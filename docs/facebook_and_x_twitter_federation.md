@@ -1,7 +1,7 @@
 # Facebook and X (Twitter) Sync
 
 Rellm's "Sync Destinations" feature lets a user connect one of their Facebook Pages as a
-[`SyncDestination`](https://jonline.io/docs/protocol#rellm-SyncDestination), so calling [`SyncOccasion`](https://jonline.io/docs/protocol#grpc-api-SyncOccasion) or [`SyncPost`](https://jonline.io/docs/protocol#grpc-api-SyncPost) posts the [`Occasion`](https://jonline.io/docs/protocol#rellm-Occasion)/[`Post`](https://jonline.io/docs/protocol#rellm-Post) to
+[`SyncDestination`](https://rellm.org/docs/protocol#rellm-SyncDestination), so calling [`SyncOccasion`](https://rellm.org/docs/protocol#grpc-api-SyncOccasion) or [`SyncPost`](https://rellm.org/docs/protocol#grpc-api-SyncPost) posts the [`Occasion`](https://rellm.org/docs/protocol#rellm-Occasion)/[`Post`](https://rellm.org/docs/protocol#rellm-Post) to
 that Page. Implementation: [`backend/src/logic/facebook_sync.rs`](../backend/src/logic/facebook_sync.rs),
 invoked from [`SyncOccasion`](../backend/src/rpcs/events/sync_occasion.rs) and
 [`SyncPost`](../backend/src/rpcs/posts/sync_post.rs) alike (both dispatch through the same
@@ -16,7 +16,7 @@ section for the rest.)
 
 ## It posts to the Page's feed, not a real Facebook Event
 
-Posting an [`Occasion`](https://jonline.io/docs/protocol#rellm-Occasion) creates a Facebook **Page post** (`POST /{page-id}/feed`) formatted to
+Posting an [`Occasion`](https://rellm.org/docs/protocol#rellm-Occasion) creates a Facebook **Page post** (`POST /{page-id}/feed`) formatted to
 read like an event announcement, or attaches its media (see "What's in the post" below) - it does
 **not** create an actual Facebook **Event** object (the kind users can RSVP to natively on
 Facebook), because the Graph API no longer allows that for ordinary third-party apps:
@@ -37,14 +37,14 @@ Facebook), because the Graph API no longer allows that for ordinary third-party 
   404s, with stale "pausing onboarding due to COVID-19" copy still up. Not a viable path.
 
 So the Page-post approach here is the best available server-side option, not an oversight. (This
-limitation is specific to *Events* - a [`Post`](https://jonline.io/docs/protocol#rellm-Post) has no such native-object alternative to begin with,
+limitation is specific to *Events* - a [`Post`](https://rellm.org/docs/protocol#rellm-Post) has no such native-object alternative to begin with,
 so its Page post is simply the whole feature for Posts.)
 
 ## What's in the post
 
 `logic::sync_message::build_occasion_message`/`build_post_message` build one
-platform-agnostic `SyncMessage` per sync (shared by every [`SyncDestination`](https://jonline.io/docs/protocol#rellm-SyncDestination) platform, not just
-Facebook) from the content's own [`Post`](https://jonline.io/docs/protocol#rellm-Post) (`title`/`content`/`link`) and, for an [`Occasion`](https://jonline.io/docs/protocol#rellm-Occasion),
+platform-agnostic `SyncMessage` per sync (shared by every [`SyncDestination`](https://rellm.org/docs/protocol#rellm-SyncDestination) platform, not just
+Facebook) from the content's own [`Post`](https://rellm.org/docs/protocol#rellm-Post) (`title`/`content`/`link`) and, for an [`Occasion`](https://rellm.org/docs/protocol#rellm-Occasion),
 also its `starts_at`/`ends_at`/`location`:
 
 1. Title - for an Occasion, `rpcs::events::sync_occasion` combines the parent Event's
@@ -67,7 +67,7 @@ by a `/feed` post referencing them (`attached_media[N]`) if there are images, or
 `/videos` post if there's a video (video wins if both are present - the Graph API can't mix photo
 attachments and a video in one Page post). The `link` param (which drives a text-only post's
 link-preview card) prefers the Rellm URL; if that isn't available it falls back to the arbitrary
-external `link` the author/organizer set on the [`Post`](https://jonline.io/docs/protocol#rellm-Post) itself (e.g. an article or ticketing site).
+external `link` the author/organizer set on the [`Post`](https://rellm.org/docs/protocol#rellm-Post) itself (e.g. an article or ticketing site).
 
 ## Local-timezone times via free-text address geocoding
 
@@ -81,7 +81,7 @@ below):
    the same service the Tamagui frontend's location picker already calls client-side
    (`packages/app/hooks/use_nominatim.ts`), just used server-side here too. Its response already
    includes `lat`/`lon`, which the Tamagui picker currently fetches and discards - only
-   `display_name` gets saved into the [`Location`](https://jonline.io/docs/protocol#rellm-Location).
+   `display_name` gets saved into the [`Location`](https://rellm.org/docs/protocol#rellm-Location).
 2. **lat/lng -> IANA timezone**: the [`tzf-rs`](https://github.com/ringsaturn/tzf-rs) crate, an
    offline polygon-based dataset bundled into the binary - no second network call, no rate limit,
    actively maintained.
@@ -95,7 +95,7 @@ geocoding match) makes `resolve_timezone` return `None`, and the post just falls
 never a reason to fail the sync itself.
 
 **Possible future work**: since Tamagui's Nominatim call already has `lat`/`lon` in hand at
-location-pick time, persisting those on [`Location`](https://jonline.io/docs/protocol#rellm-Location) (proto + DB + both frontends) would let syncs
+location-pick time, persisting those on [`Location`](https://rellm.org/docs/protocol#rellm-Location) (proto + DB + both frontends) would let syncs
 skip the live geocoding call entirely and use `tzf-rs` directly - faster, no dependency on
 Nominatim's uptime/policy, and it would also cover Elm-created locations if Elm ever gains its own
 address picker (today Elm's location field is plain free text with no geocoding at all).
@@ -105,8 +105,8 @@ address picker (today Elm's location field is plain free text with no geocoding 
 The `event_url`/`post_url` (`https://{frontend_host}/event/{occasion_id}` or
 `https://{frontend_host}/post/{post_id}`) is only built when this server has
 `ServerConfiguration.external_cdn_config.frontend_host` configured. Unlike Rocket web routes
-(`configured_frontend_domain` in `backend/src/web/external_cdn.rs`), the [`SyncOccasion`](https://jonline.io/docs/protocol#grpc-api-SyncOccasion)/
-[`SyncPost`](https://jonline.io/docs/protocol#grpc-api-SyncPost) RPCs have no HTTP `Host` header to fall back on, so on servers without `frontend_host`
+(`configured_frontend_domain` in `backend/src/web/external_cdn.rs`), the [`SyncOccasion`](https://rellm.org/docs/protocol#grpc-api-SyncOccasion)/
+[`SyncPost`](https://rellm.org/docs/protocol#grpc-api-SyncPost) RPCs have no HTTP `Host` header to fall back on, so on servers without `frontend_host`
 set, the post simply omits the Rellm link (falling back to the author's own `Post.link`, if any)
 rather than guessing a domain. This is an accepted current limitation, not a bug - set
 `frontend_host` if you want synced posts to link back to their Rellm page.
@@ -114,8 +114,8 @@ rather than guessing a domain. This is an accepted current limitation, not a bug
 ## Connecting a Page (OAuth/token flow)
 
 1. The client does Facebook Login and gets a short-lived **user** access token, passed to
-   [`CreateSyncDestination`](https://jonline.io/docs/protocol#grpc-api-CreateSyncDestination) (or [`UpdateSyncDestination`](https://jonline.io/docs/protocol#grpc-api-UpdateSyncDestination) to reconnect).
-2. The server loads its own Facebook App ID/Secret (admin-configured via [`ConfigureServer`](https://jonline.io/docs/protocol#grpc-api-ConfigureServer) ->
+   [`CreateSyncDestination`](https://rellm.org/docs/protocol#grpc-api-CreateSyncDestination) (or [`UpdateSyncDestination`](https://rellm.org/docs/protocol#grpc-api-UpdateSyncDestination) to reconnect).
+2. The server loads its own Facebook App ID/Secret (admin-configured via [`ConfigureServer`](https://rellm.org/docs/protocol#grpc-api-ConfigureServer) ->
    `ServerConfiguration.federation_info.facebook_auth_config`) and exchanges the short-lived user
    token for a long-lived one (`connect_facebook_page` -> `exchange_long_lived_user_token`).
 3. It then looks up the specific Page's own access token via `/me/accounts`
