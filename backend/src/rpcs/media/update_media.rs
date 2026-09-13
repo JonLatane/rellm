@@ -43,5 +43,11 @@ pub fn update_media(
             Status::new(Code::Internal, "data_error")
         })?;
 
-    Ok(updated.to_proto())
+    let author = if self_update {
+        Some(current_user.to_author())
+    } else {
+        updated.user_id.and_then(|uid| models::get_author(uid, conn).ok())
+    };
+
+    Ok(updated.to_proto(&author))
 }

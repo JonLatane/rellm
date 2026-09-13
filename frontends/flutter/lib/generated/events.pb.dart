@@ -15,7 +15,7 @@ import 'package:protobuf/protobuf.dart' as $pb;
 
 import 'events.pbenum.dart';
 import 'google/protobuf/timestamp.pb.dart' as $12;
-import 'location.pb.dart' as $16;
+import 'location.pb.dart' as $15;
 import 'media.pb.dart' as $5;
 import 'permissions.pbenum.dart' as $14;
 import 'posts.pb.dart' as $8;
@@ -730,7 +730,7 @@ class Occasion extends $pb.GeneratedMessage {
     OccasionInfo? info,
     $12.Timestamp? startsAt,
     $12.Timestamp? endsAt,
-    $16.Location? location,
+    $15.Location? location,
     $12.Timestamp? syncMissingSince,
     EventAttendances? attendances,
     EventAttendance? currentUserAttendance,
@@ -783,7 +783,7 @@ class Occasion extends $pb.GeneratedMessage {
     ..aOM<OccasionInfo>(4, _omitFieldNames ? '' : 'info', subBuilder: OccasionInfo.create)
     ..aOM<$12.Timestamp>(5, _omitFieldNames ? '' : 'startsAt', subBuilder: $12.Timestamp.create)
     ..aOM<$12.Timestamp>(6, _omitFieldNames ? '' : 'endsAt', subBuilder: $12.Timestamp.create)
-    ..aOM<$16.Location>(7, _omitFieldNames ? '' : 'location', subBuilder: $16.Location.create)
+    ..aOM<$15.Location>(7, _omitFieldNames ? '' : 'location', subBuilder: $15.Location.create)
     ..aOM<$12.Timestamp>(9, _omitFieldNames ? '' : 'syncMissingSince', subBuilder: $12.Timestamp.create)
     ..aOM<EventAttendances>(10, _omitFieldNames ? '' : 'attendances', subBuilder: EventAttendances.create)
     ..aOM<EventAttendance>(11, _omitFieldNames ? '' : 'currentUserAttendance', subBuilder: EventAttendance.create)
@@ -874,15 +874,15 @@ class Occasion extends $pb.GeneratedMessage {
 
   /// The location of the event.
   @$pb.TagNumber(7)
-  $16.Location get location => $_getN(5);
+  $15.Location get location => $_getN(5);
   @$pb.TagNumber(7)
-  set location($16.Location v) { setField(7, v); }
+  set location($15.Location v) { setField(7, v); }
   @$pb.TagNumber(7)
   $core.bool hasLocation() => $_has(5);
   @$pb.TagNumber(7)
   void clearLocation() => clearField(7);
   @$pb.TagNumber(7)
-  $16.Location ensureLocation() => $_ensure(5);
+  $15.Location ensureLocation() => $_ensure(5);
 
   /// The time since this event "disappeared" from the sync source.
   /// It is up to the owner whether this means it should be deleted.
@@ -1238,7 +1238,7 @@ class GetEventAttendancesRequest extends $pb.GeneratedMessage {
 class EventAttendances extends $pb.GeneratedMessage {
   factory EventAttendances({
     $core.Iterable<EventAttendance>? attendances,
-    $16.Location? hiddenLocation,
+    $15.Location? hiddenLocation,
   }) {
     final $result = create();
     if (attendances != null) {
@@ -1255,7 +1255,7 @@ class EventAttendances extends $pb.GeneratedMessage {
 
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'EventAttendances', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
     ..pc<EventAttendance>(1, _omitFieldNames ? '' : 'attendances', $pb.PbFieldType.PM, subBuilder: EventAttendance.create)
-    ..aOM<$16.Location>(2, _omitFieldNames ? '' : 'hiddenLocation', subBuilder: $16.Location.create)
+    ..aOM<$15.Location>(2, _omitFieldNames ? '' : 'hiddenLocation', subBuilder: $15.Location.create)
     ..hasRequiredFields = false
   ;
 
@@ -1286,15 +1286,15 @@ class EventAttendances extends $pb.GeneratedMessage {
 
   /// When `hide_location_until_rsvp_approved` is set, the location of the event.
   @$pb.TagNumber(2)
-  $16.Location get hiddenLocation => $_getN(1);
+  $15.Location get hiddenLocation => $_getN(1);
   @$pb.TagNumber(2)
-  set hiddenLocation($16.Location v) { setField(2, v); }
+  set hiddenLocation($15.Location v) { setField(2, v); }
   @$pb.TagNumber(2)
   $core.bool hasHiddenLocation() => $_has(1);
   @$pb.TagNumber(2)
   void clearHiddenLocation() => clearField(2);
   @$pb.TagNumber(2)
-  $16.Location ensureHiddenLocation() => $_ensure(1);
+  $15.Location ensureHiddenLocation() => $_ensure(1);
 }
 
 enum EventAttendance_Attendee {

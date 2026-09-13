@@ -173,6 +173,9 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
         <p><a href="#media-proto">media.proto</a></p>
         <ul>
           <li>
+            <p><a href="#rellm-Author">Author</a></p>
+          </li>
+          <li>
             <p><a href="#rellm-GetMediaRequest">GetMediaRequest</a></p>
           </li>
           <li>
@@ -239,32 +242,6 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
           </li>
           <li>
             <p><a href="#rellm-MessageListingType">MessageListingType</a></p>
-          </li>
-        </ul>
-      </li>
-      <li>
-        <p><a href="#groups-proto">groups.proto</a></p>
-        <ul>
-          <li>
-            <p><a href="#rellm-GetGroupsRequest">GetGroupsRequest</a></p>
-          </li>
-          <li>
-            <p><a href="#rellm-GetGroupsResponse">GetGroupsResponse</a></p>
-          </li>
-          <li>
-            <p><a href="#rellm-GetMembersRequest">GetMembersRequest</a></p>
-          </li>
-          <li>
-            <p><a href="#rellm-GetMembersResponse">GetMembersResponse</a></p>
-          </li>
-          <li>
-            <p><a href="#rellm-Group">Group</a></p>
-          </li>
-          <li>
-            <p><a href="#rellm-Member">Member</a></p>
-          </li>
-          <li>
-            <p><a href="#rellm-GroupListingType">GroupListingType</a></p>
           </li>
         </ul>
       </li>
@@ -362,6 +339,32 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
           </li>
           <li>
             <p><a href="#rellm-EventListingType">EventListingType</a></p>
+          </li>
+        </ul>
+      </li>
+      <li>
+        <p><a href="#groups-proto">groups.proto</a></p>
+        <ul>
+          <li>
+            <p><a href="#rellm-GetGroupsRequest">GetGroupsRequest</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-GetGroupsResponse">GetGroupsResponse</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-GetMembersRequest">GetMembersRequest</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-GetMembersResponse">GetMembersResponse</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-Group">Group</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-Member">Member</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-GroupListingType">GroupListingType</a></p>
           </li>
         </ul>
       </li>
@@ -3413,6 +3416,64 @@ directory</a> is (<code>{name}</code> denotes a
     <p><a name="media-proto"></a></p>
     <p align="right"><a href="#top">Top</a></p>
     <h2 id="mediaproto"><a class="anchor" aria-hidden="true" tabindex="-1" href="#mediaproto"><span class="octicon octicon-link"></span></a>media.proto</h2>
+    <p><a name="rellm-Author"></a></p>
+    <h3 id="author"><a class="anchor" aria-hidden="true" tabindex="-1" href="#author"><span class="octicon octicon-link"></span></a>Author</h3>
+    <p>
+      Post/authorship-centric version of User. UI can cross-reference user details from its own
+      cache (for things like admin/bot icons).
+    </p>
+    <p>
+      Lives in <code>media.proto</code> (rather than <code>users.proto</code>, where it used to live, or its own
+      <code>authors.proto</code>, split out from <code>users.proto</code> for a time) because <code>Author.avatar</code> needs
+      <code>MediaReference</code> and <code>Media</code>/<code>MediaReference</code> need <code>Author</code> (see this field's own doc) --
+      mutually recursive types belong in the same file, since <code>protoc</code> rejects circular <em>file</em>
+      imports even though the recursive <em>types</em> themselves are perfectly valid. <code>users.proto</code>
+      (<code>User.sync_destinations</code>) and <code>sync.proto</code> (<code>SyncDestination.owner</code>, <code>SyncSource.owner</code>) both
+      depend on this without depending on each other, via their own <code>import &#x26;#34;media.proto&#x26;#34;</code> (both
+      already needed it anyway, for <code>User.avatar</code>/<code>Media</code>-shaped fields).
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>user_id</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>Permanent string ID for the user. Will never contain a <code>@</code> symbol.</td>
+        </tr>
+        <tr>
+          <td>username</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td>Impermanent string username for the user. Will never contain a <code>@</code> symbol.</td>
+        </tr>
+        <tr>
+          <td>avatar</td>
+          <td><a href="#rellm-MediaReference">MediaReference</a></td>
+          <td>optional</td>
+          <td>The user's avatar.</td>
+        </tr>
+        <tr>
+          <td>real_name</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>permissions</td>
+          <td><a href="#rellm-Permission">Permission</a></td>
+          <td>repeated</td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
     <p><a name="rellm-GetMediaRequest"></a></p>
     <h3 id="getmediarequest"><a class="anchor" aria-hidden="true" tabindex="-1" href="#getmediarequest"><span class="octicon octicon-link"></span></a>GetMediaRequest</h3>
     <p>Valid GetMediaRequest formats:</p>
@@ -3536,10 +3597,10 @@ directory</a> is (<code>{name}</code> denotes a
           <td>The ID of the media item.</td>
         </tr>
         <tr>
-          <td>user_id</td>
-          <td><a href="#string">string</a></td>
+          <td>author</td>
+          <td><a href="#rellm-Author">Author</a></td>
           <td>optional</td>
-          <td>The ID of the user who created the media item.</td>
+          <td>The user who created the media item.</td>
         </tr>
         <tr>
           <td>name</td>
@@ -3693,10 +3754,10 @@ directory</a> is (<code>{name}</code> denotes a
           <td></td>
         </tr>
         <tr>
-          <td>user_id</td>
-          <td><a href="#string">string</a></td>
+          <td>author</td>
+          <td><a href="#rellm-Author">Author</a></td>
           <td>optional</td>
-          <td>The ID of the user who created the media item. See <code>Media.user_id</code>. Included here (unlike most other <code>MediaReference</code> fields, which are deliberately pared down from <code>Media</code>) so clients that only ever see a <code>MediaReference</code> -- e.g. a <code>Post.media</code> item -- can still tell whether the current viewer owns it, without a separate <code>Media</code> lookup.</td>
+          <td>The user who created the media item. See <code>Media.author</code>. Included here (unlike most other <code>MediaReference</code> fields, which are deliberately pared down from <code>Media</code>) so clients that only ever see a <code>MediaReference</code> -- e.g. a <code>Post.media</code> item -- can still tell whether the current viewer owns it, without a separate <code>Media</code> lookup.</td>
         </tr>
       </tbody>
     </table>
@@ -4289,325 +4350,6 @@ directory</a> is (<code>{name}</code> denotes a
           <td>ALL_SYSTEM_MESSAGES_TEXT_SEARCH</td>
           <td>11</td>
           <td></td>
-        </tr>
-      </tbody>
-    </table>
-    <p><a name="groups-proto"></a></p>
-    <p align="right"><a href="#top">Top</a></p>
-    <h2 id="groupsproto"><a class="anchor" aria-hidden="true" tabindex="-1" href="#groupsproto"><span class="octicon octicon-link"></span></a>groups.proto</h2>
-    <p><a name="rellm-GetGroupsRequest"></a></p>
-    <h3 id="getgroupsrequest"><a class="anchor" aria-hidden="true" tabindex="-1" href="#getgroupsrequest"><span class="octicon octicon-link"></span></a>GetGroupsRequest</h3>
-    <p>Request to get a group or groups by name or ID.</p>
-    <table>
-      <thead>
-        <tr>
-          <th>Field</th>
-          <th>Type</th>
-          <th>Label</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>group_id</td>
-          <td><a href="#string">string</a></td>
-          <td>optional</td>
-          <td>The ID of the group to get.</td>
-        </tr>
-        <tr>
-          <td>group_name</td>
-          <td><a href="#string">string</a></td>
-          <td>optional</td>
-          <td>The name of the group to get.</td>
-        </tr>
-        <tr>
-          <td>group_shortname</td>
-          <td><a href="#string">string</a></td>
-          <td>optional</td>
-          <td>The shortname of the group to get. Group shortname search is case-insensitive.</td>
-        </tr>
-        <tr>
-          <td>listing_type</td>
-          <td><a href="#rellm-GroupListingType">GroupListingType</a></td>
-          <td></td>
-          <td>The group listing type.</td>
-        </tr>
-        <tr>
-          <td>page</td>
-          <td><a href="#int32">int32</a></td>
-          <td>optional</td>
-          <td>The page of results to get.</td>
-        </tr>
-      </tbody>
-    </table>
-    <p><a name="rellm-GetGroupsResponse"></a></p>
-    <h3 id="getgroupsresponse"><a class="anchor" aria-hidden="true" tabindex="-1" href="#getgroupsresponse"><span class="octicon octicon-link"></span></a>GetGroupsResponse</h3>
-    <p>Response to a GetGroupsRequest.</p>
-    <table>
-      <thead>
-        <tr>
-          <th>Field</th>
-          <th>Type</th>
-          <th>Label</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>groups</td>
-          <td><a href="#rellm-Group">Group</a></td>
-          <td>repeated</td>
-          <td>The groups that matched the request.</td>
-        </tr>
-        <tr>
-          <td>has_next_page</td>
-          <td><a href="#bool">bool</a></td>
-          <td></td>
-          <td>Whether there are more groups to get.</td>
-        </tr>
-      </tbody>
-    </table>
-    <p><a name="rellm-GetMembersRequest"></a></p>
-    <h3 id="getmembersrequest"><a class="anchor" aria-hidden="true" tabindex="-1" href="#getmembersrequest"><span class="octicon octicon-link"></span></a>GetMembersRequest</h3>
-    <p>Request to get members of a group.</p>
-    <table>
-      <thead>
-        <tr>
-          <th>Field</th>
-          <th>Type</th>
-          <th>Label</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>group_id</td>
-          <td><a href="#string">string</a></td>
-          <td></td>
-          <td>The ID of the group to get members of.</td>
-        </tr>
-        <tr>
-          <td>username</td>
-          <td><a href="#string">string</a></td>
-          <td>optional</td>
-          <td>The username of the members to search for.</td>
-        </tr>
-        <tr>
-          <td>group_moderation</td>
-          <td><a href="#rellm-Moderation">Moderation</a></td>
-          <td>optional</td>
-          <td>The membership status to filter members by. If not specified, all members are returned.</td>
-        </tr>
-        <tr>
-          <td>page</td>
-          <td><a href="#int32">int32</a></td>
-          <td>optional</td>
-          <td>The page of results to get.</td>
-        </tr>
-      </tbody>
-    </table>
-    <p><a name="rellm-GetMembersResponse"></a></p>
-    <h3 id="getmembersresponse"><a class="anchor" aria-hidden="true" tabindex="-1" href="#getmembersresponse"><span class="octicon octicon-link"></span></a>GetMembersResponse</h3>
-    <p>Response to a GetMembersRequest.</p>
-    <table>
-      <thead>
-        <tr>
-          <th>Field</th>
-          <th>Type</th>
-          <th>Label</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>members</td>
-          <td><a href="#rellm-Member">Member</a></td>
-          <td>repeated</td>
-          <td>The members that matched the request.</td>
-        </tr>
-        <tr>
-          <td>has_next_page</td>
-          <td><a href="#bool">bool</a></td>
-          <td></td>
-          <td>Whether there are more members to get.</td>
-        </tr>
-      </tbody>
-    </table>
-    <p><a name="rellm-Group"></a></p>
-    <h3 id="group-1"><a class="anchor" aria-hidden="true" tabindex="-1" href="#group-1"><span class="octicon octicon-link"></span></a>Group</h3>
-    <p><code>Group</code>s are a way to organize users and posts (and thus events). They can be used for many purposes,</p>
-    <table>
-      <thead>
-        <tr>
-          <th>Field</th>
-          <th>Type</th>
-          <th>Label</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>id</td>
-          <td><a href="#string">string</a></td>
-          <td></td>
-          <td>The group's unique ID.</td>
-        </tr>
-        <tr>
-          <td>name</td>
-          <td><a href="#string">string</a></td>
-          <td></td>
-          <td>Mutable name of the group. Must be unique, such that the derived <code>shortname</code> is also unique.</td>
-        </tr>
-        <tr>
-          <td>shortname</td>
-          <td><a href="#string">string</a></td>
-          <td></td>
-          <td>Immutable shortname of the group. Derived from changes to <code>name</code> when the <a href="#rellm-Group"><code>Group</code></a> is updated.</td>
-        </tr>
-        <tr>
-          <td>description</td>
-          <td><a href="#string">string</a></td>
-          <td></td>
-          <td>A description of the group.</td>
-        </tr>
-        <tr>
-          <td>avatar</td>
-          <td><a href="#rellm-MediaReference">MediaReference</a></td>
-          <td>optional</td>
-          <td>An avatar for the group.</td>
-        </tr>
-        <tr>
-          <td>default_membership_permissions</td>
-          <td><a href="#rellm-Permission">Permission</a></td>
-          <td>repeated</td>
-          <td>The default permissions for new members of the group.</td>
-        </tr>
-        <tr>
-          <td>default_membership_moderation</td>
-          <td><a href="#rellm-Moderation">Moderation</a></td>
-          <td></td>
-          <td>The default moderation for new members of the group. Valid values are PENDING (requires a moderator to let you join) and UNMODERATED.</td>
-        </tr>
-        <tr>
-          <td>default_post_moderation</td>
-          <td><a href="#rellm-Moderation">Moderation</a></td>
-          <td></td>
-          <td>The default moderation for new posts in the group.</td>
-        </tr>
-        <tr>
-          <td>default_event_moderation</td>
-          <td><a href="#rellm-Moderation">Moderation</a></td>
-          <td></td>
-          <td>The default moderation for new events in the group.</td>
-        </tr>
-        <tr>
-          <td>visibility</td>
-          <td><a href="#rellm-Visibility">Visibility</a></td>
-          <td></td>
-          <td>LIMITED visibility groups are only visible to members. PRIVATE groups are only visibile to users with the ADMIN group permission.</td>
-        </tr>
-        <tr>
-          <td>member_count</td>
-          <td><a href="#uint32">uint32</a></td>
-          <td></td>
-          <td>The number of members in the group.</td>
-        </tr>
-        <tr>
-          <td>post_count</td>
-          <td><a href="#uint32">uint32</a></td>
-          <td></td>
-          <td>The number of posts in the group.</td>
-        </tr>
-        <tr>
-          <td>event_count</td>
-          <td><a href="#uint32">uint32</a></td>
-          <td></td>
-          <td>The number of events in the group.</td>
-        </tr>
-        <tr>
-          <td>non_member_permissions</td>
-          <td><a href="#rellm-Permission">Permission</a></td>
-          <td>repeated</td>
-          <td>The permissions given to non-members of the group.</td>
-        </tr>
-        <tr>
-          <td>current_user_membership</td>
-          <td><a href="#rellm-Membership">Membership</a></td>
-          <td>optional</td>
-          <td>The membership for the current user, if any.</td>
-        </tr>
-        <tr>
-          <td>created_at</td>
-          <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
-          <td></td>
-          <td>The time the group was created.</td>
-        </tr>
-        <tr>
-          <td>updated_at</td>
-          <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
-          <td>optional</td>
-          <td>The time the group was last updated.</td>
-        </tr>
-      </tbody>
-    </table>
-    <p><a name="rellm-Member"></a></p>
-    <h3 id="member"><a class="anchor" aria-hidden="true" tabindex="-1" href="#member"><span class="octicon octicon-link"></span></a>Member</h3>
-    <p>Used when fetching group members using the <a href="#grpc-api-GetMembers"><code>GetMembers</code></a> RPC.</p>
-    <table>
-      <thead>
-        <tr>
-          <th>Field</th>
-          <th>Type</th>
-          <th>Label</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>user</td>
-          <td><a href="#rellm-User">User</a></td>
-          <td></td>
-          <td>The user.</td>
-        </tr>
-        <tr>
-          <td>membership</td>
-          <td><a href="#rellm-Membership">Membership</a></td>
-          <td></td>
-          <td>The user's membership (or join request, or invitation, or both) in the group.</td>
-        </tr>
-      </tbody>
-    </table>
-    <p><a name="rellm-GroupListingType"></a></p>
-    <h3 id="grouplistingtype"><a class="anchor" aria-hidden="true" tabindex="-1" href="#grouplistingtype"><span class="octicon octicon-link"></span></a>GroupListingType</h3>
-    <p>The type of group listing to get.</p>
-    <table>
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Number</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>ALL_GROUPS</td>
-          <td>0</td>
-          <td>Get all groups (visible to the current user).</td>
-        </tr>
-        <tr>
-          <td>MY_GROUPS</td>
-          <td>1</td>
-          <td>Get groups the current user is a member of.</td>
-        </tr>
-        <tr>
-          <td>REQUESTED_GROUPS</td>
-          <td>2</td>
-          <td>Get groups the current user has requested to join.</td>
-        </tr>
-        <tr>
-          <td>INVITED_GROUPS</td>
-          <td>3</td>
-          <td>Get groups the current user has been invited to.</td>
         </tr>
       </tbody>
     </table>
@@ -6067,6 +5809,325 @@ directory</a> is (<code>{name}</code> denotes a
           <td>NEWLY_ADDED_EVENTS</td>
           <td>20</td>
           <td>Returns events from either <code>ALL_ACCESSIBLE_EVENTS</code> or a specific author (with optional author_user_id parameter). Returned Occasions will be ordered by creation time rather than start time.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="groups-proto"></a></p>
+    <p align="right"><a href="#top">Top</a></p>
+    <h2 id="groupsproto"><a class="anchor" aria-hidden="true" tabindex="-1" href="#groupsproto"><span class="octicon octicon-link"></span></a>groups.proto</h2>
+    <p><a name="rellm-GetGroupsRequest"></a></p>
+    <h3 id="getgroupsrequest"><a class="anchor" aria-hidden="true" tabindex="-1" href="#getgroupsrequest"><span class="octicon octicon-link"></span></a>GetGroupsRequest</h3>
+    <p>Request to get a group or groups by name or ID.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>group_id</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td>The ID of the group to get.</td>
+        </tr>
+        <tr>
+          <td>group_name</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td>The name of the group to get.</td>
+        </tr>
+        <tr>
+          <td>group_shortname</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td>The shortname of the group to get. Group shortname search is case-insensitive.</td>
+        </tr>
+        <tr>
+          <td>listing_type</td>
+          <td><a href="#rellm-GroupListingType">GroupListingType</a></td>
+          <td></td>
+          <td>The group listing type.</td>
+        </tr>
+        <tr>
+          <td>page</td>
+          <td><a href="#int32">int32</a></td>
+          <td>optional</td>
+          <td>The page of results to get.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-GetGroupsResponse"></a></p>
+    <h3 id="getgroupsresponse"><a class="anchor" aria-hidden="true" tabindex="-1" href="#getgroupsresponse"><span class="octicon octicon-link"></span></a>GetGroupsResponse</h3>
+    <p>Response to a GetGroupsRequest.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>groups</td>
+          <td><a href="#rellm-Group">Group</a></td>
+          <td>repeated</td>
+          <td>The groups that matched the request.</td>
+        </tr>
+        <tr>
+          <td>has_next_page</td>
+          <td><a href="#bool">bool</a></td>
+          <td></td>
+          <td>Whether there are more groups to get.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-GetMembersRequest"></a></p>
+    <h3 id="getmembersrequest"><a class="anchor" aria-hidden="true" tabindex="-1" href="#getmembersrequest"><span class="octicon octicon-link"></span></a>GetMembersRequest</h3>
+    <p>Request to get members of a group.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>group_id</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>The ID of the group to get members of.</td>
+        </tr>
+        <tr>
+          <td>username</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td>The username of the members to search for.</td>
+        </tr>
+        <tr>
+          <td>group_moderation</td>
+          <td><a href="#rellm-Moderation">Moderation</a></td>
+          <td>optional</td>
+          <td>The membership status to filter members by. If not specified, all members are returned.</td>
+        </tr>
+        <tr>
+          <td>page</td>
+          <td><a href="#int32">int32</a></td>
+          <td>optional</td>
+          <td>The page of results to get.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-GetMembersResponse"></a></p>
+    <h3 id="getmembersresponse"><a class="anchor" aria-hidden="true" tabindex="-1" href="#getmembersresponse"><span class="octicon octicon-link"></span></a>GetMembersResponse</h3>
+    <p>Response to a GetMembersRequest.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>members</td>
+          <td><a href="#rellm-Member">Member</a></td>
+          <td>repeated</td>
+          <td>The members that matched the request.</td>
+        </tr>
+        <tr>
+          <td>has_next_page</td>
+          <td><a href="#bool">bool</a></td>
+          <td></td>
+          <td>Whether there are more members to get.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-Group"></a></p>
+    <h3 id="group-1"><a class="anchor" aria-hidden="true" tabindex="-1" href="#group-1"><span class="octicon octicon-link"></span></a>Group</h3>
+    <p><code>Group</code>s are a way to organize users and posts (and thus events). They can be used for many purposes,</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>id</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>The group's unique ID.</td>
+        </tr>
+        <tr>
+          <td>name</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>Mutable name of the group. Must be unique, such that the derived <code>shortname</code> is also unique.</td>
+        </tr>
+        <tr>
+          <td>shortname</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>Immutable shortname of the group. Derived from changes to <code>name</code> when the <a href="#rellm-Group"><code>Group</code></a> is updated.</td>
+        </tr>
+        <tr>
+          <td>description</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>A description of the group.</td>
+        </tr>
+        <tr>
+          <td>avatar</td>
+          <td><a href="#rellm-MediaReference">MediaReference</a></td>
+          <td>optional</td>
+          <td>An avatar for the group.</td>
+        </tr>
+        <tr>
+          <td>default_membership_permissions</td>
+          <td><a href="#rellm-Permission">Permission</a></td>
+          <td>repeated</td>
+          <td>The default permissions for new members of the group.</td>
+        </tr>
+        <tr>
+          <td>default_membership_moderation</td>
+          <td><a href="#rellm-Moderation">Moderation</a></td>
+          <td></td>
+          <td>The default moderation for new members of the group. Valid values are PENDING (requires a moderator to let you join) and UNMODERATED.</td>
+        </tr>
+        <tr>
+          <td>default_post_moderation</td>
+          <td><a href="#rellm-Moderation">Moderation</a></td>
+          <td></td>
+          <td>The default moderation for new posts in the group.</td>
+        </tr>
+        <tr>
+          <td>default_event_moderation</td>
+          <td><a href="#rellm-Moderation">Moderation</a></td>
+          <td></td>
+          <td>The default moderation for new events in the group.</td>
+        </tr>
+        <tr>
+          <td>visibility</td>
+          <td><a href="#rellm-Visibility">Visibility</a></td>
+          <td></td>
+          <td>LIMITED visibility groups are only visible to members. PRIVATE groups are only visibile to users with the ADMIN group permission.</td>
+        </tr>
+        <tr>
+          <td>member_count</td>
+          <td><a href="#uint32">uint32</a></td>
+          <td></td>
+          <td>The number of members in the group.</td>
+        </tr>
+        <tr>
+          <td>post_count</td>
+          <td><a href="#uint32">uint32</a></td>
+          <td></td>
+          <td>The number of posts in the group.</td>
+        </tr>
+        <tr>
+          <td>event_count</td>
+          <td><a href="#uint32">uint32</a></td>
+          <td></td>
+          <td>The number of events in the group.</td>
+        </tr>
+        <tr>
+          <td>non_member_permissions</td>
+          <td><a href="#rellm-Permission">Permission</a></td>
+          <td>repeated</td>
+          <td>The permissions given to non-members of the group.</td>
+        </tr>
+        <tr>
+          <td>current_user_membership</td>
+          <td><a href="#rellm-Membership">Membership</a></td>
+          <td>optional</td>
+          <td>The membership for the current user, if any.</td>
+        </tr>
+        <tr>
+          <td>created_at</td>
+          <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
+          <td></td>
+          <td>The time the group was created.</td>
+        </tr>
+        <tr>
+          <td>updated_at</td>
+          <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
+          <td>optional</td>
+          <td>The time the group was last updated.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-Member"></a></p>
+    <h3 id="member"><a class="anchor" aria-hidden="true" tabindex="-1" href="#member"><span class="octicon octicon-link"></span></a>Member</h3>
+    <p>Used when fetching group members using the <a href="#grpc-api-GetMembers"><code>GetMembers</code></a> RPC.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>user</td>
+          <td><a href="#rellm-User">User</a></td>
+          <td></td>
+          <td>The user.</td>
+        </tr>
+        <tr>
+          <td>membership</td>
+          <td><a href="#rellm-Membership">Membership</a></td>
+          <td></td>
+          <td>The user's membership (or join request, or invitation, or both) in the group.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-GroupListingType"></a></p>
+    <h3 id="grouplistingtype"><a class="anchor" aria-hidden="true" tabindex="-1" href="#grouplistingtype"><span class="octicon octicon-link"></span></a>GroupListingType</h3>
+    <p>The type of group listing to get.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Number</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>ALL_GROUPS</td>
+          <td>0</td>
+          <td>Get all groups (visible to the current user).</td>
+        </tr>
+        <tr>
+          <td>MY_GROUPS</td>
+          <td>1</td>
+          <td>Get groups the current user is a member of.</td>
+        </tr>
+        <tr>
+          <td>REQUESTED_GROUPS</td>
+          <td>2</td>
+          <td>Get groups the current user has requested to join.</td>
+        </tr>
+        <tr>
+          <td>INVITED_GROUPS</td>
+          <td>3</td>
+          <td>Get groups the current user has been invited to.</td>
         </tr>
       </tbody>
     </table>

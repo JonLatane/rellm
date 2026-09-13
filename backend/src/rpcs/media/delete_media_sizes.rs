@@ -81,5 +81,11 @@ pub async fn delete_media_sizes(
         }
     }
 
-    Ok(updated.to_proto())
+    let author = if self_delete {
+        Some(current_user.to_author())
+    } else {
+        updated.user_id.and_then(|uid| models::get_author(uid, conn).ok())
+    };
+
+    Ok(updated.to_proto(&author))
 }

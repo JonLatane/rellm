@@ -56,7 +56,7 @@ import Grpc
 import Html exposing (Html, a, div, img, text)
 import Html.Attributes exposing (alt, attribute, href, src)
 import Proto.Google.Protobuf
-import Proto.Rellm exposing (Author, ContactMethod, FederatedAccount, Follow, GetUsersResponse, User, VerifyContactMethodRequest, defaultGetUsersRequest)
+import Proto.Rellm exposing (Author, ContactMethod, FederatedAccount, Follow, GetUsersResponse, User, VerifyContactMethodRequest, defaultGetUsersRequest, unwrapMediaReference)
 import Proto.Rellm.Rellm as Rellm
 import Proto.Rellm.Moderation exposing (Moderation(..))
 import Proto.Rellm.Permission exposing (Permission(..))
@@ -581,7 +581,7 @@ of a `User` -- see `Components.Posts.postAuthorHref`) instead of a full `User`.
 -}
 authorAvatarUrl : RellmServer -> Maybe RellmAccount -> Author -> Maybe String
 authorAvatarUrl server maybeAccount author =
-    mediaReferenceUrl server maybeAccount author.avatar
+    mediaReferenceUrl server maybeAccount (Maybe.map unwrapMediaReference author.avatar)
 
 
 {-| `avatarUrl`/`authorAvatarUrl`'s shared guts, exposed on its own too --

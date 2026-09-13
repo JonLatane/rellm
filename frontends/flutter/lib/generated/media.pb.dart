@@ -16,6 +16,7 @@ import 'package:protobuf/protobuf.dart' as $pb;
 
 import 'google/protobuf/timestamp.pb.dart' as $12;
 import 'media.pbenum.dart';
+import 'permissions.pbenum.dart' as $14;
 import 'visibility_moderation.pbenum.dart' as $13;
 
 export 'media.pbenum.dart';
@@ -46,7 +47,7 @@ export 'media.pbenum.dart';
 class Media extends $pb.GeneratedMessage {
   factory Media({
     $core.String? id,
-    $core.String? userId,
+    Author? author,
     $core.String? name,
     $core.String? description,
     $13.Visibility? visibility,
@@ -63,8 +64,8 @@ class Media extends $pb.GeneratedMessage {
     if (id != null) {
       $result.id = id;
     }
-    if (userId != null) {
-      $result.userId = userId;
+    if (author != null) {
+      $result.author = author;
     }
     if (name != null) {
       $result.name = name;
@@ -107,7 +108,7 @@ class Media extends $pb.GeneratedMessage {
 
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'Media', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'id')
-    ..aOS(2, _omitFieldNames ? '' : 'userId')
+    ..aOM<Author>(2, _omitFieldNames ? '' : 'author', subBuilder: Author.create)
     ..aOS(4, _omitFieldNames ? '' : 'name')
     ..aOS(5, _omitFieldNames ? '' : 'description')
     ..e<$13.Visibility>(6, _omitFieldNames ? '' : 'visibility', $pb.PbFieldType.OE, defaultOrMaker: $13.Visibility.VISIBILITY_UNKNOWN, valueOf: $13.Visibility.valueOf, enumValues: $13.Visibility.values)
@@ -153,15 +154,17 @@ class Media extends $pb.GeneratedMessage {
   @$pb.TagNumber(1)
   void clearId() => clearField(1);
 
-  /// The ID of the user who created the media item.
+  /// The user who created the media item.
   @$pb.TagNumber(2)
-  $core.String get userId => $_getSZ(1);
+  Author get author => $_getN(1);
   @$pb.TagNumber(2)
-  set userId($core.String v) { $_setString(1, v); }
+  set author(Author v) { setField(2, v); }
   @$pb.TagNumber(2)
-  $core.bool hasUserId() => $_has(1);
+  $core.bool hasAuthor() => $_has(1);
   @$pb.TagNumber(2)
-  void clearUserId() => clearField(2);
+  void clearAuthor() => clearField(2);
+  @$pb.TagNumber(2)
+  Author ensureAuthor() => $_ensure(1);
 
   /// An optional title for the media item.
   @$pb.TagNumber(4)
@@ -454,7 +457,7 @@ class MediaReference extends $pb.GeneratedMessage {
     $core.Iterable<MediaSize>? sizes,
     $core.String? url,
     $core.String? description,
-    $core.String? userId,
+    Author? author,
   }) {
     final $result = create();
     if (id != null) {
@@ -478,8 +481,8 @@ class MediaReference extends $pb.GeneratedMessage {
     if (description != null) {
       $result.description = description;
     }
-    if (userId != null) {
-      $result.userId = userId;
+    if (author != null) {
+      $result.author = author;
     }
     return $result;
   }
@@ -495,7 +498,7 @@ class MediaReference extends $pb.GeneratedMessage {
     ..pc<MediaSize>(6, _omitFieldNames ? '' : 'sizes', $pb.PbFieldType.PM, subBuilder: MediaSize.create)
     ..aOS(11, _omitFieldNames ? '' : 'url')
     ..aOS(12, _omitFieldNames ? '' : 'description')
-    ..aOS(13, _omitFieldNames ? '' : 'userId')
+    ..aOM<Author>(13, _omitFieldNames ? '' : 'author', subBuilder: Author.create)
     ..hasRequiredFields = false
   ;
 
@@ -585,18 +588,136 @@ class MediaReference extends $pb.GeneratedMessage {
   @$pb.TagNumber(12)
   void clearDescription() => clearField(12);
 
-  /// The ID of the user who created the media item. See `Media.user_id`. Included here (unlike
-  /// most other `MediaReference` fields, which are deliberately pared down from `Media`) so
-  /// clients that only ever see a `MediaReference` -- e.g. a `Post.media` item -- can still tell
-  /// whether the current viewer owns it, without a separate `Media` lookup.
+  /// The user who created the media item. See `Media.author`. Included here (unlike most other
+  /// `MediaReference` fields, which are deliberately pared down from `Media`) so clients that only
+  /// ever see a `MediaReference` -- e.g. a `Post.media` item -- can still tell whether the current
+  /// viewer owns it, without a separate `Media` lookup.
   @$pb.TagNumber(13)
-  $core.String get userId => $_getSZ(7);
+  Author get author => $_getN(7);
   @$pb.TagNumber(13)
-  set userId($core.String v) { $_setString(7, v); }
+  set author(Author v) { setField(13, v); }
   @$pb.TagNumber(13)
-  $core.bool hasUserId() => $_has(7);
+  $core.bool hasAuthor() => $_has(7);
   @$pb.TagNumber(13)
-  void clearUserId() => clearField(13);
+  void clearAuthor() => clearField(13);
+  @$pb.TagNumber(13)
+  Author ensureAuthor() => $_ensure(7);
+}
+
+///  Post/authorship-centric version of User. UI can cross-reference user details from its own
+///  cache (for things like admin/bot icons).
+///
+///  Lives in `media.proto` (rather than `users.proto`, where it used to live, or its own
+///  `authors.proto`, split out from `users.proto` for a time) because `Author.avatar` needs
+///  `MediaReference` and `Media`/`MediaReference` need `Author` (see this field's own doc) --
+///  mutually recursive types belong in the same file, since `protoc` rejects circular *file*
+///  imports even though the recursive *types* themselves are perfectly valid. `users.proto`
+///  (`User.sync_destinations`) and `sync.proto` (`SyncDestination.owner`, `SyncSource.owner`) both
+///  depend on this without depending on each other, via their own `import "media.proto"` (both
+///  already needed it anyway, for `User.avatar`/`Media`-shaped fields).
+class Author extends $pb.GeneratedMessage {
+  factory Author({
+    $core.String? userId,
+    $core.String? username,
+    MediaReference? avatar,
+    $core.String? realName,
+    $core.Iterable<$14.Permission>? permissions,
+  }) {
+    final $result = create();
+    if (userId != null) {
+      $result.userId = userId;
+    }
+    if (username != null) {
+      $result.username = username;
+    }
+    if (avatar != null) {
+      $result.avatar = avatar;
+    }
+    if (realName != null) {
+      $result.realName = realName;
+    }
+    if (permissions != null) {
+      $result.permissions.addAll(permissions);
+    }
+    return $result;
+  }
+  Author._() : super();
+  factory Author.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromBuffer(i, r);
+  factory Author.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'Author', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'userId')
+    ..aOS(2, _omitFieldNames ? '' : 'username')
+    ..aOM<MediaReference>(3, _omitFieldNames ? '' : 'avatar', subBuilder: MediaReference.create)
+    ..aOS(4, _omitFieldNames ? '' : 'realName')
+    ..pc<$14.Permission>(5, _omitFieldNames ? '' : 'permissions', $pb.PbFieldType.KE, valueOf: $14.Permission.valueOf, enumValues: $14.Permission.values, defaultEnumValue: $14.Permission.PERMISSION_UNKNOWN)
+    ..hasRequiredFields = false
+  ;
+
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.deepCopy] instead. '
+  'Will be removed in next major version')
+  Author clone() => Author()..mergeFromMessage(this);
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.rebuild] instead. '
+  'Will be removed in next major version')
+  Author copyWith(void Function(Author) updates) => super.copyWith((message) => updates(message as Author)) as Author;
+
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static Author create() => Author._();
+  Author createEmptyInstance() => create();
+  static $pb.PbList<Author> createRepeated() => $pb.PbList<Author>();
+  @$core.pragma('dart2js:noInline')
+  static Author getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<Author>(create);
+  static Author? _defaultInstance;
+
+  /// Permanent string ID for the user. Will never contain a `@` symbol.
+  @$pb.TagNumber(1)
+  $core.String get userId => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set userId($core.String v) { $_setString(0, v); }
+  @$pb.TagNumber(1)
+  $core.bool hasUserId() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearUserId() => clearField(1);
+
+  /// Impermanent string username for the user. Will never contain a `@` symbol.
+  @$pb.TagNumber(2)
+  $core.String get username => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set username($core.String v) { $_setString(1, v); }
+  @$pb.TagNumber(2)
+  $core.bool hasUsername() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearUsername() => clearField(2);
+
+  /// The user's avatar.
+  @$pb.TagNumber(3)
+  MediaReference get avatar => $_getN(2);
+  @$pb.TagNumber(3)
+  set avatar(MediaReference v) { setField(3, v); }
+  @$pb.TagNumber(3)
+  $core.bool hasAvatar() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearAvatar() => clearField(3);
+  @$pb.TagNumber(3)
+  MediaReference ensureAvatar() => $_ensure(2);
+
+  @$pb.TagNumber(4)
+  $core.String get realName => $_getSZ(3);
+  @$pb.TagNumber(4)
+  set realName($core.String v) { $_setString(3, v); }
+  @$pb.TagNumber(4)
+  $core.bool hasRealName() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearRealName() => clearField(4);
+
+  @$pb.TagNumber(5)
+  $core.List<$14.Permission> get permissions => $_getList(4);
 }
 
 /// Valid GetMediaRequest formats:

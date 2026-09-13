@@ -7,7 +7,6 @@ import "google/protobuf/timestamp.proto";
 // import "users.proto";
 import "visibility_moderation.proto";
 import "media.proto";
-import "authors.proto";
 import "sync.proto";
 
 // Valid GetPostsRequest formats:

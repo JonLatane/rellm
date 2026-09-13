@@ -7,6 +7,7 @@
 /* eslint-disable */
 import { BinaryReader, BinaryWriter } from "@bufbuild/protobuf/wire";
 import { Timestamp } from "./google/protobuf/timestamp";
+import { Permission, permissionFromJSON, permissionToJSON } from "./permissions";
 import {
   Moderation,
   moderationFromJSON,
@@ -96,9 +97,9 @@ export function mediaConversionToJSON(object: MediaConversion): string {
 export interface Media {
   /** The ID of the media item. */
   id: string;
-  /** The ID of the user who created the media item. */
-  userId?:
-    | string
+  /** The user who created the media item. */
+  author?:
+    | Author
     | undefined;
   /** An optional title for the media item. */
   name?:
@@ -217,12 +218,38 @@ export interface MediaReference {
     | string
     | undefined;
   /**
-   * The ID of the user who created the media item. See `Media.user_id`. Included here (unlike
-   * most other `MediaReference` fields, which are deliberately pared down from `Media`) so
-   * clients that only ever see a `MediaReference` -- e.g. a `Post.media` item -- can still tell
-   * whether the current viewer owns it, without a separate `Media` lookup.
+   * The user who created the media item. See `Media.author`. Included here (unlike most other
+   * `MediaReference` fields, which are deliberately pared down from `Media`) so clients that only
+   * ever see a `MediaReference` -- e.g. a `Post.media` item -- can still tell whether the current
+   * viewer owns it, without a separate `Media` lookup.
    */
-  userId?: string | undefined;
+  author?: Author | undefined;
+}
+
+/**
+ * Post/authorship-centric version of User. UI can cross-reference user details from its own
+ * cache (for things like admin/bot icons).
+ *
+ * Lives in `media.proto` (rather than `users.proto`, where it used to live, or its own
+ * `authors.proto`, split out from `users.proto` for a time) because `Author.avatar` needs
+ * `MediaReference` and `Media`/`MediaReference` need `Author` (see this field's own doc) --
+ * mutually recursive types belong in the same file, since `protoc` rejects circular *file*
+ * imports even though the recursive *types* themselves are perfectly valid. `users.proto`
+ * (`User.sync_destinations`) and `sync.proto` (`SyncDestination.owner`, `SyncSource.owner`) both
+ * depend on this without depending on each other, via their own `import "media.proto"` (both
+ * already needed it anyway, for `User.avatar`/`Media`-shaped fields).
+ */
+export interface Author {
+  /** Permanent string ID for the user. Will never contain a `@` symbol. */
+  userId: string;
+  /** Impermanent string username for the user. Will never contain a `@` symbol. */
+  username?:
+    | string
+    | undefined;
+  /** The user's avatar. */
+  avatar?: MediaReference | undefined;
+  realName?: string | undefined;
+  permissions: Permission[];
 }
 
 /**
@@ -252,7 +279,7 @@ export interface GetMediaResponse {
 function createBaseMedia(): Media {
   return {
     id: "",
-    userId: undefined,
+    author: undefined,
     name: undefined,
     description: undefined,
     visibility: 0,
@@ -272,8 +299,8 @@ export const Media: MessageFns<Media> = {
     if (message.id !== "") {
       writer.uint32(10).string(message.id);
     }
-    if (message.userId !== undefined) {
-      writer.uint32(18).string(message.userId);
+    if (message.author !== undefined) {
+      Author.encode(message.author, writer.uint32(18).fork()).join();
     }
     if (message.name !== undefined) {
       writer.uint32(34).string(message.name);
@@ -331,7 +358,7 @@ export const Media: MessageFns<Media> = {
             break;
           }
 
-          message.userId = reader.string();
+          message.author = Author.decode(reader, reader.uint32());
           continue;
         }
         case 4: {
@@ -434,7 +461,7 @@ export const Media: MessageFns<Media> = {
   fromJSON(object: any): Media {
     return {
       id: isSet(object.id) ? globalThis.String(object.id) : "",
-      userId: isSet(object.userId) ? globalThis.String(object.userId) : undefined,
+      author: isSet(object.author) ? Author.fromJSON(object.author) : undefined,
       name: isSet(object.name) ? globalThis.String(object.name) : undefined,
       description: isSet(object.description) ? globalThis.String(object.description) : undefined,
       visibility: isSet(object.visibility) ? visibilityFromJSON(object.visibility) : 0,
@@ -454,8 +481,8 @@ export const Media: MessageFns<Media> = {
     if (message.id !== "") {
       obj.id = message.id;
     }
-    if (message.userId !== undefined) {
-      obj.userId = message.userId;
+    if (message.author !== undefined) {
+      obj.author = Author.toJSON(message.author);
     }
     if (message.name !== undefined) {
       obj.name = message.name;
@@ -499,7 +526,9 @@ export const Media: MessageFns<Media> = {
   fromPartial<I extends Exact<DeepPartial<Media>, I>>(object: I): Media {
     const message = createBaseMedia();
     message.id = object.id ?? "";
-    message.userId = object.userId ?? undefined;
+    message.author = (object.author !== undefined && object.author !== null)
+      ? Author.fromPartial(object.author)
+      : undefined;
     message.name = object.name ?? undefined;
     message.description = object.description ?? undefined;
     message.visibility = object.visibility ?? 0;
@@ -694,7 +723,7 @@ function createBaseMediaReference(): MediaReference {
     sizes: [],
     url: undefined,
     description: undefined,
-    userId: undefined,
+    author: undefined,
   };
 }
 
@@ -721,8 +750,8 @@ export const MediaReference: MessageFns<MediaReference> = {
     if (message.description !== undefined) {
       writer.uint32(98).string(message.description);
     }
-    if (message.userId !== undefined) {
-      writer.uint32(106).string(message.userId);
+    if (message.author !== undefined) {
+      Author.encode(message.author, writer.uint32(106).fork()).join();
     }
     return writer;
   },
@@ -795,7 +824,7 @@ export const MediaReference: MessageFns<MediaReference> = {
             break;
           }
 
-          message.userId = reader.string();
+          message.author = Author.decode(reader, reader.uint32());
           continue;
         }
       }
@@ -816,7 +845,7 @@ export const MediaReference: MessageFns<MediaReference> = {
       sizes: globalThis.Array.isArray(object?.sizes) ? object.sizes.map((e: any) => MediaSize.fromJSON(e)) : [],
       url: isSet(object.url) ? globalThis.String(object.url) : undefined,
       description: isSet(object.description) ? globalThis.String(object.description) : undefined,
-      userId: isSet(object.userId) ? globalThis.String(object.userId) : undefined,
+      author: isSet(object.author) ? Author.fromJSON(object.author) : undefined,
     };
   },
 
@@ -843,8 +872,8 @@ export const MediaReference: MessageFns<MediaReference> = {
     if (message.description !== undefined) {
       obj.description = message.description;
     }
-    if (message.userId !== undefined) {
-      obj.userId = message.userId;
+    if (message.author !== undefined) {
+      obj.author = Author.toJSON(message.author);
     }
     return obj;
   },
@@ -863,7 +892,149 @@ export const MediaReference: MessageFns<MediaReference> = {
     message.sizes = object.sizes?.map((e) => MediaSize.fromPartial(e)) || [];
     message.url = object.url ?? undefined;
     message.description = object.description ?? undefined;
-    message.userId = object.userId ?? undefined;
+    message.author = (object.author !== undefined && object.author !== null)
+      ? Author.fromPartial(object.author)
+      : undefined;
+    return message;
+  },
+};
+
+function createBaseAuthor(): Author {
+  return { userId: "", username: undefined, avatar: undefined, realName: undefined, permissions: [] };
+}
+
+export const Author: MessageFns<Author> = {
+  encode(message: Author, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.userId !== "") {
+      writer.uint32(10).string(message.userId);
+    }
+    if (message.username !== undefined) {
+      writer.uint32(18).string(message.username);
+    }
+    if (message.avatar !== undefined) {
+      MediaReference.encode(message.avatar, writer.uint32(26).fork()).join();
+    }
+    if (message.realName !== undefined) {
+      writer.uint32(34).string(message.realName);
+    }
+    writer.uint32(42).fork();
+    for (const v of message.permissions) {
+      writer.int32(v);
+    }
+    writer.join();
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): Author {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseAuthor();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.userId = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.username = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.avatar = MediaReference.decode(reader, reader.uint32());
+          continue;
+        }
+        case 4: {
+          if (tag !== 34) {
+            break;
+          }
+
+          message.realName = reader.string();
+          continue;
+        }
+        case 5: {
+          if (tag === 40) {
+            message.permissions.push(reader.int32() as any);
+
+            continue;
+          }
+
+          if (tag === 42) {
+            const end2 = reader.uint32() + reader.pos;
+            while (reader.pos < end2) {
+              message.permissions.push(reader.int32() as any);
+            }
+
+            continue;
+          }
+
+          break;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): Author {
+    return {
+      userId: isSet(object.userId) ? globalThis.String(object.userId) : "",
+      username: isSet(object.username) ? globalThis.String(object.username) : undefined,
+      avatar: isSet(object.avatar) ? MediaReference.fromJSON(object.avatar) : undefined,
+      realName: isSet(object.realName) ? globalThis.String(object.realName) : undefined,
+      permissions: globalThis.Array.isArray(object?.permissions)
+        ? object.permissions.map((e: any) => permissionFromJSON(e))
+        : [],
+    };
+  },
+
+  toJSON(message: Author): unknown {
+    const obj: any = {};
+    if (message.userId !== "") {
+      obj.userId = message.userId;
+    }
+    if (message.username !== undefined) {
+      obj.username = message.username;
+    }
+    if (message.avatar !== undefined) {
+      obj.avatar = MediaReference.toJSON(message.avatar);
+    }
+    if (message.realName !== undefined) {
+      obj.realName = message.realName;
+    }
+    if (message.permissions?.length) {
+      obj.permissions = message.permissions.map((e) => permissionToJSON(e));
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<Author>, I>>(base?: I): Author {
+    return Author.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<Author>, I>>(object: I): Author {
+    const message = createBaseAuthor();
+    message.userId = object.userId ?? "";
+    message.username = object.username ?? undefined;
+    message.avatar = (object.avatar !== undefined && object.avatar !== null)
+      ? MediaReference.fromPartial(object.avatar)
+      : undefined;
+    message.realName = object.realName ?? undefined;
+    message.permissions = object.permissions?.map((e) => e) || [];
     return message;
   },
 };

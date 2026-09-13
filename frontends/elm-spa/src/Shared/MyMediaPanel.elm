@@ -57,7 +57,7 @@ import Html.Events exposing (on, onClick, onInput, preventDefaultOn, stopPropaga
 import Html.Keyed
 import Http
 import Json.Decode as Decode
-import Proto.Rellm exposing (GetMediaResponse, Media, MediaReference, defaultGetMediaRequest, defaultMedia)
+import Proto.Rellm exposing (GetMediaResponse, Media, MediaReference, defaultGetMediaRequest, defaultMedia, wrapAuthor)
 import Proto.Rellm.Rellm as Rellm
 import Set exposing (Set)
 import Shared.AccountsPanel as AccountsPanel
@@ -1008,7 +1008,7 @@ ifNonEmpty s =
 -}
 toMediaReference : Media -> MediaReference
 toMediaReference media =
-    { id = media.id, userId = media.userId, name = media.name, generated = media.generated, metadata = media.metadata, sizes = media.sizes, url = media.url, description = media.description }
+    { id = media.id, author = Maybe.map wrapAuthor media.author, name = media.name, generated = media.generated, metadata = media.metadata, sizes = media.sizes, url = media.url, description = media.description }
 
 
 {-| Every item Browse mode's grid is currently actually showing, converted to

@@ -35,7 +35,7 @@ const Media$json = {
   '1': 'Media',
   '2': [
     {'1': 'id', '3': 1, '4': 1, '5': 9, '10': 'id'},
-    {'1': 'user_id', '3': 2, '4': 1, '5': 9, '9': 0, '10': 'userId', '17': true},
+    {'1': 'author', '3': 2, '4': 1, '5': 11, '6': '.rellm.Author', '9': 0, '10': 'author', '17': true},
     {'1': 'name', '3': 4, '4': 1, '5': 9, '9': 1, '10': 'name', '17': true},
     {'1': 'description', '3': 5, '4': 1, '5': 9, '9': 2, '10': 'description', '17': true},
     {'1': 'visibility', '3': 6, '4': 1, '5': 14, '6': '.rellm.Visibility', '10': 'visibility'},
@@ -49,7 +49,7 @@ const Media$json = {
     {'1': 'sizes', '3': 19, '4': 3, '5': 11, '6': '.rellm.MediaSize', '10': 'sizes'},
   ],
   '8': [
-    {'1': '_user_id'},
+    {'1': '_author'},
     {'1': '_name'},
     {'1': '_description'},
     {'1': '_url'},
@@ -58,16 +58,17 @@ const Media$json = {
 
 /// Descriptor for `Media`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List mediaDescriptor = $convert.base64Decode(
-    'CgVNZWRpYRIOCgJpZBgBIAEoCVICaWQSHAoHdXNlcl9pZBgCIAEoCUgAUgZ1c2VySWSIAQESFw'
-    'oEbmFtZRgEIAEoCUgBUgRuYW1liAEBEiUKC2Rlc2NyaXB0aW9uGAUgASgJSAJSC2Rlc2NyaXB0'
-    'aW9uiAEBEjEKCnZpc2liaWxpdHkYBiABKA4yES5yZWxsbS5WaXNpYmlsaXR5Ugp2aXNpYmlsaX'
-    'R5EjEKCm1vZGVyYXRpb24YByABKA4yES5yZWxsbS5Nb2RlcmF0aW9uUgptb2RlcmF0aW9uEhwK'
-    'CWdlbmVyYXRlZBgIIAEoCFIJZ2VuZXJhdGVkEhwKCXByb2Nlc3NlZBgJIAEoCFIJcHJvY2Vzc2'
-    'VkEjkKCmNyZWF0ZWRfYXQYDyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wUgljcmVh'
-    'dGVkQXQSOQoKdXBkYXRlZF9hdBgQIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBSCX'
-    'VwZGF0ZWRBdBIwCghtZXRhZGF0YRgRIAEoCzIULnJlbGxtLk1lZGlhTWV0YWRhdGFSCG1ldGFk'
-    'YXRhEhUKA3VybBgSIAEoCUgDUgN1cmyIAQESJgoFc2l6ZXMYEyADKAsyEC5yZWxsbS5NZWRpYV'
-    'NpemVSBXNpemVzQgoKCF91c2VyX2lkQgcKBV9uYW1lQg4KDF9kZXNjcmlwdGlvbkIGCgRfdXJs');
+    'CgVNZWRpYRIOCgJpZBgBIAEoCVICaWQSKgoGYXV0aG9yGAIgASgLMg0ucmVsbG0uQXV0aG9ySA'
+    'BSBmF1dGhvcogBARIXCgRuYW1lGAQgASgJSAFSBG5hbWWIAQESJQoLZGVzY3JpcHRpb24YBSAB'
+    'KAlIAlILZGVzY3JpcHRpb26IAQESMQoKdmlzaWJpbGl0eRgGIAEoDjIRLnJlbGxtLlZpc2liaW'
+    'xpdHlSCnZpc2liaWxpdHkSMQoKbW9kZXJhdGlvbhgHIAEoDjIRLnJlbGxtLk1vZGVyYXRpb25S'
+    'Cm1vZGVyYXRpb24SHAoJZ2VuZXJhdGVkGAggASgIUglnZW5lcmF0ZWQSHAoJcHJvY2Vzc2VkGA'
+    'kgASgIUglwcm9jZXNzZWQSOQoKY3JlYXRlZF9hdBgPIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5U'
+    'aW1lc3RhbXBSCWNyZWF0ZWRBdBI5Cgp1cGRhdGVkX2F0GBAgASgLMhouZ29vZ2xlLnByb3RvYn'
+    'VmLlRpbWVzdGFtcFIJdXBkYXRlZEF0EjAKCG1ldGFkYXRhGBEgASgLMhQucmVsbG0uTWVkaWFN'
+    'ZXRhZGF0YVIIbWV0YWRhdGESFQoDdXJsGBIgASgJSANSA3VybIgBARImCgVzaXplcxgTIAMoCz'
+    'IQLnJlbGxtLk1lZGlhU2l6ZVIFc2l6ZXNCCQoHX2F1dGhvckIHCgVfbmFtZUIOCgxfZGVzY3Jp'
+    'cHRpb25CBgoEX3VybA==');
 
 @$core.Deprecated('Use mediaSizeDescriptor instead')
 const MediaSize$json = {
@@ -117,13 +118,13 @@ const MediaReference$json = {
     {'1': 'sizes', '3': 6, '4': 3, '5': 11, '6': '.rellm.MediaSize', '10': 'sizes'},
     {'1': 'url', '3': 11, '4': 1, '5': 9, '9': 1, '10': 'url', '17': true},
     {'1': 'description', '3': 12, '4': 1, '5': 9, '9': 2, '10': 'description', '17': true},
-    {'1': 'user_id', '3': 13, '4': 1, '5': 9, '9': 3, '10': 'userId', '17': true},
+    {'1': 'author', '3': 13, '4': 1, '5': 11, '6': '.rellm.Author', '9': 3, '10': 'author', '17': true},
   ],
   '8': [
     {'1': '_name'},
     {'1': '_url'},
     {'1': '_description'},
-    {'1': '_user_id'},
+    {'1': '_author'},
   ],
 };
 
@@ -133,8 +134,33 @@ final $typed_data.Uint8List mediaReferenceDescriptor = $convert.base64Decode(
     'EBEhwKCWdlbmVyYXRlZBgEIAEoCFIJZ2VuZXJhdGVkEjAKCG1ldGFkYXRhGAUgASgLMhQucmVs'
     'bG0uTWVkaWFNZXRhZGF0YVIIbWV0YWRhdGESJgoFc2l6ZXMYBiADKAsyEC5yZWxsbS5NZWRpYV'
     'NpemVSBXNpemVzEhUKA3VybBgLIAEoCUgBUgN1cmyIAQESJQoLZGVzY3JpcHRpb24YDCABKAlI'
-    'AlILZGVzY3JpcHRpb26IAQESHAoHdXNlcl9pZBgNIAEoCUgDUgZ1c2VySWSIAQFCBwoFX25hbW'
-    'VCBgoEX3VybEIOCgxfZGVzY3JpcHRpb25CCgoIX3VzZXJfaWQ=');
+    'AlILZGVzY3JpcHRpb26IAQESKgoGYXV0aG9yGA0gASgLMg0ucmVsbG0uQXV0aG9ySANSBmF1dG'
+    'hvcogBAUIHCgVfbmFtZUIGCgRfdXJsQg4KDF9kZXNjcmlwdGlvbkIJCgdfYXV0aG9y');
+
+@$core.Deprecated('Use authorDescriptor instead')
+const Author$json = {
+  '1': 'Author',
+  '2': [
+    {'1': 'user_id', '3': 1, '4': 1, '5': 9, '10': 'userId'},
+    {'1': 'username', '3': 2, '4': 1, '5': 9, '9': 0, '10': 'username', '17': true},
+    {'1': 'avatar', '3': 3, '4': 1, '5': 11, '6': '.rellm.MediaReference', '9': 1, '10': 'avatar', '17': true},
+    {'1': 'real_name', '3': 4, '4': 1, '5': 9, '9': 2, '10': 'realName', '17': true},
+    {'1': 'permissions', '3': 5, '4': 3, '5': 14, '6': '.rellm.Permission', '10': 'permissions'},
+  ],
+  '8': [
+    {'1': '_username'},
+    {'1': '_avatar'},
+    {'1': '_real_name'},
+  ],
+};
+
+/// Descriptor for `Author`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List authorDescriptor = $convert.base64Decode(
+    'CgZBdXRob3ISFwoHdXNlcl9pZBgBIAEoCVIGdXNlcklkEh8KCHVzZXJuYW1lGAIgASgJSABSCH'
+    'VzZXJuYW1liAEBEjIKBmF2YXRhchgDIAEoCzIVLnJlbGxtLk1lZGlhUmVmZXJlbmNlSAFSBmF2'
+    'YXRhcogBARIgCglyZWFsX25hbWUYBCABKAlIAlIIcmVhbE5hbWWIAQESMwoLcGVybWlzc2lvbn'
+    'MYBSADKA4yES5yZWxsbS5QZXJtaXNzaW9uUgtwZXJtaXNzaW9uc0ILCglfdXNlcm5hbWVCCQoH'
+    'X2F2YXRhckIMCgpfcmVhbF9uYW1l');
 
 @$core.Deprecated('Use getMediaRequestDescriptor instead')
 const GetMediaRequest$json = {

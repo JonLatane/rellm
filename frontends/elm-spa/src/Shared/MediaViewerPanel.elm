@@ -28,7 +28,7 @@ import Html.Events exposing (on, onClick, onInput, preventDefaultOn, stopPropaga
 import Html.Keyed
 import Json.Decode as Decode
 import Process
-import Proto.Rellm exposing (Media, MediaReference, MediaSize, Post, defaultMedia, defaultMediaSize)
+import Proto.Rellm exposing (Media, MediaReference, MediaSize, Post, defaultMedia, defaultMediaSize, unwrapAuthor, wrapAuthor)
 import Proto.Rellm.MediaConversion exposing (MediaConversion(..))
 import Proto.Rellm.Rellm as Rellm
 import Shared.AccountsPanel as AccountsPanel
@@ -304,7 +304,7 @@ open it from its own Browse-mode grid).
 mediaToReference : Media -> MediaReference
 mediaToReference media =
     { id = media.id
-    , userId = media.userId
+    , author = Maybe.map wrapAuthor media.author
     , name = media.name
     , generated = media.generated
     , metadata = media.metadata
@@ -370,7 +370,7 @@ canEditMedia : Maybe RellmAccount -> MediaReference -> Bool
 canEditMedia maybeAccount media =
     case maybeAccount of
         Just account ->
-            media.userId == Just account.userId || RellmAccounts.isAdmin account
+            (media.author |> Maybe.map (unwrapAuthor >> .userId)) == Just account.userId || RellmAccounts.isAdmin account
 
         Nothing ->
             False

@@ -416,7 +416,7 @@ pub async fn generate_media(
             })?;
     }
 
-    Ok(new_media.to_proto())
+    Ok(new_media.to_proto(&Some(current_user.to_author())))
 }
 
 /// Preferred order to fetch a reference image in -- medium first (same "cap the payload, the model

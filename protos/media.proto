@@ -4,6 +4,7 @@ package rellm;
 
 import "google/protobuf/timestamp.proto";
 
+import "permissions.proto";
 import "visibility_moderation.proto";
 
 // A Rellm `Media` message represents a single media item, such as a photo or video.
@@ -32,8 +33,8 @@ import "visibility_moderation.proto";
 message Media {
   // The ID of the media item.
   string id = 1;
-  // The ID of the user who created the media item.
-  optional string user_id = 2;
+  // The user who created the media item.
+  optional Author author = 2;
   // An optional title for the media item.
   optional string name = 4;
   // An optional description for the media item.
@@ -125,11 +126,33 @@ message MediaReference {
   // If unset, clients fall back to `/media/{id}`.
   optional string url = 11;
   optional string description = 12;
-  // The ID of the user who created the media item. See `Media.user_id`. Included here (unlike
-  // most other `MediaReference` fields, which are deliberately pared down from `Media`) so
-  // clients that only ever see a `MediaReference` -- e.g. a `Post.media` item -- can still tell
-  // whether the current viewer owns it, without a separate `Media` lookup.
-  optional string user_id = 13;
+  // The user who created the media item. See `Media.author`. Included here (unlike most other
+  // `MediaReference` fields, which are deliberately pared down from `Media`) so clients that only
+  // ever see a `MediaReference` -- e.g. a `Post.media` item -- can still tell whether the current
+  // viewer owns it, without a separate `Media` lookup.
+  optional Author author = 13;
+}
+
+// Post/authorship-centric version of User. UI can cross-reference user details from its own
+// cache (for things like admin/bot icons).
+//
+// Lives in `media.proto` (rather than `users.proto`, where it used to live, or its own
+// `authors.proto`, split out from `users.proto` for a time) because `Author.avatar` needs
+// `MediaReference` and `Media`/`MediaReference` need `Author` (see this field's own doc) --
+// mutually recursive types belong in the same file, since `protoc` rejects circular *file*
+// imports even though the recursive *types* themselves are perfectly valid. `users.proto`
+// (`User.sync_destinations`) and `sync.proto` (`SyncDestination.owner`, `SyncSource.owner`) both
+// depend on this without depending on each other, via their own `import "media.proto"` (both
+// already needed it anyway, for `User.avatar`/`Media`-shaped fields).
+message Author {
+  // Permanent string ID for the user. Will never contain a `@` symbol.
+  string user_id = 1;
+  // Impermanent string username for the user. Will never contain a `@` symbol.
+  optional string username = 2;
+  // The user's avatar.
+  optional MediaReference avatar = 3;
+  optional string real_name = 4;
+  repeated Permission permissions = 5;
 }
 
 // Valid GetMediaRequest formats:

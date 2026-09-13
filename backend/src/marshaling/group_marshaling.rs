@@ -44,7 +44,7 @@ impl ToProtoGroup for models::Group {
     ) -> Group {
         let avatar = match (media_lookup, &self.avatar_media_id) {
             (Some(media_lookup), Some(media_id)) => {
-                media_lookup.get(media_id).map(|media| media.to_proto())
+                media_lookup.get(media_id).map(|media| media.to_proto(&None))
             }
             _ => None,
         };

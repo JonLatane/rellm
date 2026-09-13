@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:rellm/rellm_state.dart';
 
 import '../../app_state.dart';
-import '../../generated/authors.pb.dart';
+import '../../generated/media.pb.dart';
 import '../../generated/posts.pb.dart';
 import '../../models/rellm_account.dart';
 import '../../models/rellm_server.dart';

@@ -6,8 +6,8 @@
 
 /* eslint-disable */
 import { BinaryReader, BinaryWriter } from "@bufbuild/protobuf/wire";
-import { Author } from "./authors";
 import { Timestamp } from "./google/protobuf/timestamp";
+import { Author } from "./media";
 
 export const protobufPackage = "rellm";
 

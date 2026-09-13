@@ -38,6 +38,7 @@
     - [UserListingType](#rellm-UserListingType)
   
 - [media.proto](#media-proto)
+    - [Author](#rellm-Author)
     - [GetMediaRequest](#rellm-GetMediaRequest)
     - [GetMediaResponse](#rellm-GetMediaResponse)
     - [Media](#rellm-Media)
@@ -63,16 +64,6 @@
     - [UnregisterPushSubscriptionRequest](#rellm-UnregisterPushSubscriptionRequest)
   
     - [MessageListingType](#rellm-MessageListingType)
-  
-- [groups.proto](#groups-proto)
-    - [GetGroupsRequest](#rellm-GetGroupsRequest)
-    - [GetGroupsResponse](#rellm-GetGroupsResponse)
-    - [GetMembersRequest](#rellm-GetMembersRequest)
-    - [GetMembersResponse](#rellm-GetMembersResponse)
-    - [Group](#rellm-Group)
-    - [Member](#rellm-Member)
-  
-    - [GroupListingType](#rellm-GroupListingType)
   
 - [posts.proto](#posts-proto)
     - [DeletePostSyncDestinationRequest](#rellm-DeletePostSyncDestinationRequest)
@@ -108,6 +99,16 @@
   
     - [AttendanceStatus](#rellm-AttendanceStatus)
     - [EventListingType](#rellm-EventListingType)
+  
+- [groups.proto](#groups-proto)
+    - [GetGroupsRequest](#rellm-GetGroupsRequest)
+    - [GetGroupsResponse](#rellm-GetGroupsResponse)
+    - [GetMembersRequest](#rellm-GetMembersRequest)
+    - [GetMembersResponse](#rellm-GetMembersResponse)
+    - [Group](#rellm-Group)
+    - [Member](#rellm-Member)
+  
+    - [GroupListingType](#rellm-GroupListingType)
   
 - [server_configuration.proto](#server_configuration-proto)
     - [BirdConfig](#rellm-BirdConfig)
@@ -1724,6 +1725,35 @@ Named `USERS_TEXT_SEARCH` (not the bare `TEXT_SEARCH` used by [`PostListingType`
 
 
 
+<a name="rellm-Author"></a>
+
+### Author
+Post/authorship-centric version of User. UI can cross-reference user details from its own
+cache (for things like admin/bot icons).
+
+Lives in `media.proto` (rather than `users.proto`, where it used to live, or its own
+`authors.proto`, split out from `users.proto` for a time) because `Author.avatar` needs
+`MediaReference` and `Media`/`MediaReference` need `Author` (see this field&#39;s own doc) --
+mutually recursive types belong in the same file, since `protoc` rejects circular *file*
+imports even though the recursive *types* themselves are perfectly valid. `users.proto`
+(`User.sync_destinations`) and `sync.proto` (`SyncDestination.owner`, `SyncSource.owner`) both
+depend on this without depending on each other, via their own `import &#34;media.proto&#34;` (both
+already needed it anyway, for `User.avatar`/`Media`-shaped fields).
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| user_id | [string](#string) |  | Permanent string ID for the user. Will never contain a `@` symbol. |
+| username | [string](#string) | optional | Impermanent string username for the user. Will never contain a `@` symbol. |
+| avatar | [MediaReference](#rellm-MediaReference) | optional | The user&#39;s avatar. |
+| real_name | [string](#string) | optional |  |
+| permissions | [Permission](#rellm-Permission) | repeated |  |
+
+
+
+
+
+
 <a name="rellm-GetMediaRequest"></a>
 
 ### GetMediaRequest
@@ -1794,7 +1824,7 @@ On success, the endpoint will return the media ID in plaintext.
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | id | [string](#string) |  | The ID of the media item. |
-| user_id | [string](#string) | optional | The ID of the user who created the media item. |
+| author | [Author](#rellm-Author) | optional | The user who created the media item. |
 | name | [string](#string) | optional | An optional title for the media item. |
 | description | [string](#string) | optional | An optional description for the media item. |
 | visibility | [Visibility](#rellm-Visibility) |  | Visibility of the media item. |
@@ -1845,7 +1875,7 @@ and the media item&#39;s name (for alt text usage).
 | sizes | [MediaSize](#rellm-MediaSize) | repeated | See `Media.sizes`. |
 | url | [string](#string) | optional | An external URL to fetch the media from, in lieu of `/media/{id}`. See `Media.url`. If unset, clients fall back to `/media/{id}`. |
 | description | [string](#string) | optional |  |
-| user_id | [string](#string) | optional | The ID of the user who created the media item. See `Media.user_id`. Included here (unlike most other `MediaReference` fields, which are deliberately pared down from `Media`) so clients that only ever see a `MediaReference` -- e.g. a `Post.media` item -- can still tell whether the current viewer owns it, without a separate `Media` lookup. |
+| author | [Author](#rellm-Author) | optional | The user who created the media item. See `Media.author`. Included here (unlike most other `MediaReference` fields, which are deliberately pared down from `Media`) so clients that only ever see a `MediaReference` -- e.g. a `Post.media` item -- can still tell whether the current viewer owns it, without a separate `Media` lookup. |
 
 
 
@@ -2160,152 +2190,6 @@ Unregisters a browser&#39;s Web Push subscription for the current user, e.g. on 
 | PERSONAL_MESSAGES_TEXT_SEARCH | 1 | Gets messages sent to the current user, and messages (purportedly) sent by the user, that match the given search text. Returns results in order of relevance to the search text. |
 | ALL_SYSTEM_MESSAGES | 10 | Gets all messages on the server (to a limit), including those sent to other users. Requires admin privileges. |
 | ALL_SYSTEM_MESSAGES_TEXT_SEARCH | 11 |  |
-
-
- 
-
- 
-
- 
-
-
-
-<a name="groups-proto"></a>
-<p align="right"><a href="#top">Top</a></p>
-
-## groups.proto
-
-
-
-<a name="rellm-GetGroupsRequest"></a>
-
-### GetGroupsRequest
-Request to get a group or groups by name or ID.
-
-
-| Field | Type | Label | Description |
-| ----- | ---- | ----- | ----------- |
-| group_id | [string](#string) | optional | The ID of the group to get. |
-| group_name | [string](#string) | optional | The name of the group to get. |
-| group_shortname | [string](#string) | optional | The shortname of the group to get. Group shortname search is case-insensitive. |
-| listing_type | [GroupListingType](#rellm-GroupListingType) |  | The group listing type. |
-| page | [int32](#int32) | optional | The page of results to get. |
-
-
-
-
-
-
-<a name="rellm-GetGroupsResponse"></a>
-
-### GetGroupsResponse
-Response to a GetGroupsRequest.
-
-
-| Field | Type | Label | Description |
-| ----- | ---- | ----- | ----------- |
-| groups | [Group](#rellm-Group) | repeated | The groups that matched the request. |
-| has_next_page | [bool](#bool) |  | Whether there are more groups to get. |
-
-
-
-
-
-
-<a name="rellm-GetMembersRequest"></a>
-
-### GetMembersRequest
-Request to get members of a group.
-
-
-| Field | Type | Label | Description |
-| ----- | ---- | ----- | ----------- |
-| group_id | [string](#string) |  | The ID of the group to get members of. |
-| username | [string](#string) | optional | The username of the members to search for. |
-| group_moderation | [Moderation](#rellm-Moderation) | optional | The membership status to filter members by. If not specified, all members are returned. |
-| page | [int32](#int32) | optional | The page of results to get. |
-
-
-
-
-
-
-<a name="rellm-GetMembersResponse"></a>
-
-### GetMembersResponse
-Response to a GetMembersRequest.
-
-
-| Field | Type | Label | Description |
-| ----- | ---- | ----- | ----------- |
-| members | [Member](#rellm-Member) | repeated | The members that matched the request. |
-| has_next_page | [bool](#bool) |  | Whether there are more members to get. |
-
-
-
-
-
-
-<a name="rellm-Group"></a>
-
-### Group
-`Group`s are a way to organize users and posts (and thus events). They can be used for many purposes,
-
-
-| Field | Type | Label | Description |
-| ----- | ---- | ----- | ----------- |
-| id | [string](#string) |  | The group&#39;s unique ID. |
-| name | [string](#string) |  | Mutable name of the group. Must be unique, such that the derived `shortname` is also unique. |
-| shortname | [string](#string) |  | Immutable shortname of the group. Derived from changes to `name` when the [`Group`](#rellm-Group) is updated. |
-| description | [string](#string) |  | A description of the group. |
-| avatar | [MediaReference](#rellm-MediaReference) | optional | An avatar for the group. |
-| default_membership_permissions | [Permission](#rellm-Permission) | repeated | The default permissions for new members of the group. |
-| default_membership_moderation | [Moderation](#rellm-Moderation) |  | The default moderation for new members of the group. Valid values are PENDING (requires a moderator to let you join) and UNMODERATED. |
-| default_post_moderation | [Moderation](#rellm-Moderation) |  | The default moderation for new posts in the group. |
-| default_event_moderation | [Moderation](#rellm-Moderation) |  | The default moderation for new events in the group. |
-| visibility | [Visibility](#rellm-Visibility) |  | LIMITED visibility groups are only visible to members. PRIVATE groups are only visibile to users with the ADMIN group permission. |
-| member_count | [uint32](#uint32) |  | The number of members in the group. |
-| post_count | [uint32](#uint32) |  | The number of posts in the group. |
-| event_count | [uint32](#uint32) |  | The number of events in the group. |
-| non_member_permissions | [Permission](#rellm-Permission) | repeated | The permissions given to non-members of the group. |
-| current_user_membership | [Membership](#rellm-Membership) | optional | The membership for the current user, if any. |
-| created_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  | The time the group was created. |
-| updated_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional | The time the group was last updated. |
-
-
-
-
-
-
-<a name="rellm-Member"></a>
-
-### Member
-Used when fetching group members using the [`GetMembers`](#grpc-api-GetMembers) RPC.
-
-
-| Field | Type | Label | Description |
-| ----- | ---- | ----- | ----------- |
-| user | [User](#rellm-User) |  | The user. |
-| membership | [Membership](#rellm-Membership) |  | The user&#39;s membership (or join request, or invitation, or both) in the group. |
-
-
-
-
-
- 
-
-
-<a name="rellm-GroupListingType"></a>
-
-### GroupListingType
-The type of group listing to get.
-
-| Name | Number | Description |
-| ---- | ------ | ----------- |
-| ALL_GROUPS | 0 | Get all groups (visible to the current user). |
-| MY_GROUPS | 1 | Get groups the current user is a member of. |
-| REQUESTED_GROUPS | 2 | Get groups the current user has requested to join. |
-| INVITED_GROUPS | 3 | Get groups the current user has been invited to. |
 
 
  
@@ -2950,6 +2834,152 @@ Events returned are ordered by start time unless otherwise specified (specifical
 | GROUP_EVENTS | 10 | Returns events from a specific group. Requires group_id parameterRequires group_id parameter |
 | GROUP_EVENTS_PENDING_MODERATION | 11 | Returns pending_moderation events from a specific group. Requires group_id parameter and user must have group (or server) admin permissions. |
 | NEWLY_ADDED_EVENTS | 20 | Returns events from either `ALL_ACCESSIBLE_EVENTS` or a specific author (with optional author_user_id parameter). Returned Occasions will be ordered by creation time rather than start time. |
+
+
+ 
+
+ 
+
+ 
+
+
+
+<a name="groups-proto"></a>
+<p align="right"><a href="#top">Top</a></p>
+
+## groups.proto
+
+
+
+<a name="rellm-GetGroupsRequest"></a>
+
+### GetGroupsRequest
+Request to get a group or groups by name or ID.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| group_id | [string](#string) | optional | The ID of the group to get. |
+| group_name | [string](#string) | optional | The name of the group to get. |
+| group_shortname | [string](#string) | optional | The shortname of the group to get. Group shortname search is case-insensitive. |
+| listing_type | [GroupListingType](#rellm-GroupListingType) |  | The group listing type. |
+| page | [int32](#int32) | optional | The page of results to get. |
+
+
+
+
+
+
+<a name="rellm-GetGroupsResponse"></a>
+
+### GetGroupsResponse
+Response to a GetGroupsRequest.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| groups | [Group](#rellm-Group) | repeated | The groups that matched the request. |
+| has_next_page | [bool](#bool) |  | Whether there are more groups to get. |
+
+
+
+
+
+
+<a name="rellm-GetMembersRequest"></a>
+
+### GetMembersRequest
+Request to get members of a group.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| group_id | [string](#string) |  | The ID of the group to get members of. |
+| username | [string](#string) | optional | The username of the members to search for. |
+| group_moderation | [Moderation](#rellm-Moderation) | optional | The membership status to filter members by. If not specified, all members are returned. |
+| page | [int32](#int32) | optional | The page of results to get. |
+
+
+
+
+
+
+<a name="rellm-GetMembersResponse"></a>
+
+### GetMembersResponse
+Response to a GetMembersRequest.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| members | [Member](#rellm-Member) | repeated | The members that matched the request. |
+| has_next_page | [bool](#bool) |  | Whether there are more members to get. |
+
+
+
+
+
+
+<a name="rellm-Group"></a>
+
+### Group
+`Group`s are a way to organize users and posts (and thus events). They can be used for many purposes,
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| id | [string](#string) |  | The group&#39;s unique ID. |
+| name | [string](#string) |  | Mutable name of the group. Must be unique, such that the derived `shortname` is also unique. |
+| shortname | [string](#string) |  | Immutable shortname of the group. Derived from changes to `name` when the [`Group`](#rellm-Group) is updated. |
+| description | [string](#string) |  | A description of the group. |
+| avatar | [MediaReference](#rellm-MediaReference) | optional | An avatar for the group. |
+| default_membership_permissions | [Permission](#rellm-Permission) | repeated | The default permissions for new members of the group. |
+| default_membership_moderation | [Moderation](#rellm-Moderation) |  | The default moderation for new members of the group. Valid values are PENDING (requires a moderator to let you join) and UNMODERATED. |
+| default_post_moderation | [Moderation](#rellm-Moderation) |  | The default moderation for new posts in the group. |
+| default_event_moderation | [Moderation](#rellm-Moderation) |  | The default moderation for new events in the group. |
+| visibility | [Visibility](#rellm-Visibility) |  | LIMITED visibility groups are only visible to members. PRIVATE groups are only visibile to users with the ADMIN group permission. |
+| member_count | [uint32](#uint32) |  | The number of members in the group. |
+| post_count | [uint32](#uint32) |  | The number of posts in the group. |
+| event_count | [uint32](#uint32) |  | The number of events in the group. |
+| non_member_permissions | [Permission](#rellm-Permission) | repeated | The permissions given to non-members of the group. |
+| current_user_membership | [Membership](#rellm-Membership) | optional | The membership for the current user, if any. |
+| created_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  | The time the group was created. |
+| updated_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional | The time the group was last updated. |
+
+
+
+
+
+
+<a name="rellm-Member"></a>
+
+### Member
+Used when fetching group members using the [`GetMembers`](#grpc-api-GetMembers) RPC.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| user | [User](#rellm-User) |  | The user. |
+| membership | [Membership](#rellm-Membership) |  | The user&#39;s membership (or join request, or invitation, or both) in the group. |
+
+
+
+
+
+ 
+
+
+<a name="rellm-GroupListingType"></a>
+
+### GroupListingType
+The type of group listing to get.
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| ALL_GROUPS | 0 | Get all groups (visible to the current user). |
+| MY_GROUPS | 1 | Get groups the current user is a member of. |
+| REQUESTED_GROUPS | 2 | Get groups the current user has requested to join. |
+| INVITED_GROUPS | 3 | Get groups the current user has been invited to. |
 
 
  

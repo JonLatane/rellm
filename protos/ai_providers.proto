@@ -3,7 +3,7 @@ syntax = "proto3";
 package rellm;
 
 import "google/protobuf/timestamp.proto";
-import "authors.proto";
+import "media.proto";
 
 // One specific model a user may call right now, and how - via an [`AIProvider`](#rellm-AIProvider)
 // they own outright (`grant` unset), or via an [`AIProviderGrant`](#rellm-AIProviderGrant) someone else

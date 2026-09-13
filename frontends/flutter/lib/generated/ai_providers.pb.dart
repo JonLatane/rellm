@@ -15,8 +15,8 @@ import 'package:fixnum/fixnum.dart' as $fixnum;
 import 'package:protobuf/protobuf.dart' as $pb;
 
 import 'ai_providers.pbenum.dart';
-import 'authors.pb.dart' as $15;
 import 'google/protobuf/timestamp.pb.dart' as $12;
+import 'media.pb.dart' as $5;
 
 export 'ai_providers.pbenum.dart';
 
@@ -307,7 +307,7 @@ enum AIProvider_Provider {
 class AIProvider extends $pb.GeneratedMessage {
   factory AIProvider({
     $core.String? id,
-    $15.Author? owner,
+    $5.Author? owner,
     $core.String? name,
     GeminiCredentials? geminiCredentials,
     OpenAICredentials? openaiCredentials,
@@ -364,7 +364,7 @@ class AIProvider extends $pb.GeneratedMessage {
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'AIProvider', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
     ..oo(0, [4, 5, 6, 7])
     ..aOS(1, _omitFieldNames ? '' : 'id')
-    ..aOM<$15.Author>(2, _omitFieldNames ? '' : 'owner', subBuilder: $15.Author.create)
+    ..aOM<$5.Author>(2, _omitFieldNames ? '' : 'owner', subBuilder: $5.Author.create)
     ..aOS(3, _omitFieldNames ? '' : 'name')
     ..aOM<GeminiCredentials>(4, _omitFieldNames ? '' : 'geminiCredentials', subBuilder: GeminiCredentials.create)
     ..aOM<OpenAICredentials>(5, _omitFieldNames ? '' : 'openaiCredentials', subBuilder: OpenAICredentials.create)
@@ -414,15 +414,15 @@ class AIProvider extends $pb.GeneratedMessage {
   /// rename it or change its credentials/provider, and the *only* user (not even Admins) who may grant/revoke other
   /// users' access to it.
   @$pb.TagNumber(2)
-  $15.Author get owner => $_getN(1);
+  $5.Author get owner => $_getN(1);
   @$pb.TagNumber(2)
-  set owner($15.Author v) { setField(2, v); }
+  set owner($5.Author v) { setField(2, v); }
   @$pb.TagNumber(2)
   $core.bool hasOwner() => $_has(1);
   @$pb.TagNumber(2)
   void clearOwner() => clearField(2);
   @$pb.TagNumber(2)
-  $15.Author ensureOwner() => $_ensure(1);
+  $5.Author ensureOwner() => $_ensure(1);
 
   /// A display name for the provider, chosen by its owner (e.g. "My Gemini Key", "Team OpenAI Account"). Purely
   /// cosmetic - has no effect on behavior.
@@ -530,7 +530,7 @@ class AIProvider extends $pb.GeneratedMessage {
 class AIProviderGrant extends $pb.GeneratedMessage {
   factory AIProviderGrant({
     $core.String? aiProviderId,
-    $15.Author? aiModelGrantee,
+    $5.Author? aiModelGrantee,
     $core.Iterable<$core.String>? modelNames,
     $fixnum.Int64? tokensRemaining,
     $fixnum.Int64? overage,
@@ -567,7 +567,7 @@ class AIProviderGrant extends $pb.GeneratedMessage {
 
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'AIProviderGrant', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'aiProviderId')
-    ..aOM<$15.Author>(2, _omitFieldNames ? '' : 'aiModelGrantee', subBuilder: $15.Author.create)
+    ..aOM<$5.Author>(2, _omitFieldNames ? '' : 'aiModelGrantee', subBuilder: $5.Author.create)
     ..pPS(3, _omitFieldNames ? '' : 'modelNames')
     ..a<$fixnum.Int64>(4, _omitFieldNames ? '' : 'tokensRemaining', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
     ..a<$fixnum.Int64>(5, _omitFieldNames ? '' : 'overage', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
@@ -609,15 +609,15 @@ class AIProviderGrant extends $pb.GeneratedMessage {
 
   /// The user this access was granted to.
   @$pb.TagNumber(2)
-  $15.Author get aiModelGrantee => $_getN(1);
+  $5.Author get aiModelGrantee => $_getN(1);
   @$pb.TagNumber(2)
-  set aiModelGrantee($15.Author v) { setField(2, v); }
+  set aiModelGrantee($5.Author v) { setField(2, v); }
   @$pb.TagNumber(2)
   $core.bool hasAiModelGrantee() => $_has(1);
   @$pb.TagNumber(2)
   void clearAiModelGrantee() => clearField(2);
   @$pb.TagNumber(2)
-  $15.Author ensureAiModelGrantee() => $_ensure(1);
+  $5.Author ensureAiModelGrantee() => $_ensure(1);
 
   /// The model name (that will be used to call the provider) that the grantee is allowed to use by this grant.
   /// If blank, allows access to any models the provider supports. If non-blank, the grantee is only allowed to use the model(s) specified here.

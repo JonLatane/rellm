@@ -37,7 +37,7 @@ import Html.Events exposing (onClick, onInput, preventDefaultOn)
 import Html.Keyed
 import Json.Decode as Decode
 import Process
-import Proto.Rellm exposing (Author, GetUsersResponse, User, defaultUser)
+import Proto.Rellm exposing (Author, GetUsersResponse, User, defaultUser, unwrapMediaReference)
 import Proto.Rellm.UserListingType exposing (UserListingType(..))
 import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts
@@ -138,7 +138,7 @@ withInitialSelection authors model =
                             | id = author.userId
                             , username = Maybe.withDefault "" author.username
                             , realName = Maybe.withDefault "" author.realName
-                            , avatar = author.avatar
+                            , avatar = Maybe.map unwrapMediaReference author.avatar
                             , permissions = author.permissions
                           }
                         )
