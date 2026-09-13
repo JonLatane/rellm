@@ -31,6 +31,12 @@ message User {
   // The user's bio.
   string bio = 8;
 
+
+  // The user's media storage allocation. If unset, is unlimited.
+  optional uint64 media_storage_limit_bytes = 10;
+
+  uint64 media_storage_bytes_used = 11;
+
   // User visibility is a bit different from Post visibility.
   // LIMITED means the user can only be seen by users they follow
   // (as opposed to Posts' individualized visibilities).
