@@ -102,6 +102,7 @@ impl ToProtoMediaReference for models::MediaReference {
     fn to_proto(&self) -> MediaReference {
         MediaReference {
             id: self.id.to_proto_id(),
+            user_id: self.user_id.map(|i| i.to_proto_id()),
             name: self.name.to_owned(),
             generated: self.generated,
             metadata: Some(self.metadata().to_proto()),

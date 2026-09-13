@@ -117,11 +117,13 @@ const MediaReference$json = {
     {'1': 'sizes', '3': 6, '4': 3, '5': 11, '6': '.rellm.MediaSize', '10': 'sizes'},
     {'1': 'url', '3': 11, '4': 1, '5': 9, '9': 1, '10': 'url', '17': true},
     {'1': 'description', '3': 12, '4': 1, '5': 9, '9': 2, '10': 'description', '17': true},
+    {'1': 'user_id', '3': 13, '4': 1, '5': 9, '9': 3, '10': 'userId', '17': true},
   ],
   '8': [
     {'1': '_name'},
     {'1': '_url'},
     {'1': '_description'},
+    {'1': '_user_id'},
   ],
 };
 
@@ -131,7 +133,8 @@ final $typed_data.Uint8List mediaReferenceDescriptor = $convert.base64Decode(
     'EBEhwKCWdlbmVyYXRlZBgEIAEoCFIJZ2VuZXJhdGVkEjAKCG1ldGFkYXRhGAUgASgLMhQucmVs'
     'bG0uTWVkaWFNZXRhZGF0YVIIbWV0YWRhdGESJgoFc2l6ZXMYBiADKAsyEC5yZWxsbS5NZWRpYV'
     'NpemVSBXNpemVzEhUKA3VybBgLIAEoCUgBUgN1cmyIAQESJQoLZGVzY3JpcHRpb24YDCABKAlI'
-    'AlILZGVzY3JpcHRpb26IAQFCBwoFX25hbWVCBgoEX3VybEIOCgxfZGVzY3JpcHRpb24=');
+    'AlILZGVzY3JpcHRpb26IAQESHAoHdXNlcl9pZBgNIAEoCUgDUgZ1c2VySWSIAQFCBwoFX25hbW'
+    'VCBgoEX3VybEIOCgxfZGVzY3JpcHRpb25CCgoIX3VzZXJfaWQ=');
 
 @$core.Deprecated('Use getMediaRequestDescriptor instead')
 const GetMediaRequest$json = {

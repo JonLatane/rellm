@@ -125,6 +125,11 @@ message MediaReference {
   // If unset, clients fall back to `/media/{id}`.
   optional string url = 11;
   optional string description = 12;
+  // The ID of the user who created the media item. See `Media.user_id`. Included here (unlike
+  // most other `MediaReference` fields, which are deliberately pared down from `Media`) so
+  // clients that only ever see a `MediaReference` -- e.g. a `Post.media` item -- can still tell
+  // whether the current viewer owns it, without a separate `Media` lookup.
+  optional string user_id = 13;
 }
 
 // Valid GetMediaRequest formats:

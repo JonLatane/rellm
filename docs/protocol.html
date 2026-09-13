@@ -3692,6 +3692,12 @@ directory</a> is (<code>{name}</code> denotes a
           <td>optional</td>
           <td></td>
         </tr>
+        <tr>
+          <td>user_id</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td>The ID of the user who created the media item. See <code>Media.user_id</code>. Included here (unlike most other <code>MediaReference</code> fields, which are deliberately pared down from <code>Media</code>) so clients that only ever see a <code>MediaReference</code> -- e.g. a <code>Post.media</code> item -- can still tell whether the current viewer owns it, without a separate <code>Media</code> lookup.</td>
+        </tr>
       </tbody>
     </table>
     <p><a name="rellm-MediaSize"></a></p>

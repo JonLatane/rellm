@@ -213,7 +213,16 @@ export interface MediaReference {
    * If unset, clients fall back to `/media/{id}`.
    */
   url?: string | undefined;
-  description?: string | undefined;
+  description?:
+    | string
+    | undefined;
+  /**
+   * The ID of the user who created the media item. See `Media.user_id`. Included here (unlike
+   * most other `MediaReference` fields, which are deliberately pared down from `Media`) so
+   * clients that only ever see a `MediaReference` -- e.g. a `Post.media` item -- can still tell
+   * whether the current viewer owns it, without a separate `Media` lookup.
+   */
+  userId?: string | undefined;
 }
 
 /**
@@ -685,6 +694,7 @@ function createBaseMediaReference(): MediaReference {
     sizes: [],
     url: undefined,
     description: undefined,
+    userId: undefined,
   };
 }
 
@@ -710,6 +720,9 @@ export const MediaReference: MessageFns<MediaReference> = {
     }
     if (message.description !== undefined) {
       writer.uint32(98).string(message.description);
+    }
+    if (message.userId !== undefined) {
+      writer.uint32(106).string(message.userId);
     }
     return writer;
   },
@@ -777,6 +790,14 @@ export const MediaReference: MessageFns<MediaReference> = {
           message.description = reader.string();
           continue;
         }
+        case 13: {
+          if (tag !== 106) {
+            break;
+          }
+
+          message.userId = reader.string();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -795,6 +816,7 @@ export const MediaReference: MessageFns<MediaReference> = {
       sizes: globalThis.Array.isArray(object?.sizes) ? object.sizes.map((e: any) => MediaSize.fromJSON(e)) : [],
       url: isSet(object.url) ? globalThis.String(object.url) : undefined,
       description: isSet(object.description) ? globalThis.String(object.description) : undefined,
+      userId: isSet(object.userId) ? globalThis.String(object.userId) : undefined,
     };
   },
 
@@ -821,6 +843,9 @@ export const MediaReference: MessageFns<MediaReference> = {
     if (message.description !== undefined) {
       obj.description = message.description;
     }
+    if (message.userId !== undefined) {
+      obj.userId = message.userId;
+    }
     return obj;
   },
 
@@ -838,6 +863,7 @@ export const MediaReference: MessageFns<MediaReference> = {
     message.sizes = object.sizes?.map((e) => MediaSize.fromPartial(e)) || [];
     message.url = object.url ?? undefined;
     message.description = object.description ?? undefined;
+    message.userId = object.userId ?? undefined;
     return message;
   },
 };

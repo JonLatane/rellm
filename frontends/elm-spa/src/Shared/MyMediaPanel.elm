@@ -63,6 +63,7 @@ import Set exposing (Set)
 import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer, withAccessToken)
+import Shared.ByteFormat as ByteFormat
 import Shared.Conversions exposing (timestampToPosix)
 import Shared.MediaViewerPanel as MediaViewerPanel
 import Task exposing (Task)
@@ -1007,7 +1008,7 @@ ifNonEmpty s =
 -}
 toMediaReference : Media -> MediaReference
 toMediaReference media =
-    { id = media.id, name = media.name, generated = media.generated, metadata = media.metadata, sizes = media.sizes, url = media.url, description = media.description }
+    { id = media.id, userId = media.userId, name = media.name, generated = media.generated, metadata = media.metadata, sizes = media.sizes, url = media.url, description = media.description }
 
 
 {-| Every item Browse mode's grid is currently actually showing, converted to
@@ -1225,33 +1226,12 @@ storageUsageView accountsPanelModel model =
                 [ text
                     (case resolved.account.mediaStorageLimitBytes of
                         Just limit ->
-                            formatBytes resolved.account.mediaStorageBytesUsed ++ " / " ++ formatBytes limit ++ " used"
+                            ByteFormat.formatBytes resolved.account.mediaStorageBytesUsed ++ " / " ++ ByteFormat.formatBytes limit ++ " used"
 
                         Nothing ->
-                            formatBytes resolved.account.mediaStorageBytesUsed ++ " used"
+                            ByteFormat.formatBytes resolved.account.mediaStorageBytesUsed ++ " used"
                     )
                 ]
-
-
-{-| A compact human-readable byte count -- "512 B", "12.4 MB", "1.3 GB" -- for `storageUsageView`.
-Rounds to 1 decimal place above bytes; not locale-aware (not worth it for this small a label).
--}
-formatBytes : Int -> String
-formatBytes bytes =
-    let
-        units : List ( Float, String )
-        units =
-            [ ( 1.0e9, "GB" ), ( 1.0e6, "MB" ), ( 1.0e3, "KB" ) ]
-
-        formatWithUnit : Float -> String -> String
-        formatWithUnit value unit =
-            String.fromFloat (toFloat (round (value * 10)) / 10) ++ " " ++ unit
-    in
-    units
-        |> List.filter (\( threshold, _ ) -> toFloat bytes >= threshold)
-        |> List.head
-        |> Maybe.map (\( threshold, unit ) -> formatWithUnit (toFloat bytes / threshold) unit)
-        |> Maybe.withDefault (String.fromInt bytes ++ " B")
 
 
 {-| A trimmed-down copy of `UI.imageOrInitial`, scoped to this panel's own

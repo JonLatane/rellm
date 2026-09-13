@@ -1845,6 +1845,7 @@ and the media item&#39;s name (for alt text usage).
 | sizes | [MediaSize](#rellm-MediaSize) | repeated | See `Media.sizes`. |
 | url | [string](#string) | optional | An external URL to fetch the media from, in lieu of `/media/{id}`. See `Media.url`. If unset, clients fall back to `/media/{id}`. |
 | description | [string](#string) | optional |  |
+| user_id | [string](#string) | optional | The ID of the user who created the media item. See `Media.user_id`. Included here (unlike most other `MediaReference` fields, which are deliberately pared down from `Media`) so clients that only ever see a `MediaReference` -- e.g. a `Post.media` item -- can still tell whether the current viewer owns it, without a separate `Media` lookup. |
 
 
 

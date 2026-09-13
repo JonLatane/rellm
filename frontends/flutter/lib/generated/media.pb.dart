@@ -454,6 +454,7 @@ class MediaReference extends $pb.GeneratedMessage {
     $core.Iterable<MediaSize>? sizes,
     $core.String? url,
     $core.String? description,
+    $core.String? userId,
   }) {
     final $result = create();
     if (id != null) {
@@ -477,6 +478,9 @@ class MediaReference extends $pb.GeneratedMessage {
     if (description != null) {
       $result.description = description;
     }
+    if (userId != null) {
+      $result.userId = userId;
+    }
     return $result;
   }
   MediaReference._() : super();
@@ -491,6 +495,7 @@ class MediaReference extends $pb.GeneratedMessage {
     ..pc<MediaSize>(6, _omitFieldNames ? '' : 'sizes', $pb.PbFieldType.PM, subBuilder: MediaSize.create)
     ..aOS(11, _omitFieldNames ? '' : 'url')
     ..aOS(12, _omitFieldNames ? '' : 'description')
+    ..aOS(13, _omitFieldNames ? '' : 'userId')
     ..hasRequiredFields = false
   ;
 
@@ -579,6 +584,19 @@ class MediaReference extends $pb.GeneratedMessage {
   $core.bool hasDescription() => $_has(6);
   @$pb.TagNumber(12)
   void clearDescription() => clearField(12);
+
+  /// The ID of the user who created the media item. See `Media.user_id`. Included here (unlike
+  /// most other `MediaReference` fields, which are deliberately pared down from `Media`) so
+  /// clients that only ever see a `MediaReference` -- e.g. a `Post.media` item -- can still tell
+  /// whether the current viewer owns it, without a separate `Media` lookup.
+  @$pb.TagNumber(13)
+  $core.String get userId => $_getSZ(7);
+  @$pb.TagNumber(13)
+  set userId($core.String v) { $_setString(7, v); }
+  @$pb.TagNumber(13)
+  $core.bool hasUserId() => $_has(7);
+  @$pb.TagNumber(13)
+  void clearUserId() => clearField(13);
 }
 
 /// Valid GetMediaRequest formats:

@@ -66,6 +66,7 @@ import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer)
 import Shared.Breadcrumbs as Breadcrumbs
+import Shared.ByteFormat as ByteFormat
 import Shared.Conversions as Conversions exposing (timestampToPosix)
 import Shared.MarkdownPanel as MarkdownPanel
 import Shared.MyMediaPanel as MyMediaPanel
@@ -91,6 +92,8 @@ type alias Model =
     , phoneEdit : Maybe PhoneEdit
     , emailEdit : Maybe EmailEdit
     , phoneVerification : Maybe PhoneVerification
+    , storageQuotaEdit : Maybe StorageQuotaEdit
+    , storageQuotaExpanded : Bool
     , permissionsEdit : Maybe PermissionsEdit
     , permissionsExpanded : Bool
     , federatedProfilesEdit : Maybe FederatedProfilesEdit
@@ -169,6 +172,15 @@ type Msg
     | PhoneVerificationCodeChanged String
     | VerifyPhoneCodeClicked
     | GotVerifyPhoneCodeResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, ContactMethod ))
+    | StorageQuotaExpandedToggled
+    | StorageQuotaEditClicked
+    | StorageQuotaPendingChanged String
+    | StorageQuotaUnitChanged String
+    | StorageQuotaUnlimitedToggled
+    | StorageQuotaCancelClicked
+    | StorageQuotaSaveClicked
+    | GotStorageQuotaSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, User ))
+    | ShowMyMediaClicked
     | PermissionsExpandedToggled
     | PermissionsEditClicked
     | PermissionRemoveClicked Permission
@@ -367,6 +379,21 @@ for `Moderation` instead of `Visibility`.
 -}
 type alias ModerationEdit =
     { pending : Moderation
+    , status : SubmitStatus
+    }
+
+
+{-| Live only while the storage quota (see `Model.storageQuotaEdit`) is being edited by an Admin
+(only an Admin may ever open this -- see `update_user.rs`'s own `admin`-only
+`media_storage_limit_bytes` branch). `pending`/`unit` are the in-progress number/unit pair (e.g.
+`"5"` + `GB`), only meaningful while `unlimited == False`; `unlimited` mirrors an unset
+`User.mediaStorageLimitBytes` (`Nothing`) and, while `True`, disables/ignores `pending`/`unit`
+entirely on save.
+-}
+type alias StorageQuotaEdit =
+    { pending : String
+    , unit : ByteFormat.ByteUnit
+    , unlimited : Bool
     , status : SubmitStatus
     }
 
@@ -979,6 +1006,8 @@ init shared pageIsSecure targetHost lookup navKey path query fragment =
             , phoneEdit = Nothing
             , emailEdit = Nothing
             , phoneVerification = Nothing
+            , storageQuotaEdit = Nothing
+            , storageQuotaExpanded = False
             , permissionsEdit = Nothing
             , permissionsExpanded = False
             , federatedProfilesEdit = Nothing
@@ -1827,6 +1856,122 @@ updateInner shared msg model =
               }
             , Effect.none
             )
+
+        StorageQuotaExpandedToggled ->
+            ( { model | storageQuotaExpanded = not model.storageQuotaExpanded }, Effect.none )
+
+        StorageQuotaEditClicked ->
+            case model.resolver.status of
+                Resolver.Loaded user ->
+                    let
+                        used : Int
+                        used =
+                            Conversions.int64ToInt user.mediaStorageBytesUsed
+
+                        limit : Maybe Int
+                        limit =
+                            Maybe.map Conversions.int64ToInt user.mediaStorageLimitBytes
+
+                        unit : ByteFormat.ByteUnit
+                        unit =
+                            ByteFormat.bytesToUnit (Maybe.withDefault used limit)
+                    in
+                    ( { model
+                        | storageQuotaEdit =
+                            Just
+                                { pending = limit |> Maybe.map (\l -> String.fromFloat (toFloat l / toFloat (ByteFormat.byteUnitBytes unit))) |> Maybe.withDefault ""
+                                , unit = unit
+                                , unlimited = limit == Nothing
+                                , status = Idle
+                                }
+                      }
+                    , Effect.none
+                    )
+
+                _ ->
+                    ( model, Effect.none )
+
+        StorageQuotaPendingChanged text ->
+            ( { model | storageQuotaEdit = model.storageQuotaEdit |> Maybe.map (\edit -> { edit | pending = text }) }, Effect.none )
+
+        StorageQuotaUnitChanged text ->
+            ( { model
+                | storageQuotaEdit =
+                    model.storageQuotaEdit
+                        |> Maybe.map
+                            (\edit ->
+                                { edit
+                                    | unit =
+                                        case text of
+                                            "B" ->
+                                                ByteFormat.Bytes
+
+                                            "KB" ->
+                                                ByteFormat.KB
+
+                                            "MB" ->
+                                                ByteFormat.MB
+
+                                            "GB" ->
+                                                ByteFormat.GB
+
+                                            _ ->
+                                                edit.unit
+                                }
+                            )
+              }
+            , Effect.none
+            )
+
+        StorageQuotaUnlimitedToggled ->
+            ( { model | storageQuotaEdit = model.storageQuotaEdit |> Maybe.map (\edit -> { edit | unlimited = not edit.unlimited }) }, Effect.none )
+
+        StorageQuotaCancelClicked ->
+            ( { model | storageQuotaEdit = Nothing }, Effect.none )
+
+        StorageQuotaSaveClicked ->
+            case ( model.resolver.status, model.storageQuotaEdit, serverAndAccount shared model ) of
+                ( Resolver.Loaded user, Just edit, Just ( server, account ) ) ->
+                    let
+                        newLimit : Maybe Int
+                        newLimit =
+                            if edit.unlimited then
+                                Nothing
+
+                            else
+                                ByteFormat.parseBytes edit.unit edit.pending
+                    in
+                    if not edit.unlimited && newLimit == Nothing then
+                        ( { model | storageQuotaEdit = Just { edit | status = SubmitFailed "Enter a valid number." } }, Effect.none )
+
+                    else
+                        ( { model | storageQuotaEdit = Just { edit | status = Submitting } }
+                        , Users.updateUser shared.accounts
+                            ( Just account.userId, server.frontendHost )
+                            user.id
+                            (\freshUser -> { freshUser | mediaStorageLimitBytes = Maybe.map Conversions.int64FromInt newLimit })
+                            |> Task.attempt GotStorageQuotaSaveResult
+                            |> Effect.fromCmd
+                        )
+
+                _ ->
+                    ( model, Effect.none )
+
+        GotStorageQuotaSaveResult (Ok ( maybeAccountsPanelMsg, updatedUser )) ->
+            ( { model | resolver = withResolvedUser updatedUser model.resolver, storageQuotaEdit = Nothing }
+            , accountsPanelEffect maybeAccountsPanelMsg
+            )
+
+        GotStorageQuotaSaveResult (Err err) ->
+            ( { model
+                | storageQuotaEdit =
+                    model.storageQuotaEdit |> Maybe.map (\edit -> { edit | status = SubmitFailed (AccountsPanel.grpcErrorToString err) })
+              }
+            , Effect.none
+            )
+
+        ShowMyMediaClicked ->
+            ( model, Effect.fromShared (Shared.MyMediaPanelMsg (MyMediaPanel.Open Nothing model.resolver.targetHost)) )
 
         PermissionsExpandedToggled ->
             ( { model | permissionsExpanded = not model.permissionsExpanded }, Effect.none )
@@ -4030,6 +4175,7 @@ profileDetail shared model server maybeAccount user =
                 text ""
         , aiProvidersSection model canEdit (isOwnProfile maybeAccount user) user
         , aiProviderGrantedSection model canEdit user
+        , storageQuotaSection isAdmin (isOwnProfile maybeAccount user) model.storageQuotaExpanded model.storageQuotaEdit user
         , permissionsSection isAdmin model.permissionsExpanded model.permissionsEdit user
         , deleteUserSection canEdit
         ]
@@ -4704,6 +4850,131 @@ expandableProfileSection sectionClass title expanded toggleMsg content =
                     []
                )
         )
+
+
+{-| "Media Storage" -- shown to an Admin (viewing anyone's profile, to set their quota -- see
+`update_user.rs`'s own admin-only `media_storage_limit_bytes` branch) or to the profile's own
+owner (viewing their own percent-used readout and a "Show My Media" button to open
+`Shared.MyMediaPanel` -- see `ShowMyMediaClicked`). Hidden entirely for anyone else, same
+"nothing to show" convention `permissionsSection` uses. Collapsed by default, right above
+`permissionsSection` -- both edit admin-only, rarely-touched `User` settings most viewers never
+need to see.
+-}
+storageQuotaSection : Bool -> Bool -> Bool -> Maybe StorageQuotaEdit -> User -> Html Msg
+storageQuotaSection isAdmin isOwn expanded maybeEdit user =
+    if not (isAdmin || isOwn) then
+        text ""
+
+    else
+        expandableProfileSection "profile-storage-quota-section"
+            "Media Storage"
+            expanded
+            StorageQuotaExpandedToggled
+            ((if isOwn then
+                storageUsageView user
+
+              else
+                text ""
+             )
+                :: (if isAdmin then
+                        [ storageQuotaEditView maybeEdit user ]
+
+                    else
+                        []
+                   )
+            )
+
+
+{-| The profile owner's own used/available readout -- "42% used (2.1 GB of 5.0 GB)" when
+`mediaStorageLimitBytes` is set, or "2.1 GB used (no limit)" otherwise -- plus the "Show My Media"
+button (`ShowMyMediaClicked`, opening `Shared.MyMediaPanel` in plain Browse mode, same as
+`UI.accountRow`'s own media button).
+-}
+storageUsageView : User -> Html Msg
+storageUsageView user =
+    let
+        used : Int
+        used =
+            Conversions.int64ToInt user.mediaStorageBytesUsed
+
+        usedText : String
+        usedText =
+            case Maybe.map Conversions.int64ToInt user.mediaStorageLimitBytes of
+                Just limit ->
+                    let
+                        percent : Int
+                        percent =
+                            if limit <= 0 then
+                                100
+
+                            else
+                                round (100 * toFloat used / toFloat limit)
+                    in
+                    String.fromInt percent ++ "% used (" ++ ByteFormat.formatBytes used ++ " of " ++ ByteFormat.formatBytes limit ++ ")"
+
+                Nothing ->
+                    ByteFormat.formatBytes used ++ " used (no limit)"
+    in
+    div [ class "profile-storage-usage" ]
+        [ span [ class "profile-storage-usage-text" ] [ text usedText ]
+        , button [ class "profile-edit-button", onClick ShowMyMediaClicked ] [ text "Show My Media" ]
+        ]
+
+
+{-| The Admin-only quota editor -- plain text (current limit, or "Unlimited") plus an Edit button
+when `maybeEdit == Nothing`; a number input + unit `<select>` + an "Unlimited" checkbox (disabling
+the number/unit inputs) + Save/Cancel while editing.
+-}
+storageQuotaEditView : Maybe StorageQuotaEdit -> User -> Html Msg
+storageQuotaEditView maybeEdit user =
+    case maybeEdit of
+        Just edit ->
+            div [ class "profile-storage-quota-edit" ]
+                [ label []
+                    [ input [ type_ "checkbox", checked edit.unlimited, onClick StorageQuotaUnlimitedToggled ] []
+                    , text " Unlimited"
+                    ]
+                , if edit.unlimited then
+                    text ""
+
+                  else
+                    span [ class "profile-storage-quota-input" ]
+                        [ input
+                            [ type_ "number"
+                            , placeholder "Quota"
+                            , value edit.pending
+                            , onInput StorageQuotaPendingChanged
+                            ]
+                            []
+                        , select [ onInput StorageQuotaUnitChanged ]
+                            ([ ByteFormat.KB, ByteFormat.MB, ByteFormat.GB ]
+                                |> List.map
+                                    (\unit ->
+                                        option
+                                            [ value (ByteFormat.byteUnitText unit), selected (edit.unit == unit) ]
+                                            [ text (ByteFormat.byteUnitText unit) ]
+                                    )
+                            )
+                        ]
+                , editSaveButton StorageQuotaSaveClicked edit.status
+                , editCancelButton StorageQuotaCancelClicked edit.status
+                , editErrorView edit.status
+                ]
+
+        Nothing ->
+            div [ class "profile-storage-quota-display" ]
+                [ span [ class "profile-storage-quota-display-text" ]
+                    [ text
+                        (case Maybe.map Conversions.int64ToInt user.mediaStorageLimitBytes of
+                            Just limit ->
+                                "Quota: " ++ ByteFormat.formatBytes limit
+
+                            Nothing ->
+                                "Quota: Unlimited"
+                        )
+                    ]
+                , button [ class "profile-edit-button", onClick StorageQuotaEditClicked ] [ text "Edit Quota" ]
+                ]
 
 
 {-| The Permissions list -- plain badges (plus an Edit button, if `isAdmin`)

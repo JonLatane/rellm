@@ -175,12 +175,14 @@ pub struct NewMedia {
 
 pub const MEDIA_REFERENCE_COLUMNS: (
     media::id,
+    media::user_id,
     media::name,
     media::generated,
     media::metadata,
     media::sizes,
 ) = (
     media::id,
+    media::user_id,
     media::name,
     media::generated,
     media::metadata,
@@ -191,6 +193,7 @@ pub const MEDIA_REFERENCE_COLUMNS: (
 #[diesel(table_name = media)]
 pub struct MediaReference {
     pub id: i64,
+    pub user_id: Option<i64>,
     pub name: Option<String>,
     pub generated: bool,
     pub metadata: serde_json::Value,

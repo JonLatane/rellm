@@ -681,13 +681,13 @@ sharedUpdate req msg model =
                         Nothing ->
                             ( model.accounts, Cmd.none )
 
-                ( mediaViewerPanelModel, mediaViewerPanelCmd ) =
+                ( mediaViewerPanelModel, mediaViewerPanelCmd, maybeMediaViewerAccountsPanelMsg ) =
                     case maybeMediaViewerPanelMsg of
                         Just mediaViewerPanelMsg ->
-                            MediaViewerPanel.update mediaViewerPanelMsg panels.mediaViewerPanel
+                            MediaViewerPanel.update model.accounts mediaViewerPanelMsg panels.mediaViewerPanel
 
                         Nothing ->
-                            ( panels.mediaViewerPanel, Cmd.none )
+                            ( panels.mediaViewerPanel, Cmd.none, Nothing )
 
                 -- Mirrors `AccountsPanelMsg`'s own close-the-other-panel
                 -- branch, above -- see `UI.Responsive`.
@@ -706,6 +706,18 @@ sharedUpdate req msg model =
 
                     else
                         ( accountsPanelModel, Cmd.none )
+
+                -- `MediaViewerPanel.update`'s own account-refresh, if any (only ever fires from an
+                -- edit action -- `Open`, all this forwarding channel ever carries, never triggers
+                -- one -- but handled uniformly regardless), layered on top of the above so neither
+                -- refresh gets lost if both somehow fired in the same update.
+                ( finalAccountsPanelModel, mediaViewerAccountsCmd ) =
+                    case maybeMediaViewerAccountsPanelMsg of
+                        Just accountsPanelMsg ->
+                            AccountsPanel.update req accountsPanelMsg closedAccountsPanelModel
+
+                        Nothing ->
+                            ( closedAccountsPanelModel, Cmd.none )
 
                 -- Unlike `shouldCloseAccountsPanel` above, unconditional --
                 -- not just narrow screens -- since the New Post panel opens
@@ -726,7 +738,7 @@ sharedUpdate req msg model =
                     if shouldCloseCreateNewPanel then
                         let
                             ( m, cmd, _ ) =
-                                CreateNewPanel.update model.time.browserTimeZone model.time.now closedAccountsPanelModel CreateNewPanel.CloseClicked panels.createNewPanel
+                                CreateNewPanel.update model.time.browserTimeZone model.time.now finalAccountsPanelModel CreateNewPanel.CloseClicked panels.createNewPanel
                         in
                         ( m, cmd )
 
@@ -749,7 +761,7 @@ sharedUpdate req msg model =
                     if shouldCloseMessagingPanel then
                         let
                             ( m, cmd, _ ) =
-                                MessagingPanel.update closedAccountsPanelModel MessagingPanel.CloseMessagingPanel panels.messagingPanel
+                                MessagingPanel.update finalAccountsPanelModel MessagingPanel.CloseMessagingPanel panels.messagingPanel
                         in
                         ( m, cmd )
 
@@ -757,7 +769,7 @@ sharedUpdate req msg model =
                         ( panels.messagingPanel, Cmd.none )
             in
             ( { model
-                | accounts = closedAccountsPanelModel
+                | accounts = finalAccountsPanelModel
                 , panels =
                     { panels
                         | starredPanel = subModel
@@ -770,6 +782,7 @@ sharedUpdate req msg model =
                 [ Cmd.map StarredPanelMsg subCmd
                 , Cmd.map AccountsPanelMsg accountsPanelCmd
                 , Cmd.map AccountsPanelMsg closeCmd
+                , Cmd.map AccountsPanelMsg mediaViewerAccountsCmd
                 , Cmd.map CreateNewPanelMsg closeCreateNewCmd
                 , Cmd.map MessagingPanelMsg closeMessagingCmd
                 , Cmd.map MediaViewerPanelMsg mediaViewerPanelCmd
@@ -789,10 +802,23 @@ sharedUpdate req msg model =
                 panels =
                     model.panels
 
-                ( subModel, subCmd ) =
-                    MediaViewerPanel.update subMsg panels.mediaViewerPanel
+                ( subModel, subCmd, maybeAccountsPanelMsg ) =
+                    MediaViewerPanel.update model.accounts subMsg panels.mediaViewerPanel
+
+                ( accountsPanelModel, accountsPanelCmd ) =
+                    case maybeAccountsPanelMsg of
+                        Just accountsPanelMsg ->
+                            AccountsPanel.update req accountsPanelMsg model.accounts
+
+                        Nothing ->
+                            ( model.accounts, Cmd.none )
             in
-            ( { model | panels = { panels | mediaViewerPanel = subModel } }, Cmd.map MediaViewerPanelMsg subCmd )
+            ( { model | accounts = accountsPanelModel, panels = { panels | mediaViewerPanel = subModel } }
+            , Cmd.batch
+                [ Cmd.map MediaViewerPanelMsg subCmd
+                , Cmd.map AccountsPanelMsg accountsPanelCmd
+                ]
+            )
 
         BreadcrumbsMsg subMsg ->
             let
@@ -1076,16 +1102,26 @@ sharedUpdate req msg model =
                 -- own doc) -- opens `Shared.MediaViewerPanel` on the tapped
                 -- tile, same forwarding convention `StarredPanelMsg`'s own
                 -- `maybeMediaViewerPanelMsg` uses above.
-                ( mediaViewerPanelModel, mediaViewerPanelCmd ) =
+                ( mediaViewerPanelModel, mediaViewerPanelCmd, maybeMediaViewerAccountsPanelMsg ) =
                     case maybeMediaViewerPanelMsg of
                         Just mediaViewerPanelMsg ->
-                            MediaViewerPanel.update mediaViewerPanelMsg panels.mediaViewerPanel
+                            MediaViewerPanel.update model.accounts mediaViewerPanelMsg panels.mediaViewerPanel
 
                         Nothing ->
-                            ( panels.mediaViewerPanel, Cmd.none )
+                            ( panels.mediaViewerPanel, Cmd.none, Nothing )
+
+                -- `MediaViewerPanel.update`'s own account-refresh, if any -- see `StarredPanelMsg`'s
+                -- own `finalAccountsPanelModel` for why this is layered on top rather than replacing.
+                ( finalAccountsPanelModel, mediaViewerAccountsCmd ) =
+                    case maybeMediaViewerAccountsPanelMsg of
+                        Just accountsPanelMsg ->
+                            AccountsPanel.update req accountsPanelMsg accountsPanelModel
+
+                        Nothing ->
+                            ( accountsPanelModel, Cmd.none )
             in
             ( { model
-                | accounts = accountsPanelModel
+                | accounts = finalAccountsPanelModel
                 , panels =
                     { panels
                         | myMediaPanel = subModel
@@ -1098,6 +1134,7 @@ sharedUpdate req msg model =
             , Cmd.batch
                 [ Cmd.map MyMediaPanelMsg subCmd
                 , Cmd.map AccountsPanelMsg accountsPanelCmd
+                , Cmd.map AccountsPanelMsg mediaViewerAccountsCmd
                 , Cmd.map CreateNewPanelMsg createNewPanelCmd
                 , Cmd.map MediaGeneratorPanelMsg mediaGeneratorPanelCmd
                 , Cmd.map MediaViewerPanelMsg mediaViewerPanelCmd

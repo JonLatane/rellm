@@ -35,6 +35,7 @@ mod x_twitter_sync_tests;
 mod update_event_tests;
 mod update_media_tests;
 mod update_post_tests;
+mod update_user_storage_quota_tests;
 mod user_counts_tests;
 mod web_push_config_tests;
 mod web_push_tests;

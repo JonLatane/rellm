@@ -9190,9 +9190,9 @@ type alias Proto__Rellm__GetMediaRequest =
 
 -}
 fieldNumbersProto__Rellm__MediaReference :
-    { id : Int, name : Int, generated : Int, metadata : Int, sizes : Int, url : Int, description : Int }
+    { id : Int, name : Int, generated : Int, metadata : Int, sizes : Int, url : Int, description : Int, userId : Int }
 fieldNumbersProto__Rellm__MediaReference =
-    { id = 2, name = 3, generated = 4, metadata = 5, sizes = 6, url = 11, description = 12 }
+    { id = 2, name = 3, generated = 4, metadata = 5, sizes = 6, url = 11, description = 12, userId = 13 }
 
 
 {-| Default for Proto__Rellm__MediaReference. Should only be used for 'required' decoders as an initial value.
@@ -9200,7 +9200,15 @@ fieldNumbersProto__Rellm__MediaReference =
 -}
 defaultProto__Rellm__MediaReference : Proto__Rellm__MediaReference
 defaultProto__Rellm__MediaReference =
-    { id = "", name = Nothing, generated = False, metadata = Nothing, sizes = [], url = Nothing, description = Nothing }
+    { id = ""
+    , name = Nothing
+    , generated = False
+    , metadata = Nothing
+    , sizes = []
+    , url = Nothing
+    , description = Nothing
+    , userId = Nothing
+    }
 
 
 {-| Declares how to decode a `Proto__Rellm__MediaReference` from Bytes. To actually perform the conversion from Bytes, you need to use Protobuf.Decode.decode from eriktim/elm-protocol-buffers.
@@ -9223,6 +9231,7 @@ decodeProto__Rellm__MediaReference =
             12
             (Protobuf.Decode.map Just Protobuf.Decode.string)
             (\a r -> { r | description = a })
+        , Protobuf.Decode.optional 13 (Protobuf.Decode.map Just Protobuf.Decode.string) (\a r -> { r | userId = a })
         ]
 
 
@@ -9239,6 +9248,7 @@ encodeProto__Rellm__MediaReference value =
         , ( 6, (Protobuf.Encode.list encodeProto__Rellm__MediaSize) value.sizes )
         , ( 11, (Maybe.map Protobuf.Encode.string >> Maybe.withDefault Protobuf.Encode.none) value.url )
         , ( 12, (Maybe.map Protobuf.Encode.string >> Maybe.withDefault Protobuf.Encode.none) value.description )
+        , ( 13, (Maybe.map Protobuf.Encode.string >> Maybe.withDefault Protobuf.Encode.none) value.userId )
         ]
 
 
@@ -9253,6 +9263,7 @@ type alias Proto__Rellm__MediaReference =
     , sizes : List Proto__Rellm__MediaSize
     , url : Maybe String
     , description : Maybe String
+    , userId : Maybe String
     }
 
 

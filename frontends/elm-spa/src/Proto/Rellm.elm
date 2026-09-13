@@ -7534,7 +7534,7 @@ type alias GetMediaRequest =
 
 -}
 fieldNumbersMediaReference :
-    { id : Int, name : Int, generated : Int, metadata : Int, sizes : Int, url : Int, description : Int }
+    { id : Int, name : Int, generated : Int, metadata : Int, sizes : Int, url : Int, description : Int, userId : Int }
 fieldNumbersMediaReference =
     Proto.Rellm.Internals_.fieldNumbersProto__Rellm__MediaReference
 
