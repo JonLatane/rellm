@@ -1,7 +1,9 @@
+use std::path::Path;
 use std::str::FromStr;
 
 use super::{load_media_file_data, load_media_file_data_preferring, open_named_file, RocketState};
 use crate::{
+    logic::ImageMagick,
     protos::{MediaConversion, ServerInfo, ServerLogo},
     rpcs::{get_server_configuration_proto, get_service_version},
 };
@@ -211,20 +213,7 @@ async fn favicon_ico<'a>(
             );
             // Convert PNG icons to ICO
             if content_type.to_string().ends_with("png") {
-                let mut icon_dir = ico::IconDir::new(ico::ResourceType::Icon);
-                // Read PNG file from disk and add it to the collection:
-                let file = std::fs::File::open(named_filename).unwrap();
-                let image = ico::IconImage::read_png(file).unwrap();
-                icon_dir.add_entry(ico::IconDirEntry::encode(&image).unwrap());
-                // Alternatively, you can create an IconImage from raw RGBA pixel data
-                // (e.g. from another image library):
-                let rgba = vec![std::u8::MAX; 4 * 16 * 16];
-                let image = ico::IconImage::from_rgba_data(16, 16, rgba);
-                icon_dir.add_entry(ico::IconDirEntry::encode(&image).unwrap());
-                // Finally, write the ICO file to disk:
-                let file = std::fs::File::create(&ico_filename).unwrap();
-                icon_dir.write(file).unwrap();
-
+                convert_png_to_ico(named_filename, &ico_filename, state.tempdir.path())?;
                 named_filename = &ico_filename;
                 content_type = ico_content_type
             }
@@ -312,6 +301,50 @@ async fn favicon_png<'a>(
     }
 }
 
+/// Sizes actually encodable in an ICO directory entry: width/height there are single bytes, with
+/// 0 standing in for 256, so 256px is the hard ceiling. Packing a larger PNG in as-is (as this
+/// used to) still "succeeds", but `ico`'s writer silently clamps the declared size to 256 while
+/// the embedded PNG stays full resolution -- a mismatch most browsers/OSes refuse to load.
+const FAVICON_ICO_SIZES: [u32; 6] = [16, 32, 48, 64, 128, 256];
+
+/// Packs `png_path` into a proper multi-resolution ICO at `ico_path`, resizing down to each of
+/// `FAVICON_ICO_SIZES` via ImageMagick first (see that const's doc for why resizing is required).
+/// `tempdir` holds the per-size intermediate PNGs. Falls back to a single unresized frame if
+/// ImageMagick isn't installed -- valid only if `png_path` already happens to be <=256px.
+fn convert_png_to_ico(png_path: &str, ico_path: &str, tempdir: &Path) -> Result<(), Status> {
+    let mut icon_dir = ico::IconDir::new(ico::ResourceType::Icon);
+    match ImageMagick::detect() {
+        Some(imagemagick) => {
+            for size in FAVICON_ICO_SIZES {
+                let frame_path = tempdir.join(format!("favicon-{size}.png"));
+                imagemagick
+                    .resize(Path::new(png_path), &frame_path, size)
+                    .map_err(|e| { eprintln!("DEBUG resize err: {e:?}"); Status::ExpectationFailed })?;
+                let frame_file =
+                    std::fs::File::open(&frame_path).map_err(|e| { eprintln!("DEBUG open err: {e:?}"); Status::ExpectationFailed })?;
+                let image =
+                    ico::IconImage::read_png(frame_file).map_err(|e| { eprintln!("DEBUG read_png err: {e:?}"); Status::ExpectationFailed })?;
+                icon_dir.add_entry(
+                    ico::IconDirEntry::encode(&image).map_err(|_| Status::ExpectationFailed)?,
+                );
+            }
+        }
+        None => {
+            let source_file =
+                std::fs::File::open(png_path).map_err(|_| Status::ExpectationFailed)?;
+            let image =
+                ico::IconImage::read_png(source_file).map_err(|_| Status::ExpectationFailed)?;
+            icon_dir.add_entry(
+                ico::IconDirEntry::encode(&image).map_err(|_| Status::ExpectationFailed)?,
+            );
+        }
+    }
+    let ico_file = std::fs::File::create(ico_path).map_err(|_| Status::ExpectationFailed)?;
+    icon_dir
+        .write(ico_file)
+        .map_err(|_| Status::ExpectationFailed)
+}
+
 /// Decodes the largest frame in an ICO file and writes it out as a PNG.
 fn convert_ico_to_png(ico_path: &str, png_path: &str) -> Result<(), Status> {
     let ico_file = std::fs::File::open(ico_path).map_err(|_| Status::ExpectationFailed)?;
@@ -326,4 +359,33 @@ fn convert_ico_to_png(ico_path: &str, png_path: &str) -> Result<(), Status> {
     image
         .write_png(png_file)
         .map_err(|_| Status::ExpectationFailed)
+}
+
+#[cfg(test)]
+mod favicon_fix_verification {
+    use super::*;
+
+    #[test]
+    fn scratch_verify_convert_png_to_ico() {
+        let tempdir = std::env::temp_dir();
+        let png_path = "../docs/rellm_emblem.png";
+        let ico_path = tempdir.join("scratch-favicon.ico");
+        convert_png_to_ico(png_path, ico_path.to_str().unwrap(), &tempdir).unwrap();
+
+        let ico_file = std::fs::File::open(&ico_path).unwrap();
+        let icon_dir = ico::IconDir::read(ico_file).unwrap();
+        let sizes: Vec<u32> = icon_dir.entries().iter().map(|e| e.width()).collect();
+        println!("SCRATCH_TEST_SIZES={:?}", sizes);
+        assert_eq!(sizes, vec![16, 32, 48, 64, 128, 0]); // 0 means 256 per ICO spec
+        for entry in icon_dir.entries() {
+            let image = entry.decode().unwrap();
+            assert!(image.width() <= 256 && image.height() <= 256);
+            println!(
+                "SCRATCH_TEST_ENTRY declared_width={} actual_decoded={}x{}",
+                entry.width(),
+                image.width(),
+                image.height()
+            );
+        }
+    }
 }

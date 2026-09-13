@@ -31,3 +31,16 @@ rellm_icon.png: rellm_icon.svg
 # a solid square doesn't fit -- READMEs, over light/dark themes, etc.
 rellm_emblem.png: rellm_emblem.svg
 	rsvg-convert -w 1024 -h 1024 rellm_emblem.svg -o rellm_emblem.png
+
+# Proper multi-resolution favicon.ico (a renamed .png is not a valid .ico container and
+# many browsers/OSes will refuse it). Packs actual 16/32/48/64/128/256px renders into one
+# real ICO file for use as rellm.org/favicon.ico. Built from the emblem (not the backdrop
+# icon) to match the favicon.png already deployed.
+favicon.ico: rellm_emblem.svg
+	tmpdir=$$(mktemp -d); \
+	for size in 16 32 48 64 128 256; do \
+		rsvg-convert -w $$size -h $$size rellm_emblem.svg -o $$tmpdir/favicon-$$size.png; \
+	done; \
+	magick $$tmpdir/favicon-16.png $$tmpdir/favicon-32.png $$tmpdir/favicon-48.png \
+		$$tmpdir/favicon-64.png $$tmpdir/favicon-128.png $$tmpdir/favicon-256.png favicon.ico; \
+	rm -rf $$tmpdir

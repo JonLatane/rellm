@@ -129,7 +129,13 @@ impl ImageMagick {
     /// Resizes `input` to fit within `max_dimension`x`max_dimension`, preserving aspect ratio and
     /// never upscaling (ImageMagick's `>` geometry flag), stripping EXIF/color-profile metadata,
     /// and correcting orientation from EXIF before doing so.
-    fn resize(&self, input: &Path, output: &Path, max_dimension: u32) -> Result<()> {
+    ///
+    /// `pub(crate)`: also called directly (bypassing `Converter` and the cluster-wide
+    /// `ClusterResource::Imagemagick` lock in `convert_media_sizes.rs`) by `web::server_information`
+    /// to build favicon.ico frames on demand -- that lock exists to cap concurrent *background*
+    /// conversion load across a cluster, not to gate this kind of small, synchronous, per-request
+    /// resize.
+    pub(crate) fn resize(&self, input: &Path, output: &Path, max_dimension: u32) -> Result<()> {
         let status = self
             .convert_command()
             .arg(input)

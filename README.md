@@ -1,10 +1,10 @@
-# <img src="https://rellm.org/favicon.png" alt="Rellm logo" height="32" align="middle"/> Rellm [![Server CI/CD Badge](https://github.com/jonlatane/rellm/actions/workflows/server_ci_cd.yml/badge.svg)](https://github.com/jonlatane/rellm/actions/workflows/server_ci_cd.yml) [![gRPC Docs!](https://img.shields.io/badge/gRPC-protocol%20docs-information?labelColor={}&color=blue)](https://jonline.io/docs)
+# <img src="https://rellm.org/favicon.png" alt="Rellm logo" height="32" align="middle"/> Rellm [![Server CI/CD Badge](https://github.com/jonlatane/rellm/actions/workflows/server_ci_cd.yml/badge.svg)](https://github.com/jonlatane/rellm/actions/workflows/server_ci_cd.yml) [![gRPC Docs!](https://img.shields.io/badge/gRPC-protocol%20docs-information?labelColor={}&color=blue)](https://rellm.org/docs)
 
-[![Jonline.io](https://jonline.io/info_shield?b6713cbc8)](https://jonline.io)
 [![Rellm.org](https://rellm.org/info_shield?b6713cbc8)](https://rellm.org)
-[![BullCity.social](https://bullcity.social/info_shield?b6713cbc8)](https://bullcity.social)
 [![OakCity.social](https://oakcity.social/info_shield?b6713cbc8)](https://oakcity.social)
+[![BullCity.social](https://bullcity.social/info_shield?b6713cbc8)](https://bullcity.social)
 [![ATO.band](https://ato.band/info_shield?b6713cbc8)](https://ato.band)
+[![Jonline.io](https://jonline.io/info_shield?b6713cbc8)](https://jonline.io)
 
 [![Homebrew](https://img.shields.io/badge/macOS-Homebrew-purple?logo=homebrew&logoColor=white)](#macos-install-and-run-via-homebrew) [![Linux](https://img.shields.io/badge/Linux-Self%20Updating%20.tar.bz2-green?logo=linux&logoColor=white)](#linux-self-updateable-tarbz2-with-arm64-and-amd64-binaries-and-launcher)
 
@@ -201,7 +201,7 @@ To set up a deployment yourself, see: [Quick deploy to your own cluster](#quick-
 | [OakCity.Social  ![OakCity.Social](https://OakCity.Social/info_shield?b6713cbc8)](https://OakCity.Social/)     | Raleigh, NC Community Page       | [BullCity.Social (pinned), ATO.Band (pinned)](https://OakCity.Social/about?tab=federation)                      | [About](https://OakCity.Social/about), [Elm UI](https://OakCity.Social/elm/), [Tamagui/React UI](https://OakCity.Social/tamagui/), [Flutter UI](https://OakCity.Social/flutter/), [Protocol Docs](https://OakCity.Social/docs/protocol/)    | Production         |
 | [ATO.Band ![ato.band](https://ato.band/info_shield?b6713cbc8)](https://ato.band/)     | Site for my band, Against The Odds | [BullCity.Social, OakCity.Social](https://ato.band/about?tab=federation), Facebook                      | [About](https://ato.band/about), [Elm UI](https://ato.band/elm/), [Tamagui/React UI](https://ato.band/tamagui/), [Flutter UI](https://ato.band/flutter/), [Protocol Docs](https://ato.band/docs/protocol/)    | Production         |
 
-- [Rellm  ](#rellm--)
+- [ Rellm  ](#-rellm--)
   - [Packages, Images \& Deployments](#packages-images--deployments)
     - [macOS: Install and Run via Homebrew](#macos-install-and-run-via-homebrew)
       - [2 minute startup with Homebrew](#2-minute-startup-with-homebrew)
