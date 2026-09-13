@@ -12,12 +12,15 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{bail, Context, Result};
+use diesel::dsl::sql;
+use diesel::sql_types::Bool;
 use diesel::*;
 use s3::Bucket;
 
 use crate::db_connection::PgPooledConnection;
 use crate::logic::update_media_storage_used;
 use crate::models::{Media, MediaConversionExt, MediaSize, RESIZED_CONVERSIONS};
+use crate::protos::MediaConversion;
 use crate::schema::media;
 
 pub const CONVERTIBLE_CONTENT_TYPES: [&str; 3] = ["image/png", "image/jpeg", "image/jpg"];
@@ -291,6 +294,21 @@ fn extension_for_content_type(content_type: &str) -> Result<&'static str> {
     }
 }
 
+/// Content type for a *resized* copy, which may differ from the original's. QuickTime
+/// (`video/quicktime`) is re-muxed into an MP4 container: `FFmpeg::resize` already re-encodes it
+/// to H.264/AAC (same codecs an MP4 would use) since it isn't `video/webm`, so this is a free
+/// container swap -- and it matters because Chrome refuses to play `video/quicktime` inline when a
+/// media URL is navigated to directly (e.g. shared/opened in its own tab), downloading it instead
+/// regardless of the actual codec inside, while `video/mp4` plays fine. The original upload is left
+/// as `video/quicktime` (some clients care about round-tripping the exact original), so this only
+/// ever affects `small`/`medium`/`large`.
+fn resized_content_type(original_content_type: &str) -> &str {
+    match original_content_type {
+        "video/quicktime" => "video/mp4",
+        other => other,
+    }
+}
+
 /// Which tool converts a given `Media` item, chosen by its content type.
 enum Converter<'a> {
     Image(&'a ImageMagick),
@@ -362,6 +380,9 @@ pub async fn convert_media(
     let aspect_ratio = width as f32 / height as f32;
     original.aspect_ratio = Some(aspect_ratio);
 
+    let resized_content_type = resized_content_type(&original.content_type).to_string();
+    let resized_extension = extension_for_content_type(&resized_content_type)?;
+
     let mut sizes = vec![original];
 
     for conversion in RESIZED_CONVERSIONS {
@@ -377,19 +398,24 @@ pub async fn convert_media(
             continue;
         }
 
-        let output_path = tmp_dir.join(format!("{}-{}.{}", item.id, conversion.key(), extension));
+        let output_path = tmp_dir.join(format!(
+            "{}-{}.{}",
+            item.id,
+            conversion.key(),
+            resized_extension
+        ));
         converter.resize(
             &input_path,
             &output_path,
             conversion.max_dimension(),
-            &sizes[0].content_type,
+            &resized_content_type,
         )?;
         let output_bytes = std::fs::read(&output_path)?;
         let _ = std::fs::remove_file(&output_path);
 
         let converted_minio_path = format!("{}.{}", sizes[0].minio_path, conversion.key());
         bucket
-            .put_object_with_content_type(&converted_minio_path, &output_bytes, &sizes[0].content_type)
+            .put_object_with_content_type(&converted_minio_path, &output_bytes, &resized_content_type)
             .await
             .context("failed to upload converted size to MinIO")?;
 
@@ -403,7 +429,7 @@ pub async fn convert_media(
         sizes.push(MediaSize {
             conversion: conversion as i32,
             minio_path: converted_minio_path,
-            content_type: sizes[0].content_type.clone(),
+            content_type: resized_content_type.clone(),
             size_bytes: output_bytes.len() as i64,
             aspect_ratio: Some(aspect_ratio),
         });
@@ -423,4 +449,88 @@ pub async fn convert_media(
     }
 
     Ok(())
+}
+
+/// `Media` rows with at least one non-`Original` `sizes` entry still tagged `video/quicktime` --
+/// left over from before `resized_content_type` started re-muxing resized video copies to MP4 (see
+/// its own doc comment for why `video/quicktime` breaks Chrome's inline playback). Paged by `id` via
+/// `min_id` (rather than a plain `processed = false` filter, since these rows are already
+/// `processed`) so `bin/reencode_quicktime_media.rs` can walk the whole backlog in one run without
+/// re-fetching a row it already handled -- including one it skipped because its original was
+/// missing, which would otherwise match this filter forever.
+pub fn media_with_quicktime_resized_sizes(
+    conn: &mut PgPooledConnection,
+    min_id: i64,
+    limit: i64,
+) -> QueryResult<Vec<Media>> {
+    media::table
+        .filter(media::id.gt(min_id))
+        .filter(sql::<Bool>(
+            r#"EXISTS (
+                SELECT 1 FROM jsonb_array_elements(sizes) e
+                WHERE e->>'content_type' = 'video/quicktime'
+                AND (e->>'conversion')::int <> 0
+            )"#,
+        ))
+        .order(media::id.asc())
+        .limit(limit)
+        .load::<Media>(conn)
+}
+
+/// Strips `item`'s `video/quicktime`-tagged resized (`small`/`medium`/`large`) `sizes` entries and
+/// deletes their MinIO objects, then marks `item` unprocessed so the ordinary `convert_media_sizes`
+/// job regenerates them (now correctly muxed to MP4 -- see `resized_content_type`) next time it
+/// runs. Only touches rows whose original is still actually downloadable from MinIO -- originals
+/// can be pruned independently of resized copies, and there'd be no source to regenerate anything
+/// from for a row missing one, so those are left untouched (returns `Ok(false)`) rather than
+/// stripped down to nothing. Returns `Ok(false)` too if the row turns out to have nothing to strip
+/// (a defensive check against a race with a concurrent run/fix, not expected in practice since
+/// callers already select via [`media_with_quicktime_resized_sizes`]).
+pub async fn strip_quicktime_resized_sizes(
+    item: &Media,
+    bucket: &Bucket,
+    conn: &mut PgPooledConnection,
+) -> Result<bool> {
+    let Some(original) = item.original() else {
+        return Ok(false);
+    };
+    if bucket.head_object(&original.minio_path).await.is_err() {
+        return Ok(false);
+    }
+
+    let (removed, kept): (Vec<MediaSize>, Vec<MediaSize>) =
+        item.sizes().into_iter().partition(|s| {
+            s.conversion() != MediaConversion::Original && s.content_type == "video/quicktime"
+        });
+    if removed.is_empty() {
+        return Ok(false);
+    }
+
+    for size in &removed {
+        if let Err(e) = bucket.delete_object(&size.minio_path).await {
+            log::warn!(
+                "Media {}: failed to delete stale MinIO object {}: {:?}",
+                item.id,
+                size.minio_path,
+                e
+            );
+        }
+    }
+
+    diesel::update(media::table.find(item.id))
+        .set((
+            media::sizes.eq(serde_json::to_value(&kept)?),
+            media::processed.eq(false),
+        ))
+        .execute(conn)?;
+    if let Some(user_id) = item.user_id {
+        update_media_storage_used(user_id, conn)?;
+    }
+
+    log::info!(
+        "Media {}: stripped {} QuickTime-tagged resized size(s); marked unprocessed for regeneration.",
+        item.id,
+        removed.len()
+    );
+    Ok(true)
 }
