@@ -7100,6 +7100,18 @@ directory</a> is (<code>{name}</code> denotes a
     </table>
     <p><a name="rellm-TwilioConfig"></a></p>
     <h3 id="twilioconfig"><a class="anchor" aria-hidden="true" tabindex="-1" href="#twilioconfig"><span class="octicon octicon-link"></span></a>TwilioConfig</h3>
+    <p>
+      Twilio credentials, authenticated via a Twilio <strong>API Key</strong> (<code>twilio_api_key_sid</code>/
+      <code>twilio_api_key_secret</code>) -- deliberately <em>not</em> the account's own Auth Token. A server's Auth
+      Token is a single unscoped, unrevocable-without-rotating-everything credential with full access
+      to the whole Twilio account; an API Key is its own separate, individually-revocable credential
+      pair meant for exactly this kind of integration. <code>twilio_account_sid</code> is still required (Twilio
+      resource URLs are always addressed by the actual Account SID), but it is <em>not</em> used to
+      authenticate -- only the API Key SID/Secret pair is. See
+      <a href="https://www.twilio.com/docs/iam/api-keys/restricted-api-keys">https://www.twilio.com/docs/iam/api-keys/restricted-api-keys</a> for the recommended
+      permission when creating one: <code>/twilio/messaging/messages/create</code> (nothing else is needed just
+      to send verification SMS).
+    </p>
     <table>
       <thead>
         <tr>
@@ -7120,13 +7132,19 @@ directory</a> is (<code>{name}</code> denotes a
           <td>twilio_account_sid</td>
           <td><a href="#string">string</a></td>
           <td></td>
-          <td>The Twilio Account SID. Public (among admins) -- freely serialized.</td>
+          <td>The Twilio Account SID (starts with <code>AC</code>). Used only in the API's URL path -- <em>never</em> as an authentication credential. Public (among admins) -- freely serialized.</td>
         </tr>
         <tr>
-          <td>twilio_api_key</td>
+          <td>twilio_api_key_sid</td>
           <td><a href="#string">string</a></td>
           <td></td>
-          <td>The Twilio Auth Token. Never serialized once written.</td>
+          <td>The Twilio API Key's SID (starts with <code>SK</code>), used as the Basic Auth username. Public (among admins) -- freely serialized; it's useless without the Secret below, same as a username alone.</td>
+        </tr>
+        <tr>
+          <td>twilio_api_key_secret</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>The Twilio API Key's Secret, used as the Basic Auth password. Never serialized once written.</td>
         </tr>
         <tr>
           <td>twilio_from_number</td>

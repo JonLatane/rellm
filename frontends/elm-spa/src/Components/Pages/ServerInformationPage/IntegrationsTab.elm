@@ -26,12 +26,13 @@ Unlike `CdnTab`'s "External CDN HTTP Support" toggle (which nulls `externalCdnCo
 when off), each provider's "Enabled" toggle here only ever flips its own `*Enabled` field -- the
 rest of the config (account identifiers, and whatever's currently stored for the write-only secret)
 is left alone on disable, so re-enabling later doesn't lose the credentials that were already
-entered. `twilioApiKey`/`birdAccessKey` are write-only secrets -- `GetServerConfiguration` always
-blanks them (mirroring `WebPushConfig.privateVapidKey`), so `*EditClicked` naturally seeds the
-secret field blank with no special-casing, and each input's placeholder makes clear that leaving it
-blank on Save keeps whatever's already stored.
+entered. `twilioApiKeySecret`/`birdAccessKey` are write-only secrets -- `GetServerConfiguration`
+always blanks them (mirroring `WebPushConfig.privateVapidKey`), so `*EditClicked` naturally seeds
+the secret field blank with no special-casing, and each input's placeholder makes clear that
+leaving it blank on Save keeps whatever's already stored.
 
-The non-secret fields (`twilioAccountSid`/`twilioFromNumber`/`birdFrom`/`birdRegion`) aren't secret
+The non-secret fields (`twilioAccountSid`/`twilioApiKeySid`/`twilioFromNumber`/`birdFrom`/
+`birdRegion`) aren't secret
 among admins (just not shown to non-admins, since `twilioConfig`/`bird_config` are themselves
 admin-only-serialized -- see `ServerInformationPage`'s tab bar gating), so they're shown in plain
 text even in the read-only display view, same as CDN's `frontendHost`/`backendHost`.
@@ -86,7 +87,8 @@ type Msg
     = TwilioEditClicked
     | TwilioEnabledToggled
     | TwilioAccountSidChanged String
-    | TwilioAuthTokenChanged String
+    | TwilioApiKeySidChanged String
+    | TwilioApiKeySecretChanged String
     | TwilioFromNumberChanged String
     | TwilioCancelClicked
     | TwilioSaveClicked
@@ -110,22 +112,25 @@ type Msg
     | GotAuthenticatedServerConfiguration (Result Grpc.Error ( Maybe AccountsPanel.Msg, ServerConfiguration ))
 
 
-{-| Live only while the Twilio config is being edited by an admin. `authToken` always starts blank
-(see module doc) -- leaving it blank on Save means "keep whatever's already stored" (the backend
-splices the existing value back in when the incoming `twilio_api_key` is empty, mirroring
-`WebPushConfig.privateVapidKey`'s own merge rule).
+{-| Live only while the Twilio config is being edited by an admin. `apiKeySecret` always starts
+blank (see module doc) -- leaving it blank on Save means "keep whatever's already stored" (the
+backend splices the existing value back in when the incoming `twilio_api_key_secret` is empty,
+mirroring `WebPushConfig.privateVapidKey`'s own merge rule). `accountSid`/`apiKeySid` are Twilio's
+Account SID and API Key SID respectively -- see `TwilioConfig`'s own proto doc for why
+authentication uses the API Key pair, never the account's own Auth Token.
 -}
 type alias TwilioConfigEdit =
     { enabled : Bool
     , accountSid : String
-    , authToken : String
+    , apiKeySid : String
+    , apiKeySecret : String
     , fromNumber : String
     , status : AccountsPanel.FormStatus
     }
 
 
 {-| Same as `TwilioConfigEdit`, but for Bird -- `accessKey` always starts blank the same way
-`authToken` does.
+`apiKeySecret` does.
 -}
 type alias BirdConfigEdit =
     { enabled : Bool
@@ -220,7 +225,8 @@ update shared targetHost msg model =
                     Just
                         { enabled = twilioConfig |> Maybe.map .twilioEnabled |> Maybe.withDefault False
                         , accountSid = twilioConfig |> Maybe.map .twilioAccountSid |> Maybe.withDefault ""
-                        , authToken = ""
+                        , apiKeySid = twilioConfig |> Maybe.map .twilioApiKeySid |> Maybe.withDefault ""
+                        , apiKeySecret = ""
                         , fromNumber = twilioConfig |> Maybe.map .twilioFromNumber |> Maybe.withDefault ""
                         , status = AccountsPanel.Idle
                         }
@@ -234,8 +240,11 @@ update shared targetHost msg model =
         TwilioAccountSidChanged text ->
             ( { model | configEdit = model.configEdit |> Maybe.map (\edit -> { edit | accountSid = text }) }, Effect.none )
 
-        TwilioAuthTokenChanged text ->
-            ( { model | configEdit = model.configEdit |> Maybe.map (\edit -> { edit | authToken = text }) }, Effect.none )
+        TwilioApiKeySidChanged text ->
+            ( { model | configEdit = model.configEdit |> Maybe.map (\edit -> { edit | apiKeySid = text }) }, Effect.none )
+
+        TwilioApiKeySecretChanged text ->
+            ( { model | configEdit = model.configEdit |> Maybe.map (\edit -> { edit | apiKeySecret = text }) }, Effect.none )
 
         TwilioFromNumberChanged text ->
             ( { model | configEdit = model.configEdit |> Maybe.map (\edit -> { edit | fromNumber = text }) }, Effect.none )
@@ -458,9 +467,9 @@ fetchAuthenticatedServerConfiguration shared targetHost account =
 {-| `TwilioSaveClicked`'s transform, passed to `AccountsPanel.updateServerConfig` the same way every
 other editor's transform is. Unlike `CdnTab.applyCdnConfig` (which nulls `externalCdnConfig` out
 entirely when its toggle is off), this never nulls `twilioConfig` out -- `twilioEnabled` is itself
-the field that means "off," so disabling just flips that bool while `accountSid`/`fromNumber` (and
-whatever's stored for `authToken`, left untouched when `edit.authToken` is blank) stay put, letting
-an admin flip Twilio off and back on without re-entering credentials.
+the field that means "off," so disabling just flips that bool while `accountSid`/`apiKeySid`/
+`fromNumber` (and whatever's stored for `apiKeySecret`, left untouched when `edit.apiKeySecret` is
+blank) stay put, letting an admin flip Twilio off and back on without re-entering credentials.
 -}
 applyTwilioConfig : TwilioConfigEdit -> ServerConfiguration -> ServerConfiguration
 applyTwilioConfig edit config =
@@ -475,7 +484,8 @@ applyTwilioConfig edit config =
                 { existing
                     | twilioEnabled = edit.enabled
                     , twilioAccountSid = edit.accountSid
-                    , twilioApiKey = edit.authToken
+                    , twilioApiKeySid = edit.apiKeySid
+                    , twilioApiKeySecret = edit.apiKeySecret
                     , twilioFromNumber = edit.fromNumber
                 }
     }
@@ -599,6 +609,7 @@ twilioDisplayView maybeAdminAccount twilioConfig =
     [ h3 [ class "section-title" ] [ text "Twilio" ]
     , Common.settingsRow "Twilio Enabled" (Common.switchDisplay (twilioConfig |> Maybe.map .twilioEnabled |> Maybe.withDefault False))
     , Common.settingsRow "Account SID" (span [ class "server-details-feature-settings-value" ] [ text (twilioConfig |> Maybe.map .twilioAccountSid |> Maybe.withDefault "—") ])
+    , Common.settingsRow "API Key SID" (span [ class "server-details-feature-settings-value" ] [ text (twilioConfig |> Maybe.map .twilioApiKeySid |> Maybe.withDefault "—") ])
     , Common.settingsRow "From Number" (span [ class "server-details-feature-settings-value" ] [ text (twilioConfig |> Maybe.map .twilioFromNumber |> Maybe.withDefault "—") ])
     , case maybeAdminAccount of
         Just _ ->
@@ -609,6 +620,11 @@ twilioDisplayView maybeAdminAccount twilioConfig =
     ]
 
 
+{-| Twilio's own IAM docs (https://www.twilio.com/docs/iam/api-keys/restricted-api-keys) recommend
+creating a Restricted API Key scoped to just `/twilio/messaging/messages/create` for exactly this
+use case, rather than using the account's own (unscoped) Auth Token -- see `TwilioConfig`'s own
+proto doc for the full reasoning.
+-}
 twilioEditView : TwilioConfigEdit -> List (Html Msg)
 twilioEditView edit =
     [ h3 [ class "section-title" ] [ text "Twilio" ]
@@ -623,13 +639,23 @@ twilioEditView edit =
             ]
             []
         )
-    , Common.settingsRow "Auth Token"
+    , Common.settingsRow "API Key SID"
+        (input
+            [ class "server-details-rename-input"
+            , placeholder "SKxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+            , value edit.apiKeySid
+            , onInput TwilioApiKeySidChanged
+            , disabled (edit.status == AccountsPanel.Submitting)
+            ]
+            []
+        )
+    , Common.settingsRow "API Key Secret"
         (input
             [ type_ "password"
             , class "server-details-rename-input"
             , placeholder "Enter to change"
-            , value edit.authToken
-            , onInput TwilioAuthTokenChanged
+            , value edit.apiKeySecret
+            , onInput TwilioApiKeySecretChanged
             , disabled (edit.status == AccountsPanel.Submitting)
             ]
             []

@@ -870,7 +870,8 @@ pub fn configure_twilio(
     conn: &mut PgPooledConnection,
     enabled: bool,
     account_sid: &str,
-    auth_token: &str,
+    api_key_sid: &str,
+    api_key_secret: &str,
     from_number: &str,
 ) {
     let mut new_config = models::default_server_configuration();
@@ -878,7 +879,8 @@ pub fn configure_twilio(
         serde_json::to_value(TwilioConfig {
             twilio_enabled: enabled,
             twilio_account_sid: account_sid.to_string(),
-            twilio_api_key: auth_token.to_string(),
+            twilio_api_key_sid: api_key_sid.to_string(),
+            twilio_api_key_secret: api_key_secret.to_string(),
             twilio_from_number: from_number.to_string(),
         })
         .unwrap(),
@@ -919,16 +921,17 @@ pub fn configure_bird(
 /// preference-ordering/fallback logic between the two.
 pub fn configure_verification_providers(
     conn: &mut PgPooledConnection,
-    twilio: Option<(&str, &str, &str)>,
+    twilio: Option<(&str, &str, &str, &str)>,
     bird: Option<(&str, &str, &str)>,
     preferred: Vec<VerificationApi>,
 ) {
     let mut new_config = models::default_server_configuration();
-    new_config.twilio_config = twilio.map(|(sid, token, from)| {
+    new_config.twilio_config = twilio.map(|(account_sid, api_key_sid, api_key_secret, from)| {
         serde_json::to_value(TwilioConfig {
             twilio_enabled: true,
-            twilio_account_sid: sid.to_string(),
-            twilio_api_key: token.to_string(),
+            twilio_account_sid: account_sid.to_string(),
+            twilio_api_key_sid: api_key_sid.to_string(),
+            twilio_api_key_secret: api_key_secret.to_string(),
             twilio_from_number: from.to_string(),
         })
         .unwrap()

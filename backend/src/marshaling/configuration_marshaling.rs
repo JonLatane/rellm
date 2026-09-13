@@ -113,16 +113,16 @@ impl ToProtoServerConfiguration for models::ServerConfiguration {
                 ..c
             });
         // .map(|c| serde_json::from_value(c).unwrap_or_else(|_| None));
-        // `TwilioConfig.twilio_api_key` (the Auth Token) is write-only -- never send the real value
-        // to a client, same reasoning (and same `configure_server` merge-on-blank counterpart) as
-        // `FacebookAuthConfig.app_secret` above.
+        // `TwilioConfig.twilio_api_key_secret` (the API Key's Secret) is write-only -- never send
+        // the real value to a client, same reasoning (and same `configure_server` merge-on-blank
+        // counterpart) as `FacebookAuthConfig.app_secret` above.
         let twilio_config: Option<TwilioConfig> = self
             .twilio_config
             .to_owned()
             .map_or(Some(None), |c| serde_json::from_value(c).ok())
             .flatten()
             .map(|c| TwilioConfig {
-                twilio_api_key: String::new(),
+                twilio_api_key_secret: String::new(),
                 ..c
             });
         // Same write-only treatment for `BirdConfig.bird_access_key`.

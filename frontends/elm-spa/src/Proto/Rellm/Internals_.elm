@@ -1140,9 +1140,14 @@ type alias Proto__Rellm__BirdConfig =
 
 -}
 fieldNumbersProto__Rellm__TwilioConfig :
-    { twilioEnabled : Int, twilioAccountSid : Int, twilioApiKey : Int, twilioFromNumber : Int }
+    { twilioEnabled : Int
+    , twilioAccountSid : Int
+    , twilioApiKeySid : Int
+    , twilioApiKeySecret : Int
+    , twilioFromNumber : Int
+    }
 fieldNumbersProto__Rellm__TwilioConfig =
-    { twilioEnabled = 1, twilioAccountSid = 3, twilioApiKey = 2, twilioFromNumber = 4 }
+    { twilioEnabled = 1, twilioAccountSid = 3, twilioApiKeySid = 5, twilioApiKeySecret = 2, twilioFromNumber = 4 }
 
 
 {-| Default for Proto__Rellm__TwilioConfig. Should only be used for 'required' decoders as an initial value.
@@ -1150,7 +1155,12 @@ fieldNumbersProto__Rellm__TwilioConfig =
 -}
 defaultProto__Rellm__TwilioConfig : Proto__Rellm__TwilioConfig
 defaultProto__Rellm__TwilioConfig =
-    { twilioEnabled = False, twilioAccountSid = "", twilioApiKey = "", twilioFromNumber = "" }
+    { twilioEnabled = False
+    , twilioAccountSid = ""
+    , twilioApiKeySid = ""
+    , twilioApiKeySecret = ""
+    , twilioFromNumber = ""
+    }
 
 
 {-| Declares how to decode a `Proto__Rellm__TwilioConfig` from Bytes. To actually perform the conversion from Bytes, you need to use Protobuf.Decode.decode from eriktim/elm-protocol-buffers.
@@ -1162,7 +1172,8 @@ decodeProto__Rellm__TwilioConfig =
         defaultProto__Rellm__TwilioConfig
         [ Protobuf.Decode.optional 1 Protobuf.Decode.bool (\a r -> { r | twilioEnabled = a })
         , Protobuf.Decode.optional 3 Protobuf.Decode.string (\a r -> { r | twilioAccountSid = a })
-        , Protobuf.Decode.optional 2 Protobuf.Decode.string (\a r -> { r | twilioApiKey = a })
+        , Protobuf.Decode.optional 5 Protobuf.Decode.string (\a r -> { r | twilioApiKeySid = a })
+        , Protobuf.Decode.optional 2 Protobuf.Decode.string (\a r -> { r | twilioApiKeySecret = a })
         , Protobuf.Decode.optional 4 Protobuf.Decode.string (\a r -> { r | twilioFromNumber = a })
         ]
 
@@ -1175,7 +1186,8 @@ encodeProto__Rellm__TwilioConfig value =
     Protobuf.Encode.message
         [ ( 1, Protobuf.Encode.bool value.twilioEnabled )
         , ( 3, Protobuf.Encode.string value.twilioAccountSid )
-        , ( 2, Protobuf.Encode.string value.twilioApiKey )
+        , ( 5, Protobuf.Encode.string value.twilioApiKeySid )
+        , ( 2, Protobuf.Encode.string value.twilioApiKeySecret )
         , ( 4, Protobuf.Encode.string value.twilioFromNumber )
         ]
 
@@ -1184,7 +1196,12 @@ encodeProto__Rellm__TwilioConfig value =
 
 -}
 type alias Proto__Rellm__TwilioConfig =
-    { twilioEnabled : Bool, twilioAccountSid : String, twilioApiKey : String, twilioFromNumber : String }
+    { twilioEnabled : Bool
+    , twilioAccountSid : String
+    , twilioApiKeySid : String
+    , twilioApiKeySecret : String
+    , twilioFromNumber : String
+    }
 
 
 {-| The field numbers for the fields of `Proto__Rellm__WebPushConfig`. This is mostly useful for internals, like documentation generation.

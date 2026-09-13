@@ -11,8 +11,9 @@ use crate::protos::TwilioConfig;
 pub const DEFAULT_BASE_URL: &str = "https://api.twilio.com";
 
 /// Sends `body` to `to` (a `tel:` value) via Twilio's `Messages.json` endpoint
-/// (`POST {base_url}/2010-04-01/Accounts/{AccountSid}/Messages.json`), Basic-authenticated with
-/// `config`'s Account SID/Auth Token.
+/// (`POST {base_url}/2010-04-01/Accounts/{AccountSid}/Messages.json`). Authenticated with
+/// `config`'s API Key SID/Secret -- *not* the Account SID, which appears only in the URL path (see
+/// `TwilioConfig`'s own doc for why an API Key, not the account's Auth Token, is required).
 pub fn send_sms_at(
     base_url: &str,
     config: &TwilioConfig,
@@ -20,7 +21,8 @@ pub fn send_sms_at(
     body: &str,
 ) -> Result<(), Status> {
     let account_sid = config.twilio_account_sid.clone();
-    let auth_token = config.twilio_api_key.clone();
+    let api_key_sid = config.twilio_api_key_sid.clone();
+    let api_key_secret = config.twilio_api_key_secret.clone();
     let from_number = config.twilio_from_number.clone();
     let to = to.trim_start_matches("tel:").to_string();
     let body = body.to_string();
@@ -30,7 +32,7 @@ pub fn send_sms_at(
         move |client| {
             client
                 .post(messages_url)
-                .basic_auth(account_sid.clone(), Some(auth_token.clone()))
+                .basic_auth(api_key_sid.clone(), Some(api_key_secret.clone()))
                 .form(&[("To", to.clone()), ("From", from_number.clone()), ("Body", body.clone())])
         },
         "twilio_request_failed",

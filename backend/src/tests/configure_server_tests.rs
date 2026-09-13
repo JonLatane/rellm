@@ -275,41 +275,44 @@ fn saving_facebook_auth_config_does_not_clobber_an_already_stored_x_twitter_secr
     });
 }
 
-/// Mirrors `facebook_auth_request`, against `twilio_config` instead -- see
-/// `logic::contact_verification`'s own doc for why `TwilioConfig.twilio_api_key` (the Auth Token)
-/// gets the identical write-only/merge-on-blank treatment as `FacebookAuthConfig.app_secret`.
+/// Mirrors `facebook_auth_request`, against `twilio_config` instead -- see `TwilioConfig`'s own
+/// doc for why `twilio_api_key_secret` (the API Key's Secret) gets the identical write-only/
+/// merge-on-blank treatment as `FacebookAuthConfig.app_secret`, while `twilio_api_key_sid` (unlike
+/// the Account SID's own Auth Token, which this deliberately never accepts) passes through freely.
 fn twilio_request(
     conn: &mut PgPooledConnection,
     account_sid: &str,
-    api_key: &str,
+    api_key_sid: &str,
+    api_key_secret: &str,
     from_number: &str,
 ) -> ServerConfiguration {
     let mut config = get_server_configuration_proto(conn).expect("failed to fetch base config");
     config.twilio_config = Some(TwilioConfig {
         twilio_enabled: true,
         twilio_account_sid: account_sid.to_string(),
-        twilio_api_key: api_key.to_string(),
+        twilio_api_key_sid: api_key_sid.to_string(),
+        twilio_api_key_secret: api_key_secret.to_string(),
         twilio_from_number: from_number.to_string(),
     });
     config
 }
 
 #[test]
-fn twilio_api_key_is_never_returned_to_the_client() {
+fn twilio_api_key_secret_is_never_returned_to_the_client() {
     let mut conn = test_conn();
     conn.test_transaction::<_, tonic::Status, _>(|conn| {
         let admin = create_user(conn, "cst_twilio_hidden");
         let admin = grant_permissions(conn, &admin, vec![Permission::Admin]);
 
         let updated = configure_server(
-            twilio_request(conn, "AC_sid", "super-secret-token", "+15005550006"),
+            twilio_request(conn, "AC_sid", "SK_key_sid", "super-secret-token", "+15005550006"),
             &admin,
             conn,
         )
         .expect("configure should succeed");
 
         assert_eq!(
-            updated.twilio_config.expect("twilio_config should be set").twilio_api_key,
+            updated.twilio_config.expect("twilio_config should be set").twilio_api_key_secret,
             ""
         );
 
@@ -318,25 +321,25 @@ fn twilio_api_key_is_never_returned_to_the_client() {
 }
 
 #[test]
-fn empty_twilio_api_key_preserves_the_previously_stored_one() {
+fn empty_twilio_api_key_secret_preserves_the_previously_stored_one() {
     let mut conn = test_conn();
     conn.test_transaction::<_, tonic::Status, _>(|conn| {
         let admin = create_user(conn, "cst_twilio_preserved");
         let admin = grant_permissions(conn, &admin, vec![Permission::Admin]);
 
         configure_server(
-            twilio_request(conn, "AC_sid_1", "super-secret-token", "+15005550006"),
+            twilio_request(conn, "AC_sid_1", "SK_key_sid", "super-secret-token", "+15005550006"),
             &admin,
             conn,
         )
         .expect("first configure should succeed");
 
-        // Changing just the Account SID, with the Auth Token left blank (as the client always
-        // sends it, since it never gets the real value back to resend) -- this is exactly the bug
+        // Changing just the Account SID, with the Secret left blank (as the client always sends
+        // it, since it never gets the real value back to resend) -- this is exactly the bug
         // report this spec guards against: editing one field must not silently blank/clobber the
         // other already-stored secret.
         configure_server(
-            twilio_request(conn, "AC_sid_2", "", "+15005550006"),
+            twilio_request(conn, "AC_sid_2", "SK_key_sid", "", "+15005550006"),
             &admin,
             conn,
         )
@@ -344,7 +347,7 @@ fn empty_twilio_api_key_preserves_the_previously_stored_one() {
 
         let stored = server_twilio_config(conn).expect("twilio config should still be configured");
         assert_eq!(stored.twilio_account_sid, "AC_sid_2");
-        assert_eq!(stored.twilio_api_key, "super-secret-token");
+        assert_eq!(stored.twilio_api_key_secret, "super-secret-token");
 
         Ok(())
     });
@@ -358,7 +361,7 @@ fn setting_twilio_config_to_none_clears_the_stored_secret() {
         let admin = grant_permissions(conn, &admin, vec![Permission::Admin]);
 
         configure_server(
-            twilio_request(conn, "AC_sid", "super-secret-token", "+15005550006"),
+            twilio_request(conn, "AC_sid", "SK_key_sid", "super-secret-token", "+15005550006"),
             &admin,
             conn,
         )

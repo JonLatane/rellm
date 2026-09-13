@@ -3422,14 +3422,24 @@ Logo data for the server. Built atop Rellm [`Media` APIs](#rellm-Media).
 <a name="rellm-TwilioConfig"></a>
 
 ### TwilioConfig
-
+Twilio credentials, authenticated via a Twilio **API Key** (`twilio_api_key_sid`/
+`twilio_api_key_secret`) -- deliberately *not* the account&#39;s own Auth Token. A server&#39;s Auth
+Token is a single unscoped, unrevocable-without-rotating-everything credential with full access
+to the whole Twilio account; an API Key is its own separate, individually-revocable credential
+pair meant for exactly this kind of integration. `twilio_account_sid` is still required (Twilio
+resource URLs are always addressed by the actual Account SID), but it is *not* used to
+authenticate -- only the API Key SID/Secret pair is. See
+https://www.twilio.com/docs/iam/api-keys/restricted-api-keys for the recommended
+permission when creating one: `/twilio/messaging/messages/create` (nothing else is needed just
+to send verification SMS).
 
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | twilio_enabled | [bool](#bool) |  |  |
-| twilio_account_sid | [string](#string) |  | The Twilio Account SID. Public (among admins) -- freely serialized. |
-| twilio_api_key | [string](#string) |  | The Twilio Auth Token. Never serialized once written. |
+| twilio_account_sid | [string](#string) |  | The Twilio Account SID (starts with `AC`). Used only in the API&#39;s URL path -- *never* as an authentication credential. Public (among admins) -- freely serialized. |
+| twilio_api_key_sid | [string](#string) |  | The Twilio API Key&#39;s SID (starts with `SK`), used as the Basic Auth username. Public (among admins) -- freely serialized; it&#39;s useless without the Secret below, same as a username alone. |
+| twilio_api_key_secret | [string](#string) |  | The Twilio API Key&#39;s Secret, used as the Basic Auth password. Never serialized once written. |
 | twilio_from_number | [string](#string) |  | The Twilio-provisioned sending number for outbound verification SMS. Not secret. |
 
 

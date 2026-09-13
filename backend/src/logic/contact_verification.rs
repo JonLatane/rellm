@@ -19,8 +19,8 @@ use crate::protos::{BirdConfig, TwilioConfig, VerificationApi};
 use crate::rpcs::get_server_configuration_model;
 
 /// Loads the server's stored `TwilioConfig`, if any, *unscrubbed* -- i.e. including the real
-/// `twilio_api_key` (the Auth Token). Only for internal/server-side use (actually calling
-/// Twilio's API); never send this straight back to a client -- see
+/// `twilio_api_key_secret` (the API Key's Secret). Only for internal/server-side use (actually
+/// calling Twilio's API); never send this straight back to a client -- see
 /// `ToProtoServerConfiguration::to_proto`'s secret-blanking for the client-facing path.
 pub fn server_twilio_config(conn: &mut PgPooledConnection) -> Option<TwilioConfig> {
     get_server_configuration_model(conn)

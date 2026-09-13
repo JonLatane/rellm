@@ -90,28 +90,30 @@ pub fn configure_server(
         );
     }
 
-    // `TwilioConfig.twilio_api_key` (the Auth Token) is write-only -- `to_proto` always blanks it
-    // before it reaches a client (see `ToProtoServerConfiguration`), so an empty incoming value
-    // means "leave whatever's already stored alone," not "clear it." Setting `twilio_config` to
-    // `None` entirely is the only way to actually clear a previously-stored config.
-    // `twilio_enabled`/`twilio_account_sid`/`twilio_from_number` pass through freely, no
-    // scrubbing needed.
+    // `TwilioConfig.twilio_api_key_secret` (the API Key's Secret) is write-only -- `to_proto`
+    // always blanks it before it reaches a client (see `ToProtoServerConfiguration`), so an empty
+    // incoming value means "leave whatever's already stored alone," not "clear it." Setting
+    // `twilio_config` to `None` entirely is the only way to actually clear a previously-stored
+    // config. `twilio_enabled`/`twilio_account_sid`/`twilio_api_key_sid`/`twilio_from_number` pass
+    // through freely, no scrubbing needed -- an API Key SID is useless without its Secret, same as
+    // a username alone.
     if let Some(incoming_twilio_config) = request
         .twilio_config
         .as_ref()
-        .filter(|c| c.twilio_api_key.is_empty())
+        .filter(|c| c.twilio_api_key_secret.is_empty())
     {
-        let existing_api_key = get_server_configuration_model(conn)
+        let existing_api_key_secret = get_server_configuration_model(conn)
             .ok()
             .and_then(|c| c.twilio_config)
             .and_then(|c| serde_json::from_value::<protos::TwilioConfig>(c).ok())
-            .map(|c| c.twilio_api_key)
+            .map(|c| c.twilio_api_key_secret)
             .unwrap_or_default();
         new_config.twilio_config = Some(
             serde_json::to_value(protos::TwilioConfig {
                 twilio_enabled: incoming_twilio_config.twilio_enabled,
                 twilio_account_sid: incoming_twilio_config.twilio_account_sid.clone(),
-                twilio_api_key: existing_api_key,
+                twilio_api_key_sid: incoming_twilio_config.twilio_api_key_sid.clone(),
+                twilio_api_key_secret: existing_api_key_secret,
                 twilio_from_number: incoming_twilio_config.twilio_from_number.clone(),
             })
             .unwrap(),

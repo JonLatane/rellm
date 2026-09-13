@@ -2460,25 +2460,39 @@ class WebPushConfig extends $pb.GeneratedMessage {
   void clearPrivateVapidKey() => clearField(2);
 }
 
+/// Twilio credentials, authenticated via a Twilio **API Key** (`twilio_api_key_sid`/
+/// `twilio_api_key_secret`) -- deliberately *not* the account's own Auth Token. A server's Auth
+/// Token is a single unscoped, unrevocable-without-rotating-everything credential with full access
+/// to the whole Twilio account; an API Key is its own separate, individually-revocable credential
+/// pair meant for exactly this kind of integration. `twilio_account_sid` is still required (Twilio
+/// resource URLs are always addressed by the actual Account SID), but it is *not* used to
+/// authenticate -- only the API Key SID/Secret pair is. See
+/// https://www.twilio.com/docs/iam/api-keys/restricted-api-keys for the recommended
+/// permission when creating one: `/twilio/messaging/messages/create` (nothing else is needed just
+/// to send verification SMS).
 class TwilioConfig extends $pb.GeneratedMessage {
   factory TwilioConfig({
     $core.bool? twilioEnabled,
-    $core.String? twilioApiKey,
+    $core.String? twilioApiKeySecret,
     $core.String? twilioAccountSid,
     $core.String? twilioFromNumber,
+    $core.String? twilioApiKeySid,
   }) {
     final $result = create();
     if (twilioEnabled != null) {
       $result.twilioEnabled = twilioEnabled;
     }
-    if (twilioApiKey != null) {
-      $result.twilioApiKey = twilioApiKey;
+    if (twilioApiKeySecret != null) {
+      $result.twilioApiKeySecret = twilioApiKeySecret;
     }
     if (twilioAccountSid != null) {
       $result.twilioAccountSid = twilioAccountSid;
     }
     if (twilioFromNumber != null) {
       $result.twilioFromNumber = twilioFromNumber;
+    }
+    if (twilioApiKeySid != null) {
+      $result.twilioApiKeySid = twilioApiKeySid;
     }
     return $result;
   }
@@ -2488,9 +2502,10 @@ class TwilioConfig extends $pb.GeneratedMessage {
 
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'TwilioConfig', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
     ..aOB(1, _omitFieldNames ? '' : 'twilioEnabled')
-    ..aOS(2, _omitFieldNames ? '' : 'twilioApiKey')
+    ..aOS(2, _omitFieldNames ? '' : 'twilioApiKeySecret')
     ..aOS(3, _omitFieldNames ? '' : 'twilioAccountSid')
     ..aOS(4, _omitFieldNames ? '' : 'twilioFromNumber')
+    ..aOS(5, _omitFieldNames ? '' : 'twilioApiKeySid')
     ..hasRequiredFields = false
   ;
 
@@ -2524,17 +2539,18 @@ class TwilioConfig extends $pb.GeneratedMessage {
   @$pb.TagNumber(1)
   void clearTwilioEnabled() => clearField(1);
 
-  /// The Twilio Auth Token. Never serialized once written.
+  /// The Twilio API Key's Secret, used as the Basic Auth password. Never serialized once written.
   @$pb.TagNumber(2)
-  $core.String get twilioApiKey => $_getSZ(1);
+  $core.String get twilioApiKeySecret => $_getSZ(1);
   @$pb.TagNumber(2)
-  set twilioApiKey($core.String v) { $_setString(1, v); }
+  set twilioApiKeySecret($core.String v) { $_setString(1, v); }
   @$pb.TagNumber(2)
-  $core.bool hasTwilioApiKey() => $_has(1);
+  $core.bool hasTwilioApiKeySecret() => $_has(1);
   @$pb.TagNumber(2)
-  void clearTwilioApiKey() => clearField(2);
+  void clearTwilioApiKeySecret() => clearField(2);
 
-  /// The Twilio Account SID. Public (among admins) -- freely serialized.
+  /// The Twilio Account SID (starts with `AC`). Used only in the API's URL path -- *never* as an
+  /// authentication credential. Public (among admins) -- freely serialized.
   @$pb.TagNumber(3)
   $core.String get twilioAccountSid => $_getSZ(2);
   @$pb.TagNumber(3)
@@ -2553,6 +2569,17 @@ class TwilioConfig extends $pb.GeneratedMessage {
   $core.bool hasTwilioFromNumber() => $_has(3);
   @$pb.TagNumber(4)
   void clearTwilioFromNumber() => clearField(4);
+
+  /// The Twilio API Key's SID (starts with `SK`), used as the Basic Auth username. Public (among
+  /// admins) -- freely serialized; it's useless without the Secret below, same as a username alone.
+  @$pb.TagNumber(5)
+  $core.String get twilioApiKeySid => $_getSZ(4);
+  @$pb.TagNumber(5)
+  set twilioApiKeySid($core.String v) { $_setString(4, v); }
+  @$pb.TagNumber(5)
+  $core.bool hasTwilioApiKeySid() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearTwilioApiKeySid() => clearField(5);
 }
 
 /// Bird (https://bird.com, formerly MessageBird) Config -- an alternative SMS verification
