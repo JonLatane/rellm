@@ -4013,8 +4013,6 @@ profileDetail shared model server maybeAccount user =
                 text ""
         , syncSourcesSection shared model canEdit maybeAccount user
         , syncDestinationsSection shared model maybeAccount user
-        , aiProvidersSection model canEdit (isOwnProfile maybeAccount user) user
-        , aiProviderGrantedSection model canEdit user
         , case model.posts of
             Just postsModel ->
                 div [ class "posts-embedded-heading-row" ]
@@ -4030,6 +4028,8 @@ profileDetail shared model server maybeAccount user =
 
             Nothing ->
                 text ""
+        , aiProvidersSection model canEdit (isOwnProfile maybeAccount user) user
+        , aiProviderGrantedSection model canEdit user
         , permissionsSection isAdmin model.permissionsExpanded model.permissionsEdit user
         , deleteUserSection canEdit
         ]

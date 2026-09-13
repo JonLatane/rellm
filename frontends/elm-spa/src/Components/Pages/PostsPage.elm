@@ -304,7 +304,7 @@ account, or always `Nothing` for Mastodon/Bluesky, since neither is ever refetch
 change the way a Rellm account is (browsing/reading Mastodon needs no sign-in at all; a Bluesky
 account's token doesn't change without a full reconnect, which itself removes and re-adds the
 account under a new key). `Nothing == Nothing` is exactly what makes `fetchNewFeeds` treat an
-already-fetched federated source as unchanged forever -- except a *newly* added instance/account
+already-fetched federated source as unchanged forever -- except a _newly_ added instance/account
 (not yet a key in `postsByServer` at all) now gets picked up live by the same `Poll`/`SharedMsg`
 events real servers already use, rather than waiting for a fresh visit to this page the way the old,
 separate `fetchFederatedPosts` (fired once, from `init`, only) did.
@@ -455,6 +455,7 @@ Mirrors `Components.Pages.EventsPage.init`'s own trailing param exactly.
 `Components.Pages.MastodonUserProfilePage`/`BlueskyUserProfilePage`, which pass `Just` a
 `MastodonAccountFeed`/`BlueskyAuthorFeed` naming the one profile being viewed. See that field's own
 doc for why this couldn't just reuse `author` instead.
+
 -}
 init : Shared.Model -> Maybe ( String, User ) -> Browser.Navigation.Key -> String -> Dict String String -> Bool -> Maybe (List SyncDestination) -> Maybe FeedSource -> ( Model, Effect Msg )
 init shared author navKey path query embeddedPage availableSyncDestinations profileFeedSource =
@@ -973,7 +974,7 @@ since neither Mastodon nor Bluesky supports the author-scoping a real `GetPosts`
 (`fetchFeedSource` doesn't even attempt to send that for a `MastodonInstance`/`BlueskyFeed`), so
 showing them on someone's profile page would be misleading -- they'd read as that person's own posts.
 
-Deliberately *not* also gated on `model.embeddedPage`: that's `True` for both
+Deliberately _not_ also gated on `model.embeddedPage`: that's `True` for both
 `Components.Pages.UserProfilePage`'s embedded copy (already excluded above, since it's author-scoped)
 and `Pages.Home_`'s "Recent Posts" widget (`model.author == Nothing`, exactly like the standalone
 Posts page) -- Home's embedded copy has just as much claim to showing federated content as the
@@ -989,6 +990,7 @@ an accepted first-pass limitation on the standalone page already, not a new one 
 Rellm server of its own to resolve via `relevantServers` at all -- unlike `model.author`'s Rellm-only
 author-scoping, there's exactly one source to ever fetch here, not "every relevant server plus zero
 federated ones."
+
 -}
 relevantFeedSources : Shared.Model -> Model -> List FeedSource
 relevantFeedSources shared model =
@@ -1110,7 +1112,7 @@ full author-scoped/search/context/cutoff support; for a `BlueskyFeed`, just `mod
 `fetchFeedSource`'s own doc; meaningless to a `MastodonInstance`, which has no search of its own),
 and drops any already-fetched source that's no longer `relevantFeedSources` -- shared by
 `fetchNewFeeds` (which only passes the sources that actually need it, see its own doc comment) and
-`applySearchChange` (which always passes every relevant server *and* Bluesky account, since a changed
+`applySearchChange` (which always passes every relevant server _and_ Bluesky account, since a changed
 search must re-fetch everything regardless of whether that source's acting account also happens to
 have changed -- `MastodonInstance` sources are deliberately never included there, since they have no
 server-side search at all, so re-fetching one on every keystroke would just be a wasted,
@@ -1270,6 +1272,7 @@ While there's active search text, a locally-spliced-in post wouldn't actually
 match the search server-side, so this instead falls back to
 `applySearchChange`'s own full re-fetch -- the one case here that's a genuine
 refresh rather than a purely local update.
+
 -}
 applyCreatedItem : Shared.Model -> CreateNewPanel.CreatedItem -> Model -> ( Model, Effect Msg )
 applyCreatedItem shared createdItem model =
@@ -1467,6 +1470,7 @@ server's response (already scoped/filtered server-side to this exact request), b
 a Mastodon/Bluesky feed, which has no notion of `model.context` at all: it's just whatever mix of
 POST/REPLY the account's own feed happened to contain, so this is the one place that still has to
 filter it by hand.
+
 -}
 syncAnimations : Model -> Model
 syncAnimations model =
@@ -1741,7 +1745,7 @@ heading when it's not. Exposed from this module for exactly that second case. Mi
 `popover-anchor`/`popover-toggle`/`popover`/`popover-backdrop` structure from `ui/popover.css`),
 just offering both RSS and Atom links/copy buttons side by side instead of one ICS link, since a
 Posts feed can be subscribed to as either format (see `logic::sync_sources::feed_sync`'s own
-"either syncs the same way" symmetry on the *pulling-in* side -- this is the *serving-out* side).
+"either syncs the same way" symmetry on the _pulling-in_ side -- this is the _serving-out_ side).
 -}
 exportButtonView : Shared.Model -> Model -> Html Msg
 exportButtonView shared model =
@@ -1761,12 +1765,15 @@ exportButtonView shared model =
             , div [ class "posts-export-popover-links" ]
                 (List.map
                     (\kind ->
-                        a
-                            [ href (feedUrl shared model kind)
-                            , target "_blank"
-                            , class "posts-export-popover-link"
+                        span []
+                            [ text (feedKindLabel kind ++ ": ")
+                            , a
+                                [ href (feedUrl shared model kind)
+                                , target "_blank"
+                                , class "posts-export-popover-link"
+                                ]
+                                [ text (feedUrl shared model kind) ]
                             ]
-                            [ text (feedKindLabel kind ++ ": " ++ feedUrl shared model kind) ]
                     )
                     [ Rss, Atom ]
                 )
