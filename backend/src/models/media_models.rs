@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use tonic::{Code, Status};
 
 use super::User;
+use crate::protos::MediaConversion;
 use crate::{db_connection::PgPooledConnection, schema::media};
 
 pub fn get_media(media_id: i64, conn: &mut PgPooledConnection) -> Result<Media, Status> {
@@ -41,8 +42,6 @@ pub fn get_all_media(
 pub struct Media {
     pub id: i64,
     pub user_id: Option<i64>,
-    pub minio_path: String,
-    pub content_type: String,
     pub name: Option<String>,
     pub description: Option<String>,
     pub generated: bool,
@@ -51,17 +50,37 @@ pub struct Media {
     pub moderation: String,
     pub created_at: SystemTime,
     pub updated_at: SystemTime,
-    pub converted_sizes: serde_json::Value,
     pub metadata: serde_json::Value,
-    pub aspect_ratio: Option<f32>,
+    pub sizes: serde_json::Value,
 }
 
 impl Media {
-    /// Typed view of `converted_sizes`. Falls back to an empty (all-`None`) `ConvertedSizes` if
-    /// the column somehow holds something that doesn't parse -- callers should treat that the
-    /// same as "not converted yet" rather than erroring.
-    pub fn converted_sizes(&self) -> ConvertedSizes {
-        serde_json::from_value(self.converted_sizes.clone()).unwrap_or_default()
+    /// Typed view of `sizes`. Falls back to an empty list if the column somehow holds something
+    /// that doesn't parse -- callers should treat that the same as "no stored copies" rather than
+    /// erroring.
+    pub fn sizes(&self) -> Vec<MediaSize> {
+        serde_json::from_value(self.sizes.clone()).unwrap_or_default()
+    }
+
+    /// The `MediaSize` for a specific `conversion`, if this item has one.
+    pub fn size(&self, conversion: MediaConversion) -> Option<MediaSize> {
+        self.sizes()
+            .into_iter()
+            .find(|s| s.conversion == conversion as i32)
+    }
+
+    /// The untouched original upload's `MediaSize` -- present on every `Media` row that actually
+    /// stores bytes locally (i.e. every one, today; `url`-only media doesn't exist in the DB yet).
+    pub fn original(&self) -> Option<MediaSize> {
+        self.size(MediaConversion::Original)
+    }
+
+    /// Sum of every stored copy's `size_bytes` -- what this item contributes to its owner's
+    /// `User.media_storage_bytes_used`. See `logic::user_counts::media_storage_bytes_used`, which
+    /// computes the same sum across every `Media` a user owns via SQL rather than this (used only
+    /// where a single already-loaded `Media` row's own contribution is needed).
+    pub fn total_size_bytes(&self) -> i64 {
+        self.sizes().iter().map(|s| s.size_bytes).sum()
     }
 
     /// Typed view of `metadata`. Falls back to an empty (all-`None`) `MediaMetadata` if the
@@ -80,79 +99,65 @@ pub struct MediaMetadata {
     pub video_preview_time_ms: Option<i64>,
 }
 
-/// Selects one of the auto-generated resized copies of a `Media` item's original upload. See
-/// [`ConvertedSizes`] and `bin/convert_media_sizes.rs`, which populates them.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ConvertedSizeSpec {
-    Small,
-    Medium,
-    Large,
+/// The 3 auto-generated resized copies `convert_media` (in `logic::media_conversion`) produces
+/// for a `Media` item, in addition to its untouched `MediaConversion::Original`.
+pub const RESIZED_CONVERSIONS: [MediaConversion; 3] = [
+    MediaConversion::Small,
+    MediaConversion::Medium,
+    MediaConversion::Large,
+];
+
+/// Sizing/naming details for each `MediaConversion` -- extension trait since `MediaConversion`
+/// itself is generated from `protos/media.proto`.
+pub trait MediaConversionExt {
+    /// The max width/height (in pixels) media is resized to fit within for this conversion,
+    /// preserving aspect ratio and never upscaling. Meaningless for `Original`.
+    fn max_dimension(&self) -> u32;
+
+    /// Lowercase name -- used to derive converted media's MinIO path and in logging.
+    fn key(&self) -> &'static str;
 }
 
-impl ConvertedSizeSpec {
-    pub const ALL: [ConvertedSizeSpec; 3] = [
-        ConvertedSizeSpec::Small,
-        ConvertedSizeSpec::Medium,
-        ConvertedSizeSpec::Large,
-    ];
-
-    /// The max width/height (in pixels) media is resized to fit within for this size, preserving
-    /// aspect ratio and never upscaling.
-    pub fn max_dimension(&self) -> u32 {
+impl MediaConversionExt for MediaConversion {
+    fn max_dimension(&self) -> u32 {
         match self {
-            ConvertedSizeSpec::Small => 320,
-            ConvertedSizeSpec::Medium => 800,
-            ConvertedSizeSpec::Large => 1600,
+            MediaConversion::Original => 0,
+            MediaConversion::Small => 320,
+            MediaConversion::Medium => 800,
+            MediaConversion::Large => 1600,
         }
     }
 
-    /// Lowercase name, matching `converted_sizes`' JSON keys -- used to derive converted media's
-    /// MinIO path and in logging.
-    pub fn key(&self) -> &'static str {
+    fn key(&self) -> &'static str {
         match self {
-            ConvertedSizeSpec::Small => "small",
-            ConvertedSizeSpec::Medium => "medium",
-            ConvertedSizeSpec::Large => "large",
+            MediaConversion::Original => "original",
+            MediaConversion::Small => "small",
+            MediaConversion::Medium => "medium",
+            MediaConversion::Large => "large",
         }
     }
 }
 
-/// A single resized copy of a `Media` item's original upload, stored separately in MinIO.
+/// One stored copy of a `Media` item's bytes -- the DB-internal (JSONB-embedded, via `Media.sizes`/
+/// `MediaReference.sizes`) counterpart to the wire `protos::MediaSize`, plus `minio_path`, which is
+/// server-internal and deliberately never sent to clients (mirrors `Media`/`MediaReference`
+/// themselves never exposing it). `conversion` is stored as `i32` (the raw `MediaConversion`
+/// discriminant), matching the convention every other proto enum field uses in this codebase (e.g.
+/// `Media.visibility`/`.moderation` on the wire) -- so this JSON round-trips as plain integers,
+/// e.g. `{"conversion": 0, "minio_path": "...", "content_type": "...", "size_bytes": 12345,
+/// "aspect_ratio": 1.5}`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ConvertedSize {
+pub struct MediaSize {
+    pub conversion: i32,
     pub minio_path: String,
     pub content_type: String,
+    pub size_bytes: i64,
+    pub aspect_ratio: Option<f32>,
 }
 
-/// `Media.converted_sizes`' typed shape: `{ small: {...}, medium: {...}, large: {...} }`. A size
-/// is `None` (and omitted from the JSON) when the original is already at or below that size's
-/// `max_dimension` -- callers should fall back to the original `Media` in that case.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct ConvertedSizes {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub small: Option<ConvertedSize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub medium: Option<ConvertedSize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub large: Option<ConvertedSize>,
-}
-
-impl ConvertedSizes {
-    pub fn get(&self, spec: ConvertedSizeSpec) -> Option<&ConvertedSize> {
-        match spec {
-            ConvertedSizeSpec::Small => self.small.as_ref(),
-            ConvertedSizeSpec::Medium => self.medium.as_ref(),
-            ConvertedSizeSpec::Large => self.large.as_ref(),
-        }
-    }
-
-    pub fn set(&mut self, spec: ConvertedSizeSpec, value: ConvertedSize) {
-        match spec {
-            ConvertedSizeSpec::Small => self.small = Some(value),
-            ConvertedSizeSpec::Medium => self.medium = Some(value),
-            ConvertedSizeSpec::Large => self.large = Some(value),
-        }
+impl MediaSize {
+    pub fn conversion(&self) -> MediaConversion {
+        MediaConversion::try_from(self.conversion).unwrap_or(MediaConversion::Original)
     }
 }
 
@@ -160,43 +165,51 @@ impl ConvertedSizes {
 #[diesel(table_name = media)]
 pub struct NewMedia {
     pub user_id: Option<i64>,
-    pub minio_path: String,
-    pub content_type: String,
     pub name: Option<String>,
     pub description: Option<String>,
     pub generated: bool,
     pub visibility: String,
     pub metadata: serde_json::Value,
+    pub sizes: serde_json::Value,
 }
 
 pub const MEDIA_REFERENCE_COLUMNS: (
     media::id,
-    media::content_type,
     media::name,
     media::generated,
     media::metadata,
-    media::aspect_ratio,
+    media::sizes,
 ) = (
     media::id,
-    media::content_type,
     media::name,
     media::generated,
     media::metadata,
-    media::aspect_ratio,
+    media::sizes,
 );
 
 #[derive(Debug, Queryable, Identifiable, AsChangeset, Clone)]
 #[diesel(table_name = media)]
 pub struct MediaReference {
     pub id: i64,
-    pub content_type: String,
     pub name: Option<String>,
     pub generated: bool,
     pub metadata: serde_json::Value,
-    pub aspect_ratio: Option<f32>,
+    pub sizes: serde_json::Value,
 }
 
 impl MediaReference {
+    /// Typed view of `sizes`. See [`Media::sizes`].
+    pub fn sizes(&self) -> Vec<MediaSize> {
+        serde_json::from_value(self.sizes.clone()).unwrap_or_default()
+    }
+
+    /// See [`Media::original`].
+    pub fn original(&self) -> Option<MediaSize> {
+        self.sizes()
+            .into_iter()
+            .find(|s| s.conversion == MediaConversion::Original as i32)
+    }
+
     /// Typed view of `metadata`. See [`Media::metadata`].
     pub fn metadata(&self) -> MediaMetadata {
         serde_json::from_value(self.metadata.clone()).unwrap_or_default()

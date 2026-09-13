@@ -1,4 +1,4 @@
-module Components.MediaRenderer exposing (MediaSize(..), SizeConstraint(..), view, viewAutoplay)
+module Components.MediaRenderer exposing (MediaSize(..), SizeConstraint(..), contentTypeOf, view, viewAutoplay)
 
 {-| Renders a single `Proto.Rellm.MediaReference` -- an image, a video, or
 (for anything else, e.g. a PDF) a browser-native `<object>` embed with a
@@ -42,9 +42,41 @@ import Html exposing (Html, a, div, img, object, text, video)
 import Html.Attributes exposing (alt, attribute, class, controls, href, property, src, style, target, type_)
 import Html.Events exposing (onClick)
 import Json.Encode as Encode
-import Proto.Rellm exposing (MediaReference)
+import Proto.Rellm as Rellm exposing (MediaReference)
+import Proto.Rellm.MediaConversion exposing (MediaConversion(..))
 import Shared.AccountsPanel.RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer)
+
+
+{-| The `MEDIACONVERSIONORIGINAL` entry of `media.sizes`, if present -- generic over any record
+carrying a `sizes` field (both `Proto.Rellm.Media` and `MediaReference` do), so it works for
+either. Every `Media`/`MediaReference` this frontend ever renders should have one (the original
+upload itself), but a `Nothing` here (e.g. `url`-only, externally-hosted media, once that's
+actually populated) just falls back to an empty content type / no aspect ratio below.
+-}
+originalSize : { a | sizes : List Rellm.MediaSize } -> Maybe Rellm.MediaSize
+originalSize media =
+    media.sizes
+        |> List.filter (\size -> size.conversion == MEDIACONVERSIONORIGINAL)
+        |> List.head
+
+
+{-| The original upload's MIME content type -- replaces the old flat `Media.contentType`/
+`MediaReference.contentType` fields, now tracked per-size (see `Proto.Rellm.MediaSize`).
+-}
+contentTypeOf : { a | sizes : List Rellm.MediaSize } -> String
+contentTypeOf media =
+    originalSize media
+        |> Maybe.map .contentType
+        |> Maybe.withDefault ""
+
+
+{-| The original upload's aspect ratio (width / height) -- replaces the old flat
+`MediaReference.aspectRatio` field, now tracked per-size (see `Proto.Rellm.MediaSize`).
+-}
+aspectRatioOf : { a | sizes : List Rellm.MediaSize } -> Maybe Float
+aspectRatioOf media =
+    originalSize media |> Maybe.andThen .aspectRatio
 
 
 type MediaSize
@@ -103,7 +135,7 @@ viewHelper autoplay mediaSize sizeConstraint server maybeAccount onImageClicked 
         sizeClass =
             mediaSizeClass mediaSize ++ " " ++ sizeConstraintClass sizeConstraint
     in
-    case String.split "/" media.contentType |> List.head |> Maybe.withDefault "" of
+    case String.split "/" (contentTypeOf media) |> List.head |> Maybe.withDefault "" of
         "image" ->
             img
                 (List.filterMap identity
@@ -136,9 +168,9 @@ viewHelper autoplay mediaSize sizeConstraint server maybeAccount onImageClicked 
                 [ text "Your browser doesn't support embedded video." ]
 
         _ ->
-            object [ class ("media-renderer-object " ++ sizeClass), attribute "data" mediaUrl, type_ media.contentType ]
+            object [ class ("media-renderer-object " ++ sizeClass), attribute "data" mediaUrl, type_ (contentTypeOf media) ]
                 [ div [ class "media-renderer-fallback" ]
-                    [ text ("Can't preview " ++ media.contentType ++ " here. ")
+                    [ text ("Can't preview " ++ contentTypeOf media ++ " here. ")
                     , a [ href mediaUrl, target "_blank" ] [ text "Download it instead." ]
                     ]
                 ]
@@ -196,7 +228,7 @@ the job doesn't inspect) just leaves sizing to load as before.
 -}
 aspectRatioStyle : MediaReference -> Maybe (Html.Attribute msg)
 aspectRatioStyle media =
-    media.aspectRatio
+    aspectRatioOf media
         |> Maybe.map (\ratio -> style "aspect-ratio" (String.fromFloat ratio))
 
 

@@ -1,9 +1,10 @@
 use std::str::FromStr;
 
 use crate::db_connection::*;
+use crate::logic::update_media_storage_used;
 use crate::marshaling::*;
 use crate::models;
-use crate::protos::Visibility;
+use crate::protos::{MediaConversion, Visibility};
 use crate::schema;
 use crate::schema::media;
 use crate::schema::user_access_tokens::dsl as user_access_tokens;
@@ -48,9 +49,9 @@ pub async fn create_media(
     content_type_header: ContentTypeHeader<'_>,
     filename_header: FilenameHeader<'_>,
     host: &Host<'_>,
-) -> Result<String, Status> {
+) -> Result<String, (Status, String)> {
     log::info!("create_media");
-    let user = get_media_user(None, auth_header, cookies, state)?;
+    let user = get_media_user(None, auth_header, cookies, state).map_err(no_message)?;
     let uuid = Uuid::new_v4();
     let minio_path = format!(
         "user/{}@{}-{}/{}-{}",
@@ -61,14 +62,31 @@ pub async fn create_media(
         filename_header.0
     );
 
-    let status_code = state
+    let put_response = state
         .bucket
         .put_object_stream(&mut media.open(250.mebibytes()), &minio_path)
         .await
-        .map_err(|_| Status::InternalServerError)?
-        .status_code();
+        .map_err(|_| (Status::InternalServerError, String::new()))?;
+    let uploaded_bytes = put_response.uploaded_bytes() as i64;
 
-    log::info!("create_media status_code: {:?}", status_code);
+    log::info!(
+        "create_media status_code: {:?}, uploaded_bytes: {}",
+        put_response.status_code(),
+        uploaded_bytes
+    );
+
+    if let Some(limit) = user.media_storage_limit_bytes {
+        if user.media_storage_bytes_used + uploaded_bytes > limit {
+            state.bucket.delete_object(&minio_path).await.ok();
+            return Err((
+                Status::PayloadTooLarge,
+                format!(
+                    "This upload ({} bytes) would exceed your storage limit ({} of {} bytes used).",
+                    uploaded_bytes, user.media_storage_bytes_used, limit
+                ),
+            ));
+        }
+    }
 
     let content_type = content_type_header.0.to_string();
     let metadata = if content_type.starts_with("video/") {
@@ -79,20 +97,41 @@ pub async fn create_media(
         models::MediaMetadata::default()
     };
 
+    let sizes = vec![models::MediaSize {
+        conversion: MediaConversion::Original as i32,
+        minio_path,
+        content_type,
+        size_bytes: uploaded_bytes,
+        aspect_ratio: None,
+    }];
+
+    let mut conn = state.pool.get().unwrap();
     let media = insert_into(media::table)
         .values(&models::NewMedia {
             user_id: Some(user.id),
-            minio_path: minio_path,
-            content_type: content_type,
             name: Some(filename_header.0.to_string()),
             description: None,
             generated: false,
             visibility: Visibility::GlobalPublic.to_string_visibility(),
             metadata: serde_json::to_value(metadata).unwrap(),
+            sizes: serde_json::to_value(sizes).unwrap(),
         })
-        .get_result::<models::Media>(&mut state.pool.get().unwrap());
+        .get_result::<models::Media>(&mut conn)
+        .map_err(|_| (Status::InternalServerError, String::new()))?;
 
-    return Ok(media.unwrap().id.to_proto_id());
+    if let Err(e) = update_media_storage_used(user.id, &mut conn) {
+        log::error!(
+            "Failed to update media_storage_bytes_used for user {}: {:?}",
+            user.id,
+            e
+        );
+    }
+
+    Ok(media.id.to_proto_id())
+}
+
+fn no_message(status: Status) -> (Status, String) {
+    (status, String::new())
 }
 
 /// Used to manage CORS for the media download endpoint(s).
@@ -129,36 +168,34 @@ pub async fn media_file<'a>(
 ///
 /// `size` of `Some("original")` always forces the unconverted original. Otherwise the requested
 /// size (defaulting to `Medium` when `size` is `None`/unrecognized) is looked up, falling through
-/// to the next *larger* converted size, and finally to the original if no converted size (at or
-/// above the request) is available -- which also covers media that hasn't been converted at all.
+/// to the original if that converted size isn't available -- which also covers media that hasn't
+/// been converted at all.
 fn resolve_media_size(media: &models::Media, size: Option<&str>) -> (String, String) {
-    if size == Some("original") {
-        return (media.minio_path.clone(), media.content_type.clone());
-    }
-
     let requested = match size {
-        Some("small") => models::ConvertedSizeSpec::Small,
-        Some("large") => models::ConvertedSizeSpec::Large,
-        _ => models::ConvertedSizeSpec::Medium,
+        Some("original") => MediaConversion::Original,
+        Some("small") => MediaConversion::Small,
+        Some("large") => MediaConversion::Large,
+        _ => MediaConversion::Medium,
     };
 
     resolve_media_size_preferring(media, &[requested])
 }
 
-/// Picks the (minio_path, content_type) to serve, trying each `ConvertedSizeSpec` in
-/// `preference` order in turn and falling back to the original (unconverted) upload if none of
-/// them are available -- which also covers media that hasn't been converted at all.
+/// Picks the (minio_path, content_type) to serve, trying each `MediaConversion` in `preference`
+/// order in turn and falling back to the original (unconverted) upload if none of them are
+/// available -- which also covers media that hasn't been converted at all.
 fn resolve_media_size_preferring(
     media: &models::Media,
-    preference: &[models::ConvertedSizeSpec],
+    preference: &[MediaConversion],
 ) -> (String, String) {
-    let converted_sizes = media.converted_sizes();
+    let sizes = media.sizes();
 
     preference
         .iter()
-        .find_map(|spec| converted_sizes.get(*spec))
-        .map(|converted| (converted.minio_path.clone(), converted.content_type.clone()))
-        .unwrap_or_else(|| (media.minio_path.clone(), media.content_type.clone()))
+        .find_map(|conversion| sizes.iter().find(|s| s.conversion == *conversion as i32))
+        .or_else(|| sizes.iter().find(|s| s.conversion == MediaConversion::Original as i32))
+        .map(|s| (s.minio_path.clone(), s.content_type.clone()))
+        .unwrap_or_default()
 }
 
 fn load_media_by_id(id: &str, state: &State<RocketState>) -> Result<models::Media, Status> {
@@ -192,7 +229,7 @@ pub async fn load_media_file_data<'a>(
 /// them are available.
 pub async fn load_media_file_data_preferring<'a>(
     id: &str,
-    preference: &[models::ConvertedSizeSpec],
+    preference: &[MediaConversion],
     state: &State<RocketState>,
 ) -> Result<(ContentType, NamedFile), Status> {
     log::info!("media_file: {:?}, preference: {:?}", id, preference);

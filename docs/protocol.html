@@ -172,11 +172,27 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
       <li>
         <p><a href="#media-proto">media.proto</a></p>
         <ul>
-          <li><a href="#rellm-GetMediaRequest">GetMediaRequest</a></li>
-          <li><a href="#rellm-GetMediaResponse">GetMediaResponse</a></li>
-          <li><a href="#rellm-Media">Media</a></li>
-          <li><a href="#rellm-MediaMetadata">MediaMetadata</a></li>
-          <li><a href="#rellm-MediaReference">MediaReference</a></li>
+          <li>
+            <p><a href="#rellm-GetMediaRequest">GetMediaRequest</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-GetMediaResponse">GetMediaResponse</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-Media">Media</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-MediaMetadata">MediaMetadata</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-MediaReference">MediaReference</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-MediaSize">MediaSize</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-MediaConversion">MediaConversion</a></p>
+          </li>
         </ul>
       </li>
       <li>
@@ -1579,6 +1595,18 @@ directory</a> is (<code>{name}</code> denotes a
           <td><a href="#rellm-Media">Media</a></td>
           <td><a href="#google-protobuf-Empty">.google.protobuf.Empty</a></td>
           <td>Deletes a media item by ID. <em>Authenticated.</em> Note that media may still be accessible for 12 hours after deletes are requested, as separate jobs clean it up from S3/MinIO. Deleting other users' media requires <code>ADMIN</code> permissions.</td>
+        </tr>
+        <tr>
+          <td>UpdateMedia</td>
+          <td><a href="#rellm-Media">Media</a></td>
+          <td><a href="#rellm-Media">Media</a></td>
+          <td>Updates a Media item's <code>name</code>/<code>description</code> by ID. <em>Authenticated.</em> Every other field (visibility, moderation, <code>sizes</code>, etc.) is ignored -- use other RPCs (or, for <code>sizes</code>, <code>DeleteMediaSizes</code>) to change them. Updating other users' media requires <code>ADMIN</code> permissions.</td>
+        </tr>
+        <tr>
+          <td>DeleteMediaSizes</td>
+          <td><a href="#rellm-Media">Media</a></td>
+          <td><a href="#rellm-Media">Media</a></td>
+          <td>Deletes only the given <code>sizes</code> (matched by <code>conversion</code>) of a Media item by ID, e.g. to reclaim space by dropping <code>MEDIA_CONVERSION_ORIGINAL</code> once converted copies exist to serve in its place. <em>Authenticated.</em> Deleting other users' media requires <code>ADMIN</code> permissions. Errors if this would leave the Media item with no <code>sizes</code> at all -- use <code>DeleteMedia</code> to remove the whole item instead.</td>
         </tr>
         <tr>
           <td>GetUsers</td>
@@ -3164,6 +3192,18 @@ directory</a> is (<code>{name}</code> denotes a
           <td>The user's bio.</td>
         </tr>
         <tr>
+          <td>media_storage_limit_bytes</td>
+          <td><a href="#uint64">uint64</a></td>
+          <td>optional</td>
+          <td>The maximum number of bytes this user's Media (see <code>Media.sizes[].size_bytes</code>) may collectively occupy in storage. Enforced by <code>POST /media</code> (see <code>Media</code>'s own doc), which rejects an upload that would push <code>media_storage_bytes_used</code> over this limit with an HTTP 413 and a plaintext error body. Unset means unlimited.</td>
+        </tr>
+        <tr>
+          <td>media_storage_bytes_used</td>
+          <td><a href="#uint64">uint64</a></td>
+          <td></td>
+          <td>The total size, in bytes, of every stored copy (original plus any converted sizes) of every Media item this user owns -- the sum of <code>Media.sizes[].size_bytes</code> across all their Media. A denormalized counter, recomputed (never trusted from client input) after every operation that could change it -- upload, delete, size conversion, <code>DeleteMediaSizes</code> -- by <code>backend/src/logic/user_counts.rs</code>'s <code>update_media_storage_used</code>, and self-healed on an interval by <code>bin/update_user_counts.rs</code> the same way every other denormalized <code>User</code> counter (<code>follower_count</code>, <code>post_count</code>, etc.) is.</td>
+        </tr>
+        <tr>
           <td>visibility</td>
           <td><a href="#rellm-Visibility">Visibility</a></td>
           <td></td>
@@ -3502,12 +3542,6 @@ directory</a> is (<code>{name}</code> denotes a
           <td>The ID of the user who created the media item.</td>
         </tr>
         <tr>
-          <td>content_type</td>
-          <td><a href="#string">string</a></td>
-          <td></td>
-          <td>The MIME content type of the media item.</td>
-        </tr>
-        <tr>
           <td>name</td>
           <td><a href="#string">string</a></td>
           <td>optional</td>
@@ -3544,12 +3578,6 @@ directory</a> is (<code>{name}</code> denotes a
           <td>Media is generally stored as-is on upload. When background jobs process and compress the media, this flag is set to true.</td>
         </tr>
         <tr>
-          <td>aspect_ratio</td>
-          <td><a href="#float">float</a></td>
-          <td>optional</td>
-          <td>Width divided by height. Set by the <code>convert_media_sizes</code> background job once it's able to read the media's dimensions (via ImageMagick/ffprobe); unset until then.</td>
-        </tr>
-        <tr>
           <td>created_at</td>
           <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
           <td></td>
@@ -3572,6 +3600,12 @@ directory</a> is (<code>{name}</code> denotes a
           <td><a href="#string">string</a></td>
           <td>optional</td>
           <td>An external URL to fetch the media from, in lieu of <code>/media/{id}</code>. Used for representing media owned by other protocols/servers (e.g. ActivityPub/Mastodon, AT Protocol/Bluesky) that Rellm does not store locally. If unset, clients fall back to <code>/media/{id}</code>.</td>
+        </tr>
+        <tr>
+          <td>sizes</td>
+          <td><a href="#rellm-MediaSize">MediaSize</a></td>
+          <td>repeated</td>
+          <td>Every stored copy of this media item's bytes -- the original upload (<code>MEDIA_CONVERSION_ORIGINAL</code>) plus any auto-generated resized copies (see <code>convert_media_sizes</code>'s background job) -- each with its own content type, byte size, and (once known) aspect ratio. Always has at least one <code>MEDIA_CONVERSION_ORIGINAL</code> entry unless <code>url</code> is set (externally-hosted media has no locally-stored copies at all). The original is tracked here rather than as a separate top-level field so it can eventually be deleted to free space once converted copies exist, while remaining fully accounted for by <code>User.media_storage_bytes_used</code> up until that point.</td>
         </tr>
       </tbody>
     </table>
@@ -3617,12 +3651,6 @@ directory</a> is (<code>{name}</code> denotes a
       </thead>
       <tbody>
         <tr>
-          <td>content_type</td>
-          <td><a href="#string">string</a></td>
-          <td></td>
-          <td>The MIME content type of the media item.</td>
-        </tr>
-        <tr>
           <td>id</td>
           <td><a href="#string">string</a></td>
           <td></td>
@@ -3647,16 +3675,102 @@ directory</a> is (<code>{name}</code> denotes a
           <td></td>
         </tr>
         <tr>
-          <td>aspect_ratio</td>
-          <td><a href="#float">float</a></td>
-          <td>optional</td>
-          <td>Width divided by height. See <code>Media.aspect_ratio</code>.</td>
+          <td>sizes</td>
+          <td><a href="#rellm-MediaSize">MediaSize</a></td>
+          <td>repeated</td>
+          <td>See <code>Media.sizes</code>.</td>
         </tr>
         <tr>
           <td>url</td>
           <td><a href="#string">string</a></td>
           <td>optional</td>
           <td>An external URL to fetch the media from, in lieu of <code>/media/{id}</code>. See <code>Media.url</code>. If unset, clients fall back to <code>/media/{id}</code>.</td>
+        </tr>
+        <tr>
+          <td>description</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-MediaSize"></a></p>
+    <h3 id="mediasize"><a class="anchor" aria-hidden="true" tabindex="-1" href="#mediasize"><span class="octicon octicon-link"></span></a>MediaSize</h3>
+    <p>
+      One stored copy of a <code>Media</code> item's bytes -- either its untouched original upload
+      (<code>MEDIA_CONVERSION_ORIGINAL</code>) or an auto-generated resized copy, as produced by the
+      <code>convert_media_sizes</code> background job. Fields are tracked per-size (rather than once on <code>Media</code>
+      itself) so that a future conversion producing a different kind of derived copy -- e.g. a
+      <code>image/jpeg</code> poster frame for a <code>video/mp4</code> original, or a differently-cropped aspect ratio --
+      can vary any of them independently of the original.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>conversion</td>
+          <td><a href="#rellm-MediaConversion">MediaConversion</a></td>
+          <td></td>
+          <td>Which copy this is -- the untouched original, or one of the auto-generated resized copies.</td>
+        </tr>
+        <tr>
+          <td>size_bytes</td>
+          <td><a href="#uint64">uint64</a></td>
+          <td></td>
+          <td>This copy's size on disk/in MinIO, in bytes. Summed (across every size, of every Media a user owns) into <code>User.media_storage_bytes_used</code>.</td>
+        </tr>
+        <tr>
+          <td>aspect_ratio</td>
+          <td><a href="#float">float</a></td>
+          <td>optional</td>
+          <td>Width divided by height. Set by the <code>convert_media_sizes</code> background job once it's able to read the media's dimensions (via ImageMagick/ffprobe); unset until then.</td>
+        </tr>
+        <tr>
+          <td>content_type</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>The MIME content type of this copy specifically. Usually identical across every size of a given <code>Media</code>, but not guaranteed to be -- e.g. a future video-thumbnail conversion could produce an <code>image/jpeg</code> size for a <code>video/mp4</code> original.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-MediaConversion"></a></p>
+    <h3 id="mediaconversion"><a class="anchor" aria-hidden="true" tabindex="-1" href="#mediaconversion"><span class="octicon octicon-link"></span></a>MediaConversion</h3>
+    <p>Which stored copy of a <code>Media</code> item's bytes a <code>MediaSize</code> represents.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Number</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>MEDIA_CONVERSION_ORIGINAL</td>
+          <td>0</td>
+          <td>The untouched original upload.</td>
+        </tr>
+        <tr>
+          <td>MEDIA_CONVERSION_SMALL</td>
+          <td>1</td>
+          <td>Resized to fit within 320x320 px, preserving aspect ratio (never upscaled).</td>
+        </tr>
+        <tr>
+          <td>MEDIA_CONVERSION_MEDIUM</td>
+          <td>2</td>
+          <td>Resized to fit within 800x800 px, preserving aspect ratio (never upscaled).</td>
+        </tr>
+        <tr>
+          <td>MEDIA_CONVERSION_LARGE</td>
+          <td>3</td>
+          <td>Resized to fit within 1600x1600 px, preserving aspect ratio (never upscaled).</td>
         </tr>
       </tbody>
     </table>

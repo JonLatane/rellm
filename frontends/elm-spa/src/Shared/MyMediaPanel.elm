@@ -1007,7 +1007,7 @@ ifNonEmpty s =
 -}
 toMediaReference : Media -> MediaReference
 toMediaReference media =
-    { contentType = media.contentType, id = media.id, name = media.name, generated = media.generated, metadata = media.metadata, aspectRatio = media.aspectRatio, url = media.url }
+    { id = media.id, name = media.name, generated = media.generated, metadata = media.metadata, sizes = media.sizes, url = media.url, description = media.description }
 
 
 {-| Every item Browse mode's grid is currently actually showing, converted to
@@ -1069,6 +1069,7 @@ view windowWidth accountsPanelModel model =
             , div [ class "my-media-panel-header-right" ]
                 [ uploadStatusView model.uploadStatus
                 , deleteStatusView model.deleteError
+                , storageUsageView accountsPanelModel model
                 , accountBadge accountsPanelModel model
                 , button
                     [ class "my-media-panel-add"
@@ -1125,7 +1126,7 @@ mediaAllowed : Maybe SelectionType -> Media -> Bool
 mediaAllowed selectionType media =
     case selectionType of
         Just (SingleSelect { imagesOnly }) ->
-            not imagesOnly || String.startsWith "image/" media.contentType
+            not imagesOnly || String.startsWith "image/" (MediaRenderer.contentTypeOf media)
 
         Just (MultiSelect _) ->
             True
@@ -1206,6 +1207,51 @@ accountBadge accountsPanelModel model =
                 [ avatarOrInitial accountsPanelModel.servers resolved.account
                 , span [ class "my-media-panel-username" ] [ text (RellmAccounts.rellmAccountDisplayName resolved.account) ]
                 ]
+
+
+{-| A minimal "X of Y used" (or just "X used" if unlimited) readout of the resolved account's
+Media storage, shown next to `accountBadge` in the header -- see `User.mediaStorageBytesUsed`/
+`.mediaStorageLimitBytes`'s own proto doc. `text ""` (nothing shown) if the panel isn't resolved
+to a live account, matching `accountBadge`'s own fallback.
+-}
+storageUsageView : AccountsPanel.Model -> Model -> Html Msg
+storageUsageView accountsPanelModel model =
+    case resolve accountsPanelModel model.targetHost of
+        Err _ ->
+            text ""
+
+        Ok resolved ->
+            span [ class "my-media-panel-storage-usage" ]
+                [ text
+                    (case resolved.account.mediaStorageLimitBytes of
+                        Just limit ->
+                            formatBytes resolved.account.mediaStorageBytesUsed ++ " / " ++ formatBytes limit ++ " used"
+
+                        Nothing ->
+                            formatBytes resolved.account.mediaStorageBytesUsed ++ " used"
+                    )
+                ]
+
+
+{-| A compact human-readable byte count -- "512 B", "12.4 MB", "1.3 GB" -- for `storageUsageView`.
+Rounds to 1 decimal place above bytes; not locale-aware (not worth it for this small a label).
+-}
+formatBytes : Int -> String
+formatBytes bytes =
+    let
+        units : List ( Float, String )
+        units =
+            [ ( 1.0e9, "GB" ), ( 1.0e6, "MB" ), ( 1.0e3, "KB" ) ]
+
+        formatWithUnit : Float -> String -> String
+        formatWithUnit value unit =
+            String.fromFloat (toFloat (round (value * 10)) / 10) ++ " " ++ unit
+    in
+    units
+        |> List.filter (\( threshold, _ ) -> toFloat bytes >= threshold)
+        |> List.head
+        |> Maybe.map (\( threshold, unit ) -> formatWithUnit (toFloat bytes / threshold) unit)
+        |> Maybe.withDefault (String.fromInt bytes ++ " B")
 
 
 {-| A trimmed-down copy of `UI.imageOrInitial`, scoped to this panel's own
@@ -1417,7 +1463,7 @@ mediaItemView server account targetHost deletingIds selected media =
                     "Deleting…"
 
                  else
-                    media.contentType
+                    MediaRenderer.contentTypeOf media
                 )
             ]
         ]

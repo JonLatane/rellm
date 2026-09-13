@@ -45,6 +45,9 @@ pub use user_counts::*;
 mod media_conversion;
 pub use media_conversion::*;
 
+mod media_size_backfill;
+pub use media_size_backfill::*;
+
 mod gemini_media;
 pub use gemini_media::*;
 

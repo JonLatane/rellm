@@ -1042,38 +1042,59 @@ pub fn serve_x_twitter_api(valid_code: bool, x_user_id: &str, username: &str, tw
 /// Inserts a `media` row directly (bypassing the `/media` upload endpoint, which lives outside
 /// the gRPC/`rpcs` layer entirely). Doesn't touch MinIO -- pair with `TestBucket::put_object` (via
 /// `test_bucket()`) when a spec needs a real object at `minio_path` to verify gets cleaned up.
+/// Starts with a single `MEDIA_CONVERSION_ORIGINAL` size of `size_bytes: 10` (matching the
+/// `b"test-bytes"` payload specs conventionally seed at `minio_path`) -- use
+/// `create_media_with_size` when a spec needs a specific byte count (e.g. quota specs), or
+/// `set_media_sizes` to fully control the `sizes` list (e.g. adding converted copies).
 pub fn create_media(
     conn: &mut PgPooledConnection,
     author: Option<&models::User>,
     minio_path: &str,
 ) -> models::Media {
+    create_media_with_size(conn, author, minio_path, 10)
+}
+
+/// Like `create_media`, but with an explicit `size_bytes` on the original -- for specs exercising
+/// storage-quota accounting.
+pub fn create_media_with_size(
+    conn: &mut PgPooledConnection,
+    author: Option<&models::User>,
+    minio_path: &str,
+    size_bytes: i64,
+) -> models::Media {
+    let sizes = vec![models::MediaSize {
+        conversion: MediaConversion::Original as i32,
+        minio_path: minio_path.to_string(),
+        content_type: "image/png".to_string(),
+        size_bytes,
+        aspect_ratio: None,
+    }];
     insert_into(media::table)
         .values(&models::NewMedia {
             user_id: author.map(|u| u.id),
-            minio_path: minio_path.to_string(),
-            content_type: "image/png".to_string(),
             name: None,
             description: None,
             generated: false,
             visibility: Visibility::ServerPublic.to_string_visibility(),
             metadata: serde_json::json!({}),
+            sizes: serde_json::to_value(sizes).unwrap(),
         })
         .get_result::<models::Media>(conn)
         .expect("failed to create test media")
 }
 
-/// Sets `media.converted_sizes` directly -- `create_media` always starts with none (matching a
-/// freshly-uploaded, not-yet-`convert_media_sizes`-processed row), and specs covering
-/// `delete_media`'s MinIO cleanup need converted copies present to prove they get deleted too.
-pub fn set_converted_sizes(
+/// Sets `media.sizes` directly -- `create_media` always starts with a single original size, and
+/// specs covering `delete_media`/`delete_media_sizes`'s MinIO cleanup need converted copies
+/// present to prove they get deleted too.
+pub fn set_media_sizes(
     conn: &mut PgPooledConnection,
     test_media: &models::Media,
-    converted_sizes: models::ConvertedSizes,
+    sizes: Vec<models::MediaSize>,
 ) -> models::Media {
     diesel::update(media::table.filter(media::id.eq(test_media.id)))
-        .set(media::converted_sizes.eq(serde_json::to_value(converted_sizes).unwrap()))
+        .set(media::sizes.eq(serde_json::to_value(sizes).unwrap()))
         .get_result::<models::Media>(conn)
-        .expect("failed to set test media converted_sizes")
+        .expect("failed to set test media sizes")
 }
 
 /// A live connection to the MinIO bucket configured by the `MINIO_*` env vars (see `.env`), plus

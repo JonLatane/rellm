@@ -4,6 +4,7 @@ import React, { useMemo } from 'react';
 
 import { Anchor, Paragraph, Text, YStack, useMedia } from "@rellm/ui";
 import { MediaRef } from "app/contexts";
+import { getOriginalContentType } from "app/utils";
 import ReactPlayer from 'react-player/lazy';
 import { useMediaUrl } from '../../hooks/use_media_url';
 import { FadeInView } from "../post";
@@ -34,13 +35,14 @@ export const MediaRenderer: React.FC<Props> = ({
   const ReactPlayerShim = ReactPlayer as any;
 
   const mediaUrl = useMediaUrl(media, { server });
+  const contentType = getOriginalContentType(media);
   const [type, subType] = useMemo(() => {
-    let [type, subType] = (media?.contentType ?? '').split('/');
+    let [type, subType] = contentType.split('/');
     if (forceImage) {
       type = 'image';
     }
     return [type, subType];
-  }, [media?.contentType, forceImage]);
+  }, [contentType, forceImage]);
 
   const renderContent = useMemo(() => {
     if (!server) return <></>;
@@ -64,16 +66,16 @@ export const MediaRenderer: React.FC<Props> = ({
       default:
         // If all else fails, render it as an HTML object and rely on the tag's standard fallback.
         return <FadeInView w='100%' h='100%'>
-          <object style={{ width: '100%', height: '100%', backgroundColor: 'white' }} data={mediaUrl} type={media.contentType} width="100%" height={mediaQuery.gtXs ? '500px' : '350px'}>
+          <object style={{ width: '100%', height: '100%', backgroundColor: 'white' }} data={mediaUrl} type={contentType} width="100%" height={mediaQuery.gtXs ? '500px' : '350px'}>
             {failQuietly ? undefined : <YStack p='$3'>
               <Paragraph size='$2' color={'black'}>
-                Media rendering is not supported in your browser for type <Text fontFamily='$mono' color={'black'}>{media.contentType}</Text>. <Anchor href={mediaUrl} color={navAnchorColor}>Download it instead.</Anchor>
+                Media rendering is not supported in your browser for type <Text fontFamily='$mono' color={'black'}>{contentType}</Text>. <Anchor href={mediaUrl} color={navAnchorColor}>Download it instead.</Anchor>
               </Paragraph>
             </YStack>}
           </object>
         </FadeInView>;
     }
-  }, [server, type, mediaUrl, isPreview, mediaQuery.gtXs, failQuietly, media.contentType, navAnchorColor]);
+  }, [server, type, mediaUrl, isPreview, mediaQuery.gtXs, failQuietly, contentType, navAnchorColor]);
 
   return renderContent;
 };

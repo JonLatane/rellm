@@ -1,8 +1,8 @@
 //! Generates `small`/`medium`/`large` resized copies of a `Media` item's original upload via the
 //! system `ImageMagick` install (`magick`, or the legacy `convert`+`identify` pair) for images, or
-//! `ffmpeg`/`ffprobe` for video, storing them in MinIO alongside the original and recording their
-//! paths in `Media.converted_sizes`. The same dimension probe also records `Media.aspect_ratio`.
-//! Used by `bin/convert_media_sizes.rs`.
+//! `ffmpeg`/`ffprobe` for video, storing them in MinIO alongside the original and recording them
+//! (each with its own `size_bytes`/`aspect_ratio`) in `Media.sizes`. Used by
+//! `bin/convert_media_sizes.rs`.
 //!
 //! Only PNG/JPEG are converted for images (`CONVERTIBLE_CONTENT_TYPES`) and MP4/QuickTime/WebM for
 //! video (`VIDEO_CONVERTIBLE_CONTENT_TYPES`) for now -- both tools handle other common formats
@@ -16,7 +16,8 @@ use diesel::*;
 use s3::Bucket;
 
 use crate::db_connection::PgPooledConnection;
-use crate::models::{ConvertedSize, ConvertedSizeSpec, ConvertedSizes, Media};
+use crate::logic::update_media_storage_used;
+use crate::models::{Media, MediaConversionExt, MediaSize, RESIZED_CONVERSIONS};
 use crate::schema::media;
 
 pub const CONVERTIBLE_CONTENT_TYPES: [&str; 3] = ["image/png", "image/jpeg", "image/jpg"];
@@ -27,11 +28,16 @@ fn is_video_content_type(content_type: &str) -> bool {
     VIDEO_CONVERTIBLE_CONTENT_TYPES.contains(&content_type)
 }
 
-/// `Media` rows still needing conversion: not yet `processed`, or missing `aspect_ratio` (e.g.
-/// `processed` media left over from before that column existed -- see `convert_media`'s backfill
-/// path), and a content type we know how to convert. `processed` is only ever set once conversion
-/// (successfully) completes, so this naturally retries anything a prior run errored out on
-/// (including runs where the relevant tool, `ImageMagick` or `ffmpeg`, was missing).
+/// `Media` rows still needing conversion: not yet `processed`, with an original whose content
+/// type we know how to convert. `processed` is only ever set once conversion (successfully)
+/// completes, so this naturally retries anything a prior run errored out on (including runs where
+/// the relevant tool, `ImageMagick` or `ffmpeg`, was missing).
+///
+/// Content type now lives inside `Media.sizes` (not a plain column), so it can't be filtered at
+/// the SQL level as cheaply as before a plain `processed = false` scan -- loads a generous
+/// multiple of `limit` still-unprocessed rows and filters/truncates to the real convertible ones
+/// in Rust, so a backlog of non-convertible uploads (PDFs, etc.) can't perpetually crowd out real
+/// work the way returning fewer-than-`limit` rows per call otherwise would.
 pub fn media_pending_conversion(
     conn: &mut PgPooledConnection,
     limit: i64,
@@ -41,12 +47,19 @@ pub fn media_pending_conversion(
         .chain(VIDEO_CONVERTIBLE_CONTENT_TYPES.iter())
         .copied()
         .collect();
-    media::table
-        .filter(media::processed.eq(false).or(media::aspect_ratio.is_null()))
-        .filter(media::content_type.eq_any(content_types))
+    let candidates: Vec<Media> = media::table
+        .filter(media::processed.eq(false))
         .order(media::id.asc())
-        .limit(limit)
-        .load::<Media>(conn)
+        .limit((limit * 10).max(200))
+        .load::<Media>(conn)?;
+    Ok(candidates
+        .into_iter()
+        .filter(|m| {
+            m.original()
+                .is_some_and(|o| content_types.contains(&o.content_type.as_str()))
+        })
+        .take(limit as usize)
+        .collect())
 }
 
 /// Which `ImageMagick` command layout is on `$PATH`: v7 unifies everything under a single
@@ -306,9 +319,12 @@ impl Converter<'_> {
     }
 }
 
-/// Downloads `item`'s original from MinIO, generates any `ConvertedSizeSpec` it's larger than
-/// (skipping sizes it already fits within -- those fall back to the original), uploads the
-/// results back to MinIO next to the original, and marks `item` `processed`.
+/// Downloads `item`'s original from MinIO, generates any `RESIZED_CONVERSIONS` entry it's larger
+/// than (skipping sizes it already fits within -- those fall back to the original), uploads the
+/// results back to MinIO next to the original, records each new size's `size_bytes`/
+/// `aspect_ratio` (and backfills the original's own `aspect_ratio`, which is unknown until this
+/// point) into `Media.sizes`, updates the owner's `media_storage_bytes_used`, and marks `item`
+/// `processed`.
 ///
 /// `imagemagick`/`ffmpeg` are `None` when the respective tool wasn't found on `$PATH` at startup;
 /// converting a `Media` item that needs the missing one fails (and is retried next run) without
@@ -321,7 +337,11 @@ pub async fn convert_media(
     tmp_dir: &Path,
     conn: &mut PgPooledConnection,
 ) -> Result<()> {
-    let converter = if is_video_content_type(&item.content_type) {
+    let mut original = item
+        .original()
+        .context("Media has no MEDIA_CONVERSION_ORIGINAL size")?;
+
+    let converter = if is_video_content_type(&original.content_type) {
         Converter::Video(ffmpeg.context("ffmpeg not found on $PATH; cannot convert video Media")?)
     } else {
         Converter::Image(
@@ -329,85 +349,78 @@ pub async fn convert_media(
         )
     };
 
-    let extension = extension_for_content_type(&item.content_type)?;
+    let extension = extension_for_content_type(&original.content_type)?;
     let input_path: PathBuf = tmp_dir.join(format!("{}-original.{}", item.id, extension));
 
-    let original = bucket
-        .get_object(&item.minio_path)
+    let original_bytes = bucket
+        .get_object(&original.minio_path)
         .await
         .context("failed to download original from MinIO")?;
-    std::fs::write(&input_path, original.as_slice())?;
+    std::fs::write(&input_path, original_bytes.as_slice())?;
 
     let (width, height) = converter.dimensions(&input_path)?;
     let aspect_ratio = width as f32 / height as f32;
+    original.aspect_ratio = Some(aspect_ratio);
 
-    if item.processed {
-        // Backfill path: `converted_sizes` was already generated by a prior run, before
-        // `aspect_ratio` existed (see `media_pending_conversion`) -- just record it, without
-        // redoing the (potentially expensive) resize/upload work above.
-        let _ = std::fs::remove_file(&input_path);
-        diesel::update(media::table.find(item.id))
-            .set(media::aspect_ratio.eq(aspect_ratio))
-            .execute(conn)?;
-        return Ok(());
-    }
+    let mut sizes = vec![original];
 
-    let mut sizes = ConvertedSizes::default();
-
-    for spec in ConvertedSizeSpec::ALL {
-        if width.max(height) <= spec.max_dimension() {
+    for conversion in RESIZED_CONVERSIONS {
+        if width.max(height) <= conversion.max_dimension() {
             log::info!(
                 "Media {} ({}x{}) already fits within '{}' ({}px) -- skipping",
                 item.id,
                 width,
                 height,
-                spec.key(),
-                spec.max_dimension()
+                conversion.key(),
+                conversion.max_dimension()
             );
             continue;
         }
 
-        let output_path = tmp_dir.join(format!("{}-{}.{}", item.id, spec.key(), extension));
+        let output_path = tmp_dir.join(format!("{}-{}.{}", item.id, conversion.key(), extension));
         converter.resize(
             &input_path,
             &output_path,
-            spec.max_dimension(),
-            &item.content_type,
+            conversion.max_dimension(),
+            &sizes[0].content_type,
         )?;
         let output_bytes = std::fs::read(&output_path)?;
         let _ = std::fs::remove_file(&output_path);
 
-        let converted_minio_path = format!("{}.{}", item.minio_path, spec.key());
+        let converted_minio_path = format!("{}.{}", sizes[0].minio_path, conversion.key());
         bucket
-            .put_object_with_content_type(&converted_minio_path, &output_bytes, &item.content_type)
+            .put_object_with_content_type(&converted_minio_path, &output_bytes, &sizes[0].content_type)
             .await
             .context("failed to upload converted size to MinIO")?;
 
         log::info!(
             "Media {}: generated '{}' ({} bytes) at {}",
             item.id,
-            spec.key(),
+            conversion.key(),
             output_bytes.len(),
             converted_minio_path
         );
-        sizes.set(
-            spec,
-            ConvertedSize {
-                minio_path: converted_minio_path,
-                content_type: item.content_type.clone(),
-            },
-        );
+        sizes.push(MediaSize {
+            conversion: conversion as i32,
+            minio_path: converted_minio_path,
+            content_type: sizes[0].content_type.clone(),
+            size_bytes: output_bytes.len() as i64,
+            aspect_ratio: Some(aspect_ratio),
+        });
     }
 
     let _ = std::fs::remove_file(&input_path);
 
     diesel::update(media::table.find(item.id))
         .set((
-            media::converted_sizes.eq(serde_json::to_value(&sizes)?),
+            media::sizes.eq(serde_json::to_value(&sizes)?),
             media::processed.eq(true),
-            media::aspect_ratio.eq(aspect_ratio),
         ))
         .execute(conn)?;
+
+    if let Some(user_id) = item.user_id {
+        update_media_storage_used(user_id, conn)?;
+    }
 
     Ok(())
 }

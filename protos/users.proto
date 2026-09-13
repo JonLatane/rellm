@@ -31,10 +31,18 @@ message User {
   // The user's bio.
   string bio = 8;
 
-
-  // The user's media storage allocation. If unset, is unlimited.
+  // The maximum number of bytes this user's Media (see `Media.sizes[].size_bytes`) may
+  // collectively occupy in storage. Enforced by `POST /media` (see `Media`'s own doc), which
+  // rejects an upload that would push `media_storage_bytes_used` over this limit with an HTTP 413
+  // and a plaintext error body. Unset means unlimited.
   optional uint64 media_storage_limit_bytes = 10;
-
+  // The total size, in bytes, of every stored copy (original plus any converted sizes) of every
+  // Media item this user owns -- the sum of `Media.sizes[].size_bytes` across all their Media.
+  // A denormalized counter, recomputed (never trusted from client input) after every operation
+  // that could change it -- upload, delete, size conversion, `DeleteMediaSizes` -- by
+  // `backend/src/logic/user_counts.rs`'s `update_media_storage_used`, and self-healed on an
+  // interval by `bin/update_user_counts.rs` the same way every other denormalized `User` counter
+  // (`follower_count`, `post_count`, etc.) is.
   uint64 media_storage_bytes_used = 11;
 
   // User visibility is a bit different from Post visibility.

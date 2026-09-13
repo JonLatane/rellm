@@ -78,7 +78,6 @@ impl ToProtoMedia for models::Media {
     fn to_proto(&self) -> Media {
         Media {
             id: self.id.to_proto_id(),
-            content_type: self.content_type.to_owned(),
             user_id: self.user_id.map(|i| i.to_proto_id()),
             name: self.name.to_owned(),
             description: self.description.to_owned(),
@@ -86,11 +85,11 @@ impl ToProtoMedia for models::Media {
             moderation: self.moderation.to_i32_moderation(),
             generated: self.generated,
             processed: self.processed,
-            aspect_ratio: self.aspect_ratio,
             created_at: Some(self.created_at.to_proto()),
             updated_at: Some(self.updated_at.to_proto()),
             metadata: Some(self.metadata().to_proto()),
             url: None,
+            sizes: self.sizes().iter().map(|s| s.to_proto()).collect(),
         }
     }
 }
@@ -103,12 +102,27 @@ impl ToProtoMediaReference for models::MediaReference {
     fn to_proto(&self) -> MediaReference {
         MediaReference {
             id: self.id.to_proto_id(),
-            content_type: self.content_type.to_owned(),
             name: self.name.to_owned(),
             generated: self.generated,
-            aspect_ratio: self.aspect_ratio,
             metadata: Some(self.metadata().to_proto()),
             url: None,
+            description: None,
+            sizes: self.sizes().iter().map(|s| s.to_proto()).collect(),
+        }
+    }
+}
+
+pub trait ToProtoMediaSize {
+    fn to_proto(&self) -> MediaSize;
+}
+
+impl ToProtoMediaSize for models::MediaSize {
+    fn to_proto(&self) -> MediaSize {
+        MediaSize {
+            conversion: self.conversion,
+            size_bytes: self.size_bytes as u64,
+            aspect_ratio: self.aspect_ratio,
+            content_type: self.content_type.to_owned(),
         }
     }
 }

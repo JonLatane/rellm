@@ -870,6 +870,16 @@ service Rellm {
   // Deletes a media item by ID. *Authenticated.* Note that media may still be accessible for 12 hours after deletes are requested, as separate jobs clean it up from S3/MinIO.
   // Deleting other users' media requires `ADMIN` permissions.
   rpc DeleteMedia(Media) returns (google.protobuf.Empty) {}
+  // Updates a Media item's `name`/`description` by ID. *Authenticated.* Every other field
+  // (visibility, moderation, `sizes`, etc.) is ignored -- use other RPCs (or, for `sizes`,
+  // `DeleteMediaSizes`) to change them. Updating other users' media requires `ADMIN` permissions.
+  rpc UpdateMedia(Media) returns (Media) {}
+  // Deletes only the given `sizes` (matched by `conversion`) of a Media item by ID, e.g. to
+  // reclaim space by dropping `MEDIA_CONVERSION_ORIGINAL` once converted copies exist to serve
+  // in its place. *Authenticated.* Deleting other users' media requires `ADMIN` permissions.
+  // Errors if this would leave the Media item with no `sizes` at all -- use `DeleteMedia` to
+  // remove the whole item instead.
+  rpc DeleteMediaSizes(Media) returns (Media) {}
 
   // Gets Users. *Publicly accessible **or** Authenticated.*
   // Unauthenticated calls only return Users of `GLOBAL_PUBLIC` visibility.

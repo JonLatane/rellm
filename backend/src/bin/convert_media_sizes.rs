@@ -64,16 +64,18 @@ async fn main() {
 
     let mut wanted_resources = Vec::new();
     if ffmpeg.is_some()
-        && pending
-            .iter()
-            .any(|m| VIDEO_CONVERTIBLE_CONTENT_TYPES.contains(&m.content_type.as_str()))
+        && pending.iter().any(|m| {
+            m.original()
+                .is_some_and(|o| VIDEO_CONVERTIBLE_CONTENT_TYPES.contains(&o.content_type.as_str()))
+        })
     {
         wanted_resources.push(ClusterResource::Ffmpeg);
     }
     if imagemagick.is_some()
-        && pending
-            .iter()
-            .any(|m| !VIDEO_CONVERTIBLE_CONTENT_TYPES.contains(&m.content_type.as_str()))
+        && pending.iter().any(|m| {
+            m.original()
+                .is_some_and(|o| !VIDEO_CONVERTIBLE_CONTENT_TYPES.contains(&o.content_type.as_str()))
+        })
     {
         wanted_resources.push(ClusterResource::Imagemagick);
     }
@@ -96,7 +98,11 @@ async fn main() {
     let tmp_dir = tempfile::tempdir().expect("Failed to create temp dir");
 
     for item in pending.iter() {
-        log::info!("Converting Media {}: {}", item.id, item.minio_path);
+        log::info!(
+            "Converting Media {}: {}",
+            item.id,
+            item.original().map(|o| o.minio_path).unwrap_or_default()
+        );
         match convert_media(
             item,
             imagemagick.as_ref(),

@@ -2,8 +2,7 @@ use std::str::FromStr;
 
 use super::{load_media_file_data, load_media_file_data_preferring, open_named_file, RocketState};
 use crate::{
-    models::ConvertedSizeSpec,
-    protos::{ServerInfo, ServerLogo},
+    protos::{MediaConversion, ServerInfo, ServerLogo},
     rpcs::{get_server_configuration_proto, get_service_version},
 };
 use base64::{prelude::BASE64_STANDARD, Engine};
@@ -18,10 +17,10 @@ use rocket_cache_response::{CacheControl, CacheResponse};
 
 /// Favicons are small, so prefer the Medium converted size, then Small, then Large, falling
 /// back to the original upload if none of those conversions exist.
-const FAVICON_SIZE_PREFERENCE: [ConvertedSizeSpec; 3] = [
-    ConvertedSizeSpec::Medium,
-    ConvertedSizeSpec::Small,
-    ConvertedSizeSpec::Large,
+const FAVICON_SIZE_PREFERENCE: [MediaConversion; 3] = [
+    MediaConversion::Medium,
+    MediaConversion::Small,
+    MediaConversion::Large,
 ];
 
 /// shields.io badge path segments are split on unescaped `-`, with a literal hyphen escaped as

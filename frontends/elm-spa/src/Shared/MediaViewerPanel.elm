@@ -516,7 +516,7 @@ their native `controls`, same as before this behavior existed).
 -}
 isImage : MediaReference -> Bool
 isImage media =
-    (String.split "/" media.contentType |> List.head) == Just "image"
+    (String.split "/" (MediaRenderer.contentTypeOf media) |> List.head) == Just "image"
 
 
 {-| Whether `media` is a video, by its MIME type's top-level part -- mirrors
@@ -527,7 +527,7 @@ e.g. a PDF).
 -}
 isVideo : MediaReference -> Bool
 isVideo media =
-    (String.split "/" media.contentType |> List.head) == Just "video"
+    (String.split "/" (MediaRenderer.contentTypeOf media) |> List.head) == Just "video"
 
 
 {-| The item before/after the current one in `media`, wrapping around --

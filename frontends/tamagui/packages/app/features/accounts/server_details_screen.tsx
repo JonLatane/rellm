@@ -527,7 +527,7 @@ export function BaseServerDetailsScreen(specificServer?: string) {
                           : undefined}
                         {logo?.squareMediaId
                           ? <XStack mb='$2'>
-                            <MediaRenderer media={Media.create({ id: logo?.squareMediaId, contentType: 'image' })} />
+                            <MediaRenderer media={Media.create({ id: logo?.squareMediaId })} forceImage />
                           </XStack>
                           : undefined}
                         {isAdmin
@@ -541,7 +541,7 @@ export function BaseServerDetailsScreen(specificServer?: string) {
                           : undefined}
                         {logo?.wideMediaId ?
                           <XStack mb='$2'>
-                            <MediaRenderer media={Media.create({ id: logo?.wideMediaId, contentType: 'image' })} />
+                            <MediaRenderer media={Media.create({ id: logo?.wideMediaId })} forceImage />
                           </XStack>
                           : undefined}
                         {isAdmin

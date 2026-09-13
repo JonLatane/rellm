@@ -18,6 +18,56 @@ import {
 
 export const protobufPackage = "rellm";
 
+/** Which stored copy of a `Media` item's bytes a `MediaSize` represents. */
+export enum MediaConversion {
+  /** MEDIA_CONVERSION_ORIGINAL - The untouched original upload. */
+  MEDIA_CONVERSION_ORIGINAL = 0,
+  /** MEDIA_CONVERSION_SMALL - Resized to fit within 320x320 px, preserving aspect ratio (never upscaled). */
+  MEDIA_CONVERSION_SMALL = 1,
+  /** MEDIA_CONVERSION_MEDIUM - Resized to fit within 800x800 px, preserving aspect ratio (never upscaled). */
+  MEDIA_CONVERSION_MEDIUM = 2,
+  /** MEDIA_CONVERSION_LARGE - Resized to fit within 1600x1600 px, preserving aspect ratio (never upscaled). */
+  MEDIA_CONVERSION_LARGE = 3,
+  UNRECOGNIZED = -1,
+}
+
+export function mediaConversionFromJSON(object: any): MediaConversion {
+  switch (object) {
+    case 0:
+    case "MEDIA_CONVERSION_ORIGINAL":
+      return MediaConversion.MEDIA_CONVERSION_ORIGINAL;
+    case 1:
+    case "MEDIA_CONVERSION_SMALL":
+      return MediaConversion.MEDIA_CONVERSION_SMALL;
+    case 2:
+    case "MEDIA_CONVERSION_MEDIUM":
+      return MediaConversion.MEDIA_CONVERSION_MEDIUM;
+    case 3:
+    case "MEDIA_CONVERSION_LARGE":
+      return MediaConversion.MEDIA_CONVERSION_LARGE;
+    case -1:
+    case "UNRECOGNIZED":
+    default:
+      return MediaConversion.UNRECOGNIZED;
+  }
+}
+
+export function mediaConversionToJSON(object: MediaConversion): string {
+  switch (object) {
+    case MediaConversion.MEDIA_CONVERSION_ORIGINAL:
+      return "MEDIA_CONVERSION_ORIGINAL";
+    case MediaConversion.MEDIA_CONVERSION_SMALL:
+      return "MEDIA_CONVERSION_SMALL";
+    case MediaConversion.MEDIA_CONVERSION_MEDIUM:
+      return "MEDIA_CONVERSION_MEDIUM";
+    case MediaConversion.MEDIA_CONVERSION_LARGE:
+      return "MEDIA_CONVERSION_LARGE";
+    case MediaConversion.UNRECOGNIZED:
+    default:
+      return "UNRECOGNIZED";
+  }
+}
+
 /**
  * A Rellm `Media` message represents a single media item, such as a photo or video.
  * Media data is deliberately *not accessible from the gRPC API*. Instead, the client
@@ -50,8 +100,6 @@ export interface Media {
   userId?:
     | string
     | undefined;
-  /** The MIME content type of the media item. */
-  contentType: string;
   /** An optional title for the media item. */
   name?:
     | string
@@ -71,11 +119,6 @@ export interface Media {
    * When background jobs process and compress the media, this flag is set to true.
    */
   processed: boolean;
-  /**
-   * Width divided by height. Set by the `convert_media_sizes` background job once it's able to
-   * read the media's dimensions (via ImageMagick/ffprobe); unset until then.
-   */
-  aspectRatio?: number | undefined;
   createdAt: string | undefined;
   updatedAt: string | undefined;
   metadata:
@@ -86,7 +129,51 @@ export interface Media {
    * media owned by other protocols/servers (e.g. ActivityPub/Mastodon, AT Protocol/Bluesky)
    * that Rellm does not store locally. If unset, clients fall back to `/media/{id}`.
    */
-  url?: string | undefined;
+  url?:
+    | string
+    | undefined;
+  /**
+   * Every stored copy of this media item's bytes -- the original upload
+   * (`MEDIA_CONVERSION_ORIGINAL`) plus any auto-generated resized copies (see
+   * `convert_media_sizes`'s background job) -- each with its own content type, byte size, and
+   * (once known) aspect ratio. Always has at least one `MEDIA_CONVERSION_ORIGINAL` entry unless
+   * `url` is set (externally-hosted media has no locally-stored copies at all). The original is
+   * tracked here rather than as a separate top-level field so it can eventually be deleted to
+   * free space once converted copies exist, while remaining fully accounted for by
+   * `User.media_storage_bytes_used` up until that point.
+   */
+  sizes: MediaSize[];
+}
+
+/**
+ * One stored copy of a `Media` item's bytes -- either its untouched original upload
+ * (`MEDIA_CONVERSION_ORIGINAL`) or an auto-generated resized copy, as produced by the
+ * `convert_media_sizes` background job. Fields are tracked per-size (rather than once on `Media`
+ * itself) so that a future conversion producing a different kind of derived copy -- e.g. a
+ * `image/jpeg` poster frame for a `video/mp4` original, or a differently-cropped aspect ratio --
+ * can vary any of them independently of the original.
+ */
+export interface MediaSize {
+  /** Which copy this is -- the untouched original, or one of the auto-generated resized copies. */
+  conversion: MediaConversion;
+  /**
+   * This copy's size on disk/in MinIO, in bytes. Summed (across every size, of every Media a user
+   * owns) into `User.media_storage_bytes_used`.
+   */
+  sizeBytes: number;
+  /**
+   * Width divided by height. Set by the `convert_media_sizes` background job once it's able to
+   * read the media's dimensions (via ImageMagick/ffprobe); unset until then.
+   */
+  aspectRatio?:
+    | number
+    | undefined;
+  /**
+   * The MIME content type of this copy specifically. Usually identical across every size of a
+   * given `Media`, but not guaranteed to be -- e.g. a future video-thumbnail conversion could
+   * produce an `image/jpeg` size for a `video/mp4` original.
+   */
+  contentType: string;
 }
 
 /**
@@ -108,8 +195,6 @@ export interface MediaMetadata {
  * and the media item's name (for alt text usage).
  */
 export interface MediaReference {
-  /** The MIME content type of the media item. */
-  contentType: string;
   /** The ID of the media item. */
   id: string;
   /** An optional title for the media item. */
@@ -121,15 +206,14 @@ export interface MediaReference {
   metadata:
     | MediaMetadata
     | undefined;
-  /** Width divided by height. See `Media.aspect_ratio`. */
-  aspectRatio?:
-    | number
-    | undefined;
+  /** See `Media.sizes`. */
+  sizes: MediaSize[];
   /**
    * An external URL to fetch the media from, in lieu of `/media/{id}`. See `Media.url`.
    * If unset, clients fall back to `/media/{id}`.
    */
   url?: string | undefined;
+  description?: string | undefined;
 }
 
 /**
@@ -160,18 +244,17 @@ function createBaseMedia(): Media {
   return {
     id: "",
     userId: undefined,
-    contentType: "",
     name: undefined,
     description: undefined,
     visibility: 0,
     moderation: 0,
     generated: false,
     processed: false,
-    aspectRatio: undefined,
     createdAt: undefined,
     updatedAt: undefined,
     metadata: undefined,
     url: undefined,
+    sizes: [],
   };
 }
 
@@ -182,9 +265,6 @@ export const Media: MessageFns<Media> = {
     }
     if (message.userId !== undefined) {
       writer.uint32(18).string(message.userId);
-    }
-    if (message.contentType !== "") {
-      writer.uint32(26).string(message.contentType);
     }
     if (message.name !== undefined) {
       writer.uint32(34).string(message.name);
@@ -204,9 +284,6 @@ export const Media: MessageFns<Media> = {
     if (message.processed !== false) {
       writer.uint32(72).bool(message.processed);
     }
-    if (message.aspectRatio !== undefined) {
-      writer.uint32(85).float(message.aspectRatio);
-    }
     if (message.createdAt !== undefined) {
       Timestamp.encode(toTimestamp(message.createdAt), writer.uint32(122).fork()).join();
     }
@@ -218,6 +295,9 @@ export const Media: MessageFns<Media> = {
     }
     if (message.url !== undefined) {
       writer.uint32(146).string(message.url);
+    }
+    for (const v of message.sizes) {
+      MediaSize.encode(v!, writer.uint32(154).fork()).join();
     }
     return writer;
   },
@@ -243,14 +323,6 @@ export const Media: MessageFns<Media> = {
           }
 
           message.userId = reader.string();
-          continue;
-        }
-        case 3: {
-          if (tag !== 26) {
-            break;
-          }
-
-          message.contentType = reader.string();
           continue;
         }
         case 4: {
@@ -301,14 +373,6 @@ export const Media: MessageFns<Media> = {
           message.processed = reader.bool();
           continue;
         }
-        case 10: {
-          if (tag !== 85) {
-            break;
-          }
-
-          message.aspectRatio = reader.float();
-          continue;
-        }
         case 15: {
           if (tag !== 122) {
             break;
@@ -341,6 +405,14 @@ export const Media: MessageFns<Media> = {
           message.url = reader.string();
           continue;
         }
+        case 19: {
+          if (tag !== 154) {
+            break;
+          }
+
+          message.sizes.push(MediaSize.decode(reader, reader.uint32()));
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -354,18 +426,17 @@ export const Media: MessageFns<Media> = {
     return {
       id: isSet(object.id) ? globalThis.String(object.id) : "",
       userId: isSet(object.userId) ? globalThis.String(object.userId) : undefined,
-      contentType: isSet(object.contentType) ? globalThis.String(object.contentType) : "",
       name: isSet(object.name) ? globalThis.String(object.name) : undefined,
       description: isSet(object.description) ? globalThis.String(object.description) : undefined,
       visibility: isSet(object.visibility) ? visibilityFromJSON(object.visibility) : 0,
       moderation: isSet(object.moderation) ? moderationFromJSON(object.moderation) : 0,
       generated: isSet(object.generated) ? globalThis.Boolean(object.generated) : false,
       processed: isSet(object.processed) ? globalThis.Boolean(object.processed) : false,
-      aspectRatio: isSet(object.aspectRatio) ? globalThis.Number(object.aspectRatio) : undefined,
       createdAt: isSet(object.createdAt) ? globalThis.String(object.createdAt) : undefined,
       updatedAt: isSet(object.updatedAt) ? globalThis.String(object.updatedAt) : undefined,
       metadata: isSet(object.metadata) ? MediaMetadata.fromJSON(object.metadata) : undefined,
       url: isSet(object.url) ? globalThis.String(object.url) : undefined,
+      sizes: globalThis.Array.isArray(object?.sizes) ? object.sizes.map((e: any) => MediaSize.fromJSON(e)) : [],
     };
   },
 
@@ -376,9 +447,6 @@ export const Media: MessageFns<Media> = {
     }
     if (message.userId !== undefined) {
       obj.userId = message.userId;
-    }
-    if (message.contentType !== "") {
-      obj.contentType = message.contentType;
     }
     if (message.name !== undefined) {
       obj.name = message.name;
@@ -398,9 +466,6 @@ export const Media: MessageFns<Media> = {
     if (message.processed !== false) {
       obj.processed = message.processed;
     }
-    if (message.aspectRatio !== undefined) {
-      obj.aspectRatio = message.aspectRatio;
-    }
     if (message.createdAt !== undefined) {
       obj.createdAt = message.createdAt;
     }
@@ -413,6 +478,9 @@ export const Media: MessageFns<Media> = {
     if (message.url !== undefined) {
       obj.url = message.url;
     }
+    if (message.sizes?.length) {
+      obj.sizes = message.sizes.map((e) => MediaSize.toJSON(e));
+    }
     return obj;
   },
 
@@ -423,20 +491,127 @@ export const Media: MessageFns<Media> = {
     const message = createBaseMedia();
     message.id = object.id ?? "";
     message.userId = object.userId ?? undefined;
-    message.contentType = object.contentType ?? "";
     message.name = object.name ?? undefined;
     message.description = object.description ?? undefined;
     message.visibility = object.visibility ?? 0;
     message.moderation = object.moderation ?? 0;
     message.generated = object.generated ?? false;
     message.processed = object.processed ?? false;
-    message.aspectRatio = object.aspectRatio ?? undefined;
     message.createdAt = object.createdAt ?? undefined;
     message.updatedAt = object.updatedAt ?? undefined;
     message.metadata = (object.metadata !== undefined && object.metadata !== null)
       ? MediaMetadata.fromPartial(object.metadata)
       : undefined;
     message.url = object.url ?? undefined;
+    message.sizes = object.sizes?.map((e) => MediaSize.fromPartial(e)) || [];
+    return message;
+  },
+};
+
+function createBaseMediaSize(): MediaSize {
+  return { conversion: 0, sizeBytes: 0, aspectRatio: undefined, contentType: "" };
+}
+
+export const MediaSize: MessageFns<MediaSize> = {
+  encode(message: MediaSize, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.conversion !== 0) {
+      writer.uint32(8).int32(message.conversion);
+    }
+    if (message.sizeBytes !== 0) {
+      writer.uint32(16).uint64(message.sizeBytes);
+    }
+    if (message.aspectRatio !== undefined) {
+      writer.uint32(29).float(message.aspectRatio);
+    }
+    if (message.contentType !== "") {
+      writer.uint32(34).string(message.contentType);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): MediaSize {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseMediaSize();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 8) {
+            break;
+          }
+
+          message.conversion = reader.int32() as any;
+          continue;
+        }
+        case 2: {
+          if (tag !== 16) {
+            break;
+          }
+
+          message.sizeBytes = longToNumber(reader.uint64());
+          continue;
+        }
+        case 3: {
+          if (tag !== 29) {
+            break;
+          }
+
+          message.aspectRatio = reader.float();
+          continue;
+        }
+        case 4: {
+          if (tag !== 34) {
+            break;
+          }
+
+          message.contentType = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): MediaSize {
+    return {
+      conversion: isSet(object.conversion) ? mediaConversionFromJSON(object.conversion) : 0,
+      sizeBytes: isSet(object.sizeBytes) ? globalThis.Number(object.sizeBytes) : 0,
+      aspectRatio: isSet(object.aspectRatio) ? globalThis.Number(object.aspectRatio) : undefined,
+      contentType: isSet(object.contentType) ? globalThis.String(object.contentType) : "",
+    };
+  },
+
+  toJSON(message: MediaSize): unknown {
+    const obj: any = {};
+    if (message.conversion !== 0) {
+      obj.conversion = mediaConversionToJSON(message.conversion);
+    }
+    if (message.sizeBytes !== 0) {
+      obj.sizeBytes = Math.round(message.sizeBytes);
+    }
+    if (message.aspectRatio !== undefined) {
+      obj.aspectRatio = message.aspectRatio;
+    }
+    if (message.contentType !== "") {
+      obj.contentType = message.contentType;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<MediaSize>, I>>(base?: I): MediaSize {
+    return MediaSize.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<MediaSize>, I>>(object: I): MediaSize {
+    const message = createBaseMediaSize();
+    message.conversion = object.conversion ?? 0;
+    message.sizeBytes = object.sizeBytes ?? 0;
+    message.aspectRatio = object.aspectRatio ?? undefined;
+    message.contentType = object.contentType ?? "";
     return message;
   },
 };
@@ -503,21 +678,18 @@ export const MediaMetadata: MessageFns<MediaMetadata> = {
 
 function createBaseMediaReference(): MediaReference {
   return {
-    contentType: "",
     id: "",
     name: undefined,
     generated: false,
     metadata: undefined,
-    aspectRatio: undefined,
+    sizes: [],
     url: undefined,
+    description: undefined,
   };
 }
 
 export const MediaReference: MessageFns<MediaReference> = {
   encode(message: MediaReference, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    if (message.contentType !== "") {
-      writer.uint32(10).string(message.contentType);
-    }
     if (message.id !== "") {
       writer.uint32(18).string(message.id);
     }
@@ -530,11 +702,14 @@ export const MediaReference: MessageFns<MediaReference> = {
     if (message.metadata !== undefined) {
       MediaMetadata.encode(message.metadata, writer.uint32(42).fork()).join();
     }
-    if (message.aspectRatio !== undefined) {
-      writer.uint32(85).float(message.aspectRatio);
+    for (const v of message.sizes) {
+      MediaSize.encode(v!, writer.uint32(50).fork()).join();
     }
     if (message.url !== undefined) {
       writer.uint32(90).string(message.url);
+    }
+    if (message.description !== undefined) {
+      writer.uint32(98).string(message.description);
     }
     return writer;
   },
@@ -546,14 +721,6 @@ export const MediaReference: MessageFns<MediaReference> = {
     while (reader.pos < end) {
       const tag = reader.uint32();
       switch (tag >>> 3) {
-        case 1: {
-          if (tag !== 10) {
-            break;
-          }
-
-          message.contentType = reader.string();
-          continue;
-        }
         case 2: {
           if (tag !== 18) {
             break;
@@ -586,12 +753,12 @@ export const MediaReference: MessageFns<MediaReference> = {
           message.metadata = MediaMetadata.decode(reader, reader.uint32());
           continue;
         }
-        case 10: {
-          if (tag !== 85) {
+        case 6: {
+          if (tag !== 50) {
             break;
           }
 
-          message.aspectRatio = reader.float();
+          message.sizes.push(MediaSize.decode(reader, reader.uint32()));
           continue;
         }
         case 11: {
@@ -600,6 +767,14 @@ export const MediaReference: MessageFns<MediaReference> = {
           }
 
           message.url = reader.string();
+          continue;
+        }
+        case 12: {
+          if (tag !== 98) {
+            break;
+          }
+
+          message.description = reader.string();
           continue;
         }
       }
@@ -613,21 +788,18 @@ export const MediaReference: MessageFns<MediaReference> = {
 
   fromJSON(object: any): MediaReference {
     return {
-      contentType: isSet(object.contentType) ? globalThis.String(object.contentType) : "",
       id: isSet(object.id) ? globalThis.String(object.id) : "",
       name: isSet(object.name) ? globalThis.String(object.name) : undefined,
       generated: isSet(object.generated) ? globalThis.Boolean(object.generated) : false,
       metadata: isSet(object.metadata) ? MediaMetadata.fromJSON(object.metadata) : undefined,
-      aspectRatio: isSet(object.aspectRatio) ? globalThis.Number(object.aspectRatio) : undefined,
+      sizes: globalThis.Array.isArray(object?.sizes) ? object.sizes.map((e: any) => MediaSize.fromJSON(e)) : [],
       url: isSet(object.url) ? globalThis.String(object.url) : undefined,
+      description: isSet(object.description) ? globalThis.String(object.description) : undefined,
     };
   },
 
   toJSON(message: MediaReference): unknown {
     const obj: any = {};
-    if (message.contentType !== "") {
-      obj.contentType = message.contentType;
-    }
     if (message.id !== "") {
       obj.id = message.id;
     }
@@ -640,11 +812,14 @@ export const MediaReference: MessageFns<MediaReference> = {
     if (message.metadata !== undefined) {
       obj.metadata = MediaMetadata.toJSON(message.metadata);
     }
-    if (message.aspectRatio !== undefined) {
-      obj.aspectRatio = message.aspectRatio;
+    if (message.sizes?.length) {
+      obj.sizes = message.sizes.map((e) => MediaSize.toJSON(e));
     }
     if (message.url !== undefined) {
       obj.url = message.url;
+    }
+    if (message.description !== undefined) {
+      obj.description = message.description;
     }
     return obj;
   },
@@ -654,15 +829,15 @@ export const MediaReference: MessageFns<MediaReference> = {
   },
   fromPartial<I extends Exact<DeepPartial<MediaReference>, I>>(object: I): MediaReference {
     const message = createBaseMediaReference();
-    message.contentType = object.contentType ?? "";
     message.id = object.id ?? "";
     message.name = object.name ?? undefined;
     message.generated = object.generated ?? false;
     message.metadata = (object.metadata !== undefined && object.metadata !== null)
       ? MediaMetadata.fromPartial(object.metadata)
       : undefined;
-    message.aspectRatio = object.aspectRatio ?? undefined;
+    message.sizes = object.sizes?.map((e) => MediaSize.fromPartial(e)) || [];
     message.url = object.url ?? undefined;
+    message.description = object.description ?? undefined;
     return message;
   },
 };
@@ -858,6 +1033,17 @@ function fromTimestamp(t: Timestamp): string {
   let millis = (t.seconds || 0) * 1_000;
   millis += (t.nanos || 0) / 1_000_000;
   return new globalThis.Date(millis).toISOString();
+}
+
+function longToNumber(int64: { toString(): string }): number {
+  const num = globalThis.Number(int64.toString());
+  if (num > globalThis.Number.MAX_SAFE_INTEGER) {
+    throw new globalThis.Error("Value is larger than Number.MAX_SAFE_INTEGER");
+  }
+  if (num < globalThis.Number.MIN_SAFE_INTEGER) {
+    throw new globalThis.Error("Value is smaller than Number.MIN_SAFE_INTEGER");
+  }
+  return num;
 }
 
 function isSet(value: any): boolean {

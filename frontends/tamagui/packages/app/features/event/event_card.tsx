@@ -27,6 +27,7 @@ import { EventCalendarExporter } from './event_calendar_exporter';
 import { EventRsvpManager, RsvpMode, selectRsvpData } from './event_rsvp_manager';
 import { OccasionTime } from "./occasion_time";
 import { LocationControl } from "./location_control";
+import { isImageMedia } from "app/utils";
 
 interface Props {
   event: FederatedEvent;
@@ -324,7 +325,7 @@ export const EventCard: React.FC<Props> = ({
     return undefined;
   }, [embedSupported, eventPost.link]);
 
-  const imagePreview = useMemo(() => media?.find(m => m.contentType.startsWith('image')), [media]);
+  const imagePreview = useMemo(() => media?.find(isImageMedia), [media]);
   const showScrollableMediaPreviews = useMemo(() => (media?.filter(m => !m.generated).length ?? 0) >= 2, [media]);
   const previewUrl = useMediaUrl(imagePreview?.id, accountOrServer);
 

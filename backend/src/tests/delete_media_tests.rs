@@ -6,7 +6,7 @@ use diesel::prelude::*;
 use tonic::Code;
 
 use crate::marshaling::*;
-use crate::models::{ConvertedSize, ConvertedSizes};
+use crate::models::MediaSize;
 use crate::protos::*;
 use crate::rpcs::delete_media;
 use crate::schema::media;
@@ -69,23 +69,39 @@ fn delete_also_removes_converted_size_objects() {
         }
 
         let media = create_media(conn, Some(&user), &original_path);
-        let media = set_converted_sizes(
+        let media = set_media_sizes(
             conn,
             &media,
-            ConvertedSizes {
-                small: Some(ConvertedSize {
+            vec![
+                MediaSize {
+                    conversion: MediaConversion::Original as i32,
+                    minio_path: original_path.clone(),
+                    content_type: "image/png".to_string(),
+                    size_bytes: 10,
+                    aspect_ratio: None,
+                },
+                MediaSize {
+                    conversion: MediaConversion::Small as i32,
                     minio_path: small_path.clone(),
                     content_type: "image/png".to_string(),
-                }),
-                medium: Some(ConvertedSize {
+                    size_bytes: 10,
+                    aspect_ratio: None,
+                },
+                MediaSize {
+                    conversion: MediaConversion::Medium as i32,
                     minio_path: medium_path.clone(),
                     content_type: "image/png".to_string(),
-                }),
-                large: Some(ConvertedSize {
+                    size_bytes: 10,
+                    aspect_ratio: None,
+                },
+                MediaSize {
+                    conversion: MediaConversion::Large as i32,
                     minio_path: large_path.clone(),
                     content_type: "image/png".to_string(),
-                }),
-            },
+                    size_bytes: 10,
+                    aspect_ratio: None,
+                },
+            ],
         );
 
         tb.block_on(delete_media(

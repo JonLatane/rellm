@@ -1011,6 +1011,34 @@ export const RellmDefinition = {
       options: {},
     },
     /**
+     * Updates a Media item's `name`/`description` by ID. *Authenticated.* Every other field
+     * (visibility, moderation, `sizes`, etc.) is ignored -- use other RPCs (or, for `sizes`,
+     * `DeleteMediaSizes`) to change them. Updating other users' media requires `ADMIN` permissions.
+     */
+    updateMedia: {
+      name: "UpdateMedia",
+      requestType: Media,
+      requestStream: false,
+      responseType: Media,
+      responseStream: false,
+      options: {},
+    },
+    /**
+     * Deletes only the given `sizes` (matched by `conversion`) of a Media item by ID, e.g. to
+     * reclaim space by dropping `MEDIA_CONVERSION_ORIGINAL` once converted copies exist to serve
+     * in its place. *Authenticated.* Deleting other users' media requires `ADMIN` permissions.
+     * Errors if this would leave the Media item with no `sizes` at all -- use `DeleteMedia` to
+     * remove the whole item instead.
+     */
+    deleteMediaSizes: {
+      name: "DeleteMediaSizes",
+      requestType: Media,
+      requestStream: false,
+      responseType: Media,
+      responseStream: false,
+      options: {},
+    },
+    /**
      * Gets Users. *Publicly accessible **or** Authenticated.*
      * Unauthenticated calls only return Users of `GLOBAL_PUBLIC` visibility.
      */
@@ -1811,6 +1839,20 @@ export interface RellmServiceImplementation<CallContextExt = {}> {
    */
   deleteMedia(request: Media, context: CallContext & CallContextExt): Promise<DeepPartial<Empty>>;
   /**
+   * Updates a Media item's `name`/`description` by ID. *Authenticated.* Every other field
+   * (visibility, moderation, `sizes`, etc.) is ignored -- use other RPCs (or, for `sizes`,
+   * `DeleteMediaSizes`) to change them. Updating other users' media requires `ADMIN` permissions.
+   */
+  updateMedia(request: Media, context: CallContext & CallContextExt): Promise<DeepPartial<Media>>;
+  /**
+   * Deletes only the given `sizes` (matched by `conversion`) of a Media item by ID, e.g. to
+   * reclaim space by dropping `MEDIA_CONVERSION_ORIGINAL` once converted copies exist to serve
+   * in its place. *Authenticated.* Deleting other users' media requires `ADMIN` permissions.
+   * Errors if this would leave the Media item with no `sizes` at all -- use `DeleteMedia` to
+   * remove the whole item instead.
+   */
+  deleteMediaSizes(request: Media, context: CallContext & CallContextExt): Promise<DeepPartial<Media>>;
+  /**
    * Gets Users. *Publicly accessible **or** Authenticated.*
    * Unauthenticated calls only return Users of `GLOBAL_PUBLIC` visibility.
    */
@@ -2201,6 +2243,20 @@ export interface RellmClient<CallOptionsExt = {}> {
    * Deleting other users' media requires `ADMIN` permissions.
    */
   deleteMedia(request: DeepPartial<Media>, options?: CallOptions & CallOptionsExt): Promise<Empty>;
+  /**
+   * Updates a Media item's `name`/`description` by ID. *Authenticated.* Every other field
+   * (visibility, moderation, `sizes`, etc.) is ignored -- use other RPCs (or, for `sizes`,
+   * `DeleteMediaSizes`) to change them. Updating other users' media requires `ADMIN` permissions.
+   */
+  updateMedia(request: DeepPartial<Media>, options?: CallOptions & CallOptionsExt): Promise<Media>;
+  /**
+   * Deletes only the given `sizes` (matched by `conversion`) of a Media item by ID, e.g. to
+   * reclaim space by dropping `MEDIA_CONVERSION_ORIGINAL` once converted copies exist to serve
+   * in its place. *Authenticated.* Deleting other users' media requires `ADMIN` permissions.
+   * Errors if this would leave the Media item with no `sizes` at all -- use `DeleteMedia` to
+   * remove the whole item instead.
+   */
+  deleteMediaSizes(request: DeepPartial<Media>, options?: CallOptions & CallOptionsExt): Promise<Media>;
   /**
    * Gets Users. *Publicly accessible **or** Authenticated.*
    * Unauthenticated calls only return Users of `GLOBAL_PUBLIC` visibility.

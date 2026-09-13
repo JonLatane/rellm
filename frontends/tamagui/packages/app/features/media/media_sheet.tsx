@@ -9,7 +9,7 @@ import { ChevronLeft, Info, Trash, Wand2 } from '@tamagui/lucide-icons';
 import { MediaReference, Permission, Post } from '@rellm/api';
 import { AccountOrServerContextProvider, MediaRef, useMediaContext } from 'app/contexts';
 import { useMediaPages } from 'app/hooks/pagination/media_pagination_hooks';
-import { highlightedButtonBackground } from 'app/utils';
+import { getOriginalContentType, highlightedButtonBackground } from 'app/utils';
 import { CreationServerSelector } from '../accounts/creation_server_selector';
 import { PageChooser } from '../home/page_chooser';
 import { AutoAnimatedList, PostMediaRenderer } from '../post';
@@ -194,7 +194,7 @@ export const MediaSheet: React.FC<MediaSheetProps> = ({ }) => {
                               } />
                             </AccountOrServerContextProvider>
                             {/* <Paragraph>hi</Paragraph> */}
-                            <Paragraph fontFamily='$mono' ml='auto'>{viewerMedia?.contentType}</Paragraph>
+                            <Paragraph fontFamily='$mono' ml='auto'>{viewerMedia ? getOriginalContentType(viewerMedia) : undefined}</Paragraph>
                             <Paragraph size='$2'>{viewerMedia?.description}</Paragraph>
                           </YStack>
                         </div>
@@ -244,7 +244,7 @@ export const MediaSheet: React.FC<MediaSheetProps> = ({ }) => {
                                     </Tooltip>
                                     {mediaQuery.gtXs
                                       ? <Paragraph ml='auto' size='$1' fontFamily='$mono'>
-                                        {item.contentType}
+                                        {getOriginalContentType(item)}
                                       </Paragraph>
                                       : undefined}
 
@@ -256,7 +256,7 @@ export const MediaSheet: React.FC<MediaSheetProps> = ({ }) => {
                                 {showInfo && !mediaQuery.gtXs
                                   ? <XStack mt='$1' mx='$1' px='$1'>
                                     <Paragraph ml='auto' size='$1' fontFamily='$mono'>
-                                      {item.contentType}
+                                      {getOriginalContentType(item)}
                                     </Paragraph>
                                   </XStack>
                                   : undefined}

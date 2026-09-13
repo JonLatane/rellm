@@ -753,14 +753,14 @@ fn post_summary(
             if ancestor_post.id != post.id {
                 title = format!("Comments | {}", title);
             }
+            let is_image = |m: &&MediaReference| {
+                m.sizes.iter().any(|s| s.content_type.starts_with("image"))
+            };
             let image_ref: Option<&MediaReference> = post
                 .media
                 .iter()
-                .find(|m| m.content_type.starts_with("image"))
-                .or(ancestor_post
-                    .media
-                    .iter()
-                    .find(|m| m.content_type.starts_with("image")));
+                .find(is_image)
+                .or(ancestor_post.media.iter().find(is_image));
             let image = image_ref.map_or(basic_logo, |mr| Some(format!("/media/{}", mr.id)));
             (title, post.content.clone(), image)
         }

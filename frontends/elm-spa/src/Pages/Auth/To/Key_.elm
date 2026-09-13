@@ -40,7 +40,7 @@ import Shared
 import Shared.AccountsPanel as AccountsPanel exposing (FormStatus(..))
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccount, RellmAccountAuthTokens, Token)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer)
-import Shared.Conversions exposing (timestampToPosix)
+import Shared.Conversions exposing (int64ToInt, timestampToPosix)
 import Shared.FederatedAuth as FederatedAuth
 import Task exposing (Task)
 import UI
@@ -583,6 +583,8 @@ accountFromLogin server resp =
                 , syncDestinations = user.syncDestinations
                 , syncSources = user.syncSources
                 , aiModels = user.aiModels
+                , mediaStorageBytesUsed = int64ToInt user.mediaStorageBytesUsed
+                , mediaStorageLimitBytes = Maybe.map int64ToInt user.mediaStorageLimitBytes
                 }
 
         _ ->

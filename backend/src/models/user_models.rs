@@ -70,6 +70,8 @@ pub struct User {
     pub updated_at: SystemTime,
     pub friend_count: i32,
     pub occasion_count: i32,
+    pub media_storage_limit_bytes: Option<i64>,
+    pub media_storage_bytes_used: i64,
 }
 
 /// Explicit column list for `users`, excluding `search_text` (a generated tsvector used only for
@@ -98,6 +100,8 @@ pub const USER_COLUMNS: (
     users::updated_at,
     users::friend_count,
     users::occasion_count,
+    users::media_storage_limit_bytes,
+    users::media_storage_bytes_used,
 ) = (
     users::id,
     users::username,
@@ -121,6 +125,8 @@ pub const USER_COLUMNS: (
     users::updated_at,
     users::friend_count,
     users::occasion_count,
+    users::media_storage_limit_bytes,
+    users::media_storage_bytes_used,
 );
 
 pub const AUTHOR_COLUMNS: (

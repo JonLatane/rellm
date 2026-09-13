@@ -50,6 +50,8 @@ impl ToProtoUser for models::User {
             phone: phone,
             permissions: self.permissions.to_i32_permissions(),
             bio: self.bio.to_owned(),
+            media_storage_limit_bytes: self.media_storage_limit_bytes.map(|b| b as u64),
+            media_storage_bytes_used: self.media_storage_bytes_used as u64,
             // avatar_media_id: self.avatar_media_id.to_owned().map(|id| id.to_proto_id()),
             avatar: media_lookup
                 .map(|ml| ml.get(&self.avatar_media_id.unwrap()).unwrap().to_proto()),
