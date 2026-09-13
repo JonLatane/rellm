@@ -54,7 +54,7 @@ lives in (`servers`), and every `Msg`/`Cmd Msg`-constructing operation (`setWebU
 -}
 
 import Html exposing (Html, div, img, text)
-import Html.Attributes exposing (alt, class, src)
+import Html.Attributes exposing (alt, class, src, title)
 import Http
 import Json.Decode as Decode exposing (Decoder)
 import Json.Encode as Encode
@@ -394,18 +394,33 @@ rellmServerNameAndLogo server size =
                         []
                    )
 
-        secondaryLine : Html msg
-        secondaryLine =
+        showSecondary : Bool
+        showSecondary =
             case nameSuffix of
                 Just suffix ->
-                    if isBig && not largeName && suffix /= "" then
-                        div [ class "server-name-secondary" ] [ text suffix ]
-
-                    else
-                        text ""
+                    isBig && not largeName && suffix /= ""
 
                 Nothing ->
-                    text ""
+                    False
+
+        secondaryLine : Html msg
+        secondaryLine =
+            if showSecondary then
+                div [ class "server-name-secondary" ] [ text (Maybe.withDefault "" nameSuffix) ]
+
+            else
+                text ""
+
+        -- Mirrors exactly what's visually rendered below (one line, or two
+        -- when `secondaryLine` is showing), so the native tooltip never says
+        -- more or less than what's on screen.
+        breakdownTitle : String
+        breakdownTitle =
+            if showSecondary then
+                String.join "\n" [ primaryLine, Maybe.withDefault "" nameSuffix ]
+
+            else
+                primaryLine
 
         sizeClass : String
         sizeClass =
@@ -418,7 +433,7 @@ rellmServerNameAndLogo server size =
     in
     div [ class ("server-name-and-logo " ++ sizeClass) ]
         [ logo
-        , div [ class "server-name-breakdown" ]
+        , div [ class "server-name-breakdown", title breakdownTitle ]
             [ div [ class (String.join " " primaryClasses) ] [ text primaryLine ]
             , secondaryLine
             ]

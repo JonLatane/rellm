@@ -318,12 +318,12 @@ fn convert_png_to_ico(png_path: &str, ico_path: &str, tempdir: &Path) -> Result<
             for size in FAVICON_ICO_SIZES {
                 let frame_path = tempdir.join(format!("favicon-{size}.png"));
                 imagemagick
-                    .resize(Path::new(png_path), &frame_path, size)
-                    .map_err(|e| { eprintln!("DEBUG resize err: {e:?}"); Status::ExpectationFailed })?;
+                    .resize_to_truecolor_png(Path::new(png_path), &frame_path, size)
+                    .map_err(|_| Status::ExpectationFailed)?;
                 let frame_file =
-                    std::fs::File::open(&frame_path).map_err(|e| { eprintln!("DEBUG open err: {e:?}"); Status::ExpectationFailed })?;
+                    std::fs::File::open(&frame_path).map_err(|_| Status::ExpectationFailed)?;
                 let image =
-                    ico::IconImage::read_png(frame_file).map_err(|e| { eprintln!("DEBUG read_png err: {e:?}"); Status::ExpectationFailed })?;
+                    ico::IconImage::read_png(frame_file).map_err(|_| Status::ExpectationFailed)?;
                 icon_dir.add_entry(
                     ico::IconDirEntry::encode(&image).map_err(|_| Status::ExpectationFailed)?,
                 );
@@ -359,33 +359,4 @@ fn convert_ico_to_png(ico_path: &str, png_path: &str) -> Result<(), Status> {
     image
         .write_png(png_file)
         .map_err(|_| Status::ExpectationFailed)
-}
-
-#[cfg(test)]
-mod favicon_fix_verification {
-    use super::*;
-
-    #[test]
-    fn scratch_verify_convert_png_to_ico() {
-        let tempdir = std::env::temp_dir();
-        let png_path = "../docs/rellm_emblem.png";
-        let ico_path = tempdir.join("scratch-favicon.ico");
-        convert_png_to_ico(png_path, ico_path.to_str().unwrap(), &tempdir).unwrap();
-
-        let ico_file = std::fs::File::open(&ico_path).unwrap();
-        let icon_dir = ico::IconDir::read(ico_file).unwrap();
-        let sizes: Vec<u32> = icon_dir.entries().iter().map(|e| e.width()).collect();
-        println!("SCRATCH_TEST_SIZES={:?}", sizes);
-        assert_eq!(sizes, vec![16, 32, 48, 64, 128, 0]); // 0 means 256 per ICO spec
-        for entry in icon_dir.entries() {
-            let image = entry.decode().unwrap();
-            assert!(image.width() <= 256 && image.height() <= 256);
-            println!(
-                "SCRATCH_TEST_ENTRY declared_width={} actual_decoded={}x{}",
-                entry.width(),
-                image.width(),
-                image.height()
-            );
-        }
-    }
 }

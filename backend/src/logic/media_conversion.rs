@@ -129,13 +129,7 @@ impl ImageMagick {
     /// Resizes `input` to fit within `max_dimension`x`max_dimension`, preserving aspect ratio and
     /// never upscaling (ImageMagick's `>` geometry flag), stripping EXIF/color-profile metadata,
     /// and correcting orientation from EXIF before doing so.
-    ///
-    /// `pub(crate)`: also called directly (bypassing `Converter` and the cluster-wide
-    /// `ClusterResource::Imagemagick` lock in `convert_media_sizes.rs`) by `web::server_information`
-    /// to build favicon.ico frames on demand -- that lock exists to cap concurrent *background*
-    /// conversion load across a cluster, not to gate this kind of small, synchronous, per-request
-    /// resize.
-    pub(crate) fn resize(&self, input: &Path, output: &Path, max_dimension: u32) -> Result<()> {
+    fn resize(&self, input: &Path, output: &Path, max_dimension: u32) -> Result<()> {
         let status = self
             .convert_command()
             .arg(input)
@@ -144,6 +138,40 @@ impl ImageMagick {
             .arg("-resize")
             .arg(format!("{0}x{0}>", max_dimension))
             .arg(output)
+            .status()
+            .context("failed to run convert")?;
+        if !status.success() {
+            bail!("convert exited with {}", status);
+        }
+        Ok(())
+    }
+
+    /// Same resizing as `resize()`, but also forces truecolor (32bpp RGBA) PNG output via
+    /// ImageMagick's `PNG32:` coder prefix. `resize()`'s plain PNG output lets ImageMagick choose
+    /// an indexed/palette encoding for simple/small images, which the `ico` crate's PNG reader
+    /// (`web::server_information`'s favicon.ico builder, its only caller) rejects outright with
+    /// "Unsupported PNG color type: Indexed".
+    ///
+    /// `pub(crate)`: called directly from `web::server_information` to build favicon.ico frames
+    /// on demand, bypassing `Converter` and the cluster-wide `ClusterResource::Imagemagick` lock
+    /// in `convert_media_sizes.rs` -- that lock caps concurrent *background* conversion load
+    /// across a cluster, not this kind of small, synchronous, per-request resize.
+    pub(crate) fn resize_to_truecolor_png(
+        &self,
+        input: &Path,
+        output: &Path,
+        max_dimension: u32,
+    ) -> Result<()> {
+        let status = self
+            .convert_command()
+            .arg(input)
+            .arg("-auto-orient")
+            .arg("-strip")
+            .arg("-resize")
+            .arg(format!("{0}x{0}>", max_dimension))
+            .arg("-type")
+            .arg("TrueColorAlpha")
+            .arg(format!("PNG32:{}", output.display()))
             .status()
             .context("failed to run convert")?;
         if !status.success() {
