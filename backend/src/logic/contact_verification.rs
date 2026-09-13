@@ -15,6 +15,7 @@ use tonic::{Code, Status};
 
 use crate::db_connection::PgPooledConnection;
 use crate::logic::{bird_sync, twilio_sync};
+use crate::marshaling::ToProtoServerConfiguration;
 use crate::protos::{BirdConfig, TwilioConfig, VerificationApi};
 use crate::rpcs::get_server_configuration_model;
 
@@ -101,7 +102,7 @@ pub fn send_verification_sms(
     to: &str,
     code: &str,
 ) -> Result<(), Status> {
-    let body = format!("Your verification code is {code}");
+    let body = verification_sms_body(conn, code);
     match available_verification_apis(conn).first() {
         Some(VerificationApi::Twilio) => {
             let config = server_twilio_config(conn)
@@ -121,6 +122,37 @@ pub fn send_verification_sms(
             Code::FailedPrecondition,
             "verification_not_configured",
         )),
+    }
+}
+
+/// The actual SMS text sent by `send_verification_sms` -- names the server (`server_info.name`)
+/// and, if configured, its public domain (`external_cdn_config.frontend_host`) so a recipient can
+/// tell which of possibly many Rellm servers they're hearing from, plus a standard
+/// don't-share-this warning. Falls back to just the server name (no parenthetical) if no CDN
+/// domain is configured.
+fn verification_sms_body(conn: &mut PgPooledConnection, code: &str) -> String {
+    let config = get_server_configuration_model(conn)
+        .ok()
+        .map(|c| c.to_proto());
+    let server_name = config
+        .as_ref()
+        .and_then(|c| c.server_info.as_ref())
+        .and_then(|info| info.name.clone())
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| "Jonline".to_string());
+    let frontend_host = config
+        .as_ref()
+        .and_then(|c| c.external_cdn_config.as_ref())
+        .map(|cdn| cdn.frontend_host.clone())
+        .filter(|host| !host.is_empty());
+
+    match frontend_host {
+        Some(host) => format!(
+            "Phone verification requested from {server_name} ({host}). Your code is: {code}. Do not share this code with anyone."
+        ),
+        None => format!(
+            "Phone verification requested from {server_name}. Your code is: {code}. Do not share this code with anyone."
+        ),
     }
 }
 

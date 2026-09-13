@@ -428,6 +428,91 @@ mod start_contact_method_verification_spec {
     }
 }
 
+mod sms_body_format_spec {
+    use super::*;
+
+    #[test]
+    fn includes_server_name_and_frontend_host_when_configured() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, tonic::Status, _>(|conn| {
+            configure_twilio_with_server_info(
+                conn,
+                "AC_sid",
+                "SK_test_key_sid",
+                "auth_token",
+                "+15005550006",
+                "Jonline",
+                "jonline.io",
+            );
+            let user = create_user(conn, "sms_body_with_cdn");
+            let user = set_user_phone(conn, &user, &phone_contact_method("tel:+15551234567"));
+
+            let (base_url, captured) = serve_capturing(|_request, _prior| {
+                ("HTTP/1.1 201 Created", serde_json::json!({ "sid": "SM_test" }))
+            });
+
+            start_contact_method_verification_at(
+                Some(&base_url),
+                phone_contact_method("tel:+15551234567"),
+                &user,
+                conn,
+            )
+            .expect("start should succeed");
+
+            let requests = captured.lock().unwrap();
+            assert!(
+                requests[0].contains("Phone+verification+requested+from+Jonline+%28jonline.io%29.+Your+code+is%3A")
+                    || requests[0].contains("Phone verification requested from Jonline (jonline.io). Your code is:"),
+                "expected the server name + frontend host in the message body: {:?}",
+                requests[0]
+            );
+            assert!(requests[0].contains("Do+not+share+this+code+with+anyone") || requests[0].contains("Do not share this code with anyone"));
+
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn omits_the_parenthetical_when_no_frontend_host_is_configured() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, tonic::Status, _>(|conn| {
+            configure_twilio_with_server_info(
+                conn,
+                "AC_sid",
+                "SK_test_key_sid",
+                "auth_token",
+                "+15005550006",
+                "Jonline",
+                "",
+            );
+            let user = create_user(conn, "sms_body_no_cdn");
+            let user = set_user_phone(conn, &user, &phone_contact_method("tel:+15551234567"));
+
+            let (base_url, captured) = serve_capturing(|_request, _prior| {
+                ("HTTP/1.1 201 Created", serde_json::json!({ "sid": "SM_test" }))
+            });
+
+            start_contact_method_verification_at(
+                Some(&base_url),
+                phone_contact_method("tel:+15551234567"),
+                &user,
+                conn,
+            )
+            .expect("start should succeed");
+
+            let requests = captured.lock().unwrap();
+            assert!(
+                requests[0].contains("Phone+verification+requested+from+Jonline.+Your+code+is%3A")
+                    || requests[0].contains("Phone verification requested from Jonline. Your code is:"),
+                "expected no parenthetical when no frontend_host is configured: {:?}",
+                requests[0]
+            );
+
+            Ok(())
+        });
+    }
+}
+
 mod bird_and_provider_selection_spec {
     use super::*;
 

@@ -891,6 +891,52 @@ pub fn configure_twilio(
         .expect("failed to create test server configuration");
 }
 
+/// Same as `configure_twilio`, but also sets `server_info.name`/`external_cdn_config.frontend_host`
+/// (pass `frontend_host: ""` to leave the CDN config unset) -- for specs on
+/// `contact_verification::verification_sms_body`'s "which server is this from" text, which needs
+/// both live in the same row.
+pub fn configure_twilio_with_server_info(
+    conn: &mut PgPooledConnection,
+    account_sid: &str,
+    api_key_sid: &str,
+    api_key_secret: &str,
+    from_number: &str,
+    server_name: &str,
+    frontend_host: &str,
+) {
+    let mut new_config = models::default_server_configuration();
+    new_config.twilio_config = Some(
+        serde_json::to_value(TwilioConfig {
+            twilio_enabled: true,
+            twilio_account_sid: account_sid.to_string(),
+            twilio_api_key_sid: api_key_sid.to_string(),
+            twilio_api_key_secret: api_key_secret.to_string(),
+            twilio_from_number: from_number.to_string(),
+        })
+        .unwrap(),
+    );
+    new_config.server_info = serde_json::to_value(ServerInfo {
+        name: Some(server_name.to_string()),
+        ..Default::default()
+    })
+    .unwrap();
+    new_config.external_cdn_config = if frontend_host.is_empty() {
+        None
+    } else {
+        Some(
+            serde_json::to_value(ExternalCdnConfig {
+                frontend_host: frontend_host.to_string(),
+                ..Default::default()
+            })
+            .unwrap(),
+        )
+    };
+    insert_into(server_configurations::table)
+        .values(&new_config)
+        .execute(conn)
+        .expect("failed to create test server configuration");
+}
+
 /// Mirrors `configure_twilio`, but sets `bird_config` instead -- for specs exercising Bird as a
 /// verification provider (or the two providers' fallback ordering together).
 pub fn configure_bird(
