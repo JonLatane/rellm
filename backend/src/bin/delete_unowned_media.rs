@@ -37,14 +37,20 @@ async fn main() {
                 .expect("Failed to update Post");
         }
 
-        match bucket.delete_object(&media.minio_path).await {
-            Ok(_) => {
-                delete(media::table.find(media.id)).execute(&mut conn)
-                    .expect("Failed to delete Media");
-                log::info!("Deleted Media: {:?}", media);
-             },
-            Err(e) => log::error!("Failed to delete Media: {:?} with error: {:?}. Proceeding through remaining media.", media, e),
+        for size in media.sizes() {
+            if let Err(e) = bucket.delete_object(&size.minio_path).await {
+                log::error!(
+                    "Failed to delete MinIO object {} for Media {}: {:?}. Proceeding through remaining media.",
+                    size.minio_path,
+                    media.id,
+                    e
+                );
+            }
         }
+        delete(media::table.find(media.id))
+            .execute(&mut conn)
+            .expect("Failed to delete Media");
+        log::info!("Deleted Media: {:?}", media);
     }
     log::info!("Done Deleting Unowned Media.");
 }

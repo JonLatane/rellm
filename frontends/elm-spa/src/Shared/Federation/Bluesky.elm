@@ -37,7 +37,7 @@ doc already covers for reading someone else's public post.
 import Http
 import Iso8601
 import Json.Decode as Decode exposing (Decoder)
-import Proto.Rellm exposing (Author, Post, defaultAuthor, defaultMediaReference, defaultPost)
+import Proto.Rellm exposing (Author, Post, defaultAuthor, defaultMediaReference, defaultPost, wrapMediaReference)
 import Proto.Rellm.PostContext exposing (PostContext(..))
 import Proto.Rellm.Visibility exposing (Visibility(..))
 import Shared.Conversions exposing (posixToTimestamp)
@@ -213,7 +213,7 @@ toAuthor feedPost =
         | userId = "bluesky:" ++ feedPost.authorHandle
         , username = Just feedPost.authorHandle
         , realName = feedPost.authorDisplayName
-        , avatar = feedPost.authorAvatarUrl |> Maybe.map (\url -> { defaultMediaReference | url = Just url })
+        , avatar = feedPost.authorAvatarUrl |> Maybe.map (\url -> wrapMediaReference { defaultMediaReference | url = Just url })
     }
 
 

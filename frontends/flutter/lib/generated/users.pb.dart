@@ -11,6 +11,7 @@
 
 import 'dart:core' as $core;
 
+import 'package:fixnum/fixnum.dart' as $fixnum;
 import 'package:protobuf/protobuf.dart' as $pb;
 
 import 'ai_providers.pb.dart' as $11;
@@ -36,6 +37,8 @@ class User extends $pb.GeneratedMessage {
     $core.Iterable<$14.Permission>? permissions,
     $5.MediaReference? avatar,
     $core.String? bio,
+    $fixnum.Int64? mediaStorageLimitBytes,
+    $fixnum.Int64? mediaStorageBytesUsed,
     $13.Visibility? visibility,
     $13.Moderation? moderation,
     $13.Moderation? defaultFollowModeration,
@@ -82,6 +85,12 @@ class User extends $pb.GeneratedMessage {
     }
     if (bio != null) {
       $result.bio = bio;
+    }
+    if (mediaStorageLimitBytes != null) {
+      $result.mediaStorageLimitBytes = mediaStorageLimitBytes;
+    }
+    if (mediaStorageBytesUsed != null) {
+      $result.mediaStorageBytesUsed = mediaStorageBytesUsed;
     }
     if (visibility != null) {
       $result.visibility = visibility;
@@ -161,6 +170,8 @@ class User extends $pb.GeneratedMessage {
     ..pc<$14.Permission>(6, _omitFieldNames ? '' : 'permissions', $pb.PbFieldType.KE, valueOf: $14.Permission.valueOf, enumValues: $14.Permission.values, defaultEnumValue: $14.Permission.PERMISSION_UNKNOWN)
     ..aOM<$5.MediaReference>(7, _omitFieldNames ? '' : 'avatar', subBuilder: $5.MediaReference.create)
     ..aOS(8, _omitFieldNames ? '' : 'bio')
+    ..a<$fixnum.Int64>(10, _omitFieldNames ? '' : 'mediaStorageLimitBytes', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
+    ..a<$fixnum.Int64>(11, _omitFieldNames ? '' : 'mediaStorageBytesUsed', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
     ..e<$13.Visibility>(20, _omitFieldNames ? '' : 'visibility', $pb.PbFieldType.OE, defaultOrMaker: $13.Visibility.VISIBILITY_UNKNOWN, valueOf: $13.Visibility.valueOf, enumValues: $13.Visibility.values)
     ..e<$13.Moderation>(21, _omitFieldNames ? '' : 'moderation', $pb.PbFieldType.OE, defaultOrMaker: $13.Moderation.MODERATION_UNKNOWN, valueOf: $13.Moderation.valueOf, enumValues: $13.Moderation.values)
     ..e<$13.Moderation>(30, _omitFieldNames ? '' : 'defaultFollowModeration', $pb.PbFieldType.OE, defaultOrMaker: $13.Moderation.MODERATION_UNKNOWN, valueOf: $13.Moderation.valueOf, enumValues: $13.Moderation.values)
@@ -287,6 +298,35 @@ class User extends $pb.GeneratedMessage {
   @$pb.TagNumber(8)
   void clearBio() => clearField(8);
 
+  /// The maximum number of bytes this user's Media (see `Media.sizes[].size_bytes`) may
+  /// collectively occupy in storage. Enforced by `POST /media` (see `Media`'s own doc), which
+  /// rejects an upload that would push `media_storage_bytes_used` over this limit with an HTTP 413
+  /// and a plaintext error body. Unset means unlimited.
+  @$pb.TagNumber(10)
+  $fixnum.Int64 get mediaStorageLimitBytes => $_getI64(8);
+  @$pb.TagNumber(10)
+  set mediaStorageLimitBytes($fixnum.Int64 v) { $_setInt64(8, v); }
+  @$pb.TagNumber(10)
+  $core.bool hasMediaStorageLimitBytes() => $_has(8);
+  @$pb.TagNumber(10)
+  void clearMediaStorageLimitBytes() => clearField(10);
+
+  /// The total size, in bytes, of every stored copy (original plus any converted sizes) of every
+  /// Media item this user owns -- the sum of `Media.sizes[].size_bytes` across all their Media.
+  /// A denormalized counter, recomputed (never trusted from client input) after every operation
+  /// that could change it -- upload, delete, size conversion, `DeleteMediaSizes` -- by
+  /// `backend/src/logic/user_counts.rs`'s `update_media_storage_used`, and self-healed on an
+  /// interval by `bin/update_user_counts.rs` the same way every other denormalized `User` counter
+  /// (`follower_count`, `post_count`, etc.) is.
+  @$pb.TagNumber(11)
+  $fixnum.Int64 get mediaStorageBytesUsed => $_getI64(9);
+  @$pb.TagNumber(11)
+  set mediaStorageBytesUsed($fixnum.Int64 v) { $_setInt64(9, v); }
+  @$pb.TagNumber(11)
+  $core.bool hasMediaStorageBytesUsed() => $_has(9);
+  @$pb.TagNumber(11)
+  void clearMediaStorageBytesUsed() => clearField(11);
+
   /// User visibility is a bit different from Post visibility.
   /// LIMITED means the user can only be seen by users they follow
   /// (as opposed to Posts' individualized visibilities).
@@ -294,161 +334,161 @@ class User extends $pb.GeneratedMessage {
   /// See server_configuration.proto for details about PRIVATE
   /// users' ability to creep.
   @$pb.TagNumber(20)
-  $13.Visibility get visibility => $_getN(8);
+  $13.Visibility get visibility => $_getN(10);
   @$pb.TagNumber(20)
   set visibility($13.Visibility v) { setField(20, v); }
   @$pb.TagNumber(20)
-  $core.bool hasVisibility() => $_has(8);
+  $core.bool hasVisibility() => $_has(10);
   @$pb.TagNumber(20)
   void clearVisibility() => clearField(20);
 
   /// The user's moderation status. See [`Moderation`](#rellm-Moderation) for details.
   @$pb.TagNumber(21)
-  $13.Moderation get moderation => $_getN(9);
+  $13.Moderation get moderation => $_getN(11);
   @$pb.TagNumber(21)
   set moderation($13.Moderation v) { setField(21, v); }
   @$pb.TagNumber(21)
-  $core.bool hasModeration() => $_has(9);
+  $core.bool hasModeration() => $_has(11);
   @$pb.TagNumber(21)
   void clearModeration() => clearField(21);
 
   /// Only PENDING or UNMODERATED are valid.
   @$pb.TagNumber(30)
-  $13.Moderation get defaultFollowModeration => $_getN(10);
+  $13.Moderation get defaultFollowModeration => $_getN(12);
   @$pb.TagNumber(30)
   set defaultFollowModeration($13.Moderation v) { setField(30, v); }
   @$pb.TagNumber(30)
-  $core.bool hasDefaultFollowModeration() => $_has(10);
+  $core.bool hasDefaultFollowModeration() => $_has(12);
   @$pb.TagNumber(30)
   void clearDefaultFollowModeration() => clearField(30);
 
   /// The number of users following this user.
   @$pb.TagNumber(31)
-  $core.int get followerCount => $_getIZ(11);
+  $core.int get followerCount => $_getIZ(13);
   @$pb.TagNumber(31)
-  set followerCount($core.int v) { $_setSignedInt32(11, v); }
+  set followerCount($core.int v) { $_setSignedInt32(13, v); }
   @$pb.TagNumber(31)
-  $core.bool hasFollowerCount() => $_has(11);
+  $core.bool hasFollowerCount() => $_has(13);
   @$pb.TagNumber(31)
   void clearFollowerCount() => clearField(31);
 
   /// The number of users this user is following.
   @$pb.TagNumber(32)
-  $core.int get followingCount => $_getIZ(12);
+  $core.int get followingCount => $_getIZ(14);
   @$pb.TagNumber(32)
-  set followingCount($core.int v) { $_setSignedInt32(12, v); }
+  set followingCount($core.int v) { $_setSignedInt32(14, v); }
   @$pb.TagNumber(32)
-  $core.bool hasFollowingCount() => $_has(12);
+  $core.bool hasFollowingCount() => $_has(14);
   @$pb.TagNumber(32)
   void clearFollowingCount() => clearField(32);
 
   /// The number of users this user mutually follows (and is followed by).
   @$pb.TagNumber(33)
-  $core.int get friendCount => $_getIZ(13);
+  $core.int get friendCount => $_getIZ(15);
   @$pb.TagNumber(33)
-  set friendCount($core.int v) { $_setSignedInt32(13, v); }
+  set friendCount($core.int v) { $_setSignedInt32(15, v); }
   @$pb.TagNumber(33)
-  $core.bool hasFriendCount() => $_has(13);
+  $core.bool hasFriendCount() => $_has(15);
   @$pb.TagNumber(33)
   void clearFriendCount() => clearField(33);
 
   /// The number of groups this user is a member of.
   @$pb.TagNumber(34)
-  $core.int get groupCount => $_getIZ(14);
+  $core.int get groupCount => $_getIZ(16);
   @$pb.TagNumber(34)
-  set groupCount($core.int v) { $_setSignedInt32(14, v); }
+  set groupCount($core.int v) { $_setSignedInt32(16, v); }
   @$pb.TagNumber(34)
-  $core.bool hasGroupCount() => $_has(14);
+  $core.bool hasGroupCount() => $_has(16);
   @$pb.TagNumber(34)
   void clearGroupCount() => clearField(34);
 
   /// The number of posts this user has made.
   @$pb.TagNumber(35)
-  $core.int get postCount => $_getIZ(15);
+  $core.int get postCount => $_getIZ(17);
   @$pb.TagNumber(35)
-  set postCount($core.int v) { $_setSignedInt32(15, v); }
+  set postCount($core.int v) { $_setSignedInt32(17, v); }
   @$pb.TagNumber(35)
-  $core.bool hasPostCount() => $_has(15);
+  $core.bool hasPostCount() => $_has(17);
   @$pb.TagNumber(35)
   void clearPostCount() => clearField(35);
 
   /// The number of responses to [`Post`](#rellm-Post)s and [`Event`](#rellm-Event)s this user has made.
   @$pb.TagNumber(36)
-  $core.int get responseCount => $_getIZ(16);
+  $core.int get responseCount => $_getIZ(18);
   @$pb.TagNumber(36)
-  set responseCount($core.int v) { $_setSignedInt32(16, v); }
+  set responseCount($core.int v) { $_setSignedInt32(18, v); }
   @$pb.TagNumber(36)
-  $core.bool hasResponseCount() => $_has(16);
+  $core.bool hasResponseCount() => $_has(18);
   @$pb.TagNumber(36)
   void clearResponseCount() => clearField(36);
 
   /// The number of events this user has created.
   @$pb.TagNumber(37)
-  $core.int get eventCount => $_getIZ(17);
+  $core.int get eventCount => $_getIZ(19);
   @$pb.TagNumber(37)
-  set eventCount($core.int v) { $_setSignedInt32(17, v); }
+  set eventCount($core.int v) { $_setSignedInt32(19, v); }
   @$pb.TagNumber(37)
-  $core.bool hasEventCount() => $_has(17);
+  $core.bool hasEventCount() => $_has(19);
   @$pb.TagNumber(37)
   void clearEventCount() => clearField(37);
 
   /// The number of occasions this user has created (across all of their events).
   @$pb.TagNumber(38)
-  $core.int get occasionCount => $_getIZ(18);
+  $core.int get occasionCount => $_getIZ(20);
   @$pb.TagNumber(38)
-  set occasionCount($core.int v) { $_setSignedInt32(18, v); }
+  set occasionCount($core.int v) { $_setSignedInt32(20, v); }
   @$pb.TagNumber(38)
-  $core.bool hasOccasionCount() => $_has(18);
+  $core.bool hasOccasionCount() => $_has(20);
   @$pb.TagNumber(38)
   void clearOccasionCount() => clearField(38);
 
   /// Presence indicates the current user is following
   /// or has a pending follow request for this user.
   @$pb.TagNumber(50)
-  Follow get currentUserFollow => $_getN(19);
+  Follow get currentUserFollow => $_getN(21);
   @$pb.TagNumber(50)
   set currentUserFollow(Follow v) { setField(50, v); }
   @$pb.TagNumber(50)
-  $core.bool hasCurrentUserFollow() => $_has(19);
+  $core.bool hasCurrentUserFollow() => $_has(21);
   @$pb.TagNumber(50)
   void clearCurrentUserFollow() => clearField(50);
   @$pb.TagNumber(50)
-  Follow ensureCurrentUserFollow() => $_ensure(19);
+  Follow ensureCurrentUserFollow() => $_ensure(21);
 
   /// Presence indicates this user is following or has
   /// a pending follow request for the current user.
   @$pb.TagNumber(51)
-  Follow get targetCurrentUserFollow => $_getN(20);
+  Follow get targetCurrentUserFollow => $_getN(22);
   @$pb.TagNumber(51)
   set targetCurrentUserFollow(Follow v) { setField(51, v); }
   @$pb.TagNumber(51)
-  $core.bool hasTargetCurrentUserFollow() => $_has(20);
+  $core.bool hasTargetCurrentUserFollow() => $_has(22);
   @$pb.TagNumber(51)
   void clearTargetCurrentUserFollow() => clearField(51);
   @$pb.TagNumber(51)
-  Follow ensureTargetCurrentUserFollow() => $_ensure(20);
+  Follow ensureTargetCurrentUserFollow() => $_ensure(22);
 
   /// Returned by [`GetMembers`](#grpc-api-GetMembers) calls, for use when managing [`Group`](#rellm-Group) [`Membership`](#rellm-Membership)s.
   /// The [`Membership`](#rellm-Membership) should match the [`Group`](#rellm-Group) from the originating [`GetMembersRequest`](#rellm-GetMembersRequest),
   /// providing whether the user is a member of that [`Group`](#rellm-Group), has been invited, requested to join, etc..
   @$pb.TagNumber(52)
-  Membership get currentGroupMembership => $_getN(21);
+  Membership get currentGroupMembership => $_getN(23);
   @$pb.TagNumber(52)
   set currentGroupMembership(Membership v) { setField(52, v); }
   @$pb.TagNumber(52)
-  $core.bool hasCurrentGroupMembership() => $_has(21);
+  $core.bool hasCurrentGroupMembership() => $_has(23);
   @$pb.TagNumber(52)
   void clearCurrentGroupMembership() => clearField(52);
   @$pb.TagNumber(52)
-  Membership ensureCurrentGroupMembership() => $_ensure(21);
+  Membership ensureCurrentGroupMembership() => $_ensure(23);
 
   /// Indicates that `federated_profiles` has been loaded.
   @$pb.TagNumber(80)
-  $core.bool get hasAdvancedData => $_getBF(22);
+  $core.bool get hasAdvancedData => $_getBF(24);
   @$pb.TagNumber(80)
-  set hasAdvancedData($core.bool v) { $_setBool(22, v); }
+  set hasAdvancedData($core.bool v) { $_setBool(24, v); }
   @$pb.TagNumber(80)
-  $core.bool hasHasAdvancedData() => $_has(22);
+  $core.bool hasHasAdvancedData() => $_has(24);
   @$pb.TagNumber(80)
   void clearHasAdvancedData() => clearField(80);
 
@@ -456,7 +496,7 @@ class User extends $pb.GeneratedMessage {
   /// that the user has connected to their account. Managed by the user via
   /// `Federate`
   @$pb.TagNumber(81)
-  $core.List<$1.FederatedAccount> get federatedProfiles => $_getList(23);
+  $core.List<$1.FederatedAccount> get federatedProfiles => $_getList(25);
 
   /// The target user's own linked SyncDestinations (e.g. Facebook Pages).
   /// Populated by [`GetUsers`](#grpc-api-GetUsers)' single-user lookups (by username or by user_id) when the
@@ -465,7 +505,7 @@ class User extends $pb.GeneratedMessage {
   /// (always a self-view) - always empty otherwise, including via every other [`GetUsers`](#grpc-api-GetUsers)
   /// listing type.
   @$pb.TagNumber(82)
-  $core.List<$10.SyncDestination> get syncDestinations => $_getList(24);
+  $core.List<$10.SyncDestination> get syncDestinations => $_getList(26);
 
   /// The target user's own [`SyncSource`](#rellm-SyncSource)s. Unlike `sync_destinations`, also populated for
   /// the target user themselves *or an Admin* across every [`GetUsers`](#grpc-api-GetUsers) listing type (not just
@@ -474,7 +514,7 @@ class User extends $pb.GeneratedMessage {
   /// [`Login`](#grpc-api-Login)/[`CreateAccount`](#grpc-api-CreateAccount)/[`GetCurrentUser`](#grpc-api-GetCurrentUser) (always a self-view). Always empty for
   /// any other viewer.
   @$pb.TagNumber(83)
-  $core.List<$10.SyncSource> get syncSources => $_getList(25);
+  $core.List<$10.SyncSource> get syncSources => $_getList(27);
 
   /// Every [`AIProvider`](#rellm-AIProvider) model the target user may currently call - their own
   /// providers' models, plus any models granted to them on other users' providers (see
@@ -482,31 +522,31 @@ class User extends $pb.GeneratedMessage {
   /// (target user themselves, or an Admin, across any [`GetUsers`](#grpc-api-GetUsers) listing type, plus
   /// [`Login`](#grpc-api-Login)/[`CreateAccount`](#grpc-api-CreateAccount)/[`GetCurrentUser`](#grpc-api-GetCurrentUser)).
   @$pb.TagNumber(84)
-  $core.List<$11.AIModel> get aiModels => $_getList(26);
+  $core.List<$11.AIModel> get aiModels => $_getList(28);
 
   /// The time the user was created.
   @$pb.TagNumber(100)
-  $12.Timestamp get createdAt => $_getN(27);
+  $12.Timestamp get createdAt => $_getN(29);
   @$pb.TagNumber(100)
   set createdAt($12.Timestamp v) { setField(100, v); }
   @$pb.TagNumber(100)
-  $core.bool hasCreatedAt() => $_has(27);
+  $core.bool hasCreatedAt() => $_has(29);
   @$pb.TagNumber(100)
   void clearCreatedAt() => clearField(100);
   @$pb.TagNumber(100)
-  $12.Timestamp ensureCreatedAt() => $_ensure(27);
+  $12.Timestamp ensureCreatedAt() => $_ensure(29);
 
   /// The time the user was last updated.
   @$pb.TagNumber(101)
-  $12.Timestamp get updatedAt => $_getN(28);
+  $12.Timestamp get updatedAt => $_getN(30);
   @$pb.TagNumber(101)
   set updatedAt($12.Timestamp v) { setField(101, v); }
   @$pb.TagNumber(101)
-  $core.bool hasUpdatedAt() => $_has(28);
+  $core.bool hasUpdatedAt() => $_has(30);
   @$pb.TagNumber(101)
   void clearUpdatedAt() => clearField(101);
   @$pb.TagNumber(101)
-  $12.Timestamp ensureUpdatedAt() => $_ensure(28);
+  $12.Timestamp ensureUpdatedAt() => $_ensure(30);
 }
 
 /// Model for a user's follow of another user.

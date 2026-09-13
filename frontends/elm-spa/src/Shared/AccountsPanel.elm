@@ -69,6 +69,7 @@ import Shared.AccountsPanel.MastodonServers as MastodonServers exposing (Browsed
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccount, rellmAccountId)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (Branding, Connection, PersistedRellmServer, RellmServer)
 import Shared.AccountsPanel.SortOrder as SortOrder
+import Shared.Conversions as Conversions
 import Task exposing (Task)
 import Time
 import UI.Classes exposing (escapeCSSClass)
@@ -1656,6 +1657,8 @@ sendUpdate req msg model =
                             , syncDestinations = user.syncDestinations
                             , syncSources = user.syncSources
                             , aiModels = user.aiModels
+                            , mediaStorageBytesUsed = Conversions.int64ToInt user.mediaStorageBytesUsed
+                            , mediaStorageLimitBytes = Maybe.map Conversions.int64ToInt user.mediaStorageLimitBytes
                             }
 
                         newModel : Model

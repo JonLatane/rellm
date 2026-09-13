@@ -13,8 +13,8 @@ import 'dart:core' as $core;
 
 import 'package:protobuf/protobuf.dart' as $pb;
 
-import 'authors.pb.dart' as $15;
 import 'google/protobuf/timestamp.pb.dart' as $12;
+import 'media.pb.dart' as $5;
 import 'messages.pbenum.dart';
 
 export 'messages.pbenum.dart';
@@ -24,7 +24,7 @@ export 'messages.pbenum.dart';
 class Message extends $pb.GeneratedMessage {
   factory Message({
     $core.String? id,
-    $15.Author? sender,
+    $5.Author? sender,
     MessagingGroup? messagingGroup,
     $core.String? bodyText,
     $core.String? subject,
@@ -81,7 +81,7 @@ class Message extends $pb.GeneratedMessage {
 
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'Message', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'id')
-    ..aOM<$15.Author>(2, _omitFieldNames ? '' : 'sender', subBuilder: $15.Author.create)
+    ..aOM<$5.Author>(2, _omitFieldNames ? '' : 'sender', subBuilder: $5.Author.create)
     ..aOM<MessagingGroup>(3, _omitFieldNames ? '' : 'messagingGroup', subBuilder: MessagingGroup.create)
     ..aOS(4, _omitFieldNames ? '' : 'bodyText')
     ..aOS(5, _omitFieldNames ? '' : 'subject')
@@ -128,15 +128,15 @@ class Message extends $pb.GeneratedMessage {
 
   /// The sender of the message. Note that this is *purported* (we don't protect against spoofing).
   @$pb.TagNumber(2)
-  $15.Author get sender => $_getN(1);
+  $5.Author get sender => $_getN(1);
   @$pb.TagNumber(2)
-  set sender($15.Author v) { setField(2, v); }
+  set sender($5.Author v) { setField(2, v); }
   @$pb.TagNumber(2)
   $core.bool hasSender() => $_has(1);
   @$pb.TagNumber(2)
   void clearSender() => clearField(2);
   @$pb.TagNumber(2)
-  $15.Author ensureSender() => $_ensure(1);
+  $5.Author ensureSender() => $_ensure(1);
 
   /// Note that, on the backend, every message actually has a messaging group.
   /// From the client's perspective, if messaging_group is not set, you
@@ -531,7 +531,7 @@ class SendMessageRequest extends $pb.GeneratedMessage {
 class MessagingGroup extends $pb.GeneratedMessage {
   factory MessagingGroup({
     $core.String? id,
-    $core.Iterable<$15.Author>? members,
+    $core.Iterable<$5.Author>? members,
     $12.Timestamp? createdAt,
   }) {
     final $result = create();
@@ -552,7 +552,7 @@ class MessagingGroup extends $pb.GeneratedMessage {
 
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'MessagingGroup', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'id')
-    ..pc<$15.Author>(2, _omitFieldNames ? '' : 'members', $pb.PbFieldType.PM, subBuilder: $15.Author.create)
+    ..pc<$5.Author>(2, _omitFieldNames ? '' : 'members', $pb.PbFieldType.PM, subBuilder: $5.Author.create)
     ..aOM<$12.Timestamp>(10, _omitFieldNames ? '' : 'createdAt', subBuilder: $12.Timestamp.create)
     ..hasRequiredFields = false
   ;
@@ -590,7 +590,7 @@ class MessagingGroup extends $pb.GeneratedMessage {
 
   /// The users who are members of the group. Note that this is a superset of the users who are
   @$pb.TagNumber(2)
-  $core.List<$15.Author> get members => $_getList(1);
+  $core.List<$5.Author> get members => $_getList(1);
 
   /// The time the group was created.
   @$pb.TagNumber(10)

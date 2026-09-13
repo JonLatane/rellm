@@ -3,7 +3,7 @@ syntax = "proto3";
 package rellm;
 
 import "google/protobuf/timestamp.proto";
-import "authors.proto";
+import "media.proto";
 
 // Rellm Message/Email support is "low trust." You should not trust that people are who
 // they say they are, or ever exchange financial or private information with Rellm's

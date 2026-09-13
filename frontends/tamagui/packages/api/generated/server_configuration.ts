@@ -1043,12 +1043,32 @@ export interface WebPushConfig {
   privateVapidKey: string;
 }
 
+/**
+ * Twilio credentials, authenticated via a Twilio **API Key** (`twilio_api_key_sid`/
+ * `twilio_api_key_secret`) -- deliberately *not* the account's own Auth Token. A server's Auth
+ * Token is a single unscoped, unrevocable-without-rotating-everything credential with full access
+ * to the whole Twilio account; an API Key is its own separate, individually-revocable credential
+ * pair meant for exactly this kind of integration. `twilio_account_sid` is still required (Twilio
+ * resource URLs are always addressed by the actual Account SID), but it is *not* used to
+ * authenticate -- only the API Key SID/Secret pair is. See
+ * https://www.twilio.com/docs/iam/api-keys/restricted-api-keys for the recommended
+ * permission when creating one: `/twilio/messaging/messages/create` (nothing else is needed just
+ * to send verification SMS).
+ */
 export interface TwilioConfig {
   twilioEnabled: boolean;
-  /** The Twilio Account SID. Public (among admins) -- freely serialized. */
+  /**
+   * The Twilio Account SID (starts with `AC`). Used only in the API's URL path -- *never* as an
+   * authentication credential. Public (among admins) -- freely serialized.
+   */
   twilioAccountSid: string;
-  /** The Twilio Auth Token. Never serialized once written. */
-  twilioApiKey: string;
+  /**
+   * The Twilio API Key's SID (starts with `SK`), used as the Basic Auth username. Public (among
+   * admins) -- freely serialized; it's useless without the Secret below, same as a username alone.
+   */
+  twilioApiKeySid: string;
+  /** The Twilio API Key's Secret, used as the Basic Auth password. Never serialized once written. */
+  twilioApiKeySecret: string;
   /** The Twilio-provisioned sending number for outbound verification SMS. Not secret. */
   twilioFromNumber: string;
 }
@@ -3856,7 +3876,13 @@ export const WebPushConfig: MessageFns<WebPushConfig> = {
 };
 
 function createBaseTwilioConfig(): TwilioConfig {
-  return { twilioEnabled: false, twilioAccountSid: "", twilioApiKey: "", twilioFromNumber: "" };
+  return {
+    twilioEnabled: false,
+    twilioAccountSid: "",
+    twilioApiKeySid: "",
+    twilioApiKeySecret: "",
+    twilioFromNumber: "",
+  };
 }
 
 export const TwilioConfig: MessageFns<TwilioConfig> = {
@@ -3867,8 +3893,11 @@ export const TwilioConfig: MessageFns<TwilioConfig> = {
     if (message.twilioAccountSid !== "") {
       writer.uint32(26).string(message.twilioAccountSid);
     }
-    if (message.twilioApiKey !== "") {
-      writer.uint32(18).string(message.twilioApiKey);
+    if (message.twilioApiKeySid !== "") {
+      writer.uint32(42).string(message.twilioApiKeySid);
+    }
+    if (message.twilioApiKeySecret !== "") {
+      writer.uint32(18).string(message.twilioApiKeySecret);
     }
     if (message.twilioFromNumber !== "") {
       writer.uint32(34).string(message.twilioFromNumber);
@@ -3899,12 +3928,20 @@ export const TwilioConfig: MessageFns<TwilioConfig> = {
           message.twilioAccountSid = reader.string();
           continue;
         }
+        case 5: {
+          if (tag !== 42) {
+            break;
+          }
+
+          message.twilioApiKeySid = reader.string();
+          continue;
+        }
         case 2: {
           if (tag !== 18) {
             break;
           }
 
-          message.twilioApiKey = reader.string();
+          message.twilioApiKeySecret = reader.string();
           continue;
         }
         case 4: {
@@ -3928,7 +3965,8 @@ export const TwilioConfig: MessageFns<TwilioConfig> = {
     return {
       twilioEnabled: isSet(object.twilioEnabled) ? globalThis.Boolean(object.twilioEnabled) : false,
       twilioAccountSid: isSet(object.twilioAccountSid) ? globalThis.String(object.twilioAccountSid) : "",
-      twilioApiKey: isSet(object.twilioApiKey) ? globalThis.String(object.twilioApiKey) : "",
+      twilioApiKeySid: isSet(object.twilioApiKeySid) ? globalThis.String(object.twilioApiKeySid) : "",
+      twilioApiKeySecret: isSet(object.twilioApiKeySecret) ? globalThis.String(object.twilioApiKeySecret) : "",
       twilioFromNumber: isSet(object.twilioFromNumber) ? globalThis.String(object.twilioFromNumber) : "",
     };
   },
@@ -3941,8 +3979,11 @@ export const TwilioConfig: MessageFns<TwilioConfig> = {
     if (message.twilioAccountSid !== "") {
       obj.twilioAccountSid = message.twilioAccountSid;
     }
-    if (message.twilioApiKey !== "") {
-      obj.twilioApiKey = message.twilioApiKey;
+    if (message.twilioApiKeySid !== "") {
+      obj.twilioApiKeySid = message.twilioApiKeySid;
+    }
+    if (message.twilioApiKeySecret !== "") {
+      obj.twilioApiKeySecret = message.twilioApiKeySecret;
     }
     if (message.twilioFromNumber !== "") {
       obj.twilioFromNumber = message.twilioFromNumber;
@@ -3957,7 +3998,8 @@ export const TwilioConfig: MessageFns<TwilioConfig> = {
     const message = createBaseTwilioConfig();
     message.twilioEnabled = object.twilioEnabled ?? false;
     message.twilioAccountSid = object.twilioAccountSid ?? "";
-    message.twilioApiKey = object.twilioApiKey ?? "";
+    message.twilioApiKeySid = object.twilioApiKeySid ?? "";
+    message.twilioApiKeySecret = object.twilioApiKeySecret ?? "";
     message.twilioFromNumber = object.twilioFromNumber ?? "";
     return message;
   },

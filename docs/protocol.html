@@ -172,11 +172,30 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
       <li>
         <p><a href="#media-proto">media.proto</a></p>
         <ul>
-          <li><a href="#rellm-GetMediaRequest">GetMediaRequest</a></li>
-          <li><a href="#rellm-GetMediaResponse">GetMediaResponse</a></li>
-          <li><a href="#rellm-Media">Media</a></li>
-          <li><a href="#rellm-MediaMetadata">MediaMetadata</a></li>
-          <li><a href="#rellm-MediaReference">MediaReference</a></li>
+          <li>
+            <p><a href="#rellm-Author">Author</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-GetMediaRequest">GetMediaRequest</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-GetMediaResponse">GetMediaResponse</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-Media">Media</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-MediaMetadata">MediaMetadata</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-MediaReference">MediaReference</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-MediaSize">MediaSize</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-MediaConversion">MediaConversion</a></p>
+          </li>
         </ul>
       </li>
       <li>
@@ -223,32 +242,6 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
           </li>
           <li>
             <p><a href="#rellm-MessageListingType">MessageListingType</a></p>
-          </li>
-        </ul>
-      </li>
-      <li>
-        <p><a href="#groups-proto">groups.proto</a></p>
-        <ul>
-          <li>
-            <p><a href="#rellm-GetGroupsRequest">GetGroupsRequest</a></p>
-          </li>
-          <li>
-            <p><a href="#rellm-GetGroupsResponse">GetGroupsResponse</a></p>
-          </li>
-          <li>
-            <p><a href="#rellm-GetMembersRequest">GetMembersRequest</a></p>
-          </li>
-          <li>
-            <p><a href="#rellm-GetMembersResponse">GetMembersResponse</a></p>
-          </li>
-          <li>
-            <p><a href="#rellm-Group">Group</a></p>
-          </li>
-          <li>
-            <p><a href="#rellm-Member">Member</a></p>
-          </li>
-          <li>
-            <p><a href="#rellm-GroupListingType">GroupListingType</a></p>
           </li>
         </ul>
       </li>
@@ -346,6 +339,32 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
           </li>
           <li>
             <p><a href="#rellm-EventListingType">EventListingType</a></p>
+          </li>
+        </ul>
+      </li>
+      <li>
+        <p><a href="#groups-proto">groups.proto</a></p>
+        <ul>
+          <li>
+            <p><a href="#rellm-GetGroupsRequest">GetGroupsRequest</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-GetGroupsResponse">GetGroupsResponse</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-GetMembersRequest">GetMembersRequest</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-GetMembersResponse">GetMembersResponse</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-Group">Group</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-Member">Member</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-GroupListingType">GroupListingType</a></p>
           </li>
         </ul>
       </li>
@@ -1579,6 +1598,18 @@ directory</a> is (<code>{name}</code> denotes a
           <td><a href="#rellm-Media">Media</a></td>
           <td><a href="#google-protobuf-Empty">.google.protobuf.Empty</a></td>
           <td>Deletes a media item by ID. <em>Authenticated.</em> Note that media may still be accessible for 12 hours after deletes are requested, as separate jobs clean it up from S3/MinIO. Deleting other users' media requires <code>ADMIN</code> permissions.</td>
+        </tr>
+        <tr>
+          <td>UpdateMedia</td>
+          <td><a href="#rellm-Media">Media</a></td>
+          <td><a href="#rellm-Media">Media</a></td>
+          <td>Updates a Media item's <code>name</code>/<code>description</code> by ID. <em>Authenticated.</em> Every other field (visibility, moderation, <code>sizes</code>, etc.) is ignored -- use other RPCs (or, for <code>sizes</code>, <code>DeleteMediaSizes</code>) to change them. Updating other users' media requires <code>ADMIN</code> permissions.</td>
+        </tr>
+        <tr>
+          <td>DeleteMediaSizes</td>
+          <td><a href="#rellm-Media">Media</a></td>
+          <td><a href="#rellm-Media">Media</a></td>
+          <td>Deletes only the given <code>sizes</code> (matched by <code>conversion</code>) of a Media item by ID, e.g. to reclaim space by dropping <code>MEDIA_CONVERSION_ORIGINAL</code> once converted copies exist to serve in its place. <em>Authenticated.</em> Deleting other users' media requires <code>ADMIN</code> permissions. Errors if this would leave the Media item with no <code>sizes</code> at all -- use <code>DeleteMedia</code> to remove the whole item instead.</td>
         </tr>
         <tr>
           <td>GetUsers</td>
@@ -3164,6 +3195,18 @@ directory</a> is (<code>{name}</code> denotes a
           <td>The user's bio.</td>
         </tr>
         <tr>
+          <td>media_storage_limit_bytes</td>
+          <td><a href="#uint64">uint64</a></td>
+          <td>optional</td>
+          <td>The maximum number of bytes this user's Media (see <code>Media.sizes[].size_bytes</code>) may collectively occupy in storage. Enforced by <code>POST /media</code> (see <code>Media</code>'s own doc), which rejects an upload that would push <code>media_storage_bytes_used</code> over this limit with an HTTP 413 and a plaintext error body. Unset means unlimited.</td>
+        </tr>
+        <tr>
+          <td>media_storage_bytes_used</td>
+          <td><a href="#uint64">uint64</a></td>
+          <td></td>
+          <td>The total size, in bytes, of every stored copy (original plus any converted sizes) of every Media item this user owns -- the sum of <code>Media.sizes[].size_bytes</code> across all their Media. A denormalized counter, recomputed (never trusted from client input) after every operation that could change it -- upload, delete, size conversion, <code>DeleteMediaSizes</code> -- by <code>backend/src/logic/user_counts.rs</code>'s <code>update_media_storage_used</code>, and self-healed on an interval by <code>bin/update_user_counts.rs</code> the same way every other denormalized <code>User</code> counter (<code>follower_count</code>, <code>post_count</code>, etc.) is.</td>
+        </tr>
+        <tr>
           <td>visibility</td>
           <td><a href="#rellm-Visibility">Visibility</a></td>
           <td></td>
@@ -3373,6 +3416,64 @@ directory</a> is (<code>{name}</code> denotes a
     <p><a name="media-proto"></a></p>
     <p align="right"><a href="#top">Top</a></p>
     <h2 id="mediaproto"><a class="anchor" aria-hidden="true" tabindex="-1" href="#mediaproto"><span class="octicon octicon-link"></span></a>media.proto</h2>
+    <p><a name="rellm-Author"></a></p>
+    <h3 id="author"><a class="anchor" aria-hidden="true" tabindex="-1" href="#author"><span class="octicon octicon-link"></span></a>Author</h3>
+    <p>
+      Post/authorship-centric version of User. UI can cross-reference user details from its own
+      cache (for things like admin/bot icons).
+    </p>
+    <p>
+      Lives in <code>media.proto</code> (rather than <code>users.proto</code>, where it used to live, or its own
+      <code>authors.proto</code>, split out from <code>users.proto</code> for a time) because <code>Author.avatar</code> needs
+      <code>MediaReference</code> and <code>Media</code>/<code>MediaReference</code> need <code>Author</code> (see this field's own doc) --
+      mutually recursive types belong in the same file, since <code>protoc</code> rejects circular <em>file</em>
+      imports even though the recursive <em>types</em> themselves are perfectly valid. <code>users.proto</code>
+      (<code>User.sync_destinations</code>) and <code>sync.proto</code> (<code>SyncDestination.owner</code>, <code>SyncSource.owner</code>) both
+      depend on this without depending on each other, via their own <code>import &#x26;#34;media.proto&#x26;#34;</code> (both
+      already needed it anyway, for <code>User.avatar</code>/<code>Media</code>-shaped fields).
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>user_id</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>Permanent string ID for the user. Will never contain a <code>@</code> symbol.</td>
+        </tr>
+        <tr>
+          <td>username</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td>Impermanent string username for the user. Will never contain a <code>@</code> symbol.</td>
+        </tr>
+        <tr>
+          <td>avatar</td>
+          <td><a href="#rellm-MediaReference">MediaReference</a></td>
+          <td>optional</td>
+          <td>The user's avatar.</td>
+        </tr>
+        <tr>
+          <td>real_name</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>permissions</td>
+          <td><a href="#rellm-Permission">Permission</a></td>
+          <td>repeated</td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
     <p><a name="rellm-GetMediaRequest"></a></p>
     <h3 id="getmediarequest"><a class="anchor" aria-hidden="true" tabindex="-1" href="#getmediarequest"><span class="octicon octicon-link"></span></a>GetMediaRequest</h3>
     <p>Valid GetMediaRequest formats:</p>
@@ -3496,16 +3597,10 @@ directory</a> is (<code>{name}</code> denotes a
           <td>The ID of the media item.</td>
         </tr>
         <tr>
-          <td>user_id</td>
-          <td><a href="#string">string</a></td>
+          <td>author</td>
+          <td><a href="#rellm-Author">Author</a></td>
           <td>optional</td>
-          <td>The ID of the user who created the media item.</td>
-        </tr>
-        <tr>
-          <td>content_type</td>
-          <td><a href="#string">string</a></td>
-          <td></td>
-          <td>The MIME content type of the media item.</td>
+          <td>The user who created the media item.</td>
         </tr>
         <tr>
           <td>name</td>
@@ -3544,12 +3639,6 @@ directory</a> is (<code>{name}</code> denotes a
           <td>Media is generally stored as-is on upload. When background jobs process and compress the media, this flag is set to true.</td>
         </tr>
         <tr>
-          <td>aspect_ratio</td>
-          <td><a href="#float">float</a></td>
-          <td>optional</td>
-          <td>Width divided by height. Set by the <code>convert_media_sizes</code> background job once it's able to read the media's dimensions (via ImageMagick/ffprobe); unset until then.</td>
-        </tr>
-        <tr>
           <td>created_at</td>
           <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
           <td></td>
@@ -3572,6 +3661,12 @@ directory</a> is (<code>{name}</code> denotes a
           <td><a href="#string">string</a></td>
           <td>optional</td>
           <td>An external URL to fetch the media from, in lieu of <code>/media/{id}</code>. Used for representing media owned by other protocols/servers (e.g. ActivityPub/Mastodon, AT Protocol/Bluesky) that Rellm does not store locally. If unset, clients fall back to <code>/media/{id}</code>.</td>
+        </tr>
+        <tr>
+          <td>sizes</td>
+          <td><a href="#rellm-MediaSize">MediaSize</a></td>
+          <td>repeated</td>
+          <td>Every stored copy of this media item's bytes -- the original upload (<code>MEDIA_CONVERSION_ORIGINAL</code>) plus any auto-generated resized copies (see <code>convert_media_sizes</code>'s background job) -- each with its own content type, byte size, and (once known) aspect ratio. Always has at least one <code>MEDIA_CONVERSION_ORIGINAL</code> entry unless <code>url</code> is set (externally-hosted media has no locally-stored copies at all). The original is tracked here rather than as a separate top-level field so it can eventually be deleted to free space once converted copies exist, while remaining fully accounted for by <code>User.media_storage_bytes_used</code> up until that point.</td>
         </tr>
       </tbody>
     </table>
@@ -3617,12 +3712,6 @@ directory</a> is (<code>{name}</code> denotes a
       </thead>
       <tbody>
         <tr>
-          <td>content_type</td>
-          <td><a href="#string">string</a></td>
-          <td></td>
-          <td>The MIME content type of the media item.</td>
-        </tr>
-        <tr>
           <td>id</td>
           <td><a href="#string">string</a></td>
           <td></td>
@@ -3647,16 +3736,108 @@ directory</a> is (<code>{name}</code> denotes a
           <td></td>
         </tr>
         <tr>
-          <td>aspect_ratio</td>
-          <td><a href="#float">float</a></td>
-          <td>optional</td>
-          <td>Width divided by height. See <code>Media.aspect_ratio</code>.</td>
+          <td>sizes</td>
+          <td><a href="#rellm-MediaSize">MediaSize</a></td>
+          <td>repeated</td>
+          <td>See <code>Media.sizes</code>.</td>
         </tr>
         <tr>
           <td>url</td>
           <td><a href="#string">string</a></td>
           <td>optional</td>
           <td>An external URL to fetch the media from, in lieu of <code>/media/{id}</code>. See <code>Media.url</code>. If unset, clients fall back to <code>/media/{id}</code>.</td>
+        </tr>
+        <tr>
+          <td>description</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>author</td>
+          <td><a href="#rellm-Author">Author</a></td>
+          <td>optional</td>
+          <td>The user who created the media item. See <code>Media.author</code>. Included here (unlike most other <code>MediaReference</code> fields, which are deliberately pared down from <code>Media</code>) so clients that only ever see a <code>MediaReference</code> -- e.g. a <code>Post.media</code> item -- can still tell whether the current viewer owns it, without a separate <code>Media</code> lookup.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-MediaSize"></a></p>
+    <h3 id="mediasize"><a class="anchor" aria-hidden="true" tabindex="-1" href="#mediasize"><span class="octicon octicon-link"></span></a>MediaSize</h3>
+    <p>
+      One stored copy of a <code>Media</code> item's bytes -- either its untouched original upload
+      (<code>MEDIA_CONVERSION_ORIGINAL</code>) or an auto-generated resized copy, as produced by the
+      <code>convert_media_sizes</code> background job. Fields are tracked per-size (rather than once on <code>Media</code>
+      itself) so that a future conversion producing a different kind of derived copy -- e.g. a
+      <code>image/jpeg</code> poster frame for a <code>video/mp4</code> original, or a differently-cropped aspect ratio --
+      can vary any of them independently of the original.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>conversion</td>
+          <td><a href="#rellm-MediaConversion">MediaConversion</a></td>
+          <td></td>
+          <td>Which copy this is -- the untouched original, or one of the auto-generated resized copies.</td>
+        </tr>
+        <tr>
+          <td>size_bytes</td>
+          <td><a href="#uint64">uint64</a></td>
+          <td></td>
+          <td>This copy's size on disk/in MinIO, in bytes. Summed (across every size, of every Media a user owns) into <code>User.media_storage_bytes_used</code>.</td>
+        </tr>
+        <tr>
+          <td>aspect_ratio</td>
+          <td><a href="#float">float</a></td>
+          <td>optional</td>
+          <td>Width divided by height. Set by the <code>convert_media_sizes</code> background job once it's able to read the media's dimensions (via ImageMagick/ffprobe); unset until then.</td>
+        </tr>
+        <tr>
+          <td>content_type</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>The MIME content type of this copy specifically. Usually identical across every size of a given <code>Media</code>, but not guaranteed to be -- e.g. a future video-thumbnail conversion could produce an <code>image/jpeg</code> size for a <code>video/mp4</code> original.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-MediaConversion"></a></p>
+    <h3 id="mediaconversion"><a class="anchor" aria-hidden="true" tabindex="-1" href="#mediaconversion"><span class="octicon octicon-link"></span></a>MediaConversion</h3>
+    <p>Which stored copy of a <code>Media</code> item's bytes a <code>MediaSize</code> represents.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Number</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>MEDIA_CONVERSION_ORIGINAL</td>
+          <td>0</td>
+          <td>The untouched original upload.</td>
+        </tr>
+        <tr>
+          <td>MEDIA_CONVERSION_SMALL</td>
+          <td>1</td>
+          <td>Resized to fit within 320x320 px, preserving aspect ratio (never upscaled).</td>
+        </tr>
+        <tr>
+          <td>MEDIA_CONVERSION_MEDIUM</td>
+          <td>2</td>
+          <td>Resized to fit within 800x800 px, preserving aspect ratio (never upscaled).</td>
+        </tr>
+        <tr>
+          <td>MEDIA_CONVERSION_LARGE</td>
+          <td>3</td>
+          <td>Resized to fit within 1600x1600 px, preserving aspect ratio (never upscaled).</td>
         </tr>
       </tbody>
     </table>
@@ -4169,325 +4350,6 @@ directory</a> is (<code>{name}</code> denotes a
           <td>ALL_SYSTEM_MESSAGES_TEXT_SEARCH</td>
           <td>11</td>
           <td></td>
-        </tr>
-      </tbody>
-    </table>
-    <p><a name="groups-proto"></a></p>
-    <p align="right"><a href="#top">Top</a></p>
-    <h2 id="groupsproto"><a class="anchor" aria-hidden="true" tabindex="-1" href="#groupsproto"><span class="octicon octicon-link"></span></a>groups.proto</h2>
-    <p><a name="rellm-GetGroupsRequest"></a></p>
-    <h3 id="getgroupsrequest"><a class="anchor" aria-hidden="true" tabindex="-1" href="#getgroupsrequest"><span class="octicon octicon-link"></span></a>GetGroupsRequest</h3>
-    <p>Request to get a group or groups by name or ID.</p>
-    <table>
-      <thead>
-        <tr>
-          <th>Field</th>
-          <th>Type</th>
-          <th>Label</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>group_id</td>
-          <td><a href="#string">string</a></td>
-          <td>optional</td>
-          <td>The ID of the group to get.</td>
-        </tr>
-        <tr>
-          <td>group_name</td>
-          <td><a href="#string">string</a></td>
-          <td>optional</td>
-          <td>The name of the group to get.</td>
-        </tr>
-        <tr>
-          <td>group_shortname</td>
-          <td><a href="#string">string</a></td>
-          <td>optional</td>
-          <td>The shortname of the group to get. Group shortname search is case-insensitive.</td>
-        </tr>
-        <tr>
-          <td>listing_type</td>
-          <td><a href="#rellm-GroupListingType">GroupListingType</a></td>
-          <td></td>
-          <td>The group listing type.</td>
-        </tr>
-        <tr>
-          <td>page</td>
-          <td><a href="#int32">int32</a></td>
-          <td>optional</td>
-          <td>The page of results to get.</td>
-        </tr>
-      </tbody>
-    </table>
-    <p><a name="rellm-GetGroupsResponse"></a></p>
-    <h3 id="getgroupsresponse"><a class="anchor" aria-hidden="true" tabindex="-1" href="#getgroupsresponse"><span class="octicon octicon-link"></span></a>GetGroupsResponse</h3>
-    <p>Response to a GetGroupsRequest.</p>
-    <table>
-      <thead>
-        <tr>
-          <th>Field</th>
-          <th>Type</th>
-          <th>Label</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>groups</td>
-          <td><a href="#rellm-Group">Group</a></td>
-          <td>repeated</td>
-          <td>The groups that matched the request.</td>
-        </tr>
-        <tr>
-          <td>has_next_page</td>
-          <td><a href="#bool">bool</a></td>
-          <td></td>
-          <td>Whether there are more groups to get.</td>
-        </tr>
-      </tbody>
-    </table>
-    <p><a name="rellm-GetMembersRequest"></a></p>
-    <h3 id="getmembersrequest"><a class="anchor" aria-hidden="true" tabindex="-1" href="#getmembersrequest"><span class="octicon octicon-link"></span></a>GetMembersRequest</h3>
-    <p>Request to get members of a group.</p>
-    <table>
-      <thead>
-        <tr>
-          <th>Field</th>
-          <th>Type</th>
-          <th>Label</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>group_id</td>
-          <td><a href="#string">string</a></td>
-          <td></td>
-          <td>The ID of the group to get members of.</td>
-        </tr>
-        <tr>
-          <td>username</td>
-          <td><a href="#string">string</a></td>
-          <td>optional</td>
-          <td>The username of the members to search for.</td>
-        </tr>
-        <tr>
-          <td>group_moderation</td>
-          <td><a href="#rellm-Moderation">Moderation</a></td>
-          <td>optional</td>
-          <td>The membership status to filter members by. If not specified, all members are returned.</td>
-        </tr>
-        <tr>
-          <td>page</td>
-          <td><a href="#int32">int32</a></td>
-          <td>optional</td>
-          <td>The page of results to get.</td>
-        </tr>
-      </tbody>
-    </table>
-    <p><a name="rellm-GetMembersResponse"></a></p>
-    <h3 id="getmembersresponse"><a class="anchor" aria-hidden="true" tabindex="-1" href="#getmembersresponse"><span class="octicon octicon-link"></span></a>GetMembersResponse</h3>
-    <p>Response to a GetMembersRequest.</p>
-    <table>
-      <thead>
-        <tr>
-          <th>Field</th>
-          <th>Type</th>
-          <th>Label</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>members</td>
-          <td><a href="#rellm-Member">Member</a></td>
-          <td>repeated</td>
-          <td>The members that matched the request.</td>
-        </tr>
-        <tr>
-          <td>has_next_page</td>
-          <td><a href="#bool">bool</a></td>
-          <td></td>
-          <td>Whether there are more members to get.</td>
-        </tr>
-      </tbody>
-    </table>
-    <p><a name="rellm-Group"></a></p>
-    <h3 id="group-1"><a class="anchor" aria-hidden="true" tabindex="-1" href="#group-1"><span class="octicon octicon-link"></span></a>Group</h3>
-    <p><code>Group</code>s are a way to organize users and posts (and thus events). They can be used for many purposes,</p>
-    <table>
-      <thead>
-        <tr>
-          <th>Field</th>
-          <th>Type</th>
-          <th>Label</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>id</td>
-          <td><a href="#string">string</a></td>
-          <td></td>
-          <td>The group's unique ID.</td>
-        </tr>
-        <tr>
-          <td>name</td>
-          <td><a href="#string">string</a></td>
-          <td></td>
-          <td>Mutable name of the group. Must be unique, such that the derived <code>shortname</code> is also unique.</td>
-        </tr>
-        <tr>
-          <td>shortname</td>
-          <td><a href="#string">string</a></td>
-          <td></td>
-          <td>Immutable shortname of the group. Derived from changes to <code>name</code> when the <a href="#rellm-Group"><code>Group</code></a> is updated.</td>
-        </tr>
-        <tr>
-          <td>description</td>
-          <td><a href="#string">string</a></td>
-          <td></td>
-          <td>A description of the group.</td>
-        </tr>
-        <tr>
-          <td>avatar</td>
-          <td><a href="#rellm-MediaReference">MediaReference</a></td>
-          <td>optional</td>
-          <td>An avatar for the group.</td>
-        </tr>
-        <tr>
-          <td>default_membership_permissions</td>
-          <td><a href="#rellm-Permission">Permission</a></td>
-          <td>repeated</td>
-          <td>The default permissions for new members of the group.</td>
-        </tr>
-        <tr>
-          <td>default_membership_moderation</td>
-          <td><a href="#rellm-Moderation">Moderation</a></td>
-          <td></td>
-          <td>The default moderation for new members of the group. Valid values are PENDING (requires a moderator to let you join) and UNMODERATED.</td>
-        </tr>
-        <tr>
-          <td>default_post_moderation</td>
-          <td><a href="#rellm-Moderation">Moderation</a></td>
-          <td></td>
-          <td>The default moderation for new posts in the group.</td>
-        </tr>
-        <tr>
-          <td>default_event_moderation</td>
-          <td><a href="#rellm-Moderation">Moderation</a></td>
-          <td></td>
-          <td>The default moderation for new events in the group.</td>
-        </tr>
-        <tr>
-          <td>visibility</td>
-          <td><a href="#rellm-Visibility">Visibility</a></td>
-          <td></td>
-          <td>LIMITED visibility groups are only visible to members. PRIVATE groups are only visibile to users with the ADMIN group permission.</td>
-        </tr>
-        <tr>
-          <td>member_count</td>
-          <td><a href="#uint32">uint32</a></td>
-          <td></td>
-          <td>The number of members in the group.</td>
-        </tr>
-        <tr>
-          <td>post_count</td>
-          <td><a href="#uint32">uint32</a></td>
-          <td></td>
-          <td>The number of posts in the group.</td>
-        </tr>
-        <tr>
-          <td>event_count</td>
-          <td><a href="#uint32">uint32</a></td>
-          <td></td>
-          <td>The number of events in the group.</td>
-        </tr>
-        <tr>
-          <td>non_member_permissions</td>
-          <td><a href="#rellm-Permission">Permission</a></td>
-          <td>repeated</td>
-          <td>The permissions given to non-members of the group.</td>
-        </tr>
-        <tr>
-          <td>current_user_membership</td>
-          <td><a href="#rellm-Membership">Membership</a></td>
-          <td>optional</td>
-          <td>The membership for the current user, if any.</td>
-        </tr>
-        <tr>
-          <td>created_at</td>
-          <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
-          <td></td>
-          <td>The time the group was created.</td>
-        </tr>
-        <tr>
-          <td>updated_at</td>
-          <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
-          <td>optional</td>
-          <td>The time the group was last updated.</td>
-        </tr>
-      </tbody>
-    </table>
-    <p><a name="rellm-Member"></a></p>
-    <h3 id="member"><a class="anchor" aria-hidden="true" tabindex="-1" href="#member"><span class="octicon octicon-link"></span></a>Member</h3>
-    <p>Used when fetching group members using the <a href="#grpc-api-GetMembers"><code>GetMembers</code></a> RPC.</p>
-    <table>
-      <thead>
-        <tr>
-          <th>Field</th>
-          <th>Type</th>
-          <th>Label</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>user</td>
-          <td><a href="#rellm-User">User</a></td>
-          <td></td>
-          <td>The user.</td>
-        </tr>
-        <tr>
-          <td>membership</td>
-          <td><a href="#rellm-Membership">Membership</a></td>
-          <td></td>
-          <td>The user's membership (or join request, or invitation, or both) in the group.</td>
-        </tr>
-      </tbody>
-    </table>
-    <p><a name="rellm-GroupListingType"></a></p>
-    <h3 id="grouplistingtype"><a class="anchor" aria-hidden="true" tabindex="-1" href="#grouplistingtype"><span class="octicon octicon-link"></span></a>GroupListingType</h3>
-    <p>The type of group listing to get.</p>
-    <table>
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Number</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>ALL_GROUPS</td>
-          <td>0</td>
-          <td>Get all groups (visible to the current user).</td>
-        </tr>
-        <tr>
-          <td>MY_GROUPS</td>
-          <td>1</td>
-          <td>Get groups the current user is a member of.</td>
-        </tr>
-        <tr>
-          <td>REQUESTED_GROUPS</td>
-          <td>2</td>
-          <td>Get groups the current user has requested to join.</td>
-        </tr>
-        <tr>
-          <td>INVITED_GROUPS</td>
-          <td>3</td>
-          <td>Get groups the current user has been invited to.</td>
         </tr>
       </tbody>
     </table>
@@ -5950,6 +5812,325 @@ directory</a> is (<code>{name}</code> denotes a
         </tr>
       </tbody>
     </table>
+    <p><a name="groups-proto"></a></p>
+    <p align="right"><a href="#top">Top</a></p>
+    <h2 id="groupsproto"><a class="anchor" aria-hidden="true" tabindex="-1" href="#groupsproto"><span class="octicon octicon-link"></span></a>groups.proto</h2>
+    <p><a name="rellm-GetGroupsRequest"></a></p>
+    <h3 id="getgroupsrequest"><a class="anchor" aria-hidden="true" tabindex="-1" href="#getgroupsrequest"><span class="octicon octicon-link"></span></a>GetGroupsRequest</h3>
+    <p>Request to get a group or groups by name or ID.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>group_id</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td>The ID of the group to get.</td>
+        </tr>
+        <tr>
+          <td>group_name</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td>The name of the group to get.</td>
+        </tr>
+        <tr>
+          <td>group_shortname</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td>The shortname of the group to get. Group shortname search is case-insensitive.</td>
+        </tr>
+        <tr>
+          <td>listing_type</td>
+          <td><a href="#rellm-GroupListingType">GroupListingType</a></td>
+          <td></td>
+          <td>The group listing type.</td>
+        </tr>
+        <tr>
+          <td>page</td>
+          <td><a href="#int32">int32</a></td>
+          <td>optional</td>
+          <td>The page of results to get.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-GetGroupsResponse"></a></p>
+    <h3 id="getgroupsresponse"><a class="anchor" aria-hidden="true" tabindex="-1" href="#getgroupsresponse"><span class="octicon octicon-link"></span></a>GetGroupsResponse</h3>
+    <p>Response to a GetGroupsRequest.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>groups</td>
+          <td><a href="#rellm-Group">Group</a></td>
+          <td>repeated</td>
+          <td>The groups that matched the request.</td>
+        </tr>
+        <tr>
+          <td>has_next_page</td>
+          <td><a href="#bool">bool</a></td>
+          <td></td>
+          <td>Whether there are more groups to get.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-GetMembersRequest"></a></p>
+    <h3 id="getmembersrequest"><a class="anchor" aria-hidden="true" tabindex="-1" href="#getmembersrequest"><span class="octicon octicon-link"></span></a>GetMembersRequest</h3>
+    <p>Request to get members of a group.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>group_id</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>The ID of the group to get members of.</td>
+        </tr>
+        <tr>
+          <td>username</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td>The username of the members to search for.</td>
+        </tr>
+        <tr>
+          <td>group_moderation</td>
+          <td><a href="#rellm-Moderation">Moderation</a></td>
+          <td>optional</td>
+          <td>The membership status to filter members by. If not specified, all members are returned.</td>
+        </tr>
+        <tr>
+          <td>page</td>
+          <td><a href="#int32">int32</a></td>
+          <td>optional</td>
+          <td>The page of results to get.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-GetMembersResponse"></a></p>
+    <h3 id="getmembersresponse"><a class="anchor" aria-hidden="true" tabindex="-1" href="#getmembersresponse"><span class="octicon octicon-link"></span></a>GetMembersResponse</h3>
+    <p>Response to a GetMembersRequest.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>members</td>
+          <td><a href="#rellm-Member">Member</a></td>
+          <td>repeated</td>
+          <td>The members that matched the request.</td>
+        </tr>
+        <tr>
+          <td>has_next_page</td>
+          <td><a href="#bool">bool</a></td>
+          <td></td>
+          <td>Whether there are more members to get.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-Group"></a></p>
+    <h3 id="group-1"><a class="anchor" aria-hidden="true" tabindex="-1" href="#group-1"><span class="octicon octicon-link"></span></a>Group</h3>
+    <p><code>Group</code>s are a way to organize users and posts (and thus events). They can be used for many purposes,</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>id</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>The group's unique ID.</td>
+        </tr>
+        <tr>
+          <td>name</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>Mutable name of the group. Must be unique, such that the derived <code>shortname</code> is also unique.</td>
+        </tr>
+        <tr>
+          <td>shortname</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>Immutable shortname of the group. Derived from changes to <code>name</code> when the <a href="#rellm-Group"><code>Group</code></a> is updated.</td>
+        </tr>
+        <tr>
+          <td>description</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>A description of the group.</td>
+        </tr>
+        <tr>
+          <td>avatar</td>
+          <td><a href="#rellm-MediaReference">MediaReference</a></td>
+          <td>optional</td>
+          <td>An avatar for the group.</td>
+        </tr>
+        <tr>
+          <td>default_membership_permissions</td>
+          <td><a href="#rellm-Permission">Permission</a></td>
+          <td>repeated</td>
+          <td>The default permissions for new members of the group.</td>
+        </tr>
+        <tr>
+          <td>default_membership_moderation</td>
+          <td><a href="#rellm-Moderation">Moderation</a></td>
+          <td></td>
+          <td>The default moderation for new members of the group. Valid values are PENDING (requires a moderator to let you join) and UNMODERATED.</td>
+        </tr>
+        <tr>
+          <td>default_post_moderation</td>
+          <td><a href="#rellm-Moderation">Moderation</a></td>
+          <td></td>
+          <td>The default moderation for new posts in the group.</td>
+        </tr>
+        <tr>
+          <td>default_event_moderation</td>
+          <td><a href="#rellm-Moderation">Moderation</a></td>
+          <td></td>
+          <td>The default moderation for new events in the group.</td>
+        </tr>
+        <tr>
+          <td>visibility</td>
+          <td><a href="#rellm-Visibility">Visibility</a></td>
+          <td></td>
+          <td>LIMITED visibility groups are only visible to members. PRIVATE groups are only visibile to users with the ADMIN group permission.</td>
+        </tr>
+        <tr>
+          <td>member_count</td>
+          <td><a href="#uint32">uint32</a></td>
+          <td></td>
+          <td>The number of members in the group.</td>
+        </tr>
+        <tr>
+          <td>post_count</td>
+          <td><a href="#uint32">uint32</a></td>
+          <td></td>
+          <td>The number of posts in the group.</td>
+        </tr>
+        <tr>
+          <td>event_count</td>
+          <td><a href="#uint32">uint32</a></td>
+          <td></td>
+          <td>The number of events in the group.</td>
+        </tr>
+        <tr>
+          <td>non_member_permissions</td>
+          <td><a href="#rellm-Permission">Permission</a></td>
+          <td>repeated</td>
+          <td>The permissions given to non-members of the group.</td>
+        </tr>
+        <tr>
+          <td>current_user_membership</td>
+          <td><a href="#rellm-Membership">Membership</a></td>
+          <td>optional</td>
+          <td>The membership for the current user, if any.</td>
+        </tr>
+        <tr>
+          <td>created_at</td>
+          <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
+          <td></td>
+          <td>The time the group was created.</td>
+        </tr>
+        <tr>
+          <td>updated_at</td>
+          <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
+          <td>optional</td>
+          <td>The time the group was last updated.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-Member"></a></p>
+    <h3 id="member"><a class="anchor" aria-hidden="true" tabindex="-1" href="#member"><span class="octicon octicon-link"></span></a>Member</h3>
+    <p>Used when fetching group members using the <a href="#grpc-api-GetMembers"><code>GetMembers</code></a> RPC.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>user</td>
+          <td><a href="#rellm-User">User</a></td>
+          <td></td>
+          <td>The user.</td>
+        </tr>
+        <tr>
+          <td>membership</td>
+          <td><a href="#rellm-Membership">Membership</a></td>
+          <td></td>
+          <td>The user's membership (or join request, or invitation, or both) in the group.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-GroupListingType"></a></p>
+    <h3 id="grouplistingtype"><a class="anchor" aria-hidden="true" tabindex="-1" href="#grouplistingtype"><span class="octicon octicon-link"></span></a>GroupListingType</h3>
+    <p>The type of group listing to get.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Number</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>ALL_GROUPS</td>
+          <td>0</td>
+          <td>Get all groups (visible to the current user).</td>
+        </tr>
+        <tr>
+          <td>MY_GROUPS</td>
+          <td>1</td>
+          <td>Get groups the current user is a member of.</td>
+        </tr>
+        <tr>
+          <td>REQUESTED_GROUPS</td>
+          <td>2</td>
+          <td>Get groups the current user has requested to join.</td>
+        </tr>
+        <tr>
+          <td>INVITED_GROUPS</td>
+          <td>3</td>
+          <td>Get groups the current user has been invited to.</td>
+        </tr>
+      </tbody>
+    </table>
     <p><a name="server_configuration-proto"></a></p>
     <p align="right"><a href="#top">Top</a></p>
     <h2 id="server_configurationproto"><a class="anchor" aria-hidden="true" tabindex="-1" href="#server_configurationproto"><span class="octicon octicon-link"></span></a>server_configuration.proto</h2>
@@ -6919,6 +7100,18 @@ directory</a> is (<code>{name}</code> denotes a
     </table>
     <p><a name="rellm-TwilioConfig"></a></p>
     <h3 id="twilioconfig"><a class="anchor" aria-hidden="true" tabindex="-1" href="#twilioconfig"><span class="octicon octicon-link"></span></a>TwilioConfig</h3>
+    <p>
+      Twilio credentials, authenticated via a Twilio <strong>API Key</strong> (<code>twilio_api_key_sid</code>/
+      <code>twilio_api_key_secret</code>) -- deliberately <em>not</em> the account's own Auth Token. A server's Auth
+      Token is a single unscoped, unrevocable-without-rotating-everything credential with full access
+      to the whole Twilio account; an API Key is its own separate, individually-revocable credential
+      pair meant for exactly this kind of integration. <code>twilio_account_sid</code> is still required (Twilio
+      resource URLs are always addressed by the actual Account SID), but it is <em>not</em> used to
+      authenticate -- only the API Key SID/Secret pair is. See
+      <a href="https://www.twilio.com/docs/iam/api-keys/restricted-api-keys">https://www.twilio.com/docs/iam/api-keys/restricted-api-keys</a> for the recommended
+      permission when creating one: <code>/twilio/messaging/messages/create</code> (nothing else is needed just
+      to send verification SMS).
+    </p>
     <table>
       <thead>
         <tr>
@@ -6939,13 +7132,19 @@ directory</a> is (<code>{name}</code> denotes a
           <td>twilio_account_sid</td>
           <td><a href="#string">string</a></td>
           <td></td>
-          <td>The Twilio Account SID. Public (among admins) -- freely serialized.</td>
+          <td>The Twilio Account SID (starts with <code>AC</code>). Used only in the API's URL path -- <em>never</em> as an authentication credential. Public (among admins) -- freely serialized.</td>
         </tr>
         <tr>
-          <td>twilio_api_key</td>
+          <td>twilio_api_key_sid</td>
           <td><a href="#string">string</a></td>
           <td></td>
-          <td>The Twilio Auth Token. Never serialized once written.</td>
+          <td>The Twilio API Key's SID (starts with <code>SK</code>), used as the Basic Auth username. Public (among admins) -- freely serialized; it's useless without the Secret below, same as a username alone.</td>
+        </tr>
+        <tr>
+          <td>twilio_api_key_secret</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>The Twilio API Key's Secret, used as the Basic Auth password. Never serialized once written.</td>
         </tr>
         <tr>
           <td>twilio_from_number</td>

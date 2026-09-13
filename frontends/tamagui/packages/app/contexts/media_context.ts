@@ -1,10 +1,10 @@
-import { Media, MediaReference } from "@rellm/api";
 import { useDebounceValue } from "@rellm/ui";
 
 import { useCreationServer } from "app/hooks";
+import { MediaRef } from "app/utils";
 import { createContext, useContext, useEffect, useState } from "react";
 
-export type MediaRef = Media | MediaReference;
+export type { MediaRef };
 
 type MediaContextType = {
   mediaSheetOpen: boolean;

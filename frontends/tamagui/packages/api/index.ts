@@ -4,7 +4,6 @@
 export * from './generated/authentication'
 export * from './generated/permissions'
 export * from './generated/visibility_moderation'
-export * from './generated/authors'
 export * from './generated/sync'
 export * from './generated/users'
 export * from './generated/media'

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use diesel::*;
 use tonic::Status;
 
@@ -6,6 +8,17 @@ use crate::marshaling::*;
 use crate::models;
 use crate::protos::*;
 use crate::schema::media;
+
+/// Batch-loads every distinct author of `media_rows`, keyed by `user_id` -- see
+/// `ToProtoMedia::to_proto`'s own doc on why each `Media`'s owner is populated here (rather than
+/// e.g. always `None`, like most other `Media`/`MediaReference` marshaling call sites).
+fn authors_by_id(media_rows: &[models::Media], conn: &mut PgPooledConnection) -> HashMap<i64, models::Author> {
+    let user_ids: Vec<i64> = media_rows.iter().filter_map(|m| m.user_id).collect();
+    models::get_authors(&user_ids, conn)
+        .into_iter()
+        .map(|author| (author.id, author))
+        .collect()
+}
 
 pub fn get_media(
     request: GetMediaRequest,
@@ -60,7 +73,7 @@ fn get_user_media(
     .map(|v| v.as_str_name())
     .collect::<Vec<&str>>();
 
-    let media = media::table
+    let media_rows: Vec<models::Media> = media::table
         .select(media::all_columns)
         .filter(media::visibility.eq_any(visibilities))
         // .filter(media::name.ilike(format!("{}%", request.media_name.unwrap())))
@@ -69,9 +82,11 @@ fn get_user_media(
         .limit(100)
         .offset((request.page * 100).into())
         .load::<models::Media>(conn)
-        .unwrap()
+        .unwrap();
+    let authors = authors_by_id(&media_rows, conn);
+    let media = media_rows
         .iter()
-        .map(|media| media.to_proto())
+        .map(|media| media.to_proto(&media.user_id.and_then(|uid| authors.get(&uid).cloned())))
         .collect();
     Ok(GetMediaResponse {
         media,
@@ -92,7 +107,7 @@ fn get_by_id(
     .iter()
     .map(|v| v.as_str_name())
     .collect::<Vec<&str>>();
-    let media = media::table
+    let media_rows: Vec<models::Media> = media::table
         .select(media::all_columns)
         .filter(media::visibility.eq_any(visibilities))
         .filter(
@@ -106,9 +121,11 @@ fn get_by_id(
         .limit(100)
         .offset((request.page * 100).into())
         .load::<models::Media>(conn)
-        .unwrap()
+        .unwrap();
+    let authors = authors_by_id(&media_rows, conn);
+    let media = media_rows
         .iter()
-        .map(|media| media.to_proto())
+        .map(|media| media.to_proto(&media.user_id.and_then(|uid| authors.get(&uid).cloned())))
         .collect();
 
     //TODO validate visibility

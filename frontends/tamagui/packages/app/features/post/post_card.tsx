@@ -16,6 +16,7 @@ import { GroupPostManager } from 'app/features/groups/group_post_manager';
 import { ServerNameAndLogo } from "app/features/navigation/server_name_and_logo";
 import { useAppSelector, useComponentKey, useCurrentAccountOrServer, useIsVisible, useLocalConfiguration, useMediaUrl, usePinnedAccountsAndServers, usePostDispatch } from "app/hooks";
 import { federatedEntity, serverHost } from 'app/store/federation';
+import { isImageMedia } from "app/utils";
 import { postVisibilityDescription } from "./base_create_post_sheet";
 import { PostMediaManager } from "./post_media_manager";
 import { LinkProps, PostMediaRenderer } from "./post_media_renderer";
@@ -255,7 +256,7 @@ export const PostCard: React.FC<PostCardProps> = ({
   //   }
   // }
 
-  const imagePreview = media?.find(m => m.contentType.startsWith('image'));
+  const imagePreview = media?.find(isImageMedia);
   const showScrollableMediaPreviews = (media?.filter(m => !m.generated).length ?? 0) >= 2;
   // const singleMediaPreview = showScrollableMediaPreviews
   //   ? undefined

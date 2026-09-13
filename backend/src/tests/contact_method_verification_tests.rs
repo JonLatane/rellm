@@ -6,6 +6,7 @@
 
 use std::time::{Duration, SystemTime};
 
+use base64::Engine;
 use diesel::prelude::*;
 use tonic::Code;
 
@@ -14,6 +15,21 @@ use crate::models;
 use crate::protos::*;
 use crate::rpcs::{start_contact_method_verification_at, update_user, verify_contact_method};
 use crate::tests::factories::*;
+
+/// Pulls the `username`/`password` pair out of a captured raw HTTP request's `Authorization:
+/// Basic <base64>` header -- lets specs assert *which* credential pair a provider call actually
+/// authenticated with (e.g. the Twilio API Key SID/Secret, not the Account SID), not just that
+/// some Basic Auth header was present.
+fn basic_auth_credentials(request: &str) -> Option<(String, String)> {
+    let header = request
+        .lines()
+        .find(|line| line.to_lowercase().starts_with("authorization: basic "))?;
+    let encoded = header.splitn(3, ' ').nth(2)?.trim();
+    let decoded = base64::engine::general_purpose::STANDARD.decode(encoded).ok()?;
+    let decoded = String::from_utf8(decoded).ok()?;
+    let (username, password) = decoded.split_once(':')?;
+    Some((username.to_string(), password.to_string()))
+}
 
 fn phone_contact_method(value: &str) -> ContactMethod {
     ContactMethod {
@@ -40,7 +56,7 @@ mod update_user_contact_methods {
     fn setting_a_new_tel_phone_marks_supported_by_server_true_when_twilio_enabled() {
         let mut conn = test_conn();
         conn.test_transaction::<_, tonic::Status, _>(|conn| {
-            configure_twilio(conn, true, "AC_sid", "auth_token", "+15005550006");
+            configure_twilio(conn, true, "AC_sid", "SK_test_key_sid", "auth_token", "+15005550006");
             let user = create_user(conn, "cmu_enabled");
 
             let mut request = user.to_proto(&None, &None, None, None);
@@ -77,7 +93,7 @@ mod update_user_contact_methods {
     fn mailto_email_is_never_supported_by_server_even_with_twilio_enabled() {
         let mut conn = test_conn();
         conn.test_transaction::<_, tonic::Status, _>(|conn| {
-            configure_twilio(conn, true, "AC_sid", "auth_token", "+15005550006");
+            configure_twilio(conn, true, "AC_sid", "SK_test_key_sid", "auth_token", "+15005550006");
             let user = create_user(conn, "cmu_email");
 
             let mut request = user.to_proto(&None, &None, None, None);
@@ -101,7 +117,7 @@ mod update_user_contact_methods {
     fn editing_phone_value_resets_verification_state() {
         let mut conn = test_conn();
         conn.test_transaction::<_, tonic::Status, _>(|conn| {
-            configure_twilio(conn, true, "AC_sid", "auth_token", "+15005550006");
+            configure_twilio(conn, true, "AC_sid", "SK_test_key_sid", "auth_token", "+15005550006");
             let user = create_user(conn, "cmu_edit_resets");
             let verified_phone = ContactMethod {
                 value: Some("tel:+15551234567".to_string()),
@@ -128,7 +144,7 @@ mod update_user_contact_methods {
     fn unchanged_phone_value_preserves_verification_state() {
         let mut conn = test_conn();
         conn.test_transaction::<_, tonic::Status, _>(|conn| {
-            configure_twilio(conn, true, "AC_sid", "auth_token", "+15005550006");
+            configure_twilio(conn, true, "AC_sid", "SK_test_key_sid", "auth_token", "+15005550006");
             let user = create_user(conn, "cmu_unchanged");
             let verified_at = SystemTime::now().to_proto();
             let verified_phone = ContactMethod {
@@ -196,7 +212,7 @@ mod start_contact_method_verification_spec {
     fn sends_code_and_stores_verification_in_progress_with_code_blanked_in_response() {
         let mut conn = test_conn();
         conn.test_transaction::<_, tonic::Status, _>(|conn| {
-            configure_twilio(conn, true, "AC_test_sid", "test_auth_token", "+15005550006");
+            configure_twilio(conn, true, "AC_test_sid", "SK_test_key_sid", "test_auth_token", "+15005550006");
             let user = create_user(conn, "scmv_happy");
             let user = set_user_phone(conn, &user, &phone_contact_method("tel:+15551234567"));
 
@@ -226,7 +242,12 @@ mod start_contact_method_verification_spec {
             assert_eq!(requests.len(), 1);
             assert!(requests[0].contains("/Accounts/AC_test_sid/Messages.json"));
             assert!(requests[0].contains("To=%2B15551234567") || requests[0].contains("To=+15551234567"));
-            assert!(requests[0].to_lowercase().contains("authorization: basic"));
+            assert_eq!(
+                basic_auth_credentials(&requests[0]),
+                Some(("SK_test_key_sid".to_string(), "test_auth_token".to_string())),
+                "must authenticate with the API Key SID/Secret pair, never the Account SID -- see \
+                 TwilioConfig's own doc on why the account's Auth Token is deliberately unsupported"
+            );
 
             Ok(())
         });
@@ -257,7 +278,7 @@ mod start_contact_method_verification_spec {
     fn rejects_mailto_as_unimplemented() {
         let mut conn = test_conn();
         conn.test_transaction::<_, tonic::Status, _>(|conn| {
-            configure_twilio(conn, true, "AC_sid", "auth_token", "+15005550006");
+            configure_twilio(conn, true, "AC_sid", "SK_test_key_sid", "auth_token", "+15005550006");
             let user = create_user(conn, "scmv_mailto");
 
             let err = start_contact_method_verification_at(
@@ -281,7 +302,7 @@ mod start_contact_method_verification_spec {
     fn rejects_invalid_value_format() {
         let mut conn = test_conn();
         conn.test_transaction::<_, tonic::Status, _>(|conn| {
-            configure_twilio(conn, true, "AC_sid", "auth_token", "+15005550006");
+            configure_twilio(conn, true, "AC_sid", "SK_test_key_sid", "auth_token", "+15005550006");
             let user = create_user(conn, "scmv_invalid");
 
             let err = start_contact_method_verification_at(
@@ -304,7 +325,7 @@ mod start_contact_method_verification_spec {
     fn rejects_when_phone_not_set_or_mismatched() {
         let mut conn = test_conn();
         conn.test_transaction::<_, tonic::Status, _>(|conn| {
-            configure_twilio(conn, true, "AC_sid", "auth_token", "+15005550006");
+            configure_twilio(conn, true, "AC_sid", "SK_test_key_sid", "auth_token", "+15005550006");
             let user = create_user(conn, "scmv_mismatch");
             let user = set_user_phone(conn, &user, &phone_contact_method("tel:+15551234567"));
 
@@ -326,7 +347,7 @@ mod start_contact_method_verification_spec {
     fn rate_limits_resend_within_60_seconds() {
         let mut conn = test_conn();
         conn.test_transaction::<_, tonic::Status, _>(|conn| {
-            configure_twilio(conn, true, "AC_sid", "auth_token", "+15005550006");
+            configure_twilio(conn, true, "AC_sid", "SK_test_key_sid", "auth_token", "+15005550006");
             let user = create_user(conn, "scmv_cooldown");
             let mut phone = phone_contact_method("tel:+15551234567");
             phone.verification_in_progress = Some(in_progress("111111", SystemTime::now(), 0));
@@ -351,7 +372,7 @@ mod start_contact_method_verification_spec {
     fn allows_resend_once_cooldown_has_elapsed() {
         let mut conn = test_conn();
         conn.test_transaction::<_, tonic::Status, _>(|conn| {
-            configure_twilio(conn, true, "AC_sid", "auth_token", "+15005550006");
+            configure_twilio(conn, true, "AC_sid", "SK_test_key_sid", "auth_token", "+15005550006");
             let user = create_user(conn, "scmv_cooldown_elapsed");
             let mut phone = phone_contact_method("tel:+15551234567");
             phone.verification_in_progress = Some(in_progress(
@@ -381,7 +402,7 @@ mod start_contact_method_verification_spec {
     fn surfaces_twilio_send_failure() {
         let mut conn = test_conn();
         conn.test_transaction::<_, tonic::Status, _>(|conn| {
-            configure_twilio(conn, true, "AC_sid", "auth_token", "+15005550006");
+            configure_twilio(conn, true, "AC_sid", "SK_test_key_sid", "auth_token", "+15005550006");
             let user = create_user(conn, "scmv_send_fails");
             let user = set_user_phone(conn, &user, &phone_contact_method("tel:+15551234567"));
 
@@ -401,6 +422,91 @@ mod start_contact_method_verification_spec {
             .unwrap_err();
             assert_eq!(err.code(), Code::FailedPrecondition);
             assert_eq!(err.message(), "twilio_send_failed");
+
+            Ok(())
+        });
+    }
+}
+
+mod sms_body_format_spec {
+    use super::*;
+
+    #[test]
+    fn includes_server_name_and_frontend_host_when_configured() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, tonic::Status, _>(|conn| {
+            configure_twilio_with_server_info(
+                conn,
+                "AC_sid",
+                "SK_test_key_sid",
+                "auth_token",
+                "+15005550006",
+                "Jonline",
+                "jonline.io",
+            );
+            let user = create_user(conn, "sms_body_with_cdn");
+            let user = set_user_phone(conn, &user, &phone_contact_method("tel:+15551234567"));
+
+            let (base_url, captured) = serve_capturing(|_request, _prior| {
+                ("HTTP/1.1 201 Created", serde_json::json!({ "sid": "SM_test" }))
+            });
+
+            start_contact_method_verification_at(
+                Some(&base_url),
+                phone_contact_method("tel:+15551234567"),
+                &user,
+                conn,
+            )
+            .expect("start should succeed");
+
+            let requests = captured.lock().unwrap();
+            assert!(
+                requests[0].contains("Phone+verification+requested+from+Jonline+%28jonline.io%29.+Your+code+is%3A")
+                    || requests[0].contains("Phone verification requested from Jonline (jonline.io). Your code is:"),
+                "expected the server name + frontend host in the message body: {:?}",
+                requests[0]
+            );
+            assert!(requests[0].contains("Do+not+share+this+code+with+anyone") || requests[0].contains("Do not share this code with anyone"));
+
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn omits_the_parenthetical_when_no_frontend_host_is_configured() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, tonic::Status, _>(|conn| {
+            configure_twilio_with_server_info(
+                conn,
+                "AC_sid",
+                "SK_test_key_sid",
+                "auth_token",
+                "+15005550006",
+                "Jonline",
+                "",
+            );
+            let user = create_user(conn, "sms_body_no_cdn");
+            let user = set_user_phone(conn, &user, &phone_contact_method("tel:+15551234567"));
+
+            let (base_url, captured) = serve_capturing(|_request, _prior| {
+                ("HTTP/1.1 201 Created", serde_json::json!({ "sid": "SM_test" }))
+            });
+
+            start_contact_method_verification_at(
+                Some(&base_url),
+                phone_contact_method("tel:+15551234567"),
+                &user,
+                conn,
+            )
+            .expect("start should succeed");
+
+            let requests = captured.lock().unwrap();
+            assert!(
+                requests[0].contains("Phone+verification+requested+from+Jonline.+Your+code+is%3A")
+                    || requests[0].contains("Phone verification requested from Jonline. Your code is:"),
+                "expected no parenthetical when no frontend_host is configured: {:?}",
+                requests[0]
+            );
 
             Ok(())
         });
@@ -479,7 +585,7 @@ mod bird_and_provider_selection_spec {
         conn.test_transaction::<_, tonic::Status, _>(|conn| {
             configure_verification_providers(
                 conn,
-                Some(("AC_sid", "auth_token", "+15005550006")),
+                Some(("AC_sid", "SK_test_key_sid", "auth_token", "+15005550006")),
                 Some(("bird_key", "Bird", "us1")),
                 vec![],
             );
@@ -515,7 +621,7 @@ mod bird_and_provider_selection_spec {
         conn.test_transaction::<_, tonic::Status, _>(|conn| {
             configure_verification_providers(
                 conn,
-                Some(("AC_sid", "auth_token", "+15005550006")),
+                Some(("AC_sid", "SK_test_key_sid", "auth_token", "+15005550006")),
                 Some(("bird_key", "Bird", "us1")),
                 vec![VerificationApi::Bird, VerificationApi::Twilio],
             );

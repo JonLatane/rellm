@@ -50,9 +50,11 @@ impl ToProtoUser for models::User {
             phone: phone,
             permissions: self.permissions.to_i32_permissions(),
             bio: self.bio.to_owned(),
+            media_storage_limit_bytes: self.media_storage_limit_bytes.map(|b| b as u64),
+            media_storage_bytes_used: self.media_storage_bytes_used as u64,
             // avatar_media_id: self.avatar_media_id.to_owned().map(|id| id.to_proto_id()),
             avatar: media_lookup
-                .map(|ml| ml.get(&self.avatar_media_id.unwrap()).unwrap().to_proto()),
+                .map(|ml| ml.get(&self.avatar_media_id.unwrap()).unwrap().to_proto(&None)),
             visibility: self.visibility.to_proto_visibility().unwrap() as i32,
             moderation: self.moderation.to_proto_moderation().unwrap() as i32,
             follower_count: Some(self.follower_count),
@@ -117,7 +119,7 @@ impl ToProtoAuthor for models::Author {
                 .map(|id| {
                     media_lookup
                         .find_media(id)
-                        .map(|media_ref| media_ref.to_proto())
+                        .map(|media_ref| Box::new(media_ref.to_proto(&None)))
                 })
                 .flatten(),
             real_name: Some(self.real_name.to_owned()),
@@ -134,7 +136,7 @@ impl ToProtoAuthor for models::Author {
                 .map(|id| {
                     media_lookup
                         .find_media(id)
-                        .map(|media_ref| media_ref.to_proto())
+                        .map(|media_ref| media_ref.to_proto(&None))
                 })
                 .flatten(),
             real_name: Some(self.real_name.to_owned()),

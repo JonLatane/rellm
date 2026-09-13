@@ -4,9 +4,9 @@ use s3::Bucket;
 use tonic::{Code, Status};
 
 use crate::db_connection::PgPooledConnection;
+use crate::logic::update_media_storage_used;
 use crate::marshaling::*;
 use crate::models;
-use crate::models::ConvertedSizeSpec;
 use crate::protos::*;
 use crate::schema::media;
 
@@ -49,14 +49,13 @@ pub async fn delete_media(
     }
 
     // Collect every MinIO object backing this Media -- the original upload plus any
-    // small/medium/large converted copies -- before the row (and its `converted_sizes`) is gone.
-    let mut minio_paths = vec![affected_media.minio_path.clone()];
-    let converted_sizes = affected_media.converted_sizes();
-    for spec in ConvertedSizeSpec::ALL {
-        if let Some(converted) = converted_sizes.get(spec) {
-            minio_paths.push(converted.minio_path.clone());
-        }
-    }
+    // small/medium/large converted copies -- before the row (and its `sizes`) is gone.
+    let minio_paths: Vec<String> = affected_media
+        .sizes()
+        .into_iter()
+        .map(|s| s.minio_path)
+        .collect();
+    let owner_id = affected_media.user_id;
 
     let db_result = delete(media::table.find(media_id)).execute(conn);
 
@@ -77,6 +76,15 @@ pub async fn delete_media(
                     "Failed to delete MinIO object {} for media {}: {:?}",
                     minio_path,
                     media_id,
+                    e
+                );
+            }
+        }
+        if let Some(owner_id) = owner_id {
+            if let Err(e) = update_media_storage_used(owner_id, conn) {
+                log::error!(
+                    "Failed to update media_storage_bytes_used for user {}: {:?}",
+                    owner_id,
                     e
                 );
             }

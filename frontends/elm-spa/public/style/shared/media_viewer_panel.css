@@ -362,3 +362,76 @@
 .media-viewer-panel-close {
   font-size: 1.1rem;
 }
+
+/* Shared.MediaViewerPanel's own Edit button (owner-or-admin only, see `canEditMedia`) -- a
+   pill rather than `.media-viewer-panel-nav`/`.media-viewer-panel-close`'s circle, since "Edit"
+   is wider than a single glyph. */
+.media-viewer-panel-edit-toggle {
+  flex: 0 0 auto;
+  padding: 0 0.75rem;
+  height: 2.2rem;
+  border-radius: 1.1rem;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  font-size: 0.9rem;
+}
+
+/* The name/description/sizes editor `Shared.MediaViewerPanel.editView` shows once
+   `Model.edit` is `Just` -- floats above the toolbar, same dark-translucent treatment as the
+   nav/close buttons above. */
+.media-viewer-panel-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  flex: 0 0 auto;
+  margin: 0 1rem 0.75rem;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: white;
+  pointer-events: auto;
+}
+
+.media-viewer-panel-edit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+}
+
+.media-viewer-panel-edit-field input,
+.media-viewer-panel-edit-field textarea {
+  padding: 0.35rem 0.5rem;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  font-size: 0.9rem;
+}
+
+.media-viewer-panel-edit-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.media-viewer-panel-edit-error {
+  color: #ff8a8a;
+  font-size: 0.85rem;
+}
+
+.media-viewer-panel-edit-sizes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+  padding-top: 0.5rem;
+}
+
+.media-viewer-panel-edit-size {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+}

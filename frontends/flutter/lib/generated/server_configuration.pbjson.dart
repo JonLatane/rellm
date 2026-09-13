@@ -630,7 +630,8 @@ const TwilioConfig$json = {
   '2': [
     {'1': 'twilio_enabled', '3': 1, '4': 1, '5': 8, '10': 'twilioEnabled'},
     {'1': 'twilio_account_sid', '3': 3, '4': 1, '5': 9, '10': 'twilioAccountSid'},
-    {'1': 'twilio_api_key', '3': 2, '4': 1, '5': 9, '10': 'twilioApiKey'},
+    {'1': 'twilio_api_key_sid', '3': 5, '4': 1, '5': 9, '10': 'twilioApiKeySid'},
+    {'1': 'twilio_api_key_secret', '3': 2, '4': 1, '5': 9, '10': 'twilioApiKeySecret'},
     {'1': 'twilio_from_number', '3': 4, '4': 1, '5': 9, '10': 'twilioFromNumber'},
   ],
 };
@@ -638,9 +639,10 @@ const TwilioConfig$json = {
 /// Descriptor for `TwilioConfig`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List twilioConfigDescriptor = $convert.base64Decode(
     'CgxUd2lsaW9Db25maWcSJQoOdHdpbGlvX2VuYWJsZWQYASABKAhSDXR3aWxpb0VuYWJsZWQSLA'
-    'oSdHdpbGlvX2FjY291bnRfc2lkGAMgASgJUhB0d2lsaW9BY2NvdW50U2lkEiQKDnR3aWxpb19h'
-    'cGlfa2V5GAIgASgJUgx0d2lsaW9BcGlLZXkSLAoSdHdpbGlvX2Zyb21fbnVtYmVyGAQgASgJUh'
-    'B0d2lsaW9Gcm9tTnVtYmVy');
+    'oSdHdpbGlvX2FjY291bnRfc2lkGAMgASgJUhB0d2lsaW9BY2NvdW50U2lkEisKEnR3aWxpb19h'
+    'cGlfa2V5X3NpZBgFIAEoCVIPdHdpbGlvQXBpS2V5U2lkEjEKFXR3aWxpb19hcGlfa2V5X3NlY3'
+    'JldBgCIAEoCVISdHdpbGlvQXBpS2V5U2VjcmV0EiwKEnR3aWxpb19mcm9tX251bWJlchgEIAEo'
+    'CVIQdHdpbGlvRnJvbU51bWJlcg==');
 
 @$core.Deprecated('Use birdConfigDescriptor instead')
 const BirdConfig$json = {

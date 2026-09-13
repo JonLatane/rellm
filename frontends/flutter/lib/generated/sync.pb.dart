@@ -14,8 +14,8 @@ import 'dart:core' as $core;
 import 'package:fixnum/fixnum.dart' as $fixnum;
 import 'package:protobuf/protobuf.dart' as $pb;
 
-import 'authors.pb.dart' as $15;
 import 'google/protobuf/timestamp.pb.dart' as $12;
+import 'media.pb.dart' as $5;
 
 enum SyncDestination_Configuration {
   facebookPage, 
@@ -34,7 +34,7 @@ enum SyncDestination_Configuration {
 class SyncDestination extends $pb.GeneratedMessage {
   factory SyncDestination({
     $core.String? id,
-    $15.Author? owner,
+    $5.Author? owner,
     $12.Timestamp? createdAt,
     $12.Timestamp? updatedAt,
     $fixnum.Int64? syncedOccasionCount,
@@ -101,7 +101,7 @@ class SyncDestination extends $pb.GeneratedMessage {
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'SyncDestination', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
     ..oo(0, [9, 10, 11, 12, 13, 14])
     ..aOS(1, _omitFieldNames ? '' : 'id')
-    ..aOM<$15.Author>(2, _omitFieldNames ? '' : 'owner', subBuilder: $15.Author.create)
+    ..aOM<$5.Author>(2, _omitFieldNames ? '' : 'owner', subBuilder: $5.Author.create)
     ..aOM<$12.Timestamp>(4, _omitFieldNames ? '' : 'createdAt', subBuilder: $12.Timestamp.create)
     ..aOM<$12.Timestamp>(5, _omitFieldNames ? '' : 'updatedAt', subBuilder: $12.Timestamp.create)
     ..a<$fixnum.Int64>(6, _omitFieldNames ? '' : 'syncedOccasionCount', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
@@ -151,15 +151,15 @@ class SyncDestination extends $pb.GeneratedMessage {
 
   /// The user information for the owner of this destination.
   @$pb.TagNumber(2)
-  $15.Author get owner => $_getN(1);
+  $5.Author get owner => $_getN(1);
   @$pb.TagNumber(2)
-  set owner($15.Author v) { setField(2, v); }
+  set owner($5.Author v) { setField(2, v); }
   @$pb.TagNumber(2)
   $core.bool hasOwner() => $_has(1);
   @$pb.TagNumber(2)
   void clearOwner() => clearField(2);
   @$pb.TagNumber(2)
-  $15.Author ensureOwner() => $_ensure(1);
+  $5.Author ensureOwner() => $_ensure(1);
 
   /// The time the SyncDestination was created.
   @$pb.TagNumber(4)
@@ -1107,7 +1107,7 @@ enum SyncSource_Configuration {
 class SyncSource extends $pb.GeneratedMessage {
   factory SyncSource({
     $core.String? id,
-    $15.Author? owner,
+    $5.Author? owner,
     $fixnum.Int64? syncIntervalSeconds,
     $12.Timestamp? createdAt,
     $12.Timestamp? updatedAt,
@@ -1171,7 +1171,7 @@ class SyncSource extends $pb.GeneratedMessage {
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'SyncSource', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
     ..oo(0, [9, 11, 12])
     ..aOS(1, _omitFieldNames ? '' : 'id')
-    ..aOM<$15.Author>(2, _omitFieldNames ? '' : 'owner', subBuilder: $15.Author.create)
+    ..aOM<$5.Author>(2, _omitFieldNames ? '' : 'owner', subBuilder: $5.Author.create)
     ..a<$fixnum.Int64>(3, _omitFieldNames ? '' : 'syncIntervalSeconds', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
     ..aOM<$12.Timestamp>(4, _omitFieldNames ? '' : 'createdAt', subBuilder: $12.Timestamp.create)
     ..aOM<$12.Timestamp>(5, _omitFieldNames ? '' : 'updatedAt', subBuilder: $12.Timestamp.create)
@@ -1221,15 +1221,15 @@ class SyncSource extends $pb.GeneratedMessage {
 
   /// The user information for the owner of this sync source.
   @$pb.TagNumber(2)
-  $15.Author get owner => $_getN(1);
+  $5.Author get owner => $_getN(1);
   @$pb.TagNumber(2)
-  set owner($15.Author v) { setField(2, v); }
+  set owner($5.Author v) { setField(2, v); }
   @$pb.TagNumber(2)
   $core.bool hasOwner() => $_has(1);
   @$pb.TagNumber(2)
   void clearOwner() => clearField(2);
   @$pb.TagNumber(2)
-  $15.Author ensureOwner() => $_ensure(1);
+  $5.Author ensureOwner() => $_ensure(1);
 
   /// How frequently the sync should happen in seconds.
   @$pb.TagNumber(3)

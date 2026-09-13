@@ -119,7 +119,8 @@ pub fn sync_occasion(
                     content_type: media_lookup
                         .as_ref()
                         .find_media(*id)
-                        .map(|m| m.content_type.clone())
+                        .and_then(|m| m.original())
+                        .map(|s| s.content_type)
                         .unwrap_or_default(),
                 })
                 .collect()

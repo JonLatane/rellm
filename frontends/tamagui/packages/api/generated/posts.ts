@@ -6,9 +6,8 @@
 
 /* eslint-disable */
 import { BinaryReader, BinaryWriter } from "@bufbuild/protobuf/wire";
-import { Author } from "./authors";
 import { Timestamp } from "./google/protobuf/timestamp";
-import { MediaReference } from "./media";
+import { Author, MediaReference } from "./media";
 import { SyncDestinationStatus, SyncSource } from "./sync";
 import {
   Moderation,

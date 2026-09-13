@@ -14,10 +14,10 @@ use tokio::task::spawn_blocking;
 use tokio::time::timeout;
 
 use rellm::db_connection::PgPooledConnection;
-use rellm::logic::{acquire_cluster_lock, release_cluster_lock};
+use rellm::logic::{acquire_cluster_lock, release_cluster_lock, update_media_storage_used};
 use rellm::models;
 use rellm::models::{get_user, Post, POST_COLUMNS};
-use rellm::protos::{ClusterResource, ClusterResources, Visibility};
+use rellm::protos::{ClusterResource, ClusterResources, MediaConversion, Visibility};
 use rellm::schema::{media, posts};
 use rellm::{db_connection, init_bin_logging, minio_connection, rpcs};
 use rellm::{init_crypto, marshaling::*};
@@ -129,20 +129,37 @@ async fn update_post(
 
                     log::info!("generate_preview_images upload_status: {:?}", upload_status);
 
+                    let sizes = vec![models::MediaSize {
+                        conversion: MediaConversion::Original as i32,
+                        minio_path,
+                        content_type: "image/png".to_string(),
+                        size_bytes: screenshot.len() as i64,
+                        aspect_ratio: None,
+                    }];
+
                     let media = insert_into(media::table)
                         .values(&models::NewMedia {
                             user_id: post.user_id,
-                            minio_path,
-                            content_type: "image/png".to_string(),
                             name: Some(filename.to_string()),
                             description: None,
                             generated: true,
                             visibility: Visibility::GlobalPublic.to_string_visibility(),
                             metadata: serde_json::to_value(models::MediaMetadata::default())
                                 .unwrap(),
+                            sizes: serde_json::to_value(sizes).unwrap(),
                         })
                         .get_result::<models::Media>(conn)
                         .unwrap();
+
+                    if let Some(user_id) = post.user_id {
+                        if let Err(e) = update_media_storage_used(user_id, conn) {
+                            log::error!(
+                                "Failed to update media_storage_bytes_used for user {}: {:?}",
+                                user_id,
+                                e
+                            );
+                        }
+                    }
 
                     let mut new_media = vec![Some(media.id)];
                     new_media.append(&mut post.media.clone());

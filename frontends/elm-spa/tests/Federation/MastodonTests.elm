@@ -2,6 +2,7 @@ module Federation.MastodonTests exposing (suite)
 
 import Expect
 import Json.Decode as Decode
+import Proto.Rellm exposing (unwrapMediaReference)
 import Proto.Rellm.PostContext exposing (PostContext(..))
 import Proto.Rellm.Visibility exposing (Visibility(..))
 import Shared.Federation.Mastodon as Mastodon
@@ -68,6 +69,7 @@ suite =
                         |> Mastodon.toPost "mastodon.social"
                         |> .author
                         |> Maybe.andThen .avatar
+                        |> Maybe.map unwrapMediaReference
                         |> Maybe.andThen .url
                         |> Expect.equal (Just "https://mastodon.social/avatars/alice.png")
             , test "the author's username is qualified with the instance host, mirroring @user@instance" <|

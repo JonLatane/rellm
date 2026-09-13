@@ -1,0 +1,2 @@
+-- Data-only migration; the cleared (invalid-under-the-new-scheme) values weren't worth
+-- preserving, so this is a no-op.

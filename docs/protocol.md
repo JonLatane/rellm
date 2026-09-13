@@ -38,11 +38,15 @@
     - [UserListingType](#rellm-UserListingType)
   
 - [media.proto](#media-proto)
+    - [Author](#rellm-Author)
     - [GetMediaRequest](#rellm-GetMediaRequest)
     - [GetMediaResponse](#rellm-GetMediaResponse)
     - [Media](#rellm-Media)
     - [MediaMetadata](#rellm-MediaMetadata)
     - [MediaReference](#rellm-MediaReference)
+    - [MediaSize](#rellm-MediaSize)
+  
+    - [MediaConversion](#rellm-MediaConversion)
   
 - [messages.proto](#messages-proto)
     - [GetMessagesRequest](#rellm-GetMessagesRequest)
@@ -60,16 +64,6 @@
     - [UnregisterPushSubscriptionRequest](#rellm-UnregisterPushSubscriptionRequest)
   
     - [MessageListingType](#rellm-MessageListingType)
-  
-- [groups.proto](#groups-proto)
-    - [GetGroupsRequest](#rellm-GetGroupsRequest)
-    - [GetGroupsResponse](#rellm-GetGroupsResponse)
-    - [GetMembersRequest](#rellm-GetMembersRequest)
-    - [GetMembersResponse](#rellm-GetMembersResponse)
-    - [Group](#rellm-Group)
-    - [Member](#rellm-Member)
-  
-    - [GroupListingType](#rellm-GroupListingType)
   
 - [posts.proto](#posts-proto)
     - [DeletePostSyncDestinationRequest](#rellm-DeletePostSyncDestinationRequest)
@@ -105,6 +99,16 @@
   
     - [AttendanceStatus](#rellm-AttendanceStatus)
     - [EventListingType](#rellm-EventListingType)
+  
+- [groups.proto](#groups-proto)
+    - [GetGroupsRequest](#rellm-GetGroupsRequest)
+    - [GetGroupsResponse](#rellm-GetGroupsResponse)
+    - [GetMembersRequest](#rellm-GetMembersRequest)
+    - [GetMembersResponse](#rellm-GetMembersResponse)
+    - [Group](#rellm-Group)
+    - [Member](#rellm-Member)
+  
+    - [GroupListingType](#rellm-GroupListingType)
   
 - [server_configuration.proto](#server_configuration-proto)
     - [BirdConfig](#rellm-BirdConfig)
@@ -1042,6 +1046,8 @@ discarded and a fresh keypair generated, so it&#39;s single-use per completed/fa
 | ResetPassword | [ResetPasswordRequest](#rellm-ResetPasswordRequest) | [.google.protobuf.Empty](#google-protobuf-Empty) | Resets the current user&#39;s - or, for admins, a given user&#39;s - password. *Authenticated.* |
 | GetMedia | [GetMediaRequest](#rellm-GetMediaRequest) | [GetMediaResponse](#rellm-GetMediaResponse) | Gets Media (Images, Videos, etc) uploaded/owned by the current user. *Authenticated.* To upload/download actual Media blob/binary data, use the [HTTP Media APIs](#media). |
 | DeleteMedia | [Media](#rellm-Media) | [.google.protobuf.Empty](#google-protobuf-Empty) | Deletes a media item by ID. *Authenticated.* Note that media may still be accessible for 12 hours after deletes are requested, as separate jobs clean it up from S3/MinIO. Deleting other users&#39; media requires `ADMIN` permissions. |
+| UpdateMedia | [Media](#rellm-Media) | [Media](#rellm-Media) | Updates a Media item&#39;s `name`/`description` by ID. *Authenticated.* Every other field (visibility, moderation, `sizes`, etc.) is ignored -- use other RPCs (or, for `sizes`, `DeleteMediaSizes`) to change them. Updating other users&#39; media requires `ADMIN` permissions. |
+| DeleteMediaSizes | [Media](#rellm-Media) | [Media](#rellm-Media) | Deletes only the given `sizes` (matched by `conversion`) of a Media item by ID, e.g. to reclaim space by dropping `MEDIA_CONVERSION_ORIGINAL` once converted copies exist to serve in its place. *Authenticated.* Deleting other users&#39; media requires `ADMIN` permissions. Errors if this would leave the Media item with no `sizes` at all -- use `DeleteMedia` to remove the whole item instead. |
 | GetUsers | [GetUsersRequest](#rellm-GetUsersRequest) | [GetUsersResponse](#rellm-GetUsersResponse) | Gets Users. *Publicly accessible **or** Authenticated.* Unauthenticated calls only return Users of `GLOBAL_PUBLIC` visibility. |
 | UpdateUser | [User](#rellm-User) | [User](#rellm-User) | Update a user by ID. *Authenticated.* Updating other users requires `ADMIN` permissions. |
 | StartContactMethodVerification | [ContactMethod](#rellm-ContactMethod) | [ContactMethod](#rellm-ContactMethod) | Starts SMS verification of the current user&#39;s own phone ContactMethod. *Authenticated, self-only.* Requires the server to have Twilio configured and enabled. Generates a 6-digit code, sends it via Twilio SMS, and stores it (with a start time and attempt counter) on the phone ContactMethod. Only `tel:` values are supported this iteration -- `mailto:` returns `Unimplemented`. Rate-limited to one send per 60 seconds per user. |
@@ -1635,6 +1641,8 @@ Model for a Rellm user. This user may have [`Media`](#rellm-Media), [`Group`](#r
 | permissions | [Permission](#rellm-Permission) | repeated | The user&#39;s permissions. See [`Permission`](#rellm-Permission) for details. |
 | avatar | [MediaReference](#rellm-MediaReference) | optional | The user&#39;s avatar. Note that its visibility is managed by the User and thus it may not be accessible to the current user. |
 | bio | [string](#string) |  | The user&#39;s bio. |
+| media_storage_limit_bytes | [uint64](#uint64) | optional | The maximum number of bytes this user&#39;s Media (see `Media.sizes[].size_bytes`) may collectively occupy in storage. Enforced by `POST /media` (see `Media`&#39;s own doc), which rejects an upload that would push `media_storage_bytes_used` over this limit with an HTTP 413 and a plaintext error body. Unset means unlimited. |
+| media_storage_bytes_used | [uint64](#uint64) |  | The total size, in bytes, of every stored copy (original plus any converted sizes) of every Media item this user owns -- the sum of `Media.sizes[].size_bytes` across all their Media. A denormalized counter, recomputed (never trusted from client input) after every operation that could change it -- upload, delete, size conversion, `DeleteMediaSizes` -- by `backend/src/logic/user_counts.rs`&#39;s `update_media_storage_used`, and self-healed on an interval by `bin/update_user_counts.rs` the same way every other denormalized `User` counter (`follower_count`, `post_count`, etc.) is. |
 | visibility | [Visibility](#rellm-Visibility) |  | User visibility is a bit different from Post visibility. LIMITED means the user can only be seen by users they follow (as opposed to Posts&#39; individualized visibilities). PRIVATE visibility means no one can see the user. See server_configuration.proto for details about PRIVATE users&#39; ability to creep. |
 | moderation | [Moderation](#rellm-Moderation) |  | The user&#39;s moderation status. See [`Moderation`](#rellm-Moderation) for details. |
 | default_follow_moderation | [Moderation](#rellm-Moderation) |  | Only PENDING or UNMODERATED are valid. |
@@ -1717,6 +1725,35 @@ Named `USERS_TEXT_SEARCH` (not the bare `TEXT_SEARCH` used by [`PostListingType`
 
 
 
+<a name="rellm-Author"></a>
+
+### Author
+Post/authorship-centric version of User. UI can cross-reference user details from its own
+cache (for things like admin/bot icons).
+
+Lives in `media.proto` (rather than `users.proto`, where it used to live, or its own
+`authors.proto`, split out from `users.proto` for a time) because `Author.avatar` needs
+`MediaReference` and `Media`/`MediaReference` need `Author` (see this field&#39;s own doc) --
+mutually recursive types belong in the same file, since `protoc` rejects circular *file*
+imports even though the recursive *types* themselves are perfectly valid. `users.proto`
+(`User.sync_destinations`) and `sync.proto` (`SyncDestination.owner`, `SyncSource.owner`) both
+depend on this without depending on each other, via their own `import &#34;media.proto&#34;` (both
+already needed it anyway, for `User.avatar`/`Media`-shaped fields).
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| user_id | [string](#string) |  | Permanent string ID for the user. Will never contain a `@` symbol. |
+| username | [string](#string) | optional | Impermanent string username for the user. Will never contain a `@` symbol. |
+| avatar | [MediaReference](#rellm-MediaReference) | optional | The user&#39;s avatar. |
+| real_name | [string](#string) | optional |  |
+| permissions | [Permission](#rellm-Permission) | repeated |  |
+
+
+
+
+
+
 <a name="rellm-GetMediaRequest"></a>
 
 ### GetMediaRequest
@@ -1787,19 +1824,18 @@ On success, the endpoint will return the media ID in plaintext.
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | id | [string](#string) |  | The ID of the media item. |
-| user_id | [string](#string) | optional | The ID of the user who created the media item. |
-| content_type | [string](#string) |  | The MIME content type of the media item. |
+| author | [Author](#rellm-Author) | optional | The user who created the media item. |
 | name | [string](#string) | optional | An optional title for the media item. |
 | description | [string](#string) | optional | An optional description for the media item. |
 | visibility | [Visibility](#rellm-Visibility) |  | Visibility of the media item. |
 | moderation | [Moderation](#rellm-Moderation) |  | Moderation of the media item. |
 | generated | [bool](#bool) |  | Indicates the media was generated by the server rather than uploaded manually by a user. |
 | processed | [bool](#bool) |  | Media is generally stored as-is on upload. When background jobs process and compress the media, this flag is set to true. |
-| aspect_ratio | [float](#float) | optional | Width divided by height. Set by the `convert_media_sizes` background job once it&#39;s able to read the media&#39;s dimensions (via ImageMagick/ffprobe); unset until then. |
 | created_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  |  |
 | updated_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  |  |
 | metadata | [MediaMetadata](#rellm-MediaMetadata) |  |  |
 | url | [string](#string) | optional | An external URL to fetch the media from, in lieu of `/media/{id}`. Used for representing media owned by other protocols/servers (e.g. ActivityPub/Mastodon, AT Protocol/Bluesky) that Rellm does not store locally. If unset, clients fall back to `/media/{id}`. |
+| sizes | [MediaSize](#rellm-MediaSize) | repeated | Every stored copy of this media item&#39;s bytes -- the original upload (`MEDIA_CONVERSION_ORIGINAL`) plus any auto-generated resized copies (see `convert_media_sizes`&#39;s background job) -- each with its own content type, byte size, and (once known) aspect ratio. Always has at least one `MEDIA_CONVERSION_ORIGINAL` entry unless `url` is set (externally-hosted media has no locally-stored copies at all). The original is tracked here rather than as a separate top-level field so it can eventually be deleted to free space once converted copies exist, while remaining fully accounted for by `User.media_storage_bytes_used` up until that point. |
 
 
 
@@ -1832,19 +1868,57 @@ and the media item&#39;s name (for alt text usage).
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| content_type | [string](#string) |  | The MIME content type of the media item. |
 | id | [string](#string) |  | The ID of the media item. |
 | name | [string](#string) | optional | An optional title for the media item. |
 | generated | [bool](#bool) |  | Indicates the media was generated by the server rather than uploaded manually by a user. |
 | metadata | [MediaMetadata](#rellm-MediaMetadata) |  |  |
-| aspect_ratio | [float](#float) | optional | Width divided by height. See `Media.aspect_ratio`. |
+| sizes | [MediaSize](#rellm-MediaSize) | repeated | See `Media.sizes`. |
 | url | [string](#string) | optional | An external URL to fetch the media from, in lieu of `/media/{id}`. See `Media.url`. If unset, clients fall back to `/media/{id}`. |
+| description | [string](#string) | optional |  |
+| author | [Author](#rellm-Author) | optional | The user who created the media item. See `Media.author`. Included here (unlike most other `MediaReference` fields, which are deliberately pared down from `Media`) so clients that only ever see a `MediaReference` -- e.g. a `Post.media` item -- can still tell whether the current viewer owns it, without a separate `Media` lookup. |
+
+
+
+
+
+
+<a name="rellm-MediaSize"></a>
+
+### MediaSize
+One stored copy of a `Media` item&#39;s bytes -- either its untouched original upload
+(`MEDIA_CONVERSION_ORIGINAL`) or an auto-generated resized copy, as produced by the
+`convert_media_sizes` background job. Fields are tracked per-size (rather than once on `Media`
+itself) so that a future conversion producing a different kind of derived copy -- e.g. a
+`image/jpeg` poster frame for a `video/mp4` original, or a differently-cropped aspect ratio --
+can vary any of them independently of the original.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| conversion | [MediaConversion](#rellm-MediaConversion) |  | Which copy this is -- the untouched original, or one of the auto-generated resized copies. |
+| size_bytes | [uint64](#uint64) |  | This copy&#39;s size on disk/in MinIO, in bytes. Summed (across every size, of every Media a user owns) into `User.media_storage_bytes_used`. |
+| aspect_ratio | [float](#float) | optional | Width divided by height. Set by the `convert_media_sizes` background job once it&#39;s able to read the media&#39;s dimensions (via ImageMagick/ffprobe); unset until then. |
+| content_type | [string](#string) |  | The MIME content type of this copy specifically. Usually identical across every size of a given `Media`, but not guaranteed to be -- e.g. a future video-thumbnail conversion could produce an `image/jpeg` size for a `video/mp4` original. |
 
 
 
 
 
  
+
+
+<a name="rellm-MediaConversion"></a>
+
+### MediaConversion
+Which stored copy of a `Media` item&#39;s bytes a `MediaSize` represents.
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| MEDIA_CONVERSION_ORIGINAL | 0 | The untouched original upload. |
+| MEDIA_CONVERSION_SMALL | 1 | Resized to fit within 320x320 px, preserving aspect ratio (never upscaled). |
+| MEDIA_CONVERSION_MEDIUM | 2 | Resized to fit within 800x800 px, preserving aspect ratio (never upscaled). |
+| MEDIA_CONVERSION_LARGE | 3 | Resized to fit within 1600x1600 px, preserving aspect ratio (never upscaled). |
+
 
  
 
@@ -2116,152 +2190,6 @@ Unregisters a browser&#39;s Web Push subscription for the current user, e.g. on 
 | PERSONAL_MESSAGES_TEXT_SEARCH | 1 | Gets messages sent to the current user, and messages (purportedly) sent by the user, that match the given search text. Returns results in order of relevance to the search text. |
 | ALL_SYSTEM_MESSAGES | 10 | Gets all messages on the server (to a limit), including those sent to other users. Requires admin privileges. |
 | ALL_SYSTEM_MESSAGES_TEXT_SEARCH | 11 |  |
-
-
- 
-
- 
-
- 
-
-
-
-<a name="groups-proto"></a>
-<p align="right"><a href="#top">Top</a></p>
-
-## groups.proto
-
-
-
-<a name="rellm-GetGroupsRequest"></a>
-
-### GetGroupsRequest
-Request to get a group or groups by name or ID.
-
-
-| Field | Type | Label | Description |
-| ----- | ---- | ----- | ----------- |
-| group_id | [string](#string) | optional | The ID of the group to get. |
-| group_name | [string](#string) | optional | The name of the group to get. |
-| group_shortname | [string](#string) | optional | The shortname of the group to get. Group shortname search is case-insensitive. |
-| listing_type | [GroupListingType](#rellm-GroupListingType) |  | The group listing type. |
-| page | [int32](#int32) | optional | The page of results to get. |
-
-
-
-
-
-
-<a name="rellm-GetGroupsResponse"></a>
-
-### GetGroupsResponse
-Response to a GetGroupsRequest.
-
-
-| Field | Type | Label | Description |
-| ----- | ---- | ----- | ----------- |
-| groups | [Group](#rellm-Group) | repeated | The groups that matched the request. |
-| has_next_page | [bool](#bool) |  | Whether there are more groups to get. |
-
-
-
-
-
-
-<a name="rellm-GetMembersRequest"></a>
-
-### GetMembersRequest
-Request to get members of a group.
-
-
-| Field | Type | Label | Description |
-| ----- | ---- | ----- | ----------- |
-| group_id | [string](#string) |  | The ID of the group to get members of. |
-| username | [string](#string) | optional | The username of the members to search for. |
-| group_moderation | [Moderation](#rellm-Moderation) | optional | The membership status to filter members by. If not specified, all members are returned. |
-| page | [int32](#int32) | optional | The page of results to get. |
-
-
-
-
-
-
-<a name="rellm-GetMembersResponse"></a>
-
-### GetMembersResponse
-Response to a GetMembersRequest.
-
-
-| Field | Type | Label | Description |
-| ----- | ---- | ----- | ----------- |
-| members | [Member](#rellm-Member) | repeated | The members that matched the request. |
-| has_next_page | [bool](#bool) |  | Whether there are more members to get. |
-
-
-
-
-
-
-<a name="rellm-Group"></a>
-
-### Group
-`Group`s are a way to organize users and posts (and thus events). They can be used for many purposes,
-
-
-| Field | Type | Label | Description |
-| ----- | ---- | ----- | ----------- |
-| id | [string](#string) |  | The group&#39;s unique ID. |
-| name | [string](#string) |  | Mutable name of the group. Must be unique, such that the derived `shortname` is also unique. |
-| shortname | [string](#string) |  | Immutable shortname of the group. Derived from changes to `name` when the [`Group`](#rellm-Group) is updated. |
-| description | [string](#string) |  | A description of the group. |
-| avatar | [MediaReference](#rellm-MediaReference) | optional | An avatar for the group. |
-| default_membership_permissions | [Permission](#rellm-Permission) | repeated | The default permissions for new members of the group. |
-| default_membership_moderation | [Moderation](#rellm-Moderation) |  | The default moderation for new members of the group. Valid values are PENDING (requires a moderator to let you join) and UNMODERATED. |
-| default_post_moderation | [Moderation](#rellm-Moderation) |  | The default moderation for new posts in the group. |
-| default_event_moderation | [Moderation](#rellm-Moderation) |  | The default moderation for new events in the group. |
-| visibility | [Visibility](#rellm-Visibility) |  | LIMITED visibility groups are only visible to members. PRIVATE groups are only visibile to users with the ADMIN group permission. |
-| member_count | [uint32](#uint32) |  | The number of members in the group. |
-| post_count | [uint32](#uint32) |  | The number of posts in the group. |
-| event_count | [uint32](#uint32) |  | The number of events in the group. |
-| non_member_permissions | [Permission](#rellm-Permission) | repeated | The permissions given to non-members of the group. |
-| current_user_membership | [Membership](#rellm-Membership) | optional | The membership for the current user, if any. |
-| created_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  | The time the group was created. |
-| updated_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional | The time the group was last updated. |
-
-
-
-
-
-
-<a name="rellm-Member"></a>
-
-### Member
-Used when fetching group members using the [`GetMembers`](#grpc-api-GetMembers) RPC.
-
-
-| Field | Type | Label | Description |
-| ----- | ---- | ----- | ----------- |
-| user | [User](#rellm-User) |  | The user. |
-| membership | [Membership](#rellm-Membership) |  | The user&#39;s membership (or join request, or invitation, or both) in the group. |
-
-
-
-
-
- 
-
-
-<a name="rellm-GroupListingType"></a>
-
-### GroupListingType
-The type of group listing to get.
-
-| Name | Number | Description |
-| ---- | ------ | ----------- |
-| ALL_GROUPS | 0 | Get all groups (visible to the current user). |
-| MY_GROUPS | 1 | Get groups the current user is a member of. |
-| REQUESTED_GROUPS | 2 | Get groups the current user has requested to join. |
-| INVITED_GROUPS | 3 | Get groups the current user has been invited to. |
 
 
  
@@ -2916,6 +2844,152 @@ Events returned are ordered by start time unless otherwise specified (specifical
 
 
 
+<a name="groups-proto"></a>
+<p align="right"><a href="#top">Top</a></p>
+
+## groups.proto
+
+
+
+<a name="rellm-GetGroupsRequest"></a>
+
+### GetGroupsRequest
+Request to get a group or groups by name or ID.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| group_id | [string](#string) | optional | The ID of the group to get. |
+| group_name | [string](#string) | optional | The name of the group to get. |
+| group_shortname | [string](#string) | optional | The shortname of the group to get. Group shortname search is case-insensitive. |
+| listing_type | [GroupListingType](#rellm-GroupListingType) |  | The group listing type. |
+| page | [int32](#int32) | optional | The page of results to get. |
+
+
+
+
+
+
+<a name="rellm-GetGroupsResponse"></a>
+
+### GetGroupsResponse
+Response to a GetGroupsRequest.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| groups | [Group](#rellm-Group) | repeated | The groups that matched the request. |
+| has_next_page | [bool](#bool) |  | Whether there are more groups to get. |
+
+
+
+
+
+
+<a name="rellm-GetMembersRequest"></a>
+
+### GetMembersRequest
+Request to get members of a group.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| group_id | [string](#string) |  | The ID of the group to get members of. |
+| username | [string](#string) | optional | The username of the members to search for. |
+| group_moderation | [Moderation](#rellm-Moderation) | optional | The membership status to filter members by. If not specified, all members are returned. |
+| page | [int32](#int32) | optional | The page of results to get. |
+
+
+
+
+
+
+<a name="rellm-GetMembersResponse"></a>
+
+### GetMembersResponse
+Response to a GetMembersRequest.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| members | [Member](#rellm-Member) | repeated | The members that matched the request. |
+| has_next_page | [bool](#bool) |  | Whether there are more members to get. |
+
+
+
+
+
+
+<a name="rellm-Group"></a>
+
+### Group
+`Group`s are a way to organize users and posts (and thus events). They can be used for many purposes,
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| id | [string](#string) |  | The group&#39;s unique ID. |
+| name | [string](#string) |  | Mutable name of the group. Must be unique, such that the derived `shortname` is also unique. |
+| shortname | [string](#string) |  | Immutable shortname of the group. Derived from changes to `name` when the [`Group`](#rellm-Group) is updated. |
+| description | [string](#string) |  | A description of the group. |
+| avatar | [MediaReference](#rellm-MediaReference) | optional | An avatar for the group. |
+| default_membership_permissions | [Permission](#rellm-Permission) | repeated | The default permissions for new members of the group. |
+| default_membership_moderation | [Moderation](#rellm-Moderation) |  | The default moderation for new members of the group. Valid values are PENDING (requires a moderator to let you join) and UNMODERATED. |
+| default_post_moderation | [Moderation](#rellm-Moderation) |  | The default moderation for new posts in the group. |
+| default_event_moderation | [Moderation](#rellm-Moderation) |  | The default moderation for new events in the group. |
+| visibility | [Visibility](#rellm-Visibility) |  | LIMITED visibility groups are only visible to members. PRIVATE groups are only visibile to users with the ADMIN group permission. |
+| member_count | [uint32](#uint32) |  | The number of members in the group. |
+| post_count | [uint32](#uint32) |  | The number of posts in the group. |
+| event_count | [uint32](#uint32) |  | The number of events in the group. |
+| non_member_permissions | [Permission](#rellm-Permission) | repeated | The permissions given to non-members of the group. |
+| current_user_membership | [Membership](#rellm-Membership) | optional | The membership for the current user, if any. |
+| created_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  | The time the group was created. |
+| updated_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional | The time the group was last updated. |
+
+
+
+
+
+
+<a name="rellm-Member"></a>
+
+### Member
+Used when fetching group members using the [`GetMembers`](#grpc-api-GetMembers) RPC.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| user | [User](#rellm-User) |  | The user. |
+| membership | [Membership](#rellm-Membership) |  | The user&#39;s membership (or join request, or invitation, or both) in the group. |
+
+
+
+
+
+ 
+
+
+<a name="rellm-GroupListingType"></a>
+
+### GroupListingType
+The type of group listing to get.
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| ALL_GROUPS | 0 | Get all groups (visible to the current user). |
+| MY_GROUPS | 1 | Get groups the current user is a member of. |
+| REQUESTED_GROUPS | 2 | Get groups the current user has requested to join. |
+| INVITED_GROUPS | 3 | Get groups the current user has been invited to. |
+
+
+ 
+
+ 
+
+ 
+
+
+
 <a name="server_configuration-proto"></a>
 <p align="right"><a href="#top">Top</a></p>
 
@@ -3348,14 +3422,24 @@ Logo data for the server. Built atop Rellm [`Media` APIs](#rellm-Media).
 <a name="rellm-TwilioConfig"></a>
 
 ### TwilioConfig
-
+Twilio credentials, authenticated via a Twilio **API Key** (`twilio_api_key_sid`/
+`twilio_api_key_secret`) -- deliberately *not* the account&#39;s own Auth Token. A server&#39;s Auth
+Token is a single unscoped, unrevocable-without-rotating-everything credential with full access
+to the whole Twilio account; an API Key is its own separate, individually-revocable credential
+pair meant for exactly this kind of integration. `twilio_account_sid` is still required (Twilio
+resource URLs are always addressed by the actual Account SID), but it is *not* used to
+authenticate -- only the API Key SID/Secret pair is. See
+https://www.twilio.com/docs/iam/api-keys/restricted-api-keys for the recommended
+permission when creating one: `/twilio/messaging/messages/create` (nothing else is needed just
+to send verification SMS).
 
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | twilio_enabled | [bool](#bool) |  |  |
-| twilio_account_sid | [string](#string) |  | The Twilio Account SID. Public (among admins) -- freely serialized. |
-| twilio_api_key | [string](#string) |  | The Twilio Auth Token. Never serialized once written. |
+| twilio_account_sid | [string](#string) |  | The Twilio Account SID (starts with `AC`). Used only in the API&#39;s URL path -- *never* as an authentication credential. Public (among admins) -- freely serialized. |
+| twilio_api_key_sid | [string](#string) |  | The Twilio API Key&#39;s SID (starts with `SK`), used as the Basic Auth username. Public (among admins) -- freely serialized; it&#39;s useless without the Secret below, same as a username alone. |
+| twilio_api_key_secret | [string](#string) |  | The Twilio API Key&#39;s Secret, used as the Basic Auth password. Never serialized once written. |
 | twilio_from_number | [string](#string) |  | The Twilio-provisioned sending number for outbound verification SMS. Not secret. |
 
 

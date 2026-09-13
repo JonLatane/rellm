@@ -155,6 +155,11 @@ pub fn update_user(
                     permissions.push(Permission::EditClusterSettings);
                 }
                 existing_user.permissions = permissions.to_json_permissions();
+
+                // Storage quota: admin-only, same gate as `permissions` above. Unset (`None`)
+                // means unlimited -- see `User.media_storage_limit_bytes`'s own proto doc.
+                existing_user.media_storage_limit_bytes =
+                    request.media_storage_limit_bytes.map(|b| b as i64);
             }
             if admin || moderator {
                 existing_user.moderation = request.moderation.to_string_moderation();

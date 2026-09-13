@@ -46,7 +46,7 @@ import Proto.Rellm.Permission exposing (Permission(..), fieldNumbersPermission)
 import Proto.Rellm.Rellm as Rellm
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (Connection, RellmServer)
 import Shared.AccountsPanel.SortOrder exposing (sortOrderDecoder)
-import Shared.Conversions exposing (timestampToPosix)
+import Shared.Conversions exposing (int64ToInt, timestampToPosix)
 import Task exposing (Task)
 import Time
 
@@ -88,6 +88,12 @@ type alias RellmAccount =
     , syncDestinations : List SyncDestination
     , syncSources : List SyncSource
     , aiModels : List AIModel
+
+    -- Refreshed alongside `permissions`/etc (see `applyPermissionsRefreshResult`) from
+    -- `User.mediaStorageBytesUsed`/`.mediaStorageLimitBytes` -- see those fields' own proto doc.
+    -- `Nothing` limit means unlimited.
+    , mediaStorageBytesUsed : Int
+    , mediaStorageLimitBytes : Maybe Int
     }
 
 
@@ -284,6 +290,8 @@ applyPermissionsRefreshResult accId result accounts =
                     , syncDestinations = user.syncDestinations
                     , syncSources = user.syncSources
                     , aiModels = user.aiModels
+                    , mediaStorageBytesUsed = int64ToInt user.mediaStorageBytesUsed
+                    , mediaStorageLimitBytes = Maybe.map int64ToInt user.mediaStorageLimitBytes
                 }
                 accounts
 
@@ -451,6 +459,8 @@ encodeRellmAccount account =
         , ( "realName", Encode.string account.realName )
         , ( "needsPassword", Encode.bool account.needsPassword )
         , ( "sortOrder", Encode.int account.sortOrder )
+        , ( "mediaStorageBytesUsed", Encode.int account.mediaStorageBytesUsed )
+        , ( "mediaStorageLimitBytes", account.mediaStorageLimitBytes |> Maybe.map Encode.int |> Maybe.withDefault Encode.null )
         ]
 
 
@@ -474,9 +484,10 @@ encodeToken token =
         ]
 
 
-{-| `elm/json` only provides `map8`, but `RellmAccount` now has 14 fields -- so this
+{-| `elm/json` only provides `map8`, but `RellmAccount` now has 16 fields -- so this
 decodes the first 8 into a partially-applied `RellmAccount` constructor, then
-applies `realName`, `needsPassword`, and `sortOrder` on top of that. The last 3
+applies `realName`, `needsPassword`, `sortOrder`, `mediaStorageBytesUsed`, and
+`mediaStorageLimitBytes` on top of that. The 3 in between
 (`syncDestinations`/`syncSources`/`aiModels`) are deliberately
 never persisted at all -- see `encodeRellmAccount`'s own doc -- so they always
 decode to `[]` here regardless of what's in storage; the very next
@@ -484,7 +495,10 @@ decode to `[]` here regardless of what's in storage; the very next
 -}
 rellmAccountDecoder : Decoder RellmAccount
 rellmAccountDecoder =
-    Decode.map4 (\partial realName needsPassword sortOrder -> partial realName needsPassword sortOrder [] [] [])
+    Decode.map6
+        (\partial realName needsPassword sortOrder mediaStorageBytesUsed mediaStorageLimitBytes ->
+            partial realName needsPassword sortOrder [] [] [] mediaStorageBytesUsed mediaStorageLimitBytes
+        )
         (Decode.map8 RellmAccount
             (Decode.field "server" Decode.string)
             (Decode.field "userId" Decode.string)
@@ -498,6 +512,8 @@ rellmAccountDecoder =
         realNameDecoder
         needsPasswordDecoder
         sortOrderDecoder
+        mediaStorageBytesUsedDecoder
+        mediaStorageLimitBytesDecoder
 
 
 {-| Decodes `encodeRellmAccountAuthTokens`'s wire format -- see `RellmAccountAuthTokens`'s own doc.
@@ -518,6 +534,27 @@ realNameDecoder =
     Decode.oneOf
         [ Decode.field "realName" Decode.string
         , Decode.succeed ""
+        ]
+
+
+{-| Defaults to 0 if the key is missing entirely (older persisted state, from before this field
+existed) -- same reasoning as `realNameDecoder`.
+-}
+mediaStorageBytesUsedDecoder : Decoder Int
+mediaStorageBytesUsedDecoder =
+    Decode.oneOf
+        [ Decode.field "mediaStorageBytesUsed" Decode.int
+        , Decode.succeed 0
+        ]
+
+
+{-| Defaults to `Nothing` (unlimited) if the key is missing entirely (older persisted state).
+-}
+mediaStorageLimitBytesDecoder : Decoder (Maybe Int)
+mediaStorageLimitBytesDecoder =
+    Decode.oneOf
+        [ Decode.field "mediaStorageLimitBytes" (Decode.nullable Decode.int)
+        , Decode.succeed Nothing
         ]
 
 

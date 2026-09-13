@@ -32,6 +32,7 @@ import Shared
 import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccount, RellmAccountAuthTokens)
 import Shared.AccountsPanel.RellmServers as RellmServers
+import Shared.Conversions as Conversions
 import Shared.FederatedAuth as FederatedAuth
 import Task
 import UI
@@ -137,6 +138,8 @@ update shared req msg model =
                     , syncDestinations = user.syncDestinations
                     , syncSources = user.syncSources
                     , aiModels = user.aiModels
+                    , mediaStorageBytesUsed = Conversions.int64ToInt user.mediaStorageBytesUsed
+                    , mediaStorageLimitBytes = Maybe.map Conversions.int64ToInt user.mediaStorageLimitBytes
                     }
             in
             ( { model | status = Accepted }

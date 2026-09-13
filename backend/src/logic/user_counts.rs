@@ -1,18 +1,55 @@
 //! Single source of truth for how each of `users`' denormalized counters (`follower_count`,
 //! `following_count`, `friend_count`, `group_count`, `post_count`, `response_count`,
-//! `event_count`, `occasion_count`) is *defined* -- each `*_count` function below computes
-//! a fresh, correct value via `COUNT(*)`, rather than trusting an incrementally maintained one.
+//! `event_count`, `occasion_count`, `media_storage_bytes_used`) is *defined* -- each `*_count`/
+//! `media_storage_bytes_used` function below computes a fresh, correct value via `COUNT(*)`/`SUM`,
+//! rather than trusting an incrementally maintained one.
 //!
 //! Used both by RPC handlers (via the `update_*` functions, to refresh just the counters a
 //! mutation could have affected) and by `bin/update_user_counts.rs` (via [`update_all_counts`],
 //! which recomputes every counter for every user on an interval, correcting any drift the
 //! incremental call sites missed -- e.g. a cascading delete that doesn't go through them at all).
 
+use diesel::sql_types::{BigInt, Nullable};
 use diesel::*;
 
 use crate::db_connection::PgPooledConnection;
 use crate::rpcs::validations::PASSING_MODERATIONS;
 use crate::schema::{occasions, events, follows, memberships, posts, users};
+
+#[derive(QueryableByName)]
+struct SumRow {
+    #[diesel(sql_type = Nullable<BigInt>)]
+    sum: Option<i64>,
+}
+
+/// The sum of `size_bytes` across every stored copy (original plus any converted sizes) of every
+/// `Media` item `user_id` owns -- what `User.media_storage_bytes_used` reports. Raw SQL (rather
+/// than loading every `Media` row into Rust and summing there) so Postgres does the aggregation,
+/// using `idx_media_user_id_created_at`, without shipping full `Media` rows over the wire just to
+/// sum one field out of each.
+pub fn media_storage_bytes_used(user_id: i64, conn: &mut PgPooledConnection) -> QueryResult<i64> {
+    // Postgres' `SUM(bigint)` aggregate returns `numeric` (to avoid silent overflow), not
+    // `bigint` -- without the explicit `::bigint` cast back, Diesel's `BigInt` deserializer
+    // chokes on the wider `numeric` wire format ("Received more than 8 bytes while decoding an
+    // i64").
+    let row: SumRow = sql_query(
+        "SELECT SUM((entry->>'size_bytes')::bigint)::bigint AS sum \
+         FROM media, jsonb_array_elements(media.sizes) AS entry \
+         WHERE media.user_id = $1",
+    )
+    .bind::<BigInt, _>(user_id)
+    .get_result(conn)?;
+    Ok(row.sum.unwrap_or(0))
+}
+
+pub fn update_media_storage_used(user_id: i64, conn: &mut PgPooledConnection) -> QueryResult<()> {
+    let used = media_storage_bytes_used(user_id, conn)?;
+    update(users::table)
+        .filter(users::id.eq(user_id))
+        .set(users::media_storage_bytes_used.eq(used))
+        .execute(conn)?;
+    Ok(())
+}
 
 pub fn follower_count(user_id: i64, conn: &mut PgPooledConnection) -> QueryResult<i32> {
     let count: i64 = follows::table
@@ -179,7 +216,7 @@ pub fn update_event_counts(user_id: i64, conn: &mut PgPooledConnection) -> Query
     Ok(())
 }
 
-/// Recomputes and sets all 8 denormalized counters for `user_id` in one `UPDATE`. Used by
+/// Recomputes and sets all 9 denormalized counters for `user_id` in one `UPDATE`. Used by
 /// `bin/update_user_counts.rs`'s full sweep; the targeted `update_*` functions above are
 /// preferred at individual RPC call sites since they only need to touch the counters a given
 /// mutation could actually have affected.
@@ -192,6 +229,7 @@ pub fn update_all_counts(user_id: i64, conn: &mut PgPooledConnection) -> QueryRe
     let responses = response_count(user_id, conn)?;
     let events = event_count(user_id, conn)?;
     let occasions = occasion_count(user_id, conn)?;
+    let media_storage_used = media_storage_bytes_used(user_id, conn)?;
     update(users::table)
         .filter(users::id.eq(user_id))
         .set((
@@ -203,6 +241,7 @@ pub fn update_all_counts(user_id: i64, conn: &mut PgPooledConnection) -> QueryRe
             users::response_count.eq(responses),
             users::event_count.eq(events),
             users::occasion_count.eq(occasions),
+            users::media_storage_bytes_used.eq(media_storage_used),
         ))
         .execute(conn)?;
     Ok(())

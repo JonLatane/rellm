@@ -339,6 +339,17 @@ impl Rellm for RellmService {
         authenticated_bucket_rpc!(self, rpcs::delete_media, request)
     }
 
+    async fn update_media(&self, request: Request<Media>) -> Result<Response<Media>, Status> {
+        authenticated_rpc!(self, rpcs::update_media, request)
+    }
+
+    async fn delete_media_sizes(
+        &self,
+        request: Request<Media>,
+    ) -> Result<Response<Media>, Status> {
+        authenticated_bucket_rpc!(self, rpcs::delete_media_sizes, request)
+    }
+
     async fn get_groups(
         &self,
         request: Request<GetGroupsRequest>,

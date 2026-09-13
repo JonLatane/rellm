@@ -2,6 +2,7 @@ module Federation.BlueskyTests exposing (suite)
 
 import Expect
 import Json.Decode as Decode
+import Proto.Rellm exposing (unwrapMediaReference)
 import Proto.Rellm.PostContext exposing (PostContext(..))
 import Proto.Rellm.Visibility exposing (Visibility(..))
 import Shared.Federation.Bluesky as Bluesky
@@ -74,6 +75,7 @@ suite =
                         |> Bluesky.toPost
                         |> .author
                         |> Maybe.andThen .avatar
+                        |> Maybe.map unwrapMediaReference
                         |> Maybe.andThen .url
                         |> Expect.equal (Just "https://cdn.bsky.app/img/avatar/alice.jpg")
             , test "the author's own handle is used as their Rellm username, unqualified (already globally unique)" <|

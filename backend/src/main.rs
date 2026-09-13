@@ -136,6 +136,15 @@ Supported flags:
         e
     })?);
 
+    // One-time backfill of `Media.sizes[].size_bytes` for rows that predate size tracking (see
+    // migration `2026-09-13-000100_restructure_media_sizes`). Spawned, not awaited -- it must not
+    // delay the server from actually starting to serve requests -- and naturally idempotent, so
+    // it's safe to spawn on every startup (a restart after it completes just finds nothing to do).
+    tokio::spawn(logic::run_media_size_backfill(
+        pool.as_ref().clone(),
+        bucket.clone(),
+    ));
+
     // Ideally, we should be able to restart servers and switch between HTTPS redirects.
     let mut conn = pool
         .get()

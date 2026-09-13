@@ -160,6 +160,25 @@ export interface User {
   /** The user's bio. */
   bio: string;
   /**
+   * The maximum number of bytes this user's Media (see `Media.sizes[].size_bytes`) may
+   * collectively occupy in storage. Enforced by `POST /media` (see `Media`'s own doc), which
+   * rejects an upload that would push `media_storage_bytes_used` over this limit with an HTTP 413
+   * and a plaintext error body. Unset means unlimited.
+   */
+  mediaStorageLimitBytes?:
+    | number
+    | undefined;
+  /**
+   * The total size, in bytes, of every stored copy (original plus any converted sizes) of every
+   * Media item this user owns -- the sum of `Media.sizes[].size_bytes` across all their Media.
+   * A denormalized counter, recomputed (never trusted from client input) after every operation
+   * that could change it -- upload, delete, size conversion, `DeleteMediaSizes` -- by
+   * `backend/src/logic/user_counts.rs`'s `update_media_storage_used`, and self-healed on an
+   * interval by `bin/update_user_counts.rs` the same way every other denormalized `User` counter
+   * (`follower_count`, `post_count`, etc.) is.
+   */
+  mediaStorageBytesUsed: number;
+  /**
    * User visibility is a bit different from Post visibility.
    * LIMITED means the user can only be seen by users they follow
    * (as opposed to Posts' individualized visibilities).
@@ -416,6 +435,8 @@ function createBaseUser(): User {
     permissions: [],
     avatar: undefined,
     bio: "",
+    mediaStorageLimitBytes: undefined,
+    mediaStorageBytesUsed: 0,
     visibility: 0,
     moderation: 0,
     defaultFollowModeration: 0,
@@ -467,6 +488,12 @@ export const User: MessageFns<User> = {
     }
     if (message.bio !== "") {
       writer.uint32(66).string(message.bio);
+    }
+    if (message.mediaStorageLimitBytes !== undefined) {
+      writer.uint32(80).uint64(message.mediaStorageLimitBytes);
+    }
+    if (message.mediaStorageBytesUsed !== 0) {
+      writer.uint32(88).uint64(message.mediaStorageBytesUsed);
     }
     if (message.visibility !== 0) {
       writer.uint32(160).int32(message.visibility);
@@ -613,6 +640,22 @@ export const User: MessageFns<User> = {
           }
 
           message.bio = reader.string();
+          continue;
+        }
+        case 10: {
+          if (tag !== 80) {
+            break;
+          }
+
+          message.mediaStorageLimitBytes = longToNumber(reader.uint64());
+          continue;
+        }
+        case 11: {
+          if (tag !== 88) {
+            break;
+          }
+
+          message.mediaStorageBytesUsed = longToNumber(reader.uint64());
           continue;
         }
         case 20: {
@@ -804,6 +847,10 @@ export const User: MessageFns<User> = {
         : [],
       avatar: isSet(object.avatar) ? MediaReference.fromJSON(object.avatar) : undefined,
       bio: isSet(object.bio) ? globalThis.String(object.bio) : "",
+      mediaStorageLimitBytes: isSet(object.mediaStorageLimitBytes)
+        ? globalThis.Number(object.mediaStorageLimitBytes)
+        : undefined,
+      mediaStorageBytesUsed: isSet(object.mediaStorageBytesUsed) ? globalThis.Number(object.mediaStorageBytesUsed) : 0,
       visibility: isSet(object.visibility) ? visibilityFromJSON(object.visibility) : 0,
       moderation: isSet(object.moderation) ? moderationFromJSON(object.moderation) : 0,
       defaultFollowModeration: isSet(object.defaultFollowModeration)
@@ -865,6 +912,12 @@ export const User: MessageFns<User> = {
     }
     if (message.bio !== "") {
       obj.bio = message.bio;
+    }
+    if (message.mediaStorageLimitBytes !== undefined) {
+      obj.mediaStorageLimitBytes = Math.round(message.mediaStorageLimitBytes);
+    }
+    if (message.mediaStorageBytesUsed !== 0) {
+      obj.mediaStorageBytesUsed = Math.round(message.mediaStorageBytesUsed);
     }
     if (message.visibility !== 0) {
       obj.visibility = visibilityToJSON(message.visibility);
@@ -951,6 +1004,8 @@ export const User: MessageFns<User> = {
       ? MediaReference.fromPartial(object.avatar)
       : undefined;
     message.bio = object.bio ?? "";
+    message.mediaStorageLimitBytes = object.mediaStorageLimitBytes ?? undefined;
+    message.mediaStorageBytesUsed = object.mediaStorageBytesUsed ?? 0;
     message.visibility = object.visibility ?? 0;
     message.moderation = object.moderation ?? 0;
     message.defaultFollowModeration = object.defaultFollowModeration ?? 0;
@@ -1814,6 +1869,17 @@ function fromTimestamp(t: Timestamp): string {
   let millis = (t.seconds || 0) * 1_000;
   millis += (t.nanos || 0) / 1_000_000;
   return new globalThis.Date(millis).toISOString();
+}
+
+function longToNumber(int64: { toString(): string }): number {
+  const num = globalThis.Number(int64.toString());
+  if (num > globalThis.Number.MAX_SAFE_INTEGER) {
+    throw new globalThis.Error("Value is larger than Number.MAX_SAFE_INTEGER");
+  }
+  if (num < globalThis.Number.MIN_SAFE_INTEGER) {
+    throw new globalThis.Error("Value is smaller than Number.MIN_SAFE_INTEGER");
+  }
+  return num;
 }
 
 function isSet(value: any): boolean {

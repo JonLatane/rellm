@@ -175,8 +175,6 @@ diesel::table! {
     media (id) {
         id -> Int8,
         user_id -> Nullable<Int8>,
-        minio_path -> Varchar,
-        content_type -> Varchar,
         name -> Nullable<Varchar>,
         description -> Nullable<Text>,
         generated -> Bool,
@@ -185,9 +183,8 @@ diesel::table! {
         moderation -> Varchar,
         created_at -> Timestamp,
         updated_at -> Timestamp,
-        converted_sizes -> Jsonb,
         metadata -> Jsonb,
-        aspect_ratio -> Nullable<Float4>,
+        sizes -> Jsonb,
     }
 }
 
@@ -429,6 +426,8 @@ diesel::table! {
         search_text -> TsVector,
         friend_count -> Int4,
         occasion_count -> Int4,
+        media_storage_limit_bytes -> Nullable<Int8>,
+        media_storage_bytes_used -> Int8,
     }
 }
 

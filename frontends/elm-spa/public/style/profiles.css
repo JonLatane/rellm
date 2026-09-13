@@ -352,6 +352,42 @@
   margin-top: 0.4rem;
 }
 
+/* Components/Pages/UserProfilePage.elm's `storageQuotaSection`/`storageUsageView`/
+   `storageQuotaEditView` -- mirrors the Permissions section's own display/edit layout above. */
+.profile-storage-usage,
+.profile-storage-quota-display,
+.profile-storage-quota-edit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.profile-storage-quota-input {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.profile-storage-quota-input input[type="number"] {
+  width: 6rem;
+  padding: 0.15rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 0.85rem;
+}
+
+.profile-storage-quota-edit select {
+  padding: 0.15rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 0.85rem;
+}
+
 .profile-federated-entry {
   display: inline-flex;
   align-items: center;

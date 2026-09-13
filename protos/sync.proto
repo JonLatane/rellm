@@ -3,7 +3,7 @@ syntax = "proto3";
 package rellm;
 
 import "google/protobuf/timestamp.proto";
-import "authors.proto";
+import "media.proto";
 
 // A user-owned destination to sync (cross-post) content out to. Mirrors [`SyncSource`](#rellm-SyncSource),
 // but for pushing content out rather than pulling content in. Originally Event-specific

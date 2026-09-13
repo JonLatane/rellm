@@ -21,16 +21,21 @@ do.
 import Browser.Events
 import Components.MediaRenderer as MediaRenderer
 import Components.Posts as Posts
-import Html exposing (Html, button, div, span, text)
-import Html.Attributes exposing (class)
-import Html.Events exposing (on, onClick, preventDefaultOn, stopPropagationOn)
+import Grpc
+import Html exposing (Html, button, div, input, span, text, textarea)
+import Html.Attributes exposing (class, disabled, placeholder, value)
+import Html.Events exposing (on, onClick, onInput, preventDefaultOn, stopPropagationOn)
 import Html.Keyed
 import Json.Decode as Decode
 import Process
-import Proto.Rellm exposing (MediaReference, Post)
+import Proto.Rellm exposing (Media, MediaReference, MediaSize, Post, defaultMedia, defaultMediaSize, unwrapAuthor, wrapAuthor)
+import Proto.Rellm.MediaConversion exposing (MediaConversion(..))
+import Proto.Rellm.Rellm as Rellm
 import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccount)
-import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer)
+import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer, withAccessToken)
+import Shared.ByteFormat as ByteFormat
+import Shared.Conversions exposing (int64ToInt)
 import Task
 import UI.Classes exposing (classes, openClosedClass)
 
@@ -75,6 +80,38 @@ type alias Model =
     -- row -- or a fast double-tap of `Next` -- never preloads anything for
     -- the items flown past, only whichever one the user actually stops on.
     , preloadFor : Maybe String
+
+    -- Live only while the current item's name/description/sizes are being edited (see
+    -- `EditClicked`) -- `Nothing` (the default) elsewhere. Reset to `Nothing` on every
+    -- `Open`/`Next`/`Prev`/`SetCurrent`/`CloseClicked`, same as `currentMediaReference` itself
+    -- moving on -- an in-progress edit of one item should never carry over to another.
+    , edit : Maybe MediaEdit
+    }
+
+
+{-| Shared by `EditSaveClicked`/`DeleteSizeClicked` -- mirrors
+`Components.Pages.UserProfilePage.SubmitStatus`, kept separate since that module isn't imported
+here.
+-}
+type SubmitStatus
+    = Idle
+    | Submitting
+    | SubmitFailed String
+
+
+{-| Live only while the currently-shown item (see `Model.edit`) is being edited by its owner or an
+Admin (see `canEdit`) -- `name`/`description` are the in-progress text fields (independent of the
+underlying `MediaReference` until `EditSaveClicked` succeeds); `deletingSizes` is which
+`MediaConversion`s currently have a `DeleteMediaSizes` request in flight, so their own button can
+show "Deleting…"/disable independently of the other sizes and of `status` (which only tracks the
+name/description Save).
+-}
+type alias MediaEdit =
+    { name : String
+    , description : String
+    , status : SubmitStatus
+    , deletingSizes : List MediaConversion
+    , deleteSizeError : Maybe String
     }
 
 
@@ -99,6 +136,14 @@ type Msg
       -- for so a stale timer (superseded by further paging before it fired)
       -- can tell itself apart from the live one.
     | PreloadReady String
+    | EditClicked
+    | EditCancelClicked
+    | EditNameChanged String
+    | EditDescriptionChanged String
+    | EditSaveClicked
+    | GotEditSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, Media ))
+    | DeleteSizeClicked MediaConversion
+    | GotDeleteSizeResult MediaConversion (Result Grpc.Error ( Maybe AccountsPanel.Msg, Media ))
 
 
 {-| See `Model.direction`'s doc.
@@ -111,7 +156,7 @@ type Direction
 
 init : Model
 init =
-    { media = [], currentMediaReference = Nothing, maybePost = Nothing, targetHost = "", direction = Entering, touchStart = Nothing, preloadFor = Nothing }
+    { media = [], currentMediaReference = Nothing, maybePost = Nothing, targetHost = "", direction = Entering, touchStart = Nothing, preloadFor = Nothing, edit = Nothing }
 
 
 {-| Left/right arrow keys page `Prev`/`Next`, same as the toolbar's `‹`/`›`
@@ -127,8 +172,212 @@ subscriptions model =
         Sub.none
 
 
-update : Msg -> Model -> ( Model, Cmd Msg )
-update msg model =
+{-| Handles the edit-related messages (`EditClicked` through `GotDeleteSizeResult`), which need
+`AccountsPanel.Model` to make `UpdateMedia`/`DeleteMediaSizes` calls and may return a refreshed
+account (see `AccountsPanel.performWithAccountServer`) for the caller to persist -- same
+`Maybe AccountsPanel.Msg` convention `Shared.MyMediaPanel.update` uses. Everything else is pure
+state juggling with no RPCs, delegated to `updatePure`.
+-}
+update : AccountsPanel.Model -> Msg -> Model -> ( Model, Cmd Msg, Maybe AccountsPanel.Msg )
+update accountsPanelModel msg model =
+    let
+        currentMedia : Maybe MediaReference
+        currentMedia =
+            model.currentMediaReference
+                |> Maybe.andThen (\id -> List.filter (\m -> m.id == id) model.media |> List.head)
+
+        maybeAccount : Maybe RellmAccount
+        maybeAccount =
+            RellmAccounts.enabledRellmAccountForServer accountsPanelModel.accounts model.targetHost
+    in
+    case msg of
+        EditClicked ->
+            case currentMedia of
+                Just media ->
+                    ( { model
+                        | edit =
+                            Just
+                                { name = Maybe.withDefault "" media.name
+                                , description = Maybe.withDefault "" media.description
+                                , status = Idle
+                                , deletingSizes = []
+                                , deleteSizeError = Nothing
+                                }
+                      }
+                    , Cmd.none
+                    , Nothing
+                    )
+
+                Nothing ->
+                    ( model, Cmd.none, Nothing )
+
+        EditCancelClicked ->
+            ( { model | edit = Nothing }, Cmd.none, Nothing )
+
+        EditNameChanged text ->
+            ( { model | edit = model.edit |> Maybe.map (\edit -> { edit | name = text }) }, Cmd.none, Nothing )
+
+        EditDescriptionChanged text ->
+            ( { model | edit = model.edit |> Maybe.map (\edit -> { edit | description = text }) }, Cmd.none, Nothing )
+
+        EditSaveClicked ->
+            case ( currentMedia, model.edit, maybeAccount ) of
+                ( Just media, Just edit, Just account ) ->
+                    ( { model | edit = Just { edit | status = Submitting } }
+                    , updateMediaTask accountsPanelModel account media.id edit.name edit.description
+                        |> Task.attempt GotEditSaveResult
+                    , Nothing
+                    )
+
+                _ ->
+                    ( model, Cmd.none, Nothing )
+
+        GotEditSaveResult (Ok ( maybeAccountsPanelMsg, updatedMedia )) ->
+            ( { model
+                | media = model.media |> List.map (\m -> if m.id == updatedMedia.id then mediaToReference updatedMedia else m)
+                , edit = Nothing
+              }
+            , Cmd.none
+            , maybeAccountsPanelMsg
+            )
+
+        GotEditSaveResult (Err err) ->
+            ( { model | edit = model.edit |> Maybe.map (\edit -> { edit | status = SubmitFailed (AccountsPanel.grpcErrorToString err) }) }
+            , Cmd.none
+            , Nothing
+            )
+
+        DeleteSizeClicked conversion ->
+            case ( currentMedia, model.edit, maybeAccount ) of
+                ( Just media, Just edit, Just account ) ->
+                    ( { model | edit = Just { edit | deletingSizes = conversion :: edit.deletingSizes, deleteSizeError = Nothing } }
+                    , deleteMediaSizeTask accountsPanelModel account media.id conversion
+                        |> Task.attempt (GotDeleteSizeResult conversion)
+                    , Nothing
+                    )
+
+                _ ->
+                    ( model, Cmd.none, Nothing )
+
+        GotDeleteSizeResult conversion (Ok ( maybeAccountsPanelMsg, updatedMedia )) ->
+            ( { model
+                | media = model.media |> List.map (\m -> if m.id == updatedMedia.id then mediaToReference updatedMedia else m)
+                , edit =
+                    model.edit
+                        |> Maybe.map (\edit -> { edit | deletingSizes = List.filter ((/=) conversion) edit.deletingSizes })
+              }
+            , Cmd.none
+            , maybeAccountsPanelMsg
+            )
+
+        GotDeleteSizeResult conversion (Err err) ->
+            ( { model
+                | edit =
+                    model.edit
+                        |> Maybe.map
+                            (\edit ->
+                                { edit
+                                    | deletingSizes = List.filter ((/=) conversion) edit.deletingSizes
+                                    , deleteSizeError = Just (AccountsPanel.grpcErrorToString err)
+                                }
+                            )
+              }
+            , Cmd.none
+            , Nothing
+            )
+
+        _ ->
+            let
+                ( newModel, cmd ) =
+                    updatePure msg model
+            in
+            ( newModel, cmd, Nothing )
+
+
+{-| The `Media` `UpdateMedia`/`DeleteMediaSizes` respond with, folded back into `model.media` in
+place of the (now possibly stale) `MediaReference` that was there -- both RPCs only ever change
+`name`/`description`/`sizes`, but this replaces the whole entry so nothing here has to track which
+of those actually changed. See `Shared.MyMediaPanel.toMediaReference` -- not reused directly,
+since importing it back from here would be circular (`MyMediaPanel` already imports this module to
+open it from its own Browse-mode grid).
+-}
+mediaToReference : Media -> MediaReference
+mediaToReference media =
+    { id = media.id
+    , author = Maybe.map wrapAuthor media.author
+    , name = media.name
+    , generated = media.generated
+    , metadata = media.metadata
+    , sizes = media.sizes
+    , url = media.url
+    , description = media.description
+    }
+
+
+{-| `None` if `s` (trimmed) is empty -- e.g. an admin clearing the name/description field means
+"this media has none" (matches `Media.name`/`.description`'s own `optional` semantics), not
+"send an empty string".
+-}
+nonEmpty : String -> Maybe String
+nonEmpty s =
+    if String.isEmpty (String.trim s) then
+        Nothing
+
+    else
+        Just s
+
+
+{-| `UpdateMedia` only ever applies `name`/`description` (see `update_media.rs`) -- every other
+field on the request `Media` is ignored, so `defaultMedia` fills in the rest with placeholders
+nothing on the backend reads.
+-}
+updateMediaTask : AccountsPanel.Model -> RellmAccount -> String -> String -> String -> Task.Task Grpc.Error ( Maybe AccountsPanel.Msg, Media )
+updateMediaTask accountsPanelModel account mediaId name description =
+    AccountsPanel.performWithAccountServer
+        accountsPanelModel
+        ( Just account.userId, account.server )
+        (\server token ->
+            Grpc.new Rellm.updateMedia
+                { defaultMedia | id = mediaId, name = nonEmpty name, description = nonEmpty description }
+                |> Grpc.setHost (RellmServers.rellmServerUrl server)
+                |> withAccessToken (Just token)
+                |> Grpc.toTask
+        )
+
+
+{-| `DeleteMediaSizes` only ever looks at `sizes`' `conversion`s (see `delete_media_sizes.rs`) --
+every other field on the request `Media`, including the `MediaSize`s' own `sizeBytes`/
+`contentType`/`aspectRatio`, is ignored.
+-}
+deleteMediaSizeTask : AccountsPanel.Model -> RellmAccount -> String -> MediaConversion -> Task.Task Grpc.Error ( Maybe AccountsPanel.Msg, Media )
+deleteMediaSizeTask accountsPanelModel account mediaId conversion =
+    AccountsPanel.performWithAccountServer
+        accountsPanelModel
+        ( Just account.userId, account.server )
+        (\server token ->
+            Grpc.new Rellm.deleteMediaSizes
+                { defaultMedia | id = mediaId, sizes = [ { defaultMediaSize | conversion = conversion } ] }
+                |> Grpc.setHost (RellmServers.rellmServerUrl server)
+                |> withAccessToken (Just token)
+                |> Grpc.toTask
+        )
+
+
+{-| Whether `maybeAccount` may edit `media`'s name/description/sizes -- its owner, or an Admin.
+Gates `view`'s Edit button -- `Nothing` (signed out) never can.
+-}
+canEditMedia : Maybe RellmAccount -> MediaReference -> Bool
+canEditMedia maybeAccount media =
+    case maybeAccount of
+        Just account ->
+            (media.author |> Maybe.map (unwrapAuthor >> .userId)) == Just account.userId || RellmAccounts.isAdmin account
+
+        Nothing ->
+            False
+
+
+updatePure : Msg -> Model -> ( Model, Cmd Msg )
+updatePure msg model =
     case msg of
         Open media maybePost initialId host ->
             let
@@ -143,6 +392,7 @@ update msg model =
               , direction = Entering
               , touchStart = Nothing
               , preloadFor = Nothing
+              , edit = Nothing
               }
             , schedulePreload newCurrent
             )
@@ -150,7 +400,7 @@ update msg model =
         SetCurrent id ->
             case validCurrent model.media id of
                 Just validId ->
-                    ( { model | currentMediaReference = Just validId, preloadFor = Nothing }, schedulePreload (Just validId) )
+                    ( { model | currentMediaReference = Just validId, preloadFor = Nothing, edit = Nothing }, schedulePreload (Just validId) )
 
                 Nothing ->
                     ( model, Cmd.none )
@@ -158,7 +408,7 @@ update msg model =
         Next ->
             case adjacent 1 model of
                 Just nextMedia ->
-                    ( { model | currentMediaReference = Just nextMedia.id, direction = Forward, preloadFor = Nothing }, schedulePreload (Just nextMedia.id) )
+                    ( { model | currentMediaReference = Just nextMedia.id, direction = Forward, preloadFor = Nothing, edit = Nothing }, schedulePreload (Just nextMedia.id) )
 
                 Nothing ->
                     ( model, Cmd.none )
@@ -166,7 +416,7 @@ update msg model =
         Prev ->
             case adjacent -1 model of
                 Just prevMedia ->
-                    ( { model | currentMediaReference = Just prevMedia.id, direction = Backward, preloadFor = Nothing }, schedulePreload (Just prevMedia.id) )
+                    ( { model | currentMediaReference = Just prevMedia.id, direction = Backward, preloadFor = Nothing, edit = Nothing }, schedulePreload (Just prevMedia.id) )
 
                 Nothing ->
                     ( model, Cmd.none )
@@ -201,6 +451,11 @@ update msg model =
 
             else
                 ( model, Cmd.none )
+
+        -- The edit-related messages are all handled directly by `update` -- never reaches here in
+        -- practice, but `updatePure` still needs to be exhaustive over the full `Msg` type.
+        _ ->
+            ( model, Cmd.none )
 
 
 {-| Schedules `PreloadReady maybeId` (a no-op if `maybeId` is `Nothing` --
@@ -249,10 +504,10 @@ applySwipe ( startX, startY ) ( endX, endY ) model =
     in
     if abs dx >= abs dy then
         if dx <= -swipeThreshold then
-            update Next model
+            updatePure Next model
 
         else if dx >= swipeThreshold then
-            update Prev model
+            updatePure Prev model
 
         else
             ( model, Cmd.none )
@@ -359,6 +614,96 @@ view accountsPanelModel model =
         navButton : List String -> Msg -> String -> Html Msg
         navButton classNames msg label =
             button [ classes ("media-viewer-panel-nav" :: classNames), stopClick msg ] [ text label ]
+
+        conversionLabel : MediaConversion -> String
+        conversionLabel conversion =
+            case conversion of
+                MEDIACONVERSIONORIGINAL ->
+                    "Original"
+
+                MEDIACONVERSIONSMALL ->
+                    "Small"
+
+                MEDIACONVERSIONMEDIUM ->
+                    "Medium"
+
+                MEDIACONVERSIONLARGE ->
+                    "Large"
+
+                MediaConversionUnrecognized_ _ ->
+                    "Unknown"
+
+        sizeDeleteButton : MediaEdit -> MediaSize -> Html Msg
+        sizeDeleteButton edit size =
+            let
+                deleting : Bool
+                deleting =
+                    List.member size.conversion edit.deletingSizes
+            in
+            div [ class "media-viewer-panel-edit-size" ]
+                [ span [ class "media-viewer-panel-edit-size-label" ]
+                    [ text (conversionLabel size.conversion ++ " (" ++ ByteFormat.formatBytes (int64ToInt size.sizeBytes) ++ ")") ]
+                , button
+                    [ class "media-viewer-panel-edit-size-delete"
+                    , stopClick (DeleteSizeClicked size.conversion)
+                    , disabled deleting
+                    ]
+                    [ text
+                        (if deleting then
+                            "Deleting…"
+
+                         else
+                            "Delete"
+                        )
+                    ]
+                ]
+
+        editView : MediaReference -> Html Msg
+        editView media =
+            case model.edit of
+                Nothing ->
+                    text ""
+
+                Just edit ->
+                    div [ class "media-viewer-panel-edit", stopClick EditCancelClicked ]
+                        [ div [ class "media-viewer-panel-edit-field" ]
+                            [ text "Name"
+                            , input [ value edit.name, onInput EditNameChanged, placeholder "Untitled" ] []
+                            ]
+                        , div [ class "media-viewer-panel-edit-field" ]
+                            [ text "Description"
+                            , textarea [ value edit.description, onInput EditDescriptionChanged ] []
+                            ]
+                        , div [ class "media-viewer-panel-edit-actions" ]
+                            [ button
+                                [ class "media-viewer-panel-edit-save"
+                                , onClick EditSaveClicked
+                                , disabled (edit.status == Submitting)
+                                ]
+                                [ text
+                                    (if edit.status == Submitting then
+                                        "Saving…"
+
+                                     else
+                                        "Save"
+                                    )
+                                ]
+                            , button [ class "media-viewer-panel-edit-cancel", onClick EditCancelClicked ] [ text "Cancel" ]
+                            ]
+                        , case edit.status of
+                            SubmitFailed err ->
+                                div [ class "media-viewer-panel-edit-error" ] [ text err ]
+
+                            _ ->
+                                text ""
+                        , div [ class "media-viewer-panel-edit-sizes" ] (media.sizes |> List.map (sizeDeleteButton edit))
+                        , case edit.deleteSizeError of
+                            Just err ->
+                                div [ class "media-viewer-panel-edit-error" ] [ text err ]
+
+                            Nothing ->
+                                text ""
+                        ]
     in
     div
         [ classes [ "media-viewer-panel", "nav-panel", openClosedClass (isOpen model) ]
@@ -425,8 +770,24 @@ view accountsPanelModel model =
 
                 Nothing ->
                     text ""
+            , case currentMedia of
+                Just media ->
+                    if canEditMedia maybeAccount media then
+                        button [ class "media-viewer-panel-edit-toggle", stopClick EditClicked ] [ text "Edit" ]
+
+                    else
+                        text ""
+
+                Nothing ->
+                    text ""
             , button [ class "media-viewer-panel-close", stopClick CloseClicked ] [ text "✕" ]
             ]
+        , case currentMedia of
+            Just media ->
+                editView media
+
+            Nothing ->
+                text ""
         ]
 
 
@@ -516,7 +877,7 @@ their native `controls`, same as before this behavior existed).
 -}
 isImage : MediaReference -> Bool
 isImage media =
-    (String.split "/" media.contentType |> List.head) == Just "image"
+    (String.split "/" (MediaRenderer.contentTypeOf media) |> List.head) == Just "image"
 
 
 {-| Whether `media` is a video, by its MIME type's top-level part -- mirrors
@@ -527,7 +888,7 @@ e.g. a PDF).
 -}
 isVideo : MediaReference -> Bool
 isVideo media =
-    (String.split "/" media.contentType |> List.head) == Just "video"
+    (String.split "/" (MediaRenderer.contentTypeOf media) |> List.head) == Just "video"
 
 
 {-| The item before/after the current one in `media`, wrapping around --

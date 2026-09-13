@@ -8,8 +8,8 @@ use tonic::{Code, Status};
 use crate::db_connection::PgPooledConnection;
 use crate::logic::{
     build_occasion_message, build_post_message, capabilities_for_model, generate_image,
-    models_for_provider, openai_generate_image, OccasionMessageInput, GeminiImageInput,
-    OpenAiImageInput, PostMessageInput,
+    models_for_provider, openai_generate_image, update_media_storage_used, OccasionMessageInput,
+    GeminiImageInput, OpenAiImageInput, PostMessageInput,
 };
 use crate::marshaling::*;
 use crate::models;
@@ -365,22 +365,37 @@ pub async fn generate_media(
             Status::new(Code::Internal, "failed_to_store_generated_media")
         })?;
 
+    let sizes = vec![models::MediaSize {
+        conversion: MediaConversion::Original as i32,
+        minio_path,
+        content_type: generated_content_type,
+        size_bytes: generated_bytes.len() as i64,
+        aspect_ratio: None,
+    }];
+
     let new_media = insert_into(media::table)
         .values(&models::NewMedia {
             user_id: Some(current_user.id),
-            minio_path,
-            content_type: generated_content_type,
             name: Some("Generated Image".to_string()),
             description: None,
             generated: true,
             visibility: Visibility::GlobalPublic.to_string_visibility(),
             metadata: serde_json::to_value(models::MediaMetadata::default()).unwrap(),
+            sizes: serde_json::to_value(sizes).unwrap(),
         })
         .get_result::<models::Media>(conn)
         .map_err(|e| {
             log::error!("Failed to create generated media: {:?}", e);
             Status::new(Code::Internal, "failed_to_create_generated_media")
         })?;
+
+    if let Err(e) = update_media_storage_used(current_user.id, conn) {
+        log::error!(
+            "Failed to update media_storage_bytes_used for user {}: {:?}",
+            current_user.id,
+            e
+        );
+    }
 
     if let Some(attach_post_id) = attach_post_id {
         let mut existing_media: Vec<Option<i64>> = posts::table
@@ -401,7 +416,7 @@ pub async fn generate_media(
             })?;
     }
 
-    Ok(new_media.to_proto())
+    Ok(new_media.to_proto(&Some(current_user.to_author())))
 }
 
 /// Preferred order to fetch a reference image in -- medium first (same "cap the payload, the model
@@ -409,10 +424,10 @@ pub async fn generate_media(
 /// default sizing uses), then progressively less ideal fallbacks (small, then large) before finally
 /// the original -- see `resolve_media_size_preferring` (`web/media.rs`) for the same preference-list
 /// pattern.
-const REFERENCE_IMAGE_SIZE_PREFERENCE: [models::ConvertedSizeSpec; 3] = [
-    models::ConvertedSizeSpec::Medium,
-    models::ConvertedSizeSpec::Small,
-    models::ConvertedSizeSpec::Large,
+const REFERENCE_IMAGE_SIZE_PREFERENCE: [MediaConversion; 3] = [
+    MediaConversion::Medium,
+    MediaConversion::Small,
+    MediaConversion::Large,
 ];
 
 /// Downloads every one of `media_ids` (in that exact order) from MinIO for use as reference images
@@ -453,12 +468,13 @@ async fn load_reference_images(
         if row.user_id != Some(current_user_id) && !admin {
             return Err(Status::new(Code::PermissionDenied, "not_your_media"));
         }
-        let converted_sizes = row.converted_sizes();
+        let sizes = row.sizes();
         let (minio_path, content_type) = REFERENCE_IMAGE_SIZE_PREFERENCE
             .iter()
-            .find_map(|spec| converted_sizes.get(*spec))
-            .map(|converted| (converted.minio_path.clone(), converted.content_type.clone()))
-            .unwrap_or_else(|| (row.minio_path.clone(), row.content_type.clone()));
+            .find_map(|conversion| sizes.iter().find(|s| s.conversion == *conversion as i32))
+            .or_else(|| sizes.iter().find(|s| s.conversion == MediaConversion::Original as i32))
+            .map(|s| (s.minio_path.clone(), s.content_type.clone()))
+            .ok_or_else(|| Status::new(Code::NotFound, "reference_media_not_found"))?;
         let bytes = bucket.get_object(&minio_path).await.map_err(|e| {
             log::error!("Failed to download reference media {} from MinIO: {:?}", id, e);
             Status::new(Code::Internal, "failed_to_load_reference_media")

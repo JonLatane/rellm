@@ -68,6 +68,14 @@ class RellmClient extends $grpc.Client {
       '/rellm.Rellm/DeleteMedia',
       ($5.Media value) => value.writeToBuffer(),
       ($core.List<$core.int> value) => $0.Empty.fromBuffer(value));
+  static final _$updateMedia = $grpc.ClientMethod<$5.Media, $5.Media>(
+      '/rellm.Rellm/UpdateMedia',
+      ($5.Media value) => value.writeToBuffer(),
+      ($core.List<$core.int> value) => $5.Media.fromBuffer(value));
+  static final _$deleteMediaSizes = $grpc.ClientMethod<$5.Media, $5.Media>(
+      '/rellm.Rellm/DeleteMediaSizes',
+      ($5.Media value) => value.writeToBuffer(),
+      ($core.List<$core.int> value) => $5.Media.fromBuffer(value));
   static final _$getUsers = $grpc.ClientMethod<$4.GetUsersRequest, $4.GetUsersResponse>(
       '/rellm.Rellm/GetUsers',
       ($4.GetUsersRequest value) => value.writeToBuffer(),
@@ -385,6 +393,14 @@ class RellmClient extends $grpc.Client {
 
   $grpc.ResponseFuture<$0.Empty> deleteMedia($5.Media request, {$grpc.CallOptions? options}) {
     return $createUnaryCall(_$deleteMedia, request, options: options);
+  }
+
+  $grpc.ResponseFuture<$5.Media> updateMedia($5.Media request, {$grpc.CallOptions? options}) {
+    return $createUnaryCall(_$updateMedia, request, options: options);
+  }
+
+  $grpc.ResponseFuture<$5.Media> deleteMediaSizes($5.Media request, {$grpc.CallOptions? options}) {
+    return $createUnaryCall(_$deleteMediaSizes, request, options: options);
   }
 
   $grpc.ResponseFuture<$4.GetUsersResponse> getUsers($4.GetUsersRequest request, {$grpc.CallOptions? options}) {
@@ -732,6 +748,20 @@ abstract class RellmServiceBase extends $grpc.Service {
         false,
         ($core.List<$core.int> value) => $5.Media.fromBuffer(value),
         ($0.Empty value) => value.writeToBuffer()));
+    $addMethod($grpc.ServiceMethod<$5.Media, $5.Media>(
+        'UpdateMedia',
+        updateMedia_Pre,
+        false,
+        false,
+        ($core.List<$core.int> value) => $5.Media.fromBuffer(value),
+        ($5.Media value) => value.writeToBuffer()));
+    $addMethod($grpc.ServiceMethod<$5.Media, $5.Media>(
+        'DeleteMediaSizes',
+        deleteMediaSizes_Pre,
+        false,
+        false,
+        ($core.List<$core.int> value) => $5.Media.fromBuffer(value),
+        ($5.Media value) => value.writeToBuffer()));
     $addMethod($grpc.ServiceMethod<$4.GetUsersRequest, $4.GetUsersResponse>(
         'GetUsers',
         getUsers_Pre,
@@ -1253,6 +1283,14 @@ abstract class RellmServiceBase extends $grpc.Service {
     return deleteMedia(call, await request);
   }
 
+  $async.Future<$5.Media> updateMedia_Pre($grpc.ServiceCall call, $async.Future<$5.Media> request) async {
+    return updateMedia(call, await request);
+  }
+
+  $async.Future<$5.Media> deleteMediaSizes_Pre($grpc.ServiceCall call, $async.Future<$5.Media> request) async {
+    return deleteMediaSizes(call, await request);
+  }
+
   $async.Future<$4.GetUsersResponse> getUsers_Pre($grpc.ServiceCall call, $async.Future<$4.GetUsersRequest> request) async {
     return getUsers(call, await request);
   }
@@ -1538,6 +1576,8 @@ abstract class RellmServiceBase extends $grpc.Service {
   $async.Future<$0.Empty> resetPassword($grpc.ServiceCall call, $3.ResetPasswordRequest request);
   $async.Future<$5.GetMediaResponse> getMedia($grpc.ServiceCall call, $5.GetMediaRequest request);
   $async.Future<$0.Empty> deleteMedia($grpc.ServiceCall call, $5.Media request);
+  $async.Future<$5.Media> updateMedia($grpc.ServiceCall call, $5.Media request);
+  $async.Future<$5.Media> deleteMediaSizes($grpc.ServiceCall call, $5.Media request);
   $async.Future<$4.GetUsersResponse> getUsers($grpc.ServiceCall call, $4.GetUsersRequest request);
   $async.Future<$4.User> updateUser($grpc.ServiceCall call, $4.User request);
   $async.Future<$4.ContactMethod> startContactMethodVerification($grpc.ServiceCall call, $4.ContactMethod request);

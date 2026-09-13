@@ -313,7 +313,7 @@ fn build_body(subject: Option<&str>, body_text: &str) -> String {
 }
 
 /// Builds a full `https://<frontend_host>/media/<id>?size=small` URL for a notification's `icon`
-/// -- `?size=small` (see `models::ConvertedSizeSpec`) rather than the original upload: a
+/// -- `?size=small` (see `protos::MediaConversion`) rather than the original upload: a
 /// notification icon renders tiny (well under 320px on every platform this has been checked
 /// against), so serving the original would just waste bandwidth decoding/downscaling an image far
 /// larger than anything actually shown. `None` if either piece is missing -- no configured

@@ -8,6 +8,7 @@ import { FacebookEmbed, InstagramEmbed, LinkedInEmbed, PinterestEmbed, TikTokEmb
 import { useLink } from "solito/link";
 
 import { FadeInView } from 'app/components';
+import { isImageMedia } from "app/utils";
 import { MediaRenderer } from "../media/media_renderer";
 import { postBackgroundSize } from "./post_card";
 
@@ -92,7 +93,7 @@ export const PostMediaRenderer: React.FC<PostMediaRendererProps> = ({
     return embed;
   }, [embedSupported, post.link]);
 
-  const generatedPreview = useMemo(() => post?.media?.find(m => m.contentType.startsWith('image') && m.generated), [post?.media]);
+  const generatedPreview = useMemo(() => post?.media?.find(m => isImageMedia(m) && m.generated), [post?.media]);
   const hasGeneratedPreview = useMemo(() => generatedPreview && post?.media?.length == 1 && !embedComponent, [generatedPreview, post?.media?.length, embedComponent]);
 
   const scrollableMediaMinCount = useMemo(() => isPreview && hasGeneratedPreview ? 3 : 2, [isPreview, hasGeneratedPreview]);
@@ -136,7 +137,7 @@ export const PostMediaRenderer: React.FC<PostMediaRendererProps> = ({
         </ScrollView>
       </XStack> : undefined}
 
-    <Anchor w='100%' textDecorationLine='none' {...{ ...(isPreview && singleMediaPreview?.contentType.startsWith('image') ? detailsLink : {}) }}>
+    <Anchor w='100%' textDecorationLine='none' {...{ ...(isPreview && singleMediaPreview && isImageMedia(singleMediaPreview) ? detailsLink : {}) }}>
       <YStack w='100%'>
         {singleMediaPreview
           ?

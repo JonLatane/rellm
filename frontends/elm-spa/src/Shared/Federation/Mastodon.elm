@@ -32,7 +32,7 @@ all, same as `fetchPosts`/`fetchStatus` already rely on for the local timeline/s
 import Http
 import Iso8601
 import Json.Decode as Decode exposing (Decoder)
-import Proto.Rellm exposing (Author, Post, defaultAuthor, defaultMediaReference, defaultPost)
+import Proto.Rellm exposing (Author, Post, defaultAuthor, defaultMediaReference, defaultPost, wrapMediaReference)
 import Proto.Rellm.PostContext exposing (PostContext(..))
 import Proto.Rellm.Visibility exposing (Visibility(..))
 import Shared.Conversions exposing (posixToTimestamp)
@@ -148,7 +148,7 @@ toAuthor instanceHost status =
         | userId = "mastodon:" ++ instanceHost ++ ":" ++ status.authorUsername
         , username = Just (status.authorUsername ++ "@" ++ instanceHost)
         , realName = status.authorDisplayName
-        , avatar = status.authorAvatarUrl |> Maybe.map (\url -> { defaultMediaReference | url = Just url })
+        , avatar = status.authorAvatarUrl |> Maybe.map (\url -> wrapMediaReference { defaultMediaReference | url = Just url })
     }
 
 

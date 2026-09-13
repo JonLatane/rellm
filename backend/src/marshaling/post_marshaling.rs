@@ -135,7 +135,7 @@ impl ToProtoMarshalablePost for MarshalablePost {
                     .iter()
                     .map(|v| match v {
                         Some(v) => match lookup.get(v) {
-                            Some(media) => Some(media.to_proto()),
+                            Some(media) => Some(media.to_proto(&None)),
                             None => None,
                         },
                         None => None,

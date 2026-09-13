@@ -45,7 +45,7 @@ append the result without their own empty-badges check.
 import Components.Users as Users
 import Html exposing (Html, a, div, img, span, text)
 import Html.Attributes exposing (alt, attribute, class, src, title)
-import Proto.Rellm exposing (Author)
+import Proto.Rellm exposing (Author, unwrapMediaReference)
 import Proto.Rellm.Permission exposing (Permission(..))
 import Shared.AccountsPanel.RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer)
@@ -211,7 +211,7 @@ path below would otherwise give a federated author, which has no real `Server` t
 -}
 avatarUrl : Maybe RellmServer -> Maybe RellmAccount -> Maybe Author -> Maybe String
 avatarUrl maybeServer maybeAccount maybeAuthor =
-    case maybeAuthor |> Maybe.andThen .avatar |> Maybe.andThen .url of
+    case maybeAuthor |> Maybe.andThen .avatar |> Maybe.map unwrapMediaReference |> Maybe.andThen .url of
         Just externalUrl ->
             Just externalUrl
 

@@ -14,7 +14,6 @@ import 'dart:core' as $core;
 import 'package:fixnum/fixnum.dart' as $fixnum;
 import 'package:protobuf/protobuf.dart' as $pb;
 
-import 'authors.pb.dart' as $15;
 import 'google/protobuf/timestamp.pb.dart' as $12;
 import 'media.pb.dart' as $5;
 import 'posts.pbenum.dart';
@@ -287,7 +286,7 @@ class GetPostsResponse extends $pb.GeneratedMessage {
 class Post extends $pb.GeneratedMessage {
   factory Post({
     $core.String? id,
-    $15.Author? author,
+    $5.Author? author,
     $core.String? replyToPostId,
     $core.String? title,
     $core.String? link,
@@ -400,7 +399,7 @@ class Post extends $pb.GeneratedMessage {
 
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'Post', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'id')
-    ..aOM<$15.Author>(2, _omitFieldNames ? '' : 'author', subBuilder: $15.Author.create)
+    ..aOM<$5.Author>(2, _omitFieldNames ? '' : 'author', subBuilder: $5.Author.create)
     ..aOS(3, _omitFieldNames ? '' : 'replyToPostId')
     ..aOS(4, _omitFieldNames ? '' : 'title')
     ..aOS(5, _omitFieldNames ? '' : 'link')
@@ -461,15 +460,15 @@ class Post extends $pb.GeneratedMessage {
 
   /// The author of the post. This is a smaller version of User.
   @$pb.TagNumber(2)
-  $15.Author get author => $_getN(1);
+  $5.Author get author => $_getN(1);
   @$pb.TagNumber(2)
-  set author($15.Author v) { setField(2, v); }
+  set author($5.Author v) { setField(2, v); }
   @$pb.TagNumber(2)
   $core.bool hasAuthor() => $_has(1);
   @$pb.TagNumber(2)
   void clearAuthor() => clearField(2);
   @$pb.TagNumber(2)
-  $15.Author ensureAuthor() => $_ensure(1);
+  $5.Author ensureAuthor() => $_ensure(1);
 
   /// If this is a reply, this is the ID of the post it's replying to.
   @$pb.TagNumber(3)
@@ -860,7 +859,7 @@ class GroupPost extends $pb.GeneratedMessage {
     $core.String? userId,
     $13.Moderation? groupModeration,
     $12.Timestamp? createdAt,
-    $15.Author? sharedBy,
+    $5.Author? sharedBy,
   }) {
     final $result = create();
     if (groupId != null) {
@@ -894,7 +893,7 @@ class GroupPost extends $pb.GeneratedMessage {
     ..aOS(3, _omitFieldNames ? '' : 'userId')
     ..e<$13.Moderation>(4, _omitFieldNames ? '' : 'groupModeration', $pb.PbFieldType.OE, defaultOrMaker: $13.Moderation.MODERATION_UNKNOWN, valueOf: $13.Moderation.valueOf, enumValues: $13.Moderation.values)
     ..aOM<$12.Timestamp>(5, _omitFieldNames ? '' : 'createdAt', subBuilder: $12.Timestamp.create)
-    ..aOM<$15.Author>(6, _omitFieldNames ? '' : 'sharedBy', subBuilder: $15.Author.create)
+    ..aOM<$5.Author>(6, _omitFieldNames ? '' : 'sharedBy', subBuilder: $5.Author.create)
     ..hasRequiredFields = false
   ;
 
@@ -977,15 +976,15 @@ class GroupPost extends $pb.GeneratedMessage {
 
   /// Author info for the user who cross-posted the post.
   @$pb.TagNumber(6)
-  $15.Author get sharedBy => $_getN(5);
+  $5.Author get sharedBy => $_getN(5);
   @$pb.TagNumber(6)
-  set sharedBy($15.Author v) { setField(6, v); }
+  set sharedBy($5.Author v) { setField(6, v); }
   @$pb.TagNumber(6)
   $core.bool hasSharedBy() => $_has(5);
   @$pb.TagNumber(6)
   void clearSharedBy() => clearField(6);
   @$pb.TagNumber(6)
-  $15.Author ensureSharedBy() => $_ensure(5);
+  $5.Author ensureSharedBy() => $_ensure(5);
 }
 
 /// A `UserPost` is a "direct share" of a [`Post`](#rellm-Post) to a [`User`](#rellm-User). Currently unused/unimplemented.
