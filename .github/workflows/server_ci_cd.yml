@@ -780,7 +780,7 @@ jobs:
         run: kubectl apply -f deploys/k8s/server_internal.yaml -n jonline
 
       - name: Verify Server deployment
-        run: kubectl rollout status deployment/rellm -n jonline --timeout 3m
+        run: kubectl rollout status deployment/rellm -n jonline --timeout 5m
 
       # Traefik's TLS-passthrough IngressRouteTCP routing (see rellm-https/rellm-grpc)
       # can get wedged pointing at stale backend pod IPs after a rollout replaces pods --
@@ -788,7 +788,7 @@ jobs:
       - name: Bounce Traefik to refresh routing
         run: |
           kubectl rollout restart deployment traefik -n traefik-ingress
-          kubectl rollout status deployment traefik -n traefik-ingress --timeout 3m
+          kubectl rollout status deployment traefik -n traefik-ingress --timeout 5m
 
       - uses: actions/cache/restore@v6
         with:
@@ -1305,7 +1305,7 @@ jobs:
         run: kubectl apply -f deploys/k8s/server_internal.yaml -n bullcitysocial
 
       - name: Verify Server deployment
-        run: kubectl rollout status deployment/rellm -n bullcitysocial --timeout 3m
+        run: kubectl rollout status deployment/rellm -n bullcitysocial --timeout 5m
 
       - name: Deploy Preview Generator
         run: kubectl apply -f deploys/k8s/preview_generator.yaml -n bullcitysocial
@@ -1366,7 +1366,7 @@ jobs:
         run: kubectl apply -f deploys/k8s/server_internal.yaml -n oakcitysocial
 
       - name: Verify Server deployment
-        run: kubectl rollout status deployment/rellm -n oakcitysocial --timeout 3m
+        run: kubectl rollout status deployment/rellm -n oakcitysocial --timeout 5m
 
       - name: Deploy Preview Generator
         run: kubectl apply -f deploys/k8s/preview_generator.yaml -n oakcitysocial
@@ -1427,7 +1427,7 @@ jobs:
         run: kubectl apply -f deploys/k8s/server_internal.yaml -n ato-band
 
       - name: Verify Server deployment
-        run: kubectl rollout status deployment/rellm -n ato-band --timeout 3m
+        run: kubectl rollout status deployment/rellm -n ato-band --timeout 5m
 
       - name: Deploy Preview Generator
         run: kubectl apply -f deploys/k8s/preview_generator.yaml -n ato-band
@@ -1488,7 +1488,7 @@ jobs:
         run: kubectl apply -f deploys/k8s/server_internal.yaml -n rellm-org
 
       - name: Verify Server deployment
-        run: kubectl rollout status deployment/rellm -n rellm-org --timeout 3m
+        run: kubectl rollout status deployment/rellm -n rellm-org --timeout 5m
 
       - name: Deploy Preview Generator
         run: kubectl apply -f deploys/k8s/preview_generator.yaml -n rellm-org
@@ -1543,4 +1543,4 @@ jobs:
       - name: Bounce Traefik to refresh routing
         run: |
           kubectl rollout restart deployment traefik -n traefik-ingress
-          kubectl rollout status deployment traefik -n traefik-ingress --timeout 3m
+          kubectl rollout status deployment traefik -n traefik-ingress --timeout 5m
