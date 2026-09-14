@@ -674,7 +674,8 @@ jobs:
           mv backend/target/release/to_db_id backend/target/release/to_db_id__server_release &&
           mv backend/target/release/to_proto_id backend/target/release/to_proto_id__server_release &&
           mv backend/target/release/repair_email_messages backend/target/release/repair_email_messages__server_release &&
-          mv backend/target/release/fix_duplicate_synced_events backend/target/release/fix_duplicate_synced_events__server_release
+          mv backend/target/release/fix_duplicate_synced_events backend/target/release/fix_duplicate_synced_events__server_release &&
+          mv backend/target/release/reencode_quicktime_media backend/target/release/reencode_quicktime_media__server_release
 
       - name: Build and push rellm image
         uses: docker/build-push-action@v7

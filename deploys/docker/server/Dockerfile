@@ -26,6 +26,14 @@ COPY backend/target/release/repair_email_messages__server_release /opt/repair_em
 # against every deployed namespace that's ever had a SyncSource.
 COPY backend/target/release/fix_duplicate_synced_events__server_release /opt/fix_duplicate_synced_events
 
+# TODO(2026-09-13): one-off cleanup for resized (small/medium/large) video Media re-muxed to MP4 by
+# logic::media_conversion::resized_content_type (see its own doc comment -- Chrome refuses to play
+# video/quicktime inline when a media URL is navigated to directly) -- delete this binary
+# (backend/src/bin/reencode_quicktime_media.rs), this COPY line, and its entry in
+# server_ci_cd.yml's "Rename Rust binaries for Dockerfiles" step once it's been run against every
+# deployed namespace that's ever stored video Media.
+COPY backend/target/release/reencode_quicktime_media__server_release /opt/reencode_quicktime_media
+
 # Runs all the above background job binaries on a loop -- see backend/background_jobs.sh. Lives
 # alongside them in /opt, unsuffixed, so its "./binary_name" resolution step finds them directly
 # (same layout as the Homebrew macOS package). Used by the rellm-jobs Deployment in
