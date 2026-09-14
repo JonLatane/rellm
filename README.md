@@ -1,4 +1,4 @@
-# <img src="https://rellm.org/favicon.png" alt="Rellm logo" height="32" align="middle"/> Rellm [![Server CI/CD Badge](https://github.com/jonlatane/rellm/actions/workflows/server_ci_cd.yml/badge.svg)](https://github.com/jonlatane/rellm/actions/workflows/server_ci_cd.yml) [![gRPC Docs!](https://img.shields.io/badge/gRPC-protocol%20docs-information?labelColor={}&color=blue)](https://rellm.org/docs)
+# <img src="https://rellm.org/favicon.png" alt="Rellm logo" height="32" align="top"/> Rellm [![Server CI/CD Badge](https://github.com/jonlatane/rellm/actions/workflows/server_ci_cd.yml/badge.svg)](https://github.com/jonlatane/rellm/actions/workflows/server_ci_cd.yml) [![gRPC Docs!](https://img.shields.io/badge/gRPC-protocol%20docs-information?labelColor={}&color=blue)](https://rellm.org/docs)
 
 [![Rellm.org](https://rellm.org/info_shield?b6713cbc8)](https://rellm.org)
 [![OakCity.social](https://oakcity.social/info_shield?b6713cbc8)](https://oakcity.social)
