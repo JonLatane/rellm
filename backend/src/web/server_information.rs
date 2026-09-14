@@ -204,16 +204,23 @@ async fn favicon_ico<'a>(
                     .await?;
             let mut content_type = &data.0;
             let mut named_filename = &data.1.path().as_os_str().to_str().unwrap().to_string();
+            // Keyed by square_media_id (not a fixed name) so a new logo upload gets its own
+            // cache entry instead of serving a stale conversion of the old one; keyed on disk
+            // rather than regenerated per-request, same caching approach `load_media_file` (this
+            // module's own media downloader) uses for the source file itself.
             let ico_filename = format!(
-                "{}/png-converted-favicon.ico",
-                state.tempdir.path().display()
+                "{}/{}-favicon.ico",
+                state.tempdir.path().display(),
+                square_media_id
             );
             let ico_content_type = &ContentType(
                 MediaType::from_str("image/x-icon").map_err(|_| Status::ExpectationFailed)?,
             );
             // Convert PNG icons to ICO
             if content_type.to_string().ends_with("png") {
-                convert_png_to_ico(named_filename, &ico_filename, state.tempdir.path())?;
+                if !std::path::Path::new(&ico_filename).exists() {
+                    convert_png_to_ico(named_filename, &ico_filename, state.tempdir.path())?;
+                }
                 named_filename = &ico_filename;
                 content_type = ico_content_type
             }
@@ -262,7 +269,9 @@ async fn favicon_png<'a>(
                 return Err(Status::ExpectationFailed);
             };
             let png_filename = format!("{}/default-favicon.png", state.tempdir.path().display());
-            convert_ico_to_png(&favicon_ico_path, &png_filename)?;
+            if !std::path::Path::new(&png_filename).exists() {
+                convert_ico_to_png(&favicon_ico_path, &png_filename)?;
+            }
 
             Ok(CacheResponse::new(
                 (ContentType::PNG, open_named_file(&png_filename).await?),
@@ -281,11 +290,15 @@ async fn favicon_png<'a>(
 
             // Convert ICO icons to PNG
             if content_type.to_string().ends_with("ico") {
+                // Keyed by square_media_id -- see the matching comment in favicon_ico().
                 let png_filename = format!(
-                    "{}/ico-converted-favicon.png",
-                    state.tempdir.path().display()
+                    "{}/{}-favicon.png",
+                    state.tempdir.path().display(),
+                    square_media_id
                 );
-                convert_ico_to_png(&named_filename, &png_filename)?;
+                if !std::path::Path::new(&png_filename).exists() {
+                    convert_ico_to_png(&named_filename, &png_filename)?;
+                }
                 named_filename = png_filename;
                 content_type = ContentType::PNG;
             }
