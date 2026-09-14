@@ -7,7 +7,7 @@
 
 use std::time::Duration;
 
-use tonic::transport::Channel;
+use tonic::transport::{Channel, ClientTlsConfig};
 
 use crate::protos::rellm_client::RellmClient;
 use crate::protos::{
@@ -85,7 +85,13 @@ pub async fn release_cluster_lock(resources: &ClusterResources, held: &[ClusterR
 /// through the usual [`GET /backend_host`](#http-based-client-host-negotiation-for-external-cdns-get-backend_host)
 /// negotiation (see `ClusterResources.conductor_host`'s own doc) in case it sits behind an
 /// external CDN. Uses plaintext HTTP (no TLS) when `conductor_host` is literally `localhost` --
-/// a local dev conductor has no cert to terminate TLS with -- and HTTPS otherwise.
+/// a local dev conductor has no cert to terminate TLS with -- and HTTPS otherwise, in which case
+/// `tls_config` must be set explicitly (tonic refuses to connect an `https://` `Endpoint` with no
+/// TLS config at all, rather than silently picking a default) -- `with_enabled_roots()` picks up
+/// whichever of `tls-native-roots`/`tls-webpki-roots` this binary was built with, and `domain_name`
+/// is pinned to `conductor_host` itself (not `host`, which -- per the CDN case above -- may be a
+/// different address entirely) so SNI/cert validation targets the hostname the conductor's own
+/// Cert-Manager cert (and Traefik's SNI-based routing) actually expect.
 async fn cluster_client(resources: &ClusterResources) -> Result<RellmClient<Channel>, anyhow::Error> {
     let host = discover_backend_host(&resources.conductor_host).await;
     let scheme = if resources.conductor_host == "localhost" {
@@ -93,10 +99,16 @@ async fn cluster_client(resources: &ClusterResources) -> Result<RellmClient<Chan
     } else {
         "https"
     };
-    let channel = Channel::from_shared(format!("{scheme}://{host}:27707"))?
-        .timeout(Duration::from_secs(10))
-        .connect()
-        .await?;
+    let mut endpoint =
+        Channel::from_shared(format!("{scheme}://{host}:27707"))?.timeout(Duration::from_secs(10));
+    if scheme == "https" {
+        endpoint = endpoint.tls_config(
+            ClientTlsConfig::new()
+                .with_enabled_roots()
+                .domain_name(resources.conductor_host.clone()),
+        )?;
+    }
+    let channel = endpoint.connect().await?;
     Ok(RellmClient::new(channel))
 }
 
