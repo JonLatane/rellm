@@ -657,7 +657,7 @@ type alias CustomHomePage =
 {-| The field numbers for the fields of `CustomNavigationTabSet`. This is mostly useful for internals, like documentation generation.
 
 -}
-fieldNumbersCustomNavigationTabSet : { home : Int, tabs : Int }
+fieldNumbersCustomNavigationTabSet : { home : Int, tabs : Int, tabStyle : Int }
 fieldNumbersCustomNavigationTabSet =
     Proto.Rellm.Internals_.fieldNumbersProto__Rellm__CustomNavigationTabSet
 
@@ -697,6 +697,15 @@ encodeCustomNavigationTabSet =
  Note: existing `/events`, `/posts`, `/people`, and `/about` paths are reserved for their
  matching predefined tab - see [`CustomNavigationTab`](#rellm-CustomNavigationTab).path's own doc.
  `/` itself is overridden via `home` above instead.
+
+
+### tabStyle
+
+ How every tab (Home excluded - it always shows the server's own logo/name) is laid out in the
+ Elm nav. Purely cosmetic: it changes nothing about which tabs exist, their order, or where they
+ link - see `NavigationTabStyle` below. Defaults to `NAVIGATION_TAB_ICON_ONLY` (proto enum value
+ 0) both when `CustomNavigationTabSet` itself is unset and for any config saved before this
+ field existed.
 
 
 -}

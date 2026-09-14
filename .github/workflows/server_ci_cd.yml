@@ -736,7 +736,7 @@ jobs:
           file: ./deploys/docker/preview_generator/Dockerfile
           platforms: linux/amd64,linux/arm64
 
-  deploy_rellmio_server:
+  deploy_jonlineio_server:
     name: Deploy Jonline.io Server
     if: github.ref == 'refs/heads/main'
     needs:
@@ -811,7 +811,7 @@ jobs:
           CLOUDFLARE_TOKEN: ${{ secrets.CLOUDFLARE_TOKEN }}
         run: .github/workflows/scripts/purge_cloudflare_cache.sh jonline.io
 
-  deploy_rellmio_preview_generator:
+  deploy_jonlineio_preview_generator:
     name: Deploy Jonline.io Preview Generator
     if: github.ref == 'refs/heads/main'
     needs:
@@ -847,8 +847,8 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     needs:
-      - deploy_rellmio_server
-      - deploy_rellmio_preview_generator
+      - deploy_jonlineio_server
+      - deploy_jonlineio_preview_generator
       - push_server
       - push_preview_generator
       - test_consistency
@@ -1519,7 +1519,7 @@ jobs:
     # deploy_bullcitysocial, deploy_oakcitysocial, deploy_ato_band, and deploy_rellm_org
     # run concurrently, so this waits on all four and bounces Traefik once for the group --
     # rather than once per namespace -- since any deploy's pod churn can wedge Traefik's
-    # TLS-passthrough routing (see the matching step in deploy_rellmio_server). Runs
+    # TLS-passthrough routing (see the matching step in deploy_jonlineio_server). Runs
     # if any succeeded, since a partial-success deploy still churns pods and can still
     # wedge routing.
     needs:

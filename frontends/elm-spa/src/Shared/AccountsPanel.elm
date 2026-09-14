@@ -35,6 +35,7 @@ module Shared.AccountsPanel exposing
     , performWithAccountServer
     , performWithOptionalAccountServer
     , recommendedFederatedServers
+    , recommendedMastodonServers
     , shouldShowAddAccountForm
     , subscriptions
     , unreachableAccountHosts
@@ -462,6 +463,7 @@ type Msg
     | ReconnectBlueskyAccountClicked String
     | BrowseMastodonInstanceInputChanged String
     | BrowseMastodonInstanceClicked
+    | RecommendedMastodonServerClicked String
     | GotMastodonInstanceInfoResult String (Result Http.Error MastodonInstanceInfo)
     | RemoveBrowsedMastodonInstanceClicked String
     | FinishRemoveBrowsedMastodonInstance String
@@ -1377,6 +1379,35 @@ update req msg model =
             resolvePendingPushSubscriptionCheck updatedModel
     in
     ( resolvedModel, Cmd.batch [ cmd, resolveCmd ] )
+
+
+{-| Adds `host` (trimmed by the caller) to `model.browsedMastodonInstances` and kicks off its
+logo/name fetch (`GotMastodonInstanceInfoResult`) -- shared by `BrowseMastodonInstanceClicked` (a
+manually-typed host) and `RecommendedMastodonServerClicked` (one of `recommendedMastodonServers`).
+A no-op for a blank host or one already browsed, exactly like `BrowseMastodonInstanceClicked` used
+to check inline.
+-}
+addBrowsedMastodonInstance : Model -> String -> ( Model, Cmd Msg )
+addBrowsedMastodonInstance model host =
+    if String.isEmpty host || List.any (\i -> i.host == host) model.browsedMastodonInstances then
+        ( model, Cmd.none )
+
+    else
+        let
+            newModel : Model
+            newModel =
+                { model
+                    | browsedMastodonInstances =
+                        { host = host, enabled = True, logoUrl = Nothing, displayName = Nothing, sortOrder = nextFrontSortOrder model }
+                            :: model.browsedMastodonInstances
+                }
+        in
+        ( newModel
+        , Cmd.batch
+            [ Ports.persistMastodonAccountsAndServers (encodeMastodonAccountsAndServers newModel)
+            , Task.attempt (GotMastodonInstanceInfoResult host) (MastodonServers.fetchMastodonInstanceInfoTask host)
+            ]
+        )
 
 
 {-| Retries matching `pendingPushSubscriptionCheck` (see its own doc comment) against
@@ -3394,31 +3425,10 @@ sendUpdate req msg model =
             ( { model | browseMastodonInstanceInput = text }, Cmd.none )
 
         BrowseMastodonInstanceClicked ->
-            let
-                host : String
-                host =
-                    String.trim model.browseMastodonInstanceInput
-            in
-            if String.isEmpty host || List.any (\i -> i.host == host) model.browsedMastodonInstances then
-                ( model, Cmd.none )
+            addBrowsedMastodonInstance { model | browseMastodonInstanceInput = "" } (String.trim model.browseMastodonInstanceInput)
 
-            else
-                let
-                    newModel : Model
-                    newModel =
-                        { model
-                            | browsedMastodonInstances =
-                                { host = host, enabled = True, logoUrl = Nothing, displayName = Nothing, sortOrder = nextFrontSortOrder model }
-                                    :: model.browsedMastodonInstances
-                            , browseMastodonInstanceInput = ""
-                        }
-                in
-                ( newModel
-                , Cmd.batch
-                    [ Ports.persistMastodonAccountsAndServers (encodeMastodonAccountsAndServers newModel)
-                    , Task.attempt (GotMastodonInstanceInfoResult host) (MastodonServers.fetchMastodonInstanceInfoTask host)
-                    ]
-                )
+        RecommendedMastodonServerClicked host ->
+            addBrowsedMastodonInstance model host
 
         GotMastodonInstanceInfoResult _ (Err _) ->
             -- No logo/name to show -- `mastodonServerFeedChip` already falls back gracefully for
@@ -3588,6 +3598,21 @@ connectableMastodonServers : Model -> List MastodonServer
 connectableMastodonServers model =
     allMastodonServers model
         |> List.filter (\ms -> not (List.any (\a -> a.instanceHost == ms.domain) model.mastodonAccounts))
+
+
+{-| Mirrors `recommendedFederatedServers` exactly, against `federationInfo.mastodonServers` instead
+of `.servers` and `model.browsedMastodonInstances` instead of `model.servers` -- the admin-registered
+Mastodon instances that aren't already browsed (see `browsedMastodonInstances`'s own doc on
+`configuredByDefault`/`pinnedByDefault` auto-adding some of these already), driving
+`UI.recommendedServersStrip`'s Mastodon chips. Distinct from `connectableMastodonServers` (which
+filters against `model.mastodonAccounts`, an OAuth-connected *account*, for the separate "Connect a
+real account" sub-section) -- clicking one of these just adds a no-login browsed feed, exactly like
+`BrowseMastodonInstanceClicked`, so it's gated on `browsedMastodonInstances` instead.
+-}
+recommendedMastodonServers : Model -> List MastodonServer
+recommendedMastodonServers model =
+    allMastodonServers model
+        |> List.filter (\ms -> not (List.any (\i -> i.host == ms.domain) model.browsedMastodonInstances))
 
 
 {-| The admin-registered `MastodonServer` entry for `instanceHost`, if one exists -- what

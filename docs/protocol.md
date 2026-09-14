@@ -138,6 +138,7 @@
     - [CalendarDisplayMode](#rellm-CalendarDisplayMode)
     - [ClusterResource](#rellm-ClusterResource)
     - [NavigationTab](#rellm-NavigationTab)
+    - [NavigationTabStyle](#rellm-NavigationTabStyle)
     - [PrivateUserStrategy](#rellm-PrivateUserStrategy)
     - [VerificationAPI](#rellm-VerificationAPI)
     - [WebUserInterface](#rellm-WebUserInterface)
@@ -3164,6 +3165,7 @@ If set, overrides the default tab set for the Elm navigation on a Rellm instance
 | ----- | ---- | ----- | ----------- |
 | home | [CustomHomePage](#rellm-CustomHomePage) | optional | Overrides the default `/` page. If unset, the default combined Events&#43;Posts feed is used. |
 | tabs | [CustomNavigationTab](#rellm-CustomNavigationTab) | repeated | Overrides the default tab set (`EVENTS_TAB`, `POSTS_TAB`, `PEOPLE_TAB`, `ABOUT_TAB`) entirely. Note: existing `/events`, `/posts`, `/people`, and `/about` paths are reserved for their matching predefined tab - see [`CustomNavigationTab`](#rellm-CustomNavigationTab).path&#39;s own doc. `/` itself is overridden via `home` above instead. |
+| tab_style | [NavigationTabStyle](#rellm-NavigationTabStyle) |  | How every tab (Home excluded - it always shows the server&#39;s own logo/name) is laid out in the Elm nav. Purely cosmetic: it changes nothing about which tabs exist, their order, or where they link - see `NavigationTabStyle` below. Defaults to `NAVIGATION_TAB_ICON_ONLY` (proto enum value 0) both when `CustomNavigationTabSet` itself is unset and for any config saved before this field existed. |
 
 
 
@@ -3518,6 +3520,22 @@ The default navigation tabs in Rellm&#39;s Elm UI.
 | POSTS_TAB | 11 | The Posts tab. |
 | PEOPLE_TAB | 12 | The People tab. |
 | ABOUT_TAB | 15 | The About tab. |
+
+
+
+<a name="rellm-NavigationTabStyle"></a>
+
+### NavigationTabStyle
+How a nav tab&#39;s icon and title are shown together, if at all. Applies uniformly to every tab
+(`tabs` above, or the predefined `EVENTS_TAB`/`POSTS_TAB`/`PEOPLE_TAB`/`ABOUT_TAB` set when `tabs`
+itself is unset) - there&#39;s no per-tab override.
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| NAVIGATION_TAB_ICON_ONLY | 0 | Just the icon/emoji, no visible title (Rellm&#39;s original, still-default look). |
+| NAVIGATION_TAB_TEXT_ONLY | 1 | Just the title text, no visible icon. |
+| NAVIGATION_TAB_ICON_AND_TEXT_BELOW | 2 | Icon above, title below, stacked in one tab. |
+| NAVIGATION_TAB_ICON_AND_TEXT_RIGHT | 3 | Icon and title side by side, icon first. |
 
 
 

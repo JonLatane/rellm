@@ -295,7 +295,7 @@ fn deserialize_custom_tabs(value: serde_json::Value) -> Option<CustomNavigationT
 mod legacy_custom_tabs {
     use crate::protos::{
         custom_home_page, custom_navigation_tab, CalendarDisplayMode, CustomHomePage,
-        CustomNavigationTab as CurrentTab, CustomNavigationTabSet as CurrentSet,
+        CustomNavigationTab as CurrentTab, CustomNavigationTabSet as CurrentSet, NavigationTabStyle,
     };
 
     // Deliberately *no* `#[serde(default)]` on either field here (unlike the sub-fields below) --
@@ -337,6 +337,10 @@ mod legacy_custom_tabs {
                     .into_iter()
                     .filter_map(CustomNavigationTabWithPath::into_current)
                     .collect(),
+                // A legacy config predates `tab_style` entirely -- the nav has only ever rendered
+                // icon-only up to this point, so that's the only sensible migration target (proto
+                // enum value 0, same default an unset/never-saved `tab_style` already gets).
+                tab_style: NavigationTabStyle::NavigationTabIconOnly as i32,
             }
         }
     }
@@ -447,9 +451,41 @@ mod custom_tabs_migration_tests {
                 title: None,
                 path: "gigs".to_string(),
             }],
+            tab_style: NavigationTabStyle::NavigationTabIconAndTextRight as i32,
         };
         let value = serde_json::to_value(&set).unwrap();
         assert_eq!(deserialize_custom_tabs(value), Some(set));
+    }
+
+    /// Regression test for `custom_tabs` JSON saved before `tab_style` existed -- current-shape in
+    /// every other way (`home`/`tabs` already migrated, no nested `custom_tab` key), just missing
+    /// the `tab_style` key entirely. Without `build.rs`'s `#[serde(default)]` `field_attribute` for
+    /// `CustomNavigationTabSet.tab_style`, step 1 (current-shape deserialize) would hard-error on
+    /// this (a plain, non-`optional` enum field is otherwise required), fall through to a legacy-shape
+    /// attempt that also can't match it, and reset the admin's whole `custom_tabs` -- tabs and all --
+    /// back to unset, exactly like `legacy_federation_info_without_mastodon_servers_deserializes`
+    /// below guards against for `FederationInfo.mastodon_servers`.
+    #[test]
+    fn custom_tabs_without_tab_style_deserializes_as_current_shape() {
+        let value = serde_json::json!({
+            "home": null,
+            "tabs": [{
+                "target": { "Tab": NavigationTab::EventsTab as i32 },
+                "icon": { "EmojiIcon": "📅" },
+                "title": null,
+                "path": "events"
+            }]
+        });
+
+        let migrated = deserialize_custom_tabs(value)
+            .expect("custom_tabs predating tab_style should still deserialize");
+
+        assert_eq!(
+            migrated.tab_style,
+            NavigationTabStyle::NavigationTabIconOnly as i32
+        );
+        assert_eq!(migrated.tabs.len(), 1);
+        assert_eq!(migrated.tabs[0].path, "events");
     }
 
     /// A config saved by the *pre-migration* backend (`home: CustomNavigationTab`, `tabs:

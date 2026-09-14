@@ -36,6 +36,15 @@ fn main() {
         // `lock_cluster_resources.rs`'s own `effective_limit`, already treat an empty/missing
         // `limits` list as every `ClusterResource` defaulting to `1`).
         .field_attribute("ClusterConductorState.limits", "#[serde(default)]")
+        // Same idea, for `CustomNavigationTabSet.tab_style` (added alongside `NavigationTabStyle`)
+        // -- lets `custom_tabs` JSON stored before this field existed deserialize instead of
+        // erroring, defaulting to NAVIGATION_TAB_ICON_ONLY (proto enum value 0, the nav's existing
+        // icon-only look). Without this, `configuration_marshaling::deserialize_custom_tabs`'s
+        // "current shape" parse would fail on every pre-existing `custom_tabs` blob (none of which
+        // have a `tab_style` key), falling through to its legacy-shape attempt and, since that one's
+        // `home` type doesn't match either, resetting the admin's whole `custom_tabs` -- tabs and
+        // all -- back to unset.
+        .field_attribute("CustomNavigationTabSet.tab_style", "#[serde(default)]")
         // This is specifically for rust-analyzer in VSCode
         // .client_attribute(".", "#![allow(non_snake_case)]")
         .extern_path(".google.protobuf.Any", "::prost_wkt_types::Any")

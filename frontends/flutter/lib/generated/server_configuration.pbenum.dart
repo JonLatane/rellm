@@ -108,6 +108,28 @@ class WebUserInterface extends $pb.ProtobufEnum {
   const WebUserInterface._($core.int v, $core.String n) : super(v, n);
 }
 
+/// How a nav tab's icon and title are shown together, if at all. Applies uniformly to every tab
+/// (`tabs` above, or the predefined `EVENTS_TAB`/`POSTS_TAB`/`PEOPLE_TAB`/`ABOUT_TAB` set when `tabs`
+/// itself is unset) - there's no per-tab override.
+class NavigationTabStyle extends $pb.ProtobufEnum {
+  static const NavigationTabStyle NAVIGATION_TAB_ICON_ONLY = NavigationTabStyle._(0, _omitEnumNames ? '' : 'NAVIGATION_TAB_ICON_ONLY');
+  static const NavigationTabStyle NAVIGATION_TAB_TEXT_ONLY = NavigationTabStyle._(1, _omitEnumNames ? '' : 'NAVIGATION_TAB_TEXT_ONLY');
+  static const NavigationTabStyle NAVIGATION_TAB_ICON_AND_TEXT_BELOW = NavigationTabStyle._(2, _omitEnumNames ? '' : 'NAVIGATION_TAB_ICON_AND_TEXT_BELOW');
+  static const NavigationTabStyle NAVIGATION_TAB_ICON_AND_TEXT_RIGHT = NavigationTabStyle._(3, _omitEnumNames ? '' : 'NAVIGATION_TAB_ICON_AND_TEXT_RIGHT');
+
+  static const $core.List<NavigationTabStyle> values = <NavigationTabStyle> [
+    NAVIGATION_TAB_ICON_ONLY,
+    NAVIGATION_TAB_TEXT_ONLY,
+    NAVIGATION_TAB_ICON_AND_TEXT_BELOW,
+    NAVIGATION_TAB_ICON_AND_TEXT_RIGHT,
+  ];
+
+  static final $core.Map<$core.int, NavigationTabStyle> _byValue = $pb.ProtobufEnum.initByValue(values);
+  static NavigationTabStyle? valueOf($core.int value) => _byValue[value];
+
+  const NavigationTabStyle._($core.int v, $core.String n) : super(v, n);
+}
+
 /// The default navigation tabs in Rellm's Elm UI.
 class NavigationTab extends $pb.ProtobufEnum {
   static const NavigationTab HOME_TAB = NavigationTab._(0, _omitEnumNames ? '' : 'HOME_TAB');

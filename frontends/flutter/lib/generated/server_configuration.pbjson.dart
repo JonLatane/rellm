@@ -93,6 +93,23 @@ final $typed_data.Uint8List webUserInterfaceDescriptor = $convert.base64Decode(
     'ChBXZWJVc2VySW50ZXJmYWNlEg8KC0ZMVVRURVJfV0VCEAASHAoUSEFORExFQkFSU19URU1QTE'
     'FURVMQARoCCAESEQoNUkVBQ1RfVEFNQUdVSRACEgsKB0VMTV9TUEEQAw==');
 
+@$core.Deprecated('Use navigationTabStyleDescriptor instead')
+const NavigationTabStyle$json = {
+  '1': 'NavigationTabStyle',
+  '2': [
+    {'1': 'NAVIGATION_TAB_ICON_ONLY', '2': 0},
+    {'1': 'NAVIGATION_TAB_TEXT_ONLY', '2': 1},
+    {'1': 'NAVIGATION_TAB_ICON_AND_TEXT_BELOW', '2': 2},
+    {'1': 'NAVIGATION_TAB_ICON_AND_TEXT_RIGHT', '2': 3},
+  ],
+};
+
+/// Descriptor for `NavigationTabStyle`. Decode as a `google.protobuf.EnumDescriptorProto`.
+final $typed_data.Uint8List navigationTabStyleDescriptor = $convert.base64Decode(
+    'ChJOYXZpZ2F0aW9uVGFiU3R5bGUSHAoYTkFWSUdBVElPTl9UQUJfSUNPTl9PTkxZEAASHAoYTk'
+    'FWSUdBVElPTl9UQUJfVEVYVF9PTkxZEAESJgoiTkFWSUdBVElPTl9UQUJfSUNPTl9BTkRfVEVY'
+    'VF9CRUxPVxACEiYKIk5BVklHQVRJT05fVEFCX0lDT05fQU5EX1RFWFRfUklHSFQQAw==');
+
 @$core.Deprecated('Use navigationTabDescriptor instead')
 const NavigationTab$json = {
   '1': 'NavigationTab',
@@ -518,6 +535,7 @@ const CustomNavigationTabSet$json = {
   '2': [
     {'1': 'home', '3': 1, '4': 1, '5': 11, '6': '.rellm.CustomHomePage', '9': 0, '10': 'home', '17': true},
     {'1': 'tabs', '3': 2, '4': 3, '5': 11, '6': '.rellm.CustomNavigationTab', '10': 'tabs'},
+    {'1': 'tab_style', '3': 3, '4': 1, '5': 14, '6': '.rellm.NavigationTabStyle', '10': 'tabStyle'},
   ],
   '8': [
     {'1': '_home'},
@@ -528,7 +546,8 @@ const CustomNavigationTabSet$json = {
 final $typed_data.Uint8List customNavigationTabSetDescriptor = $convert.base64Decode(
     'ChZDdXN0b21OYXZpZ2F0aW9uVGFiU2V0Ei4KBGhvbWUYASABKAsyFS5yZWxsbS5DdXN0b21Ib2'
     '1lUGFnZUgAUgRob21liAEBEi4KBHRhYnMYAiADKAsyGi5yZWxsbS5DdXN0b21OYXZpZ2F0aW9u'
-    'VGFiUgR0YWJzQgcKBV9ob21l');
+    'VGFiUgR0YWJzEjYKCXRhYl9zdHlsZRgDIAEoDjIZLnJlbGxtLk5hdmlnYXRpb25UYWJTdHlsZV'
+    'IIdGFiU3R5bGVCBwoFX2hvbWU=');
 
 @$core.Deprecated('Use customHomePageDescriptor instead')
 const CustomHomePage$json = {

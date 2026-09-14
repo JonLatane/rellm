@@ -13,6 +13,7 @@ import Html.Events exposing (on, onClick, onInput, onSubmit, preventDefaultOn, s
 import Html.Keyed
 import Json.Decode as Decode
 import Proto.Rellm exposing (FederatedServer, MastodonServer)
+import Proto.Rellm.NavigationTabStyle exposing (NavigationTabStyle)
 import Proto.Rellm.SyncSource.Configuration as Configuration
 import Proto.Rellm.WebUserInterface exposing (WebUserInterface(..))
 import Set
@@ -135,7 +136,7 @@ headerNav shared currentRoute =
         , onClick Shared.ScrollToTop
         ]
         [ div [ class "navbar-inner" ]
-            [ nav [ class "nav-links" ]
+            [ nav [ classes [ "nav-links", CustomNav.navigationTabStyleClass (currentTabStyle shared) ] ]
                 [ navLink shared currentRoute (homeLinkContent shared) Route.Home_
                 , div [ class "nav-links-scroll", on "scroll" navLinksScrollDecoder ]
                     ([ if Set.isEmpty shared.panels.starredPanel.starredPostIds then
@@ -479,7 +480,9 @@ peopleLink shared currentRoute =
             )
         , title "People"
         ]
-        [ text "👥" ]
+        [ span [ class "nav-link-icon" ] [ text "👥" ]
+        , span [ class "nav-link-label" ] [ text "People" ]
+        ]
 
 
 {-| A circular icon nav link to the Events page (`/events`), sitting right
@@ -506,7 +509,9 @@ eventsLink shared currentRoute =
             )
         , title "Events"
         ]
-        [ text "📅" ]
+        [ span [ class "nav-link-icon" ] [ text "📅" ]
+        , span [ class "nav-link-label" ] [ text "Events" ]
+        ]
 
 
 {-| A circular icon nav link to the Posts page (`/posts`), sitting between
@@ -533,7 +538,9 @@ postsLink shared currentRoute =
             )
         , title "Posts"
         ]
-        [ text "📝" ]
+        [ span [ class "nav-link-icon" ] [ text "📝" ]
+        , span [ class "nav-link-label" ] [ text "Posts" ]
+        ]
 
 
 {-| Looks up a known server by `frontendHost` -- a thin wrapper around
@@ -548,6 +555,17 @@ findServer shared frontendHost =
 mainServer : Shared.Model -> Maybe RellmServer
 mainServer shared =
     findServer shared shared.accounts.mainFrontendHost
+
+
+{-| `mainServer`'s effective `NavigationTabStyle` (icon-only, `CustomNav.effectiveTabStyle`'s own
+default, whenever `mainServer` itself isn't resolved yet or `customTabs` is unset) -- `headerNav`'s
+own `.nav-links` class (`CustomNav.navigationTabStyleClass`) is what actually lays `eventsLink`/
+`postsLink`/`peopleLink`/`aboutLink`/`CustomNav.navLinkView`'s shared `.nav-link-icon`/`.nav-link-label`
+content out per this, in nav.css.
+-}
+currentTabStyle : Shared.Model -> NavigationTabStyle
+currentTabStyle shared =
+    CustomNav.effectiveTabStyle (mainServer shared |> Maybe.andThen (\server -> (RellmServers.configurationOf server).customTabs))
 
 
 {-| `eventsLink`/`postsLink`/`peopleLink`/`aboutLink`, or (once `mainServer`'s own
@@ -599,9 +617,12 @@ serverName shared =
 
 {-| A circular icon nav link to the About page (`/about`), sitting alongside
 `peopleLink`/`eventsLink`/`postsLink` -- same styling/highlighting
-convention, just routed to `Route.About` with an "i" glyph. Keeps the
-`info-button` class (accounts\_panel.css) it had as the old `infoButton` for
-the same serif-italic "i" styling, layered on top of `nav-link`'s own sizing.
+convention, just routed to `Route.About` with an "i" glyph. The glyph itself
+carries `[data-glyph="i"]` (matching `CustomNav.iconView`'s own convention for
+an `EmojiIcon "i"`) rather than the old `info-button` class on the `<a>`
+itself, so accounts\_panel.css's serif-italic "i" styling lands on just the
+icon, not the visible label a non-icon-only `NavigationTabStyle` also shows
+here (see `nav.css`'s `.tab-style-*` rules).
 -}
 aboutLink : Shared.Model -> Route -> Html Shared.Msg
 aboutLink shared currentRoute =
@@ -614,7 +635,6 @@ aboutLink shared currentRoute =
         [ href (shared.basePath ++ Route.toHref Route.About)
         , classes
             ("nav-link"
-                :: "info-button"
                 :: (if isCurrent then
                         [ hostnameToCSSClass shared.accounts.mainFrontendHost, "background-color-nav" ]
 
@@ -624,7 +644,9 @@ aboutLink shared currentRoute =
             )
         , title "About"
         ]
-        [ text "i" ]
+        [ span [ class "nav-link-icon", attribute "data-glyph" "i" ] [ text "i" ]
+        , span [ class "nav-link-label" ] [ text "About" ]
+        ]
 
 
 {-| `aboutLink`'s counterpart for one `serverChip` -- links to
@@ -1440,7 +1462,8 @@ unreachableServersWarning shared =
 
 
 {-| The main server's federated-but-not-yet-added servers (see
-`AccountsPanel.recommendedFederatedServers`), tucked behind a single "X
+`AccountsPanel.recommendedFederatedServers`) plus its admin-registered-but-not-yet-browsed
+Mastodon servers (`AccountsPanel.recommendedMastodonServers`), tucked behind a single "X
 Recommended Servers..." button rather than shown outright -- collapsed by
 default, and re-collapsed every time the Accounts Panel closes (see
 `AccountsPanel.recommendedServersExpanded`'s own doc), so it doesn't compete
@@ -1454,11 +1477,19 @@ it. Renders nothing at all once there's nothing left to recommend.
 recommendedServersStrip : Shared.Model -> Html Shared.Msg
 recommendedServersStrip shared =
     let
-        recommended : List FederatedServer
-        recommended =
+        recommendedRellmServers : List FederatedServer
+        recommendedRellmServers =
             AccountsPanel.recommendedFederatedServers shared.accounts
+
+        recommendedMastodonServers : List MastodonServer
+        recommendedMastodonServers =
+            AccountsPanel.recommendedMastodonServers shared.accounts
+
+        totalCount : Int
+        totalCount =
+            List.length recommendedRellmServers + List.length recommendedMastodonServers
     in
-    if List.isEmpty recommended then
+    if totalCount == 0 then
         text ""
 
     else
@@ -1469,12 +1500,14 @@ recommendedServersStrip shared =
                     [ class "recommended-servers-toggle"
                     , onClick (Shared.AccountsPanelMsg AccountsPanel.ToggleRecommendedServersExpanded)
                     ]
-                    [ text (String.fromInt (List.length recommended) ++ " Recommended Servers...")
+                    [ text (String.fromInt totalCount ++ " Recommended Servers...")
                     ]
 
               else
                 div [ class "recommended-servers-strip" ]
-                    (List.map (\fs -> recommendedServerChip shared fs) recommended)
+                    (List.map (recommendedServerChip shared) recommendedRellmServers
+                        ++ List.map (recommendedMastodonServerChip shared) recommendedMastodonServers
+                    )
             ]
 
 
@@ -1513,6 +1546,41 @@ recommendedServerChip shared federatedServer =
             , div [ class "server-chip-host-row" ] [ div [ class "server-chip-host" ] [ text host ] ]
             ]
         , div [ classes [ "server-chip-bottom", "recommended-server-add-row", hostnameToCSSClass host, "background-color-nav" ] ]
+            [ text "+ Add" ]
+        ]
+
+
+{-| A recommended-server chip for one of `mainFrontendHost`'s admin-registered `MastodonServer`s
+(see `AccountsPanel.recommendedMastodonServers`) -- mirrors `recommendedServerChip`'s shape, but
+there's no `RellmServer`/branding to fetch here (a `MastodonServer` already carries everything it
+needs), and clicking it just adds a no-login browsed feed for it
+(`AccountsPanel.RecommendedMastodonServerClicked`), exactly like typing its domain into
+`BrowseMastodonInstanceClicked`'s own form -- unrelated to `mastodonConnectButton`'s OAuth "Connect
+Account" flow, so there's no `appId` to gate on here.
+-}
+recommendedMastodonServerChip : Shared.Model -> MastodonServer -> Html Shared.Msg
+recommendedMastodonServerChip shared mastodonServer =
+    let
+        domain : String
+        domain =
+            mastodonServer.domain
+    in
+    button
+        [ classList [ ( "server-chip", True ), ( "recommended-server-chip", True ), ( hostnameToCSSClass domain, True ) ]
+        , onClick (Shared.AccountsPanelMsg (AccountsPanel.RecommendedMastodonServerClicked domain))
+        , title ("Add " ++ domain)
+        ]
+        [ div [ classes [ "server-chip-top", hostnameToCSSClass domain, "background-color-primary" ] ]
+            [ div [ class "server-chip-logo-row" ]
+                [ div [ class "server-name-and-logo regular" ]
+                    [ div [ class "server-logo-placeholder" ] [ text (RellmServers.initialLetter domain) ]
+                    , div [ class "server-name-breakdown" ]
+                        [ div [ class "server-name-primary" ] [ text "Mastodon" ] ]
+                    ]
+                ]
+            , div [ class "server-chip-host-row" ] [ div [ class "server-chip-host" ] [ text domain ] ]
+            ]
+        , div [ classes [ "server-chip-bottom", "recommended-server-add-row", hostnameToCSSClass domain, "background-color-nav" ] ]
             [ text "+ Add" ]
         ]
 

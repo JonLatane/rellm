@@ -82,9 +82,13 @@ type alias Model =
     , preloadFor : Maybe String
 
     -- Live only while the current item's name/description/sizes are being edited (see
-    -- `EditClicked`) -- `Nothing` (the default) elsewhere. Reset to `Nothing` on every
-    -- `Open`/`Next`/`Prev`/`SetCurrent`/`CloseClicked`, same as `currentMediaReference` itself
-    -- moving on -- an in-progress edit of one item should never carry over to another.
+    -- `EditClicked`) -- `Nothing` (the default) elsewhere. Reset to `Nothing` on every `Open`/
+    -- `CloseClicked`, and also on `Next`/`Prev`/`SetCurrent` landing on media the account can't
+    -- edit (see `canEditMedia`) -- but when it *can*, `update`'s catch-all re-derives a fresh
+    -- `MediaEdit` for the new item instead, so paging through a gallery you're editing keeps you
+    -- in edit mode rather than bouncing you out on every arrow key/swipe. Either way, an
+    -- in-progress *edit* (unsaved name/description text, in-flight size deletions) never carries
+    -- over from one item to the next -- only the "am I editing" state can.
     , edit : Maybe MediaEdit
     }
 
@@ -175,8 +179,10 @@ subscriptions model =
 {-| Handles the edit-related messages (`EditClicked` through `GotDeleteSizeResult`), which need
 `AccountsPanel.Model` to make `UpdateMedia`/`DeleteMediaSizes` calls and may return a refreshed
 account (see `AccountsPanel.performWithAccountServer`) for the caller to persist -- same
-`Maybe AccountsPanel.Msg` convention `Shared.MyMediaPanel.update` uses. Everything else is pure
-state juggling with no RPCs, delegated to `updatePure`.
+`Maybe AccountsPanel.Msg` convention `Shared.MyMediaPanel.update` uses. Everything else has no RPCs
+to make and is delegated to `updatePure`, though the catch-all still uses `AccountsPanel.Model` of
+its own afterward -- to decide, per `Model.edit`'s doc, whether a `Next`/`Prev`/`SetCurrent` that
+lands on a new item should carry edit mode along with it.
 -}
 update : AccountsPanel.Model -> Msg -> Model -> ( Model, Cmd Msg, Maybe AccountsPanel.Msg )
 update accountsPanelModel msg model =
@@ -194,19 +200,7 @@ update accountsPanelModel msg model =
         EditClicked ->
             case currentMedia of
                 Just media ->
-                    ( { model
-                        | edit =
-                            Just
-                                { name = Maybe.withDefault "" media.name
-                                , description = Maybe.withDefault "" media.description
-                                , status = Idle
-                                , deletingSizes = []
-                                , deleteSizeError = Nothing
-                                }
-                      }
-                    , Cmd.none
-                    , Nothing
-                    )
+                    ( { model | edit = Just (freshEdit media) }, Cmd.none, Nothing )
 
                 Nothing ->
                     ( model, Cmd.none, Nothing )
@@ -290,8 +284,31 @@ update accountsPanelModel msg model =
             let
                 ( newModel, cmd ) =
                     updatePure msg model
+
+                newCurrentMedia : Maybe MediaReference
+                newCurrentMedia =
+                    newModel.currentMediaReference
+                        |> Maybe.andThen (\id -> List.filter (\m -> m.id == id) newModel.media |> List.head)
+
+                -- `updatePure` unconditionally resets `edit` to `Nothing` on any `Open`/`Next`/
+                -- `Prev`/`SetCurrent` that actually lands on a new `currentMediaReference` (see
+                -- its own doc) -- if that's what just happened *and* the account editing the old
+                -- item can also edit the new one, re-derive a fresh `MediaEdit` for it instead, so
+                -- paging through a gallery mid-edit keeps you in edit mode.
+                restoredEdit : Maybe MediaEdit
+                restoredEdit =
+                    case ( model.edit, newModel.currentMediaReference /= model.currentMediaReference, newCurrentMedia ) of
+                        ( Just _, True, Just media ) ->
+                            if canEditMedia maybeAccount media then
+                                Just (freshEdit media)
+
+                            else
+                                Nothing
+
+                        _ ->
+                            newModel.edit
             in
-            ( newModel, cmd, Nothing )
+            ( { newModel | edit = restoredEdit }, cmd, Nothing )
 
 
 {-| The `Media` `UpdateMedia`/`DeleteMediaSizes` respond with, folded back into `model.media` in
@@ -361,6 +378,22 @@ deleteMediaSizeTask accountsPanelModel account mediaId conversion =
                 |> withAccessToken (Just token)
                 |> Grpc.toTask
         )
+
+
+{-| A brand-new `MediaEdit` for `media` -- `name`/`description` seeded from its current values
+(`Nothing` becomes `""`, the empty text field), `status`/`deletingSizes`/`deleteSizeError` all at
+their idle defaults. Used both by `EditClicked` (entering edit mode) and by `update`'s catch-all
+(re-deriving edit mode's state for a new item after `Next`/`Prev`/`SetCurrent` -- see `Model.edit`'s
+doc).
+-}
+freshEdit : MediaReference -> MediaEdit
+freshEdit media =
+    { name = Maybe.withDefault "" media.name
+    , description = Maybe.withDefault "" media.description
+    , status = Idle
+    , deletingSizes = []
+    , deleteSizeError = Nothing
+    }
 
 
 {-| Whether `maybeAccount` may edit `media`'s name/description/sizes -- its owner, or an Admin.

@@ -1890,6 +1890,7 @@ class CustomNavigationTabSet extends $pb.GeneratedMessage {
   factory CustomNavigationTabSet({
     CustomHomePage? home,
     $core.Iterable<CustomNavigationTab>? tabs,
+    NavigationTabStyle? tabStyle,
   }) {
     final $result = create();
     if (home != null) {
@@ -1897,6 +1898,9 @@ class CustomNavigationTabSet extends $pb.GeneratedMessage {
     }
     if (tabs != null) {
       $result.tabs.addAll(tabs);
+    }
+    if (tabStyle != null) {
+      $result.tabStyle = tabStyle;
     }
     return $result;
   }
@@ -1907,6 +1911,7 @@ class CustomNavigationTabSet extends $pb.GeneratedMessage {
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'CustomNavigationTabSet', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
     ..aOM<CustomHomePage>(1, _omitFieldNames ? '' : 'home', subBuilder: CustomHomePage.create)
     ..pc<CustomNavigationTab>(2, _omitFieldNames ? '' : 'tabs', $pb.PbFieldType.PM, subBuilder: CustomNavigationTab.create)
+    ..e<NavigationTabStyle>(3, _omitFieldNames ? '' : 'tabStyle', $pb.PbFieldType.OE, defaultOrMaker: NavigationTabStyle.NAVIGATION_TAB_ICON_ONLY, valueOf: NavigationTabStyle.valueOf, enumValues: NavigationTabStyle.values)
     ..hasRequiredFields = false
   ;
 
@@ -1949,6 +1954,20 @@ class CustomNavigationTabSet extends $pb.GeneratedMessage {
   /// `/` itself is overridden via `home` above instead.
   @$pb.TagNumber(2)
   $core.List<CustomNavigationTab> get tabs => $_getList(1);
+
+  /// How every tab (Home excluded - it always shows the server's own logo/name) is laid out in the
+  /// Elm nav. Purely cosmetic: it changes nothing about which tabs exist, their order, or where they
+  /// link - see `NavigationTabStyle` below. Defaults to `NAVIGATION_TAB_ICON_ONLY` (proto enum value
+  /// 0) both when `CustomNavigationTabSet` itself is unset and for any config saved before this
+  /// field existed.
+  @$pb.TagNumber(3)
+  NavigationTabStyle get tabStyle => $_getN(2);
+  @$pb.TagNumber(3)
+  set tabStyle(NavigationTabStyle v) { setField(3, v); }
+  @$pb.TagNumber(3)
+  $core.bool hasTabStyle() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearTabStyle() => clearField(3);
 }
 
 enum CustomHomePage_Target {

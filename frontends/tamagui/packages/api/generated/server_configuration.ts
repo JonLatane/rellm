@@ -263,6 +263,60 @@ export function webUserInterfaceToJSON(object: WebUserInterface): string {
   }
 }
 
+/**
+ * How a nav tab's icon and title are shown together, if at all. Applies uniformly to every tab
+ * (`tabs` above, or the predefined `EVENTS_TAB`/`POSTS_TAB`/`PEOPLE_TAB`/`ABOUT_TAB` set when `tabs`
+ * itself is unset) - there's no per-tab override.
+ */
+export enum NavigationTabStyle {
+  /** NAVIGATION_TAB_ICON_ONLY - Just the icon/emoji, no visible title (Rellm's original, still-default look). */
+  NAVIGATION_TAB_ICON_ONLY = 0,
+  /** NAVIGATION_TAB_TEXT_ONLY - Just the title text, no visible icon. */
+  NAVIGATION_TAB_TEXT_ONLY = 1,
+  /** NAVIGATION_TAB_ICON_AND_TEXT_BELOW - Icon above, title below, stacked in one tab. */
+  NAVIGATION_TAB_ICON_AND_TEXT_BELOW = 2,
+  /** NAVIGATION_TAB_ICON_AND_TEXT_RIGHT - Icon and title side by side, icon first. */
+  NAVIGATION_TAB_ICON_AND_TEXT_RIGHT = 3,
+  UNRECOGNIZED = -1,
+}
+
+export function navigationTabStyleFromJSON(object: any): NavigationTabStyle {
+  switch (object) {
+    case 0:
+    case "NAVIGATION_TAB_ICON_ONLY":
+      return NavigationTabStyle.NAVIGATION_TAB_ICON_ONLY;
+    case 1:
+    case "NAVIGATION_TAB_TEXT_ONLY":
+      return NavigationTabStyle.NAVIGATION_TAB_TEXT_ONLY;
+    case 2:
+    case "NAVIGATION_TAB_ICON_AND_TEXT_BELOW":
+      return NavigationTabStyle.NAVIGATION_TAB_ICON_AND_TEXT_BELOW;
+    case 3:
+    case "NAVIGATION_TAB_ICON_AND_TEXT_RIGHT":
+      return NavigationTabStyle.NAVIGATION_TAB_ICON_AND_TEXT_RIGHT;
+    case -1:
+    case "UNRECOGNIZED":
+    default:
+      return NavigationTabStyle.UNRECOGNIZED;
+  }
+}
+
+export function navigationTabStyleToJSON(object: NavigationTabStyle): string {
+  switch (object) {
+    case NavigationTabStyle.NAVIGATION_TAB_ICON_ONLY:
+      return "NAVIGATION_TAB_ICON_ONLY";
+    case NavigationTabStyle.NAVIGATION_TAB_TEXT_ONLY:
+      return "NAVIGATION_TAB_TEXT_ONLY";
+    case NavigationTabStyle.NAVIGATION_TAB_ICON_AND_TEXT_BELOW:
+      return "NAVIGATION_TAB_ICON_AND_TEXT_BELOW";
+    case NavigationTabStyle.NAVIGATION_TAB_ICON_AND_TEXT_RIGHT:
+      return "NAVIGATION_TAB_ICON_AND_TEXT_RIGHT";
+    case NavigationTabStyle.UNRECOGNIZED:
+    default:
+      return "UNRECOGNIZED";
+  }
+}
+
 /** The default navigation tabs in Rellm's Elm UI. */
 export enum NavigationTab {
   /** HOME_TAB - The home/landing tab. */
@@ -923,6 +977,14 @@ export interface CustomNavigationTabSet {
    * `/` itself is overridden via `home` above instead.
    */
   tabs: CustomNavigationTab[];
+  /**
+   * How every tab (Home excluded - it always shows the server's own logo/name) is laid out in the
+   * Elm nav. Purely cosmetic: it changes nothing about which tabs exist, their order, or where they
+   * link - see `NavigationTabStyle` below. Defaults to `NAVIGATION_TAB_ICON_ONLY` (proto enum value
+   * 0) both when `CustomNavigationTabSet` itself is unset and for any config saved before this
+   * field existed.
+   */
+  tabStyle: NavigationTabStyle;
 }
 
 /**
@@ -3279,7 +3341,7 @@ export const ServerLogo: MessageFns<ServerLogo> = {
 };
 
 function createBaseCustomNavigationTabSet(): CustomNavigationTabSet {
-  return { home: undefined, tabs: [] };
+  return { home: undefined, tabs: [], tabStyle: 0 };
 }
 
 export const CustomNavigationTabSet: MessageFns<CustomNavigationTabSet> = {
@@ -3289,6 +3351,9 @@ export const CustomNavigationTabSet: MessageFns<CustomNavigationTabSet> = {
     }
     for (const v of message.tabs) {
       CustomNavigationTab.encode(v!, writer.uint32(18).fork()).join();
+    }
+    if (message.tabStyle !== 0) {
+      writer.uint32(24).int32(message.tabStyle);
     }
     return writer;
   },
@@ -3316,6 +3381,14 @@ export const CustomNavigationTabSet: MessageFns<CustomNavigationTabSet> = {
           message.tabs.push(CustomNavigationTab.decode(reader, reader.uint32()));
           continue;
         }
+        case 3: {
+          if (tag !== 24) {
+            break;
+          }
+
+          message.tabStyle = reader.int32() as any;
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -3329,6 +3402,7 @@ export const CustomNavigationTabSet: MessageFns<CustomNavigationTabSet> = {
     return {
       home: isSet(object.home) ? CustomHomePage.fromJSON(object.home) : undefined,
       tabs: globalThis.Array.isArray(object?.tabs) ? object.tabs.map((e: any) => CustomNavigationTab.fromJSON(e)) : [],
+      tabStyle: isSet(object.tabStyle) ? navigationTabStyleFromJSON(object.tabStyle) : 0,
     };
   },
 
@@ -3339,6 +3413,9 @@ export const CustomNavigationTabSet: MessageFns<CustomNavigationTabSet> = {
     }
     if (message.tabs?.length) {
       obj.tabs = message.tabs.map((e) => CustomNavigationTab.toJSON(e));
+    }
+    if (message.tabStyle !== 0) {
+      obj.tabStyle = navigationTabStyleToJSON(message.tabStyle);
     }
     return obj;
   },
@@ -3352,6 +3429,7 @@ export const CustomNavigationTabSet: MessageFns<CustomNavigationTabSet> = {
       ? CustomHomePage.fromPartial(object.home)
       : undefined;
     message.tabs = object.tabs?.map((e) => CustomNavigationTab.fromPartial(e)) || [];
+    message.tabStyle = object.tabStyle ?? 0;
     return message;
   },
 };

@@ -148,9 +148,69 @@
   transition: background-color 0.3s ease, color 0.3s ease, opacity 0.3s ease;
 }
 
-.nav-link.info-button,
 .nav-link [data-glyph="i"] {
   font-size: 16px;
+}
+
+/* `UI.CustomNav.navLinkView`/`UI.eventsLink`/`postsLink`/`peopleLink`/`aboutLink` all render both an
+   icon and a label unconditionally now -- which one(s) actually show, and how they're laid out, is
+   purely a CSS switch keyed off the `.tab-style-*` class `UI.elm`'s `headerNav` stamps on
+   `.nav-links` (`UI.CustomNav.navigationTabStyleClass`, driven by the admin-configured
+   `NavigationTabStyle` -- see `ThemeTab`'s "Navigation Tabs" section). `.nav-link-label` is hidden
+   by default (icon-only, `NAVIGATIONTABICONONLY`'s look, unchanged from before this existed) --
+   every other style below just re-shows it and/or hides `.nav-link-icon` instead. Home isn't part of
+   this -- `.nav-link-home` has never carried either class, it renders `RegularServerLogo` (see its
+   own rules above), and every selector below already excludes it the same way the base
+   `.nav-link:not(.nav-link-home)` sizing rule does. */
+.nav-link-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nav-link-label {
+  display: none;
+  white-space: nowrap;
+}
+
+.tab-style-text-only .nav-link:not(.nav-link-home) {
+  width: auto;
+  height: 44px;
+  padding: 0 0.85rem;
+}
+
+.tab-style-text-only .nav-link:not(.nav-link-home) .nav-link-icon {
+  display: none;
+}
+
+.tab-style-text-only .nav-link:not(.nav-link-home) .nav-link-label {
+  display: inline;
+  font-size: 0.85rem;
+}
+
+.tab-style-icon-and-text-below .nav-link:not(.nav-link-home) {
+  flex-direction: column;
+  gap: 0.15rem;
+  width: auto;
+  padding: 0 0.5rem;
+}
+
+.tab-style-icon-and-text-below .nav-link:not(.nav-link-home) .nav-link-label {
+  display: inline;
+  font-size: 0.65rem;
+}
+
+.tab-style-icon-and-text-right .nav-link:not(.nav-link-home) {
+  flex-direction: row;
+  gap: 0.35rem;
+  width: auto;
+  height: 44px;
+  padding: 0 0.85rem;
+}
+
+.tab-style-icon-and-text-right .nav-link:not(.nav-link-home) .nav-link-label {
+  display: inline;
+  font-size: 0.85rem;
 }
 
 /* Events/Posts/People/About (everything in `.nav-links-scroll` except the

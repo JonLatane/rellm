@@ -5,15 +5,20 @@ module UI.CustomNav exposing
     , HomePageConfig
     , TargetKind(..)
     , allCalendarDisplayModes
+    , allNavigationTabStyles
     , calendarDisplayModeFromText
     , calendarDisplayModeText
     , defaultHomePageConfig
     , defaultPathFor
+    , effectiveTabStyle
     , effectiveTabs
     , homeConfig
     , homeTargetKindFromText
     , iconView
     , navLinkView
+    , navigationTabStyleClass
+    , navigationTabStyleFromText
+    , navigationTabStyleText
     , resolvedTitle
     , selectableHomeTargetKinds
     , selectableTargetKinds
@@ -41,13 +46,14 @@ hand-edited/future-versioned config).
 
 import Gen.Route as Route exposing (Route)
 import Html exposing (Html, a, img, span, text)
-import Html.Attributes exposing (alt, attribute, href, src, title)
+import Html.Attributes exposing (alt, attribute, class, href, src, title)
 import Proto.Rellm exposing (CustomHomePage, CustomNavigationTab, CustomNavigationTabSet)
 import Proto.Rellm.CalendarDisplayMode exposing (CalendarDisplayMode(..))
 import Proto.Rellm.CustomHomePage.Target as ProtoHomeTarget
 import Proto.Rellm.CustomNavigationTab.Icon as ProtoIcon
 import Proto.Rellm.CustomNavigationTab.Target as ProtoTarget
 import Proto.Rellm.NavigationTab exposing (NavigationTab(..))
+import Proto.Rellm.NavigationTabStyle exposing (NavigationTabStyle(..), defaultNavigationTabStyle)
 import Shared
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer)
 import UI.Classes exposing (classes, hostnameToCSSClass)
@@ -331,6 +337,77 @@ effectiveTabs maybeSet =
             set.tabs |> List.filterMap fromProtoTab
 
 
+{-| `CustomNavigationTabSet.tabStyle`, or `defaultNavigationTabStyle` (icon-only, matching the
+proto's own zero value) if `customTabs` itself is unset -- mirrors `effectiveTabs`' identical
+unset-means-default fallback. Drives both the real nav (`UI.headerNav`'s own `.nav-links` class,
+see `navigationTabStyleClass`) and `CustomTabsConfiguration`'s "Tab Style" picker.
+-}
+effectiveTabStyle : Maybe CustomNavigationTabSet -> NavigationTabStyle
+effectiveTabStyle maybeSet =
+    maybeSet |> Maybe.map .tabStyle |> Maybe.withDefault defaultNavigationTabStyle
+
+
+{-| Every `NavigationTabStyle` `CustomTabsConfiguration`'s "Tab Style" `<select>` offers, in the
+order shown there.
+-}
+allNavigationTabStyles : List NavigationTabStyle
+allNavigationTabStyles =
+    [ NAVIGATIONTABICONONLY, NAVIGATIONTABTEXTONLY, NAVIGATIONTABICONANDTEXTBELOW, NAVIGATIONTABICONANDTEXTRIGHT ]
+
+
+{-| A `NavigationTabStyle`'s `<select>` option text/label -- also `CustomTabsConfiguration`'s
+read-only display text when no admin edit is in progress.
+-}
+navigationTabStyleText : NavigationTabStyle -> String
+navigationTabStyleText style =
+    case style of
+        NAVIGATIONTABICONONLY ->
+            "Icon Only"
+
+        NAVIGATIONTABTEXTONLY ->
+            "Text Only"
+
+        NAVIGATIONTABICONANDTEXTBELOW ->
+            "Icon + Text (Below)"
+
+        NAVIGATIONTABICONANDTEXTRIGHT ->
+            "Icon + Text (Right)"
+
+        NavigationTabStyleUnrecognized_ _ ->
+            "Icon Only"
+
+
+navigationTabStyleFromText : String -> Maybe NavigationTabStyle
+navigationTabStyleFromText text =
+    allNavigationTabStyles |> List.filter (\style -> navigationTabStyleText style == text) |> List.head
+
+
+{-| The class `UI.headerNav` stamps on `.nav-links` for the current `NavigationTabStyle` -- nav.css's
+`.tab-style-*` rules key off this to lay each `.nav-link:not(.nav-link-home)` out accordingly (a
+`display: none`/`flex-direction` switch on `.nav-link-icon`/`.nav-link-label`, both of which
+`navLinkView`/`UI.eventsLink`/etc. always render regardless of style -- see their own docs). No rule
+is needed for `NAVIGATIONTABICONONLY` itself: it's `.nav-link`'s existing base look (icon only,
+label hidden), so this is purely an additive hook for the other three.
+-}
+navigationTabStyleClass : NavigationTabStyle -> String
+navigationTabStyleClass style =
+    case style of
+        NAVIGATIONTABICONONLY ->
+            "tab-style-icon-only"
+
+        NAVIGATIONTABTEXTONLY ->
+            "tab-style-text-only"
+
+        NAVIGATIONTABICONANDTEXTBELOW ->
+            "tab-style-icon-and-text-below"
+
+        NAVIGATIONTABICONANDTEXTRIGHT ->
+            "tab-style-icon-and-text-right"
+
+        NavigationTabStyleUnrecognized_ _ ->
+            "tab-style-icon-only"
+
+
 navigationTabLabel : NavigationTab -> String
 navigationTabLabel navTab =
     case navTab of
@@ -603,4 +680,6 @@ navLinkView shared currentRoute server tab =
             )
         , title (resolvedTitle tab)
         ]
-        [ iconView server tab.icon ]
+        [ span [ class "nav-link-icon" ] [ iconView server tab.icon ]
+        , span [ class "nav-link-label" ] [ text (resolvedTitle tab) ]
+        ]

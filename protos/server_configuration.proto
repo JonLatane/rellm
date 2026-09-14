@@ -492,6 +492,27 @@ message CustomNavigationTabSet {
   // matching predefined tab - see [`CustomNavigationTab`](#rellm-CustomNavigationTab).path's own doc.
   // `/` itself is overridden via `home` above instead.
   repeated CustomNavigationTab tabs = 2;
+
+  // How every tab (Home excluded - it always shows the server's own logo/name) is laid out in the
+  // Elm nav. Purely cosmetic: it changes nothing about which tabs exist, their order, or where they
+  // link - see `NavigationTabStyle` below. Defaults to `NAVIGATION_TAB_ICON_ONLY` (proto enum value
+  // 0) both when `CustomNavigationTabSet` itself is unset and for any config saved before this
+  // field existed.
+  NavigationTabStyle tab_style = 3;
+}
+
+// How a nav tab's icon and title are shown together, if at all. Applies uniformly to every tab
+// (`tabs` above, or the predefined `EVENTS_TAB`/`POSTS_TAB`/`PEOPLE_TAB`/`ABOUT_TAB` set when `tabs`
+// itself is unset) - there's no per-tab override.
+enum NavigationTabStyle {
+  // Just the icon/emoji, no visible title (Rellm's original, still-default look).
+  NAVIGATION_TAB_ICON_ONLY = 0;
+  // Just the title text, no visible icon.
+  NAVIGATION_TAB_TEXT_ONLY = 1;
+  // Icon above, title below, stacked in one tab.
+  NAVIGATION_TAB_ICON_AND_TEXT_BELOW = 2;
+  // Icon and title side by side, icon first.
+  NAVIGATION_TAB_ICON_AND_TEXT_RIGHT = 3;
 }
 
 // The default navigation tabs in Rellm's Elm UI.

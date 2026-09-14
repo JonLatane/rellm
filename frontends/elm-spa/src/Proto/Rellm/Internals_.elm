@@ -541,6 +541,7 @@ import Proto.Rellm.MediaConversion
 import Proto.Rellm.MessageListingType
 import Proto.Rellm.Moderation
 import Proto.Rellm.NavigationTab
+import Proto.Rellm.NavigationTabStyle
 import Proto.Rellm.Permission
 import Proto.Rellm.PostContext
 import Proto.Rellm.PostListingType
@@ -1442,9 +1443,9 @@ type alias Proto__Rellm__CustomHomePage =
 {-| The field numbers for the fields of `Proto__Rellm__CustomNavigationTabSet`. This is mostly useful for internals, like documentation generation.
 
 -}
-fieldNumbersProto__Rellm__CustomNavigationTabSet : { home : Int, tabs : Int }
+fieldNumbersProto__Rellm__CustomNavigationTabSet : { home : Int, tabs : Int, tabStyle : Int }
 fieldNumbersProto__Rellm__CustomNavigationTabSet =
-    { home = 1, tabs = 2 }
+    { home = 1, tabs = 2, tabStyle = 3 }
 
 
 {-| Default for Proto__Rellm__CustomNavigationTabSet. Should only be used for 'required' decoders as an initial value.
@@ -1452,7 +1453,7 @@ fieldNumbersProto__Rellm__CustomNavigationTabSet =
 -}
 defaultProto__Rellm__CustomNavigationTabSet : Proto__Rellm__CustomNavigationTabSet
 defaultProto__Rellm__CustomNavigationTabSet =
-    { home = Nothing, tabs = [] }
+    { home = Nothing, tabs = [], tabStyle = Proto.Rellm.NavigationTabStyle.defaultNavigationTabStyle }
 
 
 {-| Declares how to decode a `Proto__Rellm__CustomNavigationTabSet` from Bytes. To actually perform the conversion from Bytes, you need to use Protobuf.Decode.decode from eriktim/elm-protocol-buffers.
@@ -1467,6 +1468,10 @@ decodeProto__Rellm__CustomNavigationTabSet =
             (Protobuf.Decode.map Just decodeProto__Rellm__CustomHomePage)
             (\a r -> { r | home = a })
         , Protobuf.Decode.repeated 2 decodeProto__Rellm__CustomNavigationTab .tabs (\a r -> { r | tabs = a })
+        , Protobuf.Decode.optional
+            3
+            Proto.Rellm.NavigationTabStyle.decodeNavigationTabStyle
+            (\a r -> { r | tabStyle = a })
         ]
 
 
@@ -1478,6 +1483,7 @@ encodeProto__Rellm__CustomNavigationTabSet value =
     Protobuf.Encode.message
         [ ( 1, (Maybe.map encodeProto__Rellm__CustomHomePage >> Maybe.withDefault Protobuf.Encode.none) value.home )
         , ( 2, (Protobuf.Encode.list encodeProto__Rellm__CustomNavigationTab) value.tabs )
+        , ( 3, Proto.Rellm.NavigationTabStyle.encodeNavigationTabStyle value.tabStyle )
         ]
 
 
@@ -1485,7 +1491,10 @@ encodeProto__Rellm__CustomNavigationTabSet value =
 
 -}
 type alias Proto__Rellm__CustomNavigationTabSet =
-    { home : Maybe Proto__Rellm__CustomHomePage, tabs : List Proto__Rellm__CustomNavigationTab }
+    { home : Maybe Proto__Rellm__CustomHomePage
+    , tabs : List Proto__Rellm__CustomNavigationTab
+    , tabStyle : Proto.Rellm.NavigationTabStyle.NavigationTabStyle
+    }
 
 
 {-| The field numbers for the fields of `Proto__Rellm__ServerLogo`. This is mostly useful for internals, like documentation generation.

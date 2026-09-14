@@ -24,6 +24,7 @@ import Html.Events exposing (onClick, onInput)
 import Html.Keyed
 import Proto.Rellm exposing (ServerConfiguration, defaultCustomNavigationTabSet)
 import Proto.Rellm.NavigationTab exposing (NavigationTab(..))
+import Proto.Rellm.NavigationTabStyle exposing (NavigationTabStyle)
 import Shared
 import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.RellmAccounts exposing (RellmAccount)
@@ -65,6 +66,8 @@ type Msg
     | CustomTabHomeShowEventsStripToggled
     | CustomTabHomeEventsStripToRowToggled
     | CustomTabHomeEventsStripCalendarDisplayModeChanged String
+    | TabStyleChanged String
+    | GotTabStyleSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, ServerConfiguration ))
     | MoveCustomTabLeftClicked String
     | MoveCustomTabRightClicked String
     | GotPreMoveCustomTabPositions String String Int (Result Dom.Error ( Dom.Element, Dom.Element ))
@@ -94,6 +97,10 @@ every keystroke (e.g. collapsing a trailing ", " while still typing the next id)
 admin's own typing. It saves/cancels in the same round-trip as `pending`
 (`CustomTabsSaveClicked`/`applyCustomTabs`, `CustomTabsCancelClicked`) since both live under the
 same "Navigation Tabs" section/Edit button.
+
+`ServerConfiguration.customTabs.tabStyle` is *not* part of this edit -- unlike `home`/`pending`, it's
+a standalone setting (see `tabStyleRow`/`TabStyleChanged`) that saves immediately on change, with no
+Edit/Save/Cancel of its own, since it's a single independent choice rather than a multi-field form.
 
 -}
 type alias CustomTabsEdit =
@@ -493,6 +500,33 @@ update shared targetHost maybeServer msg model =
             , Effect.none
             )
 
+        TabStyleChanged text ->
+            case ( CustomNav.navigationTabStyleFromText text, Common.adminAccountFor shared targetHost ) of
+                ( Just style, Just account ) ->
+                    ( model
+                    , AccountsPanel.updateServerConfig shared.accounts ( Just account.userId, targetHost ) (applyTabStyle style)
+                        |> Task.attempt GotTabStyleSaveResult
+                        |> Effect.fromCmd
+                    )
+
+                _ ->
+                    ( model, Effect.none )
+
+        GotTabStyleSaveResult (Ok ( maybeAccountsPanelMsg, newConfig )) ->
+            ( model
+            , Effect.batch
+                [ Common.accountsPanelEffect maybeAccountsPanelMsg
+                , Effect.fromShared (Shared.AccountsPanelMsg (AccountsPanel.GotServerConfigSaveResult targetHost newConfig))
+                ]
+            )
+
+        GotTabStyleSaveResult (Err _) ->
+            -- No dedicated error UI -- `tabStyleRow`'s `<select>` isn't part of any edit session
+            -- (see `TabStyleChanged`'s own doc), so there's no form/status to surface it on; a
+            -- failed save just leaves the nav showing whatever style the last successful save set,
+            -- same as picking a value and then losing connectivity before it lands.
+            ( model, Effect.none )
+
 
 {-| Reacts to a `Shared.Msg` forwarded through by the parent's own `SharedMsg` branch -- only the
 shared `Shared.MyMediaPanel` chooser (opened by `CustomTabChooseImageClicked`) reporting a tap
@@ -628,6 +662,21 @@ applyCustomTabs edit config =
     }
 
 
+{-| `TabStyleChanged`'s transform -- overlays just `tabStyle` onto a freshly re-fetched
+`ServerConfiguration`'s `customTabs`, leaving `home`/`tabs` untouched. Separate from
+`applyCustomTabs` because this setting saves immediately on every change (see `tabStyleRow`'s own
+doc), not as part of that editor's own Save/Cancel round-trip.
+-}
+applyTabStyle : NavigationTabStyle -> ServerConfiguration -> ServerConfiguration
+applyTabStyle style config =
+    let
+        existing : Proto.Rellm.CustomNavigationTabSet
+        existing =
+            Maybe.withDefault defaultCustomNavigationTabSet config.customTabs
+    in
+    { config | customTabs = Just { existing | tabStyle = style } }
+
+
 {-| `edit.pinnedPostIdsText`'s parse, at save time -- comma-separated (not also whitespace-separated
 like `ExternalCDNConfig.media_ipv4_allowlist`'s own CSV convention, since a Post id -- unlike an IP
 range -- isn't guaranteed never to contain a space), trimmed, and blank entries (an empty string, or
@@ -667,21 +716,63 @@ isn't a `CustomTabEntry` itself).
 -}
 view : RellmServer -> Maybe RellmAccount -> Model -> Html Msg
 view server maybeAdminAccount model =
-    div [ Html.Attributes.class "server-details-custom-tabs" ]
-        [ h3 [ classes [ "section-title" ] ] [ text "Navigation Tabs" ]
-        , case model.customTabsEdit of
-            Just edit ->
-                customTabsEditorView server edit
+    div []
+        [ div [ Html.Attributes.class "server-details-custom-tabs" ]
+            [ h3 [ classes [ "section-title" ] ] [ text "Navigation Tabs" ]
+            , case model.customTabsEdit of
+                Just edit ->
+                    customTabsEditorView server edit
 
-            Nothing ->
-                customTabsDisplayView server (CustomNav.effectiveTabs (RellmServers.configurationOf server).customTabs)
-        , case ( model.customTabsEdit, maybeAdminAccount ) of
-            ( Nothing, Just _ ) ->
-                button [ Html.Attributes.class "server-details-rename-button", onClick CustomTabsEditClicked ] [ text "Edit Tabs" ]
+                Nothing ->
+                    customTabsDisplayView server (CustomNav.effectiveTabs (RellmServers.configurationOf server).customTabs)
+            , case ( model.customTabsEdit, maybeAdminAccount ) of
+                ( Nothing, Just _ ) ->
+                    button [ Html.Attributes.class "server-details-rename-button", onClick CustomTabsEditClicked ] [ text "Edit Tabs" ]
 
-            _ ->
-                text ""
+                _ ->
+                    text ""
+            ]
+        , tabStyleRow server maybeAdminAccount
         ]
+
+
+{-| "Tab Style" -- the `NavigationTabStyle` picker for how `UI.headerNav` lays every tab out
+(icon-only/text-only/icon+text, see `UI.CustomNav.navigationTabStyleClass`). Its own section, below
+the whole "Navigation Tabs" one above (and unrelated to `model.customTabsEdit`) -- unlike
+`home`/`pending`, this is a single independent setting that saves immediately on change
+(`TabStyleChanged`), not a multi-field form with its own Edit/Save/Cancel. Just a live `<select>`
+for a server admin, or plain read-only text for everyone else.
+-}
+tabStyleRow : RellmServer -> Maybe RellmAccount -> Html Msg
+tabStyleRow server maybeAdminAccount =
+    let
+        currentStyle : NavigationTabStyle
+        currentStyle =
+            CustomNav.effectiveTabStyle (RellmServers.configurationOf server).customTabs
+    in
+    div [ Html.Attributes.class "server-details-setting" ]
+        [ Common.settingsRow "Tab Style"
+            (case maybeAdminAccount of
+                Just _ ->
+                    tabStyleSelect currentStyle
+
+                Nothing ->
+                    text (CustomNav.navigationTabStyleText currentStyle)
+            )
+        ]
+
+
+tabStyleSelect : NavigationTabStyle -> Html Msg
+tabStyleSelect currentStyle =
+    select [ onInput TabStyleChanged ]
+        (CustomNav.allNavigationTabStyles
+            |> List.map
+                (\style ->
+                    option
+                        [ value (CustomNav.navigationTabStyleText style), selected (style == currentStyle) ]
+                        [ text (CustomNav.navigationTabStyleText style) ]
+                )
+        )
 
 
 customTabsDisplayView : RellmServer -> List CustomNav.CustomTab -> Html Msg
