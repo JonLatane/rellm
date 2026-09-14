@@ -145,17 +145,20 @@ pub fn configure_server(
     }
 
     // `cluster_resources` is admin-visible but only *editable* with `EDIT_CLUSTER_SETTINGS` (see
-    // that permission's own doc). `conductor_state.locks` specifically is never settable via
+    // that permission's own doc). `conductor_state` as a whole is never *settable* via
     // `ConfigureServer` at all regardless of permission -- only `LockClusterResources`/
-    // `FreeClusterResources` ever mutate it (in place, outside this function's own versioned
-    // insert) -- but `conductor_state.limits` *is* editable here, same gating as the rest of
-    // `cluster_resources` (see `ClusterConductorState.limits`'s own doc). So this always
-    // overwrites whatever `to_db()` naively produced: without `EDIT_CLUSTER_SETTINGS`, the whole
-    // field is carried forward unchanged from the currently active config (ignoring the incoming
-    // request's copy of it entirely); with it, `namespace_id`/`conductor_host`/`limits` come from
-    // the request (blank `cluster_shared_secret` preserving the existing one, same write-only
-    // treatment as `FacebookAuthConfig.app_secret` above), but `locks` is still always carried
-    // forward from the active config.
+    // `FreeClusterResources` ever populate/mutate it (in place, outside this function's own
+    // versioned insert), and only on an instance actually acting as a conductor -- but
+    // `conductor_state.limits` *is* editable here, once that state already exists, same gating as
+    // the rest of `cluster_resources` (see `ClusterConductorState.limits`'s own doc). So this
+    // always overwrites whatever `to_db()` naively produced: without `EDIT_CLUSTER_SETTINGS`, the
+    // whole field is carried forward unchanged from the currently active config (ignoring the
+    // incoming request's copy of it entirely); with it, `namespace_id`/`conductor_host`/`limits`
+    // come from the request (blank `cluster_shared_secret` preserving the existing one, same
+    // write-only treatment as `FacebookAuthConfig.app_secret` above), but `conductor_state` itself
+    // is still always carried forward from the active config as a whole (`None` stays `None` --
+    // pointing `conductor_host` at some other instance doesn't make *this* one a conductor -- and
+    // `locks` is never touched even when `Some`).
     let existing_cluster_resources = get_server_configuration_model(conn)
         .ok()
         .and_then(|c| c.cluster_resources)
@@ -182,20 +185,24 @@ pub fn configure_server(
                 } else {
                     incoming.cluster_shared_secret.clone()
                 },
-                conductor_state: Some(protos::ClusterConductorState {
-                    locks: existing_conductor_state
-                        .as_ref()
-                        .map(|s| s.locks.clone())
-                        .unwrap_or_default(),
-                    limits: incoming
-                        .conductor_state
-                        .as_ref()
-                        .map(|s| s.limits.clone())
-                        .unwrap_or_else(|| {
-                            existing_conductor_state
-                                .map(|s| s.limits)
-                                .unwrap_or_default()
-                        }),
+                // `None` (not `Some(_::default())`) whenever this instance was never itself a
+                // conductor (`existing_conductor_state` unset) -- forcing `Some` here regardless,
+                // as this used to, populated `conductor_state` on every satellite the moment an
+                // admin merely pointed it *at* a conductor and saved, which `ClusterTab.elm`'s
+                // "Held Locks"/"Limits" sections take as "this instance IS the conductor" (see
+                // `ClusterResources.conductor_state`'s own doc: only `LockClusterResources`/
+                // `FreeClusterResources` -- i.e. actually being asked to broker a lock -- may
+                // populate it). `.limits` is still editable here, but only once this instance
+                // already has conductor state to edit.
+                conductor_state: existing_conductor_state.as_ref().map(|existing| {
+                    protos::ClusterConductorState {
+                        locks: existing.locks.clone(),
+                        limits: incoming
+                            .conductor_state
+                            .as_ref()
+                            .map(|s| s.limits.clone())
+                            .unwrap_or_else(|| existing.limits.clone()),
+                    }
                 }),
             })
             .unwrap()

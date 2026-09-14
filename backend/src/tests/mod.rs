@@ -1,6 +1,7 @@
 pub mod factories;
 
 mod bluesky_sync_tests;
+mod configure_server_cluster_resources_tests;
 mod configure_server_tests;
 mod contact_method_verification_tests;
 mod create_post_tests;
