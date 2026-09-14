@@ -3481,6 +3481,7 @@ starredPanel shared currentRoute =
             (currentStarredPostKey shared currentRoute)
             (currentStarredOccasionKey shared currentRoute)
             shared.panels.starredPanel
+            shared.mediaRenderer
         )
 
 

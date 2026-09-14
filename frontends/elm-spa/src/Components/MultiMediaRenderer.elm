@@ -26,6 +26,16 @@ a card's fixed-height layout has no room for a tall image gallery. Mirrors
 the Tamagui app's `post_media_renderer.tsx`, minus its embed-link
 (Twitter/Instagram/etc., which key off `Post.link` rather than `Post.media`)
 handling.
+
+`playState`/`onPlayClicked` are `Components.MediaRenderer`'s own click-to-play state/action,
+threaded straight through -- see its module doc (`playState` is read internally by
+`MediaRenderer.view` itself, not consulted here). `preloadVideo` isn't a parameter here: only the
+*first* item of `media` (by list position -- `media[0]`, the same "focus" item the single-item case
+above already treats specially) ever gets it, so a Post/Event with several videos never preloads
+more than one at a time; every other item gets a play-button-overlaid poster instead (when one's
+available). This holds across `view`/`preview`/`previewExtraSmall` alike -- the small strip
+thumbnails skip preloading exactly the same way the full gallery does.
+
 -}
 
 import Components.MediaRenderer as MediaRenderer
@@ -38,9 +48,9 @@ import Shared.AccountsPanel.RellmServers exposing (RellmServer)
 import UI.Classes exposing (classes)
 
 
-view : PostMediaLayout -> RellmServer -> Maybe RellmAccount -> (String -> msg) -> List MediaReference -> Html msg
-view layout server maybeAccount onImageClicked media =
-    render layout Nothing server maybeAccount onImageClicked media
+view : PostMediaLayout -> RellmServer -> Maybe RellmAccount -> MediaRenderer.Model -> (String -> msg) -> (String -> msg) -> List MediaReference -> Html msg
+view layout server maybeAccount playState onPlayClicked onImageClicked media =
+    render layout Nothing server maybeAccount playState onPlayClicked onImageClicked media
 
 
 {-| Same single-item-vs-scrolling-strip layout as `view`, just tighter
@@ -57,18 +67,18 @@ than falling through to `postCard`'s `.post-card-link-overlay` like
 `.post-card-meta`'s plain text does.
 
 -}
-preview : RellmServer -> Maybe RellmAccount -> (String -> msg) -> List MediaReference -> Html msg
-preview server maybeAccount onImageClicked media =
-    render MEDIALAYOUTSTANDARD (Just MediaRenderer.Small) server maybeAccount onImageClicked media
+preview : RellmServer -> Maybe RellmAccount -> MediaRenderer.Model -> (String -> msg) -> (String -> msg) -> List MediaReference -> Html msg
+preview server maybeAccount playState onPlayClicked onImageClicked media =
+    render MEDIALAYOUTSTANDARD (Just MediaRenderer.Small) server maybeAccount playState onPlayClicked onImageClicked media
 
 
 {-| Same as `preview`, just with `MediaRenderer.ExtraSmall` sizing (half the
 height of `preview`'s usual `Small`) -- for contexts even tighter on vertical
 space than an ordinary post card, e.g. `Shared.StarredPanel`'s post rows.
 -}
-previewExtraSmall : RellmServer -> Maybe RellmAccount -> (String -> msg) -> List MediaReference -> Html msg
-previewExtraSmall server maybeAccount onImageClicked media =
-    render MEDIALAYOUTSTANDARD (Just MediaRenderer.ExtraSmall) server maybeAccount onImageClicked media
+previewExtraSmall : RellmServer -> Maybe RellmAccount -> MediaRenderer.Model -> (String -> msg) -> (String -> msg) -> List MediaReference -> Html msg
+previewExtraSmall server maybeAccount playState onPlayClicked onImageClicked media =
+    render MEDIALAYOUTSTANDARD (Just MediaRenderer.ExtraSmall) server maybeAccount playState onPlayClicked onImageClicked media
 
 
 {-| `Nothing` renders full-size (`view`); `Just sizing` renders as a preview
@@ -90,8 +100,8 @@ ratio, rather than each capped independently and so varying in width across
 the strip.
 
 -}
-render : PostMediaLayout -> Maybe MediaRenderer.MediaSize -> RellmServer -> Maybe RellmAccount -> (String -> msg) -> List MediaReference -> Html msg
-render layout previewSizing server maybeAccount onImageClicked media =
+render : PostMediaLayout -> Maybe MediaRenderer.MediaSize -> RellmServer -> Maybe RellmAccount -> MediaRenderer.Model -> (String -> msg) -> (String -> msg) -> List MediaReference -> Html msg
+render layout previewSizing server maybeAccount playState onPlayClicked onImageClicked media =
     let
         previewClasses : List String
         previewClasses =
@@ -114,7 +124,7 @@ render layout previewSizing server maybeAccount onImageClicked media =
             in
             div [ classes ("multi-media-single" :: previewClasses) ]
                 [ div [ class "multi-media-single-item" ]
-                    [ MediaRenderer.view singleSizing MediaRenderer.ToWidthAndHeight server maybeAccount onImageClicked single ]
+                    [ MediaRenderer.view singleSizing MediaRenderer.ToWidthAndHeight server maybeAccount True playState onPlayClicked onImageClicked single ]
                 ]
 
         _ ->
@@ -122,10 +132,10 @@ render layout previewSizing server maybeAccount onImageClicked media =
                 ( MEDIALAYOUTDYNAMICVERTICALSCROLL, Nothing ) ->
                     div [ classes ("multi-media-gallery" :: previewClasses) ]
                         (media
-                            |> List.map
-                                (\mediaRef ->
+                            |> List.indexedMap
+                                (\index mediaRef ->
                                     div [ class "multi-media-gallery-item" ]
-                                        [ MediaRenderer.view MediaRenderer.Natural MediaRenderer.ToWidthAndHeight server maybeAccount onImageClicked mediaRef ]
+                                        [ MediaRenderer.view MediaRenderer.Natural MediaRenderer.ToWidthAndHeight server maybeAccount (index == 0) playState onPlayClicked onImageClicked mediaRef ]
                                 )
                         )
 
@@ -137,9 +147,9 @@ render layout previewSizing server maybeAccount onImageClicked media =
                     in
                     div [ classes ("multi-media-strip" :: previewClasses) ]
                         (media
-                            |> List.map
-                                (\mediaRef ->
+                            |> List.indexedMap
+                                (\index mediaRef ->
                                     div [ class "multi-media-item" ]
-                                        [ MediaRenderer.view stripSizing MediaRenderer.ToHeight server maybeAccount onImageClicked mediaRef ]
+                                        [ MediaRenderer.view stripSizing MediaRenderer.ToHeight server maybeAccount (index == 0) playState onPlayClicked onImageClicked mediaRef ]
                                 )
                         )

@@ -45,6 +45,7 @@ route's `id` or `id@host` segment.
 -}
 
 import Components.Authors as Authors
+import Components.MediaRenderer as MediaRenderer
 import Components.Markdown as Markdown
 import Components.MultiMediaRenderer as MultiMediaRenderer
 import Components.SyncDestinations as SyncDestinations
@@ -677,21 +678,21 @@ push/delete controls render nowhere else. Ignored entirely by the `REPLY` fallba
 below -- a reply is never synced to anything.
 
 -}
-postCard : SharedTime.Model -> String -> String -> String -> Maybe RellmServer -> Maybe RellmAccount -> (String -> msg) -> Bool -> Bool -> Bool -> Maybe msg -> Bool -> Maybe (List SyncDestination) -> (String -> Bool) -> (String -> Maybe String) -> (String -> msg) -> (String -> String -> msg) -> Post -> Html msg
-postCard time basePath viewingServerHost postServerHost maybeServer maybeAccount onMediaClicked extraSmallMedia current starred onStarClicked showSyncDestinations availableSyncDestinations isPushing pushError onPush onDelete post =
+postCard : SharedTime.Model -> String -> String -> String -> Maybe RellmServer -> Maybe RellmAccount -> (String -> msg) -> MediaRenderer.Model -> (String -> msg) -> Bool -> Bool -> Bool -> Maybe msg -> Bool -> Maybe (List SyncDestination) -> (String -> Bool) -> (String -> Maybe String) -> (String -> msg) -> (String -> String -> msg) -> Post -> Html msg
+postCard time basePath viewingServerHost postServerHost maybeServer maybeAccount onMediaClicked mediaPlayState onMediaPlayClicked extraSmallMedia current starred onStarClicked showSyncDestinations availableSyncDestinations isPushing pushError onPush onDelete post =
     if post.context == REPLY then
-        replyCard basePath viewingServerHost postServerHost maybeServer maybeAccount onMediaClicked 0 True False False Nothing Nothing Nothing post
+        replyCard basePath viewingServerHost postServerHost maybeServer maybeAccount onMediaClicked mediaPlayState onMediaPlayClicked 0 True False False Nothing Nothing Nothing post
 
     else
-        postCardView time basePath viewingServerHost postServerHost maybeServer maybeAccount onMediaClicked extraSmallMedia current starred onStarClicked showSyncDestinations availableSyncDestinations isPushing pushError onPush onDelete post
+        postCardView time basePath viewingServerHost postServerHost maybeServer maybeAccount onMediaClicked mediaPlayState onMediaPlayClicked extraSmallMedia current starred onStarClicked showSyncDestinations availableSyncDestinations isPushing pushError onPush onDelete post
 
 
 {-| The plain (non-`REPLY`) rendering `postCard` falls back to -- see its own
 doc comment above for why `REPLY` posts instead defer entirely to
 `replyCard`.
 -}
-postCardView : SharedTime.Model -> String -> String -> String -> Maybe RellmServer -> Maybe RellmAccount -> (String -> msg) -> Bool -> Bool -> Bool -> Maybe msg -> Bool -> Maybe (List SyncDestination) -> (String -> Bool) -> (String -> Maybe String) -> (String -> msg) -> (String -> String -> msg) -> Post -> Html msg
-postCardView time basePath viewingServerHost postServerHost maybeServer maybeAccount onMediaClicked extraSmallMedia current starred onStarClicked showSyncDestinations availableSyncDestinations isPushing pushError onPush onDelete post =
+postCardView : SharedTime.Model -> String -> String -> String -> Maybe RellmServer -> Maybe RellmAccount -> (String -> msg) -> MediaRenderer.Model -> (String -> msg) -> Bool -> Bool -> Bool -> Maybe msg -> Bool -> Maybe (List SyncDestination) -> (String -> Bool) -> (String -> Maybe String) -> (String -> msg) -> (String -> String -> msg) -> Post -> Html msg
+postCardView time basePath viewingServerHost postServerHost maybeServer maybeAccount onMediaClicked mediaPlayState onMediaPlayClicked extraSmallMedia current starred onStarClicked showSyncDestinations availableSyncDestinations isPushing pushError onPush onDelete post =
     div
         [ classes
             ([ "post-card"
@@ -737,10 +738,10 @@ postCardView time basePath viewingServerHost postServerHost maybeServer maybeAcc
         , case maybeServer of
             Just server ->
                 if extraSmallMedia then
-                    MultiMediaRenderer.previewExtraSmall server maybeAccount onMediaClicked post.media
+                    MultiMediaRenderer.previewExtraSmall server maybeAccount mediaPlayState onMediaPlayClicked onMediaClicked post.media
 
                 else
-                    MultiMediaRenderer.preview server maybeAccount onMediaClicked post.media
+                    MultiMediaRenderer.preview server maybeAccount mediaPlayState onMediaPlayClicked onMediaClicked post.media
 
             Nothing ->
                 text ""
@@ -819,6 +820,8 @@ replyCard :
     -> Maybe RellmServer
     -> Maybe RellmAccount
     -> (String -> msg)
+    -> MediaRenderer.Model
+    -> (String -> msg)
     -> Int
     -> Bool
     -> Bool
@@ -828,7 +831,7 @@ replyCard :
     -> Maybe msg
     -> Post
     -> Html msg
-replyCard basePath viewingServerHost postServerHost maybeServer maybeAccount onMediaClicked depth loaded loading collapsed onReplyClicked onLoadRepliesClicked onToggleCollapsedClicked post =
+replyCard basePath viewingServerHost postServerHost maybeServer maybeAccount onMediaClicked mediaPlayState onMediaPlayClicked depth loaded loading collapsed onReplyClicked onLoadRepliesClicked onToggleCollapsedClicked post =
     div
         [ class "post-reply-item"
         , style "margin-left" (String.fromInt (min depth 8 * 20) ++ "px")
@@ -854,7 +857,7 @@ replyCard basePath viewingServerHost postServerHost maybeServer maybeAccount onM
             ]
         , case maybeServer of
             Just server ->
-                MultiMediaRenderer.previewExtraSmall server maybeAccount onMediaClicked post.media
+                MultiMediaRenderer.previewExtraSmall server maybeAccount mediaPlayState onMediaPlayClicked onMediaClicked post.media
 
             Nothing ->
                 text ""
@@ -1000,8 +1003,8 @@ untouched by this flag -- `Authors.link`/`MultiMediaRenderer.view` still get the
 private/limited media and author badges keep working normally; only the edit-gating call sites above
 are skipped.
 -}
-postDetail : SharedTime.Model -> String -> String -> String -> Maybe RellmServer -> Maybe RellmAccount -> (String -> msg) -> Bool -> msg -> Maybe msg -> (String -> msg) -> Bool -> Maybe msg -> msg -> Html msg -> Html msg -> Maybe (List SyncDestination) -> (String -> Bool) -> (String -> Maybe String) -> (String -> msg) -> (String -> String -> msg) -> Post -> Html msg
-postDetail time basePath viewingServerHost postServerHost maybeServer maybeAccount onMediaClicked readOnly onMediaEditClicked onGenerateMediaClicked onMediaLayoutChanged starred onStarClicked onEditClicked visibilityView moderationView availableSyncDestinations isPushing pushError onPush onDelete post =
+postDetail : SharedTime.Model -> String -> String -> String -> Maybe RellmServer -> Maybe RellmAccount -> (String -> msg) -> MediaRenderer.Model -> (String -> msg) -> Bool -> msg -> Maybe msg -> (String -> msg) -> Bool -> Maybe msg -> msg -> Html msg -> Html msg -> Maybe (List SyncDestination) -> (String -> Bool) -> (String -> Maybe String) -> (String -> msg) -> (String -> String -> msg) -> Post -> Html msg
+postDetail time basePath viewingServerHost postServerHost maybeServer maybeAccount onMediaClicked mediaPlayState onMediaPlayClicked readOnly onMediaEditClicked onGenerateMediaClicked onMediaLayoutChanged starred onStarClicked onEditClicked visibilityView moderationView availableSyncDestinations isPushing pushError onPush onDelete post =
     div [ classes [ "post-detail", hostnameToCSSClass postServerHost, "border-color-primary-anchor-50" ] ]
         [ div [ class "post-detail-title-row" ]
             [ if post.context == POST then
@@ -1043,7 +1046,7 @@ postDetail time basePath viewingServerHost postServerHost maybeServer maybeAccou
         , case maybeServer of
             Just server ->
                 div []
-                    [ MultiMediaRenderer.view post.postMediaLayout server maybeAccount onMediaClicked post.media
+                    [ MultiMediaRenderer.view post.postMediaLayout server maybeAccount mediaPlayState onMediaPlayClicked onMediaClicked post.media
                     , if readOnly then
                         text ""
 

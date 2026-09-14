@@ -26,6 +26,7 @@ the calling page's own `Request`.
 import Browser.Navigation
 import Components.AIProviders as AIProviders
 import Components.PostReplies as PostReplies
+import Components.MediaRenderer as MediaRenderer
 import Components.Posts as Posts
 import Components.ServerDependentView as ServerDependentView
 import Components.SyncDestinations as SyncDestinations
@@ -879,6 +880,10 @@ postDetailView shared model post =
         onMediaClicked mediaId =
             MediaClicked displayPost mediaId
 
+        onMediaPlayClicked : String -> Msg
+        onMediaPlayClicked mediaId =
+            SharedMsg (Shared.MediaRendererMsg (MediaRenderer.PlayClicked mediaId))
+
         -- `Nothing` when the viewer has no image-capable `AIModel` at all -- see
         -- `Posts.generateMediaButton`'s own doc on why this decision lives at the call site rather
         -- than inside `Components.Posts`.
@@ -902,6 +907,8 @@ postDetailView shared model post =
         maybeServer
         maybeAccount
         onMediaClicked
+        shared.mediaRenderer
+        onMediaPlayClicked
         False
         (MediaEditClicked displayPost)
         onGenerateMediaClicked
@@ -1125,6 +1132,8 @@ repliesView shared model =
                 , maybeServer = RellmServers.rellmServerForHost shared.accounts.servers model.targetHost
                 , maybeAccount = RellmAccounts.enabledRellmAccountForServer shared.accounts.accounts model.targetHost
                 , onMediaClicked = MediaClicked
+                , mediaPlayState = shared.mediaRenderer
+                , onMediaPlayClicked = \mediaId -> SharedMsg (Shared.MediaRendererMsg (MediaRenderer.PlayClicked mediaId))
                 , onReplyClicked = ReplyClicked
                 , toMsg = PostRepliesMsg
                 }

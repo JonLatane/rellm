@@ -25,6 +25,7 @@ and the Starred panel already do for their own (non-nested) post lists.
 -}
 
 import Animation
+import Components.MediaRenderer as MediaRenderer
 import Components.Posts as Posts
 import Dict exposing (Dict)
 import Effect exposing (Effect)
@@ -257,6 +258,8 @@ view :
     , maybeServer : Maybe RellmServer
     , maybeAccount : Maybe RellmAccount
     , onMediaClicked : Post -> String -> msg
+    , mediaPlayState : MediaRenderer.Model
+    , onMediaPlayClicked : String -> msg
     , onReplyClicked : Post -> msg
     , toMsg : Msg -> msg
     }
@@ -300,6 +303,8 @@ replyAnimationView :
         , maybeServer : Maybe RellmServer
         , maybeAccount : Maybe RellmAccount
         , onMediaClicked : Post -> String -> msg
+        , mediaPlayState : MediaRenderer.Model
+        , onMediaPlayClicked : String -> msg
         , onReplyClicked : Post -> msg
         , toMsg : Msg -> msg
     }
@@ -338,6 +343,8 @@ replyAnimationView config model ( depth, post, flip ) =
                 config.maybeServer
                 config.maybeAccount
                 (config.onMediaClicked post)
+                config.mediaPlayState
+                config.onMediaPlayClicked
                 (depth - 1)
                 loaded
                 loading

@@ -3235,6 +3235,10 @@ eventCardView shared embeddedPage current showSyncSources showSyncDestinations a
                 Nothing ->
                     SharedMsg Shared.NoOp
 
+        onMediaPlayClicked : String -> Msg
+        onMediaPlayClicked mediaId =
+            SharedMsg (Shared.MediaRendererMsg (MediaRenderer.PlayClicked mediaId))
+
         displayOccasion : Occasion
         displayOccasion =
             case occasion.post of
@@ -3300,6 +3304,8 @@ eventCardView shared embeddedPage current showSyncSources showSyncDestinations a
         maybeServer
         maybeAccount
         onMediaClicked
+        shared.mediaRenderer
+        onMediaPlayClicked
         mediaSizing
         starred
         onStarClicked

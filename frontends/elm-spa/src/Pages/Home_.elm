@@ -76,6 +76,7 @@ scratch.
 
 -}
 
+import Components.MediaRenderer as MediaRenderer
 import Components.PinnedPosts as PinnedPosts
 import Components.Pages.EventsPage as EventsPage
 import Components.Pages.PostPage as PostPage
@@ -654,6 +655,8 @@ pinnedPostsView shared pinnedPosts =
         , isStarred = \post -> StarredPanel.isStarred host post shared.panels.starredPanel
         , onStarClicked = \post -> StarredPanel.toggleStarMsg shared.accounts host post |> Maybe.map (Shared.StarredPanelMsg >> SharedMsg)
         , onMediaClicked = \post mediaId -> SharedMsg (Shared.MediaViewerPanelMsg (MediaViewerPanel.Open post.media (Just post) mediaId host))
+        , mediaPlayState = shared.mediaRenderer
+        , onMediaPlayClicked = \mediaId -> SharedMsg (Shared.MediaRendererMsg (MediaRenderer.PlayClicked mediaId))
         , freshenPost = \post -> StarredPanel.freshestPost host post shared.panels.starredPanel
         , noOp = NoOp
         , toMsg = PinnedPostsMsg

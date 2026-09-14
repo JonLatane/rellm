@@ -146,6 +146,11 @@ type Msg
     | FinishUnstar String
     | AnimateItemFlip Animation.Msg
     | MediaClicked String Post String
+      -- A starred post/occasion's video preview play button tapped -- see `Components.MediaRenderer`'s
+      -- own "Click-to-play video previews" doc. Same forwarding convention as `MediaClicked`
+      -- above (this module doesn't own the actual click-to-play state, `Shared.Model.mediaRenderer`
+      -- does) -- `sendUpdate` no-ops it, `update` surfaces it via the 3rd escape-hatch slot below.
+    | MediaRendererMsg MediaRenderer.Msg
     | StarredPostsBroadcastReceived Decode.Value
     | PostUpdated String Post
       -- Unreachable placeholder passed as `Events.eventCard`'s/`Posts.postCard`'s
@@ -283,7 +288,7 @@ computed directly from `msg` here rather than from `sendUpdate`'s result,
 since there's no `Model` state involved.
 
 -}
-update : AccountsPanel.Model -> Msg -> Model -> ( Model, Cmd Msg, ( Maybe AccountsPanel.Msg, Maybe MediaViewerPanel.Msg ) )
+update : AccountsPanel.Model -> Msg -> Model -> ( Model, Cmd Msg, ( Maybe AccountsPanel.Msg, Maybe MediaViewerPanel.Msg, Maybe MediaRenderer.Msg ) )
 update accountsPanelModel msg model =
     let
         ( newModel, cmd, maybeAccountsPanelMsg ) =
@@ -297,8 +302,17 @@ update accountsPanelModel msg model =
 
                 _ ->
                     Nothing
+
+        maybeMediaRendererMsg : Maybe MediaRenderer.Msg
+        maybeMediaRendererMsg =
+            case msg of
+                MediaRendererMsg subMsg ->
+                    Just subMsg
+
+                _ ->
+                    Nothing
     in
-    ( syncItemAnimations newModel, cmd, ( maybeAccountsPanelMsg, maybeMediaViewerPanelMsg ) )
+    ( syncItemAnimations newModel, cmd, ( maybeAccountsPanelMsg, maybeMediaViewerPanelMsg, maybeMediaRendererMsg ) )
 
 
 sendUpdate : AccountsPanel.Model -> Msg -> Model -> ( Model, Cmd Msg, Maybe AccountsPanel.Msg )
@@ -709,6 +723,11 @@ sendUpdate accountsPanelModel msg model =
             -- touch this module's `Model`, so nothing to do here.
             ( model, Cmd.none, Nothing )
 
+        MediaRendererMsg _ ->
+            -- Handled by `update`, above -- see its own doc comment. The actual click-to-play
+            -- state lives in `Shared.Model.mediaRenderer`, not here.
+            ( model, Cmd.none, Nothing )
+
         -- A page that owns `post` fully saved a new copy of it (see
         -- `freshestPost`'s doc) -- only overwrites an existing cache entry,
         -- never creates one, since a `Post` that was never starred/fetched
@@ -985,8 +1004,8 @@ directly -- unlike those other panels' view code, which lives in `UI.elm`
 itself and so can reach `Shared.Msg` freely, this one can't (`Shared` imports
 `Shared.StarredPanel`, so the reverse import would be a cycle).
 -}
-view : SharedTime.Model -> String -> AccountsPanel.Model -> Maybe String -> Maybe String -> Model -> Html Msg
-view time basePath accountsPanelModel currentPostKey currentOccasionId model =
+view : SharedTime.Model -> String -> AccountsPanel.Model -> Maybe String -> Maybe String -> Model -> MediaRenderer.Model -> Html Msg
+view time basePath accountsPanelModel currentPostKey currentOccasionId model mediaRendererModel =
     let
         stateClass : String
         stateClass =
@@ -1022,7 +1041,7 @@ view time basePath accountsPanelModel currentPostKey currentOccasionId model =
                     [ Html.Keyed.node "div"
                         [ classes [ "starred-panel-list", "flip-animated-column" ] ]
                         (List.indexedMap
-                            (\index key -> ( key, starredPostRowFlip time basePath accountsPanelModel currentPostKey currentOccasionId model count index key ))
+                            (\index key -> ( key, starredPostRowFlip time basePath accountsPanelModel currentPostKey currentOccasionId model mediaRendererModel count index key ))
                             model.starOrder
                         )
                     ]
@@ -1035,8 +1054,8 @@ view time basePath accountsPanelModel currentPostKey currentOccasionId model =
 `starAnimations`/`UI.Flip`), same two-layer reasoning as `UI.accountRowFlip`
 (fade/collapse here vs. `starredPostRow`'s own, independent reorder-slide).
 -}
-starredPostRowFlip : SharedTime.Model -> String -> AccountsPanel.Model -> Maybe String -> Maybe String -> Model -> Int -> Int -> String -> Html Msg
-starredPostRowFlip time basePath accountsPanelModel currentPostKey currentOccasionId model count index key =
+starredPostRowFlip : SharedTime.Model -> String -> AccountsPanel.Model -> Maybe String -> Maybe String -> Model -> MediaRenderer.Model -> Int -> Int -> String -> Html Msg
+starredPostRowFlip time basePath accountsPanelModel currentPostKey currentOccasionId model mediaRendererModel count index key =
     let
         flipState : UI.Flip.State Msg
         flipState =
@@ -1055,15 +1074,15 @@ starredPostRowFlip time basePath accountsPanelModel currentPostKey currentOccasi
                 []
     in
     div (UI.Flip.itemAttributes UI.Flip.Vertical flipState isMoving)
-        [ div pointerEventsAttr [ starredPostRow time basePath accountsPanelModel currentPostKey currentOccasionId model count index key ] ]
+        [ div pointerEventsAttr [ starredPostRow time basePath accountsPanelModel currentPostKey currentOccasionId model mediaRendererModel count index key ] ]
 
 
 {-| Wraps `starredPostView`'s content with `UI.Flip`'s slide-on-reorder
 transform and the up/down reorder buttons -- mirrors `UI.accountRow`'s
 equivalent for Accounts.
 -}
-starredPostRow : SharedTime.Model -> String -> AccountsPanel.Model -> Maybe String -> Maybe String -> Model -> Int -> Int -> String -> Html Msg
-starredPostRow time basePath accountsPanelModel currentPostKey currentOccasionId model count index key =
+starredPostRow : SharedTime.Model -> String -> AccountsPanel.Model -> Maybe String -> Maybe String -> Model -> MediaRenderer.Model -> Int -> Int -> String -> Html Msg
+starredPostRow time basePath accountsPanelModel currentPostKey currentOccasionId model mediaRendererModel count index key =
     let
         moveAttrs : List (Html.Attribute Msg)
         moveAttrs =
@@ -1083,16 +1102,16 @@ starredPostRow time basePath accountsPanelModel currentPostKey currentOccasionId
             , canMoveUp = index > 0
             , canMoveDown = index < count - 1
             }
-        , starredPostView time basePath accountsPanelModel currentPostKey currentOccasionId model key
+        , starredPostView time basePath accountsPanelModel currentPostKey currentOccasionId model mediaRendererModel key
         ]
 
 
-starredPostView : SharedTime.Model -> String -> AccountsPanel.Model -> Maybe String -> Maybe String -> Model -> String -> Html Msg
-starredPostView time basePath accountsPanelModel currentPostKey currentOccasionId model key =
+starredPostView : SharedTime.Model -> String -> AccountsPanel.Model -> Maybe String -> Maybe String -> Model -> MediaRenderer.Model -> String -> Html Msg
+starredPostView time basePath accountsPanelModel currentPostKey currentOccasionId model mediaRendererModel key =
     case Dict.get key model.posts of
         Just (PostFetchLoaded host post) ->
             if post.context == OCCASION then
-                starredOccasionView time basePath accountsPanelModel currentOccasionId model key host post
+                starredOccasionView time basePath accountsPanelModel currentOccasionId model mediaRendererModel key host post
 
             else
                 let
@@ -1119,6 +1138,10 @@ starredPostView time basePath accountsPanelModel currentPostKey currentOccasionI
                     onMediaClicked : String -> Msg
                     onMediaClicked mediaId =
                         MediaClicked host post mediaId
+
+                    onMediaPlayClicked : String -> Msg
+                    onMediaPlayClicked mediaId =
+                        MediaRendererMsg (MediaRenderer.PlayClicked mediaId)
                 in
                 div [ class "starred-post-entry" ]
                     [ case Posts.postContextLabel post.context of
@@ -1127,7 +1150,7 @@ starredPostView time basePath accountsPanelModel currentPostKey currentOccasionI
 
                         Nothing ->
                             text ""
-                    , Posts.postCard time basePath accountsPanelModel.mainFrontendHost host maybeServer maybeAccount onMediaClicked True current starred onStarClicked False Nothing (\_ -> False) (\_ -> Nothing) (\_ -> NoOp) (\_ _ -> NoOp) post
+                    , Posts.postCard time basePath accountsPanelModel.mainFrontendHost host maybeServer maybeAccount onMediaClicked mediaRendererModel onMediaPlayClicked True current starred onStarClicked False Nothing (\_ -> False) (\_ -> Nothing) (\_ -> NoOp) (\_ _ -> NoOp) post
                     ]
 
         Just FetchingPost ->
@@ -1195,8 +1218,8 @@ which updates `model.posts` directly) shows immediately without waiting on a
 whole fresh `GetEvents` round-trip, mirroring
 `Components.Pages.EventsPage.eventCardView`'s own `displayOccasion` swap.
 -}
-starredOccasionView : SharedTime.Model -> String -> AccountsPanel.Model -> Maybe String -> Model -> String -> String -> Post -> Html Msg
-starredOccasionView time basePath accountsPanelModel currentOccasionId model key host post =
+starredOccasionView : SharedTime.Model -> String -> AccountsPanel.Model -> Maybe String -> Model -> MediaRenderer.Model -> String -> String -> Post -> Html Msg
+starredOccasionView time basePath accountsPanelModel currentOccasionId model mediaRendererModel key host post =
     case Dict.get key model.events of
         Just (EventFetchLoaded event occasion) ->
             let
@@ -1232,6 +1255,10 @@ starredOccasionView time basePath accountsPanelModel currentOccasionId model key
 
                         Nothing ->
                             MediaClicked host post mediaId
+
+                onMediaPlayClicked : String -> Msg
+                onMediaPlayClicked mediaId =
+                    MediaRendererMsg (MediaRenderer.PlayClicked mediaId)
             in
             div [ class "starred-post-entry" ]
                 [ case Posts.postContextLabel post.context of
@@ -1240,7 +1267,7 @@ starredOccasionView time basePath accountsPanelModel currentOccasionId model key
 
                     Nothing ->
                         text ""
-                , Events.eventCard time basePath accountsPanelModel.mainFrontendHost host maybeServer maybeAccount onMediaClicked MediaRenderer.ExtraSmall starred onStarClicked current False False Nothing (\_ -> False) (\_ -> Nothing) (\_ -> NoOp) (\_ _ -> NoOp) event displayOccasion
+                , Events.eventCard time basePath accountsPanelModel.mainFrontendHost host maybeServer maybeAccount onMediaClicked mediaRendererModel onMediaPlayClicked MediaRenderer.ExtraSmall starred onStarClicked current False False Nothing (\_ -> False) (\_ -> Nothing) (\_ -> NoOp) (\_ _ -> NoOp) event displayOccasion
                 ]
 
         Just FetchingEvent ->

@@ -299,6 +299,13 @@ view :
     , onStarClicked : Post -> Maybe msg
     , onMediaClicked : Post -> String -> msg
 
+    -- `Components.MediaRenderer`'s own click-to-play state/action -- see its module doc.
+    -- `mediaPlayState` is just `shared.mediaRenderer`, passed straight through the same way
+    -- `isStarred`/`onStarClicked` are built from `Shared.StarredPanel`'s state, since this module
+    -- can't reach `Shared.Model` itself either (it only ever sees the pieces `config` hands it).
+    , mediaPlayState : MediaRenderer.Model
+    , onMediaPlayClicked : String -> msg
+
     -- Overlays a pinned post's freshest known copy before rendering -- typically
     -- `Shared.StarredPanel.freshestPost`, so a just-toggled star's updated count shows immediately
     -- without waiting on a fresh fetch, mirroring `Components.Pages.PostsPage.postCardView`'s/
@@ -360,6 +367,8 @@ pinnedPostView :
         , isStarred : Post -> Bool
         , onStarClicked : Post -> Maybe msg
         , onMediaClicked : Post -> String -> msg
+        , mediaPlayState : MediaRenderer.Model
+        , onMediaPlayClicked : String -> msg
         , freshenPost : Post -> Post
         , noOp : msg
     }
@@ -388,6 +397,8 @@ pinnedPostView config model postId =
                             config.maybeServer
                             config.maybeAccount
                             (config.onMediaClicked post)
+                            config.mediaPlayState
+                            config.onMediaPlayClicked
                             True
                             config.noOp
                             Nothing
@@ -426,6 +437,8 @@ pinnedOccasionView :
         , isStarred : Post -> Bool
         , onStarClicked : Post -> Maybe msg
         , onMediaClicked : Post -> String -> msg
+        , mediaPlayState : MediaRenderer.Model
+        , onMediaPlayClicked : String -> msg
         , freshenPost : Post -> Post
         , noOp : msg
     }
@@ -455,6 +468,8 @@ pinnedOccasionView config model postId rawPost =
                         config.maybeServer
                         config.maybeAccount
                         (config.onMediaClicked post)
+                        config.mediaPlayState
+                        config.onMediaPlayClicked
                         MediaRenderer.ExtraSmall
                         (config.isStarred post)
                         (config.onStarClicked post)

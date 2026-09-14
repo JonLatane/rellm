@@ -32,6 +32,7 @@ left of the trail on `FromPost`/`FromEvent` roots whenever `Model.host` isn't
 -}
 
 import Components.Authors as Authors
+import Components.MediaRenderer as MediaRenderer
 import Components.Markdown as Markdown
 import Components.MultiMediaRenderer as MultiMediaRenderer
 import Components.Posts as Posts
@@ -470,7 +471,7 @@ replyCardView basePath accountsPanelModel model post =
             ]
         , case maybeServer of
             Just server ->
-                MultiMediaRenderer.previewExtraSmall server maybeAccount (\_ -> NoOp) post.media
+                MultiMediaRenderer.previewExtraSmall server maybeAccount MediaRenderer.init (\_ -> NoOp) (\_ -> NoOp) post.media
 
             Nothing ->
                 text ""
