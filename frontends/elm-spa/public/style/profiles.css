@@ -183,6 +183,10 @@
   margin: 0.5rem 0;
 }
 
+.profile-meta .profile-edit-button {
+  margin-left: 3px;
+}
+
 .profile-counts {
   display: flex;
   flex-wrap: wrap;
@@ -490,14 +494,23 @@
   font-size: 0.8rem;
 }
 
-/* Shared.SyncSourcesPanel, embedded on UserProfilePage below permissions. */
-
+/* Shared.SyncSourcesPanel, embedded on UserProfilePage below permissions. `display: flex` here
+   means this wrapper's own margin can't collapse with its `.section-title` h2 child (flex items
+   never collapse margins), so its header's `margin: 0.8rem 0 0.4rem` (`.section-title`, main.css)
+   would get trapped inside instead of collapsing with the next section like it does for the
+   plain-`div` expandable sections (Permissions/Media Storage) -- roughly doubling the gap around
+   it. Zeroing the header's own margin here and moving the same 0.8rem/0.4rem onto this wrapper
+   (below) puts it back in a normal collapsing context, so every section -- flex or plain div --
+   ends up spaced the same. */
 .sync-sources-section {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-  margin-top: 8px;
-  margin-bottom: 16px;
+  margin: 0.8rem 0 0.4rem;
+}
+
+.sync-sources-section > .expandable-section-title {
+  margin: 0;
 }
 
 .sync-sources-list {
@@ -578,12 +591,17 @@
 
 /* Components.SyncDestinations, embedded on UserProfilePage below Sync Sources. */
 
+/* See `.sync-sources-section`'s own comment above -- same flex-vs-margin-collapse gotcha and
+   same fix (header's margin zeroed and moved onto this wrapper). */
 .sync-destinations-section {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-  margin-top: 8px;
-  margin-bottom: 16px;
+  margin: 0.8rem 0 0.4rem;
+}
+
+.sync-destinations-section > .expandable-section-title {
+  margin: 0;
 }
 
 .sync-destinations-list {
@@ -678,12 +696,18 @@
 
 /* Components.AIProviders, embedded on UserProfilePage below Sync Destinations. */
 
+/* Shared by both `aiProvidersSection` ("AI Providers") and `aiProviderGrantedSection` ("AI Model
+   Access"). See `.sync-sources-section`'s own comment above -- same flex-vs-margin-collapse
+   gotcha and same fix (header's margin zeroed and moved onto this wrapper). */
 .ai-model-providers-section {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-  margin-top: 8px;
-  margin-bottom: 16px;
+  margin: 0.8rem 0 0.4rem;
+}
+
+.ai-model-providers-section > .expandable-section-title {
+  margin: 0;
 }
 
 .ai-model-providers-list {
