@@ -1295,8 +1295,14 @@ sharedUpdate req msg model =
 
                 ( openedModel, openCmd ) =
                     sharedUpdate req (MyMediaPanelMsg (MyMediaPanel.Open Nothing host)) enabledModel
+
+                -- The avatar menu (`UI.accountAvatarMenuView`) this "Media" click came from is now
+                -- superseded by the panel it just opened -- collapse it too, rather than leaving the
+                -- row sitting expanded behind `MyMediaPanel`.
+                ( closedPopoverModel, closePopoverCmd ) =
+                    sharedUpdate req (AccountsPanelMsg AccountsPanel.CloseFocusedAccount) openedModel
             in
-            ( openedModel, Cmd.batch [ enableCmd, openCmd ] )
+            ( closedPopoverModel, Cmd.batch [ enableCmd, openCmd, closePopoverCmd ] )
 
         MessagingPanelMsg subMsg ->
             let
