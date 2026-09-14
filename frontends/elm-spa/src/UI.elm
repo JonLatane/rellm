@@ -1506,7 +1506,7 @@ recommendedServersStrip shared =
               else
                 div [ class "recommended-servers-strip" ]
                     (List.map (recommendedServerChip shared) recommendedRellmServers
-                        ++ List.map (recommendedMastodonServerChip shared) recommendedMastodonServers
+                        ++ List.map recommendedMastodonServerChip recommendedMastodonServers
                     )
             ]
 
@@ -1558,8 +1558,8 @@ needs), and clicking it just adds a no-login browsed feed for it
 `BrowseMastodonInstanceClicked`'s own form -- unrelated to `mastodonConnectButton`'s OAuth "Connect
 Account" flow, so there's no `appId` to gate on here.
 -}
-recommendedMastodonServerChip : Shared.Model -> MastodonServer -> Html Shared.Msg
-recommendedMastodonServerChip shared mastodonServer =
+recommendedMastodonServerChip : MastodonServer -> Html Shared.Msg
+recommendedMastodonServerChip mastodonServer =
     let
         domain : String
         domain =
