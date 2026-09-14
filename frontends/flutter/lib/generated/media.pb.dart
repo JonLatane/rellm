@@ -394,7 +394,7 @@ class MediaSize extends $pb.GeneratedMessage {
 /// own columns.
 class MediaMetadata extends $pb.GeneratedMessage {
   factory MediaMetadata({
-    $core.int? videoPreviewTimeMs,
+    $fixnum.Int64? videoPreviewTimeMs,
   }) {
     final $result = create();
     if (videoPreviewTimeMs != null) {
@@ -407,7 +407,7 @@ class MediaMetadata extends $pb.GeneratedMessage {
   factory MediaMetadata.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
 
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'MediaMetadata', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
-    ..a<$core.int>(1, _omitFieldNames ? '' : 'videoPreviewTimeMs', $pb.PbFieldType.OU3)
+    ..a<$fixnum.Int64>(1, _omitFieldNames ? '' : 'videoPreviewTimeMs', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
     ..hasRequiredFields = false
   ;
 
@@ -433,12 +433,16 @@ class MediaMetadata extends $pb.GeneratedMessage {
   static MediaMetadata? _defaultInstance;
 
   /// For video media, how far into the video (in milliseconds) its preview/poster frame should be
-  /// taken from, via a `#t=<seconds>` Media Fragments URI on the `<video>` element's `src`.
-  /// Unset means use the browser's default first-frame preview.
+  /// taken from -- both via a `#t=<seconds>` Media Fragments URI on the `<video>` element's `src`,
+  /// and as the timestamp `ffmpeg` seeks to when generating the `VIDEO_PREVIEW_THUMBNAIL_*` poster
+  /// frames (see `MediaConversion`). Unset defaults to 1s (1000 in ms), or if the video is shorter
+  /// than 1.5s, the midpoint of the video. Settable via `UpdateMedia`; changing it invalidates
+  /// (deletes) any existing `VIDEO_PREVIEW_THUMBNAIL_*` sizes, so the `convert_media_sizes`
+  /// background job regenerates them at the new time.
   @$pb.TagNumber(1)
-  $core.int get videoPreviewTimeMs => $_getIZ(0);
+  $fixnum.Int64 get videoPreviewTimeMs => $_getI64(0);
   @$pb.TagNumber(1)
-  set videoPreviewTimeMs($core.int v) { $_setUnsignedInt32(0, v); }
+  set videoPreviewTimeMs($fixnum.Int64 v) { $_setInt64(0, v); }
   @$pb.TagNumber(1)
   $core.bool hasVideoPreviewTimeMs() => $_has(0);
   @$pb.TagNumber(1)

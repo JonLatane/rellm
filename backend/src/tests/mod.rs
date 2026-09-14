@@ -10,6 +10,7 @@ mod delete_follow_tests;
 mod delete_group_tests;
 mod delete_media_sizes_tests;
 mod delete_media_tests;
+mod media_metadata_tests;
 mod delete_post_tests;
 mod delete_user_tests;
 mod occasion_rpc_tests;

@@ -21,6 +21,9 @@ const MediaConversion$json = {
     {'1': 'MEDIA_CONVERSION_SMALL', '2': 1},
     {'1': 'MEDIA_CONVERSION_MEDIUM', '2': 2},
     {'1': 'MEDIA_CONVERSION_LARGE', '2': 3},
+    {'1': 'VIDEO_PREVIEW_THUMBNAIL_SMALL', '2': 5},
+    {'1': 'VIDEO_PREVIEW_THUMBNAIL_MEDIUM', '2': 6},
+    {'1': 'VIDEO_PREVIEW_THUMBNAIL_LARGE', '2': 7},
   ],
 };
 
@@ -28,7 +31,9 @@ const MediaConversion$json = {
 final $typed_data.Uint8List mediaConversionDescriptor = $convert.base64Decode(
     'Cg9NZWRpYUNvbnZlcnNpb24SHQoZTUVESUFfQ09OVkVSU0lPTl9PUklHSU5BTBAAEhoKFk1FRE'
     'lBX0NPTlZFUlNJT05fU01BTEwQARIbChdNRURJQV9DT05WRVJTSU9OX01FRElVTRACEhoKFk1F'
-    'RElBX0NPTlZFUlNJT05fTEFSR0UQAw==');
+    'RElBX0NPTlZFUlNJT05fTEFSR0UQAxIhCh1WSURFT19QUkVWSUVXX1RIVU1CTkFJTF9TTUFMTB'
+    'AFEiIKHlZJREVPX1BSRVZJRVdfVEhVTUJOQUlMX01FRElVTRAGEiEKHVZJREVPX1BSRVZJRVdf'
+    'VEhVTUJOQUlMX0xBUkdFEAc=');
 
 @$core.Deprecated('Use mediaDescriptor instead')
 const Media$json = {
@@ -95,7 +100,7 @@ final $typed_data.Uint8List mediaSizeDescriptor = $convert.base64Decode(
 const MediaMetadata$json = {
   '1': 'MediaMetadata',
   '2': [
-    {'1': 'video_preview_time_ms', '3': 1, '4': 1, '5': 13, '9': 0, '10': 'videoPreviewTimeMs', '17': true},
+    {'1': 'video_preview_time_ms', '3': 1, '4': 1, '5': 4, '9': 0, '10': 'videoPreviewTimeMs', '17': true},
   ],
   '8': [
     {'1': '_video_preview_time_ms'},
@@ -104,7 +109,7 @@ const MediaMetadata$json = {
 
 /// Descriptor for `MediaMetadata`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List mediaMetadataDescriptor = $convert.base64Decode(
-    'Cg1NZWRpYU1ldGFkYXRhEjYKFXZpZGVvX3ByZXZpZXdfdGltZV9tcxgBIAEoDUgAUhJ2aWRlb1'
+    'Cg1NZWRpYU1ldGFkYXRhEjYKFXZpZGVvX3ByZXZpZXdfdGltZV9tcxgBIAEoBEgAUhJ2aWRlb1'
     'ByZXZpZXdUaW1lTXOIAQFCGAoWX3ZpZGVvX3ByZXZpZXdfdGltZV9tcw==');
 
 @$core.Deprecated('Use mediaReferenceDescriptor instead')

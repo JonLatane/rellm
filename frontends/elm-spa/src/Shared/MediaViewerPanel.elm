@@ -663,6 +663,15 @@ view accountsPanelModel model =
                 MEDIACONVERSIONLARGE ->
                     "Large"
 
+                VIDEOPREVIEWTHUMBNAILSMALL ->
+                    "Video Preview (Small)"
+
+                VIDEOPREVIEWTHUMBNAILMEDIUM ->
+                    "Video Preview (Medium)"
+
+                VIDEOPREVIEWTHUMBNAILLARGE ->
+                    "Video Preview (Large)"
+
                 MediaConversionUnrecognized_ _ ->
                     "Unknown"
 

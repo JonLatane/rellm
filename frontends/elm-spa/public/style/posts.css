@@ -53,6 +53,80 @@
   gap: 0.4rem;
 }
 
+/* `Components.PinnedPosts.view` -- `CustomHomePage.pinned_post_ids`, always rendered above
+   `Pages.Home_`'s own content regardless of `home.target`. `.pinned-posts-header` is a plain
+   `<button>` (reset below) so the whole row toggles `.pinned-posts-content` open/closed, not just a
+   small icon within it -- `justify-content` is deliberately left at its `flex-start` default (not
+   `space-between`) so `.pinned-posts-chevron` sits right next to the title instead of pinned to the
+   row's far edge. */
+.pinned-posts-header {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  margin: 0 0 0.5rem 0;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pinned-posts-title {
+  font-weight: 700;
+  font-size: 1.17em;
+}
+
+/* Rest state points right (collapsed); `.open` rotates a quarter turn to point down (expanded) --
+   `Components.PinnedPosts.view`'s own glyph ("▸") is the "closed" orientation, so only one rotation
+   step is needed rather than swapping glyphs. */
+.pinned-posts-chevron {
+  display: inline-block;
+  font-size: 1em;
+  line-height: 1;
+  transition: transform 0.15s ease;
+  transform: rotate(-90deg);
+}
+
+.pinned-posts-chevron.open {
+  transform: rotate(0deg);
+}
+
+/* Collapses/expands `.pinned-posts-list` via the same `grid-template-rows` 0fr/1fr trick
+   `UI.accountAvatarMenuView`'s own collapsible menu uses (see `accounts_panel.css`'s
+   `.account-avatar-menu`) -- animates the section's own bottom margin in the same `transition`
+   alongside its height, so collapsing pulls the next element up smoothly instead of leaving a dead
+   gap the height animation alone wouldn't touch. Open (not `.is-closed`) is the default/initial
+   state -- pinned posts should be visible without the viewer needing to expand anything first. */
+.pinned-posts-content {
+  display: grid;
+  grid-template-rows: 1fr;
+  margin-bottom: 1.5rem;
+  transition: grid-template-rows 0.2s ease, margin-bottom 0.2s ease;
+}
+
+.pinned-posts-content.is-closed {
+  grid-template-rows: 0fr;
+  margin-bottom: 0;
+  /* Same reasoning as `.account-avatar-menu`'s own doc -- the grid-collapse trick shrinks this to
+     ~0 height visually, but its content is still genuinely present in the DOM at whatever sub-pixel
+     sliver of height remains, so without this it'd still be clickable while "closed". */
+  pointer-events: none;
+}
+
+.pinned-posts-content > * {
+  overflow: hidden;
+  min-height: 0;
+}
+
+.pinned-posts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
 /* The "Recent Posts"/"Posts Before <date>" tabs (see
    Components/Pages/PostsPage.elm's `recentPostsTabsView`), replacing the
    standalone Posts page's old static heading, and the search box (see

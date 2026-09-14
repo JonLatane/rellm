@@ -19,7 +19,7 @@ use s3::Bucket;
 
 use crate::db_connection::PgPooledConnection;
 use crate::logic::update_media_storage_used;
-use crate::models::{Media, MediaConversionExt, MediaSize, RESIZED_CONVERSIONS};
+use crate::models::{Media, MediaConversionExt, MediaSize, RESIZED_CONVERSIONS, VIDEO_PREVIEW_CONVERSIONS};
 use crate::protos::MediaConversion;
 use crate::schema::media;
 
@@ -27,7 +27,10 @@ pub const CONVERTIBLE_CONTENT_TYPES: [&str; 3] = ["image/png", "image/jpeg", "im
 pub const VIDEO_CONVERTIBLE_CONTENT_TYPES: [&str; 3] =
     ["video/mp4", "video/quicktime", "video/webm"];
 
-fn is_video_content_type(content_type: &str) -> bool {
+/// Whether `content_type` is one `convert_media`/`update_media` treat as video (as opposed to
+/// image) -- `pub` since `rpcs::update_media` also needs it, to know whether an item's
+/// `video_preview_time_ms` change actually has `VIDEO_PREVIEW_THUMBNAIL_*` sizes to invalidate.
+pub fn is_video_content_type(content_type: &str) -> bool {
     VIDEO_CONVERTIBLE_CONTENT_TYPES.contains(&content_type)
 }
 
@@ -307,6 +310,63 @@ impl FFmpeg {
         }
         Ok(())
     }
+
+    /// Total length of `input`, in milliseconds -- used to compute
+    /// `MediaMetadata::effective_video_preview_time_ms`'s default (the midpoint, for videos
+    /// shorter than 1.5s) before `screenshot` seeks to it.
+    fn duration_ms(&self, path: &Path) -> Result<u64> {
+        let output = Command::new("ffprobe")
+            .arg("-v")
+            .arg("error")
+            .arg("-show_entries")
+            .arg("format=duration")
+            .arg("-of")
+            .arg("default=noprint_wrappers=1:nokey=1")
+            .arg(path)
+            .output()
+            .context("failed to run ffprobe")?;
+        if !output.status.success() {
+            bail!(
+                "ffprobe exited with {}: {}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        let seconds: f64 = String::from_utf8_lossy(&output.stdout)
+            .trim()
+            .parse()
+            .context("failed to parse ffprobe duration")?;
+        Ok((seconds * 1000.0).round() as u64)
+    }
+
+    /// Captures a single `image/jpeg` poster frame from `input` at `time_ms` milliseconds in,
+    /// resized to fit within `max_dimension`x`max_dimension` the same way `resize`'s own scale
+    /// filter does (preserving aspect ratio, never upscaling) -- used to generate the
+    /// `VIDEO_PREVIEW_THUMBNAIL_*` sizes. `-ss` before `-i` seeks via the (fast, keyframe-based)
+    /// demuxer rather than decoding and discarding every frame up to `time_ms`.
+    fn screenshot(&self, input: &Path, output: &Path, time_ms: u64, max_dimension: u32) -> Result<()> {
+        let status = Command::new("ffmpeg")
+            .arg("-y")
+            .arg("-nostdin")
+            .arg("-ss")
+            .arg(format!("{:.3}", time_ms as f64 / 1000.0))
+            .arg("-i")
+            .arg(input)
+            .arg("-frames:v")
+            .arg("1")
+            .arg("-vf")
+            .arg(format!(
+                "scale='min({0},iw)':'min({0},ih)':force_original_aspect_ratio=decrease",
+                max_dimension
+            ))
+            .arg(output)
+            .status()
+            .context("failed to run ffmpeg")?;
+        if !status.success() {
+            bail!("ffmpeg exited with {}", status);
+        }
+        Ok(())
+    }
 }
 
 fn command_exists(program: &str) -> bool {
@@ -467,6 +527,44 @@ pub async fn convert_media(
             size_bytes: output_bytes.len() as i64,
             aspect_ratio: Some(aspect_ratio),
         });
+    }
+
+    // Video-only: `image/jpeg` poster frames at `MediaMetadata.effective_video_preview_time_ms`,
+    // at the same 3 dimension tiers as `RESIZED_CONVERSIONS` above. Unlike those, generated
+    // unconditionally regardless of the original's own dimensions (never skipped as "already
+    // fits") -- there's no directly-renderable fallback for a video the way `MEDIA_CONVERSION_
+    // ORIGINAL` itself serves as one for an image, so every video needs an actual poster image.
+    if let Converter::Video(ffmpeg) = &converter {
+        let duration_ms = ffmpeg.duration_ms(&input_path)?;
+        let preview_time_ms = item.metadata().effective_video_preview_time_ms(duration_ms);
+
+        for conversion in VIDEO_PREVIEW_CONVERSIONS {
+            let output_path = tmp_dir.join(format!("{}-{}.jpg", item.id, conversion.key()));
+            ffmpeg.screenshot(&input_path, &output_path, preview_time_ms, conversion.max_dimension())?;
+            let output_bytes = std::fs::read(&output_path)?;
+            let _ = std::fs::remove_file(&output_path);
+
+            let converted_minio_path = format!("{}.{}", sizes[0].minio_path, conversion.key());
+            bucket
+                .put_object_with_content_type(&converted_minio_path, &output_bytes, "image/jpeg")
+                .await
+                .context("failed to upload video preview thumbnail to MinIO")?;
+
+            log::info!(
+                "Media {}: generated '{}' ({} bytes) at {}",
+                item.id,
+                conversion.key(),
+                output_bytes.len(),
+                converted_minio_path
+            );
+            sizes.push(MediaSize {
+                conversion: conversion as i32,
+                minio_path: converted_minio_path,
+                content_type: "image/jpeg".to_string(),
+                size_bytes: output_bytes.len() as i64,
+                aspect_ratio: Some(aspect_ratio),
+            });
+        }
     }
 
     let _ = std::fs::remove_file(&input_path);

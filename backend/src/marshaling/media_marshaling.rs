@@ -143,7 +143,7 @@ pub trait ToProtoMediaMetadata {
 impl ToProtoMediaMetadata for models::MediaMetadata {
     fn to_proto(&self) -> MediaMetadata {
         MediaMetadata {
-            video_preview_time_ms: self.video_preview_time_ms.map(|ms| ms as u32),
+            video_preview_time_ms: self.video_preview_time_ms.map(|ms| ms as u64),
         }
     }
 }

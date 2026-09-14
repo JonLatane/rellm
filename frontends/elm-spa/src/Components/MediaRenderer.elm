@@ -46,6 +46,7 @@ import Proto.Rellm as Rellm exposing (MediaReference)
 import Proto.Rellm.MediaConversion exposing (MediaConversion(..))
 import Shared.AccountsPanel.RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer)
+import Shared.Conversions exposing (int64ToInt)
 
 
 {-| The `MEDIACONVERSIONORIGINAL` entry of `media.sizes`, if present -- generic over any record
@@ -236,13 +237,15 @@ aspectRatioStyle media =
 preview/poster frame, per `media.metadata.videoPreviewTimeMs` -- empty (no fragment) if unset,
 which leaves the browser's default first-frame preview in place. `npt-sec` (the fragment's time
 format) is specified in whole-or-decimal seconds, so milliseconds are rendered as a fraction of a
-second (1456ms -> "#t=1.456") rather than truncated to whole seconds.
+second (1456ms -> "#t=1.456") rather than truncated to whole seconds. `videoPreviewTimeMs` is a
+protobuf `uint64` (`Protobuf.Types.Int64.Int64` in Elm) -- `int64ToInt` unpacks it, safe here since
+a video preview timestamp never approaches the 32-bit-until-2038 ceiling that caveat is about.
 -}
 previewTimeFragment : MediaReference -> String
 previewTimeFragment media =
     media.metadata
         |> Maybe.andThen .videoPreviewTimeMs
-        |> Maybe.map (\ms -> "#t=" ++ String.fromFloat (toFloat ms / 1000))
+        |> Maybe.map (\ms -> "#t=" ++ String.fromFloat (toFloat (int64ToInt ms) / 1000))
         |> Maybe.withDefault ""
 
 

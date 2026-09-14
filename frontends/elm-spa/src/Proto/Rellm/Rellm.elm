@@ -2137,9 +2137,13 @@ deleteMediaSizes =
 
 {-| A template for a gRPC call to the method 'UpdateMedia' sending a `Media` to get back a `Media`.
 
- Updates a Media item's `name`/`description` by ID. *Authenticated.* Every other field
- (visibility, moderation, `sizes`, etc.) is ignored -- use other RPCs (or, for `sizes`,
- `DeleteMediaSizes`) to change them. Updating other users' media requires `ADMIN` permissions.
+ Updates a Media item's `name`/`description`/`metadata.video_preview_time_ms` by ID.
+ *Authenticated.* Every other field (visibility, moderation, `sizes`, etc.) is ignored -- use
+ other RPCs (or, for `sizes`, `DeleteMediaSizes`) to change them. If `metadata` is set and its
+ `video_preview_time_ms` differs from the item's current value, any existing
+ `VIDEO_PREVIEW_THUMBNAIL_*` sizes are deleted (both from `sizes` and their backing MinIO
+ objects) so `convert_media_sizes` regenerates them at the new time -- see `MediaMetadata` and
+ `MediaConversion`'s own docs. Updating other users' media requires `ADMIN` permissions.
 
 
 -}

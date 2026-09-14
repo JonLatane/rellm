@@ -340,7 +340,7 @@ impl Rellm for RellmService {
     }
 
     async fn update_media(&self, request: Request<Media>) -> Result<Response<Media>, Status> {
-        authenticated_rpc!(self, rpcs::update_media, request)
+        authenticated_bucket_rpc!(self, rpcs::update_media, request)
     }
 
     async fn delete_media_sizes(
