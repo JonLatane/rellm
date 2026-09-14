@@ -166,15 +166,23 @@ pub async fn media_file<'a>(
 
 /// Picks the (minio_path, content_type) to serve for a given size request.
 ///
-/// `size` of `Some("original")` always forces the unconverted original. Otherwise the requested
-/// size (defaulting to `Medium` when `size` is `None`/unrecognized) is looked up, falling through
-/// to the original if that converted size isn't available -- which also covers media that hasn't
-/// been converted at all.
+/// `size` of `Some("original")` always forces the unconverted original. `video_preview_small`/
+/// `_medium`/`_large` request the `image/jpeg` poster-frame sizes video `Media` gets instead of
+/// (not in addition to) its ordinary `small`/`medium`/`large` -- see `MediaConversion`'s own doc in
+/// `media.proto` -- e.g. `Components.MediaRenderer`'s play-button-overlaid thumbnail. Otherwise the
+/// requested size (defaulting to `Medium` when `size` is `None`/unrecognized) is looked up, falling
+/// through to the original if that converted size isn't available -- which also covers media that
+/// hasn't been converted at all. Note that fallback would serve the original *video* file for an
+/// unresolved `video_preview_*` request -- harmless in practice since callers only ever request one
+/// once they already know (from the `Media` they fetched over gRPC) that it exists.
 fn resolve_media_size(media: &models::Media, size: Option<&str>) -> (String, String) {
     let requested = match size {
         Some("original") => MediaConversion::Original,
         Some("small") => MediaConversion::Small,
         Some("large") => MediaConversion::Large,
+        Some("video_preview_small") => MediaConversion::VideoPreviewThumbnailSmall,
+        Some("video_preview_medium") => MediaConversion::VideoPreviewThumbnailMedium,
+        Some("video_preview_large") => MediaConversion::VideoPreviewThumbnailLarge,
         _ => MediaConversion::Medium,
     };
 

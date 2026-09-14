@@ -19,12 +19,18 @@ class MediaConversion extends $pb.ProtobufEnum {
   static const MediaConversion MEDIA_CONVERSION_SMALL = MediaConversion._(1, _omitEnumNames ? '' : 'MEDIA_CONVERSION_SMALL');
   static const MediaConversion MEDIA_CONVERSION_MEDIUM = MediaConversion._(2, _omitEnumNames ? '' : 'MEDIA_CONVERSION_MEDIUM');
   static const MediaConversion MEDIA_CONVERSION_LARGE = MediaConversion._(3, _omitEnumNames ? '' : 'MEDIA_CONVERSION_LARGE');
+  static const MediaConversion VIDEO_PREVIEW_THUMBNAIL_SMALL = MediaConversion._(5, _omitEnumNames ? '' : 'VIDEO_PREVIEW_THUMBNAIL_SMALL');
+  static const MediaConversion VIDEO_PREVIEW_THUMBNAIL_MEDIUM = MediaConversion._(6, _omitEnumNames ? '' : 'VIDEO_PREVIEW_THUMBNAIL_MEDIUM');
+  static const MediaConversion VIDEO_PREVIEW_THUMBNAIL_LARGE = MediaConversion._(7, _omitEnumNames ? '' : 'VIDEO_PREVIEW_THUMBNAIL_LARGE');
 
   static const $core.List<MediaConversion> values = <MediaConversion> [
     MEDIA_CONVERSION_ORIGINAL,
     MEDIA_CONVERSION_SMALL,
     MEDIA_CONVERSION_MEDIUM,
     MEDIA_CONVERSION_LARGE,
+    VIDEO_PREVIEW_THUMBNAIL_SMALL,
+    VIDEO_PREVIEW_THUMBNAIL_MEDIUM,
+    VIDEO_PREVIEW_THUMBNAIL_LARGE,
   ];
 
   static final $core.Map<$core.int, MediaConversion> _byValue = $pb.ProtobufEnum.initByValue(values);

@@ -399,6 +399,14 @@
   color: var(--fg);
 }
 
+.federated-servers-strip .mastodon-app-id {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 0.75rem;
+  max-width: 100%;
+}
+
 /* Settings tab's "Navigation Tabs" section (Components/Pages/ServerInformationPage/SettingsTab.elm)
    -- a horizontally-scrolling strip of chips previewing UI.headerNav's own tab layout, reusing
    accounts_panel.css's `.server-chip`/`.server-chip-top`/`-bottom` look (see `.federated-servers-strip`'s

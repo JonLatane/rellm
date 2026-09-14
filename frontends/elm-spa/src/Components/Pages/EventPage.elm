@@ -47,6 +47,7 @@ import Components.AIProviders as AIProviders
 import Components.Authors as Authors
 import Components.Events as Events
 import Components.Markdown as Markdown
+import Components.MediaRenderer as MediaRenderer
 import Components.MultiMediaRenderer as MultiMediaRenderer
 import Components.Posts as Posts
 import Components.ServerDependentView as ServerDependentView
@@ -1899,7 +1900,7 @@ eventDetailView shared model event occasion =
                                                 Nothing
                                 in
                                 div []
-                                    [ MultiMediaRenderer.view eventPost.postMediaLayout server maybeAccount (MediaClicked eventPost) eventPost.media
+                                    [ MultiMediaRenderer.view eventPost.postMediaLayout server maybeAccount shared.mediaRenderer (\id -> SharedMsg (Shared.MediaRendererMsg (MediaRenderer.PlayClicked id))) (MediaClicked eventPost) eventPost.media
                                     , div [ class "event-post-media-edit-row" ]
                                         [ Posts.mediaEditButton maybeAccount (MediaEditClicked eventPost) eventPost
                                         , Posts.generateMediaButton maybeAccount onGenerateMediaClicked eventPost
@@ -1945,7 +1946,7 @@ eventDetailView shared model event occasion =
                         ]
                     , case maybeServer of
                         Just server ->
-                            MultiMediaRenderer.view occasionPost.postMediaLayout server maybeAccount (MediaClicked occasionPost) occasionPost.media
+                            MultiMediaRenderer.view occasionPost.postMediaLayout server maybeAccount shared.mediaRenderer (\id -> SharedMsg (Shared.MediaRendererMsg (MediaRenderer.PlayClicked id))) (MediaClicked occasionPost) occasionPost.media
 
                         Nothing ->
                             text ""

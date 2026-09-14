@@ -14,6 +14,44 @@
   object-fit: contain;
 }
 
+/* `Components.MediaRenderer`'s click-to-play poster -- a `.media-renderer-video-preview-image`
+   (same sizing classes, and so same footprint, as the `<video>` it stands in for) with a play
+   button centered over it. `position: relative`/`inline-block` so the button's own
+   `position: absolute` centers against this wrapper rather than some further-out ancestor, and so
+   the wrapper doesn't stretch wider than the image itself. */
+.media-renderer-video-preview {
+  position: relative;
+  display: inline-block;
+}
+
+.media-renderer-video-preview-image {
+  background: black;
+}
+
+.media-renderer-play-button {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 3.2rem;
+  height: 3.2rem;
+  padding: 0;
+  padding-left: 0.2rem; /* optically centers the ▶ glyph, whose own glyph-box leans left */
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  color: white;
+  font-size: 1.3rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.media-renderer-play-button:hover {
+  background: rgba(0, 0, 0, 0.8);
+}
+
 /* Each `Sizing` just sets the bound(s) an image/video gets scaled to, as
    custom properties -- which of those bounds actually applies (one, the
    other, or both) is decided below by `SizingType`, independent of `Sizing`

@@ -28,6 +28,7 @@ posts and adding this module's own "Posts | <name>" heading, via
 
 import Animation
 import Browser.Navigation
+import Components.MediaRenderer as MediaRenderer
 import Components.Posts as Posts
 import Components.Users exposing (usernameHref)
 import Components.Users.ProfileHeading as ProfileHeading
@@ -1970,6 +1971,10 @@ postCardView shared showSyncDestinations availableSyncDestinations pushStatuses 
         onMediaClicked mediaId =
             SharedMsg (Shared.MediaViewerPanelMsg (MediaViewerPanel.Open displayPost.media (Just displayPost) mediaId host))
 
+        onMediaPlayClicked : String -> Msg
+        onMediaPlayClicked mediaId =
+            SharedMsg (Shared.MediaRendererMsg (MediaRenderer.PlayClicked mediaId))
+
         isPushing : String -> Bool
         isPushing destinationId =
             Dict.get (pushStatusKey displayPost.id destinationId) pushStatuses == Just Submitting
@@ -1999,6 +2004,8 @@ postCardView shared showSyncDestinations availableSyncDestinations pushStatuses 
         maybeServer
         maybeAccount
         onMediaClicked
+        shared.mediaRenderer
+        onMediaPlayClicked
         False
         False
         starred

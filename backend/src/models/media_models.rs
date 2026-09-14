@@ -91,12 +91,29 @@ impl Media {
 }
 
 /// `Media.metadata`'s typed shape: `{ video_preview_time_ms: 1000 }`. Currently just the
-/// timestamp `MediaRenderer.elm` seeks video previews to (via a `#t=` Media Fragments URI);
-/// absence means "use the browser's default first-frame preview".
+/// timestamp `MediaRenderer.elm` seeks video previews to (via a `#t=` Media Fragments URI) and
+/// `logic::media_conversion` seeks `ffmpeg` to when generating the `VIDEO_PREVIEW_THUMBNAIL_*`
+/// poster frames; absence means the default computed by `effective_video_preview_time_ms`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct MediaMetadata {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub video_preview_time_ms: Option<i64>,
+}
+
+impl MediaMetadata {
+    /// The timestamp (in milliseconds) a video's preview/poster frame should actually be taken
+    /// from -- `video_preview_time_ms` if set, else the default documented on that field in
+    /// `media.proto`: 1s, or the midpoint of the video if it's shorter than 1.5s. `duration_ms` is
+    /// the video's own total length, from `FFmpeg::duration_ms`.
+    pub fn effective_video_preview_time_ms(&self, duration_ms: u64) -> u64 {
+        self.video_preview_time_ms.map(|ms| ms as u64).unwrap_or_else(|| {
+            if duration_ms < 1500 {
+                duration_ms / 2
+            } else {
+                1000
+            }
+        })
+    }
 }
 
 /// The 3 auto-generated resized copies `convert_media` (in `logic::media_conversion`) produces
@@ -105,6 +122,15 @@ pub const RESIZED_CONVERSIONS: [MediaConversion; 3] = [
     MediaConversion::Small,
     MediaConversion::Medium,
     MediaConversion::Large,
+];
+
+/// The 3 auto-generated `image/jpeg` poster-frame sizes `convert_media` produces for *video*
+/// `Media` items only, at the same dimension tiers as `RESIZED_CONVERSIONS` -- see each variant's
+/// own doc in `media.proto`.
+pub const VIDEO_PREVIEW_CONVERSIONS: [MediaConversion; 3] = [
+    MediaConversion::VideoPreviewThumbnailSmall,
+    MediaConversion::VideoPreviewThumbnailMedium,
+    MediaConversion::VideoPreviewThumbnailLarge,
 ];
 
 /// Sizing/naming details for each `MediaConversion` -- extension trait since `MediaConversion`
@@ -122,9 +148,9 @@ impl MediaConversionExt for MediaConversion {
     fn max_dimension(&self) -> u32 {
         match self {
             MediaConversion::Original => 0,
-            MediaConversion::Small => 320,
-            MediaConversion::Medium => 800,
-            MediaConversion::Large => 1600,
+            MediaConversion::Small | MediaConversion::VideoPreviewThumbnailSmall => 320,
+            MediaConversion::Medium | MediaConversion::VideoPreviewThumbnailMedium => 800,
+            MediaConversion::Large | MediaConversion::VideoPreviewThumbnailLarge => 1600,
         }
     }
 
@@ -134,6 +160,9 @@ impl MediaConversionExt for MediaConversion {
             MediaConversion::Small => "small",
             MediaConversion::Medium => "medium",
             MediaConversion::Large => "large",
+            MediaConversion::VideoPreviewThumbnailSmall => "video_preview_thumbnail_small",
+            MediaConversion::VideoPreviewThumbnailMedium => "video_preview_thumbnail_medium",
+            MediaConversion::VideoPreviewThumbnailLarge => "video_preview_thumbnail_large",
         }
     }
 }

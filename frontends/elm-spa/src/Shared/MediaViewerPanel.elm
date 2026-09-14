@@ -608,7 +608,7 @@ view accountsPanelModel model =
                     (\( key, media ) ->
                         ( key
                         , div [ class "media-viewer-panel-preload" ]
-                            [ MediaRenderer.view MediaRenderer.Natural MediaRenderer.ToWidthAndHeight server maybeAccount SetCurrent media ]
+                            [ MediaRenderer.view MediaRenderer.Natural MediaRenderer.ToWidthAndHeight server maybeAccount True MediaRenderer.init SetCurrent SetCurrent media ]
                         )
                     )
 
@@ -662,6 +662,15 @@ view accountsPanelModel model =
 
                 MEDIACONVERSIONLARGE ->
                     "Large"
+
+                VIDEOPREVIEWTHUMBNAILSMALL ->
+                    "Video Preview (Small)"
+
+                VIDEOPREVIEWTHUMBNAILMEDIUM ->
+                    "Video Preview (Medium)"
+
+                VIDEOPREVIEWTHUMBNAILLARGE ->
+                    "Video Preview (Large)"
 
                 MediaConversionUnrecognized_ _ ->
                     "Unknown"
@@ -775,7 +784,7 @@ view accountsPanelModel model =
                                 , preventDefaultOn "touchmove" (Decode.succeed ( TouchMove, model.touchStart /= Nothing ))
                                 , on "touchend" (touchPoint "changedTouches" TouchEnd)
                                 ]
-                                [ MediaRenderer.viewAutoplay MediaRenderer.Natural MediaRenderer.ToWidthAndHeight server maybeAccount SetCurrent media ]
+                                [ MediaRenderer.viewAutoplay MediaRenderer.Natural MediaRenderer.ToWidthAndHeight server maybeAccount True MediaRenderer.init SetCurrent SetCurrent media ]
                           )
                         ]
 

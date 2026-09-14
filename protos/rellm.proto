@@ -870,9 +870,13 @@ service Rellm {
   // Deletes a media item by ID. *Authenticated.* Note that media may still be accessible for 12 hours after deletes are requested, as separate jobs clean it up from S3/MinIO.
   // Deleting other users' media requires `ADMIN` permissions.
   rpc DeleteMedia(Media) returns (google.protobuf.Empty) {}
-  // Updates a Media item's `name`/`description` by ID. *Authenticated.* Every other field
-  // (visibility, moderation, `sizes`, etc.) is ignored -- use other RPCs (or, for `sizes`,
-  // `DeleteMediaSizes`) to change them. Updating other users' media requires `ADMIN` permissions.
+  // Updates a Media item's `name`/`description`/`metadata.video_preview_time_ms` by ID.
+  // *Authenticated.* Every other field (visibility, moderation, `sizes`, etc.) is ignored -- use
+  // other RPCs (or, for `sizes`, `DeleteMediaSizes`) to change them. If `metadata` is set and its
+  // `video_preview_time_ms` differs from the item's current value, any existing
+  // `VIDEO_PREVIEW_THUMBNAIL_*` sizes are deleted (both from `sizes` and their backing MinIO
+  // objects) so `convert_media_sizes` regenerates them at the new time -- see `MediaMetadata` and
+  // `MediaConversion`'s own docs. Updating other users' media requires `ADMIN` permissions.
   rpc UpdateMedia(Media) returns (Media) {}
   // Deletes only the given `sizes` (matched by `conversion`) of a Media item by ID, e.g. to
   // reclaim space by dropping `MEDIA_CONVERSION_ORIGINAL` once converted copies exist to serve

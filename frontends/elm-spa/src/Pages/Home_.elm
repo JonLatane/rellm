@@ -64,15 +64,27 @@ debounce logic here, it just keeps both `model.posts.searchText`/
 relay is effectively unreachable with the box hidden, but is kept for
 robustness/symmetry (e.g. a future `?search_text=` URL param divergence).
 
+`home.pinnedPostIds` sits above all five variants above, rendered by `Components.PinnedPosts`
+(`model.pinnedPosts`) regardless of `home.target` -- pinned posts are an overlay, not a target, so
+they show the same way whether Home is the ordinary `Feed`, a full `HomeEvents`/`HomePosts` tab, or a
+fixed `HomePost`/`HomePostWithEvents`. Unlike `content` (the five-variant union below, entirely
+replaced whenever `home.target` newly resolves to something else -- see `initForTarget`'s own doc),
+`model.pinnedPosts` is a single, independent `Model` that's only ever reconciled in place
+(`PinnedPosts.syncIds`, on every incoming `SharedMsg` -- same trigger, and the same "config might
+still be arriving" reasoning, as `content`'s own `homeConfigFor` recheck), never rebuilt from
+scratch.
+
 -}
 
+import Components.MediaRenderer as MediaRenderer
+import Components.PinnedPosts as PinnedPosts
 import Components.Pages.EventsPage as EventsPage
 import Components.Pages.PostPage as PostPage
 import Components.Pages.PostsPage as PostsPage
 import Dict exposing (Dict)
 import Effect exposing (Effect)
 import Gen.Params.Home_ exposing (Params)
-import Html exposing (div, h3, text)
+import Html exposing (Html, div, h3, text)
 import Html.Attributes exposing (class)
 import Page
 import Proto.Rellm.CalendarDisplayMode exposing (CalendarDisplayMode)
@@ -80,8 +92,11 @@ import Proto.Rellm.NavigationTab exposing (NavigationTab(..))
 import Proto.Rellm.PostContext exposing (PostContext(..))
 import Request
 import Shared
+import Shared.AccountsPanel.RellmAccounts as RellmAccounts
 import Shared.AccountsPanel.RellmServers as RellmServers
 import Shared.Breadcrumbs as Breadcrumbs
+import Shared.MediaViewerPanel as MediaViewerPanel
+import Shared.StarredPanel as StarredPanel
 import UI
 import UI.CustomNav as CustomNav
 import View exposing (View)
@@ -97,15 +112,23 @@ page shared req =
         }
 
 
-{-| `Feed` is the ordinary Events+Posts composite (see the module doc); `HomeEvents`/`HomePosts`/
-`HomePost`/`HomePostWithEvents` are distinct variants (not, say, folded into `Feed` as a `Maybe`) for
-the same reason `Pages.UsernameOrCustomTab_.EmbeddedProfile` is kept separate from its own `Profile`
--- once `updateInner`'s `SharedMsg` handling (below) has matched a `home` override and switched away
-from `Feed`, it must stop re-deriving `homeConfigFor` on every subsequent `Shared.Msg`, or a
-still-live `EventsPage`/`PostsPage`/`PostPage.Model` would be discarded and re-`init`ed (re-fetching)
-on every single message.
+{-| `pinnedPosts` (see the module doc) is independent of, and rendered above, `content` -- the actual
+`home.target`-driven page below it, one of five variants. `Feed` is the ordinary Events+Posts
+composite (see the module doc); `HomeEvents`/`HomePosts`/`HomePost`/`HomePostWithEvents` are distinct
+variants (not, say, folded into `Feed` as a `Maybe`) for the same reason
+`Pages.UsernameOrCustomTab_.EmbeddedProfile` is kept separate from its own `Profile` -- once
+`updateInner`'s `SharedMsg` handling (below) has matched a `home` override and switched away from
+`Feed`, it must stop re-deriving `homeConfigFor` on every subsequent `Shared.Msg`, or a still-live
+`EventsPage`/`PostsPage`/`PostPage.Model` would be discarded and re-`init`ed (re-fetching) on every
+single message.
 -}
-type Model
+type alias Model =
+    { pinnedPosts : PinnedPosts.Model
+    , content : Content
+    }
+
+
+type Content
     = Feed FeedModel
     | HomeEvents EventsPage.Model
     | HomePosts PostsPage.Model
@@ -136,26 +159,44 @@ type Msg
     | HomePostsMsg PostsPage.Msg
     | HomePostMsg PostPage.Msg
     | HomePostEventsMsg EventsPage.Msg
+    | PinnedPostsMsg PinnedPosts.Msg
     | SharedMsg Shared.Msg
+      -- `Posts.postCard`'s/`Events.eventCard`'s own `onPush`/`onDelete` for a pinned post -- always
+      -- unreachable (see `pinnedPostsConfig`'s own doc), same convention as `Shared.StarredPanel.NoOp`.
+    | NoOp
 
 
+{-| Builds both halves of `Model` -- `pinnedPosts` (from `home.pinnedPostIds`, see the module doc) and
+`content` (from `home.target`, see `initForTarget`) -- off one shared `home` read, so they can't
+observe two different (e.g. mid-load-then-arrived) copies of `mainFrontendHost`'s config on the very
+first render.
+-}
 init : Shared.Model -> Request.With Params -> ( Model, Effect Msg )
 init shared req =
-    case initForTarget shared req (homeConfigFor shared) of
-        Just result ->
-            result
-
-        Nothing ->
-            initFeed shared req
-
-
-initFeed : Shared.Model -> Request.With Params -> ( Model, Effect Msg )
-initFeed shared req =
     let
         home : CustomNav.HomePageConfig
         home =
             homeConfigFor shared
 
+        ( content, contentEffect ) =
+            case initForTarget shared req home of
+                Just result ->
+                    result
+
+                Nothing ->
+                    initFeed shared req home
+
+        ( pinnedPosts, pinnedEffect ) =
+            PinnedPosts.init shared home.pinnedPostIds
+    in
+    ( { pinnedPosts = pinnedPosts, content = content }
+    , Effect.batch [ contentEffect, Effect.map PinnedPostsMsg pinnedEffect ]
+    )
+
+
+initFeed : Shared.Model -> Request.With Params -> CustomNav.HomePageConfig -> ( Content, Effect Msg )
+initFeed shared req home =
+    let
         ( postsModel, postsEffect ) =
             PostsPage.init shared Nothing req.key req.url.path req.query True Nothing Nothing
 
@@ -187,7 +228,7 @@ isn't read here at all, since it isn't a *target* to render, just an overlay `Po
 generic listing already excludes via `PostsPage.customNavPostIds` (not relevant for a `TargetPost`/
 `TargetTab EVENTSTAB`/`TargetTab POSTSTAB` home either way, none of which show that listing).
 -}
-initForTarget : Shared.Model -> Request.With Params -> CustomNav.HomePageConfig -> Maybe ( Model, Effect Msg )
+initForTarget : Shared.Model -> Request.With Params -> CustomNav.HomePageConfig -> Maybe ( Content, Effect Msg )
 initForTarget shared req home =
     case home.target of
         CustomNav.TargetTab EVENTSTAB ->
@@ -295,9 +336,16 @@ eventsStripCalendarDisplayModeOverride home =
         Just home.defaultEventsStripCalendarDisplayMode
 
 
+{-| `pinnedPosts` needs no subscriptions of its own -- no polling/animations, see the module doc for
+`Components.PinnedPosts`. -}
 subscriptions : Model -> Sub Msg
 subscriptions model =
-    case model of
+    contentSubscriptions model.content
+
+
+contentSubscriptions : Content -> Sub Msg
+contentSubscriptions content =
+    case content of
         Feed feed ->
             Sub.batch
                 [ Sub.map PostsMsg (PostsPage.subscriptions feed.posts)
@@ -320,21 +368,47 @@ subscriptions model =
                 ]
 
 
-{-| `updateInner`, plus reissuing `setBreadcrumbsEffect` after every `update` --
-mirrors `Components.Pages.UserProfilePage.update`'s identical wrapper.
+{-| Handles `PinnedPostsMsg`/`NoOp` directly (neither touches `content`), then delegates everything
+else to `updateInner` for `model.content` -- also re-syncing `model.pinnedPosts` against a freshly
+re-read `home.pinnedPostIds` on every `SharedMsg`, the same trigger (and "config might still be
+arriving" reasoning) `updateInner`'s own `SharedMsg`/`Feed` branch already uses to recheck
+`home.target`. Finishes by reissuing `setBreadcrumbsEffect` after every `content` update -- mirrors
+`Components.Pages.UserProfilePage.update`'s identical wrapper.
 -}
 update : Shared.Model -> Request.With Params -> Msg -> Model -> ( Model, Effect Msg )
 update shared req msg model =
-    let
-        ( newModel, effect ) =
-            updateInner shared req msg model
-    in
-    ( newModel, Effect.batch [ effect, setBreadcrumbsEffect shared newModel ] )
+    case msg of
+        PinnedPostsMsg subMsg ->
+            let
+                ( newPinnedPosts, effect ) =
+                    PinnedPosts.update shared subMsg model.pinnedPosts
+            in
+            ( { model | pinnedPosts = newPinnedPosts }, Effect.map PinnedPostsMsg effect )
+
+        NoOp ->
+            ( model, Effect.none )
+
+        _ ->
+            let
+                ( newContent, contentEffect ) =
+                    updateInner shared req msg model.content
+
+                ( newPinnedPosts, pinnedEffect ) =
+                    case msg of
+                        SharedMsg _ ->
+                            PinnedPosts.syncIds shared (homeConfigFor shared).pinnedPostIds model.pinnedPosts
+
+                        _ ->
+                            ( model.pinnedPosts, Effect.none )
+            in
+            ( { model | content = newContent, pinnedPosts = newPinnedPosts }
+            , Effect.batch [ contentEffect, Effect.map PinnedPostsMsg pinnedEffect, setBreadcrumbsEffect shared newContent ]
+            )
 
 
-updateInner : Shared.Model -> Request.With Params -> Msg -> Model -> ( Model, Effect Msg )
-updateInner shared req msg model =
-    case ( msg, model ) of
+updateInner : Shared.Model -> Request.With Params -> Msg -> Content -> ( Content, Effect Msg )
+updateInner shared req msg content =
+    case ( msg, content ) of
         ( PostsMsg subMsg, Feed feed ) ->
             let
                 ( newPosts, postsEffect ) =
@@ -470,7 +544,7 @@ updateInner shared req msg model =
             )
 
         _ ->
-            ( model, Effect.none )
+            ( content, Effect.none )
 
 
 {-| Keeps `Shared.Breadcrumbs` pointed at `mainFrontendHost`, but only for `Feed` -- this feed isn't
@@ -486,9 +560,9 @@ the former two own their own breadcrumb root the same as `Pages.Events`/`Pages.P
 = False`), and `PostPage.init`/`.update` (the latter two, `HomePostWithEvents`' own `.post` included)
 already own theirs, the same as `Pages.Post.PostId_`/`Pages.UsernameOrCustomTab_.EmbeddedPost`.
 -}
-setBreadcrumbsEffect : Shared.Model -> Model -> Effect Msg
-setBreadcrumbsEffect shared model =
-    case model of
+setBreadcrumbsEffect : Shared.Model -> Content -> Effect Msg
+setBreadcrumbsEffect shared content =
+    case content of
         Feed _ ->
             setBreadcrumbsHost shared
 
@@ -521,47 +595,85 @@ setBreadcrumbsHost shared =
 
 view : Shared.Model -> Request.With Params -> Model -> View Msg
 view shared req model =
-    { title = UI.pageTitle shared (titleFor model)
+    { title = UI.pageTitle shared (titleFor model.content)
     , body =
         UI.layout shared
             req.route
             fromShared
-            (case model of
-                Feed feed ->
-                    [ Html.map EventsMsg (EventsPage.view shared True feed.events)
-                    , div [ class "posts-embedded-heading-row" ]
-                        [ h3 [] [ text (heading feed.posts.context) ]
-                        , Html.map PostsMsg (PostsPage.exportButtonView shared feed.posts)
-                        ]
-                    , Html.map PostsMsg (PostsPage.view shared False True feed.posts)
-                    ]
-
-                HomeEvents subModel ->
-                    [ Html.map HomeEventsMsg (EventsPage.view shared True subModel) ]
-
-                HomePosts subModel ->
-                    [ Html.map HomePostsMsg (PostsPage.view shared True True subModel) ]
-
-                HomePost subModel ->
-                    [ Html.map HomePostMsg (PostPage.view shared subModel) ]
-
-                HomePostWithEvents subModel ->
-                    [ Html.map HomePostEventsMsg (EventsPage.view shared True subModel.events)
-                    , Html.map HomePostMsg (PostPage.view shared subModel.post)
-                    ]
-            )
+            (pinnedPostsView shared model.pinnedPosts :: contentView shared model.content)
     }
+
+
+contentView : Shared.Model -> Content -> List (Html Msg)
+contentView shared content =
+    case content of
+        Feed feed ->
+            [ Html.map EventsMsg (EventsPage.view shared True feed.events)
+            , div [ class "posts-embedded-heading-row" ]
+                [ h3 [] [ text (heading feed.posts.context) ]
+                , Html.map PostsMsg (PostsPage.exportButtonView shared feed.posts)
+                ]
+            , Html.map PostsMsg (PostsPage.view shared False True feed.posts)
+            ]
+
+        HomeEvents subModel ->
+            [ Html.map HomeEventsMsg (EventsPage.view shared True subModel) ]
+
+        HomePosts subModel ->
+            [ Html.map HomePostsMsg (PostsPage.view shared True True subModel) ]
+
+        HomePost subModel ->
+            [ Html.map HomePostMsg (PostPage.view shared subModel) ]
+
+        HomePostWithEvents subModel ->
+            [ Html.map HomePostEventsMsg (EventsPage.view shared True subModel.events)
+            , Html.map HomePostMsg (PostPage.view shared subModel.post)
+            ]
+
+
+{-| Builds `Components.PinnedPosts.view`'s config off `shared` -- every field mirrors the same
+closures `Components.Pages.PostsPage.postCardView` already builds for its own feed's post cards (star
+toggling/media-viewer opening routed through `Shared.StarredPanelMsg`/`Shared.MediaViewerPanelMsg`,
+`StarredPanel.freshestPost` overlaid so a just-toggled star's count shows immediately) -- so a pinned
+post behaves identically to any other post card in the app. `pinnedPostIds` is always on
+`mainFrontendHost` (see the module doc for `Components.PinnedPosts`), so every field below is looked
+up against that one host.
+-}
+pinnedPostsView : Shared.Model -> PinnedPosts.Model -> Html Msg
+pinnedPostsView shared pinnedPosts =
+    let
+        host : String
+        host =
+            shared.accounts.mainFrontendHost
+    in
+    PinnedPosts.view
+        { time = shared.time
+        , basePath = shared.basePath
+        , viewingServerHost = host
+        , maybeServer = RellmServers.rellmServerForHost shared.accounts.servers host
+        , maybeAccount = RellmAccounts.enabledRellmAccountForServer shared.accounts.accounts host
+        , isStarred = \post -> StarredPanel.isStarred host post shared.panels.starredPanel
+        , onStarClicked = \post -> StarredPanel.toggleStarMsg shared.accounts host post |> Maybe.map (Shared.StarredPanelMsg >> SharedMsg)
+        , onMediaClicked = \post mediaId -> SharedMsg (Shared.MediaViewerPanelMsg (MediaViewerPanel.Open post.media (Just post) mediaId host))
+        , mediaPlayState = shared.mediaRenderer
+        , onMediaPlayClicked = \mediaId -> SharedMsg (Shared.MediaRendererMsg (MediaRenderer.PlayClicked mediaId))
+        , freshenPost = \post -> StarredPanel.freshestPost host post shared.panels.starredPanel
+        , noOp = NoOp
+        , toMsg = PinnedPostsMsg
+        }
+        pinnedPosts
 
 
 {-| `Feed` has no title of its own (matching this page's pre-existing behavior); `HomeEvents` mirrors
 `Pages.Events`' own (none -- its own "Upcoming Events"/"Events After <date>" tabs already say what
 the listing is); `HomePosts` mirrors `Pages.Posts`' own ("Posts"); `HomePost`/`HomePostWithEvents`
 use the featured Post's own title, same as `Pages.Post.PostId_`/`Pages.UsernameOrCustomTab_.titleFor`'s
-`EmbeddedPost` case.
+`EmbeddedPost` case. Pinned posts never contribute a title -- they're an overlay above whichever of
+these actually renders, not something a page title should describe.
 -}
-titleFor : Model -> List String
-titleFor model =
-    case model of
+titleFor : Content -> List String
+titleFor content =
+    case content of
         Feed _ ->
             []
 

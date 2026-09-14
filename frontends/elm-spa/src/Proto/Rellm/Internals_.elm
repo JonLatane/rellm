@@ -9375,7 +9375,7 @@ decodeProto__Rellm__MediaMetadata =
         defaultProto__Rellm__MediaMetadata
         [ Protobuf.Decode.optional
             1
-            (Protobuf.Decode.map Just Protobuf.Decode.uint32)
+            (Protobuf.Decode.map Just Protobuf.Decode.uint64)
             (\a r -> { r | videoPreviewTimeMs = a })
         ]
 
@@ -9386,14 +9386,14 @@ decodeProto__Rellm__MediaMetadata =
 encodeProto__Rellm__MediaMetadata : Proto__Rellm__MediaMetadata -> Protobuf.Encode.Encoder
 encodeProto__Rellm__MediaMetadata value =
     Protobuf.Encode.message
-        [ ( 1, (Maybe.map Protobuf.Encode.uint32 >> Maybe.withDefault Protobuf.Encode.none) value.videoPreviewTimeMs ) ]
+        [ ( 1, (Maybe.map Protobuf.Encode.uint64 >> Maybe.withDefault Protobuf.Encode.none) value.videoPreviewTimeMs ) ]
 
 
 {-| `Proto__Rellm__MediaMetadata` message
 
 -}
 type alias Proto__Rellm__MediaMetadata =
-    { videoPreviewTimeMs : Maybe Int }
+    { videoPreviewTimeMs : Maybe Protobuf.Types.Int64.Int64 }
 
 
 {-| The field numbers for the fields of `Proto__Rellm__MediaSize`. This is mostly useful for internals, like documentation generation.

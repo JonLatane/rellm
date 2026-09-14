@@ -1427,7 +1427,7 @@ mediaItemView server account targetHost deletingIds selected media =
     in
     div [ classes itemClasses, onClick (MediaItemClicked media.id) ]
         [ div [ class "my-media-panel-item-preview" ]
-            [ MediaRenderer.view MediaRenderer.ExtraSmall MediaRenderer.ToWidthAndHeight server (Just account) MediaItemClicked (toMediaReference media)
+            [ MediaRenderer.view MediaRenderer.ExtraSmall MediaRenderer.ToWidthAndHeight server (Just account) True MediaRenderer.init MediaItemClicked MediaItemClicked (toMediaReference media)
             , button
                 [ classes [ "remove-btn", "my-media-panel-item-delete" ]
                 , stopPropagationOn "click" (Decode.succeed ( DeleteClicked media, True ))
@@ -1548,7 +1548,7 @@ selectedMediaItemView server account moveAnimations count index media =
     div
         (id (selectedMediaDomId media.id) :: class "my-media-panel-selected-item" :: moveAttrs)
         [ div [ class "my-media-panel-selected-item-preview" ]
-            [ MediaRenderer.view MediaRenderer.ExtraSmall MediaRenderer.ToWidthAndHeight server (Just account) (\_ -> NoOp) media ]
+            [ MediaRenderer.view MediaRenderer.ExtraSmall MediaRenderer.ToWidthAndHeight server (Just account) True MediaRenderer.init (\_ -> NoOp) (\_ -> NoOp) media ]
         , div [ class "my-media-panel-selected-item-controls" ]
             [ div [ classList [ ( "reorder-arrow", True ), ( "reorder-arrow-hidden", not canMoveBackward ) ] ] [ reorderPair.backward ]
             , button

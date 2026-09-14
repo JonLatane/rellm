@@ -24,6 +24,7 @@ appearance (dark/light/auto) setting that doesn't belong to it.
 import Browser.Dom as Dom
 import Browser.Events
 import Browser.Navigation as Nav
+import Components.MediaRenderer as MediaRenderer
 import Components.SyncSources as SyncSources
 import Components.Events as Events
 import Components.Pages.MessagesPage as MessagesPage
@@ -112,6 +113,14 @@ type alias Model =
     -- into one type alias since every call site that needs one of these
     -- tends to need the other too (see its own doc).
     , time : SharedTime.Model
+
+    -- Which video media ids have been clicked to play -- see
+    -- `Components.MediaRenderer`'s own "Click-to-play video previews" doc. A single
+    -- app-wide instance (not folded into `panels`, since it's not an overlay -- it's read by
+    -- ordinary in-page content, `postCard`/`postDetail`/`eventCard` and friends) so a video
+    -- clicked-to-play in one rendering of a Post/Event (e.g. a pinned post) shows as playing in
+    -- every other rendering of the same media too.
+    , mediaRenderer : MediaRenderer.Model
     }
 
 
@@ -123,6 +132,7 @@ type Msg
     | MarkdownPanelMsg MarkdownPanel.Msg
     | MediaGeneratorPanelMsg MediaGeneratorPanel.Msg
     | MediaViewerPanelMsg MediaViewerPanel.Msg
+    | MediaRendererMsg MediaRenderer.Msg
     | MyMediaPanelMsg MyMediaPanel.Msg
     | MyMediaPanelOpenForAccount RellmAccount
     | CreateNewPanelMsg CreateNewPanel.Msg
@@ -454,6 +464,7 @@ init basePath req flags =
                 { browserTimeZone = { zone = Time.utc, name = "", abbreviation = timeZoneAbbreviation, uses24Hour = uses24HourTime }
                 , now = Time.millisToPosix 0
                 }
+            , mediaRenderer = MediaRenderer.init
             }
     in
     ( model
@@ -670,8 +681,17 @@ sharedUpdate req msg model =
                 panels =
                     model.panels
 
-                ( subModel, subCmd, ( maybeAccountsPanelMsg, maybeMediaViewerPanelMsg ) ) =
+                ( subModel, subCmd, ( maybeAccountsPanelMsg, maybeMediaViewerPanelMsg, maybeMediaRendererMsg ) ) =
                     StarredPanel.update model.accounts subMsg panels.starredPanel
+
+                newMediaRenderer : MediaRenderer.Model
+                newMediaRenderer =
+                    case maybeMediaRendererMsg of
+                        Just mediaRendererMsg ->
+                            MediaRenderer.update mediaRendererMsg model.mediaRenderer
+
+                        Nothing ->
+                            model.mediaRenderer
 
                 ( accountsPanelModel, accountsPanelCmd ) =
                     case maybeAccountsPanelMsg of
@@ -777,6 +797,7 @@ sharedUpdate req msg model =
                         , createNewPanel = closedCreateNewPanelModel
                         , messagingPanel = closedMessagingPanelModel
                     }
+                , mediaRenderer = newMediaRenderer
               }
             , Cmd.batch
                 [ Cmd.map StarredPanelMsg subCmd
@@ -819,6 +840,9 @@ sharedUpdate req msg model =
                 , Cmd.map AccountsPanelMsg accountsPanelCmd
                 ]
             )
+
+        MediaRendererMsg subMsg ->
+            ( { model | mediaRenderer = MediaRenderer.update subMsg model.mediaRenderer }, Cmd.none )
 
         BreadcrumbsMsg subMsg ->
             let

@@ -45,6 +45,7 @@ route's `id` or `id@host` segment.
 -}
 
 import Components.Authors as Authors
+import Components.MediaRenderer as MediaRenderer
 import Components.Markdown as Markdown
 import Components.MultiMediaRenderer as MultiMediaRenderer
 import Components.SyncDestinations as SyncDestinations
@@ -677,21 +678,21 @@ push/delete controls render nowhere else. Ignored entirely by the `REPLY` fallba
 below -- a reply is never synced to anything.
 
 -}
-postCard : SharedTime.Model -> String -> String -> String -> Maybe RellmServer -> Maybe RellmAccount -> (String -> msg) -> Bool -> Bool -> Bool -> Maybe msg -> Bool -> Maybe (List SyncDestination) -> (String -> Bool) -> (String -> Maybe String) -> (String -> msg) -> (String -> String -> msg) -> Post -> Html msg
-postCard time basePath viewingServerHost postServerHost maybeServer maybeAccount onMediaClicked extraSmallMedia current starred onStarClicked showSyncDestinations availableSyncDestinations isPushing pushError onPush onDelete post =
+postCard : SharedTime.Model -> String -> String -> String -> Maybe RellmServer -> Maybe RellmAccount -> (String -> msg) -> MediaRenderer.Model -> (String -> msg) -> Bool -> Bool -> Bool -> Maybe msg -> Bool -> Maybe (List SyncDestination) -> (String -> Bool) -> (String -> Maybe String) -> (String -> msg) -> (String -> String -> msg) -> Post -> Html msg
+postCard time basePath viewingServerHost postServerHost maybeServer maybeAccount onMediaClicked mediaPlayState onMediaPlayClicked extraSmallMedia current starred onStarClicked showSyncDestinations availableSyncDestinations isPushing pushError onPush onDelete post =
     if post.context == REPLY then
-        replyCard basePath viewingServerHost postServerHost maybeServer maybeAccount onMediaClicked 0 True False False Nothing Nothing Nothing post
+        replyCard basePath viewingServerHost postServerHost maybeServer maybeAccount onMediaClicked mediaPlayState onMediaPlayClicked 0 True False False Nothing Nothing Nothing post
 
     else
-        postCardView time basePath viewingServerHost postServerHost maybeServer maybeAccount onMediaClicked extraSmallMedia current starred onStarClicked showSyncDestinations availableSyncDestinations isPushing pushError onPush onDelete post
+        postCardView time basePath viewingServerHost postServerHost maybeServer maybeAccount onMediaClicked mediaPlayState onMediaPlayClicked extraSmallMedia current starred onStarClicked showSyncDestinations availableSyncDestinations isPushing pushError onPush onDelete post
 
 
 {-| The plain (non-`REPLY`) rendering `postCard` falls back to -- see its own
 doc comment above for why `REPLY` posts instead defer entirely to
 `replyCard`.
 -}
-postCardView : SharedTime.Model -> String -> String -> String -> Maybe RellmServer -> Maybe RellmAccount -> (String -> msg) -> Bool -> Bool -> Bool -> Maybe msg -> Bool -> Maybe (List SyncDestination) -> (String -> Bool) -> (String -> Maybe String) -> (String -> msg) -> (String -> String -> msg) -> Post -> Html msg
-postCardView time basePath viewingServerHost postServerHost maybeServer maybeAccount onMediaClicked extraSmallMedia current starred onStarClicked showSyncDestinations availableSyncDestinations isPushing pushError onPush onDelete post =
+postCardView : SharedTime.Model -> String -> String -> String -> Maybe RellmServer -> Maybe RellmAccount -> (String -> msg) -> MediaRenderer.Model -> (String -> msg) -> Bool -> Bool -> Bool -> Maybe msg -> Bool -> Maybe (List SyncDestination) -> (String -> Bool) -> (String -> Maybe String) -> (String -> msg) -> (String -> String -> msg) -> Post -> Html msg
+postCardView time basePath viewingServerHost postServerHost maybeServer maybeAccount onMediaClicked mediaPlayState onMediaPlayClicked extraSmallMedia current starred onStarClicked showSyncDestinations availableSyncDestinations isPushing pushError onPush onDelete post =
     div
         [ classes
             ([ "post-card"
@@ -737,10 +738,10 @@ postCardView time basePath viewingServerHost postServerHost maybeServer maybeAcc
         , case maybeServer of
             Just server ->
                 if extraSmallMedia then
-                    MultiMediaRenderer.previewExtraSmall server maybeAccount onMediaClicked post.media
+                    MultiMediaRenderer.previewExtraSmall server maybeAccount mediaPlayState onMediaPlayClicked onMediaClicked post.media
 
                 else
-                    MultiMediaRenderer.preview server maybeAccount onMediaClicked post.media
+                    MultiMediaRenderer.preview server maybeAccount mediaPlayState onMediaPlayClicked onMediaClicked post.media
 
             Nothing ->
                 text ""
@@ -773,7 +774,7 @@ postCardView time basePath viewingServerHost postServerHost maybeServer maybeAcc
                                 ""
 
                               else
-                                " · " ++ postServerHost
+                                " · " ++ displayHost postServerHost
                              )
                                 ++ (if showPostVisibility maybeAccount post then
                                         " · " ++ postVisibilityText post
@@ -819,6 +820,8 @@ replyCard :
     -> Maybe RellmServer
     -> Maybe RellmAccount
     -> (String -> msg)
+    -> MediaRenderer.Model
+    -> (String -> msg)
     -> Int
     -> Bool
     -> Bool
@@ -828,7 +831,7 @@ replyCard :
     -> Maybe msg
     -> Post
     -> Html msg
-replyCard basePath viewingServerHost postServerHost maybeServer maybeAccount onMediaClicked depth loaded loading collapsed onReplyClicked onLoadRepliesClicked onToggleCollapsedClicked post =
+replyCard basePath viewingServerHost postServerHost maybeServer maybeAccount onMediaClicked mediaPlayState onMediaPlayClicked depth loaded loading collapsed onReplyClicked onLoadRepliesClicked onToggleCollapsedClicked post =
     div
         [ class "post-reply-item"
         , style "margin-left" (String.fromInt (min depth 8 * 20) ++ "px")
@@ -854,7 +857,7 @@ replyCard basePath viewingServerHost postServerHost maybeServer maybeAccount onM
             ]
         , case maybeServer of
             Just server ->
-                MultiMediaRenderer.previewExtraSmall server maybeAccount onMediaClicked post.media
+                MultiMediaRenderer.previewExtraSmall server maybeAccount mediaPlayState onMediaPlayClicked onMediaClicked post.media
 
             Nothing ->
                 text ""
@@ -989,13 +992,36 @@ caller's own fetch of the viewer's `SyncDestination`s (gated on being `post`'s a
 resolves, same `Nothing`-falls-back-to-read-only-links behavior as that page (see
 `Components.Pages.PostPage.Model.availableSyncDestinations`'s own doc for the fetch itself).
 
+`readOnly`, when `True`, hides every edit affordance this would otherwise show its own author/an
+Admin (`mediaEditButton`/`generateMediaButton`/`mediaLayoutSelector`/`editContentButton` all become
+`text ""` outright, regardless of `maybeAccount`) and turns the title into a link to the post's own
+`/post/:id` page (`postHref`) -- for a caller rendering a Post somewhere other than its own dedicated
+page (currently just `Components.PinnedPosts`, which has no edit-state of its own to wire those
+buttons to -- see its own doc) where a viewer who happens to own the Post should go edit it on that
+canonical page instead, not expect a half-wired Edit button to work in place. `maybeAccount` itself is
+untouched by this flag -- `Authors.link`/`MultiMediaRenderer.view` still get the real value, so
+private/limited media and author badges keep working normally; only the edit-gating call sites above
+are skipped.
 -}
-postDetail : SharedTime.Model -> String -> String -> String -> Maybe RellmServer -> Maybe RellmAccount -> (String -> msg) -> msg -> Maybe msg -> (String -> msg) -> Bool -> Maybe msg -> msg -> Html msg -> Html msg -> Maybe (List SyncDestination) -> (String -> Bool) -> (String -> Maybe String) -> (String -> msg) -> (String -> String -> msg) -> Post -> Html msg
-postDetail time basePath viewingServerHost postServerHost maybeServer maybeAccount onMediaClicked onMediaEditClicked onGenerateMediaClicked onMediaLayoutChanged starred onStarClicked onEditClicked visibilityView moderationView availableSyncDestinations isPushing pushError onPush onDelete post =
+postDetail : SharedTime.Model -> String -> String -> String -> Maybe RellmServer -> Maybe RellmAccount -> (String -> msg) -> MediaRenderer.Model -> (String -> msg) -> Bool -> msg -> Maybe msg -> (String -> msg) -> Bool -> Maybe msg -> msg -> Html msg -> Html msg -> Maybe (List SyncDestination) -> (String -> Bool) -> (String -> Maybe String) -> (String -> msg) -> (String -> String -> msg) -> Post -> Html msg
+postDetail time basePath viewingServerHost postServerHost maybeServer maybeAccount onMediaClicked mediaPlayState onMediaPlayClicked readOnly onMediaEditClicked onGenerateMediaClicked onMediaLayoutChanged starred onStarClicked onEditClicked visibilityView moderationView availableSyncDestinations isPushing pushError onPush onDelete post =
     div [ classes [ "post-detail", hostnameToCSSClass postServerHost, "border-color-primary-anchor-50" ] ]
         [ div [ class "post-detail-title-row" ]
             [ if post.context == POST then
-                h1 [ class "post-detail-title" ] [ text (postTitleText post) ]
+                let
+                    titleHeading : Html msg
+                    titleHeading =
+                        h1 [ class "post-detail-title" ] [ text (postTitleText post) ]
+                in
+                if readOnly then
+                    a
+                        [ href (postHref basePath viewingServerHost postServerHost post)
+                        , class "post-detail-title-link"
+                        ]
+                        [ titleHeading ]
+
+                else
+                    titleHeading
 
               else
                 case postContextLabel post.context of
@@ -1020,12 +1046,20 @@ postDetail time basePath viewingServerHost postServerHost maybeServer maybeAccou
         , case maybeServer of
             Just server ->
                 div []
-                    [ MultiMediaRenderer.view post.postMediaLayout server maybeAccount onMediaClicked post.media
-                    , div [ class "post-detail-media-edit-row" ]
-                        [ mediaEditButton maybeAccount onMediaEditClicked post
-                        , generateMediaButton maybeAccount onGenerateMediaClicked post
-                        ]
-                    , div [ class "post-detail-media-layout-row" ] [ mediaLayoutSelector maybeAccount onMediaLayoutChanged post ]
+                    [ MultiMediaRenderer.view post.postMediaLayout server maybeAccount mediaPlayState onMediaPlayClicked onMediaClicked post.media
+                    , if readOnly then
+                        text ""
+
+                      else
+                        div [ class "post-detail-media-edit-row" ]
+                            [ mediaEditButton maybeAccount onMediaEditClicked post
+                            , generateMediaButton maybeAccount onGenerateMediaClicked post
+                            ]
+                    , if readOnly then
+                        text ""
+
+                      else
+                        div [ class "post-detail-media-layout-row" ] [ mediaLayoutSelector maybeAccount onMediaLayoutChanged post ]
                     ]
 
             Nothing ->
@@ -1049,7 +1083,11 @@ postDetail time basePath viewingServerHost postServerHost maybeServer maybeAccou
 
             Nothing ->
                 text ""
-        , div [ class "post-detail-edit-row" ] [ editContentButton maybeAccount onEditClicked post ]
+        , if readOnly then
+            text ""
+
+          else
+            div [ class "post-detail-edit-row" ] [ editContentButton maybeAccount onEditClicked post ]
         , postSyncDestinationsView availableSyncDestinations isPushing pushError onPush onDelete post
         ]
 
@@ -1505,6 +1543,24 @@ parseFederatedPostId id host =
 isFederatedHost : String -> Bool
 isFederatedHost host =
     String.startsWith "mastodon:" host || String.startsWith "bluesky:" host
+
+
+{-| `host` as shown next to a post card -- strips the `"mastodon:"`/`"bluesky:"` tag `isFederatedHost`
+itself looks for (see `parseFederatedPostId`'s own doc on why it's there), since that tag exists only
+to keep this synthetic host from colliding with a real Rellm `frontendHost`, not to be shown to a
+user reading "posted on mastodon.world". A real Rellm `host` (never carrying either prefix) passes
+through unchanged.
+-}
+displayHost : String -> String
+displayHost host =
+    if String.startsWith "mastodon:" host then
+        String.dropLeft 9 host
+
+    else if String.startsWith "bluesky:" host then
+        String.dropLeft 8 host
+
+    else
+        host
 
 
 {-| A post's most relevant timestamp for "recency" sorting/display: when it

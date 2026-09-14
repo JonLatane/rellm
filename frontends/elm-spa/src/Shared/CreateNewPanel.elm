@@ -44,6 +44,7 @@ panel's state directly.
 
 -}
 
+import Components.MediaRenderer as MediaRenderer
 import Components.Markdown as Markdown
 import Components.MultiMediaRenderer as MultiMediaRenderer
 import Components.Posts as Posts
@@ -907,7 +908,7 @@ mediaField accountsPanelModel model host =
           else
             case RellmServers.rellmServerForHost accountsPanelModel.servers host of
                 Just server ->
-                    MultiMediaRenderer.previewExtraSmall server (RellmAccounts.enabledRellmAccountForServer accountsPanelModel.accounts host) (\_ -> EditMediaClicked) model.media
+                    MultiMediaRenderer.previewExtraSmall server (RellmAccounts.enabledRellmAccountForServer accountsPanelModel.accounts host) MediaRenderer.init (\_ -> EditMediaClicked) (\_ -> EditMediaClicked) model.media
 
                 Nothing ->
                     text ""

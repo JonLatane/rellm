@@ -710,6 +710,8 @@ eventCard :
     -> Maybe RellmServer
     -> Maybe RellmAccount
     -> (String -> msg)
+    -> MediaRenderer.Model
+    -> (String -> msg)
     -> MediaRenderer.MediaSize
     -> Bool
     -> Maybe msg
@@ -724,7 +726,7 @@ eventCard :
     -> Event
     -> Occasion
     -> Html msg
-eventCard time basePath viewingServerHost eventServerHost maybeServer maybeAccount onMediaClicked mediaSizing starred onStarClicked current showSyncSource showSyncDestinations availableSyncDestinations isPushing pushError onPush onDelete event occasion =
+eventCard time basePath viewingServerHost eventServerHost maybeServer maybeAccount onMediaClicked mediaPlayState onMediaPlayClicked mediaSizing starred onStarClicked current showSyncSource showSyncDestinations availableSyncDestinations isPushing pushError onPush onDelete event occasion =
     case event.post of
         Nothing ->
             text ""
@@ -775,10 +777,10 @@ eventCard time basePath viewingServerHost eventServerHost maybeServer maybeAccou
                     Just server ->
                         case mediaSizing of
                             MediaRenderer.ExtraSmall ->
-                                MultiMediaRenderer.previewExtraSmall server maybeAccount onMediaClicked eventPost.media
+                                MultiMediaRenderer.previewExtraSmall server maybeAccount mediaPlayState onMediaPlayClicked onMediaClicked eventPost.media
 
                             _ ->
-                                MultiMediaRenderer.preview server maybeAccount onMediaClicked eventPost.media
+                                MultiMediaRenderer.preview server maybeAccount mediaPlayState onMediaPlayClicked onMediaClicked eventPost.media
 
                     Nothing ->
                         text ""
