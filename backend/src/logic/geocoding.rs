@@ -62,7 +62,7 @@ fn geocode_at(base_url: &str, address: &str) -> Option<(f64, f64)> {
                 ("format", "jsonv2"),
                 ("limit", "1"),
             ])
-            .header("User-Agent", "Rellm (https://jonline.io)")
+            .header("User-Agent", "Rellm (https://rellm.org)")
             .send()
             .ok()?
             .text()

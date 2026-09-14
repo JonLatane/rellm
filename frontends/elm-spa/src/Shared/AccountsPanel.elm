@@ -27,6 +27,7 @@ module Shared.AccountsPanel exposing
     , grpcErrorToString
     , hasAdminAccount
     , init
+    , isFocusedAccount
     , isKnownServer
     , isMainServer
     , mainServerTheme
@@ -107,6 +108,16 @@ type alias Model =
     -- Simply closing the panel leaves it in place -- harmless, and means
     -- reopening the strip doesn't re-fetch hosts it already has cached.
     , recommendedServerConnections : Dict String RellmServer
+
+    -- The account whose avatar menu (Media/Sync Sources/Sync Destinations/AI Models -- see
+    -- `UI.accountAvatarMenuView`) is currently expanded open, if any -- toggled by clicking that
+    -- account's avatar (`AccountAvatarClicked`), and cleared by picking a menu item or closing the
+    -- whole Accounts Panel (`CloseAccountsPanel`/`ToggleAccountsPanel`). Only one account's menu can
+    -- be open at a time, mirroring `addAccountServerFormType`'s own single-`Maybe` reasoning. Not a
+    -- floating popover -- expands the account row itself taller to hold the menu (see
+    -- `ui/accounts_panel.css`'s `.account-avatar-menu`), so it needs no positioning/z-index/overflow-
+    -- escape logic of its own; the row's existing FLIP-collapse height transition does that for free.
+    , focusedAccount : Maybe RellmAccount
 
     -- Which tab of the merged "Add Account/Server" form (see
     -- `AccountOrServerFormType`) is showing, once there's at least one account
@@ -392,6 +403,8 @@ type Msg
     | RemoveServerClicked String
     | ToggleAccountsPanel
     | CloseAccountsPanel
+    | AccountAvatarClicked RellmAccount
+    | CloseFocusedAccount
     | ShowAddAccountFormClicked
     | ReauthenticateButtonClicked RellmAccount
     | GotPermissionsRefresh String (Result Grpc.Error ( RellmAccount, User ))
@@ -631,6 +644,18 @@ reorder (`Browser.Dom.getElement`) to drive its `UI.Flip` slide.
 accountRowDomId : String -> String
 accountRowDomId key =
     "account-row-" ++ escapeCSSClass key
+
+
+{-| Whether `account` is the one whose avatar popover menu is currently open (see
+`Model.focusedAccount`) -- compared by `rellmAccountId` rather than structural equality, so a
+popover stays open across e.g. a permissions refresh landing mid-open and changing some other field
+on the same account.
+-}
+isFocusedAccount : Model -> RellmAccount -> Bool
+isFocusedAccount model account =
+    model.focusedAccount
+        |> Maybe.map (\focused -> rellmAccountId focused == rellmAccountId account)
+        |> Maybe.withDefault False
 
 
 {-| The DOM `id` a combined server feed item chip (server or browsed Mastodon instance -- see
@@ -1256,6 +1281,7 @@ init req flags blueskyAccountsFlags mastodonAccountsAndServersFlags =
       , showAccountsPanel = False
       , recommendedServersExpanded = False
       , recommendedServerConnections = Dict.empty
+      , focusedAccount = Nothing
       , addAccountServerFormType = Nothing
       , newAccountType = Nothing
       , createAccountConfirmation = Nothing
@@ -2581,15 +2607,32 @@ sendUpdate req msg model =
                 repopulateBlankServerField newModel
 
               else
-                collapseAddAccountFormIfIdle { newModel | recommendedServersExpanded = False }
+                collapseAddAccountFormIfIdle
+                    { newModel | recommendedServersExpanded = False, focusedAccount = Nothing }
             , Cmd.none
             )
 
         CloseAccountsPanel ->
             ( collapseAddAccountFormIfIdle
-                { model | showAccountsPanel = False, createAccountConfirmation = Nothing, acceptedCreateAccount = Nothing, recommendedServersExpanded = False }
+                { model
+                    | showAccountsPanel = False
+                    , createAccountConfirmation = Nothing
+                    , acceptedCreateAccount = Nothing
+                    , recommendedServersExpanded = False
+                    , focusedAccount = Nothing
+                }
             , Cmd.none
             )
+
+        AccountAvatarClicked account ->
+            if isFocusedAccount model account then
+                ( { model | focusedAccount = Nothing }, Cmd.none )
+
+            else
+                ( { model | focusedAccount = Just account }, Cmd.none )
+
+        CloseFocusedAccount ->
+            ( { model | focusedAccount = Nothing }, Cmd.none )
 
         ShowAddAccountFormClicked ->
             ( { model | addAccountServerFormType = Just RellmServerFormType }, Cmd.none )

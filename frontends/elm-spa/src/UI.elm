@@ -26,6 +26,7 @@ import Shared.AccountsPanel.MastodonServers exposing (BrowsedMastodonInstance)
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (Branding, RellmServer)
 import Shared.Breadcrumbs as Breadcrumbs
+import Shared.ByteFormat as ByteFormat
 import Shared.CreateNewPanel as CreateNewPanel
 import Shared.FederatedAuth as FederatedAuth
 import Shared.MarkdownPanel as MarkdownPanel
@@ -1993,6 +1994,121 @@ accountItemReorderInfo shared count mainCount index key =
     { moveAttrs = moveAttrs, reorderPair = reorderPair, canMoveUp = canMoveUp, canMoveDown = canMoveDown }
 
 
+{-| The avatar button that toggles `accountAvatarMenuView` (see `AccountsPanel.Model.focusedAccount`)
+-- plain `button.media-btn`, same as before this menu existed, just with its click now toggling the
+menu instead of jumping straight to `MyMediaPanel`. Nested inside `accountRow`'s own
+`a.account-row-profile-link`, so its click still needs to stop propagation -- same reasoning as
+`accountAvatarMenuView`'s own items.
+
+An account that `needsPassword` gets no menu at all -- same "sign in to view media" gate the old
+button used, since none of the four items make sense for an account that isn't actually signed in.
+-}
+accountAvatarToggle : Shared.Model -> RellmAccount -> Html Shared.Msg
+accountAvatarToggle shared account =
+    if account.needsPassword then
+        button [ class "media-btn", title "Sign in to view media" ]
+            [ avatarOrPlaceholder shared.accounts.servers account ]
+
+    else
+        button
+            [ classes [ "media-btn", openClosedClass (AccountsPanel.isFocusedAccount shared.accounts account) ]
+            , stopPropagationAndPreventDefaultOnClick (Shared.AccountsPanelMsg (AccountsPanel.AccountAvatarClicked account))
+            ]
+            [ avatarOrPlaceholder shared.accounts.servers account ]
+
+
+{-| A second, collapsible line in `accountRow` (see that function's own doc) holding "Media"/"Sync
+Sources"/"Sync Destinations"/"AI Models" for this account -- expands the row itself open when
+`accountAvatarToggle` is clicked (`AccountsPanel.Model.focusedAccount`), rather than floating a
+popover on top of neighboring rows: ordinary in-flow content, so it just grows the row's own height
+(which the outer `.flip-animated-item` -- see `combinedAccountItemRowFlip` -- already sizes itself to
+fit) with no z-index/overflow-clip/scrollable-region workarounds needed. Always rendered (`Nothing`
+account excluded via `needsPassword` below), collapsed to zero height via `ui/accounts_panel.css`'s
+`.account-avatar-menu` -- the same `grid-template-rows` 1fr/0fr trick `flip.css`'s own
+`.flip-animated-item` uses -- so opening/closing is a smooth height transition (a "for free" FLIP-like
+animation, without needing this menu to track its own `UI.Flip.State`).
+
+"Media" opens `MyMediaPanel` directly (same `Shared.MyMediaPanelOpenForAccount` the old avatar button
+fired, which now also collapses this menu back closed -- see that handler's own doc); the other three
+navigate to the account's own profile page, where their actual management UI already lives
+(`Components.Pages.UserProfilePage`'s `syncSourcesSection`/`syncDestinationsSection`/
+`aiProvidersSection`) -- same link + `CloseAccountsPanel` pattern `accountRow`'s own profile link uses.
+Each of the three is shown only if `account` actually holds a permission that would let it use that
+feature at all (`RellmAccounts.canUseSyncSources`/`canUseSyncDestinations`/`canUseAIModels`) -- an
+account with no sync-from/sync-to/AI-provider permissions at all sees just the one "Media" item.
+-}
+accountAvatarMenuView : Shared.Model -> RellmAccount -> Html Shared.Msg
+accountAvatarMenuView shared account =
+    if account.needsPassword then
+        text ""
+
+    else
+        let
+            profileHref : String
+            profileHref =
+                Users.profileHref shared.basePath shared.accounts.mainFrontendHost account.server { userId = account.userId, username = account.username }
+
+            navigateAndClose : Html.Attribute Shared.Msg
+            navigateAndClose =
+                stopPropagationAndPreventDefaultOnClick (Shared.AccountsPanelMsg AccountsPanel.CloseAccountsPanel)
+
+            configuredCountOrEmpty : String -> List a -> String
+            configuredCountOrEmpty emptyText items =
+                if List.isEmpty items then
+                    emptyText
+
+                else
+                    String.fromInt (List.length items) ++ " configured"
+
+            itemContent : String -> String -> List (Html Shared.Msg)
+            itemContent label detail =
+                [ span [ class "account-avatar-menu-item-label" ] [ text label ]
+                , span [ class "account-avatar-menu-item-detail" ] [ text detail ]
+                ]
+        in
+        div [ classes [ "account-avatar-menu", openClosedClass (AccountsPanel.isFocusedAccount shared.accounts account) ] ]
+            [ div [ class "account-avatar-menu-list" ]
+                [ button
+                    [ class "account-avatar-menu-item"
+                    , stopPropagationAndPreventDefaultOnClick (Shared.MyMediaPanelOpenForAccount account)
+                    ]
+                    (itemContent "Media"
+                        (ByteFormat.formatBytes account.mediaStorageBytesUsed
+                            ++ " used / "
+                            ++ (case account.mediaStorageLimitBytes of
+                                    Just limit ->
+                                        ByteFormat.formatBytes limit
+
+                                    Nothing ->
+                                        "no limit"
+                               )
+                        )
+                    )
+                , if RellmAccounts.canUseSyncSources account then
+                    a
+                        [ class "account-avatar-menu-item", href profileHref, navigateAndClose ]
+                        (itemContent "Sync Sources" (configuredCountOrEmpty "No sync sources configured." account.syncSources))
+
+                  else
+                    text ""
+                , if RellmAccounts.canUseSyncDestinations account then
+                    a
+                        [ class "account-avatar-menu-item", href profileHref, navigateAndClose ]
+                        (itemContent "Sync Destinations" (configuredCountOrEmpty "No sync destinations configured." account.syncDestinations))
+
+                  else
+                    text ""
+                , if RellmAccounts.canUseAIModels account then
+                    a
+                        [ class "account-avatar-menu-item", href profileHref, navigateAndClose ]
+                        (itemContent "AI Models" (configuredCountOrEmpty "No AI models configured." account.aiModels))
+
+                  else
+                    text ""
+                ]
+            ]
+
+
 {-| The whole row is tinted with the account's server's `background-color-primary`
 (background = `primaryColor`, text = `primaryTextColor`, inherited by the
 username); the "host | server name" badge underneath it uses
@@ -2044,15 +2160,7 @@ accountRow shared count mainCount index account =
                 , href (Users.profileHref shared.basePath shared.accounts.mainFrontendHost account.server { userId = account.userId, username = account.username })
                 , stopPropagationAndPreventDefaultOnClick (Shared.AccountsPanelMsg AccountsPanel.CloseAccountsPanel)
                 ]
-                [ button
-                    [ class "media-btn"
-                    , if account.needsPassword then
-                        title "Sign in to view media"
-
-                      else
-                        stopPropagationAndPreventDefaultOnClick (Shared.MyMediaPanelOpenForAccount account)
-                    ]
-                    [ avatarOrPlaceholder shared.accounts.servers account ]
+                [ accountAvatarToggle shared account
                 , div [ class "account-row-label" ]
                     [ div [ class "account-row-username" ]
                         [ text (RellmAccounts.rellmAccountDisplayName account)
@@ -2074,6 +2182,7 @@ accountRow shared count mainCount index account =
                 [ text "╳" ]
             ]
         , accountRowAlerts shared account
+        , accountAvatarMenuView shared account
         ]
 
 

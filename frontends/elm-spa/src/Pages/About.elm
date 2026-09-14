@@ -63,8 +63,10 @@ aboutRellmView : Html.Html Msg
 aboutRellmView =
     div [ class "about-rellm" ]
         [ h2 [] [ text "About Rellm" ]
-        , p [] [ text "Rellm is a federated, decentralized social media platform created by Jon Latané." ]
-        , p [] [ text "It's AGPLv3, with a Rust BE and Elm FE (in the past, alternative ", a [ href "/tamagui/about", target "_self" ] [ text "React/Tamagui" ], text " and ", a [ href "/flutter", target "_self" ] [ text "Flutter" ], text " FEs), ", a [ href "https://github.com/JonLatane/rellm" ] [ text "available on GitHub" ], text ", and it should be easy to deploy yourself." ]
+        , p [] [ a [ href "https://rellm.org" ] [ text "Rellm" ], text " is a federated, decentralized social media platform created by Jon Latané." ]
+        , p [] [ text "Privacy-focused and marketing-hostile, it's AGPLv3 code, with a Rust BE and Elm FE (in the past, alternative ", a [ href "/tamagui/about", target "_self" ] [ text "React/Tamagui" ], text " and ", a [ href "/flutter", target "_self" ] [ text "Flutter" ], text " FEs), ", a [ href "https://github.com/JonLatane/rellm" ] [ text "available on GitHub" ], text ", and easy to deploy yourself." ]
+        , p [] [ text "A single-dev process leverages LLMs the \"right\" way, against two of the most slop-resistant languages invented, with tests, to make industrial-grade, delightful, self-hostable software accessible to all. In fact, \"Rellm\" is short for \"Rust, Elm, LLMs\"." ]
+        , p [] [ text "Rellm's client is natively interoperable with Mastodon and Bluesky accounts and servers. It also integrates with Facebook, X (Twitter), RSS, Atom, iCal, and much more, in many configurations (sending data to/from all these platforms)." ]
         , p [] [ text "Its only external requirements are PostgreSQL and MinIO/S3. If you have ", pre [] [ text "docker" ], text " and Postgres's ", pre [] [ text "createdb" ], text " it takes about ", a [ href "https://github.com/JonLatane/rellm#2-minute-startup-with-homebrew" ] [ text "2 minutes to set up Rellm on macOS with Homebrew" ], text " or ", a [ href "https://github.com/JonLatane/rellm#3-minute-startup-on-linux" ] [ text "3 minutes to set up Rellm on Linux" ], text "." ]
         , p [] [ text "Feel free to ", a [ href "mailto:jonlatane@gmail.com" ] [ text "email me" ], text " if you have any questions or want to contribute." ]
         ]

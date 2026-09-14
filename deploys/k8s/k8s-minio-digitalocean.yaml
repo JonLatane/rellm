@@ -38,7 +38,7 @@ spec:
           claimName: minio-pv-claim
       containers:
       - name: minio
-        image: minio/minio:latest
+        image: quay.io/minio/minio:RELEASE.2025-07-23T15-54-02Z
         args:
         - server
         - /storage

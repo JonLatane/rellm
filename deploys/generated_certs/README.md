@@ -9,6 +9,7 @@ Rellm's `make`-powered cert generation setup is built on Cert-Manager. You'll ne
 The following `make` commands should be run from inside this directory (`generated_certs`).
 
 ### Quick setup with Cert-Manager (DigitalOcean-specific for now)
+
 These steps are all based off of using [the `Makefile` in this directory](https://github.com/JonLatane/rellm/blob/main/generated_certs/Makefile).
 1. Point your DNS host (for instance, I use `jonline.io`), at the IP for your deployed `rellm` LoadBalancer instance. For the default Quick Start deploy, get it with: `kubectl describe service rellm -n rellm | grep 'LoadBalancer Ingress'`.
     * You need to be using DigitalOcean DNS for your domain and DigitalOcean Kubernetes Service (DOKS) to host.

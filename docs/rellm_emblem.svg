@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="realm" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#E2542D"/>
+      <stop offset="100%" stop-color="#5FB6D9"/>
+    </linearGradient>
+
+    <radialGradient id="sparkGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#C6AEFF" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#C6AEFF" stop-opacity="0"/>
+    </radialGradient>
+
+    <filter id="soften" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="10"/>
+    </filter>
+  </defs>
+
+  <!-- Federation nodes: neighboring networks beyond the realm's border -->
+  <g stroke="#9AA3C7" stroke-width="2" stroke-dasharray="4 5" opacity="0.55" fill="none">
+    <line x1="86" y1="86" x2="130" y2="126"/>
+    <line x1="426" y1="86" x2="382" y2="126"/>
+    <line x1="256" y1="466" x2="256" y2="422"/>
+  </g>
+  <circle cx="86" cy="86" r="10" fill="#6364FF"/>
+  <circle cx="426" cy="86" r="10" fill="#1185FE"/>
+  <circle cx="256" cy="466" r="9" fill="#B9C0DE"/>
+
+  <!-- The Realm: a walled shield, borders you define -->
+  <path d="M128,124
+           L128,100 L179.2,100 L179.2,124
+           L230.4,124 L230.4,100 L281.6,100 L281.6,124
+           L332.8,124 L332.8,100 L384,100 L384,124
+           C393,192 381,304 256,422
+           C131,304 119,192 128,124
+           Z"
+        fill="url(#realm)"
+        stroke="#F0AD00"
+        stroke-width="6"
+        stroke-linejoin="round"/>
+
+  <!-- LLM spark, glowing at the realm's heart -->
+  <circle cx="256" cy="228" r="52" fill="url(#sparkGlow)" filter="url(#soften)"/>
+  <path d="M256,178
+           C259,208 262,222 292,228
+           C262,234 259,248 256,278
+           C253,248 250,234 220,228
+           C250,222 253,208 256,178
+           Z"
+        fill="#FFFFFF"/>
+  <path d="M310,290
+           C311.5,300 313,303 323,305
+           C313,307 311.5,310 310,320
+           C308.5,310 307,307 297,305
+           C307,303 308.5,300 310,290
+           Z"
+        fill="#FFFFFF" opacity="0.9"/>
+</svg>

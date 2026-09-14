@@ -3,6 +3,9 @@ module Shared.AccountsPanel.RellmAccounts exposing
     , RellmAccountAuthTokens
     , Token
     , applyPermissionsRefreshResult
+    , canUseAIModels
+    , canUseSyncDestinations
+    , canUseSyncSources
     , disableOtherRellmAccountsOnServer
     , enabledRellmAccountForServer
     , encodeRellmAccount
@@ -131,6 +134,52 @@ rellmAccountId account =
 isAdmin : RellmAccount -> Bool
 isAdmin account =
     List.member ADMIN account.permissions
+
+
+{-| Whether `account` holds any permission that lets it create/manage `SyncSource`s (iCal/RSS/Atom
+subscriptions) -- gates whether the account avatar menu's "Sync Sources" item shows at all
+(see `UI.accountAvatarMenuView`). Mirrors `Components.Pages.UserProfilePage.canUseSyncSources`'s
+own any-of-N-permissions-or-ADMIN gate; kept as a separate, `Maybe`-free copy here rather than
+imported from there, since that module itself depends on `AccountsPanel` (which this module is
+part of) and so can't be imported back into it.
+-}
+canUseSyncSources : RellmAccount -> Bool
+canUseSyncSources account =
+    List.member ADMIN account.permissions
+        || List.member SYNCEVENTSFROMICS account.permissions
+        || List.member SYNCPOSTSFROMRSS account.permissions
+        || List.member SYNCPOSTSFROMATOM account.permissions
+
+
+{-| Whether `account` holds any permission that lets it create/manage a `SyncDestination` (cross-
+posting to Facebook/Instagram/Mastodon/Bluesky/X/Threads) -- gates the popover's "Sync Destinations"
+item. See `canUseSyncSources`'s own doc for why this is a separate copy of
+`Components.Pages.UserProfilePage.canUseSyncDestinations`'s same any-of-N-permissions-or-ADMIN gate.
+-}
+canUseSyncDestinations : RellmAccount -> Bool
+canUseSyncDestinations account =
+    List.member ADMIN account.permissions
+        || List.member SYNCEVENTSTOFACEBOOK account.permissions
+        || List.member SYNCPOSTSTOFACEBOOK account.permissions
+        || List.member SYNCEVENTSTOINSTAGRAM account.permissions
+        || List.member SYNCPOSTSTOINSTAGRAM account.permissions
+        || List.member SYNCEVENTSTOMASTODON account.permissions
+        || List.member SYNCPOSTSTOMASTODON account.permissions
+        || List.member SYNCEVENTSTOBLUESKY account.permissions
+        || List.member SYNCPOSTSTOBLUESKY account.permissions
+        || List.member SYNCEVENTSTOXTWITTER account.permissions
+        || List.member SYNCPOSTSTOXTWITTER account.permissions
+        || List.member SYNCEVENTSTOTHREADS account.permissions
+        || List.member SYNCPOSTSTOTHREADS account.permissions
+
+
+{-| Whether `account` holds `CREATE_AI_PROVIDERS` (or `ADMIN`) -- gates the popover's "AI Models"
+item, same any-of-N-permissions-or-ADMIN shape as `canUseSyncSources`/`canUseSyncDestinations` even
+though there's only one permission to check here.
+-}
+canUseAIModels : RellmAccount -> Bool
+canUseAIModels account =
+    List.member ADMIN account.permissions || List.member CREATEAIPROVIDERS account.permissions
 
 
 {-| A username display enriched with the account's Real Name, if it has one --
@@ -692,6 +741,12 @@ permissionFromInt n =
         700 ->
             SYNCEVENTSFROMICS
 
+        701 ->
+            SYNCPOSTSFROMRSS
+
+        702 ->
+            SYNCPOSTSFROMATOM
+
         1000 ->
             SYNCEVENTSTOFACEBOOK
 
@@ -739,6 +794,9 @@ permissionFromInt n =
 
         10001 ->
             VIEWPRIVATECONTACTMETHODS
+
+        10002 ->
+            EDITCLUSTERSETTINGS
 
         other ->
             PermissionUnrecognized_ other

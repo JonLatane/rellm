@@ -176,23 +176,16 @@ protos:
 lines_of_code:
 	git ls-files | grep -v generated | xargs cloc
 
-docs: documentation html_docs
+# Docs-related targets: more in docs/Makefile
+docs:
+	$(MAKE) -C docs docs
 
 documentation:
-	docker run --rm -v $(PWD)/docs:/out -v $(PWD)/protos:/protos pseudomuto/protoc-gen-doc --doc_opt=markdown,protocol.md rellm.proto authentication.proto visibility_moderation.proto permissions.proto users.proto media.proto messages.proto posts.proto events.proto groups.proto server_configuration.proto federation.proto sync.proto ai_providers.proto
+	$(MAKE) -C docs documentation
 
-html_docs: documentation
-	npm i markdown-to-html-cli -g
-	markdown-to-html --source docs/protocol.md --output docs/protocol.html --github-corners https://github.com/JonLatane/rellm --style 'markdown-style { padding-top: 40px!important; }' --title 'Rellm Protocol Documentation'
-	node -e "const f='docs/protocol.html'; const js=require('fs').readFileSync('docs/toc-sidebar.js','utf8'); \
-		require('fs').writeFileSync(f, require('fs').readFileSync(f,'utf8').replace('</body>', '<script>'+js+'</script></body>'));"
+html_docs:
+	$(MAKE) -C docs html_docs
 
 graphs:
-	cd docs/architecture && dot -Tsvg Kubernetes_Deployment.dot -o Kubernetes_Deployment.svg
-	cd docs/architecture && dot -Gdpi=150 -Twebp Kubernetes_Deployment.dot -o Kubernetes_Deployment.webp
-	cd docs/architecture && dot -Tsvg Traefik_Kubernetes_Deployment.dot -o Traefik_Kubernetes_Deployment.svg
-	cd docs/architecture && dot -Gdpi=150 -Twebp Traefik_Kubernetes_Deployment.dot -o Traefik_Kubernetes_Deployment.webp
-	cd docs/architecture && dot -Tsvg Service_Architecture.dot -o Service_Architecture.svg
-	cd docs/architecture && dot -Gdpi=150 -Twebp Service_Architecture.dot -o Service_Architecture.webp
-#	cd docs/architecture && neato -Tsvg Service_Architecture.dot -o Service_Architecture.svg
+	$(MAKE) -C docs graphs
 

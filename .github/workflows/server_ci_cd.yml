@@ -33,6 +33,9 @@ on:
       CLOUDFLARE_ZONE_ATO_BAND:
         description: "Cloudflare Zone ID for Ato Band"
         required: true
+      CLOUDFLARE_ZONE_RELLM_ORG:
+        description: "Cloudflare Zone ID for Rellm.org"
+        required: true
       HOMEBREW_TAP_TOKEN:
         description: "GitHub PAT with contents:write on JonLatane/homebrew-rellm, used to push Formula updates"
         required: true
@@ -944,7 +947,7 @@ jobs:
 
             | Deployment | Links | Deployment Version |
             | --- | --- | --- |
-            | [Jonline.io ![Jonline.io](https://jonline.io/info_shield?56fdas586)](https://jonline.io)                      | [About](https://jonline.io/about), [Protocol Docs](https://jonline.io/docs/protocol/)           | Development |
+            | [Jonline.io ![Jonline.io](https://jonline.io/info_shield?56fdas586)](https://jonline.io)                      | [About](https://jonline.io/about), [Protocol Docs](https://rellm.org/docs/protocol/)           | Development |
             | [BullCity.Social ![BullCity.Social](https://BullCity.Social/info_shield?56fdas586)](https://BullCity.Social/) | [About](https://BullCity.Social/about), [Protocol Docs](https://BullCity.Social/docs/protocol/) | Production  |
             | [OakCity.Social ![OakCity.Social](https://OakCity.Social/info_shield?56fdas586)](https://OakCity.Social/)     | [About](https://OakCity.Social/about), [Protocol Docs](https://OakCity.Social/docs/protocol/)   | Production  |
 
@@ -1449,11 +1452,72 @@ jobs:
           CLOUDFLARE_TOKEN: ${{ secrets.CLOUDFLARE_TOKEN }}
         run: .github/workflows/scripts/purge_cloudflare_cache.sh ato.band
 
+  deploy_rellm_org:
+    name: Deploy to rellm.org
+    needs: create_github_release
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Extract Versioning Data
+        id: vars
+        run: |-
+          echo "be_version=$(cat backend/Cargo.toml | grep 'version =' | sed -n 1p | awk '{print $3;}' | sed 's/"//g')" >> $GITHUB_OUTPUT
+          echo "sha_short=$(git rev-parse --short=7 HEAD)" >> $GITHUB_OUTPUT
+
+      - uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Update deploys/k8s/server_internal.yaml to use ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
+        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}|g' deploys/k8s/server_internal.yaml
+
+      - name: Update deploys/k8s/preview_generator.yaml to use ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
+        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}|g' deploys/k8s/preview_generator.yaml
+
+      - name: Save DigitalOcean kubeconfig with short-lived credentials
+        run: doctl kubernetes cluster kubeconfig save --expiry-seconds 600 rellm-be
+
+      - name: Delete stray CronJobs (background jobs moved to the rellm-jobs Deployment)
+        run: kubectl delete cronjob --all -n rellm-org --ignore-not-found=true
+
+      - name: Deploy to rellm.org via DigitalOcean Kubernetes
+        run: kubectl apply -f deploys/k8s/server_internal.yaml -n rellm-org
+
+      - name: Verify Server deployment
+        run: kubectl rollout status deployment/rellm -n rellm-org --timeout 3m
+
+      - name: Deploy Preview Generator
+        run: kubectl apply -f deploys/k8s/preview_generator.yaml -n rellm-org
+
+      - uses: actions/cache/restore@v6
+        with:
+          path: frontends/flutter/build/web
+          key: flutter-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
+      - uses: actions/cache/restore@v6
+        with:
+          path: |
+            frontends/tamagui/apps/next/out
+            frontends/tamagui/apps/next/out-tamagui
+          key: web-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
+      - uses: actions/cache/restore@v6
+        with:
+          path: frontends/elm-spa/public
+          key: elm-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
+
+      - name: Purge Cloudflare cache
+        env:
+          CLOUDFLARE_ZONE: ${{ secrets.CLOUDFLARE_ZONE_RELLM_ORG }}
+          CLOUDFLARE_TOKEN: ${{ secrets.CLOUDFLARE_TOKEN }}
+        run: .github/workflows/scripts/purge_cloudflare_cache.sh rellm.org
+
   bounce_traefik_production:
     name: Bounce Traefik (Production)
-    # deploy_bullcitysocial, deploy_oakcitysocial, and deploy_ato_band run concurrently,
-    # so this waits on all three and bounces Traefik once for the group -- rather than
-    # once per namespace -- since any deploy's pod churn can wedge Traefik's
+    # deploy_bullcitysocial, deploy_oakcitysocial, deploy_ato_band, and deploy_rellm_org
+    # run concurrently, so this waits on all four and bounces Traefik once for the group --
+    # rather than once per namespace -- since any deploy's pod churn can wedge Traefik's
     # TLS-passthrough routing (see the matching step in deploy_rellmio_server). Runs
     # if any succeeded, since a partial-success deploy still churns pods and can still
     # wedge routing.
@@ -1461,9 +1525,10 @@ jobs:
       - deploy_bullcitysocial
       - deploy_oakcitysocial
       - deploy_ato_band
+      - deploy_rellm_org
     if: |
       always() && github.ref == 'refs/heads/main' &&
-      (needs.deploy_bullcitysocial.result == 'success' || needs.deploy_oakcitysocial.result == 'success' || needs.deploy_ato_band.result == 'success')
+      (needs.deploy_bullcitysocial.result == 'success' || needs.deploy_oakcitysocial.result == 'success' || needs.deploy_ato_band.result == 'success' || needs.deploy_rellm_org.result == 'success')
     runs-on: ubuntu-latest
 
     steps:
