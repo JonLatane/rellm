@@ -1,36 +1,48 @@
-apiVersion: batch/v1
-kind: CronJob
+# A single persistent pod that loops generate_preview_images on an interval (see
+# backend/preview_generator_job.sh, baked into this image's ENTRYPOINT). Replaced the old
+# per-minute `generate-preview-images` CronJob -- that many Job executions piling up across
+# every tenant namespace at once was adding to cluster resource pressure.
+#
+# replicas MUST stay at 1 -- see backend/preview_generator_job.sh; running two would just
+# duplicate work (and briefly launch two browsers) without the cluster-lock coordination that
+# ClusterResources-configured deploys use for exactly this. strategy Recreate for the same
+# reason, so a rollout doesn't briefly run old and new pods' loops at once.
+apiVersion: apps/v1
+kind: Deployment
 metadata:
-  name: generate-preview-images
+  name: rellm-preview-generator
+  labels:
+    app: rellm-preview-generator
 spec:
-  schedule: "* * * * *"
-  successfulJobsHistoryLimit: 3
-  concurrencyPolicy: Forbid
-  jobTemplate:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: rellm-preview-generator
+  template:
+    metadata:
+      labels:
+        app: rellm-preview-generator
     spec:
-      template:
-        spec:
-          containers:
-            - name: generate-preview-images
-              image: docker.io/jonlatane/rellm_preview_generator:0.5.553
-              imagePullPolicy: IfNotPresent
-              env:
-                - name: DATABASE_URL
-                  value: postgres://admin:secure_password1@rellm-postgres/rellm
-                - name: MINIO_ENDPOINT
-                  value: http://rellm-minio:9000
-                - name: MINIO_REGION
-                  value: ""
-                - name: MINIO_BUCKET
-                  value: rellm
-                - name: MINIO_ACCESS_KEY
-                  value: minio
-                - name: MINIO_SECRET_KEY
-                  value: minio123
-                - name: RUST_BACKTRACE
-                  value: full
-                - name: RUST_LOG
-                  value: headless_chrome=trace
-              command:
-                - /opt/generate_preview_images
-          restartPolicy: Never
+      containers:
+        - name: rellm-preview-generator
+          image: docker.io/jonlatane/rellm_preview_generator:0.5.553
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: DATABASE_URL
+              value: postgres://admin:secure_password1@rellm-postgres/rellm
+            - name: MINIO_ENDPOINT
+              value: http://rellm-minio:9000
+            - name: MINIO_REGION
+              value: ""
+            - name: MINIO_BUCKET
+              value: rellm
+            - name: MINIO_ACCESS_KEY
+              value: minio
+            - name: MINIO_SECRET_KEY
+              value: minio123
+            - name: RUST_BACKTRACE
+              value: full
+            - name: RUST_LOG
+              value: headless_chrome=trace

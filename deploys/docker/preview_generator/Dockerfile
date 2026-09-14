@@ -3,10 +3,16 @@ FROM --platform=linux/amd64 debian:testing-slim
 # The preview generator image only includes the background job binary and a tool to delete images. Other Rellm binaries aren't really useful;
 # the bulk of this image will be the Chrome distro included.
 #
-# Note that its entrypoint is a headless browser, which is necessary for the preview generator to work. A cluster job of some sort must
-# run /opt/generate_preview_images periodically (which is set up automatically in Rellm deployment as a K8s CronJob).
+# generate_preview_images launches its own headless Brave instance internally (see start_browser()
+# in backend/src/bin/generate_preview_images.rs) -- it doesn't need one already running. The
+# entrypoint just loops that binary on an interval via preview_generator_job.sh, run as a single
+# persistent pod (deploys/k8s/preview_generator.yaml) rather than a per-invocation K8s CronJob.
 COPY backend/target/release/generate_preview_images__server_release /opt/generate_preview_images
 COPY backend/target/release/delete_preview_images__server_release /opt/delete_preview_images
+
+# Runs generate_preview_images on a loop -- see backend/preview_generator_job.sh. Lives
+# alongside it in /opt, unsuffixed, so its "./generate_preview_images" call finds it directly.
+COPY backend/preview_generator_job.sh /opt/preview_generator_job.sh
 
 # Setup the environment for the preview generator.
 RUN apt-get update && apt-get -y install libpq5 curl postgresql-client
@@ -49,4 +55,4 @@ RUN apt-get -y install brave-browser
 
 EXPOSE 27707 8000 80 443 8001-9000 9222
 
-ENTRYPOINT xvfb-run brave-browser --remote-debugging-port=9222 --disable-gpu --no-sandbox https://www.google.com
+ENTRYPOINT ["bash", "/opt/preview_generator_job.sh"]
