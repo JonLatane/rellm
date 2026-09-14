@@ -257,9 +257,9 @@
 /* .section-title, .permission-badges, .permission-badge (+ .editable) and
    .permission-remove are shared with ServerInformationPage -- see main.css. */
 
-/* `expandableProfileSection`'s own clickable header, wrapping `.section-title`
-   -- used by the Permissions/Sync Sources sections, both collapsed by
-   default. */
+/* `expandableProfileSection`'s own clickable header, wrapping `.section-title` -- shared by every
+   collapsible profile section (Contact Methods, Media Storage, Permissions, Sync Sources, Sync
+   Destinations, AI Providers, AI Model Access). */
 .expandable-section-title {
   display: flex;
   align-items: center;
@@ -268,12 +268,55 @@
   user-select: none;
 }
 
+/* Rest state (`.is-closed`) points right; `.is-open` rotates a quarter turn to point down -- same
+   glyph ("▸"), same rotation values and transition timing as `Components.PinnedPosts.view`'s own
+   collapsible chevron (`posts.css`'s `.pinned-posts-chevron`), just kept at this section's own
+   (smaller) font size rather than adopting that one's. */
 .expandable-section-arrow {
-  font-size: 1.75rem;
+  display: inline-block;
+  font-size: 1rem;
   line-height: 1;
   color: var(--muted);
-  margin-top: -0.4rem;
+  /* margin-top: -0.4rem; */
+  transition: transform 0.15s ease;
+  transform: rotate(-90deg);
+}
 
+.expandable-section-arrow.is-open {
+  transform: rotate(0deg);
+}
+
+/* Collapses/expands `expandableProfileSection`'s own body via the same `grid-template-rows` 0fr/1fr
+   trick `.pinned-posts-content` uses (see `posts.css`) -- `margin-top` is deliberately left at 0
+   here (rather than baked into this shared rule) since the plain-`div` sections (Permissions/Media
+   Storage) never had a gap between header and body to begin with; the flex-column-wrapped sections
+   that used to get that gap "for free" via their own `gap` (Sync Sources/Sync Destinations/AI
+   Providers/AI Model Access) instead animate it back in themselves -- see e.g.
+   `.sync-sources-section > .expandable-section-content.is-open`'s own doc below -- so collapsing
+   one of those pulls its next sibling flush up instead of leaving a dead gap the height animation
+   alone wouldn't touch. */
+.expandable-section-content {
+  display: grid;
+  grid-template-rows: 0fr;
+  margin-top: 0;
+  transition: grid-template-rows 0.2s ease, margin-top 0.2s ease;
+}
+
+.expandable-section-content.is-open {
+  grid-template-rows: 1fr;
+}
+
+.expandable-section-content.is-closed {
+  /* Same reasoning as `.pinned-posts-content.is-closed`'s own doc -- the grid-collapse trick
+     shrinks this to ~0 height visually, but its content is still genuinely present in the DOM at
+     whatever sub-pixel sliver of height remains, so without this it'd still be clickable/focusable
+     while "closed". */
+  pointer-events: none;
+}
+
+.expandable-section-content > * {
+  overflow: hidden;
+  min-height: 0;
 }
 
 .profile-federated {
@@ -477,18 +520,29 @@
   color: var(--muted);
 }
 
-/* Shared "Refresh" button/error row -- see UserProfilePage.elm's `refreshRowView`, used by both
-   the Sync Sources and AI Providers sections. */
-.profile-section-refresh-row {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
+/* The shared "Refresh" button -- see UserProfilePage.elm's `refreshButtonView`, used by both the
+   Sync Sources and AI Providers sections -- rendered in `expandableProfileSection`'s own header
+   (`.expandable-section-title`, a flex row) as its `maybeHeaderAction`, `margin-left: auto` pushing
+   it to the row's far right regardless of how long the title text is. Always mounted (not
+   conditionally, like the header's own arrow/content -- see `expandableProfileSection`'s doc), so
+   it fades in/out via `opacity` rather than appearing/disappearing outright; `pointer-events: none`
+   while closed keeps it unclickable during (and after) that fade, matching
+   `.expandable-section-content.is-closed`'s own reasoning. */
 .profile-section-refresh {
-  align-self: flex-start;
+  margin-left: auto;
+  opacity: 1;
+  pointer-events: auto;
+  transition: opacity 0.15s ease;
 }
 
+.profile-section-refresh.is-closed {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* `refreshButtonView`'s own error message -- unlike the button itself, this stays inside the
+   collapsible body (`expandableProfileSection`'s `content`), not the header -- see that function's
+   own doc. */
 .profile-section-refresh-error {
   color: var(--danger);
   font-size: 0.8rem;
@@ -501,16 +555,23 @@
    plain-`div` expandable sections (Permissions/Media Storage) -- roughly doubling the gap around
    it. Zeroing the header's own margin here and moving the same 0.8rem/0.4rem onto this wrapper
    (below) puts it back in a normal collapsing context, so every section -- flex or plain div --
-   ends up spaced the same. */
+   ends up spaced the same. No `gap` here (unlike before `expandable-section-content`'s own
+   grid-collapse animation existed) -- a flex `gap` doesn't shrink away just because a flex item's
+   own height animates to ~0, so it would've left a dead 0.25rem sliver between header and body
+   while collapsed; the equivalent spacing is instead animated on `.expandable-section-content`
+   itself (below), collapsing to 0 in lockstep with its height. */
 .sync-sources-section {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
   margin: 0.8rem 0 0.4rem;
 }
 
 .sync-sources-section > .expandable-section-title {
   margin: 0;
+}
+
+.sync-sources-section > .expandable-section-content.is-open {
+  margin-top: 0.25rem;
 }
 
 .sync-sources-list {
@@ -592,16 +653,20 @@
 /* Components.SyncDestinations, embedded on UserProfilePage below Sync Sources. */
 
 /* See `.sync-sources-section`'s own comment above -- same flex-vs-margin-collapse gotcha and
-   same fix (header's margin zeroed and moved onto this wrapper). */
+   same fix (header's margin zeroed and moved onto this wrapper), and the same no-`gap`/animated
+   `margin-top` swap on `.expandable-section-content` below it. */
 .sync-destinations-section {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
   margin: 0.8rem 0 0.4rem;
 }
 
 .sync-destinations-section > .expandable-section-title {
   margin: 0;
+}
+
+.sync-destinations-section > .expandable-section-content.is-open {
+  margin-top: 0.25rem;
 }
 
 .sync-destinations-list {
@@ -698,16 +763,20 @@
 
 /* Shared by both `aiProvidersSection` ("AI Providers") and `aiProviderGrantedSection` ("AI Model
    Access"). See `.sync-sources-section`'s own comment above -- same flex-vs-margin-collapse
-   gotcha and same fix (header's margin zeroed and moved onto this wrapper). */
+   gotcha and same fix (header's margin zeroed and moved onto this wrapper), and the same no-`gap`/
+   animated `margin-top` swap on `.expandable-section-content` below it. */
 .ai-model-providers-section {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
   margin: 0.8rem 0 0.4rem;
 }
 
 .ai-model-providers-section > .expandable-section-title {
   margin: 0;
+}
+
+.ai-model-providers-section > .expandable-section-content.is-open {
+  margin-top: 0.25rem;
 }
 
 .ai-model-providers-list {

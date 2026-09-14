@@ -24,13 +24,12 @@ Renders each plain (non-`OCCASION`) pinned post via `Components.Posts.postDetail
 title/content/media treatment `Components.Pages.PostPage`/`Pages.Post.PostId_` use for a post's own
 dedicated page) rather than `postCard`'s compact preview -- a deliberate step up from every other
 listing this app renders posts in, since a pin is meant to read as something the admin is
-foregrounding, not just another feed entry. Its edit-related affordances (Edit Content/Media, media
-layout, visibility/moderation editing) are wired to `config.noOp`/left blank, though -- none of that
-editing state (`PostPage.Model`'s `visibilityEdit`/`moderationEdit`/etc.) exists here, and wiring it up
-is out of scope for what's otherwise a read-mostly overlay; `postDetail` still only actually shows an
-Edit/Edit Media button to the post's own author or an admin (see `Posts.editButton`/`mediaEditButton`'s
-own `isAuthor`/`ADMIN` gating), so this is a real (if narrow) dead-button edge case worth knowing about
-rather than a silent limitation.
+foregrounding, not just another feed entry. Always passed `readOnly = True`, though (see
+`postDetail`'s own doc) -- there's no `PostPage.Model`-style editing state
+(`visibilityEdit`/`moderationEdit`/etc.) here to wire Edit Content/Media/visibility/moderation up to,
+so rather than show a post's own author a half-wired Edit button that does nothing, none of that UI
+renders at all; its title instead links to the post's own `/post/:id` page, where editing (already
+fully wired there) actually works.
 
 -}
 
@@ -389,6 +388,7 @@ pinnedPostView config model postId =
                             config.maybeServer
                             config.maybeAccount
                             (config.onMediaClicked post)
+                            True
                             config.noOp
                             Nothing
                             (\_ -> config.noOp)

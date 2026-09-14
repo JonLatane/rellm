@@ -127,7 +127,7 @@ link basePath viewingServerHost hostServerHost maybeServer maybeAccount maybeAut
     let
         authorName : String
         authorName =
-            name maybeAuthor
+            displayName hostServerHost maybeAuthor
 
         content : List (Html msg)
         content =
@@ -152,6 +152,27 @@ name maybeAuthor =
     maybeAuthor
         |> Maybe.andThen .username
         |> Maybe.withDefault "unknown"
+
+
+{-| Like `name`, but for a Mastodon author (`hostServerHost` starting with `"mastodon:"`) strips the
+`"@instanceHost"` suffix `Shared.Federation.Mastodon.toAuthor`'s `Author.username` carries (see
+`routeUsername`'s own doc for why that suffix is there in the first place) -- the instance host is
+already shown alongside the post card itself, so repeating it here as part of the clickable name is
+redundant. Every other author (a real Rellm user, or a Bluesky one, whose `username` is already a
+bare handle) passes through unchanged.
+-}
+displayName : String -> Maybe Author -> String
+displayName hostServerHost maybeAuthor =
+    let
+        rawName : String
+        rawName =
+            name maybeAuthor
+    in
+    if String.startsWith "mastodon:" hostServerHost then
+        String.split "@" rawName |> List.head |> Maybe.withDefault rawName
+
+    else
+        rawName
 
 
 hasPermission : Permission -> { a | permissions : List Permission } -> Bool

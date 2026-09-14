@@ -73,7 +73,7 @@ import Shared.MyMediaPanel as MyMediaPanel
 import Shared.Time as SharedTime
 import Task
 import UI
-import UI.Classes exposing (classes, hostnameToCSSClass)
+import UI.Classes exposing (classes, hostnameToCSSClass, openClosedClass)
 import UI.HtmlEvents exposing (stopPropagationAndPreventDefaultOnClick)
 import Url
 
@@ -4493,6 +4493,7 @@ contactMethodsSection canEdit isOwn expanded model user =
     else
         expandableProfileSection "profile-contact-methods-section"
             "Contact Methods"
+            Nothing
             expanded
             ContactMethodsExpandedToggled
             [ phoneView canEdit model.phoneEdit user
@@ -4819,37 +4820,45 @@ profileCountView ( label, count, maybeHref ) =
             div [ class "profile-count" ] content
 
 
-{-| A `.section-title` header that also toggles a collapsed/expanded body
-below it -- shared by `permissionsSection`/`syncSourcesSection`, both of
-which start collapsed (see `Model.permissionsExpanded`/`syncSourcesExpanded`,
-both `False` in `init`) so neither dumps a wall of mostly-admin-only content
-onto every profile visit by default.
+{-| A `.section-title` header that also toggles a collapsed/expanded body below it -- shared by
+`contactMethodsSection`/`storageQuotaSection`/`permissionsSection`/`syncSourcesSection`/
+`syncDestinationsSection`/`aiProvidersSection`/`aiProviderGrantedSection`, most of which start
+collapsed (see e.g. `Model.permissionsExpanded`/`syncSourcesExpanded`, both `False` in `init`) so
+none dumps a wall of mostly-admin-only content onto every profile visit by default.
+
+`content` is always mounted (unlike before this doc was last touched, when an unexpanded section
+omitted it from the vdom outright) so `.expandable-section-content`'s own `grid-template-rows` 0fr/1fr
+trick (`profiles.css`) can animate it open/closed -- the same mechanism, and the same tweaked rotation
+values, as `Components.PinnedPosts.view`'s own collapsible section (`posts.css`'s
+`.pinned-posts-content`/`.pinned-posts-chevron`) -- rather than the instant appear/disappear this
+helper used to do. `expandable-section-arrow`'s glyph is now a single static `"▼"`, rotated via
+`.expandable-section-arrow.is-open` instead of swapped for a different glyph per state, so the same
+CSS transition drives both directions.
+
+`maybeHeaderAction`, if given, renders inside the header itself (`.expandable-section-title`,
+pushed to its far right via `.profile-section-refresh`'s own `margin-left: auto`) -- currently only
+`syncSourcesSection`/`aiProvidersSection`'s "↻ Refresh" button (`refreshButtonView`), since that's
+useful without expanding the section first to find it. Faded in/out via CSS (`.is-open`/`.is-closed`,
+opacity + `pointer-events: none`) rather than conditionally mounted, same "always in the DOM, purely
+CSS-driven" convention as `content`/the arrow above -- and its own `onClick` must stop propagation
+(see `refreshButtonView`), or a click on it would bubble up to this same header's `toggleMsg` and
+collapse the section it just refreshed.
 -}
-expandableProfileSection : String -> String -> Bool -> Msg -> List (Html Msg) -> Html Msg
-expandableProfileSection sectionClass title expanded toggleMsg content =
+expandableProfileSection : String -> String -> Maybe (Html Msg) -> Bool -> Msg -> List (Html Msg) -> Html Msg
+expandableProfileSection sectionClass title maybeHeaderAction expanded toggleMsg content =
     div [ class sectionClass ]
-        (h2
+        [ h2
             [ classes [ "section-title", "expandable-section-title" ]
             , onClick toggleMsg
             ]
-            [ span [ class "expandable-section-arrow" ]
-                [ text
-                    (if expanded then
-                        "▾"
-
-                     else
-                        "▸"
-                    )
-                ]
+            [ span [ classes [ "expandable-section-arrow", openClosedClass expanded ] ] [ text "▼" ]
             , text title
+            , Maybe.withDefault (text "") maybeHeaderAction
             ]
-            :: (if expanded then
-                    content
-
-                else
-                    []
-               )
-        )
+        , div
+            [ classes [ "expandable-section-content", openClosedClass expanded ] ]
+            [ div [ class "expandable-section-content-inner" ] content ]
+        ]
 
 
 {-| "Media Storage" -- shown to an Admin (viewing anyone's profile, to set their quota -- see
@@ -4868,6 +4877,7 @@ storageQuotaSection isAdmin isOwn expanded maybeEdit user =
     else
         expandableProfileSection "profile-storage-quota-section"
             "Media Storage"
+            Nothing
             expanded
             StorageQuotaExpandedToggled
             ((if isOwn then
@@ -4993,6 +5003,7 @@ permissionsSection isAdmin expanded maybeEdit user =
     else
         expandableProfileSection "profile-permissions-section"
             "Permissions"
+            Nothing
             expanded
             PermissionsExpandedToggled
             [ case maybeEdit of
@@ -5357,9 +5368,10 @@ syncSourcesSection shared model canManage maybeAccount user =
         in
         expandableProfileSection "sync-sources-section"
             "Sync Sources"
+            (Just (refreshButtonView model.syncSourcesExpanded SyncSourcesRefreshClicked model.syncSources.refreshStatus))
             model.syncSourcesExpanded
             SyncSourcesExpandedToggled
-            (refreshRowView SyncSourcesRefreshClicked model.syncSources.refreshStatus
+            (refreshErrorView model.syncSources.refreshStatus
                 :: div [ class "sync-sources-list" ] (syncSourcesContentView model.resolver.targetHost shared.time.browserTimeZone model.syncSources user.syncSources)
                 :: (if canAdd then
                         [ syncSourceAddRowView model.resolver.targetHost (availableSyncSourceKinds maybeAccount) model.syncSources.addForm ]
@@ -5370,34 +5382,47 @@ syncSourcesSection shared model canManage maybeAccount user =
             )
 
 
-{-| Shared by every section with a manual "Refresh" button (`SyncSourcesRefreshClicked`/
-`AIProvidersRefreshClicked`) -- these overlay just their own field onto the resolved `User`
-(see `withResolvedUser`) rather than the whole-profile `refetch` every mutation already triggers,
-for a cheaper "did something change on another device" check.
+{-| The manual "Refresh" button shared by every section that has one (`SyncSourcesRefreshClicked`/
+`AIProvidersRefreshClicked`) -- these overlay just their own field onto the resolved `User` (see
+`withResolvedUser`) rather than the whole-profile `refetch` every mutation already triggers, for a
+cheaper "did something change on another device" check.
+
+Lives in `expandableProfileSection`'s own header now (its `maybeHeaderAction`), not the collapsible
+body -- see that function's own doc. `expanded` only drives the CSS fade/`pointer-events` (via
+`openClosedClass`, `profiles.css`'s `.profile-section-refresh.is-open`/`.is-closed`); this button is
+always mounted regardless, same "CSS-driven, not conditionally-mounted" convention as the rest of
+that header. `stopPropagationAndPreventDefaultOnClick`, not a plain `onClick`, since this sits inside
+the same `h2` as the header's own `toggleMsg` handler -- without it, a click here would also bubble up
+and collapse the section it just refreshed.
 -}
-refreshRowView : Msg -> SubmitStatus -> Html Msg
-refreshRowView msg status =
-    div [ class "profile-section-refresh-row" ]
-        [ button
-            [ class "profile-section-refresh"
-            , onClick msg
-            , disabled (status == Submitting)
-            ]
-            [ text
-                (if status == Submitting then
-                    "Refreshing…"
-
-                 else
-                    "↻ Refresh"
-                )
-            ]
-        , case status of
-            SubmitFailed err ->
-                div [ class "profile-section-refresh-error" ] [ text err ]
-
-            _ ->
-                text ""
+refreshButtonView : Bool -> Msg -> SubmitStatus -> Html Msg
+refreshButtonView expanded msg status =
+    button
+        [ classes [ "profile-section-refresh", openClosedClass expanded ]
+        , stopPropagationAndPreventDefaultOnClick msg
+        , disabled (status == Submitting)
         ]
+        [ text
+            (if status == Submitting then
+                "Refreshing…"
+
+             else
+                "↻ Refresh"
+            )
+        ]
+
+
+{-| `refreshButtonView`'s own error message -- unlike the button itself, this stays in the
+collapsible body (so it doesn't permanently occupy header space, and so it's only visible once the
+section carrying the failure is actually opened). -}
+refreshErrorView : SubmitStatus -> Html Msg
+refreshErrorView status =
+    case status of
+        SubmitFailed err ->
+            div [ class "profile-section-refresh-error" ] [ text err ]
+
+        _ ->
+            text ""
 
 
 syncSourcesContentView : String -> SharedTime.BrowserTimeZone -> SyncSourcesState -> List SyncSource -> List (Html Msg)
@@ -5542,9 +5567,10 @@ aiProvidersSection model canManage canAdd user =
     else
         expandableProfileSection "ai-model-providers-section"
             "AI Providers"
+            (Just (refreshButtonView model.aiProvidersExpanded AIProvidersRefreshClicked model.aiProviders.refreshStatus))
             model.aiProvidersExpanded
             AIProvidersExpandedToggled
-            (refreshRowView AIProvidersRefreshClicked model.aiProviders.refreshStatus
+            (refreshErrorView model.aiProviders.refreshStatus
                 :: div [ class "ai-model-providers-list" ] (aiProvidersContentView canAdd model.aiProviders (ownedAIProviders user))
                 :: (if canAdd then
                         [ aiProviderAddRowView model.aiProviders.addForm ]
@@ -5996,6 +6022,7 @@ aiProviderGrantedSection model canView user =
     else
         expandableProfileSection "ai-model-providers-section"
             "AI Model Access"
+            Nothing
             model.aiProviderGrantsExpanded
             AIProviderGrantsSectionToggled
             [ div [ class "ai-model-providers-list" ] (aiProviderGrantedContentView (grantedAIModelAccess user)) ]
@@ -6027,6 +6054,7 @@ syncDestinationsSection shared model maybeAccount user =
     else
         expandableProfileSection "sync-destinations-section"
             "Sync Destinations"
+            Nothing
             model.syncDestinationsExpanded
             SyncDestinationsExpandedToggled
             [ div [ class "sync-destinations-list" ] (syncDestinationsContentView model.syncDestinations user.syncDestinations)

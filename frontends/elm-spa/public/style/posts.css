@@ -104,7 +104,11 @@
   display: grid;
   grid-template-rows: 1fr;
   margin-bottom: 1.5rem;
-  transition: grid-template-rows 0.2s ease, margin-bottom 0.2s ease;
+  transition: grid-template-rows 0.2s ease, margin-bottom 0.2s ease, opacity 0.2s ease;
+  opacity: 1;
+  /* overflow-y: hidden;
+  overflow-x: visible; */
+  overflow: visible;
 }
 
 .pinned-posts-content.is-closed {
@@ -114,10 +118,11 @@
      ~0 height visually, but its content is still genuinely present in the DOM at whatever sub-pixel
      sliver of height remains, so without this it'd still be clickable while "closed". */
   pointer-events: none;
+  opacity: 0;
 }
 
 .pinned-posts-content > * {
-  overflow: hidden;
+  /* overflow: hidden; */
   min-height: 0;
 }
 
@@ -471,6 +476,19 @@
 .post-detail-title-row .post-detail-title,
 .post-detail-title-row .post-detail-context {
   margin: 0;
+}
+
+/* `postDetail`'s own `readOnly` title-as-link (see that function's doc, and
+   `Components.PinnedPosts`) -- plain block-level wrapper around `.post-detail-title` itself, so it
+   inherits that heading's look with no underline/color change until hovered. */
+.post-detail-title-link {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+
+.post-detail-title-link:hover .post-detail-title {
+  text-decoration: underline;
 }
 
 /* The post's own `link` field, shown below the title -- see

@@ -1461,15 +1461,17 @@ mastodonServerDisplayChip logos mastodonServer =
         [ div [ classes [ "server-chip-top", "background-color-primary" ] ]
             [ div [ class "server-chip-host-row" ] [ mastodonServerLogoImage logos mastodonServer.domain ]
             , div [ class "server-chip-host-row" ] [ div [ class "server-chip-host" ] [ text mastodonServer.domain ] ]
-            , div [ class "server-chip-host-row" ]
-                [ text
-                    (if String.isEmpty mastodonServer.appId then
+            , let
+                appIdLabel: String
+                appIdLabel =
+                    if String.isEmpty mastodonServer.appId then
                         "App ID not set"
 
-                     else
+                    else
                         "App ID: " ++ mastodonServer.appId
-                    )
-                ]
+              in
+              div [ class "mastodon-app-id", title appIdLabel ]
+                [ text appIdLabel ]
             ]
         , div [ classes [ "server-chip-bottom", "federated-server-flags", "background-color-nav" ] ]
             [ if configuredByDefault then

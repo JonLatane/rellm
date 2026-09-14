@@ -902,6 +902,7 @@ postDetailView shared model post =
         maybeServer
         maybeAccount
         onMediaClicked
+        False
         (MediaEditClicked displayPost)
         onGenerateMediaClicked
         (MediaLayoutChanged displayPost)
