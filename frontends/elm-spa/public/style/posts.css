@@ -588,6 +588,37 @@
   padding: 0.3rem 0.6rem;
 }
 
+/* `Posts.postDetailContentView`'s "Show more"/"Show less" state (currently only ever passed by
+   `Components.PinnedPosts`, via its own `contentHeights`/`expandedPostIds` -- see `postDetail`'s own
+   `contentCollapse` doc). `max-height` itself is set inline per-post (`ContentCollapse.naturalHeight`
+   when expanded, `Posts.postDetailContentPreviewHeight` when collapsed -- both real px values, which
+   is what lets this `transition` actually animate the toggle instead of snapping: CSS can't animate
+   into/out of `max-height: none`/`auto`). `.post-detail-content-collapsed`'s `mask-image` fade
+   (rather than a `linear-gradient` background, which would need to match whatever's actually behind
+   the content in both themes) fades its bottom edge to signal there's more below the cutoff, without
+   needing to know that color. */
+.post-detail-content-collapsible .post-detail-content {
+  overflow: hidden;
+  transition: max-height 0.25s ease;
+}
+
+.post-detail-content-collapsible .post-detail-content.post-detail-content-collapsed {
+  mask-image: linear-gradient(to bottom, black 70%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, black 70%, transparent 100%);
+}
+
+.post-detail-content-toggle {
+  display: block;
+  margin: 0.3rem 0 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .post-comments-link {
   margin-top: 0.8rem;
   margin-bottom: 70vh;

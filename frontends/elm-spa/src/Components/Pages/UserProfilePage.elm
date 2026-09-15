@@ -33,6 +33,7 @@ import Components.AIProviders as AIProviders
 import Components.Markdown as Markdown
 import Components.Pages.EventsPage as EventsPage
 import Components.Pages.PostsPage as PostsPage
+import Components.Posts as Posts
 import Components.ServerDependentView as ServerDependentView
 import Components.SyncDestinations as SyncDestinations
 import Components.SyncSources as SyncSources
@@ -158,11 +159,13 @@ type Msg
     | ContactMethodsExpandedToggled
     | PhoneEditClicked
     | PhoneInputChanged String
+    | PhoneVisibilityChanged String
     | PhoneCancelClicked
     | PhoneSaveClicked
     | GotPhoneSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, User ))
     | EmailEditClicked
     | EmailInputChanged String
+    | EmailVisibilityChanged String
     | EmailCancelClicked
     | EmailSaveClicked
     | GotEmailSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, User ))
@@ -299,11 +302,17 @@ type alias RealNameEdit =
 
 
 {-| Live only while the Phone field (see `Model.phoneEdit`) is being edited -- mirrors
-`RealNameEdit` exactly. `input` holds just the raw phone number, with the `tel:` scheme stripped
-back off (see `contactMethodEditValue`) -- re-added on save (see `PhoneSaveClicked`).
+`RealNameEdit` exactly, plus `visibility` for the visibility `<select>` shown alongside the input
+(see `contactMethodVisibilities`). `input` holds just the raw phone number, with the `tel:` scheme
+stripped back off (see `contactMethodEditValue`) -- re-added on save (see `PhoneSaveClicked`).
+Changing `visibility` alone (leaving `input` at the currently-saved number) doesn't reset
+verification status on save -- only an actual number change does, per
+`update_user.rs`'s `apply_contact_method_update`, which resets `verified_at`/
+`verification_in_progress` only when `value` itself changed.
 -}
 type alias PhoneEdit =
     { input : String
+    , visibility : Visibility
     , status : SubmitStatus
     }
 
@@ -315,6 +324,7 @@ sibling type for this one.
 -}
 type alias EmailEdit =
     { input : String
+    , visibility : Visibility
     , status : SubmitStatus
     }
 
@@ -1661,13 +1671,31 @@ updateInner shared msg model =
         PhoneEditClicked ->
             case model.resolver.status of
                 Resolver.Loaded user ->
-                    ( { model | phoneEdit = Just { input = contactMethodEditValue "tel:" user.phone, status = Idle } }, Effect.none )
+                    ( { model
+                        | phoneEdit =
+                            Just
+                                { input = contactMethodEditValue "tel:" user.phone
+                                , visibility = user.phone |> Maybe.map .visibility |> Maybe.withDefault PRIVATE
+                                , status = Idle
+                                }
+                      }
+                    , Effect.none
+                    )
 
                 _ ->
                     ( model, Effect.none )
 
         PhoneInputChanged input ->
             ( { model | phoneEdit = model.phoneEdit |> Maybe.map (\edit -> { edit | input = input }) }
+            , Effect.none
+            )
+
+        PhoneVisibilityChanged text ->
+            ( { model
+                | phoneEdit =
+                    model.phoneEdit
+                        |> Maybe.map (\edit -> { edit | visibility = Posts.visibilityFromText text |> Maybe.withDefault edit.visibility })
+              }
             , Effect.none
             )
 
@@ -1686,7 +1714,7 @@ updateInner shared msg model =
                                 | phone =
                                     Just
                                         { value = Just ("tel:" ++ edit.input)
-                                        , visibility = freshUser.phone |> Maybe.map .visibility |> Maybe.withDefault PRIVATE
+                                        , visibility = edit.visibility
                                         , supportedByServer = False
                                         , verifiedAt = Nothing
                                         , verificationInProgress = Nothing
@@ -1716,13 +1744,31 @@ updateInner shared msg model =
         EmailEditClicked ->
             case model.resolver.status of
                 Resolver.Loaded user ->
-                    ( { model | emailEdit = Just { input = contactMethodEditValue "mailto:" user.email, status = Idle } }, Effect.none )
+                    ( { model
+                        | emailEdit =
+                            Just
+                                { input = contactMethodEditValue "mailto:" user.email
+                                , visibility = user.email |> Maybe.map .visibility |> Maybe.withDefault PRIVATE
+                                , status = Idle
+                                }
+                      }
+                    , Effect.none
+                    )
 
                 _ ->
                     ( model, Effect.none )
 
         EmailInputChanged input ->
             ( { model | emailEdit = model.emailEdit |> Maybe.map (\edit -> { edit | input = input }) }
+            , Effect.none
+            )
+
+        EmailVisibilityChanged text ->
+            ( { model
+                | emailEdit =
+                    model.emailEdit
+                        |> Maybe.map (\edit -> { edit | visibility = Posts.visibilityFromText text |> Maybe.withDefault edit.visibility })
+              }
             , Effect.none
             )
 
@@ -1741,7 +1787,7 @@ updateInner shared msg model =
                                 | email =
                                     Just
                                         { value = Just ("mailto:" ++ edit.input)
-                                        , visibility = freshUser.email |> Maybe.map .visibility |> Maybe.withDefault PRIVATE
+                                        , visibility = edit.visibility
                                         , supportedByServer = False
                                         , verifiedAt = Nothing
                                         , verificationInProgress = Nothing
@@ -4525,6 +4571,7 @@ phoneView canEdit maybeEdit user =
                     , placeholder "+15555550100"
                     ]
                     []
+                , contactMethodVisibilitySelector PhoneVisibilityChanged edit.visibility
                 , editSaveButton PhoneSaveClicked edit.status
                 , editCancelButton PhoneCancelClicked edit.status
                 , editErrorView edit.status
@@ -4567,6 +4614,7 @@ emailView canEdit maybeEdit user =
                     , placeholder "you@example.com"
                     ]
                     []
+                , contactMethodVisibilitySelector EmailVisibilityChanged edit.visibility
                 , editSaveButton EmailSaveClicked edit.status
                 , editCancelButton EmailCancelClicked edit.status
                 , editErrorView edit.status
@@ -4589,6 +4637,37 @@ emailView canEdit maybeEdit user =
                                 []
                            )
                     )
+
+
+{-| The visibility options offered by `phoneView`/`emailView`'s visibility `<select>` -- narrower than
+`Components.Posts.allVisibilities`: excludes `LIMITED` (explicit-user/group sharing doesn't apply to
+a contact method) and `DIRECT` (same `[TODO]`/unimplemented reason `allVisibilities` itself excludes
+it), leaving just the three options a contact method's visibility can meaningfully take.
+-}
+contactMethodVisibilities : List Visibility
+contactMethodVisibilities =
+    [ PRIVATE, SERVERPUBLIC, GLOBALPUBLIC ]
+
+
+{-| The visibility `<select>` shown alongside `phoneView`/`emailView`'s input while editing -- reuses
+`Components.Posts`' own `visibilityText`/`visibilityFromText` for display/round-tripping, narrowed to
+`contactMethodVisibilities`. Selecting a new option only ever updates the in-progress edit's
+`visibility` (see `PhoneVisibilityChanged`/`EmailVisibilityChanged`); nothing is sent to the server
+until the corresponding Save button is clicked.
+-}
+contactMethodVisibilitySelector : (String -> Msg) -> Visibility -> Html Msg
+contactMethodVisibilitySelector onChange currentVisibility =
+    select [ onInput onChange ]
+        (contactMethodVisibilities
+            |> List.map
+                (\visibility ->
+                    option
+                        [ value (Posts.visibilityText visibility)
+                        , selected (visibility == currentVisibility)
+                        ]
+                        [ text (Posts.visibilityText visibility) ]
+                )
+        )
 
 
 {-| The Verified/Not Verified badge next to a displayed contact method -- plain Unicode glyphs (no
@@ -4859,7 +4938,7 @@ expandableProfileSection sectionClass title maybeHeaderAction expanded toggleMsg
             , Maybe.withDefault (text "") maybeHeaderAction
             ]
         , div
-            [ classes [ "expandable-section-content", openClosedClass expanded ] ]
+            [ classes [ "expandable-section-content", openClosedClass expanded, "border-color-primary-anchor-50" ] ]
             [ div [ class "expandable-section-content-inner" ] content ]
         ]
 

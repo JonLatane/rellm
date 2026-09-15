@@ -1,9 +1,9 @@
 module Shared.UserPreferences exposing (Model, Msg(..), init, update)
 
 {-| Small, app-wide user preferences that aren't tied to any one page's own
-URL/local state -- `prefersCalendar`, `postsBefore`, `eventsAfter` (see each
-field's own doc), all one JSON object persisted to its own localStorage key
-(`Ports.persistUserPreferences`).
+URL/local state -- `prefersCalendar`, `postsBefore`, `eventsAfter`,
+`pinnedPostsCollapsedToHidePostIds` (see each field's own doc), all one JSON
+object persisted to its own localStorage key (`Ports.persistUserPreferences`).
 
 Mirrors `Shared.StarredPanel`'s persist-to-localStorage half exactly, minus
 the `BroadcastChannel` live cross-tab push -- see `Ports.persistUserPreferences`'s
@@ -48,6 +48,16 @@ type alias Model =
     -- `EventsAfterDate`) as that switch's starting cutoff instead of
     -- wherever `UpcomingEvents`' live clock last left `endsAfter`.
     , eventsAfter : Maybe Time.Posix
+
+    -- Mirrors `Components.PinnedPosts.Model.postIds` as of the moment the viewer last collapsed
+    -- that section via its own header toggle -- `[]` means "currently expanded" (either never
+    -- collapsed, or last re-opened). `Components.PinnedPosts` compares this against its own live
+    -- `postIds` on every render (see `Components.PinnedPosts.isSectionCollapsed`): an exact match
+    -- means nothing pinned has changed since the viewer closed it, so it loads pre-collapsed;
+    -- anything else (including a freshly-pinned post the viewer hasn't seen yet) reopens it
+    -- automatically, without `Components.PinnedPosts` needing any collapse state of its own to
+    -- reconcile in `syncIds`.
+    , pinnedPostsCollapsedToHidePostIds : List String
     }
 
 
@@ -55,6 +65,7 @@ type Msg
     = SetPrefersCalendar Bool
     | SetPostsBefore (Maybe Time.Posix)
     | SetEventsAfter (Maybe Time.Posix)
+    | SetPinnedPostsCollapsedToHidePostIds (List String)
 
 
 {-| `flags` is the raw, persisted JSON object (see `Ports.persistUserPreferences`)
@@ -68,6 +79,9 @@ init flags =
             |> Result.withDefault True
     , postsBefore = decodePosixField "postsBefore" flags
     , eventsAfter = decodePosixField "eventsAfter" flags
+    , pinnedPostsCollapsedToHidePostIds =
+        Decode.decodeValue (Decode.field "pinnedPostsCollapsedToHidePostIds" (Decode.list Decode.string)) flags
+            |> Result.withDefault []
     }
 
 
@@ -105,6 +119,14 @@ update msg model =
             in
             ( newModel, persistCmd newModel )
 
+        SetPinnedPostsCollapsedToHidePostIds pinnedPostsCollapsedToHidePostIds ->
+            let
+                newModel : Model
+                newModel =
+                    { model | pinnedPostsCollapsedToHidePostIds = pinnedPostsCollapsedToHidePostIds }
+            in
+            ( newModel, persistCmd newModel )
+
 
 persistCmd : Model -> Cmd Msg
 persistCmd model =
@@ -117,6 +139,7 @@ encode model =
         [ ( "prefersCalendar", Encode.bool model.prefersCalendar )
         , ( "postsBefore", encodePosixField model.postsBefore )
         , ( "eventsAfter", encodePosixField model.eventsAfter )
+        , ( "pinnedPostsCollapsedToHidePostIds", Encode.list Encode.string model.pinnedPostsCollapsedToHidePostIds )
         ]
 
 

@@ -336,11 +336,16 @@ eventsStripCalendarDisplayModeOverride home =
         Just home.defaultEventsStripCalendarDisplayMode
 
 
-{-| `pinnedPosts` needs no subscriptions of its own -- no polling/animations, see the module doc for
-`Components.PinnedPosts`. -}
+{-| `pinnedPosts` needs `Components.PinnedPosts.subscriptions` for its own `Ports.elementsMeasured`
+pickup (see that module's own `kickOffContentMeasurements`) -- otherwise no polling/animations, see
+the module doc for `Components.PinnedPosts`.
+-}
 subscriptions : Model -> Sub Msg
 subscriptions model =
-    contentSubscriptions model.content
+    Sub.batch
+        [ contentSubscriptions model.content
+        , Sub.map PinnedPostsMsg (PinnedPosts.subscriptions model.pinnedPosts)
+        ]
 
 
 contentSubscriptions : Content -> Sub Msg
@@ -647,6 +652,7 @@ pinnedPostsView shared pinnedPosts =
             shared.accounts.mainFrontendHost
     in
     PinnedPosts.view
+        shared
         { time = shared.time
         , basePath = shared.basePath
         , viewingServerHost = host

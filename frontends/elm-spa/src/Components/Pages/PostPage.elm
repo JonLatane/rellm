@@ -932,6 +932,7 @@ postDetailView shared model post =
         (\destinationId destinationLabel ->
             SharedMsg (Shared.RequestDelete (Shared.ConfirmPostSyncDestinationDelete displayPost destinationId destinationLabel model.targetHost))
         )
+        Nothing
         displayPost
 
 

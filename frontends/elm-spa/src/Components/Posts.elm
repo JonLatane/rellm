@@ -1,5 +1,6 @@
 module Components.Posts exposing
-    ( FederatedPostId(..)
+    ( ContentCollapse
+    , FederatedPostId(..)
     , allModerations
     , allowedVisibilities
     , commentCountText
@@ -19,6 +20,8 @@ module Components.Posts exposing
     , postCard
     , postContextLabel
     , postDetail
+    , postDetailContentDomId
+    , postDetailContentPreviewHeight
     , postHref
     , postLinkText
     , postMediaLayoutFromText
@@ -53,7 +56,7 @@ import Components.Users as Users
 import Gen.Route
 import Grpc
 import Html exposing (Html, a, button, div, h1, option, select, span, text)
-import Html.Attributes exposing (attribute, class, href, rel, selected, style, target, title, value)
+import Html.Attributes exposing (attribute, class, href, id, rel, selected, style, target, title, value)
 import Html.Events
 import Proto.Rellm exposing (GetPostsResponse, Post, SyncDestination, defaultGetPostsRequest, defaultPost)
 import Proto.Rellm.Moderation exposing (Moderation(..))
@@ -1002,9 +1005,20 @@ canonical page instead, not expect a half-wired Edit button to work in place. `m
 untouched by this flag -- `Authors.link`/`MultiMediaRenderer.view` still get the real value, so
 private/limited media and author badges keep working normally; only the edit-gating call sites above
 are skipped.
+
+`contentCollapse`, when `Just`, lets the content Markdown itself be clamped to a short,
+`postDetailContentPreviewHeight`-tall preview (`collapse.toggle` fired by a "Show more"/"Show less"
+link below it, `collapse.collapsed` reflecting the caller's own current choice, `collapse.naturalHeight`
+the content's own real full height so the clamp can animate smoothly between the two rather than
+snapping) rather than always rendering in full -- currently only `Components.PinnedPosts` passes this
+(see its own `contentHeights`/`expandedPostIds`), since a pin is meant to be glanceable without
+necessarily reading its entire content; `Nothing` (every other caller, e.g. `Components.Pages.PostPage`,
+a Post's own dedicated page) always renders the content in full, with no toggle at all. See
+`postDetailContentView`'s own doc for why *whether* to offer the toggle at all is left entirely to the
+caller's own measurement, not decided in here.
 -}
-postDetail : SharedTime.Model -> String -> String -> String -> Maybe RellmServer -> Maybe RellmAccount -> (String -> msg) -> MediaRenderer.Model -> (String -> msg) -> Bool -> msg -> Maybe msg -> (String -> msg) -> Bool -> Maybe msg -> msg -> Html msg -> Html msg -> Maybe (List SyncDestination) -> (String -> Bool) -> (String -> Maybe String) -> (String -> msg) -> (String -> String -> msg) -> Post -> Html msg
-postDetail time basePath viewingServerHost postServerHost maybeServer maybeAccount onMediaClicked mediaPlayState onMediaPlayClicked readOnly onMediaEditClicked onGenerateMediaClicked onMediaLayoutChanged starred onStarClicked onEditClicked visibilityView moderationView availableSyncDestinations isPushing pushError onPush onDelete post =
+postDetail : SharedTime.Model -> String -> String -> String -> Maybe RellmServer -> Maybe RellmAccount -> (String -> msg) -> MediaRenderer.Model -> (String -> msg) -> Bool -> msg -> Maybe msg -> (String -> msg) -> Bool -> Maybe msg -> msg -> Html msg -> Html msg -> Maybe (List SyncDestination) -> (String -> Bool) -> (String -> Maybe String) -> (String -> msg) -> (String -> String -> msg) -> Maybe (ContentCollapse msg) -> Post -> Html msg
+postDetail time basePath viewingServerHost postServerHost maybeServer maybeAccount onMediaClicked mediaPlayState onMediaPlayClicked readOnly onMediaEditClicked onGenerateMediaClicked onMediaLayoutChanged starred onStarClicked onEditClicked visibilityView moderationView availableSyncDestinations isPushing pushError onPush onDelete contentCollapse post =
     div [ classes [ "post-detail", hostnameToCSSClass postServerHost, "border-color-primary-anchor-50" ] ]
         [ div [ class "post-detail-title-row" ]
             [ if post.context == POST then
@@ -1079,7 +1093,7 @@ postDetail time basePath viewingServerHost postServerHost maybeServer maybeAccou
             ]
         , case post.content of
             Just content ->
-                Markdown.view [ class "post-detail-content" ] content
+                postDetailContentView contentCollapse post.id content
 
             Nothing ->
                 text ""
@@ -1090,6 +1104,101 @@ postDetail time basePath viewingServerHost postServerHost maybeServer maybeAccou
             div [ class "post-detail-edit-row" ] [ editContentButton maybeAccount onEditClicked post ]
         , postSyncDestinationsView availableSyncDestinations isPushing pushError onPush onDelete post
         ]
+
+
+{-| `postDetail`'s own `contentCollapse` argument -- see that parameter's own doc. `naturalHeight` is
+the content's real, full (unclamped) rendered height in px, as the caller measured it (currently
+always via `Ports.measureElements`, see `Components.PinnedPosts.kickOffContentMeasurements`) --
+`postDetailContentView` clamps `max-height` to this exact value rather than removing the clamp
+outright when `collapsed == False`, purely so the CSS `transition` on `max-height` has two concrete
+px values to animate between (a transition into/out of `none`/`auto` doesn't animate in CSS at all).
+-}
+type alias ContentCollapse msg =
+    { collapsed : Bool
+    , toggle : msg
+    , naturalHeight : Float
+    }
+
+
+{-| `postDetail`'s own content block -- `contentCollapse`'s own doc. Always rendered at `postId`'s own
+`postDetailContentDomId` regardless of `contentCollapse`, so a caller that wants the toggle (currently
+just `Components.PinnedPosts`) can measure this element's real rendered height (via `Ports.measureElements`)
+to decide whether it's actually taller than `postDetailContentPreviewHeight` -- raw Markdown length
+alone doesn't predict that reliably (a handful of short paragraphs/headings/list items can render far
+taller than a single 400-character one, and vice versa for a long paragraph that wraps to only two or
+three lines), so this renders in full, with no toggle, until the caller has actually measured it and
+found it worth clamping -- exactly `postDetail` always rendered before this existed. `Just collapse`
+(only once the caller's own measurement confirms it's tall enough to matter) renders `content` itself
+(clamped to `postDetailContentPreviewHeight` when `collapse.collapsed`, `collapse.naturalHeight`
+otherwise -- both concrete `max-height` px values, so the `post-detail-content-collapsible`'s own CSS
+`transition` can animate the toggle instead of snapping) plus a "Show more"/"Show less" button below
+it.
+-}
+postDetailContentView : Maybe (ContentCollapse msg) -> String -> String -> Html msg
+postDetailContentView contentCollapse postId content =
+    case contentCollapse of
+        Just collapse ->
+            div [ class "post-detail-content-collapsible" ]
+                [ Markdown.view
+                    [ id (postDetailContentDomId postId)
+                    , classes
+                        ("post-detail-content"
+                            :: (if collapse.collapsed then
+                                    [ "post-detail-content-collapsed" ]
+
+                                else
+                                    []
+                               )
+                        )
+                    , style "max-height"
+                        (String.fromFloat
+                            (if collapse.collapsed then
+                                postDetailContentPreviewHeight
+
+                             else
+                                -- +1px headroom so a sub-pixel rounding difference between the
+                                -- measured `naturalHeight` and the real layout can't leave a
+                                -- fraction of a line clipped off even while "expanded".
+                                collapse.naturalHeight + 1
+                            )
+                            ++ "px"
+                        )
+                    ]
+                    content
+                , button
+                    [ class "post-detail-content-toggle", Html.Events.onClick collapse.toggle ]
+                    [ text
+                        (if collapse.collapsed then
+                            "Show more"
+
+                         else
+                            "Show less"
+                        )
+                    ]
+                ]
+
+        Nothing ->
+            Markdown.view [ id (postDetailContentDomId postId), class "post-detail-content" ] content
+
+
+{-| The DOM `id` `postDetailContentView` renders its content block at, for `postId` -- exists so a
+caller measuring it (see `postDetailContentView`'s own doc) doesn't have to reconstruct this string
+itself/risk drifting out of sync with it.
+-}
+postDetailContentDomId : String -> String
+postDetailContentDomId postId =
+    "post-detail-content-" ++ postId
+
+
+{-| The `max-height` (px) `postDetailContentView` clamps a collapsed preview to -- also what
+`Components.PinnedPosts` compares a measured `ContentCollapse.naturalHeight` against to decide whether
+a pinned post's content is worth offering the toggle for at all (see `postDetailContentView`'s own
+doc). Kept here (rather than duplicated as a raw `100` in both modules, or in `posts.css`) since it's
+inherently a contract between this view and whatever measures against it.
+-}
+postDetailContentPreviewHeight : Float
+postDetailContentPreviewHeight =
+    100
 
 
 
