@@ -1,9 +1,9 @@
-module Components.PinnedPosts exposing (Model, Msg, init, isSectionCollapsed, subscriptions, syncIds, update, view)
+module Components.PinnedPosts exposing (Model, Msg, init, subscriptions, syncIds, update, view)
 
 {-| Fetches and renders `CustomHomePage.pinned_post_ids` -- the Posts `mainFrontendHost`'s admin has
 pinned to the top of the Home page, above whatever `Pages.Home_`'s `home.target` otherwise renders
 there (`Feed`/`HomeEvents`/`HomePosts`/`HomePost`/`HomePostWithEvents` alike -- pinned posts aren't a
-*target*, just an overlay every one of those renders above itself, see `Pages.Home_`'s own doc). Only
+_target_, just an overlay every one of those renders above itself, see `Pages.Home_`'s own doc). Only
 ever pins Posts on `mainFrontendHost` itself (`Pages.Home_.homeConfigFor` only ever reads that one
 server's own `customTabs`, and `Components.Pages.PostsPage.customNavPostIds`'s own doc makes the same
 assumption for the tab/post-id case) -- so unlike `Shared.StarredPanel` (which can star Posts on any
@@ -423,8 +423,8 @@ for a postId no longer in `model.postIds` is harmless (`Dict.insert` just adds a
 entry `syncIds` will drop on its own next pass), so unlike `Components.Pages.EventsPage`'s FLIP
 round-trip there's no `model`-tracked phase to check this against.
 -}
-subscriptions : Model -> Sub Msg
-subscriptions _ =
+subscriptions : Sub Msg
+subscriptions =
     Ports.elementsMeasured GotContentHeights
 
 
@@ -474,6 +474,7 @@ Every argument besides `shared`/`model`/`toMsg` mirrors `Components.Posts.postDe
 builds them once and passes them through here too, keeping pinned posts' star/media-click behavior
 identical to every other post in the app. `shared` itself is only read for `isSectionCollapsed`'s own
 `shared.userPreferences.pinnedPostsCollapsedToHidePostIds` check.
+
 -}
 view :
     Shared.Model

@@ -45,7 +45,7 @@ all instead leave breadcrumbs alone entirely: `HomeEvents`/`HomePosts` pass `emb
 (own their own root the same as `Pages.Events`/`Pages.Posts` do); `PostPage.init`/`.update` (`HomePost`,
 and `HomePostWithEvents`' own `.post`) own their own breadcrumb root already, the same as
 `Pages.Post.PostId_`/`Pages.UsernameOrCustomTab_.EmbeddedPost` -- so `HomePostWithEvents`' own
-`.events` copy passes `embeddedPage = True` precisely so it *doesn't* also assert a root of its own
+`.events` copy passes `embeddedPage = True` precisely so it _doesn't_ also assert a root of its own
 alongside `.post`'s (the same flicker this whole scheme exists to avoid, just between two halves of
 one `Model` instead of two top-level pages). `setBreadcrumbsHost` only ever fires for `Feed` (see
 `setBreadcrumbsEffect`).
@@ -77,10 +77,10 @@ scratch.
 -}
 
 import Components.MediaRenderer as MediaRenderer
-import Components.PinnedPosts as PinnedPosts
 import Components.Pages.EventsPage as EventsPage
 import Components.Pages.PostPage as PostPage
 import Components.Pages.PostsPage as PostsPage
+import Components.PinnedPosts as PinnedPosts
 import Dict exposing (Dict)
 import Effect exposing (Effect)
 import Gen.Params.Home_ exposing (Params)
@@ -224,7 +224,7 @@ back to `initFeed`." Factored out of `init` so `updateInner`'s `SharedMsg`/`Feed
 re-checks `homeConfigFor` on every incoming `Shared.Msg`, see `homeConfigFor`'s own doc) can reuse
 the exact same switch without duplicating it. `TargetPost`'s own `home.showEventsStrip` picks between
 the plain `HomePost` and the paired `HomePostWithEvents` (see the module doc) -- `home.pinnedPostIds`
-isn't read here at all, since it isn't a *target* to render, just an overlay `PostsPage`/`Feed`'s own
+isn't read here at all, since it isn't a _target_ to render, just an overlay `PostsPage`/`Feed`'s own
 generic listing already excludes via `PostsPage.customNavPostIds` (not relevant for a `TargetPost`/
 `TargetTab EVENTSTAB`/`TargetTab POSTSTAB` home either way, none of which show that listing).
 -}
@@ -301,7 +301,7 @@ and left untouched) being the more specific request. Left alone entirely -- not 
 `defaultEventsStripToRow` -- when `home` is still `CustomNav.defaultHomePageConfig` (nothing
 configured), so an ordinary, unconfigured server keeps exactly today's behavior: `EventsPage`'s own
 `embeddedPage` fallback to `HorizontalList` (`Feed`'s strip) rather than silently starting to default
-to `Calendar` (this field's own unset-value meaning) the moment *any* unrelated `home` field gets
+to `Calendar` (this field's own unset-value meaning) the moment _any_ unrelated `home` field gets
 configured.
 -}
 withEventsStripDisplayOverride : CustomNav.HomePageConfig -> Dict String String -> Dict String String
@@ -321,7 +321,7 @@ withEventsStripDisplayOverride home query =
 
 
 {-| `EventsPage.init`'s own `calendarDisplayModeOverride` argument for an Events strip governed by
-`home` -- `Just home.defaultEventsStripCalendarDisplayMode` once *any* `home` field is configured
+`home` -- `Just home.defaultEventsStripCalendarDisplayMode` once _any_ `home` field is configured
 (see `withEventsStripDisplayOverride`'s own doc for why that's the right threshold, not just
 `showEventsStrip`/a non-default `target`), `Nothing` (defer to the server-wide
 `EventSettings.default_calendar_display_mode`, `EventsPage.calendarDisplayMode`'s own default) for a
@@ -344,7 +344,7 @@ subscriptions : Model -> Sub Msg
 subscriptions model =
     Sub.batch
         [ contentSubscriptions model.content
-        , Sub.map PinnedPostsMsg (PinnedPosts.subscriptions model.pinnedPosts)
+        , Sub.map PinnedPostsMsg PinnedPosts.subscriptions
         ]
 
 
