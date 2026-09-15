@@ -362,6 +362,13 @@
   margin: 0.3rem 0 0.6rem;
 }
 
+.profile-contact-method-verify-disclaimer {
+  color: var(--muted);
+  font-size: 0.75rem;
+  margin: 0 0 0.4rem;
+  max-width: 32rem;
+}
+
 .profile-contact-method-verify-status {
   color: var(--muted);
   font-size: 0.85rem;

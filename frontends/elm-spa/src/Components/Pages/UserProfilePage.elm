@@ -4662,7 +4662,10 @@ phoneVerificationView maybePhoneVerification maybePhone =
         case maybePhoneVerification of
             Nothing ->
                 div [ class "profile-contact-method-verify" ]
-                    [ button [ class "profile-edit-button", onClick StartPhoneVerificationClicked ] [ text "Start Verification" ] ]
+                    [ p [ class "profile-contact-method-verify-disclaimer" ]
+                        [ text "By pressing \"Start Verification,\" you agree to receive one SMS for verification purposes only. Your number will not be used for any further contact or marketing." ]
+                    , button [ class "profile-edit-button", onClick StartPhoneVerificationClicked ] [ text "Start Verification" ]
+                    ]
 
             Just pv ->
                 div [ class "profile-contact-method-verify" ]
