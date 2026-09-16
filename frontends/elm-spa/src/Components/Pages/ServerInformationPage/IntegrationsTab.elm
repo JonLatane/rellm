@@ -1,11 +1,12 @@
 module Components.Pages.ServerInformationPage.IntegrationsTab exposing (Model, Msg, activated, init, update, view)
 
-{-| The Integrations tab of `Components.Pages.ServerInformationPage` -- Twilio (`TwilioConfig`) and
+{-| The Integrations tab of `Components.Pages.ServerInformationPage` -- Twilio (`TwilioConfig`),
 Bird (`BirdConfig`, see that message's own doc in `server_configuration.proto` -- a cheaper Twilio
-alternative for SMS verification), each editable by an admin as its own unit (a single
-Edit/Save/Cancel per provider, mirroring `CdnTab`'s Edit/Save/Cancel shape), plus a "Preferred
-Verification Providers" selector choosing which provider is tried first when both are enabled
-(`preferredVerificationApis`).
+alternative for SMS verification), and Stripe (`StripeConfig`, Rellm's Market payment provider --
+see `market.proto`), each editable by an admin as its own unit (a single Edit/Save/Cancel per
+provider, mirroring `CdnTab`'s Edit/Save/Cancel shape), plus a "Preferred Verification Providers"
+selector choosing which of Twilio/Bird is tried first when both are enabled
+(`preferredVerificationApis`) -- Stripe has no such selector, since it's the only payment provider.
 
 Unlike `CdnTab`, though, this tab **can't** just read `RellmServers.configurationOf server` for its
 display -- `twilioConfig`/`birdConfig`/`preferredVerificationApis` are all admin-only-serialized
@@ -48,7 +49,7 @@ import Grpc
 import Html exposing (Html, button, div, h3, input, option, select, span, text)
 import Html.Attributes exposing (class, disabled, placeholder, selected, type_, value)
 import Html.Events exposing (onClick, onInput)
-import Proto.Rellm exposing (BirdConfig, ServerConfiguration, TwilioConfig, defaultBirdConfig, defaultTwilioConfig)
+import Proto.Rellm exposing (BirdConfig, ServerConfiguration, StripeConfig, TwilioConfig, defaultBirdConfig, defaultStripeConfig, defaultTwilioConfig)
 import Proto.Rellm.Rellm as Rellm
 import Proto.Rellm.VerificationAPI exposing (VerificationAPI(..))
 import Shared
@@ -65,6 +66,7 @@ import Task
 type alias Model =
     { configEdit : Maybe TwilioConfigEdit
     , birdConfigEdit : Maybe BirdConfigEdit
+    , stripeConfigEdit : Maybe StripeConfigEdit
     , preferredProvidersEdit : Maybe PreferredProvidersEdit
     , adminIntegrations : AdminIntegrationsStatus
     }
@@ -101,6 +103,14 @@ type Msg
     | BirdCancelClicked
     | BirdSaveClicked
     | GotBirdSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, ServerConfiguration ))
+    | StripeEditClicked
+    | StripeEnabledToggled
+    | StripePublishableKeyChanged String
+    | StripeSecretKeyChanged String
+    | StripeWebhookSigningSecretChanged String
+    | StripeCancelClicked
+    | StripeSaveClicked
+    | GotStripeSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, ServerConfiguration ))
     | PreferredProvidersEditClicked
     | PreferredProviderRemoveClicked VerificationAPI
     | PreferredProviderAddSelectionChanged String
@@ -141,6 +151,20 @@ type alias BirdConfigEdit =
     }
 
 
+{-| Live only while the Stripe config is being edited by an admin. `secretKey`/`webhookSigningSecret`
+always start blank (same "write-only, `Enter to change` placeholder" convention as
+`TwilioConfigEdit.apiKeySecret`) -- both are blanked by the server's own `to_proto` (see
+`StripeConfig`'s own proto doc). `publishableKey` is plain text (not secret), shown/edited normally.
+-}
+type alias StripeConfigEdit =
+    { enabled : Bool
+    , publishableKey : String
+    , secretKey : String
+    , webhookSigningSecret : String
+    , status : AccountsPanel.FormStatus
+    }
+
+
 {-| Live only while `preferredVerificationApis` is being edited by an admin -- mirrors
 `SettingsTab.PermissionsEdit` exactly, just over `VerificationAPI` instead of `Permission`.
 `pending`'s order IS the preference order (see module doc).
@@ -156,6 +180,7 @@ init : Model
 init =
     { configEdit = Nothing
     , birdConfigEdit = Nothing
+    , stripeConfigEdit = Nothing
     , preferredProvidersEdit = Nothing
     , adminIntegrations = AdminIntegrationsNotFetched
     }
@@ -192,6 +217,16 @@ adminBirdConfig model =
     case model.adminIntegrations of
         AdminIntegrationsLoaded config ->
             config.birdConfig
+
+        _ ->
+            Nothing
+
+
+adminStripeConfig : Model -> Maybe StripeConfig
+adminStripeConfig model =
+    case model.adminIntegrations of
+        AdminIntegrationsLoaded config ->
+            config.stripeConfig
 
         _ ->
             Nothing
@@ -333,6 +368,65 @@ update shared targetHost msg model =
 
         GotBirdSaveResult (Err err) ->
             ( { model | birdConfigEdit = model.birdConfigEdit |> Maybe.map (\edit -> { edit | status = AccountsPanel.Errored (AccountsPanel.grpcErrorToString err) }) }
+            , Effect.none
+            )
+
+        StripeEditClicked ->
+            let
+                stripeConfig : Maybe StripeConfig
+                stripeConfig =
+                    adminStripeConfig model
+            in
+            ( { model
+                | stripeConfigEdit =
+                    Just
+                        { enabled = stripeConfig |> Maybe.map .stripeEnabled |> Maybe.withDefault False
+                        , publishableKey = stripeConfig |> Maybe.map .stripePublishableKey |> Maybe.withDefault ""
+                        , secretKey = ""
+                        , webhookSigningSecret = ""
+                        , status = AccountsPanel.Idle
+                        }
+              }
+            , Effect.none
+            )
+
+        StripeEnabledToggled ->
+            ( { model | stripeConfigEdit = model.stripeConfigEdit |> Maybe.map (\edit -> { edit | enabled = not edit.enabled }) }, Effect.none )
+
+        StripePublishableKeyChanged text ->
+            ( { model | stripeConfigEdit = model.stripeConfigEdit |> Maybe.map (\edit -> { edit | publishableKey = text }) }, Effect.none )
+
+        StripeSecretKeyChanged text ->
+            ( { model | stripeConfigEdit = model.stripeConfigEdit |> Maybe.map (\edit -> { edit | secretKey = text }) }, Effect.none )
+
+        StripeWebhookSigningSecretChanged text ->
+            ( { model | stripeConfigEdit = model.stripeConfigEdit |> Maybe.map (\edit -> { edit | webhookSigningSecret = text }) }, Effect.none )
+
+        StripeCancelClicked ->
+            ( { model | stripeConfigEdit = Nothing }, Effect.none )
+
+        StripeSaveClicked ->
+            case ( model.stripeConfigEdit, Common.adminAccountFor shared targetHost ) of
+                ( Just edit, Just account ) ->
+                    ( { model | stripeConfigEdit = Just { edit | status = AccountsPanel.Submitting } }
+                    , AccountsPanel.updateServerConfig shared.accounts ( Just account.userId, targetHost ) (applyStripeConfig edit)
+                        |> Task.attempt GotStripeSaveResult
+                        |> Effect.fromCmd
+                    )
+
+                _ ->
+                    ( model, Effect.none )
+
+        GotStripeSaveResult (Ok ( maybeAccountsPanelMsg, newConfig )) ->
+            ( { model | stripeConfigEdit = Nothing, adminIntegrations = AdminIntegrationsLoaded newConfig }
+            , Effect.batch
+                [ Common.accountsPanelEffect maybeAccountsPanelMsg
+                , Effect.fromShared (Shared.AccountsPanelMsg (AccountsPanel.GotServerConfigSaveResult targetHost newConfig))
+                ]
+            )
+
+        GotStripeSaveResult (Err err) ->
+            ( { model | stripeConfigEdit = model.stripeConfigEdit |> Maybe.map (\edit -> { edit | status = AccountsPanel.Errored (AccountsPanel.grpcErrorToString err) }) }
             , Effect.none
             )
 
@@ -512,6 +606,30 @@ applyBirdConfig edit config =
     }
 
 
+{-| Same as `applyTwilioConfig`, but for Stripe -- `secretKey`/`webhookSigningSecret` are sent as
+typed (blank if left untouched), and the backend splices the existing stored value back in when
+the incoming field is empty, same as `twilio_api_key_secret`. `publishableKey` is not secret, so
+it's always applied straight across.
+-}
+applyStripeConfig : StripeConfigEdit -> ServerConfiguration -> ServerConfiguration
+applyStripeConfig edit config =
+    let
+        existing : StripeConfig
+        existing =
+            Maybe.withDefault defaultStripeConfig config.stripeConfig
+    in
+    { config
+        | stripeConfig =
+            Just
+                { existing
+                    | stripeEnabled = edit.enabled
+                    , stripePublishableKey = edit.publishableKey
+                    , stripeSecretKey = edit.secretKey
+                    , stripeWebhookSigningSecret = edit.webhookSigningSecret
+                }
+    }
+
+
 {-| Every `VerificationAPI` value, in a fixed display order -- used both for the Add dropdown's
 full option list and (indirectly, via `addablePreferredProviders`) for what's left to add.
 -}
@@ -598,6 +716,14 @@ view maybeAdminAccount model =
 
                         Nothing ->
                             birdDisplayView maybeAdminAccount (adminBirdConfig model)
+                    )
+                , div []
+                    (case model.stripeConfigEdit of
+                        Just edit ->
+                            stripeEditView edit
+
+                        Nothing ->
+                            stripeDisplayView maybeAdminAccount (adminStripeConfig model)
                     )
                 , preferredProvidersSection maybeAdminAccount model.preferredProvidersEdit (adminPreferredProviders model)
                 ]
@@ -731,6 +857,68 @@ birdEditView edit =
     , div [ class "server-details-feature-settings-actions" ]
         [ Common.editSaveButton BirdSaveClicked edit.status
         , Common.editCancelButton BirdCancelClicked edit.status
+        ]
+    , Common.editErrorView edit.status
+    ]
+
+
+stripeDisplayView : Maybe RellmAccount -> Maybe StripeConfig -> List (Html Msg)
+stripeDisplayView maybeAdminAccount stripeConfig =
+    [ h3 [ class "section-title" ] [ text "Stripe" ]
+    , Common.settingsRow "Stripe Enabled" (Common.switchDisplay (stripeConfig |> Maybe.map .stripeEnabled |> Maybe.withDefault False))
+    , Common.settingsRow "Publishable Key" (span [ class "server-details-feature-settings-value" ] [ text (stripeConfig |> Maybe.map .stripePublishableKey |> Maybe.andThen emptyToNothing |> Maybe.withDefault "—") ])
+    , case maybeAdminAccount of
+        Just _ ->
+            button [ class "server-details-rename-button", onClick StripeEditClicked ] [ text "Edit Stripe Settings" ]
+
+        Nothing ->
+            text ""
+    ]
+
+
+{-| `secretKey`/`webhookSigningSecret` are the two write-only fields (`type_ "password"`,
+`placeholder "Enter to change"`, always seeded blank -- see `StripeConfigEdit`'s own doc);
+`publishableKey` is plain text.
+-}
+stripeEditView : StripeConfigEdit -> List (Html Msg)
+stripeEditView edit =
+    [ h3 [ class "section-title" ] [ text "Stripe" ]
+    , Common.settingsRow "Stripe Enabled" (Common.flagSwitch edit.enabled StripeEnabledToggled)
+    , Common.settingsRow "Publishable Key"
+        (input
+            [ class "server-details-rename-input"
+            , placeholder "pk_live_xxxxxxxxxxxxxxxxxxxxxxxx"
+            , value edit.publishableKey
+            , onInput StripePublishableKeyChanged
+            , disabled (edit.status == AccountsPanel.Submitting)
+            ]
+            []
+        )
+    , Common.settingsRow "Secret Key"
+        (input
+            [ type_ "password"
+            , class "server-details-rename-input"
+            , placeholder "Enter to change"
+            , value edit.secretKey
+            , onInput StripeSecretKeyChanged
+            , disabled (edit.status == AccountsPanel.Submitting)
+            ]
+            []
+        )
+    , Common.settingsRow "Webhook Signing Secret"
+        (input
+            [ type_ "password"
+            , class "server-details-rename-input"
+            , placeholder "Enter to change"
+            , value edit.webhookSigningSecret
+            , onInput StripeWebhookSigningSecretChanged
+            , disabled (edit.status == AccountsPanel.Submitting)
+            ]
+            []
+        )
+    , div [ class "server-details-feature-settings-actions" ]
+        [ Common.editSaveButton StripeSaveClicked edit.status
+        , Common.editCancelButton StripeCancelClicked edit.status
         ]
     , Common.editErrorView edit.status
     ]

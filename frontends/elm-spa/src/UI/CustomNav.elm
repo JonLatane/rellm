@@ -426,6 +426,9 @@ navigationTabLabel navTab =
         ABOUTTAB ->
             "About"
 
+        MARKETTAB ->
+            "Market"
+
         NavigationTabUnrecognized_ _ ->
             "Tab"
 
@@ -483,6 +486,9 @@ defaultPathFor target =
 
                 ABOUTTAB ->
                     "about"
+
+                MARKETTAB ->
+                    "market"
 
                 NavigationTabUnrecognized_ _ ->
                     "home"
@@ -545,6 +551,9 @@ targetKindText kind =
                 ABOUTTAB ->
                     "About Page"
 
+                MARKETTAB ->
+                    "Market Page"
+
                 NavigationTabUnrecognized_ _ ->
                     "Tab"
 
@@ -561,7 +570,7 @@ predefined tabs, plus Custom Post and Profile. Mirrors `SettingsTab.allowedDefau
 -}
 selectableTargetKinds : List TargetKind
 selectableTargetKinds =
-    [ KindTab EVENTSTAB, KindTab POSTSTAB, KindTab PEOPLETAB, KindTab ABOUTTAB, KindPost, KindProfile ]
+    [ KindTab EVENTSTAB, KindTab POSTSTAB, KindTab PEOPLETAB, KindTab ABOUTTAB, KindTab MARKETTAB, KindPost, KindProfile ]
 
 
 targetKindFromText : String -> Maybe TargetKind
@@ -653,6 +662,9 @@ navLinkView shared currentRoute server tab =
 
                 TargetTab ABOUTTAB ->
                     Route.About
+
+                TargetTab MARKETTAB ->
+                    Route.Market
 
                 TargetTab (NavigationTabUnrecognized_ _) ->
                     route

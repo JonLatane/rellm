@@ -33,6 +33,7 @@ pub fn get_server_configuration(
         // itself.
         result.twilio_config = None;
         result.bird_config = None;
+        result.stripe_config = None;
         result.preferred_verification_apis = vec![];
     }
     // log::info!("GetServerConfiguration called, returning {:?}", result);

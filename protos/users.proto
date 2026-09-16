@@ -9,6 +9,7 @@ import "media.proto";
 import "federation.proto";
 import "sync.proto";
 import "ai_providers.proto";
+import "market.proto";
 
 // Model for a Rellm user. This user may have [`Media`](#rellm-Media), [`Group`](#rellm-Group) [`Membership`](#rellm-Membership)s,
 // [`Post`](#rellm-Post)s, [`Event`](#rellm-Event)s, and other objects associated with them.
@@ -115,6 +116,11 @@ message User {
   // [`Login`](#grpc-api-Login)/[`CreateAccount`](#grpc-api-CreateAccount)/[`GetCurrentUser`](#grpc-api-GetCurrentUser)).
   repeated AIModel ai_models = 84;
 
+  // The target user's own MarketSubscriptions (`market.proto`), each with its own
+  // `billing_history`. Gated and populated the same way as `ai_models`/`sync_sources` (target user
+  // themselves, or an Admin, across any [`GetUsers`](#grpc-api-GetUsers) listing type, plus
+  // [`Login`](#grpc-api-Login)/[`CreateAccount`](#grpc-api-CreateAccount)/[`GetCurrentUser`](#grpc-api-GetCurrentUser)).
+  repeated MarketSubscription market_subscriptions = 85;
 
   // The time the user was created.
   google.protobuf.Timestamp created_at = 100;

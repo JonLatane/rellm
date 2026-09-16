@@ -11,8 +11,9 @@ use crate::logic::{
     server_bird_config, server_facebook_app_credentials, server_twilio_config,
     server_x_twitter_app_credentials,
 };
+use crate::logic::stripe_sync::server_stripe_config;
 use crate::protos::*;
-use crate::rpcs::{configure_server, get_server_configuration_proto};
+use crate::rpcs::{configure_server, get_server_configuration, get_server_configuration_proto};
 use crate::tests::factories::*;
 
 /// `configure_server` (like every real caller -- see `validate_configuration`'s
@@ -447,6 +448,163 @@ fn setting_bird_config_to_none_clears_the_stored_secret() {
         configure_server(clearing_config, &admin, conn).expect("clearing configure should succeed");
 
         assert_eq!(server_bird_config(conn), None);
+
+        Ok(())
+    });
+}
+
+/// Mirrors `twilio_request`, against `stripe_config` instead -- `StripeConfig` has *two*
+/// write-only fields (`stripe_secret_key`, `stripe_webhook_signing_secret`, both merge-on-blank --
+/// see `configure_server`'s own comment), unlike Twilio/Bird's single secret, so these specs cover
+/// each independently.
+fn stripe_request(
+    conn: &mut PgPooledConnection,
+    secret_key: &str,
+    publishable_key: &str,
+    webhook_signing_secret: &str,
+) -> ServerConfiguration {
+    let mut config = get_server_configuration_proto(conn).expect("failed to fetch base config");
+    config.stripe_config = Some(StripeConfig {
+        stripe_enabled: true,
+        stripe_secret_key: secret_key.to_string(),
+        stripe_publishable_key: publishable_key.to_string(),
+        stripe_webhook_signing_secret: webhook_signing_secret.to_string(),
+    });
+    config
+}
+
+#[test]
+fn stripe_secrets_are_never_returned_to_the_client() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let admin = create_user(conn, "cst_stripe_hidden");
+        let admin = grant_permissions(conn, &admin, vec![Permission::Admin]);
+
+        let updated = configure_server(
+            stripe_request(conn, "sk_test_secret", "pk_test_public", "whsec_test_secret"),
+            &admin,
+            conn,
+        )
+        .expect("configure should succeed");
+
+        let stripe_config = updated.stripe_config.expect("stripe_config should be set");
+        assert_eq!(stripe_config.stripe_publishable_key, "pk_test_public");
+        assert_eq!(stripe_config.stripe_secret_key, "");
+        assert_eq!(stripe_config.stripe_webhook_signing_secret, "");
+
+        Ok(())
+    });
+}
+
+#[test]
+fn empty_stripe_secret_key_preserves_the_previously_stored_one() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let admin = create_user(conn, "cst_stripe_secret_preserved");
+        let admin = grant_permissions(conn, &admin, vec![Permission::Admin]);
+
+        configure_server(
+            stripe_request(conn, "sk_test_secret", "pk_test_public_1", "whsec_test_secret"),
+            &admin,
+            conn,
+        )
+        .expect("first configure should succeed");
+
+        // Changing just the publishable key, with the Secret Key left blank (as the client always
+        // sends it, since it never gets the real value back to resend).
+        configure_server(
+            stripe_request(conn, "", "pk_test_public_2", "whsec_test_secret"),
+            &admin,
+            conn,
+        )
+        .expect("second configure should succeed");
+
+        let stored =
+            server_stripe_config(conn).expect("stripe config should still be configured");
+        assert_eq!(stored.stripe_publishable_key, "pk_test_public_2");
+        assert_eq!(stored.stripe_secret_key, "sk_test_secret");
+        assert_eq!(stored.stripe_webhook_signing_secret, "whsec_test_secret");
+
+        Ok(())
+    });
+}
+
+#[test]
+fn empty_stripe_webhook_signing_secret_preserves_the_previously_stored_one() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let admin = create_user(conn, "cst_stripe_webhook_preserved");
+        let admin = grant_permissions(conn, &admin, vec![Permission::Admin]);
+
+        configure_server(
+            stripe_request(conn, "sk_test_secret", "pk_test_public", "whsec_test_secret_1"),
+            &admin,
+            conn,
+        )
+        .expect("first configure should succeed");
+
+        configure_server(
+            stripe_request(conn, "sk_test_secret", "pk_test_public", ""),
+            &admin,
+            conn,
+        )
+        .expect("second configure should succeed");
+
+        let stored =
+            server_stripe_config(conn).expect("stripe config should still be configured");
+        assert_eq!(stored.stripe_secret_key, "sk_test_secret");
+        assert_eq!(stored.stripe_webhook_signing_secret, "whsec_test_secret_1");
+
+        Ok(())
+    });
+}
+
+#[test]
+fn setting_stripe_config_to_none_clears_the_stored_secrets() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let admin = create_user(conn, "cst_stripe_cleared");
+        let admin = grant_permissions(conn, &admin, vec![Permission::Admin]);
+
+        configure_server(
+            stripe_request(conn, "sk_test_secret", "pk_test_public", "whsec_test_secret"),
+            &admin,
+            conn,
+        )
+        .expect("first configure should succeed");
+
+        let mut clearing_config =
+            get_server_configuration_proto(conn).expect("failed to fetch base config");
+        clearing_config.stripe_config = None;
+        configure_server(clearing_config, &admin, conn).expect("clearing configure should succeed");
+
+        assert_eq!(server_stripe_config(conn), None);
+
+        Ok(())
+    });
+}
+
+#[test]
+fn non_admin_never_sees_stripe_config_from_get_server_configuration() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let admin = create_user(conn, "cst_stripe_admin");
+        let admin = grant_permissions(conn, &admin, vec![Permission::Admin]);
+        configure_server(
+            stripe_request(conn, "sk_test_secret", "pk_test_public", "whsec_test_secret"),
+            &admin,
+            conn,
+        )
+        .expect("configure should succeed");
+
+        let non_admin = create_user(conn, "cst_stripe_non_admin");
+        let result = get_server_configuration(
+            (),
+            &Some(&non_admin),
+            conn,
+        )
+        .expect("get_server_configuration should succeed");
+        assert_eq!(result.stripe_config, None);
 
         Ok(())
     });

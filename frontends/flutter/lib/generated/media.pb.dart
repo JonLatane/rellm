@@ -14,10 +14,10 @@ import 'dart:core' as $core;
 import 'package:fixnum/fixnum.dart' as $fixnum;
 import 'package:protobuf/protobuf.dart' as $pb;
 
-import 'google/protobuf/timestamp.pb.dart' as $12;
+import 'google/protobuf/timestamp.pb.dart' as $13;
 import 'media.pbenum.dart';
-import 'permissions.pbenum.dart' as $14;
-import 'visibility_moderation.pbenum.dart' as $13;
+import 'permissions.pbenum.dart' as $15;
+import 'visibility_moderation.pbenum.dart' as $14;
 
 export 'media.pbenum.dart';
 
@@ -50,12 +50,12 @@ class Media extends $pb.GeneratedMessage {
     Author? author,
     $core.String? name,
     $core.String? description,
-    $13.Visibility? visibility,
-    $13.Moderation? moderation,
+    $14.Visibility? visibility,
+    $14.Moderation? moderation,
     $core.bool? generated,
     $core.bool? processed,
-    $12.Timestamp? createdAt,
-    $12.Timestamp? updatedAt,
+    $13.Timestamp? createdAt,
+    $13.Timestamp? updatedAt,
     MediaMetadata? metadata,
     $core.String? url,
     $core.Iterable<MediaSize>? sizes,
@@ -111,12 +111,12 @@ class Media extends $pb.GeneratedMessage {
     ..aOM<Author>(2, _omitFieldNames ? '' : 'author', subBuilder: Author.create)
     ..aOS(4, _omitFieldNames ? '' : 'name')
     ..aOS(5, _omitFieldNames ? '' : 'description')
-    ..e<$13.Visibility>(6, _omitFieldNames ? '' : 'visibility', $pb.PbFieldType.OE, defaultOrMaker: $13.Visibility.VISIBILITY_UNKNOWN, valueOf: $13.Visibility.valueOf, enumValues: $13.Visibility.values)
-    ..e<$13.Moderation>(7, _omitFieldNames ? '' : 'moderation', $pb.PbFieldType.OE, defaultOrMaker: $13.Moderation.MODERATION_UNKNOWN, valueOf: $13.Moderation.valueOf, enumValues: $13.Moderation.values)
+    ..e<$14.Visibility>(6, _omitFieldNames ? '' : 'visibility', $pb.PbFieldType.OE, defaultOrMaker: $14.Visibility.VISIBILITY_UNKNOWN, valueOf: $14.Visibility.valueOf, enumValues: $14.Visibility.values)
+    ..e<$14.Moderation>(7, _omitFieldNames ? '' : 'moderation', $pb.PbFieldType.OE, defaultOrMaker: $14.Moderation.MODERATION_UNKNOWN, valueOf: $14.Moderation.valueOf, enumValues: $14.Moderation.values)
     ..aOB(8, _omitFieldNames ? '' : 'generated')
     ..aOB(9, _omitFieldNames ? '' : 'processed')
-    ..aOM<$12.Timestamp>(15, _omitFieldNames ? '' : 'createdAt', subBuilder: $12.Timestamp.create)
-    ..aOM<$12.Timestamp>(16, _omitFieldNames ? '' : 'updatedAt', subBuilder: $12.Timestamp.create)
+    ..aOM<$13.Timestamp>(15, _omitFieldNames ? '' : 'createdAt', subBuilder: $13.Timestamp.create)
+    ..aOM<$13.Timestamp>(16, _omitFieldNames ? '' : 'updatedAt', subBuilder: $13.Timestamp.create)
     ..aOM<MediaMetadata>(17, _omitFieldNames ? '' : 'metadata', subBuilder: MediaMetadata.create)
     ..aOS(18, _omitFieldNames ? '' : 'url')
     ..pc<MediaSize>(19, _omitFieldNames ? '' : 'sizes', $pb.PbFieldType.PM, subBuilder: MediaSize.create)
@@ -188,9 +188,9 @@ class Media extends $pb.GeneratedMessage {
 
   /// Visibility of the media item.
   @$pb.TagNumber(6)
-  $13.Visibility get visibility => $_getN(4);
+  $14.Visibility get visibility => $_getN(4);
   @$pb.TagNumber(6)
-  set visibility($13.Visibility v) { setField(6, v); }
+  set visibility($14.Visibility v) { setField(6, v); }
   @$pb.TagNumber(6)
   $core.bool hasVisibility() => $_has(4);
   @$pb.TagNumber(6)
@@ -198,9 +198,9 @@ class Media extends $pb.GeneratedMessage {
 
   /// Moderation of the media item.
   @$pb.TagNumber(7)
-  $13.Moderation get moderation => $_getN(5);
+  $14.Moderation get moderation => $_getN(5);
   @$pb.TagNumber(7)
-  set moderation($13.Moderation v) { setField(7, v); }
+  set moderation($14.Moderation v) { setField(7, v); }
   @$pb.TagNumber(7)
   $core.bool hasModeration() => $_has(5);
   @$pb.TagNumber(7)
@@ -228,26 +228,26 @@ class Media extends $pb.GeneratedMessage {
   void clearProcessed() => clearField(9);
 
   @$pb.TagNumber(15)
-  $12.Timestamp get createdAt => $_getN(8);
+  $13.Timestamp get createdAt => $_getN(8);
   @$pb.TagNumber(15)
-  set createdAt($12.Timestamp v) { setField(15, v); }
+  set createdAt($13.Timestamp v) { setField(15, v); }
   @$pb.TagNumber(15)
   $core.bool hasCreatedAt() => $_has(8);
   @$pb.TagNumber(15)
   void clearCreatedAt() => clearField(15);
   @$pb.TagNumber(15)
-  $12.Timestamp ensureCreatedAt() => $_ensure(8);
+  $13.Timestamp ensureCreatedAt() => $_ensure(8);
 
   @$pb.TagNumber(16)
-  $12.Timestamp get updatedAt => $_getN(9);
+  $13.Timestamp get updatedAt => $_getN(9);
   @$pb.TagNumber(16)
-  set updatedAt($12.Timestamp v) { setField(16, v); }
+  set updatedAt($13.Timestamp v) { setField(16, v); }
   @$pb.TagNumber(16)
   $core.bool hasUpdatedAt() => $_has(9);
   @$pb.TagNumber(16)
   void clearUpdatedAt() => clearField(16);
   @$pb.TagNumber(16)
-  $12.Timestamp ensureUpdatedAt() => $_ensure(9);
+  $13.Timestamp ensureUpdatedAt() => $_ensure(9);
 
   @$pb.TagNumber(17)
   MediaMetadata get metadata => $_getN(10);
@@ -625,7 +625,7 @@ class Author extends $pb.GeneratedMessage {
     $core.String? username,
     MediaReference? avatar,
     $core.String? realName,
-    $core.Iterable<$14.Permission>? permissions,
+    $core.Iterable<$15.Permission>? permissions,
   }) {
     final $result = create();
     if (userId != null) {
@@ -654,7 +654,7 @@ class Author extends $pb.GeneratedMessage {
     ..aOS(2, _omitFieldNames ? '' : 'username')
     ..aOM<MediaReference>(3, _omitFieldNames ? '' : 'avatar', subBuilder: MediaReference.create)
     ..aOS(4, _omitFieldNames ? '' : 'realName')
-    ..pc<$14.Permission>(5, _omitFieldNames ? '' : 'permissions', $pb.PbFieldType.KE, valueOf: $14.Permission.valueOf, enumValues: $14.Permission.values, defaultEnumValue: $14.Permission.PERMISSION_UNKNOWN)
+    ..pc<$15.Permission>(5, _omitFieldNames ? '' : 'permissions', $pb.PbFieldType.KE, valueOf: $15.Permission.valueOf, enumValues: $15.Permission.values, defaultEnumValue: $15.Permission.PERMISSION_UNKNOWN)
     ..hasRequiredFields = false
   ;
 
@@ -721,7 +721,7 @@ class Author extends $pb.GeneratedMessage {
   void clearRealName() => clearField(4);
 
   @$pb.TagNumber(5)
-  $core.List<$14.Permission> get permissions => $_getList(4);
+  $core.List<$15.Permission> get permissions => $_getList(4);
 }
 
 /// Valid GetMediaRequest formats:

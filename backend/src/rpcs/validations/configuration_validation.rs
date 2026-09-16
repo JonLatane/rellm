@@ -49,9 +49,9 @@ pub fn validate_configuration(config: &ServerConfiguration) -> Result<(), Status
                 ));
             }
 
-            // "events", "posts", "people", and "about" are reserved as top-level paths (see
-            // `RESERVED_PATHS`/`CUSTOM_TAB_RESERVED_PATHS`), but still permitted as custom tab
-            // paths since they're the predefined tabs' own paths. Make sure they're only ever
+            // "events", "posts", "people", "about", and "market" are reserved as top-level paths
+            // (see `RESERVED_PATHS`/`CUSTOM_TAB_RESERVED_PATHS`), but still permitted as custom
+            // tab paths since they're the predefined tabs' own paths. Make sure they're only ever
             // used to point to their matching `NavigationTab`, not remapped to a different tab
             // or a Post.
             let required_tab = match tab.path.as_str() {
@@ -59,6 +59,7 @@ pub fn validate_configuration(config: &ServerConfiguration) -> Result<(), Status
                 "posts" => Some((NavigationTab::PostsTab, "posts_path_must_point_to_posts_tab")),
                 "people" => Some((NavigationTab::PeopleTab, "people_path_must_point_to_people_tab")),
                 "about" => Some((NavigationTab::AboutTab, "about_path_must_point_to_about_tab")),
+                "market" => Some((NavigationTab::MarketTab, "market_path_must_point_to_market_tab")),
                 _ => None,
             };
             if let Some((required_tab, error_message)) = required_tab {

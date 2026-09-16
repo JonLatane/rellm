@@ -358,6 +358,16 @@ pub fn attach_advanced_admin_data(
             }
         }
     }
+
+    if let Ok(mut subscriptions_by_id) = build_subscriptions_for_buyers(&allowed_ids, conn) {
+        for proto_user in users.iter_mut() {
+            if let Ok(id) = proto_user.id.to_db_id() {
+                if let Some(subscriptions) = subscriptions_by_id.remove(&id) {
+                    proto_user.market_subscriptions = subscriptions;
+                }
+            }
+        }
+    }
 }
 
 /// Convenience wrapper combining `attach_own_sync_destinations` + `attach_advanced_admin_data` for

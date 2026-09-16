@@ -144,6 +144,45 @@ pub fn configure_server(
         );
     }
 
+    // Same merge-on-blank treatment as `twilio_config` above, for `StripeConfig.stripe_secret_key`/
+    // `stripe_webhook_signing_secret` -- both write-only (`to_proto` always blanks them before
+    // reaching a client), so an empty incoming value means "leave whatever's already stored alone."
+    // `stripe_enabled`/`stripe_publishable_key` pass through freely, no scrubbing needed.
+    if let Some(incoming_stripe_config) = request.stripe_config.as_ref() {
+        let existing_stripe_config = get_server_configuration_model(conn)
+            .ok()
+            .and_then(|c| c.stripe_config)
+            .and_then(|c| serde_json::from_value::<protos::StripeConfig>(c).ok());
+        let existing_secret_key = existing_stripe_config
+            .as_ref()
+            .map(|c| c.stripe_secret_key.clone())
+            .unwrap_or_default();
+        let existing_webhook_signing_secret = existing_stripe_config
+            .as_ref()
+            .map(|c| c.stripe_webhook_signing_secret.clone())
+            .unwrap_or_default();
+        new_config.stripe_config = Some(
+            serde_json::to_value(protos::StripeConfig {
+                stripe_enabled: incoming_stripe_config.stripe_enabled,
+                stripe_publishable_key: incoming_stripe_config.stripe_publishable_key.clone(),
+                stripe_secret_key: if incoming_stripe_config.stripe_secret_key.is_empty() {
+                    existing_secret_key
+                } else {
+                    incoming_stripe_config.stripe_secret_key.clone()
+                },
+                stripe_webhook_signing_secret: if incoming_stripe_config
+                    .stripe_webhook_signing_secret
+                    .is_empty()
+                {
+                    existing_webhook_signing_secret
+                } else {
+                    incoming_stripe_config.stripe_webhook_signing_secret.clone()
+                },
+            })
+            .unwrap(),
+        );
+    }
+
     // `cluster_resources` is admin-visible but only *editable* with `EDIT_CLUSTER_SETTINGS` (see
     // that permission's own doc). `conductor_state` as a whole is never *settable* via
     // `ConfigureServer` at all regardless of permission -- only `LockClusterResources`/

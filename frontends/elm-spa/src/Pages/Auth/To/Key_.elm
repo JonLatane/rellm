@@ -583,6 +583,7 @@ accountFromLogin server resp =
                 , syncDestinations = user.syncDestinations
                 , syncSources = user.syncSources
                 , aiModels = user.aiModels
+                , marketSubscriptions = user.marketSubscriptions
                 , mediaStorageBytesUsed = int64ToInt user.mediaStorageBytesUsed
                 , mediaStorageLimitBytes = Maybe.map int64ToInt user.mediaStorageLimitBytes
                 }

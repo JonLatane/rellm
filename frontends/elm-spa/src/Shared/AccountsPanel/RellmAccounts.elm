@@ -44,7 +44,7 @@ own coordinating logic.
 import Grpc
 import Json.Decode as Decode exposing (Decoder)
 import Json.Encode as Encode
-import Proto.Rellm exposing (AccessTokenResponse, AIModel, ExpirableToken, SyncDestination, SyncSource, User)
+import Proto.Rellm exposing (AccessTokenResponse, AIModel, ExpirableToken, MarketSubscription, SyncDestination, SyncSource, User)
 import Proto.Rellm.Permission exposing (Permission(..), fieldNumbersPermission)
 import Proto.Rellm.Rellm as Rellm
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (Connection, RellmServer)
@@ -91,6 +91,7 @@ type alias RellmAccount =
     , syncDestinations : List SyncDestination
     , syncSources : List SyncSource
     , aiModels : List AIModel
+    , marketSubscriptions : List MarketSubscription
 
     -- Refreshed alongside `permissions`/etc (see `applyPermissionsRefreshResult`) from
     -- `User.mediaStorageBytesUsed`/`.mediaStorageLimitBytes` -- see those fields' own proto doc.
@@ -339,6 +340,7 @@ applyPermissionsRefreshResult accId result accounts =
                     , syncDestinations = user.syncDestinations
                     , syncSources = user.syncSources
                     , aiModels = user.aiModels
+                    , marketSubscriptions = user.marketSubscriptions
                     , mediaStorageBytesUsed = int64ToInt user.mediaStorageBytesUsed
                     , mediaStorageLimitBytes = Maybe.map int64ToInt user.mediaStorageLimitBytes
                 }
@@ -489,7 +491,7 @@ isExpired now token =
 -- ENCODE/DECODE
 
 
-{-| Deliberately omits `syncDestinations`/`syncSources`/`aiModels` -- they're
+{-| Deliberately omits `syncDestinations`/`syncSources`/`aiModels`/`marketSubscriptions` -- they're
 nested-proto-shaped, can be sizeable, and change often, so persisting them to `localStorage` (and
 writing the JSON codecs for their `oneof`s) isn't worth it when `refreshPermissionsTask` already
 refetches them on every reconnect/enable. See `rellmAccountDecoder`'s own doc for the decode side.
@@ -533,11 +535,11 @@ encodeToken token =
         ]
 
 
-{-| `elm/json` only provides `map8`, but `RellmAccount` now has 16 fields -- so this
+{-| `elm/json` only provides `map8`, but `RellmAccount` now has 17 fields -- so this
 decodes the first 8 into a partially-applied `RellmAccount` constructor, then
 applies `realName`, `needsPassword`, `sortOrder`, `mediaStorageBytesUsed`, and
-`mediaStorageLimitBytes` on top of that. The 3 in between
-(`syncDestinations`/`syncSources`/`aiModels`) are deliberately
+`mediaStorageLimitBytes` on top of that. The 4 in between
+(`syncDestinations`/`syncSources`/`aiModels`/`marketSubscriptions`) are deliberately
 never persisted at all -- see `encodeRellmAccount`'s own doc -- so they always
 decode to `[]` here regardless of what's in storage; the very next
 `refreshPermissionsTask` (fired on every reconnect/enable) fills them back in.
@@ -546,7 +548,7 @@ rellmAccountDecoder : Decoder RellmAccount
 rellmAccountDecoder =
     Decode.map6
         (\partial realName needsPassword sortOrder mediaStorageBytesUsed mediaStorageLimitBytes ->
-            partial realName needsPassword sortOrder [] [] [] mediaStorageBytesUsed mediaStorageLimitBytes
+            partial realName needsPassword sortOrder [] [] [] [] mediaStorageBytesUsed mediaStorageLimitBytes
         )
         (Decode.map8 RellmAccount
             (Decode.field "server" Decode.string)

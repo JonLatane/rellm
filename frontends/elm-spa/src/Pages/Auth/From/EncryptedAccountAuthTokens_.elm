@@ -138,6 +138,7 @@ update shared req msg model =
                     , syncDestinations = user.syncDestinations
                     , syncSources = user.syncSources
                     , aiModels = user.aiModels
+                    , marketSubscriptions = user.marketSubscriptions
                     , mediaStorageBytesUsed = Conversions.int64ToInt user.mediaStorageBytesUsed
                     , mediaStorageLimitBytes = Maybe.map Conversions.int64ToInt user.mediaStorageLimitBytes
                     }

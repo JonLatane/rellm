@@ -41,6 +41,15 @@ pub fn create_account(
             Some(Ok(v)) => Some(v),
         };
     let server_configuration = get_server_configuration_proto(conn)?;
+    // New users get the server's configured default media storage allocation (falls back to 15MB
+    // -- see `ToProtoServerConfiguration::to_proto`'s `media_settings` deserialize -- so
+    // `media_settings` is always `Some` here). Previously left unset entirely, which means
+    // *unlimited* (see `MediaSettings.default_media_allocation_bytes`'s own doc) -- the actual bug
+    // this fixes.
+    let default_media_allocation_bytes = server_configuration
+        .media_settings
+        .as_ref()
+        .map(|m| m.default_media_allocation_bytes as i64);
     let insert_result: Result<models::User, _> = insert_into(users)
         .values((
             username.eq(request.username.to_owned()),
@@ -61,6 +70,7 @@ pub fn create_account(
                 .unwrap()
                 .default_visibility
                 .to_string_visibility()),
+            media_storage_limit_bytes.eq(default_media_allocation_bytes),
         ))
         .returning(models::USER_COLUMNS)
         .get_result::<models::User>(conn);

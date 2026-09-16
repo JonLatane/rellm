@@ -2173,6 +2173,9 @@ accountAvatarMenuView shared account =
 
                   else
                     text ""
+                , a
+                    [ class "account-avatar-menu-item", href profileHref, navigateAndClose ]
+                    (itemContent "Subscriptions" (configuredCountOrEmpty "No subscriptions." account.marketSubscriptions))
                 ]
             ]
 
@@ -2561,39 +2564,55 @@ Enter, type a password" flow.
 -}
 formView : Shared.Model -> Route -> Html Shared.Msg
 formView shared currentRoute =
-    if AccountsPanel.shouldShowAddAccountForm shared.accounts then
-        addAccountServerForm shared currentRoute
-
-    else
-        div [ class "account-form" ]
-            [ button
-                [ classes [ "show-add-account-form-button", hostnameToCSSClass <| formThemeHost shared.accounts, "background-color-primary" ]
-                , onClick (Shared.AccountsPanelMsg AccountsPanel.ShowAddAccountFormClicked)
-                ]
-                [ text "Add Account/Server..." ]
-            ]
+    div [ class "account-form" ]
+        [ addAccountServerHeaderRow shared
+        , addAccountServerFormBody shared currentRoute
+        ]
 
 
-{-| The expanded "Add Account/Server" area, once `AccountsPanel.shouldShowAddAccountForm` -- one
-merged form with three tabs (Rellm/Mastodon/Bluesky, see `AccountsPanel.AccountOrServerFormType`)
-replacing what used to be three separate forms with their own independent show/hide state: the Rellm
-`addAccountForm` (now `rellmAddAccountServerForm`), the "+ Bluesky Account"/"+ Mastodon Server"
-buttons and their forms (`federatedFeedsSection`, removed), and the former `mastodonServersStrip`'s
-"Connect" buttons for admin-registered instances (now `mastodonConnectSection`). Each tab keeps its
-own separate set of inputs (`AccountsPanel.Model.accountForm`/`addServerForm`,
-`browseMastodonInstanceInput`, `blueskyConnectForm`) -- only which one is currently *showing* is
-now shared.
+{-| The merged "Add Account/Server" area's header row: the collapsed "Add Account/Server..." button
+and the expanded "←" + Rellm/Mastodon/Bluesky tabs (see `AccountsPanel.AccountOrServerFormType`)
+share one row, animated between the two via a per-item `max-width` transition
+(`.add-account-server-header-row`/`.is-open`, see that CSS's own doc for why a shared grid-column
+track didn't work here) rather than either being mounted/unmounted outright -- both are always
+rendered, in the fixed order [button, "←", Rellm, Mastodon, Bluesky]; only which side's `max-width`
+is open changes. `hideAddAccountFormButton` rendering nothing while there are no accounts yet (see
+its own doc) needs no special-casing here -- an empty flex item just takes zero width on its own,
+letting the tabs' `flex-grow` claim that space same as if it were never there.
 -}
-addAccountServerForm : Shared.Model -> Route -> Html Shared.Msg
-addAccountServerForm shared currentRoute =
+addAccountServerHeaderRow : Shared.Model -> Html Shared.Msg
+addAccountServerHeaderRow shared =
     let
         activeType : AccountsPanel.AccountOrServerFormType
         activeType =
             AccountsPanel.activeAddAccountServerFormType shared.accounts
     in
-    div [ class "account-form" ]
-        [ addAccountServerFormTabBar shared activeType
-        , case activeType of
+    div [ classes [ "add-account-server-header-row", openClosedClass (AccountsPanel.shouldShowAddAccountForm shared.accounts) ] ]
+        [ button
+            [ classes [ "show-add-account-form-button", hostnameToCSSClass <| formThemeHost shared.accounts, "background-color-primary" ]
+            , onClick (Shared.AccountsPanelMsg AccountsPanel.ShowAddAccountFormClicked)
+            ]
+            [ span [ class "header-row-chip" ] [ text "Add Account/Server..." ] ]
+        , hideAddAccountFormButton shared (addAccountServerFormBusy shared activeType)
+        , addAccountServerFormTabButton activeType AccountsPanel.RellmServerFormType "Rellm"
+        , addAccountServerFormTabButton activeType AccountsPanel.MastodonServerFormType "Mastodon"
+        , addAccountServerFormTabButton activeType AccountsPanel.BlueskyAccountFormType "Bluesky"
+        ]
+
+
+{-| The merged "Add Account/Server" area's lower part -- whichever tab's own fields
+(`rellmAddAccountServerForm`/`mastodonServerFormView`+`mastodonConnectSection`/`blueskyConnectFormView`,
+see `AccountsPanel.AccountOrServerFormType`) -- collapsed to zero height via the same
+`grid-template-rows` 1fr/0fr trick `.account-avatar-menu` uses (`.add-account-server-form-body`/
+`.is-open`) in step with `addAccountServerHeaderRow`'s own horizontal collapse, rather than appearing/
+disappearing outright. Always renders the *active* tab's fields (never all three at once) -- switching
+tabs while already open just reflows the row's own natural height, with no separate animation of its
+own.
+-}
+addAccountServerFormBody : Shared.Model -> Route -> Html Shared.Msg
+addAccountServerFormBody shared currentRoute =
+    div [ classes [ "add-account-server-form-body", openClosedClass (AccountsPanel.shouldShowAddAccountForm shared.accounts) ] ]
+        [ case AccountsPanel.activeAddAccountServerFormType shared.accounts of
             AccountsPanel.RellmServerFormType ->
                 rellmAddAccountServerForm shared currentRoute
 
@@ -2608,23 +2627,6 @@ addAccountServerForm shared currentRoute =
         ]
 
 
-{-| The Rellm/Mastodon/Bluesky tab row for `addAccountServerForm`, plus the shared "←" button that
-collapses the whole area back behind its "Add Account/Server..." button (see
-`hideAddAccountFormButton`) -- reuses the outer Accounts Panel's own `.accounts-panel-tab`/
-`.selected` styling (see `accountsPanelTab`) for visual consistency, one level deeper.
--}
-addAccountServerFormTabBar : Shared.Model -> AccountsPanel.AccountOrServerFormType -> Html Shared.Msg
-addAccountServerFormTabBar shared activeType =
-    div [ class "add-account-server-tab-bar" ]
-        [ hideAddAccountFormButton shared (addAccountServerFormBusy shared activeType)
-        , div [ class "accounts-panel-tabs" ]
-            [ addAccountServerFormTabButton activeType AccountsPanel.RellmServerFormType "Rellm"
-            , addAccountServerFormTabButton activeType AccountsPanel.MastodonServerFormType "Mastodon"
-            , addAccountServerFormTabButton activeType AccountsPanel.BlueskyAccountFormType "Bluesky"
-            ]
-        ]
-
-
 addAccountServerFormTabButton : AccountsPanel.AccountOrServerFormType -> AccountsPanel.AccountOrServerFormType -> String -> Html Shared.Msg
 addAccountServerFormTabButton activeType tabType label =
     button
@@ -2632,7 +2634,7 @@ addAccountServerFormTabButton activeType tabType label =
         , classList [ ( "accounts-panel-tab", True ), ( "selected", activeType == tabType ) ]
         , onClick (Shared.AccountsPanelMsg (AccountsPanel.AddAccountServerFormTypeSelected tabType))
         ]
-        [ text label ]
+        [ span [ class "header-row-chip" ] [ text label ] ]
 
 
 {-| Whether the currently-active tab has a submission in flight -- used only to disable the shared
@@ -2696,7 +2698,7 @@ hideAddAccountFormButton shared accountFieldsDisabled =
             , class "hide-add-account-form-button"
             , title "Back"
             ]
-            [ text "←" ]
+            [ span [ class "header-row-chip" ] [ text "←" ] ]
 
 
 rellmAddAccountServerForm : Shared.Model -> Route -> Html Shared.Msg

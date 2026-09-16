@@ -39,8 +39,11 @@
   opacity: 0.7;
 }
 
-.accounts-panel-tab.selected {
+.add-account-server-header-row.is-open > .accounts-panel-tab.selected {
   opacity: 1;
+}
+
+.accounts-panel-tab.selected {
   background: var(--panel-bg);
   border-color: var(--fg);
 }
@@ -702,7 +705,7 @@
    when a row's removed instead of holding its full width until the row
    itself is gone, then snapping shut all at once. */
 .accounts-list {
-  max-height: 240px;
+  max-height: calc(max(240px, calc(100vh - 485px)));
   overflow-y: auto;
   /* Same reasoning as .servers-strip's flex-shrink: 0 -- this already has its
      own scroll for "many accounts"; it shouldn't also get squashed below
@@ -1137,6 +1140,31 @@
   gap: 0.4rem;
 }
 
+/* `UI.elm`'s `addAccountServerFormBody` -- the active tab's own fields (Rellm/Mastodon/Bluesky),
+   collapsed to zero height via the same `grid-template-rows` 1fr/0fr trick `.account-avatar-menu`
+   uses, so it grows/shrinks in step with `.add-account-server-header-row`'s own horizontal collapse
+   rather than appearing/disappearing outright. `pointer-events: none` while closed keeps the
+   fields (still genuinely present in the DOM, just clipped to ~0 height) unclickable, mirroring
+   `.account-avatar-menu`'s own reasoning. */
+.add-account-server-form-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.25s ease, margin-top 0.25s ease;
+  pointer-events: none;
+  margin-top: -8px;
+}
+
+.add-account-server-form-body.is-open {
+  grid-template-rows: 1fr;
+  pointer-events: auto;
+  margin-top: 0px;
+}
+
+.add-account-server-form-body > * {
+  overflow: hidden;
+  min-height: 0;
+}
+
 /* Username/password fields' clear ("╳") and show-password ("👁") buttons --
    overlaid on the right edge of the field itself, rather than laid out
    beside it, so the field doesn't visibly shift width when a button
@@ -1228,20 +1256,79 @@
   width: 32px;
 }
 
-/* The Rellm/Mastodon/Bluesky tab row for `addAccountServerForm` (UI.elm's
-   `addAccountServerFormTabBar`) -- the "←" collapse button sits to the tabs'
-   left, both vertically centered in the row. Explicit width+height (rather
-   than `.hide-add-account-form-button`'s own `aspect-ratio`+`width: 32px`)
-   shrinks it down to match `.accounts-panel-tab`'s own rendered height,
-   instead of the taller 32px square it is everywhere else it's used
-   (`.account-form-buttons`/`.sign-in-from-row`). */
-.add-account-server-tab-bar {
+/* `UI.elm`'s `addAccountServerHeaderRow` -- the collapsed "Add Account/Server..." button and the
+   expanded "←" + Rellm/Mastodon/Bluesky tabs share this one row, both always rendered side by side
+   (in that fixed order); which one's visible is animated via `max-width` on each item, not a shared
+   grid track (a `grid-template-columns` 1fr/0fr split there turned out not to collapse reliably --
+   a button forced to zero column width still wrapped its label across lines instead of clipping,
+   leaving a visible sliver). Each item transitions its own `max-width` between `0` (collapsed,
+   clipped by `overflow: hidden`) and a generous cap it'll never actually reach (its real width comes
+   from `flex-grow` sharing whatever space the *other* side has given up) -- `white-space: nowrap`
+   keeps a label from ever wrapping onto a second line while it's mid-shrink. */
+.add-account-server-header-row {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
 }
 
-.add-account-server-tab-bar .hide-add-account-form-button {
+/* No `gap` here -- like `flip.css`'s own reasoning, a flex `gap` reserves its space between every
+   pair of items regardless of how narrow either's collapsed to, which would leave a permanent blank
+   strip trailing the "Add Account/Server..." button while closed. `margin-right` (below, on the
+   items that actually need it) transitions away to nothing right alongside `max-width` instead. */
+.add-account-server-header-row > * {
+  overflow: hidden;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 0 0 auto;
+  max-width: 0;
+  height: 1.8rem;
+  margin-right: -2px;
+  padding: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: max-width 0.25s ease, margin-right 0.25s ease, opacity 0.25s ease;
+}
+
+.add-account-server-header-row > .show-add-account-form-button {
+  max-width: 100%;
+  flex: 1 1 auto;
+}
+
+.add-account-server-header-row.is-closed > .show-add-account-form-button {
+  opacity: 1;
+  pointer-events: all;
+}
+
+.add-account-server-header-row.is-open > .show-add-account-form-button {
+  opacity: 0;
+}
+
+.add-account-server-header-row.is-open > .show-add-account-form-button {
+  max-width: 0%;
+  flex: 0 0 auto;
+}
+
+.add-account-server-header-row.is-open > .hide-add-account-form-button {
+  max-width: 1.7rem;
+  margin-right: 0.5rem;
+  opacity: 1;
+  pointer-events: all;
+}
+
+.add-account-server-header-row.is-open > .accounts-panel-tab {
+  max-width: 100%;
+  flex: 1 1 0;
+  margin-right: 0.5rem;
+  opacity: 1;
+  pointer-events: all;
+}
+
+/* The last tab (Bluesky) is also the row's actual last child regardless of whether the "←" button
+   rendered before it (see `addAccountServerHeaderRow`'s own doc) -- no trailing margin needed. */
+.add-account-server-header-row.is-open > .accounts-panel-tab:last-child {
+  margin-right: 0;
+}
+
+.add-account-server-header-row .hide-add-account-form-button {
   width: 1.7rem;
   height: 1.7rem;
 }

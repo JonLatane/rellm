@@ -9,6 +9,7 @@ import { BinaryReader, BinaryWriter } from "@bufbuild/protobuf/wire";
 import { AIModel } from "./ai_providers";
 import { FederatedAccount } from "./federation";
 import { Timestamp } from "./google/protobuf/timestamp";
+import { MarketSubscription } from "./market";
 import { MediaReference } from "./media";
 import { Permission, permissionFromJSON, permissionToJSON } from "./permissions";
 import { SyncDestination, SyncSource } from "./sync";
@@ -279,6 +280,13 @@ export interface User {
    * [`Login`](#grpc-api-Login)/[`CreateAccount`](#grpc-api-CreateAccount)/[`GetCurrentUser`](#grpc-api-GetCurrentUser)).
    */
   aiModels: AIModel[];
+  /**
+   * The target user's own MarketSubscriptions (`market.proto`), each with its own
+   * `billing_history`. Gated and populated the same way as `ai_models`/`sync_sources` (target user
+   * themselves, or an Admin, across any [`GetUsers`](#grpc-api-GetUsers) listing type, plus
+   * [`Login`](#grpc-api-Login)/[`CreateAccount`](#grpc-api-CreateAccount)/[`GetCurrentUser`](#grpc-api-GetCurrentUser)).
+   */
+  marketSubscriptions: MarketSubscription[];
   /** The time the user was created. */
   createdAt:
     | string
@@ -456,6 +464,7 @@ function createBaseUser(): User {
     syncDestinations: [],
     syncSources: [],
     aiModels: [],
+    marketSubscriptions: [],
     createdAt: undefined,
     updatedAt: undefined,
   };
@@ -551,6 +560,9 @@ export const User: MessageFns<User> = {
     }
     for (const v of message.aiModels) {
       AIModel.encode(v!, writer.uint32(674).fork()).join();
+    }
+    for (const v of message.marketSubscriptions) {
+      MarketSubscription.encode(v!, writer.uint32(682).fork()).join();
     }
     if (message.createdAt !== undefined) {
       Timestamp.encode(toTimestamp(message.createdAt), writer.uint32(802).fork()).join();
@@ -810,6 +822,14 @@ export const User: MessageFns<User> = {
           message.aiModels.push(AIModel.decode(reader, reader.uint32()));
           continue;
         }
+        case 85: {
+          if (tag !== 682) {
+            break;
+          }
+
+          message.marketSubscriptions.push(MarketSubscription.decode(reader, reader.uint32()));
+          continue;
+        }
         case 100: {
           if (tag !== 802) {
             break;
@@ -882,6 +902,9 @@ export const User: MessageFns<User> = {
         ? object.syncSources.map((e: any) => SyncSource.fromJSON(e))
         : [],
       aiModels: globalThis.Array.isArray(object?.aiModels) ? object.aiModels.map((e: any) => AIModel.fromJSON(e)) : [],
+      marketSubscriptions: globalThis.Array.isArray(object?.marketSubscriptions)
+        ? object.marketSubscriptions.map((e: any) => MarketSubscription.fromJSON(e))
+        : [],
       createdAt: isSet(object.createdAt) ? globalThis.String(object.createdAt) : undefined,
       updatedAt: isSet(object.updatedAt) ? globalThis.String(object.updatedAt) : undefined,
     };
@@ -976,6 +999,9 @@ export const User: MessageFns<User> = {
     if (message.aiModels?.length) {
       obj.aiModels = message.aiModels.map((e) => AIModel.toJSON(e));
     }
+    if (message.marketSubscriptions?.length) {
+      obj.marketSubscriptions = message.marketSubscriptions.map((e) => MarketSubscription.toJSON(e));
+    }
     if (message.createdAt !== undefined) {
       obj.createdAt = message.createdAt;
     }
@@ -1033,6 +1059,7 @@ export const User: MessageFns<User> = {
     message.syncDestinations = object.syncDestinations?.map((e) => SyncDestination.fromPartial(e)) || [];
     message.syncSources = object.syncSources?.map((e) => SyncSource.fromPartial(e)) || [];
     message.aiModels = object.aiModels?.map((e) => AIModel.fromPartial(e)) || [];
+    message.marketSubscriptions = object.marketSubscriptions?.map((e) => MarketSubscription.fromPartial(e)) || [];
     message.createdAt = object.createdAt ?? undefined;
     message.updatedAt = object.updatedAt ?? undefined;
     return message;

@@ -131,6 +131,7 @@
     - [ServerConfiguration](#rellm-ServerConfiguration)
     - [ServerInfo](#rellm-ServerInfo)
     - [ServerLogo](#rellm-ServerLogo)
+    - [StripeConfig](#rellm-StripeConfig)
     - [TwilioConfig](#rellm-TwilioConfig)
     - [WebPushConfig](#rellm-WebPushConfig)
   
@@ -182,6 +183,32 @@
     - [RevokeAIProviderRequest](#rellm-RevokeAIProviderRequest)
   
     - [AIModelCapability](#rellm-AIModelCapability)
+  
+- [market.proto](#market-proto)
+    - [AIGrantPurchaseDetails](#rellm-AIGrantPurchaseDetails)
+    - [AIGrantSubscriptionDetails](#rellm-AIGrantSubscriptionDetails)
+    - [GetMarketProductsRequest](#rellm-GetMarketProductsRequest)
+    - [GetMarketProductsResponse](#rellm-GetMarketProductsResponse)
+    - [GetMarketSubscriptionsRequest](#rellm-GetMarketSubscriptionsRequest)
+    - [GetMarketSubscriptionsResponse](#rellm-GetMarketSubscriptionsResponse)
+    - [MakeMarketPurchaseRequest](#rellm-MakeMarketPurchaseRequest)
+    - [MakeMarketPurchaseResponse](#rellm-MakeMarketPurchaseResponse)
+    - [MarketPayment](#rellm-MarketPayment)
+    - [MarketPaymentMethod](#rellm-MarketPaymentMethod)
+    - [MarketProduct](#rellm-MarketProduct)
+    - [MarketPurchase](#rellm-MarketPurchase)
+    - [MarketRefund](#rellm-MarketRefund)
+    - [MarketRefundMethod](#rellm-MarketRefundMethod)
+    - [MarketSubscription](#rellm-MarketSubscription)
+    - [MediaStoragePurchaseDetails](#rellm-MediaStoragePurchaseDetails)
+    - [MediaStorageSubscriptionDetails](#rellm-MediaStorageSubscriptionDetails)
+    - [PermissionsAccessPurchaseDetails](#rellm-PermissionsAccessPurchaseDetails)
+    - [PermissionsAccessSubscriptionDetails](#rellm-PermissionsAccessSubscriptionDetails)
+    - [RellmHostingPurchaseDetails](#rellm-RellmHostingPurchaseDetails)
+    - [RellmHostingSubscriptionDetails](#rellm-RellmHostingSubscriptionDetails)
+  
+    - [PurchasePeriod](#rellm-PurchasePeriod)
+    - [PurchaseType](#rellm-PurchaseType)
   
 - [Scalar Value Types](#scalar-value-types)
 
@@ -585,6 +612,38 @@ Granted/reset via [`GrantAIProvider`](#grpc-api-GrantAIProvider) (upserted on th
 removed via [`RevokeAIProvider`](#grpc-api-RevokeAIProvider). Unlike every other RPC pair in this section,
 these two are **owner-only, with no Admin override** - an Admin may manage the provider record itself, but only
 its owner may hand out access to it.
+
+#### Rellm&#39;s Market
+Rellm&#39;s Market (`market.proto`) is this server&#39;s storefront - a small, Stripe-backed marketplace an admin
+stocks with up to nine [`MarketProduct`](#rellm-MarketProduct)s (one offering type times one billing period
+each) that any user can buy. Three offering types exist today ([`PurchaseType`](#rellm-PurchaseType)):
+`PURCHASE_TYPE_MEDIA_STORAGE` (raises the buyer&#39;s `User.media_storage_limit_bytes`),
+`PURCHASE_TYPE_AI_GRANTS` (grants/resets an [`AIProviderGrant`](#rellm-AIProviderGrant) against one of the
+server operator&#39;s [`AIProvider`](#rellm-AIProvider)s), and `PURCHASE_TYPE_RELLM_HOSTING` (bills the buyer for
+the server operator to stand up a new Rellm instance on a domain of their choosing - provisioned by hand, not
+automated). Each [`MarketProduct`](#rellm-MarketProduct) is sold once ([`PurchasePeriod`](#rellm-PurchasePeriod)
+`PURCHASE_PERIOD_INDEFINITE`, a single non-renewing [`MarketPurchase`](#rellm-MarketPurchase)) or on a recurring
+`PURCHASE_PERIOD_ANNUAL`/`PURCHASE_PERIOD_MONTHLY` cycle (a [`MarketSubscription`](#rellm-MarketSubscription),
+whose `billing_history` accumulates one [`MarketPurchase`](#rellm-MarketPurchase) per renewal).
+
+Products are listed via [`GetMarketProducts`](#grpc-api-GetMarketProducts) (unauthenticated; admins
+additionally see delisted ones) and managed via
+[`CreateMarketProduct`](#grpc-api-CreateMarketProduct)/[`UpdateMarketProduct`](#grpc-api-UpdateMarketProduct)
+(both Admin-only; a [`MarketProduct`](#rellm-MarketProduct)&#39;s `type`/`period` are immutable once created).
+Buying one is a two-step, webhook-settled flow: [`MakeMarketPurchase`](#grpc-api-MakeMarketPurchase) starts a
+Stripe Checkout Session and returns its URL to redirect the buyer to - no
+[`MarketPurchase`](#rellm-MarketPurchase)/[`MarketSubscription`](#rellm-MarketSubscription) is created yet, so
+an abandoned checkout leaves nothing behind. Only once Stripe confirms payment (a
+`checkout.session.completed` webhook delivery) does the server create the
+[`MarketPurchase`](#rellm-MarketPurchase)/[`MarketSubscription`](#rellm-MarketSubscription) and apply its
+entitlement. A recurring [`MarketSubscription`](#rellm-MarketSubscription) renews itself thereafter via
+off-session charges against the payment method saved on that first checkout - no further action from the
+buyer - until a renewal charge fails, which ends the [`MarketSubscription`](#rellm-MarketSubscription). A
+user&#39;s own MarketSubscriptions (never anyone else&#39;s) are listed via
+[`GetMarketSubscriptions`](#grpc-api-GetMarketSubscriptions), and also travel along on [`User`](#rellm-User)
+itself (`User.market_subscriptions`) the same way `ai_models`/`sync_sources` do. Stripe credentials for all of
+this live in `ServerConfiguration.stripe_config` (a [`StripeConfig`](#rellm-StripeConfig)), Admin-only like
+`twilio_config`/`bird_config`.
 
 #### Media
 [`Media`](#rellm-Media) represents an uploaded (or server-generated) photo or video. Unlike other types, Media
@@ -1107,6 +1166,11 @@ discarded and a fresh keypair generated, so it&#39;s single-use per completed/fa
 | DeleteAIProvider | [DeleteAIProviderRequest](#rellm-DeleteAIProviderRequest) | [.google.protobuf.Empty](#google-protobuf-Empty) | Deletes an AIProvider (and its AIProviderGrants). *Authenticated* (owner, or Admin). |
 | GrantAIProvider | [GrantAIProviderRequest](#rellm-GrantAIProviderRequest) | [AIProviderGrant](#rellm-AIProviderGrant) | Grants (or resets) another user&#39;s metered access to one of the current user&#39;s AIProviders. *Authenticated*, owner-only (no Admin override). |
 | RevokeAIProvider | [RevokeAIProviderRequest](#rellm-RevokeAIProviderRequest) | [.google.protobuf.Empty](#google-protobuf-Empty) | Revokes another user&#39;s access to one of the current user&#39;s AIProviders. *Authenticated*, owner-only (no Admin override). |
+| GetMarketProducts | [GetMarketProductsRequest](#rellm-GetMarketProductsRequest) | [GetMarketProductsResponse](#rellm-GetMarketProductsResponse) | Gets MarketProducts available for purchase on this server (`market.proto`). *Unauthenticated* -- admins additionally see delisted MarketProducts. |
+| CreateMarketProduct | [MarketProduct](#rellm-MarketProduct) | [MarketProduct](#rellm-MarketProduct) | Creates a MarketProduct. *Authenticated*, requires Admin. |
+| UpdateMarketProduct | [MarketProduct](#rellm-MarketProduct) | [MarketProduct](#rellm-MarketProduct) | Updates a MarketProduct&#39;s amount/currency/details/delisted_at. *Authenticated*, requires Admin. `type`/`period` are immutable after creation and are ignored if changed. |
+| GetMarketSubscriptions | [GetMarketSubscriptionsRequest](#rellm-GetMarketSubscriptionsRequest) | [GetMarketSubscriptionsResponse](#rellm-GetMarketSubscriptionsResponse) | Gets the current user&#39;s own MarketSubscriptions (with billing_history). *Authenticated*, self-scoped only. |
+| MakeMarketPurchase | [MakeMarketPurchaseRequest](#rellm-MakeMarketPurchaseRequest) | [MakeMarketPurchaseResponse](#rellm-MakeMarketPurchaseResponse) | Starts (or resumes) buying a MarketProduct for the current user, returning a Stripe Checkout URL to redirect to. *Authenticated*. See `MakeMarketPurchaseRequest`&#39;s own doc -- no MarketPurchase/ MarketSubscription is created by this call itself, only once Stripe confirms payment via webhook. |
 | GenerateMedia | [GenerateMediaRequest](#rellm-GenerateMediaRequest) | [Media](#rellm-Media) | Generates (or edits, given reference `media_ids`) an image via one of the current user&#39;s AIModels, storing it as a new Media and, if `target` is set, attaching it to that Post/Event. *Authenticated* - caller must own or have been granted access to the chosen AIProvider, and (if `target` is set) have edit access to that Post/Event. A grantee (never the provider&#39;s own owner) spends real AIProviderGrant.tokens_remaining on every call - the provider&#39;s own reported token usage once generation succeeds, or (rejected before any request is even sent to the provider) a rough pre-flight estimate of the request&#39;s input cost alone, whichever catches an insufficient balance first. |
 | GetEventAttendances | [GetEventAttendancesRequest](#rellm-GetEventAttendancesRequest) | [EventAttendances](#rellm-EventAttendances) | Gets EventAttendances for an Occasion. *Publicly accessible **or** Authenticated.* |
 | UpsertEventAttendance | [EventAttendance](#rellm-EventAttendance) | [EventAttendance](#rellm-EventAttendance) | Upsert an EventAttendance. *Publicly accessible **or** Authenticated, with anonymous RSVP support.* See [EventAttendance](#rellm-EventAttendance) and [AnonymousAttendee](#rellm-AnonymousAttendee) for details. tl;dr: Anonymous RSVPs may updated/deleted with the `AnonymousAttendee.auth_token` returned by this RPC (the client should save this for the user, and ideally, offer a link with the token). |
@@ -1663,6 +1727,7 @@ Model for a Rellm user. This user may have [`Media`](#rellm-Media), [`Group`](#r
 | sync_destinations | [SyncDestination](#rellm-SyncDestination) | repeated | The target user&#39;s own linked SyncDestinations (e.g. Facebook Pages). Populated by [`GetUsers`](#grpc-api-GetUsers)&#39; single-user lookups (by username or by user_id) when the viewer is the target user themselves (and holds `SYNC_EVENTS_TO_FACEBOOK` or `SYNC_POSTS_TO_FACEBOOK`) or an Admin, and by [`Login`](#grpc-api-Login)/[`CreateAccount`](#grpc-api-CreateAccount)/[`GetCurrentUser`](#grpc-api-GetCurrentUser) (always a self-view) - always empty otherwise, including via every other [`GetUsers`](#grpc-api-GetUsers) listing type. |
 | sync_sources | [SyncSource](#rellm-SyncSource) | repeated | The target user&#39;s own [`SyncSource`](#rellm-SyncSource)s. Unlike `sync_destinations`, also populated for the target user themselves *or an Admin* across every [`GetUsers`](#grpc-api-GetUsers) listing type (not just single-user lookups) - e.g. an Admin&#39;s `EVERYONE` listing gets every returned user&#39;s sources filled in, batch-loaded in one query rather than per-user. Also populated by [`Login`](#grpc-api-Login)/[`CreateAccount`](#grpc-api-CreateAccount)/[`GetCurrentUser`](#grpc-api-GetCurrentUser) (always a self-view). Always empty for any other viewer. |
 | ai_models | [AIModel](#rellm-AIModel) | repeated | Every [`AIProvider`](#rellm-AIProvider) model the target user may currently call - their own providers&#39; models, plus any models granted to them on other users&#39; providers (see [`AIModel`](#rellm-AIModel)). Gated and populated the same way as `sync_sources` (target user themselves, or an Admin, across any [`GetUsers`](#grpc-api-GetUsers) listing type, plus [`Login`](#grpc-api-Login)/[`CreateAccount`](#grpc-api-CreateAccount)/[`GetCurrentUser`](#grpc-api-GetCurrentUser)). |
+| market_subscriptions | [MarketSubscription](#rellm-MarketSubscription) | repeated | The target user&#39;s own MarketSubscriptions (`market.proto`), each with its own `billing_history`. Gated and populated the same way as `ai_models`/`sync_sources` (target user themselves, or an Admin, across any [`GetUsers`](#grpc-api-GetUsers) listing type, plus [`Login`](#grpc-api-Login)/[`CreateAccount`](#grpc-api-CreateAccount)/[`GetCurrentUser`](#grpc-api-GetCurrentUser)). |
 | created_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  | The time the user was created. |
 | updated_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional | The time the user was last updated. |
 
@@ -3304,6 +3369,7 @@ Media is a special type and less customizable than &#34;Features.&#34;
 | visible | [bool](#bool) |  | Hide the Posts or Events tab from the user with this flag. |
 | default_moderation | [Moderation](#rellm-Moderation) |  | Only `UNMODERATED` and `PENDING` are valid. When `UNMODERATED`, user reports may transition status to `PENDING`. When `PENDING`, users&#39; SERVER_PUBLIC or `GLOBAL_PUBLIC` posts will not be visible until a moderator approves them. `LIMITED` visiblity posts are always visible to targeted users (who have not blocked the author) regardless of default_moderation. |
 | default_visibility | [Visibility](#rellm-Visibility) |  | Only `SERVER_PUBLIC` and `GLOBAL_PUBLIC` are valid. `GLOBAL_PUBLIC` is only valid if default_user_permissions contains `GLOBALLY_PUBLISH_[USERS|GROUPS|POSTS|EVENTS]` as appropriate. |
+| default_media_allocation_bytes | [uint64](#uint64) |  | Default media storage allocation for newly created users. Defaults to 10MB. |
 
 
 
@@ -3377,6 +3443,7 @@ Configuration for a Rellm server instance.
 | available_verification_apis | [VerificationAPI](#rellm-VerificationAPI) | repeated | Derived from whether TwilioConfig.enabled is true, etc. Serialized to every caller (not admin-only, unlike `preferred_verification_apis`/`twilio_config`) -- this is what a non-admin client should check to decide whether to show verification UI at all, without exposing any provider configuration. |
 | twilio_config | [TwilioConfig](#rellm-TwilioConfig) | optional | Twilio Config. Only serialized for admin users. |
 | bird_config | [BirdConfig](#rellm-BirdConfig) | optional | Bird (bird.com, formerly MessageBird) Config -- a cheaper Twilio alternative for SMS verification. Only serialized for admin users. |
+| stripe_config | [StripeConfig](#rellm-StripeConfig) | optional | Stripe Config, backing the Marketplace (`market.proto`). Only serialized for admin users. |
 
 
 
@@ -3418,6 +3485,26 @@ Logo data for the server. Built atop Rellm [`Media` APIs](#rellm-Media).
 | squareMediaIdDark | [string](#string) | optional | The media ID for the square logo in dark mode. |
 | wideMediaId | [string](#string) | optional | The media ID for the wide logo. |
 | wideMediaIdDark | [string](#string) | optional | The media ID for the wide logo in dark mode. |
+
+
+
+
+
+
+<a name="rellm-StripeConfig"></a>
+
+### StripeConfig
+Stripe credentials backing the Marketplace (`market.proto`). Used both to create Checkout
+Sessions/off-session renewal PaymentIntents (`stripe_secret_key`) and to verify incoming
+webhook deliveries (`stripe_webhook_signing_secret`).
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| stripe_enabled | [bool](#bool) |  |  |
+| stripe_secret_key | [string](#string) |  | Stripe Secret Key (starts with `sk_`), used as Bearer auth for all Stripe API calls made by this server (Checkout Session creation, off-session renewal charges). Never serialized once written -- same write-only treatment as `TwilioConfig.twilio_api_key_secret`. |
+| stripe_publishable_key | [string](#string) |  | Stripe Publishable Key (starts with `pk_`). Not secret -- kept here (rather than derived from `stripe_secret_key`) so a future client-side Stripe Elements integration has what it needs, even though the current Checkout-based flow doesn&#39;t use it server-side at all. |
+| stripe_webhook_signing_secret | [string](#string) |  | Signing secret (starts with `whsec_`) for the `/webhooks/stripe` endpoint, used to verify the `Stripe-Signature` header on incoming webhook deliveries. Never serialized once written -- same write-only treatment as `stripe_secret_key` above. |
 
 
 
@@ -3523,6 +3610,7 @@ The default navigation tabs in Rellm&#39;s Elm UI.
 | POSTS_TAB | 11 | The Posts tab. |
 | PEOPLE_TAB | 12 | The People tab. |
 | ABOUT_TAB | 15 | The About tab. |
+| MARKET_TAB | 16 | The Market tab. |
 
 
 
@@ -4330,6 +4418,428 @@ text-to-image generation.
 | AI_MODEL_CAPABILITY_TEXT_GENERATION | 1 | The model can generate new text from a prompt. |
 | AI_MODEL_CAPABILITY_IMAGE_GENERATION | 2 | The model can generate a new image from a text prompt alone - what [`GenerateMedia`](#grpc-api-GenerateMedia) requires when `GenerateMediaRequest.media_ids` is empty (no reference images to edit with). |
 | AI_MODEL_CAPABILITY_IMAGE_EDITING | 3 | The model can edit an existing image, given a text prompt and one or more reference images -- what [`GenerateMedia`](#grpc-api-GenerateMedia) requires instead, whenever `GenerateMediaRequest.media_ids` is non-empty. Not every model with `AI_MODEL_CAPABILITY_IMAGE_GENERATION` also has this - some (e.g. the cheaper/faster `gemini-3.1-flash-lite-image` tier) only support plain generation. |
+
+
+ 
+
+ 
+
+ 
+
+
+
+<a name="market-proto"></a>
+<p align="right"><a href="#top">Top</a></p>
+
+## market.proto
+
+
+
+<a name="rellm-AIGrantPurchaseDetails"></a>
+
+### AIGrantPurchaseDetails
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| ai_provider_id | [string](#string) |  |  |
+| model_names | [string](#string) | repeated |  |
+| tokens | [uint64](#uint64) |  |  |
+
+
+
+
+
+
+<a name="rellm-AIGrantSubscriptionDetails"></a>
+
+### AIGrantSubscriptionDetails
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| ai_provider_id | [string](#string) |  |  |
+| model_names | [string](#string) | repeated |  |
+| tokens | [uint64](#uint64) |  |  |
+
+
+
+
+
+
+<a name="rellm-GetMarketProductsRequest"></a>
+
+### GetMarketProductsRequest
+Request to get products available for purchase on a Rellm server.
+For now, there are few enough that this has no parameters.
+
+
+
+
+
+
+<a name="rellm-GetMarketProductsResponse"></a>
+
+### GetMarketProductsResponse
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| market_products | [MarketProduct](#rellm-MarketProduct) | repeated | Non-delisted products, plus delisted ones too if the caller is an admin. |
+
+
+
+
+
+
+<a name="rellm-GetMarketSubscriptionsRequest"></a>
+
+### GetMarketSubscriptionsRequest
+Request to get the current user&#39;s own MarketSubscriptions (with billing_history). Self-scoped --
+there&#39;s no way to fetch another user&#39;s MarketSubscriptions, even as an admin, for now.
+
+
+
+
+
+
+<a name="rellm-GetMarketSubscriptionsResponse"></a>
+
+### GetMarketSubscriptionsResponse
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| market_subscriptions | [MarketSubscription](#rellm-MarketSubscription) | repeated |  |
+
+
+
+
+
+
+<a name="rellm-MakeMarketPurchaseRequest"></a>
+
+### MakeMarketPurchaseRequest
+Authenticated*. Buys `market_product_id` for the current user, starting (or continuing) a
+Stripe Checkout flow -- see `MakeMarketPurchaseResponse.checkout_url`. No `MarketPurchase`/
+`MarketSubscription` is created by this call itself; that only happens once Stripe confirms
+payment via webhook, so an abandoned checkout never leaves a half-created purchase behind.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| market_product_id | [string](#string) |  |  |
+| rellm_hosting_details | [RellmHostingPurchaseDetails](#rellm-RellmHostingPurchaseDetails) | optional | Only meaningful (and required) for a `PURCHASE_TYPE_RELLM_HOSTING` product -- the buyer&#39;s desired domain/contact info/notes, carried through to Stripe as Checkout Session metadata and copied onto the resulting `MarketPurchase`/`MarketSubscription` once payment completes. |
+
+
+
+
+
+
+<a name="rellm-MakeMarketPurchaseResponse"></a>
+
+### MakeMarketPurchaseResponse
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| checkout_url | [string](#string) |  | Redirect the buyer&#39;s browser here (a Stripe-hosted Checkout page) to complete payment. |
+
+
+
+
+
+
+<a name="rellm-MarketPayment"></a>
+
+### MarketPayment
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| amount | [uint32](#uint32) |  |  |
+| currency | [uint32](#uint32) |  |  |
+| market_purchase_id | [string](#string) |  |  |
+| method | [MarketPaymentMethod](#rellm-MarketPaymentMethod) | optional | The card actually charged, if known/resolvable at the time this MarketPayment was recorded. |
+| created_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  |  |
+
+
+
+
+
+
+<a name="rellm-MarketPaymentMethod"></a>
+
+### MarketPaymentMethod
+Card details for a MarketPayment, resolved from Stripe at charge time (Stripe&#39;s own
+`PaymentMethod.card` object). Unset entirely if the payment wasn&#39;t card-based or details
+couldn&#39;t be resolved. Never carries anything more sensitive than what Stripe itself considers
+safe to display (brand/last4/expiry) -- never a full card number.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| card_brand | [string](#string) |  | E.g. &#34;visa&#34;, &#34;mastercard&#34;, &#34;amex&#34;. |
+| card_last4 | [string](#string) |  | Last 4 digits of the card number. |
+| card_exp_month | [uint32](#uint32) |  |  |
+| card_exp_year | [uint32](#uint32) |  |  |
+
+
+
+
+
+
+<a name="rellm-MarketProduct"></a>
+
+### MarketProduct
+An actual subscribable product listed on, say, https://rellm.org/market
+Listed/delisted by clients by setting `delisted_at` (though the actual date supplied
+by the client is ignored).
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| id | [string](#string) |  |  |
+| type | [PurchaseType](#rellm-PurchaseType) |  | Never changeable after product creation. |
+| period | [PurchasePeriod](#rellm-PurchasePeriod) |  | Never changeable after product creation. |
+| amount | [uint32](#uint32) |  |  |
+| currency | [uint32](#uint32) |  |  |
+| media_storage_subscription_details | [MediaStorageSubscriptionDetails](#rellm-MediaStorageSubscriptionDetails) |  |  |
+| ai_grant_subscription_details | [AIGrantSubscriptionDetails](#rellm-AIGrantSubscriptionDetails) |  |  |
+| rellm_hosting_subscription_details | [RellmHostingSubscriptionDetails](#rellm-RellmHostingSubscriptionDetails) |  |  |
+| permissions_access_subscription_details | [PermissionsAccessSubscriptionDetails](#rellm-PermissionsAccessSubscriptionDetails) |  |  |
+| created_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  |  |
+| delisted_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional | If set, the MarketProduct is not purchasable. Note: clients toggle listings by setting this, but the server will always set it to the time of the request, not the time sent *by* the request. |
+
+
+
+
+
+
+<a name="rellm-MarketPurchase"></a>
+
+### MarketPurchase
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| id | [string](#string) |  |  |
+| buyer | [Author](#rellm-Author) |  |  |
+| type | [PurchaseType](#rellm-PurchaseType) |  |  |
+| market_product | [MarketProduct](#rellm-MarketProduct) |  |  |
+| market_subscription | [MarketSubscription](#rellm-MarketSubscription) | optional | Note: this circular relationship should be handled by the Rust marshaling side. |
+| market_payments | [MarketPayment](#rellm-MarketPayment) | repeated |  |
+| market_refunds | [MarketRefund](#rellm-MarketRefund) | repeated |  |
+| media_storage_purchase_details | [MediaStoragePurchaseDetails](#rellm-MediaStoragePurchaseDetails) |  |  |
+| ai_grant_purchase_details | [AIGrantPurchaseDetails](#rellm-AIGrantPurchaseDetails) |  |  |
+| rellm_hosting_purchase_details | [RellmHostingPurchaseDetails](#rellm-RellmHostingPurchaseDetails) |  |  |
+| permissions_access_purchase_details | [PermissionsAccessPurchaseDetails](#rellm-PermissionsAccessPurchaseDetails) |  |  |
+| created_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  |  |
+
+
+
+
+
+
+<a name="rellm-MarketRefund"></a>
+
+### MarketRefund
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| amount | [uint32](#uint32) |  |  |
+| currency | [uint32](#uint32) |  |  |
+| market_purchase_id | [string](#string) |  |  |
+| method | [MarketRefundMethod](#rellm-MarketRefundMethod) | optional | The card the refund was issued back to -- in practice always the same card as the MarketPayment being refunded, since Stripe refunds are only ever issued back to their original payment method. |
+| created_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  |  |
+
+
+
+
+
+
+<a name="rellm-MarketRefundMethod"></a>
+
+### MarketRefundMethod
+Same shape as MarketPaymentMethod -- kept as its own message (rather than reusing
+MarketPaymentMethod directly) since a MarketRefund and the MarketPayment it refunds are
+otherwise-independent messages, matching the MarketPayment/MarketRefund split itself.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| card_brand | [string](#string) |  |  |
+| card_last4 | [string](#string) |  |  |
+| card_exp_month | [uint32](#uint32) |  |  |
+| card_exp_year | [uint32](#uint32) |  |  |
+
+
+
+
+
+
+<a name="rellm-MarketSubscription"></a>
+
+### MarketSubscription
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| id | [string](#string) |  |  |
+| buyer | [Author](#rellm-Author) |  |  |
+| type | [PurchaseType](#rellm-PurchaseType) |  |  |
+| period | [PurchasePeriod](#rellm-PurchasePeriod) |  |  |
+| amount | [uint32](#uint32) |  |  |
+| currency | [uint32](#uint32) |  |  |
+| market_product | [MarketProduct](#rellm-MarketProduct) |  | Note: marshaling should handle the circular relationship here gracefully. |
+| billing_history | [MarketPurchase](#rellm-MarketPurchase) | repeated |  |
+| media_storage_subscription_details | [MediaStorageSubscriptionDetails](#rellm-MediaStorageSubscriptionDetails) |  |  |
+| ai_grant_subscription_details | [AIGrantSubscriptionDetails](#rellm-AIGrantSubscriptionDetails) |  |  |
+| rellm_hosting_subscription_details | [RellmHostingSubscriptionDetails](#rellm-RellmHostingSubscriptionDetails) |  |  |
+| permissions_access_subscription_details | [PermissionsAccessSubscriptionDetails](#rellm-PermissionsAccessSubscriptionDetails) |  |  |
+| created_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  |  |
+| renews_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional |  |
+| ended_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional | If set, the MarketSubscription is unavailable |
+
+
+
+
+
+
+<a name="rellm-MediaStoragePurchaseDetails"></a>
+
+### MediaStoragePurchaseDetails
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| allocation_bytes | [uint64](#uint64) |  |  |
+
+
+
+
+
+
+<a name="rellm-MediaStorageSubscriptionDetails"></a>
+
+### MediaStorageSubscriptionDetails
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| allocation_bytes | [uint64](#uint64) |  |  |
+
+
+
+
+
+
+<a name="rellm-PermissionsAccessPurchaseDetails"></a>
+
+### PermissionsAccessPurchaseDetails
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| permissions | [Permission](#rellm-Permission) | repeated |  |
+
+
+
+
+
+
+<a name="rellm-PermissionsAccessSubscriptionDetails"></a>
+
+### PermissionsAccessSubscriptionDetails
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| permissions | [Permission](#rellm-Permission) | repeated |  |
+
+
+
+
+
+
+<a name="rellm-RellmHostingPurchaseDetails"></a>
+
+### RellmHostingPurchaseDetails
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| db_size_bytes | [uint64](#uint64) |  |  |
+| minio_size_bytes | [uint64](#uint64) |  |  |
+| domain | [string](#string) |  |  |
+| contact_email | [string](#string) |  |  |
+| additional_information | [string](#string) |  |  |
+
+
+
+
+
+
+<a name="rellm-RellmHostingSubscriptionDetails"></a>
+
+### RellmHostingSubscriptionDetails
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| db_size_bytes | [uint64](#uint64) |  |  |
+| minio_size_bytes | [uint64](#uint64) |  |  |
+| domain | [string](#string) |  |  |
+| contact_email | [string](#string) |  |  |
+| additional_information | [string](#string) |  |  |
+
+
+
+
+
+ 
+
+
+<a name="rellm-PurchasePeriod"></a>
+
+### PurchasePeriod
+
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| PURCHASE_PERIOD_INDEFINITE | 0 |  |
+| PURCHASE_PERIOD_ANNUAL | 1 |  |
+| PURCHASE_PERIOD_MONTHLY | 2 |  |
+
+
+
+<a name="rellm-PurchaseType"></a>
+
+### PurchaseType
+
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| PURCHASE_TYPE_MEDIA_STORAGE | 0 |  |
+| PURCHASE_TYPE_AI_GRANTS | 1 |  |
+| PURCHASE_TYPE_RELLM_HOSTING | 2 |  |
+| PURCHASE_TYPE_PERMISSIONS_ACCESS | 3 |  |
 
 
  

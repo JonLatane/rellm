@@ -62,7 +62,11 @@ lazy_static! {
         "third_party_auths",
         "auth",
         "auths",
+        "oauth",
         "calendar.ics",
+        "rss.xml",
+        "atom.xml",
+        "market",
     ];
     // Custom tab paths share the RESERVED_PATHS namespace, but these specific values are
     // allowed since they're used as top-level containers (e.g. federatedserver.com/events)

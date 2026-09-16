@@ -63,6 +63,8 @@ import Pages.About
 import Pages.Event.PostId_
 import Pages.Events
 import Pages.Home_
+import Pages.Market
+import Pages.Market.Product.ProductId_
 import Pages.Messages
 import Pages.People
 import Pages.Post.PostId_
@@ -357,6 +359,12 @@ sharedMsgForPage sharedMsg page =
 
         Gen.Model.Messages _ _ ->
             Just (Gen.Msg.Messages (Pages.Messages.fromShared sharedMsg))
+
+        Gen.Model.Market _ _ ->
+            Just (Gen.Msg.Market (Pages.Market.fromShared sharedMsg))
+
+        Gen.Model.Market__Product__ProductId_ _ _ ->
+            Just (Gen.Msg.Market__Product__ProductId_ (Pages.Market.Product.ProductId_.fromShared sharedMsg))
 
         _ ->
             Nothing

@@ -102,6 +102,9 @@ message ServerConfiguration {
   // Bird (bird.com, formerly MessageBird) Config -- a cheaper Twilio alternative for SMS
   // verification. Only serialized for admin users.
   optional BirdConfig bird_config = 123;
+
+  // Stripe Config, backing the Marketplace (`market.proto`). Only serialized for admin users.
+  optional StripeConfig stripe_config = 124;
 }
 
 // Coordinates a small piece of shared, cluster-wide state across multiple independent Rellm
@@ -318,6 +321,9 @@ message MediaSettings {
   // if default_user_permissions contains `GLOBALLY_PUBLISH_[USERS|GROUPS|POSTS|EVENTS]` 
   // as appropriate.
   Visibility default_visibility = 3;
+
+  // Default media storage allocation for newly created users. Defaults to 10MB.
+  uint64 default_media_allocation_bytes = 4;
 }
 
 // Settings for a feature (e.g. People, Groups, Posts, Events, Media).
@@ -527,6 +533,8 @@ enum NavigationTab {
   PEOPLE_TAB = 12;
   // The About tab.
   ABOUT_TAB = 15;
+  // The Market tab.
+  MARKET_TAB = 16;
 }
 
 // Overrides the app's default `/` page (the combined Events+Posts feed). Unlike a regular
@@ -659,4 +667,23 @@ message BirdConfig {
   // Which Bird API region to call ("us1" or "eu1", per Bird's own regional API hosts). Not
   // secret. Empty defaults to "us1".
   string bird_region = 4;
+}
+
+// Stripe credentials backing the Marketplace (`market.proto`). Used both to create Checkout
+// Sessions/off-session renewal PaymentIntents (`stripe_secret_key`) and to verify incoming
+// webhook deliveries (`stripe_webhook_signing_secret`).
+message StripeConfig {
+  bool stripe_enabled = 1;
+  // Stripe Secret Key (starts with `sk_`), used as Bearer auth for all Stripe API calls made by
+  // this server (Checkout Session creation, off-session renewal charges). Never serialized once
+  // written -- same write-only treatment as `TwilioConfig.twilio_api_key_secret`.
+  string stripe_secret_key = 2;
+  // Stripe Publishable Key (starts with `pk_`). Not secret -- kept here (rather than derived from
+  // `stripe_secret_key`) so a future client-side Stripe Elements integration has what it needs,
+  // even though the current Checkout-based flow doesn't use it server-side at all.
+  string stripe_publishable_key = 3;
+  // Signing secret (starts with `whsec_`) for the `/webhooks/stripe` endpoint, used to verify the
+  // `Stripe-Signature` header on incoming webhook deliveries. Never serialized once written --
+  // same write-only treatment as `stripe_secret_key` above.
+  string stripe_webhook_signing_secret = 4;
 }

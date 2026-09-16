@@ -33,3 +33,6 @@ pub use federation_models::*;
 
 mod ai_provider_models;
 pub use ai_provider_models::*;
+
+mod market_models;
+pub use market_models::*;

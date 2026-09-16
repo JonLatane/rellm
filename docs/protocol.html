@@ -432,6 +432,9 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
             <p><a href="#rellm-ServerLogo">ServerLogo</a></p>
           </li>
           <li>
+            <p><a href="#rellm-StripeConfig">StripeConfig</a></p>
+          </li>
+          <li>
             <p><a href="#rellm-TwilioConfig">TwilioConfig</a></p>
           </li>
           <li>
@@ -534,6 +537,80 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
           </li>
           <li>
             <p><a href="#rellm-AIModelCapability">AIModelCapability</a></p>
+          </li>
+        </ul>
+      </li>
+      <li>
+        <p><a href="#market-proto">market.proto</a></p>
+        <ul>
+          <li>
+            <p><a href="#rellm-AIGrantPurchaseDetails">AIGrantPurchaseDetails</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-AIGrantSubscriptionDetails">AIGrantSubscriptionDetails</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-GetMarketProductsRequest">GetMarketProductsRequest</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-GetMarketProductsResponse">GetMarketProductsResponse</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-GetMarketSubscriptionsRequest">GetMarketSubscriptionsRequest</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-GetMarketSubscriptionsResponse">GetMarketSubscriptionsResponse</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-MakeMarketPurchaseRequest">MakeMarketPurchaseRequest</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-MakeMarketPurchaseResponse">MakeMarketPurchaseResponse</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-MarketPayment">MarketPayment</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-MarketPaymentMethod">MarketPaymentMethod</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-MarketProduct">MarketProduct</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-MarketPurchase">MarketPurchase</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-MarketRefund">MarketRefund</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-MarketRefundMethod">MarketRefundMethod</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-MarketSubscription">MarketSubscription</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-MediaStoragePurchaseDetails">MediaStoragePurchaseDetails</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-MediaStorageSubscriptionDetails">MediaStorageSubscriptionDetails</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-PermissionsAccessPurchaseDetails">PermissionsAccessPurchaseDetails</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-PermissionsAccessSubscriptionDetails">PermissionsAccessSubscriptionDetails</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-RellmHostingPurchaseDetails">RellmHostingPurchaseDetails</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-RellmHostingSubscriptionDetails">RellmHostingSubscriptionDetails</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-PurchasePeriod">PurchasePeriod</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-PurchaseType">PurchaseType</a></p>
           </li>
         </ul>
       </li>
@@ -991,6 +1068,40 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
       removed via <a href="#grpc-api-RevokeAIProvider"><code>RevokeAIProvider</code></a>. Unlike every other RPC pair in this section,
       these two are <strong>owner-only, with no Admin override</strong> - an Admin may manage the provider record itself, but only
       its owner may hand out access to it.
+    </p>
+    <h4 id="rellms-market"><a class="anchor" aria-hidden="true" tabindex="-1" href="#rellms-market"><span class="octicon octicon-link"></span></a>Rellm's Market</h4>
+    <p>
+      Rellm's Market (<code>market.proto</code>) is this server's storefront - a small, Stripe-backed marketplace an admin
+      stocks with up to nine <a href="#rellm-MarketProduct"><code>MarketProduct</code></a>s (one offering type times one billing period
+      each) that any user can buy. Three offering types exist today (<a href="#rellm-PurchaseType"><code>PurchaseType</code></a>):
+      <code>PURCHASE_TYPE_MEDIA_STORAGE</code> (raises the buyer's <code>User.media_storage_limit_bytes</code>),
+      <code>PURCHASE_TYPE_AI_GRANTS</code> (grants/resets an <a href="#rellm-AIProviderGrant"><code>AIProviderGrant</code></a> against one of the
+      server operator's <a href="#rellm-AIProvider"><code>AIProvider</code></a>s), and <code>PURCHASE_TYPE_RELLM_HOSTING</code> (bills the buyer for
+      the server operator to stand up a new Rellm instance on a domain of their choosing - provisioned by hand, not
+      automated). Each <a href="#rellm-MarketProduct"><code>MarketProduct</code></a> is sold once (<a href="#rellm-PurchasePeriod"><code>PurchasePeriod</code></a>
+      <code>PURCHASE_PERIOD_INDEFINITE</code>, a single non-renewing <a href="#rellm-MarketPurchase"><code>MarketPurchase</code></a>) or on a recurring
+      <code>PURCHASE_PERIOD_ANNUAL</code>/<code>PURCHASE_PERIOD_MONTHLY</code> cycle (a <a href="#rellm-MarketSubscription"><code>MarketSubscription</code></a>,
+      whose <code>billing_history</code> accumulates one <a href="#rellm-MarketPurchase"><code>MarketPurchase</code></a> per renewal).
+    </p>
+    <p>
+      Products are listed via <a href="#grpc-api-GetMarketProducts"><code>GetMarketProducts</code></a> (unauthenticated; admins
+      additionally see delisted ones) and managed via
+      <a href="#grpc-api-CreateMarketProduct"><code>CreateMarketProduct</code></a>/<a href="#grpc-api-UpdateMarketProduct"><code>UpdateMarketProduct</code></a>
+      (both Admin-only; a <a href="#rellm-MarketProduct"><code>MarketProduct</code></a>'s <code>type</code>/<code>period</code> are immutable once created).
+      Buying one is a two-step, webhook-settled flow: <a href="#grpc-api-MakeMarketPurchase"><code>MakeMarketPurchase</code></a> starts a
+      Stripe Checkout Session and returns its URL to redirect the buyer to - no
+      <a href="#rellm-MarketPurchase"><code>MarketPurchase</code></a>/<a href="#rellm-MarketSubscription"><code>MarketSubscription</code></a> is created yet, so
+      an abandoned checkout leaves nothing behind. Only once Stripe confirms payment (a
+      <code>checkout.session.completed</code> webhook delivery) does the server create the
+      <a href="#rellm-MarketPurchase"><code>MarketPurchase</code></a>/<a href="#rellm-MarketSubscription"><code>MarketSubscription</code></a> and apply its
+      entitlement. A recurring <a href="#rellm-MarketSubscription"><code>MarketSubscription</code></a> renews itself thereafter via
+      off-session charges against the payment method saved on that first checkout - no further action from the
+      buyer - until a renewal charge fails, which ends the <a href="#rellm-MarketSubscription"><code>MarketSubscription</code></a>. A
+      user's own MarketSubscriptions (never anyone else's) are listed via
+      <a href="#grpc-api-GetMarketSubscriptions"><code>GetMarketSubscriptions</code></a>, and also travel along on <a href="#rellm-User"><code>User</code></a>
+      itself (<code>User.market_subscriptions</code>) the same way <code>ai_models</code>/<code>sync_sources</code> do. Stripe credentials for all of
+      this live in <code>ServerConfiguration.stripe_config</code> (a <a href="#rellm-StripeConfig"><code>StripeConfig</code></a>), Admin-only like
+      <code>twilio_config</code>/<code>bird_config</code>.
     </p>
     <h4 id="media"><a class="anchor" aria-hidden="true" tabindex="-1" href="#media"><span class="octicon octicon-link"></span></a>Media</h4>
     <p>
@@ -1961,6 +2072,36 @@ directory</a> is (<code>{name}</code> denotes a
           <td><a href="#rellm-RevokeAIProviderRequest">RevokeAIProviderRequest</a></td>
           <td><a href="#google-protobuf-Empty">.google.protobuf.Empty</a></td>
           <td>Revokes another user's access to one of the current user's AIProviders. <em>Authenticated</em>, owner-only (no Admin override).</td>
+        </tr>
+        <tr>
+          <td>GetMarketProducts</td>
+          <td><a href="#rellm-GetMarketProductsRequest">GetMarketProductsRequest</a></td>
+          <td><a href="#rellm-GetMarketProductsResponse">GetMarketProductsResponse</a></td>
+          <td>Gets MarketProducts available for purchase on this server (<code>market.proto</code>). <em>Unauthenticated</em> -- admins additionally see delisted MarketProducts.</td>
+        </tr>
+        <tr>
+          <td>CreateMarketProduct</td>
+          <td><a href="#rellm-MarketProduct">MarketProduct</a></td>
+          <td><a href="#rellm-MarketProduct">MarketProduct</a></td>
+          <td>Creates a MarketProduct. <em>Authenticated</em>, requires Admin.</td>
+        </tr>
+        <tr>
+          <td>UpdateMarketProduct</td>
+          <td><a href="#rellm-MarketProduct">MarketProduct</a></td>
+          <td><a href="#rellm-MarketProduct">MarketProduct</a></td>
+          <td>Updates a MarketProduct's amount/currency/details/delisted_at. <em>Authenticated</em>, requires Admin. <code>type</code>/<code>period</code> are immutable after creation and are ignored if changed.</td>
+        </tr>
+        <tr>
+          <td>GetMarketSubscriptions</td>
+          <td><a href="#rellm-GetMarketSubscriptionsRequest">GetMarketSubscriptionsRequest</a></td>
+          <td><a href="#rellm-GetMarketSubscriptionsResponse">GetMarketSubscriptionsResponse</a></td>
+          <td>Gets the current user's own MarketSubscriptions (with billing_history). <em>Authenticated</em>, self-scoped only.</td>
+        </tr>
+        <tr>
+          <td>MakeMarketPurchase</td>
+          <td><a href="#rellm-MakeMarketPurchaseRequest">MakeMarketPurchaseRequest</a></td>
+          <td><a href="#rellm-MakeMarketPurchaseResponse">MakeMarketPurchaseResponse</a></td>
+          <td>Starts (or resumes) buying a MarketProduct for the current user, returning a Stripe Checkout URL to redirect to. <em>Authenticated</em>. See <code>MakeMarketPurchaseRequest</code>'s own doc -- no MarketPurchase/ MarketSubscription is created by this call itself, only once Stripe confirms payment via webhook.</td>
         </tr>
         <tr>
           <td>GenerateMedia</td>
@@ -3322,6 +3463,12 @@ directory</a> is (<code>{name}</code> denotes a
           <td><a href="#rellm-AIModel">AIModel</a></td>
           <td>repeated</td>
           <td>Every <a href="#rellm-AIProvider"><code>AIProvider</code></a> model the target user may currently call - their own providers' models, plus any models granted to them on other users' providers (see <a href="#rellm-AIModel"><code>AIModel</code></a>). Gated and populated the same way as <code>sync_sources</code> (target user themselves, or an Admin, across any <a href="#grpc-api-GetUsers"><code>GetUsers</code></a> listing type, plus <a href="#grpc-api-Login"><code>Login</code></a>/<a href="#grpc-api-CreateAccount"><code>CreateAccount</code></a>/<a href="#grpc-api-GetCurrentUser"><code>GetCurrentUser</code></a>).</td>
+        </tr>
+        <tr>
+          <td>market_subscriptions</td>
+          <td><a href="#rellm-MarketSubscription">MarketSubscription</a></td>
+          <td>repeated</td>
+          <td>The target user's own MarketSubscriptions (<code>market.proto</code>), each with its own <code>billing_history</code>. Gated and populated the same way as <code>ai_models</code>/<code>sync_sources</code> (target user themselves, or an Admin, across any <a href="#grpc-api-GetUsers"><code>GetUsers</code></a> listing type, plus <a href="#grpc-api-Login"><code>Login</code></a>/<a href="#grpc-api-CreateAccount"><code>CreateAccount</code></a>/<a href="#grpc-api-GetCurrentUser"><code>GetCurrentUser</code></a>).</td>
         </tr>
         <tr>
           <td>created_at</td>
@@ -6781,6 +6928,12 @@ directory</a> is (<code>{name}</code> denotes a
           <td></td>
           <td>Only <code>SERVER_PUBLIC</code> and <code>GLOBAL_PUBLIC</code> are valid. <code>GLOBAL_PUBLIC</code> is only valid if default_user_permissions contains `GLOBALLY_PUBLISH_[USERS</td>
         </tr>
+        <tr>
+          <td>default_media_allocation_bytes</td>
+          <td><a href="#uint64">uint64</a></td>
+          <td></td>
+          <td>Default media storage allocation for newly created users. Defaults to 10MB.</td>
+        </tr>
       </tbody>
     </table>
     <p><a name="rellm-PostSettings"></a></p>
@@ -7012,6 +7165,12 @@ directory</a> is (<code>{name}</code> denotes a
           <td>optional</td>
           <td>Bird (bird.com, formerly MessageBird) Config -- a cheaper Twilio alternative for SMS verification. Only serialized for admin users.</td>
         </tr>
+        <tr>
+          <td>stripe_config</td>
+          <td><a href="#rellm-StripeConfig">StripeConfig</a></td>
+          <td>optional</td>
+          <td>Stripe Config, backing the Marketplace (<code>market.proto</code>). Only serialized for admin users.</td>
+        </tr>
       </tbody>
     </table>
     <p><a name="rellm-ServerInfo"></a></p>
@@ -7119,6 +7278,49 @@ directory</a> is (<code>{name}</code> denotes a
           <td><a href="#string">string</a></td>
           <td>optional</td>
           <td>The media ID for the wide logo in dark mode.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-StripeConfig"></a></p>
+    <h3 id="stripeconfig"><a class="anchor" aria-hidden="true" tabindex="-1" href="#stripeconfig"><span class="octicon octicon-link"></span></a>StripeConfig</h3>
+    <p>
+      Stripe credentials backing the Marketplace (<code>market.proto</code>). Used both to create Checkout
+      Sessions/off-session renewal PaymentIntents (<code>stripe_secret_key</code>) and to verify incoming
+      webhook deliveries (<code>stripe_webhook_signing_secret</code>).
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>stripe_enabled</td>
+          <td><a href="#bool">bool</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>stripe_secret_key</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>Stripe Secret Key (starts with <code>sk_</code>), used as Bearer auth for all Stripe API calls made by this server (Checkout Session creation, off-session renewal charges). Never serialized once written -- same write-only treatment as <code>TwilioConfig.twilio_api_key_secret</code>.</td>
+        </tr>
+        <tr>
+          <td>stripe_publishable_key</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>Stripe Publishable Key (starts with <code>pk_</code>). Not secret -- kept here (rather than derived from <code>stripe_secret_key</code>) so a future client-side Stripe Elements integration has what it needs, even though the current Checkout-based flow doesn't use it server-side at all.</td>
+        </tr>
+        <tr>
+          <td>stripe_webhook_signing_secret</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>Signing secret (starts with <code>whsec_</code>) for the <code>/webhooks/stripe</code> endpoint, used to verify the <code>Stripe-Signature</code> header on incoming webhook deliveries. Never serialized once written -- same write-only treatment as <code>stripe_secret_key</code> above.</td>
         </tr>
       </tbody>
     </table>
@@ -7332,6 +7534,11 @@ directory</a> is (<code>{name}</code> denotes a
           <td>ABOUT_TAB</td>
           <td>15</td>
           <td>The About tab.</td>
+        </tr>
+        <tr>
+          <td>MARKET_TAB</td>
+          <td>16</td>
+          <td>The Market tab.</td>
         </tr>
       </tbody>
     </table>
@@ -8830,6 +9037,856 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>AI_MODEL_CAPABILITY_IMAGE_EDITING</td>
           <td>3</td>
           <td>The model can edit an existing image, given a text prompt and one or more reference images -- what <a href="#grpc-api-GenerateMedia"><code>GenerateMedia</code></a> requires instead, whenever <code>GenerateMediaRequest.media_ids</code> is non-empty. Not every model with <code>AI_MODEL_CAPABILITY_IMAGE_GENERATION</code> also has this - some (e.g. the cheaper/faster <code>gemini-3.1-flash-lite-image</code> tier) only support plain generation.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="market-proto"></a></p>
+    <p align="right"><a href="#top">Top</a></p>
+    <h2 id="marketproto"><a class="anchor" aria-hidden="true" tabindex="-1" href="#marketproto"><span class="octicon octicon-link"></span></a>market.proto</h2>
+    <p><a name="rellm-AIGrantPurchaseDetails"></a></p>
+    <h3 id="aigrantpurchasedetails"><a class="anchor" aria-hidden="true" tabindex="-1" href="#aigrantpurchasedetails"><span class="octicon octicon-link"></span></a>AIGrantPurchaseDetails</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>ai_provider_id</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>model_names</td>
+          <td><a href="#string">string</a></td>
+          <td>repeated</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>tokens</td>
+          <td><a href="#uint64">uint64</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-AIGrantSubscriptionDetails"></a></p>
+    <h3 id="aigrantsubscriptiondetails"><a class="anchor" aria-hidden="true" tabindex="-1" href="#aigrantsubscriptiondetails"><span class="octicon octicon-link"></span></a>AIGrantSubscriptionDetails</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>ai_provider_id</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>model_names</td>
+          <td><a href="#string">string</a></td>
+          <td>repeated</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>tokens</td>
+          <td><a href="#uint64">uint64</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-GetMarketProductsRequest"></a></p>
+    <h3 id="getmarketproductsrequest"><a class="anchor" aria-hidden="true" tabindex="-1" href="#getmarketproductsrequest"><span class="octicon octicon-link"></span></a>GetMarketProductsRequest</h3>
+    <p>
+      Request to get products available for purchase on a Rellm server.
+      For now, there are few enough that this has no parameters.
+    </p>
+    <p><a name="rellm-GetMarketProductsResponse"></a></p>
+    <h3 id="getmarketproductsresponse"><a class="anchor" aria-hidden="true" tabindex="-1" href="#getmarketproductsresponse"><span class="octicon octicon-link"></span></a>GetMarketProductsResponse</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>market_products</td>
+          <td><a href="#rellm-MarketProduct">MarketProduct</a></td>
+          <td>repeated</td>
+          <td>Non-delisted products, plus delisted ones too if the caller is an admin.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-GetMarketSubscriptionsRequest"></a></p>
+    <h3 id="getmarketsubscriptionsrequest"><a class="anchor" aria-hidden="true" tabindex="-1" href="#getmarketsubscriptionsrequest"><span class="octicon octicon-link"></span></a>GetMarketSubscriptionsRequest</h3>
+    <p>
+      Request to get the current user's own MarketSubscriptions (with billing_history). Self-scoped --
+      there's no way to fetch another user's MarketSubscriptions, even as an admin, for now.
+    </p>
+    <p><a name="rellm-GetMarketSubscriptionsResponse"></a></p>
+    <h3 id="getmarketsubscriptionsresponse"><a class="anchor" aria-hidden="true" tabindex="-1" href="#getmarketsubscriptionsresponse"><span class="octicon octicon-link"></span></a>GetMarketSubscriptionsResponse</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>market_subscriptions</td>
+          <td><a href="#rellm-MarketSubscription">MarketSubscription</a></td>
+          <td>repeated</td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-MakeMarketPurchaseRequest"></a></p>
+    <h3 id="makemarketpurchaserequest"><a class="anchor" aria-hidden="true" tabindex="-1" href="#makemarketpurchaserequest"><span class="octicon octicon-link"></span></a>MakeMarketPurchaseRequest</h3>
+    <p>
+      Authenticated*. Buys <code>market_product_id</code> for the current user, starting (or continuing) a
+      Stripe Checkout flow -- see <code>MakeMarketPurchaseResponse.checkout_url</code>. No <code>MarketPurchase</code>/
+      <code>MarketSubscription</code> is created by this call itself; that only happens once Stripe confirms
+      payment via webhook, so an abandoned checkout never leaves a half-created purchase behind.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>market_product_id</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>rellm_hosting_details</td>
+          <td><a href="#rellm-RellmHostingPurchaseDetails">RellmHostingPurchaseDetails</a></td>
+          <td>optional</td>
+          <td>Only meaningful (and required) for a <code>PURCHASE_TYPE_RELLM_HOSTING</code> product -- the buyer's desired domain/contact info/notes, carried through to Stripe as Checkout Session metadata and copied onto the resulting <code>MarketPurchase</code>/<code>MarketSubscription</code> once payment completes.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-MakeMarketPurchaseResponse"></a></p>
+    <h3 id="makemarketpurchaseresponse"><a class="anchor" aria-hidden="true" tabindex="-1" href="#makemarketpurchaseresponse"><span class="octicon octicon-link"></span></a>MakeMarketPurchaseResponse</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>checkout_url</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>Redirect the buyer's browser here (a Stripe-hosted Checkout page) to complete payment.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-MarketPayment"></a></p>
+    <h3 id="marketpayment"><a class="anchor" aria-hidden="true" tabindex="-1" href="#marketpayment"><span class="octicon octicon-link"></span></a>MarketPayment</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>amount</td>
+          <td><a href="#uint32">uint32</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>currency</td>
+          <td><a href="#uint32">uint32</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>market_purchase_id</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>method</td>
+          <td><a href="#rellm-MarketPaymentMethod">MarketPaymentMethod</a></td>
+          <td>optional</td>
+          <td>The card actually charged, if known/resolvable at the time this MarketPayment was recorded.</td>
+        </tr>
+        <tr>
+          <td>created_at</td>
+          <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-MarketPaymentMethod"></a></p>
+    <h3 id="marketpaymentmethod"><a class="anchor" aria-hidden="true" tabindex="-1" href="#marketpaymentmethod"><span class="octicon octicon-link"></span></a>MarketPaymentMethod</h3>
+    <p>
+      Card details for a MarketPayment, resolved from Stripe at charge time (Stripe's own
+      <code>PaymentMethod.card</code> object). Unset entirely if the payment wasn't card-based or details
+      couldn't be resolved. Never carries anything more sensitive than what Stripe itself considers
+      safe to display (brand/last4/expiry) -- never a full card number.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>card_brand</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>E.g. "visa", "mastercard", "amex".</td>
+        </tr>
+        <tr>
+          <td>card_last4</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>Last 4 digits of the card number.</td>
+        </tr>
+        <tr>
+          <td>card_exp_month</td>
+          <td><a href="#uint32">uint32</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>card_exp_year</td>
+          <td><a href="#uint32">uint32</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-MarketProduct"></a></p>
+    <h3 id="marketproduct"><a class="anchor" aria-hidden="true" tabindex="-1" href="#marketproduct"><span class="octicon octicon-link"></span></a>MarketProduct</h3>
+    <p>
+      An actual subscribable product listed on, say, <a href="https://rellm.org/market">https://rellm.org/market</a>
+      Listed/delisted by clients by setting <code>delisted_at</code> (though the actual date supplied
+      by the client is ignored).
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>id</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>type</td>
+          <td><a href="#rellm-PurchaseType">PurchaseType</a></td>
+          <td></td>
+          <td>Never changeable after product creation.</td>
+        </tr>
+        <tr>
+          <td>period</td>
+          <td><a href="#rellm-PurchasePeriod">PurchasePeriod</a></td>
+          <td></td>
+          <td>Never changeable after product creation.</td>
+        </tr>
+        <tr>
+          <td>amount</td>
+          <td><a href="#uint32">uint32</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>currency</td>
+          <td><a href="#uint32">uint32</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>media_storage_subscription_details</td>
+          <td><a href="#rellm-MediaStorageSubscriptionDetails">MediaStorageSubscriptionDetails</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>ai_grant_subscription_details</td>
+          <td><a href="#rellm-AIGrantSubscriptionDetails">AIGrantSubscriptionDetails</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>rellm_hosting_subscription_details</td>
+          <td><a href="#rellm-RellmHostingSubscriptionDetails">RellmHostingSubscriptionDetails</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>permissions_access_subscription_details</td>
+          <td><a href="#rellm-PermissionsAccessSubscriptionDetails">PermissionsAccessSubscriptionDetails</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>created_at</td>
+          <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>delisted_at</td>
+          <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
+          <td>optional</td>
+          <td>If set, the MarketProduct is not purchasable. Note: clients toggle listings by setting this, but the server will always set it to the time of the request, not the time sent <em>by</em> the request.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-MarketPurchase"></a></p>
+    <h3 id="marketpurchase"><a class="anchor" aria-hidden="true" tabindex="-1" href="#marketpurchase"><span class="octicon octicon-link"></span></a>MarketPurchase</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>id</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>buyer</td>
+          <td><a href="#rellm-Author">Author</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>type</td>
+          <td><a href="#rellm-PurchaseType">PurchaseType</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>market_product</td>
+          <td><a href="#rellm-MarketProduct">MarketProduct</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>market_subscription</td>
+          <td><a href="#rellm-MarketSubscription">MarketSubscription</a></td>
+          <td>optional</td>
+          <td>Note: this circular relationship should be handled by the Rust marshaling side.</td>
+        </tr>
+        <tr>
+          <td>market_payments</td>
+          <td><a href="#rellm-MarketPayment">MarketPayment</a></td>
+          <td>repeated</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>market_refunds</td>
+          <td><a href="#rellm-MarketRefund">MarketRefund</a></td>
+          <td>repeated</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>media_storage_purchase_details</td>
+          <td><a href="#rellm-MediaStoragePurchaseDetails">MediaStoragePurchaseDetails</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>ai_grant_purchase_details</td>
+          <td><a href="#rellm-AIGrantPurchaseDetails">AIGrantPurchaseDetails</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>rellm_hosting_purchase_details</td>
+          <td><a href="#rellm-RellmHostingPurchaseDetails">RellmHostingPurchaseDetails</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>permissions_access_purchase_details</td>
+          <td><a href="#rellm-PermissionsAccessPurchaseDetails">PermissionsAccessPurchaseDetails</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>created_at</td>
+          <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-MarketRefund"></a></p>
+    <h3 id="marketrefund"><a class="anchor" aria-hidden="true" tabindex="-1" href="#marketrefund"><span class="octicon octicon-link"></span></a>MarketRefund</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>amount</td>
+          <td><a href="#uint32">uint32</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>currency</td>
+          <td><a href="#uint32">uint32</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>market_purchase_id</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>method</td>
+          <td><a href="#rellm-MarketRefundMethod">MarketRefundMethod</a></td>
+          <td>optional</td>
+          <td>The card the refund was issued back to -- in practice always the same card as the MarketPayment being refunded, since Stripe refunds are only ever issued back to their original payment method.</td>
+        </tr>
+        <tr>
+          <td>created_at</td>
+          <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-MarketRefundMethod"></a></p>
+    <h3 id="marketrefundmethod"><a class="anchor" aria-hidden="true" tabindex="-1" href="#marketrefundmethod"><span class="octicon octicon-link"></span></a>MarketRefundMethod</h3>
+    <p>
+      Same shape as MarketPaymentMethod -- kept as its own message (rather than reusing
+      MarketPaymentMethod directly) since a MarketRefund and the MarketPayment it refunds are
+      otherwise-independent messages, matching the MarketPayment/MarketRefund split itself.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>card_brand</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>card_last4</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>card_exp_month</td>
+          <td><a href="#uint32">uint32</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>card_exp_year</td>
+          <td><a href="#uint32">uint32</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-MarketSubscription"></a></p>
+    <h3 id="marketsubscription"><a class="anchor" aria-hidden="true" tabindex="-1" href="#marketsubscription"><span class="octicon octicon-link"></span></a>MarketSubscription</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>id</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>buyer</td>
+          <td><a href="#rellm-Author">Author</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>type</td>
+          <td><a href="#rellm-PurchaseType">PurchaseType</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>period</td>
+          <td><a href="#rellm-PurchasePeriod">PurchasePeriod</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>amount</td>
+          <td><a href="#uint32">uint32</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>currency</td>
+          <td><a href="#uint32">uint32</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>market_product</td>
+          <td><a href="#rellm-MarketProduct">MarketProduct</a></td>
+          <td></td>
+          <td>Note: marshaling should handle the circular relationship here gracefully.</td>
+        </tr>
+        <tr>
+          <td>billing_history</td>
+          <td><a href="#rellm-MarketPurchase">MarketPurchase</a></td>
+          <td>repeated</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>media_storage_subscription_details</td>
+          <td><a href="#rellm-MediaStorageSubscriptionDetails">MediaStorageSubscriptionDetails</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>ai_grant_subscription_details</td>
+          <td><a href="#rellm-AIGrantSubscriptionDetails">AIGrantSubscriptionDetails</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>rellm_hosting_subscription_details</td>
+          <td><a href="#rellm-RellmHostingSubscriptionDetails">RellmHostingSubscriptionDetails</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>permissions_access_subscription_details</td>
+          <td><a href="#rellm-PermissionsAccessSubscriptionDetails">PermissionsAccessSubscriptionDetails</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>created_at</td>
+          <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>renews_at</td>
+          <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
+          <td>optional</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>ended_at</td>
+          <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
+          <td>optional</td>
+          <td>If set, the MarketSubscription is unavailable</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-MediaStoragePurchaseDetails"></a></p>
+    <h3 id="mediastoragepurchasedetails"><a class="anchor" aria-hidden="true" tabindex="-1" href="#mediastoragepurchasedetails"><span class="octicon octicon-link"></span></a>MediaStoragePurchaseDetails</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>allocation_bytes</td>
+          <td><a href="#uint64">uint64</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-MediaStorageSubscriptionDetails"></a></p>
+    <h3 id="mediastoragesubscriptiondetails"><a class="anchor" aria-hidden="true" tabindex="-1" href="#mediastoragesubscriptiondetails"><span class="octicon octicon-link"></span></a>MediaStorageSubscriptionDetails</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>allocation_bytes</td>
+          <td><a href="#uint64">uint64</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-PermissionsAccessPurchaseDetails"></a></p>
+    <h3 id="permissionsaccesspurchasedetails"><a class="anchor" aria-hidden="true" tabindex="-1" href="#permissionsaccesspurchasedetails"><span class="octicon octicon-link"></span></a>PermissionsAccessPurchaseDetails</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>permissions</td>
+          <td><a href="#rellm-Permission">Permission</a></td>
+          <td>repeated</td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-PermissionsAccessSubscriptionDetails"></a></p>
+    <h3 id="permissionsaccesssubscriptiondetails"><a class="anchor" aria-hidden="true" tabindex="-1" href="#permissionsaccesssubscriptiondetails"><span class="octicon octicon-link"></span></a>PermissionsAccessSubscriptionDetails</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>permissions</td>
+          <td><a href="#rellm-Permission">Permission</a></td>
+          <td>repeated</td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-RellmHostingPurchaseDetails"></a></p>
+    <h3 id="rellmhostingpurchasedetails"><a class="anchor" aria-hidden="true" tabindex="-1" href="#rellmhostingpurchasedetails"><span class="octicon octicon-link"></span></a>RellmHostingPurchaseDetails</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>db_size_bytes</td>
+          <td><a href="#uint64">uint64</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>minio_size_bytes</td>
+          <td><a href="#uint64">uint64</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>domain</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>contact_email</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>additional_information</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-RellmHostingSubscriptionDetails"></a></p>
+    <h3 id="rellmhostingsubscriptiondetails"><a class="anchor" aria-hidden="true" tabindex="-1" href="#rellmhostingsubscriptiondetails"><span class="octicon octicon-link"></span></a>RellmHostingSubscriptionDetails</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>db_size_bytes</td>
+          <td><a href="#uint64">uint64</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>minio_size_bytes</td>
+          <td><a href="#uint64">uint64</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>domain</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>contact_email</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>additional_information</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-PurchasePeriod"></a></p>
+    <h3 id="purchaseperiod"><a class="anchor" aria-hidden="true" tabindex="-1" href="#purchaseperiod"><span class="octicon octicon-link"></span></a>PurchasePeriod</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Number</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>PURCHASE_PERIOD_INDEFINITE</td>
+          <td>0</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>PURCHASE_PERIOD_ANNUAL</td>
+          <td>1</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>PURCHASE_PERIOD_MONTHLY</td>
+          <td>2</td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-PurchaseType"></a></p>
+    <h3 id="purchasetype"><a class="anchor" aria-hidden="true" tabindex="-1" href="#purchasetype"><span class="octicon octicon-link"></span></a>PurchaseType</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Number</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>PURCHASE_TYPE_MEDIA_STORAGE</td>
+          <td>0</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>PURCHASE_TYPE_AI_GRANTS</td>
+          <td>1</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>PURCHASE_TYPE_RELLM_HOSTING</td>
+          <td>2</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>PURCHASE_TYPE_PERMISSIONS_ACCESS</td>
+          <td>3</td>
+          <td></td>
         </tr>
       </tbody>
     </table>
