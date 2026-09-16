@@ -275,6 +275,7 @@
 
 .server-details-feature-settings-value {
   font-family: monospace;
+  word-break: break-all;
 }
 
 .server-details-feature-settings-row select {
