@@ -702,7 +702,7 @@
    when a row's removed instead of holding its full width until the row
    itself is gone, then snapping shut all at once. */
 .accounts-list {
-  max-height: 240px;
+  max-height: calc(max(240px, calc(100vh - 460px)));
   overflow-y: auto;
   /* Same reasoning as .servers-strip's flex-shrink: 0 -- this already has its
      own scroll for "many accounts"; it shouldn't also get squashed below

@@ -1,0 +1,191 @@
+syntax = "proto3";
+
+package rellm;
+import "media.proto";
+import "google/protobuf/timestamp.proto";
+
+// To back this all we need the following tables:
+// * market_products
+//    * represents our "storefront state"
+// * market_subscriptions
+//    * market_product_id NOT NULL
+//    * essentially, data is copied from market_products when a user makes a subscription and
+//      purchases their first month/year/indefinite bit (with a payment)
+// * market_purchases
+//    * market_product_id NOT NULL, market_subscription_id NULL (though we won't use NULL values at the moment)
+//    * market_subscriptions have 1..n purchases
+//    * market_purchases have 0..1 market_subscriptions
+// * market_payments
+// * market_refunds - or should we keep this and market_payments in the same table, allow negative values, and marshall them to the appropriate `Payment`/`Refund` in Rust?
+// * market_payment_methods/market_refund_methods? Or should these just be stored on market_payments/market_refunds? Depends how Stripe (and other providers) work.
+
+// New RPCs needed:
+// * GetProducts(GetProductsRequest) - unauthenticated. Admins can see delisted products.
+// * CreateProduct(Product), UpdateProduct(Product) - authenticated, admin required
+// * GetSubscriptions(User)
+// * PurchaseSubscription(User)
+
+// New background job needed (in Rust bin/):
+// * renew_media_storage_subscriptions.rs
+// * renew_ai_grant_subscriptions.rs
+// * renew_rellm_hosting_subscriptions.rs
+
+// New Elm page/routes needed:
+// * /market
+//     * We should define this in the SPA web app paths in rust, so the preview can be "Market | Rellm.org" or "Market | Oak City Social", etc.
+// * /market/product/productId
+
+// New Elm UI updates:
+// * New collapsible Subscriptions section on UserProfilePage, just above Permissions section.
+//     * No purchasing here. Just lists all the user's Purchases are made via flows from `/market`/`Pages/Market.elm`.
+// * AccountsPanel Account Chips, when expanded
+//     * This means RellmAccount in Elm will need to store Subscriptions, I think, same as it does AI Model providers, etc.
+
+
+enum PurchaseType {
+  PURCHASE_TYPE_MEDIA_STORAGE = 0;
+  PURCHASE_TYPE_AI_GRANTS = 1;
+  PURCHASE_TYPE_RELLM_HOSTING = 2;
+}
+
+enum PurchasePeriod {
+  PURCHASE_PERIOD_INDEFINITE = 0;
+  PURCHASE_PERIOD_ANNUAL = 1;
+  PURCHASE_PERIOD_MONTHLY = 2;
+}
+
+// An actual subscribable product listed on, say, https://rellm.org/market
+// Listed/delisted by clients by setting `delisted_at` (though the actual date supplied
+// by the client is ignored).
+message Product {
+  string id = 1;
+  // Never changeable after product creation.
+  PurchaseType type = 2;
+  // Never changeable after product creation.
+  PurchasePeriod period = 3;
+  uint32 amount = 4;
+  uint32 currency = 5;
+
+  oneof details {
+    MediaStorageSubscriptionDetails media_storage_subscription_details = 10;
+    AIGrantSubscriptionDetails ai_grant_subscription_details = 11;
+    RellmHostingSubscriptionDetails rellm_hosting_subscription_details = 12;
+  }
+  
+  google.protobuf.Timestamp created_at = 20;
+
+  // If set, the Product is not purchasable. Note: clients toggle listings by setting this,
+  // but the server will always set it to the time of the request, not the time sent *by* the request.
+  optional google.protobuf.Timestamp delisted_at = 21;
+}
+
+// Request to get products available for purchase on a Rellm server.
+// For now, there are few enough that this has no parameters.
+message GetProductsRequest {
+
+}
+
+message Purchase {
+  string id = 1;
+  Author buyer = 2;
+  PurchaseType type = 3;
+
+  Product product = 4;
+
+  // Note: this circular relationship should be handled by the Rust marshaling side.
+  optional Subscription subscription = 5;
+
+  repeated Payment payments = 6;
+  repeated Refund refunds = 7;
+
+  oneof details {
+    MediaStoragePurchaseDetails media_storage_purchase_details = 10;
+    AIGrantPurchaseDetails ai_grant_purchase_details = 11;
+    RellmHostingPurchaseDetails rellm_hosting_purchase_details = 12;
+  }
+
+  google.protobuf.Timestamp created_at = 20;
+}
+
+message Payment {
+  uint32 amount = 1;
+  uint32 currency = 2;
+  string purchase_id = 3;
+  google.protobuf.Timestamp created_at = 10;
+}
+
+message PaymentMethod {
+
+}
+
+message Refund {
+  uint32 amount = 1;
+  uint32 currency = 2;
+  string purchase_id = 3;
+  google.protobuf.Timestamp created_at = 10;
+}
+message RefundMethod {
+  
+}
+
+message MediaStoragePurchaseDetails {
+  uint64 allocation_bytes = 1;
+}
+
+message AIGrantPurchaseDetails {
+  string ai_provider_id = 1;
+  repeated string model_names = 2;
+  uint64 tokens = 3;
+}
+
+message RellmHostingPurchaseDetails {
+  uint64 db_size_bytes = 1;
+  uint64 minio_size_bytes = 2;
+  string domain = 3;
+  string contact_email = 4;
+  string additional_information = 5;
+}
+
+message Subscription {
+  string id = 1;
+  Author buyer = 2;
+  PurchaseType type = 3;
+  PurchasePeriod period = 4;
+  uint32 amount = 5;
+  uint32 currency = 6;
+
+  // Note: marshaling should handle the circular relationship here gracefully.
+  Product product = 7;
+
+  repeated Purchase billing_history = 8;
+
+  oneof details {
+    MediaStorageSubscriptionDetails media_storage_subscription_details = 10;
+    AIGrantSubscriptionDetails ai_grant_subscription_details = 11;
+    RellmHostingSubscriptionDetails rellm_hosting_subscription_details = 12;
+  }
+
+  google.protobuf.Timestamp created_at = 20;
+  optional google.protobuf.Timestamp renews_at = 21;
+
+  // If set, the Subscription is unavailable
+  optional google.protobuf.Timestamp ended_at = 22;
+}
+
+message MediaStorageSubscriptionDetails {
+  uint64 allocation_bytes = 1;  
+}
+
+message AIGrantSubscriptionDetails {
+  string ai_provider_id = 1;
+  repeated string model_names = 2;
+  uint64 tokens = 3;
+}
+
+message RellmHostingSubscriptionDetails {
+  uint64 db_size_bytes = 1;
+  uint64 minio_size_bytes = 2;
+  string domain = 3;
+  string contact_email = 4;
+  string additional_information = 5;
+}
