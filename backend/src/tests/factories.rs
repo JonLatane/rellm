@@ -891,6 +891,34 @@ pub fn configure_twilio(
         .expect("failed to create test server configuration");
 }
 
+/// Inserts an active `server_configurations` row with `stripe_config` set -- mirrors
+/// `configure_twilio`, for specs exercising the Rellm Marketplace's Stripe integration
+/// (`rpcs::market::make_market_purchase`, `logic::market_renewal`, `web::stripe_webhook`,
+/// `configure_server`/`get_server_configuration`'s own `stripe_config` handling) without going
+/// through `ConfigureServer`'s own merge logic.
+pub fn configure_stripe(
+    conn: &mut PgPooledConnection,
+    enabled: bool,
+    secret_key: &str,
+    publishable_key: &str,
+    webhook_signing_secret: &str,
+) {
+    let mut new_config = models::default_server_configuration();
+    new_config.stripe_config = Some(
+        serde_json::to_value(StripeConfig {
+            stripe_enabled: enabled,
+            stripe_secret_key: secret_key.to_string(),
+            stripe_publishable_key: publishable_key.to_string(),
+            stripe_webhook_signing_secret: webhook_signing_secret.to_string(),
+        })
+        .unwrap(),
+    );
+    insert_into(server_configurations::table)
+        .values(&new_config)
+        .execute(conn)
+        .expect("failed to create test server configuration");
+}
+
 /// Same as `configure_twilio`, but also sets `server_info.name`/`external_cdn_config.frontend_host`
 /// (pass `frontend_host: ""` to leave the CDN config unset) -- for specs on
 /// `contact_verification::verification_sms_body`'s "which server is this from" text, which needs

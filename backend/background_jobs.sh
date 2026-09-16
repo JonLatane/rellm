@@ -35,6 +35,7 @@ JOBS=(
   "sync_sources 5 60"
   "update_user_counts 15 3600"
   "convert_media_sizes 20 600"
+  "renew_market_subscriptions 25 3600"
 )
 
 cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"

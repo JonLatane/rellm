@@ -15,7 +15,7 @@ import 'package:fixnum/fixnum.dart' as $fixnum;
 import 'package:protobuf/protobuf.dart' as $pb;
 
 import 'ai_providers.pbenum.dart';
-import 'google/protobuf/timestamp.pb.dart' as $12;
+import 'google/protobuf/timestamp.pb.dart' as $13;
 import 'media.pb.dart' as $5;
 
 export 'ai_providers.pbenum.dart';
@@ -314,8 +314,8 @@ class AIProvider extends $pb.GeneratedMessage {
     AnthropicCredentials? anthropicCredentials,
     DigitalOceanCredentials? digitaloceanCredentials,
     $core.Iterable<AIProviderGrant>? grants,
-    $12.Timestamp? createdAt,
-    $12.Timestamp? updatedAt,
+    $13.Timestamp? createdAt,
+    $13.Timestamp? updatedAt,
   }) {
     final $result = create();
     if (id != null) {
@@ -371,8 +371,8 @@ class AIProvider extends $pb.GeneratedMessage {
     ..aOM<AnthropicCredentials>(6, _omitFieldNames ? '' : 'anthropicCredentials', subBuilder: AnthropicCredentials.create)
     ..aOM<DigitalOceanCredentials>(7, _omitFieldNames ? '' : 'digitaloceanCredentials', subBuilder: DigitalOceanCredentials.create)
     ..pc<AIProviderGrant>(14, _omitFieldNames ? '' : 'grants', $pb.PbFieldType.PM, subBuilder: AIProviderGrant.create)
-    ..aOM<$12.Timestamp>(15, _omitFieldNames ? '' : 'createdAt', subBuilder: $12.Timestamp.create)
-    ..aOM<$12.Timestamp>(16, _omitFieldNames ? '' : 'updatedAt', subBuilder: $12.Timestamp.create)
+    ..aOM<$13.Timestamp>(15, _omitFieldNames ? '' : 'createdAt', subBuilder: $13.Timestamp.create)
+    ..aOM<$13.Timestamp>(16, _omitFieldNames ? '' : 'updatedAt', subBuilder: $13.Timestamp.create)
     ..hasRequiredFields = false
   ;
 
@@ -498,27 +498,27 @@ class AIProvider extends $pb.GeneratedMessage {
 
   /// The time the provider was created.
   @$pb.TagNumber(15)
-  $12.Timestamp get createdAt => $_getN(8);
+  $13.Timestamp get createdAt => $_getN(8);
   @$pb.TagNumber(15)
-  set createdAt($12.Timestamp v) { setField(15, v); }
+  set createdAt($13.Timestamp v) { setField(15, v); }
   @$pb.TagNumber(15)
   $core.bool hasCreatedAt() => $_has(8);
   @$pb.TagNumber(15)
   void clearCreatedAt() => clearField(15);
   @$pb.TagNumber(15)
-  $12.Timestamp ensureCreatedAt() => $_ensure(8);
+  $13.Timestamp ensureCreatedAt() => $_ensure(8);
 
   /// The time the provider was last updated (renamed, or had its provider/credentials changed).
   @$pb.TagNumber(16)
-  $12.Timestamp get updatedAt => $_getN(9);
+  $13.Timestamp get updatedAt => $_getN(9);
   @$pb.TagNumber(16)
-  set updatedAt($12.Timestamp v) { setField(16, v); }
+  set updatedAt($13.Timestamp v) { setField(16, v); }
   @$pb.TagNumber(16)
   $core.bool hasUpdatedAt() => $_has(9);
   @$pb.TagNumber(16)
   void clearUpdatedAt() => clearField(16);
   @$pb.TagNumber(16)
-  $12.Timestamp ensureUpdatedAt() => $_ensure(9);
+  $13.Timestamp ensureUpdatedAt() => $_ensure(9);
 }
 
 /// A grant of metered access to someone else's [`AIProvider`](#rellm-AIProvider), created/reset via
@@ -534,8 +534,8 @@ class AIProviderGrant extends $pb.GeneratedMessage {
     $core.Iterable<$core.String>? modelNames,
     $fixnum.Int64? tokensRemaining,
     $fixnum.Int64? overage,
-    $12.Timestamp? createdAt,
-    $12.Timestamp? updatedAt,
+    $13.Timestamp? createdAt,
+    $13.Timestamp? updatedAt,
   }) {
     final $result = create();
     if (aiProviderId != null) {
@@ -571,8 +571,8 @@ class AIProviderGrant extends $pb.GeneratedMessage {
     ..pPS(3, _omitFieldNames ? '' : 'modelNames')
     ..a<$fixnum.Int64>(4, _omitFieldNames ? '' : 'tokensRemaining', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
     ..a<$fixnum.Int64>(5, _omitFieldNames ? '' : 'overage', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
-    ..aOM<$12.Timestamp>(15, _omitFieldNames ? '' : 'createdAt', subBuilder: $12.Timestamp.create)
-    ..aOM<$12.Timestamp>(16, _omitFieldNames ? '' : 'updatedAt', subBuilder: $12.Timestamp.create)
+    ..aOM<$13.Timestamp>(15, _omitFieldNames ? '' : 'createdAt', subBuilder: $13.Timestamp.create)
+    ..aOM<$13.Timestamp>(16, _omitFieldNames ? '' : 'updatedAt', subBuilder: $13.Timestamp.create)
     ..hasRequiredFields = false
   ;
 
@@ -655,28 +655,28 @@ class AIProviderGrant extends $pb.GeneratedMessage {
 
   /// The time the grant was first created.
   @$pb.TagNumber(15)
-  $12.Timestamp get createdAt => $_getN(5);
+  $13.Timestamp get createdAt => $_getN(5);
   @$pb.TagNumber(15)
-  set createdAt($12.Timestamp v) { setField(15, v); }
+  set createdAt($13.Timestamp v) { setField(15, v); }
   @$pb.TagNumber(15)
   $core.bool hasCreatedAt() => $_has(5);
   @$pb.TagNumber(15)
   void clearCreatedAt() => clearField(15);
   @$pb.TagNumber(15)
-  $12.Timestamp ensureCreatedAt() => $_ensure(5);
+  $13.Timestamp ensureCreatedAt() => $_ensure(5);
 
   /// The time the grant was last updated (i.e. last reset by another
   /// [`GrantAIProvider`](#grpc-api-GrantAIProvider) call).
   @$pb.TagNumber(16)
-  $12.Timestamp get updatedAt => $_getN(6);
+  $13.Timestamp get updatedAt => $_getN(6);
   @$pb.TagNumber(16)
-  set updatedAt($12.Timestamp v) { setField(16, v); }
+  set updatedAt($13.Timestamp v) { setField(16, v); }
   @$pb.TagNumber(16)
   $core.bool hasUpdatedAt() => $_has(6);
   @$pb.TagNumber(16)
   void clearUpdatedAt() => clearField(16);
   @$pb.TagNumber(16)
-  $12.Timestamp ensureUpdatedAt() => $_ensure(6);
+  $13.Timestamp ensureUpdatedAt() => $_ensure(6);
 }
 
 /// Response to a request for a user's [`AIProvider`](#rellm-AIProvider)s.

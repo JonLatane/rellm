@@ -30,6 +30,7 @@ but none of this module's profile-editing machinery.
 
 import Browser.Navigation
 import Components.AIProviders as AIProviders
+import Components.Market as Market
 import Components.Markdown as Markdown
 import Components.Pages.EventsPage as EventsPage
 import Components.Pages.PostsPage as PostsPage
@@ -53,7 +54,7 @@ import Json.Decode as Decode
 import Ports
 import Process
 import Proto.Google.Protobuf
-import Proto.Rellm exposing (AIProvider, AIProviderGrant, ContactMethod, FederatedAccount, SyncDestination, SyncSource, User, defaultAIProvider, defaultDigitalOceanCredentials, defaultGeminiCredentials, defaultMediaReference, defaultOpenAICredentials, defaultSyncDestination, defaultSyncSource)
+import Proto.Rellm exposing (AIProvider, AIProviderGrant, ContactMethod, FederatedAccount, MarketSubscription, SyncDestination, SyncSource, User, defaultAIProvider, defaultDigitalOceanCredentials, defaultGeminiCredentials, defaultMediaReference, defaultOpenAICredentials, defaultSyncDestination, defaultSyncSource)
 import Proto.Rellm.AIProvider.Provider as AIProviderProvider
 import Proto.Rellm.Moderation exposing (Moderation(..))
 import Proto.Rellm.Permission exposing (Permission(..))
@@ -95,6 +96,7 @@ type alias Model =
     , phoneVerification : Maybe PhoneVerification
     , storageQuotaEdit : Maybe StorageQuotaEdit
     , storageQuotaExpanded : Bool
+    , subscriptionsExpanded : Bool
     , permissionsEdit : Maybe PermissionsEdit
     , permissionsExpanded : Bool
     , federatedProfilesEdit : Maybe FederatedProfilesEdit
@@ -184,6 +186,7 @@ type Msg
     | StorageQuotaSaveClicked
     | GotStorageQuotaSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, User ))
     | ShowMyMediaClicked
+    | SubscriptionsExpandedToggled
     | PermissionsExpandedToggled
     | PermissionsEditClicked
     | PermissionRemoveClicked Permission
@@ -1018,6 +1021,7 @@ init shared pageIsSecure targetHost lookup navKey path query fragment =
             , phoneVerification = Nothing
             , storageQuotaEdit = Nothing
             , storageQuotaExpanded = False
+            , subscriptionsExpanded = False
             , permissionsEdit = Nothing
             , permissionsExpanded = False
             , federatedProfilesEdit = Nothing
@@ -2018,6 +2022,9 @@ updateInner shared msg model =
 
         ShowMyMediaClicked ->
             ( model, Effect.fromShared (Shared.MyMediaPanelMsg (MyMediaPanel.Open Nothing model.resolver.targetHost)) )
+
+        SubscriptionsExpandedToggled ->
+            ( { model | subscriptionsExpanded = not model.subscriptionsExpanded }, Effect.none )
 
         PermissionsExpandedToggled ->
             ( { model | permissionsExpanded = not model.permissionsExpanded }, Effect.none )
@@ -4222,6 +4229,7 @@ profileDetail shared model server maybeAccount user =
         , aiProvidersSection model canEdit (isOwnProfile maybeAccount user) user
         , aiProviderGrantedSection model canEdit user
         , storageQuotaSection isAdmin (isOwnProfile maybeAccount user) model.storageQuotaExpanded model.storageQuotaEdit user
+        , subscriptionsSection shared.time.browserTimeZone isAdmin (isOwnProfile maybeAccount user) model.subscriptionsExpanded user
         , permissionsSection isAdmin model.permissionsExpanded model.permissionsEdit user
         , deleteUserSection canEdit
         ]
@@ -5067,6 +5075,65 @@ storageQuotaEditView maybeEdit user =
                     ]
                 , button [ class "profile-edit-button", onClick StorageQuotaEditClicked ] [ text "Edit Quota" ]
                 ]
+
+
+{-| "Subscriptions" -- a read-only readout of `user.marketSubscriptions` (`market.proto`), each
+with its type/period/amount and either "Renews <date>" or "Ended <date>". Unlike
+`storageQuotaSection`/`permissionsSection`, there's no edit mode here at all -- subscriptions are
+only ever created via `Components.Pages.MarketPage`'s "Buy" flow (a real Stripe Checkout redirect),
+never by editing a `User` directly. Shown to the profile's own owner or an Admin, same gating (and
+same "hide if nothing to show" convention) as `storageQuotaSection` -- matches how
+`User.marketSubscriptions` itself is only ever populated for those two viewers (see that field's
+own proto doc). Collapsed by default, alongside `storageQuotaSection`/`permissionsSection`.
+-}
+subscriptionsSection : SharedTime.BrowserTimeZone -> Bool -> Bool -> Bool -> User -> Html Msg
+subscriptionsSection browserTimeZone isAdmin isOwn expanded user =
+    if not (isAdmin || isOwn) then
+        text ""
+
+    else
+        expandableProfileSection "profile-subscriptions-section"
+            "Subscriptions"
+            Nothing
+            expanded
+            SubscriptionsExpandedToggled
+            (if List.isEmpty user.marketSubscriptions then
+                [ span [ class "profile-subscriptions-empty" ] [ text "No subscriptions." ] ]
+
+             else
+                List.map (subscriptionRowView browserTimeZone) user.marketSubscriptions
+            )
+
+
+subscriptionRowView : SharedTime.BrowserTimeZone -> MarketSubscription -> Html Msg
+subscriptionRowView browserTimeZone subscription =
+    let
+        statusText : String
+        statusText =
+            case subscription.endedAt of
+                Just endedAt ->
+                    "Ended " ++ SharedTime.formatDate browserTimeZone.zone (timestampToPosix endedAt)
+
+                Nothing ->
+                    case subscription.renewsAt of
+                        Just renewsAt ->
+                            "Renews " ++ SharedTime.formatDate browserTimeZone.zone (timestampToPosix renewsAt)
+
+                        Nothing ->
+                            "Active"
+    in
+    div [ class "profile-subscription-row" ]
+        [ span [ class "profile-subscription-row-title" ]
+            [ text
+                (Market.purchaseTypeLabel subscription.type_
+                    ++ " · "
+                    ++ Market.purchasePeriodLabel subscription.period
+                    ++ " · "
+                    ++ Market.formatAmount subscription.amount subscription.currency
+                )
+            ]
+        , span [ class "profile-subscription-row-status" ] [ text statusText ]
+        ]
 
 
 {-| The Permissions list -- plain badges (plus an Edit button, if `isAdmin`)

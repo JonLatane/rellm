@@ -567,6 +567,18 @@ An Anthropic API connection ([`AnthropicCredentials`](https://rellm.org/docs/pro
 
 A DigitalOcean Gradient AI Platform / Serverless Inference connection ([`DigitalOceanCredentials`](https://rellm.org/docs/protocol#rellm-DigitalOceanCredentials)), used for image *generation only* (no editing) via an OpenAI-Images-API-shaped endpoint re-hosting GPT Image and Stable Diffusion models under DigitalOcean's own billing.
 
+### Rellm's Market
+
+Rellm's Market ([`market.proto`](https://rellm.org/docs/protocol#market.proto)) is a small, Stripe-backed storefront a server admin can stock with up to nine [`MarketProduct`](https://rellm.org/docs/protocol#rellm-MarketProduct)s - one of three offering types ([`PurchaseType`](https://rellm.org/docs/protocol#rellm-PurchaseType): media storage, AI token grants, or Rellm hosting for a domain), each sold once (indefinitely) or on a recurring annual/monthly [`PurchasePeriod`](https://rellm.org/docs/protocol#rellm-PurchasePeriod). Buying one starts a Stripe Checkout Session; the actual [`MarketPurchase`](https://rellm.org/docs/protocol#rellm-MarketPurchase)/[`MarketSubscription`](https://rellm.org/docs/protocol#rellm-MarketSubscription) is only ever created once Stripe confirms payment via webhook, so an abandoned checkout leaves nothing behind. A recurring [`MarketSubscription`](https://rellm.org/docs/protocol#rellm-MarketSubscription) then renews itself off-session against the saved payment method until a charge fails.
+
+What buying each type of MarketProduct actually does:
+
+- **Media storage** raises the buyer's `User.media_storage_limit_bytes` to the MarketProduct's configured allocation.
+- **AI token grants** grant/reset an [`AIProviderGrant`](https://rellm.org/docs/protocol#rellm-AIProviderGrant) - the buyer effectively subscribes to metered access on one of the server operator's own [`AIProvider`](https://rellm.org/docs/protocol#rellm-AIProvider)s.
+- **Rellm hosting** bills the buyer for the server operator to stand up a brand new Rellm instance on a domain of their choosing (e.g. "Joe's Tavern" buying `social.joestavern.com` from `rellm.org`) - this is billing only, provisioned by hand rather than automated.
+
+Products are listed via [`GetMarketProducts`](https://rellm.org/docs/protocol#grpc-api-GetMarketProducts) (unauthenticated; admins additionally see delisted ones) and managed via [`CreateMarketProduct`](https://rellm.org/docs/protocol#grpc-api-CreateMarketProduct)/[`UpdateMarketProduct`](https://rellm.org/docs/protocol#grpc-api-UpdateMarketProduct) (Admin-only). Stripe credentials live in `ServerConfiguration.stripe_config`, Admin-only like `twilio_config`/`bird_config`.
+
 ### Posts
 
 [`Post`](https://rellm.org/docs/protocol#rellm-Post)s follow a Twitter- or Reddit- like model. They have a [`PostContext`](https://rellm.org/docs/protocol#rellm-PostContext) as well as all-optional `title`, `link`, and `description` string values. A top-level post is stored generally the same as a reply. Posts also carry a [`Visibility`](https://rellm.org/docs/protocol#rellm-Visibility) and [`Moderation`](https://rellm.org/docs/protocol#rellm-Moderation) value that is enforced by the APIs.

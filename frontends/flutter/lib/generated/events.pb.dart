@@ -14,14 +14,14 @@ import 'dart:core' as $core;
 import 'package:protobuf/protobuf.dart' as $pb;
 
 import 'events.pbenum.dart';
-import 'google/protobuf/timestamp.pb.dart' as $12;
-import 'location.pb.dart' as $15;
+import 'google/protobuf/timestamp.pb.dart' as $13;
+import 'location.pb.dart' as $16;
 import 'media.pb.dart' as $5;
-import 'permissions.pbenum.dart' as $14;
+import 'permissions.pbenum.dart' as $15;
 import 'posts.pb.dart' as $8;
 import 'sync.pb.dart' as $10;
 import 'users.pb.dart' as $4;
-import 'visibility_moderation.pbenum.dart' as $13;
+import 'visibility_moderation.pbenum.dart' as $14;
 
 export 'events.pbenum.dart';
 
@@ -227,10 +227,10 @@ class GetEventsRequest extends $pb.GeneratedMessage {
 /// API currently only supports `ends_after`.
 class TimeFilter extends $pb.GeneratedMessage {
   factory TimeFilter({
-    $12.Timestamp? startsAfter,
-    $12.Timestamp? endsAfter,
-    $12.Timestamp? startsBefore,
-    $12.Timestamp? endsBefore,
+    $13.Timestamp? startsAfter,
+    $13.Timestamp? endsAfter,
+    $13.Timestamp? startsBefore,
+    $13.Timestamp? endsBefore,
   }) {
     final $result = create();
     if (startsAfter != null) {
@@ -252,10 +252,10 @@ class TimeFilter extends $pb.GeneratedMessage {
   factory TimeFilter.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
 
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'TimeFilter', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
-    ..aOM<$12.Timestamp>(1, _omitFieldNames ? '' : 'startsAfter', subBuilder: $12.Timestamp.create)
-    ..aOM<$12.Timestamp>(2, _omitFieldNames ? '' : 'endsAfter', subBuilder: $12.Timestamp.create)
-    ..aOM<$12.Timestamp>(3, _omitFieldNames ? '' : 'startsBefore', subBuilder: $12.Timestamp.create)
-    ..aOM<$12.Timestamp>(4, _omitFieldNames ? '' : 'endsBefore', subBuilder: $12.Timestamp.create)
+    ..aOM<$13.Timestamp>(1, _omitFieldNames ? '' : 'startsAfter', subBuilder: $13.Timestamp.create)
+    ..aOM<$13.Timestamp>(2, _omitFieldNames ? '' : 'endsAfter', subBuilder: $13.Timestamp.create)
+    ..aOM<$13.Timestamp>(3, _omitFieldNames ? '' : 'startsBefore', subBuilder: $13.Timestamp.create)
+    ..aOM<$13.Timestamp>(4, _omitFieldNames ? '' : 'endsBefore', subBuilder: $13.Timestamp.create)
     ..hasRequiredFields = false
   ;
 
@@ -282,51 +282,51 @@ class TimeFilter extends $pb.GeneratedMessage {
 
   /// Filter to events that start after the given time.
   @$pb.TagNumber(1)
-  $12.Timestamp get startsAfter => $_getN(0);
+  $13.Timestamp get startsAfter => $_getN(0);
   @$pb.TagNumber(1)
-  set startsAfter($12.Timestamp v) { setField(1, v); }
+  set startsAfter($13.Timestamp v) { setField(1, v); }
   @$pb.TagNumber(1)
   $core.bool hasStartsAfter() => $_has(0);
   @$pb.TagNumber(1)
   void clearStartsAfter() => clearField(1);
   @$pb.TagNumber(1)
-  $12.Timestamp ensureStartsAfter() => $_ensure(0);
+  $13.Timestamp ensureStartsAfter() => $_ensure(0);
 
   /// Filter to events that end after the given time.
   @$pb.TagNumber(2)
-  $12.Timestamp get endsAfter => $_getN(1);
+  $13.Timestamp get endsAfter => $_getN(1);
   @$pb.TagNumber(2)
-  set endsAfter($12.Timestamp v) { setField(2, v); }
+  set endsAfter($13.Timestamp v) { setField(2, v); }
   @$pb.TagNumber(2)
   $core.bool hasEndsAfter() => $_has(1);
   @$pb.TagNumber(2)
   void clearEndsAfter() => clearField(2);
   @$pb.TagNumber(2)
-  $12.Timestamp ensureEndsAfter() => $_ensure(1);
+  $13.Timestamp ensureEndsAfter() => $_ensure(1);
 
   /// Filter to events that start before the given time.
   @$pb.TagNumber(3)
-  $12.Timestamp get startsBefore => $_getN(2);
+  $13.Timestamp get startsBefore => $_getN(2);
   @$pb.TagNumber(3)
-  set startsBefore($12.Timestamp v) { setField(3, v); }
+  set startsBefore($13.Timestamp v) { setField(3, v); }
   @$pb.TagNumber(3)
   $core.bool hasStartsBefore() => $_has(2);
   @$pb.TagNumber(3)
   void clearStartsBefore() => clearField(3);
   @$pb.TagNumber(3)
-  $12.Timestamp ensureStartsBefore() => $_ensure(2);
+  $13.Timestamp ensureStartsBefore() => $_ensure(2);
 
   /// Filter to events that end before the given time.
   @$pb.TagNumber(4)
-  $12.Timestamp get endsBefore => $_getN(3);
+  $13.Timestamp get endsBefore => $_getN(3);
   @$pb.TagNumber(4)
-  set endsBefore($12.Timestamp v) { setField(4, v); }
+  set endsBefore($13.Timestamp v) { setField(4, v); }
   @$pb.TagNumber(4)
   $core.bool hasEndsBefore() => $_has(3);
   @$pb.TagNumber(4)
   void clearEndsBefore() => clearField(4);
   @$pb.TagNumber(4)
-  $12.Timestamp ensureEndsBefore() => $_ensure(3);
+  $13.Timestamp ensureEndsBefore() => $_ensure(3);
 }
 
 ///  A list of [`Event`](#rellm-Event)s with a maybe-incomplete (see [`GetEventsRequest`](#rellm-GetEventsRequest)) set of their [`Occasion`](#rellm-Occasion)s.
@@ -611,7 +611,7 @@ class EventInfo extends $pb.GeneratedMessage {
     $core.bool? allowsAnonymousRsvps,
     $core.int? maxAttendees,
     $core.bool? hideLocationUntilRsvpApproved,
-    $13.Moderation? defaultRsvpModeration,
+    $14.Moderation? defaultRsvpModeration,
   }) {
     final $result = create();
     if (allowsRsvps != null) {
@@ -640,7 +640,7 @@ class EventInfo extends $pb.GeneratedMessage {
     ..aOB(2, _omitFieldNames ? '' : 'allowsAnonymousRsvps')
     ..a<$core.int>(3, _omitFieldNames ? '' : 'maxAttendees', $pb.PbFieldType.OU3)
     ..aOB(4, _omitFieldNames ? '' : 'hideLocationUntilRsvpApproved')
-    ..e<$13.Moderation>(5, _omitFieldNames ? '' : 'defaultRsvpModeration', $pb.PbFieldType.OE, defaultOrMaker: $13.Moderation.MODERATION_UNKNOWN, valueOf: $13.Moderation.valueOf, enumValues: $13.Moderation.values)
+    ..e<$14.Moderation>(5, _omitFieldNames ? '' : 'defaultRsvpModeration', $pb.PbFieldType.OE, defaultOrMaker: $14.Moderation.MODERATION_UNKNOWN, valueOf: $14.Moderation.valueOf, enumValues: $14.Moderation.values)
     ..hasRequiredFields = false
   ;
 
@@ -711,9 +711,9 @@ class EventInfo extends $pb.GeneratedMessage {
   /// Default moderation for RSVPs from logged-in users (either `PENDING` or `APPROVED`).
   /// Anonymous RSVPs are always moderated (default to `PENDING`).
   @$pb.TagNumber(5)
-  $13.Moderation get defaultRsvpModeration => $_getN(4);
+  $14.Moderation get defaultRsvpModeration => $_getN(4);
   @$pb.TagNumber(5)
-  set defaultRsvpModeration($13.Moderation v) { setField(5, v); }
+  set defaultRsvpModeration($14.Moderation v) { setField(5, v); }
   @$pb.TagNumber(5)
   $core.bool hasDefaultRsvpModeration() => $_has(4);
   @$pb.TagNumber(5)
@@ -728,10 +728,10 @@ class Occasion extends $pb.GeneratedMessage {
     $core.String? eventId,
     $8.Post? post,
     OccasionInfo? info,
-    $12.Timestamp? startsAt,
-    $12.Timestamp? endsAt,
-    $15.Location? location,
-    $12.Timestamp? syncMissingSince,
+    $13.Timestamp? startsAt,
+    $13.Timestamp? endsAt,
+    $16.Location? location,
+    $13.Timestamp? syncMissingSince,
     EventAttendances? attendances,
     EventAttendance? currentUserAttendance,
     $core.Iterable<$10.SyncDestinationStatus>? syncDestinations,
@@ -781,10 +781,10 @@ class Occasion extends $pb.GeneratedMessage {
     ..aOS(2, _omitFieldNames ? '' : 'eventId')
     ..aOM<$8.Post>(3, _omitFieldNames ? '' : 'post', subBuilder: $8.Post.create)
     ..aOM<OccasionInfo>(4, _omitFieldNames ? '' : 'info', subBuilder: OccasionInfo.create)
-    ..aOM<$12.Timestamp>(5, _omitFieldNames ? '' : 'startsAt', subBuilder: $12.Timestamp.create)
-    ..aOM<$12.Timestamp>(6, _omitFieldNames ? '' : 'endsAt', subBuilder: $12.Timestamp.create)
-    ..aOM<$15.Location>(7, _omitFieldNames ? '' : 'location', subBuilder: $15.Location.create)
-    ..aOM<$12.Timestamp>(9, _omitFieldNames ? '' : 'syncMissingSince', subBuilder: $12.Timestamp.create)
+    ..aOM<$13.Timestamp>(5, _omitFieldNames ? '' : 'startsAt', subBuilder: $13.Timestamp.create)
+    ..aOM<$13.Timestamp>(6, _omitFieldNames ? '' : 'endsAt', subBuilder: $13.Timestamp.create)
+    ..aOM<$16.Location>(7, _omitFieldNames ? '' : 'location', subBuilder: $16.Location.create)
+    ..aOM<$13.Timestamp>(9, _omitFieldNames ? '' : 'syncMissingSince', subBuilder: $13.Timestamp.create)
     ..aOM<EventAttendances>(10, _omitFieldNames ? '' : 'attendances', subBuilder: EventAttendances.create)
     ..aOM<EventAttendance>(11, _omitFieldNames ? '' : 'currentUserAttendance', subBuilder: EventAttendance.create)
     ..pc<$10.SyncDestinationStatus>(12, _omitFieldNames ? '' : 'syncDestinations', $pb.PbFieldType.PM, subBuilder: $10.SyncDestinationStatus.create)
@@ -850,52 +850,52 @@ class Occasion extends $pb.GeneratedMessage {
 
   /// The time the event starts (UTC/Timestamp format).
   @$pb.TagNumber(5)
-  $12.Timestamp get startsAt => $_getN(3);
+  $13.Timestamp get startsAt => $_getN(3);
   @$pb.TagNumber(5)
-  set startsAt($12.Timestamp v) { setField(5, v); }
+  set startsAt($13.Timestamp v) { setField(5, v); }
   @$pb.TagNumber(5)
   $core.bool hasStartsAt() => $_has(3);
   @$pb.TagNumber(5)
   void clearStartsAt() => clearField(5);
   @$pb.TagNumber(5)
-  $12.Timestamp ensureStartsAt() => $_ensure(3);
+  $13.Timestamp ensureStartsAt() => $_ensure(3);
 
   /// The time the event ends (UTC/Timestamp format).
   @$pb.TagNumber(6)
-  $12.Timestamp get endsAt => $_getN(4);
+  $13.Timestamp get endsAt => $_getN(4);
   @$pb.TagNumber(6)
-  set endsAt($12.Timestamp v) { setField(6, v); }
+  set endsAt($13.Timestamp v) { setField(6, v); }
   @$pb.TagNumber(6)
   $core.bool hasEndsAt() => $_has(4);
   @$pb.TagNumber(6)
   void clearEndsAt() => clearField(6);
   @$pb.TagNumber(6)
-  $12.Timestamp ensureEndsAt() => $_ensure(4);
+  $13.Timestamp ensureEndsAt() => $_ensure(4);
 
   /// The location of the event.
   @$pb.TagNumber(7)
-  $15.Location get location => $_getN(5);
+  $16.Location get location => $_getN(5);
   @$pb.TagNumber(7)
-  set location($15.Location v) { setField(7, v); }
+  set location($16.Location v) { setField(7, v); }
   @$pb.TagNumber(7)
   $core.bool hasLocation() => $_has(5);
   @$pb.TagNumber(7)
   void clearLocation() => clearField(7);
   @$pb.TagNumber(7)
-  $15.Location ensureLocation() => $_ensure(5);
+  $16.Location ensureLocation() => $_ensure(5);
 
   /// The time since this event "disappeared" from the sync source.
   /// It is up to the owner whether this means it should be deleted.
   @$pb.TagNumber(9)
-  $12.Timestamp get syncMissingSince => $_getN(6);
+  $13.Timestamp get syncMissingSince => $_getN(6);
   @$pb.TagNumber(9)
-  set syncMissingSince($12.Timestamp v) { setField(9, v); }
+  set syncMissingSince($13.Timestamp v) { setField(9, v); }
   @$pb.TagNumber(9)
   $core.bool hasSyncMissingSince() => $_has(6);
   @$pb.TagNumber(9)
   void clearSyncMissingSince() => clearField(9);
   @$pb.TagNumber(9)
-  $12.Timestamp ensureSyncMissingSince() => $_ensure(6);
+  $13.Timestamp ensureSyncMissingSince() => $_ensure(6);
 
   /// RSVP + invite data for this Occasion.
   @$pb.TagNumber(10)
@@ -1238,7 +1238,7 @@ class GetEventAttendancesRequest extends $pb.GeneratedMessage {
 class EventAttendances extends $pb.GeneratedMessage {
   factory EventAttendances({
     $core.Iterable<EventAttendance>? attendances,
-    $15.Location? hiddenLocation,
+    $16.Location? hiddenLocation,
   }) {
     final $result = create();
     if (attendances != null) {
@@ -1255,7 +1255,7 @@ class EventAttendances extends $pb.GeneratedMessage {
 
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'EventAttendances', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
     ..pc<EventAttendance>(1, _omitFieldNames ? '' : 'attendances', $pb.PbFieldType.PM, subBuilder: EventAttendance.create)
-    ..aOM<$15.Location>(2, _omitFieldNames ? '' : 'hiddenLocation', subBuilder: $15.Location.create)
+    ..aOM<$16.Location>(2, _omitFieldNames ? '' : 'hiddenLocation', subBuilder: $16.Location.create)
     ..hasRequiredFields = false
   ;
 
@@ -1286,15 +1286,15 @@ class EventAttendances extends $pb.GeneratedMessage {
 
   /// When `hide_location_until_rsvp_approved` is set, the location of the event.
   @$pb.TagNumber(2)
-  $15.Location get hiddenLocation => $_getN(1);
+  $16.Location get hiddenLocation => $_getN(1);
   @$pb.TagNumber(2)
-  set hiddenLocation($15.Location v) { setField(2, v); }
+  set hiddenLocation($16.Location v) { setField(2, v); }
   @$pb.TagNumber(2)
   $core.bool hasHiddenLocation() => $_has(1);
   @$pb.TagNumber(2)
   void clearHiddenLocation() => clearField(2);
   @$pb.TagNumber(2)
-  $15.Location ensureHiddenLocation() => $_ensure(1);
+  $16.Location ensureHiddenLocation() => $_ensure(1);
 }
 
 enum EventAttendance_Attendee {
@@ -1318,9 +1318,9 @@ class EventAttendance extends $pb.GeneratedMessage {
     $core.String? invitingUserId,
     $core.String? privateNote,
     $core.String? publicNote,
-    $13.Moderation? moderation,
-    $12.Timestamp? createdAt,
-    $12.Timestamp? updatedAt,
+    $14.Moderation? moderation,
+    $13.Timestamp? createdAt,
+    $13.Timestamp? updatedAt,
   }) {
     final $result = create();
     if (id != null) {
@@ -1381,9 +1381,9 @@ class EventAttendance extends $pb.GeneratedMessage {
     ..aOS(7, _omitFieldNames ? '' : 'invitingUserId')
     ..aOS(8, _omitFieldNames ? '' : 'privateNote')
     ..aOS(9, _omitFieldNames ? '' : 'publicNote')
-    ..e<$13.Moderation>(10, _omitFieldNames ? '' : 'moderation', $pb.PbFieldType.OE, defaultOrMaker: $13.Moderation.MODERATION_UNKNOWN, valueOf: $13.Moderation.valueOf, enumValues: $13.Moderation.values)
-    ..aOM<$12.Timestamp>(11, _omitFieldNames ? '' : 'createdAt', subBuilder: $12.Timestamp.create)
-    ..aOM<$12.Timestamp>(12, _omitFieldNames ? '' : 'updatedAt', subBuilder: $12.Timestamp.create)
+    ..e<$14.Moderation>(10, _omitFieldNames ? '' : 'moderation', $pb.PbFieldType.OE, defaultOrMaker: $14.Moderation.MODERATION_UNKNOWN, valueOf: $14.Moderation.valueOf, enumValues: $14.Moderation.values)
+    ..aOM<$13.Timestamp>(11, _omitFieldNames ? '' : 'createdAt', subBuilder: $13.Timestamp.create)
+    ..aOM<$13.Timestamp>(12, _omitFieldNames ? '' : 'updatedAt', subBuilder: $13.Timestamp.create)
     ..hasRequiredFields = false
   ;
 
@@ -1507,9 +1507,9 @@ class EventAttendance extends $pb.GeneratedMessage {
 
   /// Moderation status for the attendance. Moderated by the [`Event`](#rellm-Event) owner (or [`Occasion`](#rellm-Occasion) owner if applicable).
   @$pb.TagNumber(10)
-  $13.Moderation get moderation => $_getN(9);
+  $14.Moderation get moderation => $_getN(9);
   @$pb.TagNumber(10)
-  set moderation($13.Moderation v) { setField(10, v); }
+  set moderation($14.Moderation v) { setField(10, v); }
   @$pb.TagNumber(10)
   $core.bool hasModeration() => $_has(9);
   @$pb.TagNumber(10)
@@ -1517,27 +1517,27 @@ class EventAttendance extends $pb.GeneratedMessage {
 
   /// The time the attendance was created.
   @$pb.TagNumber(11)
-  $12.Timestamp get createdAt => $_getN(10);
+  $13.Timestamp get createdAt => $_getN(10);
   @$pb.TagNumber(11)
-  set createdAt($12.Timestamp v) { setField(11, v); }
+  set createdAt($13.Timestamp v) { setField(11, v); }
   @$pb.TagNumber(11)
   $core.bool hasCreatedAt() => $_has(10);
   @$pb.TagNumber(11)
   void clearCreatedAt() => clearField(11);
   @$pb.TagNumber(11)
-  $12.Timestamp ensureCreatedAt() => $_ensure(10);
+  $13.Timestamp ensureCreatedAt() => $_ensure(10);
 
   /// The time the attendance was last updated.
   @$pb.TagNumber(12)
-  $12.Timestamp get updatedAt => $_getN(11);
+  $13.Timestamp get updatedAt => $_getN(11);
   @$pb.TagNumber(12)
-  set updatedAt($12.Timestamp v) { setField(12, v); }
+  set updatedAt($13.Timestamp v) { setField(12, v); }
   @$pb.TagNumber(12)
   $core.bool hasUpdatedAt() => $_has(11);
   @$pb.TagNumber(12)
   void clearUpdatedAt() => clearField(12);
   @$pb.TagNumber(12)
-  $12.Timestamp ensureUpdatedAt() => $_ensure(11);
+  $13.Timestamp ensureUpdatedAt() => $_ensure(11);
 }
 
 ///  An anonymous internet user who has RSVP'd to an [`Occasion`](#rellm-Occasion).
@@ -1629,7 +1629,7 @@ class UserAttendee extends $pb.GeneratedMessage {
     $core.String? username,
     $5.MediaReference? avatar,
     $core.String? realName,
-    $core.Iterable<$14.Permission>? permissions,
+    $core.Iterable<$15.Permission>? permissions,
   }) {
     final $result = create();
     if (userId != null) {
@@ -1658,7 +1658,7 @@ class UserAttendee extends $pb.GeneratedMessage {
     ..aOS(2, _omitFieldNames ? '' : 'username')
     ..aOM<$5.MediaReference>(3, _omitFieldNames ? '' : 'avatar', subBuilder: $5.MediaReference.create)
     ..aOS(4, _omitFieldNames ? '' : 'realName')
-    ..pc<$14.Permission>(5, _omitFieldNames ? '' : 'permissions', $pb.PbFieldType.KE, valueOf: $14.Permission.valueOf, enumValues: $14.Permission.values, defaultEnumValue: $14.Permission.PERMISSION_UNKNOWN)
+    ..pc<$15.Permission>(5, _omitFieldNames ? '' : 'permissions', $pb.PbFieldType.KE, valueOf: $15.Permission.valueOf, enumValues: $15.Permission.values, defaultEnumValue: $15.Permission.PERMISSION_UNKNOWN)
     ..hasRequiredFields = false
   ;
 
@@ -1725,7 +1725,7 @@ class UserAttendee extends $pb.GeneratedMessage {
   void clearRealName() => clearField(4);
 
   @$pb.TagNumber(5)
-  $core.List<$14.Permission> get permissions => $_getList(4);
+  $core.List<$15.Permission> get permissions => $_getList(4);
 }
 
 

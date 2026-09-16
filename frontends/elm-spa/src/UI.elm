@@ -2173,6 +2173,9 @@ accountAvatarMenuView shared account =
 
                   else
                     text ""
+                , a
+                    [ class "account-avatar-menu-item", href profileHref, navigateAndClose ]
+                    (itemContent "Subscriptions" (configuredCountOrEmpty "No subscriptions." account.marketSubscriptions))
                 ]
             ]
 

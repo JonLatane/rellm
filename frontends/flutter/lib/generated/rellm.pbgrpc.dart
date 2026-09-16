@@ -21,6 +21,7 @@ import 'events.pb.dart' as $9;
 import 'federation.pb.dart' as $1;
 import 'google/protobuf/empty.pb.dart' as $0;
 import 'groups.pb.dart' as $7;
+import 'market.pb.dart' as $12;
 import 'media.pb.dart' as $5;
 import 'messages.pb.dart' as $6;
 import 'posts.pb.dart' as $8;
@@ -308,6 +309,26 @@ class RellmClient extends $grpc.Client {
       '/rellm.Rellm/RevokeAIProvider',
       ($11.RevokeAIProviderRequest value) => value.writeToBuffer(),
       ($core.List<$core.int> value) => $0.Empty.fromBuffer(value));
+  static final _$getMarketProducts = $grpc.ClientMethod<$12.GetMarketProductsRequest, $12.GetMarketProductsResponse>(
+      '/rellm.Rellm/GetMarketProducts',
+      ($12.GetMarketProductsRequest value) => value.writeToBuffer(),
+      ($core.List<$core.int> value) => $12.GetMarketProductsResponse.fromBuffer(value));
+  static final _$createMarketProduct = $grpc.ClientMethod<$12.MarketProduct, $12.MarketProduct>(
+      '/rellm.Rellm/CreateMarketProduct',
+      ($12.MarketProduct value) => value.writeToBuffer(),
+      ($core.List<$core.int> value) => $12.MarketProduct.fromBuffer(value));
+  static final _$updateMarketProduct = $grpc.ClientMethod<$12.MarketProduct, $12.MarketProduct>(
+      '/rellm.Rellm/UpdateMarketProduct',
+      ($12.MarketProduct value) => value.writeToBuffer(),
+      ($core.List<$core.int> value) => $12.MarketProduct.fromBuffer(value));
+  static final _$getMarketSubscriptions = $grpc.ClientMethod<$12.GetMarketSubscriptionsRequest, $12.GetMarketSubscriptionsResponse>(
+      '/rellm.Rellm/GetMarketSubscriptions',
+      ($12.GetMarketSubscriptionsRequest value) => value.writeToBuffer(),
+      ($core.List<$core.int> value) => $12.GetMarketSubscriptionsResponse.fromBuffer(value));
+  static final _$makeMarketPurchase = $grpc.ClientMethod<$12.MakeMarketPurchaseRequest, $12.MakeMarketPurchaseResponse>(
+      '/rellm.Rellm/MakeMarketPurchase',
+      ($12.MakeMarketPurchaseRequest value) => value.writeToBuffer(),
+      ($core.List<$core.int> value) => $12.MakeMarketPurchaseResponse.fromBuffer(value));
   static final _$generateMedia = $grpc.ClientMethod<$11.GenerateMediaRequest, $5.Media>(
       '/rellm.Rellm/GenerateMedia',
       ($11.GenerateMediaRequest value) => value.writeToBuffer(),
@@ -633,6 +654,26 @@ class RellmClient extends $grpc.Client {
 
   $grpc.ResponseFuture<$0.Empty> revokeAIProvider($11.RevokeAIProviderRequest request, {$grpc.CallOptions? options}) {
     return $createUnaryCall(_$revokeAIProvider, request, options: options);
+  }
+
+  $grpc.ResponseFuture<$12.GetMarketProductsResponse> getMarketProducts($12.GetMarketProductsRequest request, {$grpc.CallOptions? options}) {
+    return $createUnaryCall(_$getMarketProducts, request, options: options);
+  }
+
+  $grpc.ResponseFuture<$12.MarketProduct> createMarketProduct($12.MarketProduct request, {$grpc.CallOptions? options}) {
+    return $createUnaryCall(_$createMarketProduct, request, options: options);
+  }
+
+  $grpc.ResponseFuture<$12.MarketProduct> updateMarketProduct($12.MarketProduct request, {$grpc.CallOptions? options}) {
+    return $createUnaryCall(_$updateMarketProduct, request, options: options);
+  }
+
+  $grpc.ResponseFuture<$12.GetMarketSubscriptionsResponse> getMarketSubscriptions($12.GetMarketSubscriptionsRequest request, {$grpc.CallOptions? options}) {
+    return $createUnaryCall(_$getMarketSubscriptions, request, options: options);
+  }
+
+  $grpc.ResponseFuture<$12.MakeMarketPurchaseResponse> makeMarketPurchase($12.MakeMarketPurchaseRequest request, {$grpc.CallOptions? options}) {
+    return $createUnaryCall(_$makeMarketPurchase, request, options: options);
   }
 
   $grpc.ResponseFuture<$5.Media> generateMedia($11.GenerateMediaRequest request, {$grpc.CallOptions? options}) {
@@ -1168,6 +1209,41 @@ abstract class RellmServiceBase extends $grpc.Service {
         false,
         ($core.List<$core.int> value) => $11.RevokeAIProviderRequest.fromBuffer(value),
         ($0.Empty value) => value.writeToBuffer()));
+    $addMethod($grpc.ServiceMethod<$12.GetMarketProductsRequest, $12.GetMarketProductsResponse>(
+        'GetMarketProducts',
+        getMarketProducts_Pre,
+        false,
+        false,
+        ($core.List<$core.int> value) => $12.GetMarketProductsRequest.fromBuffer(value),
+        ($12.GetMarketProductsResponse value) => value.writeToBuffer()));
+    $addMethod($grpc.ServiceMethod<$12.MarketProduct, $12.MarketProduct>(
+        'CreateMarketProduct',
+        createMarketProduct_Pre,
+        false,
+        false,
+        ($core.List<$core.int> value) => $12.MarketProduct.fromBuffer(value),
+        ($12.MarketProduct value) => value.writeToBuffer()));
+    $addMethod($grpc.ServiceMethod<$12.MarketProduct, $12.MarketProduct>(
+        'UpdateMarketProduct',
+        updateMarketProduct_Pre,
+        false,
+        false,
+        ($core.List<$core.int> value) => $12.MarketProduct.fromBuffer(value),
+        ($12.MarketProduct value) => value.writeToBuffer()));
+    $addMethod($grpc.ServiceMethod<$12.GetMarketSubscriptionsRequest, $12.GetMarketSubscriptionsResponse>(
+        'GetMarketSubscriptions',
+        getMarketSubscriptions_Pre,
+        false,
+        false,
+        ($core.List<$core.int> value) => $12.GetMarketSubscriptionsRequest.fromBuffer(value),
+        ($12.GetMarketSubscriptionsResponse value) => value.writeToBuffer()));
+    $addMethod($grpc.ServiceMethod<$12.MakeMarketPurchaseRequest, $12.MakeMarketPurchaseResponse>(
+        'MakeMarketPurchase',
+        makeMarketPurchase_Pre,
+        false,
+        false,
+        ($core.List<$core.int> value) => $12.MakeMarketPurchaseRequest.fromBuffer(value),
+        ($12.MakeMarketPurchaseResponse value) => value.writeToBuffer()));
     $addMethod($grpc.ServiceMethod<$11.GenerateMediaRequest, $5.Media>(
         'GenerateMedia',
         generateMedia_Pre,
@@ -1523,6 +1599,26 @@ abstract class RellmServiceBase extends $grpc.Service {
     return revokeAIProvider(call, await request);
   }
 
+  $async.Future<$12.GetMarketProductsResponse> getMarketProducts_Pre($grpc.ServiceCall call, $async.Future<$12.GetMarketProductsRequest> request) async {
+    return getMarketProducts(call, await request);
+  }
+
+  $async.Future<$12.MarketProduct> createMarketProduct_Pre($grpc.ServiceCall call, $async.Future<$12.MarketProduct> request) async {
+    return createMarketProduct(call, await request);
+  }
+
+  $async.Future<$12.MarketProduct> updateMarketProduct_Pre($grpc.ServiceCall call, $async.Future<$12.MarketProduct> request) async {
+    return updateMarketProduct(call, await request);
+  }
+
+  $async.Future<$12.GetMarketSubscriptionsResponse> getMarketSubscriptions_Pre($grpc.ServiceCall call, $async.Future<$12.GetMarketSubscriptionsRequest> request) async {
+    return getMarketSubscriptions(call, await request);
+  }
+
+  $async.Future<$12.MakeMarketPurchaseResponse> makeMarketPurchase_Pre($grpc.ServiceCall call, $async.Future<$12.MakeMarketPurchaseRequest> request) async {
+    return makeMarketPurchase(call, await request);
+  }
+
   $async.Future<$5.Media> generateMedia_Pre($grpc.ServiceCall call, $async.Future<$11.GenerateMediaRequest> request) async {
     return generateMedia(call, await request);
   }
@@ -1636,6 +1732,11 @@ abstract class RellmServiceBase extends $grpc.Service {
   $async.Future<$0.Empty> deleteAIProvider($grpc.ServiceCall call, $11.DeleteAIProviderRequest request);
   $async.Future<$11.AIProviderGrant> grantAIProvider($grpc.ServiceCall call, $11.GrantAIProviderRequest request);
   $async.Future<$0.Empty> revokeAIProvider($grpc.ServiceCall call, $11.RevokeAIProviderRequest request);
+  $async.Future<$12.GetMarketProductsResponse> getMarketProducts($grpc.ServiceCall call, $12.GetMarketProductsRequest request);
+  $async.Future<$12.MarketProduct> createMarketProduct($grpc.ServiceCall call, $12.MarketProduct request);
+  $async.Future<$12.MarketProduct> updateMarketProduct($grpc.ServiceCall call, $12.MarketProduct request);
+  $async.Future<$12.GetMarketSubscriptionsResponse> getMarketSubscriptions($grpc.ServiceCall call, $12.GetMarketSubscriptionsRequest request);
+  $async.Future<$12.MakeMarketPurchaseResponse> makeMarketPurchase($grpc.ServiceCall call, $12.MakeMarketPurchaseRequest request);
   $async.Future<$5.Media> generateMedia($grpc.ServiceCall call, $11.GenerateMediaRequest request);
   $async.Future<$9.EventAttendances> getEventAttendances($grpc.ServiceCall call, $9.GetEventAttendancesRequest request);
   $async.Future<$9.EventAttendance> upsertEventAttendance($grpc.ServiceCall call, $9.EventAttendance request);

@@ -14,7 +14,7 @@ import 'dart:core' as $core;
 import 'package:fixnum/fixnum.dart' as $fixnum;
 import 'package:protobuf/protobuf.dart' as $pb;
 
-import 'google/protobuf/timestamp.pb.dart' as $12;
+import 'google/protobuf/timestamp.pb.dart' as $13;
 import 'media.pb.dart' as $5;
 
 enum SyncDestination_Configuration {
@@ -35,8 +35,8 @@ class SyncDestination extends $pb.GeneratedMessage {
   factory SyncDestination({
     $core.String? id,
     $5.Author? owner,
-    $12.Timestamp? createdAt,
-    $12.Timestamp? updatedAt,
+    $13.Timestamp? createdAt,
+    $13.Timestamp? updatedAt,
     $fixnum.Int64? syncedOccasionCount,
     $fixnum.Int64? syncedPostCount,
     FacebookPage? facebookPage,
@@ -102,8 +102,8 @@ class SyncDestination extends $pb.GeneratedMessage {
     ..oo(0, [9, 10, 11, 12, 13, 14])
     ..aOS(1, _omitFieldNames ? '' : 'id')
     ..aOM<$5.Author>(2, _omitFieldNames ? '' : 'owner', subBuilder: $5.Author.create)
-    ..aOM<$12.Timestamp>(4, _omitFieldNames ? '' : 'createdAt', subBuilder: $12.Timestamp.create)
-    ..aOM<$12.Timestamp>(5, _omitFieldNames ? '' : 'updatedAt', subBuilder: $12.Timestamp.create)
+    ..aOM<$13.Timestamp>(4, _omitFieldNames ? '' : 'createdAt', subBuilder: $13.Timestamp.create)
+    ..aOM<$13.Timestamp>(5, _omitFieldNames ? '' : 'updatedAt', subBuilder: $13.Timestamp.create)
     ..a<$fixnum.Int64>(6, _omitFieldNames ? '' : 'syncedOccasionCount', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
     ..a<$fixnum.Int64>(7, _omitFieldNames ? '' : 'syncedPostCount', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
     ..aOM<FacebookPage>(9, _omitFieldNames ? '' : 'facebookPage', subBuilder: FacebookPage.create)
@@ -163,27 +163,27 @@ class SyncDestination extends $pb.GeneratedMessage {
 
   /// The time the SyncDestination was created.
   @$pb.TagNumber(4)
-  $12.Timestamp get createdAt => $_getN(2);
+  $13.Timestamp get createdAt => $_getN(2);
   @$pb.TagNumber(4)
-  set createdAt($12.Timestamp v) { setField(4, v); }
+  set createdAt($13.Timestamp v) { setField(4, v); }
   @$pb.TagNumber(4)
   $core.bool hasCreatedAt() => $_has(2);
   @$pb.TagNumber(4)
   void clearCreatedAt() => clearField(4);
   @$pb.TagNumber(4)
-  $12.Timestamp ensureCreatedAt() => $_ensure(2);
+  $13.Timestamp ensureCreatedAt() => $_ensure(2);
 
   /// The time the SyncDestination was last updated.
   @$pb.TagNumber(5)
-  $12.Timestamp get updatedAt => $_getN(3);
+  $13.Timestamp get updatedAt => $_getN(3);
   @$pb.TagNumber(5)
-  set updatedAt($12.Timestamp v) { setField(5, v); }
+  set updatedAt($13.Timestamp v) { setField(5, v); }
   @$pb.TagNumber(5)
   $core.bool hasUpdatedAt() => $_has(3);
   @$pb.TagNumber(5)
   void clearUpdatedAt() => clearField(5);
   @$pb.TagNumber(5)
-  $12.Timestamp ensureUpdatedAt() => $_ensure(3);
+  $13.Timestamp ensureUpdatedAt() => $_ensure(3);
 
   /// The number of Occasions synced to this destination so far. Computed with a `COUNT` at
   /// request time (unlike [`SyncSource`](#rellm-SyncSource)'s `event_count`/`occasion_count`, which are
@@ -1003,7 +1003,7 @@ class SyncDestinationStatus extends $pb.GeneratedMessage {
     $core.String? syncDestinationId,
     $core.String? destinationInstanceId,
     $core.String? destinationUrl,
-    $12.Timestamp? syncedAt,
+    $13.Timestamp? syncedAt,
   }) {
     final $result = create();
     if (syncDestinationId != null) {
@@ -1028,7 +1028,7 @@ class SyncDestinationStatus extends $pb.GeneratedMessage {
     ..aOS(1, _omitFieldNames ? '' : 'syncDestinationId')
     ..aOS(2, _omitFieldNames ? '' : 'destinationInstanceId')
     ..aOS(3, _omitFieldNames ? '' : 'destinationUrl')
-    ..aOM<$12.Timestamp>(4, _omitFieldNames ? '' : 'syncedAt', subBuilder: $12.Timestamp.create)
+    ..aOM<$13.Timestamp>(4, _omitFieldNames ? '' : 'syncedAt', subBuilder: $13.Timestamp.create)
     ..hasRequiredFields = false
   ;
 
@@ -1085,15 +1085,15 @@ class SyncDestinationStatus extends $pb.GeneratedMessage {
 
   /// The time this content was last successfully synced to the destination.
   @$pb.TagNumber(4)
-  $12.Timestamp get syncedAt => $_getN(3);
+  $13.Timestamp get syncedAt => $_getN(3);
   @$pb.TagNumber(4)
-  set syncedAt($12.Timestamp v) { setField(4, v); }
+  set syncedAt($13.Timestamp v) { setField(4, v); }
   @$pb.TagNumber(4)
   $core.bool hasSyncedAt() => $_has(3);
   @$pb.TagNumber(4)
   void clearSyncedAt() => clearField(4);
   @$pb.TagNumber(4)
-  $12.Timestamp ensureSyncedAt() => $_ensure(3);
+  $13.Timestamp ensureSyncedAt() => $_ensure(3);
 }
 
 enum SyncSource_Configuration {
@@ -1109,9 +1109,9 @@ class SyncSource extends $pb.GeneratedMessage {
     $core.String? id,
     $5.Author? owner,
     $fixnum.Int64? syncIntervalSeconds,
-    $12.Timestamp? createdAt,
-    $12.Timestamp? updatedAt,
-    $12.Timestamp? lastSyncedAt,
+    $13.Timestamp? createdAt,
+    $13.Timestamp? updatedAt,
+    $13.Timestamp? lastSyncedAt,
     $fixnum.Int64? eventCount,
     $fixnum.Int64? occasionCount,
     $core.String? icsSubscriptionUrl,
@@ -1173,9 +1173,9 @@ class SyncSource extends $pb.GeneratedMessage {
     ..aOS(1, _omitFieldNames ? '' : 'id')
     ..aOM<$5.Author>(2, _omitFieldNames ? '' : 'owner', subBuilder: $5.Author.create)
     ..a<$fixnum.Int64>(3, _omitFieldNames ? '' : 'syncIntervalSeconds', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
-    ..aOM<$12.Timestamp>(4, _omitFieldNames ? '' : 'createdAt', subBuilder: $12.Timestamp.create)
-    ..aOM<$12.Timestamp>(5, _omitFieldNames ? '' : 'updatedAt', subBuilder: $12.Timestamp.create)
-    ..aOM<$12.Timestamp>(6, _omitFieldNames ? '' : 'lastSyncedAt', subBuilder: $12.Timestamp.create)
+    ..aOM<$13.Timestamp>(4, _omitFieldNames ? '' : 'createdAt', subBuilder: $13.Timestamp.create)
+    ..aOM<$13.Timestamp>(5, _omitFieldNames ? '' : 'updatedAt', subBuilder: $13.Timestamp.create)
+    ..aOM<$13.Timestamp>(6, _omitFieldNames ? '' : 'lastSyncedAt', subBuilder: $13.Timestamp.create)
     ..a<$fixnum.Int64>(7, _omitFieldNames ? '' : 'eventCount', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
     ..a<$fixnum.Int64>(8, _omitFieldNames ? '' : 'occasionCount', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
     ..aOS(9, _omitFieldNames ? '' : 'icsSubscriptionUrl')
@@ -1243,39 +1243,39 @@ class SyncSource extends $pb.GeneratedMessage {
 
   /// The time the SyncSource was created.
   @$pb.TagNumber(4)
-  $12.Timestamp get createdAt => $_getN(3);
+  $13.Timestamp get createdAt => $_getN(3);
   @$pb.TagNumber(4)
-  set createdAt($12.Timestamp v) { setField(4, v); }
+  set createdAt($13.Timestamp v) { setField(4, v); }
   @$pb.TagNumber(4)
   $core.bool hasCreatedAt() => $_has(3);
   @$pb.TagNumber(4)
   void clearCreatedAt() => clearField(4);
   @$pb.TagNumber(4)
-  $12.Timestamp ensureCreatedAt() => $_ensure(3);
+  $13.Timestamp ensureCreatedAt() => $_ensure(3);
 
   /// The time the SyncSource was last updated.
   @$pb.TagNumber(5)
-  $12.Timestamp get updatedAt => $_getN(4);
+  $13.Timestamp get updatedAt => $_getN(4);
   @$pb.TagNumber(5)
-  set updatedAt($12.Timestamp v) { setField(5, v); }
+  set updatedAt($13.Timestamp v) { setField(5, v); }
   @$pb.TagNumber(5)
   $core.bool hasUpdatedAt() => $_has(4);
   @$pb.TagNumber(5)
   void clearUpdatedAt() => clearField(5);
   @$pb.TagNumber(5)
-  $12.Timestamp ensureUpdatedAt() => $_ensure(4);
+  $13.Timestamp ensureUpdatedAt() => $_ensure(4);
 
   /// The time the SyncSource was last synced.
   @$pb.TagNumber(6)
-  $12.Timestamp get lastSyncedAt => $_getN(5);
+  $13.Timestamp get lastSyncedAt => $_getN(5);
   @$pb.TagNumber(6)
-  set lastSyncedAt($12.Timestamp v) { setField(6, v); }
+  set lastSyncedAt($13.Timestamp v) { setField(6, v); }
   @$pb.TagNumber(6)
   $core.bool hasLastSyncedAt() => $_has(5);
   @$pb.TagNumber(6)
   void clearLastSyncedAt() => clearField(6);
   @$pb.TagNumber(6)
-  $12.Timestamp ensureLastSyncedAt() => $_ensure(5);
+  $13.Timestamp ensureLastSyncedAt() => $_ensure(5);
 
   /// The number of events total associated with this SyncSource. Recomputed
   /// on each sync.

@@ -16,12 +16,13 @@ import 'package:protobuf/protobuf.dart' as $pb;
 
 import 'ai_providers.pb.dart' as $11;
 import 'federation.pb.dart' as $1;
-import 'google/protobuf/timestamp.pb.dart' as $12;
+import 'google/protobuf/timestamp.pb.dart' as $13;
+import 'market.pb.dart' as $12;
 import 'media.pb.dart' as $5;
-import 'permissions.pbenum.dart' as $14;
+import 'permissions.pbenum.dart' as $15;
 import 'sync.pb.dart' as $10;
 import 'users.pbenum.dart';
-import 'visibility_moderation.pbenum.dart' as $13;
+import 'visibility_moderation.pbenum.dart' as $14;
 
 export 'users.pbenum.dart';
 
@@ -34,14 +35,14 @@ class User extends $pb.GeneratedMessage {
     $core.String? realName,
     ContactMethod? email,
     ContactMethod? phone,
-    $core.Iterable<$14.Permission>? permissions,
+    $core.Iterable<$15.Permission>? permissions,
     $5.MediaReference? avatar,
     $core.String? bio,
     $fixnum.Int64? mediaStorageLimitBytes,
     $fixnum.Int64? mediaStorageBytesUsed,
-    $13.Visibility? visibility,
-    $13.Moderation? moderation,
-    $13.Moderation? defaultFollowModeration,
+    $14.Visibility? visibility,
+    $14.Moderation? moderation,
+    $14.Moderation? defaultFollowModeration,
     $core.int? followerCount,
     $core.int? followingCount,
     $core.int? friendCount,
@@ -58,8 +59,9 @@ class User extends $pb.GeneratedMessage {
     $core.Iterable<$10.SyncDestination>? syncDestinations,
     $core.Iterable<$10.SyncSource>? syncSources,
     $core.Iterable<$11.AIModel>? aiModels,
-    $12.Timestamp? createdAt,
-    $12.Timestamp? updatedAt,
+    $core.Iterable<$12.MarketSubscription>? marketSubscriptions,
+    $13.Timestamp? createdAt,
+    $13.Timestamp? updatedAt,
   }) {
     final $result = create();
     if (id != null) {
@@ -149,6 +151,9 @@ class User extends $pb.GeneratedMessage {
     if (aiModels != null) {
       $result.aiModels.addAll(aiModels);
     }
+    if (marketSubscriptions != null) {
+      $result.marketSubscriptions.addAll(marketSubscriptions);
+    }
     if (createdAt != null) {
       $result.createdAt = createdAt;
     }
@@ -167,14 +172,14 @@ class User extends $pb.GeneratedMessage {
     ..aOS(3, _omitFieldNames ? '' : 'realName')
     ..aOM<ContactMethod>(4, _omitFieldNames ? '' : 'email', subBuilder: ContactMethod.create)
     ..aOM<ContactMethod>(5, _omitFieldNames ? '' : 'phone', subBuilder: ContactMethod.create)
-    ..pc<$14.Permission>(6, _omitFieldNames ? '' : 'permissions', $pb.PbFieldType.KE, valueOf: $14.Permission.valueOf, enumValues: $14.Permission.values, defaultEnumValue: $14.Permission.PERMISSION_UNKNOWN)
+    ..pc<$15.Permission>(6, _omitFieldNames ? '' : 'permissions', $pb.PbFieldType.KE, valueOf: $15.Permission.valueOf, enumValues: $15.Permission.values, defaultEnumValue: $15.Permission.PERMISSION_UNKNOWN)
     ..aOM<$5.MediaReference>(7, _omitFieldNames ? '' : 'avatar', subBuilder: $5.MediaReference.create)
     ..aOS(8, _omitFieldNames ? '' : 'bio')
     ..a<$fixnum.Int64>(10, _omitFieldNames ? '' : 'mediaStorageLimitBytes', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
     ..a<$fixnum.Int64>(11, _omitFieldNames ? '' : 'mediaStorageBytesUsed', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
-    ..e<$13.Visibility>(20, _omitFieldNames ? '' : 'visibility', $pb.PbFieldType.OE, defaultOrMaker: $13.Visibility.VISIBILITY_UNKNOWN, valueOf: $13.Visibility.valueOf, enumValues: $13.Visibility.values)
-    ..e<$13.Moderation>(21, _omitFieldNames ? '' : 'moderation', $pb.PbFieldType.OE, defaultOrMaker: $13.Moderation.MODERATION_UNKNOWN, valueOf: $13.Moderation.valueOf, enumValues: $13.Moderation.values)
-    ..e<$13.Moderation>(30, _omitFieldNames ? '' : 'defaultFollowModeration', $pb.PbFieldType.OE, defaultOrMaker: $13.Moderation.MODERATION_UNKNOWN, valueOf: $13.Moderation.valueOf, enumValues: $13.Moderation.values)
+    ..e<$14.Visibility>(20, _omitFieldNames ? '' : 'visibility', $pb.PbFieldType.OE, defaultOrMaker: $14.Visibility.VISIBILITY_UNKNOWN, valueOf: $14.Visibility.valueOf, enumValues: $14.Visibility.values)
+    ..e<$14.Moderation>(21, _omitFieldNames ? '' : 'moderation', $pb.PbFieldType.OE, defaultOrMaker: $14.Moderation.MODERATION_UNKNOWN, valueOf: $14.Moderation.valueOf, enumValues: $14.Moderation.values)
+    ..e<$14.Moderation>(30, _omitFieldNames ? '' : 'defaultFollowModeration', $pb.PbFieldType.OE, defaultOrMaker: $14.Moderation.MODERATION_UNKNOWN, valueOf: $14.Moderation.valueOf, enumValues: $14.Moderation.values)
     ..a<$core.int>(31, _omitFieldNames ? '' : 'followerCount', $pb.PbFieldType.O3)
     ..a<$core.int>(32, _omitFieldNames ? '' : 'followingCount', $pb.PbFieldType.O3)
     ..a<$core.int>(33, _omitFieldNames ? '' : 'friendCount', $pb.PbFieldType.O3)
@@ -191,8 +196,9 @@ class User extends $pb.GeneratedMessage {
     ..pc<$10.SyncDestination>(82, _omitFieldNames ? '' : 'syncDestinations', $pb.PbFieldType.PM, subBuilder: $10.SyncDestination.create)
     ..pc<$10.SyncSource>(83, _omitFieldNames ? '' : 'syncSources', $pb.PbFieldType.PM, subBuilder: $10.SyncSource.create)
     ..pc<$11.AIModel>(84, _omitFieldNames ? '' : 'aiModels', $pb.PbFieldType.PM, subBuilder: $11.AIModel.create)
-    ..aOM<$12.Timestamp>(100, _omitFieldNames ? '' : 'createdAt', subBuilder: $12.Timestamp.create)
-    ..aOM<$12.Timestamp>(101, _omitFieldNames ? '' : 'updatedAt', subBuilder: $12.Timestamp.create)
+    ..pc<$12.MarketSubscription>(85, _omitFieldNames ? '' : 'marketSubscriptions', $pb.PbFieldType.PM, subBuilder: $12.MarketSubscription.create)
+    ..aOM<$13.Timestamp>(100, _omitFieldNames ? '' : 'createdAt', subBuilder: $13.Timestamp.create)
+    ..aOM<$13.Timestamp>(101, _omitFieldNames ? '' : 'updatedAt', subBuilder: $13.Timestamp.create)
     ..hasRequiredFields = false
   ;
 
@@ -273,7 +279,7 @@ class User extends $pb.GeneratedMessage {
 
   /// The user's permissions. See [`Permission`](#rellm-Permission) for details.
   @$pb.TagNumber(6)
-  $core.List<$14.Permission> get permissions => $_getList(5);
+  $core.List<$15.Permission> get permissions => $_getList(5);
 
   /// The user's avatar. Note that its visibility is managed by the User and thus
   /// it may not be accessible to the current user.
@@ -334,9 +340,9 @@ class User extends $pb.GeneratedMessage {
   /// See server_configuration.proto for details about PRIVATE
   /// users' ability to creep.
   @$pb.TagNumber(20)
-  $13.Visibility get visibility => $_getN(10);
+  $14.Visibility get visibility => $_getN(10);
   @$pb.TagNumber(20)
-  set visibility($13.Visibility v) { setField(20, v); }
+  set visibility($14.Visibility v) { setField(20, v); }
   @$pb.TagNumber(20)
   $core.bool hasVisibility() => $_has(10);
   @$pb.TagNumber(20)
@@ -344,9 +350,9 @@ class User extends $pb.GeneratedMessage {
 
   /// The user's moderation status. See [`Moderation`](#rellm-Moderation) for details.
   @$pb.TagNumber(21)
-  $13.Moderation get moderation => $_getN(11);
+  $14.Moderation get moderation => $_getN(11);
   @$pb.TagNumber(21)
-  set moderation($13.Moderation v) { setField(21, v); }
+  set moderation($14.Moderation v) { setField(21, v); }
   @$pb.TagNumber(21)
   $core.bool hasModeration() => $_has(11);
   @$pb.TagNumber(21)
@@ -354,9 +360,9 @@ class User extends $pb.GeneratedMessage {
 
   /// Only PENDING or UNMODERATED are valid.
   @$pb.TagNumber(30)
-  $13.Moderation get defaultFollowModeration => $_getN(12);
+  $14.Moderation get defaultFollowModeration => $_getN(12);
   @$pb.TagNumber(30)
-  set defaultFollowModeration($13.Moderation v) { setField(30, v); }
+  set defaultFollowModeration($14.Moderation v) { setField(30, v); }
   @$pb.TagNumber(30)
   $core.bool hasDefaultFollowModeration() => $_has(12);
   @$pb.TagNumber(30)
@@ -524,29 +530,36 @@ class User extends $pb.GeneratedMessage {
   @$pb.TagNumber(84)
   $core.List<$11.AIModel> get aiModels => $_getList(28);
 
+  /// The target user's own MarketSubscriptions (`market.proto`), each with its own
+  /// `billing_history`. Gated and populated the same way as `ai_models`/`sync_sources` (target user
+  /// themselves, or an Admin, across any [`GetUsers`](#grpc-api-GetUsers) listing type, plus
+  /// [`Login`](#grpc-api-Login)/[`CreateAccount`](#grpc-api-CreateAccount)/[`GetCurrentUser`](#grpc-api-GetCurrentUser)).
+  @$pb.TagNumber(85)
+  $core.List<$12.MarketSubscription> get marketSubscriptions => $_getList(29);
+
   /// The time the user was created.
   @$pb.TagNumber(100)
-  $12.Timestamp get createdAt => $_getN(29);
+  $13.Timestamp get createdAt => $_getN(30);
   @$pb.TagNumber(100)
-  set createdAt($12.Timestamp v) { setField(100, v); }
+  set createdAt($13.Timestamp v) { setField(100, v); }
   @$pb.TagNumber(100)
-  $core.bool hasCreatedAt() => $_has(29);
+  $core.bool hasCreatedAt() => $_has(30);
   @$pb.TagNumber(100)
   void clearCreatedAt() => clearField(100);
   @$pb.TagNumber(100)
-  $12.Timestamp ensureCreatedAt() => $_ensure(29);
+  $13.Timestamp ensureCreatedAt() => $_ensure(30);
 
   /// The time the user was last updated.
   @$pb.TagNumber(101)
-  $12.Timestamp get updatedAt => $_getN(30);
+  $13.Timestamp get updatedAt => $_getN(31);
   @$pb.TagNumber(101)
-  set updatedAt($12.Timestamp v) { setField(101, v); }
+  set updatedAt($13.Timestamp v) { setField(101, v); }
   @$pb.TagNumber(101)
-  $core.bool hasUpdatedAt() => $_has(30);
+  $core.bool hasUpdatedAt() => $_has(31);
   @$pb.TagNumber(101)
   void clearUpdatedAt() => clearField(101);
   @$pb.TagNumber(101)
-  $12.Timestamp ensureUpdatedAt() => $_ensure(30);
+  $13.Timestamp ensureUpdatedAt() => $_ensure(31);
 }
 
 /// Model for a user's follow of another user.
@@ -554,9 +567,9 @@ class Follow extends $pb.GeneratedMessage {
   factory Follow({
     $core.String? userId,
     $core.String? targetUserId,
-    $13.Moderation? targetUserModeration,
-    $12.Timestamp? createdAt,
-    $12.Timestamp? updatedAt,
+    $14.Moderation? targetUserModeration,
+    $13.Timestamp? createdAt,
+    $13.Timestamp? updatedAt,
   }) {
     final $result = create();
     if (userId != null) {
@@ -583,9 +596,9 @@ class Follow extends $pb.GeneratedMessage {
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'Follow', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'userId')
     ..aOS(2, _omitFieldNames ? '' : 'targetUserId')
-    ..e<$13.Moderation>(3, _omitFieldNames ? '' : 'targetUserModeration', $pb.PbFieldType.OE, defaultOrMaker: $13.Moderation.MODERATION_UNKNOWN, valueOf: $13.Moderation.valueOf, enumValues: $13.Moderation.values)
-    ..aOM<$12.Timestamp>(4, _omitFieldNames ? '' : 'createdAt', subBuilder: $12.Timestamp.create)
-    ..aOM<$12.Timestamp>(5, _omitFieldNames ? '' : 'updatedAt', subBuilder: $12.Timestamp.create)
+    ..e<$14.Moderation>(3, _omitFieldNames ? '' : 'targetUserModeration', $pb.PbFieldType.OE, defaultOrMaker: $14.Moderation.MODERATION_UNKNOWN, valueOf: $14.Moderation.valueOf, enumValues: $14.Moderation.values)
+    ..aOM<$13.Timestamp>(4, _omitFieldNames ? '' : 'createdAt', subBuilder: $13.Timestamp.create)
+    ..aOM<$13.Timestamp>(5, _omitFieldNames ? '' : 'updatedAt', subBuilder: $13.Timestamp.create)
     ..hasRequiredFields = false
   ;
 
@@ -632,9 +645,9 @@ class Follow extends $pb.GeneratedMessage {
 
   /// Tracks whether the target user needs to approve the follow.
   @$pb.TagNumber(3)
-  $13.Moderation get targetUserModeration => $_getN(2);
+  $14.Moderation get targetUserModeration => $_getN(2);
   @$pb.TagNumber(3)
-  set targetUserModeration($13.Moderation v) { setField(3, v); }
+  set targetUserModeration($14.Moderation v) { setField(3, v); }
   @$pb.TagNumber(3)
   $core.bool hasTargetUserModeration() => $_has(2);
   @$pb.TagNumber(3)
@@ -642,27 +655,27 @@ class Follow extends $pb.GeneratedMessage {
 
   /// The time the follow was created.
   @$pb.TagNumber(4)
-  $12.Timestamp get createdAt => $_getN(3);
+  $13.Timestamp get createdAt => $_getN(3);
   @$pb.TagNumber(4)
-  set createdAt($12.Timestamp v) { setField(4, v); }
+  set createdAt($13.Timestamp v) { setField(4, v); }
   @$pb.TagNumber(4)
   $core.bool hasCreatedAt() => $_has(3);
   @$pb.TagNumber(4)
   void clearCreatedAt() => clearField(4);
   @$pb.TagNumber(4)
-  $12.Timestamp ensureCreatedAt() => $_ensure(3);
+  $13.Timestamp ensureCreatedAt() => $_ensure(3);
 
   /// The time the follow was last updated.
   @$pb.TagNumber(5)
-  $12.Timestamp get updatedAt => $_getN(4);
+  $13.Timestamp get updatedAt => $_getN(4);
   @$pb.TagNumber(5)
-  set updatedAt($12.Timestamp v) { setField(5, v); }
+  set updatedAt($13.Timestamp v) { setField(5, v); }
   @$pb.TagNumber(5)
   $core.bool hasUpdatedAt() => $_has(4);
   @$pb.TagNumber(5)
   void clearUpdatedAt() => clearField(5);
   @$pb.TagNumber(5)
-  $12.Timestamp ensureUpdatedAt() => $_ensure(4);
+  $13.Timestamp ensureUpdatedAt() => $_ensure(4);
 }
 
 /// Model for a user's membership in a group. Memberships are generically
@@ -672,11 +685,11 @@ class Membership extends $pb.GeneratedMessage {
   factory Membership({
     $core.String? userId,
     $core.String? groupId,
-    $core.Iterable<$14.Permission>? permissions,
-    $13.Moderation? groupModeration,
-    $13.Moderation? userModeration,
-    $12.Timestamp? createdAt,
-    $12.Timestamp? updatedAt,
+    $core.Iterable<$15.Permission>? permissions,
+    $14.Moderation? groupModeration,
+    $14.Moderation? userModeration,
+    $13.Timestamp? createdAt,
+    $13.Timestamp? updatedAt,
   }) {
     final $result = create();
     if (userId != null) {
@@ -709,11 +722,11 @@ class Membership extends $pb.GeneratedMessage {
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'Membership', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'userId')
     ..aOS(2, _omitFieldNames ? '' : 'groupId')
-    ..pc<$14.Permission>(3, _omitFieldNames ? '' : 'permissions', $pb.PbFieldType.KE, valueOf: $14.Permission.valueOf, enumValues: $14.Permission.values, defaultEnumValue: $14.Permission.PERMISSION_UNKNOWN)
-    ..e<$13.Moderation>(4, _omitFieldNames ? '' : 'groupModeration', $pb.PbFieldType.OE, defaultOrMaker: $13.Moderation.MODERATION_UNKNOWN, valueOf: $13.Moderation.valueOf, enumValues: $13.Moderation.values)
-    ..e<$13.Moderation>(5, _omitFieldNames ? '' : 'userModeration', $pb.PbFieldType.OE, defaultOrMaker: $13.Moderation.MODERATION_UNKNOWN, valueOf: $13.Moderation.valueOf, enumValues: $13.Moderation.values)
-    ..aOM<$12.Timestamp>(6, _omitFieldNames ? '' : 'createdAt', subBuilder: $12.Timestamp.create)
-    ..aOM<$12.Timestamp>(7, _omitFieldNames ? '' : 'updatedAt', subBuilder: $12.Timestamp.create)
+    ..pc<$15.Permission>(3, _omitFieldNames ? '' : 'permissions', $pb.PbFieldType.KE, valueOf: $15.Permission.valueOf, enumValues: $15.Permission.values, defaultEnumValue: $15.Permission.PERMISSION_UNKNOWN)
+    ..e<$14.Moderation>(4, _omitFieldNames ? '' : 'groupModeration', $pb.PbFieldType.OE, defaultOrMaker: $14.Moderation.MODERATION_UNKNOWN, valueOf: $14.Moderation.valueOf, enumValues: $14.Moderation.values)
+    ..e<$14.Moderation>(5, _omitFieldNames ? '' : 'userModeration', $pb.PbFieldType.OE, defaultOrMaker: $14.Moderation.MODERATION_UNKNOWN, valueOf: $14.Moderation.valueOf, enumValues: $14.Moderation.values)
+    ..aOM<$13.Timestamp>(6, _omitFieldNames ? '' : 'createdAt', subBuilder: $13.Timestamp.create)
+    ..aOM<$13.Timestamp>(7, _omitFieldNames ? '' : 'updatedAt', subBuilder: $13.Timestamp.create)
     ..hasRequiredFields = false
   ;
 
@@ -760,13 +773,13 @@ class Membership extends $pb.GeneratedMessage {
 
   /// Valid Membership Permissions are:  `VIEW_POSTS`, `CREATE_POSTS`, `MODERATE_POSTS`, `VIEW_EVENTS`, CREATE_EVENTS, `MODERATE_EVENTS`, `ADMIN`, `RUN_BOTS`, and `MODERATE_USERS`
   @$pb.TagNumber(3)
-  $core.List<$14.Permission> get permissions => $_getList(2);
+  $core.List<$15.Permission> get permissions => $_getList(2);
 
   /// Tracks whether group moderators need to approve the membership.
   @$pb.TagNumber(4)
-  $13.Moderation get groupModeration => $_getN(3);
+  $14.Moderation get groupModeration => $_getN(3);
   @$pb.TagNumber(4)
-  set groupModeration($13.Moderation v) { setField(4, v); }
+  set groupModeration($14.Moderation v) { setField(4, v); }
   @$pb.TagNumber(4)
   $core.bool hasGroupModeration() => $_has(3);
   @$pb.TagNumber(4)
@@ -774,9 +787,9 @@ class Membership extends $pb.GeneratedMessage {
 
   /// Tracks whether the user needs to approve the membership.
   @$pb.TagNumber(5)
-  $13.Moderation get userModeration => $_getN(4);
+  $14.Moderation get userModeration => $_getN(4);
   @$pb.TagNumber(5)
-  set userModeration($13.Moderation v) { setField(5, v); }
+  set userModeration($14.Moderation v) { setField(5, v); }
   @$pb.TagNumber(5)
   $core.bool hasUserModeration() => $_has(4);
   @$pb.TagNumber(5)
@@ -784,27 +797,27 @@ class Membership extends $pb.GeneratedMessage {
 
   /// The time the membership was created.
   @$pb.TagNumber(6)
-  $12.Timestamp get createdAt => $_getN(5);
+  $13.Timestamp get createdAt => $_getN(5);
   @$pb.TagNumber(6)
-  set createdAt($12.Timestamp v) { setField(6, v); }
+  set createdAt($13.Timestamp v) { setField(6, v); }
   @$pb.TagNumber(6)
   $core.bool hasCreatedAt() => $_has(5);
   @$pb.TagNumber(6)
   void clearCreatedAt() => clearField(6);
   @$pb.TagNumber(6)
-  $12.Timestamp ensureCreatedAt() => $_ensure(5);
+  $13.Timestamp ensureCreatedAt() => $_ensure(5);
 
   /// The time the membership was last updated.
   @$pb.TagNumber(7)
-  $12.Timestamp get updatedAt => $_getN(6);
+  $13.Timestamp get updatedAt => $_getN(6);
   @$pb.TagNumber(7)
-  set updatedAt($12.Timestamp v) { setField(7, v); }
+  set updatedAt($13.Timestamp v) { setField(7, v); }
   @$pb.TagNumber(7)
   $core.bool hasUpdatedAt() => $_has(6);
   @$pb.TagNumber(7)
   void clearUpdatedAt() => clearField(7);
   @$pb.TagNumber(7)
-  $12.Timestamp ensureUpdatedAt() => $_ensure(6);
+  $13.Timestamp ensureUpdatedAt() => $_ensure(6);
 }
 
 /// A contact method for a user. Verified via `StartContactMethodVerification`/`VerifyContactMethod`
@@ -812,9 +825,9 @@ class Membership extends $pb.GeneratedMessage {
 class ContactMethod extends $pb.GeneratedMessage {
   factory ContactMethod({
     $core.String? value,
-    $13.Visibility? visibility,
+    $14.Visibility? visibility,
     $core.bool? supportedByServer,
-    $12.Timestamp? verifiedAt,
+    $13.Timestamp? verifiedAt,
     ContactMethodVerification? verificationInProgress,
   }) {
     final $result = create();
@@ -841,9 +854,9 @@ class ContactMethod extends $pb.GeneratedMessage {
 
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'ContactMethod', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'value')
-    ..e<$13.Visibility>(2, _omitFieldNames ? '' : 'visibility', $pb.PbFieldType.OE, defaultOrMaker: $13.Visibility.VISIBILITY_UNKNOWN, valueOf: $13.Visibility.valueOf, enumValues: $13.Visibility.values)
+    ..e<$14.Visibility>(2, _omitFieldNames ? '' : 'visibility', $pb.PbFieldType.OE, defaultOrMaker: $14.Visibility.VISIBILITY_UNKNOWN, valueOf: $14.Visibility.valueOf, enumValues: $14.Visibility.values)
     ..aOB(3, _omitFieldNames ? '' : 'supportedByServer')
-    ..aOM<$12.Timestamp>(4, _omitFieldNames ? '' : 'verifiedAt', subBuilder: $12.Timestamp.create)
+    ..aOM<$13.Timestamp>(4, _omitFieldNames ? '' : 'verifiedAt', subBuilder: $13.Timestamp.create)
     ..aOM<ContactMethodVerification>(5, _omitFieldNames ? '' : 'verificationInProgress', subBuilder: ContactMethodVerification.create)
     ..hasRequiredFields = false
   ;
@@ -881,9 +894,9 @@ class ContactMethod extends $pb.GeneratedMessage {
 
   /// The visibility of the contact method.
   @$pb.TagNumber(2)
-  $13.Visibility get visibility => $_getN(1);
+  $14.Visibility get visibility => $_getN(1);
   @$pb.TagNumber(2)
-  set visibility($13.Visibility v) { setField(2, v); }
+  set visibility($14.Visibility v) { setField(2, v); }
   @$pb.TagNumber(2)
   $core.bool hasVisibility() => $_has(1);
   @$pb.TagNumber(2)
@@ -906,15 +919,15 @@ class ContactMethod extends $pb.GeneratedMessage {
   /// Indicates the user has completed verification of the contact method.
   /// Verification requires `supported_by_server` to be `true`.
   @$pb.TagNumber(4)
-  $12.Timestamp get verifiedAt => $_getN(3);
+  $13.Timestamp get verifiedAt => $_getN(3);
   @$pb.TagNumber(4)
-  set verifiedAt($12.Timestamp v) { setField(4, v); }
+  set verifiedAt($13.Timestamp v) { setField(4, v); }
   @$pb.TagNumber(4)
   $core.bool hasVerifiedAt() => $_has(3);
   @$pb.TagNumber(4)
   void clearVerifiedAt() => clearField(4);
   @$pb.TagNumber(4)
-  $12.Timestamp ensureVerifiedAt() => $_ensure(3);
+  $13.Timestamp ensureVerifiedAt() => $_ensure(3);
 
   @$pb.TagNumber(5)
   ContactMethodVerification get verificationInProgress => $_getN(4);
@@ -931,7 +944,7 @@ class ContactMethod extends $pb.GeneratedMessage {
 class ContactMethodVerification extends $pb.GeneratedMessage {
   factory ContactMethodVerification({
     $core.String? verificationCode,
-    $12.Timestamp? verificationStartedAt,
+    $13.Timestamp? verificationStartedAt,
     $core.int? attempts,
   }) {
     final $result = create();
@@ -952,7 +965,7 @@ class ContactMethodVerification extends $pb.GeneratedMessage {
 
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'ContactMethodVerification', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'verificationCode')
-    ..aOM<$12.Timestamp>(2, _omitFieldNames ? '' : 'verificationStartedAt', subBuilder: $12.Timestamp.create)
+    ..aOM<$13.Timestamp>(2, _omitFieldNames ? '' : 'verificationStartedAt', subBuilder: $13.Timestamp.create)
     ..a<$core.int>(3, _omitFieldNames ? '' : 'attempts', $pb.PbFieldType.O3)
     ..hasRequiredFields = false
   ;
@@ -990,15 +1003,15 @@ class ContactMethodVerification extends $pb.GeneratedMessage {
   void clearVerificationCode() => clearField(1);
 
   @$pb.TagNumber(2)
-  $12.Timestamp get verificationStartedAt => $_getN(1);
+  $13.Timestamp get verificationStartedAt => $_getN(1);
   @$pb.TagNumber(2)
-  set verificationStartedAt($12.Timestamp v) { setField(2, v); }
+  set verificationStartedAt($13.Timestamp v) { setField(2, v); }
   @$pb.TagNumber(2)
   $core.bool hasVerificationStartedAt() => $_has(1);
   @$pb.TagNumber(2)
   void clearVerificationStartedAt() => clearField(2);
   @$pb.TagNumber(2)
-  $12.Timestamp ensureVerificationStartedAt() => $_ensure(1);
+  $13.Timestamp ensureVerificationStartedAt() => $_ensure(1);
 
   /// Number of failed `VerifyContactMethod` attempts against `verification_code` since it was sent.
   /// Capped (see that RPC's own doc) to prevent brute-forcing the 6-digit code within its expiry

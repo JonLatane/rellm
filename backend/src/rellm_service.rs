@@ -596,6 +596,37 @@ impl Rellm for RellmService {
         authenticated_bucket_rpc!(self, rpcs::generate_media, request)
     }
 
+    async fn get_market_products(
+        &self,
+        request: Request<GetMarketProductsRequest>,
+    ) -> Result<Response<GetMarketProductsResponse>, Status> {
+        unauthenticated_rpc!(self, rpcs::get_market_products, request)
+    }
+    async fn create_market_product(
+        &self,
+        request: Request<MarketProduct>,
+    ) -> Result<Response<MarketProduct>, Status> {
+        authenticated_rpc!(self, rpcs::create_market_product, request)
+    }
+    async fn update_market_product(
+        &self,
+        request: Request<MarketProduct>,
+    ) -> Result<Response<MarketProduct>, Status> {
+        authenticated_rpc!(self, rpcs::update_market_product, request)
+    }
+    async fn get_market_subscriptions(
+        &self,
+        request: Request<GetMarketSubscriptionsRequest>,
+    ) -> Result<Response<GetMarketSubscriptionsResponse>, Status> {
+        authenticated_rpc!(self, rpcs::get_market_subscriptions, request)
+    }
+    async fn make_market_purchase(
+        &self,
+        request: Request<MakeMarketPurchaseRequest>,
+    ) -> Result<Response<MakeMarketPurchaseResponse>, Status> {
+        authenticated_rpc!(self, rpcs::make_market_purchase, request)
+    }
+
     async fn upsert_event_attendance(
         &self,
         request: Request<EventAttendance>,

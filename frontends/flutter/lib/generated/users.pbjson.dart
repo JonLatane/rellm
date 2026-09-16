@@ -72,6 +72,7 @@ const User$json = {
     {'1': 'sync_destinations', '3': 82, '4': 3, '5': 11, '6': '.rellm.SyncDestination', '10': 'syncDestinations'},
     {'1': 'sync_sources', '3': 83, '4': 3, '5': 11, '6': '.rellm.SyncSource', '10': 'syncSources'},
     {'1': 'ai_models', '3': 84, '4': 3, '5': 11, '6': '.rellm.AIModel', '10': 'aiModels'},
+    {'1': 'market_subscriptions', '3': 85, '4': 3, '5': 11, '6': '.rellm.MarketSubscription', '10': 'marketSubscriptions'},
     {'1': 'created_at', '3': 100, '4': 1, '5': 11, '6': '.google.protobuf.Timestamp', '10': 'createdAt'},
     {'1': 'updated_at', '3': 101, '4': 1, '5': 11, '6': '.google.protobuf.Timestamp', '9': 15, '10': 'updatedAt', '17': true},
   ],
@@ -123,14 +124,16 @@ final $typed_data.Uint8List userDescriptor = $convert.base64Decode(
     'xlcxJDChFzeW5jX2Rlc3RpbmF0aW9ucxhSIAMoCzIWLnJlbGxtLlN5bmNEZXN0aW5hdGlvblIQ'
     'c3luY0Rlc3RpbmF0aW9ucxI0CgxzeW5jX3NvdXJjZXMYUyADKAsyES5yZWxsbS5TeW5jU291cm'
     'NlUgtzeW5jU291cmNlcxIrCglhaV9tb2RlbHMYVCADKAsyDi5yZWxsbS5BSU1vZGVsUghhaU1v'
-    'ZGVscxI5CgpjcmVhdGVkX2F0GGQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcFIJY3'
-    'JlYXRlZEF0Ej4KCnVwZGF0ZWRfYXQYZSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1w'
-    'SA9SCXVwZGF0ZWRBdIgBAUIICgZfZW1haWxCCAoGX3Bob25lQgkKB19hdmF0YXJCHAoaX21lZG'
-    'lhX3N0b3JhZ2VfbGltaXRfYnl0ZXNCEQoPX2ZvbGxvd2VyX2NvdW50QhIKEF9mb2xsb3dpbmdf'
-    'Y291bnRCDwoNX2ZyaWVuZF9jb3VudEIOCgxfZ3JvdXBfY291bnRCDQoLX3Bvc3RfY291bnRCEQ'
-    'oPX3Jlc3BvbnNlX2NvdW50Qg4KDF9ldmVudF9jb3VudEIRCg9fb2NjYXNpb25fY291bnRCFgoU'
-    'X2N1cnJlbnRfdXNlcl9mb2xsb3dCHQobX3RhcmdldF9jdXJyZW50X3VzZXJfZm9sbG93QhsKGV'
-    '9jdXJyZW50X2dyb3VwX21lbWJlcnNoaXBCDQoLX3VwZGF0ZWRfYXQ=');
+    'ZGVscxJMChRtYXJrZXRfc3Vic2NyaXB0aW9ucxhVIAMoCzIZLnJlbGxtLk1hcmtldFN1YnNjcm'
+    'lwdGlvblITbWFya2V0U3Vic2NyaXB0aW9ucxI5CgpjcmVhdGVkX2F0GGQgASgLMhouZ29vZ2xl'
+    'LnByb3RvYnVmLlRpbWVzdGFtcFIJY3JlYXRlZEF0Ej4KCnVwZGF0ZWRfYXQYZSABKAsyGi5nb2'
+    '9nbGUucHJvdG9idWYuVGltZXN0YW1wSA9SCXVwZGF0ZWRBdIgBAUIICgZfZW1haWxCCAoGX3Bo'
+    'b25lQgkKB19hdmF0YXJCHAoaX21lZGlhX3N0b3JhZ2VfbGltaXRfYnl0ZXNCEQoPX2ZvbGxvd2'
+    'VyX2NvdW50QhIKEF9mb2xsb3dpbmdfY291bnRCDwoNX2ZyaWVuZF9jb3VudEIOCgxfZ3JvdXBf'
+    'Y291bnRCDQoLX3Bvc3RfY291bnRCEQoPX3Jlc3BvbnNlX2NvdW50Qg4KDF9ldmVudF9jb3VudE'
+    'IRCg9fb2NjYXNpb25fY291bnRCFgoUX2N1cnJlbnRfdXNlcl9mb2xsb3dCHQobX3RhcmdldF9j'
+    'dXJyZW50X3VzZXJfZm9sbG93QhsKGV9jdXJyZW50X2dyb3VwX21lbWJlcnNoaXBCDQoLX3VwZG'
+    'F0ZWRfYXQ=');
 
 @$core.Deprecated('Use followDescriptor instead')
 const Follow$json = {

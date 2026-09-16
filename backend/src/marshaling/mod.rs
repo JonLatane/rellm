@@ -48,3 +48,9 @@ pub use event_marshaling::*;
 
 mod ai_provider_marshaling;
 pub use ai_provider_marshaling::*;
+
+mod market_enum_marshaling;
+pub use market_enum_marshaling::*;
+
+mod market_marshaling;
+pub use market_marshaling::*;

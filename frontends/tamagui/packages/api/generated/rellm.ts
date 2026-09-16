@@ -37,6 +37,15 @@ import {
 import { FederatedAccount, GetServiceVersionResponse } from "./federation";
 import { Empty } from "./google/protobuf/empty";
 import { GetGroupsRequest, GetGroupsResponse, GetMembersRequest, GetMembersResponse, Group } from "./groups";
+import {
+  GetMarketProductsRequest,
+  GetMarketProductsResponse,
+  GetMarketSubscriptionsRequest,
+  GetMarketSubscriptionsResponse,
+  MakeMarketPurchaseRequest,
+  MakeMarketPurchaseResponse,
+  MarketProduct,
+} from "./market";
 import { GetMediaRequest, GetMediaResponse, Media } from "./media";
 import {
   GetMessagesRequest,
@@ -470,6 +479,38 @@ export const protobufPackage = "rellm";
  * removed via [`RevokeAIProvider`](#grpc-api-RevokeAIProvider). Unlike every other RPC pair in this section,
  * these two are **owner-only, with no Admin override** - an Admin may manage the provider record itself, but only
  * its owner may hand out access to it.
+ *
+ * #### Rellm's Market
+ * Rellm's Market (`market.proto`) is this server's storefront - a small, Stripe-backed marketplace an admin
+ * stocks with up to nine [`MarketProduct`](#rellm-MarketProduct)s (one offering type times one billing period
+ * each) that any user can buy. Three offering types exist today ([`PurchaseType`](#rellm-PurchaseType)):
+ * `PURCHASE_TYPE_MEDIA_STORAGE` (raises the buyer's `User.media_storage_limit_bytes`),
+ * `PURCHASE_TYPE_AI_GRANTS` (grants/resets an [`AIProviderGrant`](#rellm-AIProviderGrant) against one of the
+ * server operator's [`AIProvider`](#rellm-AIProvider)s), and `PURCHASE_TYPE_RELLM_HOSTING` (bills the buyer for
+ * the server operator to stand up a new Rellm instance on a domain of their choosing - provisioned by hand, not
+ * automated). Each [`MarketProduct`](#rellm-MarketProduct) is sold once ([`PurchasePeriod`](#rellm-PurchasePeriod)
+ * `PURCHASE_PERIOD_INDEFINITE`, a single non-renewing [`MarketPurchase`](#rellm-MarketPurchase)) or on a recurring
+ * `PURCHASE_PERIOD_ANNUAL`/`PURCHASE_PERIOD_MONTHLY` cycle (a [`MarketSubscription`](#rellm-MarketSubscription),
+ * whose `billing_history` accumulates one [`MarketPurchase`](#rellm-MarketPurchase) per renewal).
+ *
+ * Products are listed via [`GetMarketProducts`](#grpc-api-GetMarketProducts) (unauthenticated; admins
+ * additionally see delisted ones) and managed via
+ * [`CreateMarketProduct`](#grpc-api-CreateMarketProduct)/[`UpdateMarketProduct`](#grpc-api-UpdateMarketProduct)
+ * (both Admin-only; a [`MarketProduct`](#rellm-MarketProduct)'s `type`/`period` are immutable once created).
+ * Buying one is a two-step, webhook-settled flow: [`MakeMarketPurchase`](#grpc-api-MakeMarketPurchase) starts a
+ * Stripe Checkout Session and returns its URL to redirect the buyer to - no
+ * [`MarketPurchase`](#rellm-MarketPurchase)/[`MarketSubscription`](#rellm-MarketSubscription) is created yet, so
+ * an abandoned checkout leaves nothing behind. Only once Stripe confirms payment (a
+ * `checkout.session.completed` webhook delivery) does the server create the
+ * [`MarketPurchase`](#rellm-MarketPurchase)/[`MarketSubscription`](#rellm-MarketSubscription) and apply its
+ * entitlement. A recurring [`MarketSubscription`](#rellm-MarketSubscription) renews itself thereafter via
+ * off-session charges against the payment method saved on that first checkout - no further action from the
+ * buyer - until a renewal charge fails, which ends the [`MarketSubscription`](#rellm-MarketSubscription). A
+ * user's own MarketSubscriptions (never anyone else's) are listed via
+ * [`GetMarketSubscriptions`](#grpc-api-GetMarketSubscriptions), and also travel along on [`User`](#rellm-User)
+ * itself (`User.market_subscriptions`) the same way `ai_models`/`sync_sources` do. Stripe credentials for all of
+ * this live in `ServerConfiguration.stripe_config` (a [`StripeConfig`](#rellm-StripeConfig)), Admin-only like
+ * `twilio_config`/`bird_config`.
  *
  * #### Media
  * [`Media`](#rellm-Media) represents an uploaded (or server-generated) photo or video. Unlike other types, Media
@@ -1663,6 +1704,61 @@ export const RellmDefinition = {
       options: {},
     },
     /**
+     * Gets MarketProducts available for purchase on this server (`market.proto`). *Unauthenticated* --
+     * admins additionally see delisted MarketProducts.
+     */
+    getMarketProducts: {
+      name: "GetMarketProducts",
+      requestType: GetMarketProductsRequest,
+      requestStream: false,
+      responseType: GetMarketProductsResponse,
+      responseStream: false,
+      options: {},
+    },
+    /** Creates a MarketProduct. *Authenticated*, requires Admin. */
+    createMarketProduct: {
+      name: "CreateMarketProduct",
+      requestType: MarketProduct,
+      requestStream: false,
+      responseType: MarketProduct,
+      responseStream: false,
+      options: {},
+    },
+    /**
+     * Updates a MarketProduct's amount/currency/details/delisted_at. *Authenticated*, requires Admin.
+     * `type`/`period` are immutable after creation and are ignored if changed.
+     */
+    updateMarketProduct: {
+      name: "UpdateMarketProduct",
+      requestType: MarketProduct,
+      requestStream: false,
+      responseType: MarketProduct,
+      responseStream: false,
+      options: {},
+    },
+    /** Gets the current user's own MarketSubscriptions (with billing_history). *Authenticated*, self-scoped only. */
+    getMarketSubscriptions: {
+      name: "GetMarketSubscriptions",
+      requestType: GetMarketSubscriptionsRequest,
+      requestStream: false,
+      responseType: GetMarketSubscriptionsResponse,
+      responseStream: false,
+      options: {},
+    },
+    /**
+     * Starts (or resumes) buying a MarketProduct for the current user, returning a Stripe Checkout URL to
+     * redirect to. *Authenticated*. See `MakeMarketPurchaseRequest`'s own doc -- no MarketPurchase/
+     * MarketSubscription is created by this call itself, only once Stripe confirms payment via webhook.
+     */
+    makeMarketPurchase: {
+      name: "MakeMarketPurchase",
+      requestType: MakeMarketPurchaseRequest,
+      requestStream: false,
+      responseType: MakeMarketPurchaseResponse,
+      responseStream: false,
+      options: {},
+    },
+    /**
      * Generates (or edits, given reference `media_ids`) an image via one of the current user's AIModels,
      * storing it as a new Media and, if `target` is set, attaching it to that Post/Event. *Authenticated* - caller
      * must own or have been granted access to the chosen AIProvider, and (if `target` is set) have edit access
@@ -2132,6 +2228,41 @@ export interface RellmServiceImplementation<CallContextExt = {}> {
     context: CallContext & CallContextExt,
   ): Promise<DeepPartial<Empty>>;
   /**
+   * Gets MarketProducts available for purchase on this server (`market.proto`). *Unauthenticated* --
+   * admins additionally see delisted MarketProducts.
+   */
+  getMarketProducts(
+    request: GetMarketProductsRequest,
+    context: CallContext & CallContextExt,
+  ): Promise<DeepPartial<GetMarketProductsResponse>>;
+  /** Creates a MarketProduct. *Authenticated*, requires Admin. */
+  createMarketProduct(
+    request: MarketProduct,
+    context: CallContext & CallContextExt,
+  ): Promise<DeepPartial<MarketProduct>>;
+  /**
+   * Updates a MarketProduct's amount/currency/details/delisted_at. *Authenticated*, requires Admin.
+   * `type`/`period` are immutable after creation and are ignored if changed.
+   */
+  updateMarketProduct(
+    request: MarketProduct,
+    context: CallContext & CallContextExt,
+  ): Promise<DeepPartial<MarketProduct>>;
+  /** Gets the current user's own MarketSubscriptions (with billing_history). *Authenticated*, self-scoped only. */
+  getMarketSubscriptions(
+    request: GetMarketSubscriptionsRequest,
+    context: CallContext & CallContextExt,
+  ): Promise<DeepPartial<GetMarketSubscriptionsResponse>>;
+  /**
+   * Starts (or resumes) buying a MarketProduct for the current user, returning a Stripe Checkout URL to
+   * redirect to. *Authenticated*. See `MakeMarketPurchaseRequest`'s own doc -- no MarketPurchase/
+   * MarketSubscription is created by this call itself, only once Stripe confirms payment via webhook.
+   */
+  makeMarketPurchase(
+    request: MakeMarketPurchaseRequest,
+    context: CallContext & CallContextExt,
+  ): Promise<DeepPartial<MakeMarketPurchaseResponse>>;
+  /**
    * Generates (or edits, given reference `media_ids`) an image via one of the current user's AIModels,
    * storing it as a new Media and, if `target` is set, attaching it to that Post/Event. *Authenticated* - caller
    * must own or have been granted access to the chosen AIProvider, and (if `target` is set) have edit access
@@ -2540,6 +2671,41 @@ export interface RellmClient<CallOptionsExt = {}> {
     request: DeepPartial<RevokeAIProviderRequest>,
     options?: CallOptions & CallOptionsExt,
   ): Promise<Empty>;
+  /**
+   * Gets MarketProducts available for purchase on this server (`market.proto`). *Unauthenticated* --
+   * admins additionally see delisted MarketProducts.
+   */
+  getMarketProducts(
+    request: DeepPartial<GetMarketProductsRequest>,
+    options?: CallOptions & CallOptionsExt,
+  ): Promise<GetMarketProductsResponse>;
+  /** Creates a MarketProduct. *Authenticated*, requires Admin. */
+  createMarketProduct(
+    request: DeepPartial<MarketProduct>,
+    options?: CallOptions & CallOptionsExt,
+  ): Promise<MarketProduct>;
+  /**
+   * Updates a MarketProduct's amount/currency/details/delisted_at. *Authenticated*, requires Admin.
+   * `type`/`period` are immutable after creation and are ignored if changed.
+   */
+  updateMarketProduct(
+    request: DeepPartial<MarketProduct>,
+    options?: CallOptions & CallOptionsExt,
+  ): Promise<MarketProduct>;
+  /** Gets the current user's own MarketSubscriptions (with billing_history). *Authenticated*, self-scoped only. */
+  getMarketSubscriptions(
+    request: DeepPartial<GetMarketSubscriptionsRequest>,
+    options?: CallOptions & CallOptionsExt,
+  ): Promise<GetMarketSubscriptionsResponse>;
+  /**
+   * Starts (or resumes) buying a MarketProduct for the current user, returning a Stripe Checkout URL to
+   * redirect to. *Authenticated*. See `MakeMarketPurchaseRequest`'s own doc -- no MarketPurchase/
+   * MarketSubscription is created by this call itself, only once Stripe confirms payment via webhook.
+   */
+  makeMarketPurchase(
+    request: DeepPartial<MakeMarketPurchaseRequest>,
+    options?: CallOptions & CallOptionsExt,
+  ): Promise<MakeMarketPurchaseResponse>;
   /**
    * Generates (or edits, given reference `media_ids`) an image via one of the current user's AIModels,
    * storing it as a new Media and, if `target` is set, attaching it to that Post/Event. *Authenticated* - caller

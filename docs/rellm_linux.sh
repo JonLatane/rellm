@@ -57,7 +57,7 @@ RELLM_COMMANDS=(
   environment edit_environment
   local_db_create local_db_drop local_db_reset local_db_connect
   local_minio_start local_minio_create local_minio_delete
-  delete_expired_tokens delete_unowned_media sync_sources update_user_counts convert_media_sizes generate_preview_images
+  delete_expired_tokens delete_unowned_media sync_sources update_user_counts convert_media_sizes renew_market_subscriptions generate_preview_images
   set_permission delete_preview_images disable_cdn_grpc free_all_cluster_resources
   to_db_id to_proto_id grpcurl
   deploy
@@ -106,7 +106,7 @@ Commands:
     jobs                     Run background jobs on a loop (@@JOBS_SCRIPT_PATH@@) --
                              delete_expired_tokens every 2m, delete_unowned_media every 8h,
                              sync_sources every 1m, update_user_counts every 1h,
-                             convert_media_sizes every 10m, ...
+                             convert_media_sizes every 10m, renew_market_subscriptions every 1h, ...
     version                  Print the Rellm server version (rellm-server --version)
     local_instances_stop     Stop any running rellm-server processes
     help                     Show this help text
@@ -140,6 +140,10 @@ Commands:
                              MP4/QuickTime/WebM Media via `ffmpeg`+`ffprobe`; each must be on
                              your $PATH to convert its media types -- skips those media types
                              (logging an error) if missing
+    renew_market_subscriptions
+                             Charge/renew any due Rellm Marketplace MarketSubscription (media
+                             storage/AI grant/Rellm hosting) via Stripe, applying the renewed
+                             entitlement on success or ending the subscription on failure
     generate_preview_images  Generate media preview images -- requires Brave Browser
                              installed at /usr/bin/brave-browser (e.g. `apt install
                              brave-browser`) plus ad/cookie-blocking Chrome extensions
@@ -348,6 +352,10 @@ update_user_counts() {
 # if neither tool is found.
 convert_media_sizes() {
   _rellm_exec_bin convert_media_sizes "$@"
+}
+
+renew_market_subscriptions() {
+  _rellm_exec_bin renew_market_subscriptions "$@"
 }
 
 # Renders media preview images headlessly. Requires Brave Browser at

@@ -71,3 +71,18 @@ impl<'r> FromRequest<'r> for MediaDescriptionHeader<'r> {
         }
     }
 }
+
+/// `Stripe-Signature` header on `POST /webhooks/stripe` deliveries -- see `web::stripe_webhook`.
+pub struct StripeSignatureHeader<'a>(pub &'a str);
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for StripeSignatureHeader<'r> {
+    type Error = ();
+
+    async fn from_request(req: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+        match req.headers().get_one("Stripe-Signature") {
+            Some(h) => Outcome::Success(StripeSignatureHeader(h)),
+            None => Outcome::Error((rocket::http::Status::NotAcceptable, ())),
+        }
+    }
+}

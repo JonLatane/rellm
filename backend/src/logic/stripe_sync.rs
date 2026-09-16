@@ -1,0 +1,221 @@
+//! REST calls to Stripe's API (`api.stripe.com`), backing `protos/market.proto`'s Rellm
+//! Marketplace -- mirrors `logic::twilio_sync`'s `_at`-suffixed testable shape (Bearer auth,
+//! form-encoded body, since Stripe's REST API is form-encoded exactly like Twilio's). No Stripe
+//! SDK crate -- plain `reqwest`, same as every other external-provider integration in this repo.
+
+use tonic::{Code, Status};
+
+use crate::db_connection::PgPooledConnection;
+use crate::logic::http_client::blocking_json_request;
+use crate::protos::StripeConfig;
+use crate::rpcs::get_server_configuration_model;
+
+pub const DEFAULT_BASE_URL: &str = "https://api.stripe.com";
+
+/// This server's own `StripeConfig`, straight off the DB (not admin-stripped -- only ever called
+/// from server-side logic, never handed to a client) -- mirrors
+/// `logic::contact_verification::server_twilio_config`/`server_bird_config`.
+pub fn server_stripe_config(conn: &mut PgPooledConnection) -> Option<StripeConfig> {
+    get_server_configuration_model(conn)
+        .ok()
+        .and_then(|c| c.stripe_config)
+        .and_then(|c| serde_json::from_value::<StripeConfig>(c).ok())
+}
+
+/// Same as `server_stripe_config`, but additionally requires `stripe_enabled` and a non-blank
+/// `stripe_secret_key` -- what every real caller (`rpcs::market::make_market_purchase`,
+/// `logic::market_renewal`) actually needs before it can call the Stripe API at all.
+pub fn usable_server_stripe_config(conn: &mut PgPooledConnection) -> Option<StripeConfig> {
+    server_stripe_config(conn).filter(|c| c.stripe_enabled && !c.stripe_secret_key.is_empty())
+}
+
+/// Numeric ISO 4217 currency code -> Stripe's lowercase alpha currency code. Only USD is needed
+/// today (see `market.proto`'s own scope note) -- structured to extend, not a full ISO 4217 table.
+pub fn currency_code(currency: u32) -> Result<&'static str, Status> {
+    match currency {
+        840 => Ok("usd"),
+        _ => Err(Status::new(Code::InvalidArgument, "unsupported_currency")),
+    }
+}
+
+/// One Stripe Checkout Session line item -- a single `price_data`-based item (no pre-created
+/// Stripe Price object needed), always quantity 1 for the Marketplace's single-product checkouts.
+pub struct CheckoutLineItem {
+    pub currency: &'static str,
+    /// The smallest-currency-unit amount (e.g. cents for USD) -- same unit as `Product.amount`.
+    pub unit_amount: u32,
+    pub product_name: String,
+}
+
+pub struct CreateCheckoutSessionParams {
+    pub line_item: CheckoutLineItem,
+    /// An existing Stripe Customer id to bill, if the buyer already has one on file (from a prior
+    /// purchase's webhook-recorded `Subscription.stripe_customer_id`). Mutually exclusive with
+    /// `customer_email` -- Stripe creates a fresh Customer automatically when only an email is
+    /// given, which the webhook then records for next time (see `web::stripe_webhook`).
+    pub customer: Option<String>,
+    pub customer_email: Option<String>,
+    pub success_url: String,
+    pub cancel_url: String,
+    /// Carried through to the completed Checkout Session's `metadata` -- read back by
+    /// `web::stripe_webhook` to know what to fulfill (`rellm_user_id`/`product_id`/any
+    /// `RellmHostingPurchaseDetails` fields).
+    pub metadata: Vec<(String, String)>,
+}
+
+/// Creates a Stripe Checkout Session (`mode=payment`, `payment_intent_data[setup_future_usage]=off_session`
+/// so the resulting PaymentMethod can be reused for off-session renewal charges later) and returns
+/// its hosted `url` to redirect the buyer's browser to. See `rpcs::market::make_market_purchase`
+/// for the one real caller; `base_url` is only ever overridden by specs (pointed at a local mock
+/// server instead of the real Stripe API, mirroring `twilio_sync::send_sms_at`).
+pub fn create_checkout_session_at(
+    base_url: &str,
+    secret_key: &str,
+    params: CreateCheckoutSessionParams,
+) -> Result<String, Status> {
+    let secret_key = secret_key.to_string();
+    let url = format!("{base_url}/v1/checkout/sessions");
+
+    let mut form: Vec<(String, String)> = vec![
+        ("mode".to_string(), "payment".to_string()),
+        (
+            "payment_intent_data[setup_future_usage]".to_string(),
+            "off_session".to_string(),
+        ),
+        ("line_items[0][quantity]".to_string(), "1".to_string()),
+        (
+            "line_items[0][price_data][currency]".to_string(),
+            params.line_item.currency.to_string(),
+        ),
+        (
+            "line_items[0][price_data][unit_amount]".to_string(),
+            params.line_item.unit_amount.to_string(),
+        ),
+        (
+            "line_items[0][price_data][product_data][name]".to_string(),
+            params.line_item.product_name,
+        ),
+        ("success_url".to_string(), params.success_url),
+        ("cancel_url".to_string(), params.cancel_url),
+    ];
+    if let Some(customer) = params.customer {
+        form.push(("customer".to_string(), customer));
+    } else if let Some(email) = params.customer_email {
+        form.push(("customer_email".to_string(), email));
+    }
+    for (key, value) in params.metadata {
+        form.push((format!("metadata[{key}]"), value));
+    }
+
+    let (status, response_body) = blocking_json_request(
+        move |client| client.post(url.clone()).bearer_auth(secret_key.clone()).form(&form),
+        "stripe_request_failed",
+    )?;
+    if !status.is_success() {
+        log::error!("Stripe CreateCheckoutSession failed ({}): {:?}", status, response_body);
+        return Err(Status::new(Code::FailedPrecondition, "stripe_checkout_session_failed"));
+    }
+    response_body
+        .get("url")
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+        .ok_or_else(|| {
+            log::error!("Stripe CreateCheckoutSession response missing url: {:?}", response_body);
+            Status::new(Code::Internal, "stripe_checkout_session_missing_url")
+        })
+}
+
+/// Looks up the `payment_method` id Stripe actually attached to a completed PaymentIntent --
+/// `checkout.session.completed`'s own webhook payload doesn't include this directly (only a
+/// `payment_intent` id), so `web::stripe_webhook` calls this once per initial purchase to learn
+/// what to save as `market_subscriptions.stripe_payment_method_id` for later off-session renewals.
+pub fn get_payment_intent_payment_method_at(
+    base_url: &str,
+    secret_key: &str,
+    payment_intent_id: &str,
+) -> Result<Option<String>, Status> {
+    let secret_key = secret_key.to_string();
+    let url = format!("{base_url}/v1/payment_intents/{payment_intent_id}");
+
+    let (status, response_body) = blocking_json_request(
+        move |client| client.get(url.clone()).bearer_auth(secret_key.clone()),
+        "stripe_request_failed",
+    )?;
+    if !status.is_success() {
+        log::error!(
+            "Stripe GetPaymentIntent({}) failed ({}): {:?}",
+            payment_intent_id,
+            status,
+            response_body
+        );
+        return Err(Status::new(Code::FailedPrecondition, "stripe_get_payment_intent_failed"));
+    }
+    Ok(response_body
+        .get("payment_method")
+        .and_then(|v| v.as_str())
+        .map(str::to_string))
+}
+
+pub struct OffSessionPaymentIntentParams {
+    pub customer_id: String,
+    pub payment_method_id: String,
+    pub currency: &'static str,
+    pub amount: u32,
+    pub metadata: Vec<(String, String)>,
+}
+
+/// A successfully-charged off-session renewal PaymentIntent -- `id` is stored as
+/// `market_payments.stripe_payment_intent_id`.
+pub struct OffSessionPaymentIntentResult {
+    pub id: String,
+}
+
+/// Charges a renewal via a previously-saved Customer/PaymentMethod pair (`off_session=true,
+/// confirm=true`) -- used by `logic::market_renewal`. Returns `Err` (mapped by the caller to
+/// "cancel the subscription, no retry" -- see `market_renewal`'s own doc) on any non-`succeeded`
+/// result, including one requiring further authentication (`requires_action`), since there's no
+/// user present to complete it off-session.
+pub fn create_off_session_payment_intent_at(
+    base_url: &str,
+    secret_key: &str,
+    params: OffSessionPaymentIntentParams,
+) -> Result<OffSessionPaymentIntentResult, Status> {
+    let secret_key = secret_key.to_string();
+    let url = format!("{base_url}/v1/payment_intents");
+
+    let mut form: Vec<(String, String)> = vec![
+        ("amount".to_string(), params.amount.to_string()),
+        ("currency".to_string(), params.currency.to_string()),
+        ("customer".to_string(), params.customer_id),
+        ("payment_method".to_string(), params.payment_method_id),
+        ("off_session".to_string(), "true".to_string()),
+        ("confirm".to_string(), "true".to_string()),
+    ];
+    for (key, value) in params.metadata {
+        form.push((format!("metadata[{key}]"), value));
+    }
+
+    let (status, response_body) = blocking_json_request(
+        move |client| client.post(url.clone()).bearer_auth(secret_key.clone()).form(&form),
+        "stripe_request_failed",
+    )?;
+    let stripe_status = response_body.get("status").and_then(|v| v.as_str()).unwrap_or("");
+    if !status.is_success() || stripe_status != "succeeded" {
+        log::warn!(
+            "Stripe off-session PaymentIntent did not succeed ({}, status={}): {:?}",
+            status,
+            stripe_status,
+            response_body
+        );
+        return Err(Status::new(Code::FailedPrecondition, "stripe_payment_intent_failed"));
+    }
+    let id = response_body
+        .get("id")
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+        .ok_or_else(|| {
+            log::error!("Stripe PaymentIntent response missing id: {:?}", response_body);
+            Status::new(Code::Internal, "stripe_payment_intent_missing_id")
+        })?;
+    Ok(OffSessionPaymentIntentResult { id })
+}

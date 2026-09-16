@@ -39,6 +39,9 @@ fieldNumbersNavigationTab n_ =
         ABOUTTAB ->
             15
 
+        MARKETTAB ->
+            16
+
         NavigationTabUnrecognized_ m_ ->
             m_
 
@@ -73,6 +76,9 @@ encodeNavigationTab value =
             ABOUTTAB ->
                 15
 
+            MARKETTAB ->
+                16
+
             NavigationTabUnrecognized_ i ->
                 i
 
@@ -101,6 +107,9 @@ decodeNavigationTab =
                     15 ->
                         ABOUTTAB
 
+                    16 ->
+                        MARKETTAB
+
                     _ ->
                         NavigationTabUnrecognized_ i
             )
@@ -115,4 +124,5 @@ type NavigationTab
     | POSTSTAB
     | PEOPLETAB
     | ABOUTTAB
+    | MARKETTAB
     | NavigationTabUnrecognized_ Int

@@ -35,6 +35,14 @@ impl ToDbServerConfiguration for ServerConfiguration {
                 .bird_config
                 .as_ref()
                 .map(|c| serde_json::to_value(c).unwrap()),
+            media_settings: self
+                .media_settings
+                .as_ref()
+                .map(|c| serde_json::to_value(c).unwrap()),
+            stripe_config: self
+                .stripe_config
+                .as_ref()
+                .map(|c| serde_json::to_value(c).unwrap()),
             preferred_verification_apis: Some(crate::logic::verification_apis_to_json(
                 &self
                     .preferred_verification_apis
@@ -135,6 +143,35 @@ impl ToProtoServerConfiguration for models::ServerConfiguration {
                 bird_access_key: String::new(),
                 ..c
             });
+        // Same write-only treatment for `StripeConfig.stripe_secret_key`/
+        // `stripe_webhook_signing_secret`.
+        let stripe_config: Option<StripeConfig> = self
+            .stripe_config
+            .to_owned()
+            .map_or(Some(None), |c| serde_json::from_value(c).ok())
+            .flatten()
+            .map(|c| StripeConfig {
+                stripe_secret_key: String::new(),
+                stripe_webhook_signing_secret: String::new(),
+                ..c
+            });
+        // Real `MediaSettings` deserialize (replacing the old hardcoded stub) -- falls back to the
+        // 15MB default whenever the stored blob is missing *or* its own
+        // `default_media_allocation_bytes` is `0` (covers every server today, since the column is
+        // brand new) -- see this repo's established read-time-fallback convention
+        // (`deserialize_custom_tabs` above, `federation_info_migration_tests` below) rather than a
+        // SQL backfill migration.
+        let media_settings: MediaSettings = self
+            .media_settings
+            .to_owned()
+            .and_then(|c| serde_json::from_value::<MediaSettings>(c).ok())
+            .filter(|m| m.default_media_allocation_bytes != 0)
+            .unwrap_or(MediaSettings {
+                visible: true,
+                default_moderation: Moderation::Unmoderated as i32,
+                default_visibility: Visibility::GlobalPublic as i32,
+                default_media_allocation_bytes: 15_728_640,
+            });
         // Not persisted anywhere yet -- see `NewServerConfiguration`'s doc and
         // `preferred_verification_apis`'s own proto comment. `ConfigureServer` does persist this
         // one (unlike the comment below used to say), stored the same way `Permission` lists are
@@ -197,12 +234,7 @@ impl ToProtoServerConfiguration for models::ServerConfiguration {
             post_settings: Some(post_settings),
             event_settings: Some(event_settings),
             custom_tabs: custom_tabs,
-            //TODO actually add media settings to the DB models...
-            media_settings: Some(MediaSettings {
-                visible: true,
-                default_moderation: Moderation::Unmoderated as i32,
-                default_visibility: Visibility::GlobalPublic as i32,
-            }),
+            media_settings: Some(media_settings),
             private_user_strategy: self.private_user_strategy.to_i32_private_user_strategy(),
             authentication_features: self
                 .authentication_features
@@ -212,6 +244,7 @@ impl ToProtoServerConfiguration for models::ServerConfiguration {
             web_push_config: web_push_config, // ..Default::default()
             twilio_config: twilio_config,
             bird_config: bird_config,
+            stripe_config: stripe_config,
             preferred_verification_apis: preferred_verification_apis,
             available_verification_apis: available_verification_apis,
         }

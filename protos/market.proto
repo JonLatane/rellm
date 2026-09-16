@@ -16,19 +16,17 @@ import "google/protobuf/timestamp.proto";
 //    * market_subscriptions have 1..n purchases
 //    * market_purchases have 0..1 market_subscriptions
 // * market_payments
-// * market_refunds - or should we keep this and market_payments in the same table, allow negative values, and marshall them to the appropriate `Payment`/`Refund` in Rust?
+// * market_refunds - or should we keep this and market_payments in the same table, allow negative values, and marshall them to the appropriate `MarketPayment`/`MarketRefund` in Rust?
 // * market_payment_methods/market_refund_methods? Or should these just be stored on market_payments/market_refunds? Depends how Stripe (and other providers) work.
 
 // New RPCs needed:
-// * GetProducts(GetProductsRequest) - unauthenticated. Admins can see delisted products.
-// * CreateProduct(Product), UpdateProduct(Product) - authenticated, admin required
-// * GetSubscriptions(User)
-// * PurchaseSubscription(User)
+// * GetMarketProducts(GetMarketProductsRequest) - unauthenticated. Admins can see delisted products.
+// * CreateMarketProduct(MarketProduct), UpdateMarketProduct(MarketProduct) - authenticated, admin required
+// * GetMarketSubscriptions(User)
+// * MakeMarketPurchase(User)
 
 // New background job needed (in Rust bin/):
-// * renew_media_storage_subscriptions.rs
-// * renew_ai_grant_subscriptions.rs
-// * renew_rellm_hosting_subscriptions.rs
+// * renew_market_subscriptions.rs - handles all three PurchaseTypes in one pass.
 
 // New Elm page/routes needed:
 // * /market
@@ -37,9 +35,9 @@ import "google/protobuf/timestamp.proto";
 
 // New Elm UI updates:
 // * New collapsible Subscriptions section on UserProfilePage, just above Permissions section.
-//     * No purchasing here. Just lists all the user's Purchases are made via flows from `/market`/`Pages/Market.elm`.
+//     * No purchasing here. Just lists all the user's MarketPurchases are made via flows from `/market`/`Pages/Market.elm`.
 // * AccountsPanel Account Chips, when expanded
-//     * This means RellmAccount in Elm will need to store Subscriptions, I think, same as it does AI Model providers, etc.
+//     * This means RellmAccount in Elm will need to store MarketSubscriptions, I think, same as it does AI Model providers, etc.
 
 
 enum PurchaseType {
@@ -57,7 +55,7 @@ enum PurchasePeriod {
 // An actual subscribable product listed on, say, https://rellm.org/market
 // Listed/delisted by clients by setting `delisted_at` (though the actual date supplied
 // by the client is ignored).
-message Product {
+message MarketProduct {
   string id = 1;
   // Never changeable after product creation.
   PurchaseType type = 2;
@@ -71,32 +69,65 @@ message Product {
     AIGrantSubscriptionDetails ai_grant_subscription_details = 11;
     RellmHostingSubscriptionDetails rellm_hosting_subscription_details = 12;
   }
-  
+
   google.protobuf.Timestamp created_at = 20;
 
-  // If set, the Product is not purchasable. Note: clients toggle listings by setting this,
+  // If set, the MarketProduct is not purchasable. Note: clients toggle listings by setting this,
   // but the server will always set it to the time of the request, not the time sent *by* the request.
   optional google.protobuf.Timestamp delisted_at = 21;
 }
 
 // Request to get products available for purchase on a Rellm server.
 // For now, there are few enough that this has no parameters.
-message GetProductsRequest {
+message GetMarketProductsRequest {
 
 }
 
-message Purchase {
+message GetMarketProductsResponse {
+  // Non-delisted products, plus delisted ones too if the caller is an admin.
+  repeated MarketProduct market_products = 1;
+}
+
+// Request to get the current user's own MarketSubscriptions (with billing_history). Self-scoped --
+// there's no way to fetch another user's MarketSubscriptions, even as an admin, for now.
+message GetMarketSubscriptionsRequest {
+
+}
+
+message GetMarketSubscriptionsResponse {
+  repeated MarketSubscription market_subscriptions = 1;
+}
+
+// *Authenticated*. Buys `market_product_id` for the current user, starting (or continuing) a
+// Stripe Checkout flow -- see `MakeMarketPurchaseResponse.checkout_url`. No `MarketPurchase`/
+// `MarketSubscription` is created by this call itself; that only happens once Stripe confirms
+// payment via webhook, so an abandoned checkout never leaves a half-created purchase behind.
+message MakeMarketPurchaseRequest {
+  string market_product_id = 1;
+
+  // Only meaningful (and required) for a `PURCHASE_TYPE_RELLM_HOSTING` product -- the buyer's
+  // desired domain/contact info/notes, carried through to Stripe as Checkout Session metadata and
+  // copied onto the resulting `MarketPurchase`/`MarketSubscription` once payment completes.
+  optional RellmHostingPurchaseDetails rellm_hosting_details = 2;
+}
+
+message MakeMarketPurchaseResponse {
+  // Redirect the buyer's browser here (a Stripe-hosted Checkout page) to complete payment.
+  string checkout_url = 1;
+}
+
+message MarketPurchase {
   string id = 1;
   Author buyer = 2;
   PurchaseType type = 3;
 
-  Product product = 4;
+  MarketProduct market_product = 4;
 
   // Note: this circular relationship should be handled by the Rust marshaling side.
-  optional Subscription subscription = 5;
+  optional MarketSubscription market_subscription = 5;
 
-  repeated Payment payments = 6;
-  repeated Refund refunds = 7;
+  repeated MarketPayment market_payments = 6;
+  repeated MarketRefund market_refunds = 7;
 
   oneof details {
     MediaStoragePurchaseDetails media_storage_purchase_details = 10;
@@ -107,25 +138,25 @@ message Purchase {
   google.protobuf.Timestamp created_at = 20;
 }
 
-message Payment {
+message MarketPayment {
   uint32 amount = 1;
   uint32 currency = 2;
-  string purchase_id = 3;
+  string market_purchase_id = 3;
   google.protobuf.Timestamp created_at = 10;
 }
 
-message PaymentMethod {
+message MarketPaymentMethod {
 
 }
 
-message Refund {
+message MarketRefund {
   uint32 amount = 1;
   uint32 currency = 2;
-  string purchase_id = 3;
+  string market_purchase_id = 3;
   google.protobuf.Timestamp created_at = 10;
 }
-message RefundMethod {
-  
+message MarketRefundMethod {
+
 }
 
 message MediaStoragePurchaseDetails {
@@ -146,7 +177,7 @@ message RellmHostingPurchaseDetails {
   string additional_information = 5;
 }
 
-message Subscription {
+message MarketSubscription {
   string id = 1;
   Author buyer = 2;
   PurchaseType type = 3;
@@ -155,9 +186,9 @@ message Subscription {
   uint32 currency = 6;
 
   // Note: marshaling should handle the circular relationship here gracefully.
-  Product product = 7;
+  MarketProduct market_product = 7;
 
-  repeated Purchase billing_history = 8;
+  repeated MarketPurchase billing_history = 8;
 
   oneof details {
     MediaStorageSubscriptionDetails media_storage_subscription_details = 10;
@@ -168,12 +199,12 @@ message Subscription {
   google.protobuf.Timestamp created_at = 20;
   optional google.protobuf.Timestamp renews_at = 21;
 
-  // If set, the Subscription is unavailable
+  // If set, the MarketSubscription is unavailable
   optional google.protobuf.Timestamp ended_at = 22;
 }
 
 message MediaStorageSubscriptionDetails {
-  uint64 allocation_bytes = 1;  
+  uint64 allocation_bytes = 1;
 }
 
 message AIGrantSubscriptionDetails {

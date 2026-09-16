@@ -119,13 +119,14 @@ const NavigationTab$json = {
     {'1': 'POSTS_TAB', '2': 11},
     {'1': 'PEOPLE_TAB', '2': 12},
     {'1': 'ABOUT_TAB', '2': 15},
+    {'1': 'MARKET_TAB', '2': 16},
   ],
 };
 
 /// Descriptor for `NavigationTab`. Decode as a `google.protobuf.EnumDescriptorProto`.
 final $typed_data.Uint8List navigationTabDescriptor = $convert.base64Decode(
     'Cg1OYXZpZ2F0aW9uVGFiEgwKCEhPTUVfVEFCEAASDgoKRVZFTlRTX1RBQhAKEg0KCVBPU1RTX1'
-    'RBQhALEg4KClBFT1BMRV9UQUIQDBINCglBQk9VVF9UQUIQDw==');
+    'RBQhALEg4KClBFT1BMRV9UQUIQDBINCglBQk9VVF9UQUIQDxIOCgpNQVJLRVRfVEFCEBA=');
 
 @$core.Deprecated('Use verificationAPIDescriptor instead')
 const VerificationAPI$json = {
@@ -165,6 +166,7 @@ const ServerConfiguration$json = {
     {'1': 'available_verification_apis', '3': 121, '4': 3, '5': 14, '6': '.rellm.VerificationAPI', '10': 'availableVerificationApis'},
     {'1': 'twilio_config', '3': 122, '4': 1, '5': 11, '6': '.rellm.TwilioConfig', '9': 6, '10': 'twilioConfig', '17': true},
     {'1': 'bird_config', '3': 123, '4': 1, '5': 11, '6': '.rellm.BirdConfig', '9': 7, '10': 'birdConfig', '17': true},
+    {'1': 'stripe_config', '3': 124, '4': 1, '5': 11, '6': '.rellm.StripeConfig', '9': 8, '10': 'stripeConfig', '17': true},
   ],
   '8': [
     {'1': '_server_info'},
@@ -175,6 +177,7 @@ const ServerConfiguration$json = {
     {'1': '_web_push_config'},
     {'1': '_twilio_config'},
     {'1': '_bird_config'},
+    {'1': '_stripe_config'},
   ],
 };
 
@@ -205,10 +208,12 @@ final $typed_data.Uint8List serverConfigurationDescriptor = $convert.base64Decod
     'Y2F0aW9uQXBpcxJWChthdmFpbGFibGVfdmVyaWZpY2F0aW9uX2FwaXMYeSADKA4yFi5yZWxsbS'
     '5WZXJpZmljYXRpb25BUElSGWF2YWlsYWJsZVZlcmlmaWNhdGlvbkFwaXMSPQoNdHdpbGlvX2Nv'
     'bmZpZxh6IAEoCzITLnJlbGxtLlR3aWxpb0NvbmZpZ0gGUgx0d2lsaW9Db25maWeIAQESNwoLYm'
-    'lyZF9jb25maWcYeyABKAsyES5yZWxsbS5CaXJkQ29uZmlnSAdSCmJpcmRDb25maWeIAQFCDgoM'
-    'X3NlcnZlcl9pbmZvQhIKEF9mZWRlcmF0aW9uX2luZm9CDgoMX2N1c3RvbV90YWJzQhYKFF9leH'
-    'Rlcm5hbF9jZG5fY29uZmlnQhQKEl9jbHVzdGVyX3Jlc291cmNlc0ISChBfd2ViX3B1c2hfY29u'
-    'ZmlnQhAKDl90d2lsaW9fY29uZmlnQg4KDF9iaXJkX2NvbmZpZw==');
+    'lyZF9jb25maWcYeyABKAsyES5yZWxsbS5CaXJkQ29uZmlnSAdSCmJpcmRDb25maWeIAQESPQoN'
+    'c3RyaXBlX2NvbmZpZxh8IAEoCzITLnJlbGxtLlN0cmlwZUNvbmZpZ0gIUgxzdHJpcGVDb25maW'
+    'eIAQFCDgoMX3NlcnZlcl9pbmZvQhIKEF9mZWRlcmF0aW9uX2luZm9CDgoMX2N1c3RvbV90YWJz'
+    'QhYKFF9leHRlcm5hbF9jZG5fY29uZmlnQhQKEl9jbHVzdGVyX3Jlc291cmNlc0ISChBfd2ViX3'
+    'B1c2hfY29uZmlnQhAKDl90d2lsaW9fY29uZmlnQg4KDF9iaXJkX2NvbmZpZ0IQCg5fc3RyaXBl'
+    'X2NvbmZpZw==');
 
 @$core.Deprecated('Use clusterResourcesDescriptor instead')
 const ClusterResources$json = {
@@ -358,6 +363,7 @@ const MediaSettings$json = {
     {'1': 'visible', '3': 1, '4': 1, '5': 8, '10': 'visible'},
     {'1': 'default_moderation', '3': 2, '4': 1, '5': 14, '6': '.rellm.Moderation', '10': 'defaultModeration'},
     {'1': 'default_visibility', '3': 3, '4': 1, '5': 14, '6': '.rellm.Visibility', '10': 'defaultVisibility'},
+    {'1': 'default_media_allocation_bytes', '3': 4, '4': 1, '5': 4, '10': 'defaultMediaAllocationBytes'},
   ],
 };
 
@@ -366,7 +372,8 @@ final $typed_data.Uint8List mediaSettingsDescriptor = $convert.base64Decode(
     'Cg1NZWRpYVNldHRpbmdzEhgKB3Zpc2libGUYASABKAhSB3Zpc2libGUSQAoSZGVmYXVsdF9tb2'
     'RlcmF0aW9uGAIgASgOMhEucmVsbG0uTW9kZXJhdGlvblIRZGVmYXVsdE1vZGVyYXRpb24SQAoS'
     'ZGVmYXVsdF92aXNpYmlsaXR5GAMgASgOMhEucmVsbG0uVmlzaWJpbGl0eVIRZGVmYXVsdFZpc2'
-    'liaWxpdHk=');
+    'liaWxpdHkSQwoeZGVmYXVsdF9tZWRpYV9hbGxvY2F0aW9uX2J5dGVzGAQgASgEUhtkZWZhdWx0'
+    'TWVkaWFBbGxvY2F0aW9uQnl0ZXM=');
 
 @$core.Deprecated('Use featureSettingsDescriptor instead')
 const FeatureSettings$json = {
@@ -679,4 +686,22 @@ final $typed_data.Uint8List birdConfigDescriptor = $convert.base64Decode(
     'CgpCaXJkQ29uZmlnEiEKDGJpcmRfZW5hYmxlZBgBIAEoCFILYmlyZEVuYWJsZWQSJgoPYmlyZF'
     '9hY2Nlc3Nfa2V5GAIgASgJUg1iaXJkQWNjZXNzS2V5EhsKCWJpcmRfZnJvbRgDIAEoCVIIYmly'
     'ZEZyb20SHwoLYmlyZF9yZWdpb24YBCABKAlSCmJpcmRSZWdpb24=');
+
+@$core.Deprecated('Use stripeConfigDescriptor instead')
+const StripeConfig$json = {
+  '1': 'StripeConfig',
+  '2': [
+    {'1': 'stripe_enabled', '3': 1, '4': 1, '5': 8, '10': 'stripeEnabled'},
+    {'1': 'stripe_secret_key', '3': 2, '4': 1, '5': 9, '10': 'stripeSecretKey'},
+    {'1': 'stripe_publishable_key', '3': 3, '4': 1, '5': 9, '10': 'stripePublishableKey'},
+    {'1': 'stripe_webhook_signing_secret', '3': 4, '4': 1, '5': 9, '10': 'stripeWebhookSigningSecret'},
+  ],
+};
+
+/// Descriptor for `StripeConfig`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List stripeConfigDescriptor = $convert.base64Decode(
+    'CgxTdHJpcGVDb25maWcSJQoOc3RyaXBlX2VuYWJsZWQYASABKAhSDXN0cmlwZUVuYWJsZWQSKg'
+    'oRc3RyaXBlX3NlY3JldF9rZXkYAiABKAlSD3N0cmlwZVNlY3JldEtleRI0ChZzdHJpcGVfcHVi'
+    'bGlzaGFibGVfa2V5GAMgASgJUhRzdHJpcGVQdWJsaXNoYWJsZUtleRJBCh1zdHJpcGVfd2ViaG'
+    '9va19zaWduaW5nX3NlY3JldBgEIAEoCVIac3RyaXBlV2ViaG9va1NpZ25pbmdTZWNyZXQ=');
 

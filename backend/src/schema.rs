@@ -172,6 +172,63 @@ diesel::table! {
 }
 
 diesel::table! {
+    market_payments (id) {
+        id -> Int8,
+        purchase_id -> Int8,
+        amount -> Int4,
+        currency -> Int4,
+        created_at -> Timestamp,
+        stripe_payment_intent_id -> Nullable<Varchar>,
+        stripe_refund_id -> Nullable<Varchar>,
+    }
+}
+
+diesel::table! {
+    market_products (id) {
+        id -> Int8,
+        product_type -> Varchar,
+        period -> Varchar,
+        amount -> Int4,
+        currency -> Int4,
+        details -> Jsonb,
+        created_at -> Timestamp,
+        delisted_at -> Nullable<Timestamp>,
+    }
+}
+
+diesel::table! {
+    market_purchases (id) {
+        id -> Int8,
+        buyer_id -> Int8,
+        product_id -> Int8,
+        subscription_id -> Nullable<Int8>,
+        product_type -> Varchar,
+        details -> Jsonb,
+        created_at -> Timestamp,
+        stripe_checkout_session_id -> Nullable<Varchar>,
+        stripe_payment_intent_id -> Nullable<Varchar>,
+    }
+}
+
+diesel::table! {
+    market_subscriptions (id) {
+        id -> Int8,
+        buyer_id -> Int8,
+        product_id -> Int8,
+        product_type -> Varchar,
+        period -> Varchar,
+        amount -> Int4,
+        currency -> Int4,
+        details -> Jsonb,
+        created_at -> Timestamp,
+        renews_at -> Nullable<Timestamp>,
+        ended_at -> Nullable<Timestamp>,
+        stripe_customer_id -> Nullable<Varchar>,
+        stripe_payment_method_id -> Nullable<Varchar>,
+    }
+}
+
+diesel::table! {
     media (id) {
         id -> Int8,
         user_id -> Nullable<Int8>,
@@ -330,6 +387,8 @@ diesel::table! {
         twilio_config -> Nullable<Jsonb>,
         bird_config -> Nullable<Jsonb>,
         preferred_verification_apis -> Nullable<Jsonb>,
+        media_settings -> Nullable<Jsonb>,
+        stripe_config -> Nullable<Jsonb>,
     }
 }
 
@@ -448,6 +507,12 @@ diesel::joinable!(group_posts -> groups (group_id));
 diesel::joinable!(group_posts -> posts (post_id));
 diesel::joinable!(group_posts -> users (user_id));
 diesel::joinable!(groups -> media (avatar_media_id));
+diesel::joinable!(market_payments -> market_purchases (purchase_id));
+diesel::joinable!(market_purchases -> market_products (product_id));
+diesel::joinable!(market_purchases -> market_subscriptions (subscription_id));
+diesel::joinable!(market_purchases -> users (buyer_id));
+diesel::joinable!(market_subscriptions -> market_products (product_id));
+diesel::joinable!(market_subscriptions -> users (buyer_id));
 diesel::joinable!(memberships -> groups (group_id));
 diesel::joinable!(memberships -> users (user_id));
 diesel::joinable!(message_reads -> messages (message_id));
@@ -483,6 +548,10 @@ diesel::allow_tables_to_appear_in_same_query!(
     follows,
     group_posts,
     groups,
+    market_payments,
+    market_products,
+    market_purchases,
+    market_subscriptions,
     media,
     memberships,
     message_reads,

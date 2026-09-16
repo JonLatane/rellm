@@ -37,5 +37,8 @@ pub use sync_destinations::*;
 pub mod ai_providers;
 pub use ai_providers::*;
 
+pub mod market;
+pub use market::*;
+
 mod federation;
 pub use federation::*;

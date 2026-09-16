@@ -183,6 +183,13 @@ pub async fn spa_file_or_username_or_custom_tab(
                                             "About Community".to_string(),
                                             Some("Information a Rellm community".to_string()),
                                         ),
+                                        NavigationTab::MarketTab => (
+                                            "Market".to_string(),
+                                            Some(
+                                                "Products and subscriptions from a Rellm community"
+                                                    .to_string(),
+                                            ),
+                                        ),
                                     };
                                 let page_title = matched_tab
                                     .and_then(|ct| ct.title.clone())

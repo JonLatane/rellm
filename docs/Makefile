@@ -5,7 +5,7 @@ docs: documentation html_docs
 PROTOS_DIR := $(abspath $(CURDIR)/../protos)
 
 documentation:
-	docker run --rm -v $(CURDIR):/out -v $(PROTOS_DIR):/protos pseudomuto/protoc-gen-doc --doc_opt=markdown,protocol.md rellm.proto authentication.proto visibility_moderation.proto permissions.proto users.proto media.proto messages.proto posts.proto events.proto groups.proto server_configuration.proto federation.proto sync.proto ai_providers.proto
+	docker run --rm -v $(CURDIR):/out -v $(PROTOS_DIR):/protos pseudomuto/protoc-gen-doc --doc_opt=markdown,protocol.md rellm.proto authentication.proto visibility_moderation.proto permissions.proto users.proto media.proto messages.proto posts.proto events.proto groups.proto server_configuration.proto federation.proto sync.proto ai_providers.proto market.proto
 
 html_docs: documentation
 	npm i markdown-to-html-cli -g

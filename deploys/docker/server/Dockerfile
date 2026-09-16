@@ -13,6 +13,7 @@ COPY backend/target/release/delete_unowned_media__server_release /opt/delete_uno
 COPY backend/target/release/sync_sources__server_release /opt/sync_sources
 COPY backend/target/release/update_user_counts__server_release /opt/update_user_counts
 COPY backend/target/release/convert_media_sizes__server_release /opt/convert_media_sizes
+COPY backend/target/release/renew_market_subscriptions__server_release /opt/renew_market_subscriptions
 
 # TODO(2026-08-18): one-off backfill for the header-reconstruction bug fixed in web/email.rs
 # (see build_raw_message's doc comment) -- delete this binary (backend/src/bin/repair_email_messages.rs),

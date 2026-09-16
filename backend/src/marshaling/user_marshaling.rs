@@ -83,6 +83,10 @@ impl ToProtoUser for models::User {
             // single-user lookups) -- see that function's own doc.
             sync_sources: vec![],
             ai_models: vec![],
+            // Same deal as `ai_models` -- populated by `get_users.rs`'s `attach_advanced_admin_data`
+            // across every listing type, self-or-Admin gated (see `market.proto`'s own doc on
+            // `User.market_subscriptions`).
+            market_subscriptions: vec![],
             current_user_follow: follow.as_ref().map(|f| f.to_proto()),
             target_current_user_follow: target_follow.as_ref().map(|f| f.to_proto()),
             current_group_membership: None, // TODO

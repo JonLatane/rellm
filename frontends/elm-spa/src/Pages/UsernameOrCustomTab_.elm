@@ -29,6 +29,7 @@ tries those literal static routes first, so this file's `init` never even runs f
 import Browser.Navigation
 import Components.Pages.BlueskyUserProfilePage as BlueskyUserProfilePage
 import Components.Pages.EventsPage as EventsPage
+import Components.Pages.MarketPage as MarketPage
 import Components.Pages.MastodonUserProfilePage as MastodonUserProfilePage
 import Components.Pages.PostOrEventPage as PostOrEventPage
 import Components.Pages.PostPage as PostPage
@@ -66,8 +67,8 @@ page shared req =
 {-| `Reserved` short-circuits straight to a "not a user" message, without ever constructing a
 `UserProfilePage.Model` (and thus without ever attempting a fetch) -- see the module doc.
 `Embedded*` mount whichever `Components.Pages.*` a matched custom tab's `target` calls for, exactly
-the same components `Pages.Events`/`Pages.Posts`/`Pages.People`/`Pages.About`/`Pages.Post.PostId_`
-themselves wrap -- see `initEmbedded`, and that module's own doc for why a `Post` target is
+the same components `Pages.Events`/`Pages.Posts`/`Pages.People`/`Pages.About`/`Pages.Market`/
+`Pages.Post.PostId_` themselves wrap -- see `initEmbedded`, and that module's own doc for why a `Post` target is
 genuinely indistinguishable from visiting `/post/:id` directly (down to the same `Components.Pages.PostPage`
 being mounted either way). `EmbeddedProfile` is `TargetProfile`'s own -- deliberately a *separate*
 variant from the plain-username-fallback `Profile` below even though both just wrap a
@@ -94,6 +95,7 @@ type Model
     | EmbeddedPosts PostsPage.Model
     | EmbeddedPeople UsersPage.Model
     | EmbeddedAbout ServerInformationPage.Model
+    | EmbeddedMarket MarketPage.Model
     | EmbeddedPost PostPage.Model
     | EmbeddedProfile UserProfilePage.Model
     | EmbeddedPostOrEvent PostOrEventPage.Model
@@ -115,6 +117,7 @@ type Msg
     | PostsMsg PostsPage.Msg
     | PeopleMsg UsersPage.Msg
     | AboutMsg ServerInformationPage.Msg
+    | MarketMsg MarketPage.Msg
     | EmbeddedPostMsg PostPage.Msg
     | EmbeddedProfileMsg UserProfilePage.Msg
     | EmbeddedPostOrEventMsg PostOrEventPage.Msg
@@ -153,8 +156,9 @@ customTabFor shared path =
 
 
 {-| Mounts whichever page a matched custom tab's `target` calls for. `EVENTSTAB`/`POSTSTAB`/`PEOPLETAB`/
-`ABOUTTAB` embed inline (each call mirrors `Pages.Events`/`Pages.Posts`/`Pages.People`/`Pages.About`'s
-own `init` exactly, just wrapped in this module's `Embedded*` instead of their own bare `Model`), so
+`ABOUTTAB`/`MARKETTAB` embed inline (each call mirrors `Pages.Events`/`Pages.Posts`/`Pages.People`/
+`Pages.About`/`Pages.Market`'s own `init` exactly, just wrapped in this module's `Embedded*` instead
+of their own bare `Model`), so
 the custom path itself stays in the address bar with that page's content rendered at it -- the actual
 point of a vanity URL. `TargetPost` mounts `Components.Pages.PostPage` exactly the same way
 `Pages.Post.PostId_` itself does, so e.g. a band's `/weddings` renders indistinguishably from
@@ -190,6 +194,11 @@ initEmbedded shared req tab =
             ServerInformationPage.init shared (RellmServers.isSecure req) shared.accounts.mainFrontendHost req.key req.url.path req.query
                 |> Tuple.mapFirst EmbeddedAbout
                 |> Tuple.mapSecond (Effect.map AboutMsg)
+
+        CustomNav.TargetTab MARKETTAB ->
+            MarketPage.init shared
+                |> Tuple.mapFirst EmbeddedMarket
+                |> Tuple.mapSecond (Effect.map MarketMsg)
 
         CustomNav.TargetTab HOMETAB ->
             ( Redirecting, redirectTo req.key Route.Home_ )
@@ -274,6 +283,9 @@ subscriptions model =
         EmbeddedAbout subModel ->
             Sub.map AboutMsg (ServerInformationPage.subscriptions subModel)
 
+        EmbeddedMarket subModel ->
+            Sub.map MarketMsg (MarketPage.subscriptions subModel)
+
         EmbeddedPost subModel ->
             Sub.map EmbeddedPostMsg (PostPage.subscriptions subModel)
 
@@ -327,6 +339,11 @@ update shared req msg model =
             ServerInformationPage.update shared subMsg subModel
                 |> Tuple.mapFirst EmbeddedAbout
                 |> Tuple.mapSecond (Effect.map AboutMsg)
+
+        ( MarketMsg subMsg, EmbeddedMarket subModel ) ->
+            MarketPage.update shared subMsg subModel
+                |> Tuple.mapFirst EmbeddedMarket
+                |> Tuple.mapSecond (Effect.map MarketMsg)
 
         ( EmbeddedPostMsg subMsg, EmbeddedPost subModel ) ->
             PostPage.update shared subMsg subModel
@@ -406,6 +423,11 @@ update shared req msg model =
                 |> Tuple.mapFirst EmbeddedAbout
                 |> Tuple.mapSecond (Effect.map AboutMsg)
 
+        ( SharedMsg subMsg, EmbeddedMarket subModel ) ->
+            MarketPage.update shared (MarketPage.fromShared subMsg) subModel
+                |> Tuple.mapFirst EmbeddedMarket
+                |> Tuple.mapSecond (Effect.map MarketMsg)
+
         ( SharedMsg subMsg, EmbeddedPost subModel ) ->
             PostPage.update shared (PostPage.fromShared subMsg) subModel
                 |> Tuple.mapFirst EmbeddedPost
@@ -453,6 +475,9 @@ view shared req model =
 
                 EmbeddedAbout subModel ->
                     Html.map AboutMsg (ServerInformationPage.view shared subModel)
+
+                EmbeddedMarket subModel ->
+                    Html.map MarketMsg (MarketPage.view shared True subModel)
 
                 EmbeddedPost subModel ->
                     Html.map EmbeddedPostMsg (PostPage.view shared subModel)
@@ -506,6 +531,9 @@ titleFor shared req model =
 
                 EmbeddedAbout _ ->
                     [ "About" ]
+
+                EmbeddedMarket _ ->
+                    [ "Market" ]
 
                 EmbeddedPost subModel ->
                     [ PostPage.titleFor subModel ]

@@ -329,6 +329,8 @@ export enum NavigationTab {
   PEOPLE_TAB = 12,
   /** ABOUT_TAB - The About tab. */
   ABOUT_TAB = 15,
+  /** MARKET_TAB - The Market tab. */
+  MARKET_TAB = 16,
   UNRECOGNIZED = -1,
 }
 
@@ -349,6 +351,9 @@ export function navigationTabFromJSON(object: any): NavigationTab {
     case 15:
     case "ABOUT_TAB":
       return NavigationTab.ABOUT_TAB;
+    case 16:
+    case "MARKET_TAB":
+      return NavigationTab.MARKET_TAB;
     case -1:
     case "UNRECOGNIZED":
     default:
@@ -368,6 +373,8 @@ export function navigationTabToJSON(object: NavigationTab): string {
       return "PEOPLE_TAB";
     case NavigationTab.ABOUT_TAB:
       return "ABOUT_TAB";
+    case NavigationTab.MARKET_TAB:
+      return "MARKET_TAB";
     case NavigationTab.UNRECOGNIZED:
     default:
       return "UNRECOGNIZED";
@@ -539,7 +546,11 @@ export interface ServerConfiguration {
    * Bird (bird.com, formerly MessageBird) Config -- a cheaper Twilio alternative for SMS
    * verification. Only serialized for admin users.
    */
-  birdConfig?: BirdConfig | undefined;
+  birdConfig?:
+    | BirdConfig
+    | undefined;
+  /** Stripe Config, backing the Marketplace (`market.proto`). Only serialized for admin users. */
+  stripeConfig?: StripeConfig | undefined;
 }
 
 /**
@@ -777,6 +788,8 @@ export interface MediaSettings {
    * as appropriate.
    */
   defaultVisibility: Visibility;
+  /** Default media storage allocation for newly created users. Defaults to 10MB. */
+  defaultMediaAllocationBytes: number;
 }
 
 /**
@@ -1155,6 +1168,33 @@ export interface BirdConfig {
   birdRegion: string;
 }
 
+/**
+ * Stripe credentials backing the Marketplace (`market.proto`). Used both to create Checkout
+ * Sessions/off-session renewal PaymentIntents (`stripe_secret_key`) and to verify incoming
+ * webhook deliveries (`stripe_webhook_signing_secret`).
+ */
+export interface StripeConfig {
+  stripeEnabled: boolean;
+  /**
+   * Stripe Secret Key (starts with `sk_`), used as Bearer auth for all Stripe API calls made by
+   * this server (Checkout Session creation, off-session renewal charges). Never serialized once
+   * written -- same write-only treatment as `TwilioConfig.twilio_api_key_secret`.
+   */
+  stripeSecretKey: string;
+  /**
+   * Stripe Publishable Key (starts with `pk_`). Not secret -- kept here (rather than derived from
+   * `stripe_secret_key`) so a future client-side Stripe Elements integration has what it needs,
+   * even though the current Checkout-based flow doesn't use it server-side at all.
+   */
+  stripePublishableKey: string;
+  /**
+   * Signing secret (starts with `whsec_`) for the `/webhooks/stripe` endpoint, used to verify the
+   * `Stripe-Signature` header on incoming webhook deliveries. Never serialized once written --
+   * same write-only treatment as `stripe_secret_key` above.
+   */
+  stripeWebhookSigningSecret: string;
+}
+
 function createBaseServerConfiguration(): ServerConfiguration {
   return {
     serverInfo: undefined,
@@ -1177,6 +1217,7 @@ function createBaseServerConfiguration(): ServerConfiguration {
     availableVerificationApis: [],
     twilioConfig: undefined,
     birdConfig: undefined,
+    stripeConfig: undefined,
   };
 }
 
@@ -1253,6 +1294,9 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
     }
     if (message.birdConfig !== undefined) {
       BirdConfig.encode(message.birdConfig, writer.uint32(986).fork()).join();
+    }
+    if (message.stripeConfig !== undefined) {
+      StripeConfig.encode(message.stripeConfig, writer.uint32(994).fork()).join();
     }
     return writer;
   },
@@ -1484,6 +1528,14 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
           message.birdConfig = BirdConfig.decode(reader, reader.uint32());
           continue;
         }
+        case 124: {
+          if (tag !== 994) {
+            break;
+          }
+
+          message.stripeConfig = StripeConfig.decode(reader, reader.uint32());
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1531,6 +1583,7 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
         : [],
       twilioConfig: isSet(object.twilioConfig) ? TwilioConfig.fromJSON(object.twilioConfig) : undefined,
       birdConfig: isSet(object.birdConfig) ? BirdConfig.fromJSON(object.birdConfig) : undefined,
+      stripeConfig: isSet(object.stripeConfig) ? StripeConfig.fromJSON(object.stripeConfig) : undefined,
     };
   },
 
@@ -1596,6 +1649,9 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
     if (message.birdConfig !== undefined) {
       obj.birdConfig = BirdConfig.toJSON(message.birdConfig);
     }
+    if (message.stripeConfig !== undefined) {
+      obj.stripeConfig = StripeConfig.toJSON(message.stripeConfig);
+    }
     return obj;
   },
 
@@ -1649,6 +1705,9 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
       : undefined;
     message.birdConfig = (object.birdConfig !== undefined && object.birdConfig !== null)
       ? BirdConfig.fromPartial(object.birdConfig)
+      : undefined;
+    message.stripeConfig = (object.stripeConfig !== undefined && object.stripeConfig !== null)
+      ? StripeConfig.fromPartial(object.stripeConfig)
       : undefined;
     return message;
   },
@@ -2456,7 +2515,7 @@ export const ExternalCDNConfig: MessageFns<ExternalCDNConfig> = {
 };
 
 function createBaseMediaSettings(): MediaSettings {
-  return { visible: false, defaultModeration: 0, defaultVisibility: 0 };
+  return { visible: false, defaultModeration: 0, defaultVisibility: 0, defaultMediaAllocationBytes: 0 };
 }
 
 export const MediaSettings: MessageFns<MediaSettings> = {
@@ -2469,6 +2528,9 @@ export const MediaSettings: MessageFns<MediaSettings> = {
     }
     if (message.defaultVisibility !== 0) {
       writer.uint32(24).int32(message.defaultVisibility);
+    }
+    if (message.defaultMediaAllocationBytes !== 0) {
+      writer.uint32(32).uint64(message.defaultMediaAllocationBytes);
     }
     return writer;
   },
@@ -2504,6 +2566,14 @@ export const MediaSettings: MessageFns<MediaSettings> = {
           message.defaultVisibility = reader.int32() as any;
           continue;
         }
+        case 4: {
+          if (tag !== 32) {
+            break;
+          }
+
+          message.defaultMediaAllocationBytes = longToNumber(reader.uint64());
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -2518,6 +2588,9 @@ export const MediaSettings: MessageFns<MediaSettings> = {
       visible: isSet(object.visible) ? globalThis.Boolean(object.visible) : false,
       defaultModeration: isSet(object.defaultModeration) ? moderationFromJSON(object.defaultModeration) : 0,
       defaultVisibility: isSet(object.defaultVisibility) ? visibilityFromJSON(object.defaultVisibility) : 0,
+      defaultMediaAllocationBytes: isSet(object.defaultMediaAllocationBytes)
+        ? globalThis.Number(object.defaultMediaAllocationBytes)
+        : 0,
     };
   },
 
@@ -2532,6 +2605,9 @@ export const MediaSettings: MessageFns<MediaSettings> = {
     if (message.defaultVisibility !== 0) {
       obj.defaultVisibility = visibilityToJSON(message.defaultVisibility);
     }
+    if (message.defaultMediaAllocationBytes !== 0) {
+      obj.defaultMediaAllocationBytes = Math.round(message.defaultMediaAllocationBytes);
+    }
     return obj;
   },
 
@@ -2543,6 +2619,7 @@ export const MediaSettings: MessageFns<MediaSettings> = {
     message.visible = object.visible ?? false;
     message.defaultModeration = object.defaultModeration ?? 0;
     message.defaultVisibility = object.defaultVisibility ?? 0;
+    message.defaultMediaAllocationBytes = object.defaultMediaAllocationBytes ?? 0;
     return message;
   },
 };
@@ -4191,6 +4268,116 @@ export const BirdConfig: MessageFns<BirdConfig> = {
   },
 };
 
+function createBaseStripeConfig(): StripeConfig {
+  return { stripeEnabled: false, stripeSecretKey: "", stripePublishableKey: "", stripeWebhookSigningSecret: "" };
+}
+
+export const StripeConfig: MessageFns<StripeConfig> = {
+  encode(message: StripeConfig, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.stripeEnabled !== false) {
+      writer.uint32(8).bool(message.stripeEnabled);
+    }
+    if (message.stripeSecretKey !== "") {
+      writer.uint32(18).string(message.stripeSecretKey);
+    }
+    if (message.stripePublishableKey !== "") {
+      writer.uint32(26).string(message.stripePublishableKey);
+    }
+    if (message.stripeWebhookSigningSecret !== "") {
+      writer.uint32(34).string(message.stripeWebhookSigningSecret);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): StripeConfig {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseStripeConfig();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 8) {
+            break;
+          }
+
+          message.stripeEnabled = reader.bool();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.stripeSecretKey = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.stripePublishableKey = reader.string();
+          continue;
+        }
+        case 4: {
+          if (tag !== 34) {
+            break;
+          }
+
+          message.stripeWebhookSigningSecret = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): StripeConfig {
+    return {
+      stripeEnabled: isSet(object.stripeEnabled) ? globalThis.Boolean(object.stripeEnabled) : false,
+      stripeSecretKey: isSet(object.stripeSecretKey) ? globalThis.String(object.stripeSecretKey) : "",
+      stripePublishableKey: isSet(object.stripePublishableKey) ? globalThis.String(object.stripePublishableKey) : "",
+      stripeWebhookSigningSecret: isSet(object.stripeWebhookSigningSecret)
+        ? globalThis.String(object.stripeWebhookSigningSecret)
+        : "",
+    };
+  },
+
+  toJSON(message: StripeConfig): unknown {
+    const obj: any = {};
+    if (message.stripeEnabled !== false) {
+      obj.stripeEnabled = message.stripeEnabled;
+    }
+    if (message.stripeSecretKey !== "") {
+      obj.stripeSecretKey = message.stripeSecretKey;
+    }
+    if (message.stripePublishableKey !== "") {
+      obj.stripePublishableKey = message.stripePublishableKey;
+    }
+    if (message.stripeWebhookSigningSecret !== "") {
+      obj.stripeWebhookSigningSecret = message.stripeWebhookSigningSecret;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<StripeConfig>, I>>(base?: I): StripeConfig {
+    return StripeConfig.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<StripeConfig>, I>>(object: I): StripeConfig {
+    const message = createBaseStripeConfig();
+    message.stripeEnabled = object.stripeEnabled ?? false;
+    message.stripeSecretKey = object.stripeSecretKey ?? "";
+    message.stripePublishableKey = object.stripePublishableKey ?? "";
+    message.stripeWebhookSigningSecret = object.stripeWebhookSigningSecret ?? "";
+    return message;
+  },
+};
+
 type Builtin = Date | Function | Uint8Array | string | number | boolean | undefined;
 
 export type DeepPartial<T> = T extends Builtin ? T
@@ -4214,6 +4401,17 @@ function fromTimestamp(t: Timestamp): string {
   let millis = (t.seconds || 0) * 1_000;
   millis += (t.nanos || 0) / 1_000_000;
   return new globalThis.Date(millis).toISOString();
+}
+
+function longToNumber(int64: { toString(): string }): number {
+  const num = globalThis.Number(int64.toString());
+  if (num > globalThis.Number.MAX_SAFE_INTEGER) {
+    throw new globalThis.Error("Value is larger than Number.MAX_SAFE_INTEGER");
+  }
+  if (num < globalThis.Number.MIN_SAFE_INTEGER) {
+    throw new globalThis.Error("Value is smaller than Number.MIN_SAFE_INTEGER");
+  }
+  return num;
 }
 
 function isSet(value: any): boolean {
