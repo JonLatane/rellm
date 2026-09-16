@@ -250,7 +250,14 @@ policySectionView sectionClass heading editClicked maybeAdminAccount content =
                         p [ class "server-details-policy-unset" ] [ text "Not set." ]
                 , case maybeAdminAccount of
                     Just _ ->
-                        button [ class "server-details-rename-button", onClick editClicked ] [ text "Edit Name" ]
+                        let
+                            buttonText: String
+                            buttonText = "Edit " ++ (case heading of
+                                Just headingText ->
+                                    headingText
+                                _ -> "Description")
+                        in
+                        button [ class "server-details-rename-button", onClick editClicked ] [ text  buttonText]
 
                     Nothing ->
                         text ""

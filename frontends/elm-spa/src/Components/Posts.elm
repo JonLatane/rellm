@@ -1198,7 +1198,7 @@ inherently a contract between this view and whatever measures against it.
 -}
 postDetailContentPreviewHeight : Float
 postDetailContentPreviewHeight =
-    100
+    180
 
 
 
