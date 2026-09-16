@@ -17,6 +17,7 @@ import 'package:protobuf/protobuf.dart' as $pb;
 import 'google/protobuf/timestamp.pb.dart' as $13;
 import 'market.pbenum.dart';
 import 'media.pb.dart' as $5;
+import 'permissions.pbenum.dart' as $15;
 
 export 'market.pbenum.dart';
 
@@ -24,6 +25,7 @@ enum MarketProduct_Details {
   mediaStorageSubscriptionDetails, 
   aiGrantSubscriptionDetails, 
   rellmHostingSubscriptionDetails, 
+  permissionsAccessSubscriptionDetails, 
   notSet
 }
 
@@ -40,6 +42,7 @@ class MarketProduct extends $pb.GeneratedMessage {
     MediaStorageSubscriptionDetails? mediaStorageSubscriptionDetails,
     AIGrantSubscriptionDetails? aiGrantSubscriptionDetails,
     RellmHostingSubscriptionDetails? rellmHostingSubscriptionDetails,
+    PermissionsAccessSubscriptionDetails? permissionsAccessSubscriptionDetails,
     $13.Timestamp? createdAt,
     $13.Timestamp? delistedAt,
   }) {
@@ -68,6 +71,9 @@ class MarketProduct extends $pb.GeneratedMessage {
     if (rellmHostingSubscriptionDetails != null) {
       $result.rellmHostingSubscriptionDetails = rellmHostingSubscriptionDetails;
     }
+    if (permissionsAccessSubscriptionDetails != null) {
+      $result.permissionsAccessSubscriptionDetails = permissionsAccessSubscriptionDetails;
+    }
     if (createdAt != null) {
       $result.createdAt = createdAt;
     }
@@ -84,10 +90,11 @@ class MarketProduct extends $pb.GeneratedMessage {
     10 : MarketProduct_Details.mediaStorageSubscriptionDetails,
     11 : MarketProduct_Details.aiGrantSubscriptionDetails,
     12 : MarketProduct_Details.rellmHostingSubscriptionDetails,
+    13 : MarketProduct_Details.permissionsAccessSubscriptionDetails,
     0 : MarketProduct_Details.notSet
   };
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'MarketProduct', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
-    ..oo(0, [10, 11, 12])
+    ..oo(0, [10, 11, 12, 13])
     ..aOS(1, _omitFieldNames ? '' : 'id')
     ..e<PurchaseType>(2, _omitFieldNames ? '' : 'type', $pb.PbFieldType.OE, defaultOrMaker: PurchaseType.PURCHASE_TYPE_MEDIA_STORAGE, valueOf: PurchaseType.valueOf, enumValues: PurchaseType.values)
     ..e<PurchasePeriod>(3, _omitFieldNames ? '' : 'period', $pb.PbFieldType.OE, defaultOrMaker: PurchasePeriod.PURCHASE_PERIOD_INDEFINITE, valueOf: PurchasePeriod.valueOf, enumValues: PurchasePeriod.values)
@@ -96,6 +103,7 @@ class MarketProduct extends $pb.GeneratedMessage {
     ..aOM<MediaStorageSubscriptionDetails>(10, _omitFieldNames ? '' : 'mediaStorageSubscriptionDetails', subBuilder: MediaStorageSubscriptionDetails.create)
     ..aOM<AIGrantSubscriptionDetails>(11, _omitFieldNames ? '' : 'aiGrantSubscriptionDetails', subBuilder: AIGrantSubscriptionDetails.create)
     ..aOM<RellmHostingSubscriptionDetails>(12, _omitFieldNames ? '' : 'rellmHostingSubscriptionDetails', subBuilder: RellmHostingSubscriptionDetails.create)
+    ..aOM<PermissionsAccessSubscriptionDetails>(13, _omitFieldNames ? '' : 'permissionsAccessSubscriptionDetails', subBuilder: PermissionsAccessSubscriptionDetails.create)
     ..aOM<$13.Timestamp>(20, _omitFieldNames ? '' : 'createdAt', subBuilder: $13.Timestamp.create)
     ..aOM<$13.Timestamp>(21, _omitFieldNames ? '' : 'delistedAt', subBuilder: $13.Timestamp.create)
     ..hasRequiredFields = false
@@ -205,29 +213,40 @@ class MarketProduct extends $pb.GeneratedMessage {
   @$pb.TagNumber(12)
   RellmHostingSubscriptionDetails ensureRellmHostingSubscriptionDetails() => $_ensure(7);
 
+  @$pb.TagNumber(13)
+  PermissionsAccessSubscriptionDetails get permissionsAccessSubscriptionDetails => $_getN(8);
+  @$pb.TagNumber(13)
+  set permissionsAccessSubscriptionDetails(PermissionsAccessSubscriptionDetails v) { setField(13, v); }
+  @$pb.TagNumber(13)
+  $core.bool hasPermissionsAccessSubscriptionDetails() => $_has(8);
+  @$pb.TagNumber(13)
+  void clearPermissionsAccessSubscriptionDetails() => clearField(13);
+  @$pb.TagNumber(13)
+  PermissionsAccessSubscriptionDetails ensurePermissionsAccessSubscriptionDetails() => $_ensure(8);
+
   @$pb.TagNumber(20)
-  $13.Timestamp get createdAt => $_getN(8);
+  $13.Timestamp get createdAt => $_getN(9);
   @$pb.TagNumber(20)
   set createdAt($13.Timestamp v) { setField(20, v); }
   @$pb.TagNumber(20)
-  $core.bool hasCreatedAt() => $_has(8);
+  $core.bool hasCreatedAt() => $_has(9);
   @$pb.TagNumber(20)
   void clearCreatedAt() => clearField(20);
   @$pb.TagNumber(20)
-  $13.Timestamp ensureCreatedAt() => $_ensure(8);
+  $13.Timestamp ensureCreatedAt() => $_ensure(9);
 
   /// If set, the MarketProduct is not purchasable. Note: clients toggle listings by setting this,
   /// but the server will always set it to the time of the request, not the time sent *by* the request.
   @$pb.TagNumber(21)
-  $13.Timestamp get delistedAt => $_getN(9);
+  $13.Timestamp get delistedAt => $_getN(10);
   @$pb.TagNumber(21)
   set delistedAt($13.Timestamp v) { setField(21, v); }
   @$pb.TagNumber(21)
-  $core.bool hasDelistedAt() => $_has(9);
+  $core.bool hasDelistedAt() => $_has(10);
   @$pb.TagNumber(21)
   void clearDelistedAt() => clearField(21);
   @$pb.TagNumber(21)
-  $13.Timestamp ensureDelistedAt() => $_ensure(9);
+  $13.Timestamp ensureDelistedAt() => $_ensure(10);
 }
 
 /// Request to get products available for purchase on a Rellm server.
@@ -515,6 +534,7 @@ enum MarketPurchase_Details {
   mediaStoragePurchaseDetails, 
   aiGrantPurchaseDetails, 
   rellmHostingPurchaseDetails, 
+  permissionsAccessPurchaseDetails, 
   notSet
 }
 
@@ -530,6 +550,7 @@ class MarketPurchase extends $pb.GeneratedMessage {
     MediaStoragePurchaseDetails? mediaStoragePurchaseDetails,
     AIGrantPurchaseDetails? aiGrantPurchaseDetails,
     RellmHostingPurchaseDetails? rellmHostingPurchaseDetails,
+    PermissionsAccessPurchaseDetails? permissionsAccessPurchaseDetails,
     $13.Timestamp? createdAt,
   }) {
     final $result = create();
@@ -563,6 +584,9 @@ class MarketPurchase extends $pb.GeneratedMessage {
     if (rellmHostingPurchaseDetails != null) {
       $result.rellmHostingPurchaseDetails = rellmHostingPurchaseDetails;
     }
+    if (permissionsAccessPurchaseDetails != null) {
+      $result.permissionsAccessPurchaseDetails = permissionsAccessPurchaseDetails;
+    }
     if (createdAt != null) {
       $result.createdAt = createdAt;
     }
@@ -576,10 +600,11 @@ class MarketPurchase extends $pb.GeneratedMessage {
     10 : MarketPurchase_Details.mediaStoragePurchaseDetails,
     11 : MarketPurchase_Details.aiGrantPurchaseDetails,
     12 : MarketPurchase_Details.rellmHostingPurchaseDetails,
+    13 : MarketPurchase_Details.permissionsAccessPurchaseDetails,
     0 : MarketPurchase_Details.notSet
   };
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'MarketPurchase', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
-    ..oo(0, [10, 11, 12])
+    ..oo(0, [10, 11, 12, 13])
     ..aOS(1, _omitFieldNames ? '' : 'id')
     ..aOM<$5.Author>(2, _omitFieldNames ? '' : 'buyer', subBuilder: $5.Author.create)
     ..e<PurchaseType>(3, _omitFieldNames ? '' : 'type', $pb.PbFieldType.OE, defaultOrMaker: PurchaseType.PURCHASE_TYPE_MEDIA_STORAGE, valueOf: PurchaseType.valueOf, enumValues: PurchaseType.values)
@@ -590,6 +615,7 @@ class MarketPurchase extends $pb.GeneratedMessage {
     ..aOM<MediaStoragePurchaseDetails>(10, _omitFieldNames ? '' : 'mediaStoragePurchaseDetails', subBuilder: MediaStoragePurchaseDetails.create)
     ..aOM<AIGrantPurchaseDetails>(11, _omitFieldNames ? '' : 'aiGrantPurchaseDetails', subBuilder: AIGrantPurchaseDetails.create)
     ..aOM<RellmHostingPurchaseDetails>(12, _omitFieldNames ? '' : 'rellmHostingPurchaseDetails', subBuilder: RellmHostingPurchaseDetails.create)
+    ..aOM<PermissionsAccessPurchaseDetails>(13, _omitFieldNames ? '' : 'permissionsAccessPurchaseDetails', subBuilder: PermissionsAccessPurchaseDetails.create)
     ..aOM<$13.Timestamp>(20, _omitFieldNames ? '' : 'createdAt', subBuilder: $13.Timestamp.create)
     ..hasRequiredFields = false
   ;
@@ -709,16 +735,27 @@ class MarketPurchase extends $pb.GeneratedMessage {
   @$pb.TagNumber(12)
   RellmHostingPurchaseDetails ensureRellmHostingPurchaseDetails() => $_ensure(9);
 
+  @$pb.TagNumber(13)
+  PermissionsAccessPurchaseDetails get permissionsAccessPurchaseDetails => $_getN(10);
+  @$pb.TagNumber(13)
+  set permissionsAccessPurchaseDetails(PermissionsAccessPurchaseDetails v) { setField(13, v); }
+  @$pb.TagNumber(13)
+  $core.bool hasPermissionsAccessPurchaseDetails() => $_has(10);
+  @$pb.TagNumber(13)
+  void clearPermissionsAccessPurchaseDetails() => clearField(13);
+  @$pb.TagNumber(13)
+  PermissionsAccessPurchaseDetails ensurePermissionsAccessPurchaseDetails() => $_ensure(10);
+
   @$pb.TagNumber(20)
-  $13.Timestamp get createdAt => $_getN(10);
+  $13.Timestamp get createdAt => $_getN(11);
   @$pb.TagNumber(20)
   set createdAt($13.Timestamp v) { setField(20, v); }
   @$pb.TagNumber(20)
-  $core.bool hasCreatedAt() => $_has(10);
+  $core.bool hasCreatedAt() => $_has(11);
   @$pb.TagNumber(20)
   void clearCreatedAt() => clearField(20);
   @$pb.TagNumber(20)
-  $13.Timestamp ensureCreatedAt() => $_ensure(10);
+  $13.Timestamp ensureCreatedAt() => $_ensure(11);
 }
 
 class MarketPayment extends $pb.GeneratedMessage {
@@ -726,6 +763,7 @@ class MarketPayment extends $pb.GeneratedMessage {
     $core.int? amount,
     $core.int? currency,
     $core.String? marketPurchaseId,
+    MarketPaymentMethod? method,
     $13.Timestamp? createdAt,
   }) {
     final $result = create();
@@ -737,6 +775,9 @@ class MarketPayment extends $pb.GeneratedMessage {
     }
     if (marketPurchaseId != null) {
       $result.marketPurchaseId = marketPurchaseId;
+    }
+    if (method != null) {
+      $result.method = method;
     }
     if (createdAt != null) {
       $result.createdAt = createdAt;
@@ -751,6 +792,7 @@ class MarketPayment extends $pb.GeneratedMessage {
     ..a<$core.int>(1, _omitFieldNames ? '' : 'amount', $pb.PbFieldType.OU3)
     ..a<$core.int>(2, _omitFieldNames ? '' : 'currency', $pb.PbFieldType.OU3)
     ..aOS(3, _omitFieldNames ? '' : 'marketPurchaseId')
+    ..aOM<MarketPaymentMethod>(4, _omitFieldNames ? '' : 'method', subBuilder: MarketPaymentMethod.create)
     ..aOM<$13.Timestamp>(10, _omitFieldNames ? '' : 'createdAt', subBuilder: $13.Timestamp.create)
     ..hasRequiredFields = false
   ;
@@ -803,25 +845,65 @@ class MarketPayment extends $pb.GeneratedMessage {
   @$pb.TagNumber(3)
   void clearMarketPurchaseId() => clearField(3);
 
+  /// The card actually charged, if known/resolvable at the time this MarketPayment was recorded.
+  @$pb.TagNumber(4)
+  MarketPaymentMethod get method => $_getN(3);
+  @$pb.TagNumber(4)
+  set method(MarketPaymentMethod v) { setField(4, v); }
+  @$pb.TagNumber(4)
+  $core.bool hasMethod() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearMethod() => clearField(4);
+  @$pb.TagNumber(4)
+  MarketPaymentMethod ensureMethod() => $_ensure(3);
+
   @$pb.TagNumber(10)
-  $13.Timestamp get createdAt => $_getN(3);
+  $13.Timestamp get createdAt => $_getN(4);
   @$pb.TagNumber(10)
   set createdAt($13.Timestamp v) { setField(10, v); }
   @$pb.TagNumber(10)
-  $core.bool hasCreatedAt() => $_has(3);
+  $core.bool hasCreatedAt() => $_has(4);
   @$pb.TagNumber(10)
   void clearCreatedAt() => clearField(10);
   @$pb.TagNumber(10)
-  $13.Timestamp ensureCreatedAt() => $_ensure(3);
+  $13.Timestamp ensureCreatedAt() => $_ensure(4);
 }
 
+/// Card details for a MarketPayment, resolved from Stripe at charge time (Stripe's own
+/// `PaymentMethod.card` object). Unset entirely if the payment wasn't card-based or details
+/// couldn't be resolved. Never carries anything more sensitive than what Stripe itself considers
+/// safe to display (brand/last4/expiry) -- never a full card number.
 class MarketPaymentMethod extends $pb.GeneratedMessage {
-  factory MarketPaymentMethod() => create();
+  factory MarketPaymentMethod({
+    $core.String? cardBrand,
+    $core.String? cardLast4,
+    $core.int? cardExpMonth,
+    $core.int? cardExpYear,
+  }) {
+    final $result = create();
+    if (cardBrand != null) {
+      $result.cardBrand = cardBrand;
+    }
+    if (cardLast4 != null) {
+      $result.cardLast4 = cardLast4;
+    }
+    if (cardExpMonth != null) {
+      $result.cardExpMonth = cardExpMonth;
+    }
+    if (cardExpYear != null) {
+      $result.cardExpYear = cardExpYear;
+    }
+    return $result;
+  }
   MarketPaymentMethod._() : super();
   factory MarketPaymentMethod.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromBuffer(i, r);
   factory MarketPaymentMethod.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
 
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'MarketPaymentMethod', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'cardBrand')
+    ..aOS(2, _omitFieldNames ? '' : 'cardLast4')
+    ..a<$core.int>(3, _omitFieldNames ? '' : 'cardExpMonth', $pb.PbFieldType.OU3)
+    ..a<$core.int>(4, _omitFieldNames ? '' : 'cardExpYear', $pb.PbFieldType.OU3)
     ..hasRequiredFields = false
   ;
 
@@ -845,6 +927,44 @@ class MarketPaymentMethod extends $pb.GeneratedMessage {
   @$core.pragma('dart2js:noInline')
   static MarketPaymentMethod getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<MarketPaymentMethod>(create);
   static MarketPaymentMethod? _defaultInstance;
+
+  /// E.g. "visa", "mastercard", "amex".
+  @$pb.TagNumber(1)
+  $core.String get cardBrand => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set cardBrand($core.String v) { $_setString(0, v); }
+  @$pb.TagNumber(1)
+  $core.bool hasCardBrand() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearCardBrand() => clearField(1);
+
+  /// Last 4 digits of the card number.
+  @$pb.TagNumber(2)
+  $core.String get cardLast4 => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set cardLast4($core.String v) { $_setString(1, v); }
+  @$pb.TagNumber(2)
+  $core.bool hasCardLast4() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearCardLast4() => clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.int get cardExpMonth => $_getIZ(2);
+  @$pb.TagNumber(3)
+  set cardExpMonth($core.int v) { $_setUnsignedInt32(2, v); }
+  @$pb.TagNumber(3)
+  $core.bool hasCardExpMonth() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearCardExpMonth() => clearField(3);
+
+  @$pb.TagNumber(4)
+  $core.int get cardExpYear => $_getIZ(3);
+  @$pb.TagNumber(4)
+  set cardExpYear($core.int v) { $_setUnsignedInt32(3, v); }
+  @$pb.TagNumber(4)
+  $core.bool hasCardExpYear() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearCardExpYear() => clearField(4);
 }
 
 class MarketRefund extends $pb.GeneratedMessage {
@@ -852,6 +972,7 @@ class MarketRefund extends $pb.GeneratedMessage {
     $core.int? amount,
     $core.int? currency,
     $core.String? marketPurchaseId,
+    MarketRefundMethod? method,
     $13.Timestamp? createdAt,
   }) {
     final $result = create();
@@ -863,6 +984,9 @@ class MarketRefund extends $pb.GeneratedMessage {
     }
     if (marketPurchaseId != null) {
       $result.marketPurchaseId = marketPurchaseId;
+    }
+    if (method != null) {
+      $result.method = method;
     }
     if (createdAt != null) {
       $result.createdAt = createdAt;
@@ -877,6 +1001,7 @@ class MarketRefund extends $pb.GeneratedMessage {
     ..a<$core.int>(1, _omitFieldNames ? '' : 'amount', $pb.PbFieldType.OU3)
     ..a<$core.int>(2, _omitFieldNames ? '' : 'currency', $pb.PbFieldType.OU3)
     ..aOS(3, _omitFieldNames ? '' : 'marketPurchaseId')
+    ..aOM<MarketRefundMethod>(4, _omitFieldNames ? '' : 'method', subBuilder: MarketRefundMethod.create)
     ..aOM<$13.Timestamp>(10, _omitFieldNames ? '' : 'createdAt', subBuilder: $13.Timestamp.create)
     ..hasRequiredFields = false
   ;
@@ -929,25 +1054,66 @@ class MarketRefund extends $pb.GeneratedMessage {
   @$pb.TagNumber(3)
   void clearMarketPurchaseId() => clearField(3);
 
+  /// The card the refund was issued back to -- in practice always the same card as the
+  /// MarketPayment being refunded, since Stripe refunds are only ever issued back to their
+  /// original payment method.
+  @$pb.TagNumber(4)
+  MarketRefundMethod get method => $_getN(3);
+  @$pb.TagNumber(4)
+  set method(MarketRefundMethod v) { setField(4, v); }
+  @$pb.TagNumber(4)
+  $core.bool hasMethod() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearMethod() => clearField(4);
+  @$pb.TagNumber(4)
+  MarketRefundMethod ensureMethod() => $_ensure(3);
+
   @$pb.TagNumber(10)
-  $13.Timestamp get createdAt => $_getN(3);
+  $13.Timestamp get createdAt => $_getN(4);
   @$pb.TagNumber(10)
   set createdAt($13.Timestamp v) { setField(10, v); }
   @$pb.TagNumber(10)
-  $core.bool hasCreatedAt() => $_has(3);
+  $core.bool hasCreatedAt() => $_has(4);
   @$pb.TagNumber(10)
   void clearCreatedAt() => clearField(10);
   @$pb.TagNumber(10)
-  $13.Timestamp ensureCreatedAt() => $_ensure(3);
+  $13.Timestamp ensureCreatedAt() => $_ensure(4);
 }
 
+/// Same shape as MarketPaymentMethod -- kept as its own message (rather than reusing
+/// MarketPaymentMethod directly) since a MarketRefund and the MarketPayment it refunds are
+/// otherwise-independent messages, matching the MarketPayment/MarketRefund split itself.
 class MarketRefundMethod extends $pb.GeneratedMessage {
-  factory MarketRefundMethod() => create();
+  factory MarketRefundMethod({
+    $core.String? cardBrand,
+    $core.String? cardLast4,
+    $core.int? cardExpMonth,
+    $core.int? cardExpYear,
+  }) {
+    final $result = create();
+    if (cardBrand != null) {
+      $result.cardBrand = cardBrand;
+    }
+    if (cardLast4 != null) {
+      $result.cardLast4 = cardLast4;
+    }
+    if (cardExpMonth != null) {
+      $result.cardExpMonth = cardExpMonth;
+    }
+    if (cardExpYear != null) {
+      $result.cardExpYear = cardExpYear;
+    }
+    return $result;
+  }
   MarketRefundMethod._() : super();
   factory MarketRefundMethod.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromBuffer(i, r);
   factory MarketRefundMethod.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
 
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'MarketRefundMethod', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'cardBrand')
+    ..aOS(2, _omitFieldNames ? '' : 'cardLast4')
+    ..a<$core.int>(3, _omitFieldNames ? '' : 'cardExpMonth', $pb.PbFieldType.OU3)
+    ..a<$core.int>(4, _omitFieldNames ? '' : 'cardExpYear', $pb.PbFieldType.OU3)
     ..hasRequiredFields = false
   ;
 
@@ -971,6 +1137,42 @@ class MarketRefundMethod extends $pb.GeneratedMessage {
   @$core.pragma('dart2js:noInline')
   static MarketRefundMethod getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<MarketRefundMethod>(create);
   static MarketRefundMethod? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get cardBrand => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set cardBrand($core.String v) { $_setString(0, v); }
+  @$pb.TagNumber(1)
+  $core.bool hasCardBrand() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearCardBrand() => clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.String get cardLast4 => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set cardLast4($core.String v) { $_setString(1, v); }
+  @$pb.TagNumber(2)
+  $core.bool hasCardLast4() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearCardLast4() => clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.int get cardExpMonth => $_getIZ(2);
+  @$pb.TagNumber(3)
+  set cardExpMonth($core.int v) { $_setUnsignedInt32(2, v); }
+  @$pb.TagNumber(3)
+  $core.bool hasCardExpMonth() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearCardExpMonth() => clearField(3);
+
+  @$pb.TagNumber(4)
+  $core.int get cardExpYear => $_getIZ(3);
+  @$pb.TagNumber(4)
+  set cardExpYear($core.int v) { $_setUnsignedInt32(3, v); }
+  @$pb.TagNumber(4)
+  $core.bool hasCardExpYear() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearCardExpYear() => clearField(4);
 }
 
 class MediaStoragePurchaseDetails extends $pb.GeneratedMessage {
@@ -1201,10 +1403,55 @@ class RellmHostingPurchaseDetails extends $pb.GeneratedMessage {
   void clearAdditionalInformation() => clearField(5);
 }
 
+class PermissionsAccessPurchaseDetails extends $pb.GeneratedMessage {
+  factory PermissionsAccessPurchaseDetails({
+    $core.Iterable<$15.Permission>? permissions,
+  }) {
+    final $result = create();
+    if (permissions != null) {
+      $result.permissions.addAll(permissions);
+    }
+    return $result;
+  }
+  PermissionsAccessPurchaseDetails._() : super();
+  factory PermissionsAccessPurchaseDetails.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromBuffer(i, r);
+  factory PermissionsAccessPurchaseDetails.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'PermissionsAccessPurchaseDetails', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
+    ..pc<$15.Permission>(1, _omitFieldNames ? '' : 'permissions', $pb.PbFieldType.KE, valueOf: $15.Permission.valueOf, enumValues: $15.Permission.values, defaultEnumValue: $15.Permission.PERMISSION_UNKNOWN)
+    ..hasRequiredFields = false
+  ;
+
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.deepCopy] instead. '
+  'Will be removed in next major version')
+  PermissionsAccessPurchaseDetails clone() => PermissionsAccessPurchaseDetails()..mergeFromMessage(this);
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.rebuild] instead. '
+  'Will be removed in next major version')
+  PermissionsAccessPurchaseDetails copyWith(void Function(PermissionsAccessPurchaseDetails) updates) => super.copyWith((message) => updates(message as PermissionsAccessPurchaseDetails)) as PermissionsAccessPurchaseDetails;
+
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static PermissionsAccessPurchaseDetails create() => PermissionsAccessPurchaseDetails._();
+  PermissionsAccessPurchaseDetails createEmptyInstance() => create();
+  static $pb.PbList<PermissionsAccessPurchaseDetails> createRepeated() => $pb.PbList<PermissionsAccessPurchaseDetails>();
+  @$core.pragma('dart2js:noInline')
+  static PermissionsAccessPurchaseDetails getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<PermissionsAccessPurchaseDetails>(create);
+  static PermissionsAccessPurchaseDetails? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.List<$15.Permission> get permissions => $_getList(0);
+}
+
 enum MarketSubscription_Details {
   mediaStorageSubscriptionDetails, 
   aiGrantSubscriptionDetails, 
   rellmHostingSubscriptionDetails, 
+  permissionsAccessSubscriptionDetails, 
   notSet
 }
 
@@ -1221,6 +1468,7 @@ class MarketSubscription extends $pb.GeneratedMessage {
     MediaStorageSubscriptionDetails? mediaStorageSubscriptionDetails,
     AIGrantSubscriptionDetails? aiGrantSubscriptionDetails,
     RellmHostingSubscriptionDetails? rellmHostingSubscriptionDetails,
+    PermissionsAccessSubscriptionDetails? permissionsAccessSubscriptionDetails,
     $13.Timestamp? createdAt,
     $13.Timestamp? renewsAt,
     $13.Timestamp? endedAt,
@@ -1259,6 +1507,9 @@ class MarketSubscription extends $pb.GeneratedMessage {
     if (rellmHostingSubscriptionDetails != null) {
       $result.rellmHostingSubscriptionDetails = rellmHostingSubscriptionDetails;
     }
+    if (permissionsAccessSubscriptionDetails != null) {
+      $result.permissionsAccessSubscriptionDetails = permissionsAccessSubscriptionDetails;
+    }
     if (createdAt != null) {
       $result.createdAt = createdAt;
     }
@@ -1278,10 +1529,11 @@ class MarketSubscription extends $pb.GeneratedMessage {
     10 : MarketSubscription_Details.mediaStorageSubscriptionDetails,
     11 : MarketSubscription_Details.aiGrantSubscriptionDetails,
     12 : MarketSubscription_Details.rellmHostingSubscriptionDetails,
+    13 : MarketSubscription_Details.permissionsAccessSubscriptionDetails,
     0 : MarketSubscription_Details.notSet
   };
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'MarketSubscription', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
-    ..oo(0, [10, 11, 12])
+    ..oo(0, [10, 11, 12, 13])
     ..aOS(1, _omitFieldNames ? '' : 'id')
     ..aOM<$5.Author>(2, _omitFieldNames ? '' : 'buyer', subBuilder: $5.Author.create)
     ..e<PurchaseType>(3, _omitFieldNames ? '' : 'type', $pb.PbFieldType.OE, defaultOrMaker: PurchaseType.PURCHASE_TYPE_MEDIA_STORAGE, valueOf: PurchaseType.valueOf, enumValues: PurchaseType.values)
@@ -1293,6 +1545,7 @@ class MarketSubscription extends $pb.GeneratedMessage {
     ..aOM<MediaStorageSubscriptionDetails>(10, _omitFieldNames ? '' : 'mediaStorageSubscriptionDetails', subBuilder: MediaStorageSubscriptionDetails.create)
     ..aOM<AIGrantSubscriptionDetails>(11, _omitFieldNames ? '' : 'aiGrantSubscriptionDetails', subBuilder: AIGrantSubscriptionDetails.create)
     ..aOM<RellmHostingSubscriptionDetails>(12, _omitFieldNames ? '' : 'rellmHostingSubscriptionDetails', subBuilder: RellmHostingSubscriptionDetails.create)
+    ..aOM<PermissionsAccessSubscriptionDetails>(13, _omitFieldNames ? '' : 'permissionsAccessSubscriptionDetails', subBuilder: PermissionsAccessSubscriptionDetails.create)
     ..aOM<$13.Timestamp>(20, _omitFieldNames ? '' : 'createdAt', subBuilder: $13.Timestamp.create)
     ..aOM<$13.Timestamp>(21, _omitFieldNames ? '' : 'renewsAt', subBuilder: $13.Timestamp.create)
     ..aOM<$13.Timestamp>(22, _omitFieldNames ? '' : 'endedAt', subBuilder: $13.Timestamp.create)
@@ -1427,39 +1680,50 @@ class MarketSubscription extends $pb.GeneratedMessage {
   @$pb.TagNumber(12)
   RellmHostingSubscriptionDetails ensureRellmHostingSubscriptionDetails() => $_ensure(10);
 
+  @$pb.TagNumber(13)
+  PermissionsAccessSubscriptionDetails get permissionsAccessSubscriptionDetails => $_getN(11);
+  @$pb.TagNumber(13)
+  set permissionsAccessSubscriptionDetails(PermissionsAccessSubscriptionDetails v) { setField(13, v); }
+  @$pb.TagNumber(13)
+  $core.bool hasPermissionsAccessSubscriptionDetails() => $_has(11);
+  @$pb.TagNumber(13)
+  void clearPermissionsAccessSubscriptionDetails() => clearField(13);
+  @$pb.TagNumber(13)
+  PermissionsAccessSubscriptionDetails ensurePermissionsAccessSubscriptionDetails() => $_ensure(11);
+
   @$pb.TagNumber(20)
-  $13.Timestamp get createdAt => $_getN(11);
+  $13.Timestamp get createdAt => $_getN(12);
   @$pb.TagNumber(20)
   set createdAt($13.Timestamp v) { setField(20, v); }
   @$pb.TagNumber(20)
-  $core.bool hasCreatedAt() => $_has(11);
+  $core.bool hasCreatedAt() => $_has(12);
   @$pb.TagNumber(20)
   void clearCreatedAt() => clearField(20);
   @$pb.TagNumber(20)
-  $13.Timestamp ensureCreatedAt() => $_ensure(11);
+  $13.Timestamp ensureCreatedAt() => $_ensure(12);
 
   @$pb.TagNumber(21)
-  $13.Timestamp get renewsAt => $_getN(12);
+  $13.Timestamp get renewsAt => $_getN(13);
   @$pb.TagNumber(21)
   set renewsAt($13.Timestamp v) { setField(21, v); }
   @$pb.TagNumber(21)
-  $core.bool hasRenewsAt() => $_has(12);
+  $core.bool hasRenewsAt() => $_has(13);
   @$pb.TagNumber(21)
   void clearRenewsAt() => clearField(21);
   @$pb.TagNumber(21)
-  $13.Timestamp ensureRenewsAt() => $_ensure(12);
+  $13.Timestamp ensureRenewsAt() => $_ensure(13);
 
   /// If set, the MarketSubscription is unavailable
   @$pb.TagNumber(22)
-  $13.Timestamp get endedAt => $_getN(13);
+  $13.Timestamp get endedAt => $_getN(14);
   @$pb.TagNumber(22)
   set endedAt($13.Timestamp v) { setField(22, v); }
   @$pb.TagNumber(22)
-  $core.bool hasEndedAt() => $_has(13);
+  $core.bool hasEndedAt() => $_has(14);
   @$pb.TagNumber(22)
   void clearEndedAt() => clearField(22);
   @$pb.TagNumber(22)
-  $13.Timestamp ensureEndedAt() => $_ensure(13);
+  $13.Timestamp ensureEndedAt() => $_ensure(14);
 }
 
 class MediaStorageSubscriptionDetails extends $pb.GeneratedMessage {
@@ -1688,6 +1952,50 @@ class RellmHostingSubscriptionDetails extends $pb.GeneratedMessage {
   $core.bool hasAdditionalInformation() => $_has(4);
   @$pb.TagNumber(5)
   void clearAdditionalInformation() => clearField(5);
+}
+
+class PermissionsAccessSubscriptionDetails extends $pb.GeneratedMessage {
+  factory PermissionsAccessSubscriptionDetails({
+    $core.Iterable<$15.Permission>? permissions,
+  }) {
+    final $result = create();
+    if (permissions != null) {
+      $result.permissions.addAll(permissions);
+    }
+    return $result;
+  }
+  PermissionsAccessSubscriptionDetails._() : super();
+  factory PermissionsAccessSubscriptionDetails.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromBuffer(i, r);
+  factory PermissionsAccessSubscriptionDetails.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'PermissionsAccessSubscriptionDetails', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
+    ..pc<$15.Permission>(1, _omitFieldNames ? '' : 'permissions', $pb.PbFieldType.KE, valueOf: $15.Permission.valueOf, enumValues: $15.Permission.values, defaultEnumValue: $15.Permission.PERMISSION_UNKNOWN)
+    ..hasRequiredFields = false
+  ;
+
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.deepCopy] instead. '
+  'Will be removed in next major version')
+  PermissionsAccessSubscriptionDetails clone() => PermissionsAccessSubscriptionDetails()..mergeFromMessage(this);
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.rebuild] instead. '
+  'Will be removed in next major version')
+  PermissionsAccessSubscriptionDetails copyWith(void Function(PermissionsAccessSubscriptionDetails) updates) => super.copyWith((message) => updates(message as PermissionsAccessSubscriptionDetails)) as PermissionsAccessSubscriptionDetails;
+
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static PermissionsAccessSubscriptionDetails create() => PermissionsAccessSubscriptionDetails._();
+  PermissionsAccessSubscriptionDetails createEmptyInstance() => create();
+  static $pb.PbList<PermissionsAccessSubscriptionDetails> createRepeated() => $pb.PbList<PermissionsAccessSubscriptionDetails>();
+  @$core.pragma('dart2js:noInline')
+  static PermissionsAccessSubscriptionDetails getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<PermissionsAccessSubscriptionDetails>(create);
+  static PermissionsAccessSubscriptionDetails? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.List<$15.Permission> get permissions => $_getList(0);
 }
 
 

@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package rellm;
 import "media.proto";
+import "permissions.proto";
 import "google/protobuf/timestamp.proto";
 
 // To back this all we need the following tables:
@@ -44,6 +45,7 @@ enum PurchaseType {
   PURCHASE_TYPE_MEDIA_STORAGE = 0;
   PURCHASE_TYPE_AI_GRANTS = 1;
   PURCHASE_TYPE_RELLM_HOSTING = 2;
+  PURCHASE_TYPE_PERMISSIONS_ACCESS = 3;
 }
 
 enum PurchasePeriod {
@@ -68,6 +70,7 @@ message MarketProduct {
     MediaStorageSubscriptionDetails media_storage_subscription_details = 10;
     AIGrantSubscriptionDetails ai_grant_subscription_details = 11;
     RellmHostingSubscriptionDetails rellm_hosting_subscription_details = 12;
+    PermissionsAccessSubscriptionDetails permissions_access_subscription_details = 13;
   }
 
   google.protobuf.Timestamp created_at = 20;
@@ -133,6 +136,7 @@ message MarketPurchase {
     MediaStoragePurchaseDetails media_storage_purchase_details = 10;
     AIGrantPurchaseDetails ai_grant_purchase_details = 11;
     RellmHostingPurchaseDetails rellm_hosting_purchase_details = 12;
+    PermissionsAccessPurchaseDetails permissions_access_purchase_details = 13;
   }
 
   google.protobuf.Timestamp created_at = 20;
@@ -142,21 +146,42 @@ message MarketPayment {
   uint32 amount = 1;
   uint32 currency = 2;
   string market_purchase_id = 3;
+  // The card actually charged, if known/resolvable at the time this MarketPayment was recorded.
+  optional MarketPaymentMethod method = 4;
   google.protobuf.Timestamp created_at = 10;
 }
 
+// Card details for a MarketPayment, resolved from Stripe at charge time (Stripe's own
+// `PaymentMethod.card` object). Unset entirely if the payment wasn't card-based or details
+// couldn't be resolved. Never carries anything more sensitive than what Stripe itself considers
+// safe to display (brand/last4/expiry) -- never a full card number.
 message MarketPaymentMethod {
-
+  // E.g. "visa", "mastercard", "amex".
+  string card_brand = 1;
+  // Last 4 digits of the card number.
+  string card_last4 = 2;
+  uint32 card_exp_month = 3;
+  uint32 card_exp_year = 4;
 }
 
 message MarketRefund {
   uint32 amount = 1;
   uint32 currency = 2;
   string market_purchase_id = 3;
+  // The card the refund was issued back to -- in practice always the same card as the
+  // MarketPayment being refunded, since Stripe refunds are only ever issued back to their
+  // original payment method.
+  optional MarketRefundMethod method = 4;
   google.protobuf.Timestamp created_at = 10;
 }
+// Same shape as MarketPaymentMethod -- kept as its own message (rather than reusing
+// MarketPaymentMethod directly) since a MarketRefund and the MarketPayment it refunds are
+// otherwise-independent messages, matching the MarketPayment/MarketRefund split itself.
 message MarketRefundMethod {
-
+  string card_brand = 1;
+  string card_last4 = 2;
+  uint32 card_exp_month = 3;
+  uint32 card_exp_year = 4;
 }
 
 message MediaStoragePurchaseDetails {
@@ -177,6 +202,10 @@ message RellmHostingPurchaseDetails {
   string additional_information = 5;
 }
 
+message PermissionsAccessPurchaseDetails {
+  repeated Permission permissions = 1;
+}
+
 message MarketSubscription {
   string id = 1;
   Author buyer = 2;
@@ -194,6 +223,7 @@ message MarketSubscription {
     MediaStorageSubscriptionDetails media_storage_subscription_details = 10;
     AIGrantSubscriptionDetails ai_grant_subscription_details = 11;
     RellmHostingSubscriptionDetails rellm_hosting_subscription_details = 12;
+    PermissionsAccessSubscriptionDetails permissions_access_subscription_details = 13;
   }
 
   google.protobuf.Timestamp created_at = 20;
@@ -219,4 +249,9 @@ message RellmHostingSubscriptionDetails {
   string domain = 3;
   string contact_email = 4;
   string additional_information = 5;
+}
+
+
+message PermissionsAccessSubscriptionDetails {
+  repeated Permission permissions = 1;
 }

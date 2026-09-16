@@ -8,6 +8,7 @@
 import { BinaryReader, BinaryWriter } from "@bufbuild/protobuf/wire";
 import { Timestamp } from "./google/protobuf/timestamp";
 import { Author } from "./media";
+import { Permission, permissionFromJSON, permissionToJSON } from "./permissions";
 
 export const protobufPackage = "rellm";
 
@@ -15,6 +16,7 @@ export enum PurchaseType {
   PURCHASE_TYPE_MEDIA_STORAGE = 0,
   PURCHASE_TYPE_AI_GRANTS = 1,
   PURCHASE_TYPE_RELLM_HOSTING = 2,
+  PURCHASE_TYPE_PERMISSIONS_ACCESS = 3,
   UNRECOGNIZED = -1,
 }
 
@@ -29,6 +31,9 @@ export function purchaseTypeFromJSON(object: any): PurchaseType {
     case 2:
     case "PURCHASE_TYPE_RELLM_HOSTING":
       return PurchaseType.PURCHASE_TYPE_RELLM_HOSTING;
+    case 3:
+    case "PURCHASE_TYPE_PERMISSIONS_ACCESS":
+      return PurchaseType.PURCHASE_TYPE_PERMISSIONS_ACCESS;
     case -1:
     case "UNRECOGNIZED":
     default:
@@ -44,6 +49,8 @@ export function purchaseTypeToJSON(object: PurchaseType): string {
       return "PURCHASE_TYPE_AI_GRANTS";
     case PurchaseType.PURCHASE_TYPE_RELLM_HOSTING:
       return "PURCHASE_TYPE_RELLM_HOSTING";
+    case PurchaseType.PURCHASE_TYPE_PERMISSIONS_ACCESS:
+      return "PURCHASE_TYPE_PERMISSIONS_ACCESS";
     case PurchaseType.UNRECOGNIZED:
     default:
       return "UNRECOGNIZED";
@@ -105,6 +112,7 @@ export interface MarketProduct {
   mediaStorageSubscriptionDetails?: MediaStorageSubscriptionDetails | undefined;
   aiGrantSubscriptionDetails?: AIGrantSubscriptionDetails | undefined;
   rellmHostingSubscriptionDetails?: RellmHostingSubscriptionDetails | undefined;
+  permissionsAccessSubscriptionDetails?: PermissionsAccessSubscriptionDetails | undefined;
   createdAt:
     | string
     | undefined;
@@ -173,6 +181,7 @@ export interface MarketPurchase {
   mediaStoragePurchaseDetails?: MediaStoragePurchaseDetails | undefined;
   aiGrantPurchaseDetails?: AIGrantPurchaseDetails | undefined;
   rellmHostingPurchaseDetails?: RellmHostingPurchaseDetails | undefined;
+  permissionsAccessPurchaseDetails?: PermissionsAccessPurchaseDetails | undefined;
   createdAt: string | undefined;
 }
 
@@ -180,20 +189,49 @@ export interface MarketPayment {
   amount: number;
   currency: number;
   marketPurchaseId: string;
+  /** The card actually charged, if known/resolvable at the time this MarketPayment was recorded. */
+  method?: MarketPaymentMethod | undefined;
   createdAt: string | undefined;
 }
 
+/**
+ * Card details for a MarketPayment, resolved from Stripe at charge time (Stripe's own
+ * `PaymentMethod.card` object). Unset entirely if the payment wasn't card-based or details
+ * couldn't be resolved. Never carries anything more sensitive than what Stripe itself considers
+ * safe to display (brand/last4/expiry) -- never a full card number.
+ */
 export interface MarketPaymentMethod {
+  /** E.g. "visa", "mastercard", "amex". */
+  cardBrand: string;
+  /** Last 4 digits of the card number. */
+  cardLast4: string;
+  cardExpMonth: number;
+  cardExpYear: number;
 }
 
 export interface MarketRefund {
   amount: number;
   currency: number;
   marketPurchaseId: string;
+  /**
+   * The card the refund was issued back to -- in practice always the same card as the
+   * MarketPayment being refunded, since Stripe refunds are only ever issued back to their
+   * original payment method.
+   */
+  method?: MarketRefundMethod | undefined;
   createdAt: string | undefined;
 }
 
+/**
+ * Same shape as MarketPaymentMethod -- kept as its own message (rather than reusing
+ * MarketPaymentMethod directly) since a MarketRefund and the MarketPayment it refunds are
+ * otherwise-independent messages, matching the MarketPayment/MarketRefund split itself.
+ */
 export interface MarketRefundMethod {
+  cardBrand: string;
+  cardLast4: string;
+  cardExpMonth: number;
+  cardExpYear: number;
 }
 
 export interface MediaStoragePurchaseDetails {
@@ -214,6 +252,10 @@ export interface RellmHostingPurchaseDetails {
   additionalInformation: string;
 }
 
+export interface PermissionsAccessPurchaseDetails {
+  permissions: Permission[];
+}
+
 export interface MarketSubscription {
   id: string;
   buyer: Author | undefined;
@@ -227,6 +269,7 @@ export interface MarketSubscription {
   mediaStorageSubscriptionDetails?: MediaStorageSubscriptionDetails | undefined;
   aiGrantSubscriptionDetails?: AIGrantSubscriptionDetails | undefined;
   rellmHostingSubscriptionDetails?: RellmHostingSubscriptionDetails | undefined;
+  permissionsAccessSubscriptionDetails?: PermissionsAccessSubscriptionDetails | undefined;
   createdAt: string | undefined;
   renewsAt?:
     | string
@@ -253,6 +296,10 @@ export interface RellmHostingSubscriptionDetails {
   additionalInformation: string;
 }
 
+export interface PermissionsAccessSubscriptionDetails {
+  permissions: Permission[];
+}
+
 function createBaseMarketProduct(): MarketProduct {
   return {
     id: "",
@@ -263,6 +310,7 @@ function createBaseMarketProduct(): MarketProduct {
     mediaStorageSubscriptionDetails: undefined,
     aiGrantSubscriptionDetails: undefined,
     rellmHostingSubscriptionDetails: undefined,
+    permissionsAccessSubscriptionDetails: undefined,
     createdAt: undefined,
     delistedAt: undefined,
   };
@@ -293,6 +341,12 @@ export const MarketProduct: MessageFns<MarketProduct> = {
     }
     if (message.rellmHostingSubscriptionDetails !== undefined) {
       RellmHostingSubscriptionDetails.encode(message.rellmHostingSubscriptionDetails, writer.uint32(98).fork()).join();
+    }
+    if (message.permissionsAccessSubscriptionDetails !== undefined) {
+      PermissionsAccessSubscriptionDetails.encode(
+        message.permissionsAccessSubscriptionDetails,
+        writer.uint32(106).fork(),
+      ).join();
     }
     if (message.createdAt !== undefined) {
       Timestamp.encode(toTimestamp(message.createdAt), writer.uint32(162).fork()).join();
@@ -374,6 +428,17 @@ export const MarketProduct: MessageFns<MarketProduct> = {
           message.rellmHostingSubscriptionDetails = RellmHostingSubscriptionDetails.decode(reader, reader.uint32());
           continue;
         }
+        case 13: {
+          if (tag !== 106) {
+            break;
+          }
+
+          message.permissionsAccessSubscriptionDetails = PermissionsAccessSubscriptionDetails.decode(
+            reader,
+            reader.uint32(),
+          );
+          continue;
+        }
         case 20: {
           if (tag !== 162) {
             break;
@@ -415,6 +480,9 @@ export const MarketProduct: MessageFns<MarketProduct> = {
       rellmHostingSubscriptionDetails: isSet(object.rellmHostingSubscriptionDetails)
         ? RellmHostingSubscriptionDetails.fromJSON(object.rellmHostingSubscriptionDetails)
         : undefined,
+      permissionsAccessSubscriptionDetails: isSet(object.permissionsAccessSubscriptionDetails)
+        ? PermissionsAccessSubscriptionDetails.fromJSON(object.permissionsAccessSubscriptionDetails)
+        : undefined,
       createdAt: isSet(object.createdAt) ? globalThis.String(object.createdAt) : undefined,
       delistedAt: isSet(object.delistedAt) ? globalThis.String(object.delistedAt) : undefined,
     };
@@ -450,6 +518,11 @@ export const MarketProduct: MessageFns<MarketProduct> = {
         message.rellmHostingSubscriptionDetails,
       );
     }
+    if (message.permissionsAccessSubscriptionDetails !== undefined) {
+      obj.permissionsAccessSubscriptionDetails = PermissionsAccessSubscriptionDetails.toJSON(
+        message.permissionsAccessSubscriptionDetails,
+      );
+    }
     if (message.createdAt !== undefined) {
       obj.createdAt = message.createdAt;
     }
@@ -480,6 +553,11 @@ export const MarketProduct: MessageFns<MarketProduct> = {
     message.rellmHostingSubscriptionDetails =
       (object.rellmHostingSubscriptionDetails !== undefined && object.rellmHostingSubscriptionDetails !== null)
         ? RellmHostingSubscriptionDetails.fromPartial(object.rellmHostingSubscriptionDetails)
+        : undefined;
+    message.permissionsAccessSubscriptionDetails =
+      (object.permissionsAccessSubscriptionDetails !== undefined &&
+          object.permissionsAccessSubscriptionDetails !== null)
+        ? PermissionsAccessSubscriptionDetails.fromPartial(object.permissionsAccessSubscriptionDetails)
         : undefined;
     message.createdAt = object.createdAt ?? undefined;
     message.delistedAt = object.delistedAt ?? undefined;
@@ -849,6 +927,7 @@ function createBaseMarketPurchase(): MarketPurchase {
     mediaStoragePurchaseDetails: undefined,
     aiGrantPurchaseDetails: undefined,
     rellmHostingPurchaseDetails: undefined,
+    permissionsAccessPurchaseDetails: undefined,
     createdAt: undefined,
   };
 }
@@ -884,6 +963,10 @@ export const MarketPurchase: MessageFns<MarketPurchase> = {
     }
     if (message.rellmHostingPurchaseDetails !== undefined) {
       RellmHostingPurchaseDetails.encode(message.rellmHostingPurchaseDetails, writer.uint32(98).fork()).join();
+    }
+    if (message.permissionsAccessPurchaseDetails !== undefined) {
+      PermissionsAccessPurchaseDetails.encode(message.permissionsAccessPurchaseDetails, writer.uint32(106).fork())
+        .join();
     }
     if (message.createdAt !== undefined) {
       Timestamp.encode(toTimestamp(message.createdAt), writer.uint32(162).fork()).join();
@@ -978,6 +1061,14 @@ export const MarketPurchase: MessageFns<MarketPurchase> = {
           message.rellmHostingPurchaseDetails = RellmHostingPurchaseDetails.decode(reader, reader.uint32());
           continue;
         }
+        case 13: {
+          if (tag !== 106) {
+            break;
+          }
+
+          message.permissionsAccessPurchaseDetails = PermissionsAccessPurchaseDetails.decode(reader, reader.uint32());
+          continue;
+        }
         case 20: {
           if (tag !== 162) {
             break;
@@ -1019,6 +1110,9 @@ export const MarketPurchase: MessageFns<MarketPurchase> = {
       rellmHostingPurchaseDetails: isSet(object.rellmHostingPurchaseDetails)
         ? RellmHostingPurchaseDetails.fromJSON(object.rellmHostingPurchaseDetails)
         : undefined,
+      permissionsAccessPurchaseDetails: isSet(object.permissionsAccessPurchaseDetails)
+        ? PermissionsAccessPurchaseDetails.fromJSON(object.permissionsAccessPurchaseDetails)
+        : undefined,
       createdAt: isSet(object.createdAt) ? globalThis.String(object.createdAt) : undefined,
     };
   },
@@ -1054,6 +1148,11 @@ export const MarketPurchase: MessageFns<MarketPurchase> = {
     }
     if (message.rellmHostingPurchaseDetails !== undefined) {
       obj.rellmHostingPurchaseDetails = RellmHostingPurchaseDetails.toJSON(message.rellmHostingPurchaseDetails);
+    }
+    if (message.permissionsAccessPurchaseDetails !== undefined) {
+      obj.permissionsAccessPurchaseDetails = PermissionsAccessPurchaseDetails.toJSON(
+        message.permissionsAccessPurchaseDetails,
+      );
     }
     if (message.createdAt !== undefined) {
       obj.createdAt = message.createdAt;
@@ -1091,13 +1190,17 @@ export const MarketPurchase: MessageFns<MarketPurchase> = {
       (object.rellmHostingPurchaseDetails !== undefined && object.rellmHostingPurchaseDetails !== null)
         ? RellmHostingPurchaseDetails.fromPartial(object.rellmHostingPurchaseDetails)
         : undefined;
+    message.permissionsAccessPurchaseDetails =
+      (object.permissionsAccessPurchaseDetails !== undefined && object.permissionsAccessPurchaseDetails !== null)
+        ? PermissionsAccessPurchaseDetails.fromPartial(object.permissionsAccessPurchaseDetails)
+        : undefined;
     message.createdAt = object.createdAt ?? undefined;
     return message;
   },
 };
 
 function createBaseMarketPayment(): MarketPayment {
-  return { amount: 0, currency: 0, marketPurchaseId: "", createdAt: undefined };
+  return { amount: 0, currency: 0, marketPurchaseId: "", method: undefined, createdAt: undefined };
 }
 
 export const MarketPayment: MessageFns<MarketPayment> = {
@@ -1110,6 +1213,9 @@ export const MarketPayment: MessageFns<MarketPayment> = {
     }
     if (message.marketPurchaseId !== "") {
       writer.uint32(26).string(message.marketPurchaseId);
+    }
+    if (message.method !== undefined) {
+      MarketPaymentMethod.encode(message.method, writer.uint32(34).fork()).join();
     }
     if (message.createdAt !== undefined) {
       Timestamp.encode(toTimestamp(message.createdAt), writer.uint32(82).fork()).join();
@@ -1148,6 +1254,14 @@ export const MarketPayment: MessageFns<MarketPayment> = {
           message.marketPurchaseId = reader.string();
           continue;
         }
+        case 4: {
+          if (tag !== 34) {
+            break;
+          }
+
+          message.method = MarketPaymentMethod.decode(reader, reader.uint32());
+          continue;
+        }
         case 10: {
           if (tag !== 82) {
             break;
@@ -1170,6 +1284,7 @@ export const MarketPayment: MessageFns<MarketPayment> = {
       amount: isSet(object.amount) ? globalThis.Number(object.amount) : 0,
       currency: isSet(object.currency) ? globalThis.Number(object.currency) : 0,
       marketPurchaseId: isSet(object.marketPurchaseId) ? globalThis.String(object.marketPurchaseId) : "",
+      method: isSet(object.method) ? MarketPaymentMethod.fromJSON(object.method) : undefined,
       createdAt: isSet(object.createdAt) ? globalThis.String(object.createdAt) : undefined,
     };
   },
@@ -1185,6 +1300,9 @@ export const MarketPayment: MessageFns<MarketPayment> = {
     if (message.marketPurchaseId !== "") {
       obj.marketPurchaseId = message.marketPurchaseId;
     }
+    if (message.method !== undefined) {
+      obj.method = MarketPaymentMethod.toJSON(message.method);
+    }
     if (message.createdAt !== undefined) {
       obj.createdAt = message.createdAt;
     }
@@ -1199,17 +1317,32 @@ export const MarketPayment: MessageFns<MarketPayment> = {
     message.amount = object.amount ?? 0;
     message.currency = object.currency ?? 0;
     message.marketPurchaseId = object.marketPurchaseId ?? "";
+    message.method = (object.method !== undefined && object.method !== null)
+      ? MarketPaymentMethod.fromPartial(object.method)
+      : undefined;
     message.createdAt = object.createdAt ?? undefined;
     return message;
   },
 };
 
 function createBaseMarketPaymentMethod(): MarketPaymentMethod {
-  return {};
+  return { cardBrand: "", cardLast4: "", cardExpMonth: 0, cardExpYear: 0 };
 }
 
 export const MarketPaymentMethod: MessageFns<MarketPaymentMethod> = {
-  encode(_: MarketPaymentMethod, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+  encode(message: MarketPaymentMethod, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.cardBrand !== "") {
+      writer.uint32(10).string(message.cardBrand);
+    }
+    if (message.cardLast4 !== "") {
+      writer.uint32(18).string(message.cardLast4);
+    }
+    if (message.cardExpMonth !== 0) {
+      writer.uint32(24).uint32(message.cardExpMonth);
+    }
+    if (message.cardExpYear !== 0) {
+      writer.uint32(32).uint32(message.cardExpYear);
+    }
     return writer;
   },
 
@@ -1220,6 +1353,38 @@ export const MarketPaymentMethod: MessageFns<MarketPaymentMethod> = {
     while (reader.pos < end) {
       const tag = reader.uint32();
       switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.cardBrand = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.cardLast4 = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 24) {
+            break;
+          }
+
+          message.cardExpMonth = reader.uint32();
+          continue;
+        }
+        case 4: {
+          if (tag !== 32) {
+            break;
+          }
+
+          message.cardExpYear = reader.uint32();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1229,26 +1394,47 @@ export const MarketPaymentMethod: MessageFns<MarketPaymentMethod> = {
     return message;
   },
 
-  fromJSON(_: any): MarketPaymentMethod {
-    return {};
+  fromJSON(object: any): MarketPaymentMethod {
+    return {
+      cardBrand: isSet(object.cardBrand) ? globalThis.String(object.cardBrand) : "",
+      cardLast4: isSet(object.cardLast4) ? globalThis.String(object.cardLast4) : "",
+      cardExpMonth: isSet(object.cardExpMonth) ? globalThis.Number(object.cardExpMonth) : 0,
+      cardExpYear: isSet(object.cardExpYear) ? globalThis.Number(object.cardExpYear) : 0,
+    };
   },
 
-  toJSON(_: MarketPaymentMethod): unknown {
+  toJSON(message: MarketPaymentMethod): unknown {
     const obj: any = {};
+    if (message.cardBrand !== "") {
+      obj.cardBrand = message.cardBrand;
+    }
+    if (message.cardLast4 !== "") {
+      obj.cardLast4 = message.cardLast4;
+    }
+    if (message.cardExpMonth !== 0) {
+      obj.cardExpMonth = Math.round(message.cardExpMonth);
+    }
+    if (message.cardExpYear !== 0) {
+      obj.cardExpYear = Math.round(message.cardExpYear);
+    }
     return obj;
   },
 
   create<I extends Exact<DeepPartial<MarketPaymentMethod>, I>>(base?: I): MarketPaymentMethod {
     return MarketPaymentMethod.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<MarketPaymentMethod>, I>>(_: I): MarketPaymentMethod {
+  fromPartial<I extends Exact<DeepPartial<MarketPaymentMethod>, I>>(object: I): MarketPaymentMethod {
     const message = createBaseMarketPaymentMethod();
+    message.cardBrand = object.cardBrand ?? "";
+    message.cardLast4 = object.cardLast4 ?? "";
+    message.cardExpMonth = object.cardExpMonth ?? 0;
+    message.cardExpYear = object.cardExpYear ?? 0;
     return message;
   },
 };
 
 function createBaseMarketRefund(): MarketRefund {
-  return { amount: 0, currency: 0, marketPurchaseId: "", createdAt: undefined };
+  return { amount: 0, currency: 0, marketPurchaseId: "", method: undefined, createdAt: undefined };
 }
 
 export const MarketRefund: MessageFns<MarketRefund> = {
@@ -1261,6 +1447,9 @@ export const MarketRefund: MessageFns<MarketRefund> = {
     }
     if (message.marketPurchaseId !== "") {
       writer.uint32(26).string(message.marketPurchaseId);
+    }
+    if (message.method !== undefined) {
+      MarketRefundMethod.encode(message.method, writer.uint32(34).fork()).join();
     }
     if (message.createdAt !== undefined) {
       Timestamp.encode(toTimestamp(message.createdAt), writer.uint32(82).fork()).join();
@@ -1299,6 +1488,14 @@ export const MarketRefund: MessageFns<MarketRefund> = {
           message.marketPurchaseId = reader.string();
           continue;
         }
+        case 4: {
+          if (tag !== 34) {
+            break;
+          }
+
+          message.method = MarketRefundMethod.decode(reader, reader.uint32());
+          continue;
+        }
         case 10: {
           if (tag !== 82) {
             break;
@@ -1321,6 +1518,7 @@ export const MarketRefund: MessageFns<MarketRefund> = {
       amount: isSet(object.amount) ? globalThis.Number(object.amount) : 0,
       currency: isSet(object.currency) ? globalThis.Number(object.currency) : 0,
       marketPurchaseId: isSet(object.marketPurchaseId) ? globalThis.String(object.marketPurchaseId) : "",
+      method: isSet(object.method) ? MarketRefundMethod.fromJSON(object.method) : undefined,
       createdAt: isSet(object.createdAt) ? globalThis.String(object.createdAt) : undefined,
     };
   },
@@ -1336,6 +1534,9 @@ export const MarketRefund: MessageFns<MarketRefund> = {
     if (message.marketPurchaseId !== "") {
       obj.marketPurchaseId = message.marketPurchaseId;
     }
+    if (message.method !== undefined) {
+      obj.method = MarketRefundMethod.toJSON(message.method);
+    }
     if (message.createdAt !== undefined) {
       obj.createdAt = message.createdAt;
     }
@@ -1350,17 +1551,32 @@ export const MarketRefund: MessageFns<MarketRefund> = {
     message.amount = object.amount ?? 0;
     message.currency = object.currency ?? 0;
     message.marketPurchaseId = object.marketPurchaseId ?? "";
+    message.method = (object.method !== undefined && object.method !== null)
+      ? MarketRefundMethod.fromPartial(object.method)
+      : undefined;
     message.createdAt = object.createdAt ?? undefined;
     return message;
   },
 };
 
 function createBaseMarketRefundMethod(): MarketRefundMethod {
-  return {};
+  return { cardBrand: "", cardLast4: "", cardExpMonth: 0, cardExpYear: 0 };
 }
 
 export const MarketRefundMethod: MessageFns<MarketRefundMethod> = {
-  encode(_: MarketRefundMethod, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+  encode(message: MarketRefundMethod, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.cardBrand !== "") {
+      writer.uint32(10).string(message.cardBrand);
+    }
+    if (message.cardLast4 !== "") {
+      writer.uint32(18).string(message.cardLast4);
+    }
+    if (message.cardExpMonth !== 0) {
+      writer.uint32(24).uint32(message.cardExpMonth);
+    }
+    if (message.cardExpYear !== 0) {
+      writer.uint32(32).uint32(message.cardExpYear);
+    }
     return writer;
   },
 
@@ -1371,6 +1587,38 @@ export const MarketRefundMethod: MessageFns<MarketRefundMethod> = {
     while (reader.pos < end) {
       const tag = reader.uint32();
       switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.cardBrand = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.cardLast4 = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 24) {
+            break;
+          }
+
+          message.cardExpMonth = reader.uint32();
+          continue;
+        }
+        case 4: {
+          if (tag !== 32) {
+            break;
+          }
+
+          message.cardExpYear = reader.uint32();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1380,20 +1628,41 @@ export const MarketRefundMethod: MessageFns<MarketRefundMethod> = {
     return message;
   },
 
-  fromJSON(_: any): MarketRefundMethod {
-    return {};
+  fromJSON(object: any): MarketRefundMethod {
+    return {
+      cardBrand: isSet(object.cardBrand) ? globalThis.String(object.cardBrand) : "",
+      cardLast4: isSet(object.cardLast4) ? globalThis.String(object.cardLast4) : "",
+      cardExpMonth: isSet(object.cardExpMonth) ? globalThis.Number(object.cardExpMonth) : 0,
+      cardExpYear: isSet(object.cardExpYear) ? globalThis.Number(object.cardExpYear) : 0,
+    };
   },
 
-  toJSON(_: MarketRefundMethod): unknown {
+  toJSON(message: MarketRefundMethod): unknown {
     const obj: any = {};
+    if (message.cardBrand !== "") {
+      obj.cardBrand = message.cardBrand;
+    }
+    if (message.cardLast4 !== "") {
+      obj.cardLast4 = message.cardLast4;
+    }
+    if (message.cardExpMonth !== 0) {
+      obj.cardExpMonth = Math.round(message.cardExpMonth);
+    }
+    if (message.cardExpYear !== 0) {
+      obj.cardExpYear = Math.round(message.cardExpYear);
+    }
     return obj;
   },
 
   create<I extends Exact<DeepPartial<MarketRefundMethod>, I>>(base?: I): MarketRefundMethod {
     return MarketRefundMethod.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<MarketRefundMethod>, I>>(_: I): MarketRefundMethod {
+  fromPartial<I extends Exact<DeepPartial<MarketRefundMethod>, I>>(object: I): MarketRefundMethod {
     const message = createBaseMarketRefundMethod();
+    message.cardBrand = object.cardBrand ?? "";
+    message.cardLast4 = object.cardLast4 ?? "";
+    message.cardExpMonth = object.cardExpMonth ?? 0;
+    message.cardExpYear = object.cardExpYear ?? 0;
     return message;
   },
 };
@@ -1674,6 +1943,84 @@ export const RellmHostingPurchaseDetails: MessageFns<RellmHostingPurchaseDetails
   },
 };
 
+function createBasePermissionsAccessPurchaseDetails(): PermissionsAccessPurchaseDetails {
+  return { permissions: [] };
+}
+
+export const PermissionsAccessPurchaseDetails: MessageFns<PermissionsAccessPurchaseDetails> = {
+  encode(message: PermissionsAccessPurchaseDetails, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    writer.uint32(10).fork();
+    for (const v of message.permissions) {
+      writer.int32(v);
+    }
+    writer.join();
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): PermissionsAccessPurchaseDetails {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBasePermissionsAccessPurchaseDetails();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag === 8) {
+            message.permissions.push(reader.int32() as any);
+
+            continue;
+          }
+
+          if (tag === 10) {
+            const end2 = reader.uint32() + reader.pos;
+            while (reader.pos < end2) {
+              message.permissions.push(reader.int32() as any);
+            }
+
+            continue;
+          }
+
+          break;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): PermissionsAccessPurchaseDetails {
+    return {
+      permissions: globalThis.Array.isArray(object?.permissions)
+        ? object.permissions.map((e: any) => permissionFromJSON(e))
+        : [],
+    };
+  },
+
+  toJSON(message: PermissionsAccessPurchaseDetails): unknown {
+    const obj: any = {};
+    if (message.permissions?.length) {
+      obj.permissions = message.permissions.map((e) => permissionToJSON(e));
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<PermissionsAccessPurchaseDetails>, I>>(
+    base?: I,
+  ): PermissionsAccessPurchaseDetails {
+    return PermissionsAccessPurchaseDetails.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<PermissionsAccessPurchaseDetails>, I>>(
+    object: I,
+  ): PermissionsAccessPurchaseDetails {
+    const message = createBasePermissionsAccessPurchaseDetails();
+    message.permissions = object.permissions?.map((e) => e) || [];
+    return message;
+  },
+};
+
 function createBaseMarketSubscription(): MarketSubscription {
   return {
     id: "",
@@ -1687,6 +2034,7 @@ function createBaseMarketSubscription(): MarketSubscription {
     mediaStorageSubscriptionDetails: undefined,
     aiGrantSubscriptionDetails: undefined,
     rellmHostingSubscriptionDetails: undefined,
+    permissionsAccessSubscriptionDetails: undefined,
     createdAt: undefined,
     renewsAt: undefined,
     endedAt: undefined,
@@ -1727,6 +2075,12 @@ export const MarketSubscription: MessageFns<MarketSubscription> = {
     }
     if (message.rellmHostingSubscriptionDetails !== undefined) {
       RellmHostingSubscriptionDetails.encode(message.rellmHostingSubscriptionDetails, writer.uint32(98).fork()).join();
+    }
+    if (message.permissionsAccessSubscriptionDetails !== undefined) {
+      PermissionsAccessSubscriptionDetails.encode(
+        message.permissionsAccessSubscriptionDetails,
+        writer.uint32(106).fork(),
+      ).join();
     }
     if (message.createdAt !== undefined) {
       Timestamp.encode(toTimestamp(message.createdAt), writer.uint32(162).fork()).join();
@@ -1835,6 +2189,17 @@ export const MarketSubscription: MessageFns<MarketSubscription> = {
           message.rellmHostingSubscriptionDetails = RellmHostingSubscriptionDetails.decode(reader, reader.uint32());
           continue;
         }
+        case 13: {
+          if (tag !== 106) {
+            break;
+          }
+
+          message.permissionsAccessSubscriptionDetails = PermissionsAccessSubscriptionDetails.decode(
+            reader,
+            reader.uint32(),
+          );
+          continue;
+        }
         case 20: {
           if (tag !== 162) {
             break;
@@ -1889,6 +2254,9 @@ export const MarketSubscription: MessageFns<MarketSubscription> = {
       rellmHostingSubscriptionDetails: isSet(object.rellmHostingSubscriptionDetails)
         ? RellmHostingSubscriptionDetails.fromJSON(object.rellmHostingSubscriptionDetails)
         : undefined,
+      permissionsAccessSubscriptionDetails: isSet(object.permissionsAccessSubscriptionDetails)
+        ? PermissionsAccessSubscriptionDetails.fromJSON(object.permissionsAccessSubscriptionDetails)
+        : undefined,
       createdAt: isSet(object.createdAt) ? globalThis.String(object.createdAt) : undefined,
       renewsAt: isSet(object.renewsAt) ? globalThis.String(object.renewsAt) : undefined,
       endedAt: isSet(object.endedAt) ? globalThis.String(object.endedAt) : undefined,
@@ -1934,6 +2302,11 @@ export const MarketSubscription: MessageFns<MarketSubscription> = {
         message.rellmHostingSubscriptionDetails,
       );
     }
+    if (message.permissionsAccessSubscriptionDetails !== undefined) {
+      obj.permissionsAccessSubscriptionDetails = PermissionsAccessSubscriptionDetails.toJSON(
+        message.permissionsAccessSubscriptionDetails,
+      );
+    }
     if (message.createdAt !== undefined) {
       obj.createdAt = message.createdAt;
     }
@@ -1974,6 +2347,11 @@ export const MarketSubscription: MessageFns<MarketSubscription> = {
     message.rellmHostingSubscriptionDetails =
       (object.rellmHostingSubscriptionDetails !== undefined && object.rellmHostingSubscriptionDetails !== null)
         ? RellmHostingSubscriptionDetails.fromPartial(object.rellmHostingSubscriptionDetails)
+        : undefined;
+    message.permissionsAccessSubscriptionDetails =
+      (object.permissionsAccessSubscriptionDetails !== undefined &&
+          object.permissionsAccessSubscriptionDetails !== null)
+        ? PermissionsAccessSubscriptionDetails.fromPartial(object.permissionsAccessSubscriptionDetails)
         : undefined;
     message.createdAt = object.createdAt ?? undefined;
     message.renewsAt = object.renewsAt ?? undefined;
@@ -2258,6 +2636,84 @@ export const RellmHostingSubscriptionDetails: MessageFns<RellmHostingSubscriptio
     message.domain = object.domain ?? "";
     message.contactEmail = object.contactEmail ?? "";
     message.additionalInformation = object.additionalInformation ?? "";
+    return message;
+  },
+};
+
+function createBasePermissionsAccessSubscriptionDetails(): PermissionsAccessSubscriptionDetails {
+  return { permissions: [] };
+}
+
+export const PermissionsAccessSubscriptionDetails: MessageFns<PermissionsAccessSubscriptionDetails> = {
+  encode(message: PermissionsAccessSubscriptionDetails, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    writer.uint32(10).fork();
+    for (const v of message.permissions) {
+      writer.int32(v);
+    }
+    writer.join();
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): PermissionsAccessSubscriptionDetails {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBasePermissionsAccessSubscriptionDetails();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag === 8) {
+            message.permissions.push(reader.int32() as any);
+
+            continue;
+          }
+
+          if (tag === 10) {
+            const end2 = reader.uint32() + reader.pos;
+            while (reader.pos < end2) {
+              message.permissions.push(reader.int32() as any);
+            }
+
+            continue;
+          }
+
+          break;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): PermissionsAccessSubscriptionDetails {
+    return {
+      permissions: globalThis.Array.isArray(object?.permissions)
+        ? object.permissions.map((e: any) => permissionFromJSON(e))
+        : [],
+    };
+  },
+
+  toJSON(message: PermissionsAccessSubscriptionDetails): unknown {
+    const obj: any = {};
+    if (message.permissions?.length) {
+      obj.permissions = message.permissions.map((e) => permissionToJSON(e));
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<PermissionsAccessSubscriptionDetails>, I>>(
+    base?: I,
+  ): PermissionsAccessSubscriptionDetails {
+    return PermissionsAccessSubscriptionDetails.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<PermissionsAccessSubscriptionDetails>, I>>(
+    object: I,
+  ): PermissionsAccessSubscriptionDetails {
+    const message = createBasePermissionsAccessSubscriptionDetails();
+    message.permissions = object.permissions?.map((e) => e) || [];
     return message;
   },
 };

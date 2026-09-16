@@ -21,6 +21,7 @@ and never paged.
 
 import Browser.Navigation
 import Components.Market as Market
+import Components.Users as Users
 import Dict exposing (Dict)
 import Effect exposing (Effect)
 import Gen.Route as Route
@@ -35,6 +36,7 @@ import Proto.Rellm
         , defaultAIGrantSubscriptionDetails
         , defaultMarketProduct
         , defaultMediaStorageSubscriptionDetails
+        , defaultPermissionsAccessSubscriptionDetails
         , defaultRellmHostingSubscriptionDetails
         )
 import Proto.Rellm.MarketProduct exposing (Details)
@@ -86,6 +88,7 @@ type alias ProductForm =
     , aiTokens : String
     , hostingDbSizeMB : String
     , hostingMinioSizeMB : String
+    , permissionsText : String
     , status : AccountsPanel.FormStatus
     }
 
@@ -101,6 +104,7 @@ defaultProductForm =
     , aiTokens = ""
     , hostingDbSizeMB = ""
     , hostingMinioSizeMB = ""
+    , permissionsText = ""
     , status = AccountsPanel.Idle
     }
 
@@ -135,6 +139,9 @@ productFormFromProduct product =
                 | hostingDbSizeMB = String.fromInt (bytesToMB (Conversions.int64ToInt details.dbSizeBytes))
                 , hostingMinioSizeMB = String.fromInt (bytesToMB (Conversions.int64ToInt details.minioSizeBytes))
             }
+
+        Just (ProductDetails.PermissionsAccessSubscriptionDetails details) ->
+            { base | permissionsText = String.join ", " (List.map Users.permissionText details.permissions) }
 
         Nothing ->
             base
@@ -432,6 +439,18 @@ detailsFromForm form =
                     }
                 )
 
+        PURCHASETYPEPERMISSIONSACCESS ->
+            Just
+                (ProductDetails.PermissionsAccessSubscriptionDetails
+                    { defaultPermissionsAccessSubscriptionDetails
+                        | permissions =
+                            form.permissionsText
+                                |> String.split ","
+                                |> List.map String.trim
+                                |> List.filterMap Users.permissionFromText
+                    }
+                )
+
         PurchaseTypeUnrecognized_ _ ->
             Nothing
 
@@ -444,6 +463,9 @@ purchaseTypeFromString text =
 
         "RELLM_HOSTING" ->
             PURCHASETYPERELLMHOSTING
+
+        "PERMISSIONS_ACCESS" ->
+            PURCHASETYPEPERMISSIONSACCESS
 
         _ ->
             PURCHASETYPEMEDIASTORAGE
@@ -460,6 +482,9 @@ purchaseTypeToString type_ =
 
         PURCHASETYPERELLMHOSTING ->
             "RELLM_HOSTING"
+
+        PURCHASETYPEPERMISSIONSACCESS ->
+            "PERMISSIONS_ACCESS"
 
         PurchaseTypeUnrecognized_ _ ->
             "MEDIA_STORAGE"
@@ -667,6 +692,7 @@ typeAndPeriodSelectors form =
         [ option [ value (purchaseTypeToString PURCHASETYPEMEDIASTORAGE), selected (form.type_ == PURCHASETYPEMEDIASTORAGE) ] [ text "Media Storage" ]
         , option [ value (purchaseTypeToString PURCHASETYPEAIGRANTS), selected (form.type_ == PURCHASETYPEAIGRANTS) ] [ text "AI Model Access" ]
         , option [ value (purchaseTypeToString PURCHASETYPERELLMHOSTING), selected (form.type_ == PURCHASETYPERELLMHOSTING) ] [ text "Rellm Hosting" ]
+        , option [ value (purchaseTypeToString PURCHASETYPEPERMISSIONSACCESS), selected (form.type_ == PURCHASETYPEPERMISSIONSACCESS) ] [ text "Permissions Access" ]
         ]
     , select [ onInput AddFormPeriodChanged ]
         [ option [ value (purchasePeriodToString PURCHASEPERIODINDEFINITE), selected (form.period == PURCHASEPERIODINDEFINITE) ] [ text "One-Time" ]
@@ -715,6 +741,15 @@ productFormView change form =
                         [ placeholder "Object Storage Size (MB)"
                         , value form.hostingMinioSizeMB
                         , onInput (change (\f text -> { f | hostingMinioSizeMB = text }))
+                        ]
+                        []
+                    ]
+
+                PURCHASETYPEPERMISSIONSACCESS ->
+                    [ input
+                        [ placeholder "Permissions (comma-separated, e.g. Sync Events To Facebook)"
+                        , value form.permissionsText
+                        , onInput (change (\f text -> { f | permissionsText = text }))
                         ]
                         []
                     ]

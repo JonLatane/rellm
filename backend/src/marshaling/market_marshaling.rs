@@ -77,6 +77,7 @@ impl ToProtoMarshalableMarketPurchase for MarshalableMarketPurchase {
                 amount: p.amount as u32,
                 currency: p.currency as u32,
                 market_purchase_id: purchase.id.to_proto_id(),
+                method: method_json_to_market_payment_method(&p.method),
                 created_at: Some(p.created_at.to_proto()),
             })
             .collect();
@@ -87,6 +88,7 @@ impl ToProtoMarshalableMarketPurchase for MarshalableMarketPurchase {
                 amount: (-p.amount) as u32,
                 currency: p.currency as u32,
                 market_purchase_id: purchase.id.to_proto_id(),
+                method: method_json_to_market_refund_method(&p.method),
                 created_at: Some(p.created_at.to_proto()),
             })
             .collect();
@@ -261,6 +263,9 @@ pub fn product_details_to_json(details: &Option<market_product::Details>) -> ser
         Some(market_product::Details::RellmHostingSubscriptionDetails(d)) => {
             serde_json::to_value(d).unwrap_or_default()
         }
+        Some(market_product::Details::PermissionsAccessSubscriptionDetails(d)) => {
+            serde_json::to_value(d).unwrap_or_default()
+        }
         None => serde_json::json!({}),
     }
 }
@@ -282,6 +287,11 @@ pub fn product_details_to_proto(
         PurchaseType::RellmHosting => serde_json::from_value::<RellmHostingSubscriptionDetails>(details.clone())
             .ok()
             .map(market_product::Details::RellmHostingSubscriptionDetails),
+        PurchaseType::PermissionsAccess => {
+            serde_json::from_value::<PermissionsAccessSubscriptionDetails>(details.clone())
+                .ok()
+                .map(market_product::Details::PermissionsAccessSubscriptionDetails)
+        }
     }
 }
 
@@ -302,12 +312,18 @@ pub fn subscription_details_to_proto(
         PurchaseType::RellmHosting => serde_json::from_value::<RellmHostingSubscriptionDetails>(details.clone())
             .ok()
             .map(market_subscription::Details::RellmHostingSubscriptionDetails),
+        PurchaseType::PermissionsAccess => {
+            serde_json::from_value::<PermissionsAccessSubscriptionDetails>(details.clone())
+                .ok()
+                .map(market_subscription::Details::PermissionsAccessSubscriptionDetails)
+        }
     }
 }
 
 /// `market_purchase::Details` counterpart -- `MarketPurchase.details` uses its own, separate
-/// `MediaStoragePurchaseDetails`/`AiGrantPurchaseDetails`/`RellmHostingPurchaseDetails` messages
-/// (field-for-field identical to the `*SubscriptionDetails` ones, just named differently).
+/// `MediaStoragePurchaseDetails`/`AiGrantPurchaseDetails`/`RellmHostingPurchaseDetails`/
+/// `PermissionsAccessPurchaseDetails` messages (field-for-field identical to the
+/// `*SubscriptionDetails` ones, just named differently).
 pub fn purchase_details_to_json(details: &Option<market_purchase::Details>) -> serde_json::Value {
     match details {
         Some(market_purchase::Details::MediaStoragePurchaseDetails(d)) => {
@@ -317,6 +333,9 @@ pub fn purchase_details_to_json(details: &Option<market_purchase::Details>) -> s
             serde_json::to_value(d).unwrap_or_default()
         }
         Some(market_purchase::Details::RellmHostingPurchaseDetails(d)) => {
+            serde_json::to_value(d).unwrap_or_default()
+        }
+        Some(market_purchase::Details::PermissionsAccessPurchaseDetails(d)) => {
             serde_json::to_value(d).unwrap_or_default()
         }
         None => serde_json::json!({}),
@@ -337,6 +356,11 @@ pub fn purchase_details_to_proto(
         PurchaseType::RellmHosting => serde_json::from_value::<RellmHostingPurchaseDetails>(details.clone())
             .ok()
             .map(market_purchase::Details::RellmHostingPurchaseDetails),
+        PurchaseType::PermissionsAccess => {
+            serde_json::from_value::<PermissionsAccessPurchaseDetails>(details.clone())
+                .ok()
+                .map(market_purchase::Details::PermissionsAccessPurchaseDetails)
+        }
     }
 }
 
@@ -346,4 +370,85 @@ pub fn purchase_details_to_proto(
 /// `MarketProduct`'s defaults) carries the actual domain/contact/notes.
 pub fn rellm_hosting_details_to_json(details: &RellmHostingPurchaseDetails) -> serde_json::Value {
     serde_json::to_value(details).unwrap_or_default()
+}
+
+/// Serializes a `logic::stripe_sync::CardDetails` into `market_payments.method`'s JSON shape
+/// (field-for-field the same as `MarketPaymentMethod`/`MarketRefundMethod`, so the `method_json_to_*`
+/// functions below can deserialize straight into either).
+pub fn card_details_to_json(card: &crate::logic::stripe_sync::CardDetails) -> serde_json::Value {
+    serde_json::json!({
+        "card_brand": card.brand,
+        "card_last4": card.last4,
+        "card_exp_month": card.exp_month,
+        "card_exp_year": card.exp_year,
+    })
+}
+
+/// `market_payments.method` -> `MarketPaymentMethod`, for a `MarketPayment` (positive-`amount`
+/// row). `None` whenever the row predates this column, or the charge's payment method couldn't be
+/// resolved from Stripe at the time -- never an error, just an absent display detail.
+pub fn method_json_to_market_payment_method(
+    method: &Option<serde_json::Value>,
+) -> Option<MarketPaymentMethod> {
+    method.as_ref().and_then(|m| serde_json::from_value(m.clone()).ok())
+}
+
+/// `market_payments.method` -> `MarketRefundMethod`, for a `MarketRefund` (negative-`amount` row)
+/// -- same JSON shape as `method_json_to_market_payment_method`, just the distinct proto type
+/// `MarketRefund.method` actually needs.
+pub fn method_json_to_market_refund_method(
+    method: &Option<serde_json::Value>,
+) -> Option<MarketRefundMethod> {
+    method.as_ref().and_then(|m| serde_json::from_value(m.clone()).ok())
+}
+
+#[cfg(test)]
+mod method_json_tests {
+    use super::*;
+    use crate::logic::stripe_sync::CardDetails;
+
+    fn a_card() -> CardDetails {
+        CardDetails {
+            brand: "visa".to_string(),
+            last4: "4242".to_string(),
+            exp_month: 12,
+            exp_year: 2030,
+        }
+    }
+
+    #[test]
+    fn card_details_round_trip_to_market_payment_method() {
+        let json = card_details_to_json(&a_card());
+        let method = method_json_to_market_payment_method(&Some(json)).unwrap();
+        assert_eq!(
+            method,
+            MarketPaymentMethod {
+                card_brand: "visa".to_string(),
+                card_last4: "4242".to_string(),
+                card_exp_month: 12,
+                card_exp_year: 2030,
+            }
+        );
+    }
+
+    #[test]
+    fn card_details_round_trip_to_market_refund_method() {
+        let json = card_details_to_json(&a_card());
+        let method = method_json_to_market_refund_method(&Some(json)).unwrap();
+        assert_eq!(
+            method,
+            MarketRefundMethod {
+                card_brand: "visa".to_string(),
+                card_last4: "4242".to_string(),
+                card_exp_month: 12,
+                card_exp_year: 2030,
+            }
+        );
+    }
+
+    #[test]
+    fn absent_method_json_yields_none_rather_than_erroring() {
+        assert_eq!(method_json_to_market_payment_method(&None), None);
+        assert_eq!(method_json_to_market_refund_method(&None), None);
+    }
 }

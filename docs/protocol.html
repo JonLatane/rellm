@@ -595,6 +595,12 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
             <p><a href="#rellm-MediaStorageSubscriptionDetails">MediaStorageSubscriptionDetails</a></p>
           </li>
           <li>
+            <p><a href="#rellm-PermissionsAccessPurchaseDetails">PermissionsAccessPurchaseDetails</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-PermissionsAccessSubscriptionDetails">PermissionsAccessSubscriptionDetails</a></p>
+          </li>
+          <li>
             <p><a href="#rellm-RellmHostingPurchaseDetails">RellmHostingPurchaseDetails</a></p>
           </li>
           <li>
@@ -9236,6 +9242,12 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td></td>
         </tr>
         <tr>
+          <td>method</td>
+          <td><a href="#rellm-MarketPaymentMethod">MarketPaymentMethod</a></td>
+          <td>optional</td>
+          <td>The card actually charged, if known/resolvable at the time this MarketPayment was recorded.</td>
+        </tr>
+        <tr>
           <td>created_at</td>
           <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
           <td></td>
@@ -9245,6 +9257,48 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
     </table>
     <p><a name="rellm-MarketPaymentMethod"></a></p>
     <h3 id="marketpaymentmethod"><a class="anchor" aria-hidden="true" tabindex="-1" href="#marketpaymentmethod"><span class="octicon octicon-link"></span></a>MarketPaymentMethod</h3>
+    <p>
+      Card details for a MarketPayment, resolved from Stripe at charge time (Stripe's own
+      <code>PaymentMethod.card</code> object). Unset entirely if the payment wasn't card-based or details
+      couldn't be resolved. Never carries anything more sensitive than what Stripe itself considers
+      safe to display (brand/last4/expiry) -- never a full card number.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>card_brand</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>E.g. "visa", "mastercard", "amex".</td>
+        </tr>
+        <tr>
+          <td>card_last4</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>Last 4 digits of the card number.</td>
+        </tr>
+        <tr>
+          <td>card_exp_month</td>
+          <td><a href="#uint32">uint32</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>card_exp_year</td>
+          <td><a href="#uint32">uint32</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
     <p><a name="rellm-MarketProduct"></a></p>
     <h3 id="marketproduct"><a class="anchor" aria-hidden="true" tabindex="-1" href="#marketproduct"><span class="octicon octicon-link"></span></a>MarketProduct</h3>
     <p>
@@ -9307,6 +9361,12 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
         <tr>
           <td>rellm_hosting_subscription_details</td>
           <td><a href="#rellm-RellmHostingSubscriptionDetails">RellmHostingSubscriptionDetails</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>permissions_access_subscription_details</td>
+          <td><a href="#rellm-PermissionsAccessSubscriptionDetails">PermissionsAccessSubscriptionDetails</a></td>
           <td></td>
           <td></td>
         </tr>
@@ -9397,6 +9457,12 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td></td>
         </tr>
         <tr>
+          <td>permissions_access_purchase_details</td>
+          <td><a href="#rellm-PermissionsAccessPurchaseDetails">PermissionsAccessPurchaseDetails</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
           <td>created_at</td>
           <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
           <td></td>
@@ -9435,6 +9501,12 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td></td>
         </tr>
         <tr>
+          <td>method</td>
+          <td><a href="#rellm-MarketRefundMethod">MarketRefundMethod</a></td>
+          <td>optional</td>
+          <td>The card the refund was issued back to -- in practice always the same card as the MarketPayment being refunded, since Stripe refunds are only ever issued back to their original payment method.</td>
+        </tr>
+        <tr>
           <td>created_at</td>
           <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
           <td></td>
@@ -9444,6 +9516,47 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
     </table>
     <p><a name="rellm-MarketRefundMethod"></a></p>
     <h3 id="marketrefundmethod"><a class="anchor" aria-hidden="true" tabindex="-1" href="#marketrefundmethod"><span class="octicon octicon-link"></span></a>MarketRefundMethod</h3>
+    <p>
+      Same shape as MarketPaymentMethod -- kept as its own message (rather than reusing
+      MarketPaymentMethod directly) since a MarketRefund and the MarketPayment it refunds are
+      otherwise-independent messages, matching the MarketPayment/MarketRefund split itself.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>card_brand</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>card_last4</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>card_exp_month</td>
+          <td><a href="#uint32">uint32</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>card_exp_year</td>
+          <td><a href="#uint32">uint32</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
     <p><a name="rellm-MarketSubscription"></a></p>
     <h3 id="marketsubscription"><a class="anchor" aria-hidden="true" tabindex="-1" href="#marketsubscription"><span class="octicon octicon-link"></span></a>MarketSubscription</h3>
     <table>
@@ -9523,6 +9636,12 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td></td>
         </tr>
         <tr>
+          <td>permissions_access_subscription_details</td>
+          <td><a href="#rellm-PermissionsAccessSubscriptionDetails">PermissionsAccessSubscriptionDetails</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
           <td>created_at</td>
           <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
           <td></td>
@@ -9578,6 +9697,46 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>allocation_bytes</td>
           <td><a href="#uint64">uint64</a></td>
           <td></td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-PermissionsAccessPurchaseDetails"></a></p>
+    <h3 id="permissionsaccesspurchasedetails"><a class="anchor" aria-hidden="true" tabindex="-1" href="#permissionsaccesspurchasedetails"><span class="octicon octicon-link"></span></a>PermissionsAccessPurchaseDetails</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>permissions</td>
+          <td><a href="#rellm-Permission">Permission</a></td>
+          <td>repeated</td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-PermissionsAccessSubscriptionDetails"></a></p>
+    <h3 id="permissionsaccesssubscriptiondetails"><a class="anchor" aria-hidden="true" tabindex="-1" href="#permissionsaccesssubscriptiondetails"><span class="octicon octicon-link"></span></a>PermissionsAccessSubscriptionDetails</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>permissions</td>
+          <td><a href="#rellm-Permission">Permission</a></td>
+          <td>repeated</td>
           <td></td>
         </tr>
       </tbody>
@@ -9722,6 +9881,11 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
         <tr>
           <td>PURCHASE_TYPE_RELLM_HOSTING</td>
           <td>2</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>PURCHASE_TYPE_PERMISSIONS_ACCESS</td>
+          <td>3</td>
           <td></td>
         </tr>
       </tbody>

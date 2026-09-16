@@ -65,6 +65,20 @@ pub const DIGITALOCEAN_MODELS: &[ModelInfo] = &[
 /// `CreateAIProvider` (see that message's own proto doc).
 pub const ANTHROPIC_MODELS: &[ModelInfo] = &[];
 
+/// A friendlier display name for a model, e.g. for `logic::market_summary`'s human-readable
+/// `MarketProduct` descriptions -- Rellm's own "Nano Banana" nicknames for the Gemini image family
+/// (see `GEMINI_MODELS`'s own doc), falling back to the raw provider-API model name for every
+/// other model, which has no comparable nickname in common use.
+pub fn display_name(model_name: &str) -> String {
+    match model_name {
+        "gemini-3-pro-image" => "Nano Banana Pro".to_string(),
+        "gemini-3.1-flash-image" => "Nano Banana Flash".to_string(),
+        "gemini-3.1-flash-lite-image" => "Nano Banana Flash Lite".to_string(),
+        "gemini-2.5-flash-image" => "Nano Banana".to_string(),
+        other => other.to_string(),
+    }
+}
+
 /// Every model `provider`'s external service supports, regardless of any grant -- the full set an
 /// owner sees. `None` (an unset `oneof`) has no models.
 pub fn models_for_provider(provider: &Option<Provider>) -> &'static [ModelInfo] {

@@ -65,6 +65,9 @@ pub(super) fn validate_details_match_type(
         Some(market_product::Details::RellmHostingSubscriptionDetails(_)) => {
             purchase_type == PurchaseType::RellmHosting
         }
+        Some(market_product::Details::PermissionsAccessSubscriptionDetails(_)) => {
+            purchase_type == PurchaseType::PermissionsAccess
+        }
     };
     if matches {
         Ok(())

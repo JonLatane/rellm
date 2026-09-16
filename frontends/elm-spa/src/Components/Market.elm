@@ -184,6 +184,9 @@ purchaseTypeLabel type_ =
         PURCHASETYPERELLMHOSTING ->
             "Rellm Hosting"
 
+        PURCHASETYPEPERMISSIONSACCESS ->
+            "Permissions Access"
+
         PurchaseTypeUnrecognized_ _ ->
             "Unknown"
 

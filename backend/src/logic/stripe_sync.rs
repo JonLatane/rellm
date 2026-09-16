@@ -129,13 +129,43 @@ pub fn create_checkout_session_at(
 /// `checkout.session.completed`'s own webhook payload doesn't include this directly (only a
 /// `payment_intent` id), so `web::stripe_webhook` calls this once per initial purchase to learn
 /// what to save as `market_subscriptions.stripe_payment_method_id` for later off-session renewals.
+/// A card's brand/last4/expiry, as Stripe itself considers safe to display -- never a full card
+/// number. Resolved from Stripe's own `PaymentMethod.card` object (`type: "card"` only -- other
+/// payment method types, e.g. bank debits, resolve to `None`).
+#[derive(Debug, Clone)]
+pub struct CardDetails {
+    pub brand: String,
+    pub last4: String,
+    pub exp_month: u32,
+    pub exp_year: u32,
+}
+
+fn card_details_from_payment_method_json(payment_method: &serde_json::Value) -> Option<CardDetails> {
+    let card = payment_method.get("card")?;
+    Some(CardDetails {
+        brand: card.get("brand").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
+        last4: card.get("last4").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
+        exp_month: card.get("exp_month").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
+        exp_year: card.get("exp_year").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
+    })
+}
+
+/// The payment method actually used for `payment_intent_id`, plus its card details in the same
+/// round trip (`?expand[]=payment_method` inlines the full PaymentMethod object rather than just
+/// its id, avoiding a second request) -- used right after a Checkout Session completes, when all
+/// we have is the PaymentIntent id.
+pub struct PaymentIntentPaymentMethod {
+    pub payment_method_id: Option<String>,
+    pub card: Option<CardDetails>,
+}
+
 pub fn get_payment_intent_payment_method_at(
     base_url: &str,
     secret_key: &str,
     payment_intent_id: &str,
-) -> Result<Option<String>, Status> {
+) -> Result<PaymentIntentPaymentMethod, Status> {
     let secret_key = secret_key.to_string();
-    let url = format!("{base_url}/v1/payment_intents/{payment_intent_id}");
+    let url = format!("{base_url}/v1/payment_intents/{payment_intent_id}?expand[]=payment_method");
 
     let (status, response_body) = blocking_json_request(
         move |client| client.get(url.clone()).bearer_auth(secret_key.clone()),
@@ -150,10 +180,41 @@ pub fn get_payment_intent_payment_method_at(
         );
         return Err(Status::new(Code::FailedPrecondition, "stripe_get_payment_intent_failed"));
     }
-    Ok(response_body
-        .get("payment_method")
-        .and_then(|v| v.as_str())
-        .map(str::to_string))
+    let payment_method = response_body.get("payment_method");
+    Ok(PaymentIntentPaymentMethod {
+        payment_method_id: payment_method
+            .and_then(|v| v.get("id").and_then(|id| id.as_str()).or_else(|| v.as_str()))
+            .map(str::to_string),
+        card: payment_method.and_then(card_details_from_payment_method_json),
+    })
+}
+
+/// A previously-known PaymentMethod's card details, fetched fresh (e.g. right before recording a
+/// renewal `MarketPayment`, where the payment method id is already on file on the
+/// `MarketSubscription` -- no PaymentIntent lookup needed, unlike
+/// `get_payment_intent_payment_method_at`).
+pub fn get_payment_method_card_at(
+    base_url: &str,
+    secret_key: &str,
+    payment_method_id: &str,
+) -> Result<Option<CardDetails>, Status> {
+    let secret_key = secret_key.to_string();
+    let url = format!("{base_url}/v1/payment_methods/{payment_method_id}");
+
+    let (status, response_body) = blocking_json_request(
+        move |client| client.get(url.clone()).bearer_auth(secret_key.clone()),
+        "stripe_request_failed",
+    )?;
+    if !status.is_success() {
+        log::error!(
+            "Stripe GetPaymentMethod({}) failed ({}): {:?}",
+            payment_method_id,
+            status,
+            response_body
+        );
+        return Err(Status::new(Code::FailedPrecondition, "stripe_get_payment_method_failed"));
+    }
+    Ok(card_details_from_payment_method_json(&response_body))
 }
 
 pub struct OffSessionPaymentIntentParams {

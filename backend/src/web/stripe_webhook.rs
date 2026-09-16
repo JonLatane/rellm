@@ -210,17 +210,19 @@ fn handle_checkout_session_completed(
         .get("payment_intent")
         .and_then(|v| v.as_str())
         .map(str::to_string);
-    let payment_method_id = payment_intent_id
+    let payment_method = payment_intent_id.as_ref().and_then(|payment_intent_id| {
+        stripe_sync::get_payment_intent_payment_method_at(
+            stripe_sync::DEFAULT_BASE_URL,
+            &stripe_config.stripe_secret_key,
+            payment_intent_id,
+        )
+        .ok()
+    });
+    let payment_method_id = payment_method.as_ref().and_then(|pm| pm.payment_method_id.clone());
+    let method_json = payment_method
         .as_ref()
-        .and_then(|payment_intent_id| {
-            stripe_sync::get_payment_intent_payment_method_at(
-                stripe_sync::DEFAULT_BASE_URL,
-                &stripe_config.stripe_secret_key,
-                payment_intent_id,
-            )
-            .ok()
-            .flatten()
-        });
+        .and_then(|pm| pm.card.as_ref())
+        .map(crate::marshaling::card_details_to_json);
 
     // `PURCHASE_PERIOD_INDEFINITE` products never create a `MarketSubscription` -- see
     // `PurchasePeriod.PURCHASE_PERIOD_INDEFINITE`'s own doc.
@@ -265,6 +267,7 @@ fn handle_checkout_session_completed(
             currency: product.currency,
             stripe_payment_intent_id: payment_intent_id,
             stripe_refund_id: None,
+            method: method_json,
         },
         conn,
     )?;

@@ -25,6 +25,7 @@ mod get_events_tests;
 mod get_messages_tests;
 mod get_posts_tests;
 mod get_users_tests;
+mod market_fulfillment_tests;
 mod market_rpc_tests;
 mod mastodon_sync_tests;
 mod post_sync_rpc_tests;

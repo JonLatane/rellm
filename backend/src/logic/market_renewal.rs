@@ -1,6 +1,5 @@
-//! Shared logic behind the 3 renewal background jobs (`bin/renew_media_storage_subscriptions.rs`,
-//! `bin/renew_ai_grant_subscriptions.rs`, `bin/renew_rellm_hosting_subscriptions.rs`) -- each is a
-//! thin wrapper calling `renew_subscriptions_of_type` with its own `PurchaseType`.
+//! Shared logic behind `bin/renew_market_subscriptions.rs`, which loops over all 3 `PurchaseType`s
+//! calling `renew_subscriptions_of_type` for each.
 
 use std::time::SystemTime;
 
@@ -80,7 +79,7 @@ fn renew_one(
         &stripe_config.stripe_secret_key,
         stripe_sync::OffSessionPaymentIntentParams {
             customer_id,
-            payment_method_id,
+            payment_method_id: payment_method_id.clone(),
             currency,
             amount: subscription.amount as u32,
             metadata: vec![
@@ -89,6 +88,17 @@ fn renew_one(
             ],
         },
     )?;
+    // Best-effort -- a card lookup failure shouldn't fail an otherwise-successful renewal charge,
+    // it just means this MarketPayment's `method` goes unset (same as any other resolution
+    // failure -- see `marshaling::method_json_to_market_payment_method`'s own doc).
+    let method_json = stripe_sync::get_payment_method_card_at(
+        stripe_sync::DEFAULT_BASE_URL,
+        &stripe_config.stripe_secret_key,
+        &payment_method_id,
+    )
+    .ok()
+    .flatten()
+    .map(|card| crate::marshaling::card_details_to_json(&card));
 
     let purchase = models::insert_market_purchase(
         &models::NewMarketPurchase {
@@ -110,6 +120,7 @@ fn renew_one(
             currency: subscription.currency,
             stripe_payment_intent_id: Some(result.id),
             stripe_refund_id: None,
+            method: method_json,
         },
         conn,
     )?;

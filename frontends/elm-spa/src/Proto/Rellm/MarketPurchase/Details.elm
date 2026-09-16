@@ -23,8 +23,11 @@ To run it, add a dependency via `elm install` on [`elm-protocol-buffers`](https:
 
 ### RellmHostingPurchaseDetails
 
+### PermissionsAccessPurchaseDetails
+
 -}
-type Details a0 a1 a2
+type Details a0 a1 a2 a3
     = MediaStoragePurchaseDetails a0
     | AiGrantPurchaseDetails a1
     | RellmHostingPurchaseDetails a2
+    | PermissionsAccessPurchaseDetails a3

@@ -202,6 +202,8 @@
     - [MarketSubscription](#rellm-MarketSubscription)
     - [MediaStoragePurchaseDetails](#rellm-MediaStoragePurchaseDetails)
     - [MediaStorageSubscriptionDetails](#rellm-MediaStorageSubscriptionDetails)
+    - [PermissionsAccessPurchaseDetails](#rellm-PermissionsAccessPurchaseDetails)
+    - [PermissionsAccessSubscriptionDetails](#rellm-PermissionsAccessSubscriptionDetails)
     - [RellmHostingPurchaseDetails](#rellm-RellmHostingPurchaseDetails)
     - [RellmHostingSubscriptionDetails](#rellm-RellmHostingSubscriptionDetails)
   
@@ -4564,6 +4566,7 @@ payment via webhook, so an abandoned checkout never leaves a half-created purcha
 | amount | [uint32](#uint32) |  |  |
 | currency | [uint32](#uint32) |  |  |
 | market_purchase_id | [string](#string) |  |  |
+| method | [MarketPaymentMethod](#rellm-MarketPaymentMethod) | optional | The card actually charged, if known/resolvable at the time this MarketPayment was recorded. |
 | created_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  |  |
 
 
@@ -4574,7 +4577,18 @@ payment via webhook, so an abandoned checkout never leaves a half-created purcha
 <a name="rellm-MarketPaymentMethod"></a>
 
 ### MarketPaymentMethod
+Card details for a MarketPayment, resolved from Stripe at charge time (Stripe&#39;s own
+`PaymentMethod.card` object). Unset entirely if the payment wasn&#39;t card-based or details
+couldn&#39;t be resolved. Never carries anything more sensitive than what Stripe itself considers
+safe to display (brand/last4/expiry) -- never a full card number.
 
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| card_brand | [string](#string) |  | E.g. &#34;visa&#34;, &#34;mastercard&#34;, &#34;amex&#34;. |
+| card_last4 | [string](#string) |  | Last 4 digits of the card number. |
+| card_exp_month | [uint32](#uint32) |  |  |
+| card_exp_year | [uint32](#uint32) |  |  |
 
 
 
@@ -4599,6 +4613,7 @@ by the client is ignored).
 | media_storage_subscription_details | [MediaStorageSubscriptionDetails](#rellm-MediaStorageSubscriptionDetails) |  |  |
 | ai_grant_subscription_details | [AIGrantSubscriptionDetails](#rellm-AIGrantSubscriptionDetails) |  |  |
 | rellm_hosting_subscription_details | [RellmHostingSubscriptionDetails](#rellm-RellmHostingSubscriptionDetails) |  |  |
+| permissions_access_subscription_details | [PermissionsAccessSubscriptionDetails](#rellm-PermissionsAccessSubscriptionDetails) |  |  |
 | created_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  |  |
 | delisted_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional | If set, the MarketProduct is not purchasable. Note: clients toggle listings by setting this, but the server will always set it to the time of the request, not the time sent *by* the request. |
 
@@ -4625,6 +4640,7 @@ by the client is ignored).
 | media_storage_purchase_details | [MediaStoragePurchaseDetails](#rellm-MediaStoragePurchaseDetails) |  |  |
 | ai_grant_purchase_details | [AIGrantPurchaseDetails](#rellm-AIGrantPurchaseDetails) |  |  |
 | rellm_hosting_purchase_details | [RellmHostingPurchaseDetails](#rellm-RellmHostingPurchaseDetails) |  |  |
+| permissions_access_purchase_details | [PermissionsAccessPurchaseDetails](#rellm-PermissionsAccessPurchaseDetails) |  |  |
 | created_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  |  |
 
 
@@ -4643,6 +4659,7 @@ by the client is ignored).
 | amount | [uint32](#uint32) |  |  |
 | currency | [uint32](#uint32) |  |  |
 | market_purchase_id | [string](#string) |  |  |
+| method | [MarketRefundMethod](#rellm-MarketRefundMethod) | optional | The card the refund was issued back to -- in practice always the same card as the MarketPayment being refunded, since Stripe refunds are only ever issued back to their original payment method. |
 | created_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  |  |
 
 
@@ -4653,7 +4670,17 @@ by the client is ignored).
 <a name="rellm-MarketRefundMethod"></a>
 
 ### MarketRefundMethod
+Same shape as MarketPaymentMethod -- kept as its own message (rather than reusing
+MarketPaymentMethod directly) since a MarketRefund and the MarketPayment it refunds are
+otherwise-independent messages, matching the MarketPayment/MarketRefund split itself.
 
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| card_brand | [string](#string) |  |  |
+| card_last4 | [string](#string) |  |  |
+| card_exp_month | [uint32](#uint32) |  |  |
+| card_exp_year | [uint32](#uint32) |  |  |
 
 
 
@@ -4679,6 +4706,7 @@ by the client is ignored).
 | media_storage_subscription_details | [MediaStorageSubscriptionDetails](#rellm-MediaStorageSubscriptionDetails) |  |  |
 | ai_grant_subscription_details | [AIGrantSubscriptionDetails](#rellm-AIGrantSubscriptionDetails) |  |  |
 | rellm_hosting_subscription_details | [RellmHostingSubscriptionDetails](#rellm-RellmHostingSubscriptionDetails) |  |  |
+| permissions_access_subscription_details | [PermissionsAccessSubscriptionDetails](#rellm-PermissionsAccessSubscriptionDetails) |  |  |
 | created_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  |  |
 | renews_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional |  |
 | ended_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional | If set, the MarketSubscription is unavailable |
@@ -4712,6 +4740,36 @@ by the client is ignored).
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | allocation_bytes | [uint64](#uint64) |  |  |
+
+
+
+
+
+
+<a name="rellm-PermissionsAccessPurchaseDetails"></a>
+
+### PermissionsAccessPurchaseDetails
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| permissions | [Permission](#rellm-Permission) | repeated |  |
+
+
+
+
+
+
+<a name="rellm-PermissionsAccessSubscriptionDetails"></a>
+
+### PermissionsAccessSubscriptionDetails
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| permissions | [Permission](#rellm-Permission) | repeated |  |
 
 
 
@@ -4781,6 +4839,7 @@ by the client is ignored).
 | PURCHASE_TYPE_MEDIA_STORAGE | 0 |  |
 | PURCHASE_TYPE_AI_GRANTS | 1 |  |
 | PURCHASE_TYPE_RELLM_HOSTING | 2 |  |
+| PURCHASE_TYPE_PERMISSIONS_ACCESS | 3 |  |
 
 
  

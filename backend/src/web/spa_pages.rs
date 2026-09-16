@@ -17,6 +17,11 @@ use crate::{
     itertools::Itertools,
     protos::{GetEventsRequest, Post},
 };
+use crate::{
+    logic::{market_product_headline, market_product_summary},
+    marshaling::{MarshalableMarketProduct, ToDbId, ToProtoMarshalableMarketProduct},
+    models,
+};
 
 use super::{
     RellmResponder, RellmSummary, SpaApp, root_app, spa_prefix, spa_web_path, strip_spa_prefix,
@@ -34,6 +39,8 @@ lazy_static! {
     pub static ref SPA_PAGES: Vec<Route> = routes![
         posts,
         events,
+        market,
+        market_product,
         about,
         about_rellm,
         post,
@@ -175,6 +182,43 @@ webui!(
         Some(RellmSummary {
             title: Some(format!("Events | {}", server_name)),
             description: Some("Searchable, RSVPable Events from a Rellm community".to_string()),
+            image: server_logo.or(Some("/favicon.png".to_string())),
+        })
+    }
+);
+webui!(
+    market,
+    "/market",
+    "market.html",
+    |_connection: PgPooledConnection,
+     server_name: String,
+     server_logo: Option<String>,
+     _path: &str| {
+        Some(RellmSummary {
+            title: Some(format!("Market | {}", server_name)),
+            description: Some("Products and subscriptions from a Rellm community".to_string()),
+            image: server_logo.or(Some("/favicon.png".to_string())),
+        })
+    }
+);
+webui!(
+    market_product,
+    "/market/product/<_>",
+    "market/product/[productId].html",
+    |mut connection: PgPooledConnection,
+     server_name: String,
+     server_logo: Option<String>,
+     path: &str| {
+        let product_id = path_component(path, 3)?;
+        let product = models::get_market_product(product_id.to_db_id().ok()?, &mut connection).ok()?;
+        let product = MarshalableMarketProduct(product).to_proto();
+        Some(RellmSummary {
+            title: Some(format!(
+                "{} | Market | {}",
+                market_product_headline(&product),
+                server_name
+            )),
+            description: Some(market_product_summary(&product)),
             image: server_logo.or(Some("/favicon.png".to_string())),
         })
     }

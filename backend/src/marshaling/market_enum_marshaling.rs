@@ -6,10 +6,11 @@ use std::mem::transmute;
 
 use crate::protos::*;
 
-pub const ALL_PURCHASE_TYPES: [PurchaseType; 3] = [
+pub const ALL_PURCHASE_TYPES: [PurchaseType; 4] = [
     PurchaseType::MediaStorage,
     PurchaseType::AiGrants,
     PurchaseType::RellmHosting,
+    PurchaseType::PermissionsAccess,
 ];
 
 pub trait ToProtoPurchaseType {

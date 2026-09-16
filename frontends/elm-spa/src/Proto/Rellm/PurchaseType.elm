@@ -33,6 +33,9 @@ fieldNumbersPurchaseType n_ =
         PURCHASETYPERELLMHOSTING ->
             2
 
+        PURCHASETYPEPERMISSIONSACCESS ->
+            3
+
         PurchaseTypeUnrecognized_ m_ ->
             m_
 
@@ -61,6 +64,9 @@ encodePurchaseType value =
             PURCHASETYPERELLMHOSTING ->
                 2
 
+            PURCHASETYPEPERMISSIONSACCESS ->
+                3
+
             PurchaseTypeUnrecognized_ i ->
                 i
 
@@ -83,6 +89,9 @@ decodePurchaseType =
                     2 ->
                         PURCHASETYPERELLMHOSTING
 
+                    3 ->
+                        PURCHASETYPEPERMISSIONSACCESS
+
                     _ ->
                         PurchaseTypeUnrecognized_ i
             )
@@ -95,4 +104,5 @@ type PurchaseType
     = PURCHASETYPEMEDIASTORAGE
     | PURCHASETYPEAIGRANTS
     | PURCHASETYPERELLMHOSTING
+    | PURCHASETYPEPERMISSIONSACCESS
     | PurchaseTypeUnrecognized_ Int

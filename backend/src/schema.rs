@@ -180,6 +180,7 @@ diesel::table! {
         created_at -> Timestamp,
         stripe_payment_intent_id -> Nullable<Varchar>,
         stripe_refund_id -> Nullable<Varchar>,
+        method -> Nullable<Jsonb>,
     }
 }
 

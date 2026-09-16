@@ -101,8 +101,12 @@ pub struct NewMarketPurchase {
     pub stripe_payment_intent_id: Option<String>,
 }
 
-/// Backs both `Payment` and `Refund` (positive `amount` = Payment, negative = Refund) -- see
-/// `migrations/2026-09-16-000000_create_market_tables/up.sql`'s own header comment.
+/// Backs both `MarketPayment` and `MarketRefund` (positive `amount` = MarketPayment, negative =
+/// MarketRefund) -- see `migrations/2026-09-16-000000_create_market_tables/up.sql`'s own header
+/// comment. `method` (added by `migrations/2026-09-16-000300_add_method_to_market_payments`)
+/// stores the card summary (brand/last4/expiry) marshaled into `MarketPaymentMethod`/
+/// `MarketRefundMethod` -- unlike the `stripe_*` id columns here, its *contents* are meant to
+/// reach a client.
 #[derive(Debug, Queryable, Identifiable, AsChangeset, Clone)]
 #[diesel(table_name = market_payments)]
 pub struct MarketPayment {
@@ -113,6 +117,7 @@ pub struct MarketPayment {
     pub created_at: SystemTime,
     pub stripe_payment_intent_id: Option<String>,
     pub stripe_refund_id: Option<String>,
+    pub method: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Insertable)]
@@ -123,6 +128,7 @@ pub struct NewMarketPayment {
     pub currency: i32,
     pub stripe_payment_intent_id: Option<String>,
     pub stripe_refund_id: Option<String>,
+    pub method: Option<serde_json::Value>,
 }
 
 pub fn get_market_product(id: i64, conn: &mut PgPooledConnection) -> Result<MarketProduct, Status> {

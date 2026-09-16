@@ -54,7 +54,7 @@ import Json.Decode as Decode
 import Ports
 import Process
 import Proto.Google.Protobuf
-import Proto.Rellm exposing (AIProvider, AIProviderGrant, ContactMethod, FederatedAccount, MarketSubscription, SyncDestination, SyncSource, User, defaultAIProvider, defaultDigitalOceanCredentials, defaultGeminiCredentials, defaultMediaReference, defaultOpenAICredentials, defaultSyncDestination, defaultSyncSource)
+import Proto.Rellm exposing (AIProvider, AIProviderGrant, ContactMethod, FederatedAccount, MarketPurchase, MarketPurchase_, MarketSubscription, SyncDestination, SyncSource, User, defaultAIProvider, defaultDigitalOceanCredentials, defaultGeminiCredentials, defaultMediaReference, defaultOpenAICredentials, defaultSyncDestination, defaultSyncSource, unwrapMarketPurchase)
 import Proto.Rellm.AIProvider.Provider as AIProviderProvider
 import Proto.Rellm.Moderation exposing (Moderation(..))
 import Proto.Rellm.Permission exposing (Permission(..))
@@ -5133,7 +5133,73 @@ subscriptionRowView browserTimeZone subscription =
                 )
             ]
         , span [ class "profile-subscription-row-status" ] [ text statusText ]
+        , billingHistoryView browserTimeZone subscription.billingHistory
         ]
+
+
+{-| One row per `MarketPurchase` in a subscription's `billingHistory` -- amount, date, and (when
+Stripe resolved one) the card actually charged/refunded, e.g. "Visa •••• 4242". No purchasing
+happens here (per `market.proto`'s own design note) -- this is read-only, same as the rest of
+`subscriptionsSection`.
+-}
+billingHistoryView : SharedTime.BrowserTimeZone -> List MarketPurchase_ -> Html Msg
+billingHistoryView browserTimeZone purchases =
+    if List.isEmpty purchases then
+        text ""
+
+    else
+        div [ class "profile-subscription-billing-history" ]
+            (purchases |> List.map unwrapMarketPurchase |> List.map (billingHistoryRowView browserTimeZone))
+
+
+billingHistoryRowView : SharedTime.BrowserTimeZone -> MarketPurchase -> Html Msg
+billingHistoryRowView browserTimeZone purchase =
+    let
+        dateText : String
+        dateText =
+            purchase.createdAt
+                |> Maybe.map (timestampToPosix >> SharedTime.formatDate browserTimeZone.zone)
+                |> Maybe.withDefault ""
+
+        amountAndCardText : String
+        amountAndCardText =
+            case ( purchase.marketPayments, purchase.marketRefunds ) of
+                ( payment :: _, _ ) ->
+                    Market.formatAmount payment.amount payment.currency ++ cardSuffix payment.method
+
+                ( [], refund :: _ ) ->
+                    "Refund " ++ Market.formatAmount refund.amount refund.currency ++ cardSuffix refund.method
+
+                ( [], [] ) ->
+                    ""
+
+        cardSuffix : Maybe { a | cardBrand : String, cardLast4 : String } -> String
+        cardSuffix maybeMethod =
+            maybeMethod |> Maybe.map (\m -> " · " ++ formatCardMethod m) |> Maybe.withDefault ""
+    in
+    div [ class "profile-subscription-billing-history-row" ]
+        [ span [ class "profile-subscription-billing-history-date" ] [ text dateText ]
+        , span [ class "profile-subscription-billing-history-amount" ] [ text amountAndCardText ]
+        ]
+
+
+{-| E.g. "Visa •••• 4242" -- works for both `MarketPaymentMethod` and `MarketRefundMethod` (same
+`cardBrand`/`cardLast4` fields, structurally, just distinct generated types -- see
+`market.proto`'s own doc on why they're kept separate).
+-}
+formatCardMethod : { a | cardBrand : String, cardLast4 : String } -> String
+formatCardMethod method =
+    capitalizeWord method.cardBrand ++ " •••• " ++ method.cardLast4
+
+
+capitalizeWord : String -> String
+capitalizeWord word =
+    case String.uncons word of
+        Just ( first, rest ) ->
+            String.cons (Char.toUpper first) rest
+
+        Nothing ->
+            word
 
 
 {-| The Permissions list -- plain badges (plus an Edit button, if `isAdmin`)

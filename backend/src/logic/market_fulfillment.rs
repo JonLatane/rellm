@@ -8,7 +8,7 @@ use diesel::*;
 use tonic::Status;
 
 use crate::db_connection::PgPooledConnection;
-use crate::marshaling::ToDbId;
+use crate::marshaling::{ToDbId, ToJsonPermissions, ToProtoPermissions};
 use crate::models;
 use crate::protos::*;
 use crate::schema::users;
@@ -66,5 +66,37 @@ pub fn fulfill_purchase(
         // No automatic entitlement -- just leaves the `Purchase` record (with domain/contact/
         // notes) for Jon to act on by hand. See `market.proto`'s own framing.
         PurchaseType::RellmHosting => Ok(()),
+        // Adds the product's configured `Permission`s to the buyer's own `User.permissions`,
+        // union-style (never removes anything the buyer already had, from this grant or any other
+        // source) -- "just grant the permissions to the subscribed user," per Jon's own framing.
+        // Mirrors `AiGrants`' "no revoke-on-lapse" behavior too: a subscription that stops
+        // renewing simply stops re-granting, it doesn't claw back permissions already applied --
+        // same no-retry/no-reconciliation MVP simplicity as the rest of this module.
+        PurchaseType::PermissionsAccess => {
+            let parsed: PermissionsAccessPurchaseDetails =
+                serde_json::from_value(details.clone()).map_err(|e| {
+                    log::error!("Failed to parse PermissionsAccessPurchaseDetails: {:?}", e);
+                    Status::new(tonic::Code::Internal, "invalid_purchase_details")
+                })?;
+            let buyer = models::get_user(buyer_id, conn)?;
+            let mut updated_permissions = buyer.permissions.to_proto_permissions();
+            for permission in parsed.permissions.to_proto_permissions() {
+                if !updated_permissions.contains(&permission) {
+                    updated_permissions.push(permission);
+                }
+            }
+            diesel::update(users::table.filter(users::id.eq(buyer_id)))
+                .set(users::permissions.eq(updated_permissions.to_json_permissions()))
+                .execute(conn)
+                .map_err(|e| {
+                    log::error!(
+                        "Failed to apply permissions entitlement to user {}: {:?}",
+                        buyer_id,
+                        e
+                    );
+                    Status::new(tonic::Code::Internal, "failed_to_apply_entitlement")
+                })?;
+            Ok(())
+        }
     }
 }
