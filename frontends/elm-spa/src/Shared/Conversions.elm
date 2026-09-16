@@ -24,16 +24,36 @@ posixToTimestamp posix =
     { seconds = Int64.fromInts 0 (Time.posixToMillis posix // 1000), nanos = 0 }
 
 
-{-| The inverse of `int64ToInt` -- safe for any value that fits in a plain
-`Int` (which is all this app ever builds one from, e.g.
-`Components.Pages.UserProfilePage`'s Sync Source `syncIntervalSeconds`, capped at 1 day in
-seconds), same 32-bit-until-2038 caveat `posixToTimestamp` already documents
-for the same reason (`Int64.fromInts` splits a value across two 32-bit
-halves, and this always passes `0` for the high half).
+{-| The inverse of `int64ToInt` -- correct for any non-negative value up to Elm's own `Int`
+precision limit (2^53, since `Int` is a JS float under the hood -- vastly more than any real
+64-bit protobuf field this app builds one from needs, e.g. `Components.Market`'s byte/token counts
+or `Components.Pages.UserProfilePage`'s Sync Source `syncIntervalSeconds`). Splits `value` into
+`Int64`'s two signed-32-bit halves the same way `int64ToInt` recombines them (`high * 2^32 +
+unsignedLow`) -- unlike a naive `Int64.fromInts 0 value`, which silently wraps (not errors) for
+any `value` at or above 2^32 (4GB), since `Int64.fromInts`'s low half is only ever guaranteed to
+hold `-2^31 .. 2^31 - 1`. Caught by a real `productSummary` test case (a 5GB Rellm-hosting MinIO
+allocation silently became 1GB) -- exactly the scale of value this function is actually fed today.
 -}
 int64FromInt : Int -> Int64.Int64
 int64FromInt value =
-    Int64.fromInts 0 value
+    let
+        high : Int
+        high =
+            value // 4294967296
+
+        unsignedLow : Int
+        unsignedLow =
+            value - high * 4294967296
+
+        low : Int
+        low =
+            if unsignedLow >= 2147483648 then
+                unsignedLow - 4294967296
+
+            else
+                unsignedLow
+    in
+    Int64.fromInts high low
 
 
 int64ToInt : Int64.Int64 -> Int

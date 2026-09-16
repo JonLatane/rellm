@@ -577,8 +577,7 @@ productRowView basePath isAdmin model product =
             div [ class "market-product" ]
                 [ Html.a [ class "market-product-link", Html.Attributes.href (basePath ++ Route.toHref (Route.Market__Product__ProductId_ { productId = product.id })) ]
                     [ span [ class "market-product-title" ] [ text (Market.purchaseTypeLabel product.type_) ]
-                    , span [ class "market-product-period" ] [ text (Market.purchasePeriodLabel product.period) ]
-                    , span [ class "market-product-amount" ] [ text (Market.formatAmount product.amount product.currency) ]
+                    , span [ class "market-product-summary" ] [ text (Market.productSummary product) ]
                     ]
                 , if product.delistedAt /= Nothing then
                     span [ class "market-product-delisted" ] [ text "Delisted" ]

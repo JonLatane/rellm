@@ -184,8 +184,7 @@ view model =
 
             Found product ->
                 [ h1 [] [ text (Market.purchaseTypeLabel product.type_) ]
-                , p [ class "product-period" ] [ text (Market.purchasePeriodLabel product.period) ]
-                , p [ class "product-amount" ] [ text (Market.formatAmount product.amount product.currency) ]
+                , p [ class "product-summary" ] [ text (Market.productSummary product) ]
                 , if product.delistedAt /= Nothing then
                     p [ class "product-delisted" ] [ text "This product is no longer available for purchase." ]
 
