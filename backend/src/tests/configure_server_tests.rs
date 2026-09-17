@@ -609,3 +609,46 @@ fn non_admin_never_sees_stripe_config_from_get_server_configuration() {
         Ok(())
     });
 }
+
+/// `market_settings` is a brand-new nullable column -- every server that existed before it did
+/// (i.e. every `test_conn()` fixture here, which never calls `ConfigureServer` for it) must still
+/// get a well-formed `MarketSettings` back, not `None`/a decode error, same read-time-fallback
+/// convention `media_settings` already established. This is the actual behavior Jon asked to
+/// double-check: a server that's never touched this setting shouldn't crash or misbehave.
+#[test]
+fn market_settings_defaults_to_disabled_for_a_server_that_never_set_it() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let config = get_server_configuration_proto(conn).expect("failed to fetch base config");
+        assert_eq!(config.market_settings, Some(MarketSettings { enabled: false }));
+
+        Ok(())
+    });
+}
+
+/// Unlike `stripe_config` (Admin-only, see the spec above), `market_settings` is the deliberately
+/// public "is this server's Market open" signal -- even a non-admin (or fully unauthenticated)
+/// caller must still see it, or federated multi-server Market browsing (`Pages.Market`) couldn't
+/// work at all. See `ServerConfiguration.market_settings`'s own proto doc.
+#[test]
+fn market_settings_stays_visible_to_non_admins_and_unauthenticated_callers() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let admin = create_user(conn, "cst_market_admin");
+        let admin = grant_permissions(conn, &admin, vec![Permission::Admin]);
+        let mut config = get_server_configuration_proto(conn).expect("failed to fetch base config");
+        config.market_settings = Some(MarketSettings { enabled: true });
+        configure_server(config, &admin, conn).expect("configure should succeed");
+
+        let non_admin = create_user(conn, "cst_market_non_admin");
+        let non_admin_result = get_server_configuration((), &Some(&non_admin), conn)
+            .expect("get_server_configuration should succeed");
+        assert_eq!(non_admin_result.market_settings, Some(MarketSettings { enabled: true }));
+
+        let unauthenticated_result =
+            get_server_configuration((), &None, conn).expect("get_server_configuration should succeed");
+        assert_eq!(unauthenticated_result.market_settings, Some(MarketSettings { enabled: true }));
+
+        Ok(())
+    });
+}

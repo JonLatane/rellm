@@ -125,6 +125,7 @@
     - [FreeClusterResourcesRequest](#rellm-FreeClusterResourcesRequest)
     - [LockClusterResourcesRequest](#rellm-LockClusterResourcesRequest)
     - [LockClusterResourcesResponse](#rellm-LockClusterResourcesResponse)
+    - [MarketSettings](#rellm-MarketSettings)
     - [MediaSettings](#rellm-MediaSettings)
     - [PostSettings](#rellm-PostSettings)
     - [ServerColors](#rellm-ServerColors)
@@ -187,6 +188,7 @@
 - [market.proto](#market-proto)
     - [AIGrantPurchaseDetails](#rellm-AIGrantPurchaseDetails)
     - [AIGrantSubscriptionDetails](#rellm-AIGrantSubscriptionDetails)
+    - [FulfillmentNote](#rellm-FulfillmentNote)
     - [GetMarketProductsRequest](#rellm-GetMarketProductsRequest)
     - [GetMarketProductsResponse](#rellm-GetMarketProductsResponse)
     - [GetMarketSubscriptionsRequest](#rellm-GetMarketSubscriptionsRequest)
@@ -207,6 +209,7 @@
     - [RellmHostingPurchaseDetails](#rellm-RellmHostingPurchaseDetails)
     - [RellmHostingSubscriptionDetails](#rellm-RellmHostingSubscriptionDetails)
   
+    - [GetMarketSubscriptionsRequestType](#rellm-GetMarketSubscriptionsRequestType)
     - [PurchasePeriod](#rellm-PurchasePeriod)
     - [PurchaseType](#rellm-PurchaseType)
   
@@ -230,6 +233,8 @@
 <a name="rellm-Rellm"></a>
 
 ### Rellm
+[Jump to the gRPC API?](#grpc-api)
+
 [Rellm](https://github.com/JonLatane/rellm) is a social media protocol with support for Users (and Follows), Media, Posts, Events, Groups, and Messages. It is designed to be federated, 
 but does not require federation to be a useful next-gen forum type solution.
 It is designed to be used with a variety of frontends, including web, mobile, and desktop applications. It interoperates across numerous ports, protocols, and formats, including
@@ -615,13 +620,18 @@ its owner may hand out access to it.
 
 #### Rellm&#39;s Market
 Rellm&#39;s Market (`market.proto`) is this server&#39;s storefront - a small, Stripe-backed marketplace an admin
-stocks with up to nine [`MarketProduct`](#rellm-MarketProduct)s (one offering type times one billing period
-each) that any user can buy. Three offering types exist today ([`PurchaseType`](#rellm-PurchaseType)):
+stocks with up to twelve [`MarketProduct`](#rellm-MarketProduct)s (one offering type times one billing period
+each) that any user can buy. Four offering types exist today ([`PurchaseType`](#rellm-PurchaseType)):
 `PURCHASE_TYPE_MEDIA_STORAGE` (raises the buyer&#39;s `User.media_storage_limit_bytes`),
 `PURCHASE_TYPE_AI_GRANTS` (grants/resets an [`AIProviderGrant`](#rellm-AIProviderGrant) against one of the
-server operator&#39;s [`AIProvider`](#rellm-AIProvider)s), and `PURCHASE_TYPE_RELLM_HOSTING` (bills the buyer for
+server operator&#39;s [`AIProvider`](#rellm-AIProvider)s), `PURCHASE_TYPE_RELLM_HOSTING` (bills the buyer for
 the server operator to stand up a new Rellm instance on a domain of their choosing - provisioned by hand, not
-automated). Each [`MarketProduct`](#rellm-MarketProduct) is sold once ([`PurchasePeriod`](#rellm-PurchasePeriod)
+automated; the admin&#39;s own `/market/fulfillment` page, backed by
+`GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN` and
+[`UpdateMarketSubscription`](#grpc-api-UpdateMarketSubscription), tracks these orders -
+[`RellmHostingSubscriptionDetails`](#rellm-RellmHostingSubscriptionDetails)&#39;s own `fulfilled`/
+`fulfillment_notes` fields), and `PURCHASE_TYPE_PERMISSIONS_ACCESS` (grants the buyer a fixed set of `Permission`s, e.g.
+pay-gating `SYNC_EVENTS_TO_FACEBOOK`). Each [`MarketProduct`](#rellm-MarketProduct) is sold once ([`PurchasePeriod`](#rellm-PurchasePeriod)
 `PURCHASE_PERIOD_INDEFINITE`, a single non-renewing [`MarketPurchase`](#rellm-MarketPurchase)) or on a recurring
 `PURCHASE_PERIOD_ANNUAL`/`PURCHASE_PERIOD_MONTHLY` cycle (a [`MarketSubscription`](#rellm-MarketSubscription),
 whose `billing_history` accumulates one [`MarketPurchase`](#rellm-MarketPurchase) per renewal).
@@ -638,12 +648,16 @@ an abandoned checkout leaves nothing behind. Only once Stripe confirms payment (
 [`MarketPurchase`](#rellm-MarketPurchase)/[`MarketSubscription`](#rellm-MarketSubscription) and apply its
 entitlement. A recurring [`MarketSubscription`](#rellm-MarketSubscription) renews itself thereafter via
 off-session charges against the payment method saved on that first checkout - no further action from the
-buyer - until a renewal charge fails, which ends the [`MarketSubscription`](#rellm-MarketSubscription). A
-user&#39;s own MarketSubscriptions (never anyone else&#39;s) are listed via
-[`GetMarketSubscriptions`](#grpc-api-GetMarketSubscriptions), and also travel along on [`User`](#rellm-User)
-itself (`User.market_subscriptions`) the same way `ai_models`/`sync_sources` do. Stripe credentials for all of
-this live in `ServerConfiguration.stripe_config` (a [`StripeConfig`](#rellm-StripeConfig)), Admin-only like
-`twilio_config`/`bird_config`.
+buyer - until either a renewal charge fails or the buyer/admin calls
+[`CancelMarketSubscription`](#grpc-api-CancelMarketSubscription), either of which sets `canceled_at`. The
+entitlement itself stays in effect until whichever is later of `renews_at`/`canceled_at` - once both have
+passed, the `renew_market_subscriptions` background job revokes it (reverts `media_storage_limit_bytes` to
+`ServerConfiguration.media_settings.default_media_allocation_bytes`, or removes the granted `Permission`s,
+depending on `type`) and sets `service_terminated_at`. A user&#39;s own MarketSubscriptions (never anyone
+else&#39;s) are listed via [`GetMarketSubscriptions`](#grpc-api-GetMarketSubscriptions), and also travel along
+on [`User`](#rellm-User) itself (`User.market_subscriptions`) the same way `ai_models`/`sync_sources` do.
+Stripe credentials for all of this live in `ServerConfiguration.stripe_config` (a
+[`StripeConfig`](#rellm-StripeConfig)), Admin-only like `twilio_config`/`bird_config`.
 
 #### Media
 [`Media`](#rellm-Media) represents an uploaded (or server-generated) photo or video. Unlike other types, Media
@@ -814,6 +828,22 @@ platforms.
 #### Federated Messaging
 Rellm&#39;s Elm Messaging UI is generally a multi-server federated messenger. The main limitation is that it can only receive push notifications
 from one server. (This could be changed with VAPID key sharing, but is part of the VAPID protocol.)
+
+#### Federated Markets
+The Elm `/market` page can show more than one server&#39;s Market side by side: the browsed server&#39;s own
+(always first) plus any other connected, enabled server whose `ServerConfiguration.market_settings.enabled`
+is set (in Accounts panel order after that) - the public, non-secret &#34;is this server&#39;s Market open&#34; signal,
+unlike `stripe_config` itself, which stays Admin-only. Each section is fully independent: it lists that
+server&#39;s own [`MarketProduct`](#rellm-MarketProduct)s and shows product-management controls only if the
+current user is actually an Admin *on that server*.
+
+Unlike Federated Browsing/Profiles/Messaging above, buying is never seamless across servers - Market is the
+one place a user must always transact with the target site directly. A product tile for the browsed server
+links to its own in-app product page as usual, but a tile for any *other* server links straight to that
+server&#39;s own `https://{host}/market/product/{id}` (a real page navigation, not client-side routing), since
+[`MakeMarketPurchase`](#grpc-api-MakeMarketPurchase) starts a Stripe Checkout Session scoped to whichever
+server the buyer is actually authenticated against, and Stripe&#39;s own `success_url`/`cancel_url` redirect
+back to that same server when payment completes.
 
 ### HTTP Endpoints
 #### Internal HTTP server (27705)
@@ -1169,8 +1199,10 @@ discarded and a fresh keypair generated, so it&#39;s single-use per completed/fa
 | GetMarketProducts | [GetMarketProductsRequest](#rellm-GetMarketProductsRequest) | [GetMarketProductsResponse](#rellm-GetMarketProductsResponse) | Gets MarketProducts available for purchase on this server (`market.proto`). *Unauthenticated* -- admins additionally see delisted MarketProducts. |
 | CreateMarketProduct | [MarketProduct](#rellm-MarketProduct) | [MarketProduct](#rellm-MarketProduct) | Creates a MarketProduct. *Authenticated*, requires Admin. |
 | UpdateMarketProduct | [MarketProduct](#rellm-MarketProduct) | [MarketProduct](#rellm-MarketProduct) | Updates a MarketProduct&#39;s amount/currency/details/delisted_at. *Authenticated*, requires Admin. `type`/`period` are immutable after creation and are ignored if changed. |
-| GetMarketSubscriptions | [GetMarketSubscriptionsRequest](#rellm-GetMarketSubscriptionsRequest) | [GetMarketSubscriptionsResponse](#rellm-GetMarketSubscriptionsResponse) | Gets the current user&#39;s own MarketSubscriptions (with billing_history). *Authenticated*, self-scoped only. |
+| GetMarketSubscriptions | [GetMarketSubscriptionsRequest](#rellm-GetMarketSubscriptionsRequest) | [GetMarketSubscriptionsResponse](#rellm-GetMarketSubscriptionsResponse) | Gets MarketSubscriptions -- self-scoped (&#34;MY subscriptions&#34;, `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE`, the default) for any authenticated caller, or every `PURCHASE_TYPE_RELLM_HOSTING` subscription across every buyer (`GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN`, backing `/market/fulfillment` -- see `RellmHostingSubscriptionDetails.fulfilled`&#39;s own doc) for an Admin. *Authenticated*. |
 | MakeMarketPurchase | [MakeMarketPurchaseRequest](#rellm-MakeMarketPurchaseRequest) | [MakeMarketPurchaseResponse](#rellm-MakeMarketPurchaseResponse) | Starts (or resumes) buying a MarketProduct for the current user, returning a Stripe Checkout URL to redirect to. *Authenticated*. See `MakeMarketPurchaseRequest`&#39;s own doc -- no MarketPurchase/ MarketSubscription is created by this call itself, only once Stripe confirms payment via webhook. |
+| CancelMarketSubscription | [MarketSubscription](#rellm-MarketSubscription) | [MarketSubscription](#rellm-MarketSubscription) | Cancels a MarketSubscription by setting `canceled_at` to now -- entitlement (media storage quota, granted permissions, etc.) stays active until whichever is later of `renews_at`/`canceled_at`; the `renew_market_subscriptions` background job is what actually revokes it and sets `service_terminated_at`, once both have passed. *Authenticated* -- the subscription&#39;s own buyer, or an Admin. |
+| UpdateMarketSubscription | [MarketSubscription](#rellm-MarketSubscription) | [MarketSubscription](#rellm-MarketSubscription) | Updates a `PURCHASE_TYPE_RELLM_HOSTING` MarketSubscription&#39;s own `fulfilled`/`fulfillment_notes` (nothing else -- every other field, including `additional_information`, is immutable after purchase and silently ignored if changed) -- backs `/market/fulfillment`. A new `fulfillment_notes` entry must be appended (not inserted/reordered/removed) after whatever&#39;s already stored, and its `user_id` must match the caller&#39;s own -- the server stamps `created_at` itself, ignoring whatever the client sent. *Authenticated*, requires Admin (for now -- see that field&#39;s own doc on why this may loosen to &#34;buyer, or Admin&#34; later). |
 | GenerateMedia | [GenerateMediaRequest](#rellm-GenerateMediaRequest) | [Media](#rellm-Media) | Generates (or edits, given reference `media_ids`) an image via one of the current user&#39;s AIModels, storing it as a new Media and, if `target` is set, attaching it to that Post/Event. *Authenticated* - caller must own or have been granted access to the chosen AIProvider, and (if `target` is set) have edit access to that Post/Event. A grantee (never the provider&#39;s own owner) spends real AIProviderGrant.tokens_remaining on every call - the provider&#39;s own reported token usage once generation succeeds, or (rejected before any request is even sent to the provider) a rough pre-flight estimate of the request&#39;s input cost alone, whichever catches an insufficient balance first. |
 | GetEventAttendances | [GetEventAttendancesRequest](#rellm-GetEventAttendancesRequest) | [EventAttendances](#rellm-EventAttendances) | Gets EventAttendances for an Occasion. *Publicly accessible **or** Authenticated.* |
 | UpsertEventAttendance | [EventAttendance](#rellm-EventAttendance) | [EventAttendance](#rellm-EventAttendance) | Upsert an EventAttendance. *Publicly accessible **or** Authenticated, with anonymous RSVP support.* See [EventAttendance](#rellm-EventAttendance) and [AnonymousAttendee](#rellm-AnonymousAttendee) for details. tl;dr: Anonymous RSVPs may updated/deleted with the `AnonymousAttendee.auth_token` returned by this RPC (the client should save this for the user, and ideally, offer a link with the token). |
@@ -3358,6 +3390,26 @@ See [`LockClusterResources`](#grpc-api-LockClusterResources).
 
 
 
+<a name="rellm-MarketSettings"></a>
+
+### MarketSettings
+Whether this server&#39;s `/market` is open -- an explicit, admin-set toggle independent of
+`StripeConfig.stripe_enabled` (an admin can configure Stripe credentials without opening the
+storefront yet, or temporarily close it without touching those credentials). See
+`ServerConfiguration.market_settings`&#39;s own doc on why this lives outside `StripeConfig`: it&#39;s
+the one bit that has to stay visible to non-admins for federated multi-server Market browsing to
+work at all.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| enabled | [bool](#bool) |  |  |
+
+
+
+
+
+
 <a name="rellm-MediaSettings"></a>
 
 ### MediaSettings
@@ -3434,6 +3486,7 @@ Configuration for a Rellm server instance.
 | post_settings | [PostSettings](#rellm-PostSettings) |  | Configuration for posts on the server. If default visibility is `GLOBAL_PUBLIC`, default_user_permissions *must* contain `PUBLISH_POSTS_GLOBALLY`. |
 | event_settings | [EventSettings](#rellm-EventSettings) |  | Configuration for events on the server. If default visibility is `GLOBAL_PUBLIC`, default_user_permissions *must* contain `PUBLISH_EVENTS_GLOBALLY`. |
 | media_settings | [MediaSettings](#rellm-MediaSettings) |  | Configuration for media on the server. If default visibility is `GLOBAL_PUBLIC`, default_user_permissions *must* contain `PUBLISH_MEDIA_GLOBALLY`. |
+| market_settings | [MarketSettings](#rellm-MarketSettings) |  | Public, non-secret &#34;is this server&#39;s Market open&#34; signal -- unlike `stripe_config` (which holds real credentials and is Admin-only, see that field&#39;s own doc), this is never stripped for a non-admin/unauthenticated caller. Lets a client decide whether to show this server&#39;s Market section at all (e.g. when browsing a federated list of servers) without needing to be an admin here just to check -- see `rellm.proto`&#39;s own &#34;Federated Markets&#34; doc section. |
 | external_cdn_config | [ExternalCDNConfig](#rellm-ExternalCDNConfig) | optional | If set, enables External CDN support for the server. This means that the non-secure HTTP server (on port 80) will *not* redirect to the secure server, and instead serve up Tamagui Web/Flutter clients directly. This allows you to point Cloudflare&#39;s &#34;CNAME HTTPS Proxy&#34; feature at your Rellm server to serve up HTML/CS/JS and Media files with caching from Cloudflare&#39;s CDN. See ExternalCDNConfig for more details on securing this setup. |
 | cluster_resources | [ClusterResources](#rellm-ClusterResources) | optional | Cluster-internal coordination state - see `ClusterResources`&#39;s own doc. Visible to any logged-in admin (unlike most fields here, this describes infrastructure topology rather than anything end users need, so it&#39;s stripped entirely from [`GetServerConfiguration`](#grpc-api-GetServerConfiguration) for non-admins/anonymous callers); editing it via [`ConfigureServer`](#grpc-api-ConfigureServer) additionally requires the [`EDIT_CLUSTER_SETTINGS`](#rellm-Permission) permission. |
 | private_user_strategy | [PrivateUserStrategy](#rellm-PrivateUserStrategy) |  | Strategy when a user sets their visibility to `PRIVATE`. Defaults to `ACCOUNT_IS_FROZEN`. |
@@ -4469,6 +4522,23 @@ text-to-image generation.
 
 
 
+<a name="rellm-FulfillmentNote"></a>
+
+### FulfillmentNote
+One entry in a MarketSubscription&#39;s `fulfillment_notes` -- see that field&#39;s own doc.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| user_id | [string](#string) |  |  |
+| note | [string](#string) |  |  |
+| created_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  |  |
+
+
+
+
+
+
 <a name="rellm-GetMarketProductsRequest"></a>
 
 ### GetMarketProductsRequest
@@ -4498,8 +4568,16 @@ For now, there are few enough that this has no parameters.
 <a name="rellm-GetMarketSubscriptionsRequest"></a>
 
 ### GetMarketSubscriptionsRequest
-Request to get the current user&#39;s own MarketSubscriptions (with billing_history). Self-scoped --
-there&#39;s no way to fetch another user&#39;s MarketSubscriptions, even as an admin, for now.
+Request to get MarketSubscriptions -- self-scoped to the current user&#39;s own
+(`GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE`, the default -- there&#39;s no way to fetch another
+user&#39;s own subscriptions this way, even as an admin), or -- for an admin only --
+`GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN`, every `PURCHASE_TYPE_RELLM_HOSTING`
+subscription across every buyer, for the `/market/fulfillment` admin page.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| request_type | [GetMarketSubscriptionsRequestType](#rellm-GetMarketSubscriptionsRequestType) |  |  |
 
 
 
@@ -4610,6 +4688,8 @@ by the client is ignored).
 | period | [PurchasePeriod](#rellm-PurchasePeriod) |  | Never changeable after product creation. |
 | amount | [uint32](#uint32) |  |  |
 | currency | [uint32](#uint32) |  |  |
+| available_count | [uint32](#uint32) |  | Number of subscriptions &#34;slots&#34; availbable (admin-set) |
+| sold_count | [uint32](#uint32) |  | Number of subscriptions actually sold. Canceled subscriptions reduce this number, allowing a new person to subscribe. |
 | media_storage_subscription_details | [MediaStorageSubscriptionDetails](#rellm-MediaStorageSubscriptionDetails) |  |  |
 | ai_grant_subscription_details | [AIGrantSubscriptionDetails](#rellm-AIGrantSubscriptionDetails) |  |  |
 | rellm_hosting_subscription_details | [RellmHostingSubscriptionDetails](#rellm-RellmHostingSubscriptionDetails) |  |  |
@@ -4709,7 +4789,8 @@ otherwise-independent messages, matching the MarketPayment/MarketRefund split it
 | permissions_access_subscription_details | [PermissionsAccessSubscriptionDetails](#rellm-PermissionsAccessSubscriptionDetails) |  |  |
 | created_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  |  |
 | renews_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional |  |
-| ended_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional | If set, the MarketSubscription is unavailable |
+| canceled_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional | Set once the subscription will no longer renew -- either the buyer/admin explicitly canceled it (CancelMarketSubscription) or a renewal charge failed. The subscription&#39;s entitlement (media storage quota, granted permissions, etc.) stays active until whichever is later of renews_at/canceled_at, at which point renew_market_subscriptions.rs revokes it and sets service_terminated_at. |
+| service_terminated_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional | The time permissions were removed, media storage quotas reset, etc. |
 
 
 
@@ -4807,13 +4888,27 @@ otherwise-independent messages, matching the MarketPayment/MarketRefund split it
 | minio_size_bytes | [uint64](#uint64) |  |  |
 | domain | [string](#string) |  |  |
 | contact_email | [string](#string) |  |  |
-| additional_information | [string](#string) |  |  |
+| additional_information | [string](#string) |  | Immutable after purchase -- the buyer&#39;s own notes to the admin fulfilling this order. Never editable via UpdateMarketSubscription (see that RPC&#39;s own doc); `fulfillment_notes` below is the admin/buyer conversation about fulfilling it. |
+| fulfilled | [bool](#bool) |  | Whether an admin has actually stood up this Rellm hosting order -- Rellm hosting is deliberately not automated (see `market.proto`&#39;s own top-of-file notes and `logic::market_fulfillment::fulfill_purchase`&#39;s `RellmHosting` no-op arm), so this is the one manual &#34;is this order done&#34; signal, shown/toggled on `/market/fulfillment` (`GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN`). |
+| fulfillment_notes | [FulfillmentNote](#rellm-FulfillmentNote) | repeated | The admin/buyer conversation about fulfilling this order -- oldest to newest, append-only (see `UpdateMarketSubscription`&#39;s own doc: a new entry can only ever be appended after whatever&#39;s already here, never inserted/reordered/removed, and its `user_id` must match whoever&#39;s actually making the request -- the server stamps `created_at` itself). |
 
 
 
 
 
  
+
+
+<a name="rellm-GetMarketSubscriptionsRequestType"></a>
+
+### GetMarketSubscriptionsRequestType
+
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE | 0 | The &#34;user facing&#34; view backing /market -- the caller&#39;s own MarketSubscriptions only. |
+| GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN | 1 | Admin-only view backing /market/fulfillment -- every PURCHASE_TYPE_RELLM_HOSTING MarketSubscription across every buyer, since Rellm hosting needs manual setup that isn&#39;t automated (see RellmHostingSubscriptionDetails.fulfilled&#39;s own doc). |
+
 
 
 <a name="rellm-PurchasePeriod"></a>

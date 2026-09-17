@@ -491,6 +491,16 @@ export interface ServerConfiguration {
     | MediaSettings
     | undefined;
   /**
+   * Public, non-secret "is this server's Market open" signal -- unlike `stripe_config` (which holds
+   * real credentials and is Admin-only, see that field's own doc), this is never stripped for a
+   * non-admin/unauthenticated caller. Lets a client decide whether to show this server's Market
+   * section at all (e.g. when browsing a federated list of servers) without needing to be an admin
+   * here just to check -- see `rellm.proto`'s own "Federated Markets" doc section.
+   */
+  marketSettings:
+    | MarketSettings
+    | undefined;
+  /**
    * If set, enables External CDN support for the server. This means that the
    * non-secure HTTP server (on port 80) will *not* redirect to the secure server,
    * and instead serve up Tamagui Web/Flutter clients directly. This allows you
@@ -790,6 +800,18 @@ export interface MediaSettings {
   defaultVisibility: Visibility;
   /** Default media storage allocation for newly created users. Defaults to 10MB. */
   defaultMediaAllocationBytes: number;
+}
+
+/**
+ * Whether this server's `/market` is open -- an explicit, admin-set toggle independent of
+ * `StripeConfig.stripe_enabled` (an admin can configure Stripe credentials without opening the
+ * storefront yet, or temporarily close it without touching those credentials). See
+ * `ServerConfiguration.market_settings`'s own doc on why this lives outside `StripeConfig`: it's
+ * the one bit that has to stay visible to non-admins for federated multi-server Market browsing to
+ * work at all.
+ */
+export interface MarketSettings {
+  enabled: boolean;
 }
 
 /**
@@ -1208,6 +1230,7 @@ function createBaseServerConfiguration(): ServerConfiguration {
     postSettings: undefined,
     eventSettings: undefined,
     mediaSettings: undefined,
+    marketSettings: undefined,
     externalCdnConfig: undefined,
     clusterResources: undefined,
     privateUserStrategy: 0,
@@ -1261,6 +1284,9 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
     }
     if (message.mediaSettings !== undefined) {
       MediaSettings.encode(message.mediaSettings, writer.uint32(194).fork()).join();
+    }
+    if (message.marketSettings !== undefined) {
+      MarketSettings.encode(message.marketSettings, writer.uint32(202).fork()).join();
     }
     if (message.externalCdnConfig !== undefined) {
       ExternalCDNConfig.encode(message.externalCdnConfig, writer.uint32(722).fork()).join();
@@ -1426,6 +1452,14 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
           message.mediaSettings = MediaSettings.decode(reader, reader.uint32());
           continue;
         }
+        case 25: {
+          if (tag !== 202) {
+            break;
+          }
+
+          message.marketSettings = MarketSettings.decode(reader, reader.uint32());
+          continue;
+        }
         case 90: {
           if (tag !== 722) {
             break;
@@ -1564,6 +1598,7 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
       postSettings: isSet(object.postSettings) ? PostSettings.fromJSON(object.postSettings) : undefined,
       eventSettings: isSet(object.eventSettings) ? EventSettings.fromJSON(object.eventSettings) : undefined,
       mediaSettings: isSet(object.mediaSettings) ? MediaSettings.fromJSON(object.mediaSettings) : undefined,
+      marketSettings: isSet(object.marketSettings) ? MarketSettings.fromJSON(object.marketSettings) : undefined,
       externalCdnConfig: isSet(object.externalCdnConfig)
         ? ExternalCDNConfig.fromJSON(object.externalCdnConfig)
         : undefined,
@@ -1621,6 +1656,9 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
     }
     if (message.mediaSettings !== undefined) {
       obj.mediaSettings = MediaSettings.toJSON(message.mediaSettings);
+    }
+    if (message.marketSettings !== undefined) {
+      obj.marketSettings = MarketSettings.toJSON(message.marketSettings);
     }
     if (message.externalCdnConfig !== undefined) {
       obj.externalCdnConfig = ExternalCDNConfig.toJSON(message.externalCdnConfig);
@@ -1686,6 +1724,9 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
       : undefined;
     message.mediaSettings = (object.mediaSettings !== undefined && object.mediaSettings !== null)
       ? MediaSettings.fromPartial(object.mediaSettings)
+      : undefined;
+    message.marketSettings = (object.marketSettings !== undefined && object.marketSettings !== null)
+      ? MarketSettings.fromPartial(object.marketSettings)
       : undefined;
     message.externalCdnConfig = (object.externalCdnConfig !== undefined && object.externalCdnConfig !== null)
       ? ExternalCDNConfig.fromPartial(object.externalCdnConfig)
@@ -2620,6 +2661,64 @@ export const MediaSettings: MessageFns<MediaSettings> = {
     message.defaultModeration = object.defaultModeration ?? 0;
     message.defaultVisibility = object.defaultVisibility ?? 0;
     message.defaultMediaAllocationBytes = object.defaultMediaAllocationBytes ?? 0;
+    return message;
+  },
+};
+
+function createBaseMarketSettings(): MarketSettings {
+  return { enabled: false };
+}
+
+export const MarketSettings: MessageFns<MarketSettings> = {
+  encode(message: MarketSettings, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.enabled !== false) {
+      writer.uint32(8).bool(message.enabled);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): MarketSettings {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseMarketSettings();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 8) {
+            break;
+          }
+
+          message.enabled = reader.bool();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): MarketSettings {
+    return { enabled: isSet(object.enabled) ? globalThis.Boolean(object.enabled) : false };
+  },
+
+  toJSON(message: MarketSettings): unknown {
+    const obj: any = {};
+    if (message.enabled !== false) {
+      obj.enabled = message.enabled;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<MarketSettings>, I>>(base?: I): MarketSettings {
+    return MarketSettings.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<MarketSettings>, I>>(object: I): MarketSettings {
+    const message = createBaseMarketSettings();
+    message.enabled = object.enabled ?? false;
     return message;
   },
 };

@@ -96,6 +96,45 @@ export function purchasePeriodToJSON(object: PurchasePeriod): string {
   }
 }
 
+export enum GetMarketSubscriptionsRequestType {
+  /** GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE - The "user facing" view backing /market -- the caller's own MarketSubscriptions only. */
+  GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE = 0,
+  /**
+   * GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN - Admin-only view backing /market/fulfillment -- every PURCHASE_TYPE_RELLM_HOSTING
+   * MarketSubscription across every buyer, since Rellm hosting needs manual setup that isn't
+   * automated (see RellmHostingSubscriptionDetails.fulfilled's own doc).
+   */
+  GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN = 1,
+  UNRECOGNIZED = -1,
+}
+
+export function getMarketSubscriptionsRequestTypeFromJSON(object: any): GetMarketSubscriptionsRequestType {
+  switch (object) {
+    case 0:
+    case "GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE":
+      return GetMarketSubscriptionsRequestType.GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE;
+    case 1:
+    case "GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN":
+      return GetMarketSubscriptionsRequestType.GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN;
+    case -1:
+    case "UNRECOGNIZED":
+    default:
+      return GetMarketSubscriptionsRequestType.UNRECOGNIZED;
+  }
+}
+
+export function getMarketSubscriptionsRequestTypeToJSON(object: GetMarketSubscriptionsRequestType): string {
+  switch (object) {
+    case GetMarketSubscriptionsRequestType.GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE:
+      return "GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE";
+    case GetMarketSubscriptionsRequestType.GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN:
+      return "GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN";
+    case GetMarketSubscriptionsRequestType.UNRECOGNIZED:
+    default:
+      return "UNRECOGNIZED";
+  }
+}
+
 /**
  * An actual subscribable product listed on, say, https://rellm.org/market
  * Listed/delisted by clients by setting `delisted_at` (though the actual date supplied
@@ -109,6 +148,13 @@ export interface MarketProduct {
   period: PurchasePeriod;
   amount: number;
   currency: number;
+  /** Number of subscriptions "slots" availbable (admin-set) */
+  availableCount: number;
+  /**
+   * Number of subscriptions actually sold. Canceled subscriptions reduce this number,
+   * allowing a new person to subscribe.
+   */
+  soldCount: number;
   mediaStorageSubscriptionDetails?: MediaStorageSubscriptionDetails | undefined;
   aiGrantSubscriptionDetails?: AIGrantSubscriptionDetails | undefined;
   rellmHostingSubscriptionDetails?: RellmHostingSubscriptionDetails | undefined;
@@ -136,10 +182,14 @@ export interface GetMarketProductsResponse {
 }
 
 /**
- * Request to get the current user's own MarketSubscriptions (with billing_history). Self-scoped --
- * there's no way to fetch another user's MarketSubscriptions, even as an admin, for now.
+ * Request to get MarketSubscriptions -- self-scoped to the current user's own
+ * (`GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE`, the default -- there's no way to fetch another
+ * user's own subscriptions this way, even as an admin), or -- for an admin only --
+ * `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN`, every `PURCHASE_TYPE_RELLM_HOSTING`
+ * subscription across every buyer, for the `/market/fulfillment` admin page.
  */
 export interface GetMarketSubscriptionsRequest {
+  requestType: GetMarketSubscriptionsRequestType;
 }
 
 export interface GetMarketSubscriptionsResponse {
@@ -274,8 +324,18 @@ export interface MarketSubscription {
   renewsAt?:
     | string
     | undefined;
-  /** If set, the MarketSubscription is unavailable */
-  endedAt?: string | undefined;
+  /**
+   * Set once the subscription will no longer renew -- either the buyer/admin explicitly canceled it
+   * (CancelMarketSubscription) or a renewal charge failed. The subscription's entitlement (media
+   * storage quota, granted permissions, etc.) stays active until whichever is later of
+   * renews_at/canceled_at, at which point renew_market_subscriptions.rs revokes it and sets
+   * service_terminated_at.
+   */
+  canceledAt?:
+    | string
+    | undefined;
+  /** The time permissions were removed, media storage quotas reset, etc. */
+  serviceTerminatedAt?: string | undefined;
 }
 
 export interface MediaStorageSubscriptionDetails {
@@ -293,7 +353,34 @@ export interface RellmHostingSubscriptionDetails {
   minioSizeBytes: number;
   domain: string;
   contactEmail: string;
+  /**
+   * Immutable after purchase -- the buyer's own notes to the admin fulfilling this order. Never
+   * editable via UpdateMarketSubscription (see that RPC's own doc); `fulfillment_notes` below is
+   * the admin/buyer conversation about fulfilling it.
+   */
   additionalInformation: string;
+  /**
+   * Whether an admin has actually stood up this Rellm hosting order -- Rellm hosting is
+   * deliberately not automated (see `market.proto`'s own top-of-file notes and
+   * `logic::market_fulfillment::fulfill_purchase`'s `RellmHosting` no-op arm), so this is the one
+   * manual "is this order done" signal, shown/toggled on `/market/fulfillment`
+   * (`GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN`).
+   */
+  fulfilled: boolean;
+  /**
+   * The admin/buyer conversation about fulfilling this order -- oldest to newest, append-only (see
+   * `UpdateMarketSubscription`'s own doc: a new entry can only ever be appended after whatever's
+   * already here, never inserted/reordered/removed, and its `user_id` must match whoever's actually
+   * making the request -- the server stamps `created_at` itself).
+   */
+  fulfillmentNotes: FulfillmentNote[];
+}
+
+/** One entry in a MarketSubscription's `fulfillment_notes` -- see that field's own doc. */
+export interface FulfillmentNote {
+  userId: string;
+  note: string;
+  createdAt: string | undefined;
 }
 
 export interface PermissionsAccessSubscriptionDetails {
@@ -307,6 +394,8 @@ function createBaseMarketProduct(): MarketProduct {
     period: 0,
     amount: 0,
     currency: 0,
+    availableCount: 0,
+    soldCount: 0,
     mediaStorageSubscriptionDetails: undefined,
     aiGrantSubscriptionDetails: undefined,
     rellmHostingSubscriptionDetails: undefined,
@@ -332,6 +421,12 @@ export const MarketProduct: MessageFns<MarketProduct> = {
     }
     if (message.currency !== 0) {
       writer.uint32(40).uint32(message.currency);
+    }
+    if (message.availableCount !== 0) {
+      writer.uint32(48).uint32(message.availableCount);
+    }
+    if (message.soldCount !== 0) {
+      writer.uint32(56).uint32(message.soldCount);
     }
     if (message.mediaStorageSubscriptionDetails !== undefined) {
       MediaStorageSubscriptionDetails.encode(message.mediaStorageSubscriptionDetails, writer.uint32(82).fork()).join();
@@ -404,6 +499,22 @@ export const MarketProduct: MessageFns<MarketProduct> = {
           message.currency = reader.uint32();
           continue;
         }
+        case 6: {
+          if (tag !== 48) {
+            break;
+          }
+
+          message.availableCount = reader.uint32();
+          continue;
+        }
+        case 7: {
+          if (tag !== 56) {
+            break;
+          }
+
+          message.soldCount = reader.uint32();
+          continue;
+        }
         case 10: {
           if (tag !== 82) {
             break;
@@ -471,6 +582,8 @@ export const MarketProduct: MessageFns<MarketProduct> = {
       period: isSet(object.period) ? purchasePeriodFromJSON(object.period) : 0,
       amount: isSet(object.amount) ? globalThis.Number(object.amount) : 0,
       currency: isSet(object.currency) ? globalThis.Number(object.currency) : 0,
+      availableCount: isSet(object.availableCount) ? globalThis.Number(object.availableCount) : 0,
+      soldCount: isSet(object.soldCount) ? globalThis.Number(object.soldCount) : 0,
       mediaStorageSubscriptionDetails: isSet(object.mediaStorageSubscriptionDetails)
         ? MediaStorageSubscriptionDetails.fromJSON(object.mediaStorageSubscriptionDetails)
         : undefined,
@@ -504,6 +617,12 @@ export const MarketProduct: MessageFns<MarketProduct> = {
     }
     if (message.currency !== 0) {
       obj.currency = Math.round(message.currency);
+    }
+    if (message.availableCount !== 0) {
+      obj.availableCount = Math.round(message.availableCount);
+    }
+    if (message.soldCount !== 0) {
+      obj.soldCount = Math.round(message.soldCount);
     }
     if (message.mediaStorageSubscriptionDetails !== undefined) {
       obj.mediaStorageSubscriptionDetails = MediaStorageSubscriptionDetails.toJSON(
@@ -542,6 +661,8 @@ export const MarketProduct: MessageFns<MarketProduct> = {
     message.period = object.period ?? 0;
     message.amount = object.amount ?? 0;
     message.currency = object.currency ?? 0;
+    message.availableCount = object.availableCount ?? 0;
+    message.soldCount = object.soldCount ?? 0;
     message.mediaStorageSubscriptionDetails =
       (object.mediaStorageSubscriptionDetails !== undefined && object.mediaStorageSubscriptionDetails !== null)
         ? MediaStorageSubscriptionDetails.fromPartial(object.mediaStorageSubscriptionDetails)
@@ -671,11 +792,14 @@ export const GetMarketProductsResponse: MessageFns<GetMarketProductsResponse> = 
 };
 
 function createBaseGetMarketSubscriptionsRequest(): GetMarketSubscriptionsRequest {
-  return {};
+  return { requestType: 0 };
 }
 
 export const GetMarketSubscriptionsRequest: MessageFns<GetMarketSubscriptionsRequest> = {
-  encode(_: GetMarketSubscriptionsRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+  encode(message: GetMarketSubscriptionsRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.requestType !== 0) {
+      writer.uint32(8).int32(message.requestType);
+    }
     return writer;
   },
 
@@ -686,6 +810,14 @@ export const GetMarketSubscriptionsRequest: MessageFns<GetMarketSubscriptionsReq
     while (reader.pos < end) {
       const tag = reader.uint32();
       switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 8) {
+            break;
+          }
+
+          message.requestType = reader.int32() as any;
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -695,20 +827,28 @@ export const GetMarketSubscriptionsRequest: MessageFns<GetMarketSubscriptionsReq
     return message;
   },
 
-  fromJSON(_: any): GetMarketSubscriptionsRequest {
-    return {};
+  fromJSON(object: any): GetMarketSubscriptionsRequest {
+    return {
+      requestType: isSet(object.requestType) ? getMarketSubscriptionsRequestTypeFromJSON(object.requestType) : 0,
+    };
   },
 
-  toJSON(_: GetMarketSubscriptionsRequest): unknown {
+  toJSON(message: GetMarketSubscriptionsRequest): unknown {
     const obj: any = {};
+    if (message.requestType !== 0) {
+      obj.requestType = getMarketSubscriptionsRequestTypeToJSON(message.requestType);
+    }
     return obj;
   },
 
   create<I extends Exact<DeepPartial<GetMarketSubscriptionsRequest>, I>>(base?: I): GetMarketSubscriptionsRequest {
     return GetMarketSubscriptionsRequest.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<GetMarketSubscriptionsRequest>, I>>(_: I): GetMarketSubscriptionsRequest {
+  fromPartial<I extends Exact<DeepPartial<GetMarketSubscriptionsRequest>, I>>(
+    object: I,
+  ): GetMarketSubscriptionsRequest {
     const message = createBaseGetMarketSubscriptionsRequest();
+    message.requestType = object.requestType ?? 0;
     return message;
   },
 };
@@ -2037,7 +2177,8 @@ function createBaseMarketSubscription(): MarketSubscription {
     permissionsAccessSubscriptionDetails: undefined,
     createdAt: undefined,
     renewsAt: undefined,
-    endedAt: undefined,
+    canceledAt: undefined,
+    serviceTerminatedAt: undefined,
   };
 }
 
@@ -2088,8 +2229,11 @@ export const MarketSubscription: MessageFns<MarketSubscription> = {
     if (message.renewsAt !== undefined) {
       Timestamp.encode(toTimestamp(message.renewsAt), writer.uint32(170).fork()).join();
     }
-    if (message.endedAt !== undefined) {
-      Timestamp.encode(toTimestamp(message.endedAt), writer.uint32(178).fork()).join();
+    if (message.canceledAt !== undefined) {
+      Timestamp.encode(toTimestamp(message.canceledAt), writer.uint32(178).fork()).join();
+    }
+    if (message.serviceTerminatedAt !== undefined) {
+      Timestamp.encode(toTimestamp(message.serviceTerminatedAt), writer.uint32(186).fork()).join();
     }
     return writer;
   },
@@ -2221,7 +2365,15 @@ export const MarketSubscription: MessageFns<MarketSubscription> = {
             break;
           }
 
-          message.endedAt = fromTimestamp(Timestamp.decode(reader, reader.uint32()));
+          message.canceledAt = fromTimestamp(Timestamp.decode(reader, reader.uint32()));
+          continue;
+        }
+        case 23: {
+          if (tag !== 186) {
+            break;
+          }
+
+          message.serviceTerminatedAt = fromTimestamp(Timestamp.decode(reader, reader.uint32()));
           continue;
         }
       }
@@ -2259,7 +2411,10 @@ export const MarketSubscription: MessageFns<MarketSubscription> = {
         : undefined,
       createdAt: isSet(object.createdAt) ? globalThis.String(object.createdAt) : undefined,
       renewsAt: isSet(object.renewsAt) ? globalThis.String(object.renewsAt) : undefined,
-      endedAt: isSet(object.endedAt) ? globalThis.String(object.endedAt) : undefined,
+      canceledAt: isSet(object.canceledAt) ? globalThis.String(object.canceledAt) : undefined,
+      serviceTerminatedAt: isSet(object.serviceTerminatedAt)
+        ? globalThis.String(object.serviceTerminatedAt)
+        : undefined,
     };
   },
 
@@ -2313,8 +2468,11 @@ export const MarketSubscription: MessageFns<MarketSubscription> = {
     if (message.renewsAt !== undefined) {
       obj.renewsAt = message.renewsAt;
     }
-    if (message.endedAt !== undefined) {
-      obj.endedAt = message.endedAt;
+    if (message.canceledAt !== undefined) {
+      obj.canceledAt = message.canceledAt;
+    }
+    if (message.serviceTerminatedAt !== undefined) {
+      obj.serviceTerminatedAt = message.serviceTerminatedAt;
     }
     return obj;
   },
@@ -2355,7 +2513,8 @@ export const MarketSubscription: MessageFns<MarketSubscription> = {
         : undefined;
     message.createdAt = object.createdAt ?? undefined;
     message.renewsAt = object.renewsAt ?? undefined;
-    message.endedAt = object.endedAt ?? undefined;
+    message.canceledAt = object.canceledAt ?? undefined;
+    message.serviceTerminatedAt = object.serviceTerminatedAt ?? undefined;
     return message;
   },
 };
@@ -2515,7 +2674,15 @@ export const AIGrantSubscriptionDetails: MessageFns<AIGrantSubscriptionDetails> 
 };
 
 function createBaseRellmHostingSubscriptionDetails(): RellmHostingSubscriptionDetails {
-  return { dbSizeBytes: 0, minioSizeBytes: 0, domain: "", contactEmail: "", additionalInformation: "" };
+  return {
+    dbSizeBytes: 0,
+    minioSizeBytes: 0,
+    domain: "",
+    contactEmail: "",
+    additionalInformation: "",
+    fulfilled: false,
+    fulfillmentNotes: [],
+  };
 }
 
 export const RellmHostingSubscriptionDetails: MessageFns<RellmHostingSubscriptionDetails> = {
@@ -2534,6 +2701,12 @@ export const RellmHostingSubscriptionDetails: MessageFns<RellmHostingSubscriptio
     }
     if (message.additionalInformation !== "") {
       writer.uint32(42).string(message.additionalInformation);
+    }
+    if (message.fulfilled !== false) {
+      writer.uint32(48).bool(message.fulfilled);
+    }
+    for (const v of message.fulfillmentNotes) {
+      FulfillmentNote.encode(v!, writer.uint32(58).fork()).join();
     }
     return writer;
   },
@@ -2585,6 +2758,22 @@ export const RellmHostingSubscriptionDetails: MessageFns<RellmHostingSubscriptio
           message.additionalInformation = reader.string();
           continue;
         }
+        case 6: {
+          if (tag !== 48) {
+            break;
+          }
+
+          message.fulfilled = reader.bool();
+          continue;
+        }
+        case 7: {
+          if (tag !== 58) {
+            break;
+          }
+
+          message.fulfillmentNotes.push(FulfillmentNote.decode(reader, reader.uint32()));
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -2601,6 +2790,10 @@ export const RellmHostingSubscriptionDetails: MessageFns<RellmHostingSubscriptio
       domain: isSet(object.domain) ? globalThis.String(object.domain) : "",
       contactEmail: isSet(object.contactEmail) ? globalThis.String(object.contactEmail) : "",
       additionalInformation: isSet(object.additionalInformation) ? globalThis.String(object.additionalInformation) : "",
+      fulfilled: isSet(object.fulfilled) ? globalThis.Boolean(object.fulfilled) : false,
+      fulfillmentNotes: globalThis.Array.isArray(object?.fulfillmentNotes)
+        ? object.fulfillmentNotes.map((e: any) => FulfillmentNote.fromJSON(e))
+        : [],
     };
   },
 
@@ -2621,6 +2814,12 @@ export const RellmHostingSubscriptionDetails: MessageFns<RellmHostingSubscriptio
     if (message.additionalInformation !== "") {
       obj.additionalInformation = message.additionalInformation;
     }
+    if (message.fulfilled !== false) {
+      obj.fulfilled = message.fulfilled;
+    }
+    if (message.fulfillmentNotes?.length) {
+      obj.fulfillmentNotes = message.fulfillmentNotes.map((e) => FulfillmentNote.toJSON(e));
+    }
     return obj;
   },
 
@@ -2636,6 +2835,100 @@ export const RellmHostingSubscriptionDetails: MessageFns<RellmHostingSubscriptio
     message.domain = object.domain ?? "";
     message.contactEmail = object.contactEmail ?? "";
     message.additionalInformation = object.additionalInformation ?? "";
+    message.fulfilled = object.fulfilled ?? false;
+    message.fulfillmentNotes = object.fulfillmentNotes?.map((e) => FulfillmentNote.fromPartial(e)) || [];
+    return message;
+  },
+};
+
+function createBaseFulfillmentNote(): FulfillmentNote {
+  return { userId: "", note: "", createdAt: undefined };
+}
+
+export const FulfillmentNote: MessageFns<FulfillmentNote> = {
+  encode(message: FulfillmentNote, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.userId !== "") {
+      writer.uint32(10).string(message.userId);
+    }
+    if (message.note !== "") {
+      writer.uint32(18).string(message.note);
+    }
+    if (message.createdAt !== undefined) {
+      Timestamp.encode(toTimestamp(message.createdAt), writer.uint32(26).fork()).join();
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): FulfillmentNote {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseFulfillmentNote();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.userId = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.note = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.createdAt = fromTimestamp(Timestamp.decode(reader, reader.uint32()));
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): FulfillmentNote {
+    return {
+      userId: isSet(object.userId) ? globalThis.String(object.userId) : "",
+      note: isSet(object.note) ? globalThis.String(object.note) : "",
+      createdAt: isSet(object.createdAt) ? globalThis.String(object.createdAt) : undefined,
+    };
+  },
+
+  toJSON(message: FulfillmentNote): unknown {
+    const obj: any = {};
+    if (message.userId !== "") {
+      obj.userId = message.userId;
+    }
+    if (message.note !== "") {
+      obj.note = message.note;
+    }
+    if (message.createdAt !== undefined) {
+      obj.createdAt = message.createdAt;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<FulfillmentNote>, I>>(base?: I): FulfillmentNote {
+    return FulfillmentNote.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<FulfillmentNote>, I>>(object: I): FulfillmentNote {
+    const message = createBaseFulfillmentNote();
+    message.userId = object.userId ?? "";
+    message.note = object.note ?? "";
+    message.createdAt = object.createdAt ?? undefined;
     return message;
   },
 };

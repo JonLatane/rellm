@@ -272,5 +272,9 @@ fn handle_checkout_session_completed(
         conn,
     )?;
 
+    // A newly-fulfilled purchase/subscription consumes one of `product.available_count`'s slots --
+    // see `MarketProduct.sold_count`'s own doc.
+    models::increment_market_product_sold_count(product.id, conn);
+
     fulfill_purchase(purchase_type, buyer_id, &purchase.details, conn)
 }

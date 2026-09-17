@@ -43,6 +43,10 @@ impl ToDbServerConfiguration for ServerConfiguration {
                 .stripe_config
                 .as_ref()
                 .map(|c| serde_json::to_value(c).unwrap()),
+            market_settings: self
+                .market_settings
+                .as_ref()
+                .map(|c| serde_json::to_value(c).unwrap()),
             preferred_verification_apis: Some(crate::logic::verification_apis_to_json(
                 &self
                     .preferred_verification_apis
@@ -172,6 +176,15 @@ impl ToProtoServerConfiguration for models::ServerConfiguration {
                 default_visibility: Visibility::GlobalPublic as i32,
                 default_media_allocation_bytes: 15_728_640,
             });
+        // `MarketSettings` deserialize -- falls back to `enabled: false` whenever the stored blob
+        // is missing (every server before this column existed), same read-time-fallback convention
+        // as `media_settings` above. Never stripped for non-admins (see `get_server_configuration`)
+        // -- it's the public signal, unlike `stripe_config` itself.
+        let market_settings: MarketSettings = self
+            .market_settings
+            .to_owned()
+            .and_then(|c| serde_json::from_value::<MarketSettings>(c).ok())
+            .unwrap_or(MarketSettings { enabled: false });
         // Not persisted anywhere yet -- see `NewServerConfiguration`'s doc and
         // `preferred_verification_apis`'s own proto comment. `ConfigureServer` does persist this
         // one (unlike the comment below used to say), stored the same way `Permission` lists are
@@ -235,6 +248,7 @@ impl ToProtoServerConfiguration for models::ServerConfiguration {
             event_settings: Some(event_settings),
             custom_tabs: custom_tabs,
             media_settings: Some(media_settings),
+            market_settings: Some(market_settings),
             private_user_strategy: self.private_user_strategy.to_i32_private_user_strategy(),
             authentication_features: self
                 .authentication_features

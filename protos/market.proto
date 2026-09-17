@@ -66,6 +66,12 @@ message MarketProduct {
   uint32 amount = 4;
   uint32 currency = 5;
 
+  // Number of subscriptions "slots" availbable (admin-set)
+  uint32 available_count = 6;
+  // Number of subscriptions actually sold. Canceled subscriptions reduce this number,
+  // allowing a new person to subscribe.
+  uint32 sold_count = 7;
+
   oneof details {
     MediaStorageSubscriptionDetails media_storage_subscription_details = 10;
     AIGrantSubscriptionDetails ai_grant_subscription_details = 11;
@@ -91,10 +97,22 @@ message GetMarketProductsResponse {
   repeated MarketProduct market_products = 1;
 }
 
-// Request to get the current user's own MarketSubscriptions (with billing_history). Self-scoped --
-// there's no way to fetch another user's MarketSubscriptions, even as an admin, for now.
+// Request to get MarketSubscriptions -- self-scoped to the current user's own
+// (`GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE`, the default -- there's no way to fetch another
+// user's own subscriptions this way, even as an admin), or -- for an admin only --
+// `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN`, every `PURCHASE_TYPE_RELLM_HOSTING`
+// subscription across every buyer, for the `/market/fulfillment` admin page.
 message GetMarketSubscriptionsRequest {
+  GetMarketSubscriptionsRequestType request_type = 1;
+}
 
+enum GetMarketSubscriptionsRequestType {
+  // The "user facing" view backing /market -- the caller's own MarketSubscriptions only.
+  GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE = 0;
+  // Admin-only view backing /market/fulfillment -- every PURCHASE_TYPE_RELLM_HOSTING
+  // MarketSubscription across every buyer, since Rellm hosting needs manual setup that isn't
+  // automated (see RellmHostingSubscriptionDetails.fulfilled's own doc).
+  GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN = 1;
 }
 
 message GetMarketSubscriptionsResponse {
@@ -229,8 +247,16 @@ message MarketSubscription {
   google.protobuf.Timestamp created_at = 20;
   optional google.protobuf.Timestamp renews_at = 21;
 
-  // If set, the MarketSubscription is unavailable
-  optional google.protobuf.Timestamp ended_at = 22;
+  // Set once the subscription will no longer renew -- either the buyer/admin explicitly canceled it
+  // (CancelMarketSubscription) or a renewal charge failed. The subscription's entitlement (media
+  // storage quota, granted permissions, etc.) stays active until whichever is later of
+  // renews_at/canceled_at, at which point renew_market_subscriptions.rs revokes it and sets
+  // service_terminated_at.
+  optional google.protobuf.Timestamp canceled_at = 22;
+
+  // The time permissions were removed, media storage quotas reset, etc.
+  optional google.protobuf.Timestamp service_terminated_at = 23;
+
 }
 
 message MediaStorageSubscriptionDetails {
@@ -248,7 +274,30 @@ message RellmHostingSubscriptionDetails {
   uint64 minio_size_bytes = 2;
   string domain = 3;
   string contact_email = 4;
+  // Immutable after purchase -- the buyer's own notes to the admin fulfilling this order. Never
+  // editable via UpdateMarketSubscription (see that RPC's own doc); `fulfillment_notes` below is
+  // the admin/buyer conversation about fulfilling it.
   string additional_information = 5;
+
+  // Whether an admin has actually stood up this Rellm hosting order -- Rellm hosting is
+  // deliberately not automated (see `market.proto`'s own top-of-file notes and
+  // `logic::market_fulfillment::fulfill_purchase`'s `RellmHosting` no-op arm), so this is the one
+  // manual "is this order done" signal, shown/toggled on `/market/fulfillment`
+  // (`GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN`).
+  bool fulfilled = 6;
+
+  // The admin/buyer conversation about fulfilling this order -- oldest to newest, append-only (see
+  // `UpdateMarketSubscription`'s own doc: a new entry can only ever be appended after whatever's
+  // already here, never inserted/reordered/removed, and its `user_id` must match whoever's actually
+  // making the request -- the server stamps `created_at` itself).
+  repeated FulfillmentNote fulfillment_notes = 7;
+}
+
+// One entry in a MarketSubscription's `fulfillment_notes` -- see that field's own doc.
+message FulfillmentNote {
+  string user_id = 1;
+  string note = 2;
+  google.protobuf.Timestamp created_at = 3;
 }
 
 

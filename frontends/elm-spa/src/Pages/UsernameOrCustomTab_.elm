@@ -196,7 +196,7 @@ initEmbedded shared req tab =
                 |> Tuple.mapSecond (Effect.map AboutMsg)
 
         CustomNav.TargetTab MARKETTAB ->
-            MarketPage.init shared
+            MarketPage.init shared shared.accounts.browsingHost
                 |> Tuple.mapFirst EmbeddedMarket
                 |> Tuple.mapSecond (Effect.map MarketMsg)
 

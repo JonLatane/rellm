@@ -23,6 +23,11 @@ pub fn make_market_purchase(
     if product.delisted_at.is_some() {
         return Err(Status::new(Code::FailedPrecondition, "product_delisted"));
     }
+    // `available_count == 0` means no cap (see that field's own doc) -- otherwise, once
+    // `sold_count` catches up, no one new can start a checkout for this product.
+    if product.available_count > 0 && product.sold_count >= product.available_count {
+        return Err(Status::new(Code::FailedPrecondition, "product_sold_out"));
+    }
     let purchase_type = product
         .product_type
         .to_owned()

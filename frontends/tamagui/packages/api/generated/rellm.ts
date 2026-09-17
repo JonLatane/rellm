@@ -45,6 +45,7 @@ import {
   MakeMarketPurchaseRequest,
   MakeMarketPurchaseResponse,
   MarketProduct,
+  MarketSubscription,
 } from "./market";
 import { GetMediaRequest, GetMediaResponse, Media } from "./media";
 import {
@@ -97,6 +98,8 @@ import {
 export const protobufPackage = "rellm";
 
 /**
+ * [Jump to the gRPC API?](#grpc-api)
+ *
  * [Rellm](https://github.com/JonLatane/rellm) is a social media protocol with support for Users (and Follows), Media, Posts, Events, Groups, and Messages. It is designed to be federated,
  * but does not require federation to be a useful next-gen forum type solution.
  * It is designed to be used with a variety of frontends, including web, mobile, and desktop applications. It interoperates across numerous ports, protocols, and formats, including
@@ -482,13 +485,14 @@ export const protobufPackage = "rellm";
  *
  * #### Rellm's Market
  * Rellm's Market (`market.proto`) is this server's storefront - a small, Stripe-backed marketplace an admin
- * stocks with up to nine [`MarketProduct`](#rellm-MarketProduct)s (one offering type times one billing period
- * each) that any user can buy. Three offering types exist today ([`PurchaseType`](#rellm-PurchaseType)):
+ * stocks with up to twelve [`MarketProduct`](#rellm-MarketProduct)s (one offering type times one billing period
+ * each) that any user can buy. Four offering types exist today ([`PurchaseType`](#rellm-PurchaseType)):
  * `PURCHASE_TYPE_MEDIA_STORAGE` (raises the buyer's `User.media_storage_limit_bytes`),
  * `PURCHASE_TYPE_AI_GRANTS` (grants/resets an [`AIProviderGrant`](#rellm-AIProviderGrant) against one of the
- * server operator's [`AIProvider`](#rellm-AIProvider)s), and `PURCHASE_TYPE_RELLM_HOSTING` (bills the buyer for
+ * server operator's [`AIProvider`](#rellm-AIProvider)s), `PURCHASE_TYPE_RELLM_HOSTING` (bills the buyer for
  * the server operator to stand up a new Rellm instance on a domain of their choosing - provisioned by hand, not
- * automated). Each [`MarketProduct`](#rellm-MarketProduct) is sold once ([`PurchasePeriod`](#rellm-PurchasePeriod)
+ * automated), and `PURCHASE_TYPE_PERMISSIONS_ACCESS` (grants the buyer a fixed set of `Permission`s, e.g.
+ * pay-gating `SYNC_EVENTS_TO_FACEBOOK`). Each [`MarketProduct`](#rellm-MarketProduct) is sold once ([`PurchasePeriod`](#rellm-PurchasePeriod)
  * `PURCHASE_PERIOD_INDEFINITE`, a single non-renewing [`MarketPurchase`](#rellm-MarketPurchase)) or on a recurring
  * `PURCHASE_PERIOD_ANNUAL`/`PURCHASE_PERIOD_MONTHLY` cycle (a [`MarketSubscription`](#rellm-MarketSubscription),
  * whose `billing_history` accumulates one [`MarketPurchase`](#rellm-MarketPurchase) per renewal).
@@ -505,12 +509,16 @@ export const protobufPackage = "rellm";
  * [`MarketPurchase`](#rellm-MarketPurchase)/[`MarketSubscription`](#rellm-MarketSubscription) and apply its
  * entitlement. A recurring [`MarketSubscription`](#rellm-MarketSubscription) renews itself thereafter via
  * off-session charges against the payment method saved on that first checkout - no further action from the
- * buyer - until a renewal charge fails, which ends the [`MarketSubscription`](#rellm-MarketSubscription). A
- * user's own MarketSubscriptions (never anyone else's) are listed via
- * [`GetMarketSubscriptions`](#grpc-api-GetMarketSubscriptions), and also travel along on [`User`](#rellm-User)
- * itself (`User.market_subscriptions`) the same way `ai_models`/`sync_sources` do. Stripe credentials for all of
- * this live in `ServerConfiguration.stripe_config` (a [`StripeConfig`](#rellm-StripeConfig)), Admin-only like
- * `twilio_config`/`bird_config`.
+ * buyer - until either a renewal charge fails or the buyer/admin calls
+ * [`CancelMarketSubscription`](#grpc-api-CancelMarketSubscription), either of which sets `canceled_at`. The
+ * entitlement itself stays in effect until whichever is later of `renews_at`/`canceled_at` - once both have
+ * passed, the `renew_market_subscriptions` background job revokes it (reverts `media_storage_limit_bytes` to
+ * `ServerConfiguration.media_settings.default_media_allocation_bytes`, or removes the granted `Permission`s,
+ * depending on `type`) and sets `service_terminated_at`. A user's own MarketSubscriptions (never anyone
+ * else's) are listed via [`GetMarketSubscriptions`](#grpc-api-GetMarketSubscriptions), and also travel along
+ * on [`User`](#rellm-User) itself (`User.market_subscriptions`) the same way `ai_models`/`sync_sources` do.
+ * Stripe credentials for all of this live in `ServerConfiguration.stripe_config` (a
+ * [`StripeConfig`](#rellm-StripeConfig)), Admin-only like `twilio_config`/`bird_config`.
  *
  * #### Media
  * [`Media`](#rellm-Media) represents an uploaded (or server-generated) photo or video. Unlike other types, Media
@@ -681,6 +689,22 @@ export const protobufPackage = "rellm";
  * #### Federated Messaging
  * Rellm's Elm Messaging UI is generally a multi-server federated messenger. The main limitation is that it can only receive push notifications
  * from one server. (This could be changed with VAPID key sharing, but is part of the VAPID protocol.)
+ *
+ * #### Federated Markets
+ * The Elm `/market` page can show more than one server's Market side by side: the browsed server's own
+ * (always first) plus any other connected, enabled server whose `ServerConfiguration.market_settings.enabled`
+ * is set (in Accounts panel order after that) - the public, non-secret "is this server's Market open" signal,
+ * unlike `stripe_config` itself, which stays Admin-only. Each section is fully independent: it lists that
+ * server's own [`MarketProduct`](#rellm-MarketProduct)s and shows product-management controls only if the
+ * current user is actually an Admin *on that server*.
+ *
+ * Unlike Federated Browsing/Profiles/Messaging above, buying is never seamless across servers - Market is the
+ * one place a user must always transact with the target site directly. A product tile for the browsed server
+ * links to its own in-app product page as usual, but a tile for any *other* server links straight to that
+ * server's own `https://{host}/market/product/{id}` (a real page navigation, not client-side routing), since
+ * [`MakeMarketPurchase`](#grpc-api-MakeMarketPurchase) starts a Stripe Checkout Session scoped to whichever
+ * server the buyer is actually authenticated against, and Stripe's own `success_url`/`cancel_url` redirect
+ * back to that same server when payment completes.
  *
  * ### HTTP Endpoints
  * #### Internal HTTP server (27705)
@@ -1736,7 +1760,12 @@ export const RellmDefinition = {
       responseStream: false,
       options: {},
     },
-    /** Gets the current user's own MarketSubscriptions (with billing_history). *Authenticated*, self-scoped only. */
+    /**
+     * Gets MarketSubscriptions -- self-scoped ("MY subscriptions", `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE`,
+     * the default) for any authenticated caller, or every `PURCHASE_TYPE_RELLM_HOSTING` subscription
+     * across every buyer (`GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN`, backing `/market/fulfillment` --
+     * see `RellmHostingSubscriptionDetails.fulfilled`'s own doc) for an Admin. *Authenticated*.
+     */
     getMarketSubscriptions: {
       name: "GetMarketSubscriptions",
       requestType: GetMarketSubscriptionsRequest,
@@ -1755,6 +1784,38 @@ export const RellmDefinition = {
       requestType: MakeMarketPurchaseRequest,
       requestStream: false,
       responseType: MakeMarketPurchaseResponse,
+      responseStream: false,
+      options: {},
+    },
+    /**
+     * Cancels a MarketSubscription by setting `canceled_at` to now -- entitlement (media storage quota,
+     * granted permissions, etc.) stays active until whichever is later of `renews_at`/`canceled_at`; the
+     * `renew_market_subscriptions` background job is what actually revokes it and sets
+     * `service_terminated_at`, once both have passed. *Authenticated* -- the subscription's own buyer,
+     * or an Admin.
+     */
+    cancelMarketSubscription: {
+      name: "CancelMarketSubscription",
+      requestType: MarketSubscription,
+      requestStream: false,
+      responseType: MarketSubscription,
+      responseStream: false,
+      options: {},
+    },
+    /**
+     * Updates a `PURCHASE_TYPE_RELLM_HOSTING` MarketSubscription's own `fulfilled`/`fulfillment_notes`
+     * (nothing else -- every other field, including `additional_information`, is immutable after purchase
+     * and silently ignored if changed) -- backs `/market/fulfillment`. A new `fulfillment_notes` entry
+     * must be appended (not inserted/reordered/removed) after whatever's already stored, and its `user_id`
+     * must match the caller's own -- the server stamps `created_at` itself, ignoring whatever the client
+     * sent. *Authenticated*, requires Admin (for now -- see that field's own doc on why this may loosen to
+     * "buyer, or Admin" later).
+     */
+    updateMarketSubscription: {
+      name: "UpdateMarketSubscription",
+      requestType: MarketSubscription,
+      requestStream: false,
+      responseType: MarketSubscription,
       responseStream: false,
       options: {},
     },
@@ -2248,7 +2309,12 @@ export interface RellmServiceImplementation<CallContextExt = {}> {
     request: MarketProduct,
     context: CallContext & CallContextExt,
   ): Promise<DeepPartial<MarketProduct>>;
-  /** Gets the current user's own MarketSubscriptions (with billing_history). *Authenticated*, self-scoped only. */
+  /**
+   * Gets MarketSubscriptions -- self-scoped ("MY subscriptions", `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE`,
+   * the default) for any authenticated caller, or every `PURCHASE_TYPE_RELLM_HOSTING` subscription
+   * across every buyer (`GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN`, backing `/market/fulfillment` --
+   * see `RellmHostingSubscriptionDetails.fulfilled`'s own doc) for an Admin. *Authenticated*.
+   */
   getMarketSubscriptions(
     request: GetMarketSubscriptionsRequest,
     context: CallContext & CallContextExt,
@@ -2262,6 +2328,30 @@ export interface RellmServiceImplementation<CallContextExt = {}> {
     request: MakeMarketPurchaseRequest,
     context: CallContext & CallContextExt,
   ): Promise<DeepPartial<MakeMarketPurchaseResponse>>;
+  /**
+   * Cancels a MarketSubscription by setting `canceled_at` to now -- entitlement (media storage quota,
+   * granted permissions, etc.) stays active until whichever is later of `renews_at`/`canceled_at`; the
+   * `renew_market_subscriptions` background job is what actually revokes it and sets
+   * `service_terminated_at`, once both have passed. *Authenticated* -- the subscription's own buyer,
+   * or an Admin.
+   */
+  cancelMarketSubscription(
+    request: MarketSubscription,
+    context: CallContext & CallContextExt,
+  ): Promise<DeepPartial<MarketSubscription>>;
+  /**
+   * Updates a `PURCHASE_TYPE_RELLM_HOSTING` MarketSubscription's own `fulfilled`/`fulfillment_notes`
+   * (nothing else -- every other field, including `additional_information`, is immutable after purchase
+   * and silently ignored if changed) -- backs `/market/fulfillment`. A new `fulfillment_notes` entry
+   * must be appended (not inserted/reordered/removed) after whatever's already stored, and its `user_id`
+   * must match the caller's own -- the server stamps `created_at` itself, ignoring whatever the client
+   * sent. *Authenticated*, requires Admin (for now -- see that field's own doc on why this may loosen to
+   * "buyer, or Admin" later).
+   */
+  updateMarketSubscription(
+    request: MarketSubscription,
+    context: CallContext & CallContextExt,
+  ): Promise<DeepPartial<MarketSubscription>>;
   /**
    * Generates (or edits, given reference `media_ids`) an image via one of the current user's AIModels,
    * storing it as a new Media and, if `target` is set, attaching it to that Post/Event. *Authenticated* - caller
@@ -2692,7 +2782,12 @@ export interface RellmClient<CallOptionsExt = {}> {
     request: DeepPartial<MarketProduct>,
     options?: CallOptions & CallOptionsExt,
   ): Promise<MarketProduct>;
-  /** Gets the current user's own MarketSubscriptions (with billing_history). *Authenticated*, self-scoped only. */
+  /**
+   * Gets MarketSubscriptions -- self-scoped ("MY subscriptions", `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE`,
+   * the default) for any authenticated caller, or every `PURCHASE_TYPE_RELLM_HOSTING` subscription
+   * across every buyer (`GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN`, backing `/market/fulfillment` --
+   * see `RellmHostingSubscriptionDetails.fulfilled`'s own doc) for an Admin. *Authenticated*.
+   */
   getMarketSubscriptions(
     request: DeepPartial<GetMarketSubscriptionsRequest>,
     options?: CallOptions & CallOptionsExt,
@@ -2706,6 +2801,30 @@ export interface RellmClient<CallOptionsExt = {}> {
     request: DeepPartial<MakeMarketPurchaseRequest>,
     options?: CallOptions & CallOptionsExt,
   ): Promise<MakeMarketPurchaseResponse>;
+  /**
+   * Cancels a MarketSubscription by setting `canceled_at` to now -- entitlement (media storage quota,
+   * granted permissions, etc.) stays active until whichever is later of `renews_at`/`canceled_at`; the
+   * `renew_market_subscriptions` background job is what actually revokes it and sets
+   * `service_terminated_at`, once both have passed. *Authenticated* -- the subscription's own buyer,
+   * or an Admin.
+   */
+  cancelMarketSubscription(
+    request: DeepPartial<MarketSubscription>,
+    options?: CallOptions & CallOptionsExt,
+  ): Promise<MarketSubscription>;
+  /**
+   * Updates a `PURCHASE_TYPE_RELLM_HOSTING` MarketSubscription's own `fulfilled`/`fulfillment_notes`
+   * (nothing else -- every other field, including `additional_information`, is immutable after purchase
+   * and silently ignored if changed) -- backs `/market/fulfillment`. A new `fulfillment_notes` entry
+   * must be appended (not inserted/reordered/removed) after whatever's already stored, and its `user_id`
+   * must match the caller's own -- the server stamps `created_at` itself, ignoring whatever the client
+   * sent. *Authenticated*, requires Admin (for now -- see that field's own doc on why this may loosen to
+   * "buyer, or Admin" later).
+   */
+  updateMarketSubscription(
+    request: DeepPartial<MarketSubscription>,
+    options?: CallOptions & CallOptionsExt,
+  ): Promise<MarketSubscription>;
   /**
    * Generates (or edits, given reference `media_ids`) an image via one of the current user's AIModels,
    * storing it as a new Media and, if `target` is set, attaching it to that Post/Event. *Authenticated* - caller

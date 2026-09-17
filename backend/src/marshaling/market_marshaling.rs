@@ -11,7 +11,9 @@ use std::collections::HashMap;
 
 use tonic::Status;
 
-use super::{ToProtoAuthor, ToProtoId, ToProtoPurchasePeriod, ToProtoPurchaseType, ToProtoTime};
+use super::{
+    ToProtoAuthor, ToProtoId, ToProtoPurchasePeriod, ToProtoPurchaseType, ToProtoTime, ToStringPurchaseType,
+};
 use crate::db_connection::PgPooledConnection;
 use crate::models;
 use crate::protos::*;
@@ -43,6 +45,8 @@ impl ToProtoMarshalableMarketProduct for MarshalableMarketProduct {
             created_at: Some(product.created_at.to_proto()),
             delisted_at: product.delisted_at.map(|t| t.to_proto()),
             details: product_details_to_proto(purchase_type, &product.details),
+            available_count: product.available_count as u32,
+            sold_count: product.sold_count as u32,
         }
     }
 }
@@ -151,7 +155,8 @@ impl ToProtoMarshalableMarketSubscription for MarshalableMarketSubscription {
             details: subscription_details_to_proto(purchase_type, &subscription.details),
             created_at: Some(subscription.created_at.to_proto()),
             renews_at: subscription.renews_at.map(|t| t.to_proto()),
-            ended_at: subscription.ended_at.map(|t| t.to_proto()),
+            canceled_at: subscription.canceled_at.map(|t| t.to_proto()),
+            service_terminated_at: subscription.service_terminated_at.map(|t| t.to_proto()),
         }
     }
 }
@@ -173,13 +178,53 @@ pub fn build_subscriptions_for_buyers(
     }
 
     let subscriptions = models::get_market_subscriptions_for_buyers(buyer_ids, conn)?;
+    for (buyer_id, subscription) in build_subscriptions(subscriptions, conn)? {
+        result.entry(buyer_id).or_default().push(subscription);
+    }
+    Ok(result)
+}
+
+/// Every `PURCHASE_TYPE_RELLM_HOSTING` `MarketSubscription` across *every* buyer, oldest first --
+/// backs `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN` (`/market/fulfillment`). Unlike
+/// `build_subscriptions_for_buyers`, this isn't scoped to any particular buyer -- Rellm hosting
+/// needs manual setup (see `RellmHostingSubscriptionDetails.fulfilled`'s own doc), so the admin
+/// fulfilling orders needs to see everyone's.
+pub fn build_fulfillment_subscriptions(conn: &mut PgPooledConnection) -> Result<Vec<MarketSubscription>, Status> {
+    let subscriptions = models::get_market_subscriptions_by_product_type(
+        &PurchaseType::RellmHosting.to_string_purchase_type(),
+        conn,
+    )?;
+    let mut result: Vec<(i64, MarketSubscription)> = build_subscriptions(subscriptions, conn)?;
+    result.sort_by(|(_, a), (_, b)| {
+        a.created_at
+            .as_ref()
+            .map(|t| (t.seconds, t.nanos))
+            .cmp(&b.created_at.as_ref().map(|t| (t.seconds, t.nanos)))
+    });
+    Ok(result.into_iter().map(|(_, s)| s).collect())
+}
+
+/// Shared by `build_subscriptions_for_buyers`/`build_fulfillment_subscriptions` -- everything past
+/// "I already have the `market_subscriptions` rows I care about" (loading their products/
+/// purchases/payments/buyers and assembling each into a full `MarketSubscription` proto, with
+/// `billing_history` populated), batched in a fixed number of queries regardless of row count,
+/// mirroring `ai_provider_marshaling::build_ai_models_for_users`. Returns `(buyer_id, proto)` pairs
+/// rather than a `HashMap` itself, since the two callers group them differently (by buyer vs. not
+/// at all).
+fn build_subscriptions(
+    subscriptions: Vec<models::MarketSubscription>,
+    conn: &mut PgPooledConnection,
+) -> Result<Vec<(i64, MarketSubscription)>, Status> {
     if subscriptions.is_empty() {
-        return Ok(result);
+        return Ok(vec![]);
     }
     let subscription_ids: Vec<i64> = subscriptions.iter().map(|s| s.id).collect();
     let mut product_ids: Vec<i64> = subscriptions.iter().map(|s| s.product_id).collect();
     product_ids.sort_unstable();
     product_ids.dedup();
+    let mut buyer_ids: Vec<i64> = subscriptions.iter().map(|s| s.buyer_id).collect();
+    buyer_ids.sort_unstable();
+    buyer_ids.dedup();
 
     let products_by_id: HashMap<i64, models::MarketProduct> =
         models::get_market_products_by_ids(&product_ids, conn)?
@@ -197,7 +242,7 @@ pub fn build_subscriptions_for_buyers(
             .push(payment);
     }
 
-    let authors_by_id: HashMap<i64, models::Author> = models::get_authors(buyer_ids, conn)
+    let authors_by_id: HashMap<i64, models::Author> = models::get_authors(&buyer_ids, conn)
         .into_iter()
         .map(|a| (a.id, a))
         .collect();
@@ -225,6 +270,7 @@ pub fn build_subscriptions_for_buyers(
             .push(purchase_proto);
     }
 
+    let mut result: Vec<(i64, MarketSubscription)> = Vec::with_capacity(subscriptions.len());
     for subscription in subscriptions {
         let Some(product) = products_by_id.get(&subscription.product_id) else {
             continue;
@@ -243,7 +289,7 @@ pub fn build_subscriptions_for_buyers(
             billing_history,
         )
         .to_proto();
-        result.entry(buyer_id).or_default().push(subscription_proto);
+        result.push((buyer_id, subscription_proto));
     }
 
     Ok(result)

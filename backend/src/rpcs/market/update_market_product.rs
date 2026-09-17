@@ -42,6 +42,9 @@ pub fn update_market_product(
     existing.amount = request.amount as i32;
     existing.currency = request.currency as i32;
     existing.details = product_details_to_json(&request.details);
+    // `sold_count` is server-managed only (see its own doc on `models::MarketProduct`) -- silently
+    // ignored here, same treatment `type`/`period` already get above.
+    existing.available_count = request.available_count as i32;
     // Per `MarketProduct.delisted_at`'s own doc: presence, not the client-supplied timestamp, is
     // what matters -- listing/delisting always stamps the server's own current time.
     existing.delisted_at = request.delisted_at.map(|_| SystemTime::now());

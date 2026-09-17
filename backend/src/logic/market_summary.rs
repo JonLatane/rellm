@@ -242,6 +242,8 @@ mod tests {
             created_at: None,
             delisted_at: None,
             details: Some(details),
+            available_count: 0,
+            sold_count: 0,
         }
     }
 
@@ -304,6 +306,8 @@ mod tests {
                 minio_size_bytes: 5 * 1024 * 1024 * 1024,
                 domain: String::new(),
                 contact_email: String::new(),
+                fulfilled: false,
+                fulfillment_notes: vec![],
                 additional_information: String::new(),
             }),
         );

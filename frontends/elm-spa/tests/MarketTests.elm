@@ -80,6 +80,8 @@ suite =
                         , domain = ""
                         , contactEmail = ""
                         , additionalInformation = ""
+                        , fulfilled = False
+                        , fulfillmentNotes = []
                         }
                     )
                     |> Market.productSummary

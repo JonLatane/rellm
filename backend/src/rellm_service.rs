@@ -620,6 +620,18 @@ impl Rellm for RellmService {
     ) -> Result<Response<GetMarketSubscriptionsResponse>, Status> {
         authenticated_rpc!(self, rpcs::get_market_subscriptions, request)
     }
+    async fn cancel_market_subscription(
+        &self,
+        request: Request<MarketSubscription>,
+    ) -> Result<Response<MarketSubscription>, Status> {
+        authenticated_rpc!(self, rpcs::cancel_market_subscription, request)
+    }
+    async fn update_market_subscription(
+        &self,
+        request: Request<MarketSubscription>,
+    ) -> Result<Response<MarketSubscription>, Status> {
+        authenticated_rpc!(self, rpcs::update_market_subscription, request)
+    }
     async fn make_market_purchase(
         &self,
         request: Request<MakeMarketPurchaseRequest>,

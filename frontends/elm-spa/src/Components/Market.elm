@@ -5,12 +5,15 @@ module Components.Market exposing
     , allCurrencies
     , allPurchaseTypes
     , amountInputLabel
+    , cancelMarketSubscription
     , createMarketProduct
     , currencyLabel
     , defaultHostingForm
     , formatAmount
     , getMarketProducts
+    , getMarketSubscriptionsForFulfillment
     , hostingDetailsFromForm
+    , isSoldOut
     , makeMarketPurchase
     , periodSortOrder
     , permissionsForProduct
@@ -19,7 +22,9 @@ module Components.Market exposing
     , purchaseTypeDescription
     , purchaseTypeEmoji
     , purchaseTypeLabel
+    , slotsAvailableText
     , updateMarketProduct
+    , updateMarketSubscription
     , usdCurrencyCode
     )
 
@@ -44,13 +49,16 @@ import Grpc
 import Proto.Rellm
     exposing
         ( GetMarketProductsResponse
+        , GetMarketSubscriptionsResponse
         , MakeMarketPurchaseRequest
         , MakeMarketPurchaseResponse
         , MarketProduct
+        , MarketSubscription
         , RellmHostingPurchaseDetails
         , defaultGetMarketProductsRequest
         , defaultRellmHostingPurchaseDetails
         )
+import Proto.Rellm.GetMarketSubscriptionsRequestType exposing (GetMarketSubscriptionsRequestType(..))
 import Proto.Rellm.MarketProduct.Details as ProductDetails
 import Proto.Rellm.Permission exposing (Permission)
 import Proto.Rellm.PurchasePeriod exposing (PurchasePeriod(..))
@@ -209,6 +217,81 @@ updateMarketProduct accountsPanelModel maybeAccountServer product =
         maybeAccountServer
         (\server token ->
             Grpc.new Rellm.updateMarketProduct product
+                |> Grpc.setHost (RellmServers.rellmServerUrl server)
+                |> withAccessToken (Just token)
+                |> Grpc.toTask
+        )
+
+
+{-| Cancels a `MarketSubscription` -- only ever sets `canceledAt` on the returned subscription; it
+does *not* revoke the subscription's entitlement (media storage quota/granted permissions) right
+away. That only happens once the server's `renew_market_subscriptions` background job later
+processes it (once both `canceledAt` and `renewsAt` have passed) and sets `serviceTerminatedAt`, so
+a canceled-but-not-yet-terminated subscription still functions normally until its current billing
+period actually runs out.
+-}
+cancelMarketSubscription :
+    AccountsPanel.Model
+    -> AccountsPanel.MaybeAccountServer
+    -> MarketSubscription
+    -> Task Grpc.Error ( Maybe AccountsPanel.Msg, MarketSubscription )
+cancelMarketSubscription accountsPanelModel maybeAccountServer subscription =
+    AccountsPanel.performWithAccountServer
+        accountsPanelModel
+        maybeAccountServer
+        (\server token ->
+            Grpc.new Rellm.cancelMarketSubscription subscription
+                |> Grpc.setHost (RellmServers.rellmServerUrl server)
+                |> withAccessToken (Just token)
+                |> Grpc.toTask
+        )
+
+
+{-| Every `PURCHASE_TYPE_RELLM_HOSTING` `MarketSubscription` across *every* buyer on the server --
+admin-only server-side (see `GetMarketSubscriptionsRequestType.GETMARKETSUBSCRIPTIONSREQUESTFORFULFILLMENTADMIN`'s
+own proto doc; a non-admin caller gets a permission error). Backs
+`Components.Pages.MarketFulfillmentPage`'s `/market/fulfillment` table -- the admin-only "what Rellm
+Hosting orders still need setting up" view, as opposed to `getMarketProducts`'/a profile's own
+`GETMARKETSUBSCRIPTIONSREQUESTFORPURCHASE`-scoped (self-only) subscriptions list.
+-}
+getMarketSubscriptionsForFulfillment :
+    AccountsPanel.Model
+    -> AccountsPanel.MaybeAccountServer
+    -> Task Grpc.Error ( Maybe AccountsPanel.Msg, GetMarketSubscriptionsResponse )
+getMarketSubscriptionsForFulfillment accountsPanelModel maybeAccountServer =
+    AccountsPanel.performWithAccountServer
+        accountsPanelModel
+        maybeAccountServer
+        (\server token ->
+            Grpc.new Rellm.getMarketSubscriptions
+                { requestType = GETMARKETSUBSCRIPTIONSREQUESTFORFULFILLMENTADMIN }
+                |> Grpc.setHost (RellmServers.rellmServerUrl server)
+                |> withAccessToken (Just token)
+                |> Grpc.toTask
+        )
+
+
+{-| Admin-only (server-side gated; even the subscription's own buyer is rejected) -- sets
+`RellmHostingSubscriptionDetails.fulfilled` and/or appends to `fulfillmentNotes` on a
+`PURCHASE_TYPE_RELLM_HOSTING` subscription (rejected for any other type). See
+`Rellm.updateMarketSubscription`'s own proto doc for the full append-only contract: `subscription`'s
+`fulfillmentNotes` must carry every note already stored, byte-for-byte, in order, with at most new
+ones appended (each new note's `userId` must equal the calling admin's own id, and its `note` can't
+be blank) -- the server rejects any edit/reorder/removal of an existing note, and always overwrites
+`createdAt` on new notes itself. Callers should always start from the subscription's last-fetched
+`fulfillmentNotes` list and only ever append, never reconstruct it.
+-}
+updateMarketSubscription :
+    AccountsPanel.Model
+    -> AccountsPanel.MaybeAccountServer
+    -> MarketSubscription
+    -> Task Grpc.Error ( Maybe AccountsPanel.Msg, MarketSubscription )
+updateMarketSubscription accountsPanelModel maybeAccountServer subscription =
+    AccountsPanel.performWithAccountServer
+        accountsPanelModel
+        maybeAccountServer
+        (\server token ->
+            Grpc.new Rellm.updateMarketSubscription subscription
                 |> Grpc.setHost (RellmServers.rellmServerUrl server)
                 |> withAccessToken (Just token)
                 |> Grpc.toTask
@@ -452,6 +535,30 @@ productSummary product =
         ++ formatAmount product.amount product.currency
         ++ periodSuffix product.period
         ++ additionalNote product.type_
+
+
+{-| "X Slots Available" (`availableCount - soldCount`, floored at 0) -- `Nothing` when
+`availableCount == 0`, which means no cap at all (see that field's own proto doc), so there's
+nothing worth showing. Shown as small text on both `MarketPage`'s tier cards and `ProductPage`'s
+detail view.
+-}
+slotsAvailableText : MarketProduct -> Maybe String
+slotsAvailableText product =
+    if product.availableCount == 0 then
+        Nothing
+
+    else
+        Just (String.fromInt (max 0 (product.availableCount - product.soldCount)) ++ " Slots Available")
+
+
+{-| Mirrors `backend/src/rpcs/market/make_market_purchase.rs`'s own `product_sold_out` check
+exactly -- `availableCount == 0` means no cap, so it's never sold out. Used to hide/replace the Buy
+button client-side, same as `product.delistedAt /= Nothing` already does -- the server enforces this
+regardless, this is just so a buyer doesn't hit an avoidable error.
+-}
+isSoldOut : MarketProduct -> Bool
+isSoldOut product =
+    product.availableCount > 0 && product.soldCount >= product.availableCount
 
 
 {-| The resource being sold, without its price -- see `productSummary`'s own doc.

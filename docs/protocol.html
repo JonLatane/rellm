@@ -414,6 +414,9 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
             <p><a href="#rellm-LockClusterResourcesResponse">LockClusterResourcesResponse</a></p>
           </li>
           <li>
+            <p><a href="#rellm-MarketSettings">MarketSettings</a></p>
+          </li>
+          <li>
             <p><a href="#rellm-MediaSettings">MediaSettings</a></p>
           </li>
           <li>
@@ -550,6 +553,9 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
             <p><a href="#rellm-AIGrantSubscriptionDetails">AIGrantSubscriptionDetails</a></p>
           </li>
           <li>
+            <p><a href="#rellm-FulfillmentNote">FulfillmentNote</a></p>
+          </li>
+          <li>
             <p><a href="#rellm-GetMarketProductsRequest">GetMarketProductsRequest</a></p>
           </li>
           <li>
@@ -607,6 +613,9 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
             <p><a href="#rellm-RellmHostingSubscriptionDetails">RellmHostingSubscriptionDetails</a></p>
           </li>
           <li>
+            <p><a href="#rellm-GetMarketSubscriptionsRequestType">GetMarketSubscriptionsRequestType</a></p>
+          </li>
+          <li>
             <p><a href="#rellm-PurchasePeriod">PurchasePeriod</a></p>
           </li>
           <li>
@@ -623,6 +632,7 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
     <h2 id="rellmproto"><a class="anchor" aria-hidden="true" tabindex="-1" href="#rellmproto"><span class="octicon octicon-link"></span></a>rellm.proto</h2>
     <p><a name="rellm-Rellm"></a></p>
     <h3 id="rellm"><a class="anchor" aria-hidden="true" tabindex="-1" href="#rellm"><span class="octicon octicon-link"></span></a>Rellm</h3>
+    <p><a href="#grpc-api">Jump to the gRPC API?</a></p>
     <p>
       <a href="https://github.com/JonLatane/rellm">Rellm</a> is a social media protocol with support for Users (and Follows), Media, Posts, Events, Groups, and Messages. It is designed to be federated,
       but does not require federation to be a useful next-gen forum type solution.
@@ -1072,13 +1082,18 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
     <h4 id="rellms-market"><a class="anchor" aria-hidden="true" tabindex="-1" href="#rellms-market"><span class="octicon octicon-link"></span></a>Rellm's Market</h4>
     <p>
       Rellm's Market (<code>market.proto</code>) is this server's storefront - a small, Stripe-backed marketplace an admin
-      stocks with up to nine <a href="#rellm-MarketProduct"><code>MarketProduct</code></a>s (one offering type times one billing period
-      each) that any user can buy. Three offering types exist today (<a href="#rellm-PurchaseType"><code>PurchaseType</code></a>):
+      stocks with up to twelve <a href="#rellm-MarketProduct"><code>MarketProduct</code></a>s (one offering type times one billing period
+      each) that any user can buy. Four offering types exist today (<a href="#rellm-PurchaseType"><code>PurchaseType</code></a>):
       <code>PURCHASE_TYPE_MEDIA_STORAGE</code> (raises the buyer's <code>User.media_storage_limit_bytes</code>),
       <code>PURCHASE_TYPE_AI_GRANTS</code> (grants/resets an <a href="#rellm-AIProviderGrant"><code>AIProviderGrant</code></a> against one of the
-      server operator's <a href="#rellm-AIProvider"><code>AIProvider</code></a>s), and <code>PURCHASE_TYPE_RELLM_HOSTING</code> (bills the buyer for
+      server operator's <a href="#rellm-AIProvider"><code>AIProvider</code></a>s), <code>PURCHASE_TYPE_RELLM_HOSTING</code> (bills the buyer for
       the server operator to stand up a new Rellm instance on a domain of their choosing - provisioned by hand, not
-      automated). Each <a href="#rellm-MarketProduct"><code>MarketProduct</code></a> is sold once (<a href="#rellm-PurchasePeriod"><code>PurchasePeriod</code></a>
+      automated; the admin's own <code>/market/fulfillment</code> page, backed by
+      <code>GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN</code> and
+      <a href="#grpc-api-UpdateMarketSubscription"><code>UpdateMarketSubscription</code></a>, tracks these orders -
+      <a href="#rellm-RellmHostingSubscriptionDetails"><code>RellmHostingSubscriptionDetails</code></a>'s own <code>fulfilled</code>/
+      <code>fulfillment_notes</code> fields), and <code>PURCHASE_TYPE_PERMISSIONS_ACCESS</code> (grants the buyer a fixed set of <code>Permission</code>s, e.g.
+      pay-gating <code>SYNC_EVENTS_TO_FACEBOOK</code>). Each <a href="#rellm-MarketProduct"><code>MarketProduct</code></a> is sold once (<a href="#rellm-PurchasePeriod"><code>PurchasePeriod</code></a>
       <code>PURCHASE_PERIOD_INDEFINITE</code>, a single non-renewing <a href="#rellm-MarketPurchase"><code>MarketPurchase</code></a>) or on a recurring
       <code>PURCHASE_PERIOD_ANNUAL</code>/<code>PURCHASE_PERIOD_MONTHLY</code> cycle (a <a href="#rellm-MarketSubscription"><code>MarketSubscription</code></a>,
       whose <code>billing_history</code> accumulates one <a href="#rellm-MarketPurchase"><code>MarketPurchase</code></a> per renewal).
@@ -1096,12 +1111,16 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
       <a href="#rellm-MarketPurchase"><code>MarketPurchase</code></a>/<a href="#rellm-MarketSubscription"><code>MarketSubscription</code></a> and apply its
       entitlement. A recurring <a href="#rellm-MarketSubscription"><code>MarketSubscription</code></a> renews itself thereafter via
       off-session charges against the payment method saved on that first checkout - no further action from the
-      buyer - until a renewal charge fails, which ends the <a href="#rellm-MarketSubscription"><code>MarketSubscription</code></a>. A
-      user's own MarketSubscriptions (never anyone else's) are listed via
-      <a href="#grpc-api-GetMarketSubscriptions"><code>GetMarketSubscriptions</code></a>, and also travel along on <a href="#rellm-User"><code>User</code></a>
-      itself (<code>User.market_subscriptions</code>) the same way <code>ai_models</code>/<code>sync_sources</code> do. Stripe credentials for all of
-      this live in <code>ServerConfiguration.stripe_config</code> (a <a href="#rellm-StripeConfig"><code>StripeConfig</code></a>), Admin-only like
-      <code>twilio_config</code>/<code>bird_config</code>.
+      buyer - until either a renewal charge fails or the buyer/admin calls
+      <a href="#grpc-api-CancelMarketSubscription"><code>CancelMarketSubscription</code></a>, either of which sets <code>canceled_at</code>. The
+      entitlement itself stays in effect until whichever is later of <code>renews_at</code>/<code>canceled_at</code> - once both have
+      passed, the <code>renew_market_subscriptions</code> background job revokes it (reverts <code>media_storage_limit_bytes</code> to
+      <code>ServerConfiguration.media_settings.default_media_allocation_bytes</code>, or removes the granted <code>Permission</code>s,
+      depending on <code>type</code>) and sets <code>service_terminated_at</code>. A user's own MarketSubscriptions (never anyone
+      else's) are listed via <a href="#grpc-api-GetMarketSubscriptions"><code>GetMarketSubscriptions</code></a>, and also travel along
+      on <a href="#rellm-User"><code>User</code></a> itself (<code>User.market_subscriptions</code>) the same way <code>ai_models</code>/<code>sync_sources</code> do.
+      Stripe credentials for all of this live in <code>ServerConfiguration.stripe_config</code> (a
+      <a href="#rellm-StripeConfig"><code>StripeConfig</code></a>), Admin-only like <code>twilio_config</code>/<code>bird_config</code>.
     </p>
     <h4 id="media"><a class="anchor" aria-hidden="true" tabindex="-1" href="#media"><span class="octicon octicon-link"></span></a>Media</h4>
     <p>
@@ -1325,6 +1344,24 @@ the destination&#x26;#39;s resulting post ID/URL and last-synced time.
     <p>
       Rellm's Elm Messaging UI is generally a multi-server federated messenger. The main limitation is that it can only receive push notifications
       from one server. (This could be changed with VAPID key sharing, but is part of the VAPID protocol.)
+    </p>
+    <h4 id="federated-markets"><a class="anchor" aria-hidden="true" tabindex="-1" href="#federated-markets"><span class="octicon octicon-link"></span></a>Federated Markets</h4>
+    <p>
+      The Elm <code>/market</code> page can show more than one server's Market side by side: the browsed server's own
+      (always first) plus any other connected, enabled server whose <code>ServerConfiguration.market_settings.enabled</code>
+      is set (in Accounts panel order after that) - the public, non-secret "is this server's Market open" signal,
+      unlike <code>stripe_config</code> itself, which stays Admin-only. Each section is fully independent: it lists that
+      server's own <a href="#rellm-MarketProduct"><code>MarketProduct</code></a>s and shows product-management controls only if the
+      current user is actually an Admin <em>on that server</em>.
+    </p>
+    <p>
+      Unlike Federated Browsing/Profiles/Messaging above, buying is never seamless across servers - Market is the
+      one place a user must always transact with the target site directly. A product tile for the browsed server
+      links to its own in-app product page as usual, but a tile for any <em>other</em> server links straight to that
+      server's own <code>https://{host}/market/product/{id}</code> (a real page navigation, not client-side routing), since
+      <a href="#grpc-api-MakeMarketPurchase"><code>MakeMarketPurchase</code></a> starts a Stripe Checkout Session scoped to whichever
+      server the buyer is actually authenticated against, and Stripe's own <code>success_url</code>/<code>cancel_url</code> redirect
+      back to that same server when payment completes.
     </p>
     <h3 id="http-endpoints"><a class="anchor" aria-hidden="true" tabindex="-1" href="#http-endpoints"><span class="octicon octicon-link"></span></a>HTTP Endpoints</h3>
     <h4 id="internal-http-server-27705"><a class="anchor" aria-hidden="true" tabindex="-1" href="#internal-http-server-27705"><span class="octicon octicon-link"></span></a>Internal HTTP server (27705)</h4>
@@ -2095,13 +2132,25 @@ directory</a> is (<code>{name}</code> denotes a
           <td>GetMarketSubscriptions</td>
           <td><a href="#rellm-GetMarketSubscriptionsRequest">GetMarketSubscriptionsRequest</a></td>
           <td><a href="#rellm-GetMarketSubscriptionsResponse">GetMarketSubscriptionsResponse</a></td>
-          <td>Gets the current user's own MarketSubscriptions (with billing_history). <em>Authenticated</em>, self-scoped only.</td>
+          <td>Gets MarketSubscriptions -- self-scoped ("MY subscriptions", <code>GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE</code>, the default) for any authenticated caller, or every <code>PURCHASE_TYPE_RELLM_HOSTING</code> subscription across every buyer (<code>GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN</code>, backing <code>/market/fulfillment</code> -- see <code>RellmHostingSubscriptionDetails.fulfilled</code>'s own doc) for an Admin. <em>Authenticated</em>.</td>
         </tr>
         <tr>
           <td>MakeMarketPurchase</td>
           <td><a href="#rellm-MakeMarketPurchaseRequest">MakeMarketPurchaseRequest</a></td>
           <td><a href="#rellm-MakeMarketPurchaseResponse">MakeMarketPurchaseResponse</a></td>
           <td>Starts (or resumes) buying a MarketProduct for the current user, returning a Stripe Checkout URL to redirect to. <em>Authenticated</em>. See <code>MakeMarketPurchaseRequest</code>'s own doc -- no MarketPurchase/ MarketSubscription is created by this call itself, only once Stripe confirms payment via webhook.</td>
+        </tr>
+        <tr>
+          <td>CancelMarketSubscription</td>
+          <td><a href="#rellm-MarketSubscription">MarketSubscription</a></td>
+          <td><a href="#rellm-MarketSubscription">MarketSubscription</a></td>
+          <td>Cancels a MarketSubscription by setting <code>canceled_at</code> to now -- entitlement (media storage quota, granted permissions, etc.) stays active until whichever is later of <code>renews_at</code>/<code>canceled_at</code>; the <code>renew_market_subscriptions</code> background job is what actually revokes it and sets <code>service_terminated_at</code>, once both have passed. <em>Authenticated</em> -- the subscription's own buyer, or an Admin.</td>
+        </tr>
+        <tr>
+          <td>UpdateMarketSubscription</td>
+          <td><a href="#rellm-MarketSubscription">MarketSubscription</a></td>
+          <td><a href="#rellm-MarketSubscription">MarketSubscription</a></td>
+          <td>Updates a <code>PURCHASE_TYPE_RELLM_HOSTING</code> MarketSubscription's own <code>fulfilled</code>/<code>fulfillment_notes</code> (nothing else -- every other field, including <code>additional_information</code>, is immutable after purchase and silently ignored if changed) -- backs <code>/market/fulfillment</code>. A new <code>fulfillment_notes</code> entry must be appended (not inserted/reordered/removed) after whatever's already stored, and its <code>user_id</code> must match the caller's own -- the server stamps <code>created_at</code> itself, ignoring whatever the client sent. <em>Authenticated</em>, requires Admin (for now -- see that field's own doc on why this may loosen to "buyer, or Admin" later).</td>
         </tr>
         <tr>
           <td>GenerateMedia</td>
@@ -6897,6 +6946,34 @@ directory</a> is (<code>{name}</code> denotes a
         </tr>
       </tbody>
     </table>
+    <p><a name="rellm-MarketSettings"></a></p>
+    <h3 id="marketsettings"><a class="anchor" aria-hidden="true" tabindex="-1" href="#marketsettings"><span class="octicon octicon-link"></span></a>MarketSettings</h3>
+    <p>
+      Whether this server's <code>/market</code> is open -- an explicit, admin-set toggle independent of
+      <code>StripeConfig.stripe_enabled</code> (an admin can configure Stripe credentials without opening the
+      storefront yet, or temporarily close it without touching those credentials). See
+      <code>ServerConfiguration.market_settings</code>'s own doc on why this lives outside <code>StripeConfig</code>: it's
+      the one bit that has to stay visible to non-admins for federated multi-server Market browsing to
+      work at all.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>enabled</td>
+          <td><a href="#bool">bool</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
     <p><a name="rellm-MediaSettings"></a></p>
     <h3 id="mediasettings"><a class="anchor" aria-hidden="true" tabindex="-1" href="#mediasettings"><span class="octicon octicon-link"></span></a>MediaSettings</h3>
     <p>Media is a special type and less customizable than "Features."</p>
@@ -7110,6 +7187,12 @@ directory</a> is (<code>{name}</code> denotes a
           <td><a href="#rellm-MediaSettings">MediaSettings</a></td>
           <td></td>
           <td>Configuration for media on the server. If default visibility is <code>GLOBAL_PUBLIC</code>, default_user_permissions <em>must</em> contain <code>PUBLISH_MEDIA_GLOBALLY</code>.</td>
+        </tr>
+        <tr>
+          <td>market_settings</td>
+          <td><a href="#rellm-MarketSettings">MarketSettings</a></td>
+          <td></td>
+          <td>Public, non-secret "is this server's Market open" signal -- unlike <code>stripe_config</code> (which holds real credentials and is Admin-only, see that field's own doc), this is never stripped for a non-admin/unauthenticated caller. Lets a client decide whether to show this server's Market section at all (e.g. when browsing a federated list of servers) without needing to be an admin here just to check -- see <code>rellm.proto</code>'s own "Federated Markets" doc section.</td>
         </tr>
         <tr>
           <td>external_cdn_config</td>
@@ -9107,6 +9190,39 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
         </tr>
       </tbody>
     </table>
+    <p><a name="rellm-FulfillmentNote"></a></p>
+    <h3 id="fulfillmentnote"><a class="anchor" aria-hidden="true" tabindex="-1" href="#fulfillmentnote"><span class="octicon octicon-link"></span></a>FulfillmentNote</h3>
+    <p>One entry in a MarketSubscription's <code>fulfillment_notes</code> -- see that field's own doc.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>user_id</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>note</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>created_at</td>
+          <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
     <p><a name="rellm-GetMarketProductsRequest"></a></p>
     <h3 id="getmarketproductsrequest"><a class="anchor" aria-hidden="true" tabindex="-1" href="#getmarketproductsrequest"><span class="octicon octicon-link"></span></a>GetMarketProductsRequest</h3>
     <p>
@@ -9136,9 +9252,30 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
     <p><a name="rellm-GetMarketSubscriptionsRequest"></a></p>
     <h3 id="getmarketsubscriptionsrequest"><a class="anchor" aria-hidden="true" tabindex="-1" href="#getmarketsubscriptionsrequest"><span class="octicon octicon-link"></span></a>GetMarketSubscriptionsRequest</h3>
     <p>
-      Request to get the current user's own MarketSubscriptions (with billing_history). Self-scoped --
-      there's no way to fetch another user's MarketSubscriptions, even as an admin, for now.
+      Request to get MarketSubscriptions -- self-scoped to the current user's own
+      (<code>GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE</code>, the default -- there's no way to fetch another
+      user's own subscriptions this way, even as an admin), or -- for an admin only --
+      <code>GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN</code>, every <code>PURCHASE_TYPE_RELLM_HOSTING</code>
+      subscription across every buyer, for the <code>/market/fulfillment</code> admin page.
     </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>request_type</td>
+          <td><a href="#rellm-GetMarketSubscriptionsRequestType">GetMarketSubscriptionsRequestType</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
     <p><a name="rellm-GetMarketSubscriptionsResponse"></a></p>
     <h3 id="getmarketsubscriptionsresponse"><a class="anchor" aria-hidden="true" tabindex="-1" href="#getmarketsubscriptionsresponse"><span class="octicon octicon-link"></span></a>GetMarketSubscriptionsResponse</h3>
     <table>
@@ -9345,6 +9482,18 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td><a href="#uint32">uint32</a></td>
           <td></td>
           <td></td>
+        </tr>
+        <tr>
+          <td>available_count</td>
+          <td><a href="#uint32">uint32</a></td>
+          <td></td>
+          <td>Number of subscriptions "slots" availbable (admin-set)</td>
+        </tr>
+        <tr>
+          <td>sold_count</td>
+          <td><a href="#uint32">uint32</a></td>
+          <td></td>
+          <td>Number of subscriptions actually sold. Canceled subscriptions reduce this number, allowing a new person to subscribe.</td>
         </tr>
         <tr>
           <td>media_storage_subscription_details</td>
@@ -9654,10 +9803,16 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td></td>
         </tr>
         <tr>
-          <td>ended_at</td>
+          <td>canceled_at</td>
           <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
           <td>optional</td>
-          <td>If set, the MarketSubscription is unavailable</td>
+          <td>Set once the subscription will no longer renew -- either the buyer/admin explicitly canceled it (CancelMarketSubscription) or a renewal charge failed. The subscription's entitlement (media storage quota, granted permissions, etc.) stays active until whichever is later of renews_at/canceled_at, at which point renew_market_subscriptions.rs revokes it and sets service_terminated_at.</td>
+        </tr>
+        <tr>
+          <td>service_terminated_at</td>
+          <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
+          <td>optional</td>
+          <td>The time permissions were removed, media storage quotas reset, etc.</td>
         </tr>
       </tbody>
     </table>
@@ -9825,7 +9980,42 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>additional_information</td>
           <td><a href="#string">string</a></td>
           <td></td>
+          <td>Immutable after purchase -- the buyer's own notes to the admin fulfilling this order. Never editable via UpdateMarketSubscription (see that RPC's own doc); <code>fulfillment_notes</code> below is the admin/buyer conversation about fulfilling it.</td>
+        </tr>
+        <tr>
+          <td>fulfilled</td>
+          <td><a href="#bool">bool</a></td>
           <td></td>
+          <td>Whether an admin has actually stood up this Rellm hosting order -- Rellm hosting is deliberately not automated (see <code>market.proto</code>'s own top-of-file notes and <code>logic::market_fulfillment::fulfill_purchase</code>'s <code>RellmHosting</code> no-op arm), so this is the one manual "is this order done" signal, shown/toggled on <code>/market/fulfillment</code> (<code>GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN</code>).</td>
+        </tr>
+        <tr>
+          <td>fulfillment_notes</td>
+          <td><a href="#rellm-FulfillmentNote">FulfillmentNote</a></td>
+          <td>repeated</td>
+          <td>The admin/buyer conversation about fulfilling this order -- oldest to newest, append-only (see <code>UpdateMarketSubscription</code>'s own doc: a new entry can only ever be appended after whatever's already here, never inserted/reordered/removed, and its <code>user_id</code> must match whoever's actually making the request -- the server stamps <code>created_at</code> itself).</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-GetMarketSubscriptionsRequestType"></a></p>
+    <h3 id="getmarketsubscriptionsrequesttype"><a class="anchor" aria-hidden="true" tabindex="-1" href="#getmarketsubscriptionsrequesttype"><span class="octicon octicon-link"></span></a>GetMarketSubscriptionsRequestType</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Number</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE</td>
+          <td>0</td>
+          <td>The "user facing" view backing /market -- the caller's own MarketSubscriptions only.</td>
+        </tr>
+        <tr>
+          <td>GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN</td>
+          <td>1</td>
+          <td>Admin-only view backing /market/fulfillment -- every PURCHASE_TYPE_RELLM_HOSTING MarketSubscription across every buyer, since Rellm hosting needs manual setup that isn't automated (see RellmHostingSubscriptionDetails.fulfilled's own doc).</td>
         </tr>
       </tbody>
     </table>

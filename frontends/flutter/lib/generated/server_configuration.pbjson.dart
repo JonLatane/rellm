@@ -157,6 +157,7 @@ const ServerConfiguration$json = {
     {'1': 'post_settings', '3': 22, '4': 1, '5': 11, '6': '.rellm.PostSettings', '10': 'postSettings'},
     {'1': 'event_settings', '3': 23, '4': 1, '5': 11, '6': '.rellm.EventSettings', '10': 'eventSettings'},
     {'1': 'media_settings', '3': 24, '4': 1, '5': 11, '6': '.rellm.MediaSettings', '10': 'mediaSettings'},
+    {'1': 'market_settings', '3': 25, '4': 1, '5': 11, '6': '.rellm.MarketSettings', '10': 'marketSettings'},
     {'1': 'external_cdn_config', '3': 90, '4': 1, '5': 11, '6': '.rellm.ExternalCDNConfig', '9': 3, '10': 'externalCdnConfig', '17': true},
     {'1': 'cluster_resources', '3': 91, '4': 1, '5': 11, '6': '.rellm.ClusterResources', '9': 4, '10': 'clusterResources', '17': true},
     {'1': 'private_user_strategy', '3': 100, '4': 1, '5': 14, '6': '.rellm.PrivateUserStrategy', '10': 'privateUserStrategy'},
@@ -196,24 +197,25 @@ final $typed_data.Uint8List serverConfigurationDescriptor = $convert.base64Decod
     'dGluZ3NSDWdyb3VwU2V0dGluZ3MSOAoNcG9zdF9zZXR0aW5ncxgWIAEoCzITLnJlbGxtLlBvc3'
     'RTZXR0aW5nc1IMcG9zdFNldHRpbmdzEjsKDmV2ZW50X3NldHRpbmdzGBcgASgLMhQucmVsbG0u'
     'RXZlbnRTZXR0aW5nc1INZXZlbnRTZXR0aW5ncxI7Cg5tZWRpYV9zZXR0aW5ncxgYIAEoCzIULn'
-    'JlbGxtLk1lZGlhU2V0dGluZ3NSDW1lZGlhU2V0dGluZ3MSTQoTZXh0ZXJuYWxfY2RuX2NvbmZp'
-    'ZxhaIAEoCzIYLnJlbGxtLkV4dGVybmFsQ0ROQ29uZmlnSANSEWV4dGVybmFsQ2RuQ29uZmlniA'
-    'EBEkkKEWNsdXN0ZXJfcmVzb3VyY2VzGFsgASgLMhcucmVsbG0uQ2x1c3RlclJlc291cmNlc0gE'
-    'UhBjbHVzdGVyUmVzb3VyY2VziAEBEk4KFXByaXZhdGVfdXNlcl9zdHJhdGVneRhkIAEoDjIaLn'
-    'JlbGxtLlByaXZhdGVVc2VyU3RyYXRlZ3lSE3ByaXZhdGVVc2VyU3RyYXRlZ3kSVQoXYXV0aGVu'
-    'dGljYXRpb25fZmVhdHVyZXMYZSADKA4yHC5yZWxsbS5BdXRoZW50aWNhdGlvbkZlYXR1cmVSFm'
-    'F1dGhlbnRpY2F0aW9uRmVhdHVyZXMSQQoPd2ViX3B1c2hfY29uZmlnGG4gASgLMhQucmVsbG0u'
-    'V2ViUHVzaENvbmZpZ0gFUg13ZWJQdXNoQ29uZmlniAEBElYKG3ByZWZlcnJlZF92ZXJpZmljYX'
-    'Rpb25fYXBpcxh4IAMoDjIWLnJlbGxtLlZlcmlmaWNhdGlvbkFQSVIZcHJlZmVycmVkVmVyaWZp'
-    'Y2F0aW9uQXBpcxJWChthdmFpbGFibGVfdmVyaWZpY2F0aW9uX2FwaXMYeSADKA4yFi5yZWxsbS'
-    '5WZXJpZmljYXRpb25BUElSGWF2YWlsYWJsZVZlcmlmaWNhdGlvbkFwaXMSPQoNdHdpbGlvX2Nv'
-    'bmZpZxh6IAEoCzITLnJlbGxtLlR3aWxpb0NvbmZpZ0gGUgx0d2lsaW9Db25maWeIAQESNwoLYm'
-    'lyZF9jb25maWcYeyABKAsyES5yZWxsbS5CaXJkQ29uZmlnSAdSCmJpcmRDb25maWeIAQESPQoN'
-    'c3RyaXBlX2NvbmZpZxh8IAEoCzITLnJlbGxtLlN0cmlwZUNvbmZpZ0gIUgxzdHJpcGVDb25maW'
-    'eIAQFCDgoMX3NlcnZlcl9pbmZvQhIKEF9mZWRlcmF0aW9uX2luZm9CDgoMX2N1c3RvbV90YWJz'
-    'QhYKFF9leHRlcm5hbF9jZG5fY29uZmlnQhQKEl9jbHVzdGVyX3Jlc291cmNlc0ISChBfd2ViX3'
-    'B1c2hfY29uZmlnQhAKDl90d2lsaW9fY29uZmlnQg4KDF9iaXJkX2NvbmZpZ0IQCg5fc3RyaXBl'
-    'X2NvbmZpZw==');
+    'JlbGxtLk1lZGlhU2V0dGluZ3NSDW1lZGlhU2V0dGluZ3MSPgoPbWFya2V0X3NldHRpbmdzGBkg'
+    'ASgLMhUucmVsbG0uTWFya2V0U2V0dGluZ3NSDm1hcmtldFNldHRpbmdzEk0KE2V4dGVybmFsX2'
+    'Nkbl9jb25maWcYWiABKAsyGC5yZWxsbS5FeHRlcm5hbENETkNvbmZpZ0gDUhFleHRlcm5hbENk'
+    'bkNvbmZpZ4gBARJJChFjbHVzdGVyX3Jlc291cmNlcxhbIAEoCzIXLnJlbGxtLkNsdXN0ZXJSZX'
+    'NvdXJjZXNIBFIQY2x1c3RlclJlc291cmNlc4gBARJOChVwcml2YXRlX3VzZXJfc3RyYXRlZ3kY'
+    'ZCABKA4yGi5yZWxsbS5Qcml2YXRlVXNlclN0cmF0ZWd5UhNwcml2YXRlVXNlclN0cmF0ZWd5El'
+    'UKF2F1dGhlbnRpY2F0aW9uX2ZlYXR1cmVzGGUgAygOMhwucmVsbG0uQXV0aGVudGljYXRpb25G'
+    'ZWF0dXJlUhZhdXRoZW50aWNhdGlvbkZlYXR1cmVzEkEKD3dlYl9wdXNoX2NvbmZpZxhuIAEoCz'
+    'IULnJlbGxtLldlYlB1c2hDb25maWdIBVINd2ViUHVzaENvbmZpZ4gBARJWChtwcmVmZXJyZWRf'
+    'dmVyaWZpY2F0aW9uX2FwaXMYeCADKA4yFi5yZWxsbS5WZXJpZmljYXRpb25BUElSGXByZWZlcn'
+    'JlZFZlcmlmaWNhdGlvbkFwaXMSVgobYXZhaWxhYmxlX3ZlcmlmaWNhdGlvbl9hcGlzGHkgAygO'
+    'MhYucmVsbG0uVmVyaWZpY2F0aW9uQVBJUhlhdmFpbGFibGVWZXJpZmljYXRpb25BcGlzEj0KDX'
+    'R3aWxpb19jb25maWcYeiABKAsyEy5yZWxsbS5Ud2lsaW9Db25maWdIBlIMdHdpbGlvQ29uZmln'
+    'iAEBEjcKC2JpcmRfY29uZmlnGHsgASgLMhEucmVsbG0uQmlyZENvbmZpZ0gHUgpiaXJkQ29uZm'
+    'lniAEBEj0KDXN0cmlwZV9jb25maWcYfCABKAsyEy5yZWxsbS5TdHJpcGVDb25maWdICFIMc3Ry'
+    'aXBlQ29uZmlniAEBQg4KDF9zZXJ2ZXJfaW5mb0ISChBfZmVkZXJhdGlvbl9pbmZvQg4KDF9jdX'
+    'N0b21fdGFic0IWChRfZXh0ZXJuYWxfY2RuX2NvbmZpZ0IUChJfY2x1c3Rlcl9yZXNvdXJjZXNC'
+    'EgoQX3dlYl9wdXNoX2NvbmZpZ0IQCg5fdHdpbGlvX2NvbmZpZ0IOCgxfYmlyZF9jb25maWdCEA'
+    'oOX3N0cmlwZV9jb25maWc=');
 
 @$core.Deprecated('Use clusterResourcesDescriptor instead')
 const ClusterResources$json = {
@@ -374,6 +376,18 @@ final $typed_data.Uint8List mediaSettingsDescriptor = $convert.base64Decode(
     'ZGVmYXVsdF92aXNpYmlsaXR5GAMgASgOMhEucmVsbG0uVmlzaWJpbGl0eVIRZGVmYXVsdFZpc2'
     'liaWxpdHkSQwoeZGVmYXVsdF9tZWRpYV9hbGxvY2F0aW9uX2J5dGVzGAQgASgEUhtkZWZhdWx0'
     'TWVkaWFBbGxvY2F0aW9uQnl0ZXM=');
+
+@$core.Deprecated('Use marketSettingsDescriptor instead')
+const MarketSettings$json = {
+  '1': 'MarketSettings',
+  '2': [
+    {'1': 'enabled', '3': 1, '4': 1, '5': 8, '10': 'enabled'},
+  ],
+};
+
+/// Descriptor for `MarketSettings`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List marketSettingsDescriptor = $convert.base64Decode(
+    'Cg5NYXJrZXRTZXR0aW5ncxIYCgdlbmFibGVkGAEgASgIUgdlbmFibGVk');
 
 @$core.Deprecated('Use featureSettingsDescriptor instead')
 const FeatureSettings$json = {

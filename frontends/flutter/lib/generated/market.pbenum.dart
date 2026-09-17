@@ -49,5 +49,20 @@ class PurchasePeriod extends $pb.ProtobufEnum {
   const PurchasePeriod._($core.int v, $core.String n) : super(v, n);
 }
 
+class GetMarketSubscriptionsRequestType extends $pb.ProtobufEnum {
+  static const GetMarketSubscriptionsRequestType GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE = GetMarketSubscriptionsRequestType._(0, _omitEnumNames ? '' : 'GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE');
+  static const GetMarketSubscriptionsRequestType GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN = GetMarketSubscriptionsRequestType._(1, _omitEnumNames ? '' : 'GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN');
+
+  static const $core.List<GetMarketSubscriptionsRequestType> values = <GetMarketSubscriptionsRequestType> [
+    GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE,
+    GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN,
+  ];
+
+  static final $core.Map<$core.int, GetMarketSubscriptionsRequestType> _byValue = $pb.ProtobufEnum.initByValue(values);
+  static GetMarketSubscriptionsRequestType? valueOf($core.int value) => _byValue[value];
+
+  const GetMarketSubscriptionsRequestType._($core.int v, $core.String n) : super(v, n);
+}
+
 
 const _omitEnumNames = $core.bool.fromEnvironment('protobuf.omit_enum_names');

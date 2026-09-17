@@ -11,6 +11,7 @@ use crate::db_connection::PgPooledConnection;
 use crate::marshaling::{ToDbId, ToJsonPermissions, ToProtoPermissions};
 use crate::models;
 use crate::protos::*;
+use crate::rpcs::get_server_configuration_proto;
 use crate::schema::users;
 
 /// Applies `purchase_type`'s entitlement to `buyer_id`, given the just-created `Purchase`'s own
@@ -69,9 +70,11 @@ pub fn fulfill_purchase(
         // Adds the product's configured `Permission`s to the buyer's own `User.permissions`,
         // union-style (never removes anything the buyer already had, from this grant or any other
         // source) -- "just grant the permissions to the subscribed user," per Jon's own framing.
-        // Mirrors `AiGrants`' "no revoke-on-lapse" behavior too: a subscription that stops
-        // renewing simply stops re-granting, it doesn't claw back permissions already applied --
-        // same no-retry/no-reconciliation MVP simplicity as the rest of this module.
+        // Unlike `AiGrants`, a lapsed/canceled `PermissionsAccess` subscription *does* eventually
+        // claw back the permissions it granted -- see `terminate_entitlement` below -- just not
+        // immediately: the entitlement stays in effect until `logic::market_renewal`'s
+        // `terminate_subscriptions_of_type` finds both `renews_at`/`canceled_at` have passed, same
+        // no-retry/no-reconciliation MVP simplicity as the rest of this module.
         PurchaseType::PermissionsAccess => {
             let parsed: PermissionsAccessPurchaseDetails =
                 serde_json::from_value(details.clone()).map_err(|e| {
@@ -98,5 +101,78 @@ pub fn fulfill_purchase(
                 })?;
             Ok(())
         }
+    }
+}
+
+/// The semantic inverse of `fulfill_purchase` -- revokes `purchase_type`'s entitlement from
+/// `buyer_id`, given a `MarketSubscription`'s own `details` JSON (the `*SubscriptionDetails`
+/// shape `market_marshaling::subscription_details_to_proto` uses, NOT the `*PurchaseDetails` shape
+/// `fulfill_purchase` itself parses -- field-for-field identical for every variant today, but the
+/// distinct Rust types matter for `PermissionsAccess` below). Called only from
+/// `logic::market_renewal::terminate_subscriptions_of_type`, once a subscription's cancellation has
+/// actually taken effect (see that function's own doc).
+pub fn terminate_entitlement(
+    purchase_type: PurchaseType,
+    buyer_id: i64,
+    details: &serde_json::Value,
+    conn: &mut PgPooledConnection,
+) -> Result<(), Status> {
+    match purchase_type {
+        // Reverts to the server's *current* configured default allocation -- not `NULL`/unlimited
+        // -- mirroring `rpcs::authentication::create_account`'s own read of
+        // `media_settings.default_media_allocation_bytes` (always `Some` in practice, per that
+        // read's own comment on `ToProtoServerConfiguration::to_proto`'s deserialize-with-fallback).
+        PurchaseType::MediaStorage => {
+            let server_configuration = get_server_configuration_proto(conn)?;
+            let default_media_allocation_bytes = server_configuration
+                .media_settings
+                .as_ref()
+                .map(|m| m.default_media_allocation_bytes as i64);
+            diesel::update(users::table.filter(users::id.eq(buyer_id)))
+                .set(users::media_storage_limit_bytes.eq(default_media_allocation_bytes))
+                .execute(conn)
+                .map_err(|e| {
+                    log::error!(
+                        "Failed to revert media storage entitlement for user {}: {:?}",
+                        buyer_id,
+                        e
+                    );
+                    Status::new(tonic::Code::Internal, "failed_to_revoke_entitlement")
+                })?;
+            Ok(())
+        }
+        // Removes exactly the permissions this subscription's own `details` granted -- a plain set
+        // difference, not a reconciliation against any other subscription/grant the buyer might
+        // also have (out of scope for this MVP, same "no reconciliation" simplicity noted on
+        // `fulfill_purchase`'s own `PermissionsAccess` arm above).
+        PurchaseType::PermissionsAccess => {
+            let parsed: PermissionsAccessSubscriptionDetails =
+                serde_json::from_value(details.clone()).map_err(|e| {
+                    log::error!("Failed to parse PermissionsAccessSubscriptionDetails: {:?}", e);
+                    Status::new(tonic::Code::Internal, "invalid_subscription_details")
+                })?;
+            let granted = parsed.permissions.to_proto_permissions();
+            let buyer = models::get_user(buyer_id, conn)?;
+            let updated_permissions: Vec<Permission> = buyer
+                .permissions
+                .to_proto_permissions()
+                .into_iter()
+                .filter(|p| !granted.contains(p))
+                .collect();
+            diesel::update(users::table.filter(users::id.eq(buyer_id)))
+                .set(users::permissions.eq(updated_permissions.to_json_permissions()))
+                .execute(conn)
+                .map_err(|e| {
+                    log::error!(
+                        "Failed to revoke permissions entitlement for user {}: {:?}",
+                        buyer_id,
+                        e
+                    );
+                    Status::new(tonic::Code::Internal, "failed_to_revoke_entitlement")
+                })?;
+            Ok(())
+        }
+        // Out of scope for this MVP -- no automatic revocation action for either.
+        PurchaseType::AiGrants | PurchaseType::RellmHosting => Ok(()),
     }
 }

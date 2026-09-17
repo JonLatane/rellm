@@ -37,6 +37,7 @@ pub fn create_market_product(
             amount: request.amount as i32,
             currency: request.currency as i32,
             details: product_details_to_json(&request.details),
+            available_count: request.available_count as i32,
         })
         .get_result::<models::MarketProduct>(conn)
         .map_err(|e| {

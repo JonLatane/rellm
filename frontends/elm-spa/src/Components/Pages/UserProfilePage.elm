@@ -97,6 +97,7 @@ type alias Model =
     , storageQuotaEdit : Maybe StorageQuotaEdit
     , storageQuotaExpanded : Bool
     , subscriptionsExpanded : Bool
+    , cancelingSubscriptions : Dict String SubmitStatus
     , permissionsEdit : Maybe PermissionsEdit
     , permissionsExpanded : Bool
     , federatedProfilesEdit : Maybe FederatedProfilesEdit
@@ -187,6 +188,8 @@ type Msg
     | GotStorageQuotaSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, User ))
     | ShowMyMediaClicked
     | SubscriptionsExpandedToggled
+    | CancelSubscriptionClicked MarketSubscription
+    | GotCancelSubscriptionResult String (Result Grpc.Error ( Maybe AccountsPanel.Msg, MarketSubscription ))
     | PermissionsExpandedToggled
     | PermissionsEditClicked
     | PermissionRemoveClicked Permission
@@ -1022,6 +1025,7 @@ init shared pageIsSecure targetHost lookup navKey path query fragment =
             , storageQuotaEdit = Nothing
             , storageQuotaExpanded = False
             , subscriptionsExpanded = False
+            , cancelingSubscriptions = Dict.empty
             , permissionsEdit = Nothing
             , permissionsExpanded = False
             , federatedProfilesEdit = Nothing
@@ -2025,6 +2029,34 @@ updateInner shared msg model =
 
         SubscriptionsExpandedToggled ->
             ( { model | subscriptionsExpanded = not model.subscriptionsExpanded }, Effect.none )
+
+        CancelSubscriptionClicked subscription ->
+            case serverAndAccount shared model of
+                Just ( server, account ) ->
+                    ( { model | cancelingSubscriptions = Dict.insert subscription.id Submitting model.cancelingSubscriptions }
+                    , Market.cancelMarketSubscription shared.accounts ( Just account.userId, server.frontendHost ) subscription
+                        |> Task.attempt (GotCancelSubscriptionResult subscription.id)
+                        |> Effect.fromCmd
+                    )
+
+                Nothing ->
+                    ( model, Effect.none )
+
+        GotCancelSubscriptionResult subscriptionId (Ok ( maybeAccountsPanelMsg, updated )) ->
+            ( { model
+                | cancelingSubscriptions = Dict.remove subscriptionId model.cancelingSubscriptions
+                , resolver = withResolvedSubscription updated model.resolver
+              }
+            , accountsPanelEffect maybeAccountsPanelMsg
+            )
+
+        GotCancelSubscriptionResult subscriptionId (Err err) ->
+            ( { model
+                | cancelingSubscriptions =
+                    Dict.insert subscriptionId (SubmitFailed (AccountsPanel.grpcErrorToString err)) model.cancelingSubscriptions
+              }
+            , Effect.none
+            )
 
         PermissionsExpandedToggled ->
             ( { model | permissionsExpanded = not model.permissionsExpanded }, Effect.none )
@@ -4051,6 +4083,37 @@ withResolvedUserPhone phone resolver =
             resolver
 
 
+{-| Merges a just-updated `MarketSubscription` (as returned by `Components.Market.cancelMarketSubscription`,
+which only ever echoes back the one `MarketSubscription` it acted on, not a whole `User`) into
+`model.resolver`'s currently loaded `User` -- mirrors `withResolvedUserPhone`, replacing the
+matching-`id` entry in `user.marketSubscriptions` rather than the whole `User` (a no-op if
+`resolver.status` isn't `Loaded`).
+-}
+withResolvedSubscription : MarketSubscription -> Resolver.Model -> Resolver.Model
+withResolvedSubscription updated resolver =
+    case resolver.status of
+        Resolver.Loaded user ->
+            { resolver
+                | status =
+                    Resolver.Loaded
+                        { user
+                            | marketSubscriptions =
+                                List.map
+                                    (\s ->
+                                        if s.id == updated.id then
+                                            updated
+
+                                        else
+                                            s
+                                    )
+                                    user.marketSubscriptions
+                        }
+            }
+
+        _ ->
+            resolver
+
+
 {-| `AvatarSaveClicked`'s transform, passed to `Users.updateUser` the same way
 `RealNameSaveClicked`'s inline lambda is -- applied to a freshly re-fetched
 `User`, not `model.resolver`'s own possibly-stale one (see `Users.updateUser`'s
@@ -4229,7 +4292,7 @@ profileDetail shared model server maybeAccount user =
         , aiProvidersSection model canEdit (isOwnProfile maybeAccount user) user
         , aiProviderGrantedSection model canEdit user
         , storageQuotaSection isAdmin (isOwnProfile maybeAccount user) model.storageQuotaExpanded model.storageQuotaEdit user
-        , subscriptionsSection shared.time.browserTimeZone isAdmin (isOwnProfile maybeAccount user) model.subscriptionsExpanded user
+        , subscriptionsSection shared.time.browserTimeZone isAdmin (isOwnProfile maybeAccount user) model.subscriptionsExpanded model.cancelingSubscriptions user
         , permissionsSection isAdmin model.permissionsExpanded model.permissionsEdit user
         , deleteUserSection canEdit
         ]
@@ -5078,16 +5141,19 @@ storageQuotaEditView maybeEdit user =
 
 
 {-| "Subscriptions" -- a read-only readout of `user.marketSubscriptions` (`market.proto`), each
-with its type/period/amount and either "Renews <date>" or "Ended <date>". Unlike
-`storageQuotaSection`/`permissionsSection`, there's no edit mode here at all -- subscriptions are
-only ever created via `Components.Pages.MarketPage`'s "Buy" flow (a real Stripe Checkout redirect),
-never by editing a `User` directly. Shown to the profile's own owner or an Admin, same gating (and
-same "hide if nothing to show" convention) as `storageQuotaSection` -- matches how
+with its type/period/amount, whichever of `renewsAt`/`canceledAt`/`serviceTerminatedAt` are
+actually set (see `timestampLineView`), and (for the profile's own owner or an Admin, same gating
+below) a "Cancel Subscription" button while it's not yet canceled. Unlike `storageQuotaSection`/
+`permissionsSection`, there's no edit mode here at all -- subscriptions are only ever created via
+`Components.Pages.MarketPage`'s "Buy" flow (a real Stripe Checkout redirect), never by editing a
+`User` directly; cancellation is the one mutation this section supports, via
+`Components.Market.cancelMarketSubscription`. Shown to the profile's own owner or an Admin, same
+gating (and same "hide if nothing to show" convention) as `storageQuotaSection` -- matches how
 `User.marketSubscriptions` itself is only ever populated for those two viewers (see that field's
 own proto doc). Collapsed by default, alongside `storageQuotaSection`/`permissionsSection`.
 -}
-subscriptionsSection : SharedTime.BrowserTimeZone -> Bool -> Bool -> Bool -> User -> Html Msg
-subscriptionsSection browserTimeZone isAdmin isOwn expanded user =
+subscriptionsSection : SharedTime.BrowserTimeZone -> Bool -> Bool -> Bool -> Dict String SubmitStatus -> User -> Html Msg
+subscriptionsSection browserTimeZone isAdmin isOwn expanded cancelingSubscriptions user =
     if not (isAdmin || isOwn) then
         text ""
 
@@ -5101,27 +5167,30 @@ subscriptionsSection browserTimeZone isAdmin isOwn expanded user =
                 [ span [ class "profile-subscriptions-empty" ] [ text "No subscriptions." ] ]
 
              else
-                List.map (subscriptionRowView browserTimeZone) user.marketSubscriptions
+                List.map (subscriptionRowView browserTimeZone (isAdmin || isOwn) cancelingSubscriptions) user.marketSubscriptions
             )
 
 
-subscriptionRowView : SharedTime.BrowserTimeZone -> MarketSubscription -> Html Msg
-subscriptionRowView browserTimeZone subscription =
-    let
-        statusText : String
-        statusText =
-            case subscription.endedAt of
-                Just endedAt ->
-                    "Ended " ++ SharedTime.formatDate browserTimeZone.zone (timestampToPosix endedAt)
+{-| A `renewsAt`/`canceledAt`/`serviceTerminatedAt` readout line, shown only when `maybeTimestamp`
+is actually set -- e.g. a subscription that's been canceled but whose entitlement hasn't been
+revoked yet (see `Components.Market.cancelMarketSubscription`'s own doc) shows both a "Canceled
+<date>" and (until `renewMarketSubscriptions` catches up) still its "Renews <date>" line, since
+`renewsAt` isn't cleared on cancellation. `label` already includes its own trailing verb, e.g.
+"Renews"/"Canceled"/"Service ended".
+-}
+timestampLineView : String -> SharedTime.BrowserTimeZone -> Maybe Proto.Google.Protobuf.Timestamp -> Html msg
+timestampLineView label browserTimeZone maybeTimestamp =
+    case maybeTimestamp of
+        Just t ->
+            span [ class "profile-subscription-row-status" ]
+                [ text (label ++ " " ++ SharedTime.formatDate browserTimeZone.zone (timestampToPosix t)) ]
 
-                Nothing ->
-                    case subscription.renewsAt of
-                        Just renewsAt ->
-                            "Renews " ++ SharedTime.formatDate browserTimeZone.zone (timestampToPosix renewsAt)
+        Nothing ->
+            text ""
 
-                        Nothing ->
-                            "Active"
-    in
+
+subscriptionRowView : SharedTime.BrowserTimeZone -> Bool -> Dict String SubmitStatus -> MarketSubscription -> Html Msg
+subscriptionRowView browserTimeZone canCancel cancelingSubscriptions subscription =
     div [ class "profile-subscription-row" ]
         [ span [ class "profile-subscription-row-title" ]
             [ text
@@ -5132,7 +5201,34 @@ subscriptionRowView browserTimeZone subscription =
                     ++ Market.formatAmount subscription.amount subscription.currency
                 )
             ]
-        , span [ class "profile-subscription-row-status" ] [ text statusText ]
+        , timestampLineView "Renews" browserTimeZone subscription.renewsAt
+        , timestampLineView "Canceled" browserTimeZone subscription.canceledAt
+        , timestampLineView "Service ended" browserTimeZone subscription.serviceTerminatedAt
+        , if canCancel && subscription.canceledAt == Nothing then
+            let
+                cancelStatus : SubmitStatus
+                cancelStatus =
+                    Dict.get subscription.id cancelingSubscriptions |> Maybe.withDefault Idle
+            in
+            div [ class "profile-subscription-cancel" ]
+                [ button
+                    [ class "profile-edit-button"
+                    , onClick (CancelSubscriptionClicked subscription)
+                    , disabled (cancelStatus == Submitting)
+                    ]
+                    [ text
+                        (if cancelStatus == Submitting then
+                            "Canceling…"
+
+                         else
+                            "Cancel Subscription"
+                        )
+                    ]
+                , editErrorView cancelStatus
+                ]
+
+          else
+            text ""
         , billingHistoryView browserTimeZone subscription.billingHistory
         ]
 

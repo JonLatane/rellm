@@ -45,6 +45,18 @@ fn main() {
         // `home` type doesn't match either, resetting the admin's whole `custom_tabs` -- tabs and
         // all -- back to unset.
         .field_attribute("CustomNavigationTabSet.tab_style", "#[serde(default)]")
+        // Same idea, for `RellmHostingSubscriptionDetails.fulfilled`/`fulfillment_notes` (added for
+        // `/market/fulfillment` -- see `UpdateMarketSubscription`'s own doc) -- lets a
+        // `market_subscriptions`/`market_products` row's `details` JSON, stored before these two
+        // fields existed, deserialize instead of erroring: `fulfilled` defaults to `false`
+        // (correct -- an order predating this feature was never marked fulfilled through it), and
+        // `fulfillment_notes` (a `repeated` field, same reasoning as `mastodon_servers` above) to an
+        // empty list.
+        .field_attribute("RellmHostingSubscriptionDetails.fulfilled", "#[serde(default)]")
+        .field_attribute(
+            "RellmHostingSubscriptionDetails.fulfillment_notes",
+            "#[serde(default)]",
+        )
         // This is specifically for rust-analyzer in VSCode
         // .client_attribute(".", "#![allow(non_snake_case)]")
         .extern_path(".google.protobuf.Any", "::prost_wkt_types::Any")

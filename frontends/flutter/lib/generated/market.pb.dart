@@ -39,6 +39,8 @@ class MarketProduct extends $pb.GeneratedMessage {
     PurchasePeriod? period,
     $core.int? amount,
     $core.int? currency,
+    $core.int? availableCount,
+    $core.int? soldCount,
     MediaStorageSubscriptionDetails? mediaStorageSubscriptionDetails,
     AIGrantSubscriptionDetails? aiGrantSubscriptionDetails,
     RellmHostingSubscriptionDetails? rellmHostingSubscriptionDetails,
@@ -61,6 +63,12 @@ class MarketProduct extends $pb.GeneratedMessage {
     }
     if (currency != null) {
       $result.currency = currency;
+    }
+    if (availableCount != null) {
+      $result.availableCount = availableCount;
+    }
+    if (soldCount != null) {
+      $result.soldCount = soldCount;
     }
     if (mediaStorageSubscriptionDetails != null) {
       $result.mediaStorageSubscriptionDetails = mediaStorageSubscriptionDetails;
@@ -100,6 +108,8 @@ class MarketProduct extends $pb.GeneratedMessage {
     ..e<PurchasePeriod>(3, _omitFieldNames ? '' : 'period', $pb.PbFieldType.OE, defaultOrMaker: PurchasePeriod.PURCHASE_PERIOD_INDEFINITE, valueOf: PurchasePeriod.valueOf, enumValues: PurchasePeriod.values)
     ..a<$core.int>(4, _omitFieldNames ? '' : 'amount', $pb.PbFieldType.OU3)
     ..a<$core.int>(5, _omitFieldNames ? '' : 'currency', $pb.PbFieldType.OU3)
+    ..a<$core.int>(6, _omitFieldNames ? '' : 'availableCount', $pb.PbFieldType.OU3)
+    ..a<$core.int>(7, _omitFieldNames ? '' : 'soldCount', $pb.PbFieldType.OU3)
     ..aOM<MediaStorageSubscriptionDetails>(10, _omitFieldNames ? '' : 'mediaStorageSubscriptionDetails', subBuilder: MediaStorageSubscriptionDetails.create)
     ..aOM<AIGrantSubscriptionDetails>(11, _omitFieldNames ? '' : 'aiGrantSubscriptionDetails', subBuilder: AIGrantSubscriptionDetails.create)
     ..aOM<RellmHostingSubscriptionDetails>(12, _omitFieldNames ? '' : 'rellmHostingSubscriptionDetails', subBuilder: RellmHostingSubscriptionDetails.create)
@@ -180,73 +190,94 @@ class MarketProduct extends $pb.GeneratedMessage {
   @$pb.TagNumber(5)
   void clearCurrency() => clearField(5);
 
+  /// Number of subscriptions "slots" availbable (admin-set)
+  @$pb.TagNumber(6)
+  $core.int get availableCount => $_getIZ(5);
+  @$pb.TagNumber(6)
+  set availableCount($core.int v) { $_setUnsignedInt32(5, v); }
+  @$pb.TagNumber(6)
+  $core.bool hasAvailableCount() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearAvailableCount() => clearField(6);
+
+  /// Number of subscriptions actually sold. Canceled subscriptions reduce this number,
+  /// allowing a new person to subscribe.
+  @$pb.TagNumber(7)
+  $core.int get soldCount => $_getIZ(6);
+  @$pb.TagNumber(7)
+  set soldCount($core.int v) { $_setUnsignedInt32(6, v); }
+  @$pb.TagNumber(7)
+  $core.bool hasSoldCount() => $_has(6);
+  @$pb.TagNumber(7)
+  void clearSoldCount() => clearField(7);
+
   @$pb.TagNumber(10)
-  MediaStorageSubscriptionDetails get mediaStorageSubscriptionDetails => $_getN(5);
+  MediaStorageSubscriptionDetails get mediaStorageSubscriptionDetails => $_getN(7);
   @$pb.TagNumber(10)
   set mediaStorageSubscriptionDetails(MediaStorageSubscriptionDetails v) { setField(10, v); }
   @$pb.TagNumber(10)
-  $core.bool hasMediaStorageSubscriptionDetails() => $_has(5);
+  $core.bool hasMediaStorageSubscriptionDetails() => $_has(7);
   @$pb.TagNumber(10)
   void clearMediaStorageSubscriptionDetails() => clearField(10);
   @$pb.TagNumber(10)
-  MediaStorageSubscriptionDetails ensureMediaStorageSubscriptionDetails() => $_ensure(5);
+  MediaStorageSubscriptionDetails ensureMediaStorageSubscriptionDetails() => $_ensure(7);
 
   @$pb.TagNumber(11)
-  AIGrantSubscriptionDetails get aiGrantSubscriptionDetails => $_getN(6);
+  AIGrantSubscriptionDetails get aiGrantSubscriptionDetails => $_getN(8);
   @$pb.TagNumber(11)
   set aiGrantSubscriptionDetails(AIGrantSubscriptionDetails v) { setField(11, v); }
   @$pb.TagNumber(11)
-  $core.bool hasAiGrantSubscriptionDetails() => $_has(6);
+  $core.bool hasAiGrantSubscriptionDetails() => $_has(8);
   @$pb.TagNumber(11)
   void clearAiGrantSubscriptionDetails() => clearField(11);
   @$pb.TagNumber(11)
-  AIGrantSubscriptionDetails ensureAiGrantSubscriptionDetails() => $_ensure(6);
+  AIGrantSubscriptionDetails ensureAiGrantSubscriptionDetails() => $_ensure(8);
 
   @$pb.TagNumber(12)
-  RellmHostingSubscriptionDetails get rellmHostingSubscriptionDetails => $_getN(7);
+  RellmHostingSubscriptionDetails get rellmHostingSubscriptionDetails => $_getN(9);
   @$pb.TagNumber(12)
   set rellmHostingSubscriptionDetails(RellmHostingSubscriptionDetails v) { setField(12, v); }
   @$pb.TagNumber(12)
-  $core.bool hasRellmHostingSubscriptionDetails() => $_has(7);
+  $core.bool hasRellmHostingSubscriptionDetails() => $_has(9);
   @$pb.TagNumber(12)
   void clearRellmHostingSubscriptionDetails() => clearField(12);
   @$pb.TagNumber(12)
-  RellmHostingSubscriptionDetails ensureRellmHostingSubscriptionDetails() => $_ensure(7);
+  RellmHostingSubscriptionDetails ensureRellmHostingSubscriptionDetails() => $_ensure(9);
 
   @$pb.TagNumber(13)
-  PermissionsAccessSubscriptionDetails get permissionsAccessSubscriptionDetails => $_getN(8);
+  PermissionsAccessSubscriptionDetails get permissionsAccessSubscriptionDetails => $_getN(10);
   @$pb.TagNumber(13)
   set permissionsAccessSubscriptionDetails(PermissionsAccessSubscriptionDetails v) { setField(13, v); }
   @$pb.TagNumber(13)
-  $core.bool hasPermissionsAccessSubscriptionDetails() => $_has(8);
+  $core.bool hasPermissionsAccessSubscriptionDetails() => $_has(10);
   @$pb.TagNumber(13)
   void clearPermissionsAccessSubscriptionDetails() => clearField(13);
   @$pb.TagNumber(13)
-  PermissionsAccessSubscriptionDetails ensurePermissionsAccessSubscriptionDetails() => $_ensure(8);
+  PermissionsAccessSubscriptionDetails ensurePermissionsAccessSubscriptionDetails() => $_ensure(10);
 
   @$pb.TagNumber(20)
-  $13.Timestamp get createdAt => $_getN(9);
+  $13.Timestamp get createdAt => $_getN(11);
   @$pb.TagNumber(20)
   set createdAt($13.Timestamp v) { setField(20, v); }
   @$pb.TagNumber(20)
-  $core.bool hasCreatedAt() => $_has(9);
+  $core.bool hasCreatedAt() => $_has(11);
   @$pb.TagNumber(20)
   void clearCreatedAt() => clearField(20);
   @$pb.TagNumber(20)
-  $13.Timestamp ensureCreatedAt() => $_ensure(9);
+  $13.Timestamp ensureCreatedAt() => $_ensure(11);
 
   /// If set, the MarketProduct is not purchasable. Note: clients toggle listings by setting this,
   /// but the server will always set it to the time of the request, not the time sent *by* the request.
   @$pb.TagNumber(21)
-  $13.Timestamp get delistedAt => $_getN(10);
+  $13.Timestamp get delistedAt => $_getN(12);
   @$pb.TagNumber(21)
   set delistedAt($13.Timestamp v) { setField(21, v); }
   @$pb.TagNumber(21)
-  $core.bool hasDelistedAt() => $_has(10);
+  $core.bool hasDelistedAt() => $_has(12);
   @$pb.TagNumber(21)
   void clearDelistedAt() => clearField(21);
   @$pb.TagNumber(21)
-  $13.Timestamp ensureDelistedAt() => $_ensure(10);
+  $13.Timestamp ensureDelistedAt() => $_ensure(12);
 }
 
 /// Request to get products available for purchase on a Rellm server.
@@ -328,15 +359,27 @@ class GetMarketProductsResponse extends $pb.GeneratedMessage {
   $core.List<MarketProduct> get marketProducts => $_getList(0);
 }
 
-/// Request to get the current user's own MarketSubscriptions (with billing_history). Self-scoped --
-/// there's no way to fetch another user's MarketSubscriptions, even as an admin, for now.
+/// Request to get MarketSubscriptions -- self-scoped to the current user's own
+/// (`GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE`, the default -- there's no way to fetch another
+/// user's own subscriptions this way, even as an admin), or -- for an admin only --
+/// `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN`, every `PURCHASE_TYPE_RELLM_HOSTING`
+/// subscription across every buyer, for the `/market/fulfillment` admin page.
 class GetMarketSubscriptionsRequest extends $pb.GeneratedMessage {
-  factory GetMarketSubscriptionsRequest() => create();
+  factory GetMarketSubscriptionsRequest({
+    GetMarketSubscriptionsRequestType? requestType,
+  }) {
+    final $result = create();
+    if (requestType != null) {
+      $result.requestType = requestType;
+    }
+    return $result;
+  }
   GetMarketSubscriptionsRequest._() : super();
   factory GetMarketSubscriptionsRequest.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromBuffer(i, r);
   factory GetMarketSubscriptionsRequest.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
 
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'GetMarketSubscriptionsRequest', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
+    ..e<GetMarketSubscriptionsRequestType>(1, _omitFieldNames ? '' : 'requestType', $pb.PbFieldType.OE, defaultOrMaker: GetMarketSubscriptionsRequestType.GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE, valueOf: GetMarketSubscriptionsRequestType.valueOf, enumValues: GetMarketSubscriptionsRequestType.values)
     ..hasRequiredFields = false
   ;
 
@@ -360,6 +403,15 @@ class GetMarketSubscriptionsRequest extends $pb.GeneratedMessage {
   @$core.pragma('dart2js:noInline')
   static GetMarketSubscriptionsRequest getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<GetMarketSubscriptionsRequest>(create);
   static GetMarketSubscriptionsRequest? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  GetMarketSubscriptionsRequestType get requestType => $_getN(0);
+  @$pb.TagNumber(1)
+  set requestType(GetMarketSubscriptionsRequestType v) { setField(1, v); }
+  @$pb.TagNumber(1)
+  $core.bool hasRequestType() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearRequestType() => clearField(1);
 }
 
 class GetMarketSubscriptionsResponse extends $pb.GeneratedMessage {
@@ -1471,7 +1523,8 @@ class MarketSubscription extends $pb.GeneratedMessage {
     PermissionsAccessSubscriptionDetails? permissionsAccessSubscriptionDetails,
     $13.Timestamp? createdAt,
     $13.Timestamp? renewsAt,
-    $13.Timestamp? endedAt,
+    $13.Timestamp? canceledAt,
+    $13.Timestamp? serviceTerminatedAt,
   }) {
     final $result = create();
     if (id != null) {
@@ -1516,8 +1569,11 @@ class MarketSubscription extends $pb.GeneratedMessage {
     if (renewsAt != null) {
       $result.renewsAt = renewsAt;
     }
-    if (endedAt != null) {
-      $result.endedAt = endedAt;
+    if (canceledAt != null) {
+      $result.canceledAt = canceledAt;
+    }
+    if (serviceTerminatedAt != null) {
+      $result.serviceTerminatedAt = serviceTerminatedAt;
     }
     return $result;
   }
@@ -1548,7 +1604,8 @@ class MarketSubscription extends $pb.GeneratedMessage {
     ..aOM<PermissionsAccessSubscriptionDetails>(13, _omitFieldNames ? '' : 'permissionsAccessSubscriptionDetails', subBuilder: PermissionsAccessSubscriptionDetails.create)
     ..aOM<$13.Timestamp>(20, _omitFieldNames ? '' : 'createdAt', subBuilder: $13.Timestamp.create)
     ..aOM<$13.Timestamp>(21, _omitFieldNames ? '' : 'renewsAt', subBuilder: $13.Timestamp.create)
-    ..aOM<$13.Timestamp>(22, _omitFieldNames ? '' : 'endedAt', subBuilder: $13.Timestamp.create)
+    ..aOM<$13.Timestamp>(22, _omitFieldNames ? '' : 'canceledAt', subBuilder: $13.Timestamp.create)
+    ..aOM<$13.Timestamp>(23, _omitFieldNames ? '' : 'serviceTerminatedAt', subBuilder: $13.Timestamp.create)
     ..hasRequiredFields = false
   ;
 
@@ -1713,17 +1770,33 @@ class MarketSubscription extends $pb.GeneratedMessage {
   @$pb.TagNumber(21)
   $13.Timestamp ensureRenewsAt() => $_ensure(13);
 
-  /// If set, the MarketSubscription is unavailable
+  /// Set once the subscription will no longer renew -- either the buyer/admin explicitly canceled it
+  /// (CancelMarketSubscription) or a renewal charge failed. The subscription's entitlement (media
+  /// storage quota, granted permissions, etc.) stays active until whichever is later of
+  /// renews_at/canceled_at, at which point renew_market_subscriptions.rs revokes it and sets
+  /// service_terminated_at.
   @$pb.TagNumber(22)
-  $13.Timestamp get endedAt => $_getN(14);
+  $13.Timestamp get canceledAt => $_getN(14);
   @$pb.TagNumber(22)
-  set endedAt($13.Timestamp v) { setField(22, v); }
+  set canceledAt($13.Timestamp v) { setField(22, v); }
   @$pb.TagNumber(22)
-  $core.bool hasEndedAt() => $_has(14);
+  $core.bool hasCanceledAt() => $_has(14);
   @$pb.TagNumber(22)
-  void clearEndedAt() => clearField(22);
+  void clearCanceledAt() => clearField(22);
   @$pb.TagNumber(22)
-  $13.Timestamp ensureEndedAt() => $_ensure(14);
+  $13.Timestamp ensureCanceledAt() => $_ensure(14);
+
+  /// The time permissions were removed, media storage quotas reset, etc.
+  @$pb.TagNumber(23)
+  $13.Timestamp get serviceTerminatedAt => $_getN(15);
+  @$pb.TagNumber(23)
+  set serviceTerminatedAt($13.Timestamp v) { setField(23, v); }
+  @$pb.TagNumber(23)
+  $core.bool hasServiceTerminatedAt() => $_has(15);
+  @$pb.TagNumber(23)
+  void clearServiceTerminatedAt() => clearField(23);
+  @$pb.TagNumber(23)
+  $13.Timestamp ensureServiceTerminatedAt() => $_ensure(15);
 }
 
 class MediaStorageSubscriptionDetails extends $pb.GeneratedMessage {
@@ -1855,6 +1928,8 @@ class RellmHostingSubscriptionDetails extends $pb.GeneratedMessage {
     $core.String? domain,
     $core.String? contactEmail,
     $core.String? additionalInformation,
+    $core.bool? fulfilled,
+    $core.Iterable<FulfillmentNote>? fulfillmentNotes,
   }) {
     final $result = create();
     if (dbSizeBytes != null) {
@@ -1872,6 +1947,12 @@ class RellmHostingSubscriptionDetails extends $pb.GeneratedMessage {
     if (additionalInformation != null) {
       $result.additionalInformation = additionalInformation;
     }
+    if (fulfilled != null) {
+      $result.fulfilled = fulfilled;
+    }
+    if (fulfillmentNotes != null) {
+      $result.fulfillmentNotes.addAll(fulfillmentNotes);
+    }
     return $result;
   }
   RellmHostingSubscriptionDetails._() : super();
@@ -1884,6 +1965,8 @@ class RellmHostingSubscriptionDetails extends $pb.GeneratedMessage {
     ..aOS(3, _omitFieldNames ? '' : 'domain')
     ..aOS(4, _omitFieldNames ? '' : 'contactEmail')
     ..aOS(5, _omitFieldNames ? '' : 'additionalInformation')
+    ..aOB(6, _omitFieldNames ? '' : 'fulfilled')
+    ..pc<FulfillmentNote>(7, _omitFieldNames ? '' : 'fulfillmentNotes', $pb.PbFieldType.PM, subBuilder: FulfillmentNote.create)
     ..hasRequiredFields = false
   ;
 
@@ -1944,6 +2027,9 @@ class RellmHostingSubscriptionDetails extends $pb.GeneratedMessage {
   @$pb.TagNumber(4)
   void clearContactEmail() => clearField(4);
 
+  /// Immutable after purchase -- the buyer's own notes to the admin fulfilling this order. Never
+  /// editable via UpdateMarketSubscription (see that RPC's own doc); `fulfillment_notes` below is
+  /// the admin/buyer conversation about fulfilling it.
   @$pb.TagNumber(5)
   $core.String get additionalInformation => $_getSZ(4);
   @$pb.TagNumber(5)
@@ -1952,6 +2038,108 @@ class RellmHostingSubscriptionDetails extends $pb.GeneratedMessage {
   $core.bool hasAdditionalInformation() => $_has(4);
   @$pb.TagNumber(5)
   void clearAdditionalInformation() => clearField(5);
+
+  /// Whether an admin has actually stood up this Rellm hosting order -- Rellm hosting is
+  /// deliberately not automated (see `market.proto`'s own top-of-file notes and
+  /// `logic::market_fulfillment::fulfill_purchase`'s `RellmHosting` no-op arm), so this is the one
+  /// manual "is this order done" signal, shown/toggled on `/market/fulfillment`
+  /// (`GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN`).
+  @$pb.TagNumber(6)
+  $core.bool get fulfilled => $_getBF(5);
+  @$pb.TagNumber(6)
+  set fulfilled($core.bool v) { $_setBool(5, v); }
+  @$pb.TagNumber(6)
+  $core.bool hasFulfilled() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearFulfilled() => clearField(6);
+
+  /// The admin/buyer conversation about fulfilling this order -- oldest to newest, append-only (see
+  /// `UpdateMarketSubscription`'s own doc: a new entry can only ever be appended after whatever's
+  /// already here, never inserted/reordered/removed, and its `user_id` must match whoever's actually
+  /// making the request -- the server stamps `created_at` itself).
+  @$pb.TagNumber(7)
+  $core.List<FulfillmentNote> get fulfillmentNotes => $_getList(6);
+}
+
+/// One entry in a MarketSubscription's `fulfillment_notes` -- see that field's own doc.
+class FulfillmentNote extends $pb.GeneratedMessage {
+  factory FulfillmentNote({
+    $core.String? userId,
+    $core.String? note,
+    $13.Timestamp? createdAt,
+  }) {
+    final $result = create();
+    if (userId != null) {
+      $result.userId = userId;
+    }
+    if (note != null) {
+      $result.note = note;
+    }
+    if (createdAt != null) {
+      $result.createdAt = createdAt;
+    }
+    return $result;
+  }
+  FulfillmentNote._() : super();
+  factory FulfillmentNote.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromBuffer(i, r);
+  factory FulfillmentNote.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'FulfillmentNote', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'userId')
+    ..aOS(2, _omitFieldNames ? '' : 'note')
+    ..aOM<$13.Timestamp>(3, _omitFieldNames ? '' : 'createdAt', subBuilder: $13.Timestamp.create)
+    ..hasRequiredFields = false
+  ;
+
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.deepCopy] instead. '
+  'Will be removed in next major version')
+  FulfillmentNote clone() => FulfillmentNote()..mergeFromMessage(this);
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.rebuild] instead. '
+  'Will be removed in next major version')
+  FulfillmentNote copyWith(void Function(FulfillmentNote) updates) => super.copyWith((message) => updates(message as FulfillmentNote)) as FulfillmentNote;
+
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static FulfillmentNote create() => FulfillmentNote._();
+  FulfillmentNote createEmptyInstance() => create();
+  static $pb.PbList<FulfillmentNote> createRepeated() => $pb.PbList<FulfillmentNote>();
+  @$core.pragma('dart2js:noInline')
+  static FulfillmentNote getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<FulfillmentNote>(create);
+  static FulfillmentNote? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get userId => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set userId($core.String v) { $_setString(0, v); }
+  @$pb.TagNumber(1)
+  $core.bool hasUserId() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearUserId() => clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.String get note => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set note($core.String v) { $_setString(1, v); }
+  @$pb.TagNumber(2)
+  $core.bool hasNote() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearNote() => clearField(2);
+
+  @$pb.TagNumber(3)
+  $13.Timestamp get createdAt => $_getN(2);
+  @$pb.TagNumber(3)
+  set createdAt($13.Timestamp v) { setField(3, v); }
+  @$pb.TagNumber(3)
+  $core.bool hasCreatedAt() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearCreatedAt() => clearField(3);
+  @$pb.TagNumber(3)
+  $13.Timestamp ensureCreatedAt() => $_ensure(2);
 }
 
 class PermissionsAccessSubscriptionDetails extends $pb.GeneratedMessage {
