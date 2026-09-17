@@ -45,6 +45,37 @@ final $typed_data.Uint8List purchasePeriodDescriptor = $convert.base64Decode(
     'Cg5QdXJjaGFzZVBlcmlvZBIeChpQVVJDSEFTRV9QRVJJT0RfSU5ERUZJTklURRAAEhoKFlBVUk'
     'NIQVNFX1BFUklPRF9BTk5VQUwQARIbChdQVVJDSEFTRV9QRVJJT0RfTU9OVEhMWRAC');
 
+@$core.Deprecated('Use fulfillmentStatusDescriptor instead')
+const FulfillmentStatus$json = {
+  '1': 'FulfillmentStatus',
+  '2': [
+    {'1': 'FULFILLMENT_STATUS_AWAITING_HOST_ADMIN', '2': 0},
+    {'1': 'FULFILLMENT_STATUS_FULFILLED', '2': 1},
+    {'1': 'FULFILLMENT_STATUS_IN_PROGRESS', '2': 2},
+  ],
+};
+
+/// Descriptor for `FulfillmentStatus`. Decode as a `google.protobuf.EnumDescriptorProto`.
+final $typed_data.Uint8List fulfillmentStatusDescriptor = $convert.base64Decode(
+    'ChFGdWxmaWxsbWVudFN0YXR1cxIqCiZGVUxGSUxMTUVOVF9TVEFUVVNfQVdBSVRJTkdfSE9TVF'
+    '9BRE1JThAAEiAKHEZVTEZJTExNRU5UX1NUQVRVU19GVUxGSUxMRUQQARIiCh5GVUxGSUxMTUVO'
+    'VF9TVEFUVVNfSU5fUFJPR1JFU1MQAg==');
+
+@$core.Deprecated('Use getMarketSubscriptionsRequestTypeDescriptor instead')
+const GetMarketSubscriptionsRequestType$json = {
+  '1': 'GetMarketSubscriptionsRequestType',
+  '2': [
+    {'1': 'GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE', '2': 0},
+    {'1': 'GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN', '2': 1},
+  ],
+};
+
+/// Descriptor for `GetMarketSubscriptionsRequestType`. Decode as a `google.protobuf.EnumDescriptorProto`.
+final $typed_data.Uint8List getMarketSubscriptionsRequestTypeDescriptor = $convert.base64Decode(
+    'CiFHZXRNYXJrZXRTdWJzY3JpcHRpb25zUmVxdWVzdFR5cGUSMQotR0VUX01BUktFVF9TVUJTQ1'
+    'JJUFRJT05TX1JFUVVFU1RfRk9SX1BVUkNIQVNFEAASOgo2R0VUX01BUktFVF9TVUJTQ1JJUFRJ'
+    'T05TX1JFUVVFU1RfRk9SX0ZVTEZJTExNRU5UX0FETUlOEAE=');
+
 @$core.Deprecated('Use marketProductDescriptor instead')
 const MarketProduct$json = {
   '1': 'MarketProduct',
@@ -54,6 +85,8 @@ const MarketProduct$json = {
     {'1': 'period', '3': 3, '4': 1, '5': 14, '6': '.rellm.PurchasePeriod', '10': 'period'},
     {'1': 'amount', '3': 4, '4': 1, '5': 13, '10': 'amount'},
     {'1': 'currency', '3': 5, '4': 1, '5': 13, '10': 'currency'},
+    {'1': 'available_count', '3': 6, '4': 1, '5': 13, '10': 'availableCount'},
+    {'1': 'sold_count', '3': 7, '4': 1, '5': 13, '10': 'soldCount'},
     {'1': 'media_storage_subscription_details', '3': 10, '4': 1, '5': 11, '6': '.rellm.MediaStorageSubscriptionDetails', '9': 0, '10': 'mediaStorageSubscriptionDetails'},
     {'1': 'ai_grant_subscription_details', '3': 11, '4': 1, '5': 11, '6': '.rellm.AIGrantSubscriptionDetails', '9': 0, '10': 'aiGrantSubscriptionDetails'},
     {'1': 'rellm_hosting_subscription_details', '3': 12, '4': 1, '5': 11, '6': '.rellm.RellmHostingSubscriptionDetails', '9': 0, '10': 'rellmHostingSubscriptionDetails'},
@@ -72,18 +105,19 @@ final $typed_data.Uint8List marketProductDescriptor = $convert.base64Decode(
     'Cg1NYXJrZXRQcm9kdWN0Eg4KAmlkGAEgASgJUgJpZBInCgR0eXBlGAIgASgOMhMucmVsbG0uUH'
     'VyY2hhc2VUeXBlUgR0eXBlEi0KBnBlcmlvZBgDIAEoDjIVLnJlbGxtLlB1cmNoYXNlUGVyaW9k'
     'UgZwZXJpb2QSFgoGYW1vdW50GAQgASgNUgZhbW91bnQSGgoIY3VycmVuY3kYBSABKA1SCGN1cn'
-    'JlbmN5EnUKIm1lZGlhX3N0b3JhZ2Vfc3Vic2NyaXB0aW9uX2RldGFpbHMYCiABKAsyJi5yZWxs'
-    'bS5NZWRpYVN0b3JhZ2VTdWJzY3JpcHRpb25EZXRhaWxzSABSH21lZGlhU3RvcmFnZVN1YnNjcm'
-    'lwdGlvbkRldGFpbHMSZgodYWlfZ3JhbnRfc3Vic2NyaXB0aW9uX2RldGFpbHMYCyABKAsyIS5y'
-    'ZWxsbS5BSUdyYW50U3Vic2NyaXB0aW9uRGV0YWlsc0gAUhphaUdyYW50U3Vic2NyaXB0aW9uRG'
-    'V0YWlscxJ1CiJyZWxsbV9ob3N0aW5nX3N1YnNjcmlwdGlvbl9kZXRhaWxzGAwgASgLMiYucmVs'
-    'bG0uUmVsbG1Ib3N0aW5nU3Vic2NyaXB0aW9uRGV0YWlsc0gAUh9yZWxsbUhvc3RpbmdTdWJzY3'
-    'JpcHRpb25EZXRhaWxzEoQBCidwZXJtaXNzaW9uc19hY2Nlc3Nfc3Vic2NyaXB0aW9uX2RldGFp'
-    'bHMYDSABKAsyKy5yZWxsbS5QZXJtaXNzaW9uc0FjY2Vzc1N1YnNjcmlwdGlvbkRldGFpbHNIAF'
-    'IkcGVybWlzc2lvbnNBY2Nlc3NTdWJzY3JpcHRpb25EZXRhaWxzEjkKCmNyZWF0ZWRfYXQYFCAB'
-    'KAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wUgljcmVhdGVkQXQSQAoLZGVsaXN0ZWRfYX'
-    'QYFSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wSAFSCmRlbGlzdGVkQXSIAQFCCQoH'
-    'ZGV0YWlsc0IOCgxfZGVsaXN0ZWRfYXQ=');
+    'JlbmN5EicKD2F2YWlsYWJsZV9jb3VudBgGIAEoDVIOYXZhaWxhYmxlQ291bnQSHQoKc29sZF9j'
+    'b3VudBgHIAEoDVIJc29sZENvdW50EnUKIm1lZGlhX3N0b3JhZ2Vfc3Vic2NyaXB0aW9uX2RldG'
+    'FpbHMYCiABKAsyJi5yZWxsbS5NZWRpYVN0b3JhZ2VTdWJzY3JpcHRpb25EZXRhaWxzSABSH21l'
+    'ZGlhU3RvcmFnZVN1YnNjcmlwdGlvbkRldGFpbHMSZgodYWlfZ3JhbnRfc3Vic2NyaXB0aW9uX2'
+    'RldGFpbHMYCyABKAsyIS5yZWxsbS5BSUdyYW50U3Vic2NyaXB0aW9uRGV0YWlsc0gAUhphaUdy'
+    'YW50U3Vic2NyaXB0aW9uRGV0YWlscxJ1CiJyZWxsbV9ob3N0aW5nX3N1YnNjcmlwdGlvbl9kZX'
+    'RhaWxzGAwgASgLMiYucmVsbG0uUmVsbG1Ib3N0aW5nU3Vic2NyaXB0aW9uRGV0YWlsc0gAUh9y'
+    'ZWxsbUhvc3RpbmdTdWJzY3JpcHRpb25EZXRhaWxzEoQBCidwZXJtaXNzaW9uc19hY2Nlc3Nfc3'
+    'Vic2NyaXB0aW9uX2RldGFpbHMYDSABKAsyKy5yZWxsbS5QZXJtaXNzaW9uc0FjY2Vzc1N1YnNj'
+    'cmlwdGlvbkRldGFpbHNIAFIkcGVybWlzc2lvbnNBY2Nlc3NTdWJzY3JpcHRpb25EZXRhaWxzEj'
+    'kKCmNyZWF0ZWRfYXQYFCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wUgljcmVhdGVk'
+    'QXQSQAoLZGVsaXN0ZWRfYXQYFSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wSAFSCm'
+    'RlbGlzdGVkQXSIAQFCCQoHZGV0YWlsc0IOCgxfZGVsaXN0ZWRfYXQ=');
 
 @$core.Deprecated('Use getMarketProductsRequestDescriptor instead')
 const GetMarketProductsRequest$json = {
@@ -110,11 +144,15 @@ final $typed_data.Uint8List getMarketProductsResponseDescriptor = $convert.base6
 @$core.Deprecated('Use getMarketSubscriptionsRequestDescriptor instead')
 const GetMarketSubscriptionsRequest$json = {
   '1': 'GetMarketSubscriptionsRequest',
+  '2': [
+    {'1': 'request_type', '3': 1, '4': 1, '5': 14, '6': '.rellm.GetMarketSubscriptionsRequestType', '10': 'requestType'},
+  ],
 };
 
 /// Descriptor for `GetMarketSubscriptionsRequest`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List getMarketSubscriptionsRequestDescriptor = $convert.base64Decode(
-    'Ch1HZXRNYXJrZXRTdWJzY3JpcHRpb25zUmVxdWVzdA==');
+    'Ch1HZXRNYXJrZXRTdWJzY3JpcHRpb25zUmVxdWVzdBJLCgxyZXF1ZXN0X3R5cGUYASABKA4yKC'
+    '5yZWxsbS5HZXRNYXJrZXRTdWJzY3JpcHRpb25zUmVxdWVzdFR5cGVSC3JlcXVlc3RUeXBl');
 
 @$core.Deprecated('Use getMarketSubscriptionsResponseDescriptor instead')
 const GetMarketSubscriptionsResponse$json = {
@@ -364,12 +402,14 @@ const MarketSubscription$json = {
     {'1': 'permissions_access_subscription_details', '3': 13, '4': 1, '5': 11, '6': '.rellm.PermissionsAccessSubscriptionDetails', '9': 0, '10': 'permissionsAccessSubscriptionDetails'},
     {'1': 'created_at', '3': 20, '4': 1, '5': 11, '6': '.google.protobuf.Timestamp', '10': 'createdAt'},
     {'1': 'renews_at', '3': 21, '4': 1, '5': 11, '6': '.google.protobuf.Timestamp', '9': 1, '10': 'renewsAt', '17': true},
-    {'1': 'ended_at', '3': 22, '4': 1, '5': 11, '6': '.google.protobuf.Timestamp', '9': 2, '10': 'endedAt', '17': true},
+    {'1': 'canceled_at', '3': 22, '4': 1, '5': 11, '6': '.google.protobuf.Timestamp', '9': 2, '10': 'canceledAt', '17': true},
+    {'1': 'service_terminated_at', '3': 23, '4': 1, '5': 11, '6': '.google.protobuf.Timestamp', '9': 3, '10': 'serviceTerminatedAt', '17': true},
   ],
   '8': [
     {'1': 'details'},
     {'1': '_renews_at'},
-    {'1': '_ended_at'},
+    {'1': '_canceled_at'},
+    {'1': '_service_terminated_at'},
   ],
 };
 
@@ -391,9 +431,11 @@ final $typed_data.Uint8List marketSubscriptionDescriptor = $convert.base64Decode
     'lscxgNIAEoCzIrLnJlbGxtLlBlcm1pc3Npb25zQWNjZXNzU3Vic2NyaXB0aW9uRGV0YWlsc0gA'
     'UiRwZXJtaXNzaW9uc0FjY2Vzc1N1YnNjcmlwdGlvbkRldGFpbHMSOQoKY3JlYXRlZF9hdBgUIA'
     'EoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBSCWNyZWF0ZWRBdBI8CglyZW5ld3NfYXQY'
-    'FSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wSAFSCHJlbmV3c0F0iAEBEjoKCGVuZG'
-    'VkX2F0GBYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcEgCUgdlbmRlZEF0iAEBQgkK'
-    'B2RldGFpbHNCDAoKX3JlbmV3c19hdEILCglfZW5kZWRfYXQ=');
+    'FSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wSAFSCHJlbmV3c0F0iAEBEkAKC2Nhbm'
+    'NlbGVkX2F0GBYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcEgCUgpjYW5jZWxlZEF0'
+    'iAEBElMKFXNlcnZpY2VfdGVybWluYXRlZF9hdBgXIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW'
+    '1lc3RhbXBIA1ITc2VydmljZVRlcm1pbmF0ZWRBdIgBAUIJCgdkZXRhaWxzQgwKCl9yZW5ld3Nf'
+    'YXRCDgoMX2NhbmNlbGVkX2F0QhgKFl9zZXJ2aWNlX3Rlcm1pbmF0ZWRfYXQ=');
 
 @$core.Deprecated('Use mediaStorageSubscriptionDetailsDescriptor instead')
 const MediaStorageSubscriptionDetails$json = {
@@ -433,6 +475,8 @@ const RellmHostingSubscriptionDetails$json = {
     {'1': 'domain', '3': 3, '4': 1, '5': 9, '10': 'domain'},
     {'1': 'contact_email', '3': 4, '4': 1, '5': 9, '10': 'contactEmail'},
     {'1': 'additional_information', '3': 5, '4': 1, '5': 9, '10': 'additionalInformation'},
+    {'1': 'fulfillment_status', '3': 6, '4': 1, '5': 14, '6': '.rellm.FulfillmentStatus', '10': 'fulfillmentStatus'},
+    {'1': 'fulfillment_notes', '3': 7, '4': 3, '5': 11, '6': '.rellm.FulfillmentNote', '10': 'fulfillmentNotes'},
   ],
 };
 
@@ -442,7 +486,27 @@ final $typed_data.Uint8List rellmHostingSubscriptionDetailsDescriptor = $convert
     'RSC2RiU2l6ZUJ5dGVzEigKEG1pbmlvX3NpemVfYnl0ZXMYAiABKARSDm1pbmlvU2l6ZUJ5dGVz'
     'EhYKBmRvbWFpbhgDIAEoCVIGZG9tYWluEiMKDWNvbnRhY3RfZW1haWwYBCABKAlSDGNvbnRhY3'
     'RFbWFpbBI1ChZhZGRpdGlvbmFsX2luZm9ybWF0aW9uGAUgASgJUhVhZGRpdGlvbmFsSW5mb3Jt'
-    'YXRpb24=');
+    'YXRpb24SRwoSZnVsZmlsbG1lbnRfc3RhdHVzGAYgASgOMhgucmVsbG0uRnVsZmlsbG1lbnRTdG'
+    'F0dXNSEWZ1bGZpbGxtZW50U3RhdHVzEkMKEWZ1bGZpbGxtZW50X25vdGVzGAcgAygLMhYucmVs'
+    'bG0uRnVsZmlsbG1lbnROb3RlUhBmdWxmaWxsbWVudE5vdGVz');
+
+@$core.Deprecated('Use fulfillmentNoteDescriptor instead')
+const FulfillmentNote$json = {
+  '1': 'FulfillmentNote',
+  '2': [
+    {'1': 'user_id', '3': 1, '4': 1, '5': 9, '10': 'userId'},
+    {'1': 'note', '3': 2, '4': 1, '5': 9, '10': 'note'},
+    {'1': 'fulfillment_status', '3': 3, '4': 1, '5': 14, '6': '.rellm.FulfillmentStatus', '10': 'fulfillmentStatus'},
+    {'1': 'created_at', '3': 4, '4': 1, '5': 11, '6': '.google.protobuf.Timestamp', '10': 'createdAt'},
+  ],
+};
+
+/// Descriptor for `FulfillmentNote`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List fulfillmentNoteDescriptor = $convert.base64Decode(
+    'Cg9GdWxmaWxsbWVudE5vdGUSFwoHdXNlcl9pZBgBIAEoCVIGdXNlcklkEhIKBG5vdGUYAiABKA'
+    'lSBG5vdGUSRwoSZnVsZmlsbG1lbnRfc3RhdHVzGAMgASgOMhgucmVsbG0uRnVsZmlsbG1lbnRT'
+    'dGF0dXNSEWZ1bGZpbGxtZW50U3RhdHVzEjkKCmNyZWF0ZWRfYXQYBCABKAsyGi5nb29nbGUucH'
+    'JvdG9idWYuVGltZXN0YW1wUgljcmVhdGVkQXQ=');
 
 @$core.Deprecated('Use permissionsAccessSubscriptionDetailsDescriptor instead')
 const PermissionsAccessSubscriptionDetails$json = {

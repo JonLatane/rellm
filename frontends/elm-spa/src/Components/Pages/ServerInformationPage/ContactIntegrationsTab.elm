@@ -1,12 +1,14 @@
-module Components.Pages.ServerInformationPage.IntegrationsTab exposing (Model, Msg, activated, init, update, view)
+module Components.Pages.ServerInformationPage.ContactIntegrationsTab exposing (Model, Msg, activated, init, update, view)
 
-{-| The Integrations tab of `Components.Pages.ServerInformationPage` -- Twilio (`TwilioConfig`),
-Bird (`BirdConfig`, see that message's own doc in `server_configuration.proto` -- a cheaper Twilio
-alternative for SMS verification), and Stripe (`StripeConfig`, Rellm's Market payment provider --
-see `market.proto`), each editable by an admin as its own unit (a single Edit/Save/Cancel per
-provider, mirroring `CdnTab`'s Edit/Save/Cancel shape), plus a "Preferred Verification Providers"
-selector choosing which of Twilio/Bird is tried first when both are enabled
-(`preferredVerificationApis`) -- Stripe has no such selector, since it's the only payment provider.
+{-| The Contact Integrations tab of `Components.Pages.ServerInformationPage` -- Twilio
+(`TwilioConfig`) and Bird (`BirdConfig`, see that message's own doc in
+`server_configuration.proto` -- a cheaper Twilio alternative for SMS verification), each editable
+by an admin as its own unit (a single Edit/Save/Cancel per provider, mirroring `CdnTab`'s
+Edit/Save/Cancel shape), plus a "Preferred Verification Providers" selector choosing which of
+Twilio/Bird is tried first when both are enabled (`preferredVerificationApis`). Split out of a
+single "Integrations" tab (see `Components.Pages.ServerInformationPage.MarketTab` for the other
+half, Stripe/Market) once that combined tab grew unwieldy -- these two provider groups have nothing
+to do with each other beyond both once having lived in the same file.
 
 Unlike `CdnTab`, though, this tab **can't** just read `RellmServers.configurationOf server` for its
 display -- `twilioConfig`/`birdConfig`/`preferredVerificationApis` are all admin-only-serialized
@@ -14,14 +16,16 @@ display -- `twilioConfig`/`birdConfig`/`preferredVerificationApis` are all admin
 `RellmServers.configurationOf` reflects (the same one used for the initial "can we connect at all"
 check and every reconnect). So, exactly like `ClusterTab` (`cluster_resources` is admin-only the
 same way), this tab fires its own authenticated `GetServerConfiguration`
-(`fetchAuthenticatedServerConfiguration`/`AdminIntegrationsStatus`) once an admin account is
+(`fetchAuthenticatedServerConfiguration`/`AdminContactIntegrationsStatus`) once an admin account is
 present, and displays *that* instead, via the exposed `activated` message --
 `Components.Pages.ServerInformationPage` dispatches it from every point its own connectivity state
 could plausibly have changed (`TabSelected`, `GotOwnServerResult`'s success branch, `init`'s
-already-known-connected branch, and every `SharedMsg`), via `activateIntegrationsTab`, since firing
-it before the account's server connection has actually finished settling races ahead of it and
-fails with a `Grpc.NetworkError` -- see `ClusterTab`'s own doc for the full "why so many call
-sites" explanation, which applies here verbatim.
+already-known-connected branch, and every `SharedMsg`), via `activateContactIntegrationsTab`, since
+firing it before the account's server connection has actually finished settling races ahead of it
+and fails with a `Grpc.NetworkError` -- see `ClusterTab`'s own doc for the full "why so many call
+sites" explanation, which applies here verbatim. `Components.Pages.ServerInformationPage.MarketTab`
+does the exact same thing independently, with its own separate fetch -- the two tabs don't share
+this fetched `ServerConfiguration`, same as any other pair of admin tabs in this app.
 
 Unlike `CdnTab`'s "External CDN HTTP Support" toggle (which nulls `externalCdnConfig` out entirely
 when off), each provider's "Enabled" toggle here only ever flips its own `*Enabled` field -- the
@@ -33,30 +37,62 @@ the secret field blank with no special-casing, and each input's placeholder make
 leaving it blank on Save keeps whatever's already stored.
 
 The non-secret fields (`twilioAccountSid`/`twilioApiKeySid`/`twilioFromNumber`/`birdFrom`/
-`birdRegion`) aren't secret
-among admins (just not shown to non-admins, since `twilioConfig`/`bird_config` are themselves
-admin-only-serialized -- see `ServerInformationPage`'s tab bar gating), so they're shown in plain
-text even in the read-only display view, same as CDN's `frontendHost`/`backendHost`.
+`birdRegion`) aren't secret among admins (just not shown to non-admins, since `twilioConfig`/
+`bird_config` are themselves admin-only-serialized -- see `ServerInformationPage`'s tab bar
+gating), so they're shown in plain text even in the read-only display view, same as CDN's
+`frontendHost`/`backendHost`.
 
 The Preferred Providers selector mirrors `SettingsTab`'s Permissions editor (removable badges + an
 Add `<select>` + Save/Cancel) -- with only two possible values, "reordering" just means
 remove-then-re-add at the end, same as that editor offers no drag-and-drop either.
+
+Also hosts the Web Push VAPID public/private key editor (`WebPushConfig`) -- moved here from
+`FederationTab` purely for topical consistency (it's another "contact/notification-delivery
+credential" alongside Twilio/Bird, not because it shares their admin-only-stripped visibility).
+Unlike Twilio/Bird/Preferred Providers, `webPushConfig` is NOT stripped from the unauthenticated
+`GetServerConfiguration` probe (only `privateVapidKey` itself is always blanked, mirroring
+`FacebookAuthConfig.appSecret`) -- so its display reads straight off `RellmServers.configurationOf
+server` (the `server` this module's own `update`/`view` now take, exactly like `FederationTab`
+already does for its own similarly-public Facebook/X (Twitter) fields), independent of
+`adminContactIntegrations`'s own fetch.
+
+Preferred Providers/Twilio/Bird are grouped under a collapsible "External Integrations" section
+(`externalIntegrationsSection`), with Twilio and Bird each *also* independently collapsible inside
+it (`twilioSection`/`birdSection`) -- three nested levels of the same `expandable-section-title`/
+`-arrow`/`-content` idiom `SettingsTab.featureSettingsSection`/`UserProfilePage.expandableProfileSection`
+already establish (see `collapsedIntegrationsSections`, a `Set String` exactly like
+`SettingsTab.Model.collapsedFeatureSettings`). Everything starts expanded except Bird (the newer,
+less commonly configured of the two SMS providers -- see `BirdConfig`'s own proto doc). Since
+`ServerInformationPage.view` mounts each tab's content under a *different* `Html.Keyed` key per tab
+(`tabParam model.activeTab`), switching away from and back to this tab always tears down and
+rebuilds this whole subtree from scratch (never patches it in place) -- so a freshly-collapsed
+Bird section (or a freshly-toggled anything) always mounts already in its final CSS state, with no
+"is-open" -> "is-closed" class flip for the browser to animate; the `grid-template-rows` transition
+`profiles.css` defines only ever fires from a live *click* while this tab stays active, never from
+a tab switch. This only holds because each collapsible section's own wrapper node stays at a fixed
+position in its parent's child list across every state this module renders (Loading/Failed/Loaded,
+display/edit) -- if one were ever conditionally omitted instead of always-mounted-but-collapsed,
+Elm's positional diffing could reuse a DOM node meant for a different section and misfire a
+transition; every section here follows the established "always mounted, CSS-driven" convention
+specifically to avoid that.
 -}
 
 import Components.Pages.ServerInformationPage.Common as Common
 import Effect exposing (Effect)
 import Grpc
-import Html exposing (Html, button, div, h3, input, option, select, span, text)
+import Html exposing (Html, button, div, h2, h3, input, option, select, span, text)
 import Html.Attributes exposing (class, disabled, placeholder, selected, type_, value)
 import Html.Events exposing (onClick, onInput)
-import Proto.Rellm exposing (BirdConfig, ServerConfiguration, StripeConfig, TwilioConfig, defaultBirdConfig, defaultStripeConfig, defaultTwilioConfig)
+import Proto.Rellm exposing (BirdConfig, ServerConfiguration, TwilioConfig, defaultBirdConfig, defaultTwilioConfig)
 import Proto.Rellm.Rellm as Rellm
 import Proto.Rellm.VerificationAPI exposing (VerificationAPI(..))
+import Set exposing (Set)
 import Shared
 import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.RellmAccounts exposing (RellmAccount)
-import Shared.AccountsPanel.RellmServers as RellmServers
+import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer)
 import Task
+import UI.Classes exposing (classes, openClosedClass)
 
 
 
@@ -66,10 +102,56 @@ import Task
 type alias Model =
     { configEdit : Maybe TwilioConfigEdit
     , birdConfigEdit : Maybe BirdConfigEdit
-    , stripeConfigEdit : Maybe StripeConfigEdit
     , preferredProvidersEdit : Maybe PreferredProvidersEdit
-    , adminIntegrations : AdminIntegrationsStatus
+    , webPushPublicKeyEdit : Maybe TextFieldEdit
+    , webPushPrivateKeyEdit : Maybe TextFieldEdit
+    , adminContactIntegrations : AdminContactIntegrationsStatus
+    , collapsedIntegrationsSections : Set String
     }
+
+
+{-| The three nested collapsible sections `view` builds under "External Integrations" --
+`ExternalIntegrationsSection` is the outer wrapper (Preferred Providers/Twilio/Bird all live
+inside it), `TwilioIntegrationSection`/`BirdIntegrationSection` are each provider's own nested
+collapsible. See `Model.collapsedIntegrationsSections` and this module's own doc for why nesting
+this is safe against `ServerInformationPage`'s per-tab `Html.Keyed` remounting.
+-}
+type IntegrationsSection
+    = ExternalIntegrationsSection
+    | TwilioIntegrationSection
+    | BirdIntegrationSection
+
+
+{-| The `collapsedIntegrationsSections` key each `IntegrationsSection` stores itself under --
+distinct from its own display label the same way `SettingsTab.featureSettingsKey` is.
+-}
+integrationsSectionKey : IntegrationsSection -> String
+integrationsSectionKey section =
+    case section of
+        ExternalIntegrationsSection ->
+            "external"
+
+        TwilioIntegrationSection ->
+            "twilio"
+
+        BirdIntegrationSection ->
+            "bird"
+
+
+integrationsSectionExpanded : Model -> IntegrationsSection -> Bool
+integrationsSectionExpanded model section =
+    not (Set.member (integrationsSectionKey section) model.collapsedIntegrationsSections)
+
+
+{-| Toggles a single `Set` member -- mirrors `SettingsTab.toggleSetMember` exactly.
+-}
+toggleSetMember : comparable -> Set comparable -> Set comparable
+toggleSetMember key set =
+    if Set.member key set then
+        Set.remove key set
+
+    else
+        Set.insert key set
 
 
 {-| The result of this tab's own authenticated `GetServerConfiguration` fetch -- see this module's
@@ -78,11 +160,11 @@ Mirrors `ClusterTab.AdminClusterResourcesStatus` exactly, just holding the whole
 `ServerConfiguration` (since this tab needs three admin-only fields off of it --
 `twilioConfig`/`birdConfig`/`preferredVerificationApis` -- rather than ClusterTab's one).
 -}
-type AdminIntegrationsStatus
-    = AdminIntegrationsNotFetched
-    | FetchingAdminIntegrations
-    | AdminIntegrationsLoaded ServerConfiguration
-    | AdminIntegrationsFetchFailed String
+type AdminContactIntegrationsStatus
+    = AdminContactIntegrationsNotFetched
+    | FetchingAdminContactIntegrations
+    | AdminContactIntegrationsLoaded ServerConfiguration
+    | AdminContactIntegrationsFetchFailed String
 
 
 type Msg
@@ -103,14 +185,6 @@ type Msg
     | BirdCancelClicked
     | BirdSaveClicked
     | GotBirdSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, ServerConfiguration ))
-    | StripeEditClicked
-    | StripeEnabledToggled
-    | StripePublishableKeyChanged String
-    | StripeSecretKeyChanged String
-    | StripeWebhookSigningSecretChanged String
-    | StripeCancelClicked
-    | StripeSaveClicked
-    | GotStripeSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, ServerConfiguration ))
     | PreferredProvidersEditClicked
     | PreferredProviderRemoveClicked VerificationAPI
     | PreferredProviderAddSelectionChanged String
@@ -118,8 +192,19 @@ type Msg
     | PreferredProvidersCancelClicked
     | PreferredProvidersSaveClicked
     | GotPreferredProvidersSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, ServerConfiguration ))
-    | IntegrationsTabActivated
+    | WebPushPublicKeyEditClicked
+    | WebPushPublicKeyChanged String
+    | WebPushPublicKeyCancelClicked
+    | WebPushPublicKeySaveClicked
+    | GotWebPushPublicKeySaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, ServerConfiguration ))
+    | WebPushPrivateKeyEditClicked
+    | WebPushPrivateKeyChanged String
+    | WebPushPrivateKeyCancelClicked
+    | WebPushPrivateKeySaveClicked
+    | GotWebPushPrivateKeySaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, ServerConfiguration ))
+    | ContactIntegrationsTabActivated
     | GotAuthenticatedServerConfiguration (Result Grpc.Error ( Maybe AccountsPanel.Msg, ServerConfiguration ))
+    | IntegrationsSectionToggled IntegrationsSection
 
 
 {-| Live only while the Twilio config is being edited by an admin. `apiKeySecret` always starts
@@ -151,20 +236,6 @@ type alias BirdConfigEdit =
     }
 
 
-{-| Live only while the Stripe config is being edited by an admin. `secretKey`/`webhookSigningSecret`
-always start blank (same "write-only, `Enter to change` placeholder" convention as
-`TwilioConfigEdit.apiKeySecret`) -- both are blanked by the server's own `to_proto` (see
-`StripeConfig`'s own proto doc). `publishableKey` is plain text (not secret), shown/edited normally.
--}
-type alias StripeConfigEdit =
-    { enabled : Bool
-    , publishableKey : String
-    , secretKey : String
-    , webhookSigningSecret : String
-    , status : AccountsPanel.FormStatus
-    }
-
-
 {-| Live only while `preferredVerificationApis` is being edited by an admin -- mirrors
 `SettingsTab.PermissionsEdit` exactly, just over `VerificationAPI` instead of `Permission`.
 `pending`'s order IS the preference order (see module doc).
@@ -176,36 +247,51 @@ type alias PreferredProvidersEdit =
     }
 
 
+{-| Live only while the Web Push public or private VAPID key is being edited by an admin --
+`pending` is the in-progress `<input>` value. The private key always starts this at `""` (never
+pre-filled), since it's never actually sent back by the server (see `ToProtoServerConfiguration` on
+the backend) -- saving with `pending == ""` is a deliberate no-op there (leaves whatever's already
+stored alone), same as leaving a "change password" field blank. The public key isn't secret, so its
+own edit starts pre-filled with the current value instead.
+-}
+type alias TextFieldEdit =
+    { pending : String
+    , status : AccountsPanel.FormStatus
+    }
+
+
 init : Model
 init =
     { configEdit = Nothing
     , birdConfigEdit = Nothing
-    , stripeConfigEdit = Nothing
     , preferredProvidersEdit = Nothing
-    , adminIntegrations = AdminIntegrationsNotFetched
+    , webPushPublicKeyEdit = Nothing
+    , webPushPrivateKeyEdit = Nothing
+    , adminContactIntegrations = AdminContactIntegrationsNotFetched
+    , collapsedIntegrationsSections = Set.singleton (integrationsSectionKey BirdIntegrationSection)
     }
 
 
-{-| `Components.Pages.ServerInformationPage` dispatches this (via `IntegrationsTab.update`)
-whenever this tab becomes the active one -- on `TabSelected TabIntegrations`, and at every point
-this page's own connectivity state could plausibly have changed (see module doc) -- to kick off the
-authenticated fetch this module's own doc describes. `IntegrationsTabActivated`'s own constructor
-isn't exposed (like every other `Msg` here), so this is the one blessed way a parent triggers it.
-Mirrors `ClusterTab.activated` exactly.
+{-| `Components.Pages.ServerInformationPage` dispatches this (via `ContactIntegrationsTab.update`)
+whenever this tab becomes the active one -- on `TabSelected TabContactIntegrations`, and at every
+point this page's own connectivity state could plausibly have changed (see module doc) -- to kick
+off the authenticated fetch this module's own doc describes. `ContactIntegrationsTabActivated`'s
+own constructor isn't exposed (like every other `Msg` here), so this is the one blessed way a
+parent triggers it. Mirrors `ClusterTab.activated` exactly.
 -}
 activated : Msg
 activated =
-    IntegrationsTabActivated
+    ContactIntegrationsTabActivated
 
 
-{-| `twilioConfig`/`birdConfig`/`preferredVerificationApis` off of `model.adminIntegrations`'s own
-freshly-authenticated fetch (see module doc) -- `Nothing`/`[]` whenever that fetch hasn't completed
-yet (or failed), same as `ClusterTab`'s own accessors.
+{-| `twilioConfig`/`birdConfig`/`preferredVerificationApis` off of `model.adminContactIntegrations`'s
+own freshly-authenticated fetch (see module doc) -- `Nothing`/`[]` whenever that fetch hasn't
+completed yet (or failed), same as `ClusterTab`'s own accessors.
 -}
 adminTwilioConfig : Model -> Maybe TwilioConfig
 adminTwilioConfig model =
-    case model.adminIntegrations of
-        AdminIntegrationsLoaded config ->
+    case model.adminContactIntegrations of
+        AdminContactIntegrationsLoaded config ->
             config.twilioConfig
 
         _ ->
@@ -214,19 +300,9 @@ adminTwilioConfig model =
 
 adminBirdConfig : Model -> Maybe BirdConfig
 adminBirdConfig model =
-    case model.adminIntegrations of
-        AdminIntegrationsLoaded config ->
+    case model.adminContactIntegrations of
+        AdminContactIntegrationsLoaded config ->
             config.birdConfig
-
-        _ ->
-            Nothing
-
-
-adminStripeConfig : Model -> Maybe StripeConfig
-adminStripeConfig model =
-    case model.adminIntegrations of
-        AdminIntegrationsLoaded config ->
-            config.stripeConfig
 
         _ ->
             Nothing
@@ -234,8 +310,8 @@ adminStripeConfig model =
 
 adminPreferredProviders : Model -> List VerificationAPI
 adminPreferredProviders model =
-    case model.adminIntegrations of
-        AdminIntegrationsLoaded config ->
+    case model.adminContactIntegrations of
+        AdminContactIntegrationsLoaded config ->
             config.preferredVerificationApis
 
         _ ->
@@ -246,8 +322,8 @@ adminPreferredProviders model =
 -- UPDATE
 
 
-update : Shared.Model -> String -> Msg -> Model -> ( Model, Effect Msg )
-update shared targetHost msg model =
+update : Shared.Model -> String -> Maybe RellmServer -> Msg -> Model -> ( Model, Effect Msg )
+update shared targetHost maybeServer msg model =
     case msg of
         TwilioEditClicked ->
             let
@@ -300,7 +376,7 @@ update shared targetHost msg model =
                     ( model, Effect.none )
 
         GotTwilioSaveResult (Ok ( maybeAccountsPanelMsg, newConfig )) ->
-            ( { model | configEdit = Nothing, adminIntegrations = AdminIntegrationsLoaded newConfig }
+            ( { model | configEdit = Nothing, adminContactIntegrations = AdminContactIntegrationsLoaded newConfig }
             , Effect.batch
                 [ Common.accountsPanelEffect maybeAccountsPanelMsg
                 , Effect.fromShared (Shared.AccountsPanelMsg (AccountsPanel.GotServerConfigSaveResult targetHost newConfig))
@@ -359,7 +435,7 @@ update shared targetHost msg model =
                     ( model, Effect.none )
 
         GotBirdSaveResult (Ok ( maybeAccountsPanelMsg, newConfig )) ->
-            ( { model | birdConfigEdit = Nothing, adminIntegrations = AdminIntegrationsLoaded newConfig }
+            ( { model | birdConfigEdit = Nothing, adminContactIntegrations = AdminContactIntegrationsLoaded newConfig }
             , Effect.batch
                 [ Common.accountsPanelEffect maybeAccountsPanelMsg
                 , Effect.fromShared (Shared.AccountsPanelMsg (AccountsPanel.GotServerConfigSaveResult targetHost newConfig))
@@ -368,65 +444,6 @@ update shared targetHost msg model =
 
         GotBirdSaveResult (Err err) ->
             ( { model | birdConfigEdit = model.birdConfigEdit |> Maybe.map (\edit -> { edit | status = AccountsPanel.Errored (AccountsPanel.grpcErrorToString err) }) }
-            , Effect.none
-            )
-
-        StripeEditClicked ->
-            let
-                stripeConfig : Maybe StripeConfig
-                stripeConfig =
-                    adminStripeConfig model
-            in
-            ( { model
-                | stripeConfigEdit =
-                    Just
-                        { enabled = stripeConfig |> Maybe.map .stripeEnabled |> Maybe.withDefault False
-                        , publishableKey = stripeConfig |> Maybe.map .stripePublishableKey |> Maybe.withDefault ""
-                        , secretKey = ""
-                        , webhookSigningSecret = ""
-                        , status = AccountsPanel.Idle
-                        }
-              }
-            , Effect.none
-            )
-
-        StripeEnabledToggled ->
-            ( { model | stripeConfigEdit = model.stripeConfigEdit |> Maybe.map (\edit -> { edit | enabled = not edit.enabled }) }, Effect.none )
-
-        StripePublishableKeyChanged text ->
-            ( { model | stripeConfigEdit = model.stripeConfigEdit |> Maybe.map (\edit -> { edit | publishableKey = text }) }, Effect.none )
-
-        StripeSecretKeyChanged text ->
-            ( { model | stripeConfigEdit = model.stripeConfigEdit |> Maybe.map (\edit -> { edit | secretKey = text }) }, Effect.none )
-
-        StripeWebhookSigningSecretChanged text ->
-            ( { model | stripeConfigEdit = model.stripeConfigEdit |> Maybe.map (\edit -> { edit | webhookSigningSecret = text }) }, Effect.none )
-
-        StripeCancelClicked ->
-            ( { model | stripeConfigEdit = Nothing }, Effect.none )
-
-        StripeSaveClicked ->
-            case ( model.stripeConfigEdit, Common.adminAccountFor shared targetHost ) of
-                ( Just edit, Just account ) ->
-                    ( { model | stripeConfigEdit = Just { edit | status = AccountsPanel.Submitting } }
-                    , AccountsPanel.updateServerConfig shared.accounts ( Just account.userId, targetHost ) (applyStripeConfig edit)
-                        |> Task.attempt GotStripeSaveResult
-                        |> Effect.fromCmd
-                    )
-
-                _ ->
-                    ( model, Effect.none )
-
-        GotStripeSaveResult (Ok ( maybeAccountsPanelMsg, newConfig )) ->
-            ( { model | stripeConfigEdit = Nothing, adminIntegrations = AdminIntegrationsLoaded newConfig }
-            , Effect.batch
-                [ Common.accountsPanelEffect maybeAccountsPanelMsg
-                , Effect.fromShared (Shared.AccountsPanelMsg (AccountsPanel.GotServerConfigSaveResult targetHost newConfig))
-                ]
-            )
-
-        GotStripeSaveResult (Err err) ->
-            ( { model | stripeConfigEdit = model.stripeConfigEdit |> Maybe.map (\edit -> { edit | status = AccountsPanel.Errored (AccountsPanel.grpcErrorToString err) }) }
             , Effect.none
             )
 
@@ -502,7 +519,7 @@ update shared targetHost msg model =
                     ( model, Effect.none )
 
         GotPreferredProvidersSaveResult (Ok ( maybeAccountsPanelMsg, newConfig )) ->
-            ( { model | preferredProvidersEdit = Nothing, adminIntegrations = AdminIntegrationsLoaded newConfig }
+            ( { model | preferredProvidersEdit = Nothing, adminContactIntegrations = AdminContactIntegrationsLoaded newConfig }
             , Effect.batch
                 [ Common.accountsPanelEffect maybeAccountsPanelMsg
                 , Effect.fromShared (Shared.AccountsPanelMsg (AccountsPanel.GotServerConfigSaveResult targetHost newConfig))
@@ -514,15 +531,95 @@ update shared targetHost msg model =
             , Effect.none
             )
 
-        IntegrationsTabActivated ->
-            case ( model.adminIntegrations, Common.adminAccountFor shared targetHost ) of
-                ( AdminIntegrationsNotFetched, Just account ) ->
-                    ( { model | adminIntegrations = FetchingAdminIntegrations }
+        WebPushPublicKeyEditClicked ->
+            case maybeServer of
+                Just server ->
+                    let
+                        currentPublicKey : String
+                        currentPublicKey =
+                            (RellmServers.configurationOf server).webPushConfig
+                                |> Maybe.map .publicVapidKey
+                                |> Maybe.withDefault ""
+                    in
+                    ( { model | webPushPublicKeyEdit = Just { pending = currentPublicKey, status = AccountsPanel.Idle } }, Effect.none )
+
+                Nothing ->
+                    ( model, Effect.none )
+
+        WebPushPublicKeyChanged text ->
+            ( { model | webPushPublicKeyEdit = model.webPushPublicKeyEdit |> Maybe.map (\edit -> { edit | pending = text }) }, Effect.none )
+
+        WebPushPublicKeyCancelClicked ->
+            ( { model | webPushPublicKeyEdit = Nothing }, Effect.none )
+
+        WebPushPublicKeySaveClicked ->
+            case ( model.webPushPublicKeyEdit, Common.adminAccountFor shared targetHost ) of
+                ( Just edit, Just account ) ->
+                    ( { model | webPushPublicKeyEdit = Just { edit | status = AccountsPanel.Submitting } }
+                    , AccountsPanel.updateServerConfig shared.accounts ( Just account.userId, targetHost ) (applyWebPushPublicKey edit.pending)
+                        |> Task.attempt GotWebPushPublicKeySaveResult
+                        |> Effect.fromCmd
+                    )
+
+                _ ->
+                    ( model, Effect.none )
+
+        GotWebPushPublicKeySaveResult (Ok ( maybeAccountsPanelMsg, newConfig )) ->
+            ( { model | webPushPublicKeyEdit = Nothing }
+            , Effect.batch
+                [ Common.accountsPanelEffect maybeAccountsPanelMsg
+                , Effect.fromShared (Shared.AccountsPanelMsg (AccountsPanel.GotServerConfigSaveResult targetHost newConfig))
+                ]
+            )
+
+        GotWebPushPublicKeySaveResult (Err err) ->
+            ( { model | webPushPublicKeyEdit = model.webPushPublicKeyEdit |> Maybe.map (\edit -> { edit | status = AccountsPanel.Errored (AccountsPanel.grpcErrorToString err) }) }
+            , Effect.none
+            )
+
+        WebPushPrivateKeyEditClicked ->
+            ( { model | webPushPrivateKeyEdit = Just { pending = "", status = AccountsPanel.Idle } }, Effect.none )
+
+        WebPushPrivateKeyChanged text ->
+            ( { model | webPushPrivateKeyEdit = model.webPushPrivateKeyEdit |> Maybe.map (\edit -> { edit | pending = text }) }, Effect.none )
+
+        WebPushPrivateKeyCancelClicked ->
+            ( { model | webPushPrivateKeyEdit = Nothing }, Effect.none )
+
+        WebPushPrivateKeySaveClicked ->
+            case ( model.webPushPrivateKeyEdit, Common.adminAccountFor shared targetHost ) of
+                ( Just edit, Just account ) ->
+                    ( { model | webPushPrivateKeyEdit = Just { edit | status = AccountsPanel.Submitting } }
+                    , AccountsPanel.updateServerConfig shared.accounts ( Just account.userId, targetHost ) (applyWebPushPrivateKey edit.pending)
+                        |> Task.attempt GotWebPushPrivateKeySaveResult
+                        |> Effect.fromCmd
+                    )
+
+                _ ->
+                    ( model, Effect.none )
+
+        GotWebPushPrivateKeySaveResult (Ok ( maybeAccountsPanelMsg, newConfig )) ->
+            ( { model | webPushPrivateKeyEdit = Nothing }
+            , Effect.batch
+                [ Common.accountsPanelEffect maybeAccountsPanelMsg
+                , Effect.fromShared (Shared.AccountsPanelMsg (AccountsPanel.GotServerConfigSaveResult targetHost newConfig))
+                ]
+            )
+
+        GotWebPushPrivateKeySaveResult (Err err) ->
+            ( { model | webPushPrivateKeyEdit = model.webPushPrivateKeyEdit |> Maybe.map (\edit -> { edit | status = AccountsPanel.Errored (AccountsPanel.grpcErrorToString err) }) }
+            , Effect.none
+            )
+
+        ContactIntegrationsTabActivated ->
+            case ( model.adminContactIntegrations, Common.adminAccountFor shared targetHost ) of
+                ( AdminContactIntegrationsNotFetched, Just account ) ->
+                    ( { model | adminContactIntegrations = FetchingAdminContactIntegrations }
                     , fetchAuthenticatedServerConfiguration shared targetHost account
                     )
 
-                ( AdminIntegrationsFetchFailed _, Just account ) ->
-                    ( { model | adminIntegrations = FetchingAdminIntegrations }
+                ( AdminContactIntegrationsFetchFailed _, Just account ) ->
+                    ( { model | adminContactIntegrations = FetchingAdminContactIntegrations }
                     , fetchAuthenticatedServerConfiguration shared targetHost account
                     )
 
@@ -530,18 +627,23 @@ update shared targetHost msg model =
                     ( model, Effect.none )
 
         GotAuthenticatedServerConfiguration (Ok ( maybeAccountsPanelMsg, config )) ->
-            ( { model | adminIntegrations = AdminIntegrationsLoaded config }
+            ( { model | adminContactIntegrations = AdminContactIntegrationsLoaded config }
             , Common.accountsPanelEffect maybeAccountsPanelMsg
             )
 
         GotAuthenticatedServerConfiguration (Err err) ->
-            ( { model | adminIntegrations = AdminIntegrationsFetchFailed (AccountsPanel.grpcErrorToString err) }, Effect.none )
+            ( { model | adminContactIntegrations = AdminContactIntegrationsFetchFailed (AccountsPanel.grpcErrorToString err) }, Effect.none )
+
+        IntegrationsSectionToggled section ->
+            ( { model | collapsedIntegrationsSections = toggleSetMember (integrationsSectionKey section) model.collapsedIntegrationsSections }
+            , Effect.none
+            )
 
 
-{-| `cluster_resources`/`twilio_config`/`bird_config`/`preferred_verification_apis` are all
-stripped from the unauthenticated `GetServerConfiguration` every other tab reads via
-`RellmServers.configurationOf` (see module doc) -- this fetches it fresh, authenticated as
-`account`, the same way `AccountsPanel.updateServerConfig` does before writing. Mirrors
+{-| `twilio_config`/`bird_config`/`preferred_verification_apis` are all stripped from the
+unauthenticated `GetServerConfiguration` every other tab reads via `RellmServers.configurationOf`
+(see module doc) -- this fetches it fresh, authenticated as `account`, the same way
+`AccountsPanel.updateServerConfig` does before writing. Mirrors
 `ClusterTab.fetchAuthenticatedServerConfiguration` exactly.
 -}
 fetchAuthenticatedServerConfiguration : Shared.Model -> String -> RellmAccount -> Effect Msg
@@ -606,28 +708,28 @@ applyBirdConfig edit config =
     }
 
 
-{-| Same as `applyTwilioConfig`, but for Stripe -- `secretKey`/`webhookSigningSecret` are sent as
-typed (blank if left untouched), and the backend splices the existing stored value back in when
-the incoming field is empty, same as `twilio_api_key_secret`. `publishableKey` is not secret, so
-it's always applied straight across.
+{-| `WebPushPublicKeySaveClicked`'s transform -- overlays a new `publicVapidKey` onto a freshly
+re-fetched `ServerConfiguration`'s `webPushConfig`. `privateVapidKey` is always sent blank here:
+same "blank means leave it alone" merge every other write-only field on this page relies on, this
+time in `ConfigureServer`'s `WebPushConfig`-specific merge block (see that RPC's own doc comment).
 -}
-applyStripeConfig : StripeConfigEdit -> ServerConfiguration -> ServerConfiguration
-applyStripeConfig edit config =
+applyWebPushPublicKey : String -> ServerConfiguration -> ServerConfiguration
+applyWebPushPublicKey publicKey config =
+    { config | webPushConfig = Just { publicVapidKey = publicKey, privateVapidKey = "" } }
+
+
+{-| `WebPushPrivateKeySaveClicked`'s transform -- mirrors `applyWebPushPublicKey`, just overlaying a
+new `privateVapidKey` (this time actually non-blank, since this _is_ the save that's meant to change
+it) instead. Keeps whatever `publicVapidKey` the freshly re-fetched config already has.
+-}
+applyWebPushPrivateKey : String -> ServerConfiguration -> ServerConfiguration
+applyWebPushPrivateKey privateKey config =
     let
-        existing : StripeConfig
-        existing =
-            Maybe.withDefault defaultStripeConfig config.stripeConfig
+        existingPublicKey : String
+        existingPublicKey =
+            config.webPushConfig |> Maybe.map .publicVapidKey |> Maybe.withDefault ""
     in
-    { config
-        | stripeConfig =
-            Just
-                { existing
-                    | stripeEnabled = edit.enabled
-                    , stripePublishableKey = edit.publishableKey
-                    , stripeSecretKey = edit.secretKey
-                    , stripeWebhookSigningSecret = edit.webhookSigningSecret
-                }
-    }
+    { config | webPushConfig = Just { publicVapidKey = existingPublicKey, privateVapidKey = privateKey } }
 
 
 {-| Every `VerificationAPI` value, in a fixed display order -- used both for the Add dropdown's
@@ -687,53 +789,124 @@ verificationApiFromText text_ =
 -- VIEW
 
 
-view : Maybe RellmAccount -> Model -> Html Msg
-view maybeAdminAccount model =
+{-| `server` is only needed for `webPushConfigSection` (see module doc -- `webPushConfig` isn't
+admin-only-stripped, so it doesn't need to wait on `adminContactIntegrations`'s own fetch the way
+Twilio/Bird/Preferred Providers below it do), mirroring exactly how `FederationTab.view` takes its
+own `server` for the same reason.
+-}
+view : RellmServer -> Maybe RellmAccount -> Model -> Html Msg
+view server maybeAdminAccount model =
     div [ class "server-details-tab-content server-details-integrations" ]
-        (case model.adminIntegrations of
-            FetchingAdminIntegrations ->
-                [ span [ class "server-details-feature-settings-value" ] [ text "Loading…" ] ]
+        [ webPushConfigSection server model maybeAdminAccount
+        , externalIntegrationsSection model maybeAdminAccount
+        ]
 
-            AdminIntegrationsNotFetched ->
-                [ span [ class "server-details-feature-settings-value" ] [ text "Loading…" ] ]
 
-            AdminIntegrationsFetchFailed err ->
-                [ span [ class "server-details-feature-settings-value" ] [ text ("Failed to load integration settings: " ++ err) ] ]
+{-| The collapsible "External Integrations" group -- Preferred Providers/Twilio/Bird, each always
+mounted (even while collapsed, or before/during the admin fetch) so this section's own
+`expanded`/`is-open`/`is-closed` toggle stays purely CSS-driven, per this module's own doc. Twilio
+and Bird are each their own nested collapsible inside it (`twilioSection`/`birdSection`) -- see
+`IntegrationsSection`.
+-}
+externalIntegrationsSection : Model -> Maybe RellmAccount -> Html Msg
+externalIntegrationsSection model maybeAdminAccount =
+    let
+        expanded : Bool
+        expanded =
+            integrationsSectionExpanded model ExternalIntegrationsSection
+    in
+    div [ class "server-details-external-integrations" ]
+        [ h2
+            [ classes [ "expandable-section-title", "server-details-group-title" ]
+            , onClick (IntegrationsSectionToggled ExternalIntegrationsSection)
+            ]
+            [ span [ classes [ "expandable-section-arrow", openClosedClass expanded ] ] [ text "▼" ]
+            , text "External Integrations"
+            ]
+        , div
+            [ classes [ "expandable-section-content", openClosedClass expanded, "border-color-primary-anchor-50" ] ]
+            [ div [ class "expandable-section-content-inner" ]
+                (case model.adminContactIntegrations of
+                    FetchingAdminContactIntegrations ->
+                        [ span [ class "server-details-feature-settings-value" ] [ text "Loading…" ] ]
 
-            AdminIntegrationsLoaded _ ->
-                [ div []
-                    (case model.configEdit of
-                        Just edit ->
-                            twilioEditView edit
+                    AdminContactIntegrationsNotFetched ->
+                        [ span [ class "server-details-feature-settings-value" ] [ text "Loading…" ] ]
 
-                        Nothing ->
-                            twilioDisplayView maybeAdminAccount (adminTwilioConfig model)
-                    )
-                , div []
-                    (case model.birdConfigEdit of
-                        Just edit ->
-                            birdEditView edit
+                    AdminContactIntegrationsFetchFailed err ->
+                        [ span [ class "server-details-feature-settings-value" ] [ text ("Failed to load integration settings: " ++ err) ] ]
 
-                        Nothing ->
-                            birdDisplayView maybeAdminAccount (adminBirdConfig model)
-                    )
-                , div []
-                    (case model.stripeConfigEdit of
-                        Just edit ->
-                            stripeEditView edit
+                    AdminContactIntegrationsLoaded _ ->
+                        [ preferredProvidersSection maybeAdminAccount model.preferredProvidersEdit (adminPreferredProviders model)
+                        , twilioSection model maybeAdminAccount
+                        , birdSection model maybeAdminAccount
+                        ]
+                )
+            ]
+        ]
 
-                        Nothing ->
-                            stripeDisplayView maybeAdminAccount (adminStripeConfig model)
-                    )
-                , preferredProvidersSection maybeAdminAccount model.preferredProvidersEdit (adminPreferredProviders model)
-                ]
-        )
+
+twilioSection : Model -> Maybe RellmAccount -> Html Msg
+twilioSection model maybeAdminAccount =
+    let
+        expanded : Bool
+        expanded =
+            integrationsSectionExpanded model TwilioIntegrationSection
+    in
+    div [ class "server-details-feature-settings" ]
+        [ h3
+            [ classes [ "section-title", "expandable-section-title" ]
+            , onClick (IntegrationsSectionToggled TwilioIntegrationSection)
+            ]
+            [ span [ classes [ "expandable-section-arrow", openClosedClass expanded ] ] [ text "▼" ]
+            , text "Twilio"
+            ]
+        , div
+            [ classes [ "expandable-section-content", openClosedClass expanded, "border-color-primary-anchor-50" ] ]
+            [ div [ class "expandable-section-content-inner" ]
+                (case model.configEdit of
+                    Just edit ->
+                        twilioEditView edit
+
+                    Nothing ->
+                        twilioDisplayView maybeAdminAccount (adminTwilioConfig model)
+                )
+            ]
+        ]
+
+
+birdSection : Model -> Maybe RellmAccount -> Html Msg
+birdSection model maybeAdminAccount =
+    let
+        expanded : Bool
+        expanded =
+            integrationsSectionExpanded model BirdIntegrationSection
+    in
+    div [ class "server-details-feature-settings" ]
+        [ h3
+            [ classes [ "section-title", "expandable-section-title" ]
+            , onClick (IntegrationsSectionToggled BirdIntegrationSection)
+            ]
+            [ span [ classes [ "expandable-section-arrow", openClosedClass expanded ] ] [ text "▼" ]
+            , text "Bird"
+            ]
+        , div
+            [ classes [ "expandable-section-content", openClosedClass expanded, "border-color-primary-anchor-50" ] ]
+            [ div [ class "expandable-section-content-inner" ]
+                (case model.birdConfigEdit of
+                    Just edit ->
+                        birdEditView edit
+
+                    Nothing ->
+                        birdDisplayView maybeAdminAccount (adminBirdConfig model)
+                )
+            ]
+        ]
 
 
 twilioDisplayView : Maybe RellmAccount -> Maybe TwilioConfig -> List (Html Msg)
 twilioDisplayView maybeAdminAccount twilioConfig =
-    [ h3 [ class "section-title" ] [ text "Twilio" ]
-    , Common.settingsRow "Twilio Enabled" (Common.switchDisplay (twilioConfig |> Maybe.map .twilioEnabled |> Maybe.withDefault False))
+    [ Common.settingsRow "Twilio Enabled" (Common.switchDisplay (twilioConfig |> Maybe.map .twilioEnabled |> Maybe.withDefault False))
     , Common.settingsRow "Account SID" (span [ class "server-details-feature-settings-value" ] [ text (twilioConfig |> Maybe.map .twilioAccountSid |> Maybe.withDefault "—") ])
     , Common.settingsRow "API Key SID" (span [ class "server-details-feature-settings-value" ] [ text (twilioConfig |> Maybe.map .twilioApiKeySid |> Maybe.withDefault "—") ])
     , Common.settingsRow "From Number" (span [ class "server-details-feature-settings-value" ] [ text (twilioConfig |> Maybe.map .twilioFromNumber |> Maybe.withDefault "—") ])
@@ -753,8 +926,7 @@ proto doc for the full reasoning.
 -}
 twilioEditView : TwilioConfigEdit -> List (Html Msg)
 twilioEditView edit =
-    [ h3 [ class "section-title" ] [ text "Twilio" ]
-    , Common.settingsRow "Twilio Enabled" (Common.flagSwitch edit.enabled TwilioEnabledToggled)
+    [ Common.settingsRow "Twilio Enabled" (Common.flagSwitch edit.enabled TwilioEnabledToggled)
     , Common.settingsRow "Account SID"
         (input
             [ class "server-details-rename-input"
@@ -806,8 +978,7 @@ twilioEditView edit =
 
 birdDisplayView : Maybe RellmAccount -> Maybe BirdConfig -> List (Html Msg)
 birdDisplayView maybeAdminAccount birdConfig =
-    [ h3 [ class "section-title" ] [ text "Bird" ]
-    , Common.settingsRow "Bird Enabled" (Common.switchDisplay (birdConfig |> Maybe.map .birdEnabled |> Maybe.withDefault False))
+    [ Common.settingsRow "Bird Enabled" (Common.switchDisplay (birdConfig |> Maybe.map .birdEnabled |> Maybe.withDefault False))
     , Common.settingsRow "From" (span [ class "server-details-feature-settings-value" ] [ text (birdConfig |> Maybe.map .birdFrom |> Maybe.withDefault "—") ])
     , Common.settingsRow "Region" (span [ class "server-details-feature-settings-value" ] [ text (birdConfig |> Maybe.map .birdRegion |> Maybe.andThen emptyToNothing |> Maybe.withDefault "us1 (default)") ])
     , case maybeAdminAccount of
@@ -821,8 +992,7 @@ birdDisplayView maybeAdminAccount birdConfig =
 
 birdEditView : BirdConfigEdit -> List (Html Msg)
 birdEditView edit =
-    [ h3 [ class "section-title" ] [ text "Bird" ]
-    , Common.settingsRow "Bird Enabled" (Common.flagSwitch edit.enabled BirdEnabledToggled)
+    [ Common.settingsRow "Bird Enabled" (Common.flagSwitch edit.enabled BirdEnabledToggled)
     , Common.settingsRow "Access Key"
         (input
             [ type_ "password"
@@ -857,68 +1027,6 @@ birdEditView edit =
     , div [ class "server-details-feature-settings-actions" ]
         [ Common.editSaveButton BirdSaveClicked edit.status
         , Common.editCancelButton BirdCancelClicked edit.status
-        ]
-    , Common.editErrorView edit.status
-    ]
-
-
-stripeDisplayView : Maybe RellmAccount -> Maybe StripeConfig -> List (Html Msg)
-stripeDisplayView maybeAdminAccount stripeConfig =
-    [ h3 [ class "section-title" ] [ text "Stripe" ]
-    , Common.settingsRow "Stripe Enabled" (Common.switchDisplay (stripeConfig |> Maybe.map .stripeEnabled |> Maybe.withDefault False))
-    , Common.settingsRow "Publishable Key" (span [ class "server-details-feature-settings-value" ] [ text (stripeConfig |> Maybe.map .stripePublishableKey |> Maybe.andThen emptyToNothing |> Maybe.withDefault "—") ])
-    , case maybeAdminAccount of
-        Just _ ->
-            button [ class "server-details-rename-button", onClick StripeEditClicked ] [ text "Edit Stripe Settings" ]
-
-        Nothing ->
-            text ""
-    ]
-
-
-{-| `secretKey`/`webhookSigningSecret` are the two write-only fields (`type_ "password"`,
-`placeholder "Enter to change"`, always seeded blank -- see `StripeConfigEdit`'s own doc);
-`publishableKey` is plain text.
--}
-stripeEditView : StripeConfigEdit -> List (Html Msg)
-stripeEditView edit =
-    [ h3 [ class "section-title" ] [ text "Stripe" ]
-    , Common.settingsRow "Stripe Enabled" (Common.flagSwitch edit.enabled StripeEnabledToggled)
-    , Common.settingsRow "Publishable Key"
-        (input
-            [ class "server-details-rename-input"
-            , placeholder "pk_live_xxxxxxxxxxxxxxxxxxxxxxxx"
-            , value edit.publishableKey
-            , onInput StripePublishableKeyChanged
-            , disabled (edit.status == AccountsPanel.Submitting)
-            ]
-            []
-        )
-    , Common.settingsRow "Secret Key"
-        (input
-            [ type_ "password"
-            , class "server-details-rename-input"
-            , placeholder "Enter to change"
-            , value edit.secretKey
-            , onInput StripeSecretKeyChanged
-            , disabled (edit.status == AccountsPanel.Submitting)
-            ]
-            []
-        )
-    , Common.settingsRow "Webhook Signing Secret"
-        (input
-            [ type_ "password"
-            , class "server-details-rename-input"
-            , placeholder "Enter to change"
-            , value edit.webhookSigningSecret
-            , onInput StripeWebhookSigningSecretChanged
-            , disabled (edit.status == AccountsPanel.Submitting)
-            ]
-            []
-        )
-    , div [ class "server-details-feature-settings-actions" ]
-        [ Common.editSaveButton StripeSaveClicked edit.status
-        , Common.editCancelButton StripeCancelClicked edit.status
         ]
     , Common.editErrorView edit.status
     ]
@@ -999,3 +1107,108 @@ preferredProviderEditBadge api =
             ]
             [ text "×" ]
         ]
+
+
+{-| Mirrors `FederationTab`'s old `facebookAuthConfigSection`: the read-only Public VAPID key
+(needed by any browser calling `pushManager.subscribe`, see `Shared.AccountsPanel`'s "Enable
+notifications") is shown to everyone, same as Facebook's App ID; the Private VAPID key (needed only
+to sign outgoing pushes, see `backend/src/web_push`) is admin-only, same as Facebook's App Secret.
+-}
+webPushConfigSection : RellmServer -> Model -> Maybe RellmAccount -> Html Msg
+webPushConfigSection server model maybeAdminAccount =
+    let
+        currentPublicKey : String
+        currentPublicKey =
+            (RellmServers.configurationOf server).webPushConfig
+                |> Maybe.map .publicVapidKey
+                |> Maybe.withDefault ""
+    in
+    div [ class "server-details-facebook-auth" ]
+        (h3 [ class "section-title" ] [ text "Web Push Configuration" ]
+            :: webPushPublicKeyRow currentPublicKey model.webPushPublicKeyEdit maybeAdminAccount
+            :: (case maybeAdminAccount of
+                    Just _ ->
+                        [ webPushPrivateKeyRow model.webPushPrivateKeyEdit maybeAdminAccount ]
+
+                    Nothing ->
+                        []
+               )
+        )
+
+
+webPushPublicKeyRow : String -> Maybe TextFieldEdit -> Maybe RellmAccount -> Html Msg
+webPushPublicKeyRow currentPublicKey maybeEdit maybeAdminAccount =
+    case maybeEdit of
+        Just edit ->
+            div [ class "server-details-color-row server-details-color-row-edit" ]
+                [ span [ class "server-details-color-label" ] [ text "Public VAPID Key" ]
+                , input
+                    [ class "server-details-rename-input"
+                    , value edit.pending
+                    , onInput WebPushPublicKeyChanged
+                    , disabled (edit.status == AccountsPanel.Submitting)
+                    ]
+                    []
+                , Common.editSaveButton WebPushPublicKeySaveClicked edit.status
+                , Common.editCancelButton WebPushPublicKeyCancelClicked edit.status
+                , Common.editErrorView edit.status
+                ]
+
+        Nothing ->
+            div [ class "server-details-color-row" ]
+                [ span [ class "server-details-color-label" ] [ text "Public VAPID Key" ]
+                , span [ class "server-details-color-hex" ]
+                    [ text
+                        (if String.isEmpty currentPublicKey then
+                            "Not set."
+
+                         else
+                            currentPublicKey
+                        )
+                    ]
+                , case maybeAdminAccount of
+                    Just _ ->
+                        button [ class "server-details-rename-button", onClick WebPushPublicKeyEditClicked ] [ text "Edit" ]
+
+                    Nothing ->
+                        text ""
+                ]
+
+
+{-| Unlike `webPushPublicKeyRow`, there's no "current value" to show when not editing -- the server
+never sends the real `privateVapidKey` back (see `TextFieldEdit`'s doc), so the placeholder below is
+shown regardless of whether a key is actually configured. Clicking Edit always starts from a blank
+`<input>`; saving it blank is a no-op on the backend, same as leaving a "change password" field
+untouched.
+-}
+webPushPrivateKeyRow : Maybe TextFieldEdit -> Maybe RellmAccount -> Html Msg
+webPushPrivateKeyRow maybeEdit maybeAdminAccount =
+    case maybeEdit of
+        Just edit ->
+            div [ class "server-details-color-row server-details-color-row-edit" ]
+                [ span [ class "server-details-color-label" ] [ text "Private VAPID Key" ]
+                , input
+                    [ type_ "password"
+                    , class "server-details-rename-input"
+                    , placeholder "New Private VAPID Key"
+                    , value edit.pending
+                    , onInput WebPushPrivateKeyChanged
+                    , disabled (edit.status == AccountsPanel.Submitting)
+                    ]
+                    []
+                , Common.editSaveButton WebPushPrivateKeySaveClicked edit.status
+                , Common.editCancelButton WebPushPrivateKeyCancelClicked edit.status
+                , Common.editErrorView edit.status
+                ]
+
+        Nothing ->
+            div [ class "server-details-color-row" ]
+                [ span [ class "server-details-color-label" ] [ text "Private VAPID Key" ]
+                , span [ class "server-details-color-hex" ] [ text "Never shown" ]
+                , case maybeAdminAccount of
+                    Just _ ->
+                        button [ class "server-details-rename-button", onClick WebPushPrivateKeyEditClicked ] [ text "Edit" ]
+
+                    Nothing ->
+                        text ""
+                ]

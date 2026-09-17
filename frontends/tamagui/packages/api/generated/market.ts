@@ -12,10 +12,48 @@ import { Permission, permissionFromJSON, permissionToJSON } from "./permissions"
 
 export const protobufPackage = "rellm";
 
+/**
+ * What a `MarketProduct`/`MarketPurchase`/`MarketSubscription` actually grants the buyer once
+ * fulfilled -- see `logic::market_fulfillment::fulfill_purchase` (the Rust match on this same enum)
+ * for exactly what each value does. Immutable on a `MarketProduct` once created (see that message's
+ * own doc) -- changing what a product *is* after people have already bought it would silently
+ * change existing buyers' entitlements out from under them, so a product whose type needs to change
+ * is delisted and replaced with a new one instead.
+ */
 export enum PurchaseType {
+  /**
+   * PURCHASE_TYPE_MEDIA_STORAGE - Extra media storage allocation -- fulfillment sets the buyer's `User.media_storage_limit_bytes`
+   * to `MediaStoragePurchaseDetails.allocation_bytes` outright (not additive with any existing
+   * quota). On cancellation/expiry, reverts to the server's current configured default allocation
+   * (`ServerConfiguration.media_settings.default_media_allocation_bytes`), not to unlimited.
+   */
   PURCHASE_TYPE_MEDIA_STORAGE = 0,
+  /**
+   * PURCHASE_TYPE_AI_GRANTS - AI provider token grants -- fulfillment resets (never adds to) the buyer's
+   * `AIProviderGrant.tokens_remaining` for `AIGrantPurchaseDetails.ai_provider_id`/`model_names` to
+   * `AIGrantPurchaseDetails.tokens`, same "reset, don't add" semantics every renewal uses. Not
+   * automatically revoked on cancellation/expiry -- whatever tokens remain when the subscription
+   * lapses just aren't replenished again.
+   */
   PURCHASE_TYPE_AI_GRANTS = 1,
+  /**
+   * PURCHASE_TYPE_RELLM_HOSTING - A dedicated Rellm server instance, hosted and administered by Jon. Deliberately NOT automated --
+   * fulfillment applies no entitlement at all; an admin provisions the server by hand and tracks
+   * progress via `RellmHostingSubscriptionDetails.fulfillment_status`/`fulfillment_notes` on the
+   * `/market/fulfillment` admin page. Not automatically revoked on cancellation/expiry either
+   * (out of scope for this MVP -- an admin handles teardown manually too).
+   */
   PURCHASE_TYPE_RELLM_HOSTING = 2,
+  /**
+   * PURCHASE_TYPE_PERMISSIONS_ACCESS - A bundle of `Permission`s (e.g. `SYNC_EVENTS_TO_FACEBOOK`) granted directly to the buyer's own
+   * `User.permissions`, union-style -- fulfillment only ever adds permissions the buyer doesn't
+   * already have from some other source, never removes any. Unlike the other three types, this ONE
+   * eventually claws back what it granted: once cancellation/expiry actually takes effect (see
+   * `MarketSubscription.canceled_at`/`service_terminated_at`), `logic::market_fulfillment::
+   * terminate_entitlement` removes exactly the permissions this subscription granted (a plain set
+   * difference, not a reconciliation against any other subscription/grant the buyer might also
+   * hold).
+   */
   PURCHASE_TYPE_PERMISSIONS_ACCESS = 3,
   UNRECOGNIZED = -1,
 }
@@ -57,9 +95,24 @@ export function purchaseTypeToJSON(object: PurchaseType): string {
   }
 }
 
+/**
+ * How often a `MarketProduct`/`MarketSubscription` bills. Immutable on a `MarketProduct` once
+ * created (see that message's own doc) -- same reasoning as `PurchaseType`'s immutability.
+ */
 export enum PurchasePeriod {
+  /**
+   * PURCHASE_PERIOD_INDEFINITE - A single one-time purchase -- still creates a `MarketSubscription` alongside its
+   * `MarketPurchase` (see `MarketSubscription`'s own doc), so it's still cancelable and still
+   * carries per-type fulfillment tracking (e.g. `RellmHostingSubscriptionDetails.fulfillment_status`/
+   * `fulfillment_notes`) the same way a recurring one does -- it just has `renews_at` unset and
+   * never bills again. Canceling one takes effect immediately (see `MarketSubscription.canceled_at`'s
+   * own doc: entitlement stays active until the later of `renews_at`/`canceled_at`, and an unset
+   * `renews_at` is never later than anything).
+   */
   PURCHASE_PERIOD_INDEFINITE = 0,
+  /** PURCHASE_PERIOD_ANNUAL - Renews (re-bills and re-fulfills) once per year, via `renew_market_subscriptions.rs`. */
   PURCHASE_PERIOD_ANNUAL = 1,
+  /** PURCHASE_PERIOD_MONTHLY - Renews (re-bills and re-fulfills) once per month, via `renew_market_subscriptions.rs`. */
   PURCHASE_PERIOD_MONTHLY = 2,
   UNRECOGNIZED = -1,
 }
@@ -97,52 +150,212 @@ export function purchasePeriodToJSON(object: PurchasePeriod): string {
 }
 
 /**
- * An actual subscribable product listed on, say, https://rellm.org/market
- * Listed/delisted by clients by setting `delisted_at` (though the actual date supplied
- * by the client is ignored).
+ * The state of a `PURCHASE_TYPE_RELLM_HOSTING` order's manual fulfillment -- see
+ * `RellmHostingSubscriptionDetails.fulfillment_status`'s own doc for how the "current" value is
+ * derived, and `FulfillmentNote.fulfillment_status` for how every transition is recorded as its own
+ * timestamped note (a "fulfillment state history"), not just tracked as a bare current value.
+ */
+export enum FulfillmentStatus {
+  /** FULFILLMENT_STATUS_AWAITING_HOST_ADMIN - The starting state for every new order -- no admin has looked at it yet. */
+  FULFILLMENT_STATUS_AWAITING_HOST_ADMIN = 0,
+  /**
+   * FULFILLMENT_STATUS_FULFILLED - The order is fully stood up -- set via "Add and Mark as Fulfilled" on `/market/fulfillment`
+   * (`UpdateMarketSubscription`).
+   */
+  FULFILLMENT_STATUS_FULFILLED = 1,
+  /**
+   * FULFILLMENT_STATUS_IN_PROGRESS - An admin has started working the order but it isn't done yet -- set automatically the first
+   * time an admin expands this order's row on `/market/fulfillment` (if it was still
+   * `FULFILLMENT_STATUS_AWAITING_HOST_ADMIN`), or explicitly via a note.
+   */
+  FULFILLMENT_STATUS_IN_PROGRESS = 2,
+  UNRECOGNIZED = -1,
+}
+
+export function fulfillmentStatusFromJSON(object: any): FulfillmentStatus {
+  switch (object) {
+    case 0:
+    case "FULFILLMENT_STATUS_AWAITING_HOST_ADMIN":
+      return FulfillmentStatus.FULFILLMENT_STATUS_AWAITING_HOST_ADMIN;
+    case 1:
+    case "FULFILLMENT_STATUS_FULFILLED":
+      return FulfillmentStatus.FULFILLMENT_STATUS_FULFILLED;
+    case 2:
+    case "FULFILLMENT_STATUS_IN_PROGRESS":
+      return FulfillmentStatus.FULFILLMENT_STATUS_IN_PROGRESS;
+    case -1:
+    case "UNRECOGNIZED":
+    default:
+      return FulfillmentStatus.UNRECOGNIZED;
+  }
+}
+
+export function fulfillmentStatusToJSON(object: FulfillmentStatus): string {
+  switch (object) {
+    case FulfillmentStatus.FULFILLMENT_STATUS_AWAITING_HOST_ADMIN:
+      return "FULFILLMENT_STATUS_AWAITING_HOST_ADMIN";
+    case FulfillmentStatus.FULFILLMENT_STATUS_FULFILLED:
+      return "FULFILLMENT_STATUS_FULFILLED";
+    case FulfillmentStatus.FULFILLMENT_STATUS_IN_PROGRESS:
+      return "FULFILLMENT_STATUS_IN_PROGRESS";
+    case FulfillmentStatus.UNRECOGNIZED:
+    default:
+      return "UNRECOGNIZED";
+  }
+}
+
+export enum GetMarketSubscriptionsRequestType {
+  /** GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE - The "user facing" view backing /market -- the caller's own MarketSubscriptions only. */
+  GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE = 0,
+  /**
+   * GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN - Admin-only view backing /market/fulfillment -- every PURCHASE_TYPE_RELLM_HOSTING
+   * MarketSubscription across every buyer, since Rellm hosting needs manual setup that isn't
+   * automated (see RellmHostingSubscriptionDetails.fulfillment_status's own doc).
+   */
+  GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN = 1,
+  UNRECOGNIZED = -1,
+}
+
+export function getMarketSubscriptionsRequestTypeFromJSON(object: any): GetMarketSubscriptionsRequestType {
+  switch (object) {
+    case 0:
+    case "GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE":
+      return GetMarketSubscriptionsRequestType.GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE;
+    case 1:
+    case "GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN":
+      return GetMarketSubscriptionsRequestType.GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN;
+    case -1:
+    case "UNRECOGNIZED":
+    default:
+      return GetMarketSubscriptionsRequestType.UNRECOGNIZED;
+  }
+}
+
+export function getMarketSubscriptionsRequestTypeToJSON(object: GetMarketSubscriptionsRequestType): string {
+  switch (object) {
+    case GetMarketSubscriptionsRequestType.GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE:
+      return "GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE";
+    case GetMarketSubscriptionsRequestType.GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN:
+      return "GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN";
+    case GetMarketSubscriptionsRequestType.UNRECOGNIZED:
+    default:
+      return "UNRECOGNIZED";
+  }
+}
+
+/**
+ * An actual subscribable product listed on, say, https://rellm.org/market -- what an admin creates
+ * via `CreateMarketProduct`/edits via `UpdateMarketProduct`, and what a buyer actually purchases via
+ * `MakeMarketPurchase`. `market_settings.enabled` (see `server_configuration.proto`) gates whether a
+ * server's Market is browsable/purchasable at all, independent of any individual product's own
+ * `delisted_at`. Listed/delisted by clients by setting `delisted_at` (though the actual date
+ * supplied by the client is ignored -- see that field's own doc).
  */
 export interface MarketProduct {
   id: string;
-  /** Never changeable after product creation. */
+  /**
+   * What this product grants once purchased -- see `PurchaseType`'s own doc for what each value
+   * does. Never changeable after product creation (`UpdateMarketProduct` silently ignores any
+   * change to this field) -- changing what a product *is* after people have already bought it would
+   * silently change existing buyers' entitlements out from under them; a product whose type needs
+   * to change is delisted and replaced with a new one instead.
+   */
   type: PurchaseType;
-  /** Never changeable after product creation. */
+  /**
+   * How often this product bills, if at all -- see `PurchasePeriod`'s own doc. Never changeable
+   * after product creation, same reasoning as `type` above.
+   */
   period: PurchasePeriod;
+  /**
+   * The price, in the smallest unit of `currency` (e.g. cents for USD) -- except for a
+   * zero-decimal currency like JPY, where this is already the whole unit (see
+   * `logic::stripe_sync::is_zero_decimal_currency`).
+   */
   amount: number;
+  /**
+   * The ISO 4217 numeric currency code this product is priced in (e.g. `840` for USD, `392` for
+   * JPY) -- see `logic::market_summary`'s currency table for the full set of currencies a server
+   * actually supports pricing in today.
+   */
   currency: number;
+  /**
+   * Number of subscription "slots" available for this product (admin-set) -- `0` means unlimited.
+   * Once `sold_count >= available_count` (and `available_count > 0`), `MakeMarketPurchase` rejects
+   * further purchases with `product_sold_out`.
+   */
+  availableCount: number;
+  /**
+   * Number of subscriptions actually sold, maintained server-side (never client-settable --
+   * `UpdateMarketProduct` silently ignores any client-sent value for this field). Incremented when
+   * a purchase's Stripe Checkout Session completes; decremented when the resulting
+   * `MarketSubscription` is actually canceled (`CancelMarketSubscription`), freeing the slot for a
+   * new buyer.
+   */
+  soldCount: number;
   mediaStorageSubscriptionDetails?: MediaStorageSubscriptionDetails | undefined;
   aiGrantSubscriptionDetails?: AIGrantSubscriptionDetails | undefined;
   rellmHostingSubscriptionDetails?: RellmHostingSubscriptionDetails | undefined;
-  permissionsAccessSubscriptionDetails?: PermissionsAccessSubscriptionDetails | undefined;
+  permissionsAccessSubscriptionDetails?:
+    | PermissionsAccessSubscriptionDetails
+    | undefined;
+  /**
+   * When this product was created. Server-stamped -- `CreateMarketProduct` ignores any client-sent
+   * value.
+   */
   createdAt:
     | string
     | undefined;
   /**
-   * If set, the MarketProduct is not purchasable. Note: clients toggle listings by setting this,
-   * but the server will always set it to the time of the request, not the time sent *by* the request.
+   * If set, the MarketProduct is not purchasable -- still shown to admins (see
+   * `GetMarketProductsResponse.market_products`' own doc), but hidden from every other caller and
+   * rejected by `MakeMarketPurchase`. Note: clients toggle listings by setting this, but the server
+   * will always set it to the time of the request, not the time sent *by* the request.
    */
   delistedAt?: string | undefined;
 }
 
 /**
- * Request to get products available for purchase on a Rellm server.
- * For now, there are few enough that this has no parameters.
+ * Request to get products available for purchase on a Rellm server. *Unauthenticated* --
+ * `GetMarketProducts` never requires a signed-in caller (see that RPC's own doc), so anyone can
+ * browse a server's Market without an account, including from another federated server (see
+ * `rellm.proto`'s "Federated Markets" doc). For now, there are few enough products per server that
+ * this has no filtering/paging parameters.
  */
 export interface GetMarketProductsRequest {
 }
 
 export interface GetMarketProductsResponse {
-  /** Non-delisted products, plus delisted ones too if the caller is an admin. */
+  /**
+   * Every non-delisted `MarketProduct`, plus delisted ones too if the caller is a signed-in admin
+   * on this server (so admins can still find/relist/edit a delisted product from the same `/market`
+   * page everyone else sees).
+   */
   marketProducts: MarketProduct[];
 }
 
 /**
- * Request to get the current user's own MarketSubscriptions (with billing_history). Self-scoped --
- * there's no way to fetch another user's MarketSubscriptions, even as an admin, for now.
+ * Request to get MarketSubscriptions -- self-scoped to the current user's own
+ * (`GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE`, the default -- there's no way to fetch another
+ * user's own subscriptions this way, even as an admin), or -- for an admin only --
+ * `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN`, every `PURCHASE_TYPE_RELLM_HOSTING`
+ * subscription across every buyer, for the `/market/fulfillment` admin page.
  */
 export interface GetMarketSubscriptionsRequest {
+  /**
+   * Which of the two views below to return. Defaults to
+   * `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE` (proto3's implicit `0` default), so existing
+   * callers that predate this field keep getting their own subscriptions, not the admin view.
+   */
+  requestType: GetMarketSubscriptionsRequestType;
 }
 
 export interface GetMarketSubscriptionsResponse {
+  /**
+   * For `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE`: the caller's own subscriptions, newest
+   * first. For `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN`: every
+   * `PURCHASE_TYPE_RELLM_HOSTING` subscription across every buyer, oldest first (so the oldest
+   * unfulfilled order surfaces at the top of `/market/fulfillment`).
+   */
   marketSubscriptions: MarketSubscription[];
 }
 
@@ -151,6 +364,10 @@ export interface GetMarketSubscriptionsResponse {
  * Stripe Checkout flow -- see `MakeMarketPurchaseResponse.checkout_url`. No `MarketPurchase`/
  * `MarketSubscription` is created by this call itself; that only happens once Stripe confirms
  * payment via webhook, so an abandoned checkout never leaves a half-created purchase behind.
+ * Rejected outright (`market_disabled`) if `market_settings.enabled` is false -- checked first,
+ * ahead of every product-specific precondition (delisted/sold-out/Stripe-not-configured/etc.),
+ * since an admin who's closed Market entirely shouldn't have that bypassable by simply knowing a
+ * still-valid product id.
  */
 export interface MakeMarketPurchaseRequest {
   marketProductId: string;
@@ -162,35 +379,104 @@ export interface MakeMarketPurchaseRequest {
   rellmHostingDetails?: RellmHostingPurchaseDetails | undefined;
 }
 
+/** A pending Stripe Checkout Session, ready to redirect the buyer's browser to. */
 export interface MakeMarketPurchaseResponse {
-  /** Redirect the buyer's browser here (a Stripe-hosted Checkout page) to complete payment. */
+  /**
+   * Redirect the buyer's browser here (a Stripe-hosted Checkout page) to complete payment. Expires
+   * after Stripe's own Checkout Session timeout if never completed -- since no `MarketPurchase` row
+   * is created until the webhook fires (see this message's own request's doc), an abandoned/expired
+   * checkout leaves no trace at all.
+   */
   checkoutUrl: string;
 }
 
+/**
+ * One completed billing event -- the initial purchase or a later recurring renewal charge -- for a
+ * single product. Created only from `web::stripe_webhook` (the initial purchase, on
+ * `checkout.session.completed`) or `logic::market_renewal` (each subsequent recurring charge),
+ * never directly by `MakeMarketPurchase` itself (see that RPC's own doc). MarketPurchases are
+ * immutable via the API+CLI once created -- there is no `UpdateMarketPurchase` RPC; the payments,
+ * refunds, and (for a subscription) fulfillment information that accumulate against a purchase over
+ * time live in their own separate messages/tables instead of ever rewriting this one.
+ */
 export interface MarketPurchase {
   id: string;
-  buyer: Author | undefined;
+  /** Who bought this. */
+  buyer:
+    | Author
+    | undefined;
+  /**
+   * What this purchase grants -- copied from (and always matching) `market_product.type` at the
+   * time of purchase. Denormalized here (rather than requiring a lookup through `market_product`)
+   * so a client can branch on `details`' oneof case without needing `market_product` populated.
+   */
   type: PurchaseType;
+  /**
+   * The `MarketProduct` this purchase was made against, as it existed at the time it was fetched --
+   * may since have changed price/details/been delisted; this purchase's own `amount`-equivalent
+   * fields live on whichever `MarketPayment`s are attached, not here.
+   */
   marketProduct:
     | MarketProduct
     | undefined;
-  /** Note: this circular relationship should be handled by the Rust marshaling side. */
-  marketSubscription?: MarketSubscription | undefined;
+  /**
+   * The subscription this purchase belongs to -- every purchase gets one, including a
+   * `PURCHASE_PERIOD_INDEFINITE` one-time purchase (see `MarketSubscription`'s own doc), so
+   * `Optional` here really only means "always unset when this `MarketPurchase` is itself embedded
+   * inside a `MarketSubscription.billing_history`" (there'd be no point recursing into the same
+   * subscription again). Note: this circular relationship should be handled by the Rust marshaling
+   * side.
+   */
+  marketSubscription?:
+    | MarketSubscription
+    | undefined;
+  /**
+   * Every payment recorded against this purchase, oldest first -- ordinarily just one, but a failed
+   * charge that's later retried (see `logic::market_renewal`) can leave more than one row.
+   */
   marketPayments: MarketPayment[];
+  /**
+   * Every refund recorded against this purchase, oldest first -- empty for the common case of a
+   * purchase that was never refunded.
+   */
   marketRefunds: MarketRefund[];
   mediaStoragePurchaseDetails?: MediaStoragePurchaseDetails | undefined;
   aiGrantPurchaseDetails?: AIGrantPurchaseDetails | undefined;
   rellmHostingPurchaseDetails?: RellmHostingPurchaseDetails | undefined;
-  permissionsAccessPurchaseDetails?: PermissionsAccessPurchaseDetails | undefined;
+  permissionsAccessPurchaseDetails?:
+    | PermissionsAccessPurchaseDetails
+    | undefined;
+  /**
+   * When this purchase was recorded -- i.e. when the Stripe webhook/renewal job actually processed
+   * it, not when the buyer started checkout.
+   */
   createdAt: string | undefined;
 }
 
+/**
+ * A single successful charge against a `MarketPurchase` -- one row per completed Stripe
+ * `PaymentIntent` (the initial purchase's, or a later renewal's). Backed by the same
+ * `market_payments` table as `MarketRefund` (a positive `amount` row marshals to a `MarketPayment`,
+ * a negative one to a `MarketRefund` -- see that message's own doc), so a `MarketPayment` is never
+ * itself edited or deleted once created; a refund is always its own separate row/message.
+ */
 export interface MarketPayment {
+  /**
+   * The amount actually charged, in the same unit `MarketProduct.amount` uses (smallest unit of
+   * `currency`, except for a zero-decimal currency like JPY).
+   */
   amount: number;
+  /**
+   * The ISO 4217 numeric currency code `amount` is denominated in -- copied from the purchase's own
+   * product at charge time.
+   */
   currency: number;
   marketPurchaseId: string;
   /** The card actually charged, if known/resolvable at the time this MarketPayment was recorded. */
-  method?: MarketPaymentMethod | undefined;
+  method?:
+    | MarketPaymentMethod
+    | undefined;
+  /** When this charge succeeded. */
   createdAt: string | undefined;
 }
 
@@ -205,12 +491,27 @@ export interface MarketPaymentMethod {
   cardBrand: string;
   /** Last 4 digits of the card number. */
   cardLast4: string;
+  /** 1-12. */
   cardExpMonth: number;
+  /** 4-digit year. */
   cardExpYear: number;
 }
 
+/**
+ * A single refund issued against a `MarketPurchase`'s payment -- see `MarketPayment`'s own doc for
+ * how this and `MarketPayment` share the same underlying `market_payments` table.
+ */
 export interface MarketRefund {
+  /**
+   * The amount refunded, in the same unit the original `MarketPayment.amount` was charged in --
+   * always positive here (the underlying row's negative `amount` is what distinguishes a refund
+   * from a payment; this message itself never exposes the sign).
+   */
   amount: number;
+  /**
+   * The ISO 4217 numeric currency code `amount` is denominated in -- always matches the
+   * `MarketPayment.currency` being refunded.
+   */
   currency: number;
   marketPurchaseId: string;
   /**
@@ -218,7 +519,10 @@ export interface MarketRefund {
    * MarketPayment being refunded, since Stripe refunds are only ever issued back to their
    * original payment method.
    */
-  method?: MarketRefundMethod | undefined;
+  method?:
+    | MarketRefundMethod
+    | undefined;
+  /** When this refund was issued. */
   createdAt: string | undefined;
 }
 
@@ -228,75 +532,359 @@ export interface MarketRefund {
  * otherwise-independent messages, matching the MarketPayment/MarketRefund split itself.
  */
 export interface MarketRefundMethod {
+  /** E.g. "visa", "mastercard", "amex". */
   cardBrand: string;
+  /** Last 4 digits of the card number. */
   cardLast4: string;
+  /** 1-12. */
   cardExpMonth: number;
+  /** 4-digit year. */
   cardExpYear: number;
 }
 
+/**
+ * `MarketPurchase.details`' `PURCHASE_TYPE_MEDIA_STORAGE` variant -- copied verbatim from the
+ * originating `MarketProduct.details` at the moment this purchase was fulfilled (see
+ * `MarketPurchase.details`' own doc). Field-for-field identical to
+ * `MediaStorageSubscriptionDetails` -- kept as its own message only so the Purchase- and
+ * Subscription-side `oneof`s stay independent Rust types (see
+ * `logic::market_fulfillment::terminate_entitlement`'s own doc for why that distinction matters
+ * for `PermissionsAccessPurchaseDetails`/`PermissionsAccessSubscriptionDetails`).
+ */
 export interface MediaStoragePurchaseDetails {
+  /**
+   * The buyer's new total media storage allocation, replacing (not adding to) whatever quota they
+   * already had -- see `logic::market_fulfillment::fulfill_purchase`'s `MediaStorage` arm.
+   */
   allocationBytes: number;
 }
 
+/**
+ * `MarketPurchase.details`' `PURCHASE_TYPE_AI_GRANTS` variant -- copied verbatim from the
+ * originating `MarketProduct.details` at the moment this purchase was fulfilled. Field-for-field
+ * identical to `AIGrantSubscriptionDetails` -- see `MediaStoragePurchaseDetails`'s own doc for why
+ * it's still a separate message.
+ */
 export interface AIGrantPurchaseDetails {
+  /** Which `AIProvider` this grant is against. */
   aiProviderId: string;
+  /** Which of that provider's models the grant covers. */
   modelNames: string[];
+  /**
+   * The buyer's new total token balance for `ai_provider_id`/`model_names`, replacing (not adding
+   * to) whatever balance remained -- see `logic::market_fulfillment::fulfill_purchase`'s
+   * `AiGrants` arm.
+   */
   tokens: number;
 }
 
+/**
+ * `MarketPurchase.details`' `PURCHASE_TYPE_RELLM_HOSTING` variant -- unlike the other three
+ * `*PurchaseDetails` messages, NOT copied from the originating `MarketProduct.details`; instead
+ * built fresh at checkout time from the buyer's own `MakeMarketPurchaseRequest.rellm_hosting_details`
+ * (carried through as Stripe Checkout Session metadata -- see `rpcs::market::make_market_purchase`
+ * and `web::stripe_webhook::handle_checkout_session_completed`). Field-for-field identical to
+ * `RellmHostingSubscriptionDetails` (minus that message's `fulfillment_status`/`fulfillment_notes`) -- see
+ * `MediaStoragePurchaseDetails`'s own doc for why it's still a separate message.
+ */
 export interface RellmHostingPurchaseDetails {
+  /**
+   * NOTE: as of the current webhook implementation, the buyer never supplies this and the
+   * originating `MarketProduct`'s own configured size isn't carried through Checkout Session
+   * metadata either, so this is currently always `0` here -- an admin fulfilling an order today
+   * needs to cross-reference the `MarketProduct` itself for the size actually sold. Intended to be
+   * the requested PostgreSQL database size in bytes.
+   */
   dbSizeBytes: number;
+  /**
+   * Same caveat as `db_size_bytes` above -- currently always `0`. Intended to be the requested
+   * MinIO (object storage) size in bytes.
+   */
   minioSizeBytes: number;
+  /** The domain the buyer wants their new Rellm instance reachable at (e.g. "myserver.example.com"). */
   domain: string;
+  /**
+   * Where the fulfilling admin should reach the buyer about this order, separate from whatever
+   * email/contact info is on the buyer's own `User` (which may not be checked as often, or may not
+   * exist at all for a server with no email-based signup).
+   */
   contactEmail: string;
+  /**
+   * Free-form notes from the buyer to the fulfilling admin, captured once at purchase time (e.g.
+   * special requests, existing-data-migration needs). Immutable after purchase -- see
+   * `RellmHostingSubscriptionDetails.additional_information`'s own doc, which carries this same
+   * text forward onto the resulting `MarketSubscription`.
+   */
   additionalInformation: string;
 }
 
+/**
+ * `MarketPurchase.details`' `PURCHASE_TYPE_PERMISSIONS_ACCESS` variant -- copied verbatim from the
+ * originating `MarketProduct.details` at the moment this purchase was fulfilled. Field-for-field
+ * identical to `PermissionsAccessSubscriptionDetails`, but kept as a genuinely distinct Rust type
+ * (not just documentation) -- see `logic::market_fulfillment::terminate_entitlement`'s own doc,
+ * which parses a `MarketSubscription`'s `details` as `PermissionsAccessSubscriptionDetails`
+ * specifically (never this message) when clawing back a lapsed grant.
+ */
 export interface PermissionsAccessPurchaseDetails {
+  /**
+   * The permissions this purchase granted -- see `logic::market_fulfillment::fulfill_purchase`'s
+   * `PermissionsAccess` arm (adds these to the buyer's `User.permissions`, union-style).
+   */
   permissions: Permission[];
 }
 
+/**
+ * Created for *every* `MarketPurchase`, regardless of `MarketProduct.period` -- a recurring
+ * (`PURCHASE_PERIOD_ANNUAL`/`PURCHASE_PERIOD_MONTHLY`) one gets re-billed and re-fulfilled
+ * automatically every period by `renew_market_subscriptions.rs` until canceled; a
+ * `PURCHASE_PERIOD_INDEFINITE` one-time purchase gets a subscription too (with `renews_at` unset --
+ * see that field's own doc), purely so it's still cancelable and still carries the same per-type
+ * fulfillment tracking (e.g. `RellmHostingSubscriptionDetails.fulfillment_status`/`fulfillment_notes`) every
+ * other purchase type gets, even though it never actually bills again.
+ */
 export interface MarketSubscription {
   id: string;
-  buyer: Author | undefined;
+  /** Who owns this subscription (i.e. who's being billed and who the entitlement applies to). */
+  buyer:
+    | Author
+    | undefined;
+  /**
+   * What this subscription grants -- copied from (and always matching) `market_product.type`.
+   * Denormalized here the same way `MarketPurchase.type` is -- see that field's own doc.
+   */
   type: PurchaseType;
+  /**
+   * How often this subscription bills -- copied from `market_product.period` at the time this
+   * subscription was created. `PURCHASE_PERIOD_INDEFINITE` is valid here too (see this message's
+   * own doc) -- it just means `renews_at` stays unset and this subscription never actually bills
+   * again.
+   */
   period: PurchasePeriod;
+  /**
+   * The price charged each renewal, in the same unit `MarketProduct.amount` uses -- copied from
+   * `market_product.amount` at the time this subscription was created, so a later price change to
+   * the product doesn't retroactively re-price an existing subscriber.
+   */
   amount: number;
+  /**
+   * The ISO 4217 numeric currency code `amount` is denominated in -- copied from
+   * `market_product.currency` at the time this subscription was created.
+   */
   currency: number;
-  /** Note: marshaling should handle the circular relationship here gracefully. */
-  marketProduct: MarketProduct | undefined;
+  /**
+   * The `MarketProduct` this subscription was made against, as it existed at the time it was
+   * fetched -- may since have changed price/details/been delisted (delisting an already-subscribed
+   * product doesn't cancel existing subscriptions, only blocks new purchases). Note: marshaling
+   * should handle the circular relationship here gracefully.
+   */
+  marketProduct:
+    | MarketProduct
+    | undefined;
+  /**
+   * Every `MarketPurchase` billed against this subscription so far -- the original purchase plus
+   * every successful renewal charge, newest first. Each entry's own `market_subscription` field is
+   * left unset here (see `MarketPurchase.market_subscription`'s own doc) to avoid recursing back
+   * into this same subscription.
+   */
   billingHistory: MarketPurchase[];
   mediaStorageSubscriptionDetails?: MediaStorageSubscriptionDetails | undefined;
   aiGrantSubscriptionDetails?: AIGrantSubscriptionDetails | undefined;
   rellmHostingSubscriptionDetails?: RellmHostingSubscriptionDetails | undefined;
-  permissionsAccessSubscriptionDetails?: PermissionsAccessSubscriptionDetails | undefined;
-  createdAt: string | undefined;
+  permissionsAccessSubscriptionDetails?:
+    | PermissionsAccessSubscriptionDetails
+    | undefined;
+  /**
+   * When this subscription was first created (i.e. when the initial `MarketPurchase` was
+   * fulfilled).
+   */
+  createdAt:
+    | string
+    | undefined;
+  /**
+   * When the next renewal charge is due. Always unset for a `PURCHASE_PERIOD_INDEFINITE`
+   * subscription (see this message's own doc) -- there is no next charge. Otherwise, advanced by
+   * one `period` on every successful renewal (`renew_market_subscriptions.rs`); left untouched
+   * once `canceled_at` is set, since a canceled subscription never renews again regardless of what
+   * this still says.
+   */
   renewsAt?:
     | string
     | undefined;
-  /** If set, the MarketSubscription is unavailable */
-  endedAt?: string | undefined;
+  /**
+   * Set once the subscription will no longer renew -- either the buyer/admin explicitly canceled it
+   * (CancelMarketSubscription) or a renewal charge failed. The subscription's entitlement (media
+   * storage quota, granted permissions, etc.) stays active until whichever is later of
+   * renews_at/canceled_at, at which point renew_market_subscriptions.rs revokes it and sets
+   * service_terminated_at. Also the moment `MarketProduct.sold_count` is decremented, freeing this
+   * subscription's slot for a new buyer (see that field's own doc).
+   */
+  canceledAt?:
+    | string
+    | undefined;
+  /**
+   * The time permissions were removed, media storage quotas reset, etc. -- i.e. when
+   * `logic::market_fulfillment::terminate_entitlement` actually ran for this subscription. Always
+   * unset while `canceled_at` is unset; may remain unset for a while *after* `canceled_at` is set,
+   * since the entitlement intentionally stays active until the later of `renews_at`/`canceled_at`
+   * (see `canceled_at`'s own doc) -- a buyer who cancels mid-period keeps what they already paid
+   * for through the end of that period.
+   */
+  serviceTerminatedAt?: string | undefined;
 }
 
+/**
+ * `MarketProduct.details`/`MarketSubscription.details`' `PURCHASE_TYPE_MEDIA_STORAGE` variant --
+ * what a media storage product actually grants. Field-for-field identical to
+ * `MediaStoragePurchaseDetails` -- see that message's own doc for why it's still a distinct type.
+ */
 export interface MediaStorageSubscriptionDetails {
+  /**
+   * How much media storage this product/subscription grants the buyer, replacing (not adding to)
+   * whatever quota they already had -- see `logic::market_fulfillment::fulfill_purchase`'s
+   * `MediaStorage` arm.
+   */
   allocationBytes: number;
 }
 
+/**
+ * `MarketProduct.details`/`MarketSubscription.details`' `PURCHASE_TYPE_AI_GRANTS` variant -- what
+ * an AI token product actually grants. Field-for-field identical to `AIGrantPurchaseDetails` --
+ * see that message's own doc for why it's still a distinct type.
+ */
 export interface AIGrantSubscriptionDetails {
+  /** Which `AIProvider` this grant is against. */
   aiProviderId: string;
+  /** Which of that provider's models the grant covers. */
   modelNames: string[];
+  /**
+   * How many tokens this product/subscription grants the buyer each time it's (re-)fulfilled,
+   * replacing (not adding to) whatever balance remained -- see
+   * `logic::market_fulfillment::fulfill_purchase`'s `AiGrants` arm.
+   */
   tokens: number;
 }
 
+/**
+ * `MarketProduct.details`/`MarketSubscription.details`' `PURCHASE_TYPE_RELLM_HOSTING` variant --
+ * what a dedicated-hosting product actually grants, plus the buyer's own request details and the
+ * admin's own fulfillment tracking for it. Field-for-field identical to `RellmHostingPurchaseDetails`
+ * for the first five fields (see that message's own doc); `fulfillment_status`/`fulfillment_notes` below have
+ * no `*PurchaseDetails` counterpart, since they're only ever meaningful on the standing
+ * `MarketSubscription`, not on any one individual `MarketPurchase` billing event.
+ */
 export interface RellmHostingSubscriptionDetails {
+  /**
+   * On a `MarketProduct`: the PostgreSQL database size (in bytes) this product is configured to
+   * provision. On a `MarketSubscription`: see `RellmHostingPurchaseDetails.db_size_bytes`'s own
+   * doc -- as of the current webhook implementation, this is currently always `0` here too, since
+   * the subscription's `details` is built the same way the purchase's is.
+   */
   dbSizeBytes: number;
+  /**
+   * Same caveat as `db_size_bytes` above. On a `MarketProduct`: the MinIO (object storage) size (in
+   * bytes) this product is configured to provision.
+   */
   minioSizeBytes: number;
+  /**
+   * On a `MarketProduct`: unset/meaningless (a product isn't tied to any one domain). On a
+   * `MarketSubscription`: the domain the buyer wants their new Rellm instance reachable at, from
+   * `RellmHostingPurchaseDetails.domain`.
+   */
   domain: string;
+  /**
+   * On a `MarketProduct`: unset/meaningless. On a `MarketSubscription`: where the fulfilling admin
+   * should reach the buyer about this order, from `RellmHostingPurchaseDetails.contact_email`.
+   */
   contactEmail: string;
+  /**
+   * Immutable after purchase -- the buyer's own notes to the admin fulfilling this order. Never
+   * editable via UpdateMarketSubscription (see that RPC's own doc); `fulfillment_notes` below is
+   * the admin/buyer conversation about fulfilling it.
+   */
   additionalInformation: string;
+  /**
+   * Where this Rellm hosting order currently stands -- Rellm hosting is deliberately not automated
+   * (see `market.proto`'s own top-of-file notes and `logic::market_fulfillment::fulfill_purchase`'s
+   * `RellmHosting` no-op arm), so this is the one manual "how far along is this order" signal,
+   * shown on `/market/fulfillment` (`GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN`).
+   * Never independently settable by a client -- always server-derived as whatever
+   * `fulfillment_notes`' own last entry's `fulfillment_status` says (or
+   * `FULFILLMENT_STATUS_AWAITING_HOST_ADMIN` if `fulfillment_notes` is empty), so this field can
+   * never drift out of sync with the history that explains *why* it's in that state.
+   */
+  fulfillmentStatus: FulfillmentStatus;
+  /**
+   * The admin/buyer conversation about fulfilling this order -- oldest to newest, append-only (see
+   * `UpdateMarketSubscription`'s own doc: a new entry can only ever be appended after whatever's
+   * already here, never inserted/reordered/removed, and its `user_id` must match whoever's actually
+   * making the request -- the server stamps `created_at` itself).
+   */
+  fulfillmentNotes: FulfillmentNote[];
 }
 
+/**
+ * One entry in a MarketSubscription's `fulfillment_notes` -- see that field's own doc. Immutable
+ * once appended: `UpdateMarketSubscription` only ever accepts a `fulfillment_notes` list whose
+ * existing entries are byte-for-byte identical to what's already stored (see that RPC's own doc).
+ */
+export interface FulfillmentNote {
+  /**
+   * Whoever wrote this note -- either the fulfilling admin or the buyer themselves, depending on
+   * which side of the conversation this entry is. Must match the id of whoever's actually making
+   * the `UpdateMarketSubscription` request that appends this entry (server-validated -- see that
+   * RPC's own doc); a client can't author a note on someone else's behalf.
+   */
+  userId: string;
+  /**
+   * The note's own text -- required (rejected with `fulfillment_note_text_required`) unless this
+   * entry also changes `fulfillment_status` from whatever the previous entry (or, for the very
+   * first note, the implicit `FULFILLMENT_STATUS_AWAITING_HOST_ADMIN` default) left it at, in which
+   * case an admin can record a bare status change with no accompanying text (e.g. the automatic
+   * "admin opened this order" transition to `FULFILLMENT_STATUS_IN_PROGRESS` -- see that enum
+   * value's own doc).
+   */
+  note: string;
+  /**
+   * What `RellmHostingSubscriptionDetails.fulfillment_status` became as of this note -- unchanged
+   * from the previous entry for a plain note, or the new value for an actual status transition (see
+   * `note`'s own doc on when text is/isn't required for each case). This is what makes
+   * `fulfillment_notes` a genuine "fulfillment state history," not just a chat log alongside a
+   * separately-tracked current status.
+   */
+  fulfillmentStatus: FulfillmentStatus;
+  /**
+   * When this note was added. Server-stamped -- `UpdateMarketSubscription` always ignores whatever
+   * timestamp the client sends for a newly-appended entry.
+   */
+  createdAt: string | undefined;
+}
+
+/**
+ * `MarketProduct.details`/`MarketSubscription.details`' `PURCHASE_TYPE_PERMISSIONS_ACCESS`
+ * variant -- what a permissions-bundle product actually grants. Field-for-field identical to
+ * `PermissionsAccessPurchaseDetails` -- see that message's own doc for why it's still a distinct
+ * type (that distinction is exactly what lets `logic::market_fulfillment::terminate_entitlement`
+ * tell "what to claw back" apart from "what was originally billed").
+ */
 export interface PermissionsAccessSubscriptionDetails {
+  /**
+   * Which `Permission`s this product/subscription grants the buyer -- see
+   * `logic::market_fulfillment::fulfill_purchase`'s `PermissionsAccess` arm (union-added to the
+   * buyer's own `User.permissions`, never replacing what they already had) and
+   * `terminate_entitlement`'s own arm (the exact claw-back set on cancellation/expiry).
+   * Intentionally excludes permissions dangerous or nonsensical to sell this way -- e.g.
+   * "Grant Basic Permissions," any "Moderate"/"Read All System Messages" permission, "Admin,"
+   * "View Private Contact Methods," and "Edit Cluster Settings" must never appear in a Market
+   * product's own `permissions` list. Enforced server-side on `CreateMarketProduct`/
+   * `UpdateMarketProduct` (rejected with `permission_not_purchasable`) and again on
+   * `MakeMarketPurchase` (defense in depth, in case a permission is later removed from the
+   * purchasable set after a product granting it already exists) -- see
+   * `rpcs::market::create_market_product::PURCHASABLE_PERMISSIONS`. NOTE: that Rust list is an
+   * explicit include-list, not an exclude-list -- described here as an exclusion for readability,
+   * but implemented as "only these permissions are purchasable" so a newly-added `Permission` is
+   * never purchasable by default; it has to be deliberately added to that list.
+   */
   permissions: Permission[];
 }
 
@@ -307,6 +895,8 @@ function createBaseMarketProduct(): MarketProduct {
     period: 0,
     amount: 0,
     currency: 0,
+    availableCount: 0,
+    soldCount: 0,
     mediaStorageSubscriptionDetails: undefined,
     aiGrantSubscriptionDetails: undefined,
     rellmHostingSubscriptionDetails: undefined,
@@ -332,6 +922,12 @@ export const MarketProduct: MessageFns<MarketProduct> = {
     }
     if (message.currency !== 0) {
       writer.uint32(40).uint32(message.currency);
+    }
+    if (message.availableCount !== 0) {
+      writer.uint32(48).uint32(message.availableCount);
+    }
+    if (message.soldCount !== 0) {
+      writer.uint32(56).uint32(message.soldCount);
     }
     if (message.mediaStorageSubscriptionDetails !== undefined) {
       MediaStorageSubscriptionDetails.encode(message.mediaStorageSubscriptionDetails, writer.uint32(82).fork()).join();
@@ -404,6 +1000,22 @@ export const MarketProduct: MessageFns<MarketProduct> = {
           message.currency = reader.uint32();
           continue;
         }
+        case 6: {
+          if (tag !== 48) {
+            break;
+          }
+
+          message.availableCount = reader.uint32();
+          continue;
+        }
+        case 7: {
+          if (tag !== 56) {
+            break;
+          }
+
+          message.soldCount = reader.uint32();
+          continue;
+        }
         case 10: {
           if (tag !== 82) {
             break;
@@ -471,6 +1083,8 @@ export const MarketProduct: MessageFns<MarketProduct> = {
       period: isSet(object.period) ? purchasePeriodFromJSON(object.period) : 0,
       amount: isSet(object.amount) ? globalThis.Number(object.amount) : 0,
       currency: isSet(object.currency) ? globalThis.Number(object.currency) : 0,
+      availableCount: isSet(object.availableCount) ? globalThis.Number(object.availableCount) : 0,
+      soldCount: isSet(object.soldCount) ? globalThis.Number(object.soldCount) : 0,
       mediaStorageSubscriptionDetails: isSet(object.mediaStorageSubscriptionDetails)
         ? MediaStorageSubscriptionDetails.fromJSON(object.mediaStorageSubscriptionDetails)
         : undefined,
@@ -504,6 +1118,12 @@ export const MarketProduct: MessageFns<MarketProduct> = {
     }
     if (message.currency !== 0) {
       obj.currency = Math.round(message.currency);
+    }
+    if (message.availableCount !== 0) {
+      obj.availableCount = Math.round(message.availableCount);
+    }
+    if (message.soldCount !== 0) {
+      obj.soldCount = Math.round(message.soldCount);
     }
     if (message.mediaStorageSubscriptionDetails !== undefined) {
       obj.mediaStorageSubscriptionDetails = MediaStorageSubscriptionDetails.toJSON(
@@ -542,6 +1162,8 @@ export const MarketProduct: MessageFns<MarketProduct> = {
     message.period = object.period ?? 0;
     message.amount = object.amount ?? 0;
     message.currency = object.currency ?? 0;
+    message.availableCount = object.availableCount ?? 0;
+    message.soldCount = object.soldCount ?? 0;
     message.mediaStorageSubscriptionDetails =
       (object.mediaStorageSubscriptionDetails !== undefined && object.mediaStorageSubscriptionDetails !== null)
         ? MediaStorageSubscriptionDetails.fromPartial(object.mediaStorageSubscriptionDetails)
@@ -671,11 +1293,14 @@ export const GetMarketProductsResponse: MessageFns<GetMarketProductsResponse> = 
 };
 
 function createBaseGetMarketSubscriptionsRequest(): GetMarketSubscriptionsRequest {
-  return {};
+  return { requestType: 0 };
 }
 
 export const GetMarketSubscriptionsRequest: MessageFns<GetMarketSubscriptionsRequest> = {
-  encode(_: GetMarketSubscriptionsRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+  encode(message: GetMarketSubscriptionsRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.requestType !== 0) {
+      writer.uint32(8).int32(message.requestType);
+    }
     return writer;
   },
 
@@ -686,6 +1311,14 @@ export const GetMarketSubscriptionsRequest: MessageFns<GetMarketSubscriptionsReq
     while (reader.pos < end) {
       const tag = reader.uint32();
       switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 8) {
+            break;
+          }
+
+          message.requestType = reader.int32() as any;
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -695,20 +1328,28 @@ export const GetMarketSubscriptionsRequest: MessageFns<GetMarketSubscriptionsReq
     return message;
   },
 
-  fromJSON(_: any): GetMarketSubscriptionsRequest {
-    return {};
+  fromJSON(object: any): GetMarketSubscriptionsRequest {
+    return {
+      requestType: isSet(object.requestType) ? getMarketSubscriptionsRequestTypeFromJSON(object.requestType) : 0,
+    };
   },
 
-  toJSON(_: GetMarketSubscriptionsRequest): unknown {
+  toJSON(message: GetMarketSubscriptionsRequest): unknown {
     const obj: any = {};
+    if (message.requestType !== 0) {
+      obj.requestType = getMarketSubscriptionsRequestTypeToJSON(message.requestType);
+    }
     return obj;
   },
 
   create<I extends Exact<DeepPartial<GetMarketSubscriptionsRequest>, I>>(base?: I): GetMarketSubscriptionsRequest {
     return GetMarketSubscriptionsRequest.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<GetMarketSubscriptionsRequest>, I>>(_: I): GetMarketSubscriptionsRequest {
+  fromPartial<I extends Exact<DeepPartial<GetMarketSubscriptionsRequest>, I>>(
+    object: I,
+  ): GetMarketSubscriptionsRequest {
     const message = createBaseGetMarketSubscriptionsRequest();
+    message.requestType = object.requestType ?? 0;
     return message;
   },
 };
@@ -2037,7 +2678,8 @@ function createBaseMarketSubscription(): MarketSubscription {
     permissionsAccessSubscriptionDetails: undefined,
     createdAt: undefined,
     renewsAt: undefined,
-    endedAt: undefined,
+    canceledAt: undefined,
+    serviceTerminatedAt: undefined,
   };
 }
 
@@ -2088,8 +2730,11 @@ export const MarketSubscription: MessageFns<MarketSubscription> = {
     if (message.renewsAt !== undefined) {
       Timestamp.encode(toTimestamp(message.renewsAt), writer.uint32(170).fork()).join();
     }
-    if (message.endedAt !== undefined) {
-      Timestamp.encode(toTimestamp(message.endedAt), writer.uint32(178).fork()).join();
+    if (message.canceledAt !== undefined) {
+      Timestamp.encode(toTimestamp(message.canceledAt), writer.uint32(178).fork()).join();
+    }
+    if (message.serviceTerminatedAt !== undefined) {
+      Timestamp.encode(toTimestamp(message.serviceTerminatedAt), writer.uint32(186).fork()).join();
     }
     return writer;
   },
@@ -2221,7 +2866,15 @@ export const MarketSubscription: MessageFns<MarketSubscription> = {
             break;
           }
 
-          message.endedAt = fromTimestamp(Timestamp.decode(reader, reader.uint32()));
+          message.canceledAt = fromTimestamp(Timestamp.decode(reader, reader.uint32()));
+          continue;
+        }
+        case 23: {
+          if (tag !== 186) {
+            break;
+          }
+
+          message.serviceTerminatedAt = fromTimestamp(Timestamp.decode(reader, reader.uint32()));
           continue;
         }
       }
@@ -2259,7 +2912,10 @@ export const MarketSubscription: MessageFns<MarketSubscription> = {
         : undefined,
       createdAt: isSet(object.createdAt) ? globalThis.String(object.createdAt) : undefined,
       renewsAt: isSet(object.renewsAt) ? globalThis.String(object.renewsAt) : undefined,
-      endedAt: isSet(object.endedAt) ? globalThis.String(object.endedAt) : undefined,
+      canceledAt: isSet(object.canceledAt) ? globalThis.String(object.canceledAt) : undefined,
+      serviceTerminatedAt: isSet(object.serviceTerminatedAt)
+        ? globalThis.String(object.serviceTerminatedAt)
+        : undefined,
     };
   },
 
@@ -2313,8 +2969,11 @@ export const MarketSubscription: MessageFns<MarketSubscription> = {
     if (message.renewsAt !== undefined) {
       obj.renewsAt = message.renewsAt;
     }
-    if (message.endedAt !== undefined) {
-      obj.endedAt = message.endedAt;
+    if (message.canceledAt !== undefined) {
+      obj.canceledAt = message.canceledAt;
+    }
+    if (message.serviceTerminatedAt !== undefined) {
+      obj.serviceTerminatedAt = message.serviceTerminatedAt;
     }
     return obj;
   },
@@ -2355,7 +3014,8 @@ export const MarketSubscription: MessageFns<MarketSubscription> = {
         : undefined;
     message.createdAt = object.createdAt ?? undefined;
     message.renewsAt = object.renewsAt ?? undefined;
-    message.endedAt = object.endedAt ?? undefined;
+    message.canceledAt = object.canceledAt ?? undefined;
+    message.serviceTerminatedAt = object.serviceTerminatedAt ?? undefined;
     return message;
   },
 };
@@ -2515,7 +3175,15 @@ export const AIGrantSubscriptionDetails: MessageFns<AIGrantSubscriptionDetails> 
 };
 
 function createBaseRellmHostingSubscriptionDetails(): RellmHostingSubscriptionDetails {
-  return { dbSizeBytes: 0, minioSizeBytes: 0, domain: "", contactEmail: "", additionalInformation: "" };
+  return {
+    dbSizeBytes: 0,
+    minioSizeBytes: 0,
+    domain: "",
+    contactEmail: "",
+    additionalInformation: "",
+    fulfillmentStatus: 0,
+    fulfillmentNotes: [],
+  };
 }
 
 export const RellmHostingSubscriptionDetails: MessageFns<RellmHostingSubscriptionDetails> = {
@@ -2534,6 +3202,12 @@ export const RellmHostingSubscriptionDetails: MessageFns<RellmHostingSubscriptio
     }
     if (message.additionalInformation !== "") {
       writer.uint32(42).string(message.additionalInformation);
+    }
+    if (message.fulfillmentStatus !== 0) {
+      writer.uint32(48).int32(message.fulfillmentStatus);
+    }
+    for (const v of message.fulfillmentNotes) {
+      FulfillmentNote.encode(v!, writer.uint32(58).fork()).join();
     }
     return writer;
   },
@@ -2585,6 +3259,22 @@ export const RellmHostingSubscriptionDetails: MessageFns<RellmHostingSubscriptio
           message.additionalInformation = reader.string();
           continue;
         }
+        case 6: {
+          if (tag !== 48) {
+            break;
+          }
+
+          message.fulfillmentStatus = reader.int32() as any;
+          continue;
+        }
+        case 7: {
+          if (tag !== 58) {
+            break;
+          }
+
+          message.fulfillmentNotes.push(FulfillmentNote.decode(reader, reader.uint32()));
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -2601,6 +3291,10 @@ export const RellmHostingSubscriptionDetails: MessageFns<RellmHostingSubscriptio
       domain: isSet(object.domain) ? globalThis.String(object.domain) : "",
       contactEmail: isSet(object.contactEmail) ? globalThis.String(object.contactEmail) : "",
       additionalInformation: isSet(object.additionalInformation) ? globalThis.String(object.additionalInformation) : "",
+      fulfillmentStatus: isSet(object.fulfillmentStatus) ? fulfillmentStatusFromJSON(object.fulfillmentStatus) : 0,
+      fulfillmentNotes: globalThis.Array.isArray(object?.fulfillmentNotes)
+        ? object.fulfillmentNotes.map((e: any) => FulfillmentNote.fromJSON(e))
+        : [],
     };
   },
 
@@ -2621,6 +3315,12 @@ export const RellmHostingSubscriptionDetails: MessageFns<RellmHostingSubscriptio
     if (message.additionalInformation !== "") {
       obj.additionalInformation = message.additionalInformation;
     }
+    if (message.fulfillmentStatus !== 0) {
+      obj.fulfillmentStatus = fulfillmentStatusToJSON(message.fulfillmentStatus);
+    }
+    if (message.fulfillmentNotes?.length) {
+      obj.fulfillmentNotes = message.fulfillmentNotes.map((e) => FulfillmentNote.toJSON(e));
+    }
     return obj;
   },
 
@@ -2636,6 +3336,116 @@ export const RellmHostingSubscriptionDetails: MessageFns<RellmHostingSubscriptio
     message.domain = object.domain ?? "";
     message.contactEmail = object.contactEmail ?? "";
     message.additionalInformation = object.additionalInformation ?? "";
+    message.fulfillmentStatus = object.fulfillmentStatus ?? 0;
+    message.fulfillmentNotes = object.fulfillmentNotes?.map((e) => FulfillmentNote.fromPartial(e)) || [];
+    return message;
+  },
+};
+
+function createBaseFulfillmentNote(): FulfillmentNote {
+  return { userId: "", note: "", fulfillmentStatus: 0, createdAt: undefined };
+}
+
+export const FulfillmentNote: MessageFns<FulfillmentNote> = {
+  encode(message: FulfillmentNote, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.userId !== "") {
+      writer.uint32(10).string(message.userId);
+    }
+    if (message.note !== "") {
+      writer.uint32(18).string(message.note);
+    }
+    if (message.fulfillmentStatus !== 0) {
+      writer.uint32(24).int32(message.fulfillmentStatus);
+    }
+    if (message.createdAt !== undefined) {
+      Timestamp.encode(toTimestamp(message.createdAt), writer.uint32(34).fork()).join();
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): FulfillmentNote {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseFulfillmentNote();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.userId = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.note = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 24) {
+            break;
+          }
+
+          message.fulfillmentStatus = reader.int32() as any;
+          continue;
+        }
+        case 4: {
+          if (tag !== 34) {
+            break;
+          }
+
+          message.createdAt = fromTimestamp(Timestamp.decode(reader, reader.uint32()));
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): FulfillmentNote {
+    return {
+      userId: isSet(object.userId) ? globalThis.String(object.userId) : "",
+      note: isSet(object.note) ? globalThis.String(object.note) : "",
+      fulfillmentStatus: isSet(object.fulfillmentStatus) ? fulfillmentStatusFromJSON(object.fulfillmentStatus) : 0,
+      createdAt: isSet(object.createdAt) ? globalThis.String(object.createdAt) : undefined,
+    };
+  },
+
+  toJSON(message: FulfillmentNote): unknown {
+    const obj: any = {};
+    if (message.userId !== "") {
+      obj.userId = message.userId;
+    }
+    if (message.note !== "") {
+      obj.note = message.note;
+    }
+    if (message.fulfillmentStatus !== 0) {
+      obj.fulfillmentStatus = fulfillmentStatusToJSON(message.fulfillmentStatus);
+    }
+    if (message.createdAt !== undefined) {
+      obj.createdAt = message.createdAt;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<FulfillmentNote>, I>>(base?: I): FulfillmentNote {
+    return FulfillmentNote.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<FulfillmentNote>, I>>(object: I): FulfillmentNote {
+    const message = createBaseFulfillmentNote();
+    message.userId = object.userId ?? "";
+    message.note = object.note ?? "";
+    message.fulfillmentStatus = object.fulfillmentStatus ?? 0;
+    message.createdAt = object.createdAt ?? undefined;
     return message;
   },
 };

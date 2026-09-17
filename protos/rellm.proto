@@ -17,6 +17,8 @@ import "federation.proto";
 import "server_configuration.proto";
 import "market.proto";
 
+// [Jump to the gRPC API?](#grpc-api)
+//
 // [Rellm](https://github.com/JonLatane/rellm) is a social media protocol with support for Users (and Follows), Media, Posts, Events, Groups, and Messages. It is designed to be federated, 
 // but does not require federation to be a useful next-gen forum type solution.
 // It is designed to be used with a variety of frontends, including web, mobile, and desktop applications. It interoperates across numerous ports, protocols, and formats, including
@@ -402,16 +404,23 @@ import "market.proto";
 //
 // #### Rellm's Market
 // Rellm's Market (`market.proto`) is this server's storefront - a small, Stripe-backed marketplace an admin
-// stocks with up to nine [`MarketProduct`](#rellm-MarketProduct)s (one offering type times one billing period
-// each) that any user can buy. Three offering types exist today ([`PurchaseType`](#rellm-PurchaseType)):
+// stocks with up to twelve [`MarketProduct`](#rellm-MarketProduct)s (one offering type times one billing period
+// each) that any user can buy. Four offering types exist today ([`PurchaseType`](#rellm-PurchaseType)):
 // `PURCHASE_TYPE_MEDIA_STORAGE` (raises the buyer's `User.media_storage_limit_bytes`),
 // `PURCHASE_TYPE_AI_GRANTS` (grants/resets an [`AIProviderGrant`](#rellm-AIProviderGrant) against one of the
-// server operator's [`AIProvider`](#rellm-AIProvider)s), and `PURCHASE_TYPE_RELLM_HOSTING` (bills the buyer for
+// server operator's [`AIProvider`](#rellm-AIProvider)s), `PURCHASE_TYPE_RELLM_HOSTING` (bills the buyer for
 // the server operator to stand up a new Rellm instance on a domain of their choosing - provisioned by hand, not
-// automated). Each [`MarketProduct`](#rellm-MarketProduct) is sold once ([`PurchasePeriod`](#rellm-PurchasePeriod)
-// `PURCHASE_PERIOD_INDEFINITE`, a single non-renewing [`MarketPurchase`](#rellm-MarketPurchase)) or on a recurring
-// `PURCHASE_PERIOD_ANNUAL`/`PURCHASE_PERIOD_MONTHLY` cycle (a [`MarketSubscription`](#rellm-MarketSubscription),
-// whose `billing_history` accumulates one [`MarketPurchase`](#rellm-MarketPurchase) per renewal).
+// automated; the admin's own `/market/fulfillment` page, backed by
+// `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN` and
+// [`UpdateMarketSubscription`](#grpc-api-UpdateMarketSubscription), tracks these orders -
+// [`RellmHostingSubscriptionDetails`](#rellm-RellmHostingSubscriptionDetails)'s own `fulfillment_status`/
+// `fulfillment_notes` fields), and `PURCHASE_TYPE_PERMISSIONS_ACCESS` (grants the buyer a fixed set of `Permission`s, e.g.
+// pay-gating `SYNC_EVENTS_TO_FACEBOOK`). Every purchase gets a [`MarketSubscription`](#rellm-MarketSubscription) --
+// even a one-time ([`PurchasePeriod`](#rellm-PurchasePeriod) `PURCHASE_PERIOD_INDEFINITE`) purchase, so it's still
+// cancelable and still carries the same per-type fulfillment tracking (e.g. `fulfillment_status`/`fulfillment_notes` above)
+// a recurring one does; it just never gets a `renews_at`, so it never actually bills again. A recurring
+// `PURCHASE_PERIOD_ANNUAL`/`PURCHASE_PERIOD_MONTHLY` subscription's `billing_history` accumulates one
+// [`MarketPurchase`](#rellm-MarketPurchase) per renewal; an indefinite one's stays at exactly one.
 //
 // Products are listed via [`GetMarketProducts`](#grpc-api-GetMarketProducts) (unauthenticated; admins
 // additionally see delisted ones) and managed via
@@ -425,12 +434,16 @@ import "market.proto";
 // [`MarketPurchase`](#rellm-MarketPurchase)/[`MarketSubscription`](#rellm-MarketSubscription) and apply its
 // entitlement. A recurring [`MarketSubscription`](#rellm-MarketSubscription) renews itself thereafter via
 // off-session charges against the payment method saved on that first checkout - no further action from the
-// buyer - until a renewal charge fails, which ends the [`MarketSubscription`](#rellm-MarketSubscription). A
-// user's own MarketSubscriptions (never anyone else's) are listed via
-// [`GetMarketSubscriptions`](#grpc-api-GetMarketSubscriptions), and also travel along on [`User`](#rellm-User)
-// itself (`User.market_subscriptions`) the same way `ai_models`/`sync_sources` do. Stripe credentials for all of
-// this live in `ServerConfiguration.stripe_config` (a [`StripeConfig`](#rellm-StripeConfig)), Admin-only like
-// `twilio_config`/`bird_config`.
+// buyer - until either a renewal charge fails or the buyer/admin calls
+// [`CancelMarketSubscription`](#grpc-api-CancelMarketSubscription), either of which sets `canceled_at`. The
+// entitlement itself stays in effect until whichever is later of `renews_at`/`canceled_at` - once both have
+// passed, the `renew_market_subscriptions` background job revokes it (reverts `media_storage_limit_bytes` to
+// `ServerConfiguration.media_settings.default_media_allocation_bytes`, or removes the granted `Permission`s,
+// depending on `type`) and sets `service_terminated_at`. A user's own MarketSubscriptions (never anyone
+// else's) are listed via [`GetMarketSubscriptions`](#grpc-api-GetMarketSubscriptions), and also travel along
+// on [`User`](#rellm-User) itself (`User.market_subscriptions`) the same way `ai_models`/`sync_sources` do.
+// Stripe credentials for all of this live in `ServerConfiguration.stripe_config` (a
+// [`StripeConfig`](#rellm-StripeConfig)), Admin-only like `twilio_config`/`bird_config`.
 //
 // #### Media
 // [`Media`](#rellm-Media) represents an uploaded (or server-generated) photo or video. Unlike other types, Media
@@ -601,6 +614,22 @@ import "market.proto";
 // #### Federated Messaging
 // Rellm's Elm Messaging UI is generally a multi-server federated messenger. The main limitation is that it can only receive push notifications
 // from one server. (This could be changed with VAPID key sharing, but is part of the VAPID protocol.)
+//
+// #### Federated Markets
+// The Elm `/market` page can show more than one server's Market side by side: the browsed server's own
+// (always first) plus any other connected, enabled server whose `ServerConfiguration.market_settings.enabled`
+// is set (in Accounts panel order after that) - the public, non-secret "is this server's Market open" signal,
+// unlike `stripe_config` itself, which stays Admin-only. Each section is fully independent: it lists that
+// server's own [`MarketProduct`](#rellm-MarketProduct)s and shows product-management controls only if the
+// current user is actually an Admin *on that server*.
+//
+// Unlike Federated Browsing/Profiles/Messaging above, buying is never seamless across servers - Market is the
+// one place a user must always transact with the target site directly. A product tile for the browsed server
+// links to its own in-app product page as usual, but a tile for any *other* server links straight to that
+// server's own `https://{host}/market/product/{id}` (a real page navigation, not client-side routing), since
+// [`MakeMarketPurchase`](#grpc-api-MakeMarketPurchase) starts a Stripe Checkout Session scoped to whichever
+// server the buyer is actually authenticated against, and Stripe's own `success_url`/`cancel_url` redirect
+// back to that same server when payment completes.
 //
 // ### HTTP Endpoints
 // #### Internal HTTP server (27705)
@@ -1109,12 +1138,32 @@ service Rellm {
   // Updates a MarketProduct's amount/currency/details/delisted_at. *Authenticated*, requires Admin.
   // `type`/`period` are immutable after creation and are ignored if changed.
   rpc UpdateMarketProduct(MarketProduct) returns (MarketProduct) {}
-  // Gets the current user's own MarketSubscriptions (with billing_history). *Authenticated*, self-scoped only.
+  // Gets MarketSubscriptions -- self-scoped ("MY subscriptions", `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE`,
+  // the default) for any authenticated caller, or every `PURCHASE_TYPE_RELLM_HOSTING` subscription
+  // across every buyer (`GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN`, backing `/market/fulfillment` --
+  // see `RellmHostingSubscriptionDetails.fulfillment_status`'s own doc) for an Admin. *Authenticated*.
   rpc GetMarketSubscriptions(GetMarketSubscriptionsRequest) returns (GetMarketSubscriptionsResponse) {}
   // Starts (or resumes) buying a MarketProduct for the current user, returning a Stripe Checkout URL to
   // redirect to. *Authenticated*. See `MakeMarketPurchaseRequest`'s own doc -- no MarketPurchase/
   // MarketSubscription is created by this call itself, only once Stripe confirms payment via webhook.
   rpc MakeMarketPurchase(MakeMarketPurchaseRequest) returns (MakeMarketPurchaseResponse) {}
+  // Cancels a MarketSubscription by setting `canceled_at` to now -- entitlement (media storage quota,
+  // granted permissions, etc.) stays active until whichever is later of `renews_at`/`canceled_at`; the
+  // `renew_market_subscriptions` background job is what actually revokes it and sets
+  // `service_terminated_at`, once both have passed. *Authenticated* -- the subscription's own buyer,
+  // or an Admin.
+  rpc CancelMarketSubscription(MarketSubscription) returns (MarketSubscription) {}
+  // Appends to a `PURCHASE_TYPE_RELLM_HOSTING` MarketSubscription's own `fulfillment_notes` (nothing
+  // else -- every other field, including `additional_information`, is immutable after purchase and
+  // silently ignored if changed) -- backs `/market/fulfillment`. A new entry must be appended (not
+  // inserted/reordered/removed) after whatever's already stored, and its `user_id` must match the
+  // caller's own -- the server stamps `created_at` itself, ignoring whatever the client sent. Its
+  // `note` text is required unless the entry also changes `fulfillment_status` from the previous
+  // entry's own value (see `FulfillmentNote.note`'s own doc). `fulfillment_status` on the returned
+  // `RellmHostingSubscriptionDetails` is always the last appended entry's own value -- there's no way
+  // to set it independently of a note. *Authenticated*, requires Admin (for now -- see that field's
+  // own doc on why this may loosen to "buyer, or Admin" later).
+  rpc UpdateMarketSubscription(MarketSubscription) returns (MarketSubscription) {}
   // Generates (or edits, given reference `media_ids`) an image via one of the current user's AIModels,
   // storing it as a new Media and, if `target` is set, attaching it to that Post/Event. *Authenticated* - caller
   // must own or have been granted access to the chosen AIProvider, and (if `target` is set) have edit access

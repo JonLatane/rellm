@@ -36,6 +36,7 @@ class ServerConfiguration extends $pb.GeneratedMessage {
     PostSettings? postSettings,
     EventSettings? eventSettings,
     MediaSettings? mediaSettings,
+    MarketSettings? marketSettings,
     ExternalCDNConfig? externalCdnConfig,
     ClusterResources? clusterResources,
     PrivateUserStrategy? privateUserStrategy,
@@ -80,6 +81,9 @@ class ServerConfiguration extends $pb.GeneratedMessage {
     }
     if (mediaSettings != null) {
       $result.mediaSettings = mediaSettings;
+    }
+    if (marketSettings != null) {
+      $result.marketSettings = marketSettings;
     }
     if (externalCdnConfig != null) {
       $result.externalCdnConfig = externalCdnConfig;
@@ -129,6 +133,7 @@ class ServerConfiguration extends $pb.GeneratedMessage {
     ..aOM<PostSettings>(22, _omitFieldNames ? '' : 'postSettings', subBuilder: PostSettings.create)
     ..aOM<EventSettings>(23, _omitFieldNames ? '' : 'eventSettings', subBuilder: EventSettings.create)
     ..aOM<MediaSettings>(24, _omitFieldNames ? '' : 'mediaSettings', subBuilder: MediaSettings.create)
+    ..aOM<MarketSettings>(25, _omitFieldNames ? '' : 'marketSettings', subBuilder: MarketSettings.create)
     ..aOM<ExternalCDNConfig>(90, _omitFieldNames ? '' : 'externalCdnConfig', subBuilder: ExternalCDNConfig.create)
     ..aOM<ClusterResources>(91, _omitFieldNames ? '' : 'clusterResources', subBuilder: ClusterResources.create)
     ..e<PrivateUserStrategy>(100, _omitFieldNames ? '' : 'privateUserStrategy', $pb.PbFieldType.OE, defaultOrMaker: PrivateUserStrategy.ACCOUNT_IS_FROZEN, valueOf: PrivateUserStrategy.valueOf, enumValues: PrivateUserStrategy.values)
@@ -291,6 +296,22 @@ class ServerConfiguration extends $pb.GeneratedMessage {
   @$pb.TagNumber(24)
   MediaSettings ensureMediaSettings() => $_ensure(10);
 
+  /// Public, non-secret "is this server's Market open" signal -- unlike `stripe_config` (which holds
+  /// real credentials and is Admin-only, see that field's own doc), this is never stripped for a
+  /// non-admin/unauthenticated caller. Lets a client decide whether to show this server's Market
+  /// section at all (e.g. when browsing a federated list of servers) without needing to be an admin
+  /// here just to check -- see `rellm.proto`'s own "Federated Markets" doc section.
+  @$pb.TagNumber(25)
+  MarketSettings get marketSettings => $_getN(11);
+  @$pb.TagNumber(25)
+  set marketSettings(MarketSettings v) { setField(25, v); }
+  @$pb.TagNumber(25)
+  $core.bool hasMarketSettings() => $_has(11);
+  @$pb.TagNumber(25)
+  void clearMarketSettings() => clearField(25);
+  @$pb.TagNumber(25)
+  MarketSettings ensureMarketSettings() => $_ensure(11);
+
   /// If set, enables External CDN support for the server. This means that the
   /// non-secure HTTP server (on port 80) will *not* redirect to the secure server,
   /// and instead serve up Tamagui Web/Flutter clients directly. This allows you
@@ -298,15 +319,15 @@ class ServerConfiguration extends $pb.GeneratedMessage {
   /// up HTML/CS/JS and Media files with caching from Cloudflare's CDN.
   /// See ExternalCDNConfig for more details on securing this setup.
   @$pb.TagNumber(90)
-  ExternalCDNConfig get externalCdnConfig => $_getN(11);
+  ExternalCDNConfig get externalCdnConfig => $_getN(12);
   @$pb.TagNumber(90)
   set externalCdnConfig(ExternalCDNConfig v) { setField(90, v); }
   @$pb.TagNumber(90)
-  $core.bool hasExternalCdnConfig() => $_has(11);
+  $core.bool hasExternalCdnConfig() => $_has(12);
   @$pb.TagNumber(90)
   void clearExternalCdnConfig() => clearField(90);
   @$pb.TagNumber(90)
-  ExternalCDNConfig ensureExternalCdnConfig() => $_ensure(11);
+  ExternalCDNConfig ensureExternalCdnConfig() => $_ensure(12);
 
   /// Cluster-internal coordination state - see `ClusterResources`'s own doc. Visible to any
   /// logged-in admin (unlike most fields here, this describes infrastructure topology rather than
@@ -315,42 +336,42 @@ class ServerConfiguration extends $pb.GeneratedMessage {
   /// callers); editing it via [`ConfigureServer`](#grpc-api-ConfigureServer) additionally requires
   /// the [`EDIT_CLUSTER_SETTINGS`](#rellm-Permission) permission.
   @$pb.TagNumber(91)
-  ClusterResources get clusterResources => $_getN(12);
+  ClusterResources get clusterResources => $_getN(13);
   @$pb.TagNumber(91)
   set clusterResources(ClusterResources v) { setField(91, v); }
   @$pb.TagNumber(91)
-  $core.bool hasClusterResources() => $_has(12);
+  $core.bool hasClusterResources() => $_has(13);
   @$pb.TagNumber(91)
   void clearClusterResources() => clearField(91);
   @$pb.TagNumber(91)
-  ClusterResources ensureClusterResources() => $_ensure(12);
+  ClusterResources ensureClusterResources() => $_ensure(13);
 
   /// Strategy when a user sets their visibility to `PRIVATE`. Defaults to `ACCOUNT_IS_FROZEN`.
   @$pb.TagNumber(100)
-  PrivateUserStrategy get privateUserStrategy => $_getN(13);
+  PrivateUserStrategy get privateUserStrategy => $_getN(14);
   @$pb.TagNumber(100)
   set privateUserStrategy(PrivateUserStrategy v) { setField(100, v); }
   @$pb.TagNumber(100)
-  $core.bool hasPrivateUserStrategy() => $_has(13);
+  $core.bool hasPrivateUserStrategy() => $_has(14);
   @$pb.TagNumber(100)
   void clearPrivateUserStrategy() => clearField(100);
 
   /// (TODO) Allows admins to enable/disable creating accounts and logging in.
   /// Eventually, external auth too hopefully!
   @$pb.TagNumber(101)
-  $core.List<AuthenticationFeature> get authenticationFeatures => $_getList(14);
+  $core.List<AuthenticationFeature> get authenticationFeatures => $_getList(15);
 
   /// Web Push (VAPID) configuration for the server.
   @$pb.TagNumber(110)
-  WebPushConfig get webPushConfig => $_getN(15);
+  WebPushConfig get webPushConfig => $_getN(16);
   @$pb.TagNumber(110)
   set webPushConfig(WebPushConfig v) { setField(110, v); }
   @$pb.TagNumber(110)
-  $core.bool hasWebPushConfig() => $_has(15);
+  $core.bool hasWebPushConfig() => $_has(16);
   @$pb.TagNumber(110)
   void clearWebPushConfig() => clearField(110);
   @$pb.TagNumber(110)
-  WebPushConfig ensureWebPushConfig() => $_ensure(15);
+  WebPushConfig ensureWebPushConfig() => $_ensure(16);
 
   /// A server-preferred order of contact verification APIs.
   /// Note: even if this is blank, if twilio_config is enabled, the server should try
@@ -358,51 +379,51 @@ class ServerConfiguration extends $pb.GeneratedMessage {
   /// SMS/Email providers.
   /// Only serialized for admin users.
   @$pb.TagNumber(120)
-  $core.List<VerificationAPI> get preferredVerificationApis => $_getList(16);
+  $core.List<VerificationAPI> get preferredVerificationApis => $_getList(17);
 
   /// Derived from whether TwilioConfig.enabled is true, etc. Serialized to every caller (not
   /// admin-only, unlike `preferred_verification_apis`/`twilio_config`) -- this is what a non-admin
   /// client should check to decide whether to show verification UI at all, without exposing any
   /// provider configuration.
   @$pb.TagNumber(121)
-  $core.List<VerificationAPI> get availableVerificationApis => $_getList(17);
+  $core.List<VerificationAPI> get availableVerificationApis => $_getList(18);
 
   /// Twilio Config. Only serialized for admin users.
   @$pb.TagNumber(122)
-  TwilioConfig get twilioConfig => $_getN(18);
+  TwilioConfig get twilioConfig => $_getN(19);
   @$pb.TagNumber(122)
   set twilioConfig(TwilioConfig v) { setField(122, v); }
   @$pb.TagNumber(122)
-  $core.bool hasTwilioConfig() => $_has(18);
+  $core.bool hasTwilioConfig() => $_has(19);
   @$pb.TagNumber(122)
   void clearTwilioConfig() => clearField(122);
   @$pb.TagNumber(122)
-  TwilioConfig ensureTwilioConfig() => $_ensure(18);
+  TwilioConfig ensureTwilioConfig() => $_ensure(19);
 
   /// Bird (bird.com, formerly MessageBird) Config -- a cheaper Twilio alternative for SMS
   /// verification. Only serialized for admin users.
   @$pb.TagNumber(123)
-  BirdConfig get birdConfig => $_getN(19);
+  BirdConfig get birdConfig => $_getN(20);
   @$pb.TagNumber(123)
   set birdConfig(BirdConfig v) { setField(123, v); }
   @$pb.TagNumber(123)
-  $core.bool hasBirdConfig() => $_has(19);
+  $core.bool hasBirdConfig() => $_has(20);
   @$pb.TagNumber(123)
   void clearBirdConfig() => clearField(123);
   @$pb.TagNumber(123)
-  BirdConfig ensureBirdConfig() => $_ensure(19);
+  BirdConfig ensureBirdConfig() => $_ensure(20);
 
   /// Stripe Config, backing the Marketplace (`market.proto`). Only serialized for admin users.
   @$pb.TagNumber(124)
-  StripeConfig get stripeConfig => $_getN(20);
+  StripeConfig get stripeConfig => $_getN(21);
   @$pb.TagNumber(124)
   set stripeConfig(StripeConfig v) { setField(124, v); }
   @$pb.TagNumber(124)
-  $core.bool hasStripeConfig() => $_has(20);
+  $core.bool hasStripeConfig() => $_has(21);
   @$pb.TagNumber(124)
   void clearStripeConfig() => clearField(124);
   @$pb.TagNumber(124)
-  StripeConfig ensureStripeConfig() => $_ensure(20);
+  StripeConfig ensureStripeConfig() => $_ensure(21);
 }
 
 ///  Coordinates a small piece of shared, cluster-wide state across multiple independent Rellm
@@ -1202,6 +1223,83 @@ class MediaSettings extends $pb.GeneratedMessage {
   $core.bool hasDefaultMediaAllocationBytes() => $_has(3);
   @$pb.TagNumber(4)
   void clearDefaultMediaAllocationBytes() => clearField(4);
+}
+
+/// Whether this server's `/market` is open -- an explicit, admin-set toggle independent of
+/// `StripeConfig.stripe_enabled` (an admin can configure Stripe credentials without opening the
+/// storefront yet, or temporarily close it without touching those credentials). See
+/// `ServerConfiguration.market_settings`'s own doc on why this lives outside `StripeConfig`: it's
+/// the one bit that has to stay visible to non-admins for federated multi-server Market browsing to
+/// work at all.
+class MarketSettings extends $pb.GeneratedMessage {
+  factory MarketSettings({
+    $core.bool? enabled,
+    $core.bool? stripeConfigured,
+  }) {
+    final $result = create();
+    if (enabled != null) {
+      $result.enabled = enabled;
+    }
+    if (stripeConfigured != null) {
+      $result.stripeConfigured = stripeConfigured;
+    }
+    return $result;
+  }
+  MarketSettings._() : super();
+  factory MarketSettings.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromBuffer(i, r);
+  factory MarketSettings.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'MarketSettings', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
+    ..aOB(1, _omitFieldNames ? '' : 'enabled')
+    ..aOB(2, _omitFieldNames ? '' : 'stripeConfigured')
+    ..hasRequiredFields = false
+  ;
+
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.deepCopy] instead. '
+  'Will be removed in next major version')
+  MarketSettings clone() => MarketSettings()..mergeFromMessage(this);
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.rebuild] instead. '
+  'Will be removed in next major version')
+  MarketSettings copyWith(void Function(MarketSettings) updates) => super.copyWith((message) => updates(message as MarketSettings)) as MarketSettings;
+
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static MarketSettings create() => MarketSettings._();
+  MarketSettings createEmptyInstance() => create();
+  static $pb.PbList<MarketSettings> createRepeated() => $pb.PbList<MarketSettings>();
+  @$core.pragma('dart2js:noInline')
+  static MarketSettings getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<MarketSettings>(create);
+  static MarketSettings? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.bool get enabled => $_getBF(0);
+  @$pb.TagNumber(1)
+  set enabled($core.bool v) { $_setBool(0, v); }
+  @$pb.TagNumber(1)
+  $core.bool hasEnabled() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearEnabled() => clearField(1);
+
+  /// Whether Stripe is actually usable right now -- `stripe_config.stripe_enabled` is true AND a
+  /// `stripe_secret_key` is on file. Computed live on every `GetServerConfiguration` (never read back
+  /// from whatever was last saved to `market_settings` itself), and -- like `enabled` above --
+  /// deliberately never stripped for non-admins: it's the public "can I actually buy something here"
+  /// signal a buyer needs (e.g. to grey out `/market/product/:id`'s "Buy" button with a
+  /// "Stripe is not configured" message) without ever exposing `StripeConfig` itself, which stays
+  /// admin-only.
+  @$pb.TagNumber(2)
+  $core.bool get stripeConfigured => $_getBF(1);
+  @$pb.TagNumber(2)
+  set stripeConfigured($core.bool v) { $_setBool(1, v); }
+  @$pb.TagNumber(2)
+  $core.bool hasStripeConfigured() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearStripeConfigured() => clearField(2);
 }
 
 /// Settings for a feature (e.g. People, Groups, Posts, Events, Media).

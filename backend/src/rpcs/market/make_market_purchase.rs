@@ -6,6 +6,7 @@ use crate::marshaling::*;
 use crate::models;
 use crate::protos::*;
 use crate::rpcs::get_server_configuration_proto;
+use crate::rpcs::market::create_market_product::validate_permissions_are_purchasable;
 
 /// *Authenticated*. Starts (or resumes) buying a `MarketProduct` -- creates a Stripe Checkout
 /// Session and returns its hosted URL. Deliberately does **not** create any `MarketPurchase`/
@@ -18,10 +19,29 @@ pub fn make_market_purchase(
     current_user: &models::User,
     conn: &mut PgPooledConnection,
 ) -> Result<MakeMarketPurchaseResponse, Status> {
+    let server_configuration = get_server_configuration_proto(conn)?;
+    // `market_settings.enabled` is the admin's own "is Market open at all" toggle (see that
+    // field's own proto doc) -- checked first, ahead of everything product-specific, since an
+    // admin who's turned Market off entirely shouldn't have that bypassable by simply knowing a
+    // still-valid product id. Defense in depth: `Pages.Market`'s own listing already hides a
+    // disabled server's products from federated browsing, and `Components.Pages.MarketPage`/
+    // `ProductPage` grey out their own "Buy" buttons the same way they do for
+    // `stripe_configured` -- but a direct `MakeMarketPurchase` call (or a UI that hasn't caught up
+    // yet) must still be rejected server-side.
+    let market_enabled = server_configuration.market_settings.as_ref().is_some_and(|m| m.enabled);
+    if !market_enabled {
+        return Err(Status::new(Code::FailedPrecondition, "market_disabled"));
+    }
+
     let product_id = request.market_product_id.to_db_id_or_err("market_product_id")?;
     let product = models::get_market_product(product_id, conn)?;
     if product.delisted_at.is_some() {
         return Err(Status::new(Code::FailedPrecondition, "product_delisted"));
+    }
+    // `available_count == 0` means no cap (see that field's own doc) -- otherwise, once
+    // `sold_count` catches up, no one new can start a checkout for this product.
+    if product.available_count > 0 && product.sold_count >= product.available_count {
+        return Err(Status::new(Code::FailedPrecondition, "product_sold_out"));
     }
     let purchase_type = product
         .product_type
@@ -35,6 +55,21 @@ pub fn make_market_purchase(
         return Err(Status::new(Code::InvalidArgument, "rellm_hosting_details_required"));
     }
 
+    // Re-validates against `PURCHASABLE_PERMISSIONS` at purchase time too, not just at
+    // Create/UpdateMarketProduct time -- see `validate_permissions_are_purchasable`'s own doc.
+    if purchase_type == PurchaseType::PermissionsAccess {
+        let parsed: PermissionsAccessSubscriptionDetails = serde_json::from_value(product.details.clone())
+            .map_err(|e| {
+                log::error!(
+                    "Failed to parse PermissionsAccessSubscriptionDetails for product {}: {:?}",
+                    product.id,
+                    e
+                );
+                Status::new(Code::Internal, "invalid_product_details")
+            })?;
+        validate_permissions_are_purchasable(&parsed.permissions)?;
+    }
+
     // `usable_server_stripe_config`, not `get_server_configuration_proto(conn)?.stripe_config` --
     // `ToProtoServerConfiguration::to_proto` always blanks `stripe_secret_key` (write-only, same as
     // `TwilioConfig.twilio_api_key_secret`), so reading it off the *proto* form here would find it
@@ -42,7 +77,6 @@ pub fn make_market_purchase(
     let stripe_config = stripe_sync::usable_server_stripe_config(conn)
         .ok_or_else(|| Status::new(Code::FailedPrecondition, "stripe_not_configured"))?;
 
-    let server_configuration = get_server_configuration_proto(conn)?;
     // Same constraint `rpcs::posts::sync_post` documents on its own `post_url`/`media` -- this is a
     // gRPC RPC, not a Rocket route, so there's no HTTP `Host` header to build an absolute URL from;
     // `external_cdn_config.frontend_host` is the only source of this server's own public domain

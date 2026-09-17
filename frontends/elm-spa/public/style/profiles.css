@@ -453,6 +453,56 @@
   font-size: 0.85rem;
 }
 
+/* Components/Pages/UserProfilePage.elm's `subscriptionsSection`/`subscriptionRowView`/
+   `billingHistoryView` -- one row per `User.marketSubscriptions` entry (title line, then whichever
+   of `renewsAt`/`canceledAt`/`serviceTerminatedAt` are set, then a "Cancel Subscription" button and
+   its billing history), same visual rhythm as the Storage Quota/Permissions sections above. */
+.profile-subscriptions-empty {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.profile-subscription-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.5rem 0;
+}
+
+.profile-subscription-row + .profile-subscription-row {
+  border-top: 1px solid var(--border);
+}
+
+.profile-subscription-row-title {
+  font-weight: 600;
+}
+
+.profile-subscription-row-status {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.profile-subscription-cancel {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.3rem;
+}
+
+.profile-subscription-billing-history {
+  margin-top: 0.4rem;
+  padding-left: 0.6rem;
+  border-left: 2px solid var(--border);
+}
+
+.profile-subscription-billing-history-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
 .profile-federated-entry {
   display: inline-flex;
   align-items: center;

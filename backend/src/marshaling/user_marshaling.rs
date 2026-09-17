@@ -3,10 +3,36 @@ use crate::marshaling::*;
 use crate::models;
 use crate::protos::*;
 use crate::rpcs::get_federated_users;
+use crate::rpcs::validate_exact_permission;
 use tonic::Code;
 use tonic::Status;
 
 use super::MediaLookup;
+
+/// Whether `contact_method` (an `email`/`phone` on some user `owner_id`) should be visible to
+/// `viewer`, per the `ContactMethod`'s own `visibility` -- independent of the owning `User`'s
+/// overall `visibility`.
+///
+/// - `GLOBAL_PUBLIC` is visible to everyone, including anonymous (`viewer: &None`) users.
+/// - `SERVER_PUBLIC` is visible to any authenticated user, but not anonymously.
+/// - `LIMITED`/`PRIVATE` (and any unrecognized visibility, treated as `PRIVATE`) are visible only
+///   to the owner themselves, or to a viewer holding `VIEW_PRIVATE_CONTACT_METHODS` -- checked via
+///   `validate_exact_permission`, deliberately *not* `validate_permission`, so a plain `ADMIN`
+///   does *not* get this for free (see `Permission::ViewPrivateContactMethods`'s own doc).
+fn visible_contact_method(
+    contact_method: &ContactMethod,
+    owner_id: i64,
+    viewer: &Option<&models::User>,
+) -> bool {
+    match contact_method.visibility.to_proto_visibility() {
+        Some(Visibility::GlobalPublic) => true,
+        Some(Visibility::ServerPublic) => viewer.is_some(),
+        _ => {
+            viewer.map(|v| v.id) == Some(owner_id)
+                || validate_exact_permission(viewer, Permission::ViewPrivateContactMethods).is_ok()
+        }
+    }
+}
 
 pub trait ToProtoUser {
     fn to_proto(
@@ -14,6 +40,9 @@ pub trait ToProtoUser {
         follow: &Option<&models::Follow>,
         target_follow: &Option<&models::Follow>,
         media_lookup: Option<&MediaLookup>,
+        // The user viewing this profile (if authenticated) -- gates `email`/`phone` visibility,
+        // per each `ContactMethod`'s own `visibility` (see `visible_contact_method` below).
+        viewer: &Option<&models::User>,
         // If provided, marshaling will load federated user data from the DB.
         conn: Option<&mut PgPooledConnection>,
     ) -> User;
@@ -29,17 +58,20 @@ impl ToProtoUser for models::User {
         follow: &Option<&models::Follow>,
         target_follow: &Option<&models::Follow>,
         media_lookup: Option<&MediaLookup>,
+        viewer: &Option<&models::User>,
         // If provided, marshaling will load federated user data from the DB.
         conn: Option<&mut PgPooledConnection>,
     ) -> User {
         let email: Option<ContactMethod> = self
             .email
             .to_owned()
-            .map(|cm| serde_json::from_value(cm).unwrap());
+            .map(|cm| serde_json::from_value(cm).unwrap())
+            .filter(|cm| visible_contact_method(cm, self.id, viewer));
         let phone: Option<ContactMethod> = self
             .phone
             .to_owned()
-            .map(|cm| serde_json::from_value(cm).unwrap());
+            .map(|cm| serde_json::from_value(cm).unwrap())
+            .filter(|cm| visible_contact_method(cm, self.id, viewer));
 
         log::info!("user.avatar_media_id={:?}", &self.avatar_media_id);
         let user = User {
@@ -69,7 +101,6 @@ impl ToProtoUser for models::User {
                 .default_follow_moderation
                 .to_proto_moderation()
                 .unwrap() as i32,
-            has_advanced_data: conn.is_some(),
             federated_profiles: conn
                 .map(|conn| get_federated_users(self.id, conn))
                 .unwrap_or(vec![]),

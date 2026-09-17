@@ -136,15 +136,16 @@ fn get_all_members(
         .unwrap()
         .iter()
         .map(
-            |(membership, user, follow, target_follow, media_reference)| {
+            |(membership, row_user, follow, target_follow, media_reference)| {
                 let lookup = media_reference.to_media_lookup();
                 // .as_ref()
                 // .map(|mr| media_lookup(vec![mr.clone()]));
                 Member {
-                    user: Some(user.to_proto(
+                    user: Some(row_user.to_proto(
                         &follow.as_ref(),
                         &target_follow.as_ref(),
                         lookup.as_ref(),
+                        user,
                         None,
                     )),
                     membership: Some(membership.to_proto()),
@@ -225,11 +226,12 @@ fn get_members_by_username(
         .unwrap()
         .iter()
         .map(
-            |(membership, user, follow, target_follow, media_reference)| Member {
-                user: Some(user.to_proto(
+            |(membership, row_user, follow, target_follow, media_reference)| Member {
+                user: Some(row_user.to_proto(
                     &follow.as_ref(),
                     &target_follow.as_ref(),
                     media_reference.to_media_lookup().as_ref(),
+                    user,
                     None,
                 )),
                 membership: Some(membership.to_proto()),

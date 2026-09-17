@@ -225,6 +225,7 @@ To set up a deployment yourself, see: [Quick deploy to your own cluster](#quick-
       - [Federated Profiles](#federated-profiles)
       - [Federated Browsing](#federated-browsing)
       - [Federated Messaging](#federated-messaging)
+      - [Federated Markets](#federated-markets)
     - [Synchronization with Outside Servers](#synchronization-with-outside-servers)
       - [Sync Sources](#sync-sources)
         - [iCal](#ical)
@@ -250,6 +251,7 @@ To set up a deployment yourself, see: [Quick deploy to your own cluster](#quick-
       - [OpenAI](#openai)
       - [Anthropic](#anthropic)
       - [DigitalOcean](#digitalocean)
+    - [Rellm's Market](#rellms-market)
     - [Posts](#posts)
       - [GroupPost](#grouppost)
     - [Events](#events)
@@ -272,9 +274,9 @@ To set up a deployment yourself, see: [Quick deploy to your own cluster](#quick-
 
 ## What is Rellm?
 
-Broadly speaking, Rellm is something of an "internet philosophy." It's my (Jon's) philosophy. It's a generally anti-capitalist tech approach that has a few perhaps obvious opinions on everything from user data privacy expectations, to cost of servers, through CI/CD, the BE, API design, user expectations for transparent permissions/moderation/visibility on things like People, Media, Groups, Posts, and Events, etc. Conveniently, things that meet my (Jon's) requirements for these these things can be described as "Rellm CI/CD,", "Rellm API Design,", "Rellm Events," and so forth.
+Broadly speaking, Rellm is something of an "internet philosophy." It's tech approach that hovers between capitalism, socialism, libertarianism and syndicalism, more in the realm of "what could be better if we don't care about labels?", and strives to make communication and markets alike more open and fair. To provide a way to communicate and share that has mechanism to prevent it from being abused for marketing, and to make it profitable to run a server for your local business, club, or social media service at nearly any scale - or those of a few people you may know. It has a few clear opinions on everything from user data privacy expectations, to cost of servers, through CI/CD, the BE, media conversion, API design, user expectations for transparent permissions/moderation/visibility on things like People, Media, Groups, Posts, and Events, etc.
 
-As a more traditional market product, Rellm is a network of, and a protocol for, social networks that meets my (Jon's) expectations of usability, transparency, and fairness. It's designed to scale as well as Mastodon or better, but really, it aims to be something more like [Plex](https://www.plex.tv/), but as a social network released under the [AGPL](https://fossa.com/blog/open-source-software-licenses-101-agpl-license/) (and also, Kubernetes/LetsEncrypt/CertManager-friendly). Use cases include:
+As a more traditional market product, Rellm is a network of, and a protocol for, social networks that meets strict expectations of usability, transparency, and fairness. It's designed to scale as well as Mastodon or better, but really, it aims to be something more like [Plex](https://www.plex.tv/), but as a social network released under the [AGPL](https://fossa.com/blog/open-source-software-licenses-101-agpl-license/) (and also, Kubernetes/LetsEncrypt/CertManager-friendly). Use cases include:
 
 - Neighborhoods, communities, or cities
 - (Ex-)Coworkers wanting a private channel to chat
@@ -387,6 +389,12 @@ Rellm's protocols and UI are designed to work together to present a seamless UX 
 #### Federated Messaging
 
 Rellm's Elm Messaging UI is generally a multi-server federated messenger. The main limitation is that it can only receive push notifications from one server. (This could be changed with VAPID key sharing, but is part of the VAPID protocol.)
+
+#### Federated Markets
+
+The Elm `/market` page can show more than one server's Market side by side: the browsed server's own (always first) plus any other connected, enabled server whose `ServerConfiguration.market_settings.enabled` is set (in Accounts panel order after that) — the public, non-secret "is this server's Market open" signal, unlike `stripe_config` itself, which stays Admin-only. Each section is fully independent: it lists that server's own [`MarketProduct`](https://rellm.org/docs/protocol#rellm-MarketProduct)s and shows product-management controls only if the current user is actually an Admin *on that server*.
+
+Unlike Federated Browsing/Profiles/Messaging above, buying is never seamless across servers — Market is the one place a user must always transact with the target site directly. A product tile for the browsed server links to its own in-app product page as usual, but a tile for any *other* server links straight to that server's own `https://{host}/market/product/{id}` (a real page navigation, not client-side routing), since [`MakeMarketPurchase`](https://rellm.org/docs/protocol#grpc-api-MakeMarketPurchase) starts a Stripe Checkout Session scoped to whichever server the buyer is actually authenticated against, and Stripe's own `success_url`/`cancel_url` redirect back to that same server when payment completes.
 
 ### Synchronization with Outside Servers
 
@@ -569,7 +577,7 @@ A DigitalOcean Gradient AI Platform / Serverless Inference connection ([`Digital
 
 ### Rellm's Market
 
-Rellm's Market ([`market.proto`](https://rellm.org/docs/protocol#market.proto)) is a small, Stripe-backed storefront a server admin can stock with up to nine [`MarketProduct`](https://rellm.org/docs/protocol#rellm-MarketProduct)s - one of three offering types ([`PurchaseType`](https://rellm.org/docs/protocol#rellm-PurchaseType): media storage, AI token grants, or Rellm hosting for a domain), each sold once (indefinitely) or on a recurring annual/monthly [`PurchasePeriod`](https://rellm.org/docs/protocol#rellm-PurchasePeriod). Buying one starts a Stripe Checkout Session; the actual [`MarketPurchase`](https://rellm.org/docs/protocol#rellm-MarketPurchase)/[`MarketSubscription`](https://rellm.org/docs/protocol#rellm-MarketSubscription) is only ever created once Stripe confirms payment via webhook, so an abandoned checkout leaves nothing behind. A recurring [`MarketSubscription`](https://rellm.org/docs/protocol#rellm-MarketSubscription) then renews itself off-session against the saved payment method until a charge fails.
+Rellm's Market ([`market.proto`](https://rellm.org/docs/protocol#market.proto)) is a small, Stripe-backed storefront a server admin can stock with up to twelve [`MarketProduct`](https://rellm.org/docs/protocol#rellm-MarketProduct)s - one of four offering types ([`PurchaseType`](https://rellm.org/docs/protocol#rellm-PurchaseType): media storage, AI token grants, Rellm hosting for a domain, or a fixed set of extra `Permission`s), each sold once (indefinitely) or on a recurring annual/monthly [`PurchasePeriod`](https://rellm.org/docs/protocol#rellm-PurchasePeriod). Buying one starts a Stripe Checkout Session; the actual [`MarketPurchase`](https://rellm.org/docs/protocol#rellm-MarketPurchase)/[`MarketSubscription`](https://rellm.org/docs/protocol#rellm-MarketSubscription) is only ever created once Stripe confirms payment via webhook, so an abandoned checkout leaves nothing behind. A recurring [`MarketSubscription`](https://rellm.org/docs/protocol#rellm-MarketSubscription) renews itself off-session against the saved payment method until either a charge fails or the buyer/admin calls [`CancelMarketSubscription`](https://rellm.org/docs/protocol#grpc-api-CancelMarketSubscription) - either way, the subscription's entitlement stays active until it's actually due to lapse, at which point the `renew_market_subscriptions` background job revokes it.
 
 What buying each type of MarketProduct actually does:
 

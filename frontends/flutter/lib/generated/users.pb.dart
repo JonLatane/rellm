@@ -54,7 +54,6 @@ class User extends $pb.GeneratedMessage {
     Follow? currentUserFollow,
     Follow? targetCurrentUserFollow,
     Membership? currentGroupMembership,
-    $core.bool? hasAdvancedData,
     $core.Iterable<$1.FederatedAccount>? federatedProfiles,
     $core.Iterable<$10.SyncDestination>? syncDestinations,
     $core.Iterable<$10.SyncSource>? syncSources,
@@ -136,9 +135,6 @@ class User extends $pb.GeneratedMessage {
     if (currentGroupMembership != null) {
       $result.currentGroupMembership = currentGroupMembership;
     }
-    if (hasAdvancedData != null) {
-      $result.hasAdvancedData = hasAdvancedData;
-    }
     if (federatedProfiles != null) {
       $result.federatedProfiles.addAll(federatedProfiles);
     }
@@ -191,7 +187,6 @@ class User extends $pb.GeneratedMessage {
     ..aOM<Follow>(50, _omitFieldNames ? '' : 'currentUserFollow', subBuilder: Follow.create)
     ..aOM<Follow>(51, _omitFieldNames ? '' : 'targetCurrentUserFollow', subBuilder: Follow.create)
     ..aOM<Membership>(52, _omitFieldNames ? '' : 'currentGroupMembership', subBuilder: Membership.create)
-    ..aOB(80, _omitFieldNames ? '' : 'hasAdvancedData')
     ..pc<$1.FederatedAccount>(81, _omitFieldNames ? '' : 'federatedProfiles', $pb.PbFieldType.PM, subBuilder: $1.FederatedAccount.create)
     ..pc<$10.SyncDestination>(82, _omitFieldNames ? '' : 'syncDestinations', $pb.PbFieldType.PM, subBuilder: $10.SyncDestination.create)
     ..pc<$10.SyncSource>(83, _omitFieldNames ? '' : 'syncSources', $pb.PbFieldType.PM, subBuilder: $10.SyncSource.create)
@@ -488,21 +483,11 @@ class User extends $pb.GeneratedMessage {
   @$pb.TagNumber(52)
   Membership ensureCurrentGroupMembership() => $_ensure(23);
 
-  /// Indicates that `federated_profiles` has been loaded.
-  @$pb.TagNumber(80)
-  $core.bool get hasAdvancedData => $_getBF(24);
-  @$pb.TagNumber(80)
-  set hasAdvancedData($core.bool v) { $_setBool(24, v); }
-  @$pb.TagNumber(80)
-  $core.bool hasHasAdvancedData() => $_has(24);
-  @$pb.TagNumber(80)
-  void clearHasAdvancedData() => clearField(80);
-
   /// Federated profiles for the user. *Not always loaded.* This is a list of profiles from other servers
   /// that the user has connected to their account. Managed by the user via
   /// `Federate`
   @$pb.TagNumber(81)
-  $core.List<$1.FederatedAccount> get federatedProfiles => $_getList(25);
+  $core.List<$1.FederatedAccount> get federatedProfiles => $_getList(24);
 
   /// The target user's own linked SyncDestinations (e.g. Facebook Pages).
   /// Populated by [`GetUsers`](#grpc-api-GetUsers)' single-user lookups (by username or by user_id) when the
@@ -511,7 +496,7 @@ class User extends $pb.GeneratedMessage {
   /// (always a self-view) - always empty otherwise, including via every other [`GetUsers`](#grpc-api-GetUsers)
   /// listing type.
   @$pb.TagNumber(82)
-  $core.List<$10.SyncDestination> get syncDestinations => $_getList(26);
+  $core.List<$10.SyncDestination> get syncDestinations => $_getList(25);
 
   /// The target user's own [`SyncSource`](#rellm-SyncSource)s. Unlike `sync_destinations`, also populated for
   /// the target user themselves *or an Admin* across every [`GetUsers`](#grpc-api-GetUsers) listing type (not just
@@ -520,7 +505,7 @@ class User extends $pb.GeneratedMessage {
   /// [`Login`](#grpc-api-Login)/[`CreateAccount`](#grpc-api-CreateAccount)/[`GetCurrentUser`](#grpc-api-GetCurrentUser) (always a self-view). Always empty for
   /// any other viewer.
   @$pb.TagNumber(83)
-  $core.List<$10.SyncSource> get syncSources => $_getList(27);
+  $core.List<$10.SyncSource> get syncSources => $_getList(26);
 
   /// Every [`AIProvider`](#rellm-AIProvider) model the target user may currently call - their own
   /// providers' models, plus any models granted to them on other users' providers (see
@@ -528,38 +513,38 @@ class User extends $pb.GeneratedMessage {
   /// (target user themselves, or an Admin, across any [`GetUsers`](#grpc-api-GetUsers) listing type, plus
   /// [`Login`](#grpc-api-Login)/[`CreateAccount`](#grpc-api-CreateAccount)/[`GetCurrentUser`](#grpc-api-GetCurrentUser)).
   @$pb.TagNumber(84)
-  $core.List<$11.AIModel> get aiModels => $_getList(28);
+  $core.List<$11.AIModel> get aiModels => $_getList(27);
 
   /// The target user's own MarketSubscriptions (`market.proto`), each with its own
   /// `billing_history`. Gated and populated the same way as `ai_models`/`sync_sources` (target user
   /// themselves, or an Admin, across any [`GetUsers`](#grpc-api-GetUsers) listing type, plus
   /// [`Login`](#grpc-api-Login)/[`CreateAccount`](#grpc-api-CreateAccount)/[`GetCurrentUser`](#grpc-api-GetCurrentUser)).
   @$pb.TagNumber(85)
-  $core.List<$12.MarketSubscription> get marketSubscriptions => $_getList(29);
+  $core.List<$12.MarketSubscription> get marketSubscriptions => $_getList(28);
 
   /// The time the user was created.
   @$pb.TagNumber(100)
-  $13.Timestamp get createdAt => $_getN(30);
+  $13.Timestamp get createdAt => $_getN(29);
   @$pb.TagNumber(100)
   set createdAt($13.Timestamp v) { setField(100, v); }
   @$pb.TagNumber(100)
-  $core.bool hasCreatedAt() => $_has(30);
+  $core.bool hasCreatedAt() => $_has(29);
   @$pb.TagNumber(100)
   void clearCreatedAt() => clearField(100);
   @$pb.TagNumber(100)
-  $13.Timestamp ensureCreatedAt() => $_ensure(30);
+  $13.Timestamp ensureCreatedAt() => $_ensure(29);
 
   /// The time the user was last updated.
   @$pb.TagNumber(101)
-  $13.Timestamp get updatedAt => $_getN(31);
+  $13.Timestamp get updatedAt => $_getN(30);
   @$pb.TagNumber(101)
   set updatedAt($13.Timestamp v) { setField(101, v); }
   @$pb.TagNumber(101)
-  $core.bool hasUpdatedAt() => $_has(31);
+  $core.bool hasUpdatedAt() => $_has(30);
   @$pb.TagNumber(101)
   void clearUpdatedAt() => clearField(101);
   @$pb.TagNumber(101)
-  $13.Timestamp ensureUpdatedAt() => $_ensure(31);
+  $13.Timestamp ensureUpdatedAt() => $_ensure(30);
 }
 
 /// Model for a user's follow of another user.

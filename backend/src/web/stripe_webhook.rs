@@ -224,29 +224,32 @@ fn handle_checkout_session_completed(
         .and_then(|pm| pm.card.as_ref())
         .map(crate::marshaling::card_details_to_json);
 
-    // `PURCHASE_PERIOD_INDEFINITE` products never create a `MarketSubscription` -- see
-    // `PurchasePeriod.PURCHASE_PERIOD_INDEFINITE`'s own doc.
-    let subscription_id = if period == PurchasePeriod::Indefinite {
+    // Every purchase gets a `MarketSubscription`, including a `PURCHASE_PERIOD_INDEFINITE`
+    // one-time purchase -- see `PurchasePeriod.PURCHASE_PERIOD_INDEFINITE`'s own doc: it just
+    // never gets a `renews_at`, so it's never picked up by `renew_market_subscriptions.rs`'s own
+    // "due" query, but it's still cancelable and still carries the same per-type fulfillment
+    // tracking every other subscription does.
+    let renews_at = if period == PurchasePeriod::Indefinite {
         None
     } else {
-        let renews_at = advance_by_period(SystemTime::now(), &product.period);
-        let subscription = models::insert_market_subscription(
-            &models::NewMarketSubscription {
-                buyer_id,
-                product_id: product.id,
-                product_type: product.product_type.clone(),
-                period: product.period.clone(),
-                amount: product.amount,
-                currency: product.currency,
-                details: details.clone(),
-                renews_at: Some(renews_at),
-                stripe_customer_id: customer_id.clone(),
-                stripe_payment_method_id: payment_method_id.clone(),
-            },
-            conn,
-        )?;
-        Some(subscription.id)
+        Some(advance_by_period(SystemTime::now(), &product.period))
     };
+    let subscription = models::insert_market_subscription(
+        &models::NewMarketSubscription {
+            buyer_id,
+            product_id: product.id,
+            product_type: product.product_type.clone(),
+            period: product.period.clone(),
+            amount: product.amount,
+            currency: product.currency,
+            details: details.clone(),
+            renews_at,
+            stripe_customer_id: customer_id.clone(),
+            stripe_payment_method_id: payment_method_id.clone(),
+        },
+        conn,
+    )?;
+    let subscription_id = Some(subscription.id);
 
     let purchase = models::insert_market_purchase(
         &models::NewMarketPurchase {
@@ -271,6 +274,10 @@ fn handle_checkout_session_completed(
         },
         conn,
     )?;
+
+    // A newly-fulfilled purchase/subscription consumes one of `product.available_count`'s slots --
+    // see `MarketProduct.sold_count`'s own doc.
+    models::increment_market_product_sold_count(product.id, conn);
 
     fulfill_purchase(purchase_type, buyer_id, &purchase.details, conn)
 }

@@ -1,5 +1,5 @@
-//! Shared logic behind `bin/renew_market_subscriptions.rs`, which loops over all 3 `PurchaseType`s
-//! calling `renew_subscriptions_of_type` for each.
+//! Shared logic behind `bin/renew_market_subscriptions.rs`, which loops over all 4 `PurchaseType`s
+//! calling `renew_subscriptions_of_type`/`terminate_subscriptions_of_type` for each.
 
 use std::time::SystemTime;
 
@@ -8,19 +8,22 @@ use diesel::*;
 use tonic::Status;
 
 use crate::db_connection::PgPooledConnection;
-use crate::logic::{fulfill_purchase, stripe_sync};
+use crate::logic::{fulfill_purchase, stripe_sync, terminate_entitlement};
 use crate::marshaling::{ToProtoId, ToStringPurchaseType};
 use crate::models;
 use crate::protos::*;
 use crate::schema::market_subscriptions;
 
-/// Renews every `market_subscriptions` row of `purchase_type` that's due (`ended_at IS NULL AND
-/// renews_at <= NOW()`): charges the saved Stripe Customer/PaymentMethod off-session; on success,
-/// records a new `Purchase` + `Payment`, advances `renews_at` by the subscription's own `period`,
-/// and re-applies the entitlement via `fulfill_purchase`; on any failure (no saved payment method,
-/// unsupported currency, the charge itself failing), ends the subscription (`ended_at = now()`) --
-/// no retry/grace-period logic for this MVP -- and moves on to the next one, so one bad
-/// subscription never blocks the rest of the batch.
+/// Renews every `market_subscriptions` row of `purchase_type` that's due (`canceled_at IS NULL
+/// AND renews_at <= NOW()`): charges the saved Stripe Customer/PaymentMethod off-session; on
+/// success, records a new `Purchase` + `Payment`, advances `renews_at` by the subscription's own
+/// `period`, and re-applies the entitlement via `fulfill_purchase`; on any failure (no saved
+/// payment method, unsupported currency, the charge itself failing), cancels the subscription
+/// (`canceled_at = now()`) -- no retry/grace-period logic for this MVP -- and moves on to the next
+/// one, so one bad subscription never blocks the rest of the batch. Note this only *cancels* the
+/// subscription -- it doesn't revoke the entitlement, which stays in effect until
+/// `terminate_subscriptions_of_type` runs and finds `renews_at` has also passed (see that
+/// function's own doc, and `MarketSubscription.canceled_at`'s proto doc).
 pub fn renew_subscriptions_of_type(
     purchase_type: PurchaseType,
     conn: &mut PgPooledConnection,
@@ -153,9 +156,53 @@ pub fn advance_by_period(from: SystemTime, period: &str) -> SystemTime {
 
 fn end_subscription(subscription_id: i64, conn: &mut PgPooledConnection) {
     if let Err(e) = diesel::update(market_subscriptions::table.filter(market_subscriptions::id.eq(subscription_id)))
-        .set(market_subscriptions::ended_at.eq(SystemTime::now()))
+        .set(market_subscriptions::canceled_at.eq(SystemTime::now()))
         .execute(conn)
     {
         log::error!("Failed to end market subscription {}: {:?}", subscription_id, e);
     }
+}
+
+/// Revokes the entitlement of every `market_subscriptions` row of `purchase_type` whose
+/// cancellation has actually taken effect (`canceled_at IS NOT NULL AND service_terminated_at IS
+/// NULL AND canceled_at <= NOW() AND (renews_at IS NULL OR renews_at <= NOW())` -- see
+/// `models::get_terminable_market_subscriptions`'s own doc for the exact filter and why a `NULL
+/// renews_at` counts as past-due rather than being excluded). This is the delayed second half of
+/// cancellation: `CancelMarketSubscription`/a failed renewal charge only ever sets `canceled_at`,
+/// leaving the entitlement (media storage quota, granted permissions) in effect until whichever
+/// is later of `renews_at`/`canceled_at` has passed -- this function is what actually claws the
+/// entitlement back, via `logic::market_fulfillment::terminate_entitlement`, once that's true, and
+/// stamps `service_terminated_at` so it's never reprocessed. Same "one bad row never blocks the
+/// batch" philosophy as `renew_subscriptions_of_type`: a `terminate_entitlement` failure for one
+/// subscription is logged and skipped (its `service_terminated_at` stays unset, so it's retried
+/// next run), rather than aborting the whole pass.
+pub fn terminate_subscriptions_of_type(
+    purchase_type: PurchaseType,
+    conn: &mut PgPooledConnection,
+) -> Result<(), Status> {
+    let terminable =
+        models::get_terminable_market_subscriptions(&purchase_type.to_string_purchase_type(), conn)?;
+    for subscription in terminable {
+        if let Err(e) = terminate_entitlement(purchase_type, subscription.buyer_id, &subscription.details, conn) {
+            log::error!(
+                "Failed to terminate entitlement for market subscription {} (buyer {}): {:?} -- \
+                 leaving service_terminated_at unset for retry",
+                subscription.id,
+                subscription.buyer_id,
+                e
+            );
+            continue;
+        }
+        if let Err(e) = diesel::update(market_subscriptions::table.filter(market_subscriptions::id.eq(subscription.id)))
+            .set(market_subscriptions::service_terminated_at.eq(SystemTime::now()))
+            .execute(conn)
+        {
+            log::error!(
+                "Failed to stamp service_terminated_at for market subscription {}: {:?}",
+                subscription.id,
+                e
+            );
+        }
+    }
+    Ok(())
 }

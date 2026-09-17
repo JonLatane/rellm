@@ -919,6 +919,28 @@ pub fn configure_stripe(
         .expect("failed to create test server configuration");
 }
 
+/// Sets `market_settings.enabled` -- for specs on `rpcs::market::make_market_purchase`'s
+/// `market_disabled` precondition (and anything else gated on Market being administratively open).
+/// Unlike `configure_stripe`/`configure_twilio` (which `insert_into` a brand-new row, assuming
+/// nothing's touched `server_configurations` in this test transaction yet), this updates whichever
+/// row already exists -- creating the default one first if needed, via
+/// `rpcs::get_server_configuration_model` -- so it composes with `configure_stripe` regardless of
+/// which is called first in a given test.
+pub fn configure_market(conn: &mut PgPooledConnection, enabled: bool) {
+    let existing = crate::rpcs::get_server_configuration_model(conn)
+        .expect("failed to load or create test server configuration");
+    diesel::update(server_configurations::table.filter(server_configurations::id.eq(existing.id)))
+        .set(
+            server_configurations::market_settings.eq(serde_json::to_value(MarketSettings {
+                enabled,
+                stripe_configured: false,
+            })
+            .unwrap()),
+        )
+        .execute(conn)
+        .expect("failed to configure test market_settings");
+}
+
 /// Same as `configure_twilio`, but also sets `server_info.name`/`external_cdn_config.frontend_host`
 /// (pass `frontend_host: ""` to leave the CDN config unset) -- for specs on
 /// `contact_verification::verification_sms_body`'s "which server is this from" text, which needs

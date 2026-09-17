@@ -86,9 +86,6 @@ message User {
   // providing whether the user is a member of that [`Group`](#rellm-Group), has been invited, requested to join, etc..
   optional Membership current_group_membership = 52;
 
-  // Indicates that `federated_profiles` has been loaded.
-  bool has_advanced_data = 80;
-
   // Federated profiles for the user. *Not always loaded.* This is a list of profiles from other servers
   // that the user has connected to their account. Managed by the user via
   // `Federate`

@@ -14,5 +14,11 @@ pub use update_market_product::update_market_product;
 mod get_market_subscriptions;
 pub use get_market_subscriptions::get_market_subscriptions;
 
+mod cancel_market_subscription;
+pub use cancel_market_subscription::cancel_market_subscription;
+
+mod update_market_subscription;
+pub use update_market_subscription::update_market_subscription;
+
 mod make_market_purchase;
 pub use make_market_purchase::make_market_purchase;

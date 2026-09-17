@@ -1101,6 +1101,8 @@ debugTab shared =
             [ switchInput shared.accounts.debugTab.allowMainServerSwitch False (Shared.AccountsPanelMsg (AccountsPanel.DebugTabMsg DebugTab.ToggleAllowMainServerSwitch))
             , span [] [ text "Switch main server by tapping servers" ]
             ]
+        , div [ class "debug-tab-note" ]
+            [ text ("Market pages are always based off the host being browsed from, " ++ shared.accounts.browsingHost ++ ".") ]
         , label [ class "admin-switch-row" ]
             [ switchInput shared.accounts.debugTab.allowUsernamePasswordForOtherHosts False (Shared.AccountsPanelMsg (AccountsPanel.DebugTabMsg DebugTab.ToggleAllowUsernamePasswordForOtherHosts))
             , span [] [ text "Sign into other hosts with username/password" ]

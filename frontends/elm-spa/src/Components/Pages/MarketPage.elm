@@ -1,7 +1,7 @@
 module Components.Pages.MarketPage exposing (Model, Msg, fromShared, init, subscriptions, update, view)
 
 {-| `/market` -- Rellm's Stripe-backed marketplace (`market.proto`). Lists every non-delisted
-`MarketProduct` on `mainFrontendHost` (an Admin additionally sees delisted ones, per
+`MarketProduct` on `Model.host` (an Admin *on that host* additionally sees delisted ones, per
 `GetMarketProductsResponse.marketProducts`' own proto doc), with a "Buy" button per product that
 starts a Stripe Checkout flow (`Components.Market.makeMarketPurchase`) and, on success, redirects
 the browser straight to the returned `checkoutUrl` (`Browser.Navigation.load` -- a plain external
@@ -10,8 +10,14 @@ exists yet at this point). An Admin also gets inline create/edit affordances for
 right on this list -- there's deliberately no separate admin page for it, to keep this feature's
 scope tight (see the plan this was built from).
 
-Always scoped to `shared.accounts.mainFrontendHost` -- like `Pages.Posts`/`Pages.Events`, there's no
-federated "market on some other server" browsing here.
+`init`'s own `String` argument is the host this particular instance is scoped to -- see `Pages.Market`
+for why there can be more than one `MarketPage.Model` alive at once (federated multi-server Market
+browsing, per `rellm.proto`'s own "Federated Markets" doc section): `Pages.Market` mounts one instance
+per connected, enabled server (`ServerConfiguration.market_settings.enabled`), the browsed host's own
+always first. A product tile links internally (`Route.toHref`) only when `host` is the app's own
+`browsingHost`; for any other host it's a plain external `https://{host}/market/product/{id}` link
+(see `productHref`), since buying always has to happen *on* that host (Stripe Checkout is scoped to
+whichever server the buyer authenticates against).
 
 Mirrors `Components.Pages.PostsPage`/`Components.Pages.EventsPage`'s overall shape (a thin
 `Pages.Market` wrapper around this module, `init`/`update`/`view`/`subscriptions`/`fromShared`), just
@@ -28,7 +34,7 @@ import Effect exposing (Effect)
 import Gen.Route as Route
 import Grpc
 import Html exposing (Html, button, div, h1, input, label, option, p, select, span, text, textarea)
-import Html.Attributes exposing (checked, class, disabled, placeholder, selected, type_, value)
+import Html.Attributes exposing (checked, class, disabled, placeholder, selected, title, type_, value)
 import Html.Events exposing (onClick, onInput)
 import Proto.Rellm
     exposing
@@ -64,7 +70,8 @@ import UI.Classes exposing (classes, openClosedClass)
 
 
 type alias Model =
-    { products : ProductsState
+    { host : String
+    , products : ProductsState
     , productsFetchStarted : Bool
     , addForm : Maybe ProductForm
     , rowEdits : Dict String ProductForm
@@ -105,6 +112,7 @@ type alias ProductForm =
     , period : PurchasePeriod
     , amountText : String
     , currency : Int
+    , availableCountText : String
     , mediaAllocationText : String
     , mediaAllocationUnit : ByteFormat.ByteUnit
     , aiProviderId : String
@@ -114,7 +122,8 @@ type alias ProductForm =
     , hostingDbSizeUnit : ByteFormat.ByteUnit
     , hostingMinioSizeText : String
     , hostingMinioSizeUnit : ByteFormat.ByteUnit
-    , permissionsText : String
+    , permissions : List Permission
+    , permissionAddSelection : Maybe Permission
     , status : AccountsPanel.FormStatus
     }
 
@@ -125,6 +134,7 @@ defaultProductForm =
     , period = PURCHASEPERIODMONTHLY
     , amountText = ""
     , currency = Market.usdCurrencyCode
+    , availableCountText = ""
     , mediaAllocationText = ""
     , mediaAllocationUnit = ByteFormat.GB
     , aiProviderId = ""
@@ -134,7 +144,8 @@ defaultProductForm =
     , hostingDbSizeUnit = ByteFormat.GB
     , hostingMinioSizeText = ""
     , hostingMinioSizeUnit = ByteFormat.GB
-    , permissionsText = ""
+    , permissions = []
+    , permissionAddSelection = List.head Users.allPermissions
     , status = AccountsPanel.Idle
     }
 
@@ -152,6 +163,12 @@ productFormFromProduct product =
                 , period = product.period
                 , amountText = String.fromInt product.amount
                 , currency = product.currency
+                , availableCountText =
+                    if product.availableCount == 0 then
+                        ""
+
+                    else
+                        String.fromInt product.availableCount
             }
     in
     case product.details of
@@ -203,7 +220,10 @@ productFormFromProduct product =
             }
 
         Just (ProductDetails.PermissionsAccessSubscriptionDetails details) ->
-            { base | permissionsText = String.join ", " (List.map Users.permissionText details.permissions) }
+            { base
+                | permissions = details.permissions
+                , permissionAddSelection = resolveAddSelection Nothing details.permissions
+            }
 
         Nothing ->
             base
@@ -321,19 +341,20 @@ byteSizeSelectorView change placeholderText form getText setText getUnit setUnit
         ]
 
 
-init : Shared.Model -> ( Model, Effect Msg )
-init shared =
+init : Shared.Model -> String -> ( Model, Effect Msg )
+init shared host =
     let
         initialModel : Model
         initialModel =
-            { products = ProductsLoading
+            { host = host
+            , products = ProductsLoading
             , productsFetchStarted = False
             , addForm = Nothing
             , rowEdits = Dict.empty
             , purchases = Dict.empty
             , hostingForms = Dict.empty
             , aiProviders =
-                if isAdminOn shared then
+                if isAdminOn shared host then
                     AiProvidersLoading
 
                 else
@@ -347,21 +368,21 @@ init shared =
     ( readyModel
     , Effect.batch
         [ fetchEffect
-        , Effect.fromShared (Shared.BreadcrumbsMsg (Breadcrumbs.SetRoot (Breadcrumbs.FromServerHost shared.accounts.mainFrontendHost) shared.accounts.mainFrontendHost []))
+        , Effect.fromShared (Shared.BreadcrumbsMsg (Breadcrumbs.SetRoot (Breadcrumbs.FromServerHost host) host []))
         ]
     )
 
 
-isAdminOn : Shared.Model -> Bool
-isAdminOn shared =
-    RellmAccounts.enabledRellmAccountForServer shared.accounts.accounts shared.accounts.mainFrontendHost
+isAdminOn : Shared.Model -> String -> Bool
+isAdminOn shared host =
+    RellmAccounts.enabledRellmAccountForServer shared.accounts.accounts host
         |> Maybe.map RellmAccounts.isAdmin
         |> Maybe.withDefault False
 
 
-{-| Fires `fetchProducts`/`fetchAiProviders` the first time `mainFrontendHost` is a known,
-*connected* server -- see `RellmServers.knownConnectedRellmServer`'s own doc: `Shared.AccountsPanel.init`
-seeds every persisted server disconnected before its own reconnect attempt resolves, so firing these
+{-| Fires `fetchProducts`/`fetchAiProviders` the first time `model.host` is a known, *connected*
+server -- see `RellmServers.knownConnectedRellmServer`'s own doc: `Shared.AccountsPanel.init` seeds
+every persisted server disconnected before its own reconnect attempt resolves, so firing these
 fetches unconditionally in `init` (the original bug here -- a cold app load raced that reconnect and
 failed instantly with "Couldn't reach the server", before the real connection ever landed) doesn't
 work. Safe to call repeatedly (from `init` and every `SharedMsgReceived`, mirroring
@@ -373,18 +394,18 @@ attemptFetches shared model =
     let
         serverReady : Bool
         serverReady =
-            RellmServers.knownConnectedRellmServer shared.accounts.servers shared.accounts.mainFrontendHost /= Nothing
+            RellmServers.knownConnectedRellmServer shared.accounts.servers model.host /= Nothing
 
         ( model1, productsEffect ) =
             if serverReady && not model.productsFetchStarted then
-                ( { model | productsFetchStarted = True }, fetchProducts shared )
+                ( { model | productsFetchStarted = True }, fetchProducts shared model.host )
 
             else
                 ( model, Effect.none )
 
         ( model2, aiProvidersEffect ) =
             if serverReady && model1.aiProviders /= AiProvidersNotLoaded && not model1.aiProvidersFetchStarted then
-                ( { model1 | aiProvidersFetchStarted = True }, fetchAiProviders shared )
+                ( { model1 | aiProvidersFetchStarted = True }, fetchAiProviders shared model1.host )
 
             else
                 ( model1, Effect.none )
@@ -392,9 +413,9 @@ attemptFetches shared model =
     ( model2, Effect.batch [ productsEffect, aiProvidersEffect ] )
 
 
-fetchProducts : Shared.Model -> Effect Msg
-fetchProducts shared =
-    Market.getMarketProducts shared.accounts (maybeAccountServer shared)
+fetchProducts : Shared.Model -> String -> Effect Msg
+fetchProducts shared host =
+    Market.getMarketProducts shared.accounts (maybeAccountServer shared host)
         |> Task.attempt GotProductsResult
         |> Effect.fromCmd
 
@@ -404,17 +425,17 @@ pickers (`aiGrantsFormView`) -- `targetUserId = ""` asks for the caller's own pr
 `Components.AIProviders.getAIProviders`'s own doc), which is always right here since only an Admin
 ever opens this form (see `isAdminOn`'s callers).
 -}
-fetchAiProviders : Shared.Model -> Effect Msg
-fetchAiProviders shared =
-    AIProviders.getAIProviders shared.accounts (maybeAccountServer shared) ""
+fetchAiProviders : Shared.Model -> String -> Effect Msg
+fetchAiProviders shared host =
+    AIProviders.getAIProviders shared.accounts (maybeAccountServer shared host) ""
         |> Task.attempt GotAIProvidersResult
         |> Effect.fromCmd
 
 
-maybeAccountServer : Shared.Model -> AccountsPanel.MaybeAccountServer
-maybeAccountServer shared =
-    ( RellmAccounts.enabledRellmAccountForServer shared.accounts.accounts shared.accounts.mainFrontendHost |> Maybe.map .userId
-    , shared.accounts.mainFrontendHost
+maybeAccountServer : Shared.Model -> String -> AccountsPanel.MaybeAccountServer
+maybeAccountServer shared host =
+    ( RellmAccounts.enabledRellmAccountForServer shared.accounts.accounts host |> Maybe.map .userId
+    , host
     )
 
 
@@ -499,7 +520,7 @@ update shared msg model =
             case model.addForm of
                 Just addForm ->
                     ( { model | addForm = Just { addForm | status = AccountsPanel.Submitting } }
-                    , Market.createMarketProduct shared.accounts (maybeAccountServer shared) (productFromForm defaultMarketProduct addForm)
+                    , Market.createMarketProduct shared.accounts (maybeAccountServer shared model.host) (productFromForm defaultMarketProduct addForm)
                         |> Task.attempt GotAddProductResult
                         |> Effect.fromCmd
                     )
@@ -533,7 +554,7 @@ update shared msg model =
             case Dict.get product.id model.rowEdits of
                 Just edit ->
                     ( { model | rowEdits = Dict.insert product.id { edit | status = AccountsPanel.Submitting } model.rowEdits }
-                    , Market.updateMarketProduct shared.accounts (maybeAccountServer shared) (productFromForm product edit)
+                    , Market.updateMarketProduct shared.accounts (maybeAccountServer shared model.host) (productFromForm product edit)
                         |> Task.attempt (GotRowEditResult product.id)
                         |> Effect.fromCmd
                     )
@@ -558,7 +579,7 @@ update shared msg model =
                     }
             in
             ( model
-            , Market.updateMarketProduct shared.accounts (maybeAccountServer shared) updated
+            , Market.updateMarketProduct shared.accounts (maybeAccountServer shared model.host) updated
                 |> Task.attempt (GotRowEditResult product.id)
                 |> Effect.fromCmd
             )
@@ -598,7 +619,7 @@ update shared msg model =
             in
             ( { model | purchases = Dict.insert product.id Market.PurchaseSubmitting model.purchases }
             , Market.makeMarketPurchase shared.accounts
-                (maybeAccountServer shared)
+                (maybeAccountServer shared model.host)
                 { marketProductId = product.id, rellmHostingDetails = hostingDetails }
                 |> Task.attempt (GotPurchaseResult product.id)
                 |> Effect.fromCmd
@@ -663,6 +684,7 @@ productFromForm existing form =
         , period = form.period
         , amount = Maybe.withDefault 0 (String.toInt form.amountText)
         , currency = form.currency
+        , availableCount = Maybe.withDefault 0 (String.toInt form.availableCountText)
         , details = detailsFromForm form
     }
 
@@ -706,13 +728,7 @@ detailsFromForm form =
         PURCHASETYPEPERMISSIONSACCESS ->
             Just
                 (ProductDetails.PermissionsAccessSubscriptionDetails
-                    { defaultPermissionsAccessSubscriptionDetails
-                        | permissions =
-                            form.permissionsText
-                                |> String.split ","
-                                |> List.map String.trim
-                                |> List.filterMap Users.permissionFromText
-                    }
+                    { defaultPermissionsAccessSubscriptionDetails | permissions = form.permissions }
                 )
 
         PurchaseTypeUnrecognized_ _ ->
@@ -787,15 +803,25 @@ purchasePeriodToString period =
 -- VIEW
 
 
+{-| `embeddedPage` still only ever applies to the browsed host's own instance (see
+`Pages.UsernameOrCustomTab_`'s embedding, which never mounts a second server's Market) --
+`isPrimary` (`model.host == shared.accounts.browsingHost`) is the independent question of whether
+*this particular instance*, among however many `Pages.Market` has mounted, is the browsed server's
+own -- see module doc.
+-}
 view : Shared.Model -> Bool -> Model -> Html Msg
 view shared embeddedPage model =
     let
         isAdmin : Bool
         isAdmin =
-            isAdminOn shared
+            isAdminOn shared model.host
+
+        isPrimary : Bool
+        isPrimary =
+            model.host == shared.accounts.browsingHost
     in
     div [ class "market-page" ]
-        (headerRowView embeddedPage isAdmin
+        (headerRowView embeddedPage isPrimary model.host isAdmin
             :: (if isAdmin then
                     [ addProductPanelView model.aiProviders model.addForm ]
 
@@ -818,28 +844,51 @@ view shared embeddedPage model =
                                 List.filter (visibleProduct isAdmin) products
                         in
                         [ div [ class "market-sections" ]
-                            (Market.allPurchaseTypes |> List.map (sectionView shared isAdmin model visible))
+                            (Market.allPurchaseTypes |> List.map (sectionView shared isPrimary isAdmin model visible))
                         ]
                )
         )
 
 
-{-| The "Market" heading (hidden while embedded on `UsernameOrCustomTab_`, same as before) and, for
-an Admin, a "+ New Product" button -- both on the same row, the button pinned to the right by
-`.market-header-row`'s `justify-content: space-between` (see `market.css`). The button stays
+{-| The "Market" heading (hidden while embedded on `UsernameOrCustomTab_`, same as before, for the
+browsed server's own primary instance only) and, for an Admin *on this instance's own host*, a
+"+ New Product" button and a link to `/market/fulfillment` -- all on the same row, pinned to the
+right by `.market-header-row`'s `justify-content: space-between` (see `market.css`). The button stays
 visible even while `addProductPanelView`'s form is already open, rather than disappearing -- a
 second click toggles the form closed again (see `AddProductClicked`), same as `AddFormCancelClicked`.
+The fulfillment link only ever makes sense for the browsed server's own primary instance (an Admin
+manages *their own* server's Rellm Hosting orders here, not some other federated server's), so it's
+gated on `isPrimary` too, unlike the "+ New Product" button.
+
+A non-primary instance (another server's Market, shown alongside the browsed server's own -- see
+module doc) always gets a heading, even while `embeddedPage`, naming which server it's for ("Market
+on other-server.com") -- there's no ambiguity to resolve for the primary instance, but stacking two
+bare "Market" headings would be.
 -}
-headerRowView : Bool -> Bool -> Html Msg
-headerRowView embeddedPage isAdmin =
+headerRowView : Bool -> Bool -> String -> Bool -> Html Msg
+headerRowView embeddedPage isPrimary host isAdmin =
     div [ class "market-header-row" ]
-        [ if embeddedPage then
+        [ if embeddedPage && isPrimary then
             text ""
 
-          else
+          else if isPrimary then
             h1 [] [ text "Market" ]
+
+          else
+            h1 [] [ text ("Market on " ++ host) ]
         , if isAdmin then
-            button [ class "market-add-product-button", onClick AddProductClicked ] [ text "+ New Product" ]
+            div [ class "market-header-row-admin-actions" ]
+                ((if isPrimary then
+                    [ Html.a
+                        [ Html.Attributes.href (Route.toHref Route.Market__Fulfillment), class "market-fulfillment-link" ]
+                        [ text "Rellm Hosting Fulfillment" ]
+                    ]
+
+                  else
+                    []
+                 )
+                    ++ [ button [ class "market-add-product-button", onClick AddProductClicked ] [ text "+ New Product" ] ]
+                )
 
           else
             text ""
@@ -897,8 +946,8 @@ type yet."), a regular user only sees ones with at least one tier (see `Model` t
 doc on why: browsing is public, buying isn't). Tiers within a section are sorted cheapest-monthly
 first, then annual by price, then indefinite/lifetime by price (`Market.periodSortOrder`).
 -}
-sectionView : Shared.Model -> Bool -> Model -> List MarketProduct -> PurchaseType -> Html Msg
-sectionView shared isAdmin model products type_ =
+sectionView : Shared.Model -> Bool -> Bool -> Model -> List MarketProduct -> PurchaseType -> Html Msg
+sectionView shared isPrimary isAdmin model products type_ =
     let
         tiers : List MarketProduct
         tiers =
@@ -930,12 +979,27 @@ sectionView shared isAdmin model products type_ =
                 p [ class "market-section-empty" ] [ text "You have not added any products of this type yet." ]
 
               else
-                div [ class "market-tier-row" ] (List.map (tierCardView shared isAdmin model) tiers)
+                div [ class "market-tier-row" ] (List.map (tierCardView shared isPrimary isAdmin model) tiers)
             ]
 
 
-tierCardView : Shared.Model -> Bool -> Model -> MarketProduct -> Html Msg
-tierCardView shared isAdmin model product =
+{-| `isPrimary` decides how a tier's own link is built (see module doc): the browsed server's own
+products link internally (`Route.toHref`, resolves against `browsingHost` for free by being a plain
+relative URL); any other server's products link straight to that server's own
+`https://{host}/market/product/{id}` instead, a real page navigation -- buying always has to happen
+*on* that server, not this one.
+-}
+productHref : Shared.Model -> Bool -> String -> MarketProduct -> String
+productHref shared isPrimary host product =
+    if isPrimary then
+        shared.basePath ++ Route.toHref (Route.Market__Product__ProductId_ { productId = product.id })
+
+    else
+        "https://" ++ host ++ "/market/product/" ++ product.id
+
+
+tierCardView : Shared.Model -> Bool -> Bool -> Model -> MarketProduct -> Html Msg
+tierCardView shared isPrimary isAdmin model product =
     case Dict.get product.id model.rowEdits of
         Just edit ->
             div [ class "market-tier market-tier-editing" ]
@@ -945,12 +1009,22 @@ tierCardView shared isAdmin model product =
             div [ class "market-tier" ]
                 [ Html.a
                     [ class "market-tier-link"
-                    , Html.Attributes.href (shared.basePath ++ Route.toHref (Route.Market__Product__ProductId_ { productId = product.id }))
+                    , Html.Attributes.href (productHref shared isPrimary model.host product)
                     ]
-                    [ span [ class "market-tier-summary" ] [ text (Market.productSummary product) ] ]
+                    [ span [ class "market-tier-summary" ] [ text (Market.productSummary product) ]
+                    , case Market.slotsAvailableText product of
+                        Just slotsText ->
+                            span [ class "market-tier-slots" ] [ text slotsText ]
+
+                        Nothing ->
+                            text ""
+                    ]
                 , permissionBadgesView (Market.permissionsForProduct product)
                 , if product.delistedAt /= Nothing then
                     span [ class "market-tier-delisted" ] [ text "Delisted" ]
+
+                  else if Market.isSoldOut product then
+                    span [ class "market-tier-delisted" ] [ text "Sold Out" ]
 
                   else
                     text ""
@@ -967,6 +1041,9 @@ tierCardView shared isAdmin model product =
                                 )
                             ]
                         ]
+
+                  else if Market.isSoldOut product then
+                    text ""
 
                   else
                     buyView shared model product
@@ -987,18 +1064,69 @@ permissionBadgesView permissions =
             (permissions |> List.map (\permission -> span [ class "permission-badge" ] [ text (Users.permissionText permission) ]))
 
 
-{-| Whether anyone is signed in on `mainFrontendHost` at all -- gates `buyView`'s "Buy" button (a
-signed-out click would otherwise just fail with a confusing `NetworkError`, since
-`Market.makeMarketPurchase` is always authenticated -- see `Shared.AccountsPanel.performWithAccountServer`).
+{-| Whether anyone is signed in on `host` at all -- gates `buyView`'s "Buy" button (a signed-out
+click would otherwise just fail with a confusing `NetworkError`, since `Market.makeMarketPurchase`
+is always authenticated -- see `Shared.AccountsPanel.performWithAccountServer`).
 -}
-signedIn : Shared.Model -> Bool
-signedIn shared =
-    RellmAccounts.enabledRellmAccountForServer shared.accounts.accounts shared.accounts.mainFrontendHost /= Nothing
+signedIn : Shared.Model -> String -> Bool
+signedIn shared host =
+    RellmAccounts.enabledRellmAccountForServer shared.accounts.accounts host /= Nothing
+
+
+{-| Whether Market itself is open for `host` at all -- `market_settings.enabled` (see that field's
+own proto doc). Checked first in `buyView`, ahead of `stripeConfigured` and `signedIn`, since a
+closed Market makes both of those moot. Defaults to `True` (don't block the Buy button) whenever
+`host` isn't yet a known/connected server or hasn't reported `marketSettings` at all -- mirrors
+`Components.Pages.ProductPage.stripeConfigured`'s own "unknown isn't the same as definitely not
+configured" reasoning. In practice this only ever matters for the primary (browsed) host's own
+instance -- `Pages.Market.marketEnabledHosts` already filters any *other* federated server out of
+the page entirely once its own `market_settings.enabled` goes false, so a `MarketPage` instance for
+one only exists here while it's still enabled.
+-}
+marketEnabled : Shared.Model -> String -> Bool
+marketEnabled shared host =
+    RellmServers.knownConnectedRellmServer shared.accounts.servers host
+        |> Maybe.map
+            (\server ->
+                (RellmServers.configurationOf server).marketSettings
+                    |> Maybe.map .enabled
+                    |> Maybe.withDefault True
+            )
+        |> Maybe.withDefault True
+
+
+{-| Whether Stripe is actually usable on `host` right now -- `market_settings.stripe_configured`.
+Mirrors `Components.Pages.ProductPage.stripeConfigured` exactly, just parameterized over `host`
+(a `MarketPage` instance can be for any federated server, not just the one being browsed) instead of
+always reading `shared.accounts.browsingHost`.
+-}
+stripeConfigured : Shared.Model -> String -> Bool
+stripeConfigured shared host =
+    RellmServers.knownConnectedRellmServer shared.accounts.servers host
+        |> Maybe.map
+            (\server ->
+                (RellmServers.configurationOf server).marketSettings
+                    |> Maybe.map .stripeConfigured
+                    |> Maybe.withDefault True
+            )
+        |> Maybe.withDefault True
 
 
 buyView : Shared.Model -> Model -> MarketProduct -> Html Msg
 buyView shared model product =
-    if not (signedIn shared) then
+    if not (marketEnabled shared model.host) then
+        div [ class "market-tier-buy" ]
+            [ button [ disabled True ] [ text "Buy" ]
+            , p [ class "market-tier-buy-note" ] [ text "Market is not currently open." ]
+            ]
+
+    else if not (stripeConfigured shared model.host) then
+        div [ class "market-tier-buy" ]
+            [ button [ disabled True ] [ text "Buy" ]
+            , p [ class "market-tier-buy-note" ] [ text "Stripe is not configured." ]
+            ]
+
+    else if not (signedIn shared model.host) then
         loginPromptView
 
     else
@@ -1106,6 +1234,13 @@ productFormView aiProviders change form =
                     )
             )
         ]
+        :: input
+            [ type_ "number"
+            , placeholder "Available Slots (blank/0 = unlimited)"
+            , value form.availableCountText
+            , onInput (change (\f text -> { f | availableCountText = text }))
+            ]
+            []
         :: (case form.type_ of
                 PURCHASETYPEMEDIASTORAGE ->
                     [ byteSizeSelectorView change
@@ -1138,13 +1273,7 @@ productFormView aiProviders change form =
                     ]
 
                 PURCHASETYPEPERMISSIONSACCESS ->
-                    [ input
-                        [ placeholder "Permissions (comma-separated, e.g. Sync Events To Facebook)"
-                        , value form.permissionsText
-                        , onInput (change (\f text -> { f | permissionsText = text }))
-                        ]
-                        []
-                    ]
+                    permissionsFormView change form
 
                 PurchaseTypeUnrecognized_ _ ->
                     []
@@ -1227,6 +1356,101 @@ toggleAiModel modelName form =
     }
 
 
+{-| The Extra Features form's permissions editor -- the same add-via-dropdown/remove-via-×-badge
+pattern `Components.Pages.UserProfilePage.permissionsSection`'s edit mode uses (mirrors
+`permissionEditBadge`/the "Add Permission" `<select>`+button there almost exactly), rather than the
+free-text comma-separated field this used to be -- picking from `Components.Users.allPermissions`
+means an admin can't typo a permission name into something that silently grants nothing.
+-}
+permissionsFormView : ((ProductForm -> String -> ProductForm) -> String -> msg) -> ProductForm -> List (Html msg)
+permissionsFormView change form =
+    [ div [ class "permission-badges" ]
+        (form.permissions
+            |> List.map
+                (\permission ->
+                    span [ class "permission-badge editable" ]
+                        [ text (Users.permissionText permission)
+                        , button
+                            [ class "permission-remove"
+                            , onClick (change (\f _ -> removePermission permission f) "")
+                            , title ("Remove " ++ Users.permissionText permission)
+                            ]
+                            [ text "×" ]
+                        ]
+                )
+        )
+    , div [ class "market-form-permissions-add" ]
+        [ select [ onInput (change (\f text -> { f | permissionAddSelection = Users.permissionFromText text })) ]
+            (addablePermissions form.permissions
+                |> List.map
+                    (\permission ->
+                        option
+                            [ value (Users.permissionText permission), selected (form.permissionAddSelection == Just permission) ]
+                            [ text (Users.permissionText permission) ]
+                    )
+            )
+        , button
+            [ onClick (change (\f _ -> addSelectedPermission f) "")
+            , disabled (form.permissionAddSelection == Nothing)
+            ]
+            [ text "Add Permission" ]
+        ]
+    ]
+
+
+{-| Mirrors `Components.Pages.UserProfilePage.resolveAddSelection`/`addablePermissions` exactly --
+keeps the "Add Permission" `<select>`'s selection valid as `form.permissions` changes (falls back to
+the first still-addable permission, `Nothing` once every permission's already added).
+-}
+removePermission : Permission -> ProductForm -> ProductForm
+removePermission permission form =
+    let
+        remaining : List Permission
+        remaining =
+            List.filter ((/=) permission) form.permissions
+    in
+    { form | permissions = remaining, permissionAddSelection = resolveAddSelection form.permissionAddSelection remaining }
+
+
+addSelectedPermission : ProductForm -> ProductForm
+addSelectedPermission form =
+    case form.permissionAddSelection of
+        Just permission ->
+            let
+                updated : List Permission
+                updated =
+                    form.permissions ++ [ permission ]
+            in
+            { form | permissions = updated, permissionAddSelection = resolveAddSelection Nothing updated }
+
+        Nothing ->
+            form
+
+
+addablePermissions : List Permission -> List Permission
+addablePermissions pending =
+    Users.allPermissions |> List.filter (\permission -> not (List.member permission pending))
+
+
+resolveAddSelection : Maybe Permission -> List Permission -> Maybe Permission
+resolveAddSelection current pending =
+    let
+        available : List Permission
+        available =
+            addablePermissions pending
+    in
+    case current of
+        Just permission ->
+            if List.member permission available then
+                Just permission
+
+            else
+                List.head available
+
+        Nothing ->
+            List.head available
+
+
 rowEditActionsView : MarketProduct -> ProductForm -> Html Msg
 rowEditActionsView product edit =
     div [ class "market-form-actions" ]
@@ -1242,8 +1466,8 @@ rowEditActionsView product edit =
 
 
 subscriptions : Model -> Sub Msg
-subscriptions _ =
-    Sub.none
+subscriptions =
+    always Sub.none
 
 
 fromShared : Shared.Msg -> Msg

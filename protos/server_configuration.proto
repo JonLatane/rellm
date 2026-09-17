@@ -56,6 +56,12 @@ message ServerConfiguration {
   // If default visibility is `GLOBAL_PUBLIC`, default_user_permissions *must*
   // contain `PUBLISH_MEDIA_GLOBALLY`.
   MediaSettings media_settings = 24;
+  // Public, non-secret "is this server's Market open" signal -- unlike `stripe_config` (which holds
+  // real credentials and is Admin-only, see that field's own doc), this is never stripped for a
+  // non-admin/unauthenticated caller. Lets a client decide whether to show this server's Market
+  // section at all (e.g. when browsing a federated list of servers) without needing to be an admin
+  // here just to check -- see `rellm.proto`'s own "Federated Markets" doc section.
+  MarketSettings market_settings = 25;
 
   // If set, enables External CDN support for the server. This means that the
   // non-secure HTTP server (on port 80) will *not* redirect to the secure server,
@@ -324,6 +330,25 @@ message MediaSettings {
 
   // Default media storage allocation for newly created users. Defaults to 10MB.
   uint64 default_media_allocation_bytes = 4;
+}
+
+// Whether this server's `/market` is open -- an explicit, admin-set toggle independent of
+// `StripeConfig.stripe_enabled` (an admin can configure Stripe credentials without opening the
+// storefront yet, or temporarily close it without touching those credentials). See
+// `ServerConfiguration.market_settings`'s own doc on why this lives outside `StripeConfig`: it's
+// the one bit that has to stay visible to non-admins for federated multi-server Market browsing to
+// work at all.
+message MarketSettings {
+  bool enabled = 1;
+
+  // Whether Stripe is actually usable right now -- `stripe_config.stripe_enabled` is true AND a
+  // `stripe_secret_key` is on file. Computed live on every `GetServerConfiguration` (never read back
+  // from whatever was last saved to `market_settings` itself), and -- like `enabled` above --
+  // deliberately never stripped for non-admins: it's the public "can I actually buy something here"
+  // signal a buyer needs (e.g. to grey out `/market/product/:id`'s "Buy" button with a
+  // "Stripe is not configured" message) without ever exposing `StripeConfig` itself, which stays
+  // admin-only.
+  bool stripe_configured = 2;
 }
 
 // Settings for a feature (e.g. People, Groups, Posts, Events, Media).

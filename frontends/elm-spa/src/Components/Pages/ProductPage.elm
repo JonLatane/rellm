@@ -67,12 +67,12 @@ init shared productId =
     ( readyModel
     , Effect.batch
         [ fetchEffect
-        , Effect.fromShared (Shared.BreadcrumbsMsg (Breadcrumbs.SetRoot (Breadcrumbs.FromServerHost shared.accounts.mainFrontendHost) shared.accounts.mainFrontendHost []))
+        , Effect.fromShared (Shared.BreadcrumbsMsg (Breadcrumbs.SetRoot (Breadcrumbs.FromServerHost shared.accounts.browsingHost) shared.accounts.browsingHost []))
         ]
     )
 
 
-{-| Fires `fetchProduct` the first time `mainFrontendHost` is a known, *connected* server -- see
+{-| Fires `fetchProduct` the first time `browsingHost` is a known, *connected* server -- see
 `RellmServers.knownConnectedRellmServer`'s own doc: `Shared.AccountsPanel.init` seeds every
 persisted server disconnected before its own reconnect attempt resolves, so firing this fetch
 unconditionally in `init` (the original bug here -- a cold app load raced that reconnect and failed
@@ -83,7 +83,7 @@ every call after the first a no-op.
 -}
 attemptFetch : Shared.Model -> Model -> ( Model, Effect Msg )
 attemptFetch shared model =
-    if model.fetchStarted || RellmServers.knownConnectedRellmServer shared.accounts.servers shared.accounts.mainFrontendHost == Nothing then
+    if model.fetchStarted || RellmServers.knownConnectedRellmServer shared.accounts.servers shared.accounts.browsingHost == Nothing then
         ( model, Effect.none )
 
     else
@@ -99,8 +99,8 @@ fetchProduct shared productId =
 
 maybeAccountServer : Shared.Model -> AccountsPanel.MaybeAccountServer
 maybeAccountServer shared =
-    ( RellmAccounts.enabledRellmAccountForServer shared.accounts.accounts shared.accounts.mainFrontendHost |> Maybe.map .userId
-    , shared.accounts.mainFrontendHost
+    ( RellmAccounts.enabledRellmAccountForServer shared.accounts.accounts shared.accounts.browsingHost |> Maybe.map .userId
+    , shared.accounts.browsingHost
     )
 
 
@@ -221,8 +221,17 @@ view shared model =
                 , h1 [] [ text (Market.purchaseTypeLabel product.type_) ]
                 , p [ class "product-description" ] [ text (Market.purchaseTypeDescription product.type_) ]
                 , p [ class "product-summary" ] [ text (Market.productSummary product) ]
+                , case Market.slotsAvailableText product of
+                    Just slotsText ->
+                        p [ class "product-slots" ] [ text slotsText ]
+
+                    Nothing ->
+                        text ""
                 , if product.delistedAt /= Nothing then
                     p [ class "product-delisted" ] [ text "This product is no longer available for purchase." ]
+
+                  else if Market.isSoldOut product then
+                    p [ class "product-delisted" ] [ text "This product is sold out." ]
 
                   else
                     buyView shared model product
@@ -230,18 +239,45 @@ view shared model =
         )
 
 
-{-| Whether anyone is signed in on `mainFrontendHost` at all -- gates the "Buy" button below (a
+{-| Whether anyone is signed in on `browsingHost` at all -- gates the "Buy" button below (a
 signed-out click would otherwise just fail with a confusing `NetworkError`, since
 `Market.makeMarketPurchase` is always authenticated -- see `Shared.AccountsPanel.performWithAccountServer`).
 -}
 signedIn : Shared.Model -> Bool
 signedIn shared =
-    RellmAccounts.enabledRellmAccountForServer shared.accounts.accounts shared.accounts.mainFrontendHost /= Nothing
+    RellmAccounts.enabledRellmAccountForServer shared.accounts.accounts shared.accounts.browsingHost /= Nothing
+
+
+{-| `market_settings.stripe_configured` -- the public "is Stripe actually usable right now" signal
+(see that field's own proto doc), read off whatever `RellmServers.configurationOf` already has
+cached for `browsingHost` (the same unauthenticated probe `MarketProduct`s themselves came from, via
+`fetchProduct`). Defaults to `True` (i.e. don't block the Buy button) whenever `browsingHost` isn't
+yet a known/connected server or hasn't reported `marketSettings` at all -- by the time `Found
+product` is actually on screen this should never happen in practice (see `attemptFetch`'s own doc:
+`fetchProduct` itself doesn't fire until the server is known/connected), but "unknown" shouldn't read
+as "definitely not configured" either way.
+-}
+stripeConfigured : Shared.Model -> Bool
+stripeConfigured shared =
+    RellmServers.knownConnectedRellmServer shared.accounts.servers shared.accounts.browsingHost
+        |> Maybe.map
+            (\server ->
+                (RellmServers.configurationOf server).marketSettings
+                    |> Maybe.map .stripeConfigured
+                    |> Maybe.withDefault True
+            )
+        |> Maybe.withDefault True
 
 
 buyView : Shared.Model -> Model -> MarketProduct -> Html Msg
 buyView shared model product =
-    if not (signedIn shared) then
+    if not (stripeConfigured shared) then
+        div [ class "product-buy" ]
+            [ button [ disabled True ] [ text "Buy" ]
+            , p [ class "product-stripe-not-configured" ] [ text "Stripe is not configured." ]
+            ]
+
+    else if not (signedIn shared) then
         loginPromptView
 
     else

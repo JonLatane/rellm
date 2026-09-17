@@ -194,6 +194,8 @@ diesel::table! {
         details -> Jsonb,
         created_at -> Timestamp,
         delisted_at -> Nullable<Timestamp>,
+        available_count -> Int4,
+        sold_count -> Int4,
     }
 }
 
@@ -223,9 +225,10 @@ diesel::table! {
         details -> Jsonb,
         created_at -> Timestamp,
         renews_at -> Nullable<Timestamp>,
-        ended_at -> Nullable<Timestamp>,
+        canceled_at -> Nullable<Timestamp>,
         stripe_customer_id -> Nullable<Varchar>,
         stripe_payment_method_id -> Nullable<Varchar>,
+        service_terminated_at -> Nullable<Timestamp>,
     }
 }
 
@@ -390,6 +393,7 @@ diesel::table! {
         preferred_verification_apis -> Nullable<Jsonb>,
         media_settings -> Nullable<Jsonb>,
         stripe_config -> Nullable<Jsonb>,
+        market_settings -> Nullable<Jsonb>,
     }
 }
 

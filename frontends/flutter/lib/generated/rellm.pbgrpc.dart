@@ -329,6 +329,14 @@ class RellmClient extends $grpc.Client {
       '/rellm.Rellm/MakeMarketPurchase',
       ($12.MakeMarketPurchaseRequest value) => value.writeToBuffer(),
       ($core.List<$core.int> value) => $12.MakeMarketPurchaseResponse.fromBuffer(value));
+  static final _$cancelMarketSubscription = $grpc.ClientMethod<$12.MarketSubscription, $12.MarketSubscription>(
+      '/rellm.Rellm/CancelMarketSubscription',
+      ($12.MarketSubscription value) => value.writeToBuffer(),
+      ($core.List<$core.int> value) => $12.MarketSubscription.fromBuffer(value));
+  static final _$updateMarketSubscription = $grpc.ClientMethod<$12.MarketSubscription, $12.MarketSubscription>(
+      '/rellm.Rellm/UpdateMarketSubscription',
+      ($12.MarketSubscription value) => value.writeToBuffer(),
+      ($core.List<$core.int> value) => $12.MarketSubscription.fromBuffer(value));
   static final _$generateMedia = $grpc.ClientMethod<$11.GenerateMediaRequest, $5.Media>(
       '/rellm.Rellm/GenerateMedia',
       ($11.GenerateMediaRequest value) => value.writeToBuffer(),
@@ -674,6 +682,14 @@ class RellmClient extends $grpc.Client {
 
   $grpc.ResponseFuture<$12.MakeMarketPurchaseResponse> makeMarketPurchase($12.MakeMarketPurchaseRequest request, {$grpc.CallOptions? options}) {
     return $createUnaryCall(_$makeMarketPurchase, request, options: options);
+  }
+
+  $grpc.ResponseFuture<$12.MarketSubscription> cancelMarketSubscription($12.MarketSubscription request, {$grpc.CallOptions? options}) {
+    return $createUnaryCall(_$cancelMarketSubscription, request, options: options);
+  }
+
+  $grpc.ResponseFuture<$12.MarketSubscription> updateMarketSubscription($12.MarketSubscription request, {$grpc.CallOptions? options}) {
+    return $createUnaryCall(_$updateMarketSubscription, request, options: options);
   }
 
   $grpc.ResponseFuture<$5.Media> generateMedia($11.GenerateMediaRequest request, {$grpc.CallOptions? options}) {
@@ -1244,6 +1260,20 @@ abstract class RellmServiceBase extends $grpc.Service {
         false,
         ($core.List<$core.int> value) => $12.MakeMarketPurchaseRequest.fromBuffer(value),
         ($12.MakeMarketPurchaseResponse value) => value.writeToBuffer()));
+    $addMethod($grpc.ServiceMethod<$12.MarketSubscription, $12.MarketSubscription>(
+        'CancelMarketSubscription',
+        cancelMarketSubscription_Pre,
+        false,
+        false,
+        ($core.List<$core.int> value) => $12.MarketSubscription.fromBuffer(value),
+        ($12.MarketSubscription value) => value.writeToBuffer()));
+    $addMethod($grpc.ServiceMethod<$12.MarketSubscription, $12.MarketSubscription>(
+        'UpdateMarketSubscription',
+        updateMarketSubscription_Pre,
+        false,
+        false,
+        ($core.List<$core.int> value) => $12.MarketSubscription.fromBuffer(value),
+        ($12.MarketSubscription value) => value.writeToBuffer()));
     $addMethod($grpc.ServiceMethod<$11.GenerateMediaRequest, $5.Media>(
         'GenerateMedia',
         generateMedia_Pre,
@@ -1619,6 +1649,14 @@ abstract class RellmServiceBase extends $grpc.Service {
     return makeMarketPurchase(call, await request);
   }
 
+  $async.Future<$12.MarketSubscription> cancelMarketSubscription_Pre($grpc.ServiceCall call, $async.Future<$12.MarketSubscription> request) async {
+    return cancelMarketSubscription(call, await request);
+  }
+
+  $async.Future<$12.MarketSubscription> updateMarketSubscription_Pre($grpc.ServiceCall call, $async.Future<$12.MarketSubscription> request) async {
+    return updateMarketSubscription(call, await request);
+  }
+
   $async.Future<$5.Media> generateMedia_Pre($grpc.ServiceCall call, $async.Future<$11.GenerateMediaRequest> request) async {
     return generateMedia(call, await request);
   }
@@ -1737,6 +1775,8 @@ abstract class RellmServiceBase extends $grpc.Service {
   $async.Future<$12.MarketProduct> updateMarketProduct($grpc.ServiceCall call, $12.MarketProduct request);
   $async.Future<$12.GetMarketSubscriptionsResponse> getMarketSubscriptions($grpc.ServiceCall call, $12.GetMarketSubscriptionsRequest request);
   $async.Future<$12.MakeMarketPurchaseResponse> makeMarketPurchase($grpc.ServiceCall call, $12.MakeMarketPurchaseRequest request);
+  $async.Future<$12.MarketSubscription> cancelMarketSubscription($grpc.ServiceCall call, $12.MarketSubscription request);
+  $async.Future<$12.MarketSubscription> updateMarketSubscription($grpc.ServiceCall call, $12.MarketSubscription request);
   $async.Future<$5.Media> generateMedia($grpc.ServiceCall call, $11.GenerateMediaRequest request);
   $async.Future<$9.EventAttendances> getEventAttendances($grpc.ServiceCall call, $9.GetEventAttendancesRequest request);
   $async.Future<$9.EventAttendance> upsertEventAttendance($grpc.ServiceCall call, $9.EventAttendance request);

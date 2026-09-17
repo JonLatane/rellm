@@ -28,6 +28,16 @@ pub struct MarketProduct {
     pub details: serde_json::Value,
     pub created_at: SystemTime,
     pub delisted_at: Option<SystemTime>,
+    /// Admin-set cap on how many subscriptions/purchases of this product can ever be sold -- `0`
+    /// means no cap (every product created before this field existed keeps behaving exactly as
+    /// before). See `sold_count`'s own doc.
+    pub available_count: i32,
+    /// Server-managed -- incremented when a purchase/subscription is created (the Stripe webhook,
+    /// on `checkout.session.completed`) and decremented when a subscription is canceled
+    /// (`CancelMarketSubscription`), which is what frees a slot for someone else to buy. Never
+    /// settable directly by a client (see `rpcs::market::update_market_product`, which silently
+    /// ignores any `sold_count` a request sends, same treatment as `type`/`period`).
+    pub sold_count: i32,
 }
 
 #[derive(Debug, Insertable)]
@@ -38,6 +48,8 @@ pub struct NewMarketProduct {
     pub amount: i32,
     pub currency: i32,
     pub details: serde_json::Value,
+    /// `sold_count` isn't included here -- every new product starts at the column's own `DEFAULT 0`.
+    pub available_count: i32,
 }
 
 #[derive(Debug, Queryable, Identifiable, AsChangeset, Clone)]
@@ -53,10 +65,11 @@ pub struct MarketSubscription {
     pub details: serde_json::Value,
     pub created_at: SystemTime,
     pub renews_at: Option<SystemTime>,
-    pub ended_at: Option<SystemTime>,
+    pub canceled_at: Option<SystemTime>,
     /// Stripe bookkeeping only -- never marshaled into a proto type.
     pub stripe_customer_id: Option<String>,
     pub stripe_payment_method_id: Option<String>,
+    pub service_terminated_at: Option<SystemTime>,
 }
 
 #[derive(Debug, Insertable)]
@@ -136,6 +149,35 @@ pub fn get_market_product(id: i64, conn: &mut PgPooledConnection) -> Result<Mark
         .filter(market_products::id.eq(id))
         .first::<MarketProduct>(conn)
         .map_err(|_| Status::new(Code::NotFound, "product_not_found"))
+}
+
+/// Called once a purchase/subscription is actually created (`web::stripe_webhook`, on
+/// `checkout.session.completed`) -- see `MarketProduct.sold_count`'s own doc. A plain SQL-side
+/// `+1` (not a Rust-side read-then-write) so two near-simultaneous webhook deliveries can't lose an
+/// increment to a race -- matches this feature's established "no heavier concurrency handling than
+/// it needs" MVP philosophy elsewhere (see e.g. `logic::market_renewal`'s own doc).
+pub fn increment_market_product_sold_count(product_id: i64, conn: &mut PgPooledConnection) {
+    if let Err(e) = diesel::update(market_products::table.filter(market_products::id.eq(product_id)))
+        .set(market_products::sold_count.eq(market_products::sold_count + 1))
+        .execute(conn)
+    {
+        log::error!("Failed to increment sold_count for market product {}: {:?}", product_id, e);
+    }
+}
+
+/// Called once a subscription is canceled (`rpcs::market::cancel_market_subscription`) -- frees the
+/// slot it held (see `MarketProduct.sold_count`'s own doc). Clamped at `0` (`GREATEST`, SQL-side)
+/// since `sold_count` is a `NOT NULL` `i32`, not a signed count that's meaningful going negative.
+pub fn decrement_market_product_sold_count(product_id: i64, conn: &mut PgPooledConnection) {
+    if let Err(e) = diesel::update(market_products::table.filter(market_products::id.eq(product_id)))
+        .set(
+            market_products::sold_count
+                .eq(diesel::dsl::sql::<diesel::sql_types::Integer>("GREATEST(sold_count - 1, 0)")),
+        )
+        .execute(conn)
+    {
+        log::error!("Failed to decrement sold_count for market product {}: {:?}", product_id, e);
+    }
 }
 
 /// Every `MarketProduct` -- `include_delisted` false for the public (non-admin) `GetProducts`
@@ -246,7 +288,29 @@ pub fn get_market_subscriptions_for_buyers(
         })
 }
 
-/// Every `MarketSubscription` of `product_type` that's due to renew (`ended_at IS NULL AND
+/// Every `MarketSubscription` of `product_type`, across every buyer, regardless of
+/// canceled/renewal state -- used by `marshaling::market_marshaling::build_fulfillment_subscriptions`
+/// (`GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN`). Unlike `get_due_market_subscriptions`
+/// (which only cares about ones still eligible to renew), an admin fulfilling orders needs to see
+/// every one ever made, fulfilled or not.
+pub fn get_market_subscriptions_by_product_type(
+    product_type: &str,
+    conn: &mut PgPooledConnection,
+) -> Result<Vec<MarketSubscription>, Status> {
+    market_subscriptions::table
+        .filter(market_subscriptions::product_type.eq(product_type))
+        .load::<MarketSubscription>(conn)
+        .map_err(|e| {
+            log::error!(
+                "Failed to load market subscriptions of type {}: {:?}",
+                product_type,
+                e
+            );
+            Status::new(Code::Internal, "failed_to_load_subscriptions")
+        })
+}
+
+/// Every `MarketSubscription` of `product_type` that's due to renew (`canceled_at IS NULL AND
 /// renews_at <= NOW()`) -- used by `logic::market_renewal::renew_subscriptions_of_type`.
 pub fn get_due_market_subscriptions(
     product_type: &str,
@@ -254,13 +318,48 @@ pub fn get_due_market_subscriptions(
 ) -> Result<Vec<MarketSubscription>, Status> {
     market_subscriptions::table
         .filter(market_subscriptions::product_type.eq(product_type))
-        .filter(market_subscriptions::ended_at.is_null())
+        .filter(market_subscriptions::canceled_at.is_null())
         .filter(market_subscriptions::renews_at.le(diesel::dsl::now))
         .order(market_subscriptions::renews_at.asc())
         .load::<MarketSubscription>(conn)
         .map_err(|e| {
             log::error!(
                 "Failed to load due market subscriptions of type {}: {:?}",
+                product_type,
+                e
+            );
+            Status::new(Code::Internal, "failed_to_load_subscriptions")
+        })
+}
+
+/// Every `MarketSubscription` of `product_type` that's due to have its entitlement actually
+/// revoked (`canceled_at IS NOT NULL AND service_terminated_at IS NULL AND canceled_at <= NOW()
+/// AND (renews_at IS NULL OR renews_at <= NOW())`) -- mirrors
+/// `idx_market_subscriptions_terminable`'s filter shape (that index doesn't cover `product_type`,
+/// so it's applied here as a plain additional filter, same as `get_due_market_subscriptions`
+/// does). A `NULL renews_at` is treated as "already past" rather than excluded -- a canceled
+/// non-recurring subscription (or any edge case that never got a `renews_at`) should still become
+/// terminable rather than being stranded forever. Used by
+/// `logic::market_renewal::terminate_subscriptions_of_type`.
+pub fn get_terminable_market_subscriptions(
+    product_type: &str,
+    conn: &mut PgPooledConnection,
+) -> Result<Vec<MarketSubscription>, Status> {
+    market_subscriptions::table
+        .filter(market_subscriptions::product_type.eq(product_type))
+        .filter(market_subscriptions::canceled_at.is_not_null())
+        .filter(market_subscriptions::service_terminated_at.is_null())
+        .filter(market_subscriptions::canceled_at.le(diesel::dsl::now))
+        .filter(
+            market_subscriptions::renews_at
+                .is_null()
+                .or(market_subscriptions::renews_at.le(diesel::dsl::now)),
+        )
+        .order(market_subscriptions::canceled_at.asc())
+        .load::<MarketSubscription>(conn)
+        .map_err(|e| {
+            log::error!(
+                "Failed to load terminable market subscriptions of type {}: {:?}",
                 product_type,
                 e
             );
