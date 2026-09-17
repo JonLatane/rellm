@@ -115,8 +115,8 @@ pub fn update_post(
                 }
 
                 // Unpublished posts also support title updates.
-                if (existing_post.context == PostContext::Post.to_string_post_context()
-                    && existing_post.published_at == None)
+                if existing_post.context == PostContext::Post.to_string_post_context()
+                    && existing_post.published_at == None
                 {
                     existing_post.title = request.title.to_owned();
                 }
