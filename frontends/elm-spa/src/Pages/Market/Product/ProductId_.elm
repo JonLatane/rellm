@@ -50,7 +50,7 @@ view shared req model =
         UI.layout shared
             req.route
             fromShared
-            [ ProductPage.view model
+            [ ProductPage.view shared model
             ]
     }
 

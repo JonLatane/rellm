@@ -29,13 +29,32 @@ pub fn usable_server_stripe_config(conn: &mut PgPooledConnection) -> Option<Stri
     server_stripe_config(conn).filter(|c| c.stripe_enabled && !c.stripe_secret_key.is_empty())
 }
 
-/// Numeric ISO 4217 currency code -> Stripe's lowercase alpha currency code. Only USD is needed
-/// today (see `market.proto`'s own scope note) -- structured to extend, not a full ISO 4217 table.
+/// Numeric ISO 4217 currency code -> Stripe's lowercase alpha currency code. A small, common-currency
+/// set Stripe supports well -- matches `market_summary::format_price`'s own display table exactly, so
+/// every currency an admin can pick in the Elm product form is actually purchasable. Structured to
+/// extend, not a full ISO 4217 table.
 pub fn currency_code(currency: u32) -> Result<&'static str, Status> {
     match currency {
         840 => Ok("usd"),
+        978 => Ok("eur"),
+        826 => Ok("gbp"),
+        124 => Ok("cad"),
+        36 => Ok("aud"),
+        392 => Ok("jpy"),
+        756 => Ok("chf"),
         _ => Err(Status::new(Code::InvalidArgument, "unsupported_currency")),
     }
+}
+
+/// Whether `currency` has no minor unit (e.g. Japanese yen has no "cents") -- Stripe's own
+/// zero-decimal currency list (a superset of this); only JPY is reachable through the currencies
+/// `currency_code` actually supports today. `MarketProduct.amount` is still always a plain integer
+/// (see that field's own proto doc) -- for a zero-decimal currency it's simply the whole-unit amount
+/// itself (e.g. `500` = &yen;500), which is already exactly what Stripe's `unit_amount` wants with no
+/// further conversion, so this only matters for *display* (`market_summary::format_price`) and the
+/// Elm admin form's own amount-input label, not for anything sent to Stripe.
+pub fn is_zero_decimal_currency(currency: u32) -> bool {
+    matches!(currency, 392)
 }
 
 /// One Stripe Checkout Session line item -- a single `price_data`-based item (no pre-created

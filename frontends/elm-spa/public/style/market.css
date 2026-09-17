@@ -1,0 +1,302 @@
+/* `/market` (`Components.Pages.MarketPage`) and `/market/product/:id`
+   (`Components.Pages.ProductPage`) -- Rellm's Stripe-backed marketplace
+   (`market.proto`). Shares `.permission-badges`/`.permission-badge` (main.css)
+   for a tier's granted-permissions list, and mirrors `.server-dependent-prompt`
+   (main.css) for the signed-out "Create Account or Login to proceed." prompt. */
+
+.market-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+}
+
+/* The "Market" heading and, for an Admin, the "+ New Product" button --
+   `space-between` pins the button to the right even when the heading is a
+   bare empty text node (embedded on `UsernameOrCustomTab_`, no `<h1>`). */
+.market-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.market-header-row h1 {
+  margin: 0;
+}
+
+/* Right-aligned via `margin-left: auto` -- sits under `.market-header-row`'s "+ New Product"
+   button, always mounted (open or closed) so `grid-template-rows` can animate its height between
+   `0fr` (closed) and `1fr` (open/its natural content height) -- the same trick
+   `Components.Pages.UserProfilePage`'s `.expandable-section-content` uses (profiles.css), including
+   the same "no vertical padding/border on the direct animated child, `> *` gets `overflow:hidden` +
+   `min-height: 0`, deeper content carries the real padding/border" structure that trick needs to
+   actually reach 0 height instead of stopping at its own padding+border. */
+.market-add-product-panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.2s ease;
+  margin-left: auto;
+  width: 100%;
+  max-width: 360px;
+}
+
+.market-add-product-panel.is-open {
+  grid-template-rows: 1fr;
+}
+
+.market-add-product-panel.is-closed {
+  /* Same reasoning as `.expandable-section-content.is-closed`'s own doc (profiles.css) -- the
+     grid-collapse trick shrinks this to ~0 height visually, but its content is still genuinely
+     present in the DOM at whatever sub-pixel sliver of height remains, so without this it'd still
+     be clickable/focusable while "closed". */
+  pointer-events: none;
+}
+
+.market-add-product-panel > * {
+  overflow: hidden;
+  min-height: 0;
+}
+
+.market-add-product-panel-content,
+.market-tier.market-tier-editing {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-bg);
+}
+
+.market-tier.market-tier-editing {
+  flex: 0 0 auto;
+  width: calc(min(90vw, 360px));
+}
+
+.market-form-price-row,
+.market-form-size-row {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.market-form-price-row input,
+.market-form-size-row input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.market-form-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.market-form-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* AI Access product form's per-model checkboxes (`Components.Pages.MarketPage.aiGrantsFormView`) --
+   small chip-like rows, similar footprint to `.permission-badge` (main.css) but checkbox-driven. */
+.market-form-ai-models {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.market-form-ai-model-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  background: var(--chip-bg);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.market-error,
+.market-form-error,
+.market-purchase-error,
+.product-error,
+.product-purchase-error {
+  color: var(--danger);
+  font-size: 0.85rem;
+}
+
+.market-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.market-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.market-section-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.8rem;
+}
+
+/* "Product image"-sized glyph standing in for real product photography --
+   mirrors `shared/accounts_panel.css`'s `.server-logo-emoji` treatment. */
+.market-section-emoji {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  font-size: 2.6rem;
+  line-height: 1;
+}
+
+.market-section-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.market-section-heading h2 {
+  margin: 0;
+}
+
+.market-section-description,
+.market-section-empty {
+  margin: 0;
+  color: var(--muted);
+}
+
+.market-section-empty {
+  font-style: italic;
+  padding: 0.5rem 0;
+}
+
+/* Horizontally scrollable tier row -- mirrors `events.css`'s
+   `.calendar-preview-strip`/`.events-strip` (`overflow-x: auto`, smooth
+   scroll, each card a fixed flex-basis). */
+.market-tier-row {
+  display: flex;
+  flex-direction: row;
+  gap: 0.8rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-behavior: smooth;
+  padding: 0.2rem 0.2rem 0.6rem;
+}
+
+.market-tier {
+  flex: 0 0 auto;
+  width: calc(min(70vw, 260px));
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-bg);
+}
+
+.market-tier-link {
+  color: inherit;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.market-tier-summary {
+  line-height: 1.35;
+}
+
+.market-tier-delisted {
+  color: var(--danger);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.market-tier-permissions {
+  margin-top: 0.1rem;
+}
+
+.market-tier-admin-actions,
+.market-tier-buy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: auto;
+}
+
+.market-tier-admin-actions {
+  flex-direction: row;
+}
+
+.market-hosting-form,
+.product-hosting-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+/* Mirrors `.server-dependent-prompt` (main.css) -- shown instead of a "Buy"
+   button/hosting form when nobody's signed in. */
+.market-tier-login-prompt,
+.product-login-prompt {
+  padding: 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-top: auto;
+}
+
+.market-tier-login-prompt p,
+.product-login-prompt p {
+  margin: 0 0 0.5rem;
+  color: var(--muted);
+}
+
+
+/* `/market/product/:id` (`Components.Pages.ProductPage`) */
+
+.product-page {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+.product-icon {
+  align-self: center;
+  font-size: 4rem;
+  line-height: 1;
+}
+
+.product-page h1 {
+  text-align: center;
+  margin: 0 0 0.2rem;
+}
+
+.product-description {
+  text-align: center;
+  color: var(--muted);
+  margin: 0;
+}
+
+.product-summary {
+  text-align: center;
+  margin: 0.3rem 0 1rem;
+}
+
+.product-delisted {
+  color: var(--danger);
+  text-align: center;
+}
+
+.product-buy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}

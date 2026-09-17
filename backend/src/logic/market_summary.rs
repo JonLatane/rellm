@@ -8,12 +8,12 @@
 use crate::marshaling::{ToProtoPermissions, ToProtoPurchasePeriod, ToProtoPurchaseType};
 use crate::protos::*;
 
-/// ISO 4217 numeric currency code -> the display Jon asked for: `$` for USD (the only currency
-/// actually purchasable today, per `stripe_sync::currency_code`'s own scope note), otherwise a
-/// bare "<amount> <ALPHA3>" -- a small, common-currency display table, distinct from (and more
-/// permissive than) `stripe_sync::currency_code`'s "what Stripe purchases actually support" gate.
+/// ISO 4217 numeric currency code -> the display Jon asked for: `$` for USD, otherwise a bare
+/// "<amount> <ALPHA3>" -- matches `stripe_sync::currency_code`'s own supported-currency set exactly
+/// (every currency displayable here is actually purchasable), plus a permissive fallback for any
+/// other currency code a client might have set directly.
 fn format_price(amount: u32, currency: u32) -> String {
-    let formatted = format_amount_with_commas(amount);
+    let formatted = format_amount_with_commas(amount, currency);
     match currency {
         840 => format!("${}", formatted),
         978 => format!("{} EUR", formatted),
@@ -26,13 +26,16 @@ fn format_price(amount: u32, currency: u32) -> String {
     }
 }
 
-/// `amount` is always minor units (e.g. cents), same convention `logic::stripe_sync` already uses
-/// for Stripe's own `unit_amount` -- integer arithmetic throughout (no float rounding surprises),
-/// comma-grouped major-unit thousands, and the minor-unit part dropped entirely when it's zero
-/// (`100` -> `"1"`, not `"1.00"`).
-fn format_amount_with_commas(amount: u32) -> String {
-    let major = amount / 100;
-    let minor = amount % 100;
+/// `amount` is minor units (e.g. cents) for every currency except a zero-decimal one (see
+/// `stripe_sync::is_zero_decimal_currency`, e.g. JPY), where it's already the whole-unit amount --
+/// integer arithmetic throughout (no float rounding surprises), comma-grouped major-unit thousands,
+/// and the minor-unit part dropped entirely when it's zero (`100` -> `"1"`, not `"1.00"`).
+fn format_amount_with_commas(amount: u32, currency: u32) -> String {
+    let (major, minor) = if crate::logic::stripe_sync::is_zero_decimal_currency(currency) {
+        (amount, 0)
+    } else {
+        (amount / 100, amount % 100)
+    };
     let digits = major.to_string();
     let mut grouped = String::new();
     for (i, c) in digits.chars().rev().enumerate() {
@@ -345,5 +348,19 @@ mod tests {
             }),
         );
         assert_eq!(market_product_summary(&p), "1GB storage for 10 EUR/mo");
+    }
+
+    #[test]
+    fn zero_decimal_currency_is_not_divided_by_100() {
+        let p = product(
+            PurchaseType::MediaStorage,
+            PurchasePeriod::Monthly,
+            500,
+            392, // JPY -- zero-decimal, so 500 means 500 yen, not 5 yen
+            market_product::Details::MediaStorageSubscriptionDetails(MediaStorageSubscriptionDetails {
+                allocation_bytes: 1024 * 1024 * 1024,
+            }),
+        );
+        assert_eq!(market_product_summary(&p), "1GB storage for 500 JPY/mo");
     }
 }

@@ -1,14 +1,23 @@
 module Components.Market exposing
     ( HostingForm
     , PurchaseState(..)
+    , aiModelDisplayName
+    , allCurrencies
+    , allPurchaseTypes
+    , amountInputLabel
     , createMarketProduct
+    , currencyLabel
     , defaultHostingForm
     , formatAmount
     , getMarketProducts
     , hostingDetailsFromForm
     , makeMarketPurchase
+    , periodSortOrder
+    , permissionsForProduct
     , productSummary
     , purchasePeriodLabel
+    , purchaseTypeDescription
+    , purchaseTypeEmoji
     , purchaseTypeLabel
     , updateMarketProduct
     , usdCurrencyCode
@@ -43,6 +52,7 @@ import Proto.Rellm
         , defaultRellmHostingPurchaseDetails
         )
 import Proto.Rellm.MarketProduct.Details as ProductDetails
+import Proto.Rellm.Permission exposing (Permission)
 import Proto.Rellm.PurchasePeriod exposing (PurchasePeriod(..))
 import Proto.Rellm.PurchaseType exposing (PurchaseType(..))
 import Proto.Rellm.Rellm as Rellm
@@ -52,14 +62,66 @@ import Shared.Conversions as Conversions
 import Task exposing (Task)
 
 
-{-| For now the only currency `purchase_subscription.rs` actually supports (see `market.proto`'s
-own scope note) -- ISO 4217 numeric code 840. Every admin-created `MarketProduct` on this frontend
-is created in USD; `formatAmount` falls back to a generic "<amount> (currency <code>)" for anything
-else (e.g. a product created by some other client in a different currency).
+{-| ISO 4217 numeric code 840 -- the default currency for a freshly-opened admin product form (see
+`allCurrencies`).
 -}
 usdCurrencyCode : Int
 usdCurrencyCode =
     840
+
+
+{-| The currencies an admin can pick in the product form's currency selector -- matches
+`backend/src/logic/stripe_sync.rs`'s `currency_code` exactly (a small, common-currency set Stripe
+supports well), so every currency offered here is actually purchasable. `formatAmount` falls back to
+a generic "<amount> (currency <code>)" for any other currency code (e.g. a product created by some
+other client with a currency not in this list).
+-}
+allCurrencies : List { code : Int, alpha : String, name : String }
+allCurrencies =
+    [ { code = 840, alpha = "USD", name = "US Dollar" }
+    , { code = 978, alpha = "EUR", name = "Euro" }
+    , { code = 826, alpha = "GBP", name = "British Pound" }
+    , { code = 124, alpha = "CAD", name = "Canadian Dollar" }
+    , { code = 36, alpha = "AUD", name = "Australian Dollar" }
+    , { code = 392, alpha = "JPY", name = "Japanese Yen" }
+    , { code = 756, alpha = "CHF", name = "Swiss Franc" }
+    ]
+
+
+{-| A currency's dropdown-option label, e.g. "USD - US Dollar". Falls back to a bare numeric code
+for anything not in `allCurrencies`.
+-}
+currencyLabel : Int -> String
+currencyLabel code =
+    allCurrencies
+        |> List.filter (\c -> c.code == code)
+        |> List.head
+        |> Maybe.map (\c -> c.alpha ++ " - " ++ c.name)
+        |> Maybe.withDefault (String.fromInt code)
+
+
+{-| Whether `currency` has no minor unit (e.g. Japanese yen has no "cents") -- mirrors
+`backend/src/logic/stripe_sync.rs`'s `is_zero_decimal_currency` exactly. `MarketProduct.amount` is
+still always a plain integer either way -- for a zero-decimal currency it's simply the whole-unit
+amount itself (e.g. `500` = &yen;500). Used both by `formatAmount` (so a zero-decimal amount isn't
+divided by 100) and `amountInputLabel` (so the admin form's amount field is clearly labeled).
+-}
+isZeroDecimalCurrency : Int -> Bool
+isZeroDecimalCurrency currency =
+    currency == 392
+
+
+{-| The admin product form's amount-input placeholder/label -- makes it explicit whether the number
+typed there means cents (every currency except a zero-decimal one) or whole units (e.g. "Amount (in
+yen, no decimal)" for JPY, not "Amount (in cents)").
+-}
+amountInputLabel : Int -> String
+amountInputLabel currency =
+    if isZeroDecimalCurrency currency then
+        "Amount (whole units, no decimal -- e.g. 500 = \u{00A5}500)"
+
+    else
+        "Amount (in cents -- e.g. 500 = $5.00)"
 
 
 {-| A "Buy" button's own in-flight state, keyed by product id in whichever `Dict` the calling page
@@ -176,6 +238,15 @@ makeMarketPurchase accountsPanelModel maybeAccountServer request =
         )
 
 
+{-| The 4 sections `Components.Pages.MarketPage` always renders for an admin (and, for a regular
+user, renders only when non-empty) -- fixed display order, not the proto enum's own declaration
+order.
+-}
+allPurchaseTypes : List PurchaseType
+allPurchaseTypes =
+    [ PURCHASETYPEMEDIASTORAGE, PURCHASETYPEAIGRANTS, PURCHASETYPERELLMHOSTING, PURCHASETYPEPERMISSIONSACCESS ]
+
+
 purchaseTypeLabel : PurchaseType -> String
 purchaseTypeLabel type_ =
     case type_ of
@@ -183,16 +254,62 @@ purchaseTypeLabel type_ =
             "Media Storage"
 
         PURCHASETYPEAIGRANTS ->
-            "AI Model Access"
+            "AI Access"
 
         PURCHASETYPERELLMHOSTING ->
             "Rellm Hosting"
 
         PURCHASETYPEPERMISSIONSACCESS ->
-            "Permissions Access"
+            "Extra Features"
 
         PurchaseTypeUnrecognized_ _ ->
             "Unknown"
+
+
+{-| A large "product image"-sized glyph for a `PurchaseType` section heading on `MarketPage`/a
+product's icon on `ProductPage` -- this app has no actual product photography (`MarketProduct` has
+no image field), so a big emoji stands in, the same way `Shared.AccountsPanel.RellmServers`' own
+`.server-logo-emoji` treatment stands in for a server's real logo.
+-}
+purchaseTypeEmoji : PurchaseType -> String
+purchaseTypeEmoji type_ =
+    case type_ of
+        PURCHASETYPEMEDIASTORAGE ->
+            "\u{1F4BE}"
+
+        PURCHASETYPEAIGRANTS ->
+            "\u{1F916}"
+
+        PURCHASETYPERELLMHOSTING ->
+            "\u{1F310}"
+
+        PURCHASETYPEPERMISSIONSACCESS ->
+            "\u{2728}"
+
+        PurchaseTypeUnrecognized_ _ ->
+            "\u{1F4E6}"
+
+
+{-| A one-line blurb under each `MarketPage` section heading, explaining what that `PurchaseType`
+actually is before its tiers are shown.
+-}
+purchaseTypeDescription : PurchaseType -> String
+purchaseTypeDescription type_ =
+    case type_ of
+        PURCHASETYPEMEDIASTORAGE ->
+            "Extra room for photos, videos, and other media uploads."
+
+        PURCHASETYPEAIGRANTS ->
+            "Tokens for AI-powered image generation."
+
+        PURCHASETYPERELLMHOSTING ->
+            "Your own Rellm instance, hosted and fully admin-controlled by you."
+
+        PURCHASETYPEPERMISSIONSACCESS ->
+            "Unlock additional permissions and capabilities on this server."
+
+        PurchaseTypeUnrecognized_ _ ->
+            ""
 
 
 purchasePeriodLabel : PurchasePeriod -> String
@@ -211,40 +328,118 @@ purchasePeriodLabel period =
             "Unknown"
 
 
-{-| `amount` is in the currency's smallest unit (e.g. USD cents), matching how Stripe itself wants
-amounts -- see `MarketProduct.amount`'s own proto doc. Only `usdCurrencyCode` is formatted as an
-actual price; any other `currency` falls back to a generic "<amount> (currency <code>)" readout
-(this frontend never lets an admin pick a different one -- see `usdCurrencyCode`'s own doc).
+{-| Sort key for `MarketPage`'s per-section tier row -- cheapest monthly first, then annual tiers by
+price, then indefinite (lifetime) tiers by price, matching how a shopper actually compares "$/mo"
+options before "one-time" ones. Pair with `product.amount` as a secondary sort key (smallest to
+largest) to get the full ordering Jon asked for.
+-}
+periodSortOrder : PurchasePeriod -> Int
+periodSortOrder period =
+    case period of
+        PURCHASEPERIODMONTHLY ->
+            0
+
+        PURCHASEPERIODANNUAL ->
+            1
+
+        PURCHASEPERIODINDEFINITE ->
+            2
+
+        PurchasePeriodUnrecognized_ _ ->
+            3
+
+
+{-| `amount` is in the currency's smallest unit (e.g. USD cents; already the whole-unit amount for a
+zero-decimal currency like JPY -- see `isZeroDecimalCurrency`), matching how Stripe itself wants
+amounts -- see `MarketProduct.amount`'s own proto doc. Mirrors
+`backend/src/logic/market_summary.rs`'s `format_price` exactly (`$` for USD, "<amount> <ALPHA3>" for
+every other currency in `allCurrencies`, comma-grouped major-unit thousands, minor-unit part dropped
+entirely when zero -- `100` -> `"$1"`, not `"$1.00"`), so the in-app product page and the SSR preview
+read identically. Falls back to a generic "<amount> (currency <code>)" for any currency not in
+`allCurrencies`.
 -}
 formatAmount : Int -> Int -> String
 formatAmount amount currency =
-    if currency == usdCurrencyCode then
-        let
-            dollars : Int
-            dollars =
-                amount // 100
+    let
+        formatted : String
+        formatted =
+            formatAmountWithCommas amount currency
+    in
+    case currency of
+        840 ->
+            "$" ++ formatted
 
-            cents : Int
-            cents =
-                abs (remainderBy 100 amount)
+        978 ->
+            formatted ++ " EUR"
 
-            centsText : String
-            centsText =
-                if cents < 10 then
-                    "0" ++ String.fromInt cents
+        826 ->
+            formatted ++ " GBP"
 
-                else
-                    String.fromInt cents
-        in
-        "$" ++ String.fromInt dollars ++ "." ++ centsText
+        124 ->
+            formatted ++ " CAD"
+
+        36 ->
+            formatted ++ " AUD"
+
+        392 ->
+            formatted ++ " JPY"
+
+        756 ->
+            formatted ++ " CHF"
+
+        _ ->
+            formatted ++ " (currency " ++ String.fromInt currency ++ ")"
+
+
+formatAmountWithCommas : Int -> Int -> String
+formatAmountWithCommas amount currency =
+    if isZeroDecimalCurrency currency then
+        groupWithCommas amount
 
     else
-        String.fromInt amount ++ " (currency " ++ String.fromInt currency ++ ")"
+        let
+            major : Int
+            major =
+                amount // 100
+
+            minor : Int
+            minor =
+                abs (remainderBy 100 amount)
+
+            majorGrouped : String
+            majorGrouped =
+                groupWithCommas major
+        in
+        if minor == 0 then
+            majorGrouped
+
+        else
+            majorGrouped ++ "." ++ String.padLeft 2 '0' (String.fromInt minor)
+
+
+{-| `1234567` -> `"1,234,567"` -- mirrors `market_summary.rs`'s own comma-grouping loop exactly.
+-}
+groupWithCommas : Int -> String
+groupWithCommas n =
+    String.fromInt n
+        |> String.reverse
+        |> String.toList
+        |> List.indexedMap
+            (\i c ->
+                if i /= 0 && modBy 3 i == 0 then
+                    [ ',', c ]
+
+                else
+                    [ c ]
+            )
+        |> List.concat
+        |> String.fromList
+        |> String.reverse
 
 
 {-| The full, pedantically-clear "what am I buying" sentence for a `MarketProduct`, e.g. "1.5GB
-storage for $1.00/mo", "100k tokens of Nano Banana Pro image generation for $2.00/mo", "Rellm
-hosting, 1GB DB + 5GB MinIO for $15.00/mo. You get full admin access...". Mirrors
+storage for $1/mo", "100k tokens of Nano Banana Pro image generation for $2/mo", "Rellm
+hosting, 1GB DB + 5GB MinIO for $15/mo. You get full admin access...". Mirrors
 `backend/src/logic/market_summary.rs`'s `market_product_summary` (used server-side for the
 `/market/product/:id` SSR preview) as closely as Elm's own formatting conventions allow, so the
 in-app product page and a shared link's preview read the same way. Shown on `ProductPage`'s detail
@@ -311,6 +506,21 @@ resourceDescription product =
 
         Nothing ->
             "Rellm Market product"
+
+
+{-| The `Permission`s a `PURCHASE_TYPE_PERMISSIONS_ACCESS` product grants -- `[]` for every other
+`PurchaseType` (nothing to badge). Used by `MarketPage`'s tier cards to show the extra permissions
+each Extra Features tier grants, as the same read-only badge chips `UserProfilePage`'s own
+permissions section uses.
+-}
+permissionsForProduct : MarketProduct -> List Permission
+permissionsForProduct product =
+    case product.details of
+        Just (ProductDetails.PermissionsAccessSubscriptionDetails details) ->
+            details.permissions
+
+        _ ->
+            []
 
 
 {-| Rellm's own "Nano Banana" nicknames for the Gemini image model family -- mirrors

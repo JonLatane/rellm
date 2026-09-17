@@ -29,7 +29,7 @@ import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer)
 import Shared.MyMediaPanel as MyMediaPanel
 import Task
 import UI
-import UI.Classes exposing (classes)
+import UI.Classes exposing (classes, openClosedClass)
 import UI.ServerTheme as ServerTheme
 
 
@@ -496,86 +496,85 @@ accentColorPreviewRow model info =
 -- i.e. everything except the plain `primaryColor`/`navColor`/`accentColor` hexes themselves. Lets an
 admin see exactly how a color choice propagates (its text/dark/light/bg/anchor/contrast variants,
 luma, saturation) without cluttering the tab by default. Collapsed by default (`Model.colorMetaExpanded`),
-toggled by `ColorMetaExpandedToggled`, mirroring `UserProfilePage.expandableProfileSection`'s own
-Bool-driven toggle (just inlined here, since there's only one such section on this tab). Kept live
-against in-progress edits the same way `accentColorPreviewRow` is, via `effectiveColorMeta`. The
-header row also carries `UI.themeToggle` (the same 3-way Auto/Light/Dark control shown in the
-Accounts Panel's own tab bar) at its far right -- pinned there rather than nested inside the
-clickable `h3` itself, so tapping it doesn't also bubble into `ColorMetaExpandedToggled`.
+toggled by `ColorMetaExpandedToggled`, following `UserProfilePage.expandableProfileSection`'s own
+conventions (just inlined here, since there's only one such section on this tab): the body
+(`expandable-section-content`/`-content-inner`) is always mounted rather than appearing/disappearing
+outright, so `profiles.css`'s `grid-template-rows` 0fr/1fr trick can animate it open/closed, and the
+arrow is a single static "▼" rotated via `.expandable-section-arrow.is-open` instead of a glyph swap
+between "▸"/"▾". Kept live against in-progress edits the same way `accentColorPreviewRow` is, via
+`effectiveColorMeta`. The header row also carries `UI.themeToggle` (the same 3-way Auto/Light/Dark
+control shown in the Accounts Panel's own tab bar) at its far right -- pinned there rather than nested
+inside the clickable `h3` itself, so tapping it doesn't also bubble into `ColorMetaExpandedToggled` --
+and, like `expandableProfileSection`'s own `maybeHeaderAction`, always mounted and faded via
+`openClosedClass` rather than conditionally rendered, so it never pops in/out mid-animation.
 -}
 colorMetaSection : Shared.Model -> Model -> Proto.Rellm.ServerInfo -> Html Msg
 colorMetaSection shared model info =
+    let
+        expanded : Bool
+        expanded =
+            model.colorMetaExpanded
+
+        primaryMeta : ServerTheme.ColorMeta
+        primaryMeta =
+            effectiveColorMeta model.primaryColorEdit (info.colors |> Maybe.andThen .primary)
+
+        navMeta : ServerTheme.ColorMeta
+        navMeta =
+            effectiveColorMeta model.navigationColorEdit (info.colors |> Maybe.andThen .navigation)
+
+        theme : ServerTheme.ServerTheme
+        theme =
+            ServerTheme.fromColorMetas False primaryMeta navMeta
+    in
     div [ class "server-details-color-meta" ]
-        (div [ class "server-details-color-meta-header" ]
+        [ div [ class "server-details-color-meta-header" ]
             [ h3
                 [ classes [ "section-title", "expandable-section-title" ]
                 , onClick ColorMetaExpandedToggled
                 ]
-                [ span [ class "expandable-section-arrow" ]
-                    [ text
-                        (if model.colorMetaExpanded then
-                            "▾"
-
-                         else
-                            "▸"
-                        )
-                    ]
+                [ span [ classes [ "expandable-section-arrow", openClosedClass expanded ] ] [ text "▼" ]
                 , text "Calculated Color Meta"
                 ]
-            , if model.colorMetaExpanded then
-                Html.map SharedMsg (UI.themeToggle shared)
-
-              else
-                text ""
+            , div [ classes [ "server-details-color-meta-toggle", openClosedClass expanded ] ]
+                [ Html.map SharedMsg (UI.themeToggle shared) ]
             ]
-            :: (if model.colorMetaExpanded then
-                    let
-                        primaryMeta : ServerTheme.ColorMeta
-                        primaryMeta =
-                            effectiveColorMeta model.primaryColorEdit (info.colors |> Maybe.andThen .primary)
-                        navMeta : ServerTheme.ColorMeta
-                        navMeta =
-                            effectiveColorMeta model.navigationColorEdit (info.colors |> Maybe.andThen .navigation)
-                        theme : ServerTheme.ServerTheme
-                        theme =
-                            ServerTheme.fromColorMetas False primaryMeta navMeta
-                    in
-                    [ colorMetaColorRow "Primary Text Color" theme.primaryTextColor
-                    , colorMetaColorRow "Primary Dark Color" theme.primaryDarkColor
-                    , colorMetaColorRow "Primary Light Color" theme.primaryLightColor
-                    , colorMetaColorRow "Primary Background Color" theme.primaryBgColor
-                    , colorMetaColorRow "Primary Anchor Color" theme.primaryAnchorColor
-                    , colorMetaValueRow "Primary Luma" (formatColorMetaFloat theme.primaryLuma)
-                    , colorMetaValueRow "Primary Saturation" (formatColorMetaFloat theme.primarySaturation)
-                    , colorMetaColorRow "Primary Contrast Color" theme.primaryContrastColor
-                    , colorMetaColorRow "Nav Text Color" theme.navTextColor
-                    , colorMetaColorRow "Nav Dark Color" theme.navDarkColor
-                    , colorMetaColorRow "Nav Light Color" theme.navLightColor
-                    , colorMetaColorRow "Nav Background Color" theme.navBgColor
-                    , colorMetaColorRow "Nav Anchor Color" theme.navAnchorColor
-                    , colorMetaValueRow "Nav Luma" (formatColorMetaFloat theme.navLuma)
-                    , colorMetaValueRow "Nav Saturation" (formatColorMetaFloat theme.navSaturation)
-                    , colorMetaColorRow "Nav Contrast Color" theme.navContrastColor
-                    , colorMetaColorRow "Accent Text Color" theme.accentTextColor
-                    , colorMetaColorRow "Accent Dark Color" theme.accentDarkColor
-                    , colorMetaColorRow "Accent Light Color" theme.accentLightColor
-                    , colorMetaColorRow "Accent Background Color" theme.accentBgColor
-                    , colorMetaColorRow "Accent Anchor Color" theme.accentAnchorColor
-                    , colorMetaValueRow "Accent Luma" (formatColorMetaFloat theme.accentLuma)
-                    , colorMetaValueRow "Accent Saturation" (formatColorMetaFloat theme.accentSaturation)
-                    , colorMetaColorRow "Accent Contrast Color" theme.accentContrastColor
-                    , colorMetaColorRow "Text Color" theme.textColor
-                    , colorMetaColorRow "Background Color" theme.backgroundColor
-                    , colorMetaColorRow "Transparent Background Color" theme.transparentBackgroundColor
-                    , colorMetaColorRow "Transparent Primary Color" theme.transparentPrimaryColor
-                    , colorMetaColorRow "Barely Transparent Background Color" theme.barelyTransparentBackgroundColor
-                    , colorMetaColorRow "Warning Anchor Color" theme.warningAnchorColor
-                    ]
-
-                else
-                    []
-               )
-        )
+        , div
+            [ classes [ "expandable-section-content", openClosedClass expanded, "border-color-primary-anchor-50" ] ]
+            [ div [ class "expandable-section-content-inner" ]
+                [ colorMetaColorRow "Primary Text Color" theme.primaryTextColor
+                , colorMetaColorRow "Primary Dark Color" theme.primaryDarkColor
+                , colorMetaColorRow "Primary Light Color" theme.primaryLightColor
+                , colorMetaColorRow "Primary Background Color" theme.primaryBgColor
+                , colorMetaColorRow "Primary Anchor Color" theme.primaryAnchorColor
+                , colorMetaValueRow "Primary Luma" (formatColorMetaFloat theme.primaryLuma)
+                , colorMetaValueRow "Primary Saturation" (formatColorMetaFloat theme.primarySaturation)
+                , colorMetaColorRow "Primary Contrast Color" theme.primaryContrastColor
+                , colorMetaColorRow "Nav Text Color" theme.navTextColor
+                , colorMetaColorRow "Nav Dark Color" theme.navDarkColor
+                , colorMetaColorRow "Nav Light Color" theme.navLightColor
+                , colorMetaColorRow "Nav Background Color" theme.navBgColor
+                , colorMetaColorRow "Nav Anchor Color" theme.navAnchorColor
+                , colorMetaValueRow "Nav Luma" (formatColorMetaFloat theme.navLuma)
+                , colorMetaValueRow "Nav Saturation" (formatColorMetaFloat theme.navSaturation)
+                , colorMetaColorRow "Nav Contrast Color" theme.navContrastColor
+                , colorMetaColorRow "Accent Text Color" theme.accentTextColor
+                , colorMetaColorRow "Accent Dark Color" theme.accentDarkColor
+                , colorMetaColorRow "Accent Light Color" theme.accentLightColor
+                , colorMetaColorRow "Accent Background Color" theme.accentBgColor
+                , colorMetaColorRow "Accent Anchor Color" theme.accentAnchorColor
+                , colorMetaValueRow "Accent Luma" (formatColorMetaFloat theme.accentLuma)
+                , colorMetaValueRow "Accent Saturation" (formatColorMetaFloat theme.accentSaturation)
+                , colorMetaColorRow "Accent Contrast Color" theme.accentContrastColor
+                , colorMetaColorRow "Text Color" theme.textColor
+                , colorMetaColorRow "Background Color" theme.backgroundColor
+                , colorMetaColorRow "Transparent Background Color" theme.transparentBackgroundColor
+                , colorMetaColorRow "Transparent Primary Color" theme.transparentPrimaryColor
+                , colorMetaColorRow "Barely Transparent Background Color" theme.barelyTransparentBackgroundColor
+                , colorMetaColorRow "Warning Anchor Color" theme.warningAnchorColor
+                ]
+            ]
+        ]
 
 
 {-| One `colorMetaSection` color row: left label, right swatch + hex -- same structure as

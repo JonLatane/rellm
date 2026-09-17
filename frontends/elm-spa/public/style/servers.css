@@ -182,6 +182,20 @@
   margin: 0.8rem 0 0.4rem 0;
 }
 
+/* `colorMetaSection`'s `UI.themeToggle` wrapper -- always mounted (not conditionally rendered) so
+   it never pops in/out mid-animation, and faded via `openClosedClass` instead -- same convention as
+   profiles.css's `.profile-section-refresh.is-closed`. */
+.server-details-color-meta-toggle {
+  opacity: 1;
+  pointer-events: auto;
+  transition: opacity 0.15s ease;
+}
+
+.server-details-color-meta-toggle.is-closed {
+  opacity: 0;
+  pointer-events: none;
+}
+
 .server-details-logo {
   margin-bottom: 1rem;
 }

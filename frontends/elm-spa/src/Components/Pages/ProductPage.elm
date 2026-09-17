@@ -27,6 +27,7 @@ import Proto.Rellm.PurchaseType exposing (PurchaseType(..))
 import Shared
 import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts
+import Shared.AccountsPanel.RellmServers as RellmServers
 import Shared.Breadcrumbs as Breadcrumbs
 import Task
 
@@ -38,6 +39,7 @@ import Task
 type alias Model =
     { productId : String
     , fetch : ProductFetchState
+    , fetchStarted : Bool
     , purchase : Market.PurchaseState
     , hostingForm : Market.HostingForm
     }
@@ -52,16 +54,40 @@ type ProductFetchState
 
 init : Shared.Model -> String -> ( Model, Effect Msg )
 init shared productId =
-    ( { productId = productId
-      , fetch = Fetching
-      , purchase = Market.PurchaseIdle
-      , hostingForm = Market.defaultHostingForm
-      }
+    let
+        ( readyModel, fetchEffect ) =
+            attemptFetch shared
+                { productId = productId
+                , fetch = Fetching
+                , fetchStarted = False
+                , purchase = Market.PurchaseIdle
+                , hostingForm = Market.defaultHostingForm
+                }
+    in
+    ( readyModel
     , Effect.batch
-        [ fetchProduct shared productId
+        [ fetchEffect
         , Effect.fromShared (Shared.BreadcrumbsMsg (Breadcrumbs.SetRoot (Breadcrumbs.FromServerHost shared.accounts.mainFrontendHost) shared.accounts.mainFrontendHost []))
         ]
     )
+
+
+{-| Fires `fetchProduct` the first time `mainFrontendHost` is a known, *connected* server -- see
+`RellmServers.knownConnectedRellmServer`'s own doc: `Shared.AccountsPanel.init` seeds every
+persisted server disconnected before its own reconnect attempt resolves, so firing this fetch
+unconditionally in `init` (the original bug here -- a cold app load raced that reconnect and failed
+instantly with "Couldn't load this product: Couldn't reach the server", with no retry affordance on
+this page at all) doesn't work. Safe to call repeatedly (from `init` and every `SharedMsgReceived`,
+mirroring `Components.Pages.PostOrEventPage.fetchIfReady`'s exact pattern) -- `fetchStarted` makes
+every call after the first a no-op.
+-}
+attemptFetch : Shared.Model -> Model -> ( Model, Effect Msg )
+attemptFetch shared model =
+    if model.fetchStarted || RellmServers.knownConnectedRellmServer shared.accounts.servers shared.accounts.mainFrontendHost == Nothing then
+        ( model, Effect.none )
+
+    else
+        ( { model | fetchStarted = True }, fetchProduct shared model.productId )
 
 
 fetchProduct : Shared.Model -> String -> Effect Msg
@@ -103,6 +129,7 @@ type Msg
     | HostingFieldChanged (Market.HostingForm -> String -> Market.HostingForm) String
     | BuyClicked MarketProduct
     | GotPurchaseResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, Proto.Rellm.MakeMarketPurchaseResponse ))
+    | LoginClicked
     | SharedMsgReceived Shared.Msg
 
 
@@ -154,8 +181,15 @@ update shared msg model =
         GotPurchaseResult (Err err) ->
             ( { model | purchase = Market.PurchaseErrored (AccountsPanel.grpcErrorToString err) }, Effect.none )
 
+        LoginClicked ->
+            ( model, Effect.fromShared (Shared.AccountsPanelMsg AccountsPanel.ToggleAccountsPanel) )
+
         SharedMsgReceived subMsg ->
-            ( model, Effect.fromShared subMsg )
+            let
+                ( retriedModel, retryEffect ) =
+                    attemptFetch shared model
+            in
+            ( retriedModel, Effect.batch [ Effect.fromShared subMsg, retryEffect ] )
 
 
 accountsPanelEffect : Maybe AccountsPanel.Msg -> Effect msg
@@ -169,8 +203,8 @@ accountsPanelEffect maybeAccountsPanelMsg =
 -- VIEW
 
 
-view : Model -> Html Msg
-view model =
+view : Shared.Model -> Model -> Html Msg
+view shared model =
     div [ class "product-page" ]
         (case model.fetch of
             Fetching ->
@@ -183,44 +217,71 @@ view model =
                 [ p [ class "product-error" ] [ text ("Couldn't load this product: " ++ err) ] ]
 
             Found product ->
-                [ h1 [] [ text (Market.purchaseTypeLabel product.type_) ]
+                [ div [ class "product-icon" ] [ text (Market.purchaseTypeEmoji product.type_) ]
+                , h1 [] [ text (Market.purchaseTypeLabel product.type_) ]
+                , p [ class "product-description" ] [ text (Market.purchaseTypeDescription product.type_) ]
                 , p [ class "product-summary" ] [ text (Market.productSummary product) ]
                 , if product.delistedAt /= Nothing then
                     p [ class "product-delisted" ] [ text "This product is no longer available for purchase." ]
 
                   else
-                    buyView model product
+                    buyView shared model product
                 ]
         )
 
 
-buyView : Model -> MarketProduct -> Html Msg
-buyView model product =
-    div [ class "product-buy" ]
-        ((if product.type_ == PURCHASETYPERELLMHOSTING then
-            [ hostingFormView model.hostingForm ]
+{-| Whether anyone is signed in on `mainFrontendHost` at all -- gates the "Buy" button below (a
+signed-out click would otherwise just fail with a confusing `NetworkError`, since
+`Market.makeMarketPurchase` is always authenticated -- see `Shared.AccountsPanel.performWithAccountServer`).
+-}
+signedIn : Shared.Model -> Bool
+signedIn shared =
+    RellmAccounts.enabledRellmAccountForServer shared.accounts.accounts shared.accounts.mainFrontendHost /= Nothing
 
-          else
-            []
-         )
-            ++ [ button
-                    [ onClick (BuyClicked product), disabled (model.purchase == Market.PurchaseSubmitting) ]
-                    [ text
-                        (if model.purchase == Market.PurchaseSubmitting then
-                            "Starting checkout…"
 
-                         else
-                            "Buy"
-                        )
-                    ]
-               , case model.purchase of
-                    Market.PurchaseErrored err ->
-                        span [ class "product-purchase-error" ] [ text err ]
+buyView : Shared.Model -> Model -> MarketProduct -> Html Msg
+buyView shared model product =
+    if not (signedIn shared) then
+        loginPromptView
 
-                    _ ->
-                        text ""
-               ]
-        )
+    else
+        div [ class "product-buy" ]
+            ((if product.type_ == PURCHASETYPERELLMHOSTING then
+                [ hostingFormView model.hostingForm ]
+
+              else
+                []
+             )
+                ++ [ button
+                        [ onClick (BuyClicked product), disabled (model.purchase == Market.PurchaseSubmitting) ]
+                        [ text
+                            (if model.purchase == Market.PurchaseSubmitting then
+                                "Starting checkout…"
+
+                             else
+                                "Buy"
+                            )
+                        ]
+                   , case model.purchase of
+                        Market.PurchaseErrored err ->
+                            span [ class "product-purchase-error" ] [ text err ]
+
+                        _ ->
+                            text ""
+                   ]
+            )
+
+
+{-| Shown instead of a "Buy" button (and, for `RELLM_HOSTING`, its domain/contact/notes form) when
+nobody's signed in -- opens the Accounts Panel (the app's only Login/Create Account entry point --
+there's no dedicated route).
+-}
+loginPromptView : Html Msg
+loginPromptView =
+    div [ class "product-login-prompt" ]
+        [ p [] [ text "Create Account or Login to proceed." ]
+        , button [ onClick LoginClicked ] [ text "Login" ]
+        ]
 
 
 hostingFormView : Market.HostingForm -> Html Msg

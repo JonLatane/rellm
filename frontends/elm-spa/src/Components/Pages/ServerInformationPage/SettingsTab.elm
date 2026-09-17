@@ -28,7 +28,7 @@ import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer)
 import Task
-import UI.Classes exposing (classes)
+import UI.Classes exposing (classes, openClosedClass)
 
 
 
@@ -932,6 +932,12 @@ checkbox, plus an Edit button for an admin) when this section has no in-progress
 `FeatureSettingsEdit`, or `featureSettingsEditView` (an enabled checkbox + Moderation/Visibility
 `<select>`s + Save/Cancel) while being edited -- mirrors `permissionsSection`'s own edit/non-edit
 split, just collapsible.
+
+Follows `UserProfilePage.expandableProfileSection`'s own conventions: the body
+(`expandable-section-content`/`-content-inner`) is always mounted rather than appearing/disappearing
+outright, so `profiles.css`'s `grid-template-rows` 0fr/1fr trick can animate it open/closed, and the
+arrow is a single static "▼" rotated via `.expandable-section-arrow.is-open` instead of a glyph swap
+between "▸"/"▾".
 -}
 featureSettingsSection : FeatureSettingsSet -> Maybe RellmAccount -> Maybe FeatureSettingsEdit -> Bool -> FeatureSettingsSummary -> Html Msg
 featureSettingsSection set maybeAdminAccount maybeEdit collapsed current =
@@ -941,34 +947,25 @@ featureSettingsSection set maybeAdminAccount maybeEdit collapsed current =
             not collapsed
     in
     div [ Html.Attributes.class "server-details-feature-settings" ]
-        (h3
+        [ h3
             [ classes [ "section-title", "expandable-section-title" ]
             , onClick (FeatureSettingsSectionToggled set)
             ]
-            [ span [ Html.Attributes.class "expandable-section-arrow" ]
-                [ text
-                    (if expanded then
-                        "▾"
-
-                     else
-                        "▸"
-                    )
-                ]
+            [ span [ classes [ "expandable-section-arrow", openClosedClass expanded ] ] [ text "▼" ]
             , text (featureSettingsLabel set)
             ]
-            :: (if expanded then
-                    [ case maybeEdit of
-                        Just edit ->
-                            featureSettingsEditView set edit
+        , div
+            [ classes [ "expandable-section-content", openClosedClass expanded, "border-color-primary-anchor-50" ] ]
+            [ div [ Html.Attributes.class "expandable-section-content-inner" ]
+                [ case maybeEdit of
+                    Just edit ->
+                        featureSettingsEditView set edit
 
-                        Nothing ->
-                            featureSettingsDisplayView set maybeAdminAccount current
-                    ]
-
-                else
-                    []
-               )
-        )
+                    Nothing ->
+                        featureSettingsDisplayView set maybeAdminAccount current
+                ]
+            ]
+        ]
 
 
 {-| The non-editing body of a `featureSettingsSection` -- `visible`/`enableReplies` are always

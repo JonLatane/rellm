@@ -42,7 +42,7 @@ suite =
                         { allocationBytes = Conversions.int64FromInt (1024 * 1024 * 1024 + 512 * 1024 * 1024) }
                     )
                     |> Market.productSummary
-                    |> Expect.equal "1.5GB storage for $1.00/mo"
+                    |> Expect.equal "1.5GB storage for $1/mo"
         , test "indefinite media storage reads lifetime" <|
             \_ ->
                 product PURCHASETYPEMEDIASTORAGE
@@ -53,7 +53,7 @@ suite =
                         { allocationBytes = Conversions.int64FromInt (1024 * 1024 * 1024) }
                     )
                     |> Market.productSummary
-                    |> Expect.equal "1GB lifetime storage for $10000.00"
+                    |> Expect.equal "1GB lifetime storage for $10,000"
         , test "monthly AI grants uses Nano Banana display name" <|
             \_ ->
                 product PURCHASETYPEAIGRANTS
@@ -67,7 +67,7 @@ suite =
                         }
                     )
                     |> Market.productSummary
-                    |> Expect.equal "100k tokens of Nano Banana Pro image generation for $2.00/mo"
+                    |> Expect.equal "100k tokens of Nano Banana Pro image generation for $2/mo"
         , test "monthly Rellm hosting includes the admin-access note" <|
             \_ ->
                 product PURCHASETYPERELLMHOSTING
@@ -84,7 +84,7 @@ suite =
                     )
                     |> Market.productSummary
                     |> Expect.equal
-                        ("Rellm hosting, 1GB DB + 5GB MinIO for $15.00/mo You get full admin access to "
+                        ("Rellm hosting, 1GB DB + 5GB MinIO for $15/mo You get full admin access to "
                             ++ "your own Rellm instance -- e.g. you can pay-gate features like Facebook sync "
                             ++ "yourself, if you set up your own Facebook developer account."
                         )
@@ -98,5 +98,29 @@ suite =
                         { permissions = [ SYNCEVENTSTOFACEBOOK, SYNCPOSTSTOFACEBOOK ] }
                     )
                     |> Market.productSummary
-                    |> Expect.equal "access to Sync Events To Facebook, Sync Posts To Facebook for $5.00/mo"
+                    |> Expect.equal "access to Sync Events To Facebook, Sync Posts To Facebook for $5/mo"
+        , test "non-USD currency uses alpha code, not symbol" <|
+            \_ ->
+                product PURCHASETYPEMEDIASTORAGE
+                    PURCHASEPERIODMONTHLY
+                    1000
+                    978
+                    -- EUR
+                    (ProductDetails.MediaStorageSubscriptionDetails
+                        { allocationBytes = Conversions.int64FromInt (1024 * 1024 * 1024) }
+                    )
+                    |> Market.productSummary
+                    |> Expect.equal "1GB storage for 10 EUR/mo"
+        , test "zero-decimal currency (JPY) is not divided by 100" <|
+            \_ ->
+                product PURCHASETYPEMEDIASTORAGE
+                    PURCHASEPERIODMONTHLY
+                    500
+                    392
+                    -- JPY -- zero-decimal, so 500 means 500 yen, not 5 yen
+                    (ProductDetails.MediaStorageSubscriptionDetails
+                        { allocationBytes = Conversions.int64FromInt (1024 * 1024 * 1024) }
+                    )
+                    |> Market.productSummary
+                    |> Expect.equal "1GB storage for 500 JPY/mo"
         ]

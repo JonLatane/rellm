@@ -20,18 +20,21 @@ and never paged.
 -}
 
 import Browser.Navigation
+import Components.AIProviders as AIProviders
 import Components.Market as Market
 import Components.Users as Users
 import Dict exposing (Dict)
 import Effect exposing (Effect)
 import Gen.Route as Route
 import Grpc
-import Html exposing (Html, button, div, h1, input, option, p, select, span, text, textarea)
-import Html.Attributes exposing (class, disabled, placeholder, selected, value)
+import Html exposing (Html, button, div, h1, input, label, option, p, select, span, text, textarea)
+import Html.Attributes exposing (checked, class, disabled, placeholder, selected, type_, value)
 import Html.Events exposing (onClick, onInput)
 import Proto.Rellm
     exposing
-        ( MarketProduct
+        ( AIModel
+        , AIProvider
+        , MarketProduct
         , RellmHostingPurchaseDetails
         , defaultAIGrantSubscriptionDetails
         , defaultMarketProduct
@@ -43,13 +46,17 @@ import Proto.Rellm.MarketProduct exposing (Details)
 import Proto.Rellm.MarketProduct.Details as ProductDetails
 import Proto.Rellm.PurchasePeriod exposing (PurchasePeriod(..))
 import Proto.Rellm.PurchaseType exposing (PurchaseType(..))
+import Proto.Rellm.Permission exposing (Permission)
 import Shared
 import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts
+import Shared.AccountsPanel.RellmServers as RellmServers
 import Shared.Breadcrumbs as Breadcrumbs
+import Shared.ByteFormat as ByteFormat
 import Shared.Conversions as Conversions
 import Task
 import Time
+import UI.Classes exposing (classes, openClosedClass)
 
 
 
@@ -58,10 +65,13 @@ import Time
 
 type alias Model =
     { products : ProductsState
+    , productsFetchStarted : Bool
     , addForm : Maybe ProductForm
     , rowEdits : Dict String ProductForm
     , purchases : Dict String Market.PurchaseState
     , hostingForms : Dict String Market.HostingForm
+    , aiProviders : AiProvidersState
+    , aiProvidersFetchStarted : Bool
     }
 
 
@@ -69,6 +79,18 @@ type ProductsState
     = ProductsLoading
     | ProductsLoaded (List MarketProduct)
     | ProductsErrored String
+
+
+{-| The current Admin's own `AIProvider`s/`AIModel`s (`Components.AIProviders.getAIProviders` with
+`targetUserId = ""`) -- fetched only for an Admin (see `init`), and used to back the AI Access
+product form's provider `<select>` + model checkboxes (`productFormView`) instead of the raw
+provider-id/comma-separated-model-names text fields this form used to have.
+-}
+type AiProvidersState
+    = AiProvidersNotLoaded
+    | AiProvidersLoading
+    | AiProvidersLoaded (List AIProvider) (List AIModel)
+    | AiProvidersErrored String
 
 
 {-| The Admin create/edit form for a `MarketProduct` -- every possible field across all three
@@ -82,12 +104,16 @@ type alias ProductForm =
     { type_ : PurchaseType
     , period : PurchasePeriod
     , amountText : String
-    , mediaAllocationMB : String
+    , currency : Int
+    , mediaAllocationText : String
+    , mediaAllocationUnit : ByteFormat.ByteUnit
     , aiProviderId : String
-    , aiModelNames : String
+    , aiModelNames : List String
     , aiTokens : String
-    , hostingDbSizeMB : String
-    , hostingMinioSizeMB : String
+    , hostingDbSizeText : String
+    , hostingDbSizeUnit : ByteFormat.ByteUnit
+    , hostingMinioSizeText : String
+    , hostingMinioSizeUnit : ByteFormat.ByteUnit
     , permissionsText : String
     , status : AccountsPanel.FormStatus
     }
@@ -98,12 +124,16 @@ defaultProductForm =
     { type_ = PURCHASETYPEMEDIASTORAGE
     , period = PURCHASEPERIODMONTHLY
     , amountText = ""
-    , mediaAllocationMB = ""
+    , currency = Market.usdCurrencyCode
+    , mediaAllocationText = ""
+    , mediaAllocationUnit = ByteFormat.GB
     , aiProviderId = ""
-    , aiModelNames = ""
+    , aiModelNames = []
     , aiTokens = ""
-    , hostingDbSizeMB = ""
-    , hostingMinioSizeMB = ""
+    , hostingDbSizeText = ""
+    , hostingDbSizeUnit = ByteFormat.GB
+    , hostingMinioSizeText = ""
+    , hostingMinioSizeUnit = ByteFormat.GB
     , permissionsText = ""
     , status = AccountsPanel.Idle
     }
@@ -121,23 +151,55 @@ productFormFromProduct product =
                 | type_ = product.type_
                 , period = product.period
                 , amountText = String.fromInt product.amount
+                , currency = product.currency
             }
     in
     case product.details of
         Just (ProductDetails.MediaStorageSubscriptionDetails details) ->
-            { base | mediaAllocationMB = String.fromInt (bytesToMB (Conversions.int64ToInt details.allocationBytes)) }
+            let
+                bytes : Int
+                bytes =
+                    Conversions.int64ToInt details.allocationBytes
+
+                unit : ByteFormat.ByteUnit
+                unit =
+                    marketBytesToUnit bytes
+            in
+            { base
+                | mediaAllocationText = String.fromFloat (toFloat bytes / toFloat (marketUnitBytes unit))
+                , mediaAllocationUnit = unit
+            }
 
         Just (ProductDetails.AiGrantSubscriptionDetails details) ->
             { base
                 | aiProviderId = details.aiProviderId
-                , aiModelNames = String.join ", " details.modelNames
+                , aiModelNames = details.modelNames
                 , aiTokens = String.fromInt (Conversions.int64ToInt details.tokens)
             }
 
         Just (ProductDetails.RellmHostingSubscriptionDetails details) ->
+            let
+                dbBytes : Int
+                dbBytes =
+                    Conversions.int64ToInt details.dbSizeBytes
+
+                dbUnit : ByteFormat.ByteUnit
+                dbUnit =
+                    marketBytesToUnit dbBytes
+
+                minioBytes : Int
+                minioBytes =
+                    Conversions.int64ToInt details.minioSizeBytes
+
+                minioUnit : ByteFormat.ByteUnit
+                minioUnit =
+                    marketBytesToUnit minioBytes
+            in
             { base
-                | hostingDbSizeMB = String.fromInt (bytesToMB (Conversions.int64ToInt details.dbSizeBytes))
-                , hostingMinioSizeMB = String.fromInt (bytesToMB (Conversions.int64ToInt details.minioSizeBytes))
+                | hostingDbSizeText = String.fromFloat (toFloat dbBytes / toFloat (marketUnitBytes dbUnit))
+                , hostingDbSizeUnit = dbUnit
+                , hostingMinioSizeText = String.fromFloat (toFloat minioBytes / toFloat (marketUnitBytes minioUnit))
+                , hostingMinioSizeUnit = minioUnit
             }
 
         Just (ProductDetails.PermissionsAccessSubscriptionDetails details) ->
@@ -147,35 +209,205 @@ productFormFromProduct product =
             base
 
 
-bytesToMB : Int -> Int
-bytesToMB bytes =
-    bytes // (1024 * 1024)
+{-| Binary (1024-based) bytes-per-unit -- deliberately `Shared.ByteFormat`'s own type
+(`ByteFormat.ByteUnit`, reused so `mediaAllocationUnit`/`hostingDbSizeUnit`/`hostingMinioSizeUnit`'s
+`<select>`s can stay the exact same KB/MB/GB widget `Components.Pages.UserProfilePage`'s storage
+quota editor uses) but *not* `ByteFormat.byteUnitBytes`'s decimal (1000-based) math:
+`Market.humanizeBytes`/`backend/src/logic/market_summary.rs::humanize_bytes` (the display side of
+every `MarketProduct` size, including these same fields once saved) are both binary -- entering "5"
++ "GB" needs to round-trip back to exactly "5GB" on `MarketPage`'s tier card, not "4.7GB" (what
+`ByteFormat`'s decimal GB would silently produce, since `ByteFormat` is tuned for `du`-style OS
+reporting, not this precise a round-trip -- see that module's own doc).
+-}
+marketUnitBytes : ByteFormat.ByteUnit -> Int
+marketUnitBytes unit =
+    case unit of
+        ByteFormat.Bytes ->
+            1
+
+        ByteFormat.KB ->
+            1024
+
+        ByteFormat.MB ->
+            1024 * 1024
+
+        ByteFormat.GB ->
+            1024 * 1024 * 1024
 
 
-mbToBytes : Int -> Int
-mbToBytes mb =
-    mb * 1024 * 1024
+{-| The largest unit `n` is at least 1 whole one of, using `marketUnitBytes`' binary sizes -- the
+binary counterpart of `ByteFormat.bytesToUnit`, used to seed `mediaAllocationUnit` when opening
+"Edit" on an existing product (see `productFormFromProduct`).
+-}
+marketBytesToUnit : Int -> ByteFormat.ByteUnit
+marketBytesToUnit n =
+    if n >= marketUnitBytes ByteFormat.GB then
+        ByteFormat.GB
+
+    else if n >= marketUnitBytes ByteFormat.MB then
+        ByteFormat.MB
+
+    else if n >= marketUnitBytes ByteFormat.KB then
+        ByteFormat.KB
+
+    else
+        ByteFormat.Bytes
+
+
+{-| The binary counterpart of `ByteFormat.parseBytes` -- the inverse of `marketBytesToUnit`.
+-}
+marketParseBytes : ByteFormat.ByteUnit -> String -> Maybe Int
+marketParseBytes unit input =
+    String.toFloat (String.trim input) |> Maybe.map (\n -> round (n * toFloat (marketUnitBytes unit)))
+
+
+{-| `<select>`-driven unit change for `mediaAllocationUnit` (mirrors
+`Components.Pages.UserProfilePage`'s `StorageQuotaUnitChanged` handler exactly) -- falls back to
+`current` for any unrecognized `<option>` value, which never actually happens since the `<select>`
+this feeds only ever offers `ByteFormat.byteUnitText`'s own output.
+-}
+byteUnitFromText : String -> ByteFormat.ByteUnit -> ByteFormat.ByteUnit
+byteUnitFromText text current =
+    case text of
+        "B" ->
+            ByteFormat.Bytes
+
+        "KB" ->
+            ByteFormat.KB
+
+        "MB" ->
+            ByteFormat.MB
+
+        "GB" ->
+            ByteFormat.GB
+
+        _ ->
+            current
+
+
+{-| A number input + KB/MB/GB unit `<select>` for one byte-size `ProductForm` field -- shared by
+`mediaAllocationText`/`hostingDbSizeText`/`hostingMinioSizeText` (all three use the same binary
+`marketUnitBytes` math via `marketParseBytes`/`marketBytesToUnit`, and the same widget shape
+`Components.Pages.UserProfilePage`'s storage quota editor established). `getText`/`setText` and
+`getUnit`/`setUnit` pick out which of the three fields this particular instance edits.
+-}
+byteSizeSelectorView :
+    ((ProductForm -> String -> ProductForm) -> String -> msg)
+    -> String
+    -> ProductForm
+    -> (ProductForm -> String)
+    -> (ProductForm -> String -> ProductForm)
+    -> (ProductForm -> ByteFormat.ByteUnit)
+    -> (ProductForm -> ByteFormat.ByteUnit -> ProductForm)
+    -> Html msg
+byteSizeSelectorView change placeholderText form getText setText getUnit setUnit =
+    span [ class "market-form-size-row" ]
+        [ input
+            [ type_ "number"
+            , placeholder placeholderText
+            , value (getText form)
+            , onInput (change setText)
+            ]
+            []
+        , select [ onInput (change (\f text -> setUnit f (byteUnitFromText text (getUnit f)))) ]
+            ([ ByteFormat.KB, ByteFormat.MB, ByteFormat.GB ]
+                |> List.map
+                    (\unit ->
+                        option
+                            [ value (ByteFormat.byteUnitText unit), selected (getUnit form == unit) ]
+                            [ text (ByteFormat.byteUnitText unit) ]
+                    )
+            )
+        ]
 
 
 init : Shared.Model -> ( Model, Effect Msg )
 init shared =
-    ( { products = ProductsLoading
-      , addForm = Nothing
-      , rowEdits = Dict.empty
-      , purchases = Dict.empty
-      , hostingForms = Dict.empty
-      }
+    let
+        initialModel : Model
+        initialModel =
+            { products = ProductsLoading
+            , productsFetchStarted = False
+            , addForm = Nothing
+            , rowEdits = Dict.empty
+            , purchases = Dict.empty
+            , hostingForms = Dict.empty
+            , aiProviders =
+                if isAdminOn shared then
+                    AiProvidersLoading
+
+                else
+                    AiProvidersNotLoaded
+            , aiProvidersFetchStarted = False
+            }
+
+        ( readyModel, fetchEffect ) =
+            attemptFetches shared initialModel
+    in
+    ( readyModel
     , Effect.batch
-        [ fetchProducts shared
+        [ fetchEffect
         , Effect.fromShared (Shared.BreadcrumbsMsg (Breadcrumbs.SetRoot (Breadcrumbs.FromServerHost shared.accounts.mainFrontendHost) shared.accounts.mainFrontendHost []))
         ]
     )
+
+
+isAdminOn : Shared.Model -> Bool
+isAdminOn shared =
+    RellmAccounts.enabledRellmAccountForServer shared.accounts.accounts shared.accounts.mainFrontendHost
+        |> Maybe.map RellmAccounts.isAdmin
+        |> Maybe.withDefault False
+
+
+{-| Fires `fetchProducts`/`fetchAiProviders` the first time `mainFrontendHost` is a known,
+*connected* server -- see `RellmServers.knownConnectedRellmServer`'s own doc: `Shared.AccountsPanel.init`
+seeds every persisted server disconnected before its own reconnect attempt resolves, so firing these
+fetches unconditionally in `init` (the original bug here -- a cold app load raced that reconnect and
+failed instantly with "Couldn't reach the server", before the real connection ever landed) doesn't
+work. Safe to call repeatedly (from `init` and every `SharedMsgReceived`, mirroring
+`Components.Pages.PostOrEventPage.fetchIfReady`'s exact pattern) -- each fetch's own `*FetchStarted`
+flag makes every call after the first a no-op.
+-}
+attemptFetches : Shared.Model -> Model -> ( Model, Effect Msg )
+attemptFetches shared model =
+    let
+        serverReady : Bool
+        serverReady =
+            RellmServers.knownConnectedRellmServer shared.accounts.servers shared.accounts.mainFrontendHost /= Nothing
+
+        ( model1, productsEffect ) =
+            if serverReady && not model.productsFetchStarted then
+                ( { model | productsFetchStarted = True }, fetchProducts shared )
+
+            else
+                ( model, Effect.none )
+
+        ( model2, aiProvidersEffect ) =
+            if serverReady && model1.aiProviders /= AiProvidersNotLoaded && not model1.aiProvidersFetchStarted then
+                ( { model1 | aiProvidersFetchStarted = True }, fetchAiProviders shared )
+
+            else
+                ( model1, Effect.none )
+    in
+    ( model2, Effect.batch [ productsEffect, aiProvidersEffect ] )
 
 
 fetchProducts : Shared.Model -> Effect Msg
 fetchProducts shared =
     Market.getMarketProducts shared.accounts (maybeAccountServer shared)
         |> Task.attempt GotProductsResult
+        |> Effect.fromCmd
+
+
+{-| The Admin's own `AIProvider`s/`AIModel`s, for the AI Access product form's provider/model
+pickers (`aiGrantsFormView`) -- `targetUserId = ""` asks for the caller's own providers (see
+`Components.AIProviders.getAIProviders`'s own doc), which is always right here since only an Admin
+ever opens this form (see `isAdminOn`'s callers).
+-}
+fetchAiProviders : Shared.Model -> Effect Msg
+fetchAiProviders shared =
+    AIProviders.getAIProviders shared.accounts (maybeAccountServer shared) ""
+        |> Task.attempt GotAIProvidersResult
         |> Effect.fromCmd
 
 
@@ -193,6 +425,7 @@ maybeAccountServer shared =
 type Msg
     = GotProductsResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, Proto.Rellm.GetMarketProductsResponse ))
     | RefreshClicked
+    | GotAIProvidersResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, Proto.Rellm.GetAIProvidersResponse ))
       -- Admin: create form
     | AddProductClicked
     | AddFormCancelClicked
@@ -212,6 +445,7 @@ type Msg
     | HostingFieldChanged String (Market.HostingForm -> String -> Market.HostingForm) String
     | BuyClicked MarketProduct
     | GotPurchaseResult String (Result Grpc.Error ( Maybe AccountsPanel.Msg, Proto.Rellm.MakeMarketPurchaseResponse ))
+    | LoginClicked
     | SharedMsgReceived Shared.Msg
 
 
@@ -227,10 +461,27 @@ update shared msg model =
             ( { model | products = ProductsErrored (AccountsPanel.grpcErrorToString err) }, Effect.none )
 
         RefreshClicked ->
-            ( { model | products = ProductsLoading }, fetchProducts shared )
+            attemptFetches shared { model | products = ProductsLoading, productsFetchStarted = False }
+
+        GotAIProvidersResult (Ok ( maybeAccountsPanelMsg, response )) ->
+            ( { model | aiProviders = AiProvidersLoaded response.providers response.aiModels }
+            , accountsPanelEffect maybeAccountsPanelMsg
+            )
+
+        GotAIProvidersResult (Err err) ->
+            ( { model | aiProviders = AiProvidersErrored (AccountsPanel.grpcErrorToString err) }, Effect.none )
 
         AddProductClicked ->
-            ( { model | addForm = Just defaultProductForm }, Effect.none )
+            ( { model
+                | addForm =
+                    if model.addForm == Nothing then
+                        Just defaultProductForm
+
+                    else
+                        Nothing
+              }
+            , Effect.none
+            )
 
         AddFormCancelClicked ->
             ( { model | addForm = Nothing }, Effect.none )
@@ -363,8 +614,15 @@ update shared msg model =
             , Effect.none
             )
 
+        LoginClicked ->
+            ( model, Effect.fromShared (Shared.AccountsPanelMsg AccountsPanel.ToggleAccountsPanel) )
+
         SharedMsgReceived subMsg ->
-            ( model, Effect.fromShared subMsg )
+            let
+                ( retriedModel, retryEffect ) =
+                    attemptFetches shared model
+            in
+            ( retriedModel, Effect.batch [ Effect.fromShared subMsg, retryEffect ] )
 
 
 accountsPanelEffect : Maybe AccountsPanel.Msg -> Effect msg
@@ -404,7 +662,7 @@ productFromForm existing form =
         | type_ = form.type_
         , period = form.period
         , amount = Maybe.withDefault 0 (String.toInt form.amountText)
-        , currency = Market.usdCurrencyCode
+        , currency = form.currency
         , details = detailsFromForm form
     }
 
@@ -416,7 +674,9 @@ detailsFromForm form =
             Just
                 (ProductDetails.MediaStorageSubscriptionDetails
                     { defaultMediaStorageSubscriptionDetails
-                        | allocationBytes = Conversions.int64FromInt (mbToBytes (Maybe.withDefault 0 (String.toInt form.mediaAllocationMB)))
+                        | allocationBytes =
+                            Conversions.int64FromInt
+                                (marketParseBytes form.mediaAllocationUnit form.mediaAllocationText |> Maybe.withDefault 0)
                     }
                 )
 
@@ -425,7 +685,7 @@ detailsFromForm form =
                 (ProductDetails.AiGrantSubscriptionDetails
                     { defaultAIGrantSubscriptionDetails
                         | aiProviderId = form.aiProviderId
-                        , modelNames = form.aiModelNames |> String.split "," |> List.map String.trim |> List.filter (not << String.isEmpty)
+                        , modelNames = form.aiModelNames
                         , tokens = Conversions.int64FromInt (Maybe.withDefault 0 (String.toInt form.aiTokens))
                     }
                 )
@@ -434,8 +694,12 @@ detailsFromForm form =
             Just
                 (ProductDetails.RellmHostingSubscriptionDetails
                     { defaultRellmHostingSubscriptionDetails
-                        | dbSizeBytes = Conversions.int64FromInt (mbToBytes (Maybe.withDefault 0 (String.toInt form.hostingDbSizeMB)))
-                        , minioSizeBytes = Conversions.int64FromInt (mbToBytes (Maybe.withDefault 0 (String.toInt form.hostingMinioSizeMB)))
+                        | dbSizeBytes =
+                            Conversions.int64FromInt
+                                (marketParseBytes form.hostingDbSizeUnit form.hostingDbSizeText |> Maybe.withDefault 0)
+                        , minioSizeBytes =
+                            Conversions.int64FromInt
+                                (marketParseBytes form.hostingMinioSizeUnit form.hostingMinioSizeText |> Maybe.withDefault 0)
                     }
                 )
 
@@ -525,14 +789,20 @@ purchasePeriodToString period =
 
 view : Shared.Model -> Bool -> Model -> Html Msg
 view shared embeddedPage model =
+    let
+        isAdmin : Bool
+        isAdmin =
+            isAdminOn shared
+    in
     div [ class "market-page" ]
-        (( if embeddedPage then
-            text ""
+        (headerRowView embeddedPage isAdmin
+            :: (if isAdmin then
+                    [ addProductPanelView model.aiProviders model.addForm ]
 
-           else
-            h1 [] [ text "Market" ]
-         )
-            :: (case model.products of
+                else
+                    []
+               )
+            ++ (case model.products of
                     ProductsLoading ->
                         [ p [] [ text "Loading products…" ] ]
 
@@ -543,23 +813,77 @@ view shared embeddedPage model =
 
                     ProductsLoaded products ->
                         let
-                            isAdmin : Bool
-                            isAdmin =
-                                RellmAccounts.enabledRellmAccountForServer shared.accounts.accounts shared.accounts.mainFrontendHost
-                                    |> Maybe.map RellmAccounts.isAdmin
-                                    |> Maybe.withDefault False
+                            visible : List MarketProduct
+                            visible =
+                                List.filter (visibleProduct isAdmin) products
                         in
-                        (if isAdmin then
-                            [ addProductView model.addForm ]
-
-                         else
-                            []
-                        )
-                            ++ [ div [ class "market-products" ]
-                                    (List.map (productRowView shared.basePath isAdmin model) (List.filter (visibleProduct isAdmin) products))
-                               ]
+                        [ div [ class "market-sections" ]
+                            (Market.allPurchaseTypes |> List.map (sectionView shared isAdmin model visible))
+                        ]
                )
         )
+
+
+{-| The "Market" heading (hidden while embedded on `UsernameOrCustomTab_`, same as before) and, for
+an Admin, a "+ New Product" button -- both on the same row, the button pinned to the right by
+`.market-header-row`'s `justify-content: space-between` (see `market.css`). The button stays
+visible even while `addProductPanelView`'s form is already open, rather than disappearing -- a
+second click toggles the form closed again (see `AddProductClicked`), same as `AddFormCancelClicked`.
+-}
+headerRowView : Bool -> Bool -> Html Msg
+headerRowView embeddedPage isAdmin =
+    div [ class "market-header-row" ]
+        [ if embeddedPage then
+            text ""
+
+          else
+            h1 [] [ text "Market" ]
+        , if isAdmin then
+            button [ class "market-add-product-button", onClick AddProductClicked ] [ text "+ New Product" ]
+
+          else
+            text ""
+        ]
+
+
+{-| The "New Product" form -- always mounted (even while closed) so `.market-add-product-panel`'s
+`grid-template-rows` 0fr/1fr trick (`market.css`) can animate it open/closed, the same mechanism
+`Components.Pages.UserProfilePage.expandableProfileSection` uses (see that function's own doc on why
+"always mounted" is required for the CSS transition to have something to animate). Right-aligned via
+the outer panel's own `margin-left: auto`. While closed, `form` is just a throwaway
+`defaultProductForm` -- invisible (clipped to ~0 height) and inert (`.is-closed` sets
+`pointer-events: none`), never actually submitted.
+-}
+addProductPanelView : AiProvidersState -> Maybe ProductForm -> Html Msg
+addProductPanelView aiProviders maybeAddForm =
+    let
+        isOpen : Bool
+        isOpen =
+            maybeAddForm /= Nothing
+
+        addForm : ProductForm
+        addForm =
+            Maybe.withDefault defaultProductForm maybeAddForm
+    in
+    div [ classes [ "market-add-product-panel", openClosedClass isOpen ] ]
+        [ div [ class "market-add-product-panel-inner" ]
+            [ div [ class "market-add-product-panel-content market-tier-editing" ]
+                (typeAndPeriodSelectors addForm
+                    ++ productFormView aiProviders AddFormFieldChanged addForm
+                    ++ [ div [ class "market-form-actions" ]
+                            [ button [ onClick AddFormSubmitClicked, disabled (addForm.status == AccountsPanel.Submitting) ] [ text "Create" ]
+                            , button [ onClick AddFormCancelClicked ] [ text "Cancel" ]
+                            ]
+                       , case addForm.status of
+                            AccountsPanel.Errored err ->
+                                span [ class "market-form-error" ] [ text err ]
+
+                            _ ->
+                                text ""
+                       ]
+                )
+            ]
+        ]
 
 
 visibleProduct : Bool -> MarketProduct -> Bool
@@ -567,25 +891,71 @@ visibleProduct isAdmin product =
     isAdmin || product.delistedAt == Nothing
 
 
-productRowView : String -> Bool -> Model -> MarketProduct -> Html Msg
-productRowView basePath isAdmin model product =
+{-| One of the 4 `PurchaseType` sections (Media Storage / AI Access / Rellm Hosting / Extra
+Features) -- an Admin always sees all 4 (empty ones read "You have not added any products of this
+type yet."), a regular user only sees ones with at least one tier (see `Model` type's own module
+doc on why: browsing is public, buying isn't). Tiers within a section are sorted cheapest-monthly
+first, then annual by price, then indefinite/lifetime by price (`Market.periodSortOrder`).
+-}
+sectionView : Shared.Model -> Bool -> Model -> List MarketProduct -> PurchaseType -> Html Msg
+sectionView shared isAdmin model products type_ =
+    let
+        tiers : List MarketProduct
+        tiers =
+            products
+                |> List.filter (\p -> p.type_ == type_)
+                |> List.sortWith
+                    (\a b ->
+                        case compare (Market.periodSortOrder a.period) (Market.periodSortOrder b.period) of
+                            EQ ->
+                                compare a.amount b.amount
+
+                            order ->
+                                order
+                    )
+    in
+    if not isAdmin && List.isEmpty tiers then
+        text ""
+
+    else
+        div [ class "market-section" ]
+            [ div [ class "market-section-header" ]
+                [ span [ class "market-section-emoji" ] [ text (Market.purchaseTypeEmoji type_) ]
+                , div [ class "market-section-heading" ]
+                    [ Html.h2 [] [ text (Market.purchaseTypeLabel type_) ]
+                    , p [ class "market-section-description" ] [ text (Market.purchaseTypeDescription type_) ]
+                    ]
+                ]
+            , if List.isEmpty tiers then
+                p [ class "market-section-empty" ] [ text "You have not added any products of this type yet." ]
+
+              else
+                div [ class "market-tier-row" ] (List.map (tierCardView shared isAdmin model) tiers)
+            ]
+
+
+tierCardView : Shared.Model -> Bool -> Model -> MarketProduct -> Html Msg
+tierCardView shared isAdmin model product =
     case Dict.get product.id model.rowEdits of
         Just edit ->
-            div [ class "market-product market-product-editing" ] (productFormView (RowEditFieldChanged product.id) edit ++ [ rowEditActionsView product edit ])
+            div [ class "market-tier market-tier-editing" ]
+                (productFormView model.aiProviders (RowEditFieldChanged product.id) edit ++ [ rowEditActionsView product edit ])
 
         Nothing ->
-            div [ class "market-product" ]
-                [ Html.a [ class "market-product-link", Html.Attributes.href (basePath ++ Route.toHref (Route.Market__Product__ProductId_ { productId = product.id })) ]
-                    [ span [ class "market-product-title" ] [ text (Market.purchaseTypeLabel product.type_) ]
-                    , span [ class "market-product-summary" ] [ text (Market.productSummary product) ]
+            div [ class "market-tier" ]
+                [ Html.a
+                    [ class "market-tier-link"
+                    , Html.Attributes.href (shared.basePath ++ Route.toHref (Route.Market__Product__ProductId_ { productId = product.id }))
                     ]
+                    [ span [ class "market-tier-summary" ] [ text (Market.productSummary product) ] ]
+                , permissionBadgesView (Market.permissionsForProduct product)
                 , if product.delistedAt /= Nothing then
-                    span [ class "market-product-delisted" ] [ text "Delisted" ]
+                    span [ class "market-tier-delisted" ] [ text "Delisted" ]
 
                   else
                     text ""
                 , if isAdmin then
-                    div [ class "market-product-admin-actions" ]
+                    div [ class "market-tier-admin-actions" ]
                         [ button [ onClick (EditProductClicked product) ] [ text "Edit" ]
                         , button [ onClick (RowDelistToggleClicked product) ]
                             [ text
@@ -599,42 +969,82 @@ productRowView basePath isAdmin model product =
                         ]
 
                   else
-                    buyView model product
+                    buyView shared model product
                 ]
 
 
-buyView : Model -> MarketProduct -> Html Msg
-buyView model product =
-    let
-        purchaseState : Market.PurchaseState
-        purchaseState =
-            Dict.get product.id model.purchases |> Maybe.withDefault Market.PurchaseIdle
-    in
-    div [ class "market-product-buy" ]
-        ((if product.type_ == PURCHASETYPERELLMHOSTING then
-            [ hostingFormView product.id (Dict.get product.id model.hostingForms |> Maybe.withDefault Market.defaultHostingForm) ]
+{-| The extra `Permission`s a tier grants, as the same read-only badge chips
+`Components.Pages.UserProfilePage`'s own permissions section uses -- `text ""` (nothing rendered)
+for a tier with none (every `PurchaseType` except `PERMISSIONS_ACCESS`).
+-}
+permissionBadgesView : List Permission -> Html msg
+permissionBadgesView permissions =
+    if List.isEmpty permissions then
+        text ""
 
-          else
-            []
-         )
-            ++ [ button
-                    [ onClick (BuyClicked product), disabled (purchaseState == Market.PurchaseSubmitting) ]
-                    [ text
-                        (if purchaseState == Market.PurchaseSubmitting then
-                            "Starting checkout…"
+    else
+        div [ class "permission-badges market-tier-permissions" ]
+            (permissions |> List.map (\permission -> span [ class "permission-badge" ] [ text (Users.permissionText permission) ]))
 
-                         else
-                            "Buy"
-                        )
-                    ]
-               , case purchaseState of
-                    Market.PurchaseErrored err ->
-                        span [ class "market-purchase-error" ] [ text err ]
 
-                    _ ->
-                        text ""
-               ]
-        )
+{-| Whether anyone is signed in on `mainFrontendHost` at all -- gates `buyView`'s "Buy" button (a
+signed-out click would otherwise just fail with a confusing `NetworkError`, since
+`Market.makeMarketPurchase` is always authenticated -- see `Shared.AccountsPanel.performWithAccountServer`).
+-}
+signedIn : Shared.Model -> Bool
+signedIn shared =
+    RellmAccounts.enabledRellmAccountForServer shared.accounts.accounts shared.accounts.mainFrontendHost /= Nothing
+
+
+buyView : Shared.Model -> Model -> MarketProduct -> Html Msg
+buyView shared model product =
+    if not (signedIn shared) then
+        loginPromptView
+
+    else
+        let
+            purchaseState : Market.PurchaseState
+            purchaseState =
+                Dict.get product.id model.purchases |> Maybe.withDefault Market.PurchaseIdle
+        in
+        div [ class "market-tier-buy" ]
+            ((if product.type_ == PURCHASETYPERELLMHOSTING then
+                [ hostingFormView product.id (Dict.get product.id model.hostingForms |> Maybe.withDefault Market.defaultHostingForm) ]
+
+              else
+                []
+             )
+                ++ [ button
+                        [ onClick (BuyClicked product), disabled (purchaseState == Market.PurchaseSubmitting) ]
+                        [ text
+                            (if purchaseState == Market.PurchaseSubmitting then
+                                "Starting checkout…"
+
+                             else
+                                "Buy"
+                            )
+                        ]
+                   , case purchaseState of
+                        Market.PurchaseErrored err ->
+                            span [ class "market-purchase-error" ] [ text err ]
+
+                        _ ->
+                            text ""
+                   ]
+            )
+
+
+{-| Shown instead of a "Buy" button (and, for `RELLM_HOSTING`, its domain/contact/notes form) when
+nobody's signed in -- mirrors `Components.ServerDependentView`'s own "connect to proceed" prompt
+styling, but opens the Accounts Panel (the app's only Login/Create Account entry point -- there's no
+dedicated route) rather than connecting a server.
+-}
+loginPromptView : Html Msg
+loginPromptView =
+    div [ class "market-tier-login-prompt" ]
+        [ p [] [ text "Create Account or Login to proceed." ]
+        , button [ onClick LoginClicked ] [ text "Login" ]
+        ]
 
 
 hostingFormView : String -> Market.HostingForm -> Html Msg
@@ -661,42 +1071,16 @@ hostingFormView productId hostingForm =
         ]
 
 
-addProductView : Maybe ProductForm -> Html Msg
-addProductView maybeAddForm =
-    case maybeAddForm of
-        Nothing ->
-            div [ class "market-add-product" ] [ button [ onClick AddProductClicked ] [ text "+ New Product" ] ]
-
-        Just addForm ->
-            div [ class "market-add-product market-product-editing" ]
-                (typeAndPeriodSelectors addForm
-                    ++ productFormView AddFormFieldChanged addForm
-                    ++ [ div [ class "market-form-actions" ]
-                            [ button [ onClick AddFormSubmitClicked, disabled (addForm.status == AccountsPanel.Submitting) ] [ text "Create" ]
-                            , button [ onClick AddFormCancelClicked ] [ text "Cancel" ]
-                            ]
-                       , case addForm.status of
-                            AccountsPanel.Errored err ->
-                                span [ class "market-form-error" ] [ text err ]
-
-                            _ ->
-                                text ""
-                       ]
-                )
-
-
 typeAndPeriodSelectors : ProductForm -> List (Html Msg)
 typeAndPeriodSelectors form =
     [ select [ onInput AddFormTypeChanged ]
-        [ option [ value (purchaseTypeToString PURCHASETYPEMEDIASTORAGE), selected (form.type_ == PURCHASETYPEMEDIASTORAGE) ] [ text "Media Storage" ]
-        , option [ value (purchaseTypeToString PURCHASETYPEAIGRANTS), selected (form.type_ == PURCHASETYPEAIGRANTS) ] [ text "AI Model Access" ]
-        , option [ value (purchaseTypeToString PURCHASETYPERELLMHOSTING), selected (form.type_ == PURCHASETYPERELLMHOSTING) ] [ text "Rellm Hosting" ]
-        , option [ value (purchaseTypeToString PURCHASETYPEPERMISSIONSACCESS), selected (form.type_ == PURCHASETYPEPERMISSIONSACCESS) ] [ text "Permissions Access" ]
-        ]
+        (Market.allPurchaseTypes
+            |> List.map (\t -> option [ value (purchaseTypeToString t), selected (form.type_ == t) ] [ text (Market.purchaseTypeLabel t) ])
+        )
     , select [ onInput AddFormPeriodChanged ]
-        [ option [ value (purchasePeriodToString PURCHASEPERIODINDEFINITE), selected (form.period == PURCHASEPERIODINDEFINITE) ] [ text "One-Time" ]
-        , option [ value (purchasePeriodToString PURCHASEPERIODMONTHLY), selected (form.period == PURCHASEPERIODMONTHLY) ] [ text "Monthly" ]
+        [ option [ value (purchasePeriodToString PURCHASEPERIODMONTHLY), selected (form.period == PURCHASEPERIODMONTHLY) ] [ text "Monthly" ]
         , option [ value (purchasePeriodToString PURCHASEPERIODANNUAL), selected (form.period == PURCHASEPERIODANNUAL) ] [ text "Yearly" ]
+        , option [ value (purchasePeriodToString PURCHASEPERIODINDEFINITE), selected (form.period == PURCHASEPERIODINDEFINITE) ] [ text "One-Time" ]
         ]
     ]
 
@@ -705,43 +1089,52 @@ typeAndPeriodSelectors form =
 `productId`) or editing an existing row (`RowEditFieldChanged productId`) -- `change` abstracts over
 that difference, same shape as `AIProviderGrantForm`'s own per-provider `Dict` update helpers.
 -}
-productFormView : ((ProductForm -> String -> ProductForm) -> String -> msg) -> ProductForm -> List (Html msg)
-productFormView change form =
-    input [ placeholder "Amount (cents, USD)", value form.amountText, onInput (change (\f text -> { f | amountText = text })) ] []
+productFormView : AiProvidersState -> ((ProductForm -> String -> ProductForm) -> String -> msg) -> ProductForm -> List (Html msg)
+productFormView aiProviders change form =
+    span [ class "market-form-price-row" ]
+        [ input
+            [ placeholder (Market.amountInputLabel form.currency)
+            , value form.amountText
+            , onInput (change (\f text -> { f | amountText = text }))
+            ]
+            []
+        , select [ onInput (change (\f text -> { f | currency = String.toInt text |> Maybe.withDefault f.currency })) ]
+            (Market.allCurrencies
+                |> List.map
+                    (\c ->
+                        option [ value (String.fromInt c.code), selected (c.code == form.currency) ] [ text (Market.currencyLabel c.code) ]
+                    )
+            )
+        ]
         :: (case form.type_ of
                 PURCHASETYPEMEDIASTORAGE ->
-                    [ input
-                        [ placeholder "Storage Allocation (MB)"
-                        , value form.mediaAllocationMB
-                        , onInput (change (\f text -> { f | mediaAllocationMB = text }))
-                        ]
-                        []
+                    [ byteSizeSelectorView change
+                        "Storage Allocation"
+                        form
+                        .mediaAllocationText
+                        (\f text -> { f | mediaAllocationText = text })
+                        .mediaAllocationUnit
+                        (\f unit -> { f | mediaAllocationUnit = unit })
                     ]
 
                 PURCHASETYPEAIGRANTS ->
-                    [ input [ placeholder "AI Provider ID", value form.aiProviderId, onInput (change (\f text -> { f | aiProviderId = text })) ] []
-                    , input
-                        [ placeholder "Model Names (comma-separated)"
-                        , value form.aiModelNames
-                        , onInput (change (\f text -> { f | aiModelNames = text }))
-                        ]
-                        []
-                    , input [ placeholder "Tokens", value form.aiTokens, onInput (change (\f text -> { f | aiTokens = text })) ] []
-                    ]
+                    aiGrantsFormView aiProviders change form
 
                 PURCHASETYPERELLMHOSTING ->
-                    [ input
-                        [ placeholder "Database Size (MB)"
-                        , value form.hostingDbSizeMB
-                        , onInput (change (\f text -> { f | hostingDbSizeMB = text }))
-                        ]
-                        []
-                    , input
-                        [ placeholder "Object Storage Size (MB)"
-                        , value form.hostingMinioSizeMB
-                        , onInput (change (\f text -> { f | hostingMinioSizeMB = text }))
-                        ]
-                        []
+                    [ byteSizeSelectorView change
+                        "Database Size"
+                        form
+                        .hostingDbSizeText
+                        (\f text -> { f | hostingDbSizeText = text })
+                        .hostingDbSizeUnit
+                        (\f unit -> { f | hostingDbSizeUnit = unit })
+                    , byteSizeSelectorView change
+                        "Object Storage Size"
+                        form
+                        .hostingMinioSizeText
+                        (\f text -> { f | hostingMinioSizeText = text })
+                        .hostingMinioSizeUnit
+                        (\f unit -> { f | hostingMinioSizeUnit = unit })
                     ]
 
                 PURCHASETYPEPERMISSIONSACCESS ->
@@ -756,6 +1149,82 @@ productFormView change form =
                 PurchaseTypeUnrecognized_ _ ->
                     []
            )
+
+
+{-| The AI Access form fields: a `<select>` of the Admin's own `AIProvider`s (from
+`Components.AIProviders.getAIProviders`, fetched once at `init` -- see `AiProvidersState`), then a
+checkbox per `AIModel` that provider offers (multi-select, per Jon's own ask), then the Tokens
+field. Replaces the old raw "AI Provider ID"/"Model Names (comma-separated)" text inputs -- an
+Admin picks from what they actually have instead of hand-typing an id/name that has to match
+exactly. Picking a different provider clears any already-checked models (a model name is only
+meaningful relative to its own provider).
+-}
+aiGrantsFormView : AiProvidersState -> ((ProductForm -> String -> ProductForm) -> String -> msg) -> ProductForm -> List (Html msg)
+aiGrantsFormView aiProviders change form =
+    case aiProviders of
+        AiProvidersNotLoaded ->
+            [ p [ class "market-form-hint" ] [ text "AI providers aren't loaded." ] ]
+
+        AiProvidersLoading ->
+            [ p [ class "market-form-hint" ] [ text "Loading your AI providers…" ] ]
+
+        AiProvidersErrored err ->
+            [ p [ class "market-form-error" ] [ text ("Couldn't load AI providers: " ++ err) ] ]
+
+        AiProvidersLoaded [] _ ->
+            [ p [ class "market-form-hint" ] [ text "You have no AI providers configured yet -- add one on your profile first." ] ]
+
+        AiProvidersLoaded providers aiModels ->
+            [ select
+                [ onInput (change (\f id -> { f | aiProviderId = id, aiModelNames = [] })) ]
+                (option [ value "", selected (form.aiProviderId == "") ] [ text "Select an AI Provider" ]
+                    :: (providers |> List.map (\provider -> option [ value provider.id, selected (provider.id == form.aiProviderId) ] [ text provider.name ]))
+                )
+            , if form.aiProviderId == "" then
+                text ""
+
+              else
+                let
+                    modelsForSelectedProvider : List AIModel
+                    modelsForSelectedProvider =
+                        aiModels |> List.filter (\m -> (m.provider |> Maybe.map .id) == Just form.aiProviderId)
+                in
+                if List.isEmpty modelsForSelectedProvider then
+                    p [ class "market-form-hint" ] [ text "This provider has no models yet." ]
+
+                else
+                    div [ class "market-form-ai-models" ]
+                        (modelsForSelectedProvider
+                            |> List.map
+                                (\aiModel ->
+                                    label [ class "market-form-ai-model-option" ]
+                                        [ input
+                                            [ type_ "checkbox"
+                                            , checked (List.member aiModel.modelName form.aiModelNames)
+                                            , onClick (change (\f _ -> toggleAiModel aiModel.modelName f) "")
+                                            ]
+                                            []
+                                        , text (Market.aiModelDisplayName aiModel.modelName)
+                                        ]
+                                )
+                        )
+            , input [ placeholder "Tokens", value form.aiTokens, onInput (change (\f text -> { f | aiTokens = text })) ] []
+            ]
+
+
+{-| Toggles `modelName` in `form.aiModelNames` -- add if absent, remove if present. Used by
+`aiGrantsFormView`'s per-model checkboxes.
+-}
+toggleAiModel : String -> ProductForm -> ProductForm
+toggleAiModel modelName form =
+    { form
+        | aiModelNames =
+            if List.member modelName form.aiModelNames then
+                List.filter ((/=) modelName) form.aiModelNames
+
+            else
+                form.aiModelNames ++ [ modelName ]
+    }
 
 
 rowEditActionsView : MarketProduct -> ProductForm -> Html Msg
