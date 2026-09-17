@@ -14,7 +14,7 @@ use std::time::{Duration, SystemTime};
 
 use diesel::*;
 
-use crate::logic::terminate_subscriptions_of_type;
+use crate::logic::{renew_subscriptions_of_type, terminate_subscriptions_of_type};
 use crate::marshaling::{ToDbId, ToProtoPermissions, ToStringPurchasePeriod, ToStringPurchaseType};
 use crate::models;
 use crate::protos::*;
@@ -39,6 +39,30 @@ fn media_storage_product(admin: &models::User, conn: &mut crate::db_connection::
                     allocation_bytes: 1_073_741_824, // 1GB
                 },
             )),
+        },
+        admin,
+        conn,
+    )
+    .expect("create should succeed")
+}
+
+fn ai_grants_product(admin: &models::User, conn: &mut crate::db_connection::PgPooledConnection) -> MarketProduct {
+    create_market_product(
+        MarketProduct {
+            id: String::new(),
+            r#type: PurchaseType::AiGrants as i32,
+            period: PurchasePeriod::Monthly as i32,
+            amount: 500,
+            currency: 840,
+            created_at: None,
+            delisted_at: None,
+            available_count: 0,
+            sold_count: 0,
+            details: Some(market_product::Details::AiGrantSubscriptionDetails(AiGrantSubscriptionDetails {
+                ai_provider_id: "some-provider".to_string(),
+                model_names: vec!["gemini-2.5-flash-image".to_string()],
+                tokens: 100_000,
+            })),
         },
         admin,
         conn,
@@ -209,6 +233,87 @@ fn terminates_permissions_access_subscription_removing_only_its_own_granted_perm
 
         let updated_subscription = models::get_market_subscription(subscription.id, conn)?;
         assert!(updated_subscription.service_terminated_at.is_some());
+
+        Ok(())
+    });
+}
+
+/// `AiGrants`/`RellmHosting` are deliberately out of scope for automatic revocation (see
+/// `terminate_entitlement`'s own doc, and `PurchaseType.PURCHASE_TYPE_AI_GRANTS`'s proto doc) --
+/// this confirms that's a genuine no-op (nothing errors, nothing else changes) rather than an
+/// oversight, while `service_terminated_at` still gets stamped so the subscription itself is
+/// correctly marked as processed and never reprocessed.
+#[test]
+fn terminates_ai_grants_subscription_as_a_no_op_that_still_marks_service_terminated() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let admin = create_user(conn, "mkt_term_ai_admin");
+        let admin = grant_permissions(conn, &admin, vec![Permission::Admin]);
+        let product = ai_grants_product(&admin, conn);
+
+        let buyer = create_user(conn, "mkt_term_ai_buyer");
+
+        let subscription = create_subscription_with_state(
+            conn,
+            &buyer,
+            &product,
+            PurchaseType::AiGrants,
+            serde_json::to_value(AiGrantSubscriptionDetails {
+                ai_provider_id: "some-provider".to_string(),
+                model_names: vec!["gemini-2.5-flash-image".to_string()],
+                tokens: 100_000,
+            })
+            .unwrap(),
+            Some(an_hour_ago()),
+            Some(an_hour_ago()),
+            None,
+        );
+
+        terminate_subscriptions_of_type(PurchaseType::AiGrants, conn)?;
+
+        let updated_subscription = models::get_market_subscription(subscription.id, conn)?;
+        assert!(updated_subscription.service_terminated_at.is_some());
+
+        Ok(())
+    });
+}
+
+/// A `PURCHASE_PERIOD_INDEFINITE` subscription's `renews_at` is always unset (see that field's own
+/// proto doc) -- `get_due_market_subscriptions`' `renews_at <= now()` filter never matches a NULL
+/// column, so it should never be picked up here at all. Uses no Stripe config on purpose: if this
+/// were ever mistakenly treated as "due," `renew_subscriptions_of_type` would immediately cancel it
+/// (see that function's own doc's "Stripe isn't configured -- ending them all" branch), which is
+/// exactly the wrong, observable failure this test would catch.
+#[test]
+fn an_indefinite_subscription_is_never_picked_up_for_renewal() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let admin = create_user(conn, "mkt_indefinite_no_renew_admin");
+        let admin = grant_permissions(conn, &admin, vec![Permission::Admin]);
+        let product = media_storage_product(&admin, conn);
+
+        let buyer = create_user(conn, "mkt_indefinite_no_renew_buyer");
+        let subscription = create_subscription_with_state(
+            conn,
+            &buyer,
+            &product,
+            PurchaseType::MediaStorage,
+            serde_json::to_value(MediaStorageSubscriptionDetails {
+                allocation_bytes: 1_073_741_824,
+            })
+            .unwrap(),
+            None,
+            None,
+            None,
+        );
+
+        renew_subscriptions_of_type(PurchaseType::MediaStorage, conn)?;
+
+        let unchanged = models::get_market_subscription(subscription.id, conn)?;
+        assert!(
+            unchanged.canceled_at.is_none(),
+            "an indefinite subscription must never be treated as due for renewal"
+        );
 
         Ok(())
     });

@@ -25,7 +25,7 @@ fn admin_can_set_another_users_storage_quota() {
         let admin = create_user(conn, "usq_admin");
         let admin = grant_permissions(conn, &admin, vec![Permission::Admin]);
 
-        let mut request = target.to_proto(&None, &None, None, None);
+        let mut request = target.to_proto(&None, &None, None, &None, None);
         request.media_storage_limit_bytes = Some(5_000_000_000);
 
         update_user(request, &admin, conn).expect("admin update should succeed");
@@ -44,12 +44,12 @@ fn admin_can_clear_a_storage_quota_back_to_unlimited() {
         let admin = create_user(conn, "usq_admin_clear");
         let admin = grant_permissions(conn, &admin, vec![Permission::Admin]);
 
-        let mut request = target.to_proto(&None, &None, None, None);
+        let mut request = target.to_proto(&None, &None, None, &None, None);
         request.media_storage_limit_bytes = Some(1_000_000);
         update_user(request.clone(), &admin, conn).expect("first update should succeed");
         assert_eq!(media_storage_limit_bytes(conn, target.id), Some(1_000_000));
 
-        let mut clear_request = target.to_proto(&None, &None, None, None);
+        let mut clear_request = target.to_proto(&None, &None, None, &None, None);
         clear_request.media_storage_limit_bytes = None;
         update_user(clear_request, &admin, conn).expect("clearing update should succeed");
         assert_eq!(media_storage_limit_bytes(conn, target.id), None);
@@ -64,7 +64,7 @@ fn self_update_cannot_change_own_storage_quota() {
     conn.test_transaction::<_, tonic::Status, _>(|conn| {
         let user = create_user(conn, "usq_self");
 
-        let mut request = user.to_proto(&None, &None, None, None);
+        let mut request = user.to_proto(&None, &None, None, &None, None);
         request.media_storage_limit_bytes = Some(999);
 
         update_user(request, &user, conn).expect("self update should succeed");
@@ -87,7 +87,7 @@ fn non_admin_moderator_cannot_change_someone_elses_storage_quota() {
         let moderator = create_user(conn, "usq_moderator");
         let moderator = grant_permissions(conn, &moderator, vec![Permission::ModerateUsers]);
 
-        let mut request = target.to_proto(&None, &None, None, None);
+        let mut request = target.to_proto(&None, &None, None, &None, None);
         request.media_storage_limit_bytes = Some(123);
 
         // A plain (non-admin) MODERATEUSERS holder may still update someone else's `moderation`

@@ -306,7 +306,7 @@ mod tests {
                 minio_size_bytes: 5 * 1024 * 1024 * 1024,
                 domain: String::new(),
                 contact_email: String::new(),
-                fulfilled: false,
+                fulfillment_status: FulfillmentStatus::AwaitingHostAdmin as i32,
                 fulfillment_notes: vec![],
                 additional_information: String::new(),
             }),

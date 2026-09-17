@@ -323,11 +323,12 @@ makeMarketPurchase accountsPanelModel maybeAccountServer request =
 
 {-| The 4 sections `Components.Pages.MarketPage` always renders for an admin (and, for a regular
 user, renders only when non-empty) -- fixed display order, not the proto enum's own declaration
-order.
+order. Extra Features sits right under Media Storage (Jon's own preferred ordering), ahead of AI
+Access/Rellm Hosting.
 -}
 allPurchaseTypes : List PurchaseType
 allPurchaseTypes =
-    [ PURCHASETYPEMEDIASTORAGE, PURCHASETYPEAIGRANTS, PURCHASETYPERELLMHOSTING, PURCHASETYPEPERMISSIONSACCESS ]
+    [ PURCHASETYPEMEDIASTORAGE, PURCHASETYPEPERMISSIONSACCESS, PURCHASETYPEAIGRANTS, PURCHASETYPERELLMHOSTING ]
 
 
 purchaseTypeLabel : PurchaseType -> String

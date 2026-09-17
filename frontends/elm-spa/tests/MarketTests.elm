@@ -9,6 +9,7 @@ mirror that module's own Rust tests so the two stay in sync).
 import Components.Market as Market
 import Expect
 import Proto.Rellm exposing (MarketProduct, defaultMarketProduct)
+import Proto.Rellm.FulfillmentStatus exposing (FulfillmentStatus(..))
 import Proto.Rellm.MarketProduct exposing (Details)
 import Proto.Rellm.MarketProduct.Details as ProductDetails
 import Proto.Rellm.Permission exposing (Permission(..))
@@ -80,7 +81,7 @@ suite =
                         , domain = ""
                         , contactEmail = ""
                         , additionalInformation = ""
-                        , fulfilled = False
+                        , fulfillmentStatus = FULFILLMENTSTATUSAWAITINGHOSTADMIN
                         , fulfillmentNotes = []
                         }
                     )

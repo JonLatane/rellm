@@ -812,6 +812,16 @@ export interface MediaSettings {
  */
 export interface MarketSettings {
   enabled: boolean;
+  /**
+   * Whether Stripe is actually usable right now -- `stripe_config.stripe_enabled` is true AND a
+   * `stripe_secret_key` is on file. Computed live on every `GetServerConfiguration` (never read back
+   * from whatever was last saved to `market_settings` itself), and -- like `enabled` above --
+   * deliberately never stripped for non-admins: it's the public "can I actually buy something here"
+   * signal a buyer needs (e.g. to grey out `/market/product/:id`'s "Buy" button with a
+   * "Stripe is not configured" message) without ever exposing `StripeConfig` itself, which stays
+   * admin-only.
+   */
+  stripeConfigured: boolean;
 }
 
 /**
@@ -2666,13 +2676,16 @@ export const MediaSettings: MessageFns<MediaSettings> = {
 };
 
 function createBaseMarketSettings(): MarketSettings {
-  return { enabled: false };
+  return { enabled: false, stripeConfigured: false };
 }
 
 export const MarketSettings: MessageFns<MarketSettings> = {
   encode(message: MarketSettings, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.enabled !== false) {
       writer.uint32(8).bool(message.enabled);
+    }
+    if (message.stripeConfigured !== false) {
+      writer.uint32(16).bool(message.stripeConfigured);
     }
     return writer;
   },
@@ -2692,6 +2705,14 @@ export const MarketSettings: MessageFns<MarketSettings> = {
           message.enabled = reader.bool();
           continue;
         }
+        case 2: {
+          if (tag !== 16) {
+            break;
+          }
+
+          message.stripeConfigured = reader.bool();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -2702,13 +2723,19 @@ export const MarketSettings: MessageFns<MarketSettings> = {
   },
 
   fromJSON(object: any): MarketSettings {
-    return { enabled: isSet(object.enabled) ? globalThis.Boolean(object.enabled) : false };
+    return {
+      enabled: isSet(object.enabled) ? globalThis.Boolean(object.enabled) : false,
+      stripeConfigured: isSet(object.stripeConfigured) ? globalThis.Boolean(object.stripeConfigured) : false,
+    };
   },
 
   toJSON(message: MarketSettings): unknown {
     const obj: any = {};
     if (message.enabled !== false) {
       obj.enabled = message.enabled;
+    }
+    if (message.stripeConfigured !== false) {
+      obj.stripeConfigured = message.stripeConfigured;
     }
     return obj;
   },
@@ -2719,6 +2746,7 @@ export const MarketSettings: MessageFns<MarketSettings> = {
   fromPartial<I extends Exact<DeepPartial<MarketSettings>, I>>(object: I): MarketSettings {
     const message = createBaseMarketSettings();
     message.enabled = object.enabled ?? false;
+    message.stripeConfigured = object.stripeConfigured ?? false;
     return message;
   },
 };

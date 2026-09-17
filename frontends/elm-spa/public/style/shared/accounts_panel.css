@@ -225,6 +225,12 @@
   margin: 7px 0;
 }
 
+.debug-tab-note {
+  color: var(--muted);
+  font-size: 0.7rem;
+  margin: -4px 0 7px 0;
+}
+
 /* One collapsible panel per admin-capable signed-in account -- see
    UI.elm's adminAccountPanel. */
 

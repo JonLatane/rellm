@@ -22,7 +22,7 @@ pub fn get_current_user(
     };
 
     let lookup = avatar.to_media_lookup();
-    let mut result = user.to_proto(&None, &None, lookup.as_ref(), Some(conn));
+    let mut result = user.to_proto(&None, &None, lookup.as_ref(), &Some(user), Some(conn));
     attach_own_advanced_data(&mut result, user, conn);
     log::info!("GetCurrentUser::response={:?}", &result);
     Ok(result)

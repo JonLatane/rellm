@@ -62,6 +62,7 @@ import Grpc
 import Html exposing (Html, button, div, p, text)
 import Html.Attributes exposing (class)
 import Html.Events exposing (onClick)
+import Html.Keyed
 import Proto.Rellm exposing (GetServiceVersionResponse, GetUsersResponse, defaultGetUsersRequest)
 import Proto.Rellm.Rellm as Rellm
 import Proto.Rellm.Permission exposing (Permission(..))
@@ -612,10 +613,11 @@ view : Shared.Model -> Model -> Html Msg
 view shared model =
     case effectiveServer shared model of
         Just server ->
-            div [ class "server-details" ]
-                [ addServerButton shared model server
-                , tabBar shared model
-                , tabContent shared model server
+            Html.Keyed.node "div"
+                [ class "server-details" ]
+                [ ( "add-server", addServerButton shared model server )
+                , ( "tab-bar", tabBar shared model )
+                , ( tabParam model.activeTab, tabContent shared model server )
                 ]
 
         Nothing ->
@@ -657,13 +659,12 @@ tabBar shared model =
              , ( TabTheme, "Theme" )
              , ( TabSettings, "Settings" )
              , ( TabFederation, "Federation" )
-             , ( TabCdn, "CDN" )
              ]
                 ++ (if Common.adminAccountFor shared model.targetHost /= Nothing then
-                        [ ( TabContactIntegrations, "Contact Integrations" ), ( TabMarket, "Market" ), ( TabCluster, "Cluster" ) ]
+                        [ ( TabMarket, "Market" ), ( TabContactIntegrations, "Contact Integrations" ), ( TabCdn, "CDN" ), ( TabCluster, "Cluster" ) ]
 
                     else
-                        []
+                        [ ( TabCdn, "CDN" ) ]
                    )
             )
         )

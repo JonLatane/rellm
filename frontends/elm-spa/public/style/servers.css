@@ -64,6 +64,22 @@
   margin: 0 auto;
 }
 
+/* `ContactIntegrationsTab.externalIntegrationsSection`'s own outer wrapper -- just spacing, same
+   convention as `.server-details-permissions`/`.server-details-feature-settings` below. */
+.server-details-external-integrations {
+  margin-bottom: 1.25rem;
+}
+
+/* `externalIntegrationsSection`'s clickable `h2` header -- paired with `.expandable-section-title`
+   (profiles.css) for the collapsible behavior, this just makes it read bigger and less muted than
+   the plain `.section-title` (main.css) Twilio/Bird's own nested headers use, so the grouping reads
+   as a step up rather than just another section. */
+.server-details-group-title {
+  font-size: 1.15rem;
+  font-weight: 600;
+  margin: 1.2rem 0 0.4rem;
+}
+
 .server-details-name {
   display: flex;
   align-items: center;

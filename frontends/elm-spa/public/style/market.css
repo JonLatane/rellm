@@ -260,6 +260,17 @@
   flex-direction: row;
 }
 
+/* Shown beneath a greyed-out (disabled) "Buy" button -- `market_settings.enabled`/
+   `stripe_configured` both being false (see `MarketPage.buyView`/`ProductPage.stripeConfigured`).
+   Muted, not `.market-tier-delisted`'s danger red -- this isn't something the buyer did wrong.
+   Mirrors `.product-stripe-not-configured` (below) for the single-product page's own copy of this
+   same state. */
+.market-tier-buy-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
 .market-hosting-form,
 .product-hosting-form {
   display: flex;
@@ -334,12 +345,22 @@
   gap: 0.6rem;
 }
 
+/* Shown instead of an active "Buy" button when `market_settings.stripe_configured` is `false` --
+   the button itself is just greyed out via the existing global `button:disabled` rule (main.css),
+   this is only the explanatory text beneath it. Muted, not `.product-error`'s danger red -- this
+   isn't something the buyer did wrong. */
+.product-stripe-not-configured {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
 
 /* `/market/fulfillment` (`Components.Pages.MarketFulfillmentPage`) -- admin-only Rellm Hosting
    order table. No `<table>` element anywhere in this app (see other `.market-*`/`.profile-*`
    list-of-row-divs above) -- each order is a `.market-fulfillment-row`, a collapsed summary line
-   that expands (plain conditional render, no animated accordion needed here) into
-   `.market-fulfillment-row-details`. */
+   that expands, via the `grid-template-rows` 0fr/1fr trick (see `.market-fulfillment-row-details-wrap`
+   below), into `.market-fulfillment-row-details`. */
 
 .market-fulfillment-admin-only {
   color: var(--muted);
@@ -371,12 +392,16 @@
   min-width: 0;
 }
 
+/* Both are real links (`https:`/`mailto:` respectively) -- colored via their own
+   `hostnameToCSSClass` (see `UI.EmittedStylesheet`'s `a.server-<host>` rule, which sets this
+   server's own theme `primaryAnchorColor`), so no `color` override here; just the underline that
+   rule doesn't itself provide. */
 .market-fulfillment-row-domain,
 .market-fulfillment-row-contact {
   flex: 1 1 160px;
   min-width: 0;
   overflow-wrap: anywhere;
-  color: inherit;
+  text-decoration: underline;
 }
 
 .market-fulfillment-badge {
@@ -397,20 +422,76 @@
   background: var(--chip-bg);
 }
 
+.market-fulfillment-badge-in-progress {
+  color: var(--info, #2e6fbb);
+  background: var(--chip-bg);
+}
+
+/* Always mounted (open or closed) so `grid-template-rows` can animate this row's expanded details
+   between `0fr` (closed) and `1fr` (open/its natural content height) -- same trick
+   `.market-add-product-panel`/`.expandable-section-content` (profiles.css) use, including the same
+   "no vertical padding/border on the animated wrapper itself, its direct `> *` child gets
+   `overflow: hidden; min-height: 0`, the real padding/border lives one level deeper on
+   `.market-fulfillment-row-details` below" structure that trick needs to actually reach 0 height
+   instead of stopping at its own padding+border. See `expandedRowView`'s own doc. */
+.market-fulfillment-row-details-wrap {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.2s ease;
+}
+
+.market-fulfillment-row-details-wrap.is-open {
+  grid-template-rows: 1fr;
+}
+
+.market-fulfillment-row-details-wrap.is-closed {
+  /* Same reasoning as `.market-add-product-panel.is-closed`'s own doc -- the grid-collapse trick
+     shrinks this to ~0 height visually, but its content is still genuinely present in the DOM at
+     whatever sub-pixel sliver of height remains, so without this it'd still be clickable/focusable
+     (e.g. the note textarea/buttons) while "closed". */
+  pointer-events: none;
+}
+
+.market-fulfillment-row-details-wrap > * {
+  overflow: hidden;
+  min-height: 0;
+}
+
 .market-fulfillment-row-details {
   display: flex;
   flex-direction: column;
   gap: 0.7rem;
-  padding: 0 0.9rem 0.9rem;
+  padding: 0;
   border-top: 1px solid var(--border);
   margin-top: -1px;
-  padding-top: 0.7rem;
 }
 
-.market-fulfillment-fulfilled-toggle {
+.market-fulfillment-row-details > * {
+  margin-left: 0.9rem;
+  margin-right: 0.9rem;
+}
+.market-fulfillment-row-details > *:first-child {
+  margin-top: 0.9rem;
+}
+.market-fulfillment-row-details > *:last-child {
+  margin-bottom: 0.9rem;
+}
+
+/* One of `expandedRowView`'s four ordered sections (Purchase Details/Notes/Subscription
+   Cancellation/Payment History) -- just a heading plus whatever content, spaced apart from its
+   neighbors as a `.market-fulfillment-row-details` child (see that class's own `> *` rules above). */
+.market-fulfillment-section {
   display: flex;
-  align-items: center;
-  gap: 0.6rem;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.market-fulfillment-section-title {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 
 .market-fulfillment-additional-info {
@@ -446,10 +527,19 @@
 
 .market-fulfillment-note-meta {
   display: flex;
+  align-items: center;
+  flex-wrap: wrap;
   justify-content: space-between;
   gap: 0.6rem;
   font-size: 0.8rem;
   color: var(--muted);
+}
+
+/* Smaller than the row-summary's own `.market-fulfillment-badge` -- this is secondary, inline
+   metadata on a single note, not the row's own primary status indicator. */
+.market-fulfillment-note-status {
+  font-size: 0.7rem;
+  padding: 0.1rem 0.5rem;
 }
 
 .market-fulfillment-note-text {
@@ -461,4 +551,53 @@
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
+}
+
+.market-fulfillment-note-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.market-fulfillment-timestamp-line {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.market-fulfillment-billing-totals {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.market-fulfillment-billing-history {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.3rem;
+}
+
+.market-fulfillment-billing-history-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.3rem 0.8rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.market-fulfillment-billing-history-date {
+  color: var(--muted);
+  font-size: 0.85rem;
+  flex: 0 0 auto;
+}
+
+.market-fulfillment-billing-history-line {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.market-fulfillment-billing-history-refund {
+  color: var(--danger);
 }

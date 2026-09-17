@@ -248,9 +248,36 @@ signedIn shared =
     RellmAccounts.enabledRellmAccountForServer shared.accounts.accounts shared.accounts.browsingHost /= Nothing
 
 
+{-| `market_settings.stripe_configured` -- the public "is Stripe actually usable right now" signal
+(see that field's own proto doc), read off whatever `RellmServers.configurationOf` already has
+cached for `browsingHost` (the same unauthenticated probe `MarketProduct`s themselves came from, via
+`fetchProduct`). Defaults to `True` (i.e. don't block the Buy button) whenever `browsingHost` isn't
+yet a known/connected server or hasn't reported `marketSettings` at all -- by the time `Found
+product` is actually on screen this should never happen in practice (see `attemptFetch`'s own doc:
+`fetchProduct` itself doesn't fire until the server is known/connected), but "unknown" shouldn't read
+as "definitely not configured" either way.
+-}
+stripeConfigured : Shared.Model -> Bool
+stripeConfigured shared =
+    RellmServers.knownConnectedRellmServer shared.accounts.servers shared.accounts.browsingHost
+        |> Maybe.map
+            (\server ->
+                (RellmServers.configurationOf server).marketSettings
+                    |> Maybe.map .stripeConfigured
+                    |> Maybe.withDefault True
+            )
+        |> Maybe.withDefault True
+
+
 buyView : Shared.Model -> Model -> MarketProduct -> Html Msg
 buyView shared model product =
-    if not (signedIn shared) then
+    if not (stripeConfigured shared) then
+        div [ class "product-buy" ]
+            [ button [ disabled True ] [ text "Buy" ]
+            , p [ class "product-stripe-not-configured" ] [ text "Stripe is not configured." ]
+            ]
+
+    else if not (signedIn shared) then
         loginPromptView
 
     else

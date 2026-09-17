@@ -246,8 +246,6 @@ export interface User {
   currentGroupMembership?:
     | Membership
     | undefined;
-  /** Indicates that `federated_profiles` has been loaded. */
-  hasAdvancedData: boolean;
   /**
    * Federated profiles for the user. *Not always loaded.* This is a list of profiles from other servers
    * that the user has connected to their account. Managed by the user via
@@ -459,7 +457,6 @@ function createBaseUser(): User {
     currentUserFollow: undefined,
     targetCurrentUserFollow: undefined,
     currentGroupMembership: undefined,
-    hasAdvancedData: false,
     federatedProfiles: [],
     syncDestinations: [],
     syncSources: [],
@@ -545,9 +542,6 @@ export const User: MessageFns<User> = {
     }
     if (message.currentGroupMembership !== undefined) {
       Membership.encode(message.currentGroupMembership, writer.uint32(418).fork()).join();
-    }
-    if (message.hasAdvancedData !== false) {
-      writer.uint32(640).bool(message.hasAdvancedData);
     }
     for (const v of message.federatedProfiles) {
       FederatedAccount.encode(v!, writer.uint32(650).fork()).join();
@@ -782,14 +776,6 @@ export const User: MessageFns<User> = {
           message.currentGroupMembership = Membership.decode(reader, reader.uint32());
           continue;
         }
-        case 80: {
-          if (tag !== 640) {
-            break;
-          }
-
-          message.hasAdvancedData = reader.bool();
-          continue;
-        }
         case 81: {
           if (tag !== 650) {
             break;
@@ -891,7 +877,6 @@ export const User: MessageFns<User> = {
       currentGroupMembership: isSet(object.currentGroupMembership)
         ? Membership.fromJSON(object.currentGroupMembership)
         : undefined,
-      hasAdvancedData: isSet(object.hasAdvancedData) ? globalThis.Boolean(object.hasAdvancedData) : false,
       federatedProfiles: globalThis.Array.isArray(object?.federatedProfiles)
         ? object.federatedProfiles.map((e: any) => FederatedAccount.fromJSON(e))
         : [],
@@ -901,7 +886,9 @@ export const User: MessageFns<User> = {
       syncSources: globalThis.Array.isArray(object?.syncSources)
         ? object.syncSources.map((e: any) => SyncSource.fromJSON(e))
         : [],
-      aiModels: globalThis.Array.isArray(object?.aiModels) ? object.aiModels.map((e: any) => AIModel.fromJSON(e)) : [],
+      aiModels: globalThis.Array.isArray(object?.aiModels)
+        ? object.aiModels.map((e: any) => AIModel.fromJSON(e))
+        : [],
       marketSubscriptions: globalThis.Array.isArray(object?.marketSubscriptions)
         ? object.marketSubscriptions.map((e: any) => MarketSubscription.fromJSON(e))
         : [],
@@ -984,9 +971,6 @@ export const User: MessageFns<User> = {
     if (message.currentGroupMembership !== undefined) {
       obj.currentGroupMembership = Membership.toJSON(message.currentGroupMembership);
     }
-    if (message.hasAdvancedData !== false) {
-      obj.hasAdvancedData = message.hasAdvancedData;
-    }
     if (message.federatedProfiles?.length) {
       obj.federatedProfiles = message.federatedProfiles.map((e) => FederatedAccount.toJSON(e));
     }
@@ -1054,7 +1038,6 @@ export const User: MessageFns<User> = {
       (object.currentGroupMembership !== undefined && object.currentGroupMembership !== null)
         ? Membership.fromPartial(object.currentGroupMembership)
         : undefined;
-    message.hasAdvancedData = object.hasAdvancedData ?? false;
     message.federatedProfiles = object.federatedProfiles?.map((e) => FederatedAccount.fromPartial(e)) || [];
     message.syncDestinations = object.syncDestinations?.map((e) => SyncDestination.fromPartial(e)) || [];
     message.syncSources = object.syncSources?.map((e) => SyncSource.fromPartial(e)) || [];

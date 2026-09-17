@@ -613,6 +613,9 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
             <p><a href="#rellm-RellmHostingSubscriptionDetails">RellmHostingSubscriptionDetails</a></p>
           </li>
           <li>
+            <p><a href="#rellm-FulfillmentStatus">FulfillmentStatus</a></p>
+          </li>
+          <li>
             <p><a href="#rellm-GetMarketSubscriptionsRequestType">GetMarketSubscriptionsRequestType</a></p>
           </li>
           <li>
@@ -1091,12 +1094,14 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
       automated; the admin's own <code>/market/fulfillment</code> page, backed by
       <code>GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN</code> and
       <a href="#grpc-api-UpdateMarketSubscription"><code>UpdateMarketSubscription</code></a>, tracks these orders -
-      <a href="#rellm-RellmHostingSubscriptionDetails"><code>RellmHostingSubscriptionDetails</code></a>'s own <code>fulfilled</code>/
+      <a href="#rellm-RellmHostingSubscriptionDetails"><code>RellmHostingSubscriptionDetails</code></a>'s own <code>fulfillment_status</code>/
       <code>fulfillment_notes</code> fields), and <code>PURCHASE_TYPE_PERMISSIONS_ACCESS</code> (grants the buyer a fixed set of <code>Permission</code>s, e.g.
-      pay-gating <code>SYNC_EVENTS_TO_FACEBOOK</code>). Each <a href="#rellm-MarketProduct"><code>MarketProduct</code></a> is sold once (<a href="#rellm-PurchasePeriod"><code>PurchasePeriod</code></a>
-      <code>PURCHASE_PERIOD_INDEFINITE</code>, a single non-renewing <a href="#rellm-MarketPurchase"><code>MarketPurchase</code></a>) or on a recurring
-      <code>PURCHASE_PERIOD_ANNUAL</code>/<code>PURCHASE_PERIOD_MONTHLY</code> cycle (a <a href="#rellm-MarketSubscription"><code>MarketSubscription</code></a>,
-      whose <code>billing_history</code> accumulates one <a href="#rellm-MarketPurchase"><code>MarketPurchase</code></a> per renewal).
+      pay-gating <code>SYNC_EVENTS_TO_FACEBOOK</code>). Every purchase gets a <a href="#rellm-MarketSubscription"><code>MarketSubscription</code></a> --
+      even a one-time (<a href="#rellm-PurchasePeriod"><code>PurchasePeriod</code></a> <code>PURCHASE_PERIOD_INDEFINITE</code>) purchase, so it's still
+      cancelable and still carries the same per-type fulfillment tracking (e.g. <code>fulfillment_status</code>/<code>fulfillment_notes</code> above)
+      a recurring one does; it just never gets a <code>renews_at</code>, so it never actually bills again. A recurring
+      <code>PURCHASE_PERIOD_ANNUAL</code>/<code>PURCHASE_PERIOD_MONTHLY</code> subscription's <code>billing_history</code> accumulates one
+      <a href="#rellm-MarketPurchase"><code>MarketPurchase</code></a> per renewal; an indefinite one's stays at exactly one.
     </p>
     <p>
       Products are listed via <a href="#grpc-api-GetMarketProducts"><code>GetMarketProducts</code></a> (unauthenticated; admins
@@ -2132,7 +2137,7 @@ directory</a> is (<code>{name}</code> denotes a
           <td>GetMarketSubscriptions</td>
           <td><a href="#rellm-GetMarketSubscriptionsRequest">GetMarketSubscriptionsRequest</a></td>
           <td><a href="#rellm-GetMarketSubscriptionsResponse">GetMarketSubscriptionsResponse</a></td>
-          <td>Gets MarketSubscriptions -- self-scoped ("MY subscriptions", <code>GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE</code>, the default) for any authenticated caller, or every <code>PURCHASE_TYPE_RELLM_HOSTING</code> subscription across every buyer (<code>GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN</code>, backing <code>/market/fulfillment</code> -- see <code>RellmHostingSubscriptionDetails.fulfilled</code>'s own doc) for an Admin. <em>Authenticated</em>.</td>
+          <td>Gets MarketSubscriptions -- self-scoped ("MY subscriptions", <code>GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE</code>, the default) for any authenticated caller, or every <code>PURCHASE_TYPE_RELLM_HOSTING</code> subscription across every buyer (<code>GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN</code>, backing <code>/market/fulfillment</code> -- see <code>RellmHostingSubscriptionDetails.fulfillment_status</code>'s own doc) for an Admin. <em>Authenticated</em>.</td>
         </tr>
         <tr>
           <td>MakeMarketPurchase</td>
@@ -2150,7 +2155,7 @@ directory</a> is (<code>{name}</code> denotes a
           <td>UpdateMarketSubscription</td>
           <td><a href="#rellm-MarketSubscription">MarketSubscription</a></td>
           <td><a href="#rellm-MarketSubscription">MarketSubscription</a></td>
-          <td>Updates a <code>PURCHASE_TYPE_RELLM_HOSTING</code> MarketSubscription's own <code>fulfilled</code>/<code>fulfillment_notes</code> (nothing else -- every other field, including <code>additional_information</code>, is immutable after purchase and silently ignored if changed) -- backs <code>/market/fulfillment</code>. A new <code>fulfillment_notes</code> entry must be appended (not inserted/reordered/removed) after whatever's already stored, and its <code>user_id</code> must match the caller's own -- the server stamps <code>created_at</code> itself, ignoring whatever the client sent. <em>Authenticated</em>, requires Admin (for now -- see that field's own doc on why this may loosen to "buyer, or Admin" later).</td>
+          <td>Appends to a <code>PURCHASE_TYPE_RELLM_HOSTING</code> MarketSubscription's own <code>fulfillment_notes</code> (nothing else -- every other field, including <code>additional_information</code>, is immutable after purchase and silently ignored if changed) -- backs <code>/market/fulfillment</code>. A new entry must be appended (not inserted/reordered/removed) after whatever's already stored, and its <code>user_id</code> must match the caller's own -- the server stamps <code>created_at</code> itself, ignoring whatever the client sent. Its <code>note</code> text is required unless the entry also changes <code>fulfillment_status</code> from the previous entry's own value (see <code>FulfillmentNote.note</code>'s own doc). <code>fulfillment_status</code> on the returned <code>RellmHostingSubscriptionDetails</code> is always the last appended entry's own value -- there's no way to set it independently of a note. <em>Authenticated</em>, requires Admin (for now -- see that field's own doc on why this may loosen to "buyer, or Admin" later).</td>
         </tr>
         <tr>
           <td>GenerateMedia</td>
@@ -3482,12 +3487,6 @@ directory</a> is (<code>{name}</code> denotes a
           <td><a href="#rellm-Membership">Membership</a></td>
           <td>optional</td>
           <td>Returned by <a href="#grpc-api-GetMembers"><code>GetMembers</code></a> calls, for use when managing <a href="#rellm-Group"><code>Group</code></a> <a href="#rellm-Membership"><code>Membership</code></a>s. The <a href="#rellm-Membership"><code>Membership</code></a> should match the <a href="#rellm-Group"><code>Group</code></a> from the originating <a href="#rellm-GetMembersRequest"><code>GetMembersRequest</code></a>, providing whether the user is a member of that <a href="#rellm-Group"><code>Group</code></a>, has been invited, requested to join, etc..</td>
-        </tr>
-        <tr>
-          <td>has_advanced_data</td>
-          <td><a href="#bool">bool</a></td>
-          <td></td>
-          <td>Indicates that <code>federated_profiles</code> has been loaded.</td>
         </tr>
         <tr>
           <td>federated_profiles</td>
@@ -6972,6 +6971,12 @@ directory</a> is (<code>{name}</code> denotes a
           <td></td>
           <td></td>
         </tr>
+        <tr>
+          <td>stripe_configured</td>
+          <td><a href="#bool">bool</a></td>
+          <td></td>
+          <td>Whether Stripe is actually usable right now -- <code>stripe_config.stripe_enabled</code> is true AND a <code>stripe_secret_key</code> is on file. Computed live on every <code>GetServerConfiguration</code> (never read back from whatever was last saved to <code>market_settings</code> itself), and -- like <code>enabled</code> above -- deliberately never stripped for non-admins: it's the public "can I actually buy something here" signal a buyer needs (e.g. to grey out <code>/market/product/:id</code>'s "Buy" button with a "Stripe is not configured" message) without ever exposing <code>StripeConfig</code> itself, which stays admin-only.</td>
+        </tr>
       </tbody>
     </table>
     <p><a name="rellm-MediaSettings"></a></p>
@@ -9128,6 +9133,12 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
     <h2 id="marketproto"><a class="anchor" aria-hidden="true" tabindex="-1" href="#marketproto"><span class="octicon octicon-link"></span></a>market.proto</h2>
     <p><a name="rellm-AIGrantPurchaseDetails"></a></p>
     <h3 id="aigrantpurchasedetails"><a class="anchor" aria-hidden="true" tabindex="-1" href="#aigrantpurchasedetails"><span class="octicon octicon-link"></span></a>AIGrantPurchaseDetails</h3>
+    <p>
+      <code>MarketPurchase.details</code>' <code>PURCHASE_TYPE_AI_GRANTS</code> variant -- copied verbatim from the
+      originating <code>MarketProduct.details</code> at the moment this purchase was fulfilled. Field-for-field
+      identical to <code>AIGrantSubscriptionDetails</code> -- see <code>MediaStoragePurchaseDetails</code>'s own doc for why
+      it's still a separate message.
+    </p>
     <table>
       <thead>
         <tr>
@@ -9142,24 +9153,29 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>ai_provider_id</td>
           <td><a href="#string">string</a></td>
           <td></td>
-          <td></td>
+          <td>Which <code>AIProvider</code> this grant is against.</td>
         </tr>
         <tr>
           <td>model_names</td>
           <td><a href="#string">string</a></td>
           <td>repeated</td>
-          <td></td>
+          <td>Which of that provider's models the grant covers.</td>
         </tr>
         <tr>
           <td>tokens</td>
           <td><a href="#uint64">uint64</a></td>
           <td></td>
-          <td></td>
+          <td>The buyer's new total token balance for <code>ai_provider_id</code>/<code>model_names</code>, replacing (not adding to) whatever balance remained -- see <code>logic::market_fulfillment::fulfill_purchase</code>'s <code>AiGrants</code> arm.</td>
         </tr>
       </tbody>
     </table>
     <p><a name="rellm-AIGrantSubscriptionDetails"></a></p>
     <h3 id="aigrantsubscriptiondetails"><a class="anchor" aria-hidden="true" tabindex="-1" href="#aigrantsubscriptiondetails"><span class="octicon octicon-link"></span></a>AIGrantSubscriptionDetails</h3>
+    <p>
+      <code>MarketProduct.details</code>/<code>MarketSubscription.details</code>' <code>PURCHASE_TYPE_AI_GRANTS</code> variant -- what
+      an AI token product actually grants. Field-for-field identical to <code>AIGrantPurchaseDetails</code> --
+      see that message's own doc for why it's still a distinct type.
+    </p>
     <table>
       <thead>
         <tr>
@@ -9174,25 +9190,29 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>ai_provider_id</td>
           <td><a href="#string">string</a></td>
           <td></td>
-          <td></td>
+          <td>Which <code>AIProvider</code> this grant is against.</td>
         </tr>
         <tr>
           <td>model_names</td>
           <td><a href="#string">string</a></td>
           <td>repeated</td>
-          <td></td>
+          <td>Which of that provider's models the grant covers.</td>
         </tr>
         <tr>
           <td>tokens</td>
           <td><a href="#uint64">uint64</a></td>
           <td></td>
-          <td></td>
+          <td>How many tokens this product/subscription grants the buyer each time it's (re-)fulfilled, replacing (not adding to) whatever balance remained -- see <code>logic::market_fulfillment::fulfill_purchase</code>'s <code>AiGrants</code> arm.</td>
         </tr>
       </tbody>
     </table>
     <p><a name="rellm-FulfillmentNote"></a></p>
     <h3 id="fulfillmentnote"><a class="anchor" aria-hidden="true" tabindex="-1" href="#fulfillmentnote"><span class="octicon octicon-link"></span></a>FulfillmentNote</h3>
-    <p>One entry in a MarketSubscription's <code>fulfillment_notes</code> -- see that field's own doc.</p>
+    <p>
+      One entry in a MarketSubscription's <code>fulfillment_notes</code> -- see that field's own doc. Immutable
+      once appended: <code>UpdateMarketSubscription</code> only ever accepts a <code>fulfillment_notes</code> list whose
+      existing entries are byte-for-byte identical to what's already stored (see that RPC's own doc).
+    </p>
     <table>
       <thead>
         <tr>
@@ -9207,27 +9227,36 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>user_id</td>
           <td><a href="#string">string</a></td>
           <td></td>
-          <td></td>
+          <td>Whoever wrote this note -- either the fulfilling admin or the buyer themselves, depending on which side of the conversation this entry is. Must match the id of whoever's actually making the <code>UpdateMarketSubscription</code> request that appends this entry (server-validated -- see that RPC's own doc); a client can't author a note on someone else's behalf.</td>
         </tr>
         <tr>
           <td>note</td>
           <td><a href="#string">string</a></td>
           <td></td>
+          <td>The note's own text -- required (rejected with <code>fulfillment_note_text_required</code>) unless this entry also changes <code>fulfillment_status</code> from whatever the previous entry (or, for the very first note, the implicit <code>FULFILLMENT_STATUS_AWAITING_HOST_ADMIN</code> default) left it at, in which case an admin can record a bare status change with no accompanying text (e.g. the automatic "admin opened this order" transition to <code>FULFILLMENT_STATUS_IN_PROGRESS</code> -- see that enum value's own doc).</td>
+        </tr>
+        <tr>
+          <td>fulfillment_status</td>
+          <td><a href="#rellm-FulfillmentStatus">FulfillmentStatus</a></td>
           <td></td>
+          <td>What <code>RellmHostingSubscriptionDetails.fulfillment_status</code> became as of this note -- unchanged from the previous entry for a plain note, or the new value for an actual status transition (see <code>note</code>'s own doc on when text is/isn't required for each case). This is what makes <code>fulfillment_notes</code> a genuine "fulfillment state history," not just a chat log alongside a separately-tracked current status.</td>
         </tr>
         <tr>
           <td>created_at</td>
           <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
           <td></td>
-          <td></td>
+          <td>When this note was added. Server-stamped -- <code>UpdateMarketSubscription</code> always ignores whatever timestamp the client sends for a newly-appended entry.</td>
         </tr>
       </tbody>
     </table>
     <p><a name="rellm-GetMarketProductsRequest"></a></p>
     <h3 id="getmarketproductsrequest"><a class="anchor" aria-hidden="true" tabindex="-1" href="#getmarketproductsrequest"><span class="octicon octicon-link"></span></a>GetMarketProductsRequest</h3>
     <p>
-      Request to get products available for purchase on a Rellm server.
-      For now, there are few enough that this has no parameters.
+      Request to get products available for purchase on a Rellm server. <em>Unauthenticated</em> --
+      <code>GetMarketProducts</code> never requires a signed-in caller (see that RPC's own doc), so anyone can
+      browse a server's Market without an account, including from another federated server (see
+      <code>rellm.proto</code>'s "Federated Markets" doc). For now, there are few enough products per server that
+      this has no filtering/paging parameters.
     </p>
     <p><a name="rellm-GetMarketProductsResponse"></a></p>
     <h3 id="getmarketproductsresponse"><a class="anchor" aria-hidden="true" tabindex="-1" href="#getmarketproductsresponse"><span class="octicon octicon-link"></span></a>GetMarketProductsResponse</h3>
@@ -9245,7 +9274,7 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>market_products</td>
           <td><a href="#rellm-MarketProduct">MarketProduct</a></td>
           <td>repeated</td>
-          <td>Non-delisted products, plus delisted ones too if the caller is an admin.</td>
+          <td>Every non-delisted <code>MarketProduct</code>, plus delisted ones too if the caller is a signed-in admin on this server (so admins can still find/relist/edit a delisted product from the same <code>/market</code> page everyone else sees).</td>
         </tr>
       </tbody>
     </table>
@@ -9272,7 +9301,7 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>request_type</td>
           <td><a href="#rellm-GetMarketSubscriptionsRequestType">GetMarketSubscriptionsRequestType</a></td>
           <td></td>
-          <td></td>
+          <td>Which of the two views below to return. Defaults to <code>GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE</code> (proto3's implicit <code>0</code> default), so existing callers that predate this field keep getting their own subscriptions, not the admin view.</td>
         </tr>
       </tbody>
     </table>
@@ -9292,7 +9321,7 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>market_subscriptions</td>
           <td><a href="#rellm-MarketSubscription">MarketSubscription</a></td>
           <td>repeated</td>
-          <td></td>
+          <td>For <code>GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE</code>: the caller's own subscriptions, newest first. For <code>GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN</code>: every <code>PURCHASE_TYPE_RELLM_HOSTING</code> subscription across every buyer, oldest first (so the oldest unfulfilled order surfaces at the top of <code>/market/fulfillment</code>).</td>
         </tr>
       </tbody>
     </table>
@@ -9303,6 +9332,10 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
       Stripe Checkout flow -- see <code>MakeMarketPurchaseResponse.checkout_url</code>. No <code>MarketPurchase</code>/
       <code>MarketSubscription</code> is created by this call itself; that only happens once Stripe confirms
       payment via webhook, so an abandoned checkout never leaves a half-created purchase behind.
+      Rejected outright (<code>market_disabled</code>) if <code>market_settings.enabled</code> is false -- checked first,
+      ahead of every product-specific precondition (delisted/sold-out/Stripe-not-configured/etc.),
+      since an admin who's closed Market entirely shouldn't have that bypassable by simply knowing a
+      still-valid product id.
     </p>
     <table>
       <thead>
@@ -9330,6 +9363,7 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
     </table>
     <p><a name="rellm-MakeMarketPurchaseResponse"></a></p>
     <h3 id="makemarketpurchaseresponse"><a class="anchor" aria-hidden="true" tabindex="-1" href="#makemarketpurchaseresponse"><span class="octicon octicon-link"></span></a>MakeMarketPurchaseResponse</h3>
+    <p>A pending Stripe Checkout Session, ready to redirect the buyer's browser to.</p>
     <table>
       <thead>
         <tr>
@@ -9344,12 +9378,19 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>checkout_url</td>
           <td><a href="#string">string</a></td>
           <td></td>
-          <td>Redirect the buyer's browser here (a Stripe-hosted Checkout page) to complete payment.</td>
+          <td>Redirect the buyer's browser here (a Stripe-hosted Checkout page) to complete payment. Expires after Stripe's own Checkout Session timeout if never completed -- since no <code>MarketPurchase</code> row is created until the webhook fires (see this message's own request's doc), an abandoned/expired checkout leaves no trace at all.</td>
         </tr>
       </tbody>
     </table>
     <p><a name="rellm-MarketPayment"></a></p>
     <h3 id="marketpayment"><a class="anchor" aria-hidden="true" tabindex="-1" href="#marketpayment"><span class="octicon octicon-link"></span></a>MarketPayment</h3>
+    <p>
+      A single successful charge against a <code>MarketPurchase</code> -- one row per completed Stripe
+      <code>PaymentIntent</code> (the initial purchase's, or a later renewal's). Backed by the same
+      <code>market_payments</code> table as <code>MarketRefund</code> (a positive <code>amount</code> row marshals to a <code>MarketPayment</code>,
+      a negative one to a <code>MarketRefund</code> -- see that message's own doc), so a <code>MarketPayment</code> is never
+      itself edited or deleted once created; a refund is always its own separate row/message.
+    </p>
     <table>
       <thead>
         <tr>
@@ -9364,13 +9405,13 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>amount</td>
           <td><a href="#uint32">uint32</a></td>
           <td></td>
-          <td></td>
+          <td>The amount actually charged, in the same unit <code>MarketProduct.amount</code> uses (smallest unit of <code>currency</code>, except for a zero-decimal currency like JPY).</td>
         </tr>
         <tr>
           <td>currency</td>
           <td><a href="#uint32">uint32</a></td>
           <td></td>
-          <td></td>
+          <td>The ISO 4217 numeric currency code <code>amount</code> is denominated in -- copied from the purchase's own product at charge time.</td>
         </tr>
         <tr>
           <td>market_purchase_id</td>
@@ -9388,7 +9429,7 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>created_at</td>
           <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
           <td></td>
-          <td></td>
+          <td>When this charge succeeded.</td>
         </tr>
       </tbody>
     </table>
@@ -9426,22 +9467,25 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>card_exp_month</td>
           <td><a href="#uint32">uint32</a></td>
           <td></td>
-          <td></td>
+          <td>1-12.</td>
         </tr>
         <tr>
           <td>card_exp_year</td>
           <td><a href="#uint32">uint32</a></td>
           <td></td>
-          <td></td>
+          <td>4-digit year.</td>
         </tr>
       </tbody>
     </table>
     <p><a name="rellm-MarketProduct"></a></p>
     <h3 id="marketproduct"><a class="anchor" aria-hidden="true" tabindex="-1" href="#marketproduct"><span class="octicon octicon-link"></span></a>MarketProduct</h3>
     <p>
-      An actual subscribable product listed on, say, <a href="https://rellm.org/market">https://rellm.org/market</a>
-      Listed/delisted by clients by setting <code>delisted_at</code> (though the actual date supplied
-      by the client is ignored).
+      An actual subscribable product listed on, say, <a href="https://rellm.org/market">https://rellm.org/market</a> -- what an admin creates
+      via <code>CreateMarketProduct</code>/edits via <code>UpdateMarketProduct</code>, and what a buyer actually purchases via
+      <code>MakeMarketPurchase</code>. <code>market_settings.enabled</code> (see <code>server_configuration.proto</code>) gates whether a
+      server's Market is browsable/purchasable at all, independent of any individual product's own
+      <code>delisted_at</code>. Listed/delisted by clients by setting <code>delisted_at</code> (though the actual date
+      supplied by the client is ignored -- see that field's own doc).
     </p>
     <table>
       <thead>
@@ -9463,37 +9507,37 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>type</td>
           <td><a href="#rellm-PurchaseType">PurchaseType</a></td>
           <td></td>
-          <td>Never changeable after product creation.</td>
+          <td>What this product grants once purchased -- see <code>PurchaseType</code>'s own doc for what each value does. Never changeable after product creation (<code>UpdateMarketProduct</code> silently ignores any change to this field) -- changing what a product <em>is</em> after people have already bought it would silently change existing buyers' entitlements out from under them; a product whose type needs to change is delisted and replaced with a new one instead.</td>
         </tr>
         <tr>
           <td>period</td>
           <td><a href="#rellm-PurchasePeriod">PurchasePeriod</a></td>
           <td></td>
-          <td>Never changeable after product creation.</td>
+          <td>How often this product bills, if at all -- see <code>PurchasePeriod</code>'s own doc. Never changeable after product creation, same reasoning as <code>type</code> above.</td>
         </tr>
         <tr>
           <td>amount</td>
           <td><a href="#uint32">uint32</a></td>
           <td></td>
-          <td></td>
+          <td>The price, in the smallest unit of <code>currency</code> (e.g. cents for USD) -- except for a zero-decimal currency like JPY, where this is already the whole unit (see <code>logic::stripe_sync::is_zero_decimal_currency</code>).</td>
         </tr>
         <tr>
           <td>currency</td>
           <td><a href="#uint32">uint32</a></td>
           <td></td>
-          <td></td>
+          <td>The ISO 4217 numeric currency code this product is priced in (e.g. <code>840</code> for USD, <code>392</code> for JPY) -- see <code>logic::market_summary</code>'s currency table for the full set of currencies a server actually supports pricing in today.</td>
         </tr>
         <tr>
           <td>available_count</td>
           <td><a href="#uint32">uint32</a></td>
           <td></td>
-          <td>Number of subscriptions "slots" availbable (admin-set)</td>
+          <td>Number of subscription "slots" available for this product (admin-set) -- <code>0</code> means unlimited. Once <code>sold_count &#x26;gt;= available_count</code> (and <code>available_count &#x26;gt; 0</code>), <code>MakeMarketPurchase</code> rejects further purchases with <code>product_sold_out</code>.</td>
         </tr>
         <tr>
           <td>sold_count</td>
           <td><a href="#uint32">uint32</a></td>
           <td></td>
-          <td>Number of subscriptions actually sold. Canceled subscriptions reduce this number, allowing a new person to subscribe.</td>
+          <td>Number of subscriptions actually sold, maintained server-side (never client-settable -- <code>UpdateMarketProduct</code> silently ignores any client-sent value for this field). Incremented when a purchase's Stripe Checkout Session completes; decremented when the resulting <code>MarketSubscription</code> is actually canceled (<code>CancelMarketSubscription</code>), freeing the slot for a new buyer.</td>
         </tr>
         <tr>
           <td>media_storage_subscription_details</td>
@@ -9523,18 +9567,27 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>created_at</td>
           <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
           <td></td>
-          <td></td>
+          <td>When this product was created. Server-stamped -- <code>CreateMarketProduct</code> ignores any client-sent value.</td>
         </tr>
         <tr>
           <td>delisted_at</td>
           <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
           <td>optional</td>
-          <td>If set, the MarketProduct is not purchasable. Note: clients toggle listings by setting this, but the server will always set it to the time of the request, not the time sent <em>by</em> the request.</td>
+          <td>If set, the MarketProduct is not purchasable -- still shown to admins (see <code>GetMarketProductsResponse.market_products</code>' own doc), but hidden from every other caller and rejected by <code>MakeMarketPurchase</code>. Note: clients toggle listings by setting this, but the server will always set it to the time of the request, not the time sent <em>by</em> the request.</td>
         </tr>
       </tbody>
     </table>
     <p><a name="rellm-MarketPurchase"></a></p>
     <h3 id="marketpurchase"><a class="anchor" aria-hidden="true" tabindex="-1" href="#marketpurchase"><span class="octicon octicon-link"></span></a>MarketPurchase</h3>
+    <p>
+      One completed billing event -- the initial purchase or a later recurring renewal charge -- for a
+      single product. Created only from <code>web::stripe_webhook</code> (the initial purchase, on
+      <code>checkout.session.completed</code>) or <code>logic::market_renewal</code> (each subsequent recurring charge),
+      never directly by <code>MakeMarketPurchase</code> itself (see that RPC's own doc). MarketPurchases are
+      immutable via the API+CLI once created -- there is no <code>UpdateMarketPurchase</code> RPC; the payments,
+      refunds, and (for a subscription) fulfillment information that accumulate against a purchase over
+      time live in their own separate messages/tables instead of ever rewriting this one.
+    </p>
     <table>
       <thead>
         <tr>
@@ -9555,37 +9608,37 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>buyer</td>
           <td><a href="#rellm-Author">Author</a></td>
           <td></td>
-          <td></td>
+          <td>Who bought this.</td>
         </tr>
         <tr>
           <td>type</td>
           <td><a href="#rellm-PurchaseType">PurchaseType</a></td>
           <td></td>
-          <td></td>
+          <td>What this purchase grants -- copied from (and always matching) <code>market_product.type</code> at the time of purchase. Denormalized here (rather than requiring a lookup through <code>market_product</code>) so a client can branch on <code>details</code>' oneof case without needing <code>market_product</code> populated.</td>
         </tr>
         <tr>
           <td>market_product</td>
           <td><a href="#rellm-MarketProduct">MarketProduct</a></td>
           <td></td>
-          <td></td>
+          <td>The <code>MarketProduct</code> this purchase was made against, as it existed at the time it was fetched -- may since have changed price/details/been delisted; this purchase's own <code>amount</code>-equivalent fields live on whichever <code>MarketPayment</code>s are attached, not here.</td>
         </tr>
         <tr>
           <td>market_subscription</td>
           <td><a href="#rellm-MarketSubscription">MarketSubscription</a></td>
           <td>optional</td>
-          <td>Note: this circular relationship should be handled by the Rust marshaling side.</td>
+          <td>The subscription this purchase belongs to -- every purchase gets one, including a <code>PURCHASE_PERIOD_INDEFINITE</code> one-time purchase (see <code>MarketSubscription</code>'s own doc), so <code>Optional</code> here really only means "always unset when this <code>MarketPurchase</code> is itself embedded inside a <code>MarketSubscription.billing_history</code>" (there'd be no point recursing into the same subscription again). Note: this circular relationship should be handled by the Rust marshaling side.</td>
         </tr>
         <tr>
           <td>market_payments</td>
           <td><a href="#rellm-MarketPayment">MarketPayment</a></td>
           <td>repeated</td>
-          <td></td>
+          <td>Every payment recorded against this purchase, oldest first -- ordinarily just one, but a failed charge that's later retried (see <code>logic::market_renewal</code>) can leave more than one row.</td>
         </tr>
         <tr>
           <td>market_refunds</td>
           <td><a href="#rellm-MarketRefund">MarketRefund</a></td>
           <td>repeated</td>
-          <td></td>
+          <td>Every refund recorded against this purchase, oldest first -- empty for the common case of a purchase that was never refunded.</td>
         </tr>
         <tr>
           <td>media_storage_purchase_details</td>
@@ -9615,12 +9668,16 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>created_at</td>
           <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
           <td></td>
-          <td></td>
+          <td>When this purchase was recorded -- i.e. when the Stripe webhook/renewal job actually processed it, not when the buyer started checkout.</td>
         </tr>
       </tbody>
     </table>
     <p><a name="rellm-MarketRefund"></a></p>
     <h3 id="marketrefund"><a class="anchor" aria-hidden="true" tabindex="-1" href="#marketrefund"><span class="octicon octicon-link"></span></a>MarketRefund</h3>
+    <p>
+      A single refund issued against a <code>MarketPurchase</code>'s payment -- see <code>MarketPayment</code>'s own doc for
+      how this and <code>MarketPayment</code> share the same underlying <code>market_payments</code> table.
+    </p>
     <table>
       <thead>
         <tr>
@@ -9635,13 +9692,13 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>amount</td>
           <td><a href="#uint32">uint32</a></td>
           <td></td>
-          <td></td>
+          <td>The amount refunded, in the same unit the original <code>MarketPayment.amount</code> was charged in -- always positive here (the underlying row's negative <code>amount</code> is what distinguishes a refund from a payment; this message itself never exposes the sign).</td>
         </tr>
         <tr>
           <td>currency</td>
           <td><a href="#uint32">uint32</a></td>
           <td></td>
-          <td></td>
+          <td>The ISO 4217 numeric currency code <code>amount</code> is denominated in -- always matches the <code>MarketPayment.currency</code> being refunded.</td>
         </tr>
         <tr>
           <td>market_purchase_id</td>
@@ -9659,7 +9716,7 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>created_at</td>
           <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
           <td></td>
-          <td></td>
+          <td>When this refund was issued.</td>
         </tr>
       </tbody>
     </table>
@@ -9684,30 +9741,39 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>card_brand</td>
           <td><a href="#string">string</a></td>
           <td></td>
-          <td></td>
+          <td>E.g. "visa", "mastercard", "amex".</td>
         </tr>
         <tr>
           <td>card_last4</td>
           <td><a href="#string">string</a></td>
           <td></td>
-          <td></td>
+          <td>Last 4 digits of the card number.</td>
         </tr>
         <tr>
           <td>card_exp_month</td>
           <td><a href="#uint32">uint32</a></td>
           <td></td>
-          <td></td>
+          <td>1-12.</td>
         </tr>
         <tr>
           <td>card_exp_year</td>
           <td><a href="#uint32">uint32</a></td>
           <td></td>
-          <td></td>
+          <td>4-digit year.</td>
         </tr>
       </tbody>
     </table>
     <p><a name="rellm-MarketSubscription"></a></p>
     <h3 id="marketsubscription"><a class="anchor" aria-hidden="true" tabindex="-1" href="#marketsubscription"><span class="octicon octicon-link"></span></a>MarketSubscription</h3>
+    <p>
+      Created for <em>every</em> <code>MarketPurchase</code>, regardless of <code>MarketProduct.period</code> -- a recurring
+      (<code>PURCHASE_PERIOD_ANNUAL</code>/<code>PURCHASE_PERIOD_MONTHLY</code>) one gets re-billed and re-fulfilled
+      automatically every period by <code>renew_market_subscriptions.rs</code> until canceled; a
+      <code>PURCHASE_PERIOD_INDEFINITE</code> one-time purchase gets a subscription too (with <code>renews_at</code> unset --
+      see that field's own doc), purely so it's still cancelable and still carries the same per-type
+      fulfillment tracking (e.g. <code>RellmHostingSubscriptionDetails.fulfillment_status</code>/<code>fulfillment_notes</code>) every
+      other purchase type gets, even though it never actually bills again.
+    </p>
     <table>
       <thead>
         <tr>
@@ -9728,43 +9794,43 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>buyer</td>
           <td><a href="#rellm-Author">Author</a></td>
           <td></td>
-          <td></td>
+          <td>Who owns this subscription (i.e. who's being billed and who the entitlement applies to).</td>
         </tr>
         <tr>
           <td>type</td>
           <td><a href="#rellm-PurchaseType">PurchaseType</a></td>
           <td></td>
-          <td></td>
+          <td>What this subscription grants -- copied from (and always matching) <code>market_product.type</code>. Denormalized here the same way <code>MarketPurchase.type</code> is -- see that field's own doc.</td>
         </tr>
         <tr>
           <td>period</td>
           <td><a href="#rellm-PurchasePeriod">PurchasePeriod</a></td>
           <td></td>
-          <td></td>
+          <td>How often this subscription bills -- copied from <code>market_product.period</code> at the time this subscription was created. <code>PURCHASE_PERIOD_INDEFINITE</code> is valid here too (see this message's own doc) -- it just means <code>renews_at</code> stays unset and this subscription never actually bills again.</td>
         </tr>
         <tr>
           <td>amount</td>
           <td><a href="#uint32">uint32</a></td>
           <td></td>
-          <td></td>
+          <td>The price charged each renewal, in the same unit <code>MarketProduct.amount</code> uses -- copied from <code>market_product.amount</code> at the time this subscription was created, so a later price change to the product doesn't retroactively re-price an existing subscriber.</td>
         </tr>
         <tr>
           <td>currency</td>
           <td><a href="#uint32">uint32</a></td>
           <td></td>
-          <td></td>
+          <td>The ISO 4217 numeric currency code <code>amount</code> is denominated in -- copied from <code>market_product.currency</code> at the time this subscription was created.</td>
         </tr>
         <tr>
           <td>market_product</td>
           <td><a href="#rellm-MarketProduct">MarketProduct</a></td>
           <td></td>
-          <td>Note: marshaling should handle the circular relationship here gracefully.</td>
+          <td>The <code>MarketProduct</code> this subscription was made against, as it existed at the time it was fetched -- may since have changed price/details/been delisted (delisting an already-subscribed product doesn't cancel existing subscriptions, only blocks new purchases). Note: marshaling should handle the circular relationship here gracefully.</td>
         </tr>
         <tr>
           <td>billing_history</td>
           <td><a href="#rellm-MarketPurchase">MarketPurchase</a></td>
           <td>repeated</td>
-          <td></td>
+          <td>Every <code>MarketPurchase</code> billed against this subscription so far -- the original purchase plus every successful renewal charge, newest first. Each entry's own <code>market_subscription</code> field is left unset here (see <code>MarketPurchase.market_subscription</code>'s own doc) to avoid recursing back into this same subscription.</td>
         </tr>
         <tr>
           <td>media_storage_subscription_details</td>
@@ -9794,30 +9860,39 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>created_at</td>
           <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
           <td></td>
-          <td></td>
+          <td>When this subscription was first created (i.e. when the initial <code>MarketPurchase</code> was fulfilled).</td>
         </tr>
         <tr>
           <td>renews_at</td>
           <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
           <td>optional</td>
-          <td></td>
+          <td>When the next renewal charge is due. Always unset for a <code>PURCHASE_PERIOD_INDEFINITE</code> subscription (see this message's own doc) -- there is no next charge. Otherwise, advanced by one <code>period</code> on every successful renewal (<code>renew_market_subscriptions.rs</code>); left untouched once <code>canceled_at</code> is set, since a canceled subscription never renews again regardless of what this still says.</td>
         </tr>
         <tr>
           <td>canceled_at</td>
           <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
           <td>optional</td>
-          <td>Set once the subscription will no longer renew -- either the buyer/admin explicitly canceled it (CancelMarketSubscription) or a renewal charge failed. The subscription's entitlement (media storage quota, granted permissions, etc.) stays active until whichever is later of renews_at/canceled_at, at which point renew_market_subscriptions.rs revokes it and sets service_terminated_at.</td>
+          <td>Set once the subscription will no longer renew -- either the buyer/admin explicitly canceled it (CancelMarketSubscription) or a renewal charge failed. The subscription's entitlement (media storage quota, granted permissions, etc.) stays active until whichever is later of renews_at/canceled_at, at which point renew_market_subscriptions.rs revokes it and sets service_terminated_at. Also the moment <code>MarketProduct.sold_count</code> is decremented, freeing this subscription's slot for a new buyer (see that field's own doc).</td>
         </tr>
         <tr>
           <td>service_terminated_at</td>
           <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
           <td>optional</td>
-          <td>The time permissions were removed, media storage quotas reset, etc.</td>
+          <td>The time permissions were removed, media storage quotas reset, etc. -- i.e. when <code>logic::market_fulfillment::terminate_entitlement</code> actually ran for this subscription. Always unset while <code>canceled_at</code> is unset; may remain unset for a while <em>after</em> <code>canceled_at</code> is set, since the entitlement intentionally stays active until the later of <code>renews_at</code>/<code>canceled_at</code> (see <code>canceled_at</code>'s own doc) -- a buyer who cancels mid-period keeps what they already paid for through the end of that period.</td>
         </tr>
       </tbody>
     </table>
     <p><a name="rellm-MediaStoragePurchaseDetails"></a></p>
     <h3 id="mediastoragepurchasedetails"><a class="anchor" aria-hidden="true" tabindex="-1" href="#mediastoragepurchasedetails"><span class="octicon octicon-link"></span></a>MediaStoragePurchaseDetails</h3>
+    <p>
+      <code>MarketPurchase.details</code>' <code>PURCHASE_TYPE_MEDIA_STORAGE</code> variant -- copied verbatim from the
+      originating <code>MarketProduct.details</code> at the moment this purchase was fulfilled (see
+      <code>MarketPurchase.details</code>' own doc). Field-for-field identical to
+      <code>MediaStorageSubscriptionDetails</code> -- kept as its own message only so the Purchase- and
+      Subscription-side <code>oneof</code>s stay independent Rust types (see
+      <code>logic::market_fulfillment::terminate_entitlement</code>'s own doc for why that distinction matters
+      for <code>PermissionsAccessPurchaseDetails</code>/<code>PermissionsAccessSubscriptionDetails</code>).
+    </p>
     <table>
       <thead>
         <tr>
@@ -9832,12 +9907,17 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>allocation_bytes</td>
           <td><a href="#uint64">uint64</a></td>
           <td></td>
-          <td></td>
+          <td>The buyer's new total media storage allocation, replacing (not adding to) whatever quota they already had -- see <code>logic::market_fulfillment::fulfill_purchase</code>'s <code>MediaStorage</code> arm.</td>
         </tr>
       </tbody>
     </table>
     <p><a name="rellm-MediaStorageSubscriptionDetails"></a></p>
     <h3 id="mediastoragesubscriptiondetails"><a class="anchor" aria-hidden="true" tabindex="-1" href="#mediastoragesubscriptiondetails"><span class="octicon octicon-link"></span></a>MediaStorageSubscriptionDetails</h3>
+    <p>
+      <code>MarketProduct.details</code>/<code>MarketSubscription.details</code>' <code>PURCHASE_TYPE_MEDIA_STORAGE</code> variant --
+      what a media storage product actually grants. Field-for-field identical to
+      <code>MediaStoragePurchaseDetails</code> -- see that message's own doc for why it's still a distinct type.
+    </p>
     <table>
       <thead>
         <tr>
@@ -9852,12 +9932,20 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>allocation_bytes</td>
           <td><a href="#uint64">uint64</a></td>
           <td></td>
-          <td></td>
+          <td>How much media storage this product/subscription grants the buyer, replacing (not adding to) whatever quota they already had -- see <code>logic::market_fulfillment::fulfill_purchase</code>'s <code>MediaStorage</code> arm.</td>
         </tr>
       </tbody>
     </table>
     <p><a name="rellm-PermissionsAccessPurchaseDetails"></a></p>
     <h3 id="permissionsaccesspurchasedetails"><a class="anchor" aria-hidden="true" tabindex="-1" href="#permissionsaccesspurchasedetails"><span class="octicon octicon-link"></span></a>PermissionsAccessPurchaseDetails</h3>
+    <p>
+      <code>MarketPurchase.details</code>' <code>PURCHASE_TYPE_PERMISSIONS_ACCESS</code> variant -- copied verbatim from the
+      originating <code>MarketProduct.details</code> at the moment this purchase was fulfilled. Field-for-field
+      identical to <code>PermissionsAccessSubscriptionDetails</code>, but kept as a genuinely distinct Rust type
+      (not just documentation) -- see <code>logic::market_fulfillment::terminate_entitlement</code>'s own doc,
+      which parses a <code>MarketSubscription</code>'s <code>details</code> as <code>PermissionsAccessSubscriptionDetails</code>
+      specifically (never this message) when clawing back a lapsed grant.
+    </p>
     <table>
       <thead>
         <tr>
@@ -9872,12 +9960,19 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>permissions</td>
           <td><a href="#rellm-Permission">Permission</a></td>
           <td>repeated</td>
-          <td></td>
+          <td>The permissions this purchase granted -- see <code>logic::market_fulfillment::fulfill_purchase</code>'s <code>PermissionsAccess</code> arm (adds these to the buyer's <code>User.permissions</code>, union-style).</td>
         </tr>
       </tbody>
     </table>
     <p><a name="rellm-PermissionsAccessSubscriptionDetails"></a></p>
     <h3 id="permissionsaccesssubscriptiondetails"><a class="anchor" aria-hidden="true" tabindex="-1" href="#permissionsaccesssubscriptiondetails"><span class="octicon octicon-link"></span></a>PermissionsAccessSubscriptionDetails</h3>
+    <p>
+      <code>MarketProduct.details</code>/<code>MarketSubscription.details</code>' <code>PURCHASE_TYPE_PERMISSIONS_ACCESS</code>
+      variant -- what a permissions-bundle product actually grants. Field-for-field identical to
+      <code>PermissionsAccessPurchaseDetails</code> -- see that message's own doc for why it's still a distinct
+      type (that distinction is exactly what lets <code>logic::market_fulfillment::terminate_entitlement</code>
+      tell "what to claw back" apart from "what was originally billed").
+    </p>
     <table>
       <thead>
         <tr>
@@ -9892,12 +9987,21 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>permissions</td>
           <td><a href="#rellm-Permission">Permission</a></td>
           <td>repeated</td>
-          <td></td>
+          <td>Which <code>Permission</code>s this product/subscription grants the buyer -- see <code>logic::market_fulfillment::fulfill_purchase</code>'s <code>PermissionsAccess</code> arm (union-added to the buyer's own <code>User.permissions</code>, never replacing what they already had) and <code>terminate_entitlement</code>'s own arm (the exact claw-back set on cancellation/expiry). Intentionally excludes permissions dangerous or nonsensical to sell this way -- e.g. "Grant Basic Permissions," any "Moderate"/"Read All System Messages" permission, "Admin," "View Private Contact Methods," and "Edit Cluster Settings" must never appear in a Market product's own <code>permissions</code> list. Enforced server-side on <code>CreateMarketProduct</code>/ <code>UpdateMarketProduct</code> (rejected with <code>permission_not_purchasable</code>) and again on <code>MakeMarketPurchase</code> (defense in depth, in case a permission is later removed from the purchasable set after a product granting it already exists) -- see <code>rpcs::market::create_market_product::PURCHASABLE_PERMISSIONS</code>. NOTE: that Rust list is an explicit include-list, not an exclude-list -- described here as an exclusion for readability, but implemented as "only these permissions are purchasable" so a newly-added <code>Permission</code> is never purchasable by default; it has to be deliberately added to that list.</td>
         </tr>
       </tbody>
     </table>
     <p><a name="rellm-RellmHostingPurchaseDetails"></a></p>
     <h3 id="rellmhostingpurchasedetails"><a class="anchor" aria-hidden="true" tabindex="-1" href="#rellmhostingpurchasedetails"><span class="octicon octicon-link"></span></a>RellmHostingPurchaseDetails</h3>
+    <p>
+      <code>MarketPurchase.details</code>' <code>PURCHASE_TYPE_RELLM_HOSTING</code> variant -- unlike the other three
+      <code>*PurchaseDetails</code> messages, NOT copied from the originating <code>MarketProduct.details</code>; instead
+      built fresh at checkout time from the buyer's own <code>MakeMarketPurchaseRequest.rellm_hosting_details</code>
+      (carried through as Stripe Checkout Session metadata -- see <code>rpcs::market::make_market_purchase</code>
+      and <code>web::stripe_webhook::handle_checkout_session_completed</code>). Field-for-field identical to
+      <code>RellmHostingSubscriptionDetails</code> (minus that message's <code>fulfillment_status</code>/<code>fulfillment_notes</code>) -- see
+      <code>MediaStoragePurchaseDetails</code>'s own doc for why it's still a separate message.
+    </p>
     <table>
       <thead>
         <tr>
@@ -9912,36 +10016,44 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>db_size_bytes</td>
           <td><a href="#uint64">uint64</a></td>
           <td></td>
-          <td></td>
+          <td>NOTE: as of the current webhook implementation, the buyer never supplies this and the originating <code>MarketProduct</code>'s own configured size isn't carried through Checkout Session metadata either, so this is currently always <code>0</code> here -- an admin fulfilling an order today needs to cross-reference the <code>MarketProduct</code> itself for the size actually sold. Intended to be the requested PostgreSQL database size in bytes.</td>
         </tr>
         <tr>
           <td>minio_size_bytes</td>
           <td><a href="#uint64">uint64</a></td>
           <td></td>
-          <td></td>
+          <td>Same caveat as <code>db_size_bytes</code> above -- currently always <code>0</code>. Intended to be the requested MinIO (object storage) size in bytes.</td>
         </tr>
         <tr>
           <td>domain</td>
           <td><a href="#string">string</a></td>
           <td></td>
-          <td></td>
+          <td>The domain the buyer wants their new Rellm instance reachable at (e.g. "myserver.example.com").</td>
         </tr>
         <tr>
           <td>contact_email</td>
           <td><a href="#string">string</a></td>
           <td></td>
-          <td></td>
+          <td>Where the fulfilling admin should reach the buyer about this order, separate from whatever email/contact info is on the buyer's own <code>User</code> (which may not be checked as often, or may not exist at all for a server with no email-based signup).</td>
         </tr>
         <tr>
           <td>additional_information</td>
           <td><a href="#string">string</a></td>
           <td></td>
-          <td></td>
+          <td>Free-form notes from the buyer to the fulfilling admin, captured once at purchase time (e.g. special requests, existing-data-migration needs). Immutable after purchase -- see <code>RellmHostingSubscriptionDetails.additional_information</code>'s own doc, which carries this same text forward onto the resulting <code>MarketSubscription</code>.</td>
         </tr>
       </tbody>
     </table>
     <p><a name="rellm-RellmHostingSubscriptionDetails"></a></p>
     <h3 id="rellmhostingsubscriptiondetails"><a class="anchor" aria-hidden="true" tabindex="-1" href="#rellmhostingsubscriptiondetails"><span class="octicon octicon-link"></span></a>RellmHostingSubscriptionDetails</h3>
+    <p>
+      <code>MarketProduct.details</code>/<code>MarketSubscription.details</code>' <code>PURCHASE_TYPE_RELLM_HOSTING</code> variant --
+      what a dedicated-hosting product actually grants, plus the buyer's own request details and the
+      admin's own fulfillment tracking for it. Field-for-field identical to <code>RellmHostingPurchaseDetails</code>
+      for the first five fields (see that message's own doc); <code>fulfillment_status</code>/<code>fulfillment_notes</code> below have
+      no <code>*PurchaseDetails</code> counterpart, since they're only ever meaningful on the standing
+      <code>MarketSubscription</code>, not on any one individual <code>MarketPurchase</code> billing event.
+    </p>
     <table>
       <thead>
         <tr>
@@ -9956,25 +10068,25 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>db_size_bytes</td>
           <td><a href="#uint64">uint64</a></td>
           <td></td>
-          <td></td>
+          <td>On a <code>MarketProduct</code>: the PostgreSQL database size (in bytes) this product is configured to provision. On a <code>MarketSubscription</code>: see <code>RellmHostingPurchaseDetails.db_size_bytes</code>'s own doc -- as of the current webhook implementation, this is currently always <code>0</code> here too, since the subscription's <code>details</code> is built the same way the purchase's is.</td>
         </tr>
         <tr>
           <td>minio_size_bytes</td>
           <td><a href="#uint64">uint64</a></td>
           <td></td>
-          <td></td>
+          <td>Same caveat as <code>db_size_bytes</code> above. On a <code>MarketProduct</code>: the MinIO (object storage) size (in bytes) this product is configured to provision.</td>
         </tr>
         <tr>
           <td>domain</td>
           <td><a href="#string">string</a></td>
           <td></td>
-          <td></td>
+          <td>On a <code>MarketProduct</code>: unset/meaningless (a product isn't tied to any one domain). On a <code>MarketSubscription</code>: the domain the buyer wants their new Rellm instance reachable at, from <code>RellmHostingPurchaseDetails.domain</code>.</td>
         </tr>
         <tr>
           <td>contact_email</td>
           <td><a href="#string">string</a></td>
           <td></td>
-          <td></td>
+          <td>On a <code>MarketProduct</code>: unset/meaningless. On a <code>MarketSubscription</code>: where the fulfilling admin should reach the buyer about this order, from <code>RellmHostingPurchaseDetails.contact_email</code>.</td>
         </tr>
         <tr>
           <td>additional_information</td>
@@ -9983,16 +10095,50 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>Immutable after purchase -- the buyer's own notes to the admin fulfilling this order. Never editable via UpdateMarketSubscription (see that RPC's own doc); <code>fulfillment_notes</code> below is the admin/buyer conversation about fulfilling it.</td>
         </tr>
         <tr>
-          <td>fulfilled</td>
-          <td><a href="#bool">bool</a></td>
+          <td>fulfillment_status</td>
+          <td><a href="#rellm-FulfillmentStatus">FulfillmentStatus</a></td>
           <td></td>
-          <td>Whether an admin has actually stood up this Rellm hosting order -- Rellm hosting is deliberately not automated (see <code>market.proto</code>'s own top-of-file notes and <code>logic::market_fulfillment::fulfill_purchase</code>'s <code>RellmHosting</code> no-op arm), so this is the one manual "is this order done" signal, shown/toggled on <code>/market/fulfillment</code> (<code>GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN</code>).</td>
+          <td>Where this Rellm hosting order currently stands -- Rellm hosting is deliberately not automated (see <code>market.proto</code>'s own top-of-file notes and <code>logic::market_fulfillment::fulfill_purchase</code>'s <code>RellmHosting</code> no-op arm), so this is the one manual "how far along is this order" signal, shown on <code>/market/fulfillment</code> (<code>GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN</code>). Never independently settable by a client -- always server-derived as whatever <code>fulfillment_notes</code>' own last entry's <code>fulfillment_status</code> says (or <code>FULFILLMENT_STATUS_AWAITING_HOST_ADMIN</code> if <code>fulfillment_notes</code> is empty), so this field can never drift out of sync with the history that explains <em>why</em> it's in that state.</td>
         </tr>
         <tr>
           <td>fulfillment_notes</td>
           <td><a href="#rellm-FulfillmentNote">FulfillmentNote</a></td>
           <td>repeated</td>
           <td>The admin/buyer conversation about fulfilling this order -- oldest to newest, append-only (see <code>UpdateMarketSubscription</code>'s own doc: a new entry can only ever be appended after whatever's already here, never inserted/reordered/removed, and its <code>user_id</code> must match whoever's actually making the request -- the server stamps <code>created_at</code> itself).</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-FulfillmentStatus"></a></p>
+    <h3 id="fulfillmentstatus"><a class="anchor" aria-hidden="true" tabindex="-1" href="#fulfillmentstatus"><span class="octicon octicon-link"></span></a>FulfillmentStatus</h3>
+    <p>
+      The state of a <code>PURCHASE_TYPE_RELLM_HOSTING</code> order's manual fulfillment -- see
+      <code>RellmHostingSubscriptionDetails.fulfillment_status</code>'s own doc for how the "current" value is
+      derived, and <code>FulfillmentNote.fulfillment_status</code> for how every transition is recorded as its own
+      timestamped note (a "fulfillment state history"), not just tracked as a bare current value.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Number</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>FULFILLMENT_STATUS_AWAITING_HOST_ADMIN</td>
+          <td>0</td>
+          <td>The starting state for every new order -- no admin has looked at it yet.</td>
+        </tr>
+        <tr>
+          <td>FULFILLMENT_STATUS_FULFILLED</td>
+          <td>1</td>
+          <td>The order is fully stood up -- set via "Add and Mark as Fulfilled" on <code>/market/fulfillment</code> (<code>UpdateMarketSubscription</code>).</td>
+        </tr>
+        <tr>
+          <td>FULFILLMENT_STATUS_IN_PROGRESS</td>
+          <td>2</td>
+          <td>An admin has started working the order but it isn't done yet -- set automatically the first time an admin expands this order's row on <code>/market/fulfillment</code> (if it was still <code>FULFILLMENT_STATUS_AWAITING_HOST_ADMIN</code>), or explicitly via a note.</td>
         </tr>
       </tbody>
     </table>
@@ -10015,12 +10161,16 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
         <tr>
           <td>GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN</td>
           <td>1</td>
-          <td>Admin-only view backing /market/fulfillment -- every PURCHASE_TYPE_RELLM_HOSTING MarketSubscription across every buyer, since Rellm hosting needs manual setup that isn't automated (see RellmHostingSubscriptionDetails.fulfilled's own doc).</td>
+          <td>Admin-only view backing /market/fulfillment -- every PURCHASE_TYPE_RELLM_HOSTING MarketSubscription across every buyer, since Rellm hosting needs manual setup that isn't automated (see RellmHostingSubscriptionDetails.fulfillment_status's own doc).</td>
         </tr>
       </tbody>
     </table>
     <p><a name="rellm-PurchasePeriod"></a></p>
     <h3 id="purchaseperiod"><a class="anchor" aria-hidden="true" tabindex="-1" href="#purchaseperiod"><span class="octicon octicon-link"></span></a>PurchasePeriod</h3>
+    <p>
+      How often a <code>MarketProduct</code>/<code>MarketSubscription</code> bills. Immutable on a <code>MarketProduct</code> once
+      created (see that message's own doc) -- same reasoning as <code>PurchaseType</code>'s immutability.
+    </p>
     <table>
       <thead>
         <tr>
@@ -10033,22 +10183,30 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
         <tr>
           <td>PURCHASE_PERIOD_INDEFINITE</td>
           <td>0</td>
-          <td></td>
+          <td>A single one-time purchase -- still creates a <code>MarketSubscription</code> alongside its <code>MarketPurchase</code> (see <code>MarketSubscription</code>'s own doc), so it's still cancelable and still carries per-type fulfillment tracking (e.g. <code>RellmHostingSubscriptionDetails.fulfillment_status</code>/ <code>fulfillment_notes</code>) the same way a recurring one does -- it just has <code>renews_at</code> unset and never bills again. Canceling one takes effect immediately (see <code>MarketSubscription.canceled_at</code>'s own doc: entitlement stays active until the later of <code>renews_at</code>/<code>canceled_at</code>, and an unset <code>renews_at</code> is never later than anything).</td>
         </tr>
         <tr>
           <td>PURCHASE_PERIOD_ANNUAL</td>
           <td>1</td>
-          <td></td>
+          <td>Renews (re-bills and re-fulfills) once per year, via <code>renew_market_subscriptions.rs</code>.</td>
         </tr>
         <tr>
           <td>PURCHASE_PERIOD_MONTHLY</td>
           <td>2</td>
-          <td></td>
+          <td>Renews (re-bills and re-fulfills) once per month, via <code>renew_market_subscriptions.rs</code>.</td>
         </tr>
       </tbody>
     </table>
     <p><a name="rellm-PurchaseType"></a></p>
     <h3 id="purchasetype"><a class="anchor" aria-hidden="true" tabindex="-1" href="#purchasetype"><span class="octicon octicon-link"></span></a>PurchaseType</h3>
+    <p>
+      What a <code>MarketProduct</code>/<code>MarketPurchase</code>/<code>MarketSubscription</code> actually grants the buyer once
+      fulfilled -- see <code>logic::market_fulfillment::fulfill_purchase</code> (the Rust match on this same enum)
+      for exactly what each value does. Immutable on a <code>MarketProduct</code> once created (see that message's
+      own doc) -- changing what a product <em>is</em> after people have already bought it would silently
+      change existing buyers' entitlements out from under them, so a product whose type needs to change
+      is delisted and replaced with a new one instead.
+    </p>
     <table>
       <thead>
         <tr>
@@ -10061,22 +10219,22 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
         <tr>
           <td>PURCHASE_TYPE_MEDIA_STORAGE</td>
           <td>0</td>
-          <td></td>
+          <td>Extra media storage allocation -- fulfillment sets the buyer's <code>User.media_storage_limit_bytes</code> to <code>MediaStoragePurchaseDetails.allocation_bytes</code> outright (not additive with any existing quota). On cancellation/expiry, reverts to the server's current configured default allocation (<code>ServerConfiguration.media_settings.default_media_allocation_bytes</code>), not to unlimited.</td>
         </tr>
         <tr>
           <td>PURCHASE_TYPE_AI_GRANTS</td>
           <td>1</td>
-          <td></td>
+          <td>AI provider token grants -- fulfillment resets (never adds to) the buyer's <code>AIProviderGrant.tokens_remaining</code> for <code>AIGrantPurchaseDetails.ai_provider_id</code>/<code>model_names</code> to <code>AIGrantPurchaseDetails.tokens</code>, same "reset, don't add" semantics every renewal uses. Not automatically revoked on cancellation/expiry -- whatever tokens remain when the subscription lapses just aren't replenished again.</td>
         </tr>
         <tr>
           <td>PURCHASE_TYPE_RELLM_HOSTING</td>
           <td>2</td>
-          <td></td>
+          <td>A dedicated Rellm server instance, hosted and administered by Jon. Deliberately NOT automated -- fulfillment applies no entitlement at all; an admin provisions the server by hand and tracks progress via <code>RellmHostingSubscriptionDetails.fulfillment_status</code>/<code>fulfillment_notes</code> on the <code>/market/fulfillment</code> admin page. Not automatically revoked on cancellation/expiry either (out of scope for this MVP -- an admin handles teardown manually too).</td>
         </tr>
         <tr>
           <td>PURCHASE_TYPE_PERMISSIONS_ACCESS</td>
           <td>3</td>
-          <td></td>
+          <td>A bundle of <code>Permission</code>s (e.g. <code>SYNC_EVENTS_TO_FACEBOOK</code>) granted directly to the buyer's own <code>User.permissions</code>, union-style -- fulfillment only ever adds permissions the buyer doesn't already have from some other source, never removes any. Unlike the other three types, this ONE eventually claws back what it granted: once cancellation/expiry actually takes effect (see <code>MarketSubscription.canceled_at</code>/<code>service_terminated_at</code>), <code>logic::market_fulfillment:: terminate_entitlement</code> removes exactly the permissions this subscription granted (a plain set difference, not a reconciliation against any other subscription/grant the buyer might also hold).</td>
         </tr>
       </tbody>
     </table>

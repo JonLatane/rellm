@@ -11,16 +11,22 @@ use crate::rpcs::validate_permission;
 use crate::schema::market_subscriptions;
 
 /// *Authenticated*, requires Admin (for now -- see this RPC's own proto doc). Only ever touches a
-/// `PURCHASE_TYPE_RELLM_HOSTING` subscription's own `fulfilled`/`fulfillment_notes` -- every other
-/// field (`amount`/`currency`/`domain`/`contact_email`/`additional_information`/etc.) is immutable
-/// after purchase, same "only the fields this RPC is actually for" treatment
-/// `update_market_product.rs` gives `type`/`period`.
+/// `PURCHASE_TYPE_RELLM_HOSTING` subscription's own `fulfillment_notes` (`fulfillment_status` is
+/// never set directly -- see below) -- every other field (`amount`/`currency`/`domain`/
+/// `contact_email`/`additional_information`/etc.) is immutable after purchase, same "only the
+/// fields this RPC is actually for" treatment `update_market_product.rs` gives `type`/`period`.
 ///
 /// `fulfillment_notes` is append-only: the incoming list must start with exactly the same entries
 /// already stored (any fewer, or any that differ, is an error), and every entry *beyond* what's
 /// already stored is treated as new -- its `user_id` must match the caller's own (never trusted
 /// otherwise, so one admin can't attribute a note to another), and the server stamps its own
-/// `created_at`, ignoring whatever the client sent.
+/// `created_at`, ignoring whatever the client sent. Each new entry's own `note` text is required
+/// *unless* its `fulfillment_status` differs from the previous entry's (or, for the very first
+/// note ever, from the implicit `FULFILLMENT_STATUS_AWAITING_HOST_ADMIN` default) -- a real status
+/// transition can stand on its own with no text (e.g. the "admin opened this order" transition to
+/// `IN_PROGRESS`). The returned subscription's own `RellmHostingSubscriptionDetails.
+/// fulfillment_status` is always set to whatever the *last* note (old or newly appended) says --
+/// there's no way to change it except by appending a note that says something different.
 pub fn update_market_subscription(
     request: MarketSubscription,
     current_user: &models::User,
@@ -52,27 +58,34 @@ pub fn update_market_subscription(
             Status::new(Code::Internal, "invalid_stored_details")
         })?;
 
-    current_details.fulfilled = incoming.fulfilled;
-
     let already_stored = current_details.fulfillment_notes.len();
     if incoming.fulfillment_notes.len() < already_stored
         || incoming.fulfillment_notes[..already_stored] != current_details.fulfillment_notes[..]
     {
         return Err(Status::new(Code::InvalidArgument, "fulfillment_notes_must_only_be_appended"));
     }
+    // Tracks what `fulfillment_status` was as of the last note processed so far (old or newly
+    // appended) -- starts at whatever it's currently set to (itself always in sync with the last
+    // *already-stored* note, or the `AWAITING_HOST_ADMIN` default if there are none yet -- see this
+    // field's own proto doc), then advances with each newly appended entry below.
+    let mut running_status = current_details.fulfillment_status;
     for note in &incoming.fulfillment_notes[already_stored..] {
         if note.user_id != current_user.id.to_proto_id() {
             return Err(Status::new(Code::PermissionDenied, "fulfillment_note_user_id_mismatch"));
         }
-        if note.note.trim().is_empty() {
+        let is_status_change = note.fulfillment_status != running_status;
+        if !is_status_change && note.note.trim().is_empty() {
             return Err(Status::new(Code::InvalidArgument, "fulfillment_note_text_required"));
         }
+        running_status = note.fulfillment_status;
         current_details.fulfillment_notes.push(FulfillmentNote {
             user_id: note.user_id.clone(),
             note: note.note.clone(),
+            fulfillment_status: note.fulfillment_status,
             created_at: Some(SystemTime::now().to_proto()),
         });
     }
+    current_details.fulfillment_status = running_status;
 
     existing.details = serde_json::to_value(&current_details).map_err(|e| {
         log::error!("Failed to serialize RellmHostingSubscriptionDetails: {:?}", e);

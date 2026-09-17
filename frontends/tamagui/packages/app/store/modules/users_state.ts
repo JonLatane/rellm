@@ -13,7 +13,12 @@ import { AccountOrServer, FederatedPagesStatus, PaginatedIds, createEvent, creat
 import { Federated, FederatedAction, FederatedEntity, createFederated, federateId, federatedEntities, federatedEntity, federatedEntityId, federatedId, getFederated, parseFederatedId, setFederated } from '../federation';
 import { LoadUser, LoadUsername, defaultUserListingType, deleteUser, followUnfollowUser, loadUser, loadUserEvents, loadUserPosts, loadUserReplies, loadUsername, loadUsersPage, respondToFollowRequest, updateUser } from "./user_actions";
 
-export type FederatedUser = FederatedEntity<User>;
+// `hasAdvancedData` is client-only (no longer a wire field): it's set true when a user
+// is upserted from a single-user lookup (`loadUser`/`loadUsername`/`updateUser`), which is
+// the only case where the backend populates `federatedProfiles`. List-type fetches
+// (`loadUsersPage`) don't set it, so a user cached from a list still knows it needs a
+// real fetch before its `federatedProfiles` can be trusted.
+export type FederatedUser = FederatedEntity<User> & { hasAdvancedData?: boolean };
 export function federatedUsername(user: FederatedUser): string {
   return `${user.username}@${user.serverHost}`;
 }
@@ -146,7 +151,7 @@ export const usersSlice = createSlice({
       builder.addCase(loader.pending, (_state) => { });
       builder.addCase(loader.fulfilled, (state, action) => {
         const user = action.payload;
-        usersAdapter.upsertOne(state, federatedEntity(user, action));
+        usersAdapter.upsertOne(state, { ...federatedEntity(user, action), hasAdvancedData: true });
         const usernameIds = getFederated(state.usernameIds, action);
         usernameIds[action.payload.username.split('@')[0]!] = federatedEntityId(user, action);
         setFederated(state.usernameIds, action, usernameIds);

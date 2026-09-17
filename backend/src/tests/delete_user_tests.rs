@@ -28,7 +28,7 @@ fn self_delete_removes_the_user() {
         let user = create_user(conn, "dut_self");
 
         tb.block_on(delete_user(
-            user.to_proto(&None, &None, None, None),
+            user.to_proto(&None, &None, None, &None, None),
             &user,
             conn,
             &tb.bucket,
@@ -56,7 +56,7 @@ fn delete_rejects_non_admin_non_self() {
 
         let err = tb
             .block_on(delete_user(
-                target.to_proto(&None, &None, None, None),
+                target.to_proto(&None, &None, None, &None, None),
                 &other,
                 conn,
                 &tb.bucket,
@@ -86,7 +86,7 @@ fn admin_can_delete_another_user() {
         let admin = grant_permissions(conn, &admin, vec![Permission::Admin]);
 
         tb.block_on(delete_user(
-            target.to_proto(&None, &None, None, None),
+            target.to_proto(&None, &None, None, &None, None),
             &admin,
             conn,
             &tb.bucket,
@@ -162,7 +162,7 @@ fn delete_cascades_events_posts_media_and_sync_config() {
         create_post_sync_destination_row(conn, &post, &other_owner_destination);
 
         tb.block_on(delete_user(
-            user.to_proto(&None, &None, None, None),
+            user.to_proto(&None, &None, None, &None, None),
             &user,
             conn,
             &tb.bucket,

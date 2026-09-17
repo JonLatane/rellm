@@ -177,12 +177,13 @@ fn get_all_users(
         )>(conn)
         .unwrap()
         .iter()
-        .map(|(user, follow, target_follow, media_reference)| {
+        .map(|(row_user, follow, target_follow, media_reference)| {
             let lookup = media_reference.to_media_lookup();
-            user.to_proto(
+            row_user.to_proto(
                 &follow.as_ref(),
                 &target_follow.as_ref(),
                 lookup.as_ref(),
+                user,
                 None,
             )
         })
@@ -246,12 +247,13 @@ fn get_follow_requests(
         )>(conn)
         .unwrap()
         .iter()
-        .map(|(user, follow, target_follow, media_reference)| {
+        .map(|(row_user, follow, target_follow, media_reference)| {
             let lookup = media_reference.to_media_lookup();
-            user.to_proto(
+            row_user.to_proto(
                 &follow.as_ref(),
                 &Some(target_follow),
                 lookup.as_ref(),
+                &Some(user),
                 None,
             )
         })
@@ -452,6 +454,7 @@ fn get_by_username(
                 &follow.as_ref(),
                 &target_follow.as_ref(),
                 lookup.as_ref(),
+                user,
                 Some(conn),
             );
             attach_own_sync_destinations(&mut proto_user, row_user, user, conn);
@@ -525,6 +528,7 @@ fn get_by_user_id(
                 &follow.as_ref(),
                 &target_follow.as_ref(),
                 lookup.as_ref(),
+                user,
                 Some(conn),
             );
             attach_own_sync_destinations(&mut proto_user, row_user, user, conn);
@@ -620,12 +624,13 @@ fn get_following(
         )>(conn)
         .unwrap()
         .iter()
-        .map(|(user, follow, target_follow, media_reference)| {
+        .map(|(row_user, follow, target_follow, media_reference)| {
             let lookup = media_reference.to_media_lookup();
-            user.to_proto(
+            row_user.to_proto(
                 &follow.as_ref(),
                 &target_follow.as_ref(),
                 lookup.as_ref(),
+                user,
                 Some(conn),
             )
         })
@@ -719,12 +724,13 @@ fn get_followers(
         )>(conn)
         .unwrap()
         .iter()
-        .map(|(user, follow, target_follow, media_reference)| {
+        .map(|(row_user, follow, target_follow, media_reference)| {
             let lookup = media_reference.to_media_lookup();
-            user.to_proto(
+            row_user.to_proto(
                 &follow.as_ref(),
                 &target_follow.as_ref(),
                 lookup.as_ref(),
+                user,
                 Some(conn),
             )
         })
@@ -831,12 +837,13 @@ fn get_friends(
         )>(conn)
         .unwrap()
         .iter()
-        .map(|(user, follow, target_follow, media_reference)| {
+        .map(|(row_user, follow, target_follow, media_reference)| {
             let lookup = media_reference.to_media_lookup();
-            user.to_proto(
+            row_user.to_proto(
                 &follow.as_ref(),
                 &target_follow.as_ref(),
                 lookup.as_ref(),
+                user,
                 Some(conn),
             )
         })

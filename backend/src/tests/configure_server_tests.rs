@@ -620,7 +620,10 @@ fn market_settings_defaults_to_disabled_for_a_server_that_never_set_it() {
     let mut conn = test_conn();
     conn.test_transaction::<_, tonic::Status, _>(|conn| {
         let config = get_server_configuration_proto(conn).expect("failed to fetch base config");
-        assert_eq!(config.market_settings, Some(MarketSettings { enabled: false }));
+        assert_eq!(
+            config.market_settings,
+            Some(MarketSettings { enabled: false, stripe_configured: false })
+        );
 
         Ok(())
     });
@@ -637,17 +640,81 @@ fn market_settings_stays_visible_to_non_admins_and_unauthenticated_callers() {
         let admin = create_user(conn, "cst_market_admin");
         let admin = grant_permissions(conn, &admin, vec![Permission::Admin]);
         let mut config = get_server_configuration_proto(conn).expect("failed to fetch base config");
-        config.market_settings = Some(MarketSettings { enabled: true });
+        // `stripe_configured` is never actually written -- `configure_server`/`to_proto` always
+        // recompute it live (see that field's own proto doc) -- but it's still required here to
+        // construct this `MarketSettings` literal at all.
+        config.market_settings = Some(MarketSettings { enabled: true, stripe_configured: false });
         configure_server(config, &admin, conn).expect("configure should succeed");
 
         let non_admin = create_user(conn, "cst_market_non_admin");
         let non_admin_result = get_server_configuration((), &Some(&non_admin), conn)
             .expect("get_server_configuration should succeed");
-        assert_eq!(non_admin_result.market_settings, Some(MarketSettings { enabled: true }));
+        assert_eq!(
+            non_admin_result.market_settings,
+            Some(MarketSettings { enabled: true, stripe_configured: false })
+        );
 
         let unauthenticated_result =
             get_server_configuration((), &None, conn).expect("get_server_configuration should succeed");
-        assert_eq!(unauthenticated_result.market_settings, Some(MarketSettings { enabled: true }));
+        assert_eq!(
+            unauthenticated_result.market_settings,
+            Some(MarketSettings { enabled: true, stripe_configured: false })
+        );
+
+        Ok(())
+    });
+}
+
+/// `market_settings.stripe_configured` is computed live off `stripe_config` on every
+/// `GetServerConfiguration` -- never read back from whatever's stored on `market_settings` itself
+/// (see that field's own proto doc). Unconfigured (never called `configure_stripe`) reads `false`,
+/// same as `market_settings_defaults_to_disabled_for_a_server_that_never_set_it` above for
+/// `enabled`.
+#[test]
+fn stripe_configured_is_false_when_stripe_was_never_configured() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let config = get_server_configuration_proto(conn).expect("failed to fetch base config");
+        assert_eq!(config.market_settings.unwrap().stripe_configured, false);
+
+        Ok(())
+    });
+}
+
+/// Credentials on file, but `stripe_enabled` is false -- an admin who's filled in Stripe
+/// credentials but hasn't flipped the toggle on yet.
+#[test]
+fn stripe_configured_is_false_when_stripe_is_disabled() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        configure_stripe(conn, false, "sk_test_secret", "pk_test_public", "whsec_test_secret");
+        let config = get_server_configuration_proto(conn).expect("failed to fetch base config");
+        assert_eq!(config.market_settings.unwrap().stripe_configured, false);
+
+        Ok(())
+    });
+}
+
+/// Enabled, but no secret key on file -- e.g. an admin toggled it on before filling anything in.
+#[test]
+fn stripe_configured_is_false_when_enabled_but_missing_a_secret_key() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        configure_stripe(conn, true, "", "pk_test_public", "whsec_test_secret");
+        let config = get_server_configuration_proto(conn).expect("failed to fetch base config");
+        assert_eq!(config.market_settings.unwrap().stripe_configured, false);
+
+        Ok(())
+    });
+}
+
+#[test]
+fn stripe_configured_is_true_once_enabled_with_a_secret_key() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        configure_stripe(conn, true, "sk_test_secret", "pk_test_public", "whsec_test_secret");
+        let config = get_server_configuration_proto(conn).expect("failed to fetch base config");
+        assert_eq!(config.market_settings.unwrap().stripe_configured, true);
 
         Ok(())
     });

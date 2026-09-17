@@ -382,12 +382,14 @@ const MarketSettings$json = {
   '1': 'MarketSettings',
   '2': [
     {'1': 'enabled', '3': 1, '4': 1, '5': 8, '10': 'enabled'},
+    {'1': 'stripe_configured', '3': 2, '4': 1, '5': 8, '10': 'stripeConfigured'},
   ],
 };
 
 /// Descriptor for `MarketSettings`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List marketSettingsDescriptor = $convert.base64Decode(
-    'Cg5NYXJrZXRTZXR0aW5ncxIYCgdlbmFibGVkGAEgASgIUgdlbmFibGVk');
+    'Cg5NYXJrZXRTZXR0aW5ncxIYCgdlbmFibGVkGAEgASgIUgdlbmFibGVkEisKEXN0cmlwZV9jb2'
+    '5maWd1cmVkGAIgASgIUhBzdHJpcGVDb25maWd1cmVk');
 
 @$core.Deprecated('Use featureSettingsDescriptor instead')
 const FeatureSettings$json = {

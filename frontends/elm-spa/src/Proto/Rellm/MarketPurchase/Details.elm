@@ -15,7 +15,14 @@ To run it, add a dependency via `elm install` on [`elm-protocol-buffers`](https:
 -}
 
 
-{-| ## Options
+{-|  Type-specific details for this purchase, matching `type` above -- copied from the
+ `MarketProduct.details` (or the buyer-supplied `RellmHostingPurchaseDetails`, for
+ `PURCHASE_TYPE_RELLM_HOSTING`) at the moment this purchase was fulfilled, frozen from then on
+ even if the originating product later changes. See `logic::market_fulfillment::fulfill_purchase`
+ for what each variant actually does to the buyer's account.
+
+
+## Options
 
 ### MediaStoragePurchaseDetails
 

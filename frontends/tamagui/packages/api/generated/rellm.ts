@@ -491,11 +491,17 @@ export const protobufPackage = "rellm";
  * `PURCHASE_TYPE_AI_GRANTS` (grants/resets an [`AIProviderGrant`](#rellm-AIProviderGrant) against one of the
  * server operator's [`AIProvider`](#rellm-AIProvider)s), `PURCHASE_TYPE_RELLM_HOSTING` (bills the buyer for
  * the server operator to stand up a new Rellm instance on a domain of their choosing - provisioned by hand, not
- * automated), and `PURCHASE_TYPE_PERMISSIONS_ACCESS` (grants the buyer a fixed set of `Permission`s, e.g.
- * pay-gating `SYNC_EVENTS_TO_FACEBOOK`). Each [`MarketProduct`](#rellm-MarketProduct) is sold once ([`PurchasePeriod`](#rellm-PurchasePeriod)
- * `PURCHASE_PERIOD_INDEFINITE`, a single non-renewing [`MarketPurchase`](#rellm-MarketPurchase)) or on a recurring
- * `PURCHASE_PERIOD_ANNUAL`/`PURCHASE_PERIOD_MONTHLY` cycle (a [`MarketSubscription`](#rellm-MarketSubscription),
- * whose `billing_history` accumulates one [`MarketPurchase`](#rellm-MarketPurchase) per renewal).
+ * automated; the admin's own `/market/fulfillment` page, backed by
+ * `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN` and
+ * [`UpdateMarketSubscription`](#grpc-api-UpdateMarketSubscription), tracks these orders -
+ * [`RellmHostingSubscriptionDetails`](#rellm-RellmHostingSubscriptionDetails)'s own `fulfillment_status`/
+ * `fulfillment_notes` fields), and `PURCHASE_TYPE_PERMISSIONS_ACCESS` (grants the buyer a fixed set of `Permission`s, e.g.
+ * pay-gating `SYNC_EVENTS_TO_FACEBOOK`). Every purchase gets a [`MarketSubscription`](#rellm-MarketSubscription) --
+ * even a one-time ([`PurchasePeriod`](#rellm-PurchasePeriod) `PURCHASE_PERIOD_INDEFINITE`) purchase, so it's still
+ * cancelable and still carries the same per-type fulfillment tracking (e.g. `fulfillment_status`/`fulfillment_notes` above)
+ * a recurring one does; it just never gets a `renews_at`, so it never actually bills again. A recurring
+ * `PURCHASE_PERIOD_ANNUAL`/`PURCHASE_PERIOD_MONTHLY` subscription's `billing_history` accumulates one
+ * [`MarketPurchase`](#rellm-MarketPurchase) per renewal; an indefinite one's stays at exactly one.
  *
  * Products are listed via [`GetMarketProducts`](#grpc-api-GetMarketProducts) (unauthenticated; admins
  * additionally see delisted ones) and managed via
@@ -1764,7 +1770,7 @@ export const RellmDefinition = {
      * Gets MarketSubscriptions -- self-scoped ("MY subscriptions", `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE`,
      * the default) for any authenticated caller, or every `PURCHASE_TYPE_RELLM_HOSTING` subscription
      * across every buyer (`GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN`, backing `/market/fulfillment` --
-     * see `RellmHostingSubscriptionDetails.fulfilled`'s own doc) for an Admin. *Authenticated*.
+     * see `RellmHostingSubscriptionDetails.fulfillment_status`'s own doc) for an Admin. *Authenticated*.
      */
     getMarketSubscriptions: {
       name: "GetMarketSubscriptions",
@@ -1803,13 +1809,16 @@ export const RellmDefinition = {
       options: {},
     },
     /**
-     * Updates a `PURCHASE_TYPE_RELLM_HOSTING` MarketSubscription's own `fulfilled`/`fulfillment_notes`
-     * (nothing else -- every other field, including `additional_information`, is immutable after purchase
-     * and silently ignored if changed) -- backs `/market/fulfillment`. A new `fulfillment_notes` entry
-     * must be appended (not inserted/reordered/removed) after whatever's already stored, and its `user_id`
-     * must match the caller's own -- the server stamps `created_at` itself, ignoring whatever the client
-     * sent. *Authenticated*, requires Admin (for now -- see that field's own doc on why this may loosen to
-     * "buyer, or Admin" later).
+     * Appends to a `PURCHASE_TYPE_RELLM_HOSTING` MarketSubscription's own `fulfillment_notes` (nothing
+     * else -- every other field, including `additional_information`, is immutable after purchase and
+     * silently ignored if changed) -- backs `/market/fulfillment`. A new entry must be appended (not
+     * inserted/reordered/removed) after whatever's already stored, and its `user_id` must match the
+     * caller's own -- the server stamps `created_at` itself, ignoring whatever the client sent. Its
+     * `note` text is required unless the entry also changes `fulfillment_status` from the previous
+     * entry's own value (see `FulfillmentNote.note`'s own doc). `fulfillment_status` on the returned
+     * `RellmHostingSubscriptionDetails` is always the last appended entry's own value -- there's no way
+     * to set it independently of a note. *Authenticated*, requires Admin (for now -- see that field's
+     * own doc on why this may loosen to "buyer, or Admin" later).
      */
     updateMarketSubscription: {
       name: "UpdateMarketSubscription",
@@ -2313,7 +2322,7 @@ export interface RellmServiceImplementation<CallContextExt = {}> {
    * Gets MarketSubscriptions -- self-scoped ("MY subscriptions", `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE`,
    * the default) for any authenticated caller, or every `PURCHASE_TYPE_RELLM_HOSTING` subscription
    * across every buyer (`GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN`, backing `/market/fulfillment` --
-   * see `RellmHostingSubscriptionDetails.fulfilled`'s own doc) for an Admin. *Authenticated*.
+   * see `RellmHostingSubscriptionDetails.fulfillment_status`'s own doc) for an Admin. *Authenticated*.
    */
   getMarketSubscriptions(
     request: GetMarketSubscriptionsRequest,
@@ -2340,13 +2349,16 @@ export interface RellmServiceImplementation<CallContextExt = {}> {
     context: CallContext & CallContextExt,
   ): Promise<DeepPartial<MarketSubscription>>;
   /**
-   * Updates a `PURCHASE_TYPE_RELLM_HOSTING` MarketSubscription's own `fulfilled`/`fulfillment_notes`
-   * (nothing else -- every other field, including `additional_information`, is immutable after purchase
-   * and silently ignored if changed) -- backs `/market/fulfillment`. A new `fulfillment_notes` entry
-   * must be appended (not inserted/reordered/removed) after whatever's already stored, and its `user_id`
-   * must match the caller's own -- the server stamps `created_at` itself, ignoring whatever the client
-   * sent. *Authenticated*, requires Admin (for now -- see that field's own doc on why this may loosen to
-   * "buyer, or Admin" later).
+   * Appends to a `PURCHASE_TYPE_RELLM_HOSTING` MarketSubscription's own `fulfillment_notes` (nothing
+   * else -- every other field, including `additional_information`, is immutable after purchase and
+   * silently ignored if changed) -- backs `/market/fulfillment`. A new entry must be appended (not
+   * inserted/reordered/removed) after whatever's already stored, and its `user_id` must match the
+   * caller's own -- the server stamps `created_at` itself, ignoring whatever the client sent. Its
+   * `note` text is required unless the entry also changes `fulfillment_status` from the previous
+   * entry's own value (see `FulfillmentNote.note`'s own doc). `fulfillment_status` on the returned
+   * `RellmHostingSubscriptionDetails` is always the last appended entry's own value -- there's no way
+   * to set it independently of a note. *Authenticated*, requires Admin (for now -- see that field's
+   * own doc on why this may loosen to "buyer, or Admin" later).
    */
   updateMarketSubscription(
     request: MarketSubscription,
@@ -2786,7 +2798,7 @@ export interface RellmClient<CallOptionsExt = {}> {
    * Gets MarketSubscriptions -- self-scoped ("MY subscriptions", `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE`,
    * the default) for any authenticated caller, or every `PURCHASE_TYPE_RELLM_HOSTING` subscription
    * across every buyer (`GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN`, backing `/market/fulfillment` --
-   * see `RellmHostingSubscriptionDetails.fulfilled`'s own doc) for an Admin. *Authenticated*.
+   * see `RellmHostingSubscriptionDetails.fulfillment_status`'s own doc) for an Admin. *Authenticated*.
    */
   getMarketSubscriptions(
     request: DeepPartial<GetMarketSubscriptionsRequest>,
@@ -2813,13 +2825,16 @@ export interface RellmClient<CallOptionsExt = {}> {
     options?: CallOptions & CallOptionsExt,
   ): Promise<MarketSubscription>;
   /**
-   * Updates a `PURCHASE_TYPE_RELLM_HOSTING` MarketSubscription's own `fulfilled`/`fulfillment_notes`
-   * (nothing else -- every other field, including `additional_information`, is immutable after purchase
-   * and silently ignored if changed) -- backs `/market/fulfillment`. A new `fulfillment_notes` entry
-   * must be appended (not inserted/reordered/removed) after whatever's already stored, and its `user_id`
-   * must match the caller's own -- the server stamps `created_at` itself, ignoring whatever the client
-   * sent. *Authenticated*, requires Admin (for now -- see that field's own doc on why this may loosen to
-   * "buyer, or Admin" later).
+   * Appends to a `PURCHASE_TYPE_RELLM_HOSTING` MarketSubscription's own `fulfillment_notes` (nothing
+   * else -- every other field, including `additional_information`, is immutable after purchase and
+   * silently ignored if changed) -- backs `/market/fulfillment`. A new entry must be appended (not
+   * inserted/reordered/removed) after whatever's already stored, and its `user_id` must match the
+   * caller's own -- the server stamps `created_at` itself, ignoring whatever the client sent. Its
+   * `note` text is required unless the entry also changes `fulfillment_status` from the previous
+   * entry's own value (see `FulfillmentNote.note`'s own doc). `fulfillment_status` on the returned
+   * `RellmHostingSubscriptionDetails` is always the last appended entry's own value -- there's no way
+   * to set it independently of a note. *Authenticated*, requires Admin (for now -- see that field's
+   * own doc on why this may loosen to "buyer, or Admin" later).
    */
   updateMarketSubscription(
     request: DeepPartial<MarketSubscription>,

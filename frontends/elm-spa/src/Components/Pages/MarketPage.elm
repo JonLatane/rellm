@@ -1073,9 +1073,60 @@ signedIn shared host =
     RellmAccounts.enabledRellmAccountForServer shared.accounts.accounts host /= Nothing
 
 
+{-| Whether Market itself is open for `host` at all -- `market_settings.enabled` (see that field's
+own proto doc). Checked first in `buyView`, ahead of `stripeConfigured` and `signedIn`, since a
+closed Market makes both of those moot. Defaults to `True` (don't block the Buy button) whenever
+`host` isn't yet a known/connected server or hasn't reported `marketSettings` at all -- mirrors
+`Components.Pages.ProductPage.stripeConfigured`'s own "unknown isn't the same as definitely not
+configured" reasoning. In practice this only ever matters for the primary (browsed) host's own
+instance -- `Pages.Market.marketEnabledHosts` already filters any *other* federated server out of
+the page entirely once its own `market_settings.enabled` goes false, so a `MarketPage` instance for
+one only exists here while it's still enabled.
+-}
+marketEnabled : Shared.Model -> String -> Bool
+marketEnabled shared host =
+    RellmServers.knownConnectedRellmServer shared.accounts.servers host
+        |> Maybe.map
+            (\server ->
+                (RellmServers.configurationOf server).marketSettings
+                    |> Maybe.map .enabled
+                    |> Maybe.withDefault True
+            )
+        |> Maybe.withDefault True
+
+
+{-| Whether Stripe is actually usable on `host` right now -- `market_settings.stripe_configured`.
+Mirrors `Components.Pages.ProductPage.stripeConfigured` exactly, just parameterized over `host`
+(a `MarketPage` instance can be for any federated server, not just the one being browsed) instead of
+always reading `shared.accounts.browsingHost`.
+-}
+stripeConfigured : Shared.Model -> String -> Bool
+stripeConfigured shared host =
+    RellmServers.knownConnectedRellmServer shared.accounts.servers host
+        |> Maybe.map
+            (\server ->
+                (RellmServers.configurationOf server).marketSettings
+                    |> Maybe.map .stripeConfigured
+                    |> Maybe.withDefault True
+            )
+        |> Maybe.withDefault True
+
+
 buyView : Shared.Model -> Model -> MarketProduct -> Html Msg
 buyView shared model product =
-    if not (signedIn shared model.host) then
+    if not (marketEnabled shared model.host) then
+        div [ class "market-tier-buy" ]
+            [ button [ disabled True ] [ text "Buy" ]
+            , p [ class "market-tier-buy-note" ] [ text "Market is not currently open." ]
+            ]
+
+    else if not (stripeConfigured shared model.host) then
+        div [ class "market-tier-buy" ]
+            [ button [ disabled True ] [ text "Buy" ]
+            , p [ class "market-tier-buy-note" ] [ text "Stripe is not configured." ]
+            ]
+
+    else if not (signedIn shared model.host) then
         loginPromptView
 
     else

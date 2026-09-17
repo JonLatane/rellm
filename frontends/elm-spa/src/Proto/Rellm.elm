@@ -1173,7 +1173,7 @@ type alias FeatureSettings =
 {-| The field numbers for the fields of `MarketSettings`. This is mostly useful for internals, like documentation generation.
 
 -}
-fieldNumbersMarketSettings : { enabled : Int }
+fieldNumbersMarketSettings : { enabled : Int, stripeConfigured : Int }
 fieldNumbersMarketSettings =
     Proto.Rellm.Internals_.fieldNumbersProto__Rellm__MarketSettings
 
@@ -1208,6 +1208,19 @@ encodeMarketSettings =
  `ServerConfiguration.market_settings`'s own doc on why this lives outside `StripeConfig`: it's
  the one bit that has to stay visible to non-admins for federated multi-server Market browsing to
  work at all.
+
+
+## Fields
+
+### stripeConfigured
+
+ Whether Stripe is actually usable right now -- `stripe_config.stripe_enabled` is true AND a
+ `stripe_secret_key` is on file. Computed live on every `GetServerConfiguration` (never read back
+ from whatever was last saved to `market_settings` itself), and -- like `enabled` above --
+ deliberately never stripped for non-admins: it's the public "can I actually buy something here"
+ signal a buyer needs (e.g. to grey out `/market/product/:id`'s "Buy" button with a
+ "Stripe is not configured" message) without ever exposing `StripeConfig` itself, which stays
+ admin-only.
 
 
 -}
@@ -5568,7 +5581,6 @@ fieldNumbersUser :
     , currentUserFollow : Int
     , targetCurrentUserFollow : Int
     , currentGroupMembership : Int
-    , hasAdvancedData : Int
     , federatedProfiles : Int
     , syncDestinations : Int
     , syncSources : Int
@@ -5667,11 +5679,6 @@ encodeUser =
  Only PENDING or UNMODERATED are valid.
 
 
-### hasAdvancedData
-
- Indicates that `federated_profiles` has been loaded.
-
-
 ### federatedProfiles
 
  Federated profiles for the user. *Not always loaded.* This is a list of profiles from other servers
@@ -5758,7 +5765,33 @@ encodePermissionsAccessSubscriptionDetails =
     Proto.Rellm.Internals_.encodeProto__Rellm__PermissionsAccessSubscriptionDetails
 
 
-{-| `PermissionsAccessSubscriptionDetails` message
+{-|  `MarketProduct.details`/`MarketSubscription.details`' `PURCHASE_TYPE_PERMISSIONS_ACCESS`
+ variant -- what a permissions-bundle product actually grants. Field-for-field identical to
+ `PermissionsAccessPurchaseDetails` -- see that message's own doc for why it's still a distinct
+ type (that distinction is exactly what lets `logic::market_fulfillment::terminate_entitlement`
+ tell "what to claw back" apart from "what was originally billed").
+
+
+## Fields
+
+### permissions
+
+ Which `Permission`s this product/subscription grants the buyer -- see
+ `logic::market_fulfillment::fulfill_purchase`'s `PermissionsAccess` arm (union-added to the
+ buyer's own `User.permissions`, never replacing what they already had) and
+ `terminate_entitlement`'s own arm (the exact claw-back set on cancellation/expiry).
+ Intentionally excludes permissions dangerous or nonsensical to sell this way -- e.g.
+ "Grant Basic Permissions," any "Moderate"/"Read All System Messages" permission, "Admin,"
+ "View Private Contact Methods," and "Edit Cluster Settings" must never appear in a Market
+ product's own `permissions` list. Enforced server-side on `CreateMarketProduct`/
+ `UpdateMarketProduct` (rejected with `permission_not_purchasable`) and again on
+ `MakeMarketPurchase` (defense in depth, in case a permission is later removed from the
+ purchasable set after a product granting it already exists) -- see
+ `rpcs::market::create_market_product::PURCHASABLE_PERMISSIONS`. NOTE: that Rust list is an
+ explicit include-list, not an exclude-list -- described here as an exclusion for readability,
+ but implemented as "only these permissions are purchasable" so a newly-added `Permission` is
+ never purchasable by default; it has to be deliberately added to that list.
+
 
 -}
 type alias PermissionsAccessSubscriptionDetails =
@@ -5768,7 +5801,7 @@ type alias PermissionsAccessSubscriptionDetails =
 {-| The field numbers for the fields of `FulfillmentNote`. This is mostly useful for internals, like documentation generation.
 
 -}
-fieldNumbersFulfillmentNote : { userId : Int, note : Int, createdAt : Int }
+fieldNumbersFulfillmentNote : { userId : Int, note : Int, fulfillmentStatus : Int, createdAt : Int }
 fieldNumbersFulfillmentNote =
     Proto.Rellm.Internals_.fieldNumbersProto__Rellm__FulfillmentNote
 
@@ -5797,7 +5830,44 @@ encodeFulfillmentNote =
     Proto.Rellm.Internals_.encodeProto__Rellm__FulfillmentNote
 
 
-{-|  One entry in a MarketSubscription's `fulfillment_notes` -- see that field's own doc.
+{-|  One entry in a MarketSubscription's `fulfillment_notes` -- see that field's own doc. Immutable
+ once appended: `UpdateMarketSubscription` only ever accepts a `fulfillment_notes` list whose
+ existing entries are byte-for-byte identical to what's already stored (see that RPC's own doc).
+
+
+## Fields
+
+### userId
+
+ Whoever wrote this note -- either the fulfilling admin or the buyer themselves, depending on
+ which side of the conversation this entry is. Must match the id of whoever's actually making
+ the `UpdateMarketSubscription` request that appends this entry (server-validated -- see that
+ RPC's own doc); a client can't author a note on someone else's behalf.
+
+
+### note
+
+ The note's own text -- required (rejected with `fulfillment_note_text_required`) unless this
+ entry also changes `fulfillment_status` from whatever the previous entry (or, for the very
+ first note, the implicit `FULFILLMENT_STATUS_AWAITING_HOST_ADMIN` default) left it at, in which
+ case an admin can record a bare status change with no accompanying text (e.g. the automatic
+ "admin opened this order" transition to `FULFILLMENT_STATUS_IN_PROGRESS` -- see that enum
+ value's own doc).
+
+
+### fulfillmentStatus
+
+ What `RellmHostingSubscriptionDetails.fulfillment_status` became as of this note -- unchanged
+ from the previous entry for a plain note, or the new value for an actual status transition (see
+ `note`'s own doc on when text is/isn't required for each case). This is what makes
+ `fulfillment_notes` a genuine "fulfillment state history," not just a chat log alongside a
+ separately-tracked current status.
+
+
+### createdAt
+
+ When this note was added. Server-stamped -- `UpdateMarketSubscription` always ignores whatever
+ timestamp the client sends for a newly-appended entry.
 
 
 -}
@@ -5814,7 +5884,7 @@ fieldNumbersRellmHostingSubscriptionDetails :
     , domain : Int
     , contactEmail : Int
     , additionalInformation : Int
-    , fulfilled : Int
+    , fulfillmentStatus : Int
     , fulfillmentNotes : Int
     }
 fieldNumbersRellmHostingSubscriptionDetails =
@@ -5845,7 +5915,42 @@ encodeRellmHostingSubscriptionDetails =
     Proto.Rellm.Internals_.encodeProto__Rellm__RellmHostingSubscriptionDetails
 
 
-{-| ## Fields
+{-|  `MarketProduct.details`/`MarketSubscription.details`' `PURCHASE_TYPE_RELLM_HOSTING` variant --
+ what a dedicated-hosting product actually grants, plus the buyer's own request details and the
+ admin's own fulfillment tracking for it. Field-for-field identical to `RellmHostingPurchaseDetails`
+ for the first five fields (see that message's own doc); `fulfillment_status`/`fulfillment_notes` below have
+ no `*PurchaseDetails` counterpart, since they're only ever meaningful on the standing
+ `MarketSubscription`, not on any one individual `MarketPurchase` billing event.
+
+
+## Fields
+
+### dbSizeBytes
+
+ On a `MarketProduct`: the PostgreSQL database size (in bytes) this product is configured to
+ provision. On a `MarketSubscription`: see `RellmHostingPurchaseDetails.db_size_bytes`'s own
+ doc -- as of the current webhook implementation, this is currently always `0` here too, since
+ the subscription's `details` is built the same way the purchase's is.
+
+
+### minioSizeBytes
+
+ Same caveat as `db_size_bytes` above. On a `MarketProduct`: the MinIO (object storage) size (in
+ bytes) this product is configured to provision.
+
+
+### domain
+
+ On a `MarketProduct`: unset/meaningless (a product isn't tied to any one domain). On a
+ `MarketSubscription`: the domain the buyer wants their new Rellm instance reachable at, from
+ `RellmHostingPurchaseDetails.domain`.
+
+
+### contactEmail
+
+ On a `MarketProduct`: unset/meaningless. On a `MarketSubscription`: where the fulfilling admin
+ should reach the buyer about this order, from `RellmHostingPurchaseDetails.contact_email`.
+
 
 ### additionalInformation
 
@@ -5854,13 +5959,16 @@ encodeRellmHostingSubscriptionDetails =
  the admin/buyer conversation about fulfilling it.
 
 
-### fulfilled
+### fulfillmentStatus
 
- Whether an admin has actually stood up this Rellm hosting order -- Rellm hosting is
- deliberately not automated (see `market.proto`'s own top-of-file notes and
- `logic::market_fulfillment::fulfill_purchase`'s `RellmHosting` no-op arm), so this is the one
- manual "is this order done" signal, shown/toggled on `/market/fulfillment`
- (`GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN`).
+ Where this Rellm hosting order currently stands -- Rellm hosting is deliberately not automated
+ (see `market.proto`'s own top-of-file notes and `logic::market_fulfillment::fulfill_purchase`'s
+ `RellmHosting` no-op arm), so this is the one manual "how far along is this order" signal,
+ shown on `/market/fulfillment` (`GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN`).
+ Never independently settable by a client -- always server-derived as whatever
+ `fulfillment_notes`' own last entry's `fulfillment_status` says (or
+ `FULFILLMENT_STATUS_AWAITING_HOST_ADMIN` if `fulfillment_notes` is empty), so this field can
+ never drift out of sync with the history that explains *why* it's in that state.
 
 
 ### fulfillmentNotes
@@ -5908,7 +6016,29 @@ encodeAIGrantSubscriptionDetails =
     Proto.Rellm.Internals_.encodeProto__Rellm__AIGrantSubscriptionDetails
 
 
-{-| `AIGrantSubscriptionDetails` message
+{-|  `MarketProduct.details`/`MarketSubscription.details`' `PURCHASE_TYPE_AI_GRANTS` variant -- what
+ an AI token product actually grants. Field-for-field identical to `AIGrantPurchaseDetails` --
+ see that message's own doc for why it's still a distinct type.
+
+
+## Fields
+
+### aiProviderId
+
+ Which `AIProvider` this grant is against.
+
+
+### modelNames
+
+ Which of that provider's models the grant covers.
+
+
+### tokens
+
+ How many tokens this product/subscription grants the buyer each time it's (re-)fulfilled,
+ replacing (not adding to) whatever balance remained -- see
+ `logic::market_fulfillment::fulfill_purchase`'s `AiGrants` arm.
+
 
 -}
 type alias AIGrantSubscriptionDetails =
@@ -5947,7 +6077,19 @@ encodeMediaStorageSubscriptionDetails =
     Proto.Rellm.Internals_.encodeProto__Rellm__MediaStorageSubscriptionDetails
 
 
-{-| `MediaStorageSubscriptionDetails` message
+{-|  `MarketProduct.details`/`MarketSubscription.details`' `PURCHASE_TYPE_MEDIA_STORAGE` variant --
+ what a media storage product actually grants. Field-for-field identical to
+ `MediaStoragePurchaseDetails` -- see that message's own doc for why it's still a distinct type.
+
+
+## Fields
+
+### allocationBytes
+
+ How much media storage this product/subscription grants the buyer, replacing (not adding to)
+ whatever quota they already had -- see `logic::market_fulfillment::fulfill_purchase`'s
+ `MediaStorage` arm.
+
 
 -}
 type alias MediaStorageSubscriptionDetails =
@@ -6000,11 +6142,69 @@ encodeMarketSubscription =
     Proto.Rellm.Internals_.encodeProto__Rellm__MarketSubscription
 
 
-{-| ## Fields
+{-|  Created for *every* `MarketPurchase`, regardless of `MarketProduct.period` -- a recurring
+ (`PURCHASE_PERIOD_ANNUAL`/`PURCHASE_PERIOD_MONTHLY`) one gets re-billed and re-fulfilled
+ automatically every period by `renew_market_subscriptions.rs` until canceled; a
+ `PURCHASE_PERIOD_INDEFINITE` one-time purchase gets a subscription too (with `renews_at` unset --
+ see that field's own doc), purely so it's still cancelable and still carries the same per-type
+ fulfillment tracking (e.g. `RellmHostingSubscriptionDetails.fulfillment_status`/`fulfillment_notes`) every
+ other purchase type gets, even though it never actually bills again.
+
+
+## Fields
+
+### buyer
+
+ Who owns this subscription (i.e. who's being billed and who the entitlement applies to).
+
+
+### type_
+
+ What this subscription grants -- copied from (and always matching) `market_product.type`.
+ Denormalized here the same way `MarketPurchase.type` is -- see that field's own doc.
+
+
+### period
+
+ How often this subscription bills -- copied from `market_product.period` at the time this
+ subscription was created. `PURCHASE_PERIOD_INDEFINITE` is valid here too (see this message's
+ own doc) -- it just means `renews_at` stays unset and this subscription never actually bills
+ again.
+
+
+### amount
+
+ The price charged each renewal, in the same unit `MarketProduct.amount` uses -- copied from
+ `market_product.amount` at the time this subscription was created, so a later price change to
+ the product doesn't retroactively re-price an existing subscriber.
+
+
+### currency
+
+ The ISO 4217 numeric currency code `amount` is denominated in -- copied from
+ `market_product.currency` at the time this subscription was created.
+
 
 ### marketProduct
 
- Note: marshaling should handle the circular relationship here gracefully.
+ The `MarketProduct` this subscription was made against, as it existed at the time it was
+ fetched -- may since have changed price/details/been delisted (delisting an already-subscribed
+ product doesn't cancel existing subscriptions, only blocks new purchases). Note: marshaling
+ should handle the circular relationship here gracefully.
+
+
+### billingHistory
+
+ Every `MarketPurchase` billed against this subscription so far -- the original purchase plus
+ every successful renewal charge, newest first. Each entry's own `market_subscription` field is
+ left unset here (see `MarketPurchase.market_subscription`'s own doc) to avoid recursing back
+ into this same subscription.
+
+
+### createdAt
+
+ When this subscription was first created (i.e. when the initial `MarketPurchase` was
+ fulfilled).
 
 
 -}
@@ -6044,7 +6244,21 @@ encodePermissionsAccessPurchaseDetails =
     Proto.Rellm.Internals_.encodeProto__Rellm__PermissionsAccessPurchaseDetails
 
 
-{-| `PermissionsAccessPurchaseDetails` message
+{-|  `MarketPurchase.details`' `PURCHASE_TYPE_PERMISSIONS_ACCESS` variant -- copied verbatim from the
+ originating `MarketProduct.details` at the moment this purchase was fulfilled. Field-for-field
+ identical to `PermissionsAccessSubscriptionDetails`, but kept as a genuinely distinct Rust type
+ (not just documentation) -- see `logic::market_fulfillment::terminate_entitlement`'s own doc,
+ which parses a `MarketSubscription`'s `details` as `PermissionsAccessSubscriptionDetails`
+ specifically (never this message) when clawing back a lapsed grant.
+
+
+## Fields
+
+### permissions
+
+ The permissions this purchase granted -- see `logic::market_fulfillment::fulfill_purchase`'s
+ `PermissionsAccess` arm (adds these to the buyer's `User.permissions`, union-style).
+
 
 -}
 type alias PermissionsAccessPurchaseDetails =
@@ -6084,7 +6298,51 @@ encodeRellmHostingPurchaseDetails =
     Proto.Rellm.Internals_.encodeProto__Rellm__RellmHostingPurchaseDetails
 
 
-{-| `RellmHostingPurchaseDetails` message
+{-|  `MarketPurchase.details`' `PURCHASE_TYPE_RELLM_HOSTING` variant -- unlike the other three
+ `*PurchaseDetails` messages, NOT copied from the originating `MarketProduct.details`; instead
+ built fresh at checkout time from the buyer's own `MakeMarketPurchaseRequest.rellm_hosting_details`
+ (carried through as Stripe Checkout Session metadata -- see `rpcs::market::make_market_purchase`
+ and `web::stripe_webhook::handle_checkout_session_completed`). Field-for-field identical to
+ `RellmHostingSubscriptionDetails` (minus that message's `fulfillment_status`/`fulfillment_notes`) -- see
+ `MediaStoragePurchaseDetails`'s own doc for why it's still a separate message.
+
+
+## Fields
+
+### dbSizeBytes
+
+ NOTE: as of the current webhook implementation, the buyer never supplies this and the
+ originating `MarketProduct`'s own configured size isn't carried through Checkout Session
+ metadata either, so this is currently always `0` here -- an admin fulfilling an order today
+ needs to cross-reference the `MarketProduct` itself for the size actually sold. Intended to be
+ the requested PostgreSQL database size in bytes.
+
+
+### minioSizeBytes
+
+ Same caveat as `db_size_bytes` above -- currently always `0`. Intended to be the requested
+ MinIO (object storage) size in bytes.
+
+
+### domain
+
+ The domain the buyer wants their new Rellm instance reachable at (e.g. "myserver.example.com").
+
+
+### contactEmail
+
+ Where the fulfilling admin should reach the buyer about this order, separate from whatever
+ email/contact info is on the buyer's own `User` (which may not be checked as often, or may not
+ exist at all for a server with no email-based signup).
+
+
+### additionalInformation
+
+ Free-form notes from the buyer to the fulfilling admin, captured once at purchase time (e.g.
+ special requests, existing-data-migration needs). Immutable after purchase -- see
+ `RellmHostingSubscriptionDetails.additional_information`'s own doc, which carries this same
+ text forward onto the resulting `MarketSubscription`.
+
 
 -}
 type alias RellmHostingPurchaseDetails =
@@ -6123,7 +6381,30 @@ encodeAIGrantPurchaseDetails =
     Proto.Rellm.Internals_.encodeProto__Rellm__AIGrantPurchaseDetails
 
 
-{-| `AIGrantPurchaseDetails` message
+{-|  `MarketPurchase.details`' `PURCHASE_TYPE_AI_GRANTS` variant -- copied verbatim from the
+ originating `MarketProduct.details` at the moment this purchase was fulfilled. Field-for-field
+ identical to `AIGrantSubscriptionDetails` -- see `MediaStoragePurchaseDetails`'s own doc for why
+ it's still a separate message.
+
+
+## Fields
+
+### aiProviderId
+
+ Which `AIProvider` this grant is against.
+
+
+### modelNames
+
+ Which of that provider's models the grant covers.
+
+
+### tokens
+
+ The buyer's new total token balance for `ai_provider_id`/`model_names`, replacing (not adding
+ to) whatever balance remained -- see `logic::market_fulfillment::fulfill_purchase`'s
+ `AiGrants` arm.
+
 
 -}
 type alias AIGrantPurchaseDetails =
@@ -6162,7 +6443,22 @@ encodeMediaStoragePurchaseDetails =
     Proto.Rellm.Internals_.encodeProto__Rellm__MediaStoragePurchaseDetails
 
 
-{-| `MediaStoragePurchaseDetails` message
+{-|  `MarketPurchase.details`' `PURCHASE_TYPE_MEDIA_STORAGE` variant -- copied verbatim from the
+ originating `MarketProduct.details` at the moment this purchase was fulfilled (see
+ `MarketPurchase.details`' own doc). Field-for-field identical to
+ `MediaStorageSubscriptionDetails` -- kept as its own message only so the Purchase- and
+ Subscription-side `oneof`s stay independent Rust types (see
+ `logic::market_fulfillment::terminate_entitlement`'s own doc for why that distinction matters
+ for `PermissionsAccessPurchaseDetails`/`PermissionsAccessSubscriptionDetails`).
+
+
+## Fields
+
+### allocationBytes
+
+ The buyer's new total media storage allocation, replacing (not adding to) whatever quota they
+ already had -- see `logic::market_fulfillment::fulfill_purchase`'s `MediaStorage` arm.
+
 
 -}
 type alias MediaStoragePurchaseDetails =
@@ -6206,6 +6502,28 @@ encodeMarketRefundMethod =
  otherwise-independent messages, matching the MarketPayment/MarketRefund split itself.
 
 
+## Fields
+
+### cardBrand
+
+ E.g. "visa", "mastercard", "amex".
+
+
+### cardLast4
+
+ Last 4 digits of the card number.
+
+
+### cardExpMonth
+
+ 1-12.
+
+
+### cardExpYear
+
+ 4-digit year.
+
+
 -}
 type alias MarketRefundMethod =
     Proto.Rellm.Internals_.Proto__Rellm__MarketRefundMethod
@@ -6243,7 +6561,29 @@ encodeMarketRefund =
     Proto.Rellm.Internals_.encodeProto__Rellm__MarketRefund
 
 
-{-| `MarketRefund` message
+{-|  A single refund issued against a `MarketPurchase`'s payment -- see `MarketPayment`'s own doc for
+ how this and `MarketPayment` share the same underlying `market_payments` table.
+
+
+## Fields
+
+### amount
+
+ The amount refunded, in the same unit the original `MarketPayment.amount` was charged in --
+ always positive here (the underlying row's negative `amount` is what distinguishes a refund
+ from a payment; this message itself never exposes the sign).
+
+
+### currency
+
+ The ISO 4217 numeric currency code `amount` is denominated in -- always matches the
+ `MarketPayment.currency` being refunded.
+
+
+### createdAt
+
+ When this refund was issued.
+
 
 -}
 type alias MarketRefund =
@@ -6300,6 +6640,16 @@ encodeMarketPaymentMethod =
  Last 4 digits of the card number.
 
 
+### cardExpMonth
+
+ 1-12.
+
+
+### cardExpYear
+
+ 4-digit year.
+
+
 -}
 type alias MarketPaymentMethod =
     Proto.Rellm.Internals_.Proto__Rellm__MarketPaymentMethod
@@ -6337,7 +6687,31 @@ encodeMarketPayment =
     Proto.Rellm.Internals_.encodeProto__Rellm__MarketPayment
 
 
-{-| `MarketPayment` message
+{-|  A single successful charge against a `MarketPurchase` -- one row per completed Stripe
+ `PaymentIntent` (the initial purchase's, or a later renewal's). Backed by the same
+ `market_payments` table as `MarketRefund` (a positive `amount` row marshals to a `MarketPayment`,
+ a negative one to a `MarketRefund` -- see that message's own doc), so a `MarketPayment` is never
+ itself edited or deleted once created; a refund is always its own separate row/message.
+
+
+## Fields
+
+### amount
+
+ The amount actually charged, in the same unit `MarketProduct.amount` uses (smallest unit of
+ `currency`, except for a zero-decimal currency like JPY).
+
+
+### currency
+
+ The ISO 4217 numeric currency code `amount` is denominated in -- copied from the purchase's own
+ product at charge time.
+
+
+### createdAt
+
+ When this charge succeeded.
+
 
 -}
 type alias MarketPayment =
@@ -6436,7 +6810,53 @@ encodeMarketPurchase =
     Proto.Rellm.Internals_.encodeProto__Rellm__MarketPurchase
 
 
-{-| `MarketPurchase` message
+{-|  One completed billing event -- the initial purchase or a later recurring renewal charge -- for a
+ single product. Created only from `web::stripe_webhook` (the initial purchase, on
+ `checkout.session.completed`) or `logic::market_renewal` (each subsequent recurring charge),
+ never directly by `MakeMarketPurchase` itself (see that RPC's own doc). MarketPurchases are
+ immutable via the API+CLI once created -- there is no `UpdateMarketPurchase` RPC; the payments,
+ refunds, and (for a subscription) fulfillment information that accumulate against a purchase over
+ time live in their own separate messages/tables instead of ever rewriting this one.
+
+
+## Fields
+
+### buyer
+
+ Who bought this.
+
+
+### type_
+
+ What this purchase grants -- copied from (and always matching) `market_product.type` at the
+ time of purchase. Denormalized here (rather than requiring a lookup through `market_product`)
+ so a client can branch on `details`' oneof case without needing `market_product` populated.
+
+
+### marketProduct
+
+ The `MarketProduct` this purchase was made against, as it existed at the time it was fetched --
+ may since have changed price/details/been delisted; this purchase's own `amount`-equivalent
+ fields live on whichever `MarketPayment`s are attached, not here.
+
+
+### marketPayments
+
+ Every payment recorded against this purchase, oldest first -- ordinarily just one, but a failed
+ charge that's later retried (see `logic::market_renewal`) can leave more than one row.
+
+
+### marketRefunds
+
+ Every refund recorded against this purchase, oldest first -- empty for the common case of a
+ purchase that was never refunded.
+
+
+### createdAt
+
+ When this purchase was recorded -- i.e. when the Stripe webhook/renewal job actually processed
+ it, not when the buyer started checkout.
+
 
 -}
 type alias MarketPurchase =
@@ -6475,11 +6895,17 @@ encodeMakeMarketPurchaseResponse =
     Proto.Rellm.Internals_.encodeProto__Rellm__MakeMarketPurchaseResponse
 
 
-{-| ## Fields
+{-|  A pending Stripe Checkout Session, ready to redirect the buyer's browser to.
+
+
+## Fields
 
 ### checkoutUrl
 
- Redirect the buyer's browser here (a Stripe-hosted Checkout page) to complete payment.
+ Redirect the buyer's browser here (a Stripe-hosted Checkout page) to complete payment. Expires
+ after Stripe's own Checkout Session timeout if never completed -- since no `MarketPurchase` row
+ is created until the webhook fires (see this message's own request's doc), an abandoned/expired
+ checkout leaves no trace at all.
 
 
 -}
@@ -6523,6 +6949,10 @@ encodeMakeMarketPurchaseRequest =
  Stripe Checkout flow -- see `MakeMarketPurchaseResponse.checkout_url`. No `MarketPurchase`/
  `MarketSubscription` is created by this call itself; that only happens once Stripe confirms
  payment via webhook, so an abandoned checkout never leaves a half-created purchase behind.
+ Rejected outright (`market_disabled`) if `market_settings.enabled` is false -- checked first,
+ ahead of every product-specific precondition (delisted/sold-out/Stripe-not-configured/etc.),
+ since an admin who's closed Market entirely shouldn't have that bypassable by simply knowing a
+ still-valid product id.
 
 
 -}
@@ -6562,7 +6992,15 @@ encodeGetMarketSubscriptionsResponse =
     Proto.Rellm.Internals_.encodeProto__Rellm__GetMarketSubscriptionsResponse
 
 
-{-| `GetMarketSubscriptionsResponse` message
+{-| ## Fields
+
+### marketSubscriptions
+
+ For `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE`: the caller's own subscriptions, newest
+ first. For `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN`: every
+ `PURCHASE_TYPE_RELLM_HOSTING` subscription across every buyer, oldest first (so the oldest
+ unfulfilled order surfaces at the top of `/market/fulfillment`).
+
 
 -}
 type alias GetMarketSubscriptionsResponse =
@@ -6608,6 +7046,15 @@ encodeGetMarketSubscriptionsRequest =
  subscription across every buyer, for the `/market/fulfillment` admin page.
 
 
+## Fields
+
+### requestType
+
+ Which of the two views below to return. Defaults to
+ `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE` (proto3's implicit `0` default), so existing
+ callers that predate this field keep getting their own subscriptions, not the admin view.
+
+
 -}
 type alias GetMarketSubscriptionsRequest =
     Proto.Rellm.Internals_.Proto__Rellm__GetMarketSubscriptionsRequest
@@ -6649,7 +7096,9 @@ encodeGetMarketProductsResponse =
 
 ### marketProducts
 
- Non-delisted products, plus delisted ones too if the caller is an admin.
+ Every non-delisted `MarketProduct`, plus delisted ones too if the caller is a signed-in admin
+ on this server (so admins can still find/relist/edit a delisted product from the same `/market`
+ page everyone else sees).
 
 
 -}
@@ -6689,8 +7138,11 @@ encodeGetMarketProductsRequest =
     Proto.Rellm.Internals_.encodeProto__Rellm__GetMarketProductsRequest
 
 
-{-|  Request to get products available for purchase on a Rellm server.
- For now, there are few enough that this has no parameters.
+{-|  Request to get products available for purchase on a Rellm server. *Unauthenticated* --
+ `GetMarketProducts` never requires a signed-in caller (see that RPC's own doc), so anyone can
+ browse a server's Market without an account, including from another federated server (see
+ `rellm.proto`'s "Federated Markets" doc). For now, there are few enough products per server that
+ this has no filtering/paging parameters.
 
 
 -}
@@ -6741,32 +7193,65 @@ encodeMarketProduct =
     Proto.Rellm.Internals_.encodeProto__Rellm__MarketProduct
 
 
-{-|  An actual subscribable product listed on, say, https://rellm.org/market
- Listed/delisted by clients by setting `delisted_at` (though the actual date supplied
- by the client is ignored).
+{-|  An actual subscribable product listed on, say, https://rellm.org/market -- what an admin creates
+ via `CreateMarketProduct`/edits via `UpdateMarketProduct`, and what a buyer actually purchases via
+ `MakeMarketPurchase`. `market_settings.enabled` (see `server_configuration.proto`) gates whether a
+ server's Market is browsable/purchasable at all, independent of any individual product's own
+ `delisted_at`. Listed/delisted by clients by setting `delisted_at` (though the actual date
+ supplied by the client is ignored -- see that field's own doc).
 
 
 ## Fields
 
 ### type_
 
- Never changeable after product creation.
+ What this product grants once purchased -- see `PurchaseType`'s own doc for what each value
+ does. Never changeable after product creation (`UpdateMarketProduct` silently ignores any
+ change to this field) -- changing what a product *is* after people have already bought it would
+ silently change existing buyers' entitlements out from under them; a product whose type needs
+ to change is delisted and replaced with a new one instead.
 
 
 ### period
 
- Never changeable after product creation.
+ How often this product bills, if at all -- see `PurchasePeriod`'s own doc. Never changeable
+ after product creation, same reasoning as `type` above.
+
+
+### amount
+
+ The price, in the smallest unit of `currency` (e.g. cents for USD) -- except for a
+ zero-decimal currency like JPY, where this is already the whole unit (see
+ `logic::stripe_sync::is_zero_decimal_currency`).
+
+
+### currency
+
+ The ISO 4217 numeric currency code this product is priced in (e.g. `840` for USD, `392` for
+ JPY) -- see `logic::market_summary`'s currency table for the full set of currencies a server
+ actually supports pricing in today.
 
 
 ### availableCount
 
- Number of subscriptions "slots" availbable (admin-set)
+ Number of subscription "slots" available for this product (admin-set) -- `0` means unlimited.
+ Once `sold_count >= available_count` (and `available_count > 0`), `MakeMarketPurchase` rejects
+ further purchases with `product_sold_out`.
 
 
 ### soldCount
 
- Number of subscriptions actually sold. Canceled subscriptions reduce this number,
- allowing a new person to subscribe.
+ Number of subscriptions actually sold, maintained server-side (never client-settable --
+ `UpdateMarketProduct` silently ignores any client-sent value for this field). Incremented when
+ a purchase's Stripe Checkout Session completes; decremented when the resulting
+ `MarketSubscription` is actually canceled (`CancelMarketSubscription`), freeing the slot for a
+ new buyer.
+
+
+### createdAt
+
+ When this product was created. Server-stamped -- `CreateMarketProduct` ignores any client-sent
+ value.
 
 
 -}

@@ -53,7 +53,7 @@ pub fn login(
 
     let lookup = avatar.to_media_lookup();
 
-    let mut proto_user = user.to_proto(&None, &None, lookup.as_ref(), Some(conn));
+    let mut proto_user = user.to_proto(&None, &None, lookup.as_ref(), &Some(&user), Some(conn));
     crate::rpcs::attach_own_advanced_data(&mut proto_user, &user, conn);
 
     Ok(RefreshTokenResponse {

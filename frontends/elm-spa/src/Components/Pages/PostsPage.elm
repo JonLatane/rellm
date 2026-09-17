@@ -48,6 +48,7 @@ import Proto.Rellm.PostContext exposing (PostContext(..))
 import Set exposing (Set)
 import Shared
 import Shared.AccountsPanel as AccountsPanel
+import Shared.AccountsPanel.DebugTab as DebugTab
 import Shared.AccountsPanel.BlueskyAccounts as BlueskyAccounts exposing (BlueskyAccount)
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer)
@@ -658,6 +659,15 @@ updateInner shared msg model =
             let
                 ( fetchedModel, fetchEffect ) =
                     case subMsg of
+                        -- Toggling this doesn't change any server's acting account, so
+                        -- `fetchNewFeeds`'s accountId-based skip (see its own doc) would treat
+                        -- every source as already up to date and refetch nothing -- an
+                        -- unconditional `refetchFeeds` (mirroring `applySearchChange`'s own
+                        -- override) is needed instead to actually re-run `GotFeedPosts`'
+                        -- `customNavPostIds` filter with the new toggle state.
+                        Shared.AccountsPanelMsg (AccountsPanel.DebugTabMsg DebugTab.ToggleShowCustomNavPosts) ->
+                            refetchFeeds shared model (List.map RellmServer (relevantServers shared model))
+
                         Shared.AccountsPanelMsg _ ->
                             fetchNewFeeds shared model
 

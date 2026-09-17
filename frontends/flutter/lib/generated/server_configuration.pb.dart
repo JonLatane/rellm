@@ -1234,10 +1234,14 @@ class MediaSettings extends $pb.GeneratedMessage {
 class MarketSettings extends $pb.GeneratedMessage {
   factory MarketSettings({
     $core.bool? enabled,
+    $core.bool? stripeConfigured,
   }) {
     final $result = create();
     if (enabled != null) {
       $result.enabled = enabled;
+    }
+    if (stripeConfigured != null) {
+      $result.stripeConfigured = stripeConfigured;
     }
     return $result;
   }
@@ -1247,6 +1251,7 @@ class MarketSettings extends $pb.GeneratedMessage {
 
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'MarketSettings', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
     ..aOB(1, _omitFieldNames ? '' : 'enabled')
+    ..aOB(2, _omitFieldNames ? '' : 'stripeConfigured')
     ..hasRequiredFields = false
   ;
 
@@ -1279,6 +1284,22 @@ class MarketSettings extends $pb.GeneratedMessage {
   $core.bool hasEnabled() => $_has(0);
   @$pb.TagNumber(1)
   void clearEnabled() => clearField(1);
+
+  /// Whether Stripe is actually usable right now -- `stripe_config.stripe_enabled` is true AND a
+  /// `stripe_secret_key` is on file. Computed live on every `GetServerConfiguration` (never read back
+  /// from whatever was last saved to `market_settings` itself), and -- like `enabled` above --
+  /// deliberately never stripped for non-admins: it's the public "can I actually buy something here"
+  /// signal a buyer needs (e.g. to grey out `/market/product/:id`'s "Buy" button with a
+  /// "Stripe is not configured" message) without ever exposing `StripeConfig` itself, which stays
+  /// admin-only.
+  @$pb.TagNumber(2)
+  $core.bool get stripeConfigured => $_getBF(1);
+  @$pb.TagNumber(2)
+  set stripeConfigured($core.bool v) { $_setBool(1, v); }
+  @$pb.TagNumber(2)
+  $core.bool hasStripeConfigured() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearStripeConfigured() => clearField(2);
 }
 
 /// Settings for a feature (e.g. People, Groups, Posts, Events, Media).

@@ -15,7 +15,7 @@ impl HasPermission for User {
 
 impl HasPermission for models::User {
     fn has_permission(&self, permission: Permission) -> bool {
-        self.to_proto(&None, &None, None, None)
+        self.to_proto(&None, &None, None, &None, None)
             .has_permission(permission)
     }
 }

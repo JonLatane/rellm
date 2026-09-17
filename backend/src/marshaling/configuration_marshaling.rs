@@ -148,17 +148,21 @@ impl ToProtoServerConfiguration for models::ServerConfiguration {
                 ..c
             });
         // Same write-only treatment for `StripeConfig.stripe_secret_key`/
-        // `stripe_webhook_signing_secret`.
-        let stripe_config: Option<StripeConfig> = self
+        // `stripe_webhook_signing_secret`. `stripe_configured` (computed below, for
+        // `market_settings`) is derived from this *before* the blanking, since a blanked
+        // `stripe_secret_key` would otherwise always read as "not configured".
+        let raw_stripe_config: Option<StripeConfig> = self
             .stripe_config
             .to_owned()
             .map_or(Some(None), |c| serde_json::from_value(c).ok())
-            .flatten()
-            .map(|c| StripeConfig {
-                stripe_secret_key: String::new(),
-                stripe_webhook_signing_secret: String::new(),
-                ..c
-            });
+            .flatten();
+        let stripe_configured =
+            raw_stripe_config.as_ref().is_some_and(|c| c.stripe_enabled && !c.stripe_secret_key.is_empty());
+        let stripe_config: Option<StripeConfig> = raw_stripe_config.map(|c| StripeConfig {
+            stripe_secret_key: String::new(),
+            stripe_webhook_signing_secret: String::new(),
+            ..c
+        });
         // Real `MediaSettings` deserialize (replacing the old hardcoded stub) -- falls back to the
         // 15MB default whenever the stored blob is missing *or* its own
         // `default_media_allocation_bytes` is `0` (covers every server today, since the column is
@@ -179,12 +183,18 @@ impl ToProtoServerConfiguration for models::ServerConfiguration {
         // `MarketSettings` deserialize -- falls back to `enabled: false` whenever the stored blob
         // is missing (every server before this column existed), same read-time-fallback convention
         // as `media_settings` above. Never stripped for non-admins (see `get_server_configuration`)
-        // -- it's the public signal, unlike `stripe_config` itself.
-        let market_settings: MarketSettings = self
-            .market_settings
-            .to_owned()
-            .and_then(|c| serde_json::from_value::<MarketSettings>(c).ok())
-            .unwrap_or(MarketSettings { enabled: false });
+        // -- it's the public signal, unlike `stripe_config` itself. `stripe_configured` is never
+        // read from the stored blob (even if a stale value were somehow present there) -- always
+        // overwritten with the just-computed live value below, so it can never drift from whether
+        // Stripe is actually usable right now.
+        let market_settings: MarketSettings = MarketSettings {
+            stripe_configured,
+            ..self
+                .market_settings
+                .to_owned()
+                .and_then(|c| serde_json::from_value::<MarketSettings>(c).ok())
+                .unwrap_or(MarketSettings { enabled: false, stripe_configured: false })
+        };
         // Not persisted anywhere yet -- see `NewServerConfiguration`'s doc and
         // `preferred_verification_apis`'s own proto comment. `ConfigureServer` does persist this
         // one (unlike the comment below used to say), stored the same way `Permission` lists are

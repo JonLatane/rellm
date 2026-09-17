@@ -4,9 +4,10 @@ use rellm::logic::{renew_subscriptions_of_type, terminate_subscriptions_of_type}
 use rellm::marshaling::ALL_PURCHASE_TYPES;
 use rellm::{db_connection, init_bin_logging, init_crypto};
 
-/// Renews every due `market_subscriptions` row (`ANNUAL`/`MONTHLY` -- see
-/// `PurchasePeriod.PURCHASE_PERIOD_INDEFINITE`'s own doc for why those never get a subscription
-/// row at all) across all 4 `PurchaseType`s in one pass -- one binary rather than four, unlike most
+/// Renews every due `market_subscriptions` row (`ANNUAL`/`MONTHLY` only -- an `INDEFINITE`
+/// subscription's own `renews_at` is always unset, so it never matches the "due" query at all --
+/// see `PurchasePeriod.PURCHASE_PERIOD_INDEFINITE`'s own doc) across all 4 `PurchaseType`s in one
+/// pass -- one binary rather than four, unlike most
 /// other background jobs in this file, since the four types share one table
 /// (`market_subscriptions.product_type` distinguishes them) and the exact same renewal logic
 /// (`logic::market_renewal::renew_subscriptions_of_type`), just filtered differently. Also

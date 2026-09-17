@@ -17,7 +17,15 @@ To run it, add a dependency via `elm install` on [`elm-protocol-buffers`](https:
 import Proto.Rellm.Internals_
 
 
-{-| ## Options
+{-|  Type-specific configuration for this product, matching `type` above -- e.g. how much media
+ storage a `PURCHASE_TYPE_MEDIA_STORAGE` product grants, or which AI provider/models a
+ `PURCHASE_TYPE_AI_GRANTS` product grants tokens for. Copied onto every `MarketPurchase`/
+ `MarketSubscription` created from this product at the time of purchase (as that purchase's own
+ `details`), so a later edit to this product's own `details` never retroactively changes what an
+ existing buyer already bought.
+
+
+## Options
 
 ### MediaStorageSubscriptionDetails
 

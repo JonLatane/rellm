@@ -29,9 +29,12 @@ enum MarketProduct_Details {
   notSet
 }
 
-/// An actual subscribable product listed on, say, https://rellm.org/market
-/// Listed/delisted by clients by setting `delisted_at` (though the actual date supplied
-/// by the client is ignored).
+/// An actual subscribable product listed on, say, https://rellm.org/market -- what an admin creates
+/// via `CreateMarketProduct`/edits via `UpdateMarketProduct`, and what a buyer actually purchases via
+/// `MakeMarketPurchase`. `market_settings.enabled` (see `server_configuration.proto`) gates whether a
+/// server's Market is browsable/purchasable at all, independent of any individual product's own
+/// `delisted_at`. Listed/delisted by clients by setting `delisted_at` (though the actual date
+/// supplied by the client is ignored -- see that field's own doc).
 class MarketProduct extends $pb.GeneratedMessage {
   factory MarketProduct({
     $core.String? id,
@@ -152,7 +155,11 @@ class MarketProduct extends $pb.GeneratedMessage {
   @$pb.TagNumber(1)
   void clearId() => clearField(1);
 
-  /// Never changeable after product creation.
+  /// What this product grants once purchased -- see `PurchaseType`'s own doc for what each value
+  /// does. Never changeable after product creation (`UpdateMarketProduct` silently ignores any
+  /// change to this field) -- changing what a product *is* after people have already bought it would
+  /// silently change existing buyers' entitlements out from under them; a product whose type needs
+  /// to change is delisted and replaced with a new one instead.
   @$pb.TagNumber(2)
   PurchaseType get type => $_getN(1);
   @$pb.TagNumber(2)
@@ -162,7 +169,8 @@ class MarketProduct extends $pb.GeneratedMessage {
   @$pb.TagNumber(2)
   void clearType() => clearField(2);
 
-  /// Never changeable after product creation.
+  /// How often this product bills, if at all -- see `PurchasePeriod`'s own doc. Never changeable
+  /// after product creation, same reasoning as `type` above.
   @$pb.TagNumber(3)
   PurchasePeriod get period => $_getN(2);
   @$pb.TagNumber(3)
@@ -172,6 +180,9 @@ class MarketProduct extends $pb.GeneratedMessage {
   @$pb.TagNumber(3)
   void clearPeriod() => clearField(3);
 
+  /// The price, in the smallest unit of `currency` (e.g. cents for USD) -- except for a
+  /// zero-decimal currency like JPY, where this is already the whole unit (see
+  /// `logic::stripe_sync::is_zero_decimal_currency`).
   @$pb.TagNumber(4)
   $core.int get amount => $_getIZ(3);
   @$pb.TagNumber(4)
@@ -181,6 +192,9 @@ class MarketProduct extends $pb.GeneratedMessage {
   @$pb.TagNumber(4)
   void clearAmount() => clearField(4);
 
+  /// The ISO 4217 numeric currency code this product is priced in (e.g. `840` for USD, `392` for
+  /// JPY) -- see `logic::market_summary`'s currency table for the full set of currencies a server
+  /// actually supports pricing in today.
   @$pb.TagNumber(5)
   $core.int get currency => $_getIZ(4);
   @$pb.TagNumber(5)
@@ -190,7 +204,9 @@ class MarketProduct extends $pb.GeneratedMessage {
   @$pb.TagNumber(5)
   void clearCurrency() => clearField(5);
 
-  /// Number of subscriptions "slots" availbable (admin-set)
+  /// Number of subscription "slots" available for this product (admin-set) -- `0` means unlimited.
+  /// Once `sold_count >= available_count` (and `available_count > 0`), `MakeMarketPurchase` rejects
+  /// further purchases with `product_sold_out`.
   @$pb.TagNumber(6)
   $core.int get availableCount => $_getIZ(5);
   @$pb.TagNumber(6)
@@ -200,8 +216,11 @@ class MarketProduct extends $pb.GeneratedMessage {
   @$pb.TagNumber(6)
   void clearAvailableCount() => clearField(6);
 
-  /// Number of subscriptions actually sold. Canceled subscriptions reduce this number,
-  /// allowing a new person to subscribe.
+  /// Number of subscriptions actually sold, maintained server-side (never client-settable --
+  /// `UpdateMarketProduct` silently ignores any client-sent value for this field). Incremented when
+  /// a purchase's Stripe Checkout Session completes; decremented when the resulting
+  /// `MarketSubscription` is actually canceled (`CancelMarketSubscription`), freeing the slot for a
+  /// new buyer.
   @$pb.TagNumber(7)
   $core.int get soldCount => $_getIZ(6);
   @$pb.TagNumber(7)
@@ -255,6 +274,8 @@ class MarketProduct extends $pb.GeneratedMessage {
   @$pb.TagNumber(13)
   PermissionsAccessSubscriptionDetails ensurePermissionsAccessSubscriptionDetails() => $_ensure(10);
 
+  /// When this product was created. Server-stamped -- `CreateMarketProduct` ignores any client-sent
+  /// value.
   @$pb.TagNumber(20)
   $13.Timestamp get createdAt => $_getN(11);
   @$pb.TagNumber(20)
@@ -266,8 +287,10 @@ class MarketProduct extends $pb.GeneratedMessage {
   @$pb.TagNumber(20)
   $13.Timestamp ensureCreatedAt() => $_ensure(11);
 
-  /// If set, the MarketProduct is not purchasable. Note: clients toggle listings by setting this,
-  /// but the server will always set it to the time of the request, not the time sent *by* the request.
+  /// If set, the MarketProduct is not purchasable -- still shown to admins (see
+  /// `GetMarketProductsResponse.market_products`' own doc), but hidden from every other caller and
+  /// rejected by `MakeMarketPurchase`. Note: clients toggle listings by setting this, but the server
+  /// will always set it to the time of the request, not the time sent *by* the request.
   @$pb.TagNumber(21)
   $13.Timestamp get delistedAt => $_getN(12);
   @$pb.TagNumber(21)
@@ -280,8 +303,11 @@ class MarketProduct extends $pb.GeneratedMessage {
   $13.Timestamp ensureDelistedAt() => $_ensure(12);
 }
 
-/// Request to get products available for purchase on a Rellm server.
-/// For now, there are few enough that this has no parameters.
+/// Request to get products available for purchase on a Rellm server. *Unauthenticated* --
+/// `GetMarketProducts` never requires a signed-in caller (see that RPC's own doc), so anyone can
+/// browse a server's Market without an account, including from another federated server (see
+/// `rellm.proto`'s "Federated Markets" doc). For now, there are few enough products per server that
+/// this has no filtering/paging parameters.
 class GetMarketProductsRequest extends $pb.GeneratedMessage {
   factory GetMarketProductsRequest() => create();
   GetMarketProductsRequest._() : super();
@@ -354,7 +380,9 @@ class GetMarketProductsResponse extends $pb.GeneratedMessage {
   static GetMarketProductsResponse getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<GetMarketProductsResponse>(create);
   static GetMarketProductsResponse? _defaultInstance;
 
-  /// Non-delisted products, plus delisted ones too if the caller is an admin.
+  /// Every non-delisted `MarketProduct`, plus delisted ones too if the caller is a signed-in admin
+  /// on this server (so admins can still find/relist/edit a delisted product from the same `/market`
+  /// page everyone else sees).
   @$pb.TagNumber(1)
   $core.List<MarketProduct> get marketProducts => $_getList(0);
 }
@@ -404,6 +432,9 @@ class GetMarketSubscriptionsRequest extends $pb.GeneratedMessage {
   static GetMarketSubscriptionsRequest getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<GetMarketSubscriptionsRequest>(create);
   static GetMarketSubscriptionsRequest? _defaultInstance;
 
+  /// Which of the two views below to return. Defaults to
+  /// `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE` (proto3's implicit `0` default), so existing
+  /// callers that predate this field keep getting their own subscriptions, not the admin view.
   @$pb.TagNumber(1)
   GetMarketSubscriptionsRequestType get requestType => $_getN(0);
   @$pb.TagNumber(1)
@@ -454,6 +485,10 @@ class GetMarketSubscriptionsResponse extends $pb.GeneratedMessage {
   static GetMarketSubscriptionsResponse getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<GetMarketSubscriptionsResponse>(create);
   static GetMarketSubscriptionsResponse? _defaultInstance;
 
+  /// For `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE`: the caller's own subscriptions, newest
+  /// first. For `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN`: every
+  /// `PURCHASE_TYPE_RELLM_HOSTING` subscription across every buyer, oldest first (so the oldest
+  /// unfulfilled order surfaces at the top of `/market/fulfillment`).
   @$pb.TagNumber(1)
   $core.List<MarketSubscription> get marketSubscriptions => $_getList(0);
 }
@@ -462,6 +497,10 @@ class GetMarketSubscriptionsResponse extends $pb.GeneratedMessage {
 /// Stripe Checkout flow -- see `MakeMarketPurchaseResponse.checkout_url`. No `MarketPurchase`/
 /// `MarketSubscription` is created by this call itself; that only happens once Stripe confirms
 /// payment via webhook, so an abandoned checkout never leaves a half-created purchase behind.
+/// Rejected outright (`market_disabled`) if `market_settings.enabled` is false -- checked first,
+/// ahead of every product-specific precondition (delisted/sold-out/Stripe-not-configured/etc.),
+/// since an admin who's closed Market entirely shouldn't have that bypassable by simply knowing a
+/// still-valid product id.
 class MakeMarketPurchaseRequest extends $pb.GeneratedMessage {
   factory MakeMarketPurchaseRequest({
     $core.String? marketProductId,
@@ -531,6 +570,7 @@ class MakeMarketPurchaseRequest extends $pb.GeneratedMessage {
   RellmHostingPurchaseDetails ensureRellmHostingDetails() => $_ensure(1);
 }
 
+/// A pending Stripe Checkout Session, ready to redirect the buyer's browser to.
 class MakeMarketPurchaseResponse extends $pb.GeneratedMessage {
   factory MakeMarketPurchaseResponse({
     $core.String? checkoutUrl,
@@ -571,7 +611,10 @@ class MakeMarketPurchaseResponse extends $pb.GeneratedMessage {
   static MakeMarketPurchaseResponse getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<MakeMarketPurchaseResponse>(create);
   static MakeMarketPurchaseResponse? _defaultInstance;
 
-  /// Redirect the buyer's browser here (a Stripe-hosted Checkout page) to complete payment.
+  /// Redirect the buyer's browser here (a Stripe-hosted Checkout page) to complete payment. Expires
+  /// after Stripe's own Checkout Session timeout if never completed -- since no `MarketPurchase` row
+  /// is created until the webhook fires (see this message's own request's doc), an abandoned/expired
+  /// checkout leaves no trace at all.
   @$pb.TagNumber(1)
   $core.String get checkoutUrl => $_getSZ(0);
   @$pb.TagNumber(1)
@@ -590,6 +633,13 @@ enum MarketPurchase_Details {
   notSet
 }
 
+/// One completed billing event -- the initial purchase or a later recurring renewal charge -- for a
+/// single product. Created only from `web::stripe_webhook` (the initial purchase, on
+/// `checkout.session.completed`) or `logic::market_renewal` (each subsequent recurring charge),
+/// never directly by `MakeMarketPurchase` itself (see that RPC's own doc). MarketPurchases are
+/// immutable via the API+CLI once created -- there is no `UpdateMarketPurchase` RPC; the payments,
+/// refunds, and (for a subscription) fulfillment information that accumulate against a purchase over
+/// time live in their own separate messages/tables instead of ever rewriting this one.
 class MarketPurchase extends $pb.GeneratedMessage {
   factory MarketPurchase({
     $core.String? id,
@@ -705,6 +755,7 @@ class MarketPurchase extends $pb.GeneratedMessage {
   @$pb.TagNumber(1)
   void clearId() => clearField(1);
 
+  /// Who bought this.
   @$pb.TagNumber(2)
   $5.Author get buyer => $_getN(1);
   @$pb.TagNumber(2)
@@ -716,6 +767,9 @@ class MarketPurchase extends $pb.GeneratedMessage {
   @$pb.TagNumber(2)
   $5.Author ensureBuyer() => $_ensure(1);
 
+  /// What this purchase grants -- copied from (and always matching) `market_product.type` at the
+  /// time of purchase. Denormalized here (rather than requiring a lookup through `market_product`)
+  /// so a client can branch on `details`' oneof case without needing `market_product` populated.
   @$pb.TagNumber(3)
   PurchaseType get type => $_getN(2);
   @$pb.TagNumber(3)
@@ -725,6 +779,9 @@ class MarketPurchase extends $pb.GeneratedMessage {
   @$pb.TagNumber(3)
   void clearType() => clearField(3);
 
+  /// The `MarketProduct` this purchase was made against, as it existed at the time it was fetched --
+  /// may since have changed price/details/been delisted; this purchase's own `amount`-equivalent
+  /// fields live on whichever `MarketPayment`s are attached, not here.
   @$pb.TagNumber(4)
   MarketProduct get marketProduct => $_getN(3);
   @$pb.TagNumber(4)
@@ -736,7 +793,12 @@ class MarketPurchase extends $pb.GeneratedMessage {
   @$pb.TagNumber(4)
   MarketProduct ensureMarketProduct() => $_ensure(3);
 
-  /// Note: this circular relationship should be handled by the Rust marshaling side.
+  /// The subscription this purchase belongs to -- every purchase gets one, including a
+  /// `PURCHASE_PERIOD_INDEFINITE` one-time purchase (see `MarketSubscription`'s own doc), so
+  /// `Optional` here really only means "always unset when this `MarketPurchase` is itself embedded
+  /// inside a `MarketSubscription.billing_history`" (there'd be no point recursing into the same
+  /// subscription again). Note: this circular relationship should be handled by the Rust marshaling
+  /// side.
   @$pb.TagNumber(5)
   MarketSubscription get marketSubscription => $_getN(4);
   @$pb.TagNumber(5)
@@ -748,9 +810,13 @@ class MarketPurchase extends $pb.GeneratedMessage {
   @$pb.TagNumber(5)
   MarketSubscription ensureMarketSubscription() => $_ensure(4);
 
+  /// Every payment recorded against this purchase, oldest first -- ordinarily just one, but a failed
+  /// charge that's later retried (see `logic::market_renewal`) can leave more than one row.
   @$pb.TagNumber(6)
   $core.List<MarketPayment> get marketPayments => $_getList(5);
 
+  /// Every refund recorded against this purchase, oldest first -- empty for the common case of a
+  /// purchase that was never refunded.
   @$pb.TagNumber(7)
   $core.List<MarketRefund> get marketRefunds => $_getList(6);
 
@@ -798,6 +864,8 @@ class MarketPurchase extends $pb.GeneratedMessage {
   @$pb.TagNumber(13)
   PermissionsAccessPurchaseDetails ensurePermissionsAccessPurchaseDetails() => $_ensure(10);
 
+  /// When this purchase was recorded -- i.e. when the Stripe webhook/renewal job actually processed
+  /// it, not when the buyer started checkout.
   @$pb.TagNumber(20)
   $13.Timestamp get createdAt => $_getN(11);
   @$pb.TagNumber(20)
@@ -810,6 +878,11 @@ class MarketPurchase extends $pb.GeneratedMessage {
   $13.Timestamp ensureCreatedAt() => $_ensure(11);
 }
 
+/// A single successful charge against a `MarketPurchase` -- one row per completed Stripe
+/// `PaymentIntent` (the initial purchase's, or a later renewal's). Backed by the same
+/// `market_payments` table as `MarketRefund` (a positive `amount` row marshals to a `MarketPayment`,
+/// a negative one to a `MarketRefund` -- see that message's own doc), so a `MarketPayment` is never
+/// itself edited or deleted once created; a refund is always its own separate row/message.
 class MarketPayment extends $pb.GeneratedMessage {
   factory MarketPayment({
     $core.int? amount,
@@ -870,6 +943,8 @@ class MarketPayment extends $pb.GeneratedMessage {
   static MarketPayment getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<MarketPayment>(create);
   static MarketPayment? _defaultInstance;
 
+  /// The amount actually charged, in the same unit `MarketProduct.amount` uses (smallest unit of
+  /// `currency`, except for a zero-decimal currency like JPY).
   @$pb.TagNumber(1)
   $core.int get amount => $_getIZ(0);
   @$pb.TagNumber(1)
@@ -879,6 +954,8 @@ class MarketPayment extends $pb.GeneratedMessage {
   @$pb.TagNumber(1)
   void clearAmount() => clearField(1);
 
+  /// The ISO 4217 numeric currency code `amount` is denominated in -- copied from the purchase's own
+  /// product at charge time.
   @$pb.TagNumber(2)
   $core.int get currency => $_getIZ(1);
   @$pb.TagNumber(2)
@@ -909,6 +986,7 @@ class MarketPayment extends $pb.GeneratedMessage {
   @$pb.TagNumber(4)
   MarketPaymentMethod ensureMethod() => $_ensure(3);
 
+  /// When this charge succeeded.
   @$pb.TagNumber(10)
   $13.Timestamp get createdAt => $_getN(4);
   @$pb.TagNumber(10)
@@ -1000,6 +1078,7 @@ class MarketPaymentMethod extends $pb.GeneratedMessage {
   @$pb.TagNumber(2)
   void clearCardLast4() => clearField(2);
 
+  /// 1-12.
   @$pb.TagNumber(3)
   $core.int get cardExpMonth => $_getIZ(2);
   @$pb.TagNumber(3)
@@ -1009,6 +1088,7 @@ class MarketPaymentMethod extends $pb.GeneratedMessage {
   @$pb.TagNumber(3)
   void clearCardExpMonth() => clearField(3);
 
+  /// 4-digit year.
   @$pb.TagNumber(4)
   $core.int get cardExpYear => $_getIZ(3);
   @$pb.TagNumber(4)
@@ -1019,6 +1099,8 @@ class MarketPaymentMethod extends $pb.GeneratedMessage {
   void clearCardExpYear() => clearField(4);
 }
 
+/// A single refund issued against a `MarketPurchase`'s payment -- see `MarketPayment`'s own doc for
+/// how this and `MarketPayment` share the same underlying `market_payments` table.
 class MarketRefund extends $pb.GeneratedMessage {
   factory MarketRefund({
     $core.int? amount,
@@ -1079,6 +1161,9 @@ class MarketRefund extends $pb.GeneratedMessage {
   static MarketRefund getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<MarketRefund>(create);
   static MarketRefund? _defaultInstance;
 
+  /// The amount refunded, in the same unit the original `MarketPayment.amount` was charged in --
+  /// always positive here (the underlying row's negative `amount` is what distinguishes a refund
+  /// from a payment; this message itself never exposes the sign).
   @$pb.TagNumber(1)
   $core.int get amount => $_getIZ(0);
   @$pb.TagNumber(1)
@@ -1088,6 +1173,8 @@ class MarketRefund extends $pb.GeneratedMessage {
   @$pb.TagNumber(1)
   void clearAmount() => clearField(1);
 
+  /// The ISO 4217 numeric currency code `amount` is denominated in -- always matches the
+  /// `MarketPayment.currency` being refunded.
   @$pb.TagNumber(2)
   $core.int get currency => $_getIZ(1);
   @$pb.TagNumber(2)
@@ -1120,6 +1207,7 @@ class MarketRefund extends $pb.GeneratedMessage {
   @$pb.TagNumber(4)
   MarketRefundMethod ensureMethod() => $_ensure(3);
 
+  /// When this refund was issued.
   @$pb.TagNumber(10)
   $13.Timestamp get createdAt => $_getN(4);
   @$pb.TagNumber(10)
@@ -1190,6 +1278,7 @@ class MarketRefundMethod extends $pb.GeneratedMessage {
   static MarketRefundMethod getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<MarketRefundMethod>(create);
   static MarketRefundMethod? _defaultInstance;
 
+  /// E.g. "visa", "mastercard", "amex".
   @$pb.TagNumber(1)
   $core.String get cardBrand => $_getSZ(0);
   @$pb.TagNumber(1)
@@ -1199,6 +1288,7 @@ class MarketRefundMethod extends $pb.GeneratedMessage {
   @$pb.TagNumber(1)
   void clearCardBrand() => clearField(1);
 
+  /// Last 4 digits of the card number.
   @$pb.TagNumber(2)
   $core.String get cardLast4 => $_getSZ(1);
   @$pb.TagNumber(2)
@@ -1208,6 +1298,7 @@ class MarketRefundMethod extends $pb.GeneratedMessage {
   @$pb.TagNumber(2)
   void clearCardLast4() => clearField(2);
 
+  /// 1-12.
   @$pb.TagNumber(3)
   $core.int get cardExpMonth => $_getIZ(2);
   @$pb.TagNumber(3)
@@ -1217,6 +1308,7 @@ class MarketRefundMethod extends $pb.GeneratedMessage {
   @$pb.TagNumber(3)
   void clearCardExpMonth() => clearField(3);
 
+  /// 4-digit year.
   @$pb.TagNumber(4)
   $core.int get cardExpYear => $_getIZ(3);
   @$pb.TagNumber(4)
@@ -1227,6 +1319,13 @@ class MarketRefundMethod extends $pb.GeneratedMessage {
   void clearCardExpYear() => clearField(4);
 }
 
+/// `MarketPurchase.details`' `PURCHASE_TYPE_MEDIA_STORAGE` variant -- copied verbatim from the
+/// originating `MarketProduct.details` at the moment this purchase was fulfilled (see
+/// `MarketPurchase.details`' own doc). Field-for-field identical to
+/// `MediaStorageSubscriptionDetails` -- kept as its own message only so the Purchase- and
+/// Subscription-side `oneof`s stay independent Rust types (see
+/// `logic::market_fulfillment::terminate_entitlement`'s own doc for why that distinction matters
+/// for `PermissionsAccessPurchaseDetails`/`PermissionsAccessSubscriptionDetails`).
 class MediaStoragePurchaseDetails extends $pb.GeneratedMessage {
   factory MediaStoragePurchaseDetails({
     $fixnum.Int64? allocationBytes,
@@ -1267,6 +1366,8 @@ class MediaStoragePurchaseDetails extends $pb.GeneratedMessage {
   static MediaStoragePurchaseDetails getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<MediaStoragePurchaseDetails>(create);
   static MediaStoragePurchaseDetails? _defaultInstance;
 
+  /// The buyer's new total media storage allocation, replacing (not adding to) whatever quota they
+  /// already had -- see `logic::market_fulfillment::fulfill_purchase`'s `MediaStorage` arm.
   @$pb.TagNumber(1)
   $fixnum.Int64 get allocationBytes => $_getI64(0);
   @$pb.TagNumber(1)
@@ -1277,6 +1378,10 @@ class MediaStoragePurchaseDetails extends $pb.GeneratedMessage {
   void clearAllocationBytes() => clearField(1);
 }
 
+/// `MarketPurchase.details`' `PURCHASE_TYPE_AI_GRANTS` variant -- copied verbatim from the
+/// originating `MarketProduct.details` at the moment this purchase was fulfilled. Field-for-field
+/// identical to `AIGrantSubscriptionDetails` -- see `MediaStoragePurchaseDetails`'s own doc for why
+/// it's still a separate message.
 class AIGrantPurchaseDetails extends $pb.GeneratedMessage {
   factory AIGrantPurchaseDetails({
     $core.String? aiProviderId,
@@ -1327,6 +1432,7 @@ class AIGrantPurchaseDetails extends $pb.GeneratedMessage {
   static AIGrantPurchaseDetails getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<AIGrantPurchaseDetails>(create);
   static AIGrantPurchaseDetails? _defaultInstance;
 
+  /// Which `AIProvider` this grant is against.
   @$pb.TagNumber(1)
   $core.String get aiProviderId => $_getSZ(0);
   @$pb.TagNumber(1)
@@ -1336,9 +1442,13 @@ class AIGrantPurchaseDetails extends $pb.GeneratedMessage {
   @$pb.TagNumber(1)
   void clearAiProviderId() => clearField(1);
 
+  /// Which of that provider's models the grant covers.
   @$pb.TagNumber(2)
   $core.List<$core.String> get modelNames => $_getList(1);
 
+  /// The buyer's new total token balance for `ai_provider_id`/`model_names`, replacing (not adding
+  /// to) whatever balance remained -- see `logic::market_fulfillment::fulfill_purchase`'s
+  /// `AiGrants` arm.
   @$pb.TagNumber(3)
   $fixnum.Int64 get tokens => $_getI64(2);
   @$pb.TagNumber(3)
@@ -1349,6 +1459,13 @@ class AIGrantPurchaseDetails extends $pb.GeneratedMessage {
   void clearTokens() => clearField(3);
 }
 
+/// `MarketPurchase.details`' `PURCHASE_TYPE_RELLM_HOSTING` variant -- unlike the other three
+/// `*PurchaseDetails` messages, NOT copied from the originating `MarketProduct.details`; instead
+/// built fresh at checkout time from the buyer's own `MakeMarketPurchaseRequest.rellm_hosting_details`
+/// (carried through as Stripe Checkout Session metadata -- see `rpcs::market::make_market_purchase`
+/// and `web::stripe_webhook::handle_checkout_session_completed`). Field-for-field identical to
+/// `RellmHostingSubscriptionDetails` (minus that message's `fulfillment_status`/`fulfillment_notes`) -- see
+/// `MediaStoragePurchaseDetails`'s own doc for why it's still a separate message.
 class RellmHostingPurchaseDetails extends $pb.GeneratedMessage {
   factory RellmHostingPurchaseDetails({
     $fixnum.Int64? dbSizeBytes,
@@ -1409,6 +1526,11 @@ class RellmHostingPurchaseDetails extends $pb.GeneratedMessage {
   static RellmHostingPurchaseDetails getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<RellmHostingPurchaseDetails>(create);
   static RellmHostingPurchaseDetails? _defaultInstance;
 
+  /// NOTE: as of the current webhook implementation, the buyer never supplies this and the
+  /// originating `MarketProduct`'s own configured size isn't carried through Checkout Session
+  /// metadata either, so this is currently always `0` here -- an admin fulfilling an order today
+  /// needs to cross-reference the `MarketProduct` itself for the size actually sold. Intended to be
+  /// the requested PostgreSQL database size in bytes.
   @$pb.TagNumber(1)
   $fixnum.Int64 get dbSizeBytes => $_getI64(0);
   @$pb.TagNumber(1)
@@ -1418,6 +1540,8 @@ class RellmHostingPurchaseDetails extends $pb.GeneratedMessage {
   @$pb.TagNumber(1)
   void clearDbSizeBytes() => clearField(1);
 
+  /// Same caveat as `db_size_bytes` above -- currently always `0`. Intended to be the requested
+  /// MinIO (object storage) size in bytes.
   @$pb.TagNumber(2)
   $fixnum.Int64 get minioSizeBytes => $_getI64(1);
   @$pb.TagNumber(2)
@@ -1427,6 +1551,7 @@ class RellmHostingPurchaseDetails extends $pb.GeneratedMessage {
   @$pb.TagNumber(2)
   void clearMinioSizeBytes() => clearField(2);
 
+  /// The domain the buyer wants their new Rellm instance reachable at (e.g. "myserver.example.com").
   @$pb.TagNumber(3)
   $core.String get domain => $_getSZ(2);
   @$pb.TagNumber(3)
@@ -1436,6 +1561,9 @@ class RellmHostingPurchaseDetails extends $pb.GeneratedMessage {
   @$pb.TagNumber(3)
   void clearDomain() => clearField(3);
 
+  /// Where the fulfilling admin should reach the buyer about this order, separate from whatever
+  /// email/contact info is on the buyer's own `User` (which may not be checked as often, or may not
+  /// exist at all for a server with no email-based signup).
   @$pb.TagNumber(4)
   $core.String get contactEmail => $_getSZ(3);
   @$pb.TagNumber(4)
@@ -1445,6 +1573,10 @@ class RellmHostingPurchaseDetails extends $pb.GeneratedMessage {
   @$pb.TagNumber(4)
   void clearContactEmail() => clearField(4);
 
+  /// Free-form notes from the buyer to the fulfilling admin, captured once at purchase time (e.g.
+  /// special requests, existing-data-migration needs). Immutable after purchase -- see
+  /// `RellmHostingSubscriptionDetails.additional_information`'s own doc, which carries this same
+  /// text forward onto the resulting `MarketSubscription`.
   @$pb.TagNumber(5)
   $core.String get additionalInformation => $_getSZ(4);
   @$pb.TagNumber(5)
@@ -1455,6 +1587,12 @@ class RellmHostingPurchaseDetails extends $pb.GeneratedMessage {
   void clearAdditionalInformation() => clearField(5);
 }
 
+/// `MarketPurchase.details`' `PURCHASE_TYPE_PERMISSIONS_ACCESS` variant -- copied verbatim from the
+/// originating `MarketProduct.details` at the moment this purchase was fulfilled. Field-for-field
+/// identical to `PermissionsAccessSubscriptionDetails`, but kept as a genuinely distinct Rust type
+/// (not just documentation) -- see `logic::market_fulfillment::terminate_entitlement`'s own doc,
+/// which parses a `MarketSubscription`'s `details` as `PermissionsAccessSubscriptionDetails`
+/// specifically (never this message) when clawing back a lapsed grant.
 class PermissionsAccessPurchaseDetails extends $pb.GeneratedMessage {
   factory PermissionsAccessPurchaseDetails({
     $core.Iterable<$15.Permission>? permissions,
@@ -1495,6 +1633,8 @@ class PermissionsAccessPurchaseDetails extends $pb.GeneratedMessage {
   static PermissionsAccessPurchaseDetails getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<PermissionsAccessPurchaseDetails>(create);
   static PermissionsAccessPurchaseDetails? _defaultInstance;
 
+  /// The permissions this purchase granted -- see `logic::market_fulfillment::fulfill_purchase`'s
+  /// `PermissionsAccess` arm (adds these to the buyer's `User.permissions`, union-style).
   @$pb.TagNumber(1)
   $core.List<$15.Permission> get permissions => $_getList(0);
 }
@@ -1507,6 +1647,13 @@ enum MarketSubscription_Details {
   notSet
 }
 
+/// Created for *every* `MarketPurchase`, regardless of `MarketProduct.period` -- a recurring
+/// (`PURCHASE_PERIOD_ANNUAL`/`PURCHASE_PERIOD_MONTHLY`) one gets re-billed and re-fulfilled
+/// automatically every period by `renew_market_subscriptions.rs` until canceled; a
+/// `PURCHASE_PERIOD_INDEFINITE` one-time purchase gets a subscription too (with `renews_at` unset --
+/// see that field's own doc), purely so it's still cancelable and still carries the same per-type
+/// fulfillment tracking (e.g. `RellmHostingSubscriptionDetails.fulfillment_status`/`fulfillment_notes`) every
+/// other purchase type gets, even though it never actually bills again.
 class MarketSubscription extends $pb.GeneratedMessage {
   factory MarketSubscription({
     $core.String? id,
@@ -1642,6 +1789,7 @@ class MarketSubscription extends $pb.GeneratedMessage {
   @$pb.TagNumber(1)
   void clearId() => clearField(1);
 
+  /// Who owns this subscription (i.e. who's being billed and who the entitlement applies to).
   @$pb.TagNumber(2)
   $5.Author get buyer => $_getN(1);
   @$pb.TagNumber(2)
@@ -1653,6 +1801,8 @@ class MarketSubscription extends $pb.GeneratedMessage {
   @$pb.TagNumber(2)
   $5.Author ensureBuyer() => $_ensure(1);
 
+  /// What this subscription grants -- copied from (and always matching) `market_product.type`.
+  /// Denormalized here the same way `MarketPurchase.type` is -- see that field's own doc.
   @$pb.TagNumber(3)
   PurchaseType get type => $_getN(2);
   @$pb.TagNumber(3)
@@ -1662,6 +1812,10 @@ class MarketSubscription extends $pb.GeneratedMessage {
   @$pb.TagNumber(3)
   void clearType() => clearField(3);
 
+  /// How often this subscription bills -- copied from `market_product.period` at the time this
+  /// subscription was created. `PURCHASE_PERIOD_INDEFINITE` is valid here too (see this message's
+  /// own doc) -- it just means `renews_at` stays unset and this subscription never actually bills
+  /// again.
   @$pb.TagNumber(4)
   PurchasePeriod get period => $_getN(3);
   @$pb.TagNumber(4)
@@ -1671,6 +1825,9 @@ class MarketSubscription extends $pb.GeneratedMessage {
   @$pb.TagNumber(4)
   void clearPeriod() => clearField(4);
 
+  /// The price charged each renewal, in the same unit `MarketProduct.amount` uses -- copied from
+  /// `market_product.amount` at the time this subscription was created, so a later price change to
+  /// the product doesn't retroactively re-price an existing subscriber.
   @$pb.TagNumber(5)
   $core.int get amount => $_getIZ(4);
   @$pb.TagNumber(5)
@@ -1680,6 +1837,8 @@ class MarketSubscription extends $pb.GeneratedMessage {
   @$pb.TagNumber(5)
   void clearAmount() => clearField(5);
 
+  /// The ISO 4217 numeric currency code `amount` is denominated in -- copied from
+  /// `market_product.currency` at the time this subscription was created.
   @$pb.TagNumber(6)
   $core.int get currency => $_getIZ(5);
   @$pb.TagNumber(6)
@@ -1689,7 +1848,10 @@ class MarketSubscription extends $pb.GeneratedMessage {
   @$pb.TagNumber(6)
   void clearCurrency() => clearField(6);
 
-  /// Note: marshaling should handle the circular relationship here gracefully.
+  /// The `MarketProduct` this subscription was made against, as it existed at the time it was
+  /// fetched -- may since have changed price/details/been delisted (delisting an already-subscribed
+  /// product doesn't cancel existing subscriptions, only blocks new purchases). Note: marshaling
+  /// should handle the circular relationship here gracefully.
   @$pb.TagNumber(7)
   MarketProduct get marketProduct => $_getN(6);
   @$pb.TagNumber(7)
@@ -1701,6 +1863,10 @@ class MarketSubscription extends $pb.GeneratedMessage {
   @$pb.TagNumber(7)
   MarketProduct ensureMarketProduct() => $_ensure(6);
 
+  /// Every `MarketPurchase` billed against this subscription so far -- the original purchase plus
+  /// every successful renewal charge, newest first. Each entry's own `market_subscription` field is
+  /// left unset here (see `MarketPurchase.market_subscription`'s own doc) to avoid recursing back
+  /// into this same subscription.
   @$pb.TagNumber(8)
   $core.List<MarketPurchase> get billingHistory => $_getList(7);
 
@@ -1748,6 +1914,8 @@ class MarketSubscription extends $pb.GeneratedMessage {
   @$pb.TagNumber(13)
   PermissionsAccessSubscriptionDetails ensurePermissionsAccessSubscriptionDetails() => $_ensure(11);
 
+  /// When this subscription was first created (i.e. when the initial `MarketPurchase` was
+  /// fulfilled).
   @$pb.TagNumber(20)
   $13.Timestamp get createdAt => $_getN(12);
   @$pb.TagNumber(20)
@@ -1759,6 +1927,11 @@ class MarketSubscription extends $pb.GeneratedMessage {
   @$pb.TagNumber(20)
   $13.Timestamp ensureCreatedAt() => $_ensure(12);
 
+  /// When the next renewal charge is due. Always unset for a `PURCHASE_PERIOD_INDEFINITE`
+  /// subscription (see this message's own doc) -- there is no next charge. Otherwise, advanced by
+  /// one `period` on every successful renewal (`renew_market_subscriptions.rs`); left untouched
+  /// once `canceled_at` is set, since a canceled subscription never renews again regardless of what
+  /// this still says.
   @$pb.TagNumber(21)
   $13.Timestamp get renewsAt => $_getN(13);
   @$pb.TagNumber(21)
@@ -1774,7 +1947,8 @@ class MarketSubscription extends $pb.GeneratedMessage {
   /// (CancelMarketSubscription) or a renewal charge failed. The subscription's entitlement (media
   /// storage quota, granted permissions, etc.) stays active until whichever is later of
   /// renews_at/canceled_at, at which point renew_market_subscriptions.rs revokes it and sets
-  /// service_terminated_at.
+  /// service_terminated_at. Also the moment `MarketProduct.sold_count` is decremented, freeing this
+  /// subscription's slot for a new buyer (see that field's own doc).
   @$pb.TagNumber(22)
   $13.Timestamp get canceledAt => $_getN(14);
   @$pb.TagNumber(22)
@@ -1786,7 +1960,12 @@ class MarketSubscription extends $pb.GeneratedMessage {
   @$pb.TagNumber(22)
   $13.Timestamp ensureCanceledAt() => $_ensure(14);
 
-  /// The time permissions were removed, media storage quotas reset, etc.
+  /// The time permissions were removed, media storage quotas reset, etc. -- i.e. when
+  /// `logic::market_fulfillment::terminate_entitlement` actually ran for this subscription. Always
+  /// unset while `canceled_at` is unset; may remain unset for a while *after* `canceled_at` is set,
+  /// since the entitlement intentionally stays active until the later of `renews_at`/`canceled_at`
+  /// (see `canceled_at`'s own doc) -- a buyer who cancels mid-period keeps what they already paid
+  /// for through the end of that period.
   @$pb.TagNumber(23)
   $13.Timestamp get serviceTerminatedAt => $_getN(15);
   @$pb.TagNumber(23)
@@ -1799,6 +1978,9 @@ class MarketSubscription extends $pb.GeneratedMessage {
   $13.Timestamp ensureServiceTerminatedAt() => $_ensure(15);
 }
 
+/// `MarketProduct.details`/`MarketSubscription.details`' `PURCHASE_TYPE_MEDIA_STORAGE` variant --
+/// what a media storage product actually grants. Field-for-field identical to
+/// `MediaStoragePurchaseDetails` -- see that message's own doc for why it's still a distinct type.
 class MediaStorageSubscriptionDetails extends $pb.GeneratedMessage {
   factory MediaStorageSubscriptionDetails({
     $fixnum.Int64? allocationBytes,
@@ -1839,6 +2021,9 @@ class MediaStorageSubscriptionDetails extends $pb.GeneratedMessage {
   static MediaStorageSubscriptionDetails getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<MediaStorageSubscriptionDetails>(create);
   static MediaStorageSubscriptionDetails? _defaultInstance;
 
+  /// How much media storage this product/subscription grants the buyer, replacing (not adding to)
+  /// whatever quota they already had -- see `logic::market_fulfillment::fulfill_purchase`'s
+  /// `MediaStorage` arm.
   @$pb.TagNumber(1)
   $fixnum.Int64 get allocationBytes => $_getI64(0);
   @$pb.TagNumber(1)
@@ -1849,6 +2034,9 @@ class MediaStorageSubscriptionDetails extends $pb.GeneratedMessage {
   void clearAllocationBytes() => clearField(1);
 }
 
+/// `MarketProduct.details`/`MarketSubscription.details`' `PURCHASE_TYPE_AI_GRANTS` variant -- what
+/// an AI token product actually grants. Field-for-field identical to `AIGrantPurchaseDetails` --
+/// see that message's own doc for why it's still a distinct type.
 class AIGrantSubscriptionDetails extends $pb.GeneratedMessage {
   factory AIGrantSubscriptionDetails({
     $core.String? aiProviderId,
@@ -1899,6 +2087,7 @@ class AIGrantSubscriptionDetails extends $pb.GeneratedMessage {
   static AIGrantSubscriptionDetails getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<AIGrantSubscriptionDetails>(create);
   static AIGrantSubscriptionDetails? _defaultInstance;
 
+  /// Which `AIProvider` this grant is against.
   @$pb.TagNumber(1)
   $core.String get aiProviderId => $_getSZ(0);
   @$pb.TagNumber(1)
@@ -1908,9 +2097,13 @@ class AIGrantSubscriptionDetails extends $pb.GeneratedMessage {
   @$pb.TagNumber(1)
   void clearAiProviderId() => clearField(1);
 
+  /// Which of that provider's models the grant covers.
   @$pb.TagNumber(2)
   $core.List<$core.String> get modelNames => $_getList(1);
 
+  /// How many tokens this product/subscription grants the buyer each time it's (re-)fulfilled,
+  /// replacing (not adding to) whatever balance remained -- see
+  /// `logic::market_fulfillment::fulfill_purchase`'s `AiGrants` arm.
   @$pb.TagNumber(3)
   $fixnum.Int64 get tokens => $_getI64(2);
   @$pb.TagNumber(3)
@@ -1921,6 +2114,12 @@ class AIGrantSubscriptionDetails extends $pb.GeneratedMessage {
   void clearTokens() => clearField(3);
 }
 
+/// `MarketProduct.details`/`MarketSubscription.details`' `PURCHASE_TYPE_RELLM_HOSTING` variant --
+/// what a dedicated-hosting product actually grants, plus the buyer's own request details and the
+/// admin's own fulfillment tracking for it. Field-for-field identical to `RellmHostingPurchaseDetails`
+/// for the first five fields (see that message's own doc); `fulfillment_status`/`fulfillment_notes` below have
+/// no `*PurchaseDetails` counterpart, since they're only ever meaningful on the standing
+/// `MarketSubscription`, not on any one individual `MarketPurchase` billing event.
 class RellmHostingSubscriptionDetails extends $pb.GeneratedMessage {
   factory RellmHostingSubscriptionDetails({
     $fixnum.Int64? dbSizeBytes,
@@ -1928,7 +2127,7 @@ class RellmHostingSubscriptionDetails extends $pb.GeneratedMessage {
     $core.String? domain,
     $core.String? contactEmail,
     $core.String? additionalInformation,
-    $core.bool? fulfilled,
+    FulfillmentStatus? fulfillmentStatus,
     $core.Iterable<FulfillmentNote>? fulfillmentNotes,
   }) {
     final $result = create();
@@ -1947,8 +2146,8 @@ class RellmHostingSubscriptionDetails extends $pb.GeneratedMessage {
     if (additionalInformation != null) {
       $result.additionalInformation = additionalInformation;
     }
-    if (fulfilled != null) {
-      $result.fulfilled = fulfilled;
+    if (fulfillmentStatus != null) {
+      $result.fulfillmentStatus = fulfillmentStatus;
     }
     if (fulfillmentNotes != null) {
       $result.fulfillmentNotes.addAll(fulfillmentNotes);
@@ -1965,7 +2164,7 @@ class RellmHostingSubscriptionDetails extends $pb.GeneratedMessage {
     ..aOS(3, _omitFieldNames ? '' : 'domain')
     ..aOS(4, _omitFieldNames ? '' : 'contactEmail')
     ..aOS(5, _omitFieldNames ? '' : 'additionalInformation')
-    ..aOB(6, _omitFieldNames ? '' : 'fulfilled')
+    ..e<FulfillmentStatus>(6, _omitFieldNames ? '' : 'fulfillmentStatus', $pb.PbFieldType.OE, defaultOrMaker: FulfillmentStatus.FULFILLMENT_STATUS_AWAITING_HOST_ADMIN, valueOf: FulfillmentStatus.valueOf, enumValues: FulfillmentStatus.values)
     ..pc<FulfillmentNote>(7, _omitFieldNames ? '' : 'fulfillmentNotes', $pb.PbFieldType.PM, subBuilder: FulfillmentNote.create)
     ..hasRequiredFields = false
   ;
@@ -1991,6 +2190,10 @@ class RellmHostingSubscriptionDetails extends $pb.GeneratedMessage {
   static RellmHostingSubscriptionDetails getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<RellmHostingSubscriptionDetails>(create);
   static RellmHostingSubscriptionDetails? _defaultInstance;
 
+  /// On a `MarketProduct`: the PostgreSQL database size (in bytes) this product is configured to
+  /// provision. On a `MarketSubscription`: see `RellmHostingPurchaseDetails.db_size_bytes`'s own
+  /// doc -- as of the current webhook implementation, this is currently always `0` here too, since
+  /// the subscription's `details` is built the same way the purchase's is.
   @$pb.TagNumber(1)
   $fixnum.Int64 get dbSizeBytes => $_getI64(0);
   @$pb.TagNumber(1)
@@ -2000,6 +2203,8 @@ class RellmHostingSubscriptionDetails extends $pb.GeneratedMessage {
   @$pb.TagNumber(1)
   void clearDbSizeBytes() => clearField(1);
 
+  /// Same caveat as `db_size_bytes` above. On a `MarketProduct`: the MinIO (object storage) size (in
+  /// bytes) this product is configured to provision.
   @$pb.TagNumber(2)
   $fixnum.Int64 get minioSizeBytes => $_getI64(1);
   @$pb.TagNumber(2)
@@ -2009,6 +2214,9 @@ class RellmHostingSubscriptionDetails extends $pb.GeneratedMessage {
   @$pb.TagNumber(2)
   void clearMinioSizeBytes() => clearField(2);
 
+  /// On a `MarketProduct`: unset/meaningless (a product isn't tied to any one domain). On a
+  /// `MarketSubscription`: the domain the buyer wants their new Rellm instance reachable at, from
+  /// `RellmHostingPurchaseDetails.domain`.
   @$pb.TagNumber(3)
   $core.String get domain => $_getSZ(2);
   @$pb.TagNumber(3)
@@ -2018,6 +2226,8 @@ class RellmHostingSubscriptionDetails extends $pb.GeneratedMessage {
   @$pb.TagNumber(3)
   void clearDomain() => clearField(3);
 
+  /// On a `MarketProduct`: unset/meaningless. On a `MarketSubscription`: where the fulfilling admin
+  /// should reach the buyer about this order, from `RellmHostingPurchaseDetails.contact_email`.
   @$pb.TagNumber(4)
   $core.String get contactEmail => $_getSZ(3);
   @$pb.TagNumber(4)
@@ -2039,19 +2249,22 @@ class RellmHostingSubscriptionDetails extends $pb.GeneratedMessage {
   @$pb.TagNumber(5)
   void clearAdditionalInformation() => clearField(5);
 
-  /// Whether an admin has actually stood up this Rellm hosting order -- Rellm hosting is
-  /// deliberately not automated (see `market.proto`'s own top-of-file notes and
-  /// `logic::market_fulfillment::fulfill_purchase`'s `RellmHosting` no-op arm), so this is the one
-  /// manual "is this order done" signal, shown/toggled on `/market/fulfillment`
-  /// (`GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN`).
+  /// Where this Rellm hosting order currently stands -- Rellm hosting is deliberately not automated
+  /// (see `market.proto`'s own top-of-file notes and `logic::market_fulfillment::fulfill_purchase`'s
+  /// `RellmHosting` no-op arm), so this is the one manual "how far along is this order" signal,
+  /// shown on `/market/fulfillment` (`GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN`).
+  /// Never independently settable by a client -- always server-derived as whatever
+  /// `fulfillment_notes`' own last entry's `fulfillment_status` says (or
+  /// `FULFILLMENT_STATUS_AWAITING_HOST_ADMIN` if `fulfillment_notes` is empty), so this field can
+  /// never drift out of sync with the history that explains *why* it's in that state.
   @$pb.TagNumber(6)
-  $core.bool get fulfilled => $_getBF(5);
+  FulfillmentStatus get fulfillmentStatus => $_getN(5);
   @$pb.TagNumber(6)
-  set fulfilled($core.bool v) { $_setBool(5, v); }
+  set fulfillmentStatus(FulfillmentStatus v) { setField(6, v); }
   @$pb.TagNumber(6)
-  $core.bool hasFulfilled() => $_has(5);
+  $core.bool hasFulfillmentStatus() => $_has(5);
   @$pb.TagNumber(6)
-  void clearFulfilled() => clearField(6);
+  void clearFulfillmentStatus() => clearField(6);
 
   /// The admin/buyer conversation about fulfilling this order -- oldest to newest, append-only (see
   /// `UpdateMarketSubscription`'s own doc: a new entry can only ever be appended after whatever's
@@ -2061,11 +2274,14 @@ class RellmHostingSubscriptionDetails extends $pb.GeneratedMessage {
   $core.List<FulfillmentNote> get fulfillmentNotes => $_getList(6);
 }
 
-/// One entry in a MarketSubscription's `fulfillment_notes` -- see that field's own doc.
+/// One entry in a MarketSubscription's `fulfillment_notes` -- see that field's own doc. Immutable
+/// once appended: `UpdateMarketSubscription` only ever accepts a `fulfillment_notes` list whose
+/// existing entries are byte-for-byte identical to what's already stored (see that RPC's own doc).
 class FulfillmentNote extends $pb.GeneratedMessage {
   factory FulfillmentNote({
     $core.String? userId,
     $core.String? note,
+    FulfillmentStatus? fulfillmentStatus,
     $13.Timestamp? createdAt,
   }) {
     final $result = create();
@@ -2074,6 +2290,9 @@ class FulfillmentNote extends $pb.GeneratedMessage {
     }
     if (note != null) {
       $result.note = note;
+    }
+    if (fulfillmentStatus != null) {
+      $result.fulfillmentStatus = fulfillmentStatus;
     }
     if (createdAt != null) {
       $result.createdAt = createdAt;
@@ -2087,7 +2306,8 @@ class FulfillmentNote extends $pb.GeneratedMessage {
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'FulfillmentNote', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'userId')
     ..aOS(2, _omitFieldNames ? '' : 'note')
-    ..aOM<$13.Timestamp>(3, _omitFieldNames ? '' : 'createdAt', subBuilder: $13.Timestamp.create)
+    ..e<FulfillmentStatus>(3, _omitFieldNames ? '' : 'fulfillmentStatus', $pb.PbFieldType.OE, defaultOrMaker: FulfillmentStatus.FULFILLMENT_STATUS_AWAITING_HOST_ADMIN, valueOf: FulfillmentStatus.valueOf, enumValues: FulfillmentStatus.values)
+    ..aOM<$13.Timestamp>(4, _omitFieldNames ? '' : 'createdAt', subBuilder: $13.Timestamp.create)
     ..hasRequiredFields = false
   ;
 
@@ -2112,6 +2332,10 @@ class FulfillmentNote extends $pb.GeneratedMessage {
   static FulfillmentNote getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<FulfillmentNote>(create);
   static FulfillmentNote? _defaultInstance;
 
+  /// Whoever wrote this note -- either the fulfilling admin or the buyer themselves, depending on
+  /// which side of the conversation this entry is. Must match the id of whoever's actually making
+  /// the `UpdateMarketSubscription` request that appends this entry (server-validated -- see that
+  /// RPC's own doc); a client can't author a note on someone else's behalf.
   @$pb.TagNumber(1)
   $core.String get userId => $_getSZ(0);
   @$pb.TagNumber(1)
@@ -2121,6 +2345,12 @@ class FulfillmentNote extends $pb.GeneratedMessage {
   @$pb.TagNumber(1)
   void clearUserId() => clearField(1);
 
+  /// The note's own text -- required (rejected with `fulfillment_note_text_required`) unless this
+  /// entry also changes `fulfillment_status` from whatever the previous entry (or, for the very
+  /// first note, the implicit `FULFILLMENT_STATUS_AWAITING_HOST_ADMIN` default) left it at, in which
+  /// case an admin can record a bare status change with no accompanying text (e.g. the automatic
+  /// "admin opened this order" transition to `FULFILLMENT_STATUS_IN_PROGRESS` -- see that enum
+  /// value's own doc).
   @$pb.TagNumber(2)
   $core.String get note => $_getSZ(1);
   @$pb.TagNumber(2)
@@ -2130,18 +2360,39 @@ class FulfillmentNote extends $pb.GeneratedMessage {
   @$pb.TagNumber(2)
   void clearNote() => clearField(2);
 
+  /// What `RellmHostingSubscriptionDetails.fulfillment_status` became as of this note -- unchanged
+  /// from the previous entry for a plain note, or the new value for an actual status transition (see
+  /// `note`'s own doc on when text is/isn't required for each case). This is what makes
+  /// `fulfillment_notes` a genuine "fulfillment state history," not just a chat log alongside a
+  /// separately-tracked current status.
   @$pb.TagNumber(3)
-  $13.Timestamp get createdAt => $_getN(2);
+  FulfillmentStatus get fulfillmentStatus => $_getN(2);
   @$pb.TagNumber(3)
-  set createdAt($13.Timestamp v) { setField(3, v); }
+  set fulfillmentStatus(FulfillmentStatus v) { setField(3, v); }
   @$pb.TagNumber(3)
-  $core.bool hasCreatedAt() => $_has(2);
+  $core.bool hasFulfillmentStatus() => $_has(2);
   @$pb.TagNumber(3)
-  void clearCreatedAt() => clearField(3);
-  @$pb.TagNumber(3)
-  $13.Timestamp ensureCreatedAt() => $_ensure(2);
+  void clearFulfillmentStatus() => clearField(3);
+
+  /// When this note was added. Server-stamped -- `UpdateMarketSubscription` always ignores whatever
+  /// timestamp the client sends for a newly-appended entry.
+  @$pb.TagNumber(4)
+  $13.Timestamp get createdAt => $_getN(3);
+  @$pb.TagNumber(4)
+  set createdAt($13.Timestamp v) { setField(4, v); }
+  @$pb.TagNumber(4)
+  $core.bool hasCreatedAt() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearCreatedAt() => clearField(4);
+  @$pb.TagNumber(4)
+  $13.Timestamp ensureCreatedAt() => $_ensure(3);
 }
 
+/// `MarketProduct.details`/`MarketSubscription.details`' `PURCHASE_TYPE_PERMISSIONS_ACCESS`
+/// variant -- what a permissions-bundle product actually grants. Field-for-field identical to
+/// `PermissionsAccessPurchaseDetails` -- see that message's own doc for why it's still a distinct
+/// type (that distinction is exactly what lets `logic::market_fulfillment::terminate_entitlement`
+/// tell "what to claw back" apart from "what was originally billed").
 class PermissionsAccessSubscriptionDetails extends $pb.GeneratedMessage {
   factory PermissionsAccessSubscriptionDetails({
     $core.Iterable<$15.Permission>? permissions,
@@ -2182,6 +2433,21 @@ class PermissionsAccessSubscriptionDetails extends $pb.GeneratedMessage {
   static PermissionsAccessSubscriptionDetails getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<PermissionsAccessSubscriptionDetails>(create);
   static PermissionsAccessSubscriptionDetails? _defaultInstance;
 
+  /// Which `Permission`s this product/subscription grants the buyer -- see
+  /// `logic::market_fulfillment::fulfill_purchase`'s `PermissionsAccess` arm (union-added to the
+  /// buyer's own `User.permissions`, never replacing what they already had) and
+  /// `terminate_entitlement`'s own arm (the exact claw-back set on cancellation/expiry).
+  /// Intentionally excludes permissions dangerous or nonsensical to sell this way -- e.g.
+  /// "Grant Basic Permissions," any "Moderate"/"Read All System Messages" permission, "Admin,"
+  /// "View Private Contact Methods," and "Edit Cluster Settings" must never appear in a Market
+  /// product's own `permissions` list. Enforced server-side on `CreateMarketProduct`/
+  /// `UpdateMarketProduct` (rejected with `permission_not_purchasable`) and again on
+  /// `MakeMarketPurchase` (defense in depth, in case a permission is later removed from the
+  /// purchasable set after a product granting it already exists) -- see
+  /// `rpcs::market::create_market_product::PURCHASABLE_PERMISSIONS`. NOTE: that Rust list is an
+  /// explicit include-list, not an exclude-list -- described here as an exclusion for readability,
+  /// but implemented as "only these permissions are purchasable" so a newly-added `Permission` is
+  /// never purchasable by default; it has to be deliberately added to that list.
   @$pb.TagNumber(1)
   $core.List<$15.Permission> get permissions => $_getList(0);
 }

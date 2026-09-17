@@ -225,6 +225,7 @@ To set up a deployment yourself, see: [Quick deploy to your own cluster](#quick-
       - [Federated Profiles](#federated-profiles)
       - [Federated Browsing](#federated-browsing)
       - [Federated Messaging](#federated-messaging)
+      - [Federated Markets](#federated-markets)
     - [Synchronization with Outside Servers](#synchronization-with-outside-servers)
       - [Sync Sources](#sync-sources)
         - [iCal](#ical)
@@ -250,6 +251,7 @@ To set up a deployment yourself, see: [Quick deploy to your own cluster](#quick-
       - [OpenAI](#openai)
       - [Anthropic](#anthropic)
       - [DigitalOcean](#digitalocean)
+    - [Rellm's Market](#rellms-market)
     - [Posts](#posts)
       - [GroupPost](#grouppost)
     - [Events](#events)
@@ -272,9 +274,9 @@ To set up a deployment yourself, see: [Quick deploy to your own cluster](#quick-
 
 ## What is Rellm?
 
-Broadly speaking, Rellm is something of an "internet philosophy." It's my (Jon's) philosophy. It's a generally anti-capitalist tech approach that has a few perhaps obvious opinions on everything from user data privacy expectations, to cost of servers, through CI/CD, the BE, API design, user expectations for transparent permissions/moderation/visibility on things like People, Media, Groups, Posts, and Events, etc. Conveniently, things that meet my (Jon's) requirements for these these things can be described as "Rellm CI/CD,", "Rellm API Design,", "Rellm Events," and so forth.
+Broadly speaking, Rellm is something of an "internet philosophy." It's tech approach that hovers between capitalism, socialism, libertarianism and syndicalism, more in the realm of "what could be better if we don't care about labels?", and strives to make communication and markets alike more open and fair. To provide a way to communicate and share that has mechanism to prevent it from being abused for marketing, and to make it profitable to run a server for your local business, club, or social media service at nearly any scale - or those of a few people you may know. It has a few clear opinions on everything from user data privacy expectations, to cost of servers, through CI/CD, the BE, media conversion, API design, user expectations for transparent permissions/moderation/visibility on things like People, Media, Groups, Posts, and Events, etc.
 
-As a more traditional market product, Rellm is a network of, and a protocol for, social networks that meets my (Jon's) expectations of usability, transparency, and fairness. It's designed to scale as well as Mastodon or better, but really, it aims to be something more like [Plex](https://www.plex.tv/), but as a social network released under the [AGPL](https://fossa.com/blog/open-source-software-licenses-101-agpl-license/) (and also, Kubernetes/LetsEncrypt/CertManager-friendly). Use cases include:
+As a more traditional market product, Rellm is a network of, and a protocol for, social networks that meets strict expectations of usability, transparency, and fairness. It's designed to scale as well as Mastodon or better, but really, it aims to be something more like [Plex](https://www.plex.tv/), but as a social network released under the [AGPL](https://fossa.com/blog/open-source-software-licenses-101-agpl-license/) (and also, Kubernetes/LetsEncrypt/CertManager-friendly). Use cases include:
 
 - Neighborhoods, communities, or cities
 - (Ex-)Coworkers wanting a private channel to chat

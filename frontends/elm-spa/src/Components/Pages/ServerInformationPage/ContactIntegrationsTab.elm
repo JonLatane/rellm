@@ -55,22 +55,44 @@ Unlike Twilio/Bird/Preferred Providers, `webPushConfig` is NOT stripped from the
 server` (the `server` this module's own `update`/`view` now take, exactly like `FederationTab`
 already does for its own similarly-public Facebook/X (Twitter) fields), independent of
 `adminContactIntegrations`'s own fetch.
+
+Preferred Providers/Twilio/Bird are grouped under a collapsible "External Integrations" section
+(`externalIntegrationsSection`), with Twilio and Bird each *also* independently collapsible inside
+it (`twilioSection`/`birdSection`) -- three nested levels of the same `expandable-section-title`/
+`-arrow`/`-content` idiom `SettingsTab.featureSettingsSection`/`UserProfilePage.expandableProfileSection`
+already establish (see `collapsedIntegrationsSections`, a `Set String` exactly like
+`SettingsTab.Model.collapsedFeatureSettings`). Everything starts expanded except Bird (the newer,
+less commonly configured of the two SMS providers -- see `BirdConfig`'s own proto doc). Since
+`ServerInformationPage.view` mounts each tab's content under a *different* `Html.Keyed` key per tab
+(`tabParam model.activeTab`), switching away from and back to this tab always tears down and
+rebuilds this whole subtree from scratch (never patches it in place) -- so a freshly-collapsed
+Bird section (or a freshly-toggled anything) always mounts already in its final CSS state, with no
+"is-open" -> "is-closed" class flip for the browser to animate; the `grid-template-rows` transition
+`profiles.css` defines only ever fires from a live *click* while this tab stays active, never from
+a tab switch. This only holds because each collapsible section's own wrapper node stays at a fixed
+position in its parent's child list across every state this module renders (Loading/Failed/Loaded,
+display/edit) -- if one were ever conditionally omitted instead of always-mounted-but-collapsed,
+Elm's positional diffing could reuse a DOM node meant for a different section and misfire a
+transition; every section here follows the established "always mounted, CSS-driven" convention
+specifically to avoid that.
 -}
 
 import Components.Pages.ServerInformationPage.Common as Common
 import Effect exposing (Effect)
 import Grpc
-import Html exposing (Html, button, div, h3, input, option, select, span, text)
+import Html exposing (Html, button, div, h2, h3, input, option, select, span, text)
 import Html.Attributes exposing (class, disabled, placeholder, selected, type_, value)
 import Html.Events exposing (onClick, onInput)
 import Proto.Rellm exposing (BirdConfig, ServerConfiguration, TwilioConfig, defaultBirdConfig, defaultTwilioConfig)
 import Proto.Rellm.Rellm as Rellm
 import Proto.Rellm.VerificationAPI exposing (VerificationAPI(..))
+import Set exposing (Set)
 import Shared
 import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer)
 import Task
+import UI.Classes exposing (classes, openClosedClass)
 
 
 
@@ -84,7 +106,52 @@ type alias Model =
     , webPushPublicKeyEdit : Maybe TextFieldEdit
     , webPushPrivateKeyEdit : Maybe TextFieldEdit
     , adminContactIntegrations : AdminContactIntegrationsStatus
+    , collapsedIntegrationsSections : Set String
     }
+
+
+{-| The three nested collapsible sections `view` builds under "External Integrations" --
+`ExternalIntegrationsSection` is the outer wrapper (Preferred Providers/Twilio/Bird all live
+inside it), `TwilioIntegrationSection`/`BirdIntegrationSection` are each provider's own nested
+collapsible. See `Model.collapsedIntegrationsSections` and this module's own doc for why nesting
+this is safe against `ServerInformationPage`'s per-tab `Html.Keyed` remounting.
+-}
+type IntegrationsSection
+    = ExternalIntegrationsSection
+    | TwilioIntegrationSection
+    | BirdIntegrationSection
+
+
+{-| The `collapsedIntegrationsSections` key each `IntegrationsSection` stores itself under --
+distinct from its own display label the same way `SettingsTab.featureSettingsKey` is.
+-}
+integrationsSectionKey : IntegrationsSection -> String
+integrationsSectionKey section =
+    case section of
+        ExternalIntegrationsSection ->
+            "external"
+
+        TwilioIntegrationSection ->
+            "twilio"
+
+        BirdIntegrationSection ->
+            "bird"
+
+
+integrationsSectionExpanded : Model -> IntegrationsSection -> Bool
+integrationsSectionExpanded model section =
+    not (Set.member (integrationsSectionKey section) model.collapsedIntegrationsSections)
+
+
+{-| Toggles a single `Set` member -- mirrors `SettingsTab.toggleSetMember` exactly.
+-}
+toggleSetMember : comparable -> Set comparable -> Set comparable
+toggleSetMember key set =
+    if Set.member key set then
+        Set.remove key set
+
+    else
+        Set.insert key set
 
 
 {-| The result of this tab's own authenticated `GetServerConfiguration` fetch -- see this module's
@@ -137,6 +204,7 @@ type Msg
     | GotWebPushPrivateKeySaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, ServerConfiguration ))
     | ContactIntegrationsTabActivated
     | GotAuthenticatedServerConfiguration (Result Grpc.Error ( Maybe AccountsPanel.Msg, ServerConfiguration ))
+    | IntegrationsSectionToggled IntegrationsSection
 
 
 {-| Live only while the Twilio config is being edited by an admin. `apiKeySecret` always starts
@@ -200,6 +268,7 @@ init =
     , webPushPublicKeyEdit = Nothing
     , webPushPrivateKeyEdit = Nothing
     , adminContactIntegrations = AdminContactIntegrationsNotFetched
+    , collapsedIntegrationsSections = Set.singleton (integrationsSectionKey BirdIntegrationSection)
     }
 
 
@@ -565,6 +634,11 @@ update shared targetHost maybeServer msg model =
         GotAuthenticatedServerConfiguration (Err err) ->
             ( { model | adminContactIntegrations = AdminContactIntegrationsFetchFailed (AccountsPanel.grpcErrorToString err) }, Effect.none )
 
+        IntegrationsSectionToggled section ->
+            ( { model | collapsedIntegrationsSections = toggleSetMember (integrationsSectionKey section) model.collapsedIntegrationsSections }
+            , Effect.none
+            )
+
 
 {-| `twilio_config`/`bird_config`/`preferred_verification_apis` are all stripped from the
 unauthenticated `GetServerConfiguration` every other tab reads via `RellmServers.configurationOf`
@@ -723,44 +797,116 @@ own `server` for the same reason.
 view : RellmServer -> Maybe RellmAccount -> Model -> Html Msg
 view server maybeAdminAccount model =
     div [ class "server-details-tab-content server-details-integrations" ]
-        ((case model.adminContactIntegrations of
-            FetchingAdminContactIntegrations ->
-                [ span [ class "server-details-feature-settings-value" ] [ text "Loading…" ] ]
+        [ webPushConfigSection server model maybeAdminAccount
+        , externalIntegrationsSection model maybeAdminAccount
+        ]
 
-            AdminContactIntegrationsNotFetched ->
-                [ span [ class "server-details-feature-settings-value" ] [ text "Loading…" ] ]
 
-            AdminContactIntegrationsFetchFailed err ->
-                [ span [ class "server-details-feature-settings-value" ] [ text ("Failed to load integration settings: " ++ err) ] ]
+{-| The collapsible "External Integrations" group -- Preferred Providers/Twilio/Bird, each always
+mounted (even while collapsed, or before/during the admin fetch) so this section's own
+`expanded`/`is-open`/`is-closed` toggle stays purely CSS-driven, per this module's own doc. Twilio
+and Bird are each their own nested collapsible inside it (`twilioSection`/`birdSection`) -- see
+`IntegrationsSection`.
+-}
+externalIntegrationsSection : Model -> Maybe RellmAccount -> Html Msg
+externalIntegrationsSection model maybeAdminAccount =
+    let
+        expanded : Bool
+        expanded =
+            integrationsSectionExpanded model ExternalIntegrationsSection
+    in
+    div [ class "server-details-external-integrations" ]
+        [ h2
+            [ classes [ "expandable-section-title", "server-details-group-title" ]
+            , onClick (IntegrationsSectionToggled ExternalIntegrationsSection)
+            ]
+            [ span [ classes [ "expandable-section-arrow", openClosedClass expanded ] ] [ text "▼" ]
+            , text "External Integrations"
+            ]
+        , div
+            [ classes [ "expandable-section-content", openClosedClass expanded, "border-color-primary-anchor-50" ] ]
+            [ div [ class "expandable-section-content-inner" ]
+                (case model.adminContactIntegrations of
+                    FetchingAdminContactIntegrations ->
+                        [ span [ class "server-details-feature-settings-value" ] [ text "Loading…" ] ]
 
-            AdminContactIntegrationsLoaded _ ->
-                [ div []
-                    (case model.configEdit of
-                        Just edit ->
-                            twilioEditView edit
+                    AdminContactIntegrationsNotFetched ->
+                        [ span [ class "server-details-feature-settings-value" ] [ text "Loading…" ] ]
 
-                        Nothing ->
-                            twilioDisplayView maybeAdminAccount (adminTwilioConfig model)
-                    )
-                , div []
-                    (case model.birdConfigEdit of
-                        Just edit ->
-                            birdEditView edit
+                    AdminContactIntegrationsFetchFailed err ->
+                        [ span [ class "server-details-feature-settings-value" ] [ text ("Failed to load integration settings: " ++ err) ] ]
 
-                        Nothing ->
-                            birdDisplayView maybeAdminAccount (adminBirdConfig model)
-                    )
-                , preferredProvidersSection maybeAdminAccount model.preferredProvidersEdit (adminPreferredProviders model)
-                ]
-         )
-            ++ [ webPushConfigSection server model maybeAdminAccount ]
-        )
+                    AdminContactIntegrationsLoaded _ ->
+                        [ preferredProvidersSection maybeAdminAccount model.preferredProvidersEdit (adminPreferredProviders model)
+                        , twilioSection model maybeAdminAccount
+                        , birdSection model maybeAdminAccount
+                        ]
+                )
+            ]
+        ]
+
+
+twilioSection : Model -> Maybe RellmAccount -> Html Msg
+twilioSection model maybeAdminAccount =
+    let
+        expanded : Bool
+        expanded =
+            integrationsSectionExpanded model TwilioIntegrationSection
+    in
+    div [ class "server-details-feature-settings" ]
+        [ h3
+            [ classes [ "section-title", "expandable-section-title" ]
+            , onClick (IntegrationsSectionToggled TwilioIntegrationSection)
+            ]
+            [ span [ classes [ "expandable-section-arrow", openClosedClass expanded ] ] [ text "▼" ]
+            , text "Twilio"
+            ]
+        , div
+            [ classes [ "expandable-section-content", openClosedClass expanded, "border-color-primary-anchor-50" ] ]
+            [ div [ class "expandable-section-content-inner" ]
+                (case model.configEdit of
+                    Just edit ->
+                        twilioEditView edit
+
+                    Nothing ->
+                        twilioDisplayView maybeAdminAccount (adminTwilioConfig model)
+                )
+            ]
+        ]
+
+
+birdSection : Model -> Maybe RellmAccount -> Html Msg
+birdSection model maybeAdminAccount =
+    let
+        expanded : Bool
+        expanded =
+            integrationsSectionExpanded model BirdIntegrationSection
+    in
+    div [ class "server-details-feature-settings" ]
+        [ h3
+            [ classes [ "section-title", "expandable-section-title" ]
+            , onClick (IntegrationsSectionToggled BirdIntegrationSection)
+            ]
+            [ span [ classes [ "expandable-section-arrow", openClosedClass expanded ] ] [ text "▼" ]
+            , text "Bird"
+            ]
+        , div
+            [ classes [ "expandable-section-content", openClosedClass expanded, "border-color-primary-anchor-50" ] ]
+            [ div [ class "expandable-section-content-inner" ]
+                (case model.birdConfigEdit of
+                    Just edit ->
+                        birdEditView edit
+
+                    Nothing ->
+                        birdDisplayView maybeAdminAccount (adminBirdConfig model)
+                )
+            ]
+        ]
 
 
 twilioDisplayView : Maybe RellmAccount -> Maybe TwilioConfig -> List (Html Msg)
 twilioDisplayView maybeAdminAccount twilioConfig =
-    [ h3 [ class "section-title" ] [ text "Twilio" ]
-    , Common.settingsRow "Twilio Enabled" (Common.switchDisplay (twilioConfig |> Maybe.map .twilioEnabled |> Maybe.withDefault False))
+    [ Common.settingsRow "Twilio Enabled" (Common.switchDisplay (twilioConfig |> Maybe.map .twilioEnabled |> Maybe.withDefault False))
     , Common.settingsRow "Account SID" (span [ class "server-details-feature-settings-value" ] [ text (twilioConfig |> Maybe.map .twilioAccountSid |> Maybe.withDefault "—") ])
     , Common.settingsRow "API Key SID" (span [ class "server-details-feature-settings-value" ] [ text (twilioConfig |> Maybe.map .twilioApiKeySid |> Maybe.withDefault "—") ])
     , Common.settingsRow "From Number" (span [ class "server-details-feature-settings-value" ] [ text (twilioConfig |> Maybe.map .twilioFromNumber |> Maybe.withDefault "—") ])
@@ -780,8 +926,7 @@ proto doc for the full reasoning.
 -}
 twilioEditView : TwilioConfigEdit -> List (Html Msg)
 twilioEditView edit =
-    [ h3 [ class "section-title" ] [ text "Twilio" ]
-    , Common.settingsRow "Twilio Enabled" (Common.flagSwitch edit.enabled TwilioEnabledToggled)
+    [ Common.settingsRow "Twilio Enabled" (Common.flagSwitch edit.enabled TwilioEnabledToggled)
     , Common.settingsRow "Account SID"
         (input
             [ class "server-details-rename-input"
@@ -833,8 +978,7 @@ twilioEditView edit =
 
 birdDisplayView : Maybe RellmAccount -> Maybe BirdConfig -> List (Html Msg)
 birdDisplayView maybeAdminAccount birdConfig =
-    [ h3 [ class "section-title" ] [ text "Bird" ]
-    , Common.settingsRow "Bird Enabled" (Common.switchDisplay (birdConfig |> Maybe.map .birdEnabled |> Maybe.withDefault False))
+    [ Common.settingsRow "Bird Enabled" (Common.switchDisplay (birdConfig |> Maybe.map .birdEnabled |> Maybe.withDefault False))
     , Common.settingsRow "From" (span [ class "server-details-feature-settings-value" ] [ text (birdConfig |> Maybe.map .birdFrom |> Maybe.withDefault "—") ])
     , Common.settingsRow "Region" (span [ class "server-details-feature-settings-value" ] [ text (birdConfig |> Maybe.map .birdRegion |> Maybe.andThen emptyToNothing |> Maybe.withDefault "us1 (default)") ])
     , case maybeAdminAccount of
@@ -848,8 +992,7 @@ birdDisplayView maybeAdminAccount birdConfig =
 
 birdEditView : BirdConfigEdit -> List (Html Msg)
 birdEditView edit =
-    [ h3 [ class "section-title" ] [ text "Bird" ]
-    , Common.settingsRow "Bird Enabled" (Common.flagSwitch edit.enabled BirdEnabledToggled)
+    [ Common.settingsRow "Bird Enabled" (Common.flagSwitch edit.enabled BirdEnabledToggled)
     , Common.settingsRow "Access Key"
         (input
             [ type_ "password"

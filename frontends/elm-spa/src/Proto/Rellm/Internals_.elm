@@ -655,6 +655,7 @@ import Proto.Rellm.CustomNavigationTab.Icon
 import Proto.Rellm.CustomNavigationTab.Target
 import Proto.Rellm.EventAttendance.Attendee
 import Proto.Rellm.EventListingType
+import Proto.Rellm.FulfillmentStatus
 import Proto.Rellm.GenerateMediaRequest.Target
 import Proto.Rellm.GetMarketSubscriptionsRequestType
 import Proto.Rellm.GroupListingType
@@ -2383,9 +2384,9 @@ type alias Proto__Rellm__FeatureSettings =
 {-| The field numbers for the fields of `Proto__Rellm__MarketSettings`. This is mostly useful for internals, like documentation generation.
 
 -}
-fieldNumbersProto__Rellm__MarketSettings : { enabled : Int }
+fieldNumbersProto__Rellm__MarketSettings : { enabled : Int, stripeConfigured : Int }
 fieldNumbersProto__Rellm__MarketSettings =
-    { enabled = 1 }
+    { enabled = 1, stripeConfigured = 2 }
 
 
 {-| Default for Proto__Rellm__MarketSettings. Should only be used for 'required' decoders as an initial value.
@@ -2393,7 +2394,7 @@ fieldNumbersProto__Rellm__MarketSettings =
 -}
 defaultProto__Rellm__MarketSettings : Proto__Rellm__MarketSettings
 defaultProto__Rellm__MarketSettings =
-    { enabled = False }
+    { enabled = False, stripeConfigured = False }
 
 
 {-| Declares how to decode a `Proto__Rellm__MarketSettings` from Bytes. To actually perform the conversion from Bytes, you need to use Protobuf.Decode.decode from eriktim/elm-protocol-buffers.
@@ -2403,7 +2404,9 @@ decodeProto__Rellm__MarketSettings : Protobuf.Decode.Decoder Proto__Rellm__Marke
 decodeProto__Rellm__MarketSettings =
     Protobuf.Decode.message
         defaultProto__Rellm__MarketSettings
-        [ Protobuf.Decode.optional 1 Protobuf.Decode.bool (\a r -> { r | enabled = a }) ]
+        [ Protobuf.Decode.optional 1 Protobuf.Decode.bool (\a r -> { r | enabled = a })
+        , Protobuf.Decode.optional 2 Protobuf.Decode.bool (\a r -> { r | stripeConfigured = a })
+        ]
 
 
 {-| Declares how to encode a `Proto__Rellm__MarketSettings` to Bytes. To actually perform the conversion to Bytes, you need to use Protobuf.Encode.encode from eriktim/elm-protocol-buffers.
@@ -2411,14 +2414,15 @@ decodeProto__Rellm__MarketSettings =
 -}
 encodeProto__Rellm__MarketSettings : Proto__Rellm__MarketSettings -> Protobuf.Encode.Encoder
 encodeProto__Rellm__MarketSettings value =
-    Protobuf.Encode.message [ ( 1, Protobuf.Encode.bool value.enabled ) ]
+    Protobuf.Encode.message
+        [ ( 1, Protobuf.Encode.bool value.enabled ), ( 2, Protobuf.Encode.bool value.stripeConfigured ) ]
 
 
 {-| `Proto__Rellm__MarketSettings` message
 
 -}
 type alias Proto__Rellm__MarketSettings =
-    { enabled : Bool }
+    { enabled : Bool, stripeConfigured : Bool }
 
 
 {-| The field numbers for the fields of `Proto__Rellm__MediaSettings`. This is mostly useful for internals, like documentation generation.
@@ -7445,7 +7449,6 @@ fieldNumbersProto__Rellm__User :
     , currentUserFollow : Int
     , targetCurrentUserFollow : Int
     , currentGroupMembership : Int
-    , hasAdvancedData : Int
     , federatedProfiles : Int
     , syncDestinations : Int
     , syncSources : Int
@@ -7479,7 +7482,6 @@ fieldNumbersProto__Rellm__User =
     , currentUserFollow = 50
     , targetCurrentUserFollow = 51
     , currentGroupMembership = 52
-    , hasAdvancedData = 80
     , federatedProfiles = 81
     , syncDestinations = 82
     , syncSources = 83
@@ -7519,7 +7521,6 @@ defaultProto__Rellm__User =
     , currentUserFollow = Nothing
     , targetCurrentUserFollow = Nothing
     , currentGroupMembership = Nothing
-    , hasAdvancedData = False
     , federatedProfiles = []
     , syncDestinations = []
     , syncSources = []
@@ -7601,7 +7602,6 @@ decodeProto__Rellm__User =
             52
             (Protobuf.Decode.map Just decodeProto__Rellm__Membership)
             (\a r -> { r | currentGroupMembership = a })
-        , Protobuf.Decode.optional 80 Protobuf.Decode.bool (\a r -> { r | hasAdvancedData = a })
         , Protobuf.Decode.repeated
             81
             decodeProto__Rellm__FederatedAccount
@@ -7670,7 +7670,6 @@ encodeProto__Rellm__User value =
           , (Maybe.map encodeProto__Rellm__Membership >> Maybe.withDefault Protobuf.Encode.none)
                 value.currentGroupMembership
           )
-        , ( 80, Protobuf.Encode.bool value.hasAdvancedData )
         , ( 81, (Protobuf.Encode.list encodeProto__Rellm__FederatedAccount) value.federatedProfiles )
         , ( 82, (Protobuf.Encode.list encodeProto__Rellm__SyncDestination) value.syncDestinations )
         , ( 83, (Protobuf.Encode.list encodeProto__Rellm__SyncSource) value.syncSources )
@@ -7719,7 +7718,6 @@ type alias Proto__Rellm__User =
     , currentUserFollow : Maybe Proto__Rellm__Follow
     , targetCurrentUserFollow : Maybe Proto__Rellm__Follow
     , currentGroupMembership : Maybe Proto__Rellm__Membership
-    , hasAdvancedData : Bool
     , federatedProfiles : List Proto__Rellm__FederatedAccount
     , syncDestinations : List Proto__Rellm__SyncDestination
     , syncSources : List Proto__Rellm__SyncSource
@@ -7781,9 +7779,9 @@ type alias Proto__Rellm__PermissionsAccessSubscriptionDetails =
 {-| The field numbers for the fields of `Proto__Rellm__FulfillmentNote`. This is mostly useful for internals, like documentation generation.
 
 -}
-fieldNumbersProto__Rellm__FulfillmentNote : { userId : Int, note : Int, createdAt : Int }
+fieldNumbersProto__Rellm__FulfillmentNote : { userId : Int, note : Int, fulfillmentStatus : Int, createdAt : Int }
 fieldNumbersProto__Rellm__FulfillmentNote =
-    { userId = 1, note = 2, createdAt = 3 }
+    { userId = 1, note = 2, fulfillmentStatus = 3, createdAt = 4 }
 
 
 {-| Default for Proto__Rellm__FulfillmentNote. Should only be used for 'required' decoders as an initial value.
@@ -7791,7 +7789,11 @@ fieldNumbersProto__Rellm__FulfillmentNote =
 -}
 defaultProto__Rellm__FulfillmentNote : Proto__Rellm__FulfillmentNote
 defaultProto__Rellm__FulfillmentNote =
-    { userId = "", note = "", createdAt = Nothing }
+    { userId = ""
+    , note = ""
+    , fulfillmentStatus = Proto.Rellm.FulfillmentStatus.defaultFulfillmentStatus
+    , createdAt = Nothing
+    }
 
 
 {-| Declares how to decode a `Proto__Rellm__FulfillmentNote` from Bytes. To actually perform the conversion from Bytes, you need to use Protobuf.Decode.decode from eriktim/elm-protocol-buffers.
@@ -7805,6 +7807,10 @@ decodeProto__Rellm__FulfillmentNote =
         , Protobuf.Decode.optional 2 Protobuf.Decode.string (\a r -> { r | note = a })
         , Protobuf.Decode.optional
             3
+            Proto.Rellm.FulfillmentStatus.decodeFulfillmentStatus
+            (\a r -> { r | fulfillmentStatus = a })
+        , Protobuf.Decode.optional
+            4
             (Protobuf.Decode.map Just Proto.Google.Protobuf.Internals_.decodeProto__Google__Protobuf__Timestamp)
             (\a r -> { r | createdAt = a })
         ]
@@ -7818,7 +7824,8 @@ encodeProto__Rellm__FulfillmentNote value =
     Protobuf.Encode.message
         [ ( 1, Protobuf.Encode.string value.userId )
         , ( 2, Protobuf.Encode.string value.note )
-        , ( 3
+        , ( 3, Proto.Rellm.FulfillmentStatus.encodeFulfillmentStatus value.fulfillmentStatus )
+        , ( 4
           , (Maybe.map Proto.Google.Protobuf.Internals_.encodeProto__Google__Protobuf__Timestamp
                 >> Maybe.withDefault Protobuf.Encode.none
             )
@@ -7833,6 +7840,7 @@ encodeProto__Rellm__FulfillmentNote value =
 type alias Proto__Rellm__FulfillmentNote =
     { userId : String
     , note : String
+    , fulfillmentStatus : Proto.Rellm.FulfillmentStatus.FulfillmentStatus
     , createdAt : Maybe Proto.Google.Protobuf.Internals_.Proto__Google__Protobuf__Timestamp
     }
 
@@ -7846,7 +7854,7 @@ fieldNumbersProto__Rellm__RellmHostingSubscriptionDetails :
     , domain : Int
     , contactEmail : Int
     , additionalInformation : Int
-    , fulfilled : Int
+    , fulfillmentStatus : Int
     , fulfillmentNotes : Int
     }
 fieldNumbersProto__Rellm__RellmHostingSubscriptionDetails =
@@ -7855,7 +7863,7 @@ fieldNumbersProto__Rellm__RellmHostingSubscriptionDetails =
     , domain = 3
     , contactEmail = 4
     , additionalInformation = 5
-    , fulfilled = 6
+    , fulfillmentStatus = 6
     , fulfillmentNotes = 7
     }
 
@@ -7870,7 +7878,7 @@ defaultProto__Rellm__RellmHostingSubscriptionDetails =
     , domain = ""
     , contactEmail = ""
     , additionalInformation = ""
-    , fulfilled = False
+    , fulfillmentStatus = Proto.Rellm.FulfillmentStatus.defaultFulfillmentStatus
     , fulfillmentNotes = []
     }
 
@@ -7888,7 +7896,10 @@ decodeProto__Rellm__RellmHostingSubscriptionDetails =
         , Protobuf.Decode.optional 3 Protobuf.Decode.string (\a r -> { r | domain = a })
         , Protobuf.Decode.optional 4 Protobuf.Decode.string (\a r -> { r | contactEmail = a })
         , Protobuf.Decode.optional 5 Protobuf.Decode.string (\a r -> { r | additionalInformation = a })
-        , Protobuf.Decode.optional 6 Protobuf.Decode.bool (\a r -> { r | fulfilled = a })
+        , Protobuf.Decode.optional
+            6
+            Proto.Rellm.FulfillmentStatus.decodeFulfillmentStatus
+            (\a r -> { r | fulfillmentStatus = a })
         , Protobuf.Decode.repeated
             7
             decodeProto__Rellm__FulfillmentNote
@@ -7909,7 +7920,7 @@ encodeProto__Rellm__RellmHostingSubscriptionDetails value =
         , ( 3, Protobuf.Encode.string value.domain )
         , ( 4, Protobuf.Encode.string value.contactEmail )
         , ( 5, Protobuf.Encode.string value.additionalInformation )
-        , ( 6, Protobuf.Encode.bool value.fulfilled )
+        , ( 6, Proto.Rellm.FulfillmentStatus.encodeFulfillmentStatus value.fulfillmentStatus )
         , ( 7, (Protobuf.Encode.list encodeProto__Rellm__FulfillmentNote) value.fulfillmentNotes )
         ]
 
@@ -7923,7 +7934,7 @@ type alias Proto__Rellm__RellmHostingSubscriptionDetails =
     , domain : String
     , contactEmail : String
     , additionalInformation : String
-    , fulfilled : Bool
+    , fulfillmentStatus : Proto.Rellm.FulfillmentStatus.FulfillmentStatus
     , fulfillmentNotes : List Proto__Rellm__FulfillmentNote
     }
 

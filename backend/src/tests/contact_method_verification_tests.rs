@@ -59,7 +59,7 @@ mod update_user_contact_methods {
             configure_twilio(conn, true, "AC_sid", "SK_test_key_sid", "auth_token", "+15005550006");
             let user = create_user(conn, "cmu_enabled");
 
-            let mut request = user.to_proto(&None, &None, None, None);
+            let mut request = user.to_proto(&None, &None, None, &Some(&user), None);
             request.phone = Some(phone_contact_method("tel:+15551234567"));
 
             let updated = update_user(request, &user, conn).expect("update should succeed");
@@ -78,7 +78,7 @@ mod update_user_contact_methods {
         conn.test_transaction::<_, tonic::Status, _>(|conn| {
             let user = create_user(conn, "cmu_disabled");
 
-            let mut request = user.to_proto(&None, &None, None, None);
+            let mut request = user.to_proto(&None, &None, None, &Some(&user), None);
             request.phone = Some(phone_contact_method("tel:+15551234567"));
 
             let updated = update_user(request, &user, conn).expect("update should succeed");
@@ -96,7 +96,7 @@ mod update_user_contact_methods {
             configure_twilio(conn, true, "AC_sid", "SK_test_key_sid", "auth_token", "+15005550006");
             let user = create_user(conn, "cmu_email");
 
-            let mut request = user.to_proto(&None, &None, None, None);
+            let mut request = user.to_proto(&None, &None, None, &Some(&user), None);
             request.email = Some(ContactMethod {
                 value: Some("mailto:someone@example.com".to_string()),
                 visibility: Visibility::ServerPublic as i32,
@@ -128,7 +128,7 @@ mod update_user_contact_methods {
             };
             let user = set_user_phone(conn, &user, &verified_phone);
 
-            let mut request = user.to_proto(&None, &None, None, None);
+            let mut request = user.to_proto(&None, &None, None, &Some(&user), None);
             request.phone = Some(phone_contact_method("tel:+15559876543"));
 
             let updated = update_user(request, &user, conn).expect("update should succeed");
@@ -158,7 +158,7 @@ mod update_user_contact_methods {
 
             // Resend the same value with a different `visibility` -- only `value` changing should
             // reset verification.
-            let mut request = user.to_proto(&None, &None, None, None);
+            let mut request = user.to_proto(&None, &None, None, &Some(&user), None);
             request.phone = Some(ContactMethod {
                 value: Some("tel:+15551234567".to_string()),
                 visibility: Visibility::Private as i32,
@@ -186,7 +186,7 @@ mod update_user_contact_methods {
         conn.test_transaction::<_, tonic::Status, _>(|conn| {
             let user = create_user(conn, "cmu_spoof");
 
-            let mut request = user.to_proto(&None, &None, None, None);
+            let mut request = user.to_proto(&None, &None, None, &Some(&user), None);
             request.phone = Some(ContactMethod {
                 value: Some("tel:+15551234567".to_string()),
                 visibility: Visibility::ServerPublic as i32,
