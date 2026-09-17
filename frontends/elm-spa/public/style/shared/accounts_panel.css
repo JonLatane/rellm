@@ -1295,7 +1295,7 @@
 
 .add-account-server-header-row.is-closed > .show-add-account-form-button {
   opacity: 1;
-  pointer-events: all;
+  pointer-events: inherit;
 }
 
 .add-account-server-header-row.is-open > .show-add-account-form-button {
@@ -1311,7 +1311,7 @@
   max-width: 1.7rem;
   margin-right: 0.5rem;
   opacity: 1;
-  pointer-events: all;
+  pointer-events: inherit;
 }
 
 .add-account-server-header-row.is-open > .accounts-panel-tab {
@@ -1319,7 +1319,7 @@
   flex: 1 1 0;
   margin-right: 0.5rem;
   opacity: 1;
-  pointer-events: all;
+  pointer-events: inherit;
 }
 
 /* The last tab (Bluesky) is also the row's actual last child regardless of whether the "←" button
