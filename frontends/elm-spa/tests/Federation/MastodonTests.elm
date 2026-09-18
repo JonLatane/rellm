@@ -34,6 +34,7 @@ suite =
             , test "decodes media_attachments, including a null description (Mastodon's own \"no alt text\" convention)" <|
                 \_ ->
                     let
+                        overrides : Factory.Overrides
                         overrides =
                             { defaultOverrides
                                 | mediaAttachments =

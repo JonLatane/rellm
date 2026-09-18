@@ -40,6 +40,7 @@ suite =
             , test "decodes an app.bsky.embed.images#view embed's images" <|
                 \_ ->
                     let
+                        overrides : Factory.Overrides
                         overrides =
                             { defaultOverrides
                                 | images =

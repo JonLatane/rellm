@@ -7,7 +7,7 @@ the result against `status` of the same overrides -- see `Federation.MastodonTes
 -}
 
 import Json.Encode as Encode
-import Shared.Federation.Mastodon as Mastodon exposing (MediaAttachment, Status)
+import Shared.Federation.Mastodon exposing (MediaAttachment, Status)
 import Time
 
 
@@ -36,8 +36,8 @@ type alias Overrides =
 
 
 {-| `createdAtIso`/`createdAtMillis` are the same instant, 2023-04-05T12:00:00.000Z -- verified by
-hand (94 days after 2023-01-01T00:00:00Z's well-known 1672531200, plus 12h): 1672531200 + 94*86400 +
-12*3600 = 1680696000 seconds = 1680696000000 ms.
+hand (94 days after 2023-01-01T00:00:00Z's well-known 1672531200, plus 12h): 1672531200 + 94_86400 +
+12_3600 = 1680696000 seconds = 1680696000000 ms.
 -}
 defaultOverrides : Overrides
 defaultOverrides =

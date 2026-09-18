@@ -1,9 +1,9 @@
 module UI exposing (imageOrInitial, layout, pageTitle, themeToggle, webUiToggleRow)
 
-import Components.SyncSources as SyncSources
 import Components.Events as Events
 import Components.Markdown as Markdown
 import Components.Posts as Posts
+import Components.SyncSources as SyncSources
 import Components.Users as Users
 import Dict
 import Gen.Route as Route exposing (Route)
@@ -805,10 +805,11 @@ toggled/reconnected) directly off `AccountsPanel.enabledServers` and
 `N` counts every enabled Rellm server, every Mastodon instance actually contributing to the
 combined feed (OAuth-connected accounts, which have no enable/disable toggle of their own, plus
 browsed instances that are `.enabled` -- mirrors `Components.Pages.PostsPage.mastodonHostsToFetch`'s
-own dedup), and every enabled Bluesky account. A trailing " *" appears only if more than one Bluesky
+own dedup), and every enabled Bluesky account. A trailing " \*" appears only if more than one Bluesky
 account is enabled at once -- see `AccountsPanel.ToggleBlueskyAccountEnabled`'s own doc on why that's
 now prevented at the source (only ever a leftover-state indicator for an account enabled before that
 restriction existed, not something a fresh toggle can produce).
+
 -}
 accountsMenuServerSummary : AccountsPanel.Model -> Html Shared.Msg
 accountsMenuServerSummary accountsPanelModel =
@@ -1222,17 +1223,19 @@ its right arrow isn't. Both conditions naturally leave a lone non-main item (`co
 neither arrow interactive. Non-interactive arrows still render (`reorder-arrow-hidden` just
 fades/no-ops them) rather than disappearing, so a chip's width/layout doesn't jump around depending
 on position.
+
 -}
 feedItemReorderInfo :
     Shared.Model
     -> Int
     -> Int
     -> String
-    -> { moveAttrs : List (Html.Attribute Shared.Msg)
-       , reorderPair : { backward : Html Shared.Msg, forward : Html Shared.Msg }
-       , showBackward : Bool
-       , showForward : Bool
-       }
+    ->
+        { moveAttrs : List (Html.Attribute Shared.Msg)
+        , reorderPair : { backward : Html Shared.Msg, forward : Html Shared.Msg }
+        , showBackward : Bool
+        , showForward : Bool
+        }
 feedItemReorderInfo shared count index key =
     let
         moveAttrs : List (Html.Attribute Shared.Msg)
@@ -1636,7 +1639,15 @@ mastodonConnectButton shared mastodonServer =
     in
     button
         [ type_ "button"
-        , classes [ "mastodon-connect-account-button", hostnameToCSSClass domain, if isDisabled then "" else "background-color-primary" ]
+        , classes
+            [ "mastodon-connect-account-button"
+            , hostnameToCSSClass domain
+            , if isDisabled then
+                ""
+
+              else
+                "background-color-primary"
+            ]
         , onClick (Shared.AccountsPanelMsg (AccountsPanel.MastodonConnectClicked domain))
         , disabled isDisabled
         , title
@@ -1680,9 +1691,8 @@ federatedFeedLogoImage circular altText maybeUrl =
             text ""
 
 
-
 {-| One Mastodon instance being browsed -- mirrors `serverChip`'s own shape as closely as it can
-without a real `Server`/`ServerTheme` behind it, with its two-tone coloring deliberately *inverted*
+without a real `Server`/`ServerTheme` behind it, with its two-tone coloring deliberately _inverted_
 (`background-color-nav` top / `background-color-primary` bottom, vs. `serverChip`'s own
 primary-top/nav-bottom) as a quick visual "this one's different" cue, `mainFrontendHost`-scoped
 either way -- see `UI.EmittedStylesheet`'s own doc on why: it's not a real `Server` with its own
@@ -2013,8 +2023,9 @@ reasons about.
 `mainCount` (see `accountsList`) is how many leading items belong to accounts on the main server --
 an arrow that would cross that group boundary (moving a main-group item out of it, or a non-main one
 into it) is hidden rather than merely disabled, same as `feedItemReorderInfo`'s own main-server-chip
-boundary, just generalized to a main *group* of arbitrary size instead of always exactly one item at
+boundary, just generalized to a main _group_ of arbitrary size instead of always exactly one item at
 index `0` (there can be more than one account on the main server).
+
 -}
 accountItemReorderInfo :
     Shared.Model
@@ -2022,11 +2033,12 @@ accountItemReorderInfo :
     -> Int
     -> Int
     -> String
-    -> { moveAttrs : List (Html.Attribute Shared.Msg)
-       , reorderPair : { backward : Html Shared.Msg, forward : Html Shared.Msg }
-       , canMoveUp : Bool
-       , canMoveDown : Bool
-       }
+    ->
+        { moveAttrs : List (Html.Attribute Shared.Msg)
+        , reorderPair : { backward : Html Shared.Msg, forward : Html Shared.Msg }
+        , canMoveUp : Bool
+        , canMoveDown : Bool
+        }
 accountItemReorderInfo shared count mainCount index key =
     let
         moveAttrs : List (Html.Attribute Shared.Msg)
@@ -2072,6 +2084,7 @@ menu instead of jumping straight to `MyMediaPanel`. Nested inside `accountRow`'s
 
 An account that `needsPassword` gets no menu at all -- same "sign in to view media" gate the old
 button used, since none of the four items make sense for an account that isn't actually signed in.
+
 -}
 accountAvatarToggle : Shared.Model -> RellmAccount -> Html Shared.Msg
 accountAvatarToggle shared account =
@@ -2106,6 +2119,7 @@ navigate to the account's own profile page, where their actual management UI alr
 Each of the three is shown only if `account` actually holds a permission that would let it use that
 feature at all (`RellmAccounts.canUseSyncSources`/`canUseSyncDestinations`/`canUseAIModels`) -- an
 account with no sync-from/sync-to/AI-provider permissions at all sees just the one "Media" item.
+
 -}
 accountAvatarMenuView : Shared.Model -> RellmAccount -> Html Shared.Msg
 accountAvatarMenuView shared account =
@@ -2117,10 +2131,6 @@ accountAvatarMenuView shared account =
             profileHref : String
             profileHref =
                 Users.profileHref shared.basePath shared.accounts.mainFrontendHost account.server { userId = account.userId, username = account.username }
-
-            navigateAndClose : Html.Attribute Shared.Msg
-            navigateAndClose =
-                stopPropagationAndPreventDefaultOnClick (Shared.AccountsPanelMsg AccountsPanel.CloseAccountsPanel)
 
             -- Unlike `navigateAndClose` (a plain `href` click, left to elm/browser's
             -- own SPA link interception), this fires `Shared.ProfileSectionLinkClicked`
@@ -2619,7 +2629,7 @@ addAccountServerHeaderRow shared =
 see `AccountsPanel.AccountOrServerFormType`) -- collapsed to zero height via the same
 `grid-template-rows` 1fr/0fr trick `.account-avatar-menu` uses (`.add-account-server-form-body`/
 `.is-open`) in step with `addAccountServerHeaderRow`'s own horizontal collapse, rather than appearing/
-disappearing outright. Always renders the *active* tab's fields (never all three at once) -- switching
+disappearing outright. Always renders the _active_ tab's fields (never all three at once) -- switching
 tabs while already open just reflows the row's own natural height, with no separate animation of its
 own.
 -}
@@ -3103,7 +3113,7 @@ signInFromButton shared currentRoute accountFieldsDisabled =
         ( Just publicKey, True ) ->
             div [ class "sign-in-from-row" ]
                 [ --hideAddAccountFormButton shared accountFieldsDisabled
-                button
+                  button
                     [ type_ "button"
                     , onClick
                         (Shared.NavigateExternal
