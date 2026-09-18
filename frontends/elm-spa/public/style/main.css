@@ -80,6 +80,22 @@ html {
      panels (Accounts Panel, Markdown Panel, modals) need their own
      scroll-behavior to animate and don't have one, so they're untouched. */
   scroll-behavior: smooth;
+
+  /* Chrome/Firefox's default "scroll anchoring" tries to keep whatever's
+     currently on screen in place by silently nudging `scrollTop` on its own
+     whenever content *above* the viewport changes size (e.g. an
+     `UI.Flip`-entering calendar card, or `Components.Pages.UserProfilePage`
+     scrolling itself to a `#sync-sources`/`#sync-destinations` deep link
+     while that same embedded `EventsPage` copy's cards are still growing
+     into place -- see `scrollToProfileSectionCmd`'s own doc). That silent
+     compensation runs *in addition to* this app's own explicit
+     `Dom.setViewport` calls, which already account for the same growth
+     themselves (each re-measures fresh), so the two stack and overshoot
+     the intended target. This app always manages its own scroll position
+     by hand (the many dedicated `scrollTo*Cmd` functions across
+     `MessagesPage`/`EventsPage`/`UserProfilePage`), so the browser's own
+     guess is pure downside here -- never wanted. */
+  overflow-anchor: none;
 }
 
 body {

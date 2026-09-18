@@ -7728,54 +7728,6 @@ type alias Proto__Rellm__User =
     }
 
 
-{-| The field numbers for the fields of `Proto__Rellm__PermissionsAccessSubscriptionDetails`. This is mostly useful for internals, like documentation generation.
-
--}
-fieldNumbersProto__Rellm__PermissionsAccessSubscriptionDetails : { permissions : Int }
-fieldNumbersProto__Rellm__PermissionsAccessSubscriptionDetails =
-    { permissions = 1 }
-
-
-{-| Default for Proto__Rellm__PermissionsAccessSubscriptionDetails. Should only be used for 'required' decoders as an initial value.
-
--}
-defaultProto__Rellm__PermissionsAccessSubscriptionDetails : Proto__Rellm__PermissionsAccessSubscriptionDetails
-defaultProto__Rellm__PermissionsAccessSubscriptionDetails =
-    { permissions = [] }
-
-
-{-| Declares how to decode a `Proto__Rellm__PermissionsAccessSubscriptionDetails` from Bytes. To actually perform the conversion from Bytes, you need to use Protobuf.Decode.decode from eriktim/elm-protocol-buffers.
-
--}
-decodeProto__Rellm__PermissionsAccessSubscriptionDetails :
-    Protobuf.Decode.Decoder Proto__Rellm__PermissionsAccessSubscriptionDetails
-decodeProto__Rellm__PermissionsAccessSubscriptionDetails =
-    Protobuf.Decode.message
-        defaultProto__Rellm__PermissionsAccessSubscriptionDetails
-        [ Protobuf.Decode.repeated
-            1
-            Proto.Rellm.Permission.decodePermission
-            .permissions
-            (\a r -> { r | permissions = a })
-        ]
-
-
-{-| Declares how to encode a `Proto__Rellm__PermissionsAccessSubscriptionDetails` to Bytes. To actually perform the conversion to Bytes, you need to use Protobuf.Encode.encode from eriktim/elm-protocol-buffers.
-
--}
-encodeProto__Rellm__PermissionsAccessSubscriptionDetails :
-    Proto__Rellm__PermissionsAccessSubscriptionDetails -> Protobuf.Encode.Encoder
-encodeProto__Rellm__PermissionsAccessSubscriptionDetails value =
-    Protobuf.Encode.message [ ( 1, (Protobuf.Encode.list Proto.Rellm.Permission.encodePermission) value.permissions ) ]
-
-
-{-| `Proto__Rellm__PermissionsAccessSubscriptionDetails` message
-
--}
-type alias Proto__Rellm__PermissionsAccessSubscriptionDetails =
-    { permissions : List Proto.Rellm.Permission.Permission }
-
-
 {-| The field numbers for the fields of `Proto__Rellm__FulfillmentNote`. This is mostly useful for internals, like documentation generation.
 
 -}
@@ -7851,6 +7803,7 @@ type alias Proto__Rellm__FulfillmentNote =
 fieldNumbersProto__Rellm__RellmHostingSubscriptionDetails :
     { dbSizeBytes : Int
     , minioSizeBytes : Int
+    , additionalDescription : Int
     , domain : Int
     , contactEmail : Int
     , additionalInformation : Int
@@ -7860,11 +7813,12 @@ fieldNumbersProto__Rellm__RellmHostingSubscriptionDetails :
 fieldNumbersProto__Rellm__RellmHostingSubscriptionDetails =
     { dbSizeBytes = 1
     , minioSizeBytes = 2
-    , domain = 3
-    , contactEmail = 4
-    , additionalInformation = 5
-    , fulfillmentStatus = 6
-    , fulfillmentNotes = 7
+    , additionalDescription = 3
+    , domain = 4
+    , contactEmail = 5
+    , additionalInformation = 6
+    , fulfillmentStatus = 7
+    , fulfillmentNotes = 8
     }
 
 
@@ -7875,6 +7829,7 @@ defaultProto__Rellm__RellmHostingSubscriptionDetails : Proto__Rellm__RellmHostin
 defaultProto__Rellm__RellmHostingSubscriptionDetails =
     { dbSizeBytes = Protobuf.Types.Int64.fromInts 0 0
     , minioSizeBytes = Protobuf.Types.Int64.fromInts 0 0
+    , additionalDescription = ""
     , domain = ""
     , contactEmail = ""
     , additionalInformation = ""
@@ -7893,15 +7848,16 @@ decodeProto__Rellm__RellmHostingSubscriptionDetails =
         defaultProto__Rellm__RellmHostingSubscriptionDetails
         [ Protobuf.Decode.optional 1 Protobuf.Decode.uint64 (\a r -> { r | dbSizeBytes = a })
         , Protobuf.Decode.optional 2 Protobuf.Decode.uint64 (\a r -> { r | minioSizeBytes = a })
-        , Protobuf.Decode.optional 3 Protobuf.Decode.string (\a r -> { r | domain = a })
-        , Protobuf.Decode.optional 4 Protobuf.Decode.string (\a r -> { r | contactEmail = a })
-        , Protobuf.Decode.optional 5 Protobuf.Decode.string (\a r -> { r | additionalInformation = a })
+        , Protobuf.Decode.optional 3 Protobuf.Decode.string (\a r -> { r | additionalDescription = a })
+        , Protobuf.Decode.optional 4 Protobuf.Decode.string (\a r -> { r | domain = a })
+        , Protobuf.Decode.optional 5 Protobuf.Decode.string (\a r -> { r | contactEmail = a })
+        , Protobuf.Decode.optional 6 Protobuf.Decode.string (\a r -> { r | additionalInformation = a })
         , Protobuf.Decode.optional
-            6
+            7
             Proto.Rellm.FulfillmentStatus.decodeFulfillmentStatus
             (\a r -> { r | fulfillmentStatus = a })
         , Protobuf.Decode.repeated
-            7
+            8
             decodeProto__Rellm__FulfillmentNote
             .fulfillmentNotes
             (\a r -> { r | fulfillmentNotes = a })
@@ -7917,11 +7873,12 @@ encodeProto__Rellm__RellmHostingSubscriptionDetails value =
     Protobuf.Encode.message
         [ ( 1, Protobuf.Encode.uint64 value.dbSizeBytes )
         , ( 2, Protobuf.Encode.uint64 value.minioSizeBytes )
-        , ( 3, Protobuf.Encode.string value.domain )
-        , ( 4, Protobuf.Encode.string value.contactEmail )
-        , ( 5, Protobuf.Encode.string value.additionalInformation )
-        , ( 6, Proto.Rellm.FulfillmentStatus.encodeFulfillmentStatus value.fulfillmentStatus )
-        , ( 7, (Protobuf.Encode.list encodeProto__Rellm__FulfillmentNote) value.fulfillmentNotes )
+        , ( 3, Protobuf.Encode.string value.additionalDescription )
+        , ( 4, Protobuf.Encode.string value.domain )
+        , ( 5, Protobuf.Encode.string value.contactEmail )
+        , ( 6, Protobuf.Encode.string value.additionalInformation )
+        , ( 7, Proto.Rellm.FulfillmentStatus.encodeFulfillmentStatus value.fulfillmentStatus )
+        , ( 8, (Protobuf.Encode.list encodeProto__Rellm__FulfillmentNote) value.fulfillmentNotes )
         ]
 
 
@@ -7931,6 +7888,7 @@ encodeProto__Rellm__RellmHostingSubscriptionDetails value =
 type alias Proto__Rellm__RellmHostingSubscriptionDetails =
     { dbSizeBytes : Protobuf.Types.Int64.Int64
     , minioSizeBytes : Protobuf.Types.Int64.Int64
+    , additionalDescription : String
     , domain : String
     , contactEmail : String
     , additionalInformation : String
@@ -7985,6 +7943,60 @@ encodeProto__Rellm__AIGrantSubscriptionDetails value =
 -}
 type alias Proto__Rellm__AIGrantSubscriptionDetails =
     { aiProviderId : String, modelNames : List String, tokens : Protobuf.Types.Int64.Int64 }
+
+
+{-| The field numbers for the fields of `Proto__Rellm__PermissionsAccessSubscriptionDetails`. This is mostly useful for internals, like documentation generation.
+
+-}
+fieldNumbersProto__Rellm__PermissionsAccessSubscriptionDetails : { permissions : Int, name : Int, description : Int }
+fieldNumbersProto__Rellm__PermissionsAccessSubscriptionDetails =
+    { permissions = 1, name = 2, description = 3 }
+
+
+{-| Default for Proto__Rellm__PermissionsAccessSubscriptionDetails. Should only be used for 'required' decoders as an initial value.
+
+-}
+defaultProto__Rellm__PermissionsAccessSubscriptionDetails : Proto__Rellm__PermissionsAccessSubscriptionDetails
+defaultProto__Rellm__PermissionsAccessSubscriptionDetails =
+    { permissions = [], name = "", description = "" }
+
+
+{-| Declares how to decode a `Proto__Rellm__PermissionsAccessSubscriptionDetails` from Bytes. To actually perform the conversion from Bytes, you need to use Protobuf.Decode.decode from eriktim/elm-protocol-buffers.
+
+-}
+decodeProto__Rellm__PermissionsAccessSubscriptionDetails :
+    Protobuf.Decode.Decoder Proto__Rellm__PermissionsAccessSubscriptionDetails
+decodeProto__Rellm__PermissionsAccessSubscriptionDetails =
+    Protobuf.Decode.message
+        defaultProto__Rellm__PermissionsAccessSubscriptionDetails
+        [ Protobuf.Decode.repeated
+            1
+            Proto.Rellm.Permission.decodePermission
+            .permissions
+            (\a r -> { r | permissions = a })
+        , Protobuf.Decode.optional 2 Protobuf.Decode.string (\a r -> { r | name = a })
+        , Protobuf.Decode.optional 3 Protobuf.Decode.string (\a r -> { r | description = a })
+        ]
+
+
+{-| Declares how to encode a `Proto__Rellm__PermissionsAccessSubscriptionDetails` to Bytes. To actually perform the conversion to Bytes, you need to use Protobuf.Encode.encode from eriktim/elm-protocol-buffers.
+
+-}
+encodeProto__Rellm__PermissionsAccessSubscriptionDetails :
+    Proto__Rellm__PermissionsAccessSubscriptionDetails -> Protobuf.Encode.Encoder
+encodeProto__Rellm__PermissionsAccessSubscriptionDetails value =
+    Protobuf.Encode.message
+        [ ( 1, (Protobuf.Encode.list Proto.Rellm.Permission.encodePermission) value.permissions )
+        , ( 2, Protobuf.Encode.string value.name )
+        , ( 3, Protobuf.Encode.string value.description )
+        ]
+
+
+{-| `Proto__Rellm__PermissionsAccessSubscriptionDetails` message
+
+-}
+type alias Proto__Rellm__PermissionsAccessSubscriptionDetails =
+    { permissions : List Proto.Rellm.Permission.Permission, name : String, description : String }
 
 
 {-| The field numbers for the fields of `Proto__Rellm__MediaStorageSubscriptionDetails`. This is mostly useful for internals, like documentation generation.
@@ -8217,9 +8229,9 @@ type alias Proto__Rellm__MarketSubscription =
 {-| The field numbers for the fields of `Proto__Rellm__PermissionsAccessPurchaseDetails`. This is mostly useful for internals, like documentation generation.
 
 -}
-fieldNumbersProto__Rellm__PermissionsAccessPurchaseDetails : { permissions : Int }
+fieldNumbersProto__Rellm__PermissionsAccessPurchaseDetails : { permissions : Int, name : Int, description : Int }
 fieldNumbersProto__Rellm__PermissionsAccessPurchaseDetails =
-    { permissions = 1 }
+    { permissions = 1, name = 2, description = 3 }
 
 
 {-| Default for Proto__Rellm__PermissionsAccessPurchaseDetails. Should only be used for 'required' decoders as an initial value.
@@ -8227,7 +8239,7 @@ fieldNumbersProto__Rellm__PermissionsAccessPurchaseDetails =
 -}
 defaultProto__Rellm__PermissionsAccessPurchaseDetails : Proto__Rellm__PermissionsAccessPurchaseDetails
 defaultProto__Rellm__PermissionsAccessPurchaseDetails =
-    { permissions = [] }
+    { permissions = [], name = "", description = "" }
 
 
 {-| Declares how to decode a `Proto__Rellm__PermissionsAccessPurchaseDetails` from Bytes. To actually perform the conversion from Bytes, you need to use Protobuf.Decode.decode from eriktim/elm-protocol-buffers.
@@ -8243,6 +8255,8 @@ decodeProto__Rellm__PermissionsAccessPurchaseDetails =
             Proto.Rellm.Permission.decodePermission
             .permissions
             (\a r -> { r | permissions = a })
+        , Protobuf.Decode.optional 2 Protobuf.Decode.string (\a r -> { r | name = a })
+        , Protobuf.Decode.optional 3 Protobuf.Decode.string (\a r -> { r | description = a })
         ]
 
 
@@ -8252,23 +8266,39 @@ decodeProto__Rellm__PermissionsAccessPurchaseDetails =
 encodeProto__Rellm__PermissionsAccessPurchaseDetails :
     Proto__Rellm__PermissionsAccessPurchaseDetails -> Protobuf.Encode.Encoder
 encodeProto__Rellm__PermissionsAccessPurchaseDetails value =
-    Protobuf.Encode.message [ ( 1, (Protobuf.Encode.list Proto.Rellm.Permission.encodePermission) value.permissions ) ]
+    Protobuf.Encode.message
+        [ ( 1, (Protobuf.Encode.list Proto.Rellm.Permission.encodePermission) value.permissions )
+        , ( 2, Protobuf.Encode.string value.name )
+        , ( 3, Protobuf.Encode.string value.description )
+        ]
 
 
 {-| `Proto__Rellm__PermissionsAccessPurchaseDetails` message
 
 -}
 type alias Proto__Rellm__PermissionsAccessPurchaseDetails =
-    { permissions : List Proto.Rellm.Permission.Permission }
+    { permissions : List Proto.Rellm.Permission.Permission, name : String, description : String }
 
 
 {-| The field numbers for the fields of `Proto__Rellm__RellmHostingPurchaseDetails`. This is mostly useful for internals, like documentation generation.
 
 -}
 fieldNumbersProto__Rellm__RellmHostingPurchaseDetails :
-    { dbSizeBytes : Int, minioSizeBytes : Int, domain : Int, contactEmail : Int, additionalInformation : Int }
+    { dbSizeBytes : Int
+    , minioSizeBytes : Int
+    , additionalDescription : Int
+    , domain : Int
+    , contactEmail : Int
+    , additionalInformation : Int
+    }
 fieldNumbersProto__Rellm__RellmHostingPurchaseDetails =
-    { dbSizeBytes = 1, minioSizeBytes = 2, domain = 3, contactEmail = 4, additionalInformation = 5 }
+    { dbSizeBytes = 1
+    , minioSizeBytes = 2
+    , additionalDescription = 3
+    , domain = 4
+    , contactEmail = 5
+    , additionalInformation = 6
+    }
 
 
 {-| Default for Proto__Rellm__RellmHostingPurchaseDetails. Should only be used for 'required' decoders as an initial value.
@@ -8278,6 +8308,7 @@ defaultProto__Rellm__RellmHostingPurchaseDetails : Proto__Rellm__RellmHostingPur
 defaultProto__Rellm__RellmHostingPurchaseDetails =
     { dbSizeBytes = Protobuf.Types.Int64.fromInts 0 0
     , minioSizeBytes = Protobuf.Types.Int64.fromInts 0 0
+    , additionalDescription = ""
     , domain = ""
     , contactEmail = ""
     , additionalInformation = ""
@@ -8293,9 +8324,10 @@ decodeProto__Rellm__RellmHostingPurchaseDetails =
         defaultProto__Rellm__RellmHostingPurchaseDetails
         [ Protobuf.Decode.optional 1 Protobuf.Decode.uint64 (\a r -> { r | dbSizeBytes = a })
         , Protobuf.Decode.optional 2 Protobuf.Decode.uint64 (\a r -> { r | minioSizeBytes = a })
-        , Protobuf.Decode.optional 3 Protobuf.Decode.string (\a r -> { r | domain = a })
-        , Protobuf.Decode.optional 4 Protobuf.Decode.string (\a r -> { r | contactEmail = a })
-        , Protobuf.Decode.optional 5 Protobuf.Decode.string (\a r -> { r | additionalInformation = a })
+        , Protobuf.Decode.optional 3 Protobuf.Decode.string (\a r -> { r | additionalDescription = a })
+        , Protobuf.Decode.optional 4 Protobuf.Decode.string (\a r -> { r | domain = a })
+        , Protobuf.Decode.optional 5 Protobuf.Decode.string (\a r -> { r | contactEmail = a })
+        , Protobuf.Decode.optional 6 Protobuf.Decode.string (\a r -> { r | additionalInformation = a })
         ]
 
 
@@ -8307,9 +8339,10 @@ encodeProto__Rellm__RellmHostingPurchaseDetails value =
     Protobuf.Encode.message
         [ ( 1, Protobuf.Encode.uint64 value.dbSizeBytes )
         , ( 2, Protobuf.Encode.uint64 value.minioSizeBytes )
-        , ( 3, Protobuf.Encode.string value.domain )
-        , ( 4, Protobuf.Encode.string value.contactEmail )
-        , ( 5, Protobuf.Encode.string value.additionalInformation )
+        , ( 3, Protobuf.Encode.string value.additionalDescription )
+        , ( 4, Protobuf.Encode.string value.domain )
+        , ( 5, Protobuf.Encode.string value.contactEmail )
+        , ( 6, Protobuf.Encode.string value.additionalInformation )
         ]
 
 
@@ -8319,6 +8352,7 @@ encodeProto__Rellm__RellmHostingPurchaseDetails value =
 type alias Proto__Rellm__RellmHostingPurchaseDetails =
     { dbSizeBytes : Protobuf.Types.Int64.Int64
     , minioSizeBytes : Protobuf.Types.Int64.Int64
+    , additionalDescription : String
     , domain : String
     , contactEmail : String
     , additionalInformation : String

@@ -17,7 +17,9 @@ module Components.Market exposing
     , makeMarketPurchase
     , periodSortOrder
     , permissionsForProduct
-    , productSummary
+    , priceLabel
+    , productDescription
+    , productName
     , purchasePeriodLabel
     , purchaseTypeDescription
     , purchaseTypeEmoji
@@ -44,7 +46,6 @@ Also holds the small bits `Components.Pages.MarketPage`/`Components.Pages.Produc
 `purchasePeriodLabel`/`formatAmount` -- so the three don't each grow their own copy.
 -}
 
-import Components.Users as Users
 import Grpc
 import Proto.Rellm
     exposing
@@ -521,21 +522,119 @@ groupWithCommas n =
         |> String.reverse
 
 
-{-| The full, pedantically-clear "what am I buying" sentence for a `MarketProduct`, e.g. "1.5GB
-storage for $1/mo", "100k tokens of Nano Banana Pro image generation for $2/mo", "Rellm
-hosting, 1GB DB + 5GB MinIO for $15/mo. You get full admin access...". Mirrors
-`backend/src/logic/market_summary.rs`'s `market_product_summary` (used server-side for the
-`/market/product/:id` SSR preview) as closely as Elm's own formatting conventions allow, so the
-in-app product page and a shared link's preview read the same way. Shown on `ProductPage`'s detail
-view and `MarketPage`'s list rows.
+{-| `formatAmount` plus its billing-cycle suffix, e.g. "$15/mo", "$120/yr", "$1" (no suffix for a
+`PURCHASE_PERIOD_INDEFINITE` one-time product). Shown as the large, top-of-tier price on
+`MarketPage`'s tier cards and `ProductPage`'s detail view -- see those modules' own doc for why the
+price and `productName` are now two separate, deliberately terse lines rather than the old single
+pedantic sentence.
 -}
-productSummary : MarketProduct -> String
-productSummary product =
-    resourceDescription product
-        ++ " for "
-        ++ formatAmount product.amount product.currency
-        ++ periodSuffix product.period
-        ++ additionalNote product.type_
+priceLabel : MarketProduct -> String
+priceLabel product =
+    formatAmount product.amount product.currency ++ periodSuffix product.period
+
+
+{-| A short, one-line product name -- explicit (admin-authored) for `PURCHASE_TYPE_PERMISSIONS_ACCESS`
+(`PermissionsAccessSubscriptionDetails.name`, since a permissions bundle can be any admin-chosen set
+with no generically-derivable name -- see that field's own proto doc), implicitly computed from the
+product's own details for the other three types (e.g. "5GB Media Storage", "100k tokens for Nano
+Banana Pro", "1GB DB + 5GB Object Storage"). Shown below the price on `MarketPage`'s tier cards and
+`ProductPage`'s detail view.
+-}
+productName : MarketProduct -> String
+productName product =
+    case product.details of
+        Just (ProductDetails.MediaStorageSubscriptionDetails details) ->
+            humanizeBytes (Conversions.int64ToInt details.allocationBytes) ++ " Media Storage"
+
+        Just (ProductDetails.AiGrantSubscriptionDetails details) ->
+            humanizeCount (Conversions.int64ToInt details.tokens) ++ " tokens for " ++ aiModelNamesJoined details.modelNames
+
+        Just (ProductDetails.RellmHostingSubscriptionDetails details) ->
+            humanizeBytes (Conversions.int64ToInt details.dbSizeBytes)
+                ++ " DB + "
+                ++ humanizeBytes (Conversions.int64ToInt details.minioSizeBytes)
+                ++ " Object Storage"
+
+        Just (ProductDetails.PermissionsAccessSubscriptionDetails details) ->
+            details.name
+
+        Nothing ->
+            "Rellm Market Product"
+
+
+{-| A Markdown-formatted product description (see `Components.Markdown.view`) -- explicit
+(admin-authored) for `PURCHASE_TYPE_PERMISSIONS_ACCESS` (`PermissionsAccessSubscriptionDetails.description`),
+implicitly canned text (with the actual size/token/model amounts filled in) for the other three
+types. `PURCHASE_TYPE_RELLM_HOSTING` additionally appends
+`RellmHostingSubscriptionDetails.additionalDescription`, if the admin's set one, as an extra
+paragraph below the canned text. Shown on `ProductPage`'s detail view only -- deliberately not on
+`MarketPage`'s tier cards, which only ever show `priceLabel`/`productName` (see that module's own
+doc).
+-}
+productDescription : MarketProduct -> String
+productDescription product =
+    case product.details of
+        Just (ProductDetails.MediaStorageSubscriptionDetails details) ->
+            "Extra room for photos, videos, and other media uploads -- includes **"
+                ++ humanizeBytes (Conversions.int64ToInt details.allocationBytes)
+                ++ "** of storage, replacing (not adding to) whatever quota you already have."
+
+        Just (ProductDetails.AiGrantSubscriptionDetails details) ->
+            "Tokens for AI-powered image generation -- includes **"
+                ++ humanizeCount (Conversions.int64ToInt details.tokens)
+                ++ "** tokens for "
+                ++ aiModelNamesJoined details.modelNames
+                ++ ", replacing (not adding to) any existing balance for these models."
+
+        Just (ProductDetails.RellmHostingSubscriptionDetails details) ->
+            let
+                canned : String
+                canned =
+                    "Your own Rellm instance, hosted and fully admin-controlled by you -- includes a **"
+                        ++ humanizeBytes (Conversions.int64ToInt details.dbSizeBytes)
+                        ++ "** database and **"
+                        ++ humanizeBytes (Conversions.int64ToInt details.minioSizeBytes)
+                        ++ "** of object storage.\n\n"
+                        ++ "You get full admin access to your own Rellm instance -- e.g. you can pay-gate "
+                        ++ "features like Facebook sync yourself, if you set up your own Facebook developer account."
+            in
+            if String.trim details.additionalDescription == "" then
+                canned
+
+            else
+                canned ++ "\n\n" ++ details.additionalDescription
+
+        Just (ProductDetails.PermissionsAccessSubscriptionDetails details) ->
+            details.description
+
+        Nothing ->
+            ""
+
+
+{-| "Nano Banana Pro" / "Nano Banana Pro and Nano Banana Flash" / "Nano Banana Pro, Nano Banana
+Flash, and Nano Banana" -- an Oxford-comma join of `aiModelDisplayName`-nicknamed model names, used
+by both `productName`/`productDescription` above. Falls back to "AI models" for a product with no
+models configured yet (an incompletely-filled-out admin form).
+-}
+aiModelNamesJoined : List String -> String
+aiModelNamesJoined modelNames =
+    case List.map aiModelDisplayName modelNames of
+        [] ->
+            "AI models"
+
+        [ only ] ->
+            only
+
+        [ first, second ] ->
+            first ++ " and " ++ second
+
+        many ->
+            case List.reverse many of
+                last_ :: rest ->
+                    (List.reverse rest |> String.join ", ") ++ ", and " ++ last_
+
+                [] ->
+                    "AI models"
 
 
 {-| "X Slots Available" (`availableCount - soldCount`, floored at 0) -- `Nothing` when
@@ -560,60 +659,6 @@ regardless, this is just so a buyer doesn't hit an avoidable error.
 isSoldOut : MarketProduct -> Bool
 isSoldOut product =
     product.availableCount > 0 && product.soldCount >= product.availableCount
-
-
-{-| The resource being sold, without its price -- see `productSummary`'s own doc.
-`PURCHASE_TYPE_MEDIA_STORAGE` gets a "lifetime" qualifier for an indefinite (non-recurring)
-product specifically -- the other types don't need an equivalent qualifier, since the summary
-sentence already omits any `/mo`/`/yr` suffix for a one-off purchase.
--}
-resourceDescription : MarketProduct -> String
-resourceDescription product =
-    case product.details of
-        Just (ProductDetails.MediaStorageSubscriptionDetails details) ->
-            let
-                size : String
-                size =
-                    humanizeBytes (Conversions.int64ToInt details.allocationBytes)
-            in
-            if product.period == PURCHASEPERIODINDEFINITE then
-                size ++ " lifetime storage"
-
-            else
-                size ++ " storage"
-
-        Just (ProductDetails.AiGrantSubscriptionDetails details) ->
-            let
-                tokens : String
-                tokens =
-                    humanizeCount (Conversions.int64ToInt details.tokens)
-
-                models : String
-                models =
-                    if List.isEmpty details.modelNames then
-                        "AI"
-
-                    else
-                        details.modelNames |> List.map aiModelDisplayName |> String.join "/"
-            in
-            tokens ++ " tokens of " ++ models ++ " image generation"
-
-        Just (ProductDetails.RellmHostingSubscriptionDetails details) ->
-            "Rellm hosting, "
-                ++ humanizeBytes (Conversions.int64ToInt details.dbSizeBytes)
-                ++ " DB + "
-                ++ humanizeBytes (Conversions.int64ToInt details.minioSizeBytes)
-                ++ " MinIO"
-
-        Just (ProductDetails.PermissionsAccessSubscriptionDetails details) ->
-            if List.isEmpty details.permissions then
-                "access to server features"
-
-            else
-                "access to " ++ String.join ", " (List.map Users.permissionText details.permissions)
-
-        Nothing ->
-            "Rellm Market product"
 
 
 {-| The `Permission`s a `PURCHASE_TYPE_PERMISSIONS_ACCESS` product grants -- `[]` for every other
@@ -667,32 +712,6 @@ periodSuffix period =
             ""
 
         PurchasePeriodUnrecognized_ _ ->
-            ""
-
-
-{-| An explanatory sentence appended after the price, for a type where the bare resource+price
-summary alone doesn't convey what's actually being sold -- mirrors
-`backend/src/logic/market_summary.rs`'s `additional_note`. `PURCHASE_TYPE_RELLM_HOSTING` is the
-only one that needs this today: the buyer becomes a full admin of their own new Rellm instance,
-which is worth spelling out -- e.g. they can pay-gate features like Facebook sync themselves, the
-same way this very server might, if they set up their own Facebook developer account.
--}
-additionalNote : PurchaseType -> String
-additionalNote type_ =
-    case type_ of
-        PURCHASETYPERELLMHOSTING ->
-            " You get full admin access to your own Rellm instance -- e.g. you can pay-gate features like Facebook sync yourself, if you set up your own Facebook developer account."
-
-        PURCHASETYPEMEDIASTORAGE ->
-            ""
-
-        PURCHASETYPEAIGRANTS ->
-            ""
-
-        PURCHASETYPEPERMISSIONSACCESS ->
-            ""
-
-        PurchaseTypeUnrecognized_ _ ->
             ""
 
 

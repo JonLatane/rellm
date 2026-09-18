@@ -1,10 +1,10 @@
 module MarketHelpersTests exposing (suite)
 
 {-| Tests for `Components.Market`'s smaller pure helpers -- everything `MarketTests.elm` doesn't
-already cover via `productSummary` (which exercises `formatAmount`/`resourceDescription`/
-`periodSuffix`/`additionalNote` indirectly, end to end). These are the bits `MarketPage`/
-`ProductPage`/the admin product form call directly: currency/type/period labels, slot-counting,
-sold-out detection, and the AI model nickname lookup.
+already cover via `priceLabel`/`productName`/`productDescription` (which exercise `formatAmount`
+indirectly, end to end). These are the bits `MarketPage`/`ProductPage`/the admin product form call
+directly: currency/type/period labels, slot-counting, sold-out detection, and the AI model nickname
+lookup.
 -}
 
 import Components.Market as Market
@@ -194,7 +194,14 @@ permissionsForProductSuite =
                 product PURCHASETYPEPERMISSIONSACCESS
                     0
                     0
-                    (Just (ProductDetails.PermissionsAccessSubscriptionDetails { permissions = [ SYNCEVENTSTOFACEBOOK, SYNCPOSTSTOFACEBOOK ] }))
+                    (Just
+                        (ProductDetails.PermissionsAccessSubscriptionDetails
+                            { permissions = [ SYNCEVENTSTOFACEBOOK, SYNCPOSTSTOFACEBOOK ]
+                            , name = "Facebook Sync Access"
+                            , description = "Sync your posts and events to Facebook."
+                            }
+                        )
+                    )
                     |> Market.permissionsForProduct
                     |> Expect.equal [ SYNCEVENTSTOFACEBOOK, SYNCPOSTSTOFACEBOOK ]
         , test "any other product type has nothing to badge, even with details set" <|

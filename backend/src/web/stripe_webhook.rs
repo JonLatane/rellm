@@ -29,7 +29,7 @@ use crate::marshaling::{
     rellm_hosting_details_to_json, ToDbId, ToProtoPurchasePeriod, ToProtoPurchaseType,
 };
 use crate::models;
-use crate::protos::{PurchasePeriod, PurchaseType, RellmHostingPurchaseDetails};
+use crate::protos::{PurchasePeriod, PurchaseType, RellmHostingPurchaseDetails, RellmHostingSubscriptionDetails};
 use crate::schema::market_purchases;
 use crate::web::headers::StripeSignatureHeader;
 use crate::web::RocketState;
@@ -194,9 +194,17 @@ fn handle_checkout_session_completed(
         .unwrap_or(PurchasePeriod::Indefinite);
 
     let details = if purchase_type == PurchaseType::RellmHosting {
+        // Everything else here comes from the buyer's own checkout-time metadata (see this
+        // message's own proto doc), but `additional_description` is admin-authored on the
+        // product itself -- carry it over onto the purchase/subscription the same way `db_size_bytes`/
+        // `minio_size_bytes` would be if the webhook ever started actually populating those (see
+        // their own doc on why they're still always `0` here).
+        let product_details: RellmHostingSubscriptionDetails =
+            serde_json::from_value(product.details.clone()).unwrap_or_default();
         rellm_hosting_details_to_json(&RellmHostingPurchaseDetails {
             db_size_bytes: 0,
             minio_size_bytes: 0,
+            additional_description: product_details.additional_description,
             domain: get_meta("rellm_hosting_domain"),
             contact_email: get_meta("rellm_hosting_contact_email"),
             additional_information: get_meta("rellm_hosting_additional_information"),

@@ -1,5 +1,6 @@
 module Shared.Federation.Bluesky exposing
     ( ActorProfile
+    , BlueskyImage
     , FeedPost
     , decoder
     , fetchActorProfile
@@ -11,6 +12,7 @@ module Shared.Federation.Bluesky exposing
     , searchActors
     , searchPosts
     , toPost
+    , toPostIncludingSensitiveMedia
     )
 
 {-| Translates Bluesky's (AT Protocol) API into Rellm's `Post` shape, entirely client-side -- see
@@ -37,21 +39,41 @@ doc already covers for reading someone else's public post.
 import Http
 import Iso8601
 import Json.Decode as Decode exposing (Decoder)
-import Proto.Rellm exposing (Author, Post, defaultAuthor, defaultMediaReference, defaultPost, wrapMediaReference)
+import Proto.Rellm exposing (Author, MediaReference, Post, defaultAuthor, defaultMediaReference, defaultMediaSize, defaultPost, wrapMediaReference)
+import Proto.Rellm.MediaConversion exposing (MediaConversion(..))
 import Proto.Rellm.PostContext exposing (PostContext(..))
 import Proto.Rellm.Visibility exposing (Visibility(..))
 import Shared.Conversions exposing (posixToTimestamp)
-import Shared.Federation.Common exposing (jsonResolver, nonEmpty)
+import Shared.Federation.Common exposing (jsonResolver, nonEmpty, sensitiveMediaHiddenId)
 import Task exposing (Task)
 import Time
 import Url
+
+
+{-| One element of an `app.bsky.embed.images#view`'s `images` array (the only `embed` shape
+`toPost` translates -- see `imagesDecoder`'s own doc for `app.bsky.embed.video#view`/
+`app.bsky.embed.external#view`, the two it doesn't). `fullsize` (not `thumb`, a low-res placeholder)
+is this image's real URL -- same "skip the two-tier fetch" reasoning as
+`Shared.Federation.Mastodon.MediaAttachment.url`'s own doc.
+-}
+type alias BlueskyImage =
+    { url : String
+    , alt : Maybe String
+    , width : Maybe Int
+    , height : Maybe Int
+    }
 
 
 {-| Just the fields of one `app.bsky.feed.defs#feedViewPost` (one element of
 `GET /xrpc/app.bsky.feed.getTimeline`'s `feed` array) that `toPost` actually needs -- see
 <https://docs.bsky.app/docs/api/app-bsky-feed-get-timeline>. `uri` is the post's `at://` URI
 (`at://{did}/app.bsky.feed.post/{rkey}`), used both as this post's own identity and (via `webUrl`)
-to build a real `https://bsky.app/...` link a browser can actually open.
+to build a real `https://bsky.app/...` link a browser can actually open. `sensitive` reads
+`postView.labels` (AT Proto's own moderation-label array -- e.g. a self-applied `"porn"`/`"sexual"`/
+`"nudity"`/`"graphic-media"` value from the adult-content vocab) -- any label present at all is
+treated as "hide by default", the same coarse, allow-nothing-through-by-mistake reading
+`toPostWith`'s own doc covers for why this only ever gates `images`, never blocks the post text
+itself.
 -}
 type alias FeedPost =
     { uri : String
@@ -61,12 +83,31 @@ type alias FeedPost =
     , authorHandle : String
     , authorDisplayName : Maybe String
     , authorAvatarUrl : Maybe String
+    , images : List BlueskyImage
+    , sensitive : Bool
     }
 
 
+{-| `Decode.map8` is already at `elm/json`'s own arity ceiling, so `sensitive` (the 9th field) is
+threaded through via `andThen` instead, mirroring `Shared.Federation.Mastodon.decoder`'s identical
+trick for its own 9th/10th fields.
+-}
 decoder : Decoder FeedPost
 decoder =
-    Decode.map7 FeedPost
+    Decode.map8
+        (\uri text createdAt isReply authorHandle authorDisplayName authorAvatarUrl images ->
+            \sensitive ->
+                { uri = uri
+                , text = text
+                , createdAt = createdAt
+                , isReply = isReply
+                , authorHandle = authorHandle
+                , authorDisplayName = authorDisplayName
+                , authorAvatarUrl = authorAvatarUrl
+                , images = images
+                , sensitive = sensitive
+                }
+        )
         (Decode.at [ "post", "uri" ] Decode.string)
         (Decode.at [ "post", "record", "text" ] Decode.string)
         (Decode.at [ "post", "record", "createdAt" ] Iso8601.decoder)
@@ -74,6 +115,48 @@ decoder =
         (Decode.at [ "post", "author", "handle" ] Decode.string)
         (Decode.maybe (Decode.at [ "post", "author", "displayName" ] Decode.string) |> Decode.map (Maybe.andThen nonEmpty))
         (Decode.maybe (Decode.at [ "post", "author", "avatar" ] Decode.string))
+        (imagesDecoder [ "post", "embed", "images" ])
+        |> Decode.andThen (\f -> Decode.map f (sensitiveDecoder [ "post", "labels" ]))
+
+
+{-| `embedPath ++ [ "images" ]` (e.g. `[ "post", "embed", "images" ]` for `decoder`'s nested
+`feedViewPost` shape, `[ "embed", "images" ]` for `searchDecoder`'s flatter one) if that path exists
+and is actually an `app.bsky.embed.images#view` (i.e. carries an `images` array at all) --
+`Decode.oneOf`'s fallback to `[]` covers every other case in one go: no `embed` at all (a plain text
+post), or an `embed` that's really an `app.bsky.embed.video#view` (a single video, keyed `video`, not
+`images`) or `app.bsky.embed.external#view` (a link-card thumbnail, keyed `thumb`, not real post
+media -- rendering a target site's own preview image as if the author had attached it would be
+misleading) -- neither translated here, an accepted gap mirroring
+`Shared.Federation.Mastodon.MediaAttachment` only handling attachments with a real `url`.
+-}
+imagesDecoder : List String -> Decoder (List BlueskyImage)
+imagesDecoder embedPath =
+    Decode.oneOf
+        [ Decode.at embedPath (Decode.list blueskyImageDecoder)
+        , Decode.succeed []
+        ]
+
+
+blueskyImageDecoder : Decoder BlueskyImage
+blueskyImageDecoder =
+    Decode.map4 BlueskyImage
+        (Decode.field "fullsize" Decode.string)
+        (Decode.field "alt" Decode.string |> Decode.map nonEmpty)
+        (Decode.maybe (Decode.at [ "aspectRatio", "width" ] Decode.int))
+        (Decode.maybe (Decode.at [ "aspectRatio", "height" ] Decode.int))
+
+
+{-| `labelsPath` (`[ "post", "labels" ]` for `decoder`'s nested shape, `[ "labels" ]` for
+`searchDecoder`'s flatter one -- same path-depth split `imagesDecoder` already has) is "sensitive"
+whenever it exists and isn't empty -- absent entirely (most posts), `null`, or `[]` all read as
+`False` via the same `Decode.oneOf` catch-all `imagesDecoder` uses.
+-}
+sensitiveDecoder : List String -> Decoder Bool
+sensitiveDecoder labelsPath =
+    Decode.oneOf
+        [ Decode.at labelsPath (Decode.list Decode.value) |> Decode.map (not << List.isEmpty)
+        , Decode.succeed False
+        ]
 
 
 {-| A `FeedPost`'s translation into a Rellm `Post` -- `id` is just the bare `feedPost.uri` (an
@@ -84,10 +167,37 @@ without its synthetic host alongside it, which already carries the `"bluesky:"` 
 real `https://bsky.app/...` URL (see `webUrl`) built from the `at://` URI, since that's meaningless
 to a browser directly. `visibility` is always `GLOBALPUBLIC`: everything in a Bluesky timeline is
 already public (AT Protocol has no private-post concept at all). `author.avatar` uses
-`MediaReference.url`, same reasoning as Mastodon's own translation.
+`MediaReference.url`, same reasoning as Mastodon's own translation. `media` uses the same `.url`
+approach, via `toMediaReference` -- see `toPostWith`'s own doc for why it's sometimes left empty
+regardless of `feedPost.images`.
 -}
 toPost : FeedPost -> Post
-toPost feedPost =
+toPost =
+    toPostWith { includeSensitiveMedia = False }
+
+
+{-| `fetchPost`'s own translation, unlike `toPost` -- see that function's own doc on why a single
+post's own page, unlike a feed/card, is allowed to actually show media AT Proto flagged `sensitive`.
+-}
+toPostIncludingSensitiveMedia : FeedPost -> Post
+toPostIncludingSensitiveMedia =
+    toPostWith { includeSensitiveMedia = True }
+
+
+{-| `toPost`'s real implementation -- mirrors `Shared.Federation.Mastodon.toPostWith`'s own doc
+exactly, including the `sensitiveMediaHiddenPlaceholder` sentinel: `media` is left `[]` for a
+`feedPost.sensitive` post unless `includeSensitiveMedia` says otherwise, rather than rendering it
+blurred/behind a reveal button -- Rellm has no NSFW-filtering concept of its own for a `sensitive`
+flag to hook into, so a flagged post's images either never reach `Post.media` at all (every feed/card
+context -- `toPost`, used by `fetchPosts`/`searchPosts`/`fetchAuthorFeed`) or the viewer already
+explicitly opened this exact post (`includeSensitiveMedia`, `Components.Pages.BlueskyPostPage`'s own
+`init`, via `fetchPost`). When media actually was stripped this way, `media` becomes
+`[ sensitiveMediaHiddenPlaceholder ]` rather than plain `[]`, so `Components.Posts.hasHiddenSensitiveMedia`
+can tell "hidden sensitive media" apart from "no media at all" -- see `sensitiveMediaHiddenId`'s own
+doc.
+-}
+toPostWith : { includeSensitiveMedia : Bool } -> FeedPost -> Post
+toPostWith { includeSensitiveMedia } feedPost =
     { defaultPost
         | id = feedPost.uri
         , author = Just (toAuthor feedPost)
@@ -100,8 +210,51 @@ toPost feedPost =
             else
                 POST
         , visibility = GLOBALPUBLIC
+        , media =
+            if feedPost.sensitive && not includeSensitiveMedia then
+                if List.isEmpty feedPost.images then
+                    []
+
+                else
+                    [ sensitiveMediaHiddenPlaceholder ]
+
+            else
+                List.map toMediaReference feedPost.images
         , createdAt = Just (posixToTimestamp feedPost.createdAt)
         , lastActivityAt = Just (posixToTimestamp feedPost.createdAt)
+    }
+
+
+sensitiveMediaHiddenPlaceholder : MediaReference
+sensitiveMediaHiddenPlaceholder =
+    { defaultMediaReference | id = sensitiveMediaHiddenId }
+
+
+{-| A `BlueskyImage`'s translation into a `MediaReference` -- see
+`Shared.Federation.Mastodon.toMediaReference`'s own doc, same reasoning throughout (`url`/`name`
+carry the real content, `sizes` is a single synthetic `MEDIACONVERSIONORIGINAL` entry just so
+`MediaRenderer.contentTypeOf`/`aspectRatioOf` have something to read). `contentType` is a bare
+`"image/*"`, not coarsened from anything AT Proto provides -- `app.bsky.embed.images#view` (the only
+embed shape `imagesDecoder` reads) is images-only by construction, unlike Mastodon's single
+mixed-type `media_attachments` array. `id` borrows `image.url` itself (AT Proto's `#viewImage` has no
+id field of its own, unlike Mastodon's real per-attachment id) -- still a genuinely distinct value
+per image within one post's own `images` list, which is all `Shared.MediaViewerPanel`'s
+open-by-id/page-by-id/`Html.Keyed` logic actually needs (see `Mastodon.toMediaReference`'s own doc on
+why that has to be non-blank at all).
+-}
+toMediaReference : BlueskyImage -> MediaReference
+toMediaReference image =
+    { defaultMediaReference
+        | id = image.url
+        , url = Just image.url
+        , name = image.alt
+        , sizes =
+            [ { defaultMediaSize
+                | conversion = MEDIACONVERSIONORIGINAL
+                , contentType = "image/*"
+                , aspectRatio = Maybe.map2 (\w h -> toFloat w / toFloat h) image.width image.height
+              }
+            ]
     }
 
 
@@ -151,7 +304,20 @@ searchPosts accessToken query =
 
 searchDecoder : Decoder FeedPost
 searchDecoder =
-    Decode.map7 FeedPost
+    Decode.map8
+        (\uri text createdAt isReply authorHandle authorDisplayName authorAvatarUrl images ->
+            \sensitive ->
+                { uri = uri
+                , text = text
+                , createdAt = createdAt
+                , isReply = isReply
+                , authorHandle = authorHandle
+                , authorDisplayName = authorDisplayName
+                , authorAvatarUrl = authorAvatarUrl
+                , images = images
+                , sensitive = sensitive
+                }
+        )
         (Decode.field "uri" Decode.string)
         (Decode.at [ "record", "text" ] Decode.string)
         (Decode.at [ "record", "createdAt" ] Iso8601.decoder)
@@ -159,6 +325,8 @@ searchDecoder =
         (Decode.at [ "author", "handle" ] Decode.string)
         (Decode.maybe (Decode.at [ "author", "displayName" ] Decode.string) |> Decode.map (Maybe.andThen nonEmpty))
         (Decode.maybe (Decode.at [ "author", "avatar" ] Decode.string))
+        (imagesDecoder [ "embed", "images" ])
+        |> Decode.andThen (\f -> Decode.map f (sensitiveDecoder [ "labels" ]))
 
 
 {-| `GET /xrpc/app.bsky.feed.getPosts` for a single `uri` -- a real single-post lookup by AT URI,
@@ -167,9 +335,14 @@ data regardless of whose token it is). A batch API in general (`uris` takes a co
 but always called here with exactly one, so `Decode.field "posts"` is expected to come back with
 either one element or none (deleted/never-existed) -- the latter fails the whole decode, surfacing as
 an `Http.Error` the same as any other not-found. Response items are the same bare
-`app.bsky.feed.defs#postView` shape `searchPosts` gets, so this reuses `searchDecoder` too.
+`app.bsky.feed.defs#postView` shape `searchPosts` gets, so this reuses `searchDecoder` too. Uses
+`toPostIncludingSensitiveMedia`, unlike every other fetch here -- see that function's own doc on why
+this, alone, doesn't strip a `sensitive` post's media. The `Bool` alongside `Post` is
+`feedPost.sensitive` itself -- see `Shared.Federation.Mastodon.fetchStatus`'s own doc on why that's
+still needed even though `toPostIncludingSensitiveMedia` already includes the media unconditionally
+(`Components.Pages.BlueskyPostPage`'s own `sensitiveMediaRevealed`).
 -}
-fetchPost : String -> String -> Task Http.Error Post
+fetchPost : String -> String -> Task Http.Error ( Post, Bool )
 fetchPost accessToken uri =
     Http.task
         { method = "GET"
@@ -192,7 +365,7 @@ fetchPost accessToken uri =
                 (\metadata _ -> Http.BadStatus metadata.statusCode)
         , timeout = Just 10000
         }
-        |> Task.map toPost
+        |> Task.map (\feedPost -> ( toPostIncludingSensitiveMedia feedPost, feedPost.sensitive ))
 
 
 {-| `at://{did}/app.bsky.feed.post/{rkey}` -> `https://bsky.app/profile/{handle}/post/{rkey}` --

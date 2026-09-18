@@ -152,10 +152,10 @@ view shared req model =
                     Html.map RellmPostMsg (PostPage.view shared subModel)
 
                 MastodonPost subModel ->
-                    Html.map MastodonPostMsg (MastodonPostPage.view subModel)
+                    Html.map MastodonPostMsg (MastodonPostPage.view shared subModel)
 
                 BlueskyPost subModel ->
-                    Html.map BlueskyPostMsg (BlueskyPostPage.view subModel)
+                    Html.map BlueskyPostMsg (BlueskyPostPage.view shared subModel)
     in
     { title = UI.pageTitle shared [ pageTitle ]
     , body =

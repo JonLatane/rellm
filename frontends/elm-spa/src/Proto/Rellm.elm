@@ -5733,71 +5733,6 @@ type alias User =
     Proto.Rellm.Internals_.Proto__Rellm__User
 
 
-{-| The field numbers for the fields of `PermissionsAccessSubscriptionDetails`. This is mostly useful for internals, like documentation generation.
-
--}
-fieldNumbersPermissionsAccessSubscriptionDetails : { permissions : Int }
-fieldNumbersPermissionsAccessSubscriptionDetails =
-    Proto.Rellm.Internals_.fieldNumbersProto__Rellm__PermissionsAccessSubscriptionDetails
-
-
-{-| Default for PermissionsAccessSubscriptionDetails. Should only be used for 'required' decoders as an initial value.
-
--}
-defaultPermissionsAccessSubscriptionDetails : PermissionsAccessSubscriptionDetails
-defaultPermissionsAccessSubscriptionDetails =
-    Proto.Rellm.Internals_.defaultProto__Rellm__PermissionsAccessSubscriptionDetails
-
-
-{-| Declares how to decode a `PermissionsAccessSubscriptionDetails` from Bytes. To actually perform the conversion from Bytes, you need to use Protobuf.Decode.decode from eriktim/elm-protocol-buffers.
-
--}
-decodePermissionsAccessSubscriptionDetails : Protobuf.Decode.Decoder PermissionsAccessSubscriptionDetails
-decodePermissionsAccessSubscriptionDetails =
-    Proto.Rellm.Internals_.decodeProto__Rellm__PermissionsAccessSubscriptionDetails
-
-
-{-| Declares how to encode a `PermissionsAccessSubscriptionDetails` to Bytes. To actually perform the conversion to Bytes, you need to use Protobuf.Encode.encode from eriktim/elm-protocol-buffers.
-
--}
-encodePermissionsAccessSubscriptionDetails : PermissionsAccessSubscriptionDetails -> Protobuf.Encode.Encoder
-encodePermissionsAccessSubscriptionDetails =
-    Proto.Rellm.Internals_.encodeProto__Rellm__PermissionsAccessSubscriptionDetails
-
-
-{-|  `MarketProduct.details`/`MarketSubscription.details`' `PURCHASE_TYPE_PERMISSIONS_ACCESS`
- variant -- what a permissions-bundle product actually grants. Field-for-field identical to
- `PermissionsAccessPurchaseDetails` -- see that message's own doc for why it's still a distinct
- type (that distinction is exactly what lets `logic::market_fulfillment::terminate_entitlement`
- tell "what to claw back" apart from "what was originally billed").
-
-
-## Fields
-
-### permissions
-
- Which `Permission`s this product/subscription grants the buyer -- see
- `logic::market_fulfillment::fulfill_purchase`'s `PermissionsAccess` arm (union-added to the
- buyer's own `User.permissions`, never replacing what they already had) and
- `terminate_entitlement`'s own arm (the exact claw-back set on cancellation/expiry).
- Intentionally excludes permissions dangerous or nonsensical to sell this way -- e.g.
- "Grant Basic Permissions," any "Moderate"/"Read All System Messages" permission, "Admin,"
- "View Private Contact Methods," and "Edit Cluster Settings" must never appear in a Market
- product's own `permissions` list. Enforced server-side on `CreateMarketProduct`/
- `UpdateMarketProduct` (rejected with `permission_not_purchasable`) and again on
- `MakeMarketPurchase` (defense in depth, in case a permission is later removed from the
- purchasable set after a product granting it already exists) -- see
- `rpcs::market::create_market_product::PURCHASABLE_PERMISSIONS`. NOTE: that Rust list is an
- explicit include-list, not an exclude-list -- described here as an exclusion for readability,
- but implemented as "only these permissions are purchasable" so a newly-added `Permission` is
- never purchasable by default; it has to be deliberately added to that list.
-
-
--}
-type alias PermissionsAccessSubscriptionDetails =
-    Proto.Rellm.Internals_.Proto__Rellm__PermissionsAccessSubscriptionDetails
-
-
 {-| The field numbers for the fields of `FulfillmentNote`. This is mostly useful for internals, like documentation generation.
 
 -}
@@ -5881,6 +5816,7 @@ type alias FulfillmentNote =
 fieldNumbersRellmHostingSubscriptionDetails :
     { dbSizeBytes : Int
     , minioSizeBytes : Int
+    , additionalDescription : Int
     , domain : Int
     , contactEmail : Int
     , additionalInformation : Int
@@ -5937,6 +5873,14 @@ encodeRellmHostingSubscriptionDetails =
 
  Same caveat as `db_size_bytes` above. On a `MarketProduct`: the MinIO (object storage) size (in
  bytes) this product is configured to provision.
+
+
+### additionalDescription
+
+ Admin-authored, Markdown-formatted extra paragraph appended below the implicit, Elm-computed
+ "1GB DB + 5GB Object Storage"-style canned description shown on the product/subscription's own
+ page -- e.g. to call out something specific to this hosting tier that the canned text doesn't
+ cover. Optional; the canned description alone is shown when this is blank.
 
 
 ### domain
@@ -6043,6 +5987,90 @@ encodeAIGrantSubscriptionDetails =
 -}
 type alias AIGrantSubscriptionDetails =
     Proto.Rellm.Internals_.Proto__Rellm__AIGrantSubscriptionDetails
+
+
+{-| The field numbers for the fields of `PermissionsAccessSubscriptionDetails`. This is mostly useful for internals, like documentation generation.
+
+-}
+fieldNumbersPermissionsAccessSubscriptionDetails : { permissions : Int, name : Int, description : Int }
+fieldNumbersPermissionsAccessSubscriptionDetails =
+    Proto.Rellm.Internals_.fieldNumbersProto__Rellm__PermissionsAccessSubscriptionDetails
+
+
+{-| Default for PermissionsAccessSubscriptionDetails. Should only be used for 'required' decoders as an initial value.
+
+-}
+defaultPermissionsAccessSubscriptionDetails : PermissionsAccessSubscriptionDetails
+defaultPermissionsAccessSubscriptionDetails =
+    Proto.Rellm.Internals_.defaultProto__Rellm__PermissionsAccessSubscriptionDetails
+
+
+{-| Declares how to decode a `PermissionsAccessSubscriptionDetails` from Bytes. To actually perform the conversion from Bytes, you need to use Protobuf.Decode.decode from eriktim/elm-protocol-buffers.
+
+-}
+decodePermissionsAccessSubscriptionDetails : Protobuf.Decode.Decoder PermissionsAccessSubscriptionDetails
+decodePermissionsAccessSubscriptionDetails =
+    Proto.Rellm.Internals_.decodeProto__Rellm__PermissionsAccessSubscriptionDetails
+
+
+{-| Declares how to encode a `PermissionsAccessSubscriptionDetails` to Bytes. To actually perform the conversion to Bytes, you need to use Protobuf.Encode.encode from eriktim/elm-protocol-buffers.
+
+-}
+encodePermissionsAccessSubscriptionDetails : PermissionsAccessSubscriptionDetails -> Protobuf.Encode.Encoder
+encodePermissionsAccessSubscriptionDetails =
+    Proto.Rellm.Internals_.encodeProto__Rellm__PermissionsAccessSubscriptionDetails
+
+
+{-|  `MarketProduct.details`/`MarketSubscription.details`' `PURCHASE_TYPE_PERMISSIONS_ACCESS`
+ variant -- what a permissions-bundle product actually grants. Field-for-field identical to
+ `PermissionsAccessPurchaseDetails` -- see that message's own doc for why it's still a distinct
+ type (that distinction is exactly what lets `logic::market_fulfillment::terminate_entitlement`
+ tell "what to claw back" apart from "what was originally billed").
+
+
+## Fields
+
+### permissions
+
+ Which `Permission`s this product/subscription grants the buyer -- see
+ `logic::market_fulfillment::fulfill_purchase`'s `PermissionsAccess` arm (union-added to the
+ buyer's own `User.permissions`, never replacing what they already had) and
+ `terminate_entitlement`'s own arm (the exact claw-back set on cancellation/expiry).
+ Intentionally excludes permissions dangerous or nonsensical to sell this way -- e.g.
+ "Grant Basic Permissions," any "Moderate"/"Read All System Messages" permission, "Admin,"
+ "View Private Contact Methods," and "Edit Cluster Settings" must never appear in a Market
+ product's own `permissions` list. Enforced server-side on `CreateMarketProduct`/
+ `UpdateMarketProduct` (rejected with `permission_not_purchasable`) and again on
+ `MakeMarketPurchase` (defense in depth, in case a permission is later removed from the
+ purchasable set after a product granting it already exists) -- see
+ `rpcs::market::create_market_product::PURCHASABLE_PERMISSIONS`. NOTE: that Rust list is an
+ explicit include-list, not an exclude-list -- described here as an exclusion for readability,
+ but implemented as "only these permissions are purchasable" so a newly-added `Permission` is
+ never purchasable by default; it has to be deliberately added to that list.
+
+
+### name
+
+ Admin-authored product name -- unlike `MediaStorageSubscriptionDetails`/`AIGrantSubscriptionDetails`/
+ `RellmHostingSubscriptionDetails` (which get an implicit, Elm-computed display name from their
+ own fields, since they each describe one fixed kind of thing), a permissions-access product's
+ `permissions` list can be any admin-chosen bundle, so there's no generic way to name it
+ automatically. Required for a purchasable product (`CreateMarketProduct`/`UpdateMarketProduct`
+ reject a `PermissionsAccessSubscriptionDetails` with a blank `name`). On a `MarketSubscription`:
+ copied from the originating `MarketProduct.details.name` at the time the subscription was
+ created, same as every other field on this message.
+
+
+### description
+
+ Admin-authored, Markdown-formatted product description shown on the product's own page --
+ same "no generic implicit description" reasoning as `name` above. On a `MarketSubscription`:
+ copied the same way `name` is.
+
+
+-}
+type alias PermissionsAccessSubscriptionDetails =
+    Proto.Rellm.Internals_.Proto__Rellm__PermissionsAccessSubscriptionDetails
 
 
 {-| The field numbers for the fields of `MediaStorageSubscriptionDetails`. This is mostly useful for internals, like documentation generation.
@@ -6215,7 +6243,7 @@ type alias MarketSubscription =
 {-| The field numbers for the fields of `PermissionsAccessPurchaseDetails`. This is mostly useful for internals, like documentation generation.
 
 -}
-fieldNumbersPermissionsAccessPurchaseDetails : { permissions : Int }
+fieldNumbersPermissionsAccessPurchaseDetails : { permissions : Int, name : Int, description : Int }
 fieldNumbersPermissionsAccessPurchaseDetails =
     Proto.Rellm.Internals_.fieldNumbersProto__Rellm__PermissionsAccessPurchaseDetails
 
@@ -6260,6 +6288,21 @@ encodePermissionsAccessPurchaseDetails =
  `PermissionsAccess` arm (adds these to the buyer's `User.permissions`, union-style).
 
 
+### name
+
+ Admin-authored product name shown for this purchase (e.g. on `/market/fulfillment`'s billing
+ history) -- copied from `PermissionsAccessSubscriptionDetails.name` at the moment this purchase
+ was fulfilled. Unlike the other three purchase-detail messages' implicit, Elm-computed display
+ names, permissions-access products have no fixed bundle of permissions to describe generically,
+ so an admin names/describes each one by hand.
+
+
+### description
+
+ Admin-authored, Markdown-formatted product description -- copied from
+ `PermissionsAccessSubscriptionDetails.description` the same way `name` above is.
+
+
 -}
 type alias PermissionsAccessPurchaseDetails =
     Proto.Rellm.Internals_.Proto__Rellm__PermissionsAccessPurchaseDetails
@@ -6269,7 +6312,13 @@ type alias PermissionsAccessPurchaseDetails =
 
 -}
 fieldNumbersRellmHostingPurchaseDetails :
-    { dbSizeBytes : Int, minioSizeBytes : Int, domain : Int, contactEmail : Int, additionalInformation : Int }
+    { dbSizeBytes : Int
+    , minioSizeBytes : Int
+    , additionalDescription : Int
+    , domain : Int
+    , contactEmail : Int
+    , additionalInformation : Int
+    }
 fieldNumbersRellmHostingPurchaseDetails =
     Proto.Rellm.Internals_.fieldNumbersProto__Rellm__RellmHostingPurchaseDetails
 
@@ -6322,6 +6371,12 @@ encodeRellmHostingPurchaseDetails =
 
  Same caveat as `db_size_bytes` above -- currently always `0`. Intended to be the requested
  MinIO (object storage) size in bytes.
+
+
+### additionalDescription
+
+ Copied from `RellmHostingSubscriptionDetails.additional_description` at the moment this
+ purchase was fulfilled -- see that field's own doc.
 
 
 ### domain

@@ -229,8 +229,19 @@
   gap: 0.3rem;
 }
 
-.market-tier-summary {
-  line-height: 1.35;
+/* Price on top, larger and on its own row; the product's own name (implicit for every
+   `PurchaseType` except Extra Features -- see `Components.Market.productName`'s own doc) below it,
+   smaller/muted -- deliberately no full "what am I buying" sentence here (that's `ProductPage`'s
+   job); a tier card is just enough to compare price + what it is at a glance. */
+.market-tier-price {
+  font-size: 1.3rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.market-tier-name {
+  color: var(--muted);
+  line-height: 1.3;
 }
 
 .market-tier-slots {
@@ -316,15 +327,24 @@
   margin: 0 0 0.2rem;
 }
 
-.product-description {
+.product-name {
   text-align: center;
-  color: var(--muted);
+  font-size: 1.15rem;
+  font-weight: 600;
   margin: 0;
 }
 
-.product-summary {
+.product-price {
   text-align: center;
-  margin: 0.3rem 0 1rem;
+  font-size: 1.4rem;
+  font-weight: 600;
+  margin: 0.1rem 0 0.6rem;
+}
+
+/* Markdown-rendered (`Components.Markdown.view`) -- see `Components.Market.productDescription`'s
+   own doc on where its content comes from. */
+.product-description {
+  margin: 0 0 1rem;
 }
 
 .product-slots {

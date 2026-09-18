@@ -601,6 +601,11 @@ export interface RellmHostingPurchaseDetails {
    * MinIO (object storage) size in bytes.
    */
   minioSizeBytes: number;
+  /**
+   * Copied from `RellmHostingSubscriptionDetails.additional_description` at the moment this
+   * purchase was fulfilled -- see that field's own doc.
+   */
+  additionalDescription: string;
   /** The domain the buyer wants their new Rellm instance reachable at (e.g. "myserver.example.com"). */
   domain: string;
   /**
@@ -632,6 +637,19 @@ export interface PermissionsAccessPurchaseDetails {
    * `PermissionsAccess` arm (adds these to the buyer's `User.permissions`, union-style).
    */
   permissions: Permission[];
+  /**
+   * Admin-authored product name shown for this purchase (e.g. on `/market/fulfillment`'s billing
+   * history) -- copied from `PermissionsAccessSubscriptionDetails.name` at the moment this purchase
+   * was fulfilled. Unlike the other three purchase-detail messages' implicit, Elm-computed display
+   * names, permissions-access products have no fixed bundle of permissions to describe generically,
+   * so an admin names/describes each one by hand.
+   */
+  name: string;
+  /**
+   * Admin-authored, Markdown-formatted product description -- copied from
+   * `PermissionsAccessSubscriptionDetails.description` the same way `name` above is.
+   */
+  description: string;
 }
 
 /**
@@ -748,6 +766,51 @@ export interface MediaStorageSubscriptionDetails {
 }
 
 /**
+ * `MarketProduct.details`/`MarketSubscription.details`' `PURCHASE_TYPE_PERMISSIONS_ACCESS`
+ * variant -- what a permissions-bundle product actually grants. Field-for-field identical to
+ * `PermissionsAccessPurchaseDetails` -- see that message's own doc for why it's still a distinct
+ * type (that distinction is exactly what lets `logic::market_fulfillment::terminate_entitlement`
+ * tell "what to claw back" apart from "what was originally billed").
+ */
+export interface PermissionsAccessSubscriptionDetails {
+  /**
+   * Which `Permission`s this product/subscription grants the buyer -- see
+   * `logic::market_fulfillment::fulfill_purchase`'s `PermissionsAccess` arm (union-added to the
+   * buyer's own `User.permissions`, never replacing what they already had) and
+   * `terminate_entitlement`'s own arm (the exact claw-back set on cancellation/expiry).
+   * Intentionally excludes permissions dangerous or nonsensical to sell this way -- e.g.
+   * "Grant Basic Permissions," any "Moderate"/"Read All System Messages" permission, "Admin,"
+   * "View Private Contact Methods," and "Edit Cluster Settings" must never appear in a Market
+   * product's own `permissions` list. Enforced server-side on `CreateMarketProduct`/
+   * `UpdateMarketProduct` (rejected with `permission_not_purchasable`) and again on
+   * `MakeMarketPurchase` (defense in depth, in case a permission is later removed from the
+   * purchasable set after a product granting it already exists) -- see
+   * `rpcs::market::create_market_product::PURCHASABLE_PERMISSIONS`. NOTE: that Rust list is an
+   * explicit include-list, not an exclude-list -- described here as an exclusion for readability,
+   * but implemented as "only these permissions are purchasable" so a newly-added `Permission` is
+   * never purchasable by default; it has to be deliberately added to that list.
+   */
+  permissions: Permission[];
+  /**
+   * Admin-authored product name -- unlike `MediaStorageSubscriptionDetails`/`AIGrantSubscriptionDetails`/
+   * `RellmHostingSubscriptionDetails` (which get an implicit, Elm-computed display name from their
+   * own fields, since they each describe one fixed kind of thing), a permissions-access product's
+   * `permissions` list can be any admin-chosen bundle, so there's no generic way to name it
+   * automatically. Required for a purchasable product (`CreateMarketProduct`/`UpdateMarketProduct`
+   * reject a `PermissionsAccessSubscriptionDetails` with a blank `name`). On a `MarketSubscription`:
+   * copied from the originating `MarketProduct.details.name` at the time the subscription was
+   * created, same as every other field on this message.
+   */
+  name: string;
+  /**
+   * Admin-authored, Markdown-formatted product description shown on the product's own page --
+   * same "no generic implicit description" reasoning as `name` above. On a `MarketSubscription`:
+   * copied the same way `name` is.
+   */
+  description: string;
+}
+
+/**
  * `MarketProduct.details`/`MarketSubscription.details`' `PURCHASE_TYPE_AI_GRANTS` variant -- what
  * an AI token product actually grants. Field-for-field identical to `AIGrantPurchaseDetails` --
  * see that message's own doc for why it's still a distinct type.
@@ -786,6 +849,13 @@ export interface RellmHostingSubscriptionDetails {
    * bytes) this product is configured to provision.
    */
   minioSizeBytes: number;
+  /**
+   * Admin-authored, Markdown-formatted extra paragraph appended below the implicit, Elm-computed
+   * "1GB DB + 5GB Object Storage"-style canned description shown on the product/subscription's own
+   * page -- e.g. to call out something specific to this hosting tier that the canned text doesn't
+   * cover. Optional; the canned description alone is shown when this is blank.
+   */
+  additionalDescription: string;
   /**
    * On a `MarketProduct`: unset/meaningless (a product isn't tied to any one domain). On a
    * `MarketSubscription`: the domain the buyer wants their new Rellm instance reachable at, from
@@ -858,34 +928,6 @@ export interface FulfillmentNote {
    * timestamp the client sends for a newly-appended entry.
    */
   createdAt: string | undefined;
-}
-
-/**
- * `MarketProduct.details`/`MarketSubscription.details`' `PURCHASE_TYPE_PERMISSIONS_ACCESS`
- * variant -- what a permissions-bundle product actually grants. Field-for-field identical to
- * `PermissionsAccessPurchaseDetails` -- see that message's own doc for why it's still a distinct
- * type (that distinction is exactly what lets `logic::market_fulfillment::terminate_entitlement`
- * tell "what to claw back" apart from "what was originally billed").
- */
-export interface PermissionsAccessSubscriptionDetails {
-  /**
-   * Which `Permission`s this product/subscription grants the buyer -- see
-   * `logic::market_fulfillment::fulfill_purchase`'s `PermissionsAccess` arm (union-added to the
-   * buyer's own `User.permissions`, never replacing what they already had) and
-   * `terminate_entitlement`'s own arm (the exact claw-back set on cancellation/expiry).
-   * Intentionally excludes permissions dangerous or nonsensical to sell this way -- e.g.
-   * "Grant Basic Permissions," any "Moderate"/"Read All System Messages" permission, "Admin,"
-   * "View Private Contact Methods," and "Edit Cluster Settings" must never appear in a Market
-   * product's own `permissions` list. Enforced server-side on `CreateMarketProduct`/
-   * `UpdateMarketProduct` (rejected with `permission_not_purchasable`) and again on
-   * `MakeMarketPurchase` (defense in depth, in case a permission is later removed from the
-   * purchasable set after a product granting it already exists) -- see
-   * `rpcs::market::create_market_product::PURCHASABLE_PERMISSIONS`. NOTE: that Rust list is an
-   * explicit include-list, not an exclude-list -- described here as an exclusion for readability,
-   * but implemented as "only these permissions are purchasable" so a newly-added `Permission` is
-   * never purchasable by default; it has to be deliberately added to that list.
-   */
-  permissions: Permission[];
 }
 
 function createBaseMarketProduct(): MarketProduct {
@@ -2461,7 +2503,14 @@ export const AIGrantPurchaseDetails: MessageFns<AIGrantPurchaseDetails> = {
 };
 
 function createBaseRellmHostingPurchaseDetails(): RellmHostingPurchaseDetails {
-  return { dbSizeBytes: 0, minioSizeBytes: 0, domain: "", contactEmail: "", additionalInformation: "" };
+  return {
+    dbSizeBytes: 0,
+    minioSizeBytes: 0,
+    additionalDescription: "",
+    domain: "",
+    contactEmail: "",
+    additionalInformation: "",
+  };
 }
 
 export const RellmHostingPurchaseDetails: MessageFns<RellmHostingPurchaseDetails> = {
@@ -2472,14 +2521,17 @@ export const RellmHostingPurchaseDetails: MessageFns<RellmHostingPurchaseDetails
     if (message.minioSizeBytes !== 0) {
       writer.uint32(16).uint64(message.minioSizeBytes);
     }
+    if (message.additionalDescription !== "") {
+      writer.uint32(26).string(message.additionalDescription);
+    }
     if (message.domain !== "") {
-      writer.uint32(26).string(message.domain);
+      writer.uint32(34).string(message.domain);
     }
     if (message.contactEmail !== "") {
-      writer.uint32(34).string(message.contactEmail);
+      writer.uint32(42).string(message.contactEmail);
     }
     if (message.additionalInformation !== "") {
-      writer.uint32(42).string(message.additionalInformation);
+      writer.uint32(50).string(message.additionalInformation);
     }
     return writer;
   },
@@ -2512,7 +2564,7 @@ export const RellmHostingPurchaseDetails: MessageFns<RellmHostingPurchaseDetails
             break;
           }
 
-          message.domain = reader.string();
+          message.additionalDescription = reader.string();
           continue;
         }
         case 4: {
@@ -2520,11 +2572,19 @@ export const RellmHostingPurchaseDetails: MessageFns<RellmHostingPurchaseDetails
             break;
           }
 
-          message.contactEmail = reader.string();
+          message.domain = reader.string();
           continue;
         }
         case 5: {
           if (tag !== 42) {
+            break;
+          }
+
+          message.contactEmail = reader.string();
+          continue;
+        }
+        case 6: {
+          if (tag !== 50) {
             break;
           }
 
@@ -2544,6 +2604,7 @@ export const RellmHostingPurchaseDetails: MessageFns<RellmHostingPurchaseDetails
     return {
       dbSizeBytes: isSet(object.dbSizeBytes) ? globalThis.Number(object.dbSizeBytes) : 0,
       minioSizeBytes: isSet(object.minioSizeBytes) ? globalThis.Number(object.minioSizeBytes) : 0,
+      additionalDescription: isSet(object.additionalDescription) ? globalThis.String(object.additionalDescription) : "",
       domain: isSet(object.domain) ? globalThis.String(object.domain) : "",
       contactEmail: isSet(object.contactEmail) ? globalThis.String(object.contactEmail) : "",
       additionalInformation: isSet(object.additionalInformation) ? globalThis.String(object.additionalInformation) : "",
@@ -2557,6 +2618,9 @@ export const RellmHostingPurchaseDetails: MessageFns<RellmHostingPurchaseDetails
     }
     if (message.minioSizeBytes !== 0) {
       obj.minioSizeBytes = Math.round(message.minioSizeBytes);
+    }
+    if (message.additionalDescription !== "") {
+      obj.additionalDescription = message.additionalDescription;
     }
     if (message.domain !== "") {
       obj.domain = message.domain;
@@ -2577,6 +2641,7 @@ export const RellmHostingPurchaseDetails: MessageFns<RellmHostingPurchaseDetails
     const message = createBaseRellmHostingPurchaseDetails();
     message.dbSizeBytes = object.dbSizeBytes ?? 0;
     message.minioSizeBytes = object.minioSizeBytes ?? 0;
+    message.additionalDescription = object.additionalDescription ?? "";
     message.domain = object.domain ?? "";
     message.contactEmail = object.contactEmail ?? "";
     message.additionalInformation = object.additionalInformation ?? "";
@@ -2585,7 +2650,7 @@ export const RellmHostingPurchaseDetails: MessageFns<RellmHostingPurchaseDetails
 };
 
 function createBasePermissionsAccessPurchaseDetails(): PermissionsAccessPurchaseDetails {
-  return { permissions: [] };
+  return { permissions: [], name: "", description: "" };
 }
 
 export const PermissionsAccessPurchaseDetails: MessageFns<PermissionsAccessPurchaseDetails> = {
@@ -2595,6 +2660,12 @@ export const PermissionsAccessPurchaseDetails: MessageFns<PermissionsAccessPurch
       writer.int32(v);
     }
     writer.join();
+    if (message.name !== "") {
+      writer.uint32(18).string(message.name);
+    }
+    if (message.description !== "") {
+      writer.uint32(26).string(message.description);
+    }
     return writer;
   },
 
@@ -2623,6 +2694,22 @@ export const PermissionsAccessPurchaseDetails: MessageFns<PermissionsAccessPurch
 
           break;
         }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.name = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.description = reader.string();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -2637,6 +2724,8 @@ export const PermissionsAccessPurchaseDetails: MessageFns<PermissionsAccessPurch
       permissions: globalThis.Array.isArray(object?.permissions)
         ? object.permissions.map((e: any) => permissionFromJSON(e))
         : [],
+      name: isSet(object.name) ? globalThis.String(object.name) : "",
+      description: isSet(object.description) ? globalThis.String(object.description) : "",
     };
   },
 
@@ -2644,6 +2733,12 @@ export const PermissionsAccessPurchaseDetails: MessageFns<PermissionsAccessPurch
     const obj: any = {};
     if (message.permissions?.length) {
       obj.permissions = message.permissions.map((e) => permissionToJSON(e));
+    }
+    if (message.name !== "") {
+      obj.name = message.name;
+    }
+    if (message.description !== "") {
+      obj.description = message.description;
     }
     return obj;
   },
@@ -2658,6 +2753,8 @@ export const PermissionsAccessPurchaseDetails: MessageFns<PermissionsAccessPurch
   ): PermissionsAccessPurchaseDetails {
     const message = createBasePermissionsAccessPurchaseDetails();
     message.permissions = object.permissions?.map((e) => e) || [];
+    message.name = object.name ?? "";
+    message.description = object.description ?? "";
     return message;
   },
 };
@@ -3080,6 +3177,116 @@ export const MediaStorageSubscriptionDetails: MessageFns<MediaStorageSubscriptio
   },
 };
 
+function createBasePermissionsAccessSubscriptionDetails(): PermissionsAccessSubscriptionDetails {
+  return { permissions: [], name: "", description: "" };
+}
+
+export const PermissionsAccessSubscriptionDetails: MessageFns<PermissionsAccessSubscriptionDetails> = {
+  encode(message: PermissionsAccessSubscriptionDetails, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    writer.uint32(10).fork();
+    for (const v of message.permissions) {
+      writer.int32(v);
+    }
+    writer.join();
+    if (message.name !== "") {
+      writer.uint32(18).string(message.name);
+    }
+    if (message.description !== "") {
+      writer.uint32(26).string(message.description);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): PermissionsAccessSubscriptionDetails {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBasePermissionsAccessSubscriptionDetails();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag === 8) {
+            message.permissions.push(reader.int32() as any);
+
+            continue;
+          }
+
+          if (tag === 10) {
+            const end2 = reader.uint32() + reader.pos;
+            while (reader.pos < end2) {
+              message.permissions.push(reader.int32() as any);
+            }
+
+            continue;
+          }
+
+          break;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.name = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.description = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): PermissionsAccessSubscriptionDetails {
+    return {
+      permissions: globalThis.Array.isArray(object?.permissions)
+        ? object.permissions.map((e: any) => permissionFromJSON(e))
+        : [],
+      name: isSet(object.name) ? globalThis.String(object.name) : "",
+      description: isSet(object.description) ? globalThis.String(object.description) : "",
+    };
+  },
+
+  toJSON(message: PermissionsAccessSubscriptionDetails): unknown {
+    const obj: any = {};
+    if (message.permissions?.length) {
+      obj.permissions = message.permissions.map((e) => permissionToJSON(e));
+    }
+    if (message.name !== "") {
+      obj.name = message.name;
+    }
+    if (message.description !== "") {
+      obj.description = message.description;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<PermissionsAccessSubscriptionDetails>, I>>(
+    base?: I,
+  ): PermissionsAccessSubscriptionDetails {
+    return PermissionsAccessSubscriptionDetails.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<PermissionsAccessSubscriptionDetails>, I>>(
+    object: I,
+  ): PermissionsAccessSubscriptionDetails {
+    const message = createBasePermissionsAccessSubscriptionDetails();
+    message.permissions = object.permissions?.map((e) => e) || [];
+    message.name = object.name ?? "";
+    message.description = object.description ?? "";
+    return message;
+  },
+};
+
 function createBaseAIGrantSubscriptionDetails(): AIGrantSubscriptionDetails {
   return { aiProviderId: "", modelNames: [], tokens: 0 };
 }
@@ -3178,6 +3385,7 @@ function createBaseRellmHostingSubscriptionDetails(): RellmHostingSubscriptionDe
   return {
     dbSizeBytes: 0,
     minioSizeBytes: 0,
+    additionalDescription: "",
     domain: "",
     contactEmail: "",
     additionalInformation: "",
@@ -3194,20 +3402,23 @@ export const RellmHostingSubscriptionDetails: MessageFns<RellmHostingSubscriptio
     if (message.minioSizeBytes !== 0) {
       writer.uint32(16).uint64(message.minioSizeBytes);
     }
+    if (message.additionalDescription !== "") {
+      writer.uint32(26).string(message.additionalDescription);
+    }
     if (message.domain !== "") {
-      writer.uint32(26).string(message.domain);
+      writer.uint32(34).string(message.domain);
     }
     if (message.contactEmail !== "") {
-      writer.uint32(34).string(message.contactEmail);
+      writer.uint32(42).string(message.contactEmail);
     }
     if (message.additionalInformation !== "") {
-      writer.uint32(42).string(message.additionalInformation);
+      writer.uint32(50).string(message.additionalInformation);
     }
     if (message.fulfillmentStatus !== 0) {
-      writer.uint32(48).int32(message.fulfillmentStatus);
+      writer.uint32(56).int32(message.fulfillmentStatus);
     }
     for (const v of message.fulfillmentNotes) {
-      FulfillmentNote.encode(v!, writer.uint32(58).fork()).join();
+      FulfillmentNote.encode(v!, writer.uint32(66).fork()).join();
     }
     return writer;
   },
@@ -3240,7 +3451,7 @@ export const RellmHostingSubscriptionDetails: MessageFns<RellmHostingSubscriptio
             break;
           }
 
-          message.domain = reader.string();
+          message.additionalDescription = reader.string();
           continue;
         }
         case 4: {
@@ -3248,7 +3459,7 @@ export const RellmHostingSubscriptionDetails: MessageFns<RellmHostingSubscriptio
             break;
           }
 
-          message.contactEmail = reader.string();
+          message.domain = reader.string();
           continue;
         }
         case 5: {
@@ -3256,19 +3467,27 @@ export const RellmHostingSubscriptionDetails: MessageFns<RellmHostingSubscriptio
             break;
           }
 
-          message.additionalInformation = reader.string();
+          message.contactEmail = reader.string();
           continue;
         }
         case 6: {
-          if (tag !== 48) {
+          if (tag !== 50) {
+            break;
+          }
+
+          message.additionalInformation = reader.string();
+          continue;
+        }
+        case 7: {
+          if (tag !== 56) {
             break;
           }
 
           message.fulfillmentStatus = reader.int32() as any;
           continue;
         }
-        case 7: {
-          if (tag !== 58) {
+        case 8: {
+          if (tag !== 66) {
             break;
           }
 
@@ -3288,6 +3507,7 @@ export const RellmHostingSubscriptionDetails: MessageFns<RellmHostingSubscriptio
     return {
       dbSizeBytes: isSet(object.dbSizeBytes) ? globalThis.Number(object.dbSizeBytes) : 0,
       minioSizeBytes: isSet(object.minioSizeBytes) ? globalThis.Number(object.minioSizeBytes) : 0,
+      additionalDescription: isSet(object.additionalDescription) ? globalThis.String(object.additionalDescription) : "",
       domain: isSet(object.domain) ? globalThis.String(object.domain) : "",
       contactEmail: isSet(object.contactEmail) ? globalThis.String(object.contactEmail) : "",
       additionalInformation: isSet(object.additionalInformation) ? globalThis.String(object.additionalInformation) : "",
@@ -3305,6 +3525,9 @@ export const RellmHostingSubscriptionDetails: MessageFns<RellmHostingSubscriptio
     }
     if (message.minioSizeBytes !== 0) {
       obj.minioSizeBytes = Math.round(message.minioSizeBytes);
+    }
+    if (message.additionalDescription !== "") {
+      obj.additionalDescription = message.additionalDescription;
     }
     if (message.domain !== "") {
       obj.domain = message.domain;
@@ -3333,6 +3556,7 @@ export const RellmHostingSubscriptionDetails: MessageFns<RellmHostingSubscriptio
     const message = createBaseRellmHostingSubscriptionDetails();
     message.dbSizeBytes = object.dbSizeBytes ?? 0;
     message.minioSizeBytes = object.minioSizeBytes ?? 0;
+    message.additionalDescription = object.additionalDescription ?? "";
     message.domain = object.domain ?? "";
     message.contactEmail = object.contactEmail ?? "";
     message.additionalInformation = object.additionalInformation ?? "";
@@ -3446,84 +3670,6 @@ export const FulfillmentNote: MessageFns<FulfillmentNote> = {
     message.note = object.note ?? "";
     message.fulfillmentStatus = object.fulfillmentStatus ?? 0;
     message.createdAt = object.createdAt ?? undefined;
-    return message;
-  },
-};
-
-function createBasePermissionsAccessSubscriptionDetails(): PermissionsAccessSubscriptionDetails {
-  return { permissions: [] };
-}
-
-export const PermissionsAccessSubscriptionDetails: MessageFns<PermissionsAccessSubscriptionDetails> = {
-  encode(message: PermissionsAccessSubscriptionDetails, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    writer.uint32(10).fork();
-    for (const v of message.permissions) {
-      writer.int32(v);
-    }
-    writer.join();
-    return writer;
-  },
-
-  decode(input: BinaryReader | Uint8Array, length?: number): PermissionsAccessSubscriptionDetails {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
-    const end = length === undefined ? reader.len : reader.pos + length;
-    const message = createBasePermissionsAccessSubscriptionDetails();
-    while (reader.pos < end) {
-      const tag = reader.uint32();
-      switch (tag >>> 3) {
-        case 1: {
-          if (tag === 8) {
-            message.permissions.push(reader.int32() as any);
-
-            continue;
-          }
-
-          if (tag === 10) {
-            const end2 = reader.uint32() + reader.pos;
-            while (reader.pos < end2) {
-              message.permissions.push(reader.int32() as any);
-            }
-
-            continue;
-          }
-
-          break;
-        }
-      }
-      if ((tag & 7) === 4 || tag === 0) {
-        break;
-      }
-      reader.skip(tag & 7);
-    }
-    return message;
-  },
-
-  fromJSON(object: any): PermissionsAccessSubscriptionDetails {
-    return {
-      permissions: globalThis.Array.isArray(object?.permissions)
-        ? object.permissions.map((e: any) => permissionFromJSON(e))
-        : [],
-    };
-  },
-
-  toJSON(message: PermissionsAccessSubscriptionDetails): unknown {
-    const obj: any = {};
-    if (message.permissions?.length) {
-      obj.permissions = message.permissions.map((e) => permissionToJSON(e));
-    }
-    return obj;
-  },
-
-  create<I extends Exact<DeepPartial<PermissionsAccessSubscriptionDetails>, I>>(
-    base?: I,
-  ): PermissionsAccessSubscriptionDetails {
-    return PermissionsAccessSubscriptionDetails.fromPartial(base ?? ({} as any));
-  },
-  fromPartial<I extends Exact<DeepPartial<PermissionsAccessSubscriptionDetails>, I>>(
-    object: I,
-  ): PermissionsAccessSubscriptionDetails {
-    const message = createBasePermissionsAccessSubscriptionDetails();
-    message.permissions = object.permissions?.map((e) => e) || [];
     return message;
   },
 };

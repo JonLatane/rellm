@@ -1,4 +1,4 @@
-module Shared.Federation.Common exposing (jsonResolver, nonEmpty)
+module Shared.Federation.Common exposing (jsonResolver, nonEmpty, sensitiveMediaHiddenId)
 
 {-| Small helpers shared across Rellm's federation-protocol integrations -- currently
 `Shared.Federation.Mastodon`/`Bluesky`'s own post-fetching, and `Shared.AccountsPanel`'s Mastodon/
@@ -8,6 +8,21 @@ for the bits those would otherwise each duplicate.
 
 import Http
 import Json.Decode as Decode
+
+
+{-| A reserved `MediaReference.id` (never a real Rellm media id, which is always a UUID) that
+`Mastodon.toPostWith`/`Bluesky.toPostWith` put as `Post.media`'s one placeholder entry whenever a
+`sensitive`-flagged federated post's real media was stripped (see either's own doc) but the post did
+have media -- `Components.Posts.hasHiddenSensitiveMedia` looks for it to show a "This post contains
+sensitive media" notice in `postCard`/`replyCard` instead of silently rendering nothing, without
+Rellm's `Post`/`MediaReference` protos needing a real field for a concept (federated NSFW flagging)
+that has no equivalent for a native Rellm post at all. Kept here, rather than in either federation
+module, so `Components.Posts` (which knows about neither Mastodon nor Bluesky specifically) can check
+for it without importing either.
+-}
+sensitiveMediaHiddenId : String
+sensitiveMediaHiddenId =
+    "sensitive-media-hidden"
 
 
 {-| `""` -> `Nothing`, anything else -> `Just` itself -- several third-party APIs (Mastodon's

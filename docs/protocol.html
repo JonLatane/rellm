@@ -9962,6 +9962,18 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>repeated</td>
           <td>The permissions this purchase granted -- see <code>logic::market_fulfillment::fulfill_purchase</code>'s <code>PermissionsAccess</code> arm (adds these to the buyer's <code>User.permissions</code>, union-style).</td>
         </tr>
+        <tr>
+          <td>name</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>Admin-authored product name shown for this purchase (e.g. on <code>/market/fulfillment</code>'s billing history) -- copied from <code>PermissionsAccessSubscriptionDetails.name</code> at the moment this purchase was fulfilled. Unlike the other three purchase-detail messages' implicit, Elm-computed display names, permissions-access products have no fixed bundle of permissions to describe generically, so an admin names/describes each one by hand.</td>
+        </tr>
+        <tr>
+          <td>description</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>Admin-authored, Markdown-formatted product description -- copied from <code>PermissionsAccessSubscriptionDetails.description</code> the same way <code>name</code> above is.</td>
+        </tr>
       </tbody>
     </table>
     <p><a name="rellm-PermissionsAccessSubscriptionDetails"></a></p>
@@ -9988,6 +10000,18 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td><a href="#rellm-Permission">Permission</a></td>
           <td>repeated</td>
           <td>Which <code>Permission</code>s this product/subscription grants the buyer -- see <code>logic::market_fulfillment::fulfill_purchase</code>'s <code>PermissionsAccess</code> arm (union-added to the buyer's own <code>User.permissions</code>, never replacing what they already had) and <code>terminate_entitlement</code>'s own arm (the exact claw-back set on cancellation/expiry). Intentionally excludes permissions dangerous or nonsensical to sell this way -- e.g. "Grant Basic Permissions," any "Moderate"/"Read All System Messages" permission, "Admin," "View Private Contact Methods," and "Edit Cluster Settings" must never appear in a Market product's own <code>permissions</code> list. Enforced server-side on <code>CreateMarketProduct</code>/ <code>UpdateMarketProduct</code> (rejected with <code>permission_not_purchasable</code>) and again on <code>MakeMarketPurchase</code> (defense in depth, in case a permission is later removed from the purchasable set after a product granting it already exists) -- see <code>rpcs::market::create_market_product::PURCHASABLE_PERMISSIONS</code>. NOTE: that Rust list is an explicit include-list, not an exclude-list -- described here as an exclusion for readability, but implemented as "only these permissions are purchasable" so a newly-added <code>Permission</code> is never purchasable by default; it has to be deliberately added to that list.</td>
+        </tr>
+        <tr>
+          <td>name</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>Admin-authored product name -- unlike <code>MediaStorageSubscriptionDetails</code>/<code>AIGrantSubscriptionDetails</code>/ <code>RellmHostingSubscriptionDetails</code> (which get an implicit, Elm-computed display name from their own fields, since they each describe one fixed kind of thing), a permissions-access product's <code>permissions</code> list can be any admin-chosen bundle, so there's no generic way to name it automatically. Required for a purchasable product (<code>CreateMarketProduct</code>/<code>UpdateMarketProduct</code> reject a <code>PermissionsAccessSubscriptionDetails</code> with a blank <code>name</code>). On a <code>MarketSubscription</code>: copied from the originating <code>MarketProduct.details.name</code> at the time the subscription was created, same as every other field on this message.</td>
+        </tr>
+        <tr>
+          <td>description</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>Admin-authored, Markdown-formatted product description shown on the product's own page -- same "no generic implicit description" reasoning as <code>name</code> above. On a <code>MarketSubscription</code>: copied the same way <code>name</code> is.</td>
         </tr>
       </tbody>
     </table>
@@ -10023,6 +10047,12 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td><a href="#uint64">uint64</a></td>
           <td></td>
           <td>Same caveat as <code>db_size_bytes</code> above -- currently always <code>0</code>. Intended to be the requested MinIO (object storage) size in bytes.</td>
+        </tr>
+        <tr>
+          <td>additional_description</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>Copied from <code>RellmHostingSubscriptionDetails.additional_description</code> at the moment this purchase was fulfilled -- see that field's own doc.</td>
         </tr>
         <tr>
           <td>domain</td>
@@ -10075,6 +10105,12 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td><a href="#uint64">uint64</a></td>
           <td></td>
           <td>Same caveat as <code>db_size_bytes</code> above. On a <code>MarketProduct</code>: the MinIO (object storage) size (in bytes) this product is configured to provision.</td>
+        </tr>
+        <tr>
+          <td>additional_description</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>Admin-authored, Markdown-formatted extra paragraph appended below the implicit, Elm-computed "1GB DB + 5GB Object Storage"-style canned description shown on the product/subscription's own page -- e.g. to call out something specific to this hosting tier that the canned text doesn't cover. Optional; the canned description alone is shown when this is blank.</td>
         </tr>
         <tr>
           <td>domain</td>

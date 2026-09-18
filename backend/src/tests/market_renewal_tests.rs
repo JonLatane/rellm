@@ -89,6 +89,8 @@ fn permissions_access_product(
             details: Some(market_product::Details::PermissionsAccessSubscriptionDetails(
                 PermissionsAccessSubscriptionDetails {
                     permissions: permissions.into_iter().map(|p| p as i32).collect(),
+                    name: "Facebook Sync Access".to_string(),
+                    description: "Sync your posts and events to Facebook.".to_string(),
                 },
             )),
         },
@@ -216,6 +218,8 @@ fn terminates_permissions_access_subscription_removing_only_its_own_granted_perm
             PurchaseType::PermissionsAccess,
             serde_json::to_value(PermissionsAccessSubscriptionDetails {
                 permissions: granted_permissions.iter().map(|p| *p as i32).collect(),
+                name: "Facebook Sync Access".to_string(),
+                description: "Sync your posts and events to Facebook.".to_string(),
             })
             .unwrap(),
             Some(an_hour_ago()),

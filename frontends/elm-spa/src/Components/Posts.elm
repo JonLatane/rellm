@@ -14,6 +14,7 @@ module Components.Posts exposing
     , generateMediaButton
     , isAuthor
     , mediaEditButton
+    , mediaServer
     , moderationFromText
     , parseFederatedPostId
     , parsePostRouteId
@@ -70,6 +71,7 @@ import Shared.AccountsPanel as AccountsPanel exposing (performWithAccountServer,
 import Shared.AccountsPanel.RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer, withAccessToken)
 import Shared.Conversions exposing (int64ToInt, posixToTimestamp, timestampToPosix)
+import Shared.Federation.Common exposing (sensitiveMediaHiddenId)
 import Shared.Time as SharedTime
 import Task exposing (Task)
 import Time
@@ -703,6 +705,12 @@ postCardView time basePath viewingServerHost postServerHost maybeServer maybeAcc
              , "border-color-primary-anchor-50"
              , "hover-border-color-primary-anchor"
              ]
+                ++ (if isFederatedHost postServerHost then
+                        [ "post-card-federated" ]
+
+                    else
+                        []
+                   )
                 ++ (if current then
                         [ "post-card-current", "background-color-primary" ]
 
@@ -738,16 +746,20 @@ postCardView time basePath viewingServerHost postServerHost maybeServer maybeAcc
 
                 Nothing ->
                     text ""
-        , case maybeServer of
-            Just server ->
-                if extraSmallMedia then
-                    MultiMediaRenderer.previewExtraSmall server maybeAccount mediaPlayState onMediaPlayClicked onMediaClicked post.media
+        , if hasHiddenSensitiveMedia post then
+            div [ class "post-card-sensitive-media-notice" ] [ text "This post contains sensitive media. Click to view." ]
 
-                else
-                    MultiMediaRenderer.preview server maybeAccount mediaPlayState onMediaPlayClicked onMediaClicked post.media
+          else
+            case mediaServer maybeServer postServerHost of
+                Just server ->
+                    if extraSmallMedia then
+                        MultiMediaRenderer.previewExtraSmall server maybeAccount mediaPlayState onMediaPlayClicked onMediaClicked post.media
 
-            Nothing ->
-                text ""
+                    else
+                        MultiMediaRenderer.preview server maybeAccount mediaPlayState onMediaPlayClicked onMediaClicked post.media
+
+                Nothing ->
+                    text ""
         , case post.content of
             Just content ->
                 Markdown.view
@@ -858,12 +870,20 @@ replyCard basePath viewingServerHost postServerHost maybeServer maybeAccount onM
                     [ text "🔗" ]
                 ]
             ]
-        , case maybeServer of
-            Just server ->
-                MultiMediaRenderer.previewExtraSmall server maybeAccount mediaPlayState onMediaPlayClicked onMediaClicked post.media
+        , if hasHiddenSensitiveMedia post then
+            a
+                [ href (postHref basePath viewingServerHost postServerHost post)
+                , class "post-reply-sensitive-media-notice"
+                ]
+                [ text "This post contains sensitive media. Click to view." ]
 
-            Nothing ->
-                text ""
+          else
+            case mediaServer maybeServer postServerHost of
+                Just server ->
+                    MultiMediaRenderer.previewExtraSmall server maybeAccount mediaPlayState onMediaPlayClicked onMediaClicked post.media
+
+                Nothing ->
+                    text ""
         , case post.content of
             Just content ->
                 Markdown.view [ class "post-reply-content" ] content
@@ -1652,6 +1672,43 @@ parseFederatedPostId id host =
 isFederatedHost : String -> Bool
 isFederatedHost host =
     String.startsWith "mastodon:" host || String.startsWith "bluesky:" host
+
+
+{-| `maybeServer` as-is, or (once it's `Nothing` and `postServerHost` is federated) a placeholder
+`RellmServer` for `postCardView`/`replyCard`'s own `MultiMediaRenderer` calls -- never actually
+dereferenced by `Components.MediaRenderer.authorizedUrl`, since a federated post's `media` is always
+`.url`-only, externally-hosted `MediaReference`s (see that function's own doc). Without this, a
+federated post's card would always render no media at all: its own synthetic `"mastodon:"`/
+`"bluesky:"` `postServerHost` never matches a real connected `RellmServer`
+(`RellmServers.rellmServerForHost`), so `maybeServer` itself is always `Nothing` here, same as a real
+Rellm post whose server genuinely isn't resolved yet -- this is what tells the two apart.
+-}
+mediaServer : Maybe RellmServer -> String -> Maybe RellmServer
+mediaServer maybeServer postServerHost =
+    case maybeServer of
+        Just server ->
+            Just server
+
+        Nothing ->
+            if isFederatedHost postServerHost then
+                Just { frontendHost = "", enabled = False, connected = Nothing, sortOrder = 0 }
+
+            else
+                Nothing
+
+
+{-| Whether `post.media` is `Shared.Federation.Mastodon`/`Bluesky`'s own
+`sensitiveMediaHiddenPlaceholder` -- a `sensitive`-flagged federated post's real media, deliberately
+left out of every feed/card context (see either module's `toPostWith`' own doc) since Rellm has no
+NSFW-filtering concept of its own to render it behind. `postCardView`/`replyCard` check this to show
+a "This post contains sensitive media" notice instead of silently rendering nothing, in place of
+their usual `MultiMediaRenderer` call -- clicking through (the whole card is already one big link, see
+`postCardView`'s own `.post-card-link-overlay`) reaches `Components.Pages.MastodonPostPage`/
+`BlueskyPostPage`, the only place this post's media actually renders (via `toPostIncludingSensitiveMedia`).
+-}
+hasHiddenSensitiveMedia : Post -> Bool
+hasHiddenSensitiveMedia post =
+    List.any (\media -> media.id == sensitiveMediaHiddenId) post.media
 
 
 {-| `host` as shown next to a post card -- strips the `"mastodon:"`/`"bluesky:"` tag `isFederatedHost`
