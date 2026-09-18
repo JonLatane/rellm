@@ -16,6 +16,7 @@ types, just each keeps its own single-product-shaped copy of the surrounding `Mo
 -}
 
 import Browser.Navigation
+import Components.Markdown as Markdown
 import Components.Market as Market
 import Effect exposing (Effect)
 import Grpc
@@ -219,8 +220,9 @@ view shared model =
             Found product ->
                 [ div [ class "product-icon" ] [ text (Market.purchaseTypeEmoji product.type_) ]
                 , h1 [] [ text (Market.purchaseTypeLabel product.type_) ]
-                , p [ class "product-description" ] [ text (Market.purchaseTypeDescription product.type_) ]
-                , p [ class "product-summary" ] [ text (Market.productSummary product) ]
+                , p [ class "product-name" ] [ text (Market.productName product) ]
+                , p [ class "product-price" ] [ text (Market.priceLabel product) ]
+                , Markdown.view [ class "product-description" ] (Market.productDescription product)
                 , case Market.slotsAvailableText product of
                     Just slotsText ->
                         p [ class "product-slots" ] [ text slotsText ]

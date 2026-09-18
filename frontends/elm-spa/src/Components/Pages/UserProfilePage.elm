@@ -28,6 +28,7 @@ but none of this module's profile-editing machinery.
 
 -}
 
+import Browser.Dom as Dom
 import Browser.Navigation
 import Components.AIProviders as AIProviders
 import Components.Market as Market
@@ -47,7 +48,7 @@ import Effect exposing (Effect)
 import Gen.Route
 import Grpc
 import Html exposing (Html, a, button, div, h2, h3, input, label, option, p, select, span, text)
-import Html.Attributes exposing (checked, class, classList, disabled, href, placeholder, selected, title, type_, value)
+import Html.Attributes exposing (checked, class, classList, disabled, href, id, placeholder, selected, title, type_, value)
 import Html.Events exposing (onClick, onInput)
 import Http
 import Json.Decode as Decode
@@ -123,6 +124,13 @@ type alias Model =
     , navKey : Browser.Navigation.Key
     , path : String
     , query : Dict String String
+
+    -- A `#subscriptions`/`#sync-sources`/`#sync-destinations`/`#ai-providers`/`#ai-models`
+    -- fragment (see `init`'s own `fragment` handling), consumed once the first
+    -- `Resolver.Loaded` actually mounts that section's real DOM `id` (`updateInner`'s
+    -- `ResolverMsg` branch) -- cleared right after, so a later refetch (e.g. after a
+    -- follow/unfollow) doesn't keep re-scrolling the page back to it.
+    , pendingScrollSectionId : Maybe String
     }
 
 
@@ -273,6 +281,7 @@ type Msg
     | GotAIProviderRevokeResult String (Result Grpc.Error ( Maybe AccountsPanel.Msg, () ))
     | AIProviderGrantsSectionToggled
     | DeleteUserClicked
+    | ScrollToProfileSectionAttempted
 
 
 {-| The fetch state of one entry in a loaded `User.federatedProfiles`, keyed
@@ -999,7 +1008,12 @@ resolves a `User` to filter them by -- mirrors `PostsPage.init`/`EventsPage.init
 mirroring `EventsPage.init`'s own `fragment` param -- here just checked for an exact
 `"contact-methods"` match (unlike `EventsPage`'s `calendarPreviewKeyFromFragment` prefix parse) to
 seed `contactMethodsExpanded`, so a `#contact-methods` link opens straight to that section already
-expanded.
+expanded. `subscriptionsExpanded`/`syncSourcesExpanded`/`syncDestinationsExpanded`/
+`aiProvidersExpanded`/`aiProviderGrantsExpanded` get the same treatment against their own
+`"subscriptions"`/`"sync-sources"`/`"sync-destinations"`/`"ai-providers"`/`"ai-models"` fragments,
+each also seeding `pendingScrollSectionId` (that field's own doc covers the scroll itself, which
+-- unlike the plain expand-on-load above -- needs to wait for `Resolver.Loaded`, since the section
+it targets isn't in the DOM at all until then).
 -}
 init : Shared.Model -> Bool -> String -> Resolver.Lookup -> Browser.Navigation.Key -> String -> Dict String String -> Maybe String -> ( Model, Effect Msg )
 init shared pageIsSecure targetHost lookup navKey path query fragment =
@@ -1024,24 +1038,30 @@ init shared pageIsSecure targetHost lookup navKey path query fragment =
             , phoneVerification = Nothing
             , storageQuotaEdit = Nothing
             , storageQuotaExpanded = False
-            , subscriptionsExpanded = False
+            , subscriptionsExpanded = fragment == Just "subscriptions"
             , cancelingSubscriptions = Dict.empty
             , permissionsEdit = Nothing
             , permissionsExpanded = False
             , federatedProfilesEdit = Nothing
             , syncSources = initSyncSources
-            , syncSourcesExpanded = False
+            , syncSourcesExpanded = fragment == Just "sync-sources"
             , syncDestinations = initSyncDestinations
-            , syncDestinationsExpanded = False
+            , syncDestinationsExpanded = fragment == Just "sync-destinations"
             , aiProviders = initAIProviders
-            , aiProvidersExpanded = False
-            , aiProviderGrantsExpanded = False
+            , aiProvidersExpanded = fragment == Just "ai-providers"
+            , aiProviderGrantsExpanded = fragment == Just "ai-models"
             , followStatusAndButton = FollowStatusAndButton.init
             , posts = Nothing
             , events = Nothing
             , navKey = navKey
             , path = path
             , query = query
+            , pendingScrollSectionId =
+                if List.member fragment (List.map Just [ "subscriptions", "sync-sources", "sync-destinations", "ai-providers", "ai-models" ]) then
+                    fragment
+
+                else
+                    Nothing
             }
     in
     ( model
@@ -1136,6 +1156,186 @@ setBreadcrumbsHost shared model =
         Effect.fromShared (Shared.BreadcrumbsMsg (Breadcrumbs.SetRoot (Breadcrumbs.FromServerHost host) host []))
 
 
+{-| How many times `scrollToProfileSectionStep` will re-measure and re-correct before giving up
+regardless of whether the target has settled -- `profileSectionScrollPollMs` apart, so ~1.8s of
+total budget, comfortably past both a `UI.Flip` entrance (`flipDurationMs` = 250ms) and an
+ordinary same-host network fetch (the embedded `EventsPage`/`PostsPage` copies' own data,
+kicked off the same moment `sectionId` first shows -- see `Resolver.Loaded`'s own handling
+below -- can still be loading in and growing/shrinking everything below it).
+-}
+profileSectionScrollMaxAttempts : Int
+profileSectionScrollMaxAttempts =
+    12
+
+
+{-| The poll interval `scrollToProfileSectionStep` re-checks at once its very first, immediate
+measurement is in.
+-}
+profileSectionScrollPollMs : Float
+profileSectionScrollPollMs =
+    150
+
+
+{-| Scrolls the page (`Dom.setViewport`, not some inner pane -- unlike
+`MessagesPage.scrollToPendingMessageCmd`, this section sits in the ordinary
+page flow with nothing else to scroll) so `sectionId`'s own `expandableProfileSection`
+`domId` lands at the top of the viewport -- the `Model.pendingScrollSectionId` half of a
+`#subscriptions`/`#sync-sources`/`#sync-destinations`/`#ai-providers`/`#ai-models` deep
+link, the other half being that same fragment seeding the section's own `*Expanded` flag
+directly in `init` so it's already open by the time this runs.
+
+Polls (`scrollToProfileSectionStep`) rather than a single measurement: content above `sectionId`
+can keep changing height for a while after this first fires (a `UI.Flip`-entering embedded
+calendar card, or `EventsPage`/`PostsPage`'s own async fetch still landing), so a single
+snapshot can be stale by the time it's applied. Re-measuring and re-correcting on an interval,
+stopping once two consecutive measurements agree (within a pixel) or
+`profileSectionScrollMaxAttempts` runs out, adapts to however long *this* load actually takes
+instead of guessing one fixed number.
+-}
+scrollToProfileSectionCmd : String -> Cmd Msg
+scrollToProfileSectionCmd sectionId =
+    scrollToProfileSectionStep sectionId Nothing profileSectionScrollMaxAttempts
+        |> Task.attempt (\_ -> ScrollToProfileSectionAttempted)
+
+
+{-| One measure-and-correct pass for `scrollToProfileSectionCmd`'s own poll -- see that function's
+doc for the full reasoning. `previousTarget` is the absolute document position the *last* pass
+computed (`Nothing` on the very first call), compared against this pass's own freshly-measured
+`target` to decide whether to stop (settled) or schedule another pass `profileSectionScrollPollMs`
+later (still moving, and `attemptsLeft` hasn't run out).
+
+`el.element.y` (`Dom.getElement`'s own doc) is, despite its name, already an *absolute* document
+position -- the kernel computes it as `window.pageYOffset + rect.top`, the current scroll offset
+already baked in -- so it's the whole target on its own, straight into `Dom.setViewport`. This
+used to *also* add `Dom.getViewport`'s own `.viewport.y` (the same current scroll offset, read a
+second time) on top, double-counting it: harmless from a resting scroll position of `0` (where
+doubling zero is still zero, so every one-off manual verification of this code happened to look
+correct), but from anywhere else it inflated the target by exactly the current scroll position
+-- worse with each successive poll as that error compounded into the next reading, which is what
+was actually behind every "scrolls too far"/"lands one section past the target" report this
+mechanism produced, independent of any content-still-growing timing story.
+-}
+scrollToProfileSectionStep : String -> Maybe Float -> Int -> Task.Task Dom.Error ()
+scrollToProfileSectionStep sectionId previousTarget attemptsLeft =
+    Dom.getElement sectionId
+        |> Task.andThen
+            (\el ->
+                let
+                    target : Float
+                    target =
+                        el.element.y
+                in
+                Dom.setViewport 0 target
+                    |> Task.andThen
+                        (\_ ->
+                            let
+                                settled : Bool
+                                settled =
+                                    previousTarget
+                                        |> Maybe.map (\prev -> abs (prev - target) < 1)
+                                        |> Maybe.withDefault False
+                            in
+                            if settled || attemptsLeft <= 0 then
+                                Task.succeed ()
+
+                            else
+                                Process.sleep profileSectionScrollPollMs
+                                    |> Task.andThen (\_ -> scrollToProfileSectionStep sectionId (Just target) (attemptsLeft - 1))
+                        )
+            )
+
+
+{-| The dynamic counterpart to `init`'s own `fragment == Just "..."` seeding -- sets whichever
+`*Expanded` flag `sectionId` (one of `expandableProfileSection`'s own `domId`s) names, a no-op for
+any other string. Used by `Shared.ProfileSectionLinkClicked`'s handling below, where -- unlike
+`init` -- the target section may already be mounted and just needs expanding in place, no fresh
+`Resolver.Loaded` involved at all.
+-}
+expandProfileSection : String -> Model -> Model
+expandProfileSection sectionId model =
+    case sectionId of
+        "subscriptions" ->
+            { model | subscriptionsExpanded = True }
+
+        "sync-sources" ->
+            { model | syncSourcesExpanded = True }
+
+        "sync-destinations" ->
+            { model | syncDestinationsExpanded = True }
+
+        "ai-providers" ->
+            { model | aiProvidersExpanded = True }
+
+        "ai-models" ->
+            { model | aiProviderGrantsExpanded = True }
+
+        _ ->
+            model
+
+
+{-| `expandProfileSection`'s own missing half for `"sync-sources"`/`"sync-destinations"`
+specifically: those two sections' expanded state *also* drives extra per-card sync UI inside the
+embedded `EventsPage` (and, for destinations, `PostsPage` too) copies -- `eventCardView`'s own
+`showSyncSources`/`showSyncDestinations` params, which change each card's height and so the whole
+embedded calendar/feed's height, shifting everything below it (including the very section this
+scroll is heading for). The ordinary header-click path (`SyncSourcesExpandedToggled`/
+`SyncDestinationsExpandedToggled` above) already keeps `model.events`/`model.posts` in sync this
+way; `Shared.ProfileSectionLinkClicked`'s own handling below needs the identical propagation, or
+`scrollToProfileSectionCmd` ends up measuring `sectionId`'s position *before* the calendar/feed
+has actually grown into its expanded state -- reported as "doesn't scroll all the way up to Sync
+Sources/Sync Destinations" when the viewer started further down the page than that stale,
+pre-growth position.
+
+Always forces the flag `True` (never toggles) -- unlike the header click, a section link is only
+ever asking to *open* the section, never close an already-open one.
+-}
+syncEmbeddedSyncToggles : Shared.Model -> String -> Model -> ( Model, Effect Msg )
+syncEmbeddedSyncToggles shared sectionId model =
+    case sectionId of
+        "sync-sources" ->
+            case model.events of
+                Just eventsModel ->
+                    let
+                        ( newEventsModel, eventsEffect ) =
+                            EventsPage.update shared (EventsPage.showSyncSourcesChanged True) eventsModel
+                    in
+                    ( { model | events = Just newEventsModel }, Effect.map EventsMsg eventsEffect )
+
+                Nothing ->
+                    ( model, Effect.none )
+
+        "sync-destinations" ->
+            let
+                ( eventsUpdatedModel, eventsEffect ) =
+                    case model.events of
+                        Just eventsModel ->
+                            let
+                                ( newEventsModel, effect ) =
+                                    EventsPage.update shared (EventsPage.showSyncDestinationsChanged True) eventsModel
+                            in
+                            ( { model | events = Just newEventsModel }, effect )
+
+                        Nothing ->
+                            ( model, Effect.none )
+
+                ( postsUpdatedModel, postsEffect ) =
+                    case eventsUpdatedModel.posts of
+                        Just postsModel ->
+                            let
+                                ( newPostsModel, effect ) =
+                                    PostsPage.update shared (PostsPage.showSyncDestinationsChanged True) postsModel
+                            in
+                            ( { eventsUpdatedModel | posts = Just newPostsModel }, effect )
+
+                        Nothing ->
+                            ( eventsUpdatedModel, Effect.none )
+            in
+            ( postsUpdatedModel, Effect.batch [ Effect.map EventsMsg eventsEffect, Effect.map PostsMsg postsEffect ] )
+
+        _ ->
+            ( model, Effect.none )
+
+
 updateInner : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
 updateInner shared msg model =
     case msg of
@@ -1221,13 +1421,27 @@ updateInner shared msg model =
                                     eventsResyncedModel.posts
                                         |> Maybe.map (\pm -> { pm | availableSyncDestinations = Just user.syncDestinations })
                             }
+
+                        -- `Model.pendingScrollSectionId`'s own doc: only set on the very
+                        -- first `Loaded` (from `init`'s own fragment), and always cleared
+                        -- right after, so a later refetch's re-`Loaded` (e.g. after a
+                        -- follow/unfollow) doesn't keep scrolling back to it.
+                        scrollEffect : Effect Msg
+                        scrollEffect =
+                            case model.pendingScrollSectionId of
+                                Just sectionId ->
+                                    Effect.fromCmd (scrollToProfileSectionCmd sectionId)
+
+                                Nothing ->
+                                    Effect.none
                     in
-                    ( postsResyncedModel
+                    ( { postsResyncedModel | pendingScrollSectionId = Nothing }
                     , Effect.batch
                         [ Effect.map ResolverMsg resolverEffect
                         , federatedEffect
                         , postsInitEffect
                         , eventsInitEffect
+                        , scrollEffect
                         ]
                     )
 
@@ -1393,6 +1607,31 @@ updateInner shared msg model =
                             ( resolvedModel
                             , Browser.Navigation.pushUrl resolvedModel.navKey (Gen.Route.toHref Gen.Route.Home_) |> Effect.fromCmd
                             )
+
+                        -- `Shared.ProfileSectionLinkClicked`'s own doc: reaches every
+                        -- currently-mounted page, but only actually expand + scroll
+                        -- if `account` names *this* page's own resolved profile -- an
+                        -- Admin viewing someone else's profile while another account's
+                        -- chip fires this (or a page mounted for a different user
+                        -- entirely) leaves it untouched, same as `init`'s own fragment
+                        -- handling would for a profile that isn't the one it loads.
+                        Shared.ProfileSectionLinkClicked account sectionId ->
+                            case resolvedModel.resolver.status of
+                                Resolver.Loaded user ->
+                                    if account.server == resolvedModel.resolver.targetHost && account.userId == user.id then
+                                        let
+                                            ( syncedModel, syncEffect ) =
+                                                syncEmbeddedSyncToggles shared sectionId (expandProfileSection sectionId resolvedModel)
+                                        in
+                                        ( syncedModel
+                                        , Effect.batch [ syncEffect, Effect.fromCmd (scrollToProfileSectionCmd sectionId) ]
+                                        )
+
+                                    else
+                                        ( resolvedModel, Effect.none )
+
+                                _ ->
+                                    ( resolvedModel, Effect.none )
 
                         _ ->
                             ( resolvedModel, Effect.none )
@@ -3425,6 +3664,15 @@ updateInner shared msg model =
                 _ ->
                     ( model, Effect.none )
 
+        -- Discards the `Dom.setViewport` result either way (see
+        -- `scrollToProfileSectionCmd`) -- a missing/not-yet-rendered target (the
+        -- viewer can't actually see the section at all, e.g. an Admin's own
+        -- `#ai-providers` link to a non-owner's profile) just leaves the page
+        -- wherever it already was, same "harmless no-op" convention as
+        -- `MessagesPage.ScrollAttempted`.
+        ScrollToProfileSectionAttempted ->
+            ( model, Effect.none )
+
         GotFederatedServer account (Ok server) ->
             -- Registers the federated user's server into `shared.accounts.servers`
             -- (same as `ConnectClicked`'s own `GotConnectResult` does for
@@ -4609,6 +4857,7 @@ contactMethodsSection canEdit isOwn expanded model user =
 
     else
         expandableProfileSection "profile-contact-methods-section"
+            "profile-contact-methods-section"
             "Contact Methods"
             Nothing
             expanded
@@ -4996,10 +5245,18 @@ opacity + `pointer-events: none`) rather than conditionally mounted, same "alway
 CSS-driven" convention as `content`/the arrow above -- and its own `onClick` must stop propagation
 (see `refreshButtonView`), or a click on it would bubble up to this same header's `toggleMsg` and
 collapse the section it just refreshed.
+
+`domId` is the section's real DOM `id` -- separate from `sectionClass` since `aiProvidersSection`/
+`aiProviderGrantedSection` deliberately share one `sectionClass` (`"ai-model-providers-section"`,
+for shared styling) but need distinct ids to both be independently linkable. Named to match the
+`#subscriptions`/`#sync-sources`/`#sync-destinations`/`#ai-providers`/`#ai-models` fragments
+`Model.pendingScrollSectionId` scrolls to (see that field's own doc) -- ordinary web `#dom-id`
+anchors otherwise, so the other three sections just reuse their own `sectionClass` here since
+nothing needs to link to them yet.
 -}
-expandableProfileSection : String -> String -> Maybe (Html Msg) -> Bool -> Msg -> List (Html Msg) -> Html Msg
-expandableProfileSection sectionClass title maybeHeaderAction expanded toggleMsg content =
-    div [ class sectionClass ]
+expandableProfileSection : String -> String -> String -> Maybe (Html Msg) -> Bool -> Msg -> List (Html Msg) -> Html Msg
+expandableProfileSection sectionClass domId title maybeHeaderAction expanded toggleMsg content =
+    div [ class sectionClass, id domId ]
         [ h2
             [ classes [ "section-title", "expandable-section-title" ]
             , onClick toggleMsg
@@ -5029,6 +5286,7 @@ storageQuotaSection isAdmin isOwn expanded maybeEdit user =
 
     else
         expandableProfileSection "profile-storage-quota-section"
+            "profile-storage-quota-section"
             "Media Storage"
             Nothing
             expanded
@@ -5159,6 +5417,7 @@ subscriptionsSection browserTimeZone isAdmin isOwn expanded cancelingSubscriptio
 
     else
         expandableProfileSection "profile-subscriptions-section"
+            "subscriptions"
             "Subscriptions"
             Nothing
             expanded
@@ -5313,6 +5572,7 @@ permissionsSection isAdmin expanded maybeEdit user =
 
     else
         expandableProfileSection "profile-permissions-section"
+            "profile-permissions-section"
             "Permissions"
             Nothing
             expanded
@@ -5678,6 +5938,7 @@ syncSourcesSection shared model canManage maybeAccount user =
                 isOwnProfile maybeAccount user && canUseSyncSources maybeAccount
         in
         expandableProfileSection "sync-sources-section"
+            "sync-sources"
             "Sync Sources"
             (Just (refreshButtonView model.syncSourcesExpanded SyncSourcesRefreshClicked model.syncSources.refreshStatus))
             model.syncSourcesExpanded
@@ -5877,6 +6138,7 @@ aiProvidersSection model canManage canAdd user =
 
     else
         expandableProfileSection "ai-model-providers-section"
+            "ai-providers"
             "AI Providers"
             (Just (refreshButtonView model.aiProvidersExpanded AIProvidersRefreshClicked model.aiProviders.refreshStatus))
             model.aiProvidersExpanded
@@ -6332,6 +6594,7 @@ aiProviderGrantedSection model canView user =
 
     else
         expandableProfileSection "ai-model-providers-section"
+            "ai-models"
             "AI Model Access"
             Nothing
             model.aiProviderGrantsExpanded
@@ -6364,6 +6627,7 @@ syncDestinationsSection shared model maybeAccount user =
 
     else
         expandableProfileSection "sync-destinations-section"
+            "sync-destinations"
             "Sync Destinations"
             Nothing
             model.syncDestinationsExpanded

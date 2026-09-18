@@ -1,5 +1,6 @@
 module Shared.Federation.Mastodon exposing
     ( Account
+    , MediaAttachment
     , Status
     , decoder
     , fetchAccountStatuses
@@ -10,6 +11,7 @@ module Shared.Federation.Mastodon exposing
     , lookupAccount
     , searchAccounts
     , toPost
+    , toPostIncludingSensitiveMedia
     )
 
 {-| Translates Mastodon's REST API into Rellm's `Post` shape, entirely client-side -- see
@@ -32,19 +34,44 @@ all, same as `fetchPosts`/`fetchStatus` already rely on for the local timeline/s
 import Http
 import Iso8601
 import Json.Decode as Decode exposing (Decoder)
-import Proto.Rellm exposing (Author, Post, defaultAuthor, defaultMediaReference, defaultPost, wrapMediaReference)
+import Proto.Rellm exposing (Author, MediaReference, Post, defaultAuthor, defaultMediaReference, defaultMediaSize, defaultPost, wrapMediaReference)
+import Proto.Rellm.MediaConversion exposing (MediaConversion(..))
 import Proto.Rellm.PostContext exposing (PostContext(..))
 import Proto.Rellm.Visibility exposing (Visibility(..))
 import Shared.Conversions exposing (posixToTimestamp)
-import Shared.Federation.Common exposing (jsonResolver, nonEmpty)
+import Shared.Federation.Common exposing (jsonResolver, nonEmpty, sensitiveMediaHiddenId)
 import Task exposing (Task)
 import Time
 import Url
 
 
+{-| One element of a `Status`'s `media_attachments` -- see
+<https://docs.joinmastodon.org/entities/MediaAttachment/>. `id` is Mastodon's own attachment id
+(distinct per attachment, unique at least within one status' own list -- the only uniqueness
+`toMediaReference`'s own `MediaReference.id` needs, see its doc) -- *not* namespaced with
+`instanceHost`/`status.id` the way `Author.userId` is, since nothing anywhere compares a federated
+`MediaReference.id` across different posts, only within one `Shared.MediaViewerPanel.Model.media` list
+at a time (always a single post's own). `url` is always the full-size original (rather than
+`preview_url`, a low-res placeholder meant to load before the original does -- not worth the
+complexity of a two-tier fetch here). `mediaType` is Mastodon's own `type` field
+(`"image"`/`"video"`/`"gifv"`/`"audio"`/`"unknown"`), kept just long enough to become
+`MediaReference.sizes`' `contentType` in `toMediaReference` -- see that function's own doc on why.
+-}
+type alias MediaAttachment =
+    { id : String
+    , url : String
+    , description : Maybe String
+    , mediaType : String
+    , width : Maybe Int
+    , height : Maybe Int
+    }
+
+
 {-| Just the fields of Mastodon's `Status` entity (one element of
 `GET /api/v1/timelines/public`'s response array) that `toPost` actually needs -- see
-<https://docs.joinmastodon.org/entities/Status/>.
+<https://docs.joinmastodon.org/entities/Status/>. `sensitive` is Mastodon's own "hide behind a
+content warning" flag on the whole status (`spoiler_text` carries the CW text itself, not read here) --
+see `toPostWith`'s own doc on how it gates `mediaAttachments`.
 -}
 type alias Status =
     { id : String
@@ -55,12 +82,32 @@ type alias Status =
     , authorUsername : String
     , authorDisplayName : Maybe String
     , authorAvatarUrl : Maybe String
+    , mediaAttachments : List MediaAttachment
+    , sensitive : Bool
     }
 
 
+{-| `Decode.map8` is already at `elm/json`'s own arity ceiling, so `mediaAttachments`/`sensitive`
+(the 9th/10th fields) are threaded through via `andThen` instead, mirroring `accountDecoder`'s own
+`locked`-as-9th-field trick below.
+-}
 decoder : Decoder Status
 decoder =
-    Decode.map8 Status
+    Decode.map8
+        (\id url content createdAt inReplyToId authorUsername authorDisplayName authorAvatarUrl ->
+            \mediaAttachments sensitive ->
+                { id = id
+                , url = url
+                , content = content
+                , createdAt = createdAt
+                , inReplyToId = inReplyToId
+                , authorUsername = authorUsername
+                , authorDisplayName = authorDisplayName
+                , authorAvatarUrl = authorAvatarUrl
+                , mediaAttachments = mediaAttachments
+                , sensitive = sensitive
+                }
+        )
         (Decode.field "id" Decode.string)
         (Decode.maybe (Decode.field "url" Decode.string))
         (Decode.field "content" Decode.string)
@@ -69,6 +116,21 @@ decoder =
         (Decode.at [ "account", "username" ] Decode.string)
         (Decode.at [ "account", "display_name" ] Decode.string |> Decode.map nonEmpty)
         (Decode.at [ "account", "avatar" ] Decode.string |> Decode.map nonEmpty)
+        |> Decode.andThen (\f -> Decode.map f (Decode.oneOf [ Decode.field "media_attachments" (Decode.list mediaAttachmentDecoder), Decode.succeed [] ]))
+        |> Decode.andThen (\f -> Decode.map f (Decode.oneOf [ Decode.field "sensitive" Decode.bool, Decode.succeed False ]))
+
+
+mediaAttachmentDecoder : Decoder MediaAttachment
+mediaAttachmentDecoder =
+    Decode.map6 MediaAttachment
+        (Decode.field "id" Decode.string)
+        (Decode.field "url" Decode.string)
+        -- Mastodon's own "unset" convention for `description` is `null`, not an absent key or `""`
+        -- (unlike `display_name`/`avatar` above) -- `Decode.nullable` reads that as `Nothing` directly.
+        (Decode.field "description" (Decode.nullable Decode.string) |> Decode.map (Maybe.andThen nonEmpty))
+        (Decode.field "type" Decode.string)
+        (Decode.maybe (Decode.at [ "meta", "original", "width" ] Decode.int))
+        (Decode.maybe (Decode.at [ "meta", "original", "height" ] Decode.int))
 
 
 {-| A `Status`'s translation into a Rellm `Post` -- `id` is just Mastodon's own bare `status.id`
@@ -84,10 +146,38 @@ own path for `Post.content`) detects that and renders it as HTML directly rather
 as Markdown source, see its own doc. `visibility` is always `GLOBALPUBLIC`: a `Status` fetched off a
 public timeline endpoint is definitionally public. `author.avatar` uses `MediaReference.url` (see
 that field's own doc in `protos/media.proto`) rather than `id`, since this avatar isn't and never
-will be Rellm-hosted media.
+will be Rellm-hosted media. `media` uses the same `.url` approach, via `toMediaReference` -- see
+`toPostWith`'s own doc for why it's sometimes left empty regardless of `status.mediaAttachments`.
 -}
 toPost : String -> Status -> Post
-toPost instanceHost status =
+toPost =
+    toPostWith { includeSensitiveMedia = False }
+
+
+{-| `fetchStatus`'s own translation, unlike `toPost` -- see that function's own doc on why a single
+post's own page, unlike a feed/card, is allowed to actually show media Mastodon flagged `sensitive`.
+-}
+toPostIncludingSensitiveMedia : String -> Status -> Post
+toPostIncludingSensitiveMedia =
+    toPostWith { includeSensitiveMedia = True }
+
+
+{-| `toPost`'s real implementation -- `media` is left `[]` for a `status.sensitive` status unless
+`includeSensitiveMedia` says otherwise, rather than rendering it (blurred, behind a reveal button, or
+otherwise) -- Rellm has no NSFW-filtering concept of its own to hook a "sensitive" flag into (nothing
+comparable exists for a native Rellm post), so the only two options for a flagged Mastodon status'
+media are "never render it via `Post.media` at all" (every feed/card context -- `toPost`, used by
+`fetchPosts`/`fetchAccountStatuses`) or "the viewer already explicitly opened this exact post" (the
+one case `includeSensitiveMedia` allows -- see `Components.Pages.MastodonPostPage`, whose `init` is
+the only caller of `toPostIncludingSensitiveMedia`, via `fetchStatus`). When media actually was
+stripped this way, `media` becomes `[ sensitiveMediaHiddenPlaceholder ]` rather than plain `[]`, so
+`Components.Posts.hasHiddenSensitiveMedia` can tell "hidden sensitive media" apart from "no media at
+all" and show its own "This post contains sensitive media" notice, itself linking through to
+`MastodonPostPage` (the one place this post's media does render) -- see `sensitiveMediaHiddenId`'s
+own doc. A non-`sensitive` status' media is unaffected either way.
+-}
+toPostWith : { includeSensitiveMedia : Bool } -> String -> Status -> Post
+toPostWith { includeSensitiveMedia } instanceHost status =
     { defaultPost
         | id = status.id
         , author = Just (toAuthor instanceHost status)
@@ -100,8 +190,68 @@ toPost instanceHost status =
             else
                 POST
         , visibility = GLOBALPUBLIC
+        , media =
+            if status.sensitive && not includeSensitiveMedia then
+                if List.isEmpty status.mediaAttachments then
+                    []
+
+                else
+                    [ sensitiveMediaHiddenPlaceholder ]
+
+            else
+                List.map toMediaReference status.mediaAttachments
         , createdAt = Just (posixToTimestamp status.createdAt)
         , lastActivityAt = Just (posixToTimestamp status.createdAt)
+    }
+
+
+sensitiveMediaHiddenPlaceholder : MediaReference
+sensitiveMediaHiddenPlaceholder =
+    { defaultMediaReference | id = sensitiveMediaHiddenId }
+
+
+{-| A `MediaAttachment`'s translation into a `MediaReference` -- `id` is Mastodon's own attachment id
+(see `MediaAttachment.id`'s own doc) -- unlike a real Rellm media id, never used to actually resolve a
+URL (`Components.MediaRenderer.authorizedUrl` uses `.url` first, see its own doc), but still needed
+as a genuinely distinct value: `Shared.MediaViewerPanel`'s open-by-id/page-by-id/`Html.Keyed` logic
+all key off `MediaReference.id`, and a post with more than one attachment would otherwise leave every
+one of them sharing `defaultMediaReference`'s own blank `""` id, breaking "which image did I actually
+tap" and Next/Prev paging alike. `url` (not Rellm-hosted, so never resolved through
+`RellmServers.mediaUrl`) and `name` (Mastodon's `description`, i.e. this attachment's alt text --
+`Components.MediaRenderer.view` renders `MediaReference.name` as an image's `alt`, not `.description`)
+carry the actual content. `sizes` gets a single synthetic `MEDIACONVERSIONORIGINAL` entry just so
+`MediaRenderer.contentTypeOf`/`aspectRatioOf` (which both read a real upload's `sizes`, ordinarily
+populated server-side) have something to key off of here too -- `contentType` is coarsened to
+`mediaType ++ "/*"` since Mastodon's own `image`/`video`/`gifv`/`audio` vocabulary doesn't give an
+actual MIME subtype, and `MediaRenderer.viewHelper` only ever inspects the `/`-prefix anyway
+(`"image"` vs. `"video"` vs. everything else, which falls back to a generic downloadable-object embed
+-- covers `audio`/`unknown` attachments too, rather than mis-rendering them as images).
+-}
+toMediaReference : MediaAttachment -> MediaReference
+toMediaReference attachment =
+    let
+        -- "gifv" is Mastodon's own name for a silent, looping *video* (never an actual `.gif`) --
+        -- coalesced with "video" here so `MediaRenderer.viewHelper`'s `"video" ->` branch (which
+        -- only ever inspects `contentType`'s `/`-prefix) picks it up the same way.
+        renderedType : String
+        renderedType =
+            if attachment.mediaType == "gifv" then
+                "video"
+
+            else
+                attachment.mediaType
+    in
+    { defaultMediaReference
+        | id = attachment.id
+        , url = Just attachment.url
+        , name = attachment.description
+        , sizes =
+            [ { defaultMediaSize
+                | conversion = MEDIACONVERSIONORIGINAL
+                , contentType = renderedType ++ "/*"
+                , aspectRatio = Maybe.map2 (\w h -> toFloat w / toFloat h) attachment.width attachment.height
+              }
+            ]
     }
 
 
@@ -125,11 +275,16 @@ fetchPosts instanceHost =
 
 
 {-| `GET /api/v1/statuses/:id` -- a single status, by id, unauthenticated (same public-endpoint
-reasoning as `fetchPosts`), already translated via `toPost`. Unlike `fetchPosts`, this works
-regardless of whether `local=true` would apply -- a direct id lookup isn't scoped to "this instance's
-own timeline" the way browsing one is.
+reasoning as `fetchPosts`), already translated via `toPostIncludingSensitiveMedia` -- see that
+function's own doc on why this, alone among every fetch here, doesn't strip a `sensitive` status'
+media. Unlike `fetchPosts`, this works regardless of whether `local=true` would apply -- a direct id
+lookup isn't scoped to "this instance's own timeline" the way browsing one is. The `Bool` alongside
+`Post` is `status.sensitive` itself -- `toPostIncludingSensitiveMedia` already folds `sensitive`
+media *into* `Post.media` unconditionally, so this is `Components.Pages.MastodonPostPage`'s only way
+to still tell "sensitive, shown because the viewer clicked past a warning" apart from "never flagged
+at all" -- see that module's own `sensitiveMediaRevealed`.
 -}
-fetchStatus : String -> String -> Task Http.Error Post
+fetchStatus : String -> String -> Task Http.Error ( Post, Bool )
 fetchStatus instanceHost statusId =
     Http.task
         { method = "GET"
@@ -139,7 +294,7 @@ fetchStatus instanceHost statusId =
         , resolver = jsonResolver decoder (\metadata _ -> Http.BadStatus metadata.statusCode)
         , timeout = Just 10000
         }
-        |> Task.map (toPost instanceHost)
+        |> Task.map (\status -> ( toPostIncludingSensitiveMedia instanceHost status, status.sensitive ))
 
 
 toAuthor : String -> Status -> Author

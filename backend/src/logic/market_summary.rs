@@ -304,6 +304,7 @@ mod tests {
             market_product::Details::RellmHostingSubscriptionDetails(RellmHostingSubscriptionDetails {
                 db_size_bytes: 1024 * 1024 * 1024,
                 minio_size_bytes: 5 * 1024 * 1024 * 1024,
+                additional_description: String::new(),
                 domain: String::new(),
                 contact_email: String::new(),
                 fulfillment_status: FulfillmentStatus::AwaitingHostAdmin as i32,
@@ -331,6 +332,8 @@ mod tests {
                     Permission::SyncEventsToFacebook as i32,
                     Permission::SyncPostsToFacebook as i32,
                 ],
+                name: "Facebook Sync Access".to_string(),
+                description: "Sync your posts and events to Facebook.".to_string(),
             }),
         );
         assert_eq!(

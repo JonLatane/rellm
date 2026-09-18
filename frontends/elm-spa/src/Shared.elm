@@ -135,6 +135,7 @@ type Msg
     | MediaRendererMsg MediaRenderer.Msg
     | MyMediaPanelMsg MyMediaPanel.Msg
     | MyMediaPanelOpenForAccount RellmAccount
+    | ProfileSectionLinkClicked RellmAccount String
     | CreateNewPanelMsg CreateNewPanel.Msg
     | MessagingPanelMsg MessagingPanel.Msg
     | CloseAllPanels
@@ -1327,6 +1328,33 @@ sharedUpdate req msg model =
                     sharedUpdate req (AccountsPanelMsg AccountsPanel.CloseFocusedAccount) openedModel
             in
             ( closedPopoverModel, Cmd.batch [ enableCmd, openCmd, closePopoverCmd ] )
+
+        -- An `AccountsPanel`/`UI.accountAvatarMenuView` "Subscriptions"/"Sync
+        -- Sources"/"Sync Destinations"/"AI Models" item -- unlike a plain
+        -- `href` link, this always fires (see that view's own doc on why a
+        -- bare link can't do the job): a `Nav.pushUrl` for the general case
+        -- (a fresh `#`-seeded `init`, same as any other profile deep link --
+        -- see `Components.Pages.UserProfilePage.init`'s own `fragment`
+        -- handling), plus this same `Shared.Msg` gets forwarded straight into
+        -- whichever page is *currently* mounted too (`Main.notifyPageOfSharedMsg`,
+        -- automatic for every `Shared.Msg`) -- if that's already this exact
+        -- profile, `UserProfilePage.update`'s own `SharedMsg` branch expands
+        -- and scrolls to `sectionId` immediately, since `pushUrl` to an
+        -- unchanged path is a silent no-op there (`Main.ChangedUrl`'s own
+        -- `url.path == model.url.path` branch never re-`init`s or notifies
+        -- the page at all).
+        ProfileSectionLinkClicked account sectionId ->
+            let
+                profileHref : String
+                profileHref =
+                    Users.profileHref model.basePath model.accounts.mainFrontendHost account.server { userId = account.userId, username = account.username }
+
+                ( closedModel, closeCmd ) =
+                    sharedUpdate req (AccountsPanelMsg AccountsPanel.CloseAccountsPanel) model
+            in
+            ( closedModel
+            , Cmd.batch [ closeCmd, Nav.pushUrl req.key (profileHref ++ "#" ++ sectionId) ]
+            )
 
         MessagingPanelMsg subMsg ->
             let

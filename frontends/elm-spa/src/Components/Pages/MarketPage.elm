@@ -122,8 +122,11 @@ type alias ProductForm =
     , hostingDbSizeUnit : ByteFormat.ByteUnit
     , hostingMinioSizeText : String
     , hostingMinioSizeUnit : ByteFormat.ByteUnit
+    , hostingAdditionalDescription : String
     , permissions : List Permission
     , permissionAddSelection : Maybe Permission
+    , permissionsName : String
+    , permissionsDescription : String
     , status : AccountsPanel.FormStatus
     }
 
@@ -144,8 +147,11 @@ defaultProductForm =
     , hostingDbSizeUnit = ByteFormat.GB
     , hostingMinioSizeText = ""
     , hostingMinioSizeUnit = ByteFormat.GB
+    , hostingAdditionalDescription = ""
     , permissions = []
     , permissionAddSelection = List.head Users.allPermissions
+    , permissionsName = ""
+    , permissionsDescription = ""
     , status = AccountsPanel.Idle
     }
 
@@ -217,12 +223,15 @@ productFormFromProduct product =
                 , hostingDbSizeUnit = dbUnit
                 , hostingMinioSizeText = String.fromFloat (toFloat minioBytes / toFloat (marketUnitBytes minioUnit))
                 , hostingMinioSizeUnit = minioUnit
+                , hostingAdditionalDescription = details.additionalDescription
             }
 
         Just (ProductDetails.PermissionsAccessSubscriptionDetails details) ->
             { base
                 | permissions = details.permissions
                 , permissionAddSelection = resolveAddSelection Nothing details.permissions
+                , permissionsName = details.name
+                , permissionsDescription = details.description
             }
 
         Nothing ->
@@ -722,13 +731,18 @@ detailsFromForm form =
                         , minioSizeBytes =
                             Conversions.int64FromInt
                                 (marketParseBytes form.hostingMinioSizeUnit form.hostingMinioSizeText |> Maybe.withDefault 0)
+                        , additionalDescription = form.hostingAdditionalDescription
                     }
                 )
 
         PURCHASETYPEPERMISSIONSACCESS ->
             Just
                 (ProductDetails.PermissionsAccessSubscriptionDetails
-                    { defaultPermissionsAccessSubscriptionDetails | permissions = form.permissions }
+                    { defaultPermissionsAccessSubscriptionDetails
+                        | permissions = form.permissions
+                        , name = form.permissionsName
+                        , description = form.permissionsDescription
+                    }
                 )
 
         PurchaseTypeUnrecognized_ _ ->
@@ -1011,7 +1025,8 @@ tierCardView shared isPrimary isAdmin model product =
                     [ class "market-tier-link"
                     , Html.Attributes.href (productHref shared isPrimary model.host product)
                     ]
-                    [ span [ class "market-tier-summary" ] [ text (Market.productSummary product) ]
+                    [ span [ class "market-tier-price" ] [ text (Market.priceLabel product) ]
+                    , span [ class "market-tier-name" ] [ text (Market.productName product) ]
                     , case Market.slotsAvailableText product of
                         Just slotsText ->
                             span [ class "market-tier-slots" ] [ text slotsText ]
@@ -1270,6 +1285,12 @@ productFormView aiProviders change form =
                         (\f text -> { f | hostingMinioSizeText = text })
                         .hostingMinioSizeUnit
                         (\f unit -> { f | hostingMinioSizeUnit = unit })
+                    , textarea
+                        [ placeholder "Additional Description (Markdown, shown below the canned description)"
+                        , value form.hostingAdditionalDescription
+                        , onInput (change (\f text -> { f | hostingAdditionalDescription = text }))
+                        ]
+                        []
                     ]
 
                 PURCHASETYPEPERMISSIONSACCESS ->
@@ -1356,15 +1377,33 @@ toggleAiModel modelName form =
     }
 
 
-{-| The Extra Features form's permissions editor -- the same add-via-dropdown/remove-via-×-badge
-pattern `Components.Pages.UserProfilePage.permissionsSection`'s edit mode uses (mirrors
-`permissionEditBadge`/the "Add Permission" `<select>`+button there almost exactly), rather than the
-free-text comma-separated field this used to be -- picking from `Components.Users.allPermissions`
-means an admin can't typo a permission name into something that silently grants nothing.
+{-| The Extra Features form -- a Name field and a Markdown Description field (both required
+server-side: `CreateMarketProduct`/`UpdateMarketProduct` reject a blank `name` with `name_required`,
+see `PermissionsAccessSubscriptionDetails.name`'s own proto doc), since unlike the other three
+`PurchaseType`s' implicitly-computed display name/description (`Components.Market.productName`/
+`productDescription`), a permissions bundle can be any admin-chosen set with no generically-derivable
+name -- an admin has to author both by hand here. Followed by the permissions editor itself: the
+same add-via-dropdown/remove-via-×-badge pattern `Components.Pages.UserProfilePage.permissionsSection`'s
+edit mode uses (mirrors `permissionEditBadge`/the "Add Permission" `<select>`+button there almost
+exactly), rather than the free-text comma-separated field this used to be -- picking from
+`Components.Users.allPermissions` means an admin can't typo a permission name into something that
+silently grants nothing.
 -}
 permissionsFormView : ((ProductForm -> String -> ProductForm) -> String -> msg) -> ProductForm -> List (Html msg)
 permissionsFormView change form =
-    [ div [ class "permission-badges" ]
+    [ input
+        [ placeholder "Name (e.g. \"Facebook Sync Access\")"
+        , value form.permissionsName
+        , onInput (change (\f text -> { f | permissionsName = text }))
+        ]
+        []
+    , textarea
+        [ placeholder "Description (Markdown)"
+        , value form.permissionsDescription
+        , onInput (change (\f text -> { f | permissionsDescription = text }))
+        ]
+        []
+    , div [ class "permission-badges" ]
         (form.permissions
             |> List.map
                 (\permission ->

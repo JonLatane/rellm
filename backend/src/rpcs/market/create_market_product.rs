@@ -51,8 +51,10 @@ pub fn create_market_product(
 /// A `MarketProduct.details` variant must match its own `type` -- e.g. a
 /// `PURCHASE_TYPE_MEDIA_STORAGE` product can't carry `ai_grant_subscription_details`. `details`
 /// may also be entirely unset (an admin can fill it in later via `UpdateMarketProduct`). For
-/// `PermissionsAccessSubscriptionDetails` specifically, also validates every listed permission
-/// against `PURCHASABLE_PERMISSIONS` -- see that const's own doc.
+/// `PermissionsAccessSubscriptionDetails` specifically, also requires a non-blank `name`
+/// (rejected with `name_required` -- see that field's own proto doc for why, unlike the other
+/// three types, it has no generically-derivable display name) and validates every listed
+/// permission against `PURCHASABLE_PERMISSIONS` -- see that const's own doc.
 pub(super) fn validate_details_match_type(
     purchase_type: PurchaseType,
     details: &Option<market_product::Details>,
@@ -72,6 +74,9 @@ pub(super) fn validate_details_match_type(
             if purchase_type != PurchaseType::PermissionsAccess {
                 false
             } else {
+                if permissions_details.name.trim().is_empty() {
+                    return Err(Status::new(Code::InvalidArgument, "name_required"));
+                }
                 return validate_permissions_are_purchasable(&permissions_details.permissions);
             }
         }

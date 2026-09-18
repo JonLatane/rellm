@@ -2122,6 +2122,18 @@ accountAvatarMenuView shared account =
             navigateAndClose =
                 stopPropagationAndPreventDefaultOnClick (Shared.AccountsPanelMsg AccountsPanel.CloseAccountsPanel)
 
+            -- Unlike `navigateAndClose` (a plain `href` click, left to elm/browser's
+            -- own SPA link interception), this fires `Shared.ProfileSectionLinkClicked`
+            -- instead -- see that message's own doc on why a bare link can't expand +
+            -- scroll an already-open `UserProfilePage` to `sectionId` when the click
+            -- doesn't change the URL's path (only its fragment). The `href` stays on
+            -- each of these items regardless, purely for right-click/middle-click
+            -- "open in new tab"/hover-preview -- this handler still `preventDefault`s
+            -- an ordinary left click the same way `navigateAndClose` does.
+            sectionLinkClicked : String -> Html.Attribute Shared.Msg
+            sectionLinkClicked sectionId =
+                stopPropagationAndPreventDefaultOnClick (Shared.ProfileSectionLinkClicked account sectionId)
+
             configuredCountOrEmpty : String -> List a -> String
             configuredCountOrEmpty emptyText items =
                 if List.isEmpty items then
@@ -2156,27 +2168,27 @@ accountAvatarMenuView shared account =
                     )
                 , if RellmAccounts.canUseSyncSources account then
                     a
-                        [ class "account-avatar-menu-item", href profileHref, navigateAndClose ]
+                        [ class "account-avatar-menu-item", href (profileHref ++ "#sync-sources"), sectionLinkClicked "sync-sources" ]
                         (itemContent "Sync Sources" (configuredCountOrEmpty "No sync sources configured." account.syncSources))
 
                   else
                     text ""
                 , if RellmAccounts.canUseSyncDestinations account then
                     a
-                        [ class "account-avatar-menu-item", href profileHref, navigateAndClose ]
+                        [ class "account-avatar-menu-item", href (profileHref ++ "#sync-destinations"), sectionLinkClicked "sync-destinations" ]
                         (itemContent "Sync Destinations" (configuredCountOrEmpty "No sync destinations configured." account.syncDestinations))
 
                   else
                     text ""
                 , if RellmAccounts.canUseAIModels account then
                     a
-                        [ class "account-avatar-menu-item", href profileHref, navigateAndClose ]
+                        [ class "account-avatar-menu-item", href (profileHref ++ "#ai-models"), sectionLinkClicked "ai-models" ]
                         (itemContent "AI Models" (configuredCountOrEmpty "No AI models configured." account.aiModels))
 
                   else
                     text ""
                 , a
-                    [ class "account-avatar-menu-item", href profileHref, navigateAndClose ]
+                    [ class "account-avatar-menu-item", href (profileHref ++ "#subscriptions"), sectionLinkClicked "subscriptions" ]
                     (itemContent "Subscriptions" (configuredCountOrEmpty "No subscriptions." account.marketSubscriptions))
                 ]
             ]

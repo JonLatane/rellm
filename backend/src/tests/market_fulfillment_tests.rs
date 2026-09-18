@@ -27,6 +27,8 @@ fn permissions_access_grants_permissions_additively_without_duplicating_or_dropp
                 Permission::SyncEventsToFacebook as i32,
                 Permission::SyncPostsToFacebook as i32,
             ],
+            name: "Facebook Sync Access".to_string(),
+            description: "Sync your posts and events to Facebook.".to_string(),
         })
         .unwrap();
         fulfill_purchase(PurchaseType::PermissionsAccess, user.id, &details, conn)?;
@@ -125,6 +127,7 @@ fn rellm_hosting_fulfillment_is_a_no_op() {
         let details = serde_json::to_value(RellmHostingPurchaseDetails {
             db_size_bytes: 0,
             minio_size_bytes: 0,
+            additional_description: "".to_string(),
             domain: "example.rellm.org".to_string(),
             contact_email: "buyer@example.com".to_string(),
             additional_information: "".to_string(),

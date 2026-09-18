@@ -37,6 +37,41 @@ suite =
                         |> Decode.decodeString Bluesky.decoder
                         |> Result.map .authorDisplayName
                         |> Expect.equal (Ok Nothing)
+            , test "decodes an app.bsky.embed.images#view embed's images" <|
+                \_ ->
+                    let
+                        overrides =
+                            { defaultOverrides
+                                | images =
+                                    [ { url = "https://cdn.bsky.app/img/feed_fullsize/1.jpg"
+                                      , alt = Just "A photo of a dog"
+                                      , width = Just 1600
+                                      , height = Just 900
+                                      }
+                                    ]
+                            }
+                    in
+                    Factory.feedViewPostJson overrides
+                        |> Decode.decodeString Bluesky.decoder
+                        |> Expect.equal (Ok (Factory.feedPost overrides))
+            , test "a post with no embed at all decodes to an empty images list" <|
+                \_ ->
+                    Factory.feedViewPostJson defaultOverrides
+                        |> Decode.decodeString Bluesky.decoder
+                        |> Result.map .images
+                        |> Expect.equal (Ok [])
+            , test "a self-applied label decodes sensitive as True" <|
+                \_ ->
+                    Factory.feedViewPostJson { defaultOverrides | sensitive = True }
+                        |> Decode.decodeString Bluesky.decoder
+                        |> Result.map .sensitive
+                        |> Expect.equal (Ok True)
+            , test "no labels key at all decodes sensitive as False" <|
+                \_ ->
+                    Factory.feedViewPostJson defaultOverrides
+                        |> Decode.decodeString Bluesky.decoder
+                        |> Result.map .sensitive
+                        |> Expect.equal (Ok False)
             ]
         , describe "toPost"
             [ test "id is the bare at:// URI, unnamespaced -- the synthetic host alongside it (never id alone) is what disambiguates it from a real Rellm post id" <|
@@ -85,5 +120,61 @@ suite =
                         |> .author
                         |> Maybe.andThen .username
                         |> Expect.equal (Just "alice.bsky.social")
+            , test "an image embed's url/alt become a MediaReference's url/name -- see Components.MediaRenderer, which renders `.name` as an image's alt text" <|
+                \_ ->
+                    Factory.feedPost
+                        { defaultOverrides
+                            | images =
+                                [ { url = "https://cdn.bsky.app/img/feed_fullsize/1.jpg"
+                                  , alt = Just "A photo of a dog"
+                                  , width = Just 1600
+                                  , height = Just 900
+                                  }
+                                ]
+                        }
+                        |> Bluesky.toPost
+                        |> .media
+                        |> List.map (\media -> ( media.url, media.name ))
+                        |> Expect.equal [ ( Just "https://cdn.bsky.app/img/feed_fullsize/1.jpg", Just "A photo of a dog" ) ]
+            , test "a feed post with no images leaves Post.media empty" <|
+                \_ ->
+                    Factory.feedPost defaultOverrides
+                        |> Bluesky.toPost
+                        |> .media
+                        |> Expect.equal []
+            , test "toPost strips a sensitive (labeled) post's media down to just the hidden-media placeholder" <|
+                \_ ->
+                    Factory.feedPost
+                        { defaultOverrides
+                            | sensitive = True
+                            , images =
+                                [ { url = "https://cdn.bsky.app/img/feed_fullsize/1.jpg"
+                                  , alt = Just "A photo of a dog"
+                                  , width = Just 1600
+                                  , height = Just 900
+                                  }
+                                ]
+                        }
+                        |> Bluesky.toPost
+                        |> .media
+                        |> List.map .url
+                        |> Expect.equal [ Nothing ]
+            , test "toPostIncludingSensitiveMedia (BlueskyPostPage's own fetch) keeps a labeled post's real media" <|
+                \_ ->
+                    Factory.feedPost
+                        { defaultOverrides
+                            | sensitive = True
+                            , images =
+                                [ { url = "https://cdn.bsky.app/img/feed_fullsize/1.jpg"
+                                  , alt = Just "A photo of a dog"
+                                  , width = Just 1600
+                                  , height = Just 900
+                                  }
+                                ]
+                        }
+                        |> Bluesky.toPostIncludingSensitiveMedia
+                        |> .media
+                        |> List.map .url
+                        |> Expect.equal [ Just "https://cdn.bsky.app/img/feed_fullsize/1.jpg" ]
             ]
         ]

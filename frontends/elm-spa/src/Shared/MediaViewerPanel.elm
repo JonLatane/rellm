@@ -562,7 +562,7 @@ view accountsPanelModel model =
 
         maybeServer : Maybe RellmServer
         maybeServer =
-            RellmServers.rellmServerForHost accountsPanelModel.servers model.targetHost
+            Posts.mediaServer (RellmServers.rellmServerForHost accountsPanelModel.servers model.targetHost) model.targetHost
 
         maybeAccount : Maybe RellmAccount
         maybeAccount =

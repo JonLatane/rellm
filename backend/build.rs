@@ -74,6 +74,31 @@ fn main() {
         // pre-existing `market_settings` blob missing this key would fail the whole `MarketSettings`
         // deserialize and silently reset `enabled` back to `false` too.
         .field_attribute("MarketSettings.stripe_configured", "#[serde(default)]")
+        // Same idea, for the `name`/`description`/`additional_description` fields added to the
+        // Market `details` messages after they first shipped -- lets `market_products`/
+        // `market_subscriptions`/`market_purchases` JSON stored before these fields existed
+        // deserialize instead of erroring, defaulting to `""`.
+        .field_attribute(
+            "PermissionsAccessSubscriptionDetails.name",
+            "#[serde(default)]",
+        )
+        .field_attribute(
+            "PermissionsAccessSubscriptionDetails.description",
+            "#[serde(default)]",
+        )
+        .field_attribute("PermissionsAccessPurchaseDetails.name", "#[serde(default)]")
+        .field_attribute(
+            "PermissionsAccessPurchaseDetails.description",
+            "#[serde(default)]",
+        )
+        .field_attribute(
+            "RellmHostingSubscriptionDetails.additional_description",
+            "#[serde(default)]",
+        )
+        .field_attribute(
+            "RellmHostingPurchaseDetails.additional_description",
+            "#[serde(default)]",
+        )
         // This is specifically for rust-analyzer in VSCode
         // .client_attribute(".", "#![allow(non_snake_case)]")
         .extern_path(".google.protobuf.Any", "::prost_wkt_types::Any")

@@ -297,6 +297,14 @@
   pointer-events: none;
 }
 
+/* A Mastodon/Bluesky card (`Components.Posts.postCardView`'s own `post-card-federated`, added
+   whenever `isFederatedHost postServerHost`) gets 50% more allowed content height than a native
+   Rellm post's card -- federated posts tend to run longer/denser (no title row of their own to
+   summarize them, see `postCardView`'s title-hiding) before `max-height` truncates them. */
+.post-card-federated .post-card-content-preview {
+  max-height: 6.75em;
+}
+
 /* Added alongside `.post-card-content-preview` only when `Components.Posts`'s
    `contentPreviewFadeThreshold` judges the content long enough to actually be
    truncated by its `max-height` -- the fade signals "there's more below the
@@ -313,6 +321,29 @@
 
 .post-card-content-preview>*:last-child {
   margin-bottom: 0;
+}
+
+/* `Components.Posts.hasHiddenSensitiveMedia`'s own notice, in place of a federated post's usual
+   `MultiMediaRenderer` call -- `pointer-events: none` for the same reason
+   `.post-card-content-preview` has it: the whole card is already one big link via
+   `.post-card-link-overlay`, painted above this, so this must not look separately clickable.
+   `.post-reply-sensitive-media-notice` below is `replyCard`'s own counterpart -- a real `<a>`, since
+   a reply card has no such full-card overlay. */
+.post-card-sensitive-media-notice {
+  display: block;
+  pointer-events: none;
+  color: var(--muted);
+  font-style: italic;
+  font-size: 0.9rem;
+  margin: 0.3rem 0;
+}
+
+.post-reply-sensitive-media-notice {
+  display: block;
+  color: var(--muted);
+  font-style: italic;
+  font-size: 0.9rem;
+  margin: 0.3rem 0;
 }
 
 .post-card-meta {
@@ -552,6 +583,29 @@
   padding: 0.2rem 0.8rem;
   border-left: 3px solid var(--border);
   color: var(--muted);
+}
+
+/* `Components.Pages.MastodonPostPage`/`BlueskyPostPage`'s own click-to-reveal gate for a
+   `sensitive`-flagged post's media -- a real `<button>` (unlike `.post-card-sensitive-media-notice`'s
+   plain `<div>`, since there's no full-card link overlay here to rely on instead), styled to match
+   `.post-card-content-preview`'s muted/italic treatment. */
+.post-detail-sensitive-media-notice {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+  font-style: italic;
+  font-size: 0.95rem;
+  padding: 0.8rem;
+  margin: 0.5rem 0;
+  cursor: pointer;
+}
+
+.post-detail-sensitive-media-notice:hover {
+  border-color: var(--muted);
 }
 
 .post-detail-content :not(pre)>code {

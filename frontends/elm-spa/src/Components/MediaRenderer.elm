@@ -407,30 +407,39 @@ thumbnailUrl mediaSize server maybeAccount media =
 
 
 {-| Shared by `url`/`thumbnailUrl` -- `media`'s base `/media/{id}` URL plus `sizeParam` and (if
-`maybeAccount` is signed in) an `authorization` query param.
+`maybeAccount` is signed in) an `authorization` query param. `media.url` (set by federated media --
+`Shared.Federation.Mastodon`/`Bluesky`'s own `toPost`, see that field's own doc in
+`protos/media.proto`) is used as-is instead whenever present: it's already a full, foreign URL, so
+neither `server`'s own `/media/{id}` path nor a Rellm `authorization` token (meaningless to a
+non-Rellm host) apply to it, and `sizeParam` has no federated-side equivalent to request either.
 -}
 authorizedUrl : List String -> RellmServer -> Maybe RellmAccount -> MediaReference -> String
 authorizedUrl sizeParam server maybeAccount media =
-    let
-        base : String
-        base =
-            RellmServers.mediaUrl server media.id |> Maybe.withDefault ""
+    case media.url of
+        Just externalUrl ->
+            externalUrl
 
-        authParam : List String
-        authParam =
-            case maybeAccount of
-                Just account ->
-                    [ "authorization=" ++ account.accessToken.token ]
+        Nothing ->
+            let
+                base : String
+                base =
+                    RellmServers.mediaUrl server media.id |> Maybe.withDefault ""
 
-                Nothing ->
-                    []
-    in
-    case sizeParam ++ authParam of
-        [] ->
-            base
+                authParam : List String
+                authParam =
+                    case maybeAccount of
+                        Just account ->
+                            [ "authorization=" ++ account.accessToken.token ]
 
-        params ->
-            base ++ "?" ++ String.join "&" params
+                        Nothing ->
+                            []
+            in
+            case sizeParam ++ authParam of
+                [] ->
+                    base
+
+                params ->
+                    base ++ "?" ++ String.join "&" params
 
 
 {-| The `VIDEO_PREVIEW_THUMBNAIL_*` conversion matching `mediaSize`'s own tier -- `Natural`'s

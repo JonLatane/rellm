@@ -1470,6 +1470,7 @@ class RellmHostingPurchaseDetails extends $pb.GeneratedMessage {
   factory RellmHostingPurchaseDetails({
     $fixnum.Int64? dbSizeBytes,
     $fixnum.Int64? minioSizeBytes,
+    $core.String? additionalDescription,
     $core.String? domain,
     $core.String? contactEmail,
     $core.String? additionalInformation,
@@ -1480,6 +1481,9 @@ class RellmHostingPurchaseDetails extends $pb.GeneratedMessage {
     }
     if (minioSizeBytes != null) {
       $result.minioSizeBytes = minioSizeBytes;
+    }
+    if (additionalDescription != null) {
+      $result.additionalDescription = additionalDescription;
     }
     if (domain != null) {
       $result.domain = domain;
@@ -1499,9 +1503,10 @@ class RellmHostingPurchaseDetails extends $pb.GeneratedMessage {
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'RellmHostingPurchaseDetails', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
     ..a<$fixnum.Int64>(1, _omitFieldNames ? '' : 'dbSizeBytes', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
     ..a<$fixnum.Int64>(2, _omitFieldNames ? '' : 'minioSizeBytes', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
-    ..aOS(3, _omitFieldNames ? '' : 'domain')
-    ..aOS(4, _omitFieldNames ? '' : 'contactEmail')
-    ..aOS(5, _omitFieldNames ? '' : 'additionalInformation')
+    ..aOS(3, _omitFieldNames ? '' : 'additionalDescription')
+    ..aOS(4, _omitFieldNames ? '' : 'domain')
+    ..aOS(5, _omitFieldNames ? '' : 'contactEmail')
+    ..aOS(6, _omitFieldNames ? '' : 'additionalInformation')
     ..hasRequiredFields = false
   ;
 
@@ -1551,40 +1556,51 @@ class RellmHostingPurchaseDetails extends $pb.GeneratedMessage {
   @$pb.TagNumber(2)
   void clearMinioSizeBytes() => clearField(2);
 
+  /// Copied from `RellmHostingSubscriptionDetails.additional_description` at the moment this
+  /// purchase was fulfilled -- see that field's own doc.
+  @$pb.TagNumber(3)
+  $core.String get additionalDescription => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set additionalDescription($core.String v) { $_setString(2, v); }
+  @$pb.TagNumber(3)
+  $core.bool hasAdditionalDescription() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearAdditionalDescription() => clearField(3);
+
   /// The domain the buyer wants their new Rellm instance reachable at (e.g. "myserver.example.com").
-  @$pb.TagNumber(3)
-  $core.String get domain => $_getSZ(2);
-  @$pb.TagNumber(3)
-  set domain($core.String v) { $_setString(2, v); }
-  @$pb.TagNumber(3)
-  $core.bool hasDomain() => $_has(2);
-  @$pb.TagNumber(3)
-  void clearDomain() => clearField(3);
+  @$pb.TagNumber(4)
+  $core.String get domain => $_getSZ(3);
+  @$pb.TagNumber(4)
+  set domain($core.String v) { $_setString(3, v); }
+  @$pb.TagNumber(4)
+  $core.bool hasDomain() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearDomain() => clearField(4);
 
   /// Where the fulfilling admin should reach the buyer about this order, separate from whatever
   /// email/contact info is on the buyer's own `User` (which may not be checked as often, or may not
   /// exist at all for a server with no email-based signup).
-  @$pb.TagNumber(4)
-  $core.String get contactEmail => $_getSZ(3);
-  @$pb.TagNumber(4)
-  set contactEmail($core.String v) { $_setString(3, v); }
-  @$pb.TagNumber(4)
-  $core.bool hasContactEmail() => $_has(3);
-  @$pb.TagNumber(4)
-  void clearContactEmail() => clearField(4);
+  @$pb.TagNumber(5)
+  $core.String get contactEmail => $_getSZ(4);
+  @$pb.TagNumber(5)
+  set contactEmail($core.String v) { $_setString(4, v); }
+  @$pb.TagNumber(5)
+  $core.bool hasContactEmail() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearContactEmail() => clearField(5);
 
   /// Free-form notes from the buyer to the fulfilling admin, captured once at purchase time (e.g.
   /// special requests, existing-data-migration needs). Immutable after purchase -- see
   /// `RellmHostingSubscriptionDetails.additional_information`'s own doc, which carries this same
   /// text forward onto the resulting `MarketSubscription`.
-  @$pb.TagNumber(5)
-  $core.String get additionalInformation => $_getSZ(4);
-  @$pb.TagNumber(5)
-  set additionalInformation($core.String v) { $_setString(4, v); }
-  @$pb.TagNumber(5)
-  $core.bool hasAdditionalInformation() => $_has(4);
-  @$pb.TagNumber(5)
-  void clearAdditionalInformation() => clearField(5);
+  @$pb.TagNumber(6)
+  $core.String get additionalInformation => $_getSZ(5);
+  @$pb.TagNumber(6)
+  set additionalInformation($core.String v) { $_setString(5, v); }
+  @$pb.TagNumber(6)
+  $core.bool hasAdditionalInformation() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearAdditionalInformation() => clearField(6);
 }
 
 /// `MarketPurchase.details`' `PURCHASE_TYPE_PERMISSIONS_ACCESS` variant -- copied verbatim from the
@@ -1596,10 +1612,18 @@ class RellmHostingPurchaseDetails extends $pb.GeneratedMessage {
 class PermissionsAccessPurchaseDetails extends $pb.GeneratedMessage {
   factory PermissionsAccessPurchaseDetails({
     $core.Iterable<$15.Permission>? permissions,
+    $core.String? name,
+    $core.String? description,
   }) {
     final $result = create();
     if (permissions != null) {
       $result.permissions.addAll(permissions);
+    }
+    if (name != null) {
+      $result.name = name;
+    }
+    if (description != null) {
+      $result.description = description;
     }
     return $result;
   }
@@ -1609,6 +1633,8 @@ class PermissionsAccessPurchaseDetails extends $pb.GeneratedMessage {
 
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'PermissionsAccessPurchaseDetails', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
     ..pc<$15.Permission>(1, _omitFieldNames ? '' : 'permissions', $pb.PbFieldType.KE, valueOf: $15.Permission.valueOf, enumValues: $15.Permission.values, defaultEnumValue: $15.Permission.PERMISSION_UNKNOWN)
+    ..aOS(2, _omitFieldNames ? '' : 'name')
+    ..aOS(3, _omitFieldNames ? '' : 'description')
     ..hasRequiredFields = false
   ;
 
@@ -1637,6 +1663,31 @@ class PermissionsAccessPurchaseDetails extends $pb.GeneratedMessage {
   /// `PermissionsAccess` arm (adds these to the buyer's `User.permissions`, union-style).
   @$pb.TagNumber(1)
   $core.List<$15.Permission> get permissions => $_getList(0);
+
+  /// Admin-authored product name shown for this purchase (e.g. on `/market/fulfillment`'s billing
+  /// history) -- copied from `PermissionsAccessSubscriptionDetails.name` at the moment this purchase
+  /// was fulfilled. Unlike the other three purchase-detail messages' implicit, Elm-computed display
+  /// names, permissions-access products have no fixed bundle of permissions to describe generically,
+  /// so an admin names/describes each one by hand.
+  @$pb.TagNumber(2)
+  $core.String get name => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set name($core.String v) { $_setString(1, v); }
+  @$pb.TagNumber(2)
+  $core.bool hasName() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearName() => clearField(2);
+
+  /// Admin-authored, Markdown-formatted product description -- copied from
+  /// `PermissionsAccessSubscriptionDetails.description` the same way `name` above is.
+  @$pb.TagNumber(3)
+  $core.String get description => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set description($core.String v) { $_setString(2, v); }
+  @$pb.TagNumber(3)
+  $core.bool hasDescription() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearDescription() => clearField(3);
 }
 
 enum MarketSubscription_Details {
@@ -2034,6 +2085,109 @@ class MediaStorageSubscriptionDetails extends $pb.GeneratedMessage {
   void clearAllocationBytes() => clearField(1);
 }
 
+/// `MarketProduct.details`/`MarketSubscription.details`' `PURCHASE_TYPE_PERMISSIONS_ACCESS`
+/// variant -- what a permissions-bundle product actually grants. Field-for-field identical to
+/// `PermissionsAccessPurchaseDetails` -- see that message's own doc for why it's still a distinct
+/// type (that distinction is exactly what lets `logic::market_fulfillment::terminate_entitlement`
+/// tell "what to claw back" apart from "what was originally billed").
+class PermissionsAccessSubscriptionDetails extends $pb.GeneratedMessage {
+  factory PermissionsAccessSubscriptionDetails({
+    $core.Iterable<$15.Permission>? permissions,
+    $core.String? name,
+    $core.String? description,
+  }) {
+    final $result = create();
+    if (permissions != null) {
+      $result.permissions.addAll(permissions);
+    }
+    if (name != null) {
+      $result.name = name;
+    }
+    if (description != null) {
+      $result.description = description;
+    }
+    return $result;
+  }
+  PermissionsAccessSubscriptionDetails._() : super();
+  factory PermissionsAccessSubscriptionDetails.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromBuffer(i, r);
+  factory PermissionsAccessSubscriptionDetails.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'PermissionsAccessSubscriptionDetails', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
+    ..pc<$15.Permission>(1, _omitFieldNames ? '' : 'permissions', $pb.PbFieldType.KE, valueOf: $15.Permission.valueOf, enumValues: $15.Permission.values, defaultEnumValue: $15.Permission.PERMISSION_UNKNOWN)
+    ..aOS(2, _omitFieldNames ? '' : 'name')
+    ..aOS(3, _omitFieldNames ? '' : 'description')
+    ..hasRequiredFields = false
+  ;
+
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.deepCopy] instead. '
+  'Will be removed in next major version')
+  PermissionsAccessSubscriptionDetails clone() => PermissionsAccessSubscriptionDetails()..mergeFromMessage(this);
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.rebuild] instead. '
+  'Will be removed in next major version')
+  PermissionsAccessSubscriptionDetails copyWith(void Function(PermissionsAccessSubscriptionDetails) updates) => super.copyWith((message) => updates(message as PermissionsAccessSubscriptionDetails)) as PermissionsAccessSubscriptionDetails;
+
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static PermissionsAccessSubscriptionDetails create() => PermissionsAccessSubscriptionDetails._();
+  PermissionsAccessSubscriptionDetails createEmptyInstance() => create();
+  static $pb.PbList<PermissionsAccessSubscriptionDetails> createRepeated() => $pb.PbList<PermissionsAccessSubscriptionDetails>();
+  @$core.pragma('dart2js:noInline')
+  static PermissionsAccessSubscriptionDetails getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<PermissionsAccessSubscriptionDetails>(create);
+  static PermissionsAccessSubscriptionDetails? _defaultInstance;
+
+  /// Which `Permission`s this product/subscription grants the buyer -- see
+  /// `logic::market_fulfillment::fulfill_purchase`'s `PermissionsAccess` arm (union-added to the
+  /// buyer's own `User.permissions`, never replacing what they already had) and
+  /// `terminate_entitlement`'s own arm (the exact claw-back set on cancellation/expiry).
+  /// Intentionally excludes permissions dangerous or nonsensical to sell this way -- e.g.
+  /// "Grant Basic Permissions," any "Moderate"/"Read All System Messages" permission, "Admin,"
+  /// "View Private Contact Methods," and "Edit Cluster Settings" must never appear in a Market
+  /// product's own `permissions` list. Enforced server-side on `CreateMarketProduct`/
+  /// `UpdateMarketProduct` (rejected with `permission_not_purchasable`) and again on
+  /// `MakeMarketPurchase` (defense in depth, in case a permission is later removed from the
+  /// purchasable set after a product granting it already exists) -- see
+  /// `rpcs::market::create_market_product::PURCHASABLE_PERMISSIONS`. NOTE: that Rust list is an
+  /// explicit include-list, not an exclude-list -- described here as an exclusion for readability,
+  /// but implemented as "only these permissions are purchasable" so a newly-added `Permission` is
+  /// never purchasable by default; it has to be deliberately added to that list.
+  @$pb.TagNumber(1)
+  $core.List<$15.Permission> get permissions => $_getList(0);
+
+  /// Admin-authored product name -- unlike `MediaStorageSubscriptionDetails`/`AIGrantSubscriptionDetails`/
+  /// `RellmHostingSubscriptionDetails` (which get an implicit, Elm-computed display name from their
+  /// own fields, since they each describe one fixed kind of thing), a permissions-access product's
+  /// `permissions` list can be any admin-chosen bundle, so there's no generic way to name it
+  /// automatically. Required for a purchasable product (`CreateMarketProduct`/`UpdateMarketProduct`
+  /// reject a `PermissionsAccessSubscriptionDetails` with a blank `name`). On a `MarketSubscription`:
+  /// copied from the originating `MarketProduct.details.name` at the time the subscription was
+  /// created, same as every other field on this message.
+  @$pb.TagNumber(2)
+  $core.String get name => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set name($core.String v) { $_setString(1, v); }
+  @$pb.TagNumber(2)
+  $core.bool hasName() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearName() => clearField(2);
+
+  /// Admin-authored, Markdown-formatted product description shown on the product's own page --
+  /// same "no generic implicit description" reasoning as `name` above. On a `MarketSubscription`:
+  /// copied the same way `name` is.
+  @$pb.TagNumber(3)
+  $core.String get description => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set description($core.String v) { $_setString(2, v); }
+  @$pb.TagNumber(3)
+  $core.bool hasDescription() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearDescription() => clearField(3);
+}
+
 /// `MarketProduct.details`/`MarketSubscription.details`' `PURCHASE_TYPE_AI_GRANTS` variant -- what
 /// an AI token product actually grants. Field-for-field identical to `AIGrantPurchaseDetails` --
 /// see that message's own doc for why it's still a distinct type.
@@ -2124,6 +2278,7 @@ class RellmHostingSubscriptionDetails extends $pb.GeneratedMessage {
   factory RellmHostingSubscriptionDetails({
     $fixnum.Int64? dbSizeBytes,
     $fixnum.Int64? minioSizeBytes,
+    $core.String? additionalDescription,
     $core.String? domain,
     $core.String? contactEmail,
     $core.String? additionalInformation,
@@ -2136,6 +2291,9 @@ class RellmHostingSubscriptionDetails extends $pb.GeneratedMessage {
     }
     if (minioSizeBytes != null) {
       $result.minioSizeBytes = minioSizeBytes;
+    }
+    if (additionalDescription != null) {
+      $result.additionalDescription = additionalDescription;
     }
     if (domain != null) {
       $result.domain = domain;
@@ -2161,11 +2319,12 @@ class RellmHostingSubscriptionDetails extends $pb.GeneratedMessage {
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'RellmHostingSubscriptionDetails', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
     ..a<$fixnum.Int64>(1, _omitFieldNames ? '' : 'dbSizeBytes', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
     ..a<$fixnum.Int64>(2, _omitFieldNames ? '' : 'minioSizeBytes', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
-    ..aOS(3, _omitFieldNames ? '' : 'domain')
-    ..aOS(4, _omitFieldNames ? '' : 'contactEmail')
-    ..aOS(5, _omitFieldNames ? '' : 'additionalInformation')
-    ..e<FulfillmentStatus>(6, _omitFieldNames ? '' : 'fulfillmentStatus', $pb.PbFieldType.OE, defaultOrMaker: FulfillmentStatus.FULFILLMENT_STATUS_AWAITING_HOST_ADMIN, valueOf: FulfillmentStatus.valueOf, enumValues: FulfillmentStatus.values)
-    ..pc<FulfillmentNote>(7, _omitFieldNames ? '' : 'fulfillmentNotes', $pb.PbFieldType.PM, subBuilder: FulfillmentNote.create)
+    ..aOS(3, _omitFieldNames ? '' : 'additionalDescription')
+    ..aOS(4, _omitFieldNames ? '' : 'domain')
+    ..aOS(5, _omitFieldNames ? '' : 'contactEmail')
+    ..aOS(6, _omitFieldNames ? '' : 'additionalInformation')
+    ..e<FulfillmentStatus>(7, _omitFieldNames ? '' : 'fulfillmentStatus', $pb.PbFieldType.OE, defaultOrMaker: FulfillmentStatus.FULFILLMENT_STATUS_AWAITING_HOST_ADMIN, valueOf: FulfillmentStatus.valueOf, enumValues: FulfillmentStatus.values)
+    ..pc<FulfillmentNote>(8, _omitFieldNames ? '' : 'fulfillmentNotes', $pb.PbFieldType.PM, subBuilder: FulfillmentNote.create)
     ..hasRequiredFields = false
   ;
 
@@ -2214,40 +2373,53 @@ class RellmHostingSubscriptionDetails extends $pb.GeneratedMessage {
   @$pb.TagNumber(2)
   void clearMinioSizeBytes() => clearField(2);
 
+  /// Admin-authored, Markdown-formatted extra paragraph appended below the implicit, Elm-computed
+  /// "1GB DB + 5GB Object Storage"-style canned description shown on the product/subscription's own
+  /// page -- e.g. to call out something specific to this hosting tier that the canned text doesn't
+  /// cover. Optional; the canned description alone is shown when this is blank.
+  @$pb.TagNumber(3)
+  $core.String get additionalDescription => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set additionalDescription($core.String v) { $_setString(2, v); }
+  @$pb.TagNumber(3)
+  $core.bool hasAdditionalDescription() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearAdditionalDescription() => clearField(3);
+
   /// On a `MarketProduct`: unset/meaningless (a product isn't tied to any one domain). On a
   /// `MarketSubscription`: the domain the buyer wants their new Rellm instance reachable at, from
   /// `RellmHostingPurchaseDetails.domain`.
-  @$pb.TagNumber(3)
-  $core.String get domain => $_getSZ(2);
-  @$pb.TagNumber(3)
-  set domain($core.String v) { $_setString(2, v); }
-  @$pb.TagNumber(3)
-  $core.bool hasDomain() => $_has(2);
-  @$pb.TagNumber(3)
-  void clearDomain() => clearField(3);
+  @$pb.TagNumber(4)
+  $core.String get domain => $_getSZ(3);
+  @$pb.TagNumber(4)
+  set domain($core.String v) { $_setString(3, v); }
+  @$pb.TagNumber(4)
+  $core.bool hasDomain() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearDomain() => clearField(4);
 
   /// On a `MarketProduct`: unset/meaningless. On a `MarketSubscription`: where the fulfilling admin
   /// should reach the buyer about this order, from `RellmHostingPurchaseDetails.contact_email`.
-  @$pb.TagNumber(4)
-  $core.String get contactEmail => $_getSZ(3);
-  @$pb.TagNumber(4)
-  set contactEmail($core.String v) { $_setString(3, v); }
-  @$pb.TagNumber(4)
-  $core.bool hasContactEmail() => $_has(3);
-  @$pb.TagNumber(4)
-  void clearContactEmail() => clearField(4);
+  @$pb.TagNumber(5)
+  $core.String get contactEmail => $_getSZ(4);
+  @$pb.TagNumber(5)
+  set contactEmail($core.String v) { $_setString(4, v); }
+  @$pb.TagNumber(5)
+  $core.bool hasContactEmail() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearContactEmail() => clearField(5);
 
   /// Immutable after purchase -- the buyer's own notes to the admin fulfilling this order. Never
   /// editable via UpdateMarketSubscription (see that RPC's own doc); `fulfillment_notes` below is
   /// the admin/buyer conversation about fulfilling it.
-  @$pb.TagNumber(5)
-  $core.String get additionalInformation => $_getSZ(4);
-  @$pb.TagNumber(5)
-  set additionalInformation($core.String v) { $_setString(4, v); }
-  @$pb.TagNumber(5)
-  $core.bool hasAdditionalInformation() => $_has(4);
-  @$pb.TagNumber(5)
-  void clearAdditionalInformation() => clearField(5);
+  @$pb.TagNumber(6)
+  $core.String get additionalInformation => $_getSZ(5);
+  @$pb.TagNumber(6)
+  set additionalInformation($core.String v) { $_setString(5, v); }
+  @$pb.TagNumber(6)
+  $core.bool hasAdditionalInformation() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearAdditionalInformation() => clearField(6);
 
   /// Where this Rellm hosting order currently stands -- Rellm hosting is deliberately not automated
   /// (see `market.proto`'s own top-of-file notes and `logic::market_fulfillment::fulfill_purchase`'s
@@ -2257,21 +2429,21 @@ class RellmHostingSubscriptionDetails extends $pb.GeneratedMessage {
   /// `fulfillment_notes`' own last entry's `fulfillment_status` says (or
   /// `FULFILLMENT_STATUS_AWAITING_HOST_ADMIN` if `fulfillment_notes` is empty), so this field can
   /// never drift out of sync with the history that explains *why* it's in that state.
-  @$pb.TagNumber(6)
-  FulfillmentStatus get fulfillmentStatus => $_getN(5);
-  @$pb.TagNumber(6)
-  set fulfillmentStatus(FulfillmentStatus v) { setField(6, v); }
-  @$pb.TagNumber(6)
-  $core.bool hasFulfillmentStatus() => $_has(5);
-  @$pb.TagNumber(6)
-  void clearFulfillmentStatus() => clearField(6);
+  @$pb.TagNumber(7)
+  FulfillmentStatus get fulfillmentStatus => $_getN(6);
+  @$pb.TagNumber(7)
+  set fulfillmentStatus(FulfillmentStatus v) { setField(7, v); }
+  @$pb.TagNumber(7)
+  $core.bool hasFulfillmentStatus() => $_has(6);
+  @$pb.TagNumber(7)
+  void clearFulfillmentStatus() => clearField(7);
 
   /// The admin/buyer conversation about fulfilling this order -- oldest to newest, append-only (see
   /// `UpdateMarketSubscription`'s own doc: a new entry can only ever be appended after whatever's
   /// already here, never inserted/reordered/removed, and its `user_id` must match whoever's actually
   /// making the request -- the server stamps `created_at` itself).
-  @$pb.TagNumber(7)
-  $core.List<FulfillmentNote> get fulfillmentNotes => $_getList(6);
+  @$pb.TagNumber(8)
+  $core.List<FulfillmentNote> get fulfillmentNotes => $_getList(7);
 }
 
 /// One entry in a MarketSubscription's `fulfillment_notes` -- see that field's own doc. Immutable
@@ -2386,70 +2558,6 @@ class FulfillmentNote extends $pb.GeneratedMessage {
   void clearCreatedAt() => clearField(4);
   @$pb.TagNumber(4)
   $13.Timestamp ensureCreatedAt() => $_ensure(3);
-}
-
-/// `MarketProduct.details`/`MarketSubscription.details`' `PURCHASE_TYPE_PERMISSIONS_ACCESS`
-/// variant -- what a permissions-bundle product actually grants. Field-for-field identical to
-/// `PermissionsAccessPurchaseDetails` -- see that message's own doc for why it's still a distinct
-/// type (that distinction is exactly what lets `logic::market_fulfillment::terminate_entitlement`
-/// tell "what to claw back" apart from "what was originally billed").
-class PermissionsAccessSubscriptionDetails extends $pb.GeneratedMessage {
-  factory PermissionsAccessSubscriptionDetails({
-    $core.Iterable<$15.Permission>? permissions,
-  }) {
-    final $result = create();
-    if (permissions != null) {
-      $result.permissions.addAll(permissions);
-    }
-    return $result;
-  }
-  PermissionsAccessSubscriptionDetails._() : super();
-  factory PermissionsAccessSubscriptionDetails.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromBuffer(i, r);
-  factory PermissionsAccessSubscriptionDetails.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
-
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'PermissionsAccessSubscriptionDetails', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
-    ..pc<$15.Permission>(1, _omitFieldNames ? '' : 'permissions', $pb.PbFieldType.KE, valueOf: $15.Permission.valueOf, enumValues: $15.Permission.values, defaultEnumValue: $15.Permission.PERMISSION_UNKNOWN)
-    ..hasRequiredFields = false
-  ;
-
-  @$core.Deprecated(
-  'Using this can add significant overhead to your binary. '
-  'Use [GeneratedMessageGenericExtensions.deepCopy] instead. '
-  'Will be removed in next major version')
-  PermissionsAccessSubscriptionDetails clone() => PermissionsAccessSubscriptionDetails()..mergeFromMessage(this);
-  @$core.Deprecated(
-  'Using this can add significant overhead to your binary. '
-  'Use [GeneratedMessageGenericExtensions.rebuild] instead. '
-  'Will be removed in next major version')
-  PermissionsAccessSubscriptionDetails copyWith(void Function(PermissionsAccessSubscriptionDetails) updates) => super.copyWith((message) => updates(message as PermissionsAccessSubscriptionDetails)) as PermissionsAccessSubscriptionDetails;
-
-  $pb.BuilderInfo get info_ => _i;
-
-  @$core.pragma('dart2js:noInline')
-  static PermissionsAccessSubscriptionDetails create() => PermissionsAccessSubscriptionDetails._();
-  PermissionsAccessSubscriptionDetails createEmptyInstance() => create();
-  static $pb.PbList<PermissionsAccessSubscriptionDetails> createRepeated() => $pb.PbList<PermissionsAccessSubscriptionDetails>();
-  @$core.pragma('dart2js:noInline')
-  static PermissionsAccessSubscriptionDetails getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<PermissionsAccessSubscriptionDetails>(create);
-  static PermissionsAccessSubscriptionDetails? _defaultInstance;
-
-  /// Which `Permission`s this product/subscription grants the buyer -- see
-  /// `logic::market_fulfillment::fulfill_purchase`'s `PermissionsAccess` arm (union-added to the
-  /// buyer's own `User.permissions`, never replacing what they already had) and
-  /// `terminate_entitlement`'s own arm (the exact claw-back set on cancellation/expiry).
-  /// Intentionally excludes permissions dangerous or nonsensical to sell this way -- e.g.
-  /// "Grant Basic Permissions," any "Moderate"/"Read All System Messages" permission, "Admin,"
-  /// "View Private Contact Methods," and "Edit Cluster Settings" must never appear in a Market
-  /// product's own `permissions` list. Enforced server-side on `CreateMarketProduct`/
-  /// `UpdateMarketProduct` (rejected with `permission_not_purchasable`) and again on
-  /// `MakeMarketPurchase` (defense in depth, in case a permission is later removed from the
-  /// purchasable set after a product granting it already exists) -- see
-  /// `rpcs::market::create_market_product::PURCHASABLE_PERMISSIONS`. NOTE: that Rust list is an
-  /// explicit include-list, not an exclude-list -- described here as an exclusion for readability,
-  /// but implemented as "only these permissions are purchasable" so a newly-added `Permission` is
-  /// never purchasable by default; it has to be deliberately added to that list.
-  @$pb.TagNumber(1)
-  $core.List<$15.Permission> get permissions => $_getList(0);
 }
 
 

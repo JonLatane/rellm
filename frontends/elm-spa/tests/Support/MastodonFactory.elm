@@ -7,7 +7,7 @@ the result against `status` of the same overrides -- see `Federation.MastodonTes
 -}
 
 import Json.Encode as Encode
-import Shared.Federation.Mastodon exposing (Status)
+import Shared.Federation.Mastodon as Mastodon exposing (MediaAttachment, Status)
 import Time
 
 
@@ -16,7 +16,9 @@ import Time
 `defaultOverrides`' own doc for the reference value both start from. `displayName`/`avatar` are
 plain (non-`Maybe`) strings, matching Mastodon's real API shape (always present, `""` for "unset"
 rather than the key being absent or `null`) -- `status`/`statusJson` are what translate that into
-`Status`'s own `Maybe String` fields.
+`Status`'s own `Maybe String` fields. `mediaAttachments` is `Status`'s own `MediaAttachment` list
+directly, unlike those -- Mastodon's real `description`/`meta` shapes are already `Maybe`-friendly
+(see `mediaAttachmentJson`'s own doc), so there's no analogous "unset" convention to translate here.
 -}
 type alias Overrides =
     { id : String
@@ -28,6 +30,8 @@ type alias Overrides =
     , username : String
     , displayName : String
     , avatar : String
+    , mediaAttachments : List MediaAttachment
+    , sensitive : Bool
     }
 
 
@@ -46,6 +50,8 @@ defaultOverrides =
     , username = "alice"
     , displayName = "Alice Example"
     , avatar = "https://mastodon.social/avatars/alice.png"
+    , mediaAttachments = []
+    , sensitive = False
     }
 
 
@@ -59,6 +65,8 @@ status overrides =
     , authorUsername = overrides.username
     , authorDisplayName = nonEmpty overrides.displayName
     , authorAvatarUrl = nonEmpty overrides.avatar
+    , mediaAttachments = overrides.mediaAttachments
+    , sensitive = overrides.sensitive
     }
 
 
@@ -87,5 +95,36 @@ statusJson overrides =
                     , ( "avatar", Encode.string overrides.avatar )
                     ]
               )
+            , ( "media_attachments", Encode.list mediaAttachmentJson overrides.mediaAttachments )
+            , ( "sensitive", Encode.bool overrides.sensitive )
             ]
         )
+
+
+{-| A `MediaAttachment`'s real Mastodon JSON shape -- `description`, unlike `display_name`/`avatar`
+above, really is `null` (not `""`/absent) for "no alt text" on the live API, so this mirrors that
+directly rather than going through `nonEmpty`/`Encode.null`'s `Maybe.withDefault` trick those use.
+`meta.original.width`/`height` are similarly genuinely optional (omitted, not `0`, when Mastodon
+hasn't determined them) -- `List.filterMap identity` drops each one from the encoded object rather
+than encoding a placeholder.
+-}
+mediaAttachmentJson : MediaAttachment -> Encode.Value
+mediaAttachmentJson attachment =
+    Encode.object
+        [ ( "id", Encode.string attachment.id )
+        , ( "url", Encode.string attachment.url )
+        , ( "description", attachment.description |> Maybe.map Encode.string |> Maybe.withDefault Encode.null )
+        , ( "type", Encode.string attachment.mediaType )
+        , ( "meta"
+          , Encode.object
+                [ ( "original"
+                  , Encode.object
+                        (List.filterMap identity
+                            [ attachment.width |> Maybe.map (\w -> ( "width", Encode.int w ))
+                            , attachment.height |> Maybe.map (\h -> ( "height", Encode.int h ))
+                            ]
+                        )
+                  )
+                ]
+          )
+        ]
