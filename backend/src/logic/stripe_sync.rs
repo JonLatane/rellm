@@ -80,6 +80,32 @@ pub struct CreateCheckoutSessionParams {
     /// `web::stripe_webhook` to know what to fulfill (`rellm_user_id`/`product_id`/any
     /// `RellmHostingPurchaseDetails` fields).
     pub metadata: Vec<(String, String)>,
+    /// What shows up on the buyer's own bank/card statement for this charge, e.g. `"Rellm.org"` --
+    /// this server's own `ServerInfo.short_name`/`name` (see `rpcs::market::make_market_purchase`'s
+    /// own `server_short_name`), *not yet* sanitized to Stripe's `statement_descriptor` rules --
+    /// `create_checkout_session_at` does that itself (`sanitize_statement_descriptor`), same
+    /// division of labor as `CheckoutLineItem.product_name`/`stripe_product_name` (callers build a
+    /// human-readable string, this module owns Stripe's own format rules for it).
+    pub statement_descriptor: String,
+}
+
+/// Stripe's own `statement_descriptor` rules (https://stripe.com/docs/payments/account/statement-descriptors):
+/// at most 22 characters, and never containing `< > \ ' "`. Not exhaustive (Stripe enforces a few
+/// more rules server-side, e.g. requiring at least one letter) -- this is a best-effort local
+/// sanitizer so an obviously-invalid descriptor (too long, or carrying a character Stripe's own API
+/// would reject outright) doesn't need a round trip to find out; `create_checkout_session_at`'s own
+/// error surfacing (see that function's doc) still shows Stripe's real rejection reason if this
+/// sanitizer missed something. Falls back to `"Rellm"` if sanitizing leaves nothing at all (e.g. a
+/// server name made up entirely of disallowed characters).
+pub fn sanitize_statement_descriptor(raw: &str) -> String {
+    let cleaned: String = raw.chars().filter(|c| !matches!(c, '<' | '>' | '\\' | '\'' | '"')).collect();
+    let trimmed = cleaned.trim();
+    let truncated: String = trimmed.chars().take(22).collect();
+    if truncated.is_empty() {
+        "Rellm".to_string()
+    } else {
+        truncated
+    }
 }
 
 /// Creates a Stripe Checkout Session (`mode=payment`, `payment_intent_data[setup_future_usage]=off_session`
@@ -116,6 +142,10 @@ pub fn create_checkout_session_at(
         ),
         ("success_url".to_string(), params.success_url),
         ("cancel_url".to_string(), params.cancel_url),
+        (
+            "payment_intent_data[statement_descriptor]".to_string(),
+            sanitize_statement_descriptor(&params.statement_descriptor),
+        ),
     ];
     if let Some(customer) = params.customer {
         form.push(("customer".to_string(), customer));
@@ -158,55 +188,6 @@ pub fn create_checkout_session_at(
             log::error!("Stripe CreateCheckoutSession response missing url: {:?}", response_body);
             Status::new(Code::Internal, "stripe_checkout_session_missing_url")
         })
-}
-
-/// `ServerColors.primary`/`.navigation` (see `protos/server_configuration.proto`, `0xAARRGGBB`) ->
-/// Stripe's own Account branding, which is what actually colors the hosted Checkout page (Stripe
-/// has no per-Checkout-Session color parameter -- branding is an Account-level setting, applied to
-/// every Checkout Session/invoice/customer portal page that account's key ever creates). This is
-/// the classic (non-Connect) `POST /v1/account` "update your own account" call -- exactly the
-/// "you bring your own Stripe account" model `StripeConfig` already assumes, no Connect/`on_behalf_of`
-/// setup needed. Best-effort: `rpcs::market::make_market_purchase` logs and carries on rather than
-/// failing the purchase over a branding sync hiccup -- getting the buyer to Checkout at all matters
-/// far more than the exact accent color once they're there.
-pub fn update_account_branding_at(
-    base_url: &str,
-    secret_key: &str,
-    primary_color: Option<u32>,
-    navigation_color: Option<u32>,
-) -> Result<(), Status> {
-    let secret_key = secret_key.to_string();
-    let url = format!("{base_url}/v1/account");
-
-    let mut form: Vec<(String, String)> = vec![];
-    if let Some(color) = primary_color {
-        form.push(("settings[branding][primary_color]".to_string(), argb_to_hex_rgb(color)));
-    }
-    if let Some(color) = navigation_color {
-        form.push(("settings[branding][secondary_color]".to_string(), argb_to_hex_rgb(color)));
-    }
-    if form.is_empty() {
-        return Ok(());
-    }
-
-    let (status, response_body) = blocking_json_request(
-        move |client| client.post(url.clone()).bearer_auth(secret_key.clone()).form(&form),
-        "stripe_request_failed",
-    )?;
-    if !status.is_success() {
-        log::error!("Stripe UpdateAccount (branding) failed ({}): {:?}", status, response_body);
-        return Err(Status::new(Code::FailedPrecondition, "stripe_update_account_branding_failed"));
-    }
-    Ok(())
-}
-
-/// `0xAARRGGBB` -> `"#rrggbb"` (alpha dropped -- Stripe's branding colors have no alpha channel).
-/// `{:06x}`, not `web::robots_sitemap::manifest`'s `format!("{:x}", ...)[2..8]` -- that slice
-/// assumes the hex representation is always exactly 8 digits wide, which silently breaks (wrong
-/// slice, or an out-of-bounds panic) for any color whose top byte(s) happen to be zero;
-/// zero-padding via `{:06x}` on the alpha-masked value is correct regardless.
-fn argb_to_hex_rgb(argb: u32) -> String {
-    format!("#{:06x}", argb & 0x00FF_FFFF)
 }
 
 /// Looks up the `payment_method` id Stripe actually attached to a completed PaymentIntent --
@@ -370,15 +351,26 @@ mod tests {
     use super::*;
 
     #[test]
-    fn argb_to_hex_rgb_drops_the_alpha_channel() {
-        assert_eq!(argb_to_hex_rgb(0xFF556CD6), "#556cd6");
+    fn sanitize_statement_descriptor_passes_a_short_clean_name_through_unchanged() {
+        assert_eq!(sanitize_statement_descriptor("Rellm.org"), "Rellm.org");
     }
 
     #[test]
-    fn argb_to_hex_rgb_zero_pads_a_color_with_a_leading_zero_byte() {
-        // A color whose red byte is 0 -- `format!("{:x}", ...)` alone would produce fewer than 6
-        // hex digits here, which is exactly the `robots_sitemap::manifest` slicing bug this
-        // function's own doc calls out.
-        assert_eq!(argb_to_hex_rgb(0xFF002A6D), "#002a6d");
+    fn sanitize_statement_descriptor_truncates_to_22_characters() {
+        assert_eq!(
+            sanitize_statement_descriptor("A Very Long Community Name Indeed"),
+            "A Very Long Community "
+        );
+    }
+
+    #[test]
+    fn sanitize_statement_descriptor_strips_disallowed_characters() {
+        assert_eq!(sanitize_statement_descriptor("Jon's <Rellm> \"Server\""), "Jons Rellm Server");
+    }
+
+    #[test]
+    fn sanitize_statement_descriptor_falls_back_to_rellm_when_nothing_survives() {
+        assert_eq!(sanitize_statement_descriptor("<<<>>>"), "Rellm");
+        assert_eq!(sanitize_statement_descriptor("   "), "Rellm");
     }
 }

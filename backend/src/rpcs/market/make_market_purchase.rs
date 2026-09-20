@@ -130,24 +130,6 @@ pub fn make_market_purchase(
             .map(|v| v.trim_start_matches("mailto:").to_string())
     }).flatten();
 
-    // Best-effort: Stripe has no per-Checkout-Session color parameter, only an Account-level
-    // branding setting (see `stripe_sync::update_account_branding_at`'s own doc) -- synced here,
-    // right before creating this checkout, so a buyer's checkout page reflects this server's
-    // *current* theme even if it's changed since the last purchase. A failure here logs and falls
-    // through rather than blocking the purchase -- getting the buyer to Checkout at all matters
-    // far more than the exact accent color once they're there.
-    let colors = server_configuration.server_info.as_ref().and_then(|i| i.colors.as_ref());
-    if let Some(colors) = colors {
-        if let Err(e) = stripe_sync::update_account_branding_at(
-            stripe_sync::DEFAULT_BASE_URL,
-            &stripe_config.stripe_secret_key,
-            colors.primary,
-            colors.navigation,
-        ) {
-            log::warn!("Failed to sync Stripe account branding before checkout: {:?}", e);
-        }
-    }
-
     let checkout_url = stripe_sync::create_checkout_session_at(
         stripe_sync::DEFAULT_BASE_URL,
         &stripe_config.stripe_secret_key,
@@ -165,6 +147,7 @@ pub fn make_market_purchase(
             success_url,
             cancel_url,
             metadata,
+            statement_descriptor: server_short_name.clone(),
         },
     )?;
 
