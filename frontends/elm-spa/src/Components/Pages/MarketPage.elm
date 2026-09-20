@@ -835,7 +835,7 @@ view shared embeddedPage model =
             model.host == shared.accounts.browsingHost
     in
     div [ class "market-page" ]
-        (headerRowView embeddedPage isPrimary model.host isAdmin
+        (headerRowView embeddedPage isPrimary shared.accounts.servers model.host isAdmin
             :: (if isAdmin then
                     [ addProductPanelView model.aiProviders model.addForm ]
 
@@ -875,12 +875,15 @@ manages *their own* server's Rellm Hosting orders here, not some other federated
 gated on `isPrimary` too, unlike the "+ New Product" button.
 
 A non-primary instance (another server's Market, shown alongside the browsed server's own -- see
-module doc) always gets a heading, even while `embeddedPage`, naming which server it's for ("Market
-on other-server.com") -- there's no ambiguity to resolve for the primary instance, but stacking two
-bare "Market" headings would be.
+module doc) always gets a heading, even while `embeddedPage`, naming which server it's for -- via
+`RellmServers.rellmServerNameAndLogo` (the same glyph+name treatment
+`Shared.Breadcrumbs.serverOverviewView` uses for its own server chip) when `host` is already a
+known `RellmServer`, falling back to plain "Market on <host>" text otherwise (e.g. still being
+resolved) -- there's no ambiguity to resolve for the primary instance, but stacking two bare
+"Market" headings would be.
 -}
-headerRowView : Bool -> Bool -> String -> Bool -> Html Msg
-headerRowView embeddedPage isPrimary host isAdmin =
+headerRowView : Bool -> Bool -> List RellmServers.RellmServer -> String -> Bool -> Html Msg
+headerRowView embeddedPage isPrimary servers host isAdmin =
     div [ class "market-header-row" ]
         [ if embeddedPage && isPrimary then
             text ""
@@ -889,7 +892,13 @@ headerRowView embeddedPage isPrimary host isAdmin =
             h1 [] [ text "Market" ]
 
           else
-            h1 [] [ text ("Market on " ++ host) ]
+            case RellmServers.rellmServerForHost servers host of
+                Just server ->
+                    div [ class "market-header-row-server" ]
+                        [ RellmServers.rellmServerNameAndLogo server RellmServers.HorizontalServerLogo ]
+
+                Nothing ->
+                    h1 [] [ text ("Market on " ++ host) ]
         , if isAdmin then
             div [ class "market-header-row-admin-actions" ]
                 ((if isPrimary then

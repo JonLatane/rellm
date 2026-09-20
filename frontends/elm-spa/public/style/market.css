@@ -33,6 +33,16 @@
   margin: 0;
 }
 
+/* A non-primary instance's heading (`MarketPage.headerRowView`) -- `RellmServers.rellmServerNameAndLogo`
+   in place of a bare "Market on <host>" `h1`, same "flex: 1 1 auto; min-width: 0" treatment
+   `.breadcrumb-server-overview-header .server-name-and-logo` (nav.css) gives it in its own
+   space-between row, so the server name can still ellipsis/wrap sanely next to the admin actions
+   on the other side of this row. */
+.market-header-row-server {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .market-header-row-admin-actions {
   display: flex;
   align-items: center;

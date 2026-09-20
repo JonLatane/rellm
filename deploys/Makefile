@@ -5,8 +5,12 @@
 # NAMESPACE is intentionally NOT given a default (mirroring the NAMESPACE/DOMAIN-not-defaulted
 # convention in ingress/Makefile and email/Makefile) -- nearly every target here acts on a specific
 # namespace, and silently defaulting to "rellm" risks operating on the wrong cluster/namespace.
+# copy_server_configuration is the one exception -- it takes SOURCE/TARGET namespaces of its own
+# (see that target's own doc below), not a single NAMESPACE, so it's carved out of this guard.
 ifndef NAMESPACE
+ifeq ($(filter copy_server_configuration,$(MAKECMDGOALS)),)
 $(error NAMESPACE is required, e.g. NAMESPACE=rellm make create_external_backend)
+endif
 endif
 
 # Selects which provider-specific k8s/*-$(K8S_PROVIDER).yaml manifests to use for the
@@ -372,3 +376,13 @@ certs_gen_test:
 	$(MAKE) -C generated_certs certs_gen_test
 certs_gen_test_pass_openssl_verify:
 	$(MAKE) -C generated_certs certs_gen_test_pass_openssl_verify
+
+# Copies one server_configurations column (e.g. stripe_config, twilio_config) from SOURCE's
+# active row to TARGET's -- see copy_server_configuration.sh's own doc for exactly how (clones
+# TARGET's active row with the new value, retires the old one, all in a transaction, same
+# pattern ConfigureServer itself uses). SOURCE/TARGET/COLUMN, not NAMESPACE -- this is the one
+# target in this Makefile that acts on two namespaces at once (see the NAMESPACE guard above).
+#
+#   make copy_server_configuration SOURCE=rellm-org TARGET=jonline COLUMN=stripe_config
+copy_server_configuration:
+	./copy_server_configuration.sh --source $(SOURCE) --destination $(TARGET) --column $(COLUMN)
