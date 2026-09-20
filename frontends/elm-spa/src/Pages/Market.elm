@@ -118,21 +118,46 @@ update shared msg model =
             -- Fanned out to every instance (rather than just one, like `InstanceMsg` above) --
             -- a reconnect/account change can affect any (or all) of them, e.g. retrying a
             -- still-pending fetch (see `MarketPage.attemptFetches`) once a server actually connects.
+            --
+            -- Also re-derives `marketEnabledHosts` on every `SharedMsg` (not just at `init`) and
+            -- reconciles `model.instances` against it -- landing on `/market` directly on a cold
+            -- app load races `Shared.AccountsPanel.init`'s own reconnect (see
+            -- `RellmServers.knownConnectedRellmServer`'s doc: every persisted server starts
+            -- `connected = Nothing`), so at `init` time a still-reconnecting server's
+            -- `RellmServers.configurationOf` falls back to `defaultServerConfiguration`
+            -- (`marketSettings = Nothing` -> `marketEnabled` reads `False`), silently excluding it
+            -- from `instances` forever if nothing here ever looked again -- `init` only runs once.
+            -- Navigating to `/market` from elsewhere doesn't hit this (`shared.accounts.servers` is
+            -- usually already settled by the time you get there), which is why it only ever showed
+            -- up as a cold-load bug.
             let
-                updated : List ( ( String, MarketPage.Model ), Effect Msg )
-                updated =
-                    model.instances
+                desiredHosts : List String
+                desiredHosts =
+                    marketEnabledHosts shared
+
+                reconciled : List ( ( String, MarketPage.Model ), Effect Msg )
+                reconciled =
+                    desiredHosts
                         |> List.map
-                            (\( host, instanceModel ) ->
-                                let
-                                    ( updatedInstance, instanceEffect ) =
-                                        MarketPage.update shared (MarketPage.fromShared subMsg) instanceModel
-                                in
-                                ( ( host, updatedInstance ), Effect.map (InstanceMsg host) instanceEffect )
+                            (\host ->
+                                case findInstance host model.instances of
+                                    Just instanceModel ->
+                                        let
+                                            ( updatedInstance, instanceEffect ) =
+                                                MarketPage.update shared (MarketPage.fromShared subMsg) instanceModel
+                                        in
+                                        ( ( host, updatedInstance ), Effect.map (InstanceMsg host) instanceEffect )
+
+                                    Nothing ->
+                                        let
+                                            ( instanceModel, instanceEffect ) =
+                                                MarketPage.init shared host
+                                        in
+                                        ( ( host, instanceModel ), Effect.map (InstanceMsg host) instanceEffect )
                             )
             in
-            ( { model | instances = List.map Tuple.first updated }
-            , Effect.batch (List.map Tuple.second updated)
+            ( { model | instances = List.map Tuple.first reconciled }
+            , Effect.batch (List.map Tuple.second reconciled)
             )
 
 
