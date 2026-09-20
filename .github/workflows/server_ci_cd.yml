@@ -129,9 +129,9 @@ jobs:
         id: vars
         run: |-
           echo "be_version=$(cat backend/Cargo.toml | grep 'version =' | sed -n 1p | awk '{print $3;}' | sed 's/"//g')" >> $GITHUB_OUTPUT
-          echo "sha_short=$(git rev-parse --short=7 HEAD)" >> $GITHUB_OUTPUT
-      - name: Store Versioning Data for release ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
-        run: echo ${{ steps.vars.outputs.sha_short }} > deploys/docker/continuous_delivery_hash
+          echo "dated_sha_short=$(TZ=UTC0 git show -s --format=%cd --date=format-local:%Y%m%d%H%M%S HEAD)-$(git rev-parse --short=7 HEAD)" >> $GITHUB_OUTPUT
+      - name: Store Versioning Data for release ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
+        run: echo ${{ steps.vars.outputs.dated_sha_short }} > deploys/docker/continuous_delivery_hash
 
       # frontends/flutter is frozen and pinned via FVM (see frontends/flutter/.fvmrc
       # and frontends/flutter/README.md) rather than tracking the `stable` channel,
@@ -157,7 +157,7 @@ jobs:
         id: flutter-app-cache
         with:
           path: frontends/flutter/build/web
-          key: flutter-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
+          key: flutter-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
 
   build_tamagui_ui:
     name: Build Tamagui Web UI
@@ -170,9 +170,9 @@ jobs:
         id: vars
         run: |-
           echo "be_version=$(cat backend/Cargo.toml | grep 'version =' | sed -n 1p | awk '{print $3;}' | sed 's/"//g')" >> $GITHUB_OUTPUT
-          echo "sha_short=$(git rev-parse --short=7 HEAD)" >> $GITHUB_OUTPUT
-      - name: Store Versioning Data for release ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
-        run: echo ${{ steps.vars.outputs.sha_short }} > deploys/docker/continuous_delivery_hash
+          echo "dated_sha_short=$(TZ=UTC0 git show -s --format=%cd --date=format-local:%Y%m%d%H%M%S HEAD)-$(git rev-parse --short=7 HEAD)" >> $GITHUB_OUTPUT
+      - name: Store Versioning Data for release ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
+        run: echo ${{ steps.vars.outputs.dated_sha_short }} > deploys/docker/continuous_delivery_hash
 
       - name: Cache Tamagui web build output
         uses: actions/cache@v6
@@ -225,7 +225,7 @@ jobs:
           path: |
             frontends/tamagui/apps/next/out
             frontends/tamagui/apps/next/out-tamagui
-          key: web-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
+          key: web-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
 
   build_elm_ui:
     name: Test & Build Elm SPA Web UI
@@ -238,9 +238,9 @@ jobs:
         id: vars
         run: |-
           echo "be_version=$(cat backend/Cargo.toml | grep 'version =' | sed -n 1p | awk '{print $3;}' | sed 's/"//g')" >> $GITHUB_OUTPUT
-          echo "sha_short=$(git rev-parse --short=7 HEAD)" >> $GITHUB_OUTPUT
-      - name: Store Versioning Data for release ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
-        run: echo ${{ steps.vars.outputs.sha_short }} > deploys/docker/continuous_delivery_hash
+          echo "dated_sha_short=$(TZ=UTC0 git show -s --format=%cd --date=format-local:%Y%m%d%H%M%S HEAD)-$(git rev-parse --short=7 HEAD)" >> $GITHUB_OUTPUT
+      - name: Store Versioning Data for release ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
+        run: echo ${{ steps.vars.outputs.dated_sha_short }} > deploys/docker/continuous_delivery_hash
 
       - uses: actions/setup-node@v7
         with:
@@ -266,7 +266,7 @@ jobs:
         id: elm-app-cache
         with:
           path: frontends/elm-spa/public
-          key: elm-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
+          key: elm-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
 
   build_rust_binaries:
     name: Build Rust Binaries
@@ -281,9 +281,9 @@ jobs:
         id: vars
         run: |-
           echo "be_version=$(cat backend/Cargo.toml | grep 'version =' | sed -n 1p | awk '{print $3;}' | sed 's/"//g')" >> $GITHUB_OUTPUT
-          echo "sha_short=$(git rev-parse --short=7 HEAD)" >> $GITHUB_OUTPUT
-      - name: Store Versioning Data for release ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
-        run: echo ${{ steps.vars.outputs.sha_short }} > deploys/docker/continuous_delivery_hash
+          echo "dated_sha_short=$(TZ=UTC0 git show -s --format=%cd --date=format-local:%Y%m%d%H%M%S HEAD)-$(git rev-parse --short=7 HEAD)" >> $GITHUB_OUTPUT
+      - name: Store Versioning Data for release ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
+        run: echo ${{ steps.vars.outputs.dated_sha_short }} > deploys/docker/continuous_delivery_hash
       - uses: dtolnay/rust-toolchain@stable
       - name: Install protoc
         run: |
@@ -308,7 +308,7 @@ jobs:
         id: rust-app-cache
         with:
           path: backend/target/release
-          key: rust-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
+          key: rust-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
 
   build_rust_binaries_macos:
     name: Build Rust Binaries (macOS arm64)
@@ -323,9 +323,9 @@ jobs:
         id: vars
         run: |-
           echo "be_version=$(cat backend/Cargo.toml | grep 'version =' | sed -n 1p | awk '{print $3;}' | sed 's/"//g')" >> $GITHUB_OUTPUT
-          echo "sha_short=$(git rev-parse --short=7 HEAD)" >> $GITHUB_OUTPUT
-      - name: Store Versioning Data for release ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
-        run: echo ${{ steps.vars.outputs.sha_short }} > deploys/docker/continuous_delivery_hash
+          echo "dated_sha_short=$(TZ=UTC0 git show -s --format=%cd --date=format-local:%Y%m%d%H%M%S HEAD)-$(git rev-parse --short=7 HEAD)" >> $GITHUB_OUTPUT
+      - name: Store Versioning Data for release ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
+        run: echo ${{ steps.vars.outputs.dated_sha_short }} > deploys/docker/continuous_delivery_hash
 
       - uses: dtolnay/rust-toolchain@stable
       - name: Install protoc
@@ -359,7 +359,7 @@ jobs:
         id: rust-macos-app-cache
         with:
           path: backend/target/release
-          key: rust-macos-arm64-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
+          key: rust-macos-arm64-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
 
   build_rust_binaries_linux_amd64_static:
     name: Build Rust Binaries (Linux amd64, static libpq)
@@ -374,9 +374,9 @@ jobs:
         id: vars
         run: |-
           echo "be_version=$(cat backend/Cargo.toml | grep 'version =' | sed -n 1p | awk '{print $3;}' | sed 's/"//g')" >> $GITHUB_OUTPUT
-          echo "sha_short=$(git rev-parse --short=7 HEAD)" >> $GITHUB_OUTPUT
-      - name: Store Versioning Data for release ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
-        run: echo ${{ steps.vars.outputs.sha_short }} > deploys/docker/continuous_delivery_hash
+          echo "dated_sha_short=$(TZ=UTC0 git show -s --format=%cd --date=format-local:%Y%m%d%H%M%S HEAD)-$(git rev-parse --short=7 HEAD)" >> $GITHUB_OUTPUT
+      - name: Store Versioning Data for release ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
+        run: echo ${{ steps.vars.outputs.dated_sha_short }} > deploys/docker/continuous_delivery_hash
 
       - uses: dtolnay/rust-toolchain@stable
       - name: Install protoc
@@ -407,7 +407,7 @@ jobs:
         id: rust-linux-amd64-static-app-cache
         with:
           path: backend/target/release
-          key: rust-linux-amd64-static-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
+          key: rust-linux-amd64-static-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
 
   build_rust_binaries_linux_arm64_static:
     name: Build Rust Binaries (Linux arm64, static libpq)
@@ -422,9 +422,9 @@ jobs:
         id: vars
         run: |-
           echo "be_version=$(cat backend/Cargo.toml | grep 'version =' | sed -n 1p | awk '{print $3;}' | sed 's/"//g')" >> $GITHUB_OUTPUT
-          echo "sha_short=$(git rev-parse --short=7 HEAD)" >> $GITHUB_OUTPUT
-      - name: Store Versioning Data for release ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
-        run: echo ${{ steps.vars.outputs.sha_short }} > deploys/docker/continuous_delivery_hash
+          echo "dated_sha_short=$(TZ=UTC0 git show -s --format=%cd --date=format-local:%Y%m%d%H%M%S HEAD)-$(git rev-parse --short=7 HEAD)" >> $GITHUB_OUTPUT
+      - name: Store Versioning Data for release ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
+        run: echo ${{ steps.vars.outputs.dated_sha_short }} > deploys/docker/continuous_delivery_hash
 
       - uses: dtolnay/rust-toolchain@stable
       - name: Install protoc
@@ -450,7 +450,7 @@ jobs:
         id: rust-linux-arm64-static-app-cache
         with:
           path: backend/target/release
-          key: rust-linux-arm64-static-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
+          key: rust-linux-arm64-static-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
 
   test_rust_binaries:
     name: Test Rust Binaries
@@ -625,32 +625,32 @@ jobs:
         id: vars
         run: |-
           echo "be_version=$(cat backend/Cargo.toml | grep 'version =' | sed -n 1p | awk '{print $3;}' | sed 's/"//g')" >> $GITHUB_OUTPUT
-          echo "sha_short=$(git rev-parse --short=7 HEAD)" >> $GITHUB_OUTPUT
-      - name: Store Versioning Data for release ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
-        run: echo ${{ steps.vars.outputs.sha_short }} > deploys/docker/continuous_delivery_hash
+          echo "dated_sha_short=$(TZ=UTC0 git show -s --format=%cd --date=format-local:%Y%m%d%H%M%S HEAD)-$(git rev-parse --short=7 HEAD)" >> $GITHUB_OUTPUT
+      - name: Store Versioning Data for release ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
+        run: echo ${{ steps.vars.outputs.dated_sha_short }} > deploys/docker/continuous_delivery_hash
 
       - uses: actions/cache/restore@v6
         id: flutter-app-cache
         with:
           path: frontends/flutter/build/web
-          key: flutter-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
+          key: flutter-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
       - uses: actions/cache/restore@v6
         id: web-app-cache
         with:
           path: |
             frontends/tamagui/apps/next/out
             frontends/tamagui/apps/next/out-tamagui
-          key: web-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
+          key: web-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
       - uses: actions/cache/restore@v6
         id: elm-app-cache
         with:
           path: frontends/elm-spa/public
-          key: elm-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
+          key: elm-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
       - uses: actions/cache/restore@v6
         id: rust-app-cache
         with:
           path: backend/target/release
-          key: rust-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
+          key: rust-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
 
       - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v4
@@ -682,7 +682,7 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/rellm:${{ steps.vars.outputs.be_version }},${{ secrets.DOCKERHUB_USERNAME }}/rellm:${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/rellm:${{ steps.vars.outputs.be_version }},${{ secrets.DOCKERHUB_USERNAME }}/rellm:${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
           context: .
           file: ./deploys/docker/server/Dockerfile
           platforms: linux/amd64,linux/arm64
@@ -702,15 +702,15 @@ jobs:
         id: vars
         run: |-
           echo "be_version=$(cat backend/Cargo.toml | grep 'version =' | sed -n 1p | awk '{print $3;}' | sed 's/"//g')" >> $GITHUB_OUTPUT
-          echo "sha_short=$(git rev-parse --short=7 HEAD)" >> $GITHUB_OUTPUT
-      - name: Store Versioning Data for release ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
-        run: echo ${{ steps.vars.outputs.sha_short }} > deploys/docker/continuous_delivery_hash
+          echo "dated_sha_short=$(TZ=UTC0 git show -s --format=%cd --date=format-local:%Y%m%d%H%M%S HEAD)-$(git rev-parse --short=7 HEAD)" >> $GITHUB_OUTPUT
+      - name: Store Versioning Data for release ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
+        run: echo ${{ steps.vars.outputs.dated_sha_short }} > deploys/docker/continuous_delivery_hash
 
       - uses: actions/cache/restore@v6
         id: rust-app-cache
         with:
           path: backend/target/release
-          key: rust-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
+          key: rust-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
 
       - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v4
@@ -732,7 +732,7 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/rellm_preview_generator:${{ steps.vars.outputs.be_version }},${{ secrets.DOCKERHUB_USERNAME }}/rellm_preview_generator:${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/rellm_preview_generator:${{ steps.vars.outputs.be_version }},${{ secrets.DOCKERHUB_USERNAME }}/rellm_preview_generator:${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
           context: .
           file: ./deploys/docker/preview_generator/Dockerfile
           platforms: linux/amd64,linux/arm64
@@ -754,14 +754,14 @@ jobs:
         id: vars
         run: |-
           echo "be_version=$(cat backend/Cargo.toml | grep 'version =' | sed -n 1p | awk '{print $3;}' | sed 's/"//g')" >> $GITHUB_OUTPUT
-          echo "sha_short=$(git rev-parse --short=7 HEAD)" >> $GITHUB_OUTPUT
+          echo "dated_sha_short=$(TZ=UTC0 git show -s --format=%cd --date=format-local:%Y%m%d%H%M%S HEAD)-$(git rev-parse --short=7 HEAD)" >> $GITHUB_OUTPUT
 
       - uses: digitalocean/action-doctl@v2
         with:
           token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
 
-      - name: Update deploys/k8s/server_internal.yaml to use ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
-        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}|g' deploys/k8s/server_internal.yaml
+      - name: Update deploys/k8s/server_internal.yaml to use ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
+        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}|g' deploys/k8s/server_internal.yaml
 
       - name: Save DigitalOcean kubeconfig with short-lived credentials
         run: doctl kubernetes cluster kubeconfig save --expiry-seconds 600 rellm-be
@@ -794,17 +794,17 @@ jobs:
       - uses: actions/cache/restore@v6
         with:
           path: frontends/flutter/build/web
-          key: flutter-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
+          key: flutter-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
       - uses: actions/cache/restore@v6
         with:
           path: |
             frontends/tamagui/apps/next/out
             frontends/tamagui/apps/next/out-tamagui
-          key: web-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
+          key: web-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
       - uses: actions/cache/restore@v6
         with:
           path: frontends/elm-spa/public
-          key: elm-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
+          key: elm-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
 
       - name: Purge Cloudflare cache
         env:
@@ -827,14 +827,14 @@ jobs:
         id: vars
         run: |-
           echo "be_version=$(cat backend/Cargo.toml | grep 'version =' | sed -n 1p | awk '{print $3;}' | sed 's/"//g')" >> $GITHUB_OUTPUT
-          echo "sha_short=$(git rev-parse --short=7 HEAD)" >> $GITHUB_OUTPUT
+          echo "dated_sha_short=$(TZ=UTC0 git show -s --format=%cd --date=format-local:%Y%m%d%H%M%S HEAD)-$(git rev-parse --short=7 HEAD)" >> $GITHUB_OUTPUT
 
       - uses: digitalocean/action-doctl@v2
         with:
           token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
 
-      - name: Update deploys/k8s/preview_generator.yaml to use ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
-        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}|g' deploys/k8s/preview_generator.yaml
+      - name: Update deploys/k8s/preview_generator.yaml to use ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
+        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}|g' deploys/k8s/preview_generator.yaml
 
       - name: Save DigitalOcean kubeconfig with short-lived credentials
         run: doctl kubernetes cluster kubeconfig save --expiry-seconds 600 rellm-be
@@ -865,13 +865,13 @@ jobs:
         id: vars
         run: |-
           be_version="$(cat backend/Cargo.toml | grep 'version =' | sed -n 1p | awk '{print $3;}' | sed 's/\"//g')"
-          sha_short="$(git rev-parse --short=7 HEAD)"
+          dated_sha_short="$(TZ=UTC0 git show -s --format=%cd --date=format-local:%Y%m%d%H%M%S HEAD)-$(git rev-parse --short=7 HEAD)"
           echo "be_version=${be_version}" >> $GITHUB_OUTPUT
-          echo "sha_short=${sha_short}" >> $GITHUB_OUTPUT
-          echo "full_version=${be_version}-${sha_short}" >> $GITHUB_OUTPUT
+          echo "dated_sha_short=${dated_sha_short}" >> $GITHUB_OUTPUT
+          echo "full_version=${be_version}-${dated_sha_short}" >> $GITHUB_OUTPUT
 
       - name: Store Versioning Data for release ${{ steps.vars.outputs.full_version }}
-        run: echo ${{ steps.vars.outputs.sha_short }} > deploys/docker/continuous_delivery_hash
+        run: echo ${{ steps.vars.outputs.dated_sha_short }} > deploys/docker/continuous_delivery_hash
 
       - name: Push tag v${{ steps.vars.outputs.full_version }}
         uses: mathieudutour/github-tag-action@v6.2
@@ -978,12 +978,12 @@ jobs:
         id: vars
         run: |-
           be_version="$(cat backend/Cargo.toml | grep 'version =' | sed -n 1p | awk '{print $3;}' | sed 's/"//g')"
-          sha_short="$(git rev-parse --short=7 HEAD)"
+          dated_sha_short="$(TZ=UTC0 git show -s --format=%cd --date=format-local:%Y%m%d%H%M%S HEAD)-$(git rev-parse --short=7 HEAD)"
           echo "be_version=${be_version}" >> $GITHUB_OUTPUT
-          echo "sha_short=${sha_short}" >> $GITHUB_OUTPUT
-          echo "full_version=${be_version}-${sha_short}" >> $GITHUB_OUTPUT
+          echo "dated_sha_short=${dated_sha_short}" >> $GITHUB_OUTPUT
+          echo "full_version=${be_version}-${dated_sha_short}" >> $GITHUB_OUTPUT
       - name: Store Versioning Data for release ${{ steps.vars.outputs.full_version }}
-        run: echo ${{ steps.vars.outputs.sha_short }} > deploys/docker/continuous_delivery_hash
+        run: echo ${{ steps.vars.outputs.dated_sha_short }} > deploys/docker/continuous_delivery_hash
 
       - uses: actions/cache/restore@v6
         id: web-app-cache
@@ -991,22 +991,22 @@ jobs:
           path: |
             frontends/tamagui/apps/next/out
             frontends/tamagui/apps/next/out-tamagui
-          key: web-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
+          key: web-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
       - uses: actions/cache/restore@v6
         id: elm-app-cache
         with:
           path: frontends/elm-spa/public
-          key: elm-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
+          key: elm-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
       - uses: actions/cache/restore@v6
         id: flutter-app-cache
         with:
           path: frontends/flutter/build/web
-          key: flutter-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
+          key: flutter-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
       - uses: actions/cache/restore@v6
         id: rust-macos-app-cache
         with:
           path: backend/target/release
-          key: rust-macos-arm64-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
+          key: rust-macos-arm64-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
 
       # Mirrors deploys/docker/server/Dockerfile's /opt layout, but rooted at a
       # staging dir that becomes /opt/homebrew/etc/rellm on the installed Mac.
@@ -1150,12 +1150,12 @@ jobs:
         id: vars
         run: |-
           be_version="$(cat backend/Cargo.toml | grep 'version =' | sed -n 1p | awk '{print $3;}' | sed 's/"//g')"
-          sha_short="$(git rev-parse --short=7 HEAD)"
+          dated_sha_short="$(TZ=UTC0 git show -s --format=%cd --date=format-local:%Y%m%d%H%M%S HEAD)-$(git rev-parse --short=7 HEAD)"
           echo "be_version=${be_version}" >> $GITHUB_OUTPUT
-          echo "sha_short=${sha_short}" >> $GITHUB_OUTPUT
-          echo "full_version=${be_version}-${sha_short}" >> $GITHUB_OUTPUT
+          echo "dated_sha_short=${dated_sha_short}" >> $GITHUB_OUTPUT
+          echo "full_version=${be_version}-${dated_sha_short}" >> $GITHUB_OUTPUT
       - name: Store Versioning Data for release ${{ steps.vars.outputs.full_version }}
-        run: echo ${{ steps.vars.outputs.sha_short }} > deploys/docker/continuous_delivery_hash
+        run: echo ${{ steps.vars.outputs.dated_sha_short }} > deploys/docker/continuous_delivery_hash
 
       - uses: actions/cache/restore@v6
         id: web-app-cache
@@ -1163,17 +1163,17 @@ jobs:
           path: |
             frontends/tamagui/apps/next/out
             frontends/tamagui/apps/next/out-tamagui
-          key: web-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
+          key: web-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
       - uses: actions/cache/restore@v6
         id: elm-app-cache
         with:
           path: frontends/elm-spa/public
-          key: elm-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
+          key: elm-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
       - uses: actions/cache/restore@v6
         id: flutter-app-cache
         with:
           path: frontends/flutter/build/web
-          key: flutter-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
+          key: flutter-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
 
       # Both cached builds were saved from the same "backend/target/release"
       # path, so they're restored one at a time and moved aside immediately --
@@ -1183,14 +1183,14 @@ jobs:
         id: rust-linux-amd64-static-app-cache
         with:
           path: backend/target/release
-          key: rust-linux-amd64-static-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
+          key: rust-linux-amd64-static-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
       - run: mv backend/target/release backend/target/release-amd64
 
       - uses: actions/cache/restore@v6
         id: rust-linux-arm64-static-app-cache
         with:
           path: backend/target/release
-          key: rust-linux-arm64-static-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
+          key: rust-linux-arm64-static-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
       - run: mv backend/target/release backend/target/release-arm64
 
       # Mirrors deploys/docker/server/Dockerfile's /opt layout (and the
@@ -1284,17 +1284,17 @@ jobs:
         id: vars
         run: |-
           echo "be_version=$(cat backend/Cargo.toml | grep 'version =' | sed -n 1p | awk '{print $3;}' | sed 's/"//g')" >> $GITHUB_OUTPUT
-          echo "sha_short=$(git rev-parse --short=7 HEAD)" >> $GITHUB_OUTPUT
+          echo "dated_sha_short=$(TZ=UTC0 git show -s --format=%cd --date=format-local:%Y%m%d%H%M%S HEAD)-$(git rev-parse --short=7 HEAD)" >> $GITHUB_OUTPUT
 
       - uses: digitalocean/action-doctl@v2
         with:
           token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
 
-      - name: Update deploys/k8s/server_internal.yaml to use ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
-        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}|g' deploys/k8s/server_internal.yaml
+      - name: Update deploys/k8s/server_internal.yaml to use ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
+        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}|g' deploys/k8s/server_internal.yaml
 
-      - name: Update deploys/k8s/preview_generator.yaml to use ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
-        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}|g' deploys/k8s/preview_generator.yaml
+      - name: Update deploys/k8s/preview_generator.yaml to use ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
+        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}|g' deploys/k8s/preview_generator.yaml
 
       - name: Save DigitalOcean kubeconfig with short-lived credentials
         run: doctl kubernetes cluster kubeconfig save --expiry-seconds 600 rellm-be
@@ -1314,17 +1314,17 @@ jobs:
       - uses: actions/cache/restore@v6
         with:
           path: frontends/flutter/build/web
-          key: flutter-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
+          key: flutter-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
       - uses: actions/cache/restore@v6
         with:
           path: |
             frontends/tamagui/apps/next/out
             frontends/tamagui/apps/next/out-tamagui
-          key: web-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
+          key: web-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
       - uses: actions/cache/restore@v6
         with:
           path: frontends/elm-spa/public
-          key: elm-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
+          key: elm-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
 
       - name: Purge Cloudflare cache
         env:
@@ -1345,17 +1345,17 @@ jobs:
         id: vars
         run: |-
           echo "be_version=$(cat backend/Cargo.toml | grep 'version =' | sed -n 1p | awk '{print $3;}' | sed 's/"//g')" >> $GITHUB_OUTPUT
-          echo "sha_short=$(git rev-parse --short=7 HEAD)" >> $GITHUB_OUTPUT
+          echo "dated_sha_short=$(TZ=UTC0 git show -s --format=%cd --date=format-local:%Y%m%d%H%M%S HEAD)-$(git rev-parse --short=7 HEAD)" >> $GITHUB_OUTPUT
 
       - uses: digitalocean/action-doctl@v2
         with:
           token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
 
-      - name: Update deploys/k8s/server_internal.yaml to use ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
-        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}|g' deploys/k8s/server_internal.yaml
+      - name: Update deploys/k8s/server_internal.yaml to use ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
+        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}|g' deploys/k8s/server_internal.yaml
 
-      - name: Update deploys/k8s/preview_generator.yaml to use ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
-        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}|g' deploys/k8s/preview_generator.yaml
+      - name: Update deploys/k8s/preview_generator.yaml to use ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
+        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}|g' deploys/k8s/preview_generator.yaml
 
       - name: Save DigitalOcean kubeconfig with short-lived credentials
         run: doctl kubernetes cluster kubeconfig save --expiry-seconds 600 rellm-be
@@ -1375,17 +1375,17 @@ jobs:
       - uses: actions/cache/restore@v6
         with:
           path: frontends/flutter/build/web
-          key: flutter-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
+          key: flutter-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
       - uses: actions/cache/restore@v6
         with:
           path: |
             frontends/tamagui/apps/next/out
             frontends/tamagui/apps/next/out-tamagui
-          key: web-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
+          key: web-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
       - uses: actions/cache/restore@v6
         with:
           path: frontends/elm-spa/public
-          key: elm-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
+          key: elm-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
 
       - name: Purge Cloudflare cache
         env:
@@ -1406,17 +1406,17 @@ jobs:
         id: vars
         run: |-
           echo "be_version=$(cat backend/Cargo.toml | grep 'version =' | sed -n 1p | awk '{print $3;}' | sed 's/"//g')" >> $GITHUB_OUTPUT
-          echo "sha_short=$(git rev-parse --short=7 HEAD)" >> $GITHUB_OUTPUT
+          echo "dated_sha_short=$(TZ=UTC0 git show -s --format=%cd --date=format-local:%Y%m%d%H%M%S HEAD)-$(git rev-parse --short=7 HEAD)" >> $GITHUB_OUTPUT
 
       - uses: digitalocean/action-doctl@v2
         with:
           token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
 
-      - name: Update deploys/k8s/server_internal.yaml to use ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
-        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}|g' deploys/k8s/server_internal.yaml
+      - name: Update deploys/k8s/server_internal.yaml to use ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
+        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}|g' deploys/k8s/server_internal.yaml
 
-      - name: Update deploys/k8s/preview_generator.yaml to use ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
-        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}|g' deploys/k8s/preview_generator.yaml
+      - name: Update deploys/k8s/preview_generator.yaml to use ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
+        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}|g' deploys/k8s/preview_generator.yaml
 
       - name: Save DigitalOcean kubeconfig with short-lived credentials
         run: doctl kubernetes cluster kubeconfig save --expiry-seconds 600 rellm-be
@@ -1436,17 +1436,17 @@ jobs:
       - uses: actions/cache/restore@v6
         with:
           path: frontends/flutter/build/web
-          key: flutter-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
+          key: flutter-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
       - uses: actions/cache/restore@v6
         with:
           path: |
             frontends/tamagui/apps/next/out
             frontends/tamagui/apps/next/out-tamagui
-          key: web-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
+          key: web-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
       - uses: actions/cache/restore@v6
         with:
           path: frontends/elm-spa/public
-          key: elm-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
+          key: elm-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
 
       - name: Purge Cloudflare cache
         env:
@@ -1467,17 +1467,17 @@ jobs:
         id: vars
         run: |-
           echo "be_version=$(cat backend/Cargo.toml | grep 'version =' | sed -n 1p | awk '{print $3;}' | sed 's/"//g')" >> $GITHUB_OUTPUT
-          echo "sha_short=$(git rev-parse --short=7 HEAD)" >> $GITHUB_OUTPUT
+          echo "dated_sha_short=$(TZ=UTC0 git show -s --format=%cd --date=format-local:%Y%m%d%H%M%S HEAD)-$(git rev-parse --short=7 HEAD)" >> $GITHUB_OUTPUT
 
       - uses: digitalocean/action-doctl@v2
         with:
           token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
 
-      - name: Update deploys/k8s/server_internal.yaml to use ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
-        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}|g' deploys/k8s/server_internal.yaml
+      - name: Update deploys/k8s/server_internal.yaml to use ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
+        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}|g' deploys/k8s/server_internal.yaml
 
-      - name: Update deploys/k8s/preview_generator.yaml to use ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
-        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}|g' deploys/k8s/preview_generator.yaml
+      - name: Update deploys/k8s/preview_generator.yaml to use ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
+        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}|g' deploys/k8s/preview_generator.yaml
 
       - name: Save DigitalOcean kubeconfig with short-lived credentials
         run: doctl kubernetes cluster kubeconfig save --expiry-seconds 600 rellm-be
@@ -1497,17 +1497,17 @@ jobs:
       - uses: actions/cache/restore@v6
         with:
           path: frontends/flutter/build/web
-          key: flutter-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
+          key: flutter-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
       - uses: actions/cache/restore@v6
         with:
           path: |
             frontends/tamagui/apps/next/out
             frontends/tamagui/apps/next/out-tamagui
-          key: web-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
+          key: web-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
       - uses: actions/cache/restore@v6
         with:
           path: frontends/elm-spa/public
-          key: elm-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.sha_short }}
+          key: elm-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
 
       - name: Purge Cloudflare cache
         env:
