@@ -1,7 +1,7 @@
 use tonic::{Code, Status};
 
 use crate::db_connection::PgPooledConnection;
-use crate::logic::stripe_sync;
+use crate::logic::{stripe_product_name, stripe_sync};
 use crate::marshaling::*;
 use crate::models;
 use crate::protos::*;
@@ -109,6 +109,17 @@ pub fn make_market_purchase(
         ));
     }
 
+    // Falls back to `name`/`"Rellm"` the same way `web::robots_sitemap::manifest` does -- Stripe's
+    // own checkout page has no other context telling a buyer which Rellm instance they're paying
+    // (see `market_summary::stripe_product_name`'s own doc).
+    let server_name =
+        server_configuration.server_info.clone().and_then(|i| i.name).unwrap_or_else(|| "Rellm".to_string());
+    let server_short_name = server_configuration
+        .server_info
+        .clone()
+        .and_then(|i| i.short_name)
+        .unwrap_or(server_name);
+
     let existing_customer_id = models::get_market_customer_id_for_buyer(current_user.id, conn);
     let customer_email = existing_customer_id.is_none().then(|| {
         current_user
@@ -119,6 +130,24 @@ pub fn make_market_purchase(
             .map(|v| v.trim_start_matches("mailto:").to_string())
     }).flatten();
 
+    // Best-effort: Stripe has no per-Checkout-Session color parameter, only an Account-level
+    // branding setting (see `stripe_sync::update_account_branding_at`'s own doc) -- synced here,
+    // right before creating this checkout, so a buyer's checkout page reflects this server's
+    // *current* theme even if it's changed since the last purchase. A failure here logs and falls
+    // through rather than blocking the purchase -- getting the buyer to Checkout at all matters
+    // far more than the exact accent color once they're there.
+    let colors = server_configuration.server_info.as_ref().and_then(|i| i.colors.as_ref());
+    if let Some(colors) = colors {
+        if let Err(e) = stripe_sync::update_account_branding_at(
+            stripe_sync::DEFAULT_BASE_URL,
+            &stripe_config.stripe_secret_key,
+            colors.primary,
+            colors.navigation,
+        ) {
+            log::warn!("Failed to sync Stripe account branding before checkout: {:?}", e);
+        }
+    }
+
     let checkout_url = stripe_sync::create_checkout_session_at(
         stripe_sync::DEFAULT_BASE_URL,
         &stripe_config.stripe_secret_key,
@@ -126,7 +155,10 @@ pub fn make_market_purchase(
             line_item: stripe_sync::CheckoutLineItem {
                 currency,
                 unit_amount: product.amount as u32,
-                product_name: purchase_type.as_str_name().to_string(),
+                product_name: stripe_product_name(
+                    &MarshalableMarketProduct(product.clone()).to_proto(),
+                    &server_short_name,
+                ),
             },
             customer: existing_customer_id,
             customer_email,

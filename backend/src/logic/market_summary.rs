@@ -1,9 +1,13 @@
 //! Human-readable `MarketProduct` descriptions (e.g. "1.5GB storage for $1/mo", "100k tokens of
 //! Nano Banana Pro image generation for $2/mo", "Rellm hosting, 1GB DB + 5GB MinIO for $15/mo",
-//! "1GB lifetime storage for $10,000") -- used by `web::spa_pages`'s `/market/product/<_>` preview
-//! (`og:description`), not exposed via any RPC (a client can build the same string itself from the
-//! raw `MarketProduct` fields if it ever needs to; this only exists for the SSR preview, where
-//! there's no client-side rendering to lean on).
+//! "1GB lifetime storage for $10,000") -- `market_product_summary`/`market_product_headline` are
+//! used by `web::spa_pages`'s `/market/product/<_>` preview (`og:description`), not exposed via
+//! any RPC (a client can build the same string itself from the raw `MarketProduct` fields if it
+//! ever needs to; this only exists for the SSR preview, where there's no client-side rendering to
+//! lean on). `stripe_product_name` is this module's one function actually reachable from an RPC
+//! (`rpcs::market::make_market_purchase`) -- it names the line item on Stripe's own hosted
+//! Checkout page, which needs a "which server is this" description this module's other functions
+//! don't (see that function's own doc).
 
 use crate::marshaling::{ToProtoPermissions, ToProtoPurchasePeriod, ToProtoPurchaseType};
 use crate::protos::*;
@@ -222,6 +226,64 @@ pub fn market_product_headline(product: &MarketProduct) -> String {
     }
 }
 
+/// The line-item name shown on Stripe's own hosted Checkout page (`rpcs::market::make_market_purchase`'s
+/// `CheckoutLineItem.product_name`) -- e.g. `"5GB Media Storage on Rellm.org"`, `"Meta Sync Access
+/// on Rellm.org"`, `"Rellm Hosting, 1GB DB + 5GB Object Storage, from Rellm.org"`, `"100k
+/// tokens/mo with Nano Banana Pro on Rellm.org"`. Always names `server_short_name` (this server's
+/// own `ServerInfo.short_name`, falling back to `name`/`"Rellm"` the same way
+/// `web::robots_sitemap::manifest` does) -- unlike `market_product_summary` above (only ever shown
+/// *on* this server, where "which server" is never in question), Stripe's own checkout page has no
+/// other context telling a buyer which Rellm instance they're paying, especially for a federated
+/// purchase against another server's Market.
+pub fn stripe_product_name(product: &MarketProduct, server_short_name: &str) -> String {
+    match &product.details {
+        Some(market_product::Details::MediaStorageSubscriptionDetails(d)) => {
+            format!("{} Media Storage on {}", humanize_bytes(d.allocation_bytes), server_short_name)
+        }
+        Some(market_product::Details::AiGrantSubscriptionDetails(d)) => {
+            let period = product.period.to_proto_purchase_period().unwrap_or(PurchasePeriod::Indefinite);
+            format!(
+                "{} tokens{} with {} on {}",
+                humanize_count(d.tokens),
+                period_suffix(period),
+                ai_grant_model_names_joined(&d.model_names),
+                server_short_name
+            )
+        }
+        Some(market_product::Details::RellmHostingSubscriptionDetails(d)) => {
+            format!(
+                "Rellm Hosting, {} DB + {} Object Storage, from {}",
+                humanize_bytes(d.db_size_bytes),
+                humanize_bytes(d.minio_size_bytes),
+                server_short_name
+            )
+        }
+        Some(market_product::Details::PermissionsAccessSubscriptionDetails(d)) => {
+            format!("{} Access on {}", d.name, server_short_name)
+        }
+        None => format!("Rellm Market product on {}", server_short_name),
+    }
+}
+
+/// "Nano Banana Pro" / "Nano Banana Pro and Nano Banana Flash" / "Nano Banana Pro, Nano Banana
+/// Flash, and Nano Banana" -- an Oxford-comma join of `ai_model_catalog::display_name`-nicknamed
+/// model names, mirroring `Components.Market.aiModelNamesJoined` (Elm) exactly, since
+/// `stripe_product_name` above is this module's own counterpart to that function's `productName`.
+/// Falls back to "AI models" for a product with no models configured yet.
+fn ai_grant_model_names_joined(model_names: &[String]) -> String {
+    let names: Vec<String> =
+        model_names.iter().map(|m| crate::logic::ai_model_catalog::display_name(m)).collect();
+    match names.as_slice() {
+        [] => "AI models".to_string(),
+        [only] => only.clone(),
+        [first, second] => format!("{first} and {second}"),
+        _ => {
+            let (last, rest) = names.split_last().unwrap();
+            format!("{}, and {}", rest.join(", "), last)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -369,5 +431,98 @@ mod tests {
             }),
         );
         assert_eq!(market_product_summary(&p), "1GB storage for 500 JPY/mo");
+    }
+
+    #[test]
+    fn stripe_product_name_media_storage() {
+        let p = product(
+            PurchaseType::MediaStorage,
+            PurchasePeriod::Monthly,
+            100,
+            840,
+            market_product::Details::MediaStorageSubscriptionDetails(MediaStorageSubscriptionDetails {
+                allocation_bytes: 5 * 1024 * 1024 * 1024,
+            }),
+        );
+        assert_eq!(stripe_product_name(&p, "Rellm.org"), "5GB Media Storage on Rellm.org");
+    }
+
+    #[test]
+    fn stripe_product_name_permissions_access_uses_the_admin_authored_name() {
+        let p = product(
+            PurchaseType::PermissionsAccess,
+            PurchasePeriod::Monthly,
+            500,
+            840,
+            market_product::Details::PermissionsAccessSubscriptionDetails(PermissionsAccessSubscriptionDetails {
+                permissions: vec![Permission::SyncEventsToFacebook as i32],
+                name: "Meta Sync".to_string(),
+                description: "Sync your posts and events to Meta platforms.".to_string(),
+            }),
+        );
+        assert_eq!(stripe_product_name(&p, "Rellm.org"), "Meta Sync Access on Rellm.org");
+    }
+
+    #[test]
+    fn stripe_product_name_rellm_hosting() {
+        let p = product(
+            PurchaseType::RellmHosting,
+            PurchasePeriod::Monthly,
+            1500,
+            840,
+            market_product::Details::RellmHostingSubscriptionDetails(RellmHostingSubscriptionDetails {
+                db_size_bytes: 1024 * 1024 * 1024,
+                minio_size_bytes: 5 * 1024 * 1024 * 1024,
+                additional_description: String::new(),
+                domain: String::new(),
+                contact_email: String::new(),
+                fulfillment_status: FulfillmentStatus::AwaitingHostAdmin as i32,
+                fulfillment_notes: vec![],
+                additional_information: String::new(),
+            }),
+        );
+        assert_eq!(
+            stripe_product_name(&p, "Rellm.org"),
+            "Rellm Hosting, 1GB DB + 5GB Object Storage, from Rellm.org"
+        );
+    }
+
+    #[test]
+    fn stripe_product_name_ai_grants_uses_nano_banana_display_name_and_period_suffix() {
+        let p = product(
+            PurchaseType::AiGrants,
+            PurchasePeriod::Monthly,
+            200,
+            840,
+            market_product::Details::AiGrantSubscriptionDetails(AiGrantSubscriptionDetails {
+                ai_provider_id: "prov1".to_string(),
+                model_names: vec!["gemini-3-pro-image".to_string()],
+                tokens: 100_000,
+            }),
+        );
+        assert_eq!(stripe_product_name(&p, "Rellm.org"), "100k tokens/mo with Nano Banana Pro on Rellm.org");
+    }
+
+    #[test]
+    fn stripe_product_name_ai_grants_joins_multiple_models_with_an_oxford_comma() {
+        let p = product(
+            PurchaseType::AiGrants,
+            PurchasePeriod::Indefinite,
+            200,
+            840,
+            market_product::Details::AiGrantSubscriptionDetails(AiGrantSubscriptionDetails {
+                ai_provider_id: "prov1".to_string(),
+                model_names: vec![
+                    "gemini-3-pro-image".to_string(),
+                    "gemini-3.1-flash-image".to_string(),
+                    "gemini-2.5-flash-image".to_string(),
+                ],
+                tokens: 100_000,
+            }),
+        );
+        assert_eq!(
+            stripe_product_name(&p, "Rellm.org"),
+            "100k tokens with Nano Banana Pro, Nano Banana Flash, and Nano Banana on Rellm.org"
+        );
     }
 }

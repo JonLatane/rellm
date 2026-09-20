@@ -132,7 +132,23 @@ pub fn create_checkout_session_at(
     )?;
     if !status.is_success() {
         log::error!("Stripe CreateCheckoutSession failed ({}): {:?}", status, response_body);
-        return Err(Status::new(Code::FailedPrecondition, "stripe_checkout_session_failed"));
+        // Stripe's own `error.message` is genuinely useful here (e.g. "The Checkout Session's
+        // total amount due must add up to at least $0.50 USD" for a too-cheap product) -- surfaced
+        // to the client via the Status message itself (the `Grpc.BadStatus` -> `errMessage` path
+        // `Shared.AccountsPanel.grpcErrorToString` already renders verbatim for any message it
+        // doesn't have a friendlier translation for), rather than the bare `stripe_checkout_session_failed`
+        // key this used to always return -- that told a buyer/admin nothing actionable without a
+        // server log dive. Keeps the `stripe_checkout_session_failed` prefix so it's still
+        // greppable/distinguishable from other `FailedPrecondition`s in logs/client error handling.
+        let stripe_message = response_body
+            .get("error")
+            .and_then(|e| e.get("message"))
+            .and_then(|m| m.as_str())
+            .unwrap_or("Stripe rejected the checkout request.");
+        return Err(Status::new(
+            Code::FailedPrecondition,
+            format!("stripe_checkout_session_failed: {stripe_message}"),
+        ));
     }
     response_body
         .get("url")
@@ -142,6 +158,55 @@ pub fn create_checkout_session_at(
             log::error!("Stripe CreateCheckoutSession response missing url: {:?}", response_body);
             Status::new(Code::Internal, "stripe_checkout_session_missing_url")
         })
+}
+
+/// `ServerColors.primary`/`.navigation` (see `protos/server_configuration.proto`, `0xAARRGGBB`) ->
+/// Stripe's own Account branding, which is what actually colors the hosted Checkout page (Stripe
+/// has no per-Checkout-Session color parameter -- branding is an Account-level setting, applied to
+/// every Checkout Session/invoice/customer portal page that account's key ever creates). This is
+/// the classic (non-Connect) `POST /v1/account` "update your own account" call -- exactly the
+/// "you bring your own Stripe account" model `StripeConfig` already assumes, no Connect/`on_behalf_of`
+/// setup needed. Best-effort: `rpcs::market::make_market_purchase` logs and carries on rather than
+/// failing the purchase over a branding sync hiccup -- getting the buyer to Checkout at all matters
+/// far more than the exact accent color once they're there.
+pub fn update_account_branding_at(
+    base_url: &str,
+    secret_key: &str,
+    primary_color: Option<u32>,
+    navigation_color: Option<u32>,
+) -> Result<(), Status> {
+    let secret_key = secret_key.to_string();
+    let url = format!("{base_url}/v1/account");
+
+    let mut form: Vec<(String, String)> = vec![];
+    if let Some(color) = primary_color {
+        form.push(("settings[branding][primary_color]".to_string(), argb_to_hex_rgb(color)));
+    }
+    if let Some(color) = navigation_color {
+        form.push(("settings[branding][secondary_color]".to_string(), argb_to_hex_rgb(color)));
+    }
+    if form.is_empty() {
+        return Ok(());
+    }
+
+    let (status, response_body) = blocking_json_request(
+        move |client| client.post(url.clone()).bearer_auth(secret_key.clone()).form(&form),
+        "stripe_request_failed",
+    )?;
+    if !status.is_success() {
+        log::error!("Stripe UpdateAccount (branding) failed ({}): {:?}", status, response_body);
+        return Err(Status::new(Code::FailedPrecondition, "stripe_update_account_branding_failed"));
+    }
+    Ok(())
+}
+
+/// `0xAARRGGBB` -> `"#rrggbb"` (alpha dropped -- Stripe's branding colors have no alpha channel).
+/// `{:06x}`, not `web::robots_sitemap::manifest`'s `format!("{:x}", ...)[2..8]` -- that slice
+/// assumes the hex representation is always exactly 8 digits wide, which silently breaks (wrong
+/// slice, or an out-of-bounds panic) for any color whose top byte(s) happen to be zero;
+/// zero-padding via `{:06x}` on the alpha-masked value is correct regardless.
+fn argb_to_hex_rgb(argb: u32) -> String {
+    format!("#{:06x}", argb & 0x00FF_FFFF)
 }
 
 /// Looks up the `payment_method` id Stripe actually attached to a completed PaymentIntent --
@@ -298,4 +363,22 @@ pub fn create_off_session_payment_intent_at(
             Status::new(Code::Internal, "stripe_payment_intent_missing_id")
         })?;
     Ok(OffSessionPaymentIntentResult { id })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn argb_to_hex_rgb_drops_the_alpha_channel() {
+        assert_eq!(argb_to_hex_rgb(0xFF556CD6), "#556cd6");
+    }
+
+    #[test]
+    fn argb_to_hex_rgb_zero_pads_a_color_with_a_leading_zero_byte() {
+        // A color whose red byte is 0 -- `format!("{:x}", ...)` alone would produce fewer than 6
+        // hex digits here, which is exactly the `robots_sitemap::manifest` slicing bug this
+        // function's own doc calls out.
+        assert_eq!(argb_to_hex_rgb(0xFF002A6D), "#002a6d");
+    }
 }
