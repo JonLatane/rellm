@@ -30,6 +30,9 @@ fieldNumbersVerificationAPI n_ =
         VERIFICATIONAPIBIRD ->
             1
 
+        VERIFICATIONAPITELNYX ->
+            2
+
         VerificationAPIUnrecognized_ m_ ->
             m_
 
@@ -55,6 +58,9 @@ encodeVerificationAPI value =
             VERIFICATIONAPIBIRD ->
                 1
 
+            VERIFICATIONAPITELNYX ->
+                2
+
             VerificationAPIUnrecognized_ i ->
                 i
 
@@ -74,6 +80,9 @@ decodeVerificationAPI =
                     1 ->
                         VERIFICATIONAPIBIRD
 
+                    2 ->
+                        VERIFICATIONAPITELNYX
+
                     _ ->
                         VerificationAPIUnrecognized_ i
             )
@@ -85,4 +94,5 @@ decodeVerificationAPI =
 type VerificationAPI
     = VERIFICATIONAPITWILIO
     | VERIFICATIONAPIBIRD
+    | VERIFICATIONAPITELNYX
     | VerificationAPIUnrecognized_ Int

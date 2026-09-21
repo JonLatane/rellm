@@ -384,6 +384,7 @@ export function navigationTabToJSON(object: NavigationTab): string {
 export enum VerificationAPI {
   VERIFICATION_API_TWILIO = 0,
   VERIFICATION_API_BIRD = 1,
+  VERIFICATION_API_TELNYX = 2,
   UNRECOGNIZED = -1,
 }
 
@@ -395,6 +396,9 @@ export function verificationAPIFromJSON(object: any): VerificationAPI {
     case 1:
     case "VERIFICATION_API_BIRD":
       return VerificationAPI.VERIFICATION_API_BIRD;
+    case 2:
+    case "VERIFICATION_API_TELNYX":
+      return VerificationAPI.VERIFICATION_API_TELNYX;
     case -1:
     case "UNRECOGNIZED":
     default:
@@ -408,6 +412,8 @@ export function verificationAPIToJSON(object: VerificationAPI): string {
       return "VERIFICATION_API_TWILIO";
     case VerificationAPI.VERIFICATION_API_BIRD:
       return "VERIFICATION_API_BIRD";
+    case VerificationAPI.VERIFICATION_API_TELNYX:
+      return "VERIFICATION_API_TELNYX";
     case VerificationAPI.UNRECOGNIZED:
     default:
       return "UNRECOGNIZED";
@@ -560,7 +566,14 @@ export interface ServerConfiguration {
     | BirdConfig
     | undefined;
   /** Stripe Config, backing the Marketplace (`market.proto`). Only serialized for admin users. */
-  stripeConfig?: StripeConfig | undefined;
+  stripeConfig?:
+    | StripeConfig
+    | undefined;
+  /**
+   * Telnyx Config -- another alternative SMS verification provider to Twilio (see `TelnyxConfig`'s
+   * own doc). Only serialized for admin users.
+   */
+  telnyxConfig?: TelnyxConfig | undefined;
 }
 
 /**
@@ -1181,6 +1194,31 @@ export interface TwilioConfig {
 }
 
 /**
+ * Telnyx (https://telnyx.com) Config -- an alternative SMS verification provider to Twilio, with a
+ * simpler single-API-key auth model like Bird's (see `BirdConfig`'s own doc).
+ */
+export interface TelnyxConfig {
+  telnyxEnabled: boolean;
+  /**
+   * The Telnyx v2 API Key (starts with `KEY`), used as Bearer auth for Telnyx's Messaging API
+   * (`POST /v2/messages`). Never serialized once written -- same write-only treatment as
+   * `TwilioConfig.twilio_api_key_secret`/`BirdConfig.bird_access_key`.
+   */
+  telnyxApiKey: string;
+  /**
+   * The Telnyx-provisioned sending number for outbound verification SMS (E.164, e.g. a toll-free
+   * number). Not secret.
+   */
+  telnyxFromNumber: string;
+  /**
+   * The Telnyx Messaging Profile ID that `telnyx_from_number` is assigned to -- required by
+   * Telnyx's Messaging API to actually send (`messaging_profile_id` on `POST /v2/messages`). Not
+   * secret.
+   */
+  telnyxMessagingProfileId: string;
+}
+
+/**
  * Bird (https://bird.com, formerly MessageBird) Config -- an alternative SMS verification
  * provider to Twilio, with a simpler single-API-key auth model.
  */
@@ -1251,6 +1289,7 @@ function createBaseServerConfiguration(): ServerConfiguration {
     twilioConfig: undefined,
     birdConfig: undefined,
     stripeConfig: undefined,
+    telnyxConfig: undefined,
   };
 }
 
@@ -1333,6 +1372,9 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
     }
     if (message.stripeConfig !== undefined) {
       StripeConfig.encode(message.stripeConfig, writer.uint32(994).fork()).join();
+    }
+    if (message.telnyxConfig !== undefined) {
+      TelnyxConfig.encode(message.telnyxConfig, writer.uint32(1002).fork()).join();
     }
     return writer;
   },
@@ -1580,6 +1622,14 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
           message.stripeConfig = StripeConfig.decode(reader, reader.uint32());
           continue;
         }
+        case 125: {
+          if (tag !== 1002) {
+            break;
+          }
+
+          message.telnyxConfig = TelnyxConfig.decode(reader, reader.uint32());
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1629,6 +1679,7 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
       twilioConfig: isSet(object.twilioConfig) ? TwilioConfig.fromJSON(object.twilioConfig) : undefined,
       birdConfig: isSet(object.birdConfig) ? BirdConfig.fromJSON(object.birdConfig) : undefined,
       stripeConfig: isSet(object.stripeConfig) ? StripeConfig.fromJSON(object.stripeConfig) : undefined,
+      telnyxConfig: isSet(object.telnyxConfig) ? TelnyxConfig.fromJSON(object.telnyxConfig) : undefined,
     };
   },
 
@@ -1700,6 +1751,9 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
     if (message.stripeConfig !== undefined) {
       obj.stripeConfig = StripeConfig.toJSON(message.stripeConfig);
     }
+    if (message.telnyxConfig !== undefined) {
+      obj.telnyxConfig = TelnyxConfig.toJSON(message.telnyxConfig);
+    }
     return obj;
   },
 
@@ -1759,6 +1813,9 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
       : undefined;
     message.stripeConfig = (object.stripeConfig !== undefined && object.stripeConfig !== null)
       ? StripeConfig.fromPartial(object.stripeConfig)
+      : undefined;
+    message.telnyxConfig = (object.telnyxConfig !== undefined && object.telnyxConfig !== null)
+      ? TelnyxConfig.fromPartial(object.telnyxConfig)
       : undefined;
     return message;
   },
@@ -4283,6 +4340,116 @@ export const TwilioConfig: MessageFns<TwilioConfig> = {
     message.twilioApiKeySid = object.twilioApiKeySid ?? "";
     message.twilioApiKeySecret = object.twilioApiKeySecret ?? "";
     message.twilioFromNumber = object.twilioFromNumber ?? "";
+    return message;
+  },
+};
+
+function createBaseTelnyxConfig(): TelnyxConfig {
+  return { telnyxEnabled: false, telnyxApiKey: "", telnyxFromNumber: "", telnyxMessagingProfileId: "" };
+}
+
+export const TelnyxConfig: MessageFns<TelnyxConfig> = {
+  encode(message: TelnyxConfig, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.telnyxEnabled !== false) {
+      writer.uint32(8).bool(message.telnyxEnabled);
+    }
+    if (message.telnyxApiKey !== "") {
+      writer.uint32(18).string(message.telnyxApiKey);
+    }
+    if (message.telnyxFromNumber !== "") {
+      writer.uint32(26).string(message.telnyxFromNumber);
+    }
+    if (message.telnyxMessagingProfileId !== "") {
+      writer.uint32(34).string(message.telnyxMessagingProfileId);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): TelnyxConfig {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseTelnyxConfig();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 8) {
+            break;
+          }
+
+          message.telnyxEnabled = reader.bool();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.telnyxApiKey = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.telnyxFromNumber = reader.string();
+          continue;
+        }
+        case 4: {
+          if (tag !== 34) {
+            break;
+          }
+
+          message.telnyxMessagingProfileId = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): TelnyxConfig {
+    return {
+      telnyxEnabled: isSet(object.telnyxEnabled) ? globalThis.Boolean(object.telnyxEnabled) : false,
+      telnyxApiKey: isSet(object.telnyxApiKey) ? globalThis.String(object.telnyxApiKey) : "",
+      telnyxFromNumber: isSet(object.telnyxFromNumber) ? globalThis.String(object.telnyxFromNumber) : "",
+      telnyxMessagingProfileId: isSet(object.telnyxMessagingProfileId)
+        ? globalThis.String(object.telnyxMessagingProfileId)
+        : "",
+    };
+  },
+
+  toJSON(message: TelnyxConfig): unknown {
+    const obj: any = {};
+    if (message.telnyxEnabled !== false) {
+      obj.telnyxEnabled = message.telnyxEnabled;
+    }
+    if (message.telnyxApiKey !== "") {
+      obj.telnyxApiKey = message.telnyxApiKey;
+    }
+    if (message.telnyxFromNumber !== "") {
+      obj.telnyxFromNumber = message.telnyxFromNumber;
+    }
+    if (message.telnyxMessagingProfileId !== "") {
+      obj.telnyxMessagingProfileId = message.telnyxMessagingProfileId;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<TelnyxConfig>, I>>(base?: I): TelnyxConfig {
+    return TelnyxConfig.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<TelnyxConfig>, I>>(object: I): TelnyxConfig {
+    const message = createBaseTelnyxConfig();
+    message.telnyxEnabled = object.telnyxEnabled ?? false;
+    message.telnyxApiKey = object.telnyxApiKey ?? "";
+    message.telnyxFromNumber = object.telnyxFromNumber ?? "";
+    message.telnyxMessagingProfileId = object.telnyxMessagingProfileId ?? "";
     return message;
   },
 };

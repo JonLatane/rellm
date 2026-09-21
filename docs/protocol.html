@@ -438,6 +438,9 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
             <p><a href="#rellm-StripeConfig">StripeConfig</a></p>
           </li>
           <li>
+            <p><a href="#rellm-TelnyxConfig">TelnyxConfig</a></p>
+          </li>
+          <li>
             <p><a href="#rellm-TwilioConfig">TwilioConfig</a></p>
           </li>
           <li>
@@ -7259,6 +7262,12 @@ directory</a> is (<code>{name}</code> denotes a
           <td>optional</td>
           <td>Stripe Config, backing the Marketplace (<code>market.proto</code>). Only serialized for admin users.</td>
         </tr>
+        <tr>
+          <td>telnyx_config</td>
+          <td><a href="#rellm-TelnyxConfig">TelnyxConfig</a></td>
+          <td>optional</td>
+          <td>Telnyx Config -- another alternative SMS verification provider to Twilio (see <code>TelnyxConfig</code>'s own doc). Only serialized for admin users.</td>
+        </tr>
       </tbody>
     </table>
     <p><a name="rellm-ServerInfo"></a></p>
@@ -7409,6 +7418,48 @@ directory</a> is (<code>{name}</code> denotes a
           <td><a href="#string">string</a></td>
           <td></td>
           <td>Signing secret (starts with <code>whsec_</code>) for the <code>/webhooks/stripe</code> endpoint, used to verify the <code>Stripe-Signature</code> header on incoming webhook deliveries. Never serialized once written -- same write-only treatment as <code>stripe_secret_key</code> above.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-TelnyxConfig"></a></p>
+    <h3 id="telnyxconfig"><a class="anchor" aria-hidden="true" tabindex="-1" href="#telnyxconfig"><span class="octicon octicon-link"></span></a>TelnyxConfig</h3>
+    <p>
+      Telnyx (<a href="https://telnyx.com/">https://telnyx.com</a>) Config -- an alternative SMS verification provider to Twilio, with a
+      simpler single-API-key auth model like Bird's (see <code>BirdConfig</code>'s own doc).
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>telnyx_enabled</td>
+          <td><a href="#bool">bool</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>telnyx_api_key</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>The Telnyx v2 API Key (starts with <code>KEY</code>), used as Bearer auth for Telnyx's Messaging API (<code>POST /v2/messages</code>). Never serialized once written -- same write-only treatment as <code>TwilioConfig.twilio_api_key_secret</code>/<code>BirdConfig.bird_access_key</code>.</td>
+        </tr>
+        <tr>
+          <td>telnyx_from_number</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>The Telnyx-provisioned sending number for outbound verification SMS (E.164, e.g. a toll-free number). Not secret.</td>
+        </tr>
+        <tr>
+          <td>telnyx_messaging_profile_id</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>The Telnyx Messaging Profile ID that <code>telnyx_from_number</code> is assigned to -- required by Telnyx's Messaging API to actually send (<code>messaging_profile_id</code> on <code>POST /v2/messages</code>). Not secret.</td>
         </tr>
       </tbody>
     </table>
@@ -7716,6 +7767,11 @@ directory</a> is (<code>{name}</code> denotes a
         <tr>
           <td>VERIFICATION_API_BIRD</td>
           <td>1</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>VERIFICATION_API_TELNYX</td>
+          <td>2</td>
           <td></td>
         </tr>
       </tbody>

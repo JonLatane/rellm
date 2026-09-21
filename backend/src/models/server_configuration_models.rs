@@ -48,6 +48,8 @@ pub struct ServerConfiguration {
     pub stripe_config: Option<serde_json::Value>,
 
     pub market_settings: Option<serde_json::Value>,
+
+    pub telnyx_config: Option<serde_json::Value>,
 }
 #[derive(Debug, Insertable)]
 #[diesel(table_name = server_configurations)]
@@ -73,6 +75,7 @@ pub struct NewServerConfiguration {
     pub media_settings: Option<serde_json::Value>,
     pub stripe_config: Option<serde_json::Value>,
     pub market_settings: Option<serde_json::Value>,
+    pub telnyx_config: Option<serde_json::Value>,
 }
 
 pub fn default_server_configuration() -> NewServerConfiguration {
@@ -200,6 +203,7 @@ Your media policy should describe who has ownership of uploaded media, anything 
         media_settings: None,
         stripe_config: None,
         market_settings: None,
+        telnyx_config: None,
         private_user_strategy: PrivateUserStrategy::AccountIsFrozen
             .as_str_name()
             .to_string(),

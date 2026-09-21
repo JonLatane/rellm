@@ -8,7 +8,7 @@ authors = ["Jon Latané <jonlatane@gmail.com>"]
 license = "AGPL"
 repository = "https://github.com/jonlatane/rellm"
 description = "Rellm is a decentralized social network server."
-homepage = "https://jonline.io"
+homepage = "https://rellm.org"
 default-run = "rellm"
 readme = "README.md"
 

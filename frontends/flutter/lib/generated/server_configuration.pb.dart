@@ -47,6 +47,7 @@ class ServerConfiguration extends $pb.GeneratedMessage {
     TwilioConfig? twilioConfig,
     BirdConfig? birdConfig,
     StripeConfig? stripeConfig,
+    TelnyxConfig? telnyxConfig,
   }) {
     final $result = create();
     if (serverInfo != null) {
@@ -115,6 +116,9 @@ class ServerConfiguration extends $pb.GeneratedMessage {
     if (stripeConfig != null) {
       $result.stripeConfig = stripeConfig;
     }
+    if (telnyxConfig != null) {
+      $result.telnyxConfig = telnyxConfig;
+    }
     return $result;
   }
   ServerConfiguration._() : super();
@@ -144,6 +148,7 @@ class ServerConfiguration extends $pb.GeneratedMessage {
     ..aOM<TwilioConfig>(122, _omitFieldNames ? '' : 'twilioConfig', subBuilder: TwilioConfig.create)
     ..aOM<BirdConfig>(123, _omitFieldNames ? '' : 'birdConfig', subBuilder: BirdConfig.create)
     ..aOM<StripeConfig>(124, _omitFieldNames ? '' : 'stripeConfig', subBuilder: StripeConfig.create)
+    ..aOM<TelnyxConfig>(125, _omitFieldNames ? '' : 'telnyxConfig', subBuilder: TelnyxConfig.create)
     ..hasRequiredFields = false
   ;
 
@@ -424,6 +429,19 @@ class ServerConfiguration extends $pb.GeneratedMessage {
   void clearStripeConfig() => clearField(124);
   @$pb.TagNumber(124)
   StripeConfig ensureStripeConfig() => $_ensure(21);
+
+  /// Telnyx Config -- another alternative SMS verification provider to Twilio (see `TelnyxConfig`'s
+  /// own doc). Only serialized for admin users.
+  @$pb.TagNumber(125)
+  TelnyxConfig get telnyxConfig => $_getN(22);
+  @$pb.TagNumber(125)
+  set telnyxConfig(TelnyxConfig v) { setField(125, v); }
+  @$pb.TagNumber(125)
+  $core.bool hasTelnyxConfig() => $_has(22);
+  @$pb.TagNumber(125)
+  void clearTelnyxConfig() => clearField(125);
+  @$pb.TagNumber(125)
+  TelnyxConfig ensureTelnyxConfig() => $_ensure(22);
 }
 
 ///  Coordinates a small piece of shared, cluster-wide state across multiple independent Rellm
@@ -2730,6 +2748,108 @@ class TwilioConfig extends $pb.GeneratedMessage {
   $core.bool hasTwilioApiKeySid() => $_has(4);
   @$pb.TagNumber(5)
   void clearTwilioApiKeySid() => clearField(5);
+}
+
+/// Telnyx (https://telnyx.com) Config -- an alternative SMS verification provider to Twilio, with a
+/// simpler single-API-key auth model like Bird's (see `BirdConfig`'s own doc).
+class TelnyxConfig extends $pb.GeneratedMessage {
+  factory TelnyxConfig({
+    $core.bool? telnyxEnabled,
+    $core.String? telnyxApiKey,
+    $core.String? telnyxFromNumber,
+    $core.String? telnyxMessagingProfileId,
+  }) {
+    final $result = create();
+    if (telnyxEnabled != null) {
+      $result.telnyxEnabled = telnyxEnabled;
+    }
+    if (telnyxApiKey != null) {
+      $result.telnyxApiKey = telnyxApiKey;
+    }
+    if (telnyxFromNumber != null) {
+      $result.telnyxFromNumber = telnyxFromNumber;
+    }
+    if (telnyxMessagingProfileId != null) {
+      $result.telnyxMessagingProfileId = telnyxMessagingProfileId;
+    }
+    return $result;
+  }
+  TelnyxConfig._() : super();
+  factory TelnyxConfig.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromBuffer(i, r);
+  factory TelnyxConfig.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'TelnyxConfig', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
+    ..aOB(1, _omitFieldNames ? '' : 'telnyxEnabled')
+    ..aOS(2, _omitFieldNames ? '' : 'telnyxApiKey')
+    ..aOS(3, _omitFieldNames ? '' : 'telnyxFromNumber')
+    ..aOS(4, _omitFieldNames ? '' : 'telnyxMessagingProfileId')
+    ..hasRequiredFields = false
+  ;
+
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.deepCopy] instead. '
+  'Will be removed in next major version')
+  TelnyxConfig clone() => TelnyxConfig()..mergeFromMessage(this);
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.rebuild] instead. '
+  'Will be removed in next major version')
+  TelnyxConfig copyWith(void Function(TelnyxConfig) updates) => super.copyWith((message) => updates(message as TelnyxConfig)) as TelnyxConfig;
+
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static TelnyxConfig create() => TelnyxConfig._();
+  TelnyxConfig createEmptyInstance() => create();
+  static $pb.PbList<TelnyxConfig> createRepeated() => $pb.PbList<TelnyxConfig>();
+  @$core.pragma('dart2js:noInline')
+  static TelnyxConfig getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<TelnyxConfig>(create);
+  static TelnyxConfig? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.bool get telnyxEnabled => $_getBF(0);
+  @$pb.TagNumber(1)
+  set telnyxEnabled($core.bool v) { $_setBool(0, v); }
+  @$pb.TagNumber(1)
+  $core.bool hasTelnyxEnabled() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearTelnyxEnabled() => clearField(1);
+
+  /// The Telnyx v2 API Key (starts with `KEY`), used as Bearer auth for Telnyx's Messaging API
+  /// (`POST /v2/messages`). Never serialized once written -- same write-only treatment as
+  /// `TwilioConfig.twilio_api_key_secret`/`BirdConfig.bird_access_key`.
+  @$pb.TagNumber(2)
+  $core.String get telnyxApiKey => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set telnyxApiKey($core.String v) { $_setString(1, v); }
+  @$pb.TagNumber(2)
+  $core.bool hasTelnyxApiKey() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearTelnyxApiKey() => clearField(2);
+
+  /// The Telnyx-provisioned sending number for outbound verification SMS (E.164, e.g. a toll-free
+  /// number). Not secret.
+  @$pb.TagNumber(3)
+  $core.String get telnyxFromNumber => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set telnyxFromNumber($core.String v) { $_setString(2, v); }
+  @$pb.TagNumber(3)
+  $core.bool hasTelnyxFromNumber() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearTelnyxFromNumber() => clearField(3);
+
+  /// The Telnyx Messaging Profile ID that `telnyx_from_number` is assigned to -- required by
+  /// Telnyx's Messaging API to actually send (`messaging_profile_id` on `POST /v2/messages`). Not
+  /// secret.
+  @$pb.TagNumber(4)
+  $core.String get telnyxMessagingProfileId => $_getSZ(3);
+  @$pb.TagNumber(4)
+  set telnyxMessagingProfileId($core.String v) { $_setString(3, v); }
+  @$pb.TagNumber(4)
+  $core.bool hasTelnyxMessagingProfileId() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearTelnyxMessagingProfileId() => clearField(4);
 }
 
 /// Bird (https://bird.com, formerly MessageBird) Config -- an alternative SMS verification

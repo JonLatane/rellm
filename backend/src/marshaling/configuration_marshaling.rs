@@ -35,6 +35,10 @@ impl ToDbServerConfiguration for ServerConfiguration {
                 .bird_config
                 .as_ref()
                 .map(|c| serde_json::to_value(c).unwrap()),
+            telnyx_config: self
+                .telnyx_config
+                .as_ref()
+                .map(|c| serde_json::to_value(c).unwrap()),
             media_settings: self
                 .media_settings
                 .as_ref()
@@ -147,6 +151,16 @@ impl ToProtoServerConfiguration for models::ServerConfiguration {
                 bird_access_key: String::new(),
                 ..c
             });
+        // Same write-only treatment for `TelnyxConfig.telnyx_api_key`.
+        let telnyx_config: Option<TelnyxConfig> = self
+            .telnyx_config
+            .to_owned()
+            .map_or(Some(None), |c| serde_json::from_value(c).ok())
+            .flatten()
+            .map(|c| TelnyxConfig {
+                telnyx_api_key: String::new(),
+                ..c
+            });
         // Same write-only treatment for `StripeConfig.stripe_secret_key`/
         // `stripe_webhook_signing_secret`. `stripe_configured` (computed below, for
         // `market_settings`) is derived from this *before* the blanking, since a blanked
@@ -215,9 +229,11 @@ impl ToProtoServerConfiguration for models::ServerConfiguration {
         // call that function with).
         let twilio_enabled = twilio_config.as_ref().is_some_and(|c| c.twilio_enabled);
         let bird_enabled = bird_config.as_ref().is_some_and(|c| c.bird_enabled);
+        let telnyx_enabled = telnyx_config.as_ref().is_some_and(|c| c.telnyx_enabled);
         let is_available = |api: &VerificationApi| match api {
             VerificationApi::Twilio => twilio_enabled,
             VerificationApi::Bird => bird_enabled,
+            VerificationApi::Telnyx => telnyx_enabled,
         };
         let mut available_verification_apis: Vec<i32> = preferred_verification_apis
             .iter()
@@ -225,7 +241,11 @@ impl ToProtoServerConfiguration for models::ServerConfiguration {
             .filter(|a| is_available(a))
             .map(|a| a as i32)
             .collect();
-        for api in [VerificationApi::Twilio, VerificationApi::Bird] {
+        for api in [
+            VerificationApi::Twilio,
+            VerificationApi::Bird,
+            VerificationApi::Telnyx,
+        ] {
             if is_available(&api) && !available_verification_apis.contains(&(api as i32)) {
                 available_verification_apis.push(api as i32);
             }
@@ -268,6 +288,7 @@ impl ToProtoServerConfiguration for models::ServerConfiguration {
             web_push_config: web_push_config, // ..Default::default()
             twilio_config: twilio_config,
             bird_config: bird_config,
+            telnyx_config: telnyx_config,
             stripe_config: stripe_config,
             preferred_verification_apis: preferred_verification_apis,
             available_verification_apis: available_verification_apis,

@@ -144,6 +144,33 @@ pub fn configure_server(
         );
     }
 
+    // Same merge-on-blank treatment as `twilio_config` above, for `TelnyxConfig.telnyx_api_key`.
+    // `telnyx_enabled`/`telnyx_from_number`/`telnyx_messaging_profile_id` pass through freely, no
+    // scrubbing needed.
+    if let Some(incoming_telnyx_config) = request
+        .telnyx_config
+        .as_ref()
+        .filter(|c| c.telnyx_api_key.is_empty())
+    {
+        let existing_api_key = get_server_configuration_model(conn)
+            .ok()
+            .and_then(|c| c.telnyx_config)
+            .and_then(|c| serde_json::from_value::<protos::TelnyxConfig>(c).ok())
+            .map(|c| c.telnyx_api_key)
+            .unwrap_or_default();
+        new_config.telnyx_config = Some(
+            serde_json::to_value(protos::TelnyxConfig {
+                telnyx_enabled: incoming_telnyx_config.telnyx_enabled,
+                telnyx_api_key: existing_api_key,
+                telnyx_from_number: incoming_telnyx_config.telnyx_from_number.clone(),
+                telnyx_messaging_profile_id: incoming_telnyx_config
+                    .telnyx_messaging_profile_id
+                    .clone(),
+            })
+            .unwrap(),
+        );
+    }
+
     // Same merge-on-blank treatment as `twilio_config` above, for `StripeConfig.stripe_secret_key`/
     // `stripe_webhook_signing_secret` -- both write-only (`to_proto` always blanks them before
     // reaching a client), so an empty incoming value means "leave whatever's already stored alone."

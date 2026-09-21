@@ -587,6 +587,7 @@ mod bird_and_provider_selection_spec {
                 conn,
                 Some(("AC_sid", "SK_test_key_sid", "auth_token", "+15005550006")),
                 Some(("bird_key", "Bird", "us1")),
+                None,
                 vec![],
             );
             let user = create_user(conn, "prefers_twilio_default");
@@ -623,6 +624,7 @@ mod bird_and_provider_selection_spec {
                 conn,
                 Some(("AC_sid", "SK_test_key_sid", "auth_token", "+15005550006")),
                 Some(("bird_key", "Bird", "us1")),
+                None,
                 vec![VerificationApi::Bird, VerificationApi::Twilio],
             );
             let user = create_user(conn, "prefers_bird_explicit");
@@ -659,6 +661,7 @@ mod bird_and_provider_selection_spec {
                 conn,
                 None,
                 Some(("bird_key", "Bird", "us1")),
+                None,
                 vec![VerificationApi::Twilio, VerificationApi::Bird],
             );
             let user = create_user(conn, "falls_back_to_bird");
@@ -678,6 +681,112 @@ mod bird_and_provider_selection_spec {
 
             let requests = captured.lock().unwrap();
             assert!(requests[0].contains("POST /v1/sms/messages"));
+
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn falls_back_to_telnyx_when_neither_twilio_nor_bird_is_configured() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, tonic::Status, _>(|conn| {
+            configure_verification_providers(
+                conn,
+                None,
+                None,
+                Some(("telnyx_key", "+15005550006", "profile_1")),
+                vec![
+                    VerificationApi::Twilio,
+                    VerificationApi::Bird,
+                    VerificationApi::Telnyx,
+                ],
+            );
+            let user = create_user(conn, "falls_back_to_telnyx");
+            let user = set_user_phone(conn, &user, &phone_contact_method("tel:+15551234567"));
+
+            let (base_url, captured) = serve_capturing(|_request, _prior| {
+                ("HTTP/1.1 202 Accepted", serde_json::json!({ "id": "sms_test" }))
+            });
+
+            start_contact_method_verification_at(
+                Some(&base_url),
+                phone_contact_method("tel:+15551234567"),
+                &user,
+                conn,
+            )
+            .expect("should fall back to Telnyx since neither Twilio nor Bird is configured");
+
+            let requests = captured.lock().unwrap();
+            assert!(requests[0].contains("POST /v2/messages"));
+
+            Ok(())
+        });
+    }
+}
+
+mod telnyx_and_provider_selection_spec {
+    use super::*;
+
+    #[test]
+    fn sends_via_telnyx_when_only_telnyx_is_configured() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, tonic::Status, _>(|conn| {
+            configure_telnyx(conn, true, "telnyx_test_key", "+15005550006", "profile_1");
+            let user = create_user(conn, "telnyx_happy");
+            let user = set_user_phone(conn, &user, &phone_contact_method("tel:+15551234567"));
+
+            let (base_url, captured) = serve_capturing(|_request, _prior| {
+                (
+                    "HTTP/1.1 202 Accepted",
+                    serde_json::json!({ "data": { "id": "sms_test" } }),
+                )
+            });
+
+            let response = start_contact_method_verification_at(
+                Some(&base_url),
+                phone_contact_method("tel:+15551234567"),
+                &user,
+                conn,
+            )
+            .expect("start should succeed via Telnyx");
+            assert!(response.verification_in_progress.is_some());
+
+            let requests = captured.lock().unwrap();
+            assert_eq!(requests.len(), 1);
+            assert!(requests[0].contains("POST /v2/messages"));
+            assert!(requests[0]
+                .to_lowercase()
+                .contains("authorization: bearer telnyx_test_key"));
+            assert!(requests[0].contains("\"messaging_profile_id\":\"profile_1\""));
+
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn rejects_telnyx_send_failure() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, tonic::Status, _>(|conn| {
+            configure_telnyx(conn, true, "telnyx_test_key", "+15005550006", "profile_1");
+            let user = create_user(conn, "telnyx_send_fails");
+            let user = set_user_phone(conn, &user, &phone_contact_method("tel:+15551234567"));
+
+            let (base_url, _captured) = serve_capturing(|_request, _prior| {
+                (
+                    "HTTP/1.1 422 Unprocessable Entity",
+                    serde_json::json!({ "errors": [{ "detail": "invalid destination" }] }),
+                )
+            });
+
+            let err = start_contact_method_verification_at(
+                Some(&base_url),
+                phone_contact_method("tel:+15551234567"),
+                &user,
+                conn,
+            )
+            .unwrap_err();
+            assert_eq!(err.code(), Code::FailedPrecondition);
+            assert_eq!(err.message(), "telnyx_send_failed");
 
             Ok(())
         });

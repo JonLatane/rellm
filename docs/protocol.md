@@ -133,6 +133,7 @@
     - [ServerInfo](#rellm-ServerInfo)
     - [ServerLogo](#rellm-ServerLogo)
     - [StripeConfig](#rellm-StripeConfig)
+    - [TelnyxConfig](#rellm-TelnyxConfig)
     - [TwilioConfig](#rellm-TwilioConfig)
     - [WebPushConfig](#rellm-WebPushConfig)
   
@@ -3500,6 +3501,7 @@ Configuration for a Rellm server instance.
 | twilio_config | [TwilioConfig](#rellm-TwilioConfig) | optional | Twilio Config. Only serialized for admin users. |
 | bird_config | [BirdConfig](#rellm-BirdConfig) | optional | Bird (bird.com, formerly MessageBird) Config -- a cheaper Twilio alternative for SMS verification. Only serialized for admin users. |
 | stripe_config | [StripeConfig](#rellm-StripeConfig) | optional | Stripe Config, backing the Marketplace (`market.proto`). Only serialized for admin users. |
+| telnyx_config | [TelnyxConfig](#rellm-TelnyxConfig) | optional | Telnyx Config -- another alternative SMS verification provider to Twilio (see `TelnyxConfig`&#39;s own doc). Only serialized for admin users. |
 
 
 
@@ -3561,6 +3563,25 @@ webhook deliveries (`stripe_webhook_signing_secret`).
 | stripe_secret_key | [string](#string) |  | Stripe Secret Key (starts with `sk_`), used as Bearer auth for all Stripe API calls made by this server (Checkout Session creation, off-session renewal charges). Never serialized once written -- same write-only treatment as `TwilioConfig.twilio_api_key_secret`. |
 | stripe_publishable_key | [string](#string) |  | Stripe Publishable Key (starts with `pk_`). Not secret -- kept here (rather than derived from `stripe_secret_key`) so a future client-side Stripe Elements integration has what it needs, even though the current Checkout-based flow doesn&#39;t use it server-side at all. |
 | stripe_webhook_signing_secret | [string](#string) |  | Signing secret (starts with `whsec_`) for the `/webhooks/stripe` endpoint, used to verify the `Stripe-Signature` header on incoming webhook deliveries. Never serialized once written -- same write-only treatment as `stripe_secret_key` above. |
+
+
+
+
+
+
+<a name="rellm-TelnyxConfig"></a>
+
+### TelnyxConfig
+Telnyx (https://telnyx.com) Config -- an alternative SMS verification provider to Twilio, with a
+simpler single-API-key auth model like Bird&#39;s (see `BirdConfig`&#39;s own doc).
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| telnyx_enabled | [bool](#bool) |  |  |
+| telnyx_api_key | [string](#string) |  | The Telnyx v2 API Key (starts with `KEY`), used as Bearer auth for Telnyx&#39;s Messaging API (`POST /v2/messages`). Never serialized once written -- same write-only treatment as `TwilioConfig.twilio_api_key_secret`/`BirdConfig.bird_access_key`. |
+| telnyx_from_number | [string](#string) |  | The Telnyx-provisioned sending number for outbound verification SMS (E.164, e.g. a toll-free number). Not secret. |
+| telnyx_messaging_profile_id | [string](#string) |  | The Telnyx Messaging Profile ID that `telnyx_from_number` is assigned to -- required by Telnyx&#39;s Messaging API to actually send (`messaging_profile_id` on `POST /v2/messages`). Not secret. |
 
 
 
@@ -3708,6 +3729,7 @@ Strategy when a user sets their visibility to `PRIVATE`.
 | ---- | ------ | ----------- |
 | VERIFICATION_API_TWILIO | 0 |  |
 | VERIFICATION_API_BIRD | 1 |  |
+| VERIFICATION_API_TELNYX | 2 |  |
 
 
 

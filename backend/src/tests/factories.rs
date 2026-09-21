@@ -1012,13 +1012,40 @@ pub fn configure_bird(
         .expect("failed to create test server configuration");
 }
 
-/// Like `configure_twilio`/`configure_bird`, but sets both providers at once plus
-/// `preferred_verification_apis` -- for specs exercising `contact_verification`'s
-/// preference-ordering/fallback logic between the two.
+/// Mirrors `configure_twilio`/`configure_bird`, but sets `telnyx_config` instead -- for specs
+/// exercising Telnyx as a verification provider (or the three providers' fallback ordering
+/// together).
+pub fn configure_telnyx(
+    conn: &mut PgPooledConnection,
+    enabled: bool,
+    api_key: &str,
+    from_number: &str,
+    messaging_profile_id: &str,
+) {
+    let mut new_config = models::default_server_configuration();
+    new_config.telnyx_config = Some(
+        serde_json::to_value(TelnyxConfig {
+            telnyx_enabled: enabled,
+            telnyx_api_key: api_key.to_string(),
+            telnyx_from_number: from_number.to_string(),
+            telnyx_messaging_profile_id: messaging_profile_id.to_string(),
+        })
+        .unwrap(),
+    );
+    insert_into(server_configurations::table)
+        .values(&new_config)
+        .execute(conn)
+        .expect("failed to create test server configuration");
+}
+
+/// Like `configure_twilio`/`configure_bird`/`configure_telnyx`, but sets any combination of the
+/// three providers at once plus `preferred_verification_apis` -- for specs exercising
+/// `contact_verification`'s preference-ordering/fallback logic between them.
 pub fn configure_verification_providers(
     conn: &mut PgPooledConnection,
     twilio: Option<(&str, &str, &str, &str)>,
     bird: Option<(&str, &str, &str)>,
+    telnyx: Option<(&str, &str, &str)>,
     preferred: Vec<VerificationApi>,
 ) {
     let mut new_config = models::default_server_configuration();
@@ -1038,6 +1065,15 @@ pub fn configure_verification_providers(
             bird_access_key: key.to_string(),
             bird_from: from.to_string(),
             bird_region: region.to_string(),
+        })
+        .unwrap()
+    });
+    new_config.telnyx_config = telnyx.map(|(api_key, from, messaging_profile_id)| {
+        serde_json::to_value(TelnyxConfig {
+            telnyx_enabled: true,
+            telnyx_api_key: api_key.to_string(),
+            telnyx_from_number: from.to_string(),
+            telnyx_messaging_profile_id: messaging_profile_id.to_string(),
         })
         .unwrap()
     });

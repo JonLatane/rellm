@@ -62,6 +62,7 @@ pub use contact_verification::*;
 
 pub(crate) mod twilio_sync;
 pub(crate) mod bird_sync;
+pub(crate) mod telnyx_sync;
 
 pub(crate) mod stripe_sync;
 

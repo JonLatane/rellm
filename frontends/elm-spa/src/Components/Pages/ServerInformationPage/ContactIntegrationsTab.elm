@@ -1,18 +1,18 @@
 module Components.Pages.ServerInformationPage.ContactIntegrationsTab exposing (Model, Msg, activated, init, update, view)
 
-{-| The Contact Integrations tab of `Components.Pages.ServerInformationPage` -- Twilio
-(`TwilioConfig`) and Bird (`BirdConfig`, see that message's own doc in
+{-| The Contact Integrations tab of `Components.Pages.ServerInformationPage` -- Telnyx
+(`TelnyxConfig`), Twilio (`TwilioConfig`), and Bird (`BirdConfig`, see that message's own doc in
 `server_configuration.proto` -- a cheaper Twilio alternative for SMS verification), each editable
 by an admin as its own unit (a single Edit/Save/Cancel per provider, mirroring `CdnTab`'s
 Edit/Save/Cancel shape), plus a "Preferred Verification Providers" selector choosing which of
-Twilio/Bird is tried first when both are enabled (`preferredVerificationApis`). Split out of a
-single "Integrations" tab (see `Components.Pages.ServerInformationPage.MarketTab` for the other
-half, Stripe/Market) once that combined tab grew unwieldy -- these two provider groups have nothing
-to do with each other beyond both once having lived in the same file.
+Telnyx/Twilio/Bird is tried first when more than one is enabled (`preferredVerificationApis`).
+Split out of a single "Integrations" tab (see `Components.Pages.ServerInformationPage.MarketTab`
+for the other half, Stripe/Market) once that combined tab grew unwieldy -- these two provider
+groups have nothing to do with each other beyond both once having lived in the same file.
 
 Unlike `CdnTab`, though, this tab **can't** just read `RellmServers.configurationOf server` for its
-display -- `twilioConfig`/`birdConfig`/`preferredVerificationApis` are all admin-only-serialized
-(see their own proto docs), stripped from the unauthenticated `GetServerConfiguration` probe
+display -- `telnyxConfig`/`twilioConfig`/`birdConfig`/`preferredVerificationApis` are all
+admin-only-serialized (see their own proto docs), stripped from the unauthenticated `GetServerConfiguration` probe
 `RellmServers.configurationOf` reflects (the same one used for the initial "can we connect at all"
 check and every reconnect). So, exactly like `ClusterTab` (`cluster_resources` is admin-only the
 same way), this tab fires its own authenticated `GetServerConfiguration`
@@ -31,38 +31,41 @@ Unlike `CdnTab`'s "External CDN HTTP Support" toggle (which nulls `externalCdnCo
 when off), each provider's "Enabled" toggle here only ever flips its own `*Enabled` field -- the
 rest of the config (account identifiers, and whatever's currently stored for the write-only secret)
 is left alone on disable, so re-enabling later doesn't lose the credentials that were already
-entered. `twilioApiKeySecret`/`birdAccessKey` are write-only secrets -- `GetServerConfiguration`
-always blanks them (mirroring `WebPushConfig.privateVapidKey`), so `*EditClicked` naturally seeds
-the secret field blank with no special-casing, and each input's placeholder makes clear that
-leaving it blank on Save keeps whatever's already stored.
+entered. `telnyxApiKey`/`twilioApiKeySecret`/`birdAccessKey` are write-only secrets --
+`GetServerConfiguration` always blanks them (mirroring `WebPushConfig.privateVapidKey`), so
+`*EditClicked` naturally seeds the secret field blank with no special-casing, and each input's
+placeholder makes clear that leaving it blank on Save keeps whatever's already stored.
 
-The non-secret fields (`twilioAccountSid`/`twilioApiKeySid`/`twilioFromNumber`/`birdFrom`/
-`birdRegion`) aren't secret among admins (just not shown to non-admins, since `twilioConfig`/
-`bird_config` are themselves admin-only-serialized -- see `ServerInformationPage`'s tab bar
-gating), so they're shown in plain text even in the read-only display view, same as CDN's
-`frontendHost`/`backendHost`.
+The non-secret fields (`telnyxFromNumber`/`telnyxMessagingProfileId`/`twilioAccountSid`/
+`twilioApiKeySid`/`twilioFromNumber`/`birdFrom`/`birdRegion`) aren't secret among admins (just not
+shown to non-admins, since `telnyxConfig`/`twilioConfig`/`bird_config` are themselves
+admin-only-serialized -- see `ServerInformationPage`'s tab bar gating), so they're shown in plain
+text even in the read-only display view, same as CDN's `frontendHost`/`backendHost`.
 
 The Preferred Providers selector mirrors `SettingsTab`'s Permissions editor (removable badges + an
-Add `<select>` + Save/Cancel) -- with only two possible values, "reordering" just means
-remove-then-re-add at the end, same as that editor offers no drag-and-drop either.
+Add `<select>` + Save/Cancel) -- "reordering" just means remove-then-re-add at the end, same as
+that editor offers no drag-and-drop either.
 
 Also hosts the Web Push VAPID public/private key editor (`WebPushConfig`) -- moved here from
 `FederationTab` purely for topical consistency (it's another "contact/notification-delivery
-credential" alongside Twilio/Bird, not because it shares their admin-only-stripped visibility).
-Unlike Twilio/Bird/Preferred Providers, `webPushConfig` is NOT stripped from the unauthenticated
-`GetServerConfiguration` probe (only `privateVapidKey` itself is always blanked, mirroring
-`FacebookAuthConfig.appSecret`) -- so its display reads straight off `RellmServers.configurationOf
-server` (the `server` this module's own `update`/`view` now take, exactly like `FederationTab`
-already does for its own similarly-public Facebook/X (Twitter) fields), independent of
-`adminContactIntegrations`'s own fetch.
+credential" alongside Telnyx/Twilio/Bird, not because it shares their admin-only-stripped
+visibility). Unlike Telnyx/Twilio/Bird/Preferred Providers, `webPushConfig` is NOT stripped from
+the unauthenticated `GetServerConfiguration` probe (only `privateVapidKey` itself is always
+blanked, mirroring `FacebookAuthConfig.appSecret`) -- so its display reads straight off
+`RellmServers.configurationOf server` (the `server` this module's own `update`/`view` now take,
+exactly like `FederationTab` already does for its own similarly-public Facebook/X (Twitter)
+fields), independent of `adminContactIntegrations`'s own fetch.
 
-Preferred Providers/Twilio/Bird are grouped under a collapsible "External Integrations" section
-(`externalIntegrationsSection`), with Twilio and Bird each *also* independently collapsible inside
-it (`twilioSection`/`birdSection`) -- three nested levels of the same `expandable-section-title`/
-`-arrow`/`-content` idiom `SettingsTab.featureSettingsSection`/`UserProfilePage.expandableProfileSection`
-already establish (see `collapsedIntegrationsSections`, a `Set String` exactly like
-`SettingsTab.Model.collapsedFeatureSettings`). Everything starts expanded except Bird (the newer,
-less commonly configured of the two SMS providers -- see `BirdConfig`'s own proto doc). Since
+Preferred Providers/Telnyx/Twilio/Bird are grouped under a collapsible "External Integrations"
+section (`externalIntegrationsSection`), with Telnyx, Twilio, and Bird each *also* independently
+collapsible inside it (`telnyxSection`/`twilioSection`/`birdSection`) -- four nested levels of the
+same `expandable-section-title`/`-arrow`/`-content` idiom
+`SettingsTab.featureSettingsSection`/`UserProfilePage.expandableProfileSection` already establish
+(see `collapsedIntegrationsSections`, a `Set String` exactly like
+`SettingsTab.Model.collapsedFeatureSettings`). `telnyxSection` is rendered above `twilioSection`
+(newest provider first, since it's the one currently being onboarded), and everything starts
+expanded except Bird (the least commonly configured of the three SMS providers -- see
+`BirdConfig`'s own proto doc). Since
 `ServerInformationPage.view` mounts each tab's content under a *different* `Html.Keyed` key per tab
 (`tabParam model.activeTab`), switching away from and back to this tab always tears down and
 rebuilds this whole subtree from scratch (never patches it in place) -- so a freshly-collapsed
@@ -83,7 +86,7 @@ import Grpc
 import Html exposing (Html, button, div, h2, h3, input, option, select, span, text)
 import Html.Attributes exposing (class, disabled, placeholder, selected, type_, value)
 import Html.Events exposing (onClick, onInput)
-import Proto.Rellm exposing (BirdConfig, ServerConfiguration, TwilioConfig, defaultBirdConfig, defaultTwilioConfig)
+import Proto.Rellm exposing (BirdConfig, ServerConfiguration, TelnyxConfig, TwilioConfig, defaultBirdConfig, defaultTelnyxConfig, defaultTwilioConfig)
 import Proto.Rellm.Rellm as Rellm
 import Proto.Rellm.VerificationAPI exposing (VerificationAPI(..))
 import Set exposing (Set)
@@ -102,6 +105,7 @@ import UI.Classes exposing (classes, openClosedClass)
 type alias Model =
     { configEdit : Maybe TwilioConfigEdit
     , birdConfigEdit : Maybe BirdConfigEdit
+    , telnyxConfigEdit : Maybe TelnyxConfigEdit
     , preferredProvidersEdit : Maybe PreferredProvidersEdit
     , webPushPublicKeyEdit : Maybe TextFieldEdit
     , webPushPrivateKeyEdit : Maybe TextFieldEdit
@@ -118,6 +122,7 @@ this is safe against `ServerInformationPage`'s per-tab `Html.Keyed` remounting.
 -}
 type IntegrationsSection
     = ExternalIntegrationsSection
+    | TelnyxIntegrationSection
     | TwilioIntegrationSection
     | BirdIntegrationSection
 
@@ -130,6 +135,9 @@ integrationsSectionKey section =
     case section of
         ExternalIntegrationsSection ->
             "external"
+
+        TelnyxIntegrationSection ->
+            "telnyx"
 
         TwilioIntegrationSection ->
             "twilio"
@@ -168,7 +176,15 @@ type AdminContactIntegrationsStatus
 
 
 type Msg
-    = TwilioEditClicked
+    = TelnyxEditClicked
+    | TelnyxEnabledToggled
+    | TelnyxApiKeyChanged String
+    | TelnyxFromNumberChanged String
+    | TelnyxMessagingProfileIdChanged String
+    | TelnyxCancelClicked
+    | TelnyxSaveClicked
+    | GotTelnyxSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, ServerConfiguration ))
+    | TwilioEditClicked
     | TwilioEnabledToggled
     | TwilioAccountSidChanged String
     | TwilioApiKeySidChanged String
@@ -205,6 +221,21 @@ type Msg
     | ContactIntegrationsTabActivated
     | GotAuthenticatedServerConfiguration (Result Grpc.Error ( Maybe AccountsPanel.Msg, ServerConfiguration ))
     | IntegrationsSectionToggled IntegrationsSection
+
+
+{-| Live only while the Telnyx config is being edited by an admin. `apiKey` always starts blank
+(see module doc) -- leaving it blank on Save means "keep whatever's already stored" (the backend
+splices the existing value back in when the incoming `telnyx_api_key` is empty, mirroring
+`WebPushConfig.privateVapidKey`'s own merge rule). `fromNumber`/`messagingProfileId` are Telnyx's
+sending number and the Messaging Profile ID it's assigned to -- see `TelnyxConfig`'s own proto doc.
+-}
+type alias TelnyxConfigEdit =
+    { enabled : Bool
+    , apiKey : String
+    , fromNumber : String
+    , messagingProfileId : String
+    , status : AccountsPanel.FormStatus
+    }
 
 
 {-| Live only while the Twilio config is being edited by an admin. `apiKeySecret` always starts
@@ -264,6 +295,7 @@ init : Model
 init =
     { configEdit = Nothing
     , birdConfigEdit = Nothing
+    , telnyxConfigEdit = Nothing
     , preferredProvidersEdit = Nothing
     , webPushPublicKeyEdit = Nothing
     , webPushPrivateKeyEdit = Nothing
@@ -284,10 +316,20 @@ activated =
     ContactIntegrationsTabActivated
 
 
-{-| `twilioConfig`/`birdConfig`/`preferredVerificationApis` off of `model.adminContactIntegrations`'s
-own freshly-authenticated fetch (see module doc) -- `Nothing`/`[]` whenever that fetch hasn't
-completed yet (or failed), same as `ClusterTab`'s own accessors.
+{-| `telnyxConfig`/`twilioConfig`/`birdConfig`/`preferredVerificationApis` off of
+`model.adminContactIntegrations`'s own freshly-authenticated fetch (see module doc) -- `Nothing`/`[]`
+whenever that fetch hasn't completed yet (or failed), same as `ClusterTab`'s own accessors.
 -}
+adminTelnyxConfig : Model -> Maybe TelnyxConfig
+adminTelnyxConfig model =
+    case model.adminContactIntegrations of
+        AdminContactIntegrationsLoaded config ->
+            config.telnyxConfig
+
+        _ ->
+            Nothing
+
+
 adminTwilioConfig : Model -> Maybe TwilioConfig
 adminTwilioConfig model =
     case model.adminContactIntegrations of
@@ -325,6 +367,65 @@ adminPreferredProviders model =
 update : Shared.Model -> String -> Maybe RellmServer -> Msg -> Model -> ( Model, Effect Msg )
 update shared targetHost maybeServer msg model =
     case msg of
+        TelnyxEditClicked ->
+            let
+                telnyxConfig : Maybe TelnyxConfig
+                telnyxConfig =
+                    adminTelnyxConfig model
+            in
+            ( { model
+                | telnyxConfigEdit =
+                    Just
+                        { enabled = telnyxConfig |> Maybe.map .telnyxEnabled |> Maybe.withDefault False
+                        , apiKey = ""
+                        , fromNumber = telnyxConfig |> Maybe.map .telnyxFromNumber |> Maybe.withDefault ""
+                        , messagingProfileId = telnyxConfig |> Maybe.map .telnyxMessagingProfileId |> Maybe.withDefault ""
+                        , status = AccountsPanel.Idle
+                        }
+              }
+            , Effect.none
+            )
+
+        TelnyxEnabledToggled ->
+            ( { model | telnyxConfigEdit = model.telnyxConfigEdit |> Maybe.map (\edit -> { edit | enabled = not edit.enabled }) }, Effect.none )
+
+        TelnyxApiKeyChanged text ->
+            ( { model | telnyxConfigEdit = model.telnyxConfigEdit |> Maybe.map (\edit -> { edit | apiKey = text }) }, Effect.none )
+
+        TelnyxFromNumberChanged text ->
+            ( { model | telnyxConfigEdit = model.telnyxConfigEdit |> Maybe.map (\edit -> { edit | fromNumber = text }) }, Effect.none )
+
+        TelnyxMessagingProfileIdChanged text ->
+            ( { model | telnyxConfigEdit = model.telnyxConfigEdit |> Maybe.map (\edit -> { edit | messagingProfileId = text }) }, Effect.none )
+
+        TelnyxCancelClicked ->
+            ( { model | telnyxConfigEdit = Nothing }, Effect.none )
+
+        TelnyxSaveClicked ->
+            case ( model.telnyxConfigEdit, Common.adminAccountFor shared targetHost ) of
+                ( Just edit, Just account ) ->
+                    ( { model | telnyxConfigEdit = Just { edit | status = AccountsPanel.Submitting } }
+                    , AccountsPanel.updateServerConfig shared.accounts ( Just account.userId, targetHost ) (applyTelnyxConfig edit)
+                        |> Task.attempt GotTelnyxSaveResult
+                        |> Effect.fromCmd
+                    )
+
+                _ ->
+                    ( model, Effect.none )
+
+        GotTelnyxSaveResult (Ok ( maybeAccountsPanelMsg, newConfig )) ->
+            ( { model | telnyxConfigEdit = Nothing, adminContactIntegrations = AdminContactIntegrationsLoaded newConfig }
+            , Effect.batch
+                [ Common.accountsPanelEffect maybeAccountsPanelMsg
+                , Effect.fromShared (Shared.AccountsPanelMsg (AccountsPanel.GotServerConfigSaveResult targetHost newConfig))
+                ]
+            )
+
+        GotTelnyxSaveResult (Err err) ->
+            ( { model | telnyxConfigEdit = model.telnyxConfigEdit |> Maybe.map (\edit -> { edit | status = AccountsPanel.Errored (AccountsPanel.grpcErrorToString err) }) }
+            , Effect.none
+            )
+
         TwilioEditClicked ->
             let
                 twilioConfig : Maybe TwilioConfig
@@ -660,6 +761,32 @@ fetchAuthenticatedServerConfiguration shared targetHost account =
         |> Effect.fromCmd
 
 
+{-| `TelnyxSaveClicked`'s transform, passed to `AccountsPanel.updateServerConfig` the same way every
+other editor's transform is. Unlike `CdnTab.applyCdnConfig` (which nulls `externalCdnConfig` out
+entirely when its toggle is off), this never nulls `telnyxConfig` out -- `telnyxEnabled` is itself
+the field that means "off," so disabling just flips that bool while `fromNumber`/
+`messagingProfileId` (and whatever's stored for `apiKey`, left untouched when `edit.apiKey` is
+blank) stay put, letting an admin flip Telnyx off and back on without re-entering credentials.
+-}
+applyTelnyxConfig : TelnyxConfigEdit -> ServerConfiguration -> ServerConfiguration
+applyTelnyxConfig edit config =
+    let
+        existing : TelnyxConfig
+        existing =
+            Maybe.withDefault defaultTelnyxConfig config.telnyxConfig
+    in
+    { config
+        | telnyxConfig =
+            Just
+                { existing
+                    | telnyxEnabled = edit.enabled
+                    , telnyxApiKey = edit.apiKey
+                    , telnyxFromNumber = edit.fromNumber
+                    , telnyxMessagingProfileId = edit.messagingProfileId
+                }
+    }
+
+
 {-| `TwilioSaveClicked`'s transform, passed to `AccountsPanel.updateServerConfig` the same way every
 other editor's transform is. Unlike `CdnTab.applyCdnConfig` (which nulls `externalCdnConfig` out
 entirely when its toggle is off), this never nulls `twilioConfig` out -- `twilioEnabled` is itself
@@ -737,7 +864,7 @@ full option list and (indirectly, via `addablePreferredProviders`) for what's le
 -}
 allVerificationApis : List VerificationAPI
 allVerificationApis =
-    [ VERIFICATIONAPITWILIO, VERIFICATIONAPIBIRD ]
+    [ VERIFICATIONAPITWILIO, VERIFICATIONAPIBIRD, VERIFICATIONAPITELNYX ]
 
 
 addablePreferredProviders : List VerificationAPI -> List VerificationAPI
@@ -770,6 +897,9 @@ resolveAddSelection current pending =
 verificationApiText : VerificationAPI -> String
 verificationApiText api =
     case api of
+        VERIFICATIONAPITELNYX ->
+            "Telnyx"
+
         VERIFICATIONAPITWILIO ->
             "Twilio"
 
@@ -838,9 +968,39 @@ externalIntegrationsSection model maybeAdminAccount =
 
                     AdminContactIntegrationsLoaded _ ->
                         [ preferredProvidersSection maybeAdminAccount model.preferredProvidersEdit (adminPreferredProviders model)
+                        , telnyxSection model maybeAdminAccount
                         , twilioSection model maybeAdminAccount
                         , birdSection model maybeAdminAccount
                         ]
+                )
+            ]
+        ]
+
+
+telnyxSection : Model -> Maybe RellmAccount -> Html Msg
+telnyxSection model maybeAdminAccount =
+    let
+        expanded : Bool
+        expanded =
+            integrationsSectionExpanded model TelnyxIntegrationSection
+    in
+    div [ class "server-details-feature-settings" ]
+        [ h3
+            [ classes [ "section-title", "expandable-section-title" ]
+            , onClick (IntegrationsSectionToggled TelnyxIntegrationSection)
+            ]
+            [ span [ classes [ "expandable-section-arrow", openClosedClass expanded ] ] [ text "▼" ]
+            , text "Telnyx"
+            ]
+        , div
+            [ classes [ "expandable-section-content", openClosedClass expanded, "border-color-primary-anchor-50" ] ]
+            [ div [ class "expandable-section-content-inner" ]
+                (case model.telnyxConfigEdit of
+                    Just edit ->
+                        telnyxEditView edit
+
+                    Nothing ->
+                        telnyxDisplayView maybeAdminAccount (adminTelnyxConfig model)
                 )
             ]
         ]
@@ -902,6 +1062,66 @@ birdSection model maybeAdminAccount =
                 )
             ]
         ]
+
+
+telnyxDisplayView : Maybe RellmAccount -> Maybe TelnyxConfig -> List (Html Msg)
+telnyxDisplayView maybeAdminAccount telnyxConfig =
+    [ Common.settingsRow "Telnyx Enabled" (Common.switchDisplay (telnyxConfig |> Maybe.map .telnyxEnabled |> Maybe.withDefault False))
+    , Common.settingsRow "From Number" (span [ class "server-details-feature-settings-value" ] [ text (telnyxConfig |> Maybe.map .telnyxFromNumber |> Maybe.withDefault "—") ])
+    , Common.settingsRow "Messaging Profile ID" (span [ class "server-details-feature-settings-value" ] [ text (telnyxConfig |> Maybe.map .telnyxMessagingProfileId |> Maybe.withDefault "—") ])
+    , case maybeAdminAccount of
+        Just _ ->
+            button [ class "server-details-rename-button", onClick TelnyxEditClicked ] [ text "Edit Telnyx Settings" ]
+
+        Nothing ->
+            text ""
+    ]
+
+
+{-| Telnyx's Messaging API (`POST /v2/messages`) authenticates with a single v2 API Key as a Bearer
+token -- see `TelnyxConfig`'s own proto doc for why there's no separate account SID the way
+Twilio's auth model needs one.
+-}
+telnyxEditView : TelnyxConfigEdit -> List (Html Msg)
+telnyxEditView edit =
+    [ Common.settingsRow "Telnyx Enabled" (Common.flagSwitch edit.enabled TelnyxEnabledToggled)
+    , Common.settingsRow "API Key"
+        (input
+            [ type_ "password"
+            , class "server-details-rename-input"
+            , placeholder "Enter to change"
+            , value edit.apiKey
+            , onInput TelnyxApiKeyChanged
+            , disabled (edit.status == AccountsPanel.Submitting)
+            ]
+            []
+        )
+    , Common.settingsRow "From Number"
+        (input
+            [ class "server-details-rename-input"
+            , placeholder "+15555550100"
+            , value edit.fromNumber
+            , onInput TelnyxFromNumberChanged
+            , disabled (edit.status == AccountsPanel.Submitting)
+            ]
+            []
+        )
+    , Common.settingsRow "Messaging Profile ID"
+        (input
+            [ class "server-details-rename-input"
+            , placeholder "4001xxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+            , value edit.messagingProfileId
+            , onInput TelnyxMessagingProfileIdChanged
+            , disabled (edit.status == AccountsPanel.Submitting)
+            ]
+            []
+        )
+    , div [ class "server-details-feature-settings-actions" ]
+        [ Common.editSaveButton TelnyxSaveClicked edit.status
+        , Common.editCancelButton TelnyxCancelClicked edit.status
+        ]
+    , Common.editErrorView edit.status
+    ]
 
 
 twilioDisplayView : Maybe RellmAccount -> Maybe TwilioConfig -> List (Html Msg)
@@ -1082,7 +1302,7 @@ preferredProvidersSection maybeAdminAccount maybeEdit preferred =
             div [ class "server-details-permissions" ]
                 [ h3 [ class "section-title" ] [ text "Preferred Verification Providers" ]
                 , if List.isEmpty preferred then
-                    Html.p [] [ text "None set -- falls back to whichever provider is enabled (Twilio first, then Bird)." ]
+                    Html.p [] [ text "None set -- falls back to whichever provider is enabled (Twilio first, then Bird, then Telnyx)." ]
 
                   else
                     div [ class "permission-badges" ]

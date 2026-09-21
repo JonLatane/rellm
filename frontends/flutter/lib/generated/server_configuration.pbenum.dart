@@ -157,10 +157,12 @@ class NavigationTab extends $pb.ProtobufEnum {
 class VerificationAPI extends $pb.ProtobufEnum {
   static const VerificationAPI VERIFICATION_API_TWILIO = VerificationAPI._(0, _omitEnumNames ? '' : 'VERIFICATION_API_TWILIO');
   static const VerificationAPI VERIFICATION_API_BIRD = VerificationAPI._(1, _omitEnumNames ? '' : 'VERIFICATION_API_BIRD');
+  static const VerificationAPI VERIFICATION_API_TELNYX = VerificationAPI._(2, _omitEnumNames ? '' : 'VERIFICATION_API_TELNYX');
 
   static const $core.List<VerificationAPI> values = <VerificationAPI> [
     VERIFICATION_API_TWILIO,
     VERIFICATION_API_BIRD,
+    VERIFICATION_API_TELNYX,
   ];
 
   static final $core.Map<$core.int, VerificationAPI> _byValue = $pb.ProtobufEnum.initByValue(values);

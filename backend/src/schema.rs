@@ -394,6 +394,7 @@ diesel::table! {
         media_settings -> Nullable<Jsonb>,
         stripe_config -> Nullable<Jsonb>,
         market_settings -> Nullable<Jsonb>,
+        telnyx_config -> Nullable<Jsonb>,
     }
 }
 

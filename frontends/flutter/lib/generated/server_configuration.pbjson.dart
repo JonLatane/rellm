@@ -134,13 +134,14 @@ const VerificationAPI$json = {
   '2': [
     {'1': 'VERIFICATION_API_TWILIO', '2': 0},
     {'1': 'VERIFICATION_API_BIRD', '2': 1},
+    {'1': 'VERIFICATION_API_TELNYX', '2': 2},
   ],
 };
 
 /// Descriptor for `VerificationAPI`. Decode as a `google.protobuf.EnumDescriptorProto`.
 final $typed_data.Uint8List verificationAPIDescriptor = $convert.base64Decode(
     'Cg9WZXJpZmljYXRpb25BUEkSGwoXVkVSSUZJQ0FUSU9OX0FQSV9UV0lMSU8QABIZChVWRVJJRk'
-    'lDQVRJT05fQVBJX0JJUkQQAQ==');
+    'lDQVRJT05fQVBJX0JJUkQQARIbChdWRVJJRklDQVRJT05fQVBJX1RFTE5ZWBAC');
 
 @$core.Deprecated('Use serverConfigurationDescriptor instead')
 const ServerConfiguration$json = {
@@ -168,6 +169,7 @@ const ServerConfiguration$json = {
     {'1': 'twilio_config', '3': 122, '4': 1, '5': 11, '6': '.rellm.TwilioConfig', '9': 6, '10': 'twilioConfig', '17': true},
     {'1': 'bird_config', '3': 123, '4': 1, '5': 11, '6': '.rellm.BirdConfig', '9': 7, '10': 'birdConfig', '17': true},
     {'1': 'stripe_config', '3': 124, '4': 1, '5': 11, '6': '.rellm.StripeConfig', '9': 8, '10': 'stripeConfig', '17': true},
+    {'1': 'telnyx_config', '3': 125, '4': 1, '5': 11, '6': '.rellm.TelnyxConfig', '9': 9, '10': 'telnyxConfig', '17': true},
   ],
   '8': [
     {'1': '_server_info'},
@@ -179,6 +181,7 @@ const ServerConfiguration$json = {
     {'1': '_twilio_config'},
     {'1': '_bird_config'},
     {'1': '_stripe_config'},
+    {'1': '_telnyx_config'},
   ],
 };
 
@@ -212,10 +215,11 @@ final $typed_data.Uint8List serverConfigurationDescriptor = $convert.base64Decod
     'R3aWxpb19jb25maWcYeiABKAsyEy5yZWxsbS5Ud2lsaW9Db25maWdIBlIMdHdpbGlvQ29uZmln'
     'iAEBEjcKC2JpcmRfY29uZmlnGHsgASgLMhEucmVsbG0uQmlyZENvbmZpZ0gHUgpiaXJkQ29uZm'
     'lniAEBEj0KDXN0cmlwZV9jb25maWcYfCABKAsyEy5yZWxsbS5TdHJpcGVDb25maWdICFIMc3Ry'
-    'aXBlQ29uZmlniAEBQg4KDF9zZXJ2ZXJfaW5mb0ISChBfZmVkZXJhdGlvbl9pbmZvQg4KDF9jdX'
-    'N0b21fdGFic0IWChRfZXh0ZXJuYWxfY2RuX2NvbmZpZ0IUChJfY2x1c3Rlcl9yZXNvdXJjZXNC'
-    'EgoQX3dlYl9wdXNoX2NvbmZpZ0IQCg5fdHdpbGlvX2NvbmZpZ0IOCgxfYmlyZF9jb25maWdCEA'
-    'oOX3N0cmlwZV9jb25maWc=');
+    'aXBlQ29uZmlniAEBEj0KDXRlbG55eF9jb25maWcYfSABKAsyEy5yZWxsbS5UZWxueXhDb25maW'
+    'dICVIMdGVsbnl4Q29uZmlniAEBQg4KDF9zZXJ2ZXJfaW5mb0ISChBfZmVkZXJhdGlvbl9pbmZv'
+    'Qg4KDF9jdXN0b21fdGFic0IWChRfZXh0ZXJuYWxfY2RuX2NvbmZpZ0IUChJfY2x1c3Rlcl9yZX'
+    'NvdXJjZXNCEgoQX3dlYl9wdXNoX2NvbmZpZ0IQCg5fdHdpbGlvX2NvbmZpZ0IOCgxfYmlyZF9j'
+    'b25maWdCEAoOX3N0cmlwZV9jb25maWdCEAoOX3RlbG55eF9jb25maWc=');
 
 @$core.Deprecated('Use clusterResourcesDescriptor instead')
 const ClusterResources$json = {
@@ -685,6 +689,24 @@ final $typed_data.Uint8List twilioConfigDescriptor = $convert.base64Decode(
     'cGlfa2V5X3NpZBgFIAEoCVIPdHdpbGlvQXBpS2V5U2lkEjEKFXR3aWxpb19hcGlfa2V5X3NlY3'
     'JldBgCIAEoCVISdHdpbGlvQXBpS2V5U2VjcmV0EiwKEnR3aWxpb19mcm9tX251bWJlchgEIAEo'
     'CVIQdHdpbGlvRnJvbU51bWJlcg==');
+
+@$core.Deprecated('Use telnyxConfigDescriptor instead')
+const TelnyxConfig$json = {
+  '1': 'TelnyxConfig',
+  '2': [
+    {'1': 'telnyx_enabled', '3': 1, '4': 1, '5': 8, '10': 'telnyxEnabled'},
+    {'1': 'telnyx_api_key', '3': 2, '4': 1, '5': 9, '10': 'telnyxApiKey'},
+    {'1': 'telnyx_from_number', '3': 3, '4': 1, '5': 9, '10': 'telnyxFromNumber'},
+    {'1': 'telnyx_messaging_profile_id', '3': 4, '4': 1, '5': 9, '10': 'telnyxMessagingProfileId'},
+  ],
+};
+
+/// Descriptor for `TelnyxConfig`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List telnyxConfigDescriptor = $convert.base64Decode(
+    'CgxUZWxueXhDb25maWcSJQoOdGVsbnl4X2VuYWJsZWQYASABKAhSDXRlbG55eEVuYWJsZWQSJA'
+    'oOdGVsbnl4X2FwaV9rZXkYAiABKAlSDHRlbG55eEFwaUtleRIsChJ0ZWxueXhfZnJvbV9udW1i'
+    'ZXIYAyABKAlSEHRlbG55eEZyb21OdW1iZXISPQobdGVsbnl4X21lc3NhZ2luZ19wcm9maWxlX2'
+    'lkGAQgASgJUhh0ZWxueXhNZXNzYWdpbmdQcm9maWxlSWQ=');
 
 @$core.Deprecated('Use birdConfigDescriptor instead')
 const BirdConfig$json = {

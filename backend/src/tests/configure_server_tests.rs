@@ -8,8 +8,8 @@ use diesel::Connection;
 
 use crate::db_connection::PgPooledConnection;
 use crate::logic::{
-    server_bird_config, server_facebook_app_credentials, server_twilio_config,
-    server_x_twitter_app_credentials,
+    server_bird_config, server_facebook_app_credentials, server_telnyx_config,
+    server_twilio_config, server_x_twitter_app_credentials,
 };
 use crate::logic::stripe_sync::server_stripe_config;
 use crate::protos::*;
@@ -448,6 +448,96 @@ fn setting_bird_config_to_none_clears_the_stored_secret() {
         configure_server(clearing_config, &admin, conn).expect("clearing configure should succeed");
 
         assert_eq!(server_bird_config(conn), None);
+
+        Ok(())
+    });
+}
+
+/// Mirrors `twilio_request` exactly, against `telnyx_config` instead.
+fn telnyx_request(
+    conn: &mut PgPooledConnection,
+    api_key: &str,
+    from_number: &str,
+) -> ServerConfiguration {
+    let mut config = get_server_configuration_proto(conn).expect("failed to fetch base config");
+    config.telnyx_config = Some(TelnyxConfig {
+        telnyx_enabled: true,
+        telnyx_api_key: api_key.to_string(),
+        telnyx_from_number: from_number.to_string(),
+        telnyx_messaging_profile_id: "profile_1".to_string(),
+    });
+    config
+}
+
+#[test]
+fn telnyx_api_key_is_never_returned_to_the_client() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let admin = create_user(conn, "cst_telnyx_hidden");
+        let admin = grant_permissions(conn, &admin, vec![Permission::Admin]);
+
+        let updated = configure_server(
+            telnyx_request(conn, "super-secret-key", "+15005550006"),
+            &admin,
+            conn,
+        )
+        .expect("configure should succeed");
+
+        assert_eq!(
+            updated.telnyx_config.expect("telnyx_config should be set").telnyx_api_key,
+            ""
+        );
+
+        Ok(())
+    });
+}
+
+#[test]
+fn empty_telnyx_api_key_preserves_the_previously_stored_one() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let admin = create_user(conn, "cst_telnyx_preserved");
+        let admin = grant_permissions(conn, &admin, vec![Permission::Admin]);
+
+        configure_server(
+            telnyx_request(conn, "super-secret-key", "+15005550006"),
+            &admin,
+            conn,
+        )
+        .expect("first configure should succeed");
+
+        // Changing just the From Number, with the API Key left blank.
+        configure_server(telnyx_request(conn, "", "+15005550007"), &admin, conn)
+            .expect("second configure should succeed");
+
+        let stored = server_telnyx_config(conn).expect("telnyx config should still be configured");
+        assert_eq!(stored.telnyx_from_number, "+15005550007");
+        assert_eq!(stored.telnyx_api_key, "super-secret-key");
+
+        Ok(())
+    });
+}
+
+#[test]
+fn setting_telnyx_config_to_none_clears_the_stored_secret() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let admin = create_user(conn, "cst_telnyx_cleared");
+        let admin = grant_permissions(conn, &admin, vec![Permission::Admin]);
+
+        configure_server(
+            telnyx_request(conn, "super-secret-key", "+15005550006"),
+            &admin,
+            conn,
+        )
+        .expect("first configure should succeed");
+
+        let mut clearing_config =
+            get_server_configuration_proto(conn).expect("failed to fetch base config");
+        clearing_config.telnyx_config = None;
+        configure_server(clearing_config, &admin, conn).expect("clearing configure should succeed");
+
+        assert_eq!(server_telnyx_config(conn), None);
 
         Ok(())
     });

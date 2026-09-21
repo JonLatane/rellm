@@ -1,22 +1,23 @@
 //! Shared helpers for `ContactMethod` verification (SMS only this iteration -- see `TwilioConfig`/
-//! `BirdConfig` in `server_configuration.proto`). Used both by `update_user.rs` (to compute
-//! `ContactMethod.supported_by_server`, always server-side/never client-trusted) and by the
+//! `BirdConfig`/`TelnyxConfig` in `server_configuration.proto`). Used both by `update_user.rs` (to
+//! compute `ContactMethod.supported_by_server`, always server-side/never client-trusted) and by the
 //! `StartContactMethodVerification`/`VerifyContactMethod` RPCs (to gate/actually place the call).
 //!
-//! Two providers exist today (`VerificationApi::Twilio`/`VerificationApi::Bird`), each configured
-//! independently and each optional -- an admin may enable either, both, or neither.
-//! `preferred_verification_apis` (stored the same way `Permission` lists are -- a JSON array of the
-//! enum's string names, so it's directly admin-DB-editable too) lets an admin pick which provider
-//! is tried first when both are enabled; whichever *available* (enabled+configured) providers
-//! aren't explicitly ordered still get tried, in the fixed default order [Twilio, Bird], after the
-//! explicitly preferred ones -- see that field's own doc in `server_configuration.proto`.
+//! Three providers exist today (`VerificationApi::Twilio`/`VerificationApi::Bird`/
+//! `VerificationApi::Telnyx`), each configured independently and each optional -- an admin may
+//! enable any combination of them, or none. `preferred_verification_apis` (stored the same way
+//! `Permission` lists are -- a JSON array of the enum's string names, so it's directly
+//! admin-DB-editable too) lets an admin pick which provider is tried first when more than one is
+//! enabled; whichever *available* (enabled+configured) providers aren't explicitly ordered still
+//! get tried, in the fixed default order [Twilio, Bird, Telnyx], after the explicitly preferred
+//! ones -- see that field's own doc in `server_configuration.proto`.
 
 use tonic::{Code, Status};
 
 use crate::db_connection::PgPooledConnection;
-use crate::logic::{bird_sync, twilio_sync};
+use crate::logic::{bird_sync, telnyx_sync, twilio_sync};
 use crate::marshaling::ToProtoServerConfiguration;
-use crate::protos::{BirdConfig, TwilioConfig, VerificationApi};
+use crate::protos::{BirdConfig, TelnyxConfig, TwilioConfig, VerificationApi};
 use crate::rpcs::get_server_configuration_model;
 
 /// Loads the server's stored `TwilioConfig`, if any, *unscrubbed* -- i.e. including the real
@@ -38,6 +39,14 @@ pub fn server_bird_config(conn: &mut PgPooledConnection) -> Option<BirdConfig> {
         .and_then(|c| serde_json::from_value::<BirdConfig>(c).ok())
 }
 
+/// Same as `server_twilio_config`, but for Telnyx's `telnyx_api_key`.
+pub fn server_telnyx_config(conn: &mut PgPooledConnection) -> Option<TelnyxConfig> {
+    get_server_configuration_model(conn)
+        .ok()
+        .and_then(|c| c.telnyx_config)
+        .and_then(|c| serde_json::from_value::<TelnyxConfig>(c).ok())
+}
+
 pub fn twilio_available(conn: &mut PgPooledConnection) -> bool {
     server_twilio_config(conn).is_some_and(|c| c.twilio_enabled)
 }
@@ -46,10 +55,14 @@ pub fn bird_available(conn: &mut PgPooledConnection) -> bool {
     server_bird_config(conn).is_some_and(|c| c.bird_enabled)
 }
 
+pub fn telnyx_available(conn: &mut PgPooledConnection) -> bool {
+    server_telnyx_config(conn).is_some_and(|c| c.telnyx_enabled)
+}
+
 /// Whether the server currently has *any* SMS verification provider enabled. This is the single
 /// source of truth `ContactMethod.supported_by_server` (for `tel:` values) is derived from.
 pub fn verification_available(conn: &mut PgPooledConnection) -> bool {
-    twilio_available(conn) || bird_available(conn)
+    twilio_available(conn) || bird_available(conn) || telnyx_available(conn)
 }
 
 /// The server's admin-set `preferred_verification_apis`, in stored order -- unlike
@@ -73,16 +86,22 @@ pub fn preferred_verification_apis(conn: &mut PgPooledConnection) -> Vec<Verific
 pub fn available_verification_apis(conn: &mut PgPooledConnection) -> Vec<VerificationApi> {
     let twilio_available = twilio_available(conn);
     let bird_available = bird_available(conn);
+    let telnyx_available = telnyx_available(conn);
     let is_available = |api: &VerificationApi| match api {
         VerificationApi::Twilio => twilio_available,
         VerificationApi::Bird => bird_available,
+        VerificationApi::Telnyx => telnyx_available,
     };
 
     let mut result: Vec<VerificationApi> = preferred_verification_apis(conn)
         .into_iter()
         .filter(is_available)
         .collect();
-    for api in [VerificationApi::Twilio, VerificationApi::Bird] {
+    for api in [
+        VerificationApi::Twilio,
+        VerificationApi::Bird,
+        VerificationApi::Telnyx,
+    ] {
         if is_available(&api) && !result.contains(&api) {
             result.push(api);
         }
@@ -118,6 +137,12 @@ pub fn send_verification_sms(
                 .unwrap_or_else(|| bird_sync::default_base_url(&config.bird_region));
             bird_sync::send_sms_at(&base_url, &config, to, &body)
         }
+        Some(VerificationApi::Telnyx) => {
+            let config = server_telnyx_config(conn)
+                .ok_or_else(|| Status::new(Code::FailedPrecondition, "telnyx_not_configured"))?;
+            let base_url = base_url.unwrap_or(telnyx_sync::DEFAULT_BASE_URL);
+            telnyx_sync::send_sms_at(base_url, &config, to, &body)
+        }
         None => Err(Status::new(
             Code::FailedPrecondition,
             "verification_not_configured",
@@ -139,7 +164,7 @@ fn verification_sms_body(conn: &mut PgPooledConnection, code: &str) -> String {
         .and_then(|c| c.server_info.as_ref())
         .and_then(|info| info.name.clone())
         .filter(|name| !name.is_empty())
-        .unwrap_or_else(|| "Jonline".to_string());
+        .unwrap_or_else(|| "Rellm".to_string());
     let frontend_host = config
         .as_ref()
         .and_then(|c| c.external_cdn_config.as_ref())

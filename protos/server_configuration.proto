@@ -96,6 +96,7 @@ message ServerConfiguration {
   // SMS/Email providers.
   // Only serialized for admin users.
   repeated VerificationAPI preferred_verification_apis = 120;
+
   // Derived from whether TwilioConfig.enabled is true, etc. Serialized to every caller (not
   // admin-only, unlike `preferred_verification_apis`/`twilio_config`) -- this is what a non-admin
   // client should check to decide whether to show verification UI at all, without exposing any
@@ -111,6 +112,10 @@ message ServerConfiguration {
 
   // Stripe Config, backing the Marketplace (`market.proto`). Only serialized for admin users.
   optional StripeConfig stripe_config = 124;
+
+  // Telnyx Config -- another alternative SMS verification provider to Twilio (see `TelnyxConfig`'s
+  // own doc). Only serialized for admin users.
+  optional TelnyxConfig telnyx_config = 125;
 }
 
 // Coordinates a small piece of shared, cluster-wide state across multiple independent Rellm
@@ -654,6 +659,7 @@ message WebPushConfig {
 enum VerificationAPI {
   VERIFICATION_API_TWILIO = 0;
   VERIFICATION_API_BIRD = 1;
+  VERIFICATION_API_TELNYX = 2;
 }
 
 // Twilio credentials, authenticated via a Twilio **API Key** (`twilio_api_key_sid`/
@@ -678,6 +684,23 @@ message TwilioConfig {
   string twilio_api_key_secret = 2;
   // The Twilio-provisioned sending number for outbound verification SMS. Not secret.
   string twilio_from_number = 4;
+}
+
+// Telnyx (https://telnyx.com) Config -- an alternative SMS verification provider to Twilio, with a
+// simpler single-API-key auth model like Bird's (see `BirdConfig`'s own doc).
+message TelnyxConfig {
+  bool telnyx_enabled = 1;
+  // The Telnyx v2 API Key (starts with `KEY`), used as Bearer auth for Telnyx's Messaging API
+  // (`POST /v2/messages`). Never serialized once written -- same write-only treatment as
+  // `TwilioConfig.twilio_api_key_secret`/`BirdConfig.bird_access_key`.
+  string telnyx_api_key = 2;
+  // The Telnyx-provisioned sending number for outbound verification SMS (E.164, e.g. a toll-free
+  // number). Not secret.
+  string telnyx_from_number = 3;
+  // The Telnyx Messaging Profile ID that `telnyx_from_number` is assigned to -- required by
+  // Telnyx's Messaging API to actually send (`messaging_profile_id` on `POST /v2/messages`). Not
+  // secret.
+  string telnyx_messaging_profile_id = 4;
 }
 
 // Bird (https://bird.com, formerly MessageBird) Config -- an alternative SMS verification
