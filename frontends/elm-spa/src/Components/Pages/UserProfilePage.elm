@@ -48,8 +48,8 @@ import Effect exposing (Effect)
 import Gen.Route
 import Grpc
 import Html exposing (Html, a, button, div, h2, h3, input, label, option, p, select, span, text)
-import Html.Attributes exposing (checked, class, classList, disabled, href, id, placeholder, selected, title, type_, value)
-import Html.Events exposing (onClick, onInput)
+import Html.Attributes exposing (attribute, checked, class, classList, disabled, href, id, name, novalidate, placeholder, readonly, selected, tabindex, title, type_, value)
+import Html.Events exposing (onClick, onInput, onSubmit)
 import Http
 import Json.Decode as Decode
 import Ports
@@ -102,6 +102,7 @@ type alias Model =
     , permissionsEdit : Maybe PermissionsEdit
     , permissionsExpanded : Bool
     , federatedProfilesEdit : Maybe FederatedProfilesEdit
+    , passwordResetEdit : Maybe PasswordResetEdit
     , syncSources : SyncSourcesState
     , syncSourcesExpanded : Bool
     , syncDestinations : SyncDestinationsState
@@ -280,6 +281,11 @@ type Msg
     | AIProviderRevokeClicked AIProvider AIProviderGrant
     | GotAIProviderRevokeResult String (Result Grpc.Error ( Maybe AccountsPanel.Msg, () ))
     | AIProviderGrantsSectionToggled
+    | PasswordResetEditClicked
+    | PasswordResetInputChanged String
+    | PasswordResetCancelClicked
+    | PasswordResetSaveClicked
+    | GotPasswordResetSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, Proto.Google.Protobuf.Empty ))
     | DeleteUserClicked
     | ScrollToProfileSectionAttempted
 
@@ -311,6 +317,17 @@ edited -- `input` is the in-progress value, independent of `status.user.realName
 until `RealNameSaveClicked` succeeds.
 -}
 type alias RealNameEdit =
+    { input : String
+    , status : SubmitStatus
+    }
+
+
+{-| Live only while the "Reset Password" form (see `Model.passwordResetEdit`) is open -- swapped in
+for both the "Reset Password" and "Delete User" buttons at once (see `accountActionsSection`),
+mirroring `RealNameEdit` except there's nothing to prefill `input` with (a password never round-trips
+back from the server) so it always starts empty, same as `AccountsPanel`'s own password fields.
+-}
+type alias PasswordResetEdit =
     { input : String
     , status : SubmitStatus
     }
@@ -1043,6 +1060,7 @@ init shared pageIsSecure targetHost lookup navKey path query fragment =
             , permissionsEdit = Nothing
             , permissionsExpanded = False
             , federatedProfilesEdit = Nothing
+            , passwordResetEdit = Nothing
             , syncSources = initSyncSources
             , syncSourcesExpanded = fragment == Just "sync-sources"
             , syncDestinations = initSyncDestinations
@@ -3649,6 +3667,40 @@ updateInner shared msg model =
             , Effect.none
             )
 
+        PasswordResetEditClicked ->
+            ( { model | passwordResetEdit = Just { input = "", status = Idle } }, Effect.none )
+
+        PasswordResetInputChanged input ->
+            ( { model | passwordResetEdit = model.passwordResetEdit |> Maybe.map (\edit -> { edit | input = input }) }
+            , Effect.none
+            )
+
+        PasswordResetCancelClicked ->
+            ( { model | passwordResetEdit = Nothing }, Effect.none )
+
+        PasswordResetSaveClicked ->
+            case ( model.resolver.status, model.passwordResetEdit, serverAndAccount shared model ) of
+                ( Resolver.Loaded user, Just edit, Just ( server, account ) ) ->
+                    ( { model | passwordResetEdit = Just { edit | status = Submitting } }
+                    , Users.resetPassword shared.accounts ( Just account.userId, server.frontendHost ) user edit.input
+                        |> Task.attempt GotPasswordResetSaveResult
+                        |> Effect.fromCmd
+                    )
+
+                _ ->
+                    ( model, Effect.none )
+
+        GotPasswordResetSaveResult (Ok ( maybeAccountsPanelMsg, _ )) ->
+            ( { model | passwordResetEdit = Nothing }, accountsPanelEffect maybeAccountsPanelMsg )
+
+        GotPasswordResetSaveResult (Err err) ->
+            ( { model
+                | passwordResetEdit =
+                    model.passwordResetEdit |> Maybe.map (\edit -> { edit | status = SubmitFailed (AccountsPanel.grpcErrorToString err) })
+              }
+            , Effect.none
+            )
+
         -- Same shape as `SyncSourceDeleteClicked`: just opens the
         -- shared "are you sure?" dialog -- the actual `DeleteUser` call
         -- happens in `Shared.update`'s `ConfirmDelete` (see
@@ -4542,7 +4594,7 @@ profileDetail shared model server maybeAccount user =
         , storageQuotaSection isAdmin (isOwnProfile maybeAccount user) model.storageQuotaExpanded model.storageQuotaEdit user
         , subscriptionsSection shared.time.browserTimeZone isAdmin (isOwnProfile maybeAccount user) model.subscriptionsExpanded model.cancelingSubscriptions user
         , permissionsSection isAdmin model.permissionsExpanded model.permissionsEdit user
-        , deleteUserSection canEdit
+        , accountActionsSection canEdit model.passwordResetEdit user
         ]
 
 
@@ -5622,21 +5674,126 @@ permissionsSection isAdmin expanded maybeEdit user =
             ]
 
 
-{-| The "Delete User" button -- shown only to `canEdit` viewers (the
-profile's own owner, or an Admin), matching
-`backend/src/rpcs/users/delete_user.rs`'s own self-or-Admin gate. Fires
-`DeleteUserClicked`, which just opens the shared "are you sure?" dialog
-(`Shared.RequestDelete`/`Shared.ConfirmUserDelete`) -- see its own doc for
-where the actual `DeleteUser` RPC happens.
+{-| The "Reset Password"/"Delete User" action row -- shown only to `canEdit` viewers (the profile's
+own owner, or an Admin), matching both `backend/src/rpcs/authentication/reset_password.rs`'s and
+`backend/src/rpcs/users/delete_user.rs`'s own self-or-Admin gates (`canEditProfile`). "Reset
+Password" and "Delete User" sit side by side until "Reset Password" is clicked
+(`PasswordResetEditClicked`), which swaps both of them out for a New Password field plus Set
+Password/Cancel -- all five pieces (`Reset Password`, a visually-hidden username field for password
+managers, the password field, the Set/Cancel pair, and `Delete User`) are always rendered, in that
+fixed order, in one `Html.form`; which side is showing is animated purely via each direct child's own
+`max-width` (see `.profile-account-actions` in profiles.css), exactly the trick
+`UI.addAccountServerHeaderRow` uses for the "Add Account/Server..." button vs. its tabs, rather than
+either side being mounted/unmounted outright. A real `<form>` (not a `div`), the hidden username
+field, and a `type_ "submit"` Set Password button (`Html.Events.onSubmit` always calls
+`preventDefault`, so this is safe) are what let Chrome/Safari's own "Save password?" prompt recognize
+this as a credential pair worth offering to save, mirroring `UI.formView`'s own Login/Create Account
+form. `PasswordResetSaveClicked` itself is a no-op while `model.passwordResetEdit == Nothing` (see
+`update`), so wiring every submit here to that one message unconditionally is safe even though the
+form's other (non-editing) state also technically contains a `type_ "submit"` button -- it's
+`pointer-events: none`/zero-width then, so it's never actually reachable to trigger one.
 -}
-deleteUserSection : Bool -> Html Msg
-deleteUserSection canEdit =
+accountActionsSection : Bool -> Maybe PasswordResetEdit -> User -> Html Msg
+accountActionsSection canEdit maybePasswordResetEdit user =
     if not canEdit then
         text ""
 
     else
-        div [ class "profile-delete-section" ]
-            [ button [ class "profile-delete-button", onClick DeleteUserClicked ] [ text "Delete User" ] ]
+        let
+            isEditing : Bool
+            isEditing =
+                maybePasswordResetEdit /= Nothing
+
+            status : SubmitStatus
+            status =
+                maybePasswordResetEdit |> Maybe.map .status |> Maybe.withDefault Idle
+
+            pendingPassword : String
+            pendingPassword =
+                maybePasswordResetEdit |> Maybe.map .input |> Maybe.withDefault ""
+
+            submitting : Bool
+            submitting =
+                status == Submitting
+        in
+        div [ class "profile-account-actions-section" ]
+            [ Html.form
+                [ classes [ "profile-account-actions", openClosedClass isEditing ]
+                , novalidate True
+                , onSubmit PasswordResetSaveClicked
+                ]
+                [ button
+                    [ type_ "button"
+                    , classes
+                        [ "profile-edit-button"
+                        , "border-color-primary-anchor"
+                        , "text-color-primary-anchor"
+                        , "profile-account-action"
+                        , "profile-account-actions-reset-toggle"
+                        ]
+                    , onClick PasswordResetEditClicked
+                    ]
+                    [ text "Reset Password" ]
+
+                -- Visually hidden (not `display: none` -- some password managers ignore fields that
+                -- way) rather than absent: gives Chrome/Safari's save-password prompt the username to
+                -- pair the new password with, without a second visible field cluttering this row.
+                -- Left permanently at this row's own default collapsed state (no `.is-open` override
+                -- below ever targets it) rather than toggled -- it only needs to *exist* in the form.
+                , input
+                    [ type_ "text"
+                    , name "username"
+                    , attribute "autocomplete" "username"
+                    , value user.username
+                    , readonly True
+                    , tabindex -1
+                    , class "profile-account-actions-username"
+                    ]
+                    []
+                , div [ classes [ "profile-account-action", "profile-account-actions-password-field" ] ]
+                    [ input
+                        [ type_ "password"
+                        , name "new-password"
+                        , attribute "autocomplete" "new-password"
+                        , placeholder "New Password"
+                        , value pendingPassword
+                        , onInput PasswordResetInputChanged
+                        , disabled submitting
+                        , class "profile-account-actions-password-input"
+                        ]
+                        []
+                    ]
+                , div [ classes [ "profile-account-action", "profile-account-actions-buttongroup" ] ]
+                    [ button
+                        [ type_ "submit"
+                        , classes [ "profile-edit-save", "background-color-primary" ]
+                        , disabled (submitting || String.isEmpty pendingPassword)
+                        ]
+                        [ text
+                            (if submitting then
+                                "Setting…"
+
+                             else
+                                "Set Password"
+                            )
+                        ]
+                    , button
+                        [ type_ "button"
+                        , class "profile-edit-cancel"
+                        , onClick PasswordResetCancelClicked
+                        , disabled submitting
+                        ]
+                        [ text "Cancel" ]
+                    ]
+                , button
+                    [ type_ "button"
+                    , classes [ "profile-delete-button", "profile-account-action", "profile-account-actions-delete-toggle" ]
+                    , onClick DeleteUserClicked
+                    ]
+                    [ text "Delete User" ]
+                ]
+            , editErrorView status
+            ]
 
 
 permissionEditBadge : Permission -> Html Msg

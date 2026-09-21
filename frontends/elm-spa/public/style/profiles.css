@@ -164,6 +164,15 @@
   font-size: 0.8rem;
 }
 
+.profile-delete-button {
+  padding: 0.15rem 0.6rem;
+  border: 1px solid var(--danger);
+  border-radius: 4px;
+  background: var(--chip-bg);
+  color: var(--danger);
+  font-size: 0.85rem;
+}
+
 .profile-edit-error {
   color: var(--danger);
   font-size: 0.85rem;
@@ -985,15 +994,103 @@ input.ai-model-provider-grant-models {
   min-width: 8rem;
 }
 
-.profile-delete-section {
+.profile-account-actions-section {
   margin: 1rem 0;
 }
 
-.profile-delete-button {
-  padding: 0.15rem 0.6rem;
-  border: 1px solid var(--danger);
+/* The merged "Reset Password"/"Delete User" row -- `Components/UserProfilePage.elm`'s
+   `accountActionsSection`. All children are always rendered, in a fixed order (Reset Password, a
+   permanently-collapsed hidden username field for password managers, the New Password field, the
+   Set/Cancel pair, Delete User); which side is showing is animated purely via each direct child's
+   own `max-width`, the same trick `shared/accounts_panel.css`'s `.add-account-server-header-row`
+   uses for its "Add Account/Server..." button vs. its tabs. No `gap` here, same reasoning as that
+   row -- it would leave a permanent blank strip next to whichever side is collapsed; `margin-right`
+   (below, on the items that need it) fills that role instead, animating away right alongside
+   `max-width`. */
+.profile-account-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+/* Only *horizontal* padding needs to zero out here -- that's the axis `max-width: 0` is animating,
+   and nonzero left/right padding would set a floor even at `max-width: 0` (this project's global
+   `* { box-sizing: border-box }`, main.css, doesn't make padding itself elastic, just changes what
+   `width` measures). Vertical padding is left alone, still coming from each item's own real class
+   (`.profile-edit-button`/`.profile-delete-button`/etc. below) same as before this row could
+   collapse at all -- so height never moves, only width, matching the "grow/shrink in width" this
+   animates. */
+.profile-account-actions > * {
+  overflow: hidden;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 0 0 auto;
+  max-width: 0;
+  margin-right: 0;
+  padding-left: 0;
+  padding-right: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: max-width 0.25s ease, margin-right 0.25s ease, opacity 0.25s ease, padding-left 0.25s ease, padding-right 0.25s ease;
+}
+
+.profile-account-actions.is-closed > .profile-account-actions-reset-toggle {
+  max-width: 14rem;
+  margin-right: 0.5rem;
+  padding-left: 0.4rem;
+  padding-right: 0.4rem;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.profile-account-actions.is-closed > .profile-account-actions-delete-toggle {
+  max-width: 14rem;
+  padding-left: 0.6rem;
+  padding-right: 0.6rem;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.profile-account-actions.is-open > .profile-account-actions-password-field {
+  max-width: 14rem;
+  margin-right: 0.5rem;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.profile-account-actions.is-open > .profile-account-actions-buttongroup {
+  max-width: 14rem;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.profile-account-actions-password-field {
+  display: flex;
+  align-items: center;
+}
+
+.profile-account-actions-password-input {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  height: 1.7rem;
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--border);
   border-radius: 4px;
-  background: var(--chip-bg);
-  color: var(--danger);
+  background: var(--bg);
+  color: var(--fg);
   font-size: 0.85rem;
+}
+
+/* Set Password/Cancel are one flex item from `.profile-account-actions`' own perspective (`display:
+   flex` here just lays the two buttons out side by side within it), so they can never split across
+   a wrap onto separate lines the way two independent flex items of the outer row could. */
+.profile-account-actions-buttongroup {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.profile-account-actions-section .profile-account-actions-username {
+  padding: 0;
 }

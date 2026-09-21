@@ -189,6 +189,7 @@ serverRules darkMode mainTheme mainFrontendHost server =
         , backgroundOnlyColorRule (selector ++ ".post-card-current .post-star") (theme.backgroundColor ++ "80")
         , backgroundOnlyColorRule (selector ++ ".event-card-current .post-star") (theme.backgroundColor ++ "80")
         , ".server-chip-bottom" ++ selector ++ " .switch input:checked + .slider { background: " ++ switchOnColor ++ "; }\n"
+        , textColorRule (withDescendants selector ".text-color-primary-anchor") theme.primaryAnchorColor
         , textColorRule ("a" ++ selector) theme.primaryAnchorColor
         , accountRowSwitchRule
         ]

@@ -129,11 +129,11 @@
    like an invitation's date/venue line, set off from the surrounding prose
    by its own border rather than blending into either Post section. */
 /* Row direction (not the time/location stack's own column direction below)
-   so `.event-instance-add-more` (see that class's own doc) can sit at the
-   far right of the same row as `.event-instance-detail-info` on desktop,
+   so `.occasion-add-more` (see that class's own doc) can sit at the
+   far right of the same row as `.occasion-detail-info` on desktop,
    wrapping onto its own row -- still right-aligned, via that class's own
    `margin-left: auto` -- once the two no longer fit side by side. */
-.event-instance-detail {
+.occasion-detail {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
@@ -147,10 +147,10 @@
 
 /* The start/end time + location stack -- `Pages.Event.EventId_.eventDetailView`'s
    `instanceDetailAndStrip` groups these under their own wrapper (rather than
-   as direct children of `.event-instance-detail`) precisely so this pair can
-   size/wrap together as one unit against `.event-instance-add-more` sharing
+   as direct children of `.occasion-detail`) precisely so this pair can
+   size/wrap together as one unit against `.occasion-add-more` sharing
    their row. */
-.event-instance-detail-info {
+.occasion-detail-info {
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
@@ -158,17 +158,17 @@
   min-width: 12rem;
 }
 
-.event-instance-when {
+.occasion-when {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   gap: 0.4rem;
 }
 
-/* Shrunk/greyed relative to `.event-instance-when` -- the location is
+/* Shrunk/greyed relative to `.occasion-when` -- the location is
    secondary/supporting information next to the date/time, same "muted"
    treatment `.event-card-where` gives it on the card view. */
-.event-instance-where {
+.occasion-where {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -294,11 +294,11 @@
 /* The date-picker strip -- see Pages/Event/EventId_.elm's
    `instanceHistoryView`. Sits between the Event's own Post and the
    currently-viewed Occasion's start/end/location block. */
-.event-instance-history {
+.occasion-history {
   margin: 0 0 1rem;
 }
 
-.event-instance-history-buttons {
+.occasion-history-buttons {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -306,7 +306,7 @@
   margin-bottom: 0.4rem;
 }
 
-.event-instance-history-button {
+.occasion-history-button {
   padding: 0.15rem 0.5rem 0.3rem;
   border: 1px solid var(--border);
   border-radius: 999px;
@@ -315,17 +315,31 @@
   font-size: 0.8rem;
 }
 
-.event-instance-history-button:disabled {
+.occasion-history-button:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
 
+.event-occasion-strip {
+  overflow: scroll;
+}
+
+.event-occasion-chip {
+  align-content: center;
+  text-wrap: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 5px;
+  border-radius: 1000px;
+  text-align: center;
+}
+
 /* Icon-only strip/grid toggle (see Pages/Event/EventId_.elm's
    `instanceLayoutButtonView`) -- `margin-left: auto` pins it to the right
-   end of `.event-instance-history-buttons`'s flex row regardless of how many
+   end of `.occasion-history-buttons`'s flex row regardless of how many
    "switch scope" buttons precede it; square padding (rather than the
    pill-shaped scope buttons' own) suits its single-glyph label. */
-.event-instance-layout-button {
+.occasion-layout-button {
   margin-left: auto;
   padding: 0.15rem 0.4rem 0.3rem;
   font-size: 0.9rem;
@@ -336,12 +350,12 @@
    conveyed by rotating it 90°, animated via this `transition` rather than
    swapping to a second glyph. `display: inline-block` is needed for
    `transform` to apply at all (it's a no-op on inline elements). */
-.event-instance-layout-icon {
+.occasion-layout-icon {
   display: inline-block;
   transition: transform 0.2s ease;
 }
 
-.event-instance-layout-icon-rotated {
+.occasion-layout-icon-rotated {
   transform: rotate(90deg);
 }
 
@@ -349,7 +363,7 @@
    flex-direction: row;` -- same "no gap, let .flip-animated-item.horizontal's
    own padding-right hold the spacing instead" reasoning as `.servers-strip`
    (accounts_panel.css), whose scrolling-row setup this otherwise mirrors. */
-.event-instance-strip {
+.occasion-strip {
   align-items: flex-start;
   overflow-x: auto;
   overflow-y: hidden;
@@ -363,18 +377,18 @@
 
 /* `.flip-animated-grid` (see ui/flip.css) supplies `display: flex;
    flex-direction: row; flex-wrap: wrap;` -- the `InstanceLayoutChanged`
-   alternative to `.event-instance-strip`: no horizontal scrollbar, grows
+   alternative to `.occasion-strip`: no horizontal scrollbar, grows
    downward instead. `row-gap` (rather than a full `gap` shorthand, which
    would double up with `.flip-animated-item.horizontal`'s own
    `padding-right` between chips on the same line) is needed because that
    same `padding-right` convention leaves `padding-bottom` at `0`, which
    would otherwise butt wrapped rows right up against each other. */
-.event-instance-grid {
+.occasion-grid {
   align-items: flex-start;
   row-gap: 0.4rem;
 }
 
-.event-instance-chip {
+.occasion-chip {
   display: block;
   flex: 0 0 auto;
   padding: 0.3rem 0.6rem;
@@ -386,11 +400,11 @@
   text-decoration: none;
 }
 
-.event-instance-chip:hover {
+.occasion-chip:hover {
   text-decoration: underline;
 }
 
-.event-instance-chip-current {
+.occasion-chip-current {
   font-weight: 700;
 }
 
@@ -480,7 +494,7 @@
   transform: translate(0, -1.5px) scale(2);
 }
 
-/* Mirrors `.event-instance-history-button` (above). */
+/* Mirrors `.occasion-history-button` (above). */
 .events-mode-button {
   padding: 0.15rem 0.6rem 0.3rem;
   border: 1px solid var(--border);
@@ -779,7 +793,7 @@
   scroll-margin-left: -50%;
 }
 
-/* Mirrors `.event-instance-strip` (above). */
+/* Mirrors `.occasion-strip` (above). */
 .events-strip {
   align-items: center;
   overflow-x: auto;
@@ -822,8 +836,8 @@
   -webkit-backdrop-filter: blur(4px); */
 }
 
-/* Mirrors `.event-instance-grid` (above), plus `justify-content: center` --
-   unlike `.event-instance-grid`/`.my-media-panel-grid` (the other two
+/* Mirrors `.occasion-grid` (above), plus `justify-content: center` --
+   unlike `.occasion-grid`/`.my-media-panel-grid` (the other two
    `.flip-animated-grid` callers, left as `flex-start`), this one spans the
    full `98vw` breakout width (see above), so a row that doesn't fill it
    (few events, or the last/only row) would otherwise sit flush against the
@@ -967,7 +981,7 @@
 
 /* Shrunk/greyed relative to `.event-card-when` -- the location is
    secondary/supporting information next to the date/time, same "muted"
-   treatment `.event-instance-where` gives it on the detail view. */
+   treatment `.occasion-where` gives it on the detail view. */
 .event-card-where {
   display: flex;
   align-items: baseline;
@@ -1062,22 +1076,22 @@
 
 /* `Pages.Event.EventId_.instanceTimeEditFormView`/`instanceLocationEditFormView`
    -- the inline start/end-time and address editors slotted into
-   `.event-instance-when`/`.event-instance-where` (see those functions' own
+   `.occasion-when`/`.occasion-where` (see those functions' own
    docs). Reuses `posts.css`'s `.post-visibility-save`/`.post-visibility-cancel`/
    `.post-visibility-error` for the Save/Cancel/error controls themselves,
    same convention `postFieldEditActionsView`'s own doc explains -- these two
    rules just lay out the `<input>`(s) alongside them. */
-.event-instance-time-edit,
-.event-instance-location-edit {
+.occasion-time-edit,
+.occasion-location-edit {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.4rem;
 }
 
-.event-instance-time-edit-input,
-.event-instance-time-edit-timezone-select,
-.event-instance-location-edit-input {
+.occasion-time-edit-input,
+.occasion-time-edit-timezone-select,
+.occasion-location-edit-input {
   font: inherit;
   padding: 0.15rem 0.4rem;
   border: 1px solid var(--border);
@@ -1086,12 +1100,12 @@
   color: var(--fg);
 }
 
-.event-instance-location-edit-input {
+.occasion-location-edit-input {
   min-width: 14rem;
 }
 
-/* Groups Save+Cancel as a single flex item within `.event-instance-time-edit`/
-   `.event-instance-location-edit`'s own `flex-wrap: wrap` (above) --
+/* Groups Save+Cancel as a single flex item within `.occasion-time-edit`/
+   `.occasion-location-edit`'s own `flex-wrap: wrap` (above) --
    `visibilityView`'s `.post-visibility-edit-controls` (posts.css) and
    `postFieldEditActionsView`'s plain inline `.event-post-field-edit` wrapper
    reuse this too, for the same reason: without it, a narrow viewport can wrap
@@ -1100,32 +1114,32 @@
    explicitly here since it's the entire point of this class) keeps them
    adjacent -- worst case they overflow together rather than split.
 */
-.event-instance-edit-actions {
+.occasion-edit-actions {
   display: inline-flex;
   flex-wrap: nowrap;
   gap: 0.4rem;
 }
 
 /* `Pages.Event.EventId_.addMoreView` -- the "+ Add More" popover toggle,
-   sharing `.event-instance-detail`'s row with `.event-instance-detail-info`
+   sharing `.occasion-detail`'s row with `.occasion-detail-info`
    (the time/location stack) on desktop -- `margin-left: auto` pushes it to
    that row's far right (rather than e.g. `justify-content: space-between` on
    the parent, which would only push it right while the two share a line: an
    auto margin instead resolves per flex line, so this stays flush right even
-   once `.event-instance-detail`'s `flex-wrap: wrap` drops it to its own line
-   under `.event-instance-detail-info` on narrow/mobile widths, per this
+   once `.occasion-detail`'s `flex-wrap: wrap` drops it to its own line
+   under `.occasion-detail-info` on narrow/mobile widths, per this
    feature's own request). Also shrinks the anchor down to the toggle
    button's own width -- `.popover`'s `right: 0` (popover.css) anchors
    relative to *this* box, so the popover still lines up flush with the
-   toggle either way. `.event-instance-add-more-toggle` mirrors `EventsPage`'s
+   toggle either way. `.occasion-add-more-toggle` mirrors `EventsPage`'s
    own `.filter-icon-button` sizing convention loosely, but reads as text
    (not an icon), so it's its own small pill button instead. */
-.event-instance-add-more {
+.occasion-add-more {
   margin-top: 0.2rem;
   margin-left: auto;
 }
 
-.event-instance-add-more-toggle {
+.occasion-add-more-toggle {
   font: inherit;
   font-size: 0.85rem;
   padding: 0.2rem 0.6rem;
@@ -1134,11 +1148,11 @@
   color: inherit;
 }
 
-.event-instance-add-more-popover {
+.occasion-add-more-popover {
   width: 16rem;
 }
 
-.event-instance-add-more-heading {
+.occasion-add-more-heading {
   margin: 0;
   font-size: 0.95rem;
 }
@@ -1146,7 +1160,7 @@
 /* The `1..52` "N more" grid (`ChoosingCount`) -- wraps into a compact grid
    rather than a single scrolling column, so all 52 options stay reachable
    without an oversized popover. */
-.event-instance-add-more-counts {
+.occasion-add-more-counts {
   display: flex;
   flex-wrap: wrap;
   gap: 0.3rem;
@@ -1155,7 +1169,7 @@
   justify-content: space-around;
 }
 
-.event-instance-add-more-count {
+.occasion-add-more-count {
   font: inherit;
   font-size: 0.8rem;
   padding: 0.15rem 0.45rem;
@@ -1168,20 +1182,20 @@
 
 /* The "Daily"/"Weekly"/"Monthly" (or "Tomorrow"/"Next Week"/"Next Month")
    buttons (`ChoosingFrequency`). */
-.event-instance-add-more-frequencies {
+.occasion-add-more-frequencies {
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;
 }
 
-.event-instance-add-more-frequency {
+.occasion-add-more-frequency {
   font: inherit;
   padding: 0.25rem 0.6rem;
   border: none;
   border-radius: 6px;
 }
 
-.event-instance-add-more-back {
+.occasion-add-more-back {
   align-self: flex-start;
   font: inherit;
   font-size: 0.85rem;
@@ -1192,12 +1206,12 @@
   cursor: pointer;
 }
 
-.event-instance-add-more-error {
+.occasion-add-more-error {
   color: var(--danger);
   font-size: 0.85rem;
 }
 
-.event-instance-add-more-status {
+.occasion-add-more-status {
   color: var(--muted);
   font-size: 0.85rem;
 }

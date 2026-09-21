@@ -28,6 +28,7 @@ module Components.Users exposing
     , permissionFromText
     , permissionText
     , profileHref
+    , resetPassword
     , startContactMethodVerification
     , startsWithReservedShortUrlCharacter
     , titleName
@@ -327,6 +328,30 @@ deleteUser accountsPanelModel maybeAccountServer user =
         maybeAccountServer
         (\server token ->
             Grpc.new Rellm.deleteUser user
+                |> Grpc.setHost (RellmServers.rellmServerUrl server)
+                |> withAccessToken (Just token)
+                |> Grpc.toTask
+        )
+
+
+{-| Resets `user`'s password to `password` (`ResetPassword`, self-or-Admin gated server-side, see
+`backend/src/rpcs/authentication/reset_password.rs`) -- always passes `userId = Just user.id`
+explicitly (rather than `Nothing`, which the RPC would otherwise resolve to "the caller"), so this
+works identically whether the caller is resetting their own password or, as an Admin, someone
+else's. Used by `Components.Pages.UserProfilePage`'s own Reset Password button.
+-}
+resetPassword :
+    AccountsPanel.Model
+    -> AccountsPanel.MaybeAccountServer
+    -> User
+    -> String
+    -> Task Grpc.Error ( Maybe AccountsPanel.Msg, Proto.Google.Protobuf.Empty )
+resetPassword accountsPanelModel maybeAccountServer user password =
+    performWithAccountServer
+        accountsPanelModel
+        maybeAccountServer
+        (\server token ->
+            Grpc.new Rellm.resetPassword { userId = Just user.id, password = password }
                 |> Grpc.setHost (RellmServers.rellmServerUrl server)
                 |> withAccessToken (Just token)
                 |> Grpc.toTask

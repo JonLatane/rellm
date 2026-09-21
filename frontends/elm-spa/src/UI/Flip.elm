@@ -124,7 +124,7 @@ caller, confirming this was never page-specific): the CSS-driven
 by 250ms, but the *element itself* -- and, for any caller whose own container
 also declares a `gap` alongside `.flip-animated-column` (`.messages-group-list`,
 `.user-picker-list`, `.my-media-panel-grid`/`-selected-strip`, `.events-grid`,
-`.event-instance-grid`), the resulting empty `gap`-width sliver right where
+`.occasion-grid`), the resulting empty `gap`-width sliver right where
 it used to be -- stuck around for however much longer the spring's own slow,
 barely-visible settling tail actually took, since only the spring's own
 completion (`Animation.Messenger.send onRemoved`) ever actually deletes the

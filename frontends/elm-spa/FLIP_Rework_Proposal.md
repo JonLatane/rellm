@@ -53,7 +53,7 @@ exactly as that file's own doc prescribes):
 **Checked and confirmed *not* buggy** (left alone, don't touch these):
 
 - `shared/my_media_panel.css` — `.my-media-panel-grid`'s `row-gap: 0.75rem`
-- `events.css` — `.event-instance-grid`'s `row-gap: 0.4rem`
+- `events.css` — `.occasion-grid`'s `row-gap: 0.4rem`
 
 Both use `.flip-animated-grid`, whose *active* collapse rule in `flip.css`
 (`.flip-animated-grid .flip-animated-item.flip-collapsed`) only animates
