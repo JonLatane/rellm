@@ -322,6 +322,11 @@
 
 .event-occasion-strip {
   overflow: scroll;
+  /* `Ports.scrollElementLeft` (see `Components.Pages.EventPage.scrollToOccasion`)
+     just assigns `scrollLeft` directly -- per the CSSOM View spec, that's one
+     of the "scrolling APIs" this property governs, same as `scrollTo`, so it
+     animates instead of jumping. */
+  scroll-behavior: smooth;
 }
 
 .event-occasion-chip {
@@ -329,7 +334,7 @@
   text-wrap: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  padding: 5px;
+  padding: 8px 5px;
   border-radius: 1000px;
   text-align: center;
 }

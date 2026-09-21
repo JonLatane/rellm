@@ -85,7 +85,7 @@
 }
 
 
-.flip-animated-item:last-child>* {
+.flip-animated-column .flip-animated-item:last-child>* {
   padding-bottom: 0;
 }
 

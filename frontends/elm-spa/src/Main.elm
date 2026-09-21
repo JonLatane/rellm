@@ -48,6 +48,17 @@ Four changes from the default:
     `ChangedUrl` treats landing back on its top entry as a back-nav (popping it),
     leaving any other url change untouched.
 
+5.  `ChangedUrl` special-cases one path change: `Pages.Event.PostId_` clicking
+    from one `Occasion` to a sibling one of the very same `Event` (see
+    `occasionSwitchMsg`). The default always reruns the newly-matched page's own
+    `init` on any path change at all, which for that transition meant a visible
+    full clear-and-reload plus a redundant `GetEvents` fetch for data the page
+    had already loaded (every one of an `Event`'s `Occasion`s comes back in a
+    single fetch -- see `Components.Pages.EventPage`'s own module doc). Detected
+    generically (old and new routes both `Route.Event__PostId_`, whatever
+    `postId` each carries) rather than by comparing full urls, since the whole
+    point is that the `postId` segment differs.
+
 -}
 
 import Browser
@@ -188,35 +199,54 @@ update msg model =
                     Shared.normalizeUrl model.basePath rawUrl
             in
             if url.path /= model.url.path then
-                let
-                    ( page, effect ) =
-                        Pages.init (Route.fromUrl url) model.shared url model.key
+                case occasionSwitchMsg model.page (Route.fromUrl url) of
+                    -- Same page, just a sibling `Occasion`'s own `postId` (see
+                    -- `occasionSwitchMsg`'s own doc, change 5 below) -- deliver straight
+                    -- into the already-running page via `Pages.update` rather than
+                    -- `Pages.init`, so it can reuse the `Event` it's already loaded instead
+                    -- of clearing itself and re-fetching. Nothing here needs the
+                    -- back-nav/`ShowScrollPreserver` handling below either: unlike a full
+                    -- remount, this never clears the page's own content in the first place,
+                    -- so there's nothing whose scroll position needs preserving.
+                    Just occasionMsg ->
+                        let
+                            ( page, effect ) =
+                                Pages.update occasionMsg model.page model.shared url model.key
+                        in
+                        ( { model | url = url, page = page }
+                        , Effect.toCmd ( Shared, Page ) effect
+                        )
 
-                    isBackNav : Bool
-                    isBackNav =
-                        List.head model.backStack == Just url
+                    Nothing ->
+                        let
+                            ( page, effect ) =
+                                Pages.init (Route.fromUrl url) model.shared url model.key
 
-                    backStack : List Url
-                    backStack =
-                        if isBackNav then
-                            List.drop 1 model.backStack
+                            isBackNav : Bool
+                            isBackNav =
+                                List.head model.backStack == Just url
 
-                        else
-                            model.backStack
+                            backStack : List Url
+                            backStack =
+                                if isBackNav then
+                                    List.drop 1 model.backStack
 
-                    ( shared, sharedCmd ) =
-                        if isBackNav then
-                            Shared.update (Request.create () url model.key) Shared.ShowScrollPreserver model.shared
+                                else
+                                    model.backStack
 
-                        else
-                            ( model.shared, Cmd.none )
-                in
-                ( { model | url = url, page = page, shared = shared, backStack = backStack }
-                , Cmd.batch
-                    [ Effect.toCmd ( Shared, Page ) effect
-                    , Cmd.map Shared sharedCmd
-                    ]
-                )
+                            ( shared, sharedCmd ) =
+                                if isBackNav then
+                                    Shared.update (Request.create () url model.key) Shared.ShowScrollPreserver model.shared
+
+                                else
+                                    ( model.shared, Cmd.none )
+                        in
+                        ( { model | url = url, page = page, shared = shared, backStack = backStack }
+                        , Cmd.batch
+                            [ Effect.toCmd ( Shared, Page ) effect
+                            , Cmd.map Shared sharedCmd
+                            ]
+                        )
 
             else
                 ( { model | url = url }, Cmd.none )
@@ -288,6 +318,27 @@ update msg model =
             ( { model | page = notifiedPage, shared = shared }
             , Cmd.batch [ sharedCmd, notifyCmd, Effect.toCmd ( Shared, Page ) remainingEffect ]
             )
+
+
+{-| `ChangedUrl`'s own change 5 (see the module doc) -- `Just` only when both
+`page` (whatever's currently running) and `newRoute` (the just-navigated-to
+url's own route) are `Route.Event__PostId_`, in which case this is a same-page
+"switched to a sibling `Occasion`" navigation (see `occasionChipView`'s own
+href, `Components.Pages.EventPage.occasionUrlChanged`'s doc) rather than a
+genuinely different page needing a fresh `init`. Built from `newRoute`'s own
+`postId`, whatever it is -- `Pages.Event.PostId_.occasionUrlChanged` itself
+sorts out whether that's actually one of the current `Event`'s own sibling
+`Occasion`s (falling back to a real fetch if not, e.g. a bookmarked/typed url
+for an unrelated `Event`).
+-}
+occasionSwitchMsg : Gen.Model.Model -> Route.Route -> Maybe Gen.Msg.Msg
+occasionSwitchMsg page newRoute =
+    case ( page, newRoute ) of
+        ( Gen.Model.Event__PostId_ _ _, Route.Event__PostId_ params ) ->
+            Just (Gen.Msg.Event__PostId_ (Pages.Event.PostId_.occasionUrlChanged params.postId))
+
+        _ ->
+            Nothing
 
 
 {-| The `Gen.Msg.Msg` that delivers `sharedMsg` to `page` via its `fromShared`

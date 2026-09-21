@@ -1,4 +1,4 @@
-module Pages.Event.PostId_ exposing (Model, Msg, fromShared, page)
+module Pages.Event.PostId_ exposing (Model, Msg, fromShared, occasionUrlChanged, page)
 
 {-| `/event/:postId[@host]` -- a single Event, by its own (or one of its
 `Occasion`s') Post id, on `mainFrontendHost` or (with an `@host` suffix)
@@ -67,3 +67,12 @@ view shared req model =
 fromShared : Shared.Msg -> Msg
 fromShared =
     EventPage.fromShared
+
+
+{-| Lets `Main`'s own `ChangedUrl` deliver a same-page "switched to a sibling
+Occasion" URL change straight into an already-running instance of this page
+instead of a full `init` remount -- see `Components.Pages.EventPage.occasionUrlChanged`.
+-}
+occasionUrlChanged : String -> Msg
+occasionUrlChanged =
+    EventPage.occasionUrlChanged

@@ -3,6 +3,7 @@ module Components.Pages.EventPage exposing
     , Msg
     , fromShared
     , init
+    , occasionUrlChanged
     , subscriptions
     , titleFor
     , update
@@ -37,6 +38,13 @@ exactly what makes the date-picker strip possible without a second request.
 `Shared.GotEventDeleteResult`/`Shared.GotOccasionDeleteResult` handling
 (navigating away once the viewed Event/occasion no longer exists), neither of
 which otherwise has access to the calling page's own `Request`.
+
+Clicking a sibling `Occasion`'s own date-picker chip (`occasionChipView`)
+changes the URL to that `Occasion`'s own `postId`, but -- when the previous
+page was already this same one -- doesn't trigger a fresh `init`/`GetEvents`
+fetch: `Main.elm`'s `ChangedUrl` recognizes that case and delivers
+`occasionUrlChanged` instead, which just switches `eventStatus` to the
+already-loaded sibling `Occasion` (see `OccasionUrlChanged`'s own doc).
 
 -}
 
@@ -281,6 +289,19 @@ type Msg
       -- through `Ports.scrollElementLeft` -- `Err` (the chip/strip not
       -- found, e.g. an `Event` with only one occasion) is a pure no-op.
     | GotScrollTarget (Result Dom.Error Float)
+      -- `Main.elm`'s own soft "same page, different `Occasion`" URL-change
+      -- handling delivers this instead of a full `init` when the user
+      -- clicks a sibling `Occasion`'s date-picker chip (see
+      -- `occasionChipView`'s href) while already on this page -- the target
+      -- `Occasion` is already sitting in `event.occasions` from this page's
+      -- own original `GetEvents` fetch (see the module doc), so this just
+      -- switches which one `eventStatus` points at, without clearing the
+      -- page or re-fetching anything. Only falls back to a real fetch (via
+      -- `fetchIfReady`) if the requested id genuinely isn't one of this
+      -- already-loaded `Event`'s own `Occasion`s, or its host differs --
+      -- e.g. a manually-typed/bookmarked URL for an unrelated `Event` that
+      -- also happens to land on this same page module.
+    | OccasionUrlChanged String
     | Poll
       -- The "synced to" listing's own Push/Push-again button (see
       -- `Model.syncDestinationPushStatuses`'s own doc) -- the Delete button
@@ -1138,6 +1159,77 @@ update shared msg model =
         GotScrollTarget (Err _) ->
             ( model, Effect.none )
 
+        OccasionUrlChanged rawPostId ->
+            let
+                ( newOccasionId, newTargetHost ) =
+                    Events.parseEventRouteId shared.accounts.mainFrontendHost rawPostId
+
+                sameEventOccasion : Maybe ( Event, Occasion )
+                sameEventOccasion =
+                    if newTargetHost == model.targetHost then
+                        case model.eventStatus of
+                            EventLoaded event _ ->
+                                Events.findOccasion newOccasionId event
+                                    |> Maybe.map (\occasion -> ( event, occasion ))
+
+                            _ ->
+                                Nothing
+
+                    else
+                        Nothing
+            in
+            case sameEventOccasion of
+                Just ( event, occasion ) ->
+                    let
+                        -- Any edit form left open belonged to the `Occasion`/its own `Post` being
+                        -- left -- none of these carry over meaningfully to a different one, same
+                        -- as landing fresh on a full page nav would.
+                        switchedModel : Model
+                        switchedModel =
+                            { model
+                                | occasionId = newOccasionId
+                                , eventStatus = EventLoaded event occasion
+                                , mediaEditActive = False
+                                , mediaGeneratorActive = False
+                                , postFieldEdit = Nothing
+                                , moderationEdit = Nothing
+                                , visibilityEdit = Nothing
+                                , occasionTimeEdit = Nothing
+                                , occasionLocationEdit = Nothing
+                                , addMoreMenu = Nothing
+                            }
+                    in
+                    ( clampHistoryDisplay shared.time.now occasion switchedModel |> syncOccasionAnimations shared.time.now
+                    , scrollToOccasion 300 newOccasionId |> Effect.fromCmd
+                    )
+
+                Nothing ->
+                    -- Not one of the already-loaded `Event`'s own `Occasion`s (or its host
+                    -- differs) -- shouldn't happen from `occasionChipView`'s own hrefs, but can
+                    -- from a manually-typed/bookmarked URL landing on an unrelated `Event` that
+                    -- happens to reuse this same page module. Resets exactly like `init` would,
+                    -- then fetches fresh.
+                    fetchIfReady shared
+                        { model
+                            | targetHost = newTargetHost
+                            , occasionId = newOccasionId
+                            , eventStatus = LoadingEvent
+                            , fetchStarted = False
+                            , fetchedAccountId = Nothing
+                            , occasionHistoryDisplay = OnlyFuture
+                            , occasionAnimations = Dict.empty
+                            , mediaEditActive = False
+                            , mediaGeneratorActive = False
+                            , postFieldEdit = Nothing
+                            , moderationEdit = Nothing
+                            , visibilityEdit = Nothing
+                            , occasionTimeEdit = Nothing
+                            , occasionLocationEdit = Nothing
+                            , addMoreMenu = Nothing
+                            , syncDestinationPushStatuses = Dict.empty
+                            , availableSyncDestinations = Nothing
+                        }
+
         Poll ->
             fetchIfReady shared model
 
@@ -1553,6 +1645,19 @@ constructor itself (and thus every other constructor of this otherwise-opaque
 fromShared : Shared.Msg -> Msg
 fromShared =
     SharedMsg
+
+
+{-| Lets `Main`'s own `ChangedUrl` deliver a same-page "switched to a sibling
+`Occasion`" URL change (see `OccasionUrlChanged`'s own doc) straight into an
+already-running instance of this page, without a full `Pages.init` remount --
+exposed the same "single wrapped constructor" way `fromShared` is, for the
+same reason (`Msg`'s other constructors stay opaque outside this module).
+`rawPostId` is the new route's raw `:postId[@host]` segment, exactly as
+`init`'s own `rawPostId` is.
+-}
+occasionUrlChanged : String -> Msg
+occasionUrlChanged =
+    OccasionUrlChanged
 
 
 accountsPanelEffect : Maybe AccountsPanel.Msg -> Effect Msg
