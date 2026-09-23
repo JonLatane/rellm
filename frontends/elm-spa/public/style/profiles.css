@@ -378,6 +378,11 @@
   font-size: 0.85rem;
 }
 
+.profile-contact-method-visibility {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
 .profile-contact-method-verify {
   margin: 0.3rem 0 0.6rem;
 }

@@ -31,6 +31,7 @@ import Shared.ByteFormat as ByteFormat
 import Shared.Conversions as Conversions
 import Task
 import UI.Classes exposing (classes, openClosedClass)
+import Protobuf.Types.Int64 exposing (Int64)
 
 
 
@@ -823,6 +824,7 @@ applyFeatureSettingsFor set edit config =
                 updated =
                     updatedFeatureSettings edit (Maybe.withDefault defaultMediaSettings config.mediaSettings)
 
+                mediaAllocationBytes: Int64
                 mediaAllocationBytes =
                     ByteFormat.parseBytes edit.mediaAllocationUnit edit.mediaAllocationText
                         |> Maybe.map Conversions.int64FromInt

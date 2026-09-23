@@ -5028,6 +5028,7 @@ contactMethodsSection browserTimeZone canEdit isOwn expanded model user =
             ContactMethodsExpandedToggled
             [ phoneView canEdit model.phoneEdit user
             , contactMethodConsentView browserTimeZone
+                "profile-phone-history-section"
                 "SMS"
                 canEdit
                 model.phoneConsentStatus
@@ -5042,6 +5043,7 @@ contactMethodsSection browserTimeZone canEdit isOwn expanded model user =
                 text ""
             , emailView canEdit model.emailEdit user
             , contactMethodConsentView browserTimeZone
+                "profile-email-history-section"
                 "email"
                 canEdit
                 model.emailConsentStatus
@@ -5054,9 +5056,11 @@ contactMethodsSection browserTimeZone canEdit isOwn expanded model user =
 
 {-| The Phone line -- mirrors `realNameView` exactly (plain text plus an Edit button when
 `maybeEdit == Nothing`, an inline input/Save/Cancel form while editing), plus a Verified/Not Verified
-badge (`contactMethodVerifiedBadge`) next to the display value. Shown (with just the Edit button, no
-value) even when `user.phone` is unset, so `canEdit` viewers can add one -- `PhoneSaveClicked` is
-what actually writes it (see `update`).
+badge (`contactMethodVerifiedBadge`) and its own visibility badge (`contactMethodVisibilityBadge`,
+same `Posts.visibilityText` the edit-mode `contactMethodVisibilitySelector` uses) next to the display
+value, so a `canEdit` viewer can see who can see this contact method without opening the edit form.
+Shown (with just the Edit button, no value) even when `user.phone` is unset, so `canEdit` viewers can
+add one -- `PhoneSaveClicked` is what actually writes it (see `update`).
 -}
 phoneView : Bool -> Maybe PhoneEdit -> User -> Html Msg
 phoneView canEdit maybeEdit user =
@@ -5086,7 +5090,7 @@ phoneView canEdit maybeEdit user =
                     ([ span [ class "profile-contact-method-label" ] [ text "Phone: " ]
                      , span [ class "profile-contact-method-value" ] [ text (contactMethodDisplayValue "tel:" user.phone) ]
                      ]
-                        ++ (user.phone |> Maybe.map (\cm -> [ contactMethodVerifiedBadge cm ]) |> Maybe.withDefault [])
+                        ++ (user.phone |> Maybe.map (\cm -> [ contactMethodVerifiedBadge cm, contactMethodVisibilityBadge cm ]) |> Maybe.withDefault [])
                         ++ (if canEdit then
                                 [ button [ class "profile-edit-button", onClick PhoneEditClicked ] [ text "Edit Phone" ] ]
 
@@ -5098,8 +5102,8 @@ phoneView canEdit maybeEdit user =
 
 {-| The Email line -- mirrors `phoneView` exactly, just for the `mailto:` scheme instead of `tel:`.
 Email verification is out of scope this iteration, so (unlike `phoneView`) there's no corresponding
-verification affordance here -- only the Verified/Not Verified badge, reflecting whatever
-`verifiedAt` the server happens to report.
+verification affordance here -- only the Verified/Not Verified and visibility badges, the former
+reflecting whatever `verifiedAt` the server happens to report.
 -}
 emailView : Bool -> Maybe EmailEdit -> User -> Html Msg
 emailView canEdit maybeEdit user =
@@ -5129,7 +5133,7 @@ emailView canEdit maybeEdit user =
                     ([ span [ class "profile-contact-method-label" ] [ text "Email: " ]
                      , span [ class "profile-contact-method-value" ] [ text (contactMethodDisplayValue "mailto:" user.email) ]
                      ]
-                        ++ (user.email |> Maybe.map (\cm -> [ contactMethodVerifiedBadge cm ]) |> Maybe.withDefault [])
+                        ++ (user.email |> Maybe.map (\cm -> [ contactMethodVerifiedBadge cm, contactMethodVisibilityBadge cm ]) |> Maybe.withDefault [])
                         ++ (if canEdit then
                                 [ button [ class "profile-edit-button", onClick EmailEditClicked ] [ text "Edit Email" ] ]
 
@@ -5140,8 +5144,12 @@ emailView canEdit maybeEdit user =
 
 
 {-| The contact-consent checkbox shown under `phoneView`/`emailView` for `canEdit` viewers, plus a
-(sub-)expandable "History" list of every `ContactConsentChange` in `contactMethod.consentHistory`
-(oldest last -- see `contactConsentChangeView`). `methodLabel` (`"SMS"`/`"email"`) fills in the
+nested "History" sub-section (another `expandableProfileSection`, so the same chevron/`grid-
+template-rows` animation as the outer Contact Methods section itself) listing every
+`ContactConsentChange` in `contactMethod.consentHistory` (oldest last -- see
+`contactConsentChangeView`). `historyDomId` (`"profile-phone-history-section"`/
+`"profile-email-history-section"`) is that nested section's own DOM id, since Phone and Email each
+need their own independently-toggleable/linkable one. `methodLabel` (`"SMS"`/`"email"`) fills in the
 disclaimer text so it reads correctly for either method -- the checkbox/behavior itself is
 otherwise identical between Phone and Email (per `docs/contact_integrations.md`).
 
@@ -5155,8 +5163,8 @@ Hidden entirely if `contactMethod` is unset (nothing to consent to yet) or `not 
 `phoneVerificationView`'s own "nothing to show" gate.
 
 -}
-contactMethodConsentView : SharedTime.BrowserTimeZone -> String -> Bool -> SubmitStatus -> Bool -> Msg -> Msg -> Maybe ContactMethod -> Html Msg
-contactMethodConsentView browserTimeZone methodLabel canEdit status historyExpanded toggleMsg historyToggleMsg maybeContactMethod =
+contactMethodConsentView : SharedTime.BrowserTimeZone -> String -> String -> Bool -> SubmitStatus -> Bool -> Msg -> Msg -> Maybe ContactMethod -> Html Msg
+contactMethodConsentView browserTimeZone historyDomId methodLabel canEdit status historyExpanded toggleMsg historyToggleMsg maybeContactMethod =
     case ( canEdit, maybeContactMethod ) of
         ( True, Just contactMethod ) ->
             div [ class "profile-contact-method-consent" ]
@@ -5175,26 +5183,17 @@ contactMethodConsentView browserTimeZone methodLabel canEdit status historyExpan
                     text ""
 
                   else
-                    div [ class "profile-contact-method-consent-history" ]
-                        [ button
-                            [ class "profile-edit-button", onClick historyToggleMsg ]
-                            [ text
-                                (if historyExpanded then
-                                    "Hide History"
-
-                                 else
-                                    "Show History"
-                                )
-                            ]
-                        , if historyExpanded then
-                            ul [ class "profile-contact-method-consent-history-list" ]
-                                (contactMethod.consentHistory
-                                    |> List.reverse
-                                    |> List.map (contactConsentChangeView browserTimeZone)
-                                )
-
-                          else
-                            text ""
+                    expandableProfileSection "profile-contact-method-consent-history"
+                        historyDomId
+                        "History"
+                        Nothing
+                        historyExpanded
+                        historyToggleMsg
+                        [ ul [ class "profile-contact-method-consent-history-list" ]
+                            (contactMethod.consentHistory
+                                |> List.reverse
+                                |> List.map (contactConsentChangeView browserTimeZone)
+                            )
                         ]
                 ]
 
@@ -5268,6 +5267,15 @@ contactMethodVerifiedBadge contactMethod =
 
     else
         span [ class "profile-contact-method-not-verified" ] [ text "✕ Not Verified" ]
+
+
+{-| The visibility badge next to a displayed contact method -- `Posts.visibilityText` (same as the
+edit-mode `contactMethodVisibilitySelector` above and `visibilityView`'s own profile-wide display),
+shown in display mode too now rather than only while editing.
+-}
+contactMethodVisibilityBadge : ContactMethod -> Html msg
+contactMethodVisibilityBadge contactMethod =
+    span [ class "profile-contact-method-visibility" ] [ text (Posts.visibilityText contactMethod.visibility) ]
 
 
 {-| `phoneView`/`emailView`'s display value -- `contactMethod.value` with its `tel:`/`mailto:`
