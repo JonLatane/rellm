@@ -86,7 +86,7 @@ update accountsPanelModel msg model =
             ( { model | page = newPage }, Cmd.map PageMsg cmd, maybeAccountsPanelMsg )
 
 
-{-| `MessagesPage.pushSubscription` on its own is *not* gated behind `model.open` -- a push
+{-| `MessagesPage.pushSubscription` on its own is _not_ gated behind `model.open` -- a push
 notification needs to be able to refresh this panel's own data (see `MessagesPage.PushNotificationReceived`)
 whether or not its dropdown happens to be open at the moment it arrives, so it doesn't show stale
 data for however long it stayed closed after. `timerAndAnimationSubscriptions` (the 30s poll timer,

@@ -45,7 +45,7 @@ account/server family -- `RellmAccounts` (and `MastodonAccounts`/`MastodonServer
 indirectly, wherever they need to resolve a Rellm connection) import this, never the other way
 around.
 
-What's deliberately *not* here, and stays in `Shared.AccountsPanel` itself: the `Model` field this
+What's deliberately _not_ here, and stays in `Shared.AccountsPanel` itself: the `Model` field this
 lives in (`servers`), and every `Msg`/`Cmd Msg`-constructing operation (`setWebUserInterface`,
 `renameServer`, `changeServerShortName`, `updateServerConfig`, and the plain `serverForHost`/
 `isKnownServer`/`isMainServer`/`enabledServers`/etc. lookups that take the whole `Model`) -- those are
@@ -53,15 +53,14 @@ lives in (`servers`), and every `Msg`/`Cmd Msg`-constructing operation (`setWebU
 
 -}
 
+import Grpc
 import Html exposing (Html, div, img, text)
 import Html.Attributes exposing (alt, class, src, title)
 import Http
 import Json.Decode as Decode exposing (Decoder)
 import Json.Encode as Encode
-import Proto.Rellm
 import Proto.Rellm exposing (ServerConfiguration, ServerInfo)
 import Proto.Rellm.Rellm as Rellm
-import Grpc
 import Request
 import Shared.AccountsPanel.SortOrder exposing (sortOrderDecoder)
 import Task exposing (Task)
@@ -673,6 +672,7 @@ content). Only an insecure (e.g. local dev) page falls back to trying plaintext 
 Generic over `params` (rather than any one page's own `Request`) so any page can pass its own
 `Request.With Params` straight in -- see `connectToRellmServer`'s own `pageIsSecure` parameter, which
 every caller ultimately derives from this.
+
 -}
 isSecure : Request.With params -> Bool
 isSecure req =

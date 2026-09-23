@@ -8,7 +8,7 @@ editor, `Shared.MediaViewerPanel`'s per-size delete buttons, and
 `formatBytes`/`parseBytes`, "12.4 MB"-style); and `Components.Market`'s product blurbs (via
 `humanizeBytes`, "12.4MB"-style, mirroring `backend/src/logic/market_summary.rs`'s `humanize_bytes`)
 and `Components.Pages.MarketPage`'s product form (via `ByteUnit`/`byteUnitBytes`/`parseBytes`/
-`byteUnitFromText` directly, same as everything else -- only the *display* string differs per call
+`byteUnitFromText` directly, same as everything else -- only the _display_ string differs per call
 site, never the underlying conversion).
 -}
 

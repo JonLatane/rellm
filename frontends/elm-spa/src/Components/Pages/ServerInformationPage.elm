@@ -40,10 +40,11 @@ reused by 2+ of them.
 
 `ownServerStatus`/`activeTab`/`adminsStatus`/`versionStatus` (and the RPCs that
 fill in the latter two) stay here rather than in any one submodule -- they're
-about loading the page's *subject* (which server, which tab, who its admins
+about loading the page's _subject_ (which server, which tab, who its admins
 are, what version it's running), not any one tab's editable content; `adminsStatus`/
 `versionStatus` are fetched as soon as a server's known regardless of which tab
 is active, even though only `AboutTab`'s `view` ever displays them.
+
 -}
 
 import Browser.Navigation
@@ -64,8 +65,8 @@ import Html.Attributes exposing (class)
 import Html.Events exposing (onClick)
 import Html.Keyed
 import Proto.Rellm exposing (GetServiceVersionResponse, GetUsersResponse, defaultGetUsersRequest)
-import Proto.Rellm.Rellm as Rellm
 import Proto.Rellm.Permission exposing (Permission(..))
+import Proto.Rellm.Rellm as Rellm
 import Shared
 import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.RellmAccounts exposing (RellmAccount)

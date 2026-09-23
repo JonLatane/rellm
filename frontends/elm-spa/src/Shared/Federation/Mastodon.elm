@@ -25,10 +25,11 @@ browsing a timeline, needs no Rellm server involved at all.
 
 `Account`/`lookupAccount`/`fetchAccountStatuses`/`fetchFollowers`/`fetchFollowing` back
 `Components.Pages.MastodonUserProfilePage`/`MastodonUsersPage` -- unlike everything else here, these
-resolve a specific *account*, not a timeline, so a viewed profile's own posts/followers/following can
+resolve a specific _account_, not a timeline, so a viewed profile's own posts/followers/following can
 be shown rather than just a whole instance's local timeline. All still unauthenticated: Mastodon's
 public API serves an unlocked account's own profile/statuses/followers/following with no token at
 all, same as `fetchPosts`/`fetchStatus` already rely on for the local timeline/single-status case.
+
 -}
 
 import Http
@@ -48,7 +49,7 @@ import Url
 {-| One element of a `Status`'s `media_attachments` -- see
 <https://docs.joinmastodon.org/entities/MediaAttachment/>. `id` is Mastodon's own attachment id
 (distinct per attachment, unique at least within one status' own list -- the only uniqueness
-`toMediaReference`'s own `MediaReference.id` needs, see its doc) -- *not* namespaced with
+`toMediaReference`'s own `MediaReference.id` needs, see its doc) -- _not_ namespaced with
 `instanceHost`/`status.id` the way `Author.userId` is, since nothing anywhere compares a federated
 `MediaReference.id` across different posts, only within one `Shared.MediaViewerPanel.Model.media` list
 at a time (always a single post's own). `url` is always the full-size original (rather than
@@ -134,11 +135,11 @@ mediaAttachmentDecoder =
 
 
 {-| A `Status`'s translation into a Rellm `Post` -- `id` is just Mastodon's own bare `status.id`
-(a numeric string), *not* further namespaced with `instanceHost` the way it briefly was: a federated
+(a numeric string), _not_ further namespaced with `instanceHost` the way it briefly was: a federated
 post's own `id` is never used or compared on its own anywhere in this app, always alongside its
 synthetic host (`Components.Pages.PostsPage.feedSourceKey`'s own `"mastodon:" ++ instanceHost`, or
 `Components.Posts.postHref`'s own `id@host` route) -- see `Components.Posts.parseFederatedPostId`,
-which reconstructs `instanceHost` from *that* host string rather than from `id` itself. Keeping `id`
+which reconstructs `instanceHost` from _that_ host string rather than from `id` itself. Keeping `id`
 bare avoids doubly encoding the same instance host in both halves of a `/post/id@host` URL. `content`
 is left as Mastodon's own sanitized HTML (Mastodon strips dangerous tags server-side before ever
 serving it back), not converted to/from Markdown -- `Components.Markdown.view` (every render site's
@@ -259,7 +260,7 @@ toMediaReference attachment =
 timeline, unauthenticated, already translated via `toPost`. `local=true` rather than the federated
 (whole-known-network) timeline, since connecting one instance shouldn't implicitly pull in every
 server it happens to federate with too -- mirrors Rellm's own `ALL_ACCESSIBLE_POSTS` being scoped
-to *this* server's own posts, not every server it's federated with either.
+to _this_ server's own posts, not every server it's federated with either.
 -}
 fetchPosts : String -> Task Http.Error (List Post)
 fetchPosts instanceHost =
@@ -280,7 +281,7 @@ function's own doc on why this, alone among every fetch here, doesn't strip a `s
 media. Unlike `fetchPosts`, this works regardless of whether `local=true` would apply -- a direct id
 lookup isn't scoped to "this instance's own timeline" the way browsing one is. The `Bool` alongside
 `Post` is `status.sensitive` itself -- `toPostIncludingSensitiveMedia` already folds `sensitive`
-media *into* `Post.media` unconditionally, so this is `Components.Pages.MastodonPostPage`'s only way
+media _into_ `Post.media` unconditionally, so this is `Components.Pages.MastodonPostPage`'s only way
 to still tell "sensitive, shown because the viewer clicked past a warning" apart from "never flagged
 at all" -- see that module's own `sensitiveMediaRevealed`.
 -}
@@ -383,7 +384,7 @@ lookupAccount instanceHost username =
 and replies," and skips bare boosts, which carry no `content` of their own for `toPost` to show --
 `Status.reblog` nests the original post's own content separately, which this doesn't bother
 following), already translated via `toPost`. Unlike `fetchPosts`' local timeline, this is one
-specific account's posts regardless of which instance the *viewer* is on -- exactly what
+specific account's posts regardless of which instance the _viewer_ is on -- exactly what
 `MastodonUserProfilePage`'s embedded `Components.Pages.PostsPage` needs (see that module's own
 `MastodonAccountFeed` `FeedSource`).
 -}
@@ -402,7 +403,7 @@ fetchAccountStatuses instanceHost accountId =
 
 {-| `GET /api/v1/accounts/:id/followers` -- up to 40 of `accountId`'s followers, unauthenticated (an
 unlocked account's follower list is public Mastodon API data, same as its profile/statuses). Returns
-an empty list, not an error, for a *locked* account's followers/following when the requester isn't
+an empty list, not an error, for a _locked_ account's followers/following when the requester isn't
 authenticated as that account or one it approved -- see `Account.locked`'s own doc; there's currently
 no way to distinguish "genuinely has none" from "locked" in `Components.Pages.UsersPage`'s rendering,
 an accepted first-pass limitation. No pagination beyond the first 40 either, mirroring

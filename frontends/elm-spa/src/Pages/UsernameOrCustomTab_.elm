@@ -4,26 +4,27 @@ module Pages.UsernameOrCustomTab_ exposing (Model, Msg, fromShared, page)
 Post/Event URL, or a custom tab, on `mainFrontendHost` or (with an `@host` suffix, username lookups
 only) some other federated server. Three checks run in order:
 
-1. A check against `mainFrontendHost`'s own `ServerConfiguration.customTabs.tabs` (see
-   `UI.CustomNav`) for a tab whose own `path` matches this segment -- letting an admin mount
-   `Events`/`Posts`/`People`/`About`/a specific `Post` at a custom URL (e.g. a band's `/weddings`
-   pointing at a Post about their wedding offerings), per `CustomNavigationTab.path`'s own doc
-   (`customTabFor`). A configured custom path always wins over a same-named user or short URL.
-2. If no custom tab matched, and the segment starts with a character no username/custom tab path
-   could ever legally start with (`Components.Users.startsWithReservedShortUrlCharacter`), it's
-   tried as a short Post/Event URL instead (`Components.Pages.PostOrEventPage`) -- see
-   `rellm.proto`'s own `### /[-._~:/?[]@!$&'()*+,;%=]{postId}: Short Post/Event URLs` routing
-   doc. Unlike `customTabFor`, this check is a pure string test with no async server config to wait
-   on, so it's decided once at `init` and never needs re-checking.
-3. Otherwise, the ordinary username fallback below.
+1.  A check against `mainFrontendHost`'s own `ServerConfiguration.customTabs.tabs` (see
+    `UI.CustomNav`) for a tab whose own `path` matches this segment -- letting an admin mount
+    `Events`/`Posts`/`People`/`About`/a specific `Post` at a custom URL (e.g. a band's `/weddings`
+    pointing at a Post about their wedding offerings), per `CustomNavigationTab.path`'s own doc
+    (`customTabFor`). A configured custom path always wins over a same-named user or short URL.
+2.  If no custom tab matched, and the segment starts with a character no username/custom tab path
+    could ever legally start with (`Components.Users.startsWithReservedShortUrlCharacter`), it's
+    tried as a short Post/Event URL instead (`Components.Pages.PostOrEventPage`) -- see
+    `rellm.proto`'s own `### /[-._~:/?[]@!$&'()*+,;%=]{postId}: Short Post/Event URLs` routing
+    doc. Unlike `customTabFor`, this check is a pure string test with no async server config to wait
+    on, so it's decided once at `init` and never needs re-checking.
+3.  Otherwise, the ordinary username fallback below.
 
 The top-level catch-all this implies means any username (or un-embeddable custom path) colliding
 with this app's own routes (or the `/user`/`/post` prefixes) can never be reached this way -- see
 `Components.Users.isReservedUsername`, checked here before `Components.UserProfilePage` (which does
 the actual fetching/rendering, same as `Pages.User.UserId_`) is ever involved. Those usernames are
 still reachable via `/user/:id[@host]`. Note `/events`/`/posts/`/`/people`/`/about` themselves are
-never actually reachable *as* a custom path either way -- `Gen.Route.routes`' own `Parser.oneOf`
+never actually reachable _as_ a custom path either way -- `Gen.Route.routes`' own `Parser.oneOf`
 tries those literal static routes first, so this file's `init` never even runs for them.
+
 -}
 
 import Browser.Navigation
@@ -70,7 +71,7 @@ page shared req =
 the same components `Pages.Events`/`Pages.Posts`/`Pages.People`/`Pages.About`/`Pages.Market`/
 `Pages.Post.PostId_` themselves wrap -- see `initEmbedded`, and that module's own doc for why a `Post` target is
 genuinely indistinguishable from visiting `/post/:id` directly (down to the same `Components.Pages.PostPage`
-being mounted either way). `EmbeddedProfile` is `TargetProfile`'s own -- deliberately a *separate*
+being mounted either way). `EmbeddedProfile` is `TargetProfile`'s own -- deliberately a _separate_
 variant from the plain-username-fallback `Profile` below even though both just wrap a
 `UserProfilePage.Model`: `update`'s `SharedMsg` handling for `Reserved`/`Profile` re-checks
 `customTabFor` on every incoming message (see its own doc, for the "config wasn't loaded yet at
@@ -105,7 +106,7 @@ type Model
 {-| `SharedMsg` (rather than always wrapping a forwarded `Shared.Msg` as, say, `ProfileMsg`) exists
 because `fromShared` (below) has no way to know which `Embedded*`/`Profile` variant is actually
 active when it's called -- `elm-spa`'s own `fromShared : Shared.Msg -> Msg` signature is model-blind
-by design. Routing on the *current* `model` instead happens in `update`'s own `SharedMsg` branches,
+by design. Routing on the _current_ `model` instead happens in `update`'s own `SharedMsg` branches,
 each re-dispatching via that embedded module's own `fromShared`, mirroring `Pages.Home_.update`'s
 identical reasoning for forwarding one incoming `Shared.Msg` to more than one possible destination.
 -}
@@ -143,7 +144,7 @@ init shared req =
 {-| `mainFrontendHost`'s own `CustomNavigationTabSet.tabs` entry (if any, and if that server's
 `ServerConfiguration` is even known yet) whose `path` matches `path` exactly -- deliberately built
 off `CustomNav.effectiveTabs (Just customTabs)`, not `RellmServers.configurationOf server |> .customTabs
-|> CustomNav.effectiveTabs` directly, so an *unset* `customTabs` (the common case) never falls back to
+|> CustomNav.effectiveTabs` directly, so an _unset_ `customTabs` (the common case) never falls back to
 `CustomNav.defaultTabs`' own paths here -- those are harmless if matched (see the module doc on why
 they're unreachable anyway), but "no config" should mean "no custom routing," not "pretend the
 defaults were explicitly configured."
@@ -167,7 +168,7 @@ UI, same everything, just a friendlier url. `TargetProfile` mounts the same `Com
 the ordinary username fallback does, just as its own `EmbeddedProfile` (see `Model`'s own doc on why
 that's a distinct variant, not just `Profile` again) -- the only real difference is where the
 username comes from (`tab.path` instead of the route segment itself), since `UI.CustomNav.CustomTabTarget`'s
-own doc explains a profile tab's url *is* that user's own `/:username` route either way. `HOMETAB`
+own doc explains a profile tab's url _is_ that user's own `/:username` route either way. `HOMETAB`
 instead redirects to `/` (see `Model`'s own doc on why that one's not embedded the same way). A
 malformed/future `NavigationTabUnrecognized_` target falls back to the ordinary username lookup,
 same as if this path hadn't matched a tab at all.

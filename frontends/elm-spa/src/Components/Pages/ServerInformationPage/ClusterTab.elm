@@ -7,7 +7,7 @@ page). Unlike every other tab, this one is never shown to a non-admin at all (se
 `Components.Pages.ServerInformationPage`'s own tab list) -- `cluster_resources` is stripped
 server-side from `GetServerConfiguration` for anyone but an admin, so there'd be nothing to show.
 
-Within the tab, a *plain* admin (no `EDITCLUSTERSETTINGS`) still sees the current settings, just
+Within the tab, a _plain_ admin (no `EDITCLUSTERSETTINGS`) still sees the current settings, just
 without an Edit button -- mirroring `Common.adminAccountFor`'s "view vs. edit" split one permission
 level further in, the same way `CdnTab`'s `cdnGrpc` field is always shown but never editable yet.
 `clusterSharedSecret` is write-only (never sent back by the server, same as
@@ -20,9 +20,9 @@ display -- that cache comes from `RellmServers.negotiateRellmServerConfig`'s una
 reconnect), and `cluster_resources` is stripped from that unauthenticated response entirely (see
 above). So whenever an admin account is present, this tab fires its own authenticated
 `GetServerConfiguration` (`fetchAuthenticatedServerConfiguration`/`AdminClusterResourcesStatus`) and
-displays *that* instead, via the exposed `activated` message.
+displays _that_ instead, via the exposed `activated` message.
 
-`activated`'s own fetch resolves `targetHost` against `Shared.AccountsPanel`'s *live* connection
+`activated`'s own fetch resolves `targetHost` against `Shared.AccountsPanel`'s _live_ connection
 state, which isn't necessarily settled yet the moment this tab first becomes relevant -- in
 particular, a persisted account's server reconnects asynchronously on app startup (mirrors
 `Components.Pages.PostsPage.fetchNewFeeds`'s own doc on the identical problem for feeds), and that
@@ -31,11 +31,12 @@ fails outright and the fetch comes back `Grpc.NetworkError`, indistinguishable b
 `Shared.AccountsPanel.grpcErrorToString`'s bare string from a real network failure. So, like
 `fetchNewFeeds`, this doesn't try to time one perfect fetch: `Components.Pages.ServerInformationPage`
 dispatches `activated` from every point its own connectivity state could plausibly have changed --
-`TabSelected`, `GotOwnServerResult`'s success branch, `init`'s already-known-connected branch, *and*
+`TabSelected`, `GotOwnServerResult`'s success branch, `init`'s already-known-connected branch, _and_
 every `SharedMsg` (any `AccountsPanel` change at all, including that startup reconnect finishing) --
 via `activateClusterTab`. `ClusterTabActivated`'s own handler makes that safe to call as often as it
 likes: it only actually fetches from `AdminClusterResourcesNotFetched`/`AdminClusterResourcesFetchFailed`,
 so a `SharedMsg` firing after a lock's already loaded is a cheap no-op, not a repeat fetch.
+
 -}
 
 import Components.Pages.ServerInformationPage.Common as Common
@@ -367,7 +368,7 @@ fetchAuthenticatedServerConfiguration shared targetHost account =
 
 
 {-| Calls `FreeClusterResources`, authenticated as `account` -- see that RPC's own doc on why an
-`EDIT_CLUSTER_SETTINGS` admin can free *any* namespace's lock this way (`namespaceId` here is the
+`EDIT_CLUSTER_SETTINGS` admin can free _any_ namespace's lock this way (`namespaceId` here is the
 lock's holder, not necessarily `account`'s own), unlike the cluster-internal
 `cluster-shared-secret` path `generate_preview_images` itself uses.
 -}
@@ -511,7 +512,7 @@ view shared server maybeAdminAccount model =
 
 
 {-| The tab's three fixed sections, always laid out in this order (never swapped out for one
-another the way an in-progress edit used to replace the *entire* tab body) -- "Cluster settings"
+another the way an in-progress edit used to replace the _entire_ tab body) -- "Cluster settings"
 (with its own "Edit Cluster Settings" button right under "Conductor Host"), then "Held Locks", then
 "Limits" (with its own "Edit Limits" button), each separated by an `hr`. "Held Locks"/"Limits" --
 and the `hr`s around them -- only exist at all when `conductorState` is populated, i.e. only on the
@@ -618,7 +619,8 @@ conductorHostView clusterResources externalCdnConfig =
         let
             isThisInstance : Bool
             isThisInstance =
-                (clusterResources |> Maybe.andThen .conductorState) /= Nothing
+                (clusterResources |> Maybe.andThen .conductorState)
+                    /= Nothing
                     || (case externalCdnConfig of
                             Just cdn ->
                                 conductorHost == cdn.frontendHost || conductorHost == cdn.backendHost
@@ -672,7 +674,7 @@ lockView time canEdit freeingLock lock =
 {-| "Free <resource name> held by <namespaceId>" -- one per `ClusterResource` in a `lockView`'s
 own `lock.resources` (today, that's always exactly one -- `CLUSTER_RESOURCE_BROWSER` is still the
 only `ClusterResource` that exists -- but this generalizes to more without changes here). Disabled
-while *any* free is in flight (`freeingLock /= Nothing`), not just this one, since
+while _any_ free is in flight (`freeingLock /= Nothing`), not just this one, since
 `FreeClusterResources` only takes one `namespaceId` at a time server-side -- see
 `ClusterTab.freeClusterResource`.
 -}

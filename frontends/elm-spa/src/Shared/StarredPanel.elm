@@ -43,9 +43,9 @@ import Html.Keyed
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Ports
-import Proto.Rellm exposing (Event, Occasion, GetEventsResponse, GetPostsResponse, Post, defaultPost)
-import Proto.Rellm.Rellm as Rellm
+import Proto.Rellm exposing (Event, GetEventsResponse, GetPostsResponse, Occasion, Post, defaultPost)
 import Proto.Rellm.PostContext exposing (PostContext(..))
+import Proto.Rellm.Rellm as Rellm
 import Set exposing (Set)
 import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccount)

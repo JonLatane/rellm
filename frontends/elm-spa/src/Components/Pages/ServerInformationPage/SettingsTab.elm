@@ -22,6 +22,7 @@ import Proto.Rellm.CalendarDisplayMode exposing (CalendarDisplayMode(..))
 import Proto.Rellm.Moderation exposing (Moderation(..))
 import Proto.Rellm.Permission exposing (Permission)
 import Proto.Rellm.Visibility exposing (Visibility(..))
+import Protobuf.Types.Int64 exposing (Int64)
 import Set exposing (Set)
 import Shared
 import Shared.AccountsPanel as AccountsPanel
@@ -31,7 +32,6 @@ import Shared.ByteFormat as ByteFormat
 import Shared.Conversions as Conversions
 import Task
 import UI.Classes exposing (classes, openClosedClass)
-import Protobuf.Types.Int64 exposing (Int64)
 
 
 
@@ -824,7 +824,7 @@ applyFeatureSettingsFor set edit config =
                 updated =
                     updatedFeatureSettings edit (Maybe.withDefault defaultMediaSettings config.mediaSettings)
 
-                mediaAllocationBytes: Int64
+                mediaAllocationBytes : Int64
                 mediaAllocationBytes =
                     ByteFormat.parseBytes edit.mediaAllocationUnit edit.mediaAllocationText
                         |> Maybe.map Conversions.int64FromInt
@@ -989,6 +989,7 @@ Follows `UserProfilePage.expandableProfileSection`'s own conventions: the body
 outright, so `profiles.css`'s `grid-template-rows` 0fr/1fr trick can animate it open/closed, and the
 arrow is a single static "▼" rotated via `.expandable-section-arrow.is-open` instead of a glyph swap
 between "▸"/"▾".
+
 -}
 featureSettingsSection : FeatureSettingsSet -> Maybe RellmAccount -> Maybe FeatureSettingsEdit -> Bool -> FeatureSettingsSummary -> Html Msg
 featureSettingsSection set maybeAdminAccount maybeEdit collapsed current =
@@ -1078,7 +1079,7 @@ featureSettingsDisplayView set maybeAdminAccount current =
                 []
             , [ case maybeAdminAccount of
                     Just _ ->
-                        button [ Html.Attributes.class "server-details-rename-button", onClick (FeatureSettingsEditClicked set) ] [ text <| "Edit " ++ (featureSettingsLabel set) ++ " Settings" ]
+                        button [ Html.Attributes.class "server-details-rename-button", onClick (FeatureSettingsEditClicked set) ] [ text <| "Edit " ++ featureSettingsLabel set ++ " Settings" ]
 
                     Nothing ->
                         text ""

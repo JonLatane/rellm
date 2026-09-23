@@ -3159,14 +3159,15 @@ item's, is what actually picks which grid axis collapses -- see
 collapses correctly along whichever axis the container it's inside actually
 is).
 
-Kept as the *last* entry in `eventsListView`'s own keyed list (rather than
+Kept as the _last_ entry in `eventsListView`'s own keyed list (rather than
 listed first, to visually lead) -- `UI.Flip.remove`'s own doc warns that
 relocating a still-present item in that list (even just to sneak this one in
 ahead of it) cancels its CSS collapse transition outright, since the browser
-has nothing to transition *from* once a keyed node's actually moved in the
+has nothing to transition _from_ once a keyed node's actually moved in the
 DOM. `calendar-flip-item` (see `events.css`) instead reorders this one item
-*visually* to the front via the flex container's own `order`, leaving every
+_visually_ to the front via the flex container's own `order`, leaving every
 real card's DOM position (and thus its collapse transition) untouched.
+
 -}
 calendarAnimationView : Bool -> ( String, CalendarAnimation ) -> ( String, Html Msg )
 calendarAnimationView embeddedPage ( key, anim ) =

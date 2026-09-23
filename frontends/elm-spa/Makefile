@@ -11,6 +11,9 @@ test: review
 server:
 	npx elm-spa server
 
+format:
+	npx elm-format
+
 stop_background_servers:
 	lsof -ti:1234 | xargs -r kill; sleep 1; lsof -ti:1234 || echo "port 1234 free"
 

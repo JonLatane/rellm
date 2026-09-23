@@ -9,6 +9,16 @@
   position: relative;
   display: flex;
   flex-shrink: 0;
+  transition: width 0.2s ease, margin 0.2s ease, opacity 0.2s ease;
+  opacity: 1;
+  width: var(--nav-toggle-height);
+}
+
+.starred-menu.hidden {
+  width: 0px;
+  opacity: 0;
+  margin-left: 0px;
+  pointer-events: none;
 }
 
 .starred-panel,

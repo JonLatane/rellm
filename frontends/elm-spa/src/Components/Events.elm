@@ -4,23 +4,23 @@ module Components.Events exposing
     , deleteOccasionSyncDestination
     , deleteRemovedOccasions
     , eventCard
-    , occasionHref
-    , occasionPairs
     , eventSyncDestinationsView
-    , syncSourceView
     , fetchEvent
     , fetchEvents
     , fetchEventsByOccasionPostIds
     , findOccasion
     , hasIcsSyncSource
-    , occasionEndsOrStartsAt
-    , occasionStartsOrEndsAt
-    , occasionWhenText
     , locationText
     , meaningfulPost
+    , occasionEndsOrStartsAt
+    , occasionHref
+    , occasionPairs
+    , occasionStartsOrEndsAt
+    , occasionWhenText
     , parseEventRouteId
     , siblingOccasionWhenText
     , syncOccasion
+    , syncSourceView
     , updateOccasions
     )
 
@@ -44,10 +44,10 @@ import Gen.Route
 import Grpc
 import Html exposing (Html, a, div, span, text)
 import Html.Attributes exposing (attribute, class, href, rel, target)
-import Proto.Rellm exposing (Event, Occasion, GetEventsRequest, GetEventsResponse, Location, Post, SyncDestination, defaultEvent, defaultGetEventsRequest, defaultPost, defaultTimeFilter)
+import Proto.Rellm exposing (Event, GetEventsRequest, GetEventsResponse, Location, Occasion, Post, SyncDestination, defaultEvent, defaultGetEventsRequest, defaultPost, defaultTimeFilter)
 import Proto.Rellm.EventListingType exposing (EventListingType(..))
-import Proto.Rellm.SyncSource.Configuration as SyncSourceConfiguration
 import Proto.Rellm.Rellm as Rellm
+import Proto.Rellm.SyncSource.Configuration as SyncSourceConfiguration
 import Shared.AccountsPanel as AccountsPanel exposing (performWithOptionalAccountServer)
 import Shared.AccountsPanel.RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer, withAccessToken)
@@ -221,13 +221,13 @@ createNewOccasions accountsPanelModel maybeAccountServer event =
         )
 
 
-{-| Deletes every `Occasion` currently on the event that *isn't* in
+{-| Deletes every `Occasion` currently on the event that _isn't_ in
 `event.occasions` -- i.e. `event.occasions` is the "keep" list, not a batch to
 delete (`DeleteRemovedOccasions`, same owner-or-moderator gating as
 `updateOccasions`/`createNewOccasions`, see
 `backend/src/rpcs/events/delete_removed_occasions.rs`). Used by
 `Shared.update`'s `ConfirmOccasionDelete` handling to delete a single
-`Occasion`: the caller passes every *other* occasion the `Event`
+`Occasion`: the caller passes every _other_ occasion the `Event`
 currently has, so this ends up deleting just the one omitted.
 -}
 deleteRemovedOccasions :

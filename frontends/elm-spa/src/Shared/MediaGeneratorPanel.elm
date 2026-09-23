@@ -17,12 +17,12 @@ reference media (`mediaSectionView`) -- reusing `Shared.MyMediaPanel`'s own `Mul
 for the last, the same picker Post/Event editing already uses for their own `media`, rather than
 building a second one.
 
-In terms of z-axis (see `media_generator_panel.css`), this sits just *below* `Shared.MyMediaPanel`
+In terms of z-axis (see `media_generator_panel.css`), this sits just _below_ `Shared.MyMediaPanel`
 -- deliberately, since `EditMediaClicked` (below) opens that panel over this one to pick reference
 media, and it should visibly win that overlap the same way every other "panel opens a picker over
 itself" pair in this app does (`Shared.CreateNewPanel`'s own Edit Media button, `Pages.Post.PostId_`'s).
 That reuse means this panel can't consume `MyMediaPanel`'s `SaveMediaClicked`/`CloseClicked`
-directly the way a *page* would (via its own `SharedMsg`/`fromShared`, gated on a page-level
+directly the way a _page_ would (via its own `SharedMsg`/`fromShared`, gated on a page-level
 "am I mid-edit" flag) -- since this panel itself lives in `Shared.Model`, not a page, that
 gating instead happens one level up, in `Shared.update`'s own `MyMediaPanelMsg` case, mirroring
 exactly how it already lets `Shared.CreateNewPanel` do the same (see `MediaSaved`/`MediaEditClosed`
@@ -46,7 +46,7 @@ import Grpc
 import Html exposing (Html, button, div, option, select, span, text, textarea)
 import Html.Attributes exposing (class, disabled, placeholder, selected, type_, value)
 import Html.Events exposing (onClick, onInput)
-import Proto.Rellm exposing (AIModel, Event, Occasion, Media, MediaReference, Post, defaultGenerateMediaRequest)
+import Proto.Rellm exposing (AIModel, Event, Media, MediaReference, Occasion, Post, defaultGenerateMediaRequest)
 import Proto.Rellm.GenerateMediaRequest.Target as GenerateMediaRequestTarget
 import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccount)
@@ -84,7 +84,7 @@ type alias Model =
     }
 
 
-{-| What this panel is generating media *for* -- `Nothing` (see `Model.target`) just generates and
+{-| What this panel is generating media _for_ -- `Nothing` (see `Model.target`) just generates and
 stores the image in the current user's own Media (as `MyMediaPanel` then shows it), without
 attaching it to anything. `TargetEvent` carries both the `Event` and the specific `Occasion`
 being viewed (`Pages.Event.PostId_`'s own `occasion`) purely so `targetCardView` can render the

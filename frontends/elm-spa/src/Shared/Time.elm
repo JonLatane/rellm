@@ -70,7 +70,7 @@ Unlike plain `Time.here`, `getBrowserZone` is DST-aware (backed by
 recurring `Occasion` on the other side of a DST transition -- still
 converts with the offset that actually applied on _its_ date, not today's.
 `name` is the actual IANA zone name (e.g. "America/New\_York") `zone` itself
-was looked up by -- kept alongside it so a timezone *selector*
+was looked up by -- kept alongside it so a timezone _selector_
 (`Shared.CreateNewPanel`/`Components.Pages.EventPage`'s `Occasion.timezone`
 field) has a sensible default to preselect, since `Time.Zone` alone is just a
 raw offset table with no name of its own. `""` if `elm/time`'s
@@ -714,6 +714,7 @@ uses internally). `Monthly` instead adds `n` to the month/year pair
 directly, so "Jan 31 + 1 month" lands on the last day of February rather
 than overflowing into March -- `daysInMonth` clamps the day-of-month down to
 whatever the target month actually has.
+
 -}
 addRecurrence : Time.Zone -> RecurrenceUnit -> Int -> Time.Posix -> Time.Posix
 addRecurrence zone unit n posix =

@@ -17,7 +17,7 @@ admin-only-serialized (see their own proto docs), stripped from the unauthentica
 check and every reconnect). So, exactly like `ClusterTab` (`cluster_resources` is admin-only the
 same way), this tab fires its own authenticated `GetServerConfiguration`
 (`fetchAuthenticatedServerConfiguration`/`AdminContactIntegrationsStatus`) once an admin account is
-present, and displays *that* instead, via the exposed `activated` message --
+present, and displays _that_ instead, via the exposed `activated` message --
 `Components.Pages.ServerInformationPage` dispatches it from every point its own connectivity state
 could plausibly have changed (`TabSelected`, `GotOwnServerResult`'s success branch, `init`'s
 already-known-connected branch, and every `SharedMsg`), via `activateContactIntegrationsTab`, since
@@ -57,7 +57,7 @@ exactly like `FederationTab` already does for its own similarly-public Facebook/
 fields), independent of `adminContactIntegrations`'s own fetch.
 
 Preferred Providers/Telnyx/Twilio/Bird are grouped under a collapsible "External Integrations"
-section (`externalIntegrationsSection`), with Telnyx, Twilio, and Bird each *also* independently
+section (`externalIntegrationsSection`), with Telnyx, Twilio, and Bird each _also_ independently
 collapsible inside it (`telnyxSection`/`twilioSection`/`birdSection`) -- four nested levels of the
 same `expandable-section-title`/`-arrow`/`-content` idiom
 `SettingsTab.featureSettingsSection`/`UserProfilePage.expandableProfileSection` already establish
@@ -71,18 +71,19 @@ state from the fetched data itself -- a provider with nothing configured yet
 non-secret fields plus whether a webhook signing key is set) collapses out of the way, while one an
 admin is actively using pre-expands with no click needed. A later manual
 `IntegrationsSectionToggled` always wins over this one-time guess. Since
-`ServerInformationPage.view` mounts each tab's content under a *different* `Html.Keyed` key per tab
+`ServerInformationPage.view` mounts each tab's content under a _different_ `Html.Keyed` key per tab
 (`tabParam model.activeTab`), switching away from and back to this tab always tears down and
 rebuilds this whole subtree from scratch (never patches it in place) -- so a freshly-collapsed
 Bird section (or a freshly-toggled anything) always mounts already in its final CSS state, with no
 "is-open" -> "is-closed" class flip for the browser to animate; the `grid-template-rows` transition
-`profiles.css` defines only ever fires from a live *click* while this tab stays active, never from
+`profiles.css` defines only ever fires from a live _click_ while this tab stays active, never from
 a tab switch. This only holds because each collapsible section's own wrapper node stays at a fixed
 position in its parent's child list across every state this module renders (Loading/Failed/Loaded,
 display/edit) -- if one were ever conditionally omitted instead of always-mounted-but-collapsed,
 Elm's positional diffing could reuse a DOM node meant for a different section and misfire a
 transition; every section here follows the established "always mounted, CSS-driven" convention
 specifically to avoid that.
+
 -}
 
 import Components.Pages.ServerInformationPage.Common as Common
@@ -92,9 +93,9 @@ import Html exposing (Html, button, div, h2, h3, input, option, select, span, te
 import Html.Attributes exposing (class, disabled, placeholder, selected, title, type_, value)
 import Html.Events exposing (onClick, onInput)
 import Proto.Rellm exposing (BirdConfig, ServerConfiguration, TelnyxConfig, TwilioConfig, defaultBirdConfig, defaultTelnyxConfig, defaultTwilioConfig)
-import Proto.Rellm.Rellm as Rellm
 import Proto.Rellm.ContactProtocol exposing (ContactProtocol(..))
 import Proto.Rellm.ContactVerificationAPI exposing (ContactVerificationAPI(..))
+import Proto.Rellm.Rellm as Rellm
 import Set exposing (Set)
 import Shared
 import Shared.AccountsPanel as AccountsPanel
@@ -157,7 +158,7 @@ integrationsSectionKey section =
 
 {-| The `collapsedIntegrationsSections` to start with once `config` (the tab's own authenticated
 fetch) first loads -- `TwilioIntegrationSection`/`BirdIntegrationSection`/`TelnyxIntegrationSection`
-each pre-expand iff that provider's config is both present *and* has at least one non-default value
+each pre-expand iff that provider's config is both present _and_ has at least one non-default value
 already entered (`*_enabled`, `*_from`/`*_from_number`, `*_region`/`*_messaging_profile_id`, or
 `use_*_webhook_signing_key` turned on -- see `twilioConfigHasValues`/`birdConfigHasValues`/
 `telnyxConfigHasValues`), so an admin actively using a provider sees it open right away without a
@@ -323,7 +324,7 @@ whatever's already stored" (the backend splices the existing value back in when 
 `WebPushConfig.privateVapidKey`'s own merge rule). `accountSid`/`apiKeySid` are Twilio's Account SID
 and API Key SID respectively -- see `TwilioConfig`'s own proto doc for why authentication uses the
 API Key pair, never the account's own Auth Token. `webhookSigningKey` is that Auth Token, used
-*only* to verify inbound `/contact_integrations/twilio/receive` deliveries (see that field's own
+_only_ to verify inbound `/contact_integrations/twilio/receive` deliveries (see that field's own
 proto doc and `docs/contact_integrations.md`) -- the one place the Auth Token is ever accepted here.
 `useWebhookSigningKey` is the "Use Webhook Signing Key" toggle
 (`TwilioConfig.use_twilio_webhook_signing_key`) -- unlike `webhookSigningKey` itself, it's not
@@ -1083,7 +1084,7 @@ toggleContactProtocol protocol config =
 False }` around: off collapses the whole `stalwartConfig` to `Nothing`, on sets it to
 `Just { stalwartReceivingEnabled = True }`. Unrelated to `supported_contact_protocols`/
 `ContactProtocol` above -- this gates the internal `:27705/email` MTA hook endpoint receiving mail
-from Stalwart, not SMS/email *sending* (see `web::email::create_email_message`'s own doc).
+from Stalwart, not SMS/email _sending_ (see `web::email::create_email_message`'s own doc).
 -}
 toggleStalwartReceiving : ServerConfiguration -> ServerConfiguration
 toggleStalwartReceiving config =
@@ -1187,7 +1188,7 @@ Stalwart mail server sharing this cluster -- see `web::email::create_email_messa
 `docs/contact_integrations.md`'s Email section) that just happen to both belong under "Email" from
 an admin's point of view. Both are instant toggle-and-save (no Edit/Save/Cancel step, unlike every
 other section here), and neither is ever disabled up front -- "Enable Email Sending" always comes
-back `mailto_contact_protocol_not_supported` from `validate_configuration` (no email *sending*
+back `mailto_contact_protocol_not_supported` from `validate_configuration` (no email _sending_
 provider exists yet), surfaced the same way any other save error on this page is. Only rendered
 once this tab's own admin fetch (`AdminContactIntegrationsLoaded`) has actually landed, same gate as
 `externalIntegrationsSection`'s admin-only fields, since both `supportedContactProtocols` and
@@ -1472,7 +1473,7 @@ twilioDisplayView maybeAdminAccount twilioConfig =
     ]
 
 
-{-| Twilio's own IAM docs (https://www.twilio.com/docs/iam/api-keys/restricted-api-keys) recommend
+{-| Twilio's own IAM docs (<https://www.twilio.com/docs/iam/api-keys/restricted-api-keys>) recommend
 creating a Restricted API Key scoped to just `/twilio/messaging/messages/create` for exactly this
 use case, rather than using the account's own (unscoped) Auth Token -- see `TwilioConfig`'s own
 proto doc for the full reasoning.

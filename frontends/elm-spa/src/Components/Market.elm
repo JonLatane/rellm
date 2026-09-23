@@ -44,6 +44,7 @@ reasoning as `Components.Posts.fetchPosts`. Every other RPC here is authenticate
 Also holds the small bits `Components.Pages.MarketPage`/`Components.Pages.ProductPage`/
 `Components.Pages.UserProfilePage`'s Subscriptions section all need in common -- `purchaseTypeLabel`/
 `purchasePeriodLabel`/`formatAmount` -- so the three don't each grow their own copy.
+
 -}
 
 import Grpc
@@ -128,7 +129,7 @@ yen, no decimal)" for JPY, not "Amount (in cents)").
 amountInputLabel : Int -> String
 amountInputLabel currency =
     if isZeroDecimalCurrency currency then
-        "Amount (whole units, no decimal -- e.g. 500 = \u{00A5}500)"
+        "Amount (whole units, no decimal -- e.g. 500 = ¥500)"
 
     else
         "Amount (in cents -- e.g. 500 = $5.00)"
@@ -226,7 +227,7 @@ updateMarketProduct accountsPanelModel maybeAccountServer product =
 
 
 {-| Cancels a `MarketSubscription` -- only ever sets `canceledAt` on the returned subscription; it
-does *not* revoke the subscription's entitlement (media storage quota/granted permissions) right
+does _not_ revoke the subscription's entitlement (media storage quota/granted permissions) right
 away. That only happens once the server's `renew_market_subscriptions` background job later
 processes it (once both `canceledAt` and `renewsAt` have passed) and sets `serviceTerminatedAt`, so
 a canceled-but-not-yet-terminated subscription still functions normally until its current billing
@@ -249,7 +250,7 @@ cancelMarketSubscription accountsPanelModel maybeAccountServer subscription =
         )
 
 
-{-| Every `PURCHASE_TYPE_RELLM_HOSTING` `MarketSubscription` across *every* buyer on the server --
+{-| Every `PURCHASE_TYPE_RELLM_HOSTING` `MarketSubscription` across _every_ buyer on the server --
 admin-only server-side (see `GetMarketSubscriptionsRequestType.GETMARKETSUBSCRIPTIONSREQUESTFORFULFILLMENTADMIN`'s
 own proto doc; a non-admin caller gets a permission error). Backs
 `Components.Pages.MarketFulfillmentPage`'s `/market/fulfillment` table -- the admin-only "what Rellm
@@ -361,19 +362,19 @@ purchaseTypeEmoji : PurchaseType -> String
 purchaseTypeEmoji type_ =
     case type_ of
         PURCHASETYPEMEDIASTORAGE ->
-            "\u{1F4BE}"
+            "💾"
 
         PURCHASETYPEAIGRANTS ->
-            "\u{1F916}"
+            "🤖"
 
         PURCHASETYPERELLMHOSTING ->
-            "\u{1F310}"
+            "🌐"
 
         PURCHASETYPEPERMISSIONSACCESS ->
-            "\u{2728}"
+            "✨"
 
         PurchaseTypeUnrecognized_ _ ->
-            "\u{1F4E6}"
+            "📦"
 
 
 {-| A one-line blurb under each `MarketPage` section heading, explaining what that `PurchaseType`

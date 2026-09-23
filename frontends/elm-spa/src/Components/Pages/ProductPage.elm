@@ -13,6 +13,7 @@ The "Buy" button (and, for a `RELLM_HOSTING` product, its domain/contact/notes f
 `Components.Market.makeMarketPurchase` call and `Components.Market.PurchaseState`/`HostingForm`
 types, just each keeps its own single-product-shaped copy of the surrounding `Model` plumbing
 (a `Dict` keyed by product id would be pure overhead here, unlike the list page).
+
 -}
 
 import Browser.Navigation
@@ -73,7 +74,7 @@ init shared productId =
     )
 
 
-{-| Fires `fetchProduct` the first time `browsingHost` is a known, *connected* server -- see
+{-| Fires `fetchProduct` the first time `browsingHost` is a known, _connected_ server -- see
 `RellmServers.knownConnectedRellmServer`'s own doc: `Shared.AccountsPanel.init` seeds every
 persisted server disconnected before its own reconnect attempt resolves, so firing this fetch
 unconditionally in `init` (the original bug here -- a cold app load raced that reconnect and failed

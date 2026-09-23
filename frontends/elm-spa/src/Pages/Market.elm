@@ -7,12 +7,13 @@ panel order after that) -- see `rellm.proto`'s own "Federated Markets" doc secti
 buying is never seamless across servers the way most other federated features are). Each section is
 a full, independent `Components.Pages.MarketPage.Model` instance, scoped to its own host -- product
 tiles for a non-browsed host link straight out to that server's own product page (see
-`MarketPage.productHref`), since buying always has to happen *on* the target server.
+`MarketPage.productHref`), since buying always has to happen _on_ the target server.
 
 Mirrors `Pages.Posts`'s own direct-alias shape around `Components.Pages.PostsPage` in spirit, but
-`Model`/`Msg` here wrap a *list* of `MarketPage` instances (keyed by host) rather than a single one.
+`Model`/`Msg` here wrap a _list_ of `MarketPage` instances (keyed by host) rather than a single one.
 `embeddedPage = False` (`MarketPage.view`'s second argument) for every instance, since this route
 owns its own heading(s) directly, same reasoning as `Pages.Posts`'s own doc on that argument.
+
 -}
 
 import Components.Pages.MarketPage as MarketPage
@@ -51,7 +52,7 @@ type Msg
 with `market_settings.enabled` set, in Accounts panel (`sortOrder`) order -- see module doc. The
 browsed host is included unconditionally (regardless of its own `market_settings.enabled`), matching
 this route's own pre-existing behavior before federated Market browsing existed: visiting `/market`
-directly always shows *something* for the server you're actually on.
+directly always shows _something_ for the server you're actually on.
 -}
 marketEnabledHosts : Shared.Model -> List String
 marketEnabledHosts shared =
@@ -190,7 +191,15 @@ findInstance host instances =
 
 replaceInstance : String -> MarketPage.Model -> List ( String, MarketPage.Model ) -> List ( String, MarketPage.Model )
 replaceInstance host updatedInstance instances =
-    instances |> List.map (\( h, m ) -> if h == host then ( h, updatedInstance ) else ( h, m ))
+    instances
+        |> List.map
+            (\( h, m ) ->
+                if h == host then
+                    ( h, updatedInstance )
+
+                else
+                    ( h, m )
+            )
 
 
 view : Shared.Model -> Request.With Params -> Model -> View Msg

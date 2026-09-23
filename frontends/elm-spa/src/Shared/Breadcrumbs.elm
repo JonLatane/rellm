@@ -32,8 +32,8 @@ left of the trail on `FromPost`/`FromEvent` roots whenever `Model.host` isn't
 -}
 
 import Components.Authors as Authors
-import Components.MediaRenderer as MediaRenderer
 import Components.Markdown as Markdown
+import Components.MediaRenderer as MediaRenderer
 import Components.MultiMediaRenderer as MultiMediaRenderer
 import Components.Posts as Posts
 import Components.Users as Users

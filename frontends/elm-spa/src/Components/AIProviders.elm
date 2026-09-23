@@ -23,14 +23,15 @@ the caller (see `Shared.AccountsPanel.performWithAccountServer`).
 `getAIProviders` is still used, though -- by that section's manual "Refresh" button
 (`AIProvidersRefreshClicked`), which overlays just the fresh `providers`/`aiModels`
 onto the resolved `User` without a whole-profile refetch.
+
 -}
 
 import Grpc
 import Proto.Rellm
     exposing
-        ( AIProvider
+        ( AIModel
+        , AIProvider
         , AIProviderGrant
-        , AIModel
         , GenerateMediaRequest
         , GetAIProvidersResponse
         , GrantAIProviderRequest
@@ -206,7 +207,7 @@ hasImageGenerationCapability available =
     List.member AIMODELCAPABILITYIMAGEGENERATION available.capabilities
 
 
-{-| Whether `available` is usable by `GenerateMedia` at all, in *either* mode -- editing (given
+{-| Whether `available` is usable by `GenerateMedia` at all, in _either_ mode -- editing (given
 reference media) or plain generation (given none). Used to gate whether a Post/Event's
 "Generate Media…" button appears at all (`Components.Posts.generateMediaButton`'s callers) --
 broader than either capability alone, since a generation-only model is still perfectly usable there

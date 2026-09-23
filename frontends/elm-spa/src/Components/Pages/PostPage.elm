@@ -21,12 +21,13 @@ whether the post id comes from the route directly or from a matched `CustomNavig
 (`RellmServers.connectToRellmServer`) and `update`'s own `Shared.GotPostDeleteResult` handling
 (navigating Home once the viewed Post no longer exists), neither of which otherwise has access to
 the calling page's own `Request`.
+
 -}
 
 import Browser.Navigation
 import Components.AIProviders as AIProviders
-import Components.PostReplies as PostReplies
 import Components.MediaRenderer as MediaRenderer
+import Components.PostReplies as PostReplies
 import Components.Posts as Posts
 import Components.ServerDependentView as ServerDependentView
 import Components.SyncDestinations as SyncDestinations
@@ -223,6 +224,7 @@ A Mastodon/Bluesky post never reaches this module at all -- `Pages.Post.PostId_`
 straight to `Components.Pages.MastodonPostPage`/`BlueskyPostPage` instead (see
 `Posts.parseFederatedPostId`, and that dispatcher's own doc) -- so everything below can assume a real
 Rellm post on some (possibly not-yet-connected) `RellmServer`.
+
 -}
 init : Shared.Model -> Bool -> String -> Browser.Navigation.Key -> ( Model, Effect Msg )
 init shared pageIsSecure rawPostId navKey =

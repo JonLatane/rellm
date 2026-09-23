@@ -42,6 +42,7 @@ on directly everywhere this is used. `fromProtoTab`/`toProtoTab` round-trip a `C
 to/from this module's own `CustomTab`, `Nothing` only for a malformed proto value (`target`/`icon`
 unset -- shouldn't happen for anything this app itself ever saves, but is possible for a
 hand-edited/future-versioned config).
+
 -}
 
 import Gen.Route as Route exposing (Route)
@@ -63,7 +64,7 @@ import UI.Classes exposing (classes, hostnameToCSSClass)
 tabs (`NavigationTab`), a specific Post (e.g. a custom business site's page), or a user profile
 (`TargetProfile`, from the proto's `is_profile` branch) -- unlike the other two, that branch carries
 no payload of its own on the wire (just `bool`), so which profile is entirely determined by the
-enclosing `CustomNavigationTab.path` (see `CustomTab.path`'s own doc) -- the tab's url *is* that
+enclosing `CustomNavigationTab.path` (see `CustomTab.path`'s own doc) -- the tab's url _is_ that
 username's own `/:username` route, just also featured as a styled nav tab.
 -}
 type CustomTabTarget
@@ -460,7 +461,7 @@ resolvedTitle tab =
 one of `defaultTabs` -- once a tab exists, its `path` is admin-editable (see `SettingsTab.customTabEditChip`'s
 Path `<input>`) and no longer re-derived from this. The backend's own `validate_configuration` (see
 `backend/src/rpcs/validations/configuration_validation.rs`) rejects anything that isn't `[a-z_]+` for
-every target *except* `TargetProfile` -- notably *not* a real href (no leading `/`, no digits, no
+every target _except_ `TargetProfile` -- notably _not_ a real href (no leading `/`, no digits, no
 hyphens), which a Post's own id would violate -- so this is just a lowercase, underscore-only
 starting slug the admin's expected to customize (e.g. to `gigs` or `weddings`); for `TargetProfile`
 it's really a placeholder username instead (see `CustomTabTarget`'s own doc), not actually reachable
@@ -631,12 +632,13 @@ Links to `tab.path` itself (via `Route.UsernameOrCustomTab_`), not `tab.target`'
 route -- `Pages.UsernameOrCustomTab_` is what actually resolves that path back to `target` at
 request time (see its own `customTabFor`), so this always matches whatever url a visitor would
 land on, e.g. a `path` of `gigs` links to `/gigs`, not `/events`, even though `target` is
-`EVENTSTAB`. `isCurrent`, though, checks *both* that path route and `target`'s own canonical one
+`EVENTSTAB`. `isCurrent`, though, checks _both_ that path route and `target`'s own canonical one
 (`canonicalRoute`) -- the proto's own doc is explicit that `/events`/`/posts/`/`/people`/`/about`
 stay reachable and unmodified regardless of any custom path pointed at the same `target`, so a
 visitor who lands on plain `/events` (an old link, a bookmark, `Gen.Route.routes`' own static entry)
 should still see the "Events" tab (now living at `/gigs`) highlighted as current, not dark. Not
-relevant for `TargetPost`/`TargetProfile`, whose only route *is* their own `path` either way.
+relevant for `TargetPost`/`TargetProfile`, whose only route _is_ their own `path` either way.
+
 -}
 navLinkView : Shared.Model -> Route -> RellmServer -> CustomTab -> Html msg
 navLinkView shared currentRoute server tab =

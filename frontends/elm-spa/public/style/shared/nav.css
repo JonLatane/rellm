@@ -125,9 +125,12 @@
   width: 100%;
 }
 
-.nav-links-scroll> :not(.starred-menu, .nav-menu-toggle):first-of-type {
+/* .nav-links-scroll>*:first-child {
   margin-left: auto;
+} */
 
+.nav-links-scroll> .nav-link:first-of-type {
+  margin-left: auto;
 }
 
 .nav-links-scroll>*:last-child {
@@ -237,6 +240,19 @@
   height: 64px;
   padding: 0;
   flex-shrink: 0;
+}
+
+.create-new-button {
+  transition: width 0.2s ease, margin 0.2s ease, opacity 0.2s ease;
+  opacity: 1;
+  width: var(--nav-toggle-height);
+}
+
+.nav-links-scroll .create-new-button.hidden {
+  width: 0px;
+  opacity: 0;
+  margin-left: 0px;
+  pointer-events: none;
 }
 
 /* The Home link swaps in the browsing server's RegularServerLogo (glyph +

@@ -1,7 +1,7 @@
 module Components.Pages.MarketPage exposing (Model, Msg, fromShared, init, subscriptions, update, view)
 
 {-| `/market` -- Rellm's Stripe-backed marketplace (`market.proto`). Lists every non-delisted
-`MarketProduct` on `Model.host` (an Admin *on that host* additionally sees delisted ones, per
+`MarketProduct` on `Model.host` (an Admin _on that host_ additionally sees delisted ones, per
 `GetMarketProductsResponse.marketProducts`' own proto doc), with a "Buy" button per product that
 starts a Stripe Checkout flow (`Components.Market.makeMarketPurchase`) and, on success, redirects
 the browser straight to the returned `checkoutUrl` (`Browser.Navigation.load` -- a plain external
@@ -16,13 +16,14 @@ browsing, per `rellm.proto`'s own "Federated Markets" doc section): `Pages.Marke
 per connected, enabled server (`ServerConfiguration.market_settings.enabled`), the browsed host's own
 always first. A product tile links internally (`Route.toHref`) only when `host` is the app's own
 `browsingHost`; for any other host it's a plain external `https://{host}/market/product/{id}` link
-(see `productHref`), since buying always has to happen *on* that host (Stripe Checkout is scoped to
+(see `productHref`), since buying always has to happen _on_ that host (Stripe Checkout is scoped to
 whichever server the buyer authenticates against).
 
 Mirrors `Components.Pages.PostsPage`/`Components.Pages.EventsPage`'s overall shape (a thin
 `Pages.Market` wrapper around this module, `init`/`update`/`view`/`subscriptions`/`fromShared`), just
 without those modules' own feed-paging/filtering machinery -- a marketplace's product list is small
 and never paged.
+
 -}
 
 import Browser.Navigation
@@ -50,9 +51,9 @@ import Proto.Rellm
         )
 import Proto.Rellm.MarketProduct exposing (Details)
 import Proto.Rellm.MarketProduct.Details as ProductDetails
+import Proto.Rellm.Permission exposing (Permission)
 import Proto.Rellm.PurchasePeriod exposing (PurchasePeriod(..))
 import Proto.Rellm.PurchaseType exposing (PurchaseType(..))
-import Proto.Rellm.Permission exposing (Permission)
 import Shared
 import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts
@@ -315,7 +316,7 @@ isAdminOn shared host =
         |> Maybe.withDefault False
 
 
-{-| Fires `fetchProducts`/`fetchAiProviders` the first time `model.host` is a known, *connected*
+{-| Fires `fetchProducts`/`fetchAiProviders` the first time `model.host` is a known, _connected_
 server -- see `RellmServers.knownConnectedRellmServer`'s own doc: `Shared.AccountsPanel.init` seeds
 every persisted server disconnected before its own reconnect attempt resolves, so firing these
 fetches unconditionally in `init` (the original bug here -- a cold app load raced that reconnect and
@@ -602,7 +603,17 @@ replaceProduct : MarketProduct -> ProductsState -> ProductsState
 replaceProduct product products =
     case products of
         ProductsLoaded existing ->
-            ProductsLoaded (List.map (\p -> if p.id == product.id then product else p) existing)
+            ProductsLoaded
+                (List.map
+                    (\p ->
+                        if p.id == product.id then
+                            product
+
+                        else
+                            p
+                    )
+                    existing
+                )
 
         other ->
             other
@@ -746,7 +757,7 @@ purchasePeriodToString period =
 {-| `embeddedPage` still only ever applies to the browsed host's own instance (see
 `Pages.UsernameOrCustomTab_`'s embedding, which never mounts a second server's Market) --
 `isPrimary` (`model.host == shared.accounts.browsingHost`) is the independent question of whether
-*this particular instance*, among however many `Pages.Market` has mounted, is the browsed server's
+_this particular instance_, among however many `Pages.Market` has mounted, is the browsed server's
 own -- see module doc.
 -}
 view : Shared.Model -> Bool -> Model -> Html Msg
@@ -791,13 +802,13 @@ view shared embeddedPage model =
 
 
 {-| The "Market" heading (hidden while embedded on `UsernameOrCustomTab_`, same as before, for the
-browsed server's own primary instance only) and, for an Admin *on this instance's own host*, a
+browsed server's own primary instance only) and, for an Admin _on this instance's own host_, a
 "+ New Product" button and a link to `/market/fulfillment` -- all on the same row, pinned to the
 right by `.market-header-row`'s `justify-content: space-between` (see `market.css`). The button stays
 visible even while `addProductPanelView`'s form is already open, rather than disappearing -- a
 second click toggles the form closed again (see `AddProductClicked`), same as `AddFormCancelClicked`.
 The fulfillment link only ever makes sense for the browsed server's own primary instance (an Admin
-manages *their own* server's Rellm Hosting orders here, not some other federated server's), so it's
+manages _their own_ server's Rellm Hosting orders here, not some other federated server's), so it's
 gated on `isPrimary` too, unlike the "+ New Product" button.
 
 A non-primary instance (another server's Market, shown alongside the browsed server's own -- see
@@ -807,6 +818,7 @@ module doc) always gets a heading, even while `embeddedPage`, naming which serve
 known `RellmServer`, falling back to plain "Market on <host>" text otherwise (e.g. still being
 resolved) -- there's no ambiguity to resolve for the primary instance, but stacking two bare
 "Market" headings would be.
+
 -}
 headerRowView : Bool -> Bool -> List RellmServers.RellmServer -> String -> Bool -> Html Msg
 headerRowView embeddedPage isPrimary servers host isAdmin =
@@ -936,7 +948,7 @@ sectionView shared isPrimary isAdmin model products type_ =
 products link internally (`Route.toHref`, resolves against `browsingHost` for free by being a plain
 relative URL); any other server's products link straight to that server's own
 `https://{host}/market/product/{id}` instead, a real page navigation -- buying always has to happen
-*on* that server, not this one.
+_on_ that server, not this one.
 -}
 productHref : Shared.Model -> Bool -> String -> MarketProduct -> String
 productHref shared isPrimary host product =
@@ -1029,7 +1041,7 @@ closed Market makes both of those moot. Defaults to `True` (don't block the Buy 
 `host` isn't yet a known/connected server or hasn't reported `marketSettings` at all -- mirrors
 `Components.Pages.ProductPage.stripeConfigured`'s own "unknown isn't the same as definitely not
 configured" reasoning. In practice this only ever matters for the primary (browsed) host's own
-instance -- `Pages.Market.marketEnabledHosts` already filters any *other* federated server out of
+instance -- `Pages.Market.marketEnabledHosts` already filters any _other_ federated server out of
 the page entirely once its own `market_settings.enabled` goes false, so a `MarketPage` instance for
 one only exists here while it's still enabled.
 -}

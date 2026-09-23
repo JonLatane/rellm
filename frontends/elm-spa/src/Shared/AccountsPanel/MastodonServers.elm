@@ -1,8 +1,8 @@
 module Shared.AccountsPanel.MastodonServers exposing
     ( BrowsedMastodonInstance
     , MastodonInstanceInfo
-    , encodeBrowsedMastodonInstance
     , browsedMastodonInstanceDecoder
+    , encodeBrowsedMastodonInstance
     , fetchMastodonInstanceInfoTask
     )
 
@@ -10,11 +10,11 @@ module Shared.AccountsPanel.MastodonServers exposing
 `Shared.AccountsPanel.Model` itself to make sense: the persisted-list element type
 (`BrowsedMastodonInstance`), its encode/decode, and the plain HTTP task/decoder
 `Shared.AccountsPanel.update` drives to fill in its logo/display name (`GET /api/v1/instance`). See
-`Shared.AccountsPanel.MastodonAccounts` for the sibling module covering *connected* (OAuth) Mastodon
+`Shared.AccountsPanel.MastodonAccounts` for the sibling module covering _connected_ (OAuth) Mastodon
 accounts -- the two used to be one module (`MastodonAccountAndServers`), see that module's own doc
 for why they split.
 
-What's deliberately *not* here, and stays in `Shared.AccountsPanel` itself: the `Model` field this
+What's deliberately _not_ here, and stays in `Shared.AccountsPanel` itself: the `Model` field this
 lives in (`browsedMastodonInstances`), and every `Msg`/`update` case that reacts to user actions and
 persists the result.
 

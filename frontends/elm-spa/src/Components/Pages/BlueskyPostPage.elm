@@ -66,7 +66,7 @@ type Msg
 
 {-| `uri` comes straight from `Components.Posts.parseFederatedPostId`'s `BlueskyPostId` -- see that
 type's own doc. Fetched using whichever connected Bluesky account comes first -- reading a public
-post doesn't need to be *that* account's own, any connected token works (see
+post doesn't need to be _that_ account's own, any connected token works (see
 `Shared.Federation.Bluesky.fetchPost`'s own doc) -- and fails outright (a bare `Http.BadStatus 401`,
 landing on `PostFailed`, same as a real auth failure would) if none is connected at all, since AT
 Protocol has no anonymous access to anything. Goes through `BlueskyAccounts.performWithBlueskyAccount`
@@ -179,6 +179,7 @@ own doc), and a "View original" link back to the real post on Bluesky. No real `
 (this is the one page that's allowed to show it at all, once asked -- see that module's own doc on
 why a feed/card context never gets this far). Once revealed (or never flagged to begin with), renders
 exactly like any other post's media.
+
 -}
 federatedPostView : Shared.Model -> Bool -> Bool -> Post -> Html Msg
 federatedPostView shared sensitiveMediaRevealed sensitive post =

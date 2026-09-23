@@ -17,7 +17,7 @@ module Shared.Federation.Bluesky exposing
 
 {-| Translates Bluesky's (AT Protocol) API into Rellm's `Post` shape, entirely client-side -- see
 `Shared.BlueskyAccount`'s own doc for the connection side this feeds off of. Unlike
-Mastodon, there's no meaningful *unauthenticated* equivalent: a bare "public timeline" isn't a
+Mastodon, there's no meaningful _unauthenticated_ equivalent: a bare "public timeline" isn't a
 concept AT Proto's federated network has (every PDS only ever serves its own users' own posts/feeds,
 not a "local instance timeline" the way a Mastodon server does), so `fetchPosts` is a connected
 account's own home timeline; `searchPosts`/`fetchPost` are both exceptions -- real endpoints that
@@ -31,9 +31,10 @@ the same auth (there's no anonymous access to anything on Bluesky, unlike Mastod
 `Components.Pages.BlueskyUserProfilePage`/`BlueskyUsersPage` -- resolving one specific actor's own
 profile/authored-posts/followers/follows, rather than the connected account's own home timeline.
 Every one of these still needs a connected account's `accessToken` to authenticate with (there's no
-anonymous AT Proto access at all, same as everything else in this module), but works against *any*
+anonymous AT Proto access at all, same as everything else in this module), but works against _any_
 handle, not just that account's own -- same "any connected token works" reasoning `fetchPost`'s own
 doc already covers for reading someone else's public post.
+
 -}
 
 import Http
@@ -160,7 +161,7 @@ sensitiveDecoder labelsPath =
 
 
 {-| A `FeedPost`'s translation into a Rellm `Post` -- `id` is just the bare `feedPost.uri` (an
-`at://` URI, already globally unique on its own -- it embeds the author's DID), *not* further
+`at://` URI, already globally unique on its own -- it embeds the author's DID), _not_ further
 prefixed with `"bluesky:"` the way it briefly was, mirroring `Shared.Federation.Mastodon.toPost`'s
 own bare `status.id` -- see that function's own doc on why (a federated post's `id` is never used
 without its synthetic host alongside it, which already carries the `"bluesky:"` tag). `link` is a

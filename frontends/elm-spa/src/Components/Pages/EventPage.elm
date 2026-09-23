@@ -71,17 +71,17 @@ import Html.Events exposing (onClick, onInput)
 import Json.Encode as Encode
 import Ports
 import Process
-import Proto.Rellm exposing (Event, Occasion, GetSyncDestinationsResponse, Location, Post, SyncDestination, defaultOccasion, defaultLocation)
+import Proto.Rellm exposing (Event, GetSyncDestinationsResponse, Location, Occasion, Post, SyncDestination, defaultLocation, defaultOccasion)
 import Proto.Rellm.Moderation exposing (Moderation)
 import Proto.Rellm.Permission exposing (Permission(..))
 import Proto.Rellm.Visibility exposing (Visibility)
 import Shared
 import Shared.AccountsPanel as AccountsPanel
-import Shared.CreateNewPanel as CreateNewPanel
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer)
 import Shared.Breadcrumbs as Breadcrumbs
 import Shared.Conversions as Conversions
+import Shared.CreateNewPanel as CreateNewPanel
 import Shared.MarkdownPanel as MarkdownPanel
 import Shared.MediaGeneratorPanel as MediaGeneratorPanel
 import Shared.MediaViewerPanel as MediaViewerPanel
@@ -889,10 +889,10 @@ update shared msg model =
                                         SharedTime.posixFromDateTimeLocalInput shared.time.browserTimeZone.zone raw
                                 in
                                 { edit
-                                    -- Mirrors `Shared.CreateNewPanel.update`'s own
-                                    -- `EndsAtChanged` exactly: clamps to at least a minute
-                                    -- after `pendingStartsAt`, rather than rejecting
-                                    -- outright.
+                                  -- Mirrors `Shared.CreateNewPanel.update`'s own
+                                  -- `EndsAtChanged` exactly: clamps to at least a minute
+                                  -- after `pendingStartsAt`, rather than rejecting
+                                  -- outright.
                                     | pendingEndsAt =
                                         case ( newEndsAt, edit.pendingStartsAt ) of
                                             ( Just newEnd, Just startsAt ) ->
@@ -2345,7 +2345,7 @@ deleteButtonView maybeAccount event post =
 {-| The "Delete Occasion" button next to `deleteButtonView`'s "Delete Event"
 (same row, same `.post-edit-button` styling, same owner-only gate) --
 only rendered once `event` has more than one `Occasion`: with exactly
-one, deleting it *is* deleting the Event (see `ConfirmOccasionDelete`'s
+one, deleting it _is_ deleting the Event (see `ConfirmOccasionDelete`'s
 own doc for why), so `deleteButtonView`'s own button already covers that
 case and a second one here would be redundant at best, misleading at worst.
 Opens the same shared "are you sure?" dialog as `deleteButtonView`, via
@@ -2538,7 +2538,7 @@ author, or an Admin -- passing `eventPost`, not `occasion.post`, since
 editing an `Occasion`'s time/location is authorized against the
 _Event_'s ownership server-side, see
 `backend/src/rpcs/events/event_permissions.rs`'s `validate_event_edit_permission`,
-not the occasion's own possibly-different-owner override `Post`) *and*
+not the occasion's own possibly-different-owner override `Post`) _and_
 `occasionEditable`; the inline `occasionTimeEditFormView` once
 editing.
 -}
@@ -2630,7 +2630,7 @@ occasionTimeEditFormView zone edit occasion =
 difference: with no location set yet, the display half reads "+ Add
 Location" (no separate location line to show) rather than a plain
 "Edit Location" next to existing text -- and, unlike the time row (which
-always has *something* to show), renders nothing at all when there's neither
+always has _something_ to show), renders nothing at all when there's neither
 a location to show nor (a synced occasion) a button to add one.
 -}
 occasionLocationView : Maybe RellmAccount -> Maybe OccasionLocationEdit -> Post -> Occasion -> Html Msg
@@ -2713,7 +2713,7 @@ same way every other edit affordance in `occasionDetailAndStrip` is (the
 Event's own `Post`'s author, or an Admin -- reuses `editButtonView`'s exact
 condition rather than rendering a bare button, so "who can add more dates"
 always matches "who can edit this date"'s own time/location buttons right
-above it) *and* `occasionEditable` (see its own doc for why "Add More" is
+above it) _and_ `occasionEditable` (see its own doc for why "Add More" is
 gated the same way Edit Time/Edit Location are).
 -}
 addMoreView : Maybe RellmAccount -> Model -> Post -> Occasion -> Html Msg

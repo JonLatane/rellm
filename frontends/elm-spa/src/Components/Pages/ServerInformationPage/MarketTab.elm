@@ -16,7 +16,7 @@ admin-only-serialized, stripped from the unauthenticated `GetServerConfiguration
 admin-only the same way) and `ContactIntegrationsTab` (`twilioConfig`/`birdConfig` likewise), this
 tab fires its own authenticated `GetServerConfiguration`
 (`fetchAuthenticatedServerConfiguration`/`AdminMarketStatus`) once an admin account is present, and
-displays *both* `stripeConfig` and `marketSettings` off of *that* fetch, rather than only Stripe --
+displays _both_ `stripeConfig` and `marketSettings` off of _that_ fetch, rather than only Stripe --
 simplest to keep one fetch covering everything this tab itself needs, even though `marketSettings`
 alone would already be visible via the public probe. `Components.Pages.ServerInformationPage.ContactIntegrationsTab`
 does the exact same thing independently for its own three fields, with its own separate fetch --
@@ -40,6 +40,7 @@ Turning Market off here doesn't touch `StripeConfig` at all (they're independent
 `MarketSettings`'s own proto doc) -- an admin could enable Stripe but leave Market off (mid-setup),
 or leave Stripe fully unconfigured while Market is nominally "on" (misconfigured, but that's caught
 at actual purchase time, not here).
+
 -}
 
 import Components.Pages.ServerInformationPage.Common as Common

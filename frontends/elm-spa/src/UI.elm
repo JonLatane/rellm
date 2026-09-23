@@ -143,21 +143,9 @@ headerNav shared currentRoute =
             [ nav [ classes [ "nav-links", CustomNav.navigationTabStyleClass (currentTabStyle shared) ] ]
                 [ navLink shared currentRoute (homeLinkContent shared) Route.Home_
                 , div [ class "nav-links-scroll", on "scroll" navLinksScrollDecoder ]
-                    ([ if Set.isEmpty shared.panels.starredPanel.starredPostIds then
-                        text ""
-
-                       else
-                        starredPostsToggle shared
-                     , if MessagingPanel.hasEligibleAccount shared.accounts then
-                        messagingToggle shared currentRoute
-
-                       else
-                        text ""
-                     , if CreateNewPanel.hasEligibleAccount shared.accounts then
-                        newPostToggle shared
-
-                       else
-                        text ""
+                    ([ starredPostsToggle shared
+                     , messagingToggle shared currentRoute
+                     , newPostToggle shared
                      ]
                         ++ customTabLinks shared currentRoute
                     )
@@ -2115,7 +2103,7 @@ Always rendered (`Nothing` account excluded via `needsPassword` below), collapse
 `flip.css`'s own `.flip-animated-item` uses -- so opening/closing is a smooth height transition (a
 "for free" FLIP-like animation, without needing this menu to track its own `UI.Flip.State`).
 
-"Contact Methods" (see `contactMethodsMenuItem`) is a nested expandable *within* this already-
+"Contact Methods" (see `contactMethodsMenuItem`) is a nested expandable _within_ this already-
 expandable menu, rather than a link out to the profile page like the other four -- its own edit/
 consent/verification flow is ported from `Components.Pages.UserProfilePage`'s
 `contactMethodsSection` into `Shared.AccountsPanel.Model`/`Shared.Msg` (see `contactMethodsMenuItem`'s
@@ -2213,7 +2201,7 @@ accountAvatarMenuView shared account =
             ]
 
 
-{-| The "Contact Methods" item in `accountAvatarMenuView` -- a nested expandable *within* that
+{-| The "Contact Methods" item in `accountAvatarMenuView` -- a nested expandable _within_ that
 already-expandable menu (`AccountsPanel.Model.focusedAccountContactMethods`), rather than the plain
 `itemContent` button/link the other four items use, since Phone/Email editing, the SMS consent
 checkbox + History sub-section, and phone verification all need real interactive content here, not
@@ -2237,6 +2225,7 @@ actually the focused one -- every other account's (CSS-hidden) copy of this same
 `RellmAccounts.emptyRellmContactMethods` instead, both so an unfocused row never renders another
 row's in-progress edit and so the nested History sub-section's own DOM `id` (below) doesn't collide
 across rows.
+
 -}
 contactMethodsMenuItem : Shared.Model -> RellmAccount -> Html Shared.Msg
 contactMethodsMenuItem shared account =
@@ -2300,7 +2289,7 @@ contactMethodsMenuItem shared account =
 when unset, so a glance at the still-collapsed item shows both values (and verification status)
 without expanding it. Each returned as its own `.account-avatar-menu-contact-methods-summary-unit`
 (`white-space: nowrap`, `ui/accounts_panel.css`) rather than one joined string, so a narrow row wraps
-*between* "📱 …"/"✉️ …" rather than splitting an emoji away from its own value/checkmark.
+_between_ "📱 …"/"✉️ …" rather than splitting an emoji away from its own value/checkmark.
 -}
 contactMethodsSummary : RellmAccount -> List (Html msg)
 contactMethodsSummary account =
@@ -3882,7 +3871,14 @@ page link. `stopPropagationOn`, not plain `onClick`, for the same reason
 newPostToggle : Shared.Model -> Html Shared.Msg
 newPostToggle shared =
     button
-        [ classes [ "nav-menu-toggle", "circular", openClosedClass (CreateNewPanel.isOpen shared.panels.createNewPanel) ]
+        [ classes <|
+            [ "create-new-button", "nav-menu-toggle", "circular", openClosedClass (CreateNewPanel.isOpen shared.panels.createNewPanel) ]
+                ++ (if CreateNewPanel.hasEligibleAccount shared.accounts then
+                        []
+
+                    else
+                        [ "hidden" ]
+                   )
         , stopPropagationOn "click" (Decode.succeed ( Shared.CreateNewPanelMsg CreateNewPanel.ToggleOpen, True ))
         , title "Create New"
         ]
@@ -3904,7 +3900,16 @@ trigger `headerNav`'s own tap-anywhere `Shared.ScrollToTop`.
 -}
 starredPostsToggle : Shared.Model -> Html Shared.Msg
 starredPostsToggle shared =
-    div [ class "starred-menu" ]
+    div
+        [ classes <|
+            "starred-menu"
+                :: (if Set.isEmpty shared.panels.starredPanel.starredPostIds then
+                        [ "hidden" ]
+
+                    else
+                        []
+                   )
+        ]
         [ button
             [ classes [ "nav-menu-toggle", "circular", openClosedClass shared.panels.starredPanel.showStarredPanel ]
             , stopPropagationOn "click" (Decode.succeed ( Shared.StarredPanelMsg StarredPanel.ToggleStarredPanel, True ))
@@ -4020,7 +4025,16 @@ messagingToggle shared currentRoute =
             else
                 []
     in
-    div [ class "messaging-menu" ]
+    div
+        [ classes <|
+            "messaging-menu"
+                :: (if MessagingPanel.hasEligibleAccount shared.accounts then
+                        []
+
+                    else
+                        [ "hidden" ]
+                   )
+        ]
         [ button
             [ classes ([ "nav-menu-toggle", "circular", openClosedClass (MessagingPanel.isOpen shared.panels.messagingPanel) ] ++ currentPageClasses)
             , stopPropagationOn "click" (Decode.succeed ( Shared.MessagingPanelMsg MessagingPanel.ToggleOpen, True ))

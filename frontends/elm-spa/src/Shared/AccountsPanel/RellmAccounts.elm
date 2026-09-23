@@ -43,7 +43,7 @@ and every pure/plain-`Task` piece of "authenticate as this account" logic (acces
 dependency root -- see that module's own doc) for `Connection`/`RellmServer` wherever an operation
 needs to know which server it's authenticating against.
 
-What's deliberately *not* here, and stays in `Shared.AccountsPanel` itself: the `Model` field this
+What's deliberately _not_ here, and stays in `Shared.AccountsPanel` itself: the `Model` field this
 lives in (`accounts`), and every `Msg`/`Cmd Msg`-constructing operation (`refreshPermissions`,
 `refreshPermissionsForServer`, `setWebUserInterface`, `renameServer`, `changeServerShortName`,
 `performWithAccountServer`, `performWithOptionalAccountServer`, and the plain `enabledAccounts`/
@@ -55,7 +55,7 @@ own coordinating logic.
 import Grpc
 import Json.Decode as Decode exposing (Decoder)
 import Json.Encode as Encode
-import Proto.Rellm exposing (AccessTokenResponse, AIModel, ContactMethod, ExpirableToken, MarketSubscription, SyncDestination, SyncSource, User)
+import Proto.Rellm exposing (AIModel, AccessTokenResponse, ContactMethod, ExpirableToken, MarketSubscription, SyncDestination, SyncSource, User)
 import Proto.Rellm.Permission exposing (Permission(..), fieldNumbersPermission)
 import Proto.Rellm.Rellm as Rellm
 import Proto.Rellm.Visibility exposing (Visibility(..))
@@ -183,6 +183,7 @@ self-contained" reason `SubmitStatus`/`PhoneEdit`/etc. do -- see `SubmitStatus`'
 `Shared.AccountsPanel.Model.focusedAccountContactMethods` wraps this in a `Maybe` that's kept in
 lockstep with `focusedAccount` itself (`Just emptyRellmContactMethods` whenever `focusedAccount` is
 `Just _`, `Nothing` whenever it's `Nothing`) -- see that field's own doc.
+
 -}
 type alias RellmContactMethods =
     { phoneEdit : Maybe PhoneEdit

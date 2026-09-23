@@ -119,14 +119,15 @@ type alias MediaEdit =
     }
 
 
-type Msg
-      -- `Open media maybePost initialId host` -- `media` is the full
-      -- paging list (a `Post`'s own `.media`, or, from `Shared.MyMediaPanel`'s
-      -- Browse mode, every currently-shown grid item converted to
-      -- `MediaReference`); `maybePost` is `Just` only in the `Post`-backed
-      -- case, purely so `view`'s toolbar can show that post's title --
-      -- `Nothing` renders no title at all, same as before this panel could
-      -- be opened any other way.
+type
+    Msg
+    -- `Open media maybePost initialId host` -- `media` is the full
+    -- paging list (a `Post`'s own `.media`, or, from `Shared.MyMediaPanel`'s
+    -- Browse mode, every currently-shown grid item converted to
+    -- `MediaReference`); `maybePost` is `Just` only in the `Post`-backed
+    -- case, purely so `view`'s toolbar can show that post's title --
+    -- `Nothing` renders no title at all, same as before this panel could
+    -- be opened any other way.
     = Open (List MediaReference) (Maybe Post) String String
     | SetCurrent String
     | Next
@@ -228,7 +229,16 @@ update accountsPanelModel msg model =
 
         GotEditSaveResult (Ok ( maybeAccountsPanelMsg, updatedMedia )) ->
             ( { model
-                | media = model.media |> List.map (\m -> if m.id == updatedMedia.id then mediaToReference updatedMedia else m)
+                | media =
+                    model.media
+                        |> List.map
+                            (\m ->
+                                if m.id == updatedMedia.id then
+                                    mediaToReference updatedMedia
+
+                                else
+                                    m
+                            )
                 , edit = Nothing
               }
             , Cmd.none
@@ -255,7 +265,16 @@ update accountsPanelModel msg model =
 
         GotDeleteSizeResult conversion (Ok ( maybeAccountsPanelMsg, updatedMedia )) ->
             ( { model
-                | media = model.media |> List.map (\m -> if m.id == updatedMedia.id then mediaToReference updatedMedia else m)
+                | media =
+                    model.media
+                        |> List.map
+                            (\m ->
+                                if m.id == updatedMedia.id then
+                                    mediaToReference updatedMedia
+
+                                else
+                                    m
+                            )
                 , edit =
                     model.edit
                         |> Maybe.map (\edit -> { edit | deletingSizes = List.filter ((/=) conversion) edit.deletingSizes })

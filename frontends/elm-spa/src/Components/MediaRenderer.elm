@@ -238,7 +238,15 @@ viewHelper forceAutoplay mediaSize sizeConstraint server maybeAccount preloadVid
                     (List.filterMap identity
                         [ Just (class ("media-renderer-video " ++ sizeClass))
                         , Just (controls True)
-                        , Just (attribute "preload" (if autoplay then "auto" else "metadata"))
+                        , Just
+                            (attribute "preload"
+                                (if autoplay then
+                                    "auto"
+
+                                 else
+                                    "metadata"
+                                )
+                            )
                         , Just (src (mediaUrl ++ previewTimeFragment media))
                         , aspectRatioStyle media
                         ]
@@ -284,12 +292,12 @@ viewHelper forceAutoplay mediaSize sizeConstraint server maybeAccount preloadVid
 {-| `autoplay`/`muted`/`playsinline` for `viewHelper`'s autoplaying branches (`viewAutoplay`, and
 any `view` item just clicked to play -- see `viewHelper`'s own `autoplay` binding) -- see
 `viewAutoplay`'s own doc for why each is needed. `muted` has
-to be `property`, not `attribute`: the `muted` *content* attribute only sets
+to be `property`, not `attribute`: the `muted` _content_ attribute only sets
 a `<video>`'s default muted state as parsed from literal HTML source: setting
 it via `setAttribute` (what `Html.Attributes.attribute` boils down to) on an
 already-constructed element -- exactly how virtual-dom always creates this
-one -- does nothing, in every browser tested; only the `.muted` *IDL
-property* (what `Html.Attributes.property`/`boolProperty` -- see `autoplay`'s
+one -- does nothing, in every browser tested; only the `.muted` _IDL
+property_ (what `Html.Attributes.property`/`boolProperty` -- see `autoplay`'s
 own elm/html source -- assign instead) actually mutes an existing element.
 `elm/html` doesn't expose `muted` itself the way it does `autoplay`/
 `controls`/`loop`, so it's built here directly.
@@ -386,7 +394,7 @@ the `video_preview_small`/`_medium`/`_large` query values this requests). Only e
 `viewHelper` has already confirmed (via `previewThumbnailConversion`/`hasPreviewThumbnail`) that
 size actually exists on `media` -- unlike `url`'s ordinary sizes, there's no sensible default/
 fallback tier to request blindly, since an unrecognized `size` value resolves server-side to
-`MEDIA_CONVERSION_MEDIUM`, which for a video is a differently-*sized video*, not a poster image.
+`MEDIA_CONVERSION_MEDIUM`, which for a video is a differently-_sized video_, not a poster image.
 -}
 thumbnailUrl : MediaSize -> RellmServer -> Maybe RellmAccount -> MediaReference -> String
 thumbnailUrl mediaSize server maybeAccount media =

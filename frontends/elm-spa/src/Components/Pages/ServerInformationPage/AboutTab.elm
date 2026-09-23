@@ -8,8 +8,9 @@ its version, and its admin list.
 
 `AdminsStatus`/`VersionStatus` are fetched by the parent module (as soon as a server's known,
 regardless of which tab is active -- see `ServerInformationPage.fetchAdmins`/`fetchVersion`), not
-here; this module only owns how they're *displayed*, exposing the two types so the parent's own
+here; this module only owns how they're _displayed_, exposing the two types so the parent's own
 `Model`/`Msg` can hold/produce them without a circular import.
+
 -}
 
 import Components.Markdown as Markdown
@@ -251,13 +252,18 @@ policySectionView sectionClass heading editClicked maybeAdminAccount content =
                 , case maybeAdminAccount of
                     Just _ ->
                         let
-                            buttonText: String
-                            buttonText = "Edit " ++ (case heading of
-                                Just headingText ->
-                                    headingText
-                                _ -> "Description")
+                            buttonText : String
+                            buttonText =
+                                "Edit "
+                                    ++ (case heading of
+                                            Just headingText ->
+                                                headingText
+
+                                            _ ->
+                                                "Description"
+                                       )
                         in
-                        button [ class "server-details-rename-button", onClick editClicked ] [ text  buttonText]
+                        button [ class "server-details-rename-button", onClick editClicked ] [ text buttonText ]
 
                     Nothing ->
                         text ""

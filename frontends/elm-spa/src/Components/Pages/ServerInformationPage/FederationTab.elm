@@ -1342,7 +1342,7 @@ mastodonServerDisplayChip logos mastodonServer =
             [ div [ class "server-chip-host-row" ] [ mastodonServerLogoImage logos mastodonServer.domain ]
             , div [ class "server-chip-host-row" ] [ div [ class "server-chip-host" ] [ text mastodonServer.domain ] ]
             , let
-                appIdLabel: String
+                appIdLabel : String
                 appIdLabel =
                     if String.isEmpty mastodonServer.appId then
                         "App ID not set"

@@ -29,9 +29,9 @@ import Html.Attributes exposing (alt, attribute, class, disabled, id, placeholde
 import Html.Events exposing (onClick, onInput, preventDefaultOn)
 import Json.Decode as Decode
 import Proto.Rellm exposing (Author, Message, Post, ServerInfo, User, defaultGetPostsRequest, defaultPost, defaultSendMessageRequest, defaultServerInfo)
-import Proto.Rellm.Rellm as Rellm
 import Proto.Rellm.Permission exposing (Permission(..))
 import Proto.Rellm.PostContext exposing (PostContext(..))
+import Proto.Rellm.Rellm as Rellm
 import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer, withAccessToken)
@@ -746,11 +746,12 @@ target renders nothing here.
 The Subject field itself is hidden behind a "…" toggle
 (`subjectToggleButton`) just left of the "To" label rather than shown
 outright -- most messages don't need one, and burying it saves the vertical
-space `markdown-panel-message-fields`'s own `max-height` (markdown_panel.css)
+space `markdown-panel-message-fields`'s own `max-height` (markdown\_panel.css)
 has to share with the recipients picker below it. `SubjectToggleClicked`
 flips `model.messageSubjectExpanded`; the subject text itself
 (`model.messageSubject`) is untouched by hiding it again, so toggling back
 and forth doesn't lose anything already typed.
+
 -}
 extraFieldsView : AccountsPanel.Model -> Model -> Html Msg
 extraFieldsView accountsPanelModel model =
@@ -1088,7 +1089,7 @@ of those; `SaveClicked` calls this directly instead. No re-fetch-then-overlay
 dance (unlike `PostContent`/`UserBio`) -- there's nothing existing to
 overwrite, this always creates a brand new `Message`. Unlike every `saveTask`
 branch (which discard their own RPC's response, `Task.map Tuple.first`ing it
-away), this keeps both the response `Message` itself *and* `server.frontendHost`
+away), this keeps both the response `Message` itself _and_ `server.frontendHost`
 -- `SendMessage` is the one save whose caller (`Components.Pages.MessagesPage`,
 via `GotSendMessageResult`) needs to know exactly what got created and where,
 to navigate/scroll to it; `Message` has no host of its own to recover that

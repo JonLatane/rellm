@@ -17,7 +17,7 @@ itself to make sense: the persisted-list element type (`BlueskyAccount`), its en
 `Shared.AccountsPanel.update` drives to build/refresh it (`com.atproto.server.createSession`,
 `com.atproto.server.refreshSession`, `app.bsky.actor.getProfile`).
 
-What's deliberately *not* here, and stays in `Shared.AccountsPanel` itself: the `Model` fields this
+What's deliberately _not_ here, and stays in `Shared.AccountsPanel` itself: the `Model` fields this
 lives in, `BlueskyConnectForm` (the handle/App Password form itself -- tightly coupled to
 `Shared.AccountsPanel`'s own per-keystroke `Msg`s and `FormStatus`), and the `Msg`s/`update` cases
 that react to user actions and persist the result.
@@ -47,7 +47,7 @@ profile info at all) and are filled in shortly after, if they resolve, by a foll
 `fetchProfileTask` call -- see `GotBlueskyProfileResult`.
 
 `refreshToken` (AT Proto's own `refreshJwt`) is single-use/rotating -- every successful
-`com.atproto.server.refreshSession` call (see `performWithBlueskyAccount`) returns a *new* one,
+`com.atproto.server.refreshSession` call (see `performWithBlueskyAccount`) returns a _new_ one,
 which replaces this field entirely; the old one stops working the moment a new one's issued, so
 holding onto a stale copy anywhere (e.g. a second browser tab that hasn't yet seen the rotated
 value) would itself start failing on its next refresh attempt. `needsReauth` mirrors
@@ -232,13 +232,13 @@ refreshedTokensDecoder =
 current `accessToken` first, and only attempts a refresh (see `refreshSessionTask`) if that comes
 back `Http.BadStatus _` -- AT Proto's exact status code/error-body shape for "this token is
 expired" (historically inconsistent across its own endpoints) isn't worth depending on precisely
-here, so *any* bad-status response is treated as a "maybe expired, worth one refresh-and-retry"
+here, so _any_ bad-status response is treated as a "maybe expired, worth one refresh-and-retry"
 signal. If the refresh itself fails (refresh token revoked/expired past its own, much longer
-lifetime, or a network error), this surfaces the *original* `req` failure rather than the refresh's
+lifetime, or a network error), this surfaces the _original_ `req` failure rather than the refresh's
 own -- callers should treat a final `Http.BadStatus _` here as "this account needs
 `needsReauth = True`" (see `isReauthError`), same shape `RellmAccounts.applyPermissionsRefreshResult`
 already uses for `RellmAccount.needsPassword`. On a successful refresh, retries `req` exactly once
-with the new access token and returns the *updated* `account` alongside whatever it resolves to
+with the new access token and returns the _updated_ `account` alongside whatever it resolves to
 (or that retry's own failure, uninterrupted, if it fails for an unrelated reason) -- either way,
 callers should persist the returned account whenever this succeeds, since its tokens may have
 rotated even though the caller never asked for that explicitly.

@@ -467,7 +467,7 @@ wiping out anything written there that Elm doesn't itself know about. So this
 prepends an Elm-rendered `#splash`/`<img>` node, identical in appearance, onto
 every `body` this produces from here on -- seamless the moment this first
 render replaces the static one, and stable afterwards since Elm's vdom only
-ever diffs attributes *this* code declares on it (never a `class`), letting
+ever diffs attributes _this_ code declares on it (never a `class`), letting
 `Ports.hideSplash` (see `Shared.splashHiddenCmd`) add/remove `.hidden` by hand
 without Elm ever fighting or resetting that change on a later render.
 -}

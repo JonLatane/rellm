@@ -4,6 +4,16 @@
   position: relative;
   display: flex;
   flex-shrink: 0;
+  transition: width 0.2s ease, margin 0.2s ease, opacity 0.2s ease;
+  opacity: 1;
+  width: var(--nav-toggle-height);
+}
+
+.messaging-menu.hidden {
+  width: 0px;
+  opacity: 0;
+  margin-left: 0px;
+  pointer-events: none;
 }
 
 /* Positioned identically to `.starred-panel` (see that rule's own doc for

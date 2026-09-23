@@ -200,7 +200,7 @@ href basePath viewingServerHost hostServerHost maybeAuthor =
 
 {-| The bare username `Users.profileHref` needs to round-trip back through `Users.parseFederatedUserId`
 -- `Shared.Federation.Mastodon.toAuthor`'s own `Author.username` is `"username@instanceHost"` (a
-compound *display* string, shown as-is next to a Mastodon post -- see `name` below), not the bare
+compound _display_ string, shown as-is next to a Mastodon post -- see `name` below), not the bare
 route-safe username `withHostSuffix`/`parseUserRouteId` expect (a single `@`, already spent on the
 `@hostServerHost` suffix `profileHref` itself appends): passing the compound string through
 unchanged would produce a route with two `@`s, which `parseUserRouteId`'s own `String.split "@"`
@@ -229,6 +229,7 @@ avatar (set by `Shared.Federation.Mastodon`/`Bluesky`'s own `toAuthor`, which al
 that avatar isn't and never will be Rellm-hosted media) actually shows up in `postCard`/`postDetail`/
 `replyCard` instead of falling back to the initial-letter placeholder every real `Server`-dependent
 path below would otherwise give a federated author, which has no real `Server` to resolve at all.
+
 -}
 avatarUrl : Maybe RellmServer -> Maybe RellmAccount -> Maybe Author -> Maybe String
 avatarUrl maybeServer maybeAccount maybeAuthor =

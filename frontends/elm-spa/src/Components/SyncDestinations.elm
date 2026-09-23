@@ -14,7 +14,7 @@ destination isn't exposed in the UI yet, only link/unlink.
 `Components.Pages.UserProfilePage`'s own "Sync Destinations" section never calls `getSyncDestinations`
 -- it already has the account's full `User` (via `Components.Users.Resolver`), which embeds
 `syncDestinations` directly (self-or-Admin gated server-side, see `protos/users.proto`'s doc on
-`User.sync_destinations`). `getSyncDestinations` exists for pages that only need *just* that list
+`User.sync_destinations`). `getSyncDestinations` exists for pages that only need _just_ that list
 without fetching a whole `User` -- e.g. `Pages.Event.PostId_`/`Components.Pages.PostPage`, which
 need the viewer's own destinations to offer a real Push button on a single Post/Occasion's
 detail view, but have no other reason to fetch their own full profile.
@@ -23,6 +23,7 @@ Also home to `syncDestinationsView`, the generic already-synced/available-to-syn
 logic shared by `Components.Events.eventSyncDestinationsView` (wrapping
 `Occasion.syncDestinations`) and `Components.Posts.postSyncDestinationsView` (wrapping
 `Post.syncDestinations`) -- see that function's own doc for the union/rendering rules.
+
 -}
 
 import Grpc
@@ -116,7 +117,7 @@ again" button -- `isPushing`/`pushError` (keyed by destination id) drive its dis
 destination id and its display name for the confirmation dialog -- see
 `Shared.ConfirmOccasionSyncDestinationDelete`/`Shared.ConfirmPostSyncDestinationDelete`),
 which removes just the local sync record, putting the row back into its unsynced "Push" state.
-This `Maybe` is the *only* gate on whether push/delete controls show at all -- deciding when to
+This `Maybe` is the _only_ gate on whether push/delete controls show at all -- deciding when to
 pass `Just` (only `UserProfilePage`'s own embedded feeds, for now) is entirely the caller's call;
 this module has no opinion on `AccountsPanel`/permissions.
 
@@ -132,6 +133,7 @@ Graph API has no text-only post type, so a row whose destination is an `Instagra
 Push button disabled (with an explanatory label) when this is `False`, rather than letting the
 click round-trip to a guaranteed `instagram_requires_media` server error. Irrelevant to every other
 platform.
+
 -}
 syncDestinationsView :
     List SyncDestinationStatus

@@ -148,7 +148,7 @@ withInitialSelection authors model =
 
 
 {-| The inner tuple's trailing `Bool` is `True` only when `ToggleSelected`
-just *added* a user (as opposed to removing one, or any other `Msg`) --
+just _added_ a user (as opposed to removing one, or any other `Msg`) --
 callers (today, just `Shared.MarkdownPanel`) use it to refocus their own
 search input, since this module doesn't own that concern (see
 `Shared.MarkdownPanel.focusCmdFor`, which already owns the `Browser.Dom.focus

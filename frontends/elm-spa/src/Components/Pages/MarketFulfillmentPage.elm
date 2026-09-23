@@ -24,6 +24,7 @@ expand/collapse itself animates via the same `grid-template-rows` 0fr/1fr trick
 `Components.Pages.ServerInformationPage.SettingsTab.featureSettingsSection` uses (`expandedRowView`'s
 own doc has the details) -- `rowView`'s details wrapper is always mounted, never appearing/
 disappearing outright.
+
 -}
 
 import Components.Authors as Authors
@@ -112,7 +113,7 @@ isAdminOn shared host =
         |> Maybe.withDefault False
 
 
-{-| Fires `fetchSubscriptions` the first time `model.host` is both a known, *connected* server
+{-| Fires `fetchSubscriptions` the first time `model.host` is both a known, _connected_ server
 (`RellmServers.knownConnectedRellmServer` -- see `Components.Pages.ProductPage.attemptFetch`'s own
 doc on why this guard exists at all) and the signed-in account there is an Admin -- a non-admin
 never fires this fetch (it would just fail with a permission error, per
@@ -347,7 +348,17 @@ replaceSubscription : MarketSubscription -> SubscriptionsState -> SubscriptionsS
 replaceSubscription updated subscriptionsState =
     case subscriptionsState of
         SubscriptionsLoaded existing ->
-            SubscriptionsLoaded (List.map (\s -> if s.id == updated.id then updated else s) existing)
+            SubscriptionsLoaded
+                (List.map
+                    (\s ->
+                        if s.id == updated.id then
+                            updated
+
+                        else
+                            s
+                    )
+                    existing
+                )
 
         other ->
             other
@@ -431,7 +442,7 @@ fulfillmentStatusLabel status =
             "In Progress"
 
         FULFILLMENTSTATUSFULFILLED ->
-            "\u{2713} Fulfilled"
+            "✓ Fulfilled"
 
         FulfillmentStatusUnrecognized_ _ ->
             "Unknown"
@@ -494,6 +505,7 @@ that deeper level -- it keeps its existing padding/border unconditionally, wheth
 Four sections, in order: the buyer's own purchase details, the fulfillment notes conversation (with
 its compose form), the subscription's own cancellation details (only when actually canceled), and
 its full payment/refund history.
+
 -}
 expandedRowView : Shared.Model -> Model -> MarketSubscription -> RellmHostingSubscriptionDetails -> Html Msg
 expandedRowView shared model subscription details =

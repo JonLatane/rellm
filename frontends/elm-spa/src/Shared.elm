@@ -24,11 +24,11 @@ appearance (dark/light/auto) setting that doesn't belong to it.
 import Browser.Dom as Dom
 import Browser.Events
 import Browser.Navigation as Nav
-import Components.MediaRenderer as MediaRenderer
-import Components.SyncSources as SyncSources
 import Components.Events as Events
+import Components.MediaRenderer as MediaRenderer
 import Components.Pages.MessagesPage as MessagesPage
 import Components.Posts as Posts
+import Components.SyncSources as SyncSources
 import Components.Users as Users
 import Grpc
 import Json.Decode as Decode
@@ -36,7 +36,7 @@ import Json.Encode as Encode
 import Ports
 import Process
 import Proto.Google.Protobuf
-import Proto.Rellm exposing (ContactMethod, Event, Occasion, SyncSource, Media, Post, User)
+import Proto.Rellm exposing (ContactMethod, Event, Media, Occasion, Post, SyncSource, User)
 import Proto.Rellm.ContactConsentState exposing (ContactConsentState(..))
 import Request exposing (Request)
 import Shared.AccountsPanel as AccountsPanel

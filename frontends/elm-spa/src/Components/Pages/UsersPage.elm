@@ -157,8 +157,8 @@ type alias SourceFeed =
 
 {-| One entry `usersByServer` can hold in a `Loaded` list -- a real Rellm `User` (from a `GetUsers`
 RPC), or a Mastodon `Account`/Bluesky `ActorProfile` translated client-side, mirroring
-`Components.Pages.PostsPage.FeedSource`'s three-way split one level down (a listed *person* instead
-of a *post*). See `userSourceKey`/`sourceAccountId`/`fetchSourceEffect` for where the three cases
+`Components.Pages.PostsPage.FeedSource`'s three-way split one level down (a listed _person_ instead
+of a _post_). See `userSourceKey`/`sourceAccountId`/`fetchSourceEffect` for where the three cases
 actually diverge.
 -}
 type ListedUser
@@ -352,6 +352,7 @@ the URL on load, so a shared/reloaded link reproduces the same search.
 `federatedTarget` seeds `Model.federatedTarget` directly -- `Nothing` for every caller except
 `Pages.UsernameOrCustomTab_.Followers`/`Following`'s federated branch. Mirrors
 `Components.Pages.PostsPage.init`'s own trailing `profileFeedSource` param.
+
 -}
 init : Shared.Model -> Maybe ( String, User, UserListingType ) -> Maybe FederatedTarget -> Browser.Navigation.Key -> String -> Dict String String -> ( Model, Effect Msg )
 init shared target federatedTarget navKey path query =
@@ -538,8 +539,8 @@ of target (`federatedTarget`'s own account, or `target`'s own host), or, for the
 case (`target`/`federatedTarget` both `Nothing`), every enabled Rellm server unconditionally plus --
 only once `model.searchText` is non-blank -- every browsed/connected Mastodon instance's own search
 and (if any Bluesky account is connected) one Bluesky actor search. Mirrors
-`Components.Pages.PostsPage.relevantFeedSources` exactly, one level up (listed *people* instead of
-*posts*): neither Mastodon nor Bluesky offers an unscoped "everyone" listing the way Rellm's own
+`Components.Pages.PostsPage.relevantFeedSources` exactly, one level up (listed _people_ instead of
+_posts_): neither Mastodon nor Bluesky offers an unscoped "everyone" listing the way Rellm's own
 `EVERYONE` does, so search is the only way either ever contributes to this unfiltered case at all.
 -}
 candidateSources : Shared.Model -> Model -> List UserSource
@@ -795,6 +796,7 @@ A no-op entirely once `model.federatedTarget` is set -- there's no federated-acc
 Rellm host), so this simply leaves whatever root the page navigated here from in place, same
 "nothing to update" choice `Components.Pages.MastodonPostPage`/`BlueskyPostPage`/
 `MastodonUserProfilePage`/`BlueskyUserProfilePage` already make by never touching breadcrumbs at all.
+
 -}
 setBreadcrumbsRoot : Shared.Model -> Model -> Effect Msg
 setBreadcrumbsRoot shared model =

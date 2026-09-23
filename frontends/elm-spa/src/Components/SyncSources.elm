@@ -20,6 +20,7 @@ a full `refetch` of that `User`. `getSyncSources` is still used, though -- by th
 manual "Refresh" button (`SyncSourcesRefreshClicked`), which overlays just the fresh `sources`
 onto the resolved `User` without a whole-profile refetch -- see `Components.AIProviders`' own
 matching doc comment on `getAIProviders`.
+
 -}
 
 import Grpc

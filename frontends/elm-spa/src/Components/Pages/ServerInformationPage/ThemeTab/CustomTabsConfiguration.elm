@@ -98,7 +98,7 @@ admin's own typing. It saves/cancels in the same round-trip as `pending`
 (`CustomTabsSaveClicked`/`applyCustomTabs`, `CustomTabsCancelClicked`) since both live under the
 same "Navigation Tabs" section/Edit button.
 
-`ServerConfiguration.customTabs.tabStyle` is *not* part of this edit -- unlike `home`/`pending`, it's
+`ServerConfiguration.customTabs.tabStyle` is _not_ part of this edit -- unlike `home`/`pending`, it's
 a standalone setting (see `tabStyleRow`/`TabStyleChanged`) that saves immediately on change, with no
 Edit/Save/Cancel of its own, since it's a single independent choice rather than a multi-field form.
 

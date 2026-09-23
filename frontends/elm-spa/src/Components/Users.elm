@@ -35,11 +35,11 @@ module Components.Users exposing
     , updateFollow
     , updateUser
     , userCard
-    , userCardContactButtons
-    , verifyContactMethod
     , userCardAvatar
+    , userCardContactButtons
     , userIdHref
     , usernameHref
+    , verifyContactMethod
     , visibilityFromText
     , visibilityText
     )
@@ -59,9 +59,9 @@ import Html exposing (Html, a, div, img, text)
 import Html.Attributes exposing (alt, attribute, href, src)
 import Proto.Google.Protobuf
 import Proto.Rellm exposing (Author, ContactMethod, FederatedAccount, Follow, GetUsersResponse, User, VerifyContactMethodRequest, defaultGetUsersRequest, unwrapMediaReference)
-import Proto.Rellm.Rellm as Rellm
 import Proto.Rellm.Moderation exposing (Moderation(..))
 import Proto.Rellm.Permission exposing (Permission(..))
+import Proto.Rellm.Rellm as Rellm
 import Proto.Rellm.UserListingType exposing (UserListingType(..))
 import Proto.Rellm.Visibility exposing (Visibility(..))
 import Set exposing (Set)
@@ -448,7 +448,7 @@ isReservedUsername username =
 legally start with -- see `backend/src/rpcs/validations/validate_fields.rs`'s
 `RESERVED_LEAD_CHAR_RE`, which this set must stay in sync with. `Pages.UsernameOrCustomTab_`
 checks this before falling back to a plain username/custom-tab lookup: a route segment starting
-with one of these is unambiguously *not* a username or custom tab, so it's tried as a short
+with one of these is unambiguously _not_ a username or custom tab, so it's tried as a short
 Post/Event URL instead (`Components.Pages.PostOrEventPage`) -- see `rellm.proto`'s own
 `### /[-._~:/?[]@!$&'()*+,;%=]{postId}: Short Post/Event URLs` routing doc. `#` is deliberately
 excluded: URL fragments never reach the server, so they're not part of this at all.
@@ -650,20 +650,21 @@ and as its own doc comment used to claim) -- now that `userCardContactButtons`
 renders real `tel:`/`mailto:` `<a>`s of their own, this needs `postCard`'s own
 "stretched link" treatment too: nesting a real `<a>` inside another `<a>`
 doesn't work in Elm, since every anchor's `href` navigation is wired up as its
-own native click listener attached directly to *that* anchor's DOM node (see
+own native click listener attached directly to _that_ anchor's DOM node (see
 `postCard`'s own doc comment for the full explanation), not by walking up to
 the nearest enclosing one -- so a click on a contact button would fire both
 listeners, and the outer (later, bubbled-to) one always wins, silently
-overriding the tel:/mailto: navigation with a profile-navigate instead
+overriding the <tel:/mailto>: navigation with a profile-navigate instead
 (exactly the "underlying card gets clicked instead" bug this structure
 avoids). So the card itself is a plain `div`; its first child is an invisible
-`<a>` (`.user-card-link-overlay`) absolutely filling it, sitting *behind*
+`<a>` (`.user-card-link-overlay`) absolutely filling it, sitting _behind_
 everything else -- `.user-card-contact-buttons`/`.follow-status-and-button`
 both opt back into their own paint layer via `position: relative` (see
 `users.css`) to stay independently clickable above it, while the rest (avatar,
 name, meta text) has no interactive descendants of its own, so it's fine to
 just sit visually behind the overlay and fall through to the same profile
 navigation either way -- mirrors `.post-card-title`'s identical treatment.
+
 -}
 userCard : String -> String -> RellmServer -> Maybe RellmAccount -> Html msg -> User -> Html msg
 userCard basePath viewingServerHost server maybeAccount followStatusAndButton user =

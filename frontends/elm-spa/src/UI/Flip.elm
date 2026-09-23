@@ -109,28 +109,29 @@ progress `y`", not the four raw control points a CSS `cubic-bezier()` takes
 directly.
 
 `enter`/`remove`/`reappear`'s own opacity/scale fade uses this (paired with
-`flipDurationMs`) instead of `Animation.to`'s *default* interpolation for a
+`flipDurationMs`) instead of `Animation.to`'s _default_ interpolation for a
 plain numeric property -- a lightly-damped spring (`stiffness = 170, damping
 = 26`, see `Animation.Model.defaultInterpolationByProperty`) that, unlike
 `flip.css`'s own fixed-duration CSS transition, has no fixed duration at all:
 it settles once its position and velocity both drop under a small tolerance,
 which for these particular constants takes roughly 400-550ms -- comfortably
-*longer* than the CSS collapse's fixed 250ms. That gap is exactly what
+_longer_ than the CSS collapse's fixed 250ms. That gap is exactly what
 produced the "mostly collapses, then a frozen-looking pause, then suddenly
 finishes" artifact reported live (Messages' sidebar/detail panes, but also
 PostsPage/UsersPage/StarredPanel turning something off -- every `UI.Flip`
 caller, confirming this was never page-specific): the CSS-driven
 `grid-template-rows` had already visually collapsed the item to zero height
-by 250ms, but the *element itself* -- and, for any caller whose own container
+by 250ms, but the _element itself_ -- and, for any caller whose own container
 also declares a `gap` alongside `.flip-animated-column` (`.messages-group-list`,
 `.user-picker-list`, `.my-media-panel-grid`/`-selected-strip`, `.events-grid`,
 `.occasion-grid`), the resulting empty `gap`-width sliver right where
 it used to be -- stuck around for however much longer the spring's own slow,
 barely-visible settling tail actually took, since only the spring's own
 completion (`Animation.Messenger.send onRemoved`) ever actually deletes the
-item from the caller's collection. Matching both animations to the *same*
+item from the caller's collection. Matching both animations to the _same_
 fixed duration and curve removes that gap entirely -- either both finish at
 250ms, or (aesthetically, not the bug fix) neither does.
+
 -}
 flipEasing : Animation.Interpolation
 flipEasing =

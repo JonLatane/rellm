@@ -48,8 +48,8 @@ import Proto.Rellm.PostContext exposing (PostContext(..))
 import Set exposing (Set)
 import Shared
 import Shared.AccountsPanel as AccountsPanel
-import Shared.AccountsPanel.DebugTab as DebugTab
 import Shared.AccountsPanel.BlueskyAccounts as BlueskyAccounts exposing (BlueskyAccount)
+import Shared.AccountsPanel.DebugTab as DebugTab
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer)
 import Shared.Breadcrumbs as Breadcrumbs

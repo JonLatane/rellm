@@ -20,12 +20,11 @@ module Shared.AccountsPanel exposing
     , combinedServerFeedItemKey
     , combinedServerFeedItems
     , connectableMastodonServers
-    , currentFocusedAccountContactMethods
     , createAccountModalBodyId
+    , currentFocusedAccountContactMethods
     , enabledAccounts
     , enabledServers
     , freshFocusedAccount
-    , serverFeedItemChipDomId
     , grpcErrorToString
     , hasAdminAccount
     , init
@@ -38,6 +37,7 @@ module Shared.AccountsPanel exposing
     , performWithOptionalAccountServer
     , recommendedFederatedServers
     , recommendedMastodonServers
+    , serverFeedItemChipDomId
     , shouldShowAddAccountForm
     , subscriptions
     , unreachableAccountHosts
@@ -519,6 +519,7 @@ emptyBlueskyConnectForm =
     { handle = "", appPassword = "", status = Idle }
 
 
+
 -- `RellmServer`/`ConnectedServer`/`Branding`/`Connection` all live in `RellmServers` now -- see
 -- that module's own docs.
 
@@ -632,6 +633,7 @@ shared between the two flows (see `AddServerClicked`).
 type alias AddServerForm =
     { status : FormStatus
     }
+
 
 
 -- `Token` lives in `RellmAccounts` now -- see that module's own doc.
@@ -769,7 +771,7 @@ serverFeedItemChipDomId key =
 {-| The bookkeeping any reorderable combined-item list built from several otherwise-separate
 `Model` lists (`CombinedServerFeedItem`'s server strip, `CombinedAccountItem`'s account list) needs
 around its own shared `sortOrder` space: how to read/write one item's `sortOrder` by its own kind of
-key, and every *non-main* item's current `sortOrder` (for `nextFrontSortOrderIn`/`nextBackSortOrderIn`).
+key, and every _non-main_ item's current `sortOrder` (for `nextFrontSortOrderIn`/`nextBackSortOrderIn`).
 Pulled out so the actual swap/next-front/next-back arithmetic is written once instead of twice, even
 though each space still has to dispatch into its own, differently-shaped `Model` fields to actually
 read or write anything -- see `serverFeedItemSortOrderSpace`/`accountItemSortOrderSpace`, the two
@@ -808,7 +810,7 @@ nextFrontSortOrderIn space model =
     (space.nonMainSortOrders model |> List.minimum |> Maybe.withDefault 0) - 1
 
 
-{-| Like `nextFrontSortOrderIn`, but for an item that should land at the *end* of `space` instead.
+{-| Like `nextFrontSortOrderIn`, but for an item that should land at the _end_ of `space` instead.
 -}
 nextBackSortOrderIn : SortOrderSpace -> Model -> Int
 nextBackSortOrderIn space model =
@@ -820,8 +822,8 @@ nextBackSortOrderIn space model =
 (`servers`, `browsedMastodonInstances`) stay separate (each persisted through its own port --
 `Ports.persistAccountsAndServers`/`persistMastodonAccountsAndServers`), so this is purely a
 rendering-time view over both at once, built by `combinedServerFeedItems`. Connected Bluesky
-accounts *don't* appear here -- unlike a Rellm server or a browsed Mastodon instance, a Bluesky
-account has no separate sign-in step of its own (connecting *is* signing in), so it belongs
+accounts _don't_ appear here -- unlike a Rellm server or a browsed Mastodon instance, a Bluesky
+account has no separate sign-in step of its own (connecting _is_ signing in), so it belongs
 alongside the other accounts in `CombinedAccountItem`/`UI.accountsList` instead -- see that type's
 own doc.
 -}
@@ -952,7 +954,7 @@ nextFrontSortOrder model =
     nextFrontSortOrderIn serverFeedItemSortOrderSpace model
 
 
-{-| Like `nextFrontSortOrder`, but for an item that should land at the *end* instead -- mirrors
+{-| Like `nextFrontSortOrder`, but for an item that should land at the _end_ instead -- mirrors
 `RellmServers.upsertRellmServerAppend`'s pre-`sortOrder` append-to-end behavior, still used for a server discovered via
 federation recommendations rather than added deliberately (see `GotReconnectResult`'s `appendToEnd`).
 -}
@@ -971,8 +973,8 @@ together in `UI.accountsList`'s one merged, reorderable vertical list -- the thr
 (`accounts`, `mastodonAccounts`, `blueskyAccounts`) stay separate (each persisted through its own
 port), so this is purely a rendering-time view over all three at once, built by
 `combinedAccountItems`. Mirrors `CombinedServerFeedItem` in every way that matters -- see that
-type's own doc -- just one level down: a server/instance is something the app merely *watches*
-(browses/federates with), while every kind here is something the app is *signed in as*.
+type's own doc -- just one level down: a server/instance is something the app merely _watches_
+(browses/federates with), while every kind here is something the app is _signed in as_.
 -}
 type CombinedAccountItem
     = CombinedRellmAccount RellmAccount
@@ -1040,7 +1042,7 @@ combinedAccountItems model =
 
 
 {-| Every non-main item's current `sortOrder`, across all three lists -- mirrors
-`nonMainServerFeedItemSortOrders`'s own reasoning, except main-server *accounts* aren't excluded for
+`nonMainServerFeedItemSortOrders`'s own reasoning, except main-server _accounts_ aren't excluded for
 the same "never meaningful" reason (there can be more than one, and they're still individually
 reorderable amongst themselves -- see `combinedAccountItems`); they're excluded purely so a fresh
 non-main item's `sortOrder` doesn't get skewed by whatever range the main group happens to occupy.
@@ -1167,8 +1169,6 @@ sortMainServerAccountsFirst model =
     { model | accounts = mainAccounts ++ otherAccounts }
 
 
-
-
 {-| Whether any _signed-in_ (enabled) account has `ADMIN` on its server --
 gates showing the Server Admin Panel button at all.
 -}
@@ -1184,6 +1184,7 @@ row of avatars instead of the "Login" label (see `UI.elm`'s
 enabledAccounts : Model -> List RellmAccount
 enabledAccounts model =
     List.filter .enabled model.accounts
+
 
 {-| Like `RellmServers.rellmServerThemeOf`, but looks a server up by `frontendHost` (for e.g. an
 account's `server` field).
@@ -3921,8 +3922,6 @@ emptyAddServerForm =
     { status = Idle }
 
 
-
-
 {-| Hosts of accounts we're keeping around but that are currently disconnected
 (see `RellmServer.connected`) -- e.g. the server's down, moved, or otherwise
 unreachable right now (see `GotReconnectResult`'s `Err` branch, which marks a
@@ -4007,7 +4006,7 @@ of `.servers` and `model.browsedMastodonInstances` instead of `model.servers` --
 Mastodon instances that aren't already browsed (see `browsedMastodonInstances`'s own doc on
 `configuredByDefault`/`pinnedByDefault` auto-adding some of these already), driving
 `UI.recommendedServersStrip`'s Mastodon chips. Distinct from `connectableMastodonServers` (which
-filters against `model.mastodonAccounts`, an OAuth-connected *account*, for the separate "Connect a
+filters against `model.mastodonAccounts`, an OAuth-connected _account_, for the separate "Connect a
 real account" sub-section) -- clicking one of these just adds a no-login browsed feed, exactly like
 `BrowseMastodonInstanceClicked`, so it's gated on `browsedMastodonInstances` instead.
 -}
@@ -4102,14 +4101,6 @@ collapseAddAccountFormIfIdle model =
         { model | addAccountServerFormType = Nothing }
 
 
-
-
-
-
-
-
-
-
 {-| Servers whose data should be included when aggregating across all of
 them -- e.g. the Home page's recent-posts feed. Excludes disabled servers, as
 well as ones that are currently disconnected (see `RellmServer.connected`) --
@@ -4118,10 +4109,6 @@ there's nothing to aggregate from a server that can't be reached right now.
 enabledServers : Model -> List RellmServer
 enabledServers model =
     List.filter (\s -> s.enabled && s.connected /= Nothing) model.servers
-
-
-
-
 
 
 updateAddServerForm : (AddServerForm -> AddServerForm) -> Model -> Model
@@ -4203,30 +4190,6 @@ repopulateBlankServerField model =
 
     else
         model
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 {-| Re-verifies a persisted `MastodonAccount`'s credentials once, at app startup (see `init`'s own
@@ -4314,8 +4277,6 @@ see that field's own doc.
 federatedSignInNoticeDuration : Float
 federatedSignInNoticeDuration =
     5000
-
-
 
 
 {-| Sets which frontend (`/`, `/flutter`, or `/elm`) `server` serves at its
@@ -4504,9 +4465,8 @@ updateServerConfig accountsPanelModel maybeAccountServer updateFn =
 
 
 
-
-
 -- CONNECTING
+
 
 grpcErrorToString : Grpc.Error -> String
 grpcErrorToString err =
@@ -4647,6 +4607,7 @@ encodeState model =
         , ( "servers", Encode.list RellmServers.encodePersistedRellmServer model.servers )
         ]
 
+
 emptyPersistedState : PersistedState
 emptyPersistedState =
     { accounts = [], servers = [] }
@@ -4668,7 +4629,7 @@ encodeMastodonAccountsAndServers model =
 browsed-Mastodon-instance still carrying `missingSortOrderSentinel` -- i.e. essentially every one of
 them, the first time a client loads a version of the app that has `sortOrder` at all. Doesn't touch
 `blueskyAccounts` -- unlike a server or a browsed instance, a connected Bluesky account belongs to
-the *account* item space now (see `CombinedAccountItem`), migrated separately by
+the _account_ item space now (see `CombinedAccountItem`), migrated separately by
 `migrateAccountItemSortOrders`.
 -}
 migrateServerFeedItemSortOrders : List PersistedRellmServer -> List BrowsedMastodonInstance -> ( List PersistedRellmServer, List BrowsedMastodonInstance )
@@ -4692,7 +4653,7 @@ doc): assigns fresh `sortOrder` values to every Rellm account/connected Mastodon
 Bluesky account still carrying `missingSortOrderSentinel`. `accounts`/`mastodonAccounts` are brand
 new fields, so this is essentially every one of them the first time a client loads a version of the
 app that has account `sortOrder` at all; `blueskyAccounts`' own `sortOrder` already existed (from
-when it briefly meant a position in the *server* feed space instead -- see `CombinedServerFeedItem`'s
+when it briefly meant a position in the _server_ feed space instead -- see `CombinedServerFeedItem`'s
 own doc) so real values there are left as-is, reinterpreted in this now-shared account item space,
 and only ever backfilled here for the rare pre-`sortOrder` straggler.
 -}
@@ -4897,7 +4858,3 @@ performWithOptionalAccountServer model maybeAccountServer req =
 
         Nothing ->
             Task.fail Grpc.NetworkError
-
-
-
-

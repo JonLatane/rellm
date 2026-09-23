@@ -132,6 +132,7 @@ own doc), and a "View original" link back to the real post on Mastodon. No real 
 (this is the one page that's allowed to show it at all, once asked -- see that module's own doc on
 why a feed/card context never gets this far). Once revealed (or never flagged to begin with), renders
 exactly like any other post's media.
+
 -}
 federatedPostView : Shared.Model -> String -> Bool -> Bool -> Post -> Html Msg
 federatedPostView shared instanceHost sensitiveMediaRevealed sensitive post =

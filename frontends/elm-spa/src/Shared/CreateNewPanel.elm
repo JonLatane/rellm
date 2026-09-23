@@ -44,8 +44,8 @@ panel's state directly.
 
 -}
 
-import Components.MediaRenderer as MediaRenderer
 import Components.Markdown as Markdown
+import Components.MediaRenderer as MediaRenderer
 import Components.MultiMediaRenderer as MultiMediaRenderer
 import Components.Posts as Posts
 import Dict
@@ -54,9 +54,9 @@ import Html exposing (Html, button, div, img, input, label, option, select, span
 import Html.Attributes exposing (alt, attribute, class, disabled, placeholder, selected, src, type_, value)
 import Html.Events exposing (onClick, onInput)
 import Proto.Rellm exposing (MediaReference, defaultEvent, defaultEventInfo, defaultOccasion, defaultPost)
-import Proto.Rellm.Rellm as Rellm
 import Proto.Rellm.Permission exposing (Permission(..))
 import Proto.Rellm.PostContext exposing (PostContext(..))
+import Proto.Rellm.Rellm as Rellm
 import Proto.Rellm.Visibility exposing (Visibility(..))
 import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccount)
@@ -113,7 +113,6 @@ type alias Model =
     }
 
 
-
 type Msg
     = ToggleOpen
     | CloseClicked
@@ -149,6 +148,7 @@ header's tabs (`modeTabsView`). See module doc.
 type Mode
     = PostMode
     | EventMode
+
 
 {-| One entry of `Model.createdItems` -- `String` is the `frontendHost` of
 the server the Post/Event was created on (`Resolved.server.frontendHost`,

@@ -25,6 +25,7 @@ here, one more inside `Components.Pages.EventPage.init` itself) -- a known, acce
 not a bug: `EventPage`/`PostPage`'s own `init` aren't designed to accept already-fetched data, and
 teaching them to would be a much bigger change for a rarely-hit path (most links are either
 `/post/:id` or `/event/:id` directly; this short form is a convenience alias).
+
 -}
 
 import Browser.Navigation

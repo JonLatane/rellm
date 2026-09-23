@@ -14,7 +14,7 @@ Followers/following lists live at their own routes (`/:handle@bluesky:.../follow
 backed by `Components.Pages.BlueskyUsersPage` -- see `Components.Users.followersHref`/`followingHref`.
 
 Fails outright (mirrors `Components.Pages.BlueskyPostPage.init`) if no Bluesky account is connected at
-all -- AT Protocol has no anonymous access to anything, so there's no way to view *any* profile
+all -- AT Protocol has no anonymous access to anything, so there's no way to view _any_ profile
 without at least one connected account to authenticate the request with.
 
 -}

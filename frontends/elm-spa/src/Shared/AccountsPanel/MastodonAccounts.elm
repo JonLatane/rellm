@@ -13,13 +13,13 @@ module Shared.AccountsPanel.MastodonAccounts exposing
 itself to make sense: the persisted-list element type (`MastodonAccount`), its encode/decode, and the
 plain HTTP tasks/decoders `Shared.AccountsPanel.update` drives to build/refresh it
 (`MastodonConnectClicked`'s OAuth popup result, `verify_credentials`, the OAuth2 refresh grant). See
-`Shared.AccountsPanel.MastodonServers` for the sibling module covering *browsed* (not connected)
+`Shared.AccountsPanel.MastodonServers` for the sibling module covering _browsed_ (not connected)
 Mastodon instances -- the two used to be one module (`MastodonAccountAndServers`) since they're
 persisted together (see `Ports.persistMastodonAccountsAndServers`), but that bundling is
 `Shared.AccountsPanel`'s own coordinating concern (mirrors `PersistedState` bundling `RellmAccount`s
 and `RellmServer`s), not something either type needs to know about itself.
 
-What's deliberately *not* here, and stays in `Shared.AccountsPanel` itself: the `Model` field this
+What's deliberately _not_ here, and stays in `Shared.AccountsPanel` itself: the `Model` field this
 lives in (`mastodonAccounts`), and every `Msg`/`update` case that reacts to user actions and persists
 the result.
 
@@ -47,7 +47,7 @@ display the connection, not a full `RellmAccount`, since a Mastodon account isn'
 
 `clientId` is whichever `client_id` the popup's own OAuth exchange actually used (the admin-registered
 `MastodonServer.appId`, or a self-registered throwaway app's own id -- see `public/index.html`'s
-`mastodonClientId`) -- Mastodon's OAuth2 refresh grant needs the *same* `client_id` that originally
+`mastodonClientId`) -- Mastodon's OAuth2 refresh grant needs the _same_ `client_id` that originally
 issued the token back again (unlike Bluesky's AT Proto refresh, which only needs the refresh token
 itself), so it has to be captured and persisted alongside the tokens rather than re-derived later (an
 admin could change/remove a `MastodonServer.appId` after the fact, or the instance's throwaway app
@@ -57,6 +57,7 @@ non-expiring tokens to third-party apps by default and simply omit `refresh_toke
 there's nothing to refresh and this account just keeps working off `accessToken` indefinitely (or
 until revoked, at which point it's a `needsReauth` case with no automatic recovery, same as a refresh
 attempt that itself fails -- see `isReauthError`).
+
 -}
 type alias MastodonAccount =
     { instanceHost : String
@@ -232,9 +233,9 @@ back `Http.BadStatus _`, mirroring `Shared.AccountsPanel.BlueskyAccounts.perform
 own reasoning for why a broad "any bad status" check is the right trigger here too (Mastodon's own
 error body shape for "token expired/revoked" isn't worth depending on precisely). If `account` has no
 `refreshToken` at all (see that field's own doc), `refreshSessionTask` fails immediately, so this
-surfaces the *original* `req` failure unchanged, same outcome as a refresh that's attempted and fails.
+surfaces the _original_ `req` failure unchanged, same outcome as a refresh that's attempted and fails.
 On a successful refresh, retries `req` exactly once with the new access token and returns the
-*updated* `account` alongside whatever it resolves to -- callers should persist the returned account
+_updated_ `account` alongside whatever it resolves to -- callers should persist the returned account
 whenever this succeeds, since its tokens may have rotated even without the caller asking for that
 explicitly.
 -}

@@ -30,7 +30,7 @@ handling.
 `playState`/`onPlayClicked` are `Components.MediaRenderer`'s own click-to-play state/action,
 threaded straight through -- see its module doc (`playState` is read internally by
 `MediaRenderer.view` itself, not consulted here). `preloadVideo` isn't a parameter here: only the
-*first* item of `media` (by list position -- `media[0]`, the same "focus" item the single-item case
+_first_ item of `media` (by list position -- `media[0]`, the same "focus" item the single-item case
 above already treats specially) ever gets it, so a Post/Event with several videos never preloads
 more than one at a time; every other item gets a play-button-overlaid poster instead (when one's
 available). This holds across `view`/`preview`/`previewExtraSmall` alike -- the small strip

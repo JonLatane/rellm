@@ -36,9 +36,9 @@ signed-in account that actually has the relevant permission, one
 import Dict exposing (Dict)
 import Grpc
 import Proto.Rellm exposing (Author, GetMessagesRequest, GetMessagesResponse, Message, MessageRead, defaultGetMessagesRequest, defaultMarkMessagesReadRequest)
-import Proto.Rellm.Rellm as Rellm
 import Proto.Rellm.MessageListingType exposing (MessageListingType(..))
 import Proto.Rellm.Permission exposing (Permission(..))
+import Proto.Rellm.Rellm as Rellm
 import Shared.AccountsPanel as AccountsPanel exposing (performWithAccountServer)
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer, withAccessToken)
@@ -320,7 +320,7 @@ conversationKey conversation =
 globally-unique value, so two messages from two different hosts can
 perfectly well share the same raw id. Anywhere a `Message`'s own id is used
 as a `Dict` key, an equality check, or otherwise compared against another
-message from a *different, not-yet-confirmed-same* host needs this, not the
+message from a _different, not-yet-confirmed-same_ host needs this, not the
 bare `.id` -- see `Components.Pages.MessagesPage`'s own `Model.sidebarAnimations`/
 `.detailThreadAnimations`/`.highlightMessageId`/`.pendingScrollMessageId`
 for what this guards against (a real bug this session: the sidebar's own

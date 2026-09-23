@@ -241,7 +241,7 @@ port setNavBarColor : String -> Cmd msg
 {-| Hides `index.html`'s `#splash` overlay (adds its `.hidden` class -- see
 `Main.elm`'s `splashOverlay`, which renders the same `#splash`/`<img>` node
 Elm's own view owns from its very first render onward, so this survives every
-later re-render undisturbed: Elm's vdom only ever diffs attributes *it*
+later re-render undisturbed: Elm's vdom only ever diffs attributes _it_
 declared on that node, and never declares a `class`, so it never touches or
 resets whatever this port adds). Called from `Shared.splashHiddenCmd` the
 moment `browsingHost`'s own `ServerConfiguration` request settles, success or
@@ -427,26 +427,26 @@ port checkPushSubscription : Encode.Value -> Cmd msg
 {-| `{ endpoint : String, publicKey : String } | null` -- the browser's current Web Push
 subscription's endpoint and the VAPID public key (base64url) it was created with, or `null` if
 there's no active subscription at all. `publicKey` is what lets `PushSubscriptionCheckReceived`
-figure out *which* account this belongs to: matched against each signed-in account's own server's
+figure out _which_ account this belongs to: matched against each signed-in account's own server's
 `RellmServers.rellmServerWebPushPublicKey`, since the Push API itself has no concept of "which
 account" -- only one subscription can ever exist per origin.
 -}
 port pushSubscriptionChecked : (Encode.Value -> msg) -> Sub msg
 
 
-{-| Broadcasts a change to *this* tab's own understanding of `AccountsPanel.pushSubscriptions` --
+{-| Broadcasts a change to _this_ tab's own understanding of `AccountsPanel.pushSubscriptions` --
 `{ accountId : String, endpoint : String } | { accountId : String, endpoint : null }` (present
 `endpoint` for an account just enabled, `null` for one just disabled) -- to every other open tab on
 this origin, so an Enable/Disable click in one tab is reflected in the others immediately instead
 of only on their own next reload. Mirrors `persistAccountsAndServers`'s cross-tab `BroadcastChannel`
-sync, but deliberately *not* combined with an actual `persist*`-style port: `pushSubscriptions` is
+sync, but deliberately _not_ combined with an actual `persist*`-style port: `pushSubscriptions` is
 itself never written to `localStorage` (see its own doc comment -- it's re-derived fresh from the
 browser's real subscription every page load), so there's nothing to persist here, only to announce.
 -}
 port broadcastPushSubscriptionChange : Encode.Value -> Cmd msg
 
 
-{-| Fires in *other* tabs (never the tab that called `broadcastPushSubscriptionChange` itself)
+{-| Fires in _other_ tabs (never the tab that called `broadcastPushSubscriptionChange` itself)
 whenever one tab's `pushSubscriptions` changes, carrying the same value that port was given --
 decode with `AccountsPanel.pushSubscriptionChangeDecoder`.
 -}

@@ -43,8 +43,8 @@ import Html.Attributes exposing (class, href, id, title)
 import Html.Events exposing (onClick, onInput, preventDefaultOn)
 import Html.Keyed
 import Json.Decode as Decode
-import Process
 import Ports
+import Process
 import Proto.Rellm exposing (Author, Message, defaultMessageRead)
 import Proto.Rellm.MessageListingType exposing (MessageListingType(..))
 import Set exposing (Set)
@@ -543,10 +543,10 @@ init accountsPanelModel pageContext selectedGroup pendingScrollMessageIdFragment
     ( expandedModel, Cmd.batch [ fetchCmd, expandCmd ] )
 
 
-{-| Everything a *mounted-but-not-necessarily-visible* instance still needs live: right now, just
+{-| Everything a _mounted-but-not-necessarily-visible_ instance still needs live: right now, just
 `Ports.pushMessageReceived`. Exposed separately from `subscriptions` (which includes this too, for
 `Pages.Messages`' own always-visible-when-mounted case) specifically for
-`Shared.MessagingPanel`, whose own `subscriptions` only forwards the *rest* of this module's
+`Shared.MessagingPanel`, whose own `subscriptions` only forwards the _rest_ of this module's
 subscriptions (`timerAndAnimationSubscriptions`) while its dropdown is open -- a push notification
 has to be able to trigger `PushNotificationReceived` regardless of whether that dropdown happens to
 be open at the moment it arrives, otherwise the panel would show stale data for however long it

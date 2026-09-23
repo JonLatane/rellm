@@ -5009,7 +5009,7 @@ for the profile's own owner) the SMS verification flow (see `phoneVerificationVi
 default (`expanded`, `Model.contactMethodsExpanded`) behind `expandableProfileSection`'s own header,
 same as `permissionsSection`/`syncSourcesSection` -- except a `#contact-methods` link (see `init`'s
 own `fragment` handling) opens it pre-expanded. Hidden entirely for a non-`canEdit` viewer (the
-profile's own owner or an admin -- see `canEditProfile`) -- there's nothing to *edit* here for
+profile's own owner or an admin -- see `canEditProfile`) -- there's nothing to _edit_ here for
 anyone else, and `profileDetail` already renders the plain `tel:`/`mailto:` links
 (`Users.userCardContactButtons`, same as `userCard`'s own) just above this section for whichever of
 `user.phone`/`user.email` such a viewer can actually see.

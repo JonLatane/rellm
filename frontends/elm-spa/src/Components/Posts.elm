@@ -49,8 +49,8 @@ route's `id` or `id@host` segment.
 -}
 
 import Components.Authors as Authors
-import Components.MediaRenderer as MediaRenderer
 import Components.Markdown as Markdown
+import Components.MediaRenderer as MediaRenderer
 import Components.MultiMediaRenderer as MultiMediaRenderer
 import Components.SyncDestinations as SyncDestinations
 import Components.Users as Users
@@ -523,6 +523,7 @@ gets silently overwritten back to the feed's own text on every subsequent sync r
 `postDetail` renders `title`/`link` as plain, non-editable text regardless of `syncSource` --
 there's no separate edit affordance for either to lock in the first place, only `content` goes
 through this button.
+
 -}
 editContentButton : Maybe RellmAccount -> msg -> Post -> Html msg
 editContentButton maybeAccount onEditClicked post =
@@ -673,7 +674,7 @@ same cards.
 
 `showSyncDestinations`/`availableSyncDestinations`/`isPushing`/`pushError`/`onPush`/`onDelete`
 mirror `Components.Events.eventCard`'s own trailing params of the same name/shape exactly (just
-without an `Events`-style `showSyncSource`/`syncSourceView` pair -- a plain Post *can* now have a
+without an `Events`-style `showSyncSource`/`syncSourceView` pair -- a plain Post _can_ now have a
 "synced from" `SyncSource` too, an RSS/Atom feed item (see `posts.proto`'s `Post.sync_source`),
 but no card here surfaces it yet the way `Events.syncSourceView` does for a synced `Event`) --
 `showSyncDestinations` gates `postSyncDestinationsView` at the
@@ -1034,8 +1035,9 @@ snapping) rather than always rendering in full -- currently only `Components.Pin
 (see its own `contentHeights`/`expandedPostIds`), since a pin is meant to be glanceable without
 necessarily reading its entire content; `Nothing` (every other caller, e.g. `Components.Pages.PostPage`,
 a Post's own dedicated page) always renders the content in full, with no toggle at all. See
-`postDetailContentView`'s own doc for why *whether* to offer the toggle at all is left entirely to the
+`postDetailContentView`'s own doc for why _whether_ to offer the toggle at all is left entirely to the
 caller's own measurement, not decided in here.
+
 -}
 postDetail : SharedTime.Model -> String -> String -> String -> Maybe RellmServer -> Maybe RellmAccount -> (String -> msg) -> MediaRenderer.Model -> (String -> msg) -> Bool -> msg -> Maybe msg -> (String -> msg) -> Bool -> Maybe msg -> msg -> Html msg -> Html msg -> Maybe (List SyncDestination) -> (String -> Bool) -> (String -> Maybe String) -> (String -> msg) -> (String -> String -> msg) -> Maybe (ContentCollapse msg) -> Post -> Html msg
 postDetail time basePath viewingServerHost postServerHost maybeServer maybeAccount onMediaClicked mediaPlayState onMediaPlayClicked readOnly onMediaEditClicked onGenerateMediaClicked onMediaLayoutChanged starred onStarClicked onEditClicked visibilityView moderationView availableSyncDestinations isPushing pushError onPush onDelete contentCollapse post =
