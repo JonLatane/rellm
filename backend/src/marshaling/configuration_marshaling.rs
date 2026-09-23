@@ -3,16 +3,6 @@ use crate::models::{self, NewServerConfiguration};
 use crate::protos::*;
 use std::mem::transmute;
 
-/// Blanks an `optional string` secret for the client-facing path while keeping `Some`/`None`
-/// itself meaningful -- `Some(_)` (configured, real value hidden) becomes `Some(String::new())`,
-/// `None` (never configured) stays `None`. Used for the webhook-signing-key fields
-/// (`TwilioConfig`/`TelnyxConfig`/`BirdConfig`), which -- unlike this file's other write-only
-/// secrets (plain `string`, always blanked to `""` either way) -- need a client to be able to tell
-/// "is one configured at all" without ever seeing the real value.
-fn blank_but_keep_presence(value: Option<String>) -> Option<String> {
-    value.map(|_| String::new())
-}
-
 pub trait ToDbServerConfiguration {
     fn to_db(&self) -> NewServerConfiguration;
 }
@@ -158,10 +148,9 @@ impl ToProtoServerConfiguration for models::ServerConfiguration {
         // (the Auth Token, used only for inbound signature verification -- see that field's own
         // doc) are each independently write-only -- never send the real value to a client, same
         // reasoning (and same `configure_server` merge-on-blank counterpart) as
-        // `FacebookAuthConfig.app_secret` above. `twilio_webhook_signing_key` is `optional`, unlike
-        // the other secrets here, specifically so blanking it can still tell a client whether one
-        // is configured at all (`Some(String::new())`) versus never set (`None`) -- see that
-        // field's own doc.
+        // `FacebookAuthConfig.app_secret` above. Whether the signing key is actually *used* is a
+        // separate, non-secret `use_twilio_webhook_signing_key` bool that passes through
+        // unmodified, like `twilio_enabled`.
         let twilio_config: Option<TwilioConfig> = self
             .twilio_config
             .to_owned()
@@ -169,7 +158,7 @@ impl ToProtoServerConfiguration for models::ServerConfiguration {
             .flatten()
             .map(|c| TwilioConfig {
                 twilio_api_key_secret: String::new(),
-                twilio_webhook_signing_key: blank_but_keep_presence(c.twilio_webhook_signing_key),
+                twilio_webhook_signing_key: String::new(),
                 ..c
             });
         // Same write-only treatment for `BirdConfig.bird_access_key`/`bird_webhook_signing_key`.
@@ -180,7 +169,7 @@ impl ToProtoServerConfiguration for models::ServerConfiguration {
             .flatten()
             .map(|c| BirdConfig {
                 bird_access_key: String::new(),
-                bird_webhook_signing_key: blank_but_keep_presence(c.bird_webhook_signing_key),
+                bird_webhook_signing_key: String::new(),
                 ..c
             });
         // Same write-only treatment for `TelnyxConfig.telnyx_api_key`/`telnyx_webhook_signing_key`.
@@ -191,7 +180,7 @@ impl ToProtoServerConfiguration for models::ServerConfiguration {
             .flatten()
             .map(|c| TelnyxConfig {
                 telnyx_api_key: String::new(),
-                telnyx_webhook_signing_key: blank_but_keep_presence(c.telnyx_webhook_signing_key),
+                telnyx_webhook_signing_key: String::new(),
                 ..c
             });
         // No secret to blank -- `StalwartConfig` is just the one on/off flag.

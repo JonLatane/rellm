@@ -4,7 +4,7 @@
 //! `configure_server`'s own doc comment). Everything else about `ConfigureServer` is exercised
 //! incidentally by other RPC specs' setup, not tested here.
 
-use diesel::Connection;
+use diesel::{Connection, RunQueryDsl};
 
 use crate::db_connection::PgPooledConnection;
 use crate::logic::{
@@ -294,7 +294,8 @@ fn twilio_request(
         twilio_api_key_sid: api_key_sid.to_string(),
         twilio_api_key_secret: api_key_secret.to_string(),
         twilio_from_number: from_number.to_string(),
-        twilio_webhook_signing_key: None,
+        twilio_webhook_signing_key: String::new(),
+        use_twilio_webhook_signing_key: false,
     });
     config
 }
@@ -380,19 +381,25 @@ fn setting_twilio_config_to_none_clears_the_stored_secret() {
     });
 }
 
-/// Sets `twilio_webhook_signing_key` on top of whatever `twilio_request` already built --
-/// separated out since most specs above don't care about it at all (it defaults to `None` there).
-fn with_twilio_webhook_signing_key(config: ServerConfiguration, key: Option<&str>) -> ServerConfiguration {
+/// Sets `twilio_webhook_signing_key`/`use_twilio_webhook_signing_key` on top of whatever
+/// `twilio_request` already built -- separated out since most specs above don't care about either
+/// at all (both default to blank/`false` there).
+fn with_twilio_webhook_signing_key(
+    config: ServerConfiguration,
+    key: &str,
+    use_key: bool,
+) -> ServerConfiguration {
     let mut config = config;
     config.twilio_config = config.twilio_config.map(|c| TwilioConfig {
-        twilio_webhook_signing_key: key.map(|k| k.to_string()),
+        twilio_webhook_signing_key: key.to_string(),
+        use_twilio_webhook_signing_key: use_key,
         ..c
     });
     config
 }
 
 #[test]
-fn twilio_webhook_signing_key_is_none_when_never_configured() {
+fn twilio_webhook_signing_key_is_blank_when_never_configured() {
     let mut conn = test_conn();
     conn.test_transaction::<_, tonic::Status, _>(|conn| {
         let admin = create_user(conn, "cst_twilio_webhook_key_unset");
@@ -405,18 +412,16 @@ fn twilio_webhook_signing_key_is_none_when_never_configured() {
         )
         .expect("configure should succeed");
 
-        assert_eq!(
-            updated.twilio_config.expect("twilio_config should be set").twilio_webhook_signing_key,
-            None,
-            "no signing key was ever set -- must stay None, not just an empty string"
-        );
+        let twilio_config = updated.twilio_config.expect("twilio_config should be set");
+        assert_eq!(twilio_config.twilio_webhook_signing_key, "");
+        assert!(!twilio_config.use_twilio_webhook_signing_key);
 
         Ok(())
     });
 }
 
 #[test]
-fn twilio_webhook_signing_key_is_blanked_but_marked_present_once_configured() {
+fn twilio_webhook_signing_key_is_always_blanked_but_use_flag_round_trips() {
     let mut conn = test_conn();
     conn.test_transaction::<_, tonic::Status, _>(|conn| {
         let admin = create_user(conn, "cst_twilio_webhook_key_set");
@@ -424,14 +429,19 @@ fn twilio_webhook_signing_key_is_blanked_but_marked_present_once_configured() {
 
         let request = with_twilio_webhook_signing_key(
             twilio_request(conn, "AC_sid", "SK_key_sid", "secret", "+15005550006"),
-            Some("real_auth_token"),
+            "real_auth_token",
+            true,
         );
         let updated = configure_server(request, &admin, conn).expect("configure should succeed");
 
+        let twilio_config = updated.twilio_config.expect("twilio_config should be set");
         assert_eq!(
-            updated.twilio_config.expect("twilio_config should be set").twilio_webhook_signing_key,
-            Some(String::new()),
-            "the real value must never round-trip, but Some(_) must survive so a client can tell one is set"
+            twilio_config.twilio_webhook_signing_key, "",
+            "the real value must never round-trip to the client"
+        );
+        assert!(
+            twilio_config.use_twilio_webhook_signing_key,
+            "the (non-secret) use-flag isn't blanked -- it should round-trip as sent"
         );
 
         Ok(())
@@ -447,21 +457,62 @@ fn empty_twilio_webhook_signing_key_preserves_the_previously_stored_one() {
 
         let first_request = with_twilio_webhook_signing_key(
             twilio_request(conn, "AC_sid", "SK_key_sid", "secret", "+15005550006"),
-            Some("real_auth_token"),
+            "real_auth_token",
+            true,
         );
         configure_server(first_request, &admin, conn).expect("first configure should succeed");
 
-        // Second save resends `None` (as the client always does, since it never gets the real
-        // value back) -- must not clobber the already-stored key.
+        // Second save resends a blank key (as the client always does, since it never gets the
+        // real value back) -- must not clobber the already-stored key.
         let second_request = with_twilio_webhook_signing_key(
             twilio_request(conn, "AC_sid_2", "SK_key_sid", "secret", "+15005550006"),
-            None,
+            "",
+            true,
         );
         configure_server(second_request, &admin, conn).expect("second configure should succeed");
 
         let stored = server_twilio_config(conn).expect("twilio config should still be configured");
         assert_eq!(stored.twilio_account_sid, "AC_sid_2");
-        assert_eq!(stored.twilio_webhook_signing_key.as_deref(), Some("real_auth_token"));
+        assert_eq!(stored.twilio_webhook_signing_key, "real_auth_token");
+
+        Ok(())
+    });
+}
+
+/// Guards the actual backward-compat concern `twilio_webhook_signing_key`/
+/// `use_twilio_webhook_signing_key`'s own `build.rs` `field_attribute`s exist for: a
+/// `twilio_config` blob stored *before* this migration (`twilio_webhook_signing_key` was
+/// `optional string`, serialized as literal JSON `null` when unset, and
+/// `use_twilio_webhook_signing_key` didn't exist at all) must still deserialize -- not silently
+/// drop the whole `twilio_config` (see `ToProtoServerConfiguration::to_proto`'s
+/// `.ok()`-then-`.flatten()` chain, which does exactly that on any deserialize error). Inserted as
+/// raw JSON, bypassing the current `TwilioConfig` struct entirely, since that struct can no longer
+/// even express the old (pre-migration) shape.
+#[test]
+fn legacy_twilio_config_with_a_null_signing_key_and_no_use_flag_still_deserializes() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let mut new_config = crate::models::default_server_configuration();
+        new_config.twilio_config = Some(serde_json::json!({
+            "twilio_enabled": true,
+            "twilio_account_sid": "AC_legacy",
+            "twilio_api_key_sid": "SK_legacy",
+            "twilio_api_key_secret": "legacy_secret",
+            "twilio_from_number": "+15005550006",
+            "twilio_webhook_signing_key": null
+        }));
+        diesel::insert_into(crate::schema::server_configurations::table)
+            .values(&new_config)
+            .execute(conn)
+            .expect("failed to create legacy test server configuration");
+
+        let config = get_server_configuration_proto(conn).expect("failed to fetch config");
+        let twilio_config = config.twilio_config.expect(
+            "twilio_config must survive deserializing a pre-migration blob, not silently vanish",
+        );
+        assert_eq!(twilio_config.twilio_account_sid, "AC_legacy");
+        assert_eq!(twilio_config.twilio_webhook_signing_key, "");
+        assert!(!twilio_config.use_twilio_webhook_signing_key);
 
         Ok(())
     });
@@ -475,7 +526,8 @@ fn bird_request(conn: &mut PgPooledConnection, access_key: &str, from: &str) -> 
         bird_access_key: access_key.to_string(),
         bird_from: from.to_string(),
         bird_region: "us1".to_string(),
-        bird_webhook_signing_key: None,
+        bird_webhook_signing_key: String::new(),
+        use_bird_webhook_signing_key: false,
     });
     config
 }
@@ -554,7 +606,8 @@ fn telnyx_request(
         telnyx_api_key: api_key.to_string(),
         telnyx_from_number: from_number.to_string(),
         telnyx_messaging_profile_id: "profile_1".to_string(),
-        telnyx_webhook_signing_key: None,
+        telnyx_webhook_signing_key: String::new(),
+        use_telnyx_webhook_signing_key: false,
     });
     config
 }

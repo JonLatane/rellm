@@ -103,7 +103,8 @@ mod update_user_contact_methods {
                     twilio_api_key_sid: "SK_test_key_sid".to_string(),
                     twilio_api_key_secret: "auth_token".to_string(),
                     twilio_from_number: "+15005550006".to_string(),
-                    twilio_webhook_signing_key: None,
+                    twilio_webhook_signing_key: String::new(),
+                    use_twilio_webhook_signing_key: false,
                 })
                 .unwrap(),
             );
@@ -776,7 +777,7 @@ mod bird_and_provider_selection_spec {
     }
 
     #[test]
-    fn prefers_twilio_by_default_when_both_are_enabled() {
+    fn prefers_bird_by_default_when_both_are_enabled() {
         let mut conn = test_conn();
         conn.test_transaction::<_, tonic::Status, _>(|conn| {
             configure_verification_providers(
@@ -786,11 +787,11 @@ mod bird_and_provider_selection_spec {
                 None,
                 vec![],
             );
-            let user = create_user(conn, "prefers_twilio_default");
+            let user = create_user(conn, "prefers_bird_default");
             let user = set_user_phone(conn, &user, &phone_contact_method("tel:+15551234567"));
 
             let (base_url, captured) = serve_capturing(|_request, _prior| {
-                ("HTTP/1.1 201 Created", serde_json::json!({ "sid": "SM_test" }))
+                ("HTTP/1.1 202 Accepted", serde_json::json!({ "id": "sms_test" }))
             });
 
             start_contact_method_verification_at(
@@ -803,8 +804,8 @@ mod bird_and_provider_selection_spec {
 
             let requests = captured.lock().unwrap();
             assert!(
-                requests[0].contains("/Accounts/AC_sid/Messages.json"),
-                "should have gone through Twilio (the default-order provider) when no preference is set: {:?}",
+                requests[0].contains("POST /v1/sms/messages"),
+                "should have gone through Bird (the default-order provider) when no preference is set: {:?}",
                 requests[0]
             );
 

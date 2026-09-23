@@ -882,7 +882,8 @@ pub fn configure_twilio(
             twilio_api_key_sid: api_key_sid.to_string(),
             twilio_api_key_secret: api_key_secret.to_string(),
             twilio_from_number: from_number.to_string(),
-            twilio_webhook_signing_key: None,
+            twilio_webhook_signing_key: String::new(),
+            use_twilio_webhook_signing_key: false,
         })
         .unwrap(),
     );
@@ -980,7 +981,8 @@ pub fn configure_twilio_with_server_info(
             twilio_api_key_sid: api_key_sid.to_string(),
             twilio_api_key_secret: api_key_secret.to_string(),
             twilio_from_number: from_number.to_string(),
-            twilio_webhook_signing_key: None,
+            twilio_webhook_signing_key: String::new(),
+            use_twilio_webhook_signing_key: false,
         })
         .unwrap(),
     );
@@ -1023,7 +1025,8 @@ pub fn configure_bird(
             bird_access_key: access_key.to_string(),
             bird_from: from.to_string(),
             bird_region: region.to_string(),
-            bird_webhook_signing_key: None,
+            bird_webhook_signing_key: String::new(),
+            use_bird_webhook_signing_key: false,
         })
         .unwrap(),
     );
@@ -1051,7 +1054,8 @@ pub fn configure_telnyx(
             telnyx_api_key: api_key.to_string(),
             telnyx_from_number: from_number.to_string(),
             telnyx_messaging_profile_id: messaging_profile_id.to_string(),
-            telnyx_webhook_signing_key: None,
+            telnyx_webhook_signing_key: String::new(),
+            use_telnyx_webhook_signing_key: false,
         })
         .unwrap(),
     );
@@ -1080,7 +1084,8 @@ pub fn configure_verification_providers(
             twilio_api_key_sid: api_key_sid.to_string(),
             twilio_api_key_secret: api_key_secret.to_string(),
             twilio_from_number: from.to_string(),
-            twilio_webhook_signing_key: None,
+            twilio_webhook_signing_key: String::new(),
+            use_twilio_webhook_signing_key: false,
         })
         .unwrap()
     });
@@ -1090,7 +1095,8 @@ pub fn configure_verification_providers(
             bird_access_key: key.to_string(),
             bird_from: from.to_string(),
             bird_region: region.to_string(),
-            bird_webhook_signing_key: None,
+            bird_webhook_signing_key: String::new(),
+            use_bird_webhook_signing_key: false,
         })
         .unwrap()
     });
@@ -1100,7 +1106,8 @@ pub fn configure_verification_providers(
             telnyx_api_key: api_key.to_string(),
             telnyx_from_number: from.to_string(),
             telnyx_messaging_profile_id: messaging_profile_id.to_string(),
-            telnyx_webhook_signing_key: None,
+            telnyx_webhook_signing_key: String::new(),
+            use_telnyx_webhook_signing_key: false,
         })
         .unwrap()
     });

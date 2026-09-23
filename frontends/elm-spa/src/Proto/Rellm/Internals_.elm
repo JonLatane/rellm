@@ -1596,9 +1596,21 @@ type alias Proto__Rellm__StripeConfig =
 
 -}
 fieldNumbersProto__Rellm__BirdConfig :
-    { birdEnabled : Int, birdAccessKey : Int, birdFrom : Int, birdRegion : Int, birdWebhookSigningKey : Int }
+    { birdEnabled : Int
+    , birdAccessKey : Int
+    , birdFrom : Int
+    , birdRegion : Int
+    , birdWebhookSigningKey : Int
+    , useBirdWebhookSigningKey : Int
+    }
 fieldNumbersProto__Rellm__BirdConfig =
-    { birdEnabled = 1, birdAccessKey = 2, birdFrom = 3, birdRegion = 4, birdWebhookSigningKey = 5 }
+    { birdEnabled = 1
+    , birdAccessKey = 2
+    , birdFrom = 3
+    , birdRegion = 4
+    , birdWebhookSigningKey = 5
+    , useBirdWebhookSigningKey = 6
+    }
 
 
 {-| Default for Proto__Rellm__BirdConfig. Should only be used for 'required' decoders as an initial value.
@@ -1606,7 +1618,13 @@ fieldNumbersProto__Rellm__BirdConfig =
 -}
 defaultProto__Rellm__BirdConfig : Proto__Rellm__BirdConfig
 defaultProto__Rellm__BirdConfig =
-    { birdEnabled = False, birdAccessKey = "", birdFrom = "", birdRegion = "", birdWebhookSigningKey = Nothing }
+    { birdEnabled = False
+    , birdAccessKey = ""
+    , birdFrom = ""
+    , birdRegion = ""
+    , birdWebhookSigningKey = ""
+    , useBirdWebhookSigningKey = False
+    }
 
 
 {-| Declares how to decode a `Proto__Rellm__BirdConfig` from Bytes. To actually perform the conversion from Bytes, you need to use Protobuf.Decode.decode from eriktim/elm-protocol-buffers.
@@ -1620,10 +1638,8 @@ decodeProto__Rellm__BirdConfig =
         , Protobuf.Decode.optional 2 Protobuf.Decode.string (\a r -> { r | birdAccessKey = a })
         , Protobuf.Decode.optional 3 Protobuf.Decode.string (\a r -> { r | birdFrom = a })
         , Protobuf.Decode.optional 4 Protobuf.Decode.string (\a r -> { r | birdRegion = a })
-        , Protobuf.Decode.optional
-            5
-            (Protobuf.Decode.map Just Protobuf.Decode.string)
-            (\a r -> { r | birdWebhookSigningKey = a })
+        , Protobuf.Decode.optional 5 Protobuf.Decode.string (\a r -> { r | birdWebhookSigningKey = a })
+        , Protobuf.Decode.optional 6 Protobuf.Decode.bool (\a r -> { r | useBirdWebhookSigningKey = a })
         ]
 
 
@@ -1637,9 +1653,8 @@ encodeProto__Rellm__BirdConfig value =
         , ( 2, Protobuf.Encode.string value.birdAccessKey )
         , ( 3, Protobuf.Encode.string value.birdFrom )
         , ( 4, Protobuf.Encode.string value.birdRegion )
-        , ( 5
-          , (Maybe.map Protobuf.Encode.string >> Maybe.withDefault Protobuf.Encode.none) value.birdWebhookSigningKey
-          )
+        , ( 5, Protobuf.Encode.string value.birdWebhookSigningKey )
+        , ( 6, Protobuf.Encode.bool value.useBirdWebhookSigningKey )
         ]
 
 
@@ -1651,7 +1666,8 @@ type alias Proto__Rellm__BirdConfig =
     , birdAccessKey : String
     , birdFrom : String
     , birdRegion : String
-    , birdWebhookSigningKey : Maybe String
+    , birdWebhookSigningKey : String
+    , useBirdWebhookSigningKey : Bool
     }
 
 
@@ -1664,6 +1680,7 @@ fieldNumbersProto__Rellm__TelnyxConfig :
     , telnyxFromNumber : Int
     , telnyxMessagingProfileId : Int
     , telnyxWebhookSigningKey : Int
+    , useTelnyxWebhookSigningKey : Int
     }
 fieldNumbersProto__Rellm__TelnyxConfig =
     { telnyxEnabled = 1
@@ -1671,6 +1688,7 @@ fieldNumbersProto__Rellm__TelnyxConfig =
     , telnyxFromNumber = 3
     , telnyxMessagingProfileId = 4
     , telnyxWebhookSigningKey = 5
+    , useTelnyxWebhookSigningKey = 6
     }
 
 
@@ -1683,7 +1701,8 @@ defaultProto__Rellm__TelnyxConfig =
     , telnyxApiKey = ""
     , telnyxFromNumber = ""
     , telnyxMessagingProfileId = ""
-    , telnyxWebhookSigningKey = Nothing
+    , telnyxWebhookSigningKey = ""
+    , useTelnyxWebhookSigningKey = False
     }
 
 
@@ -1698,10 +1717,8 @@ decodeProto__Rellm__TelnyxConfig =
         , Protobuf.Decode.optional 2 Protobuf.Decode.string (\a r -> { r | telnyxApiKey = a })
         , Protobuf.Decode.optional 3 Protobuf.Decode.string (\a r -> { r | telnyxFromNumber = a })
         , Protobuf.Decode.optional 4 Protobuf.Decode.string (\a r -> { r | telnyxMessagingProfileId = a })
-        , Protobuf.Decode.optional
-            5
-            (Protobuf.Decode.map Just Protobuf.Decode.string)
-            (\a r -> { r | telnyxWebhookSigningKey = a })
+        , Protobuf.Decode.optional 5 Protobuf.Decode.string (\a r -> { r | telnyxWebhookSigningKey = a })
+        , Protobuf.Decode.optional 6 Protobuf.Decode.bool (\a r -> { r | useTelnyxWebhookSigningKey = a })
         ]
 
 
@@ -1715,9 +1732,8 @@ encodeProto__Rellm__TelnyxConfig value =
         , ( 2, Protobuf.Encode.string value.telnyxApiKey )
         , ( 3, Protobuf.Encode.string value.telnyxFromNumber )
         , ( 4, Protobuf.Encode.string value.telnyxMessagingProfileId )
-        , ( 5
-          , (Maybe.map Protobuf.Encode.string >> Maybe.withDefault Protobuf.Encode.none) value.telnyxWebhookSigningKey
-          )
+        , ( 5, Protobuf.Encode.string value.telnyxWebhookSigningKey )
+        , ( 6, Protobuf.Encode.bool value.useTelnyxWebhookSigningKey )
         ]
 
 
@@ -1729,7 +1745,8 @@ type alias Proto__Rellm__TelnyxConfig =
     , telnyxApiKey : String
     , telnyxFromNumber : String
     , telnyxMessagingProfileId : String
-    , telnyxWebhookSigningKey : Maybe String
+    , telnyxWebhookSigningKey : String
+    , useTelnyxWebhookSigningKey : Bool
     }
 
 
@@ -1743,6 +1760,7 @@ fieldNumbersProto__Rellm__TwilioConfig :
     , twilioApiKeySecret : Int
     , twilioFromNumber : Int
     , twilioWebhookSigningKey : Int
+    , useTwilioWebhookSigningKey : Int
     }
 fieldNumbersProto__Rellm__TwilioConfig =
     { twilioEnabled = 1
@@ -1751,6 +1769,7 @@ fieldNumbersProto__Rellm__TwilioConfig =
     , twilioApiKeySecret = 2
     , twilioFromNumber = 4
     , twilioWebhookSigningKey = 6
+    , useTwilioWebhookSigningKey = 7
     }
 
 
@@ -1764,7 +1783,8 @@ defaultProto__Rellm__TwilioConfig =
     , twilioApiKeySid = ""
     , twilioApiKeySecret = ""
     , twilioFromNumber = ""
-    , twilioWebhookSigningKey = Nothing
+    , twilioWebhookSigningKey = ""
+    , useTwilioWebhookSigningKey = False
     }
 
 
@@ -1780,10 +1800,8 @@ decodeProto__Rellm__TwilioConfig =
         , Protobuf.Decode.optional 5 Protobuf.Decode.string (\a r -> { r | twilioApiKeySid = a })
         , Protobuf.Decode.optional 2 Protobuf.Decode.string (\a r -> { r | twilioApiKeySecret = a })
         , Protobuf.Decode.optional 4 Protobuf.Decode.string (\a r -> { r | twilioFromNumber = a })
-        , Protobuf.Decode.optional
-            6
-            (Protobuf.Decode.map Just Protobuf.Decode.string)
-            (\a r -> { r | twilioWebhookSigningKey = a })
+        , Protobuf.Decode.optional 6 Protobuf.Decode.string (\a r -> { r | twilioWebhookSigningKey = a })
+        , Protobuf.Decode.optional 7 Protobuf.Decode.bool (\a r -> { r | useTwilioWebhookSigningKey = a })
         ]
 
 
@@ -1798,9 +1816,8 @@ encodeProto__Rellm__TwilioConfig value =
         , ( 5, Protobuf.Encode.string value.twilioApiKeySid )
         , ( 2, Protobuf.Encode.string value.twilioApiKeySecret )
         , ( 4, Protobuf.Encode.string value.twilioFromNumber )
-        , ( 6
-          , (Maybe.map Protobuf.Encode.string >> Maybe.withDefault Protobuf.Encode.none) value.twilioWebhookSigningKey
-          )
+        , ( 6, Protobuf.Encode.string value.twilioWebhookSigningKey )
+        , ( 7, Protobuf.Encode.bool value.useTwilioWebhookSigningKey )
         ]
 
 
@@ -1813,7 +1830,8 @@ type alias Proto__Rellm__TwilioConfig =
     , twilioApiKeySid : String
     , twilioApiKeySecret : String
     , twilioFromNumber : String
-    , twilioWebhookSigningKey : Maybe String
+    , twilioWebhookSigningKey : String
+    , useTwilioWebhookSigningKey : Bool
     }
 
 

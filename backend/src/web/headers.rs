@@ -89,9 +89,10 @@ impl<'r> FromRequest<'r> for StripeSignatureHeader<'r> {
 
 /// The `Host` header -- used by `web::contact_integrations_webhook`'s Twilio signature
 /// verification to reconstruct the exact URL Twilio signed (see `TwilioConfig.
-/// twilio_webhook_signing_key`'s own doc). Always used behind an `Option<_>` at the call site
-/// (verification is only ever attempted when a signing key is actually configured), so a request
-/// missing this header just fails that check rather than the whole request being rejected here.
+/// use_twilio_webhook_signing_key`'s own doc). Always used behind an `Option<_>` at the call site
+/// (verification is only ever attempted when a signing key is both configured and turned on), so a
+/// request missing this header just fails that check rather than the whole request being rejected
+/// here.
 pub struct HostHeader<'a>(pub &'a str);
 
 #[rocket::async_trait]

@@ -158,8 +158,8 @@ integrationsSectionKey section =
 {-| The `collapsedIntegrationsSections` to start with once `config` (the tab's own authenticated
 fetch) first loads -- `TwilioIntegrationSection`/`BirdIntegrationSection`/`TelnyxIntegrationSection`
 each pre-expand iff that provider's config is both present *and* has at least one non-default value
-already entered (`*_enabled`, `*_from`/`*_from_number`, `*_region`/`*_messaging_profile_id`, or a
-configured `*_webhook_signing_key` -- see `twilioConfigHasValues`/`birdConfigHasValues`/
+already entered (`*_enabled`, `*_from`/`*_from_number`, `*_region`/`*_messaging_profile_id`, or
+`use_*_webhook_signing_key` turned on -- see `twilioConfigHasValues`/`birdConfigHasValues`/
 `telnyxConfigHasValues`), so an admin actively using a provider sees it open right away without a
 click, while an unconfigured one stays out of the way collapsed. Only ever computed here, once per
 fetch (`GotAuthenticatedServerConfiguration`'s own success branch) -- it doesn't touch
@@ -185,7 +185,7 @@ twilioConfigHasValues config =
         || not (String.isEmpty config.twilioAccountSid)
         || not (String.isEmpty config.twilioApiKeySid)
         || not (String.isEmpty config.twilioFromNumber)
-        || config.twilioWebhookSigningKey /= Nothing
+        || config.useTwilioWebhookSigningKey
 
 
 birdConfigHasValues : BirdConfig -> Bool
@@ -193,7 +193,7 @@ birdConfigHasValues config =
     config.birdEnabled
         || not (String.isEmpty config.birdFrom)
         || not (String.isEmpty config.birdRegion)
-        || config.birdWebhookSigningKey /= Nothing
+        || config.useBirdWebhookSigningKey
 
 
 telnyxConfigHasValues : TelnyxConfig -> Bool
@@ -201,7 +201,7 @@ telnyxConfigHasValues config =
     config.telnyxEnabled
         || not (String.isEmpty config.telnyxFromNumber)
         || not (String.isEmpty config.telnyxMessagingProfileId)
-        || config.telnyxWebhookSigningKey /= Nothing
+        || config.useTelnyxWebhookSigningKey
 
 
 integrationsSectionExpanded : Model -> IntegrationsSection -> Bool
@@ -240,6 +240,7 @@ type Msg
     | TelnyxFromNumberChanged String
     | TelnyxMessagingProfileIdChanged String
     | TelnyxWebhookSigningKeyChanged String
+    | TelnyxUseWebhookSigningKeyToggled
     | TelnyxCancelClicked
     | TelnyxSaveClicked
     | GotTelnyxSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, ServerConfiguration ))
@@ -250,6 +251,7 @@ type Msg
     | TwilioApiKeySecretChanged String
     | TwilioFromNumberChanged String
     | TwilioWebhookSigningKeyChanged String
+    | TwilioUseWebhookSigningKeyToggled
     | TwilioCancelClicked
     | TwilioSaveClicked
     | GotTwilioSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, ServerConfiguration ))
@@ -259,6 +261,7 @@ type Msg
     | BirdFromChanged String
     | BirdRegionChanged String
     | BirdWebhookSigningKeyChanged String
+    | BirdUseWebhookSigningKeyToggled
     | BirdCancelClicked
     | BirdSaveClicked
     | GotBirdSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, ServerConfiguration ))
@@ -297,7 +300,10 @@ stored" (the backend splices the existing value back in when the incoming
 own merge rule). `fromNumber`/`messagingProfileId` are Telnyx's sending number and the Messaging
 Profile ID it's assigned to -- see `TelnyxConfig`'s own proto doc. `webhookSigningKey` is Telnyx's
 account-level public key, used only to verify inbound `/contact_integrations/telnyx/receive`
-deliveries -- see that field's own proto doc and `docs/contact_integrations.md`.
+deliveries -- see that field's own proto doc and `docs/contact_integrations.md`. `useWebhookSigningKey`
+is the "Use Webhook Signing Key" toggle (`TelnyxConfig.use_telnyx_webhook_signing_key`) -- unlike
+`webhookSigningKey` itself, it's not secret, so it starts pre-filled with whatever's currently
+stored, not blank.
 -}
 type alias TelnyxConfigEdit =
     { enabled : Bool
@@ -305,6 +311,7 @@ type alias TelnyxConfigEdit =
     , fromNumber : String
     , messagingProfileId : String
     , webhookSigningKey : String
+    , useWebhookSigningKey : Bool
     , status : AccountsPanel.FormStatus
     }
 
@@ -318,6 +325,9 @@ and API Key SID respectively -- see `TwilioConfig`'s own proto doc for why authe
 API Key pair, never the account's own Auth Token. `webhookSigningKey` is that Auth Token, used
 *only* to verify inbound `/contact_integrations/twilio/receive` deliveries (see that field's own
 proto doc and `docs/contact_integrations.md`) -- the one place the Auth Token is ever accepted here.
+`useWebhookSigningKey` is the "Use Webhook Signing Key" toggle
+(`TwilioConfig.use_twilio_webhook_signing_key`) -- unlike `webhookSigningKey` itself, it's not
+secret, so it starts pre-filled with whatever's currently stored, not blank.
 -}
 type alias TwilioConfigEdit =
     { enabled : Bool
@@ -326,6 +336,7 @@ type alias TwilioConfigEdit =
     , apiKeySecret : String
     , fromNumber : String
     , webhookSigningKey : String
+    , useWebhookSigningKey : Bool
     , status : AccountsPanel.FormStatus
     }
 
@@ -334,6 +345,9 @@ type alias TwilioConfigEdit =
 the same way `apiKeySecret`/`webhookSigningKey` do there. `webhookSigningKey` is the Standard
 Webhooks signing secret (`whsec_...`) for the SMS channel subscription delivering to
 `/contact_integrations/bird/receive` -- see `BirdConfig.bird_webhook_signing_key`'s own proto doc.
+`useWebhookSigningKey` is the "Use Webhook Signing Key" toggle
+(`BirdConfig.use_bird_webhook_signing_key`) -- same "not secret, starts pre-filled" treatment as
+`TwilioConfigEdit.useWebhookSigningKey`.
 -}
 type alias BirdConfigEdit =
     { enabled : Bool
@@ -341,6 +355,7 @@ type alias BirdConfigEdit =
     , from : String
     , region : String
     , webhookSigningKey : String
+    , useWebhookSigningKey : Bool
     , status : AccountsPanel.FormStatus
     }
 
@@ -462,6 +477,7 @@ update shared targetHost maybeServer msg model =
                         , fromNumber = telnyxConfig |> Maybe.map .telnyxFromNumber |> Maybe.withDefault ""
                         , messagingProfileId = telnyxConfig |> Maybe.map .telnyxMessagingProfileId |> Maybe.withDefault ""
                         , webhookSigningKey = ""
+                        , useWebhookSigningKey = telnyxConfig |> Maybe.map .useTelnyxWebhookSigningKey |> Maybe.withDefault False
                         , status = AccountsPanel.Idle
                         }
               }
@@ -482,6 +498,9 @@ update shared targetHost maybeServer msg model =
 
         TelnyxWebhookSigningKeyChanged text ->
             ( { model | telnyxConfigEdit = model.telnyxConfigEdit |> Maybe.map (\edit -> { edit | webhookSigningKey = text }) }, Effect.none )
+
+        TelnyxUseWebhookSigningKeyToggled ->
+            ( { model | telnyxConfigEdit = model.telnyxConfigEdit |> Maybe.map (\edit -> { edit | useWebhookSigningKey = not edit.useWebhookSigningKey }) }, Effect.none )
 
         TelnyxCancelClicked ->
             ( { model | telnyxConfigEdit = Nothing }, Effect.none )
@@ -526,6 +545,7 @@ update shared targetHost maybeServer msg model =
                         , apiKeySecret = ""
                         , fromNumber = twilioConfig |> Maybe.map .twilioFromNumber |> Maybe.withDefault ""
                         , webhookSigningKey = ""
+                        , useWebhookSigningKey = twilioConfig |> Maybe.map .useTwilioWebhookSigningKey |> Maybe.withDefault False
                         , status = AccountsPanel.Idle
                         }
               }
@@ -549,6 +569,9 @@ update shared targetHost maybeServer msg model =
 
         TwilioWebhookSigningKeyChanged text ->
             ( { model | configEdit = model.configEdit |> Maybe.map (\edit -> { edit | webhookSigningKey = text }) }, Effect.none )
+
+        TwilioUseWebhookSigningKeyToggled ->
+            ( { model | configEdit = model.configEdit |> Maybe.map (\edit -> { edit | useWebhookSigningKey = not edit.useWebhookSigningKey }) }, Effect.none )
 
         TwilioCancelClicked ->
             ( { model | configEdit = Nothing }, Effect.none )
@@ -592,6 +615,7 @@ update shared targetHost maybeServer msg model =
                         , from = birdConfig |> Maybe.map .birdFrom |> Maybe.withDefault ""
                         , region = birdConfig |> Maybe.map .birdRegion |> Maybe.withDefault ""
                         , webhookSigningKey = ""
+                        , useWebhookSigningKey = birdConfig |> Maybe.map .useBirdWebhookSigningKey |> Maybe.withDefault False
                         , status = AccountsPanel.Idle
                         }
               }
@@ -612,6 +636,9 @@ update shared targetHost maybeServer msg model =
 
         BirdWebhookSigningKeyChanged text ->
             ( { model | birdConfigEdit = model.birdConfigEdit |> Maybe.map (\edit -> { edit | webhookSigningKey = text }) }, Effect.none )
+
+        BirdUseWebhookSigningKeyToggled ->
+            ( { model | birdConfigEdit = model.birdConfigEdit |> Maybe.map (\edit -> { edit | useWebhookSigningKey = not edit.useWebhookSigningKey }) }, Effect.none )
 
         BirdCancelClicked ->
             ( { model | birdConfigEdit = Nothing }, Effect.none )
@@ -948,7 +975,8 @@ applyTelnyxConfig edit config =
                     , telnyxApiKey = edit.apiKey
                     , telnyxFromNumber = edit.fromNumber
                     , telnyxMessagingProfileId = edit.messagingProfileId
-                    , telnyxWebhookSigningKey = emptyToNothing edit.webhookSigningKey
+                    , telnyxWebhookSigningKey = edit.webhookSigningKey
+                    , useTelnyxWebhookSigningKey = edit.useWebhookSigningKey
                 }
     }
 
@@ -976,7 +1004,8 @@ applyTwilioConfig edit config =
                     , twilioApiKeySid = edit.apiKeySid
                     , twilioApiKeySecret = edit.apiKeySecret
                     , twilioFromNumber = edit.fromNumber
-                    , twilioWebhookSigningKey = emptyToNothing edit.webhookSigningKey
+                    , twilioWebhookSigningKey = edit.webhookSigningKey
+                    , useTwilioWebhookSigningKey = edit.useWebhookSigningKey
                 }
     }
 
@@ -998,7 +1027,8 @@ applyBirdConfig edit config =
                     , birdAccessKey = edit.accessKey
                     , birdFrom = edit.from
                     , birdRegion = edit.region
-                    , birdWebhookSigningKey = emptyToNothing edit.webhookSigningKey
+                    , birdWebhookSigningKey = edit.webhookSigningKey
+                    , useBirdWebhookSigningKey = edit.useWebhookSigningKey
                 }
     }
 
@@ -1248,8 +1278,8 @@ externalIntegrationsSection model maybeAdminAccount =
                     AdminContactIntegrationsLoaded _ ->
                         [ preferredProvidersSection maybeAdminAccount model.preferredProvidersEdit (adminPreferredProviders model)
                         , telnyxSection model maybeAdminAccount
-                        , twilioSection model maybeAdminAccount
                         , birdSection model maybeAdminAccount
+                        , twilioSection model maybeAdminAccount
                         ]
                 )
             ]
@@ -1348,10 +1378,10 @@ telnyxDisplayView maybeAdminAccount telnyxConfig =
     [ Common.settingsRow "Telnyx Enabled" (Common.switchDisplay (telnyxConfig |> Maybe.map .telnyxEnabled |> Maybe.withDefault False))
     , Common.settingsRow "From Number" (span [ class "server-details-feature-settings-value" ] [ text (telnyxConfig |> Maybe.map .telnyxFromNumber |> Maybe.withDefault "—") ])
     , Common.settingsRow "Messaging Profile ID" (span [ class "server-details-feature-settings-value" ] [ text (telnyxConfig |> Maybe.map .telnyxMessagingProfileId |> Maybe.withDefault "—") ])
-    , Common.settingsRow "Webhook Signing Key"
+    , Common.settingsRow "Use Webhook Signing Key"
         (span [ class "server-details-feature-settings-value" ]
-            [ text (telnyxConfig |> Maybe.andThen .telnyxWebhookSigningKey |> Maybe.map (\_ -> "Configured") |> Maybe.withDefault "Not configured")
-            , webhookSigningKeyWarning (telnyxConfig |> Maybe.andThen .telnyxWebhookSigningKey)
+            [ Common.switchDisplay (telnyxConfig |> Maybe.map .useTelnyxWebhookSigningKey |> Maybe.withDefault False)
+            , webhookSigningKeyWarning (telnyxConfig |> Maybe.map .useTelnyxWebhookSigningKey |> Maybe.withDefault False)
             ]
         )
     , case maybeAdminAccount of
@@ -1412,6 +1442,7 @@ telnyxEditView edit =
             ]
             []
         )
+    , Common.settingsRow "Use Webhook Signing Key" (Common.flagSwitch edit.useWebhookSigningKey TelnyxUseWebhookSigningKeyToggled)
     , div [ class "server-details-feature-settings-actions" ]
         [ Common.editSaveButton TelnyxSaveClicked edit.status
         , Common.editCancelButton TelnyxCancelClicked edit.status
@@ -1426,10 +1457,10 @@ twilioDisplayView maybeAdminAccount twilioConfig =
     , Common.settingsRow "Account SID" (span [ class "server-details-feature-settings-value" ] [ text (twilioConfig |> Maybe.map .twilioAccountSid |> Maybe.withDefault "—") ])
     , Common.settingsRow "API Key SID" (span [ class "server-details-feature-settings-value" ] [ text (twilioConfig |> Maybe.map .twilioApiKeySid |> Maybe.withDefault "—") ])
     , Common.settingsRow "From Number" (span [ class "server-details-feature-settings-value" ] [ text (twilioConfig |> Maybe.map .twilioFromNumber |> Maybe.withDefault "—") ])
-    , Common.settingsRow "Webhook Signing Key"
+    , Common.settingsRow "Use Webhook Signing Key"
         (span [ class "server-details-feature-settings-value" ]
-            [ text (twilioConfig |> Maybe.andThen .twilioWebhookSigningKey |> Maybe.map (\_ -> "Configured") |> Maybe.withDefault "Not configured")
-            , webhookSigningKeyWarning (twilioConfig |> Maybe.andThen .twilioWebhookSigningKey)
+            [ Common.switchDisplay (twilioConfig |> Maybe.map .useTwilioWebhookSigningKey |> Maybe.withDefault False)
+            , webhookSigningKeyWarning (twilioConfig |> Maybe.map .useTwilioWebhookSigningKey |> Maybe.withDefault False)
             ]
         )
     , case maybeAdminAccount of
@@ -1501,6 +1532,7 @@ twilioEditView edit =
             ]
             []
         )
+    , Common.settingsRow "Use Webhook Signing Key" (Common.flagSwitch edit.useWebhookSigningKey TwilioUseWebhookSigningKeyToggled)
     , div [ class "server-details-feature-settings-actions" ]
         [ Common.editSaveButton TwilioSaveClicked edit.status
         , Common.editCancelButton TwilioCancelClicked edit.status
@@ -1514,10 +1546,10 @@ birdDisplayView maybeAdminAccount birdConfig =
     [ Common.settingsRow "Bird Enabled" (Common.switchDisplay (birdConfig |> Maybe.map .birdEnabled |> Maybe.withDefault False))
     , Common.settingsRow "From" (span [ class "server-details-feature-settings-value" ] [ text (birdConfig |> Maybe.map .birdFrom |> Maybe.withDefault "—") ])
     , Common.settingsRow "Region" (span [ class "server-details-feature-settings-value" ] [ text (birdConfig |> Maybe.map .birdRegion |> Maybe.andThen emptyToNothing |> Maybe.withDefault "us1 (default)") ])
-    , Common.settingsRow "Webhook Signing Key"
+    , Common.settingsRow "Use Webhook Signing Key"
         (span [ class "server-details-feature-settings-value" ]
-            [ text (birdConfig |> Maybe.andThen .birdWebhookSigningKey |> Maybe.map (\_ -> "Configured") |> Maybe.withDefault "Not configured")
-            , webhookSigningKeyWarning (birdConfig |> Maybe.andThen .birdWebhookSigningKey)
+            [ Common.switchDisplay (birdConfig |> Maybe.map .useBirdWebhookSigningKey |> Maybe.withDefault False)
+            , webhookSigningKeyWarning (birdConfig |> Maybe.map .useBirdWebhookSigningKey |> Maybe.withDefault False)
             ]
         )
     , case maybeAdminAccount of
@@ -1574,6 +1606,7 @@ birdEditView edit =
             ]
             []
         )
+    , Common.settingsRow "Use Webhook Signing Key" (Common.flagSwitch edit.useWebhookSigningKey BirdUseWebhookSigningKeyToggled)
     , div [ class "server-details-feature-settings-actions" ]
         [ Common.editSaveButton BirdSaveClicked edit.status
         , Common.editCancelButton BirdCancelClicked edit.status
@@ -1591,25 +1624,25 @@ emptyToNothing str =
         Just str
 
 
-{-| A "⚠️" warning (with hover title text) shown next to a provider's "Webhook Signing Key" display
-row when `maybeKey == Nothing` -- i.e. no key configured at all (see
-`TwilioConfig.twilio_webhook_signing_key`'s own proto doc: unset means inbound deliveries to that
-provider's `/contact_integrations/*/receive` endpoint are accepted without signature verification,
-per `docs/contact_integrations.md`). `Just _` (the value itself always blanked to `""` before
-reaching here -- see that field's own doc) means a key *is* configured, so no warning.
+{-| A "⚠️" warning (with hover title text) shown next to a provider's "Use Webhook Signing Key"
+display row when that toggle is off (see `TwilioConfig.use_twilio_webhook_signing_key`'s own proto
+doc: `false` means inbound deliveries to that provider's `/contact_integrations/*/receive` endpoint
+are accepted without signature verification, per `docs/contact_integrations.md`). Driven purely by
+the (non-secret) `use_*_webhook_signing_key` bool now, not by whether a key value happens to be
+present -- the key itself is always blanked to `""` before reaching here regardless (see that
+field's own doc), so it can no longer answer "is verification actually on" by itself.
 -}
-webhookSigningKeyWarning : Maybe String -> Html msg
-webhookSigningKeyWarning maybeKey =
-    case maybeKey of
-        Just _ ->
-            text ""
+webhookSigningKeyWarning : Bool -> Html msg
+webhookSigningKeyWarning useWebhookSigningKey =
+    if useWebhookSigningKey then
+        text ""
 
-        Nothing ->
-            span
-                [ class "server-details-webhook-signing-key-warning"
-                , title "No webhook signing key configured -- inbound deliveries to this provider's receive endpoint are accepted without signature verification. See docs/contact_integrations.md."
-                ]
-                [ text " ⚠️" ]
+    else
+        span
+            [ class "server-details-webhook-signing-key-warning"
+            , title "Webhook signing key verification is off -- inbound deliveries to this provider's receive endpoint are accepted without signature verification. See docs/contact_integrations.md."
+            ]
+            [ text " ⚠️" ]
 
 
 {-| The "Preferred Verification Providers" selector -- plain badges (plus an Edit button, for an
@@ -1653,7 +1686,7 @@ preferredProvidersSection maybeAdminAccount maybeEdit preferred =
             div [ class "server-details-permissions" ]
                 [ h3 [ class "section-title" ] [ text "Preferred Verification Providers" ]
                 , if List.isEmpty preferred then
-                    Html.p [] [ text "None set -- falls back to whichever provider is enabled (Twilio first, then Bird, then Telnyx)." ]
+                    Html.p [] [ text "None set - falls back to whichever provider is enabled (Telnyx first, then Bird, then Twilio)." ]
 
                   else
                     div [ class "permission-badges" ]

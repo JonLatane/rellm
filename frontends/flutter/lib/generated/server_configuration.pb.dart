@@ -408,7 +408,7 @@ class ServerConfiguration extends $pb.GeneratedMessage {
   /// preference-then-fallback ordering this feeds into
   /// [`ServerConfiguration.available_verification_apis`](#rellm-ServerConfiguration) below. Even
   /// when this is blank, an enabled provider is still tried (in the fixed default order
-  /// Twilio/Bird/Telnyx) -- this field only matters when more than one is enabled and the admin
+  /// Telnyx/Bird/Twilio) -- this field only matters when more than one is enabled and the admin
   /// wants a specific one tried first. Only serialized for admin users.
   @$pb.TagNumber(120)
   $core.List<ContactVerificationAPI> get preferredVerificationApis => $_getList(18);
@@ -2698,6 +2698,7 @@ class TwilioConfig extends $pb.GeneratedMessage {
     $core.String? twilioFromNumber,
     $core.String? twilioApiKeySid,
     $core.String? twilioWebhookSigningKey,
+    $core.bool? useTwilioWebhookSigningKey,
   }) {
     final $result = create();
     if (twilioEnabled != null) {
@@ -2718,6 +2719,9 @@ class TwilioConfig extends $pb.GeneratedMessage {
     if (twilioWebhookSigningKey != null) {
       $result.twilioWebhookSigningKey = twilioWebhookSigningKey;
     }
+    if (useTwilioWebhookSigningKey != null) {
+      $result.useTwilioWebhookSigningKey = useTwilioWebhookSigningKey;
+    }
     return $result;
   }
   TwilioConfig._() : super();
@@ -2731,6 +2735,7 @@ class TwilioConfig extends $pb.GeneratedMessage {
     ..aOS(4, _omitFieldNames ? '' : 'twilioFromNumber')
     ..aOS(5, _omitFieldNames ? '' : 'twilioApiKeySid')
     ..aOS(6, _omitFieldNames ? '' : 'twilioWebhookSigningKey')
+    ..aOB(7, _omitFieldNames ? '' : 'useTwilioWebhookSigningKey')
     ..hasRequiredFields = false
   ;
 
@@ -2806,19 +2811,18 @@ class TwilioConfig extends $pb.GeneratedMessage {
   @$pb.TagNumber(5)
   void clearTwilioApiKeySid() => clearField(5);
 
-  /// Optional -- the Twilio Account's Auth Token, used *only* to verify the `X-Twilio-Signature`
-  /// header on inbound deliveries to `/contact_integrations/twilio/receive` (see
+  /// The Twilio Account's Auth Token, used *only* to verify the `X-Twilio-Signature` header on
+  /// inbound deliveries to `/contact_integrations/twilio/receive` (see
   /// https://www.twilio.com/docs/usage/webhooks/webhooks-security and
   /// `docs/contact_integrations.md`). Never used to authenticate outbound API calls -- this
   /// message's own doc explains why the Auth Token is deliberately excluded from that role; this
   /// is the one narrow exception, since signature verification is the one thing only the Auth
-  /// Token (not an API Key) can do. Unset means inbound deliveries are accepted without signature
-  /// verification. Write-only, like every other credential here, but distinctly from those:
-  /// `optional` so a client can tell *whether* a key is configured (`Some`/`None`) without ever
-  /// seeing its real value -- once set, `to_proto` blanks this to `Some("")` (not `None`), so
-  /// "configured but hidden" and "never configured" stay distinguishable. Sending an empty value
+  /// Token (not an API Key) can do. Write-only like every other credential here -- always blanked
+  /// to `""` once written, so a client can never read the real value back. Sending an empty value
   /// back on `ConfigureServer` means "leave whatever's already stored alone," same as every other
-  /// write-only field's blank-means-no-op rule.
+  /// write-only field's blank-means-no-op rule. Whether this key is actually *used* to verify
+  /// inbound deliveries is controlled independently by `use_twilio_webhook_signing_key` below --
+  /// storing a key here doesn't by itself turn verification on.
   @$pb.TagNumber(6)
   $core.String get twilioWebhookSigningKey => $_getSZ(5);
   @$pb.TagNumber(6)
@@ -2827,6 +2831,23 @@ class TwilioConfig extends $pb.GeneratedMessage {
   $core.bool hasTwilioWebhookSigningKey() => $_has(5);
   @$pb.TagNumber(6)
   void clearTwilioWebhookSigningKey() => clearField(6);
+
+  /// Whether `twilio_webhook_signing_key` above is actually used to verify inbound
+  /// `/contact_integrations/twilio/receive` deliveries. Defaults to `false` (unverified) even once
+  /// a key is stored -- an admin must explicitly opt in, same "explicit switch, not implicit from
+  /// presence" reasoning `ContactIntegrationsTab`'s own "Use Webhook Signing Key" toggle exists
+  /// for. `false` while this is `false` means inbound deliveries are accepted without signature
+  /// verification, same fail-safe-direction reasoning as before (see this message's own doc and
+  /// `docs/contact_integrations.md`) -- the only effect an unauthenticated/spoofed delivery can
+  /// have either way is *revoking* consent, never granting it.
+  @$pb.TagNumber(7)
+  $core.bool get useTwilioWebhookSigningKey => $_getBF(6);
+  @$pb.TagNumber(7)
+  set useTwilioWebhookSigningKey($core.bool v) { $_setBool(6, v); }
+  @$pb.TagNumber(7)
+  $core.bool hasUseTwilioWebhookSigningKey() => $_has(6);
+  @$pb.TagNumber(7)
+  void clearUseTwilioWebhookSigningKey() => clearField(7);
 }
 
 /// Telnyx (https://telnyx.com) Config -- an alternative SMS verification provider to
@@ -2839,6 +2860,7 @@ class TelnyxConfig extends $pb.GeneratedMessage {
     $core.String? telnyxFromNumber,
     $core.String? telnyxMessagingProfileId,
     $core.String? telnyxWebhookSigningKey,
+    $core.bool? useTelnyxWebhookSigningKey,
   }) {
     final $result = create();
     if (telnyxEnabled != null) {
@@ -2856,6 +2878,9 @@ class TelnyxConfig extends $pb.GeneratedMessage {
     if (telnyxWebhookSigningKey != null) {
       $result.telnyxWebhookSigningKey = telnyxWebhookSigningKey;
     }
+    if (useTelnyxWebhookSigningKey != null) {
+      $result.useTelnyxWebhookSigningKey = useTelnyxWebhookSigningKey;
+    }
     return $result;
   }
   TelnyxConfig._() : super();
@@ -2868,6 +2893,7 @@ class TelnyxConfig extends $pb.GeneratedMessage {
     ..aOS(3, _omitFieldNames ? '' : 'telnyxFromNumber')
     ..aOS(4, _omitFieldNames ? '' : 'telnyxMessagingProfileId')
     ..aOS(5, _omitFieldNames ? '' : 'telnyxWebhookSigningKey')
+    ..aOB(6, _omitFieldNames ? '' : 'useTelnyxWebhookSigningKey')
     ..hasRequiredFields = false
   ;
 
@@ -2937,16 +2963,14 @@ class TelnyxConfig extends $pb.GeneratedMessage {
   @$pb.TagNumber(4)
   void clearTelnyxMessagingProfileId() => clearField(4);
 
-  /// Optional -- Telnyx's account-level public key (Mission Control Portal -> Keys & Credentials ->
-  /// Public Key), used to verify the `telnyx-signature-ed25519`/`telnyx-timestamp` headers on
-  /// inbound deliveries to `/contact_integrations/telnyx/receive` (Ed25519; see
+  /// Telnyx's account-level public key (Mission Control Portal -> Keys & Credentials -> Public
+  /// Key), used to verify the `telnyx-signature-ed25519`/`telnyx-timestamp` headers on inbound
+  /// deliveries to `/contact_integrations/telnyx/receive` (Ed25519; see
   /// https://developers.telnyx.com/docs/messaging/messages/receiving-webhooks and
   /// `docs/contact_integrations.md`). Actually a public key, not a secret, but kept write-only
-  /// (never serialized once written) for the same "don't echo config back" treatment as every
-  /// other credential here. Unset means inbound deliveries are accepted without signature
-  /// verification. `optional` (not plain `string`) for the same "`Some`/`None` distinguishable from
-  /// a client without ever seeing the real value" reason as
-  /// [`TwilioConfig.twilio_webhook_signing_key`](#rellm-TwilioConfig).
+  /// (always blanked to `""` once written) for the same "don't echo config back" treatment as
+  /// every other credential here -- see `TwilioConfig.twilio_webhook_signing_key`'s own doc for the
+  /// full reasoning, including why storing a key here doesn't by itself turn verification on.
   @$pb.TagNumber(5)
   $core.String get telnyxWebhookSigningKey => $_getSZ(4);
   @$pb.TagNumber(5)
@@ -2955,6 +2979,18 @@ class TelnyxConfig extends $pb.GeneratedMessage {
   $core.bool hasTelnyxWebhookSigningKey() => $_has(4);
   @$pb.TagNumber(5)
   void clearTelnyxWebhookSigningKey() => clearField(5);
+
+  /// Whether `telnyx_webhook_signing_key` above is actually used to verify inbound deliveries --
+  /// same "explicit opt-in, defaults to `false`" reasoning as
+  /// [`TwilioConfig.use_twilio_webhook_signing_key`](#rellm-TwilioConfig).
+  @$pb.TagNumber(6)
+  $core.bool get useTelnyxWebhookSigningKey => $_getBF(5);
+  @$pb.TagNumber(6)
+  set useTelnyxWebhookSigningKey($core.bool v) { $_setBool(5, v); }
+  @$pb.TagNumber(6)
+  $core.bool hasUseTelnyxWebhookSigningKey() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearUseTelnyxWebhookSigningKey() => clearField(6);
 }
 
 /// Bird (https://bird.com, formerly MessageBird) Config -- an alternative SMS verification
@@ -2967,6 +3003,7 @@ class BirdConfig extends $pb.GeneratedMessage {
     $core.String? birdFrom,
     $core.String? birdRegion,
     $core.String? birdWebhookSigningKey,
+    $core.bool? useBirdWebhookSigningKey,
   }) {
     final $result = create();
     if (birdEnabled != null) {
@@ -2984,6 +3021,9 @@ class BirdConfig extends $pb.GeneratedMessage {
     if (birdWebhookSigningKey != null) {
       $result.birdWebhookSigningKey = birdWebhookSigningKey;
     }
+    if (useBirdWebhookSigningKey != null) {
+      $result.useBirdWebhookSigningKey = useBirdWebhookSigningKey;
+    }
     return $result;
   }
   BirdConfig._() : super();
@@ -2996,6 +3036,7 @@ class BirdConfig extends $pb.GeneratedMessage {
     ..aOS(3, _omitFieldNames ? '' : 'birdFrom')
     ..aOS(4, _omitFieldNames ? '' : 'birdRegion')
     ..aOS(5, _omitFieldNames ? '' : 'birdWebhookSigningKey')
+    ..aOB(6, _omitFieldNames ? '' : 'useBirdWebhookSigningKey')
     ..hasRequiredFields = false
   ;
 
@@ -3061,14 +3102,13 @@ class BirdConfig extends $pb.GeneratedMessage {
   @$pb.TagNumber(4)
   void clearBirdRegion() => clearField(4);
 
-  /// Optional -- the Standard Webhooks signing secret (starts with `whsec_`) for the SMS channel
-  /// subscription delivering to `/contact_integrations/bird/receive`, used to verify the
-  /// `webhook-id`/`webhook-timestamp`/`webhook-signature` headers on inbound deliveries (HMAC-SHA256;
-  /// see https://www.standardwebhooks.com and `docs/contact_integrations.md`). Blank/unset means
-  /// inbound deliveries are accepted without signature verification. `optional` (not plain
-  /// `string`) for the same "`Some`/`None` distinguishable from a client without ever seeing the
-  /// real value" reason as
-  /// [`TwilioConfig.twilio_webhook_signing_key`](#rellm-TwilioConfig).
+  /// The Standard Webhooks signing secret (starts with `whsec_`) for the SMS channel subscription
+  /// delivering to `/contact_integrations/bird/receive`, used to verify the
+  /// `webhook-id`/`webhook-timestamp`/`webhook-signature` headers on inbound deliveries
+  /// (HMAC-SHA256; see https://www.standardwebhooks.com and `docs/contact_integrations.md`).
+  /// Write-only, same "always blanked to `""` once written" treatment as every other credential
+  /// here -- see `TwilioConfig.twilio_webhook_signing_key`'s own doc for the full reasoning,
+  /// including why storing a key here doesn't by itself turn verification on.
   @$pb.TagNumber(5)
   $core.String get birdWebhookSigningKey => $_getSZ(4);
   @$pb.TagNumber(5)
@@ -3077,6 +3117,18 @@ class BirdConfig extends $pb.GeneratedMessage {
   $core.bool hasBirdWebhookSigningKey() => $_has(4);
   @$pb.TagNumber(5)
   void clearBirdWebhookSigningKey() => clearField(5);
+
+  /// Whether `bird_webhook_signing_key` above is actually used to verify inbound deliveries -- same
+  /// "explicit opt-in, defaults to `false`" reasoning as
+  /// [`TwilioConfig.use_twilio_webhook_signing_key`](#rellm-TwilioConfig).
+  @$pb.TagNumber(6)
+  $core.bool get useBirdWebhookSigningKey => $_getBF(5);
+  @$pb.TagNumber(6)
+  set useBirdWebhookSigningKey($core.bool v) { $_setBool(5, v); }
+  @$pb.TagNumber(6)
+  $core.bool hasUseBirdWebhookSigningKey() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearUseBirdWebhookSigningKey() => clearField(6);
 }
 
 /// Stripe credentials backing the Marketplace (`market.proto`). Used both to create Checkout

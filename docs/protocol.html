@@ -6493,8 +6493,14 @@ directory</a> is (<code>{name}</code> denotes a
         <tr>
           <td>bird_webhook_signing_key</td>
           <td><a href="#string">string</a></td>
-          <td>optional</td>
-          <td>Optional -- the Standard Webhooks signing secret (starts with <code>whsec_</code>) for the SMS channel subscription delivering to <code>/contact_integrations/bird/receive</code>, used to verify the <code>webhook-id</code>/<code>webhook-timestamp</code>/<code>webhook-signature</code> headers on inbound deliveries (HMAC-SHA256; see <a href="https://www.standardwebhooks.com/">https://www.standardwebhooks.com</a> and <code>docs/contact_integrations.md</code>). Blank/unset means inbound deliveries are accepted without signature verification. <code>optional</code> (not plain <code>string</code>) for the same "<code>Some</code>/<code>None</code> distinguishable from a client without ever seeing the real value" reason as <a href="#rellm-TwilioConfig"><code>TwilioConfig.twilio_webhook_signing_key</code></a>.</td>
+          <td></td>
+          <td>The Standard Webhooks signing secret (starts with <code>whsec_</code>) for the SMS channel subscription delivering to <code>/contact_integrations/bird/receive</code>, used to verify the <code>webhook-id</code>/<code>webhook-timestamp</code>/<code>webhook-signature</code> headers on inbound deliveries (HMAC-SHA256; see <a href="https://www.standardwebhooks.com/">https://www.standardwebhooks.com</a> and <code>docs/contact_integrations.md</code>). Write-only, same "always blanked to <code>&#x26;#34;&#x26;#34;</code> once written" treatment as every other credential here -- see <code>TwilioConfig.twilio_webhook_signing_key</code>'s own doc for the full reasoning, including why storing a key here doesn't by itself turn verification on.</td>
+        </tr>
+        <tr>
+          <td>use_bird_webhook_signing_key</td>
+          <td><a href="#bool">bool</a></td>
+          <td></td>
+          <td>Whether <code>bird_webhook_signing_key</code> above is actually used to verify inbound deliveries -- same "explicit opt-in, defaults to <code>false</code>" reasoning as <a href="#rellm-TwilioConfig"><code>TwilioConfig.use_twilio_webhook_signing_key</code></a>.</td>
         </tr>
       </tbody>
     </table>
@@ -7348,7 +7354,7 @@ directory</a> is (<code>{name}</code> denotes a
           <td>preferred_verification_apis</td>
           <td><a href="#rellm-ContactVerificationAPI">ContactVerificationAPI</a></td>
           <td>repeated</td>
-          <td>A server-preferred order of <a href="#rellm-ContactVerificationAPI"><code>ContactVerificationAPI</code></a> providers to try first when more than one of <code>twilio_config</code>/<code>bird_config</code>/<code>telnyx_config</code> below is enabled -- see <code>contact_verification::available_verification_apis</code> for the full preference-then-fallback ordering this feeds into <a href="#rellm-ServerConfiguration"><code>ServerConfiguration.available_verification_apis</code></a> below. Even when this is blank, an enabled provider is still tried (in the fixed default order Twilio/Bird/Telnyx) -- this field only matters when more than one is enabled and the admin wants a specific one tried first. Only serialized for admin users.</td>
+          <td>A server-preferred order of <a href="#rellm-ContactVerificationAPI"><code>ContactVerificationAPI</code></a> providers to try first when more than one of <code>twilio_config</code>/<code>bird_config</code>/<code>telnyx_config</code> below is enabled -- see <code>contact_verification::available_verification_apis</code> for the full preference-then-fallback ordering this feeds into <a href="#rellm-ServerConfiguration"><code>ServerConfiguration.available_verification_apis</code></a> below. Even when this is blank, an enabled provider is still tried (in the fixed default order Telnyx/Bird/Twilio) -- this field only matters when more than one is enabled and the admin wants a specific one tried first. Only serialized for admin users.</td>
         </tr>
         <tr>
           <td>available_verification_apis</td>
@@ -7608,8 +7614,14 @@ directory</a> is (<code>{name}</code> denotes a
         <tr>
           <td>telnyx_webhook_signing_key</td>
           <td><a href="#string">string</a></td>
-          <td>optional</td>
-          <td>Optional -- Telnyx's account-level public key (Mission Control Portal -> Keys &#x26; Credentials -> Public Key), used to verify the <code>telnyx-signature-ed25519</code>/<code>telnyx-timestamp</code> headers on inbound deliveries to <code>/contact_integrations/telnyx/receive</code> (Ed25519; see <a href="https://developers.telnyx.com/docs/messaging/messages/receiving-webhooks">https://developers.telnyx.com/docs/messaging/messages/receiving-webhooks</a> and <code>docs/contact_integrations.md</code>). Actually a public key, not a secret, but kept write-only (never serialized once written) for the same "don't echo config back" treatment as every other credential here. Unset means inbound deliveries are accepted without signature verification. <code>optional</code> (not plain <code>string</code>) for the same "<code>Some</code>/<code>None</code> distinguishable from a client without ever seeing the real value" reason as <a href="#rellm-TwilioConfig"><code>TwilioConfig.twilio_webhook_signing_key</code></a>.</td>
+          <td></td>
+          <td>Telnyx's account-level public key (Mission Control Portal -> Keys &#x26; Credentials -> Public Key), used to verify the <code>telnyx-signature-ed25519</code>/<code>telnyx-timestamp</code> headers on inbound deliveries to <code>/contact_integrations/telnyx/receive</code> (Ed25519; see <a href="https://developers.telnyx.com/docs/messaging/messages/receiving-webhooks">https://developers.telnyx.com/docs/messaging/messages/receiving-webhooks</a> and <code>docs/contact_integrations.md</code>). Actually a public key, not a secret, but kept write-only (always blanked to <code>&#x26;#34;&#x26;#34;</code> once written) for the same "don't echo config back" treatment as every other credential here -- see <code>TwilioConfig.twilio_webhook_signing_key</code>'s own doc for the full reasoning, including why storing a key here doesn't by itself turn verification on.</td>
+        </tr>
+        <tr>
+          <td>use_telnyx_webhook_signing_key</td>
+          <td><a href="#bool">bool</a></td>
+          <td></td>
+          <td>Whether <code>telnyx_webhook_signing_key</code> above is actually used to verify inbound deliveries -- same "explicit opt-in, defaults to <code>false</code>" reasoning as <a href="#rellm-TwilioConfig"><code>TwilioConfig.use_twilio_webhook_signing_key</code></a>.</td>
         </tr>
       </tbody>
     </table>
@@ -7672,8 +7684,14 @@ directory</a> is (<code>{name}</code> denotes a
         <tr>
           <td>twilio_webhook_signing_key</td>
           <td><a href="#string">string</a></td>
-          <td>optional</td>
-          <td>Optional -- the Twilio Account's Auth Token, used <em>only</em> to verify the <code>X-Twilio-Signature</code> header on inbound deliveries to <code>/contact_integrations/twilio/receive</code> (see <a href="https://www.twilio.com/docs/usage/webhooks/webhooks-security">https://www.twilio.com/docs/usage/webhooks/webhooks-security</a> and <code>docs/contact_integrations.md</code>). Never used to authenticate outbound API calls -- this message's own doc explains why the Auth Token is deliberately excluded from that role; this is the one narrow exception, since signature verification is the one thing only the Auth Token (not an API Key) can do. Unset means inbound deliveries are accepted without signature verification. Write-only, like every other credential here, but distinctly from those: <code>optional</code> so a client can tell <em>whether</em> a key is configured (<code>Some</code>/<code>None</code>) without ever seeing its real value -- once set, <code>to_proto</code> blanks this to <code>Some(&#x26;#34;&#x26;#34;)</code> (not <code>None</code>), so "configured but hidden" and "never configured" stay distinguishable. Sending an empty value back on <code>ConfigureServer</code> means "leave whatever's already stored alone," same as every other write-only field's blank-means-no-op rule.</td>
+          <td></td>
+          <td>The Twilio Account's Auth Token, used <em>only</em> to verify the <code>X-Twilio-Signature</code> header on inbound deliveries to <code>/contact_integrations/twilio/receive</code> (see <a href="https://www.twilio.com/docs/usage/webhooks/webhooks-security">https://www.twilio.com/docs/usage/webhooks/webhooks-security</a> and <code>docs/contact_integrations.md</code>). Never used to authenticate outbound API calls -- this message's own doc explains why the Auth Token is deliberately excluded from that role; this is the one narrow exception, since signature verification is the one thing only the Auth Token (not an API Key) can do. Write-only like every other credential here -- always blanked to <code>&#x26;#34;&#x26;#34;</code> once written, so a client can never read the real value back. Sending an empty value back on <code>ConfigureServer</code> means "leave whatever's already stored alone," same as every other write-only field's blank-means-no-op rule. Whether this key is actually <em>used</em> to verify inbound deliveries is controlled independently by <code>use_twilio_webhook_signing_key</code> below -- storing a key here doesn't by itself turn verification on.</td>
+        </tr>
+        <tr>
+          <td>use_twilio_webhook_signing_key</td>
+          <td><a href="#bool">bool</a></td>
+          <td></td>
+          <td>Whether <code>twilio_webhook_signing_key</code> above is actually used to verify inbound <code>/contact_integrations/twilio/receive</code> deliveries. Defaults to <code>false</code> (unverified) even once a key is stored -- an admin must explicitly opt in, same "explicit switch, not implicit from presence" reasoning <code>ContactIntegrationsTab</code>'s own "Use Webhook Signing Key" toggle exists for. <code>false</code> while this is <code>false</code> means inbound deliveries are accepted without signature verification, same fail-safe-direction reasoning as before (see this message's own doc and <code>docs/contact_integrations.md</code>) -- the only effect an unauthenticated/spoofed delivery can have either way is <em>revoking</em> consent, never granting it.</td>
         </tr>
       </tbody>
     </table>

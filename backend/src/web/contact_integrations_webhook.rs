@@ -10,9 +10,10 @@
 //! has no two-way SMS conversation feature to route a reply into.
 //!
 //! Signature verification is optional per provider, unlike `web::stripe_webhook`'s always-on
-//! `Stripe-Signature` check: each of `TwilioConfig.twilio_webhook_signing_key`/
-//! `TelnyxConfig.telnyx_webhook_signing_key`/`BirdConfig.bird_webhook_signing_key` is blank by
-//! default, in which case deliveries are accepted unverified. Once an admin sets one (see
+//! `Stripe-Signature` check: each of `TwilioConfig.use_twilio_webhook_signing_key`/
+//! `TelnyxConfig.use_telnyx_webhook_signing_key`/`BirdConfig.use_bird_webhook_signing_key` is
+//! `false` by default, in which case deliveries are accepted unverified. Once an admin sets a
+//! signing key *and* flips that provider's "Use Webhook Signing Key" toggle on (see
 //! `docs/contact_integrations.md`), that provider's deliveries are verified and an invalid/missing
 //! signature is rejected with `401`. This graduated design exists because the only effect an
 //! unauthenticated (or spoofed) delivery can have either way is *revoking* consent, never granting
@@ -67,8 +68,8 @@ async fn twilio_receive(
         Err(_) => return Status::InternalServerError,
     };
     if let Some(signing_key) = server_twilio_config(&mut conn)
-        .and_then(|c| c.twilio_webhook_signing_key)
-        .filter(|k| !k.is_empty())
+        .filter(|c| c.use_twilio_webhook_signing_key && !c.twilio_webhook_signing_key.is_empty())
+        .map(|c| c.twilio_webhook_signing_key)
     {
         let (Some(signature_header), Some(host_header)) = (signature_header, host_header) else {
             return Status::Unauthorized;
@@ -101,8 +102,8 @@ async fn telnyx_receive(
         Err(_) => return Status::InternalServerError,
     };
     if let Some(signing_key) = server_telnyx_config(&mut conn)
-        .and_then(|c| c.telnyx_webhook_signing_key)
-        .filter(|k| !k.is_empty())
+        .filter(|c| c.use_telnyx_webhook_signing_key && !c.telnyx_webhook_signing_key.is_empty())
+        .map(|c| c.telnyx_webhook_signing_key)
     {
         let Some(webhook_headers) = webhook_headers else {
             return Status::Unauthorized;
@@ -152,8 +153,8 @@ async fn bird_receive(
         Err(_) => return Status::InternalServerError,
     };
     if let Some(signing_key) = server_bird_config(&mut conn)
-        .and_then(|c| c.bird_webhook_signing_key)
-        .filter(|k| !k.is_empty())
+        .filter(|c| c.use_bird_webhook_signing_key && !c.bird_webhook_signing_key.is_empty())
+        .map(|c| c.bird_webhook_signing_key)
     {
         let Some(webhook_headers) = webhook_headers else {
             return Status::Unauthorized;

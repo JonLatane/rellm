@@ -610,7 +610,7 @@ export interface ServerConfiguration {
    * preference-then-fallback ordering this feeds into
    * [`ServerConfiguration.available_verification_apis`](#rellm-ServerConfiguration) below. Even
    * when this is blank, an enabled provider is still tried (in the fixed default order
-   * Twilio/Bird/Telnyx) -- this field only matters when more than one is enabled and the admin
+   * Telnyx/Bird/Twilio) -- this field only matters when more than one is enabled and the admin
    * wants a specific one tried first. Only serialized for admin users.
    */
   preferredVerificationApis: ContactVerificationAPI[];
@@ -1278,21 +1278,31 @@ export interface TwilioConfig {
   /** The Twilio-provisioned sending number for outbound verification SMS. Not secret. */
   twilioFromNumber: string;
   /**
-   * Optional -- the Twilio Account's Auth Token, used *only* to verify the `X-Twilio-Signature`
-   * header on inbound deliveries to `/contact_integrations/twilio/receive` (see
+   * The Twilio Account's Auth Token, used *only* to verify the `X-Twilio-Signature` header on
+   * inbound deliveries to `/contact_integrations/twilio/receive` (see
    * https://www.twilio.com/docs/usage/webhooks/webhooks-security and
    * `docs/contact_integrations.md`). Never used to authenticate outbound API calls -- this
    * message's own doc explains why the Auth Token is deliberately excluded from that role; this
    * is the one narrow exception, since signature verification is the one thing only the Auth
-   * Token (not an API Key) can do. Unset means inbound deliveries are accepted without signature
-   * verification. Write-only, like every other credential here, but distinctly from those:
-   * `optional` so a client can tell *whether* a key is configured (`Some`/`None`) without ever
-   * seeing its real value -- once set, `to_proto` blanks this to `Some("")` (not `None`), so
-   * "configured but hidden" and "never configured" stay distinguishable. Sending an empty value
+   * Token (not an API Key) can do. Write-only like every other credential here -- always blanked
+   * to `""` once written, so a client can never read the real value back. Sending an empty value
    * back on `ConfigureServer` means "leave whatever's already stored alone," same as every other
-   * write-only field's blank-means-no-op rule.
+   * write-only field's blank-means-no-op rule. Whether this key is actually *used* to verify
+   * inbound deliveries is controlled independently by `use_twilio_webhook_signing_key` below --
+   * storing a key here doesn't by itself turn verification on.
    */
-  twilioWebhookSigningKey?: string | undefined;
+  twilioWebhookSigningKey: string;
+  /**
+   * Whether `twilio_webhook_signing_key` above is actually used to verify inbound
+   * `/contact_integrations/twilio/receive` deliveries. Defaults to `false` (unverified) even once
+   * a key is stored -- an admin must explicitly opt in, same "explicit switch, not implicit from
+   * presence" reasoning `ContactIntegrationsTab`'s own "Use Webhook Signing Key" toggle exists
+   * for. `false` while this is `false` means inbound deliveries are accepted without signature
+   * verification, same fail-safe-direction reasoning as before (see this message's own doc and
+   * `docs/contact_integrations.md`) -- the only effect an unauthenticated/spoofed delivery can
+   * have either way is *revoking* consent, never granting it.
+   */
+  useTwilioWebhookSigningKey: boolean;
 }
 
 /**
@@ -1321,18 +1331,22 @@ export interface TelnyxConfig {
    */
   telnyxMessagingProfileId: string;
   /**
-   * Optional -- Telnyx's account-level public key (Mission Control Portal -> Keys & Credentials ->
-   * Public Key), used to verify the `telnyx-signature-ed25519`/`telnyx-timestamp` headers on
-   * inbound deliveries to `/contact_integrations/telnyx/receive` (Ed25519; see
+   * Telnyx's account-level public key (Mission Control Portal -> Keys & Credentials -> Public
+   * Key), used to verify the `telnyx-signature-ed25519`/`telnyx-timestamp` headers on inbound
+   * deliveries to `/contact_integrations/telnyx/receive` (Ed25519; see
    * https://developers.telnyx.com/docs/messaging/messages/receiving-webhooks and
    * `docs/contact_integrations.md`). Actually a public key, not a secret, but kept write-only
-   * (never serialized once written) for the same "don't echo config back" treatment as every
-   * other credential here. Unset means inbound deliveries are accepted without signature
-   * verification. `optional` (not plain `string`) for the same "`Some`/`None` distinguishable from
-   * a client without ever seeing the real value" reason as
-   * [`TwilioConfig.twilio_webhook_signing_key`](#rellm-TwilioConfig).
+   * (always blanked to `""` once written) for the same "don't echo config back" treatment as
+   * every other credential here -- see `TwilioConfig.twilio_webhook_signing_key`'s own doc for the
+   * full reasoning, including why storing a key here doesn't by itself turn verification on.
    */
-  telnyxWebhookSigningKey?: string | undefined;
+  telnyxWebhookSigningKey: string;
+  /**
+   * Whether `telnyx_webhook_signing_key` above is actually used to verify inbound deliveries --
+   * same "explicit opt-in, defaults to `false`" reasoning as
+   * [`TwilioConfig.use_twilio_webhook_signing_key`](#rellm-TwilioConfig).
+   */
+  useTelnyxWebhookSigningKey: boolean;
 }
 
 /**
@@ -1355,16 +1369,21 @@ export interface BirdConfig {
    */
   birdRegion: string;
   /**
-   * Optional -- the Standard Webhooks signing secret (starts with `whsec_`) for the SMS channel
-   * subscription delivering to `/contact_integrations/bird/receive`, used to verify the
-   * `webhook-id`/`webhook-timestamp`/`webhook-signature` headers on inbound deliveries (HMAC-SHA256;
-   * see https://www.standardwebhooks.com and `docs/contact_integrations.md`). Blank/unset means
-   * inbound deliveries are accepted without signature verification. `optional` (not plain
-   * `string`) for the same "`Some`/`None` distinguishable from a client without ever seeing the
-   * real value" reason as
-   * [`TwilioConfig.twilio_webhook_signing_key`](#rellm-TwilioConfig).
+   * The Standard Webhooks signing secret (starts with `whsec_`) for the SMS channel subscription
+   * delivering to `/contact_integrations/bird/receive`, used to verify the
+   * `webhook-id`/`webhook-timestamp`/`webhook-signature` headers on inbound deliveries
+   * (HMAC-SHA256; see https://www.standardwebhooks.com and `docs/contact_integrations.md`).
+   * Write-only, same "always blanked to `""` once written" treatment as every other credential
+   * here -- see `TwilioConfig.twilio_webhook_signing_key`'s own doc for the full reasoning,
+   * including why storing a key here doesn't by itself turn verification on.
    */
-  birdWebhookSigningKey?: string | undefined;
+  birdWebhookSigningKey: string;
+  /**
+   * Whether `bird_webhook_signing_key` above is actually used to verify inbound deliveries -- same
+   * "explicit opt-in, defaults to `false`" reasoning as
+   * [`TwilioConfig.use_twilio_webhook_signing_key`](#rellm-TwilioConfig).
+   */
+  useBirdWebhookSigningKey: boolean;
 }
 
 /**
@@ -4409,7 +4428,8 @@ function createBaseTwilioConfig(): TwilioConfig {
     twilioApiKeySid: "",
     twilioApiKeySecret: "",
     twilioFromNumber: "",
-    twilioWebhookSigningKey: undefined,
+    twilioWebhookSigningKey: "",
+    useTwilioWebhookSigningKey: false,
   };
 }
 
@@ -4430,8 +4450,11 @@ export const TwilioConfig: MessageFns<TwilioConfig> = {
     if (message.twilioFromNumber !== "") {
       writer.uint32(34).string(message.twilioFromNumber);
     }
-    if (message.twilioWebhookSigningKey !== undefined) {
+    if (message.twilioWebhookSigningKey !== "") {
       writer.uint32(50).string(message.twilioWebhookSigningKey);
+    }
+    if (message.useTwilioWebhookSigningKey !== false) {
+      writer.uint32(56).bool(message.useTwilioWebhookSigningKey);
     }
     return writer;
   },
@@ -4491,6 +4514,14 @@ export const TwilioConfig: MessageFns<TwilioConfig> = {
           message.twilioWebhookSigningKey = reader.string();
           continue;
         }
+        case 7: {
+          if (tag !== 56) {
+            break;
+          }
+
+          message.useTwilioWebhookSigningKey = reader.bool();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -4509,7 +4540,10 @@ export const TwilioConfig: MessageFns<TwilioConfig> = {
       twilioFromNumber: isSet(object.twilioFromNumber) ? globalThis.String(object.twilioFromNumber) : "",
       twilioWebhookSigningKey: isSet(object.twilioWebhookSigningKey)
         ? globalThis.String(object.twilioWebhookSigningKey)
-        : undefined,
+        : "",
+      useTwilioWebhookSigningKey: isSet(object.useTwilioWebhookSigningKey)
+        ? globalThis.Boolean(object.useTwilioWebhookSigningKey)
+        : false,
     };
   },
 
@@ -4530,8 +4564,11 @@ export const TwilioConfig: MessageFns<TwilioConfig> = {
     if (message.twilioFromNumber !== "") {
       obj.twilioFromNumber = message.twilioFromNumber;
     }
-    if (message.twilioWebhookSigningKey !== undefined) {
+    if (message.twilioWebhookSigningKey !== "") {
       obj.twilioWebhookSigningKey = message.twilioWebhookSigningKey;
+    }
+    if (message.useTwilioWebhookSigningKey !== false) {
+      obj.useTwilioWebhookSigningKey = message.useTwilioWebhookSigningKey;
     }
     return obj;
   },
@@ -4546,7 +4583,8 @@ export const TwilioConfig: MessageFns<TwilioConfig> = {
     message.twilioApiKeySid = object.twilioApiKeySid ?? "";
     message.twilioApiKeySecret = object.twilioApiKeySecret ?? "";
     message.twilioFromNumber = object.twilioFromNumber ?? "";
-    message.twilioWebhookSigningKey = object.twilioWebhookSigningKey ?? undefined;
+    message.twilioWebhookSigningKey = object.twilioWebhookSigningKey ?? "";
+    message.useTwilioWebhookSigningKey = object.useTwilioWebhookSigningKey ?? false;
     return message;
   },
 };
@@ -4557,7 +4595,8 @@ function createBaseTelnyxConfig(): TelnyxConfig {
     telnyxApiKey: "",
     telnyxFromNumber: "",
     telnyxMessagingProfileId: "",
-    telnyxWebhookSigningKey: undefined,
+    telnyxWebhookSigningKey: "",
+    useTelnyxWebhookSigningKey: false,
   };
 }
 
@@ -4575,8 +4614,11 @@ export const TelnyxConfig: MessageFns<TelnyxConfig> = {
     if (message.telnyxMessagingProfileId !== "") {
       writer.uint32(34).string(message.telnyxMessagingProfileId);
     }
-    if (message.telnyxWebhookSigningKey !== undefined) {
+    if (message.telnyxWebhookSigningKey !== "") {
       writer.uint32(42).string(message.telnyxWebhookSigningKey);
+    }
+    if (message.useTelnyxWebhookSigningKey !== false) {
+      writer.uint32(48).bool(message.useTelnyxWebhookSigningKey);
     }
     return writer;
   },
@@ -4628,6 +4670,14 @@ export const TelnyxConfig: MessageFns<TelnyxConfig> = {
           message.telnyxWebhookSigningKey = reader.string();
           continue;
         }
+        case 6: {
+          if (tag !== 48) {
+            break;
+          }
+
+          message.useTelnyxWebhookSigningKey = reader.bool();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -4647,7 +4697,10 @@ export const TelnyxConfig: MessageFns<TelnyxConfig> = {
         : "",
       telnyxWebhookSigningKey: isSet(object.telnyxWebhookSigningKey)
         ? globalThis.String(object.telnyxWebhookSigningKey)
-        : undefined,
+        : "",
+      useTelnyxWebhookSigningKey: isSet(object.useTelnyxWebhookSigningKey)
+        ? globalThis.Boolean(object.useTelnyxWebhookSigningKey)
+        : false,
     };
   },
 
@@ -4665,8 +4718,11 @@ export const TelnyxConfig: MessageFns<TelnyxConfig> = {
     if (message.telnyxMessagingProfileId !== "") {
       obj.telnyxMessagingProfileId = message.telnyxMessagingProfileId;
     }
-    if (message.telnyxWebhookSigningKey !== undefined) {
+    if (message.telnyxWebhookSigningKey !== "") {
       obj.telnyxWebhookSigningKey = message.telnyxWebhookSigningKey;
+    }
+    if (message.useTelnyxWebhookSigningKey !== false) {
+      obj.useTelnyxWebhookSigningKey = message.useTelnyxWebhookSigningKey;
     }
     return obj;
   },
@@ -4680,13 +4736,21 @@ export const TelnyxConfig: MessageFns<TelnyxConfig> = {
     message.telnyxApiKey = object.telnyxApiKey ?? "";
     message.telnyxFromNumber = object.telnyxFromNumber ?? "";
     message.telnyxMessagingProfileId = object.telnyxMessagingProfileId ?? "";
-    message.telnyxWebhookSigningKey = object.telnyxWebhookSigningKey ?? undefined;
+    message.telnyxWebhookSigningKey = object.telnyxWebhookSigningKey ?? "";
+    message.useTelnyxWebhookSigningKey = object.useTelnyxWebhookSigningKey ?? false;
     return message;
   },
 };
 
 function createBaseBirdConfig(): BirdConfig {
-  return { birdEnabled: false, birdAccessKey: "", birdFrom: "", birdRegion: "", birdWebhookSigningKey: undefined };
+  return {
+    birdEnabled: false,
+    birdAccessKey: "",
+    birdFrom: "",
+    birdRegion: "",
+    birdWebhookSigningKey: "",
+    useBirdWebhookSigningKey: false,
+  };
 }
 
 export const BirdConfig: MessageFns<BirdConfig> = {
@@ -4703,8 +4767,11 @@ export const BirdConfig: MessageFns<BirdConfig> = {
     if (message.birdRegion !== "") {
       writer.uint32(34).string(message.birdRegion);
     }
-    if (message.birdWebhookSigningKey !== undefined) {
+    if (message.birdWebhookSigningKey !== "") {
       writer.uint32(42).string(message.birdWebhookSigningKey);
+    }
+    if (message.useBirdWebhookSigningKey !== false) {
+      writer.uint32(48).bool(message.useBirdWebhookSigningKey);
     }
     return writer;
   },
@@ -4756,6 +4823,14 @@ export const BirdConfig: MessageFns<BirdConfig> = {
           message.birdWebhookSigningKey = reader.string();
           continue;
         }
+        case 6: {
+          if (tag !== 48) {
+            break;
+          }
+
+          message.useBirdWebhookSigningKey = reader.bool();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -4771,9 +4846,10 @@ export const BirdConfig: MessageFns<BirdConfig> = {
       birdAccessKey: isSet(object.birdAccessKey) ? globalThis.String(object.birdAccessKey) : "",
       birdFrom: isSet(object.birdFrom) ? globalThis.String(object.birdFrom) : "",
       birdRegion: isSet(object.birdRegion) ? globalThis.String(object.birdRegion) : "",
-      birdWebhookSigningKey: isSet(object.birdWebhookSigningKey)
-        ? globalThis.String(object.birdWebhookSigningKey)
-        : undefined,
+      birdWebhookSigningKey: isSet(object.birdWebhookSigningKey) ? globalThis.String(object.birdWebhookSigningKey) : "",
+      useBirdWebhookSigningKey: isSet(object.useBirdWebhookSigningKey)
+        ? globalThis.Boolean(object.useBirdWebhookSigningKey)
+        : false,
     };
   },
 
@@ -4791,8 +4867,11 @@ export const BirdConfig: MessageFns<BirdConfig> = {
     if (message.birdRegion !== "") {
       obj.birdRegion = message.birdRegion;
     }
-    if (message.birdWebhookSigningKey !== undefined) {
+    if (message.birdWebhookSigningKey !== "") {
       obj.birdWebhookSigningKey = message.birdWebhookSigningKey;
+    }
+    if (message.useBirdWebhookSigningKey !== false) {
+      obj.useBirdWebhookSigningKey = message.useBirdWebhookSigningKey;
     }
     return obj;
   },
@@ -4806,7 +4885,8 @@ export const BirdConfig: MessageFns<BirdConfig> = {
     message.birdAccessKey = object.birdAccessKey ?? "";
     message.birdFrom = object.birdFrom ?? "";
     message.birdRegion = object.birdRegion ?? "";
-    message.birdWebhookSigningKey = object.birdWebhookSigningKey ?? undefined;
+    message.birdWebhookSigningKey = object.birdWebhookSigningKey ?? "";
+    message.useBirdWebhookSigningKey = object.useBirdWebhookSigningKey ?? false;
     return message;
   },
 };

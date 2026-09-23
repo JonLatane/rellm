@@ -701,10 +701,8 @@ const TwilioConfig$json = {
     {'1': 'twilio_api_key_sid', '3': 5, '4': 1, '5': 9, '10': 'twilioApiKeySid'},
     {'1': 'twilio_api_key_secret', '3': 2, '4': 1, '5': 9, '10': 'twilioApiKeySecret'},
     {'1': 'twilio_from_number', '3': 4, '4': 1, '5': 9, '10': 'twilioFromNumber'},
-    {'1': 'twilio_webhook_signing_key', '3': 6, '4': 1, '5': 9, '9': 0, '10': 'twilioWebhookSigningKey', '17': true},
-  ],
-  '8': [
-    {'1': '_twilio_webhook_signing_key'},
+    {'1': 'twilio_webhook_signing_key', '3': 6, '4': 1, '5': 9, '10': 'twilioWebhookSigningKey'},
+    {'1': 'use_twilio_webhook_signing_key', '3': 7, '4': 1, '5': 8, '10': 'useTwilioWebhookSigningKey'},
   ],
 };
 
@@ -714,9 +712,9 @@ final $typed_data.Uint8List twilioConfigDescriptor = $convert.base64Decode(
     'oSdHdpbGlvX2FjY291bnRfc2lkGAMgASgJUhB0d2lsaW9BY2NvdW50U2lkEisKEnR3aWxpb19h'
     'cGlfa2V5X3NpZBgFIAEoCVIPdHdpbGlvQXBpS2V5U2lkEjEKFXR3aWxpb19hcGlfa2V5X3NlY3'
     'JldBgCIAEoCVISdHdpbGlvQXBpS2V5U2VjcmV0EiwKEnR3aWxpb19mcm9tX251bWJlchgEIAEo'
-    'CVIQdHdpbGlvRnJvbU51bWJlchJAChp0d2lsaW9fd2ViaG9va19zaWduaW5nX2tleRgGIAEoCU'
-    'gAUhd0d2lsaW9XZWJob29rU2lnbmluZ0tleYgBAUIdChtfdHdpbGlvX3dlYmhvb2tfc2lnbmlu'
-    'Z19rZXk=');
+    'CVIQdHdpbGlvRnJvbU51bWJlchI7Chp0d2lsaW9fd2ViaG9va19zaWduaW5nX2tleRgGIAEoCV'
+    'IXdHdpbGlvV2ViaG9va1NpZ25pbmdLZXkSQgoedXNlX3R3aWxpb193ZWJob29rX3NpZ25pbmdf'
+    'a2V5GAcgASgIUhp1c2VUd2lsaW9XZWJob29rU2lnbmluZ0tleQ==');
 
 @$core.Deprecated('Use telnyxConfigDescriptor instead')
 const TelnyxConfig$json = {
@@ -726,10 +724,8 @@ const TelnyxConfig$json = {
     {'1': 'telnyx_api_key', '3': 2, '4': 1, '5': 9, '10': 'telnyxApiKey'},
     {'1': 'telnyx_from_number', '3': 3, '4': 1, '5': 9, '10': 'telnyxFromNumber'},
     {'1': 'telnyx_messaging_profile_id', '3': 4, '4': 1, '5': 9, '10': 'telnyxMessagingProfileId'},
-    {'1': 'telnyx_webhook_signing_key', '3': 5, '4': 1, '5': 9, '9': 0, '10': 'telnyxWebhookSigningKey', '17': true},
-  ],
-  '8': [
-    {'1': '_telnyx_webhook_signing_key'},
+    {'1': 'telnyx_webhook_signing_key', '3': 5, '4': 1, '5': 9, '10': 'telnyxWebhookSigningKey'},
+    {'1': 'use_telnyx_webhook_signing_key', '3': 6, '4': 1, '5': 8, '10': 'useTelnyxWebhookSigningKey'},
   ],
 };
 
@@ -738,9 +734,9 @@ final $typed_data.Uint8List telnyxConfigDescriptor = $convert.base64Decode(
     'CgxUZWxueXhDb25maWcSJQoOdGVsbnl4X2VuYWJsZWQYASABKAhSDXRlbG55eEVuYWJsZWQSJA'
     'oOdGVsbnl4X2FwaV9rZXkYAiABKAlSDHRlbG55eEFwaUtleRIsChJ0ZWxueXhfZnJvbV9udW1i'
     'ZXIYAyABKAlSEHRlbG55eEZyb21OdW1iZXISPQobdGVsbnl4X21lc3NhZ2luZ19wcm9maWxlX2'
-    'lkGAQgASgJUhh0ZWxueXhNZXNzYWdpbmdQcm9maWxlSWQSQAoadGVsbnl4X3dlYmhvb2tfc2ln'
-    'bmluZ19rZXkYBSABKAlIAFIXdGVsbnl4V2ViaG9va1NpZ25pbmdLZXmIAQFCHQobX3RlbG55eF'
-    '93ZWJob29rX3NpZ25pbmdfa2V5');
+    'lkGAQgASgJUhh0ZWxueXhNZXNzYWdpbmdQcm9maWxlSWQSOwoadGVsbnl4X3dlYmhvb2tfc2ln'
+    'bmluZ19rZXkYBSABKAlSF3RlbG55eFdlYmhvb2tTaWduaW5nS2V5EkIKHnVzZV90ZWxueXhfd2'
+    'ViaG9va19zaWduaW5nX2tleRgGIAEoCFIadXNlVGVsbnl4V2ViaG9va1NpZ25pbmdLZXk=');
 
 @$core.Deprecated('Use birdConfigDescriptor instead')
 const BirdConfig$json = {
@@ -750,10 +746,8 @@ const BirdConfig$json = {
     {'1': 'bird_access_key', '3': 2, '4': 1, '5': 9, '10': 'birdAccessKey'},
     {'1': 'bird_from', '3': 3, '4': 1, '5': 9, '10': 'birdFrom'},
     {'1': 'bird_region', '3': 4, '4': 1, '5': 9, '10': 'birdRegion'},
-    {'1': 'bird_webhook_signing_key', '3': 5, '4': 1, '5': 9, '9': 0, '10': 'birdWebhookSigningKey', '17': true},
-  ],
-  '8': [
-    {'1': '_bird_webhook_signing_key'},
+    {'1': 'bird_webhook_signing_key', '3': 5, '4': 1, '5': 9, '10': 'birdWebhookSigningKey'},
+    {'1': 'use_bird_webhook_signing_key', '3': 6, '4': 1, '5': 8, '10': 'useBirdWebhookSigningKey'},
   ],
 };
 
@@ -761,9 +755,9 @@ const BirdConfig$json = {
 final $typed_data.Uint8List birdConfigDescriptor = $convert.base64Decode(
     'CgpCaXJkQ29uZmlnEiEKDGJpcmRfZW5hYmxlZBgBIAEoCFILYmlyZEVuYWJsZWQSJgoPYmlyZF'
     '9hY2Nlc3Nfa2V5GAIgASgJUg1iaXJkQWNjZXNzS2V5EhsKCWJpcmRfZnJvbRgDIAEoCVIIYmly'
-    'ZEZyb20SHwoLYmlyZF9yZWdpb24YBCABKAlSCmJpcmRSZWdpb24SPAoYYmlyZF93ZWJob29rX3'
-    'NpZ25pbmdfa2V5GAUgASgJSABSFWJpcmRXZWJob29rU2lnbmluZ0tleYgBAUIbChlfYmlyZF93'
-    'ZWJob29rX3NpZ25pbmdfa2V5');
+    'ZEZyb20SHwoLYmlyZF9yZWdpb24YBCABKAlSCmJpcmRSZWdpb24SNwoYYmlyZF93ZWJob29rX3'
+    'NpZ25pbmdfa2V5GAUgASgJUhViaXJkV2ViaG9va1NpZ25pbmdLZXkSPgocdXNlX2JpcmRfd2Vi'
+    'aG9va19zaWduaW5nX2tleRgGIAEoCFIYdXNlQmlyZFdlYmhvb2tTaWduaW5nS2V5');
 
 @$core.Deprecated('Use stripeConfigDescriptor instead')
 const StripeConfig$json = {

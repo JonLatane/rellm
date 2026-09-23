@@ -9,7 +9,7 @@
 //! `Permission` lists are -- a JSON array of the enum's string names, so it's directly
 //! admin-DB-editable too) lets an admin pick which provider is tried first when more than one is
 //! enabled; whichever *available* (enabled+configured) providers aren't explicitly ordered still
-//! get tried, in the fixed default order [Twilio, Bird, Telnyx], after the explicitly preferred
+//! get tried, in the fixed default order [Telnyx, Bird, Twilio], after the explicitly preferred
 //! ones -- see that field's own doc in `server_configuration.proto`.
 
 use tonic::{Code, Status};
@@ -98,8 +98,8 @@ pub fn preferred_verification_apis(conn: &mut PgPooledConnection) -> Vec<Contact
 
 /// The server's currently *available* (enabled+configured) providers, in the order they'd actually
 /// be tried: `preferred_verification_apis` first (filtered to only those that are actually
-/// available), then any other available provider in the fixed default order [Twilio, Bird] that
-/// wasn't already covered by the preference list. Always in this order regardless of whether
+/// available), then any other available provider in the fixed default order [Telnyx, Bird, Twilio]
+/// that wasn't already covered by the preference list. Always in this order regardless of whether
 /// `preferred_verification_apis` is admin-visible -- `ServerConfiguration.available_verification_apis`
 /// (this function's proto-facing counterpart) is serialized to every caller, unlike
 /// `preferred_verification_apis`/`twilio_config`/`bird_config` themselves.
@@ -118,9 +118,9 @@ pub fn available_verification_apis(conn: &mut PgPooledConnection) -> Vec<Contact
         .filter(is_available)
         .collect();
     for api in [
-        ContactVerificationApi::Twilio,
-        ContactVerificationApi::Bird,
         ContactVerificationApi::Telnyx,
+        ContactVerificationApi::Bird,
+        ContactVerificationApi::Twilio,
     ] {
         if is_available(&api) && !result.contains(&api) {
             result.push(api);

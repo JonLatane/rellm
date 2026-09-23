@@ -7,20 +7,6 @@ use crate::{
     marshaling::*, models, protos, rpcs::get_server_configuration_model, rpcs::validations::*,
 };
 
-/// Merge-on-blank for an `optional string` secret (the webhook-signing-key fields) -- an incoming
-/// `None` or empty string means "leave whatever's already stored alone" (same blank-means-no-op
-/// rule as every other write-only field here), anything else is a genuine new value to store.
-/// Unlike those other fields (plain `string`, so `unwrap_or_default()` alone expresses this), this
-/// one is `Option<String>` specifically so `None` (never configured) survives round-tripping
-/// distinctly from `Some(String::new())` (configured, hidden) -- see
-/// `TwilioConfig.twilio_webhook_signing_key`'s own doc.
-fn merge_optional_secret(incoming: Option<String>, existing: Option<String>) -> Option<String> {
-    match incoming {
-        Some(value) if !value.is_empty() => Some(value),
-        _ => existing,
-    }
-}
-
 pub fn configure_server(
     request: protos::ServerConfiguration,
     user: &models::User,
@@ -109,8 +95,10 @@ pub fn configure_server(
     // `ToProtoServerConfiguration`), so an empty incoming value for either means "leave whatever's
     // already stored alone," not "clear it." Setting `twilio_config` to `None` entirely is the
     // only way to actually clear a previously-stored config. `twilio_enabled`/`twilio_account_sid`/
-    // `twilio_api_key_sid`/`twilio_from_number` pass through freely, no scrubbing needed -- an API
-    // Key SID is useless without its Secret, same as a username alone.
+    // `twilio_api_key_sid`/`twilio_from_number`/`use_twilio_webhook_signing_key` pass through
+    // freely, no scrubbing needed -- an API Key SID is useless without its Secret, same as a
+    // username alone, and `use_twilio_webhook_signing_key` isn't a secret at all (it's the
+    // "Use Webhook Signing Key" toggle on `ContactIntegrationsTab`).
     if let Some(incoming_twilio_config) = request.twilio_config.as_ref() {
         let existing_twilio_config = get_server_configuration_model(conn)
             .ok()
@@ -120,8 +108,10 @@ pub fn configure_server(
             .as_ref()
             .map(|c| c.twilio_api_key_secret.clone())
             .unwrap_or_default();
-        let existing_webhook_signing_key =
-            existing_twilio_config.as_ref().and_then(|c| c.twilio_webhook_signing_key.clone());
+        let existing_webhook_signing_key = existing_twilio_config
+            .as_ref()
+            .map(|c| c.twilio_webhook_signing_key.clone())
+            .unwrap_or_default();
         new_config.twilio_config = Some(
             serde_json::to_value(protos::TwilioConfig {
                 twilio_enabled: incoming_twilio_config.twilio_enabled,
@@ -133,18 +123,24 @@ pub fn configure_server(
                     incoming_twilio_config.twilio_api_key_secret.clone()
                 },
                 twilio_from_number: incoming_twilio_config.twilio_from_number.clone(),
-                twilio_webhook_signing_key: merge_optional_secret(
-                    incoming_twilio_config.twilio_webhook_signing_key.clone(),
-                    existing_webhook_signing_key,
-                ),
+                twilio_webhook_signing_key: if incoming_twilio_config
+                    .twilio_webhook_signing_key
+                    .is_empty()
+                {
+                    existing_webhook_signing_key
+                } else {
+                    incoming_twilio_config.twilio_webhook_signing_key.clone()
+                },
+                use_twilio_webhook_signing_key: incoming_twilio_config
+                    .use_twilio_webhook_signing_key,
             })
             .unwrap(),
         );
     }
 
     // Same merge-on-blank treatment as `twilio_config` above, for `BirdConfig.bird_access_key`/
-    // `bird_webhook_signing_key`. `bird_enabled`/`bird_from`/`bird_region` pass through freely, no
-    // scrubbing needed.
+    // `bird_webhook_signing_key`. `bird_enabled`/`bird_from`/`bird_region`/
+    // `use_bird_webhook_signing_key` pass through freely, no scrubbing needed.
     if let Some(incoming_bird_config) = request.bird_config.as_ref() {
         let existing_bird_config = get_server_configuration_model(conn)
             .ok()
@@ -154,8 +150,10 @@ pub fn configure_server(
             .as_ref()
             .map(|c| c.bird_access_key.clone())
             .unwrap_or_default();
-        let existing_webhook_signing_key =
-            existing_bird_config.as_ref().and_then(|c| c.bird_webhook_signing_key.clone());
+        let existing_webhook_signing_key = existing_bird_config
+            .as_ref()
+            .map(|c| c.bird_webhook_signing_key.clone())
+            .unwrap_or_default();
         new_config.bird_config = Some(
             serde_json::to_value(protos::BirdConfig {
                 bird_enabled: incoming_bird_config.bird_enabled,
@@ -166,10 +164,13 @@ pub fn configure_server(
                 },
                 bird_from: incoming_bird_config.bird_from.clone(),
                 bird_region: incoming_bird_config.bird_region.clone(),
-                bird_webhook_signing_key: merge_optional_secret(
-                    incoming_bird_config.bird_webhook_signing_key.clone(),
-                    existing_webhook_signing_key,
-                ),
+                bird_webhook_signing_key: if incoming_bird_config.bird_webhook_signing_key.is_empty()
+                {
+                    existing_webhook_signing_key
+                } else {
+                    incoming_bird_config.bird_webhook_signing_key.clone()
+                },
+                use_bird_webhook_signing_key: incoming_bird_config.use_bird_webhook_signing_key,
             })
             .unwrap(),
         );
@@ -177,7 +178,8 @@ pub fn configure_server(
 
     // Same merge-on-blank treatment as `twilio_config` above, for `TelnyxConfig.telnyx_api_key`/
     // `telnyx_webhook_signing_key`. `telnyx_enabled`/`telnyx_from_number`/
-    // `telnyx_messaging_profile_id` pass through freely, no scrubbing needed.
+    // `telnyx_messaging_profile_id`/`use_telnyx_webhook_signing_key` pass through freely, no
+    // scrubbing needed.
     if let Some(incoming_telnyx_config) = request.telnyx_config.as_ref() {
         let existing_telnyx_config = get_server_configuration_model(conn)
             .ok()
@@ -187,8 +189,10 @@ pub fn configure_server(
             .as_ref()
             .map(|c| c.telnyx_api_key.clone())
             .unwrap_or_default();
-        let existing_webhook_signing_key =
-            existing_telnyx_config.as_ref().and_then(|c| c.telnyx_webhook_signing_key.clone());
+        let existing_webhook_signing_key = existing_telnyx_config
+            .as_ref()
+            .map(|c| c.telnyx_webhook_signing_key.clone())
+            .unwrap_or_default();
         new_config.telnyx_config = Some(
             serde_json::to_value(protos::TelnyxConfig {
                 telnyx_enabled: incoming_telnyx_config.telnyx_enabled,
@@ -201,10 +205,16 @@ pub fn configure_server(
                 telnyx_messaging_profile_id: incoming_telnyx_config
                     .telnyx_messaging_profile_id
                     .clone(),
-                telnyx_webhook_signing_key: merge_optional_secret(
-                    incoming_telnyx_config.telnyx_webhook_signing_key.clone(),
-                    existing_webhook_signing_key,
-                ),
+                telnyx_webhook_signing_key: if incoming_telnyx_config
+                    .telnyx_webhook_signing_key
+                    .is_empty()
+                {
+                    existing_webhook_signing_key
+                } else {
+                    incoming_telnyx_config.telnyx_webhook_signing_key.clone()
+                },
+                use_telnyx_webhook_signing_key: incoming_telnyx_config
+                    .use_telnyx_webhook_signing_key,
             })
             .unwrap(),
         );

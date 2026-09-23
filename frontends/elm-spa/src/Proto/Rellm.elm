@@ -475,7 +475,13 @@ type alias StripeConfig =
 
 -}
 fieldNumbersBirdConfig :
-    { birdEnabled : Int, birdAccessKey : Int, birdFrom : Int, birdRegion : Int, birdWebhookSigningKey : Int }
+    { birdEnabled : Int
+    , birdAccessKey : Int
+    , birdFrom : Int
+    , birdRegion : Int
+    , birdWebhookSigningKey : Int
+    , useBirdWebhookSigningKey : Int
+    }
 fieldNumbersBirdConfig =
     Proto.Rellm.Internals_.fieldNumbersProto__Rellm__BirdConfig
 
@@ -528,6 +534,24 @@ encodeBirdConfig =
  secret. Empty defaults to "us1".
 
 
+### birdWebhookSigningKey
+
+ The Standard Webhooks signing secret (starts with `whsec_`) for the SMS channel subscription
+ delivering to `/contact_integrations/bird/receive`, used to verify the
+ `webhook-id`/`webhook-timestamp`/`webhook-signature` headers on inbound deliveries
+ (HMAC-SHA256; see https://www.standardwebhooks.com and `docs/contact_integrations.md`).
+ Write-only, same "always blanked to `""` once written" treatment as every other credential
+ here -- see `TwilioConfig.twilio_webhook_signing_key`'s own doc for the full reasoning,
+ including why storing a key here doesn't by itself turn verification on.
+
+
+### useBirdWebhookSigningKey
+
+ Whether `bird_webhook_signing_key` above is actually used to verify inbound deliveries -- same
+ "explicit opt-in, defaults to `false`" reasoning as
+ [`TwilioConfig.use_twilio_webhook_signing_key`](#rellm-TwilioConfig).
+
+
 -}
 type alias BirdConfig =
     Proto.Rellm.Internals_.Proto__Rellm__BirdConfig
@@ -542,6 +566,7 @@ fieldNumbersTelnyxConfig :
     , telnyxFromNumber : Int
     , telnyxMessagingProfileId : Int
     , telnyxWebhookSigningKey : Int
+    , useTelnyxWebhookSigningKey : Int
     }
 fieldNumbersTelnyxConfig =
     Proto.Rellm.Internals_.fieldNumbersProto__Rellm__TelnyxConfig
@@ -599,6 +624,25 @@ encodeTelnyxConfig =
  secret.
 
 
+### telnyxWebhookSigningKey
+
+ Telnyx's account-level public key (Mission Control Portal -> Keys & Credentials -> Public
+ Key), used to verify the `telnyx-signature-ed25519`/`telnyx-timestamp` headers on inbound
+ deliveries to `/contact_integrations/telnyx/receive` (Ed25519; see
+ https://developers.telnyx.com/docs/messaging/messages/receiving-webhooks and
+ `docs/contact_integrations.md`). Actually a public key, not a secret, but kept write-only
+ (always blanked to `""` once written) for the same "don't echo config back" treatment as
+ every other credential here -- see `TwilioConfig.twilio_webhook_signing_key`'s own doc for the
+ full reasoning, including why storing a key here doesn't by itself turn verification on.
+
+
+### useTelnyxWebhookSigningKey
+
+ Whether `telnyx_webhook_signing_key` above is actually used to verify inbound deliveries --
+ same "explicit opt-in, defaults to `false`" reasoning as
+ [`TwilioConfig.use_twilio_webhook_signing_key`](#rellm-TwilioConfig).
+
+
 -}
 type alias TelnyxConfig =
     Proto.Rellm.Internals_.Proto__Rellm__TelnyxConfig
@@ -614,6 +658,7 @@ fieldNumbersTwilioConfig :
     , twilioApiKeySecret : Int
     , twilioFromNumber : Int
     , twilioWebhookSigningKey : Int
+    , useTwilioWebhookSigningKey : Int
     }
 fieldNumbersTwilioConfig =
     Proto.Rellm.Internals_.fieldNumbersProto__Rellm__TwilioConfig
@@ -679,6 +724,34 @@ encodeTwilioConfig =
 ### twilioFromNumber
 
  The Twilio-provisioned sending number for outbound verification SMS. Not secret.
+
+
+### twilioWebhookSigningKey
+
+ The Twilio Account's Auth Token, used *only* to verify the `X-Twilio-Signature` header on
+ inbound deliveries to `/contact_integrations/twilio/receive` (see
+ https://www.twilio.com/docs/usage/webhooks/webhooks-security and
+ `docs/contact_integrations.md`). Never used to authenticate outbound API calls -- this
+ message's own doc explains why the Auth Token is deliberately excluded from that role; this
+ is the one narrow exception, since signature verification is the one thing only the Auth
+ Token (not an API Key) can do. Write-only like every other credential here -- always blanked
+ to `""` once written, so a client can never read the real value back. Sending an empty value
+ back on `ConfigureServer` means "leave whatever's already stored alone," same as every other
+ write-only field's blank-means-no-op rule. Whether this key is actually *used* to verify
+ inbound deliveries is controlled independently by `use_twilio_webhook_signing_key` below --
+ storing a key here doesn't by itself turn verification on.
+
+
+### useTwilioWebhookSigningKey
+
+ Whether `twilio_webhook_signing_key` above is actually used to verify inbound
+ `/contact_integrations/twilio/receive` deliveries. Defaults to `false` (unverified) even once
+ a key is stored -- an admin must explicitly opt in, same "explicit switch, not implicit from
+ presence" reasoning `ContactIntegrationsTab`'s own "Use Webhook Signing Key" toggle exists
+ for. `false` while this is `false` means inbound deliveries are accepted without signature
+ verification, same fail-safe-direction reasoning as before (see this message's own doc and
+ `docs/contact_integrations.md`) -- the only effect an unauthenticated/spoofed delivery can
+ have either way is *revoking* consent, never granting it.
 
 
 -}
@@ -2110,7 +2183,7 @@ encodeServerConfiguration =
  preference-then-fallback ordering this feeds into
  [`ServerConfiguration.available_verification_apis`](#rellm-ServerConfiguration) below. Even
  when this is blank, an enabled provider is still tried (in the fixed default order
- Twilio/Bird/Telnyx) -- this field only matters when more than one is enabled and the admin
+ Telnyx/Bird/Twilio) -- this field only matters when more than one is enabled and the admin
  wants a specific one tried first. Only serialized for admin users.
 
 

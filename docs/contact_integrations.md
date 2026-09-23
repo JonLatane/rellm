@@ -85,21 +85,23 @@ two-way SMS conversation feature to route a reply into.
 
 **Signature verification is optional per provider, off by default.** Unlike `/webhooks/stripe`'s
 always-on `Stripe-Signature` check, each provider's inbound signature is only verified once an
-admin sets that provider's own "Webhook Signing Key" field on the Contact Integrations tab
-(`TwilioConfig.twilio_webhook_signing_key`/`TelnyxConfig.telnyx_webhook_signing_key`/
-`BirdConfig.bird_webhook_signing_key`) -- see the per-provider steps below for exactly what value
-each one expects. Leave it blank and deliveries are accepted unverified; this is judged acceptable
-even then because the only effect an unauthenticated (or spoofed) delivery can have either way is
-*revoking* consent, never granting it -- the fail-safe direction. Whichever provider you skip this
-for, or if it matters for your deployment regardless, restrict access to these three paths at your
-reverse proxy/firewall to that provider's published IP ranges.
+admin sets that provider's own "Webhook Signing Key" field *and* flips its "Use Webhook Signing
+Key" toggle on, both on the Contact Integrations tab (`TwilioConfig.twilio_webhook_signing_key`/
+`use_twilio_webhook_signing_key`, and the equivalent pair on `TelnyxConfig`/`BirdConfig`) -- see the
+per-provider steps below for exactly what value each key field expects. Leave the toggle off (the
+default, even once a key is entered) and deliveries are accepted unverified; this is judged
+acceptable even then because the only effect an unauthenticated (or spoofed) delivery can have
+either way is *revoking* consent, never granting it -- the fail-safe direction. Whichever provider
+you skip this for, or if it matters for your deployment regardless, restrict access to these three
+paths at your reverse proxy/firewall to that provider's published IP ranges.
 
 Since the key is a secret, the Contact Integrations tab never shows its real value back (same
-write-only treatment as every other credential here) -- it shows **Configured**/**Not configured**
-instead, with a ⚠️ next to "Not configured" as a reminder that deliveries aren't verified. Entering
-a new value always replaces the stored one; leaving the field blank on a later save always keeps
-whatever's already stored (there's no separate "clear" action -- disable the whole provider to
-remove it).
+write-only treatment as every other credential here) -- entering a new value always replaces the
+stored one, and leaving the field blank on a later save always keeps whatever's already stored
+(there's no separate "clear" action -- disable the whole provider to remove it). The "Use Webhook
+Signing Key" toggle is a separate, non-secret setting -- it's what the tab actually shows a
+⚠️ warning next to (when off) as a reminder that deliveries aren't verified, since the key's own
+presence is no longer visible to the client at all.
 
 ### Twilio
 
@@ -116,11 +118,12 @@ remove it).
    `https://<your domain>/contact_integrations/twilio/receive`, method `HTTP POST`.
 5. **(Optional) Enable signature verification** -- Console → Account → API keys & tokens → copy
    the Account's **Auth Token** (not the API Key from step 2) into "Webhook Signing Key" on the
-   Contact Integrations tab. This is the *only* place the Auth Token is ever entered -- it's never
-   accepted for authenticating outbound API calls (step 2's API Key handles that). Rellm verifies
-   the `X-Twilio-Signature` header against this token, computed over the exact URL registered in
-   step 4 plus the request's own POST parameters -- if the endpoint's URL ever changes, this still
-   works as long as step 4's registration is updated to match.
+   Contact Integrations tab, *and* turn on "Use Webhook Signing Key" (off by default even once a
+   key is entered). This is the *only* place the Auth Token is ever entered -- it's never accepted
+   for authenticating outbound API calls (step 2's API Key handles that). Rellm verifies the
+   `X-Twilio-Signature` header against this token, computed over the exact URL registered in step 4
+   plus the request's own POST parameters -- if the endpoint's URL ever changes, this still works as
+   long as step 4's registration is updated to match.
 6. Enter `twilio_enabled`, the Account SID, API Key SID/Secret, and From Number into the Twilio
    section of the Contact Integrations tab.
 
@@ -137,7 +140,8 @@ remove it).
    `data.payload.text`).
 4. **(Optional) Enable signature verification** -- Portal → Keys & Credentials → **Public Key**
    (account-level, same page as your API keys -- despite the name, this goes in "Webhook Signing
-   Key" too, for consistency with the other providers). Rellm verifies the
+   Key" too, for consistency with the other providers), *and* turn on "Use Webhook Signing Key"
+   (off by default even once a key is entered). Rellm verifies the
    `telnyx-signature-ed25519`/`telnyx-timestamp` headers (Ed25519) against it, and rejects a
    delivery whose `telnyx-timestamp` is more than 5 minutes old.
 5. Enter `telnyx_enabled`, the API Key, From Number, and Messaging Profile ID into the Telnyx
@@ -155,7 +159,8 @@ remove it).
    channel, subscribing to the `sms.received` event, URL
    `https://<your domain>/contact_integrations/bird/receive`.
 4. **(Optional) Enable signature verification** -- that same webhook subscription's own signing
-   secret (starts with `whsec_`) goes in "Webhook Signing Key". Bird uses the
+   secret (starts with `whsec_`) goes in "Webhook Signing Key", *and* turn on "Use Webhook Signing
+   Key" (off by default even once a key is entered). Bird uses the
    [Standard Webhooks](https://www.standardwebhooks.com) scheme (HMAC-SHA256 over
    `"{webhook-id}.{webhook-timestamp}.{raw body}"`); Rellm verifies the `webhook-id`/
    `webhook-timestamp`/`webhook-signature` headers against it, rejecting a delivery whose

@@ -110,6 +110,42 @@ fn main() {
         // above) defaults to an empty list.
         .field_attribute("ContactMethod.consent_state", "#[serde(default)]")
         .field_attribute("ContactMethod.consent_history", "#[serde(default)]")
+        // `TwilioConfig`/`TelnyxConfig`/`BirdConfig`'s `*_webhook_signing_key` fields switched from
+        // `optional string` to plain `string` (with the new `use_*_webhook_signing_key` bool below
+        // taking over the "is this configured" signal that field's own `Some`/`None` used to carry
+        // -- see each field's own doc in `server_configuration.proto`). Some already-stored
+        // `twilio_config`/`telnyx_config`/`bird_config` blobs have the old field as literal JSON
+        // `null` (`None`'s serde encoding); `#[serde(default)]` alone only covers a *missing* key,
+        // so `deserialize_with` is also needed to treat a present-but-`null` value the same way,
+        // both falling back to `String::new()` (see `deserialize_string_or_null`'s own doc).
+        .field_attribute(
+            "TwilioConfig.twilio_webhook_signing_key",
+            "#[serde(default, deserialize_with = \"crate::protos::deserialize_string_or_null\")]",
+        )
+        .field_attribute(
+            "TelnyxConfig.telnyx_webhook_signing_key",
+            "#[serde(default, deserialize_with = \"crate::protos::deserialize_string_or_null\")]",
+        )
+        .field_attribute(
+            "BirdConfig.bird_webhook_signing_key",
+            "#[serde(default, deserialize_with = \"crate::protos::deserialize_string_or_null\")]",
+        )
+        // Same idea, for the new `use_*_webhook_signing_key` bools themselves -- lets
+        // `twilio_config`/`telnyx_config`/`bird_config` JSON stored before these fields existed
+        // deserialize instead of erroring, defaulting to `false` (matches the old behavior for any
+        // server that never got the chance to opt in yet -- see this field's own doc).
+        .field_attribute(
+            "TwilioConfig.use_twilio_webhook_signing_key",
+            "#[serde(default)]",
+        )
+        .field_attribute(
+            "TelnyxConfig.use_telnyx_webhook_signing_key",
+            "#[serde(default)]",
+        )
+        .field_attribute(
+            "BirdConfig.use_bird_webhook_signing_key",
+            "#[serde(default)]",
+        )
         // This is specifically for rust-analyzer in VSCode
         // .client_attribute(".", "#![allow(non_snake_case)]")
         .extern_path(".google.protobuf.Any", "::prost_wkt_types::Any")
