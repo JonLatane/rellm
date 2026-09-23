@@ -8,6 +8,7 @@
 }
 
 .user-card {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 0.6rem;
@@ -17,6 +18,19 @@
   color: inherit;
   text-decoration: none;
   transition: border-color 0.2s ease;
+}
+
+/* The "stretched link" that makes the whole card open the profile -- an
+   invisible `<a>` absolutely filling `.user-card`, sitting *behind* every
+   other child (all in normal flow, so they paint above it by default) except
+   `.user-card-contact-buttons`/`.follow-status-and-button`, which opt back
+   into their own paint layer via `position: relative` to stay independently
+   clickable -- see `Components.Users.userCard`'s own doc comment for why a
+   real nested `<a>` doesn't work here instead. Mirrors `posts.css`'s
+   `.post-card-link-overlay` exactly. */
+.user-card-link-overlay {
+  position: absolute;
+  inset: 0;
 }
 
 .user-card-avatar {
@@ -47,6 +61,10 @@
 }
 
 .user-card-contact-buttons {
+  /* Paints above `.user-card-link-overlay` (see that class's own comment)
+     instead of falling through to it -- these are real, independently
+     clickable `tel:`/`mailto:` links, not just inert text. */
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;
@@ -71,6 +89,10 @@
    whichever Follow/Request Follow/Cancel Follow Request/Unfollow/Reject
    Follower/Unreject Follower buttons apply. */
 .follow-status-and-button {
+  /* Paints above `.user-card-link-overlay` when embedded in `userCard` (see
+     that class's own comment) -- a no-op everywhere else this is used
+     (`Components.Pages.UserProfilePage`), which has no such overlay. */
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;

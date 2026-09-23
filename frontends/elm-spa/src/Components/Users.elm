@@ -645,18 +645,30 @@ than this module importing that one directly, which would cycle back through
 `FollowStatusAndButton`'s own dependency on `createFollow`/`updateFollow`/
 `deleteFollow`/`moderationPasses` etc. here).
 
-Unlike `Components.PostCard.postCard`, the whole card can just be one plain
-`<a>` -- `followStatusAndButton`'s own buttons use `stopPropagation`/
-`preventDefault` (see `FollowStatusAndButton.followActionButton`) rather than
-needing this function's callers to reach for that module's own "stretched
-link" treatment.
-
+Like `Components.PostCard.postCard` (not "one plain `<a>`", as this used to be
+and as its own doc comment used to claim) -- now that `userCardContactButtons`
+renders real `tel:`/`mailto:` `<a>`s of their own, this needs `postCard`'s own
+"stretched link" treatment too: nesting a real `<a>` inside another `<a>`
+doesn't work in Elm, since every anchor's `href` navigation is wired up as its
+own native click listener attached directly to *that* anchor's DOM node (see
+`postCard`'s own doc comment for the full explanation), not by walking up to
+the nearest enclosing one -- so a click on a contact button would fire both
+listeners, and the outer (later, bubbled-to) one always wins, silently
+overriding the tel:/mailto: navigation with a profile-navigate instead
+(exactly the "underlying card gets clicked instead" bug this structure
+avoids). So the card itself is a plain `div`; its first child is an invisible
+`<a>` (`.user-card-link-overlay`) absolutely filling it, sitting *behind*
+everything else -- `.user-card-contact-buttons`/`.follow-status-and-button`
+both opt back into their own paint layer via `position: relative` (see
+`users.css`) to stay independently clickable above it, while the rest (avatar,
+name, meta text) has no interactive descendants of its own, so it's fine to
+just sit visually behind the overlay and fall through to the same profile
+navigation either way -- mirrors `.post-card-title`'s identical treatment.
 -}
 userCard : String -> String -> RellmServer -> Maybe RellmAccount -> Html msg -> User -> Html msg
 userCard basePath viewingServerHost server maybeAccount followStatusAndButton user =
-    a
-        [ href (profileHref basePath viewingServerHost server.frontendHost { userId = user.id, username = user.username })
-        , classes
+    div
+        [ classes
             [ "user-card"
             , hostnameToCSSClass server.frontendHost
             , "border-color-primary-anchor-50"
@@ -664,7 +676,13 @@ userCard basePath viewingServerHost server maybeAccount followStatusAndButton us
             , "background-color-primary-5"
             ]
         ]
-        [ userCardAvatar (displayName user) (avatarUrl server maybeAccount user)
+        [ a
+            [ href (profileHref basePath viewingServerHost server.frontendHost { userId = user.id, username = user.username })
+            , Html.Attributes.class "user-card-link-overlay"
+            , Html.Attributes.attribute "aria-label" (displayName user)
+            ]
+            []
+        , userCardAvatar (displayName user) (avatarUrl server maybeAccount user)
         , div [ Html.Attributes.class "user-card-details" ]
             [ div [] (text (displayName user) :: userCardBadges user)
             , div [ Html.Attributes.class "user-card-meta" ] [ text (userCardMetaText user) ]
