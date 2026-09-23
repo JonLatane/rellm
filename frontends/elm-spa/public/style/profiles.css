@@ -394,6 +394,29 @@
   font-size: 0.85rem;
 }
 
+.profile-contact-method-consent {
+  margin: 0.3rem 0 0.6rem;
+}
+
+.profile-contact-method-consent-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  max-width: 32rem;
+}
+
+.profile-contact-method-consent-history {
+  margin-top: 0.3rem;
+}
+
+.profile-contact-method-consent-history-list {
+  margin: 0.3rem 0 0;
+  padding-left: 1.2rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
 .profile-permissions-view,
 .profile-permissions-edit {
   display: flex;

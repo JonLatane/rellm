@@ -882,13 +882,31 @@ pub fn configure_twilio(
             twilio_api_key_sid: api_key_sid.to_string(),
             twilio_api_key_secret: api_key_secret.to_string(),
             twilio_from_number: from_number.to_string(),
+            twilio_webhook_signing_key: None,
         })
         .unwrap(),
     );
+    new_config.supported_contact_protocols = supported_contact_protocols_json(enabled);
     insert_into(server_configurations::table)
         .values(&new_config)
         .execute(conn)
         .expect("failed to create test server configuration");
+}
+
+/// `ServerConfiguration.supported_contact_protocols`'s stored form for the test factories that
+/// configure a single SMS provider -- `[CONTACT_PROTOCOL_TEL]` iff that provider is enabled,
+/// mirroring the invariant `validate_configuration` enforces on the real `ConfigureServer` path
+/// (a real client never reaches these factories, which write straight to the DB, so it's not
+/// re-checked here). Consulted by `contact_verification::verification_available`/
+/// `contact_protocol_supported`, which -- since `ContactIntegrationsTab.elm`'s "Enable SMS
+/// Sending" toggle -- is the actual gate on both `ContactMethod.supported_by_server` and
+/// `StartContactMethodVerification` itself, not just the provider's own `*_enabled` flag.
+fn supported_contact_protocols_json(sms_enabled: bool) -> Option<serde_json::Value> {
+    if sms_enabled {
+        Some(crate::logic::contact_protocols_to_json(&[ContactProtocol::Tel]))
+    } else {
+        None
+    }
 }
 
 /// Inserts an active `server_configurations` row with `stripe_config` set -- mirrors
@@ -962,6 +980,7 @@ pub fn configure_twilio_with_server_info(
             twilio_api_key_sid: api_key_sid.to_string(),
             twilio_api_key_secret: api_key_secret.to_string(),
             twilio_from_number: from_number.to_string(),
+            twilio_webhook_signing_key: None,
         })
         .unwrap(),
     );
@@ -981,6 +1000,7 @@ pub fn configure_twilio_with_server_info(
             .unwrap(),
         )
     };
+    new_config.supported_contact_protocols = supported_contact_protocols_json(true);
     insert_into(server_configurations::table)
         .values(&new_config)
         .execute(conn)
@@ -1003,23 +1023,54 @@ pub fn configure_bird(
             bird_access_key: access_key.to_string(),
             bird_from: from.to_string(),
             bird_region: region.to_string(),
+            bird_webhook_signing_key: None,
         })
         .unwrap(),
     );
+    new_config.supported_contact_protocols = supported_contact_protocols_json(enabled);
     insert_into(server_configurations::table)
         .values(&new_config)
         .execute(conn)
         .expect("failed to create test server configuration");
 }
 
-/// Like `configure_twilio`/`configure_bird`, but sets both providers at once plus
-/// `preferred_verification_apis` -- for specs exercising `contact_verification`'s
-/// preference-ordering/fallback logic between the two.
+/// Mirrors `configure_twilio`/`configure_bird`, but sets `telnyx_config` instead -- for specs
+/// exercising Telnyx as a verification provider (or the three providers' fallback ordering
+/// together).
+pub fn configure_telnyx(
+    conn: &mut PgPooledConnection,
+    enabled: bool,
+    api_key: &str,
+    from_number: &str,
+    messaging_profile_id: &str,
+) {
+    let mut new_config = models::default_server_configuration();
+    new_config.telnyx_config = Some(
+        serde_json::to_value(TelnyxConfig {
+            telnyx_enabled: enabled,
+            telnyx_api_key: api_key.to_string(),
+            telnyx_from_number: from_number.to_string(),
+            telnyx_messaging_profile_id: messaging_profile_id.to_string(),
+            telnyx_webhook_signing_key: None,
+        })
+        .unwrap(),
+    );
+    new_config.supported_contact_protocols = supported_contact_protocols_json(enabled);
+    insert_into(server_configurations::table)
+        .values(&new_config)
+        .execute(conn)
+        .expect("failed to create test server configuration");
+}
+
+/// Like `configure_twilio`/`configure_bird`/`configure_telnyx`, but sets any combination of the
+/// three providers at once plus `preferred_verification_apis` -- for specs exercising
+/// `contact_verification`'s preference-ordering/fallback logic between them.
 pub fn configure_verification_providers(
     conn: &mut PgPooledConnection,
     twilio: Option<(&str, &str, &str, &str)>,
     bird: Option<(&str, &str, &str)>,
-    preferred: Vec<VerificationApi>,
+    telnyx: Option<(&str, &str, &str)>,
+    preferred: Vec<ContactVerificationApi>,
 ) {
     let mut new_config = models::default_server_configuration();
     new_config.twilio_config = twilio.map(|(account_sid, api_key_sid, api_key_secret, from)| {
@@ -1029,6 +1080,7 @@ pub fn configure_verification_providers(
             twilio_api_key_sid: api_key_sid.to_string(),
             twilio_api_key_secret: api_key_secret.to_string(),
             twilio_from_number: from.to_string(),
+            twilio_webhook_signing_key: None,
         })
         .unwrap()
     });
@@ -1038,12 +1090,25 @@ pub fn configure_verification_providers(
             bird_access_key: key.to_string(),
             bird_from: from.to_string(),
             bird_region: region.to_string(),
+            bird_webhook_signing_key: None,
+        })
+        .unwrap()
+    });
+    new_config.telnyx_config = telnyx.map(|(api_key, from, messaging_profile_id)| {
+        serde_json::to_value(TelnyxConfig {
+            telnyx_enabled: true,
+            telnyx_api_key: api_key.to_string(),
+            telnyx_from_number: from.to_string(),
+            telnyx_messaging_profile_id: messaging_profile_id.to_string(),
+            telnyx_webhook_signing_key: None,
         })
         .unwrap()
     });
     new_config.preferred_verification_apis = Some(
         crate::logic::verification_apis_to_json(&preferred),
     );
+    new_config.supported_contact_protocols =
+        supported_contact_protocols_json(twilio.is_some() || bird.is_some() || telnyx.is_some());
     insert_into(server_configurations::table)
         .values(&new_config)
         .execute(conn)

@@ -90,27 +90,63 @@ message ServerConfiguration {
   // Web Push (VAPID) configuration for the server.
   optional WebPushConfig web_push_config = 110;
 
-  // A server-preferred order of contact verification APIs. 
-  // Note: even if this is blank, if twilio_config is enabled, the server should try
-  // to verify with Twilio. It's really only for the case of wanting to switch between multiple
-  // SMS/Email providers.
-  // Only serialized for admin users.
-  repeated VerificationAPI preferred_verification_apis = 120;
-  // Derived from whether TwilioConfig.enabled is true, etc. Serialized to every caller (not
-  // admin-only, unlike `preferred_verification_apis`/`twilio_config`) -- this is what a non-admin
-  // client should check to decide whether to show verification UI at all, without exposing any
-  // provider configuration.
-  repeated VerificationAPI available_verification_apis = 121;
 
-  // Twilio Config. Only serialized for admin users.
+  // Which [`ContactProtocol`](#rellm-ContactProtocol)s (`tel:`/`mailto:`) this server currently
+  // accepts -- drives [`ContactMethod.supported_by_server`](#rellm-ContactMethod) (`users.proto`,
+  // which can't reference this message directly -- see that field's own doc for why). Settable via
+  // [`ConfigureServer`](#grpc-api-ConfigureServer), which *errors* rather than silently dropping an
+  // invalid entry: `CONTACT_PROTOCOL_TEL` requires an enabled
+  // [`TwilioConfig`](#rellm-TwilioConfig)/[`BirdConfig`](#rellm-BirdConfig)/
+  // [`TelnyxConfig`](#rellm-TelnyxConfig) in that same request, and `CONTACT_PROTOCOL_MAILTO` is
+  // always rejected (no email provider exists yet). Edited via the "Enable SMS Sending"/"Enable
+  // Email Sending" toggles on the Contact Integrations tab's "SMS Configuration"/"Email
+  // Configuration" sections (`ContactIntegrationsTab.smsConfigurationSection`/
+  // `emailConfigurationSection`) -- see `docs/contact_integrations.md`.
+  repeated ContactProtocol supported_contact_protocols = 119;
+
+  // A server-preferred order of [`ContactVerificationAPI`](#rellm-ContactVerificationAPI)
+  // providers to try first when more than one of `twilio_config`/`bird_config`/`telnyx_config`
+  // below is enabled -- see `contact_verification::available_verification_apis` for the full
+  // preference-then-fallback ordering this feeds into
+  // [`ServerConfiguration.available_verification_apis`](#rellm-ServerConfiguration) below. Even
+  // when this is blank, an enabled provider is still tried (in the fixed default order
+  // Twilio/Bird/Telnyx) -- this field only matters when more than one is enabled and the admin
+  // wants a specific one tried first. Only serialized for admin users.
+  repeated ContactVerificationAPI preferred_verification_apis = 120;
+
+  // Derived from whether [`TwilioConfig`](#rellm-TwilioConfig).twilio_enabled/
+  // [`BirdConfig`](#rellm-BirdConfig).bird_enabled/
+  // [`TelnyxConfig`](#rellm-TelnyxConfig).telnyx_enabled is true, ordered per
+  // `preferred_verification_apis` above. Serialized to every caller (not admin-only, unlike
+  // `preferred_verification_apis`/`twilio_config`/`bird_config`/`telnyx_config`) -- this is what a
+  // non-admin client should check to decide whether to show verification UI at all, without
+  // exposing any provider configuration. Independent of `supported_contact_protocols` above --
+  // that's the admin's own on/off toggle (can disable `tel:` contact even while a provider stays
+  // enabled/configured), this is purely "is at least one provider actually configured."
+  repeated ContactVerificationAPI available_verification_apis = 121;
+
+  // Twilio Config -- see [`TwilioConfig`](#rellm-TwilioConfig). Only serialized for admin users.
   optional TwilioConfig twilio_config = 122;
 
-  // Bird (bird.com, formerly MessageBird) Config -- a cheaper Twilio alternative for SMS
-  // verification. Only serialized for admin users.
+  // Bird (bird.com, formerly MessageBird) Config -- a cheaper alternative to
+  // [`TwilioConfig`](#rellm-TwilioConfig) for SMS verification; see
+  // [`BirdConfig`](#rellm-BirdConfig)'s own doc. Only serialized for admin users.
   optional BirdConfig bird_config = 123;
 
   // Stripe Config, backing the Marketplace (`market.proto`). Only serialized for admin users.
   optional StripeConfig stripe_config = 124;
+
+  // Telnyx Config -- another alternative SMS verification provider to
+  // [`TwilioConfig`](#rellm-TwilioConfig) (see [`TelnyxConfig`](#rellm-TelnyxConfig)'s own doc).
+  // Only serialized for admin users.
+  optional TelnyxConfig telnyx_config = 125;
+
+  // Unlike the other configs, at least at the moment, the integration with Stalwart is designed
+  // to be *in-cluster*, not over the web. It relies on unsecured /email endpoint on port 27705
+  // to receive mail from a Stalwart deployed within the same Kubernetes cluster.
+  //
+  // This could be extended in the future to allow sending mail with Stalwart, but that's TBD.
+  optional StalwartConfig stalwart_config = 126;
 }
 
 // Coordinates a small piece of shared, cluster-wide state across multiple independent Rellm
@@ -651,9 +687,26 @@ message WebPushConfig {
   string private_vapid_key = 2;
 }
 
-enum VerificationAPI {
-  VERIFICATION_API_TWILIO = 0;
-  VERIFICATION_API_BIRD = 1;
+// The two contact schemes [`ContactMethod.value`](#rellm-ContactMethod) (`users.proto`) may take --
+// see [`ServerConfiguration.supported_contact_protocols`](#rellm-ServerConfiguration) for the
+// server-wide setting keyed off this enum, and `docs/contact_integrations.md` for the full picture.
+enum ContactProtocol {
+  // `tel:` (phone/SMS) contact. Requires an enabled [`TwilioConfig`](#rellm-TwilioConfig)/
+  // [`BirdConfig`](#rellm-BirdConfig)/[`TelnyxConfig`](#rellm-TelnyxConfig).
+  CONTACT_PROTOCOL_TEL = 0;
+  // `mailto:` (email) contact. Currently not supported -- no email provider exists yet.
+  CONTACT_PROTOCOL_MAILTO = 1;
+}
+
+// The SMS providers [`ServerConfiguration.preferred_verification_apis`](#rellm-ServerConfiguration)/
+// [`available_verification_apis`](#rellm-ServerConfiguration) order between --
+// [`TwilioConfig`](#rellm-TwilioConfig), [`BirdConfig`](#rellm-BirdConfig), and
+// [`TelnyxConfig`](#rellm-TelnyxConfig). See `contact_verification.rs`'s own module doc for the
+// preference-then-fallback logic these values drive.
+enum ContactVerificationAPI {
+  CONTACT_VERIFICATION_API_TWILIO = 0;
+  CONTACT_VERIFICATION_API_BIRD = 1;
+  CONTACT_VERIFICATION_API_TELNYX = 2;
 }
 
 // Twilio credentials, authenticated via a Twilio **API Key** (`twilio_api_key_sid`/
@@ -665,7 +718,9 @@ enum VerificationAPI {
 // authenticate -- only the API Key SID/Secret pair is. See
 // https://www.twilio.com/docs/iam/api-keys/restricted-api-keys for the recommended
 // permission when creating one: `/twilio/messaging/messages/create` (nothing else is needed just
-// to send verification SMS).
+// to send verification SMS). See `docs/contact_integrations.md` for full setup steps (API key
+// creation, inbound webhook registration), and [`ContactMethod`](#rellm-ContactMethod)
+// (`users.proto`) for how a verified `tel:` contact method surfaces this provider.
 message TwilioConfig {
   bool twilio_enabled = 1;
   // The Twilio Account SID (starts with `AC`). Used only in the API's URL path -- *never* as an
@@ -678,10 +733,55 @@ message TwilioConfig {
   string twilio_api_key_secret = 2;
   // The Twilio-provisioned sending number for outbound verification SMS. Not secret.
   string twilio_from_number = 4;
+  // Optional -- the Twilio Account's Auth Token, used *only* to verify the `X-Twilio-Signature`
+  // header on inbound deliveries to `/contact_integrations/twilio/receive` (see
+  // https://www.twilio.com/docs/usage/webhooks/webhooks-security and
+  // `docs/contact_integrations.md`). Never used to authenticate outbound API calls -- this
+  // message's own doc explains why the Auth Token is deliberately excluded from that role; this
+  // is the one narrow exception, since signature verification is the one thing only the Auth
+  // Token (not an API Key) can do. Unset means inbound deliveries are accepted without signature
+  // verification. Write-only, like every other credential here, but distinctly from those:
+  // `optional` so a client can tell *whether* a key is configured (`Some`/`None`) without ever
+  // seeing its real value -- once set, `to_proto` blanks this to `Some("")` (not `None`), so
+  // "configured but hidden" and "never configured" stay distinguishable. Sending an empty value
+  // back on `ConfigureServer` means "leave whatever's already stored alone," same as every other
+  // write-only field's blank-means-no-op rule.
+  optional string twilio_webhook_signing_key = 6;
+}
+
+// Telnyx (https://telnyx.com) Config -- an alternative SMS verification provider to
+// [`TwilioConfig`](#rellm-TwilioConfig), with a simpler single-API-key auth model like
+// [`BirdConfig`](#rellm-BirdConfig)'s. See `docs/contact_integrations.md` for full setup steps.
+message TelnyxConfig {
+  bool telnyx_enabled = 1;
+  // The Telnyx v2 API Key (starts with `KEY`), used as Bearer auth for Telnyx's Messaging API
+  // (`POST /v2/messages`). Never serialized once written -- same write-only treatment as
+  // [`TwilioConfig.twilio_api_key_secret`](#rellm-TwilioConfig)/
+  // [`BirdConfig.bird_access_key`](#rellm-BirdConfig).
+  string telnyx_api_key = 2;
+  // The Telnyx-provisioned sending number for outbound verification SMS (E.164, e.g. a toll-free
+  // number). Not secret.
+  string telnyx_from_number = 3;
+  // The Telnyx Messaging Profile ID that `telnyx_from_number` is assigned to -- required by
+  // Telnyx's Messaging API to actually send (`messaging_profile_id` on `POST /v2/messages`). Not
+  // secret.
+  string telnyx_messaging_profile_id = 4;
+  // Optional -- Telnyx's account-level public key (Mission Control Portal -> Keys & Credentials ->
+  // Public Key), used to verify the `telnyx-signature-ed25519`/`telnyx-timestamp` headers on
+  // inbound deliveries to `/contact_integrations/telnyx/receive` (Ed25519; see
+  // https://developers.telnyx.com/docs/messaging/messages/receiving-webhooks and
+  // `docs/contact_integrations.md`). Actually a public key, not a secret, but kept write-only
+  // (never serialized once written) for the same "don't echo config back" treatment as every
+  // other credential here. Unset means inbound deliveries are accepted without signature
+  // verification. `optional` (not plain `string`) for the same "`Some`/`None` distinguishable from
+  // a client without ever seeing the real value" reason as
+  // [`TwilioConfig.twilio_webhook_signing_key`](#rellm-TwilioConfig).
+  optional string telnyx_webhook_signing_key = 5;
 }
 
 // Bird (https://bird.com, formerly MessageBird) Config -- an alternative SMS verification
-// provider to Twilio, with a simpler single-API-key auth model.
+// provider to [`TwilioConfig`](#rellm-TwilioConfig), with a simpler single-API-key auth model. See
+// `docs/contact_integrations.md` for full setup steps.
 message BirdConfig {
   bool bird_enabled = 1;
   // The Bird workspace's API access key. Never serialized once written.
@@ -692,6 +792,15 @@ message BirdConfig {
   // Which Bird API region to call ("us1" or "eu1", per Bird's own regional API hosts). Not
   // secret. Empty defaults to "us1".
   string bird_region = 4;
+  // Optional -- the Standard Webhooks signing secret (starts with `whsec_`) for the SMS channel
+  // subscription delivering to `/contact_integrations/bird/receive`, used to verify the
+  // `webhook-id`/`webhook-timestamp`/`webhook-signature` headers on inbound deliveries (HMAC-SHA256;
+  // see https://www.standardwebhooks.com and `docs/contact_integrations.md`). Blank/unset means
+  // inbound deliveries are accepted without signature verification. `optional` (not plain
+  // `string`) for the same "`Some`/`None` distinguishable from a client without ever seeing the
+  // real value" reason as
+  // [`TwilioConfig.twilio_webhook_signing_key`](#rellm-TwilioConfig).
+  optional string bird_webhook_signing_key = 5;
 }
 
 // Stripe credentials backing the Marketplace (`market.proto`). Used both to create Checkout
@@ -711,4 +820,11 @@ message StripeConfig {
   // `Stripe-Signature` header on incoming webhook deliveries. Never serialized once written --
   // same write-only treatment as `stripe_secret_key` above.
   string stripe_webhook_signing_secret = 4;
+}
+
+// Stalwart is an extablished, open-source Rust email/contact/calendar server (think an Outlook or Google Workspace competitor).
+// Currently Rellm supports receiving emails via Stalwart webhook configurations.
+message StalwartConfig {
+  // Enables receiving emails from the private, unsecured cluster-facing HTTP server at :27705/email.
+  bool stalwart_receiving_enabled = 1;
 }

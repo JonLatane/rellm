@@ -66,6 +66,7 @@ lazy_static! {
         "calendar.ics",
         "rss.xml",
         "atom.xml",
+        "contact_integrations",
     ];
     // Custom tab paths share the RESERVED_PATHS namespace, but these specific values are
     // allowed since they're used as top-level containers (e.g. federatedserver.com/events)

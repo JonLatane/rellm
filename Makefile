@@ -31,10 +31,10 @@ run_tmux:
 		set-option -g set-titles-string 'rellm: run_tmux' \; \
 		rename-window 'rellm: run_tmux' \; \
 		select-pane -T 'Backend' \; \
-		send-keys '$(MAKE) run_backend' C-m \; \
+		send-keys 'make run_backend' C-m \; \
 		split-window -h \; \
 		select-pane -T 'Elm' \; \
-		send-keys '$(MAKE) run_elm' C-m \; \
+		send-keys 'make run_elm' C-m \; \
 		select-pane -L \; \
 		attach-session
 

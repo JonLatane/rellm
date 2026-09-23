@@ -26,13 +26,15 @@ pub fn get_server_configuration(
         .unwrap_or(false);
     if !is_admin {
         result.cluster_resources = None;
-        // `twilio_config`/`bird_config`/`preferred_verification_apis` are admin-only -- see their
-        // own proto doc. `available_verification_apis` is deliberately NOT stripped here: it's the
-        // public "is SMS verification available" signal a non-admin client needs (e.g. to show/hide
-        // the "Start Verification" button), and it carries no secret or configuration detail
-        // itself.
+        // `twilio_config`/`bird_config`/`telnyx_config`/`preferred_verification_apis` are
+        // admin-only -- see their own proto doc. `available_verification_apis` is deliberately NOT
+        // stripped here: it's the public "is SMS verification available" signal a non-admin client
+        // needs (e.g. to show/hide the "Start Verification" button), and it carries no secret or
+        // configuration detail itself.
         result.twilio_config = None;
         result.bird_config = None;
+        result.telnyx_config = None;
+        result.stalwart_config = None;
         result.stripe_config = None;
         result.preferred_verification_apis = vec![];
     }

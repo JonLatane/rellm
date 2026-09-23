@@ -32,6 +32,7 @@ mod market_rpc_tests;
 mod mastodon_sync_tests;
 mod post_sync_rpc_tests;
 mod push_subscription_tests;
+mod stalwart_config_tests;
 mod sync_destination_count_tests;
 mod sync_destination_rpc_tests;
 mod sync_message_tests;

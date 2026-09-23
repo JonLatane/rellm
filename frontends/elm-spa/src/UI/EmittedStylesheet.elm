@@ -10,7 +10,7 @@ for each known server -- `shared.accounts.servers`, plus (so
 it's actually been added) `shared.accounts.recommendedServerConnections`
 -- a handful of color "utility class" pairs so any element can be given that
 server's colors just by adding two classes -- e.g.
-`class="jonline.io background-color-primary"` -- rather than needing that
+`class="jonline-io background-color-primary"` -- rather than needing that
 server's `ServerTheme` threaded in as a view-function argument.
 
   - `<host> background-color-primary` -- `primaryColor` / `primaryTextColor`

@@ -8,7 +8,7 @@ authors = ["Jon Latané <jonlatane@gmail.com>"]
 license = "AGPL"
 repository = "https://github.com/jonlatane/rellm"
 description = "Rellm is a decentralized social network server."
-homepage = "https://jonline.io"
+homepage = "https://rellm.org"
 default-run = "rellm"
 readme = "README.md"
 
@@ -78,6 +78,9 @@ aws-creds = "0.39.1"
 bytes = "1.7.1"
 tempfile = "3.12.0"
 percent-encoding = "2.3.0"
+# Parses Twilio's `application/x-www-form-urlencoded` inbound SMS webhook body -- see
+# `web::contact_integrations_webhook`.
+form_urlencoded = "1.2.2"
 ico = "0.5.0"
 
 # For Preview Generator images only

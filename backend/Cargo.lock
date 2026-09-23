@@ -3719,6 +3719,7 @@ dependencies = [
  "dotenvy",
  "env_logger",
  "feed-rs",
+ "form_urlencoded",
  "futures",
  "headless_chrome",
  "http 1.5.0",

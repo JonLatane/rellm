@@ -805,8 +805,13 @@ class Membership extends $pb.GeneratedMessage {
   $13.Timestamp ensureUpdatedAt() => $_ensure(6);
 }
 
-/// A contact method for a user. Verified via `StartContactMethodVerification`/`VerifyContactMethod`
-/// -- SMS/Twilio only this iteration, see `TwilioConfig` in `server_configuration.proto`.
+/// A contact method for a user (`tel:` or `mailto:`). SMS verification via
+/// [`StartContactMethodVerification`](#grpc-api-StartContactMethodVerification)/
+/// [`VerifyContactMethod`](#grpc-api-VerifyContactMethod), backed by whichever of
+/// [`TwilioConfig`](#rellm-TwilioConfig)/[`BirdConfig`](#rellm-BirdConfig)/
+/// [`TelnyxConfig`](#rellm-TelnyxConfig) the server has enabled -- see `supported_by_server` below,
+/// and [`ContactProtocol`](#rellm-ContactProtocol) for the corresponding server-wide toggle.
+/// `mailto:` has no verification provider yet.
 class ContactMethod extends $pb.GeneratedMessage {
   factory ContactMethod({
     $core.String? value,
@@ -814,6 +819,8 @@ class ContactMethod extends $pb.GeneratedMessage {
     $core.bool? supportedByServer,
     $13.Timestamp? verifiedAt,
     ContactMethodVerification? verificationInProgress,
+    ContactConsentState? consentState,
+    $core.Iterable<ContactConsentChange>? consentHistory,
   }) {
     final $result = create();
     if (value != null) {
@@ -831,6 +838,12 @@ class ContactMethod extends $pb.GeneratedMessage {
     if (verificationInProgress != null) {
       $result.verificationInProgress = verificationInProgress;
     }
+    if (consentState != null) {
+      $result.consentState = consentState;
+    }
+    if (consentHistory != null) {
+      $result.consentHistory.addAll(consentHistory);
+    }
     return $result;
   }
   ContactMethod._() : super();
@@ -843,6 +856,8 @@ class ContactMethod extends $pb.GeneratedMessage {
     ..aOB(3, _omitFieldNames ? '' : 'supportedByServer')
     ..aOM<$13.Timestamp>(4, _omitFieldNames ? '' : 'verifiedAt', subBuilder: $13.Timestamp.create)
     ..aOM<ContactMethodVerification>(5, _omitFieldNames ? '' : 'verificationInProgress', subBuilder: ContactMethodVerification.create)
+    ..e<ContactConsentState>(6, _omitFieldNames ? '' : 'consentState', $pb.PbFieldType.OE, defaultOrMaker: ContactConsentState.CONTACT_CONSENT_REVOKED, valueOf: ContactConsentState.valueOf, enumValues: ContactConsentState.values)
+    ..pc<ContactConsentChange>(7, _omitFieldNames ? '' : 'consentHistory', $pb.PbFieldType.PM, subBuilder: ContactConsentChange.create)
     ..hasRequiredFields = false
   ;
 
@@ -887,10 +902,16 @@ class ContactMethod extends $pb.GeneratedMessage {
   @$pb.TagNumber(2)
   void clearVisibility() => clearField(2);
 
-  /// Server-side flag indicating whether the server can verify
-  /// (and otherwise interact via) the contact method. Always computed server-side (never trusted
-  /// from client input) off whether a verification provider is currently enabled for this contact
-  /// method's scheme (`tel:`/`mailto:`).
+  /// Server-side flag indicating whether the server can verify (and otherwise interact via) the
+  /// contact method. Always computed server-side (never trusted from client input) -- `true` iff
+  /// this value's scheme (`tel:`/`mailto:`) is the corresponding
+  /// [`ContactProtocol`](#rellm-ContactProtocol) currently listed in
+  /// `ServerConfiguration.supported_contact_protocols` (see the
+  /// [`ServerConfiguration`](#rellm-ServerConfiguration) message). `users.proto` deliberately never
+  /// imports `server_configuration.proto` (server configuration is kept abstracted from the rest of
+  /// the protocol), so this relationship exists only in backend logic
+  /// (`contact_verification::contact_protocol_supported`, called from `update_user.rs`) and in this
+  /// doc comment, not as a formal schema reference.
   @$pb.TagNumber(3)
   $core.bool get supportedByServer => $_getBF(2);
   @$pb.TagNumber(3)
@@ -900,9 +921,9 @@ class ContactMethod extends $pb.GeneratedMessage {
   @$pb.TagNumber(3)
   void clearSupportedByServer() => clearField(3);
 
-  /// Time the contact method was verified.
-  /// Indicates the user has completed verification of the contact method.
-  /// Verification requires `supported_by_server` to be `true`.
+  /// Time the contact method was verified. Indicates the user has completed verification of the
+  /// contact method. Verification requires `supported_by_server` to be `true`, and is set by
+  /// [`VerifyContactMethod`](#grpc-api-VerifyContactMethod) on a correct code.
   @$pb.TagNumber(4)
   $13.Timestamp get verifiedAt => $_getN(3);
   @$pb.TagNumber(4)
@@ -914,6 +935,11 @@ class ContactMethod extends $pb.GeneratedMessage {
   @$pb.TagNumber(4)
   $13.Timestamp ensureVerifiedAt() => $_ensure(3);
 
+  /// Set while an SMS verification code has been sent and not yet confirmed, expired, or exhausted
+  /// -- populated by [`StartContactMethodVerification`](#grpc-api-StartContactMethodVerification)
+  /// and cleared by a successful [`VerifyContactMethod`](#grpc-api-VerifyContactMethod) (which sets
+  /// `verified_at` instead) or by expiry/too-many-attempts. See
+  /// [`ContactMethodVerification`](#rellm-ContactMethodVerification) for its own fields.
   @$pb.TagNumber(5)
   ContactMethodVerification get verificationInProgress => $_getN(4);
   @$pb.TagNumber(5)
@@ -924,8 +950,119 @@ class ContactMethod extends $pb.GeneratedMessage {
   void clearVerificationInProgress() => clearField(5);
   @$pb.TagNumber(5)
   ContactMethodVerification ensureVerificationInProgress() => $_ensure(4);
+
+  /// Whether the user currently consents to being contacted via this `ContactMethod` (e.g. by SMS,
+  /// for `tel:` values) by external services -- see `docs/contact_integrations.md`. External
+  /// services (Twilio/Bird/Telnyx) may not contact the user unless this is
+  /// `CONTACT_CONSENT_GRANTED` -- this includes
+  /// [`StartContactMethodVerification`](#grpc-api-StartContactMethodVerification)'s own outbound
+  /// verification SMS, which fails with `contact_consent_not_granted` until consent is granted,
+  /// even though the user is the one requesting the send. Defaults to `CONTACT_CONSENT_REVOKED`
+  /// (proto3's zero value) so a `ContactMethod` with no explicit consent action is treated as
+  /// not-consented. Settable via the [`UpdateUser`](#grpc-api-UpdateUser) RPC -- same
+  /// self-or-`ADMIN` gate as `value`/
+  /// `visibility` (see `update_user.rs`'s `admin || self_update` check), not restricted further;
+  /// every change appends a new entry to `consent_history` (server-timestamped, never trusted from
+  /// client input). Only ever sent to the `ContactMethod`'s own owner or an `ADMIN` -- unlike `value`,
+  /// never relaxed by `VIEW_PRIVATE_CONTACT_METHODS`; every other viewer sees this blanked to
+  /// `CONTACT_CONSENT_REVOKED` regardless of the `ContactMethod`'s own `visibility`.
+  @$pb.TagNumber(6)
+  ContactConsentState get consentState => $_getN(5);
+  @$pb.TagNumber(6)
+  set consentState(ContactConsentState v) { setField(6, v); }
+  @$pb.TagNumber(6)
+  $core.bool hasConsentState() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearConsentState() => clearField(6);
+
+  /// Append-only history of every `consent_state` change, oldest first. Not directly modifiable --
+  /// the server appends to it whenever [`UpdateUser`](#grpc-api-UpdateUser) changes `consent_state`,
+  /// using the server's own time for
+  /// [`ContactConsentChange.changed_at`](#rellm-ContactConsentChange) regardless of what the client
+  /// sends. Same owner-or-`ADMIN`-only visibility as `consent_state` (blanked to empty for every
+  /// other viewer).
+  @$pb.TagNumber(7)
+  $core.List<ContactConsentChange> get consentHistory => $_getList(6);
 }
 
+/// A single entry in a [`ContactMethod.consent_history`](#rellm-ContactMethod), recording that its
+/// `consent_state` became `state` as of `changed_at`. Our ultimate consent state is always the
+/// `state` of the most recent (last) entry in `consent_history` --
+/// [`ContactMethod.consent_state`](#rellm-ContactMethod) is just a denormalized copy of it, kept
+/// for convenient access without walking the history.
+class ContactConsentChange extends $pb.GeneratedMessage {
+  factory ContactConsentChange({
+    ContactConsentState? state,
+    $13.Timestamp? changedAt,
+  }) {
+    final $result = create();
+    if (state != null) {
+      $result.state = state;
+    }
+    if (changedAt != null) {
+      $result.changedAt = changedAt;
+    }
+    return $result;
+  }
+  ContactConsentChange._() : super();
+  factory ContactConsentChange.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromBuffer(i, r);
+  factory ContactConsentChange.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'ContactConsentChange', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
+    ..e<ContactConsentState>(1, _omitFieldNames ? '' : 'state', $pb.PbFieldType.OE, defaultOrMaker: ContactConsentState.CONTACT_CONSENT_REVOKED, valueOf: ContactConsentState.valueOf, enumValues: ContactConsentState.values)
+    ..aOM<$13.Timestamp>(2, _omitFieldNames ? '' : 'changedAt', subBuilder: $13.Timestamp.create)
+    ..hasRequiredFields = false
+  ;
+
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.deepCopy] instead. '
+  'Will be removed in next major version')
+  ContactConsentChange clone() => ContactConsentChange()..mergeFromMessage(this);
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.rebuild] instead. '
+  'Will be removed in next major version')
+  ContactConsentChange copyWith(void Function(ContactConsentChange) updates) => super.copyWith((message) => updates(message as ContactConsentChange)) as ContactConsentChange;
+
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static ContactConsentChange create() => ContactConsentChange._();
+  ContactConsentChange createEmptyInstance() => create();
+  static $pb.PbList<ContactConsentChange> createRepeated() => $pb.PbList<ContactConsentChange>();
+  @$core.pragma('dart2js:noInline')
+  static ContactConsentChange getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<ContactConsentChange>(create);
+  static ContactConsentChange? _defaultInstance;
+
+  /// The [`ContactConsentState`](#rellm-ContactConsentState) the `ContactMethod` was changed to.
+  @$pb.TagNumber(1)
+  ContactConsentState get state => $_getN(0);
+  @$pb.TagNumber(1)
+  set state(ContactConsentState v) { setField(1, v); }
+  @$pb.TagNumber(1)
+  $core.bool hasState() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearState() => clearField(1);
+
+  /// When this change took effect. Always the server's own time as of the
+  /// [`UpdateUser`](#grpc-api-UpdateUser) call that made the change -- any `changed_at` sent by a
+  /// client is ignored.
+  @$pb.TagNumber(2)
+  $13.Timestamp get changedAt => $_getN(1);
+  @$pb.TagNumber(2)
+  set changedAt($13.Timestamp v) { setField(2, v); }
+  @$pb.TagNumber(2)
+  $core.bool hasChangedAt() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearChangedAt() => clearField(2);
+  @$pb.TagNumber(2)
+  $13.Timestamp ensureChangedAt() => $_ensure(1);
+}
+
+/// Encapsulates verification of a [`ContactMethod`](#rellm-ContactMethod). Verification cannot
+/// begin until contact consent (`ContactMethod.consent_state`) is granted -- see
+/// [`StartContactMethodVerification`](#grpc-api-StartContactMethodVerification).
 class ContactMethodVerification extends $pb.GeneratedMessage {
   factory ContactMethodVerification({
     $core.String? verificationCode,
@@ -977,7 +1114,8 @@ class ContactMethodVerification extends $pb.GeneratedMessage {
   static ContactMethodVerification? _defaultInstance;
 
   /// Never serialized to gRPC by the backend. Only stored server-side; a client's own attempt to
-  /// verify goes through `VerifyContactMethodRequest.code` instead, not this field.
+  /// verify goes through [`VerifyContactMethodRequest.code`](#rellm-VerifyContactMethodRequest)
+  /// instead, not this field.
   @$pb.TagNumber(1)
   $core.String get verificationCode => $_getSZ(0);
   @$pb.TagNumber(1)
@@ -998,9 +1136,9 @@ class ContactMethodVerification extends $pb.GeneratedMessage {
   @$pb.TagNumber(2)
   $13.Timestamp ensureVerificationStartedAt() => $_ensure(1);
 
-  /// Number of failed `VerifyContactMethod` attempts against `verification_code` since it was sent.
-  /// Capped (see that RPC's own doc) to prevent brute-forcing the 6-digit code within its expiry
-  /// window.
+  /// Number of failed [`VerifyContactMethod`](#grpc-api-VerifyContactMethod) attempts against
+  /// `verification_code` since it was sent. Capped (see that RPC's own doc) to prevent
+  /// brute-forcing the 6-digit code within its expiry window.
   @$pb.TagNumber(3)
   $core.int get attempts => $_getIZ(2);
   @$pb.TagNumber(3)

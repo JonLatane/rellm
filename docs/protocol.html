@@ -141,6 +141,9 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
         <p><a href="#users-proto">users.proto</a></p>
         <ul>
           <li>
+            <p><a href="#rellm-ContactConsentChange">ContactConsentChange</a></p>
+          </li>
+          <li>
             <p><a href="#rellm-ContactMethod">ContactMethod</a></p>
           </li>
           <li>
@@ -163,6 +166,9 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
           </li>
           <li>
             <p><a href="#rellm-VerifyContactMethodRequest">VerifyContactMethodRequest</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-ContactConsentState">ContactConsentState</a></p>
           </li>
           <li>
             <p><a href="#rellm-UserListingType">UserListingType</a></p>
@@ -435,7 +441,13 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
             <p><a href="#rellm-ServerLogo">ServerLogo</a></p>
           </li>
           <li>
+            <p><a href="#rellm-StalwartConfig">StalwartConfig</a></p>
+          </li>
+          <li>
             <p><a href="#rellm-StripeConfig">StripeConfig</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-TelnyxConfig">TelnyxConfig</a></p>
           </li>
           <li>
             <p><a href="#rellm-TwilioConfig">TwilioConfig</a></p>
@@ -453,6 +465,12 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
             <p><a href="#rellm-ClusterResource">ClusterResource</a></p>
           </li>
           <li>
+            <p><a href="#rellm-ContactProtocol">ContactProtocol</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-ContactVerificationAPI">ContactVerificationAPI</a></p>
+          </li>
+          <li>
             <p><a href="#rellm-NavigationTab">NavigationTab</a></p>
           </li>
           <li>
@@ -460,9 +478,6 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
           </li>
           <li>
             <p><a href="#rellm-PrivateUserStrategy">PrivateUserStrategy</a></p>
-          </li>
-          <li>
-            <p><a href="#rellm-VerificationAPI">VerificationAPI</a></p>
           </li>
           <li>
             <p><a href="#rellm-WebUserInterface">WebUserInterface</a></p>
@@ -651,17 +666,21 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
     <h3 id="ports--protocols"><a class="anchor" aria-hidden="true" tabindex="-1" href="#ports--protocols"><span class="octicon octicon-link"></span></a>Ports &#x26; Protocols</h3>
     <p>Rellm servers interact across several ports:</p>
     <ul>
-      <li><a href="#grpc-api">gRPC (27707)</a> - The main Rellm gRPC API. This is the primary port for all Rellm clients. It may or may not be TLS-enabled (443).
+      <li>gRPC (27707) - The main <a href="#grpc-api">Rellm gRPC API</a>. This is the primary port for all Rellm clients. It may or may not be TLS-enabled (443).
         <ul>
           <li>Clients are expected to negotiate the gRPC host via the <a href="#http-based-client-host-negotiation-for-external-cdns"><code>backend_host</code> HTTP endpoint (see below)</a> on port 80/443.</li>
         </ul>
       </li>
-      <li><a href="#http-endpoints">HTTP (80, 8000, 27705), HTTPS (443)</a> - The main Rellm HTTP API. This is used for some endpoints, including media upload/download, and for negotiating the gRPC host.
+      <li>HTTP (80, 8000, 27705), HTTPS (443) - The main Rellm HTTP API. This is used for some endpoints, including media upload/download, and for negotiating the gRPC host.
         <ul>
-          <li>Port 443 will serve up a secure HTTPS server. If it fails to startup, Rellm handles this gracefully and degrades to plain HTTP.</li>
-          <li>Port 80 will serve up either an unsecured set of Rellm's HTTP endpoints, or a redirect to the HTTPS/443 server if that one launched successfully.</li>
-          <li>Port 8000 <em>always</em> serves up an unsecured Rellm UI, in case something goes horribly wrong with 80 and 443. It can probably not be exposed in your load balancer/to the web.</li>
-          <li>Port 27705 is an unsecured HTTP server meant for communication with other non-web facing services on your computer or in your cluster. It should not be exposed to the web.
+          <li><a href="#external-http-servers-80-8000-443">Public HTTP Endpoints</a> and the Elm, React and Flutter <a href="#web-ui-paths">Web UI</a>s are served up on multiple ports:
+            <ul>
+              <li>Port 443 will serve up a secure HTTPS server. If it fails to startup, Rellm handles this gracefully and degrades to plain HTTP.</li>
+              <li>Port 80 will serve up either an unsecured set of Rellm's HTTP endpoints, or a redirect to the HTTPS/443 server if that one launched successfully.</li>
+              <li>Port 8000 <em>always</em> serves up an unsecured Rellm UI, in case something goes horribly wrong with 80 and 443. It can probably not be exposed in your load balancer/to the web.</li>
+            </ul>
+          </li>
+          <li>Port 27705 is a <a href="#internal-http-server-27705">private, unsecured HTTP server</a> meant for communication with other non-web facing services on your computer or in your cluster. It should not be exposed to the web.
             <ul>
               <li>Currently this just has an <code>/email</code> endpoint. It is designed for <a href="https://github.com/JonLatane/rellm/tree/main/deploys/email">email/SMTP support via an integration with Stalwart</a>.</li>
             </ul>
@@ -1711,7 +1730,7 @@ directory</a> is (<code>{name}</code> denotes a
           <td>GetServerConfiguration</td>
           <td><a href="#google-protobuf-Empty">.google.protobuf.Empty</a></td>
           <td><a href="#rellm-ServerConfiguration">ServerConfiguration</a></td>
-          <td>Gets the Rellm server's configuration. <em>Publicly accessible.</em></td>
+          <td>Gets the Rellm server's <a href="#rellm-ServerConfiguration"><code>ServerConfiguration</code></a>. <em>Publicly accessible</em> -- some fields (e.g. <code>twilio_config</code>, <code>preferred_verification_apis</code>) are stripped for a non-admin caller, see that message's own field docs.</td>
         </tr>
         <tr>
           <td>CreateAccount</td>
@@ -1783,13 +1802,13 @@ directory</a> is (<code>{name}</code> denotes a
           <td>StartContactMethodVerification</td>
           <td><a href="#rellm-ContactMethod">ContactMethod</a></td>
           <td><a href="#rellm-ContactMethod">ContactMethod</a></td>
-          <td>Starts SMS verification of the current user's own phone ContactMethod. <em>Authenticated, self-only.</em> Requires the server to have Twilio configured and enabled. Generates a 6-digit code, sends it via Twilio SMS, and stores it (with a start time and attempt counter) on the phone ContactMethod. Only <code>tel:</code> values are supported this iteration -- <code>mailto:</code> returns <code>Unimplemented</code>. Rate-limited to one send per 60 seconds per user.</td>
+          <td>Starts SMS verification of the current user's own phone <a href="#rellm-ContactMethod"><code>ContactMethod</code></a>. <em>Authenticated, self-only.</em> Requires the server to have a <a href="#rellm-TwilioConfig"><code>TwilioConfig</code></a>/<a href="#rellm-BirdConfig"><code>BirdConfig</code></a>/ <a href="#rellm-TelnyxConfig"><code>TelnyxConfig</code></a> SMS provider configured and enabled (see <a href="#rellm-ContactProtocol"><code>ContactProtocol</code></a> for the corresponding server-wide toggle). Also requires the phone <code>ContactMethod</code>'s own <code>consent_state</code> to already be <code>CONTACT_CONSENT_GRANTED</code> -- fails with <code>contact_consent_not_granted</code> otherwise, since the verification code is itself an outbound SMS sent through that same provider (see <a href="#rellm-ContactMethod"><code>ContactMethod.consent_state</code></a>'s own doc; this is checked even though the user is the one requesting the send). Generates a 6-digit code, sends it via SMS, and stores it (with a start time and attempt counter) on the phone <code>ContactMethod</code> (<code>verification_in_progress</code>). Only <code>tel:</code> values are supported this iteration -- <code>mailto:</code> returns <code>Unimplemented</code>. Rate-limited to one send per 60 seconds per user.</td>
         </tr>
         <tr>
           <td>VerifyContactMethod</td>
           <td><a href="#rellm-VerifyContactMethodRequest">VerifyContactMethodRequest</a></td>
           <td><a href="#rellm-ContactMethod">ContactMethod</a></td>
-          <td>Verifies a code sent by <a href="#grpc-api-StartContactMethodVerification"><code>StartContactMethodVerification</code></a>. <em>Authenticated, self-only.</em> On match, sets <code>verified_at</code> and clears <code>verification_in_progress</code>. Codes expire after 10 minutes and allow at most 5 attempts before requiring a fresh <a href="#grpc-api-StartContactMethodVerification"><code>StartContactMethodVerification</code></a> call.</td>
+          <td>Verifies a code sent by <a href="#grpc-api-StartContactMethodVerification"><code>StartContactMethodVerification</code></a>. <em>Authenticated, self-only.</em> On match, sets <a href="#rellm-ContactMethod"><code>ContactMethod.verified_at</code></a> and clears <code>verification_in_progress</code>. Codes expire after 10 minutes and allow at most 5 attempts before requiring a fresh <a href="#grpc-api-StartContactMethodVerification"><code>StartContactMethodVerification</code></a> call.</td>
         </tr>
         <tr>
           <td>DeleteUser</td>
@@ -2197,7 +2216,7 @@ directory</a> is (<code>{name}</code> denotes a
           <td>ConfigureServer</td>
           <td><a href="#rellm-ServerConfiguration">ServerConfiguration</a></td>
           <td><a href="#rellm-ServerConfiguration">ServerConfiguration</a></td>
-          <td>Configure the server (i.e. the response to GetServerConfiguration). <em>Authenticated.</em> Requires <code>ADMIN</code> permissions. Editing <code>cluster_resources</code> additionally requires <code>EDIT_CLUSTER_SETTINGS</code> - see that field's own doc.</td>
+          <td>Configure the server (i.e. the response to <a href="#grpc-api-GetServerConfiguration"><code>GetServerConfiguration</code></a>). <em>Authenticated.</em> Requires <code>ADMIN</code> permissions. Editing <code>cluster_resources</code> additionally requires <code>EDIT_CLUSTER_SETTINGS</code> - see that field's own doc. Editing <a href="#rellm-ServerConfiguration"><code>supported_contact_protocols</code></a> is validated, not just stored -- see <a href="#rellm-ContactProtocol"><code>ContactProtocol</code></a>'s own doc.</td>
         </tr>
         <tr>
           <td>LockClusterResources</td>
@@ -3050,11 +3069,49 @@ directory</a> is (<code>{name}</code> denotes a
     <p><a name="users-proto"></a></p>
     <p align="right"><a href="#top">Top</a></p>
     <h2 id="usersproto"><a class="anchor" aria-hidden="true" tabindex="-1" href="#usersproto"><span class="octicon octicon-link"></span></a>users.proto</h2>
+    <p><a name="rellm-ContactConsentChange"></a></p>
+    <h3 id="contactconsentchange"><a class="anchor" aria-hidden="true" tabindex="-1" href="#contactconsentchange"><span class="octicon octicon-link"></span></a>ContactConsentChange</h3>
+    <p>
+      A single entry in a <a href="#rellm-ContactMethod"><code>ContactMethod.consent_history</code></a>, recording that its
+      <code>consent_state</code> became <code>state</code> as of <code>changed_at</code>. Our ultimate consent state is always the
+      <code>state</code> of the most recent (last) entry in <code>consent_history</code> --
+      <a href="#rellm-ContactMethod"><code>ContactMethod.consent_state</code></a> is just a denormalized copy of it, kept
+      for convenient access without walking the history.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>state</td>
+          <td><a href="#rellm-ContactConsentState">ContactConsentState</a></td>
+          <td></td>
+          <td>The <a href="#rellm-ContactConsentState"><code>ContactConsentState</code></a> the <code>ContactMethod</code> was changed to.</td>
+        </tr>
+        <tr>
+          <td>changed_at</td>
+          <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
+          <td></td>
+          <td>When this change took effect. Always the server's own time as of the <a href="#grpc-api-UpdateUser"><code>UpdateUser</code></a> call that made the change -- any <code>changed_at</code> sent by a client is ignored.</td>
+        </tr>
+      </tbody>
+    </table>
     <p><a name="rellm-ContactMethod"></a></p>
     <h3 id="contactmethod"><a class="anchor" aria-hidden="true" tabindex="-1" href="#contactmethod"><span class="octicon octicon-link"></span></a>ContactMethod</h3>
     <p>
-      A contact method for a user. Verified via <code>StartContactMethodVerification</code>/<code>VerifyContactMethod</code>
-      -- SMS/Twilio only this iteration, see <code>TwilioConfig</code> in <code>server_configuration.proto</code>.
+      A contact method for a user (<code>tel:</code> or <code>mailto:</code>). SMS verification via
+      <a href="#grpc-api-StartContactMethodVerification"><code>StartContactMethodVerification</code></a>/
+      <a href="#grpc-api-VerifyContactMethod"><code>VerifyContactMethod</code></a>, backed by whichever of
+      <a href="#rellm-TwilioConfig"><code>TwilioConfig</code></a>/<a href="#rellm-BirdConfig"><code>BirdConfig</code></a>/
+      <a href="#rellm-TelnyxConfig"><code>TelnyxConfig</code></a> the server has enabled -- see <code>supported_by_server</code> below,
+      and <a href="#rellm-ContactProtocol"><code>ContactProtocol</code></a> for the corresponding server-wide toggle.
+      <code>mailto:</code> has no verification provider yet.
     </p>
     <table>
       <thead>
@@ -3082,24 +3139,41 @@ directory</a> is (<code>{name}</code> denotes a
           <td>supported_by_server</td>
           <td><a href="#bool">bool</a></td>
           <td></td>
-          <td>Server-side flag indicating whether the server can verify (and otherwise interact via) the contact method. Always computed server-side (never trusted from client input) off whether a verification provider is currently enabled for this contact method's scheme (<code>tel:</code>/<code>mailto:</code>).</td>
+          <td>Server-side flag indicating whether the server can verify (and otherwise interact via) the contact method. Always computed server-side (never trusted from client input) -- <code>true</code> iff this value's scheme (<code>tel:</code>/<code>mailto:</code>) is the corresponding <a href="#rellm-ContactProtocol"><code>ContactProtocol</code></a> currently listed in <code>ServerConfiguration.supported_contact_protocols</code> (see the <a href="#rellm-ServerConfiguration"><code>ServerConfiguration</code></a> message). <code>users.proto</code> deliberately never imports <code>server_configuration.proto</code> (server configuration is kept abstracted from the rest of the protocol), so this relationship exists only in backend logic (<code>contact_verification::contact_protocol_supported</code>, called from <code>update_user.rs</code>) and in this doc comment, not as a formal schema reference.</td>
         </tr>
         <tr>
           <td>verified_at</td>
           <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
           <td>optional</td>
-          <td>Time the contact method was verified. Indicates the user has completed verification of the contact method. Verification requires <code>supported_by_server</code> to be <code>true</code>.</td>
+          <td>Time the contact method was verified. Indicates the user has completed verification of the contact method. Verification requires <code>supported_by_server</code> to be <code>true</code>, and is set by <a href="#grpc-api-VerifyContactMethod"><code>VerifyContactMethod</code></a> on a correct code.</td>
         </tr>
         <tr>
           <td>verification_in_progress</td>
           <td><a href="#rellm-ContactMethodVerification">ContactMethodVerification</a></td>
           <td>optional</td>
+          <td>Set while an SMS verification code has been sent and not yet confirmed, expired, or exhausted -- populated by <a href="#grpc-api-StartContactMethodVerification"><code>StartContactMethodVerification</code></a> and cleared by a successful <a href="#grpc-api-VerifyContactMethod"><code>VerifyContactMethod</code></a> (which sets <code>verified_at</code> instead) or by expiry/too-many-attempts. See <a href="#rellm-ContactMethodVerification"><code>ContactMethodVerification</code></a> for its own fields.</td>
+        </tr>
+        <tr>
+          <td>consent_state</td>
+          <td><a href="#rellm-ContactConsentState">ContactConsentState</a></td>
           <td></td>
+          <td>Whether the user currently consents to being contacted via this <code>ContactMethod</code> (e.g. by SMS, for <code>tel:</code> values) by external services -- see <code>docs/contact_integrations.md</code>. External services (Twilio/Bird/Telnyx) may not contact the user unless this is <code>CONTACT_CONSENT_GRANTED</code> -- this includes <a href="#grpc-api-StartContactMethodVerification"><code>StartContactMethodVerification</code></a>'s own outbound verification SMS, which fails with <code>contact_consent_not_granted</code> until consent is granted, even though the user is the one requesting the send. Defaults to <code>CONTACT_CONSENT_REVOKED</code> (proto3's zero value) so a <code>ContactMethod</code> with no explicit consent action is treated as not-consented. Settable via the <a href="#grpc-api-UpdateUser"><code>UpdateUser</code></a> RPC -- same self-or-<code>ADMIN</code> gate as <code>value</code>/ <code>visibility</code> (see <code>update_user.rs</code>'s `admin</td>
+        </tr>
+        <tr>
+          <td>consent_history</td>
+          <td><a href="#rellm-ContactConsentChange">ContactConsentChange</a></td>
+          <td>repeated</td>
+          <td>Append-only history of every <code>consent_state</code> change, oldest first. Not directly modifiable -- the server appends to it whenever <a href="#grpc-api-UpdateUser"><code>UpdateUser</code></a> changes <code>consent_state</code>, using the server's own time for <a href="#rellm-ContactConsentChange"><code>ContactConsentChange.changed_at</code></a> regardless of what the client sends. Same owner-or-<code>ADMIN</code>-only visibility as <code>consent_state</code> (blanked to empty for every other viewer).</td>
         </tr>
       </tbody>
     </table>
     <p><a name="rellm-ContactMethodVerification"></a></p>
     <h3 id="contactmethodverification"><a class="anchor" aria-hidden="true" tabindex="-1" href="#contactmethodverification"><span class="octicon octicon-link"></span></a>ContactMethodVerification</h3>
+    <p>
+      Encapsulates verification of a <a href="#rellm-ContactMethod"><code>ContactMethod</code></a>. Verification cannot
+      begin until contact consent (<code>ContactMethod.consent_state</code>) is granted -- see
+      <a href="#grpc-api-StartContactMethodVerification"><code>StartContactMethodVerification</code></a>.
+    </p>
     <table>
       <thead>
         <tr>
@@ -3114,7 +3188,7 @@ directory</a> is (<code>{name}</code> denotes a
           <td>verification_code</td>
           <td><a href="#string">string</a></td>
           <td></td>
-          <td>Never serialized to gRPC by the backend. Only stored server-side; a client's own attempt to verify goes through <code>VerifyContactMethodRequest.code</code> instead, not this field.</td>
+          <td>Never serialized to gRPC by the backend. Only stored server-side; a client's own attempt to verify goes through <a href="#rellm-VerifyContactMethodRequest"><code>VerifyContactMethodRequest.code</code></a> instead, not this field.</td>
         </tr>
         <tr>
           <td>verification_started_at</td>
@@ -3126,7 +3200,7 @@ directory</a> is (<code>{name}</code> denotes a
           <td>attempts</td>
           <td><a href="#int32">int32</a></td>
           <td></td>
-          <td>Number of failed <code>VerifyContactMethod</code> attempts against <code>verification_code</code> since it was sent. Capped (see that RPC's own doc) to prevent brute-forcing the 6-digit code within its expiry window.</td>
+          <td>Number of failed <a href="#grpc-api-VerifyContactMethod"><code>VerifyContactMethod</code></a> attempts against <code>verification_code</code> since it was sent. Capped (see that RPC's own doc) to prevent brute-forcing the 6-digit code within its expiry window.</td>
         </tr>
       </tbody>
     </table>
@@ -3556,6 +3630,34 @@ directory</a> is (<code>{name}</code> denotes a
           <td><a href="#string">string</a></td>
           <td></td>
           <td>The code the user was sent by <code>StartContactMethodVerification</code>.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-ContactConsentState"></a></p>
+    <h3 id="contactconsentstate"><a class="anchor" aria-hidden="true" tabindex="-1" href="#contactconsentstate"><span class="octicon octicon-link"></span></a>ContactConsentState</h3>
+    <p>
+      Whether a user has consented to being contacted (e.g. via SMS/email sent by external services)
+      through a given <a href="#rellm-ContactMethod"><code>ContactMethod</code></a>. See
+      <a href="#rellm-ContactMethod"><code>ContactMethod.consent_state</code></a>.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Number</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>CONTACT_CONSENT_REVOKED</td>
+          <td>0</td>
+          <td>The user has not consented, or has revoked a prior consent. External services may not use this <code>ContactMethod</code> to contact the user.</td>
+        </tr>
+        <tr>
+          <td>CONTACT_CONSENT_GRANTED</td>
+          <td>1</td>
+          <td>The user currently consents to being contacted via this <code>ContactMethod</code>.</td>
         </tr>
       </tbody>
     </table>
@@ -6351,7 +6453,8 @@ directory</a> is (<code>{name}</code> denotes a
     <h3 id="birdconfig"><a class="anchor" aria-hidden="true" tabindex="-1" href="#birdconfig"><span class="octicon octicon-link"></span></a>BirdConfig</h3>
     <p>
       Bird (<a href="https://bird.com/">https://bird.com</a>, formerly MessageBird) Config -- an alternative SMS verification
-      provider to Twilio, with a simpler single-API-key auth model.
+      provider to <a href="#rellm-TwilioConfig"><code>TwilioConfig</code></a>, with a simpler single-API-key auth model. See
+      <code>docs/contact_integrations.md</code> for full setup steps.
     </p>
     <table>
       <thead>
@@ -6386,6 +6489,12 @@ directory</a> is (<code>{name}</code> denotes a
           <td><a href="#string">string</a></td>
           <td></td>
           <td>Which Bird API region to call ("us1" or "eu1", per Bird's own regional API hosts). Not secret. Empty defaults to "us1".</td>
+        </tr>
+        <tr>
+          <td>bird_webhook_signing_key</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td>Optional -- the Standard Webhooks signing secret (starts with <code>whsec_</code>) for the SMS channel subscription delivering to <code>/contact_integrations/bird/receive</code>, used to verify the <code>webhook-id</code>/<code>webhook-timestamp</code>/<code>webhook-signature</code> headers on inbound deliveries (HMAC-SHA256; see <a href="https://www.standardwebhooks.com/">https://www.standardwebhooks.com</a> and <code>docs/contact_integrations.md</code>). Blank/unset means inbound deliveries are accepted without signature verification. <code>optional</code> (not plain <code>string</code>) for the same "<code>Some</code>/<code>None</code> distinguishable from a client without ever seeing the real value" reason as <a href="#rellm-TwilioConfig"><code>TwilioConfig.twilio_webhook_signing_key</code></a>.</td>
         </tr>
       </tbody>
     </table>
@@ -7230,28 +7339,34 @@ directory</a> is (<code>{name}</code> denotes a
           <td>Web Push (VAPID) configuration for the server.</td>
         </tr>
         <tr>
-          <td>preferred_verification_apis</td>
-          <td><a href="#rellm-VerificationAPI">VerificationAPI</a></td>
+          <td>supported_contact_protocols</td>
+          <td><a href="#rellm-ContactProtocol">ContactProtocol</a></td>
           <td>repeated</td>
-          <td>A server-preferred order of contact verification APIs. Note: even if this is blank, if twilio_config is enabled, the server should try to verify with Twilio. It's really only for the case of wanting to switch between multiple SMS/Email providers. Only serialized for admin users.</td>
+          <td>Which <a href="#rellm-ContactProtocol"><code>ContactProtocol</code></a>s (<code>tel:</code>/<code>mailto:</code>) this server currently accepts -- drives <a href="#rellm-ContactMethod"><code>ContactMethod.supported_by_server</code></a> (<code>users.proto</code>, which can't reference this message directly -- see that field's own doc for why). Settable via <a href="#grpc-api-ConfigureServer"><code>ConfigureServer</code></a>, which <em>errors</em> rather than silently dropping an invalid entry: <code>CONTACT_PROTOCOL_TEL</code> requires an enabled <a href="#rellm-TwilioConfig"><code>TwilioConfig</code></a>/<a href="#rellm-BirdConfig"><code>BirdConfig</code></a>/ <a href="#rellm-TelnyxConfig"><code>TelnyxConfig</code></a> in that same request, and <code>CONTACT_PROTOCOL_MAILTO</code> is always rejected (no email provider exists yet). Edited via the "Enable SMS Sending"/"Enable Email Sending" toggles on the Contact Integrations tab's "SMS Configuration"/"Email Configuration" sections (<code>ContactIntegrationsTab.smsConfigurationSection</code>/ <code>emailConfigurationSection</code>) -- see <code>docs/contact_integrations.md</code>.</td>
+        </tr>
+        <tr>
+          <td>preferred_verification_apis</td>
+          <td><a href="#rellm-ContactVerificationAPI">ContactVerificationAPI</a></td>
+          <td>repeated</td>
+          <td>A server-preferred order of <a href="#rellm-ContactVerificationAPI"><code>ContactVerificationAPI</code></a> providers to try first when more than one of <code>twilio_config</code>/<code>bird_config</code>/<code>telnyx_config</code> below is enabled -- see <code>contact_verification::available_verification_apis</code> for the full preference-then-fallback ordering this feeds into <a href="#rellm-ServerConfiguration"><code>ServerConfiguration.available_verification_apis</code></a> below. Even when this is blank, an enabled provider is still tried (in the fixed default order Twilio/Bird/Telnyx) -- this field only matters when more than one is enabled and the admin wants a specific one tried first. Only serialized for admin users.</td>
         </tr>
         <tr>
           <td>available_verification_apis</td>
-          <td><a href="#rellm-VerificationAPI">VerificationAPI</a></td>
+          <td><a href="#rellm-ContactVerificationAPI">ContactVerificationAPI</a></td>
           <td>repeated</td>
-          <td>Derived from whether TwilioConfig.enabled is true, etc. Serialized to every caller (not admin-only, unlike <code>preferred_verification_apis</code>/<code>twilio_config</code>) -- this is what a non-admin client should check to decide whether to show verification UI at all, without exposing any provider configuration.</td>
+          <td>Derived from whether <a href="#rellm-TwilioConfig"><code>TwilioConfig</code></a>.twilio_enabled/ <a href="#rellm-BirdConfig"><code>BirdConfig</code></a>.bird_enabled/ <a href="#rellm-TelnyxConfig"><code>TelnyxConfig</code></a>.telnyx_enabled is true, ordered per <code>preferred_verification_apis</code> above. Serialized to every caller (not admin-only, unlike <code>preferred_verification_apis</code>/<code>twilio_config</code>/<code>bird_config</code>/<code>telnyx_config</code>) -- this is what a non-admin client should check to decide whether to show verification UI at all, without exposing any provider configuration. Independent of <code>supported_contact_protocols</code> above -- that's the admin's own on/off toggle (can disable <code>tel:</code> contact even while a provider stays enabled/configured), this is purely "is at least one provider actually configured."</td>
         </tr>
         <tr>
           <td>twilio_config</td>
           <td><a href="#rellm-TwilioConfig">TwilioConfig</a></td>
           <td>optional</td>
-          <td>Twilio Config. Only serialized for admin users.</td>
+          <td>Twilio Config -- see <a href="#rellm-TwilioConfig"><code>TwilioConfig</code></a>. Only serialized for admin users.</td>
         </tr>
         <tr>
           <td>bird_config</td>
           <td><a href="#rellm-BirdConfig">BirdConfig</a></td>
           <td>optional</td>
-          <td>Bird (bird.com, formerly MessageBird) Config -- a cheaper Twilio alternative for SMS verification. Only serialized for admin users.</td>
+          <td>Bird (bird.com, formerly MessageBird) Config -- a cheaper alternative to <a href="#rellm-TwilioConfig"><code>TwilioConfig</code></a> for SMS verification; see <a href="#rellm-BirdConfig"><code>BirdConfig</code></a>'s own doc. Only serialized for admin users.</td>
         </tr>
         <tr>
           <td>stripe_config</td>
@@ -7259,8 +7374,21 @@ directory</a> is (<code>{name}</code> denotes a
           <td>optional</td>
           <td>Stripe Config, backing the Marketplace (<code>market.proto</code>). Only serialized for admin users.</td>
         </tr>
+        <tr>
+          <td>telnyx_config</td>
+          <td><a href="#rellm-TelnyxConfig">TelnyxConfig</a></td>
+          <td>optional</td>
+          <td>Telnyx Config -- another alternative SMS verification provider to <a href="#rellm-TwilioConfig"><code>TwilioConfig</code></a> (see <a href="#rellm-TelnyxConfig"><code>TelnyxConfig</code></a>'s own doc). Only serialized for admin users.</td>
+        </tr>
+        <tr>
+          <td>stalwart_config</td>
+          <td><a href="#rellm-StalwartConfig">StalwartConfig</a></td>
+          <td>optional</td>
+          <td>Unlike the other configs, at least at the moment, the integration with Stalwart is designed to be <em>in-cluster</em>, not over the web. It relies on unsecured /email endpoint on port 27705 to receive mail from a Stalwart deployed within the same Kubernetes cluster.</td>
+        </tr>
       </tbody>
     </table>
+    <p>This could be extended in the future to allow sending mail with Stalwart, but that's TBD. |</p>
     <p><a name="rellm-ServerInfo"></a></p>
     <h3 id="serverinfo"><a class="anchor" aria-hidden="true" tabindex="-1" href="#serverinfo"><span class="octicon octicon-link"></span></a>ServerInfo</h3>
     <p>User-facing information about the server displayed on the "about" page.</p>
@@ -7369,6 +7497,30 @@ directory</a> is (<code>{name}</code> denotes a
         </tr>
       </tbody>
     </table>
+    <p><a name="rellm-StalwartConfig"></a></p>
+    <h3 id="stalwartconfig"><a class="anchor" aria-hidden="true" tabindex="-1" href="#stalwartconfig"><span class="octicon octicon-link"></span></a>StalwartConfig</h3>
+    <p>
+      Stalwart is an extablished, open-source Rust email/contact/calendar server (think an Outlook or Google Workspace competitor).
+      Currently Rellm supports receiving emails via Stalwart webhook configurations.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>stalwart_receiving_enabled</td>
+          <td><a href="#bool">bool</a></td>
+          <td></td>
+          <td>Enables receiving emails from the private, unsecured cluster-facing HTTP server at :27705/email.</td>
+        </tr>
+      </tbody>
+    </table>
     <p><a name="rellm-StripeConfig"></a></p>
     <h3 id="stripeconfig"><a class="anchor" aria-hidden="true" tabindex="-1" href="#stripeconfig"><span class="octicon octicon-link"></span></a>StripeConfig</h3>
     <p>
@@ -7412,6 +7564,55 @@ directory</a> is (<code>{name}</code> denotes a
         </tr>
       </tbody>
     </table>
+    <p><a name="rellm-TelnyxConfig"></a></p>
+    <h3 id="telnyxconfig"><a class="anchor" aria-hidden="true" tabindex="-1" href="#telnyxconfig"><span class="octicon octicon-link"></span></a>TelnyxConfig</h3>
+    <p>
+      Telnyx (<a href="https://telnyx.com/">https://telnyx.com</a>) Config -- an alternative SMS verification provider to
+      <a href="#rellm-TwilioConfig"><code>TwilioConfig</code></a>, with a simpler single-API-key auth model like
+      <a href="#rellm-BirdConfig"><code>BirdConfig</code></a>'s. See <code>docs/contact_integrations.md</code> for full setup steps.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>telnyx_enabled</td>
+          <td><a href="#bool">bool</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>telnyx_api_key</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>The Telnyx v2 API Key (starts with <code>KEY</code>), used as Bearer auth for Telnyx's Messaging API (<code>POST /v2/messages</code>). Never serialized once written -- same write-only treatment as <a href="#rellm-TwilioConfig"><code>TwilioConfig.twilio_api_key_secret</code></a>/ <a href="#rellm-BirdConfig"><code>BirdConfig.bird_access_key</code></a>.</td>
+        </tr>
+        <tr>
+          <td>telnyx_from_number</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>The Telnyx-provisioned sending number for outbound verification SMS (E.164, e.g. a toll-free number). Not secret.</td>
+        </tr>
+        <tr>
+          <td>telnyx_messaging_profile_id</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>The Telnyx Messaging Profile ID that <code>telnyx_from_number</code> is assigned to -- required by Telnyx's Messaging API to actually send (<code>messaging_profile_id</code> on <code>POST /v2/messages</code>). Not secret.</td>
+        </tr>
+        <tr>
+          <td>telnyx_webhook_signing_key</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td>Optional -- Telnyx's account-level public key (Mission Control Portal -> Keys &#x26; Credentials -> Public Key), used to verify the <code>telnyx-signature-ed25519</code>/<code>telnyx-timestamp</code> headers on inbound deliveries to <code>/contact_integrations/telnyx/receive</code> (Ed25519; see <a href="https://developers.telnyx.com/docs/messaging/messages/receiving-webhooks">https://developers.telnyx.com/docs/messaging/messages/receiving-webhooks</a> and <code>docs/contact_integrations.md</code>). Actually a public key, not a secret, but kept write-only (never serialized once written) for the same "don't echo config back" treatment as every other credential here. Unset means inbound deliveries are accepted without signature verification. <code>optional</code> (not plain <code>string</code>) for the same "<code>Some</code>/<code>None</code> distinguishable from a client without ever seeing the real value" reason as <a href="#rellm-TwilioConfig"><code>TwilioConfig.twilio_webhook_signing_key</code></a>.</td>
+        </tr>
+      </tbody>
+    </table>
     <p><a name="rellm-TwilioConfig"></a></p>
     <h3 id="twilioconfig"><a class="anchor" aria-hidden="true" tabindex="-1" href="#twilioconfig"><span class="octicon octicon-link"></span></a>TwilioConfig</h3>
     <p>
@@ -7424,7 +7625,9 @@ directory</a> is (<code>{name}</code> denotes a
       authenticate -- only the API Key SID/Secret pair is. See
       <a href="https://www.twilio.com/docs/iam/api-keys/restricted-api-keys">https://www.twilio.com/docs/iam/api-keys/restricted-api-keys</a> for the recommended
       permission when creating one: <code>/twilio/messaging/messages/create</code> (nothing else is needed just
-      to send verification SMS).
+      to send verification SMS). See <code>docs/contact_integrations.md</code> for full setup steps (API key
+      creation, inbound webhook registration), and <a href="#rellm-ContactMethod"><code>ContactMethod</code></a>
+      (<code>users.proto</code>) for how a verified <code>tel:</code> contact method surfaces this provider.
     </p>
     <table>
       <thead>
@@ -7465,6 +7668,12 @@ directory</a> is (<code>{name}</code> denotes a
           <td><a href="#string">string</a></td>
           <td></td>
           <td>The Twilio-provisioned sending number for outbound verification SMS. Not secret.</td>
+        </tr>
+        <tr>
+          <td>twilio_webhook_signing_key</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td>Optional -- the Twilio Account's Auth Token, used <em>only</em> to verify the <code>X-Twilio-Signature</code> header on inbound deliveries to <code>/contact_integrations/twilio/receive</code> (see <a href="https://www.twilio.com/docs/usage/webhooks/webhooks-security">https://www.twilio.com/docs/usage/webhooks/webhooks-security</a> and <code>docs/contact_integrations.md</code>). Never used to authenticate outbound API calls -- this message's own doc explains why the Auth Token is deliberately excluded from that role; this is the one narrow exception, since signature verification is the one thing only the Auth Token (not an API Key) can do. Unset means inbound deliveries are accepted without signature verification. Write-only, like every other credential here, but distinctly from those: <code>optional</code> so a client can tell <em>whether</em> a key is configured (<code>Some</code>/<code>None</code>) without ever seeing its real value -- once set, <code>to_proto</code> blanks this to <code>Some(&#x26;#34;&#x26;#34;)</code> (not <code>None</code>), so "configured but hidden" and "never configured" stay distinguishable. Sending an empty value back on <code>ConfigureServer</code> means "leave whatever's already stored alone," same as every other write-only field's blank-means-no-op rule.</td>
         </tr>
       </tbody>
     </table>
@@ -7586,6 +7795,69 @@ directory</a> is (<code>{name}</code> denotes a
         </tr>
       </tbody>
     </table>
+    <p><a name="rellm-ContactProtocol"></a></p>
+    <h3 id="contactprotocol"><a class="anchor" aria-hidden="true" tabindex="-1" href="#contactprotocol"><span class="octicon octicon-link"></span></a>ContactProtocol</h3>
+    <p>
+      The two contact schemes <a href="#rellm-ContactMethod"><code>ContactMethod.value</code></a> (<code>users.proto</code>) may take --
+      see <a href="#rellm-ServerConfiguration"><code>ServerConfiguration.supported_contact_protocols</code></a> for the
+      server-wide setting keyed off this enum, and <code>docs/contact_integrations.md</code> for the full picture.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Number</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>CONTACT_PROTOCOL_TEL</td>
+          <td>0</td>
+          <td><code>tel:</code> (phone/SMS) contact. Requires an enabled <a href="#rellm-TwilioConfig"><code>TwilioConfig</code></a>/ <a href="#rellm-BirdConfig"><code>BirdConfig</code></a>/<a href="#rellm-TelnyxConfig"><code>TelnyxConfig</code></a>.</td>
+        </tr>
+        <tr>
+          <td>CONTACT_PROTOCOL_MAILTO</td>
+          <td>1</td>
+          <td><code>mailto:</code> (email) contact. Currently not supported -- no email provider exists yet.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-ContactVerificationAPI"></a></p>
+    <h3 id="contactverificationapi"><a class="anchor" aria-hidden="true" tabindex="-1" href="#contactverificationapi"><span class="octicon octicon-link"></span></a>ContactVerificationAPI</h3>
+    <p>
+      The SMS providers <a href="#rellm-ServerConfiguration"><code>ServerConfiguration.preferred_verification_apis</code></a>/
+      <a href="#rellm-ServerConfiguration"><code>available_verification_apis</code></a> order between --
+      <a href="#rellm-TwilioConfig"><code>TwilioConfig</code></a>, <a href="#rellm-BirdConfig"><code>BirdConfig</code></a>, and
+      <a href="#rellm-TelnyxConfig"><code>TelnyxConfig</code></a>. See <code>contact_verification.rs</code>'s own module doc for the
+      preference-then-fallback logic these values drive.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Number</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>CONTACT_VERIFICATION_API_TWILIO</td>
+          <td>0</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>CONTACT_VERIFICATION_API_BIRD</td>
+          <td>1</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>CONTACT_VERIFICATION_API_TELNYX</td>
+          <td>2</td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
     <p><a name="rellm-NavigationTab"></a></p>
     <h3 id="navigationtab"><a class="anchor" aria-hidden="true" tabindex="-1" href="#navigationtab"><span class="octicon octicon-link"></span></a>NavigationTab</h3>
     <p>The default navigation tabs in Rellm's Elm UI.</p>
@@ -7694,29 +7966,6 @@ directory</a> is (<code>{name}</code> denotes a
           <td>LET_ME_CREEP_ON_PPL</td>
           <td>2</td>
           <td>Users can see other users they follow, including their <code>PUBLIC_SERVER</code> Posts/Events. Other users can't see them.</td>
-        </tr>
-      </tbody>
-    </table>
-    <p><a name="rellm-VerificationAPI"></a></p>
-    <h3 id="verificationapi"><a class="anchor" aria-hidden="true" tabindex="-1" href="#verificationapi"><span class="octicon octicon-link"></span></a>VerificationAPI</h3>
-    <table>
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Number</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>VERIFICATION_API_TWILIO</td>
-          <td>0</td>
-          <td></td>
-        </tr>
-        <tr>
-          <td>VERIFICATION_API_BIRD</td>
-          <td>1</td>
-          <td></td>
         </tr>
       </tbody>
     </table>

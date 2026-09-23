@@ -46,6 +46,24 @@
   font-size: 0.85rem;
 }
 
+.user-card-contact-buttons {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.3rem;
+}
+
+.user-card-contact-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.8rem;
+  height: 1.8rem;
+  border-radius: 50%;
+  background: rgba(127, 127, 127, 0.15);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
 /* Components/Users/FollowStatusAndButton.elm -- follow status text plus
    whichever Follow/Request Follow/Cancel Follow Request/Unfollow/Reject
    Follower/Unreject Follower buttons apply. */

@@ -128,19 +128,35 @@ final $typed_data.Uint8List navigationTabDescriptor = $convert.base64Decode(
     'Cg1OYXZpZ2F0aW9uVGFiEgwKCEhPTUVfVEFCEAASDgoKRVZFTlRTX1RBQhAKEg0KCVBPU1RTX1'
     'RBQhALEg4KClBFT1BMRV9UQUIQDBINCglBQk9VVF9UQUIQDxIOCgpNQVJLRVRfVEFCEBA=');
 
-@$core.Deprecated('Use verificationAPIDescriptor instead')
-const VerificationAPI$json = {
-  '1': 'VerificationAPI',
+@$core.Deprecated('Use contactProtocolDescriptor instead')
+const ContactProtocol$json = {
+  '1': 'ContactProtocol',
   '2': [
-    {'1': 'VERIFICATION_API_TWILIO', '2': 0},
-    {'1': 'VERIFICATION_API_BIRD', '2': 1},
+    {'1': 'CONTACT_PROTOCOL_TEL', '2': 0},
+    {'1': 'CONTACT_PROTOCOL_MAILTO', '2': 1},
   ],
 };
 
-/// Descriptor for `VerificationAPI`. Decode as a `google.protobuf.EnumDescriptorProto`.
-final $typed_data.Uint8List verificationAPIDescriptor = $convert.base64Decode(
-    'Cg9WZXJpZmljYXRpb25BUEkSGwoXVkVSSUZJQ0FUSU9OX0FQSV9UV0lMSU8QABIZChVWRVJJRk'
-    'lDQVRJT05fQVBJX0JJUkQQAQ==');
+/// Descriptor for `ContactProtocol`. Decode as a `google.protobuf.EnumDescriptorProto`.
+final $typed_data.Uint8List contactProtocolDescriptor = $convert.base64Decode(
+    'Cg9Db250YWN0UHJvdG9jb2wSGAoUQ09OVEFDVF9QUk9UT0NPTF9URUwQABIbChdDT05UQUNUX1'
+    'BST1RPQ09MX01BSUxUTxAB');
+
+@$core.Deprecated('Use contactVerificationAPIDescriptor instead')
+const ContactVerificationAPI$json = {
+  '1': 'ContactVerificationAPI',
+  '2': [
+    {'1': 'CONTACT_VERIFICATION_API_TWILIO', '2': 0},
+    {'1': 'CONTACT_VERIFICATION_API_BIRD', '2': 1},
+    {'1': 'CONTACT_VERIFICATION_API_TELNYX', '2': 2},
+  ],
+};
+
+/// Descriptor for `ContactVerificationAPI`. Decode as a `google.protobuf.EnumDescriptorProto`.
+final $typed_data.Uint8List contactVerificationAPIDescriptor = $convert.base64Decode(
+    'ChZDb250YWN0VmVyaWZpY2F0aW9uQVBJEiMKH0NPTlRBQ1RfVkVSSUZJQ0FUSU9OX0FQSV9UV0'
+    'lMSU8QABIhCh1DT05UQUNUX1ZFUklGSUNBVElPTl9BUElfQklSRBABEiMKH0NPTlRBQ1RfVkVS'
+    'SUZJQ0FUSU9OX0FQSV9URUxOWVgQAg==');
 
 @$core.Deprecated('Use serverConfigurationDescriptor instead')
 const ServerConfiguration$json = {
@@ -163,11 +179,14 @@ const ServerConfiguration$json = {
     {'1': 'private_user_strategy', '3': 100, '4': 1, '5': 14, '6': '.rellm.PrivateUserStrategy', '10': 'privateUserStrategy'},
     {'1': 'authentication_features', '3': 101, '4': 3, '5': 14, '6': '.rellm.AuthenticationFeature', '10': 'authenticationFeatures'},
     {'1': 'web_push_config', '3': 110, '4': 1, '5': 11, '6': '.rellm.WebPushConfig', '9': 5, '10': 'webPushConfig', '17': true},
-    {'1': 'preferred_verification_apis', '3': 120, '4': 3, '5': 14, '6': '.rellm.VerificationAPI', '10': 'preferredVerificationApis'},
-    {'1': 'available_verification_apis', '3': 121, '4': 3, '5': 14, '6': '.rellm.VerificationAPI', '10': 'availableVerificationApis'},
+    {'1': 'supported_contact_protocols', '3': 119, '4': 3, '5': 14, '6': '.rellm.ContactProtocol', '10': 'supportedContactProtocols'},
+    {'1': 'preferred_verification_apis', '3': 120, '4': 3, '5': 14, '6': '.rellm.ContactVerificationAPI', '10': 'preferredVerificationApis'},
+    {'1': 'available_verification_apis', '3': 121, '4': 3, '5': 14, '6': '.rellm.ContactVerificationAPI', '10': 'availableVerificationApis'},
     {'1': 'twilio_config', '3': 122, '4': 1, '5': 11, '6': '.rellm.TwilioConfig', '9': 6, '10': 'twilioConfig', '17': true},
     {'1': 'bird_config', '3': 123, '4': 1, '5': 11, '6': '.rellm.BirdConfig', '9': 7, '10': 'birdConfig', '17': true},
     {'1': 'stripe_config', '3': 124, '4': 1, '5': 11, '6': '.rellm.StripeConfig', '9': 8, '10': 'stripeConfig', '17': true},
+    {'1': 'telnyx_config', '3': 125, '4': 1, '5': 11, '6': '.rellm.TelnyxConfig', '9': 9, '10': 'telnyxConfig', '17': true},
+    {'1': 'stalwart_config', '3': 126, '4': 1, '5': 11, '6': '.rellm.StalwartConfig', '9': 10, '10': 'stalwartConfig', '17': true},
   ],
   '8': [
     {'1': '_server_info'},
@@ -179,6 +198,8 @@ const ServerConfiguration$json = {
     {'1': '_twilio_config'},
     {'1': '_bird_config'},
     {'1': '_stripe_config'},
+    {'1': '_telnyx_config'},
+    {'1': '_stalwart_config'},
   ],
 };
 
@@ -205,17 +226,22 @@ final $typed_data.Uint8List serverConfigurationDescriptor = $convert.base64Decod
     'ZCABKA4yGi5yZWxsbS5Qcml2YXRlVXNlclN0cmF0ZWd5UhNwcml2YXRlVXNlclN0cmF0ZWd5El'
     'UKF2F1dGhlbnRpY2F0aW9uX2ZlYXR1cmVzGGUgAygOMhwucmVsbG0uQXV0aGVudGljYXRpb25G'
     'ZWF0dXJlUhZhdXRoZW50aWNhdGlvbkZlYXR1cmVzEkEKD3dlYl9wdXNoX2NvbmZpZxhuIAEoCz'
-    'IULnJlbGxtLldlYlB1c2hDb25maWdIBVINd2ViUHVzaENvbmZpZ4gBARJWChtwcmVmZXJyZWRf'
-    'dmVyaWZpY2F0aW9uX2FwaXMYeCADKA4yFi5yZWxsbS5WZXJpZmljYXRpb25BUElSGXByZWZlcn'
-    'JlZFZlcmlmaWNhdGlvbkFwaXMSVgobYXZhaWxhYmxlX3ZlcmlmaWNhdGlvbl9hcGlzGHkgAygO'
-    'MhYucmVsbG0uVmVyaWZpY2F0aW9uQVBJUhlhdmFpbGFibGVWZXJpZmljYXRpb25BcGlzEj0KDX'
-    'R3aWxpb19jb25maWcYeiABKAsyEy5yZWxsbS5Ud2lsaW9Db25maWdIBlIMdHdpbGlvQ29uZmln'
-    'iAEBEjcKC2JpcmRfY29uZmlnGHsgASgLMhEucmVsbG0uQmlyZENvbmZpZ0gHUgpiaXJkQ29uZm'
-    'lniAEBEj0KDXN0cmlwZV9jb25maWcYfCABKAsyEy5yZWxsbS5TdHJpcGVDb25maWdICFIMc3Ry'
-    'aXBlQ29uZmlniAEBQg4KDF9zZXJ2ZXJfaW5mb0ISChBfZmVkZXJhdGlvbl9pbmZvQg4KDF9jdX'
-    'N0b21fdGFic0IWChRfZXh0ZXJuYWxfY2RuX2NvbmZpZ0IUChJfY2x1c3Rlcl9yZXNvdXJjZXNC'
-    'EgoQX3dlYl9wdXNoX2NvbmZpZ0IQCg5fdHdpbGlvX2NvbmZpZ0IOCgxfYmlyZF9jb25maWdCEA'
-    'oOX3N0cmlwZV9jb25maWc=');
+    'IULnJlbGxtLldlYlB1c2hDb25maWdIBVINd2ViUHVzaENvbmZpZ4gBARJWChtzdXBwb3J0ZWRf'
+    'Y29udGFjdF9wcm90b2NvbHMYdyADKA4yFi5yZWxsbS5Db250YWN0UHJvdG9jb2xSGXN1cHBvcn'
+    'RlZENvbnRhY3RQcm90b2NvbHMSXQobcHJlZmVycmVkX3ZlcmlmaWNhdGlvbl9hcGlzGHggAygO'
+    'Mh0ucmVsbG0uQ29udGFjdFZlcmlmaWNhdGlvbkFQSVIZcHJlZmVycmVkVmVyaWZpY2F0aW9uQX'
+    'BpcxJdChthdmFpbGFibGVfdmVyaWZpY2F0aW9uX2FwaXMYeSADKA4yHS5yZWxsbS5Db250YWN0'
+    'VmVyaWZpY2F0aW9uQVBJUhlhdmFpbGFibGVWZXJpZmljYXRpb25BcGlzEj0KDXR3aWxpb19jb2'
+    '5maWcYeiABKAsyEy5yZWxsbS5Ud2lsaW9Db25maWdIBlIMdHdpbGlvQ29uZmlniAEBEjcKC2Jp'
+    'cmRfY29uZmlnGHsgASgLMhEucmVsbG0uQmlyZENvbmZpZ0gHUgpiaXJkQ29uZmlniAEBEj0KDX'
+    'N0cmlwZV9jb25maWcYfCABKAsyEy5yZWxsbS5TdHJpcGVDb25maWdICFIMc3RyaXBlQ29uZmln'
+    'iAEBEj0KDXRlbG55eF9jb25maWcYfSABKAsyEy5yZWxsbS5UZWxueXhDb25maWdICVIMdGVsbn'
+    'l4Q29uZmlniAEBEkMKD3N0YWx3YXJ0X2NvbmZpZxh+IAEoCzIVLnJlbGxtLlN0YWx3YXJ0Q29u'
+    'ZmlnSApSDnN0YWx3YXJ0Q29uZmlniAEBQg4KDF9zZXJ2ZXJfaW5mb0ISChBfZmVkZXJhdGlvbl'
+    '9pbmZvQg4KDF9jdXN0b21fdGFic0IWChRfZXh0ZXJuYWxfY2RuX2NvbmZpZ0IUChJfY2x1c3Rl'
+    'cl9yZXNvdXJjZXNCEgoQX3dlYl9wdXNoX2NvbmZpZ0IQCg5fdHdpbGlvX2NvbmZpZ0IOCgxfYm'
+    'lyZF9jb25maWdCEAoOX3N0cmlwZV9jb25maWdCEAoOX3RlbG55eF9jb25maWdCEgoQX3N0YWx3'
+    'YXJ0X2NvbmZpZw==');
 
 @$core.Deprecated('Use clusterResourcesDescriptor instead')
 const ClusterResources$json = {
@@ -675,6 +701,10 @@ const TwilioConfig$json = {
     {'1': 'twilio_api_key_sid', '3': 5, '4': 1, '5': 9, '10': 'twilioApiKeySid'},
     {'1': 'twilio_api_key_secret', '3': 2, '4': 1, '5': 9, '10': 'twilioApiKeySecret'},
     {'1': 'twilio_from_number', '3': 4, '4': 1, '5': 9, '10': 'twilioFromNumber'},
+    {'1': 'twilio_webhook_signing_key', '3': 6, '4': 1, '5': 9, '9': 0, '10': 'twilioWebhookSigningKey', '17': true},
+  ],
+  '8': [
+    {'1': '_twilio_webhook_signing_key'},
   ],
 };
 
@@ -684,7 +714,33 @@ final $typed_data.Uint8List twilioConfigDescriptor = $convert.base64Decode(
     'oSdHdpbGlvX2FjY291bnRfc2lkGAMgASgJUhB0d2lsaW9BY2NvdW50U2lkEisKEnR3aWxpb19h'
     'cGlfa2V5X3NpZBgFIAEoCVIPdHdpbGlvQXBpS2V5U2lkEjEKFXR3aWxpb19hcGlfa2V5X3NlY3'
     'JldBgCIAEoCVISdHdpbGlvQXBpS2V5U2VjcmV0EiwKEnR3aWxpb19mcm9tX251bWJlchgEIAEo'
-    'CVIQdHdpbGlvRnJvbU51bWJlcg==');
+    'CVIQdHdpbGlvRnJvbU51bWJlchJAChp0d2lsaW9fd2ViaG9va19zaWduaW5nX2tleRgGIAEoCU'
+    'gAUhd0d2lsaW9XZWJob29rU2lnbmluZ0tleYgBAUIdChtfdHdpbGlvX3dlYmhvb2tfc2lnbmlu'
+    'Z19rZXk=');
+
+@$core.Deprecated('Use telnyxConfigDescriptor instead')
+const TelnyxConfig$json = {
+  '1': 'TelnyxConfig',
+  '2': [
+    {'1': 'telnyx_enabled', '3': 1, '4': 1, '5': 8, '10': 'telnyxEnabled'},
+    {'1': 'telnyx_api_key', '3': 2, '4': 1, '5': 9, '10': 'telnyxApiKey'},
+    {'1': 'telnyx_from_number', '3': 3, '4': 1, '5': 9, '10': 'telnyxFromNumber'},
+    {'1': 'telnyx_messaging_profile_id', '3': 4, '4': 1, '5': 9, '10': 'telnyxMessagingProfileId'},
+    {'1': 'telnyx_webhook_signing_key', '3': 5, '4': 1, '5': 9, '9': 0, '10': 'telnyxWebhookSigningKey', '17': true},
+  ],
+  '8': [
+    {'1': '_telnyx_webhook_signing_key'},
+  ],
+};
+
+/// Descriptor for `TelnyxConfig`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List telnyxConfigDescriptor = $convert.base64Decode(
+    'CgxUZWxueXhDb25maWcSJQoOdGVsbnl4X2VuYWJsZWQYASABKAhSDXRlbG55eEVuYWJsZWQSJA'
+    'oOdGVsbnl4X2FwaV9rZXkYAiABKAlSDHRlbG55eEFwaUtleRIsChJ0ZWxueXhfZnJvbV9udW1i'
+    'ZXIYAyABKAlSEHRlbG55eEZyb21OdW1iZXISPQobdGVsbnl4X21lc3NhZ2luZ19wcm9maWxlX2'
+    'lkGAQgASgJUhh0ZWxueXhNZXNzYWdpbmdQcm9maWxlSWQSQAoadGVsbnl4X3dlYmhvb2tfc2ln'
+    'bmluZ19rZXkYBSABKAlIAFIXdGVsbnl4V2ViaG9va1NpZ25pbmdLZXmIAQFCHQobX3RlbG55eF'
+    '93ZWJob29rX3NpZ25pbmdfa2V5');
 
 @$core.Deprecated('Use birdConfigDescriptor instead')
 const BirdConfig$json = {
@@ -694,6 +750,10 @@ const BirdConfig$json = {
     {'1': 'bird_access_key', '3': 2, '4': 1, '5': 9, '10': 'birdAccessKey'},
     {'1': 'bird_from', '3': 3, '4': 1, '5': 9, '10': 'birdFrom'},
     {'1': 'bird_region', '3': 4, '4': 1, '5': 9, '10': 'birdRegion'},
+    {'1': 'bird_webhook_signing_key', '3': 5, '4': 1, '5': 9, '9': 0, '10': 'birdWebhookSigningKey', '17': true},
+  ],
+  '8': [
+    {'1': '_bird_webhook_signing_key'},
   ],
 };
 
@@ -701,7 +761,9 @@ const BirdConfig$json = {
 final $typed_data.Uint8List birdConfigDescriptor = $convert.base64Decode(
     'CgpCaXJkQ29uZmlnEiEKDGJpcmRfZW5hYmxlZBgBIAEoCFILYmlyZEVuYWJsZWQSJgoPYmlyZF'
     '9hY2Nlc3Nfa2V5GAIgASgJUg1iaXJkQWNjZXNzS2V5EhsKCWJpcmRfZnJvbRgDIAEoCVIIYmly'
-    'ZEZyb20SHwoLYmlyZF9yZWdpb24YBCABKAlSCmJpcmRSZWdpb24=');
+    'ZEZyb20SHwoLYmlyZF9yZWdpb24YBCABKAlSCmJpcmRSZWdpb24SPAoYYmlyZF93ZWJob29rX3'
+    'NpZ25pbmdfa2V5GAUgASgJSABSFWJpcmRXZWJob29rU2lnbmluZ0tleYgBAUIbChlfYmlyZF93'
+    'ZWJob29rX3NpZ25pbmdfa2V5');
 
 @$core.Deprecated('Use stripeConfigDescriptor instead')
 const StripeConfig$json = {
@@ -720,4 +782,17 @@ final $typed_data.Uint8List stripeConfigDescriptor = $convert.base64Decode(
     'oRc3RyaXBlX3NlY3JldF9rZXkYAiABKAlSD3N0cmlwZVNlY3JldEtleRI0ChZzdHJpcGVfcHVi'
     'bGlzaGFibGVfa2V5GAMgASgJUhRzdHJpcGVQdWJsaXNoYWJsZUtleRJBCh1zdHJpcGVfd2ViaG'
     '9va19zaWduaW5nX3NlY3JldBgEIAEoCVIac3RyaXBlV2ViaG9va1NpZ25pbmdTZWNyZXQ=');
+
+@$core.Deprecated('Use stalwartConfigDescriptor instead')
+const StalwartConfig$json = {
+  '1': 'StalwartConfig',
+  '2': [
+    {'1': 'stalwart_receiving_enabled', '3': 1, '4': 1, '5': 8, '10': 'stalwartReceivingEnabled'},
+  ],
+};
+
+/// Descriptor for `StalwartConfig`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List stalwartConfigDescriptor = $convert.base64Decode(
+    'Cg5TdGFsd2FydENvbmZpZxI8ChpzdGFsd2FydF9yZWNlaXZpbmdfZW5hYmxlZBgBIAEoCFIYc3'
+    'RhbHdhcnRSZWNlaXZpbmdFbmFibGVk');
 

@@ -26,6 +26,7 @@
     - [Permission](#rellm-Permission)
   
 - [users.proto](#users-proto)
+    - [ContactConsentChange](#rellm-ContactConsentChange)
     - [ContactMethod](#rellm-ContactMethod)
     - [ContactMethodVerification](#rellm-ContactMethodVerification)
     - [Follow](#rellm-Follow)
@@ -35,6 +36,7 @@
     - [User](#rellm-User)
     - [VerifyContactMethodRequest](#rellm-VerifyContactMethodRequest)
   
+    - [ContactConsentState](#rellm-ContactConsentState)
     - [UserListingType](#rellm-UserListingType)
   
 - [media.proto](#media-proto)
@@ -132,17 +134,20 @@
     - [ServerConfiguration](#rellm-ServerConfiguration)
     - [ServerInfo](#rellm-ServerInfo)
     - [ServerLogo](#rellm-ServerLogo)
+    - [StalwartConfig](#rellm-StalwartConfig)
     - [StripeConfig](#rellm-StripeConfig)
+    - [TelnyxConfig](#rellm-TelnyxConfig)
     - [TwilioConfig](#rellm-TwilioConfig)
     - [WebPushConfig](#rellm-WebPushConfig)
   
     - [AuthenticationFeature](#rellm-AuthenticationFeature)
     - [CalendarDisplayMode](#rellm-CalendarDisplayMode)
     - [ClusterResource](#rellm-ClusterResource)
+    - [ContactProtocol](#rellm-ContactProtocol)
+    - [ContactVerificationAPI](#rellm-ContactVerificationAPI)
     - [NavigationTab](#rellm-NavigationTab)
     - [NavigationTabStyle](#rellm-NavigationTabStyle)
     - [PrivateUserStrategy](#rellm-PrivateUserStrategy)
-    - [VerificationAPI](#rellm-VerificationAPI)
     - [WebUserInterface](#rellm-WebUserInterface)
   
 - [federation.proto](#federation-proto)
@@ -248,13 +253,14 @@ a simple but powerful `Makefile`-based design language.
 
 ### Ports &amp; Protocols
 Rellm servers interact across several ports:
-* [gRPC (27707)](#grpc-api) - The main Rellm gRPC API. This is the primary port for all Rellm clients. It may or may not be TLS-enabled (443).
+* gRPC (27707) - The main [Rellm gRPC API](#grpc-api). This is the primary port for all Rellm clients. It may or may not be TLS-enabled (443).
      * Clients are expected to negotiate the gRPC host via the [`backend_host` HTTP endpoint (see below)](#http-based-client-host-negotiation-for-external-cdns) on port 80/443.
-* [HTTP (80, 8000, 27705), HTTPS (443)](#http-endpoints) - The main Rellm HTTP API. This is used for some endpoints, including media upload/download, and for negotiating the gRPC host.
-     * Port 443 will serve up a secure HTTPS server. If it fails to startup, Rellm handles this gracefully and degrades to plain HTTP.
-     * Port 80 will serve up either an unsecured set of Rellm&#39;s HTTP endpoints, or a redirect to the HTTPS/443 server if that one launched successfully.
-     * Port 8000 *always* serves up an unsecured Rellm UI, in case something goes horribly wrong with 80 and 443. It can probably not be exposed in your load balancer/to the web.
-     * Port 27705 is an unsecured HTTP server meant for communication with other non-web facing services on your computer or in your cluster. It should not be exposed to the web.
+* HTTP (80, 8000, 27705), HTTPS (443) - The main Rellm HTTP API. This is used for some endpoints, including media upload/download, and for negotiating the gRPC host.
+     * [Public HTTP Endpoints](#external-http-servers-80-8000-443) and the Elm, React and Flutter [Web UI](#web-ui-paths)s are served up on multiple ports:
+         * Port 443 will serve up a secure HTTPS server. If it fails to startup, Rellm handles this gracefully and degrades to plain HTTP.
+         * Port 80 will serve up either an unsecured set of Rellm&#39;s HTTP endpoints, or a redirect to the HTTPS/443 server if that one launched successfully.
+         * Port 8000 *always* serves up an unsecured Rellm UI, in case something goes horribly wrong with 80 and 443. It can probably not be exposed in your load balancer/to the web.
+     * Port 27705 is a [private, unsecured HTTP server](#internal-http-server-27705) meant for communication with other non-web facing services on your computer or in your cluster. It should not be exposed to the web.
          * Currently this just has an `/email` endpoint. It is designed for [email/SMTP support via an integration with Stalwart](https://github.com/JonLatane/rellm/tree/main/deploys/email).
 
 #### Cross-Protocol Federation
@@ -1131,7 +1137,7 @@ discarded and a fresh keypair generated, so it&#39;s single-use per completed/fa
 | Method Name | Request Type | Response Type | Description |
 | ----------- | ------------ | ------------- | ------------|
 | GetServiceVersion | [.google.protobuf.Empty](#google-protobuf-Empty) | [GetServiceVersionResponse](#rellm-GetServiceVersionResponse) | Get the version (from Cargo) of the Rellm service. *Publicly accessible.* |
-| GetServerConfiguration | [.google.protobuf.Empty](#google-protobuf-Empty) | [ServerConfiguration](#rellm-ServerConfiguration) | Gets the Rellm server&#39;s configuration. *Publicly accessible.* |
+| GetServerConfiguration | [.google.protobuf.Empty](#google-protobuf-Empty) | [ServerConfiguration](#rellm-ServerConfiguration) | Gets the Rellm server&#39;s [`ServerConfiguration`](#rellm-ServerConfiguration). *Publicly accessible* -- some fields (e.g. `twilio_config`, `preferred_verification_apis`) are stripped for a non-admin caller, see that message&#39;s own field docs. |
 | CreateAccount | [CreateAccountRequest](#rellm-CreateAccountRequest) | [RefreshTokenResponse](#rellm-RefreshTokenResponse) | Creates a user account and provides a `refresh_token` (along with an `access_token`). *Publicly accessible.* |
 | Login | [LoginRequest](#rellm-LoginRequest) | [RefreshTokenResponse](#rellm-RefreshTokenResponse) | Logs in a user and provides a `refresh_token` (along with an `access_token`). *Publicly accessible.* |
 | AccessToken | [AccessTokenRequest](#rellm-AccessTokenRequest) | [AccessTokenResponse](#rellm-AccessTokenResponse) | Gets a new `access_token` (and possibly a new `refresh_token`, which should replace the old one in client storage), given a `refresh_token`. *Publicly accessible.* |
@@ -1143,8 +1149,8 @@ discarded and a fresh keypair generated, so it&#39;s single-use per completed/fa
 | DeleteMediaSizes | [Media](#rellm-Media) | [Media](#rellm-Media) | Deletes only the given `sizes` (matched by `conversion`) of a Media item by ID, e.g. to reclaim space by dropping `MEDIA_CONVERSION_ORIGINAL` once converted copies exist to serve in its place. *Authenticated.* Deleting other users&#39; media requires `ADMIN` permissions. Errors if this would leave the Media item with no `sizes` at all -- use `DeleteMedia` to remove the whole item instead. |
 | GetUsers | [GetUsersRequest](#rellm-GetUsersRequest) | [GetUsersResponse](#rellm-GetUsersResponse) | Gets Users. *Publicly accessible **or** Authenticated.* Unauthenticated calls only return Users of `GLOBAL_PUBLIC` visibility. |
 | UpdateUser | [User](#rellm-User) | [User](#rellm-User) | Update a user by ID. *Authenticated.* Updating other users requires `ADMIN` permissions. |
-| StartContactMethodVerification | [ContactMethod](#rellm-ContactMethod) | [ContactMethod](#rellm-ContactMethod) | Starts SMS verification of the current user&#39;s own phone ContactMethod. *Authenticated, self-only.* Requires the server to have Twilio configured and enabled. Generates a 6-digit code, sends it via Twilio SMS, and stores it (with a start time and attempt counter) on the phone ContactMethod. Only `tel:` values are supported this iteration -- `mailto:` returns `Unimplemented`. Rate-limited to one send per 60 seconds per user. |
-| VerifyContactMethod | [VerifyContactMethodRequest](#rellm-VerifyContactMethodRequest) | [ContactMethod](#rellm-ContactMethod) | Verifies a code sent by [`StartContactMethodVerification`](#grpc-api-StartContactMethodVerification). *Authenticated, self-only.* On match, sets `verified_at` and clears `verification_in_progress`. Codes expire after 10 minutes and allow at most 5 attempts before requiring a fresh [`StartContactMethodVerification`](#grpc-api-StartContactMethodVerification) call. |
+| StartContactMethodVerification | [ContactMethod](#rellm-ContactMethod) | [ContactMethod](#rellm-ContactMethod) | Starts SMS verification of the current user&#39;s own phone [`ContactMethod`](#rellm-ContactMethod). *Authenticated, self-only.* Requires the server to have a [`TwilioConfig`](#rellm-TwilioConfig)/[`BirdConfig`](#rellm-BirdConfig)/ [`TelnyxConfig`](#rellm-TelnyxConfig) SMS provider configured and enabled (see [`ContactProtocol`](#rellm-ContactProtocol) for the corresponding server-wide toggle). Also requires the phone `ContactMethod`&#39;s own `consent_state` to already be `CONTACT_CONSENT_GRANTED` -- fails with `contact_consent_not_granted` otherwise, since the verification code is itself an outbound SMS sent through that same provider (see [`ContactMethod.consent_state`](#rellm-ContactMethod)&#39;s own doc; this is checked even though the user is the one requesting the send). Generates a 6-digit code, sends it via SMS, and stores it (with a start time and attempt counter) on the phone `ContactMethod` (`verification_in_progress`). Only `tel:` values are supported this iteration -- `mailto:` returns `Unimplemented`. Rate-limited to one send per 60 seconds per user. |
+| VerifyContactMethod | [VerifyContactMethodRequest](#rellm-VerifyContactMethodRequest) | [ContactMethod](#rellm-ContactMethod) | Verifies a code sent by [`StartContactMethodVerification`](#grpc-api-StartContactMethodVerification). *Authenticated, self-only.* On match, sets [`ContactMethod.verified_at`](#rellm-ContactMethod) and clears `verification_in_progress`. Codes expire after 10 minutes and allow at most 5 attempts before requiring a fresh [`StartContactMethodVerification`](#grpc-api-StartContactMethodVerification) call. |
 | DeleteUser | [User](#rellm-User) | [.google.protobuf.Empty](#google-protobuf-Empty) | Deletes a user by ID. *Authenticated.* Deleting other users requires `ADMIN` permissions. |
 | SendMessage | [SendMessageRequest](#rellm-SendMessageRequest) | [Message](#rellm-Message) | Sends a Message to one or more recipients (creating/reusing their MessagingGroup). *Publicly accessible **or** Authenticated.* Like [`CreatePost`](#grpc-api-CreatePost)/[`CreateEvent`](#grpc-api-CreateEvent), authentication (if any) is via a standard `access_token`; unauthenticated calls are simply sent with no `sender`. |
 | GetMessages | [GetMessagesRequest](#rellm-GetMessagesRequest) | [GetMessagesResponse](#rellm-GetMessagesResponse) | Gets Messages. *Authenticated.* `PERSONAL_MESSAGES(_TEXT_SEARCH)` (and looking up a single Message/MessagingGroup) requires the `READ_PERSONAL_MESSAGES` permission and only returns Messages the current user sent or received. `ALL_SYSTEM_MESSAGES(_TEXT_SEARCH)` requires the `READ_ALL_SYSTEM_MESSAGES` permission and returns every Message on the server. |
@@ -1212,7 +1218,7 @@ discarded and a fresh keypair generated, so it&#39;s single-use per completed/fa
 | DeleteEventAttendance | [EventAttendance](#rellm-EventAttendance) | [.google.protobuf.Empty](#google-protobuf-Empty) | Delete an EventAttendance. *Publicly accessible **or** Authenticated, with anonymous RSVP support.* |
 | FederateProfile | [FederatedAccount](#rellm-FederatedAccount) | [FederatedAccount](#rellm-FederatedAccount) | Federate the current user&#39;s profile with another user profile. *Authenticated*. |
 | DefederateProfile | [FederatedAccount](#rellm-FederatedAccount) | [.google.protobuf.Empty](#google-protobuf-Empty) | Authenticated*. |
-| ConfigureServer | [ServerConfiguration](#rellm-ServerConfiguration) | [ServerConfiguration](#rellm-ServerConfiguration) | Configure the server (i.e. the response to GetServerConfiguration). *Authenticated.* Requires `ADMIN` permissions. Editing `cluster_resources` additionally requires `EDIT_CLUSTER_SETTINGS` - see that field&#39;s own doc. |
+| ConfigureServer | [ServerConfiguration](#rellm-ServerConfiguration) | [ServerConfiguration](#rellm-ServerConfiguration) | Configure the server (i.e. the response to [`GetServerConfiguration`](#grpc-api-GetServerConfiguration)). *Authenticated.* Requires `ADMIN` permissions. Editing `cluster_resources` additionally requires `EDIT_CLUSTER_SETTINGS` - see that field&#39;s own doc. Editing [`supported_contact_protocols`](#rellm-ServerConfiguration) is validated, not just stored -- see [`ContactProtocol`](#rellm-ContactProtocol)&#39;s own doc. |
 | LockClusterResources | [LockClusterResourcesRequest](#rellm-LockClusterResourcesRequest) | [LockClusterResourcesResponse](#rellm-LockClusterResourcesResponse) | Attempts to acquire one or more `ClusterResource` locks on behalf of `namespace_id`. *Not part of the authenticated-user auth system* - this is server-to-server, cluster-internal coordination, authorized *entirely* by the `cluster-shared-secret` gRPC metadata header matching this server&#39;s own stored [`ClusterResources.cluster_shared_secret`](#rellm-ClusterResources) - knowing the secret is what makes a caller entitled to treat this server as the conductor, regardless of what this server&#39;s own `ClusterResources.namespace_id`/`conductor_host` happen to say. Fails with `FAILED_PRECONDITION` if this server has no `cluster_resources` configured at all (nothing to check the secret against), and with `UNAUTHENTICATED` if the header is missing or doesn&#39;t match. See [`LockClusterResourcesResponse`](#rellm-LockClusterResourcesResponse) for the polling contract this expects of callers. |
 | FreeClusterResources | [FreeClusterResourcesRequest](#rellm-FreeClusterResourcesRequest) | [.google.protobuf.Empty](#google-protobuf-Empty) | Releases resources previously acquired via [`LockClusterResources`](#grpc-api-LockClusterResources). *Publicly accessible **or** Authenticated* - unlike `LockClusterResources`, this accepts *either* the `cluster-shared-secret` header (same as `LockClusterResources`) *or* normal per-user auth, in which case the caller needs `EDIT_CLUSTER_SETTINGS` (see that permission&#39;s own doc) and the header is ignored entirely - this is what lets an admin free a stuck lock straight from the Cluster tab UI rather than needing shell access to the cluster&#39;s shared secret. See [`FreeClusterResourcesRequest`](#rellm-FreeClusterResourcesRequest)&#39;s own doc for its no-op-if-not-held behavior. |
 | ResetData | [.google.protobuf.Empty](#google-protobuf-Empty) | [.google.protobuf.Empty](#google-protobuf-Empty) | Delete ALL Media, Posts, Groups and Users except the user who performed the RPC. *Authenticated.* Requires `ADMIN` permissions. Note: Server Configuration is not deleted. |
@@ -1602,20 +1608,47 @@ and to Group non-members via [`non_member_permissions` in `Group`](#rellm-Group)
 
 
 
+<a name="rellm-ContactConsentChange"></a>
+
+### ContactConsentChange
+A single entry in a [`ContactMethod.consent_history`](#rellm-ContactMethod), recording that its
+`consent_state` became `state` as of `changed_at`. Our ultimate consent state is always the
+`state` of the most recent (last) entry in `consent_history` --
+[`ContactMethod.consent_state`](#rellm-ContactMethod) is just a denormalized copy of it, kept
+for convenient access without walking the history.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| state | [ContactConsentState](#rellm-ContactConsentState) |  | The [`ContactConsentState`](#rellm-ContactConsentState) the `ContactMethod` was changed to. |
+| changed_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  | When this change took effect. Always the server&#39;s own time as of the [`UpdateUser`](#grpc-api-UpdateUser) call that made the change -- any `changed_at` sent by a client is ignored. |
+
+
+
+
+
+
 <a name="rellm-ContactMethod"></a>
 
 ### ContactMethod
-A contact method for a user. Verified via `StartContactMethodVerification`/`VerifyContactMethod`
--- SMS/Twilio only this iteration, see `TwilioConfig` in `server_configuration.proto`.
+A contact method for a user (`tel:` or `mailto:`). SMS verification via
+[`StartContactMethodVerification`](#grpc-api-StartContactMethodVerification)/
+[`VerifyContactMethod`](#grpc-api-VerifyContactMethod), backed by whichever of
+[`TwilioConfig`](#rellm-TwilioConfig)/[`BirdConfig`](#rellm-BirdConfig)/
+[`TelnyxConfig`](#rellm-TelnyxConfig) the server has enabled -- see `supported_by_server` below,
+and [`ContactProtocol`](#rellm-ContactProtocol) for the corresponding server-wide toggle.
+`mailto:` has no verification provider yet.
 
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | value | [string](#string) | optional | Either a valid `mailto:` or valid `tel:` URL. |
 | visibility | [Visibility](#rellm-Visibility) |  | The visibility of the contact method. |
-| supported_by_server | [bool](#bool) |  | Server-side flag indicating whether the server can verify (and otherwise interact via) the contact method. Always computed server-side (never trusted from client input) off whether a verification provider is currently enabled for this contact method&#39;s scheme (`tel:`/`mailto:`). |
-| verified_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional | Time the contact method was verified. Indicates the user has completed verification of the contact method. Verification requires `supported_by_server` to be `true`. |
-| verification_in_progress | [ContactMethodVerification](#rellm-ContactMethodVerification) | optional |  |
+| supported_by_server | [bool](#bool) |  | Server-side flag indicating whether the server can verify (and otherwise interact via) the contact method. Always computed server-side (never trusted from client input) -- `true` iff this value&#39;s scheme (`tel:`/`mailto:`) is the corresponding [`ContactProtocol`](#rellm-ContactProtocol) currently listed in `ServerConfiguration.supported_contact_protocols` (see the [`ServerConfiguration`](#rellm-ServerConfiguration) message). `users.proto` deliberately never imports `server_configuration.proto` (server configuration is kept abstracted from the rest of the protocol), so this relationship exists only in backend logic (`contact_verification::contact_protocol_supported`, called from `update_user.rs`) and in this doc comment, not as a formal schema reference. |
+| verified_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional | Time the contact method was verified. Indicates the user has completed verification of the contact method. Verification requires `supported_by_server` to be `true`, and is set by [`VerifyContactMethod`](#grpc-api-VerifyContactMethod) on a correct code. |
+| verification_in_progress | [ContactMethodVerification](#rellm-ContactMethodVerification) | optional | Set while an SMS verification code has been sent and not yet confirmed, expired, or exhausted -- populated by [`StartContactMethodVerification`](#grpc-api-StartContactMethodVerification) and cleared by a successful [`VerifyContactMethod`](#grpc-api-VerifyContactMethod) (which sets `verified_at` instead) or by expiry/too-many-attempts. See [`ContactMethodVerification`](#rellm-ContactMethodVerification) for its own fields. |
+| consent_state | [ContactConsentState](#rellm-ContactConsentState) |  | Whether the user currently consents to being contacted via this `ContactMethod` (e.g. by SMS, for `tel:` values) by external services -- see `docs/contact_integrations.md`. External services (Twilio/Bird/Telnyx) may not contact the user unless this is `CONTACT_CONSENT_GRANTED` -- this includes [`StartContactMethodVerification`](#grpc-api-StartContactMethodVerification)&#39;s own outbound verification SMS, which fails with `contact_consent_not_granted` until consent is granted, even though the user is the one requesting the send. Defaults to `CONTACT_CONSENT_REVOKED` (proto3&#39;s zero value) so a `ContactMethod` with no explicit consent action is treated as not-consented. Settable via the [`UpdateUser`](#grpc-api-UpdateUser) RPC -- same self-or-`ADMIN` gate as `value`/ `visibility` (see `update_user.rs`&#39;s `admin || self_update` check), not restricted further; every change appends a new entry to `consent_history` (server-timestamped, never trusted from client input). Only ever sent to the `ContactMethod`&#39;s own owner or an `ADMIN` -- unlike `value`, never relaxed by `VIEW_PRIVATE_CONTACT_METHODS`; every other viewer sees this blanked to `CONTACT_CONSENT_REVOKED` regardless of the `ContactMethod`&#39;s own `visibility`. |
+| consent_history | [ContactConsentChange](#rellm-ContactConsentChange) | repeated | Append-only history of every `consent_state` change, oldest first. Not directly modifiable -- the server appends to it whenever [`UpdateUser`](#grpc-api-UpdateUser) changes `consent_state`, using the server&#39;s own time for [`ContactConsentChange.changed_at`](#rellm-ContactConsentChange) regardless of what the client sends. Same owner-or-`ADMIN`-only visibility as `consent_state` (blanked to empty for every other viewer). |
 
 
 
@@ -1625,14 +1658,16 @@ A contact method for a user. Verified via `StartContactMethodVerification`/`Veri
 <a name="rellm-ContactMethodVerification"></a>
 
 ### ContactMethodVerification
-
+Encapsulates verification of a [`ContactMethod`](#rellm-ContactMethod). Verification cannot
+begin until contact consent (`ContactMethod.consent_state`) is granted -- see
+[`StartContactMethodVerification`](#grpc-api-StartContactMethodVerification).
 
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| verification_code | [string](#string) |  | Never serialized to gRPC by the backend. Only stored server-side; a client&#39;s own attempt to verify goes through `VerifyContactMethodRequest.code` instead, not this field. |
+| verification_code | [string](#string) |  | Never serialized to gRPC by the backend. Only stored server-side; a client&#39;s own attempt to verify goes through [`VerifyContactMethodRequest.code`](#rellm-VerifyContactMethodRequest) instead, not this field. |
 | verification_started_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  |  |
-| attempts | [int32](#int32) |  | Number of failed `VerifyContactMethod` attempts against `verification_code` since it was sent. Capped (see that RPC&#39;s own doc) to prevent brute-forcing the 6-digit code within its expiry window. |
+| attempts | [int32](#int32) |  | Number of failed [`VerifyContactMethod`](#grpc-api-VerifyContactMethod) attempts against `verification_code` since it was sent. Capped (see that RPC&#39;s own doc) to prevent brute-forcing the 6-digit code within its expiry window. |
 
 
 
@@ -1786,6 +1821,20 @@ Request for [`VerifyContactMethod`](#grpc-api-VerifyContactMethod).
 
 
  
+
+
+<a name="rellm-ContactConsentState"></a>
+
+### ContactConsentState
+Whether a user has consented to being contacted (e.g. via SMS/email sent by external services)
+through a given [`ContactMethod`](#rellm-ContactMethod). See
+[`ContactMethod.consent_state`](#rellm-ContactMethod).
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| CONTACT_CONSENT_REVOKED | 0 | The user has not consented, or has revoked a prior consent. External services may not use this `ContactMethod` to contact the user. |
+| CONTACT_CONSENT_GRANTED | 1 | The user currently consents to being contacted via this `ContactMethod`. |
+
 
 
 <a name="rellm-UserListingType"></a>
@@ -3104,7 +3153,8 @@ The type of group listing to get.
 
 ### BirdConfig
 Bird (https://bird.com, formerly MessageBird) Config -- an alternative SMS verification
-provider to Twilio, with a simpler single-API-key auth model.
+provider to [`TwilioConfig`](#rellm-TwilioConfig), with a simpler single-API-key auth model. See
+`docs/contact_integrations.md` for full setup steps.
 
 
 | Field | Type | Label | Description |
@@ -3113,6 +3163,7 @@ provider to Twilio, with a simpler single-API-key auth model.
 | bird_access_key | [string](#string) |  | The Bird workspace&#39;s API access key. Never serialized once written. |
 | bird_from | [string](#string) |  | The originator for outbound verification SMS -- an owned number, alphanumeric sender ID (3-11 chars), or short code, as configured in the Bird workspace. Not secret. |
 | bird_region | [string](#string) |  | Which Bird API region to call (&#34;us1&#34; or &#34;eu1&#34;, per Bird&#39;s own regional API hosts). Not secret. Empty defaults to &#34;us1&#34;. |
+| bird_webhook_signing_key | [string](#string) | optional | Optional -- the Standard Webhooks signing secret (starts with `whsec_`) for the SMS channel subscription delivering to `/contact_integrations/bird/receive`, used to verify the `webhook-id`/`webhook-timestamp`/`webhook-signature` headers on inbound deliveries (HMAC-SHA256; see https://www.standardwebhooks.com and `docs/contact_integrations.md`). Blank/unset means inbound deliveries are accepted without signature verification. `optional` (not plain `string`) for the same &#34;`Some`/`None` distinguishable from a client without ever seeing the real value&#34; reason as [`TwilioConfig.twilio_webhook_signing_key`](#rellm-TwilioConfig). |
 
 
 
@@ -3495,11 +3546,16 @@ Configuration for a Rellm server instance.
 | private_user_strategy | [PrivateUserStrategy](#rellm-PrivateUserStrategy) |  | Strategy when a user sets their visibility to `PRIVATE`. Defaults to `ACCOUNT_IS_FROZEN`. |
 | authentication_features | [AuthenticationFeature](#rellm-AuthenticationFeature) | repeated | (TODO) Allows admins to enable/disable creating accounts and logging in. Eventually, external auth too hopefully! |
 | web_push_config | [WebPushConfig](#rellm-WebPushConfig) | optional | Web Push (VAPID) configuration for the server. |
-| preferred_verification_apis | [VerificationAPI](#rellm-VerificationAPI) | repeated | A server-preferred order of contact verification APIs. Note: even if this is blank, if twilio_config is enabled, the server should try to verify with Twilio. It&#39;s really only for the case of wanting to switch between multiple SMS/Email providers. Only serialized for admin users. |
-| available_verification_apis | [VerificationAPI](#rellm-VerificationAPI) | repeated | Derived from whether TwilioConfig.enabled is true, etc. Serialized to every caller (not admin-only, unlike `preferred_verification_apis`/`twilio_config`) -- this is what a non-admin client should check to decide whether to show verification UI at all, without exposing any provider configuration. |
-| twilio_config | [TwilioConfig](#rellm-TwilioConfig) | optional | Twilio Config. Only serialized for admin users. |
-| bird_config | [BirdConfig](#rellm-BirdConfig) | optional | Bird (bird.com, formerly MessageBird) Config -- a cheaper Twilio alternative for SMS verification. Only serialized for admin users. |
+| supported_contact_protocols | [ContactProtocol](#rellm-ContactProtocol) | repeated | Which [`ContactProtocol`](#rellm-ContactProtocol)s (`tel:`/`mailto:`) this server currently accepts -- drives [`ContactMethod.supported_by_server`](#rellm-ContactMethod) (`users.proto`, which can&#39;t reference this message directly -- see that field&#39;s own doc for why). Settable via [`ConfigureServer`](#grpc-api-ConfigureServer), which *errors* rather than silently dropping an invalid entry: `CONTACT_PROTOCOL_TEL` requires an enabled [`TwilioConfig`](#rellm-TwilioConfig)/[`BirdConfig`](#rellm-BirdConfig)/ [`TelnyxConfig`](#rellm-TelnyxConfig) in that same request, and `CONTACT_PROTOCOL_MAILTO` is always rejected (no email provider exists yet). Edited via the &#34;Enable SMS Sending&#34;/&#34;Enable Email Sending&#34; toggles on the Contact Integrations tab&#39;s &#34;SMS Configuration&#34;/&#34;Email Configuration&#34; sections (`ContactIntegrationsTab.smsConfigurationSection`/ `emailConfigurationSection`) -- see `docs/contact_integrations.md`. |
+| preferred_verification_apis | [ContactVerificationAPI](#rellm-ContactVerificationAPI) | repeated | A server-preferred order of [`ContactVerificationAPI`](#rellm-ContactVerificationAPI) providers to try first when more than one of `twilio_config`/`bird_config`/`telnyx_config` below is enabled -- see `contact_verification::available_verification_apis` for the full preference-then-fallback ordering this feeds into [`ServerConfiguration.available_verification_apis`](#rellm-ServerConfiguration) below. Even when this is blank, an enabled provider is still tried (in the fixed default order Twilio/Bird/Telnyx) -- this field only matters when more than one is enabled and the admin wants a specific one tried first. Only serialized for admin users. |
+| available_verification_apis | [ContactVerificationAPI](#rellm-ContactVerificationAPI) | repeated | Derived from whether [`TwilioConfig`](#rellm-TwilioConfig).twilio_enabled/ [`BirdConfig`](#rellm-BirdConfig).bird_enabled/ [`TelnyxConfig`](#rellm-TelnyxConfig).telnyx_enabled is true, ordered per `preferred_verification_apis` above. Serialized to every caller (not admin-only, unlike `preferred_verification_apis`/`twilio_config`/`bird_config`/`telnyx_config`) -- this is what a non-admin client should check to decide whether to show verification UI at all, without exposing any provider configuration. Independent of `supported_contact_protocols` above -- that&#39;s the admin&#39;s own on/off toggle (can disable `tel:` contact even while a provider stays enabled/configured), this is purely &#34;is at least one provider actually configured.&#34; |
+| twilio_config | [TwilioConfig](#rellm-TwilioConfig) | optional | Twilio Config -- see [`TwilioConfig`](#rellm-TwilioConfig). Only serialized for admin users. |
+| bird_config | [BirdConfig](#rellm-BirdConfig) | optional | Bird (bird.com, formerly MessageBird) Config -- a cheaper alternative to [`TwilioConfig`](#rellm-TwilioConfig) for SMS verification; see [`BirdConfig`](#rellm-BirdConfig)&#39;s own doc. Only serialized for admin users. |
 | stripe_config | [StripeConfig](#rellm-StripeConfig) | optional | Stripe Config, backing the Marketplace (`market.proto`). Only serialized for admin users. |
+| telnyx_config | [TelnyxConfig](#rellm-TelnyxConfig) | optional | Telnyx Config -- another alternative SMS verification provider to [`TwilioConfig`](#rellm-TwilioConfig) (see [`TelnyxConfig`](#rellm-TelnyxConfig)&#39;s own doc). Only serialized for admin users. |
+| stalwart_config | [StalwartConfig](#rellm-StalwartConfig) | optional | Unlike the other configs, at least at the moment, the integration with Stalwart is designed to be *in-cluster*, not over the web. It relies on unsecured /email endpoint on port 27705 to receive mail from a Stalwart deployed within the same Kubernetes cluster.
+
+This could be extended in the future to allow sending mail with Stalwart, but that&#39;s TBD. |
 
 
 
@@ -3547,6 +3603,22 @@ Logo data for the server. Built atop Rellm [`Media` APIs](#rellm-Media).
 
 
 
+<a name="rellm-StalwartConfig"></a>
+
+### StalwartConfig
+Stalwart is an extablished, open-source Rust email/contact/calendar server (think an Outlook or Google Workspace competitor).
+Currently Rellm supports receiving emails via Stalwart webhook configurations.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| stalwart_receiving_enabled | [bool](#bool) |  | Enables receiving emails from the private, unsecured cluster-facing HTTP server at :27705/email. |
+
+
+
+
+
+
 <a name="rellm-StripeConfig"></a>
 
 ### StripeConfig
@@ -3567,6 +3639,27 @@ webhook deliveries (`stripe_webhook_signing_secret`).
 
 
 
+<a name="rellm-TelnyxConfig"></a>
+
+### TelnyxConfig
+Telnyx (https://telnyx.com) Config -- an alternative SMS verification provider to
+[`TwilioConfig`](#rellm-TwilioConfig), with a simpler single-API-key auth model like
+[`BirdConfig`](#rellm-BirdConfig)&#39;s. See `docs/contact_integrations.md` for full setup steps.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| telnyx_enabled | [bool](#bool) |  |  |
+| telnyx_api_key | [string](#string) |  | The Telnyx v2 API Key (starts with `KEY`), used as Bearer auth for Telnyx&#39;s Messaging API (`POST /v2/messages`). Never serialized once written -- same write-only treatment as [`TwilioConfig.twilio_api_key_secret`](#rellm-TwilioConfig)/ [`BirdConfig.bird_access_key`](#rellm-BirdConfig). |
+| telnyx_from_number | [string](#string) |  | The Telnyx-provisioned sending number for outbound verification SMS (E.164, e.g. a toll-free number). Not secret. |
+| telnyx_messaging_profile_id | [string](#string) |  | The Telnyx Messaging Profile ID that `telnyx_from_number` is assigned to -- required by Telnyx&#39;s Messaging API to actually send (`messaging_profile_id` on `POST /v2/messages`). Not secret. |
+| telnyx_webhook_signing_key | [string](#string) | optional | Optional -- Telnyx&#39;s account-level public key (Mission Control Portal -&gt; Keys &amp; Credentials -&gt; Public Key), used to verify the `telnyx-signature-ed25519`/`telnyx-timestamp` headers on inbound deliveries to `/contact_integrations/telnyx/receive` (Ed25519; see https://developers.telnyx.com/docs/messaging/messages/receiving-webhooks and `docs/contact_integrations.md`). Actually a public key, not a secret, but kept write-only (never serialized once written) for the same &#34;don&#39;t echo config back&#34; treatment as every other credential here. Unset means inbound deliveries are accepted without signature verification. `optional` (not plain `string`) for the same &#34;`Some`/`None` distinguishable from a client without ever seeing the real value&#34; reason as [`TwilioConfig.twilio_webhook_signing_key`](#rellm-TwilioConfig). |
+
+
+
+
+
+
 <a name="rellm-TwilioConfig"></a>
 
 ### TwilioConfig
@@ -3579,7 +3672,9 @@ resource URLs are always addressed by the actual Account SID), but it is *not* u
 authenticate -- only the API Key SID/Secret pair is. See
 https://www.twilio.com/docs/iam/api-keys/restricted-api-keys for the recommended
 permission when creating one: `/twilio/messaging/messages/create` (nothing else is needed just
-to send verification SMS).
+to send verification SMS). See `docs/contact_integrations.md` for full setup steps (API key
+creation, inbound webhook registration), and [`ContactMethod`](#rellm-ContactMethod)
+(`users.proto`) for how a verified `tel:` contact method surfaces this provider.
 
 
 | Field | Type | Label | Description |
@@ -3589,6 +3684,7 @@ to send verification SMS).
 | twilio_api_key_sid | [string](#string) |  | The Twilio API Key&#39;s SID (starts with `SK`), used as the Basic Auth username. Public (among admins) -- freely serialized; it&#39;s useless without the Secret below, same as a username alone. |
 | twilio_api_key_secret | [string](#string) |  | The Twilio API Key&#39;s Secret, used as the Basic Auth password. Never serialized once written. |
 | twilio_from_number | [string](#string) |  | The Twilio-provisioned sending number for outbound verification SMS. Not secret. |
+| twilio_webhook_signing_key | [string](#string) | optional | Optional -- the Twilio Account&#39;s Auth Token, used *only* to verify the `X-Twilio-Signature` header on inbound deliveries to `/contact_integrations/twilio/receive` (see https://www.twilio.com/docs/usage/webhooks/webhooks-security and `docs/contact_integrations.md`). Never used to authenticate outbound API calls -- this message&#39;s own doc explains why the Auth Token is deliberately excluded from that role; this is the one narrow exception, since signature verification is the one thing only the Auth Token (not an API Key) can do. Unset means inbound deliveries are accepted without signature verification. Write-only, like every other credential here, but distinctly from those: `optional` so a client can tell *whether* a key is configured (`Some`/`None`) without ever seeing its real value -- once set, `to_proto` blanks this to `Some(&#34;&#34;)` (not `None`), so &#34;configured but hidden&#34; and &#34;never configured&#34; stay distinguishable. Sending an empty value back on `ConfigureServer` means &#34;leave whatever&#39;s already stored alone,&#34; same as every other write-only field&#39;s blank-means-no-op rule. |
 
 
 
@@ -3654,6 +3750,37 @@ via [`LockClusterResources`](#grpc-api-LockClusterResources)/
 
 
 
+<a name="rellm-ContactProtocol"></a>
+
+### ContactProtocol
+The two contact schemes [`ContactMethod.value`](#rellm-ContactMethod) (`users.proto`) may take --
+see [`ServerConfiguration.supported_contact_protocols`](#rellm-ServerConfiguration) for the
+server-wide setting keyed off this enum, and `docs/contact_integrations.md` for the full picture.
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| CONTACT_PROTOCOL_TEL | 0 | `tel:` (phone/SMS) contact. Requires an enabled [`TwilioConfig`](#rellm-TwilioConfig)/ [`BirdConfig`](#rellm-BirdConfig)/[`TelnyxConfig`](#rellm-TelnyxConfig). |
+| CONTACT_PROTOCOL_MAILTO | 1 | `mailto:` (email) contact. Currently not supported -- no email provider exists yet. |
+
+
+
+<a name="rellm-ContactVerificationAPI"></a>
+
+### ContactVerificationAPI
+The SMS providers [`ServerConfiguration.preferred_verification_apis`](#rellm-ServerConfiguration)/
+[`available_verification_apis`](#rellm-ServerConfiguration) order between --
+[`TwilioConfig`](#rellm-TwilioConfig), [`BirdConfig`](#rellm-BirdConfig), and
+[`TelnyxConfig`](#rellm-TelnyxConfig). See `contact_verification.rs`&#39;s own module doc for the
+preference-then-fallback logic these values drive.
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| CONTACT_VERIFICATION_API_TWILIO | 0 |  |
+| CONTACT_VERIFICATION_API_BIRD | 1 |  |
+| CONTACT_VERIFICATION_API_TELNYX | 2 |  |
+
+
+
 <a name="rellm-NavigationTab"></a>
 
 ### NavigationTab
@@ -3696,18 +3823,6 @@ Strategy when a user sets their visibility to `PRIVATE`.
 | ACCOUNT_IS_FROZEN | 0 | `PRIVATE` Users can&#39;t see other Users (only `PUBLIC_GLOBAL` Visilibity Users/Posts/Events). Other users can&#39;t see them. |
 | LIMITED_CREEPINESS | 1 | Users can see other users they follow, but only `PUBLIC_GLOBAL` Visilibity Posts/Events. Other users can&#39;t see them. |
 | LET_ME_CREEP_ON_PPL | 2 | Users can see other users they follow, including their `PUBLIC_SERVER` Posts/Events. Other users can&#39;t see them. |
-
-
-
-<a name="rellm-VerificationAPI"></a>
-
-### VerificationAPI
-
-
-| Name | Number | Description |
-| ---- | ------ | ----------- |
-| VERIFICATION_API_TWILIO | 0 |  |
-| VERIFICATION_API_BIRD | 1 |  |
 
 
 

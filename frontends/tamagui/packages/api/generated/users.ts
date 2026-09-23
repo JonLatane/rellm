@@ -24,6 +24,49 @@ import {
 
 export const protobufPackage = "rellm";
 
+/**
+ * Whether a user has consented to being contacted (e.g. via SMS/email sent by external services)
+ * through a given [`ContactMethod`](#rellm-ContactMethod). See
+ * [`ContactMethod.consent_state`](#rellm-ContactMethod).
+ */
+export enum ContactConsentState {
+  /**
+   * CONTACT_CONSENT_REVOKED - The user has not consented, or has revoked a prior consent. External services may not use
+   * this `ContactMethod` to contact the user.
+   */
+  CONTACT_CONSENT_REVOKED = 0,
+  /** CONTACT_CONSENT_GRANTED - The user currently consents to being contacted via this `ContactMethod`. */
+  CONTACT_CONSENT_GRANTED = 1,
+  UNRECOGNIZED = -1,
+}
+
+export function contactConsentStateFromJSON(object: any): ContactConsentState {
+  switch (object) {
+    case 0:
+    case "CONTACT_CONSENT_REVOKED":
+      return ContactConsentState.CONTACT_CONSENT_REVOKED;
+    case 1:
+    case "CONTACT_CONSENT_GRANTED":
+      return ContactConsentState.CONTACT_CONSENT_GRANTED;
+    case -1:
+    case "UNRECOGNIZED":
+    default:
+      return ContactConsentState.UNRECOGNIZED;
+  }
+}
+
+export function contactConsentStateToJSON(object: ContactConsentState): string {
+  switch (object) {
+    case ContactConsentState.CONTACT_CONSENT_REVOKED:
+      return "CONTACT_CONSENT_REVOKED";
+    case ContactConsentState.CONTACT_CONSENT_GRANTED:
+      return "CONTACT_CONSENT_GRANTED";
+    case ContactConsentState.UNRECOGNIZED:
+    default:
+      return "UNRECOGNIZED";
+  }
+}
+
 /** Ways of listing users. */
 export enum UserListingType {
   /** EVERYONE - Get all users. */
@@ -334,8 +377,13 @@ export interface Membership {
 }
 
 /**
- * A contact method for a user. Verified via `StartContactMethodVerification`/`VerifyContactMethod`
- * -- SMS/Twilio only this iteration, see `TwilioConfig` in `server_configuration.proto`.
+ * A contact method for a user (`tel:` or `mailto:`). SMS verification via
+ * [`StartContactMethodVerification`](#grpc-api-StartContactMethodVerification)/
+ * [`VerifyContactMethod`](#grpc-api-VerifyContactMethod), backed by whichever of
+ * [`TwilioConfig`](#rellm-TwilioConfig)/[`BirdConfig`](#rellm-BirdConfig)/
+ * [`TelnyxConfig`](#rellm-TelnyxConfig) the server has enabled -- see `supported_by_server` below,
+ * and [`ContactProtocol`](#rellm-ContactProtocol) for the corresponding server-wide toggle.
+ * `mailto:` has no verification provider yet.
  */
 export interface ContactMethod {
   /** Either a valid `mailto:` or valid `tel:` URL. */
@@ -345,34 +393,102 @@ export interface ContactMethod {
   /** The visibility of the contact method. */
   visibility: Visibility;
   /**
-   * Server-side flag indicating whether the server can verify
-   * (and otherwise interact via) the contact method. Always computed server-side (never trusted
-   * from client input) off whether a verification provider is currently enabled for this contact
-   * method's scheme (`tel:`/`mailto:`).
+   * Server-side flag indicating whether the server can verify (and otherwise interact via) the
+   * contact method. Always computed server-side (never trusted from client input) -- `true` iff
+   * this value's scheme (`tel:`/`mailto:`) is the corresponding
+   * [`ContactProtocol`](#rellm-ContactProtocol) currently listed in
+   * `ServerConfiguration.supported_contact_protocols` (see the
+   * [`ServerConfiguration`](#rellm-ServerConfiguration) message). `users.proto` deliberately never
+   * imports `server_configuration.proto` (server configuration is kept abstracted from the rest of
+   * the protocol), so this relationship exists only in backend logic
+   * (`contact_verification::contact_protocol_supported`, called from `update_user.rs`) and in this
+   * doc comment, not as a formal schema reference.
    */
   supportedByServer: boolean;
   /**
-   * Time the contact method was verified.
-   * Indicates the user has completed verification of the contact method.
-   * Verification requires `supported_by_server` to be `true`.
+   * Time the contact method was verified. Indicates the user has completed verification of the
+   * contact method. Verification requires `supported_by_server` to be `true`, and is set by
+   * [`VerifyContactMethod`](#grpc-api-VerifyContactMethod) on a correct code.
    */
-  verifiedAt?: string | undefined;
-  verificationInProgress?: ContactMethodVerification | undefined;
+  verifiedAt?:
+    | string
+    | undefined;
+  /**
+   * Set while an SMS verification code has been sent and not yet confirmed, expired, or exhausted
+   * -- populated by [`StartContactMethodVerification`](#grpc-api-StartContactMethodVerification)
+   * and cleared by a successful [`VerifyContactMethod`](#grpc-api-VerifyContactMethod) (which sets
+   * `verified_at` instead) or by expiry/too-many-attempts. See
+   * [`ContactMethodVerification`](#rellm-ContactMethodVerification) for its own fields.
+   */
+  verificationInProgress?:
+    | ContactMethodVerification
+    | undefined;
+  /**
+   * Whether the user currently consents to being contacted via this `ContactMethod` (e.g. by SMS,
+   * for `tel:` values) by external services -- see `docs/contact_integrations.md`. External
+   * services (Twilio/Bird/Telnyx) may not contact the user unless this is
+   * `CONTACT_CONSENT_GRANTED` -- this includes
+   * [`StartContactMethodVerification`](#grpc-api-StartContactMethodVerification)'s own outbound
+   * verification SMS, which fails with `contact_consent_not_granted` until consent is granted,
+   * even though the user is the one requesting the send. Defaults to `CONTACT_CONSENT_REVOKED`
+   * (proto3's zero value) so a `ContactMethod` with no explicit consent action is treated as
+   * not-consented. Settable via the [`UpdateUser`](#grpc-api-UpdateUser) RPC -- same
+   * self-or-`ADMIN` gate as `value`/
+   * `visibility` (see `update_user.rs`'s `admin || self_update` check), not restricted further;
+   * every change appends a new entry to `consent_history` (server-timestamped, never trusted from
+   * client input). Only ever sent to the `ContactMethod`'s own owner or an `ADMIN` -- unlike `value`,
+   * never relaxed by `VIEW_PRIVATE_CONTACT_METHODS`; every other viewer sees this blanked to
+   * `CONTACT_CONSENT_REVOKED` regardless of the `ContactMethod`'s own `visibility`.
+   */
+  consentState: ContactConsentState;
+  /**
+   * Append-only history of every `consent_state` change, oldest first. Not directly modifiable --
+   * the server appends to it whenever [`UpdateUser`](#grpc-api-UpdateUser) changes `consent_state`,
+   * using the server's own time for
+   * [`ContactConsentChange.changed_at`](#rellm-ContactConsentChange) regardless of what the client
+   * sends. Same owner-or-`ADMIN`-only visibility as `consent_state` (blanked to empty for every
+   * other viewer).
+   */
+  consentHistory: ContactConsentChange[];
 }
 
+/**
+ * A single entry in a [`ContactMethod.consent_history`](#rellm-ContactMethod), recording that its
+ * `consent_state` became `state` as of `changed_at`. Our ultimate consent state is always the
+ * `state` of the most recent (last) entry in `consent_history` --
+ * [`ContactMethod.consent_state`](#rellm-ContactMethod) is just a denormalized copy of it, kept
+ * for convenient access without walking the history.
+ */
+export interface ContactConsentChange {
+  /** The [`ContactConsentState`](#rellm-ContactConsentState) the `ContactMethod` was changed to. */
+  state: ContactConsentState;
+  /**
+   * When this change took effect. Always the server's own time as of the
+   * [`UpdateUser`](#grpc-api-UpdateUser) call that made the change -- any `changed_at` sent by a
+   * client is ignored.
+   */
+  changedAt: string | undefined;
+}
+
+/**
+ * Encapsulates verification of a [`ContactMethod`](#rellm-ContactMethod). Verification cannot
+ * begin until contact consent (`ContactMethod.consent_state`) is granted -- see
+ * [`StartContactMethodVerification`](#grpc-api-StartContactMethodVerification).
+ */
 export interface ContactMethodVerification {
   /**
    * Never serialized to gRPC by the backend. Only stored server-side; a client's own attempt to
-   * verify goes through `VerifyContactMethodRequest.code` instead, not this field.
+   * verify goes through [`VerifyContactMethodRequest.code`](#rellm-VerifyContactMethodRequest)
+   * instead, not this field.
    */
   verificationCode: string;
   verificationStartedAt:
     | string
     | undefined;
   /**
-   * Number of failed `VerifyContactMethod` attempts against `verification_code` since it was sent.
-   * Capped (see that RPC's own doc) to prevent brute-forcing the 6-digit code within its expiry
-   * window.
+   * Number of failed [`VerifyContactMethod`](#grpc-api-VerifyContactMethod) attempts against
+   * `verification_code` since it was sent. Capped (see that RPC's own doc) to prevent
+   * brute-forcing the 6-digit code within its expiry window.
    */
   attempts: number;
 }
@@ -1358,6 +1474,8 @@ function createBaseContactMethod(): ContactMethod {
     supportedByServer: false,
     verifiedAt: undefined,
     verificationInProgress: undefined,
+    consentState: 0,
+    consentHistory: [],
   };
 }
 
@@ -1377,6 +1495,12 @@ export const ContactMethod: MessageFns<ContactMethod> = {
     }
     if (message.verificationInProgress !== undefined) {
       ContactMethodVerification.encode(message.verificationInProgress, writer.uint32(42).fork()).join();
+    }
+    if (message.consentState !== 0) {
+      writer.uint32(48).int32(message.consentState);
+    }
+    for (const v of message.consentHistory) {
+      ContactConsentChange.encode(v!, writer.uint32(58).fork()).join();
     }
     return writer;
   },
@@ -1428,6 +1552,22 @@ export const ContactMethod: MessageFns<ContactMethod> = {
           message.verificationInProgress = ContactMethodVerification.decode(reader, reader.uint32());
           continue;
         }
+        case 6: {
+          if (tag !== 48) {
+            break;
+          }
+
+          message.consentState = reader.int32() as any;
+          continue;
+        }
+        case 7: {
+          if (tag !== 58) {
+            break;
+          }
+
+          message.consentHistory.push(ContactConsentChange.decode(reader, reader.uint32()));
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1446,6 +1586,10 @@ export const ContactMethod: MessageFns<ContactMethod> = {
       verificationInProgress: isSet(object.verificationInProgress)
         ? ContactMethodVerification.fromJSON(object.verificationInProgress)
         : undefined,
+      consentState: isSet(object.consentState) ? contactConsentStateFromJSON(object.consentState) : 0,
+      consentHistory: globalThis.Array.isArray(object?.consentHistory)
+        ? object.consentHistory.map((e: any) => ContactConsentChange.fromJSON(e))
+        : [],
     };
   },
 
@@ -1466,6 +1610,12 @@ export const ContactMethod: MessageFns<ContactMethod> = {
     if (message.verificationInProgress !== undefined) {
       obj.verificationInProgress = ContactMethodVerification.toJSON(message.verificationInProgress);
     }
+    if (message.consentState !== 0) {
+      obj.consentState = contactConsentStateToJSON(message.consentState);
+    }
+    if (message.consentHistory?.length) {
+      obj.consentHistory = message.consentHistory.map((e) => ContactConsentChange.toJSON(e));
+    }
     return obj;
   },
 
@@ -1482,6 +1632,84 @@ export const ContactMethod: MessageFns<ContactMethod> = {
       (object.verificationInProgress !== undefined && object.verificationInProgress !== null)
         ? ContactMethodVerification.fromPartial(object.verificationInProgress)
         : undefined;
+    message.consentState = object.consentState ?? 0;
+    message.consentHistory = object.consentHistory?.map((e) => ContactConsentChange.fromPartial(e)) || [];
+    return message;
+  },
+};
+
+function createBaseContactConsentChange(): ContactConsentChange {
+  return { state: 0, changedAt: undefined };
+}
+
+export const ContactConsentChange: MessageFns<ContactConsentChange> = {
+  encode(message: ContactConsentChange, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.state !== 0) {
+      writer.uint32(8).int32(message.state);
+    }
+    if (message.changedAt !== undefined) {
+      Timestamp.encode(toTimestamp(message.changedAt), writer.uint32(18).fork()).join();
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): ContactConsentChange {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseContactConsentChange();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 8) {
+            break;
+          }
+
+          message.state = reader.int32() as any;
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.changedAt = fromTimestamp(Timestamp.decode(reader, reader.uint32()));
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): ContactConsentChange {
+    return {
+      state: isSet(object.state) ? contactConsentStateFromJSON(object.state) : 0,
+      changedAt: isSet(object.changedAt) ? globalThis.String(object.changedAt) : undefined,
+    };
+  },
+
+  toJSON(message: ContactConsentChange): unknown {
+    const obj: any = {};
+    if (message.state !== 0) {
+      obj.state = contactConsentStateToJSON(message.state);
+    }
+    if (message.changedAt !== undefined) {
+      obj.changedAt = message.changedAt;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ContactConsentChange>, I>>(base?: I): ContactConsentChange {
+    return ContactConsentChange.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ContactConsentChange>, I>>(object: I): ContactConsentChange {
+    const message = createBaseContactConsentChange();
+    message.state = object.state ?? 0;
+    message.changedAt = object.changedAt ?? undefined;
     return message;
   },
 };
