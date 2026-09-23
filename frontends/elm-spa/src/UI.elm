@@ -7,14 +7,16 @@ import Components.SyncSources as SyncSources
 import Components.Users as Users
 import Dict
 import Gen.Route as Route exposing (Route)
-import Html exposing (Attribute, Html, a, button, div, header, img, input, label, main_, nav, p, span, text)
-import Html.Attributes exposing (alt, attribute, checked, class, classList, disabled, href, id, name, novalidate, placeholder, spellcheck, src, style, target, title, type_, value)
+import Html exposing (Attribute, Html, a, button, div, header, img, input, label, li, main_, nav, option, p, select, span, text, ul)
+import Html.Attributes exposing (alt, attribute, checked, class, classList, disabled, href, id, name, novalidate, placeholder, selected, spellcheck, src, style, target, title, type_, value)
 import Html.Events exposing (on, onClick, onInput, onSubmit, preventDefaultOn, stopPropagationOn)
 import Html.Keyed
 import Json.Decode as Decode
-import Proto.Rellm exposing (FederatedServer, MastodonServer)
+import Proto.Rellm exposing (ContactConsentChange, ContactMethod, FederatedServer, MastodonServer)
+import Proto.Rellm.ContactConsentState exposing (ContactConsentState(..))
 import Proto.Rellm.NavigationTabStyle exposing (NavigationTabStyle)
 import Proto.Rellm.SyncSource.Configuration as Configuration
+import Proto.Rellm.Visibility exposing (Visibility)
 import Proto.Rellm.WebUserInterface exposing (WebUserInterface(..))
 import Set
 import Shared
@@ -28,6 +30,7 @@ import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccoun
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (Branding, RellmServer)
 import Shared.Breadcrumbs as Breadcrumbs
 import Shared.ByteFormat as ByteFormat
+import Shared.Conversions exposing (timestampToPosix)
 import Shared.CreateNewPanel as CreateNewPanel
 import Shared.FederatedAuth as FederatedAuth
 import Shared.MarkdownPanel as MarkdownPanel
@@ -36,6 +39,7 @@ import Shared.MediaViewerPanel as MediaViewerPanel
 import Shared.MessagingPanel as MessagingPanel
 import Shared.MyMediaPanel as MyMediaPanel
 import Shared.StarredPanel as StarredPanel
+import Shared.Time as SharedTime
 import UI.Classes exposing (classes, hostnameToCSSClass, openClosedClass)
 import UI.CustomNav as CustomNav
 import UI.EmittedStylesheet as EmittedStylesheet
@@ -2100,25 +2104,29 @@ accountAvatarToggle shared account =
             [ avatarOrPlaceholder shared.accounts.servers account ]
 
 
-{-| A second, collapsible line in `accountRow` (see that function's own doc) holding "Media"/"Sync
-Sources"/"Sync Destinations"/"AI Models" for this account -- expands the row itself open when
-`accountAvatarToggle` is clicked (`AccountsPanel.Model.focusedAccount`), rather than floating a
-popover on top of neighboring rows: ordinary in-flow content, so it just grows the row's own height
-(which the outer `.flip-animated-item` -- see `combinedAccountItemRowFlip` -- already sizes itself to
-fit) with no z-index/overflow-clip/scrollable-region workarounds needed. Always rendered (`Nothing`
-account excluded via `needsPassword` below), collapsed to zero height via `ui/accounts_panel.css`'s
-`.account-avatar-menu` -- the same `grid-template-rows` 1fr/0fr trick `flip.css`'s own
-`.flip-animated-item` uses -- so opening/closing is a smooth height transition (a "for free" FLIP-like
-animation, without needing this menu to track its own `UI.Flip.State`).
+{-| A second, collapsible line in `accountRow` (see that function's own doc) holding "Contact
+Methods"/"Media"/"Sync Sources"/"Sync Destinations"/"AI Models" for this account -- expands the row
+itself open when `accountAvatarToggle` is clicked (`AccountsPanel.Model.focusedAccount`), rather
+than floating a popover on top of neighboring rows: ordinary in-flow content, so it just grows the
+row's own height (which the outer `.flip-animated-item` -- see `combinedAccountItemRowFlip` --
+already sizes itself to fit) with no z-index/overflow-clip/scrollable-region workarounds needed.
+Always rendered (`Nothing` account excluded via `needsPassword` below), collapsed to zero height via
+`ui/accounts_panel.css`'s `.account-avatar-menu` -- the same `grid-template-rows` 1fr/0fr trick
+`flip.css`'s own `.flip-animated-item` uses -- so opening/closing is a smooth height transition (a
+"for free" FLIP-like animation, without needing this menu to track its own `UI.Flip.State`).
 
-"Media" opens `MyMediaPanel` directly (same `Shared.MyMediaPanelOpenForAccount` the old avatar button
-fired, which now also collapses this menu back closed -- see that handler's own doc); the other three
-navigate to the account's own profile page, where their actual management UI already lives
-(`Components.Pages.UserProfilePage`'s `syncSourcesSection`/`syncDestinationsSection`/
+"Contact Methods" (see `contactMethodsMenuItem`) is a nested expandable *within* this already-
+expandable menu, rather than a link out to the profile page like the other four -- its own edit/
+consent/verification flow is ported from `Components.Pages.UserProfilePage`'s
+`contactMethodsSection` into `Shared.AccountsPanel.Model`/`Shared.Msg` (see `contactMethodsMenuItem`'s
+own doc on why the split). "Media" opens `MyMediaPanel` directly (same `Shared.MyMediaPanelOpenForAccount`
+the old avatar button fired, which now also collapses this menu back closed -- see that handler's own
+doc); the other three navigate to the account's own profile page, where their actual management UI
+already lives (`Components.Pages.UserProfilePage`'s `syncSourcesSection`/`syncDestinationsSection`/
 `aiProvidersSection`) -- same link + `CloseAccountsPanel` pattern `accountRow`'s own profile link uses.
 Each of the three is shown only if `account` actually holds a permission that would let it use that
 feature at all (`RellmAccounts.canUseSyncSources`/`canUseSyncDestinations`/`canUseAIModels`) -- an
-account with no sync-from/sync-to/AI-provider permissions at all sees just the one "Media" item.
+account with no sync-from/sync-to/AI-provider permissions at all sees just "Contact Methods"/"Media".
 
 -}
 accountAvatarMenuView : Shared.Model -> RellmAccount -> Html Shared.Msg
@@ -2160,7 +2168,8 @@ accountAvatarMenuView shared account =
         in
         div [ classes [ "account-avatar-menu", openClosedClass (AccountsPanel.isFocusedAccount shared.accounts account) ] ]
             [ div [ class "account-avatar-menu-list" ]
-                [ button
+                [ contactMethodsMenuItem shared account
+                , button
                     [ class "account-avatar-menu-item"
                     , stopPropagationAndPreventDefaultOnClick (Shared.MyMediaPanelOpenForAccount account)
                     ]
@@ -2202,6 +2211,432 @@ accountAvatarMenuView shared account =
                     (itemContent "Subscriptions" (configuredCountOrEmpty "No subscriptions." account.marketSubscriptions))
                 ]
             ]
+
+
+{-| The "Contact Methods" item in `accountAvatarMenuView` -- a nested expandable *within* that
+already-expandable menu (`AccountsPanel.Model.focusedAccountContactMethods`), rather than the plain
+`itemContent` button/link the other four items use, since Phone/Email editing, the SMS consent
+checkbox + History sub-section, and phone verification all need real interactive content here, not
+just a link out to the profile page. Its header reuses `profiles.css`'s `.expandable-section-arrow`
+chevron -- the same rotate-on-`.is-open` animation `Components.Pages.UserProfilePage.
+expandableProfileSection` uses for every one of its own collapsible sections -- placed beside just
+the "Contact Methods" label itself (`.account-avatar-menu-contact-methods-header-top`, `align-items:
+center`, full opacity to match that label rather than the arrow's own muted default) with the
+subheader (`contactMethodsSummary`) on its own full-width line underneath both. The body below it
+reuses `.expandable-section-content`'s own `grid-template-rows` open/close animation for the same
+reason.
+
+Ported from `Components.Pages.UserProfilePage.contactMethodsSection` (see that function's own doc)
+into `Shared.AccountsPanel.Model`/`Shared.Msg` instead, so it works from any page the Accounts Panel
+is open on, not just the profile page -- see `Shared.Msg.ContactMethodPhoneSaveClicked`'s own doc on
+why the network-calling half specifically had to move to `Shared.elm` rather than living in
+`Shared.AccountsPanel.update` alongside the rest of this feature's `Msg` handling.
+
+`contactMethods` reads `AccountsPanel.currentFocusedAccountContactMethods` only when `account` is
+actually the focused one -- every other account's (CSS-hidden) copy of this same item gets
+`RellmAccounts.emptyRellmContactMethods` instead, both so an unfocused row never renders another
+row's in-progress edit and so the nested History sub-section's own DOM `id` (below) doesn't collide
+across rows.
+-}
+contactMethodsMenuItem : Shared.Model -> RellmAccount -> Html Shared.Msg
+contactMethodsMenuItem shared account =
+    let
+        isFocused : Bool
+        isFocused =
+            AccountsPanel.isFocusedAccount shared.accounts account
+
+        contactMethods : RellmAccounts.RellmContactMethods
+        contactMethods =
+            if isFocused then
+                AccountsPanel.currentFocusedAccountContactMethods shared.accounts
+
+            else
+                RellmAccounts.emptyRellmContactMethods
+
+        expanded : Bool
+        expanded =
+            isFocused && contactMethods.contactMethodsExpanded
+    in
+    div [ class "account-avatar-menu-contact-methods" ]
+        [ div
+            [ class "account-avatar-menu-contact-methods-header"
+            , stopPropagationAndPreventDefaultOnClick (Shared.AccountsPanelMsg AccountsPanel.ContactMethodsMenuToggled)
+            ]
+            [ div [ class "account-avatar-menu-contact-methods-header-top" ]
+                [ span [ classes [ "expandable-section-arrow", openClosedClass expanded ] ] [ text "▼" ]
+                , span [ class "account-avatar-menu-item-label" ] [ text "Contact Methods" ]
+                ]
+            , span [ class "account-avatar-menu-item-detail" ] (contactMethodsSummary account)
+            ]
+        , div
+            [ classes [ "expandable-section-content", "account-avatar-menu-contact-methods-content", "base-colors-half", "border-color-primary-anchor-50", openClosedClass expanded ] ]
+            [ div [ class "expandable-section-content-inner" ]
+                [ contactMethodPhoneView account contactMethods
+                , contactMethodConsentView shared
+                    ("account-avatar-menu-phone-history-" ++ RellmAccounts.rellmAccountId account)
+                    "SMS"
+                    contactMethods.phoneConsentStatus
+                    contactMethods.phoneHistoryExpanded
+                    Shared.ContactMethodPhoneConsentToggled
+                    (Shared.AccountsPanelMsg AccountsPanel.ContactMethodPhoneHistoryToggled)
+                    account.phone
+                , contactMethodPhoneVerificationView contactMethods account.phone
+                , contactMethodEmailView account contactMethods
+                , contactMethodConsentView shared
+                    ("account-avatar-menu-email-history-" ++ RellmAccounts.rellmAccountId account)
+                    "email"
+                    contactMethods.emailConsentStatus
+                    contactMethods.emailHistoryExpanded
+                    Shared.ContactMethodEmailConsentToggled
+                    (Shared.AccountsPanelMsg AccountsPanel.ContactMethodEmailHistoryToggled)
+                    account.email
+                ]
+            ]
+        ]
+
+
+{-| `contactMethodsMenuItem`'s collapsed-state subheader -- "📱 <phone> ✓" and "✉️ <email> ✓" (the
+"✓" only if verified), each side `RellmAccounts.contactMethodDisplayValue`'s usual "—" placeholder
+when unset, so a glance at the still-collapsed item shows both values (and verification status)
+without expanding it. Each returned as its own `.account-avatar-menu-contact-methods-summary-unit`
+(`white-space: nowrap`, `ui/accounts_panel.css`) rather than one joined string, so a narrow row wraps
+*between* "📱 …"/"✉️ …" rather than splitting an emoji away from its own value/checkmark.
+-}
+contactMethodsSummary : RellmAccount -> List (Html msg)
+contactMethodsSummary account =
+    [ contactMethodsSummaryUnit "📱" "tel:" account.phone
+    , contactMethodsSummaryUnit "✉️" "mailto:" account.email
+    ]
+
+
+contactMethodsSummaryUnit : String -> String -> Maybe ContactMethod -> Html msg
+contactMethodsSummaryUnit emoji prefix maybeContactMethod =
+    span [ class "account-avatar-menu-contact-methods-summary-unit" ]
+        [ text
+            (emoji
+                ++ " "
+                ++ RellmAccounts.contactMethodDisplayValue prefix maybeContactMethod
+                ++ (if (maybeContactMethod |> Maybe.andThen .verifiedAt) /= Nothing then
+                        " ✅"
+
+                    else
+                        ""
+                   )
+            )
+        ]
+
+
+{-| The Phone line -- ported from `Components.Pages.UserProfilePage.phoneView`, unchanged apart from
+firing `Shared.AccountsPanelMsg`s instead of that page's own local `Msg`s, and always showing the
+Edit button (this only ever renders inside the signed-in account's own menu, so there's no
+`canEdit`/other-viewer distinction to gate it on the way the profile page's copy needs).
+-}
+contactMethodPhoneView : RellmAccount -> RellmAccounts.RellmContactMethods -> Html Shared.Msg
+contactMethodPhoneView account contactMethods =
+    case contactMethods.phoneEdit of
+        Just edit ->
+            div [ class "profile-contact-method-edit" ]
+                [ span [ class "profile-contact-method-label" ] [ text "Phone" ]
+                , input
+                    [ class "profile-real-name-input"
+                    , value edit.input
+                    , onInput (\text_ -> Shared.AccountsPanelMsg (AccountsPanel.ContactMethodPhoneInputChanged text_))
+                    , placeholder "+15555550100"
+                    ]
+                    []
+                , contactMethodVisibilitySelector (\text_ -> Shared.AccountsPanelMsg (AccountsPanel.ContactMethodPhoneVisibilityChanged text_)) edit.visibility
+                , contactMethodEditSaveButton Shared.ContactMethodPhoneSaveClicked edit.status
+                , contactMethodEditCancelButton (Shared.AccountsPanelMsg AccountsPanel.ContactMethodPhoneCancelClicked) edit.status
+                , contactMethodEditErrorView edit.status
+                ]
+
+        Nothing ->
+            div [ class "profile-contact-method-display" ]
+                ([ span [ class "profile-contact-method-label" ] [ text "Phone: " ]
+                 , span [ class "profile-contact-method-value" ] [ text (RellmAccounts.contactMethodDisplayValue "tel:" account.phone) ]
+                 ]
+                    ++ (account.phone |> Maybe.map (\cm -> [ contactMethodVerifiedBadge cm, contactMethodVisibilityBadge cm ]) |> Maybe.withDefault [])
+                    ++ [ button [ class "profile-edit-button", onClick (Shared.AccountsPanelMsg AccountsPanel.ContactMethodPhoneEditClicked) ] [ text "Edit Phone" ] ]
+                )
+
+
+{-| The Email line -- mirrors `contactMethodPhoneView` exactly, just for the `mailto:` scheme
+instead of `tel:`, ported from `Components.Pages.UserProfilePage.emailView`.
+-}
+contactMethodEmailView : RellmAccount -> RellmAccounts.RellmContactMethods -> Html Shared.Msg
+contactMethodEmailView account contactMethods =
+    case contactMethods.emailEdit of
+        Just edit ->
+            div [ class "profile-contact-method-edit" ]
+                [ span [ class "profile-contact-method-label" ] [ text "Email" ]
+                , input
+                    [ class "profile-real-name-input"
+                    , value edit.input
+                    , onInput (\text_ -> Shared.AccountsPanelMsg (AccountsPanel.ContactMethodEmailInputChanged text_))
+                    , placeholder "you@example.com"
+                    ]
+                    []
+                , contactMethodVisibilitySelector (\text_ -> Shared.AccountsPanelMsg (AccountsPanel.ContactMethodEmailVisibilityChanged text_)) edit.visibility
+                , contactMethodEditSaveButton Shared.ContactMethodEmailSaveClicked edit.status
+                , contactMethodEditCancelButton (Shared.AccountsPanelMsg AccountsPanel.ContactMethodEmailCancelClicked) edit.status
+                , contactMethodEditErrorView edit.status
+                ]
+
+        Nothing ->
+            div [ class "profile-contact-method-display" ]
+                ([ span [ class "profile-contact-method-label" ] [ text "Email: " ]
+                 , span [ class "profile-contact-method-value" ] [ text (RellmAccounts.contactMethodDisplayValue "mailto:" account.email) ]
+                 ]
+                    ++ (account.email |> Maybe.map (\cm -> [ contactMethodVerifiedBadge cm, contactMethodVisibilityBadge cm ]) |> Maybe.withDefault [])
+                    ++ [ button [ class "profile-edit-button", onClick (Shared.AccountsPanelMsg AccountsPanel.ContactMethodEmailEditClicked) ] [ text "Edit Email" ] ]
+                )
+
+
+{-| The contact-consent checkbox shown under `contactMethodPhoneView`/`contactMethodEmailView`, plus
+a nested "History" sub-section (another `.expandable-section-title`/`.expandable-section-content`
+pair, same mechanism as `contactMethodsMenuItem`'s own header/body and
+`Components.Pages.UserProfilePage.expandableProfileSection` -- no separate Show/Hide button) listing
+every `ContactConsentChange` in `contactMethod.consentHistory` (oldest last). `toggleMsg` is a plain
+`Shared.Msg` (`ContactMethodPhoneConsentToggled`/`ContactMethodEmailConsentToggled`, since checking
+the box calls `UpdateUser`); `historyToggleMsg` is pure state, already wrapped in
+`Shared.AccountsPanelMsg` by the caller. Ported from
+`Components.Pages.UserProfilePage.contactMethodConsentView`.
+-}
+contactMethodConsentView :
+    Shared.Model
+    -> String
+    -> String
+    -> RellmAccounts.SubmitStatus
+    -> Bool
+    -> Shared.Msg
+    -> Shared.Msg
+    -> Maybe ContactMethod
+    -> Html Shared.Msg
+contactMethodConsentView shared historyDomId methodLabel status historyExpanded toggleMsg historyToggleMsg maybeContactMethod =
+    case maybeContactMethod of
+        Just contactMethod ->
+            div [ class "profile-contact-method-consent" ]
+                [ label [ class "profile-contact-method-consent-label" ]
+                    [ input
+                        [ type_ "checkbox"
+                        , checked (contactMethod.consentState == CONTACTCONSENTGRANTED)
+                        , disabled (status == RellmAccounts.Submitting)
+                        , onClick toggleMsg
+                        ]
+                        []
+                    , text (" Checking this box indicates I consent to be contacted via " ++ methodLabel ++ ".")
+                    ]
+                , contactMethodEditErrorView status
+                , if List.isEmpty contactMethod.consentHistory then
+                    text ""
+
+                  else
+                    div [ class "profile-contact-method-consent-history", id historyDomId ]
+                        [ div
+                            [ classes [ "section-title", "expandable-section-title" ]
+                            , onClick historyToggleMsg
+                            ]
+                            [ span [ classes [ "expandable-section-arrow", openClosedClass historyExpanded ] ] [ text "▼" ]
+                            , text "History"
+                            ]
+                        , div
+                            [ classes [ "expandable-section-content", openClosedClass historyExpanded, "border-color-primary-anchor-50" ] ]
+                            [ div [ class "expandable-section-content-inner" ]
+                                [ ul [ class "profile-contact-method-consent-history-list" ]
+                                    (contactMethod.consentHistory
+                                        |> List.reverse
+                                        |> List.map (contactConsentChangeView shared.time.browserTimeZone)
+                                    )
+                                ]
+                            ]
+                        ]
+                ]
+
+        Nothing ->
+            text ""
+
+
+{-| One `li` in `contactMethodConsentView`'s History list -- "Granted"/"Revoked" plus the
+server-timestamped `changedAt`. Ported from
+`Components.Pages.UserProfilePage.contactConsentChangeView`.
+-}
+contactConsentChangeView : SharedTime.BrowserTimeZone -> ContactConsentChange -> Html msg
+contactConsentChangeView browserTimeZone change =
+    let
+        stateLabel : String
+        stateLabel =
+            if change.state == CONTACTCONSENTGRANTED then
+                "Granted"
+
+            else
+                "Revoked"
+
+        when : String
+        when =
+            change.changedAt
+                |> Maybe.map (timestampToPosix >> SharedTime.formatDateTime browserTimeZone)
+                |> Maybe.withDefault ""
+    in
+    li [] [ text (stateLabel ++ " " ++ when) ]
+
+
+{-| The Verified/Not Verified badge next to a displayed contact method -- ported from
+`Components.Pages.UserProfilePage.contactMethodVerifiedBadge`, unchanged.
+-}
+contactMethodVerifiedBadge : ContactMethod -> Html msg
+contactMethodVerifiedBadge contactMethod =
+    if contactMethod.verifiedAt /= Nothing then
+        span [ class "profile-contact-method-verified" ] [ text "✓ Verified" ]
+
+    else
+        span [ class "profile-contact-method-not-verified" ] [ text "✕ Not Verified" ]
+
+
+{-| The visibility badge next to a displayed contact method -- ported from
+`Components.Pages.UserProfilePage.contactMethodVisibilityBadge`, just reading
+`RellmAccounts.contactMethodVisibilityText` (this leaf module's own copy, see that function's own
+doc) instead of `Components.Posts.visibilityText`.
+-}
+contactMethodVisibilityBadge : ContactMethod -> Html msg
+contactMethodVisibilityBadge contactMethod =
+    span [ class "profile-contact-method-visibility" ] [ text (RellmAccounts.contactMethodVisibilityText contactMethod.visibility) ]
+
+
+{-| The visibility `<select>` shown alongside `contactMethodPhoneView`/`contactMethodEmailView`'s
+input while editing -- ported from `Components.Pages.UserProfilePage.contactMethodVisibilitySelector`,
+reading `RellmAccounts.contactMethodVisibilities`/`contactMethodVisibilityText` in place of that
+page's own `contactMethodVisibilities`/`Components.Posts.visibilityText`.
+-}
+contactMethodVisibilitySelector : (String -> Shared.Msg) -> Visibility -> Html Shared.Msg
+contactMethodVisibilitySelector onChange currentVisibility =
+    select [ onInput onChange ]
+        (RellmAccounts.contactMethodVisibilities
+            |> List.map
+                (\visibility ->
+                    option
+                        [ value (RellmAccounts.contactMethodVisibilityText visibility)
+                        , selected (visibility == currentVisibility)
+                        ]
+                        [ text (RellmAccounts.contactMethodVisibilityText visibility) ]
+                )
+        )
+
+
+{-| Ported from `Components.Pages.UserProfilePage.editSaveButton`, unchanged apart from
+`RellmAccounts.SubmitStatus` in place of that page's own `SubmitStatus`.
+-}
+contactMethodEditSaveButton : Shared.Msg -> RellmAccounts.SubmitStatus -> Html Shared.Msg
+contactMethodEditSaveButton onSave status =
+    button
+        [ classes [ "profile-edit-save", "background-color-primary" ]
+        , onClick onSave
+        , disabled (status == RellmAccounts.Submitting)
+        ]
+        [ text
+            (if status == RellmAccounts.Submitting then
+                "Saving…"
+
+             else
+                "Save"
+            )
+        ]
+
+
+{-| Ported from `Components.Pages.UserProfilePage.editCancelButton`, unchanged apart from
+`RellmAccounts.SubmitStatus`.
+-}
+contactMethodEditCancelButton : Shared.Msg -> RellmAccounts.SubmitStatus -> Html Shared.Msg
+contactMethodEditCancelButton onCancel status =
+    button [ class "profile-edit-cancel", onClick onCancel, disabled (status == RellmAccounts.Submitting) ] [ text "Cancel" ]
+
+
+{-| Ported from `Components.Pages.UserProfilePage.editErrorView`, unchanged apart from
+`RellmAccounts.SubmitStatus`.
+-}
+contactMethodEditErrorView : RellmAccounts.SubmitStatus -> Html msg
+contactMethodEditErrorView status =
+    case status of
+        RellmAccounts.SubmitFailed err ->
+            div [ class "profile-edit-error" ] [ text err ]
+
+        _ ->
+            text ""
+
+
+{-| The phone-only SMS verification flow, shown under `contactMethodPhoneView`/
+`contactMethodConsentView` -- ported from `Components.Pages.UserProfilePage.phoneVerificationView`,
+see that function's own doc for the gating/consent reasoning (unchanged). Always for the signed-in
+account itself (this only ever renders inside that account's own menu), so there's no
+`isOwn`-equivalent gate to check the way the profile page's copy needs.
+-}
+contactMethodPhoneVerificationView : RellmAccounts.RellmContactMethods -> Maybe ContactMethod -> Html Shared.Msg
+contactMethodPhoneVerificationView contactMethods maybePhone =
+    let
+        eligibleToVerify : Bool
+        eligibleToVerify =
+            maybePhone
+                |> Maybe.map (\cm -> cm.supportedByServer && cm.verifiedAt == Nothing)
+                |> Maybe.withDefault False
+    in
+    if not eligibleToVerify then
+        text ""
+
+    else
+        let
+            consentGranted : Bool
+            consentGranted =
+                maybePhone
+                    |> Maybe.map (\cm -> cm.consentState == CONTACTCONSENTGRANTED)
+                    |> Maybe.withDefault False
+        in
+        if not consentGranted then
+            p [ class "profile-contact-method-verify-disclaimer" ]
+                [ text "Grant SMS consent above to verify your phone number -- the verification code itself is sent by SMS." ]
+
+        else
+            case contactMethods.phoneVerification of
+                Nothing ->
+                    div [ class "profile-contact-method-verify" ]
+                        [ button [ class "profile-edit-button", onClick Shared.ContactMethodStartPhoneVerificationClicked ] [ text "Start Verification" ] ]
+
+                Just pv ->
+                    div [ class "profile-contact-method-verify" ]
+                        [ if pv.sendStatus == RellmAccounts.Submitting then
+                            span [ class "profile-contact-method-verify-status" ] [ text "Sending code…" ]
+
+                          else
+                            div [ class "profile-contact-method-verify-code" ]
+                                [ input
+                                    [ class "profile-real-name-input"
+                                    , placeholder "Enter code"
+                                    , value pv.code
+                                    , onInput (\code -> Shared.AccountsPanelMsg (AccountsPanel.ContactMethodPhoneVerificationCodeChanged code))
+                                    , disabled (pv.verifyStatus == RellmAccounts.Submitting)
+                                    ]
+                                    []
+                                , button
+                                    [ class "profile-edit-save"
+                                    , onClick Shared.ContactMethodVerifyPhoneCodeClicked
+                                    , disabled (pv.verifyStatus == RellmAccounts.Submitting || String.isEmpty pv.code)
+                                    ]
+                                    [ text
+                                        (if pv.verifyStatus == RellmAccounts.Submitting then
+                                            "Verifying…"
+
+                                         else
+                                            "Verify"
+                                        )
+                                    ]
+                                , button
+                                    [ class "profile-edit-cancel"
+                                    , onClick Shared.ContactMethodStartPhoneVerificationClicked
+                                    , disabled pv.cooldownActive
+                                    ]
+                                    [ text "Resend" ]
+                                ]
+                        , contactMethodEditErrorView pv.sendStatus
+                        , contactMethodEditErrorView pv.verifyStatus
+                        ]
 
 
 {-| The whole row is tinted with the account's server's `background-color-primary`

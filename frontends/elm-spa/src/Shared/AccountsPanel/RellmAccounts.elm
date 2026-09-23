@@ -1,12 +1,23 @@
 module Shared.AccountsPanel.RellmAccounts exposing
-    ( RellmAccount
+    ( EmailEdit
+    , PhoneEdit
+    , PhoneVerification
+    , RellmAccount
     , RellmAccountAuthTokens
+    , RellmContactMethods
+    , SubmitStatus(..)
     , Token
     , applyPermissionsRefreshResult
     , canUseAIModels
     , canUseSyncDestinations
     , canUseSyncSources
+    , contactMethodDisplayValue
+    , contactMethodEditValue
+    , contactMethodVisibilities
+    , contactMethodVisibilityFromText
+    , contactMethodVisibilityText
     , disableOtherRellmAccountsOnServer
+    , emptyRellmContactMethods
     , enabledRellmAccountForServer
     , encodeRellmAccount
     , encodeRellmAccountAuthTokens
@@ -44,9 +55,10 @@ own coordinating logic.
 import Grpc
 import Json.Decode as Decode exposing (Decoder)
 import Json.Encode as Encode
-import Proto.Rellm exposing (AccessTokenResponse, AIModel, ExpirableToken, MarketSubscription, SyncDestination, SyncSource, User)
+import Proto.Rellm exposing (AccessTokenResponse, AIModel, ContactMethod, ExpirableToken, MarketSubscription, SyncDestination, SyncSource, User)
 import Proto.Rellm.Permission exposing (Permission(..), fieldNumbersPermission)
 import Proto.Rellm.Rellm as Rellm
+import Proto.Rellm.Visibility exposing (Visibility(..))
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (Connection, RellmServer)
 import Shared.AccountsPanel.SortOrder exposing (sortOrderDecoder)
 import Shared.Conversions exposing (int64ToInt, timestampToPosix)
@@ -98,7 +110,176 @@ type alias RellmAccount =
     -- `Nothing` limit means unlimited.
     , mediaStorageBytesUsed : Int
     , mediaStorageLimitBytes : Maybe Int
+
+    -- The signed-in user's own Phone/Email `ContactMethod`s (see `Proto.Rellm.User`'s own doc on
+    -- each field), same "refreshed alongside `permissions`/etc, unavailable until the first
+    -- refresh lands" story as `syncDestinations`/etc above -- drives `UI.accountAvatarMenuView`'s
+    -- own "Contact Methods" item/its nested edit UI (`Shared.AccountsPanel`'s `ContactMethod*`
+    -- `Msg`s/`Model` fields).
+    , phone : Maybe ContactMethod
+    , email : Maybe ContactMethod
     }
+
+
+{-| Status of an in-flight (or most recently failed) contact-method-related request -- `PhoneEdit`/
+`EmailEdit`/`PhoneVerification`'s own status fields, plus `Shared.AccountsPanel.Model`'s
+`focusedAccountPhoneConsentStatus`/`focusedAccountEmailConsentStatus`. Lives here (rather than
+reusing `Shared.AccountsPanel.FormStatus`, which is `Idle`/`Submitting`/`Errored String`, the same
+shape) so this whole contact-methods-editing cluster of types stays self-contained and portable --
+originally ported from `Components.Pages.UserProfilePage.SubmitStatus`, matching name deliberately
+kept, so that page's own copy can eventually just import this one instead.
+-}
+type SubmitStatus
+    = Idle
+    | Submitting
+    | SubmitFailed String
+
+
+{-| Live only while `Model.focusedAccount`'s Phone field (see
+`Shared.AccountsPanel.Model.focusedAccountPhoneEdit`) is being edited -- ported from
+`Components.Pages.UserProfilePage.PhoneEdit`, unchanged. `input` holds just the raw phone number,
+with the `tel:` scheme stripped back off -- re-added on save.
+-}
+type alias PhoneEdit =
+    { input : String
+    , visibility : Visibility
+    , status : SubmitStatus
+    }
+
+
+{-| Live only while `Model.focusedAccount`'s Email field (see
+`Shared.AccountsPanel.Model.focusedAccountEmailEdit`) is being edited -- mirrors `PhoneEdit`
+exactly, just for the `mailto:` scheme instead of `tel:`.
+-}
+type alias EmailEdit =
+    { input : String
+    , visibility : Visibility
+    , status : SubmitStatus
+    }
+
+
+{-| Live once phone verification has been started for `Model.focusedAccount` (see
+`RellmContactMethods.phoneVerification`) -- ported from
+`Components.Pages.UserProfilePage.PhoneVerification`, unchanged; see that type's own doc for the
+field-by-field reasoning.
+-}
+type alias PhoneVerification =
+    { sendStatus : SubmitStatus
+    , code : String
+    , verifyStatus : SubmitStatus
+    , cooldownActive : Bool
+    }
+
+
+{-| `Model.focusedAccount`'s own nested "Contact Methods" item state (see
+`UI.accountAvatarMenuView`'s "Contact Methods" item/`UI.contactMethodsMenuItem`) -- whether that
+sub-item is itself expanded, the edit/consent-checkbox/History-sub-section state for each of Phone/
+Email, and the SMS verification flow, all bundled into one record rather than eight separate
+`Shared.AccountsPanel.Model` fields (each of which would otherwise need its own `focusedAccount`-
+prefixed name to make clear it belongs to whichever account is focused). Lives here, not in
+`Shared.AccountsPanel` itself, for the same "keep this whole contact-methods-editing cluster
+self-contained" reason `SubmitStatus`/`PhoneEdit`/etc. do -- see `SubmitStatus`'s own doc.
+
+`Shared.AccountsPanel.Model.focusedAccountContactMethods` wraps this in a `Maybe` that's kept in
+lockstep with `focusedAccount` itself (`Just emptyRellmContactMethods` whenever `focusedAccount` is
+`Just _`, `Nothing` whenever it's `Nothing`) -- see that field's own doc.
+-}
+type alias RellmContactMethods =
+    { phoneEdit : Maybe PhoneEdit
+    , emailEdit : Maybe EmailEdit
+    , contactMethodsExpanded : Bool
+    , phoneConsentStatus : SubmitStatus
+    , phoneHistoryExpanded : Bool
+    , phoneVerification : Maybe PhoneVerification
+    , emailConsentStatus : SubmitStatus
+    , emailHistoryExpanded : Bool
+    }
+
+
+{-| `RellmContactMethods`'s all-defaults starting point -- what `focusedAccountContactMethods`
+becomes (wrapped in `Just`) the moment a `focusedAccount` is chosen, and what it's reset back to
+(this time unwrapped, folded into a fresh edit/etc field) by any individual `ContactMethod*`
+`Msg` that only touches one field of it.
+-}
+emptyRellmContactMethods : RellmContactMethods
+emptyRellmContactMethods =
+    { phoneEdit = Nothing
+    , emailEdit = Nothing
+    , contactMethodsExpanded = False
+    , phoneConsentStatus = Idle
+    , phoneHistoryExpanded = False
+    , phoneVerification = Nothing
+    , emailConsentStatus = Idle
+    , emailHistoryExpanded = False
+    }
+
+
+{-| The visibility options a contact method's own visibility `<select>` offers -- ported from
+`Components.Pages.UserProfilePage.contactMethodVisibilities`, see that value's own doc for why it's
+narrower than `Components.Posts.allVisibilities`.
+-}
+contactMethodVisibilities : List Visibility
+contactMethodVisibilities =
+    [ PRIVATE, SERVERPUBLIC, GLOBALPUBLIC ]
+
+
+{-| Display text for a `contactMethodVisibilities` value -- deliberately the exact same strings
+`Components.Posts.visibilityText`/`Components.Users.visibilityText` already produce for these three
+constructors, so a contact method's visibility reads identically wherever it's shown, without this
+leaf module having to import either (see this module's own doc on why it can't).
+-}
+contactMethodVisibilityText : Visibility -> String
+contactMethodVisibilityText visibility =
+    case visibility of
+        SERVERPUBLIC ->
+            "Server Public"
+
+        GLOBALPUBLIC ->
+            "Global Public"
+
+        _ ->
+            "Private"
+
+
+{-| The reverse of `contactMethodVisibilityText`, for round-tripping a visibility `<select>`'s
+`onInput` text back into a `Visibility` -- mirrors `Components.Posts.visibilityFromText`, narrowed
+to `contactMethodVisibilities`.
+-}
+contactMethodVisibilityFromText : String -> Maybe Visibility
+contactMethodVisibilityFromText text =
+    contactMethodVisibilities |> List.filter (\v -> contactMethodVisibilityText v == text) |> List.head
+
+
+{-| A `ContactMethod`'s `value` with its `tel:`/`mailto:` scheme stripped back off, `"—"` when
+unset -- ported from `Components.Pages.UserProfilePage.contactMethodDisplayValue`, unchanged.
+-}
+contactMethodDisplayValue : String -> Maybe ContactMethod -> String
+contactMethodDisplayValue prefix maybeContactMethod =
+    maybeContactMethod
+        |> Maybe.andThen .value
+        |> Maybe.map (stripContactMethodPrefix prefix)
+        |> Maybe.withDefault "—"
+
+
+{-| `contactMethodDisplayValue`'s edit-mode counterpart -- same, but defaults to `""` (an editable
+blank) rather than `"—"` (a display-only placeholder) when unset. Ported from
+`Components.Pages.UserProfilePage.contactMethodEditValue`, unchanged.
+-}
+contactMethodEditValue : String -> Maybe ContactMethod -> String
+contactMethodEditValue prefix maybeContactMethod =
+    maybeContactMethod
+        |> Maybe.andThen .value
+        |> Maybe.map (stripContactMethodPrefix prefix)
+        |> Maybe.withDefault ""
+
+
+stripContactMethodPrefix : String -> String -> String
+stripContactMethodPrefix prefix rawValue =
+    if String.startsWith prefix rawValue then
+        String.dropLeft (String.length prefix) rawValue
+
+    else
+        rawValue
 
 
 {-| The payload that actually crosses the wire in the cross-server SSO hand-off (see
@@ -343,6 +524,8 @@ applyPermissionsRefreshResult accId result accounts =
                     , marketSubscriptions = user.marketSubscriptions
                     , mediaStorageBytesUsed = int64ToInt user.mediaStorageBytesUsed
                     , mediaStorageLimitBytes = Maybe.map int64ToInt user.mediaStorageLimitBytes
+                    , phone = user.phone
+                    , email = user.email
                 }
                 accounts
 
@@ -491,10 +674,11 @@ isExpired now token =
 -- ENCODE/DECODE
 
 
-{-| Deliberately omits `syncDestinations`/`syncSources`/`aiModels`/`marketSubscriptions` -- they're
-nested-proto-shaped, can be sizeable, and change often, so persisting them to `localStorage` (and
-writing the JSON codecs for their `oneof`s) isn't worth it when `refreshPermissionsTask` already
-refetches them on every reconnect/enable. See `rellmAccountDecoder`'s own doc for the decode side.
+{-| Deliberately omits `syncDestinations`/`syncSources`/`aiModels`/`marketSubscriptions`/`phone`/
+`email` -- they're nested-proto-shaped, can be sizeable, and change often, so persisting them to
+`localStorage` (and writing the JSON codecs for their `oneof`s) isn't worth it when
+`refreshPermissionsTask` already refetches them on every reconnect/enable. See
+`rellmAccountDecoder`'s own doc for the decode side.
 -}
 encodeRellmAccount : RellmAccount -> Encode.Value
 encodeRellmAccount account =
@@ -535,20 +719,20 @@ encodeToken token =
         ]
 
 
-{-| `elm/json` only provides `map8`, but `RellmAccount` now has 17 fields -- so this
+{-| `elm/json` only provides `map8`, but `RellmAccount` now has 19 fields -- so this
 decodes the first 8 into a partially-applied `RellmAccount` constructor, then
 applies `realName`, `needsPassword`, `sortOrder`, `mediaStorageBytesUsed`, and
 `mediaStorageLimitBytes` on top of that. The 4 in between
-(`syncDestinations`/`syncSources`/`aiModels`/`marketSubscriptions`) are deliberately
-never persisted at all -- see `encodeRellmAccount`'s own doc -- so they always
-decode to `[]` here regardless of what's in storage; the very next
+(`syncDestinations`/`syncSources`/`aiModels`/`marketSubscriptions`) and the 2 at the very end
+(`phone`/`email`) are deliberately never persisted at all -- see `encodeRellmAccount`'s own doc --
+so they always decode to `[]`/`Nothing` here regardless of what's in storage; the very next
 `refreshPermissionsTask` (fired on every reconnect/enable) fills them back in.
 -}
 rellmAccountDecoder : Decoder RellmAccount
 rellmAccountDecoder =
     Decode.map6
         (\partial realName needsPassword sortOrder mediaStorageBytesUsed mediaStorageLimitBytes ->
-            partial realName needsPassword sortOrder [] [] [] [] mediaStorageBytesUsed mediaStorageLimitBytes
+            partial realName needsPassword sortOrder [] [] [] [] mediaStorageBytesUsed mediaStorageLimitBytes Nothing Nothing
         )
         (Decode.map8 RellmAccount
             (Decode.field "server" Decode.string)

@@ -135,26 +135,48 @@ update shared msg model =
                 desiredHosts =
                     marketEnabledHosts shared
 
+                -- `MarketPage.update`'s own `SharedMsgReceived` branch unconditionally re-emits
+                -- `Effect.fromShared subMsg` -- the thing that actually applies an incoming
+                -- `Shared.Msg` (e.g. toggling the Accounts Panel, built with `Shared.Msg` in
+                -- `UI.layout`'s header and only reaching this page via `fromShared`) back to
+                -- `Shared.update`, correct when only one instance is handling it. With more than
+                -- one market-enabled host (`desiredHosts`), every instance fires it for the exact
+                -- same `subMsg`, and `Effect.partitionShared` (`Main.elm`) applies it to
+                -- `Shared.update` once per instance in the same pass -- harmless for an idempotent
+                -- message, but for a toggle it flips on then right back off again, net zero,
+                -- whenever the instance count is even -- exactly the "can't open the Accounts Panel
+                -- on /market" bug. Mirrors `Pages.Home_`'s identical `SharedMsg`/`Feed` fix (see its
+                -- own doc): only the first instance's copy of the re-broadcast survives; every other
+                -- instance's own copy is stripped via `Effect.partitionShared`, keeping its other
+                -- effects (e.g. a retried fetch) intact.
+                reconcileInstance : Int -> String -> ( ( String, MarketPage.Model ), Effect Msg )
+                reconcileInstance index host =
+                    case findInstance host model.instances of
+                        Just instanceModel ->
+                            let
+                                ( updatedInstance, instanceEffect ) =
+                                    MarketPage.update shared (MarketPage.fromShared subMsg) instanceModel
+
+                                dedupedEffect : Effect MarketPage.Msg
+                                dedupedEffect =
+                                    if index == 0 then
+                                        instanceEffect
+
+                                    else
+                                        Effect.partitionShared instanceEffect |> Tuple.second
+                            in
+                            ( ( host, updatedInstance ), Effect.map (InstanceMsg host) dedupedEffect )
+
+                        Nothing ->
+                            let
+                                ( instanceModel, instanceEffect ) =
+                                    MarketPage.init shared host
+                            in
+                            ( ( host, instanceModel ), Effect.map (InstanceMsg host) instanceEffect )
+
                 reconciled : List ( ( String, MarketPage.Model ), Effect Msg )
                 reconciled =
-                    desiredHosts
-                        |> List.map
-                            (\host ->
-                                case findInstance host model.instances of
-                                    Just instanceModel ->
-                                        let
-                                            ( updatedInstance, instanceEffect ) =
-                                                MarketPage.update shared (MarketPage.fromShared subMsg) instanceModel
-                                        in
-                                        ( ( host, updatedInstance ), Effect.map (InstanceMsg host) instanceEffect )
-
-                                    Nothing ->
-                                        let
-                                            ( instanceModel, instanceEffect ) =
-                                                MarketPage.init shared host
-                                        in
-                                        ( ( host, instanceModel ), Effect.map (InstanceMsg host) instanceEffect )
-                            )
+                    List.indexedMap reconcileInstance desiredHosts
             in
             ( { model | instances = List.map Tuple.first reconciled }
             , Effect.batch (List.map Tuple.second reconciled)

@@ -586,6 +586,8 @@ accountFromLogin server resp =
                 , marketSubscriptions = user.marketSubscriptions
                 , mediaStorageBytesUsed = int64ToInt user.mediaStorageBytesUsed
                 , mediaStorageLimitBytes = Maybe.map int64ToInt user.mediaStorageLimitBytes
+                , phone = user.phone
+                , email = user.email
                 }
 
         _ ->

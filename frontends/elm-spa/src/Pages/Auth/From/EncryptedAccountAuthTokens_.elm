@@ -141,6 +141,8 @@ update shared req msg model =
                     , marketSubscriptions = user.marketSubscriptions
                     , mediaStorageBytesUsed = Conversions.int64ToInt user.mediaStorageBytesUsed
                     , mediaStorageLimitBytes = Maybe.map Conversions.int64ToInt user.mediaStorageLimitBytes
+                    , phone = user.phone
+                    , email = user.email
                     }
             in
             ( { model | status = Accepted }

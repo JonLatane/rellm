@@ -1114,8 +1114,74 @@
 }
 
 .account-avatar-menu-item-detail {
+  display: flex;
+  flex-wrap: wrap;
+  /* gap: 0.4rem; */
   font-size: 0.8rem;
   opacity: 0.75;
+}
+
+/* `UI.contactMethodsSummary` -- each "📱 …"/"✉️ …" unit in the Contact Methods item's own
+   `.account-avatar-menu-item-detail`, kept unbreakable so a narrow row wraps between units (the
+   flex-wrap above) rather than splitting an emoji away from its own value/checkmark. */
+.account-avatar-menu-contact-methods-summary-unit {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-right: 0.2rem;
+}
+
+/* `UI.contactMethodsMenuItem` -- the "Contact Methods" item's own header, styled to match
+   `.account-avatar-menu-item`'s padding/hover/cursor look but as its own class (rather than reusing
+   that one directly) since its content is two stacked rows -- `-header-top` (the chevron beside the
+   "Contact Methods" label) then the subheader below, spanning the full width under both. */
+.account-avatar-menu-contact-methods-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: 0.4rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.account-avatar-menu-contact-methods-header:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.account-avatar-menu-contact-methods-header-top {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+/* Full opacity/the row's own text color, same as the "Contact Methods" label beside it -- overrides
+   `.expandable-section-arrow`'s own `color: var(--muted)` (profiles.css), which reads too faint
+   against this popover's already-muted-on-hover background. */
+.account-avatar-menu-contact-methods-header-top .expandable-section-arrow {
+  color: inherit;
+  opacity: 1;
+  font-size: 0.8rem;
+}
+
+/* Collapsed/expanded via the same `.expandable-section-content`/`.is-open`/`.is-closed` mechanism
+   (`profiles.css`) as `Components.Pages.UserProfilePage.expandableProfileSection` itself, and (via
+   the `base-colors-half`/`border-color-primary-anchor-50` classes `UI.contactMethodsMenuItem` also gives
+   it) the same neutral card look/border-anchor color that section uses on the profile page --
+   needed here since `.account-row`/`.account-avatar-menu-list` otherwise tint this with the
+   account's own server color, which `border-color-primary-anchor-50` doesn't reliably read against.
+   This class itself only adds the rounding/breathing room that base look needs to sit right inside
+   the popover, beyond what `.expandable-section-content`'s own border-left/padding-left already
+   give it. */
+.account-avatar-menu-contact-methods-content {
+  border-radius: 0.4rem;
+  padding-top: 0.3rem;
+  padding-bottom: 0.3rem;
+  padding-right: 0.6rem;
+}
+
+.account-avatar-menu-contact-methods-content .expandable-section-content-inner {
+  padding-right: 0.2rem;
 }
 
 .external-link-btn {

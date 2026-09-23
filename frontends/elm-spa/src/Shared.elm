@@ -36,7 +36,8 @@ import Json.Encode as Encode
 import Ports
 import Process
 import Proto.Google.Protobuf
-import Proto.Rellm exposing (Event, Occasion, SyncSource, Media, Post, User)
+import Proto.Rellm exposing (ContactMethod, Event, Occasion, SyncSource, Media, Post, User)
+import Proto.Rellm.ContactConsentState exposing (ContactConsentState(..))
 import Request exposing (Request)
 import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccount)
@@ -136,6 +137,29 @@ type Msg
     | MyMediaPanelMsg MyMediaPanel.Msg
     | MyMediaPanelOpenForAccount RellmAccount
     | ProfileSectionLinkClicked RellmAccount String
+      -- `UI.accountAvatarMenuView`'s nested "Contact Methods" item (see
+      -- `AccountsPanel.Model.focusedAccountPhoneEdit`/etc) -- the actual RPC-calling half of that
+      -- feature. `AccountsPanel.elm` can't call `Components.Users.updateUser`/
+      -- `startContactMethodVerification`/`verifyContactMethod` itself (`Components.Users` already
+      -- imports `Shared.AccountsPanel`, so the reverse would be a cycle) -- same reason
+      -- `MyMediaPanelOpenForAccount` above lives here rather than in `AccountsPanel.update`. Each
+      -- Clicked variant fires the RPC; each `Got*TaskResult` decomposes the raw
+      -- `Task`/`( Maybe AccountsPanel.Msg, _ )` result -- forwarding the token-refresh half (if any)
+      -- the same way `accountsPanelEffect` does for `Components.Pages.UserProfilePage`, then folding
+      -- the actual `User`/`ContactMethod` into `AccountsPanel.Model` via its own same-named
+      -- `Got*Result` `Msg` (`updateFocusedAccountFromUser`/`updateFocusedAccountPhone`).
+    | ContactMethodPhoneSaveClicked
+    | ContactMethodEmailSaveClicked
+    | ContactMethodPhoneConsentToggled
+    | ContactMethodEmailConsentToggled
+    | ContactMethodStartPhoneVerificationClicked
+    | ContactMethodVerifyPhoneCodeClicked
+    | GotContactMethodPhoneSaveTaskResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, User ))
+    | GotContactMethodEmailSaveTaskResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, User ))
+    | GotContactMethodPhoneConsentTaskResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, User ))
+    | GotContactMethodEmailConsentTaskResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, User ))
+    | GotContactMethodStartPhoneVerificationTaskResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, ContactMethod ))
+    | GotContactMethodVerifyPhoneCodeTaskResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, ContactMethod ))
     | CreateNewPanelMsg CreateNewPanel.Msg
     | MessagingPanelMsg MessagingPanel.Msg
     | CloseAllPanels
@@ -1355,6 +1379,296 @@ sharedUpdate req msg model =
             ( closedModel
             , Cmd.batch [ closeCmd, Nav.pushUrl req.key (profileHref ++ "#" ++ sectionId) ]
             )
+
+        ContactMethodPhoneSaveClicked ->
+            case ( AccountsPanel.freshFocusedAccount model.accounts, (AccountsPanel.currentFocusedAccountContactMethods model.accounts).phoneEdit ) of
+                ( Just account, Just edit ) ->
+                    let
+                        accounts : AccountsPanel.Model
+                        accounts =
+                            model.accounts
+
+                        current : RellmAccounts.RellmContactMethods
+                        current =
+                            AccountsPanel.currentFocusedAccountContactMethods model.accounts
+                    in
+                    ( { model | accounts = { accounts | focusedAccountContactMethods = Just { current | phoneEdit = Just { edit | status = RellmAccounts.Submitting } } } }
+                    , Users.updateUser model.accounts
+                        ( Just account.userId, account.server )
+                        account.userId
+                        (\freshUser ->
+                            { freshUser
+                                | phone =
+                                    Just
+                                        { value = Just ("tel:" ++ edit.input)
+                                        , visibility = edit.visibility
+                                        , supportedByServer = False
+                                        , verifiedAt = Nothing
+                                        , verificationInProgress = Nothing
+
+                                        -- Consent is edited separately (`ContactMethodPhoneConsentToggled`) --
+                                        -- always carried forward from the just-refetched `freshUser.phone`,
+                                        -- same reasoning as `Components.Pages.UserProfilePage.PhoneSaveClicked`.
+                                        , consentState = freshUser.phone |> Maybe.map .consentState |> Maybe.withDefault CONTACTCONSENTREVOKED
+                                        , consentHistory = freshUser.phone |> Maybe.map .consentHistory |> Maybe.withDefault []
+                                        }
+                            }
+                        )
+                        |> Task.attempt GotContactMethodPhoneSaveTaskResult
+                    )
+
+                _ ->
+                    ( model, Cmd.none )
+
+        GotContactMethodPhoneSaveTaskResult (Ok ( maybeAccountsPanelMsg, updatedUser )) ->
+            let
+                ( afterToken, tokenCmd ) =
+                    maybeAccountsPanelMsg
+                        |> Maybe.map (\m -> sharedUpdate req (AccountsPanelMsg m) model)
+                        |> Maybe.withDefault ( model, Cmd.none )
+
+                ( finalModel, applyCmd ) =
+                    sharedUpdate req (AccountsPanelMsg (AccountsPanel.GotContactMethodPhoneSaveResult (Ok updatedUser))) afterToken
+            in
+            ( finalModel, Cmd.batch [ tokenCmd, applyCmd ] )
+
+        GotContactMethodPhoneSaveTaskResult (Err err) ->
+            sharedUpdate req (AccountsPanelMsg (AccountsPanel.GotContactMethodPhoneSaveResult (Err err))) model
+
+        ContactMethodEmailSaveClicked ->
+            case ( AccountsPanel.freshFocusedAccount model.accounts, (AccountsPanel.currentFocusedAccountContactMethods model.accounts).emailEdit ) of
+                ( Just account, Just edit ) ->
+                    let
+                        accounts : AccountsPanel.Model
+                        accounts =
+                            model.accounts
+
+                        current : RellmAccounts.RellmContactMethods
+                        current =
+                            AccountsPanel.currentFocusedAccountContactMethods model.accounts
+                    in
+                    ( { model | accounts = { accounts | focusedAccountContactMethods = Just { current | emailEdit = Just { edit | status = RellmAccounts.Submitting } } } }
+                    , Users.updateUser model.accounts
+                        ( Just account.userId, account.server )
+                        account.userId
+                        (\freshUser ->
+                            { freshUser
+                                | email =
+                                    Just
+                                        { value = Just ("mailto:" ++ edit.input)
+                                        , visibility = edit.visibility
+                                        , supportedByServer = False
+                                        , verifiedAt = Nothing
+                                        , verificationInProgress = Nothing
+
+                                        -- Same reasoning as `ContactMethodPhoneSaveClicked` above --
+                                        -- consent is edited separately, so it's always carried forward
+                                        -- unchanged here.
+                                        , consentState = freshUser.email |> Maybe.map .consentState |> Maybe.withDefault CONTACTCONSENTREVOKED
+                                        , consentHistory = freshUser.email |> Maybe.map .consentHistory |> Maybe.withDefault []
+                                        }
+                            }
+                        )
+                        |> Task.attempt GotContactMethodEmailSaveTaskResult
+                    )
+
+                _ ->
+                    ( model, Cmd.none )
+
+        GotContactMethodEmailSaveTaskResult (Ok ( maybeAccountsPanelMsg, updatedUser )) ->
+            let
+                ( afterToken, tokenCmd ) =
+                    maybeAccountsPanelMsg
+                        |> Maybe.map (\m -> sharedUpdate req (AccountsPanelMsg m) model)
+                        |> Maybe.withDefault ( model, Cmd.none )
+
+                ( finalModel, applyCmd ) =
+                    sharedUpdate req (AccountsPanelMsg (AccountsPanel.GotContactMethodEmailSaveResult (Ok updatedUser))) afterToken
+            in
+            ( finalModel, Cmd.batch [ tokenCmd, applyCmd ] )
+
+        GotContactMethodEmailSaveTaskResult (Err err) ->
+            sharedUpdate req (AccountsPanelMsg (AccountsPanel.GotContactMethodEmailSaveResult (Err err))) model
+
+        ContactMethodPhoneConsentToggled ->
+            case AccountsPanel.freshFocusedAccount model.accounts of
+                Just account ->
+                    let
+                        newConsent : ContactConsentState
+                        newConsent =
+                            if (account.phone |> Maybe.map .consentState |> Maybe.withDefault CONTACTCONSENTREVOKED) == CONTACTCONSENTGRANTED then
+                                CONTACTCONSENTREVOKED
+
+                            else
+                                CONTACTCONSENTGRANTED
+
+                        accounts : AccountsPanel.Model
+                        accounts =
+                            model.accounts
+
+                        current : RellmAccounts.RellmContactMethods
+                        current =
+                            AccountsPanel.currentFocusedAccountContactMethods model.accounts
+                    in
+                    ( { model | accounts = { accounts | focusedAccountContactMethods = Just { current | phoneConsentStatus = RellmAccounts.Submitting } } }
+                    , Users.updateUser model.accounts
+                        ( Just account.userId, account.server )
+                        account.userId
+                        (\freshUser -> { freshUser | phone = freshUser.phone |> Maybe.map (\cm -> { cm | consentState = newConsent }) })
+                        |> Task.attempt GotContactMethodPhoneConsentTaskResult
+                    )
+
+                Nothing ->
+                    ( model, Cmd.none )
+
+        GotContactMethodPhoneConsentTaskResult (Ok ( maybeAccountsPanelMsg, updatedUser )) ->
+            let
+                ( afterToken, tokenCmd ) =
+                    maybeAccountsPanelMsg
+                        |> Maybe.map (\m -> sharedUpdate req (AccountsPanelMsg m) model)
+                        |> Maybe.withDefault ( model, Cmd.none )
+
+                ( finalModel, applyCmd ) =
+                    sharedUpdate req (AccountsPanelMsg (AccountsPanel.GotContactMethodPhoneConsentResult (Ok updatedUser))) afterToken
+            in
+            ( finalModel, Cmd.batch [ tokenCmd, applyCmd ] )
+
+        GotContactMethodPhoneConsentTaskResult (Err err) ->
+            sharedUpdate req (AccountsPanelMsg (AccountsPanel.GotContactMethodPhoneConsentResult (Err err))) model
+
+        ContactMethodEmailConsentToggled ->
+            case AccountsPanel.freshFocusedAccount model.accounts of
+                Just account ->
+                    let
+                        newConsent : ContactConsentState
+                        newConsent =
+                            if (account.email |> Maybe.map .consentState |> Maybe.withDefault CONTACTCONSENTREVOKED) == CONTACTCONSENTGRANTED then
+                                CONTACTCONSENTREVOKED
+
+                            else
+                                CONTACTCONSENTGRANTED
+
+                        accounts : AccountsPanel.Model
+                        accounts =
+                            model.accounts
+
+                        current : RellmAccounts.RellmContactMethods
+                        current =
+                            AccountsPanel.currentFocusedAccountContactMethods model.accounts
+                    in
+                    ( { model | accounts = { accounts | focusedAccountContactMethods = Just { current | emailConsentStatus = RellmAccounts.Submitting } } }
+                    , Users.updateUser model.accounts
+                        ( Just account.userId, account.server )
+                        account.userId
+                        (\freshUser -> { freshUser | email = freshUser.email |> Maybe.map (\cm -> { cm | consentState = newConsent }) })
+                        |> Task.attempt GotContactMethodEmailConsentTaskResult
+                    )
+
+                Nothing ->
+                    ( model, Cmd.none )
+
+        GotContactMethodEmailConsentTaskResult (Ok ( maybeAccountsPanelMsg, updatedUser )) ->
+            let
+                ( afterToken, tokenCmd ) =
+                    maybeAccountsPanelMsg
+                        |> Maybe.map (\m -> sharedUpdate req (AccountsPanelMsg m) model)
+                        |> Maybe.withDefault ( model, Cmd.none )
+
+                ( finalModel, applyCmd ) =
+                    sharedUpdate req (AccountsPanelMsg (AccountsPanel.GotContactMethodEmailConsentResult (Ok updatedUser))) afterToken
+            in
+            ( finalModel, Cmd.batch [ tokenCmd, applyCmd ] )
+
+        GotContactMethodEmailConsentTaskResult (Err err) ->
+            sharedUpdate req (AccountsPanelMsg (AccountsPanel.GotContactMethodEmailConsentResult (Err err))) model
+
+        ContactMethodStartPhoneVerificationClicked ->
+            case AccountsPanel.freshFocusedAccount model.accounts of
+                Just account ->
+                    case account.phone of
+                        Just contactMethod ->
+                            let
+                                accounts : AccountsPanel.Model
+                                accounts =
+                                    model.accounts
+
+                                current : RellmAccounts.RellmContactMethods
+                                current =
+                                    AccountsPanel.currentFocusedAccountContactMethods model.accounts
+
+                                pendingVerification : RellmAccounts.PhoneVerification
+                                pendingVerification =
+                                    current.phoneVerification
+                                        |> Maybe.map (\pv -> { pv | sendStatus = RellmAccounts.Submitting })
+                                        |> Maybe.withDefault { sendStatus = RellmAccounts.Submitting, code = "", verifyStatus = RellmAccounts.Idle, cooldownActive = False }
+                            in
+                            ( { model | accounts = { accounts | focusedAccountContactMethods = Just { current | phoneVerification = Just pendingVerification } } }
+                            , Users.startContactMethodVerification model.accounts ( Just account.userId, account.server ) contactMethod
+                                |> Task.attempt GotContactMethodStartPhoneVerificationTaskResult
+                            )
+
+                        Nothing ->
+                            ( model, Cmd.none )
+
+                Nothing ->
+                    ( model, Cmd.none )
+
+        GotContactMethodStartPhoneVerificationTaskResult (Ok ( maybeAccountsPanelMsg, updatedContactMethod )) ->
+            let
+                ( afterToken, tokenCmd ) =
+                    maybeAccountsPanelMsg
+                        |> Maybe.map (\m -> sharedUpdate req (AccountsPanelMsg m) model)
+                        |> Maybe.withDefault ( model, Cmd.none )
+
+                ( finalModel, applyCmd ) =
+                    sharedUpdate req (AccountsPanelMsg (AccountsPanel.GotContactMethodStartPhoneVerificationResult (Ok updatedContactMethod))) afterToken
+            in
+            ( finalModel, Cmd.batch [ tokenCmd, applyCmd ] )
+
+        GotContactMethodStartPhoneVerificationTaskResult (Err err) ->
+            sharedUpdate req (AccountsPanelMsg (AccountsPanel.GotContactMethodStartPhoneVerificationResult (Err err))) model
+
+        ContactMethodVerifyPhoneCodeClicked ->
+            case ( AccountsPanel.freshFocusedAccount model.accounts, (AccountsPanel.currentFocusedAccountContactMethods model.accounts).phoneVerification ) of
+                ( Just account, Just pendingVerification ) ->
+                    case account.phone |> Maybe.andThen .value of
+                        Just phoneValue ->
+                            let
+                                accounts : AccountsPanel.Model
+                                accounts =
+                                    model.accounts
+
+                                current : RellmAccounts.RellmContactMethods
+                                current =
+                                    AccountsPanel.currentFocusedAccountContactMethods model.accounts
+                            in
+                            ( { model | accounts = { accounts | focusedAccountContactMethods = Just { current | phoneVerification = Just { pendingVerification | verifyStatus = RellmAccounts.Submitting } } } }
+                            , Users.verifyContactMethod model.accounts
+                                ( Just account.userId, account.server )
+                                { value = phoneValue, code = pendingVerification.code }
+                                |> Task.attempt GotContactMethodVerifyPhoneCodeTaskResult
+                            )
+
+                        Nothing ->
+                            ( model, Cmd.none )
+
+                _ ->
+                    ( model, Cmd.none )
+
+        GotContactMethodVerifyPhoneCodeTaskResult (Ok ( maybeAccountsPanelMsg, updatedContactMethod )) ->
+            let
+                ( afterToken, tokenCmd ) =
+                    maybeAccountsPanelMsg
+                        |> Maybe.map (\m -> sharedUpdate req (AccountsPanelMsg m) model)
+                        |> Maybe.withDefault ( model, Cmd.none )
+
+                ( finalModel, applyCmd ) =
+                    sharedUpdate req (AccountsPanelMsg (AccountsPanel.GotContactMethodVerifyPhoneCodeResult (Ok updatedContactMethod))) afterToken
+            in
+            ( finalModel, Cmd.batch [ tokenCmd, applyCmd ] )
+
+        GotContactMethodVerifyPhoneCodeTaskResult (Err err) ->
+            sharedUpdate req (AccountsPanelMsg (AccountsPanel.GotContactMethodVerifyPhoneCodeResult (Err err))) model
 
         MessagingPanelMsg subMsg ->
             let

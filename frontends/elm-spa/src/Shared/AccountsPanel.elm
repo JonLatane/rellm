@@ -20,9 +20,11 @@ module Shared.AccountsPanel exposing
     , combinedServerFeedItemKey
     , combinedServerFeedItems
     , connectableMastodonServers
+    , currentFocusedAccountContactMethods
     , createAccountModalBodyId
     , enabledAccounts
     , enabledServers
+    , freshFocusedAccount
     , serverFeedItemChipDomId
     , grpcErrorToString
     , hasAdminAccount
@@ -58,8 +60,9 @@ import Json.Decode as Decode exposing (Decoder)
 import Json.Encode as Encode
 import Ports
 import Process
-import Proto.Rellm exposing (AccessTokenResponse, FederatedServer, GetPushSubscriptionStatusResponse, MastodonServer, PushSubscription, RefreshTokenResponse, ServerConfiguration, ServerInfo, User)
+import Proto.Rellm exposing (AccessTokenResponse, ContactMethod, FederatedServer, GetPushSubscriptionStatusResponse, MastodonServer, PushSubscription, RefreshTokenResponse, ServerConfiguration, ServerInfo, User)
 import Proto.Rellm.Rellm as Rellm
+import Proto.Rellm.Visibility exposing (Visibility(..))
 import Proto.Rellm.WebUserInterface exposing (WebUserInterface)
 import Request exposing (Request)
 import Set
@@ -68,7 +71,7 @@ import Shared.AccountsPanel.BlueskyAccounts as BlueskyAccounts exposing (Bluesky
 import Shared.AccountsPanel.DebugTab as DebugTab
 import Shared.AccountsPanel.MastodonAccounts as MastodonAccounts exposing (MastodonAccount)
 import Shared.AccountsPanel.MastodonServers as MastodonServers exposing (BrowsedMastodonInstance, MastodonInstanceInfo)
-import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccount, rellmAccountId)
+import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccount, RellmContactMethods, contactMethodEditValue, contactMethodVisibilityFromText, rellmAccountId)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (Branding, Connection, PersistedRellmServer, RellmServer)
 import Shared.AccountsPanel.SortOrder as SortOrder
 import Shared.Conversions as Conversions
@@ -119,6 +122,15 @@ type alias Model =
     -- `ui/accounts_panel.css`'s `.account-avatar-menu`), so it needs no positioning/z-index/overflow-
     -- escape logic of its own; the row's existing FLIP-collapse height transition does that for free.
     , focusedAccount : Maybe RellmAccount
+
+    -- `focusedAccount`'s own nested "Contact Methods" item state (see `UI.accountAvatarMenuView`'s
+    -- "Contact Methods" item, and `RellmContactMethods`'s own doc for why it's one record rather
+    -- than several separate fields here). Kept in lockstep with `focusedAccount` -- `Just
+    -- RellmAccounts.emptyRellmContactMethods` whenever that's `Just _`, `Nothing` whenever it's
+    -- `Nothing` (see `resetFocusedAccountContactMethods`, run alongside every place `focusedAccount`
+    -- itself changes: `AccountAvatarClicked`/`CloseFocusedAccount`/`CloseAccountsPanel`/
+    -- `ToggleAccountsPanel`) -- editing only ever targets whichever account's menu is currently open.
+    , focusedAccountContactMethods : Maybe RellmContactMethods
 
     -- Which tab of the merged "Add Account/Server" form (see
     -- `AccountOrServerFormType`) is showing, once there's at least one account
@@ -406,6 +418,25 @@ type Msg
     | CloseAccountsPanel
     | AccountAvatarClicked RellmAccount
     | CloseFocusedAccount
+    | ContactMethodsMenuToggled
+    | ContactMethodPhoneEditClicked
+    | ContactMethodPhoneInputChanged String
+    | ContactMethodPhoneVisibilityChanged String
+    | ContactMethodPhoneCancelClicked
+    | ContactMethodPhoneHistoryToggled
+    | ContactMethodEmailEditClicked
+    | ContactMethodEmailInputChanged String
+    | ContactMethodEmailVisibilityChanged String
+    | ContactMethodEmailCancelClicked
+    | ContactMethodEmailHistoryToggled
+    | ContactMethodPhoneVerificationCodeChanged String
+    | ContactMethodPhoneVerificationCooldownElapsed
+    | GotContactMethodPhoneSaveResult (Result Grpc.Error User)
+    | GotContactMethodEmailSaveResult (Result Grpc.Error User)
+    | GotContactMethodPhoneConsentResult (Result Grpc.Error User)
+    | GotContactMethodEmailConsentResult (Result Grpc.Error User)
+    | GotContactMethodStartPhoneVerificationResult (Result Grpc.Error ContactMethod)
+    | GotContactMethodVerifyPhoneCodeResult (Result Grpc.Error ContactMethod)
     | ShowAddAccountFormClicked
     | ReauthenticateButtonClicked RellmAccount
     | GotPermissionsRefresh String (Result Grpc.Error ( RellmAccount, User ))
@@ -658,6 +689,71 @@ isFocusedAccount model account =
     model.focusedAccount
         |> Maybe.map (\focused -> rellmAccountId focused == rellmAccountId account)
         |> Maybe.withDefault False
+
+
+{-| `model.focusedAccount`'s own entry in `model.accounts`, looked up fresh by `rellmAccountId`
+rather than trusting `focusedAccount`'s own (possibly stale, see that field's own doc) copy --
+`applyPermissionsRefreshResult`/`GotContactMethodPhoneSaveResult`/etc. can all update `model.accounts`
+out from under an already-open menu, and reading straight from `focusedAccount` instead would silently
+seed an edit from (or clobber a save back onto) out-of-date `phone`/`email`/`username`/etc.
+-}
+freshFocusedAccount : Model -> Maybe RellmAccount
+freshFocusedAccount model =
+    model.focusedAccount
+        |> Maybe.andThen (\focused -> model.accounts |> List.filter (\a -> rellmAccountId a == rellmAccountId focused) |> List.head)
+
+
+{-| Puts `focusedAccountContactMethods` back in lockstep with `focusedAccount` -- called (after
+`focusedAccount` itself has already been updated in the same record literal) everywhere that field
+changes (`AccountAvatarClicked`/`CloseFocusedAccount`/`CloseAccountsPanel`/`ToggleAccountsPanel`'s
+closing branch): `Just RellmAccounts.emptyRellmContactMethods` if a (possibly different) account is
+now focused, `Nothing` if none is -- either way, none of the old contact-methods state makes sense
+once the account it was editing is no longer the one in view.
+-}
+resetFocusedAccountContactMethods : Model -> Model
+resetFocusedAccountContactMethods model =
+    { model | focusedAccountContactMethods = model.focusedAccount |> Maybe.map (\_ -> RellmAccounts.emptyRellmContactMethods) }
+
+
+{-| `focusedAccountContactMethods`'s current value, defaulted -- since that field is only ever
+`Nothing` when `focusedAccount` itself is (see `resetFocusedAccountContactMethods`), every
+`ContactMethod*` `Msg` handler that only touches one field of it reads the current whole record
+through this (rather than pattern-matching `Maybe` at every call site) before writing back
+`Just { current | ... }`.
+-}
+currentFocusedAccountContactMethods : Model -> RellmContactMethods
+currentFocusedAccountContactMethods model =
+    model.focusedAccountContactMethods |> Maybe.withDefault RellmAccounts.emptyRellmContactMethods
+
+
+{-| Folds a freshly-saved `User`'s `phone`/`email` back into whichever `RellmAccount` in
+`model.accounts` matches `model.focusedAccount` -- the "Contact Methods" counterpart of
+`applyPermissionsRefreshResult`, but for a single field pair rather than a whole permissions
+refresh, and sourced from an `UpdateUser` response rather than `GetCurrentUser`. A no-op if
+`focusedAccount` is somehow unset by the time a save result lands (the menu was closed mid-request).
+-}
+updateFocusedAccountFromUser : User -> Model -> Model
+updateFocusedAccountFromUser updatedUser model =
+    case freshFocusedAccount model of
+        Just account ->
+            { model | accounts = RellmAccounts.upsertRellmAccount { account | phone = updatedUser.phone, email = updatedUser.email } model.accounts }
+
+        Nothing ->
+            model
+
+
+{-| Like `updateFocusedAccountFromUser`, but for the phone-verification flow's own
+`StartContactMethodVerification`/`VerifyContactMethod` responses, which echo back just the updated
+Phone `ContactMethod` rather than a whole `User`.
+-}
+updateFocusedAccountPhone : ContactMethod -> Model -> Model
+updateFocusedAccountPhone updatedContactMethod model =
+    case freshFocusedAccount model of
+        Just account ->
+            { model | accounts = RellmAccounts.upsertRellmAccount { account | phone = Just updatedContactMethod } model.accounts }
+
+        Nothing ->
+            model
 
 
 {-| The DOM `id` a combined server feed item chip (server or browsed Mastodon instance -- see
@@ -1284,6 +1380,7 @@ init req flags blueskyAccountsFlags mastodonAccountsAndServersFlags =
       , recommendedServersExpanded = False
       , recommendedServerConnections = Dict.empty
       , focusedAccount = Nothing
+      , focusedAccountContactMethods = Nothing
       , addAccountServerFormType = Nothing
       , newAccountType = Nothing
       , createAccountConfirmation = Nothing
@@ -1717,6 +1814,8 @@ sendUpdate req msg model =
                             , marketSubscriptions = user.marketSubscriptions
                             , mediaStorageBytesUsed = Conversions.int64ToInt user.mediaStorageBytesUsed
                             , mediaStorageLimitBytes = Maybe.map Conversions.int64ToInt user.mediaStorageLimitBytes
+                            , phone = user.phone
+                            , email = user.email
                             }
 
                         newModel : Model
@@ -2640,31 +2739,333 @@ sendUpdate req msg model =
 
               else
                 collapseAddAccountFormIfIdle
-                    { newModel | recommendedServersExpanded = False, focusedAccount = Nothing }
+                    (resetFocusedAccountContactMethods { newModel | recommendedServersExpanded = False, focusedAccount = Nothing })
             , Cmd.none
             )
 
         CloseAccountsPanel ->
             ( collapseAddAccountFormIfIdle
-                { model
-                    | showAccountsPanel = False
-                    , createAccountConfirmation = Nothing
-                    , acceptedCreateAccount = Nothing
-                    , recommendedServersExpanded = False
-                    , focusedAccount = Nothing
-                }
+                (resetFocusedAccountContactMethods
+                    { model
+                        | showAccountsPanel = False
+                        , createAccountConfirmation = Nothing
+                        , acceptedCreateAccount = Nothing
+                        , recommendedServersExpanded = False
+                        , focusedAccount = Nothing
+                    }
+                )
             , Cmd.none
             )
 
         AccountAvatarClicked account ->
             if isFocusedAccount model account then
-                ( { model | focusedAccount = Nothing }, Cmd.none )
+                ( resetFocusedAccountContactMethods { model | focusedAccount = Nothing }, Cmd.none )
 
             else
-                ( { model | focusedAccount = Just account }, Cmd.none )
+                ( resetFocusedAccountContactMethods { model | focusedAccount = Just account }, Cmd.none )
 
         CloseFocusedAccount ->
-            ( { model | focusedAccount = Nothing }, Cmd.none )
+            ( resetFocusedAccountContactMethods { model | focusedAccount = Nothing }, Cmd.none )
+
+        ContactMethodsMenuToggled ->
+            let
+                current : RellmContactMethods
+                current =
+                    currentFocusedAccountContactMethods model
+            in
+            ( { model | focusedAccountContactMethods = Just { current | contactMethodsExpanded = not current.contactMethodsExpanded } }, Cmd.none )
+
+        ContactMethodPhoneEditClicked ->
+            case freshFocusedAccount model of
+                Just account ->
+                    let
+                        current : RellmContactMethods
+                        current =
+                            currentFocusedAccountContactMethods model
+                    in
+                    ( { model
+                        | focusedAccountContactMethods =
+                            Just
+                                { current
+                                    | phoneEdit =
+                                        Just
+                                            { input = contactMethodEditValue "tel:" account.phone
+                                            , visibility = account.phone |> Maybe.map .visibility |> Maybe.withDefault PRIVATE
+                                            , status = RellmAccounts.Idle
+                                            }
+                                }
+                      }
+                    , Cmd.none
+                    )
+
+                Nothing ->
+                    ( model, Cmd.none )
+
+        ContactMethodPhoneInputChanged input ->
+            let
+                current : RellmContactMethods
+                current =
+                    currentFocusedAccountContactMethods model
+            in
+            ( { model | focusedAccountContactMethods = Just { current | phoneEdit = current.phoneEdit |> Maybe.map (\edit -> { edit | input = input }) } }
+            , Cmd.none
+            )
+
+        ContactMethodPhoneVisibilityChanged text ->
+            let
+                current : RellmContactMethods
+                current =
+                    currentFocusedAccountContactMethods model
+            in
+            ( { model
+                | focusedAccountContactMethods =
+                    Just
+                        { current
+                            | phoneEdit =
+                                current.phoneEdit
+                                    |> Maybe.map (\edit -> { edit | visibility = contactMethodVisibilityFromText text |> Maybe.withDefault edit.visibility })
+                        }
+              }
+            , Cmd.none
+            )
+
+        ContactMethodPhoneCancelClicked ->
+            let
+                current : RellmContactMethods
+                current =
+                    currentFocusedAccountContactMethods model
+            in
+            ( { model | focusedAccountContactMethods = Just { current | phoneEdit = Nothing } }, Cmd.none )
+
+        ContactMethodPhoneHistoryToggled ->
+            let
+                current : RellmContactMethods
+                current =
+                    currentFocusedAccountContactMethods model
+            in
+            ( { model | focusedAccountContactMethods = Just { current | phoneHistoryExpanded = not current.phoneHistoryExpanded } }, Cmd.none )
+
+        ContactMethodEmailEditClicked ->
+            case freshFocusedAccount model of
+                Just account ->
+                    let
+                        current : RellmContactMethods
+                        current =
+                            currentFocusedAccountContactMethods model
+                    in
+                    ( { model
+                        | focusedAccountContactMethods =
+                            Just
+                                { current
+                                    | emailEdit =
+                                        Just
+                                            { input = contactMethodEditValue "mailto:" account.email
+                                            , visibility = account.email |> Maybe.map .visibility |> Maybe.withDefault PRIVATE
+                                            , status = RellmAccounts.Idle
+                                            }
+                                }
+                      }
+                    , Cmd.none
+                    )
+
+                Nothing ->
+                    ( model, Cmd.none )
+
+        ContactMethodEmailInputChanged input ->
+            let
+                current : RellmContactMethods
+                current =
+                    currentFocusedAccountContactMethods model
+            in
+            ( { model | focusedAccountContactMethods = Just { current | emailEdit = current.emailEdit |> Maybe.map (\edit -> { edit | input = input }) } }
+            , Cmd.none
+            )
+
+        ContactMethodEmailVisibilityChanged text ->
+            let
+                current : RellmContactMethods
+                current =
+                    currentFocusedAccountContactMethods model
+            in
+            ( { model
+                | focusedAccountContactMethods =
+                    Just
+                        { current
+                            | emailEdit =
+                                current.emailEdit
+                                    |> Maybe.map (\edit -> { edit | visibility = contactMethodVisibilityFromText text |> Maybe.withDefault edit.visibility })
+                        }
+              }
+            , Cmd.none
+            )
+
+        ContactMethodEmailCancelClicked ->
+            let
+                current : RellmContactMethods
+                current =
+                    currentFocusedAccountContactMethods model
+            in
+            ( { model | focusedAccountContactMethods = Just { current | emailEdit = Nothing } }, Cmd.none )
+
+        ContactMethodEmailHistoryToggled ->
+            let
+                current : RellmContactMethods
+                current =
+                    currentFocusedAccountContactMethods model
+            in
+            ( { model | focusedAccountContactMethods = Just { current | emailHistoryExpanded = not current.emailHistoryExpanded } }, Cmd.none )
+
+        ContactMethodPhoneVerificationCodeChanged code ->
+            let
+                current : RellmContactMethods
+                current =
+                    currentFocusedAccountContactMethods model
+            in
+            ( { model | focusedAccountContactMethods = Just { current | phoneVerification = current.phoneVerification |> Maybe.map (\pv -> { pv | code = code }) } }
+            , Cmd.none
+            )
+
+        ContactMethodPhoneVerificationCooldownElapsed ->
+            let
+                current : RellmContactMethods
+                current =
+                    currentFocusedAccountContactMethods model
+            in
+            ( { model | focusedAccountContactMethods = Just { current | phoneVerification = current.phoneVerification |> Maybe.map (\pv -> { pv | cooldownActive = False }) } }
+            , Cmd.none
+            )
+
+        GotContactMethodPhoneSaveResult (Ok updatedUser) ->
+            let
+                current : RellmContactMethods
+                current =
+                    currentFocusedAccountContactMethods model
+            in
+            ( updateFocusedAccountFromUser updatedUser { model | focusedAccountContactMethods = Just { current | phoneEdit = Nothing } }
+            , Cmd.none
+            )
+
+        GotContactMethodPhoneSaveResult (Err err) ->
+            let
+                current : RellmContactMethods
+                current =
+                    currentFocusedAccountContactMethods model
+            in
+            ( { model
+                | focusedAccountContactMethods =
+                    Just { current | phoneEdit = current.phoneEdit |> Maybe.map (\edit -> { edit | status = RellmAccounts.SubmitFailed (grpcErrorToString err) }) }
+              }
+            , Cmd.none
+            )
+
+        GotContactMethodEmailSaveResult (Ok updatedUser) ->
+            let
+                current : RellmContactMethods
+                current =
+                    currentFocusedAccountContactMethods model
+            in
+            ( updateFocusedAccountFromUser updatedUser { model | focusedAccountContactMethods = Just { current | emailEdit = Nothing } }
+            , Cmd.none
+            )
+
+        GotContactMethodEmailSaveResult (Err err) ->
+            let
+                current : RellmContactMethods
+                current =
+                    currentFocusedAccountContactMethods model
+            in
+            ( { model
+                | focusedAccountContactMethods =
+                    Just { current | emailEdit = current.emailEdit |> Maybe.map (\edit -> { edit | status = RellmAccounts.SubmitFailed (grpcErrorToString err) }) }
+              }
+            , Cmd.none
+            )
+
+        GotContactMethodPhoneConsentResult (Ok updatedUser) ->
+            let
+                current : RellmContactMethods
+                current =
+                    currentFocusedAccountContactMethods model
+            in
+            ( updateFocusedAccountFromUser updatedUser { model | focusedAccountContactMethods = Just { current | phoneConsentStatus = RellmAccounts.Idle } }
+            , Cmd.none
+            )
+
+        GotContactMethodPhoneConsentResult (Err err) ->
+            let
+                current : RellmContactMethods
+                current =
+                    currentFocusedAccountContactMethods model
+            in
+            ( { model | focusedAccountContactMethods = Just { current | phoneConsentStatus = RellmAccounts.SubmitFailed (grpcErrorToString err) } }, Cmd.none )
+
+        GotContactMethodEmailConsentResult (Ok updatedUser) ->
+            let
+                current : RellmContactMethods
+                current =
+                    currentFocusedAccountContactMethods model
+            in
+            ( updateFocusedAccountFromUser updatedUser { model | focusedAccountContactMethods = Just { current | emailConsentStatus = RellmAccounts.Idle } }
+            , Cmd.none
+            )
+
+        GotContactMethodEmailConsentResult (Err err) ->
+            let
+                current : RellmContactMethods
+                current =
+                    currentFocusedAccountContactMethods model
+            in
+            ( { model | focusedAccountContactMethods = Just { current | emailConsentStatus = RellmAccounts.SubmitFailed (grpcErrorToString err) } }, Cmd.none )
+
+        GotContactMethodStartPhoneVerificationResult (Ok updatedContactMethod) ->
+            let
+                current : RellmContactMethods
+                current =
+                    currentFocusedAccountContactMethods model
+            in
+            ( updateFocusedAccountPhone updatedContactMethod
+                { model
+                    | focusedAccountContactMethods =
+                        Just { current | phoneVerification = current.phoneVerification |> Maybe.map (\pv -> { pv | sendStatus = RellmAccounts.Idle, cooldownActive = True }) }
+                }
+            , Process.sleep 60000 |> Task.perform (\_ -> ContactMethodPhoneVerificationCooldownElapsed)
+            )
+
+        GotContactMethodStartPhoneVerificationResult (Err err) ->
+            let
+                current : RellmContactMethods
+                current =
+                    currentFocusedAccountContactMethods model
+            in
+            ( { model
+                | focusedAccountContactMethods =
+                    Just { current | phoneVerification = current.phoneVerification |> Maybe.map (\pv -> { pv | sendStatus = RellmAccounts.SubmitFailed (grpcErrorToString err) }) }
+              }
+            , Cmd.none
+            )
+
+        GotContactMethodVerifyPhoneCodeResult (Ok updatedContactMethod) ->
+            let
+                current : RellmContactMethods
+                current =
+                    currentFocusedAccountContactMethods model
+            in
+            ( updateFocusedAccountPhone updatedContactMethod { model | focusedAccountContactMethods = Just { current | phoneVerification = Nothing } }
+            , Cmd.none
+            )
+
+        GotContactMethodVerifyPhoneCodeResult (Err err) ->
+            let
+                current : RellmContactMethods
+                current =
+                    currentFocusedAccountContactMethods model
+            in
+            ( { model
+                | focusedAccountContactMethods =
+                    Just { current | phoneVerification = current.phoneVerification |> Maybe.map (\pv -> { pv | verifyStatus = RellmAccounts.SubmitFailed (grpcErrorToString err) }) }
+              }
+            , Cmd.none
+            )
 
         ShowAddAccountFormClicked ->
             ( { model | addAccountServerFormType = Just RellmServerFormType }, Cmd.none )

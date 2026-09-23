@@ -97,6 +97,7 @@ mainFrontendServerRules theme accountsPanel =
         , borderColorRule ".events-calendar .fc .fc-button-primary:not(:disabled).fc-button-active" theme.accentColor
         , ":root { --calendar-accent: " ++ theme.navColor ++ "; }\n"
         , ".events-list:not(:has(>* .events-calendar)), .events-strip, .events-calendar { background-color:" ++ theme.backgroundColor ++ "BB; backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }"
+        , ".base-colors-half { background-color: " ++ theme.backgroundColor ++ "BB; color: " ++ theme.textColor ++ "; }\n"
         ]
 
 

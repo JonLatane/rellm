@@ -316,7 +316,7 @@
   display: grid;
   grid-template-rows: 0fr;
   margin-top: 0;
-  transition: grid-template-rows 0.2s ease, margin-top 0.2s ease;
+  transition: grid-template-rows 0.2s ease, margin-top 0.2s ease, padding 0.2s ease;
   border-left: 5px solid;
   padding-left: 0.5rem;
   margin-left: 0.25rem;
@@ -332,6 +332,8 @@
      whatever sub-pixel sliver of height remains, so without this it'd still be clickable/focusable
      while "closed". */
   pointer-events: none;
+  padding-top: 0;
+  padding-bottom: 0;
 }
 
 .expandable-section-content > * {
