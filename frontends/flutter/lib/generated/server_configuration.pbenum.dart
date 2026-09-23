@@ -154,21 +154,44 @@ class NavigationTab extends $pb.ProtobufEnum {
   const NavigationTab._($core.int v, $core.String n) : super(v, n);
 }
 
-class VerificationAPI extends $pb.ProtobufEnum {
-  static const VerificationAPI VERIFICATION_API_TWILIO = VerificationAPI._(0, _omitEnumNames ? '' : 'VERIFICATION_API_TWILIO');
-  static const VerificationAPI VERIFICATION_API_BIRD = VerificationAPI._(1, _omitEnumNames ? '' : 'VERIFICATION_API_BIRD');
-  static const VerificationAPI VERIFICATION_API_TELNYX = VerificationAPI._(2, _omitEnumNames ? '' : 'VERIFICATION_API_TELNYX');
+/// The two contact schemes [`ContactMethod.value`](#rellm-ContactMethod) (`users.proto`) may take --
+/// see [`ServerConfiguration.supported_contact_protocols`](#rellm-ServerConfiguration) for the
+/// server-wide setting keyed off this enum, and `docs/contact_integrations.md` for the full picture.
+class ContactProtocol extends $pb.ProtobufEnum {
+  static const ContactProtocol CONTACT_PROTOCOL_TEL = ContactProtocol._(0, _omitEnumNames ? '' : 'CONTACT_PROTOCOL_TEL');
+  static const ContactProtocol CONTACT_PROTOCOL_MAILTO = ContactProtocol._(1, _omitEnumNames ? '' : 'CONTACT_PROTOCOL_MAILTO');
 
-  static const $core.List<VerificationAPI> values = <VerificationAPI> [
-    VERIFICATION_API_TWILIO,
-    VERIFICATION_API_BIRD,
-    VERIFICATION_API_TELNYX,
+  static const $core.List<ContactProtocol> values = <ContactProtocol> [
+    CONTACT_PROTOCOL_TEL,
+    CONTACT_PROTOCOL_MAILTO,
   ];
 
-  static final $core.Map<$core.int, VerificationAPI> _byValue = $pb.ProtobufEnum.initByValue(values);
-  static VerificationAPI? valueOf($core.int value) => _byValue[value];
+  static final $core.Map<$core.int, ContactProtocol> _byValue = $pb.ProtobufEnum.initByValue(values);
+  static ContactProtocol? valueOf($core.int value) => _byValue[value];
 
-  const VerificationAPI._($core.int v, $core.String n) : super(v, n);
+  const ContactProtocol._($core.int v, $core.String n) : super(v, n);
+}
+
+/// The SMS providers [`ServerConfiguration.preferred_verification_apis`](#rellm-ServerConfiguration)/
+/// [`available_verification_apis`](#rellm-ServerConfiguration) order between --
+/// [`TwilioConfig`](#rellm-TwilioConfig), [`BirdConfig`](#rellm-BirdConfig), and
+/// [`TelnyxConfig`](#rellm-TelnyxConfig). See `contact_verification.rs`'s own module doc for the
+/// preference-then-fallback logic these values drive.
+class ContactVerificationAPI extends $pb.ProtobufEnum {
+  static const ContactVerificationAPI CONTACT_VERIFICATION_API_TWILIO = ContactVerificationAPI._(0, _omitEnumNames ? '' : 'CONTACT_VERIFICATION_API_TWILIO');
+  static const ContactVerificationAPI CONTACT_VERIFICATION_API_BIRD = ContactVerificationAPI._(1, _omitEnumNames ? '' : 'CONTACT_VERIFICATION_API_BIRD');
+  static const ContactVerificationAPI CONTACT_VERIFICATION_API_TELNYX = ContactVerificationAPI._(2, _omitEnumNames ? '' : 'CONTACT_VERIFICATION_API_TELNYX');
+
+  static const $core.List<ContactVerificationAPI> values = <ContactVerificationAPI> [
+    CONTACT_VERIFICATION_API_TWILIO,
+    CONTACT_VERIFICATION_API_BIRD,
+    CONTACT_VERIFICATION_API_TELNYX,
+  ];
+
+  static final $core.Map<$core.int, ContactVerificationAPI> _byValue = $pb.ProtobufEnum.initByValue(values);
+  static ContactVerificationAPI? valueOf($core.int value) => _byValue[value];
+
+  const ContactVerificationAPI._($core.int v, $core.String n) : super(v, n);
 }
 
 

@@ -308,6 +308,10 @@
   word-break: break-all;
 }
 
+.server-details-webhook-signing-key-warning {
+  cursor: help;
+}
+
 .server-details-feature-settings-row select {
   font-family: monospace;
   padding: 0.15rem 0.4rem;

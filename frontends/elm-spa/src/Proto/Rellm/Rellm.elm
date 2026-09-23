@@ -24,13 +24,14 @@ To run it, add a dependency via `elm install` on [`elm-protocol-buffers`](https:
 
  ### Ports & Protocols
  Rellm servers interact across several ports:
- * [gRPC (27707)](#grpc-api) - The main Rellm gRPC API. This is the primary port for all Rellm clients. It may or may not be TLS-enabled (443).
+ * gRPC (27707) - The main [Rellm gRPC API](#grpc-api). This is the primary port for all Rellm clients. It may or may not be TLS-enabled (443).
       * Clients are expected to negotiate the gRPC host via the [`backend_host` HTTP endpoint (see below)](#http-based-client-host-negotiation-for-external-cdns) on port 80/443.
- * [HTTP (80, 8000, 27705), HTTPS (443)](#http-endpoints) - The main Rellm HTTP API. This is used for some endpoints, including media upload/download, and for negotiating the gRPC host.
-      * Port 443 will serve up a secure HTTPS server. If it fails to startup, Rellm handles this gracefully and degrades to plain HTTP.
-      * Port 80 will serve up either an unsecured set of Rellm's HTTP endpoints, or a redirect to the HTTPS/443 server if that one launched successfully.
-      * Port 8000 *always* serves up an unsecured Rellm UI, in case something goes horribly wrong with 80 and 443. It can probably not be exposed in your load balancer/to the web.
-      * Port 27705 is an unsecured HTTP server meant for communication with other non-web facing services on your computer or in your cluster. It should not be exposed to the web.
+ * HTTP (80, 8000, 27705), HTTPS (443) - The main Rellm HTTP API. This is used for some endpoints, including media upload/download, and for negotiating the gRPC host.
+      * [Public HTTP Endpoints](#external-http-servers-80-8000-443) and the Elm, React and Flutter [Web UI](#web-ui-paths)s are served up on multiple ports:
+          * Port 443 will serve up a secure HTTPS server. If it fails to startup, Rellm handles this gracefully and degrades to plain HTTP.
+          * Port 80 will serve up either an unsecured set of Rellm's HTTP endpoints, or a redirect to the HTTPS/443 server if that one launched successfully.
+          * Port 8000 *always* serves up an unsecured Rellm UI, in case something goes horribly wrong with 80 and 443. It can probably not be exposed in your load balancer/to the web.
+      * Port 27705 is a [private, unsecured HTTP server](#internal-http-server-27705) meant for communication with other non-web facing services on your computer or in your cluster. It should not be exposed to the web.
           * Currently this just has an `/email` endpoint. It is designed for [email/SMTP support via an integration with Stalwart](https://github.com/JonLatane/rellm/tree/main/deploys/email).
 
  #### Cross-Protocol Federation
@@ -1010,9 +1011,12 @@ lockClusterResources =
 
 {-| A template for a gRPC call to the method 'ConfigureServer' sending a `ServerConfiguration` to get back a `ServerConfiguration`.
 
- Configure the server (i.e. the response to GetServerConfiguration). *Authenticated.*
- Requires `ADMIN` permissions. Editing `cluster_resources` additionally requires
- `EDIT_CLUSTER_SETTINGS` - see that field's own doc.
+ Configure the server (i.e. the response to
+ [`GetServerConfiguration`](#grpc-api-GetServerConfiguration)). *Authenticated.* Requires
+ `ADMIN` permissions. Editing `cluster_resources` additionally requires
+ `EDIT_CLUSTER_SETTINGS` - see that field's own doc. Editing
+ [`supported_contact_protocols`](#rellm-ServerConfiguration) is validated, not just
+ stored -- see [`ContactProtocol`](#rellm-ContactProtocol)'s own doc.
 
 
 -}
@@ -2243,8 +2247,9 @@ deleteUser =
 {-| A template for a gRPC call to the method 'VerifyContactMethod' sending a `VerifyContactMethodRequest` to get back a `ContactMethod`.
 
  Verifies a code sent by [`StartContactMethodVerification`](#grpc-api-StartContactMethodVerification). *Authenticated, self-only.*
- On match, sets `verified_at` and clears `verification_in_progress`. Codes expire after 10
- minutes and allow at most 5 attempts before requiring a fresh
+ On match, sets [`ContactMethod.verified_at`](#rellm-ContactMethod) and clears
+ `verification_in_progress`. Codes expire after 10 minutes and allow at most 5 attempts before
+ requiring a fresh
  [`StartContactMethodVerification`](#grpc-api-StartContactMethodVerification) call.
 
 
@@ -2262,11 +2267,19 @@ verifyContactMethod =
 
 {-| A template for a gRPC call to the method 'StartContactMethodVerification' sending a `ContactMethod` to get back a `ContactMethod`.
 
- Starts SMS verification of the current user's own phone ContactMethod. *Authenticated,
- self-only.* Requires the server to have Twilio configured and enabled. Generates a 6-digit
- code, sends it via Twilio SMS, and stores it (with a start time and attempt counter) on the
- phone ContactMethod. Only `tel:` values are supported this iteration -- `mailto:` returns
- `Unimplemented`. Rate-limited to one send per 60 seconds per user.
+ Starts SMS verification of the current user's own phone
+ [`ContactMethod`](#rellm-ContactMethod). *Authenticated, self-only.* Requires the server to
+ have a [`TwilioConfig`](#rellm-TwilioConfig)/[`BirdConfig`](#rellm-BirdConfig)/
+ [`TelnyxConfig`](#rellm-TelnyxConfig) SMS provider configured and enabled (see
+ [`ContactProtocol`](#rellm-ContactProtocol) for the corresponding server-wide toggle). Also
+ requires the phone `ContactMethod`'s own `consent_state` to already be
+ `CONTACT_CONSENT_GRANTED` -- fails with `contact_consent_not_granted` otherwise, since the
+ verification code is itself an outbound SMS sent through that same provider (see
+ [`ContactMethod.consent_state`](#rellm-ContactMethod)'s own doc; this is checked even though
+ the user is the one requesting the send). Generates a 6-digit code, sends it via SMS, and
+ stores it (with a start time and attempt counter) on the phone `ContactMethod`
+ (`verification_in_progress`). Only `tel:` values are supported this iteration -- `mailto:`
+ returns `Unimplemented`. Rate-limited to one send per 60 seconds per user.
 
 
 -}
@@ -2483,7 +2496,9 @@ createAccount =
 
 {-| A template for a gRPC call to the method 'GetServerConfiguration' sending a `Empty` to get back a `ServerConfiguration`.
 
- Gets the Rellm server's configuration. *Publicly accessible.*
+ Gets the Rellm server's [`ServerConfiguration`](#rellm-ServerConfiguration). *Publicly
+ accessible* -- some fields (e.g. `twilio_config`, `preferred_verification_apis`) are stripped
+ for a non-admin caller, see that message's own field docs.
 
 
 -}

@@ -3,8 +3,8 @@
 //! compute `ContactMethod.supported_by_server`, always server-side/never client-trusted) and by the
 //! `StartContactMethodVerification`/`VerifyContactMethod` RPCs (to gate/actually place the call).
 //!
-//! Three providers exist today (`VerificationApi::Twilio`/`VerificationApi::Bird`/
-//! `VerificationApi::Telnyx`), each configured independently and each optional -- an admin may
+//! Three providers exist today (`ContactVerificationApi::Twilio`/`ContactVerificationApi::Bird`/
+//! `ContactVerificationApi::Telnyx`), each configured independently and each optional -- an admin may
 //! enable any combination of them, or none. `preferred_verification_apis` (stored the same way
 //! `Permission` lists are -- a JSON array of the enum's string names, so it's directly
 //! admin-DB-editable too) lets an admin pick which provider is tried first when more than one is
@@ -17,7 +17,7 @@ use tonic::{Code, Status};
 use crate::db_connection::PgPooledConnection;
 use crate::logic::{bird_sync, telnyx_sync, twilio_sync};
 use crate::marshaling::ToProtoServerConfiguration;
-use crate::protos::{BirdConfig, TelnyxConfig, TwilioConfig, VerificationApi};
+use crate::protos::{BirdConfig, ContactProtocol, TelnyxConfig, TwilioConfig, ContactVerificationApi};
 use crate::rpcs::get_server_configuration_model;
 
 /// Loads the server's stored `TwilioConfig`, if any, *unscrubbed* -- i.e. including the real
@@ -59,16 +59,36 @@ pub fn telnyx_available(conn: &mut PgPooledConnection) -> bool {
     server_telnyx_config(conn).is_some_and(|c| c.telnyx_enabled)
 }
 
-/// Whether the server currently has *any* SMS verification provider enabled. This is the single
-/// source of truth `ContactMethod.supported_by_server` (for `tel:` values) is derived from.
+/// Whether SMS contact (`tel:`) is currently supported -- the single source of truth
+/// `ContactMethod.supported_by_server` (`users.proto`) is computed from for `tel:` values (see
+/// that field's own proto doc for why `users.proto` can't reference `ContactProtocol` directly:
+/// `users.proto` deliberately never imports `server_configuration.proto`, so this connection only
+/// exists in backend logic and in the two fields' own doc comments, not as a formal schema
+/// reference). A thin wrapper over `contact_protocol_supported` -- since that's already
+/// invariant-enforced at `ConfigureServer` time (`validate_configuration`'s own `ContactProtocol`
+/// check: `CONTACT_PROTOCOL_TEL` can never be stored without some provider enabled), this also
+/// implies `twilio_available(conn) || bird_available(conn) || telnyx_available(conn)`, just gated
+/// additionally on the admin's own "Enable SMS Sending" toggle
+/// (`ContactIntegrationsTab.contactProtocolsSection`).
 pub fn verification_available(conn: &mut PgPooledConnection) -> bool {
-    twilio_available(conn) || bird_available(conn) || telnyx_available(conn)
+    contact_protocol_supported(conn, ContactProtocol::Tel)
+}
+
+/// Whether `protocol` is currently listed in the server's admin-set
+/// `ServerConfiguration.supported_contact_protocols`.
+pub fn contact_protocol_supported(conn: &mut PgPooledConnection, protocol: ContactProtocol) -> bool {
+    get_server_configuration_model(conn)
+        .ok()
+        .and_then(|c| c.supported_contact_protocols)
+        .map(|v| json_to_contact_protocols(&v))
+        .unwrap_or_default()
+        .contains(&protocol)
 }
 
 /// The server's admin-set `preferred_verification_apis`, in stored order -- unlike
 /// `available_verification_apis` below, this doesn't filter to only *available* providers, or add
 /// the fixed-order fallback; it's the raw admin preference as stored.
-pub fn preferred_verification_apis(conn: &mut PgPooledConnection) -> Vec<VerificationApi> {
+pub fn preferred_verification_apis(conn: &mut PgPooledConnection) -> Vec<ContactVerificationApi> {
     get_server_configuration_model(conn)
         .ok()
         .and_then(|c| c.preferred_verification_apis)
@@ -83,24 +103,24 @@ pub fn preferred_verification_apis(conn: &mut PgPooledConnection) -> Vec<Verific
 /// `preferred_verification_apis` is admin-visible -- `ServerConfiguration.available_verification_apis`
 /// (this function's proto-facing counterpart) is serialized to every caller, unlike
 /// `preferred_verification_apis`/`twilio_config`/`bird_config` themselves.
-pub fn available_verification_apis(conn: &mut PgPooledConnection) -> Vec<VerificationApi> {
+pub fn available_verification_apis(conn: &mut PgPooledConnection) -> Vec<ContactVerificationApi> {
     let twilio_available = twilio_available(conn);
     let bird_available = bird_available(conn);
     let telnyx_available = telnyx_available(conn);
-    let is_available = |api: &VerificationApi| match api {
-        VerificationApi::Twilio => twilio_available,
-        VerificationApi::Bird => bird_available,
-        VerificationApi::Telnyx => telnyx_available,
+    let is_available = |api: &ContactVerificationApi| match api {
+        ContactVerificationApi::Twilio => twilio_available,
+        ContactVerificationApi::Bird => bird_available,
+        ContactVerificationApi::Telnyx => telnyx_available,
     };
 
-    let mut result: Vec<VerificationApi> = preferred_verification_apis(conn)
+    let mut result: Vec<ContactVerificationApi> = preferred_verification_apis(conn)
         .into_iter()
         .filter(is_available)
         .collect();
     for api in [
-        VerificationApi::Twilio,
-        VerificationApi::Bird,
-        VerificationApi::Telnyx,
+        ContactVerificationApi::Twilio,
+        ContactVerificationApi::Bird,
+        ContactVerificationApi::Telnyx,
     ] {
         if is_available(&api) && !result.contains(&api) {
             result.push(api);
@@ -123,13 +143,13 @@ pub fn send_verification_sms(
 ) -> Result<(), Status> {
     let body = verification_sms_body(conn, code);
     match available_verification_apis(conn).first() {
-        Some(VerificationApi::Twilio) => {
+        Some(ContactVerificationApi::Twilio) => {
             let config = server_twilio_config(conn)
                 .ok_or_else(|| Status::new(Code::FailedPrecondition, "twilio_not_configured"))?;
             let base_url = base_url.unwrap_or(twilio_sync::DEFAULT_BASE_URL);
             twilio_sync::send_sms_at(base_url, &config, to, &body)
         }
-        Some(VerificationApi::Bird) => {
+        Some(ContactVerificationApi::Bird) => {
             let config = server_bird_config(conn)
                 .ok_or_else(|| Status::new(Code::FailedPrecondition, "bird_not_configured"))?;
             let base_url = base_url
@@ -137,7 +157,7 @@ pub fn send_verification_sms(
                 .unwrap_or_else(|| bird_sync::default_base_url(&config.bird_region));
             bird_sync::send_sms_at(&base_url, &config, to, &body)
         }
-        Some(VerificationApi::Telnyx) => {
+        Some(ContactVerificationApi::Telnyx) => {
             let config = server_telnyx_config(conn)
                 .ok_or_else(|| Status::new(Code::FailedPrecondition, "telnyx_not_configured"))?;
             let base_url = base_url.unwrap_or(telnyx_sync::DEFAULT_BASE_URL);
@@ -181,26 +201,50 @@ fn verification_sms_body(conn: &mut PgPooledConnection, code: &str) -> String {
     }
 }
 
-/// Parses a `VerificationApi` list stored the same way `Permission` lists are -- a JSON array of
+/// Parses a `ContactVerificationApi` list stored the same way `Permission` lists are -- a JSON array of
 /// the enum's string names (`ToJsonPermissions`'s own doc explains why: human-readable and
 /// directly admin-DB-editable, not an opaque int). Unknown/malformed entries are silently dropped,
 /// mirroring `ToProtoPermissions for serde_json::Value`'s own leniency.
-pub fn json_to_verification_apis(value: &serde_json::Value) -> Vec<VerificationApi> {
+pub fn json_to_verification_apis(value: &serde_json::Value) -> Vec<ContactVerificationApi> {
     match value {
         serde_json::Value::Array(apis) => apis
             .iter()
             .filter_map(|v| v.as_str())
-            .filter_map(VerificationApi::from_str_name)
+            .filter_map(ContactVerificationApi::from_str_name)
             .collect(),
         _ => Vec::new(),
     }
 }
 
 /// The inverse of `json_to_verification_apis`.
-pub fn verification_apis_to_json(apis: &[VerificationApi]) -> serde_json::Value {
+pub fn verification_apis_to_json(apis: &[ContactVerificationApi]) -> serde_json::Value {
     serde_json::Value::Array(
         apis.iter()
             .map(|a| serde_json::Value::String(a.as_str_name().to_string()))
+            .collect(),
+    )
+}
+
+/// Parses a `ContactProtocol` list stored the same way `Permission`/`ContactVerificationApi` lists
+/// are -- a JSON array of the enum's string names. Unknown/malformed entries are silently dropped,
+/// same leniency as `json_to_verification_apis`.
+pub fn json_to_contact_protocols(value: &serde_json::Value) -> Vec<ContactProtocol> {
+    match value {
+        serde_json::Value::Array(protocols) => protocols
+            .iter()
+            .filter_map(|v| v.as_str())
+            .filter_map(ContactProtocol::from_str_name)
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// The inverse of `json_to_contact_protocols`.
+pub fn contact_protocols_to_json(protocols: &[ContactProtocol]) -> serde_json::Value {
+    serde_json::Value::Array(
+        protocols
+            .iter()
+            .map(|p| serde_json::Value::String(p.as_str_name().to_string()))
             .collect(),
     )
 }

@@ -101,6 +101,35 @@ pub fn validate_configuration(config: &ServerConfiguration) -> Result<(), Status
         validate_vapid_private_key(&web_push_config.private_vapid_key)?;
     }
 
+    // `ContactProtocol.supported_contact_protocols`'s own proto doc: the server enforces these
+    // invariants by *erroring*, not silently dropping the offending entry -- an admin who checks
+    // "Enable SMS Sending" without a configured provider, or "Enable Email Sending" at all (no
+    // email provider exists yet), gets a clear rejection back on save rather than a silent no-op.
+    // Checked against `twilio_config`/`bird_config`/`telnyx_config` from this *same* request (not
+    // whatever's currently stored) -- `ContactIntegrationsTab.elm` always resends the whole config
+    // it has loaded, so a request that both disables an admin's only provider and still claims
+    // `CONTACT_PROTOCOL_TEL` is exactly the case this must catch.
+    let sms_provider_enabled = config.twilio_config.as_ref().is_some_and(|c| c.twilio_enabled)
+        || config.bird_config.as_ref().is_some_and(|c| c.bird_enabled)
+        || config.telnyx_config.as_ref().is_some_and(|c| c.telnyx_enabled);
+    for protocol in &config.supported_contact_protocols {
+        match ContactProtocol::try_from(*protocol) {
+            Ok(ContactProtocol::Tel) if !sms_provider_enabled => {
+                return Err(Status::new(
+                    Code::FailedPrecondition,
+                    "sms_contact_protocol_requires_a_configured_provider",
+                ));
+            }
+            Ok(ContactProtocol::Mailto) => {
+                return Err(Status::new(
+                    Code::Unimplemented,
+                    "mailto_contact_protocol_not_supported",
+                ));
+            }
+            _ => {}
+        }
+    }
+
     Ok(())
 }
 

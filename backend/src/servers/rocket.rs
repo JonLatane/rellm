@@ -127,6 +127,7 @@ fn create_rocket<T: rocket::figment::Provider>(
     routes.append(&mut (*web::SEO_PAGES).clone());
     routes.append(&mut (*web::MEDIA_ENDPOINTS).clone());
     routes.append(&mut (*web::STRIPE_WEBHOOK_ENDPOINTS).clone());
+    routes.append(&mut (*web::CONTACT_INTEGRATIONS_WEBHOOK_ENDPOINTS).clone());
     routes.append(&mut (*web::FLUTTER_PAGES).clone());
     routes.append(&mut (*web::ELM_PAGES).clone());
     routes.append(&mut (*web::TAMAGUI_PAGES).clone());

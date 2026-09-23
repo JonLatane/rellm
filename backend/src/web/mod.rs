@@ -58,3 +58,6 @@ pub use email::*;
 
 pub mod stripe_webhook;
 pub use stripe_webhook::*;
+
+pub mod contact_integrations_webhook;
+pub use contact_integrations_webhook::*;

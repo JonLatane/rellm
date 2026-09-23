@@ -34,6 +34,7 @@ pub fn get_server_configuration(
         result.twilio_config = None;
         result.bird_config = None;
         result.telnyx_config = None;
+        result.stalwart_config = None;
         result.stripe_config = None;
         result.preferred_verification_apis = vec![];
     }

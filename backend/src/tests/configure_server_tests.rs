@@ -294,6 +294,7 @@ fn twilio_request(
         twilio_api_key_sid: api_key_sid.to_string(),
         twilio_api_key_secret: api_key_secret.to_string(),
         twilio_from_number: from_number.to_string(),
+        twilio_webhook_signing_key: None,
     });
     config
 }
@@ -379,6 +380,93 @@ fn setting_twilio_config_to_none_clears_the_stored_secret() {
     });
 }
 
+/// Sets `twilio_webhook_signing_key` on top of whatever `twilio_request` already built --
+/// separated out since most specs above don't care about it at all (it defaults to `None` there).
+fn with_twilio_webhook_signing_key(config: ServerConfiguration, key: Option<&str>) -> ServerConfiguration {
+    let mut config = config;
+    config.twilio_config = config.twilio_config.map(|c| TwilioConfig {
+        twilio_webhook_signing_key: key.map(|k| k.to_string()),
+        ..c
+    });
+    config
+}
+
+#[test]
+fn twilio_webhook_signing_key_is_none_when_never_configured() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let admin = create_user(conn, "cst_twilio_webhook_key_unset");
+        let admin = grant_permissions(conn, &admin, vec![Permission::Admin]);
+
+        let updated = configure_server(
+            twilio_request(conn, "AC_sid", "SK_key_sid", "secret", "+15005550006"),
+            &admin,
+            conn,
+        )
+        .expect("configure should succeed");
+
+        assert_eq!(
+            updated.twilio_config.expect("twilio_config should be set").twilio_webhook_signing_key,
+            None,
+            "no signing key was ever set -- must stay None, not just an empty string"
+        );
+
+        Ok(())
+    });
+}
+
+#[test]
+fn twilio_webhook_signing_key_is_blanked_but_marked_present_once_configured() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let admin = create_user(conn, "cst_twilio_webhook_key_set");
+        let admin = grant_permissions(conn, &admin, vec![Permission::Admin]);
+
+        let request = with_twilio_webhook_signing_key(
+            twilio_request(conn, "AC_sid", "SK_key_sid", "secret", "+15005550006"),
+            Some("real_auth_token"),
+        );
+        let updated = configure_server(request, &admin, conn).expect("configure should succeed");
+
+        assert_eq!(
+            updated.twilio_config.expect("twilio_config should be set").twilio_webhook_signing_key,
+            Some(String::new()),
+            "the real value must never round-trip, but Some(_) must survive so a client can tell one is set"
+        );
+
+        Ok(())
+    });
+}
+
+#[test]
+fn empty_twilio_webhook_signing_key_preserves_the_previously_stored_one() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let admin = create_user(conn, "cst_twilio_webhook_key_preserved");
+        let admin = grant_permissions(conn, &admin, vec![Permission::Admin]);
+
+        let first_request = with_twilio_webhook_signing_key(
+            twilio_request(conn, "AC_sid", "SK_key_sid", "secret", "+15005550006"),
+            Some("real_auth_token"),
+        );
+        configure_server(first_request, &admin, conn).expect("first configure should succeed");
+
+        // Second save resends `None` (as the client always does, since it never gets the real
+        // value back) -- must not clobber the already-stored key.
+        let second_request = with_twilio_webhook_signing_key(
+            twilio_request(conn, "AC_sid_2", "SK_key_sid", "secret", "+15005550006"),
+            None,
+        );
+        configure_server(second_request, &admin, conn).expect("second configure should succeed");
+
+        let stored = server_twilio_config(conn).expect("twilio config should still be configured");
+        assert_eq!(stored.twilio_account_sid, "AC_sid_2");
+        assert_eq!(stored.twilio_webhook_signing_key.as_deref(), Some("real_auth_token"));
+
+        Ok(())
+    });
+}
+
 /// Mirrors `twilio_request` exactly, against `bird_config` instead.
 fn bird_request(conn: &mut PgPooledConnection, access_key: &str, from: &str) -> ServerConfiguration {
     let mut config = get_server_configuration_proto(conn).expect("failed to fetch base config");
@@ -387,6 +475,7 @@ fn bird_request(conn: &mut PgPooledConnection, access_key: &str, from: &str) -> 
         bird_access_key: access_key.to_string(),
         bird_from: from.to_string(),
         bird_region: "us1".to_string(),
+        bird_webhook_signing_key: None,
     });
     config
 }
@@ -465,6 +554,7 @@ fn telnyx_request(
         telnyx_api_key: api_key.to_string(),
         telnyx_from_number: from_number.to_string(),
         telnyx_messaging_profile_id: "profile_1".to_string(),
+        telnyx_webhook_signing_key: None,
     });
     config
 }
@@ -808,4 +898,89 @@ fn stripe_configured_is_true_once_enabled_with_a_secret_key() {
 
         Ok(())
     });
+}
+
+mod supported_contact_protocols_spec {
+    use super::*;
+
+    #[test]
+    fn tel_is_rejected_with_no_sms_provider_configured() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, tonic::Status, _>(|conn| {
+            let admin = create_user(conn, "cst_protocols_tel_no_provider");
+            let admin = grant_permissions(conn, &admin, vec![Permission::Admin]);
+
+            let mut config = get_server_configuration_proto(conn).expect("failed to fetch base config");
+            config.supported_contact_protocols = vec![ContactProtocol::Tel as i32];
+
+            let err = configure_server(config, &admin, conn).unwrap_err();
+            assert_eq!(err.code(), tonic::Code::FailedPrecondition);
+            assert_eq!(err.message(), "sms_contact_protocol_requires_a_configured_provider");
+
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn mailto_is_always_rejected_even_with_an_sms_provider_configured() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, tonic::Status, _>(|conn| {
+            let admin = create_user(conn, "cst_protocols_mailto");
+            let admin = grant_permissions(conn, &admin, vec![Permission::Admin]);
+
+            let mut config = twilio_request(conn, "AC_sid", "SK_key_sid", "secret", "+15005550006");
+            config.supported_contact_protocols = vec![ContactProtocol::Mailto as i32];
+
+            let err = configure_server(config, &admin, conn).unwrap_err();
+            assert_eq!(err.code(), tonic::Code::Unimplemented);
+            assert_eq!(err.message(), "mailto_contact_protocol_not_supported");
+
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn tel_succeeds_and_round_trips_once_an_sms_provider_is_enabled_in_the_same_request() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, tonic::Status, _>(|conn| {
+            let admin = create_user(conn, "cst_protocols_tel_ok");
+            let admin = grant_permissions(conn, &admin, vec![Permission::Admin]);
+
+            let mut config = twilio_request(conn, "AC_sid", "SK_key_sid", "secret", "+15005550006");
+            config.supported_contact_protocols = vec![ContactProtocol::Tel as i32];
+
+            let updated = configure_server(config, &admin, conn).expect("configure should succeed");
+            assert_eq!(updated.supported_contact_protocols, vec![ContactProtocol::Tel as i32]);
+
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn disabling_the_only_provider_while_still_claiming_tel_is_rejected() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, tonic::Status, _>(|conn| {
+            let admin = create_user(conn, "cst_protocols_tel_disable");
+            let admin = grant_permissions(conn, &admin, vec![Permission::Admin]);
+
+            let mut config = twilio_request(conn, "AC_sid", "SK_key_sid", "secret", "+15005550006");
+            config.supported_contact_protocols = vec![ContactProtocol::Tel as i32];
+            configure_server(config, &admin, conn).expect("initial configure should succeed");
+
+            // Same request shape a real save would resend (`ContactIntegrationsTab.elm` always
+            // resends its whole loaded config), just with Twilio switched off and
+            // `supported_contact_protocols` left untouched -- must be caught, not silently stored.
+            let mut config = get_server_configuration_proto(conn).expect("failed to fetch base config");
+            config.twilio_config = config.twilio_config.map(|c| TwilioConfig {
+                twilio_enabled: false,
+                ..c
+            });
+
+            let err = configure_server(config, &admin, conn).unwrap_err();
+            assert_eq!(err.code(), tonic::Code::FailedPrecondition);
+            assert_eq!(err.message(), "sms_contact_protocol_requires_a_configured_provider");
+
+            Ok(())
+        });
+    }
 }

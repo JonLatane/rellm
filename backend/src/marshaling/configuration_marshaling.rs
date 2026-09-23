@@ -3,6 +3,16 @@ use crate::models::{self, NewServerConfiguration};
 use crate::protos::*;
 use std::mem::transmute;
 
+/// Blanks an `optional string` secret for the client-facing path while keeping `Some`/`None`
+/// itself meaningful -- `Some(_)` (configured, real value hidden) becomes `Some(String::new())`,
+/// `None` (never configured) stays `None`. Used for the webhook-signing-key fields
+/// (`TwilioConfig`/`TelnyxConfig`/`BirdConfig`), which -- unlike this file's other write-only
+/// secrets (plain `string`, always blanked to `""` either way) -- need a client to be able to tell
+/// "is one configured at all" without ever seeing the real value.
+fn blank_but_keep_presence(value: Option<String>) -> Option<String> {
+    value.map(|_| String::new())
+}
+
 pub trait ToDbServerConfiguration {
     fn to_db(&self) -> NewServerConfiguration;
 }
@@ -39,6 +49,10 @@ impl ToDbServerConfiguration for ServerConfiguration {
                 .telnyx_config
                 .as_ref()
                 .map(|c| serde_json::to_value(c).unwrap()),
+            stalwart_config: self
+                .stalwart_config
+                .as_ref()
+                .map(|c| serde_json::to_value(c).unwrap()),
             media_settings: self
                 .media_settings
                 .as_ref()
@@ -55,7 +69,18 @@ impl ToDbServerConfiguration for ServerConfiguration {
                 &self
                     .preferred_verification_apis
                     .iter()
-                    .filter_map(|a| VerificationApi::try_from(*a).ok())
+                    .filter_map(|a| ContactVerificationApi::try_from(*a).ok())
+                    .collect::<Vec<_>>(),
+            )),
+            // Already validated (see `validate_configuration`'s own `ContactProtocol` check,
+            // called before `to_db` on the `ConfigureServer` path) -- by the time this runs,
+            // `MAILTO` can't be present and `TEL` can't be present without an enabled SMS
+            // provider, so this is a plain round-trip, not another enforcement point.
+            supported_contact_protocols: Some(crate::logic::contact_protocols_to_json(
+                &self
+                    .supported_contact_protocols
+                    .iter()
+                    .filter_map(|p| ContactProtocol::try_from(*p).ok())
                     .collect::<Vec<_>>(),
             )),
             custom_tabs: self
@@ -129,38 +154,51 @@ impl ToProtoServerConfiguration for models::ServerConfiguration {
                 ..c
             });
         // .map(|c| serde_json::from_value(c).unwrap_or_else(|_| None));
-        // `TwilioConfig.twilio_api_key_secret` (the API Key's Secret) is write-only -- never send
-        // the real value to a client, same reasoning (and same `configure_server` merge-on-blank
-        // counterpart) as `FacebookAuthConfig.app_secret` above.
+        // `TwilioConfig.twilio_api_key_secret` (the API Key's Secret) and `twilio_webhook_signing_key`
+        // (the Auth Token, used only for inbound signature verification -- see that field's own
+        // doc) are each independently write-only -- never send the real value to a client, same
+        // reasoning (and same `configure_server` merge-on-blank counterpart) as
+        // `FacebookAuthConfig.app_secret` above. `twilio_webhook_signing_key` is `optional`, unlike
+        // the other secrets here, specifically so blanking it can still tell a client whether one
+        // is configured at all (`Some(String::new())`) versus never set (`None`) -- see that
+        // field's own doc.
         let twilio_config: Option<TwilioConfig> = self
             .twilio_config
             .to_owned()
-            .map_or(Some(None), |c| serde_json::from_value(c).ok())
+            .map_or(Some(None), |c| serde_json::from_value::<Option<TwilioConfig>>(c).ok())
             .flatten()
             .map(|c| TwilioConfig {
                 twilio_api_key_secret: String::new(),
+                twilio_webhook_signing_key: blank_but_keep_presence(c.twilio_webhook_signing_key),
                 ..c
             });
-        // Same write-only treatment for `BirdConfig.bird_access_key`.
+        // Same write-only treatment for `BirdConfig.bird_access_key`/`bird_webhook_signing_key`.
         let bird_config: Option<BirdConfig> = self
             .bird_config
             .to_owned()
-            .map_or(Some(None), |c| serde_json::from_value(c).ok())
+            .map_or(Some(None), |c| serde_json::from_value::<Option<BirdConfig>>(c).ok())
             .flatten()
             .map(|c| BirdConfig {
                 bird_access_key: String::new(),
+                bird_webhook_signing_key: blank_but_keep_presence(c.bird_webhook_signing_key),
                 ..c
             });
-        // Same write-only treatment for `TelnyxConfig.telnyx_api_key`.
+        // Same write-only treatment for `TelnyxConfig.telnyx_api_key`/`telnyx_webhook_signing_key`.
         let telnyx_config: Option<TelnyxConfig> = self
             .telnyx_config
             .to_owned()
-            .map_or(Some(None), |c| serde_json::from_value(c).ok())
+            .map_or(Some(None), |c| serde_json::from_value::<Option<TelnyxConfig>>(c).ok())
             .flatten()
             .map(|c| TelnyxConfig {
                 telnyx_api_key: String::new(),
+                telnyx_webhook_signing_key: blank_but_keep_presence(c.telnyx_webhook_signing_key),
                 ..c
             });
+        // No secret to blank -- `StalwartConfig` is just the one on/off flag.
+        let stalwart_config: Option<StalwartConfig> = self
+            .stalwart_config
+            .to_owned()
+            .and_then(|c| serde_json::from_value(c).ok());
         // Same write-only treatment for `StripeConfig.stripe_secret_key`/
         // `stripe_webhook_signing_secret`. `stripe_configured` (computed below, for
         // `market_settings`) is derived from this *before* the blanking, since a blanked
@@ -230,26 +268,39 @@ impl ToProtoServerConfiguration for models::ServerConfiguration {
         let twilio_enabled = twilio_config.as_ref().is_some_and(|c| c.twilio_enabled);
         let bird_enabled = bird_config.as_ref().is_some_and(|c| c.bird_enabled);
         let telnyx_enabled = telnyx_config.as_ref().is_some_and(|c| c.telnyx_enabled);
-        let is_available = |api: &VerificationApi| match api {
-            VerificationApi::Twilio => twilio_enabled,
-            VerificationApi::Bird => bird_enabled,
-            VerificationApi::Telnyx => telnyx_enabled,
+        let is_available = |api: &ContactVerificationApi| match api {
+            ContactVerificationApi::Twilio => twilio_enabled,
+            ContactVerificationApi::Bird => bird_enabled,
+            ContactVerificationApi::Telnyx => telnyx_enabled,
         };
         let mut available_verification_apis: Vec<i32> = preferred_verification_apis
             .iter()
-            .filter_map(|a| VerificationApi::try_from(*a).ok())
+            .filter_map(|a| ContactVerificationApi::try_from(*a).ok())
             .filter(|a| is_available(a))
             .map(|a| a as i32)
             .collect();
         for api in [
-            VerificationApi::Twilio,
-            VerificationApi::Bird,
-            VerificationApi::Telnyx,
+            ContactVerificationApi::Twilio,
+            ContactVerificationApi::Bird,
+            ContactVerificationApi::Telnyx,
         ] {
             if is_available(&api) && !available_verification_apis.contains(&(api as i32)) {
                 available_verification_apis.push(api as i32);
             }
         }
+        // Already invariant-enforced at write time (`validate_configuration`'s `ContactProtocol`
+        // check, on the `ConfigureServer` path) -- a stored `TEL` always implies some SMS provider
+        // was enabled as of that same write, so this is a plain round-trip on read, same as
+        // `preferred_verification_apis` above (not live-recomputed like `available_verification_apis`
+        // below, which has no admin-settable counterpart to validate in the first place).
+        let supported_contact_protocols: Vec<i32> = self
+            .supported_contact_protocols
+            .to_owned()
+            .map(|v| crate::logic::json_to_contact_protocols(&v))
+            .unwrap_or_default()
+            .into_iter()
+            .map(|p| p as i32)
+            .collect();
         let custom_tabs: Option<CustomNavigationTabSet> =
             self.custom_tabs.to_owned().and_then(deserialize_custom_tabs);
         // `cluster_shared_secret` is write-only -- never send the real value to a client (not even
@@ -289,9 +340,11 @@ impl ToProtoServerConfiguration for models::ServerConfiguration {
             twilio_config: twilio_config,
             bird_config: bird_config,
             telnyx_config: telnyx_config,
+            stalwart_config: stalwart_config,
             stripe_config: stripe_config,
             preferred_verification_apis: preferred_verification_apis,
             available_verification_apis: available_verification_apis,
+            supported_contact_protocols: supported_contact_protocols,
         }
     }
 }

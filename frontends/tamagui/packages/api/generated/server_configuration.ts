@@ -381,40 +381,90 @@ export function navigationTabToJSON(object: NavigationTab): string {
   }
 }
 
-export enum VerificationAPI {
-  VERIFICATION_API_TWILIO = 0,
-  VERIFICATION_API_BIRD = 1,
-  VERIFICATION_API_TELNYX = 2,
+/**
+ * The two contact schemes [`ContactMethod.value`](#rellm-ContactMethod) (`users.proto`) may take --
+ * see [`ServerConfiguration.supported_contact_protocols`](#rellm-ServerConfiguration) for the
+ * server-wide setting keyed off this enum, and `docs/contact_integrations.md` for the full picture.
+ */
+export enum ContactProtocol {
+  /**
+   * CONTACT_PROTOCOL_TEL - `tel:` (phone/SMS) contact. Requires an enabled [`TwilioConfig`](#rellm-TwilioConfig)/
+   * [`BirdConfig`](#rellm-BirdConfig)/[`TelnyxConfig`](#rellm-TelnyxConfig).
+   */
+  CONTACT_PROTOCOL_TEL = 0,
+  /** CONTACT_PROTOCOL_MAILTO - `mailto:` (email) contact. Currently not supported -- no email provider exists yet. */
+  CONTACT_PROTOCOL_MAILTO = 1,
   UNRECOGNIZED = -1,
 }
 
-export function verificationAPIFromJSON(object: any): VerificationAPI {
+export function contactProtocolFromJSON(object: any): ContactProtocol {
   switch (object) {
     case 0:
-    case "VERIFICATION_API_TWILIO":
-      return VerificationAPI.VERIFICATION_API_TWILIO;
+    case "CONTACT_PROTOCOL_TEL":
+      return ContactProtocol.CONTACT_PROTOCOL_TEL;
     case 1:
-    case "VERIFICATION_API_BIRD":
-      return VerificationAPI.VERIFICATION_API_BIRD;
-    case 2:
-    case "VERIFICATION_API_TELNYX":
-      return VerificationAPI.VERIFICATION_API_TELNYX;
+    case "CONTACT_PROTOCOL_MAILTO":
+      return ContactProtocol.CONTACT_PROTOCOL_MAILTO;
     case -1:
     case "UNRECOGNIZED":
     default:
-      return VerificationAPI.UNRECOGNIZED;
+      return ContactProtocol.UNRECOGNIZED;
   }
 }
 
-export function verificationAPIToJSON(object: VerificationAPI): string {
+export function contactProtocolToJSON(object: ContactProtocol): string {
   switch (object) {
-    case VerificationAPI.VERIFICATION_API_TWILIO:
-      return "VERIFICATION_API_TWILIO";
-    case VerificationAPI.VERIFICATION_API_BIRD:
-      return "VERIFICATION_API_BIRD";
-    case VerificationAPI.VERIFICATION_API_TELNYX:
-      return "VERIFICATION_API_TELNYX";
-    case VerificationAPI.UNRECOGNIZED:
+    case ContactProtocol.CONTACT_PROTOCOL_TEL:
+      return "CONTACT_PROTOCOL_TEL";
+    case ContactProtocol.CONTACT_PROTOCOL_MAILTO:
+      return "CONTACT_PROTOCOL_MAILTO";
+    case ContactProtocol.UNRECOGNIZED:
+    default:
+      return "UNRECOGNIZED";
+  }
+}
+
+/**
+ * The SMS providers [`ServerConfiguration.preferred_verification_apis`](#rellm-ServerConfiguration)/
+ * [`available_verification_apis`](#rellm-ServerConfiguration) order between --
+ * [`TwilioConfig`](#rellm-TwilioConfig), [`BirdConfig`](#rellm-BirdConfig), and
+ * [`TelnyxConfig`](#rellm-TelnyxConfig). See `contact_verification.rs`'s own module doc for the
+ * preference-then-fallback logic these values drive.
+ */
+export enum ContactVerificationAPI {
+  CONTACT_VERIFICATION_API_TWILIO = 0,
+  CONTACT_VERIFICATION_API_BIRD = 1,
+  CONTACT_VERIFICATION_API_TELNYX = 2,
+  UNRECOGNIZED = -1,
+}
+
+export function contactVerificationAPIFromJSON(object: any): ContactVerificationAPI {
+  switch (object) {
+    case 0:
+    case "CONTACT_VERIFICATION_API_TWILIO":
+      return ContactVerificationAPI.CONTACT_VERIFICATION_API_TWILIO;
+    case 1:
+    case "CONTACT_VERIFICATION_API_BIRD":
+      return ContactVerificationAPI.CONTACT_VERIFICATION_API_BIRD;
+    case 2:
+    case "CONTACT_VERIFICATION_API_TELNYX":
+      return ContactVerificationAPI.CONTACT_VERIFICATION_API_TELNYX;
+    case -1:
+    case "UNRECOGNIZED":
+    default:
+      return ContactVerificationAPI.UNRECOGNIZED;
+  }
+}
+
+export function contactVerificationAPIToJSON(object: ContactVerificationAPI): string {
+  switch (object) {
+    case ContactVerificationAPI.CONTACT_VERIFICATION_API_TWILIO:
+      return "CONTACT_VERIFICATION_API_TWILIO";
+    case ContactVerificationAPI.CONTACT_VERIFICATION_API_BIRD:
+      return "CONTACT_VERIFICATION_API_BIRD";
+    case ContactVerificationAPI.CONTACT_VERIFICATION_API_TELNYX:
+      return "CONTACT_VERIFICATION_API_TELNYX";
+    case ContactVerificationAPI.UNRECOGNIZED:
     default:
       return "UNRECOGNIZED";
   }
@@ -540,27 +590,50 @@ export interface ServerConfiguration {
     | WebPushConfig
     | undefined;
   /**
-   * A server-preferred order of contact verification APIs.
-   * Note: even if this is blank, if twilio_config is enabled, the server should try
-   * to verify with Twilio. It's really only for the case of wanting to switch between multiple
-   * SMS/Email providers.
-   * Only serialized for admin users.
+   * Which [`ContactProtocol`](#rellm-ContactProtocol)s (`tel:`/`mailto:`) this server currently
+   * accepts -- drives [`ContactMethod.supported_by_server`](#rellm-ContactMethod) (`users.proto`,
+   * which can't reference this message directly -- see that field's own doc for why). Settable via
+   * [`ConfigureServer`](#grpc-api-ConfigureServer), which *errors* rather than silently dropping an
+   * invalid entry: `CONTACT_PROTOCOL_TEL` requires an enabled
+   * [`TwilioConfig`](#rellm-TwilioConfig)/[`BirdConfig`](#rellm-BirdConfig)/
+   * [`TelnyxConfig`](#rellm-TelnyxConfig) in that same request, and `CONTACT_PROTOCOL_MAILTO` is
+   * always rejected (no email provider exists yet). Edited via the "Enable SMS Sending"/"Enable
+   * Email Sending" toggles on the Contact Integrations tab's "SMS Configuration"/"Email
+   * Configuration" sections (`ContactIntegrationsTab.smsConfigurationSection`/
+   * `emailConfigurationSection`) -- see `docs/contact_integrations.md`.
    */
-  preferredVerificationApis: VerificationAPI[];
+  supportedContactProtocols: ContactProtocol[];
   /**
-   * Derived from whether TwilioConfig.enabled is true, etc. Serialized to every caller (not
-   * admin-only, unlike `preferred_verification_apis`/`twilio_config`) -- this is what a non-admin
-   * client should check to decide whether to show verification UI at all, without exposing any
-   * provider configuration.
+   * A server-preferred order of [`ContactVerificationAPI`](#rellm-ContactVerificationAPI)
+   * providers to try first when more than one of `twilio_config`/`bird_config`/`telnyx_config`
+   * below is enabled -- see `contact_verification::available_verification_apis` for the full
+   * preference-then-fallback ordering this feeds into
+   * [`ServerConfiguration.available_verification_apis`](#rellm-ServerConfiguration) below. Even
+   * when this is blank, an enabled provider is still tried (in the fixed default order
+   * Twilio/Bird/Telnyx) -- this field only matters when more than one is enabled and the admin
+   * wants a specific one tried first. Only serialized for admin users.
    */
-  availableVerificationApis: VerificationAPI[];
-  /** Twilio Config. Only serialized for admin users. */
+  preferredVerificationApis: ContactVerificationAPI[];
+  /**
+   * Derived from whether [`TwilioConfig`](#rellm-TwilioConfig).twilio_enabled/
+   * [`BirdConfig`](#rellm-BirdConfig).bird_enabled/
+   * [`TelnyxConfig`](#rellm-TelnyxConfig).telnyx_enabled is true, ordered per
+   * `preferred_verification_apis` above. Serialized to every caller (not admin-only, unlike
+   * `preferred_verification_apis`/`twilio_config`/`bird_config`/`telnyx_config`) -- this is what a
+   * non-admin client should check to decide whether to show verification UI at all, without
+   * exposing any provider configuration. Independent of `supported_contact_protocols` above --
+   * that's the admin's own on/off toggle (can disable `tel:` contact even while a provider stays
+   * enabled/configured), this is purely "is at least one provider actually configured."
+   */
+  availableVerificationApis: ContactVerificationAPI[];
+  /** Twilio Config -- see [`TwilioConfig`](#rellm-TwilioConfig). Only serialized for admin users. */
   twilioConfig?:
     | TwilioConfig
     | undefined;
   /**
-   * Bird (bird.com, formerly MessageBird) Config -- a cheaper Twilio alternative for SMS
-   * verification. Only serialized for admin users.
+   * Bird (bird.com, formerly MessageBird) Config -- a cheaper alternative to
+   * [`TwilioConfig`](#rellm-TwilioConfig) for SMS verification; see
+   * [`BirdConfig`](#rellm-BirdConfig)'s own doc. Only serialized for admin users.
    */
   birdConfig?:
     | BirdConfig
@@ -570,10 +643,21 @@ export interface ServerConfiguration {
     | StripeConfig
     | undefined;
   /**
-   * Telnyx Config -- another alternative SMS verification provider to Twilio (see `TelnyxConfig`'s
-   * own doc). Only serialized for admin users.
+   * Telnyx Config -- another alternative SMS verification provider to
+   * [`TwilioConfig`](#rellm-TwilioConfig) (see [`TelnyxConfig`](#rellm-TelnyxConfig)'s own doc).
+   * Only serialized for admin users.
    */
-  telnyxConfig?: TelnyxConfig | undefined;
+  telnyxConfig?:
+    | TelnyxConfig
+    | undefined;
+  /**
+   * Unlike the other configs, at least at the moment, the integration with Stalwart is designed
+   * to be *in-cluster*, not over the web. It relies on unsecured /email endpoint on port 27705
+   * to receive mail from a Stalwart deployed within the same Kubernetes cluster.
+   *
+   * This could be extended in the future to allow sending mail with Stalwart, but that's TBD.
+   */
+  stalwartConfig?: StalwartConfig | undefined;
 }
 
 /**
@@ -1173,7 +1257,9 @@ export interface WebPushConfig {
  * authenticate -- only the API Key SID/Secret pair is. See
  * https://www.twilio.com/docs/iam/api-keys/restricted-api-keys for the recommended
  * permission when creating one: `/twilio/messaging/messages/create` (nothing else is needed just
- * to send verification SMS).
+ * to send verification SMS). See `docs/contact_integrations.md` for full setup steps (API key
+ * creation, inbound webhook registration), and [`ContactMethod`](#rellm-ContactMethod)
+ * (`users.proto`) for how a verified `tel:` contact method surfaces this provider.
  */
 export interface TwilioConfig {
   twilioEnabled: boolean;
@@ -1191,18 +1277,36 @@ export interface TwilioConfig {
   twilioApiKeySecret: string;
   /** The Twilio-provisioned sending number for outbound verification SMS. Not secret. */
   twilioFromNumber: string;
+  /**
+   * Optional -- the Twilio Account's Auth Token, used *only* to verify the `X-Twilio-Signature`
+   * header on inbound deliveries to `/contact_integrations/twilio/receive` (see
+   * https://www.twilio.com/docs/usage/webhooks/webhooks-security and
+   * `docs/contact_integrations.md`). Never used to authenticate outbound API calls -- this
+   * message's own doc explains why the Auth Token is deliberately excluded from that role; this
+   * is the one narrow exception, since signature verification is the one thing only the Auth
+   * Token (not an API Key) can do. Unset means inbound deliveries are accepted without signature
+   * verification. Write-only, like every other credential here, but distinctly from those:
+   * `optional` so a client can tell *whether* a key is configured (`Some`/`None`) without ever
+   * seeing its real value -- once set, `to_proto` blanks this to `Some("")` (not `None`), so
+   * "configured but hidden" and "never configured" stay distinguishable. Sending an empty value
+   * back on `ConfigureServer` means "leave whatever's already stored alone," same as every other
+   * write-only field's blank-means-no-op rule.
+   */
+  twilioWebhookSigningKey?: string | undefined;
 }
 
 /**
- * Telnyx (https://telnyx.com) Config -- an alternative SMS verification provider to Twilio, with a
- * simpler single-API-key auth model like Bird's (see `BirdConfig`'s own doc).
+ * Telnyx (https://telnyx.com) Config -- an alternative SMS verification provider to
+ * [`TwilioConfig`](#rellm-TwilioConfig), with a simpler single-API-key auth model like
+ * [`BirdConfig`](#rellm-BirdConfig)'s. See `docs/contact_integrations.md` for full setup steps.
  */
 export interface TelnyxConfig {
   telnyxEnabled: boolean;
   /**
    * The Telnyx v2 API Key (starts with `KEY`), used as Bearer auth for Telnyx's Messaging API
    * (`POST /v2/messages`). Never serialized once written -- same write-only treatment as
-   * `TwilioConfig.twilio_api_key_secret`/`BirdConfig.bird_access_key`.
+   * [`TwilioConfig.twilio_api_key_secret`](#rellm-TwilioConfig)/
+   * [`BirdConfig.bird_access_key`](#rellm-BirdConfig).
    */
   telnyxApiKey: string;
   /**
@@ -1216,11 +1320,25 @@ export interface TelnyxConfig {
    * secret.
    */
   telnyxMessagingProfileId: string;
+  /**
+   * Optional -- Telnyx's account-level public key (Mission Control Portal -> Keys & Credentials ->
+   * Public Key), used to verify the `telnyx-signature-ed25519`/`telnyx-timestamp` headers on
+   * inbound deliveries to `/contact_integrations/telnyx/receive` (Ed25519; see
+   * https://developers.telnyx.com/docs/messaging/messages/receiving-webhooks and
+   * `docs/contact_integrations.md`). Actually a public key, not a secret, but kept write-only
+   * (never serialized once written) for the same "don't echo config back" treatment as every
+   * other credential here. Unset means inbound deliveries are accepted without signature
+   * verification. `optional` (not plain `string`) for the same "`Some`/`None` distinguishable from
+   * a client without ever seeing the real value" reason as
+   * [`TwilioConfig.twilio_webhook_signing_key`](#rellm-TwilioConfig).
+   */
+  telnyxWebhookSigningKey?: string | undefined;
 }
 
 /**
  * Bird (https://bird.com, formerly MessageBird) Config -- an alternative SMS verification
- * provider to Twilio, with a simpler single-API-key auth model.
+ * provider to [`TwilioConfig`](#rellm-TwilioConfig), with a simpler single-API-key auth model. See
+ * `docs/contact_integrations.md` for full setup steps.
  */
 export interface BirdConfig {
   birdEnabled: boolean;
@@ -1236,6 +1354,17 @@ export interface BirdConfig {
    * secret. Empty defaults to "us1".
    */
   birdRegion: string;
+  /**
+   * Optional -- the Standard Webhooks signing secret (starts with `whsec_`) for the SMS channel
+   * subscription delivering to `/contact_integrations/bird/receive`, used to verify the
+   * `webhook-id`/`webhook-timestamp`/`webhook-signature` headers on inbound deliveries (HMAC-SHA256;
+   * see https://www.standardwebhooks.com and `docs/contact_integrations.md`). Blank/unset means
+   * inbound deliveries are accepted without signature verification. `optional` (not plain
+   * `string`) for the same "`Some`/`None` distinguishable from a client without ever seeing the
+   * real value" reason as
+   * [`TwilioConfig.twilio_webhook_signing_key`](#rellm-TwilioConfig).
+   */
+  birdWebhookSigningKey?: string | undefined;
 }
 
 /**
@@ -1265,6 +1394,15 @@ export interface StripeConfig {
   stripeWebhookSigningSecret: string;
 }
 
+/**
+ * Stalwart is an extablished, open-source Rust email/contact/calendar server (think an Outlook or Google Workspace competitor).
+ * Currently Rellm supports receiving emails via Stalwart webhook configurations.
+ */
+export interface StalwartConfig {
+  /** Enables receiving emails from the private, unsecured cluster-facing HTTP server at :27705/email. */
+  stalwartReceivingEnabled: boolean;
+}
+
 function createBaseServerConfiguration(): ServerConfiguration {
   return {
     serverInfo: undefined,
@@ -1284,12 +1422,14 @@ function createBaseServerConfiguration(): ServerConfiguration {
     privateUserStrategy: 0,
     authenticationFeatures: [],
     webPushConfig: undefined,
+    supportedContactProtocols: [],
     preferredVerificationApis: [],
     availableVerificationApis: [],
     twilioConfig: undefined,
     birdConfig: undefined,
     stripeConfig: undefined,
     telnyxConfig: undefined,
+    stalwartConfig: undefined,
   };
 }
 
@@ -1354,6 +1494,11 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
     if (message.webPushConfig !== undefined) {
       WebPushConfig.encode(message.webPushConfig, writer.uint32(882).fork()).join();
     }
+    writer.uint32(954).fork();
+    for (const v of message.supportedContactProtocols) {
+      writer.int32(v);
+    }
+    writer.join();
     writer.uint32(962).fork();
     for (const v of message.preferredVerificationApis) {
       writer.int32(v);
@@ -1375,6 +1520,9 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
     }
     if (message.telnyxConfig !== undefined) {
       TelnyxConfig.encode(message.telnyxConfig, writer.uint32(1002).fork()).join();
+    }
+    if (message.stalwartConfig !== undefined) {
+      StalwartConfig.encode(message.stalwartConfig, writer.uint32(1010).fork()).join();
     }
     return writer;
   },
@@ -1562,6 +1710,24 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
           message.webPushConfig = WebPushConfig.decode(reader, reader.uint32());
           continue;
         }
+        case 119: {
+          if (tag === 952) {
+            message.supportedContactProtocols.push(reader.int32() as any);
+
+            continue;
+          }
+
+          if (tag === 954) {
+            const end2 = reader.uint32() + reader.pos;
+            while (reader.pos < end2) {
+              message.supportedContactProtocols.push(reader.int32() as any);
+            }
+
+            continue;
+          }
+
+          break;
+        }
         case 120: {
           if (tag === 960) {
             message.preferredVerificationApis.push(reader.int32() as any);
@@ -1630,6 +1796,14 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
           message.telnyxConfig = TelnyxConfig.decode(reader, reader.uint32());
           continue;
         }
+        case 126: {
+          if (tag !== 1010) {
+            break;
+          }
+
+          message.stalwartConfig = StalwartConfig.decode(reader, reader.uint32());
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1670,16 +1844,20 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
         ? object.authenticationFeatures.map((e: any) => authenticationFeatureFromJSON(e))
         : [],
       webPushConfig: isSet(object.webPushConfig) ? WebPushConfig.fromJSON(object.webPushConfig) : undefined,
+      supportedContactProtocols: globalThis.Array.isArray(object?.supportedContactProtocols)
+        ? object.supportedContactProtocols.map((e: any) => contactProtocolFromJSON(e))
+        : [],
       preferredVerificationApis: globalThis.Array.isArray(object?.preferredVerificationApis)
-        ? object.preferredVerificationApis.map((e: any) => verificationAPIFromJSON(e))
+        ? object.preferredVerificationApis.map((e: any) => contactVerificationAPIFromJSON(e))
         : [],
       availableVerificationApis: globalThis.Array.isArray(object?.availableVerificationApis)
-        ? object.availableVerificationApis.map((e: any) => verificationAPIFromJSON(e))
+        ? object.availableVerificationApis.map((e: any) => contactVerificationAPIFromJSON(e))
         : [],
       twilioConfig: isSet(object.twilioConfig) ? TwilioConfig.fromJSON(object.twilioConfig) : undefined,
       birdConfig: isSet(object.birdConfig) ? BirdConfig.fromJSON(object.birdConfig) : undefined,
       stripeConfig: isSet(object.stripeConfig) ? StripeConfig.fromJSON(object.stripeConfig) : undefined,
       telnyxConfig: isSet(object.telnyxConfig) ? TelnyxConfig.fromJSON(object.telnyxConfig) : undefined,
+      stalwartConfig: isSet(object.stalwartConfig) ? StalwartConfig.fromJSON(object.stalwartConfig) : undefined,
     };
   },
 
@@ -1736,11 +1914,14 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
     if (message.webPushConfig !== undefined) {
       obj.webPushConfig = WebPushConfig.toJSON(message.webPushConfig);
     }
+    if (message.supportedContactProtocols?.length) {
+      obj.supportedContactProtocols = message.supportedContactProtocols.map((e) => contactProtocolToJSON(e));
+    }
     if (message.preferredVerificationApis?.length) {
-      obj.preferredVerificationApis = message.preferredVerificationApis.map((e) => verificationAPIToJSON(e));
+      obj.preferredVerificationApis = message.preferredVerificationApis.map((e) => contactVerificationAPIToJSON(e));
     }
     if (message.availableVerificationApis?.length) {
-      obj.availableVerificationApis = message.availableVerificationApis.map((e) => verificationAPIToJSON(e));
+      obj.availableVerificationApis = message.availableVerificationApis.map((e) => contactVerificationAPIToJSON(e));
     }
     if (message.twilioConfig !== undefined) {
       obj.twilioConfig = TwilioConfig.toJSON(message.twilioConfig);
@@ -1753,6 +1934,9 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
     }
     if (message.telnyxConfig !== undefined) {
       obj.telnyxConfig = TelnyxConfig.toJSON(message.telnyxConfig);
+    }
+    if (message.stalwartConfig !== undefined) {
+      obj.stalwartConfig = StalwartConfig.toJSON(message.stalwartConfig);
     }
     return obj;
   },
@@ -1803,6 +1987,7 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
     message.webPushConfig = (object.webPushConfig !== undefined && object.webPushConfig !== null)
       ? WebPushConfig.fromPartial(object.webPushConfig)
       : undefined;
+    message.supportedContactProtocols = object.supportedContactProtocols?.map((e) => e) || [];
     message.preferredVerificationApis = object.preferredVerificationApis?.map((e) => e) || [];
     message.availableVerificationApis = object.availableVerificationApis?.map((e) => e) || [];
     message.twilioConfig = (object.twilioConfig !== undefined && object.twilioConfig !== null)
@@ -1816,6 +2001,9 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
       : undefined;
     message.telnyxConfig = (object.telnyxConfig !== undefined && object.telnyxConfig !== null)
       ? TelnyxConfig.fromPartial(object.telnyxConfig)
+      : undefined;
+    message.stalwartConfig = (object.stalwartConfig !== undefined && object.stalwartConfig !== null)
+      ? StalwartConfig.fromPartial(object.stalwartConfig)
       : undefined;
     return message;
   },
@@ -4221,6 +4409,7 @@ function createBaseTwilioConfig(): TwilioConfig {
     twilioApiKeySid: "",
     twilioApiKeySecret: "",
     twilioFromNumber: "",
+    twilioWebhookSigningKey: undefined,
   };
 }
 
@@ -4240,6 +4429,9 @@ export const TwilioConfig: MessageFns<TwilioConfig> = {
     }
     if (message.twilioFromNumber !== "") {
       writer.uint32(34).string(message.twilioFromNumber);
+    }
+    if (message.twilioWebhookSigningKey !== undefined) {
+      writer.uint32(50).string(message.twilioWebhookSigningKey);
     }
     return writer;
   },
@@ -4291,6 +4483,14 @@ export const TwilioConfig: MessageFns<TwilioConfig> = {
           message.twilioFromNumber = reader.string();
           continue;
         }
+        case 6: {
+          if (tag !== 50) {
+            break;
+          }
+
+          message.twilioWebhookSigningKey = reader.string();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -4307,6 +4507,9 @@ export const TwilioConfig: MessageFns<TwilioConfig> = {
       twilioApiKeySid: isSet(object.twilioApiKeySid) ? globalThis.String(object.twilioApiKeySid) : "",
       twilioApiKeySecret: isSet(object.twilioApiKeySecret) ? globalThis.String(object.twilioApiKeySecret) : "",
       twilioFromNumber: isSet(object.twilioFromNumber) ? globalThis.String(object.twilioFromNumber) : "",
+      twilioWebhookSigningKey: isSet(object.twilioWebhookSigningKey)
+        ? globalThis.String(object.twilioWebhookSigningKey)
+        : undefined,
     };
   },
 
@@ -4327,6 +4530,9 @@ export const TwilioConfig: MessageFns<TwilioConfig> = {
     if (message.twilioFromNumber !== "") {
       obj.twilioFromNumber = message.twilioFromNumber;
     }
+    if (message.twilioWebhookSigningKey !== undefined) {
+      obj.twilioWebhookSigningKey = message.twilioWebhookSigningKey;
+    }
     return obj;
   },
 
@@ -4340,12 +4546,19 @@ export const TwilioConfig: MessageFns<TwilioConfig> = {
     message.twilioApiKeySid = object.twilioApiKeySid ?? "";
     message.twilioApiKeySecret = object.twilioApiKeySecret ?? "";
     message.twilioFromNumber = object.twilioFromNumber ?? "";
+    message.twilioWebhookSigningKey = object.twilioWebhookSigningKey ?? undefined;
     return message;
   },
 };
 
 function createBaseTelnyxConfig(): TelnyxConfig {
-  return { telnyxEnabled: false, telnyxApiKey: "", telnyxFromNumber: "", telnyxMessagingProfileId: "" };
+  return {
+    telnyxEnabled: false,
+    telnyxApiKey: "",
+    telnyxFromNumber: "",
+    telnyxMessagingProfileId: "",
+    telnyxWebhookSigningKey: undefined,
+  };
 }
 
 export const TelnyxConfig: MessageFns<TelnyxConfig> = {
@@ -4361,6 +4574,9 @@ export const TelnyxConfig: MessageFns<TelnyxConfig> = {
     }
     if (message.telnyxMessagingProfileId !== "") {
       writer.uint32(34).string(message.telnyxMessagingProfileId);
+    }
+    if (message.telnyxWebhookSigningKey !== undefined) {
+      writer.uint32(42).string(message.telnyxWebhookSigningKey);
     }
     return writer;
   },
@@ -4404,6 +4620,14 @@ export const TelnyxConfig: MessageFns<TelnyxConfig> = {
           message.telnyxMessagingProfileId = reader.string();
           continue;
         }
+        case 5: {
+          if (tag !== 42) {
+            break;
+          }
+
+          message.telnyxWebhookSigningKey = reader.string();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -4421,6 +4645,9 @@ export const TelnyxConfig: MessageFns<TelnyxConfig> = {
       telnyxMessagingProfileId: isSet(object.telnyxMessagingProfileId)
         ? globalThis.String(object.telnyxMessagingProfileId)
         : "",
+      telnyxWebhookSigningKey: isSet(object.telnyxWebhookSigningKey)
+        ? globalThis.String(object.telnyxWebhookSigningKey)
+        : undefined,
     };
   },
 
@@ -4438,6 +4665,9 @@ export const TelnyxConfig: MessageFns<TelnyxConfig> = {
     if (message.telnyxMessagingProfileId !== "") {
       obj.telnyxMessagingProfileId = message.telnyxMessagingProfileId;
     }
+    if (message.telnyxWebhookSigningKey !== undefined) {
+      obj.telnyxWebhookSigningKey = message.telnyxWebhookSigningKey;
+    }
     return obj;
   },
 
@@ -4450,12 +4680,13 @@ export const TelnyxConfig: MessageFns<TelnyxConfig> = {
     message.telnyxApiKey = object.telnyxApiKey ?? "";
     message.telnyxFromNumber = object.telnyxFromNumber ?? "";
     message.telnyxMessagingProfileId = object.telnyxMessagingProfileId ?? "";
+    message.telnyxWebhookSigningKey = object.telnyxWebhookSigningKey ?? undefined;
     return message;
   },
 };
 
 function createBaseBirdConfig(): BirdConfig {
-  return { birdEnabled: false, birdAccessKey: "", birdFrom: "", birdRegion: "" };
+  return { birdEnabled: false, birdAccessKey: "", birdFrom: "", birdRegion: "", birdWebhookSigningKey: undefined };
 }
 
 export const BirdConfig: MessageFns<BirdConfig> = {
@@ -4471,6 +4702,9 @@ export const BirdConfig: MessageFns<BirdConfig> = {
     }
     if (message.birdRegion !== "") {
       writer.uint32(34).string(message.birdRegion);
+    }
+    if (message.birdWebhookSigningKey !== undefined) {
+      writer.uint32(42).string(message.birdWebhookSigningKey);
     }
     return writer;
   },
@@ -4514,6 +4748,14 @@ export const BirdConfig: MessageFns<BirdConfig> = {
           message.birdRegion = reader.string();
           continue;
         }
+        case 5: {
+          if (tag !== 42) {
+            break;
+          }
+
+          message.birdWebhookSigningKey = reader.string();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -4529,6 +4771,9 @@ export const BirdConfig: MessageFns<BirdConfig> = {
       birdAccessKey: isSet(object.birdAccessKey) ? globalThis.String(object.birdAccessKey) : "",
       birdFrom: isSet(object.birdFrom) ? globalThis.String(object.birdFrom) : "",
       birdRegion: isSet(object.birdRegion) ? globalThis.String(object.birdRegion) : "",
+      birdWebhookSigningKey: isSet(object.birdWebhookSigningKey)
+        ? globalThis.String(object.birdWebhookSigningKey)
+        : undefined,
     };
   },
 
@@ -4546,6 +4791,9 @@ export const BirdConfig: MessageFns<BirdConfig> = {
     if (message.birdRegion !== "") {
       obj.birdRegion = message.birdRegion;
     }
+    if (message.birdWebhookSigningKey !== undefined) {
+      obj.birdWebhookSigningKey = message.birdWebhookSigningKey;
+    }
     return obj;
   },
 
@@ -4558,6 +4806,7 @@ export const BirdConfig: MessageFns<BirdConfig> = {
     message.birdAccessKey = object.birdAccessKey ?? "";
     message.birdFrom = object.birdFrom ?? "";
     message.birdRegion = object.birdRegion ?? "";
+    message.birdWebhookSigningKey = object.birdWebhookSigningKey ?? undefined;
     return message;
   },
 };
@@ -4668,6 +4917,68 @@ export const StripeConfig: MessageFns<StripeConfig> = {
     message.stripeSecretKey = object.stripeSecretKey ?? "";
     message.stripePublishableKey = object.stripePublishableKey ?? "";
     message.stripeWebhookSigningSecret = object.stripeWebhookSigningSecret ?? "";
+    return message;
+  },
+};
+
+function createBaseStalwartConfig(): StalwartConfig {
+  return { stalwartReceivingEnabled: false };
+}
+
+export const StalwartConfig: MessageFns<StalwartConfig> = {
+  encode(message: StalwartConfig, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.stalwartReceivingEnabled !== false) {
+      writer.uint32(8).bool(message.stalwartReceivingEnabled);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): StalwartConfig {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseStalwartConfig();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 8) {
+            break;
+          }
+
+          message.stalwartReceivingEnabled = reader.bool();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): StalwartConfig {
+    return {
+      stalwartReceivingEnabled: isSet(object.stalwartReceivingEnabled)
+        ? globalThis.Boolean(object.stalwartReceivingEnabled)
+        : false,
+    };
+  },
+
+  toJSON(message: StalwartConfig): unknown {
+    const obj: any = {};
+    if (message.stalwartReceivingEnabled !== false) {
+      obj.stalwartReceivingEnabled = message.stalwartReceivingEnabled;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<StalwartConfig>, I>>(base?: I): StalwartConfig {
+    return StalwartConfig.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<StalwartConfig>, I>>(object: I): StalwartConfig {
+    const message = createBaseStalwartConfig();
+    message.stalwartReceivingEnabled = object.stalwartReceivingEnabled ?? false;
     return message;
   },
 };

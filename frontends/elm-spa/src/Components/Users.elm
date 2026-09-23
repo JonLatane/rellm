@@ -667,8 +667,37 @@ userCard basePath viewingServerHost server maybeAccount followStatusAndButton us
         , div [ Html.Attributes.class "user-card-details" ]
             [ div [] (text (displayName user) :: userCardBadges user)
             , div [ Html.Attributes.class "user-card-meta" ] [ text (userCardMetaText user) ]
+            , div [ Html.Attributes.class "user-card-contact-buttons" ] (userCardContactButtons user)
             ]
         , followStatusAndButton
+        ]
+
+
+{-| "📞"/"✉️" `tel:`/`mailto:` buttons for `userCard` -- shown only for whichever of
+`user.phone`/`user.email` is both present (already server-gated by each `ContactMethod`'s own
+`visibility` -- see `visible_contact_method` on the backend, so a `Just` here already means this
+viewer may see it at all) and holds a validly-schemed `value` (defensively re-checked here via
+`String.startsWith`, not just trusted, in case of a malformed/mismatched-scheme value). Renders as
+plain `<a href="tel:…">`/`<a href="mailto:…">` links nested inside `userCard`'s own profile-link
+`<a>` -- technically invalid HTML5 (nested anchors), but harmless here: both Elm's own click-routing
+and every evergreen browser's native default action resolve a click to whichever anchor is nearest
+the actual click target, so the innermost (phone/email) link is what fires, never a competing
+profile navigation.
+-}
+userCardContactButtons : User -> List (Html msg)
+userCardContactButtons user =
+    let
+        contactButton : String -> String -> String -> Maybe (Html msg)
+        contactButton scheme label maybeValue =
+            if String.startsWith scheme maybeValue then
+                Just (a [ href maybeValue, Html.Attributes.class "user-card-contact-button" ] [ text label ])
+
+            else
+                Nothing
+    in
+    List.filterMap identity
+        [ user.phone |> Maybe.andThen .value |> Maybe.andThen (contactButton "tel:" "📞")
+        , user.email |> Maybe.andThen .value |> Maybe.andThen (contactButton "mailto:" "✉️")
         ]
 
 

@@ -60,6 +60,9 @@ pub use cluster_lock::*;
 mod contact_verification;
 pub use contact_verification::*;
 
+mod contact_consent;
+pub use contact_consent::*;
+
 pub(crate) mod twilio_sync;
 pub(crate) mod bird_sync;
 pub(crate) mod telnyx_sync;

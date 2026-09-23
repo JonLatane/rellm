@@ -8,7 +8,7 @@ use diesel::*;
 use tonic::{Code, Status};
 
 use crate::db_connection::PgPooledConnection;
-use crate::logic::verification_available;
+use crate::logic::contact_protocol_supported;
 use crate::marshaling::*;
 use crate::models;
 use crate::protos::*;
@@ -19,14 +19,25 @@ use crate::rpcs::validations::*;
 
 /// Applies a client-supplied `ContactMethod` (`request.phone`/`.email`) onto the currently-stored
 /// JSONB value, folding in the fields the server always computes/protects itself. Guards against
-/// a plain `UpdateUser` call spoofing a verified contact method: `value`/`visibility` are the
-/// *only* fields ever taken from client input -- `verified_at`/`verification_in_progress` are
-/// always carried forward from the currently-stored copy, UNLESS `value` actually changed (or is
-/// newly set), in which case editing invalidates any prior verification and both are reset to
-/// `None` (correct behavior, not just a safety guard -- otherwise brute-forcing `UpdateUser` to
-/// fake a verified status would work). `supported_by_server` is always recomputed here via
-/// `is_supported`, never trusted from client input or carried over stale from a prior write (e.g.
-/// if Twilio gets disabled server-side after a number was marked supported).
+/// a plain `UpdateUser` call spoofing a verified contact method: `value`/`visibility`/
+/// `consent_state` are the *only* fields ever taken from client input -- `verified_at`/
+/// `verification_in_progress` are always carried forward from the currently-stored copy, UNLESS
+/// `value` actually changed (or is newly set), in which case editing invalidates any prior
+/// verification and both are reset to `None` (correct behavior, not just a safety guard --
+/// otherwise brute-forcing `UpdateUser` to fake a verified status would work). `supported_by_server`
+/// is always recomputed here via `is_supported`, never trusted from client input or carried over
+/// stale from a prior write (e.g. if Twilio gets disabled server-side after a number was marked
+/// supported).
+///
+/// `consent_state`/`consent_history` (see `docs/contact_integrations.md`) work differently:
+/// `consent_state` *is* taken from client input (this is how `UserProfilePage.elm`'s consent
+/// checkbox actually grants/revokes consent), but `consent_history` itself is never trusted from
+/// the client -- whenever the requested `consent_state` differs from the currently-stored one, the
+/// server appends its own `ContactConsentChange` (server-timestamped) rather than accepting
+/// whatever history the client sent. Sending the same `consent_state` the `ContactMethod` already
+/// has is a no-op (no new history entry). Consent is intentionally independent of `value`/
+/// `verified_at` -- changing the phone number or re-verifying does not itself grant or revoke
+/// consent, and revoking/re-granting doesn't touch verification.
 ///
 /// `incoming: None` (the client's request omits this contact method entirely) clears the stored
 /// value, same as every other plain field `update_user` copies over unconditionally -- callers
@@ -52,6 +63,24 @@ fn apply_contact_method_update(
         )
     };
     let supported_by_server = incoming.value.as_deref().is_some_and(&is_supported);
+
+    let existing_consent_state = existing_cm
+        .as_ref()
+        .map(|cm| ContactConsentState::try_from(cm.consent_state).unwrap_or_default())
+        .unwrap_or_default();
+    let requested_consent_state =
+        ContactConsentState::try_from(incoming.consent_state).unwrap_or_default();
+    let mut consent_history = existing_cm
+        .as_ref()
+        .map(|cm| cm.consent_history.clone())
+        .unwrap_or_default();
+    if requested_consent_state != existing_consent_state {
+        consent_history.push(ContactConsentChange {
+            state: requested_consent_state as i32,
+            changed_at: Some(SystemTime::now().into()),
+        });
+    }
+
     Some(
         serde_json::to_value(ContactMethod {
             value: incoming.value.clone(),
@@ -59,6 +88,8 @@ fn apply_contact_method_update(
             supported_by_server,
             verified_at,
             verification_in_progress,
+            consent_state: requested_consent_state as i32,
+            consent_history,
         })
         .unwrap(),
     )
@@ -124,21 +155,28 @@ pub fn update_user(
                 existing_user.default_follow_moderation =
                     request.default_follow_moderation.to_string_moderation();
 
-                // `tel:` values are verifiable via SMS iff some provider (Twilio and/or Bird) is
-                // currently enabled server-side; `mailto:` has no verification provider this
-                // iteration (always unsupported). See `apply_contact_method_update`'s own doc for
-                // why `supported_by_server` is always recomputed here rather than trusted from the
+                // `ContactMethod.supported_by_server` mirrors whichever `ContactProtocol` this
+                // value's scheme (`tel:`/`mailto:`) corresponds to in the admin-set
+                // `ServerConfiguration.supported_contact_protocols` (see that field's own proto
+                // doc for why `users.proto` can't reference it directly) --
+                // `contact_protocol_supported` is already invariant-enforced at `ConfigureServer`
+                // time, so a `true` here always implies a real provider is actually enabled too.
+                // `mailto:` is checked the same way as `tel:` for consistency, even though
+                // `CONTACT_PROTOCOL_MAILTO` can never actually be enabled today (see
+                // `validate_configuration`). See `apply_contact_method_update`'s own doc for why
+                // `supported_by_server` is always recomputed here rather than trusted from the
                 // request.
-                let verification_enabled = verification_available(conn);
+                let tel_supported = contact_protocol_supported(conn, ContactProtocol::Tel);
+                let mailto_supported = contact_protocol_supported(conn, ContactProtocol::Mailto);
                 existing_user.phone = apply_contact_method_update(
                     existing_user.phone.to_owned(),
                     request.phone.as_ref(),
-                    |value| value.starts_with("tel:") && verification_enabled,
+                    |value| value.starts_with("tel:") && tel_supported,
                 );
                 existing_user.email = apply_contact_method_update(
                     existing_user.email.to_owned(),
                     request.email.as_ref(),
-                    |_value| false,
+                    |value| value.starts_with("mailto:") && mailto_supported,
                 );
             }
             if admin {

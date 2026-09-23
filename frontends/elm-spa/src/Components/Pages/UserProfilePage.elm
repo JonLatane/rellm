@@ -47,7 +47,7 @@ import Dict exposing (Dict)
 import Effect exposing (Effect)
 import Gen.Route
 import Grpc
-import Html exposing (Html, a, button, div, h2, h3, input, label, option, p, select, span, text)
+import Html exposing (Html, a, button, div, h2, h3, input, label, li, option, p, select, span, text, ul)
 import Html.Attributes exposing (attribute, checked, class, classList, disabled, href, id, name, novalidate, placeholder, readonly, selected, tabindex, title, type_, value)
 import Html.Events exposing (onClick, onInput, onSubmit)
 import Http
@@ -55,8 +55,9 @@ import Json.Decode as Decode
 import Ports
 import Process
 import Proto.Google.Protobuf
-import Proto.Rellm exposing (AIProvider, AIProviderGrant, ContactMethod, FederatedAccount, MarketPurchase, MarketPurchase_, MarketSubscription, SyncDestination, SyncSource, User, defaultAIProvider, defaultDigitalOceanCredentials, defaultGeminiCredentials, defaultMediaReference, defaultOpenAICredentials, defaultSyncDestination, defaultSyncSource, unwrapMarketPurchase)
+import Proto.Rellm exposing (AIProvider, AIProviderGrant, ContactConsentChange, ContactMethod, FederatedAccount, MarketPurchase, MarketPurchase_, MarketSubscription, SyncDestination, SyncSource, User, defaultAIProvider, defaultDigitalOceanCredentials, defaultGeminiCredentials, defaultMediaReference, defaultOpenAICredentials, defaultSyncDestination, defaultSyncSource, unwrapMarketPurchase)
 import Proto.Rellm.AIProvider.Provider as AIProviderProvider
+import Proto.Rellm.ContactConsentState exposing (ContactConsentState(..))
 import Proto.Rellm.Moderation exposing (Moderation(..))
 import Proto.Rellm.Permission exposing (Permission(..))
 import Proto.Rellm.PostContext exposing (PostContext(..))
@@ -94,6 +95,10 @@ type alias Model =
     , contactMethodsExpanded : Bool
     , phoneEdit : Maybe PhoneEdit
     , emailEdit : Maybe EmailEdit
+    , phoneConsentStatus : SubmitStatus
+    , emailConsentStatus : SubmitStatus
+    , phoneHistoryExpanded : Bool
+    , emailHistoryExpanded : Bool
     , phoneVerification : Maybe PhoneVerification
     , storageQuotaEdit : Maybe StorageQuotaEdit
     , storageQuotaExpanded : Bool
@@ -175,12 +180,18 @@ type Msg
     | PhoneCancelClicked
     | PhoneSaveClicked
     | GotPhoneSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, User ))
+    | PhoneConsentToggled
+    | GotPhoneConsentSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, User ))
+    | PhoneHistoryToggled
     | EmailEditClicked
     | EmailInputChanged String
     | EmailVisibilityChanged String
     | EmailCancelClicked
     | EmailSaveClicked
     | GotEmailSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, User ))
+    | EmailConsentToggled
+    | GotEmailConsentSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, User ))
+    | EmailHistoryToggled
     | StartPhoneVerificationClicked
     | GotStartPhoneVerificationResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, ContactMethod ))
     | PhoneVerificationCooldownElapsed
@@ -1052,6 +1063,10 @@ init shared pageIsSecure targetHost lookup navKey path query fragment =
             , contactMethodsExpanded = fragment == Just "contact-methods"
             , phoneEdit = Nothing
             , emailEdit = Nothing
+            , phoneConsentStatus = Idle
+            , emailConsentStatus = Idle
+            , phoneHistoryExpanded = False
+            , emailHistoryExpanded = False
             , phoneVerification = Nothing
             , storageQuotaEdit = Nothing
             , storageQuotaExpanded = False
@@ -1983,6 +1998,14 @@ updateInner shared msg model =
                                         , supportedByServer = False
                                         , verifiedAt = Nothing
                                         , verificationInProgress = Nothing
+
+                                        -- Consent is edited separately (`PhoneConsentToggled`) --
+                                        -- changing the number/visibility here must not silently
+                                        -- grant or revoke it, so it's always carried forward from
+                                        -- whatever `freshUser.phone` (the just-refetched, current
+                                        -- copy) already has.
+                                        , consentState = freshUser.phone |> Maybe.map .consentState |> Maybe.withDefault CONTACTCONSENTREVOKED
+                                        , consentHistory = freshUser.phone |> Maybe.map .consentHistory |> Maybe.withDefault []
                                         }
                             }
                         )
@@ -2005,6 +2028,45 @@ updateInner shared msg model =
               }
             , Effect.none
             )
+
+        PhoneConsentToggled ->
+            case ( model.resolver.status, serverAndAccount shared model ) of
+                ( Resolver.Loaded user, Just ( server, account ) ) ->
+                    let
+                        newConsent : ContactConsentState
+                        newConsent =
+                            if (user.phone |> Maybe.map .consentState |> Maybe.withDefault CONTACTCONSENTREVOKED) == CONTACTCONSENTGRANTED then
+                                CONTACTCONSENTREVOKED
+
+                            else
+                                CONTACTCONSENTGRANTED
+                    in
+                    ( { model | phoneConsentStatus = Submitting }
+                    , Users.updateUser shared.accounts
+                        ( Just account.userId, server.frontendHost )
+                        user.id
+                        (\freshUser ->
+                            { freshUser
+                                | phone = freshUser.phone |> Maybe.map (\cm -> { cm | consentState = newConsent })
+                            }
+                        )
+                        |> Task.attempt GotPhoneConsentSaveResult
+                        |> Effect.fromCmd
+                    )
+
+                _ ->
+                    ( model, Effect.none )
+
+        GotPhoneConsentSaveResult (Ok ( maybeAccountsPanelMsg, updatedUser )) ->
+            ( { model | resolver = withResolvedUser updatedUser model.resolver, phoneConsentStatus = Idle }
+            , accountsPanelEffect maybeAccountsPanelMsg
+            )
+
+        GotPhoneConsentSaveResult (Err err) ->
+            ( { model | phoneConsentStatus = SubmitFailed (AccountsPanel.grpcErrorToString err) }, Effect.none )
+
+        PhoneHistoryToggled ->
+            ( { model | phoneHistoryExpanded = not model.phoneHistoryExpanded }, Effect.none )
 
         EmailEditClicked ->
             case model.resolver.status of
@@ -2056,6 +2118,12 @@ updateInner shared msg model =
                                         , supportedByServer = False
                                         , verifiedAt = Nothing
                                         , verificationInProgress = Nothing
+
+                                        -- Same reasoning as `PhoneSaveClicked` -- consent is edited
+                                        -- separately (`EmailConsentToggled`), so it's always
+                                        -- carried forward unchanged here.
+                                        , consentState = freshUser.email |> Maybe.map .consentState |> Maybe.withDefault CONTACTCONSENTREVOKED
+                                        , consentHistory = freshUser.email |> Maybe.map .consentHistory |> Maybe.withDefault []
                                         }
                             }
                         )
@@ -2078,6 +2146,45 @@ updateInner shared msg model =
               }
             , Effect.none
             )
+
+        EmailConsentToggled ->
+            case ( model.resolver.status, serverAndAccount shared model ) of
+                ( Resolver.Loaded user, Just ( server, account ) ) ->
+                    let
+                        newConsent : ContactConsentState
+                        newConsent =
+                            if (user.email |> Maybe.map .consentState |> Maybe.withDefault CONTACTCONSENTREVOKED) == CONTACTCONSENTGRANTED then
+                                CONTACTCONSENTREVOKED
+
+                            else
+                                CONTACTCONSENTGRANTED
+                    in
+                    ( { model | emailConsentStatus = Submitting }
+                    , Users.updateUser shared.accounts
+                        ( Just account.userId, server.frontendHost )
+                        user.id
+                        (\freshUser ->
+                            { freshUser
+                                | email = freshUser.email |> Maybe.map (\cm -> { cm | consentState = newConsent })
+                            }
+                        )
+                        |> Task.attempt GotEmailConsentSaveResult
+                        |> Effect.fromCmd
+                    )
+
+                _ ->
+                    ( model, Effect.none )
+
+        GotEmailConsentSaveResult (Ok ( maybeAccountsPanelMsg, updatedUser )) ->
+            ( { model | resolver = withResolvedUser updatedUser model.resolver, emailConsentStatus = Idle }
+            , accountsPanelEffect maybeAccountsPanelMsg
+            )
+
+        GotEmailConsentSaveResult (Err err) ->
+            ( { model | emailConsentStatus = SubmitFailed (AccountsPanel.grpcErrorToString err) }, Effect.none )
+
+        EmailHistoryToggled ->
+            ( { model | emailHistoryExpanded = not model.emailHistoryExpanded }, Effect.none )
 
         StartPhoneVerificationClicked ->
             case ( model.resolver.status, serverAndAccount shared model ) of
@@ -4562,7 +4669,7 @@ profileDetail shared model server maybeAccount user =
                         |> Maybe.withDefault []
                    )
             )
-        , contactMethodsSection canEdit (isOwnProfile maybeAccount user) model.contactMethodsExpanded model user
+        , contactMethodsSection shared.time.browserTimeZone canEdit (isOwnProfile maybeAccount user) model.contactMethodsExpanded model user
         , followModerationToggleView canEdit model.followModerationStatus user
         , profileCounts postsHref repliesHref followersHref followingHref friendsHref eventsHref user
         , bioSection canEdit user
@@ -4902,8 +5009,8 @@ nothing to show (mirrors `permissionsSection`'s own "hide if nothing to show and
 gate) -- a `User` this viewer can't see either contact method on simply won't have them populated at
 all (enforced server-side via each `ContactMethod`'s own `visibility`), so there'd be nothing here.
 -}
-contactMethodsSection : Bool -> Bool -> Bool -> Model -> User -> Html Msg
-contactMethodsSection canEdit isOwn expanded model user =
+contactMethodsSection : SharedTime.BrowserTimeZone -> Bool -> Bool -> Bool -> Model -> User -> Html Msg
+contactMethodsSection browserTimeZone canEdit isOwn expanded model user =
     if user.phone == Nothing && user.email == Nothing && not canEdit then
         text ""
 
@@ -4915,12 +5022,28 @@ contactMethodsSection canEdit isOwn expanded model user =
             expanded
             ContactMethodsExpandedToggled
             [ phoneView canEdit model.phoneEdit user
+            , contactMethodConsentView browserTimeZone
+                "SMS"
+                canEdit
+                model.phoneConsentStatus
+                model.phoneHistoryExpanded
+                PhoneConsentToggled
+                PhoneHistoryToggled
+                user.phone
             , if isOwn then
                 phoneVerificationView model.phoneVerification user.phone
 
               else
                 text ""
             , emailView canEdit model.emailEdit user
+            , contactMethodConsentView browserTimeZone
+                "email"
+                canEdit
+                model.emailConsentStatus
+                model.emailHistoryExpanded
+                EmailConsentToggled
+                EmailHistoryToggled
+                user.email
             ]
 
 
@@ -5011,6 +5134,92 @@ emailView canEdit maybeEdit user =
                     )
 
 
+{-| The contact-consent checkbox shown under `phoneView`/`emailView` for `canEdit` viewers, plus a
+(sub-)expandable "History" list of every `ContactConsentChange` in `contactMethod.consentHistory`
+(oldest last -- see `contactConsentChangeView`). `methodLabel` (`"SMS"`/`"email"`) fills in the
+disclaimer text so it reads correctly for either method -- the checkbox/behavior itself is
+otherwise identical between Phone and Email (per `docs/contact_integrations.md`).
+
+Checking/unchecking calls `toggleMsg` (`PhoneConsentToggled`/`EmailConsentToggled`), which
+`UpdateUser`s just `consentState` (see `update`); the server appends the resulting
+`ContactConsentChange` to `consentHistory` (`apply_contact_method_update` on the backend), and that
+updated `User` flows back into `model.resolver` same as any other save -- so the History list, if
+already expanded, updates as a pure byproduct of the checkbox's own save, no separate fetch needed.
+
+Hidden entirely if `contactMethod` is unset (nothing to consent to yet) or `not canEdit` -- mirrors
+`phoneVerificationView`'s own "nothing to show" gate.
+-}
+contactMethodConsentView : SharedTime.BrowserTimeZone -> String -> Bool -> SubmitStatus -> Bool -> Msg -> Msg -> Maybe ContactMethod -> Html Msg
+contactMethodConsentView browserTimeZone methodLabel canEdit status historyExpanded toggleMsg historyToggleMsg maybeContactMethod =
+    case ( canEdit, maybeContactMethod ) of
+        ( True, Just contactMethod ) ->
+            div [ class "profile-contact-method-consent" ]
+                [ label [ class "profile-contact-method-consent-label" ]
+                    [ input
+                        [ type_ "checkbox"
+                        , checked (contactMethod.consentState == CONTACTCONSENTGRANTED)
+                        , disabled (status == Submitting)
+                        , onClick toggleMsg
+                        ]
+                        []
+                    , text (" Checking this box indicates I consent to be contacted via " ++ methodLabel ++ ".")
+                    ]
+                , editErrorView status
+                , if List.isEmpty contactMethod.consentHistory then
+                    text ""
+
+                  else
+                    div [ class "profile-contact-method-consent-history" ]
+                        [ button
+                            [ class "profile-edit-button", onClick historyToggleMsg ]
+                            [ text
+                                (if historyExpanded then
+                                    "Hide History"
+
+                                 else
+                                    "Show History"
+                                )
+                            ]
+                        , if historyExpanded then
+                            ul [ class "profile-contact-method-consent-history-list" ]
+                                (contactMethod.consentHistory
+                                    |> List.reverse
+                                    |> List.map (contactConsentChangeView browserTimeZone)
+                                )
+
+                          else
+                            text ""
+                        ]
+                ]
+
+        _ ->
+            text ""
+
+
+{-| One `li` in `contactMethodConsentView`'s History list -- "Granted"/"Revoked" plus the
+server-timestamped `changedAt`, formatted the same way `syncSourceRowView` formats its own
+timestamps (`SharedTime.formatDateTime`).
+-}
+contactConsentChangeView : SharedTime.BrowserTimeZone -> ContactConsentChange -> Html msg
+contactConsentChangeView browserTimeZone change =
+    let
+        label : String
+        label =
+            if change.state == CONTACTCONSENTGRANTED then
+                "Granted"
+
+            else
+                "Revoked"
+
+        when : String
+        when =
+            change.changedAt
+                |> Maybe.map (timestampToPosix >> SharedTime.formatDateTime browserTimeZone)
+                |> Maybe.withDefault ""
+    in
+    li [] [ text (label ++ " " ++ when) ]
+
+
 {-| The visibility options offered by `phoneView`/`emailView`'s visibility `<select>` -- narrower than
 `Components.Posts.allVisibilities`: excludes `LIMITED` (explicit-user/group sharing doesn't apply to
 a contact method) and `DIRECT` (same `[TODO]`/unimplemented reason `allVisibilities` itself excludes
@@ -5088,35 +5297,46 @@ stripContactMethodPrefix prefix rawValue =
         rawValue
 
 
-{-| The phone-only SMS verification flow, shown under `phoneView` for the profile's own owner --
-gated on `ContactMethod.supportedByServer` (the server-computed "can this be verified right now"
-signal, reflecting Twilio's enabled state without exposing any config details to a non-admin viewer,
-who can't read `ServerConfiguration.twilioConfig` at all) and on not already being verified.
-`Nothing` (`model.phoneVerification`) shows a bare "Start Verification" button
-(`StartPhoneVerificationClicked`); `Just pv` shows a code-entry input plus Verify/Resend once at
-least one send has been attempted, with "Resend" disabled during `pv.cooldownActive`'s 60-second
-window (see `update`'s `GotStartPhoneVerificationResult`/`PhoneVerificationCooldownElapsed`).
+{-| The phone-only SMS verification flow, shown under `phoneView`/`contactMethodConsentView` for the
+profile's own owner -- gated on `ContactMethod.supportedByServer` (the server-computed "can this be
+verified right now" signal, reflecting Twilio/Bird/Telnyx's enabled state without exposing any
+config details to a non-admin viewer) and on not already being verified. Also requires
+`consentState == CONTACT_CONSENT_GRANTED` -- the verification code is itself an outbound SMS, so
+`start_contact_method_verification_at` rejects it with `contact_consent_not_granted` otherwise (see
+that function's own doc); rather than let the user hit that error, the "Start Verification" button
+is simply replaced with a hint to grant consent above first. `Nothing` (`model.phoneVerification`)
+shows a bare "Start Verification" button (`StartPhoneVerificationClicked`); `Just pv` shows a
+code-entry input plus Verify/Resend once at least one send has been attempted, with "Resend"
+disabled during `pv.cooldownActive`'s 60-second window (see `update`'s
+`GotStartPhoneVerificationResult`/`PhoneVerificationCooldownElapsed`).
 -}
 phoneVerificationView : Maybe PhoneVerification -> Maybe ContactMethod -> Html Msg
 phoneVerificationView maybePhoneVerification maybePhone =
     let
-        canVerify : Bool
-        canVerify =
+        eligibleToVerify : Bool
+        eligibleToVerify =
             maybePhone
                 |> Maybe.map (\cm -> cm.supportedByServer && cm.verifiedAt == Nothing)
                 |> Maybe.withDefault False
+
+        consentGranted : Bool
+        consentGranted =
+            maybePhone
+                |> Maybe.map (\cm -> cm.consentState == CONTACTCONSENTGRANTED)
+                |> Maybe.withDefault False
     in
-    if not canVerify then
+    if not eligibleToVerify then
         text ""
+
+    else if not consentGranted then
+        p [ class "profile-contact-method-verify-disclaimer" ]
+            [ text "Grant SMS consent above to verify your phone number -- the verification code itself is sent by SMS." ]
 
     else
         case maybePhoneVerification of
             Nothing ->
                 div [ class "profile-contact-method-verify" ]
-                    [ p [ class "profile-contact-method-verify-disclaimer" ]
-                        [ text "By pressing \"Start Verification,\" you agree to receive one SMS for verification purposes only. Your number will not be used for any further contact or marketing." ]
-                    , button [ class "profile-edit-button", onClick StartPhoneVerificationClicked ] [ text "Start Verification" ]
-                    ]
+                    [ button [ class "profile-edit-button", onClick StartPhoneVerificationClicked ] [ text "Start Verification" ] ]
 
             Just pv ->
                 div [ class "profile-contact-method-verify" ]

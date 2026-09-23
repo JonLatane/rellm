@@ -13,6 +13,20 @@ import 'dart:convert' as $convert;
 import 'dart:core' as $core;
 import 'dart:typed_data' as $typed_data;
 
+@$core.Deprecated('Use contactConsentStateDescriptor instead')
+const ContactConsentState$json = {
+  '1': 'ContactConsentState',
+  '2': [
+    {'1': 'CONTACT_CONSENT_REVOKED', '2': 0},
+    {'1': 'CONTACT_CONSENT_GRANTED', '2': 1},
+  ],
+};
+
+/// Descriptor for `ContactConsentState`. Decode as a `google.protobuf.EnumDescriptorProto`.
+final $typed_data.Uint8List contactConsentStateDescriptor = $convert.base64Decode(
+    'ChNDb250YWN0Q29uc2VudFN0YXRlEhsKF0NPTlRBQ1RfQ09OU0VOVF9SRVZPS0VEEAASGwoXQ0'
+    '9OVEFDVF9DT05TRU5UX0dSQU5URUQQAQ==');
+
 @$core.Deprecated('Use userListingTypeDescriptor instead')
 const UserListingType$json = {
   '1': 'UserListingType',
@@ -193,6 +207,8 @@ const ContactMethod$json = {
     {'1': 'supported_by_server', '3': 3, '4': 1, '5': 8, '10': 'supportedByServer'},
     {'1': 'verified_at', '3': 4, '4': 1, '5': 11, '6': '.google.protobuf.Timestamp', '9': 1, '10': 'verifiedAt', '17': true},
     {'1': 'verification_in_progress', '3': 5, '4': 1, '5': 11, '6': '.rellm.ContactMethodVerification', '9': 2, '10': 'verificationInProgress', '17': true},
+    {'1': 'consent_state', '3': 6, '4': 1, '5': 14, '6': '.rellm.ContactConsentState', '10': 'consentState'},
+    {'1': 'consent_history', '3': 7, '4': 3, '5': 11, '6': '.rellm.ContactConsentChange', '10': 'consentHistory'},
   ],
   '8': [
     {'1': '_value'},
@@ -208,8 +224,25 @@ final $typed_data.Uint8List contactMethodDescriptor = $convert.base64Decode(
     'ZXJ2ZXIYAyABKAhSEXN1cHBvcnRlZEJ5U2VydmVyEkAKC3ZlcmlmaWVkX2F0GAQgASgLMhouZ2'
     '9vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcEgBUgp2ZXJpZmllZEF0iAEBEl8KGHZlcmlmaWNhdGlv'
     'bl9pbl9wcm9ncmVzcxgFIAEoCzIgLnJlbGxtLkNvbnRhY3RNZXRob2RWZXJpZmljYXRpb25IAl'
-    'IWdmVyaWZpY2F0aW9uSW5Qcm9ncmVzc4gBAUIICgZfdmFsdWVCDgoMX3ZlcmlmaWVkX2F0QhsK'
-    'GV92ZXJpZmljYXRpb25faW5fcHJvZ3Jlc3M=');
+    'IWdmVyaWZpY2F0aW9uSW5Qcm9ncmVzc4gBARI/Cg1jb25zZW50X3N0YXRlGAYgASgOMhoucmVs'
+    'bG0uQ29udGFjdENvbnNlbnRTdGF0ZVIMY29uc2VudFN0YXRlEkQKD2NvbnNlbnRfaGlzdG9yeR'
+    'gHIAMoCzIbLnJlbGxtLkNvbnRhY3RDb25zZW50Q2hhbmdlUg5jb25zZW50SGlzdG9yeUIICgZf'
+    'dmFsdWVCDgoMX3ZlcmlmaWVkX2F0QhsKGV92ZXJpZmljYXRpb25faW5fcHJvZ3Jlc3M=');
+
+@$core.Deprecated('Use contactConsentChangeDescriptor instead')
+const ContactConsentChange$json = {
+  '1': 'ContactConsentChange',
+  '2': [
+    {'1': 'state', '3': 1, '4': 1, '5': 14, '6': '.rellm.ContactConsentState', '10': 'state'},
+    {'1': 'changed_at', '3': 2, '4': 1, '5': 11, '6': '.google.protobuf.Timestamp', '10': 'changedAt'},
+  ],
+};
+
+/// Descriptor for `ContactConsentChange`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List contactConsentChangeDescriptor = $convert.base64Decode(
+    'ChRDb250YWN0Q29uc2VudENoYW5nZRIwCgVzdGF0ZRgBIAEoDjIaLnJlbGxtLkNvbnRhY3RDb2'
+    '5zZW50U3RhdGVSBXN0YXRlEjkKCmNoYW5nZWRfYXQYAiABKAsyGi5nb29nbGUucHJvdG9idWYu'
+    'VGltZXN0YW1wUgljaGFuZ2VkQXQ=');
 
 @$core.Deprecated('Use contactMethodVerificationDescriptor instead')
 const ContactMethodVerification$json = {

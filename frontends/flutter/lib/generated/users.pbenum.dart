@@ -13,6 +13,24 @@ import 'dart:core' as $core;
 
 import 'package:protobuf/protobuf.dart' as $pb;
 
+/// Whether a user has consented to being contacted (e.g. via SMS/email sent by external services)
+/// through a given [`ContactMethod`](#rellm-ContactMethod). See
+/// [`ContactMethod.consent_state`](#rellm-ContactMethod).
+class ContactConsentState extends $pb.ProtobufEnum {
+  static const ContactConsentState CONTACT_CONSENT_REVOKED = ContactConsentState._(0, _omitEnumNames ? '' : 'CONTACT_CONSENT_REVOKED');
+  static const ContactConsentState CONTACT_CONSENT_GRANTED = ContactConsentState._(1, _omitEnumNames ? '' : 'CONTACT_CONSENT_GRANTED');
+
+  static const $core.List<ContactConsentState> values = <ContactConsentState> [
+    CONTACT_CONSENT_REVOKED,
+    CONTACT_CONSENT_GRANTED,
+  ];
+
+  static final $core.Map<$core.int, ContactConsentState> _byValue = $pb.ProtobufEnum.initByValue(values);
+  static ContactConsentState? valueOf($core.int value) => _byValue[value];
+
+  const ContactConsentState._($core.int v, $core.String n) : super(v, n);
+}
+
 /// Ways of listing users.
 class UserListingType extends $pb.ProtobufEnum {
   static const UserListingType EVERYONE = UserListingType._(0, _omitEnumNames ? '' : 'EVERYONE');

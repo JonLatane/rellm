@@ -63,9 +63,14 @@ same `expandable-section-title`/`-arrow`/`-content` idiom
 `SettingsTab.featureSettingsSection`/`UserProfilePage.expandableProfileSection` already establish
 (see `collapsedIntegrationsSections`, a `Set String` exactly like
 `SettingsTab.Model.collapsedFeatureSettings`). `telnyxSection` is rendered above `twilioSection`
-(newest provider first, since it's the one currently being onboarded), and everything starts
-expanded except Bird (the least commonly configured of the three SMS providers -- see
-`BirdConfig`'s own proto doc). Since
+(newest provider first, since it's the one currently being onboarded). Before this tab's own
+authenticated fetch resolves, all three (and "External Integrations" itself) default to expanded;
+once it lands, `initialCollapsedIntegrationsSections` recomputes Telnyx/Twilio/Bird's collapsed
+state from the fetched data itself -- a provider with nothing configured yet
+(`twilioConfigHasValues`/`birdConfigHasValues`/`telnyxConfigHasValues`, checked against its
+non-secret fields plus whether a webhook signing key is set) collapses out of the way, while one an
+admin is actively using pre-expands with no click needed. A later manual
+`IntegrationsSectionToggled` always wins over this one-time guess. Since
 `ServerInformationPage.view` mounts each tab's content under a *different* `Html.Keyed` key per tab
 (`tabParam model.activeTab`), switching away from and back to this tab always tears down and
 rebuilds this whole subtree from scratch (never patches it in place) -- so a freshly-collapsed
@@ -84,11 +89,12 @@ import Components.Pages.ServerInformationPage.Common as Common
 import Effect exposing (Effect)
 import Grpc
 import Html exposing (Html, button, div, h2, h3, input, option, select, span, text)
-import Html.Attributes exposing (class, disabled, placeholder, selected, type_, value)
+import Html.Attributes exposing (class, disabled, placeholder, selected, title, type_, value)
 import Html.Events exposing (onClick, onInput)
 import Proto.Rellm exposing (BirdConfig, ServerConfiguration, TelnyxConfig, TwilioConfig, defaultBirdConfig, defaultTelnyxConfig, defaultTwilioConfig)
 import Proto.Rellm.Rellm as Rellm
-import Proto.Rellm.VerificationAPI exposing (VerificationAPI(..))
+import Proto.Rellm.ContactProtocol exposing (ContactProtocol(..))
+import Proto.Rellm.ContactVerificationAPI exposing (ContactVerificationAPI(..))
 import Set exposing (Set)
 import Shared
 import Shared.AccountsPanel as AccountsPanel
@@ -111,6 +117,9 @@ type alias Model =
     , webPushPrivateKeyEdit : Maybe TextFieldEdit
     , adminContactIntegrations : AdminContactIntegrationsStatus
     , collapsedIntegrationsSections : Set String
+    , smsContactProtocolStatus : AccountsPanel.FormStatus
+    , emailContactProtocolStatus : AccountsPanel.FormStatus
+    , stalwartReceivingStatus : AccountsPanel.FormStatus
     }
 
 
@@ -144,6 +153,55 @@ integrationsSectionKey section =
 
         BirdIntegrationSection ->
             "bird"
+
+
+{-| The `collapsedIntegrationsSections` to start with once `config` (the tab's own authenticated
+fetch) first loads -- `TwilioIntegrationSection`/`BirdIntegrationSection`/`TelnyxIntegrationSection`
+each pre-expand iff that provider's config is both present *and* has at least one non-default value
+already entered (`*_enabled`, `*_from`/`*_from_number`, `*_region`/`*_messaging_profile_id`, or a
+configured `*_webhook_signing_key` -- see `twilioConfigHasValues`/`birdConfigHasValues`/
+`telnyxConfigHasValues`), so an admin actively using a provider sees it open right away without a
+click, while an unconfigured one stays out of the way collapsed. Only ever computed here, once per
+fetch (`GotAuthenticatedServerConfiguration`'s own success branch) -- it doesn't touch
+`ExternalIntegrationsSection`'s own collapsed state, and a later manual
+`IntegrationsSectionToggled` always wins over this initial guess (this never re-runs while already
+`AdminContactIntegrationsLoaded`, since `ContactIntegrationsTabActivated` only re-fetches from
+`AdminContactIntegrationsNotFetched`/`AdminContactIntegrationsFetchFailed`).
+-}
+initialCollapsedIntegrationsSections : ServerConfiguration -> Set String
+initialCollapsedIntegrationsSections config =
+    [ ( TwilioIntegrationSection, config.twilioConfig |> Maybe.map twilioConfigHasValues |> Maybe.withDefault False )
+    , ( BirdIntegrationSection, config.birdConfig |> Maybe.map birdConfigHasValues |> Maybe.withDefault False )
+    , ( TelnyxIntegrationSection, config.telnyxConfig |> Maybe.map telnyxConfigHasValues |> Maybe.withDefault False )
+    ]
+        |> List.filter (\( _, hasValues ) -> not hasValues)
+        |> List.map (\( section, _ ) -> integrationsSectionKey section)
+        |> Set.fromList
+
+
+twilioConfigHasValues : TwilioConfig -> Bool
+twilioConfigHasValues config =
+    config.twilioEnabled
+        || not (String.isEmpty config.twilioAccountSid)
+        || not (String.isEmpty config.twilioApiKeySid)
+        || not (String.isEmpty config.twilioFromNumber)
+        || config.twilioWebhookSigningKey /= Nothing
+
+
+birdConfigHasValues : BirdConfig -> Bool
+birdConfigHasValues config =
+    config.birdEnabled
+        || not (String.isEmpty config.birdFrom)
+        || not (String.isEmpty config.birdRegion)
+        || config.birdWebhookSigningKey /= Nothing
+
+
+telnyxConfigHasValues : TelnyxConfig -> Bool
+telnyxConfigHasValues config =
+    config.telnyxEnabled
+        || not (String.isEmpty config.telnyxFromNumber)
+        || not (String.isEmpty config.telnyxMessagingProfileId)
+        || config.telnyxWebhookSigningKey /= Nothing
 
 
 integrationsSectionExpanded : Model -> IntegrationsSection -> Bool
@@ -181,6 +239,7 @@ type Msg
     | TelnyxApiKeyChanged String
     | TelnyxFromNumberChanged String
     | TelnyxMessagingProfileIdChanged String
+    | TelnyxWebhookSigningKeyChanged String
     | TelnyxCancelClicked
     | TelnyxSaveClicked
     | GotTelnyxSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, ServerConfiguration ))
@@ -190,6 +249,7 @@ type Msg
     | TwilioApiKeySidChanged String
     | TwilioApiKeySecretChanged String
     | TwilioFromNumberChanged String
+    | TwilioWebhookSigningKeyChanged String
     | TwilioCancelClicked
     | TwilioSaveClicked
     | GotTwilioSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, ServerConfiguration ))
@@ -198,11 +258,12 @@ type Msg
     | BirdAccessKeyChanged String
     | BirdFromChanged String
     | BirdRegionChanged String
+    | BirdWebhookSigningKeyChanged String
     | BirdCancelClicked
     | BirdSaveClicked
     | GotBirdSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, ServerConfiguration ))
     | PreferredProvidersEditClicked
-    | PreferredProviderRemoveClicked VerificationAPI
+    | PreferredProviderRemoveClicked ContactVerificationAPI
     | PreferredProviderAddSelectionChanged String
     | PreferredProviderAddClicked
     | PreferredProvidersCancelClicked
@@ -218,32 +279,45 @@ type Msg
     | WebPushPrivateKeyCancelClicked
     | WebPushPrivateKeySaveClicked
     | GotWebPushPrivateKeySaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, ServerConfiguration ))
+    | SmsContactProtocolToggled
+    | GotSmsContactProtocolSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, ServerConfiguration ))
+    | EmailContactProtocolToggled
+    | GotEmailContactProtocolSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, ServerConfiguration ))
+    | StalwartReceivingToggled
+    | GotStalwartReceivingSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, ServerConfiguration ))
     | ContactIntegrationsTabActivated
     | GotAuthenticatedServerConfiguration (Result Grpc.Error ( Maybe AccountsPanel.Msg, ServerConfiguration ))
     | IntegrationsSectionToggled IntegrationsSection
 
 
-{-| Live only while the Telnyx config is being edited by an admin. `apiKey` always starts blank
-(see module doc) -- leaving it blank on Save means "keep whatever's already stored" (the backend
-splices the existing value back in when the incoming `telnyx_api_key` is empty, mirroring
-`WebPushConfig.privateVapidKey`'s own merge rule). `fromNumber`/`messagingProfileId` are Telnyx's
-sending number and the Messaging Profile ID it's assigned to -- see `TelnyxConfig`'s own proto doc.
+{-| Live only while the Telnyx config is being edited by an admin. `apiKey`/`webhookSigningKey`
+always start blank (see module doc) -- leaving either blank on Save means "keep whatever's already
+stored" (the backend splices the existing value back in when the incoming
+`telnyx_api_key`/`telnyx_webhook_signing_key` is empty, mirroring `WebPushConfig.privateVapidKey`'s
+own merge rule). `fromNumber`/`messagingProfileId` are Telnyx's sending number and the Messaging
+Profile ID it's assigned to -- see `TelnyxConfig`'s own proto doc. `webhookSigningKey` is Telnyx's
+account-level public key, used only to verify inbound `/contact_integrations/telnyx/receive`
+deliveries -- see that field's own proto doc and `docs/contact_integrations.md`.
 -}
 type alias TelnyxConfigEdit =
     { enabled : Bool
     , apiKey : String
     , fromNumber : String
     , messagingProfileId : String
+    , webhookSigningKey : String
     , status : AccountsPanel.FormStatus
     }
 
 
-{-| Live only while the Twilio config is being edited by an admin. `apiKeySecret` always starts
-blank (see module doc) -- leaving it blank on Save means "keep whatever's already stored" (the
-backend splices the existing value back in when the incoming `twilio_api_key_secret` is empty,
-mirroring `WebPushConfig.privateVapidKey`'s own merge rule). `accountSid`/`apiKeySid` are Twilio's
-Account SID and API Key SID respectively -- see `TwilioConfig`'s own proto doc for why
-authentication uses the API Key pair, never the account's own Auth Token.
+{-| Live only while the Twilio config is being edited by an admin. `apiKeySecret`/
+`webhookSigningKey` always start blank (see module doc) -- leaving either blank on Save means "keep
+whatever's already stored" (the backend splices the existing value back in when the incoming
+`twilio_api_key_secret`/`twilio_webhook_signing_key` is empty, mirroring
+`WebPushConfig.privateVapidKey`'s own merge rule). `accountSid`/`apiKeySid` are Twilio's Account SID
+and API Key SID respectively -- see `TwilioConfig`'s own proto doc for why authentication uses the
+API Key pair, never the account's own Auth Token. `webhookSigningKey` is that Auth Token, used
+*only* to verify inbound `/contact_integrations/twilio/receive` deliveries (see that field's own
+proto doc and `docs/contact_integrations.md`) -- the one place the Auth Token is ever accepted here.
 -}
 type alias TwilioConfigEdit =
     { enabled : Bool
@@ -251,29 +325,33 @@ type alias TwilioConfigEdit =
     , apiKeySid : String
     , apiKeySecret : String
     , fromNumber : String
+    , webhookSigningKey : String
     , status : AccountsPanel.FormStatus
     }
 
 
-{-| Same as `TwilioConfigEdit`, but for Bird -- `accessKey` always starts blank the same way
-`apiKeySecret` does.
+{-| Same as `TwilioConfigEdit`, but for Bird -- `accessKey`/`webhookSigningKey` always start blank
+the same way `apiKeySecret`/`webhookSigningKey` do there. `webhookSigningKey` is the Standard
+Webhooks signing secret (`whsec_...`) for the SMS channel subscription delivering to
+`/contact_integrations/bird/receive` -- see `BirdConfig.bird_webhook_signing_key`'s own proto doc.
 -}
 type alias BirdConfigEdit =
     { enabled : Bool
     , accessKey : String
     , from : String
     , region : String
+    , webhookSigningKey : String
     , status : AccountsPanel.FormStatus
     }
 
 
 {-| Live only while `preferredVerificationApis` is being edited by an admin -- mirrors
-`SettingsTab.PermissionsEdit` exactly, just over `VerificationAPI` instead of `Permission`.
+`SettingsTab.PermissionsEdit` exactly, just over `ContactVerificationAPI` instead of `Permission`.
 `pending`'s order IS the preference order (see module doc).
 -}
 type alias PreferredProvidersEdit =
-    { pending : List VerificationAPI
-    , addSelection : Maybe VerificationAPI
+    { pending : List ContactVerificationAPI
+    , addSelection : Maybe ContactVerificationAPI
     , status : AccountsPanel.FormStatus
     }
 
@@ -300,7 +378,10 @@ init =
     , webPushPublicKeyEdit = Nothing
     , webPushPrivateKeyEdit = Nothing
     , adminContactIntegrations = AdminContactIntegrationsNotFetched
-    , collapsedIntegrationsSections = Set.singleton (integrationsSectionKey BirdIntegrationSection)
+    , collapsedIntegrationsSections = Set.empty
+    , smsContactProtocolStatus = AccountsPanel.Idle
+    , emailContactProtocolStatus = AccountsPanel.Idle
+    , stalwartReceivingStatus = AccountsPanel.Idle
     }
 
 
@@ -350,7 +431,7 @@ adminBirdConfig model =
             Nothing
 
 
-adminPreferredProviders : Model -> List VerificationAPI
+adminPreferredProviders : Model -> List ContactVerificationAPI
 adminPreferredProviders model =
     case model.adminContactIntegrations of
         AdminContactIntegrationsLoaded config ->
@@ -380,6 +461,7 @@ update shared targetHost maybeServer msg model =
                         , apiKey = ""
                         , fromNumber = telnyxConfig |> Maybe.map .telnyxFromNumber |> Maybe.withDefault ""
                         , messagingProfileId = telnyxConfig |> Maybe.map .telnyxMessagingProfileId |> Maybe.withDefault ""
+                        , webhookSigningKey = ""
                         , status = AccountsPanel.Idle
                         }
               }
@@ -397,6 +479,9 @@ update shared targetHost maybeServer msg model =
 
         TelnyxMessagingProfileIdChanged text ->
             ( { model | telnyxConfigEdit = model.telnyxConfigEdit |> Maybe.map (\edit -> { edit | messagingProfileId = text }) }, Effect.none )
+
+        TelnyxWebhookSigningKeyChanged text ->
+            ( { model | telnyxConfigEdit = model.telnyxConfigEdit |> Maybe.map (\edit -> { edit | webhookSigningKey = text }) }, Effect.none )
 
         TelnyxCancelClicked ->
             ( { model | telnyxConfigEdit = Nothing }, Effect.none )
@@ -440,6 +525,7 @@ update shared targetHost maybeServer msg model =
                         , apiKeySid = twilioConfig |> Maybe.map .twilioApiKeySid |> Maybe.withDefault ""
                         , apiKeySecret = ""
                         , fromNumber = twilioConfig |> Maybe.map .twilioFromNumber |> Maybe.withDefault ""
+                        , webhookSigningKey = ""
                         , status = AccountsPanel.Idle
                         }
               }
@@ -460,6 +546,9 @@ update shared targetHost maybeServer msg model =
 
         TwilioFromNumberChanged text ->
             ( { model | configEdit = model.configEdit |> Maybe.map (\edit -> { edit | fromNumber = text }) }, Effect.none )
+
+        TwilioWebhookSigningKeyChanged text ->
+            ( { model | configEdit = model.configEdit |> Maybe.map (\edit -> { edit | webhookSigningKey = text }) }, Effect.none )
 
         TwilioCancelClicked ->
             ( { model | configEdit = Nothing }, Effect.none )
@@ -502,6 +591,7 @@ update shared targetHost maybeServer msg model =
                         , accessKey = ""
                         , from = birdConfig |> Maybe.map .birdFrom |> Maybe.withDefault ""
                         , region = birdConfig |> Maybe.map .birdRegion |> Maybe.withDefault ""
+                        , webhookSigningKey = ""
                         , status = AccountsPanel.Idle
                         }
               }
@@ -519,6 +609,9 @@ update shared targetHost maybeServer msg model =
 
         BirdRegionChanged text ->
             ( { model | birdConfigEdit = model.birdConfigEdit |> Maybe.map (\edit -> { edit | region = text }) }, Effect.none )
+
+        BirdWebhookSigningKeyChanged text ->
+            ( { model | birdConfigEdit = model.birdConfigEdit |> Maybe.map (\edit -> { edit | webhookSigningKey = text }) }, Effect.none )
 
         BirdCancelClicked ->
             ( { model | birdConfigEdit = Nothing }, Effect.none )
@@ -550,7 +643,7 @@ update shared targetHost maybeServer msg model =
 
         PreferredProvidersEditClicked ->
             let
-                current : List VerificationAPI
+                current : List ContactVerificationAPI
                 current =
                     adminPreferredProviders model
             in
@@ -565,7 +658,7 @@ update shared targetHost maybeServer msg model =
                         |> Maybe.map
                             (\edit ->
                                 let
-                                    pending : List VerificationAPI
+                                    pending : List ContactVerificationAPI
                                     pending =
                                         List.filter ((/=) provider) edit.pending
                                 in
@@ -589,7 +682,7 @@ update shared targetHost maybeServer msg model =
                                 case edit.addSelection of
                                     Just provider ->
                                         let
-                                            pending : List VerificationAPI
+                                            pending : List ContactVerificationAPI
                                             pending =
                                                 edit.pending ++ [ provider ]
                                         in
@@ -712,6 +805,75 @@ update shared targetHost maybeServer msg model =
             , Effect.none
             )
 
+        SmsContactProtocolToggled ->
+            case Common.adminAccountFor shared targetHost of
+                Just account ->
+                    ( { model | smsContactProtocolStatus = AccountsPanel.Submitting }
+                    , AccountsPanel.updateServerConfig shared.accounts ( Just account.userId, targetHost ) (toggleContactProtocol CONTACTPROTOCOLTEL)
+                        |> Task.attempt GotSmsContactProtocolSaveResult
+                        |> Effect.fromCmd
+                    )
+
+                Nothing ->
+                    ( model, Effect.none )
+
+        GotSmsContactProtocolSaveResult (Ok ( maybeAccountsPanelMsg, newConfig )) ->
+            ( { model | smsContactProtocolStatus = AccountsPanel.Idle, adminContactIntegrations = AdminContactIntegrationsLoaded newConfig }
+            , Effect.batch
+                [ Common.accountsPanelEffect maybeAccountsPanelMsg
+                , Effect.fromShared (Shared.AccountsPanelMsg (AccountsPanel.GotServerConfigSaveResult targetHost newConfig))
+                ]
+            )
+
+        GotSmsContactProtocolSaveResult (Err err) ->
+            ( { model | smsContactProtocolStatus = AccountsPanel.Errored (AccountsPanel.grpcErrorToString err) }, Effect.none )
+
+        EmailContactProtocolToggled ->
+            case Common.adminAccountFor shared targetHost of
+                Just account ->
+                    ( { model | emailContactProtocolStatus = AccountsPanel.Submitting }
+                    , AccountsPanel.updateServerConfig shared.accounts ( Just account.userId, targetHost ) (toggleContactProtocol CONTACTPROTOCOLMAILTO)
+                        |> Task.attempt GotEmailContactProtocolSaveResult
+                        |> Effect.fromCmd
+                    )
+
+                Nothing ->
+                    ( model, Effect.none )
+
+        GotEmailContactProtocolSaveResult (Ok ( maybeAccountsPanelMsg, newConfig )) ->
+            ( { model | emailContactProtocolStatus = AccountsPanel.Idle, adminContactIntegrations = AdminContactIntegrationsLoaded newConfig }
+            , Effect.batch
+                [ Common.accountsPanelEffect maybeAccountsPanelMsg
+                , Effect.fromShared (Shared.AccountsPanelMsg (AccountsPanel.GotServerConfigSaveResult targetHost newConfig))
+                ]
+            )
+
+        GotEmailContactProtocolSaveResult (Err err) ->
+            ( { model | emailContactProtocolStatus = AccountsPanel.Errored (AccountsPanel.grpcErrorToString err) }, Effect.none )
+
+        StalwartReceivingToggled ->
+            case Common.adminAccountFor shared targetHost of
+                Just account ->
+                    ( { model | stalwartReceivingStatus = AccountsPanel.Submitting }
+                    , AccountsPanel.updateServerConfig shared.accounts ( Just account.userId, targetHost ) toggleStalwartReceiving
+                        |> Task.attempt GotStalwartReceivingSaveResult
+                        |> Effect.fromCmd
+                    )
+
+                Nothing ->
+                    ( model, Effect.none )
+
+        GotStalwartReceivingSaveResult (Ok ( maybeAccountsPanelMsg, newConfig )) ->
+            ( { model | stalwartReceivingStatus = AccountsPanel.Idle, adminContactIntegrations = AdminContactIntegrationsLoaded newConfig }
+            , Effect.batch
+                [ Common.accountsPanelEffect maybeAccountsPanelMsg
+                , Effect.fromShared (Shared.AccountsPanelMsg (AccountsPanel.GotServerConfigSaveResult targetHost newConfig))
+                ]
+            )
+
+        GotStalwartReceivingSaveResult (Err err) ->
+            ( { model | stalwartReceivingStatus = AccountsPanel.Errored (AccountsPanel.grpcErrorToString err) }, Effect.none )
+
         ContactIntegrationsTabActivated ->
             case ( model.adminContactIntegrations, Common.adminAccountFor shared targetHost ) of
                 ( AdminContactIntegrationsNotFetched, Just account ) ->
@@ -728,7 +890,10 @@ update shared targetHost maybeServer msg model =
                     ( model, Effect.none )
 
         GotAuthenticatedServerConfiguration (Ok ( maybeAccountsPanelMsg, config )) ->
-            ( { model | adminContactIntegrations = AdminContactIntegrationsLoaded config }
+            ( { model
+                | adminContactIntegrations = AdminContactIntegrationsLoaded config
+                , collapsedIntegrationsSections = initialCollapsedIntegrationsSections config
+              }
             , Common.accountsPanelEffect maybeAccountsPanelMsg
             )
 
@@ -783,6 +948,7 @@ applyTelnyxConfig edit config =
                     , telnyxApiKey = edit.apiKey
                     , telnyxFromNumber = edit.fromNumber
                     , telnyxMessagingProfileId = edit.messagingProfileId
+                    , telnyxWebhookSigningKey = emptyToNothing edit.webhookSigningKey
                 }
     }
 
@@ -810,6 +976,7 @@ applyTwilioConfig edit config =
                     , twilioApiKeySid = edit.apiKeySid
                     , twilioApiKeySecret = edit.apiKeySecret
                     , twilioFromNumber = edit.fromNumber
+                    , twilioWebhookSigningKey = emptyToNothing edit.webhookSigningKey
                 }
     }
 
@@ -831,6 +998,7 @@ applyBirdConfig edit config =
                     , birdAccessKey = edit.accessKey
                     , birdFrom = edit.from
                     , birdRegion = edit.region
+                    , birdWebhookSigningKey = emptyToNothing edit.webhookSigningKey
                 }
     }
 
@@ -859,15 +1027,60 @@ applyWebPushPrivateKey privateKey config =
     { config | webPushConfig = Just { publicVapidKey = existingPublicKey, privateVapidKey = privateKey } }
 
 
-{-| Every `VerificationAPI` value, in a fixed display order -- used both for the Add dropdown's
+{-| `SmsContactProtocolToggled`/`EmailContactProtocolToggled`'s transform -- flips whether `protocol`
+is present in the freshly re-fetched `config.supportedContactProtocols`, leaving every other entry
+(and every other field) untouched. The actual invariant enforcement ("TEL only with a configured SMS
+provider, MAILTO never") lives entirely server-side (`validate_configuration`'s own `ContactProtocol`
+check) -- this just toggles the one bit and lets `GotSmsContactProtocolSaveResult`/
+`GotEmailContactProtocolSaveResult` surface whatever `Err` comes back (see `Common.editErrorView`
+in `emailConfigurationSection`/`smsConfigurationSection`), per this feature's own "just show the
+server error" design.
+-}
+toggleContactProtocol : ContactProtocol -> ServerConfiguration -> ServerConfiguration
+toggleContactProtocol protocol config =
+    { config
+        | supportedContactProtocols =
+            if List.member protocol config.supportedContactProtocols then
+                List.filter ((/=) protocol) config.supportedContactProtocols
+
+            else
+                protocol :: config.supportedContactProtocols
+    }
+
+
+{-| `StalwartReceivingToggled`'s transform -- `StalwartConfig` holds nothing but this one flag, so
+(per this feature's own design) there's no reason to keep a `Just { stalwartReceivingEnabled =
+False }` around: off collapses the whole `stalwartConfig` to `Nothing`, on sets it to
+`Just { stalwartReceivingEnabled = True }`. Unrelated to `supported_contact_protocols`/
+`ContactProtocol` above -- this gates the internal `:27705/email` MTA hook endpoint receiving mail
+from Stalwart, not SMS/email *sending* (see `web::email::create_email_message`'s own doc).
+-}
+toggleStalwartReceiving : ServerConfiguration -> ServerConfiguration
+toggleStalwartReceiving config =
+    let
+        currentlyEnabled : Bool
+        currentlyEnabled =
+            config.stalwartConfig |> Maybe.map .stalwartReceivingEnabled |> Maybe.withDefault False
+    in
+    { config
+        | stalwartConfig =
+            if currentlyEnabled then
+                Nothing
+
+            else
+                Just { stalwartReceivingEnabled = True }
+    }
+
+
+{-| Every `ContactVerificationAPI` value, in a fixed display order -- used both for the Add dropdown's
 full option list and (indirectly, via `addablePreferredProviders`) for what's left to add.
 -}
-allVerificationApis : List VerificationAPI
+allVerificationApis : List ContactVerificationAPI
 allVerificationApis =
-    [ VERIFICATIONAPITWILIO, VERIFICATIONAPIBIRD, VERIFICATIONAPITELNYX ]
+    [ CONTACTVERIFICATIONAPITWILIO, CONTACTVERIFICATIONAPIBIRD, CONTACTVERIFICATIONAPITELNYX ]
 
 
-addablePreferredProviders : List VerificationAPI -> List VerificationAPI
+addablePreferredProviders : List ContactVerificationAPI -> List ContactVerificationAPI
 addablePreferredProviders pending =
     List.filter (\api -> not (List.member api pending)) allVerificationApis
 
@@ -875,10 +1088,10 @@ addablePreferredProviders pending =
 {-| The first still-addable provider, preferring to keep `current` selected if it's still
 addable -- mirrors `SettingsTab.resolveAddSelection` exactly.
 -}
-resolveAddSelection : Maybe VerificationAPI -> List VerificationAPI -> Maybe VerificationAPI
+resolveAddSelection : Maybe ContactVerificationAPI -> List ContactVerificationAPI -> Maybe ContactVerificationAPI
 resolveAddSelection current pending =
     let
-        addable : List VerificationAPI
+        addable : List ContactVerificationAPI
         addable =
             addablePreferredProviders pending
     in
@@ -894,23 +1107,23 @@ resolveAddSelection current pending =
             List.head addable
 
 
-verificationApiText : VerificationAPI -> String
+verificationApiText : ContactVerificationAPI -> String
 verificationApiText api =
     case api of
-        VERIFICATIONAPITELNYX ->
+        CONTACTVERIFICATIONAPITELNYX ->
             "Telnyx"
 
-        VERIFICATIONAPITWILIO ->
+        CONTACTVERIFICATIONAPITWILIO ->
             "Twilio"
 
-        VERIFICATIONAPIBIRD ->
+        CONTACTVERIFICATIONAPIBIRD ->
             "Bird"
 
-        VerificationAPIUnrecognized_ _ ->
+        ContactVerificationAPIUnrecognized_ _ ->
             "Unknown"
 
 
-verificationApiFromText : String -> Maybe VerificationAPI
+verificationApiFromText : String -> Maybe ContactVerificationAPI
 verificationApiFromText text_ =
     allVerificationApis |> List.filter (\api -> verificationApiText api == text_) |> List.head
 
@@ -928,8 +1141,74 @@ view : RellmServer -> Maybe RellmAccount -> Model -> Html Msg
 view server maybeAdminAccount model =
     div [ class "server-details-tab-content server-details-integrations" ]
         [ webPushConfigSection server model maybeAdminAccount
+        , emailConfigurationSection model
+        , smsConfigurationSection model
         , externalIntegrationsSection model maybeAdminAccount
         ]
+
+
+{-| "Email Configuration" -- sibling section to "Web Push Configuration" above it and "SMS
+Configuration" below it, grouping the two toggles that gate email entirely independently of each
+other: "Enable Email Sending" (`ServerConfiguration.supportedContactProtocols`, see
+`toggleContactProtocol`) and "Receive Emails from Stalwart" (`ServerConfiguration.stalwartConfig`,
+see `toggleStalwartReceiving`). Sending and receiving are unrelated mechanisms (outbound `mailto:`
+verification/notification vs. the internal `:27705/email` MTA hook accepting mail forwarded by a
+Stalwart mail server sharing this cluster -- see `web::email::create_email_message`'s own doc, and
+`docs/contact_integrations.md`'s Email section) that just happen to both belong under "Email" from
+an admin's point of view. Both are instant toggle-and-save (no Edit/Save/Cancel step, unlike every
+other section here), and neither is ever disabled up front -- "Enable Email Sending" always comes
+back `mailto_contact_protocol_not_supported` from `validate_configuration` (no email *sending*
+provider exists yet), surfaced the same way any other save error on this page is. Only rendered
+once this tab's own admin fetch (`AdminContactIntegrationsLoaded`) has actually landed, same gate as
+`externalIntegrationsSection`'s admin-only fields, since both `supportedContactProtocols` and
+`stalwartConfig` live on that same authenticated `ServerConfiguration`.
+-}
+emailConfigurationSection : Model -> Html Msg
+emailConfigurationSection model =
+    div [ class "server-details-feature-settings" ]
+        (h3 [ class "section-title" ] [ text "Email Configuration" ]
+            :: (case model.adminContactIntegrations of
+                    AdminContactIntegrationsLoaded config ->
+                        [ Common.settingsRow "Enable Email Sending"
+                            (Common.flagSwitch (List.member CONTACTPROTOCOLMAILTO config.supportedContactProtocols) EmailContactProtocolToggled)
+                        , Common.editErrorView model.emailContactProtocolStatus
+                        , Common.settingsRow "Receive Emails from Stalwart"
+                            (Common.flagSwitch
+                                (config.stalwartConfig |> Maybe.map .stalwartReceivingEnabled |> Maybe.withDefault False)
+                                StalwartReceivingToggled
+                            )
+                        , Common.editErrorView model.stalwartReceivingStatus
+                        ]
+
+                    _ ->
+                        [ span [ class "server-details-feature-settings-value" ] [ text "Loading…" ] ]
+               )
+        )
+
+
+{-| "SMS Configuration" -- sibling section to "Email Configuration", holding the one "Enable SMS
+Sending" toggle (`ServerConfiguration.supportedContactProtocols`, see `toggleContactProtocol`).
+Same instant toggle-and-save shape as `emailConfigurationSection`'s own toggles -- not disabled up
+front; checking it with no Twilio/Bird/Telnyx configured comes back
+`sms_contact_protocol_requires_a_configured_provider` from `validate_configuration`, surfaced the
+same way any other save error on this page is. Only rendered once this tab's own admin fetch
+(`AdminContactIntegrationsLoaded`) has actually landed, same gate as `emailConfigurationSection`.
+-}
+smsConfigurationSection : Model -> Html Msg
+smsConfigurationSection model =
+    div [ class "server-details-feature-settings" ]
+        (h3 [ class "section-title" ] [ text "SMS Configuration" ]
+            :: (case model.adminContactIntegrations of
+                    AdminContactIntegrationsLoaded config ->
+                        [ Common.settingsRow "Enable SMS Sending"
+                            (Common.flagSwitch (List.member CONTACTPROTOCOLTEL config.supportedContactProtocols) SmsContactProtocolToggled)
+                        , Common.editErrorView model.smsContactProtocolStatus
+                        ]
+
+                    _ ->
+                        [ span [ class "server-details-feature-settings-value" ] [ text "Loading…" ] ]
+               )
+        )
 
 
 {-| The collapsible "External Integrations" group -- Preferred Providers/Twilio/Bird, each always
@@ -1069,6 +1348,12 @@ telnyxDisplayView maybeAdminAccount telnyxConfig =
     [ Common.settingsRow "Telnyx Enabled" (Common.switchDisplay (telnyxConfig |> Maybe.map .telnyxEnabled |> Maybe.withDefault False))
     , Common.settingsRow "From Number" (span [ class "server-details-feature-settings-value" ] [ text (telnyxConfig |> Maybe.map .telnyxFromNumber |> Maybe.withDefault "—") ])
     , Common.settingsRow "Messaging Profile ID" (span [ class "server-details-feature-settings-value" ] [ text (telnyxConfig |> Maybe.map .telnyxMessagingProfileId |> Maybe.withDefault "—") ])
+    , Common.settingsRow "Webhook Signing Key"
+        (span [ class "server-details-feature-settings-value" ]
+            [ text (telnyxConfig |> Maybe.andThen .telnyxWebhookSigningKey |> Maybe.map (\_ -> "Configured") |> Maybe.withDefault "Not configured")
+            , webhookSigningKeyWarning (telnyxConfig |> Maybe.andThen .telnyxWebhookSigningKey)
+            ]
+        )
     , case maybeAdminAccount of
         Just _ ->
             button [ class "server-details-rename-button", onClick TelnyxEditClicked ] [ text "Edit Telnyx Settings" ]
@@ -1116,6 +1401,17 @@ telnyxEditView edit =
             ]
             []
         )
+    , Common.settingsRow "Webhook Signing Key"
+        (input
+            [ type_ "password"
+            , class "server-details-rename-input"
+            , placeholder "Enter to change (optional)"
+            , value edit.webhookSigningKey
+            , onInput TelnyxWebhookSigningKeyChanged
+            , disabled (edit.status == AccountsPanel.Submitting)
+            ]
+            []
+        )
     , div [ class "server-details-feature-settings-actions" ]
         [ Common.editSaveButton TelnyxSaveClicked edit.status
         , Common.editCancelButton TelnyxCancelClicked edit.status
@@ -1130,6 +1426,12 @@ twilioDisplayView maybeAdminAccount twilioConfig =
     , Common.settingsRow "Account SID" (span [ class "server-details-feature-settings-value" ] [ text (twilioConfig |> Maybe.map .twilioAccountSid |> Maybe.withDefault "—") ])
     , Common.settingsRow "API Key SID" (span [ class "server-details-feature-settings-value" ] [ text (twilioConfig |> Maybe.map .twilioApiKeySid |> Maybe.withDefault "—") ])
     , Common.settingsRow "From Number" (span [ class "server-details-feature-settings-value" ] [ text (twilioConfig |> Maybe.map .twilioFromNumber |> Maybe.withDefault "—") ])
+    , Common.settingsRow "Webhook Signing Key"
+        (span [ class "server-details-feature-settings-value" ]
+            [ text (twilioConfig |> Maybe.andThen .twilioWebhookSigningKey |> Maybe.map (\_ -> "Configured") |> Maybe.withDefault "Not configured")
+            , webhookSigningKeyWarning (twilioConfig |> Maybe.andThen .twilioWebhookSigningKey)
+            ]
+        )
     , case maybeAdminAccount of
         Just _ ->
             button [ class "server-details-rename-button", onClick TwilioEditClicked ] [ text "Edit Twilio Settings" ]
@@ -1188,6 +1490,17 @@ twilioEditView edit =
             ]
             []
         )
+    , Common.settingsRow "Webhook Signing Key"
+        (input
+            [ type_ "password"
+            , class "server-details-rename-input"
+            , placeholder "Enter to change (optional -- the Account Auth Token)"
+            , value edit.webhookSigningKey
+            , onInput TwilioWebhookSigningKeyChanged
+            , disabled (edit.status == AccountsPanel.Submitting)
+            ]
+            []
+        )
     , div [ class "server-details-feature-settings-actions" ]
         [ Common.editSaveButton TwilioSaveClicked edit.status
         , Common.editCancelButton TwilioCancelClicked edit.status
@@ -1201,6 +1514,12 @@ birdDisplayView maybeAdminAccount birdConfig =
     [ Common.settingsRow "Bird Enabled" (Common.switchDisplay (birdConfig |> Maybe.map .birdEnabled |> Maybe.withDefault False))
     , Common.settingsRow "From" (span [ class "server-details-feature-settings-value" ] [ text (birdConfig |> Maybe.map .birdFrom |> Maybe.withDefault "—") ])
     , Common.settingsRow "Region" (span [ class "server-details-feature-settings-value" ] [ text (birdConfig |> Maybe.map .birdRegion |> Maybe.andThen emptyToNothing |> Maybe.withDefault "us1 (default)") ])
+    , Common.settingsRow "Webhook Signing Key"
+        (span [ class "server-details-feature-settings-value" ]
+            [ text (birdConfig |> Maybe.andThen .birdWebhookSigningKey |> Maybe.map (\_ -> "Configured") |> Maybe.withDefault "Not configured")
+            , webhookSigningKeyWarning (birdConfig |> Maybe.andThen .birdWebhookSigningKey)
+            ]
+        )
     , case maybeAdminAccount of
         Just _ ->
             button [ class "server-details-rename-button", onClick BirdEditClicked ] [ text "Edit Bird Settings" ]
@@ -1244,6 +1563,17 @@ birdEditView edit =
             ]
             []
         )
+    , Common.settingsRow "Webhook Signing Key"
+        (input
+            [ type_ "password"
+            , class "server-details-rename-input"
+            , placeholder "Enter to change (optional -- starts with whsec_)"
+            , value edit.webhookSigningKey
+            , onInput BirdWebhookSigningKeyChanged
+            , disabled (edit.status == AccountsPanel.Submitting)
+            ]
+            []
+        )
     , div [ class "server-details-feature-settings-actions" ]
         [ Common.editSaveButton BirdSaveClicked edit.status
         , Common.editCancelButton BirdCancelClicked edit.status
@@ -1261,11 +1591,32 @@ emptyToNothing str =
         Just str
 
 
+{-| A "⚠️" warning (with hover title text) shown next to a provider's "Webhook Signing Key" display
+row when `maybeKey == Nothing` -- i.e. no key configured at all (see
+`TwilioConfig.twilio_webhook_signing_key`'s own proto doc: unset means inbound deliveries to that
+provider's `/contact_integrations/*/receive` endpoint are accepted without signature verification,
+per `docs/contact_integrations.md`). `Just _` (the value itself always blanked to `""` before
+reaching here -- see that field's own doc) means a key *is* configured, so no warning.
+-}
+webhookSigningKeyWarning : Maybe String -> Html msg
+webhookSigningKeyWarning maybeKey =
+    case maybeKey of
+        Just _ ->
+            text ""
+
+        Nothing ->
+            span
+                [ class "server-details-webhook-signing-key-warning"
+                , title "No webhook signing key configured -- inbound deliveries to this provider's receive endpoint are accepted without signature verification. See docs/contact_integrations.md."
+                ]
+                [ text " ⚠️" ]
+
+
 {-| The "Preferred Verification Providers" selector -- plain badges (plus an Edit button, for an
 admin) when not being edited, or the removable-badges + Add Provider + Save/Cancel editor while
 being edited. Mirrors `SettingsTab.permissionsSection` exactly (see module doc).
 -}
-preferredProvidersSection : Maybe RellmAccount -> Maybe PreferredProvidersEdit -> List VerificationAPI -> Html Msg
+preferredProvidersSection : Maybe RellmAccount -> Maybe PreferredProvidersEdit -> List ContactVerificationAPI -> Html Msg
 preferredProvidersSection maybeAdminAccount maybeEdit preferred =
     case maybeEdit of
         Just edit ->
@@ -1316,7 +1667,7 @@ preferredProvidersSection maybeAdminAccount maybeEdit preferred =
                 ]
 
 
-preferredProviderEditBadge : VerificationAPI -> Html Msg
+preferredProviderEditBadge : ContactVerificationAPI -> Html Msg
 preferredProviderEditBadge api =
     span [ class "permission-badge editable" ]
         [ text (verificationApiText api)

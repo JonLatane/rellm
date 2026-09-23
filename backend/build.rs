@@ -99,6 +99,17 @@ fn main() {
             "RellmHostingPurchaseDetails.additional_description",
             "#[serde(default)]",
         )
+        // Same idea, for `ContactMethod.consent_state`/`consent_history` (added for SMS/email
+        // contact consent tracking) -- lets `users.phone`/`users.email` JSON stored before these
+        // fields existed deserialize instead of erroring (`user_marshaling.rs`'s own `to_proto`
+        // uses a bare `.unwrap()` here, so this isn't just a graceful-degradation nicety -- without
+        // it, loading any pre-existing user with a phone/email panics the whole request).
+        // `consent_state` defaults to `0` (`CONTACT_CONSENT_REVOKED`, correct anyway -- a
+        // `ContactMethod` predating this feature was never explicitly consented to).
+        // `consent_history` (a `repeated` field, same reasoning as `FederationInfo.mastodon_servers`
+        // above) defaults to an empty list.
+        .field_attribute("ContactMethod.consent_state", "#[serde(default)]")
+        .field_attribute("ContactMethod.consent_history", "#[serde(default)]")
         // This is specifically for rust-analyzer in VSCode
         // .client_attribute(".", "#![allow(non_snake_case)]")
         .extern_path(".google.protobuf.Any", "::prost_wkt_types::Any")

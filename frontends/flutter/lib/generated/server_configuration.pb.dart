@@ -42,12 +42,14 @@ class ServerConfiguration extends $pb.GeneratedMessage {
     PrivateUserStrategy? privateUserStrategy,
     $core.Iterable<AuthenticationFeature>? authenticationFeatures,
     WebPushConfig? webPushConfig,
-    $core.Iterable<VerificationAPI>? preferredVerificationApis,
-    $core.Iterable<VerificationAPI>? availableVerificationApis,
+    $core.Iterable<ContactProtocol>? supportedContactProtocols,
+    $core.Iterable<ContactVerificationAPI>? preferredVerificationApis,
+    $core.Iterable<ContactVerificationAPI>? availableVerificationApis,
     TwilioConfig? twilioConfig,
     BirdConfig? birdConfig,
     StripeConfig? stripeConfig,
     TelnyxConfig? telnyxConfig,
+    StalwartConfig? stalwartConfig,
   }) {
     final $result = create();
     if (serverInfo != null) {
@@ -101,6 +103,9 @@ class ServerConfiguration extends $pb.GeneratedMessage {
     if (webPushConfig != null) {
       $result.webPushConfig = webPushConfig;
     }
+    if (supportedContactProtocols != null) {
+      $result.supportedContactProtocols.addAll(supportedContactProtocols);
+    }
     if (preferredVerificationApis != null) {
       $result.preferredVerificationApis.addAll(preferredVerificationApis);
     }
@@ -118,6 +123,9 @@ class ServerConfiguration extends $pb.GeneratedMessage {
     }
     if (telnyxConfig != null) {
       $result.telnyxConfig = telnyxConfig;
+    }
+    if (stalwartConfig != null) {
+      $result.stalwartConfig = stalwartConfig;
     }
     return $result;
   }
@@ -143,12 +151,14 @@ class ServerConfiguration extends $pb.GeneratedMessage {
     ..e<PrivateUserStrategy>(100, _omitFieldNames ? '' : 'privateUserStrategy', $pb.PbFieldType.OE, defaultOrMaker: PrivateUserStrategy.ACCOUNT_IS_FROZEN, valueOf: PrivateUserStrategy.valueOf, enumValues: PrivateUserStrategy.values)
     ..pc<AuthenticationFeature>(101, _omitFieldNames ? '' : 'authenticationFeatures', $pb.PbFieldType.KE, valueOf: AuthenticationFeature.valueOf, enumValues: AuthenticationFeature.values, defaultEnumValue: AuthenticationFeature.AUTHENTICATION_FEATURE_UNKNOWN)
     ..aOM<WebPushConfig>(110, _omitFieldNames ? '' : 'webPushConfig', subBuilder: WebPushConfig.create)
-    ..pc<VerificationAPI>(120, _omitFieldNames ? '' : 'preferredVerificationApis', $pb.PbFieldType.KE, valueOf: VerificationAPI.valueOf, enumValues: VerificationAPI.values, defaultEnumValue: VerificationAPI.VERIFICATION_API_TWILIO)
-    ..pc<VerificationAPI>(121, _omitFieldNames ? '' : 'availableVerificationApis', $pb.PbFieldType.KE, valueOf: VerificationAPI.valueOf, enumValues: VerificationAPI.values, defaultEnumValue: VerificationAPI.VERIFICATION_API_TWILIO)
+    ..pc<ContactProtocol>(119, _omitFieldNames ? '' : 'supportedContactProtocols', $pb.PbFieldType.KE, valueOf: ContactProtocol.valueOf, enumValues: ContactProtocol.values, defaultEnumValue: ContactProtocol.CONTACT_PROTOCOL_TEL)
+    ..pc<ContactVerificationAPI>(120, _omitFieldNames ? '' : 'preferredVerificationApis', $pb.PbFieldType.KE, valueOf: ContactVerificationAPI.valueOf, enumValues: ContactVerificationAPI.values, defaultEnumValue: ContactVerificationAPI.CONTACT_VERIFICATION_API_TWILIO)
+    ..pc<ContactVerificationAPI>(121, _omitFieldNames ? '' : 'availableVerificationApis', $pb.PbFieldType.KE, valueOf: ContactVerificationAPI.valueOf, enumValues: ContactVerificationAPI.values, defaultEnumValue: ContactVerificationAPI.CONTACT_VERIFICATION_API_TWILIO)
     ..aOM<TwilioConfig>(122, _omitFieldNames ? '' : 'twilioConfig', subBuilder: TwilioConfig.create)
     ..aOM<BirdConfig>(123, _omitFieldNames ? '' : 'birdConfig', subBuilder: BirdConfig.create)
     ..aOM<StripeConfig>(124, _omitFieldNames ? '' : 'stripeConfig', subBuilder: StripeConfig.create)
     ..aOM<TelnyxConfig>(125, _omitFieldNames ? '' : 'telnyxConfig', subBuilder: TelnyxConfig.create)
+    ..aOM<StalwartConfig>(126, _omitFieldNames ? '' : 'stalwartConfig', subBuilder: StalwartConfig.create)
     ..hasRequiredFields = false
   ;
 
@@ -378,70 +388,110 @@ class ServerConfiguration extends $pb.GeneratedMessage {
   @$pb.TagNumber(110)
   WebPushConfig ensureWebPushConfig() => $_ensure(16);
 
-  /// A server-preferred order of contact verification APIs.
-  /// Note: even if this is blank, if twilio_config is enabled, the server should try
-  /// to verify with Twilio. It's really only for the case of wanting to switch between multiple
-  /// SMS/Email providers.
-  /// Only serialized for admin users.
+  /// Which [`ContactProtocol`](#rellm-ContactProtocol)s (`tel:`/`mailto:`) this server currently
+  /// accepts -- drives [`ContactMethod.supported_by_server`](#rellm-ContactMethod) (`users.proto`,
+  /// which can't reference this message directly -- see that field's own doc for why). Settable via
+  /// [`ConfigureServer`](#grpc-api-ConfigureServer), which *errors* rather than silently dropping an
+  /// invalid entry: `CONTACT_PROTOCOL_TEL` requires an enabled
+  /// [`TwilioConfig`](#rellm-TwilioConfig)/[`BirdConfig`](#rellm-BirdConfig)/
+  /// [`TelnyxConfig`](#rellm-TelnyxConfig) in that same request, and `CONTACT_PROTOCOL_MAILTO` is
+  /// always rejected (no email provider exists yet). Edited via the "Enable SMS Sending"/"Enable
+  /// Email Sending" toggles on the Contact Integrations tab's "SMS Configuration"/"Email
+  /// Configuration" sections (`ContactIntegrationsTab.smsConfigurationSection`/
+  /// `emailConfigurationSection`) -- see `docs/contact_integrations.md`.
+  @$pb.TagNumber(119)
+  $core.List<ContactProtocol> get supportedContactProtocols => $_getList(17);
+
+  /// A server-preferred order of [`ContactVerificationAPI`](#rellm-ContactVerificationAPI)
+  /// providers to try first when more than one of `twilio_config`/`bird_config`/`telnyx_config`
+  /// below is enabled -- see `contact_verification::available_verification_apis` for the full
+  /// preference-then-fallback ordering this feeds into
+  /// [`ServerConfiguration.available_verification_apis`](#rellm-ServerConfiguration) below. Even
+  /// when this is blank, an enabled provider is still tried (in the fixed default order
+  /// Twilio/Bird/Telnyx) -- this field only matters when more than one is enabled and the admin
+  /// wants a specific one tried first. Only serialized for admin users.
   @$pb.TagNumber(120)
-  $core.List<VerificationAPI> get preferredVerificationApis => $_getList(17);
+  $core.List<ContactVerificationAPI> get preferredVerificationApis => $_getList(18);
 
-  /// Derived from whether TwilioConfig.enabled is true, etc. Serialized to every caller (not
-  /// admin-only, unlike `preferred_verification_apis`/`twilio_config`) -- this is what a non-admin
-  /// client should check to decide whether to show verification UI at all, without exposing any
-  /// provider configuration.
+  /// Derived from whether [`TwilioConfig`](#rellm-TwilioConfig).twilio_enabled/
+  /// [`BirdConfig`](#rellm-BirdConfig).bird_enabled/
+  /// [`TelnyxConfig`](#rellm-TelnyxConfig).telnyx_enabled is true, ordered per
+  /// `preferred_verification_apis` above. Serialized to every caller (not admin-only, unlike
+  /// `preferred_verification_apis`/`twilio_config`/`bird_config`/`telnyx_config`) -- this is what a
+  /// non-admin client should check to decide whether to show verification UI at all, without
+  /// exposing any provider configuration. Independent of `supported_contact_protocols` above --
+  /// that's the admin's own on/off toggle (can disable `tel:` contact even while a provider stays
+  /// enabled/configured), this is purely "is at least one provider actually configured."
   @$pb.TagNumber(121)
-  $core.List<VerificationAPI> get availableVerificationApis => $_getList(18);
+  $core.List<ContactVerificationAPI> get availableVerificationApis => $_getList(19);
 
-  /// Twilio Config. Only serialized for admin users.
+  /// Twilio Config -- see [`TwilioConfig`](#rellm-TwilioConfig). Only serialized for admin users.
   @$pb.TagNumber(122)
-  TwilioConfig get twilioConfig => $_getN(19);
+  TwilioConfig get twilioConfig => $_getN(20);
   @$pb.TagNumber(122)
   set twilioConfig(TwilioConfig v) { setField(122, v); }
   @$pb.TagNumber(122)
-  $core.bool hasTwilioConfig() => $_has(19);
+  $core.bool hasTwilioConfig() => $_has(20);
   @$pb.TagNumber(122)
   void clearTwilioConfig() => clearField(122);
   @$pb.TagNumber(122)
-  TwilioConfig ensureTwilioConfig() => $_ensure(19);
+  TwilioConfig ensureTwilioConfig() => $_ensure(20);
 
-  /// Bird (bird.com, formerly MessageBird) Config -- a cheaper Twilio alternative for SMS
-  /// verification. Only serialized for admin users.
+  /// Bird (bird.com, formerly MessageBird) Config -- a cheaper alternative to
+  /// [`TwilioConfig`](#rellm-TwilioConfig) for SMS verification; see
+  /// [`BirdConfig`](#rellm-BirdConfig)'s own doc. Only serialized for admin users.
   @$pb.TagNumber(123)
-  BirdConfig get birdConfig => $_getN(20);
+  BirdConfig get birdConfig => $_getN(21);
   @$pb.TagNumber(123)
   set birdConfig(BirdConfig v) { setField(123, v); }
   @$pb.TagNumber(123)
-  $core.bool hasBirdConfig() => $_has(20);
+  $core.bool hasBirdConfig() => $_has(21);
   @$pb.TagNumber(123)
   void clearBirdConfig() => clearField(123);
   @$pb.TagNumber(123)
-  BirdConfig ensureBirdConfig() => $_ensure(20);
+  BirdConfig ensureBirdConfig() => $_ensure(21);
 
   /// Stripe Config, backing the Marketplace (`market.proto`). Only serialized for admin users.
   @$pb.TagNumber(124)
-  StripeConfig get stripeConfig => $_getN(21);
+  StripeConfig get stripeConfig => $_getN(22);
   @$pb.TagNumber(124)
   set stripeConfig(StripeConfig v) { setField(124, v); }
   @$pb.TagNumber(124)
-  $core.bool hasStripeConfig() => $_has(21);
+  $core.bool hasStripeConfig() => $_has(22);
   @$pb.TagNumber(124)
   void clearStripeConfig() => clearField(124);
   @$pb.TagNumber(124)
-  StripeConfig ensureStripeConfig() => $_ensure(21);
+  StripeConfig ensureStripeConfig() => $_ensure(22);
 
-  /// Telnyx Config -- another alternative SMS verification provider to Twilio (see `TelnyxConfig`'s
-  /// own doc). Only serialized for admin users.
+  /// Telnyx Config -- another alternative SMS verification provider to
+  /// [`TwilioConfig`](#rellm-TwilioConfig) (see [`TelnyxConfig`](#rellm-TelnyxConfig)'s own doc).
+  /// Only serialized for admin users.
   @$pb.TagNumber(125)
-  TelnyxConfig get telnyxConfig => $_getN(22);
+  TelnyxConfig get telnyxConfig => $_getN(23);
   @$pb.TagNumber(125)
   set telnyxConfig(TelnyxConfig v) { setField(125, v); }
   @$pb.TagNumber(125)
-  $core.bool hasTelnyxConfig() => $_has(22);
+  $core.bool hasTelnyxConfig() => $_has(23);
   @$pb.TagNumber(125)
   void clearTelnyxConfig() => clearField(125);
   @$pb.TagNumber(125)
-  TelnyxConfig ensureTelnyxConfig() => $_ensure(22);
+  TelnyxConfig ensureTelnyxConfig() => $_ensure(23);
+
+  ///  Unlike the other configs, at least at the moment, the integration with Stalwart is designed
+  ///  to be *in-cluster*, not over the web. It relies on unsecured /email endpoint on port 27705
+  ///  to receive mail from a Stalwart deployed within the same Kubernetes cluster.
+  ///
+  ///  This could be extended in the future to allow sending mail with Stalwart, but that's TBD.
+  @$pb.TagNumber(126)
+  StalwartConfig get stalwartConfig => $_getN(24);
+  @$pb.TagNumber(126)
+  set stalwartConfig(StalwartConfig v) { setField(126, v); }
+  @$pb.TagNumber(126)
+  $core.bool hasStalwartConfig() => $_has(24);
+  @$pb.TagNumber(126)
+  void clearStalwartConfig() => clearField(126);
+  @$pb.TagNumber(126)
+  StalwartConfig ensureStalwartConfig() => $_ensure(24);
 }
 
 ///  Coordinates a small piece of shared, cluster-wide state across multiple independent Rellm
@@ -2637,7 +2687,9 @@ class WebPushConfig extends $pb.GeneratedMessage {
 /// authenticate -- only the API Key SID/Secret pair is. See
 /// https://www.twilio.com/docs/iam/api-keys/restricted-api-keys for the recommended
 /// permission when creating one: `/twilio/messaging/messages/create` (nothing else is needed just
-/// to send verification SMS).
+/// to send verification SMS). See `docs/contact_integrations.md` for full setup steps (API key
+/// creation, inbound webhook registration), and [`ContactMethod`](#rellm-ContactMethod)
+/// (`users.proto`) for how a verified `tel:` contact method surfaces this provider.
 class TwilioConfig extends $pb.GeneratedMessage {
   factory TwilioConfig({
     $core.bool? twilioEnabled,
@@ -2645,6 +2697,7 @@ class TwilioConfig extends $pb.GeneratedMessage {
     $core.String? twilioAccountSid,
     $core.String? twilioFromNumber,
     $core.String? twilioApiKeySid,
+    $core.String? twilioWebhookSigningKey,
   }) {
     final $result = create();
     if (twilioEnabled != null) {
@@ -2662,6 +2715,9 @@ class TwilioConfig extends $pb.GeneratedMessage {
     if (twilioApiKeySid != null) {
       $result.twilioApiKeySid = twilioApiKeySid;
     }
+    if (twilioWebhookSigningKey != null) {
+      $result.twilioWebhookSigningKey = twilioWebhookSigningKey;
+    }
     return $result;
   }
   TwilioConfig._() : super();
@@ -2674,6 +2730,7 @@ class TwilioConfig extends $pb.GeneratedMessage {
     ..aOS(3, _omitFieldNames ? '' : 'twilioAccountSid')
     ..aOS(4, _omitFieldNames ? '' : 'twilioFromNumber')
     ..aOS(5, _omitFieldNames ? '' : 'twilioApiKeySid')
+    ..aOS(6, _omitFieldNames ? '' : 'twilioWebhookSigningKey')
     ..hasRequiredFields = false
   ;
 
@@ -2748,16 +2805,40 @@ class TwilioConfig extends $pb.GeneratedMessage {
   $core.bool hasTwilioApiKeySid() => $_has(4);
   @$pb.TagNumber(5)
   void clearTwilioApiKeySid() => clearField(5);
+
+  /// Optional -- the Twilio Account's Auth Token, used *only* to verify the `X-Twilio-Signature`
+  /// header on inbound deliveries to `/contact_integrations/twilio/receive` (see
+  /// https://www.twilio.com/docs/usage/webhooks/webhooks-security and
+  /// `docs/contact_integrations.md`). Never used to authenticate outbound API calls -- this
+  /// message's own doc explains why the Auth Token is deliberately excluded from that role; this
+  /// is the one narrow exception, since signature verification is the one thing only the Auth
+  /// Token (not an API Key) can do. Unset means inbound deliveries are accepted without signature
+  /// verification. Write-only, like every other credential here, but distinctly from those:
+  /// `optional` so a client can tell *whether* a key is configured (`Some`/`None`) without ever
+  /// seeing its real value -- once set, `to_proto` blanks this to `Some("")` (not `None`), so
+  /// "configured but hidden" and "never configured" stay distinguishable. Sending an empty value
+  /// back on `ConfigureServer` means "leave whatever's already stored alone," same as every other
+  /// write-only field's blank-means-no-op rule.
+  @$pb.TagNumber(6)
+  $core.String get twilioWebhookSigningKey => $_getSZ(5);
+  @$pb.TagNumber(6)
+  set twilioWebhookSigningKey($core.String v) { $_setString(5, v); }
+  @$pb.TagNumber(6)
+  $core.bool hasTwilioWebhookSigningKey() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearTwilioWebhookSigningKey() => clearField(6);
 }
 
-/// Telnyx (https://telnyx.com) Config -- an alternative SMS verification provider to Twilio, with a
-/// simpler single-API-key auth model like Bird's (see `BirdConfig`'s own doc).
+/// Telnyx (https://telnyx.com) Config -- an alternative SMS verification provider to
+/// [`TwilioConfig`](#rellm-TwilioConfig), with a simpler single-API-key auth model like
+/// [`BirdConfig`](#rellm-BirdConfig)'s. See `docs/contact_integrations.md` for full setup steps.
 class TelnyxConfig extends $pb.GeneratedMessage {
   factory TelnyxConfig({
     $core.bool? telnyxEnabled,
     $core.String? telnyxApiKey,
     $core.String? telnyxFromNumber,
     $core.String? telnyxMessagingProfileId,
+    $core.String? telnyxWebhookSigningKey,
   }) {
     final $result = create();
     if (telnyxEnabled != null) {
@@ -2772,6 +2853,9 @@ class TelnyxConfig extends $pb.GeneratedMessage {
     if (telnyxMessagingProfileId != null) {
       $result.telnyxMessagingProfileId = telnyxMessagingProfileId;
     }
+    if (telnyxWebhookSigningKey != null) {
+      $result.telnyxWebhookSigningKey = telnyxWebhookSigningKey;
+    }
     return $result;
   }
   TelnyxConfig._() : super();
@@ -2783,6 +2867,7 @@ class TelnyxConfig extends $pb.GeneratedMessage {
     ..aOS(2, _omitFieldNames ? '' : 'telnyxApiKey')
     ..aOS(3, _omitFieldNames ? '' : 'telnyxFromNumber')
     ..aOS(4, _omitFieldNames ? '' : 'telnyxMessagingProfileId')
+    ..aOS(5, _omitFieldNames ? '' : 'telnyxWebhookSigningKey')
     ..hasRequiredFields = false
   ;
 
@@ -2818,7 +2903,8 @@ class TelnyxConfig extends $pb.GeneratedMessage {
 
   /// The Telnyx v2 API Key (starts with `KEY`), used as Bearer auth for Telnyx's Messaging API
   /// (`POST /v2/messages`). Never serialized once written -- same write-only treatment as
-  /// `TwilioConfig.twilio_api_key_secret`/`BirdConfig.bird_access_key`.
+  /// [`TwilioConfig.twilio_api_key_secret`](#rellm-TwilioConfig)/
+  /// [`BirdConfig.bird_access_key`](#rellm-BirdConfig).
   @$pb.TagNumber(2)
   $core.String get telnyxApiKey => $_getSZ(1);
   @$pb.TagNumber(2)
@@ -2850,16 +2936,37 @@ class TelnyxConfig extends $pb.GeneratedMessage {
   $core.bool hasTelnyxMessagingProfileId() => $_has(3);
   @$pb.TagNumber(4)
   void clearTelnyxMessagingProfileId() => clearField(4);
+
+  /// Optional -- Telnyx's account-level public key (Mission Control Portal -> Keys & Credentials ->
+  /// Public Key), used to verify the `telnyx-signature-ed25519`/`telnyx-timestamp` headers on
+  /// inbound deliveries to `/contact_integrations/telnyx/receive` (Ed25519; see
+  /// https://developers.telnyx.com/docs/messaging/messages/receiving-webhooks and
+  /// `docs/contact_integrations.md`). Actually a public key, not a secret, but kept write-only
+  /// (never serialized once written) for the same "don't echo config back" treatment as every
+  /// other credential here. Unset means inbound deliveries are accepted without signature
+  /// verification. `optional` (not plain `string`) for the same "`Some`/`None` distinguishable from
+  /// a client without ever seeing the real value" reason as
+  /// [`TwilioConfig.twilio_webhook_signing_key`](#rellm-TwilioConfig).
+  @$pb.TagNumber(5)
+  $core.String get telnyxWebhookSigningKey => $_getSZ(4);
+  @$pb.TagNumber(5)
+  set telnyxWebhookSigningKey($core.String v) { $_setString(4, v); }
+  @$pb.TagNumber(5)
+  $core.bool hasTelnyxWebhookSigningKey() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearTelnyxWebhookSigningKey() => clearField(5);
 }
 
 /// Bird (https://bird.com, formerly MessageBird) Config -- an alternative SMS verification
-/// provider to Twilio, with a simpler single-API-key auth model.
+/// provider to [`TwilioConfig`](#rellm-TwilioConfig), with a simpler single-API-key auth model. See
+/// `docs/contact_integrations.md` for full setup steps.
 class BirdConfig extends $pb.GeneratedMessage {
   factory BirdConfig({
     $core.bool? birdEnabled,
     $core.String? birdAccessKey,
     $core.String? birdFrom,
     $core.String? birdRegion,
+    $core.String? birdWebhookSigningKey,
   }) {
     final $result = create();
     if (birdEnabled != null) {
@@ -2874,6 +2981,9 @@ class BirdConfig extends $pb.GeneratedMessage {
     if (birdRegion != null) {
       $result.birdRegion = birdRegion;
     }
+    if (birdWebhookSigningKey != null) {
+      $result.birdWebhookSigningKey = birdWebhookSigningKey;
+    }
     return $result;
   }
   BirdConfig._() : super();
@@ -2885,6 +2995,7 @@ class BirdConfig extends $pb.GeneratedMessage {
     ..aOS(2, _omitFieldNames ? '' : 'birdAccessKey')
     ..aOS(3, _omitFieldNames ? '' : 'birdFrom')
     ..aOS(4, _omitFieldNames ? '' : 'birdRegion')
+    ..aOS(5, _omitFieldNames ? '' : 'birdWebhookSigningKey')
     ..hasRequiredFields = false
   ;
 
@@ -2949,6 +3060,23 @@ class BirdConfig extends $pb.GeneratedMessage {
   $core.bool hasBirdRegion() => $_has(3);
   @$pb.TagNumber(4)
   void clearBirdRegion() => clearField(4);
+
+  /// Optional -- the Standard Webhooks signing secret (starts with `whsec_`) for the SMS channel
+  /// subscription delivering to `/contact_integrations/bird/receive`, used to verify the
+  /// `webhook-id`/`webhook-timestamp`/`webhook-signature` headers on inbound deliveries (HMAC-SHA256;
+  /// see https://www.standardwebhooks.com and `docs/contact_integrations.md`). Blank/unset means
+  /// inbound deliveries are accepted without signature verification. `optional` (not plain
+  /// `string`) for the same "`Some`/`None` distinguishable from a client without ever seeing the
+  /// real value" reason as
+  /// [`TwilioConfig.twilio_webhook_signing_key`](#rellm-TwilioConfig).
+  @$pb.TagNumber(5)
+  $core.String get birdWebhookSigningKey => $_getSZ(4);
+  @$pb.TagNumber(5)
+  set birdWebhookSigningKey($core.String v) { $_setString(4, v); }
+  @$pb.TagNumber(5)
+  $core.bool hasBirdWebhookSigningKey() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearBirdWebhookSigningKey() => clearField(5);
 }
 
 /// Stripe credentials backing the Marketplace (`market.proto`). Used both to create Checkout
@@ -3053,6 +3181,59 @@ class StripeConfig extends $pb.GeneratedMessage {
   $core.bool hasStripeWebhookSigningSecret() => $_has(3);
   @$pb.TagNumber(4)
   void clearStripeWebhookSigningSecret() => clearField(4);
+}
+
+/// Stalwart is an extablished, open-source Rust email/contact/calendar server (think an Outlook or Google Workspace competitor).
+/// Currently Rellm supports receiving emails via Stalwart webhook configurations.
+class StalwartConfig extends $pb.GeneratedMessage {
+  factory StalwartConfig({
+    $core.bool? stalwartReceivingEnabled,
+  }) {
+    final $result = create();
+    if (stalwartReceivingEnabled != null) {
+      $result.stalwartReceivingEnabled = stalwartReceivingEnabled;
+    }
+    return $result;
+  }
+  StalwartConfig._() : super();
+  factory StalwartConfig.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromBuffer(i, r);
+  factory StalwartConfig.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'StalwartConfig', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
+    ..aOB(1, _omitFieldNames ? '' : 'stalwartReceivingEnabled')
+    ..hasRequiredFields = false
+  ;
+
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.deepCopy] instead. '
+  'Will be removed in next major version')
+  StalwartConfig clone() => StalwartConfig()..mergeFromMessage(this);
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.rebuild] instead. '
+  'Will be removed in next major version')
+  StalwartConfig copyWith(void Function(StalwartConfig) updates) => super.copyWith((message) => updates(message as StalwartConfig)) as StalwartConfig;
+
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static StalwartConfig create() => StalwartConfig._();
+  StalwartConfig createEmptyInstance() => create();
+  static $pb.PbList<StalwartConfig> createRepeated() => $pb.PbList<StalwartConfig>();
+  @$core.pragma('dart2js:noInline')
+  static StalwartConfig getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<StalwartConfig>(create);
+  static StalwartConfig? _defaultInstance;
+
+  /// Enables receiving emails from the private, unsecured cluster-facing HTTP server at :27705/email.
+  @$pb.TagNumber(1)
+  $core.bool get stalwartReceivingEnabled => $_getBF(0);
+  @$pb.TagNumber(1)
+  set stalwartReceivingEnabled($core.bool v) { $_setBool(0, v); }
+  @$pb.TagNumber(1)
+  $core.bool hasStalwartReceivingEnabled() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearStalwartReceivingEnabled() => clearField(1);
 }
 
 

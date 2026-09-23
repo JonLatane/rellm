@@ -6,8 +6,11 @@ use rocket::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::db_connection::PgPooledConnection;
 use crate::models;
 use crate::models::{find_or_create_messaging_group, MESSAGE_COLUMNS};
+use crate::protos::StalwartConfig;
+use crate::rpcs::get_server_configuration_model;
 use crate::schema::{self, message_recipients, messages, users};
 use crate::web::RocketState;
 
@@ -56,10 +59,59 @@ struct MtaHookMessage {
 /// this shape (see https://stalw.art/docs/mta/filter/mtahooks/) and treats a body it can't parse
 /// as a hook failure regardless of status code, which -- combined with the `MtaHook`'s
 /// `tempFailOnError: true` -- surfaces to the sending client as a `451` temp-fail. `{"action":
-/// "accept"}` is the minimal response that tells Stalwart to keep going with no modifications.
+/// "accept"}` (`response: None`) is the minimal response that tells Stalwart to keep going with no
+/// modifications; `action: "reject"` + `response` (see `MtaHookRejectResponse`) is a deliberate,
+/// permanent SMTP-level rejection -- used when email receiving is turned off
+/// (`receiving_disabled_response`) so a Stalwart admin sees a clear, permanent reason in their own
+/// logs rather than a `tempFailOnError` retry loop.
 #[derive(Serialize)]
 struct MtaHookResponse {
     action: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    response: Option<MtaHookRejectResponse>,
+}
+
+/// The SMTP-level response Stalwart relays back to the sending client for `action: "reject"` -- see
+/// https://stalw.art/docs/mta/filter/mtahooks/. `status`/`enhanced_status` (550/5.7.1) mean
+/// "permanently refused, policy reason" (RFC 5321/3463), not a transient failure worth retrying.
+#[derive(Serialize)]
+struct MtaHookRejectResponse {
+    status: u16,
+    #[serde(rename = "enhancedStatus")]
+    enhanced_status: &'static str,
+    message: &'static str,
+    disconnect: bool,
+}
+
+/// The reject-with-message response sent when `StalwartConfig.stalwart_receiving_enabled` isn't
+/// `true` -- see `create_email_message`'s own doc.
+fn receiving_disabled_response() -> RawJson<String> {
+    RawJson(
+        serde_json::to_string(&MtaHookResponse {
+            action: "reject",
+            response: Some(MtaHookRejectResponse {
+                status: 550,
+                enhanced_status: "5.7.1",
+                message: "Rellm email receiving is disabled on this server -- enable \"Receive \
+                    Emails from Stalwart\" on its Contact Integrations tab \
+                    (ServerConfiguration.stalwart_config.stalwart_receiving_enabled) to accept \
+                    mail here.",
+                disconnect: false,
+            }),
+        })
+        .unwrap(),
+    )
+}
+
+/// Whether this server currently accepts inbound mail via this endpoint at all --
+/// `StalwartConfig.stalwart_receiving_enabled`, defaulting to `false` if `stalwart_config` was
+/// never set. See `docs/contact_integrations.md`'s Email section.
+pub(crate) fn stalwart_receiving_enabled(conn: &mut PgPooledConnection) -> bool {
+    get_server_configuration_model(conn)
+        .ok()
+        .and_then(|c| c.stalwart_config)
+        .and_then(|c| serde_json::from_value::<StalwartConfig>(c).ok())
+        .is_some_and(|c| c.stalwart_receiving_enabled)
 }
 
 /// Delivery endpoint called by the Stalwart mail server (see `deploys/email`) once it accepts an
@@ -75,11 +127,24 @@ struct MtaHookResponse {
 /// username doesn't match any user in this namespace are silently skipped (Stalwart is expected
 /// to have already validated deliverability before calling this endpoint); if none match, the
 /// whole message is dropped.
+///
+/// This route is always mounted on port 27705 regardless of `StalwartConfig` -- it would be
+/// useless to conditionally start the internal server around it, since nothing else lives there.
+/// Instead, every call checks `stalwart_receiving_enabled` first and, if it's not `true`, returns
+/// a clean, permanent `action: "reject"` (550/5.7.1) rather than processing the message -- see
+/// `receiving_disabled_response`'s own doc for why that's the right shape (a normal Rust `Status`
+/// error here would come back as an unparseable body, which Stalwart's `tempFailOnError: true`
+/// would retry forever as a `451` temp-fail instead of a clear, permanent, admin-visible reason).
 #[rocket::post("/email", data = "<body>")]
 pub async fn create_email_message(
     body: Data<'_>,
     state: &State<RocketState>,
 ) -> Result<RawJson<String>, Status> {
+    let mut conn = state.pool.get().map_err(|_| Status::InternalServerError)?;
+    if !stalwart_receiving_enabled(&mut conn) {
+        return Ok(receiving_disabled_response());
+    }
+
     let capped_body = body
         .open(MAX_EMAIL_SIZE_MIB.mebibytes())
         .into_bytes()
@@ -103,8 +168,6 @@ pub async fn create_email_message(
         .message_id()
         .map(|id| id.to_string())
         .unwrap_or_else(|| format!("<generated-{}@rellm.internal>", Uuid::new_v4()));
-
-    let mut conn = state.pool.get().map_err(|_| Status::InternalServerError)?;
 
     let mut recipients: Vec<(i64, models::RecipientType)> = vec![];
     for address in payload
@@ -265,7 +328,7 @@ pub async fn create_email_message(
     }
 
     Ok(RawJson(
-        serde_json::to_string(&MtaHookResponse { action: "accept" }).unwrap(),
+        serde_json::to_string(&MtaHookResponse { action: "accept", response: None }).unwrap(),
     ))
 }
 
@@ -332,6 +395,26 @@ pub fn display_address(address: &Address) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // DB-touching specs for `stalwart_receiving_enabled` live in
+    // `src/tests/stalwart_config_tests.rs`, not here -- this file is compiled into *both* the lib
+    // and (via `main.rs`'s own duplicate `pub mod web;` tree) the `rellm` bin, but `crate::tests`
+    // (declared only in `lib.rs`) doesn't exist from the bin's side, so a test here can't depend
+    // on `crate::tests::factories::test_conn` the way `src/tests/*` specs do.
+
+    #[test]
+    fn receiving_disabled_response_is_a_permanent_reject_not_a_temp_fail() {
+        // `serde_json::Value` round-trip rather than a raw string compare -- asserts the actual
+        // shape (see `MtaHookRejectResponse`'s own doc: 550/5.7.1 is "permanent", not the 4xx a
+        // temp-fail would use), independent of field ordering.
+        let RawJson(body) = receiving_disabled_response();
+        let value: serde_json::Value = serde_json::from_str(&body).expect("must be valid JSON");
+        assert_eq!(value["action"], "reject");
+        assert_eq!(value["response"]["status"], 550);
+        assert_eq!(value["response"]["enhancedStatus"], "5.7.1");
+        assert_eq!(value["response"]["disconnect"], false);
+        assert!(value["response"]["message"].as_str().unwrap().contains("disabled"));
+    }
 
     #[test]
     fn sanitize_header_value_passes_through_a_clean_value() {

@@ -31,6 +31,11 @@ fn basic_auth_credentials(request: &str) -> Option<(String, String)> {
     Some((username.to_string(), password.to_string()))
 }
 
+/// A phone `ContactMethod` with consent already granted -- most specs here exercise
+/// `start_contact_method_verification`/`verify_contact_method`, which (see
+/// `start_contact_method_verification_at`'s own doc) require `CONTACT_CONSENT_GRANTED` before
+/// they'll send anything, same as any other outbound SMS. Specs for the *lack* of consent use
+/// `phone_contact_method_without_consent` instead.
 fn phone_contact_method(value: &str) -> ContactMethod {
     ContactMethod {
         value: Some(value.to_string()),
@@ -38,6 +43,15 @@ fn phone_contact_method(value: &str) -> ContactMethod {
         supported_by_server: false,
         verified_at: None,
         verification_in_progress: None,
+        consent_state: ContactConsentState::ContactConsentGranted as i32,
+        consent_history: vec![],
+    }
+}
+
+fn phone_contact_method_without_consent(value: &str) -> ContactMethod {
+    ContactMethod {
+        consent_state: ContactConsentState::ContactConsentRevoked as i32,
+        ..phone_contact_method(value)
     }
 }
 
@@ -67,6 +81,47 @@ mod update_user_contact_methods {
             assert_eq!(phone.value.as_deref(), Some("tel:+15551234567"));
             assert!(phone.supported_by_server);
             assert_eq!(phone.verified_at, None);
+
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn setting_a_new_tel_phone_marks_supported_by_server_false_when_provider_enabled_but_sms_sending_not_enabled() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, tonic::Status, _>(|conn| {
+            // Twilio enabled directly, but `supported_contact_protocols` deliberately left unset
+            // -- mirrors an admin having entered Twilio credentials without (yet, or anymore)
+            // checking "Enable SMS Sending" on `ContactIntegrationsTab.elm`. `supported_by_server`
+            // must be false: `contact_protocol_supported` (not the raw `twilio_enabled` flag) is
+            // the actual gate, per `ContactMethod.supported_by_server`'s own proto doc.
+            let mut new_config = models::default_server_configuration();
+            new_config.twilio_config = Some(
+                serde_json::to_value(TwilioConfig {
+                    twilio_enabled: true,
+                    twilio_account_sid: "AC_sid".to_string(),
+                    twilio_api_key_sid: "SK_test_key_sid".to_string(),
+                    twilio_api_key_secret: "auth_token".to_string(),
+                    twilio_from_number: "+15005550006".to_string(),
+                    twilio_webhook_signing_key: None,
+                })
+                .unwrap(),
+            );
+            diesel::insert_into(crate::schema::server_configurations::table)
+                .values(&new_config)
+                .execute(conn)
+                .expect("failed to create test server configuration");
+
+            let user = create_user(conn, "cmu_protocol_gate");
+            let mut request = user.to_proto(&None, &None, None, &Some(&user), None);
+            request.phone = Some(phone_contact_method("tel:+15551234567"));
+
+            let updated = update_user(request, &user, conn).expect("update should succeed");
+            let phone = updated.phone.expect("phone should be set");
+            assert!(
+                !phone.supported_by_server,
+                "twilio_enabled alone isn't enough -- CONTACT_PROTOCOL_TEL must be in supported_contact_protocols too"
+            );
 
             Ok(())
         });
@@ -103,6 +158,8 @@ mod update_user_contact_methods {
                 supported_by_server: false,
                 verified_at: None,
                 verification_in_progress: None,
+                consent_state: ContactConsentState::ContactConsentRevoked as i32,
+                consent_history: vec![],
             });
 
             let updated = update_user(request, &user, conn).expect("update should succeed");
@@ -125,6 +182,8 @@ mod update_user_contact_methods {
                 supported_by_server: true,
                 verified_at: Some(SystemTime::now().to_proto()),
                 verification_in_progress: None,
+                consent_state: ContactConsentState::ContactConsentRevoked as i32,
+                consent_history: vec![],
             };
             let user = set_user_phone(conn, &user, &verified_phone);
 
@@ -153,6 +212,8 @@ mod update_user_contact_methods {
                 supported_by_server: true,
                 verified_at: Some(verified_at.clone()),
                 verification_in_progress: None,
+                consent_state: ContactConsentState::ContactConsentRevoked as i32,
+                consent_history: vec![],
             };
             let user = set_user_phone(conn, &user, &verified_phone);
 
@@ -165,6 +226,8 @@ mod update_user_contact_methods {
                 supported_by_server: false, // client-supplied -- must be ignored
                 verified_at: None,          // client-supplied -- must be ignored
                 verification_in_progress: None,
+                consent_state: ContactConsentState::ContactConsentRevoked as i32,
+                consent_history: vec![],
             });
 
             let updated = update_user(request, &user, conn).expect("update should succeed");
@@ -193,12 +256,119 @@ mod update_user_contact_methods {
                 supported_by_server: true, // spoofed
                 verified_at: Some(SystemTime::now().to_proto()), // spoofed
                 verification_in_progress: None,
+                consent_state: ContactConsentState::ContactConsentRevoked as i32,
+                consent_history: vec![],
             });
 
             let updated = update_user(request, &user, conn).expect("update should succeed");
             let phone = updated.phone.expect("phone should be set");
             assert_eq!(phone.verified_at, None, "a brand new number can never come back pre-verified");
             assert!(!phone.supported_by_server, "no Twilio configured -- must not be trusted from the client");
+
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn granting_consent_appends_a_history_entry_and_sets_consent_state() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, tonic::Status, _>(|conn| {
+            let user = create_user(conn, "cmu_consent_grant");
+            let user = set_user_phone(conn, &user, &phone_contact_method_without_consent("tel:+15551234567"));
+
+            let mut request = user.to_proto(&None, &None, None, &Some(&user), None);
+            request.phone = Some(ContactMethod {
+                consent_state: ContactConsentState::ContactConsentGranted as i32,
+                ..phone_contact_method_without_consent("tel:+15551234567")
+            });
+
+            let updated = update_user(request, &user, conn).expect("update should succeed");
+            let phone = updated.phone.expect("phone should be set");
+            assert_eq!(phone.consent_state, ContactConsentState::ContactConsentGranted as i32);
+            assert_eq!(phone.consent_history.len(), 1);
+            assert_eq!(phone.consent_history[0].state, ContactConsentState::ContactConsentGranted as i32);
+            assert!(phone.consent_history[0].changed_at.is_some());
+
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn revoking_after_granting_appends_a_second_history_entry_without_dropping_the_first() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, tonic::Status, _>(|conn| {
+            let user = create_user(conn, "cmu_consent_revoke");
+            let user = set_user_phone(conn, &user, &phone_contact_method("tel:+15551234567"));
+
+            let mut request = user.to_proto(&None, &None, None, &Some(&user), None);
+            request.phone = Some(ContactMethod {
+                consent_state: ContactConsentState::ContactConsentRevoked as i32,
+                ..phone_contact_method("tel:+15551234567")
+            });
+
+            let updated = update_user(request, &user, conn).expect("update should succeed");
+            let phone = updated.phone.expect("phone should be set");
+            assert_eq!(phone.consent_state, ContactConsentState::ContactConsentRevoked as i32);
+            assert_eq!(phone.consent_history.len(), 1, "revoking a ContactMethod with no prior history still logs the revocation");
+            assert_eq!(phone.consent_history[0].state, ContactConsentState::ContactConsentRevoked as i32);
+
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn resending_the_same_consent_state_is_a_no_op_on_history() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, tonic::Status, _>(|conn| {
+            let user = create_user(conn, "cmu_consent_noop");
+            let user = set_user_phone(conn, &user, &phone_contact_method("tel:+15551234567"));
+
+            // First call actually changes nothing (phone_contact_method is already GRANTED with no
+            // history), so append one entry to have something to *not* duplicate.
+            let mut request = user.to_proto(&None, &None, None, &Some(&user), None);
+            request.phone = Some(phone_contact_method("tel:+15551234567"));
+            let updated = update_user(request, &user, conn).expect("update should succeed");
+            let user = set_user_phone(conn, &user, &updated.phone.clone().unwrap());
+
+            // Resend the exact same (already-GRANTED) consent_state again.
+            let mut request = user.to_proto(&None, &None, None, &Some(&user), None);
+            request.phone = Some(phone_contact_method("tel:+15551234567"));
+            let updated = update_user(request, &user, conn).expect("update should succeed");
+            let phone = updated.phone.expect("phone should be set");
+            assert_eq!(phone.consent_state, ContactConsentState::ContactConsentGranted as i32);
+            assert!(phone.consent_history.is_empty(), "no consent_state change means no new history entry");
+
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn re_granting_consent_after_revocation_does_not_erase_the_revocation_from_history() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, tonic::Status, _>(|conn| {
+            let user = create_user(conn, "cmu_consent_regrant");
+            let user = set_user_phone(conn, &user, &phone_contact_method("tel:+15551234567"));
+
+            // Grant -> revoke -> re-grant.
+            let mut request = user.to_proto(&None, &None, None, &Some(&user), None);
+            request.phone = Some(phone_contact_method("tel:+15551234567"));
+            let updated = update_user(request, &user, conn).expect("update should succeed");
+            let user = set_user_phone(conn, &user, &updated.phone.clone().unwrap());
+
+            let mut request = user.to_proto(&None, &None, None, &Some(&user), None);
+            request.phone = Some(phone_contact_method_without_consent("tel:+15551234567"));
+            let updated = update_user(request, &user, conn).expect("update should succeed");
+            let user = set_user_phone(conn, &user, &updated.phone.clone().unwrap());
+
+            let mut request = user.to_proto(&None, &None, None, &Some(&user), None);
+            request.phone = Some(phone_contact_method("tel:+15551234567"));
+            let updated = update_user(request, &user, conn).expect("update should succeed");
+            let phone = updated.phone.expect("phone should be set");
+
+            assert_eq!(phone.consent_state, ContactConsentState::ContactConsentGranted as i32);
+            assert_eq!(phone.consent_history.len(), 2, "the intermediate revocation stays in history");
+            assert_eq!(phone.consent_history[0].state, ContactConsentState::ContactConsentRevoked as i32);
+            assert_eq!(phone.consent_history[1].state, ContactConsentState::ContactConsentGranted as i32);
 
             Ok(())
         });
@@ -248,6 +418,32 @@ mod start_contact_method_verification_spec {
                 "must authenticate with the API Key SID/Secret pair, never the Account SID -- see \
                  TwilioConfig's own doc on why the account's Auth Token is deliberately unsupported"
             );
+
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn rejects_when_consent_not_granted() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, tonic::Status, _>(|conn| {
+            configure_twilio(conn, true, "AC_sid", "SK_test_key_sid", "auth_token", "+15005550006");
+            let user = create_user(conn, "scmv_no_consent");
+            let user = set_user_phone(
+                conn,
+                &user,
+                &phone_contact_method_without_consent("tel:+15551234567"),
+            );
+
+            let err = start_contact_method_verification_at(
+                Some("http://127.0.0.1:1"),
+                phone_contact_method_without_consent("tel:+15551234567"),
+                &user,
+                conn,
+            )
+            .unwrap_err();
+            assert_eq!(err.code(), Code::FailedPrecondition);
+            assert_eq!(err.message(), "contact_consent_not_granted");
 
             Ok(())
         });
@@ -625,7 +821,7 @@ mod bird_and_provider_selection_spec {
                 Some(("AC_sid", "SK_test_key_sid", "auth_token", "+15005550006")),
                 Some(("bird_key", "Bird", "us1")),
                 None,
-                vec![VerificationApi::Bird, VerificationApi::Twilio],
+                vec![ContactVerificationApi::Bird, ContactVerificationApi::Twilio],
             );
             let user = create_user(conn, "prefers_bird_explicit");
             let user = set_user_phone(conn, &user, &phone_contact_method("tel:+15551234567"));
@@ -662,7 +858,7 @@ mod bird_and_provider_selection_spec {
                 None,
                 Some(("bird_key", "Bird", "us1")),
                 None,
-                vec![VerificationApi::Twilio, VerificationApi::Bird],
+                vec![ContactVerificationApi::Twilio, ContactVerificationApi::Bird],
             );
             let user = create_user(conn, "falls_back_to_bird");
             let user = set_user_phone(conn, &user, &phone_contact_method("tel:+15551234567"));
@@ -696,9 +892,9 @@ mod bird_and_provider_selection_spec {
                 None,
                 Some(("telnyx_key", "+15005550006", "profile_1")),
                 vec![
-                    VerificationApi::Twilio,
-                    VerificationApi::Bird,
-                    VerificationApi::Telnyx,
+                    ContactVerificationApi::Twilio,
+                    ContactVerificationApi::Bird,
+                    ContactVerificationApi::Telnyx,
                 ],
             );
             let user = create_user(conn, "falls_back_to_telnyx");

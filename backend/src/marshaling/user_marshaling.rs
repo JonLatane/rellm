@@ -4,6 +4,7 @@ use crate::models;
 use crate::protos::*;
 use crate::rpcs::get_federated_users;
 use crate::rpcs::validate_exact_permission;
+use crate::rpcs::validate_permission;
 use tonic::Code;
 use tonic::Status;
 
@@ -32,6 +33,26 @@ fn visible_contact_method(
                 || validate_exact_permission(viewer, Permission::ViewPrivateContactMethods).is_ok()
         }
     }
+}
+
+/// Blanks `consent_state`/`consent_history` on `contact_method` for anyone but its owner or an
+/// `ADMIN` -- regardless of the `ContactMethod`'s own `visibility` (see `visible_contact_method`
+/// above, which gates `value` itself). Consent is a record of the user's own contact
+/// preferences/actions and has no reason to be exposed to other viewers just because they can see
+/// a public `value` -- unlike `value`'s own visibility, this isn't relaxable via
+/// `VIEW_PRIVATE_CONTACT_METHODS`.
+fn scrub_consent_for_viewer(
+    mut contact_method: ContactMethod,
+    owner_id: i64,
+    viewer: &Option<&models::User>,
+) -> ContactMethod {
+    let is_owner_or_admin =
+        viewer.map(|v| v.id) == Some(owner_id) || validate_permission(viewer, Permission::Admin).is_ok();
+    if !is_owner_or_admin {
+        contact_method.consent_state = ContactConsentState::ContactConsentRevoked as i32;
+        contact_method.consent_history = vec![];
+    }
+    contact_method
 }
 
 pub trait ToProtoUser {
@@ -66,12 +87,14 @@ impl ToProtoUser for models::User {
             .email
             .to_owned()
             .map(|cm| serde_json::from_value(cm).unwrap())
-            .filter(|cm| visible_contact_method(cm, self.id, viewer));
+            .filter(|cm| visible_contact_method(cm, self.id, viewer))
+            .map(|cm| scrub_consent_for_viewer(cm, self.id, viewer));
         let phone: Option<ContactMethod> = self
             .phone
             .to_owned()
             .map(|cm| serde_json::from_value(cm).unwrap())
-            .filter(|cm| visible_contact_method(cm, self.id, viewer));
+            .filter(|cm| visible_contact_method(cm, self.id, viewer))
+            .map(|cm| scrub_consent_for_viewer(cm, self.id, viewer));
 
         log::info!("user.avatar_media_id={:?}", &self.avatar_media_id);
         let user = User {

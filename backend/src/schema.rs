@@ -395,6 +395,8 @@ diesel::table! {
         stripe_config -> Nullable<Jsonb>,
         market_settings -> Nullable<Jsonb>,
         telnyx_config -> Nullable<Jsonb>,
+        supported_contact_protocols -> Nullable<Jsonb>,
+        stalwart_config -> Nullable<Jsonb>,
     }
 }
 

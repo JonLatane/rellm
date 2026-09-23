@@ -68,6 +68,20 @@ pub fn start_contact_method_verification_at(
     }
     let existing_phone = existing_phone.unwrap();
 
+    // The verification SMS is itself an outbound message via a Twilio/Bird/Telnyx `ContactMethod`
+    // -- gated by `consent_state` exactly like any other outbound contact (see
+    // `docs/contact_integrations.md`), even though the user just requested it themselves. This is
+    // the single choke point every provider's outbound SMS passes through (via
+    // `send_verification_sms` below), so it's the only place this needs enforcing.
+    if ContactConsentState::try_from(existing_phone.consent_state).unwrap_or_default()
+        != ContactConsentState::ContactConsentGranted
+    {
+        return Err(Status::new(
+            Code::FailedPrecondition,
+            "contact_consent_not_granted",
+        ));
+    }
+
     if !verification_available(conn) {
         return Err(Status::new(
             Code::FailedPrecondition,
@@ -103,6 +117,9 @@ pub fn start_contact_method_verification_at(
             verification_started_at: Some(now.to_proto()),
             attempts: 0,
         }),
+        // Verification never touches consent -- carried forward unchanged.
+        consent_state: existing_phone.consent_state,
+        consent_history: existing_phone.consent_history.clone(),
     };
 
     diesel::update(users::table)
