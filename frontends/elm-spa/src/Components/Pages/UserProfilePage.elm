@@ -4672,6 +4672,7 @@ profileDetail shared model server maybeAccount user =
                         |> Maybe.withDefault []
                    )
             )
+        , div [ class "user-card-contact-buttons" ] (Users.userCardContactButtons user)
         , contactMethodsSection shared.time.browserTimeZone canEdit (isOwnProfile maybeAccount user) model.contactMethodsExpanded model user
         , followModerationToggleView canEdit model.followModerationStatus user
         , profileCounts postsHref repliesHref followersHref followingHref friendsHref eventsHref user
@@ -5007,14 +5008,15 @@ followModerationToggleView canEdit status user =
 for the profile's own owner) the SMS verification flow (see `phoneVerificationView`). Collapsed by
 default (`expanded`, `Model.contactMethodsExpanded`) behind `expandableProfileSection`'s own header,
 same as `permissionsSection`/`syncSourcesSection` -- except a `#contact-methods` link (see `init`'s
-own `fragment` handling) opens it pre-expanded. Hidden entirely for a non-`canEdit` viewer if there's
-nothing to show (mirrors `permissionsSection`'s own "hide if nothing to show and can't add anything"
-gate) -- a `User` this viewer can't see either contact method on simply won't have them populated at
-all (enforced server-side via each `ContactMethod`'s own `visibility`), so there'd be nothing here.
+own `fragment` handling) opens it pre-expanded. Hidden entirely for a non-`canEdit` viewer (the
+profile's own owner or an admin -- see `canEditProfile`) -- there's nothing to *edit* here for
+anyone else, and `profileDetail` already renders the plain `tel:`/`mailto:` links
+(`Users.userCardContactButtons`, same as `userCard`'s own) just above this section for whichever of
+`user.phone`/`user.email` such a viewer can actually see.
 -}
 contactMethodsSection : SharedTime.BrowserTimeZone -> Bool -> Bool -> Bool -> Model -> User -> Html Msg
 contactMethodsSection browserTimeZone canEdit isOwn expanded model user =
-    if user.phone == Nothing && user.email == Nothing && not canEdit then
+    if not canEdit then
         text ""
 
     else

@@ -35,6 +35,7 @@ module Components.Users exposing
     , updateFollow
     , updateUser
     , userCard
+    , userCardContactButtons
     , verifyContactMethod
     , userCardAvatar
     , userIdHref
@@ -673,24 +674,32 @@ userCard basePath viewingServerHost server maybeAccount followStatusAndButton us
         ]
 
 
-{-| "📞"/"✉️" `tel:`/`mailto:` buttons for `userCard` -- shown only for whichever of
-`user.phone`/`user.email` is both present (already server-gated by each `ContactMethod`'s own
+{-| "📞 <number>"/"✉️ <address>" `tel:`/`mailto:` buttons for `userCard` -- shown only for whichever
+of `user.phone`/`user.email` is both present (already server-gated by each `ContactMethod`'s own
 `visibility` -- see `visible_contact_method` on the backend, so a `Just` here already means this
 viewer may see it at all) and holds a validly-schemed `value` (defensively re-checked here via
-`String.startsWith`, not just trusted, in case of a malformed/mismatched-scheme value). Renders as
-plain `<a href="tel:…">`/`<a href="mailto:…">` links nested inside `userCard`'s own profile-link
-`<a>` -- technically invalid HTML5 (nested anchors), but harmless here: both Elm's own click-routing
-and every evergreen browser's native default action resolve a click to whichever anchor is nearest
-the actual click target, so the innermost (phone/email) link is what fires, never a competing
-profile navigation.
+`String.startsWith`, not just trusted, in case of a malformed/mismatched-scheme value). The button's
+own label is the icon plus the scheme stripped off `value` (e.g. `"📞 +15555550123"`), so the actual
+number/address is visible without a click -- `href` still carries the full `tel:`/`mailto:` value.
+Renders as plain `<a href="tel:…">`/`<a href="mailto:…">` links; inside `userCard`'s own
+profile-link `<a>` these end up nested (technically invalid HTML5), but harmless there: both Elm's
+own click-routing and every evergreen browser's native default action resolve a click to whichever
+anchor is nearest the actual click target, so the innermost (phone/email) link is what fires, never
+a competing profile navigation. Exposed (not just used locally) so
+`Components.Pages.UserProfilePage.profileDetail` can render the same links above its own "Contact
+Methods" section, for a viewer who can see the values but -- unlike the profile's own owner/an
+admin -- can't edit them (so that section itself is hidden for them entirely).
 -}
 userCardContactButtons : User -> List (Html msg)
 userCardContactButtons user =
     let
         contactButton : String -> String -> String -> Maybe (Html msg)
-        contactButton scheme label maybeValue =
-            if String.startsWith scheme maybeValue then
-                Just (a [ href maybeValue, Html.Attributes.class "user-card-contact-button" ] [ text label ])
+        contactButton scheme icon value =
+            if String.startsWith scheme value then
+                Just
+                    (a [ href value, Html.Attributes.class "user-card-contact-button" ]
+                        [ text (icon ++ " " ++ String.dropLeft (String.length scheme) value) ]
+                    )
 
             else
                 Nothing

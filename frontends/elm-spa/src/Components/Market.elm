@@ -67,6 +67,7 @@ import Proto.Rellm.PurchaseType exposing (PurchaseType(..))
 import Proto.Rellm.Rellm as Rellm
 import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (withAccessToken)
+import Shared.ByteFormat as ByteFormat
 import Shared.Conversions as Conversions
 import Task exposing (Task)
 
@@ -544,15 +545,15 @@ productName : MarketProduct -> String
 productName product =
     case product.details of
         Just (ProductDetails.MediaStorageSubscriptionDetails details) ->
-            humanizeBytes (Conversions.int64ToInt details.allocationBytes) ++ " Media Storage"
+            ByteFormat.humanizeBytes (Conversions.int64ToInt details.allocationBytes) ++ " Media Storage"
 
         Just (ProductDetails.AiGrantSubscriptionDetails details) ->
             humanizeCount (Conversions.int64ToInt details.tokens) ++ " tokens for " ++ aiModelNamesJoined details.modelNames
 
         Just (ProductDetails.RellmHostingSubscriptionDetails details) ->
-            humanizeBytes (Conversions.int64ToInt details.dbSizeBytes)
+            ByteFormat.humanizeBytes (Conversions.int64ToInt details.dbSizeBytes)
                 ++ " DB + "
-                ++ humanizeBytes (Conversions.int64ToInt details.minioSizeBytes)
+                ++ ByteFormat.humanizeBytes (Conversions.int64ToInt details.minioSizeBytes)
                 ++ " Object Storage"
 
         Just (ProductDetails.PermissionsAccessSubscriptionDetails details) ->
@@ -576,7 +577,7 @@ productDescription product =
     case product.details of
         Just (ProductDetails.MediaStorageSubscriptionDetails details) ->
             "Extra room for photos, videos, and other media uploads -- includes **"
-                ++ humanizeBytes (Conversions.int64ToInt details.allocationBytes)
+                ++ ByteFormat.humanizeBytes (Conversions.int64ToInt details.allocationBytes)
                 ++ "** of storage, replacing (not adding to) whatever quota you already have."
 
         Just (ProductDetails.AiGrantSubscriptionDetails details) ->
@@ -591,9 +592,9 @@ productDescription product =
                 canned : String
                 canned =
                     "Your own Rellm instance, hosted and fully admin-controlled by you -- includes a **"
-                        ++ humanizeBytes (Conversions.int64ToInt details.dbSizeBytes)
+                        ++ ByteFormat.humanizeBytes (Conversions.int64ToInt details.dbSizeBytes)
                         ++ "** database and **"
-                        ++ humanizeBytes (Conversions.int64ToInt details.minioSizeBytes)
+                        ++ ByteFormat.humanizeBytes (Conversions.int64ToInt details.minioSizeBytes)
                         ++ "** of object storage.\n\n"
                         ++ "You get full admin access to your own Rellm instance -- e.g. you can pay-gate "
                         ++ "features like Facebook sync yourself, if you set up your own Facebook developer account."
@@ -713,37 +714,6 @@ periodSuffix period =
 
         PurchasePeriodUnrecognized_ _ ->
             ""
-
-
-{-| A byte count -> "1.5GB"/"100MB"/"512KB"/"3B" -- binary (1024-based) units, mirroring
-`backend/src/logic/market_summary.rs`'s `humanize_bytes` exactly.
--}
-humanizeBytes : Int -> String
-humanizeBytes bytes =
-    let
-        kb : Int
-        kb =
-            1024
-
-        mb : Int
-        mb =
-            kb * 1024
-
-        gb : Int
-        gb =
-            mb * 1024
-    in
-    if bytes >= gb then
-        formatTrimmedDecimal (toFloat bytes / toFloat gb) ++ "GB"
-
-    else if bytes >= mb then
-        formatTrimmedDecimal (toFloat bytes / toFloat mb) ++ "MB"
-
-    else if bytes >= kb then
-        formatTrimmedDecimal (toFloat bytes / toFloat kb) ++ "KB"
-
-    else
-        String.fromInt bytes ++ "B"
 
 
 {-| A token count -> "100k"/"1.5M"/"500" -- decimal (1000-based) units, since these are tokens,

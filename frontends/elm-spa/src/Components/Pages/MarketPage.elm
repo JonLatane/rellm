@@ -186,10 +186,10 @@ productFormFromProduct product =
 
                 unit : ByteFormat.ByteUnit
                 unit =
-                    marketBytesToUnit bytes
+                    ByteFormat.bytesToUnit bytes
             in
             { base
-                | mediaAllocationText = String.fromFloat (toFloat bytes / toFloat (marketUnitBytes unit))
+                | mediaAllocationText = String.fromFloat (toFloat bytes / toFloat (ByteFormat.byteUnitBytes unit))
                 , mediaAllocationUnit = unit
             }
 
@@ -208,7 +208,7 @@ productFormFromProduct product =
 
                 dbUnit : ByteFormat.ByteUnit
                 dbUnit =
-                    marketBytesToUnit dbBytes
+                    ByteFormat.bytesToUnit dbBytes
 
                 minioBytes : Int
                 minioBytes =
@@ -216,12 +216,12 @@ productFormFromProduct product =
 
                 minioUnit : ByteFormat.ByteUnit
                 minioUnit =
-                    marketBytesToUnit minioBytes
+                    ByteFormat.bytesToUnit minioBytes
             in
             { base
-                | hostingDbSizeText = String.fromFloat (toFloat dbBytes / toFloat (marketUnitBytes dbUnit))
+                | hostingDbSizeText = String.fromFloat (toFloat dbBytes / toFloat (ByteFormat.byteUnitBytes dbUnit))
                 , hostingDbSizeUnit = dbUnit
-                , hostingMinioSizeText = String.fromFloat (toFloat minioBytes / toFloat (marketUnitBytes minioUnit))
+                , hostingMinioSizeText = String.fromFloat (toFloat minioBytes / toFloat (ByteFormat.byteUnitBytes minioUnit))
                 , hostingMinioSizeUnit = minioUnit
                 , hostingAdditionalDescription = details.additionalDescription
             }
@@ -238,86 +238,12 @@ productFormFromProduct product =
             base
 
 
-{-| Binary (1024-based) bytes-per-unit -- deliberately `Shared.ByteFormat`'s own type
-(`ByteFormat.ByteUnit`, reused so `mediaAllocationUnit`/`hostingDbSizeUnit`/`hostingMinioSizeUnit`'s
-`<select>`s can stay the exact same KB/MB/GB widget `Components.Pages.UserProfilePage`'s storage
-quota editor uses) but *not* `ByteFormat.byteUnitBytes`'s decimal (1000-based) math:
-`Market.humanizeBytes`/`backend/src/logic/market_summary.rs::humanize_bytes` (the display side of
-every `MarketProduct` size, including these same fields once saved) are both binary -- entering "5"
-+ "GB" needs to round-trip back to exactly "5GB" on `MarketPage`'s tier card, not "4.7GB" (what
-`ByteFormat`'s decimal GB would silently produce, since `ByteFormat` is tuned for `du`-style OS
-reporting, not this precise a round-trip -- see that module's own doc).
--}
-marketUnitBytes : ByteFormat.ByteUnit -> Int
-marketUnitBytes unit =
-    case unit of
-        ByteFormat.Bytes ->
-            1
-
-        ByteFormat.KB ->
-            1024
-
-        ByteFormat.MB ->
-            1024 * 1024
-
-        ByteFormat.GB ->
-            1024 * 1024 * 1024
-
-
-{-| The largest unit `n` is at least 1 whole one of, using `marketUnitBytes`' binary sizes -- the
-binary counterpart of `ByteFormat.bytesToUnit`, used to seed `mediaAllocationUnit` when opening
-"Edit" on an existing product (see `productFormFromProduct`).
--}
-marketBytesToUnit : Int -> ByteFormat.ByteUnit
-marketBytesToUnit n =
-    if n >= marketUnitBytes ByteFormat.GB then
-        ByteFormat.GB
-
-    else if n >= marketUnitBytes ByteFormat.MB then
-        ByteFormat.MB
-
-    else if n >= marketUnitBytes ByteFormat.KB then
-        ByteFormat.KB
-
-    else
-        ByteFormat.Bytes
-
-
-{-| The binary counterpart of `ByteFormat.parseBytes` -- the inverse of `marketBytesToUnit`.
--}
-marketParseBytes : ByteFormat.ByteUnit -> String -> Maybe Int
-marketParseBytes unit input =
-    String.toFloat (String.trim input) |> Maybe.map (\n -> round (n * toFloat (marketUnitBytes unit)))
-
-
-{-| `<select>`-driven unit change for `mediaAllocationUnit` (mirrors
-`Components.Pages.UserProfilePage`'s `StorageQuotaUnitChanged` handler exactly) -- falls back to
-`current` for any unrecognized `<option>` value, which never actually happens since the `<select>`
-this feeds only ever offers `ByteFormat.byteUnitText`'s own output.
--}
-byteUnitFromText : String -> ByteFormat.ByteUnit -> ByteFormat.ByteUnit
-byteUnitFromText text current =
-    case text of
-        "B" ->
-            ByteFormat.Bytes
-
-        "KB" ->
-            ByteFormat.KB
-
-        "MB" ->
-            ByteFormat.MB
-
-        "GB" ->
-            ByteFormat.GB
-
-        _ ->
-            current
-
-
 {-| A number input + KB/MB/GB unit `<select>` for one byte-size `ProductForm` field -- shared by
-`mediaAllocationText`/`hostingDbSizeText`/`hostingMinioSizeText` (all three use the same binary
-`marketUnitBytes` math via `marketParseBytes`/`marketBytesToUnit`, and the same widget shape
-`Components.Pages.UserProfilePage`'s storage quota editor established). `getText`/`setText` and
+`mediaAllocationText`/`hostingDbSizeText`/`hostingMinioSizeText` (all three parse/format through
+`Shared.ByteFormat.parseBytes`/`byteUnitBytes`/`byteUnitFromText` directly now that that module's
+own `ByteUnit` math is binary, same as this page always needed -- see that module's own doc; this
+page no longer keeps a local binary copy of them), and the same widget shape
+`Components.Pages.UserProfilePage`'s storage quota editor established. `getText`/`setText` and
 `getUnit`/`setUnit` pick out which of the three fields this particular instance edits.
 -}
 byteSizeSelectorView :
@@ -338,7 +264,7 @@ byteSizeSelectorView change placeholderText form getText setText getUnit setUnit
             , onInput (change setText)
             ]
             []
-        , select [ onInput (change (\f text -> setUnit f (byteUnitFromText text (getUnit f)))) ]
+        , select [ onInput (change (\f text -> setUnit f (ByteFormat.byteUnitFromText text |> Maybe.withDefault (getUnit f)))) ]
             ([ ByteFormat.KB, ByteFormat.MB, ByteFormat.GB ]
                 |> List.map
                     (\unit ->
@@ -707,7 +633,7 @@ detailsFromForm form =
                     { defaultMediaStorageSubscriptionDetails
                         | allocationBytes =
                             Conversions.int64FromInt
-                                (marketParseBytes form.mediaAllocationUnit form.mediaAllocationText |> Maybe.withDefault 0)
+                                (ByteFormat.parseBytes form.mediaAllocationUnit form.mediaAllocationText |> Maybe.withDefault 0)
                     }
                 )
 
@@ -727,10 +653,10 @@ detailsFromForm form =
                     { defaultRellmHostingSubscriptionDetails
                         | dbSizeBytes =
                             Conversions.int64FromInt
-                                (marketParseBytes form.hostingDbSizeUnit form.hostingDbSizeText |> Maybe.withDefault 0)
+                                (ByteFormat.parseBytes form.hostingDbSizeUnit form.hostingDbSizeText |> Maybe.withDefault 0)
                         , minioSizeBytes =
                             Conversions.int64FromInt
-                                (marketParseBytes form.hostingMinioSizeUnit form.hostingMinioSizeText |> Maybe.withDefault 0)
+                                (ByteFormat.parseBytes form.hostingMinioSizeUnit form.hostingMinioSizeText |> Maybe.withDefault 0)
                         , additionalDescription = form.hostingAdditionalDescription
                     }
                 )

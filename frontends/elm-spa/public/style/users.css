@@ -48,6 +48,7 @@
 
 .user-card-contact-buttons {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.4rem;
   margin-top: 0.3rem;
 }
@@ -56,12 +57,14 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.8rem;
   height: 1.8rem;
-  border-radius: 50%;
+  padding: 0 0.55rem;
+  border-radius: 0.9rem;
   background: rgba(127, 127, 127, 0.15);
+  color: var(--fg);
   text-decoration: none;
-  font-size: 0.9rem;
+  font-size: 0.8rem;
+  white-space: nowrap;
 }
 
 /* Components/Users/FollowStatusAndButton.elm -- follow status text plus
