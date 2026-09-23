@@ -31,8 +31,8 @@ but none of this module's profile-editing machinery.
 import Browser.Dom as Dom
 import Browser.Navigation
 import Components.AIProviders as AIProviders
-import Components.Market as Market
 import Components.Markdown as Markdown
+import Components.Market as Market
 import Components.Pages.EventsPage as EventsPage
 import Components.Pages.PostsPage as PostsPage
 import Components.Posts as Posts
@@ -1222,8 +1222,9 @@ can keep changing height for a while after this first fires (a `UI.Flip`-enterin
 calendar card, or `EventsPage`/`PostsPage`'s own async fetch still landing), so a single
 snapshot can be stale by the time it's applied. Re-measuring and re-correcting on an interval,
 stopping once two consecutive measurements agree (within a pixel) or
-`profileSectionScrollMaxAttempts` runs out, adapts to however long *this* load actually takes
+`profileSectionScrollMaxAttempts` runs out, adapts to however long _this_ load actually takes
 instead of guessing one fixed number.
+
 -}
 scrollToProfileSectionCmd : String -> Cmd Msg
 scrollToProfileSectionCmd sectionId =
@@ -1232,21 +1233,22 @@ scrollToProfileSectionCmd sectionId =
 
 
 {-| One measure-and-correct pass for `scrollToProfileSectionCmd`'s own poll -- see that function's
-doc for the full reasoning. `previousTarget` is the absolute document position the *last* pass
+doc for the full reasoning. `previousTarget` is the absolute document position the _last_ pass
 computed (`Nothing` on the very first call), compared against this pass's own freshly-measured
 `target` to decide whether to stop (settled) or schedule another pass `profileSectionScrollPollMs`
 later (still moving, and `attemptsLeft` hasn't run out).
 
-`el.element.y` (`Dom.getElement`'s own doc) is, despite its name, already an *absolute* document
+`el.element.y` (`Dom.getElement`'s own doc) is, despite its name, already an _absolute_ document
 position -- the kernel computes it as `window.pageYOffset + rect.top`, the current scroll offset
 already baked in -- so it's the whole target on its own, straight into `Dom.setViewport`. This
-used to *also* add `Dom.getViewport`'s own `.viewport.y` (the same current scroll offset, read a
+used to _also_ add `Dom.getViewport`'s own `.viewport.y` (the same current scroll offset, read a
 second time) on top, double-counting it: harmless from a resting scroll position of `0` (where
 doubling zero is still zero, so every one-off manual verification of this code happened to look
 correct), but from anywhere else it inflated the target by exactly the current scroll position
 -- worse with each successive poll as that error compounded into the next reading, which is what
 was actually behind every "scrolls too far"/"lands one section past the target" report this
 mechanism produced, independent of any content-still-growing timing story.
+
 -}
 scrollToProfileSectionStep : String -> Maybe Float -> Int -> Task.Task Dom.Error ()
 scrollToProfileSectionStep sectionId previousTarget attemptsLeft =
@@ -1307,20 +1309,21 @@ expandProfileSection sectionId model =
 
 
 {-| `expandProfileSection`'s own missing half for `"sync-sources"`/`"sync-destinations"`
-specifically: those two sections' expanded state *also* drives extra per-card sync UI inside the
+specifically: those two sections' expanded state _also_ drives extra per-card sync UI inside the
 embedded `EventsPage` (and, for destinations, `PostsPage` too) copies -- `eventCardView`'s own
 `showSyncSources`/`showSyncDestinations` params, which change each card's height and so the whole
 embedded calendar/feed's height, shifting everything below it (including the very section this
 scroll is heading for). The ordinary header-click path (`SyncSourcesExpandedToggled`/
 `SyncDestinationsExpandedToggled` above) already keeps `model.events`/`model.posts` in sync this
 way; `Shared.ProfileSectionLinkClicked`'s own handling below needs the identical propagation, or
-`scrollToProfileSectionCmd` ends up measuring `sectionId`'s position *before* the calendar/feed
+`scrollToProfileSectionCmd` ends up measuring `sectionId`'s position _before_ the calendar/feed
 has actually grown into its expanded state -- reported as "doesn't scroll all the way up to Sync
 Sources/Sync Destinations" when the viewer started further down the page than that stale,
 pre-growth position.
 
 Always forces the flag `True` (never toggles) -- unlike the header click, a section link is only
-ever asking to *open* the section, never close an already-open one.
+ever asking to _open_ the section, never close an already-open one.
+
 -}
 syncEmbeddedSyncToggles : Shared.Model -> String -> Model -> ( Model, Effect Msg )
 syncEmbeddedSyncToggles shared sectionId model =
@@ -5148,6 +5151,7 @@ already expanded, updates as a pure byproduct of the checkbox's own save, no sep
 
 Hidden entirely if `contactMethod` is unset (nothing to consent to yet) or `not canEdit` -- mirrors
 `phoneVerificationView`'s own "nothing to show" gate.
+
 -}
 contactMethodConsentView : SharedTime.BrowserTimeZone -> String -> Bool -> SubmitStatus -> Bool -> Msg -> Msg -> Maybe ContactMethod -> Html Msg
 contactMethodConsentView browserTimeZone methodLabel canEdit status historyExpanded toggleMsg historyToggleMsg maybeContactMethod =
@@ -5318,64 +5322,66 @@ phoneVerificationView maybePhoneVerification maybePhone =
             maybePhone
                 |> Maybe.map (\cm -> cm.supportedByServer && cm.verifiedAt == Nothing)
                 |> Maybe.withDefault False
-
-        consentGranted : Bool
-        consentGranted =
-            maybePhone
-                |> Maybe.map (\cm -> cm.consentState == CONTACTCONSENTGRANTED)
-                |> Maybe.withDefault False
     in
     if not eligibleToVerify then
         text ""
 
-    else if not consentGranted then
-        p [ class "profile-contact-method-verify-disclaimer" ]
-            [ text "Grant SMS consent above to verify your phone number -- the verification code itself is sent by SMS." ]
-
     else
-        case maybePhoneVerification of
-            Nothing ->
-                div [ class "profile-contact-method-verify" ]
-                    [ button [ class "profile-edit-button", onClick StartPhoneVerificationClicked ] [ text "Start Verification" ] ]
+        let
+            consentGranted : Bool
+            consentGranted =
+                maybePhone
+                    |> Maybe.map (\cm -> cm.consentState == CONTACTCONSENTGRANTED)
+                    |> Maybe.withDefault False
+        in
+        if not consentGranted then
+            p [ class "profile-contact-method-verify-disclaimer" ]
+                [ text "Grant SMS consent above to verify your phone number -- the verification code itself is sent by SMS." ]
 
-            Just pv ->
-                div [ class "profile-contact-method-verify" ]
-                    [ if pv.sendStatus == Submitting then
-                        span [ class "profile-contact-method-verify-status" ] [ text "Sending code…" ]
+        else
+            case maybePhoneVerification of
+                Nothing ->
+                    div [ class "profile-contact-method-verify" ]
+                        [ button [ class "profile-edit-button", onClick StartPhoneVerificationClicked ] [ text "Start Verification" ] ]
 
-                      else
-                        div [ class "profile-contact-method-verify-code" ]
-                            [ input
-                                [ class "profile-real-name-input"
-                                , placeholder "Enter code"
-                                , value pv.code
-                                , onInput PhoneVerificationCodeChanged
-                                , disabled (pv.verifyStatus == Submitting)
-                                ]
-                                []
-                            , button
-                                [ class "profile-edit-save"
-                                , onClick VerifyPhoneCodeClicked
-                                , disabled (pv.verifyStatus == Submitting || String.isEmpty pv.code)
-                                ]
-                                [ text
-                                    (if pv.verifyStatus == Submitting then
-                                        "Verifying…"
+                Just pv ->
+                    div [ class "profile-contact-method-verify" ]
+                        [ if pv.sendStatus == Submitting then
+                            span [ class "profile-contact-method-verify-status" ] [ text "Sending code…" ]
 
-                                     else
-                                        "Verify"
-                                    )
+                          else
+                            div [ class "profile-contact-method-verify-code" ]
+                                [ input
+                                    [ class "profile-real-name-input"
+                                    , placeholder "Enter code"
+                                    , value pv.code
+                                    , onInput PhoneVerificationCodeChanged
+                                    , disabled (pv.verifyStatus == Submitting)
+                                    ]
+                                    []
+                                , button
+                                    [ class "profile-edit-save"
+                                    , onClick VerifyPhoneCodeClicked
+                                    , disabled (pv.verifyStatus == Submitting || String.isEmpty pv.code)
+                                    ]
+                                    [ text
+                                        (if pv.verifyStatus == Submitting then
+                                            "Verifying…"
+
+                                         else
+                                            "Verify"
+                                        )
+                                    ]
+                                , button
+                                    [ class "profile-edit-cancel"
+                                    , onClick StartPhoneVerificationClicked
+                                    , disabled pv.cooldownActive
+                                    ]
+                                    [ text "Resend" ]
                                 ]
-                            , button
-                                [ class "profile-edit-cancel"
-                                , onClick StartPhoneVerificationClicked
-                                , disabled pv.cooldownActive
-                                ]
-                                [ text "Resend" ]
-                            ]
-                    , editErrorView pv.sendStatus
-                    , editErrorView pv.verifyStatus
-                    ]
+                        , editErrorView pv.sendStatus
+                        , editErrorView pv.verifyStatus
+                        ]
 
 
 {-| A checkbox styled as a toggle switch -- same `.switch`/`.slider` classes
@@ -5525,6 +5531,7 @@ for shared styling) but need distinct ids to both be independently linkable. Nam
 `Model.pendingScrollSectionId` scrolls to (see that field's own doc) -- ordinary web `#dom-id`
 anchors otherwise, so the other three sections just reuse their own `sectionClass` here since
 nothing needs to link to them yet.
+
 -}
 expandableProfileSection : String -> String -> String -> Maybe (Html Msg) -> Bool -> Msg -> List (Html Msg) -> Html Msg
 expandableProfileSection sectionClass domId title maybeHeaderAction expanded toggleMsg content =
@@ -6343,6 +6350,7 @@ always mounted regardless, same "CSS-driven, not conditionally-mounted" conventi
 that header. `stopPropagationAndPreventDefaultOnClick`, not a plain `onClick`, since this sits inside
 the same `h2` as the header's own `toggleMsg` handler -- without it, a click here would also bubble up
 and collapse the section it just refreshed.
+
 -}
 refreshButtonView : Bool -> Msg -> SubmitStatus -> Html Msg
 refreshButtonView expanded msg status =
@@ -6363,7 +6371,8 @@ refreshButtonView expanded msg status =
 
 {-| `refreshButtonView`'s own error message -- unlike the button itself, this stays in the
 collapsible body (so it doesn't permanently occupy header space, and so it's only visible once the
-section carrying the failure is actually opened). -}
+section carrying the failure is actually opened).
+-}
 refreshErrorView : SubmitStatus -> Html Msg
 refreshErrorView status =
     case status of
