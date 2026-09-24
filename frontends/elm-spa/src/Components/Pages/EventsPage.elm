@@ -2706,7 +2706,6 @@ own active-tab convention) is added while the filter is on.
 -}
 hideStartedOrLongButtonView : Model -> Html Msg
 hideStartedOrLongButtonView model =
-    if anyStartedEvents model then
         button
             [ classes
                 ("filter-icon-button"
@@ -2716,6 +2715,12 @@ hideStartedOrLongButtonView model =
                         else
                             []
                        )
+                    ++ (if anyStartedEvents model then
+                        []
+
+                    else
+                        [ "hidden" ]
+                   )
                 )
             , onClick HideStartedEventsToggled
             , title
@@ -2736,8 +2741,20 @@ hideStartedOrLongButtonView model =
             ]
             [ text "▽" ]
 
-    else
-        text ""
+
+{-| The cutoff `tabsView`'s "Events After" input shows -- `model.endsAfter`,
+except while `UpcomingEvents` is active, where that's just the live clock:
+there it shows the remembered `Shared.UserPreferences.eventsAfter` (if set),
+i.e. what `TabChanged EventsAfterDate` will actually switch `endsAfter` to.
+-}
+displayedEndsAfter : Shared.Model -> Model -> Maybe Time.Posix
+displayedEndsAfter shared model =
+    case ( model.tab, shared.userPreferences.eventsAfter ) of
+        ( UpcomingEvents, Just preferredEndsAfter ) ->
+            Just preferredEndsAfter
+
+        _ ->
+            model.endsAfter
 
 
 {-| The 2 tabs (see `EventsTab`) -- "Upcoming Events" (a plain pill button,
@@ -2752,7 +2769,9 @@ otherwise independent (a plain `TabChanged EventsAfterDate` is a no-op once
 already active, so the two never conflict). The input's own `value` reflects
 `model.endsAfter` (falling back to the UNIX epoch only for the brief instant
 before the very first `GotNow`/`?ends_after=` resolves one -- see
-`Model.endsAfter`'s own doc) formatted in the viewer's own local time zone,
+`Model.endsAfter`'s own doc) -- or, while `UpcomingEvents` is active, the
+remembered `Shared.UserPreferences.eventsAfter` instead, if set (see
+`displayedEndsAfter`) -- formatted in the viewer's own local time zone,
 so the picker shows/accepts wall-clock time the viewer actually recognizes
 rather than raw UTC. The standalone (non-embedded) branch sits its tabs (plus
 `hideStartedOrLongButtonView`) directly in the generic, horizontally-scrolling
@@ -2804,7 +2823,7 @@ tabsView shared model =
                     , value
                         (SharedTime.formatDateTimeLocalInput
                             shared.time.browserTimeZone.zone
-                            (Maybe.withDefault (Time.millisToPosix 0) model.endsAfter)
+                            (Maybe.withDefault (Time.millisToPosix 0) (displayedEndsAfter shared model))
                         )
                     , onInput EndsAfterInputChanged
                     ]

@@ -243,7 +243,7 @@
 }
 
 .create-new-button {
-  transition: width 0.2s ease, margin 0.2s ease, opacity 0.2s ease;
+  transition: width 0.2s ease, margin 0.2s ease, opacity 0.2s ease, padding 0.2s ease, border 0.2s ease;
   opacity: 1;
   width: var(--nav-toggle-height);
 }
@@ -253,6 +253,8 @@
   opacity: 0;
   margin-left: 0px;
   pointer-events: none;
+  padding: 0px;
+  border: 0px;
 }
 
 /* The Home link swaps in the browsing server's RegularServerLogo (glyph +

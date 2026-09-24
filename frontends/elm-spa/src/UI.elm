@@ -3925,19 +3925,39 @@ page link. `stopPropagationOn`, not plain `onClick`, for the same reason
 -}
 newPostToggle : Shared.Model -> Html Shared.Msg
 newPostToggle shared =
-    button
+    div
         [ classes <|
-            [ "create-new-button", "nav-menu-toggle", "circular", openClosedClass (CreateNewPanel.isOpen shared.panels.createNewPanel) ]
-                ++ (if CreateNewPanel.hasEligibleAccount shared.accounts then
+            "create-new-button" :: (if CreateNewPanel.hasEligibleAccount shared.accounts then
                         []
 
                     else
                         [ "hidden" ]
                    )
+        -- , stopPropagationOn "click" (Decode.succeed ( Shared.CreateNewPanelMsg CreateNewPanel.ToggleOpen, True ))
+        -- , title "Create New"
+        ]
+        [ 
+            button
+        [ classes <|
+            [ "nav-menu-toggle", "circular", openClosedClass (CreateNewPanel.isOpen shared.panels.createNewPanel) ]
         , stopPropagationOn "click" (Decode.succeed ( Shared.CreateNewPanelMsg CreateNewPanel.ToggleOpen, True ))
         , title "Create New"
         ]
         [ text "+" ]
+         ]
+    -- button
+    --     [ classes <|
+    --         [ "create-new-button", "nav-menu-toggle", "circular", openClosedClass (CreateNewPanel.isOpen shared.panels.createNewPanel) ]
+    --             ++ (if CreateNewPanel.hasEligibleAccount shared.accounts then
+    --                     []
+
+    --                 else
+    --                     [ "hidden" ]
+    --                )
+    --     , stopPropagationOn "click" (Decode.succeed ( Shared.CreateNewPanelMsg CreateNewPanel.ToggleOpen, True ))
+    --     , title "Create New"
+    --     ]
+    --     [ text "+" ]
 
 
 
