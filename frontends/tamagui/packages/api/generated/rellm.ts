@@ -751,7 +751,7 @@ export const protobufPackage = "rellm";
  * [`MessagingGroup`](#rellm-MessagingGroup) keyed on the `To`/`Cc` recipients only - Bcc'd recipients are excluded
  * from the group (so they stay invisible to everyone else on the thread) and instead recorded individually as `Bcc`
  * rows on the [`Message`](#rellm-Message). The [`Message`](#rellm-Message) has no `from_user_id`, since inbound email never has a local sender; its
- * parsed `from`/`to`/`cc` headers are stored alongside it, and the raw `.eml` is uploaded to the same MinIO store
+ * parsed `from`/`to`/`cc` headers are stored alongside it, and the raw `.eml` is uploaded to the same object storage
  * used for [`Media`](#rellm-Media). Duplicate deliveries of the same `Message-ID` (Stalwart retries on transient failure) reuse the
  * existing [`Message`](#rellm-Message) row rather than storing/uploading a duplicate.
  * * **Response**: `200 OK` with a body of `{"action": "accept"}` on success - Stalwart's MTA Hook protocol parses
@@ -1075,7 +1075,7 @@ export const RellmDefinition = {
       options: {},
     },
     /**
-     * Deletes a media item by ID. *Authenticated.* Note that media may still be accessible for 12 hours after deletes are requested, as separate jobs clean it up from S3/MinIO.
+     * Deletes a media item by ID. *Authenticated.* Note that media may still be accessible for 12 hours after deletes are requested, as separate jobs clean it up from S3/object storage.
      * Deleting other users' media requires `ADMIN` permissions.
      */
     deleteMedia: {
@@ -1091,8 +1091,8 @@ export const RellmDefinition = {
      * *Authenticated.* Every other field (visibility, moderation, `sizes`, etc.) is ignored -- use
      * other RPCs (or, for `sizes`, `DeleteMediaSizes`) to change them. If `metadata` is set and its
      * `video_preview_time_ms` differs from the item's current value, any existing
-     * `VIDEO_PREVIEW_THUMBNAIL_*` sizes are deleted (both from `sizes` and their backing MinIO
-     * objects) so `convert_media_sizes` regenerates them at the new time -- see `MediaMetadata` and
+     * `VIDEO_PREVIEW_THUMBNAIL_*` sizes are deleted (both from `sizes` and their backing object
+     * storage objects) so `convert_media_sizes` regenerates them at the new time -- see `MediaMetadata` and
      * `MediaConversion`'s own docs. Updating other users' media requires `ADMIN` permissions.
      */
     updateMedia: {
@@ -2025,7 +2025,7 @@ export interface RellmServiceImplementation<CallContextExt = {}> {
   /** Gets Media (Images, Videos, etc) uploaded/owned by the current user. *Authenticated.* To upload/download actual Media blob/binary data, use the [HTTP Media APIs](#media). */
   getMedia(request: GetMediaRequest, context: CallContext & CallContextExt): Promise<DeepPartial<GetMediaResponse>>;
   /**
-   * Deletes a media item by ID. *Authenticated.* Note that media may still be accessible for 12 hours after deletes are requested, as separate jobs clean it up from S3/MinIO.
+   * Deletes a media item by ID. *Authenticated.* Note that media may still be accessible for 12 hours after deletes are requested, as separate jobs clean it up from S3/object storage.
    * Deleting other users' media requires `ADMIN` permissions.
    */
   deleteMedia(request: Media, context: CallContext & CallContextExt): Promise<DeepPartial<Empty>>;
@@ -2034,8 +2034,8 @@ export interface RellmServiceImplementation<CallContextExt = {}> {
    * *Authenticated.* Every other field (visibility, moderation, `sizes`, etc.) is ignored -- use
    * other RPCs (or, for `sizes`, `DeleteMediaSizes`) to change them. If `metadata` is set and its
    * `video_preview_time_ms` differs from the item's current value, any existing
-   * `VIDEO_PREVIEW_THUMBNAIL_*` sizes are deleted (both from `sizes` and their backing MinIO
-   * objects) so `convert_media_sizes` regenerates them at the new time -- see `MediaMetadata` and
+   * `VIDEO_PREVIEW_THUMBNAIL_*` sizes are deleted (both from `sizes` and their backing object
+   * storage objects) so `convert_media_sizes` regenerates them at the new time -- see `MediaMetadata` and
    * `MediaConversion`'s own docs. Updating other users' media requires `ADMIN` permissions.
    */
   updateMedia(request: Media, context: CallContext & CallContextExt): Promise<DeepPartial<Media>>;
@@ -2517,7 +2517,7 @@ export interface RellmClient<CallOptionsExt = {}> {
   /** Gets Media (Images, Videos, etc) uploaded/owned by the current user. *Authenticated.* To upload/download actual Media blob/binary data, use the [HTTP Media APIs](#media). */
   getMedia(request: DeepPartial<GetMediaRequest>, options?: CallOptions & CallOptionsExt): Promise<GetMediaResponse>;
   /**
-   * Deletes a media item by ID. *Authenticated.* Note that media may still be accessible for 12 hours after deletes are requested, as separate jobs clean it up from S3/MinIO.
+   * Deletes a media item by ID. *Authenticated.* Note that media may still be accessible for 12 hours after deletes are requested, as separate jobs clean it up from S3/object storage.
    * Deleting other users' media requires `ADMIN` permissions.
    */
   deleteMedia(request: DeepPartial<Media>, options?: CallOptions & CallOptionsExt): Promise<Empty>;
@@ -2526,8 +2526,8 @@ export interface RellmClient<CallOptionsExt = {}> {
    * *Authenticated.* Every other field (visibility, moderation, `sizes`, etc.) is ignored -- use
    * other RPCs (or, for `sizes`, `DeleteMediaSizes`) to change them. If `metadata` is set and its
    * `video_preview_time_ms` differs from the item's current value, any existing
-   * `VIDEO_PREVIEW_THUMBNAIL_*` sizes are deleted (both from `sizes` and their backing MinIO
-   * objects) so `convert_media_sizes` regenerates them at the new time -- see `MediaMetadata` and
+   * `VIDEO_PREVIEW_THUMBNAIL_*` sizes are deleted (both from `sizes` and their backing object
+   * storage objects) so `convert_media_sizes` regenerates them at the new time -- see `MediaMetadata` and
    * `MediaConversion`'s own docs. Updating other users' media requires `ADMIN` permissions.
    */
   updateMedia(request: DeepPartial<Media>, options?: CallOptions & CallOptionsExt): Promise<Media>;

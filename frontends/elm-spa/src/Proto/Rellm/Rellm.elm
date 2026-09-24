@@ -663,7 +663,7 @@ To run it, add a dependency via `elm install` on [`elm-protocol-buffers`](https:
  [`MessagingGroup`](#rellm-MessagingGroup) keyed on the `To`/`Cc` recipients only - Bcc'd recipients are excluded
  from the group (so they stay invisible to everyone else on the thread) and instead recorded individually as `Bcc`
  rows on the [`Message`](#rellm-Message). The [`Message`](#rellm-Message) has no `from_user_id`, since inbound email never has a local sender; its
- parsed `from`/`to`/`cc` headers are stored alongside it, and the raw `.eml` is uploaded to the same MinIO store
+ parsed `from`/`to`/`cc` headers are stored alongside it, and the raw `.eml` is uploaded to the same object storage
  used for [`Media`](#rellm-Media). Duplicate deliveries of the same `Message-ID` (Stalwart retries on transient failure) reuse the
  existing [`Message`](#rellm-Message) row rather than storing/uploading a duplicate.
  * **Response**: `200 OK` with a body of `{"action": "accept"}` on success - Stalwart's MTA Hook protocol parses
@@ -2357,8 +2357,8 @@ deleteMediaSizes =
  *Authenticated.* Every other field (visibility, moderation, `sizes`, etc.) is ignored -- use
  other RPCs (or, for `sizes`, `DeleteMediaSizes`) to change them. If `metadata` is set and its
  `video_preview_time_ms` differs from the item's current value, any existing
- `VIDEO_PREVIEW_THUMBNAIL_*` sizes are deleted (both from `sizes` and their backing MinIO
- objects) so `convert_media_sizes` regenerates them at the new time -- see `MediaMetadata` and
+ `VIDEO_PREVIEW_THUMBNAIL_*` sizes are deleted (both from `sizes` and their backing object
+ storage objects) so `convert_media_sizes` regenerates them at the new time -- see `MediaMetadata` and
  `MediaConversion`'s own docs. Updating other users' media requires `ADMIN` permissions.
 
 
@@ -2376,7 +2376,7 @@ updateMedia =
 
 {-| A template for a gRPC call to the method 'DeleteMedia' sending a `Media` to get back a `Empty`.
 
- Deletes a media item by ID. *Authenticated.* Note that media may still be accessible for 12 hours after deletes are requested, as separate jobs clean it up from S3/MinIO.
+ Deletes a media item by ID. *Authenticated.* Note that media may still be accessible for 12 hours after deletes are requested, as separate jobs clean it up from S3/object storage.
  Deleting other users' media requires `ADMIN` permissions.
 
 

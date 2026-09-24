@@ -65,7 +65,7 @@ macro_rules! authenticated_rpc {
     }};
 }
 
-/// Like `authenticated_rpc!`, but for RPCs that also need MinIO access (e.g. to clean up
+/// Like `authenticated_rpc!`, but for RPCs that also need object storage access (e.g. to clean up
 /// objects backing deleted Media) and are therefore `async fn`s themselves.
 macro_rules! authenticated_bucket_rpc {
     ($self: expr, $rpc:expr, $request:expr) => {{

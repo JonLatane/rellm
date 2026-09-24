@@ -53,22 +53,22 @@ local_test_db_reset: local_test_db_drop local_test_db_create
 MAKEFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
 MAKEFILE_DIR := $(dir $(MAKEFILE_PATH))
 
-local_minio_start:
-	docker start rellm-dev-minio
+local_object_storage_start:
+	docker start rellm-dev-object-storage
 
-local_minio_create:
-	$(MAKE) local_minio_start || $(MAKE) _do_local_minio_create
+local_object_storage_create:
+	$(MAKE) local_object_storage_start || $(MAKE) _do_local_object_storage_create
 
-# bitnamilegacy/minio, not quay.io/minio/minio -- MinIO locked down anonymous pulls of
-# quay.io/minio/minio (401 "unauthorized" on every tag) after archiving the OSS project.
-# bitnamilegacy/minio is Bitnami's frozen/unsupported-but-still-pullable image; it starts
-# the server itself via its own entrypoint, so no `server /data` command override here.
-_do_local_minio_create:
-	docker run -d -p 9000:9000 -p 9090:9090 --name rellm-dev-minio -v $(MAKEFILE_DIR)/.minio-data:/bitnami/minio/data -e "MINIO_ROOT_USER=ROOTNAME" -e "MINIO_ROOT_PASSWORD=CHANGEME123" -e "MINIO_BROWSER=on" -e "MINIO_CONSOLE_PORT_NUMBER=9090" bitnamilegacy/minio:latest
+# pgsty/silo, not quay.io/minio/minio -- MinIO's OSS project was archived in 2026 and
+# quay.io/minio/minio now 401s "unauthorized" on anonymous pulls of every tag. pgsty/silo is
+# a drop-in, MinIO-API-compatible fork that accepts the exact same `server /data
+# --console-address ":9090"` invocation and MINIO_ROOT_USER/MINIO_ROOT_PASSWORD env vars.
+_do_local_object_storage_create:
+	docker run -d -p 9000:9000 -p 9090:9090 --name rellm-dev-object-storage -v $(MAKEFILE_DIR)/.object-storage-data:/data -e "MINIO_ROOT_USER=ROOTNAME" -e "MINIO_ROOT_PASSWORD=CHANGEME123" pgsty/silo:latest server /data --console-address ":9090"
 
-local_minio_delete:
-	docker stop rellm-dev-minio
-	docker rm rellm-dev-minio
+local_object_storage_delete:
+	docker stop rellm-dev-object-storage
+	docker rm rellm-dev-object-storage
 
 
 local_instances_stop:

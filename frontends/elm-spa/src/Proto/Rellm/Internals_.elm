@@ -8101,7 +8101,7 @@ type alias Proto__Rellm__FulfillmentNote =
 -}
 fieldNumbersProto__Rellm__RellmHostingSubscriptionDetails :
     { dbSizeBytes : Int
-    , minioSizeBytes : Int
+    , objectStorageSizeBytes : Int
     , additionalDescription : Int
     , domain : Int
     , contactEmail : Int
@@ -8111,7 +8111,7 @@ fieldNumbersProto__Rellm__RellmHostingSubscriptionDetails :
     }
 fieldNumbersProto__Rellm__RellmHostingSubscriptionDetails =
     { dbSizeBytes = 1
-    , minioSizeBytes = 2
+    , objectStorageSizeBytes = 2
     , additionalDescription = 3
     , domain = 4
     , contactEmail = 5
@@ -8127,7 +8127,7 @@ fieldNumbersProto__Rellm__RellmHostingSubscriptionDetails =
 defaultProto__Rellm__RellmHostingSubscriptionDetails : Proto__Rellm__RellmHostingSubscriptionDetails
 defaultProto__Rellm__RellmHostingSubscriptionDetails =
     { dbSizeBytes = Protobuf.Types.Int64.fromInts 0 0
-    , minioSizeBytes = Protobuf.Types.Int64.fromInts 0 0
+    , objectStorageSizeBytes = Protobuf.Types.Int64.fromInts 0 0
     , additionalDescription = ""
     , domain = ""
     , contactEmail = ""
@@ -8146,7 +8146,7 @@ decodeProto__Rellm__RellmHostingSubscriptionDetails =
     Protobuf.Decode.message
         defaultProto__Rellm__RellmHostingSubscriptionDetails
         [ Protobuf.Decode.optional 1 Protobuf.Decode.uint64 (\a r -> { r | dbSizeBytes = a })
-        , Protobuf.Decode.optional 2 Protobuf.Decode.uint64 (\a r -> { r | minioSizeBytes = a })
+        , Protobuf.Decode.optional 2 Protobuf.Decode.uint64 (\a r -> { r | objectStorageSizeBytes = a })
         , Protobuf.Decode.optional 3 Protobuf.Decode.string (\a r -> { r | additionalDescription = a })
         , Protobuf.Decode.optional 4 Protobuf.Decode.string (\a r -> { r | domain = a })
         , Protobuf.Decode.optional 5 Protobuf.Decode.string (\a r -> { r | contactEmail = a })
@@ -8171,7 +8171,7 @@ encodeProto__Rellm__RellmHostingSubscriptionDetails :
 encodeProto__Rellm__RellmHostingSubscriptionDetails value =
     Protobuf.Encode.message
         [ ( 1, Protobuf.Encode.uint64 value.dbSizeBytes )
-        , ( 2, Protobuf.Encode.uint64 value.minioSizeBytes )
+        , ( 2, Protobuf.Encode.uint64 value.objectStorageSizeBytes )
         , ( 3, Protobuf.Encode.string value.additionalDescription )
         , ( 4, Protobuf.Encode.string value.domain )
         , ( 5, Protobuf.Encode.string value.contactEmail )
@@ -8186,7 +8186,7 @@ encodeProto__Rellm__RellmHostingSubscriptionDetails value =
 -}
 type alias Proto__Rellm__RellmHostingSubscriptionDetails =
     { dbSizeBytes : Protobuf.Types.Int64.Int64
-    , minioSizeBytes : Protobuf.Types.Int64.Int64
+    , objectStorageSizeBytes : Protobuf.Types.Int64.Int64
     , additionalDescription : String
     , domain : String
     , contactEmail : String
@@ -8584,7 +8584,7 @@ type alias Proto__Rellm__PermissionsAccessPurchaseDetails =
 -}
 fieldNumbersProto__Rellm__RellmHostingPurchaseDetails :
     { dbSizeBytes : Int
-    , minioSizeBytes : Int
+    , objectStorageSizeBytes : Int
     , additionalDescription : Int
     , domain : Int
     , contactEmail : Int
@@ -8592,7 +8592,7 @@ fieldNumbersProto__Rellm__RellmHostingPurchaseDetails :
     }
 fieldNumbersProto__Rellm__RellmHostingPurchaseDetails =
     { dbSizeBytes = 1
-    , minioSizeBytes = 2
+    , objectStorageSizeBytes = 2
     , additionalDescription = 3
     , domain = 4
     , contactEmail = 5
@@ -8606,7 +8606,7 @@ fieldNumbersProto__Rellm__RellmHostingPurchaseDetails =
 defaultProto__Rellm__RellmHostingPurchaseDetails : Proto__Rellm__RellmHostingPurchaseDetails
 defaultProto__Rellm__RellmHostingPurchaseDetails =
     { dbSizeBytes = Protobuf.Types.Int64.fromInts 0 0
-    , minioSizeBytes = Protobuf.Types.Int64.fromInts 0 0
+    , objectStorageSizeBytes = Protobuf.Types.Int64.fromInts 0 0
     , additionalDescription = ""
     , domain = ""
     , contactEmail = ""
@@ -8622,7 +8622,7 @@ decodeProto__Rellm__RellmHostingPurchaseDetails =
     Protobuf.Decode.message
         defaultProto__Rellm__RellmHostingPurchaseDetails
         [ Protobuf.Decode.optional 1 Protobuf.Decode.uint64 (\a r -> { r | dbSizeBytes = a })
-        , Protobuf.Decode.optional 2 Protobuf.Decode.uint64 (\a r -> { r | minioSizeBytes = a })
+        , Protobuf.Decode.optional 2 Protobuf.Decode.uint64 (\a r -> { r | objectStorageSizeBytes = a })
         , Protobuf.Decode.optional 3 Protobuf.Decode.string (\a r -> { r | additionalDescription = a })
         , Protobuf.Decode.optional 4 Protobuf.Decode.string (\a r -> { r | domain = a })
         , Protobuf.Decode.optional 5 Protobuf.Decode.string (\a r -> { r | contactEmail = a })
@@ -8637,7 +8637,7 @@ encodeProto__Rellm__RellmHostingPurchaseDetails : Proto__Rellm__RellmHostingPurc
 encodeProto__Rellm__RellmHostingPurchaseDetails value =
     Protobuf.Encode.message
         [ ( 1, Protobuf.Encode.uint64 value.dbSizeBytes )
-        , ( 2, Protobuf.Encode.uint64 value.minioSizeBytes )
+        , ( 2, Protobuf.Encode.uint64 value.objectStorageSizeBytes )
         , ( 3, Protobuf.Encode.string value.additionalDescription )
         , ( 4, Protobuf.Encode.string value.domain )
         , ( 5, Protobuf.Encode.string value.contactEmail )
@@ -8650,7 +8650,7 @@ encodeProto__Rellm__RellmHostingPurchaseDetails value =
 -}
 type alias Proto__Rellm__RellmHostingPurchaseDetails =
     { dbSizeBytes : Protobuf.Types.Int64.Int64
-    , minioSizeBytes : Protobuf.Types.Int64.Int64
+    , objectStorageSizeBytes : Protobuf.Types.Int64.Int64
     , additionalDescription : String
     , domain : String
     , contactEmail : String

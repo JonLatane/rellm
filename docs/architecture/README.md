@@ -2,7 +2,7 @@
 Rellm is generally setup to be deployed using Make atop `kubectl` and `jq` (and `graphviz`, if editing architecture diagrams in this directory).
 
 ## Application Architecture
-This is how Rellm works on a client-server, in terms of interaction of the Browser/App, HTTP server, gRPC server, PostgreSQL DB, and MinIO.
+This is how Rellm works on a client-server, in terms of interaction of the Browser/App, HTTP server, gRPC server, PostgreSQL DB, and object storage.
 
 ![Rellm Application Architecture](https://github.com/JonLatane/rellm/blob/main/docs/architecture/Service_Architecture.svg)
 

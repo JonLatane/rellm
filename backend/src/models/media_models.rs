@@ -140,7 +140,7 @@ pub trait MediaConversionExt {
     /// preserving aspect ratio and never upscaling. Meaningless for `Original`.
     fn max_dimension(&self) -> u32;
 
-    /// Lowercase name -- used to derive converted media's MinIO path and in logging.
+    /// Lowercase name -- used to derive converted media's object storage path and in logging.
     fn key(&self) -> &'static str;
 }
 
@@ -168,17 +168,17 @@ impl MediaConversionExt for MediaConversion {
 }
 
 /// One stored copy of a `Media` item's bytes -- the DB-internal (JSONB-embedded, via `Media.sizes`/
-/// `MediaReference.sizes`) counterpart to the wire `protos::MediaSize`, plus `minio_path`, which is
-/// server-internal and deliberately never sent to clients (mirrors `Media`/`MediaReference`
+/// `MediaReference.sizes`) counterpart to the wire `protos::MediaSize`, plus `object_storage_path`,
+/// which is server-internal and deliberately never sent to clients (mirrors `Media`/`MediaReference`
 /// themselves never exposing it). `conversion` is stored as `i32` (the raw `MediaConversion`
 /// discriminant), matching the convention every other proto enum field uses in this codebase (e.g.
 /// `Media.visibility`/`.moderation` on the wire) -- so this JSON round-trips as plain integers,
-/// e.g. `{"conversion": 0, "minio_path": "...", "content_type": "...", "size_bytes": 12345,
+/// e.g. `{"conversion": 0, "object_storage_path": "...", "content_type": "...", "size_bytes": 12345,
 /// "aspect_ratio": 1.5}`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MediaSize {
     pub conversion: i32,
-    pub minio_path: String,
+    pub object_storage_path: String,
     pub content_type: String,
     pub size_bytes: i64,
     pub aspect_ratio: Option<f32>,

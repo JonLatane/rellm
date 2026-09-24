@@ -9,24 +9,27 @@
 #   ./cutover_jonline_namespace.sh ato-band
 #
 # What it does, in order:
-#   1. Renames Postgres (jonline-postgres -> rellm-postgres) and MinIO
-#      (jonline-minio -> rellm-minio) StatefulSets+Services. Data is
-#      untouched by this step -- both old and new StatefulSets mount the
-#      SAME PVC (postgres-pv-claim/minio-pv-claim), referenced by a fixed
-#      claimName rather than derived from the StatefulSet's own name.
+#   1. Renames Postgres (jonline-postgres -> rellm-postgres) and object
+#      storage (jonline-minio -> rellm-object-storage) StatefulSets+Services.
+#      Data is untouched by this step -- both old and new StatefulSets mount
+#      the SAME PVC (postgres-pv-claim/object-storage-pv-claim), referenced
+#      by a fixed claimName rather than derived from the StatefulSet's own
+#      name.
 #   2. Deletes the old `jonline`/`jonline-jobs` Deployment+Service. Done
 #      here (before the data-level renames below) specifically to stop all
-#      writes to the old Postgres database/MinIO bucket before copying it,
-#      so there's no window where something could write to `jonline` after
-#      we've already copied/renamed it to `rellm`.
+#      writes to the old Postgres database/object storage bucket before
+#      copying it, so there's no window where something could write to
+#      `jonline` after we've already copied/renamed it to `rellm`.
 #   3. Renames the Postgres database itself (`jonline` -> `rellm`) via
 #      ALTER DATABASE -- metadata-only, no data copied, just needs zero
 #      active connections (guaranteed by step 2).
-#   4. Copy-migrates the MinIO bucket (`jonline` -> `rellm`): S3/MinIO has
-#      no rename-bucket operation, so this actually copies every object via
-#      `mc mirror`, verifies the copy is byte-for-byte identical with
-#      `mc diff`, and only then removes the old bucket. Requires the MinIO
-#      client: `brew install minio/stable/mc`.
+#   4. Copy-migrates the object storage bucket (`jonline` -> `rellm`):
+#      S3/object storage has no rename-bucket operation, so this actually
+#      copies every object via `mc mirror`, verifies the copy is
+#      byte-for-byte identical with `mc diff`, and only then removes the old
+#      bucket. Requires the MinIO Client (`mc` -- works against any
+#      S3-compatible server, including the object storage backend used
+#      here): `brew install minio/stable/mc`.
 #   5. Issues a new TLS certificate (rellm-generated-tls, via a new
 #      cert-manager Certificate resource, rellm-letsencrypt-cert) for
 #      HTTPS/gRPC (ports 443/27707). TLS_KEY/TLS_CERT are `optional: true`
@@ -36,7 +39,7 @@
 #      and digitalocean-dns credential as-is; only requests a fresh
 #      Let's-Encrypt-issued cert under the new secret name.
 #   6. Restarts rellm/rellm-jobs and waits for them to come up healthy
-#      against the now-renamed Postgres database, MinIO bucket, and cert.
+#      against the now-renamed Postgres database, object storage bucket, and cert.
 #   7. Swaps the Traefik ingress routes (jonline-http/-alt/-https/-grpc ->
 #      rellm-http/-alt/-https/-grpc) so traffic reaches the new `rellm`
 #      Service. DOMAIN/EXTRA_DOMAINS are read straight off the live old
@@ -48,30 +51,30 @@
 #
 # Downtime: this is a full stop-old/start-new cutover, not a staged
 # rollout -- the domain will be down from step 2 until step 8 completes
-# (Postgres rename is instant, MinIO copy-migrate in step 4 takes as long as
-# your media library does to copy, and the cert issuance in step 5 needs a
-# few minutes for DNS-01 propagation). No data is at risk at any point: the
-# old Postgres/MinIO data is never deleted until verified copied (MinIO) or
-# is untouched entirely (Postgres is a metadata-only rename); the old TLS
-# cert/secret is untouched too.
+# (Postgres rename is instant, object storage copy-migrate in step 4 takes
+# as long as your media library does to copy, and the cert issuance in step
+# 5 needs a few minutes for DNS-01 propagation). No data is at risk at any
+# point: the old Postgres/object storage data is never deleted until
+# verified copied (object storage) or is untouched entirely (Postgres is a
+# metadata-only rename); the old TLS cert/secret is untouched too.
 #
 # Prerequisites:
 #  - kubectl pointed at the right cluster. If your kubeconfig still
 #    references the cluster by its old name, refresh it now that it's been
 #    renamed to rellm-be:
 #      doctl kubernetes cluster kubeconfig save --expiry-seconds 600 rellm-be
-#  - the MinIO client, for the bucket copy: brew install minio/stable/mc
+#  - the MinIO Client, for the bucket copy: brew install minio/stable/mc
 set -euo pipefail
 
 NAMESPACE="${1:?Usage: $0 <namespace>  (e.g. jonline, bullcitysocial, oakcitysocial, ato-band)}"
 DEPLOYS_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-command -v mc >/dev/null || { echo "mc (MinIO client) is required -- install with: brew install minio/stable/mc" >&2; exit 1; }
+command -v mc >/dev/null || { echo "mc (MinIO Client) is required -- install with: brew install minio/stable/mc" >&2; exit 1; }
 
 echo "=== Namespace: $NAMESPACE ==="
 
 echo
-echo "== 1. Rename Postgres and MinIO StatefulSets+Services (data untouched -- same PVCs) =="
+echo "== 1. Rename Postgres and object storage StatefulSets+Services (data untouched -- same PVCs) =="
 kubectl delete statefulset jonline-postgres -n "$NAMESPACE" --ignore-not-found
 kubectl delete service jonline-postgres -n "$NAMESPACE" --ignore-not-found
 (cd "$DEPLOYS_DIR" && make update_backend_postgres NAMESPACE="$NAMESPACE")
@@ -79,8 +82,8 @@ kubectl wait --for=condition=ready pod/rellm-postgres-0 -n "$NAMESPACE" --timeou
 
 kubectl delete statefulset jonline-minio -n "$NAMESPACE" --ignore-not-found
 kubectl delete service jonline-minio -n "$NAMESPACE" --ignore-not-found
-(cd "$DEPLOYS_DIR" && make update_backend_minio NAMESPACE="$NAMESPACE")
-kubectl wait --for=condition=ready pod/rellm-minio-0 -n "$NAMESPACE" --timeout=2m
+(cd "$DEPLOYS_DIR" && make update_backend_object_storage NAMESPACE="$NAMESPACE")
+kubectl wait --for=condition=ready pod/rellm-object-storage-0 -n "$NAMESPACE" --timeout=2m
 
 echo
 echo "== 2. Delete the old jonline/jonline-jobs Deployment+Service =="
@@ -120,11 +123,11 @@ kill $PG_PF_PID 2>/dev/null || true
 trap - EXIT
 
 echo
-echo "== 4. Copy-migrate the MinIO bucket (jonline -> rellm) =="
-kubectl port-forward -n "$NAMESPACE" svc/rellm-minio 19000:9000 >/tmp/miniopf-"$NAMESPACE".log 2>&1 &
-MINIO_PF_PID=$!
+echo "== 4. Copy-migrate the object storage bucket (jonline -> rellm) =="
+kubectl port-forward -n "$NAMESPACE" svc/rellm-object-storage 19000:9000 >/tmp/objectstoragepf-"$NAMESPACE".log 2>&1 &
+OBJECT_STORAGE_PF_PID=$!
 sleep 2
-trap 'kill $MINIO_PF_PID 2>/dev/null || true' EXIT
+trap 'kill $OBJECT_STORAGE_PF_PID 2>/dev/null || true' EXIT
 
 export MC_HOST_local="http://minio:minio123@localhost:19000"
 
@@ -146,7 +149,7 @@ else
   echo "   'jonline' bucket not found (already migrated, or never existed) -- skipping."
 fi
 
-kill $MINIO_PF_PID 2>/dev/null || true
+kill $OBJECT_STORAGE_PF_PID 2>/dev/null || true
 trap - EXIT
 
 echo

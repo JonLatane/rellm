@@ -234,10 +234,10 @@ pub async fn create_email_message(
     let messaging_group_id = find_or_create_messaging_group(group_user_ids, &mut conn)
         .map_err(|_| Status::InternalServerError)?;
 
-    let email_minio_path = format!("email/{}.eml", Uuid::new_v4());
+    let email_object_storage_path = format!("email/{}.eml", Uuid::new_v4());
     state
         .bucket
-        .put_object_with_content_type(&email_minio_path, &raw_message, "message/rfc822")
+        .put_object_with_content_type(&email_object_storage_path, &raw_message, "message/rfc822")
         .await
         .map_err(|_| Status::InternalServerError)?;
 
@@ -247,7 +247,7 @@ pub async fn create_email_message(
         body_text: parsed.body_text(0).map(|body| body.to_string()),
         email_headers: Some(serde_json::to_value(email_headers).unwrap()),
         email_message_id: Some(message_id.clone()),
-        email_minio_path: Some(email_minio_path),
+        email_object_storage_path: Some(email_object_storage_path),
         messaging_group_id,
     };
 
@@ -264,7 +264,7 @@ pub async fn create_email_message(
         Ok(message) => (message, true),
         // Stalwart retries delivery on transient failure -- a unique violation here means we've
         // already stored this Message-ID, so treat it as success and reuse the existing row
-        // rather than storing (and MinIO-uploading) a duplicate.
+        // rather than storing (and object-storage-uploading) a duplicate.
         Err(diesel::result::Error::DatabaseError(
             diesel::result::DatabaseErrorKind::UniqueViolation,
             _,

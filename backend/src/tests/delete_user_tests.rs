@@ -1,7 +1,7 @@
 //! Specs for `delete_user`: who's allowed to call it, and that it actually cleans up everything
 //! the user owned -- Events (via `delete_event`), Posts/Replies (via `delete_post`), Media
-//! (via `delete_media`, including its MinIO objects), and SyncSources/SyncDestinations --
-//! before removing the `users` row itself. Needs a real MinIO connection for the Media leg -- see
+//! (via `delete_media`, including its object storage objects), and SyncSources/SyncDestinations --
+//! before removing the `users` row itself. Needs a real object storage connection for the Media leg -- see
 //! `factories::test_bucket`.
 
 use diesel::prelude::*;
@@ -141,10 +141,10 @@ fn delete_cascades_events_posts_media_and_sync_config() {
         let (occasion, occasion_post) =
             create_occasion(conn, &event, Some(&user), OccasionOpts::default());
 
-        // Media -- DeleteMedia should hard-delete the row and the backing MinIO object.
+        // Media -- DeleteMedia should hard-delete the row and the backing object storage object.
         let media_path = unique_path("cascade");
         tb.block_on(tb.bucket.put_object(&media_path, b"test-bytes"))
-            .expect("failed to seed test MinIO object");
+            .expect("failed to seed test object storage object");
         let user_media = create_media(conn, Some(&user), &media_path);
 
         // A SyncSource/SyncDestination the user configured.
@@ -209,7 +209,7 @@ fn delete_cascades_events_posts_media_and_sync_config() {
         let occasion_post_after = models::get_post(occasion_post.id, conn).unwrap();
         assert_eq!(occasion_post_after.user_id, None);
 
-        // Media was hard-deleted, and its MinIO object cleaned up.
+        // Media was hard-deleted, and its object storage object cleaned up.
         let remaining_media: i64 = media::table
             .filter(media::id.eq(user_media.id))
             .count()

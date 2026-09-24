@@ -24,7 +24,7 @@ sender's MTA -> DNS MX lookup for yourdomain.com -> Traefik (:25, shared LoadBal
                                                         |
                                                         v
                               that namespace's `rellm` backend parses it, stores the raw
-                              message in MinIO, and indexes it in Postgres per recipient
+                              message in object storage, and indexes it in Postgres per recipient
 ```
 
 Because Stalwart is the one thing that has to be a well-behaved, spam-resistant internet-facing SMTP server, this is a **single shared component per cluster** - like `deploys/ingress`'s Traefik, not like each namespace's own `rellm` Deployment. Unlike `rellm`, though, it sits *behind* that same shared Traefik ingress rather than getting its own LoadBalancer: `deploys/ingress` has to peek at the TLS SNI on 443/27707 to decide which of several namespaces to forward to, but there's no such decision for SMTP - Stalwart is the only possible destination cluster-wide (it does its own per-domain acceptance internally, after Traefik hands it the connection). So it's wired up as a plain TCP passthrough on a dedicated `smtp` entrypoint (port 25) with a catch-all ``HostSNI(`*`)`` route, requiring nothing from Traefik beyond "forward every byte" - see `../ingress/k8s/traefik.yaml` and `k8s/stalwart.yaml`'s `IngressRouteTCP`. STARTTLS is transparent to this: it just upgrades the same already-routed connection in place, it doesn't open a new one Traefik would need to re-route.

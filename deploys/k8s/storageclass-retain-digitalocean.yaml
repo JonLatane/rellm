@@ -1,6 +1,6 @@
 # Mirrors DigitalOcean's default "do-block-storage" StorageClass, except
 # reclaimPolicy is Retain instead of Delete -- so deleting/recreating a
-# postgres-pv-claim or minio-pv-claim PVC (e.g. during a Deployment/StatefulSet
+# postgres-pv-claim or object-storage-pv-claim PVC (e.g. during a Deployment/StatefulSet
 # migration, or a namespace teardown) can never take the underlying volume's
 # data with it. Cluster-scoped, so this only needs to be created once, not
 # once per namespace/site.

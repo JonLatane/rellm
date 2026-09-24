@@ -31,8 +31,8 @@ or `Components.Pages.UserProfilePage`'s Sync Source `syncIntervalSeconds`). Spli
 `Int64`'s two signed-32-bit halves the same way `int64ToInt` recombines them (`high * 2^32 +
 unsignedLow`) -- unlike a naive `Int64.fromInts 0 value`, which silently wraps (not errors) for
 any `value` at or above 2^32 (4GB), since `Int64.fromInts`'s low half is only ever guaranteed to
-hold `-2^31 .. 2^31 - 1`. Caught by a real `productSummary` test case (a 5GB Rellm-hosting MinIO
-allocation silently became 1GB) -- exactly the scale of value this function is actually fed today.
+hold `-2^31 .. 2^31 - 1`. Caught by a real `productSummary` test case (a 5GB Rellm-hosting object
+storage allocation silently became 1GB) -- exactly the scale of value this function is actually fed today.
 -}
 int64FromInt : Int -> Int64.Int64
 int64FromInt value =

@@ -1,4 +1,4 @@
-//! Specs for `MediaMetadata::effective_video_preview_time_ms` -- pure logic, no DB/MinIO needed
+//! Specs for `MediaMetadata::effective_video_preview_time_ms` -- pure logic, no DB/object storage needed
 //! (unlike most `tests/` specs, which exercise an RPC end-to-end).
 
 use crate::models::MediaMetadata;

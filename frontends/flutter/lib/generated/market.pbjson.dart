@@ -356,7 +356,7 @@ const RellmHostingPurchaseDetails$json = {
   '1': 'RellmHostingPurchaseDetails',
   '2': [
     {'1': 'db_size_bytes', '3': 1, '4': 1, '5': 4, '10': 'dbSizeBytes'},
-    {'1': 'minio_size_bytes', '3': 2, '4': 1, '5': 4, '10': 'minioSizeBytes'},
+    {'1': 'object_storage_size_bytes', '3': 2, '4': 1, '5': 4, '10': 'objectStorageSizeBytes'},
     {'1': 'additional_description', '3': 3, '4': 1, '5': 9, '10': 'additionalDescription'},
     {'1': 'domain', '3': 4, '4': 1, '5': 9, '10': 'domain'},
     {'1': 'contact_email', '3': 5, '4': 1, '5': 9, '10': 'contactEmail'},
@@ -367,11 +367,11 @@ const RellmHostingPurchaseDetails$json = {
 /// Descriptor for `RellmHostingPurchaseDetails`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List rellmHostingPurchaseDetailsDescriptor = $convert.base64Decode(
     'ChtSZWxsbUhvc3RpbmdQdXJjaGFzZURldGFpbHMSIgoNZGJfc2l6ZV9ieXRlcxgBIAEoBFILZG'
-    'JTaXplQnl0ZXMSKAoQbWluaW9fc2l6ZV9ieXRlcxgCIAEoBFIObWluaW9TaXplQnl0ZXMSNQoW'
-    'YWRkaXRpb25hbF9kZXNjcmlwdGlvbhgDIAEoCVIVYWRkaXRpb25hbERlc2NyaXB0aW9uEhYKBm'
-    'RvbWFpbhgEIAEoCVIGZG9tYWluEiMKDWNvbnRhY3RfZW1haWwYBSABKAlSDGNvbnRhY3RFbWFp'
-    'bBI1ChZhZGRpdGlvbmFsX2luZm9ybWF0aW9uGAYgASgJUhVhZGRpdGlvbmFsSW5mb3JtYXRpb2'
-    '4=');
+    'JTaXplQnl0ZXMSOQoZb2JqZWN0X3N0b3JhZ2Vfc2l6ZV9ieXRlcxgCIAEoBFIWb2JqZWN0U3Rv'
+    'cmFnZVNpemVCeXRlcxI1ChZhZGRpdGlvbmFsX2Rlc2NyaXB0aW9uGAMgASgJUhVhZGRpdGlvbm'
+    'FsRGVzY3JpcHRpb24SFgoGZG9tYWluGAQgASgJUgZkb21haW4SIwoNY29udGFjdF9lbWFpbBgF'
+    'IAEoCVIMY29udGFjdEVtYWlsEjUKFmFkZGl0aW9uYWxfaW5mb3JtYXRpb24YBiABKAlSFWFkZG'
+    'l0aW9uYWxJbmZvcm1hdGlvbg==');
 
 @$core.Deprecated('Use permissionsAccessPurchaseDetailsDescriptor instead')
 const PermissionsAccessPurchaseDetails$json = {
@@ -492,7 +492,7 @@ const RellmHostingSubscriptionDetails$json = {
   '1': 'RellmHostingSubscriptionDetails',
   '2': [
     {'1': 'db_size_bytes', '3': 1, '4': 1, '5': 4, '10': 'dbSizeBytes'},
-    {'1': 'minio_size_bytes', '3': 2, '4': 1, '5': 4, '10': 'minioSizeBytes'},
+    {'1': 'object_storage_size_bytes', '3': 2, '4': 1, '5': 4, '10': 'objectStorageSizeBytes'},
     {'1': 'additional_description', '3': 3, '4': 1, '5': 9, '10': 'additionalDescription'},
     {'1': 'domain', '3': 4, '4': 1, '5': 9, '10': 'domain'},
     {'1': 'contact_email', '3': 5, '4': 1, '5': 9, '10': 'contactEmail'},
@@ -505,13 +505,13 @@ const RellmHostingSubscriptionDetails$json = {
 /// Descriptor for `RellmHostingSubscriptionDetails`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List rellmHostingSubscriptionDetailsDescriptor = $convert.base64Decode(
     'Ch9SZWxsbUhvc3RpbmdTdWJzY3JpcHRpb25EZXRhaWxzEiIKDWRiX3NpemVfYnl0ZXMYASABKA'
-    'RSC2RiU2l6ZUJ5dGVzEigKEG1pbmlvX3NpemVfYnl0ZXMYAiABKARSDm1pbmlvU2l6ZUJ5dGVz'
-    'EjUKFmFkZGl0aW9uYWxfZGVzY3JpcHRpb24YAyABKAlSFWFkZGl0aW9uYWxEZXNjcmlwdGlvbh'
-    'IWCgZkb21haW4YBCABKAlSBmRvbWFpbhIjCg1jb250YWN0X2VtYWlsGAUgASgJUgxjb250YWN0'
-    'RW1haWwSNQoWYWRkaXRpb25hbF9pbmZvcm1hdGlvbhgGIAEoCVIVYWRkaXRpb25hbEluZm9ybW'
-    'F0aW9uEkcKEmZ1bGZpbGxtZW50X3N0YXR1cxgHIAEoDjIYLnJlbGxtLkZ1bGZpbGxtZW50U3Rh'
-    'dHVzUhFmdWxmaWxsbWVudFN0YXR1cxJDChFmdWxmaWxsbWVudF9ub3RlcxgIIAMoCzIWLnJlbG'
-    'xtLkZ1bGZpbGxtZW50Tm90ZVIQZnVsZmlsbG1lbnROb3Rlcw==');
+    'RSC2RiU2l6ZUJ5dGVzEjkKGW9iamVjdF9zdG9yYWdlX3NpemVfYnl0ZXMYAiABKARSFm9iamVj'
+    'dFN0b3JhZ2VTaXplQnl0ZXMSNQoWYWRkaXRpb25hbF9kZXNjcmlwdGlvbhgDIAEoCVIVYWRkaX'
+    'Rpb25hbERlc2NyaXB0aW9uEhYKBmRvbWFpbhgEIAEoCVIGZG9tYWluEiMKDWNvbnRhY3RfZW1h'
+    'aWwYBSABKAlSDGNvbnRhY3RFbWFpbBI1ChZhZGRpdGlvbmFsX2luZm9ybWF0aW9uGAYgASgJUh'
+    'VhZGRpdGlvbmFsSW5mb3JtYXRpb24SRwoSZnVsZmlsbG1lbnRfc3RhdHVzGAcgASgOMhgucmVs'
+    'bG0uRnVsZmlsbG1lbnRTdGF0dXNSEWZ1bGZpbGxtZW50U3RhdHVzEkMKEWZ1bGZpbGxtZW50X2'
+    '5vdGVzGAggAygLMhYucmVsbG0uRnVsZmlsbG1lbnROb3RlUhBmdWxmaWxsbWVudE5vdGVz');
 
 @$core.Deprecated('Use fulfillmentNoteDescriptor instead')
 const FulfillmentNote$json = {

@@ -355,8 +355,8 @@ class MediaSize extends $pb.GeneratedMessage {
   @$pb.TagNumber(1)
   void clearConversion() => clearField(1);
 
-  /// This copy's size on disk/in MinIO, in bytes. Summed (across every size, of every Media a user
-  /// owns) into `User.media_storage_bytes_used`.
+  /// This copy's size on disk/in object storage, in bytes. Summed (across every size, of every
+  /// Media a user owns) into `User.media_storage_bytes_used`.
   @$pb.TagNumber(2)
   $fixnum.Int64 get sizeBytes => $_getI64(1);
   @$pb.TagNumber(2)

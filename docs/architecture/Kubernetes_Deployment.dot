@@ -18,11 +18,11 @@ digraph G {
     color = lightgrey;
     
     rellm0 [label = <<table><tr><td><b>rellm</b></td></tr><tr><td>(K8s LoadBalancer)</td></tr></table>>];
-    minio0 [shape=cylinder label = "Minio";];
+    objectStorage0 [shape=cylinder label = "Object Storage";];
     postgres0 [shape=cylinder label = "Postgres";];
     tls0 [shape = "box";color = ".7 .3 1.0";label = <<table><tr><td>rellm-tls</td></tr><tr><td>(K8s Secret)</td></tr><tr><td>Configurable with deploys/generated_certs/Makefile</td></tr><tr><td>Lightweight integration with&nbsp;<i>Cert-Manager</i></td></tr></table>>;];
     
-    rellm0 -> minio0 [label=<5GB @ <b>50¢/mo</b>>];
+    rellm0 -> objectStorage0 [label=<5GB @ <b>50¢/mo</b>>];
     rellm0 -> postgres0 [label=<1GB @ <b>10¢/mo</b>>];
     rellm0 -> tls0;
   }
@@ -36,10 +36,10 @@ digraph G {
     color = lightgrey;
     
     rellm1 [label = <<table><tr><td><b>rellm</b></td></tr><tr><td>(K8s LoadBalancer)</td></tr></table>>;];
-    minio1 [shape=cylinder label = "Minio";];
+    objectStorage1 [shape=cylinder label = "Object Storage";];
     postgres1 [shape=cylinder label = "Postgres";];
     
-    rellm1 -> minio1 [label=<5GB @ <b>50¢/mo</b>>];
+    rellm1 -> objectStorage1 [label=<5GB @ <b>50¢/mo</b>>];
     rellm1 -> postgres1 [label=<1GB @ <b>10¢/mo</b>>];
     tls1 [shape = "box";color = ".7 .3 1.0";label = <<table><tr><td>rellm-tls</td></tr><tr><td>(K8s Secret)</td></tr><tr><td>Configurable with deploys/generated_certs/Makefile</td></tr><tr><td>Lightweight integration with&nbsp;<i>Cert-Manager</i></td></tr></table>>;];
     rellm1 -> tls1;
@@ -53,10 +53,10 @@ digraph G {
     color = lightgrey;
     
     rellm2 [label = <<table><tr><td><b>rellm</b></td></tr><tr><td>(K8s LoadBalancer)</td></tr></table>>;];
-    minio2 [label = "Minio" shape=cylinder];
+    objectStorage2 [label = "Object Storage" shape=cylinder];
     postgres2 [label = "Postgres" shape=cylinder];
     
-    rellm2 -> minio2 [label=<5GB @ <b>50¢/mo</b>>];
+    rellm2 -> objectStorage2 [label=<5GB @ <b>50¢/mo</b>>];
     rellm2 -> postgres2 [label=<1GB @ <b>10¢/mo</b>>];
     tls2 [shape = "box";color = ".7 .3 1.0";label = <<table><tr><td>rellm-tls</td></tr><tr><td>(K8s Secret)</td></tr><tr><td>Configurable with deploys/generated_certs/Makefile</td></tr><tr><td>Lightweight integration with&nbsp;<i>Cert-Manager</i></td></tr></table>>;];
     rellm2 -> tls2;

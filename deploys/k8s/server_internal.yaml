@@ -58,15 +58,15 @@ spec:
           env:
             - name: DATABASE_URL
               value: postgres://admin:secure_password1@rellm-postgres/rellm
-            - name: MINIO_ENDPOINT
-              value: http://rellm-minio:9000
-            - name: MINIO_REGION
+            - name: OBJECT_STORAGE_ENDPOINT
+              value: http://rellm-object-storage:9000
+            - name: OBJECT_STORAGE_REGION
               value: ""
-            - name: MINIO_BUCKET
+            - name: OBJECT_STORAGE_BUCKET
               value: rellm
-            - name: MINIO_ACCESS_KEY
+            - name: OBJECT_STORAGE_ACCESS_KEY
               value: minio
-            - name: MINIO_SECRET_KEY
+            - name: OBJECT_STORAGE_SECRET_KEY
               value: minio123
             - name: RUST_BACKTRACE
               value: full
@@ -145,15 +145,15 @@ spec:
           env:
             - name: DATABASE_URL
               value: postgres://admin:secure_password1@rellm-postgres/rellm
-            - name: MINIO_ENDPOINT
-              value: http://rellm-minio:9000
-            - name: MINIO_REGION
+            - name: OBJECT_STORAGE_ENDPOINT
+              value: http://rellm-object-storage:9000
+            - name: OBJECT_STORAGE_REGION
               value: ""
-            - name: MINIO_BUCKET
+            - name: OBJECT_STORAGE_BUCKET
               value: rellm
-            - name: MINIO_ACCESS_KEY
+            - name: OBJECT_STORAGE_ACCESS_KEY
               value: minio
-            - name: MINIO_SECRET_KEY
+            - name: OBJECT_STORAGE_SECRET_KEY
               value: minio123
             - name: RUST_BACKTRACE
               value: full

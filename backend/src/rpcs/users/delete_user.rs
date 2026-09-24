@@ -83,7 +83,7 @@ pub async fn delete_user(
         )?;
     }
 
-    // Media -- via DeleteMedia, which also cleans up the underlying MinIO object(s).
+    // Media -- via DeleteMedia, which also cleans up the underlying object storage object(s).
     let media_ids = media::table
         .filter(media::user_id.eq(Some(target_user_id)))
         .select(media::id)

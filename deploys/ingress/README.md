@@ -1,6 +1,6 @@
 # Rellm Ingress
 
-A single shared [Traefik](https://traefik.io) ingress that lets many Rellm instances (each in its own namespace, each with its own domain, Postgres, MinIO and Cert-Manager certs) share **one** external IP/LoadBalancer instead of one each. On most cloud providers a LoadBalancer/external IP is the most expensive part of running a small Rellm instance, so this is the difference between paying for `N` of them and paying for 1, no matter how many domains you host.
+A single shared [Traefik](https://traefik.io) ingress that lets many Rellm instances (each in its own namespace, each with its own domain, Postgres, object storage and Cert-Manager certs) share **one** external IP/LoadBalancer instead of one each. On most cloud providers a LoadBalancer/external IP is the most expensive part of running a small Rellm instance, so this is the difference between paying for `N` of them and paying for 1, no matter how many domains you host.
 
 This whole setup is domain-agnostic and cluster-agnostic: nothing you type here ends up in a file this repo tracks in git (same principle as [the Cert-Manager setup](../generated_certs/README.md), which never commits your actual domain either).
 
@@ -38,7 +38,7 @@ make remove_ingress
 
 ## Onboarding a domain
 
-Once a namespace already has its own `rellm` backend, Postgres, MinIO and Cert-Manager certs set up (i.e. you've already done the [Basic Deployment](../README.md#basic-deployment) for it) and it's currently using `server_external.yaml` (its own LoadBalancer), you can move it behind the shared ingress:
+Once a namespace already has its own `rellm` backend, Postgres, object storage and Cert-Manager certs set up (i.e. you've already done the [Basic Deployment](../README.md#basic-deployment) for it) and it's currently using `server_external.yaml` (its own LoadBalancer), you can move it behind the shared ingress:
 
 ```bash
 NAMESPACE=mynamespace DOMAIN=my.domain.example.com make add_ingress_domain

@@ -892,7 +892,7 @@ endpoint returns `404 Not Found`.
 [`MessagingGroup`](#rellm-MessagingGroup) keyed on the `To`/`Cc` recipients only - Bcc&#39;d recipients are excluded
 from the group (so they stay invisible to everyone else on the thread) and instead recorded individually as `Bcc`
 rows on the [`Message`](#rellm-Message). The [`Message`](#rellm-Message) has no `from_user_id`, since inbound email never has a local sender; its
-parsed `from`/`to`/`cc` headers are stored alongside it, and the raw `.eml` is uploaded to the same MinIO store
+parsed `from`/`to`/`cc` headers are stored alongside it, and the raw `.eml` is uploaded to the same object storage
 used for [`Media`](#rellm-Media). Duplicate deliveries of the same `Message-ID` (Stalwart retries on transient failure) reuse the
 existing [`Message`](#rellm-Message) row rather than storing/uploading a duplicate.
 * **Response**: `200 OK` with a body of `{&#34;action&#34;: &#34;accept&#34;}` on success - Stalwart&#39;s MTA Hook protocol parses
@@ -1144,8 +1144,8 @@ discarded and a fresh keypair generated, so it&#39;s single-use per completed/fa
 | GetCurrentUser | [.google.protobuf.Empty](#google-protobuf-Empty) | [User](#rellm-User) | Gets the current user. *Authenticated.* |
 | ResetPassword | [ResetPasswordRequest](#rellm-ResetPasswordRequest) | [.google.protobuf.Empty](#google-protobuf-Empty) | Resets the current user&#39;s - or, for admins, a given user&#39;s - password. *Authenticated.* |
 | GetMedia | [GetMediaRequest](#rellm-GetMediaRequest) | [GetMediaResponse](#rellm-GetMediaResponse) | Gets Media (Images, Videos, etc) uploaded/owned by the current user. *Authenticated.* To upload/download actual Media blob/binary data, use the [HTTP Media APIs](#media). |
-| DeleteMedia | [Media](#rellm-Media) | [.google.protobuf.Empty](#google-protobuf-Empty) | Deletes a media item by ID. *Authenticated.* Note that media may still be accessible for 12 hours after deletes are requested, as separate jobs clean it up from S3/MinIO. Deleting other users&#39; media requires `ADMIN` permissions. |
-| UpdateMedia | [Media](#rellm-Media) | [Media](#rellm-Media) | Updates a Media item&#39;s `name`/`description`/`metadata.video_preview_time_ms` by ID. *Authenticated.* Every other field (visibility, moderation, `sizes`, etc.) is ignored -- use other RPCs (or, for `sizes`, `DeleteMediaSizes`) to change them. If `metadata` is set and its `video_preview_time_ms` differs from the item&#39;s current value, any existing `VIDEO_PREVIEW_THUMBNAIL_*` sizes are deleted (both from `sizes` and their backing MinIO objects) so `convert_media_sizes` regenerates them at the new time -- see `MediaMetadata` and `MediaConversion`&#39;s own docs. Updating other users&#39; media requires `ADMIN` permissions. |
+| DeleteMedia | [Media](#rellm-Media) | [.google.protobuf.Empty](#google-protobuf-Empty) | Deletes a media item by ID. *Authenticated.* Note that media may still be accessible for 12 hours after deletes are requested, as separate jobs clean it up from S3/object storage. Deleting other users&#39; media requires `ADMIN` permissions. |
+| UpdateMedia | [Media](#rellm-Media) | [Media](#rellm-Media) | Updates a Media item&#39;s `name`/`description`/`metadata.video_preview_time_ms` by ID. *Authenticated.* Every other field (visibility, moderation, `sizes`, etc.) is ignored -- use other RPCs (or, for `sizes`, `DeleteMediaSizes`) to change them. If `metadata` is set and its `video_preview_time_ms` differs from the item&#39;s current value, any existing `VIDEO_PREVIEW_THUMBNAIL_*` sizes are deleted (both from `sizes` and their backing object storage objects) so `convert_media_sizes` regenerates them at the new time -- see `MediaMetadata` and `MediaConversion`&#39;s own docs. Updating other users&#39; media requires `ADMIN` permissions. |
 | DeleteMediaSizes | [Media](#rellm-Media) | [Media](#rellm-Media) | Deletes only the given `sizes` (matched by `conversion`) of a Media item by ID, e.g. to reclaim space by dropping `MEDIA_CONVERSION_ORIGINAL` once converted copies exist to serve in its place. *Authenticated.* Deleting other users&#39; media requires `ADMIN` permissions. Errors if this would leave the Media item with no `sizes` at all -- use `DeleteMedia` to remove the whole item instead. |
 | GetUsers | [GetUsersRequest](#rellm-GetUsersRequest) | [GetUsersResponse](#rellm-GetUsersResponse) | Gets Users. *Publicly accessible **or** Authenticated.* Unauthenticated calls only return Users of `GLOBAL_PUBLIC` visibility. |
 | UpdateUser | [User](#rellm-User) | [User](#rellm-User) | Update a user by ID. *Authenticated.* Updating other users requires `ADMIN` permissions. |
@@ -2045,7 +2045,7 @@ can vary any of them independently of the original.
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | conversion | [MediaConversion](#rellm-MediaConversion) |  | Which copy this is -- the untouched original, or one of the auto-generated resized copies. |
-| size_bytes | [uint64](#uint64) |  | This copy&#39;s size on disk/in MinIO, in bytes. Summed (across every size, of every Media a user owns) into `User.media_storage_bytes_used`. |
+| size_bytes | [uint64](#uint64) |  | This copy&#39;s size on disk/in object storage, in bytes. Summed (across every size, of every Media a user owns) into `User.media_storage_bytes_used`. |
 | aspect_ratio | [float](#float) | optional | Width divided by height. Set by the `convert_media_sizes` background job once it&#39;s able to read the media&#39;s dimensions (via ImageMagick/ffprobe); unset until then. |
 | content_type | [string](#string) |  | The MIME content type of this copy specifically. Usually identical across every size of a given `Media`, but not guaranteed to be -- e.g. a future video-thumbnail conversion could produce an `image/jpeg` size for a `video/mp4` original. |
 
@@ -5049,7 +5049,7 @@ and `web::stripe_webhook::handle_checkout_session_completed`). Field-for-field i
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | db_size_bytes | [uint64](#uint64) |  | NOTE: as of the current webhook implementation, the buyer never supplies this and the originating `MarketProduct`&#39;s own configured size isn&#39;t carried through Checkout Session metadata either, so this is currently always `0` here -- an admin fulfilling an order today needs to cross-reference the `MarketProduct` itself for the size actually sold. Intended to be the requested PostgreSQL database size in bytes. |
-| minio_size_bytes | [uint64](#uint64) |  | Same caveat as `db_size_bytes` above -- currently always `0`. Intended to be the requested MinIO (object storage) size in bytes. |
+| object_storage_size_bytes | [uint64](#uint64) |  | Same caveat as `db_size_bytes` above -- currently always `0`. Intended to be the requested object storage size in bytes. |
 | additional_description | [string](#string) |  | Copied from `RellmHostingSubscriptionDetails.additional_description` at the moment this purchase was fulfilled -- see that field&#39;s own doc. |
 | domain | [string](#string) |  | The domain the buyer wants their new Rellm instance reachable at (e.g. &#34;myserver.example.com&#34;). |
 | contact_email | [string](#string) |  | Where the fulfilling admin should reach the buyer about this order, separate from whatever email/contact info is on the buyer&#39;s own `User` (which may not be checked as often, or may not exist at all for a server with no email-based signup). |
@@ -5074,7 +5074,7 @@ no `*PurchaseDetails` counterpart, since they&#39;re only ever meaningful on the
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | db_size_bytes | [uint64](#uint64) |  | On a `MarketProduct`: the PostgreSQL database size (in bytes) this product is configured to provision. On a `MarketSubscription`: see `RellmHostingPurchaseDetails.db_size_bytes`&#39;s own doc -- as of the current webhook implementation, this is currently always `0` here too, since the subscription&#39;s `details` is built the same way the purchase&#39;s is. |
-| minio_size_bytes | [uint64](#uint64) |  | Same caveat as `db_size_bytes` above. On a `MarketProduct`: the MinIO (object storage) size (in bytes) this product is configured to provision. |
+| object_storage_size_bytes | [uint64](#uint64) |  | Same caveat as `db_size_bytes` above. On a `MarketProduct`: the object storage size (in bytes) this product is configured to provision. |
 | additional_description | [string](#string) |  | Admin-authored, Markdown-formatted extra paragraph appended below the implicit, Elm-computed &#34;1GB DB &#43; 5GB Object Storage&#34;-style canned description shown on the product/subscription&#39;s own page -- e.g. to call out something specific to this hosting tier that the canned text doesn&#39;t cover. Optional; the canned description alone is shown when this is blank. |
 | domain | [string](#string) |  | On a `MarketProduct`: unset/meaningless (a product isn&#39;t tied to any one domain). On a `MarketSubscription`: the domain the buyer wants their new Rellm instance reachable at, from `RellmHostingPurchaseDetails.domain`. |
 | contact_email | [string](#string) |  | On a `MarketProduct`: unset/meaningless. On a `MarketSubscription`: where the fulfilling admin should reach the buyer about this order, from `RellmHostingPurchaseDetails.contact_email`. |

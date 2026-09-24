@@ -121,8 +121,8 @@ type alias ProductForm =
     , aiTokens : String
     , hostingDbSizeText : String
     , hostingDbSizeUnit : ByteFormat.ByteUnit
-    , hostingMinioSizeText : String
-    , hostingMinioSizeUnit : ByteFormat.ByteUnit
+    , hostingObjectStorageSizeText : String
+    , hostingObjectStorageSizeUnit : ByteFormat.ByteUnit
     , hostingAdditionalDescription : String
     , permissions : List Permission
     , permissionAddSelection : Maybe Permission
@@ -146,8 +146,8 @@ defaultProductForm =
     , aiTokens = ""
     , hostingDbSizeText = ""
     , hostingDbSizeUnit = ByteFormat.GB
-    , hostingMinioSizeText = ""
-    , hostingMinioSizeUnit = ByteFormat.GB
+    , hostingObjectStorageSizeText = ""
+    , hostingObjectStorageSizeUnit = ByteFormat.GB
     , hostingAdditionalDescription = ""
     , permissions = []
     , permissionAddSelection = List.head Users.allPermissions
@@ -211,19 +211,19 @@ productFormFromProduct product =
                 dbUnit =
                     ByteFormat.bytesToUnit dbBytes
 
-                minioBytes : Int
-                minioBytes =
-                    Conversions.int64ToInt details.minioSizeBytes
+                objectStorageBytes : Int
+                objectStorageBytes =
+                    Conversions.int64ToInt details.objectStorageSizeBytes
 
-                minioUnit : ByteFormat.ByteUnit
-                minioUnit =
-                    ByteFormat.bytesToUnit minioBytes
+                objectStorageUnit : ByteFormat.ByteUnit
+                objectStorageUnit =
+                    ByteFormat.bytesToUnit objectStorageBytes
             in
             { base
                 | hostingDbSizeText = String.fromFloat (toFloat dbBytes / toFloat (ByteFormat.byteUnitBytes dbUnit))
                 , hostingDbSizeUnit = dbUnit
-                , hostingMinioSizeText = String.fromFloat (toFloat minioBytes / toFloat (ByteFormat.byteUnitBytes minioUnit))
-                , hostingMinioSizeUnit = minioUnit
+                , hostingObjectStorageSizeText = String.fromFloat (toFloat objectStorageBytes / toFloat (ByteFormat.byteUnitBytes objectStorageUnit))
+                , hostingObjectStorageSizeUnit = objectStorageUnit
                 , hostingAdditionalDescription = details.additionalDescription
             }
 
@@ -240,7 +240,7 @@ productFormFromProduct product =
 
 
 {-| A number input + KB/MB/GB unit `<select>` for one byte-size `ProductForm` field -- shared by
-`mediaAllocationText`/`hostingDbSizeText`/`hostingMinioSizeText` (all three parse/format through
+`mediaAllocationText`/`hostingDbSizeText`/`hostingObjectStorageSizeText` (all three parse/format through
 `Shared.ByteFormat.parseBytes`/`byteUnitBytes`/`byteUnitFromText` directly now that that module's
 own `ByteUnit` math is binary, same as this page always needed -- see that module's own doc; this
 page no longer keeps a local binary copy of them), and the same widget shape
@@ -665,9 +665,9 @@ detailsFromForm form =
                         | dbSizeBytes =
                             Conversions.int64FromInt
                                 (ByteFormat.parseBytes form.hostingDbSizeUnit form.hostingDbSizeText |> Maybe.withDefault 0)
-                        , minioSizeBytes =
+                        , objectStorageSizeBytes =
                             Conversions.int64FromInt
-                                (ByteFormat.parseBytes form.hostingMinioSizeUnit form.hostingMinioSizeText |> Maybe.withDefault 0)
+                                (ByteFormat.parseBytes form.hostingObjectStorageSizeUnit form.hostingObjectStorageSizeText |> Maybe.withDefault 0)
                         , additionalDescription = form.hostingAdditionalDescription
                     }
                 )
@@ -1228,10 +1228,10 @@ productFormView aiProviders change form =
                     , byteSizeSelectorView change
                         "Object Storage Size"
                         form
-                        .hostingMinioSizeText
-                        (\f text -> { f | hostingMinioSizeText = text })
-                        .hostingMinioSizeUnit
-                        (\f unit -> { f | hostingMinioSizeUnit = unit })
+                        .hostingObjectStorageSizeText
+                        (\f text -> { f | hostingObjectStorageSizeText = text })
+                        .hostingObjectStorageSizeUnit
+                        (\f unit -> { f | hostingObjectStorageSizeUnit = unit })
                     , textarea
                         [ placeholder "Additional Description (Markdown, shown below the canned description)"
                         , value form.hostingAdditionalDescription

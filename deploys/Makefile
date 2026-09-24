@@ -14,7 +14,7 @@ endif
 endif
 
 # Selects which provider-specific k8s/*-$(K8S_PROVIDER).yaml manifests to use for the
-# DB/Minio/StorageClass targets below (e.g. "digitalocean"; "eks" or others as they're added).
+# DB/object storage/StorageClass targets below (e.g. "digitalocean"; "eks" or others as they're added).
 K8S_PROVIDER ?= digitalocean
 
 # Used when configuring the load balancer (deploy_lb_[un]link_service_account).
@@ -109,10 +109,10 @@ deploy_test_be_unsecured:
 deploy_test_be_tls_openssl:
 	openssl s_client -connect $(TEST_GRPC_TARGET) -CAfile generated_certs/ca.pem
 
-create_backend_data: create_backend_postgres create_backend_minio
-update_backend_data: update_backend_postgres update_backend_minio
-delete_backend_data: delete_backend_postgres delete_backend_minio
-restart_backend_data: restart_backend_postgres restart_backend_minio
+create_backend_data: create_backend_postgres create_backend_object_storage
+update_backend_data: update_backend_postgres update_backend_object_storage
+delete_backend_data: delete_backend_postgres delete_backend_object_storage
+restart_backend_data: restart_backend_postgres restart_backend_object_storage
 
 # Cluster-scoped, so this is safe/idempotent to (re)apply from any namespace's create target.
 deploy_ensure_storageclass_retain:
@@ -226,28 +226,29 @@ delete_backend_postgres_old_data:
 	@echo "This permanently deletes the pre-upgrade Postgres data at postgres-pv-claim:/postgres in namespace $(NAMESPACE)."
 	kubectl exec -n $(NAMESPACE) rellm-postgres-0 -- rm -rf /var/lib/postgresql/data/postgres
 
-# K8s Minio deployment targets (optional if using managed S3/Minio)
-create_backend_minio: deploy_ensure_namespace deploy_ensure_storageclass_retain
-	kubectl create -f k8s/k8s-minio-pvc-$(K8S_PROVIDER).yaml --save-config -n $(NAMESPACE)
-	kubectl create -f k8s/k8s-minio-$(K8S_PROVIDER).yaml --save-config -n $(NAMESPACE)
+# K8s object storage deployment targets (optional if using managed S3/object storage)
+create_backend_object_storage: deploy_ensure_namespace deploy_ensure_storageclass_retain
+	kubectl create -f k8s/k8s-object-storage-pvc-$(K8S_PROVIDER).yaml --save-config -n $(NAMESPACE)
+	kubectl create -f k8s/k8s-object-storage-$(K8S_PROVIDER).yaml --save-config -n $(NAMESPACE)
 
-update_backend_minio:
-	kubectl apply -f k8s/k8s-minio-$(K8S_PROVIDER).yaml -n $(NAMESPACE)
+update_backend_object_storage:
+	kubectl apply -f k8s/k8s-object-storage-$(K8S_PROVIDER).yaml -n $(NAMESPACE)
 
-delete_backend_minio:
-	- kubectl delete -f k8s/k8s-minio-$(K8S_PROVIDER).yaml -n $(NAMESPACE)
+delete_backend_object_storage:
+	- kubectl delete -f k8s/k8s-object-storage-$(K8S_PROVIDER).yaml -n $(NAMESPACE)
 
-# Separate from delete_backend_minio since it's rarely wanted: releases the PVC (data itself
-# is safe either way, since the PV's reclaimPolicy is Retain -- see storageclass-retain-*.yaml --
-# but this makes the volume unbound/orphaned from any PVC until manually reclaimed).
-delete_backend_minio_pvc:
-	- kubectl delete -f k8s/k8s-minio-pvc-$(K8S_PROVIDER).yaml -n $(NAMESPACE)
+# Separate from delete_backend_object_storage since it's rarely wanted: releases the PVC (data
+# itself is safe either way, since the PV's reclaimPolicy is Retain -- see
+# storageclass-retain-*.yaml -- but this makes the volume unbound/orphaned from any PVC until
+# manually reclaimed).
+delete_backend_object_storage_pvc:
+	- kubectl delete -f k8s/k8s-object-storage-pvc-$(K8S_PROVIDER).yaml -n $(NAMESPACE)
 
-restart_backend_minio:
-	kubectl rollout restart statefulset rellm-minio -n $(NAMESPACE)
+restart_backend_object_storage:
+	kubectl rollout restart statefulset rellm-object-storage -n $(NAMESPACE)
 
-wait_backend_minio_ready:
-	kubectl wait --for=condition=ready pod/rellm-minio-0 -n $(NAMESPACE) --timeout=2m
+wait_backend_object_storage_ready:
+	kubectl wait --for=condition=ready pod/rellm-object-storage-0 -n $(NAMESPACE) --timeout=2m
 
 # Useful things
 deploy_ensure_namespace:

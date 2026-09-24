@@ -37,7 +37,7 @@ pub mod db_connection;
 pub mod rellm_service;
 pub mod logic;
 pub mod marshaling;
-pub mod minio_connection;
+pub mod object_storage_connection;
 pub mod models;
 pub mod protos;
 pub mod rpcs;
@@ -108,11 +108,11 @@ Supported environment variables (and examples):
 
     DATABASE_URL=postgres://localhost/rellm_dev
 
-    MINIO_ENDPOINT=http://localhost:9000
-    MINIO_REGION=
-    MINIO_BUCKET=rellm-dev
-    MINIO_ACCESS_KEY=ROOTNAME
-    MINIO_SECRET_KEY=CHANGEME123
+    OBJECT_STORAGE_ENDPOINT=http://localhost:9000
+    OBJECT_STORAGE_REGION=
+    OBJECT_STORAGE_BUCKET=rellm-dev
+    OBJECT_STORAGE_ACCESS_KEY=ROOTNAME
+    OBJECT_STORAGE_SECRET_KEY=CHANGEME123
 
     TLS_CERT_PATH=/path/to/cert.pem
 
@@ -126,9 +126,9 @@ Supported flags:
 
     let pool = Arc::new(db_connection::establish_pool());
     let bucket = Arc::new(
-        *minio_connection::get_and_test_bucket()
+        *object_storage_connection::get_and_test_bucket()
             .await
-            .expect("Failed to connect to MinIO"),
+            .expect("Failed to connect to object storage"),
     );
 
     let tempdir = Arc::new(tempfile::tempdir().map_err(|e| {

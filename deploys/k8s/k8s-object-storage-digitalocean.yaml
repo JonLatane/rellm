@@ -1,0 +1,59 @@
+# The PVC (object-storage-pv-claim) lives in the sibling
+# k8s-object-storage-pvc-$(K8S_PROVIDER).yaml, not here -- see that file for why.
+# create_backend_object_storage applies both; update_backend_object_storage only applies
+# this one.
+apiVersion: v1
+kind: Service
+metadata:
+  name: rellm-object-storage
+  labels:
+    app: rellm-object-storage
+spec:
+  clusterIP: None
+  ports:
+    - port: 9000
+      protocol: TCP
+  selector:
+    app: rellm-object-storage
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: rellm-object-storage
+  labels:
+    app: rellm-object-storage
+spec:
+  serviceName: rellm-object-storage
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rellm-object-storage
+  template:
+    metadata:
+      labels:
+        app: rellm-object-storage
+    spec:
+      volumes:
+      - name: storage
+        persistentVolumeClaim:
+          claimName: object-storage-pv-claim
+      containers:
+      # pgsty/silo, not quay.io/minio/minio -- MinIO's OSS project was archived in 2026 and
+      # quay.io/minio/minio now 401s "unauthorized" on anonymous pulls of every tag, pinned
+      # ones included. pgsty/silo is a drop-in, MinIO-API-compatible fork that accepts the
+      # exact same `server /storage` args and MINIO_ROOT_USER/MINIO_ROOT_PASSWORD env vars.
+      - name: object-storage
+        image: pgsty/silo:RELEASE.2026-09-16T00-00-00Z
+        args:
+        - server
+        - /storage
+        env:
+        - name: MINIO_ROOT_USER
+          value: "minio"
+        - name: MINIO_ROOT_PASSWORD
+          value: "minio123"
+        ports:
+        - containerPort: 9000
+        volumeMounts:
+        - name: storage
+          mountPath: "/storage"

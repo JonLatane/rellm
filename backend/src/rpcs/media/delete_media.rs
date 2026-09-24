@@ -48,12 +48,12 @@ pub async fn delete_media(
         return Err(Status::new(Code::PermissionDenied, "not_your_media"));
     }
 
-    // Collect every MinIO object backing this Media -- the original upload plus any
+    // Collect every object storage object backing this Media -- the original upload plus any
     // small/medium/large converted copies -- before the row (and its `sizes`) is gone.
-    let minio_paths: Vec<String> = affected_media
+    let object_storage_paths: Vec<String> = affected_media
         .sizes()
         .into_iter()
-        .map(|s| s.minio_path)
+        .map(|s| s.object_storage_path)
         .collect();
     let owner_id = affected_media.user_id;
 
@@ -70,11 +70,11 @@ pub async fn delete_media(
     };
 
     if result.is_ok() {
-        for minio_path in minio_paths {
-            if let Err(e) = bucket.delete_object(&minio_path).await {
+        for object_storage_path in object_storage_paths {
+            if let Err(e) = bucket.delete_object(&object_storage_path).await {
                 log::error!(
-                    "Failed to delete MinIO object {} for media {}: {:?}",
-                    minio_path,
+                    "Failed to delete object storage object {} for media {}: {:?}",
+                    object_storage_path,
                     media_id,
                     e
                 );

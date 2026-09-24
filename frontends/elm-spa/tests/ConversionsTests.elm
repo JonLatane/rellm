@@ -31,7 +31,7 @@ suite =
                     |> int64FromInt
                     |> int64ToInt
                     |> Expect.equal (1024 * 1024 * 1024 * 5)
-        , test "round-trips 100GB (a plausible real Rellm-hosting DB/MinIO allocation)" <|
+        , test "round-trips 100GB (a plausible real Rellm-hosting DB/object storage allocation)" <|
             \_ ->
                 (1024 * 1024 * 1024 * 100)
                     |> int64FromInt

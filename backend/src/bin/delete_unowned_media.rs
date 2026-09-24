@@ -2,18 +2,18 @@ extern crate diesel;
 extern crate rellm;
 use diesel::*;
 use rellm::schema::{media, posts};
-use rellm::{db_connection, init_bin_logging, init_crypto, minio_connection};
+use rellm::{db_connection, init_bin_logging, init_crypto, object_storage_connection};
 
 #[tokio::main]
 async fn main() {
     init_crypto();
     init_bin_logging();
     log::info!("Deleting Unowned Media...");
-    log::info!("Connecting to DB and MinIO...");
+    log::info!("Connecting to DB and object storage...");
     let mut conn = db_connection::establish_connection();
-    let bucket = minio_connection::get_and_test_bucket()
+    let bucket = object_storage_connection::get_and_test_bucket()
         .await
-        .expect("Failed to connect to MinIO");
+        .expect("Failed to connect to object storage");
 
     let mut unowned_media = media::table
         .filter(media::user_id.is_null())
@@ -38,10 +38,10 @@ async fn main() {
         }
 
         for size in media.sizes() {
-            if let Err(e) = bucket.delete_object(&size.minio_path).await {
+            if let Err(e) = bucket.delete_object(&size.object_storage_path).await {
                 log::error!(
-                    "Failed to delete MinIO object {} for Media {}: {:?}. Proceeding through remaining media.",
-                    size.minio_path,
+                    "Failed to delete object storage object {} for Media {}: {:?}. Proceeding through remaining media.",
+                    size.object_storage_path,
                     media.id,
                     e
                 );

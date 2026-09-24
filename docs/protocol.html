@@ -1442,7 +1442,7 @@ the destination&#x26;#39;s resulting post ID/URL and last-synced time.
         <a href="#rellm-MessagingGroup"><code>MessagingGroup</code></a> keyed on the <code>To</code>/<code>Cc</code> recipients only - Bcc'd recipients are excluded
         from the group (so they stay invisible to everyone else on the thread) and instead recorded individually as <code>Bcc</code>
         rows on the <a href="#rellm-Message"><code>Message</code></a>. The <a href="#rellm-Message"><code>Message</code></a> has no <code>from_user_id</code>, since inbound email never has a local sender; its
-        parsed <code>from</code>/<code>to</code>/<code>cc</code> headers are stored alongside it, and the raw <code>.eml</code> is uploaded to the same MinIO store
+        parsed <code>from</code>/<code>to</code>/<code>cc</code> headers are stored alongside it, and the raw <code>.eml</code> is uploaded to the same object storage
         used for <a href="#rellm-Media"><code>Media</code></a>. Duplicate deliveries of the same <code>Message-ID</code> (Stalwart retries on transient failure) reuse the
         existing <a href="#rellm-Message"><code>Message</code></a> row rather than storing/uploading a duplicate.
       </li>
@@ -1772,13 +1772,13 @@ directory</a> is (<code>{name}</code> denotes a
           <td>DeleteMedia</td>
           <td><a href="#rellm-Media">Media</a></td>
           <td><a href="#google-protobuf-Empty">.google.protobuf.Empty</a></td>
-          <td>Deletes a media item by ID. <em>Authenticated.</em> Note that media may still be accessible for 12 hours after deletes are requested, as separate jobs clean it up from S3/MinIO. Deleting other users' media requires <code>ADMIN</code> permissions.</td>
+          <td>Deletes a media item by ID. <em>Authenticated.</em> Note that media may still be accessible for 12 hours after deletes are requested, as separate jobs clean it up from S3/object storage. Deleting other users' media requires <code>ADMIN</code> permissions.</td>
         </tr>
         <tr>
           <td>UpdateMedia</td>
           <td><a href="#rellm-Media">Media</a></td>
           <td><a href="#rellm-Media">Media</a></td>
-          <td>Updates a Media item's <code>name</code>/<code>description</code>/<code>metadata.video_preview_time_ms</code> by ID. <em>Authenticated.</em> Every other field (visibility, moderation, <code>sizes</code>, etc.) is ignored -- use other RPCs (or, for <code>sizes</code>, <code>DeleteMediaSizes</code>) to change them. If <code>metadata</code> is set and its <code>video_preview_time_ms</code> differs from the item's current value, any existing <code>VIDEO_PREVIEW_THUMBNAIL_*</code> sizes are deleted (both from <code>sizes</code> and their backing MinIO objects) so <code>convert_media_sizes</code> regenerates them at the new time -- see <code>MediaMetadata</code> and <code>MediaConversion</code>'s own docs. Updating other users' media requires <code>ADMIN</code> permissions.</td>
+          <td>Updates a Media item's <code>name</code>/<code>description</code>/<code>metadata.video_preview_time_ms</code> by ID. <em>Authenticated.</em> Every other field (visibility, moderation, <code>sizes</code>, etc.) is ignored -- use other RPCs (or, for <code>sizes</code>, <code>DeleteMediaSizes</code>) to change them. If <code>metadata</code> is set and its <code>video_preview_time_ms</code> differs from the item's current value, any existing <code>VIDEO_PREVIEW_THUMBNAIL_*</code> sizes are deleted (both from <code>sizes</code> and their backing object storage objects) so <code>convert_media_sizes</code> regenerates them at the new time -- see <code>MediaMetadata</code> and <code>MediaConversion</code>'s own docs. Updating other users' media requires <code>ADMIN</code> permissions.</td>
         </tr>
         <tr>
           <td>DeleteMediaSizes</td>
@@ -4091,7 +4091,7 @@ directory</a> is (<code>{name}</code> denotes a
           <td>size_bytes</td>
           <td><a href="#uint64">uint64</a></td>
           <td></td>
-          <td>This copy's size on disk/in MinIO, in bytes. Summed (across every size, of every Media a user owns) into <code>User.media_storage_bytes_used</code>.</td>
+          <td>This copy's size on disk/in object storage, in bytes. Summed (across every size, of every Media a user owns) into <code>User.media_storage_bytes_used</code>.</td>
         </tr>
         <tr>
           <td>aspect_ratio</td>
@@ -10310,10 +10310,10 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>NOTE: as of the current webhook implementation, the buyer never supplies this and the originating <code>MarketProduct</code>'s own configured size isn't carried through Checkout Session metadata either, so this is currently always <code>0</code> here -- an admin fulfilling an order today needs to cross-reference the <code>MarketProduct</code> itself for the size actually sold. Intended to be the requested PostgreSQL database size in bytes.</td>
         </tr>
         <tr>
-          <td>minio_size_bytes</td>
+          <td>object_storage_size_bytes</td>
           <td><a href="#uint64">uint64</a></td>
           <td></td>
-          <td>Same caveat as <code>db_size_bytes</code> above -- currently always <code>0</code>. Intended to be the requested MinIO (object storage) size in bytes.</td>
+          <td>Same caveat as <code>db_size_bytes</code> above -- currently always <code>0</code>. Intended to be the requested object storage size in bytes.</td>
         </tr>
         <tr>
           <td>additional_description</td>
@@ -10368,10 +10368,10 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>On a <code>MarketProduct</code>: the PostgreSQL database size (in bytes) this product is configured to provision. On a <code>MarketSubscription</code>: see <code>RellmHostingPurchaseDetails.db_size_bytes</code>'s own doc -- as of the current webhook implementation, this is currently always <code>0</code> here too, since the subscription's <code>details</code> is built the same way the purchase's is.</td>
         </tr>
         <tr>
-          <td>minio_size_bytes</td>
+          <td>object_storage_size_bytes</td>
           <td><a href="#uint64">uint64</a></td>
           <td></td>
-          <td>Same caveat as <code>db_size_bytes</code> above. On a <code>MarketProduct</code>: the MinIO (object storage) size (in bytes) this product is configured to provision.</td>
+          <td>Same caveat as <code>db_size_bytes</code> above. On a <code>MarketProduct</code>: the object storage size (in bytes) this product is configured to provision.</td>
         </tr>
         <tr>
           <td>additional_description</td>

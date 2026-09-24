@@ -8,7 +8,7 @@ Rellm's background jobs are small standalone binaries under `backend/src/bin/*.r
 ## 1. The binary: `backend/src/bin/<job_name>.rs`
 
 - Put the actual logic in `backend/src/logic/` (e.g. `logic/event_sync.rs`) if it's non-trivial or needs to be unit-testable/reused by an RPC handler; keep the `bin/` file itself thin (connect, query what's due, call logic, log, exit).
-- Boilerplate (copy `delete_expired_tokens.rs` for a sync job, or `delete_unowned_media.rs`/`generate_preview_images.rs` for an async one needing `#[tokio::main]`, e.g. MinIO/HTTP):
+- Boilerplate (copy `delete_expired_tokens.rs` for a sync job, or `delete_unowned_media.rs`/`generate_preview_images.rs` for an async one needing `#[tokio::main]`, e.g. object storage/HTTP):
   ```rust
   extern crate diesel;
   extern crate rellm;
@@ -53,7 +53,7 @@ Both are standalone launcher scripts (one becomes the Linux tarball's `bin/rellm
 
 ## K8s: nothing to do
 
-Cluster deploys (`deploys/k8s/server_external.yaml`, `server_internal.yaml`, `server_internal_insecure.yaml`) don't define jobs individually - the `rellm-jobs` Deployment in each just runs `backend/background_jobs.sh` (step 4), which picks up any job appended to its `JOBS` array automatically. If the job needs env vars beyond `DATABASE_URL` (e.g. `MINIO_*`), check the `rellm-jobs` container's `env:` block already has them - it currently carries the union of everything any job needs, so a new job needing only existing vars requires no edit there either.
+Cluster deploys (`deploys/k8s/server_external.yaml`, `server_internal.yaml`, `server_internal_insecure.yaml`) don't define jobs individually - the `rellm-jobs` Deployment in each just runs `backend/background_jobs.sh` (step 4), which picks up any job appended to its `JOBS` array automatically. If the job needs env vars beyond `DATABASE_URL` (e.g. `OBJECT_STORAGE_*`), check the `rellm-jobs` container's `env:` block already has them - it currently carries the union of everything any job needs, so a new job needing only existing vars requires no edit there either.
 
 ## Checklist
 

@@ -1469,7 +1469,7 @@ class AIGrantPurchaseDetails extends $pb.GeneratedMessage {
 class RellmHostingPurchaseDetails extends $pb.GeneratedMessage {
   factory RellmHostingPurchaseDetails({
     $fixnum.Int64? dbSizeBytes,
-    $fixnum.Int64? minioSizeBytes,
+    $fixnum.Int64? objectStorageSizeBytes,
     $core.String? additionalDescription,
     $core.String? domain,
     $core.String? contactEmail,
@@ -1479,8 +1479,8 @@ class RellmHostingPurchaseDetails extends $pb.GeneratedMessage {
     if (dbSizeBytes != null) {
       $result.dbSizeBytes = dbSizeBytes;
     }
-    if (minioSizeBytes != null) {
-      $result.minioSizeBytes = minioSizeBytes;
+    if (objectStorageSizeBytes != null) {
+      $result.objectStorageSizeBytes = objectStorageSizeBytes;
     }
     if (additionalDescription != null) {
       $result.additionalDescription = additionalDescription;
@@ -1502,7 +1502,7 @@ class RellmHostingPurchaseDetails extends $pb.GeneratedMessage {
 
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'RellmHostingPurchaseDetails', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
     ..a<$fixnum.Int64>(1, _omitFieldNames ? '' : 'dbSizeBytes', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
-    ..a<$fixnum.Int64>(2, _omitFieldNames ? '' : 'minioSizeBytes', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
+    ..a<$fixnum.Int64>(2, _omitFieldNames ? '' : 'objectStorageSizeBytes', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
     ..aOS(3, _omitFieldNames ? '' : 'additionalDescription')
     ..aOS(4, _omitFieldNames ? '' : 'domain')
     ..aOS(5, _omitFieldNames ? '' : 'contactEmail')
@@ -1546,15 +1546,15 @@ class RellmHostingPurchaseDetails extends $pb.GeneratedMessage {
   void clearDbSizeBytes() => clearField(1);
 
   /// Same caveat as `db_size_bytes` above -- currently always `0`. Intended to be the requested
-  /// MinIO (object storage) size in bytes.
+  /// object storage size in bytes.
   @$pb.TagNumber(2)
-  $fixnum.Int64 get minioSizeBytes => $_getI64(1);
+  $fixnum.Int64 get objectStorageSizeBytes => $_getI64(1);
   @$pb.TagNumber(2)
-  set minioSizeBytes($fixnum.Int64 v) { $_setInt64(1, v); }
+  set objectStorageSizeBytes($fixnum.Int64 v) { $_setInt64(1, v); }
   @$pb.TagNumber(2)
-  $core.bool hasMinioSizeBytes() => $_has(1);
+  $core.bool hasObjectStorageSizeBytes() => $_has(1);
   @$pb.TagNumber(2)
-  void clearMinioSizeBytes() => clearField(2);
+  void clearObjectStorageSizeBytes() => clearField(2);
 
   /// Copied from `RellmHostingSubscriptionDetails.additional_description` at the moment this
   /// purchase was fulfilled -- see that field's own doc.
@@ -2277,7 +2277,7 @@ class AIGrantSubscriptionDetails extends $pb.GeneratedMessage {
 class RellmHostingSubscriptionDetails extends $pb.GeneratedMessage {
   factory RellmHostingSubscriptionDetails({
     $fixnum.Int64? dbSizeBytes,
-    $fixnum.Int64? minioSizeBytes,
+    $fixnum.Int64? objectStorageSizeBytes,
     $core.String? additionalDescription,
     $core.String? domain,
     $core.String? contactEmail,
@@ -2289,8 +2289,8 @@ class RellmHostingSubscriptionDetails extends $pb.GeneratedMessage {
     if (dbSizeBytes != null) {
       $result.dbSizeBytes = dbSizeBytes;
     }
-    if (minioSizeBytes != null) {
-      $result.minioSizeBytes = minioSizeBytes;
+    if (objectStorageSizeBytes != null) {
+      $result.objectStorageSizeBytes = objectStorageSizeBytes;
     }
     if (additionalDescription != null) {
       $result.additionalDescription = additionalDescription;
@@ -2318,7 +2318,7 @@ class RellmHostingSubscriptionDetails extends $pb.GeneratedMessage {
 
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'RellmHostingSubscriptionDetails', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
     ..a<$fixnum.Int64>(1, _omitFieldNames ? '' : 'dbSizeBytes', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
-    ..a<$fixnum.Int64>(2, _omitFieldNames ? '' : 'minioSizeBytes', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
+    ..a<$fixnum.Int64>(2, _omitFieldNames ? '' : 'objectStorageSizeBytes', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
     ..aOS(3, _omitFieldNames ? '' : 'additionalDescription')
     ..aOS(4, _omitFieldNames ? '' : 'domain')
     ..aOS(5, _omitFieldNames ? '' : 'contactEmail')
@@ -2362,16 +2362,16 @@ class RellmHostingSubscriptionDetails extends $pb.GeneratedMessage {
   @$pb.TagNumber(1)
   void clearDbSizeBytes() => clearField(1);
 
-  /// Same caveat as `db_size_bytes` above. On a `MarketProduct`: the MinIO (object storage) size (in
+  /// Same caveat as `db_size_bytes` above. On a `MarketProduct`: the object storage size (in
   /// bytes) this product is configured to provision.
   @$pb.TagNumber(2)
-  $fixnum.Int64 get minioSizeBytes => $_getI64(1);
+  $fixnum.Int64 get objectStorageSizeBytes => $_getI64(1);
   @$pb.TagNumber(2)
-  set minioSizeBytes($fixnum.Int64 v) { $_setInt64(1, v); }
+  set objectStorageSizeBytes($fixnum.Int64 v) { $_setInt64(1, v); }
   @$pb.TagNumber(2)
-  $core.bool hasMinioSizeBytes() => $_has(1);
+  $core.bool hasObjectStorageSizeBytes() => $_has(1);
   @$pb.TagNumber(2)
-  void clearMinioSizeBytes() => clearField(2);
+  void clearObjectStorageSizeBytes() => clearField(2);
 
   /// Admin-authored, Markdown-formatted extra paragraph appended below the implicit, Elm-computed
   /// "1GB DB + 5GB Object Storage"-style canned description shown on the product/subscription's own

@@ -368,8 +368,8 @@ message RellmHostingPurchaseDetails {
   // the requested PostgreSQL database size in bytes.
   uint64 db_size_bytes = 1;
   // Same caveat as `db_size_bytes` above -- currently always `0`. Intended to be the requested
-  // MinIO (object storage) size in bytes.
-  uint64 minio_size_bytes = 2;
+  // object storage size in bytes.
+  uint64 object_storage_size_bytes = 2;
   // Copied from `RellmHostingSubscriptionDetails.additional_description` at the moment this
   // purchase was fulfilled -- see that field's own doc.
   string additional_description = 3;
@@ -564,9 +564,9 @@ message RellmHostingSubscriptionDetails {
   // doc -- as of the current webhook implementation, this is currently always `0` here too, since
   // the subscription's `details` is built the same way the purchase's is.
   uint64 db_size_bytes = 1;
-  // Same caveat as `db_size_bytes` above. On a `MarketProduct`: the MinIO (object storage) size (in
+  // Same caveat as `db_size_bytes` above. On a `MarketProduct`: the object storage size (in
   // bytes) this product is configured to provision.
-  uint64 minio_size_bytes = 2;
+  uint64 object_storage_size_bytes = 2;
 
   // Admin-authored, Markdown-formatted extra paragraph appended below the implicit, Elm-computed
   // "1GB DB + 5GB Object Storage"-style canned description shown on the product/subscription's own

@@ -96,7 +96,7 @@ get_backend_external_ip:
 monitor_backend_rollout:
 	$(MAKE) -C deploys monitor_backend_rollout
 
-# General targets for creating/deleting Postgres/MinIO for Rellm. For more granuar control, use deploys/Makefile directly.
+# General targets for creating/deleting Postgres/object storage for Rellm. For more granuar control, use deploys/Makefile directly.
 create_backend_data:
 	$(MAKE) -C deploys create_backend_data
 delete_backend_data:
@@ -156,10 +156,10 @@ local_db_reset:
 local_db_connect:
 	$(MAKE) -C backend local_db_connect
 
-local_minio_create:
-	$(MAKE) -C backend local_minio_create
-local_minio_delete:
-	$(MAKE) -C backend local_minio_delete
+local_object_storage_create:
+	$(MAKE) -C backend local_object_storage_create
+local_object_storage_delete:
+	$(MAKE) -C backend local_object_storage_delete
 
 ############################################################################
 # FULLSTACK DEV/RELEASE-RELATED TARGETS: More in deploys/releases/Makefile

@@ -350,7 +350,7 @@ pub async fn generate_media(
         }
     }
 
-    let minio_path = format!(
+    let object_storage_path = format!(
         "user/{}-{}/generated-{}.{}",
         current_user.id,
         current_user.username,
@@ -358,16 +358,16 @@ pub async fn generate_media(
         extension_for_content_type(&generated_content_type)
     );
     bucket
-        .put_object_with_content_type(&minio_path, &generated_bytes, &generated_content_type)
+        .put_object_with_content_type(&object_storage_path, &generated_bytes, &generated_content_type)
         .await
         .map_err(|e| {
-            log::error!("Failed to upload generated media to MinIO: {:?}", e);
+            log::error!("Failed to upload generated media to object storage: {:?}", e);
             Status::new(Code::Internal, "failed_to_store_generated_media")
         })?;
 
     let sizes = vec![models::MediaSize {
         conversion: MediaConversion::Original as i32,
-        minio_path,
+        object_storage_path,
         content_type: generated_content_type,
         size_bytes: generated_bytes.len() as i64,
         aspect_ratio: None,
@@ -430,7 +430,7 @@ const REFERENCE_IMAGE_SIZE_PREFERENCE: [MediaConversion; 3] = [
     MediaConversion::Large,
 ];
 
-/// Downloads every one of `media_ids` (in that exact order) from MinIO for use as reference images
+/// Downloads every one of `media_ids` (in that exact order) from object storage for use as reference images
 /// -- see `REFERENCE_IMAGE_SIZE_PREFERENCE` for which converted size (or the original, as a last
 /// resort) each one is actually fetched at. Returned as plain `(content_type, bytes)` pairs,
 /// provider-agnostic, since the caller wraps each into whichever provider-specific input type
@@ -469,14 +469,14 @@ async fn load_reference_images(
             return Err(Status::new(Code::PermissionDenied, "not_your_media"));
         }
         let sizes = row.sizes();
-        let (minio_path, content_type) = REFERENCE_IMAGE_SIZE_PREFERENCE
+        let (object_storage_path, content_type) = REFERENCE_IMAGE_SIZE_PREFERENCE
             .iter()
             .find_map(|conversion| sizes.iter().find(|s| s.conversion == *conversion as i32))
             .or_else(|| sizes.iter().find(|s| s.conversion == MediaConversion::Original as i32))
-            .map(|s| (s.minio_path.clone(), s.content_type.clone()))
+            .map(|s| (s.object_storage_path.clone(), s.content_type.clone()))
             .ok_or_else(|| Status::new(Code::NotFound, "reference_media_not_found"))?;
-        let bytes = bucket.get_object(&minio_path).await.map_err(|e| {
-            log::error!("Failed to download reference media {} from MinIO: {:?}", id, e);
+        let bytes = bucket.get_object(&object_storage_path).await.map_err(|e| {
+            log::error!("Failed to download reference media {} from object storage: {:?}", id, e);
             Status::new(Code::Internal, "failed_to_load_reference_media")
         })?;
         images.push((content_type, bytes.as_slice().to_vec()));

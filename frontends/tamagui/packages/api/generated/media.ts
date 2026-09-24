@@ -192,8 +192,8 @@ export interface MediaSize {
   /** Which copy this is -- the untouched original, or one of the auto-generated resized copies. */
   conversion: MediaConversion;
   /**
-   * This copy's size on disk/in MinIO, in bytes. Summed (across every size, of every Media a user
-   * owns) into `User.media_storage_bytes_used`.
+   * This copy's size on disk/in object storage, in bytes. Summed (across every size, of every
+   * Media a user owns) into `User.media_storage_bytes_used`.
    */
   sizeBytes: number;
   /**

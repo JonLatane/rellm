@@ -6155,7 +6155,7 @@ type alias FulfillmentNote =
 -}
 fieldNumbersRellmHostingSubscriptionDetails :
     { dbSizeBytes : Int
-    , minioSizeBytes : Int
+    , objectStorageSizeBytes : Int
     , additionalDescription : Int
     , domain : Int
     , contactEmail : Int
@@ -6209,9 +6209,9 @@ encodeRellmHostingSubscriptionDetails =
  the subscription's `details` is built the same way the purchase's is.
 
 
-### minioSizeBytes
+### objectStorageSizeBytes
 
- Same caveat as `db_size_bytes` above. On a `MarketProduct`: the MinIO (object storage) size (in
+ Same caveat as `db_size_bytes` above. On a `MarketProduct`: the object storage size (in
  bytes) this product is configured to provision.
 
 
@@ -6653,7 +6653,7 @@ type alias PermissionsAccessPurchaseDetails =
 -}
 fieldNumbersRellmHostingPurchaseDetails :
     { dbSizeBytes : Int
-    , minioSizeBytes : Int
+    , objectStorageSizeBytes : Int
     , additionalDescription : Int
     , domain : Int
     , contactEmail : Int
@@ -6707,10 +6707,10 @@ encodeRellmHostingPurchaseDetails =
  the requested PostgreSQL database size in bytes.
 
 
-### minioSizeBytes
+### objectStorageSizeBytes
 
  Same caveat as `db_size_bytes` above -- currently always `0`. Intended to be the requested
- MinIO (object storage) size in bytes.
+ object storage size in bytes.
 
 
 ### additionalDescription
@@ -9902,8 +9902,8 @@ encodeMediaSize =
 
 ### sizeBytes
 
- This copy's size on disk/in MinIO, in bytes. Summed (across every size, of every Media a user
- owns) into `User.media_storage_bytes_used`.
+ This copy's size on disk/in object storage, in bytes. Summed (across every size, of every
+ Media a user owns) into `User.media_storage_bytes_used`.
 
 
 ### contentType

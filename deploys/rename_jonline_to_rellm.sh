@@ -23,7 +23,7 @@
 # .github/workflows/server_ci_cd.yml) is left as "jonline" even though
 # everything *inside* it (Deployment/StatefulSet/Service names) is renamed.
 # Kubernetes has no rename-namespace operation -- renaming it would mean
-# recreating every resource (including the Postgres/MinIO PVCs) in a new
+# recreating every resource (including the Postgres/object storage PVCs) in a new
 # namespace, for a purely internal identifier nobody outside the cluster ever
 # sees. Not worth the risk. If you ever do want it, that's a manual
 # PV-rebind migration, not a text substitution.

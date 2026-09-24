@@ -5,9 +5,9 @@ digraph G {
     label = "Rellm Rust Backend & Cluster"
     compound=true;
 
-    minio [color=magenta; shape = folder; style=filled; label = <<b>MinIO</b>>;];
-    
-    media -> minio [color=magenta; style = dashed; label = "+minio_path";];
+    objectStorage [color=magenta; shape = folder; style=filled; label = <<b>Object Storage</b>>;];
+
+    media -> objectStorage [color=magenta; style = dashed; label = "+object_storage_path";];
     
     subgraph cluster1 {
       label = "Rellm gRPC Service";
@@ -423,11 +423,11 @@ digraph G {
     tamagui_previews -> media [color=mediumorchid;style = dotted;];
 
     http_get_media -> media [color=mediumorchid;style = dotted;];
-    http_get_media -> minio [style = dotted; color=magenta; label = <<i>binary stream</i>>;];
+    http_get_media -> objectStorage [style = dotted; color=magenta; label = <<i>binary stream</i>>;];
 
     favicon -> server_configurations [color=dodgerblue; style = dotted; label = <<i>auto-transform PNG to ICO</i>>;];
     favicon -> media [color=mediumorchid;style = dotted;];
-    favicon -> minio [color=magenta; style = dotted;];
+    favicon -> objectStorage [color=magenta; style = dotted;];
   }_
 
   // subgraph cluster2 {

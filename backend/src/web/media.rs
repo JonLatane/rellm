@@ -53,7 +53,7 @@ pub async fn create_media(
     log::info!("create_media");
     let user = get_media_user(None, auth_header, cookies, state).map_err(no_message)?;
     let uuid = Uuid::new_v4();
-    let minio_path = format!(
+    let object_storage_path = format!(
         "user/{}@{}-{}/{}-{}",
         user.id.to_proto_id(),
         host.domain().to_string(),
@@ -64,7 +64,7 @@ pub async fn create_media(
 
     let put_response = state
         .bucket
-        .put_object_stream(&mut media.open(250.mebibytes()), &minio_path)
+        .put_object_stream(&mut media.open(250.mebibytes()), &object_storage_path)
         .await
         .map_err(|_| (Status::InternalServerError, String::new()))?;
     let uploaded_bytes = put_response.uploaded_bytes() as i64;
@@ -77,7 +77,7 @@ pub async fn create_media(
 
     if let Some(limit) = user.media_storage_limit_bytes {
         if user.media_storage_bytes_used + uploaded_bytes > limit {
-            state.bucket.delete_object(&minio_path).await.ok();
+            state.bucket.delete_object(&object_storage_path).await.ok();
             return Err((
                 Status::PayloadTooLarge,
                 format!(
@@ -99,7 +99,7 @@ pub async fn create_media(
 
     let sizes = vec![models::MediaSize {
         conversion: MediaConversion::Original as i32,
-        minio_path,
+        object_storage_path,
         content_type,
         size_bytes: uploaded_bytes,
         aspect_ratio: None,
@@ -164,7 +164,7 @@ pub async fn media_file<'a>(
     ))
 }
 
-/// Picks the (minio_path, content_type) to serve for a given size request.
+/// Picks the (object_storage_path, content_type) to serve for a given size request.
 ///
 /// `size` of `Some("original")` always forces the unconverted original. `video_preview_small`/
 /// `_medium`/`_large` request the `image/jpeg` poster-frame sizes video `Media` gets instead of
@@ -189,7 +189,7 @@ fn resolve_media_size(media: &models::Media, size: Option<&str>) -> (String, Str
     resolve_media_size_preferring(media, &[requested])
 }
 
-/// Picks the (minio_path, content_type) to serve, trying each `MediaConversion` in `preference`
+/// Picks the (object_storage_path, content_type) to serve, trying each `MediaConversion` in `preference`
 /// order in turn and falling back to the original (unconverted) upload if none of them are
 /// available -- which also covers media that hasn't been converted at all.
 fn resolve_media_size_preferring(
@@ -202,7 +202,7 @@ fn resolve_media_size_preferring(
         .iter()
         .find_map(|conversion| sizes.iter().find(|s| s.conversion == *conversion as i32))
         .or_else(|| sizes.iter().find(|s| s.conversion == MediaConversion::Original as i32))
-        .map(|s| (s.minio_path.clone(), s.content_type.clone()))
+        .map(|s| (s.object_storage_path.clone(), s.content_type.clone()))
         .unwrap_or_default()
 }
 
@@ -228,8 +228,8 @@ pub async fn load_media_file_data<'a>(
 
     // TODO: Validate moderation/visiblity/permissions etc.
     let media = load_media_by_id(id, state)?;
-    let (minio_path, content_type) = resolve_media_size(&media, size);
-    load_media_file(minio_path, content_type, state).await
+    let (object_storage_path, content_type) = resolve_media_size(&media, size);
+    load_media_file(object_storage_path, content_type, state).await
 }
 
 /// Like [`load_media_file_data`], but tries each `ConvertedSizeSpec` in `preference` order
@@ -244,19 +244,19 @@ pub async fn load_media_file_data_preferring<'a>(
 
     // TODO: Validate moderation/visiblity/permissions etc.
     let media = load_media_by_id(id, state)?;
-    let (minio_path, content_type) = resolve_media_size_preferring(&media, preference);
-    load_media_file(minio_path, content_type, state).await
+    let (object_storage_path, content_type) = resolve_media_size_preferring(&media, preference);
+    load_media_file(object_storage_path, content_type, state).await
 }
 
 async fn load_media_file(
-    minio_path: String,
+    object_storage_path: String,
     content_type: String,
     state: &State<RocketState>,
 ) -> Result<(ContentType, NamedFile), Status> {
     let local_filename = format!(
         "{}/{}.mediafile",
         state.tempdir.path().display(),
-        minio_path
+        object_storage_path
     );
     if !std::path::Path::new(&local_filename).exists() {
         // Ensure local directory exists.
@@ -273,7 +273,7 @@ async fn load_media_file(
             .map_err(|_| Status::InternalServerError)?;
         let _status_code = state
             .bucket
-            .get_object_to_writer(minio_path, &mut async_output_file)
+            .get_object_to_writer(object_storage_path, &mut async_output_file)
             .await
             .map_err(|_| Status::InternalServerError)?;
 
@@ -292,7 +292,7 @@ async fn load_media_file(
 
     // let mut _stream = state
     //     .bucket
-    //     .get_object_stream(media.minio_path.as_str())
+    //     .get_object_stream(media.object_storage_path.as_str())
     //     .await
     //     .map_err(|_| Status::NotFound)?;
 
@@ -305,7 +305,7 @@ async fn load_media_file(
     // Ok(ByteStream! {
     //     let mut stream: &'a ResponseDataStream = &state
     //         .bucket
-    //         .get_object_stream(media.minio_path.as_str())
+    //         .get_object_stream(media.object_storage_path.as_str())
     //         .await
     //         .map_err(|_| Status::NotFound).unwrap();
     //     while let Some(bytes) = stream.bytes().next().await {
@@ -316,7 +316,7 @@ async fn load_media_file(
     // We should at least be able to write to an output file and return that... but this doesn't compile either.
     // Seems the S3 `ResponseDataStream` type is not `Send`.
 
-    // let mut async_output_file = tokio::fs::File::create(media.minio_path).await.expect("Unable to create file");
+    // let mut async_output_file = tokio::fs::File::create(media.object_storage_path).await.expect("Unable to create file");
     // while let Some(chunk) = _stream.bytes.next().await {
     //     async_output_file.write_all(&chunk).await.map_err(|_| Status::NotFound)?;
     // }
