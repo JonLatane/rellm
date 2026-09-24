@@ -19,9 +19,9 @@
 Rather than requiring Helm, Ansible, Terraform, or other orchestration layers, Rellm deployment takes a more primitive route. Rellm deployment is built so you can simply maintain one cloned Rellm repo per cluster whose deployments you want to manage. Within your cluster's repo, you'll simply use `make` to deploy:
 
 * Clone this repo.
-* `cd deploys && NAMESPACE=rellm make create_backend_data create_internal_backend([^_]) to create backing Postgres and MinIO/S3 instances and your BE instance. (You actually don't have to `cd deploys` because the main `Makefile` has some passthroughs!)
-    * `NAMESPACE` is required (no default) - this deploys Postgres, MinIO and Rellm to whichever namespace you name, e.g. `NAMESPACE=mynamespace make create_backend_data create_internal_backend([^_]).
-    * For "production-ready" performance you can (and should) skip the `create_backend_data` part and instead configure external, managed Postgres and/or MinIO/S3 servers.
+* `cd deploys && NAMESPACE=rellm make create_backend_data create_internal_backend([^_]) to create backing Postgres and object storage/S3 instances and your BE instance. (You actually don't have to `cd deploys` because the main `Makefile` has some passthroughs!)
+    * `NAMESPACE` is required (no default) - this deploys Postgres, object storage and Rellm to whichever namespace you name, e.g. `NAMESPACE=mynamespace make create_backend_data create_internal_backend([^_]).
+    * For "production-ready" performance you can (and should) skip the `create_backend_data` part and instead configure external, managed Postgres and/or object storage/S3 servers.
 
 See [the Cert-Manager integration README](./generated_certs/README.md) for more info on generating certs. At a high level, for a K8s deploy, `generated_certs/Makefile` will simply generate Cert-Manager K8s YAML to `deploys/generated_certs/k8s/cert-manager.\[digitalocean\].\[my-domain.com\].generated.yaml`. Applying that YAML (also doable through the `Makefile`) sets up K8s/Cert-Manager to auto-generate the certs for your Rellm instance in its namespace where it will look for them.
 
@@ -61,7 +61,7 @@ git clone https://github.com/JonLatane/rellm.git
 cd rellm
 ```
 
-Next, from the repo root, to create Postgres, Minio and two load-balanced Rellm servers in the namespace `rellm` (plus a few recurring jobs), run:
+Next, from the repo root, to create Postgres, object storage and two load-balanced Rellm servers in the namespace `rellm` (plus a few recurring jobs), run:
 
 ```bash
 # THIS STEP WILL COST MONEY WITH MOST KUBERNETES PROVIDERS. ($12/mo. at DigitalOcean)
@@ -72,14 +72,14 @@ Next, from the repo root, to create Postgres, Minio and two load-balanced Rellm 
 NAMESPACE=rellm make create_backend_data create_external_backend
 ```
 
-That's it! You've created Minio and Postgres servers along with an *unsecured Rellm instance* where ***passwords and auth tokens will be sent in plain text*** (You should secure it immediately if you care about any data/people, but feel free to play around with it until you do! Simply `NAMESPACE=rellm make delete_backend_data create_backend_data restart_backend` to reset your server's data.) Because Rellm is a very tiny Rust service, it will all be up within seconds. Your Kubenetes provider will probably take some time to assign you an IP, though.
+That's it! You've created object storage and Postgres servers along with an *unsecured Rellm instance* where ***passwords and auth tokens will be sent in plain text*** (You should secure it immediately if you care about any data/people, but feel free to play around with it until you do! Simply `NAMESPACE=rellm make delete_backend_data create_backend_data restart_backend` to reset your server's data.) Because Rellm is a very tiny Rust service, it will all be up within seconds. Your Kubenetes provider will probably take some time to assign you an IP, though.
 
 ### Deploying to namespaces other than `rellm`
 `NAMESPACE` is required (no default) for every `deploys/Makefile` target, so you always pick the namespace explicitly: `NAMESPACE=my_namespace make create_backend_data create_external_backend` to deploy to `my_namespace`. This should work for any of the `make deploy_*` targets in Rellm.
 
 ## Validating your deployment
 ### Kubernetes service statuses
-To see *everything* you just deployed (minio, postgres, Rellm server and background cron jobs), run `NAMESPACE=rellm make get_backend_all`. It should look something like this (with fewer jobs after a fresh install, probably):
+To see *everything* you just deployed (object storage, postgres, Rellm server and background cron jobs), run `NAMESPACE=rellm make get_backend_all`. It should look something like this (with fewer jobs after a fresh install, probably):
 
 ```bash
 $ NAMESPACE=rellm make get_backend_all
@@ -104,17 +104,17 @@ pod/rellm-c4b798878-tg5qf                           1/1     Terminating   0     
 pod/rellm-expired-token-cleanup-27742795--1-l8fzs   0/1     Completed     0          11m
 pod/rellm-expired-token-cleanup-27742800--1-x6gch   0/1     Completed     0          6m49s
 pod/rellm-expired-token-cleanup-27742805--1-hd2wj   0/1     Completed     0          109s
-pod/rellm-minio-84685f9bd4-8knxq                    1/1     Running       0          4d22h
+pod/rellm-object-storage-84685f9bd4-8knxq           1/1     Running       0          4d22h
 pod/rellm-postgres-bf6cb7679-l6mcb                  1/1     Running       0          53m
 
 NAME                       TYPE           CLUSTER-IP       EXTERNAL-IP       PORT(S)                                                     AGE
 service/rellm            LoadBalancer   10.245.199.164   178.128.137.194   27707:30679/TCP,443:32401/TCP,80:30932/TCP,8000:30414/TCP   20d
-service/rellm-minio      LoadBalancer   10.245.220.21    174.138.106.145   9000:32603/TCP                                              2d
+service/rellm-object-storage  LoadBalancer   10.245.220.21    174.138.106.145   9000:32603/TCP                                              2d
 service/rellm-postgres   ClusterIP      10.245.198.74    <none>            5432/TCP                                                    53m
 
 NAME                               READY   UP-TO-DATE   AVAILABLE   AGE
 deployment.apps/rellm            2/2     2            2           20d
-deployment.apps/rellm-minio      1/1     1            1           4d22h
+deployment.apps/rellm-object-storage  1/1     1            1           4d22h
 deployment.apps/rellm-postgres   1/1     1            1           53m
 
 NAME                                         DESIRED   CURRENT   READY   AGE
@@ -129,7 +129,7 @@ replicaset.apps/rellm-7bff45979c           0         0         0       4d6h
 replicaset.apps/rellm-7f69759bd7           2         2         2       38s
 replicaset.apps/rellm-7f6d9d4cbd           0         0         0       3d23h
 replicaset.apps/rellm-c4b798878            0         0         0       53m
-replicaset.apps/rellm-minio-84685f9bd4     1         1         1       4d22h
+replicaset.apps/rellm-object-storage-84685f9bd4     1         1         1       4d22h
 replicaset.apps/rellm-postgres-bf6cb7679   1         1         1       53m
 
 NAME                                          SCHEDULE      SUSPEND   ACTIVE   LAST SCHEDULE   AGE
@@ -207,7 +207,7 @@ As mentioned in [Deploying to namespaces other than `rellm`](#deploying-to-names
 Note that multiple *external* deployments will each have a Kubernetes LoadBalancer. On many providers, this is relatively expensive (an external IP, $12/mo on DigitalOcean). Other Makefile targets include `create_internal_backend` and `deploy_be_internal_insecure_create` (the latter of which will specifically ignore K8s-stored TLS certificates, to save CPU time by not encrypting interal services).
 
 ### Rellm Ingress: sharing one LoadBalancer across many domains (recommended)
-[`deploys/ingress/`](./ingress/README.md) sets up a single, shared [Traefik](https://traefik.io) ingress that lets any number of Rellm instances - each still in its own namespace, each with its own domain, Postgres, MinIO and Cert-Manager certs - share **one** external IP/LoadBalancer instead of one each. Each backend keeps terminating its own TLS exactly as it does today (`create_internal_backend`/`update_internal_backend`); the ingress only reads the plaintext SNI hostname from the TLS handshake to route the still-encrypted bytes to the right namespace, so no certs need to move, be duplicated, or change hands.
+[`deploys/ingress/`](./ingress/README.md) sets up a single, shared [Traefik](https://traefik.io) ingress that lets any number of Rellm instances - each still in its own namespace, each with its own domain, Postgres, object storage and Cert-Manager certs - share **one** external IP/LoadBalancer instead of one each. Each backend keeps terminating its own TLS exactly as it does today (`create_internal_backend`/`update_internal_backend`); the ingress only reads the plaintext SNI hostname from the TLS handshake to route the still-encrypted bytes to the right namespace, so no certs need to move, be duplicated, or change hands.
 
 ```bash
 # Once per cluster:

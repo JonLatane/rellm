@@ -475,11 +475,11 @@ jobs:
     env:
       TEST_DATABASE_URL: postgres://postgres@localhost:5432/rellm_test
       CARGO_INCREMENTAL: "0"
-      MINIO_ENDPOINT: http://localhost:9000
-      MINIO_REGION: ""
-      MINIO_BUCKET: rellm-test
-      MINIO_ACCESS_KEY: ROOTNAME
-      MINIO_SECRET_KEY: CHANGEME123
+      OBJECT_STORAGE_ENDPOINT: http://localhost:9000
+      OBJECT_STORAGE_REGION: ""
+      OBJECT_STORAGE_BUCKET: rellm-test
+      OBJECT_STORAGE_ACCESS_KEY: ROOTNAME
+      OBJECT_STORAGE_SECRET_KEY: CHANGEME123
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -492,33 +492,32 @@ jobs:
           rm "$PROTOC_ZIP"
           protoc --version
 
-      # backend/src/tests/factories.rs's `test_bucket()` needs a real MinIO bucket (the
-      # delete_media/delete_user specs verify actual object deletion, and rust-s3's async
+      # backend/src/tests/factories.rs's `test_bucket()` needs a real object storage bucket
+      # (the delete_media/delete_user specs verify actual object deletion, and rust-s3's async
       # client isn't mockable). GitHub Actions' `services:` containers can't override the
       # image's command, so it's started by hand here instead -- mirrors `backend/Makefile`'s
-      # `local_minio_create` target.
+      # `local_object_storage_create` target.
       #
-      # Image: bitnamilegacy/minio, not minio/minio or quay.io/minio/minio -- MinIO pulled
-      # `minio/minio` from Docker Hub entirely (404s now), and as of 2026-09-24 also locked
-      # down anonymous pulls of quay.io/minio/minio (valid token, no pull scope -> 401
-      # "unauthorized" on every tag, pinned ones included) after archiving the OSS project.
-      # bitnamilegacy/minio is Bitnami's frozen/unsupported-but-still-pullable image; it uses
-      # its own entrypoint that starts the server itself, so no `server /data` command
-      # override here (that bypasses Bitnami's setup script entirely).
-      - name: Start MinIO
+      # Image: pgsty/silo, not quay.io/minio/minio -- MinIO's OSS project was archived in
+      # 2026 (GitHub repo archived, community web console stripped, no more prebuilt
+      # community images), and quay.io/minio/minio now 401s "unauthorized" on anonymous pulls
+      # of every tag, pinned ones included. pgsty/silo is a drop-in, MinIO-API-compatible fork
+      # that accepts the exact same `server /data` invocation and MINIO_ROOT_USER/
+      # MINIO_ROOT_PASSWORD env vars the old image did.
+      - name: Start Object Storage
         run: |
-          docker run -d -p 9000:9000 --name rellm-test-minio \
-            -e "MINIO_ROOT_USER=${MINIO_ACCESS_KEY}" -e "MINIO_ROOT_PASSWORD=${MINIO_SECRET_KEY}" \
-            bitnamilegacy/minio:latest
+          docker run -d -p 9000:9000 --name rellm-test-object-storage \
+            -e "MINIO_ROOT_USER=${OBJECT_STORAGE_ACCESS_KEY}" -e "MINIO_ROOT_PASSWORD=${OBJECT_STORAGE_SECRET_KEY}" \
+            pgsty/silo:latest server /data
           for i in $(seq 1 30); do
-            if curl -sf "${MINIO_ENDPOINT}/minio/health/live" >/dev/null; then
-              echo "MinIO is up"
+            if curl -sf "${OBJECT_STORAGE_ENDPOINT}/minio/health/live" >/dev/null; then
+              echo "Object storage is up"
               exit 0
             fi
             sleep 1
           done
-          echo "MinIO failed to become healthy in time" >&2
-          docker logs rellm-test-minio
+          echo "Object storage failed to become healthy in time" >&2
+          docker logs rellm-test-object-storage
           exit 1
 
       - uses: Swatinem/rust-cache@v2

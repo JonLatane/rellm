@@ -2,7 +2,7 @@ extern crate diesel;
 extern crate rellm;
 
 use rellm::logic::{media_with_quicktime_resized_sizes, strip_quicktime_resized_sizes};
-use rellm::{db_connection, init_bin_logging, init_crypto, minio_connection};
+use rellm::{db_connection, init_bin_logging, init_crypto, object_storage_connection};
 
 /// Rows scanned per DB round-trip -- just a page size (see `media_with_quicktime_resized_sizes`'s
 /// `min_id` paging), not a retry-friendly batch: unlike `convert_media_sizes`, this isn't
@@ -16,17 +16,17 @@ const BATCH_SIZE: i64 = 50;
 /// regardless of the actual codec inside -- so those rows currently trigger a download in Chrome
 /// instead of playing.
 ///
-/// Strips the stale `video/quicktime` sizes (deleting their MinIO objects) and marks each affected
+/// Strips the stale `video/quicktime` sizes (deleting their object storage objects) and marks each affected
 /// row unprocessed, so the ordinary `convert_media_sizes` job -- already re-invoked on an interval
 /// by `background_jobs.sh`, and fixed by the same change that added `resized_content_type` -- picks
 /// it back up and regenerates correctly-tagged MP4 copies on its next pass. Rows whose original is
-/// no longer downloadable from MinIO are left untouched, since there'd be no source to regenerate
+/// no longer downloadable from object storage are left untouched, since there'd be no source to regenerate
 /// from.
 ///
 /// Not wired into any schedule or the server image -- run it by hand once per affected deployment,
 /// e.g.:
 /// ```sh
-/// DATABASE_URL=... MINIO_ENDPOINT=... cargo run --release --bin reencode_quicktime_media
+/// DATABASE_URL=... OBJECT_STORAGE_ENDPOINT=... cargo run --release --bin reencode_quicktime_media
 /// ```
 #[tokio::main]
 async fn main() {
@@ -34,12 +34,12 @@ async fn main() {
     init_bin_logging();
     log::info!("Finding Media with QuickTime-tagged resized copies...");
 
-    log::info!("Connecting to DB and MinIO...");
+    log::info!("Connecting to DB and object storage...");
     let pool = db_connection::establish_pool();
     let mut conn = pool.get().expect("Failed to get DB connection");
-    let bucket = minio_connection::get_and_test_bucket()
+    let bucket = object_storage_connection::get_and_test_bucket()
         .await
-        .expect("Failed to connect to MinIO");
+        .expect("Failed to connect to object storage");
 
     let mut min_id = 0i64;
     let mut stripped = 0;

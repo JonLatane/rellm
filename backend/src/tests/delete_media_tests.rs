@@ -1,6 +1,6 @@
 //! Specs for `delete_media`: ownership/permission checks, and that both the `media` row and every
-//! MinIO object backing it (the original upload plus any small/medium/large converted copies) are
-//! actually removed. Needs a real MinIO connection -- see `factories::test_bucket`.
+//! object storage object backing it (the original upload plus any small/medium/large converted copies) are
+//! actually removed. Needs a real object storage connection -- see `factories::test_bucket`.
 
 use diesel::prelude::*;
 use tonic::Code;
@@ -17,14 +17,14 @@ fn unique_path(name: &str) -> String {
 }
 
 #[test]
-fn self_delete_removes_row_and_minio_object() {
+fn self_delete_removes_row_and_object_storage_object() {
     let tb = test_bucket();
     let mut conn = test_conn();
     conn.test_transaction::<_, tonic::Status, _>(|conn| {
         let user = create_user(conn, "dmt_self");
         let path = unique_path("self");
         tb.block_on(tb.bucket.put_object(&path, b"test-bytes"))
-            .expect("failed to seed test MinIO object");
+            .expect("failed to seed test object storage object");
         let media = create_media(conn, Some(&user), &path);
 
         tb.block_on(delete_media(
@@ -46,7 +46,7 @@ fn self_delete_removes_row_and_minio_object() {
         assert_eq!(remaining, 0, "media row should be hard-deleted");
         assert!(
             !tb.object_exists(&path),
-            "the original MinIO object should be deleted"
+            "the original object storage object should be deleted"
         );
 
         Ok(())
@@ -65,7 +65,7 @@ fn delete_also_removes_converted_size_objects() {
         let large_path = unique_path("large");
         for path in [&original_path, &small_path, &medium_path, &large_path] {
             tb.block_on(tb.bucket.put_object(path, b"test-bytes"))
-                .expect("failed to seed test MinIO object");
+                .expect("failed to seed test object storage object");
         }
 
         let media = create_media(conn, Some(&user), &original_path);
@@ -75,28 +75,28 @@ fn delete_also_removes_converted_size_objects() {
             vec![
                 MediaSize {
                     conversion: MediaConversion::Original as i32,
-                    minio_path: original_path.clone(),
+                    object_storage_path: original_path.clone(),
                     content_type: "image/png".to_string(),
                     size_bytes: 10,
                     aspect_ratio: None,
                 },
                 MediaSize {
                     conversion: MediaConversion::Small as i32,
-                    minio_path: small_path.clone(),
+                    object_storage_path: small_path.clone(),
                     content_type: "image/png".to_string(),
                     size_bytes: 10,
                     aspect_ratio: None,
                 },
                 MediaSize {
                     conversion: MediaConversion::Medium as i32,
-                    minio_path: medium_path.clone(),
+                    object_storage_path: medium_path.clone(),
                     content_type: "image/png".to_string(),
                     size_bytes: 10,
                     aspect_ratio: None,
                 },
                 MediaSize {
                     conversion: MediaConversion::Large as i32,
-                    minio_path: large_path.clone(),
+                    object_storage_path: large_path.clone(),
                     content_type: "image/png".to_string(),
                     size_bytes: 10,
                     aspect_ratio: None,
@@ -118,7 +118,7 @@ fn delete_also_removes_converted_size_objects() {
         for path in [&original_path, &small_path, &medium_path, &large_path] {
             assert!(
                 !tb.object_exists(path),
-                "MinIO object {} should be deleted",
+                "Object storage object {} should be deleted",
                 path
             );
         }
@@ -171,7 +171,7 @@ fn admin_can_delete_another_users_media() {
         let admin = grant_permissions(conn, &admin, vec![Permission::Admin]);
         let path = unique_path("admin");
         tb.block_on(tb.bucket.put_object(&path, b"test-bytes"))
-            .expect("failed to seed test MinIO object");
+            .expect("failed to seed test object storage object");
         let media = create_media(conn, Some(&owner), &path);
 
         tb.block_on(delete_media(

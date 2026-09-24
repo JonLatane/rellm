@@ -31,9 +31,9 @@ fn media_pending_size_backfill(conn: &mut PgPooledConnection, limit: i64) -> Que
         .load::<Media>(conn)
 }
 
-/// Backfills one `Media` row: stats every `sizes` entry still at the `0` placeholder via MinIO
+/// Backfills one `Media` row: stats every `sizes` entry still at the `0` placeholder via object storage
 /// `HEAD`, writes the real byte counts back, and refreshes the owner's
-/// `User.media_storage_bytes_used`. Best-effort per entry -- a MinIO object that's somehow gone
+/// `User.media_storage_bytes_used`. Best-effort per entry -- an object storage object that's somehow gone
 /// (e.g. already garbage-collected) is left at `0` rather than failing the whole row, so one bad
 /// entry can't block every other row's backfill.
 async fn backfill_media(item: &Media, bucket: &Bucket, conn: &mut PgPooledConnection) -> QueryResult<()> {
@@ -43,15 +43,15 @@ async fn backfill_media(item: &Media, bucket: &Bucket, conn: &mut PgPooledConnec
         if size.size_bytes != 0 {
             continue;
         }
-        match bucket.head_object(&size.minio_path).await {
+        match bucket.head_object(&size.object_storage_path).await {
             Ok((head, _)) => {
                 size.size_bytes = head.content_length.unwrap_or(0);
                 changed = true;
             }
             Err(e) => {
                 log::warn!(
-                    "media_size_backfill: failed to stat MinIO object {} for Media {}: {:?}",
-                    size.minio_path,
+                    "media_size_backfill: failed to stat object storage object {} for Media {}: {:?}",
+                    size.object_storage_path,
                     item.id,
                     e
                 );

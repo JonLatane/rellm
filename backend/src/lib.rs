@@ -31,7 +31,7 @@ pub mod db_connection;
 pub mod rellm_service;
 pub mod logic;
 pub mod marshaling;
-pub mod minio_connection;
+pub mod object_storage_connection;
 pub mod models;
 pub mod protos;
 pub mod rpcs;

@@ -692,7 +692,7 @@ fn rellm_hosting_details(
 ) -> RellmHostingSubscriptionDetails {
     RellmHostingSubscriptionDetails {
         db_size_bytes: 1_073_741_824,
-        minio_size_bytes: 5 * 1_073_741_824,
+        object_storage_size_bytes: 5 * 1_073_741_824,
         additional_description: String::new(),
         domain: "band.rellm.org".to_string(),
         contact_email: "band@example.com".to_string(),

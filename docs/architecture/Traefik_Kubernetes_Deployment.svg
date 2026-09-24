@@ -668,18 +668,18 @@
 <path fill="none" stroke="black" stroke-dasharray="5,2" d="M839.96,-1559.26C1057.18,-1554.09 2323.59,-1521.73 2383.39,-1468.41 2435.58,-1421.87 2410.39,-1383.33 2410.39,-1313.41 2410.39,-1313.41 2410.39,-1313.41 2410.39,-1112.26 2410.39,-1094.92 2409.5,-1086.33 2395.39,-1076.26 2372.74,-1060.09 2296.14,-1078.83 2270.39,-1068.26 2227.57,-1050.68 2188.67,-1014.62 2162.63,-986.15"/>
 <polygon fill="black" stroke="black" points="2165.25,-983.84 2155.98,-978.72 2160.03,-988.51 2165.25,-983.84"/>
 </g>
-<!-- minio0 -->
+<!-- objectStorage0 -->
 <g id="node30" class="node">
-<title>minio0</title>
+<title>objectStorage0</title>
 <path fill="#cccccc" stroke="black" d="M625.64,-1339.97C625.64,-1343.35 601.32,-1346.09 571.39,-1346.09 541.46,-1346.09 517.14,-1343.35 517.14,-1339.97 517.14,-1339.97 517.14,-1284.84 517.14,-1284.84 517.14,-1281.46 541.46,-1278.72 571.39,-1278.72 601.32,-1278.72 625.64,-1281.46 625.64,-1284.84 625.64,-1284.84 625.64,-1339.97 625.64,-1339.97"/>
 <path fill="none" stroke="black" d="M625.64,-1339.97C625.64,-1336.59 601.32,-1333.84 571.39,-1333.84 541.46,-1333.84 517.14,-1336.59 517.14,-1339.97"/>
-<text text-anchor="start" x="550.77" y="-1318.61" font-family="Times,serif" font-weight="bold" font-size="14.00">MinIO</text>
+<text text-anchor="start" x="527.52" y="-1318.61" font-family="Times,serif" font-weight="bold" font-size="14.00">Object Storage</text>
 <text text-anchor="start" x="527.14" y="-1298.11" font-family="Times,serif" font-size="14.00">5GB @ </text>
 <text text-anchor="start" x="572.89" y="-1298.11" font-family="Times,serif" font-weight="bold" font-size="14.00">50¢/mo</text>
 </g>
-<!-- rellm0&#45;&gt;minio0 -->
+<!-- rellm0&#45;&gt;objectStorage0 -->
 <g id="edge33" class="edge">
-<title>rellm0&#45;&gt;minio0</title>
+<title>rellm0&#45;&gt;objectStorage0</title>
 <path fill="none" stroke="black" d="M482.34,-1312.41C490.06,-1312.41 497.77,-1312.41 505.48,-1312.41"/>
 <polygon fill="black" stroke="black" points="505.27,-1315.91 515.27,-1312.41 505.27,-1308.91 505.27,-1315.91"/>
 </g>
@@ -799,18 +799,18 @@
 <polygon fill="black" stroke="black" points="220.69,-342.35 210.25,-340.52 217.27,-348.46 220.69,-342.35"/>
 </g>
 <!-- push_content&#45;&gt;rellm2 -->
-<!-- minio1 -->
+<!-- objectStorage1 -->
 <g id="node40" class="node">
-<title>minio1</title>
+<title>objectStorage1</title>
 <path fill="#cccccc" stroke="black" d="M1678.64,-1339.97C1678.64,-1343.35 1654.32,-1346.09 1624.39,-1346.09 1594.46,-1346.09 1570.14,-1343.35 1570.14,-1339.97 1570.14,-1339.97 1570.14,-1284.84 1570.14,-1284.84 1570.14,-1281.46 1594.46,-1278.72 1624.39,-1278.72 1654.32,-1278.72 1678.64,-1281.46 1678.64,-1284.84 1678.64,-1284.84 1678.64,-1339.97 1678.64,-1339.97"/>
 <path fill="none" stroke="black" d="M1678.64,-1339.97C1678.64,-1336.59 1654.32,-1333.84 1624.39,-1333.84 1594.46,-1333.84 1570.14,-1336.59 1570.14,-1339.97"/>
-<text text-anchor="start" x="1603.77" y="-1318.61" font-family="Times,serif" font-weight="bold" font-size="14.00">MinIO</text>
+<text text-anchor="start" x="1580.52" y="-1318.61" font-family="Times,serif" font-weight="bold" font-size="14.00">Object Storage</text>
 <text text-anchor="start" x="1580.14" y="-1298.11" font-family="Times,serif" font-size="14.00">5GB @ </text>
 <text text-anchor="start" x="1625.89" y="-1298.11" font-family="Times,serif" font-weight="bold" font-size="14.00">50¢/mo</text>
 </g>
-<!-- rellm1&#45;&gt;minio1 -->
+<!-- rellm1&#45;&gt;objectStorage1 -->
 <g id="edge43" class="edge">
-<title>rellm1&#45;&gt;minio1</title>
+<title>rellm1&#45;&gt;objectStorage1</title>
 <path fill="none" stroke="black" d="M1492.19,-1312.41C1514.17,-1312.41 1536.16,-1312.41 1558.15,-1312.41"/>
 <polygon fill="black" stroke="black" points="1558.14,-1315.91 1568.14,-1312.41 1558.14,-1308.91 1558.14,-1315.91"/>
 </g>
@@ -929,18 +929,18 @@
 <text text-anchor="start" x="2241.64" y="-1308.36" font-family="Times,serif" font-weight="bold" font-size="14.00">rellm&#45;tls</text>
 <text text-anchor="start" x="2291.14" y="-1308.36" font-family="Times,serif" font-size="14.00"> (K8s Secret)</text>
 </g>
-<!-- minio2 -->
+<!-- objectStorage2 -->
 <g id="node51" class="node">
-<title>minio2</title>
+<title>objectStorage2</title>
 <path fill="#cccccc" stroke="black" d="M1337.64,-972.32C1337.64,-975.7 1313.32,-978.45 1283.39,-978.45 1253.46,-978.45 1229.14,-975.7 1229.14,-972.32 1229.14,-972.32 1229.14,-917.2 1229.14,-917.2 1229.14,-913.82 1253.46,-911.07 1283.39,-911.07 1313.32,-911.07 1337.64,-913.82 1337.64,-917.2 1337.64,-917.2 1337.64,-972.32 1337.64,-972.32"/>
 <path fill="none" stroke="black" d="M1337.64,-972.32C1337.64,-968.94 1313.32,-966.2 1283.39,-966.2 1253.46,-966.2 1229.14,-968.94 1229.14,-972.32"/>
-<text text-anchor="start" x="1262.77" y="-950.96" font-family="Times,serif" font-weight="bold" font-size="14.00">MinIO</text>
+<text text-anchor="start" x="1239.52" y="-950.96" font-family="Times,serif" font-weight="bold" font-size="14.00">Object Storage</text>
 <text text-anchor="start" x="1239.14" y="-930.46" font-family="Times,serif" font-size="14.00">5GB @ </text>
 <text text-anchor="start" x="1284.89" y="-930.46" font-family="Times,serif" font-weight="bold" font-size="14.00">50¢/mo</text>
 </g>
-<!-- rellm2&#45;&gt;minio2 -->
+<!-- rellm2&#45;&gt;objectStorage2 -->
 <g id="edge53" class="edge">
-<title>rellm2&#45;&gt;minio2</title>
+<title>rellm2&#45;&gt;objectStorage2</title>
 <path fill="none" stroke="black" d="M1194.34,-944.76C1202.06,-944.76 1209.77,-944.76 1217.48,-944.76"/>
 <polygon fill="black" stroke="black" points="1217.27,-948.26 1227.27,-944.76 1217.27,-941.26 1217.27,-948.26"/>
 </g>
@@ -1058,18 +1058,18 @@
 <text text-anchor="start" x="1900.64" y="-940.71" font-family="Times,serif" font-weight="bold" font-size="14.00">rellm&#45;tls</text>
 <text text-anchor="start" x="1950.14" y="-940.71" font-family="Times,serif" font-size="14.00"> (K8s Secret)</text>
 </g>
-<!-- minio3 -->
+<!-- objectStorage3 -->
 <g id="node62" class="node">
-<title>minio3</title>
+<title>objectStorage3</title>
 <path fill="#cccccc" stroke="black" d="M2390.64,-972.32C2390.64,-975.7 2366.32,-978.45 2336.39,-978.45 2306.46,-978.45 2282.14,-975.7 2282.14,-972.32 2282.14,-972.32 2282.14,-917.2 2282.14,-917.2 2282.14,-913.82 2306.46,-911.07 2336.39,-911.07 2366.32,-911.07 2390.64,-913.82 2390.64,-917.2 2390.64,-917.2 2390.64,-972.32 2390.64,-972.32"/>
 <path fill="none" stroke="black" d="M2390.64,-972.32C2390.64,-968.94 2366.32,-966.2 2336.39,-966.2 2306.46,-966.2 2282.14,-968.94 2282.14,-972.32"/>
-<text text-anchor="start" x="2315.77" y="-950.96" font-family="Times,serif" font-weight="bold" font-size="14.00">MinIO</text>
+<text text-anchor="start" x="2292.52" y="-950.96" font-family="Times,serif" font-weight="bold" font-size="14.00">Object Storage</text>
 <text text-anchor="start" x="2292.14" y="-930.46" font-family="Times,serif" font-size="14.00">5GB @ </text>
 <text text-anchor="start" x="2337.89" y="-930.46" font-family="Times,serif" font-weight="bold" font-size="14.00">50¢/mo</text>
 </g>
-<!-- rellm3&#45;&gt;minio3 -->
+<!-- rellm3&#45;&gt;objectStorage3 -->
 <g id="edge63" class="edge">
-<title>rellm3&#45;&gt;minio3</title>
+<title>rellm3&#45;&gt;objectStorage3</title>
 <path fill="none" stroke="black" d="M2204.19,-944.76C2226.17,-944.76 2248.16,-944.76 2270.15,-944.76"/>
 <polygon fill="black" stroke="black" points="2270.14,-948.26 2280.14,-944.76 2270.14,-941.26 2270.14,-948.26"/>
 </g>

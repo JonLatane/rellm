@@ -1,5 +1,5 @@
 //! Human-readable `MarketProduct` descriptions (e.g. "1.5GB storage for $1/mo", "100k tokens of
-//! Nano Banana Pro image generation for $2/mo", "Rellm hosting, 1GB DB + 5GB MinIO for $15/mo",
+//! Nano Banana Pro image generation for $2/mo", "Rellm hosting, 1GB DB + 5GB Object Storage for $15/mo",
 //! "1GB lifetime storage for $10,000") -- `market_product_summary`/`market_product_headline` are
 //! used by `web::spa_pages`'s `/market/product/<_>` preview (`og:description`), not exposed via
 //! any RPC (a client can build the same string itself from the raw `MarketProduct` fields if it
@@ -109,7 +109,7 @@ fn format_trimmed_decimal(value: f64) -> String {
 }
 
 /// The resource being sold, without its price -- e.g. `"1.5GB storage"`, `"100k tokens of Nano
-/// Banana Pro image generation"`, `"Rellm hosting, 1GB DB + 5GB MinIO"`. `PURCHASE_TYPE_MEDIA_STORAGE`
+/// Banana Pro image generation"`, `"Rellm hosting, 1GB DB + 5GB Object Storage"`. `PURCHASE_TYPE_MEDIA_STORAGE`
 /// gets a `"lifetime"` qualifier for an indefinite (non-recurring) product specifically, matching
 /// the "1GB lifetime storage for $10,000" example this was designed around -- the other two types
 /// don't need an equivalent qualifier, since "for $X" alone (no `/mo`/`/yr` suffix) already reads
@@ -140,9 +140,9 @@ fn resource_description(product: &MarketProduct) -> String {
         }
         Some(market_product::Details::RellmHostingSubscriptionDetails(d)) => {
             format!(
-                "Rellm hosting, {} DB + {} MinIO",
+                "Rellm hosting, {} DB + {} Object Storage",
                 humanize_bytes(d.db_size_bytes),
-                humanize_bytes(d.minio_size_bytes)
+                humanize_bytes(d.object_storage_size_bytes)
             )
         }
         Some(market_product::Details::PermissionsAccessSubscriptionDetails(d)) => {
@@ -254,7 +254,7 @@ pub fn stripe_product_name(product: &MarketProduct, server_short_name: &str) -> 
             format!(
                 "Rellm Hosting, {} DB + {} Object Storage, from {}",
                 humanize_bytes(d.db_size_bytes),
-                humanize_bytes(d.minio_size_bytes),
+                humanize_bytes(d.object_storage_size_bytes),
                 server_short_name
             )
         }
@@ -365,7 +365,7 @@ mod tests {
             840,
             market_product::Details::RellmHostingSubscriptionDetails(RellmHostingSubscriptionDetails {
                 db_size_bytes: 1024 * 1024 * 1024,
-                minio_size_bytes: 5 * 1024 * 1024 * 1024,
+                object_storage_size_bytes: 5 * 1024 * 1024 * 1024,
                 additional_description: String::new(),
                 domain: String::new(),
                 contact_email: String::new(),
@@ -376,7 +376,7 @@ mod tests {
         );
         assert_eq!(
             market_product_summary(&p),
-            "Rellm hosting, 1GB DB + 5GB MinIO for $15/mo You get full admin access to your own \
+            "Rellm hosting, 1GB DB + 5GB Object Storage for $15/mo You get full admin access to your own \
              Rellm instance -- e.g. you can pay-gate features like Facebook sync yourself, if you \
              set up your own Facebook developer account."
         );
@@ -472,7 +472,7 @@ mod tests {
             840,
             market_product::Details::RellmHostingSubscriptionDetails(RellmHostingSubscriptionDetails {
                 db_size_bytes: 1024 * 1024 * 1024,
-                minio_size_bytes: 5 * 1024 * 1024 * 1024,
+                object_storage_size_bytes: 5 * 1024 * 1024 * 1024,
                 additional_description: String::new(),
                 domain: String::new(),
                 contact_email: String::new(),

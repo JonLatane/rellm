@@ -598,9 +598,9 @@ export interface RellmHostingPurchaseDetails {
   dbSizeBytes: number;
   /**
    * Same caveat as `db_size_bytes` above -- currently always `0`. Intended to be the requested
-   * MinIO (object storage) size in bytes.
+   * object storage size in bytes.
    */
-  minioSizeBytes: number;
+  objectStorageSizeBytes: number;
   /**
    * Copied from `RellmHostingSubscriptionDetails.additional_description` at the moment this
    * purchase was fulfilled -- see that field's own doc.
@@ -845,10 +845,10 @@ export interface RellmHostingSubscriptionDetails {
    */
   dbSizeBytes: number;
   /**
-   * Same caveat as `db_size_bytes` above. On a `MarketProduct`: the MinIO (object storage) size (in
+   * Same caveat as `db_size_bytes` above. On a `MarketProduct`: the object storage size (in
    * bytes) this product is configured to provision.
    */
-  minioSizeBytes: number;
+  objectStorageSizeBytes: number;
   /**
    * Admin-authored, Markdown-formatted extra paragraph appended below the implicit, Elm-computed
    * "1GB DB + 5GB Object Storage"-style canned description shown on the product/subscription's own
@@ -2505,7 +2505,7 @@ export const AIGrantPurchaseDetails: MessageFns<AIGrantPurchaseDetails> = {
 function createBaseRellmHostingPurchaseDetails(): RellmHostingPurchaseDetails {
   return {
     dbSizeBytes: 0,
-    minioSizeBytes: 0,
+    objectStorageSizeBytes: 0,
     additionalDescription: "",
     domain: "",
     contactEmail: "",
@@ -2518,8 +2518,8 @@ export const RellmHostingPurchaseDetails: MessageFns<RellmHostingPurchaseDetails
     if (message.dbSizeBytes !== 0) {
       writer.uint32(8).uint64(message.dbSizeBytes);
     }
-    if (message.minioSizeBytes !== 0) {
-      writer.uint32(16).uint64(message.minioSizeBytes);
+    if (message.objectStorageSizeBytes !== 0) {
+      writer.uint32(16).uint64(message.objectStorageSizeBytes);
     }
     if (message.additionalDescription !== "") {
       writer.uint32(26).string(message.additionalDescription);
@@ -2556,7 +2556,7 @@ export const RellmHostingPurchaseDetails: MessageFns<RellmHostingPurchaseDetails
             break;
           }
 
-          message.minioSizeBytes = longToNumber(reader.uint64());
+          message.objectStorageSizeBytes = longToNumber(reader.uint64());
           continue;
         }
         case 3: {
@@ -2603,7 +2603,9 @@ export const RellmHostingPurchaseDetails: MessageFns<RellmHostingPurchaseDetails
   fromJSON(object: any): RellmHostingPurchaseDetails {
     return {
       dbSizeBytes: isSet(object.dbSizeBytes) ? globalThis.Number(object.dbSizeBytes) : 0,
-      minioSizeBytes: isSet(object.minioSizeBytes) ? globalThis.Number(object.minioSizeBytes) : 0,
+      objectStorageSizeBytes: isSet(object.objectStorageSizeBytes)
+        ? globalThis.Number(object.objectStorageSizeBytes)
+        : 0,
       additionalDescription: isSet(object.additionalDescription) ? globalThis.String(object.additionalDescription) : "",
       domain: isSet(object.domain) ? globalThis.String(object.domain) : "",
       contactEmail: isSet(object.contactEmail) ? globalThis.String(object.contactEmail) : "",
@@ -2616,8 +2618,8 @@ export const RellmHostingPurchaseDetails: MessageFns<RellmHostingPurchaseDetails
     if (message.dbSizeBytes !== 0) {
       obj.dbSizeBytes = Math.round(message.dbSizeBytes);
     }
-    if (message.minioSizeBytes !== 0) {
-      obj.minioSizeBytes = Math.round(message.minioSizeBytes);
+    if (message.objectStorageSizeBytes !== 0) {
+      obj.objectStorageSizeBytes = Math.round(message.objectStorageSizeBytes);
     }
     if (message.additionalDescription !== "") {
       obj.additionalDescription = message.additionalDescription;
@@ -2640,7 +2642,7 @@ export const RellmHostingPurchaseDetails: MessageFns<RellmHostingPurchaseDetails
   fromPartial<I extends Exact<DeepPartial<RellmHostingPurchaseDetails>, I>>(object: I): RellmHostingPurchaseDetails {
     const message = createBaseRellmHostingPurchaseDetails();
     message.dbSizeBytes = object.dbSizeBytes ?? 0;
-    message.minioSizeBytes = object.minioSizeBytes ?? 0;
+    message.objectStorageSizeBytes = object.objectStorageSizeBytes ?? 0;
     message.additionalDescription = object.additionalDescription ?? "";
     message.domain = object.domain ?? "";
     message.contactEmail = object.contactEmail ?? "";
@@ -3384,7 +3386,7 @@ export const AIGrantSubscriptionDetails: MessageFns<AIGrantSubscriptionDetails> 
 function createBaseRellmHostingSubscriptionDetails(): RellmHostingSubscriptionDetails {
   return {
     dbSizeBytes: 0,
-    minioSizeBytes: 0,
+    objectStorageSizeBytes: 0,
     additionalDescription: "",
     domain: "",
     contactEmail: "",
@@ -3399,8 +3401,8 @@ export const RellmHostingSubscriptionDetails: MessageFns<RellmHostingSubscriptio
     if (message.dbSizeBytes !== 0) {
       writer.uint32(8).uint64(message.dbSizeBytes);
     }
-    if (message.minioSizeBytes !== 0) {
-      writer.uint32(16).uint64(message.minioSizeBytes);
+    if (message.objectStorageSizeBytes !== 0) {
+      writer.uint32(16).uint64(message.objectStorageSizeBytes);
     }
     if (message.additionalDescription !== "") {
       writer.uint32(26).string(message.additionalDescription);
@@ -3443,7 +3445,7 @@ export const RellmHostingSubscriptionDetails: MessageFns<RellmHostingSubscriptio
             break;
           }
 
-          message.minioSizeBytes = longToNumber(reader.uint64());
+          message.objectStorageSizeBytes = longToNumber(reader.uint64());
           continue;
         }
         case 3: {
@@ -3506,7 +3508,9 @@ export const RellmHostingSubscriptionDetails: MessageFns<RellmHostingSubscriptio
   fromJSON(object: any): RellmHostingSubscriptionDetails {
     return {
       dbSizeBytes: isSet(object.dbSizeBytes) ? globalThis.Number(object.dbSizeBytes) : 0,
-      minioSizeBytes: isSet(object.minioSizeBytes) ? globalThis.Number(object.minioSizeBytes) : 0,
+      objectStorageSizeBytes: isSet(object.objectStorageSizeBytes)
+        ? globalThis.Number(object.objectStorageSizeBytes)
+        : 0,
       additionalDescription: isSet(object.additionalDescription) ? globalThis.String(object.additionalDescription) : "",
       domain: isSet(object.domain) ? globalThis.String(object.domain) : "",
       contactEmail: isSet(object.contactEmail) ? globalThis.String(object.contactEmail) : "",
@@ -3523,8 +3527,8 @@ export const RellmHostingSubscriptionDetails: MessageFns<RellmHostingSubscriptio
     if (message.dbSizeBytes !== 0) {
       obj.dbSizeBytes = Math.round(message.dbSizeBytes);
     }
-    if (message.minioSizeBytes !== 0) {
-      obj.minioSizeBytes = Math.round(message.minioSizeBytes);
+    if (message.objectStorageSizeBytes !== 0) {
+      obj.objectStorageSizeBytes = Math.round(message.objectStorageSizeBytes);
     }
     if (message.additionalDescription !== "") {
       obj.additionalDescription = message.additionalDescription;
@@ -3555,7 +3559,7 @@ export const RellmHostingSubscriptionDetails: MessageFns<RellmHostingSubscriptio
   ): RellmHostingSubscriptionDetails {
     const message = createBaseRellmHostingSubscriptionDetails();
     message.dbSizeBytes = object.dbSizeBytes ?? 0;
-    message.minioSizeBytes = object.minioSizeBytes ?? 0;
+    message.objectStorageSizeBytes = object.objectStorageSizeBytes ?? 0;
     message.additionalDescription = object.additionalDescription ?? "";
     message.domain = object.domain ?? "";
     message.contactEmail = object.contactEmail ?? "";

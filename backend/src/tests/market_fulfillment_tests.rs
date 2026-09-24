@@ -126,7 +126,7 @@ fn rellm_hosting_fulfillment_is_a_no_op() {
         let buyer = create_user(conn, "mkt_fulfill_hosting");
         let details = serde_json::to_value(RellmHostingPurchaseDetails {
             db_size_bytes: 0,
-            minio_size_bytes: 0,
+            object_storage_size_bytes: 0,
             additional_description: "".to_string(),
             domain: "example.rellm.org".to_string(),
             contact_email: "buyer@example.com".to_string(),

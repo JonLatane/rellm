@@ -19,7 +19,7 @@ use rellm::models;
 use rellm::models::{get_user, Post, POST_COLUMNS};
 use rellm::protos::{ClusterResource, ClusterResources, MediaConversion, Visibility};
 use rellm::schema::{media, posts};
-use rellm::{db_connection, init_bin_logging, minio_connection, rpcs};
+use rellm::{db_connection, init_bin_logging, object_storage_connection, rpcs};
 use rellm::{init_crypto, marshaling::*};
 use s3::Bucket;
 use uuid::Uuid;
@@ -47,10 +47,10 @@ async fn main() {
         return;
     }
 
-    log::info!("Connecting to MinIO...");
-    let bucket = minio_connection::get_and_test_bucket()
+    log::info!("Connecting to object storage...");
+    let bucket = object_storage_connection::get_and_test_bucket()
         .await
-        .expect("Failed to connect to MinIO");
+        .expect("Failed to connect to object storage");
 
     // If this server is part of a cluster (see `ClusterResources`'s own doc in
     // server_configuration.proto), only one instance may have a browser open at a time --
@@ -112,7 +112,7 @@ async fn update_post(
 
                     let filename = format!("post_{}_generated_preview.png", post.id.to_proto_id());
                     let uuid = Uuid::new_v4();
-                    let minio_path = format!(
+                    let object_storage_path = format!(
                         "user/{}-{}/{}-{}",
                         user.id.to_proto_id(),
                         user.username,
@@ -120,7 +120,7 @@ async fn update_post(
                         filename
                     );
                     let upload_status = bucket
-                        .put_object(&minio_path, screenshot.as_slice())
+                        .put_object(&object_storage_path, screenshot.as_slice())
                         .await
                         .map_err(|e| {
                             log::warn!("Failed to upload screenshot for link {}: {}", url, e);
@@ -131,7 +131,7 @@ async fn update_post(
 
                     let sizes = vec![models::MediaSize {
                         conversion: MediaConversion::Original as i32,
-                        minio_path,
+                        object_storage_path,
                         content_type: "image/png".to_string(),
                         size_bytes: screenshot.len() as i64,
                         aspect_ratio: None,

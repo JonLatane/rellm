@@ -12,6 +12,12 @@
 
 # Generated YAML from deploy scripts. May contain emails, names, etc.
 *.generated.yaml
+
+# Local dev object storage container's data dir (backend/Makefile's local_object_storage_create).
+# .minio-data is the old name/mount path from before the MinIO->object_storage rename -- kept
+# ignored too since existing local checkouts may still have a running rellm-dev-minio container
+# using it until they switch over to local_object_storage_create's rellm-dev-object-storage one.
+.object-storage-data
 .minio-data
 
 # Postgres dumps from deploys/Makefile's dump_backend_postgres/upgrade_backend_postgres. Contain

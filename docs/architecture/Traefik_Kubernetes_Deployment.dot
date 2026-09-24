@@ -141,11 +141,11 @@ digraph G {
     resolve_mta_hook -> oakcitysocial_mta [style = "dotted,dashed";];
     resolve_mta_hook -> bullcitysocial_mta [style = "dotted,dashed";];
     resolve_mta_hook -> atoband_mta [style = "dotted,dashed";];
-    // minio0 [shape = cylinder;label = "Minio";];
+    // objectStorage0 [shape = cylinder;label = "Object Storage";];
     // postgres0 [shape = cylinder;label = "Postgres";];
     // tls0 [shape = "box";color = ".7 .3 1.0";label = <<b>rellm-tls</b>&nbsp;(K8s Secret)>;];
     
-    // rellm0 -> minio0 [label = <5GB @ <b>50¢/mo</b>>;];
+    // rellm0 -> objectStorage0 [label = <5GB @ <b>50¢/mo</b>>;];
     // rellm0 -> postgres0 [label = <1GB @ <b>10¢/mo</b>>;];
   }
 
@@ -175,7 +175,7 @@ digraph G {
       color = "#88f5df";
       node [style = filled; color = white;];
 
-      minio0 [shape = cylinder;label = <<table border="0" cellborder="0" cellspacing="0"><tr><td><b>MinIO</b></td></tr><tr><td>5GB @ <b>50¢/mo</b></td></tr></table>>;color = black;fillcolor = gray80;];
+      objectStorage0 [shape = cylinder;label = <<table border="0" cellborder="0" cellspacing="0"><tr><td><b>Object Storage</b></td></tr><tr><td>5GB @ <b>50¢/mo</b></td></tr></table>>;color = black;fillcolor = gray80;];
 
       subgraph cluster_rellm_postgres {
         label = "";
@@ -207,7 +207,7 @@ digraph G {
         vapid_configuration -> sync_sources [style = invis;];
       }
     }
-    rellm0 -> minio0;
+    rellm0 -> objectStorage0;
     rellm0 -> postgres0;
 
     vapid_push [shape = parallelogram;label = "VAPID Push";];
@@ -237,7 +237,7 @@ digraph G {
       color = "#88f5df";
       node [style = filled; color = white;];
 
-      minio1 [shape = cylinder;label = <<table border="0" cellborder="0" cellspacing="0"><tr><td><b>MinIO</b></td></tr><tr><td>5GB @ <b>50¢/mo</b></td></tr></table>>;color = black;fillcolor = gray80;];
+      objectStorage1 [shape = cylinder;label = <<table border="0" cellborder="0" cellspacing="0"><tr><td><b>Object Storage</b></td></tr><tr><td>5GB @ <b>50¢/mo</b></td></tr></table>>;color = black;fillcolor = gray80;];
 
       subgraph cluster_oakcitysocial_postgres {
         label = "";
@@ -269,7 +269,7 @@ digraph G {
         vapid_configuration1 -> sync_sources1 [style = invis;];
       }
     }
-    rellm1 -> minio1;
+    rellm1 -> objectStorage1;
     rellm1 -> postgres1;
 
     vapid_push1 [shape = parallelogram;label = "VAPID Push";];
@@ -300,7 +300,7 @@ digraph G {
       color = "#88f5df";
       node [style = filled; color = white;];
 
-      minio2 [label = <<table border="0" cellborder="0" cellspacing="0"><tr><td><b>MinIO</b></td></tr><tr><td>5GB @ <b>50¢/mo</b></td></tr></table>>;shape = cylinder;color = black;fillcolor = gray80;];
+      objectStorage2 [label = <<table border="0" cellborder="0" cellspacing="0"><tr><td><b>Object Storage</b></td></tr><tr><td>5GB @ <b>50¢/mo</b></td></tr></table>>;shape = cylinder;color = black;fillcolor = gray80;];
 
       subgraph cluster_bullcitysocial_postgres {
         label = "";
@@ -332,7 +332,7 @@ digraph G {
         vapid_configuration2 -> sync_sources2 [style = invis;];
       }
     }
-    rellm2 -> minio2;
+    rellm2 -> objectStorage2;
     rellm2 -> postgres2;
 
     vapid_push2 [shape = parallelogram;label = "VAPID Push";];
@@ -363,7 +363,7 @@ digraph G {
       color = "#88f5df";
       node [style = filled; color = white;];
 
-      minio3 [label = <<table border="0" cellborder="0" cellspacing="0"><tr><td><b>MinIO</b></td></tr><tr><td>5GB @ <b>50¢/mo</b></td></tr></table>>;shape = cylinder;color = black;fillcolor = gray80;];
+      objectStorage3 [label = <<table border="0" cellborder="0" cellspacing="0"><tr><td><b>Object Storage</b></td></tr><tr><td>5GB @ <b>50¢/mo</b></td></tr></table>>;shape = cylinder;color = black;fillcolor = gray80;];
 
       subgraph cluster_atoband_postgres {
         label = "";
@@ -395,7 +395,7 @@ digraph G {
         vapid_configuration3 -> sync_sources3 [style = invis;];
       }
     }
-    rellm3 -> minio3;
+    rellm3 -> objectStorage3;
     rellm3 -> postgres3;
 
     vapid_push3 [shape = parallelogram;label = "VAPID Push";];

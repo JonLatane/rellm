@@ -61,10 +61,10 @@ pub async fn delete_media_sizes(
         })?;
 
     for size in removed {
-        if let Err(e) = bucket.delete_object(&size.minio_path).await {
+        if let Err(e) = bucket.delete_object(&size.object_storage_path).await {
             log::error!(
-                "Failed to delete MinIO object {} for media {}: {:?}",
-                size.minio_path,
+                "Failed to delete object storage object {} for media {}: {:?}",
+                size.object_storage_path,
                 media_id,
                 e
             );

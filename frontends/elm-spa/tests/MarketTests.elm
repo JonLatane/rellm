@@ -117,7 +117,7 @@ suite =
                         Market.usdCurrencyCode
                         (ProductDetails.RellmHostingSubscriptionDetails
                             { dbSizeBytes = Conversions.int64FromInt (1024 * 1024 * 1024)
-                            , minioSizeBytes = Conversions.int64FromInt (5 * 1024 * 1024 * 1024)
+                            , objectStorageSizeBytes = Conversions.int64FromInt (5 * 1024 * 1024 * 1024)
                             , additionalDescription = ""
                             , domain = ""
                             , contactEmail = ""
@@ -179,7 +179,7 @@ suite =
                         Market.usdCurrencyCode
                         (ProductDetails.RellmHostingSubscriptionDetails
                             { dbSizeBytes = Conversions.int64FromInt (1024 * 1024 * 1024)
-                            , minioSizeBytes = Conversions.int64FromInt (5 * 1024 * 1024 * 1024)
+                            , objectStorageSizeBytes = Conversions.int64FromInt (5 * 1024 * 1024 * 1024)
                             , additionalDescription = "Comes with a free .rellm.org subdomain for the first year."
                             , domain = ""
                             , contactEmail = ""
@@ -203,7 +203,7 @@ suite =
                         Market.usdCurrencyCode
                         (ProductDetails.RellmHostingSubscriptionDetails
                             { dbSizeBytes = Conversions.int64FromInt (1024 * 1024 * 1024)
-                            , minioSizeBytes = Conversions.int64FromInt (5 * 1024 * 1024 * 1024)
+                            , objectStorageSizeBytes = Conversions.int64FromInt (5 * 1024 * 1024 * 1024)
                             , additionalDescription = ""
                             , domain = ""
                             , contactEmail = ""

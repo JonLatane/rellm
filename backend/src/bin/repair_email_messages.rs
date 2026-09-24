@@ -5,7 +5,7 @@ use diesel::*;
 use rellm::models::{EmailHeaders, Message, MESSAGE_COLUMNS};
 use rellm::schema::messages;
 use rellm::web::email::{collect_addresses, display_address, sanitize_header_value};
-use rellm::{db_connection, init_bin_logging, init_crypto, minio_connection};
+use rellm::{db_connection, init_bin_logging, init_crypto, object_storage_connection};
 
 /// TODO(2026-08-18): temporary, one-off migration. Once this has been run against every deployed
 /// namespace's Messages (bullcitysocial, oakcitysocial, ato-band, jonline.io -- see
@@ -23,7 +23,7 @@ use rellm::{db_connection, init_bin_logging, init_crypto, minio_connection};
 ///
 /// This finds those rows via `Message::email_headers()` being the all-default `EmailHeaders`,
 /// re-downloads the (also-corrupted, since it's the same buggy `raw_message` bytes) `.eml` each
-/// one stored in MinIO, undoes the specific corruption pattern the old bug produced, and re-parses
+/// one stored in object storage, undoes the specific corruption pattern the old bug produced, and re-parses
 /// the repaired bytes the same way the fixed endpoint would have the first time.
 ///
 /// Because the bug also defeated the endpoint's Message-ID-based dedup (every retry of the same
@@ -39,15 +39,15 @@ async fn main() {
     init_bin_logging();
     log::info!("Repairing corrupted inbound-email Messages...");
 
-    log::info!("Connecting to DB and MinIO...");
+    log::info!("Connecting to DB and object storage...");
     let mut conn = db_connection::establish_connection();
-    let bucket = minio_connection::get_and_test_bucket()
+    let bucket = object_storage_connection::get_and_test_bucket()
         .await
-        .expect("Failed to connect to MinIO");
+        .expect("Failed to connect to object storage");
 
     let mut candidates = messages::table
         .select(MESSAGE_COLUMNS)
-        .filter(messages::email_minio_path.is_not_null())
+        .filter(messages::email_object_storage_path.is_not_null())
         .order(messages::id.asc())
         .load::<Message>(&mut conn)
         .expect("Failed to load Messages");
@@ -59,14 +59,14 @@ async fn main() {
     let mut skipped_count = 0;
 
     for message in candidates {
-        let minio_path = message.email_minio_path.clone().unwrap();
-        let corrupted = match bucket.get_object(&minio_path).await {
+        let object_storage_path = message.email_object_storage_path.clone().unwrap();
+        let corrupted = match bucket.get_object(&object_storage_path).await {
             Ok(response) => response.as_slice().to_vec(),
             Err(e) => {
                 log::error!(
-                    "Message {}: failed to download {} from MinIO: {:?}. Skipping.",
+                    "Message {}: failed to download {} from object storage: {:?}. Skipping.",
                     message.id,
-                    minio_path,
+                    object_storage_path,
                     e
                 );
                 skipped_count += 1;

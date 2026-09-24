@@ -75,7 +75,7 @@ pub fn send_message(
             body_text: Some(body_text),
             email_headers: None,
             email_message_id: None,
-            email_minio_path: None,
+            email_object_storage_path: None,
             messaging_group_id,
         })
         .returning(models::MESSAGE_COLUMNS)

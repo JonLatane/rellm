@@ -42,10 +42,10 @@ As an end user, once you've set up per the quick setup, you can simply run this 
 git pull && make update_external_backend
 ```
 
-Until Rellm is fairly complete, I'm not bothering with migrations. Be prepared to reset data until then. To reset your database/minio (if you're using the K8s one and not a managed DB):
+Until Rellm is fairly complete, I'm not bothering with migrations. Be prepared to reset data until then. To reset your database/object storage (if you're using the K8s one and not a managed DB):
 
 ```bash
-make delete_backend_postgres create_backend_postgres delete_backend_minio create_backend_minio restart_backend
+make delete_backend_postgres create_backend_postgres delete_backend_object_storage create_backend_object_storage restart_backend
 ```
 
 or, more succinctly:

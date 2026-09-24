@@ -29,11 +29,11 @@ if [ ! -f "$RELLM_ENV" ]; then
   cat > "$RELLM_ENV" <<'RELLM_ENV_EOF'
 DATABASE_URL=postgres://localhost/rellm_dev
 
-MINIO_ENDPOINT=http://localhost:9000
-MINIO_REGION=
-MINIO_BUCKET=rellm-dev
-MINIO_ACCESS_KEY=ROOTNAME
-MINIO_SECRET_KEY=CHANGEME123
+OBJECT_STORAGE_ENDPOINT=http://localhost:9000
+OBJECT_STORAGE_REGION=
+OBJECT_STORAGE_BUCKET=rellm-dev
+OBJECT_STORAGE_ACCESS_KEY=ROOTNAME
+OBJECT_STORAGE_SECRET_KEY=CHANGEME123
 
 # TLS_CERT_PATH=/path/to/cert.pem
 RELLM_ENV_EOF
@@ -44,8 +44,8 @@ source "$RELLM_ENV"
 set +a
 
 RELLM_DB_NAME="${RELLM_DB_NAME:-rellm_dev}"
-RELLM_MINIO_CONTAINER="${RELLM_MINIO_CONTAINER:-rellm-dev-minio}"
-RELLM_MINIO_DATA_DIR="${RELLM_MINIO_DATA_DIR:-$HOME/.rellm-minio-data}"
+RELLM_OBJECT_STORAGE_CONTAINER="${RELLM_OBJECT_STORAGE_CONTAINER:-rellm-dev-object-storage}"
+RELLM_OBJECT_STORAGE_DATA_DIR="${RELLM_OBJECT_STORAGE_DATA_DIR:-$HOME/.rellm-object-storage-data}"
 
 # Single source of truth for valid subcommands -- used both to dispatch (see
 # bottom of file) and to answer `rellm --list-commands`, which the
@@ -56,7 +56,7 @@ RELLM_COMMANDS=(
   server_and_jobs server jobs version local_instances_stop
   environment edit_environment
   local_db_create local_db_drop local_db_reset local_db_connect
-  local_minio_start local_minio_create local_minio_delete
+  local_object_storage_start local_object_storage_create local_object_storage_delete
   delete_expired_tokens delete_unowned_media sync_sources update_user_counts convert_media_sizes renew_market_subscriptions generate_preview_images
   set_permission delete_preview_images disable_cdn_grpc free_all_cluster_resources
   to_db_id to_proto_id grpcurl
@@ -79,18 +79,18 @@ rellm - launcher for the Rellm server and its local dev dependencies
 Usage: rellm <command> [args...]
 
 Relies on Postgres's createdb/dropdb/psql for its example database (local_db_* commands),
-and on Docker's docker for its example MinIO (local_minio_* commands; S3-compatible storage).
+and on Docker's docker for its example object storage (local_object_storage_* commands; S3-compatible storage).
 
 Relies on `jq` and `curl` for its self-updating commands (install, show_latest, update, cleanup_updates).
 
-Edit ~/.rellm (created on first run) to point DATABASE_URL, MINIO_* and other environment
+Edit ~/.rellm (created on first run) to point DATABASE_URL, OBJECT_STORAGE_* and other environment
 variables at different instances, if desired. (Or use "rellm edit_environment".)
 
 Start server:
   rellm server
 
 Quick setup:
-  rellm local_db_create && rellm local_minio_create && rellm server
+  rellm local_db_create && rellm local_object_storage_create && rellm server
 
 Commands:
 
@@ -123,9 +123,12 @@ Commands:
     local_db_reset           Stop local instances, then drop and recreate the local database
     local_db_connect         Connect to the local database with psql ($DATABASE_URL)
 
-    local_minio_start        Start an existing local MinIO docker container
-    local_minio_create       Start local MinIO, creating its docker container first if needed
-    local_minio_delete       Stop and remove the local MinIO docker container
+    local_object_storage_start
+                             Start an existing local object storage docker container
+    local_object_storage_create
+                             Start local object storage, creating its docker container first if needed
+    local_object_storage_delete
+                             Stop and remove the local object storage docker container
 
   Background jobs:
 
@@ -229,26 +232,27 @@ local_db_connect() {
   psql "$DATABASE_URL"
 }
 
-local_minio_start() {
-  docker start "$RELLM_MINIO_CONTAINER"
+local_object_storage_start() {
+  docker start "$RELLM_OBJECT_STORAGE_CONTAINER"
 }
 
-local_minio_create() {
-  local_minio_start || _do_local_minio_create
+local_object_storage_create() {
+  local_object_storage_start || _do_local_object_storage_create
 }
 
-# bitnamilegacy/minio, not minio/minio -- MinIO pulled minio/minio from Docker Hub entirely
-# (404s) and locked down anonymous pulls of quay.io/minio/minio too, after archiving the OSS
-# project. bitnamilegacy/minio is Bitnami's frozen/unsupported-but-still-pullable image; it
-# starts the server itself via its own entrypoint, so no `server /data` command override.
-_do_local_minio_create() {
-  mkdir -p "$RELLM_MINIO_DATA_DIR"
-  docker run -d -p 9000:9000 -p 9090:9090 --name "$RELLM_MINIO_CONTAINER" -v "$RELLM_MINIO_DATA_DIR:/bitnami/minio/data" -e "MINIO_ROOT_USER=$MINIO_ACCESS_KEY" -e "MINIO_ROOT_PASSWORD=$MINIO_SECRET_KEY" -e "MINIO_BROWSER=on" -e "MINIO_CONSOLE_PORT_NUMBER=9090" bitnamilegacy/minio:latest
+# pgsty/silo, not quay.io/minio/minio or minio/minio -- MinIO's OSS project was archived in
+# 2026: minio/minio was pulled from Docker Hub entirely (404s), and quay.io/minio/minio now
+# 401s "unauthorized" on anonymous pulls of every tag. pgsty/silo is a drop-in,
+# MinIO-API-compatible fork that accepts the exact same `server /data --console-address
+# ":9090"` invocation and MINIO_ROOT_USER/MINIO_ROOT_PASSWORD env vars.
+_do_local_object_storage_create() {
+  mkdir -p "$RELLM_OBJECT_STORAGE_DATA_DIR"
+  docker run -d -p 9000:9000 -p 9090:9090 --name "$RELLM_OBJECT_STORAGE_CONTAINER" -v "$RELLM_OBJECT_STORAGE_DATA_DIR:/data" -e "MINIO_ROOT_USER=$OBJECT_STORAGE_ACCESS_KEY" -e "MINIO_ROOT_PASSWORD=$OBJECT_STORAGE_SECRET_KEY" pgsty/silo:latest server /data --console-address ":9090"
 }
 
-local_minio_delete() {
-  docker stop "$RELLM_MINIO_CONTAINER"
-  docker rm "$RELLM_MINIO_CONTAINER"
+local_object_storage_delete() {
+  docker stop "$RELLM_OBJECT_STORAGE_CONTAINER"
+  docker rm "$RELLM_OBJECT_STORAGE_CONTAINER"
 }
 
 local_instances_stop() {

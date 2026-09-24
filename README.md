@@ -16,7 +16,7 @@ Rellm is an open-source, community-scale social network designed to be capable o
 
 Meanwhile, in support of media creators/providers who might want to self-host Rellm for themselves or in a consortium (whether in lieu of or in addition to monolithic social media presence like YouTube or Twitch), Rellm's CORS support does still afford private media holders a basic way to control who can see their content. If I want to require you be on `ato.band` to listen to my band's music instead of letting you listen from `bullcity.social`, that's already a Web thing, and Rellm can give you a switch for it. Further, better Media permission/visibility controls could definitely be added, should, say, video creators or streamers want to migrate to self-hosting using a Rellm instance as their decentralized video platform to charge for premium content.
 
-The "dev" instance is up at [Jonline.io](https://jonline.io). Three "production" instances are also at [BullCity.Social](https://bullcity.social), [OakCity.Social](https://oakcity.social), and [ATO.Band](https://ato.band). Unless I'm doing some testing with Jonline.io, all three should be configured to be able to federate with one another (or, for clients to federate between them). For anyone curious, all four (along with their corresponding Postgres and MinIO) live on a single-box DigitalOcean K8s instance. Between a single DigitalOcean "Droplet" for compute/memory, a Traefik LB, and 60¢ per server of storage (1GB Postgres + 5GB MinIO), it costs about $45/mo to run the 4 domains. Other than the cost to buy the new domain, any other new domains should just cost 60¢ more per month. (All also keep their media and HTML/CSS/JS behind Cloudflare's free CDN.)
+The "dev" instance is up at [Jonline.io](https://jonline.io). Three "production" instances are also at [BullCity.Social](https://bullcity.social), [OakCity.Social](https://oakcity.social), and [ATO.Band](https://ato.band). Unless I'm doing some testing with Jonline.io, all three should be configured to be able to federate with one another (or, for clients to federate between them). For anyone curious, all four (along with their corresponding Postgres and object storage) live on a single-box DigitalOcean K8s instance. Between a single DigitalOcean "Droplet" for compute/memory, a Traefik LB, and 60¢ per server of storage (1GB Postgres + 5GB object storage), it costs about $45/mo to run the 4 domains. Other than the cost to buy the new domain, any other new domains should just cost 60¢ more per month. (All also keep their media and HTML/CSS/JS behind Cloudflare's free CDN.)
 
 [![Buy me a coffee!](https://img.shields.io/badge/🙏%20Buy%20me%20a%20coffee%20☕️-venmo-information?labelColor={}&color={})](https://account.venmo.com/u/Jon-Latane)
 [![Buy me a beer!](https://img.shields.io/badge/🙏%20Buy%20me%20a%20beer%20🍺-paypal-information?labelColor={}&color={})](https://paypal.me/JLatane)
@@ -41,7 +41,7 @@ At a high level, Rellm's CI/CD ([example run](https://github.com/JonLatane/rellm
 
 ### macOS: Install and Run via Homebrew
 
-The Homebrew distro puts the Rellm server contents in `/#{etc}/rellm`, with a `bash`-based thin launcher for it at `#{bin}/rellm`. The launcher can set up your local Postgres DB with `createdb` and `dropdb` for you, and start a MinIO instance with `docker`. You will need to provide these yourself, but that's it.
+The Homebrew distro puts the Rellm server contents in `/#{etc}/rellm`, with a `bash`-based thin launcher for it at `#{bin}/rellm`. The launcher can set up your local Postgres DB with `createdb` and `dropdb` for you, and start an object storage instance with `docker`. You will need to provide these yourself, but that's it.
 
 Additional docs for the Rellm thin launcher can be found in [`docs/rellm_homebrew.sh`](https://github.com/JonLatane/rellm/blob/main/docs/rellm_homebrew.sh`) (which *is literally the launcher script that will become your `#{bin}/rellm`*, if you wanna PR any changes).
 
@@ -51,7 +51,7 @@ Additional docs for the Rellm thin launcher can be found in [`docs/rellm_homebre
 
 * Installation: `brew`
 * Postgres autoconfiguration: `createdb`, `dropdb`
-* Docker/MinIO autoconfiguration: `docker`
+* Docker/object storage autoconfiguration: `docker`
 * `convert_media_sizes` background job (images): ImageMagick (`brew install imagemagick`), providing either `magick` or the legacy `convert`+`identify` pair. Optional - the job just skips images (logging an error) if it's missing.
 * `convert_media_sizes` background job (video): `ffmpeg` (`brew install ffmpeg`), providing both `ffmpeg` and `ffprobe`. Optional - the job just skips videos (logging an error) if it's missing.
 * `rellm deploy` (managing your own K8s cluster): `make` and `kubectl`. Optional - only needed if you use `rellm deploy`.
@@ -61,14 +61,13 @@ brew install jonlatane/rellm/rellm
 
 rellm help # show subcommands for the bash launcher
 
-# Either configure to use your own MinIO/Postgres (and thus not needing `createdb` or `docker`):
-rellm environment # literally just: cat ~/.rellm. Contains database, MinIO, and optional TLS credentials.
-rellm edit_environment # literally just: $EDITOR ~/.rellm. Edit those database, MinIO, and optional TLS 
+# Either configure to use your own object storage/Postgres (and thus not needing `createdb` or `docker`):
+rellm environment # literally just: cat ~/.rellm. Contains database, object storage, and optional TLS credentials.
+rellm edit_environment # literally just: $EDITOR ~/.rellm. Edit those database, object storage, and optional TLS credentials.
 
 # Or, create the examples. These are what will be auto-populated in ~/.rellm.
 rellm local_db_create # Requires a local Postgres instance. literally just: createdb rellm_dev
-rellm local_minio_start # literally "just": docker start rellm-dev-minio || docker run -d -p 9000:9000 -p 9090:9090 --name rellm-dev-minio -v $(MAKEFILE_DIR)/.minio-data:/bitnami/minio/data -e "MINIO_ROOT_USER=ROOTNAME" -e "MINIO_ROOT_PASSWORD=CHANGEME123" -e "MINIO_BROWSER=on" -e "MINIO_CONSOLE_PORT_NUMBER=9090" bitnamilegacy/minio:latest
-credentials.
+rellm local_object_storage_start # literally "just": docker start rellm-dev-object-storage || docker run -d -p 9000:9000 -p 9090:9090 --name rellm-dev-object-storage -v $(MAKEFILE_DIR)/.object-storage-data:/data -e "MINIO_ROOT_USER=ROOTNAME" -e "MINIO_ROOT_PASSWORD=CHANGEME123" pgsty/silo:latest server /data --console-address ":9090"
 
 # Launch the server (and its background jobs). HTTP on ports 80 and 8000, 27707 (gRPC), and HTTPS on 443 if TLS is configured.
 rellm server_and_jobs
@@ -83,7 +82,7 @@ rellm set_permission my_admin_username admin on
 
 brew upgrade jonlatane/rellm/rellm # Upgrade to the latest release.
 
-# (DigitalOcean only for now) Create Postgres with 1GB storage, MinIO with 5GB storage, and a web-facing Rellm server (with a load balancer) in your DOKS (DigitalOcean Kubernetes) cluster with `make` and `kubectl`.
+# (DigitalOcean only for now) Create Postgres with 1GB storage, object storage with 5GB storage, and a web-facing Rellm server (with a load balancer) in your DOKS (DigitalOcean Kubernetes) cluster with `make` and `kubectl`.
 rellm deploy create_backend_data create_external_backend NAMESPACE=my-rellm-instance-namespace
 
 # To tear that cluster deployment down again (kubectl deletes the whole namespace, and everything in it, at once):
@@ -104,7 +103,7 @@ Unlike the Homebrew distro, this is *straight up untested by me*. So please, sub
 
 * Installation/Updates: `jq`, `curl`, `xargs`
 * Postgres autoconfiguration: `createdb`, `dropdb`
-* Docker/MinIO autoconfiguration: `docker`
+* Docker/object storage autoconfiguration: `docker`
 * `convert_media_sizes` background job (images): ImageMagick (`apt install imagemagick`), providing either `magick` or the legacy `convert`+`identify` pair. Optional - the job just skips images (logging an error) if it's missing.
 * `convert_media_sizes` background job (video): `ffmpeg` (`apt install ffmpeg`), providing both `ffmpeg` and `ffprobe`. Optional - the job just skips videos (logging an error) if it's missing.
 * `rellm deploy` (managing your own K8s cluster): `make` and `kubectl`. Optional - only needed if you use `rellm deploy`.
@@ -136,14 +135,13 @@ echo 'eval "$(rellm completion zsh)"' >> ~/.zshrc     # zsh
 
 rellm help # show subcommands for the bash launcher
 
-# Either configure to use your own MinIO/Postgres (and thus not needing `createdb` or `docker`):
-rellm environment # literally just: cat ~/.rellm. Contains database, MinIO, and optional TLS credentials.
-rellm edit_environment # literally just: $EDITOR ~/.rellm. Edit those database, MinIO, and optional TLS 
+# Either configure to use your own object storage/Postgres (and thus not needing `createdb` or `docker`):
+rellm environment # literally just: cat ~/.rellm. Contains database, object storage, and optional TLS credentials.
+rellm edit_environment # literally just: $EDITOR ~/.rellm. Edit those database, object storage, and optional TLS credentials.
 
 # Or, create the examples. These are what will be auto-populated in ~/.rellm.
 rellm local_db_create # Requires a local Postgres instance. literally just: createdb rellm_dev
-rellm local_minio_start # literally "just": docker start rellm-dev-minio || docker run -d -p 9000:9000 -p 9090:9090 --name rellm-dev-minio -v $(MAKEFILE_DIR)/.minio-data:/bitnami/minio/data -e "MINIO_ROOT_USER=ROOTNAME" -e "MINIO_ROOT_PASSWORD=CHANGEME123" -e "MINIO_BROWSER=on" -e "MINIO_CONSOLE_PORT_NUMBER=9090" bitnamilegacy/minio:latest
-credentials.
+rellm local_object_storage_start # literally "just": docker start rellm-dev-object-storage || docker run -d -p 9000:9000 -p 9090:9090 --name rellm-dev-object-storage -v $(MAKEFILE_DIR)/.object-storage-data:/data -e "MINIO_ROOT_USER=ROOTNAME" -e "MINIO_ROOT_PASSWORD=CHANGEME123" pgsty/silo:latest server /data --console-address ":9090"
 
 # Launch the server (and its background jobs). HTTP on ports 80 and 8000, 27707 (gRPC), and HTTPS on 443 if TLS is configured.
 rellm server_and_jobs
@@ -156,7 +154,7 @@ xdg-open http://localhost/
 # To give them admin permissions:
 rellm set_permission my_admin_username admin on
 
-# COST: $12.60/mo on DigitalOcean. (DigitalOcean only for now) Create Postgres with 1GB storage, MinIO with 5GB storage, and a web-facing Rellm server (with a load balancer) in your DOKS (DigitalOcean Kubernetes) cluster with `make` and `kubectl`.
+# COST: $12.60/mo on DigitalOcean. (DigitalOcean only for now) Create Postgres with 1GB storage, object storage with 5GB storage, and a web-facing Rellm server (with a load balancer) in your DOKS (DigitalOcean Kubernetes) cluster with `make` and `kubectl`.
 rellm deploy create_backend_data create_external_backend NAMESPACE=my-rellm-instance-namespace
 
 # To tear that cluster deployment down again (kubectl deletes the whole namespace, and everything in it, at once):
@@ -179,7 +177,7 @@ rellm uninstall
 
 ### DockerHub: Server and Preview Generator images
 
-Rellm has an intuitive (helm-less) mechanism and conventions for templating Rellm server/Postgres/MinIO containers into Kubernetes namespaces. Helm-ification or other improvements, if "friendlily" documented, are very welcome.
+Rellm has an intuitive (helm-less) mechanism and conventions for templating Rellm server/Postgres/object storage containers into Kubernetes namespaces. Helm-ification or other improvements, if "friendlily" documented, are very welcome.
 
 [![DockerHub Server Images](https://img.shields.io/docker/v/jonlatane/rellm?label=dockerhub:rellm)](https://hub.docker.com/r/jonlatane/rellm/tags) [![DockerHub Preview Generator Images](https://img.shields.io/docker/v/jonlatane/rellm_preview_generator?label=dockerhub:rellm_preview_generator)](https://hub.docker.com/r/jonlatane/rellm_preview_generator/tags)
 
@@ -545,7 +543,7 @@ Rellm supports Groups, which are much like Usenet groups, Facebook groups, or su
 
 ### Media
 
-Rellm [`Media`](https://rellm.org/docs/protocol#rellm-Media) is something like ActiveStorage, but with Rust and Diesel. It's straightforwardly built on content-types and blob storage. It's the reason Rellm requires S3/MinIO. Unlike [`Post`](https://rellm.org/docs/protocol#rellm-Post)s and [`Event`](https://rellm.org/docs/protocol#rellm-Event)s, [`Media`](https://rellm.org/docs/protocol#rellm-Media) is generally not shared directly. It is instead associated with [`Post`](https://rellm.org/docs/protocol#rellm-Post)s and [`Event`](https://rellm.org/docs/protocol#rellm-Event)s (for media listings) as well as Users and Groups (for their avatars).
+Rellm [`Media`](https://rellm.org/docs/protocol#rellm-Media) is something like ActiveStorage, but with Rust and Diesel. It's straightforwardly built on content-types and blob storage. It's the reason Rellm requires S3/object storage. Unlike [`Post`](https://rellm.org/docs/protocol#rellm-Post)s and [`Event`](https://rellm.org/docs/protocol#rellm-Event)s, [`Media`](https://rellm.org/docs/protocol#rellm-Media) is generally not shared directly. It is instead associated with [`Post`](https://rellm.org/docs/protocol#rellm-Post)s and [`Event`](https://rellm.org/docs/protocol#rellm-Event)s (for media listings) as well as Users and Groups (for their avatars).
 
 Media is the *only* part of Rellm's APIs offered over HTTP as well as gRPC/gRPC-over-HTTP. (Hopefully the reasons for this are obvious: easy browser streaming and cache utilization for things like images.) Details on the HTTP Media APIs are in the ["Media" section](https://github.com/JonLatane/rellm/blob/main/docs/protocol.md#media) of the [protocol documentation](https://github.com/JonLatane/rellm/blob/main/docs/protocol.md).
 
@@ -612,7 +610,7 @@ An [`Event`](https://rellm.org/docs/protocol#rellm-Event)'s ID *is* its own [`Po
 
 A [`MessagingGroup`](https://rellm.org/docs/protocol#rellm-MessagingGroup) is the set of participants in a Message conversation. Every [`Message`](https://rellm.org/docs/protocol#rellm-Message) belongs to one; if a client wasn't a visible recipient (e.g. they were BCC'ed), the [`Message`](https://rellm.org/docs/protocol#rellm-Message) they receive omits it.
 
-Messages can also be delivered by email, via a [Stalwart](https://stalw.art) mail server integration (see [`deploys/email`](https://github.com/JonLatane/rellm/tree/main/deploys/email)) on the internal-only HTTP server, port 27705. Once Stalwart accepts an inbound message addressed to one of the instance's onboarded domains, it calls `POST /email` to hand it off, and Rellm turns it into a [`Message`](https://rellm.org/docs/protocol#rellm-Message): each envelope recipient's local part (before the `@`) is looked up as a username on the server, `To`/`Cc` recipients become the [`Message`](https://rellm.org/docs/protocol#rellm-Message)'s [`MessagingGroup`](https://rellm.org/docs/protocol#rellm-MessagingGroup), and `Bcc`'d recipients are recorded individually so they stay invisible to everyone else on the thread. The [`Message`](https://rellm.org/docs/protocol#rellm-Message) has no `from_user_id`, since inbound email never has a local sender; its parsed `from`/`to`/`cc` headers are stored alongside it, and the raw `.eml` is uploaded to the same MinIO store used for [`Media`](https://rellm.org/docs/protocol#rellm-Media).
+Messages can also be delivered by email, via a [Stalwart](https://stalw.art) mail server integration (see [`deploys/email`](https://github.com/JonLatane/rellm/tree/main/deploys/email)) on the internal-only HTTP server, port 27705. Once Stalwart accepts an inbound message addressed to one of the instance's onboarded domains, it calls `POST /email` to hand it off, and Rellm turns it into a [`Message`](https://rellm.org/docs/protocol#rellm-Message): each envelope recipient's local part (before the `@`) is looked up as a username on the server, `To`/`Cc` recipients become the [`Message`](https://rellm.org/docs/protocol#rellm-Message)'s [`MessagingGroup`](https://rellm.org/docs/protocol#rellm-MessagingGroup), and `Bcc`'d recipients are recorded individually so they stay invisible to everyone else on the thread. The [`Message`](https://rellm.org/docs/protocol#rellm-Message) has no `from_user_id`, since inbound email never has a local sender; its parsed `from`/`to`/`cc` headers are stored alongside it, and the raw `.eml` is uploaded to the same object storage used for [`Media`](https://rellm.org/docs/protocol#rellm-Media).
 
 ### Potential future features
 
@@ -676,7 +674,7 @@ The [gRPC APIs are defined in `protos/`](https://github.com/JonLatane/rellm/tree
 
 [Rellm architecture docs live in `docs/architecture`](https://github.com/JonLatane/rellm/tree/main/docs/architecture).
 
-At its core, Rellm is a boring client-server app; the Browser/App, HTTP server, gRPC server, PostgreSQL, and MinIO interact thusly:
+At its core, Rellm is a boring client-server app; the Browser/App, HTTP server, gRPC server, PostgreSQL, and object storage interact thusly:
 
 ![Rellm Application Architecture](https://github.com/JonLatane/rellm/blob/main/docs/architecture/Service_Architecture.svg)
 
@@ -690,7 +688,7 @@ Generally, Rellm is designed to be straightforward to deploy to Kubernetes clust
 [Rellm's architecture docs](https://github.com/JonLatane/rellm/tree/main/docs/architecture) also cover and link to such topics as:
 
 - [Deployment management, in `deploys/`](https://github.com/JonLatane/rellm/tree/main/deploys)
-    - This handles Rellm as well as Postgres and MinIO.
+    - This handles Rellm as well as Postgres and object storage.
 - [TLS cert generation, in `deploys/generated_certs`](https://github.com/JonLatane/rellm/tree/main/deploys/generated_certs)
 - [Traefik ingress management, in `deploys/ingress`](https://github.com/JonLatane/rellm/tree/main/deploys/ingress)
 
@@ -744,7 +742,7 @@ cd rellm
 
 (On Homebrew or the Linux package instead? Skip the clone - see [Deploying to Kubernetes from Homebrew/Linux](#deploying-to-kubernetes-from-homebrewlinux-rellm-deploy).)
 
-Next, from the repo root, to create Postgres, Minio and two load-balanced Rellm servers in the namespace `rellm` (plus a few recurring jobs), run:
+Next, from the repo root, to create Postgres, object storage and two load-balanced Rellm servers in the namespace `rellm` (plus a few recurring jobs), run:
 
 ```bash
 # THIS STEP WILL COST MONEY WITH MOST KUBERNETES PROVIDERS. ($12/mo. at DigitalOcean)
@@ -755,7 +753,7 @@ Next, from the repo root, to create Postgres, Minio and two load-balanced Rellm 
 NAMESPACE=rellm make create_backend_data create_external_backend
 ```
 
-That's it! You've created Minio and Postgres servers along with an *unsecured Rellm instance* where ***passwords and auth tokens will be sent in plain text*** (You should secure it immediately if you care about any data/people, but feel free to play around with it until you do! Simply `NAMESPACE=rellm make delete_backend_data create_backend_data restart_backend` to reset your server's data.) Because Rellm is a very tiny Rust service, it will all be up within seconds. Your Kubenetes provider will probably take some time to assign you an IP, though.
+That's it! You've created object storage and Postgres servers along with an *unsecured Rellm instance* where ***passwords and auth tokens will be sent in plain text*** (You should secure it immediately if you care about any data/people, but feel free to play around with it until you do! Simply `NAMESPACE=rellm make delete_backend_data create_backend_data restart_backend` to reset your server's data.) Because Rellm is a very tiny Rust service, it will all be up within seconds. Your Kubenetes provider will probably take some time to assign you an IP, though.
 
 Simply `kubectl delete namespace rellm` to delete your deployment (or see below for more detailed management instructions).
 

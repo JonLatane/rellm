@@ -41,7 +41,7 @@ pub struct Message {
     pub body_text: Option<String>,
     pub email_headers: Option<serde_json::Value>,
     pub email_message_id: Option<String>,
-    pub email_minio_path: Option<String>,
+    pub email_object_storage_path: Option<String>,
     pub created_at: SystemTime,
     pub messaging_group_id: i64,
 }
@@ -67,7 +67,7 @@ pub const MESSAGE_COLUMNS: (
     messages::body_text,
     messages::email_headers,
     messages::email_message_id,
-    messages::email_minio_path,
+    messages::email_object_storage_path,
     messages::created_at,
     messages::messaging_group_id,
 ) = (
@@ -77,7 +77,7 @@ pub const MESSAGE_COLUMNS: (
     messages::body_text,
     messages::email_headers,
     messages::email_message_id,
-    messages::email_minio_path,
+    messages::email_object_storage_path,
     messages::created_at,
     messages::messaging_group_id,
 );
@@ -92,7 +92,7 @@ pub struct NewMessage {
     pub body_text: Option<String>,
     pub email_headers: Option<serde_json::Value>,
     pub email_message_id: Option<String>,
-    pub email_minio_path: Option<String>,
+    pub email_object_storage_path: Option<String>,
     pub messaging_group_id: i64,
 }
 
@@ -145,7 +145,7 @@ pub fn find_or_create_messaging_group(
 
 /// `Message.email_headers`' typed shape. Address fields hold raw `To`/`Cc`/`Bcc`/`From` header
 /// values (e.g. `"Jon Latané <jon@jonline.io>"`), not just bare addresses, since that's what's
-/// useful to render without re-parsing the MIME blob in MinIO. `date`/`message_id`/`x_mailer` are
+/// useful to render without re-parsing the MIME blob in object storage. `date`/`message_id`/`x_mailer` are
 /// backend-only for now (not surfaced on the `Message` proto -- `subject` already is, as its own
 /// top-level field, so it has no counterpart here). New fields are all `Option`/default-on-missing
 /// so existing stored rows (JSONB, no migration) still deserialize fine without them.

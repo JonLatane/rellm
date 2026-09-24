@@ -1,6 +1,6 @@
 //! Specs for `delete_media_sizes`: removes only the requested `sizes` (by `conversion`), deletes
-//! their MinIO objects, refreshes `media_storage_bytes_used`, and refuses to leave a `Media` item
-//! with no sizes at all. Needs a real MinIO connection -- see `factories::test_bucket`.
+//! their object storage objects, refreshes `media_storage_bytes_used`, and refuses to leave a `Media` item
+//! with no sizes at all. Needs a real object storage connection -- see `factories::test_bucket`.
 
 use diesel::prelude::*;
 use tonic::Code;
@@ -27,7 +27,7 @@ fn media_storage_bytes_used(conn: &mut PgPooledConnection, user_id: i64) -> i64 
 }
 
 #[test]
-fn deletes_only_the_requested_size_and_its_minio_object() {
+fn deletes_only_the_requested_size_and_its_object_storage_object() {
     let tb = test_bucket();
     let mut conn = test_conn();
     conn.test_transaction::<_, tonic::Status, _>(|conn| {
@@ -36,7 +36,7 @@ fn deletes_only_the_requested_size_and_its_minio_object() {
         let small_path = unique_path("small");
         for path in [&original_path, &small_path] {
             tb.block_on(tb.bucket.put_object(path, b"test-bytes"))
-                .expect("failed to seed test MinIO object");
+                .expect("failed to seed test object storage object");
         }
         let media = create_media_with_size(conn, Some(&user), &original_path, 100);
         let media = set_media_sizes(
@@ -45,14 +45,14 @@ fn deletes_only_the_requested_size_and_its_minio_object() {
             vec![
                 MediaSize {
                     conversion: MediaConversion::Original as i32,
-                    minio_path: original_path.clone(),
+                    object_storage_path: original_path.clone(),
                     content_type: "image/png".to_string(),
                     size_bytes: 100,
                     aspect_ratio: None,
                 },
                 MediaSize {
                     conversion: MediaConversion::Small as i32,
-                    minio_path: small_path.clone(),
+                    object_storage_path: small_path.clone(),
                     content_type: "image/png".to_string(),
                     size_bytes: 20,
                     aspect_ratio: None,
@@ -80,8 +80,8 @@ fn deletes_only_the_requested_size_and_its_minio_object() {
 
         assert_eq!(updated.sizes.len(), 1);
         assert_eq!(updated.sizes[0].conversion, MediaConversion::Original as i32);
-        assert!(!tb.object_exists(&small_path), "small MinIO object should be deleted");
-        assert!(tb.object_exists(&original_path), "original MinIO object should survive");
+        assert!(!tb.object_exists(&small_path), "small object storage object should be deleted");
+        assert!(tb.object_exists(&original_path), "original object storage object should survive");
         assert_eq!(
             media_storage_bytes_used(conn, user.id),
             100,
@@ -169,7 +169,7 @@ fn admin_can_delete_sizes_of_another_users_media() {
         let small_path = unique_path("small");
         for path in [&original_path, &small_path] {
             tb.block_on(tb.bucket.put_object(path, b"test-bytes"))
-                .expect("failed to seed test MinIO object");
+                .expect("failed to seed test object storage object");
         }
         let media = create_media(conn, Some(&owner), &original_path);
         let media = set_media_sizes(
@@ -178,14 +178,14 @@ fn admin_can_delete_sizes_of_another_users_media() {
             vec![
                 MediaSize {
                     conversion: MediaConversion::Original as i32,
-                    minio_path: original_path.clone(),
+                    object_storage_path: original_path.clone(),
                     content_type: "image/png".to_string(),
                     size_bytes: 10,
                     aspect_ratio: None,
                 },
                 MediaSize {
                     conversion: MediaConversion::Small as i32,
-                    minio_path: small_path.clone(),
+                    object_storage_path: small_path.clone(),
                     content_type: "image/png".to_string(),
                     size_bytes: 5,
                     aspect_ratio: None,

@@ -294,7 +294,7 @@ diesel::table! {
         body_text -> Nullable<Text>,
         email_headers -> Nullable<Jsonb>,
         email_message_id -> Nullable<Varchar>,
-        email_minio_path -> Nullable<Varchar>,
+        email_object_storage_path -> Nullable<Varchar>,
         created_at -> Timestamp,
         search_text -> TsVector,
         messaging_group_id -> Int8,

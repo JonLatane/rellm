@@ -6,7 +6,7 @@ use rellm::logic::{
     ImageMagick, VIDEO_CONVERTIBLE_CONTENT_TYPES,
 };
 use rellm::protos::{ClusterResource, ClusterResources};
-use rellm::{db_connection, init_bin_logging, init_crypto, minio_connection, rpcs};
+use rellm::{db_connection, init_bin_logging, init_crypto, object_storage_connection, rpcs};
 
 /// Processes Media in batches of this size per run -- background_jobs.sh re-invokes this binary
 /// on an interval, so a large backlog just gets worked down over several runs rather than one
@@ -38,7 +38,7 @@ async fn main() {
         std::process::exit(1);
     }
 
-    log::info!("Connecting to DB and MinIO...");
+    log::info!("Connecting to DB and object storage...");
     let pool = db_connection::establish_pool();
     let mut conn = pool.get().expect("Failed to get DB connection");
 
@@ -54,7 +54,7 @@ async fn main() {
     // If this server is part of a cluster (see `ClusterResources`'s own doc in
     // server_configuration.proto), only up to each resource's configured `ClusterResourceLimit`
     // instances may run `ffmpeg`/ImageMagick conversions at once -- acquire whichever of those
-    // this batch actually needs from the conductor before touching MinIO/running either tool
+    // this batch actually needs from the conductor before touching object storage/running either tool
     // below. Servers not configured with `cluster_resources` skip this entirely (single-instance
     // mode, unchanged from before this existed).
     let cluster_resources: Option<ClusterResources> = rpcs::get_server_configuration_model(&mut conn)
@@ -91,9 +91,9 @@ async fn main() {
         }
     }
 
-    let bucket = minio_connection::get_and_test_bucket()
+    let bucket = object_storage_connection::get_and_test_bucket()
         .await
-        .expect("Failed to connect to MinIO");
+        .expect("Failed to connect to object storage");
 
     let tmp_dir = tempfile::tempdir().expect("Failed to create temp dir");
 
@@ -101,7 +101,7 @@ async fn main() {
         log::info!(
             "Converting Media {}: {}",
             item.id,
-            item.original().map(|o| o.minio_path).unwrap_or_default()
+            item.original().map(|o| o.object_storage_path).unwrap_or_default()
         );
         match convert_media(
             item,

@@ -286,7 +286,7 @@ pub fn create_message(
                 .unwrap()
             }),
             email_message_id: None,
-            email_minio_path: None,
+            email_object_storage_path: None,
             messaging_group_id,
         })
         .returning(models::MESSAGE_COLUMNS)
@@ -1211,18 +1211,18 @@ pub fn serve_x_twitter_api(valid_code: bool, x_user_id: &str, username: &str, tw
 }
 
 /// Inserts a `media` row directly (bypassing the `/media` upload endpoint, which lives outside
-/// the gRPC/`rpcs` layer entirely). Doesn't touch MinIO -- pair with `TestBucket::put_object` (via
-/// `test_bucket()`) when a spec needs a real object at `minio_path` to verify gets cleaned up.
+/// the gRPC/`rpcs` layer entirely). Doesn't touch object storage -- pair with `TestBucket::put_object` (via
+/// `test_bucket()`) when a spec needs a real object at `object_storage_path` to verify gets cleaned up.
 /// Starts with a single `MEDIA_CONVERSION_ORIGINAL` size of `size_bytes: 10` (matching the
-/// `b"test-bytes"` payload specs conventionally seed at `minio_path`) -- use
+/// `b"test-bytes"` payload specs conventionally seed at `object_storage_path`) -- use
 /// `create_media_with_size` when a spec needs a specific byte count (e.g. quota specs), or
 /// `set_media_sizes` to fully control the `sizes` list (e.g. adding converted copies).
 pub fn create_media(
     conn: &mut PgPooledConnection,
     author: Option<&models::User>,
-    minio_path: &str,
+    object_storage_path: &str,
 ) -> models::Media {
-    create_media_with_size(conn, author, minio_path, 10)
+    create_media_with_size(conn, author, object_storage_path, 10)
 }
 
 /// Like `create_media`, but with an explicit `size_bytes` on the original -- for specs exercising
@@ -1230,12 +1230,12 @@ pub fn create_media(
 pub fn create_media_with_size(
     conn: &mut PgPooledConnection,
     author: Option<&models::User>,
-    minio_path: &str,
+    object_storage_path: &str,
     size_bytes: i64,
 ) -> models::Media {
     let sizes = vec![models::MediaSize {
         conversion: MediaConversion::Original as i32,
-        minio_path: minio_path.to_string(),
+        object_storage_path: object_storage_path.to_string(),
         content_type: "image/png".to_string(),
         size_bytes,
         aspect_ratio: None,
@@ -1255,7 +1255,7 @@ pub fn create_media_with_size(
 }
 
 /// Sets `media.sizes` directly -- `create_media` always starts with a single original size, and
-/// specs covering `delete_media`/`delete_media_sizes`'s MinIO cleanup need converted copies
+/// specs covering `delete_media`/`delete_media_sizes`'s object storage cleanup need converted copies
 /// present to prove they get deleted too.
 pub fn set_media_sizes(
     conn: &mut PgPooledConnection,
@@ -1268,9 +1268,9 @@ pub fn set_media_sizes(
         .expect("failed to set test media sizes")
 }
 
-/// A live connection to the MinIO bucket configured by the `MINIO_*` env vars (see `.env`), plus
+/// A live connection to the object storage bucket configured by the `OBJECT_STORAGE_*` env vars (see `.env`), plus
 /// the single Tokio runtime used to drive it. Specs proving `delete_media`/`delete_user` actually
-/// clean up MinIO objects need a real bucket -- `rust-s3`'s async client isn't mockable -- and
+/// clean up object storage objects need a real bucket -- `rust-s3`'s async client isn't mockable -- and
 /// need to run those RPCs' `.await` points from *somewhere*, but the rest of the test harness
 /// (`test_conn`/`test_transaction`) is entirely synchronous. Every await for a given spec should
 /// go through this same runtime, and every spec should share the same `Bucket` -- besides the
@@ -1278,7 +1278,7 @@ pub fn set_media_sizes(
 /// with a put/get/head/delete round trip against a *fixed* `"test.file"` key, so calling it fresh
 /// per-spec races those round trips against each other under `cargo test`'s parallel threads.
 /// `test_bucket` therefore hands out a single process-wide connection (`lazy_static`, same trick
-/// `test_conn`'s `POOL` uses) instead of dialing MinIO anew for every spec.
+/// `test_conn`'s `POOL` uses) instead of dialing object storage anew for every spec.
 fn block_on<F: std::future::Future>(fut: F) -> F::Output {
     lazy_static! {
         static ref RUNTIME: tokio::runtime::Runtime =
@@ -1296,9 +1296,9 @@ impl TestBucket {
         block_on(fut)
     }
 
-    /// Whether an object exists at `minio_path` -- used to assert deletion actually happened.
-    pub fn object_exists(&self, minio_path: &str) -> bool {
-        self.block_on(self.bucket.get_object(minio_path)).is_ok()
+    /// Whether an object exists at `object_storage_path` -- used to assert deletion actually happened.
+    pub fn object_exists(&self, object_storage_path: &str) -> bool {
+        self.block_on(self.bucket.get_object(object_storage_path)).is_ok()
     }
 }
 
@@ -1306,12 +1306,12 @@ pub fn test_bucket() -> TestBucket {
     lazy_static! {
         static ref BUCKET: Box<Bucket> = {
             // `test_conn`/`establish_test_pool` load `.env` (via `dotenv()`) before reading
-            // `TEST_DATABASE_URL`; `minio_connection::get_and_test_bucket` doesn't load `.env`
+            // `TEST_DATABASE_URL`; `object_storage_connection::get_and_test_bucket` doesn't load `.env`
             // itself, and callers may reach for a bucket before ever calling `test_conn`, so do
             // it here too.
             dotenvy::dotenv().ok();
-            block_on(crate::minio_connection::get_and_test_bucket()).expect(
-                "failed to connect to test MinIO bucket -- is MinIO running? (`docker compose up minio`, or the full dev stack)",
+            block_on(crate::object_storage_connection::get_and_test_bucket()).expect(
+                "failed to connect to test object storage bucket -- is object storage running? (`make -C backend local_object_storage_create`, or the full dev stack)",
             )
         };
     }

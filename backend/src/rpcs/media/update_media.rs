@@ -17,7 +17,7 @@ use crate::rpcs::validations::*;
 ///
 /// If `request.metadata` is set and its `video_preview_time_ms` differs from the item's current
 /// value, any existing `VIDEO_PREVIEW_THUMBNAIL_*` sizes are stale (they were captured at the old
-/// time) -- they're deleted here (from `sizes` and their MinIO objects) and the item is marked
+/// time) -- they're deleted here (from `sizes` and their object storage objects) and the item is marked
 /// unprocessed, so `convert_media` (in `logic::media_conversion`, run by the `convert_media_sizes`
 /// background job) regenerates them at the new time next run. `request.metadata` unset leaves
 /// `video_preview_time_ms` untouched, same as `name`/`description` being unset.
@@ -78,10 +78,10 @@ pub async fn update_media(
         })?;
 
     for size in &removed_sizes {
-        if let Err(e) = bucket.delete_object(&size.minio_path).await {
+        if let Err(e) = bucket.delete_object(&size.object_storage_path).await {
             log::error!(
-                "Failed to delete MinIO object {} for media {}: {:?}",
-                size.minio_path,
+                "Failed to delete object storage object {} for media {}: {:?}",
+                size.object_storage_path,
                 media_id,
                 e
             );

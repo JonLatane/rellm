@@ -1,6 +1,6 @@
 //! Generates `small`/`medium`/`large` resized copies of a `Media` item's original upload via the
 //! system `ImageMagick` install (`magick`, or the legacy `convert`+`identify` pair) for images, or
-//! `ffmpeg`/`ffprobe` for video, storing them in MinIO alongside the original and recording them
+//! `ffmpeg`/`ffprobe` for video, storing them in object storage alongside the original and recording them
 //! (each with its own `size_bytes`/`aspect_ratio`) in `Media.sizes`. Used by
 //! `bin/convert_media_sizes.rs`.
 //!
@@ -431,9 +431,9 @@ impl Converter<'_> {
     }
 }
 
-/// Downloads `item`'s original from MinIO, generates any `RESIZED_CONVERSIONS` entry it's larger
+/// Downloads `item`'s original from object storage, generates any `RESIZED_CONVERSIONS` entry it's larger
 /// than (skipping sizes it already fits within -- those fall back to the original), uploads the
-/// results back to MinIO next to the original, records each new size's `size_bytes`/
+/// results back to object storage next to the original, records each new size's `size_bytes`/
 /// `aspect_ratio` (and backfills the original's own `aspect_ratio`, which is unknown until this
 /// point) into `Media.sizes`, updates the owner's `media_storage_bytes_used`, and marks `item`
 /// `processed`.
@@ -465,9 +465,9 @@ pub async fn convert_media(
     let input_path: PathBuf = tmp_dir.join(format!("{}-original.{}", item.id, extension));
 
     let original_bytes = bucket
-        .get_object(&original.minio_path)
+        .get_object(&original.object_storage_path)
         .await
-        .context("failed to download original from MinIO")?;
+        .context("failed to download original from object storage")?;
     std::fs::write(&input_path, original_bytes.as_slice())?;
 
     let (width, height) = converter.dimensions(&input_path)?;
@@ -507,22 +507,22 @@ pub async fn convert_media(
         let output_bytes = std::fs::read(&output_path)?;
         let _ = std::fs::remove_file(&output_path);
 
-        let converted_minio_path = format!("{}.{}", sizes[0].minio_path, conversion.key());
+        let converted_object_storage_path = format!("{}.{}", sizes[0].object_storage_path, conversion.key());
         bucket
-            .put_object_with_content_type(&converted_minio_path, &output_bytes, &resized_content_type)
+            .put_object_with_content_type(&converted_object_storage_path, &output_bytes, &resized_content_type)
             .await
-            .context("failed to upload converted size to MinIO")?;
+            .context("failed to upload converted size to object storage")?;
 
         log::info!(
             "Media {}: generated '{}' ({} bytes) at {}",
             item.id,
             conversion.key(),
             output_bytes.len(),
-            converted_minio_path
+            converted_object_storage_path
         );
         sizes.push(MediaSize {
             conversion: conversion as i32,
-            minio_path: converted_minio_path,
+            object_storage_path: converted_object_storage_path,
             content_type: resized_content_type.clone(),
             size_bytes: output_bytes.len() as i64,
             aspect_ratio: Some(aspect_ratio),
@@ -544,22 +544,22 @@ pub async fn convert_media(
             let output_bytes = std::fs::read(&output_path)?;
             let _ = std::fs::remove_file(&output_path);
 
-            let converted_minio_path = format!("{}.{}", sizes[0].minio_path, conversion.key());
+            let converted_object_storage_path = format!("{}.{}", sizes[0].object_storage_path, conversion.key());
             bucket
-                .put_object_with_content_type(&converted_minio_path, &output_bytes, "image/jpeg")
+                .put_object_with_content_type(&converted_object_storage_path, &output_bytes, "image/jpeg")
                 .await
-                .context("failed to upload video preview thumbnail to MinIO")?;
+                .context("failed to upload video preview thumbnail to object storage")?;
 
             log::info!(
                 "Media {}: generated '{}' ({} bytes) at {}",
                 item.id,
                 conversion.key(),
                 output_bytes.len(),
-                converted_minio_path
+                converted_object_storage_path
             );
             sizes.push(MediaSize {
                 conversion: conversion as i32,
-                minio_path: converted_minio_path,
+                object_storage_path: converted_object_storage_path,
                 content_type: "image/jpeg".to_string(),
                 size_bytes: output_bytes.len() as i64,
                 aspect_ratio: Some(aspect_ratio),
@@ -610,9 +610,9 @@ pub fn media_with_quicktime_resized_sizes(
 }
 
 /// Strips `item`'s `video/quicktime`-tagged resized (`small`/`medium`/`large`) `sizes` entries and
-/// deletes their MinIO objects, then marks `item` unprocessed so the ordinary `convert_media_sizes`
+/// deletes their object storage objects, then marks `item` unprocessed so the ordinary `convert_media_sizes`
 /// job regenerates them (now correctly muxed to MP4 -- see `resized_content_type`) next time it
-/// runs. Only touches rows whose original is still actually downloadable from MinIO -- originals
+/// runs. Only touches rows whose original is still actually downloadable from object storage -- originals
 /// can be pruned independently of resized copies, and there'd be no source to regenerate anything
 /// from for a row missing one, so those are left untouched (returns `Ok(false)`) rather than
 /// stripped down to nothing. Returns `Ok(false)` too if the row turns out to have nothing to strip
@@ -626,7 +626,7 @@ pub async fn strip_quicktime_resized_sizes(
     let Some(original) = item.original() else {
         return Ok(false);
     };
-    if bucket.head_object(&original.minio_path).await.is_err() {
+    if bucket.head_object(&original.object_storage_path).await.is_err() {
         return Ok(false);
     }
 
@@ -639,11 +639,11 @@ pub async fn strip_quicktime_resized_sizes(
     }
 
     for size in &removed {
-        if let Err(e) = bucket.delete_object(&size.minio_path).await {
+        if let Err(e) = bucket.delete_object(&size.object_storage_path).await {
             log::warn!(
-                "Media {}: failed to delete stale MinIO object {}: {:?}",
+                "Media {}: failed to delete stale object storage object {}: {:?}",
                 item.id,
-                size.minio_path,
+                size.object_storage_path,
                 e
             );
         }

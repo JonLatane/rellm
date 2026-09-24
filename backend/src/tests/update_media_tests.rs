@@ -144,7 +144,7 @@ fn changing_video_preview_time_invalidates_thumbnails_on_video_media() {
         let thumb_small_path = unique_path("thumb_small");
         for path in [&original_path, &thumb_small_path] {
             tb.block_on(tb.bucket.put_object(path, b"test-bytes"))
-                .expect("failed to seed test MinIO object");
+                .expect("failed to seed test object storage object");
         }
         let media = create_media(conn, Some(&user), &original_path);
         let media = set_media_sizes(
@@ -153,14 +153,14 @@ fn changing_video_preview_time_invalidates_thumbnails_on_video_media() {
             vec![
                 MediaSize {
                     conversion: MediaConversion::Original as i32,
-                    minio_path: original_path.clone(),
+                    object_storage_path: original_path.clone(),
                     content_type: "video/mp4".to_string(),
                     size_bytes: 1000,
                     aspect_ratio: None,
                 },
                 MediaSize {
                     conversion: MediaConversion::VideoPreviewThumbnailSmall as i32,
-                    minio_path: thumb_small_path.clone(),
+                    object_storage_path: thumb_small_path.clone(),
                     content_type: "image/jpeg".to_string(),
                     size_bytes: 50,
                     aspect_ratio: None,
@@ -197,7 +197,7 @@ fn changing_video_preview_time_invalidates_thumbnails_on_video_media() {
         assert_eq!(updated.sizes[0].conversion, MediaConversion::Original as i32);
         assert!(
             !tb.object_exists(&thumb_small_path),
-            "the stale preview thumbnail's MinIO object should be deleted"
+            "the stale preview thumbnail's object storage object should be deleted"
         );
         assert!(!updated.processed, "media should be marked unprocessed so the thumbnail regenerates");
         assert_eq!(
@@ -220,7 +220,7 @@ fn changing_video_preview_time_to_same_value_does_not_invalidate() {
         let thumb_small_path = unique_path("thumb_small");
         for path in [&original_path, &thumb_small_path] {
             tb.block_on(tb.bucket.put_object(path, b"test-bytes"))
-                .expect("failed to seed test MinIO object");
+                .expect("failed to seed test object storage object");
         }
         let media = create_media(conn, Some(&user), &original_path);
         diesel::update(crate::schema::media::table.find(media.id))
@@ -236,14 +236,14 @@ fn changing_video_preview_time_to_same_value_does_not_invalidate() {
             vec![
                 MediaSize {
                     conversion: MediaConversion::Original as i32,
-                    minio_path: original_path.clone(),
+                    object_storage_path: original_path.clone(),
                     content_type: "video/mp4".to_string(),
                     size_bytes: 1000,
                     aspect_ratio: None,
                 },
                 MediaSize {
                     conversion: MediaConversion::VideoPreviewThumbnailSmall as i32,
-                    minio_path: thumb_small_path.clone(),
+                    object_storage_path: thumb_small_path.clone(),
                     content_type: "image/jpeg".to_string(),
                     size_bytes: 50,
                     aspect_ratio: None,

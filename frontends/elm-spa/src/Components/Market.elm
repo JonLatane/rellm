@@ -554,7 +554,7 @@ productName product =
         Just (ProductDetails.RellmHostingSubscriptionDetails details) ->
             ByteFormat.humanizeBytes (Conversions.int64ToInt details.dbSizeBytes)
                 ++ " DB + "
-                ++ ByteFormat.humanizeBytes (Conversions.int64ToInt details.minioSizeBytes)
+                ++ ByteFormat.humanizeBytes (Conversions.int64ToInt details.objectStorageSizeBytes)
                 ++ " Object Storage"
 
         Just (ProductDetails.PermissionsAccessSubscriptionDetails details) ->
@@ -595,7 +595,7 @@ productDescription product =
                     "Your own Rellm instance, hosted and fully admin-controlled by you -- includes a **"
                         ++ ByteFormat.humanizeBytes (Conversions.int64ToInt details.dbSizeBytes)
                         ++ "** database and **"
-                        ++ ByteFormat.humanizeBytes (Conversions.int64ToInt details.minioSizeBytes)
+                        ++ ByteFormat.humanizeBytes (Conversions.int64ToInt details.objectStorageSizeBytes)
                         ++ "** of object storage.\n\n"
                         ++ "You get full admin access to your own Rellm instance -- e.g. you can pay-gate "
                         ++ "features like Facebook sync yourself, if you set up your own Facebook developer account."
