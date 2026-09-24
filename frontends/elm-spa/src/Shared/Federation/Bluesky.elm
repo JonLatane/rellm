@@ -44,7 +44,7 @@ import Proto.Rellm exposing (Author, MediaReference, Post, defaultAuthor, defaul
 import Proto.Rellm.MediaConversion exposing (MediaConversion(..))
 import Proto.Rellm.PostContext exposing (PostContext(..))
 import Proto.Rellm.Visibility exposing (Visibility(..))
-import Shared.Conversions exposing (posixToTimestamp)
+import Shared.Conversions exposing (int64FromInt, posixToTimestamp)
 import Shared.Federation.Common exposing (jsonResolver, nonEmpty, sensitiveMediaHiddenId)
 import Task exposing (Task)
 import Time
@@ -74,7 +74,14 @@ to build a real `https://bsky.app/...` link a browser can actually open. `sensit
 `"nudity"`/`"graphic-media"` value from the adult-content vocab) -- any label present at all is
 treated as "hide by default", the same coarse, allow-nothing-through-by-mistake reading
 `toPostWith`'s own doc covers for why this only ever gates `images`, never blocks the post text
-itself.
+itself. `likeCount`/`replyCount` are AT Proto's own real, server-aggregated, publicly-visible counts on
+every `postView` (present unauthenticated in spirit -- everything in this module still needs a
+connected account's own token to ask for it, per this module's own doc, but the counts themselves
+aren't gated on being that post's author) -- unlike `Post.unauthenticatedStarCount`, AT Proto doesn't
+anonymize these at all (there's even a dedicated `getLikes` endpoint listing who liked a post), so
+`toPostWith` maps them straight into the equivalent `Post` fields for display -- see that function's
+own doc on why that's read-only: Rellm's own star button still can't actually push a real like to
+Bluesky.
 -}
 type alias FeedPost =
     { uri : String
@@ -86,18 +93,20 @@ type alias FeedPost =
     , authorAvatarUrl : Maybe String
     , images : List BlueskyImage
     , sensitive : Bool
+    , likeCount : Int
+    , replyCount : Int
     }
 
 
-{-| `Decode.map8` is already at `elm/json`'s own arity ceiling, so `sensitive` (the 9th field) is
-threaded through via `andThen` instead, mirroring `Shared.Federation.Mastodon.decoder`'s identical
-trick for its own 9th/10th fields.
+{-| `Decode.map8` is already at `elm/json`'s own arity ceiling, so `sensitive`/`likeCount`/
+`replyCount` (the 9th-11th fields) are threaded through via `andThen` instead, mirroring
+`Shared.Federation.Mastodon.decoder`'s identical trick for its own 9th-12th fields.
 -}
 decoder : Decoder FeedPost
 decoder =
     Decode.map8
         (\uri text createdAt isReply authorHandle authorDisplayName authorAvatarUrl images ->
-            \sensitive ->
+            \sensitive likeCount replyCount ->
                 { uri = uri
                 , text = text
                 , createdAt = createdAt
@@ -107,6 +116,8 @@ decoder =
                 , authorAvatarUrl = authorAvatarUrl
                 , images = images
                 , sensitive = sensitive
+                , likeCount = likeCount
+                , replyCount = replyCount
                 }
         )
         (Decode.at [ "post", "uri" ] Decode.string)
@@ -118,6 +129,8 @@ decoder =
         (Decode.maybe (Decode.at [ "post", "author", "avatar" ] Decode.string))
         (imagesDecoder [ "post", "embed", "images" ])
         |> Decode.andThen (\f -> Decode.map f (sensitiveDecoder [ "post", "labels" ]))
+        |> Decode.andThen (\f -> Decode.map f (countDecoder [ "post", "likeCount" ]))
+        |> Decode.andThen (\f -> Decode.map f (countDecoder [ "post", "replyCount" ]))
 
 
 {-| `embedPath ++ [ "images" ]` (e.g. `[ "post", "embed", "images" ]` for `decoder`'s nested
@@ -158,6 +171,16 @@ sensitiveDecoder labelsPath =
         [ Decode.at labelsPath (Decode.list Decode.value) |> Decode.map (not << List.isEmpty)
         , Decode.succeed False
         ]
+
+
+{-| `likeCount`/`replyCount`'s own path-parameterized reader (`countPath` is `[ "post", "likeCount" ]`
+for `decoder`'s nested shape, `[ "likeCount" ]` for `searchDecoder`'s flatter one, same split
+`imagesDecoder`/`sensitiveDecoder` already have) -- defaults to `0` rather than failing the decode if
+somehow absent, same defensive convention `actorProfileDecoder`'s own counts use below.
+-}
+countDecoder : List String -> Decoder Int
+countDecoder countPath =
+    Decode.oneOf [ Decode.at countPath Decode.int, Decode.succeed 0 ]
 
 
 {-| A `FeedPost`'s translation into a Rellm `Post` -- `id` is just the bare `feedPost.uri` (an
@@ -223,6 +246,14 @@ toPostWith { includeSensitiveMedia } feedPost =
                 List.map toMediaReference feedPost.images
         , createdAt = Just (posixToTimestamp feedPost.createdAt)
         , lastActivityAt = Just (posixToTimestamp feedPost.createdAt)
+        , unauthenticatedStarCount = int64FromInt feedPost.likeCount
+
+        -- No separate "direct replies" vs. "whole nested thread" distinction AT Proto's own
+        -- `replyCount` could split across (unlike a real Rellm post's `replyCount`/
+        -- `responseCount`) -- setting both the same makes `Components.Posts.commentCountText`
+        -- show it as a single number rather than a misleading "x/x".
+        , replyCount = feedPost.replyCount
+        , responseCount = feedPost.replyCount
     }
 
 
@@ -307,7 +338,7 @@ searchDecoder : Decoder FeedPost
 searchDecoder =
     Decode.map8
         (\uri text createdAt isReply authorHandle authorDisplayName authorAvatarUrl images ->
-            \sensitive ->
+            \sensitive likeCount replyCount ->
                 { uri = uri
                 , text = text
                 , createdAt = createdAt
@@ -317,6 +348,8 @@ searchDecoder =
                 , authorAvatarUrl = authorAvatarUrl
                 , images = images
                 , sensitive = sensitive
+                , likeCount = likeCount
+                , replyCount = replyCount
                 }
         )
         (Decode.field "uri" Decode.string)
@@ -328,6 +361,8 @@ searchDecoder =
         (Decode.maybe (Decode.at [ "author", "avatar" ] Decode.string))
         (imagesDecoder [ "embed", "images" ])
         |> Decode.andThen (\f -> Decode.map f (sensitiveDecoder [ "labels" ]))
+        |> Decode.andThen (\f -> Decode.map f (countDecoder [ "likeCount" ]))
+        |> Decode.andThen (\f -> Decode.map f (countDecoder [ "replyCount" ]))
 
 
 {-| `GET /xrpc/app.bsky.feed.getPosts` for a single `uri` -- a real single-post lookup by AT URI,

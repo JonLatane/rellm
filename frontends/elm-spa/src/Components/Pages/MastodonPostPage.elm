@@ -18,7 +18,7 @@ import Components.MediaRenderer as MediaRenderer
 import Components.MultiMediaRenderer as MultiMediaRenderer
 import Components.Posts as Posts
 import Effect exposing (Effect)
-import Html exposing (Html, a, button, div, p, text)
+import Html exposing (Html, a, button, div, p, span, text)
 import Html.Attributes exposing (class, href, rel, target)
 import Html.Events exposing (onClick)
 import Http
@@ -27,6 +27,7 @@ import Shared
 import Shared.AccountsPanel.RellmServers exposing (RellmServer)
 import Shared.Federation.Mastodon as Mastodon
 import Shared.MediaViewerPanel as MediaViewerPanel
+import Shared.StarredPanel as StarredPanel
 import Task
 
 
@@ -61,6 +62,7 @@ type Msg
     | MediaPlayClicked String
     | MediaImageClicked String
     | RevealSensitiveMediaClicked
+    | StarredPanelMsg StarredPanel.Msg
 
 
 {-| `instanceHost`/`statusId` come straight from `Components.Posts.parseFederatedPostId`'s
@@ -103,6 +105,18 @@ update msg model =
         RevealSensitiveMediaClicked ->
             ( { model | sensitiveMediaRevealed = True }, Effect.none )
 
+        StarredPanelMsg subMsg ->
+            ( model, Effect.fromShared (Shared.StarredPanelMsg subMsg) )
+
+
+{-| `host` for `StarredPanel`'s keying/lookups -- the same `"mastodon:" ++
+instanceHost` tag `federatedPostView`'s own `Authors.link` call and every
+Mastodon post card use (see `Components.Posts.isFederatedHost`).
+-}
+starHost : String -> String
+starHost instanceHost =
+    "mastodon:" ++ instanceHost
+
 
 view : Shared.Model -> Model -> Html Msg
 view shared model =
@@ -114,7 +128,14 @@ view shared model =
             p [ class "post-error" ] [ text "Couldn't load this post. Maybe it was deleted, or maybe it's private." ]
 
         PostLoaded post sensitive ->
-            federatedPostView shared model.instanceHost model.sensitiveMediaRevealed sensitive post
+            let
+                -- Reflects this session's own star/unstar clicks immediately
+                -- -- see `StarredPanel.freshestPost`'s own doc.
+                displayPost : Post
+                displayPost =
+                    StarredPanel.freshestPost (starHost model.instanceHost) post shared.panels.starredPanel
+            in
+            federatedPostView shared model.instanceHost model.sensitiveMediaRevealed sensitive displayPost
 
 
 {-| No title, no URL row -- just the author (linking to their own `Components.Pages.MastodonUserProfilePage`,
@@ -136,9 +157,23 @@ exactly like any other post's media.
 -}
 federatedPostView : Shared.Model -> String -> Bool -> Bool -> Post -> Html Msg
 federatedPostView shared instanceHost sensitiveMediaRevealed sensitive post =
+    let
+        host : String
+        host =
+            starHost instanceHost
+
+        starred : Bool
+        starred =
+            StarredPanel.isStarred host post shared.panels.starredPanel
+
+        onStarClicked : Maybe Msg
+        onStarClicked =
+            StarredPanel.toggleStarMsg shared.accounts host post |> Maybe.map StarredPanelMsg
+    in
     div [ class "post-detail" ]
         [ div [ class "federated-service-label" ] [ text "⇄ Mastodon" ]
-        , Authors.link "" "" ("mastodon:" ++ instanceHost) Nothing Nothing post.author
+        , Authors.link "" "" host Nothing Nothing post.author
+        , div [ class "post-detail-meta" ] [ span [ class "post-meta-right" ] [ Posts.starButton host starred onStarClicked post ] ]
         , Markdown.view [ class "post-detail-content" ] (Maybe.withDefault "" post.content)
         , if sensitive && not sensitiveMediaRevealed && not (List.isEmpty post.media) then
             button

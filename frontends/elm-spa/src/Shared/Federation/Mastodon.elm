@@ -39,7 +39,7 @@ import Proto.Rellm exposing (Author, MediaReference, Post, defaultAuthor, defaul
 import Proto.Rellm.MediaConversion exposing (MediaConversion(..))
 import Proto.Rellm.PostContext exposing (PostContext(..))
 import Proto.Rellm.Visibility exposing (Visibility(..))
-import Shared.Conversions exposing (posixToTimestamp)
+import Shared.Conversions exposing (int64FromInt, posixToTimestamp)
 import Shared.Federation.Common exposing (jsonResolver, nonEmpty, sensitiveMediaHiddenId)
 import Task exposing (Task)
 import Time
@@ -72,7 +72,12 @@ type alias MediaAttachment =
 `GET /api/v1/timelines/public`'s response array) that `toPost` actually needs -- see
 <https://docs.joinmastodon.org/entities/Status/>. `sensitive` is Mastodon's own "hide behind a
 content warning" flag on the whole status (`spoiler_text` carries the CW text itself, not read here) --
-see `toPostWith`'s own doc on how it gates `mediaAttachments`.
+see `toPostWith`'s own doc on how it gates `mediaAttachments`. `favouritesCount`/`repliesCount` are
+Mastodon's own real, server-aggregated, publicly-visible counts (present unauthenticated, same as
+every other field here) -- unlike `Post.unauthenticatedStarCount`, Mastodon doesn't anonymize these at
+all (it even exposes *who* favourited a status via a separate, dedicated endpoint), so `toPostWith`
+maps them straight into the equivalent `Post` fields for display -- see that function's own doc on why
+that's read-only: Rellm's own star button still can't actually push a real favourite to Mastodon.
 -}
 type alias Status =
     { id : String
@@ -85,18 +90,20 @@ type alias Status =
     , authorAvatarUrl : Maybe String
     , mediaAttachments : List MediaAttachment
     , sensitive : Bool
+    , favouritesCount : Int
+    , repliesCount : Int
     }
 
 
-{-| `Decode.map8` is already at `elm/json`'s own arity ceiling, so `mediaAttachments`/`sensitive`
-(the 9th/10th fields) are threaded through via `andThen` instead, mirroring `accountDecoder`'s own
-`locked`-as-9th-field trick below.
+{-| `Decode.map8` is already at `elm/json`'s own arity ceiling, so `mediaAttachments`/`sensitive`/
+`favouritesCount`/`repliesCount` (the 9th-12th fields) are threaded through via `andThen` instead,
+mirroring `accountDecoder`'s own `locked`-as-9th-field trick below.
 -}
 decoder : Decoder Status
 decoder =
     Decode.map8
         (\id url content createdAt inReplyToId authorUsername authorDisplayName authorAvatarUrl ->
-            \mediaAttachments sensitive ->
+            \mediaAttachments sensitive favouritesCount repliesCount ->
                 { id = id
                 , url = url
                 , content = content
@@ -107,6 +114,8 @@ decoder =
                 , authorAvatarUrl = authorAvatarUrl
                 , mediaAttachments = mediaAttachments
                 , sensitive = sensitive
+                , favouritesCount = favouritesCount
+                , repliesCount = repliesCount
                 }
         )
         (Decode.field "id" Decode.string)
@@ -119,6 +128,8 @@ decoder =
         (Decode.at [ "account", "avatar" ] Decode.string |> Decode.map nonEmpty)
         |> Decode.andThen (\f -> Decode.map f (Decode.oneOf [ Decode.field "media_attachments" (Decode.list mediaAttachmentDecoder), Decode.succeed [] ]))
         |> Decode.andThen (\f -> Decode.map f (Decode.oneOf [ Decode.field "sensitive" Decode.bool, Decode.succeed False ]))
+        |> Decode.andThen (\f -> Decode.map f (Decode.oneOf [ Decode.field "favourites_count" Decode.int, Decode.succeed 0 ]))
+        |> Decode.andThen (\f -> Decode.map f (Decode.oneOf [ Decode.field "replies_count" Decode.int, Decode.succeed 0 ]))
 
 
 mediaAttachmentDecoder : Decoder MediaAttachment
@@ -203,6 +214,14 @@ toPostWith { includeSensitiveMedia } instanceHost status =
                 List.map toMediaReference status.mediaAttachments
         , createdAt = Just (posixToTimestamp status.createdAt)
         , lastActivityAt = Just (posixToTimestamp status.createdAt)
+        , unauthenticatedStarCount = int64FromInt status.favouritesCount
+
+        -- No separate "direct replies" vs. "whole nested thread" distinction Mastodon's own
+        -- `replies_count` could split across (unlike a real Rellm post's `replyCount`/
+        -- `responseCount`) -- setting both the same makes `Components.Posts.commentCountText`
+        -- show it as a single number rather than a misleading "x/x".
+        , replyCount = status.repliesCount
+        , responseCount = status.repliesCount
     }
 
 

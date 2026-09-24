@@ -40,6 +40,7 @@ import Html exposing (Html, button, div, text)
 import Html.Attributes exposing (class, id, style)
 import Html.Events exposing (onClick)
 import Html.Keyed
+import Http
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Ports
@@ -48,8 +49,11 @@ import Proto.Rellm.PostContext exposing (PostContext(..))
 import Proto.Rellm.Rellm as Rellm
 import Set exposing (Set)
 import Shared.AccountsPanel as AccountsPanel
+import Shared.AccountsPanel.BlueskyAccounts as BlueskyAccounts
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer)
+import Shared.Federation.Bluesky as Bluesky
+import Shared.Federation.Mastodon as Mastodon
 import Shared.MediaViewerPanel as MediaViewerPanel
 import Shared.Time as SharedTime
 import Task
@@ -104,6 +108,22 @@ type alias Model =
 type Msg
     = ToggleStar RellmServer Post
     | GotStarResult String Bool (Result Grpc.Error Post)
+      -- `ToggleStar`'s counterpart for a Mastodon/Bluesky post (`host` is
+      -- the `"mastodon:"`/`"bluesky:"`-tagged host string -- see
+      -- `Components.Posts.isFederatedHost`) -- there's no
+      -- `StarPost`/`UnstarPost` RPC to call for either service, so this is a
+      -- purely local bookmark: same `starredPostIds`/`starOrder`/`posts`
+      -- mutation `ToggleStar` does, just with no `rpcCmd` (and so no
+      -- `GotStarResult` reply either -- the optimistic update here is never
+      -- reverted).
+    | ToggleFederatedStar String Post
+      -- `GotStarredPost`'s counterpart for re-fetching a starred Mastodon/
+      -- Bluesky post (see `fetchFederatedGroup`) -- carries a plain `Post`
+      -- (dropping the `Bool` "sensitive" flag `Mastodon.fetchStatus`/
+      -- `Bluesky.fetchPost` also return, which only matters for gating
+      -- media on the dedicated post-detail pages, not this panel's card)
+      -- rather than `GotStarredPost`'s Jonline-specific `GetPostsResponse`.
+    | GotStarredFederatedPost String (Result Http.Error Post)
     | ToggleStarredPanel
     | CloseStarredPanel
     | EnableServerClicked String
@@ -256,10 +276,12 @@ subscriptions model =
             Sub.none
 
         -- Unlike the reorder-only `AnimateMove` above, this can't be gated on
-        -- the panel being open -- `ToggleStar` (and so a pending `FinishUnstar`)
-        -- can be triggered from anywhere a post card renders (Home, Post
-        -- detail, ...), not just from here, so this needs to keep ticking
-        -- regardless in order to ever actually fire.
+        -- the panel being open outright -- `ToggleStar`/`ToggleFederatedStar`
+        -- only skip starting a fade in the first place while the panel's
+        -- closed (see `finishUnstar`'s own doc); an unstar fade already in
+        -- flight when the panel gets closed mid-animation (`CloseStarredPanel`/
+        -- `ToggleStarredPanel` don't cancel one) still needs this to keep
+        -- ticking so its own `FinishUnstar` ever actually fires.
         , UI.Flip.subscription AnimateItemFlip (Dict.values model.starAnimations)
         , Ports.starredPostsUpdated StarredPostsBroadcastReceived
         ]
@@ -364,7 +386,7 @@ sendUpdate accountsPanelModel msg model =
                 , Nothing
                 )
 
-            else
+            else if model.showStarredPanel then
                 -- Doesn't actually unstar (remove from `starredPostIds`/`starOrder`)
                 -- yet -- starts its fade-out in the panel (see `starAnimations`),
                 -- which sends `FinishUnstar` once that finishes to do the real
@@ -381,6 +403,81 @@ sendUpdate accountsPanelModel msg model =
                 , rpcCmd
                 , Nothing
                 )
+
+            else
+                -- Panel's closed -- see `finishUnstar`'s own doc on why
+                -- there's nothing to fade out for something nobody can see.
+                let
+                    ( finishedModel, finishCmd ) =
+                        finishUnstar key { model | posts = newPosts }
+                in
+                ( finishedModel, Cmd.batch [ finishCmd, rpcCmd ], Nothing )
+
+        ToggleFederatedStar host post ->
+            let
+                key : String
+                key =
+                    starKey host post
+
+                starring : Bool
+                starring =
+                    not (Set.member key model.starredPostIds)
+
+                newPosts : Dict String PostFetchStatus
+                newPosts =
+                    Dict.insert key (PostFetchLoaded host post) model.posts
+            in
+            if starring then
+                let
+                    newStarredPostIds : Set String
+                    newStarredPostIds =
+                        Set.insert key model.starredPostIds
+
+                    newStarOrder : List String
+                    newStarOrder =
+                        key :: model.starOrder
+                in
+                ( { model | starredPostIds = newStarredPostIds, starOrder = newStarOrder, posts = newPosts }
+                , persistCmd newStarOrder
+                , Nothing
+                )
+
+            else if model.showStarredPanel then
+                let
+                    currentState : UI.Flip.State Msg
+                    currentState =
+                        Dict.get key model.starAnimations |> Maybe.withDefault UI.Flip.restingState
+                in
+                ( { model
+                    | posts = newPosts
+                    , starAnimations = Dict.insert key (UI.Flip.remove (FinishUnstar key) currentState) model.starAnimations
+                  }
+                , Cmd.none
+                , Nothing
+                )
+
+            else
+                let
+                    ( finishedModel, finishCmd ) =
+                        finishUnstar key { model | posts = newPosts }
+                in
+                ( finishedModel, finishCmd, Nothing )
+
+        GotStarredFederatedPost key (Ok post) ->
+            let
+                newStatus : PostFetchStatus
+                newStatus =
+                    case parseStarKey key of
+                        Just ( _, host ) ->
+                            PostFetchLoaded host post
+
+                        Nothing ->
+                            PostFetchFailed
+            in
+            ( { model | posts = Dict.insert key newStatus model.posts }, Cmd.none, Nothing )
+
+        GotStarredFederatedPost key (Err _) ->
+            ( { model | posts = Dict.insert key PostFetchFailed model.posts }, Cmd.none, Nothing )
 
         GotStarResult key _ (Ok updatedPost) ->
             let
@@ -446,18 +543,10 @@ sendUpdate accountsPanelModel msg model =
 
         FinishUnstar key ->
             let
-                newStarredPostIds : Set String
-                newStarredPostIds =
-                    Set.remove key model.starredPostIds
-
-                newStarOrder : List String
-                newStarOrder =
-                    List.filter ((/=) key) model.starOrder
+                ( finishedModel, cmd ) =
+                    finishUnstar key model
             in
-            ( { model | starredPostIds = newStarredPostIds, starOrder = newStarOrder, starAnimations = Dict.remove key model.starAnimations }
-            , persistCmd newStarOrder
-            , Nothing
-            )
+            ( finishedModel, cmd, Nothing )
 
         AnimateItemFlip animMsg ->
             let
@@ -779,11 +868,37 @@ sendUpdate accountsPanelModel msg model =
 {-| Inserts a fresh `UI.Flip.enter` into `starAnimations` for any starred
 post that doesn't have an entry yet -- see that field's own doc, and
 `UI.Flip.syncEnter`. Run unconditionally after every message (see `update`),
-same reasoning as `AccountsPanel.syncItemAnimations`.
+same reasoning as `AccountsPanel.syncItemAnimations` -- except while the
+panel's closed, when a newly-starred post seeds straight to `restingState`
+instead (same as `init` does for every persisted star): there's nothing to
+animate for a panel nobody can currently see (`opacity: 0`, still fully
+mounted -- see `view`'s own doc), so `UI.Flip.enter`'s fade-in would just run
+invisibly in the background for however long its spring takes to settle,
+and -- unlike `finishUnstar`'s equivalent skip for unstarring -- there isn't
+even a later message this would need to arrive before doing something
+functionally different; it'd be pure waste. Opening the panel later then
+shows every star made while it was closed already at rest, exactly like a
+reload would.
 -}
 syncItemAnimations : Model -> Model
 syncItemAnimations model =
-    { model | starAnimations = UI.Flip.syncEnter identity model.starOrder model.starAnimations }
+    { model
+        | starAnimations =
+            if model.showStarredPanel then
+                UI.Flip.syncEnter identity model.starOrder model.starAnimations
+
+            else
+                List.foldl
+                    (\key acc ->
+                        if Dict.member key acc then
+                            acc
+
+                        else
+                            Dict.insert key UI.Flip.restingState acc
+                    )
+                    model.starAnimations
+                    model.starOrder
+    }
 
 
 {-| Fetches every starred post that isn't already loaded, in flight, or
@@ -924,6 +1039,33 @@ persistCmd starOrder =
     Ports.persistStarredPosts (Encode.list Encode.string starOrder)
 
 
+{-| The actual `starredPostIds`/`starOrder` removal `FinishUnstar` applies
+once a fade-out finishes -- factored out so `ToggleStar`/`ToggleFederatedStar`
+can also call it directly, synchronously, when the Starred panel is closed:
+`starAnimations` only exists to animate this panel's own (always-mounted,
+just `opacity: 0`-and-`pointer-events: none` while closed -- see `view`'s own
+doc) rendering, so unstarring while it's closed has nothing to fade out for
+-- registering one anyway would just tick `AnimateItemFlip` in the background
+for however long the spring takes to settle, entirely unseen, before
+`FinishUnstar` eventually arrived to do exactly this. Going straight there
+instead is the same end state, immediately, with no wasted animation.
+-}
+finishUnstar : String -> Model -> ( Model, Cmd Msg )
+finishUnstar key model =
+    let
+        newStarredPostIds : Set String
+        newStarredPostIds =
+            Set.remove key model.starredPostIds
+
+        newStarOrder : List String
+        newStarOrder =
+            List.filter ((/=) key) model.starOrder
+    in
+    ( { model | starredPostIds = newStarredPostIds, starOrder = newStarOrder, starAnimations = Dict.remove key model.starAnimations }
+    , persistCmd newStarOrder
+    )
+
+
 {-| `ServerDependentView.availableServer` -- not the raw
 `RellmServers.rellmServerForHost` -- so a starred post whose server is known but
 disabled (see `Shared.AccountsPanel`'s `Server.enabled`) is treated the same
@@ -937,30 +1079,94 @@ fetchGroup :
     -> ( Dict String PostFetchStatus, List (Cmd Msg) )
     -> ( Dict String PostFetchStatus, List (Cmd Msg) )
 fetchGroup accountsPanelModel ( host, postIds ) ( posts, cmds ) =
-    case ServerDependentView.availableServer accountsPanelModel.servers host of
-        Nothing ->
-            ( List.foldl (\postId -> Dict.insert (rawKey postId host) ServerUnavailable) posts postIds
-            , cmds
-            )
+    if Posts.isFederatedHost host then
+        fetchFederatedGroup accountsPanelModel ( host, postIds ) ( posts, cmds )
 
-        Just _ ->
-            let
-                maybeAccountServer : AccountsPanel.MaybeAccountServer
-                maybeAccountServer =
-                    ( RellmAccounts.enabledRellmAccountForServer accountsPanelModel.accounts host |> Maybe.map .userId, host )
+    else
+        case ServerDependentView.availableServer accountsPanelModel.servers host of
+            Nothing ->
+                ( List.foldl (\postId -> Dict.insert (rawKey postId host) ServerUnavailable) posts postIds
+                , cmds
+                )
 
-                fetchCmds : List (Cmd Msg)
-                fetchCmds =
-                    List.map
-                        (\postId ->
-                            Posts.fetchPost accountsPanelModel maybeAccountServer postId
-                                |> Task.attempt (GotStarredPost (rawKey postId host))
-                        )
-                        postIds
-            in
-            ( List.foldl (\postId -> Dict.insert (rawKey postId host) FetchingPost) posts postIds
-            , cmds ++ fetchCmds
-            )
+            Just _ ->
+                let
+                    maybeAccountServer : AccountsPanel.MaybeAccountServer
+                    maybeAccountServer =
+                        ( RellmAccounts.enabledRellmAccountForServer accountsPanelModel.accounts host |> Maybe.map .userId, host )
+
+                    fetchCmds : List (Cmd Msg)
+                    fetchCmds =
+                        List.map
+                            (\postId ->
+                                Posts.fetchPost accountsPanelModel maybeAccountServer postId
+                                    |> Task.attempt (GotStarredPost (rawKey postId host))
+                            )
+                            postIds
+                in
+                ( List.foldl (\postId -> Dict.insert (rawKey postId host) FetchingPost) posts postIds
+                , cmds ++ fetchCmds
+                )
+
+
+{-| `fetchGroup`'s branch for a Mastodon/Bluesky `host` -- there's no
+"connected server" to check (`ServerDependentView.availableServer` is
+Jonline-only), so this just fetches directly: `Mastodon.fetchStatus` for a
+`"mastodon:"` host (no auth needed), or `Bluesky.fetchPost` using whichever
+connected Bluesky account comes first for a `"bluesky:"` host (same
+"any connected token works" reasoning as `Components.Pages.BlueskyPostPage.init`
+-- reading a public post doesn't need to be that account's own). With no
+Bluesky account connected at all, AT Protocol has no anonymous read, so those
+posts are marked `ServerUnavailable` same as an unreachable Jonline server.
+-}
+fetchFederatedGroup :
+    AccountsPanel.Model
+    -> ( String, List String )
+    -> ( Dict String PostFetchStatus, List (Cmd Msg) )
+    -> ( Dict String PostFetchStatus, List (Cmd Msg) )
+fetchFederatedGroup accountsPanelModel ( host, postIds ) ( posts, cmds ) =
+    if String.startsWith "mastodon:" host then
+        let
+            instanceHost : String
+            instanceHost =
+                String.dropLeft 9 host
+
+            fetchCmds : List (Cmd Msg)
+            fetchCmds =
+                List.map
+                    (\postId ->
+                        Mastodon.fetchStatus instanceHost postId
+                            |> Task.map Tuple.first
+                            |> Task.attempt (GotStarredFederatedPost (rawKey postId host))
+                    )
+                    postIds
+        in
+        ( List.foldl (\postId -> Dict.insert (rawKey postId host) FetchingPost) posts postIds
+        , cmds ++ fetchCmds
+        )
+
+    else
+        case accountsPanelModel.blueskyAccounts of
+            account :: _ ->
+                let
+                    fetchCmds : List (Cmd Msg)
+                    fetchCmds =
+                        List.map
+                            (\postId ->
+                                BlueskyAccounts.performWithBlueskyAccount account (\accessToken -> Bluesky.fetchPost accessToken postId)
+                                    |> Task.map (Tuple.second >> Tuple.first)
+                                    |> Task.attempt (GotStarredFederatedPost (rawKey postId host))
+                            )
+                            postIds
+                in
+                ( List.foldl (\postId -> Dict.insert (rawKey postId host) FetchingPost) posts postIds
+                , cmds ++ fetchCmds
+                )
+
+            [] ->
+                ( List.foldl (\postId -> Dict.insert (rawKey postId host) ServerUnavailable) posts postIds
+                , cmds
+                )
 
 
 {-| `fetchGroup`'s counterpart for `kickOffEventFetches` -- one batched
@@ -1401,15 +1607,26 @@ parseStarKey key =
 
 
 {-| `ToggleStar`, if `host` currently resolves to a connected `Server` --
-`Nothing` if it doesn't (nothing to star it against). Shared by every page
-that renders a `postCard`/`postDetail` (`Pages.Home_`, `Pages.Post.PostId_`,
-and this module's own `starredPostView`) so each doesn't re-derive the same
-"look up the server, then wrap `ToggleStar`" logic.
+falls back to `ToggleFederatedStar` if `host` is a Mastodon/Bluesky host
+instead (see `Components.Posts.isFederatedHost`), and only `Nothing` if
+it's neither (nothing to star it against). Shared by every page that
+renders a `postCard`/`postDetail` (`Pages.Home_`, `Pages.Post.PostId_`,
+`Components.Pages.MastodonPostPage`/`BlueskyPostPage`, and this module's own
+`starredPostView`) so each doesn't re-derive the same "look up the server,
+then wrap `ToggleStar`" logic.
 -}
 toggleStarMsg : AccountsPanel.Model -> String -> Post -> Maybe Msg
 toggleStarMsg accountsPanelModel host post =
-    RellmServers.rellmServerForHost accountsPanelModel.servers host
-        |> Maybe.map (\server -> ToggleStar server post)
+    case RellmServers.rellmServerForHost accountsPanelModel.servers host of
+        Just server ->
+            Just (ToggleStar server post)
+
+        Nothing ->
+            if Posts.isFederatedHost host then
+                Just (ToggleFederatedStar host post)
+
+            else
+                Nothing
 
 
 {-| Whether the starred entry `key` is a starred Event (i.e. its fetched

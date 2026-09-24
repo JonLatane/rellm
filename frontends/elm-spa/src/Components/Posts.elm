@@ -13,6 +13,7 @@ module Components.Posts exposing
     , fetchReplies
     , generateMediaButton
     , isAuthor
+    , isFederatedHost
     , mediaEditButton
     , mediaServer
     , moderationFromText
