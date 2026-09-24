@@ -32,6 +32,8 @@ type alias Overrides =
     , avatar : String
     , mediaAttachments : List MediaAttachment
     , sensitive : Bool
+    , favouritesCount : Int
+    , repliesCount : Int
     }
 
 
@@ -52,6 +54,8 @@ defaultOverrides =
     , avatar = "https://mastodon.social/avatars/alice.png"
     , mediaAttachments = []
     , sensitive = False
+    , favouritesCount = 0
+    , repliesCount = 0
     }
 
 
@@ -67,6 +71,8 @@ status overrides =
     , authorAvatarUrl = nonEmpty overrides.avatar
     , mediaAttachments = overrides.mediaAttachments
     , sensitive = overrides.sensitive
+    , favouritesCount = overrides.favouritesCount
+    , repliesCount = overrides.repliesCount
     }
 
 
@@ -97,6 +103,8 @@ statusJson overrides =
               )
             , ( "media_attachments", Encode.list mediaAttachmentJson overrides.mediaAttachments )
             , ( "sensitive", Encode.bool overrides.sensitive )
+            , ( "favourites_count", Encode.int overrides.favouritesCount )
+            , ( "replies_count", Encode.int overrides.repliesCount )
             ]
         )
 

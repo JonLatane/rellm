@@ -29,6 +29,8 @@ type alias Overrides =
     , avatar : Maybe String
     , images : List BlueskyImage
     , sensitive : Bool
+    , likeCount : Int
+    , replyCount : Int
     }
 
 
@@ -44,6 +46,8 @@ defaultOverrides =
     , avatar = Just "https://cdn.bsky.app/img/avatar/alice.jpg"
     , images = []
     , sensitive = False
+    , likeCount = 0
+    , replyCount = 0
     }
 
 
@@ -58,6 +62,8 @@ feedPost overrides =
     , authorAvatarUrl = overrides.avatar
     , images = overrides.images
     , sensitive = overrides.sensitive
+    , likeCount = overrides.likeCount
+    , replyCount = overrides.replyCount
     }
 
 
@@ -88,6 +94,8 @@ feedViewPostJson overrides =
                         ]
                    )
                  , ( "indexedAt", Encode.string overrides.createdAtIso )
+                 , ( "likeCount", Encode.int overrides.likeCount )
+                 , ( "replyCount", Encode.int overrides.replyCount )
                  ]
                     ++ (case overrides.images of
                             [] ->
