@@ -5,6 +5,7 @@ import Json.Decode as Decode
 import Proto.Rellm exposing (unwrapMediaReference)
 import Proto.Rellm.PostContext exposing (PostContext(..))
 import Proto.Rellm.Visibility exposing (Visibility(..))
+import Shared.Conversions exposing (int64ToInt)
 import Shared.Federation.Bluesky as Bluesky
 import Support.BlueskyFactory as Factory exposing (defaultOverrides)
 import Test exposing (Test, describe, test)
@@ -73,6 +74,12 @@ suite =
                         |> Decode.decodeString Bluesky.decoder
                         |> Result.map .sensitive
                         |> Expect.equal (Ok False)
+            , test "decodes likeCount/replyCount -- AT Proto's own real, public, server-aggregated counts" <|
+                \_ ->
+                    Factory.feedViewPostJson { defaultOverrides | likeCount = 42, replyCount = 7 }
+                        |> Decode.decodeString Bluesky.decoder
+                        |> Result.map (\p -> ( p.likeCount, p.replyCount ))
+                        |> Expect.equal (Ok ( 42, 7 ))
             ]
         , describe "toPost"
             [ test "id is the bare at:// URI, unnamespaced -- the synthetic host alongside it (never id alone) is what disambiguates it from a real Rellm post id" <|
@@ -177,5 +184,18 @@ suite =
                         |> .media
                         |> List.map .url
                         |> Expect.equal [ Just "https://cdn.bsky.app/img/feed_fullsize/1.jpg" ]
+            , test "likeCount becomes Post.unauthenticatedStarCount -- Bluesky's own real count, not Rellm's anonymized one" <|
+                \_ ->
+                    Factory.feedPost { defaultOverrides | likeCount = 42 }
+                        |> Bluesky.toPost
+                        |> .unauthenticatedStarCount
+                        |> int64ToInt
+                        |> Expect.equal 42
+            , test "replyCount becomes both Post.replyCount and .responseCount -- AT Proto has no separate direct/nested distinction to split them across" <|
+                \_ ->
+                    Factory.feedPost { defaultOverrides | replyCount = 7 }
+                        |> Bluesky.toPost
+                        |> (\post -> ( post.replyCount, post.responseCount ))
+                        |> Expect.equal ( 7, 7 )
             ]
         ]

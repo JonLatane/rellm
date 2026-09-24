@@ -5,6 +5,7 @@ import Json.Decode as Decode
 import Proto.Rellm exposing (unwrapMediaReference)
 import Proto.Rellm.PostContext exposing (PostContext(..))
 import Proto.Rellm.Visibility exposing (Visibility(..))
+import Shared.Conversions exposing (int64ToInt)
 import Shared.Federation.Mastodon as Mastodon
 import Support.MastodonFactory as Factory exposing (defaultOverrides)
 import Test exposing (Test, describe, test)
@@ -70,6 +71,12 @@ suite =
                         |> Decode.decodeString Mastodon.decoder
                         |> Result.map .sensitive
                         |> Expect.equal (Ok False)
+            , test "decodes favourites_count/replies_count -- Mastodon's own real, public, server-aggregated counts" <|
+                \_ ->
+                    Factory.statusJson { defaultOverrides | favouritesCount = 568, repliesCount = 13 }
+                        |> Decode.decodeString Mastodon.decoder
+                        |> Result.map (\s -> ( s.favouritesCount, s.repliesCount ))
+                        |> Expect.equal (Ok ( 568, 13 ))
             ]
         , describe "toPost"
             [ test "id is the bare status id, unnamespaced -- the synthetic host alongside it (never id alone) is what disambiguates it from a real Rellm post id" <|
@@ -223,5 +230,18 @@ suite =
                         |> .media
                         |> List.map .id
                         |> Expect.equal [ "1", "2" ]
+            , test "favourites_count becomes Post.unauthenticatedStarCount -- Mastodon's own real count, not Rellm's anonymized one" <|
+                \_ ->
+                    Factory.status { defaultOverrides | favouritesCount = 568 }
+                        |> Mastodon.toPost "mastodon.social"
+                        |> .unauthenticatedStarCount
+                        |> int64ToInt
+                        |> Expect.equal 568
+            , test "replies_count becomes both Post.replyCount and .responseCount -- Mastodon has no separate direct/nested distinction to split them across" <|
+                \_ ->
+                    Factory.status { defaultOverrides | repliesCount = 13 }
+                        |> Mastodon.toPost "mastodon.social"
+                        |> (\post -> ( post.replyCount, post.responseCount ))
+                        |> Expect.equal ( 13, 13 )
             ]
         ]
