@@ -424,6 +424,15 @@
   font-size: 0.8rem;
 }
 
+/* `Components.Pages.UserProfilePage.contactMethodDeleteButton` -- "Delete Phone"/"Delete Email",
+   at the bottom of each of `contactMethodsSection`'s own Phone/Email sub-areas. */
+.profile-contact-method-delete {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.6rem 0 0.3rem;
+}
+
 .profile-permissions-view,
 .profile-permissions-edit {
   display: flex;

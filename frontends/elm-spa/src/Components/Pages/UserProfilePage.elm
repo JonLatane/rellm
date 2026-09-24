@@ -1669,6 +1669,29 @@ updateInner shared msg model =
                                 _ ->
                                     ( resolvedModel, Effect.none )
 
+                        -- `contactMethodDeleteButton`'s own "Delete Phone"/"Delete Email" (via
+                        -- `Shared.RequestDelete`/`Shared.ConfirmDelete`, see `Shared.
+                        -- ConfirmPhoneDelete`'s own doc) resolving successfully -- `Shared.update`'s
+                        -- own handling already merged the account's now-`Nothing` phone/email into
+                        -- `AccountsPanel.Model` (for the Accounts Panel's own copy of this same
+                        -- feature); this is the page-local half, merging the updated `User` straight
+                        -- into `model.resolver` the same way `GotPhoneSaveResult`/`GotEmailSaveResult`
+                        -- do, no extra refetch needed since the RPC's own response already carries
+                        -- the full fresh `User` back.
+                        Shared.GotPhoneDeleteResult _ (Ok ( _, updatedUser )) ->
+                            ( { resolvedModel
+                                | resolver = withResolvedUser updatedUser resolvedModel.resolver
+                                , phoneEdit = Nothing
+                                , phoneVerification = Nothing
+                              }
+                            , Effect.none
+                            )
+
+                        Shared.GotEmailDeleteResult _ (Ok ( _, updatedUser )) ->
+                            ( { resolvedModel | resolver = withResolvedUser updatedUser resolvedModel.resolver, emailEdit = Nothing }
+                            , Effect.none
+                            )
+
                         _ ->
                             ( resolvedModel, Effect.none )
 
@@ -5041,6 +5064,7 @@ contactMethodsSection browserTimeZone canEdit isOwn expanded model user =
 
               else
                 text ""
+            , contactMethodDeleteButton (\cm -> Shared.ConfirmPhoneDelete cm model.resolver.targetHost) "Delete Phone" user.phone
             , emailView canEdit model.emailEdit user
             , contactMethodConsentView browserTimeZone
                 "profile-email-history-section"
@@ -5051,6 +5075,7 @@ contactMethodsSection browserTimeZone canEdit isOwn expanded model user =
                 EmailConsentToggled
                 EmailHistoryToggled
                 user.email
+            , contactMethodDeleteButton (\cm -> Shared.ConfirmEmailDelete cm model.resolver.targetHost) "Delete Email" user.email
             ]
 
 
@@ -5392,6 +5417,35 @@ phoneVerificationView maybePhoneVerification maybePhone =
                         , editErrorView pv.sendStatus
                         , editErrorView pv.verifyStatus
                         ]
+
+
+{-| "Delete Phone"/"Delete Email" -- rather than deleting outright, opens
+`Shared.DeleteConfirmation`'s modal (`Shared.RequestDelete (Shared.ConfirmPhoneDelete contactMethod
+host)`/`ConfirmEmailDelete`), which carries the whole `ContactMethod` along (not just its `value`)
+so `UI.deleteConfirmationModal` can warn -- via its own `verifiedAt` -- that deleting a *verified*
+one means re-verifying if it's ever added back. `ConfirmDelete`'s own handling `UpdateUser`s the
+field to `Nothing`/`null` outright rather than just blanking `value` (a zero-length phone/email
+isn't a meaningful state on its own, and leaving stale visibility/consent/verification behind for a
+value that's gone would be confusing the next time one's added); the result is picked back up by
+this page's own `SharedMsg` handling of `Shared.GotPhoneDeleteResult`/`GotEmailDeleteResult` (see
+that branch's own doc). Shared with `UI.contactMethodDeleteButton`, the Accounts Panel's ported
+copy -- see `Shared.DeleteConfirmation`'s own doc on why neither one fires the RPC itself. Hidden
+entirely once there's nothing to delete.
+-}
+contactMethodDeleteButton : (ContactMethod -> Shared.DeleteConfirmation) -> String -> Maybe ContactMethod -> Html Msg
+contactMethodDeleteButton toConfirmation label maybeContactMethod =
+    case maybeContactMethod of
+        Nothing ->
+            text ""
+
+        Just contactMethod ->
+            div [ class "profile-contact-method-delete" ]
+                [ button
+                    [ classes [ "profile-delete-button" ]
+                    , onClick (SharedMsg (Shared.RequestDelete (toConfirmation contactMethod)))
+                    ]
+                    [ text label ]
+                ]
 
 
 {-| A checkbox styled as a toggle switch -- same `.switch`/`.slider` classes

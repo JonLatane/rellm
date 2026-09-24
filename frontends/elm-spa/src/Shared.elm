@@ -147,7 +147,11 @@ type Msg
       -- `Task`/`( Maybe AccountsPanel.Msg, _ )` result -- forwarding the token-refresh half (if any)
       -- the same way `accountsPanelEffect` does for `Components.Pages.UserProfilePage`, then folding
       -- the actual `User`/`ContactMethod` into `AccountsPanel.Model` via its own same-named
-      -- `Got*Result` `Msg` (`updateFocusedAccountFromUser`/`updateFocusedAccountPhone`).
+      -- `Got*Result` `Msg` (`updateFocusedAccountFromUser`/`updateFocusedAccountPhone`). Deleting
+      -- (`GotPhoneDeleteResult`/`GotEmailDeleteResult`, up above with the other `DeleteConfirmation`-
+      -- driven results) isn't among these -- it's shared with `Components.Pages.UserProfilePage`'s
+      -- own "Delete Phone"/"Delete Email", so it goes through `ConfirmDelete` (`ConfirmPhoneDelete`/
+      -- `ConfirmEmailDelete`) instead of this Accounts-Panel-only Clicked/`Got*TaskResult` pairing.
     | ContactMethodPhoneSaveClicked
     | ContactMethodEmailSaveClicked
     | ContactMethodPhoneConsentToggled
@@ -220,6 +224,16 @@ type Msg
       -- response -- only an echo of the incoming message itself is safe to
       -- forward that way, per its own doc.
     | GotUserDeleteResult User String (Result Grpc.Error ( Maybe AccountsPanel.Msg, Proto.Google.Protobuf.Empty ))
+      -- `ConfirmPhoneDelete`/`ConfirmEmailDelete`'s own results -- the trailing `String` is the
+      -- acting `targetHost` (same convention as the other `DeleteConfirmation`-driven results
+      -- above), used to find the matching `RellmAccount` in `model.accounts.accounts` (by that host
+      -- + the updated `User.id`) to fold the now-`Nothing` `phone`/`email` into, mirroring
+      -- `GotUserDeleteResult`'s own "can only be done here, not in a page's own `SharedMsg`" reasoning
+      -- for why that merge lives in `Shared.update` rather than `Components.Pages.UserProfilePage`'s.
+      -- The full updated `User` (not just `()`/`Empty`) rides along so that page's own `SharedMsg`
+      -- handling can still merge it into `model.resolver` directly, no extra refetch needed.
+    | GotPhoneDeleteResult String (Result Grpc.Error ( Maybe AccountsPanel.Msg, User ))
+    | GotEmailDeleteResult String (Result Grpc.Error ( Maybe AccountsPanel.Msg, User ))
     | ShowScrollPreserver
     | HideScrollPreserver
     | UncollapseHome
@@ -345,6 +359,19 @@ type DeleteConfirmation
       -- `Components.Pages.PostPage`'s detail view and
       -- `Components.Pages.UserProfilePage`'s embedded `PostsPage` copy.
     | ConfirmPostSyncDestinationDelete Post String String String
+      -- "Delete Phone"/"Delete Email" -- shown by both `Components.Pages.UserProfilePage.
+      -- contactMethodDeleteButton` and `UI.contactMethodDeleteButton` (the ported copy in the
+      -- Accounts Panel's own "Contact Methods" item), so it's not owned by either one specifically
+      -- -- same "no Shared-owned home, `ConfirmDelete` fires the RPC directly" shape as the seven
+      -- above, resolving the acting account from the carried `targetHost` (the trailing `String`,
+      -- same convention). Carries the whole `ContactMethod` (not just its `value`) so
+      -- `UI.deleteConfirmationModal` can warn -- via its own `verifiedAt` -- that deleting a
+      -- *verified* one means re-verifying if it's ever added back. `ConfirmDelete`'s own handling
+      -- `UpdateUser`s the field to `Nothing` outright (clearing value/visibility/verification/
+      -- consent together, not just blanking `value`), same as the ported `Shared.Msg`s this
+      -- replaces used to.
+    | ConfirmPhoneDelete ContactMethod String
+    | ConfirmEmailDelete ContactMethod String
 
 
 {-| Every app-wide "Panel" other than the Accounts Panel (see `Model.accounts`
@@ -1963,6 +1990,34 @@ sharedUpdate req msg model =
                         |> Task.attempt (GotUserDeleteResult user host)
                     )
 
+                Just (ConfirmPhoneDelete _ host) ->
+                    case RellmAccounts.enabledRellmAccountForServer model.accounts.accounts host of
+                        Just account ->
+                            ( { model | panels = { panels | confirmingDeleteFor = Nothing } }
+                            , Users.updateUser model.accounts
+                                ( Just account.userId, host )
+                                account.userId
+                                (\freshUser -> { freshUser | phone = Nothing })
+                                |> Task.attempt (GotPhoneDeleteResult host)
+                            )
+
+                        Nothing ->
+                            ( { model | panels = { panels | confirmingDeleteFor = Nothing } }, Cmd.none )
+
+                Just (ConfirmEmailDelete _ host) ->
+                    case RellmAccounts.enabledRellmAccountForServer model.accounts.accounts host of
+                        Just account ->
+                            ( { model | panels = { panels | confirmingDeleteFor = Nothing } }
+                            , Users.updateUser model.accounts
+                                ( Just account.userId, host )
+                                account.userId
+                                (\freshUser -> { freshUser | email = Nothing })
+                                |> Task.attempt (GotEmailDeleteResult host)
+                            )
+
+                        Nothing ->
+                            ( { model | panels = { panels | confirmingDeleteFor = Nothing } }, Cmd.none )
+
                 Just (ConfirmOccasionSyncDestinationDelete occasion eventSyncDestinationId _ host) ->
                     ( { model | panels = { panels | confirmingDeleteFor = Nothing } }
                     , Events.deleteOccasionSyncDestination
@@ -2112,6 +2167,92 @@ sharedUpdate req msg model =
             )
 
         GotUserDeleteResult _ _ (Err _) ->
+            ( model, Cmd.none )
+
+        GotPhoneDeleteResult host (Ok ( maybeAccountsPanelMsg, updatedUser )) ->
+            let
+                ( refreshedAccounts, refreshCmd ) =
+                    case maybeAccountsPanelMsg of
+                        Just accountsPanelMsg ->
+                            AccountsPanel.update req accountsPanelMsg model.accounts
+
+                        Nothing ->
+                            ( model.accounts, Cmd.none )
+
+                -- Not necessarily the *focused* account (this same result also lands from
+                -- `Components.Pages.UserProfilePage`'s own "Delete Phone", which has no notion of a
+                -- focused Accounts Panel account at all) -- found by `host`/`userId` instead, same
+                -- as `GotUserDeleteResult`'s own account-list cleanup just above.
+                mergedAccountsList : List RellmAccount
+                mergedAccountsList =
+                    case refreshedAccounts.accounts |> List.filter (\a -> a.server == host && a.userId == updatedUser.id) |> List.head of
+                        Just account ->
+                            RellmAccounts.upsertRellmAccount { account | phone = updatedUser.phone } refreshedAccounts.accounts
+
+                        Nothing ->
+                            refreshedAccounts.accounts
+
+                -- Clears any stale edit/verification state for that account's own nested "Contact
+                -- Methods" item too, if it happens to be the one currently focused in the Accounts
+                -- Panel.
+                clearedContactMethods : Maybe RellmAccounts.RellmContactMethods
+                clearedContactMethods =
+                    case refreshedAccounts.focusedAccount of
+                        Just focused ->
+                            if focused.server == host && focused.userId == updatedUser.id then
+                                refreshedAccounts.focusedAccountContactMethods
+                                    |> Maybe.map (\cm -> { cm | phoneEdit = Nothing, phoneVerification = Nothing })
+
+                            else
+                                refreshedAccounts.focusedAccountContactMethods
+
+                        Nothing ->
+                            refreshedAccounts.focusedAccountContactMethods
+            in
+            ( { model | accounts = { refreshedAccounts | accounts = mergedAccountsList, focusedAccountContactMethods = clearedContactMethods } }
+            , Cmd.map AccountsPanelMsg refreshCmd
+            )
+
+        GotPhoneDeleteResult _ (Err _) ->
+            ( model, Cmd.none )
+
+        GotEmailDeleteResult host (Ok ( maybeAccountsPanelMsg, updatedUser )) ->
+            let
+                ( refreshedAccounts, refreshCmd ) =
+                    case maybeAccountsPanelMsg of
+                        Just accountsPanelMsg ->
+                            AccountsPanel.update req accountsPanelMsg model.accounts
+
+                        Nothing ->
+                            ( model.accounts, Cmd.none )
+
+                mergedAccountsList : List RellmAccount
+                mergedAccountsList =
+                    case refreshedAccounts.accounts |> List.filter (\a -> a.server == host && a.userId == updatedUser.id) |> List.head of
+                        Just account ->
+                            RellmAccounts.upsertRellmAccount { account | email = updatedUser.email } refreshedAccounts.accounts
+
+                        Nothing ->
+                            refreshedAccounts.accounts
+
+                clearedContactMethods : Maybe RellmAccounts.RellmContactMethods
+                clearedContactMethods =
+                    case refreshedAccounts.focusedAccount of
+                        Just focused ->
+                            if focused.server == host && focused.userId == updatedUser.id then
+                                refreshedAccounts.focusedAccountContactMethods |> Maybe.map (\cm -> { cm | emailEdit = Nothing })
+
+                            else
+                                refreshedAccounts.focusedAccountContactMethods
+
+                        Nothing ->
+                            refreshedAccounts.focusedAccountContactMethods
+            in
+            ( { model | accounts = { refreshedAccounts | accounts = mergedAccountsList, focusedAccountContactMethods = clearedContactMethods } }
+            , Cmd.map AccountsPanelMsg refreshCmd
+            )
+
+        GotEmailDeleteResult _ (Err _) ->
             ( model, Cmd.none )
 
         ShowScrollPreserver ->

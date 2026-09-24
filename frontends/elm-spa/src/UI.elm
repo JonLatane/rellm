@@ -2270,6 +2270,7 @@ contactMethodsMenuItem shared account =
                     (Shared.AccountsPanelMsg AccountsPanel.ContactMethodPhoneHistoryToggled)
                     account.phone
                 , contactMethodPhoneVerificationView contactMethods account.phone
+                , contactMethodDeleteButton (\cm -> Shared.ConfirmPhoneDelete cm account.server) "Delete Phone" account.phone
                 , contactMethodEmailView account contactMethods
                 , contactMethodConsentView shared
                     ("account-avatar-menu-email-history-" ++ RellmAccounts.rellmAccountId account)
@@ -2279,6 +2280,7 @@ contactMethodsMenuItem shared account =
                     Shared.ContactMethodEmailConsentToggled
                     (Shared.AccountsPanelMsg AccountsPanel.ContactMethodEmailHistoryToggled)
                     account.email
+                , contactMethodDeleteButton (\cm -> Shared.ConfirmEmailDelete cm account.server) "Delete Email" account.email
                 ]
             ]
         ]
@@ -2550,6 +2552,31 @@ contactMethodEditErrorView status =
 
         _ ->
             text ""
+
+
+{-| "Delete Phone"/"Delete Email" -- shared by both this page and
+`Components.Pages.UserProfilePage.contactMethodDeleteButton`: rather than deleting outright, opens
+`Shared.DeleteConfirmation`'s modal (`Shared.RequestDelete (Shared.ConfirmPhoneDelete contactMethod
+account.server)`/`ConfirmEmailDelete`), which carries the whole `ContactMethod` along so
+`UI.deleteConfirmationModal` can warn (via its own `verifiedAt`) that a *verified* one means
+re-verifying if it's ever added back -- see `Shared.DeleteConfirmation`'s own doc on why this and
+that page's copy both fire `Shared.ConfirmDelete`'s RPC directly rather than routing through
+`Shared.AccountsPanel.Model`. Hidden entirely once there's nothing to delete.
+-}
+contactMethodDeleteButton : (ContactMethod -> Shared.DeleteConfirmation) -> String -> Maybe ContactMethod -> Html Shared.Msg
+contactMethodDeleteButton toConfirmation label maybeContactMethod =
+    case maybeContactMethod of
+        Nothing ->
+            text ""
+
+        Just contactMethod ->
+            div [ class "profile-contact-method-delete" ]
+                [ button
+                    [ class "profile-delete-button"
+                    , onClick (Shared.RequestDelete (toConfirmation contactMethod))
+                    ]
+                    [ text label ]
+                ]
 
 
 {-| The phone-only SMS verification flow, shown under `contactMethodPhoneView`/
@@ -3792,6 +3819,34 @@ deleteConfirmationModal shared =
                             , "Stop syncing this post to "
                                 ++ destinationLabel
                                 ++ "? This won't delete the post already made there."
+                            , "Delete"
+                            )
+
+                        Shared.ConfirmPhoneDelete contactMethod _ ->
+                            ( "Delete Phone Number?"
+                            , "Delete your phone number ("
+                                ++ RellmAccounts.contactMethodDisplayValue "tel:" (Just contactMethod)
+                                ++ ")?"
+                                ++ (if contactMethod.verifiedAt /= Nothing then
+                                        " It's currently verified. If you add a phone number again later, you'll need to verify it again."
+
+                                    else
+                                        ""
+                                   )
+                            , "Delete"
+                            )
+
+                        Shared.ConfirmEmailDelete contactMethod _ ->
+                            ( "Delete Email Address?"
+                            , "Delete your email address ("
+                                ++ RellmAccounts.contactMethodDisplayValue "mailto:" (Just contactMethod)
+                                ++ ")?"
+                                ++ (if contactMethod.verifiedAt /= Nothing then
+                                        " It's currently verified. If you add an email address again later, you'll need to verify it again."
+
+                                    else
+                                        ""
+                                   )
                             , "Delete"
                             )
             in
