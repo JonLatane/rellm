@@ -495,18 +495,21 @@ jobs:
       # backend/src/tests/factories.rs's `test_bucket()` needs a real MinIO bucket (the
       # delete_media/delete_user specs verify actual object deletion, and rust-s3's async
       # client isn't mockable). GitHub Actions' `services:` containers can't override the
-      # image's command, and minio/minio needs `server /data` to actually serve (bare `docker
-      # run minio/minio` just prints usage and exits), so it's started by hand here instead --
-      # mirrors `backend/Makefile`'s `local_minio_create` target.
+      # image's command, so it's started by hand here instead -- mirrors `backend/Makefile`'s
+      # `local_minio_create` target.
       #
-      # Pulled from quay.io, not Docker Hub -- MinIO pulled `minio/minio` from Docker Hub
-      # entirely (the repository now 404s), so `docker run minio/minio` fails CI with
-      # "pull access denied ... repository does not exist" regardless of tag/auth.
+      # Image: bitnamilegacy/minio, not minio/minio or quay.io/minio/minio -- MinIO pulled
+      # `minio/minio` from Docker Hub entirely (404s now), and as of 2026-09-24 also locked
+      # down anonymous pulls of quay.io/minio/minio (valid token, no pull scope -> 401
+      # "unauthorized" on every tag, pinned ones included) after archiving the OSS project.
+      # bitnamilegacy/minio is Bitnami's frozen/unsupported-but-still-pullable image; it uses
+      # its own entrypoint that starts the server itself, so no `server /data` command
+      # override here (that bypasses Bitnami's setup script entirely).
       - name: Start MinIO
         run: |
           docker run -d -p 9000:9000 --name rellm-test-minio \
             -e "MINIO_ROOT_USER=${MINIO_ACCESS_KEY}" -e "MINIO_ROOT_PASSWORD=${MINIO_SECRET_KEY}" \
-            quay.io/minio/minio server /data
+            bitnamilegacy/minio:latest
           for i in $(seq 1 30); do
             if curl -sf "${MINIO_ENDPOINT}/minio/health/live" >/dev/null; then
               echo "MinIO is up"

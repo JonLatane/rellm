@@ -37,16 +37,20 @@ spec:
         persistentVolumeClaim:
           claimName: minio-pv-claim
       containers:
+      # bitnamilegacy/minio, not quay.io/minio/minio -- MinIO locked down anonymous pulls of
+      # quay.io/minio/minio (401 "unauthorized" on every tag, pinned ones included) after
+      # archiving the OSS project. bitnamilegacy/minio is Bitnami's frozen/unsupported-but-
+      # still-pullable image; it starts the server itself via its own entrypoint, so no
+      # `server /storage` args override here -- MINIO_DATA_DIR points it at /storage instead.
       - name: minio
-        image: quay.io/minio/minio:RELEASE.2025-07-23T15-54-02Z
-        args:
-        - server
-        - /storage
+        image: bitnamilegacy/minio:latest
         env:
-        - name: MINIO_ACCESS_KEY
+        - name: MINIO_ROOT_USER
           value: "minio"
-        - name: MINIO_SECRET_KEY
+        - name: MINIO_ROOT_PASSWORD
           value: "minio123"
+        - name: MINIO_DATA_DIR
+          value: "/storage"
         ports:
         - containerPort: 9000
         volumeMounts:

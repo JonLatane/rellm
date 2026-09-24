@@ -214,9 +214,13 @@ local_minio_create() {
   local_minio_start || _do_local_minio_create
 }
 
+# bitnamilegacy/minio, not minio/minio -- MinIO pulled minio/minio from Docker Hub entirely
+# (404s) and locked down anonymous pulls of quay.io/minio/minio too, after archiving the OSS
+# project. bitnamilegacy/minio is Bitnami's frozen/unsupported-but-still-pullable image; it
+# starts the server itself via its own entrypoint, so no `server /data` command override.
 _do_local_minio_create() {
   mkdir -p "$RELLM_MINIO_DATA_DIR"
-  docker run -d -p 9000:9000 -p 9090:9090 --name "$RELLM_MINIO_CONTAINER" -v "$RELLM_MINIO_DATA_DIR:/data" -e "MINIO_ROOT_USER=$MINIO_ACCESS_KEY" -e "MINIO_ROOT_PASSWORD=$MINIO_SECRET_KEY" minio/minio server /data --console-address ":9090"
+  docker run -d -p 9000:9000 -p 9090:9090 --name "$RELLM_MINIO_CONTAINER" -v "$RELLM_MINIO_DATA_DIR:/bitnami/minio/data" -e "MINIO_ROOT_USER=$MINIO_ACCESS_KEY" -e "MINIO_ROOT_PASSWORD=$MINIO_SECRET_KEY" -e "MINIO_BROWSER=on" -e "MINIO_CONSOLE_PORT_NUMBER=9090" bitnamilegacy/minio:latest
 }
 
 local_minio_delete() {

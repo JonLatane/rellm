@@ -67,7 +67,8 @@ rellm edit_environment # literally just: $EDITOR ~/.rellm. Edit those database, 
 
 # Or, create the examples. These are what will be auto-populated in ~/.rellm.
 rellm local_db_create # Requires a local Postgres instance. literally just: createdb rellm_dev
-rellm local_minio_start # literally "just": docker start rellm-dev-minio || docker run -d -p 9000:9000 -p 9090:9090 --name rellm-dev-minio -v $(MAKEFILE_DIR)/.minio-data:/data -e "MINIO_ROOT_USER=ROOTNAME" -e "MINIO_ROOT_PASSWORD=CHANGEME123" quay.io/minio/minio server /data --console-address ":9090"credentials.
+rellm local_minio_start # literally "just": docker start rellm-dev-minio || docker run -d -p 9000:9000 -p 9090:9090 --name rellm-dev-minio -v $(MAKEFILE_DIR)/.minio-data:/bitnami/minio/data -e "MINIO_ROOT_USER=ROOTNAME" -e "MINIO_ROOT_PASSWORD=CHANGEME123" -e "MINIO_BROWSER=on" -e "MINIO_CONSOLE_PORT_NUMBER=9090" bitnamilegacy/minio:latest
+credentials.
 
 # Launch the server (and its background jobs). HTTP on ports 80 and 8000, 27707 (gRPC), and HTTPS on 443 if TLS is configured.
 rellm server_and_jobs
@@ -141,7 +142,8 @@ rellm edit_environment # literally just: $EDITOR ~/.rellm. Edit those database, 
 
 # Or, create the examples. These are what will be auto-populated in ~/.rellm.
 rellm local_db_create # Requires a local Postgres instance. literally just: createdb rellm_dev
-rellm local_minio_start # literally "just": docker start rellm-dev-minio || docker run -d -p 9000:9000 -p 9090:9090 --name rellm-dev-minio -v $(MAKEFILE_DIR)/.minio-data:/data -e "MINIO_ROOT_USER=ROOTNAME" -e "MINIO_ROOT_PASSWORD=CHANGEME123" quay.io/minio/minio server /data --console-address ":9090"credentials.
+rellm local_minio_start # literally "just": docker start rellm-dev-minio || docker run -d -p 9000:9000 -p 9090:9090 --name rellm-dev-minio -v $(MAKEFILE_DIR)/.minio-data:/bitnami/minio/data -e "MINIO_ROOT_USER=ROOTNAME" -e "MINIO_ROOT_PASSWORD=CHANGEME123" -e "MINIO_BROWSER=on" -e "MINIO_CONSOLE_PORT_NUMBER=9090" bitnamilegacy/minio:latest
+credentials.
 
 # Launch the server (and its background jobs). HTTP on ports 80 and 8000, 27707 (gRPC), and HTTPS on 443 if TLS is configured.
 rellm server_and_jobs
