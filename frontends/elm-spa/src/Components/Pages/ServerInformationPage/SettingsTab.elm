@@ -1182,7 +1182,7 @@ featureSettingsDisplayView time set maybeAdminAccount current =
               else
                 []
             , if fields.mediaAllocation then
-                [ Common.settingsRow "Default Media Allocation" (textValue (current.mediaAllocationBytes |> Maybe.map ByteFormat.formatBytes |> Maybe.withDefault "—")) ]
+                [ Common.settingsRow "Default User Media Allocation" (textValue (current.mediaAllocationBytes |> Maybe.map ByteFormat.formatBytes |> Maybe.withDefault "—")) ]
 
               else
                 []
@@ -1313,7 +1313,7 @@ featureSettingsEditView time set edit =
               else
                 []
             , if fields.mediaAllocation then
-                [ Common.settingsRow "Default Media Allocation" (mediaAllocationInput set edit) ]
+                [ Common.settingsRow "Default User Media Allocation" (mediaAllocationInput set edit) ]
 
               else
                 []
