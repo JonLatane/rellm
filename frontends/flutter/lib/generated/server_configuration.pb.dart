@@ -1195,7 +1195,12 @@ class MediaSettings extends $pb.GeneratedMessage {
     $core.bool? visible,
     $14.Moderation? defaultModeration,
     $14.Visibility? defaultVisibility,
-    $fixnum.Int64? defaultMediaAllocationBytes,
+    $fixnum.Int64? defaultUserMediaAllocationBytes,
+    $fixnum.Int64? serverMediaAllocationBytes,
+    $fixnum.Int64? serverMediaUsageBytes,
+    $13.Timestamp? serverMediaUsageCalculatedAt,
+    $fixnum.Int64? serverObjectStorageUsageBytes,
+    $13.Timestamp? serverObjectStorageUsageCalculatedAt,
   }) {
     final $result = create();
     if (visible != null) {
@@ -1207,8 +1212,23 @@ class MediaSettings extends $pb.GeneratedMessage {
     if (defaultVisibility != null) {
       $result.defaultVisibility = defaultVisibility;
     }
-    if (defaultMediaAllocationBytes != null) {
-      $result.defaultMediaAllocationBytes = defaultMediaAllocationBytes;
+    if (defaultUserMediaAllocationBytes != null) {
+      $result.defaultUserMediaAllocationBytes = defaultUserMediaAllocationBytes;
+    }
+    if (serverMediaAllocationBytes != null) {
+      $result.serverMediaAllocationBytes = serverMediaAllocationBytes;
+    }
+    if (serverMediaUsageBytes != null) {
+      $result.serverMediaUsageBytes = serverMediaUsageBytes;
+    }
+    if (serverMediaUsageCalculatedAt != null) {
+      $result.serverMediaUsageCalculatedAt = serverMediaUsageCalculatedAt;
+    }
+    if (serverObjectStorageUsageBytes != null) {
+      $result.serverObjectStorageUsageBytes = serverObjectStorageUsageBytes;
+    }
+    if (serverObjectStorageUsageCalculatedAt != null) {
+      $result.serverObjectStorageUsageCalculatedAt = serverObjectStorageUsageCalculatedAt;
     }
     return $result;
   }
@@ -1220,7 +1240,12 @@ class MediaSettings extends $pb.GeneratedMessage {
     ..aOB(1, _omitFieldNames ? '' : 'visible')
     ..e<$14.Moderation>(2, _omitFieldNames ? '' : 'defaultModeration', $pb.PbFieldType.OE, defaultOrMaker: $14.Moderation.MODERATION_UNKNOWN, valueOf: $14.Moderation.valueOf, enumValues: $14.Moderation.values)
     ..e<$14.Visibility>(3, _omitFieldNames ? '' : 'defaultVisibility', $pb.PbFieldType.OE, defaultOrMaker: $14.Visibility.VISIBILITY_UNKNOWN, valueOf: $14.Visibility.valueOf, enumValues: $14.Visibility.values)
-    ..a<$fixnum.Int64>(4, _omitFieldNames ? '' : 'defaultMediaAllocationBytes', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
+    ..a<$fixnum.Int64>(4, _omitFieldNames ? '' : 'defaultUserMediaAllocationBytes', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
+    ..a<$fixnum.Int64>(5, _omitFieldNames ? '' : 'serverMediaAllocationBytes', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
+    ..a<$fixnum.Int64>(6, _omitFieldNames ? '' : 'serverMediaUsageBytes', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
+    ..aOM<$13.Timestamp>(7, _omitFieldNames ? '' : 'serverMediaUsageCalculatedAt', subBuilder: $13.Timestamp.create)
+    ..a<$fixnum.Int64>(8, _omitFieldNames ? '' : 'serverObjectStorageUsageBytes', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
+    ..aOM<$13.Timestamp>(9, _omitFieldNames ? '' : 'serverObjectStorageUsageCalculatedAt', subBuilder: $13.Timestamp.create)
     ..hasRequiredFields = false
   ;
 
@@ -1282,15 +1307,83 @@ class MediaSettings extends $pb.GeneratedMessage {
   @$pb.TagNumber(3)
   void clearDefaultVisibility() => clearField(3);
 
-  /// Default media storage allocation for newly created users. Defaults to 10MB.
+  /// Default media storage allocation for newly created users. Defaults to 15MB.
   @$pb.TagNumber(4)
-  $fixnum.Int64 get defaultMediaAllocationBytes => $_getI64(3);
+  $fixnum.Int64 get defaultUserMediaAllocationBytes => $_getI64(3);
   @$pb.TagNumber(4)
-  set defaultMediaAllocationBytes($fixnum.Int64 v) { $_setInt64(3, v); }
+  set defaultUserMediaAllocationBytes($fixnum.Int64 v) { $_setInt64(3, v); }
   @$pb.TagNumber(4)
-  $core.bool hasDefaultMediaAllocationBytes() => $_has(3);
+  $core.bool hasDefaultUserMediaAllocationBytes() => $_has(3);
   @$pb.TagNumber(4)
-  void clearDefaultMediaAllocationBytes() => clearField(4);
+  void clearDefaultUserMediaAllocationBytes() => clearField(4);
+
+  /// Default is 5GB (applied whenever this is `0`, same read-time-fallback convention as
+  /// `default_user_media_allocation_bytes` above). API/server-enforced limit for total of all
+  /// Media usage (`server_media_usage_bytes` below) -- `CreateMedia` rejects an upload that would
+  /// push the server over this cap the same way it already rejects one that would push a user over
+  /// their own `User.media_storage_limit_bytes`. Editing this requires
+  /// [`EDIT_SERVER_MEDIA_ALLOCATION`](#rellm-Permission) via
+  /// [`ConfigureServer`](#grpc-api-ConfigureServer) -- see that permission's own doc.
+  @$pb.TagNumber(5)
+  $fixnum.Int64 get serverMediaAllocationBytes => $_getI64(4);
+  @$pb.TagNumber(5)
+  set serverMediaAllocationBytes($fixnum.Int64 v) { $_setInt64(4, v); }
+  @$pb.TagNumber(5)
+  $core.bool hasServerMediaAllocationBytes() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearServerMediaAllocationBytes() => clearField(5);
+
+  /// (Read-only) Amount of storage used by user-stored Media, according to its sizing data.
+  /// Adjusted (by a cheap incremental delta, not a full recompute) on CreateMedia calls, deletes,
+  /// and size conversions, and also fully recomputed every 3 minutes by the
+  /// `calculate_server_media_usage` background job (correcting any drift the incremental call
+  /// sites missed).
+  @$pb.TagNumber(6)
+  $fixnum.Int64 get serverMediaUsageBytes => $_getI64(5);
+  @$pb.TagNumber(6)
+  set serverMediaUsageBytes($fixnum.Int64 v) { $_setInt64(5, v); }
+  @$pb.TagNumber(6)
+  $core.bool hasServerMediaUsageBytes() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearServerMediaUsageBytes() => clearField(6);
+
+  /// When `server_media_usage_bytes` was last written -- by either an incremental adjustment or a
+  /// full recompute (see that field's own doc); not limited to just the periodic job's runs.
+  @$pb.TagNumber(7)
+  $13.Timestamp get serverMediaUsageCalculatedAt => $_getN(6);
+  @$pb.TagNumber(7)
+  set serverMediaUsageCalculatedAt($13.Timestamp v) { setField(7, v); }
+  @$pb.TagNumber(7)
+  $core.bool hasServerMediaUsageCalculatedAt() => $_has(6);
+  @$pb.TagNumber(7)
+  void clearServerMediaUsageCalculatedAt() => clearField(7);
+  @$pb.TagNumber(7)
+  $13.Timestamp ensureServerMediaUsageCalculatedAt() => $_ensure(6);
+
+  /// (Read-only) Amount of storage used by S3 (or compatible) object storage.
+  /// Periodically computed via list+sum from object storage itself, by the
+  /// `calculate_server_object_storage_usage` background job (every 4h) -- this is a drift check
+  /// against `server_media_usage_bytes` above (which is derived from the `media` table, not object
+  /// storage itself), so unlike that field this is never incrementally adjusted between runs.
+  @$pb.TagNumber(8)
+  $fixnum.Int64 get serverObjectStorageUsageBytes => $_getI64(7);
+  @$pb.TagNumber(8)
+  set serverObjectStorageUsageBytes($fixnum.Int64 v) { $_setInt64(7, v); }
+  @$pb.TagNumber(8)
+  $core.bool hasServerObjectStorageUsageBytes() => $_has(7);
+  @$pb.TagNumber(8)
+  void clearServerObjectStorageUsageBytes() => clearField(8);
+
+  @$pb.TagNumber(9)
+  $13.Timestamp get serverObjectStorageUsageCalculatedAt => $_getN(8);
+  @$pb.TagNumber(9)
+  set serverObjectStorageUsageCalculatedAt($13.Timestamp v) { setField(9, v); }
+  @$pb.TagNumber(9)
+  $core.bool hasServerObjectStorageUsageCalculatedAt() => $_has(8);
+  @$pb.TagNumber(9)
+  void clearServerObjectStorageUsageCalculatedAt() => clearField(9);
+  @$pb.TagNumber(9)
+  $13.Timestamp ensureServerObjectStorageUsageCalculatedAt() => $_ensure(8);
 }
 
 /// Whether this server's `/market` is open -- an explicit, admin-set toggle independent of

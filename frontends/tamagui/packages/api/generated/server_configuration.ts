@@ -895,8 +895,42 @@ export interface MediaSettings {
    * as appropriate.
    */
   defaultVisibility: Visibility;
-  /** Default media storage allocation for newly created users. Defaults to 10MB. */
-  defaultMediaAllocationBytes: number;
+  /** Default media storage allocation for newly created users. Defaults to 15MB. */
+  defaultUserMediaAllocationBytes: number;
+  /**
+   * Default is 5GB (applied whenever this is `0`, same read-time-fallback convention as
+   * `default_user_media_allocation_bytes` above). API/server-enforced limit for total of all
+   * Media usage (`server_media_usage_bytes` below) -- `CreateMedia` rejects an upload that would
+   * push the server over this cap the same way it already rejects one that would push a user over
+   * their own `User.media_storage_limit_bytes`. Editing this requires
+   * [`EDIT_SERVER_MEDIA_ALLOCATION`](#rellm-Permission) via
+   * [`ConfigureServer`](#grpc-api-ConfigureServer) -- see that permission's own doc.
+   */
+  serverMediaAllocationBytes: number;
+  /**
+   * (Read-only) Amount of storage used by user-stored Media, according to its sizing data.
+   * Adjusted (by a cheap incremental delta, not a full recompute) on CreateMedia calls, deletes,
+   * and size conversions, and also fully recomputed every 3 minutes by the
+   * `calculate_server_media_usage` background job (correcting any drift the incremental call
+   * sites missed).
+   */
+  serverMediaUsageBytes: number;
+  /**
+   * When `server_media_usage_bytes` was last written -- by either an incremental adjustment or a
+   * full recompute (see that field's own doc); not limited to just the periodic job's runs.
+   */
+  serverMediaUsageCalculatedAt:
+    | string
+    | undefined;
+  /**
+   * (Read-only) Amount of storage used by S3 (or compatible) object storage.
+   * Periodically computed via list+sum from object storage itself, by the
+   * `calculate_server_object_storage_usage` background job (every 4h) -- this is a drift check
+   * against `server_media_usage_bytes` above (which is derived from the `media` table, not object
+   * storage itself), so unlike that field this is never incrementally adjusted between runs.
+   */
+  serverObjectStorageUsageBytes: number;
+  serverObjectStorageUsageCalculatedAt: string | undefined;
 }
 
 /**
@@ -2830,7 +2864,17 @@ export const ExternalCDNConfig: MessageFns<ExternalCDNConfig> = {
 };
 
 function createBaseMediaSettings(): MediaSettings {
-  return { visible: false, defaultModeration: 0, defaultVisibility: 0, defaultMediaAllocationBytes: 0 };
+  return {
+    visible: false,
+    defaultModeration: 0,
+    defaultVisibility: 0,
+    defaultUserMediaAllocationBytes: 0,
+    serverMediaAllocationBytes: 0,
+    serverMediaUsageBytes: 0,
+    serverMediaUsageCalculatedAt: undefined,
+    serverObjectStorageUsageBytes: 0,
+    serverObjectStorageUsageCalculatedAt: undefined,
+  };
 }
 
 export const MediaSettings: MessageFns<MediaSettings> = {
@@ -2844,8 +2888,23 @@ export const MediaSettings: MessageFns<MediaSettings> = {
     if (message.defaultVisibility !== 0) {
       writer.uint32(24).int32(message.defaultVisibility);
     }
-    if (message.defaultMediaAllocationBytes !== 0) {
-      writer.uint32(32).uint64(message.defaultMediaAllocationBytes);
+    if (message.defaultUserMediaAllocationBytes !== 0) {
+      writer.uint32(32).uint64(message.defaultUserMediaAllocationBytes);
+    }
+    if (message.serverMediaAllocationBytes !== 0) {
+      writer.uint32(40).uint64(message.serverMediaAllocationBytes);
+    }
+    if (message.serverMediaUsageBytes !== 0) {
+      writer.uint32(48).uint64(message.serverMediaUsageBytes);
+    }
+    if (message.serverMediaUsageCalculatedAt !== undefined) {
+      Timestamp.encode(toTimestamp(message.serverMediaUsageCalculatedAt), writer.uint32(58).fork()).join();
+    }
+    if (message.serverObjectStorageUsageBytes !== 0) {
+      writer.uint32(64).uint64(message.serverObjectStorageUsageBytes);
+    }
+    if (message.serverObjectStorageUsageCalculatedAt !== undefined) {
+      Timestamp.encode(toTimestamp(message.serverObjectStorageUsageCalculatedAt), writer.uint32(74).fork()).join();
     }
     return writer;
   },
@@ -2886,7 +2945,47 @@ export const MediaSettings: MessageFns<MediaSettings> = {
             break;
           }
 
-          message.defaultMediaAllocationBytes = longToNumber(reader.uint64());
+          message.defaultUserMediaAllocationBytes = longToNumber(reader.uint64());
+          continue;
+        }
+        case 5: {
+          if (tag !== 40) {
+            break;
+          }
+
+          message.serverMediaAllocationBytes = longToNumber(reader.uint64());
+          continue;
+        }
+        case 6: {
+          if (tag !== 48) {
+            break;
+          }
+
+          message.serverMediaUsageBytes = longToNumber(reader.uint64());
+          continue;
+        }
+        case 7: {
+          if (tag !== 58) {
+            break;
+          }
+
+          message.serverMediaUsageCalculatedAt = fromTimestamp(Timestamp.decode(reader, reader.uint32()));
+          continue;
+        }
+        case 8: {
+          if (tag !== 64) {
+            break;
+          }
+
+          message.serverObjectStorageUsageBytes = longToNumber(reader.uint64());
+          continue;
+        }
+        case 9: {
+          if (tag !== 74) {
+            break;
+          }
+
+          message.serverObjectStorageUsageCalculatedAt = fromTimestamp(Timestamp.decode(reader, reader.uint32()));
           continue;
         }
       }
@@ -2903,9 +3002,22 @@ export const MediaSettings: MessageFns<MediaSettings> = {
       visible: isSet(object.visible) ? globalThis.Boolean(object.visible) : false,
       defaultModeration: isSet(object.defaultModeration) ? moderationFromJSON(object.defaultModeration) : 0,
       defaultVisibility: isSet(object.defaultVisibility) ? visibilityFromJSON(object.defaultVisibility) : 0,
-      defaultMediaAllocationBytes: isSet(object.defaultMediaAllocationBytes)
-        ? globalThis.Number(object.defaultMediaAllocationBytes)
+      defaultUserMediaAllocationBytes: isSet(object.defaultUserMediaAllocationBytes)
+        ? globalThis.Number(object.defaultUserMediaAllocationBytes)
         : 0,
+      serverMediaAllocationBytes: isSet(object.serverMediaAllocationBytes)
+        ? globalThis.Number(object.serverMediaAllocationBytes)
+        : 0,
+      serverMediaUsageBytes: isSet(object.serverMediaUsageBytes) ? globalThis.Number(object.serverMediaUsageBytes) : 0,
+      serverMediaUsageCalculatedAt: isSet(object.serverMediaUsageCalculatedAt)
+        ? globalThis.String(object.serverMediaUsageCalculatedAt)
+        : undefined,
+      serverObjectStorageUsageBytes: isSet(object.serverObjectStorageUsageBytes)
+        ? globalThis.Number(object.serverObjectStorageUsageBytes)
+        : 0,
+      serverObjectStorageUsageCalculatedAt: isSet(object.serverObjectStorageUsageCalculatedAt)
+        ? globalThis.String(object.serverObjectStorageUsageCalculatedAt)
+        : undefined,
     };
   },
 
@@ -2920,8 +3032,23 @@ export const MediaSettings: MessageFns<MediaSettings> = {
     if (message.defaultVisibility !== 0) {
       obj.defaultVisibility = visibilityToJSON(message.defaultVisibility);
     }
-    if (message.defaultMediaAllocationBytes !== 0) {
-      obj.defaultMediaAllocationBytes = Math.round(message.defaultMediaAllocationBytes);
+    if (message.defaultUserMediaAllocationBytes !== 0) {
+      obj.defaultUserMediaAllocationBytes = Math.round(message.defaultUserMediaAllocationBytes);
+    }
+    if (message.serverMediaAllocationBytes !== 0) {
+      obj.serverMediaAllocationBytes = Math.round(message.serverMediaAllocationBytes);
+    }
+    if (message.serverMediaUsageBytes !== 0) {
+      obj.serverMediaUsageBytes = Math.round(message.serverMediaUsageBytes);
+    }
+    if (message.serverMediaUsageCalculatedAt !== undefined) {
+      obj.serverMediaUsageCalculatedAt = message.serverMediaUsageCalculatedAt;
+    }
+    if (message.serverObjectStorageUsageBytes !== 0) {
+      obj.serverObjectStorageUsageBytes = Math.round(message.serverObjectStorageUsageBytes);
+    }
+    if (message.serverObjectStorageUsageCalculatedAt !== undefined) {
+      obj.serverObjectStorageUsageCalculatedAt = message.serverObjectStorageUsageCalculatedAt;
     }
     return obj;
   },
@@ -2934,7 +3061,12 @@ export const MediaSettings: MessageFns<MediaSettings> = {
     message.visible = object.visible ?? false;
     message.defaultModeration = object.defaultModeration ?? 0;
     message.defaultVisibility = object.defaultVisibility ?? 0;
-    message.defaultMediaAllocationBytes = object.defaultMediaAllocationBytes ?? 0;
+    message.defaultUserMediaAllocationBytes = object.defaultUserMediaAllocationBytes ?? 0;
+    message.serverMediaAllocationBytes = object.serverMediaAllocationBytes ?? 0;
+    message.serverMediaUsageBytes = object.serverMediaUsageBytes ?? 0;
+    message.serverMediaUsageCalculatedAt = object.serverMediaUsageCalculatedAt ?? undefined;
+    message.serverObjectStorageUsageBytes = object.serverObjectStorageUsageBytes ?? 0;
+    message.serverObjectStorageUsageCalculatedAt = object.serverObjectStorageUsageCalculatedAt ?? undefined;
     return message;
   },
 };

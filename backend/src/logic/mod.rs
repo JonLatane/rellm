@@ -42,6 +42,9 @@ pub use geocoding::*;
 mod user_counts;
 pub use user_counts::*;
 
+mod server_storage_usage;
+pub use server_storage_usage::*;
+
 mod media_conversion;
 pub use media_conversion::*;
 

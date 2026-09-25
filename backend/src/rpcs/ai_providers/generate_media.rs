@@ -7,9 +7,10 @@ use tonic::{Code, Status};
 
 use crate::db_connection::PgPooledConnection;
 use crate::logic::{
-    build_occasion_message, build_post_message, capabilities_for_model, generate_image,
-    models_for_provider, openai_generate_image, update_media_storage_used, OccasionMessageInput,
-    GeminiImageInput, OpenAiImageInput, PostMessageInput,
+    adjust_server_media_usage_bytes, build_occasion_message, build_post_message,
+    capabilities_for_model, generate_image, models_for_provider, openai_generate_image,
+    update_media_storage_used, OccasionMessageInput, GeminiImageInput, OpenAiImageInput,
+    PostMessageInput,
 };
 use crate::marshaling::*;
 use crate::models;
@@ -389,6 +390,13 @@ pub async fn generate_media(
             Status::new(Code::Internal, "failed_to_create_generated_media")
         })?;
 
+    if let Err(e) = adjust_server_media_usage_bytes(conn, generated_bytes.len() as i64) {
+        log::error!(
+            "Failed to adjust server_media_usage_bytes for generated media {}: {:?}",
+            new_media.id,
+            e
+        );
+    }
     if let Err(e) = update_media_storage_used(current_user.id, conn) {
         log::error!(
             "Failed to update media_storage_bytes_used for user {}: {:?}",

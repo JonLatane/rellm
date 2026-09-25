@@ -14,6 +14,13 @@
 #
 # To add a job, append a "binary_name startup_delay_seconds interval_seconds"
 # entry to JOBS below -- binary_name must have a matching backend/src/bin/*.rs.
+# startup_delay_seconds may instead be the literal string "random", meaning a
+# delay chosen once (at this script's own startup) uniformly at random between
+# 0 and interval_seconds -- useful for a job whose work is expensive against a
+# shared resource (e.g. listing a whole object storage bucket), so that many
+# instances of this script starting at the same wall-clock moment (e.g. a
+# Kubernetes rolling deploy restarting every replica together) don't all run
+# that job at the same moment too, every interval, forever.
 # Each job's binary is resolved (in this order):
 #   1. ./binary_name                    (Homebrew macOS package; single-arch)
 #   2. ./binary_name-<amd64|arm64>      (Linux tarball; arch-suffixed binaries)
@@ -36,6 +43,8 @@ JOBS=(
   "update_user_counts 15 3600"
   "convert_media_sizes 20 600"
   "renew_market_subscriptions 25 3600"
+  "calculate_server_media_usage 30 180"
+  "calculate_server_object_storage_usage random 14400"
 )
 
 cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
@@ -72,6 +81,11 @@ _background_jobs_resolve_bin() {
 
 _background_jobs_run_loop() {
   local name="$1" delay="$2" interval="$3"
+
+  if [ "$delay" = "random" ]; then
+    delay=$((RANDOM % interval))
+    echo "[background_jobs] ${name}: randomized startup delay ${delay}s (interval ${interval}s)"
+  fi
 
   if [ "$delay" -gt 0 ]; then
     sleep "$delay"

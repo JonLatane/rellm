@@ -672,6 +672,8 @@ jobs:
           mv backend/target/release/renew_market_subscriptions backend/target/release/renew_market_subscriptions__server_release &&
           mv backend/target/release/generate_preview_images backend/target/release/generate_preview_images__server_release &&
           mv backend/target/release/delete_preview_images backend/target/release/delete_preview_images__server_release &&
+          mv backend/target/release/calculate_server_media_usage backend/target/release/calculate_server_media_usage__server_release &&
+          mv backend/target/release/calculate_server_object_storage_usage backend/target/release/calculate_server_object_storage_usage__server_release &&
           mv backend/target/release/set_permission backend/target/release/set_permission__server_release &&
           mv backend/target/release/free_all_cluster_resources backend/target/release/free_all_cluster_resources__server_release &&
           mv backend/target/release/to_db_id backend/target/release/to_db_id__server_release &&
@@ -1021,6 +1023,7 @@ jobs:
 
           for bin in rellm disable_cdn_grpc delete_expired_tokens delete_unowned_media \
                      sync_sources update_user_counts convert_media_sizes renew_market_subscriptions generate_preview_images delete_preview_images \
+                     calculate_server_media_usage calculate_server_object_storage_usage \
                      set_permission free_all_cluster_resources to_db_id to_proto_id; do
             cp "backend/target/release/${bin}" "$PKG/${bin}"
             chmod +x "$PKG/${bin}"
@@ -1210,6 +1213,7 @@ jobs:
             src="backend/target/release-${arch}"
             for bin in rellm disable_cdn_grpc delete_expired_tokens delete_unowned_media \
                        sync_sources update_user_counts convert_media_sizes renew_market_subscriptions generate_preview_images delete_preview_images \
+                       calculate_server_media_usage calculate_server_object_storage_usage \
                        set_permission free_all_cluster_resources to_db_id to_proto_id; do
               cp "${src}/${bin}" "$PKG/${bin}-${arch}"
               chmod +x "$PKG/${bin}-${arch}"

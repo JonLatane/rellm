@@ -95,6 +95,36 @@ impl ToDbServerConfiguration for ServerConfiguration {
 pub trait ToProtoServerConfiguration {
     fn to_proto(&self) -> ServerConfiguration;
 }
+
+/// The read-time-fallback logic for `MediaSettings` -- shared between `to_proto()` below (reading
+/// a whole `ServerConfiguration`) and `logic::server_storage_usage::update_media_settings` (which
+/// reads/writes just this one JSONB column in place). Both need the *same* normalization: writing
+/// back a `MediaSettings` whose `default_user_media_allocation_bytes` is still `0` (e.g. one
+/// `adjust_server_media_usage_bytes` built from a never-configured column, which defaults every
+/// field including that one to its zero value) would make this very function's own
+/// `default_user_media_allocation_bytes != 0` staleness check treat that freshly-written blob as
+/// stale on the *next* read, silently discarding the `server_media_usage_bytes` it just wrote back
+/// -- so every writer needs to apply these same fallbacks before persisting, not just readers.
+pub fn normalized_media_settings(raw: Option<serde_json::Value>) -> MediaSettings {
+    let mut media_settings: MediaSettings = raw
+        .and_then(|c| serde_json::from_value::<MediaSettings>(c).ok())
+        .filter(|m| m.default_user_media_allocation_bytes != 0)
+        .unwrap_or(MediaSettings {
+            visible: true,
+            default_moderation: Moderation::Unmoderated as i32,
+            default_visibility: Visibility::GlobalPublic as i32,
+            default_user_media_allocation_bytes: 15_728_640,
+            ..Default::default()
+        });
+    // `server_media_allocation_bytes`'s own 5GB fallback-when-0 -- independent of the whole-blob
+    // fallback above, since this field is newer than `default_user_media_allocation_bytes` and so
+    // is legitimately `0` (unset) on every server configured before it existed, even ones whose
+    // blob is otherwise fine and skips the fallback above entirely. See that field's own proto doc.
+    if media_settings.server_media_allocation_bytes == 0 {
+        media_settings.server_media_allocation_bytes = 5_368_709_120;
+    }
+    media_settings
+}
 impl ToProtoServerConfiguration for models::ServerConfiguration {
     fn to_proto(&self) -> ServerConfiguration {
         let server_info: ServerInfo = serde_json::from_value(self.server_info.to_owned()).unwrap();
@@ -204,23 +234,11 @@ impl ToProtoServerConfiguration for models::ServerConfiguration {
             stripe_webhook_signing_secret: String::new(),
             ..c
         });
-        // Real `MediaSettings` deserialize (replacing the old hardcoded stub) -- falls back to the
-        // 15MB default whenever the stored blob is missing *or* its own
-        // `default_media_allocation_bytes` is `0` (covers every server today, since the column is
-        // brand new) -- see this repo's established read-time-fallback convention
-        // (`deserialize_custom_tabs` above, `federation_info_migration_tests` below) rather than a
-        // SQL backfill migration.
-        let media_settings: MediaSettings = self
-            .media_settings
-            .to_owned()
-            .and_then(|c| serde_json::from_value::<MediaSettings>(c).ok())
-            .filter(|m| m.default_media_allocation_bytes != 0)
-            .unwrap_or(MediaSettings {
-                visible: true,
-                default_moderation: Moderation::Unmoderated as i32,
-                default_visibility: Visibility::GlobalPublic as i32,
-                default_media_allocation_bytes: 15_728_640,
-            });
+        // Real `MediaSettings` deserialize (replacing the old hardcoded stub) -- see
+        // `normalized_media_settings`'s own doc for the read-time-fallback rules this applies (same
+        // established convention as `deserialize_custom_tabs` above/`federation_info_migration_tests`
+        // below, rather than a SQL backfill migration).
+        let media_settings: MediaSettings = normalized_media_settings(self.media_settings.to_owned());
         // `MarketSettings` deserialize -- falls back to `enabled: false` whenever the stored blob
         // is missing (every server before this column existed), same read-time-fallback convention
         // as `media_settings` above. Never stripped for non-admins (see `get_server_configuration`)

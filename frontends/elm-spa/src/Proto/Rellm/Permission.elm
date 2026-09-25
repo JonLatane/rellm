@@ -189,6 +189,9 @@ fieldNumbersPermission n_ =
         EDITCLUSTERSETTINGS ->
             10002
 
+        EDITSERVERMEDIAALLOCATION ->
+            10003
+
         PermissionUnrecognized_ m_ ->
             m_
 
@@ -373,6 +376,9 @@ encodePermission value =
             EDITCLUSTERSETTINGS ->
                 10002
 
+            EDITSERVERMEDIAALLOCATION ->
+                10003
+
             PermissionUnrecognized_ i ->
                 i
 
@@ -551,6 +557,9 @@ decodePermission =
                     10002 ->
                         EDITCLUSTERSETTINGS
 
+                    10003 ->
+                        EDITSERVERMEDIAALLOCATION
+
                     _ ->
                         PermissionUnrecognized_ i
             )
@@ -615,4 +624,5 @@ type Permission
     | ADMIN
     | VIEWPRIVATECONTACTMETHODS
     | EDITCLUSTERSETTINGS
+    | EDITSERVERMEDIAALLOCATION
     | PermissionUnrecognized_ Int

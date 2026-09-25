@@ -259,6 +259,50 @@ pub fn configure_server(
         );
     }
 
+    // `media_settings.server_media_usage_bytes`/`server_media_usage_calculated_at`/
+    // `server_object_storage_usage_bytes`/`server_object_storage_usage_calculated_at` are
+    // read-only -- populated only by the `calculate_server_media_usage`/
+    // `calculate_server_object_storage_usage` background jobs and by incremental adjustments at
+    // Media mutation call sites (see those fields' own docs in server_configuration.proto) -- so
+    // they're always carried forward from the currently active config here, regardless of what
+    // `request` sent for them (never trusted from a client, same reasoning as
+    // `ClusterConductorState.conductor_state.locks` below). `server_media_allocation_bytes`
+    // additionally requires `EDIT_SERVER_MEDIA_ALLOCATION` to actually change here -- same
+    // `validate_exact_permission` gating as `cluster_resources`/`EDIT_CLUSTER_SETTINGS` below --
+    // without it, that one field is *also* carried forward, but the rest of `media_settings`
+    // (`visible`/`default_moderation`/`default_visibility`/
+    // `default_user_media_allocation_bytes`) still comes from `request` as normal, same as any
+    // other plain `ADMIN`-editable setting. A `None` `request.media_settings` leaves the whole
+    // thing untouched (carried forward as-is), same "omitting a submessage never clears it"
+    // treatment as `cluster_resources` below.
+    let existing_media_settings = get_server_configuration_model(conn)
+        .ok()
+        .and_then(|c| c.media_settings)
+        .and_then(|v| serde_json::from_value::<protos::MediaSettings>(v).ok())
+        .unwrap_or_default();
+    let can_edit_server_media_allocation =
+        validate_exact_permission(&Some(user), Permission::EditServerMediaAllocation).is_ok();
+    new_config.media_settings = request.media_settings.as_ref().map(|incoming| {
+        serde_json::to_value(protos::MediaSettings {
+            server_media_allocation_bytes: if can_edit_server_media_allocation {
+                incoming.server_media_allocation_bytes
+            } else {
+                existing_media_settings.server_media_allocation_bytes
+            },
+            server_media_usage_bytes: existing_media_settings.server_media_usage_bytes,
+            server_media_usage_calculated_at: existing_media_settings
+                .server_media_usage_calculated_at
+                .clone(),
+            server_object_storage_usage_bytes: existing_media_settings
+                .server_object_storage_usage_bytes,
+            server_object_storage_usage_calculated_at: existing_media_settings
+                .server_object_storage_usage_calculated_at
+                .clone(),
+            ..incoming.clone()
+        })
+        .unwrap()
+    });
+
     // `cluster_resources` is admin-visible but only *editable* with `EDIT_CLUSTER_SETTINGS` (see
     // that permission's own doc). `conductor_state` as a whole is never *settable* via
     // `ConfigureServer` at all regardless of permission -- only `LockClusterResources`/

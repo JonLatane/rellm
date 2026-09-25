@@ -960,6 +960,21 @@ pub fn configure_market(conn: &mut PgPooledConnection, enabled: bool) {
         .expect("failed to configure test market_settings");
 }
 
+/// Reads `MediaSettings.server_media_usage_bytes` off whichever `server_configurations` row is
+/// currently active -- creating the default one first if needed, via
+/// `rpcs::get_server_configuration_model`, same as `configure_market` -- for specs asserting
+/// `logic::server_storage_usage::adjust_server_media_usage_bytes`'s incremental call sites
+/// (`delete_media`/`delete_media_sizes`/`update_media`/etc.) actually move this figure.
+pub fn server_media_usage_bytes(conn: &mut PgPooledConnection) -> i64 {
+    let config = crate::rpcs::get_server_configuration_model(conn)
+        .expect("failed to load or create test server configuration");
+    config
+        .media_settings
+        .and_then(|v| serde_json::from_value::<MediaSettings>(v).ok())
+        .map(|m| m.server_media_usage_bytes as i64)
+        .unwrap_or(0)
+}
+
 /// Same as `configure_twilio`, but also sets `server_info.name`/`external_cdn_config.frontend_host`
 /// (pass `frontend_host: ""` to leave the CDN config unset) -- for specs on
 /// `contact_verification::verification_sms_body`'s "which server is this from" text, which needs

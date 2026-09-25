@@ -2603,9 +2603,27 @@ type alias Proto__Rellm__MarketSettings =
 
 -}
 fieldNumbersProto__Rellm__MediaSettings :
-    { visible : Int, defaultModeration : Int, defaultVisibility : Int, defaultMediaAllocationBytes : Int }
+    { visible : Int
+    , defaultModeration : Int
+    , defaultVisibility : Int
+    , defaultUserMediaAllocationBytes : Int
+    , serverMediaAllocationBytes : Int
+    , serverMediaUsageBytes : Int
+    , serverMediaUsageCalculatedAt : Int
+    , serverObjectStorageUsageBytes : Int
+    , serverObjectStorageUsageCalculatedAt : Int
+    }
 fieldNumbersProto__Rellm__MediaSettings =
-    { visible = 1, defaultModeration = 2, defaultVisibility = 3, defaultMediaAllocationBytes = 4 }
+    { visible = 1
+    , defaultModeration = 2
+    , defaultVisibility = 3
+    , defaultUserMediaAllocationBytes = 4
+    , serverMediaAllocationBytes = 5
+    , serverMediaUsageBytes = 6
+    , serverMediaUsageCalculatedAt = 7
+    , serverObjectStorageUsageBytes = 8
+    , serverObjectStorageUsageCalculatedAt = 9
+    }
 
 
 {-| Default for Proto__Rellm__MediaSettings. Should only be used for 'required' decoders as an initial value.
@@ -2616,7 +2634,12 @@ defaultProto__Rellm__MediaSettings =
     { visible = False
     , defaultModeration = Proto.Rellm.Moderation.defaultModeration
     , defaultVisibility = Proto.Rellm.Visibility.defaultVisibility
-    , defaultMediaAllocationBytes = Protobuf.Types.Int64.fromInts 0 0
+    , defaultUserMediaAllocationBytes = Protobuf.Types.Int64.fromInts 0 0
+    , serverMediaAllocationBytes = Protobuf.Types.Int64.fromInts 0 0
+    , serverMediaUsageBytes = Protobuf.Types.Int64.fromInts 0 0
+    , serverMediaUsageCalculatedAt = Nothing
+    , serverObjectStorageUsageBytes = Protobuf.Types.Int64.fromInts 0 0
+    , serverObjectStorageUsageCalculatedAt = Nothing
     }
 
 
@@ -2630,7 +2653,18 @@ decodeProto__Rellm__MediaSettings =
         [ Protobuf.Decode.optional 1 Protobuf.Decode.bool (\a r -> { r | visible = a })
         , Protobuf.Decode.optional 2 Proto.Rellm.Moderation.decodeModeration (\a r -> { r | defaultModeration = a })
         , Protobuf.Decode.optional 3 Proto.Rellm.Visibility.decodeVisibility (\a r -> { r | defaultVisibility = a })
-        , Protobuf.Decode.optional 4 Protobuf.Decode.uint64 (\a r -> { r | defaultMediaAllocationBytes = a })
+        , Protobuf.Decode.optional 4 Protobuf.Decode.uint64 (\a r -> { r | defaultUserMediaAllocationBytes = a })
+        , Protobuf.Decode.optional 5 Protobuf.Decode.uint64 (\a r -> { r | serverMediaAllocationBytes = a })
+        , Protobuf.Decode.optional 6 Protobuf.Decode.uint64 (\a r -> { r | serverMediaUsageBytes = a })
+        , Protobuf.Decode.optional
+            7
+            (Protobuf.Decode.map Just Proto.Google.Protobuf.Internals_.decodeProto__Google__Protobuf__Timestamp)
+            (\a r -> { r | serverMediaUsageCalculatedAt = a })
+        , Protobuf.Decode.optional 8 Protobuf.Decode.uint64 (\a r -> { r | serverObjectStorageUsageBytes = a })
+        , Protobuf.Decode.optional
+            9
+            (Protobuf.Decode.map Just Proto.Google.Protobuf.Internals_.decodeProto__Google__Protobuf__Timestamp)
+            (\a r -> { r | serverObjectStorageUsageCalculatedAt = a })
         ]
 
 
@@ -2643,7 +2677,22 @@ encodeProto__Rellm__MediaSettings value =
         [ ( 1, Protobuf.Encode.bool value.visible )
         , ( 2, Proto.Rellm.Moderation.encodeModeration value.defaultModeration )
         , ( 3, Proto.Rellm.Visibility.encodeVisibility value.defaultVisibility )
-        , ( 4, Protobuf.Encode.uint64 value.defaultMediaAllocationBytes )
+        , ( 4, Protobuf.Encode.uint64 value.defaultUserMediaAllocationBytes )
+        , ( 5, Protobuf.Encode.uint64 value.serverMediaAllocationBytes )
+        , ( 6, Protobuf.Encode.uint64 value.serverMediaUsageBytes )
+        , ( 7
+          , (Maybe.map Proto.Google.Protobuf.Internals_.encodeProto__Google__Protobuf__Timestamp
+                >> Maybe.withDefault Protobuf.Encode.none
+            )
+                value.serverMediaUsageCalculatedAt
+          )
+        , ( 8, Protobuf.Encode.uint64 value.serverObjectStorageUsageBytes )
+        , ( 9
+          , (Maybe.map Proto.Google.Protobuf.Internals_.encodeProto__Google__Protobuf__Timestamp
+                >> Maybe.withDefault Protobuf.Encode.none
+            )
+                value.serverObjectStorageUsageCalculatedAt
+          )
         ]
 
 
@@ -2654,7 +2703,12 @@ type alias Proto__Rellm__MediaSettings =
     { visible : Bool
     , defaultModeration : Proto.Rellm.Moderation.Moderation
     , defaultVisibility : Proto.Rellm.Visibility.Visibility
-    , defaultMediaAllocationBytes : Protobuf.Types.Int64.Int64
+    , defaultUserMediaAllocationBytes : Protobuf.Types.Int64.Int64
+    , serverMediaAllocationBytes : Protobuf.Types.Int64.Int64
+    , serverMediaUsageBytes : Protobuf.Types.Int64.Int64
+    , serverMediaUsageCalculatedAt : Maybe Proto.Google.Protobuf.Internals_.Proto__Google__Protobuf__Timestamp
+    , serverObjectStorageUsageBytes : Protobuf.Types.Int64.Int64
+    , serverObjectStorageUsageCalculatedAt : Maybe Proto.Google.Protobuf.Internals_.Proto__Google__Protobuf__Timestamp
     }
 
 

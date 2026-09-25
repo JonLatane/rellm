@@ -323,7 +323,7 @@
 }
 
 /* The number input + KB/MB/GB `<select>` pair for `MediaFeatureSettings`'s
-   `defaultMediaAllocationBytes` (`mediaAllocationInput`) -- narrows the number
+   `defaultUserMediaAllocationBytes` (`mediaAllocationInput`) -- narrows the number
    input down from `.server-details-rename-input`'s full-width default, mirroring
    `profiles.css`'s own `.profile-storage-quota-input` (the same `Shared.ByteFormat`
    pairing, just for a `User`'s own storage quota there). */

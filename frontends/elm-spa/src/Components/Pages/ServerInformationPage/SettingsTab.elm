@@ -20,7 +20,7 @@ import Html.Events exposing (onClick, onInput)
 import Proto.Rellm exposing (ServerConfiguration, defaultEventSettings, defaultFeatureSettings, defaultMediaSettings, defaultPostSettings)
 import Proto.Rellm.CalendarDisplayMode exposing (CalendarDisplayMode(..))
 import Proto.Rellm.Moderation exposing (Moderation(..))
-import Proto.Rellm.Permission exposing (Permission)
+import Proto.Rellm.Permission exposing (Permission(..))
 import Proto.Rellm.Visibility exposing (Visibility(..))
 import Protobuf.Types.Int64 exposing (Int64)
 import Set exposing (Set)
@@ -30,7 +30,9 @@ import Shared.AccountsPanel.RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer)
 import Shared.ByteFormat as ByteFormat
 import Shared.Conversions as Conversions
+import Shared.Time as SharedTime
 import Task
+import Time
 import UI.Classes exposing (classes, openClosedClass)
 
 
@@ -71,6 +73,8 @@ type Msg
     | FeatureSettingsShowStartedOrLongEventsToggled FeatureSettingsSet
     | FeatureSettingsMediaAllocationTextChanged FeatureSettingsSet String
     | FeatureSettingsMediaAllocationUnitChanged FeatureSettingsSet String
+    | FeatureSettingsServerMediaAllocationTextChanged FeatureSettingsSet String
+    | FeatureSettingsServerMediaAllocationUnitChanged FeatureSettingsSet String
     | FeatureSettingsCancelClicked FeatureSettingsSet
     | FeatureSettingsSaveClicked FeatureSettingsSet
     | GotFeatureSettingsSaveResult FeatureSettingsSet (Result Grpc.Error ( Maybe AccountsPanel.Msg, ServerConfiguration ))
@@ -126,7 +130,7 @@ see `featureSettingsFieldsFor`, which gates which rows `featureSettingsDisplayVi
 `applyFeatureSettingsFor` only writes back the ones the real proto type underneath actually has.
 `aliasSingular`/`aliasPlural`/`calendarLookbackDays`/`mediaAllocationText` are the raw pending
 `<input>` text (empty means "unset" -- see `optionalString`/`optionalNonNegativeInt`; a blank or
-unparseable `mediaAllocationText` instead just leaves `defaultMediaAllocationBytes` at its prior
+unparseable `mediaAllocationText` instead just leaves `defaultUserMediaAllocationBytes` at its prior
 value, since that field is a plain `uint64`, not `optional`), not the `Maybe String`/`Maybe Int`
 the proto itself uses. `mediaAllocationText`/`mediaAllocationUnit` pair the same way
 `Components.Pages.UserProfilePage.StorageQuotaEdit`'s `pending`/`unit` do, via the shared
@@ -144,6 +148,24 @@ type alias FeatureSettingsEdit =
     , showStartedOrLongEventsByDefault : Bool
     , mediaAllocationText : String
     , mediaAllocationUnit : ByteFormat.ByteUnit
+
+    -- `MediaFeatureSettings`-only, same as the `mediaAllocation*` pair above -- see
+    -- `featureSettingsFieldsFor`'s `serverMediaUsage` flag. `canEditServerMediaAllocation` is
+    -- snapshotted from the editing admin's own permissions at `FeatureSettingsEditClicked` time
+    -- (see `EDIT_SERVER_MEDIA_ALLOCATION`'s own proto doc) and gates whether
+    -- `serverMediaAllocationText`/`Unit` render as an editable input or plain read-only text in
+    -- `featureSettingsEditView`; `applyFeatureSettingsFor` only writes `serverMediaAllocationBytes`
+    -- back when it's `True`. The four `server*UsageBytes`/`*CalculatedAt` fields are read-only in
+    -- every case -- snapshotted purely so `featureSettingsEditView` has something to show without
+    -- needing `FeatureSettingsSummary` threaded through it too.
+    , serverMediaAllocationText : String
+    , serverMediaAllocationUnit : ByteFormat.ByteUnit
+    , canEditServerMediaAllocation : Bool
+    , serverMediaAllocationBytes : Maybe Int
+    , serverMediaUsageBytes : Maybe Int
+    , serverMediaUsageCalculatedAt : Maybe Time.Posix
+    , serverObjectStorageUsageBytes : Maybe Int
+    , serverObjectStorageUsageCalculatedAt : Maybe Time.Posix
     , status : AccountsPanel.FormStatus
     }
 
@@ -276,6 +298,20 @@ update shared targetHost maybeServer msg model =
                         mediaAllocationUnit : ByteFormat.ByteUnit
                         mediaAllocationUnit =
                             ByteFormat.bytesToUnit mediaAllocationBytes
+
+                        serverMediaAllocationBytes : Int
+                        serverMediaAllocationBytes =
+                            Maybe.withDefault 0 current.serverMediaAllocationBytes
+
+                        serverMediaAllocationUnit : ByteFormat.ByteUnit
+                        serverMediaAllocationUnit =
+                            ByteFormat.bytesToUnit serverMediaAllocationBytes
+
+                        canEditServerMediaAllocation : Bool
+                        canEditServerMediaAllocation =
+                            Common.adminAccountFor shared targetHost
+                                |> Maybe.map (\account -> List.member EDITSERVERMEDIAALLOCATION account.permissions)
+                                |> Maybe.withDefault False
                     in
                     ( setFeatureSettingsEditFor set
                         (Just
@@ -290,6 +326,14 @@ update shared targetHost maybeServer msg model =
                             , showStartedOrLongEventsByDefault = Maybe.withDefault False current.showStartedOrLongEventsByDefault
                             , mediaAllocationText = String.fromFloat (toFloat mediaAllocationBytes / toFloat (ByteFormat.byteUnitBytes mediaAllocationUnit))
                             , mediaAllocationUnit = mediaAllocationUnit
+                            , serverMediaAllocationText = String.fromFloat (toFloat serverMediaAllocationBytes / toFloat (ByteFormat.byteUnitBytes serverMediaAllocationUnit))
+                            , serverMediaAllocationUnit = serverMediaAllocationUnit
+                            , canEditServerMediaAllocation = canEditServerMediaAllocation
+                            , serverMediaAllocationBytes = current.serverMediaAllocationBytes
+                            , serverMediaUsageBytes = current.serverMediaUsageBytes
+                            , serverMediaUsageCalculatedAt = current.serverMediaUsageCalculatedAt
+                            , serverObjectStorageUsageBytes = current.serverObjectStorageUsageBytes
+                            , serverObjectStorageUsageCalculatedAt = current.serverObjectStorageUsageCalculatedAt
                             , status = AccountsPanel.Idle
                             }
                         )
@@ -373,6 +417,22 @@ update shared targetHost maybeServer msg model =
             ( setFeatureSettingsEditFor set
                 (featureSettingsEditFor set model
                     |> Maybe.map (\edit -> { edit | mediaAllocationUnit = ByteFormat.byteUnitFromText text |> Maybe.withDefault edit.mediaAllocationUnit })
+                )
+                model
+            , Effect.none
+            )
+
+        FeatureSettingsServerMediaAllocationTextChanged set text ->
+            ( setFeatureSettingsEditFor set
+                (featureSettingsEditFor set model |> Maybe.map (\edit -> { edit | serverMediaAllocationText = text }))
+                model
+            , Effect.none
+            )
+
+        FeatureSettingsServerMediaAllocationUnitChanged set text ->
+            ( setFeatureSettingsEditFor set
+                (featureSettingsEditFor set model
+                    |> Maybe.map (\edit -> { edit | serverMediaAllocationUnit = ByteFormat.byteUnitFromText text |> Maybe.withDefault edit.serverMediaAllocationUnit })
                 )
                 model
             , Effect.none
@@ -619,23 +679,23 @@ which rows `featureSettingsDisplayView`/`featureSettingsEditView` show, and whic
 have `mediaAllocation`, unique to it); `FeatureSettings` (People/Groups) has only alias;
 `PostSettings` adds replies; `EventSettings` alone has all four calendar/replies/alias fields.
 -}
-featureSettingsFieldsFor : FeatureSettingsSet -> { alias : Bool, replies : Bool, calendarLookback : Bool, calendarDisplayMode : Bool, showStartedOrLongEventsByDefault : Bool, mediaAllocation : Bool }
+featureSettingsFieldsFor : FeatureSettingsSet -> { alias : Bool, replies : Bool, calendarLookback : Bool, calendarDisplayMode : Bool, showStartedOrLongEventsByDefault : Bool, mediaAllocation : Bool, serverMediaUsage : Bool }
 featureSettingsFieldsFor set =
     case set of
         PeopleFeatureSettings ->
-            { alias = True, replies = False, calendarLookback = False, calendarDisplayMode = False, showStartedOrLongEventsByDefault = False, mediaAllocation = False }
+            { alias = True, replies = False, calendarLookback = False, calendarDisplayMode = False, showStartedOrLongEventsByDefault = False, mediaAllocation = False, serverMediaUsage = False }
 
         GroupFeatureSettings ->
-            { alias = True, replies = False, calendarLookback = False, calendarDisplayMode = False, showStartedOrLongEventsByDefault = False, mediaAllocation = False }
+            { alias = True, replies = False, calendarLookback = False, calendarDisplayMode = False, showStartedOrLongEventsByDefault = False, mediaAllocation = False, serverMediaUsage = False }
 
         PostFeatureSettings ->
-            { alias = True, replies = True, calendarLookback = False, calendarDisplayMode = False, showStartedOrLongEventsByDefault = False, mediaAllocation = False }
+            { alias = True, replies = True, calendarLookback = False, calendarDisplayMode = False, showStartedOrLongEventsByDefault = False, mediaAllocation = False, serverMediaUsage = False }
 
         EventFeatureSettings ->
-            { alias = True, replies = True, calendarLookback = True, calendarDisplayMode = True, showStartedOrLongEventsByDefault = True, mediaAllocation = False }
+            { alias = True, replies = True, calendarLookback = True, calendarDisplayMode = True, showStartedOrLongEventsByDefault = True, mediaAllocation = False, serverMediaUsage = False }
 
         MediaFeatureSettings ->
-            { alias = False, replies = False, calendarLookback = False, calendarDisplayMode = False, showStartedOrLongEventsByDefault = False, mediaAllocation = True }
+            { alias = False, replies = False, calendarLookback = False, calendarDisplayMode = False, showStartedOrLongEventsByDefault = False, mediaAllocation = True, serverMediaUsage = True }
 
 
 {-| `currentFeatureSettingsFor`'s return shape -- every field every `FeatureSettingsSet` might show,
@@ -652,6 +712,17 @@ type alias FeatureSettingsSummary =
     , calendarDisplayMode : Maybe CalendarDisplayMode
     , showStartedOrLongEventsByDefault : Maybe Bool
     , mediaAllocationBytes : Maybe Int
+
+    -- `MediaFeatureSettings`-only -- see `FeatureSettingsEdit`'s matching fields for why these are
+    -- `Maybe` rather than plain values the way `mediaAllocationBytes` above technically could be
+    -- too (kept `Maybe` for symmetry with these four, which are genuinely unknown -- `0`/unset --
+    -- until the first `calculate_server_media_usage`/`calculate_server_object_storage_usage`
+    -- background job run on a freshly configured server).
+    , serverMediaAllocationBytes : Maybe Int
+    , serverMediaUsageBytes : Maybe Int
+    , serverMediaUsageCalculatedAt : Maybe Time.Posix
+    , serverObjectStorageUsageBytes : Maybe Int
+    , serverObjectStorageUsageCalculatedAt : Maybe Time.Posix
     }
 
 
@@ -674,7 +745,7 @@ currentFeatureSettingsFor set config =
                 s =
                     Maybe.withDefault defaultFeatureSettings config.peopleSettings
             in
-            { visible = s.visible, moderation = s.defaultModeration, visibility = s.defaultVisibility, aliasSingular = s.aliasSingular, aliasPlural = s.aliasPlural, enableReplies = Nothing, calendarLookbackDays = Nothing, calendarDisplayMode = Nothing, showStartedOrLongEventsByDefault = Nothing, mediaAllocationBytes = Nothing }
+            { visible = s.visible, moderation = s.defaultModeration, visibility = s.defaultVisibility, aliasSingular = s.aliasSingular, aliasPlural = s.aliasPlural, enableReplies = Nothing, calendarLookbackDays = Nothing, calendarDisplayMode = Nothing, showStartedOrLongEventsByDefault = Nothing, mediaAllocationBytes = Nothing, serverMediaAllocationBytes = Nothing, serverMediaUsageBytes = Nothing, serverMediaUsageCalculatedAt = Nothing, serverObjectStorageUsageBytes = Nothing, serverObjectStorageUsageCalculatedAt = Nothing }
 
         GroupFeatureSettings ->
             let
@@ -682,7 +753,7 @@ currentFeatureSettingsFor set config =
                 s =
                     Maybe.withDefault defaultFeatureSettings config.groupSettings
             in
-            { visible = s.visible, moderation = s.defaultModeration, visibility = s.defaultVisibility, aliasSingular = s.aliasSingular, aliasPlural = s.aliasPlural, enableReplies = Nothing, calendarLookbackDays = Nothing, calendarDisplayMode = Nothing, showStartedOrLongEventsByDefault = Nothing, mediaAllocationBytes = Nothing }
+            { visible = s.visible, moderation = s.defaultModeration, visibility = s.defaultVisibility, aliasSingular = s.aliasSingular, aliasPlural = s.aliasPlural, enableReplies = Nothing, calendarLookbackDays = Nothing, calendarDisplayMode = Nothing, showStartedOrLongEventsByDefault = Nothing, mediaAllocationBytes = Nothing, serverMediaAllocationBytes = Nothing, serverMediaUsageBytes = Nothing, serverMediaUsageCalculatedAt = Nothing, serverObjectStorageUsageBytes = Nothing, serverObjectStorageUsageCalculatedAt = Nothing }
 
         PostFeatureSettings ->
             let
@@ -690,7 +761,7 @@ currentFeatureSettingsFor set config =
                 s =
                     Maybe.withDefault defaultPostSettings config.postSettings
             in
-            { visible = s.visible, moderation = s.defaultModeration, visibility = s.defaultVisibility, aliasSingular = s.aliasSingular, aliasPlural = s.aliasPlural, enableReplies = s.enableReplies, calendarLookbackDays = Nothing, calendarDisplayMode = Nothing, showStartedOrLongEventsByDefault = Nothing, mediaAllocationBytes = Nothing }
+            { visible = s.visible, moderation = s.defaultModeration, visibility = s.defaultVisibility, aliasSingular = s.aliasSingular, aliasPlural = s.aliasPlural, enableReplies = s.enableReplies, calendarLookbackDays = Nothing, calendarDisplayMode = Nothing, showStartedOrLongEventsByDefault = Nothing, mediaAllocationBytes = Nothing, serverMediaAllocationBytes = Nothing, serverMediaUsageBytes = Nothing, serverMediaUsageCalculatedAt = Nothing, serverObjectStorageUsageBytes = Nothing, serverObjectStorageUsageCalculatedAt = Nothing }
 
         EventFeatureSettings ->
             let
@@ -698,7 +769,7 @@ currentFeatureSettingsFor set config =
                 s =
                     Maybe.withDefault defaultEventSettings config.eventSettings
             in
-            { visible = s.visible, moderation = s.defaultModeration, visibility = s.defaultVisibility, aliasSingular = s.aliasSingular, aliasPlural = s.aliasPlural, enableReplies = s.enableReplies, calendarLookbackDays = s.calendarLookbackDays, calendarDisplayMode = Just s.defaultCalendarDisplayMode, showStartedOrLongEventsByDefault = Just s.showStartedOrLongEventsByDefault, mediaAllocationBytes = Nothing }
+            { visible = s.visible, moderation = s.defaultModeration, visibility = s.defaultVisibility, aliasSingular = s.aliasSingular, aliasPlural = s.aliasPlural, enableReplies = s.enableReplies, calendarLookbackDays = s.calendarLookbackDays, calendarDisplayMode = Just s.defaultCalendarDisplayMode, showStartedOrLongEventsByDefault = Just s.showStartedOrLongEventsByDefault, mediaAllocationBytes = Nothing, serverMediaAllocationBytes = Nothing, serverMediaUsageBytes = Nothing, serverMediaUsageCalculatedAt = Nothing, serverObjectStorageUsageBytes = Nothing, serverObjectStorageUsageCalculatedAt = Nothing }
 
         MediaFeatureSettings ->
             let
@@ -706,7 +777,22 @@ currentFeatureSettingsFor set config =
                 s =
                     Maybe.withDefault defaultMediaSettings config.mediaSettings
             in
-            { visible = s.visible, moderation = s.defaultModeration, visibility = s.defaultVisibility, aliasSingular = Nothing, aliasPlural = Nothing, enableReplies = Nothing, calendarLookbackDays = Nothing, calendarDisplayMode = Nothing, showStartedOrLongEventsByDefault = Nothing, mediaAllocationBytes = Just (Conversions.int64ToInt s.defaultMediaAllocationBytes) }
+            { visible = s.visible
+            , moderation = s.defaultModeration
+            , visibility = s.defaultVisibility
+            , aliasSingular = Nothing
+            , aliasPlural = Nothing
+            , enableReplies = Nothing
+            , calendarLookbackDays = Nothing
+            , calendarDisplayMode = Nothing
+            , showStartedOrLongEventsByDefault = Nothing
+            , mediaAllocationBytes = Just (Conversions.int64ToInt s.defaultUserMediaAllocationBytes)
+            , serverMediaAllocationBytes = Just (Conversions.int64ToInt s.serverMediaAllocationBytes)
+            , serverMediaUsageBytes = Just (Conversions.int64ToInt s.serverMediaUsageBytes)
+            , serverMediaUsageCalculatedAt = s.serverMediaUsageCalculatedAt |> Maybe.map Conversions.timestampToPosix
+            , serverObjectStorageUsageBytes = Just (Conversions.int64ToInt s.serverObjectStorageUsageBytes)
+            , serverObjectStorageUsageCalculatedAt = s.serverObjectStorageUsageCalculatedAt |> Maybe.map Conversions.timestampToPosix
+            }
 
 
 {-| Overlays a `FeatureSettingsEdit`'s `visible`/`moderation`/`visibility` onto whichever of
@@ -828,9 +914,31 @@ applyFeatureSettingsFor set edit config =
                 mediaAllocationBytes =
                     ByteFormat.parseBytes edit.mediaAllocationUnit edit.mediaAllocationText
                         |> Maybe.map Conversions.int64FromInt
-                        |> Maybe.withDefault updated.defaultMediaAllocationBytes
+                        |> Maybe.withDefault updated.defaultUserMediaAllocationBytes
+
+                -- Only actually overlaid when `edit.canEditServerMediaAllocation` (snapshotted at
+                -- `FeatureSettingsEditClicked` time from the editing admin's own permissions -- see
+                -- `EDIT_SERVER_MEDIA_ALLOCATION`'s own proto doc); otherwise `updated` already
+                -- carries the live, freshly-refetched value forward unchanged, same as every other
+                -- field this branch doesn't explicitly overlay.
+                serverMediaAllocationBytes : Int64
+                serverMediaAllocationBytes =
+                    if edit.canEditServerMediaAllocation then
+                        ByteFormat.parseBytes edit.serverMediaAllocationUnit edit.serverMediaAllocationText
+                            |> Maybe.map Conversions.int64FromInt
+                            |> Maybe.withDefault updated.serverMediaAllocationBytes
+
+                    else
+                        updated.serverMediaAllocationBytes
             in
-            { config | mediaSettings = Just { updated | defaultMediaAllocationBytes = mediaAllocationBytes } }
+            { config
+                | mediaSettings =
+                    Just
+                        { updated
+                            | defaultUserMediaAllocationBytes = mediaAllocationBytes
+                            , serverMediaAllocationBytes = serverMediaAllocationBytes
+                        }
+            }
 
 
 {-| Starts a `PermissionsEdit` off `currentPermissions` (that set's own, as currently configured) --
@@ -878,8 +986,8 @@ addablePermissions pending =
 -- VIEW
 
 
-view : RellmServer -> Maybe RellmAccount -> Model -> Html Msg
-view server maybeAdminAccount model =
+view : Shared.Model -> RellmServer -> Maybe RellmAccount -> Model -> Html Msg
+view shared server maybeAdminAccount model =
     let
         config : ServerConfiguration
         config =
@@ -893,7 +1001,8 @@ view server maybeAdminAccount model =
             ++ ([ PeopleFeatureSettings, GroupFeatureSettings, PostFeatureSettings, EventFeatureSettings, MediaFeatureSettings ]
                     |> List.map
                         (\set ->
-                            featureSettingsSection set
+                            featureSettingsSection shared.time
+                                set
                                 maybeAdminAccount
                                 (featureSettingsEditFor set model)
                                 (Set.member (featureSettingsKey set) model.collapsedFeatureSettings)
@@ -991,8 +1100,8 @@ arrow is a single static "▼" rotated via `.expandable-section-arrow.is-open` i
 between "▸"/"▾".
 
 -}
-featureSettingsSection : FeatureSettingsSet -> Maybe RellmAccount -> Maybe FeatureSettingsEdit -> Bool -> FeatureSettingsSummary -> Html Msg
-featureSettingsSection set maybeAdminAccount maybeEdit collapsed current =
+featureSettingsSection : SharedTime.Model -> FeatureSettingsSet -> Maybe RellmAccount -> Maybe FeatureSettingsEdit -> Bool -> FeatureSettingsSummary -> Html Msg
+featureSettingsSection time set maybeAdminAccount maybeEdit collapsed current =
     let
         expanded : Bool
         expanded =
@@ -1011,10 +1120,10 @@ featureSettingsSection set maybeAdminAccount maybeEdit collapsed current =
             [ div [ Html.Attributes.class "expandable-section-content-inner" ]
                 [ case maybeEdit of
                     Just edit ->
-                        featureSettingsEditView set edit
+                        featureSettingsEditView time set edit
 
                     Nothing ->
-                        featureSettingsDisplayView set maybeAdminAccount current
+                        featureSettingsDisplayView time set maybeAdminAccount current
                 ]
             ]
         ]
@@ -1028,10 +1137,10 @@ actually show is gated by `featureSettingsFieldsFor set` -- e.g. Media shows non
 Events shows a display mode. The Edit button is only shown to an admin (`maybeAdminAccount`), same
 as `permissionsSection`.
 -}
-featureSettingsDisplayView : FeatureSettingsSet -> Maybe RellmAccount -> FeatureSettingsSummary -> Html Msg
-featureSettingsDisplayView set maybeAdminAccount current =
+featureSettingsDisplayView : SharedTime.Model -> FeatureSettingsSet -> Maybe RellmAccount -> FeatureSettingsSummary -> Html Msg
+featureSettingsDisplayView time set maybeAdminAccount current =
     let
-        fields : { alias : Bool, replies : Bool, calendarLookback : Bool, calendarDisplayMode : Bool, showStartedOrLongEventsByDefault : Bool, mediaAllocation : Bool }
+        fields : { alias : Bool, replies : Bool, calendarLookback : Bool, calendarDisplayMode : Bool, showStartedOrLongEventsByDefault : Bool, mediaAllocation : Bool, serverMediaUsage : Bool }
         fields =
             featureSettingsFieldsFor set
 
@@ -1073,7 +1182,17 @@ featureSettingsDisplayView set maybeAdminAccount current =
               else
                 []
             , if fields.mediaAllocation then
-                [ Common.settingsRow "Default Media Allocation" (textValue (current.mediaAllocationBytes |> Maybe.map ByteFormat.formatBytes |> Maybe.withDefault "—")) ]
+                [ Common.settingsRow "Default User Media Allocation" (textValue (current.mediaAllocationBytes |> Maybe.map ByteFormat.formatBytes |> Maybe.withDefault "—")) ]
+
+              else
+                []
+            , if fields.serverMediaUsage then
+                [ Common.settingsRow "Server Media Allocation" (textValue (current.serverMediaAllocationBytes |> Maybe.map ByteFormat.formatBytes |> Maybe.withDefault "—"))
+                , Common.settingsRow "Server Media Usage" (textValue (current.serverMediaUsageBytes |> Maybe.map ByteFormat.formatBytes |> Maybe.withDefault "—"))
+                , Common.settingsRow "Server Media Usage Calculated At" (textValue (current.serverMediaUsageCalculatedAt |> Maybe.map (SharedTime.formatMoment time) |> Maybe.withDefault "—"))
+                , Common.settingsRow "Server Object Storage Usage" (textValue (current.serverObjectStorageUsageBytes |> Maybe.map ByteFormat.formatBytes |> Maybe.withDefault "—"))
+                , Common.settingsRow "Server Object Storage Usage Calculated At" (textValue (current.serverObjectStorageUsageCalculatedAt |> Maybe.map (SharedTime.formatMoment time) |> Maybe.withDefault "—"))
+                ]
 
               else
                 []
@@ -1097,10 +1216,10 @@ editing case. `moderation`/`visibility` are narrowed to `allowedDefaultModeratio
 `default_moderation`/`default_visibility`); which of the rest actually show is gated by
 `featureSettingsFieldsFor set`, same as `featureSettingsDisplayView`.
 -}
-featureSettingsEditView : FeatureSettingsSet -> FeatureSettingsEdit -> Html Msg
-featureSettingsEditView set edit =
+featureSettingsEditView : SharedTime.Model -> FeatureSettingsSet -> FeatureSettingsEdit -> Html Msg
+featureSettingsEditView time set edit =
     let
-        fields : { alias : Bool, replies : Bool, calendarLookback : Bool, calendarDisplayMode : Bool, showStartedOrLongEventsByDefault : Bool, mediaAllocation : Bool }
+        fields : { alias : Bool, replies : Bool, calendarLookback : Bool, calendarDisplayMode : Bool, showStartedOrLongEventsByDefault : Bool, mediaAllocation : Bool, serverMediaUsage : Bool }
         fields =
             featureSettingsFieldsFor set
 
@@ -1113,6 +1232,10 @@ featureSettingsEditView set edit =
                 , disabled (edit.status == AccountsPanel.Submitting)
                 ]
                 []
+
+        textValue : String -> Html Msg
+        textValue text_ =
+            span [ Html.Attributes.class "server-details-feature-settings-value" ] [ text text_ ]
     in
     div [ Html.Attributes.class "server-details-feature-settings-edit" ]
         (List.concat
@@ -1190,7 +1313,23 @@ featureSettingsEditView set edit =
               else
                 []
             , if fields.mediaAllocation then
-                [ Common.settingsRow "Default Media Allocation" (mediaAllocationInput set edit) ]
+                [ Common.settingsRow "Default User Media Allocation" (mediaAllocationInput set edit) ]
+
+              else
+                []
+            , if fields.serverMediaUsage then
+                [ Common.settingsRow "Server Media Allocation"
+                    (if edit.canEditServerMediaAllocation then
+                        serverMediaAllocationInput set edit
+
+                     else
+                        textValue (edit.serverMediaAllocationBytes |> Maybe.map ByteFormat.formatBytes |> Maybe.withDefault "—")
+                    )
+                , Common.settingsRow "Server Media Usage" (textValue (edit.serverMediaUsageBytes |> Maybe.map ByteFormat.formatBytes |> Maybe.withDefault "—"))
+                , Common.settingsRow "Server Media Usage Calculated At" (textValue (edit.serverMediaUsageCalculatedAt |> Maybe.map (SharedTime.formatMoment time) |> Maybe.withDefault "—"))
+                , Common.settingsRow "Server Object Storage Usage" (textValue (edit.serverObjectStorageUsageBytes |> Maybe.map ByteFormat.formatBytes |> Maybe.withDefault "—"))
+                , Common.settingsRow "Server Object Storage Usage Calculated At" (textValue (edit.serverObjectStorageUsageCalculatedAt |> Maybe.map (SharedTime.formatMoment time) |> Maybe.withDefault "—"))
+                ]
 
               else
                 []
@@ -1208,8 +1347,8 @@ featureSettingsEditView set edit =
 `mediaAllocationUnit` (`MediaFeatureSettings` only, see `featureSettingsFieldsFor`) -- the same
 `Shared.ByteFormat` pairing `Components.Pages.UserProfilePage`'s own storage quota editor
 (`storageQuotaEditView`) uses for a `User.mediaStorageLimitBytes`, reused here for
-`MediaSettings.defaultMediaAllocationBytes` instead. Unlike that editor there's no "Unlimited"
-checkbox -- `default_media_allocation_bytes` is a plain `uint64`, not `optional`.
+`MediaSettings.defaultUserMediaAllocationBytes` instead. Unlike that editor there's no "Unlimited"
+checkbox -- `default_user_media_allocation_bytes` is a plain `uint64`, not `optional`.
 -}
 mediaAllocationInput : FeatureSettingsSet -> FeatureSettingsEdit -> Html Msg
 mediaAllocationInput set edit =
@@ -1229,6 +1368,37 @@ mediaAllocationInput set edit =
                     (\unit ->
                         option
                             [ value (ByteFormat.byteUnitText unit), selected (edit.mediaAllocationUnit == unit) ]
+                            [ text (ByteFormat.byteUnitText unit) ]
+                    )
+            )
+        ]
+
+
+{-| Same pairing as `mediaAllocationInput` above, just for `FeatureSettingsEdit.serverMediaAllocationText`/
+`Unit` (`MediaSettings.server_media_allocation_bytes`) instead of `mediaAllocationText`/`Unit`
+(`default_user_media_allocation_bytes`). Only ever rendered when `edit.canEditServerMediaAllocation`
+is `True` -- see `featureSettingsEditView`'s own call site, which falls back to plain read-only text
+otherwise (the `EDIT_SERVER_MEDIA_ALLOCATION` permission gate -- see that permission's own proto
+doc -- happens at that call site, not in here).
+-}
+serverMediaAllocationInput : FeatureSettingsSet -> FeatureSettingsEdit -> Html Msg
+serverMediaAllocationInput set edit =
+    span [ Html.Attributes.class "server-details-media-allocation-input" ]
+        [ input
+            [ Html.Attributes.class "server-details-rename-input"
+            , Html.Attributes.type_ "number"
+            , Html.Attributes.min "0"
+            , value edit.serverMediaAllocationText
+            , onInput (FeatureSettingsServerMediaAllocationTextChanged set)
+            , disabled (edit.status == AccountsPanel.Submitting)
+            ]
+            []
+        , select [ onInput (FeatureSettingsServerMediaAllocationUnitChanged set) ]
+            ([ ByteFormat.KB, ByteFormat.MB, ByteFormat.GB ]
+                |> List.map
+                    (\unit ->
+                        option
+                            [ value (ByteFormat.byteUnitText unit), selected (edit.serverMediaAllocationUnit == unit) ]
                             [ text (ByteFormat.byteUnitText unit) ]
                     )
             )

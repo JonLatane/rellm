@@ -180,17 +180,25 @@ pub fn update_user(
                 );
             }
             if admin {
-                // `EDIT_CLUSTER_SETTINGS` is deliberately never settable via `UpdateUser` -- see
-                // that permission's own doc -- so it's always carried forward from whatever the
-                // user already had, regardless of what this request asked for (grant or revoke).
-                let has_cluster_settings = existing_user
-                    .permissions
-                    .to_proto_permissions()
-                    .contains(&Permission::EditClusterSettings);
+                // `EDIT_CLUSTER_SETTINGS`/`EDIT_SERVER_MEDIA_ALLOCATION` are deliberately never
+                // settable via `UpdateUser` -- see their own docs -- so each is always carried
+                // forward from whatever the user already had, regardless of what this request
+                // asked for (grant or revoke).
+                let existing_permissions = existing_user.permissions.to_proto_permissions();
+                let has_cluster_settings =
+                    existing_permissions.contains(&Permission::EditClusterSettings);
+                let has_server_media_allocation =
+                    existing_permissions.contains(&Permission::EditServerMediaAllocation);
                 let mut permissions = request.permissions.to_proto_permissions();
-                permissions.retain(|p| *p != Permission::EditClusterSettings);
+                permissions.retain(|p| {
+                    *p != Permission::EditClusterSettings
+                        && *p != Permission::EditServerMediaAllocation
+                });
                 if has_cluster_settings {
                     permissions.push(Permission::EditClusterSettings);
+                }
+                if has_server_media_allocation {
+                    permissions.push(Permission::EditServerMediaAllocation);
                 }
                 existing_user.permissions = permissions.to_json_permissions();
 

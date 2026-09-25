@@ -67,7 +67,7 @@ fn period_suffix(period: PurchasePeriod) -> &'static str {
 }
 
 /// A byte count -> `"1.5GB"`/`"100MB"`/`"512KB"`/`"3B"` -- binary (1024-based) units, matching how
-/// `MediaSettings.default_media_allocation_bytes`'s own 15MB default is actually computed
+/// `MediaSettings.default_user_media_allocation_bytes`'s own 15MB default is actually computed
 /// (`15 * 1024 * 1024`), at most one decimal place, trailing `.0` dropped.
 fn humanize_bytes(bytes: u64) -> String {
     const KB: u64 = 1024;
