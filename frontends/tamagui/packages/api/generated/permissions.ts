@@ -230,6 +230,15 @@ export enum Permission {
    * operator action, never a side effect of a normal admin-managing-admins flow.
    */
   EDIT_CLUSTER_SETTINGS = 10002,
+  /**
+   * EDIT_SERVER_MEDIA_ALLOCATION - Allow the user to edit [`MediaSettings.server_media_allocation_bytes`](#rellm-MediaSettings)
+   * via [`ConfigureServer`](#grpc-api-ConfigureServer). Raising this cap changes how much total
+   * Media storage the server will accept across every user, so - same reasoning as
+   * `EDIT_CLUSTER_SETTINGS` above - it's kept separate from `ADMIN` and deliberately *not*
+   * grantable via [`UpdateUser`](#grpc-api-UpdateUser), only settable directly in the database
+   * (e.g. via the `set_permission` binary).
+   */
+  EDIT_SERVER_MEDIA_ALLOCATION = 10003,
   UNRECOGNIZED = -1,
 }
 
@@ -400,6 +409,9 @@ export function permissionFromJSON(object: any): Permission {
     case 10002:
     case "EDIT_CLUSTER_SETTINGS":
       return Permission.EDIT_CLUSTER_SETTINGS;
+    case 10003:
+    case "EDIT_SERVER_MEDIA_ALLOCATION":
+      return Permission.EDIT_SERVER_MEDIA_ALLOCATION;
     case -1:
     case "UNRECOGNIZED":
     default:
@@ -519,6 +531,8 @@ export function permissionToJSON(object: Permission): string {
       return "VIEW_PRIVATE_CONTACT_METHODS";
     case Permission.EDIT_CLUSTER_SETTINGS:
       return "EDIT_CLUSTER_SETTINGS";
+    case Permission.EDIT_SERVER_MEDIA_ALLOCATION:
+      return "EDIT_SERVER_MEDIA_ALLOCATION";
     case Permission.UNRECOGNIZED:
     default:
       return "UNRECOGNIZED";

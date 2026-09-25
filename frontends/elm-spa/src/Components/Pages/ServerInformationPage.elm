@@ -703,7 +703,7 @@ tabContent shared model server =
             Html.map ThemeTabMsg (ThemeTab.view shared server maybeAdminAccount model.themeTab)
 
         TabSettings ->
-            Html.map SettingsTabMsg (SettingsTab.view server maybeAdminAccount model.settingsTab)
+            Html.map SettingsTabMsg (SettingsTab.view shared server maybeAdminAccount model.settingsTab)
 
         TabFederation ->
             Html.map FederationTabMsg (FederationTab.view shared server maybeAdminAccount model.federationTab)

@@ -25,7 +25,7 @@ export enum PurchaseType {
    * PURCHASE_TYPE_MEDIA_STORAGE - Extra media storage allocation -- fulfillment sets the buyer's `User.media_storage_limit_bytes`
    * to `MediaStoragePurchaseDetails.allocation_bytes` outright (not additive with any existing
    * quota). On cancellation/expiry, reverts to the server's current configured default allocation
-   * (`ServerConfiguration.media_settings.default_media_allocation_bytes`), not to unlimited.
+   * (`ServerConfiguration.media_settings.default_user_media_allocation_bytes`), not to unlimited.
    */
   PURCHASE_TYPE_MEDIA_STORAGE = 0,
   /**

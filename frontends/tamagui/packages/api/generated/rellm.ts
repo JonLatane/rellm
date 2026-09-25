@@ -520,7 +520,7 @@ export const protobufPackage = "rellm";
  * [`CancelMarketSubscription`](#grpc-api-CancelMarketSubscription), either of which sets `canceled_at`. The
  * entitlement itself stays in effect until whichever is later of `renews_at`/`canceled_at` - once both have
  * passed, the `renew_market_subscriptions` background job revokes it (reverts `media_storage_limit_bytes` to
- * `ServerConfiguration.media_settings.default_media_allocation_bytes`, or removes the granted `Permission`s,
+ * `ServerConfiguration.media_settings.default_user_media_allocation_bytes`, or removes the granted `Permission`s,
  * depending on `type`) and sets `service_terminated_at`. A user's own MarketSubscriptions (never anyone
  * else's) are listed via [`GetMarketSubscriptions`](#grpc-api-GetMarketSubscriptions), and also travel along
  * on [`User`](#rellm-User) itself (`User.market_subscriptions`) the same way `ai_models`/`sync_sources` do.

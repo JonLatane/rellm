@@ -173,6 +173,11 @@ fn changing_video_preview_time_invalidates_thumbnails_on_video_media() {
             .unwrap();
         crate::logic::update_media_storage_used(user.id, conn).unwrap();
         assert_eq!(media_storage_bytes_used(conn, user.id), 1050);
+        // `server_media_usage_bytes` seeds the active `server_configurations` row first if this
+        // test transaction doesn't already have one -- see its own doc.
+        assert_eq!(server_media_usage_bytes(conn), 0);
+        crate::logic::adjust_server_media_usage_bytes(conn, 1050).unwrap();
+        assert_eq!(server_media_usage_bytes(conn), 1050);
 
         let updated = tb
             .block_on(update_media(
@@ -204,6 +209,11 @@ fn changing_video_preview_time_invalidates_thumbnails_on_video_media() {
             media_storage_bytes_used(conn, user.id),
             1000,
             "media_storage_bytes_used should drop by the deleted thumbnail's byte count"
+        );
+        assert_eq!(
+            server_media_usage_bytes(conn),
+            1000,
+            "server_media_usage_bytes should drop by the deleted thumbnail's byte count too"
         );
 
         Ok(())

@@ -391,7 +391,12 @@ const MediaSettings$json = {
     {'1': 'visible', '3': 1, '4': 1, '5': 8, '10': 'visible'},
     {'1': 'default_moderation', '3': 2, '4': 1, '5': 14, '6': '.rellm.Moderation', '10': 'defaultModeration'},
     {'1': 'default_visibility', '3': 3, '4': 1, '5': 14, '6': '.rellm.Visibility', '10': 'defaultVisibility'},
-    {'1': 'default_media_allocation_bytes', '3': 4, '4': 1, '5': 4, '10': 'defaultMediaAllocationBytes'},
+    {'1': 'default_user_media_allocation_bytes', '3': 4, '4': 1, '5': 4, '10': 'defaultUserMediaAllocationBytes'},
+    {'1': 'server_media_allocation_bytes', '3': 5, '4': 1, '5': 4, '10': 'serverMediaAllocationBytes'},
+    {'1': 'server_media_usage_bytes', '3': 6, '4': 1, '5': 4, '10': 'serverMediaUsageBytes'},
+    {'1': 'server_media_usage_calculated_at', '3': 7, '4': 1, '5': 11, '6': '.google.protobuf.Timestamp', '10': 'serverMediaUsageCalculatedAt'},
+    {'1': 'server_object_storage_usage_bytes', '3': 8, '4': 1, '5': 4, '10': 'serverObjectStorageUsageBytes'},
+    {'1': 'server_object_storage_usage_calculated_at', '3': 9, '4': 1, '5': 11, '6': '.google.protobuf.Timestamp', '10': 'serverObjectStorageUsageCalculatedAt'},
   ],
 };
 
@@ -400,8 +405,15 @@ final $typed_data.Uint8List mediaSettingsDescriptor = $convert.base64Decode(
     'Cg1NZWRpYVNldHRpbmdzEhgKB3Zpc2libGUYASABKAhSB3Zpc2libGUSQAoSZGVmYXVsdF9tb2'
     'RlcmF0aW9uGAIgASgOMhEucmVsbG0uTW9kZXJhdGlvblIRZGVmYXVsdE1vZGVyYXRpb24SQAoS'
     'ZGVmYXVsdF92aXNpYmlsaXR5GAMgASgOMhEucmVsbG0uVmlzaWJpbGl0eVIRZGVmYXVsdFZpc2'
-    'liaWxpdHkSQwoeZGVmYXVsdF9tZWRpYV9hbGxvY2F0aW9uX2J5dGVzGAQgASgEUhtkZWZhdWx0'
-    'TWVkaWFBbGxvY2F0aW9uQnl0ZXM=');
+    'liaWxpdHkSTAojZGVmYXVsdF91c2VyX21lZGlhX2FsbG9jYXRpb25fYnl0ZXMYBCABKARSH2Rl'
+    'ZmF1bHRVc2VyTWVkaWFBbGxvY2F0aW9uQnl0ZXMSQQodc2VydmVyX21lZGlhX2FsbG9jYXRpb2'
+    '5fYnl0ZXMYBSABKARSGnNlcnZlck1lZGlhQWxsb2NhdGlvbkJ5dGVzEjcKGHNlcnZlcl9tZWRp'
+    'YV91c2FnZV9ieXRlcxgGIAEoBFIVc2VydmVyTWVkaWFVc2FnZUJ5dGVzEmIKIHNlcnZlcl9tZW'
+    'RpYV91c2FnZV9jYWxjdWxhdGVkX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFt'
+    'cFIcc2VydmVyTWVkaWFVc2FnZUNhbGN1bGF0ZWRBdBJICiFzZXJ2ZXJfb2JqZWN0X3N0b3JhZ2'
+    'VfdXNhZ2VfYnl0ZXMYCCABKARSHXNlcnZlck9iamVjdFN0b3JhZ2VVc2FnZUJ5dGVzEnMKKXNl'
+    'cnZlcl9vYmplY3Rfc3RvcmFnZV91c2FnZV9jYWxjdWxhdGVkX2F0GAkgASgLMhouZ29vZ2xlLn'
+    'Byb3RvYnVmLlRpbWVzdGFtcFIkc2VydmVyT2JqZWN0U3RvcmFnZVVzYWdlQ2FsY3VsYXRlZEF0');
 
 @$core.Deprecated('Use marketSettingsDescriptor instead')
 const MarketSettings$json = {

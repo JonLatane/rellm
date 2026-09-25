@@ -1139,7 +1139,7 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
       <a href="#grpc-api-CancelMarketSubscription"><code>CancelMarketSubscription</code></a>, either of which sets <code>canceled_at</code>. The
       entitlement itself stays in effect until whichever is later of <code>renews_at</code>/<code>canceled_at</code> - once both have
       passed, the <code>renew_market_subscriptions</code> background job revokes it (reverts <code>media_storage_limit_bytes</code> to
-      <code>ServerConfiguration.media_settings.default_media_allocation_bytes</code>, or removes the granted <code>Permission</code>s,
+      <code>ServerConfiguration.media_settings.default_user_media_allocation_bytes</code>, or removes the granted <code>Permission</code>s,
       depending on <code>type</code>) and sets <code>service_terminated_at</code>. A user's own MarketSubscriptions (never anyone
       else's) are listed via <a href="#grpc-api-GetMarketSubscriptions"><code>GetMarketSubscriptions</code></a>, and also travel along
       on <a href="#rellm-User"><code>User</code></a> itself (<code>User.market_subscriptions</code>) the same way <code>ai_models</code>/<code>sync_sources</code> do.
@@ -3063,6 +3063,11 @@ directory</a> is (<code>{name}</code> denotes a
           <td>EDIT_CLUSTER_SETTINGS</td>
           <td>10002</td>
           <td>Allow the user to edit <a href="#rellm-ClusterResources"><code>ServerConfiguration.cluster_resources</code></a> via <a href="#grpc-api-ConfigureServer"><code>ConfigureServer</code></a>. <code>cluster_resources</code> is otherwise visible (read-only) to any <code>ADMIN</code> - this permission gates <em>editing</em> it specifically, on top of <code>ADMIN</code>, since misconfiguring it (wrong <code>conductor_host</code>/<code>cluster_shared_secret</code>) affects cluster-mates this admin may not operate. Kept separate from <code>ADMIN</code> the same way <code>VIEW_PRIVATE_CONTACT_METHODS</code> is, and deliberately <em>not</em> grantable via <a href="#grpc-api-UpdateUser"><code>UpdateUser</code></a> like other permissions - only settable directly in the database (e.g. via the <code>set_permission</code> binary), so granting it is always a deliberate operator action, never a side effect of a normal admin-managing-admins flow.</td>
+        </tr>
+        <tr>
+          <td>EDIT_SERVER_MEDIA_ALLOCATION</td>
+          <td>10003</td>
+          <td>Allow the user to edit <a href="#rellm-MediaSettings"><code>MediaSettings.server_media_allocation_bytes</code></a> via <a href="#grpc-api-ConfigureServer"><code>ConfigureServer</code></a>. Raising this cap changes how much total Media storage the server will accept across every user, so - same reasoning as <code>EDIT_CLUSTER_SETTINGS</code> above - it's kept separate from <code>ADMIN</code> and deliberately <em>not</em> grantable via <a href="#grpc-api-UpdateUser"><code>UpdateUser</code></a>, only settable directly in the database (e.g. via the <code>set_permission</code> binary).</td>
         </tr>
       </tbody>
     </table>
@@ -7126,10 +7131,40 @@ directory</a> is (<code>{name}</code> denotes a
           <td>Only <code>SERVER_PUBLIC</code> and <code>GLOBAL_PUBLIC</code> are valid. <code>GLOBAL_PUBLIC</code> is only valid if default_user_permissions contains `GLOBALLY_PUBLISH_[USERS</td>
         </tr>
         <tr>
-          <td>default_media_allocation_bytes</td>
+          <td>default_user_media_allocation_bytes</td>
           <td><a href="#uint64">uint64</a></td>
           <td></td>
-          <td>Default media storage allocation for newly created users. Defaults to 10MB.</td>
+          <td>Default media storage allocation for newly created users. Defaults to 15MB.</td>
+        </tr>
+        <tr>
+          <td>server_media_allocation_bytes</td>
+          <td><a href="#uint64">uint64</a></td>
+          <td></td>
+          <td>Default is 5GB (applied whenever this is <code>0</code>, same read-time-fallback convention as <code>default_user_media_allocation_bytes</code> above). API/server-enforced limit for total of all Media usage (<code>server_media_usage_bytes</code> below) -- <code>CreateMedia</code> rejects an upload that would push the server over this cap the same way it already rejects one that would push a user over their own <code>User.media_storage_limit_bytes</code>. Editing this requires <a href="#rellm-Permission"><code>EDIT_SERVER_MEDIA_ALLOCATION</code></a> via <a href="#grpc-api-ConfigureServer"><code>ConfigureServer</code></a> -- see that permission's own doc.</td>
+        </tr>
+        <tr>
+          <td>server_media_usage_bytes</td>
+          <td><a href="#uint64">uint64</a></td>
+          <td></td>
+          <td>(Read-only) Amount of storage used by user-stored Media, according to its sizing data. Adjusted (by a cheap incremental delta, not a full recompute) on CreateMedia calls, deletes, and size conversions, and also fully recomputed every 3 minutes by the <code>calculate_server_media_usage</code> background job (correcting any drift the incremental call sites missed).</td>
+        </tr>
+        <tr>
+          <td>server_media_usage_calculated_at</td>
+          <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
+          <td></td>
+          <td>When <code>server_media_usage_bytes</code> was last written -- by either an incremental adjustment or a full recompute (see that field's own doc); not limited to just the periodic job's runs.</td>
+        </tr>
+        <tr>
+          <td>server_object_storage_usage_bytes</td>
+          <td><a href="#uint64">uint64</a></td>
+          <td></td>
+          <td>(Read-only) Amount of storage used by S3 (or compatible) object storage. Periodically computed via list+sum from object storage itself, by the <code>calculate_server_object_storage_usage</code> background job (every 4h) -- this is a drift check against <code>server_media_usage_bytes</code> above (which is derived from the <code>media</code> table, not object storage itself), so unlike that field this is never incrementally adjusted between runs.</td>
+        </tr>
+        <tr>
+          <td>server_object_storage_usage_calculated_at</td>
+          <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
+          <td></td>
+          <td></td>
         </tr>
       </tbody>
     </table>
@@ -10522,7 +10557,7 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
         <tr>
           <td>PURCHASE_TYPE_MEDIA_STORAGE</td>
           <td>0</td>
-          <td>Extra media storage allocation -- fulfillment sets the buyer's <code>User.media_storage_limit_bytes</code> to <code>MediaStoragePurchaseDetails.allocation_bytes</code> outright (not additive with any existing quota). On cancellation/expiry, reverts to the server's current configured default allocation (<code>ServerConfiguration.media_settings.default_media_allocation_bytes</code>), not to unlimited.</td>
+          <td>Extra media storage allocation -- fulfillment sets the buyer's <code>User.media_storage_limit_bytes</code> to <code>MediaStoragePurchaseDetails.allocation_bytes</code> outright (not additive with any existing quota). On cancellation/expiry, reverts to the server's current configured default allocation (<code>ServerConfiguration.media_settings.default_user_media_allocation_bytes</code>), not to unlimited.</td>
         </tr>
         <tr>
           <td>PURCHASE_TYPE_AI_GRANTS</td>

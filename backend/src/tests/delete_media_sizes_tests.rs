@@ -93,6 +93,70 @@ fn deletes_only_the_requested_size_and_its_object_storage_object() {
 }
 
 #[test]
+fn deleting_a_size_reduces_server_media_usage_bytes_by_that_size_only() {
+    let tb = test_bucket();
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let user = create_user(conn, "dmst_server_usage");
+        let original_path = unique_path("server_usage_original");
+        let small_path = unique_path("server_usage_small");
+        for path in [&original_path, &small_path] {
+            tb.block_on(tb.bucket.put_object(path, b"test-bytes"))
+                .expect("failed to seed test object storage object");
+        }
+        let media = create_media_with_size(conn, Some(&user), &original_path, 100);
+        let media = set_media_sizes(
+            conn,
+            &media,
+            vec![
+                MediaSize {
+                    conversion: MediaConversion::Original as i32,
+                    object_storage_path: original_path.clone(),
+                    content_type: "image/png".to_string(),
+                    size_bytes: 100,
+                    aspect_ratio: None,
+                },
+                MediaSize {
+                    conversion: MediaConversion::Small as i32,
+                    object_storage_path: small_path.clone(),
+                    content_type: "image/png".to_string(),
+                    size_bytes: 20,
+                    aspect_ratio: None,
+                },
+            ],
+        );
+        // `server_media_usage_bytes` seeds the active `server_configurations` row first if this
+        // test transaction doesn't already have one -- see its own doc.
+        assert_eq!(server_media_usage_bytes(conn), 0);
+        crate::logic::adjust_server_media_usage_bytes(conn, 120).unwrap();
+        assert_eq!(server_media_usage_bytes(conn), 120);
+
+        tb.block_on(delete_media_sizes(
+            Media {
+                id: media.id.to_proto_id(),
+                sizes: vec![ProtoMediaSize {
+                    conversion: MediaConversion::Small as i32,
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            &user,
+            conn,
+            &tb.bucket,
+        ))
+        .expect("delete_media_sizes should succeed");
+
+        assert_eq!(
+            server_media_usage_bytes(conn),
+            100,
+            "server_media_usage_bytes should drop by only the deleted size's byte count"
+        );
+
+        Ok(())
+    });
+}
+
+#[test]
 fn errors_if_it_would_leave_media_with_no_sizes() {
     let tb = test_bucket();
     let mut conn = test_conn();

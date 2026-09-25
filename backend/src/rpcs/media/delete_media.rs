@@ -4,7 +4,7 @@ use s3::Bucket;
 use tonic::{Code, Status};
 
 use crate::db_connection::PgPooledConnection;
-use crate::logic::update_media_storage_used;
+use crate::logic::{adjust_server_media_usage_bytes, update_media_storage_used};
 use crate::marshaling::*;
 use crate::models;
 use crate::protos::*;
@@ -50,11 +50,9 @@ pub async fn delete_media(
 
     // Collect every object storage object backing this Media -- the original upload plus any
     // small/medium/large converted copies -- before the row (and its `sizes`) is gone.
-    let object_storage_paths: Vec<String> = affected_media
-        .sizes()
-        .into_iter()
-        .map(|s| s.object_storage_path)
-        .collect();
+    let sizes = affected_media.sizes();
+    let object_storage_paths: Vec<String> = sizes.iter().map(|s| s.object_storage_path.clone()).collect();
+    let deleted_bytes: i64 = sizes.iter().map(|s| s.size_bytes).sum();
     let owner_id = affected_media.user_id;
 
     let db_result = delete(media::table.find(media_id)).execute(conn);
@@ -88,6 +86,13 @@ pub async fn delete_media(
                     e
                 );
             }
+        }
+        if let Err(e) = adjust_server_media_usage_bytes(conn, -deleted_bytes) {
+            log::error!(
+                "Failed to adjust server_media_usage_bytes for deleted media {}: {:?}",
+                media_id,
+                e
+            );
         }
     }
 

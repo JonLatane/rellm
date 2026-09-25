@@ -1068,6 +1068,9 @@ permissionText permission =
         EDITCLUSTERSETTINGS ->
             "Edit Cluster Settings"
 
+        EDITSERVERMEDIAALLOCATION ->
+            "Edit Server Media Allocation"
+
         SYNCEVENTSTOFACEBOOK ->
             "Sync Events To Facebook"
 

@@ -173,4 +173,12 @@ enum Permission {
   // database (e.g. via the `set_permission` binary), so granting it is always a deliberate
   // operator action, never a side effect of a normal admin-managing-admins flow.
   EDIT_CLUSTER_SETTINGS = 10002;
+
+  // Allow the user to edit [`MediaSettings.server_media_allocation_bytes`](#rellm-MediaSettings)
+  // via [`ConfigureServer`](#grpc-api-ConfigureServer). Raising this cap changes how much total
+  // Media storage the server will accept across every user, so - same reasoning as
+  // `EDIT_CLUSTER_SETTINGS` above - it's kept separate from `ADMIN` and deliberately *not*
+  // grantable via [`UpdateUser`](#grpc-api-UpdateUser), only settable directly in the database
+  // (e.g. via the `set_permission` binary).
+  EDIT_SERVER_MEDIA_ALLOCATION = 10003;
 }

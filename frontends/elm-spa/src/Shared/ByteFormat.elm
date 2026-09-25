@@ -17,7 +17,7 @@ site, never the underlying conversion).
 deliberately just these 4 (not past GB): every byte size this app deals with is well under a TB.
 `KB`/`MB`/`GB` are binary (1024-based, i.e. actually KiB/MiB/GiB) rather than decimal, matching
 `backend/src/logic/market_summary.rs`'s `humanize_bytes` and how the backend itself computes
-byte-size defaults (e.g. `MediaSettings`'s own `default_media_allocation_bytes`, `15 * 1024 * 1024`)
+byte-size defaults (e.g. `MediaSettings`'s own `default_user_media_allocation_bytes`, `15 * 1024 * 1024`)
 -- every "MB"/"GB" elsewhere in this app already means MiB/GiB, so this module matches rather than
 introducing a second, decimal meaning for the same labels.
 -}

@@ -120,16 +120,16 @@ pub fn terminate_entitlement(
     match purchase_type {
         // Reverts to the server's *current* configured default allocation -- not `NULL`/unlimited
         // -- mirroring `rpcs::authentication::create_account`'s own read of
-        // `media_settings.default_media_allocation_bytes` (always `Some` in practice, per that
+        // `media_settings.default_user_media_allocation_bytes` (always `Some` in practice, per that
         // read's own comment on `ToProtoServerConfiguration::to_proto`'s deserialize-with-fallback).
         PurchaseType::MediaStorage => {
             let server_configuration = get_server_configuration_proto(conn)?;
-            let default_media_allocation_bytes = server_configuration
+            let default_user_media_allocation_bytes = server_configuration
                 .media_settings
                 .as_ref()
-                .map(|m| m.default_media_allocation_bytes as i64);
+                .map(|m| m.default_user_media_allocation_bytes as i64);
             diesel::update(users::table.filter(users::id.eq(buyer_id)))
-                .set(users::media_storage_limit_bytes.eq(default_media_allocation_bytes))
+                .set(users::media_storage_limit_bytes.eq(default_user_media_allocation_bytes))
                 .execute(conn)
                 .map_err(|e| {
                     log::error!(

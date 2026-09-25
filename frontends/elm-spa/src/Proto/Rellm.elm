@@ -1435,7 +1435,16 @@ type alias MarketSettings =
 
 -}
 fieldNumbersMediaSettings :
-    { visible : Int, defaultModeration : Int, defaultVisibility : Int, defaultMediaAllocationBytes : Int }
+    { visible : Int
+    , defaultModeration : Int
+    , defaultVisibility : Int
+    , defaultUserMediaAllocationBytes : Int
+    , serverMediaAllocationBytes : Int
+    , serverMediaUsageBytes : Int
+    , serverMediaUsageCalculatedAt : Int
+    , serverObjectStorageUsageBytes : Int
+    , serverObjectStorageUsageCalculatedAt : Int
+    }
 fieldNumbersMediaSettings =
     Proto.Rellm.Internals_.fieldNumbersProto__Rellm__MediaSettings
 
@@ -1491,9 +1500,44 @@ encodeMediaSettings =
  as appropriate.
 
 
-### defaultMediaAllocationBytes
+### defaultUserMediaAllocationBytes
 
- Default media storage allocation for newly created users. Defaults to 10MB.
+ Default media storage allocation for newly created users. Defaults to 15MB.
+
+
+### serverMediaAllocationBytes
+
+ Default is 5GB (applied whenever this is `0`, same read-time-fallback convention as
+ `default_user_media_allocation_bytes` above). API/server-enforced limit for total of all
+ Media usage (`server_media_usage_bytes` below) -- `CreateMedia` rejects an upload that would
+ push the server over this cap the same way it already rejects one that would push a user over
+ their own `User.media_storage_limit_bytes`. Editing this requires
+ [`EDIT_SERVER_MEDIA_ALLOCATION`](#rellm-Permission) via
+ [`ConfigureServer`](#grpc-api-ConfigureServer) -- see that permission's own doc.
+
+
+### serverMediaUsageBytes
+
+ (Read-only) Amount of storage used by user-stored Media, according to its sizing data.
+ Adjusted (by a cheap incremental delta, not a full recompute) on CreateMedia calls, deletes,
+ and size conversions, and also fully recomputed every 3 minutes by the
+ `calculate_server_media_usage` background job (correcting any drift the incremental call
+ sites missed).
+
+
+### serverMediaUsageCalculatedAt
+
+ When `server_media_usage_bytes` was last written -- by either an incremental adjustment or a
+ full recompute (see that field's own doc); not limited to just the periodic job's runs.
+
+
+### serverObjectStorageUsageBytes
+
+ (Read-only) Amount of storage used by S3 (or compatible) object storage.
+ Periodically computed via list+sum from object storage itself, by the
+ `calculate_server_object_storage_usage` background job (every 4h) -- this is a drift check
+ against `server_media_usage_bytes` above (which is derived from the `media` table, not object
+ storage itself), so unlike that field this is never incrementally adjusted between runs.
 
 
 -}

@@ -1,10 +1,11 @@
 use std::str::FromStr;
 
 use crate::db_connection::*;
-use crate::logic::update_media_storage_used;
+use crate::logic::{adjust_server_media_usage_bytes, update_media_storage_used};
 use crate::marshaling::*;
 use crate::models;
 use crate::protos::{MediaConversion, Visibility};
+use crate::rpcs::get_server_configuration_proto;
 use crate::schema;
 use crate::schema::media;
 use crate::schema::user_access_tokens::dsl as user_access_tokens;
@@ -88,6 +89,30 @@ pub async fn create_media(
         }
     }
 
+    // Same idea as the per-user check above, but against the server-wide cap
+    // (`MediaSettings.server_media_allocation_bytes`) -- `server_media_usage_bytes` is a running
+    // total (see `logic::server_storage_usage`'s own doc), not necessarily perfectly fresh, but
+    // close enough to gate uploads on without an expensive full recompute on every request.
+    {
+        let mut config_conn = state.pool.get().unwrap();
+        if let Ok(server_configuration) = get_server_configuration_proto(&mut config_conn) {
+            if let Some(media_settings) = server_configuration.media_settings {
+                let server_usage = media_settings.server_media_usage_bytes as i64;
+                let server_limit = media_settings.server_media_allocation_bytes as i64;
+                if server_usage + uploaded_bytes > server_limit {
+                    state.bucket.delete_object(&object_storage_path).await.ok();
+                    return Err((
+                        Status::PayloadTooLarge,
+                        format!(
+                            "This upload ({} bytes) would exceed this server's storage limit ({} of {} bytes used).",
+                            uploaded_bytes, server_usage, server_limit
+                        ),
+                    ));
+                }
+            }
+        }
+    }
+
     let content_type = content_type_header.0.to_string();
     let metadata = if content_type.starts_with("video/") {
         models::MediaMetadata {
@@ -123,6 +148,13 @@ pub async fn create_media(
         log::error!(
             "Failed to update media_storage_bytes_used for user {}: {:?}",
             user.id,
+            e
+        );
+    }
+    if let Err(e) = adjust_server_media_usage_bytes(&mut conn, uploaded_bytes) {
+        log::error!(
+            "Failed to adjust server_media_usage_bytes for new media {}: {:?}",
+            media.id,
             e
         );
     }

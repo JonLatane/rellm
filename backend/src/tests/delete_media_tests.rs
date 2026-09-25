@@ -17,6 +17,46 @@ fn unique_path(name: &str) -> String {
 }
 
 #[test]
+fn delete_reduces_server_media_usage_bytes_by_every_size() {
+    let tb = test_bucket();
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let user = create_user(conn, "dmt_server_usage");
+        let path = unique_path("server_usage");
+        let media = create_media_with_size(conn, Some(&user), &path, 150);
+
+        // `server_media_usage_bytes` creates the active `server_configurations` row if this test
+        // transaction doesn't already have one (see its own doc), same as any real server would
+        // long before its first Media upload -- needed before `adjust_server_media_usage_bytes`
+        // below, which (unlike this helper) assumes that row already exists.
+        assert_eq!(server_media_usage_bytes(conn), 0);
+        // Seed the running total the same way `web::media::create_media`'s own
+        // `adjust_server_media_usage_bytes` call would have on the way in.
+        crate::logic::adjust_server_media_usage_bytes(conn, 150).unwrap();
+        assert_eq!(server_media_usage_bytes(conn), 150);
+
+        tb.block_on(delete_media(
+            Media {
+                id: media.id.to_proto_id(),
+                ..Default::default()
+            },
+            &user,
+            conn,
+            &tb.bucket,
+        ))
+        .expect("delete should succeed");
+
+        assert_eq!(
+            server_media_usage_bytes(conn),
+            0,
+            "server_media_usage_bytes should drop by the deleted media's total size"
+        );
+
+        Ok(())
+    });
+}
+
+#[test]
 fn self_delete_removes_row_and_object_storage_object() {
     let tb = test_bucket();
     let mut conn = test_conn();

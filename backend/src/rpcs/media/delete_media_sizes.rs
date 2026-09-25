@@ -3,7 +3,7 @@ use s3::Bucket;
 use tonic::{Code, Status};
 
 use crate::db_connection::PgPooledConnection;
-use crate::logic::update_media_storage_used;
+use crate::logic::{adjust_server_media_usage_bytes, update_media_storage_used};
 use crate::marshaling::*;
 use crate::models;
 use crate::protos::*;
@@ -60,6 +60,8 @@ pub async fn delete_media_sizes(
             Status::new(Code::Internal, "data_error")
         })?;
 
+    let removed_bytes: i64 = removed.iter().map(|s| s.size_bytes).sum();
+
     for size in removed {
         if let Err(e) = bucket.delete_object(&size.object_storage_path).await {
             log::error!(
@@ -79,6 +81,13 @@ pub async fn delete_media_sizes(
                 e
             );
         }
+    }
+    if let Err(e) = adjust_server_media_usage_bytes(conn, -removed_bytes) {
+        log::error!(
+            "Failed to adjust server_media_usage_bytes for media {}: {:?}",
+            media_id,
+            e
+        );
     }
 
     let author = if self_delete {

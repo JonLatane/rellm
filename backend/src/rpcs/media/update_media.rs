@@ -3,7 +3,7 @@ use s3::Bucket;
 use tonic::{Code, Status};
 
 use crate::db_connection::PgPooledConnection;
-use crate::logic::{is_video_content_type, update_media_storage_used};
+use crate::logic::{adjust_server_media_usage_bytes, is_video_content_type, update_media_storage_used};
 use crate::marshaling::*;
 use crate::models::{self, VIDEO_PREVIEW_CONVERSIONS};
 use crate::protos::*;
@@ -97,6 +97,14 @@ pub async fn update_media(
                     e
                 );
             }
+        }
+        let removed_bytes: i64 = removed_sizes.iter().map(|s| s.size_bytes).sum();
+        if let Err(e) = adjust_server_media_usage_bytes(conn, -removed_bytes) {
+            log::error!(
+                "Failed to adjust server_media_usage_bytes for media {}: {:?}",
+                media_id,
+                e
+            );
         }
     }
 
