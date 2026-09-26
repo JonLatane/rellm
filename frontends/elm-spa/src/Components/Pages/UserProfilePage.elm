@@ -1209,9 +1209,9 @@ profileSectionScrollPollMs =
     150
 
 
-{-| Scrolls the page (`Shared.appScrollDomId`, not some inner pane -- unlike
+{-| Scrolls the page (`Dom.setViewport`, not some inner pane -- unlike
 `MessagesPage.scrollToPendingMessageCmd`, this section sits in the ordinary
-page flow, whose one shared scrolling element is `appScrollDomId`) so `sectionId`'s own `expandableProfileSection`
+page flow with nothing else to scroll) so `sectionId`'s own `expandableProfileSection`
 `domId` lands at the top of the viewport -- the `Model.pendingScrollSectionId` half of a
 `#subscriptions`/`#sync-sources`/`#sync-destinations`/`#ai-providers`/`#ai-models` deep
 link, the other half being that same fragment seeding the section's own `*Expanded` flag
@@ -1238,29 +1238,29 @@ computed (`Nothing` on the very first call), compared against this pass's own fr
 `target` to decide whether to stop (settled) or schedule another pass `profileSectionScrollPollMs`
 later (still moving, and `attemptsLeft` hasn't run out).
 
-`el.element.y` (`Dom.getElement`'s own doc) is, despite its name, computed by the kernel as
-`window.pageYOffset + rect.top` -- an absolute _document_ position only back when the document
-itself (`window`) was what scrolled. Now that `Shared.appScrollDomId` (see its own doc) is the
-only thing that ever scrolls, `window.pageYOffset` is permanently `0`, so `el.element.y` collapses
-to plain `rect.top` -- a _viewport-relative_ position that changes as `appScrollDomId` scrolls, not
-a stable target. Adding `appScrollDomId`'s own current `scrollTop` (via `Dom.getViewportOf`) back
-on top of it is what actually reconstructs a stable, content-relative position now -- this looks
-like the same "double-counting" `window.pageYOffset` a past version of this comment warned against
-(back when both `Dom.getElement` _and_ `Dom.getViewport` independently read the window's own
-scroll), but it's a different, now-necessary addition: `Dom.getElement` no longer includes any
-scroll offset at all (its `window.pageYOffset` term is always `0`), so this is the only place that
-offset comes from.
+`el.element.y` (`Dom.getElement`'s own doc) is, despite its name, already an _absolute_ document
+position -- the kernel computes it as `window.pageYOffset + rect.top`, the current scroll offset
+already baked in -- so it's the whole target on its own, straight into `Dom.setViewport`. This
+used to _also_ add `Dom.getViewport`'s own `.viewport.y` (the same current scroll offset, read a
+second time) on top, double-counting it: harmless from a resting scroll position of `0` (where
+doubling zero is still zero, so every one-off manual verification of this code happened to look
+correct), but from anywhere else it inflated the target by exactly the current scroll position
+-- worse with each successive poll as that error compounded into the next reading, which is what
+was actually behind every "scrolls too far"/"lands one section past the target" report this
+mechanism produced, independent of any content-still-growing timing story.
 
 -}
 scrollToProfileSectionStep : String -> Maybe Float -> Int -> Task.Task Dom.Error ()
 scrollToProfileSectionStep sectionId previousTarget attemptsLeft =
-    Task.map2
-        (\el appScrollViewport -> el.element.y + appScrollViewport.viewport.y)
-        (Dom.getElement sectionId)
-        (Dom.getViewportOf Shared.appScrollDomId)
+    Dom.getElement sectionId
         |> Task.andThen
-            (\target ->
-                Dom.setViewportOf Shared.appScrollDomId 0 target
+            (\el ->
+                let
+                    target : Float
+                    target =
+                        el.element.y
+                in
+                Dom.setViewport 0 target
                     |> Task.andThen
                         (\_ ->
                             let

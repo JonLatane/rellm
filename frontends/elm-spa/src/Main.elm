@@ -470,15 +470,6 @@ render replaces the static one, and stable afterwards since Elm's vdom only
 ever diffs attributes _this_ code declares on it (never a `class`), letting
 `Ports.hideSplash` (see `Shared.splashHiddenCmd`) add/remove `.hidden` by hand
 without Elm ever fighting or resetting that change on a later render.
-
-Everything (including `splashOverlay` itself) is nested one level deeper than it used to be, inside
-a single `Shared.appScrollDomId` div -- see that constant's own doc, and `main.css`'s matching
-`#app-scroll` rule, for why: it's the one and only element that actually scrolls now, working
-around an iOS 27 bug that painted a system blur over the top of the page whenever the *document*
-itself was what scrolled. Every genuinely `position: fixed` node already in `doc.body` (modals,
-the Accounts/Starred/etc. panels, `.shared-backdrop`, `splashOverlay` itself) stays positioned
-relative to the real viewport regardless of this new wrapper -- `#app-scroll` sets `position` and
-`overflow` but never a `transform`/`filter`, so it doesn't become a new containing block for them.
 -}
 view : Model -> Browser.Document Msg
 view model =
@@ -489,12 +480,7 @@ view model =
                 |> View.map Page
                 |> View.toBrowserDocument
     in
-    { doc
-        | body =
-            [ Html.div [ Html.Attributes.id Shared.appScrollDomId ]
-                (splashOverlay :: doc.body)
-            ]
-    }
+    { doc | body = splashOverlay :: doc.body }
 
 
 splashOverlay : Html Msg

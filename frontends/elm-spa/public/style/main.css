@@ -73,84 +73,12 @@ html {
   touch-action: manipulation;
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
-  /* `body` fills it (100%) below -- needed for `body`'s own `height: 100%`
-     to resolve to anything, since percentage heights need a definite
-     ancestor height to measure against. */
-  height: 100%;
-}
-
-body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-  background: var(--bg);
-  color: var(--fg);
-
-  /* Neither `html` nor `body` ever scrolls -- `#app-scroll` (below) is the
-     app's one real scrolling element, so this just clips `body` to exactly
-     the viewport's height with nothing of its own to overflow. See
-     `#app-scroll`'s own doc comment for why. */
-  height: 100%;
-  overflow: hidden;
-}
-
-/* Wraps every top-level node Elm renders into `<body>` (see `Main.elm`'s own
-   `view`) -- the app's real, and only, scrolling element; `body`/`html`
-   themselves never scroll (above).
-
-   Works around a real iOS 27 bug, widely reported as "iOS 27 blurs the top
-   edge of installed PWAs" (standalone/home-screen PWAs specifically): iOS's
-   new "Liquid Glass" scroll-edge effect paints a system blur/gradient
-   wherever the WKWebView's own root scroll view -- the *document* itself --
-   reaches the top edge under `viewport-fit=cover`, regardless of any
-   page-level CSS on the content underneath it. No page-level fix could ever
-   touch that blur as long as `body`/`html` were the thing actually
-   scrolling -- it's painted by iOS on top of the document's own scroll view,
-   not by anything this app's stylesheet controls. Giving the document
-   nothing to scroll (fixed, `overflow: hidden`, full-height, above) and
-   moving all real scrolling into this ordinary `overflow-y: auto` div
-   instead means iOS's own root scroll view genuinely has nothing to paint
-   an edge effect over -- the blur is gone because there's no longer a
-   document-level scroll view for iOS to apply it to, not because anything
-   is fighting the effect after the fact.
-
-   Solid `background` (not transparent) for the same reason `.navbar`'s own
-   tinted background needs to extend up underneath the iOS status bar (see
-   `index.html`'s `apple-mobile-web-app-status-bar-style` comment) -- this
-   element, not `body`, is what's actually visible under there now.
-
-   Every genuinely `position: fixed` node nested inside it (modals, the
-   Accounts/Starred/etc. panels, `.shared-backdrop`, `#splash`) stays
-   positioned relative to the real viewport exactly as before -- this rule
-   sets `position`/`overflow` but never a `transform`/`filter`/`perspective`,
-   so it never becomes a new containing block for them.
-
-   `scroll-behavior`/`overflow-anchor` moved here from `html`'s own former
-   rules (see git history) now that this, not the document, is the thing
-   that actually scrolls; `overflow-x: hidden` moved here from `body`'s own
-   former rule for the same reason (still doesn't clip `.events-grid`/
-   `.events-strip`'s own intentional breakout past `.container`'s 800px --
-   see events.css's own comment on those classes -- since this is still an
-   *ancestor* of `.container`, not `.container` itself). This element's own
-   `id` (`Shared.appScrollDomId` on the Elm side) is what every place that
-   used to scroll the window directly (`Dom.setViewport`/`getViewport`)
-   targets by id instead now (`Dom.setViewportOf`/`getViewportOf`) -- see
-   `Shared.ScrollToTop` and `UserProfilePage.scrollToProfileSectionStep` --
-   and what `index.html`'s `measureElements` port adds its own
-   `scrollLeft`/`scrollTop` from, in place of `window.pageXOffset`/
-   `pageYOffset`, to keep computing a stable position. */
-#app-scroll {
-  position: fixed;
-  inset: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  -webkit-overflow-scrolling: touch;
-  background: var(--bg);
-
-  /* Animates `Dom.setViewportOf`'s direct scrollTop/scrollLeft assignment
-     (the CSSOM View spec still runs that through this scroll-behavior)
-     instead of jumping instantly. Nested `overflow-y: auto` panels (Accounts
-     Panel, Markdown Panel, modals) need their own scroll-behavior to animate
-     and don't have one, so they're untouched. */
+  /* Animates `Shared.ScrollToTop`'s `Browser.Dom.setViewport 0 0` (a direct
+     scrollTop/scrollLeft assignment, which the CSSOM View spec still runs
+     through this scroll-behavior) instead of jumping instantly. Only the
+     root/document scrolling box is affected -- nested `overflow-y: auto`
+     panels (Accounts Panel, Markdown Panel, modals) need their own
+     scroll-behavior to animate and don't have one, so they're untouched. */
   scroll-behavior: smooth;
 
   /* Chrome/Firefox's default "scroll anchoring" tries to keep whatever's
@@ -161,13 +89,30 @@ body {
      while that same embedded `EventsPage` copy's cards are still growing
      into place -- see `scrollToProfileSectionCmd`'s own doc). That silent
      compensation runs *in addition to* this app's own explicit
-     `Dom.setViewportOf` calls, which already account for the same growth
+     `Dom.setViewport` calls, which already account for the same growth
      themselves (each re-measures fresh), so the two stack and overshoot
      the intended target. This app always manages its own scroll position
      by hand (the many dedicated `scrollTo*Cmd` functions across
      `MessagesPage`/`EventsPage`/`UserProfilePage`), so the browser's own
      guess is pure downside here -- never wanted. */
   overflow-anchor: none;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+
+  /* Guards against an accidental horizontal scrollbar -- moved here from
+     `.container` (below), which used to clip at its own 800px-max box
+     instead. That also clipped `.events-grid`/`.events-strip`'s own
+     intentional breakout past 800px (see events.css's own comment on those
+     classes), so it's a `body`-level backstop now: still catches anything
+     that genuinely overflows the viewport, but no longer clips a
+     `.container` descendant that's deliberately wider than `.container`
+     itself while still narrower than the viewport. */
+  overflow-x: hidden;
 }
 
 .container {
