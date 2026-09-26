@@ -5,6 +5,7 @@ module Shared exposing
     , Msg(..)
     , NavAnimationState
     , ThemePreference(..)
+    , appScrollDomId
     , basePathFromPath
     , effectiveDarkMode
     , init
@@ -58,6 +59,21 @@ import Time
 import TimeZone
 import UI.Responsive as Responsive
 import Url exposing (Url)
+
+
+{-| The `id` of the single `div` (see `Main.elm`'s `view`) that wraps every top-level node this
+app renders into `<body>` -- the app's real, and only, scrolling element. `body`/`html` themselves
+never scroll (see `main.css`'s own doc comment on this element for why: working around iOS 27's
+"blurs the top edge of installed PWAs" bug), so every place that used to scroll the window directly
+(`Browser.Dom.setViewport`/`getViewport`) targets this element by id instead
+(`Dom.setViewportOf`/`getViewportOf`) -- see `ScrollToTop`, below, and
+`UserProfilePage.scrollToProfileSectionStep`. `index.html`'s `measureElements` port mirrors this
+too, adding this element's own `scrollLeft`/`scrollTop` instead of `window.pageXOffset`/`pageYOffset`
+to compute a stable position.
+-}
+appScrollDomId : String
+appScrollDomId =
+    "app-scroll"
 
 
 type alias Model =
@@ -2301,7 +2317,7 @@ sharedUpdate req msg model =
             ( uncollapsedHomeModel, Cmd.batch [ closeCmd, scrollCmd ] )
 
         ScrollToTop ->
-            ( model, Task.perform (\_ -> NoOp) (Dom.setViewport 0 0) )
+            ( model, Task.attempt (\_ -> NoOp) (Dom.setViewportOf appScrollDomId 0 0) )
 
         NavLinksScrolled position ->
             ( { model

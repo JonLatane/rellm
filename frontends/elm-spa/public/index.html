@@ -654,7 +654,18 @@
     // DOM id to look up, `key` is echoed back verbatim in the result so the
     // Elm side never has to reverse-derive its own caller-side key back out
     // of a DOM id string.
+    //
+    // `x`/`y` add `#app-scroll`'s own scrollLeft/scrollTop, not
+    // window.pageXOffset/pageYOffset -- `#app-scroll` (see main.css's own
+    // doc comment on it) is this app's one real scrolling element, `window`
+    // itself never scrolls, so its own page offsets are permanently 0. This
+    // mirrors elm/browser's kernel `Browser.Dom.getElement` exactly, which
+    // used to add window.pageXOffset/pageYOffset for the same reason --
+    // `Shared.appScrollDomId` on the Elm side is this same "app-scroll" id.
     app.ports.measureElements.subscribe(function (items) {
+      var appScrollEl = document.getElementById("app-scroll");
+      var scrollLeft = appScrollEl ? appScrollEl.scrollLeft : 0;
+      var scrollTop = appScrollEl ? appScrollEl.scrollTop : 0;
       var results = [];
       for (var i = 0; i < items.length; i++) {
         var el = document.getElementById(items[i].id);
@@ -662,8 +673,8 @@
         var rect = el.getBoundingClientRect();
         results.push({
           key: items[i].key,
-          x: rect.left + window.pageXOffset,
-          y: rect.top + window.pageYOffset,
+          x: rect.left + scrollLeft,
+          y: rect.top + scrollTop,
           width: rect.width,
           height: rect.height
         });
