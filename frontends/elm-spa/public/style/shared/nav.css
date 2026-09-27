@@ -9,13 +9,21 @@
 .navbar {
   position: sticky;
   top: 0;
-  /* Lets the navbar's own background (already tinted with mainFrontendHost's
-     primaryColor, above) extend up underneath the iOS status bar -- see
-     index.html's `apple-mobile-web-app-status-bar-style` comment, and
-     media_viewer_panel.css's toolbar padding for the same
-     `env(safe-area-inset-top)`/`viewport-fit=cover` reasoning. 0 on anything
-     without a notch/Dynamic Island (or without `viewport-fit=cover`), so this
-     is a no-op elsewhere. */
+  /* Historically let the navbar's own background (already tinted with
+     mainFrontendHost's primaryColor, above) extend up underneath a
+     *translucent* iOS status bar -- see index.html's
+     `apple-mobile-web-app-status-bar-style` comment for why that's no longer
+     what this app uses (an opaque status bar, colored from `theme-color`
+     directly, instead). Still needed, not dead: iOS only reads a PWA's status
+     bar style at "Add to Home Screen" time, not on every launch, so any
+     already-installed icon keeps running the old translucent style (and thus
+     a non-zero `env(safe-area-inset-top)`, needing this padding to still show
+     `.navbar`'s own background through it) until it's removed and re-added.
+     Naturally becomes a no-op once an install *does* pick up the opaque
+     style -- iOS then excludes the status bar from the content viewport
+     entirely, so `env(safe-area-inset-top)` resolves to 0 on its own, same as
+     it always has without a notch/Dynamic Island or `viewport-fit=cover`. See
+     media_viewer_panel.css's toolbar padding for the same reasoning. */
   padding-top: env(safe-area-inset-top);
   border-bottom: 1px solid var(--border);
   transition: background-color 0.2s ease;

@@ -6,17 +6,26 @@
   <meta name="viewport"
     content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <!-- "black-translucent" (rather than "default") makes the status bar
-       transparent when this is running as a home-screen/standalone app on
-       iOS, letting .navbar's own background (see nav.css's
-       `padding-top: env(safe-area-inset-top)`) show through underneath it --
-       "default"/"black" are opaque, fixed OS colors that never reflect the
-       page. iOS never reads `theme-color` for a standalone app's status bar
-       (only for a regular Safari tab's toolbar, which the two tags below still
-       cover), so this is the only way to tint it, at the cost of the status
-       bar's icons/text always being light-colored (iOS's choice, not
-       adjustable per-color). -->
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <!-- "default" (an opaque status bar), NOT "black-translucent", deliberately: iOS 26+'s "Liquid
+       Glass" scroll-edge effect permanently blurs the band under a *translucent* standalone status
+       bar (reported widely as "iOS 27 blurs the top edge of installed PWAs") -- WebKit only ever
+       sets `obscuredInsets.top` (the thing that tells iOS "this area is already own by the page,
+       skip your own blur") for an *opaque* status bar style, never a translucent one, so no
+       page-level CSS/JS could ever suppress it while this stayed "black-translucent". The old
+       assumption this comment used to state -- "iOS never reads `theme-color` for a standalone
+       app's status bar, only a regular Safari tab's toolbar" -- turns out to no longer hold either:
+       with an *opaque* status bar style specifically, iOS 26+ does tint it from `theme-color`, live,
+       to whatever color the page sets -- confirmed against two other real-world iOS-27-blur fixes
+       that both rely on exactly this. So `Ports.setNavBarColor` (below) already keeping every
+       `theme-color` meta (the two static ones right after this tag, and every later update) in sync
+       with `mainServerTheme`'s `primaryColor` -- the same color `.navbar` itself is tinted with --
+       is *also* now what colors the opaque status bar to match, with no separate mechanism needed.
+       Losing: the status bar's icons/text no longer get to stay unconditionally light-colored the
+       way "black-translucent" guaranteed -- iOS now picks their contrast itself from whatever
+       `theme-color` it's currently showing (the same way Safari's own address bar already does for
+       a themed tab), which should track a server's `primaryColor` reasonably by design, but isn't
+       something this app controls directly. -->
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#16181d" media="(prefers-color-scheme: dark)">
   <title>Rellm</title>
