@@ -45,6 +45,30 @@
   z-index: 28;
 }
 
+/* iOS's rubber-band overscroll (dragging down past the very top of the page) visually drags
+   `.navbar` down with it despite `position: sticky` -- a real WebKit quirk, not a layout bug on
+   this app's part -- exposing a gap above it that would otherwise show `body`'s plain background
+   instead of `.navbar`'s own (server-tinted) one. This sits permanently just off-screen, directly
+   above `.navbar`'s own box (`position: absolute` against it, since `position: sticky` -- like any
+   non-`static` value -- is itself a containing block for that) -- invisible under any normal
+   scroll, since nothing ever exposes space above the very first element on the page outside of
+   this exact overscroll gesture. `background-color: inherit` (not a copy of `background-color-primary`,
+   the class -- see `.navbar`'s own doc, above) takes `.navbar`'s current *computed* background-color
+   directly, however that got set, so it always matches without this needing to know or duplicate
+   how. `height`/`-top` (600px) just needs to outlast any realistic drag distance -- iOS's own
+   rubber-band resistance keeps that well under 300px in practice, so this is a comfortable
+   margin, not a tuned exact value. */
+.navbar::before {
+  content: "";
+  position: absolute;
+  top: -600px;
+  left: 0;
+  right: 0;
+  height: 600px;
+  background-color: inherit;
+  pointer-events: none;
+}
+
 /* Keeps the navbar's content lined up with the (narrower) page content
    below it, the same way .container does for main. */
 .navbar-inner {
