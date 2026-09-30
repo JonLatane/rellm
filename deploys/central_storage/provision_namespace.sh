@@ -74,7 +74,7 @@ for cmd in kubectl mc openssl base64; do
 done
 
 PF_PID=""
-cleanup() { [ -z "$PF_PID" ] || kill "$PF_PID" 2>/dev/null || true; rm -rf "${TMP_DIR:-}"; }
+cleanup() { [ -z "$PF_PID" ] || { kill "$PF_PID" && wait "$PF_PID"; } 2>/dev/null || true; rm -rf "${TMP_DIR:-}"; }
 trap cleanup EXIT
 TMP_DIR="$(mktemp -d)"
 on_error() {

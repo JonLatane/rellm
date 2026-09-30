@@ -194,6 +194,30 @@ start_port_forward() { # <namespace> <pod> <local-port> <remote-port>
   die "port-forward to $1/$2 on local port $3 never came up (port already in use? override the *_LOCAL_PORT env vars)"
 }
 
+# (Re)establishes both object storage port-forwards from scratch. `kubectl port-forward` tunnels
+# drop during long transfers (a ~1GB copy is plenty of time), so the copy/verify steps reconnect
+# rather than trusting a tunnel started minutes ago.
+restart_object_storage_port_forwards() {
+  local pid
+  for pid in $PF_PIDS; do { kill "$pid" && wait "$pid"; } 2>/dev/null || true; done
+  PF_PIDS=""
+  start_port_forward "$NAMESPACE" rellm-object-storage-0 "$OBJECT_STORAGE_SRC_LOCAL_PORT" 9000
+  start_port_forward "$STORAGE_NAMESPACE" rellm-central-object-storage-0 "$OBJECT_STORAGE_DST_LOCAL_PORT" 9000
+}
+
+# `mc mirror` is incremental (already-copied objects are skipped), so when a tunnel drops
+# mid-copy we just reconnect and run it again.
+mirror_until_done() {
+  local attempt
+  for attempt in 1 2 3 4 5 6; do
+    restart_object_storage_port_forwards
+    if mc mirror --overwrite "src/$SRC_BUCKET" "dst/$NAMESPACE"; then return 0; fi
+    info "Mirror attempt $attempt of 6 failed (usually a dropped kubectl port-forward) -- reconnecting and resuming..."
+    sleep 3
+  done
+  return 1
+}
+
 # ---------------------------------------------------------------------------
 step "Preflight checks (nothing is modified yet)"
 for cmd in kubectl mc make sed grep; do
@@ -290,31 +314,37 @@ fi
 info "$(echo "$SRC_COUNTS" | wc -l | tr -d ' ') tables, all row counts identical."
 
 step "2d. Copy object storage ('$SRC_BUCKET' -> central '$NAMESPACE') via mc mirror"
-start_port_forward "$NAMESPACE" rellm-object-storage-0 "$OBJECT_STORAGE_SRC_LOCAL_PORT" 9000
-start_port_forward "$STORAGE_NAMESPACE" rellm-central-object-storage-0 "$OBJECT_STORAGE_DST_LOCAL_PORT" 9000
 # Destination uses the central instance's root credentials (from its Secret) for the copy; the
 # namespace's own restricted user is what the running site will use.
 DST_ROOT_USER="$(kubectl get secret rellm-central-object-storage-credentials -n "$STORAGE_NAMESPACE" -o jsonpath='{.data.root-user}' | base64 --decode)"
 DST_ROOT_PASSWORD="$(kubectl get secret rellm-central-object-storage-credentials -n "$STORAGE_NAMESPACE" -o jsonpath='{.data.root-password}' | base64 --decode)"
 export MC_HOST_src="http://$SRC_ACCESS_KEY:$SRC_SECRET_KEY@localhost:$OBJECT_STORAGE_SRC_LOCAL_PORT"
 export MC_HOST_dst="http://$DST_ROOT_USER:$DST_ROOT_PASSWORD@localhost:$OBJECT_STORAGE_DST_LOCAL_PORT"
+restart_object_storage_port_forwards
 if mc ls "src/$SRC_BUCKET" >/dev/null 2>&1; then
   mc mb --ignore-existing "dst/$NAMESPACE"
   info "Mirroring (can take a while depending on how much media there is; safe to re-run -- it's incremental)..."
-  mc mirror --overwrite "src/$SRC_BUCKET" "dst/$NAMESPACE"
+  mirror_until_done || die "Object storage copy still failing after 6 reconnects. The site is still down; re-run this script with --reset-target (the copy resumes where it left off)."
 
-  step "2e. Verify object storage copy (mc diff)"
+  step "2e. Verify object storage copy (mc diff + total size/object count)"
+  restart_object_storage_port_forwards
   DIFF_OUTPUT="$(mc diff "src/$SRC_BUCKET" "dst/$NAMESPACE" || true)"
   if [ -n "$DIFF_OUTPUT" ]; then
     echo "$DIFF_OUTPUT" >&2
     die "Bucket verification found differences (see above)"
   fi
+  # `mc diff ... || true` above can't tell "identical" from "couldn't connect", so also require
+  # both sides to report (successfully) the same total size and object count.
+  SRC_DU="$(mc du "src/$SRC_BUCKET")" || die "Couldn't measure the source bucket for verification"
+  DST_DU="$(mc du "dst/$NAMESPACE")" || die "Couldn't measure the central bucket for verification"
+  [ "$(echo "$SRC_DU" | awk '{print $1, $2}')" = "$(echo "$DST_DU" | awk '{print $1, $2}')" ] \
+    || die "Source and central buckets differ in total size/object count: source '$SRC_DU' vs central '$DST_DU'"
   info "$(mc ls --recursive "dst/$NAMESPACE" | wc -l | tr -d ' ') object(s) in central bucket '$NAMESPACE'; identical to source."
 else
   info "Source bucket '$SRC_BUCKET' doesn't exist (no media ever uploaded) -- creating an empty '$NAMESPACE' bucket instead."
   mc mb --ignore-existing "dst/$NAMESPACE"
 fi
-for pid in $PF_PIDS; do kill "$pid" 2>/dev/null || true; done
+for pid in $PF_PIDS; do { kill "$pid" && wait "$pid"; } 2>/dev/null || true; done
 PF_PIDS=""
 
 # ---------------------------------------------------------------------------

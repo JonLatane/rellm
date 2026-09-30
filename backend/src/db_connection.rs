@@ -62,9 +62,32 @@ pub fn establish_test_pool() -> PgPool {
         .expect("Failed to create test pool")
 }
 
+/// Arbitrary (but fixed) key for the Postgres advisory lock that serializes migrations.
+const MIGRATION_LOCK_ID: i64 = 0x52_45_4C_4C_4D; // "RELLM"
+
+/// Runs pending migrations, but only one process at a time per database. Without this, every
+/// replica of a brand-new deployment starts at once against an empty database, they all start
+/// running the same migrations, and the losers panic with unique violations on `pg_type` (a
+/// restart fixes it, but it's an ugly first boot). Whoever gets the lock migrates; everyone else
+/// blocks here, then finds nothing left to do.
+///
+/// This is a *session*-level advisory lock, held on `connection` for the duration -- so if
+/// PgBouncer (transaction pooling) is ever put in front of Postgres, migrations must still go
+/// through a direct/session-pooled connection.
+pub fn run_migrations_exclusively(connection: &mut PgConnection) {
+    diesel::sql_query(format!("SELECT pg_advisory_lock({MIGRATION_LOCK_ID})"))
+        .execute(connection)
+        .expect("Failed to acquire the migration advisory lock");
+    let result = connection.run_pending_migrations(MIGRATIONS).map(|_| ());
+    // Also released when the connection closes; unlocking explicitly just doesn't hold it longer
+    // than needed if a caller keeps the connection around.
+    diesel::sql_query(format!("SELECT pg_advisory_unlock({MIGRATION_LOCK_ID})"))
+        .execute(connection)
+        .ok();
+    result.unwrap();
+}
+
 pub fn migrate_database() {
     let mut connection = establish_connection();
-    connection.run_pending_migrations(MIGRATIONS).unwrap();
-    // embedded_migrations::run_with_output(&connection, &mut std::io::stdout())
-    //     .expect("Error running migrations");
+    run_migrations_exclusively(&mut connection);
 }

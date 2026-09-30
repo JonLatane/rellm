@@ -83,6 +83,16 @@ NAMESPACE=bullcitysocial CONFIRM=bullcitysocial make delete_backend_data_pvcs
 
 The underlying volumes are retained (`reclaimPolicy: Retain`); the target prints their PV names so you can delete them, and then the cloud volumes, yourself.
 
+## Removing a namespace from central storage
+
+`NAMESPACE=mynewsite CONFIRM=mynewsite make delete_backend_central_data` (or
+[`deprovision_namespace.sh`](./deprovision_namespace.sh)) is the reverse of provisioning: it
+**permanently** deletes the namespace's database and role, its bucket *and every object in it*, its
+Silo user/policy and its `rellm-central-data` Secret. Use it to clean up a smoke test or retire a
+site. It refuses while a `rellm` Deployment in that namespace still runs against central storage --
+delete the site first (`kubectl delete namespace mynewsite`); it's fine for the namespace to
+already be gone. Safe to re-run.
+
 ## Credentials and isolation
 
 Nothing secret is checked in. `create_central_storage` generates random admin credentials for the

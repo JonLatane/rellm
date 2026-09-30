@@ -276,6 +276,7 @@ Everything routine is a `make` target; the shell scripts under `deploys/` are fo
   * `copy_server_configuration.sh` (`make copy_server_configuration`): copies one `server_configurations` column between two namespaces' databases (per-namespace or central).
   * `distributables.sh`: sourced by the Homebrew/Linux `rellm` launchers; not run directly.
 * **`central_storage/provision_namespace.sh`** (`make create_backend_central_data`): creates a namespace's database/role, bucket/user and credentials Secret in central storage.
+* **`central_storage/deprovision_namespace.sh`** (`make delete_backend_central_data`): the reverse -- permanently removes a namespace's central-storage data and credentials (smoke-test cleanup, retiring a site).
 * **`data_migrations/`** -- one-time, per-namespace, manual data/credential migrations, kept as a record and for namespaces that haven't had them yet (`cutover_jonline_namespace.sh`, `rename_minio_pvc_to_object_storage.sh`, `adopt_legacy_data_credentials.sh`). Never run by CI or `make`.
 * **`one_off_scripts/`** -- one-shot scripts that aren't data migrations (`rename_jonline_to_rellm.sh`), kept for reference.
 

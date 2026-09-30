@@ -209,6 +209,15 @@ restart_backend_data: restart_backend_postgres restart_backend_object_storage
 create_backend_central_data:
 	STORAGE_NAMESPACE=$(STORAGE_NAMESPACE) ./central_storage/provision_namespace.sh $(ARGS) $(NAMESPACE)
 
+# The reverse of create_backend_central_data: PERMANENTLY deletes this namespace's central-storage
+# database + role, bucket (and every object in it) + user/policy and its rellm-central-data Secret
+# -- for cleaning up a smoke test (delete the namespace's site first, e.g. `kubectl delete
+# namespace $(NAMESPACE)`, then run this) or retiring a site. Refuses while a `rellm` Deployment in
+# the namespace still runs against central storage, and requires CONFIRM=$(NAMESPACE) explicitly.
+delete_backend_central_data:
+	@test "$(CONFIRM)" = "$(NAMESPACE)" || (echo "This PERMANENTLY deletes $(NAMESPACE)'s central-storage database, bucket (and all its objects) and credentials. Re-run with CONFIRM=$(NAMESPACE)." >&2 && exit 1)
+	STORAGE_NAMESPACE=$(STORAGE_NAMESPACE) ./central_storage/deprovision_namespace.sh --yes $(NAMESPACE)
+
 # Moves an already-deployed namespace's data onto central_storage/'s shared Postgres/object
 # storage (takes the site down for the duration -- see that script's own header for exactly what it
 # does, and doesn't, touch). Extra flags: make transition_backend_to_central_data ARGS="--yes".
