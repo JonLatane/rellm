@@ -1,0 +1,17 @@
+# See k8s-central-postgres-pvc-digitalocean.yaml's comment -- same split-PVC reasoning as
+# ../../k8s/k8s-object-storage-pvc-digitalocean.yaml.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  labels:
+    app: central-object-storage
+  name: central-object-storage-pv-claim
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      # Bigger default than a per-namespace ../../k8s/k8s-object-storage-pvc-digitalocean.yaml
+      # (5Gi) -- this volume holds every onboarded namespace's bucket, not just one.
+      storage: 20Gi
+  storageClassName: do-block-storage-retain

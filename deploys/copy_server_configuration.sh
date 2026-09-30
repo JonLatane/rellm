@@ -25,7 +25,7 @@
 # never echoed -- so it never appears in your terminal, shell history, or a `set -x` trace, and
 # never even reaches your process list (unlike a `-v`/`-c` argument would).
 #
-# Prerequisites: kubectl pointed at the right cluster (see cutover_jonline_namespace.sh's own doc
+# Prerequisites: kubectl pointed at the right cluster (see data_migrations/cutover_jonline_namespace.sh's own doc
 # for the `doctl kubernetes cluster kubeconfig save` incantation), psql installed locally (15+,
 # for `\getenv`).
 set -euo pipefail
@@ -34,13 +34,16 @@ set -euo pipefail
 # real difference from bash), so usage() below can't just read $0 itself.
 SCRIPT_NAME=$0
 
-PG_SVC=rellm-postgres
 PG_PORT=5432
-PG_USER=admin
-# Matches deploys/k8s/k8s-postgres-*.yaml's own POSTGRES_PASSWORD -- not a real secret (it's
-# already checked into this repo in plaintext), just this cluster's DB auth.
-PG_PASSWORD=secure_password1
-PG_DB=rellm
+STORAGE_NAMESPACE=${STORAGE_NAMESPACE:-rellm-storage}
+# Connection details for the namespace currently being read/written -- set by resolve_pg below,
+# since a namespace's database is either its own rellm-postgres (admin, password from its
+# rellm-data-credentials Secret) or, once transitioned, a role of its own in central storage.
+PG_FWD_NS=""
+PG_FWD_TARGET=""
+PG_USER=""
+PG_PASSWORD=""
+PG_DB=""
 
 # Every `server_configurations` column that's actually copyable this way -- everything except
 # `id`/`active`/`created_at`/`updated_at`, which this script manages itself (see the header doc
@@ -95,6 +98,32 @@ if [[ "$COLUMN_OK" -ne 1 ]]; then
   usage
 fi
 
+# Sets PG_FWD_NS/PG_FWD_TARGET/PG_USER/PG_PASSWORD/PG_DB for namespace $1: central storage if it has
+# a rellm-central-data Secret (see deploys/central_storage), else its own rellm-postgres.
+resolve_pg() {
+  local ns=$1 url
+  url=$(kubectl get secret rellm-central-data -n "$ns" -o jsonpath='{.data.database-url}' 2>/dev/null | base64 --decode 2>/dev/null || true)
+  if [[ -n "$url" ]]; then
+    # postgres://<user>:<password>@<host>/<db>
+    local rest=${url#postgres://}
+    PG_USER=${rest%%:*}
+    PG_PASSWORD=${${rest#*:}%%@*}
+    PG_DB=${url##*/}
+    PG_FWD_NS=$STORAGE_NAMESPACE
+    PG_FWD_TARGET=pod/rellm-central-postgres-0
+  else
+    PG_USER=admin
+    PG_DB=rellm
+    PG_FWD_NS=$ns
+    PG_FWD_TARGET=svc/rellm-postgres
+    PG_PASSWORD=$(kubectl get secret rellm-data-credentials -n "$ns" -o jsonpath='{.data.postgres-password}' 2>/dev/null | base64 --decode 2>/dev/null || true)
+    if [[ -z "$PG_PASSWORD" ]]; then
+      echo "$ns has neither a rellm-central-data nor a rellm-data-credentials Secret -- run deploys/data_migrations/adopt_legacy_data_credentials.sh $ns first." >&2
+      return 1
+    fi
+  fi
+}
+
 # Port-forwards $1's rellm-postgres to a scratch local port, waits until it's actually accepting
 # connections (a plain psql retry loop -- portable across zsh, unlike bash's /dev/tcp), and leaves
 # PF_PID/PF_PORT set for the caller. Always paired with stop_port_forward.
@@ -102,8 +131,9 @@ PF_PID=""
 PF_PORT=""
 start_port_forward() {
   local ns=$1
+  resolve_pg "$ns" || return 1
   PF_PORT=$(( (RANDOM % 5000) + 20000 ))
-  kubectl port-forward -n "$ns" "svc/$PG_SVC" "$PF_PORT:$PG_PORT" \
+  kubectl port-forward -n "$PG_FWD_NS" "$PG_FWD_TARGET" "$PF_PORT:$PG_PORT" \
     >"/tmp/pgpf-copy-server-configuration-$ns.log" 2>&1 &
   PF_PID=$!
   local attempt

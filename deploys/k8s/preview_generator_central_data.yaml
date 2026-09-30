@@ -1,0 +1,55 @@
+# Template for create_internal_central_data_backend/update_internal_central_data_backend (see
+# ../Makefile) -- identical to preview_generator.yaml, except DATABASE_URL/OBJECT_STORAGE_* point
+# at the shared Postgres/object storage in ../central_storage instead of a per-namespace instance.
+# ${NAMESPACE} and ${STORAGE_NAMESPACE} are substituted by ../Makefile's generation rule into
+# k8s/preview_generator_central_data.$(NAMESPACE).generated.yaml (gitignored) -- never edit that
+# generated file directly, edit this template and regenerate. See
+# server_internal_central_data.yaml for more on the ${NAMESPACE}-named database/bucket.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rellm-preview-generator
+  labels:
+    app: rellm-preview-generator
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: rellm-preview-generator
+  template:
+    metadata:
+      labels:
+        app: rellm-preview-generator
+    spec:
+      containers:
+        - name: rellm-preview-generator
+          image: docker.io/jonlatane/rellm_preview_generator:0.5.553
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: rellm-central-data
+                  key: database-url
+            - name: OBJECT_STORAGE_ENDPOINT
+              value: http://rellm-central-object-storage.${STORAGE_NAMESPACE}.svc.cluster.local:9000
+            - name: OBJECT_STORAGE_REGION
+              value: ""
+            - name: OBJECT_STORAGE_BUCKET
+              value: ${NAMESPACE}
+            - name: OBJECT_STORAGE_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: rellm-central-data
+                  key: object-storage-access-key
+            - name: OBJECT_STORAGE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: rellm-central-data
+                  key: object-storage-secret-key
+            - name: RUST_BACKTRACE
+              value: full
+            - name: RUST_LOG
+              value: headless_chrome=trace

@@ -22,7 +22,7 @@
 #   `object-storage-pv-claim`, so no bytes move and no bucket copy is
 #   needed (contrast this with the jonline->rellm namespace rename, which
 #   genuinely had to `mc mirror` an S3 bucket -- see
-#   cutover_jonline_namespace.sh -- because that rename changed data
+#   data_migrations/cutover_jonline_namespace.sh -- because that rename changed data
 #   ownership, not just a PVC's own name).
 #
 #   This is only possible because `deploys/k8s/storageclass-retain-*.yaml`
@@ -49,13 +49,13 @@
 #    storage) are affected for that window.
 #
 # Usage:
-#   ./rename_minio_pvc_to_object_storage.sh <namespace>
-#   NAMESPACE=jonline ./rename_minio_pvc_to_object_storage.sh
+#   ./data_migrations/rename_minio_pvc_to_object_storage.sh <namespace>
+#   NAMESPACE=jonline ./data_migrations/rename_minio_pvc_to_object_storage.sh
 # ============================================================================
 set -euo pipefail
 
 NAMESPACE="${1:-${NAMESPACE:?Usage: $0 <namespace>  (e.g. jonline, bullcitysocial, oakcitysocial, ato-band)}}"
-DEPLOYS_DIR="$(cd "$(dirname "$0")" && pwd)"
+DEPLOYS_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 echo "=== Namespace: $NAMESPACE ==="
 

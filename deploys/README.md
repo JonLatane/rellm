@@ -3,6 +3,7 @@
 - [Rellm Deploys](#rellm-deploys)
   - [Basic Deployment](#basic-deployment)
     - [Deploying to namespaces other than `rellm`](#deploying-to-namespaces-other-than-rellm)
+    - [Credentials](#credentials)
   - [Validating your deployment](#validating-your-deployment)
     - [Kubernetes service statuses](#kubernetes-service-statuses)
       - [External IP Management](#external-ip-management)
@@ -11,10 +12,12 @@
   - [Deleting your deployment](#deleting-your-deployment)
   - [Multiple Deployments](#multiple-deployments)
     - [Rellm Ingress: sharing one LoadBalancer across many domains (recommended)](#rellm-ingress-sharing-one-loadbalancer-across-many-domains-recommended)
+    - [Central Storage: sharing Postgres/object storage across many namespaces](#central-storage-sharing-postgresobject-storage-across-many-namespaces)
     - [Example Kubernetes Cluster Setups](#example-kubernetes-cluster-setups)
       - [K8s cluster with multiple Kubernetes LoadBalancers (without a shared ingress)](#k8s-cluster-with-multiple-kubernetes-loadbalancers-without-a-shared-ingress)
       - [K8s cluster with multiple Rellm servers/deployments behind a single shared LoadBalancer](#k8s-cluster-with-multiple-rellm-serversdeployments-behind-a-single-shared-loadbalancer)
   - [Upgrading your deployed PostgreSQL](#upgrading-your-deployed-postgresql)
+  - [Deploy scripts](#deploy-scripts)
 
 Rather than requiring Helm, Ansible, Terraform, or other orchestration layers, Rellm deployment takes a more primitive route. Rellm deployment is built so you can simply maintain one cloned Rellm repo per cluster whose deployments you want to manage. Within your cluster's repo, you'll simply use `make` to deploy:
 
@@ -31,6 +34,8 @@ As a user or a contributor, it's helpful to understand that Rellm deployment is 
   * `sed`
   * `jq`
   * `kubectl`
+  * `openssl` (generating credentials)
+  * `mc`, the MinIO Client (`brew install minio/stable/mc`) -- only for [central storage](./central_storage/README.md) provisioning/transitions
 * `Dockerfile`s in `deploys/docker`
   * As a user, these are really just for reference, as you'll likely be deploying pre-built images from [jonlatane/rellm](https://hub.docker.com/r/jonlatane/rellm).
 * Kubernetes `.yml` files in `deploys/k8s` and `deploys/generated_certs/k8s` (for using Rellm's Cert-Manager integration)
@@ -72,10 +77,19 @@ Next, from the repo root, to create Postgres, object storage and two load-balanc
 NAMESPACE=rellm make create_backend_data create_external_backend
 ```
 
-That's it! You've created object storage and Postgres servers along with an *unsecured Rellm instance* where ***passwords and auth tokens will be sent in plain text*** (You should secure it immediately if you care about any data/people, but feel free to play around with it until you do! Simply `NAMESPACE=rellm make delete_backend_data create_backend_data restart_backend` to reset your server's data.) Because Rellm is a very tiny Rust service, it will all be up within seconds. Your Kubenetes provider will probably take some time to assign you an IP, though.
+That's it! You've created object storage and Postgres servers (with randomly generated credentials -- see [Credentials](#credentials)) along with a Rellm instance that *doesn't have TLS yet*, so ***passwords and auth tokens will be sent in plain text*** (You should secure it immediately if you care about any data/people, but feel free to play around with it until you do! Simply `NAMESPACE=rellm make delete_backend_data create_backend_data restart_backend` to reset your server's data.) Because Rellm is a very tiny Rust service, it will all be up within seconds. Your Kubenetes provider will probably take some time to assign you an IP, though.
 
 ### Deploying to namespaces other than `rellm`
 `NAMESPACE` is required (no default) for every `deploys/Makefile` target, so you always pick the namespace explicitly: `NAMESPACE=my_namespace make create_backend_data create_external_backend` to deploy to `my_namespace`. This should work for any of the `make deploy_*` targets in Rellm.
+
+### Credentials
+**No credential is ever checked into this repo, hand-typed, or reused between deployments -- every one is generated, randomly, by a Make target or script here.** (This is a standing rule for contributors, too: a manifest or script must never contain an inline password, and a new consumer of a credential reads it from the relevant Secret via `secretKeyRef`.)
+
+* **Per-namespace deploys** (`create_backend_data`, and the `create_*_backend` targets, which run it first): `create_backend_data_credentials` generates a random Postgres password and object storage credentials into a `rellm-data-credentials` Secret in the namespace. The Postgres/object storage manifests and the server manifests all read it via `secretKeyRef`; the dump/restore targets (`dump_backend_postgres`, ...) read the password from the same Secret (or take `PG_PASSWORD=...`). It **never regenerates an existing Secret**: Postgres and the object storage server only read their credentials when initializing an empty volume, so a "new" value would silently stop matching the real one.
+* **[Central storage](./central_storage/README.md)**: the shared instances' own admin credentials are random Secrets in `rellm-storage`, and every namespace on them gets its own Postgres role and object storage user -- named after the namespace, random passwords, each restricted to only that namespace's database/bucket -- in a `rellm-central-data` Secret.
+* **Getting them back out:** `make get_all_storage_credentials` prints every one of those Secrets, decoded, across all namespaces (no `NAMESPACE` needed). Run it and put the output in a password manager -- these Secrets are the only copy. In particular, deleting a namespace (`kubectl delete namespace`) deletes its Secret while the data volumes survive (`reclaimPolicy: Retain`), and without the saved password you can't get back into that Postgres data.
+* **Namespaces deployed before this existed** have their credentials inline in the running Deployments/StatefulSets. Run `deploys/data_migrations/adopt_legacy_data_credentials.sh <namespace>` once per namespace *before its next deploy* -- it creates the Secret from the namespace's live values (verifying they all agree; nothing is restarted or changed) so the new manifests keep working against the same data. CI (`deploys/select_backend_manifest.sh`) refuses to deploy a namespace that's missing the Secret rather than roll out pods that can't start. Those inline values were the old checked-in defaults, so treat them as compromised: the real fix is moving the namespace to central storage ([`transition_jonline_namespace_to_central_storage.sh`](./central_storage/README.md#transitioning-an-existing-namespace)), which issues fresh random credentials.
+* **Rotating** a credential means changing it in the running server *and* the Secret (Postgres: `ALTER ROLE ... PASSWORD`; object storage: the server's root credentials env / `mc admin user`), then restarting the consumers. There's no target for it yet -- and never delete a `rellm-*credentials` Secret while its data volume lives on.
 
 ## Validating your deployment
 ### Kubernetes service statuses
@@ -198,7 +212,9 @@ See [`deploys/generated_certs/README.md`](https://github.com/JonLatane/rellm/tre
 See [`backend/README.md`](https://github.com/JonLatane/rellm/blob/main/backend/README.md) for more detailed descriptions of how the deployment and TLS system works.
 
 ## Deleting your deployment
-You can delete your Rellm deployment piece by piece with `NAMESPACE=my_namespace make delete_backend delete_backend_postgres` or simply `kubectl delete namespace my_namespace`.
+You can delete your Rellm deployment piece by piece with `NAMESPACE=my_namespace make delete_backend delete_backend_postgres` or simply `kubectl delete namespace my_namespace`. Before deleting a namespace's storage, save its credentials (`make get_all_storage_credentials` -- see [Credentials](#credentials)).
+
+Once a namespace has been moved to central storage and you've verified it, `NAMESPACE=my_namespace CONFIRM=my_namespace make delete_backend_data_pvcs` removes its old per-namespace Postgres/object storage and their PVCs (it refuses unless the namespace really is on central storage, and keeps the underlying volumes as `Released` PVs until you delete them yourself).
 
 
 ## Multiple Deployments
@@ -218,6 +234,18 @@ NAMESPACE=my_namespace DOMAIN=my.domain.example.com make add_ingress_domain
 
 See [`deploys/ingress/README.md`](./ingress/README.md) for the full walkthrough, including how to cut a domain over from its own LoadBalancer without downtime.
 
+### Central Storage: sharing Postgres/object storage across many namespaces
+Each namespace's Postgres and object storage above is its own StatefulSet - 2 PVCs per namespace. Most managed Kubernetes offerings cap how many PVCs a cluster can attach at all (DigitalOcean's DOKS: 15), so that runs out fast once you're hosting more than a handful of domains, regardless of how cheap or expensive each individual domain's traffic is. [`deploys/central_storage/`](./central_storage/README.md) sets up one shared Postgres + object storage instance (2 PVCs, full stop) that any number of *new* namespaces can point at instead, each with its own database and bucket (named after the namespace) inside the shared instance rather than an instance of its own.
+
+```bash
+# Once per cluster:
+cd deploys/central_storage && make create_central_storage
+# Once per new namespace, instead of create_backend_data create_internal_backend:
+NAMESPACE=my_namespace make create_backend_central_data create_internal_central_data_backend
+```
+
+This creates no shared credentials anyone has to know: the shared instances' admin credentials are random Secrets, and each namespace gets its own restricted Postgres role/object storage user (see [Credentials](#credentials)). Existing per-namespace deployments are untouched until you move them with `NAMESPACE=my_namespace make transition_backend_to_central_data` (site is down for the duration; the old storage is left running for you to verify and later remove with `delete_backend_data_pvcs`). Known gap: `dump_backend_postgres`/`restore_backend_postgres`/`upgrade_backend_postgres` only work on a namespace's own Postgres -- central storage has PVC size/resize targets (`get_central_*_pvc_size`, `resize_central_*_pvc`) but no backup or upgrade path yet. See [`deploys/central_storage/README.md`](./central_storage/README.md) for the full walkthrough.
+
 ### Example Kubernetes Cluster Setups
 #### K8s cluster with multiple Kubernetes LoadBalancers (without a shared ingress)
 This is how Rellm was originally deployed, and still is by default for a single domain.
@@ -229,6 +257,8 @@ This is what [`deploys/ingress/`](./ingress/README.md) sets up.
 ![System with multiple Kubernetes LoadBalancers](https://github.com/JonLatane/rellm/blob/main/docs/architecture/Traefik_Kubernetes_Deployment.svg)
 
 ## Upgrading your deployed PostgreSQL
+_(This section covers a namespace's own Postgres. [Central storage](./central_storage/README.md)'s shared Postgres has no dump/upgrade targets yet.)_
+
 The Postgres image tag lives in `k8s/k8s-postgres-$(K8S_PROVIDER).yaml`. For a **minor** version bump (e.g. `17.5` → `17.6`), just edit the tag and run `NAMESPACE=rellm make update_backend_postgres`. For a **major** version bump (e.g. `14` → `17`), the on-disk data format changes, so don't just `update_backend_postgres` - use:
 
 ```bash
@@ -236,3 +266,18 @@ NAMESPACE=my_namespace make upgrade_backend_postgres
 ```
 
 This handles the whole migration: it dumps your current database (via a temporary port-forward, no `kubectl exec` needed), stops the app and the old Postgres, brings up the new version (initdb'd fresh on a new PVC subPath, so the old data directory is never touched), restores the dump into it, then restarts the app. Your old version's data stays on disk as an instant rollback until you're confident in the new one, at which point `make delete_backend_postgres_old_data NAMESPACE=my_namespace` permanently deletes it.
+
+## Deploy scripts
+Everything routine is a `make` target; the shell scripts under `deploys/` are for the things a Makefile recipe is too awkward for. They're organized by how often you'll run them:
+
+* **`deploys/`** -- tasks that may recur, or that other things call:
+  * `transition_jonline_namespace_to_central_storage.sh` (`make transition_backend_to_central_data`): moves a namespace onto [central storage](./central_storage/README.md), with downtime, verifying the copy and leaving the old storage untouched.
+  * `select_backend_manifest.sh`: used by CI (`.github/workflows/server_ci_cd.yml`) to pick each namespace's manifests -- per-namespace or central_storage -- from what its live `rellm` Deployment is running.
+  * `copy_server_configuration.sh` (`make copy_server_configuration`): copies one `server_configurations` column between two namespaces' databases (per-namespace or central).
+  * `distributables.sh`: sourced by the Homebrew/Linux `rellm` launchers; not run directly.
+* **`central_storage/provision_namespace.sh`** (`make create_backend_central_data`): creates a namespace's database/role, bucket/user and credentials Secret in central storage.
+* **`data_migrations/`** -- one-time, per-namespace, manual data/credential migrations, kept as a record and for namespaces that haven't had them yet (`cutover_jonline_namespace.sh`, `rename_minio_pvc_to_object_storage.sh`, `adopt_legacy_data_credentials.sh`). Never run by CI or `make`.
+* **`one_off_scripts/`** -- one-shot scripts that aren't data migrations (`rename_jonline_to_rellm.sh`), kept for reference.
+
+Anything destructive or that takes a site down prints what it's about to do and asks you to confirm (or takes `--yes`). New scripts follow the same rules: validate every argument before touching the cluster, and never contain or print a hard-coded credential.
+
