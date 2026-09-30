@@ -765,7 +765,7 @@ jobs:
           token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
 
       - name: Update deploys/k8s/server_internal.yaml to use ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
-        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}|g' deploys/k8s/server_internal.yaml
+        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}|g' deploys/k8s/server_internal.yaml deploys/k8s/server_internal_central_data.yaml
 
       - name: Save DigitalOcean kubeconfig with short-lived credentials
         run: doctl kubernetes cluster kubeconfig save --expiry-seconds 600 rellm-be
@@ -782,7 +782,7 @@ jobs:
         run: kubectl delete cronjob --all -n jonline --ignore-not-found=true
 
       - name: Deploy to Jonline.io via DigitalOcean Kubernetes
-        run: kubectl apply -f deploys/k8s/server_internal.yaml -n jonline
+        run: kubectl apply -f "$(deploys/select_backend_manifest.sh server jonline)" -n jonline
 
       - name: Verify Server deployment
         run: kubectl rollout status deployment/rellm -n jonline --timeout 5m
@@ -838,13 +838,13 @@ jobs:
           token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
 
       - name: Update deploys/k8s/preview_generator.yaml to use ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
-        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}|g' deploys/k8s/preview_generator.yaml
+        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}|g' deploys/k8s/preview_generator.yaml deploys/k8s/preview_generator_central_data.yaml
 
       - name: Save DigitalOcean kubeconfig with short-lived credentials
         run: doctl kubernetes cluster kubeconfig save --expiry-seconds 600 rellm-be
 
       - name: Deploy to Jonline.io via DigitalOcean Kubernetes
-        run: kubectl apply -f deploys/k8s/preview_generator.yaml -n jonline
+        run: kubectl apply -f "$(deploys/select_backend_manifest.sh preview jonline)" -n jonline
 
   create_github_release:
     name: "GitHub: Release"
@@ -920,9 +920,7 @@ jobs:
 
             - [DockerHub: Rellm Preview Generator (jonlatane/rellm_preview_generator:${{ steps.vars.outputs.full_version }})](https://hub.docker.com/r/jonlatane/rellm_preview_generator/tags?page=1&name=${{ steps.vars.outputs.full_version }})
 
-            - *In testing/not yet ready for production use:* [DockerHub: JBL (Rellm Balancer of Loads/Load Balancer) (jonlatane/jbl:${{ steps.vars.outputs.full_version }})](https://hub.docker.com/r/jonlatane/rellm_preview_generator/tags?page=1&name=${{ steps.vars.outputs.full_version }})
-
-            A macOS (Apple Silicon) build is also available via Homebrew:
+            A macOS (Apple Silicon) build is available via Homebrew:
 
             ```
             brew install jonlatane/rellm/rellm
@@ -949,13 +947,15 @@ jobs:
 
             Then, this release is created (so, Jonline.io should already be updated).
 
-            Finally, Bull City Social and Oak City Social (and any other "production" deployments) will be updated.
+            Finally, Rellm.org, Bull City Social, and Oak City Social (and any other "production" deployments) will be updated.
 
             | Deployment | Links | Deployment Version |
             | --- | --- | --- |
-            | [Jonline.io ![Jonline.io](https://jonline.io/info_shield?56fdas586)](https://jonline.io)                      | [About](https://jonline.io/about), [Protocol Docs](https://rellm.org/docs/protocol/)           | Development |
-            | [BullCity.Social ![BullCity.Social](https://BullCity.Social/info_shield?56fdas586)](https://BullCity.Social/) | [About](https://BullCity.Social/about), [Protocol Docs](https://BullCity.Social/docs/protocol/) | Production  |
+            | [Rellm.org ![Rellm.org](https://rellm.org/info_shield?56fdas586)](https://rellm.org/)     | [About](https://rellm.org/about), [Protocol Docs](https://rellm.org/docs/protocol/)   | Production  |
             | [OakCity.Social ![OakCity.Social](https://OakCity.Social/info_shield?56fdas586)](https://OakCity.Social/)     | [About](https://OakCity.Social/about), [Protocol Docs](https://OakCity.Social/docs/protocol/)   | Production  |
+            | [BullCity.Social ![BullCity.Social](https://BullCity.Social/info_shield?56fdas586)](https://BullCity.Social/) | [About](https://BullCity.Social/about), [Protocol Docs](https://BullCity.Social/docs/protocol/) | Production  |
+            | [ATO.Band ![ATO.Band](https://ATO.Band/info_shield?56fdas586)](https://ATO.Band/)     | [About](https://OakCity.Social/about), [Protocol Docs](https://OakCity.Social/docs/protocol/)   | Production  |
+            | [Jonline.io ![Jonline.io](https://jonline.io/info_shield?56fdas586)](https://jonline.io)                      | [About](https://jonline.io/about), [Protocol Docs](https://rellm.org/docs/protocol/)           | Development |
 
             ## Changelog
 
@@ -1297,10 +1297,10 @@ jobs:
           token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
 
       - name: Update deploys/k8s/server_internal.yaml to use ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
-        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}|g' deploys/k8s/server_internal.yaml
+        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}|g' deploys/k8s/server_internal.yaml deploys/k8s/server_internal_central_data.yaml
 
       - name: Update deploys/k8s/preview_generator.yaml to use ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
-        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}|g' deploys/k8s/preview_generator.yaml
+        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}|g' deploys/k8s/preview_generator.yaml deploys/k8s/preview_generator_central_data.yaml
 
       - name: Save DigitalOcean kubeconfig with short-lived credentials
         run: doctl kubernetes cluster kubeconfig save --expiry-seconds 600 rellm-be
@@ -1309,13 +1309,13 @@ jobs:
         run: kubectl delete cronjob --all -n bullcitysocial --ignore-not-found=true
 
       - name: Deploy to Bull City Social via DigitalOcean Kubernetes
-        run: kubectl apply -f deploys/k8s/server_internal.yaml -n bullcitysocial
+        run: kubectl apply -f "$(deploys/select_backend_manifest.sh server bullcitysocial)" -n bullcitysocial
 
       - name: Verify Server deployment
         run: kubectl rollout status deployment/rellm -n bullcitysocial --timeout 5m
 
       - name: Deploy Preview Generator
-        run: kubectl apply -f deploys/k8s/preview_generator.yaml -n bullcitysocial
+        run: kubectl apply -f "$(deploys/select_backend_manifest.sh preview bullcitysocial)" -n bullcitysocial
 
       - uses: actions/cache/restore@v6
         with:
@@ -1358,10 +1358,10 @@ jobs:
           token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
 
       - name: Update deploys/k8s/server_internal.yaml to use ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
-        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}|g' deploys/k8s/server_internal.yaml
+        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}|g' deploys/k8s/server_internal.yaml deploys/k8s/server_internal_central_data.yaml
 
       - name: Update deploys/k8s/preview_generator.yaml to use ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
-        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}|g' deploys/k8s/preview_generator.yaml
+        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}|g' deploys/k8s/preview_generator.yaml deploys/k8s/preview_generator_central_data.yaml
 
       - name: Save DigitalOcean kubeconfig with short-lived credentials
         run: doctl kubernetes cluster kubeconfig save --expiry-seconds 600 rellm-be
@@ -1370,13 +1370,13 @@ jobs:
         run: kubectl delete cronjob --all -n oakcitysocial --ignore-not-found=true
 
       - name: Deploy to Oak City Social via DigitalOcean Kubernetes
-        run: kubectl apply -f deploys/k8s/server_internal.yaml -n oakcitysocial
+        run: kubectl apply -f "$(deploys/select_backend_manifest.sh server oakcitysocial)" -n oakcitysocial
 
       - name: Verify Server deployment
         run: kubectl rollout status deployment/rellm -n oakcitysocial --timeout 5m
 
       - name: Deploy Preview Generator
-        run: kubectl apply -f deploys/k8s/preview_generator.yaml -n oakcitysocial
+        run: kubectl apply -f "$(deploys/select_backend_manifest.sh preview oakcitysocial)" -n oakcitysocial
 
       - uses: actions/cache/restore@v6
         with:
@@ -1419,10 +1419,10 @@ jobs:
           token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
 
       - name: Update deploys/k8s/server_internal.yaml to use ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
-        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}|g' deploys/k8s/server_internal.yaml
+        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}|g' deploys/k8s/server_internal.yaml deploys/k8s/server_internal_central_data.yaml
 
       - name: Update deploys/k8s/preview_generator.yaml to use ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
-        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}|g' deploys/k8s/preview_generator.yaml
+        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}|g' deploys/k8s/preview_generator.yaml deploys/k8s/preview_generator_central_data.yaml
 
       - name: Save DigitalOcean kubeconfig with short-lived credentials
         run: doctl kubernetes cluster kubeconfig save --expiry-seconds 600 rellm-be
@@ -1431,13 +1431,13 @@ jobs:
         run: kubectl delete cronjob --all -n ato-band --ignore-not-found=true
 
       - name: Deploy to Ato Band via DigitalOcean Kubernetes
-        run: kubectl apply -f deploys/k8s/server_internal.yaml -n ato-band
+        run: kubectl apply -f "$(deploys/select_backend_manifest.sh server ato-band)" -n ato-band
 
       - name: Verify Server deployment
         run: kubectl rollout status deployment/rellm -n ato-band --timeout 5m
 
       - name: Deploy Preview Generator
-        run: kubectl apply -f deploys/k8s/preview_generator.yaml -n ato-band
+        run: kubectl apply -f "$(deploys/select_backend_manifest.sh preview ato-band)" -n ato-band
 
       - uses: actions/cache/restore@v6
         with:
@@ -1480,10 +1480,10 @@ jobs:
           token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
 
       - name: Update deploys/k8s/server_internal.yaml to use ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
-        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}|g' deploys/k8s/server_internal.yaml
+        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}|g' deploys/k8s/server_internal.yaml deploys/k8s/server_internal_central_data.yaml
 
       - name: Update deploys/k8s/preview_generator.yaml to use ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
-        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}|g' deploys/k8s/preview_generator.yaml
+        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}|g' deploys/k8s/preview_generator.yaml deploys/k8s/preview_generator_central_data.yaml
 
       - name: Save DigitalOcean kubeconfig with short-lived credentials
         run: doctl kubernetes cluster kubeconfig save --expiry-seconds 600 rellm-be
@@ -1492,13 +1492,13 @@ jobs:
         run: kubectl delete cronjob --all -n rellm-org --ignore-not-found=true
 
       - name: Deploy to rellm.org via DigitalOcean Kubernetes
-        run: kubectl apply -f deploys/k8s/server_internal.yaml -n rellm-org
+        run: kubectl apply -f "$(deploys/select_backend_manifest.sh server rellm-org)" -n rellm-org
 
       - name: Verify Server deployment
         run: kubectl rollout status deployment/rellm -n rellm-org --timeout 5m
 
       - name: Deploy Preview Generator
-        run: kubectl apply -f deploys/k8s/preview_generator.yaml -n rellm-org
+        run: kubectl apply -f "$(deploys/select_backend_manifest.sh preview rellm-org)" -n rellm-org
 
       - uses: actions/cache/restore@v6
         with:

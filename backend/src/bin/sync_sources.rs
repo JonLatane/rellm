@@ -13,7 +13,7 @@ pub fn main() {
     init_bin_logging();
     log::info!("Syncing Sync Sources...");
     log::info!("Connecting to DB...");
-    let pool = db_connection::establish_pool();
+    let pool = db_connection::establish_job_pool();
     let mut conn = pool.get().expect("Failed to get DB connection");
 
     let sources = sync_sources::table

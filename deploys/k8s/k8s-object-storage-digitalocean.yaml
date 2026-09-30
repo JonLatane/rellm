@@ -48,10 +48,19 @@ spec:
         - server
         - /storage
         env:
+        # Randomly generated into the rellm-data-credentials Secret by
+        # create_backend_data_credentials (see ../Makefile); the Rellm server uses these same
+        # credentials (OBJECT_STORAGE_ACCESS_KEY/SECRET_KEY in server_*.yaml/preview_generator.yaml).
         - name: MINIO_ROOT_USER
-          value: "minio"
+          valueFrom:
+            secretKeyRef:
+              name: rellm-data-credentials
+              key: object-storage-user
         - name: MINIO_ROOT_PASSWORD
-          value: "minio123"
+          valueFrom:
+            secretKeyRef:
+              name: rellm-data-credentials
+              key: object-storage-password
         ports:
         - containerPort: 9000
         volumeMounts:

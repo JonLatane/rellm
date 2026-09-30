@@ -35,7 +35,7 @@ async fn main() {
     log::info!("Finding Media with QuickTime-tagged resized copies...");
 
     log::info!("Connecting to DB and object storage...");
-    let pool = db_connection::establish_pool();
+    let pool = db_connection::establish_job_pool();
     let mut conn = pool.get().expect("Failed to get DB connection");
     let bucket = object_storage_connection::get_and_test_bucket()
         .await

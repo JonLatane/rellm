@@ -1,0 +1,71 @@
+# The PVC (central-object-storage-pv-claim) lives in the sibling
+# k8s-central-object-storage-pvc-digitalocean.yaml, not here -- see that file for why.
+# create_central_object_storage applies both; update_central_object_storage only applies this
+# one.
+#
+# Unlike ../../k8s/k8s-object-storage-digitalocean.yaml (one instance per namespace, bucket
+# always named "rellm"), this instance is shared across every namespace onboarded via
+# ../../k8s/server_internal_central_data.yaml -- each gets its own bucket, named after its
+# namespace, created (along with a same-named user whose policy allows ONLY that bucket) by
+# provision_namespace.sh.
+apiVersion: v1
+kind: Service
+metadata:
+  name: rellm-central-object-storage
+  labels:
+    app: rellm-central-object-storage
+spec:
+  clusterIP: None
+  ports:
+    - port: 9000
+      protocol: TCP
+  selector:
+    app: rellm-central-object-storage
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: rellm-central-object-storage
+  labels:
+    app: rellm-central-object-storage
+spec:
+  serviceName: rellm-central-object-storage
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rellm-central-object-storage
+  template:
+    metadata:
+      labels:
+        app: rellm-central-object-storage
+    spec:
+      volumes:
+      - name: storage
+        persistentVolumeClaim:
+          claimName: central-object-storage-pv-claim
+      containers:
+      # pgsty/silo, not quay.io/minio/minio -- see ../../k8s/k8s-object-storage-digitalocean.yaml's
+      # identical comment for why.
+      - name: object-storage
+        image: pgsty/silo:RELEASE.2026-09-16T00-00-00Z
+        args:
+        - server
+        - /storage
+        env:
+        # Randomly generated into this Secret by create_central_object_storage. Only ever used to
+        # administer the instance (provision_namespace.sh); sites get their own restricted users.
+        - name: MINIO_ROOT_USER
+          valueFrom:
+            secretKeyRef:
+              name: rellm-central-object-storage-credentials
+              key: root-user
+        - name: MINIO_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: rellm-central-object-storage-credentials
+              key: root-password
+        ports:
+        - containerPort: 9000
+        volumeMounts:
+        - name: storage
+          mountPath: "/storage"

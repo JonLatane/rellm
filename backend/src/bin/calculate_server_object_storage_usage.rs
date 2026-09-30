@@ -17,7 +17,7 @@ async fn main() {
     init_bin_logging();
     log::info!("Calculating server object storage usage...");
 
-    let pool = db_connection::establish_pool();
+    let pool = db_connection::establish_job_pool();
     let mut conn = pool.get().expect("Failed to get DB connection");
     let bucket = match object_storage_connection::get_and_test_bucket().await {
         Ok(bucket) => bucket,

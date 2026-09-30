@@ -5,11 +5,27 @@
 # NAMESPACE is intentionally NOT given a default (mirroring the NAMESPACE/DOMAIN-not-defaulted
 # convention in ingress/Makefile and email/Makefile) -- nearly every target here acts on a specific
 # namespace, and silently defaulting to "rellm" risks operating on the wrong cluster/namespace.
-# copy_server_configuration is the one exception -- it takes SOURCE/TARGET namespaces of its own
-# (see that target's own doc below), not a single NAMESPACE, so it's carved out of this guard.
+# copy_server_configuration (takes SOURCE/TARGET namespaces of its own, see that target's own doc
+# below) and get_all_storage_credentials (reads every namespace) are the exceptions -- they don't
+# act on a single NAMESPACE, so they're carved out of this guard.
 ifndef NAMESPACE
-ifeq ($(filter copy_server_configuration,$(MAKECMDGOALS)),)
+ifeq ($(filter copy_server_configuration get_all_storage_credentials,$(MAKECMDGOALS)),)
 $(error NAMESPACE is required, e.g. NAMESPACE=rellm make create_external_backend)
+endif
+endif
+
+# Validated once, here, rather than in each individual target -- NAMESPACE ends up not just as a
+# `kubectl -n` argument (which would just reject a bad value with kubectl's own error) but
+# unquoted inside a generated YAML value (server_internal_central_data.yaml's
+# OBJECT_STORAGE_BUCKET/DATABASE_URL), a sed replacement (which breaks if NAMESPACE contains sed's
+# own `/` delimiter) and double-quoted SQL identifiers (central_storage/provision_namespace.sh's
+# `CREATE ROLE/DATABASE "$(NAMESPACE)"`) -- so catch anything but a plain Kubernetes-namespace-shaped
+# value up front, with one clear error, instead of a confusing failure three steps into whichever
+# target you ran. Real Kubernetes namespace names are DNS-1123 labels: lowercase alphanumeric or
+# '-', starting/ending alphanumeric, max 63 chars.
+ifdef NAMESPACE
+ifeq ($(shell printf '%s' "$(NAMESPACE)" | grep -Eq '^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$$' && echo valid),)
+$(error NAMESPACE '$(NAMESPACE)' is not a valid Kubernetes namespace name -- use lowercase letters, digits and '-' only, starting/ending with a letter or digit (e.g. NAMESPACE=my-site))
 endif
 endif
 
@@ -17,15 +33,26 @@ endif
 # DB/object storage/StorageClass targets below (e.g. "digitalocean"; "eks" or others as they're added).
 K8S_PROVIDER ?= digitalocean
 
-# Used when configuring the load balancer (deploy_lb_[un]link_service_account).
-TARGET_NAMESPACE ?= rellm
+# Which namespace central_storage/'s shared Postgres/object storage lives in -- see
+# create_internal_central_data_backend and create_backend_central_data below, and
+# central_storage/README.md. Defaults to match central_storage/Makefile's own STORAGE_NAMESPACE
+# default, unlike NAMESPACE itself above (which is deliberately never defaulted).
+STORAGE_NAMESPACE ?= rellm-storage
+# Same validation as NAMESPACE above and for the same reasons (this also ends up in a sed
+# replacement and inside generated YAML, as the ${STORAGE_NAMESPACE} half of a hostname).
+ifeq ($(shell printf '%s' "$(STORAGE_NAMESPACE)" | grep -Eq '^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$$' && echo valid),)
+$(error STORAGE_NAMESPACE '$(STORAGE_NAMESPACE)' is not a valid Kubernetes namespace name -- use lowercase letters, digits and '-' only, starting/ending with a letter or digit)
+endif
 
 TEST_GRPC_TARGET ?= $(shell $(MAKE) get_backend_external_ip):27707
 
 # Used by the Postgres dump/restore targets below (e.g. during upgrade_backend_postgres).
 PG_UPGRADE_LOCAL_PORT ?= 15432
 PG_BACKUP_DIR ?= backups
-PG_PASSWORD ?= secure_password1
+# Overrides the Postgres password used by the dump/restore targets below; by default they read it
+# from this namespace's rellm-data-credentials Secret (see create_backend_data_credentials).
+PG_PASSWORD ?=
+pg_password = $(if $(PG_PASSWORD),$(PG_PASSWORD),$$(kubectl get secret rellm-data-credentials -n $(NAMESPACE) -o jsonpath='{.data.postgres-password}' | base64 --decode))
 # Replica count restored by start_backend after a stop_backend/start_backend maintenance window.
 BACKEND_REPLICAS ?= 2
 
@@ -33,13 +60,13 @@ BACKEND_REPLICAS ?= 2
 # Use "internal" when deploying with a separate load balancer, and 
 # use deploy_be_link_lb_service_account to link the load balancer to the
 # internal Rellm service.
-create_external_backend: deploy_ensure_namespace
+create_external_backend: deploy_ensure_namespace create_backend_data_credentials
 	kubectl create -f k8s/server_external.yaml --save-config -n $(NAMESPACE)
 	kubectl create -f k8s/preview_generator.yaml --save-config -n $(NAMESPACE)
-create_internal_backend: deploy_ensure_namespace
+create_internal_backend: deploy_ensure_namespace create_backend_data_credentials
 	kubectl create -f k8s/server_internal.yaml --save-config -n $(NAMESPACE)
 	kubectl create -f k8s/preview_generator.yaml --save-config -n $(NAMESPACE)
-deploy_be_internal_insecure_create: deploy_ensure_namespace
+deploy_be_internal_insecure_create: deploy_ensure_namespace create_backend_data_credentials
 	kubectl create -f k8s/server_internal_insecure.yaml --save-config -n $(NAMESPACE)
 	kubectl create -f k8s/preview_generator.yaml --save-config -n $(NAMESPACE)
 
@@ -55,6 +82,31 @@ deploy_be_internal_insecure_update:
 	kubectl apply -f k8s/server_internal_insecure.yaml -n $(NAMESPACE)
 	kubectl apply -f k8s/preview_generator.yaml -n $(NAMESPACE)
 	$(MAKE) monitor_backend_rollout
+
+# Like create_internal_backend/update_internal_backend above, but points the new namespace at the
+# shared Postgres/object storage in central_storage/ (see central_storage/README.md) instead of
+# provisioning its own -- use this once you've hit your cluster's PVC limit (DOKS caps at 15;
+# a normal per-namespace deploy uses 2), or just want to avoid using 2 more per domain. Requires
+# central_storage's shared instances to already exist (`make -C central_storage
+# create_central_storage`) and this namespace's database to already exist (`NAMESPACE=... make
+# create_backend_central_data`) -- the object storage bucket needs no such step, Rellm creates it
+# itself on first use (see backend/src/object_storage_connection.rs).
+create_internal_central_data_backend: deploy_ensure_namespace k8s/server_internal_central_data.$(NAMESPACE).generated.yaml k8s/preview_generator_central_data.$(NAMESPACE).generated.yaml
+	kubectl create -f k8s/server_internal_central_data.$(NAMESPACE).generated.yaml --save-config -n $(NAMESPACE)
+	kubectl create -f k8s/preview_generator_central_data.$(NAMESPACE).generated.yaml --save-config -n $(NAMESPACE)
+update_internal_central_data_backend: k8s/server_internal_central_data.$(NAMESPACE).generated.yaml k8s/preview_generator_central_data.$(NAMESPACE).generated.yaml
+	kubectl apply -f k8s/server_internal_central_data.$(NAMESPACE).generated.yaml -n $(NAMESPACE)
+	kubectl apply -f k8s/preview_generator_central_data.$(NAMESPACE).generated.yaml -n $(NAMESPACE)
+	$(MAKE) monitor_backend_rollout
+
+# Generates this namespace's copy of the ${NAMESPACE}/${STORAGE_NAMESPACE}-templated central-data
+# manifests above (mirrors ingress/Makefile's k8s/rellm-routes.$(NAMESPACE).generated.yaml rule).
+# Gitignored like that file, and like it, never edit the .generated.yaml directly -- edit the
+# template and let this rule regenerate it.
+k8s/server_internal_central_data.$(NAMESPACE).generated.yaml: k8s/server_internal_central_data.yaml
+	sed -e 's/$${NAMESPACE}/$(NAMESPACE)/g' -e 's/$${STORAGE_NAMESPACE}/$(STORAGE_NAMESPACE)/g' k8s/server_internal_central_data.yaml > k8s/server_internal_central_data.$(NAMESPACE).generated.yaml
+k8s/preview_generator_central_data.$(NAMESPACE).generated.yaml: k8s/preview_generator_central_data.yaml
+	sed -e 's/$${NAMESPACE}/$(NAMESPACE)/g' -e 's/$${STORAGE_NAMESPACE}/$(STORAGE_NAMESPACE)/g' k8s/preview_generator_central_data.yaml > k8s/preview_generator_central_data.$(NAMESPACE).generated.yaml
 
 delete_backend:
 	kubectl delete -f k8s/server_external.yaml -n $(NAMESPACE)
@@ -109,17 +161,98 @@ deploy_test_be_unsecured:
 deploy_test_be_tls_openssl:
 	openssl s_client -connect $(TEST_GRPC_TARGET) -CAfile generated_certs/ca.pem
 
+# Prints EVERY storage credential Secret in the cluster, decoded, for an admin to save in a password
+# manager: central storage's admin credentials (rellm-central-postgres-credentials,
+# rellm-central-object-storage-credentials in $(STORAGE_NAMESPACE)), each central_storage site's
+# restricted ones (rellm-central-data) and each per-namespace deploy's (rellm-data-credentials).
+# Output is PLAINTEXT SECRETS -- don't paste it into chat, tickets or CI logs. A namespace that
+# predates rellm-data-credentials won't show up until you run
+# data_migrations/adopt_legacy_data_credentials.sh on it (its credentials are still inline in its
+# Deployments until then). Needs cluster-wide `get secrets` permission.
+storage_credential_secrets = rellm-central-postgres-credentials rellm-central-object-storage-credentials rellm-central-data rellm-data-credentials
+get_all_storage_credentials:
+	@echo "# PLAINTEXT SECRETS -- save these in your password manager; don't paste them into chat, tickets or logs." >&2
+	@for name in $(storage_credential_secrets); do \
+		kubectl get secret --all-namespaces --field-selector metadata.name=$$name -o go-template='{{range .items}}[{{.metadata.namespace}}/{{.metadata.name}}]{{"\n"}}{{range $$k, $$v := .data}}  {{$$k}}={{$$v | base64decode}}{{"\n"}}{{end}}{{"\n"}}{{end}}' || exit 1; \
+	done
+
+# Generates this namespace's own Postgres password and object storage credentials, randomly, into
+# a rellm-data-credentials Secret -- read by k8s-postgres-*.yaml, k8s-object-storage-*.yaml and the
+# server/preview-generator manifests, so no credential is ever a checked-in value. Idempotent: it
+# NEVER regenerates an existing Secret (Postgres and the object storage server only read their
+# credentials when initializing an empty data volume, so a new value would silently stop matching
+# the real one). A namespace deployed before this existed has no such Secret: create one from its
+# live values with data_migrations/adopt_legacy_data_credentials.sh instead of this target.
+create_backend_data_credentials: deploy_ensure_namespace
+	@command -v openssl >/dev/null || (echo "openssl is required to generate credentials" >&2 && exit 1)
+	@if kubectl get secret rellm-data-credentials -n $(NAMESPACE) >/dev/null 2>&1; then \
+		echo "rellm-data-credentials already exists in $(NAMESPACE) -- leaving it as-is."; \
+	else \
+		kubectl create secret generic rellm-data-credentials -n $(NAMESPACE) \
+			--from-literal=postgres-password="$$(openssl rand -hex 24)" \
+			--from-literal=object-storage-user=rellm \
+			--from-literal=object-storage-password="$$(openssl rand -hex 24)"; \
+	fi
+
 create_backend_data: create_backend_postgres create_backend_object_storage
 update_backend_data: update_backend_postgres update_backend_object_storage
 delete_backend_data: delete_backend_postgres delete_backend_object_storage
 restart_backend_data: restart_backend_postgres restart_backend_object_storage
+
+# Central-storage counterpart to create_backend_data above: unlike that target (which provisions
+# a whole new Postgres/object storage instance), this carves out this namespace's slice of the
+# already-running shared instances in central_storage/ (see central_storage/README.md): a
+# database + login role, a bucket + user, and a Secret (rellm-central-data) in $(NAMESPACE) with
+# freshly generated random credentials for both, each restricted to only that namespace's own
+# data. See central_storage/provision_namespace.sh for exactly what's created/restricted. Extra
+# flags: make create_backend_central_data ARGS=--reset (drops/recreates a half-finished run).
+create_backend_central_data:
+	STORAGE_NAMESPACE=$(STORAGE_NAMESPACE) ./central_storage/provision_namespace.sh $(ARGS) $(NAMESPACE)
+
+# Moves an already-deployed namespace's data onto central_storage/'s shared Postgres/object
+# storage (takes the site down for the duration -- see that script's own header for exactly what it
+# does, and doesn't, touch). Extra flags: make transition_backend_to_central_data ARGS="--yes".
+transition_backend_to_central_data:
+	STORAGE_NAMESPACE=$(STORAGE_NAMESPACE) ./transition_jonline_namespace_to_central_storage.sh $(ARGS) $(NAMESPACE)
+
+# Succeeds only if this namespace's live `rellm` Deployment already points at central_storage's
+# Postgres AND object storage -- guards delete_backend_data_pvcs below against removing the
+# storage a site is still actually using.
+check_backend_on_central_data:
+	@kubectl get deployment rellm -n $(NAMESPACE) >/dev/null 2>&1 || (echo "No 'rellm' Deployment in $(NAMESPACE) -- refusing to guess whether its old data is still in use." >&2 && exit 1)
+	@db_secret="$$(kubectl get deployment rellm -n $(NAMESPACE) -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="DATABASE_URL")].valueFrom.secretKeyRef.name}')"; \
+	os_url="$$(kubectl get deployment rellm -n $(NAMESPACE) -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="OBJECT_STORAGE_ENDPOINT")].value}')"; \
+	test "$$db_secret" = "rellm-central-data" || { echo "$(NAMESPACE)'s rellm DATABASE_URL doesn't come from the rellm-central-data Secret (central Postgres) -- refusing." >&2; exit 1; }; \
+	case "$$os_url" in http://rellm-central-object-storage.$(STORAGE_NAMESPACE).svc.cluster.local:*) ;; *) echo "$(NAMESPACE)'s rellm OBJECT_STORAGE_ENDPOINT is '$$os_url', not central object storage -- refusing." >&2; exit 1;; esac
+
+# Cleans up a namespace's OLD per-namespace Postgres/object storage after
+# transition_jonline_namespace_to_central_storage.sh (which deliberately leaves them alone) once
+# you've verified the site works against central storage: deletes their StatefulSets/Services
+# (delete_backend_data), waits for the pods to go, then deletes both PVCs (postgres-pv-claim,
+# object-storage-pv-claim) -- freeing the 2 PVCs this namespace was using against the cluster
+# limit. Refuses unless check_backend_on_central_data passes and CONFIRM=$(NAMESPACE) is passed
+# explicitly. NOT undoable, though the underlying PVs/cloud volumes survive as "Released": PVs
+# provisioned on plain do-block-storage (reclaimPolicy: Delete -- most older namespaces' Postgres
+# PVCs) are patched to Retain first, so nothing is deleted with the PVC. The PV
+# names are printed below; delete those PVs (and then the cloud volumes, e.g. in the DigitalOcean
+# console) by hand once you're certain, which is what actually stops the billing.
+delete_backend_data_pvcs: check_backend_on_central_data check_delete_backend_data_pvcs_confirmed delete_backend_data
+	@pvs="$$(kubectl get pvc postgres-pv-claim object-storage-pv-claim -n $(NAMESPACE) --ignore-not-found -o jsonpath='{range .items[*]}{.spec.volumeName}{" "}{end}')"; \
+	for pv in $$pvs; do kubectl patch pv $$pv --type merge -p '{"spec":{"persistentVolumeReclaimPolicy":"Retain"}}' || exit 1; done; \
+	kubectl wait --for=delete pod/rellm-postgres-0 pod/rellm-object-storage-0 -n $(NAMESPACE) --timeout=2m 2>/dev/null; \
+	kubectl delete pvc postgres-pv-claim object-storage-pv-claim -n $(NAMESPACE) --ignore-not-found && \
+	kubectl delete secret rellm-data-credentials -n $(NAMESPACE) --ignore-not-found && \
+	echo "Done. Retained PVs (delete with 'kubectl delete pv <name>', then remove the cloud volumes): $${pvs:-<none>}"
+
+check_delete_backend_data_pvcs_confirmed:
+	@test "$(CONFIRM)" = "$(NAMESPACE)" || (echo "This permanently deletes $(NAMESPACE)'s OLD Postgres/object storage StatefulSets and PVCs. If central storage is verified good, re-run with CONFIRM=$(NAMESPACE)." >&2 && exit 1)
 
 # Cluster-scoped, so this is safe/idempotent to (re)apply from any namespace's create target.
 deploy_ensure_storageclass_retain:
 	kubectl apply -f k8s/storageclass-retain-$(K8S_PROVIDER).yaml
 
 # K8s DB deployment targets (optional if using managed DB)
-create_backend_postgres: deploy_ensure_namespace deploy_ensure_storageclass_retain
+create_backend_postgres: deploy_ensure_namespace deploy_ensure_storageclass_retain create_backend_data_credentials
 	kubectl create -f k8s/k8s-postgres-pvc-$(K8S_PROVIDER).yaml --save-config -n $(NAMESPACE)
 	kubectl create -f k8s/k8s-postgres-$(K8S_PROVIDER).yaml --save-config -n $(NAMESPACE)
 
@@ -134,6 +267,24 @@ delete_backend_postgres:
 # but this makes the volume unbound/orphaned from any PVC until manually reclaimed).
 delete_backend_postgres_pvc:
 	- kubectl delete -f k8s/k8s-postgres-pvc-$(K8S_PROVIDER).yaml -n $(NAMESPACE)
+
+# REQUESTED is what's asked for (spec.resources.requests.storage); ACTUAL is what's live
+# (status.capacity.storage) -- they briefly differ mid-resize (see resize_backend_postgres_pvc).
+get_backend_postgres_pvc_size:
+	kubectl get pvc postgres-pv-claim -n $(NAMESPACE) -o custom-columns='NAME:.metadata.name,REQUESTED:.spec.resources.requests.storage,ACTUAL:.status.capacity.storage,STATUS:.status.phase'
+
+# Expands postgres-pv-claim in place -- no pod restart or delete/recreate needed, since
+# do-block-storage-retain has allowVolumeExpansion: true (see k8s/storageclass-retain-*.yaml) and
+# resources.requests is the one PVC field that's mutable after binding (see
+# k8s/k8s-postgres-pvc-digitalocean.yaml's own comment on that). One-directional only -- SIZE must
+# be bigger than the current REQUESTED size, kubectl/the CSI driver will reject a shrink. This
+# only bumps the live PVC; it deliberately does NOT touch k8s/k8s-postgres-pvc-$(K8S_PROVIDER).yaml
+# (that file's `storage:` is just the *initial* size a brand new namespace's PVC is created with).
+resize_backend_postgres_pvc:
+	@test -n "$(SIZE)" || (echo "SIZE is required, e.g. NAMESPACE=rellm SIZE=5Gi make resize_backend_postgres_pvc" && exit 1)
+	@printf '%s' "$(SIZE)" | grep -Eq '^[0-9]+(\.[0-9]+)?(Ki|Mi|Gi|Ti|Pi|Ei|[kMGTPE])?$$' || (echo "SIZE '$(SIZE)' doesn't look like a valid Kubernetes storage quantity -- e.g. 5Gi, 500Mi, 1Ti (see https://kubernetes.io/docs/reference/kubernetes-api/common-definitions/quantity/)" >&2 && exit 1)
+	kubectl patch pvc postgres-pv-claim -n $(NAMESPACE) --type merge -p '{"spec":{"resources":{"requests":{"storage":"$(SIZE)"}}}}'
+	@echo "Requested -- expansion can take a few minutes. Check progress with: NAMESPACE=$(NAMESPACE) make get_backend_postgres_pvc_size"
 
 restart_backend_postgres:
 	kubectl rollout restart statefulset rellm-postgres -n $(NAMESPACE)
@@ -166,7 +317,7 @@ dump_backend_postgres:
 		rm -f /tmp/pgpf-$(NAMESPACE).pid; \
 		exit 1; \
 	fi; \
-	PGPASSWORD=$(PG_PASSWORD) pg_dump -h localhost -p $(PG_UPGRADE_LOCAL_PORT) -U admin -d rellm --clean --if-exists -f $(DUMP_FILE); \
+	PGPASSWORD="$(pg_password)" pg_dump -h localhost -p $(PG_UPGRADE_LOCAL_PORT) -U admin -d rellm --clean --if-exists -f $(DUMP_FILE); \
 	DUMP_STATUS=$$?; \
 	kill $$(cat /tmp/pgpf-$(NAMESPACE).pid) 2>/dev/null; \
 	rm -f /tmp/pgpf-$(NAMESPACE).pid; \
@@ -193,7 +344,7 @@ restore_backend_postgres:
 			rm -f /tmp/pgpf-$(NAMESPACE).pid; \
 			exit 1; \
 		fi; \
-		PGPASSWORD=$(PG_PASSWORD) psql -h localhost -p $(PG_UPGRADE_LOCAL_PORT) -U admin -d rellm -v ON_ERROR_STOP=1 -f $(DUMP_FILE); \
+		PGPASSWORD="$(pg_password)" psql -h localhost -p $(PG_UPGRADE_LOCAL_PORT) -U admin -d rellm -v ON_ERROR_STOP=1 -f $(DUMP_FILE); \
 		RESTORE_STATUS=$$?; \
 		kill $$(cat /tmp/pgpf-$(NAMESPACE).pid) 2>/dev/null; \
 		rm -f /tmp/pgpf-$(NAMESPACE).pid; \
@@ -227,7 +378,7 @@ delete_backend_postgres_old_data:
 	kubectl exec -n $(NAMESPACE) rellm-postgres-0 -- rm -rf /var/lib/postgresql/data/postgres
 
 # K8s object storage deployment targets (optional if using managed S3/object storage)
-create_backend_object_storage: deploy_ensure_namespace deploy_ensure_storageclass_retain
+create_backend_object_storage: deploy_ensure_namespace deploy_ensure_storageclass_retain create_backend_data_credentials
 	kubectl create -f k8s/k8s-object-storage-pvc-$(K8S_PROVIDER).yaml --save-config -n $(NAMESPACE)
 	kubectl create -f k8s/k8s-object-storage-$(K8S_PROVIDER).yaml --save-config -n $(NAMESPACE)
 
@@ -243,6 +394,17 @@ delete_backend_object_storage:
 # manually reclaimed).
 delete_backend_object_storage_pvc:
 	- kubectl delete -f k8s/k8s-object-storage-pvc-$(K8S_PROVIDER).yaml -n $(NAMESPACE)
+
+# See get_backend_postgres_pvc_size's identical comment.
+get_backend_object_storage_pvc_size:
+	kubectl get pvc object-storage-pv-claim -n $(NAMESPACE) -o custom-columns='NAME:.metadata.name,REQUESTED:.spec.resources.requests.storage,ACTUAL:.status.capacity.storage,STATUS:.status.phase'
+
+# See resize_backend_postgres_pvc's identical comment.
+resize_backend_object_storage_pvc:
+	@test -n "$(SIZE)" || (echo "SIZE is required, e.g. NAMESPACE=rellm SIZE=10Gi make resize_backend_object_storage_pvc" && exit 1)
+	@printf '%s' "$(SIZE)" | grep -Eq '^[0-9]+(\.[0-9]+)?(Ki|Mi|Gi|Ti|Pi|Ei|[kMGTPE])?$$' || (echo "SIZE '$(SIZE)' doesn't look like a valid Kubernetes storage quantity -- e.g. 5Gi, 500Mi, 1Ti (see https://kubernetes.io/docs/reference/kubernetes-api/common-definitions/quantity/)" >&2 && exit 1)
+	kubectl patch pvc object-storage-pv-claim -n $(NAMESPACE) --type merge -p '{"spec":{"resources":{"requests":{"storage":"$(SIZE)"}}}}'
+	@echo "Requested -- expansion can take a few minutes. Check progress with: NAMESPACE=$(NAMESPACE) make get_backend_object_storage_pvc_size"
 
 restart_backend_object_storage:
 	kubectl rollout restart statefulset rellm-object-storage -n $(NAMESPACE)
@@ -329,6 +491,22 @@ remove_email_domain:
 	$(MAKE) -C email remove_email_domain
 list_email_domains:
 	$(MAKE) -C email list_email_domains
+
+############################################################################
+# CENTRAL STORAGE-RELATED TARGETS: passthroughs to deploys/central_storage/Makefile. See that
+# directory's README.md -- create_backend_central_data/create_internal_central_data_backend
+# above are what you actually run per-namespace once the shared instances below exist.
+############################################################################
+create_central_storage:
+	$(MAKE) -C central_storage create_central_storage
+update_central_storage:
+	$(MAKE) -C central_storage update_central_storage
+delete_central_storage:
+	$(MAKE) -C central_storage delete_central_storage
+restart_central_storage:
+	$(MAKE) -C central_storage restart_central_storage
+get_central_storage_all:
+	$(MAKE) -C central_storage get_central_storage_all
 
 ############################################################################
 # TLS CERTIFICATE-RELATED TARGETS: passthroughs to deploys/generated_certs/Makefile.

@@ -13,7 +13,7 @@ pub fn main() {
     init_bin_logging();
     log::info!("Calculating server Media usage...");
 
-    let pool = db_connection::establish_pool();
+    let pool = db_connection::establish_job_pool();
     let mut conn = pool.get().expect("Failed to get DB connection");
     match recompute_server_media_usage_bytes(&mut conn) {
         Ok(()) => log::info!("Done calculating server Media usage."),

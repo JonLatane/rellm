@@ -101,7 +101,7 @@ The quickest way to deploy is to simply run `make create_backend_postgres create
         * Use the cert password and challenge passwords you saved above when prompted.
     3. `make certs_store_in_k8s`
         * The certs you generated will be stored in `secret tls rellm-generated-tls` and `configmap rellm-generated-ca` in your k8s.
-2. `make create_backend_postgres` to create a Postgres instance named `rellm-postgres` with credentials `admin:secure_password1`.
+2. `make create_backend_postgres` to create a Postgres instance named `rellm-postgres`. Its `admin` password is randomly generated into the namespace's `rellm-data-credentials` Secret (see [`deploys/README.md`](../deploys/README.md#credentials); `make get_all_storage_credentials` prints it).
     * `make [update,restart,delete]_db_deployment` are all valid targets, too.
 3. `make create_internal_backend([^_]) to deploy the Rellm backend.
     * `make [update,restart,delete]_be_deployment` and `make deploy_be_get_pods` are all valid targets, too.

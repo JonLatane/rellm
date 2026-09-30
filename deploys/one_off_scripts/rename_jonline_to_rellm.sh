@@ -28,7 +28,7 @@
 # sees. Not worth the risk. If you ever do want it, that's a manual
 # PV-rebind migration, not a text substitution.
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 
 # --- 1. Delete generated protobuf bindings tied to the old package name.
 # `make protos` (run later, by hand, after this script) regenerates these

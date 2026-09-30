@@ -1,0 +1,87 @@
+# The PVC (central-postgres-pv-claim) lives in the sibling
+# k8s-central-postgres-pvc-digitalocean.yaml, not here -- see that file for why.
+# create_central_postgres applies both; update_central_postgres only applies this one.
+#
+# Unlike ../../k8s/k8s-postgres-digitalocean.yaml (one Postgres instance per namespace, database
+# always named "rellm"), this instance is shared across every namespace onboarded via
+# ../../k8s/server_internal_central_data.yaml -- each gets its own database, named after its
+# namespace, created with `NAMESPACE=<namespace> make create_backend_central_data` (see
+# ../../Makefile), which also creates a same-named LOGIN role restricted to just that database
+# (see provision_namespace.sh). The `admin` superuser's password is randomly generated into the
+# rellm-central-postgres-credentials Secret by create_central_postgres (never a checked-in value).
+# POSTGRES_DB is left at "postgres" (Postgres' own default admin database).
+apiVersion: v1
+kind: Service
+metadata:
+  name: rellm-central-postgres
+  labels:
+    app: rellm-central-postgres
+spec:
+  clusterIP: None
+  ports:
+    - port: 5432
+  selector:
+    app: rellm-central-postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: rellm-central-postgres
+  labels:
+    app: rellm-central-postgres
+spec:
+  serviceName: rellm-central-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rellm-central-postgres
+  template:
+    metadata:
+      labels:
+        app: rellm-central-postgres
+    spec:
+      volumes:
+      - name: pv-data
+        persistentVolumeClaim:
+          claimName: central-postgres-pv-claim
+      containers:
+        - image: postgres:17.6-alpine
+          name: db
+          # Every onboarded site's server/jobs/preview generator share this one instance: the
+          # backend keeps at most 4 connections per server process and 1 per job (see
+          # backend/src/db_connection.rs) and provision_namespace.sh caps each site's role at 30,
+          # so 200 leaves comfortable headroom (Postgres' default is 100).
+          args: ["-c", "max_connections=200"]
+          env:
+            - name: POSTGRES_USER
+              value: admin
+            - name: POSTGRES_DB
+              value: postgres
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: rellm-central-postgres-credentials
+                  key: password
+          ports:
+            - containerPort: 5432
+              name: db
+          # See ../../k8s/k8s-postgres-digitalocean.yaml's identical comment -- without these,
+          # kubelet marks the container Ready before Postgres is actually accepting connections.
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "admin", "-d", "postgres"]
+            initialDelaySeconds: 2
+            periodSeconds: 2
+            timeoutSeconds: 3
+            failureThreshold: 30
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "admin", "-d", "postgres"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          volumeMounts:
+          - name: pv-data
+            mountPath: /var/lib/postgresql/data
+            subPath: postgres17

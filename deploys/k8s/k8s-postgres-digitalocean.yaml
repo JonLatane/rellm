@@ -43,8 +43,15 @@ spec:
               value: admin
             - name: POSTGRES_DB
               value: rellm
+            # Randomly generated into the rellm-data-credentials Secret by
+            # create_backend_data_credentials (see ../Makefile) -- never a checked-in value. Only
+            # read on a totally empty data volume (initdb), so the Secret must never be
+            # regenerated over an existing volume; that target refuses to.
             - name: POSTGRES_PASSWORD
-              value: secure_password1
+              valueFrom:
+                secretKeyRef:
+                  name: rellm-data-credentials
+                  key: postgres-password
           ports:
             - containerPort: 5432
               name: db

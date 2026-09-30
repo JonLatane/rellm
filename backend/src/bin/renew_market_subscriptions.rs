@@ -18,7 +18,7 @@ pub fn main() {
     init_bin_logging();
     log::info!("Renewing Market Subscriptions...");
     log::info!("Connecting to DB...");
-    let pool = db_connection::establish_pool();
+    let pool = db_connection::establish_job_pool();
     let mut conn = pool.get().expect("Failed to get DB connection");
 
     for purchase_type in ALL_PURCHASE_TYPES {

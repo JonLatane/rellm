@@ -1,3 +1,15 @@
+# Template for create_internal_central_data_backend/update_internal_central_data_backend (see
+# ../Makefile) -- identical to server_internal.yaml, except DATABASE_URL/OBJECT_STORAGE_* point at
+# the shared Postgres/object storage in ../central_storage (see that directory's README.md)
+# instead of a per-namespace instance. ${NAMESPACE} and ${STORAGE_NAMESPACE} are substituted by
+# ../Makefile's generation rule into k8s/server_internal_central_data.$(NAMESPACE).generated.yaml
+# (gitignored, like ../ingress/k8s/*.generated.yaml) -- never edit that generated file directly,
+# edit this template and regenerate.
+#
+# The database, bucket, and the Postgres role/Silo user that can access them are all named after
+# ${NAMESPACE}. `NAMESPACE=... make create_backend_central_data` (central_storage/provision_namespace.sh)
+# creates all of those AND generates their random credentials into this namespace's
+# rellm-central-data Secret, which the env vars below read -- nothing secret lives in this file.
 apiVersion: v1
 kind: Service
 metadata:
@@ -5,7 +17,7 @@ metadata:
   labels:
     app: rellm
 spec:
-  type: LoadBalancer
+  type: ClusterIP
   selector:
     app: rellm
   ports:
@@ -25,13 +37,12 @@ spec:
       protocol: TCP
       port: 8000
       targetPort: 8000
-    # No "mail-delivery"/27705 entry here on purpose: this Service is a LoadBalancer, so
-    # any port listed here is reachable from the public internet. The internal-only mail
-    # delivery endpoint (see deploys/email) must never be exposed that way -- it has no
-    # authentication of its own. If you need Stalwart to reach it, deploy behind
-    # server_internal.yaml/server_internal_insecure.yaml instead (their Services are
-    # ClusterIP, and do expose it) -- see deploys/ingress for moving public traffic off a
-    # per-namespace LoadBalancer.
+    # Internal-only mail delivery endpoint used by the Stalwart mail server (see deploys/email)
+    # -- see server_internal.yaml's identical comment for why this is safe to expose here.
+    - name: mail-delivery
+      protocol: TCP
+      port: 27705
+      targetPort: 27705
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -53,29 +64,27 @@ spec:
         - image: docker.io/jonlatane/rellm:0.5.553
           name: rellm
           env:
-            - name: DATABASE_PASSWORD
+            - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: rellm-data-credentials
-                  key: postgres-password
-            - name: DATABASE_URL
-              value: postgres://admin:$(DATABASE_PASSWORD)@rellm-postgres/rellm
+                  name: rellm-central-data
+                  key: database-url
             - name: OBJECT_STORAGE_ENDPOINT
-              value: http://rellm-object-storage:9000
+              value: http://rellm-central-object-storage.${STORAGE_NAMESPACE}.svc.cluster.local:9000
             - name: OBJECT_STORAGE_REGION
               value: ""
             - name: OBJECT_STORAGE_BUCKET
-              value: rellm
+              value: ${NAMESPACE}
             - name: OBJECT_STORAGE_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
-                  name: rellm-data-credentials
-                  key: object-storage-user
+                  name: rellm-central-data
+                  key: object-storage-access-key
             - name: OBJECT_STORAGE_SECRET_KEY
               valueFrom:
                 secretKeyRef:
-                  name: rellm-data-credentials
-                  key: object-storage-password
+                  name: rellm-central-data
+                  key: object-storage-secret-key
             - name: RUST_BACKTRACE
               value: full
             - name: TLS_KEY
@@ -113,18 +122,9 @@ spec:
               protocol: TCP
               name: rellm-mail
 ---
-# Runs backend/background_jobs.sh (delete_expired_tokens, sync_sources,
-# delete_unowned_media, update_user_counts, convert_media_sizes -- see that file for the
-# authoritative list of jobs and their intervals) in a single long-running pod, one forked loop
-# per job, instead of one k8s CronJob per job. CronJobs of this shape (5min-and-under schedules,
-# times four jobs, times four namespaces) create a new pod -- and therefore a new CNI/Cilium
-# network endpoint -- every few minutes; that churn was a major contributor to the 2026-09-04
-# node incident (see incident notes), so this trades it for one steady-state pod per namespace.
-#
-# replicas MUST stay at 1 (running two would duplicate every job -- notably sync_sources,
-# which posts to external SyncDestinations, so a duplicate run isn't just wasted work, it's a
-# real double-post) and strategy MUST stay Recreate (a RollingUpdate would briefly run the old and
-# new pod's job loops at once during a deploy, same problem).
+# See server_internal.yaml's identical comment -- runs backend/background_jobs.sh in a single
+# long-running pod instead of one k8s CronJob per job. replicas MUST stay at 1 and strategy MUST
+# stay Recreate for the same reasons given there.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -151,28 +151,26 @@ spec:
             - bash
             - /opt/background_jobs.sh
           env:
-            - name: DATABASE_PASSWORD
+            - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: rellm-data-credentials
-                  key: postgres-password
-            - name: DATABASE_URL
-              value: postgres://admin:$(DATABASE_PASSWORD)@rellm-postgres/rellm
+                  name: rellm-central-data
+                  key: database-url
             - name: OBJECT_STORAGE_ENDPOINT
-              value: http://rellm-object-storage:9000
+              value: http://rellm-central-object-storage.${STORAGE_NAMESPACE}.svc.cluster.local:9000
             - name: OBJECT_STORAGE_REGION
               value: ""
             - name: OBJECT_STORAGE_BUCKET
-              value: rellm
+              value: ${NAMESPACE}
             - name: OBJECT_STORAGE_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
-                  name: rellm-data-credentials
-                  key: object-storage-user
+                  name: rellm-central-data
+                  key: object-storage-access-key
             - name: OBJECT_STORAGE_SECRET_KEY
               valueFrom:
                 secretKeyRef:
-                  name: rellm-data-credentials
-                  key: object-storage-password
+                  name: rellm-central-data
+                  key: object-storage-secret-key
             - name: RUST_BACKTRACE
               value: full

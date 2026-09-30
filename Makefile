@@ -104,6 +104,18 @@ delete_backend_data:
 update_backend_data:
 	$(MAKE) -C deploys update_backend_data
 
+# Onboard a namespace onto the shared central Postgres/object storage (deploys/central_storage)
+# instead of provisioning its own -- see deploys/central_storage/README.md. Use in place of
+# create_backend_data/create_internal_backend above.
+create_backend_central_data:
+	$(MAKE) -C deploys create_backend_central_data
+get_all_storage_credentials:
+	$(MAKE) -C deploys get_all_storage_credentials
+create_internal_central_data_backend:
+	$(MAKE) -C deploys create_internal_central_data_backend
+update_internal_central_data_backend:
+	$(MAKE) -C deploys update_internal_central_data_backend
+
 
 # Manage the shared Traefik ingress (lets many Rellm instances, each in
 # their own namespace/domain, share a single LoadBalancer/external IP instead
@@ -143,6 +155,16 @@ add_email_domain:
 	$(MAKE) -C deploys/email add_email_domain
 list_email_domains:
 	$(MAKE) -C deploys/email list_email_domains
+
+# Manage the shared central Postgres/object storage (lets many Rellm namespaces share just 2
+# PVCs instead of 2 each - see deploys/central_storage/README.md). Onboard a namespace onto it
+# with create_backend_central_data + create_internal_central_data_backend above.
+create_central_storage:
+	$(MAKE) -C deploys/central_storage create_central_storage
+update_central_storage:
+	$(MAKE) -C deploys/central_storage update_central_storage
+delete_central_storage:
+	$(MAKE) -C deploys/central_storage delete_central_storage
 
 ############################################################################
 # BE/LOCAL TESTING/DEVOPS RESEARCH TARGETS

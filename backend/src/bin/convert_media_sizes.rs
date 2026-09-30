@@ -39,7 +39,7 @@ async fn main() {
     }
 
     log::info!("Connecting to DB and object storage...");
-    let pool = db_connection::establish_pool();
+    let pool = db_connection::establish_job_pool();
     let mut conn = pool.get().expect("Failed to get DB connection");
 
     let pending = media_pending_conversion(&mut conn, BATCH_SIZE)

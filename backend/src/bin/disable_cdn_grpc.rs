@@ -12,7 +12,7 @@ pub fn main() {
     init_bin_logging();
     log::info!("Disabling gRPC CDN support...");
     log::info!("Connecting to DB...");
-    let pool = Arc::new(db_connection::establish_pool());
+    let pool = Arc::new(db_connection::establish_job_pool());
     let mut conn = pool
         .get()
         .expect("Failed to get connection trying to load server configuration");

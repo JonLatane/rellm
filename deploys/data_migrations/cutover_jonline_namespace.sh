@@ -2,11 +2,11 @@
 # Manual, one-time traffic cutover for a single namespace after merging the
 # Jonline->Rellm rename PR. NOT run automatically by anything.
 #
-# Usage: ./cutover_jonline_namespace.sh <namespace>
-#   ./cutover_jonline_namespace.sh jonline
-#   ./cutover_jonline_namespace.sh bullcitysocial
-#   ./cutover_jonline_namespace.sh oakcitysocial
-#   ./cutover_jonline_namespace.sh ato-band
+# Usage: ./data_migrations/cutover_jonline_namespace.sh <namespace>
+#   ./data_migrations/cutover_jonline_namespace.sh jonline
+#   ./data_migrations/cutover_jonline_namespace.sh bullcitysocial
+#   ./data_migrations/cutover_jonline_namespace.sh oakcitysocial
+#   ./data_migrations/cutover_jonline_namespace.sh ato-band
 #
 # What it does, in order:
 #   1. Renames Postgres (jonline-postgres -> rellm-postgres) and object
@@ -67,7 +67,7 @@
 set -euo pipefail
 
 NAMESPACE="${1:?Usage: $0 <namespace>  (e.g. jonline, bullcitysocial, oakcitysocial, ato-band)}"
-DEPLOYS_DIR="$(cd "$(dirname "$0")" && pwd)"
+DEPLOYS_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 command -v mc >/dev/null || { echo "mc (MinIO Client) is required -- install with: brew install minio/stable/mc" >&2; exit 1; }
 

@@ -1,0 +1,23 @@
+# The PVC (central-postgres-pv-claim) lives in its own file, split from
+# k8s-central-postgres-digitalocean.yaml, for the same reason as
+# ../../k8s/k8s-postgres-pvc-digitalocean.yaml: a PVC's spec (other than resources.requests) is
+# immutable once bound, so re-`apply`-ing it alongside the Service/StatefulSet on every update
+# fails outright if the live PVC's storageClassName ever drifts. Keeping it separate means only
+# create_central_postgres (a one-time thing per cluster) ever touches it; update_central_postgres
+# only re-applies the Service/StatefulSet.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  labels:
+    app: central-postgres
+  name: central-postgres-pv-claim
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      # Bigger default than a per-namespace ../../k8s/k8s-postgres-pvc-digitalocean.yaml (1Gi) --
+      # this volume holds every onboarded namespace's database, not just one. Resize (this field
+      # only -- see the comment above) as you onboard more namespaces.
+      storage: 10Gi
+  storageClassName: do-block-storage-retain

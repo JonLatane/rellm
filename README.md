@@ -753,7 +753,7 @@ Next, from the repo root, to create Postgres, object storage and two load-balanc
 NAMESPACE=rellm make create_backend_data create_external_backend
 ```
 
-That's it! You've created object storage and Postgres servers along with an *unsecured Rellm instance* where ***passwords and auth tokens will be sent in plain text*** (You should secure it immediately if you care about any data/people, but feel free to play around with it until you do! Simply `NAMESPACE=rellm make delete_backend_data create_backend_data restart_backend` to reset your server's data.) Because Rellm is a very tiny Rust service, it will all be up within seconds. Your Kubenetes provider will probably take some time to assign you an IP, though.
+That's it! You've created object storage and Postgres servers (with randomly generated credentials, stored in Kubernetes Secrets - `rellm deploy get_all_storage_credentials` prints them for your password manager) along with a Rellm instance that *doesn't have TLS yet*, so ***passwords and auth tokens will be sent in plain text*** (You should secure it immediately if you care about any data/people, but feel free to play around with it until you do! Simply `NAMESPACE=rellm make delete_backend_data create_backend_data restart_backend` to reset your server's data.) Because Rellm is a very tiny Rust service, it will all be up within seconds. Your Kubenetes provider will probably take some time to assign you an IP, though.
 
 Simply `kubectl delete namespace rellm` to delete your deployment (or see below for more detailed management instructions).
 
