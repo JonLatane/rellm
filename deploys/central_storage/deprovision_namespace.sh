@@ -19,14 +19,13 @@
 # It's fine -- expected, for the smoke test -- for the namespace itself to already be gone.
 # Safe to re-run: anything already removed is skipped.
 #
-# Environment: STORAGE_NAMESPACE (default rellm-storage), OBJECT_STORAGE_ADMIN_LOCAL_PORT
-# (default 19002).
+# Environment: STORAGE_NAMESPACE (default rellm-storage). Safe to run for several namespaces at once.
 # Prerequisites: kubectl, mc (brew install minio/stable/mc).
 # ============================================================================
 set -Eeuo pipefail
 
 STORAGE_NAMESPACE="${STORAGE_NAMESPACE:-rellm-storage}"
-LOCAL_PORT="${OBJECT_STORAGE_ADMIN_LOCAL_PORT:-19002}"
+LOCAL_PORT=""   # kernel-chosen free port, so several runs can overlap
 SECRET_NAME=rellm-central-data
 YES=false
 NAMESPACE=""
@@ -76,11 +75,15 @@ fi
 
 ROOT_USER="$(secret_value rellm-central-object-storage-credentials root-user)"
 ROOT_PASSWORD="$(secret_value rellm-central-object-storage-credentials root-password)"
-kubectl port-forward -n "$STORAGE_NAMESPACE" pod/rellm-central-object-storage-0 "$LOCAL_PORT:9000" >"$TMP_DIR/pf.log" 2>&1 &
+kubectl port-forward -n "$STORAGE_NAMESPACE" pod/rellm-central-object-storage-0 ":9000" >"$TMP_DIR/pf.log" 2>&1 &
 PF_PID=$!
-for i in $(seq 1 20); do grep -q "Forwarding from" "$TMP_DIR/pf.log" 2>/dev/null && break; sleep 1; done
-grep -q "Forwarding from" "$TMP_DIR/pf.log" || { cat "$TMP_DIR/pf.log" >&2; die "port-forward to central object storage on local port $LOCAL_PORT never came up (set OBJECT_STORAGE_ADMIN_LOCAL_PORT?)"; }
-export MC_HOST_central="http://$ROOT_USER:$ROOT_PASSWORD@localhost:$LOCAL_PORT"
+for i in $(seq 1 20); do
+  LOCAL_PORT="$(sed -n 's/^Forwarding from 127\.0\.0\.1:\([0-9][0-9]*\) ->.*/\1/p' "$TMP_DIR/pf.log" 2>/dev/null | head -1)"
+  [ -z "$LOCAL_PORT" ] || break
+  sleep 1
+done
+[ -n "$LOCAL_PORT" ] || { cat "$TMP_DIR/pf.log" >&2; die "port-forward to central object storage never came up"; }
+export MC_HOST_central="http://$ROOT_USER:$ROOT_PASSWORD@127.0.0.1:$LOCAL_PORT"
 mc ls central >/dev/null 2>&1 || die "Couldn't authenticate to the central object storage as its root user"
 
 DB_EXISTS="$(echo "SELECT 1 FROM pg_database WHERE datname = '$NAMESPACE';" | central_psql -d postgres)"

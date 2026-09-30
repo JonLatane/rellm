@@ -75,6 +75,8 @@ NAMESPACE=bullcitysocial make transition_backend_to_central_data
 
 CI needs no change per namespace: once the script has applied the switch, the next deploy sees the namespace is on central storage and applies the central-data manifests (see [CI](#ci)).
 
+**Several at once:** different namespaces can be transitioned (or provisioned/deprovisioned) in parallel from separate terminals. Every `kubectl port-forward` the scripts use takes a kernel-chosen free local port, and central provisioning is serialized where Postgres needs it (concurrent `REVOKE`s on the shared maintenance database otherwise fail with `tuple concurrently updated`). The *same* namespace can't be transitioned twice at once (a per-namespace lock refuses the second run). Pass `ARGS=--no-traefik-bounce` to all but the last run so Traefik isn't bounced once per namespace.
+
 Once you've verified the site, free the old PVCs (this refuses to run unless the namespace really is on central storage):
 
 ```bash
