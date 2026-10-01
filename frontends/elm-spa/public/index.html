@@ -343,10 +343,28 @@
       window.rellmUpdateCodeTheme(theme === "dark" || (theme === "auto" && darkMediaQuery.matches));
     });
 
+    // Colors the canvas iOS reveals when rubber-banding past the *top* of the page (see nav.css's
+    // `.navbar::before`, which only covers that gap in Safari tabs, not the standalone PWA) -- but
+    // only while actually overscrolled there (iOS reports a negative scrollY during the bounce), so
+    // the bottom overscroll and every resting state keep `body`'s own background, since a
+    // permanent `html` background would stop `body`'s propagating to the canvas.
+    var currentNavBarColor = null;
+    function updateTopOverscrollCanvas() {
+      var root = document.documentElement;
+      if (currentNavBarColor && window.scrollY < 0) {
+        root.style.backgroundColor = currentNavBarColor;
+      } else if (root.style.backgroundColor) {
+        root.style.backgroundColor = "";
+      }
+    }
+    window.addEventListener("scroll", updateTopOverscrollCanvas, { passive: true });
+
     app.ports.setNavBarColor.subscribe(function (color) {
       document.querySelectorAll('meta[name="theme-color"]').forEach(function (m) {
         m.setAttribute("content", color);
       });
+      currentNavBarColor = color;
+      updateTopOverscrollCanvas();
       forceSafeAreaRepaint();
     });
 
