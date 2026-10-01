@@ -58,6 +58,7 @@ import UI.Classes exposing (classes, hostnameToCSSClass)
 type Kind
     = Videos
     | Audio
+    | Images
 
 
 type alias Model =
@@ -125,6 +126,9 @@ requestFor kind searchText page =
 
                     Audio ->
                         "audio/*"
+
+                    Images ->
+                        "image/*"
                 )
         , searchText =
             if String.isEmpty (String.trim searchText) then
@@ -354,6 +358,9 @@ view shared model =
 
                 Audio ->
                     audioRow shared showHost host maybeServer media
+
+                Images ->
+                    imageTile shared showHost host maybeServer media
     in
     div [ class "media-feed", class (kindClass model.kind) ]
         [ div [ class "media-feed-search" ]
@@ -367,6 +374,9 @@ view shared model =
 
                         Audio ->
                             "Search audio"
+
+                        Images ->
+                            "Search images"
                     )
                 , value model.searchText
                 , onInput SearchChanged
@@ -401,6 +411,9 @@ view shared model =
 
                                 Audio ->
                                     "No audio yet."
+
+                                Images ->
+                                    "No images yet."
 
                         else
                             "Nothing matches your search."
@@ -439,29 +452,42 @@ kindClass kind =
         Audio ->
             "media-feed-audio"
 
+        Images ->
+            "media-feed-images"
 
-{-| The poster/waveform `<img>` for `media` -- only if the server has actually generated one (see
+
+{-| The thumbnail `<img>` for `media` -- for video/audio only if the server has actually generated one (see
 `MediaConversion`), since without it `GET /media/{id}?size=...` would fall back to serving the
 whole video/audio file. `Nothing` otherwise (an unprocessed upload), and `view` shows a placeholder.
 -}
 thumbnailUrl : Kind -> Maybe RellmServer -> Media -> Maybe String
 thumbnailUrl kind maybeServer media =
     let
-        ( conversion, sizeParam ) =
-            case kind of
-                Videos ->
-                    ( VIDEOPREVIEWTHUMBNAILMEDIUM, "video_preview_medium" )
+        withSize : String -> Maybe String
+        withSize sizeParam =
+            maybeServer
+                |> Maybe.andThen (\server -> RellmServers.mediaUrl server media.id)
+                |> Maybe.map (\url -> url ++ "?size=" ++ sizeParam)
 
-                Audio ->
-                    ( AUDIOPREVIEWTHUMBNAILSMALL, "audio_preview_small" )
+        ifGenerated : MediaConversion -> String -> Maybe String
+        ifGenerated conversion sizeParam =
+            if List.any (\size -> size.conversion == conversion) media.sizes then
+                withSize sizeParam
+
+            else
+                Nothing
     in
-    if List.any (\size -> size.conversion == conversion) media.sizes then
-        maybeServer
-            |> Maybe.andThen (\server -> RellmServers.mediaUrl server media.id)
-            |> Maybe.map (\url -> url ++ "?size=" ++ sizeParam)
+    case kind of
+        Videos ->
+            ifGenerated VIDEOPREVIEWTHUMBNAILMEDIUM "video_preview_medium"
 
-    else
-        Nothing
+        Audio ->
+            ifGenerated AUDIOPREVIEWTHUMBNAILSMALL "audio_preview_small"
+
+        -- Images are their own thumbnails: `size=medium` falls back to the original when the
+        -- image is already small enough that no resized copy was generated.
+        Images ->
+            withSize "medium"
 
 
 mediaTitle : Media -> String
@@ -536,6 +562,9 @@ creditsLine kind metadata =
 
         Videos ->
             [ metadata.director, metadata.starring ]
+
+        Images ->
+            []
     )
         |> List.filterMap (Maybe.andThen nonBlank)
         |> String.join " · "
@@ -628,3 +657,25 @@ hostBadge showHost host =
 
     else
         text ""
+
+
+{-| A photo-gallery tile: the image itself, cropped to a square, with its title/author/server on
+hover (always shown on touch devices -- see `.image-tile-caption` in media\_pages.css).
+-}
+imageTile : Shared.Model -> Bool -> String -> Maybe RellmServer -> Media -> Html Msg
+imageTile shared showHost host maybeServer media =
+    div [ class "media-card image-tile" ]
+        [ button [ class "media-card-thumb", onClick (MediaClicked host media.id), attribute "aria-label" ("View " ++ mediaTitle media) ]
+            [ case thumbnailUrl Images maybeServer media of
+                Just url ->
+                    img [ src url, attribute "alt" (mediaTitle media), attribute "loading" "lazy" ] []
+
+                Nothing ->
+                    span [ class "media-card-thumb-placeholder" ] [ text "🖼️" ]
+            , licensedBadge media
+            ]
+        , div [ class "image-tile-caption" ]
+            [ span [ class "media-card-title-text" ] [ text (mediaTitle media) ]
+            , div [ class "media-card-sub" ] [ authorLink shared host media, hostBadge showHost host ]
+            ]
+        ]

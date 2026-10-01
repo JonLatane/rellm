@@ -283,3 +283,66 @@
   opacity: 1;
   border-color: var(--fg);
 }
+
+/* Images: a photo-gallery grid of square tiles; the caption overlays the bottom of the tile on
+   hover/focus (always, on touch devices, which have no hover). */
+.media-feed-images .media-feed-items {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 0.5rem;
+}
+
+.image-tile {
+  position: relative;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.image-tile .media-card-thumb {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+}
+
+.image-tile-caption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 1.2rem 0.6rem 0.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.7));
+  color: white;
+  font-size: 0.85rem;
+  opacity: 0;
+  transition: opacity 0.15s;
+  pointer-events: none;
+}
+
+.image-tile-caption .media-card-sub,
+.image-tile-caption .media-card-author {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.image-tile-caption .media-card-author {
+  pointer-events: auto;
+}
+
+.media-card-title-text {
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image-tile:hover .image-tile-caption,
+.image-tile:focus-within .image-tile-caption {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .image-tile-caption {
+    opacity: 1;
+  }
+}

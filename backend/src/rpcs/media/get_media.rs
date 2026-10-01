@@ -7,7 +7,7 @@ use crate::db_connection::PgPooledConnection;
 use crate::marshaling::*;
 use crate::models;
 use crate::protos::*;
-use crate::schema::{follows, media, media_filter};
+use crate::schema::{follows, media, media_filter, users};
 use diesel_full_text_search::{to_tsquery_with_search_config, ts_rank_cd, configuration::TsConfigurationByName, TsVectorExtensions};
 use crate::logic::prefix_tsquery_text;
 
@@ -132,7 +132,14 @@ pub fn get_media(
     // media with no owner (e.g. deleted users' media) and server-generated media, so they don't
     // show up as "videos"/"audio" nobody posted.
     if requested_media_id.is_none() && requested_user_id.is_none() {
-        query = query.filter(media::user_id.is_not_null()).filter(media::generated.eq(false));
+        // Also skip profile pictures, which are ordinary uploaded `Media` but not something
+        // anyone posted to browse (they'd otherwise flood an `image/*` listing).
+        query = query
+            .filter(media::user_id.is_not_null())
+            .filter(media::generated.eq(false))
+            .filter(diesel::dsl::not(diesel::dsl::exists(
+                users::table.filter(users::avatar_media_id.eq(media::id.nullable())),
+            )));
     }
     match content_type_filter {
         Some(ContentTypeFilter::Exact(content_type)) => {

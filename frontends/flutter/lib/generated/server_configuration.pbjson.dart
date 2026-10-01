@@ -123,6 +123,7 @@ const NavigationTab$json = {
     {'1': 'MEDIA_TAB', '2': 17},
     {'1': 'VIDEO_TAB', '2': 18},
     {'1': 'AUDIO_TAB', '2': 19},
+    {'1': 'IMAGES_TAB', '2': 20},
   ],
 };
 
@@ -130,7 +131,8 @@ const NavigationTab$json = {
 final $typed_data.Uint8List navigationTabDescriptor = $convert.base64Decode(
     'Cg1OYXZpZ2F0aW9uVGFiEgwKCEhPTUVfVEFCEAASDgoKRVZFTlRTX1RBQhAKEg0KCVBPU1RTX1'
     'RBQhALEg4KClBFT1BMRV9UQUIQDBINCglBQk9VVF9UQUIQDxIOCgpNQVJLRVRfVEFCEBASDQoJ'
-    'TUVESUFfVEFCEBESDQoJVklERU9fVEFCEBISDQoJQVVESU9fVEFCEBM=');
+    'TUVESUFfVEFCEBESDQoJVklERU9fVEFCEBISDQoJQVVESU9fVEFCEBMSDgoKSU1BR0VTX1RBQh'
+    'AU');
 
 @$core.Deprecated('Use contactProtocolDescriptor instead')
 const ContactProtocol$json = {

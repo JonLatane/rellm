@@ -48,6 +48,7 @@ lazy_static! {
         video_page,
         videos_page,
         audio_page,
+        images_page,
         about,
         about_rellm,
         post,
@@ -217,6 +218,18 @@ webui!(
         Some(RellmSummary {
             title: Some(format!("Audio | {}", configuration.display_name())),
             description: Some(format!("Audio from {}", configuration.short_name())),
+            image: configuration.logo_url().or(Some("/favicon.png".to_string())),
+        })
+    }
+);
+webui!(
+    images_page,
+    "/images",
+    "images.html",
+    |_connection: PgPooledConnection, configuration: &ServerConfiguration, _path: &str| {
+        Some(RellmSummary {
+            title: Some(format!("Images | {}", configuration.display_name())),
+            description: Some(format!("Images from {}", configuration.short_name())),
             image: configuration.logo_url().or(Some("/favicon.png".to_string())),
         })
     }

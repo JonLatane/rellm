@@ -196,6 +196,10 @@ pub async fn spa_file_or_username_or_custom_tab(
                                             "Audio".to_string(),
                                             Some(format!("Audio from {}", short_name)),
                                         ),
+                                        NavigationTab::ImagesTab => (
+                                            "Images".to_string(),
+                                            Some(format!("Images from {}", short_name)),
+                                        ),
                                         NavigationTab::MarketTab => (
                                             "Market".to_string(),
                                             Some(

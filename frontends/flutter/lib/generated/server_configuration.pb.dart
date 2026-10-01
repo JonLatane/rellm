@@ -2613,7 +2613,7 @@ class CustomNavigationTab extends $pb.GeneratedMessage {
 
   /// The path this tab is reachable at, e.g. `gigs` for a band's `/gigs` link to the Events page,
   /// or `weddings` for a Post about wedding offerings. Must be distinct across every entry in
-  /// `CustomNavigationTabSet.tabs`. Note: `events`, `posts`, `people`, `about`, `media`, `video`, `videos`, and `audio` are reserved --
+  /// `CustomNavigationTabSet.tabs`. Note: `events`, `posts`, `people`, `about`, `media`, `video`, `videos`, `audio`, and `images` are reserved --
   /// each may only be used to (redundantly) point back at its own matching predefined tab, never
   /// remapped to a different tab or a Post. `/` itself is never reachable this way - it's
   /// overridden via `CustomNavigationTabSet.home` instead.

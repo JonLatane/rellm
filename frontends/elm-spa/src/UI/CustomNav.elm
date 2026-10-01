@@ -439,6 +439,9 @@ navigationTabLabel navTab =
         AUDIOTAB ->
             "Audio"
 
+        IMAGESTAB ->
+            "Images"
+
         NavigationTabUnrecognized_ _ ->
             "Tab"
 
@@ -508,6 +511,9 @@ defaultPathFor target =
 
                 AUDIOTAB ->
                     "audio"
+
+                IMAGESTAB ->
+                    "images"
 
                 NavigationTabUnrecognized_ _ ->
                     "home"
@@ -582,6 +588,9 @@ targetKindText kind =
                 AUDIOTAB ->
                     "Audio Page"
 
+                IMAGESTAB ->
+                    "Images Page"
+
                 NavigationTabUnrecognized_ _ ->
                     "Tab"
 
@@ -598,7 +607,7 @@ predefined tabs, plus Custom Post and Profile. Mirrors `SettingsTab.allowedDefau
 -}
 selectableTargetKinds : List TargetKind
 selectableTargetKinds =
-    [ KindTab EVENTSTAB, KindTab POSTSTAB, KindTab VIDEOTAB, KindTab AUDIOTAB, KindTab MEDIATAB, KindTab PEOPLETAB, KindTab ABOUTTAB, KindTab MARKETTAB, KindPost, KindProfile ]
+    [ KindTab EVENTSTAB, KindTab POSTSTAB, KindTab VIDEOTAB, KindTab AUDIOTAB, KindTab IMAGESTAB, KindTab MEDIATAB, KindTab PEOPLETAB, KindTab ABOUTTAB, KindTab MARKETTAB, KindPost, KindProfile ]
 
 
 targetKindFromText : String -> Maybe TargetKind
@@ -703,6 +712,9 @@ navLinkView shared currentRoute server tab =
 
                 TargetTab AUDIOTAB ->
                     Route.Audio
+
+                TargetTab IMAGESTAB ->
+                    Route.Images
 
                 TargetTab (NavigationTabUnrecognized_ _) ->
                     route

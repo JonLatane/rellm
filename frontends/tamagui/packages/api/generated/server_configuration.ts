@@ -331,12 +331,14 @@ export enum NavigationTab {
   ABOUT_TAB = 15,
   /** MARKET_TAB - The Market tab. */
   MARKET_TAB = 16,
-  /** MEDIA_TAB - The Media tab: Video, Audio and (when logged in) My Media sub-tabs. Reserved path: `media`. */
+  /** MEDIA_TAB - The Media tab: Video, Audio, Images and (when logged in) My Media sub-tabs. Reserved path: `media`. */
   MEDIA_TAB = 17,
   /** VIDEO_TAB - The Video tab (a YouTube-alike over `GetMedia` with `content_type: "video/*"`). Reserved paths: `video`, `videos`. */
   VIDEO_TAB = 18,
   /** AUDIO_TAB - The Audio tab (a Spotify-alike over `GetMedia` with `content_type: "audio/*"`). Reserved path: `audio`. */
   AUDIO_TAB = 19,
+  /** IMAGES_TAB - The Images tab (a photo-gallery view over `GetMedia` with `content_type: "image/*"`). Reserved path: `images`. */
+  IMAGES_TAB = 20,
   UNRECOGNIZED = -1,
 }
 
@@ -369,6 +371,9 @@ export function navigationTabFromJSON(object: any): NavigationTab {
     case 19:
     case "AUDIO_TAB":
       return NavigationTab.AUDIO_TAB;
+    case 20:
+    case "IMAGES_TAB":
+      return NavigationTab.IMAGES_TAB;
     case -1:
     case "UNRECOGNIZED":
     default:
@@ -396,6 +401,8 @@ export function navigationTabToJSON(object: NavigationTab): string {
       return "VIDEO_TAB";
     case NavigationTab.AUDIO_TAB:
       return "AUDIO_TAB";
+    case NavigationTab.IMAGES_TAB:
+      return "IMAGES_TAB";
     case NavigationTab.UNRECOGNIZED:
     default:
       return "UNRECOGNIZED";
@@ -1275,7 +1282,7 @@ export interface CustomNavigationTab {
   /**
    * The path this tab is reachable at, e.g. `gigs` for a band's `/gigs` link to the Events page,
    * or `weddings` for a Post about wedding offerings. Must be distinct across every entry in
-   * `CustomNavigationTabSet.tabs`. Note: `events`, `posts`, `people`, `about`, `media`, `video`, `videos`, and `audio` are reserved --
+   * `CustomNavigationTabSet.tabs`. Note: `events`, `posts`, `people`, `about`, `media`, `video`, `videos`, `audio`, and `images` are reserved --
    * each may only be used to (redundantly) point back at its own matching predefined tab, never
    * remapped to a different tab or a Post. `/` itself is never reachable this way - it's
    * overridden via `CustomNavigationTabSet.home` instead.

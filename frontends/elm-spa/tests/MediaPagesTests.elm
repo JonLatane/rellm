@@ -33,6 +33,9 @@ suite =
                             MediaFeed.requestFor MediaFeed.Audio "  coltrane " 3
                     in
                     Expect.equal ( Just "audio/*", Just "coltrane", 3 ) ( request.contentType, request.searchText, request.page )
+            , test "images use image/*" <|
+                \_ ->
+                    (MediaFeed.requestFor MediaFeed.Images "" 0).contentType |> Expect.equal (Just "image/*")
             , test "blank search text means no search" <|
                 \_ ->
                     (MediaFeed.requestFor MediaFeed.Audio "   " 0).searchText |> Expect.equal Nothing
@@ -62,7 +65,7 @@ suite =
         , describe "MediaPage tabs"
             [ test "?tab= round-trips, defaulting to video" <|
                 \_ ->
-                    [ MediaPage.VideoTab, MediaPage.AudioTab, MediaPage.MyMediaTab ]
+                    [ MediaPage.VideoTab, MediaPage.AudioTab, MediaPage.ImagesTab, MediaPage.MyMediaTab ]
                         |> List.map
                             (\tab ->
                                 MediaPage.tabQueryValue tab
@@ -70,7 +73,7 @@ suite =
                                     |> Maybe.withDefault Dict.empty
                                     |> MediaPage.tabFromQuery
                             )
-                        |> Expect.equal [ MediaPage.VideoTab, MediaPage.AudioTab, MediaPage.MyMediaTab ]
+                        |> Expect.equal [ MediaPage.VideoTab, MediaPage.AudioTab, MediaPage.ImagesTab, MediaPage.MyMediaTab ]
             , test "an unknown ?tab= is video" <|
                 \_ ->
                     MediaPage.tabFromQuery (Dict.fromList [ ( "tab", "nope" ) ]) |> Expect.equal MediaPage.VideoTab
@@ -132,17 +135,17 @@ suite =
                     Expect.equal ( LICENSED, Dict.fromList [ ( "Artist", "Miles Davis" ) ], Nothing ) ( edit.visibility, edit.credits, edit.openBlankCredit )
             ]
         , describe "CustomNav tab kinds"
-            [ test "Video, Audio and Media pages are offered after Posts and before People, in that order" <|
+            [ test "Video, Audio, Images and Media pages are offered after Posts and before People, in that order" <|
                 \_ ->
                     CustomNav.selectableTargetKinds
-                        |> List.take 6
+                        |> List.take 7
                         |> List.map CustomNav.targetKindText
-                        |> Expect.equal [ "Events Page", "Posts Page", "Video Page", "Audio Page", "Media Page", "People Page" ]
+                        |> Expect.equal [ "Events Page", "Posts Page", "Video Page", "Audio Page", "Images Page", "Media Page", "People Page" ]
             , test "default paths" <|
                 \_ ->
-                    [ MEDIATAB, VIDEOTAB, AUDIOTAB ]
+                    [ MEDIATAB, VIDEOTAB, AUDIOTAB, IMAGESTAB ]
                         |> List.map (CustomNav.TargetTab >> CustomNav.defaultPathFor)
-                        |> Expect.equal [ "media", "video", "audio" ]
+                        |> Expect.equal [ "media", "video", "audio", "images" ]
             ]
         ]
 

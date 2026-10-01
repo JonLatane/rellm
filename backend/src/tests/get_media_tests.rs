@@ -213,3 +213,37 @@ fn has_next_page_reflects_more_results() {
         Ok(())
     });
 }
+
+#[test]
+fn server_wide_browse_skips_profile_pictures() {
+    use crate::schema::users;
+    use diesel::prelude::*;
+    let mut conn = test_conn();
+    conn.test_transaction::<_, Status, _>(|conn| {
+        let owner = create_user(conn, "gm_avatar_owner");
+        let photo = create_media_with_opts(conn, Some(&owner), opts("image/png", Visibility::GlobalPublic));
+        let avatar = create_media_with_opts(conn, Some(&owner), opts("image/png", Visibility::GlobalPublic));
+        diesel::update(users::table.find(owner.id))
+            .set(users::avatar_media_id.eq(avatar.id))
+            .execute(conn)
+            .unwrap();
+
+        let browse = get_media(
+            GetMediaRequest { content_type: Some("image/*".to_string()), ..Default::default() },
+            &None,
+            conn,
+        )?;
+        let got = ids(&browse);
+        assert!(got.contains(&photo.id.to_proto_id()));
+        assert!(!got.contains(&avatar.id.to_proto_id()), "avatars aren't browsable images");
+
+        // ...but still fetchable directly / via the owner's own listing.
+        let own = get_media(
+            GetMediaRequest { user_id: Some(owner.id.to_proto_id()), ..Default::default() },
+            &None,
+            conn,
+        )?;
+        assert!(ids(&own).contains(&avatar.id.to_proto_id()));
+        Ok(())
+    });
+}

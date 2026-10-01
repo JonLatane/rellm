@@ -78,6 +78,7 @@ import Pages.Audio
 import Pages.Market
 import Pages.Market.Fulfillment
 import Pages.Market.Product.ProductId_
+import Pages.Images
 import Pages.Media
 import Pages.Video
 import Pages.Videos
@@ -430,6 +431,9 @@ sharedMsgForPage sharedMsg page =
 
         Gen.Model.Audio _ _ ->
             Just (Gen.Msg.Audio (Pages.Audio.fromShared sharedMsg))
+
+        Gen.Model.Images _ _ ->
+            Just (Gen.Msg.Images (Pages.Images.fromShared sharedMsg))
 
         Gen.Model.Market__Product__ProductId_ _ _ ->
             Just (Gen.Msg.Market__Product__ProductId_ (Pages.Market.Product.ProductId_.fromShared sharedMsg))

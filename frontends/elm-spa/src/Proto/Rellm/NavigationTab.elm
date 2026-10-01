@@ -51,6 +51,9 @@ fieldNumbersNavigationTab n_ =
         AUDIOTAB ->
             19
 
+        IMAGESTAB ->
+            20
+
         NavigationTabUnrecognized_ m_ ->
             m_
 
@@ -97,6 +100,9 @@ encodeNavigationTab value =
             AUDIOTAB ->
                 19
 
+            IMAGESTAB ->
+                20
+
             NavigationTabUnrecognized_ i ->
                 i
 
@@ -137,6 +143,9 @@ decodeNavigationTab =
                     19 ->
                         AUDIOTAB
 
+                    20 ->
+                        IMAGESTAB
+
                     _ ->
                         NavigationTabUnrecognized_ i
             )
@@ -155,4 +164,5 @@ type NavigationTab
     | MEDIATAB
     | VIDEOTAB
     | AUDIOTAB
+    | IMAGESTAB
     | NavigationTabUnrecognized_ Int

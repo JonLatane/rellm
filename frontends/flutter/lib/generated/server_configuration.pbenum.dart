@@ -141,6 +141,7 @@ class NavigationTab extends $pb.ProtobufEnum {
   static const NavigationTab MEDIA_TAB = NavigationTab._(17, _omitEnumNames ? '' : 'MEDIA_TAB');
   static const NavigationTab VIDEO_TAB = NavigationTab._(18, _omitEnumNames ? '' : 'VIDEO_TAB');
   static const NavigationTab AUDIO_TAB = NavigationTab._(19, _omitEnumNames ? '' : 'AUDIO_TAB');
+  static const NavigationTab IMAGES_TAB = NavigationTab._(20, _omitEnumNames ? '' : 'IMAGES_TAB');
 
   static const $core.List<NavigationTab> values = <NavigationTab> [
     HOME_TAB,
@@ -152,6 +153,7 @@ class NavigationTab extends $pb.ProtobufEnum {
     MEDIA_TAB,
     VIDEO_TAB,
     AUDIO_TAB,
+    IMAGES_TAB,
   ];
 
   static final $core.Map<$core.int, NavigationTab> _byValue = $pb.ProtobufEnum.initByValue(values);

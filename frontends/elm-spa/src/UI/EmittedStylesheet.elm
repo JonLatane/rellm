@@ -93,6 +93,7 @@ mainFrontendServerRules theme accountsPanel =
         , textColorRule ".post-star.starred" theme.primaryAnchorColor
         , ".switch input:checked + .slider { background: " ++ theme.primaryAnchorColor ++ "; }\n"
         , ".account-row" ++ mainHostSelector ++ " .switch input:checked + .slider { background: " ++ theme.navAnchorColor ++ "; }\n"
+        , ".account-row.federated-account-row" ++ mainHostSelector ++ " .switch input:checked + .slider { background: " ++ theme.primaryColor ++ "; }\n"
         , ".nav-link:hover { background-color:" ++ theme.navColor ++ "88; }\n"
         , colorRule ".events-calendar .fc .fc-button-primary:not(:disabled).fc-button-active" theme.accentColor theme.accentTextColor
         , borderColorRule ".events-calendar .fc .fc-button-primary:not(:disabled).fc-button-active" theme.accentColor

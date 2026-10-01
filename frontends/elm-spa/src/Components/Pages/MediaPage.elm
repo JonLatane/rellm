@@ -6,7 +6,8 @@ module Components.Pages.MediaPage exposing (Mode(..), Model, Msg, Tab(..), fromS
 
   - `VideoOnly` -- `/video`, `/videos`: a YouTube-alike grid of videos.
   - `AudioOnly` -- `/audio`: an iTunes/Spotify-alike track list.
-  - `Tabbed` -- `/media`: two top tabs of the above, plus a "My Media" tab (signed-in users only)
+  - `ImagesOnly` -- `/images`: a photo-gallery grid of images.
+  - `Tabbed` -- `/media`: top tabs of the above three, plus a "My Media" tab (signed-in users only)
     that renders `Shared.MyMediaPanel`'s own UI inline via `MyMediaPanel.viewEmbedded` -- the same
     "page-level reuse of a panel" idea as `Shared.MessagingPanel`/`Pages.Messages`, except here the
     page owns a _separate_ `MyMediaPanel.Model` instance (the global panel's `DeleteConfirmation`
@@ -45,11 +46,13 @@ type Mode
     = Tabbed
     | VideoOnly
     | AudioOnly
+    | ImagesOnly
 
 
 type Tab
     = VideoTab
     | AudioTab
+    | ImagesTab
     | MyMediaTab
 
 
@@ -63,6 +66,7 @@ type alias Model =
     -- the Video tab never fetches audio.
     , video : Maybe MediaFeed.Model
     , audio : Maybe MediaFeed.Model
+    , images : Maybe MediaFeed.Model
     , myMedia : MyMediaPanel.Model
 
     -- The server (`frontendHost`) of the account whose media the My Media tab shows -- `Nothing`
@@ -78,6 +82,7 @@ type alias Model =
 type Msg
     = VideoMsg MediaFeed.Msg
     | AudioMsg MediaFeed.Msg
+    | ImagesMsg MediaFeed.Msg
     | MyMediaMsg MyMediaPanel.Msg
     | TabClicked Tab
     | AccountSelected String
@@ -93,6 +98,9 @@ tabFromQuery query =
     case Dict.get "tab" query of
         Just "audio" ->
             AudioTab
+
+        Just "images" ->
+            ImagesTab
 
         Just "my" ->
             MyMediaTab
@@ -111,6 +119,9 @@ tabQueryValue tab =
 
         AudioTab ->
             Just "audio"
+
+        ImagesTab ->
+            Just "images"
 
         MyMediaTab ->
             Just "my"
@@ -131,6 +142,9 @@ init shared mode navKey path query =
                 AudioOnly ->
                     AudioTab
 
+                ImagesOnly ->
+                    ImagesTab
+
         ( model, tabEffect ) =
             enterTab shared
                 { mode = mode
@@ -139,6 +153,7 @@ init shared mode navKey path query =
                 , path = path
                 , video = Nothing
                 , audio = Nothing
+                , images = Nothing
                 , myMedia = MyMediaPanel.init
                 , myMediaHost = Nothing
                 , pendingDelete = Nothing
@@ -176,6 +191,16 @@ enterTab shared model =
                     MediaFeed.init shared MediaFeed.Audio
                         |> Tuple.mapFirst (\feed -> { model | audio = Just feed })
                         |> Tuple.mapSecond (Effect.map AudioMsg)
+
+        ImagesTab ->
+            case model.images of
+                Just _ ->
+                    ( model, Effect.none )
+
+                Nothing ->
+                    MediaFeed.init shared MediaFeed.Images
+                        |> Tuple.mapFirst (\feed -> { model | images = Just feed })
+                        |> Tuple.mapSecond (Effect.map ImagesMsg)
 
         MyMediaTab ->
             let
@@ -283,6 +308,16 @@ update shared msg model =
                 Nothing ->
                     ( model, Effect.none )
 
+        ImagesMsg feedMsg ->
+            case model.images of
+                Just feed ->
+                    MediaFeed.update shared feedMsg feed
+                        |> Tuple.mapFirst (\f -> { model | images = Just f })
+                        |> Tuple.mapSecond (Effect.map ImagesMsg)
+
+                Nothing ->
+                    ( model, Effect.none )
+
         MyMediaMsg panelMsg ->
             -- The embedded panel's own Close button isn't rendered (`viewEmbedded`), so a
             -- `CloseClicked` can only come from a `MultiSelect`/`SingleSelect` flow this instance
@@ -348,10 +383,18 @@ update shared msg model =
                         Nothing ->
                             ( Nothing, Effect.none )
 
+                ( imagesModel, imagesEffect ) =
+                    case model.images of
+                        Just feed ->
+                            MediaFeed.retryFetch shared feed |> Tuple.mapFirst Just |> Tuple.mapSecond (Effect.map ImagesMsg)
+
+                        Nothing ->
+                            ( Nothing, Effect.none )
+
                 ( enteredModel, enterEffect ) =
-                    enterTab shared { model | video = videoModel, audio = audioModel }
+                    enterTab shared { model | video = videoModel, audio = audioModel, images = imagesModel }
             in
-            ( enteredModel, Effect.batch [ Effect.fromShared subMsg, videoEffect, audioEffect, enterEffect ] )
+            ( enteredModel, Effect.batch [ Effect.fromShared subMsg, videoEffect, audioEffect, imagesEffect, enterEffect ] )
 
 
 subscriptions : Model -> Sub Msg
@@ -384,7 +427,7 @@ view shared model =
         [ case model.mode of
             Tabbed ->
                 div [ class "media-page-tabs" ]
-                    ([ tabButton VideoTab "Video", tabButton AudioTab "Audio" ]
+                    ([ tabButton VideoTab "Video", tabButton AudioTab "Audio", tabButton ImagesTab "Images" ]
                         ++ (if not (List.isEmpty (mediaAccounts shared)) then
                                 [ tabButton MyMediaTab "My Media" ]
 
@@ -404,6 +447,11 @@ view shared model =
             AudioTab ->
                 model.audio
                     |> Maybe.map (\feed -> Html.map AudioMsg (MediaFeed.view shared feed))
+                    |> Maybe.withDefault (text "")
+
+            ImagesTab ->
+                model.images
+                    |> Maybe.map (\feed -> Html.map ImagesMsg (MediaFeed.view shared feed))
                     |> Maybe.withDefault (text "")
 
             MyMediaTab ->

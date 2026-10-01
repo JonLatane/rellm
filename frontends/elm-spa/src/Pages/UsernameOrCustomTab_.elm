@@ -234,6 +234,11 @@ initEmbedded shared req tab =
                 |> Tuple.mapFirst EmbeddedMedia
                 |> Tuple.mapSecond (Effect.map MediaMsg)
 
+        CustomNav.TargetTab IMAGESTAB ->
+            MediaPage.init shared MediaPage.ImagesOnly req.key req.url.path req.query
+                |> Tuple.mapFirst EmbeddedMedia
+                |> Tuple.mapSecond (Effect.map MediaMsg)
+
         CustomNav.TargetTab HOMETAB ->
             ( Redirecting, redirectTo req.key Route.Home_ )
 

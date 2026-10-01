@@ -63,6 +63,7 @@ pub fn validate_configuration(config: &ServerConfiguration) -> Result<(), Status
                 "media" => Some((NavigationTab::MediaTab, "media_path_must_point_to_media_tab")),
                 "video" | "videos" => Some((NavigationTab::VideoTab, "video_path_must_point_to_video_tab")),
                 "audio" => Some((NavigationTab::AudioTab, "audio_path_must_point_to_audio_tab")),
+                "images" => Some((NavigationTab::ImagesTab, "images_path_must_point_to_images_tab")),
                 _ => None,
             };
             if let Some((required_tab, error_message)) = required_tab {

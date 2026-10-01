@@ -56,6 +56,7 @@ lazy_static! {
         "video",
         "videos",
         "audio",
+        "images",
         "backend_host",
         "frontend_host",
         "docs",
@@ -76,7 +77,7 @@ lazy_static! {
     // rather than single-resource routes.
     static ref CUSTOM_TAB_RESERVED_PATHS: Vec<&'static str> = RESERVED_PATHS
         .iter()
-        .filter(|path| !["events", "people", "users", "posts", "about", "market", "media", "video", "videos", "audio"].contains(path))
+        .filter(|path| !["events", "people", "users", "posts", "about", "market", "media", "video", "videos", "audio", "images"].contains(path))
         .cloned()
         .collect();
     static ref CUSTOM_TAB_PATH_RE: Regex = Regex::new(r"^[a-z_]+$").unwrap();
