@@ -188,6 +188,9 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
             <p><a href="#rellm-GetMediaResponse">GetMediaResponse</a></p>
           </li>
           <li>
+            <p><a href="#rellm-License">License</a></p>
+          </li>
+          <li>
             <p><a href="#rellm-Media">Media</a></p>
           </li>
           <li>
@@ -2765,6 +2768,11 @@ directory</a> is (<code>{name}</code> denotes a
           <td>5</td>
           <td>[TODO] Subject is visible to explicitly-associated Users. Only applicable to Posts and Events. For Users, this is the same as LIMITED. See: <a href="#rellm-UserPost"><code>UserPost</code></a>.</td>
         </tr>
+        <tr>
+          <td>LICENSED</td>
+          <td>6</td>
+          <td>Only applicable to <a href="#rellm-Media"><code>Media</code></a>. The media's metadata is discoverable by logged-in users (like <code>SERVER_PUBLIC</code>) -- or by anyone, if <code>MediaSettings.licensed_media_visible_globally</code> is set -- but its full-quality bytes are only served to the owner, admins, and holders of an active <a href="#rellm-License"><code>License</code></a>. Everyone else gets the <code>UNLICENSED_PREVIEW_MEDIUM</code> conversion.</td>
+        </tr>
       </tbody>
     </table>
     <p><a name="permissions-proto"></a></p>
@@ -3786,13 +3794,20 @@ directory</a> is (<code>{name}</code> denotes a
       <li><code>{user_id: abc123}</code> - Gets the media of the given user that the current user can see. IE:
         <ul>
           <li><em>all</em> of the current user's own media</li>
-          <li><code>GLOBAL_PUBLIC</code> media for the user if the current user is not logged in.</li>
+          <li><code>GLOBAL_PUBLIC</code> media (and <code>LICENSED</code>, if <code>MediaSettings.licensed_media_visible_globally</code>) for the user if the current user is not logged in.</li>
+          <li><code>LICENSED</code> media too for any logged-in user.</li>
           <li><code>SERVER_PUBLIC</code> media for the user if the current user is logged in.</li>
           <li><code>LIMITED</code> media for the user if the current user is following the user.</li>
         </ul>
       </li>
       <li><code>{media_id: abc123}</code> - Gets the media with the given ID, if visible to the current user.</li>
+      <li>
+        <code>{}</code> (neither <code>media_id</code> nor <code>user_id</code>) - Browses <em>all</em> media on the server visible to the current user
+        (never other users' <code>PRIVATE</code>/<code>LIMITED</code> media), newest first -- the basis of the Media/Video/Audio pages.
+        Combine with <code>content_type</code> and/or <code>search_text</code>.
+      </li>
     </ul>
+    <p><code>content_type</code> and <code>search_text</code> also narrow <code>{user_id: ...}</code> requests.</p>
     <table>
       <thead>
         <tr>
@@ -3814,6 +3829,18 @@ directory</a> is (<code>{name}</code> denotes a
           <td><a href="#string">string</a></td>
           <td>optional</td>
           <td>Returns all media items for the given user.</td>
+        </tr>
+        <tr>
+          <td>content_type</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td>Filters by the original upload's MIME content type. Either exact (<code>video/mp4</code>) or a wildcard subtype (<code>audio/*</code>, <code>video/*</code>, <code>image/*</code>). Backed by an indexed column.</td>
+        </tr>
+        <tr>
+          <td>search_text</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td>Full-text search over name, credits (artist, album, composer, ...) and description -- see <code>MediaMetadata</code>'s doc for field weighting. Prefix-matches, like <code>GetPosts</code>' <code>TEXT_SEARCH</code>. Results are ranked by match quality, then recency.</td>
         </tr>
         <tr>
           <td>page</td>
@@ -3846,6 +3873,55 @@ directory</a> is (<code>{name}</code> denotes a
           <td><a href="#bool">bool</a></td>
           <td></td>
           <td></td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-License"></a></p>
+    <h3 id="license"><a class="anchor" aria-hidden="true" tabindex="-1" href="#license"><span class="octicon octicon-link"></span></a>License</h3>
+    <p>
+      Grants <code>licensed_to</code> access to a <code>LICENSED</code> <a href="#rellm-Media"><code>Media</code></a> item's full-quality bytes.
+      Stored in the <code>media_licenses</code> table. A license is <em>active</em> while <code>revoked_at</code> is unset.
+      (Purchasing licenses through Rellm's Market is not implemented yet.)
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>id</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>licensed_to</td>
+          <td><a href="#rellm-Author">Author</a></td>
+          <td></td>
+          <td>The user holding the license to the media.</td>
+        </tr>
+        <tr>
+          <td>media</td>
+          <td><a href="#rellm-MediaReference">MediaReference</a></td>
+          <td></td>
+          <td>The licensed media.</td>
+        </tr>
+        <tr>
+          <td>created_at</td>
+          <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>revoked_at</td>
+          <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
+          <td>optional</td>
+          <td>When set, the license no longer grants access.</td>
         </tr>
       </tbody>
     </table>
@@ -3883,7 +3959,22 @@ directory</a> is (<code>{name}</code> denotes a
           <li><code>authorization</code> - Rellm Access Token for the user. May also be supplied in the <code>Cookies</code> or <code>Authorization</code> headers.</li>
         </ul>
       </li>
-      <li>Fetching media without authentication requires that it has <code>GLOBAL_PUBLIC</code> visibility.</li>
+      <li>
+        Fetching media without authentication requires that it has <code>GLOBAL_PUBLIC</code> visibility (or <code>LICENSED</code>,
+        if <code>MediaSettings.licensed_media_visible_globally</code> is set). Visibility is otherwise enforced
+        like <code>GetMedia</code>'s: <code>SERVER_PUBLIC</code> for any logged-in user, <code>LIMITED</code> for followers of the owner,
+        <code>PRIVATE</code> for the owner and admins only. A media item the viewer can't see responds <code>404</code>.
+      </li>
+      <li>
+        Anonymous (unauthenticated) responses omit CORS <code>Access-Control-Allow-*</code> headers when the server's
+        <code>MediaSettings.block_cors_anonymous_media_access</code> is set, so third-party sites can embed (<code>&#x26;lt;img&#x26;gt;</code>,
+        <code>&#x26;lt;video&#x26;gt;</code>) but not script-read public media.
+      </li>
+      <li>
+        <code>LICENSED</code> media's full-quality bytes are only served to its owner, admins, and users holding an active
+        <a href="#rellm-License"><code>License</code></a> for it. Everyone else is served its <code>UNLICENSED_PREVIEW_MEDIUM</code> conversion
+        (audio/video only; see <code>MediaMetadata.unlicensed_preview_start_ms</code>), or <code>403 Forbidden</code> if none exists yet.
+      </li>
     </ul>
     <table>
       <thead>
@@ -3997,6 +4088,78 @@ directory</a> is (<code>{name}</code> denotes a
           <td>optional</td>
           <td>For video media, how far into the video (in milliseconds) its preview/poster frame should be taken from -- both via a <code>#t=&#x26;lt;seconds&#x26;gt;</code> Media Fragments URI on the <code>&#x26;lt;video&#x26;gt;</code> element's <code>src</code>, and as the timestamp <code>ffmpeg</code> seeks to when generating the <code>VIDEO_PREVIEW_THUMBNAIL_*</code> poster frames (see <code>MediaConversion</code>). Unset defaults to 1s (1000 in ms), or if the video is shorter than 1.5s, the midpoint of the video. Settable via <code>UpdateMedia</code>; changing it invalidates (deletes) any existing <code>VIDEO_PREVIEW_THUMBNAIL_*</code> sizes, so the <code>convert_media_sizes</code> background job regenerates them at the new time.</td>
         </tr>
+        <tr>
+          <td>artist</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td>Credits. All free-form text; unset/blank means "none". Editable via <code>UpdateMedia</code> (setting one to an empty string clears it). Searched by <code>GetMediaRequest.search_text</code>, most to least important: name/artist/director, then album/composer/starring/cast/narrator, then producer/crew/publisher, then description.</td>
+        </tr>
+        <tr>
+          <td>album</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>composer</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>director</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>producer</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>starring</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>cast</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>crew</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>narrator</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>publisher</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>unlicensed_preview_start_ms</td>
+          <td><a href="#uint64">uint64</a></td>
+          <td>optional</td>
+          <td>For audio and video media only: the range of the original (in milliseconds) that is cropped into the <code>UNLICENSED_PREVIEW_MEDIUM</code> conversion served to viewers without a license for <code>LICENSED</code> media. Unset start defaults to 0; unset end defaults to start + 30s (clamped to the media's duration). Changing either invalidates (deletes) any existing <code>UNLICENSED_PREVIEW_MEDIUM</code> size so the <code>convert_media_sizes</code> background job regenerates it.</td>
+        </tr>
+        <tr>
+          <td>unlicensed_preview_end_ms</td>
+          <td><a href="#uint64">uint64</a></td>
+          <td>optional</td>
+          <td></td>
+        </tr>
       </tbody>
     </table>
     <p><a name="rellm-MediaReference"></a></p>
@@ -4063,6 +4226,12 @@ directory</a> is (<code>{name}</code> denotes a
           <td><a href="#rellm-Author">Author</a></td>
           <td>optional</td>
           <td>The user who created the media item. See <code>Media.author</code>. Included here (unlike most other <code>MediaReference</code> fields, which are deliberately pared down from <code>Media</code>) so clients that only ever see a <code>MediaReference</code> -- e.g. a <code>Post.media</code> item -- can still tell whether the current viewer owns it, without a separate <code>Media</code> lookup.</td>
+        </tr>
+        <tr>
+          <td>visibility</td>
+          <td><a href="#rellm-Visibility">Visibility</a></td>
+          <td></td>
+          <td>See <code>Media.visibility</code>. Included so a client holding only a <code>MediaReference</code> (e.g. the media viewer) can show/edit it and tell whether it's <code>LICENSED</code>.</td>
         </tr>
       </tbody>
     </table>
@@ -4159,8 +4328,29 @@ directory</a> is (<code>{name}</code> denotes a
           <td>7</td>
           <td>Same as <code>VIDEO_PREVIEW_THUMBNAIL_SMALL</code>, but resized to fit within 1600x1600 px -- the <code>MEDIA_CONVERSION_LARGE</code> tier.</td>
         </tr>
+        <tr>
+          <td>AUDIO_PREVIEW_THUMBNAIL_SMALL</td>
+          <td>10</td>
+          <td>For audio media only: an <code>image/png</code> waveform image of the whole file (rendered via <code>ffmpeg</code>'s <code>showwavespic</code> filter, transparent background), 320x320 px (square, so clients can squash it vertically to suit their layout) -- same width tier as <code>MEDIA_CONVERSION_SMALL</code>. Audio has no pixel dimensions of its own, so unlike the video/image sizes these are <em>not</em> "fit within NxN": they're always exactly the tier's size. Regenerated by the same <code>convert_media_sizes</code> background job.</td>
+        </tr>
+        <tr>
+          <td>AUDIO_PREVIEW_THUMBNAIL_MEDIUM</td>
+          <td>11</td>
+          <td>Same as <code>AUDIO_PREVIEW_THUMBNAIL_SMALL</code>, but 800x800 px -- the <code>MEDIA_CONVERSION_MEDIUM</code> tier.</td>
+        </tr>
+        <tr>
+          <td>AUDIO_PREVIEW_THUMBNAIL_LARGE</td>
+          <td>12</td>
+          <td>Same as <code>AUDIO_PREVIEW_THUMBNAIL_SMALL</code>, but 1600x1600 px -- the <code>MEDIA_CONVERSION_LARGE</code> tier.</td>
+        </tr>
+        <tr>
+          <td>UNLICENSED_PREVIEW_MEDIUM</td>
+          <td>13</td>
+          <td>For audio and video media only: a medium-quality crop of the original from <code>MediaMetadata.unlicensed_preview_start_ms</code> to <code>unlicensed_preview_end_ms</code> (via <code>ffmpeg</code>), in the original's own container-family content type (video: <code>video/mp4</code>, audio: <code>audio/mpeg</code>). This is what viewers <em>without</em> a <a href="#rellm-License"><code>License</code></a> are served for <code>LICENSED</code> media. Regenerated by the <code>convert_media_sizes</code> background job; deleted (and marked for regeneration) whenever <code>UpdateMedia</code> changes either bound. May also be deleted manually via <code>DeleteMediaSizes</code>.</td>
+        </tr>
       </tbody>
     </table>
+    <p>(Numbered 13 rather than 11 because <code>AUDIO_PREVIEW_THUMBNAIL_MEDIUM</code> already holds 11.) |</p>
     <p><a name="messages-proto"></a></p>
     <p align="right"><a href="#top">Top</a></p>
     <h2 id="messagesproto"><a class="anchor" aria-hidden="true" tabindex="-1" href="#messagesproto"><span class="octicon octicon-link"></span></a>messages.proto</h2>
@@ -6769,7 +6959,7 @@ directory</a> is (<code>{name}</code> denotes a
           <td>path</td>
           <td><a href="#string">string</a></td>
           <td></td>
-          <td>The path this tab is reachable at, e.g. <code>gigs</code> for a band's <code>/gigs</code> link to the Events page, or <code>weddings</code> for a Post about wedding offerings. Must be distinct across every entry in <code>CustomNavigationTabSet.tabs</code>. Note: <code>events</code>, <code>posts</code>, <code>people</code>, and <code>about</code> are reserved -- each may only be used to (redundantly) point back at its own matching predefined tab, never remapped to a different tab or a Post. <code>/</code> itself is never reachable this way - it's overridden via <code>CustomNavigationTabSet.home</code> instead.</td>
+          <td>The path this tab is reachable at, e.g. <code>gigs</code> for a band's <code>/gigs</code> link to the Events page, or <code>weddings</code> for a Post about wedding offerings. Must be distinct across every entry in <code>CustomNavigationTabSet.tabs</code>. Note: <code>events</code>, <code>posts</code>, <code>people</code>, <code>about</code>, <code>media</code>, <code>video</code>, <code>videos</code>, <code>audio</code>, and <code>images</code> are reserved -- each may only be used to (redundantly) point back at its own matching predefined tab, never remapped to a different tab or a Post. <code>/</code> itself is never reachable this way - it's overridden via <code>CustomNavigationTabSet.home</code> instead.</td>
         </tr>
       </tbody>
     </table>
@@ -7135,6 +7325,18 @@ directory</a> is (<code>{name}</code> denotes a
           <td><a href="#uint64">uint64</a></td>
           <td></td>
           <td>Default media storage allocation for newly created users. Defaults to 15MB.</td>
+        </tr>
+        <tr>
+          <td>block_cors_anonymous_media_access</td>
+          <td><a href="#bool">bool</a></td>
+          <td></td>
+          <td>"Block CORS Anonymous Media Access". When set, <code>GET /media/{id}</code> responses to <em>unauthenticated</em> requests omit CORS <code>Access-Control-Allow-*</code> headers even for <code>GLOBAL_PUBLIC</code> media, so browsers block other sites' scripts from reading them (plain <code>&#x26;lt;img&#x26;gt;</code>/<code>&#x26;lt;video&#x26;gt;</code> embeds still work). Authenticated requests are unaffected.</td>
+        </tr>
+        <tr>
+          <td>licensed_media_visible_globally</td>
+          <td><a href="#bool">bool</a></td>
+          <td></td>
+          <td>Whether <code>LICENSED</code> media (see <code>Visibility.LICENSED</code>) is discoverable by <em>unauthenticated</em> users: listed by <code>GetMedia</code> and its preview/thumbnails served by <code>GET /media/{id}</code>. When unset (the default), <code>LICENSED</code> media is only visible to logged-in users -- like <code>SERVER_PUBLIC</code> -- plus its owner and admins. Either way, its full-quality bytes still require an active License.</td>
         </tr>
         <tr>
           <td>server_media_allocation_bytes</td>
@@ -7952,6 +8154,26 @@ directory</a> is (<code>{name}</code> denotes a
           <td>MARKET_TAB</td>
           <td>16</td>
           <td>The Market tab.</td>
+        </tr>
+        <tr>
+          <td>MEDIA_TAB</td>
+          <td>17</td>
+          <td>The Media tab: Video, Audio, Images and (when logged in) My Media sub-tabs. Reserved path: <code>media</code>.</td>
+        </tr>
+        <tr>
+          <td>VIDEO_TAB</td>
+          <td>18</td>
+          <td>The Video tab (a YouTube-alike over <code>GetMedia</code> with <code>content_type: &#x26;#34;video/*&#x26;#34;</code>). Reserved paths: <code>video</code>, <code>videos</code>.</td>
+        </tr>
+        <tr>
+          <td>AUDIO_TAB</td>
+          <td>19</td>
+          <td>The Audio tab (a Spotify-alike over <code>GetMedia</code> with <code>content_type: &#x26;#34;audio/*&#x26;#34;</code>). Reserved path: <code>audio</code>.</td>
+        </tr>
+        <tr>
+          <td>IMAGES_TAB</td>
+          <td>20</td>
+          <td>The Images tab (a photo-gallery view over <code>GetMedia</code> with <code>content_type: &#x26;#34;image/*&#x26;#34;</code>). Reserved path: <code>images</code>.</td>
         </tr>
       </tbody>
     </table>

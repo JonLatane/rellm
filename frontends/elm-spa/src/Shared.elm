@@ -42,6 +42,7 @@ import Request exposing (Request)
 import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer)
+import Shared.BrowserInfo as BrowserInfo
 import Shared.Breadcrumbs as Breadcrumbs
 import Shared.CreateNewPanel as CreateNewPanel
 import Shared.FederatedAuth as FederatedAuth
@@ -49,6 +50,7 @@ import Shared.MarkdownPanel as MarkdownPanel
 import Shared.MediaGeneratorPanel as MediaGeneratorPanel
 import Shared.MediaViewerPanel as MediaViewerPanel
 import Shared.MessagingPanel as MessagingPanel
+import Shared.PushNotificationLink as PushNotificationLink
 import Shared.MyMediaPanel as MyMediaPanel
 import Shared.StarredPanel as StarredPanel
 import Shared.Time as SharedTime
@@ -86,6 +88,10 @@ type alias Model =
     -- onto any `Gen.Route.toHref` output so links/history stay under the
     -- right mount.
     , basePath : String
+
+    -- Detected once from `navigator.userAgent` (flag `userAgent`) -- display-only, see
+    -- `Shared.BrowserInfo`.
+    , browser : BrowserInfo.Browser
 
     -- Drives `UI.scrollPreserver`: a tall spacer at the bottom of `main_`,
     -- shown for the first 2s after navigating *back* to a page (never a
@@ -242,6 +248,10 @@ type Msg
     | NavLinksScrolled { scrollLeft : Float, scrollWidth : Float, clientWidth : Float }
     | NavigateExternal String
     | WindowResized Int Int
+      -- `Ports.pushNotificationClicked`: a push notification for another server (cross-origin from
+      -- this tab, so `service-worker.js` couldn't navigate to it itself) was clicked -- the payload
+      -- is its absolute URL. See `Shared.PushNotificationLink`.
+    | PushNotificationClicked String
     | GotTimeZone String Time.Zone
     | GotNow Time.Posix
     | NoOp
@@ -472,6 +482,12 @@ init basePath req flags =
             Decode.decodeValue (Decode.field "uses24HourTime" Decode.bool) flags
                 |> Result.withDefault False
 
+        browser : BrowserInfo.Browser
+        browser =
+            Decode.decodeValue (Decode.field "userAgent" Decode.string) flags
+                |> Result.map BrowserInfo.fromUserAgent
+                |> Result.withDefault BrowserInfo.UnknownBrowser
+
         ( accountsPanelModel, accountsPanelCmd ) =
             AccountsPanel.init req accountsPanelFlags blueskyAccountsFlags mastodonAccountsAndServersFlags
 
@@ -496,6 +512,7 @@ init basePath req flags =
             , theme = { preference = themePreference, systemPrefersDark = systemPrefersDark }
             , userPreferences = UserPreferences.init userPreferencesFlags
             , basePath = basePath
+            , browser = browser
             , scrollPreserverVisible = False
             , navAnimationState =
                 { scrollLeft = 0
@@ -557,6 +574,7 @@ subscriptions model =
     Sub.batch
         [ Ports.systemPrefersDarkChanged SystemPrefersDarkChanged
         , Browser.Events.onResize WindowResized
+        , Ports.pushNotificationClicked (Decode.decodeValue Decode.string >> Result.withDefault "" >> PushNotificationClicked)
         , Sub.map AccountsPanelMsg (AccountsPanel.subscriptions model.accounts)
         , Sub.map FederatedAuthMsg FederatedAuth.subscriptions
         , Sub.map StarredPanelMsg (StarredPanel.subscriptions model.panels.starredPanel)
@@ -2317,6 +2335,14 @@ sharedUpdate req msg model =
 
         NavigateExternal url ->
             ( model, Nav.load url )
+
+        PushNotificationClicked rawUrl ->
+            case PushNotificationLink.toInAppPath model.accounts.mainFrontendHost rawUrl of
+                Just path ->
+                    ( model, Nav.pushUrl req.key (model.basePath ++ path) )
+
+                Nothing ->
+                    ( model, Cmd.none )
 
         WindowResized width height ->
             ( { model | windowSize = { width = width, height = height } }, Cmd.none )

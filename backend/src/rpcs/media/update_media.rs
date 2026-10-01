@@ -3,24 +3,31 @@ use s3::Bucket;
 use tonic::{Code, Status};
 
 use crate::db_connection::PgPooledConnection;
-use crate::logic::{adjust_server_media_usage_bytes, is_video_content_type, update_media_storage_used};
+use crate::logic::{
+    adjust_server_media_usage_bytes, is_audio_content_type, is_video_content_type,
+    update_media_storage_used,
+};
 use crate::marshaling::*;
-use crate::models::{self, VIDEO_PREVIEW_CONVERSIONS};
+use crate::models::{self, blank_to_none, UNLICENSED_PREVIEW_CONVERSIONS, VIDEO_PREVIEW_CONVERSIONS};
 use crate::protos::*;
 use crate::schema::media;
 
 use crate::rpcs::validations::*;
 
-/// Updates a `Media` item's `name`/`description`/`metadata.video_preview_time_ms` by ID -- every
-/// other field on `request` (visibility, moderation, `sizes`, etc.) is ignored. Self-or-`ADMIN`,
-/// same ownership check as `delete_media`.
+/// Updates a `Media` item's `name`/`description`/`visibility`/`metadata` by ID -- every other field
+/// on `request` (moderation, `sizes`, etc.) is ignored. Self-or-`ADMIN`, same ownership check as
+/// `delete_media`.
 ///
-/// If `request.metadata` is set and its `video_preview_time_ms` differs from the item's current
-/// value, any existing `VIDEO_PREVIEW_THUMBNAIL_*` sizes are stale (they were captured at the old
-/// time) -- they're deleted here (from `sizes` and their object storage objects) and the item is marked
-/// unprocessed, so `convert_media` (in `logic::media_conversion`, run by the `convert_media_sizes`
-/// background job) regenerates them at the new time next run. `request.metadata` unset leaves
-/// `video_preview_time_ms` untouched, same as `name`/`description` being unset.
+/// - `visibility` of `VISIBILITY_UNKNOWN` (the proto default) leaves it unchanged. `DIRECT` is
+///   rejected (not applicable to media); `LICENSED` is accepted (see `Visibility.LICENSED`).
+/// - `request.metadata` unset leaves metadata untouched. If set, it *replaces* all of it (every
+///   credit/preview field not included becomes unset), with blank credit strings saved as null.
+///   `unlicensed_preview_*` may only be set on audio/video media.
+/// - If `video_preview_time_ms` changes on a video, existing `VIDEO_PREVIEW_THUMBNAIL_*` sizes are
+///   stale (captured at the old time); likewise `UNLICENSED_PREVIEW_MEDIUM` when either
+///   `unlicensed_preview_*` bound changes. Stale sizes are deleted here (from `sizes` and their
+///   object storage objects) and the item is marked unprocessed, so `convert_media` (in
+///   `logic::media_conversion`, run by the `convert_media_sizes` background job) regenerates them.
 pub async fn update_media(
     request: Media,
     current_user: &models::User,
@@ -43,33 +50,83 @@ pub async fn update_media(
         validate_any_permission(&Some(current_user), vec![Permission::Admin])?;
     }
 
-    let current_metadata = affected_media.metadata();
-    let requested_video_preview_time_ms =
-        request.metadata.as_ref().map(|m| m.video_preview_time_ms.map(|ms| ms as i64));
-    let preview_time_changed = requested_video_preview_time_ms
-        .is_some_and(|requested| requested != current_metadata.video_preview_time_ms);
-    let new_metadata = models::MediaMetadata {
-        video_preview_time_ms: requested_video_preview_time_ms
-            .unwrap_or(current_metadata.video_preview_time_ms),
+    let new_visibility = match request.visibility() {
+        Visibility::Unknown => affected_media.visibility.clone(),
+        Visibility::Direct => return Err(Status::new(Code::InvalidArgument, "invalid_visibility")),
+        visibility => visibility.to_string_visibility(),
     };
 
-    let invalidate_preview_thumbnails = preview_time_changed
-        && affected_media
-            .original()
-            .is_some_and(|o| is_video_content_type(&o.content_type));
+    let is_audio_or_video = affected_media.original().is_some_and(|o| {
+        is_video_content_type(&o.content_type) || is_audio_content_type(&o.content_type)
+    });
+    let is_video = affected_media
+        .original()
+        .is_some_and(|o| is_video_content_type(&o.content_type));
+
+    let current_metadata = affected_media.metadata();
+    let new_metadata = match request.metadata.as_ref() {
+        None => current_metadata.clone(),
+        Some(m) => {
+            let new_metadata = models::MediaMetadata {
+                video_preview_time_ms: m.video_preview_time_ms.map(|ms| ms as i64),
+                artist: blank_to_none(m.artist.clone()),
+                album: blank_to_none(m.album.clone()),
+                composer: blank_to_none(m.composer.clone()),
+                director: blank_to_none(m.director.clone()),
+                producer: blank_to_none(m.producer.clone()),
+                starring: blank_to_none(m.starring.clone()),
+                cast: blank_to_none(m.cast.clone()),
+                crew: blank_to_none(m.crew.clone()),
+                narrator: blank_to_none(m.narrator.clone()),
+                publisher: blank_to_none(m.publisher.clone()),
+                unlicensed_preview_start_ms: m.unlicensed_preview_start_ms.map(|ms| ms as i64),
+                unlicensed_preview_end_ms: m.unlicensed_preview_end_ms.map(|ms| ms as i64),
+            };
+            let has_unlicensed_preview = new_metadata.unlicensed_preview_start_ms.is_some()
+                || new_metadata.unlicensed_preview_end_ms.is_some();
+            if has_unlicensed_preview && !is_audio_or_video {
+                return Err(Status::new(
+                    Code::InvalidArgument,
+                    "unlicensed_preview_requires_audio_or_video",
+                ));
+            }
+            if let (Some(start), Some(end)) = (
+                new_metadata.unlicensed_preview_start_ms,
+                new_metadata.unlicensed_preview_end_ms,
+            ) {
+                if end <= start {
+                    return Err(Status::new(
+                        Code::InvalidArgument,
+                        "unlicensed_preview_end_must_be_after_start",
+                    ));
+                }
+            }
+            new_metadata
+        }
+    };
+
+    let invalidate_video_thumbnails = is_video
+        && new_metadata.video_preview_time_ms != current_metadata.video_preview_time_ms;
+    let invalidate_unlicensed_preview = new_metadata.unlicensed_preview_start_ms
+        != current_metadata.unlicensed_preview_start_ms
+        || new_metadata.unlicensed_preview_end_ms != current_metadata.unlicensed_preview_end_ms;
+    let invalidate_any = invalidate_video_thumbnails || invalidate_unlicensed_preview;
 
     let (kept_sizes, removed_sizes): (Vec<models::MediaSize>, Vec<models::MediaSize>) =
         affected_media.sizes().into_iter().partition(|s| {
-            !invalidate_preview_thumbnails || !VIDEO_PREVIEW_CONVERSIONS.contains(&s.conversion())
+            !(invalidate_video_thumbnails && VIDEO_PREVIEW_CONVERSIONS.contains(&s.conversion())
+                || invalidate_unlicensed_preview
+                    && UNLICENSED_PREVIEW_CONVERSIONS.contains(&s.conversion()))
         });
 
     let updated = diesel::update(media::table.find(media_id))
         .set((
             media::name.eq(request.name),
             media::description.eq(request.description),
+            media::visibility.eq(new_visibility),
             media::metadata.eq(serde_json::to_value(&new_metadata).unwrap()),
             media::sizes.eq(serde_json::to_value(&kept_sizes).unwrap()),
-            media::processed.eq(affected_media.processed && !invalidate_preview_thumbnails),
+            media::processed.eq(affected_media.processed && !invalidate_any),
         ))
         .get_result::<models::Media>(conn)
         .map_err(|e| {

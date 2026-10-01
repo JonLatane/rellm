@@ -91,7 +91,7 @@ pub fn get_group_posts(
                 Visibility::GlobalPublic | Visibility::ServerPublic => {}
                 Visibility::Unknown | Visibility::Private => return None,
                 //TODO implement direct post visibility
-                Visibility::Direct => return None,
+                Visibility::Direct | Visibility::Licensed => return None,
             };
 
             if moderations.contains(&group_post.group_moderation.to_proto_moderation().unwrap()) {

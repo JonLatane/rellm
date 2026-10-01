@@ -1,4 +1,4 @@
-module Pages.About exposing (Model, Msg, fromShared, page)
+module Pages.About exposing (Model, Msg, aboutRellmView, fromShared, page)
 
 {-| `/about` -- the main server's own info (`Components.Pages.ServerInformationPage`,
 same as `Pages.Server.ServerIdentifier_` shows for an arbitrary server, just
@@ -59,7 +59,7 @@ view shared req model =
     }
 
 
-aboutRellmView : Html.Html Msg
+aboutRellmView : Html.Html msg
 aboutRellmView =
     div [ class "about-rellm" ]
         [ h2 [] [ text "About Rellm" ]

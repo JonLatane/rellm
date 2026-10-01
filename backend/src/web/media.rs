@@ -1,10 +1,13 @@
 use std::str::FromStr;
 
 use crate::db_connection::*;
-use crate::logic::{adjust_server_media_usage_bytes, update_media_storage_used};
+use crate::logic::{
+    adjust_server_media_usage_bytes, is_audio_content_type, is_video_content_type,
+    update_media_storage_used,
+};
 use crate::marshaling::*;
 use crate::models;
-use crate::protos::{MediaConversion, Visibility};
+use crate::protos::{MediaConversion, Permission, Visibility};
 use crate::rpcs::get_server_configuration_proto;
 use crate::schema;
 use crate::schema::media;
@@ -117,6 +120,7 @@ pub async fn create_media(
     let metadata = if content_type.starts_with("video/") {
         models::MediaMetadata {
             video_preview_time_ms: Some(1000),
+            ..Default::default()
         }
     } else {
         models::MediaMetadata::default()
@@ -173,6 +177,35 @@ pub async fn media_file_options(id: &str) -> &'static str {
     return "";
 }
 
+/// Response header `media_file` sets to ask the `CORS` fairing to leave off every
+/// `Access-Control-Allow-*` header (and then removes itself) -- see
+/// `MediaSettings.block_cors_anonymous_media_access`.
+pub const BLOCK_CORS_HEADER: &str = "X-Rellm-Block-CORS";
+
+/// Wraps a responder, optionally tagging it with `BLOCK_CORS_HEADER` and `Vary`ing on the headers
+/// that decide whether it's tagged (so a shared cache never serves one viewer's CORS-less anonymous
+/// copy to an authenticated one, or vice versa).
+pub struct MediaResponse<R> {
+    inner: R,
+    block_cors: bool,
+    vary_on_auth: bool,
+}
+
+impl<'r, 'o: 'r, R: rocket::response::Responder<'r, 'o>> rocket::response::Responder<'r, 'o>
+    for MediaResponse<R>
+{
+    fn respond_to(self, request: &'r rocket::Request<'_>) -> rocket::response::Result<'o> {
+        let mut response = self.inner.respond_to(request)?;
+        if self.block_cors {
+            response.set_header(rocket::http::Header::new(BLOCK_CORS_HEADER, "1"));
+        }
+        if self.vary_on_auth {
+            response.set_header(rocket::http::Header::new("Vary", "Authorization, Cookie"));
+        }
+        Ok(response)
+    }
+}
+
 #[rocket::get("/media/<id>?<authorization>&<size>")]
 pub async fn media_file<'a>(
     id: &str,
@@ -181,19 +214,173 @@ pub async fn media_file<'a>(
     cookies: &CookieJar<'_>,
     state: &State<RocketState>,
     auth_header: Option<AuthHeader<'_>>,
-) -> Result<CacheResponse<(ContentType, NamedFile)>, Status> {
+) -> Result<MediaResponse<CacheResponse<(ContentType, NamedFile)>>, Status> {
     log::info!("media_file: {:?}, size: {:?}", id, size);
-    let _user = get_media_user(authorization, auth_header, cookies, state).ok();
+    let user = get_media_user(authorization, auth_header, cookies, state).ok();
 
-    let data = load_media_file_data(id, size.as_deref(), state).await?;
+    let media = load_media_by_id(id, state)?;
+    {
+        let mut conn = state.pool.get().unwrap();
+        let follows_owner = media.visibility == Visibility::Limited.to_string_visibility()
+            && match (user.as_ref(), media.user_id) {
+                (Some(viewer), Some(owner_id)) => viewer_follows(viewer.id, owner_id, &mut conn),
+                _ => false,
+            };
+        let licensed_globally = crate::rpcs::licensed_media_visible_globally(&mut conn);
+        if !media_visible_to_viewer(&media, user.as_ref(), follows_owner, licensed_globally) {
+            return Err(Status::NotFound);
+        }
+    }
+    let licensed = media.visibility == Visibility::Licensed.to_string_visibility();
+    let has_full_access = !licensed || viewer_has_full_access(&media, user.as_ref(), state);
+    let (object_storage_path, content_type) =
+        resolve_media_size_for_viewer(&media, size.as_deref(), has_full_access)?;
+    let data = load_media_file(object_storage_path, content_type, state).await?;
 
-    Ok(CacheResponse::new(
-        data,
+    // Anonymous requests to servers with `block_cors_anonymous_media_access` get no CORS headers,
+    // even for `GLOBAL_PUBLIC` media. (Authenticated requests are unaffected.)
+    let block_cors = user.is_none() && {
+        let mut conn = state.pool.get().unwrap();
+        get_server_configuration_proto(&mut conn)
+            .ok()
+            .and_then(|c| c.media_settings)
+            .is_some_and(|m| m.block_cors_anonymous_media_access)
+    };
+
+    // A `LICENSED` item's bytes depend on who's asking, so they must never sit in a shared cache.
+    let cache_control = if licensed {
+        CacheControl {
+            must_revalidate: true,
+            ..CacheControl::private(0)
+        }
+    } else {
         CacheControl {
             must_revalidate: true,
             ..CacheControl::public(3600 * 12)
-        },
+        }
+    };
+    Ok(MediaResponse {
+        inner: CacheResponse::new(data, cache_control),
+        block_cors,
+        vary_on_auth: licensed || block_cors,
+    })
+}
+
+/// Whether `viewer` (`None` if anonymous) may see `media` at all -- the same rules `GetMedia` applies
+/// (see `query_visible_media!`): the owner and admins always; otherwise `GLOBAL_PUBLIC` for anyone,
+/// `SERVER_PUBLIC` for any logged-in viewer, `LICENSED` for logged-in viewers (or anyone, if
+/// `licensed_globally`), `LIMITED` for followers of the owner (`follows_owner`), and never `PRIVATE`.
+/// `LICENSED` media's *bytes* are gated further by `resolve_media_size_for_viewer`.
+pub fn media_visible_to_viewer(
+    media: &models::Media,
+    viewer: Option<&models::User>,
+    follows_owner: bool,
+    licensed_globally: bool,
+) -> bool {
+    if let Some(viewer) = viewer {
+        if media.user_id == Some(viewer.id)
+            || viewer.permissions.to_proto_permissions().contains(&Permission::Admin)
+        {
+            return true;
+        }
+    }
+    match media.visibility.to_proto_visibility() {
+        Some(Visibility::GlobalPublic) => true,
+        Some(Visibility::ServerPublic) => viewer.is_some(),
+        Some(Visibility::Licensed) => viewer.is_some() || licensed_globally,
+        Some(Visibility::Limited) => viewer.is_some() && follows_owner,
+        _ => false,
+    }
+}
+
+fn viewer_follows(viewer_id: i64, owner_id: i64, conn: &mut PgPooledConnection) -> bool {
+    use crate::schema::follows;
+    select(diesel::dsl::exists(
+        follows::table
+            .filter(follows::user_id.eq(viewer_id))
+            .filter(follows::target_user_id.eq(owner_id)),
     ))
+    .get_result(conn)
+    .unwrap_or(false)
+}
+
+/// Owner, admins, and holders of an active (`revoked_at IS NULL`) `media_licenses` row.
+fn viewer_has_full_access(
+    media: &models::Media,
+    user: Option<&models::User>,
+    state: &State<RocketState>,
+) -> bool {
+    let Some(user) = user else { return false };
+    if media.user_id == Some(user.id) || user.permissions.to_proto_permissions().contains(&Permission::Admin) {
+        return true;
+    }
+    let mut conn = state.pool.get().unwrap();
+    viewer_holds_active_license(media.id, user.id, &mut conn)
+}
+
+pub fn viewer_holds_active_license(
+    media_id: i64,
+    user_id: i64,
+    conn: &mut PgPooledConnection,
+) -> bool {
+    use crate::schema::media_licenses;
+    select(diesel::dsl::exists(
+        media_licenses::table
+            .filter(media_licenses::media_id.eq(media_id))
+            .filter(media_licenses::user_id.eq(user_id))
+            .filter(media_licenses::revoked_at.is_null()),
+    ))
+    .get_result(conn)
+    .unwrap_or(false)
+}
+
+/// Sizes anyone may fetch for `LICENSED` media: the cropped preview itself, plus still-image
+/// thumbnails (video poster frames, audio waveforms, and an image's own `Small`).
+const UNLICENSED_VIEWABLE_CONVERSIONS: [MediaConversion; 8] = [
+    MediaConversion::UnlicensedPreviewMedium,
+    MediaConversion::Small,
+    MediaConversion::VideoPreviewThumbnailSmall,
+    MediaConversion::VideoPreviewThumbnailMedium,
+    MediaConversion::VideoPreviewThumbnailLarge,
+    MediaConversion::AudioPreviewThumbnailSmall,
+    MediaConversion::AudioPreviewThumbnailMedium,
+    MediaConversion::AudioPreviewThumbnailLarge,
+];
+
+/// Like `resolve_media_size`, but for a viewer without full access to a `LICENSED` item (see
+/// `has_full_access`): only `UNLICENSED_VIEWABLE_CONVERSIONS` are ever served -- by default (and
+/// when a restricted size is requested) the cropped `UNLICENSED_PREVIEW_MEDIUM`, or `Small`, and
+/// never the original. `403 Forbidden` if none of those exist.
+pub fn resolve_media_size_for_viewer(
+    media: &models::Media,
+    size: Option<&str>,
+    has_full_access: bool,
+) -> Result<(String, String), Status> {
+    if has_full_access {
+        return Ok(resolve_media_size(media, size));
+    }
+    let sizes = media.sizes();
+    let find = |conversion: MediaConversion| {
+        sizes
+            .iter()
+            .find(|s| s.conversion == conversion as i32)
+            .map(|s| (s.object_storage_path.clone(), s.content_type.clone()))
+    };
+    // For audio/video, `Small` is a full-length transcode -- only a still image's `Small` is a
+    // harmless thumbnail.
+    let small_allowed = !media.original().is_some_and(|o| {
+        is_audio_content_type(&o.content_type) || is_video_content_type(&o.content_type)
+    });
+    let requested = requested_conversion(size);
+    let allowed = |c: MediaConversion| {
+        UNLICENSED_VIEWABLE_CONVERSIONS.contains(&c) && (small_allowed || c != MediaConversion::Small)
+    };
+    allowed(requested)
+        .then(|| find(requested))
+        .flatten()
+        .or_else(|| find(MediaConversion::UnlicensedPreviewMedium))
+        .or_else(|| small_allowed.then(|| find(MediaConversion::Small)).flatten())
+        .ok_or(Status::Forbidden)
 }
 
 /// Picks the (object_storage_path, content_type) to serve for a given size request.
@@ -208,17 +395,23 @@ pub async fn media_file<'a>(
 /// unresolved `video_preview_*` request -- harmless in practice since callers only ever request one
 /// once they already know (from the `Media` they fetched over gRPC) that it exists.
 fn resolve_media_size(media: &models::Media, size: Option<&str>) -> (String, String) {
-    let requested = match size {
+    resolve_media_size_preferring(media, &[requested_conversion(size)])
+}
+
+fn requested_conversion(size: Option<&str>) -> MediaConversion {
+    match size {
         Some("original") => MediaConversion::Original,
         Some("small") => MediaConversion::Small,
         Some("large") => MediaConversion::Large,
         Some("video_preview_small") => MediaConversion::VideoPreviewThumbnailSmall,
         Some("video_preview_medium") => MediaConversion::VideoPreviewThumbnailMedium,
         Some("video_preview_large") => MediaConversion::VideoPreviewThumbnailLarge,
+        Some("audio_preview_small") => MediaConversion::AudioPreviewThumbnailSmall,
+        Some("audio_preview_medium") => MediaConversion::AudioPreviewThumbnailMedium,
+        Some("audio_preview_large") => MediaConversion::AudioPreviewThumbnailLarge,
+        Some("unlicensed_preview") => MediaConversion::UnlicensedPreviewMedium,
         _ => MediaConversion::Medium,
-    };
-
-    resolve_media_size_preferring(media, &[requested])
+    }
 }
 
 /// Picks the (object_storage_path, content_type) to serve, trying each `MediaConversion` in `preference`

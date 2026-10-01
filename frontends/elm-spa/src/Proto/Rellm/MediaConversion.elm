@@ -45,6 +45,18 @@ fieldNumbersMediaConversion n_ =
         VIDEOPREVIEWTHUMBNAILLARGE ->
             7
 
+        AUDIOPREVIEWTHUMBNAILSMALL ->
+            10
+
+        AUDIOPREVIEWTHUMBNAILMEDIUM ->
+            11
+
+        AUDIOPREVIEWTHUMBNAILLARGE ->
+            12
+
+        UNLICENSEDPREVIEWMEDIUM ->
+            13
+
         MediaConversionUnrecognized_ m_ ->
             m_
 
@@ -85,6 +97,18 @@ encodeMediaConversion value =
             VIDEOPREVIEWTHUMBNAILLARGE ->
                 7
 
+            AUDIOPREVIEWTHUMBNAILSMALL ->
+                10
+
+            AUDIOPREVIEWTHUMBNAILMEDIUM ->
+                11
+
+            AUDIOPREVIEWTHUMBNAILLARGE ->
+                12
+
+            UNLICENSEDPREVIEWMEDIUM ->
+                13
+
             MediaConversionUnrecognized_ i ->
                 i
 
@@ -119,6 +143,18 @@ decodeMediaConversion =
                     7 ->
                         VIDEOPREVIEWTHUMBNAILLARGE
 
+                    10 ->
+                        AUDIOPREVIEWTHUMBNAILSMALL
+
+                    11 ->
+                        AUDIOPREVIEWTHUMBNAILMEDIUM
+
+                    12 ->
+                        AUDIOPREVIEWTHUMBNAILLARGE
+
+                    13 ->
+                        UNLICENSEDPREVIEWMEDIUM
+
                     _ ->
                         MediaConversionUnrecognized_ i
             )
@@ -135,4 +171,8 @@ type MediaConversion
     | VIDEOPREVIEWTHUMBNAILSMALL
     | VIDEOPREVIEWTHUMBNAILMEDIUM
     | VIDEOPREVIEWTHUMBNAILLARGE
+    | AUDIOPREVIEWTHUMBNAILSMALL
+    | AUDIOPREVIEWTHUMBNAILMEDIUM
+    | AUDIOPREVIEWTHUMBNAILLARGE
+    | UNLICENSEDPREVIEWMEDIUM
     | MediaConversionUnrecognized_ Int

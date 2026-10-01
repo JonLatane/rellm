@@ -19,7 +19,7 @@ use crate::{
 
 use super::{
     rellm_path, root_app, spa_prefix, spa_web_path, strip_spa_prefix, RellmResponder,
-    RellmSummary, SpaApp,
+    RellmSummary, ServerSummaryInfo, SpaApp,
 };
 
 /// Fallback for arbitrary Tamagui build assets and username/custom-tab shortcut links (e.g.
@@ -79,7 +79,8 @@ pub async fn spa_file_or_username_or_custom_tab(
                         let mut connection = state.pool.get().unwrap();
                         let configuration =
                             rpcs::get_server_configuration_proto(&mut connection).unwrap();
-                        let server_info = configuration.server_info.unwrap_or_default();
+                        let server_info = configuration.server_info.clone().unwrap_or_default();
+                        let short_name = configuration.short_name();
                         let app = spa_prefix(origin.path().as_str())
                             .unwrap_or_else(|| root_app(&server_info));
                         let server_name = server_info.name.clone().unwrap_or("Rellm".to_string());
@@ -164,29 +165,45 @@ pub async fn spa_file_or_username_or_custom_tab(
                                         NavigationTab::EventsTab => (
                                             "Events".to_string(),
                                             Some(
-                                                "Searchable, RSVPable Events from a Rellm community"
+                                                format!("Searchable, RSVPable Events from {}", short_name)
                                                     .to_string(),
                                             ),
                                         ),
                                         NavigationTab::PostsTab => (
                                             "Posts".to_string(),
-                                            Some("Posts from a Rellm community".to_string()),
+                                            Some(format!("Recent posts from {}", short_name)),
                                         ),
                                         NavigationTab::PeopleTab => (
                                             "People".to_string(),
                                             Some(
-                                                "User listings for a Rellm community"
+                                                format!("User listings for {}", short_name)
                                                     .to_string(),
                                             ),
                                         ),
                                         NavigationTab::AboutTab => (
                                             "About Community".to_string(),
-                                            Some("Information a Rellm community".to_string()),
+                                            Some(format!("About {}, and the Rellm software it runs on", short_name)),
+                                        ),
+                                        NavigationTab::MediaTab => (
+                                            "Media".to_string(),
+                                            Some(format!("Videos and audio from {}", short_name)),
+                                        ),
+                                        NavigationTab::VideoTab => (
+                                            "Videos".to_string(),
+                                            Some(format!("Videos from {}", short_name)),
+                                        ),
+                                        NavigationTab::AudioTab => (
+                                            "Audio".to_string(),
+                                            Some(format!("Audio from {}", short_name)),
+                                        ),
+                                        NavigationTab::ImagesTab => (
+                                            "Images".to_string(),
+                                            Some(format!("Images from {}", short_name)),
                                         ),
                                         NavigationTab::MarketTab => (
                                             "Market".to_string(),
                                             Some(
-                                                "Products and subscriptions from a Rellm community"
+                                                format!("Products and subscriptions from {}", short_name)
                                                     .to_string(),
                                             ),
                                         ),
@@ -194,7 +211,11 @@ pub async fn spa_file_or_username_or_custom_tab(
                                 let page_title = matched_tab
                                     .and_then(|ct| ct.title.clone())
                                     .unwrap_or(default_title);
-                                (page_title, description, server_logo.clone())
+                                (
+                                    page_title,
+                                    description,
+                                    server_logo.clone(),
+                                )
                             }
                             // No matching custom tab, an `IsProfile` target (whose url *is* the
                             // matched username either way -- see `UI.CustomNav.CustomTabTarget`'s

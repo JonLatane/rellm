@@ -28,6 +28,60 @@
   background: black;
 }
 
+/* Audio: `Components.MediaRenderer`'s square waveform (stored 1:1 -- see `AUDIO_PREVIEW_THUMBNAIL_*`
+   in `media.proto`) deliberately *squashed* vertically to a short strip (`object-fit: fill`), since
+   a waveform has no fine detail to distort. Width follows the same per-`MediaSize` bound as
+   images/videos; height is a fixed fraction of that. The wrapper stacks the (also same-width)
+   `<audio controls>` strip under it once playing, and centers the play button over the waveform. */
+.media-renderer-audio-preview {
+  position: relative;
+  display: inline-block;
+  vertical-align: top;
+}
+
+.media-renderer-audio-preview-image {
+  display: block;
+  object-fit: fill;
+  cursor: pointer;
+  background: rgba(128, 128, 128, 0.12);
+  border-radius: 4px;
+}
+
+.media-renderer-audio {
+  display: block;
+  box-sizing: border-box;
+}
+
+.media-renderer-natural.media-renderer-audio-preview-image,
+.media-renderer-natural.media-renderer-audio {
+  width: 100%;
+}
+.media-renderer-natural.media-renderer-audio-preview-image {
+  height: 160px;
+}
+
+.media-renderer-small.media-renderer-audio-preview-image,
+.media-renderer-small.media-renderer-audio {
+  width: 238px;
+}
+.media-renderer-small.media-renderer-audio-preview-image {
+  height: 96px;
+}
+
+.media-renderer-extra-small.media-renderer-audio-preview-image,
+.media-renderer-extra-small.media-renderer-audio {
+  width: 238px;
+}
+.media-renderer-extra-small.media-renderer-audio-preview-image {
+  height: 88px;
+}
+
+/* A play button over the waveform only (not the `<audio>` strip below it): the wrapper is
+   `position: relative`, and the button only ever renders before the player mounts. */
+.media-renderer-audio-preview .media-renderer-play-button {
+  top: 50%;
+}
+
 .media-renderer-play-button {
   position: absolute;
   top: 50%;

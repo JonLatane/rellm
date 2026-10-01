@@ -14,6 +14,17 @@ impl Fairing for CORS {
     }
 
     async fn on_response<'r>(&self, _request: &'r Request<'_>, response: &mut Response<'r>) {
+        // `media_file` asks for no CORS headers on anonymous requests when
+        // `MediaSettings.block_cors_anonymous_media_access` is set (see `BLOCK_CORS_HEADER`). The
+        // CSP is not CORS and stays, so `<img>`/`<video>` embeds keep working.
+        if response.headers().contains(super::BLOCK_CORS_HEADER) {
+            response.remove_header(super::BLOCK_CORS_HEADER);
+            response.set_header(Header::new(
+                "Content-Security-Policy",
+                "object-src *; media-src *;",
+            ));
+            return;
+        }
         response.set_header(Header::new("Access-Control-Allow-Origin", "*"));
         response.set_header(Header::new(
             "Access-Control-Allow-Methods",

@@ -71,6 +71,8 @@ type Msg
     | FeatureSettingsCalendarLookbackDaysChanged FeatureSettingsSet String
     | FeatureSettingsCalendarDisplayModeChanged FeatureSettingsSet String
     | FeatureSettingsShowStartedOrLongEventsToggled FeatureSettingsSet
+    | FeatureSettingsLicensedMediaGloballyToggled FeatureSettingsSet
+    | FeatureSettingsBlockCorsToggled FeatureSettingsSet
     | FeatureSettingsMediaAllocationTextChanged FeatureSettingsSet String
     | FeatureSettingsMediaAllocationUnitChanged FeatureSettingsSet String
     | FeatureSettingsServerMediaAllocationTextChanged FeatureSettingsSet String
@@ -146,6 +148,11 @@ type alias FeatureSettingsEdit =
     , calendarLookbackDays : String
     , calendarDisplayMode : CalendarDisplayMode
     , showStartedOrLongEventsByDefault : Bool
+
+    -- `MediaFeatureSettings`-only booleans (`False` elsewhere) -- see `MediaSettings` in
+    -- `server_configuration.proto`.
+    , licensedMediaVisibleGlobally : Bool
+    , blockCorsAnonymousMediaAccess : Bool
     , mediaAllocationText : String
     , mediaAllocationUnit : ByteFormat.ByteUnit
 
@@ -324,6 +331,8 @@ update shared targetHost maybeServer msg model =
                             , calendarLookbackDays = current.calendarLookbackDays |> Maybe.map String.fromInt |> Maybe.withDefault ""
                             , calendarDisplayMode = Maybe.withDefault CALENDARDISPLAYWEEK current.calendarDisplayMode
                             , showStartedOrLongEventsByDefault = Maybe.withDefault False current.showStartedOrLongEventsByDefault
+                            , licensedMediaVisibleGlobally = Maybe.withDefault False current.licensedMediaVisibleGlobally
+                            , blockCorsAnonymousMediaAccess = Maybe.withDefault False current.blockCorsAnonymousMediaAccess
                             , mediaAllocationText = String.fromFloat (toFloat mediaAllocationBytes / toFloat (ByteFormat.byteUnitBytes mediaAllocationUnit))
                             , mediaAllocationUnit = mediaAllocationUnit
                             , serverMediaAllocationText = String.fromFloat (toFloat serverMediaAllocationBytes / toFloat (ByteFormat.byteUnitBytes serverMediaAllocationUnit))
@@ -395,6 +404,20 @@ update shared targetHost maybeServer msg model =
                 (featureSettingsEditFor set model
                     |> Maybe.map (\edit -> { edit | calendarDisplayMode = calendarDisplayModeFromText text |> Maybe.withDefault edit.calendarDisplayMode })
                 )
+                model
+            , Effect.none
+            )
+
+        FeatureSettingsLicensedMediaGloballyToggled set ->
+            ( setFeatureSettingsEditFor set
+                (featureSettingsEditFor set model |> Maybe.map (\edit -> { edit | licensedMediaVisibleGlobally = not edit.licensedMediaVisibleGlobally }))
+                model
+            , Effect.none
+            )
+
+        FeatureSettingsBlockCorsToggled set ->
+            ( setFeatureSettingsEditFor set
+                (featureSettingsEditFor set model |> Maybe.map (\edit -> { edit | blockCorsAnonymousMediaAccess = not edit.blockCorsAnonymousMediaAccess }))
                 model
             , Effect.none
             )
@@ -711,6 +734,8 @@ type alias FeatureSettingsSummary =
     , calendarLookbackDays : Maybe Int
     , calendarDisplayMode : Maybe CalendarDisplayMode
     , showStartedOrLongEventsByDefault : Maybe Bool
+    , licensedMediaVisibleGlobally : Maybe Bool
+    , blockCorsAnonymousMediaAccess : Maybe Bool
     , mediaAllocationBytes : Maybe Int
 
     -- `MediaFeatureSettings`-only -- see `FeatureSettingsEdit`'s matching fields for why these are
@@ -745,7 +770,7 @@ currentFeatureSettingsFor set config =
                 s =
                     Maybe.withDefault defaultFeatureSettings config.peopleSettings
             in
-            { visible = s.visible, moderation = s.defaultModeration, visibility = s.defaultVisibility, aliasSingular = s.aliasSingular, aliasPlural = s.aliasPlural, enableReplies = Nothing, calendarLookbackDays = Nothing, calendarDisplayMode = Nothing, showStartedOrLongEventsByDefault = Nothing, mediaAllocationBytes = Nothing, serverMediaAllocationBytes = Nothing, serverMediaUsageBytes = Nothing, serverMediaUsageCalculatedAt = Nothing, serverObjectStorageUsageBytes = Nothing, serverObjectStorageUsageCalculatedAt = Nothing }
+            { visible = s.visible, moderation = s.defaultModeration, visibility = s.defaultVisibility, aliasSingular = s.aliasSingular, aliasPlural = s.aliasPlural, enableReplies = Nothing, calendarLookbackDays = Nothing, calendarDisplayMode = Nothing, showStartedOrLongEventsByDefault = Nothing, licensedMediaVisibleGlobally = Nothing, blockCorsAnonymousMediaAccess = Nothing, mediaAllocationBytes = Nothing, serverMediaAllocationBytes = Nothing, serverMediaUsageBytes = Nothing, serverMediaUsageCalculatedAt = Nothing, serverObjectStorageUsageBytes = Nothing, serverObjectStorageUsageCalculatedAt = Nothing }
 
         GroupFeatureSettings ->
             let
@@ -753,7 +778,7 @@ currentFeatureSettingsFor set config =
                 s =
                     Maybe.withDefault defaultFeatureSettings config.groupSettings
             in
-            { visible = s.visible, moderation = s.defaultModeration, visibility = s.defaultVisibility, aliasSingular = s.aliasSingular, aliasPlural = s.aliasPlural, enableReplies = Nothing, calendarLookbackDays = Nothing, calendarDisplayMode = Nothing, showStartedOrLongEventsByDefault = Nothing, mediaAllocationBytes = Nothing, serverMediaAllocationBytes = Nothing, serverMediaUsageBytes = Nothing, serverMediaUsageCalculatedAt = Nothing, serverObjectStorageUsageBytes = Nothing, serverObjectStorageUsageCalculatedAt = Nothing }
+            { visible = s.visible, moderation = s.defaultModeration, visibility = s.defaultVisibility, aliasSingular = s.aliasSingular, aliasPlural = s.aliasPlural, enableReplies = Nothing, calendarLookbackDays = Nothing, calendarDisplayMode = Nothing, showStartedOrLongEventsByDefault = Nothing, licensedMediaVisibleGlobally = Nothing, blockCorsAnonymousMediaAccess = Nothing, mediaAllocationBytes = Nothing, serverMediaAllocationBytes = Nothing, serverMediaUsageBytes = Nothing, serverMediaUsageCalculatedAt = Nothing, serverObjectStorageUsageBytes = Nothing, serverObjectStorageUsageCalculatedAt = Nothing }
 
         PostFeatureSettings ->
             let
@@ -761,7 +786,7 @@ currentFeatureSettingsFor set config =
                 s =
                     Maybe.withDefault defaultPostSettings config.postSettings
             in
-            { visible = s.visible, moderation = s.defaultModeration, visibility = s.defaultVisibility, aliasSingular = s.aliasSingular, aliasPlural = s.aliasPlural, enableReplies = s.enableReplies, calendarLookbackDays = Nothing, calendarDisplayMode = Nothing, showStartedOrLongEventsByDefault = Nothing, mediaAllocationBytes = Nothing, serverMediaAllocationBytes = Nothing, serverMediaUsageBytes = Nothing, serverMediaUsageCalculatedAt = Nothing, serverObjectStorageUsageBytes = Nothing, serverObjectStorageUsageCalculatedAt = Nothing }
+            { visible = s.visible, moderation = s.defaultModeration, visibility = s.defaultVisibility, aliasSingular = s.aliasSingular, aliasPlural = s.aliasPlural, enableReplies = s.enableReplies, calendarLookbackDays = Nothing, calendarDisplayMode = Nothing, showStartedOrLongEventsByDefault = Nothing, licensedMediaVisibleGlobally = Nothing, blockCorsAnonymousMediaAccess = Nothing, mediaAllocationBytes = Nothing, serverMediaAllocationBytes = Nothing, serverMediaUsageBytes = Nothing, serverMediaUsageCalculatedAt = Nothing, serverObjectStorageUsageBytes = Nothing, serverObjectStorageUsageCalculatedAt = Nothing }
 
         EventFeatureSettings ->
             let
@@ -769,7 +794,7 @@ currentFeatureSettingsFor set config =
                 s =
                     Maybe.withDefault defaultEventSettings config.eventSettings
             in
-            { visible = s.visible, moderation = s.defaultModeration, visibility = s.defaultVisibility, aliasSingular = s.aliasSingular, aliasPlural = s.aliasPlural, enableReplies = s.enableReplies, calendarLookbackDays = s.calendarLookbackDays, calendarDisplayMode = Just s.defaultCalendarDisplayMode, showStartedOrLongEventsByDefault = Just s.showStartedOrLongEventsByDefault, mediaAllocationBytes = Nothing, serverMediaAllocationBytes = Nothing, serverMediaUsageBytes = Nothing, serverMediaUsageCalculatedAt = Nothing, serverObjectStorageUsageBytes = Nothing, serverObjectStorageUsageCalculatedAt = Nothing }
+            { visible = s.visible, moderation = s.defaultModeration, visibility = s.defaultVisibility, aliasSingular = s.aliasSingular, aliasPlural = s.aliasPlural, enableReplies = s.enableReplies, calendarLookbackDays = s.calendarLookbackDays, calendarDisplayMode = Just s.defaultCalendarDisplayMode, showStartedOrLongEventsByDefault = Just s.showStartedOrLongEventsByDefault, licensedMediaVisibleGlobally = Nothing, blockCorsAnonymousMediaAccess = Nothing, mediaAllocationBytes = Nothing, serverMediaAllocationBytes = Nothing, serverMediaUsageBytes = Nothing, serverMediaUsageCalculatedAt = Nothing, serverObjectStorageUsageBytes = Nothing, serverObjectStorageUsageCalculatedAt = Nothing }
 
         MediaFeatureSettings ->
             let
@@ -786,6 +811,8 @@ currentFeatureSettingsFor set config =
             , calendarLookbackDays = Nothing
             , calendarDisplayMode = Nothing
             , showStartedOrLongEventsByDefault = Nothing
+            , licensedMediaVisibleGlobally = Just s.licensedMediaVisibleGlobally
+            , blockCorsAnonymousMediaAccess = Just s.blockCorsAnonymousMediaAccess
             , mediaAllocationBytes = Just (Conversions.int64ToInt s.defaultUserMediaAllocationBytes)
             , serverMediaAllocationBytes = Just (Conversions.int64ToInt s.serverMediaAllocationBytes)
             , serverMediaUsageBytes = Just (Conversions.int64ToInt s.serverMediaUsageBytes)
@@ -937,6 +964,8 @@ applyFeatureSettingsFor set edit config =
                         { updated
                             | defaultUserMediaAllocationBytes = mediaAllocationBytes
                             , serverMediaAllocationBytes = serverMediaAllocationBytes
+                            , licensedMediaVisibleGlobally = edit.licensedMediaVisibleGlobally
+                            , blockCorsAnonymousMediaAccess = edit.blockCorsAnonymousMediaAccess
                         }
             }
 
@@ -1182,6 +1211,13 @@ featureSettingsDisplayView time set maybeAdminAccount current =
               else
                 []
             , if fields.mediaAllocation then
+                [ Common.settingsRow "Licensed Media Visible Globally" (Common.switchDisplay (Maybe.withDefault False current.licensedMediaVisibleGlobally))
+                , Common.settingsRow "Block CORS Anonymous Media Access" (Common.switchDisplay (Maybe.withDefault False current.blockCorsAnonymousMediaAccess))
+                ]
+
+              else
+                []
+            , if fields.mediaAllocation then
                 [ Common.settingsRow "Default User Media Allocation" (textValue (current.mediaAllocationBytes |> Maybe.map ByteFormat.formatBytes |> Maybe.withDefault "—")) ]
 
               else
@@ -1309,6 +1345,13 @@ featureSettingsEditView time set edit =
                 []
             , if fields.showStartedOrLongEventsByDefault then
                 [ Common.settingsRow "Show Started/Long Events by Default" (Common.flagSwitch edit.showStartedOrLongEventsByDefault (FeatureSettingsShowStartedOrLongEventsToggled set)) ]
+
+              else
+                []
+            , if fields.mediaAllocation then
+                [ Common.settingsRow "Licensed Media Visible Globally" (Common.flagSwitch edit.licensedMediaVisibleGlobally (FeatureSettingsLicensedMediaGloballyToggled set))
+                , Common.settingsRow "Block CORS Anonymous Media Access" (Common.flagSwitch edit.blockCorsAnonymousMediaAccess (FeatureSettingsBlockCorsToggled set))
+                ]
 
               else
                 []

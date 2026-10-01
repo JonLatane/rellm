@@ -98,9 +98,73 @@ impl Media {
 pub struct MediaMetadata {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub video_preview_time_ms: Option<i64>,
+    // Credits. Stored under these exact key names -- `media_build_search_text` (see
+    // 2026-10-01-000000_media_search_licenses_credits) reads them out of the JSONB for search.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub artist: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub album: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub composer: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub director: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub producer: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub starring: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub cast: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub crew: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub narrator: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub publisher: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub unlicensed_preview_start_ms: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub unlicensed_preview_end_ms: Option<i64>,
+}
+
+/// Default length of the `UNLICENSED_PREVIEW_MEDIUM` crop when `unlicensed_preview_end_ms` is unset.
+pub const DEFAULT_UNLICENSED_PREVIEW_LENGTH_MS: u64 = 30_000;
+
+impl MediaMetadata {
+    /// Fills every *unset* credit from `tags` (an `ffprobe` container-tag map, keys lowercased --
+    /// see `credits_from_tags`) without touching any already-set one. Returns whether anything changed.
+    pub fn fill_missing_credits(&mut self, tags: &MediaMetadata) -> bool {
+        let mut changed = false;
+        macro_rules! fill {
+            ($($field:ident),*) => {$(
+                if self.$field.is_none() && tags.$field.is_some() {
+                    self.$field = tags.$field.clone();
+                    changed = true;
+                }
+            )*};
+        }
+        fill!(artist, album, composer, director, producer, starring, cast, crew, narrator, publisher);
+        changed
+    }
+}
+
+/// Trims a credit field, mapping blank to `None` -- "If user blanks a value and saves, it saves as null".
+pub fn blank_to_none(value: Option<String>) -> Option<String> {
+    value.map(|v| v.trim().to_string()).filter(|v| !v.is_empty())
 }
 
 impl MediaMetadata {
+    /// The `[start, end)` range (ms) cropped into `UNLICENSED_PREVIEW_MEDIUM`, clamped to
+    /// `duration_ms`. `None` if the resulting range is empty (e.g. start is past the end of the media).
+    pub fn effective_unlicensed_preview_range_ms(&self, duration_ms: u64) -> Option<(u64, u64)> {
+        let start = self.unlicensed_preview_start_ms.map(|ms| ms as u64).unwrap_or(0);
+        let end = self
+            .unlicensed_preview_end_ms
+            .map(|ms| ms as u64)
+            .unwrap_or(start + DEFAULT_UNLICENSED_PREVIEW_LENGTH_MS)
+            .min(duration_ms);
+        (start < end).then_some((start, end))
+    }
+
     /// The timestamp (in milliseconds) a video's preview/poster frame should actually be taken
     /// from -- `video_preview_time_ms` if set, else the default documented on that field in
     /// `media.proto`: 1s, or the midpoint of the video if it's shorter than 1.5s. `duration_ms` is
@@ -133,6 +197,19 @@ pub const VIDEO_PREVIEW_CONVERSIONS: [MediaConversion; 3] = [
     MediaConversion::VideoPreviewThumbnailLarge,
 ];
 
+/// The 3 auto-generated `image/png` waveform sizes `convert_media` produces for *audio* `Media`
+/// items only -- see each variant's own doc in `media.proto`.
+pub const AUDIO_PREVIEW_CONVERSIONS: [MediaConversion; 3] = [
+    MediaConversion::AudioPreviewThumbnailSmall,
+    MediaConversion::AudioPreviewThumbnailMedium,
+    MediaConversion::AudioPreviewThumbnailLarge,
+];
+
+/// The single auto-generated cropped preview `convert_media` produces for *audio and video* `Media`
+/// items, served to viewers without a `License` -- see `UNLICENSED_PREVIEW_MEDIUM` in `media.proto`.
+pub const UNLICENSED_PREVIEW_CONVERSIONS: [MediaConversion; 1] =
+    [MediaConversion::UnlicensedPreviewMedium];
+
 /// Sizing/naming details for each `MediaConversion` -- extension trait since `MediaConversion`
 /// itself is generated from `protos/media.proto`.
 pub trait MediaConversionExt {
@@ -148,9 +225,16 @@ impl MediaConversionExt for MediaConversion {
     fn max_dimension(&self) -> u32 {
         match self {
             MediaConversion::Original => 0,
-            MediaConversion::Small | MediaConversion::VideoPreviewThumbnailSmall => 320,
-            MediaConversion::Medium | MediaConversion::VideoPreviewThumbnailMedium => 800,
-            MediaConversion::Large | MediaConversion::VideoPreviewThumbnailLarge => 1600,
+            MediaConversion::Small
+            | MediaConversion::VideoPreviewThumbnailSmall
+            | MediaConversion::AudioPreviewThumbnailSmall => 320,
+            MediaConversion::Medium
+            | MediaConversion::VideoPreviewThumbnailMedium
+            | MediaConversion::AudioPreviewThumbnailMedium
+            | MediaConversion::UnlicensedPreviewMedium => 800,
+            MediaConversion::Large
+            | MediaConversion::VideoPreviewThumbnailLarge
+            | MediaConversion::AudioPreviewThumbnailLarge => 1600,
         }
     }
 
@@ -163,6 +247,10 @@ impl MediaConversionExt for MediaConversion {
             MediaConversion::VideoPreviewThumbnailSmall => "video_preview_thumbnail_small",
             MediaConversion::VideoPreviewThumbnailMedium => "video_preview_thumbnail_medium",
             MediaConversion::VideoPreviewThumbnailLarge => "video_preview_thumbnail_large",
+            MediaConversion::AudioPreviewThumbnailSmall => "audio_preview_thumbnail_small",
+            MediaConversion::AudioPreviewThumbnailMedium => "audio_preview_thumbnail_medium",
+            MediaConversion::AudioPreviewThumbnailLarge => "audio_preview_thumbnail_large",
+            MediaConversion::UnlicensedPreviewMedium => "unlicensed_preview_medium",
         }
     }
 }
@@ -209,6 +297,7 @@ pub const MEDIA_REFERENCE_COLUMNS: (
     media::generated,
     media::metadata,
     media::sizes,
+    media::visibility,
 ) = (
     media::id,
     media::user_id,
@@ -216,6 +305,7 @@ pub const MEDIA_REFERENCE_COLUMNS: (
     media::generated,
     media::metadata,
     media::sizes,
+    media::visibility,
 );
 
 #[derive(Debug, Queryable, Identifiable, AsChangeset, Clone)]
@@ -227,6 +317,7 @@ pub struct MediaReference {
     pub generated: bool,
     pub metadata: serde_json::Value,
     pub sizes: serde_json::Value,
+    pub visibility: String,
 }
 
 impl MediaReference {

@@ -249,6 +249,36 @@ diesel::table! {
     }
 }
 
+// Read-only view of `media`'s two generated columns (`content_type`, `search_text` -- see
+// 2026-10-01-000000_media_search_licenses_credits), kept out of `media` itself so `Media`'s
+// `all_columns`-based Queryable/insert-returning call sites keep working unchanged (same reason
+// `posts::search_text` is excluded from `POST_COLUMNS`). Query it via subquery
+// (`media::id.eq_any(media_filter::table.filter(..).select(media_filter::id))`).
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_full_text_search::TsVector;
+
+    #[sql_name = "media"]
+    media_filter (id) {
+        id -> Int8,
+        content_type -> Nullable<Varchar>,
+        search_text -> TsVector,
+    }
+}
+
+diesel::table! {
+    media_licenses (id) {
+        id -> Int8,
+        media_id -> Int8,
+        user_id -> Int8,
+        created_at -> Timestamp,
+        revoked_at -> Nullable<Timestamp>,
+    }
+}
+
+diesel::joinable!(media_licenses -> media (media_id));
+diesel::joinable!(media_licenses -> users (user_id));
+
 diesel::table! {
     memberships (id) {
         id -> Int8,
@@ -561,6 +591,8 @@ diesel::allow_tables_to_appear_in_same_query!(
     market_purchases,
     market_subscriptions,
     media,
+    media_filter,
+    media_licenses,
     memberships,
     message_reads,
     message_recipients,

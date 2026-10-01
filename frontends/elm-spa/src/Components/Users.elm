@@ -823,6 +823,9 @@ visibilityText visibility =
         DIRECT ->
             "Direct"
 
+        LICENSED ->
+            "Licensed"
+
         VISIBILITYUNKNOWN ->
             "Unknown"
 

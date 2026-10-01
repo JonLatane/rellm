@@ -43,7 +43,16 @@ export 'media.pbenum.dart';
 ///      - `Cookies` - Standard web cookies. The `rellm_access_token` cookie may be used for authentication.
 ///  - **Query Parameters**:
 ///      - `authorization` - Rellm Access Token for the user. May also be supplied in the `Cookies` or `Authorization` headers.
-///  - Fetching media without authentication requires that it has `GLOBAL_PUBLIC` visibility.
+///  - Fetching media without authentication requires that it has `GLOBAL_PUBLIC` visibility (or `LICENSED`,
+///    if `MediaSettings.licensed_media_visible_globally` is set). Visibility is otherwise enforced
+///    like `GetMedia`'s: `SERVER_PUBLIC` for any logged-in user, `LIMITED` for followers of the owner,
+///    `PRIVATE` for the owner and admins only. A media item the viewer can't see responds `404`.
+///  - Anonymous (unauthenticated) responses omit CORS `Access-Control-Allow-*` headers when the server's
+///    `MediaSettings.block_cors_anonymous_media_access` is set, so third-party sites can embed (`<img>`,
+///    `<video>`) but not script-read public media.
+///  - `LICENSED` media's full-quality bytes are only served to its owner, admins, and users holding an active
+///    [`License`](#rellm-License) for it. Everyone else is served its `UNLICENSED_PREVIEW_MEDIUM` conversion
+///    (audio/video only; see `MediaMetadata.unlicensed_preview_start_ms`), or `403 Forbidden` if none exists yet.
 class Media extends $pb.GeneratedMessage {
   factory Media({
     $core.String? id,
@@ -395,10 +404,58 @@ class MediaSize extends $pb.GeneratedMessage {
 class MediaMetadata extends $pb.GeneratedMessage {
   factory MediaMetadata({
     $fixnum.Int64? videoPreviewTimeMs,
+    $core.String? artist,
+    $core.String? album,
+    $core.String? composer,
+    $core.String? director,
+    $core.String? producer,
+    $core.String? starring,
+    $core.String? cast,
+    $core.String? crew,
+    $core.String? narrator,
+    $core.String? publisher,
+    $fixnum.Int64? unlicensedPreviewStartMs,
+    $fixnum.Int64? unlicensedPreviewEndMs,
   }) {
     final $result = create();
     if (videoPreviewTimeMs != null) {
       $result.videoPreviewTimeMs = videoPreviewTimeMs;
+    }
+    if (artist != null) {
+      $result.artist = artist;
+    }
+    if (album != null) {
+      $result.album = album;
+    }
+    if (composer != null) {
+      $result.composer = composer;
+    }
+    if (director != null) {
+      $result.director = director;
+    }
+    if (producer != null) {
+      $result.producer = producer;
+    }
+    if (starring != null) {
+      $result.starring = starring;
+    }
+    if (cast != null) {
+      $result.cast = cast;
+    }
+    if (crew != null) {
+      $result.crew = crew;
+    }
+    if (narrator != null) {
+      $result.narrator = narrator;
+    }
+    if (publisher != null) {
+      $result.publisher = publisher;
+    }
+    if (unlicensedPreviewStartMs != null) {
+      $result.unlicensedPreviewStartMs = unlicensedPreviewStartMs;
+    }
+    if (unlicensedPreviewEndMs != null) {
+      $result.unlicensedPreviewEndMs = unlicensedPreviewEndMs;
     }
     return $result;
   }
@@ -408,6 +465,18 @@ class MediaMetadata extends $pb.GeneratedMessage {
 
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'MediaMetadata', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
     ..a<$fixnum.Int64>(1, _omitFieldNames ? '' : 'videoPreviewTimeMs', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
+    ..aOS(2, _omitFieldNames ? '' : 'artist')
+    ..aOS(3, _omitFieldNames ? '' : 'album')
+    ..aOS(4, _omitFieldNames ? '' : 'composer')
+    ..aOS(5, _omitFieldNames ? '' : 'director')
+    ..aOS(6, _omitFieldNames ? '' : 'producer')
+    ..aOS(7, _omitFieldNames ? '' : 'starring')
+    ..aOS(8, _omitFieldNames ? '' : 'cast')
+    ..aOS(9, _omitFieldNames ? '' : 'crew')
+    ..aOS(10, _omitFieldNames ? '' : 'narrator')
+    ..aOS(11, _omitFieldNames ? '' : 'publisher')
+    ..a<$fixnum.Int64>(12, _omitFieldNames ? '' : 'unlicensedPreviewStartMs', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
+    ..a<$fixnum.Int64>(13, _omitFieldNames ? '' : 'unlicensedPreviewEndMs', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
     ..hasRequiredFields = false
   ;
 
@@ -447,6 +516,243 @@ class MediaMetadata extends $pb.GeneratedMessage {
   $core.bool hasVideoPreviewTimeMs() => $_has(0);
   @$pb.TagNumber(1)
   void clearVideoPreviewTimeMs() => clearField(1);
+
+  /// Credits. All free-form text; unset/blank means "none". Editable via `UpdateMedia` (setting one
+  /// to an empty string clears it). Searched by `GetMediaRequest.search_text`, most to least
+  /// important: name/artist/director, then album/composer/starring/cast/narrator, then
+  /// producer/crew/publisher, then description.
+  @$pb.TagNumber(2)
+  $core.String get artist => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set artist($core.String v) { $_setString(1, v); }
+  @$pb.TagNumber(2)
+  $core.bool hasArtist() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearArtist() => clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.String get album => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set album($core.String v) { $_setString(2, v); }
+  @$pb.TagNumber(3)
+  $core.bool hasAlbum() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearAlbum() => clearField(3);
+
+  @$pb.TagNumber(4)
+  $core.String get composer => $_getSZ(3);
+  @$pb.TagNumber(4)
+  set composer($core.String v) { $_setString(3, v); }
+  @$pb.TagNumber(4)
+  $core.bool hasComposer() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearComposer() => clearField(4);
+
+  @$pb.TagNumber(5)
+  $core.String get director => $_getSZ(4);
+  @$pb.TagNumber(5)
+  set director($core.String v) { $_setString(4, v); }
+  @$pb.TagNumber(5)
+  $core.bool hasDirector() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearDirector() => clearField(5);
+
+  @$pb.TagNumber(6)
+  $core.String get producer => $_getSZ(5);
+  @$pb.TagNumber(6)
+  set producer($core.String v) { $_setString(5, v); }
+  @$pb.TagNumber(6)
+  $core.bool hasProducer() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearProducer() => clearField(6);
+
+  @$pb.TagNumber(7)
+  $core.String get starring => $_getSZ(6);
+  @$pb.TagNumber(7)
+  set starring($core.String v) { $_setString(6, v); }
+  @$pb.TagNumber(7)
+  $core.bool hasStarring() => $_has(6);
+  @$pb.TagNumber(7)
+  void clearStarring() => clearField(7);
+
+  @$pb.TagNumber(8)
+  $core.String get cast => $_getSZ(7);
+  @$pb.TagNumber(8)
+  set cast($core.String v) { $_setString(7, v); }
+  @$pb.TagNumber(8)
+  $core.bool hasCast() => $_has(7);
+  @$pb.TagNumber(8)
+  void clearCast() => clearField(8);
+
+  @$pb.TagNumber(9)
+  $core.String get crew => $_getSZ(8);
+  @$pb.TagNumber(9)
+  set crew($core.String v) { $_setString(8, v); }
+  @$pb.TagNumber(9)
+  $core.bool hasCrew() => $_has(8);
+  @$pb.TagNumber(9)
+  void clearCrew() => clearField(9);
+
+  @$pb.TagNumber(10)
+  $core.String get narrator => $_getSZ(9);
+  @$pb.TagNumber(10)
+  set narrator($core.String v) { $_setString(9, v); }
+  @$pb.TagNumber(10)
+  $core.bool hasNarrator() => $_has(9);
+  @$pb.TagNumber(10)
+  void clearNarrator() => clearField(10);
+
+  @$pb.TagNumber(11)
+  $core.String get publisher => $_getSZ(10);
+  @$pb.TagNumber(11)
+  set publisher($core.String v) { $_setString(10, v); }
+  @$pb.TagNumber(11)
+  $core.bool hasPublisher() => $_has(10);
+  @$pb.TagNumber(11)
+  void clearPublisher() => clearField(11);
+
+  /// For audio and video media only: the range of the original (in milliseconds) that is cropped into
+  /// the `UNLICENSED_PREVIEW_MEDIUM` conversion served to viewers without a license for `LICENSED`
+  /// media. Unset start defaults to 0; unset end defaults to start + 30s (clamped to the media's
+  /// duration). Changing either invalidates (deletes) any existing `UNLICENSED_PREVIEW_MEDIUM` size so the
+  /// `convert_media_sizes` background job regenerates it.
+  @$pb.TagNumber(12)
+  $fixnum.Int64 get unlicensedPreviewStartMs => $_getI64(11);
+  @$pb.TagNumber(12)
+  set unlicensedPreviewStartMs($fixnum.Int64 v) { $_setInt64(11, v); }
+  @$pb.TagNumber(12)
+  $core.bool hasUnlicensedPreviewStartMs() => $_has(11);
+  @$pb.TagNumber(12)
+  void clearUnlicensedPreviewStartMs() => clearField(12);
+
+  @$pb.TagNumber(13)
+  $fixnum.Int64 get unlicensedPreviewEndMs => $_getI64(12);
+  @$pb.TagNumber(13)
+  set unlicensedPreviewEndMs($fixnum.Int64 v) { $_setInt64(12, v); }
+  @$pb.TagNumber(13)
+  $core.bool hasUnlicensedPreviewEndMs() => $_has(12);
+  @$pb.TagNumber(13)
+  void clearUnlicensedPreviewEndMs() => clearField(13);
+}
+
+/// Grants `licensed_to` access to a `LICENSED` [`Media`](#rellm-Media) item's full-quality bytes.
+/// Stored in the `media_licenses` table. A license is *active* while `revoked_at` is unset.
+/// (Purchasing licenses through Rellm's Market is not implemented yet.)
+class License extends $pb.GeneratedMessage {
+  factory License({
+    $core.String? id,
+    Author? licensedTo,
+    MediaReference? media,
+    $13.Timestamp? createdAt,
+    $13.Timestamp? revokedAt,
+  }) {
+    final $result = create();
+    if (id != null) {
+      $result.id = id;
+    }
+    if (licensedTo != null) {
+      $result.licensedTo = licensedTo;
+    }
+    if (media != null) {
+      $result.media = media;
+    }
+    if (createdAt != null) {
+      $result.createdAt = createdAt;
+    }
+    if (revokedAt != null) {
+      $result.revokedAt = revokedAt;
+    }
+    return $result;
+  }
+  License._() : super();
+  factory License.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromBuffer(i, r);
+  factory License.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'License', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'id')
+    ..aOM<Author>(2, _omitFieldNames ? '' : 'licensedTo', subBuilder: Author.create)
+    ..aOM<MediaReference>(3, _omitFieldNames ? '' : 'media', subBuilder: MediaReference.create)
+    ..aOM<$13.Timestamp>(4, _omitFieldNames ? '' : 'createdAt', subBuilder: $13.Timestamp.create)
+    ..aOM<$13.Timestamp>(5, _omitFieldNames ? '' : 'revokedAt', subBuilder: $13.Timestamp.create)
+    ..hasRequiredFields = false
+  ;
+
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.deepCopy] instead. '
+  'Will be removed in next major version')
+  License clone() => License()..mergeFromMessage(this);
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.rebuild] instead. '
+  'Will be removed in next major version')
+  License copyWith(void Function(License) updates) => super.copyWith((message) => updates(message as License)) as License;
+
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static License create() => License._();
+  License createEmptyInstance() => create();
+  static $pb.PbList<License> createRepeated() => $pb.PbList<License>();
+  @$core.pragma('dart2js:noInline')
+  static License getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<License>(create);
+  static License? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get id => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set id($core.String v) { $_setString(0, v); }
+  @$pb.TagNumber(1)
+  $core.bool hasId() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearId() => clearField(1);
+
+  /// The user holding the license to the media.
+  @$pb.TagNumber(2)
+  Author get licensedTo => $_getN(1);
+  @$pb.TagNumber(2)
+  set licensedTo(Author v) { setField(2, v); }
+  @$pb.TagNumber(2)
+  $core.bool hasLicensedTo() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearLicensedTo() => clearField(2);
+  @$pb.TagNumber(2)
+  Author ensureLicensedTo() => $_ensure(1);
+
+  /// The licensed media.
+  @$pb.TagNumber(3)
+  MediaReference get media => $_getN(2);
+  @$pb.TagNumber(3)
+  set media(MediaReference v) { setField(3, v); }
+  @$pb.TagNumber(3)
+  $core.bool hasMedia() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearMedia() => clearField(3);
+  @$pb.TagNumber(3)
+  MediaReference ensureMedia() => $_ensure(2);
+
+  @$pb.TagNumber(4)
+  $13.Timestamp get createdAt => $_getN(3);
+  @$pb.TagNumber(4)
+  set createdAt($13.Timestamp v) { setField(4, v); }
+  @$pb.TagNumber(4)
+  $core.bool hasCreatedAt() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearCreatedAt() => clearField(4);
+  @$pb.TagNumber(4)
+  $13.Timestamp ensureCreatedAt() => $_ensure(3);
+
+  /// When set, the license no longer grants access.
+  @$pb.TagNumber(5)
+  $13.Timestamp get revokedAt => $_getN(4);
+  @$pb.TagNumber(5)
+  set revokedAt($13.Timestamp v) { setField(5, v); }
+  @$pb.TagNumber(5)
+  $core.bool hasRevokedAt() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearRevokedAt() => clearField(5);
+  @$pb.TagNumber(5)
+  $13.Timestamp ensureRevokedAt() => $_ensure(4);
 }
 
 /// A reference to a media item, designed to be included in other messages as a reference.
@@ -462,6 +768,7 @@ class MediaReference extends $pb.GeneratedMessage {
     $core.String? url,
     $core.String? description,
     Author? author,
+    $14.Visibility? visibility,
   }) {
     final $result = create();
     if (id != null) {
@@ -488,6 +795,9 @@ class MediaReference extends $pb.GeneratedMessage {
     if (author != null) {
       $result.author = author;
     }
+    if (visibility != null) {
+      $result.visibility = visibility;
+    }
     return $result;
   }
   MediaReference._() : super();
@@ -503,6 +813,7 @@ class MediaReference extends $pb.GeneratedMessage {
     ..aOS(11, _omitFieldNames ? '' : 'url')
     ..aOS(12, _omitFieldNames ? '' : 'description')
     ..aOM<Author>(13, _omitFieldNames ? '' : 'author', subBuilder: Author.create)
+    ..e<$14.Visibility>(14, _omitFieldNames ? '' : 'visibility', $pb.PbFieldType.OE, defaultOrMaker: $14.Visibility.VISIBILITY_UNKNOWN, valueOf: $14.Visibility.valueOf, enumValues: $14.Visibility.values)
     ..hasRequiredFields = false
   ;
 
@@ -606,6 +917,17 @@ class MediaReference extends $pb.GeneratedMessage {
   void clearAuthor() => clearField(13);
   @$pb.TagNumber(13)
   Author ensureAuthor() => $_ensure(7);
+
+  /// See `Media.visibility`. Included so a client holding only a `MediaReference` (e.g. the media
+  /// viewer) can show/edit it and tell whether it's `LICENSED`.
+  @$pb.TagNumber(14)
+  $14.Visibility get visibility => $_getN(8);
+  @$pb.TagNumber(14)
+  set visibility($14.Visibility v) { setField(14, v); }
+  @$pb.TagNumber(14)
+  $core.bool hasVisibility() => $_has(8);
+  @$pb.TagNumber(14)
+  void clearVisibility() => clearField(14);
 }
 
 ///  Post/authorship-centric version of User. UI can cross-reference user details from its own
@@ -724,17 +1046,25 @@ class Author extends $pb.GeneratedMessage {
   $core.List<$15.Permission> get permissions => $_getList(4);
 }
 
-/// Valid GetMediaRequest formats:
-/// - `{user_id: abc123}` - Gets the media of the given user that the current user can see. IE:
-///     - *all* of the current user's own media
-///     - `GLOBAL_PUBLIC` media for the user if the current user is not logged in.
-///     - `SERVER_PUBLIC` media for the user if the current user is logged in.
-///     - `LIMITED` media for the user if the current user is following the user.
-/// - `{media_id: abc123}` - Gets the media with the given ID, if visible to the current user.
+///  Valid GetMediaRequest formats:
+///  - `{user_id: abc123}` - Gets the media of the given user that the current user can see. IE:
+///      - *all* of the current user's own media
+///      - `GLOBAL_PUBLIC` media (and `LICENSED`, if `MediaSettings.licensed_media_visible_globally`) for the user if the current user is not logged in.
+///      - `LICENSED` media too for any logged-in user.
+///      - `SERVER_PUBLIC` media for the user if the current user is logged in.
+///      - `LIMITED` media for the user if the current user is following the user.
+///  - `{media_id: abc123}` - Gets the media with the given ID, if visible to the current user.
+///  - `{}` (neither `media_id` nor `user_id`) - Browses *all* media on the server visible to the current user
+///    (never other users' `PRIVATE`/`LIMITED` media), newest first -- the basis of the Media/Video/Audio pages.
+///    Combine with `content_type` and/or `search_text`.
+///
+///  `content_type` and `search_text` also narrow `{user_id: ...}` requests.
 class GetMediaRequest extends $pb.GeneratedMessage {
   factory GetMediaRequest({
     $core.String? mediaId,
     $core.String? userId,
+    $core.String? contentType,
+    $core.String? searchText,
     $core.int? page,
   }) {
     final $result = create();
@@ -743,6 +1073,12 @@ class GetMediaRequest extends $pb.GeneratedMessage {
     }
     if (userId != null) {
       $result.userId = userId;
+    }
+    if (contentType != null) {
+      $result.contentType = contentType;
+    }
+    if (searchText != null) {
+      $result.searchText = searchText;
     }
     if (page != null) {
       $result.page = page;
@@ -756,6 +1092,8 @@ class GetMediaRequest extends $pb.GeneratedMessage {
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'GetMediaRequest', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'mediaId')
     ..aOS(2, _omitFieldNames ? '' : 'userId')
+    ..aOS(3, _omitFieldNames ? '' : 'contentType')
+    ..aOS(4, _omitFieldNames ? '' : 'searchText')
     ..a<$core.int>(11, _omitFieldNames ? '' : 'page', $pb.PbFieldType.OU3)
     ..hasRequiredFields = false
   ;
@@ -801,12 +1139,35 @@ class GetMediaRequest extends $pb.GeneratedMessage {
   @$pb.TagNumber(2)
   void clearUserId() => clearField(2);
 
+  /// Filters by the original upload's MIME content type. Either exact (`video/mp4`) or a
+  /// wildcard subtype (`audio/*`, `video/*`, `image/*`). Backed by an indexed column.
+  @$pb.TagNumber(3)
+  $core.String get contentType => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set contentType($core.String v) { $_setString(2, v); }
+  @$pb.TagNumber(3)
+  $core.bool hasContentType() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearContentType() => clearField(3);
+
+  /// Full-text search over name, credits (artist, album, composer, ...) and description -- see
+  /// `MediaMetadata`'s doc for field weighting. Prefix-matches, like `GetPosts`' `TEXT_SEARCH`.
+  /// Results are ranked by match quality, then recency.
+  @$pb.TagNumber(4)
+  $core.String get searchText => $_getSZ(3);
+  @$pb.TagNumber(4)
+  set searchText($core.String v) { $_setString(3, v); }
+  @$pb.TagNumber(4)
+  $core.bool hasSearchText() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearSearchText() => clearField(4);
+
   @$pb.TagNumber(11)
-  $core.int get page => $_getIZ(2);
+  $core.int get page => $_getIZ(4);
   @$pb.TagNumber(11)
-  set page($core.int v) { $_setUnsignedInt32(2, v); }
+  set page($core.int v) { $_setUnsignedInt32(4, v); }
   @$pb.TagNumber(11)
-  $core.bool hasPage() => $_has(2);
+  $core.bool hasPage() => $_has(4);
   @$pb.TagNumber(11)
   void clearPage() => clearField(11);
 }

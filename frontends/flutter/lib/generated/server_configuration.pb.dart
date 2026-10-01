@@ -1201,6 +1201,8 @@ class MediaSettings extends $pb.GeneratedMessage {
     $13.Timestamp? serverMediaUsageCalculatedAt,
     $fixnum.Int64? serverObjectStorageUsageBytes,
     $13.Timestamp? serverObjectStorageUsageCalculatedAt,
+    $core.bool? blockCorsAnonymousMediaAccess,
+    $core.bool? licensedMediaVisibleGlobally,
   }) {
     final $result = create();
     if (visible != null) {
@@ -1230,6 +1232,12 @@ class MediaSettings extends $pb.GeneratedMessage {
     if (serverObjectStorageUsageCalculatedAt != null) {
       $result.serverObjectStorageUsageCalculatedAt = serverObjectStorageUsageCalculatedAt;
     }
+    if (blockCorsAnonymousMediaAccess != null) {
+      $result.blockCorsAnonymousMediaAccess = blockCorsAnonymousMediaAccess;
+    }
+    if (licensedMediaVisibleGlobally != null) {
+      $result.licensedMediaVisibleGlobally = licensedMediaVisibleGlobally;
+    }
     return $result;
   }
   MediaSettings._() : super();
@@ -1246,6 +1254,8 @@ class MediaSettings extends $pb.GeneratedMessage {
     ..aOM<$13.Timestamp>(7, _omitFieldNames ? '' : 'serverMediaUsageCalculatedAt', subBuilder: $13.Timestamp.create)
     ..a<$fixnum.Int64>(8, _omitFieldNames ? '' : 'serverObjectStorageUsageBytes', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
     ..aOM<$13.Timestamp>(9, _omitFieldNames ? '' : 'serverObjectStorageUsageCalculatedAt', subBuilder: $13.Timestamp.create)
+    ..aOB(20, _omitFieldNames ? '' : 'blockCorsAnonymousMediaAccess')
+    ..aOB(21, _omitFieldNames ? '' : 'licensedMediaVisibleGlobally')
     ..hasRequiredFields = false
   ;
 
@@ -1384,6 +1394,32 @@ class MediaSettings extends $pb.GeneratedMessage {
   void clearServerObjectStorageUsageCalculatedAt() => clearField(9);
   @$pb.TagNumber(9)
   $13.Timestamp ensureServerObjectStorageUsageCalculatedAt() => $_ensure(8);
+
+  /// "Block CORS Anonymous Media Access". When set, `GET /media/{id}` responses to *unauthenticated*
+  /// requests omit CORS `Access-Control-Allow-*` headers even for `GLOBAL_PUBLIC` media, so browsers
+  /// block other sites' scripts from reading them (plain `<img>`/`<video>` embeds still work).
+  /// Authenticated requests are unaffected.
+  @$pb.TagNumber(20)
+  $core.bool get blockCorsAnonymousMediaAccess => $_getBF(9);
+  @$pb.TagNumber(20)
+  set blockCorsAnonymousMediaAccess($core.bool v) { $_setBool(9, v); }
+  @$pb.TagNumber(20)
+  $core.bool hasBlockCorsAnonymousMediaAccess() => $_has(9);
+  @$pb.TagNumber(20)
+  void clearBlockCorsAnonymousMediaAccess() => clearField(20);
+
+  /// Whether `LICENSED` media (see `Visibility.LICENSED`) is discoverable by *unauthenticated*
+  /// users: listed by `GetMedia` and its preview/thumbnails served by `GET /media/{id}`. When unset
+  /// (the default), `LICENSED` media is only visible to logged-in users -- like `SERVER_PUBLIC` --
+  /// plus its owner and admins. Either way, its full-quality bytes still require an active License.
+  @$pb.TagNumber(21)
+  $core.bool get licensedMediaVisibleGlobally => $_getBF(10);
+  @$pb.TagNumber(21)
+  set licensedMediaVisibleGlobally($core.bool v) { $_setBool(10, v); }
+  @$pb.TagNumber(21)
+  $core.bool hasLicensedMediaVisibleGlobally() => $_has(10);
+  @$pb.TagNumber(21)
+  void clearLicensedMediaVisibleGlobally() => clearField(21);
 }
 
 /// Whether this server's `/market` is open -- an explicit, admin-set toggle independent of
@@ -2577,7 +2613,7 @@ class CustomNavigationTab extends $pb.GeneratedMessage {
 
   /// The path this tab is reachable at, e.g. `gigs` for a band's `/gigs` link to the Events page,
   /// or `weddings` for a Post about wedding offerings. Must be distinct across every entry in
-  /// `CustomNavigationTabSet.tabs`. Note: `events`, `posts`, `people`, and `about` are reserved --
+  /// `CustomNavigationTabSet.tabs`. Note: `events`, `posts`, `people`, `about`, `media`, `video`, `videos`, `audio`, and `images` are reserved --
   /// each may only be used to (redundantly) point back at its own matching predefined tab, never
   /// remapped to a different tab or a Post. `/` itself is never reachable this way - it's
   /// overridden via `CustomNavigationTabSet.home` instead.

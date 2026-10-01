@@ -24,6 +24,10 @@ const MediaConversion$json = {
     {'1': 'VIDEO_PREVIEW_THUMBNAIL_SMALL', '2': 5},
     {'1': 'VIDEO_PREVIEW_THUMBNAIL_MEDIUM', '2': 6},
     {'1': 'VIDEO_PREVIEW_THUMBNAIL_LARGE', '2': 7},
+    {'1': 'AUDIO_PREVIEW_THUMBNAIL_SMALL', '2': 10},
+    {'1': 'AUDIO_PREVIEW_THUMBNAIL_MEDIUM', '2': 11},
+    {'1': 'AUDIO_PREVIEW_THUMBNAIL_LARGE', '2': 12},
+    {'1': 'UNLICENSED_PREVIEW_MEDIUM', '2': 13},
   ],
 };
 
@@ -33,7 +37,9 @@ final $typed_data.Uint8List mediaConversionDescriptor = $convert.base64Decode(
     'lBX0NPTlZFUlNJT05fU01BTEwQARIbChdNRURJQV9DT05WRVJTSU9OX01FRElVTRACEhoKFk1F'
     'RElBX0NPTlZFUlNJT05fTEFSR0UQAxIhCh1WSURFT19QUkVWSUVXX1RIVU1CTkFJTF9TTUFMTB'
     'AFEiIKHlZJREVPX1BSRVZJRVdfVEhVTUJOQUlMX01FRElVTRAGEiEKHVZJREVPX1BSRVZJRVdf'
-    'VEhVTUJOQUlMX0xBUkdFEAc=');
+    'VEhVTUJOQUlMX0xBUkdFEAcSIQodQVVESU9fUFJFVklFV19USFVNQk5BSUxfU01BTEwQChIiCh'
+    '5BVURJT19QUkVWSUVXX1RIVU1CTkFJTF9NRURJVU0QCxIhCh1BVURJT19QUkVWSUVXX1RIVU1C'
+    'TkFJTF9MQVJHRRAMEh0KGVVOTElDRU5TRURfUFJFVklFV19NRURJVU0QDQ==');
 
 @$core.Deprecated('Use mediaDescriptor instead')
 const Media$json = {
@@ -101,16 +107,74 @@ const MediaMetadata$json = {
   '1': 'MediaMetadata',
   '2': [
     {'1': 'video_preview_time_ms', '3': 1, '4': 1, '5': 4, '9': 0, '10': 'videoPreviewTimeMs', '17': true},
+    {'1': 'artist', '3': 2, '4': 1, '5': 9, '9': 1, '10': 'artist', '17': true},
+    {'1': 'album', '3': 3, '4': 1, '5': 9, '9': 2, '10': 'album', '17': true},
+    {'1': 'composer', '3': 4, '4': 1, '5': 9, '9': 3, '10': 'composer', '17': true},
+    {'1': 'director', '3': 5, '4': 1, '5': 9, '9': 4, '10': 'director', '17': true},
+    {'1': 'producer', '3': 6, '4': 1, '5': 9, '9': 5, '10': 'producer', '17': true},
+    {'1': 'starring', '3': 7, '4': 1, '5': 9, '9': 6, '10': 'starring', '17': true},
+    {'1': 'cast', '3': 8, '4': 1, '5': 9, '9': 7, '10': 'cast', '17': true},
+    {'1': 'crew', '3': 9, '4': 1, '5': 9, '9': 8, '10': 'crew', '17': true},
+    {'1': 'narrator', '3': 10, '4': 1, '5': 9, '9': 9, '10': 'narrator', '17': true},
+    {'1': 'publisher', '3': 11, '4': 1, '5': 9, '9': 10, '10': 'publisher', '17': true},
+    {'1': 'unlicensed_preview_start_ms', '3': 12, '4': 1, '5': 4, '9': 11, '10': 'unlicensedPreviewStartMs', '17': true},
+    {'1': 'unlicensed_preview_end_ms', '3': 13, '4': 1, '5': 4, '9': 12, '10': 'unlicensedPreviewEndMs', '17': true},
   ],
   '8': [
     {'1': '_video_preview_time_ms'},
+    {'1': '_artist'},
+    {'1': '_album'},
+    {'1': '_composer'},
+    {'1': '_director'},
+    {'1': '_producer'},
+    {'1': '_starring'},
+    {'1': '_cast'},
+    {'1': '_crew'},
+    {'1': '_narrator'},
+    {'1': '_publisher'},
+    {'1': '_unlicensed_preview_start_ms'},
+    {'1': '_unlicensed_preview_end_ms'},
   ],
 };
 
 /// Descriptor for `MediaMetadata`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List mediaMetadataDescriptor = $convert.base64Decode(
     'Cg1NZWRpYU1ldGFkYXRhEjYKFXZpZGVvX3ByZXZpZXdfdGltZV9tcxgBIAEoBEgAUhJ2aWRlb1'
-    'ByZXZpZXdUaW1lTXOIAQFCGAoWX3ZpZGVvX3ByZXZpZXdfdGltZV9tcw==');
+    'ByZXZpZXdUaW1lTXOIAQESGwoGYXJ0aXN0GAIgASgJSAFSBmFydGlzdIgBARIZCgVhbGJ1bRgD'
+    'IAEoCUgCUgVhbGJ1bYgBARIfCghjb21wb3NlchgEIAEoCUgDUghjb21wb3NlcogBARIfCghkaX'
+    'JlY3RvchgFIAEoCUgEUghkaXJlY3RvcogBARIfCghwcm9kdWNlchgGIAEoCUgFUghwcm9kdWNl'
+    'cogBARIfCghzdGFycmluZxgHIAEoCUgGUghzdGFycmluZ4gBARIXCgRjYXN0GAggASgJSAdSBG'
+    'Nhc3SIAQESFwoEY3JldxgJIAEoCUgIUgRjcmV3iAEBEh8KCG5hcnJhdG9yGAogASgJSAlSCG5h'
+    'cnJhdG9yiAEBEiEKCXB1Ymxpc2hlchgLIAEoCUgKUglwdWJsaXNoZXKIAQESQgobdW5saWNlbn'
+    'NlZF9wcmV2aWV3X3N0YXJ0X21zGAwgASgESAtSGHVubGljZW5zZWRQcmV2aWV3U3RhcnRNc4gB'
+    'ARI+Chl1bmxpY2Vuc2VkX3ByZXZpZXdfZW5kX21zGA0gASgESAxSFnVubGljZW5zZWRQcmV2aW'
+    'V3RW5kTXOIAQFCGAoWX3ZpZGVvX3ByZXZpZXdfdGltZV9tc0IJCgdfYXJ0aXN0QggKBl9hbGJ1'
+    'bUILCglfY29tcG9zZXJCCwoJX2RpcmVjdG9yQgsKCV9wcm9kdWNlckILCglfc3RhcnJpbmdCBw'
+    'oFX2Nhc3RCBwoFX2NyZXdCCwoJX25hcnJhdG9yQgwKCl9wdWJsaXNoZXJCHgocX3VubGljZW5z'
+    'ZWRfcHJldmlld19zdGFydF9tc0IcChpfdW5saWNlbnNlZF9wcmV2aWV3X2VuZF9tcw==');
+
+@$core.Deprecated('Use licenseDescriptor instead')
+const License$json = {
+  '1': 'License',
+  '2': [
+    {'1': 'id', '3': 1, '4': 1, '5': 9, '10': 'id'},
+    {'1': 'licensed_to', '3': 2, '4': 1, '5': 11, '6': '.rellm.Author', '10': 'licensedTo'},
+    {'1': 'media', '3': 3, '4': 1, '5': 11, '6': '.rellm.MediaReference', '10': 'media'},
+    {'1': 'created_at', '3': 4, '4': 1, '5': 11, '6': '.google.protobuf.Timestamp', '10': 'createdAt'},
+    {'1': 'revoked_at', '3': 5, '4': 1, '5': 11, '6': '.google.protobuf.Timestamp', '9': 0, '10': 'revokedAt', '17': true},
+  ],
+  '8': [
+    {'1': '_revoked_at'},
+  ],
+};
+
+/// Descriptor for `License`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List licenseDescriptor = $convert.base64Decode(
+    'CgdMaWNlbnNlEg4KAmlkGAEgASgJUgJpZBIuCgtsaWNlbnNlZF90bxgCIAEoCzINLnJlbGxtLk'
+    'F1dGhvclIKbGljZW5zZWRUbxIrCgVtZWRpYRgDIAEoCzIVLnJlbGxtLk1lZGlhUmVmZXJlbmNl'
+    'UgVtZWRpYRI5CgpjcmVhdGVkX2F0GAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcF'
+    'IJY3JlYXRlZEF0Ej4KCnJldm9rZWRfYXQYBSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0'
+    'YW1wSABSCXJldm9rZWRBdIgBAUINCgtfcmV2b2tlZF9hdA==');
 
 @$core.Deprecated('Use mediaReferenceDescriptor instead')
 const MediaReference$json = {
@@ -124,6 +188,7 @@ const MediaReference$json = {
     {'1': 'url', '3': 11, '4': 1, '5': 9, '9': 1, '10': 'url', '17': true},
     {'1': 'description', '3': 12, '4': 1, '5': 9, '9': 2, '10': 'description', '17': true},
     {'1': 'author', '3': 13, '4': 1, '5': 11, '6': '.rellm.Author', '9': 3, '10': 'author', '17': true},
+    {'1': 'visibility', '3': 14, '4': 1, '5': 14, '6': '.rellm.Visibility', '10': 'visibility'},
   ],
   '8': [
     {'1': '_name'},
@@ -140,7 +205,8 @@ final $typed_data.Uint8List mediaReferenceDescriptor = $convert.base64Decode(
     'bG0uTWVkaWFNZXRhZGF0YVIIbWV0YWRhdGESJgoFc2l6ZXMYBiADKAsyEC5yZWxsbS5NZWRpYV'
     'NpemVSBXNpemVzEhUKA3VybBgLIAEoCUgBUgN1cmyIAQESJQoLZGVzY3JpcHRpb24YDCABKAlI'
     'AlILZGVzY3JpcHRpb26IAQESKgoGYXV0aG9yGA0gASgLMg0ucmVsbG0uQXV0aG9ySANSBmF1dG'
-    'hvcogBAUIHCgVfbmFtZUIGCgRfdXJsQg4KDF9kZXNjcmlwdGlvbkIJCgdfYXV0aG9y');
+    'hvcogBARIxCgp2aXNpYmlsaXR5GA4gASgOMhEucmVsbG0uVmlzaWJpbGl0eVIKdmlzaWJpbGl0'
+    'eUIHCgVfbmFtZUIGCgRfdXJsQg4KDF9kZXNjcmlwdGlvbkIJCgdfYXV0aG9y');
 
 @$core.Deprecated('Use authorDescriptor instead')
 const Author$json = {
@@ -173,19 +239,25 @@ const GetMediaRequest$json = {
   '2': [
     {'1': 'media_id', '3': 1, '4': 1, '5': 9, '9': 0, '10': 'mediaId', '17': true},
     {'1': 'user_id', '3': 2, '4': 1, '5': 9, '9': 1, '10': 'userId', '17': true},
+    {'1': 'content_type', '3': 3, '4': 1, '5': 9, '9': 2, '10': 'contentType', '17': true},
+    {'1': 'search_text', '3': 4, '4': 1, '5': 9, '9': 3, '10': 'searchText', '17': true},
     {'1': 'page', '3': 11, '4': 1, '5': 13, '10': 'page'},
   ],
   '8': [
     {'1': '_media_id'},
     {'1': '_user_id'},
+    {'1': '_content_type'},
+    {'1': '_search_text'},
   ],
 };
 
 /// Descriptor for `GetMediaRequest`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List getMediaRequestDescriptor = $convert.base64Decode(
     'Cg9HZXRNZWRpYVJlcXVlc3QSHgoIbWVkaWFfaWQYASABKAlIAFIHbWVkaWFJZIgBARIcCgd1c2'
-    'VyX2lkGAIgASgJSAFSBnVzZXJJZIgBARISCgRwYWdlGAsgASgNUgRwYWdlQgsKCV9tZWRpYV9p'
-    'ZEIKCghfdXNlcl9pZA==');
+    'VyX2lkGAIgASgJSAFSBnVzZXJJZIgBARImCgxjb250ZW50X3R5cGUYAyABKAlIAlILY29udGVu'
+    'dFR5cGWIAQESJAoLc2VhcmNoX3RleHQYBCABKAlIA1IKc2VhcmNoVGV4dIgBARISCgRwYWdlGA'
+    'sgASgNUgRwYWdlQgsKCV9tZWRpYV9pZEIKCghfdXNlcl9pZEIPCg1fY29udGVudF90eXBlQg4K'
+    'DF9zZWFyY2hfdGV4dA==');
 
 @$core.Deprecated('Use getMediaResponseDescriptor instead')
 const GetMediaResponse$json = {

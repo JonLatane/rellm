@@ -233,6 +233,7 @@
   width: var(--my-media-zoom-size, 238px);
   max-width: 100%;
   box-sizing: border-box;
+  /* transition: width 0.12s ease-out; */
   padding: 0.16rem;
   border-radius: 8px;
   cursor: pointer;
@@ -277,6 +278,30 @@
   max-width: none;
   max-height: none;
   object-fit: cover;
+  transition: height 0.12s ease-out;
+}
+
+.my-media-panel-item-preview .media-renderer-video-preview {
+  display: block;
+  width: 100%;
+}
+
+/* Audio tiles: the same full tile width as images/videos, with the waveform squashed to the tile's
+   zoom-driven height (see `.media-renderer-audio-preview-image` in media.css) rather than the 4/3
+   crop ratio photos get. */
+.my-media-panel-item-preview .media-renderer-audio-preview {
+  display: block;
+  width: 100%;
+}
+
+.my-media-panel-item-preview .media-renderer-extra-small.media-renderer-audio-preview-image,
+.my-media-panel-item-preview .media-renderer-extra-small.media-renderer-audio {
+  width: 100%;
+}
+
+.my-media-panel-item-preview .media-renderer-extra-small.media-renderer-audio-preview-image {
+  height: calc(var(--my-media-zoom-size, 238px) * 4 / 3);
+  transition: height 0.12s ease-out;
 }
 
 .my-media-panel-item-preview .media-renderer-extra-small.media-renderer-object {
@@ -441,3 +466,51 @@
    padding (above) already gives the fill a visible margin all the way
    around the preview/name/type column, rather than it only showing in the
    thin gaps between them. */
+
+/* The search box (see `MyMediaPanel.viewWith`) between the header and the grid. */
+.my-media-panel-search {
+  flex: 0 0 auto;
+}
+
+.my-media-panel-search-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.4rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--chip-bg);
+  color: var(--fg);
+  font-size: 0.9rem;
+}
+
+/* `/media`'s "My Media" tab (`MyMediaPanel.viewEmbedded`): the same panel, but in normal page flow
+   rather than a fixed bottom sheet. Needs the full `.my-media-panel.nav-panel` specificity to
+   beat the overlay rules above. */
+.my-media-panel.nav-panel.my-media-page {
+  position: relative;
+  top: auto;
+  bottom: auto;
+  left: auto;
+  right: auto;
+  transform: none;
+  width: 100%;
+  max-width: none;
+  height: auto;
+  min-height: 50vh;
+  max-height: none;
+  border-radius: 10px;
+  z-index: auto;
+}
+
+/* In the page-level "My Media" tab the panel is as tall as its grid (not a fixed-height sheet), so
+   the overlay's `position: absolute; bottom` would park the zoom slider at the very end of a
+   possibly-offscreen grid. (`position: sticky` doesn't help either: `.nav-panel`'s own
+   `overflow-y: auto` makes the panel itself the scroll container it sticks within.) Fixed pins it
+   to the viewport's bottom-right instead -- the panel has `transform: none` here (above), so it
+   doesn't become the containing block. */
+.my-media-panel.nav-panel.my-media-page .my-media-panel-zoom {
+  position: fixed;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  z-index: 5;
+}

@@ -38,6 +38,7 @@ class Visibility extends $pb.ProtobufEnum {
   static const Visibility SERVER_PUBLIC = Visibility._(3, _omitEnumNames ? '' : 'SERVER_PUBLIC');
   static const Visibility GLOBAL_PUBLIC = Visibility._(4, _omitEnumNames ? '' : 'GLOBAL_PUBLIC');
   static const Visibility DIRECT = Visibility._(5, _omitEnumNames ? '' : 'DIRECT');
+  static const Visibility LICENSED = Visibility._(6, _omitEnumNames ? '' : 'LICENSED');
 
   static const $core.List<Visibility> values = <Visibility> [
     VISIBILITY_UNKNOWN,
@@ -46,6 +47,7 @@ class Visibility extends $pb.ProtobufEnum {
     SERVER_PUBLIC,
     GLOBAL_PUBLIC,
     DIRECT,
+    LICENSED,
   ];
 
   static final $core.Map<$core.int, Visibility> _byValue = $pb.ProtobufEnum.initByValue(values);

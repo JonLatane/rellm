@@ -430,6 +430,18 @@ navigationTabLabel navTab =
         MARKETTAB ->
             "Market"
 
+        MEDIATAB ->
+            "Media"
+
+        VIDEOTAB ->
+            "Video"
+
+        AUDIOTAB ->
+            "Audio"
+
+        IMAGESTAB ->
+            "Images"
+
         NavigationTabUnrecognized_ _ ->
             "Tab"
 
@@ -490,6 +502,18 @@ defaultPathFor target =
 
                 MARKETTAB ->
                     "market"
+
+                MEDIATAB ->
+                    "media"
+
+                VIDEOTAB ->
+                    "video"
+
+                AUDIOTAB ->
+                    "audio"
+
+                IMAGESTAB ->
+                    "images"
 
                 NavigationTabUnrecognized_ _ ->
                     "home"
@@ -555,6 +579,18 @@ targetKindText kind =
                 MARKETTAB ->
                     "Market Page"
 
+                MEDIATAB ->
+                    "Media Page"
+
+                VIDEOTAB ->
+                    "Video Page"
+
+                AUDIOTAB ->
+                    "Audio Page"
+
+                IMAGESTAB ->
+                    "Images Page"
+
                 NavigationTabUnrecognized_ _ ->
                     "Tab"
 
@@ -571,7 +607,7 @@ predefined tabs, plus Custom Post and Profile. Mirrors `SettingsTab.allowedDefau
 -}
 selectableTargetKinds : List TargetKind
 selectableTargetKinds =
-    [ KindTab EVENTSTAB, KindTab POSTSTAB, KindTab PEOPLETAB, KindTab ABOUTTAB, KindTab MARKETTAB, KindPost, KindProfile ]
+    [ KindTab EVENTSTAB, KindTab POSTSTAB, KindTab VIDEOTAB, KindTab AUDIOTAB, KindTab IMAGESTAB, KindTab MEDIATAB, KindTab PEOPLETAB, KindTab ABOUTTAB, KindTab MARKETTAB, KindPost, KindProfile ]
 
 
 targetKindFromText : String -> Maybe TargetKind
@@ -668,6 +704,18 @@ navLinkView shared currentRoute server tab =
                 TargetTab MARKETTAB ->
                     Route.Market
 
+                TargetTab MEDIATAB ->
+                    Route.Media
+
+                TargetTab VIDEOTAB ->
+                    Route.Video
+
+                TargetTab AUDIOTAB ->
+                    Route.Audio
+
+                TargetTab IMAGESTAB ->
+                    Route.Images
+
                 TargetTab (NavigationTabUnrecognized_ _) ->
                     route
 
@@ -679,7 +727,7 @@ navLinkView shared currentRoute server tab =
 
         isCurrent : Bool
         isCurrent =
-            currentRoute == route || currentRoute == canonicalRoute
+            currentRoute == route || currentRoute == canonicalRoute || (tab.target == TargetTab VIDEOTAB && currentRoute == Route.Videos)
     in
     a
         [ href (shared.basePath ++ Route.toHref route)

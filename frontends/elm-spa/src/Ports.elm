@@ -17,6 +17,7 @@ port module Ports exposing
     , federatedAuthKeyPairGenerated
     , hideSplash
     , mastodonAccountsAndServersUpdated
+    , mediaDurationReported
     , measureElements
     , persistAccountsAndServers
     , persistBlueskyAccounts
@@ -26,11 +27,13 @@ port module Ports exposing
     , persistThemePreference
     , persistUserPreferences
     , pushMessageReceived
+    , pushNotificationClicked
     , pushSubscribed
     , pushSubscriptionChangeReceived
     , pushSubscriptionChecked
     , renderCalendar
     , scrollElementLeft
+    , scrubMedia
     , setNavBarColor
     , setTheme
     , starredPostsUpdated
@@ -462,3 +465,28 @@ that same module, so this refreshes whichever of them is currently mounted (poss
 without either needing its own separate wiring.
 -}
 port pushMessageReceived : (Encode.Value -> msg) -> Sub msg
+
+
+{-| Fires when a push notification is clicked and `service-worker.js` can't just navigate the open
+tab itself -- i.e. the notification's `url` is on a different origin than this tab (a server other
+than the one this PWA was loaded from, sharing its VAPID key; see
+`AccountsPanel.canUsePushNotifications`), where `WindowClient.navigate()` isn't allowed. The `String`
+is the notification's full absolute URL; `Shared.PushNotificationLink.toInAppPath` turns it into a
+path this app can route to itself.
+-}
+port pushNotificationClicked : (Encode.Value -> msg) -> Sub msg
+
+
+{-| `Shared.MediaViewerPanel`'s time sliders: `{ timeMs : Int | null }`. With an int, seeks the
+playing `<video>`/`<audio>` inside `.media-viewer-panel-media` to that time, pausing it first if it
+was playing -- and, after 5s with no further `scrubMedia`, resumes it (only if it had been playing)
+from where it was before scrubbing began. With `null`, doesn't seek at all and only reports the
+element's duration via `mediaDurationReported` (waiting for its metadata to load if needed). See
+`public/index.html`.
+-}
+port scrubMedia : Encode.Value -> Cmd msg
+
+
+{-| Reply to `scrubMedia`'s duration probe: the media element's total length, in milliseconds.
+-}
+port mediaDurationReported : (Float -> msg) -> Sub msg

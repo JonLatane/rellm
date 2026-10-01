@@ -23,6 +23,7 @@ const Visibility$json = {
     {'1': 'SERVER_PUBLIC', '2': 3},
     {'1': 'GLOBAL_PUBLIC', '2': 4},
     {'1': 'DIRECT', '2': 5},
+    {'1': 'LICENSED', '2': 6},
   ],
 };
 
@@ -30,7 +31,7 @@ const Visibility$json = {
 final $typed_data.Uint8List visibilityDescriptor = $convert.base64Decode(
     'CgpWaXNpYmlsaXR5EhYKElZJU0lCSUxJVFlfVU5LTk9XThAAEgsKB1BSSVZBVEUQARILCgdMSU'
     '1JVEVEEAISEQoNU0VSVkVSX1BVQkxJQxADEhEKDUdMT0JBTF9QVUJMSUMQBBIKCgZESVJFQ1QQ'
-    'BQ==');
+    'BRIMCghMSUNFTlNFRBAG');
 
 @$core.Deprecated('Use moderationDescriptor instead')
 const Moderation$json = {

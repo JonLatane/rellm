@@ -1,4 +1,4 @@
-module Shared.MediaViewerPanel exposing (Model, Msg(..), init, subscriptions, update, view)
+module Shared.MediaViewerPanel exposing (CreditField, MediaEdit, Model, Msg(..), formatMs, freshEdit, init, mediaToReference, metadataWithEdits, subscriptions, update, view)
 
 {-| A single, app-wide fullscreen image/video viewer -- an alternate,
 "big"/fullscreen rendering of a `Post`'s `media` (compare
@@ -21,21 +21,26 @@ do.
 import Browser.Events
 import Components.MediaRenderer as MediaRenderer
 import Components.Posts as Posts
+import Dict exposing (Dict)
 import Grpc
-import Html exposing (Html, button, div, input, span, text, textarea)
-import Html.Attributes exposing (class, disabled, placeholder, value)
+import Html exposing (Html, button, div, input, option, select, span, text, textarea)
+import Html.Attributes exposing (class, disabled, placeholder, selected, step, type_, value)
 import Html.Events exposing (on, onClick, onInput, preventDefaultOn, stopPropagationOn)
 import Html.Keyed
 import Json.Decode as Decode
+import Json.Encode as Encode
+import Ports
 import Process
-import Proto.Rellm exposing (Media, MediaReference, MediaSize, Post, defaultMedia, defaultMediaSize, unwrapAuthor, wrapAuthor)
+import Proto.Rellm exposing (Media, MediaMetadata, MediaReference, MediaSize, Post, defaultMedia, defaultMediaMetadata, defaultMediaSize, unwrapAuthor, wrapAuthor)
 import Proto.Rellm.MediaConversion exposing (MediaConversion(..))
 import Proto.Rellm.Rellm as Rellm
+import Proto.Rellm.Visibility exposing (Visibility(..))
+import Protobuf.Types.Int64
 import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer, withAccessToken)
 import Shared.ByteFormat as ByteFormat
-import Shared.Conversions exposing (int64ToInt)
+import Shared.Conversions exposing (int64FromInt, int64ToInt)
 import Task
 import UI.Classes exposing (classes, openClosedClass)
 
@@ -113,10 +118,258 @@ name/description Save).
 type alias MediaEdit =
     { name : String
     , description : String
+    , visibility : Visibility
+
+    -- `creditLabel`-keyed current text of every credit (see `CreditField`) -- a field with
+    -- no entry (or only blank text) is "unset", saved as null by `UpdateMedia`.
+    , credits : Dict String String
+
+    -- The one credit currently shown while still blank -- see `AddCreditClicked`'s doc.
+    , openBlankCredit : Maybe CreditField
+
+    -- Audio/video only; `Nothing` is "unset" (the backend's own defaults apply, see
+    -- `MediaMetadata` in `protos/media.proto`).
+    , videoPreviewTimeMs : Maybe Int
+    , unlicensedPreviewStartMs : Maybe Int
+    , unlicensedPreviewEndMs : Maybe Int
+
+    -- The playing element's total length, reported back by `Ports.mediaDurationReported` after
+    -- `Ports.scrubMedia`'s duration probe -- sliders (see `view`) only render once it's known.
+    , durationMs : Maybe Int
     , status : SubmitStatus
     , deletingSizes : List MediaConversion
     , deleteSizeError : Maybe String
     }
+
+
+{-| The credits `MediaMetadata` carries (artist, album, ...), in the order they appear between Title
+and Description when set -- see `allCreditFields`.
+-}
+type CreditField
+    = Artist
+    | Album
+    | Composer
+    | Director
+    | Producer
+    | Starring
+    | Cast
+    | Crew
+    | Narrator
+    | Publisher
+
+
+allCreditFields : List CreditField
+allCreditFields =
+    [ Artist, Album, Composer, Director, Producer, Starring, Cast, Crew, Narrator, Publisher ]
+
+
+creditLabel : CreditField -> String
+creditLabel field =
+    case field of
+        Artist ->
+            "Artist"
+
+        Album ->
+            "Album"
+
+        Composer ->
+            "Composer"
+
+        Director ->
+            "Director"
+
+        Producer ->
+            "Producer"
+
+        Starring ->
+            "Starring"
+
+        Cast ->
+            "Cast"
+
+        Crew ->
+            "Crew"
+
+        Narrator ->
+            "Narrator"
+
+        Publisher ->
+            "Publisher"
+
+
+creditFromMetadata : CreditField -> MediaMetadata -> Maybe String
+creditFromMetadata field metadata =
+    case field of
+        Artist ->
+            metadata.artist
+
+        Album ->
+            metadata.album
+
+        Composer ->
+            metadata.composer
+
+        Director ->
+            metadata.director
+
+        Producer ->
+            metadata.producer
+
+        Starring ->
+            metadata.starring
+
+        Cast ->
+            metadata.cast
+
+        Crew ->
+            metadata.crew
+
+        Narrator ->
+            metadata.narrator
+
+        Publisher ->
+            metadata.publisher
+
+
+creditIntoMetadata : CreditField -> Maybe String -> MediaMetadata -> MediaMetadata
+creditIntoMetadata field value metadata =
+    case field of
+        Artist ->
+            { metadata | artist = value }
+
+        Album ->
+            { metadata | album = value }
+
+        Composer ->
+            { metadata | composer = value }
+
+        Director ->
+            { metadata | director = value }
+
+        Producer ->
+            { metadata | producer = value }
+
+        Starring ->
+            { metadata | starring = value }
+
+        Cast ->
+            { metadata | cast = value }
+
+        Crew ->
+            { metadata | crew = value }
+
+        Narrator ->
+            { metadata | narrator = value }
+
+        Publisher ->
+            { metadata | publisher = value }
+
+
+{-| What `UpdateMedia` is sent as `metadata`: `base` (the item's current metadata) with every
+credit/preview field replaced by `edit`'s current value -- blank credits become `Nothing` (saved as
+null). `UpdateMedia` replaces the whole metadata, which is why this starts from `base` rather than
+a default. `isAudioOrVideo`/`isVideo` gate the preview fields, which the backend rejects on anything
+else.
+-}
+metadataWithEdits : Bool -> Bool -> MediaEdit -> MediaMetadata -> MediaMetadata
+metadataWithEdits isAudioOrVideo isVideo_ edit base =
+    let
+        withCredits : MediaMetadata
+        withCredits =
+            List.foldl
+                (\field acc ->
+                    creditIntoMetadata field (Dict.get (creditLabel field) edit.credits |> Maybe.andThen nonEmpty |> Maybe.map String.trim) acc
+                )
+                base
+                allCreditFields
+
+        toInt64 : Maybe Int -> Maybe Protobuf.Types.Int64.Int64
+        toInt64 =
+            Maybe.map int64FromInt
+    in
+    { withCredits
+        | videoPreviewTimeMs =
+            if isVideo_ then
+                toInt64 edit.videoPreviewTimeMs
+
+            else
+                withCredits.videoPreviewTimeMs
+        , unlicensedPreviewStartMs =
+            if isAudioOrVideo then
+                toInt64 edit.unlicensedPreviewStartMs
+
+            else
+                Nothing
+        , unlicensedPreviewEndMs =
+            if isAudioOrVideo then
+                toInt64 edit.unlicensedPreviewEndMs
+
+            else
+                Nothing
+    }
+
+
+{-| `m:ss.s` -- how the preview-time sliders show their current value.
+-}
+formatMs : Int -> String
+formatMs ms =
+    let
+        totalTenths : Int
+        totalTenths =
+            ms // 100
+
+        minutes : Int
+        minutes =
+            totalTenths // 600
+
+        seconds : Int
+        seconds =
+            modBy 600 totalTenths // 10
+
+        tenths : Int
+        tenths =
+            modBy 10 totalTenths
+    in
+    String.fromInt minutes
+        ++ ":"
+        ++ String.padLeft 2 '0' (String.fromInt seconds)
+        ++ "."
+        ++ String.fromInt tenths
+
+
+visibilityLabel : Visibility -> String
+visibilityLabel visibility =
+    case visibility of
+        PRIVATE ->
+            "Private"
+
+        LIMITED ->
+            "Limited (followers)"
+
+        SERVERPUBLIC ->
+            "Server Public"
+
+        GLOBALPUBLIC ->
+            "Global Public"
+
+        LICENSED ->
+            "Licensed"
+
+        DIRECT ->
+            "Direct"
+
+        VISIBILITYUNKNOWN ->
+            "Unknown"
+
+        VisibilityUnrecognized_ _ ->
+            "Unknown"
+
+
+{-| The visibilities `UpdateMedia` accepts (everything but `DIRECT`/unknown).
+-}
+selectableVisibilities : List Visibility
+selectableVisibilities =
+    [ PRIVATE, LIMITED, SERVERPUBLIC, GLOBALPUBLIC, LICENSED ]
 
 
 type
@@ -143,8 +396,19 @@ type
     | PreloadReady String
     | EditClicked
     | EditCancelClicked
+    | NoOp
     | EditNameChanged String
     | EditDescriptionChanged String
+    | VisibilityChanged String
+      -- "Add Artist"/"Add Album"/... -- shows that credit's field, blank. At most one blank credit
+      -- is ever shown (see `Model.edit`'s `openBlankCredit`): adding another replaces it.
+    | AddCreditClicked CreditField
+    | CreditChanged CreditField String
+    | VideoPreviewTimeChanged Int
+    | UnlicensedPreviewStartChanged Int
+    | UnlicensedPreviewEndChanged Int
+      -- From `Ports.mediaDurationReported` -- the playing `<video>`/`<audio>`'s length in ms.
+    | MediaDurationReported Float
     | EditSaveClicked
     | GotEditSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, Media ))
     | DeleteSizeClicked MediaConversion
@@ -171,7 +435,14 @@ buttons -- only while the panel's actually open, so the keys behave normally
 subscriptions : Model -> Sub Msg
 subscriptions model =
     if isOpen model then
-        Browser.Events.onKeyDown keyDecoder
+        Sub.batch
+            [ Browser.Events.onKeyDown keyDecoder
+            , if model.edit /= Nothing then
+                Ports.mediaDurationReported MediaDurationReported
+
+              else
+                Sub.none
+            ]
 
     else
         Sub.none
@@ -201,7 +472,7 @@ update accountsPanelModel msg model =
         EditClicked ->
             case currentMedia of
                 Just media ->
-                    ( { model | edit = Just (freshEdit media) }, Cmd.none, Nothing )
+                    ( { model | edit = Just (freshEdit media) }, probeDuration media, Nothing )
 
                 Nothing ->
                     ( model, Cmd.none, Nothing )
@@ -215,11 +486,118 @@ update accountsPanelModel msg model =
         EditDescriptionChanged text ->
             ( { model | edit = model.edit |> Maybe.map (\edit -> { edit | description = text }) }, Cmd.none, Nothing )
 
+        NoOp ->
+            ( model, Cmd.none, Nothing )
+
+        VisibilityChanged raw ->
+            case List.filter (\v -> visibilityLabel v == raw) selectableVisibilities |> List.head of
+                Just visibility ->
+                    ( { model | edit = model.edit |> Maybe.map (\edit -> { edit | visibility = visibility }) }, Cmd.none, Nothing )
+
+                Nothing ->
+                    ( model, Cmd.none, Nothing )
+
+        AddCreditClicked field ->
+            ( { model | edit = model.edit |> Maybe.map (\edit -> { edit | openBlankCredit = Just field }) }, Cmd.none, Nothing )
+
+        CreditChanged field text ->
+            ( { model
+                | edit =
+                    model.edit
+                        |> Maybe.map
+                            (\edit ->
+                                { edit
+                                    | credits = Dict.insert (creditLabel field) text edit.credits
+
+                                    -- Blanking a field leaves it showing (so it doesn't vanish from
+                                    -- under the cursor mid-edit) and makes it *the* one blank field,
+                                    -- displacing any other that was open.
+                                    , openBlankCredit =
+                                        if isBlank text then
+                                            Just field
+
+                                        else if edit.openBlankCredit == Just field then
+                                            Nothing
+
+                                        else
+                                            edit.openBlankCredit
+                                }
+                            )
+              }
+            , Cmd.none
+            , Nothing
+            )
+
+        VideoPreviewTimeChanged ms ->
+            ( { model | edit = model.edit |> Maybe.map (\edit -> { edit | videoPreviewTimeMs = Just ms }) }, scrubTo ms, Nothing )
+
+        UnlicensedPreviewStartChanged ms ->
+            ( { model
+                | edit =
+                    model.edit
+                        |> Maybe.map
+                            (\edit ->
+                                { edit
+                                    | unlicensedPreviewStartMs = Just ms
+                                    , unlicensedPreviewEndMs =
+                                        -- Keep the range non-empty: dragging start past end pushes end along.
+                                        case edit.unlicensedPreviewEndMs of
+                                            Just end ->
+                                                if end <= ms then
+                                                    Just (min (Maybe.withDefault (ms + 1000) edit.durationMs) (ms + 1000))
+
+                                                else
+                                                    Just end
+
+                                            Nothing ->
+                                                Nothing
+                                }
+                            )
+              }
+            , scrubTo ms
+            , Nothing
+            )
+
+        UnlicensedPreviewEndChanged ms ->
+            ( { model
+                | edit =
+                    model.edit
+                        |> Maybe.map
+                            (\edit ->
+                                { edit
+                                    | unlicensedPreviewEndMs = Just ms
+                                    , unlicensedPreviewStartMs =
+                                        case edit.unlicensedPreviewStartMs of
+                                            Just start ->
+                                                if start >= ms then
+                                                    Just (max 0 (ms - 1000))
+
+                                                else
+                                                    Just start
+
+                                            Nothing ->
+                                                Nothing
+                                }
+                            )
+              }
+            , scrubTo ms
+            , Nothing
+            )
+
+        MediaDurationReported durationMs ->
+            ( { model | edit = model.edit |> Maybe.map (\edit -> { edit | durationMs = Just (round durationMs) }) }, Cmd.none, Nothing )
+
         EditSaveClicked ->
             case ( currentMedia, model.edit, maybeAccount ) of
                 ( Just media, Just edit, Just account ) ->
                     ( { model | edit = Just { edit | status = Submitting } }
-                    , updateMediaTask accountsPanelModel account media.id edit.name edit.description
+                    , updateMediaTask accountsPanelModel
+                        account
+                        media.id
+                        edit.name
+                        edit.description
+                        edit.visibility
+                        (metadataWithEdits (isAudio media || isVideo media) (isVideo media) edit (Maybe.withDefault defaultMediaMetadata media.metadata))
                         |> Task.attempt GotEditSaveResult
                     , Nothing
                     )
@@ -327,7 +705,22 @@ update accountsPanelModel msg model =
                         _ ->
                             newModel.edit
             in
-            ( { newModel | edit = restoredEdit }, cmd, Nothing )
+            ( { newModel | edit = restoredEdit }
+            , Cmd.batch
+                [ cmd
+                , case ( restoredEdit, newCurrentMedia ) of
+                    ( Just _, Just media ) ->
+                        if newModel.currentMediaReference /= model.currentMediaReference then
+                            probeDuration media
+
+                        else
+                            Cmd.none
+
+                    _ ->
+                        Cmd.none
+                ]
+            , Nothing
+            )
 
 
 {-| The `Media` `UpdateMedia`/`DeleteMediaSizes` respond with, folded back into `model.media` in
@@ -347,6 +740,7 @@ mediaToReference media =
     , sizes = media.sizes
     , url = media.url
     , description = media.description
+    , visibility = media.visibility
     }
 
 
@@ -363,18 +757,24 @@ nonEmpty s =
         Just s
 
 
-{-| `UpdateMedia` only ever applies `name`/`description` (see `update_media.rs`) -- every other
-field on the request `Media` is ignored, so `defaultMedia` fills in the rest with placeholders
-nothing on the backend reads.
+{-| `UpdateMedia` applies `name`/`description`/`visibility`/`metadata` (see `update_media.rs`) -- every
+other field on the request `Media` is ignored, so `defaultMedia` fills in the rest with placeholders
+nothing on the backend reads. `metadata` replaces the item's whole metadata (see `metadataWithEdits`).
 -}
-updateMediaTask : AccountsPanel.Model -> RellmAccount -> String -> String -> String -> Task.Task Grpc.Error ( Maybe AccountsPanel.Msg, Media )
-updateMediaTask accountsPanelModel account mediaId name description =
+updateMediaTask : AccountsPanel.Model -> RellmAccount -> String -> String -> String -> Visibility -> MediaMetadata -> Task.Task Grpc.Error ( Maybe AccountsPanel.Msg, Media )
+updateMediaTask accountsPanelModel account mediaId name description visibility metadata =
     AccountsPanel.performWithAccountServer
         accountsPanelModel
         ( Just account.userId, account.server )
         (\server token ->
             Grpc.new Rellm.updateMedia
-                { defaultMedia | id = mediaId, name = nonEmpty name, description = nonEmpty description }
+                { defaultMedia
+                    | id = mediaId
+                    , name = nonEmpty name
+                    , description = nonEmpty description
+                    , visibility = visibility
+                    , metadata = Just metadata
+                }
                 |> Grpc.setHost (RellmServers.rellmServerUrl server)
                 |> withAccessToken (Just token)
                 |> Grpc.toTask
@@ -407,12 +807,57 @@ doc).
 -}
 freshEdit : MediaReference -> MediaEdit
 freshEdit media =
+    let
+        metadata : MediaMetadata
+        metadata =
+            Maybe.withDefault defaultMediaMetadata media.metadata
+
+        toMs : Maybe Protobuf.Types.Int64.Int64 -> Maybe Int
+        toMs =
+            Maybe.map int64ToInt
+    in
     { name = Maybe.withDefault "" media.name
     , description = Maybe.withDefault "" media.description
+    , visibility = media.visibility
+    , credits =
+        allCreditFields
+            |> List.filterMap (\field -> creditFromMetadata field metadata |> Maybe.map (Tuple.pair (creditLabel field)))
+            |> Dict.fromList
+    , openBlankCredit = Nothing
+    , videoPreviewTimeMs = toMs metadata.videoPreviewTimeMs
+    , unlicensedPreviewStartMs = toMs metadata.unlicensedPreviewStartMs
+    , unlicensedPreviewEndMs = toMs metadata.unlicensedPreviewEndMs
+    , durationMs = Nothing
     , status = Idle
     , deletingSizes = []
     , deleteSizeError = Nothing
     }
+
+
+isBlank : String -> Bool
+isBlank text =
+    String.isEmpty (String.trim text)
+
+
+{-| Asks `public/index.html` to report the playing media element's duration back via
+`Ports.mediaDurationReported` (no seeking) -- the preview sliders need it for their max.
+-}
+probeDuration : MediaReference -> Cmd msg
+probeDuration media =
+    if isAudio media || isVideo media then
+        Ports.scrubMedia (Encode.object [ ( "timeMs", Encode.null ) ])
+
+    else
+        Cmd.none
+
+
+{-| Seeks the playing `<video>`/`<audio>` to `ms`, pausing it first if it was playing -- after 5s
+with no further scrubs, `public/index.html` resumes it from where it was before scrubbing began
+(only if it was playing then). See `Ports.scrubMedia`.
+-}
+scrubTo : Int -> Cmd msg
+scrubTo ms =
+    Ports.scrubMedia (Encode.object [ ( "timeMs", Encode.int ms ) ])
 
 
 {-| Whether `maybeAccount` may edit `media`'s name/description/sizes -- its owner, or an Admin.
@@ -691,6 +1136,18 @@ view accountsPanelModel model =
                 VIDEOPREVIEWTHUMBNAILLARGE ->
                     "Video Preview (Large)"
 
+                AUDIOPREVIEWTHUMBNAILSMALL ->
+                    "Audio Waveform (Small)"
+
+                AUDIOPREVIEWTHUMBNAILMEDIUM ->
+                    "Audio Waveform (Medium)"
+
+                AUDIOPREVIEWTHUMBNAILLARGE ->
+                    "Audio Waveform (Large)"
+
+                UNLICENSEDPREVIEWMEDIUM ->
+                    "Unlicensed Preview (Medium)"
+
                 MediaConversionUnrecognized_ _ ->
                     "Unknown"
 
@@ -719,6 +1176,75 @@ view accountsPanelModel model =
                     ]
                 ]
 
+        creditField : MediaEdit -> CreditField -> Maybe (Html Msg)
+        creditField edit field =
+            let
+                current : String
+                current =
+                    Dict.get (creditLabel field) edit.credits |> Maybe.withDefault ""
+            in
+            if not (isBlank current) || edit.openBlankCredit == Just field then
+                Just
+                    (div [ class "media-viewer-panel-edit-field media-viewer-panel-edit-credit" ]
+                        [ text (creditLabel field)
+                        , input [ value current, onInput (CreditChanged field), placeholder (creditLabel field) ] []
+                        ]
+                    )
+
+            else
+                Nothing
+
+        -- A credit's "Add X" button only exists while its value is blank and it isn't already the
+        -- one open blank field (see `AddCreditClicked`).
+        addCreditButton : MediaEdit -> CreditField -> Maybe (Html Msg)
+        addCreditButton edit field =
+            if creditField edit field == Nothing then
+                Just (button [ class "media-viewer-panel-edit-add-credit", stopClick (AddCreditClicked field) ] [ text ("Add " ++ creditLabel field) ])
+
+            else
+                Nothing
+
+        timeSlider : String -> Int -> Int -> (Int -> Msg) -> Html Msg
+        timeSlider label maxMs current toMsg =
+            div [ class "media-viewer-panel-edit-field media-viewer-panel-edit-slider" ]
+                [ div [ class "media-viewer-panel-edit-slider-label" ]
+                    [ text label, span [ class "media-viewer-panel-edit-slider-time" ] [ text (formatMs current) ] ]
+                , input
+                    [ type_ "range"
+                    , Html.Attributes.min "0"
+                    , Html.Attributes.max (String.fromInt maxMs)
+                    , step "100"
+                    , value (String.fromInt current)
+                    , onInput (\raw -> toMsg (String.toInt raw |> Maybe.withDefault current))
+                    ]
+                    []
+                ]
+
+        previewSliders : MediaReference -> MediaEdit -> List (Html Msg)
+        previewSliders media edit =
+            case edit.durationMs of
+                Just durationMs ->
+                    let
+                        start : Int
+                        start =
+                            Maybe.withDefault 0 edit.unlicensedPreviewStartMs
+                    in
+                    (if isVideo media then
+                        [ timeSlider "Video preview frame" durationMs (Maybe.withDefault (min 1000 (durationMs // 2)) edit.videoPreviewTimeMs) VideoPreviewTimeChanged ]
+
+                     else
+                        []
+                    )
+                        ++ [ timeSlider "Unlicensed preview start" durationMs start UnlicensedPreviewStartChanged
+                           , timeSlider "Unlicensed preview end"
+                                durationMs
+                                (Maybe.withDefault (min durationMs (start + 30000)) edit.unlicensedPreviewEndMs)
+                                UnlicensedPreviewEndChanged
+                           ]
+
+                Nothing ->
+                    []
+
         editView : MediaReference -> Html Msg
         editView media =
             case model.edit of
@@ -726,45 +1252,66 @@ view accountsPanelModel model =
                     text ""
 
                 Just edit ->
-                    div [ class "media-viewer-panel-edit", stopClick EditCancelClicked ]
-                        [ div [ class "media-viewer-panel-edit-field" ]
+                    div [ class "media-viewer-panel-edit", stopClick NoOp ]
+                        (div [ class "media-viewer-panel-edit-field" ]
                             [ text "Name"
                             , input [ value edit.name, onInput EditNameChanged, placeholder "Untitled" ] []
                             ]
-                        , div [ class "media-viewer-panel-edit-field" ]
-                            [ text "Description"
-                            , textarea [ value edit.description, onInput EditDescriptionChanged ] []
-                            ]
-                        , div [ class "media-viewer-panel-edit-actions" ]
-                            [ button
-                                [ class "media-viewer-panel-edit-save"
-                                , onClick EditSaveClicked
-                                , disabled (edit.status == Submitting)
-                                ]
-                                [ text
-                                    (if edit.status == Submitting then
-                                        "Saving…"
+                            :: List.filterMap (creditField edit) allCreditFields
+                            ++ [ div [ class "media-viewer-panel-edit-field" ]
+                                    [ text "Description"
+                                    , textarea [ value edit.description, onInput EditDescriptionChanged ] []
+                                    ]
+                               , div [ class "media-viewer-panel-edit-field" ]
+                                    [ text "Visibility"
+                                    , select [ onInput VisibilityChanged ]
+                                        (selectableVisibilities
+                                            |> List.map
+                                                (\visibility ->
+                                                    option [ value (visibilityLabel visibility), selected (visibility == edit.visibility) ]
+                                                        [ text (visibilityLabel visibility) ]
+                                                )
+                                        )
+                                    ]
+                               ]
+                            ++ (if isAudio media || isVideo media then
+                                    previewSliders media edit
 
-                                     else
-                                        "Save"
-                                    )
-                                ]
-                            , button [ class "media-viewer-panel-edit-cancel", onClick EditCancelClicked ] [ text "Cancel" ]
-                            ]
-                        , case edit.status of
-                            SubmitFailed err ->
-                                div [ class "media-viewer-panel-edit-error" ] [ text err ]
+                                else
+                                    []
+                               )
+                            ++ [ div [ class "media-viewer-panel-edit-add-credits" ] (List.filterMap (addCreditButton edit) allCreditFields)
+                               , div [ class "media-viewer-panel-edit-actions" ]
+                                    [ button
+                                        [ class "media-viewer-panel-edit-save"
+                                        , onClick EditSaveClicked
+                                        , disabled (edit.status == Submitting)
+                                        ]
+                                        [ text
+                                            (if edit.status == Submitting then
+                                                "Saving…"
 
-                            _ ->
-                                text ""
-                        , div [ class "media-viewer-panel-edit-sizes" ] (media.sizes |> List.map (sizeDeleteButton edit))
-                        , case edit.deleteSizeError of
-                            Just err ->
-                                div [ class "media-viewer-panel-edit-error" ] [ text err ]
+                                             else
+                                                "Save"
+                                            )
+                                        ]
+                                    , button [ class "media-viewer-panel-edit-cancel", onClick EditCancelClicked ] [ text "Cancel" ]
+                                    ]
+                               , case edit.status of
+                                    SubmitFailed err ->
+                                        div [ class "media-viewer-panel-edit-error" ] [ text err ]
 
-                            Nothing ->
-                                text ""
-                        ]
+                                    _ ->
+                                        text ""
+                               , div [ class "media-viewer-panel-edit-sizes" ] (media.sizes |> List.map (sizeDeleteButton edit))
+                               , case edit.deleteSizeError of
+                                    Just err ->
+                                        div [ class "media-viewer-panel-edit-error" ] [ text err ]
+
+                                    Nothing ->
+                                        text ""
+                               ]
+                        )
     in
     div
         [ classes [ "media-viewer-panel", "nav-panel", openClosedClass (isOpen model) ]
@@ -939,6 +1486,13 @@ their native `controls`, same as before this behavior existed).
 isImage : MediaReference -> Bool
 isImage media =
     (String.split "/" (MediaRenderer.contentTypeOf media) |> List.head) == Just "image"
+
+
+{-| Whether `media` is audio -- see `isImage`.
+-}
+isAudio : MediaReference -> Bool
+isAudio media =
+    (String.split "/" (MediaRenderer.contentTypeOf media) |> List.head) == Just "audio"
 
 
 {-| Whether `media` is a video, by its MIME type's top-level part -- mirrors

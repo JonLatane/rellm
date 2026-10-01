@@ -7,7 +7,7 @@ import Components.SyncSources as SyncSources
 import Components.Users as Users
 import Dict
 import Gen.Route as Route exposing (Route)
-import Html exposing (Attribute, Html, a, button, div, header, img, input, label, li, main_, nav, option, p, select, span, text, ul)
+import Html exposing (Attribute, Html, a, button, div, header, hr, img, input, label, li, main_, nav, option, p, select, span, text, ul)
 import Html.Attributes exposing (alt, attribute, checked, class, classList, disabled, href, id, name, novalidate, placeholder, selected, spellcheck, src, style, target, title, type_, value)
 import Html.Events exposing (on, onClick, onInput, onSubmit, preventDefaultOn, stopPropagationOn)
 import Html.Keyed
@@ -29,6 +29,7 @@ import Shared.AccountsPanel.MastodonServers exposing (BrowsedMastodonInstance)
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (Branding, RellmServer)
 import Shared.Breadcrumbs as Breadcrumbs
+import Shared.BrowserInfo as BrowserInfo
 import Shared.ByteFormat as ByteFormat
 import Shared.Conversions exposing (timestampToPosix)
 import Shared.CreateNewPanel as CreateNewPanel
@@ -2068,28 +2069,46 @@ accountItemReorderInfo shared count mainCount index key =
     { moveAttrs = moveAttrs, reorderPair = reorderPair, canMoveUp = canMoveUp, canMoveDown = canMoveDown }
 
 
-{-| The avatar button that toggles `accountAvatarMenuView` (see `AccountsPanel.Model.focusedAccount`)
--- plain `button.media-btn`, same as before this menu existed, just with its click now toggling the
-menu instead of jumping straight to `MyMediaPanel`. Nested inside `accountRow`'s own
-`a.account-row-profile-link`, so its click still needs to stop propagation -- same reasoning as
-`accountAvatarMenuView`'s own items.
+{-| The avatar shown at the left of `accountRow`'s profile/toggle area -- ringed (`.media-btn.is-open`)
+while `accountAvatarMenuView` is open for it (see `AccountsPanel.Model.focusedAccount`). Purely
+presentational now: the click that toggles that menu lives on the whole avatar-to-username area (see
+`accountRow`), not on the avatar alone. For an account with a menu, a larger chevron
+(`.account-avatar-chevron`) sits _behind_ the avatar, its tip poking out past the circle's right edge
+and rotating down to its bottom edge as the menu opens. A small 🔔 badge sits at the avatar's top left
+while push notifications are enabled for this account.
 
-An account that `needsPassword` gets no menu at all -- same "sign in to view media" gate the old
-button used, since none of the four items make sense for an account that isn't actually signed in.
+An account that `needsPassword` gets no menu at all (and so its area stays a plain profile link --
+see `accountRow`), since none of the menu's items make sense for an account that isn't actually
+signed in.
 
 -}
 accountAvatarToggle : Shared.Model -> RellmAccount -> Html Shared.Msg
 accountAvatarToggle shared account =
-    if account.needsPassword then
-        button [ class "media-btn", title "Sign in to view media" ]
-            [ avatarOrPlaceholder shared.accounts.servers account ]
+    div [ class "account-avatar-toggle" ]
+        [ if account.needsPassword then
+            text ""
 
-    else
-        button
-            [ classes [ "media-btn", openClosedClass (AccountsPanel.isFocusedAccount shared.accounts account) ]
-            , stopPropagationAndPreventDefaultOnClick (Shared.AccountsPanelMsg (AccountsPanel.AccountAvatarClicked account))
+          else
+            span
+                [ classes [ "account-avatar-chevron", openClosedClass (AccountsPanel.isFocusedAccount shared.accounts account) ] ]
+                []
+        , div
+            [ classes
+                [ "media-btn"
+                , if account.needsPassword then
+                    ""
+
+                  else
+                    openClosedClass (AccountsPanel.isFocusedAccount shared.accounts account)
+                ]
             ]
             [ avatarOrPlaceholder shared.accounts.servers account ]
+        , if Dict.member (RellmAccounts.rellmAccountId account) shared.accounts.pushSubscriptions then
+            span [ class "account-avatar-bell", title "Push notifications enabled" ] [ text "🔔" ]
+
+          else
+            text ""
+        ]
 
 
 {-| A second, collapsible line in `accountRow` (see that function's own doc) holding "Contact
@@ -2156,7 +2175,14 @@ accountAvatarMenuView shared account =
         in
         div [ classes [ "account-avatar-menu", openClosedClass (AccountsPanel.isFocusedAccount shared.accounts account) ] ]
             [ div [ class "account-avatar-menu-list" ]
-                [ contactMethodsMenuItem shared account
+                [ a
+                    [ class "account-avatar-menu-item"
+                    , href profileHref
+                    , stopPropagationAndPreventDefaultOnClick (Shared.AccountsPanelMsg AccountsPanel.CloseAccountsPanel)
+                    ]
+                    [ span [ class "account-avatar-menu-item-label" ] [ text "View Profile" ] ]
+                , pushNotificationsMenuItem shared account
+                , contactMethodsMenuItem shared account
                 , button
                     [ class "account-avatar-menu-item"
                     , stopPropagationAndPreventDefaultOnClick (Shared.MyMediaPanelOpenForAccount account)
@@ -2245,17 +2271,30 @@ contactMethodsMenuItem shared account =
         expanded : Bool
         expanded =
             isFocused && contactMethods.contactMethodsExpanded
+
+        profileHref : String
+        profileHref =
+            Users.profileHref shared.basePath shared.accounts.mainFrontendHost account.server { userId = account.userId, username = account.username }
     in
     div [ class "account-avatar-menu-contact-methods" ]
         [ div
             [ class "account-avatar-menu-contact-methods-header"
             , stopPropagationAndPreventDefaultOnClick (Shared.AccountsPanelMsg AccountsPanel.ContactMethodsMenuToggled)
             ]
-            [ div [ class "account-avatar-menu-contact-methods-header-top" ]
-                [ span [ classes [ "expandable-section-arrow", openClosedClass expanded ] ] [ text "▼" ]
-                , span [ class "account-avatar-menu-item-label" ] [ text "Contact Methods" ]
+            [ div [ class "account-avatar-menu-contact-methods-header-text" ]
+                [ div [ class "account-avatar-menu-contact-methods-header-top" ]
+                    [ span [ classes [ "expandable-section-arrow", openClosedClass expanded ] ] [ text "▼" ]
+                    , span [ class "account-avatar-menu-item-label" ] [ text "Contact Methods" ]
+                    ]
+                , span [ class "account-avatar-menu-item-detail" ] (contactMethodsSummary account)
                 ]
-            , span [ class "account-avatar-menu-item-detail" ] (contactMethodsSummary account)
+            , a
+                [ class "panel-icon-button"
+                , href (profileHref ++ "#contact-methods")
+                , title "Open Contact Methods"
+                , stopPropagationAndPreventDefaultOnClick (Shared.ProfileSectionLinkClicked account "contact-methods")
+                ]
+                [ text "⛶" ]
             ]
         , div
             [ classes [ "expandable-section-content", "account-avatar-menu-contact-methods-content", "base-colors-half", "border-color-primary-anchor-50", openClosedClass expanded ] ]
@@ -2271,6 +2310,7 @@ contactMethodsMenuItem shared account =
                     account.phone
                 , contactMethodPhoneVerificationView contactMethods account.phone
                 , contactMethodDeleteButton (\cm -> Shared.ConfirmPhoneDelete cm account.server) "Delete Phone" account.phone
+                , hr [ class "profile-contact-methods-separator" ] []
                 , contactMethodEmailView account contactMethods
                 , contactMethodConsentView shared
                     ("account-avatar-menu-email-history-" ++ RellmAccounts.rellmAccountId account)
@@ -2677,10 +2717,6 @@ accountRow shared count mainCount index account =
         key =
             AccountsPanel.combinedAccountItemKey (AccountsPanel.CombinedRellmAccount account)
 
-        branding : Branding
-        branding =
-            RellmServers.brandingFor shared.accounts.servers account.server
-
         reorderInfo :
             { moveAttrs : List (Html.Attribute Shared.Msg)
             , reorderPair : { backward : Html Shared.Msg, forward : Html Shared.Msg }
@@ -2701,26 +2737,46 @@ accountRow shared count mainCount index account =
                 , div [ classList [ ( "reorder-arrow", True ), ( "reorder-arrow-hidden", not reorderInfo.canMoveDown ) ] ] [ reorderInfo.reorderPair.forward ]
                 ]
             , switchInput account.enabled account.needsPassword (Shared.AccountsPanelMsg (AccountsPanel.ToggleAccountEnabled accId))
-            , a
-                [ class "account-row-profile-link"
-                , href (Users.profileHref shared.basePath shared.accounts.mainFrontendHost account.server { userId = account.userId, username = account.username })
-                , stopPropagationAndPreventDefaultOnClick (Shared.AccountsPanelMsg AccountsPanel.CloseAccountsPanel)
-                ]
-                [ accountAvatarToggle shared account
-                , div [ class "account-row-label" ]
-                    [ div [ class "account-row-username" ]
-                        [ text (RellmAccounts.rellmAccountDisplayName account)
-                        , if RellmAccounts.isAdmin account then
-                            span [ class "account-admin-badge", title "Admin on this server" ] [ text "🛡️" ]
+            , let
+                branding : Branding
+                branding =
+                    RellmServers.brandingFor shared.accounts.servers account.server
 
-                          else
-                            text ""
+                avatarAndLabel : List (Html Shared.Msg)
+                avatarAndLabel =
+                    [ accountAvatarToggle shared account
+                    , div [ class "account-row-label" ]
+                        [ div [ class "account-row-username" ]
+                            [ text (RellmAccounts.rellmAccountDisplayName account)
+                            , if RellmAccounts.isAdmin account then
+                                span [ class "account-admin-badge", title "Admin on this server" ] [ text "🛡️" ]
+
+                              else
+                                text ""
+                            ]
+                        , div [ classes [ "account-row-server-badge", account.server, "background-color-nav" ] ]
+                            [ text (account.server ++ " | " ++ branding.name) ]
                         ]
-                    , div [ classes [ "account-row-server-badge", account.server, "background-color-nav" ] ]
-                        [ text (account.server ++ " | " ++ branding.name) ]
                     ]
-                ]
-            , notificationsButton shared account
+              in
+              -- An account with a working menu: the whole avatar-to-username area toggles it (the
+              -- profile link lives in the menu's own "View Profile" item). One that `needsPassword`
+              -- has no menu, so it keeps linking straight to the profile as before.
+              if account.needsPassword then
+                a
+                    [ class "account-row-profile-link"
+                    , href (Users.profileHref shared.basePath shared.accounts.mainFrontendHost account.server { userId = account.userId, username = account.username })
+                    , stopPropagationAndPreventDefaultOnClick (Shared.AccountsPanelMsg AccountsPanel.CloseAccountsPanel)
+                    ]
+                    avatarAndLabel
+
+              else
+                div
+                    [ classes [ "account-row-profile-link", "account-row-menu-toggle" ]
+                    , title "Show account menu"
+                    , stopPropagationAndPreventDefaultOnClick (Shared.AccountsPanelMsg (AccountsPanel.AccountAvatarClicked account))
+                    ]
+                    avatarAndLabel
             , button
                 [ class "remove-btn"
                 , onClick (Shared.RequestDelete (Shared.ConfirmAccountDelete account))
@@ -2863,137 +2919,105 @@ blueskyAccountRow shared count mainCount index blueskyAccount =
         ]
 
 
-{-| Second row of `accountRow`, below `.account-row-main` -- the reauth button and/or push
-notification error, if either applies to `account`. Renders nothing (not even an empty div) when
-neither applies, so rows with nothing to report stay single-row.
+{-| Second row of `accountRow`, below `.account-row-main` -- the reauth button, if it applies to
+`account`. Renders nothing (not even an empty div) otherwise, so rows with nothing to report stay
+single-row. (Push notification errors live in `pushNotificationsMenuItem` instead.)
 -}
 accountRowAlerts : Shared.Model -> RellmAccount -> Html Shared.Msg
 accountRowAlerts shared account =
-    let
-        hasNotificationError : Bool
-        hasNotificationError =
-            Dict.member (RellmAccounts.rellmAccountId account) shared.accounts.notificationErrors
-    in
-    if not account.needsPassword && not hasNotificationError then
+    if not account.needsPassword then
         text ""
 
     else
+        let
+            -- "reauthentication" (not "password") when this account isn't on the
+            -- server we're actually browsing from -- clicking it still routes
+            -- through `PasswordNeededClicked`, but the wording makes clear it's
+            -- logging back into a different server, not this one.
+            needsPasswordLabel : String
+            needsPasswordLabel =
+                if account.server /= shared.accounts.browsingHost then
+                    "Reauthentication Required"
+
+                else
+                    "Password Required"
+        in
         div [ class "account-row-alerts" ]
-            [ if account.needsPassword then
-                let
-                    -- "reauthentication" (not "password") when this account isn't on the
-                    -- server we're actually browsing from -- clicking it still routes
-                    -- through `PasswordNeededClicked`, but the wording makes clear it's
-                    -- logging back into a different server, not this one.
-                    needsPasswordLabel : String
-                    needsPasswordLabel =
-                        if account.server /= shared.accounts.browsingHost then
-                            "Reauthentication Required"
-
-                        else
-                            "Password Required"
-                in
-                button
-                    [ type_ "button"
-                    , class "account-needs-password"
-                    , stopPropagationAndPreventDefaultOnClick (Shared.AccountsPanelMsg (AccountsPanel.ReauthenticateButtonClicked account))
-                    ]
-                    [ text needsPasswordLabel ]
-
-              else
-                text ""
-            , notificationError shared account
+            [ button
+                [ type_ "button"
+                , class "account-needs-password"
+                , stopPropagationAndPreventDefaultOnClick (Shared.AccountsPanelMsg (AccountsPanel.ReauthenticateButtonClicked account))
+                ]
+                [ text needsPasswordLabel ]
             ]
 
 
-{-| "Enable notifications"/"🔔" toggle for `account`'s row (see `AccountsPanel.EnableNotificationsClicked`/
-`DisableNotificationsClicked`) -- only rendered at all if `account.server` is both connected and
-has a `WebPushConfig` (`RellmServers.rellmServerWebPushPublicKey`), i.e. there's actually something to
-subscribe to; disabled (like the rest of the row's actions) while the account itself
-`needsPassword`, since registering a subscription needs a working access/refresh token.
+{-| The "Push Notifications" item at the top of `accountAvatarMenuView` -- a bell icon + label, a
+line saying whether push notifications to this browser (`Shared.BrowserInfo`) are enabled, and any
+failure from the last attempt (`pushNotificationError`), with a vertically-centered toggle switch on
+the right (same row layout as `contactMethodsMenuItem`'s header + Fullscreen button) firing
+`AccountsPanel.EnableNotificationsClicked`/`DisableNotificationsClicked`.
 
-Also only rendered for an account whose `server` is `shared.accounts.browsingHost` -- the browser
-holds at most one Web Push subscription today (see `AccountsPanel.pushSubscriptions`'s own doc
-comment), tied to whichever single server's VAPID key it was created with, and that's always
-`browsingHost`'s (the one server this tab's service worker/subscription could ever meaningfully be
-scoped to). Offering the toggle for a federated-in account on some _other_ server would just
-silently fail or steal the slot from `browsingHost`'s own account the moment it's clicked -- there's
-no way to make it actually work without each server getting its own independently-scoped
-subscription (a real, not-yet-built feature; see this button's own git history for the
-investigation).
+Only rendered for an account `AccountsPanel.canUsePushNotifications` accepts: its server must be
+connected and advertise the same `WebPushConfig.publicVapidKey` as the server this app runs from.
+The browser holds one Web Push subscription, bound to one VAPID key, and that subscription is just
+an endpoint any server holding the matching private key can push to -- so servers an admin has given
+the same keypair all share it (several accounts, possibly on several servers, riding one
+subscription -- see `AccountsPanel.pushSubscriptions`), while a server with a different key has no
+second subscription to use and gets no toggle.
 
 -}
-notificationsButton : Shared.Model -> RellmAccount -> Html Shared.Msg
-notificationsButton shared account =
-    if account.server /= shared.accounts.browsingHost then
+pushNotificationsMenuItem : Shared.Model -> RellmAccount -> Html Shared.Msg
+pushNotificationsMenuItem shared account =
+    if not (AccountsPanel.canUsePushNotifications shared.accounts account) then
         text ""
 
     else
-        case RellmServers.rellmServerWebPushPublicKey shared.accounts.servers account.server of
-            Nothing ->
-                text ""
-
-            Just _ ->
-                let
-                    id : String
-                    id =
-                        RellmAccounts.rellmAccountId account
-
-                    enabled : Bool
-                    enabled =
-                        Dict.member id shared.accounts.pushSubscriptions
-
-                    error : Maybe String
-                    error =
-                        Dict.get id shared.accounts.notificationErrors
-                in
-                button
-                    [ classList [ ( "notifications-btn", True ), ( "notifications-btn-enabled", enabled ), ( "notifications-btn-errored", error /= Nothing ) ]
-                    , disabled account.needsPassword
-                    , title
-                        (case error of
-                            Just reason ->
-                                reason
-
-                            Nothing ->
-                                if enabled then
-                                    "Disable browser notifications for this account"
+        let
+            enabled : Bool
+            enabled =
+                Dict.member (RellmAccounts.rellmAccountId account) shared.accounts.pushSubscriptions
+        in
+        div [ class "account-avatar-menu-push-notifications" ]
+            [ div [ class "account-avatar-menu-push-notifications-text" ]
+                [ div [ class "account-avatar-menu-contact-methods-header-top" ]
+                    [ span [ class "account-avatar-menu-item-label" ] [ text "Push Notifications" ]
+                    ]
+                , span [ class "account-avatar-menu-item-detail" ]
+                    [ text
+                        (BrowserInfo.name shared.browser
+                            ++ " notifications are "
+                            ++ (if enabled then
+                                    "enabled"
 
                                 else
-                                    "Enable browser notifications for this account"
-                        )
-                    , stopPropagationAndPreventDefaultOnClick
-                        (Shared.AccountsPanelMsg
-                            (if enabled then
-                                AccountsPanel.DisableNotificationsClicked account
-
-                             else
-                                AccountsPanel.EnableNotificationsClicked account
-                            )
+                                    "disabled"
+                               )
                         )
                     ]
-                    [ text
-                        (if enabled then
-                            "🔔"
+                , pushNotificationError shared account
+                ]
+            , switchInput enabled
+                account.needsPassword
+                (Shared.AccountsPanelMsg
+                    (if enabled then
+                        AccountsPanel.DisableNotificationsClicked account
 
-                         else if error /= Nothing then
-                            "⚠️"
-
-                         else
-                            "🔕"
-                        )
-                    ]
+                     else
+                        AccountsPanel.EnableNotificationsClicked account
+                    )
+                )
+            ]
 
 
-{-| The actual text of `notificationsButton`'s last failure, if any (see `AccountsPanel.notificationErrors`) --
-shown in-flow in `accountRowAlerts`, `account`'s row's second line (alongside the
-`account-needs-password` badge), rather than as a tooltip or a floating bubble anchored to the
-button itself: the button lives inside `.nav-panel`, which sets its own `overflow-y: auto` (and,
-per the CSS spec, therefore also computes `overflow-x` to `auto`), so anything positioned to poke
-outside the button just gets silently clipped instead of actually being readable.
+{-| The actual text of the last push-notification failure, if any (see
+`AccountsPanel.notificationErrors`) -- shown in-flow in `pushNotificationsMenuItem` rather than as a
+tooltip or a floating bubble: `.nav-panel` sets its own `overflow-y: auto` (and, per the CSS spec,
+therefore also computes `overflow-x` to `auto`), so anything positioned to poke outside its anchor
+just gets silently clipped instead of actually being readable.
 -}
-notificationError : Shared.Model -> RellmAccount -> Html msg
-notificationError shared account =
+pushNotificationError : Shared.Model -> RellmAccount -> Html msg
+pushNotificationError shared account =
     case Dict.get (RellmAccounts.rellmAccountId account) shared.accounts.notificationErrors of
         Just reason ->
             div [ class "account-notification-error" ] [ text reason ]

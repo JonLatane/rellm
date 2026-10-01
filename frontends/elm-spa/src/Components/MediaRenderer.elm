@@ -1,4 +1,4 @@
-module Components.MediaRenderer exposing (MediaSize(..), Model, Msg(..), SizeConstraint(..), contentTypeOf, init, update, view, viewAutoplay)
+module Components.MediaRenderer exposing (MediaSize(..), Model, Msg(..), ResolutionTier(..), SizeConstraint(..), contentTypeOf, init, update, view, viewAutoplay, viewWithResolution)
 
 {-| Renders a single `Proto.Rellm.MediaReference` -- an image, a video, or
 (for anything else, e.g. a PDF) a browser-native `<object>` embed with a
@@ -51,6 +51,11 @@ own doc for how `preloadVideo` gets decided (`True` only for the first media ite
 Post/Event). `preloadVideo = True` (or no thumbnail available yet, e.g. not `processed`) skips all
 of this and renders a live `<video>` immediately, same as before this existed.
 
+Audio works the same way with `AUDIO_PREVIEW_THUMBNAIL_*` (square `image/png` waveforms, which
+the CSS squashes vertically -- see `.media-renderer-audio-preview-image` in `media.css`), except the
+waveform stays on screen once play is clicked, with a live (autoplaying) `<audio controls>` strip
+beneath it, since there's no frame to "replace" the way a playing video replaces its poster.
+
 `Model`/`Msg`/`update` are deliberately just a thin `Set String` of "clicked to play" media ids --
 a single instance lives in `Shared.Model` (`Shared.Msg.MediaRendererMsg`, mirroring
 `Shared.StarredPanel`/`Shared.MediaViewerPanel`'s own single-shared-instance panels), so every
@@ -60,7 +65,7 @@ rendered.
 
 -}
 
-import Html exposing (Html, a, button, div, img, object, text, video)
+import Html exposing (Html, a, audio, button, div, img, object, text, video)
 import Html.Attributes exposing (alt, attribute, class, controls, href, property, src, style, target, type_)
 import Html.Events exposing (onClick)
 import Json.Encode as Encode
@@ -151,7 +156,18 @@ type SizeConstraint
 
 view : MediaSize -> SizeConstraint -> RellmServer -> Maybe RellmAccount -> Bool -> Model -> (String -> msg) -> (String -> msg) -> MediaReference -> Html msg
 view =
-    viewHelper False
+    viewHelper False Nothing
+
+
+{-| Same as `view`, except the stored rendition actually fetched (image/video `?size=`, or a video's
+`VIDEO_PREVIEW_THUMBNAIL_*` poster) is `tier`'s, independent of `MediaSize`'s own CSS sizing -- for
+callers (e.g. `Shared.MyMediaPanel`'s continuously zoomable grid) whose rendered size doesn't line
+up with one of `MediaSize`'s three fixed steps, so they'd rather not download a bigger copy than
+they're displaying.
+-}
+viewWithResolution : ResolutionTier -> MediaSize -> SizeConstraint -> RellmServer -> Maybe RellmAccount -> Bool -> Model -> (String -> msg) -> (String -> msg) -> MediaReference -> Html msg
+viewWithResolution tier =
+    viewHelper False (Just tier)
 
 
 {-| Same as `view`, except a video renders with `autoplay`/`muted`/`playsinline`
@@ -174,15 +190,15 @@ and needs setting via `property` rather than `attribute` regardless -- see
 -}
 viewAutoplay : MediaSize -> SizeConstraint -> RellmServer -> Maybe RellmAccount -> Bool -> Model -> (String -> msg) -> (String -> msg) -> MediaReference -> Html msg
 viewAutoplay =
-    viewHelper True
+    viewHelper True Nothing
 
 
-viewHelper : Bool -> MediaSize -> SizeConstraint -> RellmServer -> Maybe RellmAccount -> Bool -> Model -> (String -> msg) -> (String -> msg) -> MediaReference -> Html msg
-viewHelper forceAutoplay mediaSize sizeConstraint server maybeAccount preloadVideo playState onPlayClicked onImageClicked media =
+viewHelper : Bool -> Maybe ResolutionTier -> MediaSize -> SizeConstraint -> RellmServer -> Maybe RellmAccount -> Bool -> Model -> (String -> msg) -> (String -> msg) -> MediaReference -> Html msg
+viewHelper forceAutoplay tierOverride mediaSize sizeConstraint server maybeAccount preloadVideo playState onPlayClicked onImageClicked media =
     let
         mediaUrl : String
         mediaUrl =
-            url mediaSize server maybeAccount media
+            url (imageTier tierOverride mediaSize) server maybeAccount media
 
         sizeClass : String
         sizeClass =
@@ -209,7 +225,11 @@ viewHelper forceAutoplay mediaSize sizeConstraint server maybeAccount preloadVid
                 -- tiers together, or none at all).
                 hasPreviewThumbnail : Bool
                 hasPreviewThumbnail =
-                    media.sizes |> List.any (\size -> size.conversion == previewThumbnailConversion mediaSize)
+                    media.sizes |> List.any (\size -> size.conversion == previewThumbnailConversion thumbTier)
+
+                thumbTier : ResolutionTier
+                thumbTier =
+                    thumbnailTier tierOverride mediaSize
 
                 clickedToPlay : Bool
                 clickedToPlay =
@@ -264,7 +284,7 @@ viewHelper forceAutoplay mediaSize sizeConstraint server maybeAccount preloadVid
                     [ img
                         (List.filterMap identity
                             [ Just (class ("media-renderer-image media-renderer-video-preview-image " ++ sizeClass))
-                            , Just (src (thumbnailUrl mediaSize server maybeAccount media))
+                            , Just (src (thumbnailUrl "video" thumbTier server maybeAccount media))
                             , Just (alt (Maybe.withDefault "" media.name))
                             , Just (onClick (onPlayClicked media.id))
                             , Just (attribute "loading" "lazy")
@@ -279,6 +299,93 @@ viewHelper forceAutoplay mediaSize sizeConstraint server maybeAccount preloadVid
                         ]
                         [ text "▶" ]
                     ]
+
+        "audio" ->
+            let
+                thumbTier : ResolutionTier
+                thumbTier =
+                    thumbnailTier tierOverride mediaSize
+
+                hasWaveform : Bool
+                hasWaveform =
+                    media.sizes |> List.any (\size -> size.conversion == audioPreviewThumbnailConversion thumbTier)
+
+                clickedToPlay : Bool
+                clickedToPlay =
+                    isPlaying media.id playState
+
+                -- Mirrors the video branch: a live `<audio>` only mounts (preloading, autoplaying)
+                -- when asked for up front, when there's no waveform to show instead, or once the
+                -- user taps play -- but the waveform itself stays put either way.
+                showAsAudio : Bool
+                showAsAudio =
+                    preloadVideo || not hasWaveform || clickedToPlay
+
+                waveform : List (Html msg)
+                waveform =
+                    if hasWaveform then
+                        [ img
+                            [ class ("media-renderer-audio-preview-image " ++ sizeClass)
+                            , src (thumbnailUrl "audio" thumbTier server maybeAccount media)
+                            , alt (Maybe.withDefault "" media.name)
+                            , onClick (onPlayClicked media.id)
+                            , attribute "loading" "lazy"
+                            ]
+                            []
+                        ]
+
+                    else
+                        []
+
+                playButton : List (Html msg)
+                playButton =
+                    if showAsAudio then
+                        []
+
+                    else
+                        [ button
+                            [ class "media-renderer-play-button"
+                            , onClick (onPlayClicked media.id)
+                            , attribute "aria-label" "Play audio"
+                            ]
+                            [ text "▶" ]
+                        ]
+
+                player : List (Html msg)
+                player =
+                    if showAsAudio then
+                        let
+                            autoplay : Bool
+                            autoplay =
+                                forceAutoplay || (not preloadVideo && clickedToPlay)
+                        in
+                        [ audio
+                            ([ class ("media-renderer-audio " ++ sizeClass)
+                             , controls True
+                             , attribute "preload"
+                                (if autoplay then
+                                    "auto"
+
+                                 else
+                                    "metadata"
+                                )
+                             , src mediaUrl
+                             ]
+                                ++ (if autoplay then
+                                        [ Html.Attributes.autoplay True ]
+
+                                    else
+                                        []
+                                   )
+                            )
+                            [ text "Your browser doesn't support embedded audio." ]
+                        ]
+
+                    else
+                        []
+            in
+            div [ class "media-renderer-audio-preview" ]
+                (waveform ++ playButton ++ player)
 
         _ ->
             object [ class ("media-renderer-object " ++ sizeClass), attribute "data" mediaUrl, type_ (contentTypeOf media) ]
@@ -369,25 +476,26 @@ sizing requests the server's larger rendition (`?size=large`) since it's used
 for a post's single "focus" media item, rather than the server's default
 size.
 -}
-url : MediaSize -> RellmServer -> Maybe RellmAccount -> MediaReference -> String
-url mediaSize server maybeAccount media =
+url : ResolutionTier -> RellmServer -> Maybe RellmAccount -> MediaReference -> String
+url tier server maybeAccount media =
     let
         sizeParam : List String
         sizeParam =
-            case mediaSize of
-                Natural ->
+            case tier of
+                TierSmall ->
+                    [ "size=small" ]
+
+                TierMedium ->
+                    []
+
+                TierLarge ->
                     [ "size=large" ]
-
-                Small ->
-                    []
-
-                ExtraSmall ->
-                    []
     in
     authorizedUrl sizeParam server maybeAccount media
 
 
-{-| Authorized URL for `media`'s `VIDEO_PREVIEW_THUMBNAIL_*` poster frame matching `mediaSize` --
+{-| Authorized URL for `media`'s `VIDEO_PREVIEW_THUMBNAIL_*` poster frame (`kind` = `"video"`) or
+`AUDIO_PREVIEW_THUMBNAIL_*` waveform (`kind` = `"audio"`) matching `mediaSize` --
 the `view mediaSize` a caller would otherwise get, but a still `image/jpeg` instead of the video
 itself (see `MediaConversion`'s own doc, and `backend/src/web/media.rs`'s `resolve_media_size` for
 the `video_preview_small`/`_medium`/`_large` query values this requests). Only ever called once
@@ -396,20 +504,24 @@ size actually exists on `media` -- unlike `url`'s ordinary sizes, there's no sen
 fallback tier to request blindly, since an unrecognized `size` value resolves server-side to
 `MEDIA_CONVERSION_MEDIUM`, which for a video is a differently-_sized video_, not a poster image.
 -}
-thumbnailUrl : MediaSize -> RellmServer -> Maybe RellmAccount -> MediaReference -> String
-thumbnailUrl mediaSize server maybeAccount media =
+thumbnailUrl : String -> ResolutionTier -> RellmServer -> Maybe RellmAccount -> MediaReference -> String
+thumbnailUrl kind tier server maybeAccount media =
     let
+        tierName : String
+        tierName =
+            case tier of
+                TierSmall ->
+                    "small"
+
+                TierMedium ->
+                    "medium"
+
+                TierLarge ->
+                    "large"
+
         sizeParam : List String
         sizeParam =
-            case mediaSize of
-                Natural ->
-                    [ "size=video_preview_large" ]
-
-                Small ->
-                    [ "size=video_preview_medium" ]
-
-                ExtraSmall ->
-                    [ "size=video_preview_small" ]
+            [ "size=" ++ kind ++ "_preview_" ++ tierName ]
     in
     authorizedUrl sizeParam server maybeAccount media
 
@@ -450,17 +562,75 @@ authorizedUrl sizeParam server maybeAccount media =
                     base ++ "?" ++ String.join "&" params
 
 
-{-| The `VIDEO_PREVIEW_THUMBNAIL_*` conversion matching `mediaSize`'s own tier -- `Natural`'s
-`large`/`Small`'s `medium`/`ExtraSmall`'s `small`, same tiers `url`/`mediaSizeClass` already use.
+{-| The `VIDEO_PREVIEW_THUMBNAIL_*` conversion matching `tier`.
 -}
-previewThumbnailConversion : MediaSize -> MediaConversion
-previewThumbnailConversion mediaSize =
-    case mediaSize of
-        Natural ->
+previewThumbnailConversion : ResolutionTier -> MediaConversion
+previewThumbnailConversion tier =
+    case tier of
+        TierLarge ->
             VIDEOPREVIEWTHUMBNAILLARGE
 
-        Small ->
+        TierMedium ->
             VIDEOPREVIEWTHUMBNAILMEDIUM
 
-        ExtraSmall ->
+        TierSmall ->
             VIDEOPREVIEWTHUMBNAILSMALL
+
+
+{-| The `AUDIO_PREVIEW_THUMBNAIL_*` conversion matching `tier`.
+-}
+audioPreviewThumbnailConversion : ResolutionTier -> MediaConversion
+audioPreviewThumbnailConversion tier =
+    case tier of
+        TierLarge ->
+            AUDIOPREVIEWTHUMBNAILLARGE
+
+        TierMedium ->
+            AUDIOPREVIEWTHUMBNAILMEDIUM
+
+        TierSmall ->
+            AUDIOPREVIEWTHUMBNAILSMALL
+
+
+{-| Which stored rendition to fetch -- `MEDIA_CONVERSION_SMALL`/`MEDIUM`/`LARGE` (320/800/1600 px) and
+their `VIDEO_PREVIEW_THUMBNAIL_*`/`AUDIO_PREVIEW_THUMBNAIL_*` counterparts. Normally implied by `MediaSize` (see
+`imageTier`/`thumbnailTier`); `viewWithResolution` overrides it.
+-}
+type ResolutionTier
+    = TierSmall
+    | TierMedium
+    | TierLarge
+
+
+{-| Tier for the image/video file itself: `Natural` requests `large`, everything else the server's
+default (`medium`) -- unchanged from before `ResolutionTier` existed.
+-}
+imageTier : Maybe ResolutionTier -> MediaSize -> ResolutionTier
+imageTier tierOverride mediaSize =
+    case ( tierOverride, mediaSize ) of
+        ( Just tier, _ ) ->
+            tier
+
+        ( Nothing, Natural ) ->
+            TierLarge
+
+        ( Nothing, _ ) ->
+            TierMedium
+
+
+{-| Tier for a video's poster: `Natural`'s `large`/`Small`'s `medium`/`ExtraSmall`'s `small`.
+-}
+thumbnailTier : Maybe ResolutionTier -> MediaSize -> ResolutionTier
+thumbnailTier tierOverride mediaSize =
+    case ( tierOverride, mediaSize ) of
+        ( Just tier, _ ) ->
+            tier
+
+        ( Nothing, Natural ) ->
+            TierLarge
+
+        ( Nothing, Small ) ->
+            TierMedium
+
+        ( Nothing, ExtraSmall ) ->
+            TierSmall

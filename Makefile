@@ -14,6 +14,24 @@ run_tamagui:
 run_flutter:
 	$(MAKE) -C frontends/flutter run
 
+stop_backend:
+	$(MAKE) -C backend local_instances_stop
+stop_elm:
+	$(MAKE) -C frontends/elm-spa stop_background_servers
+# Next.js dev server (`yarn web`) listens on port 3000 by default.
+stop_tamagui:
+	-lsof -ti:3000 | xargs kill
+# `fvm flutter run` has no fixed port; kill the flutter tool process itself.
+stop_flutter:
+	-pkill -f 'flutter_tools.*run'
+
+# Tries every dev server; `-` ignores failures from ones that aren't running.
+stop_dev_servers:
+	-$(MAKE) stop_backend
+	-$(MAKE) stop_elm
+	-$(MAKE) stop_tamagui
+	-$(MAKE) stop_flutter
+
 # Backend on the left, Elm on the right, in one tmux session -- `mouse on` lets you click a pane to
 # focus it (or drag its border to resize, or click the status bar to switch windows) instead of
 # needing tmux's own keybindings. Pane titles (shown via `pane-border-status`) label which is which.
@@ -37,6 +55,10 @@ run_tmux:
 		send-keys 'make run_elm' C-m \; \
 		select-pane -L \; \
 		attach-session
+
+fresh_run_tmux:
+	$(MAKE) stop_dev_servers
+	$(MAKE) run_tmux
 
 build_backend:
 	$(MAKE) -C backend build
