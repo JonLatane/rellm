@@ -30,6 +30,7 @@ module Shared.AccountsPanel.RellmServers exposing
     , rellmServerWebPushPublicKey
     , resolveHost
     , resolvedFrontendHost
+    , sharesPushKeyWithAnchor
     , updateRellmServerConfiguration
     , upsertRellmServer
     , upsertRellmServerAppend
@@ -614,8 +615,8 @@ rellmServerForHost servers frontendHost =
 {-| The VAPID public key `frontendHost`'s server would want a `RegisterPushSubscription` call
 signed with -- `Nothing` if the server isn't connected, or is connected but has no `WebPushConfig`
 (the admin hasn't set one up), either of which means there's nothing to actually push
-notifications with. `UI.accountRow` only shows its "Enable notifications" button when this is
-`Just _`.
+notifications with. `UI.pushNotificationsMenuItem` only shows its toggle when this is `Just _` (and, via
+`sharesPushKeyWithAnchor`, matches the app's own server's key).
 -}
 rellmServerWebPushPublicKey : List RellmServer -> String -> Maybe String
 rellmServerWebPushPublicKey servers frontendHost =
@@ -623,6 +624,31 @@ rellmServerWebPushPublicKey servers frontendHost =
         |> Maybe.andThen .connected
         |> Maybe.andThen (\connected -> connected.configuration.webPushConfig)
         |> Maybe.map .publicVapidKey
+
+
+{-| Whether `frontendHost`'s server can ride the same browser Web Push subscription as the app's
+own server -- i.e. both advertise the same `WebPushConfig.publicVapidKey`. A browser holds one push
+subscription per service worker, bound to one VAPID public key, but the subscription itself is just
+an endpoint any server holding the matching private key can push to -- so an admin who pastes the
+same keypair into several instances lets one subscription be registered with all of them.
+
+`anchorHosts` are the hosts the service worker could be scoped to, tried in order until one has a
+connected server with a key (`Shared.AccountsPanel.canUsePushNotifications` passes `browsingHost`
+then `mainFrontendHost`, since the latter replaces the former when browsing via a CDN host). `False`
+if no anchor has a key at all, or `frontendHost`'s server is unknown/disconnected/has no key.
+-}
+sharesPushKeyWithAnchor : List RellmServer -> List String -> String -> Bool
+sharesPushKeyWithAnchor servers anchorHosts frontendHost =
+    case
+        ( anchorHosts |> List.filterMap (rellmServerWebPushPublicKey servers) |> List.head
+        , rellmServerWebPushPublicKey servers frontendHost
+        )
+    of
+        ( Just anchorKey, Just key ) ->
+            anchorKey == key
+
+        _ ->
+            False
 
 
 {-| `rellmServerForHost`, but only if that entry is both known _and_ actually

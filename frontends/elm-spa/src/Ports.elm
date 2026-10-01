@@ -26,6 +26,7 @@ port module Ports exposing
     , persistThemePreference
     , persistUserPreferences
     , pushMessageReceived
+    , pushNotificationClicked
     , pushSubscribed
     , pushSubscriptionChangeReceived
     , pushSubscriptionChecked
@@ -462,3 +463,13 @@ that same module, so this refreshes whichever of them is currently mounted (poss
 without either needing its own separate wiring.
 -}
 port pushMessageReceived : (Encode.Value -> msg) -> Sub msg
+
+
+{-| Fires when a push notification is clicked and `service-worker.js` can't just navigate the open
+tab itself -- i.e. the notification's `url` is on a different origin than this tab (a server other
+than the one this PWA was loaded from, sharing its VAPID key; see
+`AccountsPanel.canUsePushNotifications`), where `WindowClient.navigate()` isn't allowed. The `String`
+is the notification's full absolute URL; `Shared.PushNotificationLink.toInAppPath` turns it into a
+path this app can route to itself.
+-}
+port pushNotificationClicked : (Encode.Value -> msg) -> Sub msg

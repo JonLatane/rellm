@@ -749,6 +749,10 @@
       navigator.serviceWorker.addEventListener("message", function (event) {
         if (event.data && event.data.type === "push-received") {
           app.ports.pushMessageReceived.send(event.data.host || null);
+        } else if (event.data && event.data.type === "notification-clicked" && event.data.url) {
+          // See service-worker.js's `notificationclick`: a push for a different server than this
+          // tab's own (cross-origin, so the worker couldn't navigate to it itself).
+          app.ports.pushNotificationClicked.send(event.data.url);
         }
       });
     }

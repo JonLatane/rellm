@@ -28,6 +28,7 @@ module Shared.AccountsPanel exposing
     , grpcErrorToString
     , hasAdminAccount
     , init
+    , canUsePushNotifications
     , isFocusedAccount
     , isKnownServer
     , isMainServer
@@ -278,19 +279,18 @@ type alias Model =
     -- this browser -- the value is the subscription's `endpoint`, so `DisableNotificationsClicked`
     -- can pass it back to both `Ports.unsubscribeFromPush` and `UnregisterPushSubscription`. The
     -- Push API allows only *one* active subscription per browser origin, tied to one VAPID key --
-    -- but `UI.pushNotificationsMenuItem` is only ever shown for an account on `browsingHost`, so every
-    -- account that can appear here shares that same one server, and so that same one key/endpoint:
-    -- several entries can (and normally will, once more than one local account on `browsingHost`
-    -- has notifications on) legitimately share the exact same `endpoint` value at once, all riding
-    -- the browser's one real subscription together. `DisableNotificationsClicked` only actually
-    -- tears that subscription down (`Ports.unsubscribeFromPush`) once no other entry here still
-    -- points at the same `endpoint` -- see its own `lastAccountOnThisEndpoint`. Not persisted
-    -- across page loads -- `Ports.checkPushSubscription` (fired at `init`) tells us the browser's
-    -- current `endpoint`, but not *which* local accounts on that server are actually registered
-    -- for it (a browser subscription carries no notion of "account") -- so
+    -- but every account `canUsePushNotifications` shares that same key (it's gated on the account's
+    -- server advertising the same `publicVapidKey` as the app's own server), so any number of
+    -- accounts, on one server or several, can legitimately share the exact same `endpoint` value at
+    -- once, all riding the browser's one real subscription together. `DisableNotificationsClicked`
+    -- only actually tears that subscription down (`Ports.unsubscribeFromPush`) once no other entry
+    -- here still points at the same `endpoint` -- see its own `lastAccountOnThisEndpoint`. Not
+    -- persisted across page loads -- `Ports.checkPushSubscription` (fired at `init`) tells us the
+    -- browser's current `endpoint`, but not *which* local accounts are actually registered for it
+    -- (a browser subscription carries no notion of "account") -- so
     -- `resolvePendingPushSubscriptionCheck` verifies each candidate individually via
     -- `GetPushSubscriptionStatus` (see `GotPushSubscriptionStatusResult`) before adding it here,
-    -- rather than assuming every local account on that server is registered.
+    -- rather than assuming every local account on a matching server is registered.
     , pushSubscriptions : Dict String String
 
     -- Last known reason "Enable notifications" (or the register/unregister RPC that follows it)
@@ -679,6 +679,19 @@ reorder (`Browser.Dom.getElement`) to drive its `UI.Flip` slide.
 accountRowDomId : String -> String
 accountRowDomId key =
     "account-row-" ++ escapeCSSClass key
+
+
+{-| Whether `account` may enable Web Push notifications from this browser: its server must advertise
+the same VAPID public key as the server this app is running from (`browsingHost`, or
+`mainFrontendHost` when that was corrected to a CDN's public host -- see
+`RellmServers.sharesPushKeyWithAnchor`). The browser's one push subscription is bound to that key,
+so any server sharing it can register the same subscription; one with a different key (or none)
+can't, since there's no second subscription to give it. `UI.pushNotificationsMenuItem` shows its
+toggle only for accounts this returns `True` for.
+-}
+canUsePushNotifications : Model -> RellmAccount -> Bool
+canUsePushNotifications model account =
+    RellmServers.sharesPushKeyWithAnchor model.servers [ model.browsingHost, model.mainFrontendHost ] account.server
 
 
 {-| Whether `account` is the one whose avatar popover menu is currently open (see

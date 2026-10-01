@@ -52,6 +52,14 @@ self.addEventListener('push', function (event) {
 // control back to the already-running Elm app's own router), falling back to just focusing it if
 // navigation isn't supported (e.g. `client.navigate` is missing in some Safari versions), or
 // opening a fresh tab there if no Rellm tab is open at all.
+function isSameOrigin(a, b) {
+  try {
+    return new URL(a, self.location.href).origin === new URL(b, self.location.href).origin;
+  } catch (e) {
+    return true;
+  }
+}
+
 self.addEventListener('notificationclick', function (event) {
   event.notification.close();
   var targetUrl = (event.notification.data && event.notification.data.url) || '/';
@@ -60,6 +68,15 @@ self.addEventListener('notificationclick', function (event) {
       for (var i = 0; i < windowClients.length; i++) {
         var client = windowClients[i];
         if (!('focus' in client)) { continue; }
+        // A notification for a *different* server than the one this tab is on (one browser push
+        // subscription can be shared by every server using the same VAPID key) -- `navigate()`
+        // can't cross origins, so hand the URL to the app (`index.html` forwards it to
+        // `Ports.pushNotificationClicked`, `Shared.PushNotificationLink` turns it into an in-app
+        // route) and just focus the tab.
+        if (!isSameOrigin(targetUrl, client.url)) {
+          client.postMessage({ type: 'notification-clicked', url: targetUrl });
+          return client.focus();
+        }
         if ('navigate' in client) {
           return client.navigate(targetUrl).then(
             function (navigatedClient) { return (navigatedClient || client).focus(); },

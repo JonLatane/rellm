@@ -50,6 +50,7 @@ import Shared.MarkdownPanel as MarkdownPanel
 import Shared.MediaGeneratorPanel as MediaGeneratorPanel
 import Shared.MediaViewerPanel as MediaViewerPanel
 import Shared.MessagingPanel as MessagingPanel
+import Shared.PushNotificationLink as PushNotificationLink
 import Shared.MyMediaPanel as MyMediaPanel
 import Shared.StarredPanel as StarredPanel
 import Shared.Time as SharedTime
@@ -247,6 +248,10 @@ type Msg
     | NavLinksScrolled { scrollLeft : Float, scrollWidth : Float, clientWidth : Float }
     | NavigateExternal String
     | WindowResized Int Int
+      -- `Ports.pushNotificationClicked`: a push notification for another server (cross-origin from
+      -- this tab, so `service-worker.js` couldn't navigate to it itself) was clicked -- the payload
+      -- is its absolute URL. See `Shared.PushNotificationLink`.
+    | PushNotificationClicked String
     | GotTimeZone String Time.Zone
     | GotNow Time.Posix
     | NoOp
@@ -569,6 +574,7 @@ subscriptions model =
     Sub.batch
         [ Ports.systemPrefersDarkChanged SystemPrefersDarkChanged
         , Browser.Events.onResize WindowResized
+        , Ports.pushNotificationClicked (Decode.decodeValue Decode.string >> Result.withDefault "" >> PushNotificationClicked)
         , Sub.map AccountsPanelMsg (AccountsPanel.subscriptions model.accounts)
         , Sub.map FederatedAuthMsg FederatedAuth.subscriptions
         , Sub.map StarredPanelMsg (StarredPanel.subscriptions model.panels.starredPanel)
@@ -2329,6 +2335,14 @@ sharedUpdate req msg model =
 
         NavigateExternal url ->
             ( model, Nav.load url )
+
+        PushNotificationClicked rawUrl ->
+            case PushNotificationLink.toInAppPath model.accounts.mainFrontendHost rawUrl of
+                Just path ->
+                    ( model, Nav.pushUrl req.key (model.basePath ++ path) )
+
+                Nothing ->
+                    ( model, Cmd.none )
 
         WindowResized width height ->
             ( { model | windowSize = { width = width, height = height } }, Cmd.none )

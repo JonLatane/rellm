@@ -2717,10 +2717,6 @@ accountRow shared count mainCount index account =
         key =
             AccountsPanel.combinedAccountItemKey (AccountsPanel.CombinedRellmAccount account)
 
-        branding : Branding
-        branding =
-            RellmServers.brandingFor shared.accounts.servers account.server
-
         reorderInfo :
             { moveAttrs : List (Html.Attribute Shared.Msg)
             , reorderPair : { backward : Html Shared.Msg, forward : Html Shared.Msg }
@@ -2742,6 +2738,10 @@ accountRow shared count mainCount index account =
                 ]
             , switchInput account.enabled account.needsPassword (Shared.AccountsPanelMsg (AccountsPanel.ToggleAccountEnabled accId))
             , let
+                branding : Branding
+                branding =
+                    RellmServers.brandingFor shared.accounts.servers account.server
+
                 avatarAndLabel : List (Html Shared.Msg)
                 avatarAndLabel =
                     [ accountAvatarToggle shared account
@@ -2929,30 +2929,26 @@ accountRowAlerts shared account =
         text ""
 
     else
+        let
+            -- "reauthentication" (not "password") when this account isn't on the
+            -- server we're actually browsing from -- clicking it still routes
+            -- through `PasswordNeededClicked`, but the wording makes clear it's
+            -- logging back into a different server, not this one.
+            needsPasswordLabel : String
+            needsPasswordLabel =
+                if account.server /= shared.accounts.browsingHost then
+                    "Reauthentication Required"
+
+                else
+                    "Password Required"
+        in
         div [ class "account-row-alerts" ]
-            [ if account.needsPassword then
-                let
-                    -- "reauthentication" (not "password") when this account isn't on the
-                    -- server we're actually browsing from -- clicking it still routes
-                    -- through `PasswordNeededClicked`, but the wording makes clear it's
-                    -- logging back into a different server, not this one.
-                    needsPasswordLabel : String
-                    needsPasswordLabel =
-                        if account.server /= shared.accounts.browsingHost then
-                            "Reauthentication Required"
-
-                        else
-                            "Password Required"
-                in
-                button
-                    [ type_ "button"
-                    , class "account-needs-password"
-                    , stopPropagationAndPreventDefaultOnClick (Shared.AccountsPanelMsg (AccountsPanel.ReauthenticateButtonClicked account))
-                    ]
-                    [ text needsPasswordLabel ]
-
-              else
-                text ""
+            [ button
+                [ type_ "button"
+                , class "account-needs-password"
+                , stopPropagationAndPreventDefaultOnClick (Shared.AccountsPanelMsg (AccountsPanel.ReauthenticateButtonClicked account))
+                ]
+                [ text needsPasswordLabel ]
             ]
 
 
@@ -2962,65 +2958,56 @@ failure from the last attempt (`pushNotificationError`), with a vertically-cente
 the right (same row layout as `contactMethodsMenuItem`'s header + Fullscreen button) firing
 `AccountsPanel.EnableNotificationsClicked`/`DisableNotificationsClicked`.
 
-Only rendered at all if `account.server` is both connected and has a `WebPushConfig`
-(`RellmServers.rellmServerWebPushPublicKey`), i.e. there's actually something to subscribe to.
-
-Also only rendered for an account whose `server` is `shared.accounts.browsingHost` -- the browser
-holds at most one Web Push subscription today (see `AccountsPanel.pushSubscriptions`'s own doc
-comment), tied to whichever single server's VAPID key it was created with, and that's always
-`browsingHost`'s (the one server this tab's service worker/subscription could ever meaningfully be
-scoped to). Offering the toggle for a federated-in account on some _other_ server would just
-silently fail or steal the slot from `browsingHost`'s own account the moment it's toggled -- there's
-no way to make it actually work without each server getting its own independently-scoped
-subscription (a real, not-yet-built feature).
+Only rendered for an account `AccountsPanel.canUsePushNotifications` accepts: its server must be
+connected and advertise the same `WebPushConfig.publicVapidKey` as the server this app runs from.
+The browser holds one Web Push subscription, bound to one VAPID key, and that subscription is just
+an endpoint any server holding the matching private key can push to -- so servers an admin has given
+the same keypair all share it (several accounts, possibly on several servers, riding one
+subscription -- see `AccountsPanel.pushSubscriptions`), while a server with a different key has no
+second subscription to use and gets no toggle.
 
 -}
 pushNotificationsMenuItem : Shared.Model -> RellmAccount -> Html Shared.Msg
 pushNotificationsMenuItem shared account =
-    if account.server /= shared.accounts.browsingHost then
+    if not (AccountsPanel.canUsePushNotifications shared.accounts account) then
         text ""
 
     else
-        case RellmServers.rellmServerWebPushPublicKey shared.accounts.servers account.server of
-            Nothing ->
-                text ""
+        let
+            enabled : Bool
+            enabled =
+                Dict.member (RellmAccounts.rellmAccountId account) shared.accounts.pushSubscriptions
+        in
+        div [ class "account-avatar-menu-push-notifications" ]
+            [ div [ class "account-avatar-menu-push-notifications-text" ]
+                [ div [ class "account-avatar-menu-contact-methods-header-top" ]
+                    [ span [ class "account-avatar-menu-item-label" ] [ text "Push Notifications" ]
+                    ]
+                , span [ class "account-avatar-menu-item-detail" ]
+                    [ text
+                        (BrowserInfo.name shared.browser
+                            ++ " notifications are "
+                            ++ (if enabled then
+                                    "enabled"
 
-            Just _ ->
-                let
-                    enabled : Bool
-                    enabled =
-                        Dict.member (RellmAccounts.rellmAccountId account) shared.accounts.pushSubscriptions
-                in
-                div [ class "account-avatar-menu-push-notifications" ]
-                    [ div [ class "account-avatar-menu-push-notifications-text" ]
-                        [ div [ class "account-avatar-menu-contact-methods-header-top" ]
-                            [ span [ class "account-avatar-menu-item-label" ] [ text "Push Notifications" ]
-                            ]
-                        , span [ class "account-avatar-menu-item-detail" ]
-                            [ text
-                                (BrowserInfo.name shared.browser
-                                    ++ " notifications are "
-                                    ++ (if enabled then
-                                            "enabled"
-
-                                        else
-                                            "disabled"
-                                       )
-                                )
-                            ]
-                        , pushNotificationError shared account
-                        ]
-                    , switchInput enabled
-                        account.needsPassword
-                        (Shared.AccountsPanelMsg
-                            (if enabled then
-                                AccountsPanel.DisableNotificationsClicked account
-
-                             else
-                                AccountsPanel.EnableNotificationsClicked account
-                            )
+                                else
+                                    "disabled"
+                               )
                         )
                     ]
+                , pushNotificationError shared account
+                ]
+            , switchInput enabled
+                account.needsPassword
+                (Shared.AccountsPanelMsg
+                    (if enabled then
+                        AccountsPanel.DisableNotificationsClicked account
+
+                     else
+                        AccountsPanel.EnableNotificationsClicked account
+                    )
+                )
+            ]
 
 
 {-| The actual text of the last push-notification failure, if any (see
