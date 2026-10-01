@@ -65,9 +65,10 @@ import Dict exposing (Dict)
 import Effect exposing (Effect)
 import Gen.Route
 import Grpc
-import Html exposing (Html, a, button, div, h1, h2, h3, option, p, select, span, text)
+import Html exposing (Html, a, button, div, h1, h2, h3, hr, option, p, select, span, text)
 import Html.Attributes exposing (attribute, class, disabled, href, id, placeholder, rel, selected, target, title, type_, value)
 import Html.Events exposing (onClick, onInput)
+import Html.Keyed
 import Json.Encode as Encode
 import Ports
 import Process
@@ -127,6 +128,11 @@ type alias Model =
     -- `pending`-vs-loaded split, independent until save succeeds), just over
     -- 3 possible fields instead of one, only one live at a time.
     , postFieldEdit : Maybe PostFieldEdit
+
+    -- Live only while the currently-viewed `Occasion`'s own title editor is
+    -- open (always `TitleField`) -- same shape as `postFieldEdit`, but
+    -- editing `occasion.post` rather than `event.post`.
+    , occasionTitleEdit : Maybe PostFieldEdit
 
     -- Live only while the moderation-status selector (see `moderationView`)
     -- is open -- mirrors `postFieldEdit` in shape.
@@ -201,6 +207,14 @@ type Msg
     | PostFieldCancelClicked
     | PostFieldSaveClicked Post
     | GotPostFieldSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, Post ))
+      -- The currently-viewed `Occasion`'s own title editor -- mirrors the
+      -- `PostField*` Msgs above, but for `occasion.post` (see
+      -- `occasionTitleView`).
+    | OccasionTitleEditClicked Post
+    | OccasionTitleChanged String
+    | OccasionTitleCancelClicked
+    | OccasionTitleSaveClicked Post
+    | GotOccasionTitleSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, Post ))
       -- The Event's own `Post`'s "Edit Content" button (see
       -- `contentDisplayView`) -- opens the shared Markdown editor panel,
       -- mirroring `Components.Pages.PostPage.EditClicked` exactly (down to reusing
@@ -289,6 +303,9 @@ type Msg
       -- through `Ports.scrollElementLeft` -- `Err` (the chip/strip not
       -- found, e.g. an `Event` with only one occasion) is a pure no-op.
     | GotScrollTarget (Result Dom.Error Float)
+      -- Same, for the scope-button group (see `scrollToCurrentScopeButton`),
+      -- so e.g. a selected "N total dates" is visible on load.
+    | GotScopeScrollTarget (Result Dom.Error Float)
       -- `Main.elm`'s own soft "same page, different `Occasion`" URL-change
       -- handling delivers this instead of a full `init` when the user
       -- clicks a sibling `Occasion`'s date-picker chip (see
@@ -497,6 +514,7 @@ init shared pageIsSecure rawPostId navKey =
                 , mediaEditActive = False
                 , mediaGeneratorActive = False
                 , postFieldEdit = Nothing
+                , occasionTitleEdit = Nothing
                 , moderationEdit = Nothing
                 , visibilityEdit = Nothing
                 , occasionTimeEdit = Nothing
@@ -568,7 +586,10 @@ update shared msg model =
                 scrollEffect =
                     case newStatus of
                         EventLoaded _ _ ->
-                            scrollToOccasion 300 model.occasionId |> Effect.fromCmd
+                            Effect.batch
+                                [ scrollToOccasion 300 model.occasionId |> Effect.fromCmd
+                                , scrollToCurrentScopeButton 300 |> Effect.fromCmd
+                                ]
 
                         _ ->
                             Effect.none
@@ -718,6 +739,51 @@ update shared msg model =
             ( { model
                 | postFieldEdit =
                     model.postFieldEdit |> Maybe.map (\edit -> { edit | status = SubmitFailed (AccountsPanel.grpcErrorToString err) })
+              }
+            , Effect.none
+            )
+
+        OccasionTitleEditClicked post ->
+            ( { model | occasionTitleEdit = Just { field = TitleField, pending = Maybe.withDefault "" post.title, status = Idle } }
+            , Effect.none
+            )
+
+        OccasionTitleChanged text ->
+            ( { model | occasionTitleEdit = model.occasionTitleEdit |> Maybe.map (\edit -> { edit | pending = text }) }, Effect.none )
+
+        OccasionTitleCancelClicked ->
+            ( { model | occasionTitleEdit = Nothing }, Effect.none )
+
+        OccasionTitleSaveClicked post ->
+            case ( model.occasionTitleEdit, serverAndAccount shared model ) of
+                ( Just edit, Just ( server, account ) ) ->
+                    ( { model | occasionTitleEdit = Just { edit | status = Submitting } }
+                    , Posts.updatePost
+                        shared.accounts
+                        ( Just account.userId, server.frontendHost )
+                        post.id
+                        (\freshPost -> { freshPost | title = nonBlank edit.pending })
+                        |> Task.attempt GotOccasionTitleSaveResult
+                        |> Effect.fromCmd
+                    )
+
+                _ ->
+                    ( model, Effect.none )
+
+        GotOccasionTitleSaveResult (Ok ( maybeAccountsPanelMsg, updatedPost )) ->
+            let
+                updatedModel : Model
+                updatedModel =
+                    applyUpdatedOccasionPost model updatedPost
+            in
+            ( { updatedModel | occasionTitleEdit = Nothing }
+            , accountsPanelEffect maybeAccountsPanelMsg
+            )
+
+        GotOccasionTitleSaveResult (Err err) ->
+            ( { model
+                | occasionTitleEdit =
+                    model.occasionTitleEdit |> Maybe.map (\edit -> { edit | status = SubmitFailed (AccountsPanel.grpcErrorToString err) })
               }
             , Effect.none
             )
@@ -1125,7 +1191,12 @@ update shared msg model =
                 )
 
         OccasionLayoutChanged layout ->
-            ( { model | occasionLayout = layout }, Effect.none )
+            -- FLIP: the port records every chip's current position before the re-render, then
+            -- slides each from there once the container's layout class changes.
+            ( { model | occasionLayout = layout }
+            , Ports.flipChildren (Encode.object [ ( "id", Encode.string occasionStripDomId ) ])
+                |> Effect.fromCmd
+            )
 
         AnimateItemFlip animMsg ->
             let
@@ -1157,6 +1228,20 @@ update shared msg model =
             )
 
         GotScrollTarget (Err _) ->
+            ( model, Effect.none )
+
+        GotScopeScrollTarget (Ok target) ->
+            ( model
+            , Ports.scrollElementLeft
+                (Encode.object
+                    [ ( "id", Encode.string scopeButtonsDomId )
+                    , ( "left", Encode.float (max 0 target) )
+                    ]
+                )
+                |> Effect.fromCmd
+            )
+
+        GotScopeScrollTarget (Err _) ->
             ( model, Effect.none )
 
         OccasionUrlChanged rawPostId ->
@@ -1192,6 +1277,7 @@ update shared msg model =
                                 , mediaEditActive = False
                                 , mediaGeneratorActive = False
                                 , postFieldEdit = Nothing
+                                , occasionTitleEdit = Nothing
                                 , moderationEdit = Nothing
                                 , visibilityEdit = Nothing
                                 , occasionTimeEdit = Nothing
@@ -1221,6 +1307,7 @@ update shared msg model =
                             , mediaEditActive = False
                             , mediaGeneratorActive = False
                             , postFieldEdit = Nothing
+                            , occasionTitleEdit = Nothing
                             , moderationEdit = Nothing
                             , visibilityEdit = Nothing
                             , occasionTimeEdit = Nothing
@@ -1501,6 +1588,30 @@ applyUpdatedEventPost model updatedPost =
             model
 
 
+{-| Applies a just-saved `updatedPost` to whichever of the loaded `Event`'s
+`Occasion`s it belongs to (matched by `Post` id), including the
+currently-viewed one -- the `occasion.post` counterpart of
+`applyUpdatedEventPost`.
+-}
+applyUpdatedOccasionPost : Model -> Post -> Model
+applyUpdatedOccasionPost model updatedPost =
+    case model.eventStatus of
+        EventLoaded event occasion ->
+            let
+                patch : Occasion -> Occasion
+                patch o =
+                    if (o.post |> Maybe.map .id) == Just updatedPost.id then
+                        { o | post = Just updatedPost }
+
+                    else
+                        o
+            in
+            { model | eventStatus = EventLoaded { event | occasions = List.map patch event.occasions } (patch occasion) }
+
+        _ ->
+            model
+
+
 {-| Applies a just-saved `updatedEvent` (`UpdateOccasions`'/
 `CreateNewOccasions`' own return value -- both hand back the `Event`'s
 full current state, not just the touched occasion(s)) as this page's new
@@ -1588,7 +1699,7 @@ more noticeable the further out it compounds).
 availableFrequencies : Int -> List SharedTime.RecurrenceUnit
 availableFrequencies count =
     if count < 12 then
-        [ SharedTime.Daily, SharedTime.Weekly, SharedTime.Monthly ]
+        [ SharedTime.Daily, SharedTime.Weekly, SharedTime.Monthly, SharedTime.MonthlyNthWeekday ]
 
     else
         [ SharedTime.Daily, SharedTime.Weekly ]
@@ -1611,6 +1722,10 @@ frequencyLabel count unit =
 
         ( True, SharedTime.Monthly ) ->
             "Next Month"
+
+        -- Both overridden with the occasion's actual "2nd Tuesday" by `addMoreMenuContentView`.
+        ( _, SharedTime.MonthlyNthWeekday ) ->
+            "Nth Weekday"
 
         ( False, SharedTime.Daily ) ->
             "Daily"
@@ -1853,6 +1968,40 @@ callback is a plain (non-rAF-wrapped) JS callback, and doesn't have the
 problem.
 
 -}
+scrollToCurrentScopeButton : Float -> Cmd Msg
+scrollToCurrentScopeButton delayMs =
+    Process.sleep delayMs
+        |> Task.andThen
+            (\_ ->
+                Task.map3 (\button group viewport -> ( button, group, viewport ))
+                    (Dom.getElement currentScopeButtonDomId)
+                    (Dom.getElement scopeButtonsDomId)
+                    (Dom.getViewportOf scopeButtonsDomId)
+            )
+        |> Task.map
+            (\( button, group, viewport ) ->
+                viewport.viewport.x
+                    + (button.element.x - group.element.x)
+                    - (viewport.viewport.width / 2)
+                    + (button.element.width / 2)
+            )
+        |> Task.attempt GotScopeScrollTarget
+
+
+{-| DOM id of the horizontally scrolling group of scope buttons in `occasionHistoryView`.
+-}
+scopeButtonsDomId : String
+scopeButtonsDomId =
+    "event-occasion-history-scope-buttons"
+
+
+{-| DOM id of whichever scope button is currently selected.
+-}
+currentScopeButtonDomId : String
+currentScopeButtonDomId =
+    "event-occasion-history-current-button"
+
+
 scrollToOccasion : Float -> String -> Cmd Msg
 scrollToOccasion delayMs occasionId =
     Process.sleep delayMs
@@ -1960,6 +2109,21 @@ eventDetailView shared model event occasion =
                     -- (`Event`) post section below -- the currently-viewed
                     -- `Occasion`'s own start/end/location, then (below that) the
                     -- date-picker strip to switch to a sibling one.
+                    -- With more than one `Occasion`, "+ Add More" lives in the
+                    -- date strip's own button row (see `occasionHistoryView`);
+                    -- otherwise there's no strip, so it sits beside the time/location.
+                    occasionEditableHere : Bool
+                    occasionEditableHere =
+                        occasionEditable occasion
+
+                    hasMultipleOccasions : Bool
+                    hasMultipleOccasions =
+                        List.length event.occasions > 1
+
+                    addMore : Html Msg
+                    addMore =
+                        addMoreView shared.time.browserTimeZone.zone maybeAccount model eventPost occasion
+
                     occasionDetailAndStrip : Html Msg
                     occasionDetailAndStrip =
                         div [ class "event-occasion-detail-and-strip" ]
@@ -1968,14 +2132,33 @@ eventDetailView shared model event occasion =
                                     [ occasionTimeView shared maybeAccount model.occasionTimeEdit eventPost occasion
                                     , occasionLocationView maybeAccount model.occasionLocationEdit eventPost occasion
                                     ]
-                                , addMoreView maybeAccount model eventPost occasion
+                                , if hasMultipleOccasions then
+                                    text ""
+
+                                  else
+                                    addMore
                                 ]
-                            , occasionHistoryView shared model event occasion
+                            , occasionHistoryView shared
+                                model
+                                event
+                                occasion
+                                (if hasMultipleOccasions then
+                                    addMore
+
+                                 else
+                                    text ""
+                                )
                             ]
                 in
                 div []
                     [ div [ classes [ "event-post-section", hostnameToCSSClass model.targetHost, "event-post-primary" ] ]
                         [ h1 [ class "event-post-title" ] [ titleView editable model.postFieldEdit maybeAccount eventPost ]
+                        , case occasion.post of
+                            Just occasionPost ->
+                                occasionTitleView occasionEditableHere model.occasionTitleEdit maybeAccount occasionPost
+
+                            Nothing ->
+                                text ""
                         , linkView editable model.postFieldEdit maybeAccount eventPost
                         , div [ class "event-post-meta" ]
                             [ text "by "
@@ -2014,7 +2197,7 @@ eventDetailView shared model event occasion =
 
                             Nothing ->
                                 text ""
-                        , contentDisplayView editable maybeAccount eventPost
+                        , contentDisplayView editable "Edit Content" maybeAccount eventPost
                         ]
                     , div [ class "post-detail-edit-row" ]
                         [ deleteButtonView maybeAccount event eventPost
@@ -2024,44 +2207,70 @@ eventDetailView shared model event occasion =
 
             Nothing ->
                 text ""
-        , case occasion.post |> Maybe.andThen Events.meaningfulPost of
+        , case occasion.post of
             Just occasionPost ->
-                div [ classes [ "event-post-section", hostnameToCSSClass model.targetHost, "event-post-secondary" ] ]
-                    [ h2 [ class "event-post-title" ] [ text (Posts.postTitleText occasionPost) ]
-                    , case Posts.postLinkText occasionPost of
-                        Just link ->
-                            a
-                                [ href link
-                                , target "_blank"
-                                , rel "noopener noreferrer"
-                                , classes [ hostnameToCSSClass model.targetHost, "event-post-link" ]
-                                ]
-                                [ text link ]
+                let
+                    meaningful : Bool
+                    meaningful =
+                        Events.meaningfulPost occasionPost /= Nothing
 
-                        Nothing ->
-                            text ""
-                    , div [ class "event-post-meta" ]
-                        [ text "by "
-                        , Authors.link shared.basePath shared.accounts.mainFrontendHost model.targetHost maybeServer maybeAccount occasionPost.author
-                        , if Posts.showPostVisibility maybeAccount occasionPost then
-                            text (" · " ++ Posts.postVisibilityText occasionPost)
+                    occasionIsEditable : Bool
+                    occasionIsEditable =
+                        occasionEditable occasion
+
+                    viewerCanEdit : Bool
+                    viewerCanEdit =
+                        maybeAccount
+                            |> Maybe.map (\account -> Posts.isAuthor account occasionPost || List.member ADMIN account.permissions)
+                            |> Maybe.withDefault False
+                in
+                if not meaningful && not (occasionIsEditable && viewerCanEdit) then
+                    text ""
+
+                else
+                    div [ classes [ "event-post-section", hostnameToCSSClass model.targetHost, "event-post-secondary" ] ]
+                        [ -- A smaller echo of the Occasion's title (see `occasionTitleView`, at the
+                          -- top) separates the Event's content from the Occasion's; with no title,
+                          -- a plain rule does that job instead.
+                          case occasionPost.title |> Maybe.andThen nonBlank of
+                            Just occasionTitle ->
+                                h2 [ class "event-post-title" ] [ text occasionTitle ]
+
+                            Nothing ->
+                                hr [ class "event-occasion-content-separator" ] []
+                        , case Posts.postLinkText occasionPost of
+                            Just link ->
+                                a
+                                    [ href link
+                                    , target "_blank"
+                                    , rel "noopener noreferrer"
+                                    , classes [ hostnameToCSSClass model.targetHost, "event-post-link" ]
+                                    ]
+                                    [ text link ]
+
+                            Nothing ->
+                                text ""
+                        , if meaningful then
+                            div [ class "event-post-meta" ]
+                                [ text "by "
+                                , Authors.link shared.basePath shared.accounts.mainFrontendHost model.targetHost maybeServer maybeAccount occasionPost.author
+                                , if Posts.showPostVisibility maybeAccount occasionPost then
+                                    text (" · " ++ Posts.postVisibilityText occasionPost)
+
+                                  else
+                                    text ""
+                                ]
 
                           else
                             text ""
+                        , case maybeServer of
+                            Just server ->
+                                MultiMediaRenderer.view occasionPost.postMediaLayout server maybeAccount shared.mediaRenderer (\id -> SharedMsg (Shared.MediaRendererMsg (MediaRenderer.PlayClicked id))) (MediaClicked occasionPost) occasionPost.media
+
+                            Nothing ->
+                                text ""
+                        , contentDisplayView occasionIsEditable "Edit Occasion Content" maybeAccount occasionPost
                         ]
-                    , case maybeServer of
-                        Just server ->
-                            MultiMediaRenderer.view occasionPost.postMediaLayout server maybeAccount shared.mediaRenderer (\id -> SharedMsg (Shared.MediaRendererMsg (MediaRenderer.PlayClicked id))) (MediaClicked occasionPost) occasionPost.media
-
-                        Nothing ->
-                            text ""
-                    , case occasionPost.content of
-                        Just content ->
-                            Markdown.view [ class "event-post-content" ] content
-
-                        Nothing ->
-                            text ""
-                    ]
 
             Nothing ->
                 text ""
@@ -2111,7 +2320,7 @@ titleView editable maybeEdit maybeAccount post =
     case maybeEdit of
         Just edit ->
             if edit.field == TitleField then
-                postFieldEditFormView edit post
+                postFieldEditFormView eventFieldMsgs edit post
 
             else
                 titleDisplayView editable maybeAccount post
@@ -2137,6 +2346,40 @@ titleDisplayView editable maybeAccount post =
         ]
 
 
+{-| The currently-viewed `Occasion`'s own title (rendered smaller than the
+Event's, see `.event-occasion-title`) with its "Edit Occasion Title" button, or
+its inline editor. Renders nothing for a viewer who can't edit when the
+occasion has no title.
+-}
+occasionTitleView : Bool -> Maybe PostFieldEdit -> Maybe RellmAccount -> Post -> Html Msg
+occasionTitleView editable maybeEdit maybeAccount post =
+    case maybeEdit of
+        Just edit ->
+            h2 [ classes [ "event-post-title", "event-occasion-title" ] ]
+                [ postFieldEditFormView occasionTitleMsgs edit post ]
+
+        Nothing ->
+            let
+                maybeTitle : Maybe String
+                maybeTitle =
+                    post.title |> Maybe.andThen nonBlank
+            in
+            if maybeTitle == Nothing && not editable then
+                text ""
+
+            else
+                h2 [ classes [ "event-post-title", "event-occasion-title" ] ]
+                    [ span [ class "event-post-title-display" ]
+                        [ text (Maybe.withDefault "" maybeTitle)
+                        , if editable then
+                            editButtonView "Edit Occasion Title" (OccasionTitleEditClicked post) maybeAccount post
+
+                          else
+                            text ""
+                        ]
+                    ]
+
+
 {-| The primary post section's link-line content (see `eventDetailView`) --
 mirrors `titleView` exactly, just for the link:
 its own "Edit Link" button sits right after the link (or, if `post` has none
@@ -2147,7 +2390,7 @@ linkView editable maybeEdit maybeAccount post =
     case maybeEdit of
         Just edit ->
             if edit.field == LinkField then
-                postFieldEditFormView edit post
+                postFieldEditFormView eventFieldMsgs edit post
 
             else
                 linkDisplayView editable maybeAccount post
@@ -2194,8 +2437,8 @@ this is always just the display half. The button renders regardless of
 whether `post` actually has content set, so there's still something to click
 to add some.
 -}
-contentDisplayView : Bool -> Maybe RellmAccount -> Post -> Html Msg
-contentDisplayView editable maybeAccount post =
+contentDisplayView : Bool -> String -> Maybe RellmAccount -> Post -> Html Msg
+contentDisplayView editable label maybeAccount post =
     div [ class "event-post-content-display" ]
         [ case post.content of
             Just content ->
@@ -2204,11 +2447,31 @@ contentDisplayView editable maybeAccount post =
             Nothing ->
                 text ""
         , if editable then
-            editButtonView "Edit Content" (EditContentClicked post) maybeAccount post
+            editButtonView label (EditContentClicked post) maybeAccount post
 
           else
             text ""
         ]
+
+
+{-| The Msgs an inline field editor (`postFieldEditFormView`) fires -- lets the
+same form serve both the `Event`'s own title/link and the `Occasion`'s title.
+-}
+type alias FieldEditMsgs =
+    { onInput : String -> Msg
+    , onSave : Post -> Msg
+    , onCancel : Msg
+    }
+
+
+eventFieldMsgs : FieldEditMsgs
+eventFieldMsgs =
+    { onInput = PostFieldChanged, onSave = PostFieldSaveClicked, onCancel = PostFieldCancelClicked }
+
+
+occasionTitleMsgs : FieldEditMsgs
+occasionTitleMsgs =
+    { onInput = OccasionTitleChanged, onSave = OccasionTitleSaveClicked, onCancel = OccasionTitleCancelClicked }
 
 
 {-| The actual `<input>` + Save/Cancel controls for whichever of `TitleField`/
@@ -2218,8 +2481,8 @@ just with a plain `<input>` instead of a `<select>`. Wraps in a `span`, valid
 content for the `<h1>`/plain-link slot each replaces (see
 `titleView`/`linkView`).
 -}
-postFieldEditFormView : PostFieldEdit -> Post -> Html Msg
-postFieldEditFormView edit post =
+postFieldEditFormView : FieldEditMsgs -> PostFieldEdit -> Post -> Html Msg
+postFieldEditFormView msgs edit post =
     let
         ( fieldClass, placeholderText ) =
             case edit.field of
@@ -2235,10 +2498,10 @@ postFieldEditFormView edit post =
             , class fieldClass
             , placeholder placeholderText
             , value edit.pending
-            , onInput PostFieldChanged
+            , onInput msgs.onInput
             ]
             []
-            :: postFieldEditActionsView edit post
+            :: postFieldEditActionsView msgs edit post
         )
 
 
@@ -2247,12 +2510,12 @@ postFieldEditFormView edit post =
 own `.post-visibility-save`/`.post-visibility-cancel`/`.post-visibility-error`
 classes (posts.css) rather than `event-*` ones of its own.
 -}
-postFieldEditActionsView : PostFieldEdit -> Post -> List (Html Msg)
-postFieldEditActionsView edit post =
+postFieldEditActionsView : FieldEditMsgs -> PostFieldEdit -> Post -> List (Html Msg)
+postFieldEditActionsView msgs edit post =
     [ span [ class "event-occasion-edit-actions" ]
         [ button
             [ classes [ "post-visibility-save", "background-color-primary" ]
-            , onClick (PostFieldSaveClicked post)
+            , onClick (msgs.onSave post)
             , disabled (edit.status == Submitting)
             ]
             [ text
@@ -2265,7 +2528,7 @@ postFieldEditActionsView edit post =
             ]
         , button
             [ class "post-visibility-cancel"
-            , onClick PostFieldCancelClicked
+            , onClick msgs.onCancel
             , disabled (edit.status == Submitting)
             ]
             [ text "Cancel" ]
@@ -2716,8 +2979,8 @@ always matches "who can edit this date"'s own time/location buttons right
 above it) _and_ `occasionEditable` (see its own doc for why "Add More" is
 gated the same way Edit Time/Edit Location are).
 -}
-addMoreView : Maybe RellmAccount -> Model -> Post -> Occasion -> Html Msg
-addMoreView maybeAccount model eventPost occasion =
+addMoreView : Time.Zone -> Maybe RellmAccount -> Model -> Post -> Occasion -> Html Msg
+addMoreView zone maybeAccount model eventPost occasion =
     case maybeAccount of
         Nothing ->
             text ""
@@ -2743,12 +3006,14 @@ addMoreView maybeAccount model eventPost occasion =
                                 AddMoreClicked
                             )
                         , type_ "button"
+                        , attribute "aria-label" "Add More"
+                        , title "Add More"
                         ]
-                        [ text "+ Add More" ]
+                        [ text "+" ]
                     , div [ classes [ "popover-backdrop", openClosedClass isOpen ], onClick AddMoreClosed ] []
                     , div [ classes [ "event-occasion-add-more-popover", "popover", openClosedClass isOpen ] ]
                         (model.addMoreMenu
-                            |> Maybe.map addMoreMenuContentView
+                            |> Maybe.map (addMoreMenuContentView (occasion.startsAt |> Maybe.map (Conversions.timestampToPosix >> SharedTime.nthWeekdayLabel zone)))
                             |> Maybe.withDefault []
                         )
                     ]
@@ -2764,8 +3029,8 @@ either -- `update` re-reads both from `model.eventStatus` at submit time,
 same as every other save handler in this module -- so this needs nothing
 beyond `menu` itself.
 -}
-addMoreMenuContentView : AddMoreMenu -> List (Html Msg)
-addMoreMenuContentView menu =
+addMoreMenuContentView : Maybe String -> AddMoreMenu -> List (Html Msg)
+addMoreMenuContentView nthWeekdayText menu =
     case menu.step of
         ChoosingCount ->
             [ h3 [ class "event-occasion-add-more-heading" ] [ text "Add more dates" ]
@@ -2795,7 +3060,15 @@ addMoreMenuContentView menu =
                                 , disabled (menu.status == Submitting)
                                 , type_ "button"
                                 ]
-                                [ text (frequencyLabel count unit) ]
+                                [ text
+                                    (case ( unit, nthWeekdayText ) of
+                                        ( SharedTime.MonthlyNthWeekday, Just label ) ->
+                                            label ++ "s"
+
+                                        _ ->
+                                            frequencyLabel count unit
+                                    )
+                                ]
                         )
                 )
             , button
@@ -2862,8 +3135,8 @@ every `Occasion` currently selected by `model.occasionHistoryDisplay`,
 each linking to that occasion's own page. Renders nothing at all for an
 `Event` with only one occasion -- there's no other date to pick.
 -}
-occasionHistoryView : Shared.Model -> Model -> Event -> Occasion -> Html Msg
-occasionHistoryView shared model event occasion =
+occasionHistoryView : Shared.Model -> Model -> Event -> Occasion -> Html Msg -> Html Msg
+occasionHistoryView shared model event occasion addMore =
     if List.length event.occasions <= 1 then
         text ""
 
@@ -2879,15 +3152,16 @@ occasionHistoryView shared model event occasion =
         in
         div [ class "event-occasion-history" ]
             [ div [ class "event-occasion-history-buttons" ]
-                (List.map (historyButtonView model minimumRank) (historyButtons shared.time.now event)
-                    ++ (if showLayoutToggle then
-                            [ occasionLayoutButtonView model.occasionLayout ]
+                [ if showLayoutToggle then
+                    occasionLayoutButtonView model.occasionLayout
 
-                        else
-                            []
-                       )
-                )
-            , div
+                  else
+                    text ""
+                , div [ id scopeButtonsDomId, class "event-occasion-history-scope-buttons" ]
+                    (List.map (historyButtonView model minimumRank) (historyButtons shared.time.now event))
+                , addMore
+                ]
+            , Html.Keyed.node "div"
                 (id occasionStripDomId :: occasionContainerAttributes model.occasionLayout)
                 (event.occasions
                     |> List.filterMap
@@ -2895,7 +3169,15 @@ occasionHistoryView shared model event occasion =
                             otherOccasion.post
                                 |> Maybe.andThen (\post -> Dict.get post.id model.occasionAnimations)
                         )
-                    |> List.map (occasionChipView shared model occasion)
+                    -- Keyed so a chip that stays keeps its own DOM node when others are removed;
+                    -- unkeyed, Elm reuses nodes by position and the survivors inherit the removed
+                    -- chips' collapsed nodes, visibly re-growing from collapsed.
+                    |> List.map
+                        (\anim ->
+                            ( anim.occasion.post |> Maybe.map .id |> Maybe.withDefault ""
+                            , occasionChipView shared model occasion anim
+                            )
+                        )
                 )
             ]
 
@@ -2973,18 +3255,25 @@ historyButtonView model minimumRank ( mode, count ) =
             mode == model.occasionHistoryDisplay
     in
     button
-        [ classes
-            ("event-occasion-history-button"
-                :: (if isCurrent then
-                        [ "background-color-primary" ]
+        ((if isCurrent then
+            [ id currentScopeButtonDomId ]
 
-                    else
-                        []
-                   )
-            )
-        , onClick (HistoryDisplayChanged mode)
-        , disabled (historyDisplayRank mode < minimumRank)
-        ]
+          else
+            []
+         )
+            ++ [ classes
+                    ("event-occasion-history-button"
+                        :: (if isCurrent then
+                                [ "background-color-primary" ]
+
+                            else
+                                []
+                           )
+                    )
+               , onClick (HistoryDisplayChanged mode)
+               , disabled (historyDisplayRank mode < minimumRank)
+               ]
+        )
         [ text (historyButtonLabel mode count) ]
 
 
@@ -3033,7 +3322,7 @@ historyButtons now event =
 
         allButtons : List ( OccasionHistoryDisplay, Int )
         allButtons =
-            [ ShowAllOccasions, SinceTwoWeeksAgo, OnlyFuture ]
+            [ OnlyFuture, SinceTwoWeeksAgo, ShowAllOccasions ]
                 |> List.map (\mode -> ( mode, countFor mode ))
 
         isRedundant : ( OccasionHistoryDisplay, Int ) -> Bool
@@ -3079,7 +3368,21 @@ occasionChipView shared model currentOccasion { occasion, flip } =
                         else
                             []
                        )
+                    ++ (if not isCurrent && not (occasionMatchesHistoryDisplay shared.time.now OnlyFuture occasion) then
+                            [ "event-occasion-chip-past" ]
+
+                        else
+                            []
+                       )
                 )
             ]
-            [ text (Events.siblingOccasionWhenText shared.time currentOccasion occasion) ]
+            (text (Events.siblingOccasionWhenText shared.time currentOccasion occasion)
+                :: (case occasion.post |> Maybe.andThen .title |> Maybe.andThen nonBlank of
+                        Just occasionTitle ->
+                            [ span [ class "event-occasion-chip-title" ] [ text occasionTitle ] ]
+
+                        Nothing ->
+                            []
+                   )
+            )
         ]

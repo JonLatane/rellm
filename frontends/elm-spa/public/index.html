@@ -682,6 +682,33 @@
     function rellmScrubElement() {
       return document.querySelector('.media-viewer-panel-media video, .media-viewer-panel-media audio');
     }
+    app.ports.flipChildren.subscribe(function (payload) {
+      var el = document.getElementById(payload.id);
+      if (!el) { return; }
+      var targetOf = function (child) { return child.firstElementChild || child; };
+      var first = Array.prototype.map.call(el.children, function (child) {
+        return { node: targetOf(child), rect: targetOf(child).getBoundingClientRect() };
+      });
+      var timeout;
+      var observer = new MutationObserver(function () {
+        observer.disconnect();
+        clearTimeout(timeout);
+        first.forEach(function (item) {
+          if (!item.node.isConnected || !item.node.animate) { return; }
+          var last = item.node.getBoundingClientRect();
+          var dx = item.rect.left - last.left;
+          var dy = item.rect.top - last.top;
+          if (dx === 0 && dy === 0) { return; }
+          item.node.animate(
+            [{ transform: 'translate(' + dx + 'px, ' + dy + 'px)' }, { transform: 'none' }],
+            { duration: 300, easing: 'ease' }
+          );
+        });
+      });
+      observer.observe(el, { attributes: true, attributeFilter: ['class'] });
+      timeout = setTimeout(function () { observer.disconnect(); }, 500);
+    });
+
     app.ports.scrubMedia.subscribe(function (payload) {
       var attempts = 0;
       (function run() {

@@ -559,6 +559,29 @@ locationText location =
         Just trimmed
 
 
+{-| The Markdown a card shows for `occasion` -- its own content when it has any
+(non-blank), else its parent `Event`'s.
+-}
+cardContent : Occasion -> Post -> Maybe String
+cardContent occasion eventPost =
+    case
+        occasion.post |> Maybe.andThen .content
+            |> Maybe.andThen
+                (\c ->
+                    if String.isEmpty (String.trim c) then
+                        Nothing
+
+                    else
+                        Just c
+                )
+    of
+        Just content ->
+            Just content
+
+        Nothing ->
+            eventPost.content
+
+
 {-| `post` itself, unless it has nothing an `Occasion`'s own override
 `Post` would actually add over the parent `Event`'s -- no title, link,
 content, or media, just the empty shell every `Occasion` carries whether
@@ -784,7 +807,7 @@ eventCard time basePath viewingServerHost eventServerHost maybeServer maybeAccou
 
                     Nothing ->
                         text ""
-                , case eventPost.content of
+                , case cardContent occasion eventPost of
                     Just content ->
                         Markdown.view
                             [ classes

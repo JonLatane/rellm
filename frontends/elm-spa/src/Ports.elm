@@ -15,10 +15,11 @@ port module Ports exposing
     , federatedAuthEncrypted
     , federatedAuthGenerateKeyPair
     , federatedAuthKeyPairGenerated
+    , flipChildren
     , hideSplash
     , mastodonAccountsAndServersUpdated
-    , mediaDurationReported
     , measureElements
+    , mediaDurationReported
     , persistAccountsAndServers
     , persistBlueskyAccounts
     , persistFederatedAuthKeyPair
@@ -158,6 +159,18 @@ port-triggered assignment runs as a normal JS callback, not wrapped in
 `Pages.Event.PostId_.scrollToOccasion`, the only current caller.
 -}
 port scrollElementLeft : Encode.Value -> Cmd msg
+
+
+{-| `{ id : String }` -- FLIP-animates the direct children of the element with
+that DOM id across its next class change (a layout switch, e.g.
+`Components.Pages.EventPage`'s strip/grid toggle): JS records each child's
+current position right away (before Elm's deferred re-render), then, when a
+`MutationObserver` sees the container's `class` change, slides each child from
+its old position to its new one with the Web Animations API. Self-contained --
+no Elm-side animation state or result message. Children must keep their DOM
+nodes across the re-render (i.e. be keyed). Fire-and-forget.
+-}
+port flipChildren : Encode.Value -> Cmd msg
 
 
 {-| Measures every DOM element named in the given JSON array of

@@ -9,6 +9,7 @@ module Shared.Time exposing
     , formatDateTimeLocalInput
     , formatMoment
     , formatRange
+    , nthWeekdayLabel
     , posixFromDateTimeLocalInput
     )
 
@@ -694,6 +695,62 @@ type RecurrenceUnit
     = Daily
     | Weekly
     | Monthly
+      -- Same "Nth weekday" (e.g. 2nd Tuesday) of each following month as `posix`'s own
+      -- date -- see `nthWeekdayLabel`. A 5th weekday that a target month lacks lands on
+      -- that month's last one.
+    | MonthlyNthWeekday
+
+
+{-| "2nd Tuesday"-style label for `posix`'s own date in `zone` -- what
+`MonthlyNthWeekday` repeats.
+-}
+nthWeekdayLabel : Time.Zone -> Time.Posix -> String
+nthWeekdayLabel zone posix =
+    let
+        nth : Int
+        nth =
+            (Time.toDay zone posix - 1) // 7 + 1
+
+        suffix : String
+        suffix =
+            case nth of
+                1 ->
+                    "st"
+
+                2 ->
+                    "nd"
+
+                3 ->
+                    "rd"
+
+                _ ->
+                    "th"
+
+        weekdayName : String
+        weekdayName =
+            case Time.toWeekday zone posix of
+                Time.Mon ->
+                    "Monday"
+
+                Time.Tue ->
+                    "Tuesday"
+
+                Time.Wed ->
+                    "Wednesday"
+
+                Time.Thu ->
+                    "Thursday"
+
+                Time.Fri ->
+                    "Friday"
+
+                Time.Sat ->
+                    "Saturday"
+
+                Time.Sun ->
+                    "Sunday"
+    in
+    String.fromInt nth ++ suffix ++ " " ++ weekdayName
 
 
 {-| `posix`'s own wall-clock time-of-day (in `zone`), `n` `unit`s later on the
@@ -767,6 +824,46 @@ addRecurrence zone unit n posix =
                             modBy 12 totalMonths + 1
                     in
                     naiveMillisAt newYear newMonth (min day (daysInMonth newYear newMonth))
+
+                MonthlyNthWeekday ->
+                    let
+                        totalMonths : Int
+                        totalMonths =
+                            year * 12 + (month - 1) + n
+
+                        newYear : Int
+                        newYear =
+                            totalMonths // 12
+
+                        newMonth : Int
+                        newMonth =
+                            modBy 12 totalMonths + 1
+
+                        -- 1970-01-01 was a Thursday; 0 = Sunday.
+                        weekdayOf : Int -> Int
+                        weekdayOf days =
+                            modBy 7 (days + 4)
+
+                        firstOfMonthWeekday : Int
+                        firstOfMonthWeekday =
+                            weekdayOf (Conversions.daysFromCivil newYear newMonth 1)
+
+                        sourceWeekday : Int
+                        sourceWeekday =
+                            weekdayOf (Conversions.daysFromCivil year month day)
+
+                        candidate : Int
+                        candidate =
+                            1 + modBy 7 (sourceWeekday - firstOfMonthWeekday) + ((day - 1) // 7) * 7
+                    in
+                    naiveMillisAt newYear
+                        newMonth
+                        (if candidate > daysInMonth newYear newMonth then
+                            candidate - 7
+
+                         else
+                            candidate
+                        )
 
         naiveUtc : Time.Posix
         naiveUtc =
