@@ -32,5 +32,10 @@ gen:
 setup_proto_build:
 	yarn global add protoc-gen-elm
 
+# Generate into a temp dir, then sync src/Proto in one step (and only touch files whose
+# contents changed) so the elm-spa dev server rebuilds once instead of per-file.
 protos:
-	protoc --elm_out=./src -I../../protos ../../protos/*.proto
+	@tmp=$$(mktemp -d) && trap 'rm -rf "$$tmp"' EXIT && \
+		protoc --elm_out="$$tmp" -I../../protos ../../protos/*.proto && \
+		mkdir -p src/Proto && \
+		rsync -rc --delete "$$tmp/Proto/" src/Proto/

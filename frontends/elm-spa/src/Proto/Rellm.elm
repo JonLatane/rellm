@@ -9940,7 +9940,7 @@ encodeLicense =
 
 ### licensedTo
 
- The user holding the license.
+ The user holding the license to the media.
 
 
 ### media

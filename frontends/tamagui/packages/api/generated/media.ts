@@ -317,7 +317,7 @@ export interface MediaMetadata {
  */
 export interface License {
   id: string;
-  /** The user holding the license. */
+  /** The user holding the license to the media. */
   licensedTo:
     | Author
     | undefined;

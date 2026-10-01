@@ -1507,7 +1507,7 @@ From the top down, the rules break down as follows:
 | SERVER_PUBLIC | 3 | Subject is visible to all authenticated users. |
 | GLOBAL_PUBLIC | 4 | Subject is visible to all users on the internet. |
 | DIRECT | 5 | [TODO] Subject is visible to explicitly-associated Users. Only applicable to Posts and Events. For Users, this is the same as LIMITED. See: [`UserPost`](#rellm-UserPost). |
-| LICENSED | 6 | Only applicable to [`Media`](#rellm-Media). The media&#39;s metadata is discoverable by anyone (like `GLOBAL_PUBLIC`), but its full-quality bytes are only served to the owner, admins, and holders of an active [`License`](#rellm-License). Everyone else gets the `UNLICENSED_PREVIEW_MEDIUM` conversion. |
+| LICENSED | 6 | Only applicable to [`Media`](#rellm-Media). The media&#39;s metadata is discoverable by logged-in users (like `SERVER_PUBLIC`) -- or by anyone, if `MediaSettings.licensed_media_visible_globally` is set -- but its full-quality bytes are only served to the owner, admins, and holders of an active [`License`](#rellm-License). Everyone else gets the `UNLICENSED_PREVIEW_MEDIUM` conversion. |
 
 
  
@@ -1912,7 +1912,8 @@ already needed it anyway, for `User.avatar`/`Media`-shaped fields).
 Valid GetMediaRequest formats:
 - `{user_id: abc123}` - Gets the media of the given user that the current user can see. IE:
     - *all* of the current user&#39;s own media
-    - `GLOBAL_PUBLIC`/`LICENSED` media for the user if the current user is not logged in.
+    - `GLOBAL_PUBLIC` media (and `LICENSED`, if `MediaSettings.licensed_media_visible_globally`) for the user if the current user is not logged in.
+    - `LICENSED` media too for any logged-in user.
     - `SERVER_PUBLIC` media for the user if the current user is logged in.
     - `LIMITED` media for the user if the current user is following the user.
 - `{media_id: abc123}` - Gets the media with the given ID, if visible to the current user.
@@ -1963,7 +1964,7 @@ Stored in the `media_licenses` table. A license is *active* while `revoked_at` i
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | id | [string](#string) |  |  |
-| licensed_to | [Author](#rellm-Author) |  | The user holding the license. |
+| licensed_to | [Author](#rellm-Author) |  | The user holding the license to the media. |
 | media | [MediaReference](#rellm-MediaReference) |  | The licensed media. |
 | created_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  |  |
 | revoked_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional | When set, the license no longer grants access. |
@@ -1998,7 +1999,10 @@ On success, the endpoint will return the media ID in plaintext.
     - `Cookies` - Standard web cookies. The `rellm_access_token` cookie may be used for authentication.
 - **Query Parameters**:
     - `authorization` - Rellm Access Token for the user. May also be supplied in the `Cookies` or `Authorization` headers.
-- Fetching media without authentication requires that it has `GLOBAL_PUBLIC` visibility.
+- Fetching media without authentication requires that it has `GLOBAL_PUBLIC` visibility (or `LICENSED`,
+  if `MediaSettings.licensed_media_visible_globally` is set). Visibility is otherwise enforced
+  like `GetMedia`&#39;s: `SERVER_PUBLIC` for any logged-in user, `LIMITED` for followers of the owner,
+  `PRIVATE` for the owner and admins only. A media item the viewer can&#39;t see responds `404`.
 - Anonymous (unauthenticated) responses omit CORS `Access-Control-Allow-*` headers when the server&#39;s
   `MediaSettings.block_cors_anonymous_media_access` is set, so third-party sites can embed (`&lt;img&gt;`,
   `&lt;video&gt;`) but not script-read public media.
@@ -2074,6 +2078,7 @@ and the media item&#39;s name (for alt text usage).
 | url | [string](#string) | optional | An external URL to fetch the media from, in lieu of `/media/{id}`. See `Media.url`. If unset, clients fall back to `/media/{id}`. |
 | description | [string](#string) | optional |  |
 | author | [Author](#rellm-Author) | optional | The user who created the media item. See `Media.author`. Included here (unlike most other `MediaReference` fields, which are deliberately pared down from `Media`) so clients that only ever see a `MediaReference` -- e.g. a `Post.media` item -- can still tell whether the current viewer owns it, without a separate `Media` lookup. |
+| visibility | [Visibility](#rellm-Visibility) |  | See `Media.visibility`. Included so a client holding only a `MediaReference` (e.g. the media viewer) can show/edit it and tell whether it&#39;s `LICENSED`. |
 
 
 
@@ -3357,7 +3362,7 @@ Either one of the app&#39;s predefined tabs, a Post, or a user profile - reachab
 | emoji_icon | [string](#string) |  | Emoji shown as the tab&#39;s icon (e.g. &#34;🎪&#34;). |
 | icon_media_id | [string](#string) |  | Media ID (see [`Media`](#rellm-Media) APIs) of an image shown as the tab&#39;s icon. |
 | title | [string](#string) | optional | Title shown for the tab. Defaults to the predefined tab&#39;s/Post&#39;s title if unset. |
-| path | [string](#string) |  | The path this tab is reachable at, e.g. `gigs` for a band&#39;s `/gigs` link to the Events page, or `weddings` for a Post about wedding offerings. Must be distinct across every entry in `CustomNavigationTabSet.tabs`. Note: `events`, `posts`, `people`, `about`, `media`, `video`, `videos`, and `audio` are reserved -- each may only be used to (redundantly) point back at its own matching predefined tab, never remapped to a different tab or a Post. `/` itself is never reachable this way - it&#39;s overridden via `CustomNavigationTabSet.home` instead. |
+| path | [string](#string) |  | The path this tab is reachable at, e.g. `gigs` for a band&#39;s `/gigs` link to the Events page, or `weddings` for a Post about wedding offerings. Must be distinct across every entry in `CustomNavigationTabSet.tabs`. Note: `events`, `posts`, `people`, `about`, `media`, `video`, `videos`, `audio`, and `images` are reserved -- each may only be used to (redundantly) point back at its own matching predefined tab, never remapped to a different tab or a Post. `/` itself is never reachable this way - it&#39;s overridden via `CustomNavigationTabSet.home` instead. |
 
 
 
@@ -3533,6 +3538,7 @@ Media is a special type and less customizable than &#34;Features.&#34;
 | default_visibility | [Visibility](#rellm-Visibility) |  | Only `SERVER_PUBLIC` and `GLOBAL_PUBLIC` are valid. `GLOBAL_PUBLIC` is only valid if default_user_permissions contains `GLOBALLY_PUBLISH_[USERS|GROUPS|POSTS|EVENTS]` as appropriate. |
 | default_user_media_allocation_bytes | [uint64](#uint64) |  | Default media storage allocation for newly created users. Defaults to 15MB. |
 | block_cors_anonymous_media_access | [bool](#bool) |  | &#34;Block CORS Anonymous Media Access&#34;. When set, `GET /media/{id}` responses to *unauthenticated* requests omit CORS `Access-Control-Allow-*` headers even for `GLOBAL_PUBLIC` media, so browsers block other sites&#39; scripts from reading them (plain `&lt;img&gt;`/`&lt;video&gt;` embeds still work). Authenticated requests are unaffected. |
+| licensed_media_visible_globally | [bool](#bool) |  | Whether `LICENSED` media (see `Visibility.LICENSED`) is discoverable by *unauthenticated* users: listed by `GetMedia` and its preview/thumbnails served by `GET /media/{id}`. When unset (the default), `LICENSED` media is only visible to logged-in users -- like `SERVER_PUBLIC` -- plus its owner and admins. Either way, its full-quality bytes still require an active License. |
 | server_media_allocation_bytes | [uint64](#uint64) |  | Default is 5GB (applied whenever this is `0`, same read-time-fallback convention as `default_user_media_allocation_bytes` above). API/server-enforced limit for total of all Media usage (`server_media_usage_bytes` below) -- `CreateMedia` rejects an upload that would push the server over this cap the same way it already rejects one that would push a user over their own `User.media_storage_limit_bytes`. Editing this requires [`EDIT_SERVER_MEDIA_ALLOCATION`](#rellm-Permission) via [`ConfigureServer`](#grpc-api-ConfigureServer) -- see that permission&#39;s own doc. |
 | server_media_usage_bytes | [uint64](#uint64) |  | (Read-only) Amount of storage used by user-stored Media, according to its sizing data. Adjusted (by a cheap incremental delta, not a full recompute) on CreateMedia calls, deletes, and size conversions, and also fully recomputed every 3 minutes by the `calculate_server_media_usage` background job (correcting any drift the incremental call sites missed). |
 | server_media_usage_calculated_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  | When `server_media_usage_bytes` was last written -- by either an incremental adjustment or a full recompute (see that field&#39;s own doc); not limited to just the periodic job&#39;s runs. |
@@ -3858,9 +3864,10 @@ The default navigation tabs in Rellm&#39;s Elm UI.
 | PEOPLE_TAB | 12 | The People tab. |
 | ABOUT_TAB | 15 | The About tab. |
 | MARKET_TAB | 16 | The Market tab. |
-| MEDIA_TAB | 17 | The Media tab: Video, Audio and (when logged in) My Media sub-tabs. Reserved path: `media`. |
+| MEDIA_TAB | 17 | The Media tab: Video, Audio, Images and (when logged in) My Media sub-tabs. Reserved path: `media`. |
 | VIDEO_TAB | 18 | The Video tab (a YouTube-alike over `GetMedia` with `content_type: &#34;video/*&#34;`). Reserved paths: `video`, `videos`. |
 | AUDIO_TAB | 19 | The Audio tab (a Spotify-alike over `GetMedia` with `content_type: &#34;audio/*&#34;`). Reserved path: `audio`. |
+| IMAGES_TAB | 20 | The Images tab (a photo-gallery view over `GetMedia` with `content_type: &#34;image/*&#34;`). Reserved path: `images`. |
 
 
 

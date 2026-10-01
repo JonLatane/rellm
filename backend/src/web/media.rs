@@ -1,7 +1,10 @@
 use std::str::FromStr;
 
 use crate::db_connection::*;
-use crate::logic::{adjust_server_media_usage_bytes, update_media_storage_used};
+use crate::logic::{
+    adjust_server_media_usage_bytes, is_audio_content_type, is_video_content_type,
+    update_media_storage_used,
+};
 use crate::marshaling::*;
 use crate::models;
 use crate::protos::{MediaConversion, Permission, Visibility};
@@ -363,13 +366,20 @@ pub fn resolve_media_size_for_viewer(
             .find(|s| s.conversion == conversion as i32)
             .map(|s| (s.object_storage_path.clone(), s.content_type.clone()))
     };
+    // For audio/video, `Small` is a full-length transcode -- only a still image's `Small` is a
+    // harmless thumbnail.
+    let small_allowed = !media.original().is_some_and(|o| {
+        is_audio_content_type(&o.content_type) || is_video_content_type(&o.content_type)
+    });
     let requested = requested_conversion(size);
-    UNLICENSED_VIEWABLE_CONVERSIONS
-        .contains(&requested)
+    let allowed = |c: MediaConversion| {
+        UNLICENSED_VIEWABLE_CONVERSIONS.contains(&c) && (small_allowed || c != MediaConversion::Small)
+    };
+    allowed(requested)
         .then(|| find(requested))
         .flatten()
         .or_else(|| find(MediaConversion::UnlicensedPreviewMedium))
-        .or_else(|| find(MediaConversion::Small))
+        .or_else(|| small_allowed.then(|| find(MediaConversion::Small)).flatten())
         .ok_or(Status::Forbidden)
 }
 

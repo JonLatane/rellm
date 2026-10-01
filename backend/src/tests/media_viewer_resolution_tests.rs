@@ -161,3 +161,18 @@ fn visibility_rules_for_media_file_requests() {
         Ok(())
     });
 }
+
+#[test]
+fn licensed_video_never_falls_back_to_its_full_length_small_transcode() {
+    let media = media_with(vec![
+        size(MediaConversion::Original, "video/mp4"),
+        size(MediaConversion::Small, "video/mp4"),
+    ]);
+    for requested in [None, Some("small"), Some("original")] {
+        assert_eq!(
+            resolve_media_size_for_viewer(&media, requested, false).unwrap_err(),
+            rocket::http::Status::Forbidden,
+            "{requested:?}"
+        );
+    }
+}

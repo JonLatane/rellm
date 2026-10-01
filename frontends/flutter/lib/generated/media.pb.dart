@@ -707,7 +707,7 @@ class License extends $pb.GeneratedMessage {
   @$pb.TagNumber(1)
   void clearId() => clearField(1);
 
-  /// The user holding the license.
+  /// The user holding the license to the media.
   @$pb.TagNumber(2)
   Author get licensedTo => $_getN(1);
   @$pb.TagNumber(2)

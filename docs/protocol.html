@@ -2771,7 +2771,7 @@ directory</a> is (<code>{name}</code> denotes a
         <tr>
           <td>LICENSED</td>
           <td>6</td>
-          <td>Only applicable to <a href="#rellm-Media"><code>Media</code></a>. The media's metadata is discoverable by anyone (like <code>GLOBAL_PUBLIC</code>), but its full-quality bytes are only served to the owner, admins, and holders of an active <a href="#rellm-License"><code>License</code></a>. Everyone else gets the <code>UNLICENSED_PREVIEW_MEDIUM</code> conversion.</td>
+          <td>Only applicable to <a href="#rellm-Media"><code>Media</code></a>. The media's metadata is discoverable by logged-in users (like <code>SERVER_PUBLIC</code>) -- or by anyone, if <code>MediaSettings.licensed_media_visible_globally</code> is set -- but its full-quality bytes are only served to the owner, admins, and holders of an active <a href="#rellm-License"><code>License</code></a>. Everyone else gets the <code>UNLICENSED_PREVIEW_MEDIUM</code> conversion.</td>
         </tr>
       </tbody>
     </table>
@@ -3794,7 +3794,8 @@ directory</a> is (<code>{name}</code> denotes a
       <li><code>{user_id: abc123}</code> - Gets the media of the given user that the current user can see. IE:
         <ul>
           <li><em>all</em> of the current user's own media</li>
-          <li><code>GLOBAL_PUBLIC</code>/<code>LICENSED</code> media for the user if the current user is not logged in.</li>
+          <li><code>GLOBAL_PUBLIC</code> media (and <code>LICENSED</code>, if <code>MediaSettings.licensed_media_visible_globally</code>) for the user if the current user is not logged in.</li>
+          <li><code>LICENSED</code> media too for any logged-in user.</li>
           <li><code>SERVER_PUBLIC</code> media for the user if the current user is logged in.</li>
           <li><code>LIMITED</code> media for the user if the current user is following the user.</li>
         </ul>
@@ -3902,7 +3903,7 @@ directory</a> is (<code>{name}</code> denotes a
           <td>licensed_to</td>
           <td><a href="#rellm-Author">Author</a></td>
           <td></td>
-          <td>The user holding the license.</td>
+          <td>The user holding the license to the media.</td>
         </tr>
         <tr>
           <td>media</td>
@@ -3958,7 +3959,12 @@ directory</a> is (<code>{name}</code> denotes a
           <li><code>authorization</code> - Rellm Access Token for the user. May also be supplied in the <code>Cookies</code> or <code>Authorization</code> headers.</li>
         </ul>
       </li>
-      <li>Fetching media without authentication requires that it has <code>GLOBAL_PUBLIC</code> visibility.</li>
+      <li>
+        Fetching media without authentication requires that it has <code>GLOBAL_PUBLIC</code> visibility (or <code>LICENSED</code>,
+        if <code>MediaSettings.licensed_media_visible_globally</code> is set). Visibility is otherwise enforced
+        like <code>GetMedia</code>'s: <code>SERVER_PUBLIC</code> for any logged-in user, <code>LIMITED</code> for followers of the owner,
+        <code>PRIVATE</code> for the owner and admins only. A media item the viewer can't see responds <code>404</code>.
+      </li>
       <li>
         Anonymous (unauthenticated) responses omit CORS <code>Access-Control-Allow-*</code> headers when the server's
         <code>MediaSettings.block_cors_anonymous_media_access</code> is set, so third-party sites can embed (<code>&#x26;lt;img&#x26;gt;</code>,
@@ -4220,6 +4226,12 @@ directory</a> is (<code>{name}</code> denotes a
           <td><a href="#rellm-Author">Author</a></td>
           <td>optional</td>
           <td>The user who created the media item. See <code>Media.author</code>. Included here (unlike most other <code>MediaReference</code> fields, which are deliberately pared down from <code>Media</code>) so clients that only ever see a <code>MediaReference</code> -- e.g. a <code>Post.media</code> item -- can still tell whether the current viewer owns it, without a separate <code>Media</code> lookup.</td>
+        </tr>
+        <tr>
+          <td>visibility</td>
+          <td><a href="#rellm-Visibility">Visibility</a></td>
+          <td></td>
+          <td>See <code>Media.visibility</code>. Included so a client holding only a <code>MediaReference</code> (e.g. the media viewer) can show/edit it and tell whether it's <code>LICENSED</code>.</td>
         </tr>
       </tbody>
     </table>
@@ -6947,7 +6959,7 @@ directory</a> is (<code>{name}</code> denotes a
           <td>path</td>
           <td><a href="#string">string</a></td>
           <td></td>
-          <td>The path this tab is reachable at, e.g. <code>gigs</code> for a band's <code>/gigs</code> link to the Events page, or <code>weddings</code> for a Post about wedding offerings. Must be distinct across every entry in <code>CustomNavigationTabSet.tabs</code>. Note: <code>events</code>, <code>posts</code>, <code>people</code>, <code>about</code>, <code>media</code>, <code>video</code>, <code>videos</code>, and <code>audio</code> are reserved -- each may only be used to (redundantly) point back at its own matching predefined tab, never remapped to a different tab or a Post. <code>/</code> itself is never reachable this way - it's overridden via <code>CustomNavigationTabSet.home</code> instead.</td>
+          <td>The path this tab is reachable at, e.g. <code>gigs</code> for a band's <code>/gigs</code> link to the Events page, or <code>weddings</code> for a Post about wedding offerings. Must be distinct across every entry in <code>CustomNavigationTabSet.tabs</code>. Note: <code>events</code>, <code>posts</code>, <code>people</code>, <code>about</code>, <code>media</code>, <code>video</code>, <code>videos</code>, <code>audio</code>, and <code>images</code> are reserved -- each may only be used to (redundantly) point back at its own matching predefined tab, never remapped to a different tab or a Post. <code>/</code> itself is never reachable this way - it's overridden via <code>CustomNavigationTabSet.home</code> instead.</td>
         </tr>
       </tbody>
     </table>
@@ -7319,6 +7331,12 @@ directory</a> is (<code>{name}</code> denotes a
           <td><a href="#bool">bool</a></td>
           <td></td>
           <td>"Block CORS Anonymous Media Access". When set, <code>GET /media/{id}</code> responses to <em>unauthenticated</em> requests omit CORS <code>Access-Control-Allow-*</code> headers even for <code>GLOBAL_PUBLIC</code> media, so browsers block other sites' scripts from reading them (plain <code>&#x26;lt;img&#x26;gt;</code>/<code>&#x26;lt;video&#x26;gt;</code> embeds still work). Authenticated requests are unaffected.</td>
+        </tr>
+        <tr>
+          <td>licensed_media_visible_globally</td>
+          <td><a href="#bool">bool</a></td>
+          <td></td>
+          <td>Whether <code>LICENSED</code> media (see <code>Visibility.LICENSED</code>) is discoverable by <em>unauthenticated</em> users: listed by <code>GetMedia</code> and its preview/thumbnails served by <code>GET /media/{id}</code>. When unset (the default), <code>LICENSED</code> media is only visible to logged-in users -- like <code>SERVER_PUBLIC</code> -- plus its owner and admins. Either way, its full-quality bytes still require an active License.</td>
         </tr>
         <tr>
           <td>server_media_allocation_bytes</td>
@@ -8140,7 +8158,7 @@ directory</a> is (<code>{name}</code> denotes a
         <tr>
           <td>MEDIA_TAB</td>
           <td>17</td>
-          <td>The Media tab: Video, Audio and (when logged in) My Media sub-tabs. Reserved path: <code>media</code>.</td>
+          <td>The Media tab: Video, Audio, Images and (when logged in) My Media sub-tabs. Reserved path: <code>media</code>.</td>
         </tr>
         <tr>
           <td>VIDEO_TAB</td>
@@ -8151,6 +8169,11 @@ directory</a> is (<code>{name}</code> denotes a
           <td>AUDIO_TAB</td>
           <td>19</td>
           <td>The Audio tab (a Spotify-alike over <code>GetMedia</code> with <code>content_type: &#x26;#34;audio/*&#x26;#34;</code>). Reserved path: <code>audio</code>.</td>
+        </tr>
+        <tr>
+          <td>IMAGES_TAB</td>
+          <td>20</td>
+          <td>The Images tab (a photo-gallery view over <code>GetMedia</code> with <code>content_type: &#x26;#34;image/*&#x26;#34;</code>). Reserved path: <code>images</code>.</td>
         </tr>
       </tbody>
     </table>

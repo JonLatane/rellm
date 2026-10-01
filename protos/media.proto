@@ -186,7 +186,7 @@ message MediaMetadata {
 // (Purchasing licenses through Rellm's Market is not implemented yet.)
 message License {
   string id = 1;
-  // The user holding the license.
+  // The user holding the license to the media.
   Author licensed_to = 2;
   // The licensed media.
   MediaReference media = 3;
