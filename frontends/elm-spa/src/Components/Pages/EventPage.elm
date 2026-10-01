@@ -2110,10 +2110,6 @@ eventDetailView shared model event occasion =
                     -- With more than one `Occasion`, "+ Add More" lives in the
                     -- date strip's own button row (see `occasionHistoryView`);
                     -- otherwise there's no strip, so it sits beside the time/location.
-                    occasionEditableHere : Bool
-                    occasionEditableHere =
-                        occasionEditable occasion
-
                     hasMultipleOccasions : Bool
                     hasMultipleOccasions =
                         List.length event.occasions > 1
@@ -2153,7 +2149,7 @@ eventDetailView shared model event occasion =
                         [ h1 [ class "event-post-title" ] [ titleView editable model.postFieldEdit maybeAccount eventPost ]
                         , case occasion.post of
                             Just occasionPost ->
-                                occasionTitleView occasionEditableHere model.occasionTitleEdit maybeAccount occasionPost
+                                occasionTitleView (occasionEditable occasion) model.occasionTitleEdit maybeAccount occasionPost
 
                             Nothing ->
                                 text ""
