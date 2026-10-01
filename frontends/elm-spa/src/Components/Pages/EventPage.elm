@@ -1649,12 +1649,10 @@ applyUpdatedEvent now model updatedEvent =
 in `zone` -- see that function's own doc for the DST guarantee this relies
 on). Every duplicate copies `occasion`'s own `post` (its title/link/content/
 visibility override, if any), `location`, and `timezone` verbatim -- nothing
-about "add more like this one" should silently drop any of them. Copying `post` along also
-copies its own id (an `Occasion`'s identity, post-migration -- see this
-module's own top-of-file doc), but that's harmless: `create_occasion` on the
-backend ignores whatever `id`/`author` a submitted `post` carries and always
-creates a fresh Post authored by the caller, so every duplicate still ends up
-a genuinely new `Occasion`, never mistaken for `occasion` itself.
+about "add more like this one" should silently drop any of them. The copied `post`'s `id` is blanked: the backend's `create_new_occasions` treats
+any request occasion whose `post.id` belongs to this event as already existing
+and skips it, so leaving the source occasion's id on the copies would create
+nothing at all.
 Everything else is left at `defaultOccasion`'s blank defaults.
 `[]` (a no-op back in `AddMoreFrequencyClicked`) if `occasion` is missing
 either `startsAt` or `endsAt`, which shouldn't happen in practice -- both are
@@ -1677,7 +1675,7 @@ buildRecurringOccasions zone count unit occasion =
                 |> List.map
                     (\n ->
                         { defaultOccasion
-                            | post = occasion.post
+                            | post = occasion.post |> Maybe.map (\post -> { post | id = "" })
                             , location = occasion.location
                             , timezone = occasion.timezone
                             , startsAt = Just (Conversions.posixToTimestamp (SharedTime.addRecurrence zone unit n baseStartsAt))
@@ -1715,7 +1713,7 @@ frequencyLabel : Int -> SharedTime.RecurrenceUnit -> String
 frequencyLabel count unit =
     case ( count == 1, unit ) of
         ( True, SharedTime.Daily ) ->
-            "Tomorrow"
+            "Next Day"
 
         ( True, SharedTime.Weekly ) ->
             "Next Week"
