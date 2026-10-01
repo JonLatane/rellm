@@ -233,6 +233,7 @@
   width: var(--my-media-zoom-size, 238px);
   max-width: 100%;
   box-sizing: border-box;
+  /* transition: width 0.12s ease-out; */
   padding: 0.16rem;
   border-radius: 8px;
   cursor: pointer;
@@ -277,6 +278,12 @@
   max-width: none;
   max-height: none;
   object-fit: cover;
+  transition: height 0.12s ease-out;
+}
+
+.my-media-panel-item-preview .media-renderer-video-preview {
+  display: block;
+  width: 100%;
 }
 
 .my-media-panel-item-preview .media-renderer-extra-small.media-renderer-object {

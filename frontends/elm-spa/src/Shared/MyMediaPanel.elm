@@ -1011,6 +1011,22 @@ toMediaReference media =
     { id = media.id, author = Maybe.map wrapAuthor media.author, name = media.name, generated = media.generated, metadata = media.metadata, sizes = media.sizes, url = media.url, description = media.description }
 
 
+{-| The smallest stored rendition (320/800/1600 px -- see `MediaConversion`) that still looks
+sharp in a tile at `zoom`: tiles are cropped to a 4:3 portrait box, so their long edge is
+`zoom * 4/3` CSS px, and ~1.5x covers typical high-DPI screens. Thresholds are therefore ~160/400.
+-}
+resolutionTierForZoom : Float -> MediaRenderer.ResolutionTier
+resolutionTierForZoom zoom =
+    if zoom <= 160 then
+        MediaRenderer.TierSmall
+
+    else if zoom <= 400 then
+        MediaRenderer.TierMedium
+
+    else
+        MediaRenderer.TierLarge
+
+
 {-| Every item Browse mode's grid is currently actually showing, converted to
 `MediaReference` and in the exact same order `contentView`'s grid renders
 them in -- so `Shared.MediaViewerPanel.Open`'s own left/right paging (see
@@ -1378,7 +1394,7 @@ mediaAnimationView server account model ( mediaId, anim ) =
     in
     ( mediaId
     , div (UI.Flip.itemAttributes UI.Flip.Horizontal anim.flip False)
-        [ div pointerEventsAttr [ mediaItemView server account model.targetHost model.deletingIds selected anim.media ] ]
+        [ div pointerEventsAttr [ mediaItemView server account model.targetHost model.deletingIds model.zoom selected anim.media ] ]
     )
 
 
@@ -1408,8 +1424,8 @@ still needs `stopPropagationOn` -- without it, a click there would bubble up
 into this same handler and select/re-add the very item just deleted.
 
 -}
-mediaItemView : RellmServer -> RellmAccount -> String -> Set String -> Bool -> Media -> Html Msg
-mediaItemView server account targetHost deletingIds selected media =
+mediaItemView : RellmServer -> RellmAccount -> String -> Set String -> Float -> Bool -> Media -> Html Msg
+mediaItemView server account targetHost deletingIds zoom selected media =
     let
         deleting : Bool
         deleting =
@@ -1427,7 +1443,7 @@ mediaItemView server account targetHost deletingIds selected media =
     in
     div [ classes itemClasses, onClick (MediaItemClicked media.id) ]
         [ div [ class "my-media-panel-item-preview" ]
-            [ MediaRenderer.view MediaRenderer.ExtraSmall MediaRenderer.ToWidthAndHeight server (Just account) True MediaRenderer.init MediaItemClicked MediaItemClicked (toMediaReference media)
+            [ MediaRenderer.viewWithResolution (resolutionTierForZoom zoom) MediaRenderer.ExtraSmall MediaRenderer.ToWidthAndHeight server (Just account) False MediaRenderer.init MediaItemClicked MediaItemClicked (toMediaReference media)
             , button
                 [ classes [ "remove-btn", "my-media-panel-item-delete" ]
                 , stopPropagationOn "click" (Decode.succeed ( DeleteClicked media, True ))
@@ -1548,7 +1564,7 @@ selectedMediaItemView server account moveAnimations count index media =
     div
         (id (selectedMediaDomId media.id) :: class "my-media-panel-selected-item" :: moveAttrs)
         [ div [ class "my-media-panel-selected-item-preview" ]
-            [ MediaRenderer.view MediaRenderer.ExtraSmall MediaRenderer.ToWidthAndHeight server (Just account) True MediaRenderer.init (\_ -> NoOp) (\_ -> NoOp) media ]
+            [ MediaRenderer.view MediaRenderer.ExtraSmall MediaRenderer.ToWidthAndHeight server (Just account) False MediaRenderer.init (\_ -> NoOp) (\_ -> NoOp) media ]
         , div [ class "my-media-panel-selected-item-controls" ]
             [ div [ classList [ ( "reorder-arrow", True ), ( "reorder-arrow-hidden", not canMoveBackward ) ] ] [ reorderPair.backward ]
             , button
@@ -1624,12 +1640,21 @@ zoomSliderView windowWidth model =
         [ span [ class "my-media-panel-zoom-icon" ] [ text "🔍" ]
         , input
             [ type_ "range"
-            , Html.Attributes.min "42"
-            , Html.Attributes.max (String.fromFloat (min 800 (0.9 * toFloat windowWidth)))
-            , step "8"
-            , value (String.fromFloat model.zoom)
-            , onInput (\v -> ZoomChanged (String.toFloat v |> Maybe.withDefault model.zoom))
+            , Html.Attributes.min (String.fromFloat (logBase e minZoom))
+            , Html.Attributes.max (String.fromFloat (logBase e (max (minZoom + 1) (min 800 (0.9 * toFloat windowWidth)))))
+            , step "0.01"
+            , value (String.fromFloat (logBase e model.zoom))
+            , onInput (\v -> ZoomChanged (String.toFloat v |> Maybe.map (\logZoom -> e ^ logZoom) |> Maybe.withDefault model.zoom))
             , title "Preview size"
             ]
             []
         ]
+
+
+{-| The slider works in log-space (`zoomSliderView`'s value is `ln zoom`), so each notch changes
+tile size by a constant *percentage* -- at small sizes a notch moves the tiles by only a few px
+(few tiles reflow per step), instead of the large linear steps that make a zoomed-out grid jump.
+-}
+minZoom : Float
+minZoom =
+    42
