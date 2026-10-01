@@ -691,6 +691,15 @@ view accountsPanelModel model =
                 VIDEOPREVIEWTHUMBNAILLARGE ->
                     "Video Preview (Large)"
 
+                AUDIOPREVIEWTHUMBNAILSMALL ->
+                    "Audio Waveform (Small)"
+
+                AUDIOPREVIEWTHUMBNAILMEDIUM ->
+                    "Audio Waveform (Medium)"
+
+                AUDIOPREVIEWTHUMBNAILLARGE ->
+                    "Audio Waveform (Large)"
+
                 MediaConversionUnrecognized_ _ ->
                     "Unknown"
 

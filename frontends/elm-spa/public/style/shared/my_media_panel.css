@@ -286,6 +286,24 @@
   width: 100%;
 }
 
+/* Audio tiles: the same full tile width as images/videos, with the waveform squashed to the tile's
+   zoom-driven height (see `.media-renderer-audio-preview-image` in media.css) rather than the 4/3
+   crop ratio photos get. */
+.my-media-panel-item-preview .media-renderer-audio-preview {
+  display: block;
+  width: 100%;
+}
+
+.my-media-panel-item-preview .media-renderer-extra-small.media-renderer-audio-preview-image,
+.my-media-panel-item-preview .media-renderer-extra-small.media-renderer-audio {
+  width: 100%;
+}
+
+.my-media-panel-item-preview .media-renderer-extra-small.media-renderer-audio-preview-image {
+  height: calc(var(--my-media-zoom-size, 238px) * 4 / 3);
+  transition: height 0.12s ease-out;
+}
+
 .my-media-panel-item-preview .media-renderer-extra-small.media-renderer-object {
   width: 100%;
   height: calc(var(--my-media-zoom-size, 238px) * 4 / 3);

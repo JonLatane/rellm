@@ -133,6 +133,14 @@ pub const VIDEO_PREVIEW_CONVERSIONS: [MediaConversion; 3] = [
     MediaConversion::VideoPreviewThumbnailLarge,
 ];
 
+/// The 3 auto-generated `image/png` waveform sizes `convert_media` produces for *audio* `Media`
+/// items only -- see each variant's own doc in `media.proto`.
+pub const AUDIO_PREVIEW_CONVERSIONS: [MediaConversion; 3] = [
+    MediaConversion::AudioPreviewThumbnailSmall,
+    MediaConversion::AudioPreviewThumbnailMedium,
+    MediaConversion::AudioPreviewThumbnailLarge,
+];
+
 /// Sizing/naming details for each `MediaConversion` -- extension trait since `MediaConversion`
 /// itself is generated from `protos/media.proto`.
 pub trait MediaConversionExt {
@@ -148,9 +156,15 @@ impl MediaConversionExt for MediaConversion {
     fn max_dimension(&self) -> u32 {
         match self {
             MediaConversion::Original => 0,
-            MediaConversion::Small | MediaConversion::VideoPreviewThumbnailSmall => 320,
-            MediaConversion::Medium | MediaConversion::VideoPreviewThumbnailMedium => 800,
-            MediaConversion::Large | MediaConversion::VideoPreviewThumbnailLarge => 1600,
+            MediaConversion::Small
+            | MediaConversion::VideoPreviewThumbnailSmall
+            | MediaConversion::AudioPreviewThumbnailSmall => 320,
+            MediaConversion::Medium
+            | MediaConversion::VideoPreviewThumbnailMedium
+            | MediaConversion::AudioPreviewThumbnailMedium => 800,
+            MediaConversion::Large
+            | MediaConversion::VideoPreviewThumbnailLarge
+            | MediaConversion::AudioPreviewThumbnailLarge => 1600,
         }
     }
 
@@ -163,6 +177,9 @@ impl MediaConversionExt for MediaConversion {
             MediaConversion::VideoPreviewThumbnailSmall => "video_preview_thumbnail_small",
             MediaConversion::VideoPreviewThumbnailMedium => "video_preview_thumbnail_medium",
             MediaConversion::VideoPreviewThumbnailLarge => "video_preview_thumbnail_large",
+            MediaConversion::AudioPreviewThumbnailSmall => "audio_preview_thumbnail_small",
+            MediaConversion::AudioPreviewThumbnailMedium => "audio_preview_thumbnail_medium",
+            MediaConversion::AudioPreviewThumbnailLarge => "audio_preview_thumbnail_large",
         }
     }
 }

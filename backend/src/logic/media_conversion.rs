@@ -19,13 +19,18 @@ use s3::Bucket;
 
 use crate::db_connection::PgPooledConnection;
 use crate::logic::{adjust_server_media_usage_bytes, update_media_storage_used};
-use crate::models::{Media, MediaConversionExt, MediaSize, RESIZED_CONVERSIONS, VIDEO_PREVIEW_CONVERSIONS};
+use crate::models::{Media, MediaConversionExt, MediaSize, AUDIO_PREVIEW_CONVERSIONS, RESIZED_CONVERSIONS, VIDEO_PREVIEW_CONVERSIONS};
 use crate::protos::MediaConversion;
 use crate::schema::media;
 
 pub const CONVERTIBLE_CONTENT_TYPES: [&str; 3] = ["image/png", "image/jpeg", "image/jpg"];
 pub const VIDEO_CONVERTIBLE_CONTENT_TYPES: [&str; 3] =
     ["video/mp4", "video/quicktime", "video/webm"];
+pub const AUDIO_CONVERTIBLE_CONTENT_TYPES: [&str; 2] = ["audio/mpeg", "audio/ogg"];
+
+pub fn is_audio_content_type(content_type: &str) -> bool {
+    AUDIO_CONVERTIBLE_CONTENT_TYPES.contains(&content_type)
+}
 
 /// Whether `content_type` is one `convert_media`/`update_media` treat as video (as opposed to
 /// image) -- `pub` since `rpcs::update_media` also needs it, to know whether an item's
@@ -51,6 +56,7 @@ pub fn media_pending_conversion(
     let content_types: Vec<&str> = CONVERTIBLE_CONTENT_TYPES
         .iter()
         .chain(VIDEO_CONVERTIBLE_CONTENT_TYPES.iter())
+        .chain(AUDIO_CONVERTIBLE_CONTENT_TYPES.iter())
         .copied()
         .collect();
     let candidates: Vec<Media> = media::table
@@ -369,6 +375,38 @@ impl FFmpeg {
     }
 }
 
+/// Audio waveform images are stored square (1:1) -- clients squash them vertically to whatever
+/// height suits the layout (a waveform has no fine detail to distort).
+const WAVEFORM_ASPECT_RATIO: f32 = 1.0;
+
+impl FFmpeg {
+    /// Renders a transparent-background `image/png` waveform of the whole of `input`, exactly `width`
+    /// px square, via `showwavespic` -- used to generate the
+    /// `AUDIO_PREVIEW_THUMBNAIL_*` sizes. The (light grey) waveform color reads on both light and
+    /// dark backgrounds, so one image serves every theme.
+    fn waveform(&self, input: &Path, output: &Path, width: u32) -> Result<()> {
+        let height = width;
+        let status = Command::new("ffmpeg")
+            .arg("-y")
+            .arg("-nostdin")
+            .arg("-i")
+            .arg(input)
+            .arg("-filter_complex")
+            .arg(format!(
+                "aformat=channel_layouts=mono,showwavespic=s={width}x{height}:colors=#9a9a9a:draw=full,format=rgba"
+            ))
+            .arg("-frames:v")
+            .arg("1")
+            .arg(output)
+            .status()
+            .context("failed to run ffmpeg")?;
+        if !status.success() {
+            bail!("ffmpeg exited with {}", status);
+        }
+        Ok(())
+    }
+}
+
 fn command_exists(program: &str) -> bool {
     Command::new(program)
         .arg("-version")
@@ -384,6 +422,8 @@ fn extension_for_content_type(content_type: &str) -> Result<&'static str> {
         "video/mp4" => Ok("mp4"),
         "video/quicktime" => Ok("mov"),
         "video/webm" => Ok("webm"),
+        "audio/mpeg" => Ok("mp3"),
+        "audio/ogg" => Ok("ogg"),
         other => bail!("unsupported content type: {other}"),
     }
 }
@@ -407,6 +447,8 @@ fn resized_content_type(original_content_type: &str) -> &str {
 enum Converter<'a> {
     Image(&'a ImageMagick),
     Video(&'a FFmpeg),
+    /// Audio has no pixel dimensions and no resized copies -- only waveform thumbnails.
+    Audio(&'a FFmpeg),
 }
 
 impl Converter<'_> {
@@ -414,6 +456,7 @@ impl Converter<'_> {
         match self {
             Converter::Image(imagemagick) => imagemagick.dimensions(path),
             Converter::Video(ffmpeg) => ffmpeg.dimensions(path),
+            Converter::Audio(_) => bail!("audio has no dimensions"),
         }
     }
 
@@ -427,6 +470,7 @@ impl Converter<'_> {
         match self {
             Converter::Image(imagemagick) => imagemagick.resize(input, output, max_dimension),
             Converter::Video(ffmpeg) => ffmpeg.resize(input, output, max_dimension, content_type),
+            Converter::Audio(_) => bail!("audio has no resized copies"),
         }
     }
 }
@@ -453,7 +497,9 @@ pub async fn convert_media(
         .original()
         .context("Media has no MEDIA_CONVERSION_ORIGINAL size")?;
 
-    let converter = if is_video_content_type(&original.content_type) {
+    let converter = if is_audio_content_type(&original.content_type) {
+        Converter::Audio(ffmpeg.context("ffmpeg not found on $PATH; cannot convert audio Media")?)
+    } else if is_video_content_type(&original.content_type) {
         Converter::Video(ffmpeg.context("ffmpeg not found on $PATH; cannot convert video Media")?)
     } else {
         Converter::Image(
@@ -470,16 +516,20 @@ pub async fn convert_media(
         .context("failed to download original from object storage")?;
     std::fs::write(&input_path, original_bytes.as_slice())?;
 
-    let (width, height) = converter.dimensions(&input_path)?;
+    // Audio has no dimensions: skip resizing entirely and leave the original's `aspect_ratio` unset.
+    let is_audio = matches!(converter, Converter::Audio(_));
+    let (width, height) = if is_audio { (0, 0) } else { converter.dimensions(&input_path)? };
     let aspect_ratio = width as f32 / height as f32;
-    original.aspect_ratio = Some(aspect_ratio);
+    if !is_audio {
+        original.aspect_ratio = Some(aspect_ratio);
+    }
 
     let resized_content_type = resized_content_type(&original.content_type).to_string();
     let resized_extension = extension_for_content_type(&resized_content_type)?;
 
     let mut sizes = vec![original];
 
-    for conversion in RESIZED_CONVERSIONS {
+    for conversion in RESIZED_CONVERSIONS.into_iter().filter(|_| !is_audio) {
         if width.max(height) <= conversion.max_dimension() {
             log::info!(
                 "Media {} ({}x{}) already fits within '{}' ({}px) -- skipping",
@@ -563,6 +613,37 @@ pub async fn convert_media(
                 content_type: "image/jpeg".to_string(),
                 size_bytes: output_bytes.len() as i64,
                 aspect_ratio: Some(aspect_ratio),
+            });
+        }
+    }
+
+    // Audio-only: `image/png` waveforms of the whole file at the 3 width tiers.
+    if let Converter::Audio(ffmpeg) = &converter {
+        for conversion in AUDIO_PREVIEW_CONVERSIONS {
+            let output_path = tmp_dir.join(format!("{}-{}.png", item.id, conversion.key()));
+            ffmpeg.waveform(&input_path, &output_path, conversion.max_dimension())?;
+            let output_bytes = std::fs::read(&output_path)?;
+            let _ = std::fs::remove_file(&output_path);
+
+            let converted_object_storage_path = format!("{}.{}", sizes[0].object_storage_path, conversion.key());
+            bucket
+                .put_object_with_content_type(&converted_object_storage_path, &output_bytes, "image/png")
+                .await
+                .context("failed to upload audio waveform thumbnail to object storage")?;
+
+            log::info!(
+                "Media {}: generated '{}' ({} bytes) at {}",
+                item.id,
+                conversion.key(),
+                output_bytes.len(),
+                converted_object_storage_path
+            );
+            sizes.push(MediaSize {
+                conversion: conversion as i32,
+                object_storage_path: converted_object_storage_path,
+                content_type: "image/png".to_string(),
+                size_bytes: output_bytes.len() as i64,
+                aspect_ratio: Some(WAVEFORM_ASPECT_RATIO),
             });
         }
     }

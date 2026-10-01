@@ -215,6 +215,9 @@ fn resolve_media_size(media: &models::Media, size: Option<&str>) -> (String, Str
         Some("video_preview_small") => MediaConversion::VideoPreviewThumbnailSmall,
         Some("video_preview_medium") => MediaConversion::VideoPreviewThumbnailMedium,
         Some("video_preview_large") => MediaConversion::VideoPreviewThumbnailLarge,
+        Some("audio_preview_small") => MediaConversion::AudioPreviewThumbnailSmall,
+        Some("audio_preview_medium") => MediaConversion::AudioPreviewThumbnailMedium,
+        Some("audio_preview_large") => MediaConversion::AudioPreviewThumbnailLarge,
         _ => MediaConversion::Medium,
     };
 
