@@ -33,17 +33,20 @@ digraph G {
   rellmio_dns [shape = note;label = "jonline.io";];
   oakcitysocial_dns [shape = note;label = "oakcity.social";];
   bullcitysocial_dns [shape = note;label = "bullcity.social";];
-  atoband_dns [shape = note;label = "ato.band";];
+  ato_band_dns [shape = note;label = "ato.band";];
+  rellmorg_dns [shape = note;label = "rellm.org";];
   
   resolve_dns -> rellmio_dns [style = dotted;];
   resolve_dns -> oakcitysocial_dns [style = dotted;];
   resolve_dns -> bullcitysocial_dns [style = dotted;];
-  resolve_dns -> atoband_dns [style = dotted;];
+  resolve_dns -> ato_band_dns [style = dotted;];
+  resolve_dns -> rellmorg_dns [style = dotted;];
   
   rellmio_dns -> traefik [style = dotted;];
   oakcitysocial_dns -> traefik [style = dotted;];
   bullcitysocial_dns -> traefik [style = dotted;];
-  atoband_dns -> traefik [style = dotted;];
+  ato_band_dns -> traefik [style = dotted;];
+  rellmorg_dns -> traefik [style = dotted;];
   
   subgraph cluster_kubernetes {
     label = <<b>Kubernetes Cluster</b>&nbsp;(one $24/mo, 2vCPU/4GB/80GB, node)>;
@@ -88,12 +91,14 @@ digraph G {
     rellmio [shape = note;label = "jonline.io";];
     oakcitysocial [shape = note;label = "oakcity.social";];
     bullcitysocial [shape = note;label = "bullcity.social";];
-    atoband [shape = note;label = "ato.band";];
+    ato_band [shape = note;label = "ato.band";];
+    rellmorg [shape = note;label = "rellm.org";];
     
     resolve_namespace -> rellmio [style = dotted;];
     resolve_namespace -> oakcitysocial [style = dotted;];
     resolve_namespace -> bullcitysocial [style = dotted;];
-    resolve_namespace -> atoband [style = dotted;];
+    resolve_namespace -> ato_band [style = dotted;];
+    resolve_namespace -> rellmorg [style = dotted;];
     
     // SMTP has its own entrypoint (:25) that never touches parse_host/resolve_namespace above:
     // plaintext SMTP has no TLS ClientHello to peek an SNI from (STARTTLS upgrades the same
@@ -135,12 +140,14 @@ digraph G {
     rellmio_mta [shape = note;label = "jonline.io";];
     oakcitysocial_mta [shape = note;label = "oakcity.social";];
     bullcitysocial_mta [shape = note;label = "bullcity.social";];
-    atoband_mta [shape = note;label = "ato.band";];
+    ato_band_mta [shape = note;label = "ato.band";];
+    rellmorg_mta [shape = note;label = "rellm.org";];
     
     resolve_mta_hook -> rellmio_mta [style = "dotted,dashed";];
     resolve_mta_hook -> oakcitysocial_mta [style = "dotted,dashed";];
     resolve_mta_hook -> bullcitysocial_mta [style = "dotted,dashed";];
-    resolve_mta_hook -> atoband_mta [style = "dotted,dashed";];
+    resolve_mta_hook -> ato_band_mta [style = "dotted,dashed";];
+    resolve_mta_hook -> rellmorg_mta [style = "dotted,dashed";];
     // objectStorage0 [shape = cylinder;label = "Object Storage";];
     // postgres0 [shape = cylinder;label = "Postgres";];
     // tls0 [shape = "box";color = ".7 .3 1.0";label = <<b>rellm-tls</b>&nbsp;(K8s Secret)>;];
@@ -156,71 +163,23 @@ digraph G {
       style = filled;
       color = "gray90";
 
-  subgraph cluster_rellm {
-    label = <<b>rellm</b>&nbsp;(K8s Namespace)>;
+  subgraph cluster_jonline {
+    label = <<b>jonline</b>&nbsp;(K8s Namespace)>;
     node [style = filled; color = white;];
     style = filled;
     color = lightgrey;
-    
-    rellm0 [shape = oval;style = filled;color = white;label = <<table border="0" cellborder="0" cellspacing="0"><tr><td><b>rellm</b></td></tr><tr><td>(K8s ClusterIP)</td></tr></table>>;];
+    pencolor = "#1f77b4";
+    penwidth = 3;
+
+    rellm0 [shape = oval;style = filled;color = white;group = production_stack;label = <<table border="0" cellborder="0" cellspacing="0"><tr><td><b>rellm</b></td></tr><tr><td>(K8s ClusterIP)</td></tr></table>>;];
     tls0 [shape = "box";color = ".7 .3 1.0";label = <<b>rellm-tls</b>&nbsp;(K8s Secret)>;];
 
-    // VAPID/Facebook config live as JSON columns on the same ServerConfiguration row inside this
-    // Postgres (see backend/src/models/server_configuration_models.rs) -- shown once here, not
-    // repeated per-namespace like rellm-tls, since this diagram only tracks one server's
-    // push/Facebook setup at a time.
-    subgraph cluster_rellm_storage {
-      label = <<b>Storage</b>>;
-      style = filled;
-      color = "#88f5df";
-      node [style = filled; color = white;];
-
-      objectStorage0 [shape = cylinder;label = <<table border="0" cellborder="0" cellspacing="0"><tr><td><b>Object Storage</b></td></tr><tr><td>5GB @ <b>50¢/mo</b></td></tr></table>>;color = black;fillcolor = gray80;];
-
-      subgraph cluster_rellm_postgres {
-        label = "";
-        style = filled;
-        color = lightgrey;
-        node [style = filled; color = white;];
-
-        postgres0 [shape = cylinder;label = <<table border="0" cellborder="0" cellspacing="0"><tr><td><b>Postgres</b></td></tr><tr><td>1GB @ <b>10&#162;/mo</b></td></tr></table>>;color = black;fillcolor = white;];
-        subgraph cluster_rellm_postgres_server {
-          label = <<b>Server Level</b>>;
-          style = filled;
-          color = white;
-          node [style = filled; color = white;];
-
-          vapid_configuration [shape = box;style = filled;color = ".7 .3 1.0";label = <<b>VAPID Push Configuration</b>>;];
-          facebook_configuration [shape = box;style = filled;color = ".7 .3 1.0";label = <<b>Facebook App Configuration</b>>;];
-        }
-
-        subgraph cluster_rellm_postgres_user {
-          label = <<b>User Level</b>>;
-          style = filled;
-          color = white;
-          node [style = filled; color = white;];
-
-          sync_sources [shape = box;style = filled;color = ".7 .3 1.0";label = <<b>Sync Sources</b>>;];
-          sync_destinations [shape = box;style = filled;color = ".7 .3 1.0";label = <<b>Sync Destinations</b>>;];
-        }
-        // Invisible, rank-only edge: hints Server Level above User Level instead of beside it.
-        vapid_configuration -> sync_sources [style = invis;];
-      }
-    }
-    rellm0 -> objectStorage0;
-    rellm0 -> postgres0;
-
-    vapid_push [shape = parallelogram;label = "VAPID Push";];
-    rellm0 -> vapid_push [weight = 8; style = tapered; penwidth = 6;];
-    vapid_configuration -> vapid_push [style = tapered; penwidth = 6;];
-
-    pull_events [shape = parallelogram;label = "Pull Events From Source";];
-    push_content [shape = parallelogram;label = "Push Posts/Events To Destination";];
-    rellm0 -> pull_events [weight = 8;];
-    rellm0 -> push_content [weight = 8;];
-    sync_sources -> pull_events [style = bold;];
-    sync_destinations -> push_content [style = bold;];
-    facebook_configuration -> push_content [style = bold;];
+    vapid_push0 [shape = parallelogram;label = "VAPID Push";];
+    pull_events0 [shape = parallelogram;label = "Pull Events From Source";];
+    push_content0 [shape = parallelogram;label = "Push Posts/Events To Destination";];
+    rellm0 -> vapid_push0 [weight = 8; style = tapered; penwidth = 6;];
+    rellm0 -> pull_events0 [weight = 8;];
+    rellm0 -> push_content0 [weight = 8;];
   }
 
   subgraph cluster_oakcitysocial {
@@ -228,25 +187,149 @@ digraph G {
     node [style = filled; color = white;];
     style = filled;
     color = lightgrey;
-    
-    rellm1 [shape = oval;style = filled;color = white;group = production_stack;label = <<table border="0" cellborder="0" cellspacing="0"><tr><td><b>rellm</b></td></tr><tr><td>(K8s ClusterIP)</td></tr></table>>;];
+    pencolor = "#d62728";
+    penwidth = 3;
 
-    subgraph cluster_oakcitysocial_storage {
-      label = <<b>Storage</b>>;
+    rellm1 [shape = oval;style = filled;color = white;group = production_stack;label = <<table border="0" cellborder="0" cellspacing="0"><tr><td><b>rellm</b></td></tr><tr><td>(K8s ClusterIP)</td></tr></table>>;];
+    tls1 [shape = "box";color = ".7 .3 1.0";label = <<b>rellm-tls</b>&nbsp;(K8s Secret)>;];
+
+    vapid_push1 [shape = parallelogram;label = "VAPID Push";];
+    pull_events1 [shape = parallelogram;label = "Pull Events From Source";];
+    push_content1 [shape = parallelogram;label = "Push Posts/Events To Destination";];
+    rellm1 -> vapid_push1 [weight = 8; style = tapered; penwidth = 6;];
+    rellm1 -> pull_events1 [weight = 8;];
+    rellm1 -> push_content1 [weight = 8;];
+  }
+
+  subgraph cluster_bullcitysocial {
+    label = <<b>bullcitysocial</b>&nbsp;(K8s Namespace)>;
+    node [style = filled; color = white;];
+    style = filled;
+    color = lightgrey;
+    pencolor = "#2ca02c";
+    penwidth = 3;
+
+    rellm2 [shape = oval;style = filled;color = white;group = production_stack;label = <<table border="0" cellborder="0" cellspacing="0"><tr><td><b>rellm</b></td></tr><tr><td>(K8s ClusterIP)</td></tr></table>>;];
+    tls2 [shape = "box";color = ".7 .3 1.0";label = <<b>rellm-tls</b>&nbsp;(K8s Secret)>;];
+
+    vapid_push2 [shape = parallelogram;label = "VAPID Push";];
+    pull_events2 [shape = parallelogram;label = "Pull Events From Source";];
+    push_content2 [shape = parallelogram;label = "Push Posts/Events To Destination";];
+    rellm2 -> vapid_push2 [weight = 8; style = tapered; penwidth = 6;];
+    rellm2 -> pull_events2 [weight = 8;];
+    rellm2 -> push_content2 [weight = 8;];
+  }
+
+  subgraph cluster_ato_band {
+    label = <<b>ato-band</b>&nbsp;(K8s Namespace)>;
+    node [style = filled; color = white;];
+    style = filled;
+    color = lightgrey;
+    pencolor = "#9467bd";
+    penwidth = 3;
+
+    rellm3 [shape = oval;style = filled;color = white;group = production_stack;label = <<table border="0" cellborder="0" cellspacing="0"><tr><td><b>rellm</b></td></tr><tr><td>(K8s ClusterIP)</td></tr></table>>;];
+    tls3 [shape = "box";color = ".7 .3 1.0";label = <<b>rellm-tls</b>&nbsp;(K8s Secret)>;];
+
+    vapid_push3 [shape = parallelogram;label = "VAPID Push";];
+    pull_events3 [shape = parallelogram;label = "Pull Events From Source";];
+    push_content3 [shape = parallelogram;label = "Push Posts/Events To Destination";];
+    rellm3 -> vapid_push3 [weight = 8; style = tapered; penwidth = 6;];
+    rellm3 -> pull_events3 [weight = 8;];
+    rellm3 -> push_content3 [weight = 8;];
+  }
+
+  subgraph cluster_rellm_org {
+    label = <<b>rellm-org</b>&nbsp;(K8s Namespace)>;
+    node [style = filled; color = white;];
+    style = filled;
+    color = lightgrey;
+    pencolor = "#e08a00";
+    penwidth = 3;
+
+    rellm4 [shape = oval;style = filled;color = white;group = production_stack;label = <<table border="0" cellborder="0" cellspacing="0"><tr><td><b>rellm</b></td></tr><tr><td>(K8s ClusterIP)</td></tr></table>>;];
+    tls4 [shape = "box";color = ".7 .3 1.0";label = <<b>rellm-tls</b>&nbsp;(K8s Secret)>;];
+
+    vapid_push4 [shape = parallelogram;label = "VAPID Push";];
+    pull_events4 [shape = parallelogram;label = "Pull Events From Source";];
+    push_content4 [shape = parallelogram;label = "Push Posts/Events To Destination";];
+    rellm4 -> vapid_push4 [weight = 8; style = tapered; penwidth = 6;];
+    rellm4 -> pull_events4 [weight = 8;];
+    rellm4 -> push_content4 [weight = 8;];
+  }
+
+    }
+
+  // Shared storage for every namespace above (deploys/central_storage): one Postgres + one Silo, 2
+  // PVCs total, each namespace getting its own database/bucket (named after the namespace) plus a
+  // role/user restricted to just that data. VAPID/Facebook config live as JSON columns on the same
+  // ServerConfiguration row inside each site's database (see
+  // backend/src/models/server_configuration_models.rs), so they sit with their database here.
+  subgraph cluster_rellm_storage {
+    label = <<b>rellm-storage</b>&nbsp;(K8s Namespace)>;
+    node [style = filled; color = white;];
+    style = filled;
+    color = lightgrey;
+
+    subgraph cluster_central_postgres {
+      label = <<b>Postgres</b>>;
       style = filled;
       color = "#88f5df";
       node [style = filled; color = white;];
 
-      objectStorage1 [shape = cylinder;label = <<table border="0" cellborder="0" cellspacing="0"><tr><td><b>Object Storage</b></td></tr><tr><td>5GB @ <b>50¢/mo</b></td></tr></table>>;color = black;fillcolor = gray80;];
+      central_postgres [shape = oval;style = filled;color = white;label = <<table border="0" cellborder="0" cellspacing="0"><tr><td><b>rellm-central-postgres</b></td></tr><tr><td>(K8s headless Service)</td></tr></table>>;];
+      central_postgres_pvc [shape = box;style = filled;color = black;fillcolor = white;label = <<table border="0" cellborder="0" cellspacing="0"><tr><td><b>central-postgres-pv-claim</b></td></tr><tr><td>(K8s PVC) 10GB @ <b>$1/mo</b></td></tr></table>>;];
+      central_postgres -> central_postgres_pvc [label = "mounts"; style = dashed;];
 
-      subgraph cluster_oakcitysocial_postgres {
+      subgraph cluster_jonline_database {
         label = "";
         style = filled;
         color = lightgrey;
+        pencolor = "#1f77b4";
+        penwidth = 3;
         node [style = filled; color = white;];
 
-        postgres1 [shape = cylinder;label = <<table border="0" cellborder="0" cellspacing="0"><tr><td><b>Postgres</b></td></tr><tr><td>1GB @ <b>10&#162;/mo</b></td></tr></table>>;color = black;fillcolor = white;];
-        subgraph cluster_oakcitysocial_postgres_server {
+        postgres0 [shape = cylinder;label = <<b>Database: jonline</b>>;color = black;fillcolor = white;];
+        subgraph cluster_jonline_database_server {
+          label = <<b>Server Level</b>>;
+          style = filled;
+          color = white;
+          node [style = filled; color = white;];
+
+          vapid_configuration0 [shape = box;style = filled;color = ".7 .3 1.0";label = <<b>VAPID Push Configuration</b>>;];
+          facebook_configuration0 [shape = box;style = filled;color = ".7 .3 1.0";label = <<b>Facebook App Configuration</b>>;];
+          object_storage_limit_server0 [shape = box;style = filled;color = ".7 .3 1.0";label = <<b>Object Storage Limit</b>>;];
+        }
+
+        subgraph cluster_jonline_database_user {
+          label = <<b>User Level</b>>;
+          style = filled;
+          color = white;
+          node [style = filled; color = white;];
+
+          sync_sources0 [shape = box;style = filled;color = ".7 .3 1.0";label = <<b>Sync Sources</b>>;];
+          sync_destinations0 [shape = box;style = filled;color = ".7 .3 1.0";label = <<b>Sync Destinations</b>>;];
+          object_storage_limit_user0 [shape = box;style = filled;color = ".7 .3 1.0";label = <<b>Object Storage Limit</b>>;];
+        }
+        // Invisible, rank-only edges: Server Level and User Level sit side by side, below the database.
+        postgres0 -> vapid_configuration0 [style = invis;];
+        postgres0 -> sync_sources0 [style = invis;];
+        // Object Storage Limit sits one row below the other boxes in its group, keeping each database narrow.
+        vapid_configuration0 -> object_storage_limit_server0 [style = invis;];
+        sync_sources0 -> object_storage_limit_user0 [style = invis;];
+        vapid_configuration0 -> sync_sources0 [style = invis; constraint = false;];
+      }
+
+      subgraph cluster_oakcitysocial_database {
+        label = "";
+        style = filled;
+        color = lightgrey;
+        pencolor = "#d62728";
+        penwidth = 3;
+        node [style = filled; color = white;];
+
+        postgres1 [shape = cylinder;label = <<b>Database: oakcitysocial</b>>;color = black;fillcolor = white;];
+        subgraph cluster_oakcitysocial_database_server {
           label = <<b>Server Level</b>>;
           style = filled;
           color = white;
@@ -254,9 +337,10 @@ digraph G {
 
           vapid_configuration1 [shape = box;style = filled;color = ".7 .3 1.0";label = <<b>VAPID Push Configuration</b>>;];
           facebook_configuration1 [shape = box;style = filled;color = ".7 .3 1.0";label = <<b>Facebook App Configuration</b>>;];
+          object_storage_limit_server1 [shape = box;style = filled;color = ".7 .3 1.0";label = <<b>Object Storage Limit</b>>;];
         }
 
-        subgraph cluster_oakcitysocial_postgres_user {
+        subgraph cluster_oakcitysocial_database_user {
           label = <<b>User Level</b>>;
           style = filled;
           color = white;
@@ -264,52 +348,27 @@ digraph G {
 
           sync_sources1 [shape = box;style = filled;color = ".7 .3 1.0";label = <<b>Sync Sources</b>>;];
           sync_destinations1 [shape = box;style = filled;color = ".7 .3 1.0";label = <<b>Sync Destinations</b>>;];
+          object_storage_limit_user1 [shape = box;style = filled;color = ".7 .3 1.0";label = <<b>Object Storage Limit</b>>;];
         }
-        // Invisible, rank-only edge: hints Server Level above User Level instead of beside it.
-        vapid_configuration1 -> sync_sources1 [style = invis;];
+        // Invisible, rank-only edges: Server Level and User Level sit side by side, below the database.
+        postgres1 -> vapid_configuration1 [style = invis;];
+        postgres1 -> sync_sources1 [style = invis;];
+        // Object Storage Limit sits one row below the other boxes in its group, keeping each database narrow.
+        vapid_configuration1 -> object_storage_limit_server1 [style = invis;];
+        sync_sources1 -> object_storage_limit_user1 [style = invis;];
+        vapid_configuration1 -> sync_sources1 [style = invis; constraint = false;];
       }
-    }
-    rellm1 -> objectStorage1;
-    rellm1 -> postgres1;
 
-    vapid_push1 [shape = parallelogram;label = "VAPID Push";];
-    rellm1 -> vapid_push1 [weight = 8; style = tapered; penwidth = 6;];
-    vapid_configuration1 -> vapid_push1 [style = tapered; penwidth = 6;];
-
-    pull_events1 [shape = parallelogram;label = "Pull Events From Source";];
-    push_content1 [shape = parallelogram;label = "Push Posts/Events To Destination";];
-    rellm1 -> pull_events1 [weight = 8;];
-    rellm1 -> push_content1 [weight = 8;];
-    sync_sources1 -> pull_events1 [style = bold;];
-    sync_destinations1 -> push_content1 [style = bold;];
-    facebook_configuration1 -> push_content1 [style = bold;];
-
-    tls1 [shape = "box";color = ".7 .3 1.0";label = <<b>rellm-tls</b>&nbsp;(K8s Secret)>;];
-  }
-  subgraph cluster_bullcitysocial {
-    label = <<b>bullcitysocial</b>&nbsp;(K8s Namespace)>;
-    node [style = filled; color = white;];
-    style = filled;
-    color = lightgrey;
-    
-    rellm2 [shape = oval;style = filled;color = white;group = production_stack;label = <<table border="0" cellborder="0" cellspacing="0"><tr><td><b>rellm</b></td></tr><tr><td>(K8s ClusterIP)</td></tr></table>>;];
-
-    subgraph cluster_bullcitysocial_storage {
-      label = <<b>Storage</b>>;
-      style = filled;
-      color = "#88f5df";
-      node [style = filled; color = white;];
-
-      objectStorage2 [label = <<table border="0" cellborder="0" cellspacing="0"><tr><td><b>Object Storage</b></td></tr><tr><td>5GB @ <b>50¢/mo</b></td></tr></table>>;shape = cylinder;color = black;fillcolor = gray80;];
-
-      subgraph cluster_bullcitysocial_postgres {
+      subgraph cluster_bullcitysocial_database {
         label = "";
         style = filled;
         color = lightgrey;
+        pencolor = "#2ca02c";
+        penwidth = 3;
         node [style = filled; color = white;];
 
-        postgres2 [shape = cylinder;label = <<table border="0" cellborder="0" cellspacing="0"><tr><td><b>Postgres</b></td></tr><tr><td>1GB @ <b>10&#162;/mo</b></td></tr></table>>;color = black;fillcolor = white;];
-        subgraph cluster_bullcitysocial_postgres_server {
+        postgres2 [shape = cylinder;label = <<b>Database: bullcitysocial</b>>;color = black;fillcolor = white;];
+        subgraph cluster_bullcitysocial_database_server {
           label = <<b>Server Level</b>>;
           style = filled;
           color = white;
@@ -317,9 +376,10 @@ digraph G {
 
           vapid_configuration2 [shape = box;style = filled;color = ".7 .3 1.0";label = <<b>VAPID Push Configuration</b>>;];
           facebook_configuration2 [shape = box;style = filled;color = ".7 .3 1.0";label = <<b>Facebook App Configuration</b>>;];
+          object_storage_limit_server2 [shape = box;style = filled;color = ".7 .3 1.0";label = <<b>Object Storage Limit</b>>;];
         }
 
-        subgraph cluster_bullcitysocial_postgres_user {
+        subgraph cluster_bullcitysocial_database_user {
           label = <<b>User Level</b>>;
           style = filled;
           color = white;
@@ -327,52 +387,27 @@ digraph G {
 
           sync_sources2 [shape = box;style = filled;color = ".7 .3 1.0";label = <<b>Sync Sources</b>>;];
           sync_destinations2 [shape = box;style = filled;color = ".7 .3 1.0";label = <<b>Sync Destinations</b>>;];
+          object_storage_limit_user2 [shape = box;style = filled;color = ".7 .3 1.0";label = <<b>Object Storage Limit</b>>;];
         }
-        // Invisible, rank-only edge: hints Server Level above User Level instead of beside it.
-        vapid_configuration2 -> sync_sources2 [style = invis;];
+        // Invisible, rank-only edges: Server Level and User Level sit side by side, below the database.
+        postgres2 -> vapid_configuration2 [style = invis;];
+        postgres2 -> sync_sources2 [style = invis;];
+        // Object Storage Limit sits one row below the other boxes in its group, keeping each database narrow.
+        vapid_configuration2 -> object_storage_limit_server2 [style = invis;];
+        sync_sources2 -> object_storage_limit_user2 [style = invis;];
+        vapid_configuration2 -> sync_sources2 [style = invis; constraint = false;];
       }
-    }
-    rellm2 -> objectStorage2;
-    rellm2 -> postgres2;
 
-    vapid_push2 [shape = parallelogram;label = "VAPID Push";];
-    rellm2 -> vapid_push2 [weight = 8; style = tapered; penwidth = 6;];
-    vapid_configuration2 -> vapid_push2 [style = tapered; penwidth = 6;];
-
-    pull_events2 [shape = parallelogram;label = "Pull Events From Source";];
-    push_content2 [shape = parallelogram;label = "Push Posts/Events To Destination";];
-    rellm2 -> pull_events2 [weight = 8;];
-    rellm2 -> push_content2 [weight = 8;];
-    sync_sources2 -> pull_events2 [style = bold;];
-    sync_destinations2 -> push_content2 [style = bold;];
-    facebook_configuration2 -> push_content2 [style = bold;];
-
-    tls2 [shape = "box";color = ".7 .3 1.0";label = <<b>rellm-tls</b>&nbsp;(K8s Secret)>;];
-  }
-  subgraph cluster_atoband {
-    label = <<b>atoband</b>&nbsp;(K8s Namespace)>;
-    node [style = filled; color = white;];
-    style = filled;
-    color = lightgrey;
-    
-    rellm3 [shape = oval;style = filled;color = white;group = production_stack;label = <<table border="0" cellborder="0" cellspacing="0"><tr><td><b>rellm</b></td></tr><tr><td>(K8s ClusterIP)</td></tr></table>>;];
-
-    subgraph cluster_atoband_storage {
-      label = <<b>Storage</b>>;
-      style = filled;
-      color = "#88f5df";
-      node [style = filled; color = white;];
-
-      objectStorage3 [label = <<table border="0" cellborder="0" cellspacing="0"><tr><td><b>Object Storage</b></td></tr><tr><td>5GB @ <b>50¢/mo</b></td></tr></table>>;shape = cylinder;color = black;fillcolor = gray80;];
-
-      subgraph cluster_atoband_postgres {
+      subgraph cluster_ato_band_database {
         label = "";
         style = filled;
         color = lightgrey;
+        pencolor = "#9467bd";
+        penwidth = 3;
         node [style = filled; color = white;];
 
-        postgres3 [shape = cylinder;label = <<table border="0" cellborder="0" cellspacing="0"><tr><td><b>Postgres</b></td></tr><tr><td>1GB @ <b>10&#162;/mo</b></td></tr></table>>;color = black;fillcolor = white;];
-        subgraph cluster_atoband_postgres_server {
+        postgres3 [shape = cylinder;label = <<b>Database: ato-band</b>>;color = black;fillcolor = white;];
+        subgraph cluster_ato_band_database_server {
           label = <<b>Server Level</b>>;
           style = filled;
           color = white;
@@ -380,9 +415,10 @@ digraph G {
 
           vapid_configuration3 [shape = box;style = filled;color = ".7 .3 1.0";label = <<b>VAPID Push Configuration</b>>;];
           facebook_configuration3 [shape = box;style = filled;color = ".7 .3 1.0";label = <<b>Facebook App Configuration</b>>;];
+          object_storage_limit_server3 [shape = box;style = filled;color = ".7 .3 1.0";label = <<b>Object Storage Limit</b>>;];
         }
 
-        subgraph cluster_atoband_postgres_user {
+        subgraph cluster_ato_band_database_user {
           label = <<b>User Level</b>>;
           style = filled;
           color = white;
@@ -390,30 +426,84 @@ digraph G {
 
           sync_sources3 [shape = box;style = filled;color = ".7 .3 1.0";label = <<b>Sync Sources</b>>;];
           sync_destinations3 [shape = box;style = filled;color = ".7 .3 1.0";label = <<b>Sync Destinations</b>>;];
+          object_storage_limit_user3 [shape = box;style = filled;color = ".7 .3 1.0";label = <<b>Object Storage Limit</b>>;];
         }
-        // Invisible, rank-only edge: hints Server Level above User Level instead of beside it.
-        vapid_configuration3 -> sync_sources3 [style = invis;];
+        // Invisible, rank-only edges: Server Level and User Level sit side by side, below the database.
+        postgres3 -> vapid_configuration3 [style = invis;];
+        postgres3 -> sync_sources3 [style = invis;];
+        // Object Storage Limit sits one row below the other boxes in its group, keeping each database narrow.
+        vapid_configuration3 -> object_storage_limit_server3 [style = invis;];
+        sync_sources3 -> object_storage_limit_user3 [style = invis;];
+        vapid_configuration3 -> sync_sources3 [style = invis; constraint = false;];
       }
+
+      subgraph cluster_rellm_org_database {
+        label = "";
+        style = filled;
+        color = lightgrey;
+        pencolor = "#e08a00";
+        penwidth = 3;
+        node [style = filled; color = white;];
+
+        postgres4 [shape = cylinder;label = <<b>Database: rellm-org</b>>;color = black;fillcolor = white;];
+        subgraph cluster_rellm_org_database_server {
+          label = <<b>Server Level</b>>;
+          style = filled;
+          color = white;
+          node [style = filled; color = white;];
+
+          vapid_configuration4 [shape = box;style = filled;color = ".7 .3 1.0";label = <<b>VAPID Push Configuration</b>>;];
+          facebook_configuration4 [shape = box;style = filled;color = ".7 .3 1.0";label = <<b>Facebook App Configuration</b>>;];
+          object_storage_limit_server4 [shape = box;style = filled;color = ".7 .3 1.0";label = <<b>Object Storage Limit</b>>;];
+        }
+
+        subgraph cluster_rellm_org_database_user {
+          label = <<b>User Level</b>>;
+          style = filled;
+          color = white;
+          node [style = filled; color = white;];
+
+          sync_sources4 [shape = box;style = filled;color = ".7 .3 1.0";label = <<b>Sync Sources</b>>;];
+          sync_destinations4 [shape = box;style = filled;color = ".7 .3 1.0";label = <<b>Sync Destinations</b>>;];
+          object_storage_limit_user4 [shape = box;style = filled;color = ".7 .3 1.0";label = <<b>Object Storage Limit</b>>;];
+        }
+        // Invisible, rank-only edges: Server Level and User Level sit side by side, below the database.
+        postgres4 -> vapid_configuration4 [style = invis;];
+        postgres4 -> sync_sources4 [style = invis;];
+        // Object Storage Limit sits one row below the other boxes in its group, keeping each database narrow.
+        vapid_configuration4 -> object_storage_limit_server4 [style = invis;];
+        sync_sources4 -> object_storage_limit_user4 [style = invis;];
+        vapid_configuration4 -> sync_sources4 [style = invis; constraint = false;];
+      }
+      central_postgres -> postgres0 [style = invis; weight = 100000;];
+      object_storage_limit_user0 -> postgres1 [style = invis; weight = 100000;];
+      object_storage_limit_user1 -> postgres2 [style = invis; weight = 100000;];
+      object_storage_limit_user2 -> postgres3 [style = invis; weight = 100000;];
+      object_storage_limit_user3 -> postgres4 [style = invis; weight = 100000;];
     }
-    rellm3 -> objectStorage3;
-    rellm3 -> postgres3;
 
-    vapid_push3 [shape = parallelogram;label = "VAPID Push";];
-    rellm3 -> vapid_push3 [weight = 8; style = tapered; penwidth = 6;];
-    vapid_configuration3 -> vapid_push3 [style = tapered; penwidth = 6;];
+    subgraph cluster_central_object_storage {
+      label = <<b>Object Storage</b>>;
+      style = filled;
+      color = "#88f5df";
+      node [style = filled; color = white;];
 
-    pull_events3 [shape = parallelogram;label = "Pull Events From Source";];
-    push_content3 [shape = parallelogram;label = "Push Posts/Events To Destination";];
-    rellm3 -> pull_events3 [weight = 8;];
-    rellm3 -> push_content3 [weight = 8;];
-    sync_sources3 -> pull_events3 [style = bold;];
-    sync_destinations3 -> push_content3 [style = bold;];
-    facebook_configuration3 -> push_content3 [style = bold;];
+      central_silo [shape = oval;style = filled;color = white;label = <<table border="0" cellborder="0" cellspacing="0"><tr><td><b>rellm-central-object-storage</b></td></tr><tr><td>(Silo, K8s headless Service)</td></tr></table>>;];
+      central_silo_pvc [shape = box;style = filled;color = black;fillcolor = white;label = <<table border="0" cellborder="0" cellspacing="0"><tr><td><b>central-object-storage-pv-claim</b></td></tr><tr><td>(K8s PVC) 20GB @ <b>$2/mo</b></td></tr></table>>;];
+      central_silo -> central_silo_pvc [label = "mounts"; style = dashed;];
+      objectStorage0 [shape = cylinder;label = <<b>Bucket: jonline</b>>;color = black;fillcolor = gray80;];
+      objectStorage1 [shape = cylinder;label = <<b>Bucket: oakcitysocial</b>>;color = black;fillcolor = gray80;];
+      objectStorage2 [shape = cylinder;label = <<b>Bucket: bullcitysocial</b>>;color = black;fillcolor = gray80;];
+      objectStorage3 [shape = cylinder;label = <<b>Bucket: ato-band</b>>;color = black;fillcolor = gray80;];
+      objectStorage4 [shape = cylinder;label = <<b>Bucket: rellm-org</b>>;color = black;fillcolor = gray80;];
+      central_silo -> objectStorage0 [style = invis; weight = 100000;];
+      objectStorage0 -> objectStorage1 [style = invis; weight = 100000;];
+      objectStorage1 -> objectStorage2 [style = invis; weight = 100000;];
+      objectStorage2 -> objectStorage3 [style = invis; weight = 100000;];
+      objectStorage3 -> objectStorage4 [style = invis; weight = 100000;];
+    }
 
-    tls3 [shape = "box";color = ".7 .3 1.0";label = <<b>rellm-tls</b>&nbsp;(K8s Secret)>;];
   }
-
-    }
 
   }
 
@@ -429,23 +519,62 @@ digraph G {
   rellmio_mta -> rellm0 [style = dashed;];
   oakcitysocial_mta -> rellm1 [style = dashed;];
   bullcitysocial_mta -> rellm2 [style = dashed;];
-  atoband_mta -> rellm3 [style = dashed;];
+  ato_band_mta -> rellm3 [style = dashed;];
+  rellmorg_mta -> rellm4 [style = dashed;];
 
   rellmio -> rellm0;
   oakcitysocial -> rellm1;
   bullcitysocial -> rellm2;
-  atoband -> rellm3;
+  ato_band -> rellm3;
+  rellmorg -> rellm4;
 
-  // Invisible, rank-only edges arrange the four Instances namespaces in a 2x2 grid: row 1 is
-  // rellm/oakcitysocial (same rank, left-to-right in that order via minlen=0), row 2 is
-  // bullcitysocial/atoband (same rank as each other, anchored below row 1's deepest nodes so it
-  // starts below row 1's full height instead of overlapping it).
-  rellm0 -> rellm1 [style = invis; weight = 100000; minlen = 0;];
-  rellm2 -> rellm3 [style = invis; weight = 100000; minlen = 0;];
-  pull_events -> rellm2 [style = invis; weight = 100000;];
-  push_content -> rellm2 [style = invis; weight = 100000;];
-  pull_events1 -> rellm2 [style = invis; weight = 100000;];
-  push_content1 -> rellm2 [style = invis; weight = 100000;];
+  // Each namespace's rellm reaches across to ITS OWN bucket and database in rellm-storage (by
+  // in-cluster DNS, e.g. rellm-central-postgres.rellm-storage.svc.cluster.local), authenticating
+  // with credentials from its own rellm-central-data Secret. These live at the top level, after
+  // every node declaration, so they can't accidentally pull a storage node into a namespace.
+  rellm0 -> objectStorage0 [color = "#1f77b4"; penwidth = 2;];
+  rellm0 -> postgres0 [color = "#1f77b4"; penwidth = 2;];
+  rellm1 -> objectStorage1 [color = "#d62728"; penwidth = 2;];
+  rellm1 -> postgres1 [color = "#d62728"; penwidth = 2;];
+  rellm2 -> objectStorage2 [color = "#2ca02c"; penwidth = 2;];
+  rellm2 -> postgres2 [color = "#2ca02c"; penwidth = 2;];
+  rellm3 -> objectStorage3 [color = "#9467bd"; penwidth = 2;];
+  rellm3 -> postgres3 [color = "#9467bd"; penwidth = 2;];
+  rellm4 -> objectStorage4 [color = "#e08a00"; penwidth = 2;];
+  rellm4 -> postgres4 [color = "#e08a00"; penwidth = 2;];
+
+  // Invisible, rank-only edges. Instances is a grid: row 1 is jonline/oakcitysocial/bullcitysocial
+  // (same rank, left-to-right via minlen=0), row 2 is ato-band/rellm-org, anchored below row 1's
+  // deepest nodes. rellm-storage then sits below ALL of it, anchored below row 2's deepest nodes.
+  // Left-to-right order within each row is pinned with an invisible hub whose out-edges are ordered
+  // (flat edges between clusters alone weren't honored once the layout got busy).
+  row1_order [shape = point; style = invis; ordering = out;];
+  row1_order -> rellm0 [style = invis; weight = 100;];
+  row1_order -> rellm1 [style = invis; weight = 100;];
+  row1_order -> rellm2 [style = invis; weight = 100;];
+  row2_order [shape = point; style = invis; ordering = out;];
+  row2_order -> rellm3 [style = invis; weight = 100;];
+  row2_order -> rellm4 [style = invis; weight = 100;];
+  pull_events0 -> rellm3 [style = invis; weight = 100000;];
+  push_content0 -> rellm3 [style = invis; weight = 100000;];
+  pull_events0 -> rellm4 [style = invis; weight = 100000;];
+  push_content0 -> rellm4 [style = invis; weight = 100000;];
+  pull_events1 -> rellm3 [style = invis; weight = 100000;];
+  push_content1 -> rellm3 [style = invis; weight = 100000;];
+  pull_events1 -> rellm4 [style = invis; weight = 100000;];
+  push_content1 -> rellm4 [style = invis; weight = 100000;];
+  pull_events2 -> rellm3 [style = invis; weight = 100000;];
+  push_content2 -> rellm3 [style = invis; weight = 100000;];
+  pull_events2 -> rellm4 [style = invis; weight = 100000;];
+  push_content2 -> rellm4 [style = invis; weight = 100000;];
+  pull_events3 -> central_silo [style = invis; weight = 100000;];
+  pull_events3 -> central_postgres [style = invis; weight = 100000;];
+  push_content3 -> central_silo [style = invis; weight = 100000;];
+  push_content3 -> central_postgres [style = invis; weight = 100000;];
+  pull_events4 -> central_silo [style = invis; weight = 100000;];
+  pull_events4 -> central_postgres [style = invis; weight = 100000;];
+  push_content4 -> central_silo [style = invis; weight = 100000;];
+  push_content4 -> central_postgres [style = invis; weight = 100000;];
 
   // Push delivery never touches Traefik -- rellm calls straight out to the subscription
   // endpoint URL the browser's own push service handed it at subscribe time (see
@@ -453,22 +582,25 @@ digraph G {
   // That endpoint is chosen by the browser (FCM for Chrome, Mozilla's autopush for Firefox,
   // etc.), not by rellm -- vapid_push_service stands in for whichever one a given
   // subscription actually points at.
-  vapid_push -> vapid_push_service [constraint = false; style = tapered; penwidth = 6;];
+  vapid_push0 -> vapid_push_service [constraint = false; style = tapered; penwidth = 6;];
   vapid_push1 -> vapid_push_service [constraint = false; style = tapered; penwidth = 6;];
   vapid_push2 -> vapid_push_service [constraint = false; style = tapered; penwidth = 6;];
   vapid_push3 -> vapid_push_service [constraint = false; style = tapered; penwidth = 6;];
+  vapid_push4 -> vapid_push_service [constraint = false; style = tapered; penwidth = 6;];
   vapid_push_service -> browser [constraint = false; style = tapered; penwidth = 6;];
 
   // SyncSource (an iCal subscription) is pulled *in*; SyncDestination (e.g. a Facebook
   // Page -- used to push out both Posts and Occasions) is pushed *out* -- see
   // backend/src/protos/rellm.rs's SyncSource/SyncDestination doc comments. Arrow direction
   // follows the data, same as VAPID push above.
-  ical_feeds -> pull_events [constraint = false; style = dotted;];
+  ical_feeds -> pull_events0 [constraint = false; style = dotted;];
   ical_feeds -> pull_events1 [constraint = false; style = dotted;];
   ical_feeds -> pull_events2 [constraint = false; style = dotted;];
   ical_feeds -> pull_events3 [constraint = false; style = dotted;];
-  push_content -> facebook_service [constraint = false; style = dotted;];
+  ical_feeds -> pull_events4 [constraint = false; style = dotted;];
+  push_content0 -> facebook_service [constraint = false; style = dotted;];
   push_content1 -> facebook_service [constraint = false; style = dotted;];
   push_content2 -> facebook_service [constraint = false; style = dotted;];
   push_content3 -> facebook_service [constraint = false; style = dotted;];
+  push_content4 -> facebook_service [constraint = false; style = dotted;];
 }
