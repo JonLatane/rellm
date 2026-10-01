@@ -12,9 +12,9 @@
 # Postgres/object storage StatefulSets' own before creating anything, and is safe to re-run (it
 # leaves an existing Secret alone).
 #
-# RUN THIS BEFORE the next `make update_*_backend`/CI deploy of the namespace: the new manifests
-# reference the Secret, and deploys/select_backend_manifest.sh (used by CI) deliberately refuses to
-# deploy a namespace that doesn't have it, rather than roll out pods that can't start.
+# RUN THIS BEFORE the next `make update_*_backend` of the namespace: the new manifests reference the
+# Secret, so applying them without it would roll out pods that can't start. (CI's image-only
+# deploys don't apply manifests and don't need it.)
 #
 # To then ROTATE a credential you'd change it in both the running server (Postgres:
 # ALTER ROLE ... PASSWORD; object storage: its root credentials env) and the Secret -- this script

@@ -1,5 +1,8 @@
-# Note that the deploy steps expect that backend/Cargo.toml and deploys/k8s/server_internal.yaml
-# have the same version number.
+# Deploy steps only bump image tags (.github/workflows/scripts/set_backend_images.sh, i.e.
+# `kubectl set image`) -- they never apply deploys/k8s manifests, so a CI deploy can't change a
+# namespace's storage wiring, replica counts or credentials. Manifest changes are rolled out
+# deliberately (see "Rolling out manifest changes" in deploys/README.md); the
+# manifest_change_notice job flags pushes that need it.
 name: Server CI/CD
 
 on:
@@ -764,9 +767,6 @@ jobs:
         with:
           token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
 
-      - name: Update deploys/k8s/server_internal.yaml to use ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
-        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}|g' deploys/k8s/server_internal.yaml deploys/k8s/server_internal_central_data.yaml
-
       - name: Save DigitalOcean kubeconfig with short-lived credentials
         run: doctl kubernetes cluster kubeconfig save --expiry-seconds 600 rellm-be
 
@@ -781,8 +781,8 @@ jobs:
       - name: Delete stray CronJobs (background jobs moved to the rellm-jobs Deployment)
         run: kubectl delete cronjob --all -n jonline --ignore-not-found=true
 
-      - name: Deploy to Jonline.io via DigitalOcean Kubernetes
-        run: kubectl apply -f "$(deploys/select_backend_manifest.sh server jonline)" -n jonline
+      - name: Deploy to Jonline.io via DigitalOcean Kubernetes (image tag only)
+        run: .github/workflows/scripts/set_backend_images.sh server jonline "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
 
       - name: Verify Server deployment
         run: kubectl rollout status deployment/rellm -n jonline --timeout 5m
@@ -837,14 +837,11 @@ jobs:
         with:
           token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
 
-      - name: Update deploys/k8s/preview_generator.yaml to use ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
-        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}|g' deploys/k8s/preview_generator.yaml deploys/k8s/preview_generator_central_data.yaml
-
       - name: Save DigitalOcean kubeconfig with short-lived credentials
         run: doctl kubernetes cluster kubeconfig save --expiry-seconds 600 rellm-be
 
       - name: Deploy to Jonline.io via DigitalOcean Kubernetes
-        run: kubectl apply -f "$(deploys/select_backend_manifest.sh preview jonline)" -n jonline
+        run: .github/workflows/scripts/set_backend_images.sh preview jonline "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
 
   create_github_release:
     name: "GitHub: Release"
@@ -1296,26 +1293,20 @@ jobs:
         with:
           token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
 
-      - name: Update deploys/k8s/server_internal.yaml to use ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
-        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}|g' deploys/k8s/server_internal.yaml deploys/k8s/server_internal_central_data.yaml
-
-      - name: Update deploys/k8s/preview_generator.yaml to use ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
-        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}|g' deploys/k8s/preview_generator.yaml deploys/k8s/preview_generator_central_data.yaml
-
       - name: Save DigitalOcean kubeconfig with short-lived credentials
         run: doctl kubernetes cluster kubeconfig save --expiry-seconds 600 rellm-be
 
       - name: Delete stray CronJobs (background jobs moved to the rellm-jobs Deployment)
         run: kubectl delete cronjob --all -n bullcitysocial --ignore-not-found=true
 
-      - name: Deploy to Bull City Social via DigitalOcean Kubernetes
-        run: kubectl apply -f "$(deploys/select_backend_manifest.sh server bullcitysocial)" -n bullcitysocial
+      - name: Deploy to Bull City Social via DigitalOcean Kubernetes (image tag only)
+        run: .github/workflows/scripts/set_backend_images.sh server bullcitysocial "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
 
       - name: Verify Server deployment
         run: kubectl rollout status deployment/rellm -n bullcitysocial --timeout 5m
 
-      - name: Deploy Preview Generator
-        run: kubectl apply -f "$(deploys/select_backend_manifest.sh preview bullcitysocial)" -n bullcitysocial
+      - name: Deploy Preview Generator (image tag only)
+        run: .github/workflows/scripts/set_backend_images.sh preview bullcitysocial "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
 
       - uses: actions/cache/restore@v6
         with:
@@ -1357,26 +1348,20 @@ jobs:
         with:
           token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
 
-      - name: Update deploys/k8s/server_internal.yaml to use ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
-        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}|g' deploys/k8s/server_internal.yaml deploys/k8s/server_internal_central_data.yaml
-
-      - name: Update deploys/k8s/preview_generator.yaml to use ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
-        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}|g' deploys/k8s/preview_generator.yaml deploys/k8s/preview_generator_central_data.yaml
-
       - name: Save DigitalOcean kubeconfig with short-lived credentials
         run: doctl kubernetes cluster kubeconfig save --expiry-seconds 600 rellm-be
 
       - name: Delete stray CronJobs (background jobs moved to the rellm-jobs Deployment)
         run: kubectl delete cronjob --all -n oakcitysocial --ignore-not-found=true
 
-      - name: Deploy to Oak City Social via DigitalOcean Kubernetes
-        run: kubectl apply -f "$(deploys/select_backend_manifest.sh server oakcitysocial)" -n oakcitysocial
+      - name: Deploy to Oak City Social via DigitalOcean Kubernetes (image tag only)
+        run: .github/workflows/scripts/set_backend_images.sh server oakcitysocial "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
 
       - name: Verify Server deployment
         run: kubectl rollout status deployment/rellm -n oakcitysocial --timeout 5m
 
-      - name: Deploy Preview Generator
-        run: kubectl apply -f "$(deploys/select_backend_manifest.sh preview oakcitysocial)" -n oakcitysocial
+      - name: Deploy Preview Generator (image tag only)
+        run: .github/workflows/scripts/set_backend_images.sh preview oakcitysocial "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
 
       - uses: actions/cache/restore@v6
         with:
@@ -1418,26 +1403,20 @@ jobs:
         with:
           token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
 
-      - name: Update deploys/k8s/server_internal.yaml to use ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
-        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}|g' deploys/k8s/server_internal.yaml deploys/k8s/server_internal_central_data.yaml
-
-      - name: Update deploys/k8s/preview_generator.yaml to use ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
-        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}|g' deploys/k8s/preview_generator.yaml deploys/k8s/preview_generator_central_data.yaml
-
       - name: Save DigitalOcean kubeconfig with short-lived credentials
         run: doctl kubernetes cluster kubeconfig save --expiry-seconds 600 rellm-be
 
       - name: Delete stray CronJobs (background jobs moved to the rellm-jobs Deployment)
         run: kubectl delete cronjob --all -n ato-band --ignore-not-found=true
 
-      - name: Deploy to Ato Band via DigitalOcean Kubernetes
-        run: kubectl apply -f "$(deploys/select_backend_manifest.sh server ato-band)" -n ato-band
+      - name: Deploy to Ato Band via DigitalOcean Kubernetes (image tag only)
+        run: .github/workflows/scripts/set_backend_images.sh server ato-band "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
 
       - name: Verify Server deployment
         run: kubectl rollout status deployment/rellm -n ato-band --timeout 5m
 
-      - name: Deploy Preview Generator
-        run: kubectl apply -f "$(deploys/select_backend_manifest.sh preview ato-band)" -n ato-band
+      - name: Deploy Preview Generator (image tag only)
+        run: .github/workflows/scripts/set_backend_images.sh preview ato-band "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
 
       - uses: actions/cache/restore@v6
         with:
@@ -1479,26 +1458,20 @@ jobs:
         with:
           token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
 
-      - name: Update deploys/k8s/server_internal.yaml to use ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
-        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}|g' deploys/k8s/server_internal.yaml deploys/k8s/server_internal_central_data.yaml
-
-      - name: Update deploys/k8s/preview_generator.yaml to use ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
-        run: sed -i 's|${{ steps.vars.outputs.be_version }}|${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}|g' deploys/k8s/preview_generator.yaml deploys/k8s/preview_generator_central_data.yaml
-
       - name: Save DigitalOcean kubeconfig with short-lived credentials
         run: doctl kubernetes cluster kubeconfig save --expiry-seconds 600 rellm-be
 
       - name: Delete stray CronJobs (background jobs moved to the rellm-jobs Deployment)
         run: kubectl delete cronjob --all -n rellm-org --ignore-not-found=true
 
-      - name: Deploy to rellm.org via DigitalOcean Kubernetes
-        run: kubectl apply -f "$(deploys/select_backend_manifest.sh server rellm-org)" -n rellm-org
+      - name: Deploy to rellm.org via DigitalOcean Kubernetes (image tag only)
+        run: .github/workflows/scripts/set_backend_images.sh server rellm-org "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
 
       - name: Verify Server deployment
         run: kubectl rollout status deployment/rellm -n rellm-org --timeout 5m
 
-      - name: Deploy Preview Generator
-        run: kubectl apply -f "$(deploys/select_backend_manifest.sh preview rellm-org)" -n rellm-org
+      - name: Deploy Preview Generator (image tag only)
+        run: .github/workflows/scripts/set_backend_images.sh preview rellm-org "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
 
       - uses: actions/cache/restore@v6
         with:
@@ -1551,3 +1524,29 @@ jobs:
         run: |
           kubectl rollout restart deployment traefik -n traefik-ingress
           kubectl rollout status deployment traefik -n traefik-ingress --timeout 5m
+
+  # CI only updates image tags (see the header comment), so when a push changes the deploy
+  # manifests, say so loudly: the new image will run against the OLD manifests until someone rolls
+  # them out.
+  manifest_change_notice:
+    name: Notice if deploy manifests changed
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Warn when deploy manifests changed
+        run: |-
+          changed="$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" -- deploys/k8s deploys/central_storage/k8s 2>/dev/null | tr '\n' ' ' || true)"
+          if [ -n "$changed" ]; then
+            echo "::warning title=Deploy manifests changed::CI only updates image tags. Roll out manifest changes yourself (deploys/README.md, 'Rolling out manifest changes'): $changed"
+            {
+              echo "### Deploy manifests changed -- manual rollout needed"
+              echo "CI only bumps image tags, so the new images are running against the previous manifests."
+              echo "Changed: \`$changed\`"
+              echo "Roll out with: \`NAMESPACE=<ns> make update_internal_central_data_backend\` for each namespace."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi

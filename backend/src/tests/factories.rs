@@ -6,10 +6,9 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use diesel::*;
-use diesel_migrations::MigrationHarness;
 use s3::Bucket;
 
-use crate::db_connection::{establish_test_pool, PgPool, PgPooledConnection, MIGRATIONS};
+use crate::db_connection::{establish_test_pool, run_migrations_exclusively, PgPool, PgPooledConnection};
 use crate::marshaling::*;
 use crate::models;
 use crate::protos::*;
@@ -22,10 +21,7 @@ use crate::schema::{
 lazy_static! {
     static ref TEST_POOL: Arc<PgPool> = {
         let pool = establish_test_pool();
-        pool.get()
-            .expect("failed to connect to TEST_DATABASE_URL")
-            .run_pending_migrations(MIGRATIONS)
-            .expect("failed to run migrations against TEST_DATABASE_URL");
+        run_migrations_exclusively(&mut pool.get().expect("failed to connect to TEST_DATABASE_URL"));
         Arc::new(pool)
     };
 }

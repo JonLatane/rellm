@@ -16,8 +16,8 @@
 #             deliberately KEPT (only the user/policy/credentials are recreated). Without this
 #             flag, the script refuses to touch anything that already exists.
 #
-# Environment: STORAGE_NAMESPACE (default rellm-storage), OBJECT_STORAGE_ADMIN_LOCAL_PORT
-# (default 19002; local port of the temporary port-forward used for `mc`).
+# Environment: STORAGE_NAMESPACE (default rellm-storage). Safe to run for several namespaces at once
+# (the temporary port-forward for `mc` uses a kernel-chosen free port).
 #
 # What gets restricted, and how:
 #   Postgres  - the role is LOGIN only: NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION
@@ -38,7 +38,7 @@
 set -Eeuo pipefail
 
 STORAGE_NAMESPACE="${STORAGE_NAMESPACE:-rellm-storage}"
-LOCAL_PORT="${OBJECT_STORAGE_ADMIN_LOCAL_PORT:-19002}"
+LOCAL_PORT="${OBJECT_STORAGE_ADMIN_LOCAL_PORT:-}"   # empty = let the kernel pick a free port
 SECRET_NAME=rellm-central-data
 PG_CONNECTION_LIMIT=30
 
@@ -74,7 +74,7 @@ for cmd in kubectl mc openssl base64; do
 done
 
 PF_PID=""
-cleanup() { [ -z "$PF_PID" ] || kill "$PF_PID" 2>/dev/null || true; rm -rf "${TMP_DIR:-}"; }
+cleanup() { [ -z "$PF_PID" ] || { kill "$PF_PID" && wait "$PF_PID"; } 2>/dev/null || true; rm -rf "${TMP_DIR:-}"; }
 trap cleanup EXIT
 TMP_DIR="$(mktemp -d)"
 on_error() {
@@ -97,19 +97,21 @@ ROOT_USER="$(secret_value rellm-central-object-storage-credentials root-user)"
 ROOT_PASSWORD="$(secret_value rellm-central-object-storage-credentials root-password)"
 [ -n "$ROOT_USER" ] && [ -n "$ROOT_PASSWORD" ] || die "Couldn't read rellm-central-object-storage-credentials in $STORAGE_NAMESPACE"
 
+# Kernel-chosen free local port (":9000"), so any number of provisioning runs can overlap.
 start_port_forward() {
-  kubectl port-forward -n "$STORAGE_NAMESPACE" pod/rellm-central-object-storage-0 "$LOCAL_PORT:9000" >"$TMP_DIR/pf.log" 2>&1 &
+  kubectl port-forward -n "$STORAGE_NAMESPACE" pod/rellm-central-object-storage-0 "${LOCAL_PORT}:9000" >"$TMP_DIR/pf.log" 2>&1 &
   PF_PID=$!
   local i
   for i in $(seq 1 20); do
-    grep -q "Forwarding from" "$TMP_DIR/pf.log" 2>/dev/null && return 0
+    LOCAL_PORT="$(sed -n 's/^Forwarding from 127\.0\.0\.1:\([0-9][0-9]*\) ->.*/\1/p' "$TMP_DIR/pf.log" 2>/dev/null | head -1)"
+    [ -z "$LOCAL_PORT" ] || return 0
     sleep 1
   done
   cat "$TMP_DIR/pf.log" >&2
-  die "port-forward to the central object storage on local port $LOCAL_PORT never came up (port in use? set OBJECT_STORAGE_ADMIN_LOCAL_PORT)"
+  die "port-forward to the central object storage never came up"
 }
 start_port_forward
-export MC_HOST_central="http://$ROOT_USER:$ROOT_PASSWORD@localhost:$LOCAL_PORT"
+export MC_HOST_central="http://$ROOT_USER:$ROOT_PASSWORD@127.0.0.1:$LOCAL_PORT"
 mc ls central >/dev/null 2>&1 || die "Couldn't authenticate to the central object storage as its root user"
 
 ROLE_EXISTS="$(echo "SELECT 1 FROM pg_roles WHERE rolname = '$NAMESPACE';" | central_psql -d postgres)"
@@ -145,11 +147,15 @@ PG_PASSWORD="$(openssl rand -hex 24)"
 OS_SECRET_KEY="$(openssl rand -hex 24)"
 
 echo "== Postgres: role + database '$NAMESPACE' =="
+# The advisory lock serializes concurrent provisioning runs: they all REVOKE on the shared `postgres`
+# maintenance database, and doing that simultaneously fails with "tuple concurrently updated".
 central_psql -d postgres -q <<SQL
+SELECT pg_advisory_lock(7269761);
 CREATE ROLE "$NAMESPACE" LOGIN PASSWORD '$PG_PASSWORD' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS CONNECTION LIMIT $PG_CONNECTION_LIMIT;
 CREATE DATABASE "$NAMESPACE" OWNER "$NAMESPACE";
 REVOKE ALL ON DATABASE "$NAMESPACE" FROM PUBLIC;
 REVOKE CONNECT ON DATABASE postgres FROM PUBLIC;
+SELECT pg_advisory_unlock(7269761);
 SQL
 info "role '$NAMESPACE' (limited to $PG_CONNECTION_LIMIT connections) owns database '$NAMESPACE'; PUBLIC can't connect to it."
 
@@ -175,7 +181,7 @@ mc admin policy attach central "rellm-$NAMESPACE" --user "$NAMESPACE" >/dev/null
   || mc admin policy set central "rellm-$NAMESPACE" "user=$NAMESPACE" >/dev/null
 
 echo "== Verifying the new Silo user is scoped to its own bucket =="
-export MC_HOST_verify="http://$NAMESPACE:$OS_SECRET_KEY@localhost:$LOCAL_PORT"
+export MC_HOST_verify="http://$NAMESPACE:$OS_SECRET_KEY@127.0.0.1:$LOCAL_PORT"
 echo probe | mc pipe "verify/$NAMESPACE/.rellm-provision-check" >/dev/null 2>&1 \
   || die "New user '$NAMESPACE' can't write to its own bucket -- the policy didn't apply (does this Silo version support 'mc admin policy'?)"
 mc rm "verify/$NAMESPACE/.rellm-provision-check" >/dev/null 2>&1 || true

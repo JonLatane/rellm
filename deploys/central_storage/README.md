@@ -75,6 +75,8 @@ NAMESPACE=bullcitysocial make transition_backend_to_central_data
 
 CI needs no change per namespace: once the script has applied the switch, the next deploy sees the namespace is on central storage and applies the central-data manifests (see [CI](#ci)).
 
+**Several at once:** different namespaces can be transitioned (or provisioned/deprovisioned) in parallel from separate terminals. Every `kubectl port-forward` the scripts use takes a kernel-chosen free local port, and central provisioning is serialized where Postgres needs it (concurrent `REVOKE`s on the shared maintenance database otherwise fail with `tuple concurrently updated`). The *same* namespace can't be transitioned twice at once (a per-namespace lock refuses the second run). Pass `ARGS=--no-traefik-bounce` to all but the last run so Traefik isn't bounced once per namespace.
+
 Once you've verified the site, free the old PVCs (this refuses to run unless the namespace really is on central storage):
 
 ```bash
@@ -82,6 +84,16 @@ NAMESPACE=bullcitysocial CONFIRM=bullcitysocial make delete_backend_data_pvcs
 ```
 
 The underlying volumes are retained (`reclaimPolicy: Retain`); the target prints their PV names so you can delete them, and then the cloud volumes, yourself.
+
+## Removing a namespace from central storage
+
+`NAMESPACE=mynewsite CONFIRM=mynewsite make delete_backend_central_data` (or
+[`deprovision_namespace.sh`](./deprovision_namespace.sh)) is the reverse of provisioning: it
+**permanently** deletes the namespace's database and role, its bucket *and every object in it*, its
+Silo user/policy and its `rellm-central-data` Secret. Use it to clean up a smoke test or retire a
+site. It refuses while a `rellm` Deployment in that namespace still runs against central storage --
+delete the site first (`kubectl delete namespace mynewsite`); it's fine for the namespace to
+already be gone. Safe to re-run.
 
 ## Credentials and isolation
 
@@ -109,9 +121,11 @@ Postgres pod is trusted (local socket connections are `trust`, as in the stock i
 
 ## CI
 
-`.github/workflows/server_ci_cd.yml` picks each namespace's manifests with
-`deploys/select_backend_manifest.sh`, based on what the namespace's live `rellm` Deployment is
-running: if its `DATABASE_URL` comes from the `rellm-central-data` Secret, CI applies the generated
-central-data manifests; otherwise `server_internal.yaml`/`preview_generator.yaml`. A namespace
-therefore only switches when the transition script applies the switch -- provisioning alone never
-changes what CI deploys. The version bump in CI is applied to both sets of manifests.
+CI deploys are image-only: `.github/workflows/server_ci_cd.yml` runs
+`.github/workflows/scripts/set_backend_images.sh`, which bumps the image tags of a namespace's
+`rellm`, `rellm-jobs` and `rellm-preview-generator` Deployments and nothing else. It never applies a
+manifest, so it can't change a namespace's storage wiring, credentials or replica counts -- it behaves
+identically for namespaces on central storage and on their own, and a site you've scaled down for a
+transition stays down. Manifest changes are rolled out deliberately with
+`NAMESPACE=<ns> make update_internal_central_data_backend` (see "Rolling out manifest changes" in
+[`../README.md`](../README.md#rolling-out-manifest-changes)); a CI job warns when a push changes them.

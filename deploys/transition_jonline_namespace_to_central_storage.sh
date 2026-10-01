@@ -30,9 +30,11 @@
 #
 # Environment:
 #   STORAGE_NAMESPACE     Namespace of the central instances (default: rellm-storage)
-#   PG_LOCAL_PORT / OBJECT_STORAGE_SRC_LOCAL_PORT / OBJECT_STORAGE_DST_LOCAL_PORT
-#                         Local ports for the temporary port-forwards used by the
-#                         object storage copy (defaults 19000-19001).
+#
+# Running several at once: different namespaces can be transitioned in parallel (separate
+# terminals) -- the port-forwards use kernel-chosen free local ports and provisioning is
+# serialized where central storage needs it. The same namespace can't (a per-namespace lock refuses
+# a second run). Pass --no-traefik-bounce to all but the last one so Traefik isn't bounced N times.
 #
 # What it does, in order (the namespace's site is DOWN from step 1 until step 4):
 #   1. Scales rellm, rellm-jobs and rellm-preview-generator to 0 and waits for their pods
@@ -62,10 +64,8 @@
 #   NAMESPACE=<namespace> CONFIRM=<namespace> make delete_backend_data_pvcs
 # (see that target's docs in deploys/Makefile).
 #
-# CI: no change needed -- deploys/select_backend_manifest.sh (used by server_ci_cd.yml) sees that this
-# namespace's live rellm Deployment now reads its DATABASE_URL from the rellm-central-data Secret and
-# applies the central-data manifests from then on. (Until this script applies the switch, CI keeps
-# deploying the per-namespace manifests -- provisioning alone never changes what CI deploys.)
+# CI: no change needed -- CI only bumps image tags (kubectl set image), so it never touches this
+# namespace's storage wiring and can't scale a site you've taken down for this cutover back up.
 #
 # Prerequisites:
 #  - kubectl pointed at the right cluster/context (the script prints it and asks first).
@@ -77,8 +77,6 @@ set -Eeuo pipefail
 
 DEPLOYS_DIR="$(cd "$(dirname "$0")" && pwd)"
 STORAGE_NAMESPACE="${STORAGE_NAMESPACE:-rellm-storage}"
-OBJECT_STORAGE_SRC_LOCAL_PORT="${OBJECT_STORAGE_SRC_LOCAL_PORT:-19000}"
-OBJECT_STORAGE_DST_LOCAL_PORT="${OBJECT_STORAGE_DST_LOCAL_PORT:-19001}"
 DEPLOYMENTS="rellm rellm-jobs rellm-preview-generator"
 export STORAGE_NAMESPACE
 PROVISION="$DEPLOYS_DIR/central_storage/provision_namespace.sh"
@@ -113,6 +111,20 @@ valid_ns "$NAMESPACE" || die "'$NAMESPACE' is not a valid Kubernetes namespace n
 valid_ns "$STORAGE_NAMESPACE" || die "STORAGE_NAMESPACE '$STORAGE_NAMESPACE' is not a valid Kubernetes namespace name"
 [ "$NAMESPACE" != "$STORAGE_NAMESPACE" ] || die "NAMESPACE can't be the central storage namespace itself ($STORAGE_NAMESPACE)"
 
+# Only one transition per namespace at a time (different namespaces may run concurrently: every
+# port-forward uses a kernel-chosen free port, and central provisioning is serialized where needed).
+LOCK_DIR="${TMPDIR:-/tmp}/rellm-transition-$NAMESPACE.lock"
+LOCK_HELD=false
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+  OTHER_PID="$(cat "$LOCK_DIR/pid" 2>/dev/null || true)"
+  if [ -n "$OTHER_PID" ] && kill -0 "$OTHER_PID" 2>/dev/null; then
+    die "Another transition of '$NAMESPACE' is already running (pid $OTHER_PID)"
+  fi
+  rm -rf "$LOCK_DIR"; mkdir "$LOCK_DIR" || die "Couldn't take the run lock $LOCK_DIR"
+fi
+echo $$ > "$LOCK_DIR/pid"
+LOCK_HELD=true
+
 STATE_DIR="$(mktemp -d)"
 PF_PIDS=""
 CURRENT_STEP="preflight"
@@ -123,6 +135,7 @@ cleanup() {
   local pid
   for pid in $PF_PIDS; do kill "$pid" 2>/dev/null || true; done
   rm -rf "$STATE_DIR"
+  [ "$LOCK_HELD" = false ] || rm -rf "$LOCK_DIR"
 }
 trap cleanup EXIT
 
@@ -181,17 +194,49 @@ FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'B
 SQL
 }
 
-start_port_forward() { # <namespace> <pod> <local-port> <remote-port>
-  local log; log="$STATE_DIR/pf-$3.log"
-  kubectl port-forward -n "$1" "pod/$2" "$3:$4" >"$log" 2>&1 &
+# Starts `kubectl port-forward` to <namespace>/<pod> on a kernel-chosen FREE local port (the
+# ":<remote>" form), so any number of copies of this script can run at once without fighting over
+# ports, and leaves that port in PF_LAST_PORT. An explicit 4th argument pins the local port instead.
+start_port_forward() { # <namespace> <pod> <remote-port> [fixed-local-port]
+  local log; log="$(mktemp "$STATE_DIR/pf.XXXXXX")"
+  kubectl port-forward -n "$1" "pod/$2" "${4:-}:$3" >"$log" 2>&1 &
   PF_PIDS="$PF_PIDS $!"
   local i
+  PF_LAST_PORT=""
   for i in $(seq 1 20); do
-    grep -q "Forwarding from" "$log" 2>/dev/null && return 0
+    PF_LAST_PORT="$(sed -n 's/^Forwarding from 127\.0\.0\.1:\([0-9][0-9]*\) ->.*/\1/p' "$log" 2>/dev/null | head -1)"
+    [ -z "$PF_LAST_PORT" ] || return 0
     sleep 1
   done
   cat "$log" >&2
-  die "port-forward to $1/$2 on local port $3 never came up (port already in use? override the *_LOCAL_PORT env vars)"
+  die "port-forward to $1/$2 never came up"
+}
+
+# (Re)establishes both object storage port-forwards from scratch. `kubectl port-forward` tunnels
+# drop during long transfers (a ~1GB copy is plenty of time), so the copy/verify steps reconnect
+# rather than trusting a tunnel started minutes ago.
+restart_object_storage_port_forwards() {
+  local pid
+  for pid in $PF_PIDS; do { kill "$pid" && wait "$pid"; } 2>/dev/null || true; done
+  PF_PIDS=""
+  start_port_forward "$NAMESPACE" rellm-object-storage-0 9000; SRC_PORT="$PF_LAST_PORT"
+  start_port_forward "$STORAGE_NAMESPACE" rellm-central-object-storage-0 9000; DST_PORT="$PF_LAST_PORT"
+  # Ports differ on every (re)connect, so the mc aliases are re-exported here each time.
+  export MC_HOST_src="http://$SRC_ACCESS_KEY:$SRC_SECRET_KEY@127.0.0.1:$SRC_PORT"
+  export MC_HOST_dst="http://$DST_ROOT_USER:$DST_ROOT_PASSWORD@127.0.0.1:$DST_PORT"
+}
+
+# `mc mirror` is incremental (already-copied objects are skipped), so when a tunnel drops
+# mid-copy we just reconnect and run it again.
+mirror_until_done() {
+  local attempt
+  for attempt in 1 2 3 4 5 6; do
+    restart_object_storage_port_forwards
+    if mc mirror --overwrite "src/$SRC_BUCKET" "dst/$NAMESPACE"; then return 0; fi
+    info "Mirror attempt $attempt of 6 failed (usually a dropped kubectl port-forward) -- reconnecting and resuming..."
+    sleep 3
+  done
+  return 1
 }
 
 # ---------------------------------------------------------------------------
@@ -290,31 +335,35 @@ fi
 info "$(echo "$SRC_COUNTS" | wc -l | tr -d ' ') tables, all row counts identical."
 
 step "2d. Copy object storage ('$SRC_BUCKET' -> central '$NAMESPACE') via mc mirror"
-start_port_forward "$NAMESPACE" rellm-object-storage-0 "$OBJECT_STORAGE_SRC_LOCAL_PORT" 9000
-start_port_forward "$STORAGE_NAMESPACE" rellm-central-object-storage-0 "$OBJECT_STORAGE_DST_LOCAL_PORT" 9000
 # Destination uses the central instance's root credentials (from its Secret) for the copy; the
 # namespace's own restricted user is what the running site will use.
 DST_ROOT_USER="$(kubectl get secret rellm-central-object-storage-credentials -n "$STORAGE_NAMESPACE" -o jsonpath='{.data.root-user}' | base64 --decode)"
 DST_ROOT_PASSWORD="$(kubectl get secret rellm-central-object-storage-credentials -n "$STORAGE_NAMESPACE" -o jsonpath='{.data.root-password}' | base64 --decode)"
-export MC_HOST_src="http://$SRC_ACCESS_KEY:$SRC_SECRET_KEY@localhost:$OBJECT_STORAGE_SRC_LOCAL_PORT"
-export MC_HOST_dst="http://$DST_ROOT_USER:$DST_ROOT_PASSWORD@localhost:$OBJECT_STORAGE_DST_LOCAL_PORT"
+restart_object_storage_port_forwards
 if mc ls "src/$SRC_BUCKET" >/dev/null 2>&1; then
   mc mb --ignore-existing "dst/$NAMESPACE"
   info "Mirroring (can take a while depending on how much media there is; safe to re-run -- it's incremental)..."
-  mc mirror --overwrite "src/$SRC_BUCKET" "dst/$NAMESPACE"
+  mirror_until_done || die "Object storage copy still failing after 6 reconnects. The site is still down; re-run this script with --reset-target (the copy resumes where it left off)."
 
-  step "2e. Verify object storage copy (mc diff)"
+  step "2e. Verify object storage copy (mc diff + total size/object count)"
+  restart_object_storage_port_forwards
   DIFF_OUTPUT="$(mc diff "src/$SRC_BUCKET" "dst/$NAMESPACE" || true)"
   if [ -n "$DIFF_OUTPUT" ]; then
     echo "$DIFF_OUTPUT" >&2
     die "Bucket verification found differences (see above)"
   fi
+  # `mc diff ... || true` above can't tell "identical" from "couldn't connect", so also require
+  # both sides to report (successfully) the same total size and object count.
+  SRC_DU="$(mc du "src/$SRC_BUCKET")" || die "Couldn't measure the source bucket for verification"
+  DST_DU="$(mc du "dst/$NAMESPACE")" || die "Couldn't measure the central bucket for verification"
+  [ "$(echo "$SRC_DU" | awk '{print $1, $2}')" = "$(echo "$DST_DU" | awk '{print $1, $2}')" ] \
+    || die "Source and central buckets differ in total size/object count: source '$SRC_DU' vs central '$DST_DU'"
   info "$(mc ls --recursive "dst/$NAMESPACE" | wc -l | tr -d ' ') object(s) in central bucket '$NAMESPACE'; identical to source."
 else
   info "Source bucket '$SRC_BUCKET' doesn't exist (no media ever uploaded) -- creating an empty '$NAMESPACE' bucket instead."
   mc mb --ignore-existing "dst/$NAMESPACE"
 fi
-for pid in $PF_PIDS; do kill "$pid" 2>/dev/null || true; done
+for pid in $PF_PIDS; do { kill "$pid" && wait "$pid"; } 2>/dev/null || true; done
 PF_PIDS=""
 
 # ---------------------------------------------------------------------------
