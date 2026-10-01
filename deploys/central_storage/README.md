@@ -121,9 +121,11 @@ Postgres pod is trusted (local socket connections are `trust`, as in the stock i
 
 ## CI
 
-`.github/workflows/server_ci_cd.yml` picks each namespace's manifests with
-`deploys/select_backend_manifest.sh`, based on what the namespace's live `rellm` Deployment is
-running: if its `DATABASE_URL` comes from the `rellm-central-data` Secret, CI applies the generated
-central-data manifests; otherwise `server_internal.yaml`/`preview_generator.yaml`. A namespace
-therefore only switches when the transition script applies the switch -- provisioning alone never
-changes what CI deploys. The version bump in CI is applied to both sets of manifests.
+CI deploys are image-only: `.github/workflows/server_ci_cd.yml` runs
+`.github/workflows/scripts/set_backend_images.sh`, which bumps the image tags of a namespace's
+`rellm`, `rellm-jobs` and `rellm-preview-generator` Deployments and nothing else. It never applies a
+manifest, so it can't change a namespace's storage wiring, credentials or replica counts -- it behaves
+identically for namespaces on central storage and on their own, and a site you've scaled down for a
+transition stays down. Manifest changes are rolled out deliberately with
+`NAMESPACE=<ns> make update_internal_central_data_backend` (see "Rolling out manifest changes" in
+[`../README.md`](../README.md#rolling-out-manifest-changes)); a CI job warns when a push changes them.

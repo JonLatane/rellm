@@ -64,10 +64,8 @@
 #   NAMESPACE=<namespace> CONFIRM=<namespace> make delete_backend_data_pvcs
 # (see that target's docs in deploys/Makefile).
 #
-# CI: no change needed -- deploys/select_backend_manifest.sh (used by server_ci_cd.yml) sees that this
-# namespace's live rellm Deployment now reads its DATABASE_URL from the rellm-central-data Secret and
-# applies the central-data manifests from then on. (Until this script applies the switch, CI keeps
-# deploying the per-namespace manifests -- provisioning alone never changes what CI deploys.)
+# CI: no change needed -- CI only bumps image tags (kubectl set image), so it never touches this
+# namespace's storage wiring and can't scale a site you've taken down for this cutover back up.
 #
 # Prerequisites:
 #  - kubectl pointed at the right cluster/context (the script prints it and asks first).

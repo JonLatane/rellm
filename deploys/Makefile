@@ -94,7 +94,27 @@ deploy_be_internal_insecure_update:
 create_internal_central_data_backend: deploy_ensure_namespace k8s/server_internal_central_data.$(NAMESPACE).generated.yaml k8s/preview_generator_central_data.$(NAMESPACE).generated.yaml
 	kubectl create -f k8s/server_internal_central_data.$(NAMESPACE).generated.yaml --save-config -n $(NAMESPACE)
 	kubectl create -f k8s/preview_generator_central_data.$(NAMESPACE).generated.yaml --save-config -n $(NAMESPACE)
-update_internal_central_data_backend: k8s/server_internal_central_data.$(NAMESPACE).generated.yaml k8s/preview_generator_central_data.$(NAMESPACE).generated.yaml
+# This is how manifest changes (new env vars, ports, replicas, ...) get rolled out -- CI only bumps
+# image tags (see .github/workflows/scripts/set_backend_images.sh), never manifests. The manifests'
+# own image tags are just the base version, so this KEEPS whatever images the namespace's
+# Deployments are running right now (CI's `<version>-<sha>` tags) instead of resetting them; pass
+# REPO_IMAGES=1 to deploy the manifests' tags as written instead. Regenerates the per-namespace
+# manifests from the templates every time (never trusts a stale .generated.yaml).
+update_internal_central_data_backend:
+	rm -f k8s/server_internal_central_data.$(NAMESPACE).generated.yaml k8s/preview_generator_central_data.$(NAMESPACE).generated.yaml
+	$(MAKE) --no-print-directory k8s/server_internal_central_data.$(NAMESPACE).generated.yaml k8s/preview_generator_central_data.$(NAMESPACE).generated.yaml
+	@if [ -z "$(REPO_IMAGES)" ]; then \
+		live_server="$$(kubectl get deployment rellm -n $(NAMESPACE) --ignore-not-found -o jsonpath='{.spec.template.spec.containers[0].image}')"; \
+		live_preview="$$(kubectl get deployment rellm-preview-generator -n $(NAMESPACE) --ignore-not-found -o jsonpath='{.spec.template.spec.containers[0].image}')"; \
+		if [ -n "$$live_server" ]; then \
+			sed -E "s#(image: )docker\.io/jonlatane/rellm:[^ ]+#\1$$live_server#" k8s/server_internal_central_data.$(NAMESPACE).generated.yaml > k8s/server_internal_central_data.$(NAMESPACE).generated.yaml.tmp && mv k8s/server_internal_central_data.$(NAMESPACE).generated.yaml.tmp k8s/server_internal_central_data.$(NAMESPACE).generated.yaml; \
+			echo "Keeping live server image: $$live_server"; \
+		fi; \
+		if [ -n "$$live_preview" ]; then \
+			sed -E "s#(image: )docker\.io/jonlatane/rellm_preview_generator:[^ ]+#\1$$live_preview#" k8s/preview_generator_central_data.$(NAMESPACE).generated.yaml > k8s/preview_generator_central_data.$(NAMESPACE).generated.yaml.tmp && mv k8s/preview_generator_central_data.$(NAMESPACE).generated.yaml.tmp k8s/preview_generator_central_data.$(NAMESPACE).generated.yaml; \
+			echo "Keeping live preview generator image: $$live_preview"; \
+		fi; \
+	fi
 	kubectl apply -f k8s/server_internal_central_data.$(NAMESPACE).generated.yaml -n $(NAMESPACE)
 	kubectl apply -f k8s/preview_generator_central_data.$(NAMESPACE).generated.yaml -n $(NAMESPACE)
 	$(MAKE) monitor_backend_rollout
