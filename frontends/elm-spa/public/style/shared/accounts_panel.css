@@ -925,43 +925,30 @@
   white-space: nowrap;
 }
 
-/* "Enable notifications" toggle -- see `UI.notificationsButton`. Sized/shaped like `.remove-btn`
-   (same row of small circular icon buttons), neutral-colored except when a subscription is
-   currently active (`.notifications-btn-enabled`). */
-.notifications-btn {
+/* `UI.pushNotificationsMenuItem` -- same row layout as `.account-avatar-menu-contact-methods-header`
+   (text column on the left, one vertically-centered control on the right). */
+.account-avatar-menu-push-notifications {
   display: flex;
+  flex-direction: row;
   align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  width: 1.6rem;
-  height: 1.6rem;
-  padding: 0;
-  line-height: 1;
-  border: 1px solid var(--border);
-  background: var(--bg);
-  color: var(--fg);
+  gap: 0.5rem;
+  padding: 0.4rem 0.6rem;
 }
 
-.notifications-btn:hover:not(:disabled) {
-  background: var(--chip-bg);
+.account-avatar-menu-push-notifications-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  flex: 1;
+  min-width: 0;
 }
 
-.notifications-btn-enabled {
-  background: var(--fg);
-  color: var(--bg);
-}
-
-.notifications-btn:disabled {
-  opacity: 0.5;
-}
-
-.notifications-btn-errored {
-  border-color: var(--danger);
-  color: var(--danger);
+.account-avatar-menu-push-notifications .switch {
+  flex: none;
 }
 
 /* The actual failure reason (e.g. "Notification permission wasn't granted." -- see
-   `AccountsPanel.notificationErrors`), shown in `.account-row-alerts` (see `UI.notificationError`)
+   `AccountsPanel.notificationErrors`), shown in the Push Notifications menu item (see `UI.pushNotificationError`)
    -- *not* positioned relative to `.notifications-btn` itself, since that button lives inside
    `.nav-panel`'s own `overflow-y: auto` (which also computes `overflow-x` to `auto`), silently
    clipping anything that pokes outside it. Sized/shaped like `.account-needs-password` just above,
@@ -1019,11 +1006,61 @@
   color: var(--fg);
 }
 
-/* Hints the avatar is clickable with an inset ring, same convention
-   `.server-chip-top.selectable:hover` already uses elsewhere in this file -- kept alongside (not
-   instead of) the existing background tint. Also shown, not just on hover, while its menu is open,
-   so the ring stays visible for as long as the menu itself does. */
-.media-btn:hover,
+/* `UI.accountAvatarToggle` -- positioning context for the chevron behind the avatar. */
+.account-avatar-toggle {
+  position: relative;
+  display: flex;
+  flex: none;
+}
+
+.account-avatar-toggle .media-btn {
+  position: relative;
+  z-index: 1;
+}
+
+/* The chevron: a box slightly larger than the avatar, centered on it, containing a rotated filled
+   square whose right-hand corner pokes out past the avatar circle's right edge (the rest is hidden
+   behind the avatar). Rotating the whole box 90deg about the avatar's center swings that tip down to
+   the circle's bottom edge while the menu is open. */
+/* Small bell badge at the avatar's top left, shown only while push notifications are enabled. */
+.account-avatar-bell {
+  position: absolute;
+  top: -0.3rem;
+  left: -0.3rem;
+  z-index: 2;
+  opacity: 0.7;
+  font-size: 0.7rem;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.account-avatar-chevron {
+  position: absolute;
+  inset: -0.35rem;
+  z-index: 0;
+  pointer-events: none;
+  transition: transform 0.25s ease;
+}
+
+.account-avatar-chevron::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 0.15rem;
+  width: 0.8rem;
+  height: 0.8rem;
+  margin-top: -0.4rem;
+  background: currentColor;
+  opacity: 0.6;
+  transform: rotate(45deg);
+}
+
+.account-avatar-chevron.is-open {
+  transform: rotate(90deg);
+}
+
+/* An inset ring on the avatar for as long as its menu is open (`.is-open`). No hover style -- the
+   whole avatar-to-username area is the click target now (see `.account-row-menu-toggle`). */
 .media-btn.is-open {
   background: var(--chip-bg);
   outline: 2px solid rgba(0, 0, 0, 0.3);
@@ -1075,7 +1112,6 @@
   display: flex;
   flex-direction: column;
   gap: 0.1rem;
-  margin-left: 34px;
   padding: 0.3rem;
   border-radius: 0.6rem;
 }
@@ -1137,12 +1173,25 @@
    "Contact Methods" label) then the subheader below, spanning the full width under both. */
 .account-avatar-menu-contact-methods-header {
   display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
   padding: 0.4rem 0.6rem;
   border-radius: 0.4rem;
   cursor: pointer;
   user-select: none;
+}
+
+.account-avatar-menu-contact-methods-header-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.account-avatar-menu-contact-methods-header .panel-icon-button {
+  flex: none;
 }
 
 .account-avatar-menu-contact-methods-header:hover {
@@ -1518,6 +1567,13 @@
   min-width: 0;
   color: inherit;
   text-decoration: none;
+}
+
+/* The whole avatar-to-username area toggles `UI.accountAvatarMenuView` (see `UI.accountRow`), so it
+   reads as clickable. */
+.account-row-menu-toggle {
+  cursor: pointer;
+  user-select: none;
 }
 
 

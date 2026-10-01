@@ -278,7 +278,7 @@ type alias Model =
     -- this browser -- the value is the subscription's `endpoint`, so `DisableNotificationsClicked`
     -- can pass it back to both `Ports.unsubscribeFromPush` and `UnregisterPushSubscription`. The
     -- Push API allows only *one* active subscription per browser origin, tied to one VAPID key --
-    -- but `UI.notificationsButton` is only ever shown for an account on `browsingHost`, so every
+    -- but `UI.pushNotificationsMenuItem` is only ever shown for an account on `browsingHost`, so every
     -- account that can appear here shares that same one server, and so that same one key/endpoint:
     -- several entries can (and normally will, once more than one local account on `browsingHost`
     -- has notifications on) legitimately share the exact same `endpoint` value at once, all riding
@@ -295,7 +295,7 @@ type alias Model =
 
     -- Last known reason "Enable notifications" (or the register/unregister RPC that follows it)
     -- failed for a given `rellmAccountId`, if any -- e.g. "Notification permission wasn't granted.",
-    -- or a `grpcErrorToString`. Surfaced by `UI.notificationsButton` so a failure (silently
+    -- or a `grpcErrorToString`. Surfaced by `UI.pushNotificationsMenuItem` so a failure (silently
     -- swallowed prior to this field's existence -- see its own git history) is actually visible
     -- instead of the button just doing nothing. Cleared whenever that account's button is clicked
     -- again, so a retry starts from a clean slate.
@@ -3434,7 +3434,7 @@ sendUpdate req msg model =
                             ( model, Cmd.none )
 
                 -- Permission denied, unsupported browser, subscribe failed, etc. -- surfaced via
-                -- `notificationErrors` (see `UI.notificationsButton`) instead of silently no-oping,
+                -- `notificationErrors` (see `UI.pushNotificationsMenuItem`) instead of silently no-oping,
                 -- so a real failure (e.g. the browser blocking notifications for this site, or iOS
                 -- Safari requiring the site be added to the Home Screen first) is actually visible.
                 Ok ( id, Err reason ) ->

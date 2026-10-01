@@ -1133,3 +1133,11 @@ input.ai-model-provider-grant-models {
 .profile-account-actions-section .profile-account-actions-username {
   padding: 0;
 }
+/* Horizontal rule between the Phone and Email halves of "Contact Methods" (profile page + Accounts Panel). */
+.profile-contact-methods-separator {
+  width: 100%;
+  margin: 0.75em 0;
+  border: none;
+  border-top: 1px solid currentColor;
+  opacity: 0.25;
+}

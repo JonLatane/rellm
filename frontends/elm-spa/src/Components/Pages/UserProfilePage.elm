@@ -47,7 +47,7 @@ import Dict exposing (Dict)
 import Effect exposing (Effect)
 import Gen.Route
 import Grpc
-import Html exposing (Html, a, button, div, h2, h3, input, label, li, option, p, select, span, text, ul)
+import Html exposing (Html, a, button, div, h2, h3, hr, input, label, li, option, p, select, span, text, ul)
 import Html.Attributes exposing (attribute, checked, class, classList, disabled, href, id, name, novalidate, placeholder, readonly, selected, tabindex, title, type_, value)
 import Html.Events exposing (onClick, onInput, onSubmit)
 import Http
@@ -1090,7 +1090,7 @@ init shared pageIsSecure targetHost lookup navKey path query fragment =
             , path = path
             , query = query
             , pendingScrollSectionId =
-                if List.member fragment (List.map Just [ "subscriptions", "sync-sources", "sync-destinations", "ai-providers", "ai-models" ]) then
+                if List.member fragment (List.map Just [ "subscriptions", "sync-sources", "sync-destinations", "ai-providers", "ai-models", "contact-methods" ]) then
                     fragment
 
                 else
@@ -1289,6 +1289,9 @@ any other string. Used by `Shared.ProfileSectionLinkClicked`'s handling below, w
 expandProfileSection : String -> Model -> Model
 expandProfileSection sectionId model =
     case sectionId of
+        "contact-methods" ->
+            { model | contactMethodsExpanded = True }
+
         "subscriptions" ->
             { model | subscriptionsExpanded = True }
 
@@ -5044,7 +5047,7 @@ contactMethodsSection browserTimeZone canEdit isOwn expanded model user =
 
     else
         expandableProfileSection "profile-contact-methods-section"
-            "profile-contact-methods-section"
+            "contact-methods"
             "Contact Methods"
             Nothing
             expanded
@@ -5065,6 +5068,7 @@ contactMethodsSection browserTimeZone canEdit isOwn expanded model user =
               else
                 text ""
             , contactMethodDeleteButton (\cm -> Shared.ConfirmPhoneDelete cm model.resolver.targetHost) "Delete Phone" user.phone
+            , hr [ class "profile-contact-methods-separator" ] []
             , emailView canEdit model.emailEdit user
             , contactMethodConsentView browserTimeZone
                 "profile-email-history-section"

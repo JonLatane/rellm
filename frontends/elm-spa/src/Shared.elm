@@ -42,6 +42,7 @@ import Request exposing (Request)
 import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer)
+import Shared.BrowserInfo as BrowserInfo
 import Shared.Breadcrumbs as Breadcrumbs
 import Shared.CreateNewPanel as CreateNewPanel
 import Shared.FederatedAuth as FederatedAuth
@@ -86,6 +87,10 @@ type alias Model =
     -- onto any `Gen.Route.toHref` output so links/history stay under the
     -- right mount.
     , basePath : String
+
+    -- Detected once from `navigator.userAgent` (flag `userAgent`) -- display-only, see
+    -- `Shared.BrowserInfo`.
+    , browser : BrowserInfo.Browser
 
     -- Drives `UI.scrollPreserver`: a tall spacer at the bottom of `main_`,
     -- shown for the first 2s after navigating *back* to a page (never a
@@ -472,6 +477,12 @@ init basePath req flags =
             Decode.decodeValue (Decode.field "uses24HourTime" Decode.bool) flags
                 |> Result.withDefault False
 
+        browser : BrowserInfo.Browser
+        browser =
+            Decode.decodeValue (Decode.field "userAgent" Decode.string) flags
+                |> Result.map BrowserInfo.fromUserAgent
+                |> Result.withDefault BrowserInfo.UnknownBrowser
+
         ( accountsPanelModel, accountsPanelCmd ) =
             AccountsPanel.init req accountsPanelFlags blueskyAccountsFlags mastodonAccountsAndServersFlags
 
@@ -496,6 +507,7 @@ init basePath req flags =
             , theme = { preference = themePreference, systemPrefersDark = systemPrefersDark }
             , userPreferences = UserPreferences.init userPreferencesFlags
             , basePath = basePath
+            , browser = browser
             , scrollPreserverVisible = False
             , navAnimationState =
                 { scrollLeft = 0
