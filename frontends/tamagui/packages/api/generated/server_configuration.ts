@@ -331,6 +331,12 @@ export enum NavigationTab {
   ABOUT_TAB = 15,
   /** MARKET_TAB - The Market tab. */
   MARKET_TAB = 16,
+  /** MEDIA_TAB - The Media tab: Video, Audio and (when logged in) My Media sub-tabs. Reserved path: `media`. */
+  MEDIA_TAB = 17,
+  /** VIDEO_TAB - The Video tab (a YouTube-alike over `GetMedia` with `content_type: "video/*"`). Reserved paths: `video`, `videos`. */
+  VIDEO_TAB = 18,
+  /** AUDIO_TAB - The Audio tab (a Spotify-alike over `GetMedia` with `content_type: "audio/*"`). Reserved path: `audio`. */
+  AUDIO_TAB = 19,
   UNRECOGNIZED = -1,
 }
 
@@ -354,6 +360,15 @@ export function navigationTabFromJSON(object: any): NavigationTab {
     case 16:
     case "MARKET_TAB":
       return NavigationTab.MARKET_TAB;
+    case 17:
+    case "MEDIA_TAB":
+      return NavigationTab.MEDIA_TAB;
+    case 18:
+    case "VIDEO_TAB":
+      return NavigationTab.VIDEO_TAB;
+    case 19:
+    case "AUDIO_TAB":
+      return NavigationTab.AUDIO_TAB;
     case -1:
     case "UNRECOGNIZED":
     default:
@@ -375,6 +390,12 @@ export function navigationTabToJSON(object: NavigationTab): string {
       return "ABOUT_TAB";
     case NavigationTab.MARKET_TAB:
       return "MARKET_TAB";
+    case NavigationTab.MEDIA_TAB:
+      return "MEDIA_TAB";
+    case NavigationTab.VIDEO_TAB:
+      return "VIDEO_TAB";
+    case NavigationTab.AUDIO_TAB:
+      return "AUDIO_TAB";
     case NavigationTab.UNRECOGNIZED:
     default:
       return "UNRECOGNIZED";
@@ -898,6 +919,20 @@ export interface MediaSettings {
   /** Default media storage allocation for newly created users. Defaults to 15MB. */
   defaultUserMediaAllocationBytes: number;
   /**
+   * "Block CORS Anonymous Media Access". When set, `GET /media/{id}` responses to *unauthenticated*
+   * requests omit CORS `Access-Control-Allow-*` headers even for `GLOBAL_PUBLIC` media, so browsers
+   * block other sites' scripts from reading them (plain `<img>`/`<video>` embeds still work).
+   * Authenticated requests are unaffected.
+   */
+  blockCorsAnonymousMediaAccess: boolean;
+  /**
+   * Whether `LICENSED` media (see `Visibility.LICENSED`) is discoverable by *unauthenticated*
+   * users: listed by `GetMedia` and its preview/thumbnails served by `GET /media/{id}`. When unset
+   * (the default), `LICENSED` media is only visible to logged-in users -- like `SERVER_PUBLIC` --
+   * plus its owner and admins. Either way, its full-quality bytes still require an active License.
+   */
+  licensedMediaVisibleGlobally: boolean;
+  /**
    * Default is 5GB (applied whenever this is `0`, same read-time-fallback convention as
    * `default_user_media_allocation_bytes` above). API/server-enforced limit for total of all
    * Media usage (`server_media_usage_bytes` below) -- `CreateMedia` rejects an upload that would
@@ -1240,7 +1275,7 @@ export interface CustomNavigationTab {
   /**
    * The path this tab is reachable at, e.g. `gigs` for a band's `/gigs` link to the Events page,
    * or `weddings` for a Post about wedding offerings. Must be distinct across every entry in
-   * `CustomNavigationTabSet.tabs`. Note: `events`, `posts`, `people`, and `about` are reserved --
+   * `CustomNavigationTabSet.tabs`. Note: `events`, `posts`, `people`, `about`, `media`, `video`, `videos`, and `audio` are reserved --
    * each may only be used to (redundantly) point back at its own matching predefined tab, never
    * remapped to a different tab or a Post. `/` itself is never reachable this way - it's
    * overridden via `CustomNavigationTabSet.home` instead.
@@ -2869,6 +2904,8 @@ function createBaseMediaSettings(): MediaSettings {
     defaultModeration: 0,
     defaultVisibility: 0,
     defaultUserMediaAllocationBytes: 0,
+    blockCorsAnonymousMediaAccess: false,
+    licensedMediaVisibleGlobally: false,
     serverMediaAllocationBytes: 0,
     serverMediaUsageBytes: 0,
     serverMediaUsageCalculatedAt: undefined,
@@ -2890,6 +2927,12 @@ export const MediaSettings: MessageFns<MediaSettings> = {
     }
     if (message.defaultUserMediaAllocationBytes !== 0) {
       writer.uint32(32).uint64(message.defaultUserMediaAllocationBytes);
+    }
+    if (message.blockCorsAnonymousMediaAccess !== false) {
+      writer.uint32(160).bool(message.blockCorsAnonymousMediaAccess);
+    }
+    if (message.licensedMediaVisibleGlobally !== false) {
+      writer.uint32(168).bool(message.licensedMediaVisibleGlobally);
     }
     if (message.serverMediaAllocationBytes !== 0) {
       writer.uint32(40).uint64(message.serverMediaAllocationBytes);
@@ -2946,6 +2989,22 @@ export const MediaSettings: MessageFns<MediaSettings> = {
           }
 
           message.defaultUserMediaAllocationBytes = longToNumber(reader.uint64());
+          continue;
+        }
+        case 20: {
+          if (tag !== 160) {
+            break;
+          }
+
+          message.blockCorsAnonymousMediaAccess = reader.bool();
+          continue;
+        }
+        case 21: {
+          if (tag !== 168) {
+            break;
+          }
+
+          message.licensedMediaVisibleGlobally = reader.bool();
           continue;
         }
         case 5: {
@@ -3005,6 +3064,12 @@ export const MediaSettings: MessageFns<MediaSettings> = {
       defaultUserMediaAllocationBytes: isSet(object.defaultUserMediaAllocationBytes)
         ? globalThis.Number(object.defaultUserMediaAllocationBytes)
         : 0,
+      blockCorsAnonymousMediaAccess: isSet(object.blockCorsAnonymousMediaAccess)
+        ? globalThis.Boolean(object.blockCorsAnonymousMediaAccess)
+        : false,
+      licensedMediaVisibleGlobally: isSet(object.licensedMediaVisibleGlobally)
+        ? globalThis.Boolean(object.licensedMediaVisibleGlobally)
+        : false,
       serverMediaAllocationBytes: isSet(object.serverMediaAllocationBytes)
         ? globalThis.Number(object.serverMediaAllocationBytes)
         : 0,
@@ -3035,6 +3100,12 @@ export const MediaSettings: MessageFns<MediaSettings> = {
     if (message.defaultUserMediaAllocationBytes !== 0) {
       obj.defaultUserMediaAllocationBytes = Math.round(message.defaultUserMediaAllocationBytes);
     }
+    if (message.blockCorsAnonymousMediaAccess !== false) {
+      obj.blockCorsAnonymousMediaAccess = message.blockCorsAnonymousMediaAccess;
+    }
+    if (message.licensedMediaVisibleGlobally !== false) {
+      obj.licensedMediaVisibleGlobally = message.licensedMediaVisibleGlobally;
+    }
     if (message.serverMediaAllocationBytes !== 0) {
       obj.serverMediaAllocationBytes = Math.round(message.serverMediaAllocationBytes);
     }
@@ -3062,6 +3133,8 @@ export const MediaSettings: MessageFns<MediaSettings> = {
     message.defaultModeration = object.defaultModeration ?? 0;
     message.defaultVisibility = object.defaultVisibility ?? 0;
     message.defaultUserMediaAllocationBytes = object.defaultUserMediaAllocationBytes ?? 0;
+    message.blockCorsAnonymousMediaAccess = object.blockCorsAnonymousMediaAccess ?? false;
+    message.licensedMediaVisibleGlobally = object.licensedMediaVisibleGlobally ?? false;
     message.serverMediaAllocationBytes = object.serverMediaAllocationBytes ?? 0;
     message.serverMediaUsageBytes = object.serverMediaUsageBytes ?? 0;
     message.serverMediaUsageCalculatedAt = object.serverMediaUsageCalculatedAt ?? undefined;

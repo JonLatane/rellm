@@ -64,6 +64,7 @@
     document.write('<link rel="stylesheet" href="' + rellmBasePath + '/style/servers.css">');
     document.write('<link rel="stylesheet" href="' + rellmBasePath + '/style/messages.css">');
     document.write('<link rel="stylesheet" href="' + rellmBasePath + '/style/market.css">');
+    document.write('<link rel="stylesheet" href="' + rellmBasePath + '/style/media_pages.css">');
     document.write('<link rel="stylesheet" href="' + rellmBasePath + '/style/shared/nav.css">');
     document.write('<link rel="stylesheet" href="' + rellmBasePath + '/style/shared/accounts_panel.css">');
     document.write('<link rel="stylesheet" href="' + rellmBasePath + '/style/shared/starred_panel.css">');
@@ -654,6 +655,50 @@
     app.ports.scrollElementLeft.subscribe(function (payload) {
       var el = document.getElementById(payload.id);
       if (el) { el.scrollLeft = payload.left; }
+    });
+
+    // See Ports.elm's scrubMedia doc comment. The first scrub of a "session" (i.e. none in the last
+    // 5s) records whether the element was playing and where, then pauses it; every scrub seeks; 5s
+    // after the last one, a session that began while playing resumes from the recorded position.
+    var rellmScrub = null;
+    function rellmScrubElement() {
+      return document.querySelector('.media-viewer-panel-media video, .media-viewer-panel-media audio');
+    }
+    app.ports.scrubMedia.subscribe(function (payload) {
+      var attempts = 0;
+      (function run() {
+        var el = rellmScrubElement();
+        if (!el) {
+          // The viewer may not have rendered the new item yet -- retry briefly.
+          if (attempts++ < 20) { setTimeout(run, 150); }
+          return;
+        }
+        if (payload.timeMs === null) {
+          var report = function () {
+            if (app.ports.mediaDurationReported && isFinite(el.duration)) {
+              app.ports.mediaDurationReported.send(el.duration * 1000);
+            }
+          };
+          if (el.readyState >= 1) { report(); }
+          else { el.addEventListener('loadedmetadata', report, { once: true }); }
+          return;
+        }
+        if (!rellmScrub || rellmScrub.el !== el) {
+          if (rellmScrub) { clearTimeout(rellmScrub.timer); }
+          rellmScrub = { el: el, wasPlaying: !el.paused, resumeAt: el.currentTime, timer: null };
+        }
+        el.pause();
+        el.currentTime = payload.timeMs / 1000;
+        clearTimeout(rellmScrub.timer);
+        var session = rellmScrub;
+        session.timer = setTimeout(function () {
+          if (session.wasPlaying) {
+            session.el.currentTime = session.resumeAt;
+            session.el.play().catch(function () {});
+          }
+          if (rellmScrub === session) { rellmScrub = null; }
+        }, 5000);
+      })();
     });
 
     // See Ports.elm's measureElements doc comment: Browser.Dom.getElement

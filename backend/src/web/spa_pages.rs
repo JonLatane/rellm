@@ -1,5 +1,8 @@
 use lazy_static::lazy_static;
 
+use crate::protos::ServerConfiguration;
+use super::ServerSummaryInfo;
+
 use rocket::{
     Route, State,
     http::{Status, uri::Origin},
@@ -41,6 +44,10 @@ lazy_static! {
         events,
         market,
         market_product,
+        media_page,
+        video_page,
+        videos_page,
+        audio_page,
         about,
         about_rellm,
         post,
@@ -110,21 +117,14 @@ macro_rules! webui {
         ) -> CacheResponse<Result<RellmResponder, Status>> {
             let mut connection = state.pool.get().unwrap();
             let configuration = rpcs::get_server_configuration_proto(&mut connection).unwrap();
-            let server_info = configuration.server_info.unwrap_or_default();
-            let server_name = server_info.name.clone().unwrap_or("Rellm".to_string());
-            let server_logo = server_info
-                .logo
-                .clone()
-                .unwrap_or_default()
-                .square_media_id
-                .map(|id| format!("/media/{}", id));
+            let server_info = configuration.server_info.clone().unwrap_or_default();
             let raw_path = origin.path();
             let raw_path = raw_path.as_str();
             let app = spa_prefix(raw_path).unwrap_or_else(|| root_app(&server_info));
             let is_tamagui_prefixed = spa_prefix(raw_path) == Some(SpaApp::Tamagui);
             let path = strip_spa_prefix(raw_path);
             let summary: Option<RellmSummary> =
-                ($summary)(connection, server_name, server_logo, &path);
+                ($summary)(connection, &configuration, &path);
             spa_web_path(app, $html_path, summary, is_tamagui_prefixed).await
         }
     };
@@ -136,21 +136,14 @@ macro_rules! webui {
         ) -> CacheResponse<Result<RellmResponder, Status>> {
             let mut connection = state.pool.get().unwrap();
             let configuration = rpcs::get_server_configuration_proto(&mut connection).unwrap();
-            let server_info = configuration.server_info.unwrap_or_default();
-            let server_name = server_info.name.clone().unwrap_or("Rellm".to_string());
-            let server_logo = server_info
-                .logo
-                .clone()
-                .unwrap_or_default()
-                .square_media_id
-                .map(|id| format!("/media/{}", id));
+            let server_info = configuration.server_info.clone().unwrap_or_default();
             let raw_path = origin.path();
             let raw_path = raw_path.as_str();
             let app = spa_prefix(raw_path).unwrap_or_else(|| root_app(&server_info));
             let is_tamagui_prefixed = spa_prefix(raw_path) == Some(SpaApp::Tamagui);
             let path = strip_spa_prefix(raw_path);
             let summary: Option<RellmSummary> =
-                ($summary)(connection, server_name, server_logo, &path);
+                ($summary)(connection, &configuration, &path);
             spa_web_path(app, $html_path, summary, is_tamagui_prefixed).await
         }
     };
@@ -160,14 +153,11 @@ webui!(
     posts,
     "/posts",
     "posts.html",
-    |_connection: PgPooledConnection,
-     server_name: String,
-     server_logo: Option<String>,
-     _path: &str| {
+    |_connection: PgPooledConnection, configuration: &ServerConfiguration, _path: &str| {
         Some(RellmSummary {
-            title: Some(format!("Posts | {}", server_name)),
-            description: Some("Posts from a Rellm community".to_string()),
-            image: server_logo.or(Some("/favicon.png".to_string())),
+            title: Some(format!("Posts | {}", configuration.display_name())),
+            description: Some(format!("Recent posts from {}", configuration.short_name())),
+            image: configuration.logo_url().or(Some("/favicon.png".to_string())),
         })
     }
 );
@@ -175,14 +165,59 @@ webui!(
     events,
     "/events",
     "events.html",
-    |_connection: PgPooledConnection,
-     server_name: String,
-     server_logo: Option<String>,
-     _path: &str| {
+    |_connection: PgPooledConnection, configuration: &ServerConfiguration, _path: &str| {
         Some(RellmSummary {
-            title: Some(format!("Events | {}", server_name)),
-            description: Some("Searchable, RSVPable Events from a Rellm community".to_string()),
-            image: server_logo.or(Some("/favicon.png".to_string())),
+            title: Some(format!("Events | {}", configuration.display_name())),
+            description: Some(format!("Upcoming events from {} -- browse, search and RSVP", configuration.short_name())),
+            image: configuration.logo_url().or(Some("/favicon.png".to_string())),
+        })
+    }
+);
+webui!(
+    media_page,
+    "/media",
+    "media.html",
+    |_connection: PgPooledConnection, configuration: &ServerConfiguration, _path: &str| {
+        Some(RellmSummary {
+            title: Some(format!("Media | {}", configuration.display_name())),
+            description: Some(format!("Videos and audio from {}", configuration.short_name())),
+            image: configuration.logo_url().or(Some("/favicon.png".to_string())),
+        })
+    }
+);
+webui!(
+    video_page,
+    "/video",
+    "video.html",
+    |_connection: PgPooledConnection, configuration: &ServerConfiguration, _path: &str| {
+        Some(RellmSummary {
+            title: Some(format!("Videos | {}", configuration.display_name())),
+            description: Some(format!("Videos from {}", configuration.short_name())),
+            image: configuration.logo_url().or(Some("/favicon.png".to_string())),
+        })
+    }
+);
+webui!(
+    videos_page,
+    "/videos",
+    "videos.html",
+    |_connection: PgPooledConnection, configuration: &ServerConfiguration, _path: &str| {
+        Some(RellmSummary {
+            title: Some(format!("Videos | {}", configuration.display_name())),
+            description: Some(format!("Videos from {}", configuration.short_name())),
+            image: configuration.logo_url().or(Some("/favicon.png".to_string())),
+        })
+    }
+);
+webui!(
+    audio_page,
+    "/audio",
+    "audio.html",
+    |_connection: PgPooledConnection, configuration: &ServerConfiguration, _path: &str| {
+        Some(RellmSummary {
+            title: Some(format!("Audio | {}", configuration.display_name())),
+            description: Some(format!("Audio from {}", configuration.short_name())),
+            image: configuration.logo_url().or(Some("/favicon.png".to_string())),
         })
     }
 );
@@ -190,14 +225,11 @@ webui!(
     market,
     "/market",
     "market.html",
-    |_connection: PgPooledConnection,
-     server_name: String,
-     server_logo: Option<String>,
-     _path: &str| {
+    |_connection: PgPooledConnection, configuration: &ServerConfiguration, _path: &str| {
         Some(RellmSummary {
-            title: Some(format!("Market | {}", server_name)),
-            description: Some("Products and subscriptions from a Rellm community".to_string()),
-            image: server_logo.or(Some("/favicon.png".to_string())),
+            title: Some(format!("Market | {}", configuration.display_name())),
+            description: Some(format!("Products and subscriptions from {}", configuration.short_name())),
+            image: configuration.logo_url().or(Some("/favicon.png".to_string())),
         })
     }
 );
@@ -205,10 +237,7 @@ webui!(
     market_product,
     "/market/product/<_>",
     "market/product/[productId].html",
-    |mut connection: PgPooledConnection,
-     server_name: String,
-     server_logo: Option<String>,
-     path: &str| {
+    |mut connection: PgPooledConnection, configuration: &ServerConfiguration, path: &str| {
         let product_id = path_component(path, 3)?;
         let product = models::get_market_product(product_id.to_db_id().ok()?, &mut connection).ok()?;
         let product = MarshalableMarketProduct(product).to_proto();
@@ -216,10 +245,10 @@ webui!(
             title: Some(format!(
                 "{} | Market | {}",
                 market_product_headline(&product),
-                server_name
+                configuration.display_name()
             )),
             description: Some(market_product_summary(&product)),
-            image: server_logo.or(Some("/favicon.png".to_string())),
+            image: configuration.logo_url().or(Some("/favicon.png".to_string())),
         })
     }
 );
@@ -227,14 +256,11 @@ webui!(
     about,
     "/about",
     "about.html",
-    |_connection: PgPooledConnection,
-     server_name: String,
-     server_logo: Option<String>,
-     _path: &str| {
+    |_connection: PgPooledConnection, configuration: &ServerConfiguration, _path: &str| {
         Some(RellmSummary {
-            title: Some(format!("About Community | {}", server_name)),
-            description: Some("Information a Rellm community".to_string()),
-            image: server_logo.or(Some("/favicon.png".to_string())),
+            title: Some(format!("About Community | {}", configuration.display_name())),
+            description: Some(format!("About {}, and the Rellm software it runs on", configuration.short_name())),
+            image: configuration.logo_url().or(Some("/favicon.png".to_string())),
         })
     }
 );
@@ -242,16 +268,13 @@ webui!(
     about_rellm,
     "/about_rellm",
     "about_rellm.html",
-    |_connection: PgPooledConnection,
-     _server_name: String,
-     _server_logo: Option<String>,
-     _path: &str| {
+    |_connection: PgPooledConnection, _configuration: &ServerConfiguration, _path: &str| {
         Some(RellmSummary {
             title: Some("About Rellm".to_string()),
             description: Some(
                 "Information about the Rellm federated social network stack".to_string(),
             ),
-            image: None, //server_logo.or(Some("/favicon.png".to_string())),
+            image: None, //configuration.logo_url().or(Some("/favicon.png".to_string())),
         })
     }
 );
@@ -259,10 +282,7 @@ webui!(
     post,
     "/post/<_..>",
     "post/[postId].html",
-    |mut connection: PgPooledConnection,
-     server_name: String,
-     server_logo: Option<String>,
-     path: &str| {
+    |mut connection: PgPooledConnection, configuration: &ServerConfiguration, path: &str| {
         let post = match federated_path_component(path, 2) {
             Some(FederatedId::Local(post_id)) => get_post(post_id, &mut connection),
             Some(FederatedId::Federated(_, _domain)) => {
@@ -275,8 +295,8 @@ webui!(
         post_summary(
             "Post".to_string(),
             post,
-            server_name,
-            server_logo,
+            configuration.display_name(),
+            configuration.logo_url(),
             None,
             &mut connection,
         )
@@ -286,10 +306,7 @@ webui!(
     event,
     "/event/<_>",
     "event/[occasionId].html",
-    |mut connection: PgPooledConnection,
-     server_name: String,
-     server_logo: Option<String>,
-     path: &str| {
+    |mut connection: PgPooledConnection, configuration: &ServerConfiguration, path: &str| {
         let event = match federated_path_component(path, 2) {
             Some(FederatedId::Local(occasion_id)) => get_event(occasion_id, &mut connection),
             Some(FederatedId::Federated(_, _)) => None,
@@ -300,8 +317,8 @@ webui!(
         post_summary(
             "Event".to_string(),
             post,
-            server_name,
-            server_logo,
+            configuration.display_name(),
+            configuration.logo_url(),
             None,
             &mut connection,
         )
@@ -312,14 +329,11 @@ webui!(
     people,
     "/people",
     "people.html",
-    |_connection: PgPooledConnection,
-     server_name: String,
-     server_logo: Option<String>,
-     _path: &str| {
+    |_connection: PgPooledConnection, configuration: &ServerConfiguration, _path: &str| {
         Some(RellmSummary {
-            title: Some(format!("People | {}", server_name)),
-            description: Some("User listings for a Rellm community".to_string()),
-            image: server_logo.or(Some("/favicon.png".to_string())),
+            title: Some(format!("People | {}", configuration.display_name())),
+            description: Some(format!("People on {}", configuration.short_name())),
+            image: configuration.logo_url().or(Some("/favicon.png".to_string())),
         })
     }
 );
@@ -328,14 +342,11 @@ webui!(
     messages,
     "/messages",
     "", // This is actually not done in Tamagui yet, only Elm.
-    |_connection: PgPooledConnection,
-     server_name: String,
-     server_logo: Option<String>,
-     _path: &str| {
+    |_connection: PgPooledConnection, configuration: &ServerConfiguration, _path: &str| {
         Some(RellmSummary {
-            title: Some(format!("Messages | {}", server_name)),
-            description: Some("Direct messages and emails on a Rellm community".to_string()),
-            image: server_logo.or(Some("/favicon.png".to_string())),
+            title: Some(format!("Messages | {}", configuration.display_name())),
+            description: Some(format!("Your direct messages and emails on {}", configuration.short_name())),
+            image: configuration.logo_url().or(Some("/favicon.png".to_string())),
         })
     }
 );
@@ -344,16 +355,13 @@ webui!(
     user_posts,
     "/<_>/posts",
     "", // This is actually not done in Tamagui yet, only Elm.
-    |mut connection: PgPooledConnection,
-     server_name: String,
-     server_logo: Option<String>,
-     path: &str| {
+    |mut connection: PgPooledConnection, configuration: &ServerConfiguration, path: &str| {
         let username = username_or_real_name(path, &mut connection);
 
         Some(RellmSummary {
-            title: Some(format!("{}: Posts | {}", username, server_name)),
-            description: None,
-            image: server_logo.or(Some("/favicon.png".to_string())),
+            title: Some(format!("{}: Posts | {}", username, configuration.display_name())),
+            description: Some(format!("Posts by {} on {}", username, configuration.short_name())),
+            image: configuration.logo_url().or(Some("/favicon.png".to_string())),
         })
     },
     rank = 10
@@ -363,16 +371,13 @@ webui!(
     user_friends,
     "/<_>/friends",
     "", // This is actually not done in Tamagui yet, only Elm.
-    |mut connection: PgPooledConnection,
-     server_name: String,
-     server_logo: Option<String>,
-     path: &str| {
+    |mut connection: PgPooledConnection, configuration: &ServerConfiguration, path: &str| {
         let username = username_or_real_name(path, &mut connection);
 
         Some(RellmSummary {
-            title: Some(format!("{}: Friends | {}", username, server_name)),
-            description: None,
-            image: server_logo.or(Some("/favicon.png".to_string())),
+            title: Some(format!("{}: Friends | {}", username, configuration.display_name())),
+            description: Some(format!("Friends of {} on {}", username, configuration.short_name())),
+            image: configuration.logo_url().or(Some("/favicon.png".to_string())),
         })
     },
     rank = 10
@@ -382,16 +387,13 @@ webui!(
     user_followers,
     "/<_>/followers",
     "", // This is actually not done in Tamagui yet, only Elm.
-    |mut connection: PgPooledConnection,
-     server_name: String,
-     server_logo: Option<String>,
-     path: &str| {
+    |mut connection: PgPooledConnection, configuration: &ServerConfiguration, path: &str| {
         let username = username_or_real_name(path, &mut connection);
 
         Some(RellmSummary {
-            title: Some(format!("{}: Followers | {}", username, server_name)),
-            description: None,
-            image: server_logo.or(Some("/favicon.png".to_string())),
+            title: Some(format!("{}: Followers | {}", username, configuration.display_name())),
+            description: Some(format!("People following {} on {}", username, configuration.short_name())),
+            image: configuration.logo_url().or(Some("/favicon.png".to_string())),
         })
     },
     rank = 10
@@ -401,16 +403,13 @@ webui!(
     user_following,
     "/<_>/following",
     "", // This is actually not done in Tamagui yet, only Elm.
-    |mut connection: PgPooledConnection,
-     server_name: String,
-     server_logo: Option<String>,
-     path: &str| {
+    |mut connection: PgPooledConnection, configuration: &ServerConfiguration, path: &str| {
         let username = username_or_real_name(path, &mut connection);
 
         Some(RellmSummary {
-            title: Some(format!("{}: Following | {}", username, server_name)),
-            description: None,
-            image: server_logo.or(Some("/favicon.png".to_string())),
+            title: Some(format!("{}: Following | {}", username, configuration.display_name())),
+            description: Some(format!("People {} follows on {}", username, configuration.short_name())),
+            image: configuration.logo_url().or(Some("/favicon.png".to_string())),
         })
     },
     rank = 10
@@ -420,16 +419,13 @@ webui!(
     user_id_posts,
     "/user/<_>/posts",
     "", // This is actually not done in Tamagui yet, only Elm.
-    |mut connection: PgPooledConnection,
-     server_name: String,
-     server_logo: Option<String>,
-     path: &str| {
+    |mut connection: PgPooledConnection, configuration: &ServerConfiguration, path: &str| {
         let username = username_or_real_name_from_user_id(path, &mut connection);
 
         Some(RellmSummary {
-            title: Some(format!("{}: Posts | {}", username, server_name)),
-            description: None,
-            image: server_logo.or(Some("/favicon.png".to_string())),
+            title: Some(format!("{}: Posts | {}", username, configuration.display_name())),
+            description: Some(format!("Posts by {} on {}", username, configuration.short_name())),
+            image: configuration.logo_url().or(Some("/favicon.png".to_string())),
         })
     },
     rank = 10
@@ -439,16 +435,13 @@ webui!(
     user_id_friends,
     "/user/<_>/friends",
     "", // This is actually not done in Tamagui yet, only Elm.
-    |mut connection: PgPooledConnection,
-     server_name: String,
-     server_logo: Option<String>,
-     path: &str| {
+    |mut connection: PgPooledConnection, configuration: &ServerConfiguration, path: &str| {
         let username = username_or_real_name_from_user_id(path, &mut connection);
 
         Some(RellmSummary {
-            title: Some(format!("{}: Friends | {}", username, server_name)),
-            description: None,
-            image: server_logo.or(Some("/favicon.png".to_string())),
+            title: Some(format!("{}: Friends | {}", username, configuration.display_name())),
+            description: Some(format!("Friends of {} on {}", username, configuration.short_name())),
+            image: configuration.logo_url().or(Some("/favicon.png".to_string())),
         })
     },
     rank = 10
@@ -458,16 +451,13 @@ webui!(
     user_id_followers,
     "/user/<_>/followers",
     "", // This is actually not done in Tamagui yet, only Elm.
-    |mut connection: PgPooledConnection,
-     server_name: String,
-     server_logo: Option<String>,
-     path: &str| {
+    |mut connection: PgPooledConnection, configuration: &ServerConfiguration, path: &str| {
         let username = username_or_real_name_from_user_id(path, &mut connection);
 
         Some(RellmSummary {
-            title: Some(format!("{}: Followers | {}", username, server_name)),
-            description: None,
-            image: server_logo.or(Some("/favicon.png".to_string())),
+            title: Some(format!("{}: Followers | {}", username, configuration.display_name())),
+            description: Some(format!("People following {} on {}", username, configuration.short_name())),
+            image: configuration.logo_url().or(Some("/favicon.png".to_string())),
         })
     },
     rank = 10
@@ -477,16 +467,13 @@ webui!(
     user_id_following,
     "/user/<_>/following",
     "", // This is actually not done in Tamagui yet, only Elm.
-    |mut connection: PgPooledConnection,
-     server_name: String,
-     server_logo: Option<String>,
-     path: &str| {
+    |mut connection: PgPooledConnection, configuration: &ServerConfiguration, path: &str| {
         let username = username_or_real_name_from_user_id(path, &mut connection);
 
         Some(RellmSummary {
-            title: Some(format!("{}: Following | {}", username, server_name)),
-            description: None,
-            image: server_logo.or(Some("/favicon.png".to_string())),
+            title: Some(format!("{}: Following | {}", username, configuration.display_name())),
+            description: Some(format!("People {} follows on {}", username, configuration.short_name())),
+            image: configuration.logo_url().or(Some("/favicon.png".to_string())),
         })
     },
     rank = 10
@@ -496,14 +483,11 @@ webui!(
     follow_requests,
     "/people/follow_requests",
     "people/follow_requests.html",
-    |_connection: PgPooledConnection,
-     server_name: String,
-     server_logo: Option<String>,
-     _path: &str| {
+    |_connection: PgPooledConnection, configuration: &ServerConfiguration, _path: &str| {
         Some(RellmSummary {
-            title: Some(format!("Follow Requests | {}", server_name)),
-            description: None,
-            image: server_logo.or(Some("/favicon.png".to_string())),
+            title: Some(format!("Follow Requests | {}", configuration.display_name())),
+            description: Some(format!("Pending follow requests on {}", configuration.short_name())),
+            image: configuration.logo_url().or(Some("/favicon.png".to_string())),
         })
     }
 );
@@ -511,16 +495,13 @@ webui!(
     group_home,
     "/g/<_>",
     "g/[shortname].html",
-    |mut connection: PgPooledConnection,
-     server_name: String,
-     server_logo: Option<String>,
-     path: &str| {
+    |mut connection: PgPooledConnection, configuration: &ServerConfiguration, path: &str| {
         let group_name = group_name(path, &mut connection);
 
         Some(RellmSummary {
-            title: Some(format!("{}: {}", group_name, server_name)),
-            description: None,
-            image: server_logo.or(Some("/favicon.png".to_string())),
+            title: Some(format!("{}: {}", group_name, configuration.display_name())),
+            description: Some(format!("The {} group on {}", group_name, configuration.short_name())),
+            image: configuration.logo_url().or(Some("/favicon.png".to_string())),
         })
     }
 );
@@ -528,16 +509,13 @@ webui!(
     group_posts,
     "/g/<_>/posts",
     "g/[shortname]/posts.html",
-    |mut connection: PgPooledConnection,
-     server_name: String,
-     server_logo: Option<String>,
-     path: &str| {
+    |mut connection: PgPooledConnection, configuration: &ServerConfiguration, path: &str| {
         let group_name = group_name(path, &mut connection);
 
         Some(RellmSummary {
-            title: Some(format!("{}: Posts | {}", group_name, server_name)),
-            description: None,
-            image: server_logo.or(Some("/favicon.png".to_string())),
+            title: Some(format!("{}: Posts | {}", group_name, configuration.display_name())),
+            description: Some(format!("Posts in the {} group on {}", group_name, configuration.short_name())),
+            image: configuration.logo_url().or(Some("/favicon.png".to_string())),
         })
     }
 );
@@ -545,10 +523,7 @@ webui!(
     group_post,
     "/g/<_>/p/<_..>",
     "g/[shortname]/p/[postId].html",
-    |mut connection: PgPooledConnection,
-     server_name: String,
-     server_logo: Option<String>,
-     path: &str| {
+    |mut connection: PgPooledConnection, configuration: &ServerConfiguration, path: &str| {
         let group_name = group_name(path, &mut connection);
 
         let post = match federated_path_component(path, 4) {
@@ -560,8 +535,8 @@ webui!(
         post_summary(
             "Post".to_string(),
             post,
-            server_name,
-            server_logo,
+            configuration.display_name(),
+            configuration.logo_url(),
             Some(group_name),
             &mut connection,
         )
@@ -571,10 +546,7 @@ webui!(
     group_events,
     "/g/<_>/events",
     "g/[shortname]/events.html",
-    |mut connection: PgPooledConnection,
-     server_name: String,
-     server_logo: Option<String>,
-     path: &str| {
+    |mut connection: PgPooledConnection, configuration: &ServerConfiguration, path: &str| {
         let shortname = path_component(path, 2).unwrap();
         let group_name = rpcs::get_groups(
             crate::protos::GetGroupsRequest {
@@ -589,9 +561,9 @@ webui!(
         .flatten()
         .unwrap_or("Group".to_string());
         Some(RellmSummary {
-            title: Some(format!("{}: Events | {}", group_name, server_name)),
-            description: None,
-            image: server_logo.or(Some("/favicon.png".to_string())),
+            title: Some(format!("{}: Events | {}", group_name, configuration.display_name())),
+            description: Some(format!("Events in the {} group on {}", group_name, configuration.short_name())),
+            image: configuration.logo_url().or(Some("/favicon.png".to_string())),
         })
     }
 );
@@ -600,10 +572,7 @@ webui!(
     group_event,
     "/g/<_>/e/<_>",
     "g/[shortname]/e/[occasionId].html",
-    |mut connection: PgPooledConnection,
-     server_name: String,
-     server_logo: Option<String>,
-     path: &str| {
+    |mut connection: PgPooledConnection, configuration: &ServerConfiguration, path: &str| {
         let group_name = group_name(path, &mut connection);
 
         let event = match federated_path_component(path, 4) {
@@ -615,8 +584,8 @@ webui!(
         post_summary(
             "Event".to_string(),
             post,
-            server_name,
-            server_logo,
+            configuration.display_name(),
+            configuration.logo_url(),
             Some(group_name),
             &mut connection,
         )
@@ -626,16 +595,13 @@ webui!(
     group_members,
     "/g/<_>/members",
     "g/[shortname]/members.html",
-    |mut connection: PgPooledConnection,
-     server_name: String,
-     server_logo: Option<String>,
-     path: &str| {
+    |mut connection: PgPooledConnection, configuration: &ServerConfiguration, path: &str| {
         let group_name = group_name(path, &mut connection);
 
         Some(RellmSummary {
-            title: Some(format!("Members | {} | {}", group_name, server_name)),
-            description: None,
-            image: server_logo.or(Some("/favicon.png".to_string())),
+            title: Some(format!("Members | {} | {}", group_name, configuration.display_name())),
+            description: Some(format!("Members of the {} group on {}", group_name, configuration.short_name())),
+            image: configuration.logo_url().or(Some("/favicon.png".to_string())),
         })
     }
 );
@@ -643,16 +609,13 @@ webui!(
     group_member,
     "/g/<_>/m/<_>",
     "g/[shortname]/m/[username].html",
-    |mut connection: PgPooledConnection,
-     server_name: String,
-     server_logo: Option<String>,
-     path: &str| {
+    |mut connection: PgPooledConnection, configuration: &ServerConfiguration, path: &str| {
         let group_name = group_name(path, &mut connection);
 
         Some(RellmSummary {
-            title: Some(format!("{} | Member Details | {}", group_name, server_name)),
-            description: None,
-            image: server_logo.or(Some("/favicon.png".to_string())),
+            title: Some(format!("{} | Member Details | {}", group_name, configuration.display_name())),
+            description: Some(format!("Membership in the {} group on {}", group_name, configuration.short_name())),
+            image: configuration.logo_url().or(Some("/favicon.png".to_string())),
         })
     }
 );
@@ -662,14 +625,11 @@ webui!(
     event_ai,
     "/event_ai",
     "event_ai.html",
-    |_connection: PgPooledConnection,
-     _server_name: String,
-     _server_logo: Option<String>,
-     _path: &str| {
+    |_connection: PgPooledConnection, configuration: &ServerConfiguration, _path: &str| {
         Some(RellmSummary {
-            title: Some("Rellm AI Event Importer".to_string()),
-            description: Some("AI-powered bulk import of Events for Rellm".to_string()),
-            image: None, //server_logo.or(Some("/favicon.png".to_string())),
+            title: Some(format!("AI Event Importer | {}", configuration.display_name())),
+            description: Some(format!("AI-powered bulk import of events to {}", configuration.short_name())),
+            image: None, //configuration.logo_url().or(Some("/favicon.png".to_string())),
         })
     }
 );

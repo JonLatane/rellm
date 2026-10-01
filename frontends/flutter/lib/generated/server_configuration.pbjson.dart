@@ -120,13 +120,17 @@ const NavigationTab$json = {
     {'1': 'PEOPLE_TAB', '2': 12},
     {'1': 'ABOUT_TAB', '2': 15},
     {'1': 'MARKET_TAB', '2': 16},
+    {'1': 'MEDIA_TAB', '2': 17},
+    {'1': 'VIDEO_TAB', '2': 18},
+    {'1': 'AUDIO_TAB', '2': 19},
   ],
 };
 
 /// Descriptor for `NavigationTab`. Decode as a `google.protobuf.EnumDescriptorProto`.
 final $typed_data.Uint8List navigationTabDescriptor = $convert.base64Decode(
     'Cg1OYXZpZ2F0aW9uVGFiEgwKCEhPTUVfVEFCEAASDgoKRVZFTlRTX1RBQhAKEg0KCVBPU1RTX1'
-    'RBQhALEg4KClBFT1BMRV9UQUIQDBINCglBQk9VVF9UQUIQDxIOCgpNQVJLRVRfVEFCEBA=');
+    'RBQhALEg4KClBFT1BMRV9UQUIQDBINCglBQk9VVF9UQUIQDxIOCgpNQVJLRVRfVEFCEBASDQoJ'
+    'TUVESUFfVEFCEBESDQoJVklERU9fVEFCEBISDQoJQVVESU9fVEFCEBM=');
 
 @$core.Deprecated('Use contactProtocolDescriptor instead')
 const ContactProtocol$json = {
@@ -392,6 +396,8 @@ const MediaSettings$json = {
     {'1': 'default_moderation', '3': 2, '4': 1, '5': 14, '6': '.rellm.Moderation', '10': 'defaultModeration'},
     {'1': 'default_visibility', '3': 3, '4': 1, '5': 14, '6': '.rellm.Visibility', '10': 'defaultVisibility'},
     {'1': 'default_user_media_allocation_bytes', '3': 4, '4': 1, '5': 4, '10': 'defaultUserMediaAllocationBytes'},
+    {'1': 'block_cors_anonymous_media_access', '3': 20, '4': 1, '5': 8, '10': 'blockCorsAnonymousMediaAccess'},
+    {'1': 'licensed_media_visible_globally', '3': 21, '4': 1, '5': 8, '10': 'licensedMediaVisibleGlobally'},
     {'1': 'server_media_allocation_bytes', '3': 5, '4': 1, '5': 4, '10': 'serverMediaAllocationBytes'},
     {'1': 'server_media_usage_bytes', '3': 6, '4': 1, '5': 4, '10': 'serverMediaUsageBytes'},
     {'1': 'server_media_usage_calculated_at', '3': 7, '4': 1, '5': 11, '6': '.google.protobuf.Timestamp', '10': 'serverMediaUsageCalculatedAt'},
@@ -406,14 +412,17 @@ final $typed_data.Uint8List mediaSettingsDescriptor = $convert.base64Decode(
     'RlcmF0aW9uGAIgASgOMhEucmVsbG0uTW9kZXJhdGlvblIRZGVmYXVsdE1vZGVyYXRpb24SQAoS'
     'ZGVmYXVsdF92aXNpYmlsaXR5GAMgASgOMhEucmVsbG0uVmlzaWJpbGl0eVIRZGVmYXVsdFZpc2'
     'liaWxpdHkSTAojZGVmYXVsdF91c2VyX21lZGlhX2FsbG9jYXRpb25fYnl0ZXMYBCABKARSH2Rl'
-    'ZmF1bHRVc2VyTWVkaWFBbGxvY2F0aW9uQnl0ZXMSQQodc2VydmVyX21lZGlhX2FsbG9jYXRpb2'
-    '5fYnl0ZXMYBSABKARSGnNlcnZlck1lZGlhQWxsb2NhdGlvbkJ5dGVzEjcKGHNlcnZlcl9tZWRp'
-    'YV91c2FnZV9ieXRlcxgGIAEoBFIVc2VydmVyTWVkaWFVc2FnZUJ5dGVzEmIKIHNlcnZlcl9tZW'
-    'RpYV91c2FnZV9jYWxjdWxhdGVkX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFt'
-    'cFIcc2VydmVyTWVkaWFVc2FnZUNhbGN1bGF0ZWRBdBJICiFzZXJ2ZXJfb2JqZWN0X3N0b3JhZ2'
-    'VfdXNhZ2VfYnl0ZXMYCCABKARSHXNlcnZlck9iamVjdFN0b3JhZ2VVc2FnZUJ5dGVzEnMKKXNl'
-    'cnZlcl9vYmplY3Rfc3RvcmFnZV91c2FnZV9jYWxjdWxhdGVkX2F0GAkgASgLMhouZ29vZ2xlLn'
-    'Byb3RvYnVmLlRpbWVzdGFtcFIkc2VydmVyT2JqZWN0U3RvcmFnZVVzYWdlQ2FsY3VsYXRlZEF0');
+    'ZmF1bHRVc2VyTWVkaWFBbGxvY2F0aW9uQnl0ZXMSSAohYmxvY2tfY29yc19hbm9ueW1vdXNfbW'
+    'VkaWFfYWNjZXNzGBQgASgIUh1ibG9ja0NvcnNBbm9ueW1vdXNNZWRpYUFjY2VzcxJFCh9saWNl'
+    'bnNlZF9tZWRpYV92aXNpYmxlX2dsb2JhbGx5GBUgASgIUhxsaWNlbnNlZE1lZGlhVmlzaWJsZU'
+    'dsb2JhbGx5EkEKHXNlcnZlcl9tZWRpYV9hbGxvY2F0aW9uX2J5dGVzGAUgASgEUhpzZXJ2ZXJN'
+    'ZWRpYUFsbG9jYXRpb25CeXRlcxI3ChhzZXJ2ZXJfbWVkaWFfdXNhZ2VfYnl0ZXMYBiABKARSFX'
+    'NlcnZlck1lZGlhVXNhZ2VCeXRlcxJiCiBzZXJ2ZXJfbWVkaWFfdXNhZ2VfY2FsY3VsYXRlZF9h'
+    'dBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBSHHNlcnZlck1lZGlhVXNhZ2VDYW'
+    'xjdWxhdGVkQXQSSAohc2VydmVyX29iamVjdF9zdG9yYWdlX3VzYWdlX2J5dGVzGAggASgEUh1z'
+    'ZXJ2ZXJPYmplY3RTdG9yYWdlVXNhZ2VCeXRlcxJzCilzZXJ2ZXJfb2JqZWN0X3N0b3JhZ2VfdX'
+    'NhZ2VfY2FsY3VsYXRlZF9hdBgJIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBSJHNl'
+    'cnZlck9iamVjdFN0b3JhZ2VVc2FnZUNhbGN1bGF0ZWRBdA==');
 
 @$core.Deprecated('Use marketSettingsDescriptor instead')
 const MarketSettings$json = {

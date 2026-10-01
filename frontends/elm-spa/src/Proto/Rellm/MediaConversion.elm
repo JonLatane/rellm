@@ -54,6 +54,9 @@ fieldNumbersMediaConversion n_ =
         AUDIOPREVIEWTHUMBNAILLARGE ->
             12
 
+        UNLICENSEDPREVIEWMEDIUM ->
+            13
+
         MediaConversionUnrecognized_ m_ ->
             m_
 
@@ -103,6 +106,9 @@ encodeMediaConversion value =
             AUDIOPREVIEWTHUMBNAILLARGE ->
                 12
 
+            UNLICENSEDPREVIEWMEDIUM ->
+                13
+
             MediaConversionUnrecognized_ i ->
                 i
 
@@ -146,6 +152,9 @@ decodeMediaConversion =
                     12 ->
                         AUDIOPREVIEWTHUMBNAILLARGE
 
+                    13 ->
+                        UNLICENSEDPREVIEWMEDIUM
+
                     _ ->
                         MediaConversionUnrecognized_ i
             )
@@ -165,4 +174,5 @@ type MediaConversion
     | AUDIOPREVIEWTHUMBNAILSMALL
     | AUDIOPREVIEWTHUMBNAILMEDIUM
     | AUDIOPREVIEWTHUMBNAILLARGE
+    | UNLICENSEDPREVIEWMEDIUM
     | MediaConversionUnrecognized_ Int

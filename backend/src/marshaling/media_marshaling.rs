@@ -116,6 +116,7 @@ impl ToProtoMediaReference for models::MediaReference {
             metadata: Some(self.metadata().to_proto()),
             url: None,
             description: None,
+            visibility: self.visibility.to_i32_visibility(),
             sizes: self.sizes().iter().map(|s| s.to_proto()).collect(),
         }
     }
@@ -144,6 +145,18 @@ impl ToProtoMediaMetadata for models::MediaMetadata {
     fn to_proto(&self) -> MediaMetadata {
         MediaMetadata {
             video_preview_time_ms: self.video_preview_time_ms.map(|ms| ms as u64),
+            artist: self.artist.clone(),
+            album: self.album.clone(),
+            composer: self.composer.clone(),
+            director: self.director.clone(),
+            producer: self.producer.clone(),
+            starring: self.starring.clone(),
+            cast: self.cast.clone(),
+            crew: self.crew.clone(),
+            narrator: self.narrator.clone(),
+            publisher: self.publisher.clone(),
+            unlicensed_preview_start_ms: self.unlicensed_preview_start_ms.map(|ms| ms as u64),
+            unlicensed_preview_end_ms: self.unlicensed_preview_end_ms.map(|ms| ms as u64),
         }
     }
 }

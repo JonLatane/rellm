@@ -29,7 +29,16 @@ import "visibility_moderation.proto";
 //     - `Cookies` - Standard web cookies. The `rellm_access_token` cookie may be used for authentication.
 // - **Query Parameters**:
 //     - `authorization` - Rellm Access Token for the user. May also be supplied in the `Cookies` or `Authorization` headers.
-// - Fetching media without authentication requires that it has `GLOBAL_PUBLIC` visibility.
+// - Fetching media without authentication requires that it has `GLOBAL_PUBLIC` visibility (or `LICENSED`,
+//   if `MediaSettings.licensed_media_visible_globally` is set). Visibility is otherwise enforced
+//   like `GetMedia`'s: `SERVER_PUBLIC` for any logged-in user, `LIMITED` for followers of the owner,
+//   `PRIVATE` for the owner and admins only. A media item the viewer can't see responds `404`.
+// - Anonymous (unauthenticated) responses omit CORS `Access-Control-Allow-*` headers when the server's
+//   `MediaSettings.block_cors_anonymous_media_access` is set, so third-party sites can embed (`<img>`,
+//   `<video>`) but not script-read public media.
+// - `LICENSED` media's full-quality bytes are only served to its owner, admins, and users holding an active
+//   [`License`](#rellm-License) for it. Everyone else is served its `UNLICENSED_PREVIEW_MEDIUM` conversion
+//   (audio/video only; see `MediaMetadata.unlicensed_preview_start_ms`), or `403 Forbidden` if none exists yet.
 message Media {
   // The ID of the media item.
   string id = 1;
@@ -124,6 +133,16 @@ enum MediaConversion {
   AUDIO_PREVIEW_THUMBNAIL_MEDIUM = 11;
   // Same as `AUDIO_PREVIEW_THUMBNAIL_SMALL`, but 1600x1600 px -- the `MEDIA_CONVERSION_LARGE` tier.
   AUDIO_PREVIEW_THUMBNAIL_LARGE = 12;
+
+  // For audio and video media only: a medium-quality crop of the original from
+  // `MediaMetadata.unlicensed_preview_start_ms` to `unlicensed_preview_end_ms` (via `ffmpeg`), in the
+  // original's own container-family content type (video: `video/mp4`, audio: `audio/mpeg`). This is
+  // what viewers *without* a [`License`](#rellm-License) are served for `LICENSED` media. Regenerated
+  // by the `convert_media_sizes` background job; deleted (and marked for regeneration) whenever
+  // `UpdateMedia` changes either bound. May also be deleted manually via `DeleteMediaSizes`.
+  //
+  // (Numbered 13 rather than 11 because `AUDIO_PREVIEW_THUMBNAIL_MEDIUM` already holds 11.)
+  UNLICENSED_PREVIEW_MEDIUM = 13;
 }
 
 // Free-form metadata about a [`Media`](#rellm-Media) item that isn't queried/filtered on, so doesn't need its
@@ -137,6 +156,43 @@ message MediaMetadata {
   // (deletes) any existing `VIDEO_PREVIEW_THUMBNAIL_*` sizes, so the `convert_media_sizes`
   // background job regenerates them at the new time.
   optional uint64 video_preview_time_ms = 1;
+
+  // Credits. All free-form text; unset/blank means "none". Editable via `UpdateMedia` (setting one
+  // to an empty string clears it). Searched by `GetMediaRequest.search_text`, most to least
+  // important: name/artist/director, then album/composer/starring/cast/narrator, then
+  // producer/crew/publisher, then description.
+  optional string artist = 2;
+  optional string album = 3;
+  optional string composer = 4;
+  optional string director = 5;
+  optional string producer = 6;
+  optional string starring = 7;
+  optional string cast = 8;
+  optional string crew = 9;
+  optional string narrator = 10;
+  optional string publisher = 11;
+
+  // For audio and video media only: the range of the original (in milliseconds) that is cropped into
+  // the `UNLICENSED_PREVIEW_MEDIUM` conversion served to viewers without a license for `LICENSED`
+  // media. Unset start defaults to 0; unset end defaults to start + 30s (clamped to the media's
+  // duration). Changing either invalidates (deletes) any existing `UNLICENSED_PREVIEW_MEDIUM` size so the
+  // `convert_media_sizes` background job regenerates it.
+  optional uint64 unlicensed_preview_start_ms = 12;
+  optional uint64 unlicensed_preview_end_ms = 13;
+}
+
+// Grants `licensed_to` access to a `LICENSED` [`Media`](#rellm-Media) item's full-quality bytes.
+// Stored in the `media_licenses` table. A license is *active* while `revoked_at` is unset.
+// (Purchasing licenses through Rellm's Market is not implemented yet.)
+message License {
+  string id = 1;
+  // The user holding the license.
+  Author licensed_to = 2;
+  // The licensed media.
+  MediaReference media = 3;
+  google.protobuf.Timestamp created_at = 4;
+  // When set, the license no longer grants access.
+  optional google.protobuf.Timestamp revoked_at = 5;
 }
 
 // A reference to a media item, designed to be included in other messages as a reference.
@@ -161,6 +217,9 @@ message MediaReference {
   // ever see a `MediaReference` -- e.g. a `Post.media` item -- can still tell whether the current
   // viewer owns it, without a separate `Media` lookup.
   optional Author author = 13;
+  // See `Media.visibility`. Included so a client holding only a `MediaReference` (e.g. the media
+  // viewer) can show/edit it and tell whether it's `LICENSED`.
+  Visibility visibility = 14;
 }
 
 // Post/authorship-centric version of User. UI can cross-reference user details from its own
@@ -188,15 +247,28 @@ message Author {
 // Valid GetMediaRequest formats:
 // - `{user_id: abc123}` - Gets the media of the given user that the current user can see. IE:
 //     - *all* of the current user's own media
-//     - `GLOBAL_PUBLIC` media for the user if the current user is not logged in.
+//     - `GLOBAL_PUBLIC` media (and `LICENSED`, if `MediaSettings.licensed_media_visible_globally`) for the user if the current user is not logged in.
+//     - `LICENSED` media too for any logged-in user.
 //     - `SERVER_PUBLIC` media for the user if the current user is logged in.
 //     - `LIMITED` media for the user if the current user is following the user.
 // - `{media_id: abc123}` - Gets the media with the given ID, if visible to the current user.
+// - `{}` (neither `media_id` nor `user_id`) - Browses *all* media on the server visible to the current user
+//   (never other users' `PRIVATE`/`LIMITED` media), newest first -- the basis of the Media/Video/Audio pages.
+//   Combine with `content_type` and/or `search_text`.
+//
+// `content_type` and `search_text` also narrow `{user_id: ...}` requests.
 message GetMediaRequest {
   // Returns the single media item with the given ID.
   optional string media_id = 1;
   // Returns all media items for the given user.
   optional string user_id = 2;
+  // Filters by the original upload's MIME content type. Either exact (`video/mp4`) or a
+  // wildcard subtype (`audio/*`, `video/*`, `image/*`). Backed by an indexed column.
+  optional string content_type = 3;
+  // Full-text search over name, credits (artist, album, composer, ...) and description -- see
+  // `MediaMetadata`'s doc for field weighting. Prefix-matches, like `GetPosts`' `TEXT_SEARCH`.
+  // Results are ranked by match quality, then recency.
+  optional string search_text = 4;
 
   uint32 page = 11;
 }

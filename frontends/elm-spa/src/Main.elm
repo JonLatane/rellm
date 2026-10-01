@@ -74,9 +74,13 @@ import Pages.About
 import Pages.Event.PostId_
 import Pages.Events
 import Pages.Home_
+import Pages.Audio
 import Pages.Market
 import Pages.Market.Fulfillment
 import Pages.Market.Product.ProductId_
+import Pages.Media
+import Pages.Video
+import Pages.Videos
 import Pages.Messages
 import Pages.People
 import Pages.Post.PostId_
@@ -414,6 +418,18 @@ sharedMsgForPage sharedMsg page =
 
         Gen.Model.Market _ _ ->
             Just (Gen.Msg.Market (Pages.Market.fromShared sharedMsg))
+
+        Gen.Model.Media _ _ ->
+            Just (Gen.Msg.Media (Pages.Media.fromShared sharedMsg))
+
+        Gen.Model.Video _ _ ->
+            Just (Gen.Msg.Video (Pages.Video.fromShared sharedMsg))
+
+        Gen.Model.Videos _ _ ->
+            Just (Gen.Msg.Videos (Pages.Videos.fromShared sharedMsg))
+
+        Gen.Model.Audio _ _ ->
+            Just (Gen.Msg.Audio (Pages.Audio.fromShared sharedMsg))
 
         Gen.Model.Market__Product__ProductId_ _ _ ->
             Just (Gen.Msg.Market__Product__ProductId_ (Pages.Market.Product.ProductId_.fromShared sharedMsg))

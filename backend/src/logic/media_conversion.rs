@@ -8,6 +8,7 @@
 //! video (`VIDEO_CONVERTIBLE_CONTENT_TYPES`) for now -- both tools handle other common formats
 //! fine, but we don't have callers needing them yet.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -19,7 +20,7 @@ use s3::Bucket;
 
 use crate::db_connection::PgPooledConnection;
 use crate::logic::{adjust_server_media_usage_bytes, update_media_storage_used};
-use crate::models::{Media, MediaConversionExt, MediaSize, AUDIO_PREVIEW_CONVERSIONS, RESIZED_CONVERSIONS, VIDEO_PREVIEW_CONVERSIONS};
+use crate::models::{blank_to_none, Media, MediaConversionExt, MediaMetadata, MediaSize, AUDIO_PREVIEW_CONVERSIONS, RESIZED_CONVERSIONS, VIDEO_PREVIEW_CONVERSIONS};
 use crate::protos::MediaConversion;
 use crate::schema::media;
 
@@ -345,6 +346,30 @@ impl FFmpeg {
         Ok((seconds * 1000.0).round() as u64)
     }
 
+    /// The container-level metadata tags of `path` (ID3 for MP3, Vorbis comments for Ogg/WebM,
+    /// QuickTime/iTunes atoms for MP4/MOV, ...), as `ffprobe` normalizes them, keys lowercased. See
+    /// `credits_from_tags` for which map to which `MediaMetadata` credit.
+    fn tags(&self, path: &Path) -> Result<HashMap<String, String>> {
+        let output = Command::new("ffprobe")
+            .arg("-v")
+            .arg("error")
+            .arg("-show_entries")
+            .arg("format_tags")
+            .arg("-of")
+            .arg("json")
+            .arg(path)
+            .output()
+            .context("failed to run ffprobe")?;
+        if !output.status.success() {
+            bail!(
+                "ffprobe exited with {}: {}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        parse_ffprobe_tags(&String::from_utf8_lossy(&output.stdout))
+    }
+
     /// Captures a single `image/jpeg` poster frame from `input` at `time_ms` milliseconds in,
     /// resized to fit within `max_dimension`x`max_dimension` the same way `resize`'s own scale
     /// filter does (preserving aspect ratio, never upscaling) -- used to generate the
@@ -365,6 +390,61 @@ impl FFmpeg {
                 "scale='min({0},iw)':'min({0},ih)':force_original_aspect_ratio=decrease",
                 max_dimension
             ))
+            .arg(output)
+            .status()
+            .context("failed to run ffmpeg")?;
+        if !status.success() {
+            bail!("ffmpeg exited with {}", status);
+        }
+        Ok(())
+    }
+}
+
+impl FFmpeg {
+    /// Crops `[start_ms, end_ms)` out of `input` at "medium" quality, for `UNLICENSED_PREVIEW_MEDIUM`.
+    /// Video is re-encoded to fit within `max_dimension` (same scale filter as `resize`) at a
+    /// higher CRF than `resize` uses; audio is re-encoded at a modest VBR bitrate. Codecs follow
+    /// `content_type`'s container, as in `resize`. `-ss`/`-t` come *after* `-i` so the cut is
+    /// frame/sample-accurate (we're re-encoding anyway).
+    fn crop(
+        &self,
+        input: &Path,
+        output: &Path,
+        start_ms: u64,
+        end_ms: u64,
+        is_video: bool,
+        max_dimension: u32,
+        content_type: &str,
+    ) -> Result<()> {
+        let mut command = Command::new("ffmpeg");
+        command
+            .arg("-y")
+            .arg("-nostdin")
+            .arg("-i")
+            .arg(input)
+            .arg("-ss")
+            .arg(format!("{:.3}", start_ms as f64 / 1000.0))
+            .arg("-t")
+            .arg(format!("{:.3}", (end_ms - start_ms) as f64 / 1000.0));
+        if is_video {
+            command.arg("-vf").arg(format!(
+                "scale='min({0},iw)':'min({0},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2",
+                max_dimension
+            ));
+            if content_type == "video/webm" {
+                command.args(["-c:v", "libvpx-vp9", "-b:v", "0", "-crf", "36", "-c:a", "libopus"]);
+            } else {
+                command.args([
+                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "28", "-c:a", "aac", "-b:a",
+                    "96k", "-movflags", "+faststart",
+                ]);
+            }
+        } else if content_type == "audio/ogg" {
+            command.args(["-vn", "-c:a", "libvorbis", "-q:a", "3"]);
+        } else {
+            command.args(["-vn", "-c:a", "libmp3lame", "-q:a", "5"]);
+        }
+        let status = command
             .arg(output)
             .status()
             .context("failed to run ffmpeg")?;
@@ -404,6 +484,45 @@ impl FFmpeg {
             bail!("ffmpeg exited with {}", status);
         }
         Ok(())
+    }
+}
+
+/// `ffprobe -show_entries format_tags -of json`'s output -> `{lowercased key: value}`. Pure so it's
+/// unit-testable without ffprobe.
+pub fn parse_ffprobe_tags(json: &str) -> Result<HashMap<String, String>> {
+    let value: serde_json::Value = serde_json::from_str(json).context("unparseable ffprobe output")?;
+    Ok(value
+        .pointer("/format/tags")
+        .and_then(|tags| tags.as_object())
+        .map(|tags| {
+            tags.iter()
+                .filter_map(|(k, v)| v.as_str().map(|v| (k.to_lowercase(), v.to_string())))
+                .collect()
+        })
+        .unwrap_or_default())
+}
+
+/// Maps container tags to `MediaMetadata` credits (only the credit fields are populated). The first
+/// non-blank tag among each credit's aliases wins: ID3/Vorbis/iTunes/Matroska all spell these a
+/// little differently (`artist`/`performer`/`album_artist`, `actor`/`actors`/`starring`, ...).
+pub fn credits_from_tags(tags: &HashMap<String, String>) -> MediaMetadata {
+    let pick = |aliases: &[&str]| {
+        aliases
+            .iter()
+            .find_map(|alias| blank_to_none(tags.get(*alias).cloned()))
+    };
+    MediaMetadata {
+        artist: pick(&["artist", "performer", "album_artist"]),
+        album: pick(&["album"]),
+        composer: pick(&["composer"]),
+        director: pick(&["director"]),
+        producer: pick(&["producer"]),
+        starring: pick(&["starring", "actor", "actors"]),
+        cast: pick(&["cast"]),
+        crew: pick(&["crew"]),
+        narrator: pick(&["narrator", "reader"]),
+        publisher: pick(&["publisher", "label"]),
+        ..Default::default()
     }
 }
 
@@ -648,6 +767,81 @@ pub async fn convert_media(
         }
     }
 
+    // Audio/video: the cropped `UNLICENSED_PREVIEW_MEDIUM` served to viewers without a license for
+    // `LICENSED` media. Skipped if `unlicensed_preview_start_ms` is past the end of the media.
+    if let Converter::Audio(ffmpeg) | Converter::Video(ffmpeg) = &converter {
+        let duration_ms = ffmpeg.duration_ms(&input_path)?;
+        if let Some((start_ms, end_ms)) =
+            item.metadata().effective_unlicensed_preview_range_ms(duration_ms)
+        {
+            let is_video = matches!(converter, Converter::Video(_));
+            let content_type = if is_video {
+                resized_content_type.clone()
+            } else {
+                sizes[0].content_type.clone()
+            };
+            let conversion = MediaConversion::UnlicensedPreviewMedium;
+            let output_path = tmp_dir.join(format!(
+                "{}-{}.{}",
+                item.id,
+                conversion.key(),
+                extension_for_content_type(&content_type)?
+            ));
+            ffmpeg.crop(
+                &input_path,
+                &output_path,
+                start_ms,
+                end_ms,
+                is_video,
+                conversion.max_dimension(),
+                &content_type,
+            )?;
+            let output_bytes = std::fs::read(&output_path)?;
+            let _ = std::fs::remove_file(&output_path);
+
+            let converted_object_storage_path =
+                format!("{}.{}", sizes[0].object_storage_path, conversion.key());
+            bucket
+                .put_object_with_content_type(&converted_object_storage_path, &output_bytes, &content_type)
+                .await
+                .context("failed to upload unlicensed preview to object storage")?;
+            log::info!(
+                "Media {}: generated '{}' ({}ms-{}ms, {} bytes) at {}",
+                item.id,
+                conversion.key(),
+                start_ms,
+                end_ms,
+                output_bytes.len(),
+                converted_object_storage_path
+            );
+            sizes.push(MediaSize {
+                conversion: conversion as i32,
+                object_storage_path: converted_object_storage_path,
+                content_type,
+                size_bytes: output_bytes.len() as i64,
+                aspect_ratio: if is_video { Some(aspect_ratio) } else { None },
+            });
+        }
+    }
+
+    // Audio/video, first conversion only (i.e. the item has nothing but its original so far -- a
+    // reconversion after an edit shouldn't re-fill a credit the owner deliberately cleared): seed
+    // blank credits from the file's own tags. Best-effort -- unreadable/missing tags are logged and
+    // skipped, never failing the conversion.
+    let mut metadata = item.metadata();
+    let credits_changed = match &converter {
+        Converter::Audio(ffmpeg) | Converter::Video(ffmpeg) if item.sizes().len() <= 1 => {
+            match ffmpeg.tags(&input_path) {
+                Ok(tags) => metadata.fill_missing_credits(&credits_from_tags(&tags)),
+                Err(e) => {
+                    log::warn!("Media {}: couldn't read tags (skipping): {:#}", item.id, e);
+                    false
+                }
+            }
+        }
+        _ => false,
+    };
+
     let _ = std::fs::remove_file(&input_path);
 
     diesel::update(media::table.find(item.id))
@@ -656,6 +850,11 @@ pub async fn convert_media(
             media::processed.eq(true),
         ))
         .execute(conn)?;
+    if credits_changed {
+        diesel::update(media::table.find(item.id))
+            .set(media::metadata.eq(serde_json::to_value(&metadata)?))
+            .execute(conn)?;
+    }
 
     if let Some(user_id) = item.user_id {
         update_media_storage_used(user_id, conn)?;
@@ -753,4 +952,71 @@ pub async fn strip_quicktime_resized_sizes(
         removed.len()
     );
     Ok(true)
+}
+
+#[cfg(test)]
+mod tag_tests {
+    use super::*;
+
+    #[test]
+    fn parses_and_lowercases_ffprobe_tags() {
+        let tags = parse_ffprobe_tags(r#"{"format": {"tags": {"ARTIST": "Miles Davis", "Album": "Kind of Blue", "n": 3}}}"#).unwrap();
+        assert_eq!(tags.get("artist"), Some(&"Miles Davis".to_string()));
+        assert_eq!(tags.get("album"), Some(&"Kind of Blue".to_string()));
+        assert!(!tags.contains_key("n"), "non-string tags are ignored");
+    }
+
+    #[test]
+    fn no_tags_is_empty_not_an_error() {
+        assert!(parse_ffprobe_tags(r#"{"format": {}}"#).unwrap().is_empty());
+        assert!(parse_ffprobe_tags("{}").unwrap().is_empty());
+        assert!(parse_ffprobe_tags("not json").is_err());
+    }
+
+    #[test]
+    fn credits_use_aliases_and_skip_blanks() {
+        let tags: HashMap<String, String> = [
+            ("performer", "Trane"),
+            ("album_artist", "ignored, performer wins"),
+            ("actor", "Someone"),
+            ("composer", "   "),
+            ("label", "Impulse!"),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+        let credits = credits_from_tags(&tags);
+        assert_eq!(credits.artist.as_deref(), Some("Trane"));
+        assert_eq!(credits.starring.as_deref(), Some("Someone"));
+        assert_eq!(credits.publisher.as_deref(), Some("Impulse!"));
+        assert_eq!(credits.composer, None);
+    }
+
+    #[test]
+    fn fill_missing_credits_never_overwrites() {
+        let mut metadata = MediaMetadata { artist: Some("Owner Edit".to_string()), ..Default::default() };
+        let tags = MediaMetadata { artist: Some("Tag".to_string()), album: Some("Tag Album".to_string()), ..Default::default() };
+        assert!(metadata.fill_missing_credits(&tags));
+        assert_eq!(metadata.artist.as_deref(), Some("Owner Edit"));
+        assert_eq!(metadata.album.as_deref(), Some("Tag Album"));
+        assert!(!metadata.fill_missing_credits(&tags), "second fill changes nothing");
+    }
+
+    /// End to end against the real `ffprobe`/`ffmpeg`, skipped where they aren't installed.
+    #[test]
+    fn reads_id3_tags_from_a_real_file() {
+        let Some(ffmpeg) = FFmpeg::detect() else { return };
+        let path = std::env::temp_dir().join(format!("rellm-tag-test-{}.mp3", std::process::id()));
+        let status = Command::new("ffmpeg")
+            .args(["-y", "-nostdin", "-loglevel", "error", "-f", "lavfi", "-i", "sine=duration=1"])
+            .args(["-metadata", "artist=Test Artist", "-metadata", "composer=Test Composer"])
+            .arg(&path)
+            .status()
+            .unwrap();
+        assert!(status.success());
+        let credits = credits_from_tags(&ffmpeg.tags(&path).unwrap());
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(credits.artist.as_deref(), Some("Test Artist"));
+        assert_eq!(credits.composer.as_deref(), Some("Test Composer"));
+    }
 }

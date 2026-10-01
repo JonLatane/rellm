@@ -1265,6 +1265,55 @@ pub fn create_media_with_size(
         .expect("failed to create test media")
 }
 
+/// Everything `create_media_with_opts` lets a spec vary on a `Media` row.
+pub struct MediaOpts {
+    pub content_type: &'static str,
+    pub visibility: Visibility,
+    pub name: Option<&'static str>,
+    pub metadata: serde_json::Value,
+    pub generated: bool,
+}
+
+impl Default for MediaOpts {
+    fn default() -> Self {
+        MediaOpts {
+            content_type: "image/png",
+            visibility: Visibility::ServerPublic,
+            name: None,
+            metadata: serde_json::json!({}),
+            generated: false,
+        }
+    }
+}
+
+/// Like `create_media`, but with a chosen content type/visibility/name/metadata -- for `get_media`'s
+/// listing/filter/search specs.
+pub fn create_media_with_opts(
+    conn: &mut PgPooledConnection,
+    author: Option<&models::User>,
+    opts: MediaOpts,
+) -> models::Media {
+    let sizes = vec![models::MediaSize {
+        conversion: MediaConversion::Original as i32,
+        object_storage_path: format!("test/media_opts/{}", uuid::Uuid::new_v4()),
+        content_type: opts.content_type.to_string(),
+        size_bytes: 10,
+        aspect_ratio: None,
+    }];
+    insert_into(media::table)
+        .values(&models::NewMedia {
+            user_id: author.map(|u| u.id),
+            name: opts.name.map(str::to_string),
+            description: None,
+            generated: opts.generated,
+            visibility: opts.visibility.to_string_visibility(),
+            metadata: opts.metadata,
+            sizes: serde_json::to_value(sizes).unwrap(),
+        })
+        .get_result::<models::Media>(conn)
+        .expect("failed to create test media")
+}
+
 /// Sets `media.sizes` directly -- `create_media` always starts with a single original size, and
 /// specs covering `delete_media`/`delete_media_sizes`'s object storage cleanup need converted copies
 /// present to prove they get deleted too.

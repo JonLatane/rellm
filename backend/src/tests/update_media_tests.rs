@@ -56,7 +56,7 @@ fn self_update_changes_name_and_description() {
 }
 
 #[test]
-fn update_ignores_fields_other_than_name_description_and_metadata() {
+fn update_ignores_fields_other_than_name_description_visibility_and_metadata() {
     let tb = test_bucket();
     let mut conn = test_conn();
     conn.test_transaction::<_, tonic::Status, _>(|conn| {
@@ -70,7 +70,6 @@ fn update_ignores_fields_other_than_name_description_and_metadata() {
                     id: media.id.to_proto_id(),
                     name: Some("Renamed".to_string()),
                     generated: true,
-                    visibility: Visibility::GlobalPublic as i32,
                     ..Default::default()
                 },
                 &user,
@@ -84,7 +83,7 @@ fn update_ignores_fields_other_than_name_description_and_metadata() {
         assert_eq!(
             updated.visibility,
             Visibility::ServerPublic as i32,
-            "visibility should be untouched by update_media"
+            "visibility should be untouched by update_media when the request leaves it unknown"
         );
         assert_eq!(
             updated.sizes.len(),
@@ -106,6 +105,7 @@ fn unset_metadata_leaves_video_preview_time_ms_untouched() {
         diesel::update(crate::schema::media::table.find(media.id))
             .set(crate::schema::media::metadata.eq(serde_json::to_value(models::MediaMetadata {
                 video_preview_time_ms: Some(2500),
+                ..Default::default()
             })
             .unwrap()))
             .execute(conn)
@@ -185,6 +185,7 @@ fn changing_video_preview_time_invalidates_thumbnails_on_video_media() {
                     id: media.id.to_proto_id(),
                     metadata: Some(ProtoMediaMetadata {
                         video_preview_time_ms: Some(3000),
+                        ..Default::default()
                     }),
                     ..Default::default()
                 },
@@ -236,6 +237,7 @@ fn changing_video_preview_time_to_same_value_does_not_invalidate() {
         diesel::update(crate::schema::media::table.find(media.id))
             .set(crate::schema::media::metadata.eq(serde_json::to_value(models::MediaMetadata {
                 video_preview_time_ms: Some(1000),
+                ..Default::default()
             })
             .unwrap()))
             .execute(conn)
@@ -271,6 +273,7 @@ fn changing_video_preview_time_to_same_value_does_not_invalidate() {
                     id: media.id.to_proto_id(),
                     metadata: Some(ProtoMediaMetadata {
                         video_preview_time_ms: Some(1000),
+                        ..Default::default()
                     }),
                     ..Default::default()
                 },
@@ -306,6 +309,7 @@ fn changing_video_preview_time_on_non_video_media_does_not_invalidate_sizes() {
                     id: media.id.to_proto_id(),
                     metadata: Some(ProtoMediaMetadata {
                         video_preview_time_ms: Some(3000),
+                        ..Default::default()
                     }),
                     ..Default::default()
                 },
@@ -405,6 +409,118 @@ fn update_unknown_media_returns_not_found() {
         assert_eq!(err.code(), Code::NotFound);
         assert_eq!(err.message(), "media_not_found");
 
+        Ok(())
+    });
+}
+
+#[test]
+fn visibility_can_be_changed_to_licensed_but_not_direct() {
+    let tb = test_bucket();
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let user = create_user(conn, "umt_visibility");
+        let media = create_media(conn, Some(&user), &unique_path("visibility"));
+
+        let updated = tb
+            .block_on(update_media(
+                Media {
+                    id: media.id.to_proto_id(),
+                    visibility: Visibility::Licensed as i32,
+                    ..Default::default()
+                },
+                &user,
+                conn,
+                &tb.bucket,
+            ))
+            .expect("LICENSED should be accepted");
+        assert_eq!(updated.visibility, Visibility::Licensed as i32);
+
+        let rejected = tb.block_on(update_media(
+            Media {
+                id: media.id.to_proto_id(),
+                visibility: Visibility::Direct as i32,
+                ..Default::default()
+            },
+            &user,
+            conn,
+            &tb.bucket,
+        ));
+        assert_eq!(rejected.unwrap_err().code(), tonic::Code::InvalidArgument);
+        Ok(())
+    });
+}
+
+#[test]
+fn credits_are_saved_and_blank_credits_are_cleared_to_null() {
+    let tb = test_bucket();
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let user = create_user(conn, "umt_credits");
+        let media = create_media(conn, Some(&user), &unique_path("credits"));
+
+        let updated = tb
+            .block_on(update_media(
+                Media {
+                    id: media.id.to_proto_id(),
+                    metadata: Some(ProtoMediaMetadata {
+                        artist: Some("  Miles Davis ".to_string()),
+                        album: Some("Kind of Blue".to_string()),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+                &user,
+                conn,
+                &tb.bucket,
+            ))
+            .unwrap();
+        let metadata = updated.metadata.unwrap();
+        assert_eq!(metadata.artist, Some("Miles Davis".to_string()));
+        assert_eq!(metadata.album, Some("Kind of Blue".to_string()));
+
+        let updated = tb
+            .block_on(update_media(
+                Media {
+                    id: media.id.to_proto_id(),
+                    metadata: Some(ProtoMediaMetadata {
+                        artist: Some("Miles Davis".to_string()),
+                        album: Some("   ".to_string()),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+                &user,
+                conn,
+                &tb.bucket,
+            ))
+            .unwrap();
+        assert_eq!(updated.metadata.as_ref().unwrap().album, None, "blank saves as null");
+        Ok(())
+    });
+}
+
+#[test]
+fn unlicensed_preview_bounds_are_rejected_on_non_audio_video_media() {
+    let tb = test_bucket();
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let user = create_user(conn, "umt_preview_image");
+        let media = create_media(conn, Some(&user), &unique_path("preview-image")); // image/png
+
+        let result = tb.block_on(update_media(
+            Media {
+                id: media.id.to_proto_id(),
+                metadata: Some(ProtoMediaMetadata {
+                    unlicensed_preview_start_ms: Some(1000),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            &user,
+            conn,
+            &tb.bucket,
+        ));
+        assert_eq!(result.unwrap_err().code(), tonic::Code::InvalidArgument);
         Ok(())
     });
 }

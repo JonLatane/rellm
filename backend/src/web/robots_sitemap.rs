@@ -15,7 +15,7 @@ use crate::rpcs::{get_events, get_posts, get_server_configuration_proto};
 // `/posts`, `/events`, `/people`, and `/about` are always real pages -- per
 // `CustomNavigationTabSet.tabs`'s own doc comment, those paths can't be claimed by a custom tab --
 // so they're listed unconditionally rather than depending on server configuration.
-const RESERVED_TAB_PATHS: [&str; 4] = ["posts", "events", "people", "about"];
+const RESERVED_TAB_PATHS: [&str; 7] = ["posts", "events", "people", "about", "media", "video", "audio"];
 // Mirrors `calendarLookbackDaysDefault` in the Elm SPA's `EventsPage.elm`, used when
 // `EventSettings.calendar_lookback_days` is unset.
 const DEFAULT_CALENDAR_LOOKBACK_DAYS: u32 = 14;

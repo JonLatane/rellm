@@ -367,6 +367,18 @@ message MediaSettings {
   // Default media storage allocation for newly created users. Defaults to 15MB.
   uint64 default_user_media_allocation_bytes = 4;
 
+  // "Block CORS Anonymous Media Access". When set, `GET /media/{id}` responses to *unauthenticated*
+  // requests omit CORS `Access-Control-Allow-*` headers even for `GLOBAL_PUBLIC` media, so browsers
+  // block other sites' scripts from reading them (plain `<img>`/`<video>` embeds still work).
+  // Authenticated requests are unaffected.
+  bool block_cors_anonymous_media_access = 20;
+
+  // Whether `LICENSED` media (see `Visibility.LICENSED`) is discoverable by *unauthenticated*
+  // users: listed by `GetMedia` and its preview/thumbnails served by `GET /media/{id}`. When unset
+  // (the default), `LICENSED` media is only visible to logged-in users -- like `SERVER_PUBLIC` --
+  // plus its owner and admins. Either way, its full-quality bytes still require an active License.
+  bool licensed_media_visible_globally = 21;
+
 
   // Default is 5GB (applied whenever this is `0`, same read-time-fallback convention as
   // `default_user_media_allocation_bytes` above). API/server-enforced limit for total of all
@@ -624,6 +636,12 @@ enum NavigationTab {
   ABOUT_TAB = 15;
   // The Market tab.
   MARKET_TAB = 16;
+  // The Media tab: Video, Audio and (when logged in) My Media sub-tabs. Reserved path: `media`.
+  MEDIA_TAB = 17;
+  // The Video tab (a YouTube-alike over `GetMedia` with `content_type: "video/*"`). Reserved paths: `video`, `videos`.
+  VIDEO_TAB = 18;
+  // The Audio tab (a Spotify-alike over `GetMedia` with `content_type: "audio/*"`). Reserved path: `audio`.
+  AUDIO_TAB = 19;
 }
 
 // Overrides the app's default `/` page (the combined Events+Posts feed). Unlike a regular
@@ -685,7 +703,7 @@ message CustomNavigationTab {
 
   // The path this tab is reachable at, e.g. `gigs` for a band's `/gigs` link to the Events page,
   // or `weddings` for a Post about wedding offerings. Must be distinct across every entry in
-  // `CustomNavigationTabSet.tabs`. Note: `events`, `posts`, `people`, and `about` are reserved --
+  // `CustomNavigationTabSet.tabs`. Note: `events`, `posts`, `people`, `about`, `media`, `video`, `videos`, and `audio` are reserved --
   // each may only be used to (redundantly) point back at its own matching predefined tab, never
   // remapped to a different tab or a Post. `/` itself is never reachable this way - it's
   // overridden via `CustomNavigationTabSet.home` instead.

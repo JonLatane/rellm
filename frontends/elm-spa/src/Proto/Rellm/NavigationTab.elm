@@ -42,6 +42,15 @@ fieldNumbersNavigationTab n_ =
         MARKETTAB ->
             16
 
+        MEDIATAB ->
+            17
+
+        VIDEOTAB ->
+            18
+
+        AUDIOTAB ->
+            19
+
         NavigationTabUnrecognized_ m_ ->
             m_
 
@@ -79,6 +88,15 @@ encodeNavigationTab value =
             MARKETTAB ->
                 16
 
+            MEDIATAB ->
+                17
+
+            VIDEOTAB ->
+                18
+
+            AUDIOTAB ->
+                19
+
             NavigationTabUnrecognized_ i ->
                 i
 
@@ -110,6 +128,15 @@ decodeNavigationTab =
                     16 ->
                         MARKETTAB
 
+                    17 ->
+                        MEDIATAB
+
+                    18 ->
+                        VIDEOTAB
+
+                    19 ->
+                        AUDIOTAB
+
                     _ ->
                         NavigationTabUnrecognized_ i
             )
@@ -125,4 +152,7 @@ type NavigationTab
     | PEOPLETAB
     | ABOUTTAB
     | MARKETTAB
+    | MEDIATAB
+    | VIDEOTAB
+    | AUDIOTAB
     | NavigationTabUnrecognized_ Int

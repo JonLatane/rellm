@@ -1,4 +1,4 @@
-module Shared.MyMediaPanel exposing (Model, Msg(..), SelectionType(..), init, isOpen, subscriptions, update, view)
+module Shared.MyMediaPanel exposing (Model, Msg(..), SelectionType(..), init, isOpen, subscriptions, update, view, viewEmbedded)
 
 {-| A single, app-wide "My Media" panel -- always scoped to one specific
 server (`targetHost`, same "resolve on demand rather than cache a live
@@ -52,11 +52,12 @@ import File exposing (File)
 import File.Select
 import Grpc
 import Html exposing (Html, button, div, img, input, span, text)
-import Html.Attributes exposing (alt, attribute, class, classList, disabled, id, src, step, style, title, type_, value)
+import Html.Attributes exposing (alt, attribute, class, classList, disabled, id, placeholder, src, step, style, title, type_, value)
 import Html.Events exposing (on, onClick, onInput, preventDefaultOn, stopPropagationOn)
 import Html.Keyed
 import Http
 import Json.Decode as Decode
+import Process
 import Proto.Rellm exposing (GetMediaResponse, Media, MediaReference, defaultGetMediaRequest, defaultMedia, wrapAuthor)
 import Proto.Rellm.Rellm as Rellm
 import Set exposing (Set)
@@ -156,11 +157,25 @@ type alias Model =
     -- `selectedMedia` the same as a tapped grid item. `Nothing` the rest of
     -- the time, including every upload outside `MultiSelect`.
     , pendingUploadSelection : Maybe String
+
+    -- The header search box's current text (see `SearchChanged`) -- sent as
+    -- `GetMediaRequest.search_text` by every fetch, so it keeps applying across
+    -- upload/delete refetches. Reset by `Open`/`CloseClicked`.
+    , searchText : String
+
+    -- Bumped by every `SearchChanged`; `SearchDebounced` only fetches if it still
+    -- matches, so only the last keystroke of a burst hits the server.
+    , searchVersion : Int
     }
 
 
 type Msg
     = Open (Maybe SelectionType) String
+      -- The header search box -- debounced (`searchDebounceMs`) into a `GetMedia` refetch with
+      -- `search_text` set (or unset when cleared). `SearchDebounced` carries the
+      -- `searchVersion` it was scheduled for.
+    | SearchChanged String
+    | SearchDebounced Int
     | CloseClicked
     | GotMediaResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, GetMediaResponse ))
       -- Fired when a media item's preview is tapped -- a no-op in Browse mode
@@ -326,6 +341,8 @@ init =
     , selectedMediaAnimations = Dict.empty
     , selectedMediaMoveAnimations = Dict.empty
     , pendingUploadSelection = Nothing
+    , searchText = ""
+    , searchVersion = 0
     }
 
 
@@ -444,12 +461,14 @@ sendUpdate accountsPanelModel msg model =
                             |> Dict.fromList
                     , selectedMediaMoveAnimations = Dict.empty
                     , pendingUploadSelection = Nothing
+                    , searchText = ""
+                    , searchVersion = 0
                     }
             in
             case resolve accountsPanelModel host of
                 Ok resolved ->
                     ( opened
-                    , fetchTask accountsPanelModel resolved.account
+                    , fetchTask accountsPanelModel resolved.account opened.searchText
                         |> Task.attempt GotMediaResult
                     , ( Nothing, Nothing )
                     )
@@ -459,6 +478,41 @@ sendUpdate accountsPanelModel msg model =
 
         CloseClicked ->
             ( { init | zoom = model.zoom }, Cmd.none, ( Nothing, Nothing ) )
+
+        SearchChanged text ->
+            let
+                version : Int
+                version =
+                    model.searchVersion + 1
+            in
+            ( { model | searchText = text, searchVersion = version }
+            , Process.sleep searchDebounceMs |> Task.perform (\_ -> SearchDebounced version)
+            , ( Nothing, Nothing )
+            )
+
+        SearchDebounced version ->
+            if version /= model.searchVersion then
+                ( model, Cmd.none, ( Nothing, Nothing ) )
+
+            else
+                case resolve accountsPanelModel model.targetHost of
+                    Ok resolved ->
+                        -- Leaves `status` alone while the grid's showing, same reasoning as
+                        -- `GotUploadResult`'s own refetch (see `GotMediaResult`'s doc).
+                        ( { model
+                            | status =
+                                if Dict.isEmpty model.mediaAnimations then
+                                    Fetching
+
+                                else
+                                    model.status
+                          }
+                        , fetchTask accountsPanelModel resolved.account model.searchText |> Task.attempt GotMediaResult
+                        , ( Nothing, Nothing )
+                        )
+
+                    Err _ ->
+                        ( model, Cmd.none, ( Nothing, Nothing ) )
 
         GotMediaResult (Ok ( maybeAccountsPanelMsg, response )) ->
             -- `GotUploadResult`/`GotDeleteResult` both re-run `fetchTask`
@@ -575,7 +629,7 @@ sendUpdate accountsPanelModel msg model =
             case resolve accountsPanelModel model.targetHost of
                 Ok resolved ->
                     ( { model | uploadStatus = NotUploading, pendingUploadSelection = pendingUploadSelection }
-                    , fetchTask accountsPanelModel resolved.account |> Task.attempt GotMediaResult
+                    , fetchTask accountsPanelModel resolved.account model.searchText |> Task.attempt GotMediaResult
                     , ( maybeAccountsPanelMsg, Nothing )
                     )
 
@@ -621,7 +675,7 @@ sendUpdate accountsPanelModel msg model =
             case resolve accountsPanelModel model.targetHost of
                 Ok resolved ->
                     ( { clearedModel | status = Fetching }
-                    , fetchTask accountsPanelModel resolved.account |> Task.attempt GotMediaResult
+                    , fetchTask accountsPanelModel resolved.account model.searchText |> Task.attempt GotMediaResult
                     , ( maybeAccountsPanelMsg, Nothing )
                     )
 
@@ -853,6 +907,11 @@ passes its `<FileUploader>` -- purely a hint to the OS file picker's own
 filter, not enforced server-side (and not consulted by `Drop` at all, same as
 the React version).
 -}
+searchDebounceMs : Float
+searchDebounceMs =
+    300
+
+
 acceptedMimeTypes : List String
 acceptedMimeTypes =
     [ "image/jpeg", "image/png", "image/svg+xml", "image/webp", "image/gif", "application/pdf", "video/mp4", "video/quicktime", "video/webm", "audio/mpeg", "audio/ogg" ]
@@ -890,13 +949,13 @@ backend's "no user\_id means the caller's own media" fallback, keeps this
 request meaningful even though today it only ever runs for the signed-in
 account's own chip.
 -}
-fetchTask : AccountsPanel.Model -> RellmAccount -> Task Grpc.Error ( Maybe AccountsPanel.Msg, GetMediaResponse )
-fetchTask accountsPanelModel account =
+fetchTask : AccountsPanel.Model -> RellmAccount -> String -> Task Grpc.Error ( Maybe AccountsPanel.Msg, GetMediaResponse )
+fetchTask accountsPanelModel account searchText =
     AccountsPanel.performWithAccountServer
         accountsPanelModel
         ( Just account.userId, account.server )
         (\server token ->
-            Grpc.new Rellm.getMedia { defaultGetMediaRequest | userId = Just account.userId }
+            Grpc.new Rellm.getMedia { defaultGetMediaRequest | userId = Just account.userId, searchText = ifNonEmpty searchText }
                 |> Grpc.setHost (RellmServers.rellmServerUrl server)
                 |> withAccessToken (Just token)
                 |> Grpc.toTask
@@ -1008,7 +1067,7 @@ ifNonEmpty s =
 -}
 toMediaReference : Media -> MediaReference
 toMediaReference media =
-    { id = media.id, author = Maybe.map wrapAuthor media.author, name = media.name, generated = media.generated, metadata = media.metadata, sizes = media.sizes, url = media.url, description = media.description }
+    { id = media.id, author = Maybe.map wrapAuthor media.author, name = media.name, generated = media.generated, metadata = media.metadata, sizes = media.sizes, url = media.url, description = media.description, visibility = media.visibility }
 
 
 {-| The smallest stored rendition (320/800/1600 px -- see `MediaConversion`) that still looks
@@ -1068,10 +1127,31 @@ something `Drop`'s own correctness depends on.
 
 -}
 view : Int -> AccountsPanel.Model -> Model -> Html Msg
-view windowWidth accountsPanelModel model =
+view =
+    viewWith False
+
+
+{-| The same panel, rendered inline as a normal page section (`/media`'s "My Media" tab, see
+`Pages.Media`) instead of a fixed overlay -- no close button, and `my-media-page` (see
+my\_media\_panel.css) swaps the overlay positioning for in-flow layout. The page owns this
+`Model` and opens it (`Open Nothing host`) itself.
+-}
+viewEmbedded : Int -> AccountsPanel.Model -> Model -> Html Msg
+viewEmbedded =
+    viewWith True
+
+
+viewWith : Bool -> Int -> AccountsPanel.Model -> Model -> Html Msg
+viewWith embedded windowWidth accountsPanelModel model =
     div
         (classes
             ([ "my-media-panel", "nav-panel", openClosedClass (isOpen model) ]
+                ++ (if embedded then
+                        [ "my-media-page" ]
+
+                    else
+                        []
+                   )
                 ++ (if model.isDraggingOver then
                         [ "is-dragging-over" ]
 
@@ -1094,8 +1174,23 @@ view windowWidth accountsPanelModel model =
                     , disabled (isUploading model.uploadStatus)
                     ]
                     [ text "+ Add" ]
-                , button [ class "my-media-panel-close", onClick CloseClicked ] [ text "✕" ]
+                , if embedded then
+                    text ""
+
+                  else
+                    button [ class "my-media-panel-close", onClick CloseClicked ] [ text "✕" ]
                 ]
+            ]
+        , div [ class "my-media-panel-search" ]
+            [ input
+                [ type_ "search"
+                , class "my-media-panel-search-input"
+                , placeholder "Search your media"
+                , value model.searchText
+                , onInput SearchChanged
+                , attribute "aria-label" "Search your media"
+                ]
+                []
             ]
         , selectedMediaStripView accountsPanelModel model
         , div [ class "my-media-panel-content" ] (contentView accountsPanelModel model)
@@ -1330,7 +1425,16 @@ contentView accountsPanelModel model =
                         [ div [ class "my-media-panel-message" ] [ text err ] ]
 
                     Fetched _ ->
-                        [ div [ class "my-media-panel-message" ] [ text "No media yet." ] ]
+                        [ div [ class "my-media-panel-message" ]
+                            [ text
+                                (if String.isEmpty (String.trim model.searchText) then
+                                    "No media yet."
+
+                                 else
+                                    "No media matches your search."
+                                )
+                            ]
+                        ]
 
 
 {-| `mediaAnimations` in display order -- sorted newest-first by each tile's

@@ -1,0 +1,285 @@
+/* `/media`, `/video`, `/videos`, `/audio` (`Components.Pages.MediaPage`/`Components.MediaFeed`) --
+   the server-wide Video (YouTube-alike) and Audio (Spotify-alike) feeds, plus `/media`'s tab bar and
+   inline "My Media" tab. */
+
+.media-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.media-page-tabs {
+  display: flex;
+  gap: 0.4rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.media-page-tab {
+  padding: 0.5rem 1rem;
+  border: none;
+  border-bottom: 3px solid transparent;
+  background: none;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.media-page-tab.is-current {
+  color: var(--fg);
+  border-bottom-color: var(--fg);
+}
+
+.media-page-delete-confirm {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.75rem;
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+}
+
+.media-page-delete-confirm-yes {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.media-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.media-feed-search-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.55rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--chip-bg);
+  color: var(--fg);
+  font-size: 1rem;
+}
+
+.media-feed-message {
+  color: var(--muted);
+  padding: 1rem 0;
+}
+
+.media-feed-error {
+  color: var(--danger);
+}
+
+.media-feed-load-more {
+  align-self: center;
+  padding: 0.5rem 1.2rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--chip-bg);
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.media-card-thumb {
+  position: relative;
+  display: block;
+  padding: 0;
+  border: none;
+  background: rgba(127, 127, 127, 0.25);
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.media-card-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.media-card-thumb-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font-size: 2rem;
+}
+
+/* A play glyph that appears over the thumbnail on hover/focus (always visible on touch devices,
+   which have no hover). */
+.media-card-play {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 1.8rem;
+  background: rgba(0, 0, 0, 0.25);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.media-card-thumb:hover .media-card-play,
+.media-card-thumb:focus-visible .media-card-play {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .media-card-play {
+    opacity: 0.85;
+    background: none;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+  }
+}
+
+.media-card-title {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--fg);
+  font-weight: 700;
+  font-size: 1rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.media-card-sub,
+.media-card-credits {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.media-card-sub {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.6rem;
+}
+
+.media-card-author {
+  color: inherit;
+  font-weight: 600;
+}
+
+.media-card-badge {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.4rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.7);
+  color: white;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+/* Video: a responsive grid of 16:9 cards, YouTube-style. */
+.media-feed-videos .media-feed-items {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 1.5rem 1rem;
+}
+
+.video-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.video-card .media-card-thumb {
+  aspect-ratio: 16 / 9;
+  border-radius: 12px;
+}
+
+.video-card .media-card-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+/* Audio: a single-column track list with square cover art, Spotify-style. */
+.media-feed-audio .media-feed-items {
+  display: flex;
+  flex-direction: column;
+}
+
+.audio-row {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.5rem;
+  border-radius: 8px;
+}
+
+.audio-row:hover {
+  background: var(--chip-bg);
+}
+
+.audio-row .media-card-thumb {
+  flex: 0 0 auto;
+  width: 3.6rem;
+  height: 3.6rem;
+  border-radius: 6px;
+}
+
+.audio-row .media-card-meta {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.audio-row .media-card-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audio-row .media-card-badge {
+  position: static;
+  flex: 0 0 auto;
+}
+
+/* Which server a card came from -- only shown when more than one server's feed is merged. Takes
+   that server's own colors via `.background-color-primary` + its hostname class. */
+.media-card-host {
+  align-self: flex-start;
+  padding: 0.05rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.video-card .media-card-host {
+  margin-top: 0.1rem;
+}
+
+.audio-row .media-card-host {
+  flex: 0 0 auto;
+}
+
+.media-feed-errors:empty {
+  display: none;
+}
+
+/* "My Media" account selector -- `.profile-federated-link` (profiles.css) chips rendered as buttons. */
+.media-page-accounts {
+  margin-bottom: 0.75rem;
+}
+
+.media-page-account-chip {
+  border: 2px solid transparent;
+  cursor: pointer;
+  color: inherit;
+  font-family: inherit;
+  opacity: 0.6;
+  text-align: left;
+}
+
+.media-page-account-chip.is-selected {
+  opacity: 1;
+  border-color: var(--fg);
+}

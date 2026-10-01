@@ -43,6 +43,7 @@
     - [Author](#rellm-Author)
     - [GetMediaRequest](#rellm-GetMediaRequest)
     - [GetMediaResponse](#rellm-GetMediaResponse)
+    - [License](#rellm-License)
     - [Media](#rellm-Media)
     - [MediaMetadata](#rellm-MediaMetadata)
     - [MediaReference](#rellm-MediaReference)
@@ -1506,6 +1507,7 @@ From the top down, the rules break down as follows:
 | SERVER_PUBLIC | 3 | Subject is visible to all authenticated users. |
 | GLOBAL_PUBLIC | 4 | Subject is visible to all users on the internet. |
 | DIRECT | 5 | [TODO] Subject is visible to explicitly-associated Users. Only applicable to Posts and Events. For Users, this is the same as LIMITED. See: [`UserPost`](#rellm-UserPost). |
+| LICENSED | 6 | Only applicable to [`Media`](#rellm-Media). The media&#39;s metadata is discoverable by anyone (like `GLOBAL_PUBLIC`), but its full-quality bytes are only served to the owner, admins, and holders of an active [`License`](#rellm-License). Everyone else gets the `UNLICENSED_PREVIEW_MEDIUM` conversion. |
 
 
  
@@ -1910,16 +1912,23 @@ already needed it anyway, for `User.avatar`/`Media`-shaped fields).
 Valid GetMediaRequest formats:
 - `{user_id: abc123}` - Gets the media of the given user that the current user can see. IE:
     - *all* of the current user&#39;s own media
-    - `GLOBAL_PUBLIC` media for the user if the current user is not logged in.
+    - `GLOBAL_PUBLIC`/`LICENSED` media for the user if the current user is not logged in.
     - `SERVER_PUBLIC` media for the user if the current user is logged in.
     - `LIMITED` media for the user if the current user is following the user.
 - `{media_id: abc123}` - Gets the media with the given ID, if visible to the current user.
+- `{}` (neither `media_id` nor `user_id`) - Browses *all* media on the server visible to the current user
+  (never other users&#39; `PRIVATE`/`LIMITED` media), newest first -- the basis of the Media/Video/Audio pages.
+  Combine with `content_type` and/or `search_text`.
+
+`content_type` and `search_text` also narrow `{user_id: ...}` requests.
 
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | media_id | [string](#string) | optional | Returns the single media item with the given ID. |
 | user_id | [string](#string) | optional | Returns all media items for the given user. |
+| content_type | [string](#string) | optional | Filters by the original upload&#39;s MIME content type. Either exact (`video/mp4`) or a wildcard subtype (`audio/*`, `video/*`, `image/*`). Backed by an indexed column. |
+| search_text | [string](#string) | optional | Full-text search over name, credits (artist, album, composer, ...) and description -- see `MediaMetadata`&#39;s doc for field weighting. Prefix-matches, like `GetPosts`&#39; `TEXT_SEARCH`. Results are ranked by match quality, then recency. |
 | page | [uint32](#uint32) |  |  |
 
 
@@ -1937,6 +1946,27 @@ Valid GetMediaRequest formats:
 | ----- | ---- | ----- | ----------- |
 | media | [Media](#rellm-Media) | repeated |  |
 | has_next_page | [bool](#bool) |  |  |
+
+
+
+
+
+
+<a name="rellm-License"></a>
+
+### License
+Grants `licensed_to` access to a `LICENSED` [`Media`](#rellm-Media) item&#39;s full-quality bytes.
+Stored in the `media_licenses` table. A license is *active* while `revoked_at` is unset.
+(Purchasing licenses through Rellm&#39;s Market is not implemented yet.)
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| id | [string](#string) |  |  |
+| licensed_to | [Author](#rellm-Author) |  | The user holding the license. |
+| media | [MediaReference](#rellm-MediaReference) |  | The licensed media. |
+| created_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  |  |
+| revoked_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional | When set, the license no longer grants access. |
 
 
 
@@ -1969,6 +1999,12 @@ On success, the endpoint will return the media ID in plaintext.
 - **Query Parameters**:
     - `authorization` - Rellm Access Token for the user. May also be supplied in the `Cookies` or `Authorization` headers.
 - Fetching media without authentication requires that it has `GLOBAL_PUBLIC` visibility.
+- Anonymous (unauthenticated) responses omit CORS `Access-Control-Allow-*` headers when the server&#39;s
+  `MediaSettings.block_cors_anonymous_media_access` is set, so third-party sites can embed (`&lt;img&gt;`,
+  `&lt;video&gt;`) but not script-read public media.
+- `LICENSED` media&#39;s full-quality bytes are only served to its owner, admins, and users holding an active
+  [`License`](#rellm-License) for it. Everyone else is served its `UNLICENSED_PREVIEW_MEDIUM` conversion
+  (audio/video only; see `MediaMetadata.unlicensed_preview_start_ms`), or `403 Forbidden` if none exists yet.
 
 
 | Field | Type | Label | Description |
@@ -2002,6 +2038,18 @@ own columns.
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | video_preview_time_ms | [uint64](#uint64) | optional | For video media, how far into the video (in milliseconds) its preview/poster frame should be taken from -- both via a `#t=&lt;seconds&gt;` Media Fragments URI on the `&lt;video&gt;` element&#39;s `src`, and as the timestamp `ffmpeg` seeks to when generating the `VIDEO_PREVIEW_THUMBNAIL_*` poster frames (see `MediaConversion`). Unset defaults to 1s (1000 in ms), or if the video is shorter than 1.5s, the midpoint of the video. Settable via `UpdateMedia`; changing it invalidates (deletes) any existing `VIDEO_PREVIEW_THUMBNAIL_*` sizes, so the `convert_media_sizes` background job regenerates them at the new time. |
+| artist | [string](#string) | optional | Credits. All free-form text; unset/blank means &#34;none&#34;. Editable via `UpdateMedia` (setting one to an empty string clears it). Searched by `GetMediaRequest.search_text`, most to least important: name/artist/director, then album/composer/starring/cast/narrator, then producer/crew/publisher, then description. |
+| album | [string](#string) | optional |  |
+| composer | [string](#string) | optional |  |
+| director | [string](#string) | optional |  |
+| producer | [string](#string) | optional |  |
+| starring | [string](#string) | optional |  |
+| cast | [string](#string) | optional |  |
+| crew | [string](#string) | optional |  |
+| narrator | [string](#string) | optional |  |
+| publisher | [string](#string) | optional |  |
+| unlicensed_preview_start_ms | [uint64](#uint64) | optional | For audio and video media only: the range of the original (in milliseconds) that is cropped into the `UNLICENSED_PREVIEW_MEDIUM` conversion served to viewers without a license for `LICENSED` media. Unset start defaults to 0; unset end defaults to start &#43; 30s (clamped to the media&#39;s duration). Changing either invalidates (deletes) any existing `UNLICENSED_PREVIEW_MEDIUM` size so the `convert_media_sizes` background job regenerates it. |
+| unlicensed_preview_end_ms | [uint64](#uint64) | optional |  |
 
 
 
@@ -2074,6 +2122,9 @@ Which stored copy of a `Media` item&#39;s bytes a `MediaSize` represents.
 | AUDIO_PREVIEW_THUMBNAIL_SMALL | 10 | For audio media only: an `image/png` waveform image of the whole file (rendered via `ffmpeg`&#39;s `showwavespic` filter, transparent background), 320x320 px (square, so clients can squash it vertically to suit their layout) -- same width tier as `MEDIA_CONVERSION_SMALL`. Audio has no pixel dimensions of its own, so unlike the video/image sizes these are *not* &#34;fit within NxN&#34;: they&#39;re always exactly the tier&#39;s size. Regenerated by the same `convert_media_sizes` background job. |
 | AUDIO_PREVIEW_THUMBNAIL_MEDIUM | 11 | Same as `AUDIO_PREVIEW_THUMBNAIL_SMALL`, but 800x800 px -- the `MEDIA_CONVERSION_MEDIUM` tier. |
 | AUDIO_PREVIEW_THUMBNAIL_LARGE | 12 | Same as `AUDIO_PREVIEW_THUMBNAIL_SMALL`, but 1600x1600 px -- the `MEDIA_CONVERSION_LARGE` tier. |
+| UNLICENSED_PREVIEW_MEDIUM | 13 | For audio and video media only: a medium-quality crop of the original from `MediaMetadata.unlicensed_preview_start_ms` to `unlicensed_preview_end_ms` (via `ffmpeg`), in the original&#39;s own container-family content type (video: `video/mp4`, audio: `audio/mpeg`). This is what viewers *without* a [`License`](#rellm-License) are served for `LICENSED` media. Regenerated by the `convert_media_sizes` background job; deleted (and marked for regeneration) whenever `UpdateMedia` changes either bound. May also be deleted manually via `DeleteMediaSizes`.
+
+(Numbered 13 rather than 11 because `AUDIO_PREVIEW_THUMBNAIL_MEDIUM` already holds 11.) |
 
 
  
@@ -3306,7 +3357,7 @@ Either one of the app&#39;s predefined tabs, a Post, or a user profile - reachab
 | emoji_icon | [string](#string) |  | Emoji shown as the tab&#39;s icon (e.g. &#34;🎪&#34;). |
 | icon_media_id | [string](#string) |  | Media ID (see [`Media`](#rellm-Media) APIs) of an image shown as the tab&#39;s icon. |
 | title | [string](#string) | optional | Title shown for the tab. Defaults to the predefined tab&#39;s/Post&#39;s title if unset. |
-| path | [string](#string) |  | The path this tab is reachable at, e.g. `gigs` for a band&#39;s `/gigs` link to the Events page, or `weddings` for a Post about wedding offerings. Must be distinct across every entry in `CustomNavigationTabSet.tabs`. Note: `events`, `posts`, `people`, and `about` are reserved -- each may only be used to (redundantly) point back at its own matching predefined tab, never remapped to a different tab or a Post. `/` itself is never reachable this way - it&#39;s overridden via `CustomNavigationTabSet.home` instead. |
+| path | [string](#string) |  | The path this tab is reachable at, e.g. `gigs` for a band&#39;s `/gigs` link to the Events page, or `weddings` for a Post about wedding offerings. Must be distinct across every entry in `CustomNavigationTabSet.tabs`. Note: `events`, `posts`, `people`, `about`, `media`, `video`, `videos`, and `audio` are reserved -- each may only be used to (redundantly) point back at its own matching predefined tab, never remapped to a different tab or a Post. `/` itself is never reachable this way - it&#39;s overridden via `CustomNavigationTabSet.home` instead. |
 
 
 
@@ -3481,6 +3532,7 @@ Media is a special type and less customizable than &#34;Features.&#34;
 | default_moderation | [Moderation](#rellm-Moderation) |  | Only `UNMODERATED` and `PENDING` are valid. When `UNMODERATED`, user reports may transition status to `PENDING`. When `PENDING`, users&#39; SERVER_PUBLIC or `GLOBAL_PUBLIC` posts will not be visible until a moderator approves them. `LIMITED` visiblity posts are always visible to targeted users (who have not blocked the author) regardless of default_moderation. |
 | default_visibility | [Visibility](#rellm-Visibility) |  | Only `SERVER_PUBLIC` and `GLOBAL_PUBLIC` are valid. `GLOBAL_PUBLIC` is only valid if default_user_permissions contains `GLOBALLY_PUBLISH_[USERS|GROUPS|POSTS|EVENTS]` as appropriate. |
 | default_user_media_allocation_bytes | [uint64](#uint64) |  | Default media storage allocation for newly created users. Defaults to 15MB. |
+| block_cors_anonymous_media_access | [bool](#bool) |  | &#34;Block CORS Anonymous Media Access&#34;. When set, `GET /media/{id}` responses to *unauthenticated* requests omit CORS `Access-Control-Allow-*` headers even for `GLOBAL_PUBLIC` media, so browsers block other sites&#39; scripts from reading them (plain `&lt;img&gt;`/`&lt;video&gt;` embeds still work). Authenticated requests are unaffected. |
 | server_media_allocation_bytes | [uint64](#uint64) |  | Default is 5GB (applied whenever this is `0`, same read-time-fallback convention as `default_user_media_allocation_bytes` above). API/server-enforced limit for total of all Media usage (`server_media_usage_bytes` below) -- `CreateMedia` rejects an upload that would push the server over this cap the same way it already rejects one that would push a user over their own `User.media_storage_limit_bytes`. Editing this requires [`EDIT_SERVER_MEDIA_ALLOCATION`](#rellm-Permission) via [`ConfigureServer`](#grpc-api-ConfigureServer) -- see that permission&#39;s own doc. |
 | server_media_usage_bytes | [uint64](#uint64) |  | (Read-only) Amount of storage used by user-stored Media, according to its sizing data. Adjusted (by a cheap incremental delta, not a full recompute) on CreateMedia calls, deletes, and size conversions, and also fully recomputed every 3 minutes by the `calculate_server_media_usage` background job (correcting any drift the incremental call sites missed). |
 | server_media_usage_calculated_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  | When `server_media_usage_bytes` was last written -- by either an incremental adjustment or a full recompute (see that field&#39;s own doc); not limited to just the periodic job&#39;s runs. |
@@ -3806,6 +3858,9 @@ The default navigation tabs in Rellm&#39;s Elm UI.
 | PEOPLE_TAB | 12 | The People tab. |
 | ABOUT_TAB | 15 | The About tab. |
 | MARKET_TAB | 16 | The Market tab. |
+| MEDIA_TAB | 17 | The Media tab: Video, Audio and (when logged in) My Media sub-tabs. Reserved path: `media`. |
+| VIDEO_TAB | 18 | The Video tab (a YouTube-alike over `GetMedia` with `content_type: &#34;video/*&#34;`). Reserved paths: `video`, `videos`. |
+| AUDIO_TAB | 19 | The Audio tab (a Spotify-alike over `GetMedia` with `content_type: &#34;audio/*&#34;`). Reserved path: `audio`. |
 
 
 

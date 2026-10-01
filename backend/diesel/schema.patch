@@ -3,25 +3,28 @@
 @@ -9,9 +9,6 @@
      #[diesel(postgres_type(name = "recipient_type"))]
      pub struct RecipientType;
-
+ 
 -    #[derive(diesel::query_builder::QueryId, diesel::sql_types::SqlType)]
 -    #[diesel(postgres_type(name = "tsvector", schema = "pg_catalog"))]
 -    pub struct Tsvector;
  }
-
+ 
  diesel::table! {
-@@ -19,7 +16,7 @@
+@@ -19,10 +16,10 @@
          id -> Int8,
          ai_provider_id -> Int8,
          grantee_id -> Int8,
--        model_names -> Array<Nullable<Varchar>>,
 +        model_names -> Array<Varchar>,
          tokens_remaining -> Int8,
          created_at -> Timestamp,
          updated_at -> Nullable<Timestamp>,
+-        model_names -> Array<Nullable<Varchar>>,
+         overage -> Int8,
+     }
+ }
 @@ -56,6 +53,37 @@
  }
-
+ 
  diesel::table! {
 +    occasion_sync_destinations (occasion_id, sync_destination_id) {
 +        occasion_id -> Int8,
@@ -57,16 +60,61 @@
      events (post_id) {
          post_id -> Int8,
          info -> Jsonb,
-@@ -257,7 +285,7 @@
-
+@@ -205,9 +233,6 @@
+ }
+ 
+ diesel::table! {
+-    use diesel::sql_types::*;
+-    use super::sql_types::Tsvector;
+-
+     media (id) {
+         id -> Int8,
+         user_id -> Nullable<Int8>,
+@@ -221,8 +246,23 @@
+         updated_at -> Timestamp,
+         metadata -> Jsonb,
+         sizes -> Jsonb,
++    }
++}
++
++// Read-only view of `media`'s two generated columns (`content_type`, `search_text` -- see
++// 2026-10-01-000000_media_search_licenses_credits), kept out of `media` itself so `Media`'s
++// `all_columns`-based Queryable/insert-returning call sites keep working unchanged (same reason
++// `posts::search_text` is excluded from `POST_COLUMNS`). Query it via subquery
++// (`media::id.eq_any(media_filter::table.filter(..).select(media_filter::id))`).
++diesel::table! {
++    use diesel::sql_types::*;
++    use diesel_full_text_search::TsVector;
++
++    #[sql_name = "media"]
++    media_filter (id) {
++        id -> Int8,
+         content_type -> Nullable<Varchar>,
+-        search_text -> Nullable<Tsvector>,
++        search_text -> TsVector,
+     }
+ }
+ 
+@@ -236,6 +276,9 @@
+     }
+ }
+ 
++diesel::joinable!(media_licenses -> media (media_id));
++diesel::joinable!(media_licenses -> users (user_id));
++
+ diesel::table! {
+     memberships (id) {
+         id -> Int8,
+@@ -272,7 +315,7 @@
+ 
  diesel::table! {
      use diesel::sql_types::*;
 -    use super::sql_types::Tsvector;
 +    use diesel_full_text_search::TsVector;
-
+ 
      messages (id) {
          id -> Int8,
-@@ -268,7 +296,7 @@
+@@ -283,7 +326,7 @@
          email_message_id -> Nullable<Varchar>,
          email_object_storage_path -> Nullable<Varchar>,
          created_at -> Timestamp,
@@ -75,10 +123,15 @@
          messaging_group_id -> Int8,
      }
  }
-@@ -282,37 +310,6 @@
- }
-
- diesel::table! {
+@@ -292,38 +335,7 @@
+     messaging_groups (id) {
+         id -> Int8,
+         sorted_user_ids -> Array<Nullable<Int8>>,
+-        created_at -> Timestamp,
+-    }
+-}
+-
+-diesel::table! {
 -    occasion_sync_destinations (occasion_id, sync_destination_id) {
 -        occasion_id -> Int8,
 -        sync_destination_id -> Int8,
@@ -100,29 +153,25 @@
 -        starts_at -> Timestamp,
 -        ends_at -> Timestamp,
 -        location -> Nullable<Jsonb>,
--        created_at -> Timestamp,
+         created_at -> Timestamp,
 -        updated_at -> Nullable<Timestamp>,
 -        search_text -> Tsvector,
 -        user_id -> Nullable<Int8>,
 -        sync_missing_since -> Nullable<Timestamp>,
 -        timezone -> Nullable<Varchar>,
--    }
--}
--
--diesel::table! {
-     post_sync_destinations (post_id, sync_destination_id) {
-         post_id -> Int8,
-         sync_destination_id -> Int8,
-@@ -325,7 +322,7 @@
-
+     }
+ }
+ 
+@@ -340,7 +352,7 @@
+ 
  diesel::table! {
      use diesel::sql_types::*;
 -    use super::sql_types::Tsvector;
 +    use diesel_full_text_search::TsVector;
      use super::sql_types::PostMediaLayout;
-
+ 
      posts (id) {
-@@ -350,7 +347,7 @@
+@@ -365,7 +377,7 @@
          published_at -> Nullable<Timestamp>,
          last_activity_at -> Timestamp,
          unauthenticated_star_count -> Int8,
@@ -131,16 +180,16 @@
          sort_published_at -> Timestamp,
          post_media_layout -> PostMediaLayout,
          sync_source_id -> Nullable<Int8>,
-@@ -470,7 +467,7 @@
-
+@@ -485,7 +497,7 @@
+ 
  diesel::table! {
      use diesel::sql_types::*;
 -    use super::sql_types::Tsvector;
 +    use diesel_full_text_search::TsVector;
-
+ 
      users (id) {
          id -> Int8,
-@@ -493,7 +490,7 @@
+@@ -508,7 +520,7 @@
          response_count -> Int4,
          created_at -> Timestamp,
          updated_at -> Timestamp,
@@ -149,7 +198,7 @@
          friend_count -> Int4,
          occasion_count -> Int4,
          media_storage_limit_bytes -> Nullable<Int8>,
-@@ -505,6 +502,10 @@
+@@ -520,6 +532,10 @@
  diesel::joinable!(ai_provider_grants -> users (grantee_id));
  diesel::joinable!(ai_providers -> users (user_id));
  diesel::joinable!(event_attendances -> occasions (occasion_id));
@@ -160,7 +209,16 @@
  diesel::joinable!(events -> posts (post_id));
  diesel::joinable!(federated_accounts -> federated_servers (federated_server_id));
  diesel::joinable!(federated_accounts -> users (user_id));
-@@ -528,10 +529,6 @@
+@@ -535,8 +551,6 @@
+ diesel::joinable!(market_purchases -> users (buyer_id));
+ diesel::joinable!(market_subscriptions -> market_products (product_id));
+ diesel::joinable!(market_subscriptions -> users (buyer_id));
+-diesel::joinable!(media_licenses -> media (media_id));
+-diesel::joinable!(media_licenses -> users (user_id));
+ diesel::joinable!(memberships -> groups (group_id));
+ diesel::joinable!(memberships -> users (user_id));
+ diesel::joinable!(message_reads -> messages (message_id));
+@@ -545,10 +559,6 @@
  diesel::joinable!(message_recipients -> users (user_id));
  diesel::joinable!(messages -> messaging_groups (messaging_group_id));
  diesel::joinable!(messages -> users (from_user_id));
@@ -171,7 +229,7 @@
  diesel::joinable!(post_sync_destinations -> posts (post_id));
  diesel::joinable!(post_sync_destinations -> sync_destinations (sync_destination_id));
  diesel::joinable!(posts -> sync_sources (sync_source_id));
-@@ -549,6 +546,8 @@
+@@ -566,6 +576,8 @@
      ai_provider_grants,
      ai_providers,
      event_attendances,
@@ -180,7 +238,14 @@
      events,
      federated_accounts,
      federated_profiles,
-@@ -567,8 +566,6 @@
+@@ -579,14 +591,13 @@
+     market_purchases,
+     market_subscriptions,
+     media,
++    media_filter,
+     media_licenses,
+     memberships,
+     message_reads,
      message_recipients,
      messages,
      messaging_groups,

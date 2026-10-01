@@ -321,10 +321,6 @@ viewHelper forceAutoplay tierOverride mediaSize sizeConstraint server maybeAccou
                 showAsAudio =
                     preloadVideo || not hasWaveform || clickedToPlay
 
-                autoplay : Bool
-                autoplay =
-                    forceAutoplay || (not preloadVideo && clickedToPlay)
-
                 waveform : List (Html msg)
                 waveform =
                     if hasWaveform then
@@ -358,6 +354,11 @@ viewHelper forceAutoplay tierOverride mediaSize sizeConstraint server maybeAccou
                 player : List (Html msg)
                 player =
                     if showAsAudio then
+                        let
+                            autoplay : Bool
+                            autoplay =
+                                forceAutoplay || (not preloadVideo && clickedToPlay)
+                        in
                         [ audio
                             ([ class ("media-renderer-audio " ++ sizeClass)
                              , controls True

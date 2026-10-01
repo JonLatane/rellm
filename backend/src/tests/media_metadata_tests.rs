@@ -5,7 +5,7 @@ use crate::models::MediaMetadata;
 
 #[test]
 fn explicit_value_is_used_regardless_of_duration() {
-    let metadata = MediaMetadata { video_preview_time_ms: Some(4200) };
+    let metadata = MediaMetadata { video_preview_time_ms: Some(4200), ..Default::default() };
     assert_eq!(metadata.effective_video_preview_time_ms(60_000), 4200);
     assert_eq!(metadata.effective_video_preview_time_ms(500), 4200);
 }

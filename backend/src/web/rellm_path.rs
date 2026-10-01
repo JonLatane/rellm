@@ -22,6 +22,41 @@ pub struct RellmSummary {
     pub image: Option<String>,
 }
 
+/// What link-preview summaries (`RellmSummary`) call a server and show for it -- derived from its
+/// `ServerConfiguration`, which `spa_pages`' summary closures are handed whole.
+pub trait ServerSummaryInfo {
+    /// `ServerInfo.name`, else "Rellm" -- used in titles ("Videos | Server Name").
+    fn display_name(&self) -> String;
+    /// `ServerInfo.short_name` if set, else `display_name` -- used in descriptions
+    /// ("Videos from Server").
+    fn short_name(&self) -> String;
+    /// `/media/{id}` of the server's square logo, if it has one.
+    fn logo_url(&self) -> Option<String>;
+}
+
+impl ServerSummaryInfo for crate::protos::ServerConfiguration {
+    fn display_name(&self) -> String {
+        non_blank(self.server_info.as_ref().and_then(|i| i.name.as_deref())).unwrap_or_else(|| "Rellm".to_string())
+    }
+
+    fn short_name(&self) -> String {
+        non_blank(self.server_info.as_ref().and_then(|i| i.short_name.as_deref()))
+            .unwrap_or_else(|| self.display_name())
+    }
+
+    fn logo_url(&self) -> Option<String> {
+        self.server_info
+            .as_ref()
+            .and_then(|i| i.logo.as_ref())
+            .and_then(|l| l.square_media_id.as_ref())
+            .map(|id| format!("/media/{}", id))
+    }
+}
+
+fn non_blank(value: Option<&str>) -> Option<String> {
+    value.map(str::trim).filter(|v| !v.is_empty()).map(str::to_string)
+}
+
 lazy_static! {
     static ref CACHED_FILES: RwLock<HashMap<String, RellmResponder>> = {
         let m = HashMap::new();

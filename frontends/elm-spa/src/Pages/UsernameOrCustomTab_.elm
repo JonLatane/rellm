@@ -31,6 +31,7 @@ import Browser.Navigation
 import Components.Pages.BlueskyUserProfilePage as BlueskyUserProfilePage
 import Components.Pages.EventsPage as EventsPage
 import Components.Pages.MarketPage as MarketPage
+import Components.Pages.MediaPage as MediaPage
 import Components.Pages.MastodonUserProfilePage as MastodonUserProfilePage
 import Components.Pages.PostOrEventPage as PostOrEventPage
 import Components.Pages.PostPage as PostPage
@@ -46,6 +47,7 @@ import Gen.Route as Route exposing (Route)
 import Html exposing (p, text)
 import Html.Attributes exposing (class)
 import Page
+import Pages.About as About
 import Proto.Rellm.NavigationTab exposing (NavigationTab(..))
 import Request
 import Shared
@@ -97,10 +99,16 @@ type Model
     | EmbeddedPeople UsersPage.Model
     | EmbeddedAbout ServerInformationPage.Model
     | EmbeddedMarket MarketPage.Model
+    | EmbeddedMedia MediaPage.Model
     | EmbeddedPost PostPage.Model
     | EmbeddedProfile UserProfilePage.Model
     | EmbeddedPostOrEvent PostOrEventPage.Model
     | Redirecting
+      -- `/about_rellm`: Elm-spa's file-based routing can't produce a path with an underscore (it
+      -- hyphenates), so this static page -- the general "About Rellm" blurb, see
+      -- `Pages.About.aboutRellmView` -- is served from here, where `about_rellm` (a reserved path
+      -- on the backend, see `RESERVED_PATHS`) lands as an ordinary single path segment.
+    | AboutRellm
 
 
 {-| `SharedMsg` (rather than always wrapping a forwarded `Shared.Msg` as, say, `ProfileMsg`) exists
@@ -119,6 +127,7 @@ type Msg
     | PeopleMsg UsersPage.Msg
     | AboutMsg ServerInformationPage.Msg
     | MarketMsg MarketPage.Msg
+    | MediaMsg MediaPage.Msg
     | EmbeddedPostMsg PostPage.Msg
     | EmbeddedProfileMsg UserProfilePage.Msg
     | EmbeddedPostOrEventMsg PostOrEventPage.Msg
@@ -127,6 +136,15 @@ type Msg
 
 init : Shared.Model -> Request.With Params -> ( Model, Effect Msg )
 init shared req =
+    if req.params.usernameOrCustomTab == "about_rellm" then
+        ( AboutRellm, Effect.none )
+
+    else
+        initWithoutAboutRellm shared req
+
+
+initWithoutAboutRellm : Shared.Model -> Request.With Params -> ( Model, Effect Msg )
+initWithoutAboutRellm shared req =
     case customTabFor shared req.params.usernameOrCustomTab of
         Just tab ->
             initEmbedded shared req tab
@@ -200,6 +218,21 @@ initEmbedded shared req tab =
             MarketPage.init shared shared.accounts.browsingHost
                 |> Tuple.mapFirst EmbeddedMarket
                 |> Tuple.mapSecond (Effect.map MarketMsg)
+
+        CustomNav.TargetTab MEDIATAB ->
+            MediaPage.init shared MediaPage.Tabbed req.key req.url.path req.query
+                |> Tuple.mapFirst EmbeddedMedia
+                |> Tuple.mapSecond (Effect.map MediaMsg)
+
+        CustomNav.TargetTab VIDEOTAB ->
+            MediaPage.init shared MediaPage.VideoOnly req.key req.url.path req.query
+                |> Tuple.mapFirst EmbeddedMedia
+                |> Tuple.mapSecond (Effect.map MediaMsg)
+
+        CustomNav.TargetTab AUDIOTAB ->
+            MediaPage.init shared MediaPage.AudioOnly req.key req.url.path req.query
+                |> Tuple.mapFirst EmbeddedMedia
+                |> Tuple.mapSecond (Effect.map MediaMsg)
 
         CustomNav.TargetTab HOMETAB ->
             ( Redirecting, redirectTo req.key Route.Home_ )
@@ -287,6 +320,9 @@ subscriptions model =
         EmbeddedMarket subModel ->
             Sub.map MarketMsg (MarketPage.subscriptions subModel)
 
+        EmbeddedMedia subModel ->
+            Sub.map MediaMsg (MediaPage.subscriptions subModel)
+
         EmbeddedPost subModel ->
             Sub.map EmbeddedPostMsg (PostPage.subscriptions subModel)
 
@@ -300,6 +336,9 @@ subscriptions model =
             Sub.none
 
         Redirecting ->
+            Sub.none
+
+        AboutRellm ->
             Sub.none
 
 
@@ -345,6 +384,11 @@ update shared req msg model =
             MarketPage.update shared subMsg subModel
                 |> Tuple.mapFirst EmbeddedMarket
                 |> Tuple.mapSecond (Effect.map MarketMsg)
+
+        ( MediaMsg subMsg, EmbeddedMedia subModel ) ->
+            MediaPage.update shared subMsg subModel
+                |> Tuple.mapFirst EmbeddedMedia
+                |> Tuple.mapSecond (Effect.map MediaMsg)
 
         ( EmbeddedPostMsg subMsg, EmbeddedPost subModel ) ->
             PostPage.update shared subMsg subModel
@@ -429,6 +473,11 @@ update shared req msg model =
                 |> Tuple.mapFirst EmbeddedMarket
                 |> Tuple.mapSecond (Effect.map MarketMsg)
 
+        ( SharedMsg subMsg, EmbeddedMedia subModel ) ->
+            MediaPage.update shared (MediaPage.fromShared subMsg) subModel
+                |> Tuple.mapFirst EmbeddedMedia
+                |> Tuple.mapSecond (Effect.map MediaMsg)
+
         ( SharedMsg subMsg, EmbeddedPost subModel ) ->
             PostPage.update shared (PostPage.fromShared subMsg) subModel
                 |> Tuple.mapFirst EmbeddedPost
@@ -480,6 +529,9 @@ view shared req model =
                 EmbeddedMarket subModel ->
                     Html.map MarketMsg (MarketPage.view shared True subModel)
 
+                EmbeddedMedia subModel ->
+                    Html.map MediaMsg (MediaPage.view shared subModel)
+
                 EmbeddedPost subModel ->
                     Html.map EmbeddedPostMsg (PostPage.view shared subModel)
 
@@ -494,6 +546,9 @@ view shared req model =
 
                 Redirecting ->
                     text ""
+
+                AboutRellm ->
+                    About.aboutRellmView
             ]
     }
 
@@ -536,6 +591,9 @@ titleFor shared req model =
                 EmbeddedMarket _ ->
                     [ "Market" ]
 
+                EmbeddedMedia _ ->
+                    [ "Media" ]
+
                 EmbeddedPost subModel ->
                     [ PostPage.titleFor subModel ]
 
@@ -550,6 +608,9 @@ titleFor shared req model =
 
                 Redirecting ->
                     []
+
+                AboutRellm ->
+                    [ "About Rellm" ]
 
 
 {-| Lets `Main` forward a `Shared.Msg` that didn't originate from this page -- see `Msg`'s own doc

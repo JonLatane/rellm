@@ -45,6 +45,12 @@ export enum Visibility {
    * See: [`UserPost`](#rellm-UserPost).
    */
   DIRECT = 5,
+  /**
+   * LICENSED - Only applicable to [`Media`](#rellm-Media). The media's metadata is discoverable by logged-in users (like `SERVER_PUBLIC`) -- or by anyone, if `MediaSettings.licensed_media_visible_globally` is set --
+   * but its full-quality bytes are only served to the owner, admins, and holders of an active
+   * [`License`](#rellm-License). Everyone else gets the `UNLICENSED_PREVIEW_MEDIUM` conversion.
+   */
+  LICENSED = 6,
   UNRECOGNIZED = -1,
 }
 
@@ -68,6 +74,9 @@ export function visibilityFromJSON(object: any): Visibility {
     case 5:
     case "DIRECT":
       return Visibility.DIRECT;
+    case 6:
+    case "LICENSED":
+      return Visibility.LICENSED;
     case -1:
     case "UNRECOGNIZED":
     default:
@@ -89,6 +98,8 @@ export function visibilityToJSON(object: Visibility): string {
       return "GLOBAL_PUBLIC";
     case Visibility.DIRECT:
       return "DIRECT";
+    case Visibility.LICENSED:
+      return "LICENSED";
     case Visibility.UNRECOGNIZED:
     default:
       return "UNRECOGNIZED";

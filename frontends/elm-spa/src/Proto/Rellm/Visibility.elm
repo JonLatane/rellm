@@ -42,6 +42,9 @@ fieldNumbersVisibility n_ =
         DIRECT ->
             5
 
+        LICENSED ->
+            6
+
         VisibilityUnrecognized_ m_ ->
             m_
 
@@ -79,6 +82,9 @@ encodeVisibility value =
             DIRECT ->
                 5
 
+            LICENSED ->
+                6
+
             VisibilityUnrecognized_ i ->
                 i
 
@@ -110,6 +116,9 @@ decodeVisibility =
                     5 ->
                         DIRECT
 
+                    6 ->
+                        LICENSED
+
                     _ ->
                         VisibilityUnrecognized_ i
             )
@@ -125,4 +134,5 @@ type Visibility
     | SERVERPUBLIC
     | GLOBALPUBLIC
     | DIRECT
+    | LICENSED
     | VisibilityUnrecognized_ Int
