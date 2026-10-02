@@ -1,4 +1,4 @@
-module Components.Pages.MastodonPostPage exposing (Model, Msg, init, title, update, view)
+module Components.Mastodon.MastodonPostPage exposing (Model, Msg, init, subscriptions, title, update, view)
 
 {-| A single Mastodon post (status), read-only -- no reply/edit/delete/visibility/moderation/
 sync-destination affordances (none of that makes sense for a post Rellm doesn't own). Just its author,
@@ -8,7 +8,7 @@ reply tree below -- see `Shared.Federation.Mastodon.fetchThread` and `Components
 Split out of `Components.Pages.PostPage` (which now only ever handles real Rellm posts) into its own
 dedicated page so `Pages.Post.PostId_` can route to this directly once
 `Components.Posts.parseFederatedPostId` recognizes the id as Mastodon's -- see that module's own doc,
-and `Components.Pages.BlueskyPostPage` for the AT Protocol counterpart.
+and `Components.Bluesky.BlueskyPostPage` for the AT Protocol counterpart.
 
 -}
 
@@ -17,6 +17,7 @@ import Components.FederatedThread as FederatedThread
 import Components.Markdown as Markdown
 import Components.MediaRenderer as MediaRenderer
 import Components.MultiMediaRenderer as MultiMediaRenderer
+import Components.PostReplies as PostReplies
 import Components.Posts as Posts
 import Effect exposing (Effect)
 import Html exposing (Html, a, button, div, p, span, text)
@@ -47,6 +48,9 @@ type alias Model =
     -- Fetched right after `postStatus`'s own post, best-effort -- stays `emptyThread` if that fails
     -- (the post itself is still worth showing without its conversation).
     , thread : Thread
+
+    -- `thread.replies` as a static, collapsible `Components.PostReplies` tree.
+    , replies : PostReplies.Model
     }
 
 
@@ -70,6 +74,7 @@ type Msg
     | ThreadMediaClicked Post String
     | RevealSensitiveMediaClicked
     | StarredPanelMsg StarredPanel.Msg
+    | RepliesMsg PostReplies.Msg
 
 
 {-| `instanceHost`/`statusId` come straight from `Components.Posts.parseFederatedPostId`'s
@@ -77,7 +82,7 @@ type Msg
 -}
 init : String -> String -> ( Model, Effect Msg )
 init instanceHost statusId =
-    ( { instanceHost = instanceHost, statusId = statusId, postStatus = LoadingPost, sensitiveMediaRevealed = False, thread = Common.emptyThread }
+    ( { instanceHost = instanceHost, statusId = statusId, postStatus = LoadingPost, sensitiveMediaRevealed = False, thread = Common.emptyThread, replies = PostReplies.initStatic ("mastodon:" ++ instanceHost) [] }
     , Mastodon.fetchStatus instanceHost statusId
         |> Task.andThen
             (\( post, sensitive ) ->
@@ -90,11 +95,16 @@ init instanceHost statusId =
     )
 
 
+subscriptions : Model -> Sub Msg
+subscriptions model =
+    Sub.map RepliesMsg (PostReplies.subscriptions model.replies)
+
+
 update : Msg -> Model -> ( Model, Effect Msg )
 update msg model =
     case msg of
         GotPost (Ok ( post, sensitive, thread )) ->
-            ( { model | postStatus = PostLoaded post sensitive, thread = thread }, Effect.none )
+            ( { model | postStatus = PostLoaded post sensitive, thread = thread, replies = PostReplies.initStatic ("mastodon:" ++ model.instanceHost) thread.replies }, Effect.none )
 
         GotPost (Err _) ->
             ( { model | postStatus = PostFailed }, Effect.none )
@@ -123,6 +133,11 @@ update msg model =
 
         RevealSensitiveMediaClicked ->
             ( { model | sensitiveMediaRevealed = True }, Effect.none )
+
+        RepliesMsg subMsg ->
+            PostReplies.updateStatic subMsg model.replies
+                |> Tuple.mapFirst (\replies -> { model | replies = replies })
+                |> Tuple.mapSecond (Effect.map RepliesMsg)
 
         StarredPanelMsg subMsg ->
             ( model, Effect.fromShared (Shared.StarredPanelMsg subMsg) )
@@ -157,7 +172,7 @@ view shared model =
             div []
                 [ FederatedThread.ancestorsView (threadConfig shared model.instanceHost) model.thread
                 , federatedPostView shared model.instanceHost model.sensitiveMediaRevealed sensitive displayPost
-                , FederatedThread.repliesView (threadConfig shared model.instanceHost) model.thread
+                , FederatedThread.repliesView (threadConfig shared model.instanceHost) RepliesMsg model.replies
                 ]
 
 
@@ -172,7 +187,7 @@ threadConfig shared instanceHost =
     }
 
 
-{-| No title, no URL row -- just the author (linking to their own `Components.Pages.MastodonUserProfilePage`,
+{-| No title, no URL row -- just the author (linking to their own `Components.Mastodon.MastodonUserProfilePage`,
 via `Authors.link`, same as any other federated post card does), the content, this post's own media
 (rendered the same `MultiMediaRenderer.view` way `Components.Posts.postDetail` renders a real Rellm
 post's, since `Shared.Federation.Mastodon.toPost` now populates `Post.media` the same way -- see its

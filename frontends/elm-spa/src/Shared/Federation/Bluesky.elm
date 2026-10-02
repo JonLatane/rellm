@@ -32,7 +32,7 @@ account at all (see `readHost`). See
 `Components.Posts.BlueskyPostId`) for how each gets wired into a real page.
 
 `ActorProfile`/`fetchActorProfile`/`fetchAuthorFeed`/`fetchFollowers`/`fetchFollows` back
-`Components.Pages.BlueskyUserProfilePage`/`BlueskyUsersPage` -- resolving one specific actor's own
+`Components.Bluesky.BlueskyUserProfilePage`/`BlueskyUsersPage` -- resolving one specific actor's own
 profile/authored-posts/followers/follows, rather than the connected account's own home timeline.
 Every one of these still needs a connected account's `accessToken` to authenticate with (there's no
 anonymous AT Proto access at all, same as everything else in this module), but works against _any_
@@ -219,7 +219,7 @@ exactly, including the `sensitiveMediaHiddenPlaceholder` sentinel: `media` is le
 blurred/behind a reveal button -- Rellm has no NSFW-filtering concept of its own for a `sensitive`
 flag to hook into, so a flagged post's images either never reach `Post.media` at all (every feed/card
 context -- `toPost`, used by `fetchPosts`/`searchPosts`/`fetchAuthorFeed`) or the viewer already
-explicitly opened this exact post (`includeSensitiveMedia`, `Components.Pages.BlueskyPostPage`'s own
+explicitly opened this exact post (`includeSensitiveMedia`, `Components.Bluesky.BlueskyPostPage`'s own
 `init`, via `fetchPost`). When media actually was stripped this way, `media` becomes
 `[ sensitiveMediaHiddenPlaceholder ]` rather than plain `[]`, so `Components.Posts.hasHiddenSensitiveMedia`
 can tell "hidden sensitive media" apart from "no media at all" -- see `sensitiveMediaHiddenId`'s own
@@ -404,7 +404,7 @@ an `Http.Error` the same as any other not-found. Response items are the same bar
 this, alone, doesn't strip a `sensitive` post's media. The `Bool` alongside `Post` is
 `feedPost.sensitive` itself -- see `Shared.Federation.Mastodon.fetchStatus`'s own doc on why that's
 still needed even though `toPostIncludingSensitiveMedia` already includes the media unconditionally
-(`Components.Pages.BlueskyPostPage`'s own `sensitiveMediaRevealed`).
+(`Components.Bluesky.BlueskyPostPage`'s own `sensitiveMediaRevealed`).
 -}
 fetchPost : String -> String -> Task Http.Error ( Post, Bool )
 fetchPost accessToken uri =

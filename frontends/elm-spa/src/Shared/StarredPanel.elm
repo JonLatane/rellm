@@ -1429,7 +1429,7 @@ fetchGroup accountsPanelModel ( host, postIds ) ( posts, cmds ) =
 Jonline-only), so this just fetches directly: `Mastodon.fetchStatus` for a
 `"mastodon:"` host (no auth needed), or `Bluesky.fetchPost` using whichever
 connected Bluesky account comes first for a `"bluesky:"` host (same
-"any connected token works" reasoning as `Components.Pages.BlueskyPostPage.init`
+"any connected token works" reasoning as `Components.Bluesky.BlueskyPostPage.init`
 -- reading a public post doesn't need to be that account's own). With no
 Bluesky account connected at all, AT Protocol has no anonymous read, so those
 posts are marked `ServerUnavailable` same as an unreachable Jonline server.
@@ -2720,7 +2720,7 @@ falls back to `ToggleFederatedStar` if `host` is a Mastodon/Bluesky host
 instead (see `Components.Posts.isFederatedHost`), and only `Nothing` if
 it's neither (nothing to star it against). Shared by every page that
 renders a `postCard`/`postDetail` (`Pages.Home_`, `Pages.Post.PostId_`,
-`Components.Pages.MastodonPostPage`/`BlueskyPostPage`, and this module's own
+`Components.Mastodon.MastodonPostPage`/`BlueskyPostPage`, and this module's own
 `starredPostView`) so each doesn't re-derive the same "look up the server,
 then wrap `ToggleStar`" logic.
 -}

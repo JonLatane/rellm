@@ -93,7 +93,7 @@ type FederatedListingType
 enough to fetch and link back to the target account: `MastodonAccountTarget`'s `accountId` is
 resolved ahead of time by the caller (`Mastodon.lookupAccount`, since `fetchFollowers`/`fetchFollowing`
 key off it, not the username) -- `Pages.UsernameOrCustomTab_.Followers`/`Following` do this
-themselves before ever calling `init`, mirroring `Components.Pages.MastodonUserProfilePage.init`'s
+themselves before ever calling `init`, mirroring `Components.Mastodon.MastodonUserProfilePage.init`'s
 identical two-step resolve-then-fetch shape. A Bluesky target needs no such resolution -- `handle`
 alone is what every AT Proto call already keys off.
 -}
@@ -652,7 +652,7 @@ fetchSourceEffect shared model source =
                     -- Proto has no anonymous access -- see `Shared.Federation.Bluesky`'s own doc).
                     -- Resolves immediately to `UsersFailed` (rather than `Effect.none`, which would
                     -- leave this source stuck at `Loading` forever) -- mirrors
-                    -- `Components.Pages.BlueskyUserProfilePage.init`'s identical fallback.
+                    -- `Components.Bluesky.BlueskyUserProfilePage.init`'s identical fallback.
                     Task.fail (Http.BadStatus 401)
                         |> Task.attempt (fromFederatedResult >> GotUsers key)
                         |> Effect.fromCmd
@@ -794,7 +794,7 @@ no-op once already in sync via the same equality check.
 A no-op entirely once `model.federatedTarget` is set -- there's no federated-account counterpart to
 `Breadcrumbs.BreadcrumbRoot` to build one from (every existing variant expects a real `Post`/`User`/
 Rellm host), so this simply leaves whatever root the page navigated here from in place, same
-"nothing to update" choice `Components.Pages.MastodonPostPage`/`BlueskyPostPage`/
+"nothing to update" choice `Components.Mastodon.MastodonPostPage`/`BlueskyPostPage`/
 `MastodonUserProfilePage`/`BlueskyUserProfilePage` already make by never touching breadcrumbs at all.
 
 -}

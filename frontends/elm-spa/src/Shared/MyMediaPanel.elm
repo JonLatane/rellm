@@ -87,9 +87,10 @@ type alias Model =
     , selectionType : Maybe SelectionType
     , status : FetchStatus
     , uploadStatus : UploadStatus
-      -- Pending upload jobs -- a set, not a FIFO queue: the smallest is taken next --
-      -- waiting behind the one in `uploadStatus`,
-      -- and the current batch's byte totals for the overall progress meter.
+
+    -- Pending upload jobs -- a set, not a FIFO queue: the smallest is taken next --
+    -- waiting behind the one in `uploadStatus`,
+    -- and the current batch's byte totals for the overall progress meter.
     , pendingUploads : List File
     , uploadTotalBytes : Int
     , uploadDoneBytes : Int
@@ -983,7 +984,7 @@ startUploads accountsPanelModel model files =
             case resolve accountsPanelModel model.targetHost of
                 Ok resolved ->
                     ( { batched | uploadStatus = Uploading file (Just 0), pendingUploads = rest }
-                    , uploadTask accountsPanelModel resolved model.targetHost file
+                    , uploadTask accountsPanelModel resolved model.targetHost
                         |> Task.attempt (GotUploadCredentials file)
                     , ( Nothing, Nothing )
                     )
@@ -1093,15 +1094,16 @@ deleteTask accountsPanelModel account media =
 keeps `performWithAccountServer`'s resolution meaningful even though this only
 ever runs for the account this panel was opened for.
 -}
-uploadTask : AccountsPanel.Model -> Resolved -> String -> File -> Task Grpc.Error ( Maybe AccountsPanel.Msg, ( RellmServer, String ) )
-uploadTask accountsPanelModel resolved host file =
+uploadTask : AccountsPanel.Model -> Resolved -> String -> Task Grpc.Error ( Maybe AccountsPanel.Msg, ( RellmServer, String ) )
+uploadTask accountsPanelModel resolved host =
     AccountsPanel.performWithAccountServer
         accountsPanelModel
         ( Just resolved.account.userId, host )
         (\server token -> Task.succeed ( server, token ))
 
 
-{-| Tracker id for the one upload in flight (`Http.track`/`Http.cancel`). -}
+{-| Tracker id for the one upload in flight (`Http.track`/`Http.cancel`).
+-}
 uploadTrackerId : String
 uploadTrackerId =
     "my-media-panel-upload"
@@ -1117,8 +1119,7 @@ postMediaCmd server token file =
         -- `server` is reached via `performWithAccountServer`, which only ever
         -- resolves to a connected server -- unreachable in practice.
         Nothing ->
-            Task.perform GotUploadResult (Task.succeed (Err Grpc.NetworkError))
-                |> always (Task.attempt GotUploadResult (Task.fail Grpc.NetworkError))
+            Task.attempt GotUploadResult (Task.fail Grpc.NetworkError)
 
         Just connection ->
             Http.request
@@ -1404,14 +1405,6 @@ uploadStatusView model =
                 isBatch =
                     not (List.isEmpty model.pendingUploads) || model.uploadDoneBytes > 0
 
-                overallFraction : Float
-                overallFraction =
-                    if model.uploadTotalBytes <= 0 then
-                        0
-
-                    else
-                        (toFloat model.uploadDoneBytes + fileFraction * toFloat (File.size file)) / toFloat model.uploadTotalBytes
-
                 meter : Float -> Html Msg
                 meter fraction =
                     Html.progress
@@ -1426,6 +1419,15 @@ uploadStatusView model =
                  , meter fileFraction
                  ]
                     ++ (if isBatch then
+                            let
+                                overallFraction : Float
+                                overallFraction =
+                                    if model.uploadTotalBytes <= 0 then
+                                        0
+
+                                    else
+                                        (toFloat model.uploadDoneBytes + fileFraction * toFloat (File.size file)) / toFloat model.uploadTotalBytes
+                            in
                             [ meter overallFraction
                             , text ("Overall " ++ String.fromInt (round (100 * overallFraction)) ++ "% (" ++ String.fromInt (List.length model.pendingUploads) ++ " more)")
                             ]
@@ -1910,7 +1912,7 @@ zoomSliderView windowWidth model =
 
 
 {-| The slider works in log-space (`zoomSliderView`'s value is `ln zoom`), so each notch changes
-tile size by a constant *percentage* -- at small sizes a notch moves the tiles by only a few px
+tile size by a constant _percentage_ -- at small sizes a notch moves the tiles by only a few px
 (few tiles reflow per step), instead of the large linear steps that make a zoomed-out grid jump.
 -}
 minZoom : Float

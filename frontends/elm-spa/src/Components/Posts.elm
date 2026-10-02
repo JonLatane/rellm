@@ -1684,7 +1684,7 @@ parseFederatedPostId id host =
 
 {-| Like `parseFederatedPostId /= Nothing`, but without needing a (usually irrelevant) `id` alongside
 `host` -- `postCardView` uses this to hide the title/link row for a Mastodon/Bluesky post's card
-(its own "View original" link lives only on the detail page, via `Components.Pages.MastodonPostPage`/
+(its own "View original" link lives only on the detail page, via `Components.Mastodon.MastodonPostPage`/
 `BlueskyPostPage`) and to mark its author row with "⇄".
 -}
 isFederatedHost : String -> Bool
@@ -1721,7 +1721,7 @@ left out of every feed/card context (see either module's `toPostWith`' own doc) 
 NSFW-filtering concept of its own to render it behind. `postCardView`/`replyCard` check this to show
 a "This post contains sensitive media" notice instead of silently rendering nothing, in place of
 their usual `MultiMediaRenderer` call -- clicking through (the whole card is already one big link, see
-`postCardView`'s own `.post-card-link-overlay`) reaches `Components.Pages.MastodonPostPage`/
+`postCardView`'s own `.post-card-link-overlay`) reaches `Components.Mastodon.MastodonPostPage`/
 `BlueskyPostPage`, the only place this post's media actually renders (via `toPostIncludingSensitiveMedia`).
 -}
 hasHiddenSensitiveMedia : Post -> Bool

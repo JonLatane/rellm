@@ -1,4 +1,4 @@
-module Components.PostReplies exposing (Model, Msg, ReplyLoadStatus, init, refresh, subscriptions, update, view)
+module Components.PostReplies exposing (Model, Msg, ReplyLoadStatus, init, initStatic, refresh, subscriptions, update, updateStatic, view)
 
 {-| Threaded replies for a single Post (see `Pages.Post.PostId_`) -- the
 `Post` proto is itself recursive/graph-shaped via its own `replies` field (see
@@ -33,7 +33,7 @@ import Grpc
 import Html exposing (Html, div, span, text)
 import Html.Attributes exposing (class, style)
 import Html.Keyed
-import Proto.Rellm exposing (GetPostsResponse, Post, unwrapPost, wrapPost)
+import Proto.Rellm exposing (GetPostsResponse, Post, defaultPost, unwrapPost, wrapPost)
 import Set exposing (Set)
 import Shared
 import Shared.AccountsPanel as AccountsPanel
@@ -49,6 +49,10 @@ type alias Model =
     , statuses : Dict String ReplyLoadStatus
     , replyAnimations : Dict String ReplyAnimation
     , collapsedReplies : Set String
+
+    -- A fully-fetched, read-only tree (a Mastodon/Bluesky thread, see `initStatic`) -- every node
+    -- counts as loaded, so only the Expand/Collapse toggle ever shows.
+    , static : Bool
     }
 
 
@@ -100,6 +104,7 @@ init accountsPanelModel maybeUserId host post =
                 , statuses = Dict.empty
                 , replyAnimations = Dict.empty
                 , collapsedReplies = Set.empty
+                , static = False
                 }
     in
     if List.isEmpty post.replies && (post.replyCount > 0 || post.responseCount > 0) then
@@ -107,6 +112,22 @@ init accountsPanelModel maybeUserId host post =
 
     else
         ( model, Effect.none )
+
+
+{-| A `Model` over an already-complete reply tree (`replies` are `root`'s direct replies, each
+carrying its own nested `replies`) with nothing to fetch -- how `Components.FederatedThread` gives
+Mastodon/Bluesky threads the same FLIP-animated expand/collapse Rellm's own replies get.
+-}
+initStatic : String -> List Post -> Model
+initStatic host replies =
+    syncAnimations
+        { root = { defaultPost | replies = List.map wrapPost replies }
+        , host = host
+        , statuses = Dict.empty
+        , replyAnimations = Dict.empty
+        , collapsedReplies = Set.empty
+        , static = True
+        }
 
 
 subscriptions : Model -> Sub Msg
@@ -141,6 +162,29 @@ update accountsPanelModel maybeUserId msg model =
         GotReplies postId (Err _) ->
             ( { model | statuses = Dict.insert postId ReplyLoadFailed model.statuses }, Effect.none )
 
+        Animate _ ->
+            updateLocal msg model
+
+        RemoveReply _ ->
+            updateLocal msg model
+
+        ToggleCollapsed _ ->
+            updateLocal msg model
+
+
+{-| `update` for a `static` model (see `initStatic`) -- no fetching, so no `AccountsPanel.Model`/
+user id needed; just the animation/collapse messages.
+-}
+updateStatic : Msg -> Model -> ( Model, Effect Msg )
+updateStatic =
+    updateLocal
+
+
+{-| The animation/collapse half of `update`, which never touches the network.
+-}
+updateLocal : Msg -> Model -> ( Model, Effect Msg )
+updateLocal msg model =
+    case msg of
         Animate animMsg ->
             let
                 step : String -> ReplyAnimation -> ( Dict String ReplyAnimation, List (Cmd Msg) ) -> ( Dict String ReplyAnimation, List (Cmd Msg) )
@@ -170,6 +214,9 @@ update accountsPanelModel maybeUserId msg model =
                         Set.insert postId model.collapsedReplies
             in
             ( syncAnimations { model | collapsedReplies = collapsedReplies }, Effect.none )
+
+        _ ->
+            ( model, Effect.none )
 
 
 {-| Re-fetches `root`'s own direct replies (unconditionally, `initialReplyDepth`
@@ -260,7 +307,7 @@ view :
     , onMediaClicked : Post -> String -> msg
     , mediaPlayState : MediaRenderer.Model
     , onMediaPlayClicked : String -> msg
-    , onReplyClicked : Post -> msg
+    , onReplyClicked : Maybe (Post -> msg)
     , toMsg : Msg -> msg
     }
     -> Model
@@ -269,11 +316,14 @@ view config model =
     let
         items : List ( Int, Post, Flip.State Msg )
         items =
-            flattenReplies model.collapsedReplies model.root
+            -- Walk the *whole* tree (ignoring `collapsedReplies`) so a reply that's mid fade-out
+            -- after a collapse keeps rendering at its exact existing rank until `RemoveReply`
+            -- drops it from `replyAnimations` -- see `Flip.remove`'s doc.
+            flattenReplies Set.empty model.root
                 |> List.filterMap
-                    (\( depth, post ) ->
+                    (\( _, post ) ->
                         Dict.get post.id model.replyAnimations
-                            |> Maybe.map (\anim -> ( depth, post, anim.flip ))
+                            |> Maybe.map (\anim -> ( anim.depth, anim.post, anim.flip ))
                     )
     in
     if List.isEmpty items then
@@ -305,7 +355,7 @@ replyAnimationView :
         , onMediaClicked : Post -> String -> msg
         , mediaPlayState : MediaRenderer.Model
         , onMediaPlayClicked : String -> msg
-        , onReplyClicked : Post -> msg
+        , onReplyClicked : Maybe (Post -> msg)
         , toMsg : Msg -> msg
     }
     -> Model
@@ -315,7 +365,7 @@ replyAnimationView config model ( depth, post, flip ) =
     let
         loaded : Bool
         loaded =
-            Dict.get post.id model.statuses == Just ReplyLoaded
+            model.static || Dict.get post.id model.statuses == Just ReplyLoaded
 
         loading : Bool
         loading =
@@ -349,7 +399,7 @@ replyAnimationView config model ( depth, post, flip ) =
                 loaded
                 loading
                 collapsed
-                (Just (config.onReplyClicked post))
+                (Maybe.map (\onReply -> onReply post) config.onReplyClicked)
                 (Just (config.toMsg (LoadRepliesClicked post.id)))
                 (Just (config.toMsg (ToggleCollapsed post.id)))
                 post

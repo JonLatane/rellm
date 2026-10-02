@@ -28,11 +28,11 @@ tries those literal static routes first, so this file's `init` never even runs f
 -}
 
 import Browser.Navigation
-import Components.Pages.BlueskyUserProfilePage as BlueskyUserProfilePage
+import Components.Bluesky.BlueskyUserProfilePage as BlueskyUserProfilePage
 import Components.Pages.EventsPage as EventsPage
 import Components.Pages.MarketPage as MarketPage
 import Components.Pages.MediaPage as MediaPage
-import Components.Pages.MastodonUserProfilePage as MastodonUserProfilePage
+import Components.Mastodon.MastodonUserProfilePage as MastodonUserProfilePage
 import Components.Pages.PostOrEventPage as PostOrEventPage
 import Components.Pages.PostPage as PostPage
 import Components.Pages.PostsPage as PostsPage

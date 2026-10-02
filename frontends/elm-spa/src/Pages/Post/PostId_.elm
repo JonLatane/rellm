@@ -4,15 +4,15 @@ module Pages.Post.PostId_ exposing (Model, Msg, fromShared, page)
 some other federated server. Dispatches to one of three underlying pages, based on
 `Components.Posts.parseFederatedPostId`: a real Rellm post goes to `Components.Pages.PostPage`
 (mirrors `Pages.About`'s own direct-alias shape around `Components.Pages.ServerInformationPage`), a
-Mastodon post to `Components.Pages.MastodonPostPage`, a Bluesky post to
-`Components.Pages.BlueskyPostPage`. `Components.Pages.PostPage` itself is also reused, unmodified, by
+Mastodon post to `Components.Mastodon.MastodonPostPage`, a Bluesky post to
+`Components.Bluesky.BlueskyPostPage`. `Components.Pages.PostPage` itself is also reused, unmodified, by
 `Pages.UsernameOrCustomTab_` (once a custom tab's own `path` resolves to a `TargetPost`, always a real
 Rellm post -- see that module's `initEmbedded`) so a vanity URL like `/weddings` renders
 indistinguishably from this page itself.
 -}
 
-import Components.Pages.BlueskyPostPage as BlueskyPostPage
-import Components.Pages.MastodonPostPage as MastodonPostPage
+import Components.Bluesky.BlueskyPostPage as BlueskyPostPage
+import Components.Mastodon.MastodonPostPage as MastodonPostPage
 import Components.Pages.PostPage as PostPage
 import Components.Posts as Posts
 import Effect exposing (Effect)
@@ -123,11 +123,11 @@ subscriptions model =
         RellmPost subModel ->
             Sub.map RellmPostMsg (PostPage.subscriptions subModel)
 
-        MastodonPost _ ->
-            Sub.none
+        MastodonPost subModel ->
+            Sub.map MastodonPostMsg (MastodonPostPage.subscriptions subModel)
 
-        BlueskyPost _ ->
-            Sub.none
+        BlueskyPost subModel ->
+            Sub.map BlueskyPostMsg (BlueskyPostPage.subscriptions subModel)
 
 
 view : Shared.Model -> Request.With Params -> Model -> View Msg

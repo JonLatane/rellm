@@ -1,19 +1,19 @@
-module Components.Pages.BlueskyUserProfilePage exposing (Model, Msg, fromShared, init, subscriptions, title, update, view)
+module Components.Bluesky.BlueskyUserProfilePage exposing (Model, Msg, fromShared, init, subscriptions, title, update, view)
 
 {-| A single Bluesky account's profile, read-only -- avatar/display name/bio/follower-and-following
 counts, plus that account's own authored posts (embedding `Components.Pages.PostsPage`, scoped to
 just this account via its `BlueskyAuthorFeed` `FeedSource`). No follow/moderation/permissions/sync
 affordances, no Events/Sync Sources/Sync Destinations/AI Providers sections -- none of that
-makes sense for an account Rellm doesn't own, mirroring `Components.Pages.BlueskyPostPage`'s own
+makes sense for an account Rellm doesn't own, mirroring `Components.Bluesky.BlueskyPostPage`'s own
 read-only scope one level up (a whole profile instead of a single post).
 
 Routed to from `Pages.UsernameOrCustomTab_`/`Pages.User.UserId_` once
 `Components.Users.parseFederatedUserId` recognizes the route's host as Bluesky's -- see that
-function's own doc, and `Components.Pages.MastodonUserProfilePage` for the ActivityPub counterpart.
+function's own doc, and `Components.Mastodon.MastodonUserProfilePage` for the ActivityPub counterpart.
 Followers/following lists live at their own routes (`/:handle@bluesky:.../followers`/`/following`),
 backed by `Components.Pages.BlueskyUsersPage` -- see `Components.Users.followersHref`/`followingHref`.
 
-Fails outright (mirrors `Components.Pages.BlueskyPostPage.init`) if no Bluesky account is connected at
+Fails outright (mirrors `Components.Bluesky.BlueskyPostPage.init`) if no Bluesky account is connected at
 all -- AT Protocol has no anonymous access to anything, so there's no way to view _any_ profile
 without at least one connected account to authenticate the request with.
 
@@ -61,7 +61,7 @@ type Msg
 {-| `handle` comes straight from `Components.Users.parseFederatedUserId`'s `BlueskyUserId` -- see
 that type's own doc on how it's picked back apart from the route. `navKey`/`path`/`query` are
 threaded straight through to the embedded `PostsPage`, once `Bluesky.fetchActorProfile` resolves (see
-`update`) -- mirrors `Components.Pages.MastodonUserProfilePage.init` exactly, just authenticated
+`update`) -- mirrors `Components.Mastodon.MastodonUserProfilePage.init` exactly, just authenticated
 against whichever connected Bluesky account comes first (see this module's own doc on why one has to
 be connected at all).
 -}
@@ -139,7 +139,7 @@ update shared msg model =
                     ( model, Effect.none )
 
         SharedMsgReceived subMsg ->
-            -- See `Components.Pages.MastodonUserProfilePage.update`'s identical `SharedMsgReceived`
+            -- See `Components.Mastodon.MastodonUserProfilePage.update`'s identical `SharedMsgReceived`
             -- doc -- the embedded `PostsPage` re-emits `Effect.fromShared subMsg` on its own once it
             -- exists; before that, this does it directly.
             case model.posts of
@@ -241,7 +241,7 @@ profileCountView maybeHref label count =
 
 
 {-| Just the subtitle -- the loaded profile's own handle, or "Profile" before it's loaded -- for the
-calling page's own `UI.pageTitle`. Mirrors `Components.Pages.BlueskyPostPage.title`.
+calling page's own `UI.pageTitle`. Mirrors `Components.Bluesky.BlueskyPostPage.title`.
 -}
 title : Model -> String
 title model =

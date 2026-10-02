@@ -1,16 +1,18 @@
 module Components.FederatedThread exposing (Config, ancestorsView, repliesView)
 
 {-| Renders a Mastodon/Bluesky post's surrounding conversation (see `Shared.Federation.Common.Thread`)
-with the same `Components.Posts.replyCard` Rellm's own replies use -- read-only (no Reply/load-more/
-collapse affordances, since a federated thread arrives fully fetched and Rellm can't post into it).
-`ancestorsView` goes above the post itself, `repliesView` below it.
+with the same `Components.Posts.replyCard` Rellm's own replies use -- read-only (no Reply/load-more
+affordances, since a federated thread arrives fully fetched and Rellm can't post into it). `ancestorsView`
+goes above the post itself, `repliesView` below it; the latter is a static `Components.PostReplies`
+(see `PostReplies.initStatic`), so it gets the same FLIP-animated expand/collapse as a Rellm thread.
 -}
 
 import Components.MediaRenderer as MediaRenderer
 import Components.Posts as Posts
-import Html exposing (Html, div, h3, text)
+import Components.PostReplies as PostReplies
+import Html exposing (Html, div, text)
 import Html.Attributes exposing (class)
-import Proto.Rellm exposing (Post, unwrapPost)
+import Proto.Rellm exposing (Post)
 import Shared.Federation.Common exposing (Thread)
 
 
@@ -39,29 +41,25 @@ ancestorsView config thread =
             (List.map (card config 0) thread.ancestors)
 
 
-{-| Every reply, flattened depth-first with increasing indentation (`replyCard`'s own `depth`), the
-same way `Components.PostReplies.view` flattens a Rellm thread.
+{-| Every reply, flattened depth-first with increasing indentation and per-reply expand/collapse --
+just `Components.PostReplies.view` over a model made by `PostReplies.initStatic`. `toMsg` wraps its
+`Msg` into the calling page's own.
 -}
-repliesView : Config msg -> Thread -> Html msg
-repliesView config thread =
-    if List.isEmpty thread.replies then
-        text ""
-
-    else
-        div [ class "federated-thread-replies" ]
-            (h3 [ class "federated-thread-heading" ] [ text "Replies" ]
-                :: flatten config 1 thread.replies
-            )
-
-
-flatten : Config msg -> Int -> List Post -> List (Html msg)
-flatten config depth posts =
-    List.concatMap
-        (\post ->
-            card config depth post
-                :: flatten config (depth + 1) (List.map unwrapPost post.replies)
-        )
-        posts
+repliesView : Config msg -> (PostReplies.Msg -> msg) -> PostReplies.Model -> Html msg
+repliesView config toMsg model =
+    PostReplies.view
+        { basePath = config.basePath
+        , viewingServerHost = config.viewingServerHost
+        , postServerHost = config.postServerHost
+        , maybeServer = Nothing
+        , maybeAccount = Nothing
+        , onMediaClicked = config.onMediaClicked
+        , mediaPlayState = config.mediaPlayState
+        , onMediaPlayClicked = config.onMediaPlayClicked
+        , onReplyClicked = Nothing
+        , toMsg = toMsg
+        }
+        model
 
 
 card : Config msg -> Int -> Post -> Html msg

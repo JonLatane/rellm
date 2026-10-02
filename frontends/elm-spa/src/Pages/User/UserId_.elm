@@ -4,16 +4,16 @@ module Pages.User.UserId_ exposing (Model, Msg, fromShared, page)
 `mainFrontendHost` or, with an `@host` suffix, some other federated server. Dispatches to one of
 three underlying pages, based on `Components.Users.parseFederatedUserId`: a real Rellm user goes to
 `Components.Pages.UserProfilePage` (mirrors `Pages.Post.PostId_`'s own three-way dispatch), a
-Mastodon account to `Components.Pages.MastodonUserProfilePage`, a Bluesky account to
-`Components.Pages.BlueskyUserProfilePage`. See `Pages.UsernameOrCustomTab_` for the `/:username[@host]`
+Mastodon account to `Components.Mastodon.MastodonUserProfilePage`, a Bluesky account to
+`Components.Bluesky.BlueskyUserProfilePage`. See `Pages.UsernameOrCustomTab_` for the `/:username[@host]`
 counterpart (the one every federated author link actually generates -- see
 `Components.Users.parseFederatedUserId`'s own doc); this route's federated cases are reachable in
 principle (`id` doubles as the username for a Mastodon/Bluesky account, same as a real Rellm user's
 `/user/:id` fallback), just not one this app ever links to directly itself.
 -}
 
-import Components.Pages.BlueskyUserProfilePage as BlueskyUserProfilePage
-import Components.Pages.MastodonUserProfilePage as MastodonUserProfilePage
+import Components.Bluesky.BlueskyUserProfilePage as BlueskyUserProfilePage
+import Components.Mastodon.MastodonUserProfilePage as MastodonUserProfilePage
 import Components.Pages.UserProfilePage as UserProfilePage
 import Components.Users as Users
 import Components.Users.Resolver as Resolver

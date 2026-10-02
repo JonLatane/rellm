@@ -85,7 +85,7 @@ type alias Model =
     -- `FederatedAuthorsChanged`. See `Components.FederatedAuthors`.
     , federatedAuthors : List FederatedAuthor
 
-    -- Set only by `Components.Pages.MastodonUserProfilePage`/`BlueskyUserProfilePage`'s own embedded
+    -- Set only by `Components.Mastodon.MastodonUserProfilePage`/`BlueskyUserProfilePage`'s own embedded
     -- copy, to a `MastodonAccountFeed`/`BlueskyAuthorFeed` naming the one profile being viewed --
     -- see `relevantFeedSources`'s own doc on why this can't just reuse `author` (which is typed to a
     -- real Rellm `Proto.Rellm.User`, and whose own author-scoping is deliberately Rellm-only, see
@@ -475,7 +475,7 @@ every caller except `Components.Pages.UserProfilePage`, which passes `Just user.
 Mirrors `Components.Pages.EventsPage.init`'s own trailing param exactly.
 
 `profileFeedSource` seeds `Model.profileFeedSource` directly -- `Nothing` for every caller except
-`Components.Pages.MastodonUserProfilePage`/`BlueskyUserProfilePage`, which pass `Just` a
+`Components.Mastodon.MastodonUserProfilePage`/`BlueskyUserProfilePage`, which pass `Just` a
 `MastodonAccountFeed`/`BlueskyAuthorFeed` naming the one profile being viewed. See that field's own
 doc for why this couldn't just reuse `author` instead.
 
@@ -1050,7 +1050,7 @@ is never re-triggered by `applySearchChange`/`TabChanged` (see `refetchFeeds`'s 
 already-fetched federated post simply keeps showing, unfiltered by whatever search text is active --
 an accepted first-pass limitation on the standalone page already, not a new one introduced here.
 
-`model.profileFeedSource`, when set, overrides everything above outright -- `Components.Pages.MastodonUserProfilePage`/
+`model.profileFeedSource`, when set, overrides everything above outright -- `Components.Mastodon.MastodonUserProfilePage`/
 `BlueskyUserProfilePage` embed this module purely to show one specific federated profile's own posts
 (a `MastodonAccountFeed`/`BlueskyAuthorFeed`, see `Model.profileFeedSource`'s own doc), which has no
 Rellm server of its own to resolve via `relevantServers` at all -- unlike `model.author`'s Rellm-only
@@ -1212,7 +1212,7 @@ fetchFeedSource shared model source =
                 [] ->
                     -- No connected Bluesky account to authenticate this request with at all (AT
                     -- Proto has no anonymous access -- see `Shared.Federation.Bluesky`'s own doc) --
-                    -- `Components.Pages.BlueskyUserProfilePage.init` already refuses to even mount
+                    -- `Components.Bluesky.BlueskyUserProfilePage.init` already refuses to even mount
                     -- this `FeedSource` in that case (see its own doc), so this is unreachable in
                     -- practice; `Effect.none` rather than a synthetic failure since there's no
                     -- `BlueskyAccount` on hand for `fromBlueskyResult` to attribute one to.

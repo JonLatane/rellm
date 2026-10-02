@@ -474,7 +474,7 @@ usernameHref basePath viewingServerHost userServerHost username =
 
 {-| The `/:username[@host]/followers` href for a user -- same username-routability caveat as
 `usernameHref` itself (only meaningful for a real, non-reserved username), used directly by
-`Components.Pages.MastodonUserProfilePage`/`BlueskyUserProfilePage` (a federated profile always has a
+`Components.Mastodon.MastodonUserProfilePage`/`BlueskyUserProfilePage` (a federated profile always has a
 real, routable username -- there's no id-based fallback route for one, unlike a Rellm `User`).
 -}
 followersHref : String -> String -> String -> String -> String
@@ -533,8 +533,8 @@ parseUserRouteId mainFrontendHost rawId =
 `href` is ultimately built from -- see `Components.Authors.href`), mirroring
 `Components.Posts.parseFederatedPostId` exactly, one level up (a profile instead of a post).
 `Nothing` for a real Rellm user's own `host` (or anything else unrecognized).
-`Components.Pages.MastodonUserProfilePage`/`BlueskyUserProfilePage` are this module's own
-counterparts to `Components.Pages.MastodonPostPage`/`BlueskyPostPage` -- see
+`Components.Mastodon.MastodonUserProfilePage`/`BlueskyUserProfilePage` are this module's own
+counterparts to `Components.Mastodon.MastodonPostPage`/`BlueskyPostPage` -- see
 `Pages.UsernameOrCustomTab_.initProfile`/`Pages.User.UserId_.init`, the two callers.
 -}
 type FederatedUserId

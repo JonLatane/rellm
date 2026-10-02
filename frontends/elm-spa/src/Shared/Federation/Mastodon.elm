@@ -28,7 +28,7 @@ route's post id parses as `Components.Posts.MastodonPostId` -- viewing one post 
 browsing a timeline, needs no Rellm server involved at all.
 
 `Account`/`lookupAccount`/`fetchAccountStatuses`/`fetchFollowers`/`fetchFollowing` back
-`Components.Pages.MastodonUserProfilePage`/`MastodonUsersPage` -- unlike everything else here, these
+`Components.Mastodon.MastodonUserProfilePage`/`MastodonUsersPage` -- unlike everything else here, these
 resolve a specific _account_, not a timeline, so a viewed profile's own posts/followers/following can
 be shown rather than just a whole instance's local timeline. All still unauthenticated: Mastodon's
 public API serves an unlocked account's own profile/statuses/followers/following with no token at
@@ -185,7 +185,7 @@ otherwise) -- Rellm has no NSFW-filtering concept of its own to hook a "sensitiv
 comparable exists for a native Rellm post), so the only two options for a flagged Mastodon status'
 media are "never render it via `Post.media` at all" (every feed/card context -- `toPost`, used by
 `fetchPosts`/`fetchAccountStatuses`) or "the viewer already explicitly opened this exact post" (the
-one case `includeSensitiveMedia` allows -- see `Components.Pages.MastodonPostPage`, whose `init` is
+one case `includeSensitiveMedia` allows -- see `Components.Mastodon.MastodonPostPage`, whose `init` is
 the only caller of `toPostIncludingSensitiveMedia`, via `fetchStatus`). When media actually was
 stripped this way, `media` becomes `[ sensitiveMediaHiddenPlaceholder ]` rather than plain `[]`, so
 `Components.Posts.hasHiddenSensitiveMedia` can tell "hidden sensitive media" apart from "no media at
@@ -305,7 +305,7 @@ function's own doc on why this, alone among every fetch here, doesn't strip a `s
 media. Unlike `fetchPosts`, this works regardless of whether `local=true` would apply -- a direct id
 lookup isn't scoped to "this instance's own timeline" the way browsing one is. The `Bool` alongside
 `Post` is `status.sensitive` itself -- `toPostIncludingSensitiveMedia` already folds `sensitive`
-media _into_ `Post.media` unconditionally, so this is `Components.Pages.MastodonPostPage`'s only way
+media _into_ `Post.media` unconditionally, so this is `Components.Mastodon.MastodonPostPage`'s only way
 to still tell "sensitive, shown because the viewer clicked past a warning" apart from "never flagged
 at all" -- see that module's own `sensitiveMediaRevealed`.
 -}

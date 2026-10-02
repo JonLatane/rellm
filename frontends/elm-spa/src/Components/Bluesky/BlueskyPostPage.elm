@@ -1,4 +1,4 @@
-module Components.Pages.BlueskyPostPage exposing (Model, Msg, init, title, update, view)
+module Components.Bluesky.BlueskyPostPage exposing (Model, Msg, init, subscriptions, title, update, view)
 
 {-| A single Bluesky post, read-only -- no reply/edit/delete/visibility/moderation/sync-destination
 affordances (none of that makes sense for a post Rellm doesn't own). Just its author, content, a link
@@ -8,7 +8,7 @@ below -- see `Shared.Federation.Bluesky.fetchThread` and `Components.FederatedTh
 Split out of `Components.Pages.PostPage` (which now only ever handles real Rellm posts) into its own
 dedicated page so `Pages.Post.PostId_` can route to this directly once
 `Components.Posts.parseFederatedPostId` recognizes the id as Bluesky's -- see that module's own doc,
-and `Components.Pages.MastodonPostPage` for the ActivityPub counterpart.
+and `Components.Mastodon.MastodonPostPage` for the ActivityPub counterpart.
 
 -}
 
@@ -17,6 +17,7 @@ import Components.FederatedThread as FederatedThread
 import Components.Markdown as Markdown
 import Components.MediaRenderer as MediaRenderer
 import Components.MultiMediaRenderer as MultiMediaRenderer
+import Components.PostReplies as PostReplies
 import Components.Posts as Posts
 import Effect exposing (Effect)
 import Html exposing (Html, a, button, div, p, span, text)
@@ -47,6 +48,9 @@ type alias Model =
 
     -- Fetched right after the post itself, best-effort -- stays `emptyThread` if that fails.
     , thread : Thread
+
+    -- `thread.replies` as a static, collapsible `Components.PostReplies` tree.
+    , replies : PostReplies.Model
     }
 
 
@@ -70,6 +74,7 @@ type Msg
     | ThreadMediaClicked Post String
     | RevealSensitiveMediaClicked
     | StarredPanelMsg StarredPanel.Msg
+    | RepliesMsg PostReplies.Msg
 
 
 {-| `uri` comes straight from `Components.Posts.parseFederatedPostId`'s `BlueskyPostId` -- see that
@@ -124,7 +129,7 @@ init shared uri =
                                     |> Task.map (\thread -> ( Nothing, ( post, sensitive ), thread ))
                             )
     in
-    ( { uri = uri, postStatus = LoadingPost, sensitiveMediaRevealed = False, thread = Common.emptyThread }
+    ( { uri = uri, postStatus = LoadingPost, sensitiveMediaRevealed = False, thread = Common.emptyThread, replies = PostReplies.initStatic "bluesky:" [] }
     , fetchTask |> Task.attempt (GotPost actingHandle) |> Effect.fromCmd
     )
 
@@ -137,11 +142,16 @@ as `needsReauth` (see `BlueskyAccounts.isReauthError`) marks it the same way
 "Reconnect" affordance in the Accounts Panel rather than just failing silently every time this page
 (or any other Bluesky-post link) is opened.
 -}
+subscriptions : Model -> Sub Msg
+subscriptions model =
+    Sub.map RepliesMsg (PostReplies.subscriptions model.replies)
+
+
 update : Msg -> Model -> ( Model, Effect Msg )
 update msg model =
     case msg of
         GotPost _ (Ok ( maybeRefreshedAccount, ( post, sensitive ), thread )) ->
-            ( { model | postStatus = PostLoaded post sensitive, thread = thread }
+            ( { model | postStatus = PostLoaded post sensitive, thread = thread, replies = PostReplies.initStatic "bluesky:" thread.replies }
             , maybeRefreshedAccount
                 |> Maybe.map (AccountsPanel.BlueskyAccountRefreshed >> Shared.AccountsPanelMsg >> Effect.fromShared)
                 |> Maybe.withDefault Effect.none
@@ -178,6 +188,11 @@ update msg model =
         RevealSensitiveMediaClicked ->
             ( { model | sensitiveMediaRevealed = True }, Effect.none )
 
+        RepliesMsg subMsg ->
+            PostReplies.updateStatic subMsg model.replies
+                |> Tuple.mapFirst (\replies -> { model | replies = replies })
+                |> Tuple.mapSecond (Effect.map RepliesMsg)
+
         StarredPanelMsg subMsg ->
             ( model, Effect.fromShared (Shared.StarredPanelMsg subMsg) )
 
@@ -211,7 +226,7 @@ view shared model =
             div []
                 [ FederatedThread.ancestorsView (threadConfig shared) model.thread
                 , federatedPostView shared model.sensitiveMediaRevealed sensitive displayPost
-                , FederatedThread.repliesView (threadConfig shared) model.thread
+                , FederatedThread.repliesView (threadConfig shared) RepliesMsg model.replies
                 ]
 
 
@@ -226,7 +241,7 @@ threadConfig shared =
     }
 
 
-{-| No title, no URL row -- just the author (linking to their own `Components.Pages.BlueskyUserProfilePage`,
+{-| No title, no URL row -- just the author (linking to their own `Components.Bluesky.BlueskyUserProfilePage`,
 via `Authors.link`, same as any other federated post card does), the content, this post's own media
 (rendered the same `MultiMediaRenderer.view` way `Components.Posts.postDetail` renders a real Rellm
 post's, since `Shared.Federation.Bluesky.toPost` now populates `Post.media` the same way -- see its

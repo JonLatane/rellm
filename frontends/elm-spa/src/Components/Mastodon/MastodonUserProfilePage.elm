@@ -1,15 +1,15 @@
-module Components.Pages.MastodonUserProfilePage exposing (Model, Msg, fromShared, init, subscriptions, title, update, view)
+module Components.Mastodon.MastodonUserProfilePage exposing (Model, Msg, fromShared, init, subscriptions, title, update, view)
 
 {-| A single Mastodon account's profile, read-only -- avatar/display name/bio/follower-and-following
 counts, plus that account's own authored posts (embedding `Components.Pages.PostsPage`, scoped to
 just this account via its `MastodonAccountFeed` `FeedSource`). No follow/moderation/permissions/sync
 affordances, no Events/Sync Sources/Sync Destinations/AI Providers sections -- none of that
-makes sense for an account Rellm doesn't own, mirroring `Components.Pages.MastodonPostPage`'s own
+makes sense for an account Rellm doesn't own, mirroring `Components.Mastodon.MastodonPostPage`'s own
 read-only scope one level up (a whole profile instead of a single post).
 
 Routed to from `Pages.UsernameOrCustomTab_`/`Pages.User.UserId_` once
 `Components.Users.parseFederatedUserId` recognizes the route's host as Mastodon's -- see that
-function's own doc, and `Components.Pages.BlueskyUserProfilePage` for the AT Protocol counterpart.
+function's own doc, and `Components.Bluesky.BlueskyUserProfilePage` for the AT Protocol counterpart.
 Followers/following lists live at their own routes (`/:username@host/followers`/`/following`), backed
 by `Components.Pages.MastodonUsersPage` -- see `Components.Users.followersHref`/`followingHref`.
 
@@ -212,7 +212,7 @@ profileCountView maybeHref label count =
 
 
 {-| Just the subtitle -- the loaded account's own handle, or "Profile" before it's loaded -- for the
-calling page's own `UI.pageTitle`. Mirrors `Components.Pages.MastodonPostPage.title`.
+calling page's own `UI.pageTitle`. Mirrors `Components.Mastodon.MastodonPostPage.title`.
 -}
 title : Model -> String
 title model =

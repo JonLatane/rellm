@@ -221,7 +221,7 @@ which is always a bare id with no `@host` suffix -- `Posts.parsePostRouteId` han
 way, since a bare id with no `@` just falls back to `mainFrontendHost`).
 
 A Mastodon/Bluesky post never reaches this module at all -- `Pages.Post.PostId_` routes those
-straight to `Components.Pages.MastodonPostPage`/`BlueskyPostPage` instead (see
+straight to `Components.Mastodon.MastodonPostPage`/`BlueskyPostPage` instead (see
 `Posts.parseFederatedPostId`, and that dispatcher's own doc) -- so everything below can assume a real
 Rellm post on some (possibly not-yet-connected) `RellmServer`.
 
@@ -1137,7 +1137,7 @@ repliesView shared model =
                 , onMediaClicked = MediaClicked
                 , mediaPlayState = shared.mediaRenderer
                 , onMediaPlayClicked = \mediaId -> SharedMsg (Shared.MediaRendererMsg (MediaRenderer.PlayClicked mediaId))
-                , onReplyClicked = ReplyClicked
+                , onReplyClicked = Just ReplyClicked
                 , toMsg = PostRepliesMsg
                 }
                 repliesModel
