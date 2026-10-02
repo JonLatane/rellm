@@ -1334,6 +1334,30 @@ the destination&#x26;#39;s resulting post ID/URL and last-synced time.
       See the two <a href="#authtopublic_keyrequesting_host-and-authfromencrypted_account_auth_tokens-receiving-side">Web UI</a>
       page routes below for the exact URL/crypto shape.
     </p>
+    <h5 id="developer-option-signing-in-to-an-unsecure-localhost"><a class="anchor" aria-hidden="true" tabindex="-1" href="#developer-option-signing-in-to-an-unsecure-localhost"><span class="octicon octicon-link"></span></a>Developer option: signing in to an unsecure <code>localhost</code></h5>
+    <p>
+      For local development, a frontend running at plaintext <code>http://localhost[:port]</code> can be the <em>requesting</em> side of the
+      flow above (e.g. signing in to your local dev server using an account from a production server). Since the
+      encrypted tokens are then handed to a non-TLS origin, this is <strong>off by default</strong> and opt-in per <em>sending</em> server:
+      an admin turns on <code>FederationInfo.unsecure_localhost_federated_auth_enabled</code> (checkbox on the Elm frontend's Server
+      Information > Federation tab, saved on toggle). Without it:
+    </p>
+    <ul>
+      <li>
+        <a href="#authtopublic_keyrequesting_host-sending-side"><code>/auth/to</code></a> refuses to log in or redirect when <code>{requesting_host}</code>
+        is <code>localhost</code>, disabling its submit button and showing an error;
+      </li>
+      <li>
+        <a href="#authfromencrypted_account_auth_tokens-receiving-side"><code>/auth/from</code></a>, when loaded over plain <code>http://</code>, will not
+        call <a href="#grpc-api-GetCurrentUser"><code>GetCurrentUser</code></a> with tokens from a server that hasn't opted in.
+      </li>
+    </ul>
+    <p>
+      With it enabled, <code>/auth/to</code> redirects to <code>http://localhost/...</code> (rather than <code>https://</code>) and shows a warning that the
+      sign-in is going to an unsecure localhost; only <code>localhost</code> is ever allowed over <code>http://</code>. This is purely a
+      frontend-enforced guard -- the backend can't stop a modified client from moving its own tokens anywhere -- so only
+      enable it on servers used for development.
+    </p>
     <h3 id="federation"><a class="anchor" aria-hidden="true" tabindex="-1" href="#federation"><span class="octicon octicon-link"></span></a>Federation</h3>
     <p>
       Whereas other federated social networks (e.g. ActivityPub) have both client-server and server-server APIs,

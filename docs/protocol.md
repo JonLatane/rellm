@@ -806,6 +806,22 @@ generated in its place, so it can&#39;t be reused for a second transfer.
 See the two [Web UI](#authtopublic_keyrequesting_host-and-authfromencrypted_account_auth_tokens-receiving-side)
 page routes below for the exact URL/crypto shape.
 
+##### Developer option: signing in to an unsecure `localhost`
+For local development, a frontend running at plaintext `http://localhost[:port]` can be the *requesting* side of the
+flow above (e.g. signing in to your local dev server using an account from a production server). Since the
+encrypted tokens are then handed to a non-TLS origin, this is **off by default** and opt-in per *sending* server:
+an admin turns on `FederationInfo.unsecure_localhost_federated_auth_enabled` (checkbox on the Elm frontend&#39;s Server
+Information &gt; Federation tab, saved on toggle). Without it:
+* [`/auth/to`](#authtopublic_keyrequesting_host-sending-side) refuses to log in or redirect when `{requesting_host}`
+is `localhost`, disabling its submit button and showing an error;
+* [`/auth/from`](#authfromencrypted_account_auth_tokens-receiving-side), when loaded over plain `http://`, will not
+call [`GetCurrentUser`](#grpc-api-GetCurrentUser) with tokens from a server that hasn&#39;t opted in.
+
+With it enabled, `/auth/to` redirects to `http://localhost/...` (rather than `https://`) and shows a warning that the
+sign-in is going to an unsecure localhost; only `localhost` is ever allowed over `http://`. This is purely a
+frontend-enforced guard -- the backend can&#39;t stop a modified client from moving its own tokens anywhere -- so only
+enable it on servers used for development.
+
 ### Federation
 Whereas other federated social networks (e.g. ActivityPub) have both client-server and server-server APIs,
 Rellm only has client-server APIs. While server-to-server communication is possible, nothing but some
