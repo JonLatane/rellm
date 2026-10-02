@@ -458,21 +458,90 @@ fn sniff_image_type(bytes: &[u8]) -> Option<(&'static str, &'static str)> {
     }
 }
 
+/// Whether `ip` is somewhere a link-preview fetch must never go (loopback, private/CGNAT,
+/// link-local incl. cloud metadata, multicast, unspecified, unique-local). The main image URL is
+/// controlled by whoever controls the linked page, so without this the job is an SSRF vector into
+/// the cluster's internal network.
+fn is_forbidden_ip(ip: std::net::IpAddr) -> bool {
+    use std::net::IpAddr;
+    match ip {
+        IpAddr::V4(v4) => {
+            let o = v4.octets();
+            v4.is_loopback()
+                || v4.is_private()
+                || v4.is_link_local()
+                || v4.is_broadcast()
+                || v4.is_multicast()
+                || v4.is_unspecified()
+                || (o[0] == 100 && (64..128).contains(&o[1])) // CGNAT 100.64.0.0/10
+        }
+        IpAddr::V6(v6) => {
+            if let Some(v4) = v6.to_ipv4_mapped() {
+                return is_forbidden_ip(IpAddr::V4(v4));
+            }
+            let first = v6.segments()[0];
+            v6.is_loopback()
+                || v6.is_unspecified()
+                || v6.is_multicast()
+                || (first & 0xfe00) == 0xfc00 // unique-local fc00::/7
+                || (first & 0xffc0) == 0xfe80 // link-local fe80::/10
+        }
+    }
+}
+
+/// Errors unless `url` is http(s) and every address its host resolves to is publicly routable.
+async fn ensure_public_http_url(url: &reqwest::Url) -> Result<(), anyhow::Error> {
+    if !matches!(url.scheme(), "http" | "https") {
+        anyhow::bail!("Refusing non-http(s) image URL {}", url);
+    }
+    let host = url
+        .host_str()
+        .ok_or_else(|| anyhow::anyhow!("Image URL {} has no host", url))?;
+    let port = url.port_or_known_default().unwrap_or(80);
+    let addrs: Vec<_> = tokio::net::lookup_host((host, port)).await?.collect();
+    if addrs.is_empty() || addrs.iter().any(|a| is_forbidden_ip(a.ip())) {
+        anyhow::bail!("Refusing to fetch image from non-public host {}", host);
+    }
+    Ok(())
+}
+
+const MAX_IMAGE_REDIRECTS: usize = 5;
+
 async fn download_main_image(
     image_url: &str,
     referer: &str,
 ) -> Result<(Vec<u8>, &'static str, &'static str), anyhow::Error> {
     crate::init_crypto();
+    // Redirects are followed by hand so each hop's host can be vetted (see `is_forbidden_ip`).
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(20))
+        .redirect(reqwest::redirect::Policy::none())
         .user_agent("Mozilla/5.0 (compatible; JonlineLinkPreview/1.0)")
         .build()?;
-    let response = client
-        .get(image_url)
-        .header("Referer", referer)
-        .send()
-        .await?
-        .error_for_status()?;
+    let mut current = reqwest::Url::parse(image_url)?;
+    let mut hops = 0;
+    let response = loop {
+        ensure_public_http_url(&current).await?;
+        let response = client
+            .get(current.clone())
+            .header("Referer", referer)
+            .send()
+            .await?;
+        if response.status().is_redirection() {
+            hops += 1;
+            let location = response
+                .headers()
+                .get(reqwest::header::LOCATION)
+                .and_then(|v| v.to_str().ok())
+                .ok_or_else(|| anyhow::anyhow!("Redirect from {} without Location", current))?;
+            if hops > MAX_IMAGE_REDIRECTS {
+                anyhow::bail!("Too many redirects fetching {}", image_url);
+            }
+            current = current.join(location)?;
+            continue;
+        }
+        break response.error_for_status()?;
+    };
     if response.content_length().map(|l| l as usize > MAX_MAIN_IMAGE_BYTES).unwrap_or(false) {
         anyhow::bail!("Main image {} is too large", image_url);
     }

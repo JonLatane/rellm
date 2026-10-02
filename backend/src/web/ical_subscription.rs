@@ -107,10 +107,10 @@ async fn ical_subscription(
         (Some(_), Some(title)) => calendar.name(&format!("{title} | {server_name}")),
         (Some(_), None) => calendar.name(&format!("Event | {server_name}")),
         (None, _) => match user_id {
-        Some(_) => calendar.name(&format!(
-            "{author_user_name} | Event Calendar | {server_name}"
-        )),
-        None => calendar.name(&format!("{server_name} | Event Calendar")),
+            Some(_) => calendar.name(&format!(
+                "{author_user_name} | Event Calendar | {server_name}"
+            )),
+            None => calendar.name(&format!("{server_name} | Event Calendar")),
         },
     };
     let anonymous_auth_tokens =

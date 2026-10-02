@@ -119,7 +119,10 @@ pub fn load_visible_rsvp_counts_and_ids(
     .bind::<Array<Text>, _>(anonymous_auth_tokens)
     .bind::<Array<Text>, _>(&passing)
     .load(conn)
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        log::error!("Failed to load RSVP counts: {:?}", e);
+        vec![]
+    });
 
     let mut counts: HashMap<i64, RsvpCounts> = HashMap::new();
     for row in count_rows {
@@ -152,7 +155,10 @@ pub fn load_visible_rsvp_counts_and_ids(
     .bind::<Array<Text>, _>(&passing)
     .bind::<BigInt, _>(MAX_RSVPS_PER_OCCASION)
     .load(conn)
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        log::error!("Failed to load capped RSVP ids: {:?}", e);
+        vec![]
+    });
 
     (counts, ids.into_iter().map(|r| r.id).collect())
 }
