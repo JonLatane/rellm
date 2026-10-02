@@ -978,6 +978,22 @@ the Events page, and the user profile pages for all users with events in the las
 &#34;Subscribe&#34; to a user&#39;s calendar at, for instance, `https://jonline.io/calendar.ics?user_id=CruFm` to get a
 calendar of all public events for that user.
 
+##### `GET /calendar.ics?post_id={id}`: Event or Occasion Calendar
+Serves a calendar for a single [`Event`](#rellm-Event) -- e.g. for an &#34;Add to Calendar&#34; download. If `post_id` is
+the Event&#39;s own Post ID, every one of its [`Occasion`](#rellm-Occasion)s is included; if it is an Occasion&#39;s Post ID,
+only that Occasion is. `post_id` takes precedence over `user_id`, and the calendar is named after the Event&#39;s title.
+Each VEVENT has a stable `UID` of `{occasion_post_id}@{frontend_domain}`, so re-importing updates rather than
+duplicates. In the Elm frontend, this powers the event/occasion &#34;Add to Calendar&#34; export.
+
+##### `GET /calendar.ics?anonymous_auth_token={token}`: Anonymous RSVP Calendar
+Optional on any of the `/calendar.ics` forms above. Passed straight through to
+`GetEventsRequest.anonymous_attendee_auth_token`, so it accepts the same forms: a plain `&lt;token&gt;`, or several as
+`&lt;occasionId&gt;-&lt;token&gt;--&lt;occasionId&gt;-&lt;token&gt;...` (as in the web frontends&#39; `?anonymousAuthToken=` parameter). It reveals
+the real location of Occasions whose location is hidden until the viewer&#39;s RSVP is approved
+(`EventInfo.hide_location_until_rsvp_approved`), and adds a &#34;manage your RSVP&#34; link
+(`/event/{occasion_id}?anonymousAuthToken={token}`) to the description of each Occasion the token holds an RSVP for.
+Treat such URLs as secrets, since the token alone grants control of that RSVP.
+
 ##### `GET /rss.xml` / `GET /atom.xml`: Server Posts Feed
 The reverse direction of a `SyncSource`&#39;s own RSS/Atom subscription (see the SyncSources section above): serves
 Rellm&#39;s own [`Post`](#rellm-Post)s back out as a feed, only public Posts included. &#34;Subscribe&#34; to a Rellm server

@@ -1545,6 +1545,24 @@ the destination&#x26;#39;s resulting post ID/URL and last-synced time.
       "Subscribe" to a user's calendar at, for instance, <code>https://jonline.io/calendar.ics?user_id=CruFm</code> to get a
       calendar of all public events for that user.
     </p>
+    <h5 id="get-calendaricspost_idid-event-or-occasion-calendar"><a class="anchor" aria-hidden="true" tabindex="-1" href="#get-calendaricspost_idid-event-or-occasion-calendar"><span class="octicon octicon-link"></span></a><code>GET /calendar.ics?post_id={id}</code>: Event or Occasion Calendar</h5>
+    <p>
+      Serves a calendar for a single <a href="#rellm-Event"><code>Event</code></a> -- e.g. for an "Add to Calendar" download. If <code>post_id</code> is
+      the Event's own Post ID, every one of its <a href="#rellm-Occasion"><code>Occasion</code></a>s is included; if it is an Occasion's Post ID,
+      only that Occasion is. <code>post_id</code> takes precedence over <code>user_id</code>, and the calendar is named after the Event's title.
+      Each VEVENT has a stable <code>UID</code> of <code>{occasion_post_id}@{frontend_domain}</code>, so re-importing updates rather than
+      duplicates. In the Elm frontend, this powers the event/occasion "Add to Calendar" export.
+    </p>
+    <h5 id="get-calendaricsanonymous_auth_tokentoken-anonymous-rsvp-calendar"><a class="anchor" aria-hidden="true" tabindex="-1" href="#get-calendaricsanonymous_auth_tokentoken-anonymous-rsvp-calendar"><span class="octicon octicon-link"></span></a><code>GET /calendar.ics?anonymous_auth_token={token}</code>: Anonymous RSVP Calendar</h5>
+    <p>
+      Optional on any of the <code>/calendar.ics</code> forms above. Passed straight through to
+      <code>GetEventsRequest.anonymous_attendee_auth_token</code>, so it accepts the same forms: a plain <code>&#x26;lt;token&#x26;gt;</code>, or several as
+      <code>&#x26;lt;occasionId&#x26;gt;-&#x26;lt;token&#x26;gt;--&#x26;lt;occasionId&#x26;gt;-&#x26;lt;token&#x26;gt;...</code> (as in the web frontends' <code>?anonymousAuthToken=</code> parameter). It reveals
+      the real location of Occasions whose location is hidden until the viewer's RSVP is approved
+      (<code>EventInfo.hide_location_until_rsvp_approved</code>), and adds a "manage your RSVP" link
+      (<code>/event/{occasion_id}?anonymousAuthToken={token}</code>) to the description of each Occasion the token holds an RSVP for.
+      Treat such URLs as secrets, since the token alone grants control of that RSVP.
+    </p>
     <h5 id="get-rssxml--get-atomxml-server-posts-feed"><a class="anchor" aria-hidden="true" tabindex="-1" href="#get-rssxml--get-atomxml-server-posts-feed"><span class="octicon octicon-link"></span></a><code>GET /rss.xml</code> / <code>GET /atom.xml</code>: Server Posts Feed</h5>
     <p>
       The reverse direction of a <code>SyncSource</code>'s own RSS/Atom subscription (see the SyncSources section above): serves
