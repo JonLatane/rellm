@@ -6,7 +6,7 @@ use super::{
     ToProtoSyncDestinationStatus, ToProtoTime,
 };
 use crate::db_connection::PgPooledConnection;
-use crate::protos::event_attendance::Attendee;
+use crate::protos::rsvp::Attendee;
 use crate::protos::*;
 use crate::{marshaling::ToProtoAuthor, models};
 
@@ -200,23 +200,23 @@ impl ToProtoLocation for serde_json::Value {
     }
 }
 
-pub trait ToProtoEventAttendance {
+pub trait ToProtoRsvp {
     fn to_proto(
         &self,
         include_auth_tokens: bool,
         include_private_note: bool,
         media_lookup: Option<&MediaLookup>,
-    ) -> EventAttendance;
+    ) -> Rsvp;
 }
 
-impl ToProtoEventAttendance for (models::EventAttendance, Option<models::Author>) {
+impl ToProtoRsvp for (models::Rsvp, Option<models::Author>) {
     fn to_proto(
         &self,
         include_auth_tokens: bool,
         include_private_note: bool,
         media_lookup: Option<&MediaLookup>,
-    ) -> EventAttendance {
-        EventAttendance {
+    ) -> Rsvp {
+        Rsvp {
             id: self.0.id.to_proto_id(),
             occasion_id: self.0.occasion_id.to_proto_id(),
             attendee: match (&self.1, &self.0.anonymous_attendee) {
@@ -250,7 +250,7 @@ impl ToProtoEventAttendance for (models::EventAttendance, Option<models::Author>
                 _ => None,
             },
             number_of_guests: u32::try_from(self.0.number_of_guests).unwrap(),
-            status: self.0.status.to_i32_attendance_status(),
+            status: self.0.status.to_i32_rsvp_status(),
             inviting_user_id: self.0.inviting_user_id.map(|id| id.to_proto_id()),
             public_note: self.0.public_note.clone(),
             private_note: if include_private_note {
@@ -265,62 +265,62 @@ impl ToProtoEventAttendance for (models::EventAttendance, Option<models::Author>
     }
 }
 
-pub const ALL_ATTENDANCE_STATUSES: [AttendanceStatus; 4] = [
-    AttendanceStatus::Interested,
-    AttendanceStatus::Requested,
-    AttendanceStatus::Going,
-    AttendanceStatus::NotGoing,
-    // AttendanceStatus::Went,
-    // AttendanceStatus::DidNotGo,
+pub const ALL_RSVP_STATUSES: [RsvpStatus; 4] = [
+    RsvpStatus::Interested,
+    RsvpStatus::Requested,
+    RsvpStatus::Going,
+    RsvpStatus::NotGoing,
+    // RsvpStatus::Went,
+    // RsvpStatus::DidNotGo,
 ];
 
-pub trait ToProtoAttendanceStatus {
-    fn to_proto_attendance_status(&self) -> Option<AttendanceStatus>;
+pub trait ToProtoRsvpStatus {
+    fn to_proto_rsvp_status(&self) -> Option<RsvpStatus>;
 }
-impl ToProtoAttendanceStatus for String {
-    fn to_proto_attendance_status(&self) -> Option<AttendanceStatus> {
-        for attendance_status in ALL_ATTENDANCE_STATUSES {
-            if attendance_status.as_str_name().eq_ignore_ascii_case(self) {
-                return Some(attendance_status);
+impl ToProtoRsvpStatus for String {
+    fn to_proto_rsvp_status(&self) -> Option<RsvpStatus> {
+        for rsvp_status in ALL_RSVP_STATUSES {
+            if rsvp_status.as_str_name().eq_ignore_ascii_case(self) {
+                return Some(rsvp_status);
             }
         }
         return None;
     }
 }
-impl ToProtoAttendanceStatus for i32 {
-    fn to_proto_attendance_status(&self) -> Option<AttendanceStatus> {
-        Some(unsafe { transmute::<i32, AttendanceStatus>(*self) })
+impl ToProtoRsvpStatus for i32 {
+    fn to_proto_rsvp_status(&self) -> Option<RsvpStatus> {
+        Some(unsafe { transmute::<i32, RsvpStatus>(*self) })
     }
 }
 
-pub trait ToStringAttendanceStatus {
-    fn to_string_attendance_status(&self) -> String;
+pub trait ToStringRsvpStatus {
+    fn to_string_rsvp_status(&self) -> String;
 }
-impl ToStringAttendanceStatus for AttendanceStatus {
-    fn to_string_attendance_status(&self) -> String {
+impl ToStringRsvpStatus for RsvpStatus {
+    fn to_string_rsvp_status(&self) -> String {
         self.as_str_name().to_string()
     }
 }
-impl ToStringAttendanceStatus for i32 {
-    fn to_string_attendance_status(&self) -> String {
-        self.to_proto_attendance_status()
+impl ToStringRsvpStatus for i32 {
+    fn to_string_rsvp_status(&self) -> String {
+        self.to_proto_rsvp_status()
             .unwrap()
-            .to_string_attendance_status()
+            .to_string_rsvp_status()
     }
 }
 
-pub trait ToI32AttendanceStatus {
-    fn to_i32_attendance_status(&self) -> i32;
+pub trait ToI32RsvpStatus {
+    fn to_i32_rsvp_status(&self) -> i32;
 }
-impl ToI32AttendanceStatus for String {
-    fn to_i32_attendance_status(&self) -> i32 {
-        self.to_proto_attendance_status()
+impl ToI32RsvpStatus for String {
+    fn to_i32_rsvp_status(&self) -> i32 {
+        self.to_proto_rsvp_status()
             .unwrap()
-            .to_i32_attendance_status()
+            .to_i32_rsvp_status()
     }
 }
-impl ToI32AttendanceStatus for AttendanceStatus {
-    fn to_i32_attendance_status(&self) -> i32 {
+impl ToI32RsvpStatus for RsvpStatus {
+    fn to_i32_rsvp_status(&self) -> i32 {
         *self as i32
     }
 }

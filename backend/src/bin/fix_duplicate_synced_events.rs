@@ -35,7 +35,7 @@ use rellm::{db_connection, init_bin_logging, init_crypto};
 ///    Occasion(s) to the keeper's by `sync_source_recurrence_anchor` and, for every relation a real
 ///    user (not the iCal sync itself, which never touches Media and only ever updates occasion
 ///    times/text) could have created against the *newer* duplicate in the meantime -- Media,
-///    replies, RSVPs (`event_attendances`), cross-posts (`group_posts`/`user_posts`), and sync-out
+///    replies, RSVPs (`rsvps`), cross-posts (`group_posts`/`user_posts`), and sync-out
 ///    records (`*_sync_destinations`) -- reassigns it onto the keeper before deleting the
 ///    duplicate. `posts.media` arrays are unioned rather than overwritten. A duplicate's occasion
 ///    with no matching keeper occasion (shouldn't happen in practice, but not impossible if the
@@ -216,12 +216,12 @@ fn reassign_occasion_relations(
     duplicate_post_id: i64,
     stats: &mut Stats,
 ) -> Result<(), DieselError> {
-    let attendances_moved = diesel::update(
-        event_attendances::table.filter(event_attendances::occasion_id.eq(duplicate_post_id)),
+    let rsvps_moved = diesel::update(
+        rsvps::table.filter(rsvps::occasion_id.eq(duplicate_post_id)),
     )
-    .set(event_attendances::occasion_id.eq(keeper_post_id))
+    .set(rsvps::occasion_id.eq(keeper_post_id))
     .execute(conn)?;
-    stats.relations_reassigned += attendances_moved;
+    stats.relations_reassigned += rsvps_moved;
 
     reassign_or_drop_composite(
         conn,

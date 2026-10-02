@@ -1,5 +1,5 @@
 use super::{
-    Author, Event, EventAttendance, Occasion, OccasionSyncDestination, Post, SyncSource,
+    Author, Event, Rsvp, Occasion, OccasionSyncDestination, Post, SyncSource,
     User, AUTHOR_COLUMNS, OCCASION_COLUMNS, POST_COLUMNS,
 };
 use diesel::{
@@ -13,7 +13,7 @@ use crate::{
     db_connection::PgPooledConnection,
     // protos::Author,
     schema::{
-        event_attendances, occasion_sync_destinations, occasions, events, follows,
+        rsvps, occasion_sync_destinations, occasions, events, follows,
         posts, sync_sources, users,
     },
 };
@@ -159,43 +159,43 @@ pub fn get_occasions(
         })
 }
 
-// Gets an existing event attendance for update/deletion.
-pub fn get_event_attendance(
+// Gets an existing event rsvp for update/deletion.
+pub fn get_rsvp(
     occasion_id: i64,
     attendee_user_id: Option<i64>,
     attendee_auth_token: Option<String>,
     conn: &mut PgPooledConnection,
-) -> Option<(EventAttendance, Option<Author>)> {
+) -> Option<(Rsvp, Option<Author>)> {
     match (attendee_user_id, attendee_auth_token) {
-        (Some(user_id), _) => event_attendances::table
-            .left_join(users::table.on(event_attendances::user_id.eq(users::id.nullable())))
-            .select((event_attendances::all_columns, AUTHOR_COLUMNS.nullable()))
-            .filter(event_attendances::occasion_id.eq(occasion_id))
-            .filter(event_attendances::user_id.eq(Some(user_id)))
-            .get_result::<(EventAttendance, Option<Author>)>(conn)
+        (Some(user_id), _) => rsvps::table
+            .left_join(users::table.on(rsvps::user_id.eq(users::id.nullable())))
+            .select((rsvps::all_columns, AUTHOR_COLUMNS.nullable()))
+            .filter(rsvps::occasion_id.eq(occasion_id))
+            .filter(rsvps::user_id.eq(Some(user_id)))
+            .get_result::<(Rsvp, Option<Author>)>(conn)
             .ok(),
-        (_, Some(auth_token)) => event_attendances::table
-            .left_join(users::table.on(event_attendances::user_id.eq(users::id.nullable())))
-            .select((event_attendances::all_columns, AUTHOR_COLUMNS.nullable()))
-            .filter(event_attendances::occasion_id.eq(occasion_id))
-            .filter(event_attendances::anonymous_attendee.is_not_null().and(
+        (_, Some(auth_token)) => rsvps::table
+            .left_join(users::table.on(rsvps::user_id.eq(users::id.nullable())))
+            .select((rsvps::all_columns, AUTHOR_COLUMNS.nullable()))
+            .filter(rsvps::occasion_id.eq(occasion_id))
+            .filter(rsvps::anonymous_attendee.is_not_null().and(
                 sql::<Bool>("anonymous_attendee->>'auth_token' = ").bind::<Text, _>(auth_token),
             ))
-            .get_result::<(EventAttendance, Option<Author>)>(conn)
+            .get_result::<(Rsvp, Option<Author>)>(conn)
             .ok(),
         (_, _) => None,
     }
 }
 
-pub fn get_event_attendances(
+pub fn get_rsvps(
     occasion_id: i64,
     user: &Option<User>,
     conn: &mut PgPooledConnection,
-) -> Result<Vec<EventAttendance>, Status> {
-    event_attendances::table
+) -> Result<Vec<Rsvp>, Status> {
+    rsvps::table
         .inner_join(
             occasions::table
-                .on(event_attendances::occasion_id.eq(occasions::post_id)),
+                .on(rsvps::occasion_id.eq(occasions::post_id)),
         )
         .left_join(posts::table.on(occasions::post_id.eq(posts::id)))
         .left_join(users::table.on(posts::user_id.eq(users::id.nullable())))
@@ -206,16 +206,16 @@ pub fn get_event_attendances(
                     .eq(user.as_ref().map(|u| u.id).unwrap_or(0)),
             )),
         )
-        .select(event_attendances::all_columns)
-        .filter(event_attendances::occasion_id.eq(occasion_id))
-        .load::<EventAttendance>(conn)
+        .select(rsvps::all_columns)
+        .filter(rsvps::occasion_id.eq(occasion_id))
+        .load::<Rsvp>(conn)
         .map_err(|e| {
             log::error!(
-                "Failed to load event attendances for occasion_id={}: {:?}",
+                "Failed to load event rsvps for occasion_id={}: {:?}",
                 occasion_id,
                 e
             );
-            Status::new(Code::Internal, "failed_to_load_event_attendances")
+            Status::new(Code::Internal, "failed_to_load_rsvps")
         })
 }
 

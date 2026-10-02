@@ -308,22 +308,16 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
             <p><a href="#rellm-Event">Event</a></p>
           </li>
           <li>
-            <p><a href="#rellm-EventAttendance">EventAttendance</a></p>
-          </li>
-          <li>
-            <p><a href="#rellm-EventAttendances">EventAttendances</a></p>
-          </li>
-          <li>
             <p><a href="#rellm-EventInfo">EventInfo</a></p>
-          </li>
-          <li>
-            <p><a href="#rellm-GetEventAttendancesRequest">GetEventAttendancesRequest</a></p>
           </li>
           <li>
             <p><a href="#rellm-GetEventsRequest">GetEventsRequest</a></p>
           </li>
           <li>
             <p><a href="#rellm-GetEventsResponse">GetEventsResponse</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-GetRsvpsRequest">GetRsvpsRequest</a></p>
           </li>
           <li>
             <p><a href="#rellm-Occasion">Occasion</a></p>
@@ -335,6 +329,12 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
             <p><a href="#rellm-OccasionRsvpInfo">OccasionRsvpInfo</a></p>
           </li>
           <li>
+            <p><a href="#rellm-Rsvp">Rsvp</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-Rsvps">Rsvps</a></p>
+          </li>
+          <li>
             <p><a href="#rellm-SyncOccasionRequest">SyncOccasionRequest</a></p>
           </li>
           <li>
@@ -344,10 +344,10 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
             <p><a href="#rellm-UserAttendee">UserAttendee</a></p>
           </li>
           <li>
-            <p><a href="#rellm-AttendanceStatus">AttendanceStatus</a></p>
+            <p><a href="#rellm-EventListingType">EventListingType</a></p>
           </li>
           <li>
-            <p><a href="#rellm-EventListingType">EventListingType</a></p>
+            <p><a href="#rellm-RsvpStatus">RsvpStatus</a></p>
           </li>
         </ul>
       </li>
@@ -1195,7 +1195,7 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
       it carries the <code>starts_at</code>/<code>ends_at</code> timestamps and optional <a href="#rellm-Location"><code>Location</code></a> that the parent <a href="#rellm-Event"><code>Event</code></a> itself does not have.
       An <a href="#rellm-Event"><code>Event</code></a> with zero Occasions is meaningless (no time or place to attach to), so every <a href="#rellm-Event"><code>Event</code></a> must have at least one.
     </p>
-    <pre><code class="code-highlight"><span class="code-line line-number" line="1">- **EventAttendances**: An [`EventAttendance`](#rellm-EventAttendance) (an &#x26;#34;RSVP&#x26;#34;) tracks one attendee&#x26;#39;s status
+    <pre><code class="code-highlight"><span class="code-line line-number" line="1">- **Rsvps**: An [`Rsvp`](#rellm-Rsvp) tracks one attendee&#x26;#39;s status
 </span><span class="code-line line-number" line="2">(`INTERESTED`, `REQUESTED`, `GOING`, `NOT_GOING`) for a specific [`Occasion`](#rellm-Occasion). Attendees may be logged-in [`User`](#rellm-User)s
 </span><span class="code-line line-number" line="3">or anonymous (tracked via [`AnonymousAttendee`](#rellm-AnonymousAttendee) plus an `auth_token`), and are subject to their own [`Moderation`](#rellm-Moderation),
 </span><span class="code-line line-number" line="4">independent of the Event&#x26;#39;s/Occasion&#x26;#39;s own Post moderation.
@@ -1211,7 +1211,7 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
 </span><span class="code-line line-number" line="14">Occasion may push to several destinations at once, tracked per-destination via the repeated
 </span><span class="code-line line-number" line="15">`Occasion.sync_destinations` (each a [`SyncDestinationStatus`](#rellm-SyncDestinationStatus)), carrying
 </span><span class="code-line line-number" line="16">the destination&#x26;#39;s resulting post ID/URL and last-synced time.
-</span></code><div onclick="copied(this)" data-code="- **EventAttendances**: An [&#x60;EventAttendance&#x60;](#rellm-EventAttendance) (an &#x26;#34;RSVP&#x26;#34;) tracks one attendee&#x26;#39;s status
+</span></code><div onclick="copied(this)" data-code="- **Rsvps**: An [&#x60;Rsvp&#x60;](#rellm-Rsvp) tracks one attendee&#x26;#39;s status
 (&#x60;INTERESTED&#x60;, &#x60;REQUESTED&#x60;, &#x60;GOING&#x60;, &#x60;NOT_GOING&#x60;) for a specific [&#x60;Occasion&#x60;](#rellm-Occasion). Attendees may be logged-in [&#x60;User&#x60;](#rellm-User)s
 or anonymous (tracked via [&#x60;AnonymousAttendee&#x60;](#rellm-AnonymousAttendee) plus an &#x60;auth_token&#x60;), and are subject to their own [&#x60;Moderation&#x60;](#rellm-Moderation),
 independent of the Event&#x26;#39;s/Occasion&#x26;#39;s own Post moderation.
@@ -2186,22 +2186,22 @@ directory</a> is (<code>{name}</code> denotes a
           <td>Generates (or edits, given reference <code>media_ids</code>) an image via one of the current user's AIModels, storing it as a new Media and, if <code>target</code> is set, attaching it to that Post/Event. <em>Authenticated</em> - caller must own or have been granted access to the chosen AIProvider, and (if <code>target</code> is set) have edit access to that Post/Event. A grantee (never the provider's own owner) spends real AIProviderGrant.tokens_remaining on every call - the provider's own reported token usage once generation succeeds, or (rejected before any request is even sent to the provider) a rough pre-flight estimate of the request's input cost alone, whichever catches an insufficient balance first.</td>
         </tr>
         <tr>
-          <td>GetEventAttendances</td>
-          <td><a href="#rellm-GetEventAttendancesRequest">GetEventAttendancesRequest</a></td>
-          <td><a href="#rellm-EventAttendances">EventAttendances</a></td>
-          <td>Gets EventAttendances for an Occasion. <em>Publicly accessible <strong>or</strong> Authenticated.</em></td>
+          <td>GetRsvps</td>
+          <td><a href="#rellm-GetRsvpsRequest">GetRsvpsRequest</a></td>
+          <td><a href="#rellm-Rsvps">Rsvps</a></td>
+          <td>Gets Rsvps for an Occasion. <em>Publicly accessible <strong>or</strong> Authenticated.</em></td>
         </tr>
         <tr>
-          <td>UpsertEventAttendance</td>
-          <td><a href="#rellm-EventAttendance">EventAttendance</a></td>
-          <td><a href="#rellm-EventAttendance">EventAttendance</a></td>
-          <td>Upsert an EventAttendance. <em>Publicly accessible <strong>or</strong> Authenticated, with anonymous RSVP support.</em> See <a href="#rellm-EventAttendance">EventAttendance</a> and <a href="#rellm-AnonymousAttendee">AnonymousAttendee</a> for details. tl;dr: Anonymous RSVPs may updated/deleted with the <code>AnonymousAttendee.auth_token</code> returned by this RPC (the client should save this for the user, and ideally, offer a link with the token).</td>
+          <td>UpsertRsvp</td>
+          <td><a href="#rellm-Rsvp">Rsvp</a></td>
+          <td><a href="#rellm-Rsvp">Rsvp</a></td>
+          <td>Upsert an Rsvp. <em>Publicly accessible <strong>or</strong> Authenticated, with anonymous RSVP support.</em> See <a href="#rellm-Rsvp">Rsvp</a> and <a href="#rellm-AnonymousAttendee">AnonymousAttendee</a> for details. tl;dr: Anonymous RSVPs may updated/deleted with the <code>AnonymousAttendee.auth_token</code> returned by this RPC (the client should save this for the user, and ideally, offer a link with the token).</td>
         </tr>
         <tr>
-          <td>DeleteEventAttendance</td>
-          <td><a href="#rellm-EventAttendance">EventAttendance</a></td>
+          <td>DeleteRsvp</td>
+          <td><a href="#rellm-Rsvp">Rsvp</a></td>
           <td><a href="#google-protobuf-Empty">.google.protobuf.Empty</a></td>
-          <td>Delete an EventAttendance. <em>Publicly accessible <strong>or</strong> Authenticated, with anonymous RSVP support.</em></td>
+          <td>Delete an Rsvp. <em>Publicly accessible <strong>or</strong> Authenticated, with anonymous RSVP support.</em></td>
         </tr>
         <tr>
           <td>FederateProfile</td>
@@ -5533,7 +5533,7 @@ directory</a> is (<code>{name}</code> denotes a
           <td>auth_token</td>
           <td><a href="#string">string</a></td>
           <td>optional</td>
-          <td>Used to allow anonymous users to RSVP to an event. Generated by the server when an event attendance is upserted for the first time. Subsequent attendance upserts, with the same occasion_id and anonymous_attendee.auth_token, will update existing anonymous attendance records. Invalid auth tokens used during upserts will always create a new <a href="#rellm-EventAttendance"><code>EventAttendance</code></a>.</td>
+          <td>Used to allow anonymous users to RSVP to an event. Generated by the server when an RSVP is upserted for the first time. Subsequent RSVP upserts, with the same occasion_id and anonymous_attendee.auth_token, will update existing anonymous RSVP records. Invalid auth tokens used during upserts will always create a new <a href="#rellm-Rsvp"><code>Rsvp</code></a>.</td>
         </tr>
       </tbody>
     </table>
@@ -5604,125 +5604,6 @@ directory</a> is (<code>{name}</code> denotes a
         </tr>
       </tbody>
     </table>
-    <p><a name="rellm-EventAttendance"></a></p>
-    <h3 id="eventattendance"><a class="anchor" aria-hidden="true" tabindex="-1" href="#eventattendance"><span class="octicon octicon-link"></span></a>EventAttendance</h3>
-    <p>Could be called an "RSVP." Describes the attendance of a user at an <a href="#rellm-Occasion"><code>Occasion</code></a>. Such as:</p>
-    <ul>
-      <li>A user's RSVP to an <a href="#rellm-Occasion"><code>Occasion</code></a> (one of <code>INTERESTED</code>, <code>GOING</code>, <code>NOT_GOING</code>, or , <code>REQUESTED</code> (i.e. invited)).</li>
-      <li>Invitation status of a user to an <a href="#rellm-Occasion"><code>Occasion</code></a>.</li>
-      <li><a href="#rellm-ContactMethod"><code>ContactMethod</code></a>-driven management for anonymous RSVPs to an <a href="#rellm-Occasion"><code>Occasion</code></a>.</li>
-    </ul>
-    <table>
-      <thead>
-        <tr>
-          <th>Field</th>
-          <th>Type</th>
-          <th>Label</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>id</td>
-          <td><a href="#string">string</a></td>
-          <td></td>
-          <td>Unique server-generated ID for the attendance.</td>
-        </tr>
-        <tr>
-          <td>occasion_id</td>
-          <td><a href="#string">string</a></td>
-          <td></td>
-          <td>ID of the <a href="#rellm-Occasion"><code>Occasion</code></a> the attendance is for.</td>
-        </tr>
-        <tr>
-          <td>user_attendee</td>
-          <td><a href="#rellm-UserAttendee">UserAttendee</a></td>
-          <td></td>
-          <td>If the attendance is non-anonymous, core data about the user.</td>
-        </tr>
-        <tr>
-          <td>anonymous_attendee</td>
-          <td><a href="#rellm-AnonymousAttendee">AnonymousAttendee</a></td>
-          <td></td>
-          <td>If the attendance is anonymous, core data about the anonymous attendee.</td>
-        </tr>
-        <tr>
-          <td>number_of_guests</td>
-          <td><a href="#uint32">uint32</a></td>
-          <td></td>
-          <td>Number of guests including the RSVPing user. (Minimum 1).</td>
-        </tr>
-        <tr>
-          <td>status</td>
-          <td><a href="#rellm-AttendanceStatus">AttendanceStatus</a></td>
-          <td></td>
-          <td>The user's RSVP to an <a href="#rellm-Occasion"><code>Occasion</code></a> (one of <code>INTERESTED</code>, <code>REQUESTED</code> (i.e. invited), <code>GOING</code>, <code>NOT_GOING</code>)</td>
-        </tr>
-        <tr>
-          <td>inviting_user_id</td>
-          <td><a href="#string">string</a></td>
-          <td>optional</td>
-          <td>User who invited the attendee. (Not yet used.)</td>
-        </tr>
-        <tr>
-          <td>private_note</td>
-          <td><a href="#string">string</a></td>
-          <td></td>
-          <td>Public note for everyone who can see the event to see.</td>
-        </tr>
-        <tr>
-          <td>public_note</td>
-          <td><a href="#string">string</a></td>
-          <td></td>
-          <td>Private note for the event owner.</td>
-        </tr>
-        <tr>
-          <td>moderation</td>
-          <td><a href="#rellm-Moderation">Moderation</a></td>
-          <td></td>
-          <td>Moderation status for the attendance. Moderated by the <a href="#rellm-Event"><code>Event</code></a> owner (or <a href="#rellm-Occasion"><code>Occasion</code></a> owner if applicable).</td>
-        </tr>
-        <tr>
-          <td>created_at</td>
-          <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
-          <td></td>
-          <td>The time the attendance was created.</td>
-        </tr>
-        <tr>
-          <td>updated_at</td>
-          <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
-          <td>optional</td>
-          <td>The time the attendance was last updated.</td>
-        </tr>
-      </tbody>
-    </table>
-    <p><a name="rellm-EventAttendances"></a></p>
-    <h3 id="eventattendances"><a class="anchor" aria-hidden="true" tabindex="-1" href="#eventattendances"><span class="octicon octicon-link"></span></a>EventAttendances</h3>
-    <p>Response to get RSVP data for an event.</p>
-    <table>
-      <thead>
-        <tr>
-          <th>Field</th>
-          <th>Type</th>
-          <th>Label</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>attendances</td>
-          <td><a href="#rellm-EventAttendance">EventAttendance</a></td>
-          <td>repeated</td>
-          <td>The attendance data for the event, in no particular order.</td>
-        </tr>
-        <tr>
-          <td>hidden_location</td>
-          <td><a href="#rellm-Location">Location</a></td>
-          <td>optional</td>
-          <td>When <code>hide_location_until_rsvp_approved</code> is set, the location of the event.</td>
-        </tr>
-      </tbody>
-    </table>
     <p><a name="rellm-EventInfo"></a></p>
     <h3 id="eventinfo"><a class="anchor" aria-hidden="true" tabindex="-1" href="#eventinfo"><span class="octicon octicon-link"></span></a>EventInfo</h3>
     <p>
@@ -5761,40 +5642,13 @@ directory</a> is (<code>{name}</code> denotes a
           <td>hide_location_until_rsvp_approved</td>
           <td><a href="#bool">bool</a></td>
           <td>optional</td>
-          <td>Hide the location until the user RSVPs (and it's accepted). From a system perspective, when this is set, Events will not include the <a href="#rellm-Location"><code>Location</code></a> until the user has RSVP'd. Location will always be returned in EventAttendances if the request for the EventAttendances came from a (logged in or anonymous) user whose attendance is approved (or the event owner).</td>
+          <td>Hide the location until the user RSVPs (and it's accepted). From a system perspective, when this is set, Events will not include the <a href="#rellm-Location"><code>Location</code></a> until the user has RSVP'd. Location will always be returned in <code>Rsvps</code> if the request for the <code>Rsvps</code> came from a (logged in or anonymous) user whose RSVP is approved (or the event owner).</td>
         </tr>
         <tr>
           <td>default_rsvp_moderation</td>
           <td><a href="#rellm-Moderation">Moderation</a></td>
           <td>optional</td>
           <td>Default moderation for RSVPs from logged-in users (either <code>PENDING</code> or <code>APPROVED</code>). Anonymous RSVPs are always moderated (default to <code>PENDING</code>).</td>
-        </tr>
-      </tbody>
-    </table>
-    <p><a name="rellm-GetEventAttendancesRequest"></a></p>
-    <h3 id="geteventattendancesrequest"><a class="anchor" aria-hidden="true" tabindex="-1" href="#geteventattendancesrequest"><span class="octicon octicon-link"></span></a>GetEventAttendancesRequest</h3>
-    <p>Request to get RSVP data for an event.</p>
-    <table>
-      <thead>
-        <tr>
-          <th>Field</th>
-          <th>Type</th>
-          <th>Label</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>occasion_id</td>
-          <td><a href="#string">string</a></td>
-          <td></td>
-          <td>The ID of the event to get RSVP data for.</td>
-        </tr>
-        <tr>
-          <td>anonymous_attendee_auth_token</td>
-          <td><a href="#string">string</a></td>
-          <td>optional</td>
-          <td>If set, and if the token has an RSVP for this even, request that RSVP data in addition to the rest of the RSVP data. (The event creator can always see and moderate anonymous RSVPs.)</td>
         </tr>
       </tbody>
     </table>
@@ -5849,13 +5703,13 @@ directory</a> is (<code>{name}</code> denotes a
           <td>attendee_id</td>
           <td><a href="#string">string</a></td>
           <td>optional</td>
-          <td>If set, only returns events that the given user is attending. If <code>attendance_statuses</code> is also set, returns events where that user's status is one of the given statuses.</td>
+          <td>If set, only returns events that the given user is attending. If <code>rsvp_statuses</code> is also set, returns events where that user's status is one of the given statuses.</td>
         </tr>
         <tr>
-          <td>attendance_statuses</td>
-          <td><a href="#rellm-AttendanceStatus">AttendanceStatus</a></td>
+          <td>rsvp_statuses</td>
+          <td><a href="#rellm-RsvpStatus">RsvpStatus</a></td>
           <td>repeated</td>
-          <td>If set, only return events for which the current user's attendance status matches one of the given statuses. If <code>attendee_id</code> is also set, only returns events where the given user's status matches one of the given statuses.</td>
+          <td>If set, only return events for which the current user's RSVP status matches one of the given statuses. If <code>attendee_id</code> is also set, only returns events where the given user's status matches one of the given statuses.</td>
         </tr>
         <tr>
           <td>post_id</td>
@@ -5885,7 +5739,7 @@ directory</a> is (<code>{name}</code> denotes a
           <td>anonymous_attendee_auth_token</td>
           <td><a href="#string">string</a></td>
           <td>optional</td>
-          <td>Auth token proving ownership of an anonymous RSVP, mirroring <code>GetEventAttendancesRequest.anonymous_attendee_auth_token</code>. Lets an anonymous attendee's own (possibly still-<code>PENDING</code>) <a href="#rellm-EventAttendance"><code>EventAttendance</code></a> and its <code>Occasion.location</code> (when <code>EventInfo.hide_location_until_rsvp_approved</code> is set) surface via each returned <code>Occasion.attendances</code>/<code>current_user_attendance</code>, same as a logged-in user's own RSVP does automatically.</td>
+          <td>Auth token proving ownership of an anonymous RSVP, mirroring <code>GetRsvpsRequest.anonymous_attendee_auth_token</code>. Lets an anonymous attendee's own (possibly still-<code>PENDING</code>) <a href="#rellm-Rsvp"><code>Rsvp</code></a> and its <code>Occasion.location</code> (when <code>EventInfo.hide_location_until_rsvp_approved</code> is set) surface via each returned <code>Occasion.rsvps</code>/<code>current_user_rsvp</code>, same as a logged-in user's own RSVP does automatically.</td>
         </tr>
       </tbody>
     </table>
@@ -5919,6 +5773,33 @@ directory</a> is (<code>{name}</code> denotes a
           <td><a href="#rellm-Event">Event</a></td>
           <td>repeated</td>
           <td></td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-GetRsvpsRequest"></a></p>
+    <h3 id="getrsvpsrequest"><a class="anchor" aria-hidden="true" tabindex="-1" href="#getrsvpsrequest"><span class="octicon octicon-link"></span></a>GetRsvpsRequest</h3>
+    <p>Request to get RSVP data for an event.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>occasion_id</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>The ID of the event to get RSVP data for.</td>
+        </tr>
+        <tr>
+          <td>anonymous_attendee_auth_token</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td>If set, and if the token has an RSVP for this even, request that RSVP data in addition to the rest of the RSVP data. (The event creator can always see and moderate anonymous RSVPs.)</td>
         </tr>
       </tbody>
     </table>
@@ -5982,16 +5863,16 @@ directory</a> is (<code>{name}</code> denotes a
           <td>The time since this event "disappeared" from the sync source. It is up to the owner whether this means it should be deleted.</td>
         </tr>
         <tr>
-          <td>attendances</td>
-          <td><a href="#rellm-EventAttendances">EventAttendances</a></td>
+          <td>rsvps</td>
+          <td><a href="#rellm-Rsvps">Rsvps</a></td>
           <td>optional</td>
           <td>RSVP + invite data for this Occasion.</td>
         </tr>
         <tr>
-          <td>current_user_attendance</td>
-          <td><a href="#rellm-EventAttendance">EventAttendance</a></td>
+          <td>current_user_rsvp</td>
+          <td><a href="#rellm-Rsvp">Rsvp</a></td>
           <td>optional</td>
-          <td>If the request was made by a logged-in user, this is the current user's attendance for this Occasion.</td>
+          <td>If the request was made by a logged-in user, this is the current user's RSVP for this Occasion.</td>
         </tr>
         <tr>
           <td>sync_destinations</td>
@@ -6100,6 +5981,125 @@ directory</a> is (<code>{name}</code> denotes a
           <td><a href="#uint32">uint32</a></td>
           <td>optional</td>
           <td>The number of attendees who have been invited to the event. (RSVPs may have multiple attendees, i.e. guests.)</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-Rsvp"></a></p>
+    <h3 id="rsvp"><a class="anchor" aria-hidden="true" tabindex="-1" href="#rsvp"><span class="octicon octicon-link"></span></a>Rsvp</h3>
+    <p>An RSVP: describes a user's attendance at an <a href="#rellm-Occasion"><code>Occasion</code></a>. Such as:</p>
+    <ul>
+      <li>A user's RSVP to an <a href="#rellm-Occasion"><code>Occasion</code></a> (one of <code>INTERESTED</code>, <code>GOING</code>, <code>NOT_GOING</code>, or , <code>REQUESTED</code> (i.e. invited)).</li>
+      <li>Invitation status of a user to an <a href="#rellm-Occasion"><code>Occasion</code></a>.</li>
+      <li><a href="#rellm-ContactMethod"><code>ContactMethod</code></a>-driven management for anonymous RSVPs to an <a href="#rellm-Occasion"><code>Occasion</code></a>.</li>
+    </ul>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>id</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>Unique server-generated ID for the RSVP.</td>
+        </tr>
+        <tr>
+          <td>occasion_id</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>ID of the <a href="#rellm-Occasion"><code>Occasion</code></a> the RSVP is for.</td>
+        </tr>
+        <tr>
+          <td>user_attendee</td>
+          <td><a href="#rellm-UserAttendee">UserAttendee</a></td>
+          <td></td>
+          <td>If the RSVP is non-anonymous, core data about the user.</td>
+        </tr>
+        <tr>
+          <td>anonymous_attendee</td>
+          <td><a href="#rellm-AnonymousAttendee">AnonymousAttendee</a></td>
+          <td></td>
+          <td>If the RSVP is anonymous, core data about the anonymous attendee.</td>
+        </tr>
+        <tr>
+          <td>number_of_guests</td>
+          <td><a href="#uint32">uint32</a></td>
+          <td></td>
+          <td>Number of guests including the RSVPing user. (Minimum 1).</td>
+        </tr>
+        <tr>
+          <td>status</td>
+          <td><a href="#rellm-RsvpStatus">RsvpStatus</a></td>
+          <td></td>
+          <td>The user's RSVP to an <a href="#rellm-Occasion"><code>Occasion</code></a> (one of <code>INTERESTED</code>, <code>REQUESTED</code> (i.e. invited), <code>GOING</code>, <code>NOT_GOING</code>)</td>
+        </tr>
+        <tr>
+          <td>inviting_user_id</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td>User who invited the attendee. (Not yet used.)</td>
+        </tr>
+        <tr>
+          <td>private_note</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>Public note for everyone who can see the event to see.</td>
+        </tr>
+        <tr>
+          <td>public_note</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>Private note for the event owner.</td>
+        </tr>
+        <tr>
+          <td>moderation</td>
+          <td><a href="#rellm-Moderation">Moderation</a></td>
+          <td></td>
+          <td>Moderation status for the RSVP. Moderated by the <a href="#rellm-Event"><code>Event</code></a> owner (or <a href="#rellm-Occasion"><code>Occasion</code></a> owner if applicable).</td>
+        </tr>
+        <tr>
+          <td>created_at</td>
+          <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
+          <td></td>
+          <td>The time the RSVP was created.</td>
+        </tr>
+        <tr>
+          <td>updated_at</td>
+          <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
+          <td>optional</td>
+          <td>The time the RSVP was last updated.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-Rsvps"></a></p>
+    <h3 id="rsvps"><a class="anchor" aria-hidden="true" tabindex="-1" href="#rsvps"><span class="octicon octicon-link"></span></a>Rsvps</h3>
+    <p>Response to get RSVP data for an event.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>rsvps</td>
+          <td><a href="#rellm-Rsvp">Rsvp</a></td>
+          <td>repeated</td>
+          <td>The RSVP data for the event, in no particular order.</td>
+        </tr>
+        <tr>
+          <td>hidden_location</td>
+          <td><a href="#rellm-Location">Location</a></td>
+          <td>optional</td>
+          <td>When <code>hide_location_until_rsvp_approved</code> is set, the location of the event.</td>
         </tr>
       </tbody>
     </table>
@@ -6217,51 +6217,6 @@ directory</a> is (<code>{name}</code> denotes a
         </tr>
       </tbody>
     </table>
-    <p><a name="rellm-AttendanceStatus"></a></p>
-    <h3 id="attendancestatus"><a class="anchor" aria-hidden="true" tabindex="-1" href="#attendancestatus"><span class="octicon octicon-link"></span></a>AttendanceStatus</h3>
-    <p>
-      Occasion attendance statuses. State transitions may generally happen
-      in any direction, but:
-    </p>
-    <ul>
-      <li><code>REQUESTED</code> can only be selected if another user invited the user whose attendance is being described.</li>
-      <li><code>GOING</code> and <code>NOT_GOING</code> cannot be selected if the Occasion has ended (end time is in the past).</li>
-      <li>
-        <code>WENT</code> and <code>DID_NOT_GO</code> cannot be selected if the Occasion has not started (start time is in the future).
-        <code>INTERESTED</code> and <code>REQUESTED</code> can apply regardless of whether an event has started or ended.
-      </li>
-    </ul>
-    <table>
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Number</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>INTERESTED</td>
-          <td>0</td>
-          <td>The user is (or was) interested in attending. This is the default status.</td>
-        </tr>
-        <tr>
-          <td>REQUESTED</td>
-          <td>1</td>
-          <td>Another user has invited the user to the event.</td>
-        </tr>
-        <tr>
-          <td>GOING</td>
-          <td>2</td>
-          <td>The user plans to go to the event, or went to the event.</td>
-        </tr>
-        <tr>
-          <td>NOT_GOING</td>
-          <td>3</td>
-          <td>The user does not plan to go to the event, or did not go to the event.</td>
-        </tr>
-      </tbody>
-    </table>
     <p><a name="rellm-EventListingType"></a></p>
     <h3 id="eventlistingtype"><a class="anchor" aria-hidden="true" tabindex="-1" href="#eventlistingtype"><span class="octicon octicon-link"></span></a>EventListingType</h3>
     <p>The listing type, e.g. <code>ALL_ACCESSIBLE_EVENTS</code>, <code>FOLLOWING_EVENTS</code>, <code>MY_GROUPS_EVENTS</code>, <code>DIRECT_EVENTS</code>, <code>GROUP_EVENTS</code>, <code>GROUP_EVENTS_PENDING_MODERATION</code>.</p>
@@ -6319,6 +6274,51 @@ directory</a> is (<code>{name}</code> denotes a
           <td>NEWLY_ADDED_EVENTS</td>
           <td>20</td>
           <td>Returns events from either <code>ALL_ACCESSIBLE_EVENTS</code> or a specific author (with optional author_user_id parameter). Returned Occasions will be ordered by creation time rather than start time.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-RsvpStatus"></a></p>
+    <h3 id="rsvpstatus"><a class="anchor" aria-hidden="true" tabindex="-1" href="#rsvpstatus"><span class="octicon octicon-link"></span></a>RsvpStatus</h3>
+    <p>
+      Occasion RSVP statuses. State transitions may generally happen
+      in any direction, but:
+    </p>
+    <ul>
+      <li><code>REQUESTED</code> can only be selected if another user invited the user whose RSVP is being described.</li>
+      <li><code>GOING</code> and <code>NOT_GOING</code> cannot be selected if the Occasion has ended (end time is in the past).</li>
+      <li>
+        <code>WENT</code> and <code>DID_NOT_GO</code> cannot be selected if the Occasion has not started (start time is in the future).
+        <code>INTERESTED</code> and <code>REQUESTED</code> can apply regardless of whether an event has started or ended.
+      </li>
+    </ul>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Number</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>INTERESTED</td>
+          <td>0</td>
+          <td>The user is (or was) interested in attending. This is the default status.</td>
+        </tr>
+        <tr>
+          <td>REQUESTED</td>
+          <td>1</td>
+          <td>Another user has invited the user to the event.</td>
+        </tr>
+        <tr>
+          <td>GOING</td>
+          <td>2</td>
+          <td>The user plans to go to the event, or went to the event.</td>
+        </tr>
+        <tr>
+          <td>NOT_GOING</td>
+          <td>3</td>
+          <td>The user does not plan to go to the event, or did not go to the event.</td>
         </tr>
       </tbody>
     </table>

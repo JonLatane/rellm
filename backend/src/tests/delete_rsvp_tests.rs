@@ -1,18 +1,18 @@
-//! Specs for `delete_event_attendance`: the event owner or the attendee themselves may delete a
-//! user-backed attendance; anonymous attendances are gated by a matching `auth_token` instead
-//! (see `logic`/`models::get_event_attendance`'s auth_token lookup) rather than by `user`.
+//! Specs for `delete_rsvp`: the event owner or the attendee themselves may delete a
+//! user-backed rsvp; anonymous rsvps are gated by a matching `auth_token` instead
+//! (see `logic`/`models::get_rsvp`'s auth_token lookup) rather than by `user`.
 
 use diesel::prelude::*;
 use tonic::Code;
 
 use crate::marshaling::*;
 use crate::protos::*;
-use crate::rpcs::delete_event_attendance;
-use crate::schema::event_attendances;
+use crate::rpcs::delete_rsvp;
+use crate::schema::rsvps;
 use crate::tests::factories::*;
 
 #[test]
-fn event_owner_can_delete_any_attendance() {
+fn event_owner_can_delete_any_rsvp() {
     let mut conn = test_conn();
     conn.test_transaction::<_, tonic::Status, _>(|conn| {
         let owner = create_user(conn, "deat_owner");
@@ -27,19 +27,19 @@ fn event_owner_can_delete_any_attendance() {
         let (occasion, _occasion_post) =
             create_occasion(conn, &event, Some(&owner), OccasionOpts::default());
         let attendee = create_user(conn, "deat_attendee");
-        create_event_attendance(
+        create_rsvp(
             conn,
             &occasion,
-            EventAttendanceOpts {
+            RsvpOpts {
                 user_id: Some(attendee.id),
                 ..Default::default()
             },
         );
 
-        delete_event_attendance(
-            EventAttendance {
+        delete_rsvp(
+            Rsvp {
                 occasion_id: occasion.post_id.to_proto_id(),
-                attendee: Some(event_attendance::Attendee::UserAttendee(UserAttendee {
+                attendee: Some(rsvp::Attendee::UserAttendee(UserAttendee {
                     user_id: attendee.id.to_proto_id(),
                     ..Default::default()
                 })),
@@ -50,8 +50,8 @@ fn event_owner_can_delete_any_attendance() {
         )
         .expect("event owner delete should succeed");
 
-        let remaining: i64 = event_attendances::table
-            .filter(event_attendances::occasion_id.eq(occasion.post_id))
+        let remaining: i64 = rsvps::table
+            .filter(rsvps::occasion_id.eq(occasion.post_id))
             .count()
             .get_result(conn)
             .unwrap();
@@ -62,7 +62,7 @@ fn event_owner_can_delete_any_attendance() {
 }
 
 #[test]
-fn attendee_can_delete_their_own_attendance() {
+fn attendee_can_delete_their_own_rsvp() {
     let mut conn = test_conn();
     conn.test_transaction::<_, tonic::Status, _>(|conn| {
         let owner = create_user(conn, "deat_owner2");
@@ -77,19 +77,19 @@ fn attendee_can_delete_their_own_attendance() {
         let (occasion, _occasion_post) =
             create_occasion(conn, &event, Some(&owner), OccasionOpts::default());
         let attendee = create_user(conn, "deat_attendee2");
-        create_event_attendance(
+        create_rsvp(
             conn,
             &occasion,
-            EventAttendanceOpts {
+            RsvpOpts {
                 user_id: Some(attendee.id),
                 ..Default::default()
             },
         );
 
-        delete_event_attendance(
-            EventAttendance {
+        delete_rsvp(
+            Rsvp {
                 occasion_id: occasion.post_id.to_proto_id(),
-                attendee: Some(event_attendance::Attendee::UserAttendee(UserAttendee {
+                attendee: Some(rsvp::Attendee::UserAttendee(UserAttendee {
                     user_id: attendee.id.to_proto_id(),
                     ..Default::default()
                 })),
@@ -100,8 +100,8 @@ fn attendee_can_delete_their_own_attendance() {
         )
         .expect("attendee self delete should succeed");
 
-        let remaining: i64 = event_attendances::table
-            .filter(event_attendances::occasion_id.eq(occasion.post_id))
+        let remaining: i64 = rsvps::table
+            .filter(rsvps::occasion_id.eq(occasion.post_id))
             .count()
             .get_result(conn)
             .unwrap();
@@ -127,20 +127,20 @@ fn delete_rejects_an_unrelated_user() {
         let (occasion, _occasion_post) =
             create_occasion(conn, &event, Some(&owner), OccasionOpts::default());
         let attendee = create_user(conn, "deat_attendee3");
-        create_event_attendance(
+        create_rsvp(
             conn,
             &occasion,
-            EventAttendanceOpts {
+            RsvpOpts {
                 user_id: Some(attendee.id),
                 ..Default::default()
             },
         );
         let bystander = create_user(conn, "deat_bystander");
 
-        let err = delete_event_attendance(
-            EventAttendance {
+        let err = delete_rsvp(
+            Rsvp {
                 occasion_id: occasion.post_id.to_proto_id(),
-                attendee: Some(event_attendance::Attendee::UserAttendee(UserAttendee {
+                attendee: Some(rsvp::Attendee::UserAttendee(UserAttendee {
                     user_id: attendee.id.to_proto_id(),
                     ..Default::default()
                 })),
@@ -151,21 +151,21 @@ fn delete_rejects_an_unrelated_user() {
         )
         .unwrap_err();
         assert_eq!(err.code(), Code::PermissionDenied);
-        assert_eq!(err.message(), "not_your_event_or_attendance");
+        assert_eq!(err.message(), "not_your_event_or_rsvp");
 
-        let remaining: i64 = event_attendances::table
-            .filter(event_attendances::occasion_id.eq(occasion.post_id))
+        let remaining: i64 = rsvps::table
+            .filter(rsvps::occasion_id.eq(occasion.post_id))
             .count()
             .get_result(conn)
             .unwrap();
-        assert_eq!(remaining, 1, "attendance should survive a rejected delete");
+        assert_eq!(remaining, 1, "rsvp should survive a rejected delete");
 
         Ok(())
     });
 }
 
 #[test]
-fn anonymous_attendance_is_deleted_with_a_matching_auth_token() {
+fn anonymous_rsvp_is_deleted_with_a_matching_auth_token() {
     let mut conn = test_conn();
     conn.test_transaction::<_, tonic::Status, _>(|conn| {
         let owner = create_user(conn, "deat_owner4");
@@ -179,10 +179,10 @@ fn anonymous_attendance_is_deleted_with_a_matching_auth_token() {
         );
         let (occasion, _occasion_post) =
             create_occasion(conn, &event, Some(&owner), OccasionOpts::default());
-        create_event_attendance(
+        create_rsvp(
             conn,
             &occasion,
-            EventAttendanceOpts {
+            RsvpOpts {
                 anonymous_attendee: Some(
                     serde_json::json!({"name": "Anon", "auth_token": "correct-token"}),
                 ),
@@ -190,10 +190,10 @@ fn anonymous_attendance_is_deleted_with_a_matching_auth_token() {
             },
         );
 
-        delete_event_attendance(
-            EventAttendance {
+        delete_rsvp(
+            Rsvp {
                 occasion_id: occasion.post_id.to_proto_id(),
-                attendee: Some(event_attendance::Attendee::AnonymousAttendee(
+                attendee: Some(rsvp::Attendee::AnonymousAttendee(
                     AnonymousAttendee {
                         name: "Anon".to_string(),
                         contact_methods: vec![],
@@ -207,8 +207,8 @@ fn anonymous_attendance_is_deleted_with_a_matching_auth_token() {
         )
         .expect("matching auth_token delete should succeed");
 
-        let remaining: i64 = event_attendances::table
-            .filter(event_attendances::occasion_id.eq(occasion.post_id))
+        let remaining: i64 = rsvps::table
+            .filter(rsvps::occasion_id.eq(occasion.post_id))
             .count()
             .get_result(conn)
             .unwrap();
@@ -219,7 +219,7 @@ fn anonymous_attendance_is_deleted_with_a_matching_auth_token() {
 }
 
 #[test]
-fn anonymous_attendance_delete_fails_with_the_wrong_auth_token() {
+fn anonymous_rsvp_delete_fails_with_the_wrong_auth_token() {
     let mut conn = test_conn();
     conn.test_transaction::<_, tonic::Status, _>(|conn| {
         let owner = create_user(conn, "deat_owner5");
@@ -233,10 +233,10 @@ fn anonymous_attendance_delete_fails_with_the_wrong_auth_token() {
         );
         let (occasion, _occasion_post) =
             create_occasion(conn, &event, Some(&owner), OccasionOpts::default());
-        create_event_attendance(
+        create_rsvp(
             conn,
             &occasion,
-            EventAttendanceOpts {
+            RsvpOpts {
                 anonymous_attendee: Some(
                     serde_json::json!({"name": "Anon", "auth_token": "correct-token"}),
                 ),
@@ -244,10 +244,10 @@ fn anonymous_attendance_delete_fails_with_the_wrong_auth_token() {
             },
         );
 
-        let err = delete_event_attendance(
-            EventAttendance {
+        let err = delete_rsvp(
+            Rsvp {
                 occasion_id: occasion.post_id.to_proto_id(),
-                attendee: Some(event_attendance::Attendee::AnonymousAttendee(
+                attendee: Some(rsvp::Attendee::AnonymousAttendee(
                     AnonymousAttendee {
                         name: "Anon".to_string(),
                         contact_methods: vec![],
@@ -261,7 +261,7 @@ fn anonymous_attendance_delete_fails_with_the_wrong_auth_token() {
         )
         .unwrap_err();
         assert_eq!(err.code(), Code::NotFound);
-        assert_eq!(err.message(), "event_attendance_not_found");
+        assert_eq!(err.message(), "rsvp_not_found");
 
         Ok(())
     });

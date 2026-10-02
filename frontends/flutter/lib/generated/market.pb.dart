@@ -182,7 +182,7 @@ class MarketProduct extends $pb.GeneratedMessage {
 
   /// The price, in the smallest unit of `currency` (e.g. cents for USD) -- except for a
   /// zero-decimal currency like JPY, where this is already the whole unit (see
-  /// `logic::stripe_sync::is_zero_decimal_currency`).
+  /// `logic::stripe_payments::is_zero_decimal_currency`).
   @$pb.TagNumber(4)
   $core.int get amount => $_getIZ(3);
   @$pb.TagNumber(4)

@@ -341,17 +341,17 @@ class RellmClient extends $grpc.Client {
       '/rellm.Rellm/GenerateMedia',
       ($11.GenerateMediaRequest value) => value.writeToBuffer(),
       ($core.List<$core.int> value) => $5.Media.fromBuffer(value));
-  static final _$getEventAttendances = $grpc.ClientMethod<$9.GetEventAttendancesRequest, $9.EventAttendances>(
-      '/rellm.Rellm/GetEventAttendances',
-      ($9.GetEventAttendancesRequest value) => value.writeToBuffer(),
-      ($core.List<$core.int> value) => $9.EventAttendances.fromBuffer(value));
-  static final _$upsertEventAttendance = $grpc.ClientMethod<$9.EventAttendance, $9.EventAttendance>(
-      '/rellm.Rellm/UpsertEventAttendance',
-      ($9.EventAttendance value) => value.writeToBuffer(),
-      ($core.List<$core.int> value) => $9.EventAttendance.fromBuffer(value));
-  static final _$deleteEventAttendance = $grpc.ClientMethod<$9.EventAttendance, $0.Empty>(
-      '/rellm.Rellm/DeleteEventAttendance',
-      ($9.EventAttendance value) => value.writeToBuffer(),
+  static final _$getRsvps = $grpc.ClientMethod<$9.GetRsvpsRequest, $9.Rsvps>(
+      '/rellm.Rellm/GetRsvps',
+      ($9.GetRsvpsRequest value) => value.writeToBuffer(),
+      ($core.List<$core.int> value) => $9.Rsvps.fromBuffer(value));
+  static final _$upsertRsvp = $grpc.ClientMethod<$9.Rsvp, $9.Rsvp>(
+      '/rellm.Rellm/UpsertRsvp',
+      ($9.Rsvp value) => value.writeToBuffer(),
+      ($core.List<$core.int> value) => $9.Rsvp.fromBuffer(value));
+  static final _$deleteRsvp = $grpc.ClientMethod<$9.Rsvp, $0.Empty>(
+      '/rellm.Rellm/DeleteRsvp',
+      ($9.Rsvp value) => value.writeToBuffer(),
       ($core.List<$core.int> value) => $0.Empty.fromBuffer(value));
   static final _$federateProfile = $grpc.ClientMethod<$1.FederatedAccount, $1.FederatedAccount>(
       '/rellm.Rellm/FederateProfile',
@@ -696,16 +696,16 @@ class RellmClient extends $grpc.Client {
     return $createUnaryCall(_$generateMedia, request, options: options);
   }
 
-  $grpc.ResponseFuture<$9.EventAttendances> getEventAttendances($9.GetEventAttendancesRequest request, {$grpc.CallOptions? options}) {
-    return $createUnaryCall(_$getEventAttendances, request, options: options);
+  $grpc.ResponseFuture<$9.Rsvps> getRsvps($9.GetRsvpsRequest request, {$grpc.CallOptions? options}) {
+    return $createUnaryCall(_$getRsvps, request, options: options);
   }
 
-  $grpc.ResponseFuture<$9.EventAttendance> upsertEventAttendance($9.EventAttendance request, {$grpc.CallOptions? options}) {
-    return $createUnaryCall(_$upsertEventAttendance, request, options: options);
+  $grpc.ResponseFuture<$9.Rsvp> upsertRsvp($9.Rsvp request, {$grpc.CallOptions? options}) {
+    return $createUnaryCall(_$upsertRsvp, request, options: options);
   }
 
-  $grpc.ResponseFuture<$0.Empty> deleteEventAttendance($9.EventAttendance request, {$grpc.CallOptions? options}) {
-    return $createUnaryCall(_$deleteEventAttendance, request, options: options);
+  $grpc.ResponseFuture<$0.Empty> deleteRsvp($9.Rsvp request, {$grpc.CallOptions? options}) {
+    return $createUnaryCall(_$deleteRsvp, request, options: options);
   }
 
   $grpc.ResponseFuture<$1.FederatedAccount> federateProfile($1.FederatedAccount request, {$grpc.CallOptions? options}) {
@@ -1281,26 +1281,26 @@ abstract class RellmServiceBase extends $grpc.Service {
         false,
         ($core.List<$core.int> value) => $11.GenerateMediaRequest.fromBuffer(value),
         ($5.Media value) => value.writeToBuffer()));
-    $addMethod($grpc.ServiceMethod<$9.GetEventAttendancesRequest, $9.EventAttendances>(
-        'GetEventAttendances',
-        getEventAttendances_Pre,
+    $addMethod($grpc.ServiceMethod<$9.GetRsvpsRequest, $9.Rsvps>(
+        'GetRsvps',
+        getRsvps_Pre,
         false,
         false,
-        ($core.List<$core.int> value) => $9.GetEventAttendancesRequest.fromBuffer(value),
-        ($9.EventAttendances value) => value.writeToBuffer()));
-    $addMethod($grpc.ServiceMethod<$9.EventAttendance, $9.EventAttendance>(
-        'UpsertEventAttendance',
-        upsertEventAttendance_Pre,
+        ($core.List<$core.int> value) => $9.GetRsvpsRequest.fromBuffer(value),
+        ($9.Rsvps value) => value.writeToBuffer()));
+    $addMethod($grpc.ServiceMethod<$9.Rsvp, $9.Rsvp>(
+        'UpsertRsvp',
+        upsertRsvp_Pre,
         false,
         false,
-        ($core.List<$core.int> value) => $9.EventAttendance.fromBuffer(value),
-        ($9.EventAttendance value) => value.writeToBuffer()));
-    $addMethod($grpc.ServiceMethod<$9.EventAttendance, $0.Empty>(
-        'DeleteEventAttendance',
-        deleteEventAttendance_Pre,
+        ($core.List<$core.int> value) => $9.Rsvp.fromBuffer(value),
+        ($9.Rsvp value) => value.writeToBuffer()));
+    $addMethod($grpc.ServiceMethod<$9.Rsvp, $0.Empty>(
+        'DeleteRsvp',
+        deleteRsvp_Pre,
         false,
         false,
-        ($core.List<$core.int> value) => $9.EventAttendance.fromBuffer(value),
+        ($core.List<$core.int> value) => $9.Rsvp.fromBuffer(value),
         ($0.Empty value) => value.writeToBuffer()));
     $addMethod($grpc.ServiceMethod<$1.FederatedAccount, $1.FederatedAccount>(
         'FederateProfile',
@@ -1661,16 +1661,16 @@ abstract class RellmServiceBase extends $grpc.Service {
     return generateMedia(call, await request);
   }
 
-  $async.Future<$9.EventAttendances> getEventAttendances_Pre($grpc.ServiceCall call, $async.Future<$9.GetEventAttendancesRequest> request) async {
-    return getEventAttendances(call, await request);
+  $async.Future<$9.Rsvps> getRsvps_Pre($grpc.ServiceCall call, $async.Future<$9.GetRsvpsRequest> request) async {
+    return getRsvps(call, await request);
   }
 
-  $async.Future<$9.EventAttendance> upsertEventAttendance_Pre($grpc.ServiceCall call, $async.Future<$9.EventAttendance> request) async {
-    return upsertEventAttendance(call, await request);
+  $async.Future<$9.Rsvp> upsertRsvp_Pre($grpc.ServiceCall call, $async.Future<$9.Rsvp> request) async {
+    return upsertRsvp(call, await request);
   }
 
-  $async.Future<$0.Empty> deleteEventAttendance_Pre($grpc.ServiceCall call, $async.Future<$9.EventAttendance> request) async {
-    return deleteEventAttendance(call, await request);
+  $async.Future<$0.Empty> deleteRsvp_Pre($grpc.ServiceCall call, $async.Future<$9.Rsvp> request) async {
+    return deleteRsvp(call, await request);
   }
 
   $async.Future<$1.FederatedAccount> federateProfile_Pre($grpc.ServiceCall call, $async.Future<$1.FederatedAccount> request) async {
@@ -1778,9 +1778,9 @@ abstract class RellmServiceBase extends $grpc.Service {
   $async.Future<$12.MarketSubscription> cancelMarketSubscription($grpc.ServiceCall call, $12.MarketSubscription request);
   $async.Future<$12.MarketSubscription> updateMarketSubscription($grpc.ServiceCall call, $12.MarketSubscription request);
   $async.Future<$5.Media> generateMedia($grpc.ServiceCall call, $11.GenerateMediaRequest request);
-  $async.Future<$9.EventAttendances> getEventAttendances($grpc.ServiceCall call, $9.GetEventAttendancesRequest request);
-  $async.Future<$9.EventAttendance> upsertEventAttendance($grpc.ServiceCall call, $9.EventAttendance request);
-  $async.Future<$0.Empty> deleteEventAttendance($grpc.ServiceCall call, $9.EventAttendance request);
+  $async.Future<$9.Rsvps> getRsvps($grpc.ServiceCall call, $9.GetRsvpsRequest request);
+  $async.Future<$9.Rsvp> upsertRsvp($grpc.ServiceCall call, $9.Rsvp request);
+  $async.Future<$0.Empty> deleteRsvp($grpc.ServiceCall call, $9.Rsvp request);
   $async.Future<$1.FederatedAccount> federateProfile($grpc.ServiceCall call, $1.FederatedAccount request);
   $async.Future<$0.Empty> defederateProfile($grpc.ServiceCall call, $1.FederatedAccount request);
   $async.Future<$2.ServerConfiguration> configureServer($grpc.ServiceCall call, $2.ServerConfiguration request);

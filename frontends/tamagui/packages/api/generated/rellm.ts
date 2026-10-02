@@ -26,12 +26,12 @@ import {
 import {
   DeleteOccasionSyncDestinationRequest,
   Event,
-  EventAttendance,
-  EventAttendances,
-  GetEventAttendancesRequest,
   GetEventsRequest,
   GetEventsResponse,
+  GetRsvpsRequest,
   Occasion,
+  Rsvp,
+  Rsvps,
   SyncOccasionRequest,
 } from "./events";
 import { FederatedAccount, GetServiceVersionResponse } from "./federation";
@@ -566,7 +566,7 @@ export const protobufPackage = "rellm";
  * it carries the `starts_at`/`ends_at` timestamps and optional [`Location`](#rellm-Location) that the parent [`Event`](#rellm-Event) itself does not have.
  * An [`Event`](#rellm-Event) with zero Occasions is meaningless (no time or place to attach to), so every [`Event`](#rellm-Event) must have at least one.
  *
- *     - **EventAttendances**: An [`EventAttendance`](#rellm-EventAttendance) (an "RSVP") tracks one attendee's status
+ *     - **Rsvps**: An [`Rsvp`](#rellm-Rsvp) tracks one attendee's status
  *     (`INTERESTED`, `REQUESTED`, `GOING`, `NOT_GOING`) for a specific [`Occasion`](#rellm-Occasion). Attendees may be logged-in [`User`](#rellm-User)s
  *     or anonymous (tracked via [`AnonymousAttendee`](#rellm-AnonymousAttendee) plus an `auth_token`), and are subject to their own [`Moderation`](#rellm-Moderation),
  *     independent of the Event's/Occasion's own Post moderation.
@@ -1859,34 +1859,34 @@ export const RellmDefinition = {
       responseStream: false,
       options: {},
     },
-    /** Gets EventAttendances for an Occasion. *Publicly accessible **or** Authenticated.* */
-    getEventAttendances: {
-      name: "GetEventAttendances",
-      requestType: GetEventAttendancesRequest,
+    /** Gets Rsvps for an Occasion. *Publicly accessible **or** Authenticated.* */
+    getRsvps: {
+      name: "GetRsvps",
+      requestType: GetRsvpsRequest,
       requestStream: false,
-      responseType: EventAttendances,
+      responseType: Rsvps,
       responseStream: false,
       options: {},
     },
     /**
-     * Upsert an EventAttendance. *Publicly accessible **or** Authenticated, with anonymous RSVP support.*
-     * See [EventAttendance](#rellm-EventAttendance) and [AnonymousAttendee](#rellm-AnonymousAttendee)
+     * Upsert an Rsvp. *Publicly accessible **or** Authenticated, with anonymous RSVP support.*
+     * See [Rsvp](#rellm-Rsvp) and [AnonymousAttendee](#rellm-AnonymousAttendee)
      * for details. tl;dr: Anonymous RSVPs may updated/deleted with the `AnonymousAttendee.auth_token`
      * returned by this RPC (the client should save this for the user, and ideally, offer a link
      * with the token).
      */
-    upsertEventAttendance: {
-      name: "UpsertEventAttendance",
-      requestType: EventAttendance,
+    upsertRsvp: {
+      name: "UpsertRsvp",
+      requestType: Rsvp,
       requestStream: false,
-      responseType: EventAttendance,
+      responseType: Rsvp,
       responseStream: false,
       options: {},
     },
-    /** Delete an EventAttendance.  *Publicly accessible **or** Authenticated, with anonymous RSVP support.* */
-    deleteEventAttendance: {
-      name: "DeleteEventAttendance",
-      requestType: EventAttendance,
+    /** Delete an Rsvp.  *Publicly accessible **or** Authenticated, with anonymous RSVP support.* */
+    deleteRsvp: {
+      name: "DeleteRsvp",
+      requestType: Rsvp,
       requestStream: false,
       responseType: Empty,
       responseStream: false,
@@ -2404,24 +2404,18 @@ export interface RellmServiceImplementation<CallContextExt = {}> {
    * request's input cost alone, whichever catches an insufficient balance first.
    */
   generateMedia(request: GenerateMediaRequest, context: CallContext & CallContextExt): Promise<DeepPartial<Media>>;
-  /** Gets EventAttendances for an Occasion. *Publicly accessible **or** Authenticated.* */
-  getEventAttendances(
-    request: GetEventAttendancesRequest,
-    context: CallContext & CallContextExt,
-  ): Promise<DeepPartial<EventAttendances>>;
+  /** Gets Rsvps for an Occasion. *Publicly accessible **or** Authenticated.* */
+  getRsvps(request: GetRsvpsRequest, context: CallContext & CallContextExt): Promise<DeepPartial<Rsvps>>;
   /**
-   * Upsert an EventAttendance. *Publicly accessible **or** Authenticated, with anonymous RSVP support.*
-   * See [EventAttendance](#rellm-EventAttendance) and [AnonymousAttendee](#rellm-AnonymousAttendee)
+   * Upsert an Rsvp. *Publicly accessible **or** Authenticated, with anonymous RSVP support.*
+   * See [Rsvp](#rellm-Rsvp) and [AnonymousAttendee](#rellm-AnonymousAttendee)
    * for details. tl;dr: Anonymous RSVPs may updated/deleted with the `AnonymousAttendee.auth_token`
    * returned by this RPC (the client should save this for the user, and ideally, offer a link
    * with the token).
    */
-  upsertEventAttendance(
-    request: EventAttendance,
-    context: CallContext & CallContextExt,
-  ): Promise<DeepPartial<EventAttendance>>;
-  /** Delete an EventAttendance.  *Publicly accessible **or** Authenticated, with anonymous RSVP support.* */
-  deleteEventAttendance(request: EventAttendance, context: CallContext & CallContextExt): Promise<DeepPartial<Empty>>;
+  upsertRsvp(request: Rsvp, context: CallContext & CallContextExt): Promise<DeepPartial<Rsvp>>;
+  /** Delete an Rsvp.  *Publicly accessible **or** Authenticated, with anonymous RSVP support.* */
+  deleteRsvp(request: Rsvp, context: CallContext & CallContextExt): Promise<DeepPartial<Empty>>;
   /** Federate the current user's profile with another user profile. *Authenticated*. */
   federateProfile(
     request: FederatedAccount,
@@ -2896,24 +2890,18 @@ export interface RellmClient<CallOptionsExt = {}> {
    * request's input cost alone, whichever catches an insufficient balance first.
    */
   generateMedia(request: DeepPartial<GenerateMediaRequest>, options?: CallOptions & CallOptionsExt): Promise<Media>;
-  /** Gets EventAttendances for an Occasion. *Publicly accessible **or** Authenticated.* */
-  getEventAttendances(
-    request: DeepPartial<GetEventAttendancesRequest>,
-    options?: CallOptions & CallOptionsExt,
-  ): Promise<EventAttendances>;
+  /** Gets Rsvps for an Occasion. *Publicly accessible **or** Authenticated.* */
+  getRsvps(request: DeepPartial<GetRsvpsRequest>, options?: CallOptions & CallOptionsExt): Promise<Rsvps>;
   /**
-   * Upsert an EventAttendance. *Publicly accessible **or** Authenticated, with anonymous RSVP support.*
-   * See [EventAttendance](#rellm-EventAttendance) and [AnonymousAttendee](#rellm-AnonymousAttendee)
+   * Upsert an Rsvp. *Publicly accessible **or** Authenticated, with anonymous RSVP support.*
+   * See [Rsvp](#rellm-Rsvp) and [AnonymousAttendee](#rellm-AnonymousAttendee)
    * for details. tl;dr: Anonymous RSVPs may updated/deleted with the `AnonymousAttendee.auth_token`
    * returned by this RPC (the client should save this for the user, and ideally, offer a link
    * with the token).
    */
-  upsertEventAttendance(
-    request: DeepPartial<EventAttendance>,
-    options?: CallOptions & CallOptionsExt,
-  ): Promise<EventAttendance>;
-  /** Delete an EventAttendance.  *Publicly accessible **or** Authenticated, with anonymous RSVP support.* */
-  deleteEventAttendance(request: DeepPartial<EventAttendance>, options?: CallOptions & CallOptionsExt): Promise<Empty>;
+  upsertRsvp(request: DeepPartial<Rsvp>, options?: CallOptions & CallOptionsExt): Promise<Rsvp>;
+  /** Delete an Rsvp.  *Publicly accessible **or** Authenticated, with anonymous RSVP support.* */
+  deleteRsvp(request: DeepPartial<Rsvp>, options?: CallOptions & CallOptionsExt): Promise<Empty>;
   /** Federate the current user's profile with another user profile. *Authenticated*. */
   federateProfile(
     request: DeepPartial<FederatedAccount>,

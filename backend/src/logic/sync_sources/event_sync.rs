@@ -197,7 +197,7 @@ pub fn sync_source_text(
         // Events whose UID no longer appears in the feed at all: prune their in-window
         // occasions the same way `reconcile_occasions` does for a group with zero occurrences
         // (subject to the same missing-grace-period before an occasion is actually deleted),
-        // then delete the event itself (cascades its occasions/attendances) once nothing's left.
+        // then delete the event itself (cascades its occasions/rsvps) once nothing's left.
         let stale_event_ids: HashSet<i64> = existing_event_ids_by_uid
             .iter()
             .filter(|(uid, _)| !seen_uids.contains(*uid))

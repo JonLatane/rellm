@@ -1,0 +1,6 @@
+ALTER TABLE rsvps RENAME TO event_attendances;
+ALTER SEQUENCE rsvps_id_seq RENAME TO event_attendances_id_seq;
+ALTER TABLE event_attendances RENAME CONSTRAINT rsvps_inviting_user_id_fkey TO event_attendances_inviting_user_id_fkey;
+ALTER TABLE event_attendances RENAME CONSTRAINT rsvps_user_id_fkey TO event_attendances_user_id_fkey;
+ALTER TABLE event_attendances RENAME CONSTRAINT rsvps_occasion_id_fkey TO event_attendances_occasion_id_fkey;
+ALTER TABLE event_attendances RENAME CONSTRAINT rsvps_pkey TO event_attendances_pkey;

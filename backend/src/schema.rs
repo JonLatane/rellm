@@ -36,7 +36,7 @@ diesel::table! {
 }
 
 diesel::table! {
-    event_attendances (id) {
+    rsvps (id) {
         id -> Int8,
         occasion_id -> Int8,
         user_id -> Nullable<Int8>,
@@ -531,7 +531,7 @@ diesel::table! {
 diesel::joinable!(ai_provider_grants -> ai_providers (ai_provider_id));
 diesel::joinable!(ai_provider_grants -> users (grantee_id));
 diesel::joinable!(ai_providers -> users (user_id));
-diesel::joinable!(event_attendances -> occasions (occasion_id));
+diesel::joinable!(rsvps -> occasions (occasion_id));
 diesel::joinable!(occasion_sync_destinations -> occasions (occasion_id));
 diesel::joinable!(occasion_sync_destinations -> sync_destinations (sync_destination_id));
 diesel::joinable!(occasions -> events (event_id));
@@ -575,7 +575,7 @@ diesel::joinable!(user_refresh_tokens -> users (user_id));
 diesel::allow_tables_to_appear_in_same_query!(
     ai_provider_grants,
     ai_providers,
-    event_attendances,
+    rsvps,
     occasion_sync_destinations,
     occasions,
     events,

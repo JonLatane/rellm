@@ -87,21 +87,21 @@
     - [AnonymousAttendee](#rellm-AnonymousAttendee)
     - [DeleteOccasionSyncDestinationRequest](#rellm-DeleteOccasionSyncDestinationRequest)
     - [Event](#rellm-Event)
-    - [EventAttendance](#rellm-EventAttendance)
-    - [EventAttendances](#rellm-EventAttendances)
     - [EventInfo](#rellm-EventInfo)
-    - [GetEventAttendancesRequest](#rellm-GetEventAttendancesRequest)
     - [GetEventsRequest](#rellm-GetEventsRequest)
     - [GetEventsResponse](#rellm-GetEventsResponse)
+    - [GetRsvpsRequest](#rellm-GetRsvpsRequest)
     - [Occasion](#rellm-Occasion)
     - [OccasionInfo](#rellm-OccasionInfo)
     - [OccasionRsvpInfo](#rellm-OccasionRsvpInfo)
+    - [Rsvp](#rellm-Rsvp)
+    - [Rsvps](#rellm-Rsvps)
     - [SyncOccasionRequest](#rellm-SyncOccasionRequest)
     - [TimeFilter](#rellm-TimeFilter)
     - [UserAttendee](#rellm-UserAttendee)
   
-    - [AttendanceStatus](#rellm-AttendanceStatus)
     - [EventListingType](#rellm-EventListingType)
+    - [RsvpStatus](#rellm-RsvpStatus)
   
 - [groups.proto](#groups-proto)
     - [GetGroupsRequest](#rellm-GetGroupsRequest)
@@ -708,7 +708,7 @@ An [`Occasion`](#rellm-Occasion) is the actual time-boxed occurrence of an [`Eve
 it carries the `starts_at`/`ends_at` timestamps and optional [`Location`](#rellm-Location) that the parent [`Event`](#rellm-Event) itself does not have.
 An [`Event`](#rellm-Event) with zero Occasions is meaningless (no time or place to attach to), so every [`Event`](#rellm-Event) must have at least one.
 
-    - **EventAttendances**: An [`EventAttendance`](#rellm-EventAttendance) (an &#34;RSVP&#34;) tracks one attendee&#39;s status
+    - **Rsvps**: An [`Rsvp`](#rellm-Rsvp) tracks one attendee&#39;s status
     (`INTERESTED`, `REQUESTED`, `GOING`, `NOT_GOING`) for a specific [`Occasion`](#rellm-Occasion). Attendees may be logged-in [`User`](#rellm-User)s
     or anonymous (tracked via [`AnonymousAttendee`](#rellm-AnonymousAttendee) plus an `auth_token`), and are subject to their own [`Moderation`](#rellm-Moderation),
     independent of the Event&#39;s/Occasion&#39;s own Post moderation.
@@ -1214,9 +1214,9 @@ discarded and a fresh keypair generated, so it&#39;s single-use per completed/fa
 | CancelMarketSubscription | [MarketSubscription](#rellm-MarketSubscription) | [MarketSubscription](#rellm-MarketSubscription) | Cancels a MarketSubscription by setting `canceled_at` to now -- entitlement (media storage quota, granted permissions, etc.) stays active until whichever is later of `renews_at`/`canceled_at`; the `renew_market_subscriptions` background job is what actually revokes it and sets `service_terminated_at`, once both have passed. *Authenticated* -- the subscription&#39;s own buyer, or an Admin. |
 | UpdateMarketSubscription | [MarketSubscription](#rellm-MarketSubscription) | [MarketSubscription](#rellm-MarketSubscription) | Appends to a `PURCHASE_TYPE_RELLM_HOSTING` MarketSubscription&#39;s own `fulfillment_notes` (nothing else -- every other field, including `additional_information`, is immutable after purchase and silently ignored if changed) -- backs `/market/fulfillment`. A new entry must be appended (not inserted/reordered/removed) after whatever&#39;s already stored, and its `user_id` must match the caller&#39;s own -- the server stamps `created_at` itself, ignoring whatever the client sent. Its `note` text is required unless the entry also changes `fulfillment_status` from the previous entry&#39;s own value (see `FulfillmentNote.note`&#39;s own doc). `fulfillment_status` on the returned `RellmHostingSubscriptionDetails` is always the last appended entry&#39;s own value -- there&#39;s no way to set it independently of a note. *Authenticated*, requires Admin (for now -- see that field&#39;s own doc on why this may loosen to &#34;buyer, or Admin&#34; later). |
 | GenerateMedia | [GenerateMediaRequest](#rellm-GenerateMediaRequest) | [Media](#rellm-Media) | Generates (or edits, given reference `media_ids`) an image via one of the current user&#39;s AIModels, storing it as a new Media and, if `target` is set, attaching it to that Post/Event. *Authenticated* - caller must own or have been granted access to the chosen AIProvider, and (if `target` is set) have edit access to that Post/Event. A grantee (never the provider&#39;s own owner) spends real AIProviderGrant.tokens_remaining on every call - the provider&#39;s own reported token usage once generation succeeds, or (rejected before any request is even sent to the provider) a rough pre-flight estimate of the request&#39;s input cost alone, whichever catches an insufficient balance first. |
-| GetEventAttendances | [GetEventAttendancesRequest](#rellm-GetEventAttendancesRequest) | [EventAttendances](#rellm-EventAttendances) | Gets EventAttendances for an Occasion. *Publicly accessible **or** Authenticated.* |
-| UpsertEventAttendance | [EventAttendance](#rellm-EventAttendance) | [EventAttendance](#rellm-EventAttendance) | Upsert an EventAttendance. *Publicly accessible **or** Authenticated, with anonymous RSVP support.* See [EventAttendance](#rellm-EventAttendance) and [AnonymousAttendee](#rellm-AnonymousAttendee) for details. tl;dr: Anonymous RSVPs may updated/deleted with the `AnonymousAttendee.auth_token` returned by this RPC (the client should save this for the user, and ideally, offer a link with the token). |
-| DeleteEventAttendance | [EventAttendance](#rellm-EventAttendance) | [.google.protobuf.Empty](#google-protobuf-Empty) | Delete an EventAttendance. *Publicly accessible **or** Authenticated, with anonymous RSVP support.* |
+| GetRsvps | [GetRsvpsRequest](#rellm-GetRsvpsRequest) | [Rsvps](#rellm-Rsvps) | Gets Rsvps for an Occasion. *Publicly accessible **or** Authenticated.* |
+| UpsertRsvp | [Rsvp](#rellm-Rsvp) | [Rsvp](#rellm-Rsvp) | Upsert an Rsvp. *Publicly accessible **or** Authenticated, with anonymous RSVP support.* See [Rsvp](#rellm-Rsvp) and [AnonymousAttendee](#rellm-AnonymousAttendee) for details. tl;dr: Anonymous RSVPs may updated/deleted with the `AnonymousAttendee.auth_token` returned by this RPC (the client should save this for the user, and ideally, offer a link with the token). |
+| DeleteRsvp | [Rsvp](#rellm-Rsvp) | [.google.protobuf.Empty](#google-protobuf-Empty) | Delete an Rsvp. *Publicly accessible **or** Authenticated, with anonymous RSVP support.* |
 | FederateProfile | [FederatedAccount](#rellm-FederatedAccount) | [FederatedAccount](#rellm-FederatedAccount) | Federate the current user&#39;s profile with another user profile. *Authenticated*. |
 | DefederateProfile | [FederatedAccount](#rellm-FederatedAccount) | [.google.protobuf.Empty](#google-protobuf-Empty) | Authenticated*. |
 | ConfigureServer | [ServerConfiguration](#rellm-ServerConfiguration) | [ServerConfiguration](#rellm-ServerConfiguration) | Configure the server (i.e. the response to [`GetServerConfiguration`](#grpc-api-GetServerConfiguration)). *Authenticated.* Requires `ADMIN` permissions. Editing `cluster_resources` additionally requires `EDIT_CLUSTER_SETTINGS` - see that field&#39;s own doc. Editing [`supported_contact_protocols`](#rellm-ServerConfiguration) is validated, not just stored -- see [`ContactProtocol`](#rellm-ContactProtocol)&#39;s own doc. |
@@ -2700,7 +2700,7 @@ make them visible to the event creator.
 | ----- | ---- | ----- | ----------- |
 | name | [string](#string) |  | A name for the anonymous user. For instance, &#34;Bob Gomez&#34; or &#34;The guy on your front porch.&#34; |
 | contact_methods | [ContactMethod](#rellm-ContactMethod) | repeated | Contact methods for anonymous attendees. Currently not linked to Contact methods for users. |
-| auth_token | [string](#string) | optional | Used to allow anonymous users to RSVP to an event. Generated by the server when an event attendance is upserted for the first time. Subsequent attendance upserts, with the same occasion_id and anonymous_attendee.auth_token, will update existing anonymous attendance records. Invalid auth tokens used during upserts will always create a new [`EventAttendance`](#rellm-EventAttendance). |
+| auth_token | [string](#string) | optional | Used to allow anonymous users to RSVP to an event. Generated by the server when an RSVP is upserted for the first time. Subsequent RSVP upserts, with the same occasion_id and anonymous_attendee.auth_token, will update existing anonymous RSVP records. Invalid auth tokens used during upserts will always create a new [`Rsvp`](#rellm-Rsvp). |
 
 
 
@@ -2744,51 +2744,6 @@ about the `Event`. Actual time data lies in its `Occasions`.
 
 
 
-<a name="rellm-EventAttendance"></a>
-
-### EventAttendance
-Could be called an &#34;RSVP.&#34; Describes the attendance of a user at an [`Occasion`](#rellm-Occasion). Such as:
-* A user&#39;s RSVP to an [`Occasion`](#rellm-Occasion) (one of `INTERESTED`, `GOING`, `NOT_GOING`, or , `REQUESTED` (i.e. invited)).
-* Invitation status of a user to an [`Occasion`](#rellm-Occasion).
-* [`ContactMethod`](#rellm-ContactMethod)-driven management for anonymous RSVPs to an [`Occasion`](#rellm-Occasion).
-
-
-| Field | Type | Label | Description |
-| ----- | ---- | ----- | ----------- |
-| id | [string](#string) |  | Unique server-generated ID for the attendance. |
-| occasion_id | [string](#string) |  | ID of the [`Occasion`](#rellm-Occasion) the attendance is for. |
-| user_attendee | [UserAttendee](#rellm-UserAttendee) |  | If the attendance is non-anonymous, core data about the user. |
-| anonymous_attendee | [AnonymousAttendee](#rellm-AnonymousAttendee) |  | If the attendance is anonymous, core data about the anonymous attendee. |
-| number_of_guests | [uint32](#uint32) |  | Number of guests including the RSVPing user. (Minimum 1). |
-| status | [AttendanceStatus](#rellm-AttendanceStatus) |  | The user&#39;s RSVP to an [`Occasion`](#rellm-Occasion) (one of `INTERESTED`, `REQUESTED` (i.e. invited), `GOING`, `NOT_GOING`) |
-| inviting_user_id | [string](#string) | optional | User who invited the attendee. (Not yet used.) |
-| private_note | [string](#string) |  | Public note for everyone who can see the event to see. |
-| public_note | [string](#string) |  | Private note for the event owner. |
-| moderation | [Moderation](#rellm-Moderation) |  | Moderation status for the attendance. Moderated by the [`Event`](#rellm-Event) owner (or [`Occasion`](#rellm-Occasion) owner if applicable). |
-| created_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  | The time the attendance was created. |
-| updated_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional | The time the attendance was last updated. |
-
-
-
-
-
-
-<a name="rellm-EventAttendances"></a>
-
-### EventAttendances
-Response to get RSVP data for an event.
-
-
-| Field | Type | Label | Description |
-| ----- | ---- | ----- | ----------- |
-| attendances | [EventAttendance](#rellm-EventAttendance) | repeated | The attendance data for the event, in no particular order. |
-| hidden_location | [Location](#rellm-Location) | optional | When `hide_location_until_rsvp_approved` is set, the location of the event. |
-
-
-
-
-
-
 <a name="rellm-EventInfo"></a>
 
 ### EventInfo
@@ -2801,24 +2756,8 @@ Stored as JSON in the database.
 | allows_rsvps | [bool](#bool) | optional | Whether to allow RSVPs for the event. |
 | allows_anonymous_rsvps | [bool](#bool) | optional | Whether to allow anonymous RSVPs for the event. |
 | max_attendees | [uint32](#uint32) | optional | Limit the max number of attendees. No effect unless `allows_rsvps` is true. Not yet supported. |
-| hide_location_until_rsvp_approved | [bool](#bool) | optional | Hide the location until the user RSVPs (and it&#39;s accepted). From a system perspective, when this is set, Events will not include the [`Location`](#rellm-Location) until the user has RSVP&#39;d. Location will always be returned in EventAttendances if the request for the EventAttendances came from a (logged in or anonymous) user whose attendance is approved (or the event owner). |
+| hide_location_until_rsvp_approved | [bool](#bool) | optional | Hide the location until the user RSVPs (and it&#39;s accepted). From a system perspective, when this is set, Events will not include the [`Location`](#rellm-Location) until the user has RSVP&#39;d. Location will always be returned in `Rsvps` if the request for the `Rsvps` came from a (logged in or anonymous) user whose RSVP is approved (or the event owner). |
 | default_rsvp_moderation | [Moderation](#rellm-Moderation) | optional | Default moderation for RSVPs from logged-in users (either `PENDING` or `APPROVED`). Anonymous RSVPs are always moderated (default to `PENDING`). |
-
-
-
-
-
-
-<a name="rellm-GetEventAttendancesRequest"></a>
-
-### GetEventAttendancesRequest
-Request to get RSVP data for an event.
-
-
-| Field | Type | Label | Description |
-| ----- | ---- | ----- | ----------- |
-| occasion_id | [string](#string) |  | The ID of the event to get RSVP data for. |
-| anonymous_attendee_auth_token | [string](#string) | optional | If set, and if the token has an RSVP for this even, request that RSVP data in addition to the rest of the RSVP data. (The event creator can always see and moderate anonymous RSVPs.) |
 
 
 
@@ -2848,13 +2787,13 @@ Valid GetEventsRequest formats:
 | author_user_id | [string](#string) | optional | Limits results to those by the given author user ID. |
 | group_id | [string](#string) | optional | Limits results to those in the given group ID (via [`GroupPost`](#rellm-GroupPost) association&#39;s for the Event&#39;s internal [`Post`](#rellm-Post)). |
 | time_filter | [TimeFilter](#rellm-TimeFilter) | optional | Filters returned [`Occasion`](#rellm-Occasion)s by time. |
-| attendee_id | [string](#string) | optional | If set, only returns events that the given user is attending. If `attendance_statuses` is also set, returns events where that user&#39;s status is one of the given statuses. |
-| attendance_statuses | [AttendanceStatus](#rellm-AttendanceStatus) | repeated | If set, only return events for which the current user&#39;s attendance status matches one of the given statuses. If `attendee_id` is also set, only returns events where the given user&#39;s status matches one of the given statuses. |
+| attendee_id | [string](#string) | optional | If set, only returns events that the given user is attending. If `rsvp_statuses` is also set, returns events where that user&#39;s status is one of the given statuses. |
+| rsvp_statuses | [RsvpStatus](#rellm-RsvpStatus) | repeated | If set, only return events for which the current user&#39;s RSVP status matches one of the given statuses. If `attendee_id` is also set, only returns events where the given user&#39;s status matches one of the given statuses. |
 | post_id | [string](#string) | optional | Finds Events for the Post with the given ID. The Post should have a [`PostContext`](#rellm-PostContext) of `EVENT` or `OCCASION`. |
 | listing_type | [EventListingType](#rellm-EventListingType) |  | The listing type, e.g. `ALL_ACCESSIBLE_EVENTS`, `FOLLOWING_EVENTS`, `MY_GROUPS_EVENTS`, `DIRECT_EVENTS`, `GROUP_EVENTS`, `GROUP_EVENTS_PENDING_MODERATION`. |
 | search_text | [string](#string) | optional | Search text for full-text search. |
 | occasion_post_ids | [string](#string) | repeated | Loads multiple events by their occasions&#39; Post IDs - returns one Event per matching Occasion (see GetEventsResponse&#39;s own doc), not the requested Occasion&#39;s whole parent Event&#39;s full occasion list. |
-| anonymous_attendee_auth_token | [string](#string) | optional | Auth token proving ownership of an anonymous RSVP, mirroring `GetEventAttendancesRequest.anonymous_attendee_auth_token`. Lets an anonymous attendee&#39;s own (possibly still-`PENDING`) [`EventAttendance`](#rellm-EventAttendance) and its `Occasion.location` (when `EventInfo.hide_location_until_rsvp_approved` is set) surface via each returned `Occasion.attendances`/`current_user_attendance`, same as a logged-in user&#39;s own RSVP does automatically. |
+| anonymous_attendee_auth_token | [string](#string) | optional | Auth token proving ownership of an anonymous RSVP, mirroring `GetRsvpsRequest.anonymous_attendee_auth_token`. Lets an anonymous attendee&#39;s own (possibly still-`PENDING`) [`Rsvp`](#rellm-Rsvp) and its `Occasion.location` (when `EventInfo.hide_location_until_rsvp_approved` is set) surface via each returned `Occasion.rsvps`/`current_user_rsvp`, same as a logged-in user&#39;s own RSVP does automatically. |
 
 
 
@@ -2886,6 +2825,22 @@ effectively &#34;compacts&#34; all response into its own internal Events store, 
 
 
 
+<a name="rellm-GetRsvpsRequest"></a>
+
+### GetRsvpsRequest
+Request to get RSVP data for an event.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| occasion_id | [string](#string) |  | The ID of the event to get RSVP data for. |
+| anonymous_attendee_auth_token | [string](#string) | optional | If set, and if the token has an RSVP for this even, request that RSVP data in addition to the rest of the RSVP data. (The event creator can always see and moderate anonymous RSVPs.) |
+
+
+
+
+
+
 <a name="rellm-Occasion"></a>
 
 ### Occasion
@@ -2903,8 +2858,8 @@ a [`Location`](#rellm-Location), and an optional [`Post`](#rellm-Post) (and disc
 | ends_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  | The time the event ends (UTC/Timestamp format). |
 | location | [Location](#rellm-Location) | optional | The location of the event. |
 | sync_missing_since | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional | The time since this event &#34;disappeared&#34; from the sync source. It is up to the owner whether this means it should be deleted. |
-| attendances | [EventAttendances](#rellm-EventAttendances) | optional | RSVP &#43; invite data for this Occasion. |
-| current_user_attendance | [EventAttendance](#rellm-EventAttendance) | optional | If the request was made by a logged-in user, this is the current user&#39;s attendance for this Occasion. |
+| rsvps | [Rsvps](#rellm-Rsvps) | optional | RSVP &#43; invite data for this Occasion. |
+| current_user_rsvp | [Rsvp](#rellm-Rsvp) | optional | If the request was made by a logged-in user, this is the current user&#39;s RSVP for this Occasion. |
 | sync_destinations | [SyncDestinationStatus](#rellm-SyncDestinationStatus) | repeated | SyncDestinations this Occasion has been synced (cross-posted) to, and their status. |
 | timezone | [string](#string) | optional | A time zone for the Occasion. Used when serializing it for, e.g., Facebook or Instagram posts, or generating media. |
 
@@ -2947,6 +2902,51 @@ Curently, the `optional` counts below are *never* returned by the API.
 | interested_attendees | [uint32](#uint32) | optional | The number of attendees who have signaled interest in the event. (RSVPs may have multiple attendees, i.e. guests.) |
 | invited_rsvps | [uint32](#uint32) | optional | The number of users who have been invited to the event. |
 | invited_attendees | [uint32](#uint32) | optional | The number of attendees who have been invited to the event. (RSVPs may have multiple attendees, i.e. guests.) |
+
+
+
+
+
+
+<a name="rellm-Rsvp"></a>
+
+### Rsvp
+An RSVP: describes a user&#39;s attendance at an [`Occasion`](#rellm-Occasion). Such as:
+* A user&#39;s RSVP to an [`Occasion`](#rellm-Occasion) (one of `INTERESTED`, `GOING`, `NOT_GOING`, or , `REQUESTED` (i.e. invited)).
+* Invitation status of a user to an [`Occasion`](#rellm-Occasion).
+* [`ContactMethod`](#rellm-ContactMethod)-driven management for anonymous RSVPs to an [`Occasion`](#rellm-Occasion).
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| id | [string](#string) |  | Unique server-generated ID for the RSVP. |
+| occasion_id | [string](#string) |  | ID of the [`Occasion`](#rellm-Occasion) the RSVP is for. |
+| user_attendee | [UserAttendee](#rellm-UserAttendee) |  | If the RSVP is non-anonymous, core data about the user. |
+| anonymous_attendee | [AnonymousAttendee](#rellm-AnonymousAttendee) |  | If the RSVP is anonymous, core data about the anonymous attendee. |
+| number_of_guests | [uint32](#uint32) |  | Number of guests including the RSVPing user. (Minimum 1). |
+| status | [RsvpStatus](#rellm-RsvpStatus) |  | The user&#39;s RSVP to an [`Occasion`](#rellm-Occasion) (one of `INTERESTED`, `REQUESTED` (i.e. invited), `GOING`, `NOT_GOING`) |
+| inviting_user_id | [string](#string) | optional | User who invited the attendee. (Not yet used.) |
+| private_note | [string](#string) |  | Public note for everyone who can see the event to see. |
+| public_note | [string](#string) |  | Private note for the event owner. |
+| moderation | [Moderation](#rellm-Moderation) |  | Moderation status for the RSVP. Moderated by the [`Event`](#rellm-Event) owner (or [`Occasion`](#rellm-Occasion) owner if applicable). |
+| created_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  | The time the RSVP was created. |
+| updated_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional | The time the RSVP was last updated. |
+
+
+
+
+
+
+<a name="rellm-Rsvps"></a>
+
+### Rsvps
+Response to get RSVP data for an event.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| rsvps | [Rsvp](#rellm-Rsvp) | repeated | The RSVP data for the event, in no particular order. |
+| hidden_location | [Location](#rellm-Location) | optional | When `hide_location_until_rsvp_approved` is set, the location of the event. |
 
 
 
@@ -3009,25 +3009,6 @@ Wire-identical to [Author](#rellm-Author), but with a different name to avoid co
  
 
 
-<a name="rellm-AttendanceStatus"></a>
-
-### AttendanceStatus
-Occasion attendance statuses. State transitions may generally happen
-in any direction, but:
-* `REQUESTED` can only be selected if another user invited the user whose attendance is being described.
-* `GOING` and `NOT_GOING` cannot be selected if the Occasion has ended (end time is in the past).
-* `WENT` and `DID_NOT_GO` cannot be selected if the Occasion has not started (start time is in the future).
-`INTERESTED` and `REQUESTED` can apply regardless of whether an event has started or ended.
-
-| Name | Number | Description |
-| ---- | ------ | ----------- |
-| INTERESTED | 0 | The user is (or was) interested in attending. This is the default status. |
-| REQUESTED | 1 | Another user has invited the user to the event. |
-| GOING | 2 | The user plans to go to the event, or went to the event. |
-| NOT_GOING | 3 | The user does not plan to go to the event, or did not go to the event. |
-
-
-
 <a name="rellm-EventListingType"></a>
 
 ### EventListingType
@@ -3046,6 +3027,25 @@ Events returned are ordered by start time unless otherwise specified (specifical
 | GROUP_EVENTS | 10 | Returns events from a specific group. Requires group_id parameterRequires group_id parameter |
 | GROUP_EVENTS_PENDING_MODERATION | 11 | Returns pending_moderation events from a specific group. Requires group_id parameter and user must have group (or server) admin permissions. |
 | NEWLY_ADDED_EVENTS | 20 | Returns events from either `ALL_ACCESSIBLE_EVENTS` or a specific author (with optional author_user_id parameter). Returned Occasions will be ordered by creation time rather than start time. |
+
+
+
+<a name="rellm-RsvpStatus"></a>
+
+### RsvpStatus
+Occasion RSVP statuses. State transitions may generally happen
+in any direction, but:
+* `REQUESTED` can only be selected if another user invited the user whose RSVP is being described.
+* `GOING` and `NOT_GOING` cannot be selected if the Occasion has ended (end time is in the past).
+* `WENT` and `DID_NOT_GO` cannot be selected if the Occasion has not started (start time is in the future).
+`INTERESTED` and `REQUESTED` can apply regardless of whether an event has started or ended.
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| INTERESTED | 0 | The user is (or was) interested in attending. This is the default status. |
+| REQUESTED | 1 | Another user has invited the user to the event. |
+| GOING | 2 | The user plans to go to the event, or went to the event. |
+| NOT_GOING | 3 | The user does not plan to go to the event, or did not go to the event. |
 
 
  

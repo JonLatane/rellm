@@ -9,15 +9,15 @@ use crate::models;
 use crate::models::AUTHOR_COLUMNS;
 use crate::protos::*;
 use crate::schema::users;
-use crate::schema::{event_attendances, occasions, events, posts};
+use crate::schema::{rsvps, occasions, events, posts};
 
 use crate::rpcs::validations::*;
 
-pub fn get_event_attendances(
-    request: GetEventAttendancesRequest,
+pub fn get_rsvps(
+    request: GetRsvpsRequest,
     user: &Option<&models::User>,
     conn: &mut PgPooledConnection,
-) -> Result<EventAttendances, Status> {
+) -> Result<Rsvps, Status> {
     let occasion_id = request.occasion_id.to_db_id_or_err("id")?;
 
     let (event, event_post, occasion): (models::Event, models::Post, models::Occasion) =
@@ -53,37 +53,37 @@ pub fn get_event_attendances(
         }
     }
 
-    let mut event_attendances_query = event_attendances::table
-        .left_join(users::table.on(event_attendances::user_id.eq(users::id.nullable())))
-        .select((event_attendances::all_columns, AUTHOR_COLUMNS.nullable()))
-        .filter(event_attendances::occasion_id.eq(occasion_id))
+    let mut rsvps_query = rsvps::table
+        .left_join(users::table.on(rsvps::user_id.eq(users::id.nullable())))
+        .select((rsvps::all_columns, AUTHOR_COLUMNS.nullable()))
+        .filter(rsvps::occasion_id.eq(occasion_id))
         .into_boxed();
 
     if !is_event_owner {
-        event_attendances_query = event_attendances_query.filter(
-            event_attendances::moderation
+        rsvps_query = rsvps_query.filter(
+            rsvps::moderation
                 .eq_any(PASSING_MODERATIONS)
-                .or(event_attendances::user_id
+                .or(rsvps::user_id
                     .eq(user.map(|u| u.id).unwrap_or(0))
-                    .or(event_attendances::anonymous_attendee
+                    .or(rsvps::anonymous_attendee
                         .contains(json!({"auth_token": request.anonymous_attendee_auth_token})))),
         );
     }
 
-    let attendances: Vec<(models::EventAttendance, Option<models::Author>)> =
-        event_attendances_query
-            .load::<(models::EventAttendance, Option<models::Author>)>(conn)
+    let rsvps: Vec<(models::Rsvp, Option<models::Author>)> =
+        rsvps_query
+            .load::<(models::Rsvp, Option<models::Author>)>(conn)
             .map_err(|e| {
                 log::error!(
-                    "Failed to load event attendances for occasion_id={}: {:?}",
+                    "Failed to load event rsvps for occasion_id={}: {:?}",
                     occasion_id,
                     e
                 );
-                Status::new(Code::Internal, "failed_to_load_event_attendances")
+                Status::new(Code::Internal, "failed_to_load_rsvps")
             })?;
 
     let is_approved_attendee = is_event_owner
-        || attendances.iter().any(|(a, _)| {
+        || rsvps.iter().any(|(a, _)| {
             a.moderation == Moderation::Approved.to_string_moderation()
                 && ((user.is_some() && a.user_id == user.map(|u| u.id))
                     || (request.anonymous_attendee_auth_token.is_some()
@@ -104,14 +104,14 @@ pub fn get_event_attendances(
         None
     };
 
-    let media_ids = attendances
+    let media_ids = rsvps
         .iter()
         .filter_map(|(_, author)| author.as_ref().map(|a| a.avatar_media_id))
         .map(|id| id.unwrap_or(0))
         .collect();
     let lookup = load_media_lookup(media_ids, conn);
-    Ok(EventAttendances {
-        attendances: attendances
+    Ok(Rsvps {
+        rsvps: rsvps
             .into_iter()
             .map(|(a, attendee)| {
                 let is_current_anonymous_attendeee =
@@ -122,7 +122,7 @@ pub fn get_event_attendances(
                             .attendee
                             .unwrap()
                         {
-                            event_attendance::Attendee::AnonymousAttendee(anonymous_attendee) => {
+                            rsvp::Attendee::AnonymousAttendee(anonymous_attendee) => {
                                 anonymous_attendee.auth_token.unwrap()
                                     == request
                                         .anonymous_attendee_auth_token

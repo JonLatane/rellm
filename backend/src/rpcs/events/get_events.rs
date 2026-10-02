@@ -68,25 +68,25 @@ pub fn get_events(
         }
     };
     let mut events = convert_events(&result, conn);
-    attach_occasion_attendances(&result, &mut events, &request, &user, conn);
+    attach_occasion_rsvps(&result, &mut events, &request, &user, conn);
     Ok(GetEventsResponse { events })
 }
 
-// Per-occasion context `attach_occasion_attendances` needs but that isn't already sitting
-// on `models::EventAttendance` -- both come from the *parent Event*, not the occasion itself
+// Per-occasion context `attach_occasion_rsvps` needs but that isn't already sitting
+// on `models::Rsvp` -- both come from the *parent Event*, not the occasion itself
 // (`event_post.0.user_id`/`event.info` are shared across every occasion of that Event), so this
 // is computed once per Event up front rather than re-derived per occasion.
-struct OccasionAttendanceContext {
+struct OccasionRsvpContext {
     owner_user_id: Option<i64>,
     hide_location_until_rsvp_approved: bool,
 }
 
-fn attendance_matches_anonymous_token(
-    attendance: &models::EventAttendance,
+fn rsvp_matches_anonymous_token(
+    rsvp: &models::Rsvp,
     token: Option<&str>,
 ) -> bool {
     token.is_some()
-        && attendance
+        && rsvp
             .anonymous_attendee
             .as_ref()
             .and_then(|a| a.get("auth_token"))
@@ -94,24 +94,24 @@ fn attendance_matches_anonymous_token(
             == token
 }
 
-// Loads attendance info for every `Occasion` about to be returned, in one query keyed by
-// `occasion_id IN (...)`, and attaches it as `Occasion.attendances`/
-// `current_user_attendance` -- sparing callers (e.g. the Elm SPA's Posts page) a separate
-// `GetEventAttendances` round trip per occasion just to show RSVP info. Also resolves
-// `Occasion.location` (and mirrors it into `EventAttendances.hidden_location`) the same way,
-// since whether it's visible depends on the very attendance data being loaded here.
+// Loads rsvp info for every `Occasion` about to be returned, in one query keyed by
+// `occasion_id IN (...)`, and attaches it as `Occasion.rsvps`/
+// `current_user_rsvp` -- sparing callers (e.g. the Elm SPA's Posts page) a separate
+// `GetRsvps` round trip per occasion just to show RSVP info. Also resolves
+// `Occasion.location` (and mirrors it into `Rsvps.hidden_location`) the same way,
+// since whether it's visible depends on the very rsvp data being loaded here.
 //
-// Deliberately mirrors `get_event_attendances`'s own visibility rules field-for-field (see that
-// RPC's doc comments for the reasoning behind each): moderation-passing attendances are visible to
-// everyone, an Event's owner sees every attendance (regardless of moderation) for their own
-// occasions, a viewer always sees their own attendance regardless of moderation, and
+// Deliberately mirrors `get_rsvps`'s own visibility rules field-for-field (see that
+// RPC's doc comments for the reasoning behind each): moderation-passing rsvps are visible to
+// everyone, an Event's owner sees every rsvp (regardless of moderation) for their own
+// occasions, a viewer always sees their own rsvp regardless of moderation, and
 // `request.anonymous_attendee_auth_token` (mirroring
-// `GetEventAttendancesRequest.anonymous_attendee_auth_token`) unlocks an anonymous attendee's own
+// `GetRsvpsRequest.anonymous_attendee_auth_token`) unlocks an anonymous attendee's own
 // record the same way. `private_note` and the real `location` (once
 // `EventInfo.hide_location_until_rsvp_approved` is set) are likewise only revealed to the
-// attendance's own owner/attendee or the Event owner. Keeping these two RPCs' rules in sync by
-// hand is exactly the kind of thing `get_event_attendances_parity_tests` guards against drifting.
-fn attach_occasion_attendances(
+// rsvp's own owner/attendee or the Event owner. Keeping these two RPCs' rules in sync by
+// hand is exactly the kind of thing `get_rsvps_parity_tests` guards against drifting.
+fn attach_occasion_rsvps(
     result: &[MarshalableEvent],
     events: &mut [Event],
     request: &GetEventsRequest,
@@ -121,7 +121,7 @@ fn attach_occasion_attendances(
     let current_user_id = user.map(|u| u.id);
     let anonymous_auth_token = request.anonymous_attendee_auth_token.as_deref();
 
-    let mut context_by_occasion: HashMap<i64, OccasionAttendanceContext> = HashMap::new();
+    let mut context_by_occasion: HashMap<i64, OccasionRsvpContext> = HashMap::new();
     for MarshalableEvent(event, event_post, occasions) in result {
         let hide_location_until_rsvp_approved = event.info["hide_location_until_rsvp_approved"]
             .as_bool()
@@ -129,7 +129,7 @@ fn attach_occasion_attendances(
         for MarshalableOccasion(occasion, _) in occasions {
             context_by_occasion.insert(
                 occasion.post_id,
-                OccasionAttendanceContext {
+                OccasionRsvpContext {
                     owner_user_id: event_post.0.user_id,
                     hide_location_until_rsvp_approved,
                 },
@@ -150,34 +150,34 @@ fn attach_occasion_attendances(
         .map(|(occasion_id, _)| *occasion_id)
         .collect();
 
-    let attendances: Vec<(models::EventAttendance, Option<models::Author>)> =
-        event_attendances::table
-            .left_join(users::table.on(event_attendances::user_id.eq(users::id.nullable())))
-            .select((event_attendances::all_columns, AUTHOR_COLUMNS.nullable()))
-            .filter(event_attendances::occasion_id.eq_any(&occasion_ids))
+    let rsvps: Vec<(models::Rsvp, Option<models::Author>)> =
+        rsvps::table
+            .left_join(users::table.on(rsvps::user_id.eq(users::id.nullable())))
+            .select((rsvps::all_columns, AUTHOR_COLUMNS.nullable()))
+            .filter(rsvps::occasion_id.eq_any(&occasion_ids))
             .filter(
-                event_attendances::occasion_id
+                rsvps::occasion_id
                     .eq_any(&owned_occasion_ids)
-                    .or(event_attendances::moderation.eq_any(PASSING_MODERATIONS))
-                    .or(event_attendances::user_id.eq(current_user_id.unwrap_or(0)))
-                    .or(event_attendances::anonymous_attendee
+                    .or(rsvps::moderation.eq_any(PASSING_MODERATIONS))
+                    .or(rsvps::user_id.eq(current_user_id.unwrap_or(0)))
+                    .or(rsvps::anonymous_attendee
                         .contains(json!({"auth_token": anonymous_auth_token}))),
             )
-            .load::<(models::EventAttendance, Option<models::Author>)>(conn)
+            .load::<(models::Rsvp, Option<models::Author>)>(conn)
             .unwrap_or_default();
 
-    let media_ids = attendances
+    let media_ids = rsvps
         .iter()
         .filter_map(|(_, author)| author.as_ref().and_then(|a| a.avatar_media_id))
         .collect();
     let media_lookup = load_media_lookup(media_ids, conn);
 
-    let mut attendances_by_occasion: HashMap<
+    let mut rsvps_by_occasion: HashMap<
         i64,
-        Vec<(models::EventAttendance, Option<models::Author>)>,
+        Vec<(models::Rsvp, Option<models::Author>)>,
     > = HashMap::new();
-    for entry in attendances {
-        attendances_by_occasion
+    for entry in rsvps {
+        rsvps_by_occasion
             .entry(entry.0.occasion_id)
             .or_default()
             .push(entry);
@@ -189,18 +189,18 @@ fn attach_occasion_attendances(
         {
             let context = &context_by_occasion[&occasion.post_id];
             let is_owner = current_user_id.is_some() && context.owner_user_id == current_user_id;
-            let occasion_attendances = attendances_by_occasion
+            let occasion_rsvps = rsvps_by_occasion
                 .get(&occasion.post_id)
                 .cloned()
                 .unwrap_or_default();
 
-            let is_viewers_own = |a: &models::EventAttendance| {
+            let is_viewers_own = |a: &models::Rsvp| {
                 (current_user_id.is_some() && a.user_id == current_user_id)
-                    || attendance_matches_anonymous_token(a, anonymous_auth_token)
+                    || rsvp_matches_anonymous_token(a, anonymous_auth_token)
             };
 
             let is_approved_attendee = is_owner
-                || occasion_attendances.iter().any(|(a, _)| {
+                || occasion_rsvps.iter().any(|(a, _)| {
                     a.moderation == Moderation::Approved.to_string_moderation() && is_viewers_own(a)
                 });
 
@@ -212,13 +212,13 @@ fn attach_occasion_attendances(
                 };
             occasion_proto.location = visible_location.clone();
 
-            occasion_proto.current_user_attendance = occasion_attendances
+            occasion_proto.current_user_rsvp = occasion_rsvps
                 .iter()
                 .find(|(a, _)| is_viewers_own(a))
                 .map(|entry| entry.to_proto(true, true, media_lookup.as_ref()));
 
-            occasion_proto.attendances = Some(EventAttendances {
-                attendances: occasion_attendances
+            occasion_proto.rsvps = Some(Rsvps {
+                rsvps: occasion_rsvps
                     .iter()
                     .map(|entry| {
                         let include_private_note = is_owner || is_viewers_own(&entry.0);

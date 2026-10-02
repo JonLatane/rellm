@@ -13,7 +13,7 @@ use crate::marshaling::*;
 use crate::models;
 use crate::protos::*;
 use crate::schema::{
-    event_attendances, occasion_sync_destinations, occasions, events, follows,
+    rsvps, occasion_sync_destinations, occasions, events, follows,
     group_posts, groups, media, memberships, messages, post_sync_destinations, posts,
     server_configurations, sync_destinations, sync_sources, users,
 };
@@ -574,24 +574,24 @@ pub fn create_occasion(
     (occasion, post)
 }
 
-/// Options for `create_event_attendance`. Defaults to an unmoderated, logged-in-user-less
+/// Options for `create_rsvp`. Defaults to an unmoderated, logged-in-user-less
 /// (i.e. this needs a `user_id` or `anonymous_attendee` set explicitly, same as
-/// `upsert_event_attendance` requires exactly one of the two) `INTERESTED` RSVP.
-pub struct EventAttendanceOpts {
+/// `upsert_rsvp` requires exactly one of the two) `INTERESTED` RSVP.
+pub struct RsvpOpts {
     pub user_id: Option<i64>,
     pub anonymous_attendee: Option<serde_json::Value>,
-    pub status: AttendanceStatus,
+    pub status: RsvpStatus,
     pub moderation: Moderation,
     pub public_note: String,
     pub private_note: String,
 }
 
-impl Default for EventAttendanceOpts {
+impl Default for RsvpOpts {
     fn default() -> Self {
-        EventAttendanceOpts {
+        RsvpOpts {
             user_id: None,
             anonymous_attendee: None,
-            status: AttendanceStatus::Interested,
+            status: RsvpStatus::Interested,
             moderation: Moderation::Unmoderated,
             public_note: "".to_string(),
             private_note: "".to_string(),
@@ -599,28 +599,28 @@ impl Default for EventAttendanceOpts {
     }
 }
 
-/// Inserts an `event_attendances` row directly (bypassing `rpcs::upsert_event_attendance`), for
+/// Inserts an `rsvps` row directly (bypassing `rpcs::upsert_rsvp`), for
 /// specs that need precise control over `moderation`/`user_id`/`anonymous_attendee` to exercise
-/// `get_event_attendances`/`get_events`' visibility rules.
-pub fn create_event_attendance(
+/// `get_rsvps`/`get_events`' visibility rules.
+pub fn create_rsvp(
     conn: &mut PgPooledConnection,
     occasion: &models::Occasion,
-    opts: EventAttendanceOpts,
-) -> models::EventAttendance {
-    insert_into(event_attendances::table)
-        .values(&models::NewEventAttendance {
+    opts: RsvpOpts,
+) -> models::Rsvp {
+    insert_into(rsvps::table)
+        .values(&models::NewRsvp {
             occasion_id: occasion.post_id,
             user_id: opts.user_id,
             anonymous_attendee: opts.anonymous_attendee,
             number_of_guests: 0,
-            status: opts.status.to_string_attendance_status(),
+            status: opts.status.to_string_rsvp_status(),
             inviting_user_id: None,
             public_note: opts.public_note,
             private_note: opts.private_note,
             moderation: opts.moderation.to_string_moderation(),
         })
-        .get_result::<models::EventAttendance>(conn)
-        .expect("failed to create test event attendance")
+        .get_result::<models::Rsvp>(conn)
+        .expect("failed to create test event rsvp")
 }
 
 /// Starts a background thread serving `ics_text` as `text/calendar` for every HTTP request it

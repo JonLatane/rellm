@@ -45,29 +45,29 @@ class EventListingType extends $pb.ProtobufEnum {
   const EventListingType._($core.int v, $core.String n) : super(v, n);
 }
 
-/// Occasion attendance statuses. State transitions may generally happen
+/// Occasion RSVP statuses. State transitions may generally happen
 /// in any direction, but:
-/// * `REQUESTED` can only be selected if another user invited the user whose attendance is being described.
+/// * `REQUESTED` can only be selected if another user invited the user whose RSVP is being described.
 /// * `GOING` and `NOT_GOING` cannot be selected if the Occasion has ended (end time is in the past).
 /// * `WENT` and `DID_NOT_GO` cannot be selected if the Occasion has not started (start time is in the future).
 /// `INTERESTED` and `REQUESTED` can apply regardless of whether an event has started or ended.
-class AttendanceStatus extends $pb.ProtobufEnum {
-  static const AttendanceStatus INTERESTED = AttendanceStatus._(0, _omitEnumNames ? '' : 'INTERESTED');
-  static const AttendanceStatus REQUESTED = AttendanceStatus._(1, _omitEnumNames ? '' : 'REQUESTED');
-  static const AttendanceStatus GOING = AttendanceStatus._(2, _omitEnumNames ? '' : 'GOING');
-  static const AttendanceStatus NOT_GOING = AttendanceStatus._(3, _omitEnumNames ? '' : 'NOT_GOING');
+class RsvpStatus extends $pb.ProtobufEnum {
+  static const RsvpStatus INTERESTED = RsvpStatus._(0, _omitEnumNames ? '' : 'INTERESTED');
+  static const RsvpStatus REQUESTED = RsvpStatus._(1, _omitEnumNames ? '' : 'REQUESTED');
+  static const RsvpStatus GOING = RsvpStatus._(2, _omitEnumNames ? '' : 'GOING');
+  static const RsvpStatus NOT_GOING = RsvpStatus._(3, _omitEnumNames ? '' : 'NOT_GOING');
 
-  static const $core.List<AttendanceStatus> values = <AttendanceStatus> [
+  static const $core.List<RsvpStatus> values = <RsvpStatus> [
     INTERESTED,
     REQUESTED,
     GOING,
     NOT_GOING,
   ];
 
-  static final $core.Map<$core.int, AttendanceStatus> _byValue = $pb.ProtobufEnum.initByValue(values);
-  static AttendanceStatus? valueOf($core.int value) => _byValue[value];
+  static final $core.Map<$core.int, RsvpStatus> _byValue = $pb.ProtobufEnum.initByValue(values);
+  static RsvpStatus? valueOf($core.int value) => _byValue[value];
 
-  const AttendanceStatus._($core.int v, $core.String n) : super(v, n);
+  const RsvpStatus._($core.int v, $core.String n) : super(v, n);
 }
 
 

@@ -485,7 +485,7 @@ import "market.proto";
 // it carries the `starts_at`/`ends_at` timestamps and optional [`Location`](#rellm-Location) that the parent [`Event`](#rellm-Event) itself does not have.
 // An [`Event`](#rellm-Event) with zero Occasions is meaningless (no time or place to attach to), so every [`Event`](#rellm-Event) must have at least one.
 //
-//     - **EventAttendances**: An [`EventAttendance`](#rellm-EventAttendance) (an "RSVP") tracks one attendee's status
+//     - **Rsvps**: An [`Rsvp`](#rellm-Rsvp) tracks one attendee's status
 //     (`INTERESTED`, `REQUESTED`, `GOING`, `NOT_GOING`) for a specific [`Occasion`](#rellm-Occasion). Attendees may be logged-in [`User`](#rellm-User)s
 //     or anonymous (tracked via [`AnonymousAttendee`](#rellm-AnonymousAttendee) plus an `auth_token`), and are subject to their own [`Moderation`](#rellm-Moderation),
 //     independent of the Event's/Occasion's own Post moderation.
@@ -1185,16 +1185,16 @@ service Rellm {
   // request's input cost alone, whichever catches an insufficient balance first.
   rpc GenerateMedia(GenerateMediaRequest) returns (Media) {}
 
-  // Gets EventAttendances for an Occasion. *Publicly accessible **or** Authenticated.*
-  rpc GetEventAttendances(GetEventAttendancesRequest) returns (EventAttendances) {}
-  // Upsert an EventAttendance. *Publicly accessible **or** Authenticated, with anonymous RSVP support.*
-  // See [EventAttendance](#rellm-EventAttendance) and [AnonymousAttendee](#rellm-AnonymousAttendee)
+  // Gets Rsvps for an Occasion. *Publicly accessible **or** Authenticated.*
+  rpc GetRsvps(GetRsvpsRequest) returns (Rsvps) {}
+  // Upsert an Rsvp. *Publicly accessible **or** Authenticated, with anonymous RSVP support.*
+  // See [Rsvp](#rellm-Rsvp) and [AnonymousAttendee](#rellm-AnonymousAttendee)
   // for details. tl;dr: Anonymous RSVPs may updated/deleted with the `AnonymousAttendee.auth_token`
   // returned by this RPC (the client should save this for the user, and ideally, offer a link
   // with the token).
-  rpc UpsertEventAttendance(EventAttendance) returns (EventAttendance) {}
-  // Delete an EventAttendance.  *Publicly accessible **or** Authenticated, with anonymous RSVP support.*
-  rpc DeleteEventAttendance(EventAttendance) returns (google.protobuf.Empty) {}
+  rpc UpsertRsvp(Rsvp) returns (Rsvp) {}
+  // Delete an Rsvp.  *Publicly accessible **or** Authenticated, with anonymous RSVP support.*
+  rpc DeleteRsvp(Rsvp) returns (google.protobuf.Empty) {}
 
   // Federate the current user's profile with another user profile. *Authenticated*.
   rpc FederateProfile(FederatedAccount) returns (FederatedAccount) {}

@@ -127,7 +127,7 @@ impl ToProtoMarshalableSyncDestination for MarshalableSyncDestination {
             updated_at: destination.updated_at.map(|t| t.to_proto()),
             // Left unset here -- see `attach_synced_counts`, which every RPC handler that returns
             // a `SyncDestination` calls as a second pass to fill these in (mirrors
-            // `get_events.rs`'s "build the response, then attach_occasion_attendances"
+            // `get_events.rs`'s "build the response, then attach_occasion_rsvps"
             // shape), rather than every caller of `to_proto` having to supply it up front.
             synced_occasion_count: None,
             synced_post_count: None,

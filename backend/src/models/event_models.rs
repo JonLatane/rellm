@@ -4,7 +4,7 @@ use diesel::*;
 
 use super::SyncDestination;
 use crate::schema::{
-    event_attendances, occasion_sync_destinations, occasions, events, sync_sources,
+    rsvps, occasion_sync_destinations, occasions, events, sync_sources,
 };
 
 #[derive(Debug, Queryable, Identifiable, AsChangeset, Clone)]
@@ -143,7 +143,7 @@ pub struct NewOccasionSyncDestination {
 
 #[derive(Debug, Queryable, Identifiable, Associations, AsChangeset, Clone)]
 #[diesel(belongs_to(Occasion))]
-pub struct EventAttendance {
+pub struct Rsvp {
     pub id: i64,
     pub occasion_id: i64,
     pub user_id: Option<i64>,
@@ -159,8 +159,8 @@ pub struct EventAttendance {
 }
 
 #[derive(Debug, Insertable)]
-#[diesel(table_name = event_attendances)]
-pub struct NewEventAttendance {
+#[diesel(table_name = rsvps)]
+pub struct NewRsvp {
     pub occasion_id: i64,
     pub user_id: Option<i64>,
     pub anonymous_attendee: Option<serde_json::Value>,

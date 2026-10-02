@@ -6,15 +6,15 @@ use tonic::{Code, Status};
 use crate::db_connection::PgPooledConnection;
 use crate::generate_token;
 use crate::marshaling::*;
-use crate::models::{self, get_author, get_event_attendance, NewEventAttendance};
+use crate::models::{self, get_author, get_rsvp, NewRsvp};
 use crate::protos::*;
-use crate::schema::{event_attendances, occasions, events, posts, users};
+use crate::schema::{rsvps, occasions, events, posts, users};
 
-pub fn upsert_event_attendance(
-    request: EventAttendance,
+pub fn upsert_rsvp(
+    request: Rsvp,
     user: &Option<&models::User>,
     conn: &mut PgPooledConnection,
-) -> Result<EventAttendance, Status> {
+) -> Result<Rsvp, Status> {
     if &request.number_of_guests < &1 {
         return Err(Status::new(
             Code::InvalidArgument,
@@ -44,8 +44,8 @@ pub fn upsert_event_attendance(
         .map_err(|_e| Status::new(Code::Internal, "invalid_occasion_id"))?;
 
     let is_event_owner = user.is_some() && event_post.user_id == user.map(|u| u.id);
-    let is_own_attendance = match &request.attendee {
-        Some(event_attendance::Attendee::UserAttendee(attendee)) => {
+    let is_own_rsvp = match &request.attendee {
+        Some(rsvp::Attendee::UserAttendee(attendee)) => {
             user.is_some()
                 && user.unwrap().id == attendee.user_id.to_db_id_or_err("user_attendee.user_id")?
         }
@@ -53,7 +53,7 @@ pub fn upsert_event_attendance(
     };
 
     let attendee_user_id = match &request.attendee {
-        Some(event_attendance::Attendee::UserAttendee(author)) => {
+        Some(rsvp::Attendee::UserAttendee(author)) => {
             Some(author.user_id.to_db_id_or_err("author.user_id")?)
         }
         _ => None,
@@ -77,9 +77,9 @@ pub fn upsert_event_attendance(
     let is_anonymous = attendee_user_id.is_none();
 
     log::info!(
-        "is_event_owner: {}, is_own_attendance: {}, is_anonymous: {}, user_id: {:?}, attendee: {:?}",
+        "is_event_owner: {}, is_own_rsvp: {}, is_anonymous: {}, user_id: {:?}, attendee: {:?}",
         is_event_owner,
-        is_own_attendance,
+        is_own_rsvp,
         is_anonymous,
         user.map(|u| u.id),
         request.attendee
@@ -89,11 +89,11 @@ pub fn upsert_event_attendance(
         .attendee
         .as_ref()
         .map(|a| match a {
-            event_attendance::Attendee::AnonymousAttendee(u) => u.auth_token.clone(),
+            rsvp::Attendee::AnonymousAttendee(u) => u.auth_token.clone(),
             _ => None,
         })
         .flatten();
-    let existing_attendance = get_event_attendance(
+    let existing_rsvp = get_rsvp(
         occasion_id,
         attendee_user_id,
         attendee_auth_token,
@@ -103,14 +103,14 @@ pub fn upsert_event_attendance(
     let anonymous_attendee: Option<AnonymousAttendee> = match &attendee_user_id {
         Some(_user_id) => None,
         None => match request.attendee {
-            Some(event_attendance::Attendee::AnonymousAttendee(attendee)) => {
+            Some(rsvp::Attendee::AnonymousAttendee(attendee)) => {
                 Some(AnonymousAttendee {
                     name: attendee.name,
                     contact_methods: attendee.contact_methods,
-                    auth_token: Some(match existing_attendance {
-                        Some(ref attendance) => {
-                            match attendance.to_proto(true, false, None).attendee {
-                                Some(event_attendance::Attendee::AnonymousAttendee(
+                    auth_token: Some(match existing_rsvp {
+                        Some(ref rsvp) => {
+                            match rsvp.to_proto(true, false, None).attendee {
+                                Some(rsvp::Attendee::AnonymousAttendee(
                                     AnonymousAttendee {
                                         auth_token: Some(token),
                                         ..
@@ -123,17 +123,17 @@ pub fn upsert_event_attendance(
                     }),
                 })
             }
-            Some(event_attendance::Attendee::UserAttendee(_)) => None,
+            Some(rsvp::Attendee::UserAttendee(_)) => None,
             None => return Err(Status::new(Code::InvalidArgument, "attendee_required")),
         },
     };
 
-    match existing_attendance {
-        Some((mut attendance, author)) => {
-            if !is_own_attendance && !is_event_owner && !is_anonymous {
+    match existing_rsvp {
+        Some((mut rsvp, author)) => {
+            if !is_own_rsvp && !is_event_owner && !is_anonymous {
                 return Err(Status::new(
                     Code::PermissionDenied,
-                    "cannot_update_attendance",
+                    "cannot_update_rsvp",
                 ));
             }
 
@@ -141,11 +141,11 @@ pub fn upsert_event_attendance(
             if is_anonymous {
                 let attendee = anonymous_attendee.as_ref().unwrap();
 
-                if &attendance.public_note != &request.public_note
-                // || &attendance.private_note != &request.private_note
-                // || &attendance.status != &request.status
+                if &rsvp.public_note != &request.public_note
+                // || &rsvp.private_note != &request.private_note
+                // || &rsvp.status != &request.status
                     || &attendee.name
-                        != &attendance
+                        != &rsvp
                             .anonymous_attendee
                             .as_ref()
                             .unwrap()
@@ -155,15 +155,15 @@ pub fn upsert_event_attendance(
                             .unwrap()
                             .to_string()
                 {
-                    attendance.anonymous_attendee = anonymous_attendee
+                    rsvp.anonymous_attendee = anonymous_attendee
                         .map(|a| serde_json::to_value(a).unwrap())
-                        .or(attendance.anonymous_attendee);
-                    attendance.moderation = Moderation::Pending.to_string_moderation();
+                        .or(rsvp.anonymous_attendee);
+                    rsvp.moderation = Moderation::Pending.to_string_moderation();
                 }
             }
             if is_event_owner {
-                attendance.moderation = match (
-                    attendance.moderation.to_proto_moderation(),
+                rsvp.moderation = match (
+                    rsvp.moderation.to_proto_moderation(),
                     request.moderation.to_proto_moderation(),
                 ) {
                     (_, Some(Moderation::Rejected)) => Moderation::Rejected.to_string_moderation(),
@@ -172,24 +172,24 @@ pub fn upsert_event_attendance(
                     (_, Some(Moderation::Unmoderated)) => {
                         Moderation::Approved.to_string_moderation()
                     }
-                    _ => attendance.moderation,
+                    _ => rsvp.moderation,
                 };
             }
-            if is_own_attendance || is_anonymous {
-                attendance.number_of_guests = i32::try_from(request.number_of_guests)
+            if is_own_rsvp || is_anonymous {
+                rsvp.number_of_guests = i32::try_from(request.number_of_guests)
                     .map_err(|_e| Status::new(Code::InvalidArgument, "invalid_number_of_guests"))?;
-                attendance.public_note = request.public_note;
-                attendance.private_note = request.private_note;
-                attendance.status = request.status.to_string_attendance_status();
+                rsvp.public_note = request.public_note;
+                rsvp.private_note = request.private_note;
+                rsvp.status = request.status.to_string_rsvp_status();
             }
 
-            diesel::update(event_attendances::table)
-                .filter(event_attendances::id.eq(attendance.id))
-                .set(attendance.clone())
+            diesel::update(rsvps::table)
+                .filter(rsvps::id.eq(rsvp.id))
+                .set(rsvp.clone())
                 .execute(conn)
-                .map_err(|_e| Status::new(Code::Internal, "failed_to_update_event_attendance"))?;
+                .map_err(|_e| Status::new(Code::Internal, "failed_to_update_rsvp"))?;
 
-            Ok((attendance, author).to_proto(true, true, lookup.as_ref()))
+            Ok((rsvp, author).to_proto(true, true, lookup.as_ref()))
         }
         None => {
             let authenticated_user_id = &user.map(|u| u.id);
@@ -199,21 +199,21 @@ pub fn upsert_event_attendance(
             };
             let status = match (
                 inviting_user_id,
-                request.status.to_proto_attendance_status(),
+                request.status.to_proto_rsvp_status(),
             ) {
-                (Some(_), _) if !is_own_attendance => {
-                    AttendanceStatus::Requested.to_string_attendance_status()
+                (Some(_), _) if !is_own_rsvp => {
+                    RsvpStatus::Requested.to_string_rsvp_status()
                 }
-                (_, Some(AttendanceStatus::Going)) => {
-                    AttendanceStatus::Going.to_string_attendance_status()
+                (_, Some(RsvpStatus::Going)) => {
+                    RsvpStatus::Going.to_string_rsvp_status()
                 }
-                (_, Some(AttendanceStatus::NotGoing)) => {
-                    AttendanceStatus::NotGoing.to_string_attendance_status()
+                (_, Some(RsvpStatus::NotGoing)) => {
+                    RsvpStatus::NotGoing.to_string_rsvp_status()
                 }
-                _ => AttendanceStatus::Interested.to_string_attendance_status(),
+                _ => RsvpStatus::Interested.to_string_rsvp_status(),
             };
-            let attendance = diesel::insert_into(event_attendances::table)
-                .values(NewEventAttendance {
+            let rsvp = diesel::insert_into(rsvps::table)
+                .values(NewRsvp {
                     occasion_id,
                     user_id: attendee_user_id,
                     inviting_user_id,
@@ -232,8 +232,8 @@ pub fn upsert_event_attendance(
                     })
                     .to_string_moderation(),
                 })
-                .get_result::<models::EventAttendance>(conn)
-                .map_err(|_e| Status::new(Code::Internal, "failed_to_create_event_attendance"))?;
+                .get_result::<models::Rsvp>(conn)
+                .map_err(|_e| Status::new(Code::Internal, "failed_to_create_rsvp"))?;
             let author = match attendee_user_id {
                 Some(user_id) => Some(
                     get_author(user_id, conn)
@@ -241,7 +241,7 @@ pub fn upsert_event_attendance(
                 ),
                 _ => None,
             };
-            Ok((attendance, author).to_proto(true, true, lookup.as_ref()))
+            Ok((rsvp, author).to_proto(true, true, lookup.as_ref()))
         }
     }
 }
