@@ -11,6 +11,7 @@
 
 import 'dart:core' as $core;
 
+import 'package:fixnum/fixnum.dart' as $fixnum;
 import 'package:protobuf/protobuf.dart' as $pb;
 
 import 'events.pbenum.dart';
@@ -396,6 +397,7 @@ class Event extends $pb.GeneratedMessage {
     $8.Post? post,
     EventInfo? info,
     $core.Iterable<Occasion>? occasions,
+    $fixnum.Int64? occasionCount,
   }) {
     final $result = create();
     if (post != null) {
@@ -407,6 +409,9 @@ class Event extends $pb.GeneratedMessage {
     if (occasions != null) {
       $result.occasions.addAll(occasions);
     }
+    if (occasionCount != null) {
+      $result.occasionCount = occasionCount;
+    }
     return $result;
   }
   Event._() : super();
@@ -417,6 +422,7 @@ class Event extends $pb.GeneratedMessage {
     ..aOM<$8.Post>(2, _omitFieldNames ? '' : 'post', subBuilder: $8.Post.create)
     ..aOM<EventInfo>(3, _omitFieldNames ? '' : 'info', subBuilder: EventInfo.create)
     ..pc<Occasion>(4, _omitFieldNames ? '' : 'occasions', $pb.PbFieldType.PM, subBuilder: Occasion.create)
+    ..a<$fixnum.Int64>(5, _omitFieldNames ? '' : 'occasionCount', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
     ..hasRequiredFields = false
   ;
 
@@ -469,6 +475,17 @@ class Event extends $pb.GeneratedMessage {
   /// A list of occasions for the Event. *Events will only include all occasions if the request is for a single event.*
   @$pb.TagNumber(4)
   $core.List<Occasion> get occasions => $_getList(2);
+
+  /// The total number of occasions this Event has that the viewer can see, regardless of how many
+  /// are included in `occasions` (listings only include occasions matching their time filter).
+  @$pb.TagNumber(5)
+  $fixnum.Int64 get occasionCount => $_getI64(3);
+  @$pb.TagNumber(5)
+  set occasionCount($fixnum.Int64 v) { $_setInt64(3, v); }
+  @$pb.TagNumber(5)
+  $core.bool hasOccasionCount() => $_has(3);
+  @$pb.TagNumber(5)
+  void clearOccasionCount() => clearField(5);
 }
 
 /// Syncs (cross-posts) a single Occasion to one SyncDestination.

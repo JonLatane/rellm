@@ -45,7 +45,7 @@ import Components.SyncDestinations as SyncDestinations
 import Gen.Route
 import Grpc
 import Html exposing (Html, a, div, span, text)
-import Html.Attributes exposing (attribute, class, href, rel, target)
+import Html.Attributes exposing (attribute, class, href, rel, target, title)
 import Proto.Rellm exposing (Event, GetEventsRequest, GetEventsResponse, Location, Occasion, Post, SyncDestination, defaultEvent, defaultGetEventsRequest, defaultPost, defaultTimeFilter)
 import Proto.Rellm.EventListingType exposing (EventListingType(..))
 import Proto.Rellm.Rellm as Rellm
@@ -692,12 +692,15 @@ and model state): `rsvps` is the compact RSVP block (`Components.Rsvps.view`), `
 type alias CardSlots msg =
     { rsvps : Html msg
     , export : Html msg
+
+    -- How many other dates this `Event` has (`Event.occasionCount - 1`), shown as "& N+".
+    , moreDates : Int
     }
 
 
 noCardSlots : CardSlots msg
 noCardSlots =
-    { rsvps = text "", export = text "" }
+    { rsvps = text "", export = text "", moreDates = 0 }
 
 
 {-| A compact, read-only card for one `(Event, Occasion)` pair --
@@ -816,7 +819,20 @@ eventCard time basePath viewingServerHost eventServerHost maybeServer maybeAccou
                     Nothing ->
                         text ""
                 , div [ class "event-card-when" ]
-                    [ span [] [ text "📅 ", span [ class "event-occasion-time" ] [ text (occasionWhenText time occasion) ] ]
+                    [ span []
+                        [ text "📅 "
+                        , span [ class "event-occasion-time" ] [ text (occasionWhenText time occasion) ]
+                        , if slots.moreDates > 0 then
+                            -- Listings carry only the occasions in their window, hence the "+".
+                            span
+                                [ class "event-card-more-dates"
+                                , title "This event has more dates"
+                                ]
+                                [ text (" & " ++ String.fromInt slots.moreDates ++ "+") ]
+
+                          else
+                            text ""
+                        ]
                     , slots.export
                     ]
                 , case occasion.location |> Maybe.andThen locationText of

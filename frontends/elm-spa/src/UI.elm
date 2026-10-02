@@ -1792,6 +1792,17 @@ mastodonServerFeedChip shared count index instance =
         ]
 
 
+{-| Always-mounted wrapper that animates its single child (a button or field) in/out (height, padding, border and
+the parent flex `gap`) via the `grid-template-rows` 0fr/1fr trick -- see `.collapsible` in
+`accounts_panel.css`. Closed, the child is also out of the tab order (`visibility: hidden`).
+-}
+collapsible : Bool -> List (Html.Attribute msg) -> Html msg -> Html msg
+collapsible open attrs child =
+    div
+        (classList [ ( "collapsible", True ), ( "is-open", open ), ( "is-closed", not open ) ] :: attrs)
+        [ div [ class "collapsible-inner" ] [ child ] ]
+
+
 {-| The Mastodon tab's "browse an instance" `<input>` + submit button -- mirrors
 `blueskyConnectFormView`'s own `<form>`-with-`onSubmit` shape (so Enter submits it), just with the
 one plain host input `browseMastodonInstanceInput` needs instead of a whole record. No "Cancel"
@@ -1824,15 +1835,14 @@ mastodonServerFormView shared =
             , onInput (Shared.AccountsPanelMsg << AccountsPanel.BrowseMastodonInstanceInputChanged)
             ]
             []
-        , if alreadyBrowsed || String.isEmpty host then
-            text ""
-
-          else
-            button
+        , collapsible (not (alreadyBrowsed || String.isEmpty host))
+            [ style "flex" "1 1 100%" ]
+            (button
                 [ class "background-color-nav"
-                , style "flex" "1 1 100%"
+                , style "width" "100%"
                 ]
                 [ text "Add Instance" ]
+            )
         ]
 
 
@@ -3386,16 +3396,14 @@ rellmAddAccountServerForm shared currentRoute =
                 (AccountsPanel.ServerChanged "")
                 "Clear server"
             ]
-        , if knownServer then
-            text ""
-
-          else
-            let
-                addingServer : Bool
-                addingServer =
-                    addForm.status == AccountsPanel.Submitting
-            in
-            button
+        , let
+            addingServer : Bool
+            addingServer =
+                addForm.status == AccountsPanel.Submitting
+          in
+          collapsible (not knownServer)
+            []
+            (button
                 [ type_ "button"
                 , onClick (Shared.AccountsPanelMsg AccountsPanel.AddServerClicked)
                 , disabled (addingServer || String.isEmpty (String.trim form.server))
@@ -3409,8 +3417,10 @@ rellmAddAccountServerForm shared currentRoute =
                         "Add Server"
                     )
                 ]
-        , if showUsernamePasswordFields then
-            div [ class "account-form-field" ]
+            )
+        , collapsible showUsernamePasswordFields
+            []
+            (div [ class "account-form-field" ]
                 [ input
                     [ id "account-form-username"
                     , type_ "text"
@@ -3444,11 +3454,10 @@ rellmAddAccountServerForm shared currentRoute =
                     (AccountsPanel.UsernameChanged "")
                     "Clear username"
                 ]
-
-          else
-            text ""
-        , if showUsernamePasswordFields then
-            case newAccountType of
+            )
+        , collapsible (showUsernamePasswordFields && newAccountType /= Nothing)
+            []
+            (case newAccountType of
                 Just accountType ->
                     div [ class "account-form-field password-field" ]
                         [ input
@@ -3535,10 +3544,10 @@ rellmAddAccountServerForm shared currentRoute =
                 Nothing ->
                     text ""
 
-          else
-            text ""
-        , if showUsernamePasswordFields then
-            div [ class "account-form-buttons" ]
+            )
+        , collapsible showUsernamePasswordFields
+            []
+            (div [ class "account-form-buttons" ]
                 (case newAccountType of
                     Nothing ->
                         [ button
@@ -3612,8 +3621,7 @@ rellmAddAccountServerForm shared currentRoute =
                         ]
                 )
 
-          else
-            text ""
+            )
         , signInFromButton shared currentRoute accountFieldsDisabled
         , case ( form.status, addForm.status ) of
             ( AccountsPanel.Errored err, _ ) ->
@@ -3677,8 +3685,10 @@ signInFromButton shared currentRoute accountFieldsDisabled =
             String.trim accountsPanelModel.accountForm.server
     in
     case ( shared.panels.federatedAuth.publicKey, not (String.isEmpty server) && not (AccountsPanel.isMainServer accountsPanelModel server) ) of
-        ( Just publicKey, True ) ->
-            div [ class "sign-in-from-row" ]
+        ( Just publicKey, visible ) ->
+            collapsible visible
+                []
+                (div [ class "sign-in-from-row" ]
                 [ --hideAddAccountFormButton shared accountFieldsDisabled
                   button
                     [ type_ "button"
@@ -3698,7 +3708,7 @@ signInFromButton shared currentRoute accountFieldsDisabled =
                     , classes [ "sign-in-from-button", hostnameToCSSClass <| formThemeHost accountsPanelModel, "background-color-primary" ]
                     ]
                     [ text ("Sign in from " ++ server ++ "…") ]
-                ]
+                ])
 
         _ ->
             text ""

@@ -3735,9 +3735,16 @@ eventCardView shared embeddedPage current showSyncSources showSyncDestinations a
                 , serverHost = host
                 , anonymousAuthTokens = model.anonymousAuthTokens
                 , now = shared.time.now
+                , otherDatesSeen = moreDates > 0
                 , event = event
                 , occasion = occasion
                 }
+
+        -- Other dates of this Event, per the server's own total count (listings only carry the
+        -- occasions in their window).
+        moreDates : Int
+        moreDates =
+            max (List.length event.occasions) (Conversions.int64ToInt event.occasionCount) - 1
 
         rsvpSlot : Html Msg
         rsvpSlot =
@@ -3775,6 +3782,6 @@ eventCardView shared embeddedPage current showSyncSources showSyncDestinations a
         pushError
         onPush
         onDelete
-        { rsvps = rsvpSlot, export = exportSlot }
+        { rsvps = rsvpSlot, export = exportSlot, moreDates = moreDates }
         event
         displayOccasion

@@ -10,7 +10,7 @@ Offers:
   - **iCal, this date** -- the backend's `GET /calendar.ics?post_id=<occasion post id>` (see
     `backend/src/web/ical_subscription.rs`), exactly one `VEVENT`.
   - **iCal, all dates** -- the same with the _Event's_ post id, i.e. every one of its occasions;
-    only offered when more than one occasion is still upcoming.
+    only offered when more than one occasion is still upcoming, or the caller has seen other dates.
   - **Google Calendar** -- Google's "create event" form prefilled for just this one occasion, in a
     new tab. Built entirely here; no backend involved.
 
@@ -46,6 +46,10 @@ type alias Config msg =
     , serverHost : String
     , anonymousAuthTokens : Maybe String
     , now : Time.Posix
+
+    -- Whether the caller has seen other dates of this Event beyond `event.occasions` (listings only
+    -- carry the occasions in their window), which makes "All dates" worth offering.
+    , otherDatesSeen : Bool
     , event : Event
     , occasion : Occasion
     }
@@ -63,6 +67,10 @@ view cfg =
             cfg.event.occasions
                 |> List.filter (isUpcoming cfg.now)
                 |> List.length
+
+        multipleDates : Bool
+        multipleDates =
+            cfg.otherDatesSeen || upcomingCount > 1
 
         icsLink : String -> String
         icsLink postId =
@@ -108,7 +116,7 @@ view cfg =
         , div [ classes [ "event-export-popover", "popover", openClosedClass cfg.isOpen ] ]
             [ h3 [ class "event-export-popover-heading" ] [ text "Add to Calendar" ]
             , optionLink
-                (if upcomingCount > 1 then
+                (if multipleDates then
                     "This date (iCal)"
 
                  else
@@ -118,7 +126,7 @@ view cfg =
                 False
             , case cfg.event.post of
                 Just eventPost ->
-                    if upcomingCount > 1 then
+                    if multipleDates then
                         optionLink "All dates (iCal)" (icsLink eventPost.id) False
 
                     else

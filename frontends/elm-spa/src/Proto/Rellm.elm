@@ -3995,7 +3995,7 @@ type alias SyncOccasionRequest =
 {-| The field numbers for the fields of `Event`. This is mostly useful for internals, like documentation generation.
 
 -}
-fieldNumbersEvent : { post : Int, info : Int, occasions : Int }
+fieldNumbersEvent : { post : Int, info : Int, occasions : Int, occasionCount : Int }
 fieldNumbersEvent =
     Proto.Rellm.Internals_.fieldNumbersProto__Rellm__Event
 
@@ -4046,6 +4046,12 @@ encodeEvent =
 ### occasions
 
  A list of occasions for the Event. *Events will only include all occasions if the request is for a single event.*
+
+
+### occasionCount
+
+ The total number of occasions this Event has that the viewer can see, regardless of how many
+ are included in `occasions` (listings only include occasions matching their time filter).
 
 
 -}

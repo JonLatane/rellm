@@ -146,18 +146,15 @@ const Event$json = {
     {'1': 'post', '3': 2, '4': 1, '5': 11, '6': '.rellm.Post', '10': 'post'},
     {'1': 'info', '3': 3, '4': 1, '5': 11, '6': '.rellm.EventInfo', '10': 'info'},
     {'1': 'occasions', '3': 4, '4': 3, '5': 11, '6': '.rellm.Occasion', '10': 'occasions'},
+    {'1': 'occasion_count', '3': 5, '4': 1, '5': 4, '10': 'occasionCount'},
   ],
-  '9': [
-    {'1': 5, '2': 6},
-  ],
-  '10': ['sync_source'],
 };
 
 /// Descriptor for `Event`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List eventDescriptor = $convert.base64Decode(
     'CgVFdmVudBIfCgRwb3N0GAIgASgLMgsucmVsbG0uUG9zdFIEcG9zdBIkCgRpbmZvGAMgASgLMh'
     'AucmVsbG0uRXZlbnRJbmZvUgRpbmZvEi0KCW9jY2FzaW9ucxgEIAMoCzIPLnJlbGxtLk9jY2Fz'
-    'aW9uUglvY2Nhc2lvbnNKBAgFEAZSC3N5bmNfc291cmNl');
+    'aW9uUglvY2Nhc2lvbnMSJQoOb2NjYXNpb25fY291bnQYBSABKARSDW9jY2FzaW9uQ291bnQ=');
 
 @$core.Deprecated('Use syncOccasionRequestDescriptor instead')
 const SyncOccasionRequest$json = {

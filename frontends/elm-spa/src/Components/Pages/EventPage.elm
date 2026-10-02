@@ -2258,6 +2258,7 @@ eventDetailView shared model event occasion =
                                         , serverHost = model.targetHost
                                         , anonymousAuthTokens = model.rsvpTokenParam
                                         , now = shared.time.now
+                                        , otherDatesSeen = False
                                         , event = event
                                         , occasion = occasion
                                         }

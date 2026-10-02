@@ -5644,6 +5644,12 @@ directory</a> is (<code>{name}</code> denotes a
           <td>repeated</td>
           <td>A list of occasions for the Event. <em>Events will only include all occasions if the request is for a single event.</em></td>
         </tr>
+        <tr>
+          <td>occasion_count</td>
+          <td><a href="#uint64">uint64</a></td>
+          <td></td>
+          <td>The total number of occasions this Event has that the viewer can see, regardless of how many are included in <code>occasions</code> (listings only include occasions matching their time filter).</td>
+        </tr>
       </tbody>
     </table>
     <p><a name="rellm-EventInfo"></a></p>

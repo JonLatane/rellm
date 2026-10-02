@@ -1630,3 +1630,31 @@
   font-size: 0.8rem;
   opacity: 0.8;
 }
+/* `UI.collapsible` -- a button/field that animates in/out instead of popping: the grid 0fr/1fr trick
+   for height, with the wrapper's negative `margin-top` (cancelling the parent's 0.4rem flex `gap`)
+   animated alongside it, plus an opacity fade. Button padding needs no animation: the inner `overflow: hidden` clips it. */
+.collapsible {
+  display: grid;
+  grid-template-rows: 0fr;
+  margin-top: -0.4rem;
+  opacity: 0;
+  visibility: hidden;
+  transition: grid-template-rows 0.2s ease, margin-top 0.2s ease, opacity 0.2s ease, visibility 0s 0.2s;
+}
+
+.collapsible.is-open {
+  grid-template-rows: 1fr;
+  margin-top: 0;
+  opacity: 1;
+  visibility: visible;
+  transition: grid-template-rows 0.2s ease, margin-top 0.2s ease, opacity 0.2s ease, visibility 0s 0s;
+}
+
+.collapsible-inner {
+  overflow: hidden;
+  min-height: 0;
+}
+
+.collapsible.is-closed {
+  pointer-events: none;
+}

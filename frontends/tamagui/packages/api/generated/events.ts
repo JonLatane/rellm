@@ -300,6 +300,11 @@ export interface Event {
     | undefined;
   /** A list of occasions for the Event. *Events will only include all occasions if the request is for a single event.* */
   occasions: Occasion[];
+  /**
+   * The total number of occasions this Event has that the viewer can see, regardless of how many
+   * are included in `occasions` (listings only include occasions matching their time filter).
+   */
+  occasionCount: number;
 }
 
 /** Syncs (cross-posts) a single Occasion to one SyncDestination. */
@@ -980,7 +985,7 @@ export const GetEventsResponse: MessageFns<GetEventsResponse> = {
 };
 
 function createBaseEvent(): Event {
-  return { post: undefined, info: undefined, occasions: [] };
+  return { post: undefined, info: undefined, occasions: [], occasionCount: 0 };
 }
 
 export const Event: MessageFns<Event> = {
@@ -993,6 +998,9 @@ export const Event: MessageFns<Event> = {
     }
     for (const v of message.occasions) {
       Occasion.encode(v!, writer.uint32(34).fork()).join();
+    }
+    if (message.occasionCount !== 0) {
+      writer.uint32(40).uint64(message.occasionCount);
     }
     return writer;
   },
@@ -1028,6 +1036,14 @@ export const Event: MessageFns<Event> = {
           message.occasions.push(Occasion.decode(reader, reader.uint32()));
           continue;
         }
+        case 5: {
+          if (tag !== 40) {
+            break;
+          }
+
+          message.occasionCount = longToNumber(reader.uint64());
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1044,6 +1060,7 @@ export const Event: MessageFns<Event> = {
       occasions: globalThis.Array.isArray(object?.occasions)
         ? object.occasions.map((e: any) => Occasion.fromJSON(e))
         : [],
+      occasionCount: isSet(object.occasionCount) ? globalThis.Number(object.occasionCount) : 0,
     };
   },
 
@@ -1058,6 +1075,9 @@ export const Event: MessageFns<Event> = {
     if (message.occasions?.length) {
       obj.occasions = message.occasions.map((e) => Occasion.toJSON(e));
     }
+    if (message.occasionCount !== 0) {
+      obj.occasionCount = Math.round(message.occasionCount);
+    }
     return obj;
   },
 
@@ -1069,6 +1089,7 @@ export const Event: MessageFns<Event> = {
     message.post = (object.post !== undefined && object.post !== null) ? Post.fromPartial(object.post) : undefined;
     message.info = (object.info !== undefined && object.info !== null) ? EventInfo.fromPartial(object.info) : undefined;
     message.occasions = object.occasions?.map((e) => Occasion.fromPartial(e)) || [];
+    message.occasionCount = object.occasionCount ?? 0;
     return message;
   },
 };
@@ -2708,6 +2729,17 @@ function fromTimestamp(t: Timestamp): string {
   let millis = (t.seconds || 0) * 1_000;
   millis += (t.nanos || 0) / 1_000_000;
   return new globalThis.Date(millis).toISOString();
+}
+
+function longToNumber(int64: { toString(): string }): number {
+  const num = globalThis.Number(int64.toString());
+  if (num > globalThis.Number.MAX_SAFE_INTEGER) {
+    throw new globalThis.Error("Value is larger than Number.MAX_SAFE_INTEGER");
+  }
+  if (num < globalThis.Number.MIN_SAFE_INTEGER) {
+    throw new globalThis.Error("Value is smaller than Number.MIN_SAFE_INTEGER");
+  }
+  return num;
 }
 
 function isSet(value: any): boolean {

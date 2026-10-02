@@ -131,8 +131,9 @@ message Event {
   // A list of occasions for the Event. *Events will only include all occasions if the request is for a single event.*
   repeated Occasion occasions = 4;
 
-  reserved 5;
-  reserved "sync_source"; // Moved to `post.sync_source` - see posts.proto's `Post.sync_source`.
+  // The total number of occasions this Event has that the viewer can see, regardless of how many
+  // are included in `occasions` (listings only include occasions matching their time filter).
+  uint64 occasion_count = 5;
 }
 
 // Syncs (cross-posts) a single Occasion to one SyncDestination.

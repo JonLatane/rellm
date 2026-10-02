@@ -70,7 +70,46 @@ pub fn get_events(
     };
     let mut events = convert_events(&result, conn);
     attach_occasion_rsvps(&result, &mut events, &request, &user, conn);
+    attach_occasion_counts(&result, &mut events, user, conn);
     Ok(GetEventsResponse { events })
+}
+
+// Sets `Event.occasion_count` to each Event's total number of occasions visible to the viewer,
+// independent of the time window/limit that decided which occasions were returned.
+fn attach_occasion_counts(
+    result: &[MarshalableEvent],
+    events: &mut [Event],
+    user: &Option<&models::User>,
+    conn: &mut PgPooledConnection,
+) {
+    let event_ids: Vec<i64> = result.iter().map(|e| e.0.post_id).collect();
+    if event_ids.is_empty() {
+        return;
+    }
+    let current_user_id = user.map(|u| u.id).unwrap_or(0);
+    let counts: HashMap<i64, i64> = occasions::table
+        .inner_join(posts::table.on(posts::id.eq(occasions::post_id)))
+        .filter(occasions::event_id.eq_any(&event_ids))
+        .filter(
+            posts::visibility
+                .eq_any(public_string_visibilities(user))
+                .or(posts::user_id.eq(current_user_id)),
+        )
+        .group_by(occasions::event_id)
+        .select((occasions::event_id, diesel::dsl::count_star()))
+        .load::<(i64, i64)>(conn)
+        .unwrap_or_else(|e| {
+            log::error!("Error counting occasions: {:?}", e);
+            vec![]
+        })
+        .into_iter()
+        .collect();
+    for (marshalable_event, event) in result.iter().zip(events.iter_mut()) {
+        event.occasion_count = counts
+            .get(&marshalable_event.0.post_id)
+            .copied()
+            .unwrap_or(event.occasions.len() as i64) as u64;
+    }
 }
 
 // Per-occasion context `attach_occasion_rsvps` needs but that isn't already sitting

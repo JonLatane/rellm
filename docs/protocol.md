@@ -2770,6 +2770,7 @@ about the `Event`. Actual time data lies in its `Occasions`.
 | post | [Post](#rellm-Post) |  | The Post containing the underlying data for the event (title, content, moderation, visibility, etc.). Its [`PostContext`](#rellm-PostContext) should be `EVENT`. An `Event`&#39;s ID *is* its `post.id` - there is no separate surrogate ID. |
 | info | [EventInfo](#rellm-EventInfo) |  | Event configuration like whether to allow (anonymous) RSVPs, etc. |
 | occasions | [Occasion](#rellm-Occasion) | repeated | A list of occasions for the Event. *Events will only include all occasions if the request is for a single event.* |
+| occasion_count | [uint64](#uint64) |  | The total number of occasions this Event has that the viewer can see, regardless of how many are included in `occasions` (listings only include occasions matching their time filter). |
 
 
 

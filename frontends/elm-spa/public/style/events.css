@@ -1749,3 +1749,10 @@
   margin-right: 0.2rem;
   font-size: 0.8rem;
 }
+
+/* "& N+" next to a card's date: the Event has N more known dates (and maybe more). */
+.event-card-more-dates {
+  color: var(--muted);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
