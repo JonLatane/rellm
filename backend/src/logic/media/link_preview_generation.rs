@@ -34,7 +34,7 @@ use crate::protos::{MediaConversion, Visibility};
 use crate::schema::{media, posts};
 
 /// Hard wall-clock cap on capturing a single page.
-pub const PREVIEW_TIMEOUT: Duration = Duration::from_secs(60);
+pub const PREVIEW_TIMEOUT: Duration = Duration::from_secs(90);
 /// Allowed time for client-side rendering (and consent banners, which often appear late).
 const RENDER_WAIT: Duration = Duration::from_secs(6);
 const MAX_MAIN_IMAGE_BYTES: usize = 15 * 1024 * 1024;
@@ -44,32 +44,29 @@ const DEFAULT_EXTENSIONS_DIR: &str = "/opt/preview_generator_extensions";
 // Browser discovery
 // ---------------------------------------------------------------------------------------------
 
-/// Executables looked up on `PATH` (Linux packages; Homebrew symlinks on macOS), in preference order.
+/// Executables looked up on `PATH` (Linux packages; Homebrew symlinks on macOS), in preference order
+/// (Chrome first, then Chromium, then Brave). Only *finds* an existing install -- never downloads one.
 const PATH_CANDIDATES: &[&str] = &[
-    "brave-browser",
-    "brave-browser-stable",
-    "brave",
     "google-chrome-stable",
     "google-chrome",
     "chromium",
     "chromium-browser",
     "chrome",
+    "brave-browser",
+    "brave-browser-stable",
+    "brave",
     "microsoft-edge-stable",
 ];
 
 /// Well-known absolute install locations, in preference order.
 const FIXED_CANDIDATES: &[&str] = &[
     // macOS
-    "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
     "/Applications/Chromium.app/Contents/MacOS/Chromium",
     "/Applications/Google Chrome Beta.app/Contents/MacOS/Google Chrome Beta",
+    "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
     "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
     // Debian/Ubuntu/Fedora/Arch packages (Brave and Chrome install under /opt and symlink to /usr/bin)
-    "/usr/bin/brave-browser",
-    "/usr/bin/brave",
-    "/opt/brave.com/brave/brave-browser",
-    "/opt/brave.com/brave/brave",
     "/usr/bin/google-chrome-stable",
     "/usr/bin/google-chrome",
     "/opt/google/chrome/chrome",
@@ -79,6 +76,10 @@ const FIXED_CANDIDATES: &[&str] = &[
     "/usr/lib64/chromium-browser/chromium-browser",
     "/usr/lib/chromium/chromium",
     "/usr/lib/chromium-browser/chromium-browser",
+    "/usr/bin/brave-browser",
+    "/usr/bin/brave",
+    "/opt/brave.com/brave/brave-browser",
+    "/opt/brave.com/brave/brave",
     // Snap
     "/snap/bin/chromium",
     "/snap/bin/brave",
@@ -117,9 +118,9 @@ pub fn find_browser_executable() -> Option<PathBuf> {
     if let Some(home) = std::env::var_os("HOME") {
         let home = PathBuf::from(home);
         for app in [
-            "Brave Browser.app/Contents/MacOS/Brave Browser",
             "Google Chrome.app/Contents/MacOS/Google Chrome",
             "Chromium.app/Contents/MacOS/Chromium",
+            "Brave Browser.app/Contents/MacOS/Brave Browser",
         ] {
             let candidate = home.join("Applications").join(app);
             if is_executable_file(&candidate) {
@@ -370,8 +371,10 @@ pub struct PageCapture {
 
 fn capture_page(url: &str, browser: &Browser) -> Result<PageCapture, anyhow::Error> {
     let tab = browser.new_tab_with_options(CreateTarget {
-        url: url.to_string(),
-        background: Some(true),
+        // Navigate explicitly below; creating the tab *at* `url` too would race the load event
+        // `wait_until_navigated` waits for.
+        url: "about:blank".to_string(),
+        background: Some(false),
         new_window: Some(true),
         width: Some(1080),
         height: Some(1080),
@@ -384,8 +387,13 @@ fn capture_page(url: &str, browser: &Browser) -> Result<PageCapture, anyhow::Err
         hidden: None,
     })?;
     let result = (|| {
+        tab.set_default_timeout(Duration::from_secs(40));
         tab.navigate_to(url)?;
-        tab.wait_until_navigated()?;
+        // Pages with long-polling/ad requests may never fire a clean load event; a partially
+        // loaded page is still worth a screenshot, so don't fail the whole preview over it.
+        if let Err(e) = tab.wait_until_navigated() {
+            log::warn!("Navigation to {} didn't finish cleanly ({}); capturing anyway.", url, e);
+        }
         // Allow time for client-side page rendering and extensions to work.
         thread::sleep(RENDER_WAIT);
 
@@ -402,7 +410,10 @@ fn capture_page(url: &str, browser: &Browser) -> Result<PageCapture, anyhow::Err
             .and_then(|v| v.get("url").and_then(|u| u.as_str()).map(|s| s.to_string()))
             .filter(|u| u.starts_with("http"));
 
-        let screenshot = tab.capture_screenshot(Png, None, None, false)?;
+        let _ = tab.bring_to_front();
+        // `from_surface: true` renders the page itself; `false` grabs the OS window's compositor
+        // output, which comes back blank on macOS (and for background tabs).
+        let screenshot = tab.capture_screenshot(Png, None, None, true)?;
         Ok(PageCapture { screenshot, main_image_url })
     })();
     let _ = tab.close(true);
