@@ -59,7 +59,7 @@ pub fn get_sync_destinations_for_user(
 }
 
 /// The number of Occasions synced to each of `destination_ids` so far, batched into one
-/// `GROUP BY` query (mirrors `get_events.rs`'s `attach_occasion_attendances`: fetch the
+/// `GROUP BY` query (mirrors `get_events.rs`'s `attach_occasion_rsvps`: fetch the
 /// primary rows first, then attach a derived count/list in a second, batched query rather than
 /// one query per row) -- see `marshaling::attach_synced_counts`, which mutates already-built
 /// `SyncDestination` protos with this. A destination with zero synced occasions is simply absent

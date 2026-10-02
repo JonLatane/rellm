@@ -151,7 +151,7 @@ initWithoutAboutRellm shared req =
 
         Nothing ->
             if Users.startsWithReservedShortUrlCharacter req.params.usernameOrCustomTab then
-                PostOrEventPage.init shared (RellmServers.isSecure req) req.params.usernameOrCustomTab req.key
+                PostOrEventPage.init shared (RellmServers.isSecure req) req.query req.params.usernameOrCustomTab req.key
                     |> Tuple.mapFirst EmbeddedPostOrEvent
                     |> Tuple.mapSecond (Effect.map EmbeddedPostOrEventMsg)
 

@@ -60,7 +60,7 @@ RELLM_COMMANDS=(
   environment edit_environment
   local_db_create local_db_drop local_db_reset local_db_connect
   local_object_storage_start local_object_storage_create local_object_storage_delete
-  delete_expired_tokens delete_unowned_media sync_sources update_user_counts convert_media_sizes renew_market_subscriptions generate_preview_images
+  delete_expired_tokens delete_unowned_media sync_sources update_user_counts convert_media_sizes renew_market_subscriptions generate_link_preview_images regenerate_link_preview_images_for_post
   calculate_server_media_usage calculate_server_object_storage_usage
   set_permission delete_preview_images disable_cdn_grpc free_all_cluster_resources
   to_db_id to_proto_id grpcurl
@@ -149,12 +149,22 @@ Commands:
                              Recompute MediaSettings.server_object_storage_usage_bytes by
                              listing and summing every object in object storage directly -- a
                              drift check against server_media_usage_bytes above
-    generate_preview_images  Generate media preview images -- NOT currently supported on
-                             macOS: it launches a browser hardcoded to /usr/bin/brave-browser,
-                             a Linux path that Homebrew's Brave cask doesn't populate (and
-                             which macOS's SIP won't let you symlink into), plus ad/cookie-
-                             blocking Chrome extensions expected at
-                             /opt/preview_generator_extensions/{ublock,nocookies}/
+    generate_link_preview_images
+                             Generate preview images (the page's main image, if detected, plus a
+                             screenshot with cookie banners dismissed) for posts with links that
+                             don't have them yet
+    regenerate_link_preview_images_for_post
+                             Generate link preview images for one post, even if it already has
+                             some; they're added to the post. e.g.:
+                             rellm regenerate_link_preview_images_for_post <post id or proto ID>
+
+                             Both need a Chrome, Brave, or Chromium install, auto-detected on
+                             macOS (/Applications, ~/Applications), Debian/Ubuntu, Fedora/RHEL,
+                             Arch, and snap. Set PREVIEW_BROWSER_PATH to use a specific binary.
+                             Optional ad/cookie-blocking extensions are loaded from
+                             $PREVIEW_EXTENSIONS_DIR (default /opt/preview_generator_extensions)
+                             {ublock,nocookies}/ if present. See
+                             deploys/docker/preview_generator/Dockerfile for a reference setup.
 
   Admin tools:
 
@@ -165,7 +175,7 @@ Commands:
                              mess up your CDN configuration in the web UI and lose gRPC access.
     free_all_cluster_resources
                              Force-clear every held ClusterResource lock (e.g. browser) on this
-                             server's cluster, if it's the conductor. Use if a generate_preview_images
+                             server's cluster, if it's the conductor. Use if a generate_link_preview_images
                              job died holding one -- see the Cluster tab on the Server Configuration
                              page for the acquired_at time before assuming a lock is actually stuck.
 
@@ -317,13 +327,16 @@ calculate_server_object_storage_usage() {
   _rellm_exec_bin calculate_server_object_storage_usage "$@"
 }
 
-# Renders media preview images headlessly via a browser hardcoded to
-# /usr/bin/brave-browser -- a Linux path, not populated by Homebrew's Brave
-# cask and not writable on macOS due to SIP -- plus extensions expected at
-# /opt/preview_generator_extensions/. Doesn't currently work on macOS; see
-# deploys/docker/preview_generator/Dockerfile for the Linux reference setup.
-generate_preview_images() {
-  _rellm_exec_bin generate_preview_images "$@"
+# Renders link preview images headlessly. Needs a Chrome/Brave/Chromium install --
+# auto-detected, or set PREVIEW_BROWSER_PATH. See
+# deploys/docker/preview_generator/Dockerfile for a reference setup.
+generate_link_preview_images() {
+  _rellm_exec_bin generate_link_preview_images "$@"
+}
+
+# Same, for a single post (integer or proto ID), even if it already has previews.
+regenerate_link_preview_images_for_post() {
+  _rellm_exec_bin regenerate_link_preview_images_for_post "$@"
 }
 
 # Admin tools

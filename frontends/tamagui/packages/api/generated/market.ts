@@ -14,7 +14,7 @@ export const protobufPackage = "rellm";
 
 /**
  * What a `MarketProduct`/`MarketPurchase`/`MarketSubscription` actually grants the buyer once
- * fulfilled -- see `logic::market_fulfillment::fulfill_purchase` (the Rust match on this same enum)
+ * fulfilled -- see `logic::market::market_fulfillment::fulfill_purchase` (the Rust match on this same enum)
  * for exactly what each value does. Immutable on a `MarketProduct` once created (see that message's
  * own doc) -- changing what a product *is* after people have already bought it would silently
  * change existing buyers' entitlements out from under them, so a product whose type needs to change
@@ -49,7 +49,7 @@ export enum PurchaseType {
    * `User.permissions`, union-style -- fulfillment only ever adds permissions the buyer doesn't
    * already have from some other source, never removes any. Unlike the other three types, this ONE
    * eventually claws back what it granted: once cancellation/expiry actually takes effect (see
-   * `MarketSubscription.canceled_at`/`service_terminated_at`), `logic::market_fulfillment::
+   * `MarketSubscription.canceled_at`/`service_terminated_at`), `logic::market::market_fulfillment::
    * terminate_entitlement` removes exactly the permissions this subscription granted (a plain set
    * difference, not a reconciliation against any other subscription/grant the buyer might also
    * hold).
@@ -269,12 +269,12 @@ export interface MarketProduct {
   /**
    * The price, in the smallest unit of `currency` (e.g. cents for USD) -- except for a
    * zero-decimal currency like JPY, where this is already the whole unit (see
-   * `logic::stripe_sync::is_zero_decimal_currency`).
+   * `logic::stripe_payments::is_zero_decimal_currency`).
    */
   amount: number;
   /**
    * The ISO 4217 numeric currency code this product is priced in (e.g. `840` for USD, `392` for
-   * JPY) -- see `logic::market_summary`'s currency table for the full set of currencies a server
+   * JPY) -- see `logic::market::market_summary`'s currency table for the full set of currencies a server
    * actually supports pricing in today.
    */
   currency: number;
@@ -393,7 +393,7 @@ export interface MakeMarketPurchaseResponse {
 /**
  * One completed billing event -- the initial purchase or a later recurring renewal charge -- for a
  * single product. Created only from `web::stripe_webhook` (the initial purchase, on
- * `checkout.session.completed`) or `logic::market_renewal` (each subsequent recurring charge),
+ * `checkout.session.completed`) or `logic::market::market_renewal` (each subsequent recurring charge),
  * never directly by `MakeMarketPurchase` itself (see that RPC's own doc). MarketPurchases are
  * immutable via the API+CLI once created -- there is no `UpdateMarketPurchase` RPC; the payments,
  * refunds, and (for a subscription) fulfillment information that accumulate against a purchase over
@@ -432,7 +432,7 @@ export interface MarketPurchase {
     | undefined;
   /**
    * Every payment recorded against this purchase, oldest first -- ordinarily just one, but a failed
-   * charge that's later retried (see `logic::market_renewal`) can leave more than one row.
+   * charge that's later retried (see `logic::market::market_renewal`) can leave more than one row.
    */
   marketPayments: MarketPayment[];
   /**
@@ -548,13 +548,13 @@ export interface MarketRefundMethod {
  * `MarketPurchase.details`' own doc). Field-for-field identical to
  * `MediaStorageSubscriptionDetails` -- kept as its own message only so the Purchase- and
  * Subscription-side `oneof`s stay independent Rust types (see
- * `logic::market_fulfillment::terminate_entitlement`'s own doc for why that distinction matters
+ * `logic::market::market_fulfillment::terminate_entitlement`'s own doc for why that distinction matters
  * for `PermissionsAccessPurchaseDetails`/`PermissionsAccessSubscriptionDetails`).
  */
 export interface MediaStoragePurchaseDetails {
   /**
    * The buyer's new total media storage allocation, replacing (not adding to) whatever quota they
-   * already had -- see `logic::market_fulfillment::fulfill_purchase`'s `MediaStorage` arm.
+   * already had -- see `logic::market::market_fulfillment::fulfill_purchase`'s `MediaStorage` arm.
    */
   allocationBytes: number;
 }
@@ -572,7 +572,7 @@ export interface AIGrantPurchaseDetails {
   modelNames: string[];
   /**
    * The buyer's new total token balance for `ai_provider_id`/`model_names`, replacing (not adding
-   * to) whatever balance remained -- see `logic::market_fulfillment::fulfill_purchase`'s
+   * to) whatever balance remained -- see `logic::market::market_fulfillment::fulfill_purchase`'s
    * `AiGrants` arm.
    */
   tokens: number;
@@ -627,13 +627,13 @@ export interface RellmHostingPurchaseDetails {
  * `MarketPurchase.details`' `PURCHASE_TYPE_PERMISSIONS_ACCESS` variant -- copied verbatim from the
  * originating `MarketProduct.details` at the moment this purchase was fulfilled. Field-for-field
  * identical to `PermissionsAccessSubscriptionDetails`, but kept as a genuinely distinct Rust type
- * (not just documentation) -- see `logic::market_fulfillment::terminate_entitlement`'s own doc,
+ * (not just documentation) -- see `logic::market::market_fulfillment::terminate_entitlement`'s own doc,
  * which parses a `MarketSubscription`'s `details` as `PermissionsAccessSubscriptionDetails`
  * specifically (never this message) when clawing back a lapsed grant.
  */
 export interface PermissionsAccessPurchaseDetails {
   /**
-   * The permissions this purchase granted -- see `logic::market_fulfillment::fulfill_purchase`'s
+   * The permissions this purchase granted -- see `logic::market::market_fulfillment::fulfill_purchase`'s
    * `PermissionsAccess` arm (adds these to the buyer's `User.permissions`, union-style).
    */
   permissions: Permission[];
@@ -742,7 +742,7 @@ export interface MarketSubscription {
     | undefined;
   /**
    * The time permissions were removed, media storage quotas reset, etc. -- i.e. when
-   * `logic::market_fulfillment::terminate_entitlement` actually ran for this subscription. Always
+   * `logic::market::market_fulfillment::terminate_entitlement` actually ran for this subscription. Always
    * unset while `canceled_at` is unset; may remain unset for a while *after* `canceled_at` is set,
    * since the entitlement intentionally stays active until the later of `renews_at`/`canceled_at`
    * (see `canceled_at`'s own doc) -- a buyer who cancels mid-period keeps what they already paid
@@ -759,7 +759,7 @@ export interface MarketSubscription {
 export interface MediaStorageSubscriptionDetails {
   /**
    * How much media storage this product/subscription grants the buyer, replacing (not adding to)
-   * whatever quota they already had -- see `logic::market_fulfillment::fulfill_purchase`'s
+   * whatever quota they already had -- see `logic::market::market_fulfillment::fulfill_purchase`'s
    * `MediaStorage` arm.
    */
   allocationBytes: number;
@@ -769,13 +769,13 @@ export interface MediaStorageSubscriptionDetails {
  * `MarketProduct.details`/`MarketSubscription.details`' `PURCHASE_TYPE_PERMISSIONS_ACCESS`
  * variant -- what a permissions-bundle product actually grants. Field-for-field identical to
  * `PermissionsAccessPurchaseDetails` -- see that message's own doc for why it's still a distinct
- * type (that distinction is exactly what lets `logic::market_fulfillment::terminate_entitlement`
+ * type (that distinction is exactly what lets `logic::market::market_fulfillment::terminate_entitlement`
  * tell "what to claw back" apart from "what was originally billed").
  */
 export interface PermissionsAccessSubscriptionDetails {
   /**
    * Which `Permission`s this product/subscription grants the buyer -- see
-   * `logic::market_fulfillment::fulfill_purchase`'s `PermissionsAccess` arm (union-added to the
+   * `logic::market::market_fulfillment::fulfill_purchase`'s `PermissionsAccess` arm (union-added to the
    * buyer's own `User.permissions`, never replacing what they already had) and
    * `terminate_entitlement`'s own arm (the exact claw-back set on cancellation/expiry).
    * Intentionally excludes permissions dangerous or nonsensical to sell this way -- e.g.
@@ -823,7 +823,7 @@ export interface AIGrantSubscriptionDetails {
   /**
    * How many tokens this product/subscription grants the buyer each time it's (re-)fulfilled,
    * replacing (not adding to) whatever balance remained -- see
-   * `logic::market_fulfillment::fulfill_purchase`'s `AiGrants` arm.
+   * `logic::market::market_fulfillment::fulfill_purchase`'s `AiGrants` arm.
    */
   tokens: number;
 }
@@ -875,7 +875,7 @@ export interface RellmHostingSubscriptionDetails {
   additionalInformation: string;
   /**
    * Where this Rellm hosting order currently stands -- Rellm hosting is deliberately not automated
-   * (see `market.proto`'s own top-of-file notes and `logic::market_fulfillment::fulfill_purchase`'s
+   * (see `market.proto`'s own top-of-file notes and `logic::market::market_fulfillment::fulfill_purchase`'s
    * `RellmHosting` no-op arm), so this is the one manual "how far along is this order" signal,
    * shown on `/market/fulfillment` (`GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN`).
    * Never independently settable by a client -- always server-derived as whatever

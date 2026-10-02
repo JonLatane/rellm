@@ -10,5 +10,5 @@
     }
   },
   "extends": "expo/tsconfig.base",
-  "exclude": [ "**/node_modules", "**/dist", "**/types", "apps/next/out", "apps/next/.next"]
+  "exclude": [ "**/node_modules", "**/dist", "**/types", "apps/next/out", "apps/next/out-*", "apps/next/.next"]
 }

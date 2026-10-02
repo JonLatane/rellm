@@ -44,7 +44,7 @@ class GetEventsRequest extends $pb.GeneratedMessage {
     $core.String? groupId,
     TimeFilter? timeFilter,
     $core.String? attendeeId,
-    $core.Iterable<AttendanceStatus>? attendanceStatuses,
+    $core.Iterable<RsvpStatus>? rsvpStatuses,
     $core.String? postId,
     EventListingType? listingType,
     $core.String? searchText,
@@ -64,8 +64,8 @@ class GetEventsRequest extends $pb.GeneratedMessage {
     if (attendeeId != null) {
       $result.attendeeId = attendeeId;
     }
-    if (attendanceStatuses != null) {
-      $result.attendanceStatuses.addAll(attendanceStatuses);
+    if (rsvpStatuses != null) {
+      $result.rsvpStatuses.addAll(rsvpStatuses);
     }
     if (postId != null) {
       $result.postId = postId;
@@ -93,7 +93,7 @@ class GetEventsRequest extends $pb.GeneratedMessage {
     ..aOS(3, _omitFieldNames ? '' : 'groupId')
     ..aOM<TimeFilter>(5, _omitFieldNames ? '' : 'timeFilter', subBuilder: TimeFilter.create)
     ..aOS(6, _omitFieldNames ? '' : 'attendeeId')
-    ..pc<AttendanceStatus>(7, _omitFieldNames ? '' : 'attendanceStatuses', $pb.PbFieldType.KE, valueOf: AttendanceStatus.valueOf, enumValues: AttendanceStatus.values, defaultEnumValue: AttendanceStatus.INTERESTED)
+    ..pc<RsvpStatus>(7, _omitFieldNames ? '' : 'rsvpStatuses', $pb.PbFieldType.KE, valueOf: RsvpStatus.valueOf, enumValues: RsvpStatus.values, defaultEnumValue: RsvpStatus.INTERESTED)
     ..aOS(8, _omitFieldNames ? '' : 'postId')
     ..e<EventListingType>(10, _omitFieldNames ? '' : 'listingType', $pb.PbFieldType.OE, defaultOrMaker: EventListingType.ALL_ACCESSIBLE_EVENTS, valueOf: EventListingType.valueOf, enumValues: EventListingType.values)
     ..aOS(11, _omitFieldNames ? '' : 'searchText')
@@ -155,7 +155,7 @@ class GetEventsRequest extends $pb.GeneratedMessage {
   @$pb.TagNumber(5)
   TimeFilter ensureTimeFilter() => $_ensure(2);
 
-  /// If set, only returns events that the given user is attending. If `attendance_statuses` is also set,
+  /// If set, only returns events that the given user is attending. If `rsvp_statuses` is also set,
   /// returns events where that user's status is one of the given statuses.
   @$pb.TagNumber(6)
   $core.String get attendeeId => $_getSZ(3);
@@ -166,10 +166,10 @@ class GetEventsRequest extends $pb.GeneratedMessage {
   @$pb.TagNumber(6)
   void clearAttendeeId() => clearField(6);
 
-  /// If set, only return events for which the current user's attendance status matches one of the given statuses. If `attendee_id` is also set,
+  /// If set, only return events for which the current user's RSVP status matches one of the given statuses. If `attendee_id` is also set,
   /// only returns events where the given user's status matches one of the given statuses.
   @$pb.TagNumber(7)
-  $core.List<AttendanceStatus> get attendanceStatuses => $_getList(4);
+  $core.List<RsvpStatus> get rsvpStatuses => $_getList(4);
 
   /// Finds Events for the Post with the given ID. The Post should have a [`PostContext`](#rellm-PostContext) of `EVENT` or `OCCASION`.
   @$pb.TagNumber(8)
@@ -207,11 +207,14 @@ class GetEventsRequest extends $pb.GeneratedMessage {
   @$pb.TagNumber(12)
   $core.List<$core.String> get occasionPostIds => $_getList(8);
 
-  /// Auth token proving ownership of an anonymous RSVP, mirroring
-  /// `GetEventAttendancesRequest.anonymous_attendee_auth_token`. Lets an anonymous attendee's own
-  /// (possibly still-`PENDING`) [`EventAttendance`](#rellm-EventAttendance) and its `Occasion.location` (when
+  /// Auth token(s) proving ownership of anonymous RSVPs, mirroring
+  /// `GetRsvpsRequest.anonymous_attendee_auth_token`. Either a plain `<token>`, or several at once as
+  /// `<occasionId>-<token>--<occasionId>-<token>...` (the form the web frontends keep in their
+  /// `?anonymousAuthToken=` URL parameter, so it can be passed straight through) -- the occasion id
+  /// prefix is only advisory; every token is tried against every returned occasion's RSVPs. Lets an anonymous attendee's own
+  /// (possibly still-`PENDING`) [`Rsvp`](#rellm-Rsvp) and its `Occasion.location` (when
   /// `EventInfo.hide_location_until_rsvp_approved` is set) surface via each returned
-  /// `Occasion.attendances`/`current_user_attendance`, same as a logged-in user's own RSVP
+  /// `Occasion.rsvps`/`current_user_rsvp`, same as a logged-in user's own RSVP
   /// does automatically.
   @$pb.TagNumber(13)
   $core.String get anonymousAttendeeAuthToken => $_getSZ(9);
@@ -697,8 +700,8 @@ class EventInfo extends $pb.GeneratedMessage {
 
   /// Hide the location until the user RSVPs (and it's accepted).
   /// From a system perspective, when this is set, Events will not include the [`Location`](#rellm-Location) until the user has RSVP'd.
-  /// Location will always be returned in EventAttendances if the request for the EventAttendances came from a (logged in or anonymous)
-  /// user whose attendance is approved (or the event owner).
+  /// Location will always be returned in `Rsvps` if the request for the `Rsvps` came from a (logged in or anonymous)
+  /// user whose RSVP is approved (or the event owner).
   @$pb.TagNumber(4)
   $core.bool get hideLocationUntilRsvpApproved => $_getBF(3);
   @$pb.TagNumber(4)
@@ -732,8 +735,8 @@ class Occasion extends $pb.GeneratedMessage {
     $13.Timestamp? endsAt,
     $16.Location? location,
     $13.Timestamp? syncMissingSince,
-    EventAttendances? attendances,
-    EventAttendance? currentUserAttendance,
+    Rsvps? rsvps,
+    Rsvp? currentUserRsvp,
     $core.Iterable<$10.SyncDestinationStatus>? syncDestinations,
     $core.String? timezone,
   }) {
@@ -759,11 +762,11 @@ class Occasion extends $pb.GeneratedMessage {
     if (syncMissingSince != null) {
       $result.syncMissingSince = syncMissingSince;
     }
-    if (attendances != null) {
-      $result.attendances = attendances;
+    if (rsvps != null) {
+      $result.rsvps = rsvps;
     }
-    if (currentUserAttendance != null) {
-      $result.currentUserAttendance = currentUserAttendance;
+    if (currentUserRsvp != null) {
+      $result.currentUserRsvp = currentUserRsvp;
     }
     if (syncDestinations != null) {
       $result.syncDestinations.addAll(syncDestinations);
@@ -785,8 +788,8 @@ class Occasion extends $pb.GeneratedMessage {
     ..aOM<$13.Timestamp>(6, _omitFieldNames ? '' : 'endsAt', subBuilder: $13.Timestamp.create)
     ..aOM<$16.Location>(7, _omitFieldNames ? '' : 'location', subBuilder: $16.Location.create)
     ..aOM<$13.Timestamp>(9, _omitFieldNames ? '' : 'syncMissingSince', subBuilder: $13.Timestamp.create)
-    ..aOM<EventAttendances>(10, _omitFieldNames ? '' : 'attendances', subBuilder: EventAttendances.create)
-    ..aOM<EventAttendance>(11, _omitFieldNames ? '' : 'currentUserAttendance', subBuilder: EventAttendance.create)
+    ..aOM<Rsvps>(10, _omitFieldNames ? '' : 'rsvps', subBuilder: Rsvps.create)
+    ..aOM<Rsvp>(11, _omitFieldNames ? '' : 'currentUserRsvp', subBuilder: Rsvp.create)
     ..pc<$10.SyncDestinationStatus>(12, _omitFieldNames ? '' : 'syncDestinations', $pb.PbFieldType.PM, subBuilder: $10.SyncDestinationStatus.create)
     ..aOS(13, _omitFieldNames ? '' : 'timezone')
     ..hasRequiredFields = false
@@ -899,27 +902,27 @@ class Occasion extends $pb.GeneratedMessage {
 
   /// RSVP + invite data for this Occasion.
   @$pb.TagNumber(10)
-  EventAttendances get attendances => $_getN(7);
+  Rsvps get rsvps => $_getN(7);
   @$pb.TagNumber(10)
-  set attendances(EventAttendances v) { setField(10, v); }
+  set rsvps(Rsvps v) { setField(10, v); }
   @$pb.TagNumber(10)
-  $core.bool hasAttendances() => $_has(7);
+  $core.bool hasRsvps() => $_has(7);
   @$pb.TagNumber(10)
-  void clearAttendances() => clearField(10);
+  void clearRsvps() => clearField(10);
   @$pb.TagNumber(10)
-  EventAttendances ensureAttendances() => $_ensure(7);
+  Rsvps ensureRsvps() => $_ensure(7);
 
-  /// If the request was made by a logged-in user, this is the current user's attendance for this Occasion.
+  /// If the request was made by a logged-in user, this is the current user's RSVP for this Occasion.
   @$pb.TagNumber(11)
-  EventAttendance get currentUserAttendance => $_getN(8);
+  Rsvp get currentUserRsvp => $_getN(8);
   @$pb.TagNumber(11)
-  set currentUserAttendance(EventAttendance v) { setField(11, v); }
+  set currentUserRsvp(Rsvp v) { setField(11, v); }
   @$pb.TagNumber(11)
-  $core.bool hasCurrentUserAttendance() => $_has(8);
+  $core.bool hasCurrentUserRsvp() => $_has(8);
   @$pb.TagNumber(11)
-  void clearCurrentUserAttendance() => clearField(11);
+  void clearCurrentUserRsvp() => clearField(11);
   @$pb.TagNumber(11)
-  EventAttendance ensureCurrentUserAttendance() => $_ensure(8);
+  Rsvp ensureCurrentUserRsvp() => $_ensure(8);
 
   /// SyncDestinations this Occasion has been synced (cross-posted) to, and their status.
   @$pb.TagNumber(12)
@@ -1166,8 +1169,8 @@ class OccasionRsvpInfo extends $pb.GeneratedMessage {
 }
 
 /// Request to get RSVP data for an event.
-class GetEventAttendancesRequest extends $pb.GeneratedMessage {
-  factory GetEventAttendancesRequest({
+class GetRsvpsRequest extends $pb.GeneratedMessage {
+  factory GetRsvpsRequest({
     $core.String? occasionId,
     $core.String? anonymousAttendeeAuthToken,
   }) {
@@ -1180,11 +1183,11 @@ class GetEventAttendancesRequest extends $pb.GeneratedMessage {
     }
     return $result;
   }
-  GetEventAttendancesRequest._() : super();
-  factory GetEventAttendancesRequest.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromBuffer(i, r);
-  factory GetEventAttendancesRequest.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
+  GetRsvpsRequest._() : super();
+  factory GetRsvpsRequest.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromBuffer(i, r);
+  factory GetRsvpsRequest.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'GetEventAttendancesRequest', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'GetRsvpsRequest', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'occasionId')
     ..aOS(2, _omitFieldNames ? '' : 'anonymousAttendeeAuthToken')
     ..hasRequiredFields = false
@@ -1194,22 +1197,22 @@ class GetEventAttendancesRequest extends $pb.GeneratedMessage {
   'Using this can add significant overhead to your binary. '
   'Use [GeneratedMessageGenericExtensions.deepCopy] instead. '
   'Will be removed in next major version')
-  GetEventAttendancesRequest clone() => GetEventAttendancesRequest()..mergeFromMessage(this);
+  GetRsvpsRequest clone() => GetRsvpsRequest()..mergeFromMessage(this);
   @$core.Deprecated(
   'Using this can add significant overhead to your binary. '
   'Use [GeneratedMessageGenericExtensions.rebuild] instead. '
   'Will be removed in next major version')
-  GetEventAttendancesRequest copyWith(void Function(GetEventAttendancesRequest) updates) => super.copyWith((message) => updates(message as GetEventAttendancesRequest)) as GetEventAttendancesRequest;
+  GetRsvpsRequest copyWith(void Function(GetRsvpsRequest) updates) => super.copyWith((message) => updates(message as GetRsvpsRequest)) as GetRsvpsRequest;
 
   $pb.BuilderInfo get info_ => _i;
 
   @$core.pragma('dart2js:noInline')
-  static GetEventAttendancesRequest create() => GetEventAttendancesRequest._();
-  GetEventAttendancesRequest createEmptyInstance() => create();
-  static $pb.PbList<GetEventAttendancesRequest> createRepeated() => $pb.PbList<GetEventAttendancesRequest>();
+  static GetRsvpsRequest create() => GetRsvpsRequest._();
+  GetRsvpsRequest createEmptyInstance() => create();
+  static $pb.PbList<GetRsvpsRequest> createRepeated() => $pb.PbList<GetRsvpsRequest>();
   @$core.pragma('dart2js:noInline')
-  static GetEventAttendancesRequest getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<GetEventAttendancesRequest>(create);
-  static GetEventAttendancesRequest? _defaultInstance;
+  static GetRsvpsRequest getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<GetRsvpsRequest>(create);
+  static GetRsvpsRequest? _defaultInstance;
 
   /// The ID of the event to get RSVP data for.
   @$pb.TagNumber(1)
@@ -1223,7 +1226,8 @@ class GetEventAttendancesRequest extends $pb.GeneratedMessage {
 
   /// If set, and if the token has an RSVP for this even, request that RSVP data
   /// in addition to the rest of the RSVP data. (The event creator can always
-  /// see and moderate anonymous RSVPs.)
+  /// see and moderate anonymous RSVPs.) Takes the same plain / multi-occasion forms as
+  /// `GetEventsRequest.anonymous_attendee_auth_token`.
   @$pb.TagNumber(2)
   $core.String get anonymousAttendeeAuthToken => $_getSZ(1);
   @$pb.TagNumber(2)
@@ -1235,27 +1239,77 @@ class GetEventAttendancesRequest extends $pb.GeneratedMessage {
 }
 
 /// Response to get RSVP data for an event.
-class EventAttendances extends $pb.GeneratedMessage {
-  factory EventAttendances({
-    $core.Iterable<EventAttendance>? attendances,
+class Rsvps extends $pb.GeneratedMessage {
+  factory Rsvps({
+    $core.Iterable<Rsvp>? rsvps,
     $16.Location? hiddenLocation,
+    $core.int? goingCount,
+    $core.int? goingAttendees,
+    $core.int? interestedCount,
+    $core.int? interestedAttendees,
+    $core.int? requestedCount,
+    $core.int? requestedAttendees,
+    $core.int? notGoingCount,
+    $core.int? notGoingAttendees,
+    $core.int? pendingCount,
+    $core.int? pendingAttendees,
   }) {
     final $result = create();
-    if (attendances != null) {
-      $result.attendances.addAll(attendances);
+    if (rsvps != null) {
+      $result.rsvps.addAll(rsvps);
     }
     if (hiddenLocation != null) {
       $result.hiddenLocation = hiddenLocation;
     }
+    if (goingCount != null) {
+      $result.goingCount = goingCount;
+    }
+    if (goingAttendees != null) {
+      $result.goingAttendees = goingAttendees;
+    }
+    if (interestedCount != null) {
+      $result.interestedCount = interestedCount;
+    }
+    if (interestedAttendees != null) {
+      $result.interestedAttendees = interestedAttendees;
+    }
+    if (requestedCount != null) {
+      $result.requestedCount = requestedCount;
+    }
+    if (requestedAttendees != null) {
+      $result.requestedAttendees = requestedAttendees;
+    }
+    if (notGoingCount != null) {
+      $result.notGoingCount = notGoingCount;
+    }
+    if (notGoingAttendees != null) {
+      $result.notGoingAttendees = notGoingAttendees;
+    }
+    if (pendingCount != null) {
+      $result.pendingCount = pendingCount;
+    }
+    if (pendingAttendees != null) {
+      $result.pendingAttendees = pendingAttendees;
+    }
     return $result;
   }
-  EventAttendances._() : super();
-  factory EventAttendances.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromBuffer(i, r);
-  factory EventAttendances.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
+  Rsvps._() : super();
+  factory Rsvps.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromBuffer(i, r);
+  factory Rsvps.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
 
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'EventAttendances', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
-    ..pc<EventAttendance>(1, _omitFieldNames ? '' : 'attendances', $pb.PbFieldType.PM, subBuilder: EventAttendance.create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'Rsvps', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
+    ..pc<Rsvp>(1, _omitFieldNames ? '' : 'rsvps', $pb.PbFieldType.PM, subBuilder: Rsvp.create)
     ..aOM<$16.Location>(2, _omitFieldNames ? '' : 'hiddenLocation', subBuilder: $16.Location.create)
+    ..a<$core.int>(3, _omitFieldNames ? '' : 'goingCount', $pb.PbFieldType.OU3)
+    ..a<$core.int>(4, _omitFieldNames ? '' : 'goingAttendees', $pb.PbFieldType.OU3)
+    ..a<$core.int>(5, _omitFieldNames ? '' : 'interestedCount', $pb.PbFieldType.OU3)
+    ..a<$core.int>(6, _omitFieldNames ? '' : 'interestedAttendees', $pb.PbFieldType.OU3)
+    ..a<$core.int>(7, _omitFieldNames ? '' : 'requestedCount', $pb.PbFieldType.OU3)
+    ..a<$core.int>(8, _omitFieldNames ? '' : 'requestedAttendees', $pb.PbFieldType.OU3)
+    ..a<$core.int>(9, _omitFieldNames ? '' : 'notGoingCount', $pb.PbFieldType.OU3)
+    ..a<$core.int>(10, _omitFieldNames ? '' : 'notGoingAttendees', $pb.PbFieldType.OU3)
+    ..a<$core.int>(11, _omitFieldNames ? '' : 'pendingCount', $pb.PbFieldType.OU3)
+    ..a<$core.int>(12, _omitFieldNames ? '' : 'pendingAttendees', $pb.PbFieldType.OU3)
     ..hasRequiredFields = false
   ;
 
@@ -1263,26 +1317,26 @@ class EventAttendances extends $pb.GeneratedMessage {
   'Using this can add significant overhead to your binary. '
   'Use [GeneratedMessageGenericExtensions.deepCopy] instead. '
   'Will be removed in next major version')
-  EventAttendances clone() => EventAttendances()..mergeFromMessage(this);
+  Rsvps clone() => Rsvps()..mergeFromMessage(this);
   @$core.Deprecated(
   'Using this can add significant overhead to your binary. '
   'Use [GeneratedMessageGenericExtensions.rebuild] instead. '
   'Will be removed in next major version')
-  EventAttendances copyWith(void Function(EventAttendances) updates) => super.copyWith((message) => updates(message as EventAttendances)) as EventAttendances;
+  Rsvps copyWith(void Function(Rsvps) updates) => super.copyWith((message) => updates(message as Rsvps)) as Rsvps;
 
   $pb.BuilderInfo get info_ => _i;
 
   @$core.pragma('dart2js:noInline')
-  static EventAttendances create() => EventAttendances._();
-  EventAttendances createEmptyInstance() => create();
-  static $pb.PbList<EventAttendances> createRepeated() => $pb.PbList<EventAttendances>();
+  static Rsvps create() => Rsvps._();
+  Rsvps createEmptyInstance() => create();
+  static $pb.PbList<Rsvps> createRepeated() => $pb.PbList<Rsvps>();
   @$core.pragma('dart2js:noInline')
-  static EventAttendances getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<EventAttendances>(create);
-  static EventAttendances? _defaultInstance;
+  static Rsvps getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<Rsvps>(create);
+  static Rsvps? _defaultInstance;
 
-  /// The attendance data for the event, in no particular order.
+  /// The RSVP data for the event, in no particular order.
   @$pb.TagNumber(1)
-  $core.List<EventAttendance> get attendances => $_getList(0);
+  $core.List<Rsvp> get rsvps => $_getList(0);
 
   /// When `hide_location_until_rsvp_approved` is set, the location of the event.
   @$pb.TagNumber(2)
@@ -1295,26 +1349,125 @@ class EventAttendances extends $pb.GeneratedMessage {
   void clearHiddenLocation() => clearField(2);
   @$pb.TagNumber(2)
   $16.Location ensureHiddenLocation() => $_ensure(1);
+
+  ///  Totals over *every* RSVP the viewer is allowed to see for the Occasion -- not just the ones
+  ///  returned in `rsvps`. `GetEvents` caps how many `rsvps` it returns per Occasion (for big events),
+  ///  so these counts can be *greater than* `rsvps.length` -- much like `Post.reply_count` can exceed
+  ///  the replies actually loaded. (`GetRsvps` is not capped, so there they match `rsvps` exactly.)
+  ///
+  ///  `*_count` is a number of RSVPs; `*_attendees` is the sum of their `number_of_guests`. The
+  ///  per-status counts only include RSVPs whose moderation passes (`UNMODERATED`/`APPROVED`) -- the
+  ///  ones everyone can see. `pending_*` counts the `PENDING` ones the viewer can see (their own, or
+  ///  all of them for the event owner), whatever their status. `REJECTED` RSVPs are not counted.
+  @$pb.TagNumber(3)
+  $core.int get goingCount => $_getIZ(2);
+  @$pb.TagNumber(3)
+  set goingCount($core.int v) { $_setUnsignedInt32(2, v); }
+  @$pb.TagNumber(3)
+  $core.bool hasGoingCount() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearGoingCount() => clearField(3);
+
+  @$pb.TagNumber(4)
+  $core.int get goingAttendees => $_getIZ(3);
+  @$pb.TagNumber(4)
+  set goingAttendees($core.int v) { $_setUnsignedInt32(3, v); }
+  @$pb.TagNumber(4)
+  $core.bool hasGoingAttendees() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearGoingAttendees() => clearField(4);
+
+  @$pb.TagNumber(5)
+  $core.int get interestedCount => $_getIZ(4);
+  @$pb.TagNumber(5)
+  set interestedCount($core.int v) { $_setUnsignedInt32(4, v); }
+  @$pb.TagNumber(5)
+  $core.bool hasInterestedCount() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearInterestedCount() => clearField(5);
+
+  @$pb.TagNumber(6)
+  $core.int get interestedAttendees => $_getIZ(5);
+  @$pb.TagNumber(6)
+  set interestedAttendees($core.int v) { $_setUnsignedInt32(5, v); }
+  @$pb.TagNumber(6)
+  $core.bool hasInterestedAttendees() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearInterestedAttendees() => clearField(6);
+
+  @$pb.TagNumber(7)
+  $core.int get requestedCount => $_getIZ(6);
+  @$pb.TagNumber(7)
+  set requestedCount($core.int v) { $_setUnsignedInt32(6, v); }
+  @$pb.TagNumber(7)
+  $core.bool hasRequestedCount() => $_has(6);
+  @$pb.TagNumber(7)
+  void clearRequestedCount() => clearField(7);
+
+  @$pb.TagNumber(8)
+  $core.int get requestedAttendees => $_getIZ(7);
+  @$pb.TagNumber(8)
+  set requestedAttendees($core.int v) { $_setUnsignedInt32(7, v); }
+  @$pb.TagNumber(8)
+  $core.bool hasRequestedAttendees() => $_has(7);
+  @$pb.TagNumber(8)
+  void clearRequestedAttendees() => clearField(8);
+
+  @$pb.TagNumber(9)
+  $core.int get notGoingCount => $_getIZ(8);
+  @$pb.TagNumber(9)
+  set notGoingCount($core.int v) { $_setUnsignedInt32(8, v); }
+  @$pb.TagNumber(9)
+  $core.bool hasNotGoingCount() => $_has(8);
+  @$pb.TagNumber(9)
+  void clearNotGoingCount() => clearField(9);
+
+  @$pb.TagNumber(10)
+  $core.int get notGoingAttendees => $_getIZ(9);
+  @$pb.TagNumber(10)
+  set notGoingAttendees($core.int v) { $_setUnsignedInt32(9, v); }
+  @$pb.TagNumber(10)
+  $core.bool hasNotGoingAttendees() => $_has(9);
+  @$pb.TagNumber(10)
+  void clearNotGoingAttendees() => clearField(10);
+
+  @$pb.TagNumber(11)
+  $core.int get pendingCount => $_getIZ(10);
+  @$pb.TagNumber(11)
+  set pendingCount($core.int v) { $_setUnsignedInt32(10, v); }
+  @$pb.TagNumber(11)
+  $core.bool hasPendingCount() => $_has(10);
+  @$pb.TagNumber(11)
+  void clearPendingCount() => clearField(11);
+
+  @$pb.TagNumber(12)
+  $core.int get pendingAttendees => $_getIZ(11);
+  @$pb.TagNumber(12)
+  set pendingAttendees($core.int v) { $_setUnsignedInt32(11, v); }
+  @$pb.TagNumber(12)
+  $core.bool hasPendingAttendees() => $_has(11);
+  @$pb.TagNumber(12)
+  void clearPendingAttendees() => clearField(12);
 }
 
-enum EventAttendance_Attendee {
+enum Rsvp_Attendee {
   userAttendee, 
   anonymousAttendee, 
   notSet
 }
 
-/// Could be called an "RSVP." Describes the attendance of a user at an [`Occasion`](#rellm-Occasion). Such as:
+/// An RSVP: describes a user's attendance at an [`Occasion`](#rellm-Occasion). Such as:
 /// * A user's RSVP to an [`Occasion`](#rellm-Occasion) (one of `INTERESTED`, `GOING`, `NOT_GOING`, or , `REQUESTED` (i.e. invited)).
 /// * Invitation status of a user to an [`Occasion`](#rellm-Occasion).
 /// * [`ContactMethod`](#rellm-ContactMethod)-driven management for anonymous RSVPs to an [`Occasion`](#rellm-Occasion).
-class EventAttendance extends $pb.GeneratedMessage {
-  factory EventAttendance({
+class Rsvp extends $pb.GeneratedMessage {
+  factory Rsvp({
     $core.String? id,
     $core.String? occasionId,
     UserAttendee? userAttendee,
     AnonymousAttendee? anonymousAttendee,
     $core.int? numberOfGuests,
-    AttendanceStatus? status,
+    RsvpStatus? status,
     $core.String? invitingUserId,
     $core.String? privateNote,
     $core.String? publicNote,
@@ -1361,23 +1514,23 @@ class EventAttendance extends $pb.GeneratedMessage {
     }
     return $result;
   }
-  EventAttendance._() : super();
-  factory EventAttendance.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromBuffer(i, r);
-  factory EventAttendance.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
+  Rsvp._() : super();
+  factory Rsvp.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromBuffer(i, r);
+  factory Rsvp.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
 
-  static const $core.Map<$core.int, EventAttendance_Attendee> _EventAttendance_AttendeeByTag = {
-    3 : EventAttendance_Attendee.userAttendee,
-    4 : EventAttendance_Attendee.anonymousAttendee,
-    0 : EventAttendance_Attendee.notSet
+  static const $core.Map<$core.int, Rsvp_Attendee> _Rsvp_AttendeeByTag = {
+    3 : Rsvp_Attendee.userAttendee,
+    4 : Rsvp_Attendee.anonymousAttendee,
+    0 : Rsvp_Attendee.notSet
   };
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'EventAttendance', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'Rsvp', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
     ..oo(0, [3, 4])
     ..aOS(1, _omitFieldNames ? '' : 'id')
     ..aOS(2, _omitFieldNames ? '' : 'occasionId')
     ..aOM<UserAttendee>(3, _omitFieldNames ? '' : 'userAttendee', subBuilder: UserAttendee.create)
     ..aOM<AnonymousAttendee>(4, _omitFieldNames ? '' : 'anonymousAttendee', subBuilder: AnonymousAttendee.create)
     ..a<$core.int>(5, _omitFieldNames ? '' : 'numberOfGuests', $pb.PbFieldType.OU3)
-    ..e<AttendanceStatus>(6, _omitFieldNames ? '' : 'status', $pb.PbFieldType.OE, defaultOrMaker: AttendanceStatus.INTERESTED, valueOf: AttendanceStatus.valueOf, enumValues: AttendanceStatus.values)
+    ..e<RsvpStatus>(6, _omitFieldNames ? '' : 'status', $pb.PbFieldType.OE, defaultOrMaker: RsvpStatus.INTERESTED, valueOf: RsvpStatus.valueOf, enumValues: RsvpStatus.values)
     ..aOS(7, _omitFieldNames ? '' : 'invitingUserId')
     ..aOS(8, _omitFieldNames ? '' : 'privateNote')
     ..aOS(9, _omitFieldNames ? '' : 'publicNote')
@@ -1391,27 +1544,27 @@ class EventAttendance extends $pb.GeneratedMessage {
   'Using this can add significant overhead to your binary. '
   'Use [GeneratedMessageGenericExtensions.deepCopy] instead. '
   'Will be removed in next major version')
-  EventAttendance clone() => EventAttendance()..mergeFromMessage(this);
+  Rsvp clone() => Rsvp()..mergeFromMessage(this);
   @$core.Deprecated(
   'Using this can add significant overhead to your binary. '
   'Use [GeneratedMessageGenericExtensions.rebuild] instead. '
   'Will be removed in next major version')
-  EventAttendance copyWith(void Function(EventAttendance) updates) => super.copyWith((message) => updates(message as EventAttendance)) as EventAttendance;
+  Rsvp copyWith(void Function(Rsvp) updates) => super.copyWith((message) => updates(message as Rsvp)) as Rsvp;
 
   $pb.BuilderInfo get info_ => _i;
 
   @$core.pragma('dart2js:noInline')
-  static EventAttendance create() => EventAttendance._();
-  EventAttendance createEmptyInstance() => create();
-  static $pb.PbList<EventAttendance> createRepeated() => $pb.PbList<EventAttendance>();
+  static Rsvp create() => Rsvp._();
+  Rsvp createEmptyInstance() => create();
+  static $pb.PbList<Rsvp> createRepeated() => $pb.PbList<Rsvp>();
   @$core.pragma('dart2js:noInline')
-  static EventAttendance getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<EventAttendance>(create);
-  static EventAttendance? _defaultInstance;
+  static Rsvp getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<Rsvp>(create);
+  static Rsvp? _defaultInstance;
 
-  EventAttendance_Attendee whichAttendee() => _EventAttendance_AttendeeByTag[$_whichOneof(0)]!;
+  Rsvp_Attendee whichAttendee() => _Rsvp_AttendeeByTag[$_whichOneof(0)]!;
   void clearAttendee() => clearField($_whichOneof(0));
 
-  /// Unique server-generated ID for the attendance.
+  /// Unique server-generated ID for the RSVP.
   @$pb.TagNumber(1)
   $core.String get id => $_getSZ(0);
   @$pb.TagNumber(1)
@@ -1421,7 +1574,7 @@ class EventAttendance extends $pb.GeneratedMessage {
   @$pb.TagNumber(1)
   void clearId() => clearField(1);
 
-  /// ID of the [`Occasion`](#rellm-Occasion) the attendance is for.
+  /// ID of the [`Occasion`](#rellm-Occasion) the RSVP is for.
   @$pb.TagNumber(2)
   $core.String get occasionId => $_getSZ(1);
   @$pb.TagNumber(2)
@@ -1431,7 +1584,7 @@ class EventAttendance extends $pb.GeneratedMessage {
   @$pb.TagNumber(2)
   void clearOccasionId() => clearField(2);
 
-  /// If the attendance is non-anonymous, core data about the user.
+  /// If the RSVP is non-anonymous, core data about the user.
   @$pb.TagNumber(3)
   UserAttendee get userAttendee => $_getN(2);
   @$pb.TagNumber(3)
@@ -1443,7 +1596,7 @@ class EventAttendance extends $pb.GeneratedMessage {
   @$pb.TagNumber(3)
   UserAttendee ensureUserAttendee() => $_ensure(2);
 
-  /// If the attendance is anonymous, core data about the anonymous attendee.
+  /// If the RSVP is anonymous, core data about the anonymous attendee.
   @$pb.TagNumber(4)
   AnonymousAttendee get anonymousAttendee => $_getN(3);
   @$pb.TagNumber(4)
@@ -1467,9 +1620,9 @@ class EventAttendance extends $pb.GeneratedMessage {
 
   /// The user's RSVP to an [`Occasion`](#rellm-Occasion) (one of `INTERESTED`, `REQUESTED` (i.e. invited), `GOING`, `NOT_GOING`)
   @$pb.TagNumber(6)
-  AttendanceStatus get status => $_getN(5);
+  RsvpStatus get status => $_getN(5);
   @$pb.TagNumber(6)
-  set status(AttendanceStatus v) { setField(6, v); }
+  set status(RsvpStatus v) { setField(6, v); }
   @$pb.TagNumber(6)
   $core.bool hasStatus() => $_has(5);
   @$pb.TagNumber(6)
@@ -1505,7 +1658,7 @@ class EventAttendance extends $pb.GeneratedMessage {
   @$pb.TagNumber(9)
   void clearPublicNote() => clearField(9);
 
-  /// Moderation status for the attendance. Moderated by the [`Event`](#rellm-Event) owner (or [`Occasion`](#rellm-Occasion) owner if applicable).
+  /// Moderation status for the RSVP. Moderated by the [`Event`](#rellm-Event) owner (or [`Occasion`](#rellm-Occasion) owner if applicable).
   @$pb.TagNumber(10)
   $14.Moderation get moderation => $_getN(9);
   @$pb.TagNumber(10)
@@ -1515,7 +1668,7 @@ class EventAttendance extends $pb.GeneratedMessage {
   @$pb.TagNumber(10)
   void clearModeration() => clearField(10);
 
-  /// The time the attendance was created.
+  /// The time the RSVP was created.
   @$pb.TagNumber(11)
   $13.Timestamp get createdAt => $_getN(10);
   @$pb.TagNumber(11)
@@ -1527,7 +1680,7 @@ class EventAttendance extends $pb.GeneratedMessage {
   @$pb.TagNumber(11)
   $13.Timestamp ensureCreatedAt() => $_ensure(10);
 
-  /// The time the attendance was last updated.
+  /// The time the RSVP was last updated.
   @$pb.TagNumber(12)
   $13.Timestamp get updatedAt => $_getN(11);
   @$pb.TagNumber(12)
@@ -1609,9 +1762,9 @@ class AnonymousAttendee extends $pb.GeneratedMessage {
   $core.List<$4.ContactMethod> get contactMethods => $_getList(1);
 
   /// Used to allow anonymous users to RSVP to an event. Generated by the server
-  /// when an event attendance is upserted for the first time. Subsequent attendance
+  /// when an RSVP is upserted for the first time. Subsequent RSVP
   /// upserts, with the same occasion_id and anonymous_attendee.auth_token,
-  /// will update existing anonymous attendance records. Invalid auth tokens used during upserts will always create a new [`EventAttendance`](#rellm-EventAttendance).
+  /// will update existing anonymous RSVP records. Invalid auth tokens used during upserts will always create a new [`Rsvp`](#rellm-Rsvp).
   @$pb.TagNumber(3)
   $core.String get authToken => $_getSZ(2);
   @$pb.TagNumber(3)

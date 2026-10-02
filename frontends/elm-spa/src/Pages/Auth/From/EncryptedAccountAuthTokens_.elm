@@ -63,7 +63,7 @@ type alias Model =
 
 type Msg
     = GotDecryptResult Encode.Value
-    | GotSignInResult RellmAccountAuthTokens (Result Grpc.Error User)
+    | GotSignInResult RellmAccountAuthTokens (Result Grpc.Error (Maybe User))
     | SharedMsg Shared.Msg
 
 
@@ -117,7 +117,10 @@ update shared req msg model =
                 Err err ->
                     ( { model | status = DecryptFailed err }, Effect.none )
 
-        GotSignInResult tokens (Ok user) ->
+        GotSignInResult _ (Ok Nothing) ->
+            ( { model | status = SignInFailed "that server hasn't enabled federated sign-in to unsecure localhost." }, Effect.none )
+
+        GotSignInResult tokens (Ok (Just user)) ->
             let
                 account : RellmAccount
                 account =
@@ -167,12 +170,12 @@ view shared req model =
         UI.layout shared
             req.route
             SharedMsg
-            [ statusView model ]
+            [ statusView req model ]
     }
 
 
-statusView : Model -> Html Msg
-statusView model =
+statusView : Request.With Params -> Model -> Html Msg
+statusView req model =
     div [ class "auth-from-page" ]
         [ p []
             [ text
@@ -193,4 +196,9 @@ statusView model =
                         "Signed in! Redirecting…"
                 )
             ]
+        , if RellmServers.isSecure req then
+            text ""
+
+          else
+            p [ class "auth-error" ] [ text "Warning: this is an unsecure (http) localhost sign-in. Only use it for local development." ]
         ]

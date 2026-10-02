@@ -22,6 +22,7 @@ server's `ServerTheme` threaded in as a view-function argument.
   - `<host> hover-border-color-primary-anchor` -- `primaryAnchorColor` (border-color only), applied only on `:hover` -- pair with `border-color-primary-anchor-50` (or similar) for a border that "fills in" on hover; add `transition: border-color` yourself if you want that to animate, since this class alone is just the `:hover` color rule.
   - `<host> list-item-bordered-color-primary` -- `primaryColor` (border-left + border-bottom + border-radius only), for a list item with a colored left stripe and bottom edge, but no background color (see `Components.Pages.UserProfilePage`'s `sync-source-row`).
   - `<host> border-left-thick-color-primary` -- `primaryColor`, but (unlike the plain `border-color-*` classes above, which only ever set `border-color` and rely on some other rule to have already given the element a border width+style to color) sets `border-left` itself (`4px solid`), so a plain element gets a colored left "stripe" just by adding this one class -- see `Components.Pages.UserProfilePage`'s `sync-source-row`.
+  - `<host> accent-color-accent` -- `accentColor` as the native `accent-color` (filled range sliders, checkboxes) -- see `Shared.MyMediaPanel.zoomSliderView`.
   - `<host> post-star.starred` -- `primaryAnchorColor` (text color only), used by `Components.Posts`' star button to fill in once a Post is starred (see `Shared.StarredPanel`); `.post-star`'s own `transition` (in `posts.css`) is what animates it. `mainFrontendServerRules` also emits a bare, unscoped `.post-star.starred` rule (`mainFrontendHost`'s own `primaryAnchorColor`) as this class pair's fallback -- a Mastodon/Bluesky post's `postServerHost` (`"mastodon:"`/`"bluesky:"`-tagged, see `Components.Posts.isFederatedHost`) never matches a real `RellmServer`'s own `<host>` class below, so without this it'd only ever get `.post-star.starred`'s plain CSS-transition scale-up (`posts.css`), never a color to transition to. A real server's own `<host> post-star.starred` rule still wins over this one regardless of emission order (a class-scoped selector is more specific than a bare one).
   - `<host> post-card-current .post-star` -- `backgroundColor` at 50% opacity (background-color only) -- backs the star button of a `Components.Posts.postCard` marked `current` (see `Shared.StarredPanel.view`) with the app's own light/dark background, since its usual `primaryAnchorColor` text doesn't reliably contrast against that same card's `primaryColor` fill; semi-transparent (same "-50" convention as `border-color-primary-anchor-50`) so it reads as a tint rather than a flat patch. The pill shape itself is `posts.css`'s `.post-card-current .post-star`.
   - `<host> event-card-current .post-star` -- same rule as `post-card-current .post-star` just above, for `Components.Events.eventCard`'s own `current` marker instead of `postCard`'s.
@@ -97,7 +98,7 @@ mainFrontendServerRules theme accountsPanel =
         , ".nav-link:hover { background-color:" ++ theme.navColor ++ "88; }\n"
         , colorRule ".events-calendar .fc .fc-button-primary:not(:disabled).fc-button-active" theme.accentColor theme.accentTextColor
         , borderColorRule ".events-calendar .fc .fc-button-primary:not(:disabled).fc-button-active" theme.accentColor
-        , ":root { --calendar-accent: " ++ theme.navColor ++ "; }\n"
+        , ":root { --calendar-accent: " ++ theme.navColor ++ "; --slider-accent: " ++ theme.accentColor ++ "; }\n"
         , ".events-list:not(:has(>* .events-calendar)), .events-strip, .events-calendar { background-color:" ++ theme.backgroundColor ++ "BB; backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }"
         , ".base-colors-half { background-color: " ++ theme.backgroundColor ++ "BB; color: " ++ theme.textColor ++ "; }\n"
         ]
@@ -157,50 +158,60 @@ serverRules darkMode mainTheme mainFrontendHost server =
 
         listItemColorRule : String
         listItemColorRule =
-            withDescendants selector ".list-item-bordered-color-primary" ++ " { border-left: 4px solid " ++ theme.primaryAnchorColor ++ "; border-bottom: 2px solid " ++ theme.primaryAnchorColor ++ "; border-top: 1px solid " ++ theme.navAnchorColor ++ "88; border-right: 1px solid " ++ theme.navAnchorColor ++ "88; border-radius: 4px; }\n"
+            withDescendantsAndDirectPriority selector ".list-item-bordered-color-primary" ++ " { border-left: 4px solid " ++ theme.primaryAnchorColor ++ "; border-bottom: 2px solid " ++ theme.primaryAnchorColor ++ "; border-top: 1px solid " ++ theme.navAnchorColor ++ "88; border-right: 1px solid " ++ theme.navAnchorColor ++ "88; border-radius: 4px; }\n"
     in
     String.concat
-        [ colorRule (withDescendants selector ".background-color-primary") theme.primaryColor theme.primaryTextColor
+        [ colorRule (withDescendantsAndDirectPriority selector ".background-color-primary") theme.primaryColor theme.primaryTextColor
         , textColorRule (selector ++ ".background-color-primary:not(.navbar, .account-row) a") <|
             if theme.primaryLuma > 0.55 then
                 theme.navDarkColor
 
             else
                 theme.navLightColor
-        , colorRule (withDescendants selector ".background-color-primary-5") (theme.primaryColor ++ "05") theme.textColor
-        , colorRule (withDescendants selector ".background-color-primary-10") (theme.primaryColor ++ "10") theme.textColor
-        , colorRule (withDescendants selector ".background-color-primary-25") (theme.primaryColor ++ "40") theme.textColor
-        , colorRule (withDescendants selector ".background-color-primary-50") (theme.primaryColor ++ "80") theme.textColor
-        , colorRule (withDescendants selector ".background-color-nav") theme.navColor theme.navTextColor
-        , colorRule (withDescendants selector ".background-color-nav-contrast") theme.navContrastColor theme.backgroundColor
-        , colorRule (withDescendants selector ".background-color-accent") theme.accentColor theme.accentTextColor
-        , colorRule (withDescendants selector ".background-color-accent-5") (theme.accentColor ++ "08") theme.textColor
-        , colorRule (withDescendants selector ".background-color-accent-10") (theme.accentColor ++ "10") theme.textColor
-        , colorRule (withDescendants selector ".background-color-accent-anchor") theme.accentAnchorColor theme.backgroundColor
-        , colorRule (withDescendants selector ".background-color-primary-background") theme.primaryBgColor theme.textColor
-        , borderColorRule (withDescendants selector ".border-color-primary") theme.primaryColor
-        , borderColorRule (withDescendants selector ".border-color-nav") theme.navColor
-        , borderColorRule (withDescendants selector ".border-color-accent") theme.accentColor
-        , borderColorRule (withDescendants selector ".border-color-primary-text") theme.primaryTextColor
-        , borderColorRule (withDescendants selector ".border-color-primary-anchor") theme.primaryAnchorColor
-        , borderColorRule (withDescendants selector ".border-color-primary-anchor-50") (theme.primaryAnchorColor ++ "80")
-        , borderColorRule (withDescendants selector ".border-color-nav-text") theme.navTextColor
-        , borderColorRule (withDescendants selector ".hover-border-color-primary-anchor:hover") theme.primaryAnchorColor
+        , colorRule (withDescendantsAndDirectPriority selector ".background-color-primary-5") (theme.primaryColor ++ "05") theme.textColor
+        , colorRule (withDescendantsAndDirectPriority selector ".background-color-primary-10") (theme.primaryColor ++ "10") theme.textColor
+        , colorRule (withDescendantsAndDirectPriority selector ".background-color-primary-25") (theme.primaryColor ++ "40") theme.textColor
+        , colorRule (withDescendantsAndDirectPriority selector ".background-color-primary-50") (theme.primaryColor ++ "80") theme.textColor
+        , colorRule (withDescendantsAndDirectPriority selector ".background-color-nav") theme.navColor theme.navTextColor
+        , colorRule (withDescendantsAndDirectPriority selector ".background-color-nav-contrast") theme.navContrastColor theme.backgroundColor
+        , colorRule (withDescendantsAndDirectPriority selector ".background-color-accent") theme.accentColor theme.accentTextColor
+        , colorRule (withDescendantsAndDirectPriority selector ".background-color-accent-5") (theme.accentColor ++ "08") theme.textColor
+        , colorRule (withDescendantsAndDirectPriority selector ".background-color-accent-10") (theme.accentColor ++ "10") theme.textColor
+        , colorRule (withDescendantsAndDirectPriority selector ".background-color-accent-anchor") theme.accentAnchorColor theme.backgroundColor
+        , colorRule (withDescendantsAndDirectPriority selector ".background-color-primary-background") theme.primaryBgColor theme.textColor
+        , borderColorRule (withDescendantsAndDirectPriority selector ".border-color-primary") theme.primaryColor
+        , borderColorRule (withDescendantsAndDirectPriority selector ".border-color-nav") theme.navColor
+        , borderColorRule (withDescendantsAndDirectPriority selector ".border-color-accent") theme.accentColor
+        , borderColorRule (withDescendantsAndDirectPriority selector ".border-color-primary-text") theme.primaryTextColor
+        , borderColorRule (withDescendantsAndDirectPriority selector ".border-color-primary-anchor") theme.primaryAnchorColor
+        , borderColorRule (withDescendantsAndDirectPriority selector ".border-color-primary-anchor-50") (theme.primaryAnchorColor ++ "80")
+        , borderColorRule (withDescendantsAndDirectPriority selector ".border-color-nav-text") theme.navTextColor
+        , borderColorRule (withDescendantsAndDirectPriority selector ".hover-border-color-primary-anchor:hover") theme.primaryAnchorColor
         , listItemColorRule
-        , borderLeftThickColorRule (withDescendants selector ".border-left-thick-color-primary") theme.primaryColor
+        , borderLeftThickColorRule (withDescendantsAndDirectPriority selector ".border-left-thick-color-primary") theme.primaryColor
         , textColorRule (selector ++ ".post-star.starred") theme.primaryAnchorColor
         , backgroundOnlyColorRule (selector ++ ".post-card-current .post-star") (theme.backgroundColor ++ "80")
         , backgroundOnlyColorRule (selector ++ ".event-card-current .post-star") (theme.backgroundColor ++ "80")
         , ".server-chip-bottom" ++ selector ++ " .switch input:checked + .slider { background: " ++ switchOnColor ++ "; }\n"
-        , textColorRule (withDescendants selector ".text-color-primary-anchor") theme.primaryAnchorColor
+        , textColorRule (withDescendantsAndDirectPriority selector ".text-color-primary-anchor") theme.primaryAnchorColor
+        , withDescendantsAndDirectPriority selector ".accent-color-accent" ++ " { accent-color: " ++ theme.accentColor ++ "; }\n"
         , textColorRule ("a" ++ selector) theme.primaryAnchorColor
         , accountRowSwitchRule
         ]
 
 
-withDescendants : String -> String -> String
-withDescendants selector subselector =
-    selector ++ subselector ++ ", " ++ selector ++ " " ++ subselector
+{-| Applies a rule both to an element carrying `selector` (a server's class) and the sub-class
+directly (`.server-X.sub`), and to any `.sub` nested anywhere beneath a `.server-X` ancestor.
+
+The direct form repeats `selector` once more (`.server-X.sub.server-X`), purely to out-rank
+the descendant form by specificity (0,3,0 vs 0,2,0) instead of reaching for `!important`:
+otherwise an element explicitly tagged for server A that's nested inside server B's
+container (e.g. a federated profile's chip inside its own page's `.server-B` wrapper) ties
+with B's descendant rule, and whichever server's rules were emitted last wins.
+-}
+withDescendantsAndDirectPriority : String -> String -> String
+withDescendantsAndDirectPriority selector subselector =
+    selector ++ subselector ++ selector ++ ", " ++ selector ++ " " ++ subselector
 
 
 colorRule : String -> String -> String -> String

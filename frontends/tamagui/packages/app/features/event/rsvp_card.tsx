@@ -2,7 +2,7 @@ import { useFederatedDispatch } from "app/hooks";
 import { FederatedEvent, getCredentialClient, useServerTheme } from "app/store";
 import React, { useState } from "react";
 
-import { AttendanceStatus, EventAttendance, Occasion, Moderation, Post } from "@rellm/api";
+import { RsvpStatus, Rsvp, Occasion, Moderation, Post } from "@rellm/api";
 import { Button, Card, Heading, Paragraph, XStack, YStack, standardAnimation, useMedia } from "@rellm/ui";
 import { Edit3 as Edit } from "@tamagui/lucide-icons";
 import { ModerationPicker } from "app/components/moderation_picker";
@@ -14,15 +14,15 @@ import { AuthorInfo } from "../post/author_info";
 interface Props {
   event: FederatedEvent;
   occasion: Occasion;
-  attendance: EventAttendance;
+  rsvp: Rsvp;
   onPressEdit?: () => void;
-  onModerated?: (attendance: EventAttendance) => void;
+  onModerated?: (rsvp: Rsvp) => void;
 }
 
 export const RsvpCard: React.FC<Props> = ({
   event,
   occasion,
-  attendance,
+  rsvp,
   onPressEdit,
   onModerated,
 }) => {
@@ -34,23 +34,23 @@ export const RsvpCard: React.FC<Props> = ({
 
   const { server, textColor, primaryColor, navAnchorColor: navColor, backgroundColor: themeBgColor, primaryAnchorColor, navAnchorColor } = useServerTheme();
 
-  const { anonymousAttendee, userAttendee, publicNote, privateNote, status, numberOfGuests } = attendance;
+  const { anonymousAttendee, userAttendee, publicNote, privateNote, status, numberOfGuests } = rsvp;
 
   const [upserting, setUpserting] = useState(false);
   async function applyModeration(moderation: Moderation) {
     setUpserting(true);
 
     const client = await getCredentialClient(accountOrServer);
-    client.upsertEventAttendance({ ...attendance, moderation }, client.credential)
+    client.upsertRsvp({ ...rsvp, moderation }, client.credential)
       .then(onModerated)
       .finally(() => setUpserting(false));
   }
 
-  // console.log('attendance.userAttendee', attendance.userAttendee);
+  // console.log('rsvp.userAttendee', rsvp.userAttendee);
   return <Card elevate size="$4" bordered
     animation='standard'
     {...standardAnimation}
-    key={`attendance-card-${attendance.id}`}
+    key={`rsvp-card-${rsvp.id}`}
     margin='$0'
     mx="$1"
     scale={1}
@@ -67,18 +67,18 @@ export const RsvpCard: React.FC<Props> = ({
               <Heading size='$7'>{anonymousAttendee.name}</Heading>
             </>
             : <AccountOrServerContextProvider value={accountOrServer}>
-              <AuthorInfo larger post={Post.create({ author: attendance.userAttendee! })} />
+              <AuthorInfo larger post={Post.create({ author: rsvp.userAttendee! })} />
             </AccountOrServerContextProvider>}
         </YStack>
         <YStack my='auto'>
           <Paragraph size='$2' mx='auto'
-            color={attendance.status == AttendanceStatus.GOING ? primaryAnchorColor :
-              attendance.status == AttendanceStatus.INTERESTED || attendance.status == AttendanceStatus.REQUESTED ? navAnchorColor : undefined}>
-            {attendanceStatusString(attendance.status)}
+            color={rsvp.status == RsvpStatus.GOING ? primaryAnchorColor :
+              rsvp.status == RsvpStatus.INTERESTED || rsvp.status == RsvpStatus.REQUESTED ? navAnchorColor : undefined}>
+            {rsvpStatusString(rsvp.status)}
           </Paragraph>
-          {/* {attendance.numberOfGuests > 1 ? */}
+          {/* {rsvp.numberOfGuests > 1 ? */}
           <Paragraph size='$1' mx='auto'>
-            {attendance.numberOfGuests} attendee{attendance.numberOfGuests > 1 ? 's' : ''}
+            {rsvp.numberOfGuests} attendee{rsvp.numberOfGuests > 1 ? 's' : ''}
           </Paragraph>
           {/* : undefined} */}
         </YStack>
@@ -99,12 +99,12 @@ export const RsvpCard: React.FC<Props> = ({
         <XStack ml='auto'>
           {/* <XStack f={1} /> */}
           {isEventOwner ?
-            <ModerationPicker moderation={attendance.moderation}
-              moderationDescription={attendanceModerationDescription}
+            <ModerationPicker moderation={rsvp.moderation}
+              moderationDescription={rsvpModerationDescription}
               disabled={upserting}
               onChange={applyModeration} />
-            : !passes(attendance.moderation)
-              ? <Paragraph size='$1' ml='auto'>{attendanceModerationDescription(attendance.moderation)}</Paragraph>
+            : !passes(rsvp.moderation)
+              ? <Paragraph size='$1' ml='auto'>{rsvpModerationDescription(rsvp.moderation)}</Paragraph>
               : undefined}
         </XStack>
       </YStack>
@@ -114,7 +114,7 @@ export const RsvpCard: React.FC<Props> = ({
 
 
 
-export function attendanceModerationDescription(v: Moderation) {
+export function rsvpModerationDescription(v: Moderation) {
   switch (v) {
     case Moderation.UNMODERATED: return 'Visible to anyone who can view this event.';
     case Moderation.REJECTED: return 'Rejected by the event owner. Visible only to attendee and owner.';
@@ -123,15 +123,15 @@ export function attendanceModerationDescription(v: Moderation) {
   }
 }
 
-const attendanceStatusString = (status: AttendanceStatus) => {
+const rsvpStatusString = (status: RsvpStatus) => {
   switch (status) {
-    case AttendanceStatus.GOING:
+    case RsvpStatus.GOING:
       return 'Going';
-    case AttendanceStatus.INTERESTED:
+    case RsvpStatus.INTERESTED:
       return 'Interested';
-    case AttendanceStatus.REQUESTED:
+    case RsvpStatus.REQUESTED:
       return 'Requested';
-    case AttendanceStatus.NOT_GOING:
+    case RsvpStatus.NOT_GOING:
       return 'Not Going';
     default:
       return 'Unknown';

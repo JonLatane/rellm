@@ -15,7 +15,9 @@ module Shared.AccountsPanel.RellmServers exposing
     , enableRellmServerFor
     , encodePersistedRellmServer
     , initialLetter
+    , isLocalhost
     , isSecure
+    , unsecureLocalhostAuthEnabled
     , knownConnectedRellmServer
     , mediaBaseUrl
     , mediaUrl
@@ -703,6 +705,26 @@ every caller ultimately derives from this.
 isSecure : Request.With params -> Bool
 isSecure req =
     req.url.protocol == Url.Https
+
+
+{-| Whether `host` (a `frontendHost`, optionally with a `:port`) is `localhost` -- the one host
+cross-server auth is ever allowed to talk to over plain `http://` (see `unsecureLocalhostAuthEnabled`).
+-}
+isLocalhost : String -> Bool
+isLocalhost host =
+    (String.split ":" host |> List.head |> Maybe.withDefault "" |> String.toLower) == "localhost"
+
+
+{-| Whether `config`'s server has opted in (`FederationInfo.unsecure_localhost_federated_auth_enabled`)
+to handing federated-auth tokens to a plaintext `http://localhost` frontend. Servers that predate the
+field (or leave it unset) read as `False`. Only a frontend-side guard: the server itself can't stop a
+client from doing this.
+-}
+unsecureLocalhostAuthEnabled : ServerConfiguration -> Bool
+unsecureLocalhostAuthEnabled config =
+    config.federationInfo
+        |> Maybe.andThen .unsecureLocalhostFederatedAuthEnabled
+        |> Maybe.withDefault False
 
 
 {-| Connects to a server given only its hostname, same as adding one via the

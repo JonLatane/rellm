@@ -27,7 +27,7 @@ use crate::rpcs::validations::*;
 ///   stale (captured at the old time); likewise `UNLICENSED_PREVIEW_MEDIUM` when either
 ///   `unlicensed_preview_*` bound changes. Stale sizes are deleted here (from `sizes` and their
 ///   object storage objects) and the item is marked unprocessed, so `convert_media` (in
-///   `logic::media_conversion`, run by the `convert_media_sizes` background job) regenerates them.
+///   `logic::media::media_conversion`, run by the `convert_media_sizes` background job) regenerates them.
 pub async fn update_media(
     request: Media,
     current_user: &models::User,

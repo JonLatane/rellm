@@ -1,5 +1,6 @@
 module Components.Events exposing
-    ( createNewOccasions
+    ( CardSlots
+    , createNewOccasions
     , deleteEvent
     , deleteOccasionSyncDestination
     , deleteRemovedOccasions
@@ -12,6 +13,7 @@ module Components.Events exposing
     , hasIcsSyncSource
     , locationText
     , meaningfulPost
+    , noCardSlots
     , occasionEndsOrStartsAt
     , occasionHref
     , occasionPairs
@@ -64,19 +66,22 @@ import UI.Classes exposing (classes, hostnameToCSSClass)
 `Event` back, not just the one asked for) containing the `Occasion`
 whose own `Post` id is `occasionPostId`, from `maybeAccountServer`'s
 server, authenticated as its account if any, anonymous otherwise -- same
-auth/refresh handling as `Components.Posts.fetchPost`.
+auth/refresh handling as `Components.Posts.fetchPost`. `anonymousAuthToken` is the viewer's
+private anonymous-RSVP token, if any: it makes the response's `Occasion.rsvps`/`location` include
+that anonymous attendee's own (possibly still-pending) RSVP, see `Components.Rsvps`.
 -}
 fetchEvent :
     AccountsPanel.Model
     -> AccountsPanel.MaybeAccountServer
+    -> Maybe String
     -> String
     -> Task Grpc.Error ( Maybe AccountsPanel.Msg, GetEventsResponse )
-fetchEvent accountsPanelModel maybeAccountServer occasionPostId =
+fetchEvent accountsPanelModel maybeAccountServer anonymousAuthToken occasionPostId =
     performWithOptionalAccountServer
         accountsPanelModel
         maybeAccountServer
         (\server maybeToken ->
-            Grpc.new Rellm.getEvents { defaultGetEventsRequest | postId = Just occasionPostId }
+            Grpc.new Rellm.getEvents { defaultGetEventsRequest | postId = Just occasionPostId, anonymousAttendeeAuthToken = anonymousAuthToken }
                 |> Grpc.setHost (RellmServers.rellmServerUrl server)
                 |> withAccessToken maybeToken
                 |> Grpc.toTask
@@ -280,8 +285,9 @@ fetchEvents :
     -> Maybe String
     -> String
     -> Time.Posix
+    -> Maybe String
     -> Task Grpc.Error ( Maybe AccountsPanel.Msg, GetEventsResponse )
-fetchEvents accountsPanelModel maybeAccountServer authorUserId searchText endsAfter =
+fetchEvents accountsPanelModel maybeAccountServer authorUserId searchText endsAfter anonymousAuthTokens =
     let
         trimmedSearchText : String
         trimmedSearchText =
@@ -291,6 +297,7 @@ fetchEvents accountsPanelModel maybeAccountServer authorUserId searchText endsAf
         baseRequest =
             { defaultGetEventsRequest
                 | authorUserId = authorUserId
+                , anonymousAttendeeAuthToken = anonymousAuthTokens
                 , timeFilter = Just { defaultTimeFilter | endsAfter = Just (posixToTimestamp endsAfter) }
             }
 
@@ -678,6 +685,21 @@ eventSyncDestinationsView availableSyncDestinations isPushing pushError onPush o
     SyncDestinations.syncDestinationsView occasion.syncDestinations availableSyncDestinations hasMedia isPushing pushError onPush onDelete
 
 
+{-| Interactive blocks an `eventCard` embeds, built by its caller (they need that caller's own `Msg`
+and model state): `rsvps` is the compact RSVP block (`Components.Rsvps.view`), `export` the small
+"Add to Calendar" button (`Components.EventExport.view`), shown at the right end of the card's time row.
+-}
+type alias CardSlots msg =
+    { rsvps : Html msg
+    , export : Html msg
+    }
+
+
+noCardSlots : CardSlots msg
+noCardSlots =
+    { rsvps = text "", export = text "" }
+
+
 {-| A compact, read-only card for one `(Event, Occasion)` pair --
 `Components.Pages.EventsPage`'s per-item rendering, centered on `occasion`
 (its own start/end/location) the same way `Pages.Event.PostId_`'s detail view
@@ -718,6 +740,9 @@ caller that ever passes `True` (see `UI.currentStarredOccasionKey`);
 `showSyncDestinations` fields, which `EventsPage.eventCardView` threads
 straight through.
 
+`slots` carries the card's already-built interactive extras -- see `CardSlots`; callers with
+nothing interactive to offer (e.g. read-only previews) pass `noCardSlots`.
+
 `availableSyncDestinations`/`isPushing`/`pushError`/`onPush`/`onDelete` thread
 straight into `eventSyncDestinationsView`'s own params of the same name/shape
 -- see that function's own doc. `availableSyncDestinations` is `Nothing` for
@@ -746,10 +771,11 @@ eventCard :
     -> (String -> Maybe String)
     -> (String -> msg)
     -> (String -> String -> msg)
+    -> CardSlots msg
     -> Event
     -> Occasion
     -> Html msg
-eventCard time basePath viewingServerHost eventServerHost maybeServer maybeAccount onMediaClicked mediaPlayState onMediaPlayClicked mediaSizing starred onStarClicked current showSyncSource showSyncDestinations availableSyncDestinations isPushing pushError onPush onDelete event occasion =
+eventCard time basePath viewingServerHost eventServerHost maybeServer maybeAccount onMediaClicked mediaPlayState onMediaPlayClicked mediaSizing starred onStarClicked current showSyncSource showSyncDestinations availableSyncDestinations isPushing pushError onPush onDelete slots event occasion =
     case event.post of
         Nothing ->
             text ""
@@ -789,7 +815,10 @@ eventCard time basePath viewingServerHost eventServerHost maybeServer maybeAccou
 
                     Nothing ->
                         text ""
-                , div [ class "event-card-when" ] [ text "📅 ", span [ class "event-occasion-time" ] [ text (occasionWhenText time occasion) ] ]
+                , div [ class "event-card-when" ]
+                    [ span [] [ text "📅 ", span [ class "event-occasion-time" ] [ text (occasionWhenText time occasion) ] ]
+                    , slots.export
+                    ]
                 , case occasion.location |> Maybe.andThen locationText of
                     Just locationLine ->
                         div [ class "event-card-where" ] [ text "📍 ", text locationLine ]
@@ -847,6 +876,7 @@ eventCard time basePath viewingServerHost eventServerHost maybeServer maybeAccou
                         Nothing ->
                             text ""
                     ]
+                , slots.rsvps
                 , if showSyncSource then
                     syncSourceView event
 

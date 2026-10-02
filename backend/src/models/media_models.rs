@@ -76,7 +76,7 @@ impl Media {
     }
 
     /// Sum of every stored copy's `size_bytes` -- what this item contributes to its owner's
-    /// `User.media_storage_bytes_used`. See `logic::user_counts::media_storage_bytes_used`, which
+    /// `User.media_storage_bytes_used`. See `logic::users::user_counts::media_storage_bytes_used`, which
     /// computes the same sum across every `Media` a user owns via SQL rather than this (used only
     /// where a single already-loaded `Media` row's own contribution is needed).
     pub fn total_size_bytes(&self) -> i64 {
@@ -92,7 +92,7 @@ impl Media {
 
 /// `Media.metadata`'s typed shape: `{ video_preview_time_ms: 1000 }`. Currently just the
 /// timestamp `MediaRenderer.elm` seeks video previews to (via a `#t=` Media Fragments URI) and
-/// `logic::media_conversion` seeks `ffmpeg` to when generating the `VIDEO_PREVIEW_THUMBNAIL_*`
+/// `logic::media::media_conversion` seeks `ffmpeg` to when generating the `VIDEO_PREVIEW_THUMBNAIL_*`
 /// poster frames; absence means the default computed by `effective_video_preview_time_ms`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct MediaMetadata {
@@ -180,7 +180,7 @@ impl MediaMetadata {
     }
 }
 
-/// The 3 auto-generated resized copies `convert_media` (in `logic::media_conversion`) produces
+/// The 3 auto-generated resized copies `convert_media` (in `logic::media::media_conversion`) produces
 /// for a `Media` item, in addition to its untouched `MediaConversion::Original`.
 pub const RESIZED_CONVERSIONS: [MediaConversion; 3] = [
     MediaConversion::Small,

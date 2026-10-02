@@ -47,7 +47,6 @@ import Html exposing (Html, button, div, span, text)
 import Html.Attributes exposing (class, type_)
 import Html.Events exposing (onClick)
 import Json.Decode as Decode
-import Json.Encode as Encode
 import Ports
 import Proto.Rellm exposing (Event, GetEventsResponse, GetPostsResponse, Occasion, Post)
 import Proto.Rellm.PostContext exposing (PostContext(..))
@@ -59,6 +58,7 @@ import Shared.Time as SharedTime
 import Shared.UserPreferences as UserPreferences
 import Task
 import UI.Classes exposing (classes, openClosedClass)
+import UI.Flip
 
 
 type alias Model =
@@ -75,6 +75,13 @@ type alias Model =
     -- absent here just means "not measured yet" (renders full, no toggle, same as before this existed)
     -- exactly as much as it means "measured and short enough to skip the toggle entirely".
     , contentHeights : Dict String Float
+
+    -- Ids `ReadyToMeasureContent` has already fired a measurement for, whether or not a height came
+    -- back -- the JS side silently skips an id whose element isn't in the DOM (e.g. a post with no
+    -- content to render), so without this such a post never lands in `contentHeights` and
+    -- `kickOffContentMeasurements` (run on every `SharedMsg`, via `syncIds`) would re-measure it
+    -- forever, each round trip waking every `Ports.elementsMeasured` subscriber in the app.
+    , measureAttempted : List String
 
     -- Ids (a subset of `postIds`) the viewer has clicked "Show more" on -- each renders its own
     -- `Posts.postDetail` content in full rather than `contentHeights`'s own short preview (see
@@ -134,6 +141,7 @@ init shared postIds =
         , posts = Dict.empty
         , events = Dict.empty
         , contentHeights = Dict.empty
+        , measureAttempted = []
         , expandedPostIds = []
         }
 
@@ -169,6 +177,7 @@ syncIds shared postIds model =
             , posts = List.foldl (\postId -> Dict.insert postId FetchingPost) (keep model.posts) pending
             , events = keep model.events
             , contentHeights = keep model.contentHeights
+            , measureAttempted = List.filter (\postId -> List.member postId postIds) model.measureAttempted
             , expandedPostIds = List.filter (\postId -> List.member postId postIds) model.expandedPostIds
             }
 
@@ -279,16 +288,17 @@ update shared msg model =
             ( { model | expandedPostIds = expandedPostIds }, Effect.none )
 
         ReadyToMeasureContent postIds ->
-            ( model, measureContentEffect postIds )
+            ( { model | measureAttempted = postIds ++ model.measureAttempted }, measureContentEffect postIds )
 
         GotContentHeights value ->
-            case Decode.decodeValue contentHeightsDecoder value of
-                Ok entries ->
+            case UI.Flip.measuredResults measureOwner value |> Maybe.map (Decode.decodeValue contentHeightsDecoder) of
+                Just (Ok entries) ->
                     ( { model | contentHeights = List.foldl (\( postId, height ) -> Dict.insert postId height) model.contentHeights entries }
                     , Effect.none
                     )
 
-                Err _ ->
+                -- Malformed, or another component's result (`Ports.elementsMeasured` is shared).
+                _ ->
                     ( model, Effect.none )
 
 
@@ -368,7 +378,7 @@ kickOffContentMeasurements model =
                     (\( postId, status ) ->
                         case status of
                             PostFetchLoaded post ->
-                                if post.context /= OCCASION && not (Dict.member postId model.contentHeights) then
+                                if post.context /= OCCASION && not (Dict.member postId model.contentHeights) && not (List.member postId model.measureAttempted) then
                                     Just postId
 
                                 else
@@ -393,16 +403,15 @@ FLIP-style before/after pair to keep apart).
 -}
 measureContentEffect : List String -> Effect Msg
 measureContentEffect postIds =
-    postIds
-        |> Encode.list
-            (\postId ->
-                Encode.object
-                    [ ( "key", Encode.string postId )
-                    , ( "id", Encode.string (Posts.postDetailContentDomId postId) )
-                    ]
-            )
-        |> Ports.measureElements
+    UI.Flip.measureElementsCmd measureOwner Posts.postDetailContentDomId postIds
         |> Effect.fromCmd
+
+
+{-| This component's "self" for `UI.Flip.measure`/`measuredResults`.
+-}
+measureOwner : String
+measureOwner =
+    "pinned-posts"
 
 
 {-| Decodes `Ports.elementsMeasured`'s payload for a `measureContentEffect` call -- `key` is the
@@ -698,6 +707,7 @@ pinnedOccasionView config model postId rawPost =
                         (\_ -> Nothing)
                         (\_ -> config.noOp)
                         (\_ _ -> config.noOp)
+                        Events.noCardSlots
                         event
                         displayOccasion
                     ]

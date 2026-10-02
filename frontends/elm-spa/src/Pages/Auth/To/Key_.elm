@@ -187,12 +187,16 @@ update shared msg model =
             in
             case ( RellmServers.rellmServerForHost shared.accounts.servers browsingHost |> Maybe.andThen ifConnected, model.publicKey ) of
                 ( Just server, Just publicKey ) ->
-                    ( { model | status = Submitting }
-                    , loginTask server (effectiveUsername shared model) model.password
-                        |> Task.map (\resp -> ( accountAuthTokensFromLogin browsingHost resp, publicKey ))
-                        |> Task.attempt GotLoginResult
-                        |> Effect.fromCmd
-                    )
+                    if blockedUnsecureLocalhost shared model then
+                        ( { model | status = Errored unsecureLocalhostBlockedMessage }, Effect.none )
+
+                    else
+                        ( { model | status = Submitting }
+                        , loginTask server (effectiveUsername shared model) model.password
+                            |> Task.map (\resp -> ( accountAuthTokensFromLogin browsingHost resp, publicKey ))
+                            |> Task.attempt GotLoginResult
+                            |> Effect.fromCmd
+                        )
 
                 _ ->
                     ( { model | status = Errored ("You need to be signed in on " ++ browsingHost ++ " to do that.") }
@@ -260,7 +264,12 @@ update shared msg model =
                 Ok ciphertext ->
                     ( model
                     , Nav.load
-                        ("https://"
+                        ((if RellmServers.isLocalhost model.requestingHost then
+                            "http://"
+
+                          else
+                            "https://"
+                         )
                             ++ model.requestingHost
                             ++ "/elm/auth/from/"
                             ++ ciphertext
@@ -280,6 +289,25 @@ update shared msg model =
 
         SharedMsg subMsg ->
             ( model, Effect.fromShared subMsg )
+
+
+{-| Whether `model.requestingHost` is `localhost` (which gets a plaintext `http://` redirect -- see
+`GotEncryptResult`) while `browsingHost`'s server hasn't opted in via
+`FederationInfo.unsecure_localhost_federated_auth_enabled`. Frontend-only guard.
+-}
+blockedUnsecureLocalhost : Shared.Model -> Model -> Bool
+blockedUnsecureLocalhost shared model =
+    RellmServers.isLocalhost model.requestingHost
+        && not
+            (RellmServers.rellmServerForHost shared.accounts.servers shared.accounts.browsingHost
+                |> Maybe.map (RellmServers.configurationOf >> RellmServers.unsecureLocalhostAuthEnabled)
+                |> Maybe.withDefault False
+            )
+
+
+unsecureLocalhostBlockedMessage : String
+unsecureLocalhostBlockedMessage =
+    "This server hasn't enabled sign-in to unsecure localhost, so it can't send your sign-in to http://localhost."
 
 
 loginTask : RellmServer -> String -> String -> Task Grpc.Error RefreshTokenResponse
@@ -391,10 +419,19 @@ signInView shared model =
                     []
                 , alsoSignInCheckbox model.alsoSignInHere accountForUsername submitting
                 , button
-                    [ disabled (submitting || String.isEmpty model.password || String.isEmpty username)
+                    [ disabled (submitting || String.isEmpty model.password || String.isEmpty username || blockedUnsecureLocalhost shared model)
                     , classes [ hostnameToCSSClass model.requestingHost, "background-color-primary", "auth-to-signin-button" ]
                     ]
                     [ text ("Sign in on " ++ model.requestingHost) ]
+                , if RellmServers.isLocalhost model.requestingHost then
+                    if blockedUnsecureLocalhost shared model then
+                        div [ class "auth-error" ] [ text unsecureLocalhostBlockedMessage ]
+
+                    else
+                        div [ class "auth-error" ] [ text "Warning: you're signing in to an unsecure (http) localhost. Only do this for local development." ]
+
+                  else
+                    text ""
                 , case model.status of
                     Errored err ->
                         div [ class "auth-error" ] [ text err ]

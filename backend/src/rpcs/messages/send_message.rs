@@ -12,7 +12,7 @@ use crate::rpcs::validations::*;
 use crate::schema::{messages, users};
 
 // Anonymous sending is supported by simply omitting the `access_token` - unlike
-// `UpsertEventAttendance`'s `anonymous_attendee_auth_token` mechanism, there's no separate
+// `UpsertRsvp`'s `anonymous_attendee_auth_token` mechanism, there's no separate
 // anonymous-edit path here, matching `CreatePost`/`CreateEvent`'s plain `access_token`-or-nothing
 // authentication.
 pub fn send_message(

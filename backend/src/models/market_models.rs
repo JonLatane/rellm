@@ -155,7 +155,7 @@ pub fn get_market_product(id: i64, conn: &mut PgPooledConnection) -> Result<Mark
 /// `checkout.session.completed`) -- see `MarketProduct.sold_count`'s own doc. A plain SQL-side
 /// `+1` (not a Rust-side read-then-write) so two near-simultaneous webhook deliveries can't lose an
 /// increment to a race -- matches this feature's established "no heavier concurrency handling than
-/// it needs" MVP philosophy elsewhere (see e.g. `logic::market_renewal`'s own doc).
+/// it needs" MVP philosophy elsewhere (see e.g. `logic::market::market_renewal`'s own doc).
 pub fn increment_market_product_sold_count(product_id: i64, conn: &mut PgPooledConnection) {
     if let Err(e) = diesel::update(market_products::table.filter(market_products::id.eq(product_id)))
         .set(market_products::sold_count.eq(market_products::sold_count + 1))
@@ -311,7 +311,7 @@ pub fn get_market_subscriptions_by_product_type(
 }
 
 /// Every `MarketSubscription` of `product_type` that's due to renew (`canceled_at IS NULL AND
-/// renews_at <= NOW()`) -- used by `logic::market_renewal::renew_subscriptions_of_type`.
+/// renews_at <= NOW()`) -- used by `logic::market::market_renewal::renew_subscriptions_of_type`.
 pub fn get_due_market_subscriptions(
     product_type: &str,
     conn: &mut PgPooledConnection,
@@ -340,7 +340,7 @@ pub fn get_due_market_subscriptions(
 /// does). A `NULL renews_at` is treated as "already past" rather than excluded -- a canceled
 /// non-recurring subscription (or any edge case that never got a `renews_at`) should still become
 /// terminable rather than being stranded forever. Used by
-/// `logic::market_renewal::terminate_subscriptions_of_type`.
+/// `logic::market::market_renewal::terminate_subscriptions_of_type`.
 pub fn get_terminable_market_subscriptions(
     product_type: &str,
     conn: &mut PgPooledConnection,

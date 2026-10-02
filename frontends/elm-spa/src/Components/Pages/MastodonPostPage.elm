@@ -1,9 +1,9 @@
 module Components.Pages.MastodonPostPage exposing (Model, Msg, init, title, update, view)
 
 {-| A single Mastodon post (status), read-only -- no reply/edit/delete/visibility/moderation/
-sync-destination affordances (none of that makes sense for a post Rellm doesn't own), and no replies
-tree (Rellm has no way to fetch a Mastodon post's own replies -- a "for now" gap). Just its author,
-content, and a link back to the original.
+sync-destination affordances (none of that makes sense for a post Rellm doesn't own). Just its author,
+content, a link back to the original, and its conversation (the posts it replies to above it, its own
+reply tree below -- see `Shared.Federation.Mastodon.fetchThread` and `Components.FederatedThread`).
 
 Split out of `Components.Pages.PostPage` (which now only ever handles real Rellm posts) into its own
 dedicated page so `Pages.Post.PostId_` can route to this directly once
@@ -13,6 +13,7 @@ and `Components.Pages.BlueskyPostPage` for the AT Protocol counterpart.
 -}
 
 import Components.Authors as Authors
+import Components.FederatedThread as FederatedThread
 import Components.Markdown as Markdown
 import Components.MediaRenderer as MediaRenderer
 import Components.MultiMediaRenderer as MultiMediaRenderer
@@ -25,6 +26,7 @@ import Http
 import Proto.Rellm exposing (Post)
 import Shared
 import Shared.AccountsPanel.RellmServers exposing (RellmServer)
+import Shared.Federation.Common as Common exposing (Thread)
 import Shared.Federation.Mastodon as Mastodon
 import Shared.MediaViewerPanel as MediaViewerPanel
 import Shared.StarredPanel as StarredPanel
@@ -41,6 +43,10 @@ type alias Model =
     -- Meaningless (never consulted) unless `postStatus` is `PostLoaded _ True`, i.e. Mastodon
     -- actually flagged this status `sensitive` -- see `federatedPostView`'s own doc.
     , sensitiveMediaRevealed : Bool
+
+    -- Fetched right after `postStatus`'s own post, best-effort -- stays `emptyThread` if that fails
+    -- (the post itself is still worth showing without its conversation).
+    , thread : Thread
     }
 
 
@@ -58,9 +64,10 @@ type PostStatus
 
 
 type Msg
-    = GotPost (Result Http.Error ( Post, Bool ))
+    = GotPost (Result Http.Error ( Post, Bool, Thread ))
     | MediaPlayClicked String
     | MediaImageClicked String
+    | ThreadMediaClicked Post String
     | RevealSensitiveMediaClicked
     | StarredPanelMsg StarredPanel.Msg
 
@@ -70,8 +77,14 @@ type Msg
 -}
 init : String -> String -> ( Model, Effect Msg )
 init instanceHost statusId =
-    ( { instanceHost = instanceHost, statusId = statusId, postStatus = LoadingPost, sensitiveMediaRevealed = False }
+    ( { instanceHost = instanceHost, statusId = statusId, postStatus = LoadingPost, sensitiveMediaRevealed = False, thread = Common.emptyThread }
     , Mastodon.fetchStatus instanceHost statusId
+        |> Task.andThen
+            (\( post, sensitive ) ->
+                Mastodon.fetchThread instanceHost statusId
+                    |> Task.onError (\_ -> Task.succeed Common.emptyThread)
+                    |> Task.map (\thread -> ( post, sensitive, thread ))
+            )
         |> Task.attempt GotPost
         |> Effect.fromCmd
     )
@@ -80,8 +93,8 @@ init instanceHost statusId =
 update : Msg -> Model -> ( Model, Effect Msg )
 update msg model =
     case msg of
-        GotPost (Ok ( post, sensitive )) ->
-            ( { model | postStatus = PostLoaded post sensitive }, Effect.none )
+        GotPost (Ok ( post, sensitive, thread )) ->
+            ( { model | postStatus = PostLoaded post sensitive, thread = thread }, Effect.none )
 
         GotPost (Err _) ->
             ( { model | postStatus = PostFailed }, Effect.none )
@@ -101,6 +114,12 @@ update msg model =
 
                 _ ->
                     ( model, Effect.none )
+
+        ThreadMediaClicked post mediaId ->
+            ( model
+            , Effect.fromShared
+                (Shared.MediaViewerPanelMsg (MediaViewerPanel.Open post.media (Just post) mediaId (starHost model.instanceHost)))
+            )
 
         RevealSensitiveMediaClicked ->
             ( { model | sensitiveMediaRevealed = True }, Effect.none )
@@ -135,7 +154,22 @@ view shared model =
                 displayPost =
                     StarredPanel.freshestPost (starHost model.instanceHost) post shared.panels.starredPanel
             in
-            federatedPostView shared model.instanceHost model.sensitiveMediaRevealed sensitive displayPost
+            div []
+                [ FederatedThread.ancestorsView (threadConfig shared model.instanceHost) model.thread
+                , federatedPostView shared model.instanceHost model.sensitiveMediaRevealed sensitive displayPost
+                , FederatedThread.repliesView (threadConfig shared model.instanceHost) model.thread
+                ]
+
+
+threadConfig : Shared.Model -> String -> FederatedThread.Config Msg
+threadConfig shared instanceHost =
+    { basePath = shared.basePath
+    , viewingServerHost = shared.accounts.mainFrontendHost
+    , postServerHost = starHost instanceHost
+    , mediaPlayState = shared.mediaRenderer
+    , onMediaPlayClicked = MediaPlayClicked
+    , onMediaClicked = ThreadMediaClicked
+    }
 
 
 {-| No title, no URL row -- just the author (linking to their own `Components.Pages.MastodonUserProfilePage`,

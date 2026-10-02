@@ -1,4 +1,4 @@
-module Components.Pages.ServerInformationPage.Common exposing (accountsPanelEffect, adminAccountFor, editCancelButton, editErrorView, editSaveButton, flagSwitch, settingsRow, switchDisplay)
+module Components.Pages.ServerInformationPage.Common exposing (accountsPanelEffect, adminAccountFor, editCancelButton, editErrorView, editSaveButton, flagSwitch, settingsNote, settingsRow, switchDisplay)
 
 {-| Shared, `msg`-generic bits reused by 2+ of `Components.Pages.ServerInformationPage`'s tab
 submodules (`AboutTab`/`ThemeTab`/`SettingsTab`/`FederationTab`) -- pulled out so none of them have
@@ -7,7 +7,7 @@ account, and are they an admin on this server" check.
 -}
 
 import Effect exposing (Effect)
-import Html exposing (Html, button, div, input, label, span, text)
+import Html exposing (Html, button, div, input, label, p, span, text)
 import Html.Attributes exposing (checked, class, disabled, type_)
 import Html.Events exposing (onClick)
 import Shared
@@ -87,6 +87,14 @@ settingsRow label_ control =
         [ span [ class "server-details-feature-settings-label" ] [ text label_ ]
         , control
         ]
+
+
+{-| A small, dimmed explanatory note meant to sit directly under a `settingsRow` (no margin of its
+own, so it reads as part of that row).
+-}
+settingsNote : String -> Html msg
+settingsNote note =
+    p [ class "server-details-feature-settings-note" ] [ text note ]
 
 
 {-| A checkbox styled as a toggle switch, same `.switch`/`.slider` classes as `UI.switchInput` --

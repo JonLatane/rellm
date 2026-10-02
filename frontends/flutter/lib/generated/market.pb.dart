@@ -182,7 +182,7 @@ class MarketProduct extends $pb.GeneratedMessage {
 
   /// The price, in the smallest unit of `currency` (e.g. cents for USD) -- except for a
   /// zero-decimal currency like JPY, where this is already the whole unit (see
-  /// `logic::stripe_sync::is_zero_decimal_currency`).
+  /// `logic::stripe_payments::is_zero_decimal_currency`).
   @$pb.TagNumber(4)
   $core.int get amount => $_getIZ(3);
   @$pb.TagNumber(4)
@@ -193,7 +193,7 @@ class MarketProduct extends $pb.GeneratedMessage {
   void clearAmount() => clearField(4);
 
   /// The ISO 4217 numeric currency code this product is priced in (e.g. `840` for USD, `392` for
-  /// JPY) -- see `logic::market_summary`'s currency table for the full set of currencies a server
+  /// JPY) -- see `logic::market::market_summary`'s currency table for the full set of currencies a server
   /// actually supports pricing in today.
   @$pb.TagNumber(5)
   $core.int get currency => $_getIZ(4);
@@ -635,7 +635,7 @@ enum MarketPurchase_Details {
 
 /// One completed billing event -- the initial purchase or a later recurring renewal charge -- for a
 /// single product. Created only from `web::stripe_webhook` (the initial purchase, on
-/// `checkout.session.completed`) or `logic::market_renewal` (each subsequent recurring charge),
+/// `checkout.session.completed`) or `logic::market::market_renewal` (each subsequent recurring charge),
 /// never directly by `MakeMarketPurchase` itself (see that RPC's own doc). MarketPurchases are
 /// immutable via the API+CLI once created -- there is no `UpdateMarketPurchase` RPC; the payments,
 /// refunds, and (for a subscription) fulfillment information that accumulate against a purchase over
@@ -811,7 +811,7 @@ class MarketPurchase extends $pb.GeneratedMessage {
   MarketSubscription ensureMarketSubscription() => $_ensure(4);
 
   /// Every payment recorded against this purchase, oldest first -- ordinarily just one, but a failed
-  /// charge that's later retried (see `logic::market_renewal`) can leave more than one row.
+  /// charge that's later retried (see `logic::market::market_renewal`) can leave more than one row.
   @$pb.TagNumber(6)
   $core.List<MarketPayment> get marketPayments => $_getList(5);
 
@@ -1324,7 +1324,7 @@ class MarketRefundMethod extends $pb.GeneratedMessage {
 /// `MarketPurchase.details`' own doc). Field-for-field identical to
 /// `MediaStorageSubscriptionDetails` -- kept as its own message only so the Purchase- and
 /// Subscription-side `oneof`s stay independent Rust types (see
-/// `logic::market_fulfillment::terminate_entitlement`'s own doc for why that distinction matters
+/// `logic::market::market_fulfillment::terminate_entitlement`'s own doc for why that distinction matters
 /// for `PermissionsAccessPurchaseDetails`/`PermissionsAccessSubscriptionDetails`).
 class MediaStoragePurchaseDetails extends $pb.GeneratedMessage {
   factory MediaStoragePurchaseDetails({
@@ -1367,7 +1367,7 @@ class MediaStoragePurchaseDetails extends $pb.GeneratedMessage {
   static MediaStoragePurchaseDetails? _defaultInstance;
 
   /// The buyer's new total media storage allocation, replacing (not adding to) whatever quota they
-  /// already had -- see `logic::market_fulfillment::fulfill_purchase`'s `MediaStorage` arm.
+  /// already had -- see `logic::market::market_fulfillment::fulfill_purchase`'s `MediaStorage` arm.
   @$pb.TagNumber(1)
   $fixnum.Int64 get allocationBytes => $_getI64(0);
   @$pb.TagNumber(1)
@@ -1447,7 +1447,7 @@ class AIGrantPurchaseDetails extends $pb.GeneratedMessage {
   $core.List<$core.String> get modelNames => $_getList(1);
 
   /// The buyer's new total token balance for `ai_provider_id`/`model_names`, replacing (not adding
-  /// to) whatever balance remained -- see `logic::market_fulfillment::fulfill_purchase`'s
+  /// to) whatever balance remained -- see `logic::market::market_fulfillment::fulfill_purchase`'s
   /// `AiGrants` arm.
   @$pb.TagNumber(3)
   $fixnum.Int64 get tokens => $_getI64(2);
@@ -1606,7 +1606,7 @@ class RellmHostingPurchaseDetails extends $pb.GeneratedMessage {
 /// `MarketPurchase.details`' `PURCHASE_TYPE_PERMISSIONS_ACCESS` variant -- copied verbatim from the
 /// originating `MarketProduct.details` at the moment this purchase was fulfilled. Field-for-field
 /// identical to `PermissionsAccessSubscriptionDetails`, but kept as a genuinely distinct Rust type
-/// (not just documentation) -- see `logic::market_fulfillment::terminate_entitlement`'s own doc,
+/// (not just documentation) -- see `logic::market::market_fulfillment::terminate_entitlement`'s own doc,
 /// which parses a `MarketSubscription`'s `details` as `PermissionsAccessSubscriptionDetails`
 /// specifically (never this message) when clawing back a lapsed grant.
 class PermissionsAccessPurchaseDetails extends $pb.GeneratedMessage {
@@ -1659,7 +1659,7 @@ class PermissionsAccessPurchaseDetails extends $pb.GeneratedMessage {
   static PermissionsAccessPurchaseDetails getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<PermissionsAccessPurchaseDetails>(create);
   static PermissionsAccessPurchaseDetails? _defaultInstance;
 
-  /// The permissions this purchase granted -- see `logic::market_fulfillment::fulfill_purchase`'s
+  /// The permissions this purchase granted -- see `logic::market::market_fulfillment::fulfill_purchase`'s
   /// `PermissionsAccess` arm (adds these to the buyer's `User.permissions`, union-style).
   @$pb.TagNumber(1)
   $core.List<$15.Permission> get permissions => $_getList(0);
@@ -2012,7 +2012,7 @@ class MarketSubscription extends $pb.GeneratedMessage {
   $13.Timestamp ensureCanceledAt() => $_ensure(14);
 
   /// The time permissions were removed, media storage quotas reset, etc. -- i.e. when
-  /// `logic::market_fulfillment::terminate_entitlement` actually ran for this subscription. Always
+  /// `logic::market::market_fulfillment::terminate_entitlement` actually ran for this subscription. Always
   /// unset while `canceled_at` is unset; may remain unset for a while *after* `canceled_at` is set,
   /// since the entitlement intentionally stays active until the later of `renews_at`/`canceled_at`
   /// (see `canceled_at`'s own doc) -- a buyer who cancels mid-period keeps what they already paid
@@ -2073,7 +2073,7 @@ class MediaStorageSubscriptionDetails extends $pb.GeneratedMessage {
   static MediaStorageSubscriptionDetails? _defaultInstance;
 
   /// How much media storage this product/subscription grants the buyer, replacing (not adding to)
-  /// whatever quota they already had -- see `logic::market_fulfillment::fulfill_purchase`'s
+  /// whatever quota they already had -- see `logic::market::market_fulfillment::fulfill_purchase`'s
   /// `MediaStorage` arm.
   @$pb.TagNumber(1)
   $fixnum.Int64 get allocationBytes => $_getI64(0);
@@ -2088,7 +2088,7 @@ class MediaStorageSubscriptionDetails extends $pb.GeneratedMessage {
 /// `MarketProduct.details`/`MarketSubscription.details`' `PURCHASE_TYPE_PERMISSIONS_ACCESS`
 /// variant -- what a permissions-bundle product actually grants. Field-for-field identical to
 /// `PermissionsAccessPurchaseDetails` -- see that message's own doc for why it's still a distinct
-/// type (that distinction is exactly what lets `logic::market_fulfillment::terminate_entitlement`
+/// type (that distinction is exactly what lets `logic::market::market_fulfillment::terminate_entitlement`
 /// tell "what to claw back" apart from "what was originally billed").
 class PermissionsAccessSubscriptionDetails extends $pb.GeneratedMessage {
   factory PermissionsAccessSubscriptionDetails({
@@ -2141,7 +2141,7 @@ class PermissionsAccessSubscriptionDetails extends $pb.GeneratedMessage {
   static PermissionsAccessSubscriptionDetails? _defaultInstance;
 
   /// Which `Permission`s this product/subscription grants the buyer -- see
-  /// `logic::market_fulfillment::fulfill_purchase`'s `PermissionsAccess` arm (union-added to the
+  /// `logic::market::market_fulfillment::fulfill_purchase`'s `PermissionsAccess` arm (union-added to the
   /// buyer's own `User.permissions`, never replacing what they already had) and
   /// `terminate_entitlement`'s own arm (the exact claw-back set on cancellation/expiry).
   /// Intentionally excludes permissions dangerous or nonsensical to sell this way -- e.g.
@@ -2257,7 +2257,7 @@ class AIGrantSubscriptionDetails extends $pb.GeneratedMessage {
 
   /// How many tokens this product/subscription grants the buyer each time it's (re-)fulfilled,
   /// replacing (not adding to) whatever balance remained -- see
-  /// `logic::market_fulfillment::fulfill_purchase`'s `AiGrants` arm.
+  /// `logic::market::market_fulfillment::fulfill_purchase`'s `AiGrants` arm.
   @$pb.TagNumber(3)
   $fixnum.Int64 get tokens => $_getI64(2);
   @$pb.TagNumber(3)
@@ -2422,7 +2422,7 @@ class RellmHostingSubscriptionDetails extends $pb.GeneratedMessage {
   void clearAdditionalInformation() => clearField(6);
 
   /// Where this Rellm hosting order currently stands -- Rellm hosting is deliberately not automated
-  /// (see `market.proto`'s own top-of-file notes and `logic::market_fulfillment::fulfill_purchase`'s
+  /// (see `market.proto`'s own top-of-file notes and `logic::market::market_fulfillment::fulfill_purchase`'s
   /// `RellmHosting` no-op arm), so this is the one manual "how far along is this order" signal,
   /// shown on `/market/fulfillment` (`GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN`).
   /// Never independently settable by a client -- always server-derived as whatever

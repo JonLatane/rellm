@@ -1,4 +1,4 @@
-module Shared.StarredPanel exposing (Model, Msg(..), freshestPost, init, isStarred, rawKey, refreshHosts, subscriptions, toggleStarMsg, update, view)
+module Shared.StarredPanel exposing (Model, Msg(..), freshestPost, hasAnyStars, init, isStarred, rawKey, refreshHosts, refreshServerStars, subscriptions, hasPendingFetches, toggleStarMsg, totalStarCount, update, view)
 
 {-| Tracks which Posts the user has starred, in this browser. `StarPost`/
 `UnstarPost` (see `protos/rellm.proto`) are auth-less, "friendly" counters
@@ -21,6 +21,14 @@ eventual reply lands back in `Main.elm`'s top-level `Shared` branch, never
 passing back through a page's own `update` the way the initiating `ToggleStar`
 click did.
 
+Mastodon/Bluesky posts additionally sync with the connected account's own _server-side_ favourites/
+likes (`serverStars`): starring/unstarring one from Rellm's UI also favourites/unfavourites it on the
+service (when an account for it -- the same instance's, for Mastodon, or the enabled Bluesky one -- is
+connected), `isStarred` counts a server-side star as starred too, and when there's anything starred on
+the server the panel shows a "Browser"/"Server" tab pair (see `view`). Starring is two independent
+records kept in step only by this module's own toggles -- flipping accounts around can leave them
+disagreeing, which is deliberately left to the user.
+
 This module also owns fetching+rendering the actual starred `Post`s for the
 nav's Starred panel (`view`) -- `posts` is a cache of that fetched data,
 separate from `starredPostIds` itself so a re-star/unstar doesn't need a
@@ -36,20 +44,22 @@ import Components.Posts as Posts
 import Components.ServerDependentView as ServerDependentView
 import Dict exposing (Dict)
 import Grpc
-import Html exposing (Html, button, div, text)
-import Html.Attributes exposing (class, id, style)
+import Html exposing (Html, button, div, img, span, text)
+import Html.Attributes exposing (alt, attribute, class, id, src, style, title)
 import Html.Events exposing (onClick)
 import Html.Keyed
 import Http
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Ports
+import Process
 import Proto.Rellm exposing (Event, GetEventsResponse, GetPostsResponse, Occasion, Post, defaultPost)
 import Proto.Rellm.PostContext exposing (PostContext(..))
 import Proto.Rellm.Rellm as Rellm
 import Set exposing (Set)
 import Shared.AccountsPanel as AccountsPanel
-import Shared.AccountsPanel.BlueskyAccounts as BlueskyAccounts
+import Shared.AccountsPanel.BlueskyAccounts as BlueskyAccounts exposing (BlueskyAccount)
+import Shared.AccountsPanel.MastodonAccounts as MastodonAccounts exposing (MastodonAccount)
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer)
 import Shared.Federation.Bluesky as Bluesky
@@ -102,7 +112,47 @@ type alias Model =
     -- Which half (if any) of `OrganizeStarred`'s FLIP measure-reorder-measure
     -- round trip is in flight -- see `GroupMeasurementPhase`'s own doc.
     , groupMeasurementPhase : GroupMeasurementPhase
+
+    -- The connected Mastodon/Bluesky accounts' own server-side stars, keyed by the same
+    -- `"mastodon:" ++ instanceHost`/`"bluesky:"` host string a federated post's star key uses.
+    -- See `ServerStars`.
+    , serverStars : Dict String ServerStars
+    , activeTab : StarredTab
+
+    -- Server-tab account sections (by host) the user has collapsed -- see `ViewChange`.
+    , collapsedServerGroups : Set String
+
+    -- Bumped by every finished server-side star push; only the `RefetchServerStars` carrying the
+    -- latest value actually refetches (a trailing-edge debounce -- see `GotServerStarPushed`).
+    , serverRefetchCounter : Int
+
+    -- Per-post collapse animation for a collapsed Server-tab section -- in place, so the posts
+    -- fade/shrink away through `UI.Flip`'s own item collapse. Kept apart from `starAnimations`
+    -- (enter/unstar-fade), which stays authoritative while an unstar fade is running -- see
+    -- `effectiveFlipState`.
+    , collapseAnimations : Dict String (UI.Flip.State Msg)
     }
+
+
+type StarredTab
+    = BrowserTab
+    | ServerTab
+
+
+{-| `account` identifies whichever connected account `status` was fetched for (see
+`serverAccountKey`) -- a fetch for an account that's since been switched away from is discarded
+rather than shown under the new one.
+-}
+type alias ServerStars =
+    { account : String
+    , status : ServerStarsStatus
+    }
+
+
+type ServerStarsStatus
+    = ServerStarsFetching
+    | ServerStarsLoaded (List Post)
+    | ServerStarsFailed
 
 
 type Msg
@@ -124,6 +174,18 @@ type Msg
       -- media on the dedicated post-detail pages, not this panel's card)
       -- rather than `GotStarredPost`'s Jonline-specific `GetPostsResponse`.
     | GotStarredFederatedPost String (Result Http.Error Post)
+      -- A connected account's server-side star list arriving -- `host`, then `serverAccountKey`
+      -- of the account it was fetched for. The `Maybe AccountsPanel.Msg` is a rotated-token
+      -- persist, forwarded the same way `GotStarredPost`'s is.
+    | GotServerStars String String (Result Http.Error ( Maybe AccountsPanel.Msg, List Post ))
+      -- A favourite/like push finishing -- only ever carries a token-persist/reauth-flag to forward;
+      -- a failed push is otherwise dropped (the local star stands regardless).
+    | GotServerStarPushed (Maybe AccountsPanel.Msg)
+      -- The trailing edge of `GotServerStarPushed`'s debounce -- carries the counter value it was
+      -- scheduled under.
+    | RefetchServerStars Int
+    | SetStarredTab StarredTab
+    | ToggleServerGroupCollapsed String
     | ToggleStarredPanel
     | CloseStarredPanel
     | EnableServerClicked String
@@ -209,18 +271,28 @@ type EventFetchStatus
     | EventFetchFailed
 
 
+{-| A change to which items the one unified list shows -- applied between `OrganizeStarred`-style
+measure-before/measure-after FLIP steps, so every post that's still shown slides to its new place.
+-}
+type ViewChange
+    = SwitchTab StarredTab
+
+
 {-| Which half of `OrganizeStarred`'s FLIP measurement round-trip (if any)
 `GotMeasuredGroupRects` is currently waiting on -- a port's incoming `Sub` is
 a single, untargeted `Msg`, so there's nothing to pattern match on except
 state carried in the `Model`, same reasoning as
 `Components.Pages.EventsPage.MeasurementPhase` (which this mirrors).
 `AwaitingOldGroupRects` carries the reorder to apply once those rects are in
-hand; `AwaitingNewGroupRects` carries the old rects to diff the eventual new
+hand (`AwaitingOldViewRects`, the tab switch/collapse to apply); `AwaitingNewGroupRects` carries the old rects to diff the eventual new
 ones against.
 -}
 type GroupMeasurementPhase
     = NotMeasuringGroup
     | AwaitingOldGroupRects (List String)
+      -- A tab switch: the old positions of every post staying visible are in
+      -- flight; the change is applied once they arrive (see `beginViewChange`).
+    | AwaitingOldViewRects ViewChange
     | AwaitingNewGroupRects (Dict String UI.Flip.Rect)
 
 
@@ -235,6 +307,16 @@ init flags =
         persistedOrder =
             Decode.decodeValue (Decode.list Decode.string) flags
                 |> Result.withDefault []
+                |> List.map canonicalKey
+                |> List.foldl
+                    (\key acc ->
+                        if List.member key acc then
+                            acc
+
+                        else
+                            acc ++ [ key ]
+                    )
+                    []
     in
     { starredPostIds = Set.fromList persistedOrder
     , starOrder = persistedOrder
@@ -249,6 +331,11 @@ init flags =
     -- every reload.
     , starAnimations = persistedOrder |> List.map (\key -> ( key, UI.Flip.restingState )) |> Dict.fromList
     , groupMeasurementPhase = NotMeasuringGroup
+    , serverStars = Dict.empty
+    , activeTab = BrowserTab
+    , collapsedServerGroups = Set.empty
+    , serverRefetchCounter = 0
+    , collapseAnimations = Dict.empty
     }
 
 
@@ -282,7 +369,7 @@ subscriptions model =
         -- flight when the panel gets closed mid-animation (`CloseStarredPanel`/
         -- `ToggleStarredPanel` don't cancel one) still needs this to keep
         -- ticking so its own `FinishUnstar` ever actually fires.
-        , UI.Flip.subscription AnimateItemFlip (Dict.values model.starAnimations)
+        , UI.Flip.subscription AnimateItemFlip (Dict.values model.starAnimations ++ Dict.values model.collapseAnimations)
         , Ports.starredPostsUpdated StarredPostsBroadcastReceived
         ]
 
@@ -419,16 +506,36 @@ sendUpdate accountsPanelModel msg model =
                 key =
                     starKey host post
 
+                -- Counts a server-side star too -- see `isStarred`.
                 starring : Bool
                 starring =
-                    not (Set.member key model.starredPostIds)
+                    not (isStarred host post model)
+
+                account : Maybe ServerAccount
+                account =
+                    serverAccountFor accountsPanelModel host
 
                 newPosts : Dict String PostFetchStatus
                 newPosts =
                     Dict.insert key (PostFetchLoaded host post) model.posts
+
+                pushCmd : Cmd Msg
+                pushCmd =
+                    case account of
+                        Just acct ->
+                            pushServerStar host acct starring post
+
+                        Nothing ->
+                            Cmd.none
             in
             if starring then
                 let
+                    -- Where the account's own server-side stars are filed (a Mastodon post from some
+                    -- other instance still goes under the account's).
+                    serverHost : String
+                    serverHost =
+                        account |> Maybe.map serverHostOf |> Maybe.withDefault host
+
                     newStarredPostIds : Set String
                     newStarredPostIds =
                         Set.insert key model.starredPostIds
@@ -437,31 +544,174 @@ sendUpdate accountsPanelModel msg model =
                     newStarOrder =
                         key :: model.starOrder
                 in
-                ( { model | starredPostIds = newStarredPostIds, starOrder = newStarOrder, posts = newPosts }
-                , persistCmd newStarOrder
-                , Nothing
-                )
-
-            else if model.showStarredPanel then
-                let
-                    currentState : UI.Flip.State Msg
-                    currentState =
-                        Dict.get key model.starAnimations |> Maybe.withDefault UI.Flip.restingState
-                in
+                -- Lands at the top of both tabs: `starOrder`'s head, and the head of its account's
+                -- server-side list.
                 ( { model
-                    | posts = newPosts
-                    , starAnimations = Dict.insert key (UI.Flip.remove (FinishUnstar key) currentState) model.starAnimations
+                    | starredPostIds = newStarredPostIds
+                    , starOrder = newStarOrder
+                    , posts = newPosts
+                    , serverStars = updateServerStars serverHost True post model.serverStars
                   }
-                , Cmd.none
+                , Cmd.batch [ persistCmd newStarOrder, pushCmd ]
                 , Nothing
                 )
 
             else
                 let
-                    ( finishedModel, finishCmd ) =
-                        finishUnstar key { model | posts = newPosts }
+                    inBrowser : Bool
+                    inBrowser =
+                        Set.member key model.starredPostIds
+
+                    inServer : Bool
+                    inServer =
+                        serverStarContains host post model
                 in
-                ( finishedModel, finishCmd, Nothing )
+                if not inBrowser && not inServer then
+                    ( model, pushCmd, Nothing )
+
+                else
+                    let
+                        -- On unstarring, a server-side entry for this same post under a *different* key
+                        -- (the same status on the account's own instance) goes right away; the same-key one
+                        -- is removed with the fade, by `finishUnstar`.
+                        withoutOtherKeyCopies : Dict String ServerStars -> Dict String ServerStars
+                        withoutOtherKeyCopies =
+                            Dict.map
+                                (\listHost stars ->
+                                    case stars.status of
+                                        ServerStarsLoaded posts ->
+                                            { stars
+                                                | status =
+                                                    ServerStarsLoaded
+                                                        (List.filter
+                                                            (\p -> starKey listHost p == key || not (sameStarredPost (canonicalHost host) post listHost p))
+                                                            posts
+                                                        )
+                                            }
+
+                                        _ ->
+                                            stars
+                                )
+                    in
+                    if model.showStarredPanel then
+                        -- Fades out (in whichever tab it's showing in); `FinishUnstar` does the real
+                        -- removal from both the browser and server-side lists -- see `finishUnstar`.
+                        let
+                            currentState : UI.Flip.State Msg
+                            currentState =
+                                Dict.get key model.starAnimations |> Maybe.withDefault UI.Flip.restingState
+                        in
+                        ( { model
+                            | posts = newPosts
+                            , serverStars = withoutOtherKeyCopies model.serverStars
+                            , starAnimations = Dict.insert key (UI.Flip.remove (FinishUnstar key) currentState) model.starAnimations
+                          }
+                        , pushCmd
+                        , Nothing
+                        )
+
+                    else
+                        let
+                            ( finishedModel, finishCmd ) =
+                                finishUnstar key { model | posts = newPosts, serverStars = withoutOtherKeyCopies model.serverStars }
+                        in
+                        ( finishedModel, Cmd.batch [ finishCmd, pushCmd ], Nothing )
+
+        GotServerStars host account (Ok ( maybeAccountsPanelMsg, posts )) ->
+            ( if Dict.get host model.serverStars |> Maybe.map .account |> (==) (Just account) then
+                { model | serverStars = Dict.insert host { account = account, status = ServerStarsLoaded posts } model.serverStars }
+
+              else
+                model
+            , Cmd.none
+            , maybeAccountsPanelMsg
+            )
+
+        GotServerStars host account (Err _) ->
+            ( if Dict.get host model.serverStars |> Maybe.map .account |> (==) (Just account) then
+                { model | serverStars = Dict.insert host { account = account, status = ServerStarsFailed } model.serverStars }
+
+              else
+                model
+            , Cmd.none
+            , Nothing
+            )
+
+        GotServerStarPushed maybeAccountsPanelMsg ->
+            -- Trailing-edge debounce: a quick run of stars/unstars only refetches once, after the
+            -- last one's push finishes and 800ms pass with no further one.
+            let
+                counter : Int
+                counter =
+                    model.serverRefetchCounter + 1
+            in
+            ( { model | serverRefetchCounter = counter }
+            , Process.sleep 800 |> Task.perform (\_ -> RefetchServerStars counter)
+            , maybeAccountsPanelMsg
+            )
+
+        RefetchServerStars counter ->
+            if counter /= model.serverRefetchCounter then
+                ( model, Cmd.none, Nothing )
+
+            else
+                -- Refetches in place (no clearing -- the lists keep showing meanwhile) so the
+                -- panel reflects what the services actually have.
+                ( model
+                , Cmd.batch (List.map (\( host, account ) -> fetchServerStars host account) (serverStarSources accountsPanelModel))
+                , Nothing
+                )
+
+        ToggleServerGroupCollapsed host ->
+            let
+                collapsing : Bool
+                collapsing =
+                    not (Set.member host model.collapsedServerGroups)
+
+                groupKeys : List String
+                groupKeys =
+                    serverGroups model
+                        |> List.filter (\( groupHost, _ ) -> groupHost == host)
+                        |> List.concatMap (\( _, posts ) -> List.map (starKey host) posts)
+
+                -- Animated in place: the posts keep their spot in the list (collapsed ones aren't
+                -- reordered), which is what lets `UI.Flip`'s CSS collapse transition run -- see
+                -- `UI.Flip.remove`'s doc.
+                step : String -> Dict String (UI.Flip.State Msg) -> Dict String (UI.Flip.State Msg)
+                step key animations =
+                    let
+                        current : UI.Flip.State Msg
+                        current =
+                            Dict.get key animations |> Maybe.withDefault UI.Flip.restingState
+                    in
+                    Dict.insert key
+                        (if collapsing then
+                            UI.Flip.remove NoOp current
+
+                         else
+                            UI.Flip.reappear current
+                        )
+                        animations
+            in
+            ( { model
+                | collapsedServerGroups =
+                    if collapsing then
+                        Set.insert host model.collapsedServerGroups
+
+                    else
+                        Set.remove host model.collapsedServerGroups
+                , collapseAnimations = List.foldl step model.collapseAnimations groupKeys
+              }
+            , Cmd.none
+            , Nothing
+            )
+
+        SetStarredTab tab ->
+            if tab == model.activeTab then
+                ( model, Cmd.none, Nothing )
+
+            else
+                beginViewChange (SwitchTab tab) model
 
         GotStarredFederatedPost key (Ok post) ->
             let
@@ -560,8 +810,14 @@ sendUpdate accountsPanelModel msg model =
 
                 ( newStarAnimations, cmds ) =
                     Dict.foldl step ( Dict.empty, [] ) model.starAnimations
+
+                ( newCollapseAnimations, collapseCmds ) =
+                    Dict.foldl step ( Dict.empty, [] ) model.collapseAnimations
             in
-            ( { model | starAnimations = newStarAnimations }, Cmd.batch cmds, Nothing )
+            ( { model | starAnimations = newStarAnimations, collapseAnimations = newCollapseAnimations }
+            , Cmd.batch (cmds ++ collapseCmds)
+            , Nothing
+            )
 
         ToggleStarredPanel ->
             let
@@ -571,8 +827,14 @@ sendUpdate accountsPanelModel msg model =
             in
             if toggledModel.showStarredPanel then
                 let
+                    -- Opening the panel is the one place a previously-failed server-side fetch
+                    -- gets another try (see `kickOffServerFetches`).
+                    retryableModel : Model
+                    retryableModel =
+                        { toggledModel | serverStars = Dict.filter (\_ stars -> stars.status /= ServerStarsFailed) toggledModel.serverStars }
+
                     ( fetchedModel, cmd ) =
-                        kickOffFetches accountsPanelModel toggledModel
+                        kickOffFetches accountsPanelModel retryableModel
                 in
                 ( fetchedModel, cmd, Nothing )
 
@@ -610,71 +872,90 @@ sendUpdate accountsPanelModel msg model =
 
         OrganizeStarred ->
             ( { model | groupMeasurementPhase = AwaitingOldGroupRects (groupStarredOrder model) }
-            , UI.Flip.measureElementsCmd starEntryDomId model.starOrder
+            , UI.Flip.measureElementsCmd measureOwner starEntryDomId model.starOrder
             , Nothing
             )
 
         GotMeasuredGroupRects value ->
-            case Decode.decodeValue UI.Flip.rectsDecoder value of
-                Err _ ->
-                    let
-                        ( newModel, cmd ) =
-                            applyGroupMeasurementFailure model
-                    in
-                    ( newModel, cmd, Nothing )
+            -- `Ports.elementsMeasured` is shared with other components that measure things; one
+            -- of theirs landing between this FLIP's two measurements would otherwise be mistaken
+            -- for the "after" half (animating nothing), so only results tagged `measureOwner` count.
+            case UI.Flip.measuredResults measureOwner value of
+                Nothing ->
+                    ( model, Cmd.none, Nothing )
 
-                Ok rects ->
-                    case model.groupMeasurementPhase of
-                        NotMeasuringGroup ->
-                            -- A stray/late result with nothing pending (e.g.
-                            -- from some other `UI.Flip.measureElementsCmd`
-                            -- caller elsewhere in the app, since
-                            -- `Ports.elementsMeasured` is a single shared
-                            -- port) -- ignore.
-                            ( model, Cmd.none, Nothing )
-
-                        AwaitingOldGroupRects newOrder ->
+                Just results ->
+                    case Decode.decodeValue UI.Flip.rectsDecoder results of
+                        Err _ ->
                             let
-                                newModel : Model
-                                newModel =
-                                    { model | starOrder = newOrder, groupMeasurementPhase = AwaitingNewGroupRects rects }
+                                ( newModel, cmd ) =
+                                    applyGroupMeasurementFailure model
                             in
-                            ( newModel
-                            , Cmd.batch
-                                [ persistCmd newOrder
-                                , Task.attempt (\_ -> ReadyToMeasureNewGroupPositions) Dom.getViewport
-                                ]
-                            , Nothing
-                            )
+                            ( newModel, cmd, Nothing )
 
-                        AwaitingNewGroupRects oldRects ->
-                            let
-                                startMoveFor : String -> UI.Flip.Rect -> Dict String (UI.Flip.MoveState Msg) -> Dict String (UI.Flip.MoveState Msg)
-                                startMoveFor key oldRect anims =
-                                    case Dict.get key rects of
-                                        Just newRect ->
-                                            Dict.insert key
-                                                (UI.Flip.startMove (MoveSettled key)
-                                                    ( oldRect.x - newRect.x, oldRect.y - newRect.y )
-                                                    (Dict.get key anims |> Maybe.withDefault UI.Flip.atRest)
-                                                )
-                                                anims
+                        Ok rects ->
+                            case model.groupMeasurementPhase of
+                                NotMeasuringGroup ->
+                                    -- A stray/late result with nothing pending (e.g.
+                                    -- from some other `UI.Flip.measureElementsCmd`
+                                    -- caller elsewhere in the app, since
+                                    -- `Ports.elementsMeasured` is a single shared
+                                    -- port) -- ignore.
+                                    ( model, Cmd.none, Nothing )
 
-                                        Nothing ->
-                                            anims
-                            in
-                            ( { model
-                                | moveAnimations = Dict.foldl startMoveFor model.moveAnimations oldRects
-                                , groupMeasurementPhase = NotMeasuringGroup
-                              }
-                            , Cmd.none
-                            , Nothing
-                            )
+                                AwaitingOldViewRects change ->
+                                    let
+                                        changedModel : Model
+                                        changedModel =
+                                            applyViewChange change model
+                                    in
+                                    ( { changedModel | groupMeasurementPhase = AwaitingNewGroupRects rects }
+                                    , Task.attempt (\_ -> ReadyToMeasureNewGroupPositions) Dom.getViewport
+                                    , Nothing
+                                    )
+
+                                AwaitingOldGroupRects newOrder ->
+                                    let
+                                        newModel : Model
+                                        newModel =
+                                            { model | starOrder = newOrder, groupMeasurementPhase = AwaitingNewGroupRects rects }
+                                    in
+                                    ( newModel
+                                    , Cmd.batch
+                                        [ persistCmd newOrder
+                                        , Task.attempt (\_ -> ReadyToMeasureNewGroupPositions) Dom.getViewport
+                                        ]
+                                    , Nothing
+                                    )
+
+                                AwaitingNewGroupRects oldRects ->
+                                    let
+                                        startMoveFor : String -> UI.Flip.Rect -> Dict String (UI.Flip.MoveState Msg) -> Dict String (UI.Flip.MoveState Msg)
+                                        startMoveFor key oldRect anims =
+                                            case Dict.get key rects of
+                                                Just newRect ->
+                                                    Dict.insert key
+                                                        (UI.Flip.startMove (MoveSettled key)
+                                                            ( oldRect.x - newRect.x, oldRect.y - newRect.y )
+                                                            (Dict.get key anims |> Maybe.withDefault UI.Flip.atRest)
+                                                        )
+                                                        anims
+
+                                                Nothing ->
+                                                    anims
+                                    in
+                                    ( { model
+                                        | moveAnimations = Dict.foldl startMoveFor model.moveAnimations oldRects
+                                        , groupMeasurementPhase = NotMeasuringGroup
+                                      }
+                                    , Cmd.none
+                                    , Nothing
+                                    )
 
         ReadyToMeasureNewGroupPositions ->
             case model.groupMeasurementPhase of
                 AwaitingNewGroupRects oldRects ->
-                    ( model, UI.Flip.measureElementsCmd starEntryDomId (Dict.keys oldRects), Nothing )
+                    ( model, UI.Flip.measureElementsCmd measureOwner starEntryDomId (Dict.keys oldRects), Nothing )
 
                 _ ->
                     -- Nothing pending anymore -- ignore.
@@ -882,10 +1163,15 @@ reload would.
 -}
 syncItemAnimations : Model -> Model
 syncItemAnimations model =
+    let
+        keys : List String
+        keys =
+            allItemKeys model
+    in
     { model
         | starAnimations =
             if model.showStarredPanel then
-                UI.Flip.syncEnter identity model.starOrder model.starAnimations
+                UI.Flip.syncEnter identity keys model.starAnimations
 
             else
                 List.foldl
@@ -897,7 +1183,7 @@ syncItemAnimations model =
                             Dict.insert key UI.Flip.restingState acc
                     )
                     model.starAnimations
-                    model.starOrder
+                    keys
     }
 
 
@@ -926,8 +1212,11 @@ kickOffFetches accountsPanelModel model =
 
         ( eventModel, eventCmd ) =
             kickOffEventFetches accountsPanelModel { model | posts = newPosts }
+
+        ( serverModel, serverCmd ) =
+            refreshServerStars accountsPanelModel eventModel
     in
-    ( eventModel, Cmd.batch (eventCmd :: cmds) )
+    ( serverModel, Cmd.batch (serverCmd :: eventCmd :: cmds) )
 
 
 {-| Fetches the owning `Event`/`Occasion` (see `EventFetchStatus`'s own
@@ -1030,6 +1319,14 @@ applyGroupMeasurementFailure model =
             in
             ( newModel, persistCmd newOrder )
 
+        AwaitingOldViewRects change ->
+            let
+                changedModel : Model
+                changedModel =
+                    applyViewChange change model
+            in
+            ( { changedModel | groupMeasurementPhase = NotMeasuringGroup }, Cmd.none )
+
         AwaitingNewGroupRects _ ->
             ( { model | groupMeasurementPhase = NotMeasuringGroup }, Cmd.none )
 
@@ -1061,7 +1358,25 @@ finishUnstar key model =
         newStarOrder =
             List.filter ((/=) key) model.starOrder
     in
-    ( { model | starredPostIds = newStarredPostIds, starOrder = newStarOrder, starAnimations = Dict.remove key model.starAnimations }
+    ( { model
+        | starredPostIds = newStarredPostIds
+        , starOrder = newStarOrder
+        , starAnimations = Dict.remove key model.starAnimations
+        , collapseAnimations = Dict.remove key model.collapseAnimations
+
+        -- A federated post unstarred from either tab leaves both (see `ToggleFederatedStar`).
+        , serverStars =
+            Dict.map
+                (\host stars ->
+                    case stars.status of
+                        ServerStarsLoaded posts ->
+                            { stars | status = ServerStarsLoaded (List.filter (\p -> starKey host p /= key) posts) }
+
+                        _ ->
+                            stars
+                )
+                model.serverStars
+      }
     , persistCmd newStarOrder
     )
 
@@ -1163,9 +1478,18 @@ fetchFederatedGroup accountsPanelModel ( host, postIds ) ( posts, cmds ) =
                 , cmds ++ fetchCmds
                 )
 
+            -- No connected account -- public posts still read fine anonymously (an empty token,
+            -- see `Bluesky.fetchPost`).
             [] ->
-                ( List.foldl (\postId -> Dict.insert (rawKey postId host) ServerUnavailable) posts postIds
+                ( List.foldl (\postId -> Dict.insert (rawKey postId host) FetchingPost) posts postIds
                 , cmds
+                    ++ List.map
+                        (\postId ->
+                            Bluesky.fetchPost "" postId
+                                |> Task.map Tuple.first
+                                |> Task.attempt (GotStarredFederatedPost (rawKey postId host))
+                        )
+                        postIds
                 )
 
 
@@ -1199,6 +1523,544 @@ fetchEventGroup accountsPanelModel ( host, postIds ) ( events, cmds ) =
 
 
 
+-- SERVER-SIDE STARS (Mastodon favourites / Bluesky likes)
+
+
+type ServerAccount
+    = MastodonServerAccount MastodonAccount
+    | BlueskyServerAccount BlueskyAccount
+
+
+{-| The connected account (if any) `host`'s server-side stars live under: a Mastodon `host` prefers an
+account on that very instance (a status id is only meaningful to the instance it came from) but
+otherwise falls back to the first usable one -- `pushServerStar` then resolves the post onto that
+account's own instance; a Bluesky one needs the enabled account. Accounts flagged `needsReauth` don't
+count.
+-}
+serverAccountFor : AccountsPanel.Model -> String -> Maybe ServerAccount
+serverAccountFor accountsPanelModel host =
+    if String.startsWith "mastodon:" host then
+        let
+            usable : List MastodonAccount
+            usable =
+                List.filter (not << .needsReauth) accountsPanelModel.mastodonAccounts
+        in
+        usable
+            |> List.filter (\account -> account.instanceHost == String.dropLeft 9 host)
+            |> List.head
+            |> orElseMaybe (List.head usable)
+            |> Maybe.map MastodonServerAccount
+
+    else if String.startsWith "bluesky:" host then
+        accountsPanelModel.blueskyAccounts
+            |> List.filter (\account -> account.enabled && not account.needsReauth)
+            |> List.head
+            |> Maybe.map BlueskyServerAccount
+
+    else
+        Nothing
+
+
+orElseMaybe : Maybe a -> Maybe a -> Maybe a
+orElseMaybe fallback maybe =
+    case maybe of
+        Just _ ->
+            maybe
+
+        Nothing ->
+            fallback
+
+
+{-| The host a `ServerAccount`'s own server-side stars are filed under in `serverStars`.
+-}
+serverHostOf : ServerAccount -> String
+serverHostOf account =
+    case account of
+        MastodonServerAccount a ->
+            "mastodon:" ++ a.instanceHost
+
+        BlueskyServerAccount _ ->
+            "bluesky:"
+
+
+serverAccountKey : ServerAccount -> String
+serverAccountKey account =
+    case account of
+        MastodonServerAccount a ->
+            a.instanceHost ++ "/" ++ a.username
+
+        BlueskyServerAccount a ->
+            a.handle
+
+
+{-| Every host with a connected account to fetch server-side stars for, and that account.
+-}
+serverStarSources : AccountsPanel.Model -> List ( String, ServerAccount )
+serverStarSources accountsPanelModel =
+    let
+        hosts : List String
+        hosts =
+            (accountsPanelModel.mastodonAccounts |> List.map (\a -> "mastodon:" ++ a.instanceHost))
+                ++ [ "bluesky:" ]
+                |> List.foldl
+                    (\host acc ->
+                        if List.member host acc then
+                            acc
+
+                        else
+                            acc ++ [ host ]
+                    )
+                    []
+    in
+    hosts
+        |> List.filterMap (\host -> serverAccountFor accountsPanelModel host |> Maybe.map (Tuple.pair host))
+
+
+{-| Drops cached server-side star lists for hosts that no longer have a usable connected account (or
+whose account changed), and fetches whichever sources are missing one -- idempotent, so
+`kickOffFetches`/`Shared.update` can call it freely. A `ServerStarsFailed` entry stays put (it's
+only cleared by opening the panel, see `ToggleStarredPanel`) so a persistently failing fetch isn't
+retried on every account message.
+-}
+refreshServerStars : AccountsPanel.Model -> Model -> ( Model, Cmd Msg )
+refreshServerStars accountsPanelModel model =
+    let
+        sources : List ( String, ServerAccount )
+        sources =
+            serverStarSources accountsPanelModel
+
+        stillValid : String -> ServerStars -> Bool
+        stillValid host stars =
+            sources
+                |> List.any (\( sourceHost, account ) -> sourceHost == host && serverAccountKey account == stars.account)
+
+        kept : Dict String ServerStars
+        kept =
+            Dict.filter stillValid model.serverStars
+
+        missing : List ( String, ServerAccount )
+        missing =
+            List.filter (\( host, _ ) -> not (Dict.member host kept)) sources
+    in
+    ( { model
+        | serverStars =
+            List.foldl
+                (\( host, account ) -> Dict.insert host { account = serverAccountKey account, status = ServerStarsFetching })
+                kept
+                missing
+      }
+    , Cmd.batch (List.map (\( host, account ) -> fetchServerStars host account) missing)
+    )
+
+
+fetchServerStars : String -> ServerAccount -> Cmd Msg
+fetchServerStars host account =
+    case account of
+        MastodonServerAccount a ->
+            withMastodonAccount a (\token -> Mastodon.fetchFavourites a.instanceHost token)
+                |> Task.map (\( refreshed, posts ) -> ( rotatedMastodon a refreshed, posts ))
+                |> Task.attempt (GotServerStars host (serverAccountKey account))
+
+        BlueskyServerAccount a ->
+            BlueskyAccounts.performWithBlueskyAccount a (\token -> Bluesky.fetchLikes token a.handle)
+                |> Task.map (\( refreshed, posts ) -> ( rotatedBluesky a refreshed, posts ))
+                |> Task.attempt (GotServerStars host (serverAccountKey account))
+
+
+{-| Favourites (`starring`) or unfavourites `post` on the service. A failure is dropped, except that
+a 401/403 from Mastodon (a token connected before `write:favourites` was requested -- see
+`public/index.html`) flags the account `needsReauth` so it shows its "Reconnect" affordance.
+-}
+pushServerStar : String -> ServerAccount -> Bool -> Post -> Cmd Msg
+pushServerStar host account starring post =
+    case account of
+        MastodonServerAccount a ->
+            let
+                -- The post's id on the account's own instance: as-is if that's where it came from,
+                -- else looked up by its public URL (see `Mastodon.resolveStatusId`).
+                localId : String -> Task.Task Http.Error String
+                localId token =
+                    if host == "mastodon:" ++ a.instanceHost then
+                        Task.succeed post.id
+
+                    else
+                        case post.link of
+                            Just url ->
+                                Mastodon.resolveStatusId a.instanceHost token url
+
+                            Nothing ->
+                                Task.fail (Http.BadStatus 404)
+            in
+            withMastodonAccount a
+                (\token ->
+                    localId token
+                        |> Task.andThen (\id -> Mastodon.setFavourite starring a.instanceHost token id)
+                )
+                |> Task.map (\( refreshed, () ) -> rotatedMastodon a refreshed)
+                |> Task.onError
+                    (\err ->
+                        case err of
+                            Http.BadStatus code ->
+                                Task.succeed
+                                    (if code == 401 || code == 403 then
+                                        Just (AccountsPanel.MarkMastodonAccountNeedsReauth a.instanceHost)
+
+                                     else
+                                        Nothing
+                                    )
+
+                            _ ->
+                                Task.succeed Nothing
+                    )
+                |> Task.perform GotServerStarPushed
+
+        BlueskyServerAccount a ->
+            BlueskyAccounts.performWithBlueskyAccount a (\token -> Bluesky.setLike starring a.handle token post.id)
+                |> Task.map (\( refreshed, () ) -> rotatedBluesky a refreshed)
+                |> Task.onError (\_ -> Task.succeed Nothing)
+                |> Task.perform GotServerStarPushed
+
+
+{-| `MastodonAccounts.performWithMastodonAccount`, but only refreshing the token on a 401 -- its own
+"any bad status" trigger would burn a (rotating) refresh token on, say, a 403 for a missing scope,
+and a refresh whose retry then fails drops the rotated tokens on the floor.
+-}
+withMastodonAccount : MastodonAccount -> (String -> Task.Task Http.Error a) -> Task.Task Http.Error ( MastodonAccount, a )
+withMastodonAccount account req =
+    req account.accessToken
+        |> Task.map (\result -> ( account, result ))
+        |> Task.onError
+            (\err ->
+                case err of
+                    Http.BadStatus 401 ->
+                        MastodonAccounts.performWithMastodonAccount account req
+
+                    _ ->
+                        Task.fail err
+            )
+
+
+rotatedMastodon : MastodonAccount -> MastodonAccount -> Maybe AccountsPanel.Msg
+rotatedMastodon before after =
+    if after.accessToken == before.accessToken then
+        Nothing
+
+    else
+        Just (AccountsPanel.MastodonAccountRefreshed after)
+
+
+rotatedBluesky : BlueskyAccount -> BlueskyAccount -> Maybe AccountsPanel.Msg
+rotatedBluesky before after =
+    if after.accessToken == before.accessToken then
+        Nothing
+
+    else
+        Just (AccountsPanel.BlueskyAccountRefreshed after)
+
+
+{-| Whether any connected account's server-side star list has `post` -- by its id on `host`, or by its
+public `link` (a Mastodon status has a different id on every instance, so one viewed through its
+origin instance only matches the copy in a favourites list from the account's own by its URL).
+-}
+serverStarContains : String -> Post -> Model -> Bool
+serverStarContains host post model =
+    serverStarredPosts model
+        |> List.any (\( listHost, p ) -> sameStarredPost (canonicalHost host) post listHost p)
+
+
+sameStarredPost : String -> Post -> String -> Post -> Bool
+sameStarredPost host post otherHost other =
+    (host == otherHost && post.id == other.id) || (post.link /= Nothing && post.link == other.link)
+
+
+{-| Keeps a loaded server-side list in step with a just-made toggle (no-op for a host with no loaded
+list).
+-}
+updateServerStars : String -> Bool -> Post -> Dict String ServerStars -> Dict String ServerStars
+updateServerStars host starring post serverStars =
+    Dict.update (canonicalHost host)
+        (Maybe.map
+            (\stars ->
+                case stars.status of
+                    ServerStarsLoaded posts ->
+                        let
+                            others : List Post
+                            others =
+                                List.filter (\p -> not (sameStarredPost (canonicalHost host) post (canonicalHost host) p)) posts
+                        in
+                        { stars
+                            | status =
+                                ServerStarsLoaded
+                                    (if starring then
+                                        post :: others
+
+                                     else
+                                        others
+                                    )
+                        }
+
+                    _ ->
+                        stars
+            )
+        )
+        serverStars
+
+
+{-| Every loaded server-side star, with its host.
+-}
+serverStarredPosts : Model -> List ( String, Post )
+serverStarredPosts model =
+    model.serverStars
+        |> Dict.toList
+        |> List.concatMap
+            (\( host, stars ) ->
+                case stars.status of
+                    ServerStarsLoaded posts ->
+                        List.map (Tuple.pair host) posts
+
+                    _ ->
+                        []
+            )
+
+
+{-| Whether there's anything to show in the panel at all (browser- or server-side).
+-}
+hasAnyStars : Model -> Bool
+hasAnyStars model =
+    not (Set.isEmpty model.starredPostIds) || not (List.isEmpty (serverStarredPosts model))
+
+
+{-| Browser stars plus server-side stars not also starred here -- the nav badge's count.
+-}
+totalStarCount : Model -> Int
+totalStarCount model =
+    Set.size model.starredPostIds
+        + (serverStarredPosts model
+            |> List.filter (\( host, post ) -> not (Set.member (starKey host post) model.starredPostIds))
+            |> List.length
+          )
+
+
+
+-- THE UNIFIED LIST
+
+
+{-| One row of the panel's single FLIP list -- both tabs render from it (see `view`): a post, or
+(Server tab only) an account's heading chip.
+-}
+type StarredItem
+    = PostRowItem String
+    | ChipRowItem String
+
+
+itemKey : StarredItem -> String
+itemKey item =
+    case item of
+        PostRowItem key ->
+            key
+
+        ChipRowItem host ->
+            "chip:" ++ host
+
+
+postItemKey : StarredItem -> Maybe String
+postItemKey item =
+    case item of
+        PostRowItem key ->
+            Just key
+
+        ChipRowItem _ ->
+            Nothing
+
+
+{-| Every connected account's loaded, non-empty server-side stars, in host order.
+-}
+serverGroups : Model -> List ( String, List Post )
+serverGroups model =
+    model.serverStars
+        |> Dict.toList
+        |> List.filterMap
+            (\( host, stars ) ->
+                case stars.status of
+                    ServerStarsLoaded ((_ :: _) as posts) ->
+                        Just ( host, posts )
+
+                    _ ->
+                        Nothing
+            )
+
+
+{-| Which tab is actually showing: both kinds of star -> the user's pick; only server-side ones ->
+those; otherwise the browser's.
+-}
+effectiveTab : Model -> StarredTab
+effectiveTab model =
+    let
+        hasBrowser : Bool
+        hasBrowser =
+            not (Set.isEmpty model.starredPostIds)
+
+        hasServer : Bool
+        hasServer =
+            not (List.isEmpty (serverGroups model))
+    in
+    if hasBrowser && hasServer then
+        model.activeTab
+
+    else if hasServer then
+        ServerTab
+
+    else
+        BrowserTab
+
+
+{-| What `tab` shows, in order: the browser tab is just `starOrder`; the server tab is each account's
+chip followed by its posts (a collapsed section's stay in place, rendered collapsed -- see
+`effectiveFlipState`).
+-}
+tabItems : StarredTab -> Model -> List StarredItem
+tabItems tab model =
+    case tab of
+        BrowserTab ->
+            List.map PostRowItem model.starOrder
+
+        ServerTab ->
+            serverGroups model
+                |> List.concatMap
+                    (\( host, posts ) ->
+                        ChipRowItem host :: List.map (\post -> PostRowItem (starKey host post)) posts
+                    )
+
+
+{-| Every item in either tab, collapsed sections' posts included -- what has to stay mounted so it
+can come back.
+-}
+allItems : Model -> List StarredItem
+allItems model =
+    let
+        serverPostItems : List StarredItem
+        serverPostItems =
+            serverGroups model
+                |> List.concatMap (\( host, posts ) -> List.map (\post -> PostRowItem (starKey host post)) posts)
+
+        chips : List StarredItem
+        chips =
+            serverGroups model |> List.map (\( host, _ ) -> ChipRowItem host)
+    in
+    List.map PostRowItem model.starOrder ++ serverPostItems ++ chips
+
+
+allItemKeys : Model -> List String
+allItemKeys model =
+    allItems model |> List.map itemKey
+        |> List.foldl
+            (\k acc ->
+                if List.member k acc then
+                    acc
+
+                else
+                    k :: acc
+            )
+            []
+        |> List.reverse
+
+
+{-| Render order for the one keyed list: whatever the showing tab shows, in its order, then
+everything else (rendered instantly hidden -- see `view`). Each `Bool` is "shown".
+-}
+orderedItems : Model -> List ( StarredItem, Bool )
+orderedItems model =
+    let
+        shown : List StarredItem
+        shown =
+            tabItems (effectiveTab model) model
+
+        shownKeys : Set String
+        shownKeys =
+            shown |> List.map itemKey |> Set.fromList
+
+        rest : List StarredItem
+        rest =
+            allItems model
+                |> List.filter (\item -> not (Set.member (itemKey item) shownKeys))
+                |> List.foldl
+                    (\item ( seen, acc ) ->
+                        if Set.member (itemKey item) seen then
+                            ( seen, acc )
+
+                        else
+                            ( Set.insert (itemKey item) seen, item :: acc )
+                    )
+                    ( Set.empty, [] )
+                |> Tuple.second
+                |> List.reverse
+    in
+    List.map (\item -> ( item, True )) shown ++ List.map (\item -> ( item, False )) rest
+
+
+applyViewChange : ViewChange -> Model -> Model
+applyViewChange change model =
+    case change of
+        SwitchTab tab ->
+            { model | activeTab = tab }
+
+
+{-| Starts a tab switch as a FLIP: measure where every post that'll still be
+shown afterwards is now; `GotMeasuredGroupRects` then applies `change`, waits a frame, and measures
+again so each of those posts slides from its old spot to its new one -- the same round trip
+`OrganizeStarred` does. Posts that stop being shown just disappear (animating their collapse while
+also moving them in the DOM gets cancelled by the browser anyway -- see `UI.Flip.remove`'s doc).
+-}
+beginViewChange : ViewChange -> Model -> ( Model, Cmd Msg, Maybe AccountsPanel.Msg )
+beginViewChange change model =
+    let
+        shownPostKeys : Model -> List String
+        shownPostKeys m =
+            tabItems (effectiveTab m) m |> List.filterMap postItemKey
+
+        afterKeys : List String
+        afterKeys =
+            shownPostKeys (applyViewChange change model)
+
+        sharedKeys : List String
+        sharedKeys =
+            List.filter (\key -> List.member key afterKeys) (shownPostKeys model)
+    in
+    ( { model | groupMeasurementPhase = AwaitingOldViewRects change }
+    , UI.Flip.measureElementsCmd measureOwner starEntryDomId sharedKeys
+    , Nothing
+    )
+
+
+{-| The post `key` is showing as: its browser-side fetch if that's loaded, else a server-side list's
+copy of it (a server-only star has no browser-side entry at all).
+-}
+postStatusFor : Model -> String -> Maybe PostFetchStatus
+postStatusFor model key =
+    case Dict.get key model.posts of
+        Just (PostFetchLoaded host post) ->
+            Just (PostFetchLoaded host post)
+
+        other ->
+            case
+                serverGroups model
+                    |> List.filterMap
+                        (\( host, posts ) ->
+                            posts
+                                |> List.filter (\post -> starKey host post == key)
+                                |> List.head
+                                |> Maybe.map (PostFetchLoaded host)
+                        )
+                    |> List.head
+            of
+                Just loaded ->
+                    Just loaded
+
+                Nothing ->
+                    other
+
+
+
 -- VIEW
 
 
@@ -1210,62 +2072,153 @@ directly -- unlike those other panels' view code, which lives in `UI.elm`
 itself and so can reach `Shared.Msg` freely, this one can't (`Shared` imports
 `Shared.StarredPanel`, so the reverse import would be a cycle).
 -}
-view : SharedTime.Model -> String -> AccountsPanel.Model -> Maybe String -> Maybe String -> Model -> MediaRenderer.Model -> Html Msg
-view time basePath accountsPanelModel currentPostKey currentOccasionId model mediaRendererModel =
+view : SharedTime.Model -> String -> String -> AccountsPanel.Model -> Maybe String -> Maybe String -> Model -> MediaRenderer.Model -> Html Msg
+view time basePath browserName accountsPanelModel currentPostKey currentOccasionId model mediaRendererModel =
     let
         stateClass : String
         stateClass =
             openClosedClass model.showStarredPanel
+
+        hasBrowser : Bool
+        hasBrowser =
+            not (Set.isEmpty model.starredPostIds)
+
+        hasServer : Bool
+        hasServer =
+            not (List.isEmpty (serverGroups model))
+
+        tab : StarredTab
+        tab =
+            effectiveTab model
     in
     div [ classes [ "starred-panel", "nav-panel", stateClass ] ]
         (div [ class "starred-panel-header" ]
             (text "Starred"
-                :: (if starredPanelHasBothGroups model then
-                        [ button
-                            [ classes [ "starred-panel-organize-button", "background-color-nav" ]
-                            , onClick OrganizeStarred
+                :: (if hasBrowser && hasServer then
+                        [ div [ class "starred-panel-tabs" ]
+                            [ starredTabButton tab BrowserTab browserName
+                            , starredTabButton tab ServerTab "Server"
                             ]
-                            [ text "Organize" ]
                         ]
 
                     else
                         []
                    )
+                -- Always mounted, toggling `hidden` (which animates it to nothing) rather than
+                -- appearing/disappearing -- same as `EventsPage`'s filter button.
+                ++ (let
+                        shown : Bool
+                        shown =
+                            tab == BrowserTab && starredPanelHasBothGroups model
+                    in
+                    [ button
+                        ([ classes
+                            ("starred-panel-organize-button"
+                                :: "background-color-nav"
+                                :: (if shown then
+                                        []
+
+                                    else
+                                        [ "hidden" ]
+                                   )
+                            )
+                         , onClick OrganizeStarred
+                         , title "Organize"
+                         , attribute "aria-label" "Organize"
+                         ]
+                            ++ (if shown then
+                                    []
+
+                                else
+                                    [ attribute "tabindex" "-1", attribute "aria-hidden" "true" ]
+                               )
+                        )
+                        [ text "⇅" ]
+                    ]
+                   )
             )
-            :: (if Set.isEmpty model.starredPostIds then
+            :: (if not hasBrowser && not hasServer then
                     [ div [ class "starred-panel-empty" ] [ text "No starred posts yet." ] ]
 
                 else
-                    let
-                        count : Int
-                        count =
-                            List.length model.starOrder
-                    in
-                    -- `starOrder` starts newest-star-first (see `Model`), but the user
-                    -- can then drag it around from there via `MoveStarUpClicked`/
-                    -- `MoveStarDownClicked`.
+                    -- One FLIP list for both tabs: every item of either tab stays mounted, the
+                    -- showing tab's first (in its own order) and the rest instantly hidden, so
+                    -- switching tabs is just a reorder + show/hide -- see `beginViewChange`.
                     [ Html.Keyed.node "div"
                         [ classes [ "starred-panel-list", "flip-animated-column" ] ]
-                        (List.indexedMap
-                            (\index key -> ( key, starredPostRowFlip time basePath accountsPanelModel currentPostKey currentOccasionId model mediaRendererModel count index key ))
-                            model.starOrder
+                        (List.map
+                            (\( item, shown ) -> renderStarredItem time basePath accountsPanelModel currentPostKey currentOccasionId model mediaRendererModel tab shown item)
+                            (orderedItems model)
                         )
                     ]
                )
         )
 
 
-{-| Wraps `starredPostRow` in a fading/scaling/collapsing animated outer
-`div` (entering when freshly starred, removing when unstarred -- see
-`starAnimations`/`UI.Flip`), same two-layer reasoning as `UI.accountRowFlip`
-(fade/collapse here vs. `starredPostRow`'s own, independent reorder-slide).
+starredTabButton : StarredTab -> StarredTab -> String -> Html Msg
+starredTabButton activeTab tab label =
+    button
+        [ classes
+            ("starred-panel-tab"
+                :: (if activeTab == tab then
+                        [ "active" ]
+
+                    else
+                        []
+                   )
+            )
+        , onClick (SetStarredTab tab)
+        ]
+        [ text label ]
+
+
+{-| An instantly-collapsed, invisible `UI.Flip.State` -- how an item the showing tab doesn't show
+renders (see `orderedItems`).
 -}
-starredPostRowFlip : SharedTime.Model -> String -> AccountsPanel.Model -> Maybe String -> Maybe String -> Model -> MediaRenderer.Model -> Int -> Int -> String -> Html Msg
-starredPostRowFlip time basePath accountsPanelModel currentPostKey currentOccasionId model mediaRendererModel count index key =
+hiddenFlipState : UI.Flip.State Msg
+hiddenFlipState =
+    { removing = True
+    , entering = False
+    , style = Animation.style [ Animation.opacity 0, Animation.scale 0.92 ]
+    }
+
+
+{-| The enter/leave state `key`'s row renders with: instantly hidden if the showing tab doesn't show it;
+else its own (enter / unstar-fade) state while that's removing; else, on the Server tab, its section's
+collapse state (if it has one); else its own.
+-}
+effectiveFlipState : Model -> StarredTab -> Bool -> String -> UI.Flip.State Msg
+effectiveFlipState model tab shown key =
+    if not shown then
+        hiddenFlipState
+
+    else
+        let
+            own : UI.Flip.State Msg
+            own =
+                Dict.get key model.starAnimations |> Maybe.withDefault UI.Flip.restingState
+        in
+        if own.removing || tab /= ServerTab then
+            own
+
+        else
+            Dict.get key model.collapseAnimations |> Maybe.withDefault own
+
+
+{-| One row of the unified list, wrapped in `UI.Flip`'s enter/leave item (fading/scaling/collapsing
+on star/unstar, or `hiddenFlipState` when the showing tab doesn't show it), same two-layer reasoning
+as `UI.accountRowFlip` (that fade/collapse vs. `starredPostRow`'s own, independent slide).
+-}
+renderStarredItem : SharedTime.Model -> String -> AccountsPanel.Model -> Maybe String -> Maybe String -> Model -> MediaRenderer.Model -> StarredTab -> Bool -> StarredItem -> ( String, Html Msg )
+renderStarredItem time basePath accountsPanelModel currentPostKey currentOccasionId model mediaRendererModel tab shown item =
     let
+        key : String
+        key =
+            itemKey item
+
         flipState : UI.Flip.State Msg
         flipState =
-            Dict.get key model.starAnimations |> Maybe.withDefault UI.Flip.restingState
+            effectiveFlipState model tab shown key
 
         isMoving : Bool
         isMoving =
@@ -1279,16 +2232,76 @@ starredPostRowFlip time basePath accountsPanelModel currentPostKey currentOccasi
             else
                 []
     in
-    div (UI.Flip.itemAttributes UI.Flip.Vertical flipState isMoving)
-        [ div pointerEventsAttr [ starredPostRow time basePath accountsPanelModel currentPostKey currentOccasionId model mediaRendererModel count index key ] ]
+    ( key
+    , div (UI.Flip.itemAttributes UI.Flip.Vertical flipState isMoving)
+        [ div pointerEventsAttr
+            [ case item of
+                PostRowItem postKey ->
+                    starredPostRow time basePath accountsPanelModel currentPostKey currentOccasionId model mediaRendererModel tab postKey
+
+                ChipRowItem host ->
+                    serverChipView accountsPanelModel model host
+            ]
+        ]
+    )
+
+
+{-| An account's heading on the Server tab: avatar + name + instance/handle, styled with
+`accounts_panel.css`' own `.account-row` classes so it reads like the Accounts panel's row (see
+`UI.mastodonAccountRow`/`blueskyAccountRow`), plus the collapse chevron -- one static glyph rotated
+by CSS (`.expandable-section-arrow`, as in `SettingsTab`'s collapsible sections). Clicking collapses
+or expands that account's posts (`ToggleServerGroupCollapsed`).
+-}
+serverChipView : AccountsPanel.Model -> Model -> String -> Html Msg
+serverChipView accountsPanelModel model host =
+    let
+        mainHostClass : String
+        mainHostClass =
+            hostnameToCSSClass accountsPanelModel.mainFrontendHost
+
+        collapsed : Bool
+        collapsed =
+            Set.member host model.collapsedServerGroups
+
+        chip : ( Maybe String, String, String ) -> Html Msg
+        chip ( avatarUrl, name, badge ) =
+            div
+                [ classes [ "starred-server-account-chip", "account-row", "federated-account-row", mainHostClass, "background-color-nav", "border-color-accent" ]
+                , onClick (ToggleServerGroupCollapsed host)
+                ]
+                [ div [ class "account-row-main" ]
+                    [ case avatarUrl of
+                        Just url ->
+                            img [ class "account-avatar", src url, alt name ] []
+
+                        Nothing ->
+                            div [ classes [ "placeholder", "account-avatar" ] ] [ text (RellmServers.initialLetter name) ]
+                    , div [ class "account-row-label" ]
+                        [ div [ class "account-row-username" ] [ text ("⇄ " ++ name) ]
+                        , div [ classes [ "account-row-server-badge", mainHostClass, "background-color-primary" ] ] [ text badge ]
+                        ]
+                    , div [ class "starred-server-group-arrow" ]
+                        [ span [ classes [ "expandable-section-arrow", openClosedClass (not collapsed) ] ] [ text "▼" ] ]
+                    ]
+                ]
+    in
+    case serverAccountFor accountsPanelModel host of
+        Just (MastodonServerAccount a) ->
+            chip ( Nothing, "@" ++ a.username, a.instanceHost )
+
+        Just (BlueskyServerAccount a) ->
+            chip ( a.avatarUrl, a.displayName |> Maybe.withDefault ("@" ++ a.handle), "@" ++ a.handle )
+
+        Nothing ->
+            chip ( Nothing, String.dropLeft 1 (String.fromList (List.drop 8 (String.toList host))), host )
 
 
 {-| Wraps `starredPostView`'s content with `UI.Flip`'s slide-on-reorder
-transform and the up/down reorder buttons -- mirrors `UI.accountRow`'s
-equivalent for Accounts.
+transform and the up/down reorder buttons (mirrors `UI.accountRow`'s equivalent for Accounts). On the
+Server tab those buttons fade out and the same left slot shows the section's colored bar instead.
 -}
-starredPostRow : SharedTime.Model -> String -> AccountsPanel.Model -> Maybe String -> Maybe String -> Model -> MediaRenderer.Model -> Int -> Int -> String -> Html Msg
-starredPostRow time basePath accountsPanelModel currentPostKey currentOccasionId model mediaRendererModel count index key =
+starredPostRow : SharedTime.Model -> String -> AccountsPanel.Model -> Maybe String -> Maybe String -> Model -> MediaRenderer.Model -> StarredTab -> String -> Html Msg
+starredPostRow time basePath accountsPanelModel currentPostKey currentOccasionId model mediaRendererModel tab key =
     let
         moveAttrs : List (Html.Attribute Msg)
         moveAttrs =
@@ -1296,12 +2309,37 @@ starredPostRow time basePath accountsPanelModel currentPostKey currentOccasionId
                 |> Dict.get key
                 |> Maybe.map UI.Flip.moveAttributes
                 |> Maybe.withDefault []
+
+        count : Int
+        count =
+            List.length model.starOrder
+
+        index : Int
+        index =
+            model.starOrder
+                |> List.indexedMap Tuple.pair
+                |> List.filter (\( _, k ) -> k == key)
+                |> List.head
+                |> Maybe.map Tuple.first
+                |> Maybe.withDefault 0
     in
     div
         (id (starEntryDomId key)
-            :: class "starred-post-row"
+            :: classes
+                ("starred-post-row"
+                    :: (if tab == ServerTab then
+                            [ "starred-post-row-grouped", "border-color-primary-anchor-50" ]
+
+                        else
+                            []
+                       )
+                )
             :: moveAttrs
         )
+        -- The same two children on both tabs, so a post in both is literally the same FLIP row: the
+        -- left slot holds the sort arrows on the Browser tab and (via CSS, `-grouped`) the section's
+        -- colored bar on the Server tab, leaving the card's own x position unchanged -- it just
+        -- slides up/down.
         [ UI.Flip.reorderButtons
             { moveUp = MoveStarUpClicked key
             , moveDown = MoveStarDownClicked key
@@ -1314,7 +2352,7 @@ starredPostRow time basePath accountsPanelModel currentPostKey currentOccasionId
 
 starredPostView : SharedTime.Model -> String -> AccountsPanel.Model -> Maybe String -> Maybe String -> Model -> MediaRenderer.Model -> String -> Html Msg
 starredPostView time basePath accountsPanelModel currentPostKey currentOccasionId model mediaRendererModel key =
-    case Dict.get key model.posts of
+    case postStatusFor model key of
         Just (PostFetchLoaded host post) ->
             if post.context == OCCASION then
                 starredOccasionView time basePath accountsPanelModel currentOccasionId model mediaRendererModel key host post
@@ -1473,7 +2511,7 @@ starredOccasionView time basePath accountsPanelModel currentOccasionId model med
 
                     Nothing ->
                         text ""
-                , Events.eventCard time basePath accountsPanelModel.mainFrontendHost host maybeServer maybeAccount onMediaClicked mediaRendererModel onMediaPlayClicked MediaRenderer.ExtraSmall starred onStarClicked current False False Nothing (\_ -> False) (\_ -> Nothing) (\_ -> NoOp) (\_ _ -> NoOp) event displayOccasion
+                , Events.eventCard time basePath accountsPanelModel.mainFrontendHost host maybeServer maybeAccount onMediaClicked mediaRendererModel onMediaPlayClicked MediaRenderer.ExtraSmall starred onStarClicked current False False Nothing (\_ -> False) (\_ -> Nothing) (\_ -> NoOp) (\_ _ -> NoOp) Events.noCardSlots event displayOccasion
                 ]
 
         Just FetchingEvent ->
@@ -1497,7 +2535,43 @@ pointing at the server it actually came from regardless.
 -}
 starKey : String -> Post -> String
 starKey frontendHost post =
-    post.id ++ "@" ++ frontendHost
+    post.id ++ "@" ++ canonicalHost frontendHost
+
+
+{-| Every Bluesky post is the one host, `"bluesky:"` -- a Bluesky post reached from a feed carries
+`"bluesky:" ++ handle` (see `Components.Pages.PostsPage.feedSourceKey`) while one from its own page or
+the server-side likes list carries bare `"bluesky:"`, and the same post must be the same star (and the
+same row in the unified list) whichever way it was reached. A Mastodon host is already just its
+instance, and a Rellm server's its own.
+-}
+canonicalHost : String -> String
+canonicalHost host =
+    if String.startsWith "bluesky:" host then
+        "bluesky:"
+
+    else
+        host
+
+
+{-| `canonicalHost` applied to the host half of a persisted `postId@host` key -- migrates keys saved
+before it existed.
+-}
+canonicalKey : String -> String
+canonicalKey key =
+    case String.split "@" key of
+        [ postId, host ] ->
+            postId ++ "@" ++ canonicalHost host
+
+        _ ->
+            key
+
+
+{-| This panel's "self" for `UI.Flip.measure`/`measuredResults` -- see them for why a component sharing
+`Ports.elementsMeasured` tags its measurements.
+-}
+measureOwner : String
+measureOwner =
+    "starred-panel"
 
 
 {-| The DOM `id` a starred post's entry is rendered with (see
@@ -1512,12 +2586,16 @@ starEntryDomId key =
 
 rawKey : String -> String -> String
 rawKey postId host =
-    postId ++ "@" ++ host
+    postId ++ "@" ++ canonicalHost host
 
 
+{-| Starred in this browser _or_ on the connected Mastodon/Bluesky account's own server -- see
+`serverStars`.
+-}
 isStarred : String -> Post -> Model -> Bool
 isStarred frontendHost post model =
     Set.member (starKey frontendHost post) model.starredPostIds
+        || serverStarContains frontendHost post model
 
 
 {-| The freshest known version of `post` -- if it's ever been starred/unstarred
@@ -1550,6 +2628,37 @@ groupByHost pairs =
             (\( postId, host ) -> Dict.update host (\existing -> Just (postId :: Maybe.withDefault [] existing)))
             Dict.empty
         |> Dict.toList
+
+
+{-| Whether any starred post or occasion is still waiting on a fetch that `PollStarredPosts` would
+(re)try -- what `Shared.subscriptions` gates its poll timer on, so an open panel with everything
+loaded (or permanently failed) isn't woken (and re-rendered) every 1.5s for nothing.
+-}
+hasPendingFetches : Model -> Bool
+hasPendingFetches model =
+    let
+        postPending : Bool
+        postPending =
+            model.starredPostIds
+                |> Set.toList
+                |> List.filterMap parseStarKey
+                |> List.any (\( postId, host ) -> needsFetch model.posts (rawKey postId host))
+
+        eventPending : Bool
+        eventPending =
+            model.posts
+                |> Dict.toList
+                |> List.any
+                    (\( key, status ) ->
+                        case status of
+                            PostFetchLoaded _ post ->
+                                post.context == OCCASION && needsEventFetch model.events key
+
+                            _ ->
+                                False
+                    )
+    in
+    postPending || eventPending
 
 
 needsFetch : Dict String PostFetchStatus -> String -> Bool

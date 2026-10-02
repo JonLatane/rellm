@@ -73,6 +73,7 @@ class FederationInfo extends $pb.GeneratedMessage {
     FacebookAuthConfig? facebookAuthConfig,
     XTwitterAuthConfig? xTwitterAuthConfig,
     $core.Iterable<MastodonServer>? mastodonServers,
+    $core.bool? unsecureLocalhostFederatedAuthEnabled,
   }) {
     final $result = create();
     if (servers != null) {
@@ -87,6 +88,9 @@ class FederationInfo extends $pb.GeneratedMessage {
     if (mastodonServers != null) {
       $result.mastodonServers.addAll(mastodonServers);
     }
+    if (unsecureLocalhostFederatedAuthEnabled != null) {
+      $result.unsecureLocalhostFederatedAuthEnabled = unsecureLocalhostFederatedAuthEnabled;
+    }
     return $result;
   }
   FederationInfo._() : super();
@@ -98,6 +102,7 @@ class FederationInfo extends $pb.GeneratedMessage {
     ..aOM<FacebookAuthConfig>(2, _omitFieldNames ? '' : 'facebookAuthConfig', subBuilder: FacebookAuthConfig.create)
     ..aOM<XTwitterAuthConfig>(3, _omitFieldNames ? '' : 'xTwitterAuthConfig', subBuilder: XTwitterAuthConfig.create)
     ..pc<MastodonServer>(4, _omitFieldNames ? '' : 'mastodonServers', $pb.PbFieldType.PM, subBuilder: MastodonServer.create)
+    ..aOB(5, _omitFieldNames ? '' : 'unsecureLocalhostFederatedAuthEnabled')
     ..hasRequiredFields = false
   ;
 
@@ -167,6 +172,22 @@ class FederationInfo extends $pb.GeneratedMessage {
   /// across every client on this server rather than each one self-registering its own.)
   @$pb.TagNumber(4)
   $core.List<MastodonServer> get mastodonServers => $_getList(3);
+
+  ///  If true, this server permits cross-server ("Sign in from...") federated auth to hand tokens to a
+  ///  plaintext `http://localhost` frontend, for local development. Frontends should otherwise refuse
+  ///  to send/receive federated auth tokens for `localhost`, and should show a warning to the user
+  ///  whenever they do proceed. Unset (including on servers predating this field) means false.
+  ///
+  ///  Note this is only a frontend-enforced measure: the backend can't stop a modified client from
+  ///  moving its own tokens wherever it likes.
+  @$pb.TagNumber(5)
+  $core.bool get unsecureLocalhostFederatedAuthEnabled => $_getBF(4);
+  @$pb.TagNumber(5)
+  set unsecureLocalhostFederatedAuthEnabled($core.bool v) { $_setBool(4, v); }
+  @$pb.TagNumber(5)
+  $core.bool hasUnsecureLocalhostFederatedAuthEnabled() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearUnsecureLocalhostFederatedAuthEnabled() => clearField(5);
 }
 
 /// A server that this server will federate with.

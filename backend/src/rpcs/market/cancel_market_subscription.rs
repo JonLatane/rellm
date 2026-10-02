@@ -22,9 +22,9 @@ use crate::schema::market_subscriptions;
 /// is actually terminated (see below). This only sets `canceled_at`; it does NOT immediately revoke
 /// the subscription's entitlement
 /// (media storage quota, granted permissions) -- that stays in effect until whichever is later of
-/// `renews_at`/`canceled_at` has passed, at which point `logic::market_renewal`'s
+/// `renews_at`/`canceled_at` has passed, at which point `logic::market::market_renewal`'s
 /// `terminate_subscriptions_of_type` (run from `bin/renew_market_subscriptions.rs`) revokes it via
-/// `logic::market_fulfillment::terminate_entitlement` and stamps `service_terminated_at`. See
+/// `logic::market::market_fulfillment::terminate_entitlement` and stamps `service_terminated_at`. See
 /// `MarketSubscription.canceled_at`/`service_terminated_at`'s own proto docs.
 pub fn cancel_market_subscription(
     request: MarketSubscription,

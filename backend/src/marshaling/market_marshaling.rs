@@ -418,10 +418,10 @@ pub fn rellm_hosting_details_to_json(details: &RellmHostingPurchaseDetails) -> s
     serde_json::to_value(details).unwrap_or_default()
 }
 
-/// Serializes a `logic::stripe_sync::CardDetails` into `market_payments.method`'s JSON shape
+/// Serializes a `logic::stripe_payments::CardDetails` into `market_payments.method`'s JSON shape
 /// (field-for-field the same as `MarketPaymentMethod`/`MarketRefundMethod`, so the `method_json_to_*`
 /// functions below can deserialize straight into either).
-pub fn card_details_to_json(card: &crate::logic::stripe_sync::CardDetails) -> serde_json::Value {
+pub fn card_details_to_json(card: &crate::logic::stripe_payments::CardDetails) -> serde_json::Value {
     serde_json::json!({
         "card_brand": card.brand,
         "card_last4": card.last4,
@@ -451,7 +451,7 @@ pub fn method_json_to_market_refund_method(
 #[cfg(test)]
 mod method_json_tests {
     use super::*;
-    use crate::logic::stripe_sync::CardDetails;
+    use crate::logic::stripe_payments::CardDetails;
 
     fn a_card() -> CardDetails {
         CardDetails {

@@ -208,6 +208,8 @@ type Msg
       -- `Components.Pages.UserProfilePage`'s embedded `EventsPage` copy) can
       -- re-scope its refetch to just `host`'s server the same way.
     | GotOccasionSyncDestinationDeleteResult String (Result Grpc.Error ( Maybe AccountsPanel.Msg, () ))
+      -- `ConfirmNewAnonymousRsvp` confirmed -- occasion id, then `targetHost`.
+    | NewAnonymousRsvpConfirmed String String
       -- `ConfirmPostSyncDestinationDelete`'s own result -- mirrors
       -- `GotOccasionSyncDestinationDeleteResult`'s own doc exactly, just
       -- for `Components.Pages.PostPage`/`Components.Pages.UserProfilePage`'s
@@ -347,6 +349,11 @@ type DeleteConfirmation
       -- `backend/src/rpcs/events/get_events.rs`'s own `INNER JOIN`, which
       -- makes a zero-occasion Event unretrievable anyway).
     | ConfirmOccasionDelete Occasion Event String
+      -- "New RSVP" on an anonymous RSVP (`Components.Rsvps`): starting over forgets the current
+      -- private link, so it's confirmed first. Carries the occasion id and its acting `targetHost`;
+      -- unlike the others, `ConfirmDelete` just reports back with `NewAnonymousRsvpConfirmed` and
+      -- lets whichever page owns that RSVP form do the (purely local) reset.
+    | ConfirmNewAnonymousRsvp String String
     | ConfirmUserDelete User String
       -- Un-syncs `instance` from the `SyncDestination` (`String`) whose
       -- display name is the trailing-but-one `String` (for the confirmation
@@ -535,10 +542,20 @@ init basePath req flags =
                 }
             , mediaRenderer = MediaRenderer.init
             }
+
+        -- Already-connected Mastodon/Bluesky accounts' server-side stars, so starred posts show
+        -- as starred everywhere straight away -- see `StarredPanel.refreshServerStars`.
+        ( starredPanelWithServerStars, serverStarsCmd ) =
+            StarredPanel.refreshServerStars accountsPanelModel model.panels.starredPanel
+
+        panelsWithServerStars : Panels
+        panelsWithServerStars =
+            model.panels
     in
-    ( model
+    ( { model | panels = { panelsWithServerStars | starredPanel = starredPanelWithServerStars } }
     , Cmd.batch
-        [ Cmd.map AccountsPanelMsg accountsPanelCmd
+        [ Cmd.map StarredPanelMsg serverStarsCmd
+        , Cmd.map AccountsPanelMsg accountsPanelCmd
         , Cmd.map FederatedAuthMsg federatedAuthCmd
         , Ports.setTheme (themePreferenceToString themePreference)
 
@@ -582,7 +599,7 @@ subscriptions model =
         , Sub.map MyMediaPanelMsg (MyMediaPanel.subscriptions model.panels.myMediaPanel)
         , Sub.map MessagingPanelMsg (MessagingPanel.subscriptions model.panels.messagingPanel)
         , Sub.map MarkdownPanelMsg (MarkdownPanel.subscriptions model.panels.markdownPanel)
-        , if model.panels.starredPanel.showStarredPanel then
+        , if model.panels.starredPanel.showStarredPanel && StarredPanel.hasPendingFetches model.panels.starredPanel then
             Time.every 1500 (\_ -> StarredPanelMsg StarredPanel.PollStarredPosts)
 
           else
@@ -624,8 +641,17 @@ sharedUpdate req msg model =
                 changedHosts =
                     starredPostsRefreshHosts model.accounts subModel
 
-                ( refreshedStarredPanel, refreshCmd ) =
+                ( hostRefreshedStarredPanel, hostRefreshCmd ) =
                     StarredPanel.refreshHosts subModel changedHosts panels.starredPanel
+
+                -- Connecting/disconnecting/switching a Mastodon/Bluesky account changes whose
+                -- server-side stars apply -- see `StarredPanel.refreshServerStars`.
+                ( refreshedStarredPanel, serverStarsCmd ) =
+                    StarredPanel.refreshServerStars subModel hostRefreshedStarredPanel
+
+                refreshCmd : Cmd StarredPanel.Msg
+                refreshCmd =
+                    Cmd.batch [ hostRefreshCmd, serverStarsCmd ]
 
                 -- Mirrors `Pages.Messages`' own `SharedMsg (Shared.AccountsPanelMsg
                 -- _)` handling (`applyPageMsg shared MessagesPage.Poll model`) --
@@ -1999,6 +2025,11 @@ sharedUpdate req msg model =
                         |> Task.attempt GotOccasionDeleteResult
                     )
 
+                Just (ConfirmNewAnonymousRsvp occasionId host) ->
+                    ( { model | panels = { panels | confirmingDeleteFor = Nothing } }
+                    , Task.perform (\_ -> NewAnonymousRsvpConfirmed occasionId host) (Task.succeed ())
+                    )
+
                 Just (ConfirmUserDelete user host) ->
                     ( { model | panels = { panels | confirmingDeleteFor = Nothing } }
                     , Users.deleteUser
@@ -2087,6 +2118,10 @@ sharedUpdate req msg model =
             ( { model | accounts = accountsPanelModel }, Cmd.map AccountsPanelMsg accountsPanelCmd )
 
         GotOccasionSyncDestinationDeleteResult _ (Err _) ->
+            ( model, Cmd.none )
+
+        -- Purely a page-level signal (see `ConfirmNewAnonymousRsvp`) -- nothing for Shared itself to do.
+        NewAnonymousRsvpConfirmed _ _ ->
             ( model, Cmd.none )
 
         GotPostSyncDestinationDeleteResult _ (Ok ( maybeAccountsPanelMsg, _ )) ->

@@ -173,8 +173,10 @@ nodes across the re-render (i.e. be keyed). Fire-and-forget.
 port flipChildren : Encode.Value -> Cmd msg
 
 
-{-| Measures every DOM element named in the given JSON array of
-`{ key : String, id : String }` objects (`id` is the actual DOM id to look
+{-| Measures every DOM element named in the given `{ owner : String, items : [ { key : String, id : String }, ... ] }`
+object (build it with `UI.Flip.measure`, which takes the `owner` -- a per-component name echoed back so
+components sharing `elementsMeasured` can ignore each other's results; read it back with
+`UI.Flip.measuredResults`). Each item (`id` is the actual DOM id to look
 up; `key` is the caller's own correlation id, echoed back verbatim in the
 result -- see `elementsMeasured`) via a single plain JS callback -- exists
 for exactly the reason `scrollElementLeft` does (see its own doc comment):
@@ -198,8 +200,8 @@ regardless of how many ids are given.
 port measureElements : Encode.Value -> Cmd msg
 
 
-{-| `[ { key : String, x : Float, y : Float, width : Float, height : Float }, ... ]`
--- the result of `measureElements`, one entry per `key` whose `id` was
+{-| `{ owner : String, results : [ { key : String, x : Float, y : Float, width : Float, height : Float }, ... ] }`
+-- the result of `measureElements` (`owner` echoed from the request), one entry per `key` whose `id` was
 actually found in the DOM (a missing one is just omitted, not an error).
 `key` is exactly whatever the caller sent as that item's own `key` (its own
 correlation id -- e.g. `Components.Pages.EventsPage`'s animation key, not the

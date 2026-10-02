@@ -481,7 +481,7 @@
       var body = new URLSearchParams();
       body.set("client_name", "Rellm");
       body.set("redirect_uris", redirectUri);
-      body.set("scopes", "read");
+      body.set("scopes", "read write:favourites");
       body.set("website", window.location.origin);
       return fetch("https://" + instanceHost + "/api/v1/apps", { method: "POST", body: body })
         .then(function (resp) {
@@ -647,7 +647,7 @@
                 "?client_id=" + encodeURIComponent(clientId) +
                 "&redirect_uri=" + encodeURIComponent(redirectUri) +
                 "&response_type=code" +
-                "&scope=" + encodeURIComponent("read") +
+                "&scope=" + encodeURIComponent("read write:favourites") +
                 "&code_challenge=" + encodeURIComponent(pkce.codeChallenge) +
                 "&code_challenge_method=S256";
             });
@@ -754,7 +754,10 @@
     // DOM id to look up, `key` is echoed back verbatim in the result so the
     // Elm side never has to reverse-derive its own caller-side key back out
     // of a DOM id string.
-    app.ports.measureElements.subscribe(function (items) {
+    app.ports.measureElements.subscribe(function (request) {
+      // `request` is `{ owner, items }` -- `owner` is echoed back untouched so each Elm component
+      // sharing `elementsMeasured` can tell its own result from another's (see `UI.Flip.measure`).
+      var items = request.items;
       var results = [];
       for (var i = 0; i < items.length; i++) {
         var el = document.getElementById(items[i].id);
@@ -768,7 +771,7 @@
           height: rect.height
         });
       }
-      app.ports.elementsMeasured.send(results);
+      app.ports.elementsMeasured.send({ owner: request.owner, results: results });
     });
 
     // Renders/refreshes a FullCalendar instance inside the given container

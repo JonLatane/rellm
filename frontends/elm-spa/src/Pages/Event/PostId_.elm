@@ -42,7 +42,7 @@ type alias Msg =
 
 init : Shared.Model -> Request.With Params -> ( Model, Effect Msg )
 init shared req =
-    EventPage.init shared (RellmServers.isSecure req) req.params.postId req.key
+    EventPage.init shared (RellmServers.isSecure req) req.query req.params.postId req.key
 
 
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )

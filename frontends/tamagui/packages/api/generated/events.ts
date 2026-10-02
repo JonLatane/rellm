@@ -116,14 +116,14 @@ export function eventListingTypeToJSON(object: EventListingType): string {
 }
 
 /**
- * Occasion attendance statuses. State transitions may generally happen
+ * Occasion RSVP statuses. State transitions may generally happen
  * in any direction, but:
- * * `REQUESTED` can only be selected if another user invited the user whose attendance is being described.
+ * * `REQUESTED` can only be selected if another user invited the user whose RSVP is being described.
  * * `GOING` and `NOT_GOING` cannot be selected if the Occasion has ended (end time is in the past).
  * * `WENT` and `DID_NOT_GO` cannot be selected if the Occasion has not started (start time is in the future).
  * `INTERESTED` and `REQUESTED` can apply regardless of whether an event has started or ended.
  */
-export enum AttendanceStatus {
+export enum RsvpStatus {
   /** INTERESTED - The user is (or was) interested in attending. This is the default status. */
   INTERESTED = 0,
   /** REQUESTED - Another user has invited the user to the event. */
@@ -135,38 +135,38 @@ export enum AttendanceStatus {
   UNRECOGNIZED = -1,
 }
 
-export function attendanceStatusFromJSON(object: any): AttendanceStatus {
+export function rsvpStatusFromJSON(object: any): RsvpStatus {
   switch (object) {
     case 0:
     case "INTERESTED":
-      return AttendanceStatus.INTERESTED;
+      return RsvpStatus.INTERESTED;
     case 1:
     case "REQUESTED":
-      return AttendanceStatus.REQUESTED;
+      return RsvpStatus.REQUESTED;
     case 2:
     case "GOING":
-      return AttendanceStatus.GOING;
+      return RsvpStatus.GOING;
     case 3:
     case "NOT_GOING":
-      return AttendanceStatus.NOT_GOING;
+      return RsvpStatus.NOT_GOING;
     case -1:
     case "UNRECOGNIZED":
     default:
-      return AttendanceStatus.UNRECOGNIZED;
+      return RsvpStatus.UNRECOGNIZED;
   }
 }
 
-export function attendanceStatusToJSON(object: AttendanceStatus): string {
+export function rsvpStatusToJSON(object: RsvpStatus): string {
   switch (object) {
-    case AttendanceStatus.INTERESTED:
+    case RsvpStatus.INTERESTED:
       return "INTERESTED";
-    case AttendanceStatus.REQUESTED:
+    case RsvpStatus.REQUESTED:
       return "REQUESTED";
-    case AttendanceStatus.GOING:
+    case RsvpStatus.GOING:
       return "GOING";
-    case AttendanceStatus.NOT_GOING:
+    case RsvpStatus.NOT_GOING:
       return "NOT_GOING";
-    case AttendanceStatus.UNRECOGNIZED:
+    case RsvpStatus.UNRECOGNIZED:
     default:
       return "UNRECOGNIZED";
   }
@@ -201,17 +201,17 @@ export interface GetEventsRequest {
     | TimeFilter
     | undefined;
   /**
-   * If set, only returns events that the given user is attending. If `attendance_statuses` is also set,
+   * If set, only returns events that the given user is attending. If `rsvp_statuses` is also set,
    * returns events where that user's status is one of the given statuses.
    */
   attendeeId?:
     | string
     | undefined;
   /**
-   * If set, only return events for which the current user's attendance status matches one of the given statuses. If `attendee_id` is also set,
+   * If set, only return events for which the current user's RSVP status matches one of the given statuses. If `attendee_id` is also set,
    * only returns events where the given user's status matches one of the given statuses.
    */
-  attendanceStatuses: AttendanceStatus[];
+  rsvpStatuses: RsvpStatus[];
   /** Finds Events for the Post with the given ID. The Post should have a [`PostContext`](#rellm-PostContext) of `EVENT` or `OCCASION`. */
   postId?:
     | string
@@ -229,11 +229,14 @@ export interface GetEventsRequest {
    */
   occasionPostIds: string[];
   /**
-   * Auth token proving ownership of an anonymous RSVP, mirroring
-   * `GetEventAttendancesRequest.anonymous_attendee_auth_token`. Lets an anonymous attendee's own
-   * (possibly still-`PENDING`) [`EventAttendance`](#rellm-EventAttendance) and its `Occasion.location` (when
+   * Auth token(s) proving ownership of anonymous RSVPs, mirroring
+   * `GetRsvpsRequest.anonymous_attendee_auth_token`. Either a plain `<token>`, or several at once as
+   * `<occasionId>-<token>--<occasionId>-<token>...` (the form the web frontends keep in their
+   * `?anonymousAuthToken=` URL parameter, so it can be passed straight through) -- the occasion id
+   * prefix is only advisory; every token is tried against every returned occasion's RSVPs. Lets an anonymous attendee's own
+   * (possibly still-`PENDING`) [`Rsvp`](#rellm-Rsvp) and its `Occasion.location` (when
    * `EventInfo.hide_location_until_rsvp_approved` is set) surface via each returned
-   * `Occasion.attendances`/`current_user_attendance`, same as a logged-in user's own RSVP
+   * `Occasion.rsvps`/`current_user_rsvp`, same as a logged-in user's own RSVP
    * does automatically.
    */
   anonymousAttendeeAuthToken?: string | undefined;
@@ -338,8 +341,8 @@ export interface EventInfo {
   /**
    * Hide the location until the user RSVPs (and it's accepted).
    * From a system perspective, when this is set, Events will not include the [`Location`](#rellm-Location) until the user has RSVP'd.
-   * Location will always be returned in EventAttendances if the request for the EventAttendances came from a (logged in or anonymous)
-   * user whose attendance is approved (or the event owner).
+   * Location will always be returned in `Rsvps` if the request for the `Rsvps` came from a (logged in or anonymous)
+   * user whose RSVP is approved (or the event owner).
    */
   hideLocationUntilRsvpApproved?:
     | boolean
@@ -390,12 +393,12 @@ export interface Occasion {
     | string
     | undefined;
   /** RSVP + invite data for this Occasion. */
-  attendances?:
-    | EventAttendances
+  rsvps?:
+    | Rsvps
     | undefined;
-  /** If the request was made by a logged-in user, this is the current user's attendance for this Occasion. */
-  currentUserAttendance?:
-    | EventAttendance
+  /** If the request was made by a logged-in user, this is the current user's RSVP for this Occasion. */
+  currentUserRsvp?:
+    | Rsvp
     | undefined;
   /** SyncDestinations this Occasion has been synced (cross-posted) to, and their status. */
   syncDestinations: SyncDestinationStatus[];
@@ -457,48 +460,72 @@ export interface OccasionRsvpInfo {
 }
 
 /** Request to get RSVP data for an event. */
-export interface GetEventAttendancesRequest {
+export interface GetRsvpsRequest {
   /** The ID of the event to get RSVP data for. */
   occasionId: string;
   /**
    * If set, and if the token has an RSVP for this even, request that RSVP data
    * in addition to the rest of the RSVP data. (The event creator can always
-   * see and moderate anonymous RSVPs.)
+   * see and moderate anonymous RSVPs.) Takes the same plain / multi-occasion forms as
+   * `GetEventsRequest.anonymous_attendee_auth_token`.
    */
   anonymousAttendeeAuthToken?: string | undefined;
 }
 
 /** Response to get RSVP data for an event. */
-export interface EventAttendances {
-  /** The attendance data for the event, in no particular order. */
-  attendances: EventAttendance[];
+export interface Rsvps {
+  /** The RSVP data for the event, in no particular order. */
+  rsvps: Rsvp[];
   /** When `hide_location_until_rsvp_approved` is set, the location of the event. */
-  hiddenLocation?: Location | undefined;
+  hiddenLocation?:
+    | Location
+    | undefined;
+  /**
+   * Totals over *every* RSVP the viewer is allowed to see for the Occasion -- not just the ones
+   * returned in `rsvps`. `GetEvents` caps how many `rsvps` it returns per Occasion (for big events),
+   * so these counts can be *greater than* `rsvps.length` -- much like `Post.reply_count` can exceed
+   * the replies actually loaded. (`GetRsvps` is not capped, so there they match `rsvps` exactly.)
+   *
+   * `*_count` is a number of RSVPs; `*_attendees` is the sum of their `number_of_guests`. The
+   * per-status counts only include RSVPs whose moderation passes (`UNMODERATED`/`APPROVED`) -- the
+   * ones everyone can see. `pending_*` counts the `PENDING` ones the viewer can see (their own, or
+   * all of them for the event owner), whatever their status. `REJECTED` RSVPs are not counted.
+   */
+  goingCount: number;
+  goingAttendees: number;
+  interestedCount: number;
+  interestedAttendees: number;
+  requestedCount: number;
+  requestedAttendees: number;
+  notGoingCount: number;
+  notGoingAttendees: number;
+  pendingCount: number;
+  pendingAttendees: number;
 }
 
 /**
- * Could be called an "RSVP." Describes the attendance of a user at an [`Occasion`](#rellm-Occasion). Such as:
+ * An RSVP: describes a user's attendance at an [`Occasion`](#rellm-Occasion). Such as:
  * * A user's RSVP to an [`Occasion`](#rellm-Occasion) (one of `INTERESTED`, `GOING`, `NOT_GOING`, or , `REQUESTED` (i.e. invited)).
  * * Invitation status of a user to an [`Occasion`](#rellm-Occasion).
  * * [`ContactMethod`](#rellm-ContactMethod)-driven management for anonymous RSVPs to an [`Occasion`](#rellm-Occasion).
  */
-export interface EventAttendance {
-  /** Unique server-generated ID for the attendance. */
+export interface Rsvp {
+  /** Unique server-generated ID for the RSVP. */
   id: string;
-  /** ID of the [`Occasion`](#rellm-Occasion) the attendance is for. */
+  /** ID of the [`Occasion`](#rellm-Occasion) the RSVP is for. */
   occasionId: string;
-  /** If the attendance is non-anonymous, core data about the user. */
+  /** If the RSVP is non-anonymous, core data about the user. */
   userAttendee?:
     | UserAttendee
     | undefined;
-  /** If the attendance is anonymous, core data about the anonymous attendee. */
+  /** If the RSVP is anonymous, core data about the anonymous attendee. */
   anonymousAttendee?:
     | AnonymousAttendee
     | undefined;
   /** Number of guests including the RSVPing user. (Minimum 1). */
   numberOfGuests: number;
   /** The user's RSVP to an [`Occasion`](#rellm-Occasion) (one of `INTERESTED`, `REQUESTED` (i.e. invited), `GOING`, `NOT_GOING`) */
-  status: AttendanceStatus;
+  status: RsvpStatus;
   /** User who invited the attendee. (Not yet used.) */
   invitingUserId?:
     | string
@@ -507,13 +534,13 @@ export interface EventAttendance {
   privateNote: string;
   /** Private note for the event owner. */
   publicNote: string;
-  /** Moderation status for the attendance. Moderated by the [`Event`](#rellm-Event) owner (or [`Occasion`](#rellm-Occasion) owner if applicable). */
+  /** Moderation status for the RSVP. Moderated by the [`Event`](#rellm-Event) owner (or [`Occasion`](#rellm-Occasion) owner if applicable). */
   moderation: Moderation;
-  /** The time the attendance was created. */
+  /** The time the RSVP was created. */
   createdAt:
     | string
     | undefined;
-  /** The time the attendance was last updated. */
+  /** The time the RSVP was last updated. */
   updatedAt?: string | undefined;
 }
 
@@ -530,9 +557,9 @@ export interface AnonymousAttendee {
   contactMethods: ContactMethod[];
   /**
    * Used to allow anonymous users to RSVP to an event. Generated by the server
-   * when an event attendance is upserted for the first time. Subsequent attendance
+   * when an RSVP is upserted for the first time. Subsequent RSVP
    * upserts, with the same occasion_id and anonymous_attendee.auth_token,
-   * will update existing anonymous attendance records. Invalid auth tokens used during upserts will always create a new [`EventAttendance`](#rellm-EventAttendance).
+   * will update existing anonymous RSVP records. Invalid auth tokens used during upserts will always create a new [`Rsvp`](#rellm-Rsvp).
    */
   authToken?: string | undefined;
 }
@@ -557,7 +584,7 @@ function createBaseGetEventsRequest(): GetEventsRequest {
     groupId: undefined,
     timeFilter: undefined,
     attendeeId: undefined,
-    attendanceStatuses: [],
+    rsvpStatuses: [],
     postId: undefined,
     listingType: 0,
     searchText: undefined,
@@ -581,7 +608,7 @@ export const GetEventsRequest: MessageFns<GetEventsRequest> = {
       writer.uint32(50).string(message.attendeeId);
     }
     writer.uint32(58).fork();
-    for (const v of message.attendanceStatuses) {
+    for (const v of message.rsvpStatuses) {
       writer.int32(v);
     }
     writer.join();
@@ -644,7 +671,7 @@ export const GetEventsRequest: MessageFns<GetEventsRequest> = {
         }
         case 7: {
           if (tag === 56) {
-            message.attendanceStatuses.push(reader.int32() as any);
+            message.rsvpStatuses.push(reader.int32() as any);
 
             continue;
           }
@@ -652,7 +679,7 @@ export const GetEventsRequest: MessageFns<GetEventsRequest> = {
           if (tag === 58) {
             const end2 = reader.uint32() + reader.pos;
             while (reader.pos < end2) {
-              message.attendanceStatuses.push(reader.int32() as any);
+              message.rsvpStatuses.push(reader.int32() as any);
             }
 
             continue;
@@ -715,8 +742,8 @@ export const GetEventsRequest: MessageFns<GetEventsRequest> = {
       groupId: isSet(object.groupId) ? globalThis.String(object.groupId) : undefined,
       timeFilter: isSet(object.timeFilter) ? TimeFilter.fromJSON(object.timeFilter) : undefined,
       attendeeId: isSet(object.attendeeId) ? globalThis.String(object.attendeeId) : undefined,
-      attendanceStatuses: globalThis.Array.isArray(object?.attendanceStatuses)
-        ? object.attendanceStatuses.map((e: any) => attendanceStatusFromJSON(e))
+      rsvpStatuses: globalThis.Array.isArray(object?.rsvpStatuses)
+        ? object.rsvpStatuses.map((e: any) => rsvpStatusFromJSON(e))
         : [],
       postId: isSet(object.postId) ? globalThis.String(object.postId) : undefined,
       listingType: isSet(object.listingType) ? eventListingTypeFromJSON(object.listingType) : 0,
@@ -744,8 +771,8 @@ export const GetEventsRequest: MessageFns<GetEventsRequest> = {
     if (message.attendeeId !== undefined) {
       obj.attendeeId = message.attendeeId;
     }
-    if (message.attendanceStatuses?.length) {
-      obj.attendanceStatuses = message.attendanceStatuses.map((e) => attendanceStatusToJSON(e));
+    if (message.rsvpStatuses?.length) {
+      obj.rsvpStatuses = message.rsvpStatuses.map((e) => rsvpStatusToJSON(e));
     }
     if (message.postId !== undefined) {
       obj.postId = message.postId;
@@ -776,7 +803,7 @@ export const GetEventsRequest: MessageFns<GetEventsRequest> = {
       ? TimeFilter.fromPartial(object.timeFilter)
       : undefined;
     message.attendeeId = object.attendeeId ?? undefined;
-    message.attendanceStatuses = object.attendanceStatuses?.map((e) => e) || [];
+    message.rsvpStatuses = object.rsvpStatuses?.map((e) => e) || [];
     message.postId = object.postId ?? undefined;
     message.listingType = object.listingType ?? 0;
     message.searchText = object.searchText ?? undefined;
@@ -1347,8 +1374,8 @@ function createBaseOccasion(): Occasion {
     endsAt: undefined,
     location: undefined,
     syncMissingSince: undefined,
-    attendances: undefined,
-    currentUserAttendance: undefined,
+    rsvps: undefined,
+    currentUserRsvp: undefined,
     syncDestinations: [],
     timezone: undefined,
   };
@@ -1377,11 +1404,11 @@ export const Occasion: MessageFns<Occasion> = {
     if (message.syncMissingSince !== undefined) {
       Timestamp.encode(toTimestamp(message.syncMissingSince), writer.uint32(74).fork()).join();
     }
-    if (message.attendances !== undefined) {
-      EventAttendances.encode(message.attendances, writer.uint32(82).fork()).join();
+    if (message.rsvps !== undefined) {
+      Rsvps.encode(message.rsvps, writer.uint32(82).fork()).join();
     }
-    if (message.currentUserAttendance !== undefined) {
-      EventAttendance.encode(message.currentUserAttendance, writer.uint32(90).fork()).join();
+    if (message.currentUserRsvp !== undefined) {
+      Rsvp.encode(message.currentUserRsvp, writer.uint32(90).fork()).join();
     }
     for (const v of message.syncDestinations) {
       SyncDestinationStatus.encode(v!, writer.uint32(98).fork()).join();
@@ -1460,7 +1487,7 @@ export const Occasion: MessageFns<Occasion> = {
             break;
           }
 
-          message.attendances = EventAttendances.decode(reader, reader.uint32());
+          message.rsvps = Rsvps.decode(reader, reader.uint32());
           continue;
         }
         case 11: {
@@ -1468,7 +1495,7 @@ export const Occasion: MessageFns<Occasion> = {
             break;
           }
 
-          message.currentUserAttendance = EventAttendance.decode(reader, reader.uint32());
+          message.currentUserRsvp = Rsvp.decode(reader, reader.uint32());
           continue;
         }
         case 12: {
@@ -1505,10 +1532,8 @@ export const Occasion: MessageFns<Occasion> = {
       endsAt: isSet(object.endsAt) ? globalThis.String(object.endsAt) : undefined,
       location: isSet(object.location) ? Location.fromJSON(object.location) : undefined,
       syncMissingSince: isSet(object.syncMissingSince) ? globalThis.String(object.syncMissingSince) : undefined,
-      attendances: isSet(object.attendances) ? EventAttendances.fromJSON(object.attendances) : undefined,
-      currentUserAttendance: isSet(object.currentUserAttendance)
-        ? EventAttendance.fromJSON(object.currentUserAttendance)
-        : undefined,
+      rsvps: isSet(object.rsvps) ? Rsvps.fromJSON(object.rsvps) : undefined,
+      currentUserRsvp: isSet(object.currentUserRsvp) ? Rsvp.fromJSON(object.currentUserRsvp) : undefined,
       syncDestinations: globalThis.Array.isArray(object?.syncDestinations)
         ? object.syncDestinations.map((e: any) => SyncDestinationStatus.fromJSON(e))
         : [],
@@ -1539,11 +1564,11 @@ export const Occasion: MessageFns<Occasion> = {
     if (message.syncMissingSince !== undefined) {
       obj.syncMissingSince = message.syncMissingSince;
     }
-    if (message.attendances !== undefined) {
-      obj.attendances = EventAttendances.toJSON(message.attendances);
+    if (message.rsvps !== undefined) {
+      obj.rsvps = Rsvps.toJSON(message.rsvps);
     }
-    if (message.currentUserAttendance !== undefined) {
-      obj.currentUserAttendance = EventAttendance.toJSON(message.currentUserAttendance);
+    if (message.currentUserRsvp !== undefined) {
+      obj.currentUserRsvp = Rsvp.toJSON(message.currentUserRsvp);
     }
     if (message.syncDestinations?.length) {
       obj.syncDestinations = message.syncDestinations.map((e) => SyncDestinationStatus.toJSON(e));
@@ -1570,13 +1595,10 @@ export const Occasion: MessageFns<Occasion> = {
       ? Location.fromPartial(object.location)
       : undefined;
     message.syncMissingSince = object.syncMissingSince ?? undefined;
-    message.attendances = (object.attendances !== undefined && object.attendances !== null)
-      ? EventAttendances.fromPartial(object.attendances)
+    message.rsvps = (object.rsvps !== undefined && object.rsvps !== null) ? Rsvps.fromPartial(object.rsvps) : undefined;
+    message.currentUserRsvp = (object.currentUserRsvp !== undefined && object.currentUserRsvp !== null)
+      ? Rsvp.fromPartial(object.currentUserRsvp)
       : undefined;
-    message.currentUserAttendance =
-      (object.currentUserAttendance !== undefined && object.currentUserAttendance !== null)
-        ? EventAttendance.fromPartial(object.currentUserAttendance)
-        : undefined;
     message.syncDestinations = object.syncDestinations?.map((e) => SyncDestinationStatus.fromPartial(e)) || [];
     message.timezone = object.timezone ?? undefined;
     return message;
@@ -1845,12 +1867,12 @@ export const OccasionRsvpInfo: MessageFns<OccasionRsvpInfo> = {
   },
 };
 
-function createBaseGetEventAttendancesRequest(): GetEventAttendancesRequest {
+function createBaseGetRsvpsRequest(): GetRsvpsRequest {
   return { occasionId: "", anonymousAttendeeAuthToken: undefined };
 }
 
-export const GetEventAttendancesRequest: MessageFns<GetEventAttendancesRequest> = {
-  encode(message: GetEventAttendancesRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+export const GetRsvpsRequest: MessageFns<GetRsvpsRequest> = {
+  encode(message: GetRsvpsRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.occasionId !== "") {
       writer.uint32(10).string(message.occasionId);
     }
@@ -1860,10 +1882,10 @@ export const GetEventAttendancesRequest: MessageFns<GetEventAttendancesRequest> 
     return writer;
   },
 
-  decode(input: BinaryReader | Uint8Array, length?: number): GetEventAttendancesRequest {
+  decode(input: BinaryReader | Uint8Array, length?: number): GetRsvpsRequest {
     const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
-    const message = createBaseGetEventAttendancesRequest();
+    const message = createBaseGetRsvpsRequest();
     while (reader.pos < end) {
       const tag = reader.uint32();
       switch (tag >>> 3) {
@@ -1892,7 +1914,7 @@ export const GetEventAttendancesRequest: MessageFns<GetEventAttendancesRequest> 
     return message;
   },
 
-  fromJSON(object: any): GetEventAttendancesRequest {
+  fromJSON(object: any): GetRsvpsRequest {
     return {
       occasionId: isSet(object.occasionId) ? globalThis.String(object.occasionId) : "",
       anonymousAttendeeAuthToken: isSet(object.anonymousAttendeeAuthToken)
@@ -1901,7 +1923,7 @@ export const GetEventAttendancesRequest: MessageFns<GetEventAttendancesRequest> 
     };
   },
 
-  toJSON(message: GetEventAttendancesRequest): unknown {
+  toJSON(message: GetRsvpsRequest): unknown {
     const obj: any = {};
     if (message.occasionId !== "") {
       obj.occasionId = message.occasionId;
@@ -1912,36 +1934,79 @@ export const GetEventAttendancesRequest: MessageFns<GetEventAttendancesRequest> 
     return obj;
   },
 
-  create<I extends Exact<DeepPartial<GetEventAttendancesRequest>, I>>(base?: I): GetEventAttendancesRequest {
-    return GetEventAttendancesRequest.fromPartial(base ?? ({} as any));
+  create<I extends Exact<DeepPartial<GetRsvpsRequest>, I>>(base?: I): GetRsvpsRequest {
+    return GetRsvpsRequest.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<GetEventAttendancesRequest>, I>>(object: I): GetEventAttendancesRequest {
-    const message = createBaseGetEventAttendancesRequest();
+  fromPartial<I extends Exact<DeepPartial<GetRsvpsRequest>, I>>(object: I): GetRsvpsRequest {
+    const message = createBaseGetRsvpsRequest();
     message.occasionId = object.occasionId ?? "";
     message.anonymousAttendeeAuthToken = object.anonymousAttendeeAuthToken ?? undefined;
     return message;
   },
 };
 
-function createBaseEventAttendances(): EventAttendances {
-  return { attendances: [], hiddenLocation: undefined };
+function createBaseRsvps(): Rsvps {
+  return {
+    rsvps: [],
+    hiddenLocation: undefined,
+    goingCount: 0,
+    goingAttendees: 0,
+    interestedCount: 0,
+    interestedAttendees: 0,
+    requestedCount: 0,
+    requestedAttendees: 0,
+    notGoingCount: 0,
+    notGoingAttendees: 0,
+    pendingCount: 0,
+    pendingAttendees: 0,
+  };
 }
 
-export const EventAttendances: MessageFns<EventAttendances> = {
-  encode(message: EventAttendances, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    for (const v of message.attendances) {
-      EventAttendance.encode(v!, writer.uint32(10).fork()).join();
+export const Rsvps: MessageFns<Rsvps> = {
+  encode(message: Rsvps, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    for (const v of message.rsvps) {
+      Rsvp.encode(v!, writer.uint32(10).fork()).join();
     }
     if (message.hiddenLocation !== undefined) {
       Location.encode(message.hiddenLocation, writer.uint32(18).fork()).join();
     }
+    if (message.goingCount !== 0) {
+      writer.uint32(24).uint32(message.goingCount);
+    }
+    if (message.goingAttendees !== 0) {
+      writer.uint32(32).uint32(message.goingAttendees);
+    }
+    if (message.interestedCount !== 0) {
+      writer.uint32(40).uint32(message.interestedCount);
+    }
+    if (message.interestedAttendees !== 0) {
+      writer.uint32(48).uint32(message.interestedAttendees);
+    }
+    if (message.requestedCount !== 0) {
+      writer.uint32(56).uint32(message.requestedCount);
+    }
+    if (message.requestedAttendees !== 0) {
+      writer.uint32(64).uint32(message.requestedAttendees);
+    }
+    if (message.notGoingCount !== 0) {
+      writer.uint32(72).uint32(message.notGoingCount);
+    }
+    if (message.notGoingAttendees !== 0) {
+      writer.uint32(80).uint32(message.notGoingAttendees);
+    }
+    if (message.pendingCount !== 0) {
+      writer.uint32(88).uint32(message.pendingCount);
+    }
+    if (message.pendingAttendees !== 0) {
+      writer.uint32(96).uint32(message.pendingAttendees);
+    }
     return writer;
   },
 
-  decode(input: BinaryReader | Uint8Array, length?: number): EventAttendances {
+  decode(input: BinaryReader | Uint8Array, length?: number): Rsvps {
     const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
-    const message = createBaseEventAttendances();
+    const message = createBaseRsvps();
     while (reader.pos < end) {
       const tag = reader.uint32();
       switch (tag >>> 3) {
@@ -1950,7 +2015,7 @@ export const EventAttendances: MessageFns<EventAttendances> = {
             break;
           }
 
-          message.attendances.push(EventAttendance.decode(reader, reader.uint32()));
+          message.rsvps.push(Rsvp.decode(reader, reader.uint32()));
           continue;
         }
         case 2: {
@@ -1959,6 +2024,86 @@ export const EventAttendances: MessageFns<EventAttendances> = {
           }
 
           message.hiddenLocation = Location.decode(reader, reader.uint32());
+          continue;
+        }
+        case 3: {
+          if (tag !== 24) {
+            break;
+          }
+
+          message.goingCount = reader.uint32();
+          continue;
+        }
+        case 4: {
+          if (tag !== 32) {
+            break;
+          }
+
+          message.goingAttendees = reader.uint32();
+          continue;
+        }
+        case 5: {
+          if (tag !== 40) {
+            break;
+          }
+
+          message.interestedCount = reader.uint32();
+          continue;
+        }
+        case 6: {
+          if (tag !== 48) {
+            break;
+          }
+
+          message.interestedAttendees = reader.uint32();
+          continue;
+        }
+        case 7: {
+          if (tag !== 56) {
+            break;
+          }
+
+          message.requestedCount = reader.uint32();
+          continue;
+        }
+        case 8: {
+          if (tag !== 64) {
+            break;
+          }
+
+          message.requestedAttendees = reader.uint32();
+          continue;
+        }
+        case 9: {
+          if (tag !== 72) {
+            break;
+          }
+
+          message.notGoingCount = reader.uint32();
+          continue;
+        }
+        case 10: {
+          if (tag !== 80) {
+            break;
+          }
+
+          message.notGoingAttendees = reader.uint32();
+          continue;
+        }
+        case 11: {
+          if (tag !== 88) {
+            break;
+          }
+
+          message.pendingCount = reader.uint32();
+          continue;
+        }
+        case 12: {
+          if (tag !== 96) {
+            break;
+          }
+
+          message.pendingAttendees = reader.uint32();
           continue;
         }
       }
@@ -1970,40 +2115,88 @@ export const EventAttendances: MessageFns<EventAttendances> = {
     return message;
   },
 
-  fromJSON(object: any): EventAttendances {
+  fromJSON(object: any): Rsvps {
     return {
-      attendances: globalThis.Array.isArray(object?.attendances)
-        ? object.attendances.map((e: any) => EventAttendance.fromJSON(e))
-        : [],
+      rsvps: globalThis.Array.isArray(object?.rsvps) ? object.rsvps.map((e: any) => Rsvp.fromJSON(e)) : [],
       hiddenLocation: isSet(object.hiddenLocation) ? Location.fromJSON(object.hiddenLocation) : undefined,
+      goingCount: isSet(object.goingCount) ? globalThis.Number(object.goingCount) : 0,
+      goingAttendees: isSet(object.goingAttendees) ? globalThis.Number(object.goingAttendees) : 0,
+      interestedCount: isSet(object.interestedCount) ? globalThis.Number(object.interestedCount) : 0,
+      interestedAttendees: isSet(object.interestedAttendees) ? globalThis.Number(object.interestedAttendees) : 0,
+      requestedCount: isSet(object.requestedCount) ? globalThis.Number(object.requestedCount) : 0,
+      requestedAttendees: isSet(object.requestedAttendees) ? globalThis.Number(object.requestedAttendees) : 0,
+      notGoingCount: isSet(object.notGoingCount) ? globalThis.Number(object.notGoingCount) : 0,
+      notGoingAttendees: isSet(object.notGoingAttendees) ? globalThis.Number(object.notGoingAttendees) : 0,
+      pendingCount: isSet(object.pendingCount) ? globalThis.Number(object.pendingCount) : 0,
+      pendingAttendees: isSet(object.pendingAttendees) ? globalThis.Number(object.pendingAttendees) : 0,
     };
   },
 
-  toJSON(message: EventAttendances): unknown {
+  toJSON(message: Rsvps): unknown {
     const obj: any = {};
-    if (message.attendances?.length) {
-      obj.attendances = message.attendances.map((e) => EventAttendance.toJSON(e));
+    if (message.rsvps?.length) {
+      obj.rsvps = message.rsvps.map((e) => Rsvp.toJSON(e));
     }
     if (message.hiddenLocation !== undefined) {
       obj.hiddenLocation = Location.toJSON(message.hiddenLocation);
     }
+    if (message.goingCount !== 0) {
+      obj.goingCount = Math.round(message.goingCount);
+    }
+    if (message.goingAttendees !== 0) {
+      obj.goingAttendees = Math.round(message.goingAttendees);
+    }
+    if (message.interestedCount !== 0) {
+      obj.interestedCount = Math.round(message.interestedCount);
+    }
+    if (message.interestedAttendees !== 0) {
+      obj.interestedAttendees = Math.round(message.interestedAttendees);
+    }
+    if (message.requestedCount !== 0) {
+      obj.requestedCount = Math.round(message.requestedCount);
+    }
+    if (message.requestedAttendees !== 0) {
+      obj.requestedAttendees = Math.round(message.requestedAttendees);
+    }
+    if (message.notGoingCount !== 0) {
+      obj.notGoingCount = Math.round(message.notGoingCount);
+    }
+    if (message.notGoingAttendees !== 0) {
+      obj.notGoingAttendees = Math.round(message.notGoingAttendees);
+    }
+    if (message.pendingCount !== 0) {
+      obj.pendingCount = Math.round(message.pendingCount);
+    }
+    if (message.pendingAttendees !== 0) {
+      obj.pendingAttendees = Math.round(message.pendingAttendees);
+    }
     return obj;
   },
 
-  create<I extends Exact<DeepPartial<EventAttendances>, I>>(base?: I): EventAttendances {
-    return EventAttendances.fromPartial(base ?? ({} as any));
+  create<I extends Exact<DeepPartial<Rsvps>, I>>(base?: I): Rsvps {
+    return Rsvps.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<EventAttendances>, I>>(object: I): EventAttendances {
-    const message = createBaseEventAttendances();
-    message.attendances = object.attendances?.map((e) => EventAttendance.fromPartial(e)) || [];
+  fromPartial<I extends Exact<DeepPartial<Rsvps>, I>>(object: I): Rsvps {
+    const message = createBaseRsvps();
+    message.rsvps = object.rsvps?.map((e) => Rsvp.fromPartial(e)) || [];
     message.hiddenLocation = (object.hiddenLocation !== undefined && object.hiddenLocation !== null)
       ? Location.fromPartial(object.hiddenLocation)
       : undefined;
+    message.goingCount = object.goingCount ?? 0;
+    message.goingAttendees = object.goingAttendees ?? 0;
+    message.interestedCount = object.interestedCount ?? 0;
+    message.interestedAttendees = object.interestedAttendees ?? 0;
+    message.requestedCount = object.requestedCount ?? 0;
+    message.requestedAttendees = object.requestedAttendees ?? 0;
+    message.notGoingCount = object.notGoingCount ?? 0;
+    message.notGoingAttendees = object.notGoingAttendees ?? 0;
+    message.pendingCount = object.pendingCount ?? 0;
+    message.pendingAttendees = object.pendingAttendees ?? 0;
     return message;
   },
 };
 
-function createBaseEventAttendance(): EventAttendance {
+function createBaseRsvp(): Rsvp {
   return {
     id: "",
     occasionId: "",
@@ -2020,8 +2213,8 @@ function createBaseEventAttendance(): EventAttendance {
   };
 }
 
-export const EventAttendance: MessageFns<EventAttendance> = {
-  encode(message: EventAttendance, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+export const Rsvp: MessageFns<Rsvp> = {
+  encode(message: Rsvp, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.id !== "") {
       writer.uint32(10).string(message.id);
     }
@@ -2061,10 +2254,10 @@ export const EventAttendance: MessageFns<EventAttendance> = {
     return writer;
   },
 
-  decode(input: BinaryReader | Uint8Array, length?: number): EventAttendance {
+  decode(input: BinaryReader | Uint8Array, length?: number): Rsvp {
     const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
-    const message = createBaseEventAttendance();
+    const message = createBaseRsvp();
     while (reader.pos < end) {
       const tag = reader.uint32();
       switch (tag >>> 3) {
@@ -2173,7 +2366,7 @@ export const EventAttendance: MessageFns<EventAttendance> = {
     return message;
   },
 
-  fromJSON(object: any): EventAttendance {
+  fromJSON(object: any): Rsvp {
     return {
       id: isSet(object.id) ? globalThis.String(object.id) : "",
       occasionId: isSet(object.occasionId) ? globalThis.String(object.occasionId) : "",
@@ -2182,7 +2375,7 @@ export const EventAttendance: MessageFns<EventAttendance> = {
         ? AnonymousAttendee.fromJSON(object.anonymousAttendee)
         : undefined,
       numberOfGuests: isSet(object.numberOfGuests) ? globalThis.Number(object.numberOfGuests) : 0,
-      status: isSet(object.status) ? attendanceStatusFromJSON(object.status) : 0,
+      status: isSet(object.status) ? rsvpStatusFromJSON(object.status) : 0,
       invitingUserId: isSet(object.invitingUserId) ? globalThis.String(object.invitingUserId) : undefined,
       privateNote: isSet(object.privateNote) ? globalThis.String(object.privateNote) : "",
       publicNote: isSet(object.publicNote) ? globalThis.String(object.publicNote) : "",
@@ -2192,7 +2385,7 @@ export const EventAttendance: MessageFns<EventAttendance> = {
     };
   },
 
-  toJSON(message: EventAttendance): unknown {
+  toJSON(message: Rsvp): unknown {
     const obj: any = {};
     if (message.id !== "") {
       obj.id = message.id;
@@ -2210,7 +2403,7 @@ export const EventAttendance: MessageFns<EventAttendance> = {
       obj.numberOfGuests = Math.round(message.numberOfGuests);
     }
     if (message.status !== 0) {
-      obj.status = attendanceStatusToJSON(message.status);
+      obj.status = rsvpStatusToJSON(message.status);
     }
     if (message.invitingUserId !== undefined) {
       obj.invitingUserId = message.invitingUserId;
@@ -2233,11 +2426,11 @@ export const EventAttendance: MessageFns<EventAttendance> = {
     return obj;
   },
 
-  create<I extends Exact<DeepPartial<EventAttendance>, I>>(base?: I): EventAttendance {
-    return EventAttendance.fromPartial(base ?? ({} as any));
+  create<I extends Exact<DeepPartial<Rsvp>, I>>(base?: I): Rsvp {
+    return Rsvp.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<EventAttendance>, I>>(object: I): EventAttendance {
-    const message = createBaseEventAttendance();
+  fromPartial<I extends Exact<DeepPartial<Rsvp>, I>>(object: I): Rsvp {
+    const message = createBaseRsvp();
     message.id = object.id ?? "";
     message.occasionId = object.occasionId ?? "";
     message.userAttendee = (object.userAttendee !== undefined && object.userAttendee !== null)

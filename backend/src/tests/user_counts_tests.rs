@@ -4,7 +4,7 @@
 //! checks the RPC call sites that are supposed to keep them in sync actually do, plus
 //! `update_all_counts` (the full recompute `bin/update_user_counts.rs` runs hourly).
 //!
-//! Regression coverage in particular for two bugs `logic::user_counts` fixed:
+//! Regression coverage in particular for two bugs `logic::users::user_counts` fixed:
 //! `create_post` used to bump the *wrong* counter for replies vs. top-level posts (see
 //! `create_post_increments_post_count_and_reply_increments_response_count`), and `create_event`
 //! used to bump `event_count` once per *occasion* rather than once per event (see

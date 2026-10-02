@@ -1,4 +1,4 @@
-import { Event, EventAttendances, Occasion, EventListingType, TimeFilter } from "@rellm/api";
+import { Event, Rsvps, Occasion, EventListingType, TimeFilter } from "@rellm/api";
 import {
   Dictionary,
   EntityAdapter,
@@ -34,7 +34,7 @@ export interface EventsState {
   upcomingEventsTime: string;
   upcomingEventsTimeFilter?: TimeFilter;
   // Maps Occasion IDs to RSVP data.
-  rsvpData: Dictionary<EventAttendances>;
+  rsvpData: Dictionary<Rsvps>;
 }
 
 // Stores pages of listed event *occasions* for listing types used in the UI.

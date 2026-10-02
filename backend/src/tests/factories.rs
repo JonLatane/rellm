@@ -13,7 +13,7 @@ use crate::marshaling::*;
 use crate::models;
 use crate::protos::*;
 use crate::schema::{
-    event_attendances, occasion_sync_destinations, occasions, events, follows,
+    rsvps, occasion_sync_destinations, occasions, events, follows,
     group_posts, groups, media, memberships, messages, post_sync_destinations, posts,
     server_configurations, sync_destinations, sync_sources, users,
 };
@@ -574,24 +574,24 @@ pub fn create_occasion(
     (occasion, post)
 }
 
-/// Options for `create_event_attendance`. Defaults to an unmoderated, logged-in-user-less
+/// Options for `create_rsvp`. Defaults to an unmoderated, logged-in-user-less
 /// (i.e. this needs a `user_id` or `anonymous_attendee` set explicitly, same as
-/// `upsert_event_attendance` requires exactly one of the two) `INTERESTED` RSVP.
-pub struct EventAttendanceOpts {
+/// `upsert_rsvp` requires exactly one of the two) `INTERESTED` RSVP.
+pub struct RsvpOpts {
     pub user_id: Option<i64>,
     pub anonymous_attendee: Option<serde_json::Value>,
-    pub status: AttendanceStatus,
+    pub status: RsvpStatus,
     pub moderation: Moderation,
     pub public_note: String,
     pub private_note: String,
 }
 
-impl Default for EventAttendanceOpts {
+impl Default for RsvpOpts {
     fn default() -> Self {
-        EventAttendanceOpts {
+        RsvpOpts {
             user_id: None,
             anonymous_attendee: None,
-            status: AttendanceStatus::Interested,
+            status: RsvpStatus::Interested,
             moderation: Moderation::Unmoderated,
             public_note: "".to_string(),
             private_note: "".to_string(),
@@ -599,28 +599,28 @@ impl Default for EventAttendanceOpts {
     }
 }
 
-/// Inserts an `event_attendances` row directly (bypassing `rpcs::upsert_event_attendance`), for
+/// Inserts an `rsvps` row directly (bypassing `rpcs::upsert_rsvp`), for
 /// specs that need precise control over `moderation`/`user_id`/`anonymous_attendee` to exercise
-/// `get_event_attendances`/`get_events`' visibility rules.
-pub fn create_event_attendance(
+/// `get_rsvps`/`get_events`' visibility rules.
+pub fn create_rsvp(
     conn: &mut PgPooledConnection,
     occasion: &models::Occasion,
-    opts: EventAttendanceOpts,
-) -> models::EventAttendance {
-    insert_into(event_attendances::table)
-        .values(&models::NewEventAttendance {
+    opts: RsvpOpts,
+) -> models::Rsvp {
+    insert_into(rsvps::table)
+        .values(&models::NewRsvp {
             occasion_id: occasion.post_id,
             user_id: opts.user_id,
             anonymous_attendee: opts.anonymous_attendee,
             number_of_guests: 0,
-            status: opts.status.to_string_attendance_status(),
+            status: opts.status.to_string_rsvp_status(),
             inviting_user_id: None,
             public_note: opts.public_note,
             private_note: opts.private_note,
             moderation: opts.moderation.to_string_moderation(),
         })
-        .get_result::<models::EventAttendance>(conn)
-        .expect("failed to create test event attendance")
+        .get_result::<models::Rsvp>(conn)
+        .expect("failed to create test event rsvp")
 }
 
 /// Starts a background thread serving `ics_text` as `text/calendar` for every HTTP request it
@@ -685,7 +685,7 @@ pub fn serve_feed(feed_text: &str) -> String {
 /// Inserts a `sync_destinations` row directly (bypassing `rpcs::create_sync_destination`, so no
 /// Facebook OAuth exchange happens) -- for specs that only care about ownership/permission
 /// handling. Specs exercising the actual Facebook Graph API calls should go through
-/// `logic::facebook_sync`'s `_at` functions against `serve_facebook_graph_api` instead.
+/// `logic::sync_destinations::facebook_sync`'s `_at` functions against `serve_facebook_graph_api` instead.
 pub fn create_sync_destination_row(
     conn: &mut PgPooledConnection,
     user: &models::User,
@@ -760,6 +760,7 @@ pub fn configure_facebook_app(conn: &mut PgPooledConnection, app_id: &str, app_s
         }),
         x_twitter_auth_config: None,
         mastodon_servers: vec![],
+        unsecure_localhost_federated_auth_enabled: None,
     })
     .unwrap();
     insert_into(server_configurations::table)
@@ -769,7 +770,7 @@ pub fn configure_facebook_app(conn: &mut PgPooledConnection, app_id: &str, app_s
 }
 
 /// Same as `configure_facebook_app`, but also sets `external_cdn_config.frontend_host` -- needed
-/// for specs that exercise `logic::threads_sync::threads_redirect_uri` (and RPCs that call it,
+/// for specs that exercise `logic::sync_destinations::threads_sync::threads_redirect_uri` (and RPCs that call it,
 /// like `create_sync_destination`'s `ThreadsAccount` arm), which derives the OAuth popup's
 /// `redirect_uri` from it and fails fast with `threads_redirect_uri_not_configured` otherwise.
 pub fn configure_facebook_app_and_frontend_host(
@@ -787,6 +788,7 @@ pub fn configure_facebook_app_and_frontend_host(
         }),
         x_twitter_auth_config: None,
         mastodon_servers: vec![],
+        unsecure_localhost_federated_auth_enabled: None,
     })
     .unwrap();
     new_config.external_cdn_config = Some(
@@ -803,7 +805,7 @@ pub fn configure_facebook_app_and_frontend_host(
 }
 
 /// Mirrors `configure_facebook_app`, but sets `x_twitter_auth_config` instead -- needed for specs
-/// that exercise `logic::x_twitter_sync::server_x_twitter_app_credentials` (and RPCs that call it,
+/// that exercise `logic::sync_destinations::x_twitter_sync::server_x_twitter_app_credentials` (and RPCs that call it,
 /// like `create_sync_destination`'s `XTwitterAccount` arm).
 pub fn configure_x_twitter_app(conn: &mut PgPooledConnection, client_id: &str, client_secret: &str) {
     let mut new_config = models::default_server_configuration();
@@ -815,6 +817,7 @@ pub fn configure_x_twitter_app(conn: &mut PgPooledConnection, client_id: &str, c
             client_secret: client_secret.to_string(),
         }),
         mastodon_servers: vec![],
+        unsecure_localhost_federated_auth_enabled: None,
     })
     .unwrap();
     insert_into(server_configurations::table)
@@ -824,7 +827,7 @@ pub fn configure_x_twitter_app(conn: &mut PgPooledConnection, client_id: &str, c
 }
 
 /// Same as `configure_x_twitter_app`, but also sets `external_cdn_config.frontend_host` -- needed
-/// for specs that exercise `logic::x_twitter_sync::x_twitter_redirect_uri` (and RPCs that call it,
+/// for specs that exercise `logic::sync_destinations::x_twitter_sync::x_twitter_redirect_uri` (and RPCs that call it,
 /// like `create_sync_destination`'s `XTwitterAccount` arm), which derives the OAuth popup's
 /// `redirect_uri` from it and fails fast with `x_twitter_redirect_uri_not_configured` otherwise.
 pub fn configure_x_twitter_app_and_frontend_host(
@@ -842,6 +845,7 @@ pub fn configure_x_twitter_app_and_frontend_host(
             client_secret: client_secret.to_string(),
         }),
         mastodon_servers: vec![],
+        unsecure_localhost_federated_auth_enabled: None,
     })
     .unwrap();
     new_config.external_cdn_config = Some(
@@ -858,7 +862,7 @@ pub fn configure_x_twitter_app_and_frontend_host(
 }
 
 /// Inserts an active `server_configurations` row with `twilio_config` set -- lets specs exercise
-/// `logic::contact_verification::{server_twilio_config, twilio_available}` (and RPCs/logic that
+/// `logic::contact_methods::contact_verification::{server_twilio_config, twilio_available}` (and RPCs/logic that
 /// call them, like `update_user`'s `supported_by_server` computation and
 /// `start_contact_method_verification`) without going through `ConfigureServer`'s own merge logic.
 /// Mirrors `configure_x_twitter_app`.
@@ -908,7 +912,7 @@ fn supported_contact_protocols_json(sms_enabled: bool) -> Option<serde_json::Val
 
 /// Inserts an active `server_configurations` row with `stripe_config` set -- mirrors
 /// `configure_twilio`, for specs exercising the Rellm Marketplace's Stripe integration
-/// (`rpcs::market::make_market_purchase`, `logic::market_renewal`, `web::stripe_webhook`,
+/// (`rpcs::market::make_market_purchase`, `logic::market::market_renewal`, `web::stripe_webhook`,
 /// `configure_server`/`get_server_configuration`'s own `stripe_config` handling) without going
 /// through `ConfigureServer`'s own merge logic.
 pub fn configure_stripe(
@@ -1136,7 +1140,7 @@ pub fn configure_verification_providers(
 /// A minimal mock of the X (Twitter) API v2 OAuth token endpoint (`/2/oauth2/token`, both the
 /// initial `authorization_code` exchange and subsequent `refresh_token` exchanges -- distinguished
 /// by inspecting the request *body*, not just the request line, since both share one path/method),
-/// `/2/users/me`, `/2/media/upload`, and `/2/tweets`, for `logic::x_twitter_sync` specs. Mirrors
+/// `/2/users/me`, `/2/media/upload`, and `/2/tweets`, for `logic::sync_destinations::x_twitter_sync` specs. Mirrors
 /// `serve_threads_api`'s shape. `valid_code: false` simulates a rejected authorization code (`400`
 /// on the initial exchange only -- a refresh always succeeds here, since specs cover refresh
 /// failure separately via `serve_capturing` where finer control is needed).
@@ -1379,12 +1383,12 @@ pub fn test_bucket() -> TestBucket {
 }
 
 /// Starts a background thread serving canned Facebook Graph API JSON responses (mirrors
-/// `serve_ics`, but routes by request path since `logic::facebook_sync` hits different endpoints
+/// `serve_ics`, but routes by request path since `logic::sync_destinations::facebook_sync` hits different endpoints
 /// depending on which step it's on): `/oauth/access_token` returns a long-lived user token,
 /// `/me/accounts` returns `page` as the (fake) user's one managed Page (or none, if `page` is
 /// `None` -- for testing the "page not managed by this user" error path), and anything else (the
 /// `/{page_id}/feed` post) returns `post_id`. Returns the `http://127.0.0.1:<port>` base URL to
-/// pass as `logic::facebook_sync`'s `base_url` param.
+/// pass as `logic::sync_destinations::facebook_sync`'s `base_url` param.
 pub fn serve_facebook_graph_api(page: Option<(&str, &str, &str)>, post_id: &str) -> String {
     use std::io::{Read, Write};
     use std::net::TcpListener;
@@ -1434,7 +1438,7 @@ pub fn serve_facebook_graph_api(page: Option<(&str, &str, &str)>, post_id: &str)
     format!("http://127.0.0.1:{port}")
 }
 
-/// A minimal mock of the Facebook Graph API endpoints `logic::facebook_sync`'s Instagram functions
+/// A minimal mock of the Facebook Graph API endpoints `logic::sync_destinations::facebook_sync`'s Instagram functions
 /// hit -- routes by request line, mirroring `serve_facebook_graph_api`: a
 /// `fields=instagram_business_account{id,username}` lookup returns `instagram_account` (or just
 /// `{"id": ...}` with no linked account, if `None`) for `get_linked_instagram_business_account_at`;
@@ -1496,7 +1500,7 @@ pub fn serve_facebook_graph_api_instagram(
 }
 
 /// A minimal mock of the Mastodon REST API's `verify_credentials`/`statuses` endpoints for
-/// `logic::mastodon_sync` specs -- routes by request line and always responds `200` unless
+/// `logic::sync_destinations::mastodon_sync` specs -- routes by request line and always responds `200` unless
 /// `valid_token` is `false` (simulating a rejected/invalid Personal Access Token, `401`) or
 /// `post_succeeds` is `false` (simulating a too-long status, `422`).
 pub fn serve_mastodon_api(
@@ -1563,7 +1567,7 @@ pub fn serve_mastodon_api(
     format!("http://127.0.0.1:{port}")
 }
 
-/// A minimal mock of the Threads Graph API endpoints `logic::threads_sync` hits for
+/// A minimal mock of the Threads Graph API endpoints `logic::sync_destinations::threads_sync` hits for
 /// `oauth/access_token` (code exchange), `access_token` (long-lived exchange), `fields=username`
 /// (username lookup), `/threads` (media container creation), `/threads_publish`, and
 /// `fields=permalink` (permalink lookup) -- routes by request line, mirroring
@@ -1703,7 +1707,7 @@ pub fn serve_capturing(
 }
 
 /// A minimal mock of the Bluesky (AT Protocol) `createSession`/`createRecord` XRPC endpoints for
-/// `logic::bluesky_sync` specs -- routes by request line, mirroring `serve_mastodon_api`:
+/// `logic::sync_destinations::bluesky_sync` specs -- routes by request line, mirroring `serve_mastodon_api`:
 /// `valid_credentials: false` simulates a rejected handle/app-password (`401`), `post_succeeds:
 /// false` simulates a `createRecord` failure (`400`).
 pub fn serve_bluesky_api(

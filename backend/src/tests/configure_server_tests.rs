@@ -11,7 +11,7 @@ use crate::logic::{
     server_bird_config, server_facebook_app_credentials, server_telnyx_config,
     server_twilio_config, server_x_twitter_app_credentials,
 };
-use crate::logic::stripe_sync::server_stripe_config;
+use crate::logic::stripe_payments::server_stripe_config;
 use crate::protos::*;
 use crate::rpcs::{configure_server, get_server_configuration, get_server_configuration_proto};
 use crate::tests::factories::*;
@@ -41,6 +41,10 @@ fn facebook_auth_request(
             .as_ref()
             .map(|f| f.mastodon_servers.clone())
             .unwrap_or_default(),
+        unsecure_localhost_federated_auth_enabled: config
+            .federation_info
+            .as_ref()
+            .and_then(|f| f.unsecure_localhost_federated_auth_enabled),
         x_twitter_auth_config: config.federation_info.and_then(|f| f.x_twitter_auth_config),
     });
     config
@@ -120,6 +124,7 @@ fn setting_facebook_auth_config_to_none_clears_the_stored_secret() {
             servers: f.servers,
             facebook_auth_config: None,
             mastodon_servers: f.mastodon_servers,
+            unsecure_localhost_federated_auth_enabled: f.unsecure_localhost_federated_auth_enabled,
             x_twitter_auth_config: f.x_twitter_auth_config,
         });
         configure_server(clearing_config, &admin, conn).expect("clearing configure should succeed");
@@ -150,6 +155,10 @@ fn x_twitter_auth_request(
             .as_ref()
             .map(|f| f.mastodon_servers.clone())
             .unwrap_or_default(),
+        unsecure_localhost_federated_auth_enabled: config
+            .federation_info
+            .as_ref()
+            .and_then(|f| f.unsecure_localhost_federated_auth_enabled),
         x_twitter_auth_config: Some(XTwitterAuthConfig {
             client_id: client_id.to_string(),
             client_secret: client_secret.to_string(),
@@ -232,6 +241,7 @@ fn setting_x_twitter_auth_config_to_none_clears_the_stored_secret() {
             servers: f.servers,
             facebook_auth_config: f.facebook_auth_config,
             mastodon_servers: f.mastodon_servers,
+            unsecure_localhost_federated_auth_enabled: f.unsecure_localhost_federated_auth_enabled,
             x_twitter_auth_config: None,
         });
         configure_server(clearing_config, &admin, conn).expect("clearing configure should succeed");

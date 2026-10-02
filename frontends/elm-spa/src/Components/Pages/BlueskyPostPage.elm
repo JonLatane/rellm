@@ -1,9 +1,9 @@
 module Components.Pages.BlueskyPostPage exposing (Model, Msg, init, title, update, view)
 
 {-| A single Bluesky post, read-only -- no reply/edit/delete/visibility/moderation/sync-destination
-affordances (none of that makes sense for a post Rellm doesn't own), and no replies tree (Rellm has
-no way to fetch a Bluesky post's own replies -- a "for now" gap). Just its author, content, and a
-link back to the original.
+affordances (none of that makes sense for a post Rellm doesn't own). Just its author, content, a link
+back to the original, and its conversation (the posts it replies to above it, its own reply tree
+below -- see `Shared.Federation.Bluesky.fetchThread` and `Components.FederatedThread`).
 
 Split out of `Components.Pages.PostPage` (which now only ever handles real Rellm posts) into its own
 dedicated page so `Pages.Post.PostId_` can route to this directly once
@@ -13,6 +13,7 @@ and `Components.Pages.MastodonPostPage` for the ActivityPub counterpart.
 -}
 
 import Components.Authors as Authors
+import Components.FederatedThread as FederatedThread
 import Components.Markdown as Markdown
 import Components.MediaRenderer as MediaRenderer
 import Components.MultiMediaRenderer as MultiMediaRenderer
@@ -28,6 +29,7 @@ import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.BlueskyAccounts as BlueskyAccounts exposing (BlueskyAccount)
 import Shared.AccountsPanel.RellmServers exposing (RellmServer)
 import Shared.Federation.Bluesky as Bluesky
+import Shared.Federation.Common as Common exposing (Thread)
 import Shared.MediaViewerPanel as MediaViewerPanel
 import Shared.StarredPanel as StarredPanel
 import Task
@@ -42,6 +44,9 @@ type alias Model =
     -- Meaningless (never consulted) unless `postStatus` is `PostLoaded _ True`, i.e. AT Proto
     -- actually labeled this post -- see `federatedPostView`'s own doc.
     , sensitiveMediaRevealed : Bool
+
+    -- Fetched right after the post itself, best-effort -- stays `emptyThread` if that fails.
+    , thread : Thread
     }
 
 
@@ -59,9 +64,10 @@ type PostStatus
 
 
 type Msg
-    = GotPost String (Result Http.Error ( Maybe BlueskyAccount, Post, Bool ))
+    = GotPost String (Result Http.Error ( Maybe BlueskyAccount, ( Post, Bool ), Thread ))
     | MediaPlayClicked String
     | MediaImageClicked String
+    | ThreadMediaClicked Post String
     | RevealSensitiveMediaClicked
     | StarredPanelMsg StarredPanel.Msg
 
@@ -69,9 +75,7 @@ type Msg
 {-| `uri` comes straight from `Components.Posts.parseFederatedPostId`'s `BlueskyPostId` -- see that
 type's own doc. Fetched using whichever connected Bluesky account comes first -- reading a public
 post doesn't need to be _that_ account's own, any connected token works (see
-`Shared.Federation.Bluesky.fetchPost`'s own doc) -- and fails outright (a bare `Http.BadStatus 401`,
-landing on `PostFailed`, same as a real auth failure would) if none is connected at all, since AT
-Protocol has no anonymous access to anything. Goes through `BlueskyAccounts.performWithBlueskyAccount`
+`Shared.Federation.Bluesky.fetchPost`'s own doc) -- and falls back to anonymous reads from Bluesky's public AppView if none is connected. Goes through `BlueskyAccounts.performWithBlueskyAccount`
 same as `Components.Pages.PostsPage.fetchFeedSource`'s own `BlueskyFeed` case, so a since-expired
 access token gets one refresh-and-retry rather than failing outright -- see `update`'s own handling
 of the rotated/reauth-needed account this can come back with.
@@ -83,27 +87,44 @@ init shared uri =
         actingHandle =
             List.head shared.accounts.blueskyAccounts |> Maybe.map .handle |> Maybe.withDefault ""
 
-        fetchTask : Task.Task Http.Error ( Maybe BlueskyAccount, Post, Bool )
+        fetchTask : Task.Task Http.Error ( Maybe BlueskyAccount, ( Post, Bool ), Thread )
         fetchTask =
             case shared.accounts.blueskyAccounts of
                 account :: _ ->
+                    -- The thread is fetched with the (possibly just-refreshed) token the post fetch
+                    -- ended up with, strictly after it rather than alongside -- AT Proto refresh
+                    -- tokens are single-use (see `BlueskyAccount`'s own doc), so two concurrent
+                    -- `performWithBlueskyAccount` calls could race to rotate the same one.
                     BlueskyAccounts.performWithBlueskyAccount account (\accessToken -> Bluesky.fetchPost accessToken uri)
-                        |> Task.map
+                        |> Task.andThen
                             (\( refreshedAccount, ( post, sensitive ) ) ->
-                                ( if refreshedAccount.accessToken == account.accessToken then
-                                    Nothing
+                                Bluesky.fetchThread refreshedAccount.accessToken uri
+                                    |> Task.onError (\_ -> Task.succeed Common.emptyThread)
+                                    |> Task.map
+                                        (\thread ->
+                                            ( if refreshedAccount.accessToken == account.accessToken then
+                                                Nothing
 
-                                  else
-                                    Just refreshedAccount
-                                , post
-                                , sensitive
-                                )
+                                              else
+                                                Just refreshedAccount
+                                            , ( post, sensitive )
+                                            , thread
+                                            )
+                                        )
                             )
 
+                -- No connected account -- read anonymously from the public AppView (an empty
+                -- token, see `Bluesky.fetchPost`), nothing to refresh/persist.
                 [] ->
-                    Task.fail (Http.BadStatus 401)
+                    Bluesky.fetchPost "" uri
+                        |> Task.andThen
+                            (\( post, sensitive ) ->
+                                Bluesky.fetchThread "" uri
+                                    |> Task.onError (\_ -> Task.succeed Common.emptyThread)
+                                    |> Task.map (\thread -> ( Nothing, ( post, sensitive ), thread ))
+                            )
     in
-    ( { uri = uri, postStatus = LoadingPost, sensitiveMediaRevealed = False }
+    ( { uri = uri, postStatus = LoadingPost, sensitiveMediaRevealed = False, thread = Common.emptyThread }
     , fetchTask |> Task.attempt (GotPost actingHandle) |> Effect.fromCmd
     )
 
@@ -119,8 +140,8 @@ as `needsReauth` (see `BlueskyAccounts.isReauthError`) marks it the same way
 update : Msg -> Model -> ( Model, Effect Msg )
 update msg model =
     case msg of
-        GotPost _ (Ok ( maybeRefreshedAccount, post, sensitive )) ->
-            ( { model | postStatus = PostLoaded post sensitive }
+        GotPost _ (Ok ( maybeRefreshedAccount, ( post, sensitive ), thread )) ->
+            ( { model | postStatus = PostLoaded post sensitive, thread = thread }
             , maybeRefreshedAccount
                 |> Maybe.map (AccountsPanel.BlueskyAccountRefreshed >> Shared.AccountsPanelMsg >> Effect.fromShared)
                 |> Maybe.withDefault Effect.none
@@ -148,6 +169,11 @@ update msg model =
 
                 _ ->
                     ( model, Effect.none )
+
+        ThreadMediaClicked post mediaId ->
+            ( model
+            , Effect.fromShared (Shared.MediaViewerPanelMsg (MediaViewerPanel.Open post.media (Just post) mediaId "bluesky:"))
+            )
 
         RevealSensitiveMediaClicked ->
             ( { model | sensitiveMediaRevealed = True }, Effect.none )
@@ -182,7 +208,22 @@ view shared model =
                 displayPost =
                     StarredPanel.freshestPost starHost post shared.panels.starredPanel
             in
-            federatedPostView shared model.sensitiveMediaRevealed sensitive displayPost
+            div []
+                [ FederatedThread.ancestorsView (threadConfig shared) model.thread
+                , federatedPostView shared model.sensitiveMediaRevealed sensitive displayPost
+                , FederatedThread.repliesView (threadConfig shared) model.thread
+                ]
+
+
+threadConfig : Shared.Model -> FederatedThread.Config Msg
+threadConfig shared =
+    { basePath = shared.basePath
+    , viewingServerHost = shared.accounts.mainFrontendHost
+    , postServerHost = starHost
+    , mediaPlayState = shared.mediaRenderer
+    , onMediaPlayClicked = MediaPlayClicked
+    , onMediaClicked = ThreadMediaClicked
+    }
 
 
 {-| No title, no URL row -- just the author (linking to their own `Components.Pages.BlueskyUserProfilePage`,

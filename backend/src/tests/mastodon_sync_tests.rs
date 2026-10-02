@@ -1,4 +1,4 @@
-//! Specs for `logic::mastodon_sync`'s REST API interaction correctness (credential verification,
+//! Specs for `logic::sync_destinations::mastodon_sync`'s REST API interaction correctness (credential verification,
 //! posting), run against `factories::serve_mastodon_api` instead of a real Mastodon instance.
 //! RPC-level permission/ownership handling is covered separately by `sync_destination_rpc_tests`/
 //! `post_sync_rpc_tests`.

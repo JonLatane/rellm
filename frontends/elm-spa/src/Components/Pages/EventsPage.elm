@@ -2,6 +2,7 @@ module Components.Pages.EventsPage exposing
     ( EventsDisplayMode
     , Model
     , Msg
+    , federatedAuthorsChanged
     , fromShared
     , init
     , searchTextChanged
@@ -41,17 +42,21 @@ difference away" FLIP recipe.
 
 import Animation
 import Browser.Dom as Dom
+import Browser.Events
 import Browser.Navigation
+import Components.EventExport as EventExport
 import Components.Events as Events
+import Components.FederatedAuthors as FederatedAuthors exposing (FederatedAuthor)
 import Components.MediaRenderer as MediaRenderer
 import Components.Posts as Posts
+import Components.Rsvps as Rsvps
 import Components.Users exposing (usernameHref)
 import Components.Users.ProfileHeading as ProfileHeading
 import Dict exposing (Dict)
 import Effect exposing (Effect)
 import Grpc
 import Html exposing (Html, a, button, div, h2, h3, input, p, span, text)
-import Html.Attributes exposing (class, href, id, placeholder, style, target, title, type_, value)
+import Html.Attributes exposing (class, disabled, href, id, placeholder, style, target, title, type_, value)
 import Html.Events exposing (onClick, onInput, onMouseDown, preventDefaultOn)
 import Html.Keyed
 import Json.Decode as Decode
@@ -114,6 +119,13 @@ type alias Model =
     -- `pushUrl` the navigation function, so opening/closing it never itself
     -- spams browser history (mirrors every other filter this page persists).
     , calendarPreview : Maybe String
+
+    -- Which card the modal is currently _viewing_ -- set by stepping through it
+    -- (`CalendarPreviewStepped`) or clicking a card (`CalendarPreviewCardNavigated`), and
+    -- mirrored only in the URL's `#calendar-preview-<key>` fragment, never `calendarPreview`
+    -- itself (which stays the event originally tapped, as `?calendar_preview=`). `Nothing`
+    -- means "still at `calendarPreview`". Seeded from that same fragment at `init`.
+    , calendarPreviewViewed : Maybe String
 
     -- A `calendarPreviewCardView` key waiting for `calendarPreviewEvents` to
     -- actually contain it before `scrollToCalendarPreviewCard` can do
@@ -183,6 +195,11 @@ type alias Model =
     , syncsCalendarPreference : Bool
     , measurementPhase : MeasurementPhase
     , author : Maybe ( String, User )
+
+    -- Extra profiles (beyond `author`) whose events are fetched and shown alongside it -- only
+    -- ever non-empty on `Components.Pages.UserProfilePage`'s embedded copy, set via
+    -- `FederatedAuthorsChanged`. See `Components.FederatedAuthors`.
+    , federatedAuthors : List FederatedAuthor
     , navKey : Browser.Navigation.Key
     , path : String
     , tab : EventsTab
@@ -284,11 +301,29 @@ type alias Model =
     -- only needs to key by `destinationId`) -- drives the `isPushing`/
     -- `pushError` closures `eventCardView` builds for `Events.eventCard`.
     , pushStatuses : Dict String SubmitStatus
+
+    -- Per-card RSVP UI state (`Components.Rsvps`), keyed by `eventAnimationKey` and created
+    -- lazily. The RSVP _data_ is whatever `GetEvents` already attached to each `Occasion` --
+    -- cards never fetch RSVPs separately -- with this viewer's own upserts/deletes overlaid by
+    -- `Rsvps.applyEdits`.
+    , rsvpModels : Dict String Rsvps.Model
+
+    -- The raw `?anonymousAuthToken=` URL parameter (see `Rsvps.parseAnonymousAuthToken`): every
+    -- anonymous RSVP token this browser holds, across occasions. Sent with each `GetEvents` (the
+    -- backend takes the same format) so those RSVPs show up on their cards, and kept in the URL as
+    -- anonymous RSVPs are created/deleted from a card.
+    , anonymousAuthTokens : Maybe String
+
+    -- The card (`eventAnimationKey`) whose "Add to Calendar" popdown is open, if any.
+    , exportOpenFor : Maybe String
     }
 
 
 type Msg
-    = GotServerEvents String (Result Grpc.Error ( Maybe AccountsPanel.Msg, Proto.Rellm.GetEventsResponse ))
+    = RsvpsMsg String String Rsvps.Msg
+    | ExportOccasionToggled String
+    | ExportOccasionClosed
+    | GotServerEvents String (Result Grpc.Error ( Maybe AccountsPanel.Msg, Proto.Rellm.GetEventsResponse ))
     | GotNow Time.Posix
     | Poll
     | Animate Animation.Msg
@@ -371,6 +406,8 @@ type Msg
       -- own UI.
     | ShowSyncSourcesChanged Bool
     | ShowSyncDestinationsChanged Bool
+      -- Replaces `model.federatedAuthors` -- see `federatedAuthorsChanged`.
+    | FederatedAuthorsChanged (List FederatedAuthor)
       -- Opens/closes the "Export" button's ICS-subscription-link popover
       -- (see `exportButtonView`).
     | ExportClicked
@@ -398,6 +435,12 @@ type Msg
       -- Closes `calendarPreviewModalView`'s modal -- its own close button or
       -- backdrop click.
     | CalendarPreviewClosed
+      -- Moves the open modal's current event by this many places (-1/+1: the header arrows and
+      -- left/right keys), clamped to the ends -- see `calendarPreviewSorted`.
+    | CalendarPreviewStepped Int
+      -- The header slider (`calendarPreviewModalView`) moving to this index among
+      -- `calendarPreviewEvents` -- same effect as stepping, just to an absolute position.
+    | CalendarPreviewSeeked Int
       -- `scrollToCalendarPreviewCard`'s measurement resolving -- mirrors
       -- `Pages.Event.PostId_.GotScrollTarget` exactly, including giving up
       -- silently (`Err`) if the strip/card aren't found (e.g. the modal was
@@ -478,6 +521,23 @@ detected as "the acting credential changed" and trigger a re-fetch -- mirrors
 type alias ServerFeed =
     { status : ServerEvents
     , accountId : Maybe String
+
+    -- The real server host the events came from -- `eventsByServer`'s own key is
+    -- `EventSource.key`, which for a federated author isn't just the host (two profiles can
+    -- share one server).
+    , host : String
+    }
+
+
+{-| One `GetEvents` fetch -- a server, scoped to one author (`authorId`: the page's own `author`,
+or one `FederatedAuthor`'s profile; `Nothing` for an unfiltered feed). `key` is its
+`eventsByServer` key: the server's own `frontendHost` for the page's own `author`/unfiltered
+feed, so that's unchanged, and a host-and-user-qualified one for each federated author.
+-}
+type alias EventSource =
+    { key : String
+    , server : RellmServer
+    , authorId : Maybe String
     }
 
 
@@ -633,6 +693,7 @@ init shared author navKey path query fragment embeddedPage syncsCalendarPreferen
                 , eventAnimations = Dict.empty
                 , calendarAnimations = Dict.empty
                 , calendarPreview = calendarPreview
+                , calendarPreviewViewed = calendarPreviewKeyFromFragment fragment
                 , pendingCalendarPreviewScroll = pendingCalendarPreviewScroll
                 , mode = Dict.get "display" query |> Maybe.andThen displayModeFromParam |> Maybe.withDefault computedDefaultDisplayMode
                 , defaultDisplayMode = computedDefaultDisplayMode
@@ -640,6 +701,7 @@ init shared author navKey path query fragment embeddedPage syncsCalendarPreferen
                 , syncsCalendarPreference = syncsCalendarPreference
                 , measurementPhase = NotMeasuring
                 , author = author
+                , federatedAuthors = []
                 , navKey = navKey
                 , path = path
                 , tab = tab
@@ -657,6 +719,9 @@ init shared author navKey path query fragment embeddedPage syncsCalendarPreferen
                 , embeddingPageSearchesPosts = embeddingPageSearchesPosts
                 , calendarDisplayModeOverride = calendarDisplayModeOverride
                 , pushStatuses = Dict.empty
+                , rsvpModels = Dict.empty
+                , anonymousAuthTokens = Dict.get "anonymousAuthToken" query
+                , exportOpenFor = Nothing
                 }
                 |> Tuple.mapFirst syncCalendarAnimations
     in
@@ -694,6 +759,31 @@ subscriptions model =
         , UI.Flip.subscription Animate (List.map .flip (Dict.values model.eventAnimations) ++ List.map .flip (Dict.values model.calendarAnimations))
         , UI.Flip.moveSubscription AnimateMove (List.map .move (Dict.values model.eventAnimations))
         , Ports.calendarEventClicked CalendarEventClicked
+
+        -- Esc closes `calendarPreviewModalView`'s modal, left/right step through its events --
+        -- only while it's actually open.
+        , if model.calendarPreview /= Nothing then
+            Browser.Events.onKeyDown
+                (Decode.field "key" Decode.string
+                    |> Decode.andThen
+                        (\key ->
+                            case key of
+                                "Escape" ->
+                                    Decode.succeed CalendarPreviewClosed
+
+                                "ArrowLeft" ->
+                                    Decode.succeed (CalendarPreviewStepped -1)
+
+                                "ArrowRight" ->
+                                    Decode.succeed (CalendarPreviewStepped 1)
+
+                                _ ->
+                                    Decode.fail "Not a calendar preview key"
+                        )
+                )
+
+          else
+            Sub.none
         ]
 
 
@@ -739,6 +829,56 @@ showSyncDestinationsChanged =
     ShowSyncDestinationsChanged
 
 
+{-| Replaces the extra profiles (beyond `author`) this feed also shows -- driven by
+`Components.Pages.UserProfilePage`'s own federation toggle and its loaded `federatedProfiles`
+(see `Components.FederatedAuthors`).
+-}
+federatedAuthorsChanged : List FederatedAuthor -> Msg
+federatedAuthorsChanged =
+    FederatedAuthorsChanged
+
+
+{-| A card's RSVP UI state -- a fresh one (seeded with this occasion's token from the URL, if any)
+until the viewer first interacts with it.
+-}
+rsvpModelFor : Model -> String -> String -> Rsvps.Model
+rsvpModelFor model host occasionId =
+    Dict.get (host ++ "@" ++ occasionId) model.rsvpModels
+        |> Maybe.withDefault
+            (Rsvps.init (model.anonymousAuthTokens |> Maybe.andThen (Rsvps.parseAnonymousAuthToken occasionId)) False)
+
+
+{-| The currently-listed `Event`/`Occasion` for a card (`host`, occasion post id) -- whichever card
+animation still holds it, else the host's loaded feed (what calendar-preview cards render from).
+-}
+findEventAndOccasion : Model -> String -> String -> Maybe ( Event, Occasion )
+findEventAndOccasion model host occasionId =
+    let
+        matches : Occasion -> Bool
+        matches occasion =
+            Rsvps.occasionIdOf occasion == occasionId
+
+        fromAnimations : Maybe ( Event, Occasion )
+        fromAnimations =
+            model.eventAnimations
+                |> Dict.values
+                |> List.filter (\anim -> anim.host == host && matches anim.occasion)
+                |> List.head
+                |> Maybe.map (\anim -> ( anim.event, anim.occasion ))
+    in
+    case fromAnimations of
+        Just found ->
+            Just found
+
+        Nothing ->
+            case Dict.get host model.eventsByServer |> Maybe.map .status of
+                Just (Loaded pairs) ->
+                    pairs |> List.filter (\( _, occasion ) -> matches occasion) |> List.head
+
+                _ ->
+                    Nothing
+
+
 accountsPanelEffect : Maybe AccountsPanel.Msg -> Effect Msg
 accountsPanelEffect maybeAccountsPanelMsg =
     maybeAccountsPanelMsg
@@ -765,6 +905,77 @@ update shared msg model =
 updateInner : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
 updateInner shared msg model =
     case msg of
+        RsvpsMsg host occasionId rsvpsMsg ->
+            case findEventAndOccasion model host occasionId of
+                Just ( event, occasion ) ->
+                    let
+                        key : String
+                        key =
+                            host ++ "@" ++ occasionId
+
+                        ( newRsvpModel, rsvpCmd, outcome ) =
+                            Rsvps.update
+                                { accounts = shared.accounts, targetHost = host, event = event, occasion = occasion }
+                                rsvpsMsg
+                                (rsvpModelFor model host occasionId)
+
+                        -- A card's anonymous RSVP created/deleted: keep the URL's (multi-occasion)
+                        -- token parameter in step, so reloading this listing still shows it.
+                        tokensChanged : Bool
+                        tokensChanged =
+                            outcome.tokenChange /= Nothing
+
+                        updatedModel : Model
+                        updatedModel =
+                            { model
+                                | rsvpModels = Dict.insert key newRsvpModel model.rsvpModels
+                                , anonymousAuthTokens =
+                                    case outcome.tokenChange of
+                                        Just newToken ->
+                                            Rsvps.setAnonymousAuthToken occasionId newToken model.anonymousAuthTokens
+
+                                        Nothing ->
+                                            model.anonymousAuthTokens
+                            }
+                    in
+                    ( updatedModel
+                    , Effect.batch
+                        [ Cmd.map (RsvpsMsg host occasionId) rsvpCmd |> Effect.fromCmd
+                        , accountsPanelEffect outcome.accountsPanelMsg
+                        , if tokensChanged then
+                            pushUrl updatedModel
+
+                          else
+                            Effect.none
+                        , if outcome.confirmNewAnonymousRsvp then
+                            Effect.fromShared (Shared.RequestDelete (Shared.ConfirmNewAnonymousRsvp occasionId host))
+
+                          else
+                            Effect.none
+                        ]
+                    )
+
+                Nothing ->
+                    ( model, Effect.none )
+
+        SharedMsg (Shared.NewAnonymousRsvpConfirmed occasionId host) ->
+            update shared (RsvpsMsg host occasionId Rsvps.newAnonymousRsvpConfirmed) model
+
+        ExportOccasionToggled key ->
+            ( { model
+                | exportOpenFor =
+                    if model.exportOpenFor == Just key then
+                        Nothing
+
+                    else
+                        Just key
+              }
+            , Effect.none
+            )
+
+        ExportOccasionClosed ->
+            ( { model | exportOpenFor = Nothing }, Effect.none )
+
         GotServerEvents frontendHost (Ok ( maybeAccountsPanelMsg, response )) ->
             ( { model
                 | eventsByServer =
@@ -791,7 +1002,7 @@ updateInner shared msg model =
             -- user switched to `EventsAfterDate` (or a fixed `?ends_after=`
             -- on load) must not clobber their fixed cutoff.
             if model.tab == UpcomingEvents then
-                refetchServers shared { model | endsAfter = Just now } (relevantServers shared model)
+                refetchServers shared { model | endsAfter = Just now } (relevantSources shared model)
 
             else
                 ( model, Effect.none )
@@ -875,12 +1086,7 @@ updateInner shared msg model =
                         -- successful un-sync changes `occasion.syncDestinations`
                         -- behind this already-fetched copy's back the same way.
                         Shared.GotOccasionSyncDestinationDeleteResult host (Ok _) ->
-                            case RellmServers.rellmServerForHost shared.accounts.servers host of
-                                Just server ->
-                                    refetchServers shared model [ server ]
-
-                                Nothing ->
-                                    ( model, Effect.none )
+                            refetchServers shared model (sourcesForHost shared model host)
 
                         Shared.CreateNewPanelMsg (CreateNewPanel.GotSaveResult (Ok ( _, createdItem ))) ->
                             applyCreatedItem shared createdItem model
@@ -966,11 +1172,16 @@ updateInner shared msg model =
                 )
 
         GotMeasuredRects value ->
-            case Decode.decodeValue rectsDecoder value of
-                Err _ ->
+            case UI.Flip.measuredResults measureOwner value |> Maybe.map (Decode.decodeValue rectsDecoder) of
+                -- Another component's measurement result (`Ports.elementsMeasured` is shared) --
+                -- not ours to act on.
+                Nothing ->
+                    ( model, Effect.none )
+
+                Just (Err _) ->
                     applyMeasurementFailure model
 
-                Ok rects ->
+                Just (Ok rects) ->
                     case model.measurementPhase of
                         NotMeasuring ->
                             -- A stray/late result with nothing pending -- ignore.
@@ -1055,7 +1266,7 @@ updateInner shared msg model =
                         -- changing this time) refetch with it.
                         let
                             ( refetchedModel, refetchEffect ) =
-                                refetchServers shared { model | tab = EventsAfterDate, endsAfter = Just preferredEndsAfter } (relevantServers shared model)
+                                refetchServers shared { model | tab = EventsAfterDate, endsAfter = Just preferredEndsAfter } (relevantSources shared model)
                         in
                         ( refetchedModel, Effect.batch [ refetchEffect, pushUrl refetchedModel ] )
 
@@ -1091,7 +1302,7 @@ updateInner shared msg model =
             if generation == model.endsAfterInputGeneration then
                 let
                     ( refetchedModel, refetchEffect ) =
-                        refetchServers shared model (relevantServers shared model)
+                        refetchServers shared model (relevantSources shared model)
                 in
                 ( refetchedModel
                 , Effect.batch
@@ -1138,6 +1349,15 @@ updateInner shared msg model =
 
         ShowSyncDestinationsChanged showSyncDestinations ->
             ( { model | showSyncDestinations = showSyncDestinations }, Effect.none )
+
+        FederatedAuthorsChanged authors ->
+            if authors == model.federatedAuthors then
+                ( model, Effect.none )
+
+            else
+                -- Fetches any newly-listed profile, drops any no-longer-listed one (see
+                -- `refetchServers`' own pruning), and leaves already-`Loaded` ones alone.
+                fetchNewServers shared { model | federatedAuthors = authors }
 
         ExportClicked ->
             ( { model | exportPopoverOpen = not model.exportPopoverOpen }, Effect.none )
@@ -1197,12 +1417,7 @@ updateInner shared msg model =
                 Ok ( maybeAccountsPanelMsg, _ ) ->
                     let
                         ( refetchedModel, refetchEffect ) =
-                            case RellmServers.rellmServerForHost shared.accounts.servers host of
-                                Just server ->
-                                    refetchServers shared clearedModel [ server ]
-
-                                Nothing ->
-                                    ( clearedModel, Effect.none )
+                            refetchServers shared clearedModel (sourcesForHost shared clearedModel host)
                     in
                     ( refetchedModel, Effect.batch [ refetchEffect, accountsPanelEffect maybeAccountsPanelMsg ] )
 
@@ -1215,15 +1430,26 @@ updateInner shared msg model =
             let
                 newModel : Model
                 newModel =
-                    { model | calendarPreview = Just key, pendingCalendarPreviewScroll = Nothing }
+                    { model | calendarPreview = Just key, calendarPreviewViewed = Nothing, pendingCalendarPreviewScroll = Nothing }
             in
             ( newModel, Effect.batch [ scrollToCalendarPreviewCard 60 key, pushUrl newModel ] )
+
+        CalendarPreviewStepped delta ->
+            viewCalendarPreviewKey model (calendarPreviewSteppedKey model delta)
+
+        CalendarPreviewSeeked index ->
+            viewCalendarPreviewKey model
+                (calendarPreviewEvents model
+                    |> List.drop index
+                    |> List.head
+                    |> Maybe.map (\( host, _, occasion ) -> eventAnimationKey host occasion)
+                )
 
         CalendarPreviewClosed ->
             let
                 newModel : Model
                 newModel =
-                    { model | calendarPreview = Nothing, pendingCalendarPreviewScroll = Nothing }
+                    { model | calendarPreview = Nothing, calendarPreviewViewed = Nothing, pendingCalendarPreviewScroll = Nothing }
             in
             ( newModel, pushUrl newModel )
 
@@ -1242,7 +1468,7 @@ updateInner shared msg model =
             ( { model | pendingCalendarPreviewScroll = Nothing }, Effect.none )
 
         CalendarPreviewCardNavigated key ->
-            ( model, pushCalendarPreviewHash model key )
+            ( { model | calendarPreviewViewed = Just key }, pushCalendarPreviewHash model key )
 
 
 {-| `GotMeasuredRects`'s fallback for a payload that failed to decode (should
@@ -1388,6 +1614,13 @@ queryParams model =
                 Nothing ->
                     []
            )
+        ++ (case model.anonymousAuthTokens of
+                Just tokens ->
+                    [ Url.Builder.string "anonymousAuthToken" tokens ]
+
+                Nothing ->
+                    []
+           )
 
 
 {-| `pushUrl`, but only once every card has actually finished its
@@ -1496,6 +1729,57 @@ relevantServers shared model =
             AccountsPanel.enabledServers shared.accounts
 
 
+{-| Every `EventSource` this page should ever fetch: one per `relevantServers` entry (scoped to
+`model.author`, if any), plus -- only once there's an `author` -- one per `model.federatedAuthors`
+entry whose server is known, minus the `author` itself (a profile can list itself, or be listed
+back by another one).
+-}
+relevantSources : Shared.Model -> Model -> List EventSource
+relevantSources shared model =
+    let
+        primary : List EventSource
+        primary =
+            relevantServers shared model
+                |> List.map
+                    (\server ->
+                        { key = server.frontendHost
+                        , server = server
+                        , authorId = model.author |> Maybe.map (Tuple.second >> .id)
+                        }
+                    )
+
+        federated : List EventSource
+        federated =
+            case model.author of
+                Just ( authorHost, author ) ->
+                    model.federatedAuthors
+                        |> List.filter (\a -> not (a.host == authorHost && a.userId == author.id))
+                        |> List.filterMap
+                            (\a ->
+                                RellmServers.rellmServerForHost shared.accounts.servers a.host
+                                    |> Maybe.map
+                                        (\server ->
+                                            { key = a.host ++ "/user/" ++ a.userId
+                                            , server = server
+                                            , authorId = Just a.userId
+                                            }
+                                        )
+                            )
+
+                Nothing ->
+                    []
+    in
+    primary ++ federated
+
+
+{-| `relevantSources` fetched from `host` -- what a change to one host's own data (a push/un-sync
+completing) needs re-fetched.
+-}
+sourcesForHost : Shared.Model -> Model -> String -> List EventSource
+sourcesForHost shared model host =
+    relevantSources shared model |> List.filter (\source -> source.server.frontendHost == host)
+
+
 {-| `calendarLookbackDays`'s fallback -- 14 days (2 weeks), used whenever
 `shared.accounts`' main server hasn't set `event_settings.calendar_lookback_days`
 (or hasn't finished connecting yet) -- the same default `server_configuration.proto`
@@ -1554,17 +1838,18 @@ still `Nothing`) -- mirrors `Components.Pages.PostsPage.refetchServers`'s
 inline `fetchEffect`, just factored out since `GotNow` also needs to kick
 every relevant server's fetch off again once a real cutoff lands.
 -}
-fetchServerEffect : Shared.Model -> Model -> Time.Posix -> RellmServer -> Effect Msg
-fetchServerEffect shared model endsAfter server =
+fetchServerEffect : Shared.Model -> Model -> Time.Posix -> EventSource -> Effect Msg
+fetchServerEffect shared model endsAfter source =
     Events.fetchEvents
         shared.accounts
-        ( RellmAccounts.enabledRellmAccountForServer shared.accounts.accounts server.frontendHost |> Maybe.map .userId
-        , server.frontendHost
+        ( RellmAccounts.enabledRellmAccountForServer shared.accounts.accounts source.server.frontendHost |> Maybe.map .userId
+        , source.server.frontendHost
         )
-        (model.author |> Maybe.map (Tuple.second >> .id))
+        source.authorId
         model.searchText
         (queryEndsAfter shared model endsAfter)
-        |> Task.attempt (GotServerEvents server.frontendHost)
+        model.anonymousAuthTokens
+        |> Task.attempt (GotServerEvents source.key)
         |> Effect.fromCmd
 
 
@@ -1586,7 +1871,7 @@ touched, no fetch fired) while `model.endsAfter` is still `Nothing` -- see
 its own doc comment for why this page must never fetch before that's
 resolved.
 -}
-refetchServers : Shared.Model -> Model -> List RellmServer -> ( Model, Effect Msg )
+refetchServers : Shared.Model -> Model -> List EventSource -> ( Model, Effect Msg )
 refetchServers shared model serversToFetch =
     case model.endsAfter of
         Nothing ->
@@ -1594,29 +1879,29 @@ refetchServers shared model serversToFetch =
 
         Just endsAfter ->
             let
-                enabledServers : List RellmServer
-                enabledServers =
-                    relevantServers shared model
+                relevantKeys : List String
+                relevantKeys =
+                    relevantSources shared model |> List.map .key
 
-                currentAccountId : RellmServer -> Maybe String
-                currentAccountId server =
-                    RellmAccounts.enabledRellmAccountForServer shared.accounts.accounts server.frontendHost
+                currentAccountId : EventSource -> Maybe String
+                currentAccountId source =
+                    RellmAccounts.enabledRellmAccountForServer shared.accounts.accounts source.server.frontendHost
                         |> Maybe.map RellmAccounts.rellmAccountId
 
                 prunedEventsByServer : Dict String ServerFeed
                 prunedEventsByServer =
-                    Dict.filter (\host _ -> List.member host (List.map .frontendHost enabledServers)) model.eventsByServer
+                    Dict.filter (\key _ -> List.member key relevantKeys) model.eventsByServer
 
-                markServer : RellmServer -> Dict String ServerFeed -> Dict String ServerFeed
-                markServer server dict =
+                markServer : EventSource -> Dict String ServerFeed -> Dict String ServerFeed
+                markServer source dict =
                     let
                         accountId : Maybe String
                         accountId =
-                            currentAccountId server
+                            currentAccountId source
 
                         statusIfSameAccount : Maybe ServerEvents
                         statusIfSameAccount =
-                            Dict.get server.frontendHost dict
+                            Dict.get source.key dict
                                 |> Maybe.andThen
                                     (\feed ->
                                         if feed.accountId == accountId then
@@ -1626,8 +1911,8 @@ refetchServers shared model serversToFetch =
                                             Nothing
                                     )
                     in
-                    Dict.insert server.frontendHost
-                        { status = Maybe.withDefault Loading statusIfSameAccount, accountId = accountId }
+                    Dict.insert source.key
+                        { status = Maybe.withDefault Loading statusIfSameAccount, accountId = accountId, host = source.server.frontendHost }
                         dict
             in
             ( { model
@@ -1651,7 +1936,7 @@ applySearchChange : Shared.Model -> Model -> ( Model, Effect Msg )
 applySearchChange shared model =
     let
         ( refetchedModel, refetchEffect ) =
-            refetchServers shared model (relevantServers shared model)
+            refetchServers shared model (relevantSources shared model)
     in
     ( refetchedModel, Effect.batch [ refetchEffect, pushUrl refetchedModel ] )
 
@@ -1712,22 +1997,22 @@ against `GetEvents` instead of `GetPosts`.
 fetchNewServers : Shared.Model -> Model -> ( Model, Effect Msg )
 fetchNewServers shared model =
     let
-        currentAccountId : RellmServer -> Maybe String
-        currentAccountId server =
-            RellmAccounts.enabledRellmAccountForServer shared.accounts.accounts server.frontendHost
+        currentAccountId : EventSource -> Maybe String
+        currentAccountId source =
+            RellmAccounts.enabledRellmAccountForServer shared.accounts.accounts source.server.frontendHost
                 |> Maybe.map RellmAccounts.rellmAccountId
 
-        serversToFetch : List RellmServer
+        serversToFetch : List EventSource
         serversToFetch =
-            relevantServers shared model
+            relevantSources shared model
                 |> List.filter
-                    (\server ->
-                        case Dict.get server.frontendHost model.eventsByServer of
+                    (\source ->
+                        case Dict.get source.key model.eventsByServer of
                             Nothing ->
                                 True
 
                             Just feed ->
-                                feed.accountId /= currentAccountId server
+                                feed.accountId /= currentAccountId source
                     )
     in
     refetchServers shared model serversToFetch
@@ -1770,6 +2055,11 @@ element back up after a layout switch. Mirrors `PostsPage.postAnimationKey`,
 just keyed on the `Occasion`'s own `Post` id (this listing's own unit,
 see the module doc) rather than `Post.id` directly.
 -}
+isUnverifiedEvent : Model -> String -> Event -> Bool
+isUnverifiedEvent model host event =
+    FederatedAuthors.isUnverified model.federatedAuthors host (event.post |> Maybe.andThen .author |> Maybe.map .userId)
+
+
 eventAnimationKey : String -> Occasion -> String
 eventAnimationKey host occasion =
     host ++ "@" ++ (occasion.post |> Maybe.map .id |> Maybe.withDefault "")
@@ -1934,12 +2224,12 @@ syncAnimations model =
                 model.eventsByServer
                     |> Dict.toList
                     |> List.concatMap
-                        (\( host, feed ) ->
+                        (\( _, feed ) ->
                             case feed.status of
                                 Loaded pairs ->
                                     pairs
                                         |> List.filter (\( _, occasion ) -> not (hiddenAsStarted model occasion) && not (hiddenAsEnded model occasion))
-                                        |> List.map (\( event, occasion ) -> ( eventAnimationKey host occasion, ( host, event, occasion ) ))
+                                        |> List.map (\( event, occasion ) -> ( eventAnimationKey feed.host occasion, ( feed.host, event, occasion ) ))
 
                                 _ ->
                                     []
@@ -2072,16 +2362,15 @@ is. See that port's own doc for why this replaces a `Task.sequence` over
 -}
 measureElementsEffect : List String -> Effect Msg
 measureElementsEffect keys =
-    keys
-        |> Encode.list
-            (\key ->
-                Encode.object
-                    [ ( "key", Encode.string key )
-                    , ( "id", Encode.string (eventCardDomId key) )
-                    ]
-            )
-        |> Ports.measureElements
+    UI.Flip.measureElementsCmd measureOwner eventCardDomId keys
         |> Effect.fromCmd
+
+
+{-| This page's "self" for `UI.Flip.measure`/`measuredResults`.
+-}
+measureOwner : String
+measureOwner =
+    "events-page"
 
 
 
@@ -2172,12 +2461,12 @@ calendarEvents model =
     model.eventsByServer
         |> Dict.toList
         |> List.concatMap
-            (\( host, feed ) ->
+            (\( _, feed ) ->
                 case feed.status of
                     Loaded pairs ->
                         pairs
                             |> List.filter (\( _, occasion ) -> not (hiddenAsLong model occasion))
-                            |> List.map (\( event, occasion ) -> ( host, event, occasion ))
+                            |> List.map (\( event, occasion ) -> ( feed.host, event, occasion ))
 
                     _ ->
                         []
@@ -2213,14 +2502,15 @@ actually visible -- FullCalendar's default month-view style is a small
 wouldn't paint.
 
 -}
-calendarEventEncoder : ( String, Event, Occasion ) -> Encode.Value
-calendarEventEncoder ( host, event, occasion ) =
+calendarEventEncoder : Model -> ( String, Event, Occasion ) -> Encode.Value
+calendarEventEncoder model ( host, event, occasion ) =
     let
         title : String
         title =
             event.post
                 |> Maybe.map Posts.postTitleText
                 |> Maybe.withDefault "Event"
+                |> FederatedAuthors.unverifiedTitle (isUnverifiedEvent model host event)
 
         isoField : String -> Maybe Timestamp -> Maybe ( String, Encode.Value )
         isoField fieldName =
@@ -2315,12 +2605,12 @@ calendarRenderEffect shared oldModel newModel =
     if
         newModel.mode
             == Calendar
-            && (oldModel.mode /= Calendar || oldModel.eventsByServer /= newModel.eventsByServer || oldModel.hideStartedOrLongEvents /= newModel.hideStartedOrLongEvents)
+            && (oldModel.mode /= Calendar || oldModel.eventsByServer /= newModel.eventsByServer || oldModel.federatedAuthors /= newModel.federatedAuthors || oldModel.hideStartedOrLongEvents /= newModel.hideStartedOrLongEvents)
     then
         Ports.renderCalendar
             (Encode.object
                 [ ( "id", Encode.string calendarContainerId )
-                , ( "events", Encode.list calendarEventEncoder (calendarEvents newModel) )
+                , ( "events", Encode.list (calendarEventEncoder newModel) (calendarEvents newModel) )
                 , ( "initialView"
                   , Encode.string
                         (fullCalendarInitialView
@@ -2495,11 +2785,55 @@ calendarPreviewModalView shared model =
         isOpen : Bool
         isOpen =
             model.calendarPreview /= Nothing
+
+        cardCount : Int
+        cardCount =
+            List.length (calendarPreviewEvents model)
+
+        currentIndex : Maybe Int
+        currentIndex =
+            calendarPreviewPosition model
+
+        hasPrevious : Bool
+        hasPrevious =
+            currentIndex |> Maybe.map (\i -> i > 0) |> Maybe.withDefault False
+
+        hasNext : Bool
+        hasNext =
+            currentIndex |> Maybe.map (\i -> i < cardCount - 1) |> Maybe.withDefault False
     in
     div []
         [ UI.Modal.backdrop isOpen CalendarPreviewClosed
         , div [ classes [ "calendar-preview-modal", openClosedClass isOpen ] ]
-            [ button
+            [ div [ class "calendar-preview-nav-bar" ]
+                [ button
+                    [ class "calendar-preview-nav"
+                    , onClick (CalendarPreviewStepped -1)
+                    , type_ "button"
+                    , title "Previous event (←)"
+                    , disabled (not hasPrevious)
+                    ]
+                    [ text "‹" ]
+                , input
+                    [ class "calendar-preview-slider"
+                    , type_ "range"
+                    , Html.Attributes.min "0"
+                    , Html.Attributes.max (String.fromInt (max 0 (cardCount - 1)))
+                    , value (String.fromInt (Maybe.withDefault 0 currentIndex))
+                    , onInput (\v -> CalendarPreviewSeeked (String.toInt v |> Maybe.withDefault 0))
+                    , disabled (cardCount < 2)
+                    ]
+                    []
+                , button
+                    [ class "calendar-preview-nav"
+                    , onClick (CalendarPreviewStepped 1)
+                    , type_ "button"
+                    , title "Next event (→)"
+                    , disabled (not hasNext)
+                    ]
+                    [ text "›" ]
+                ]
+            , button
                 [ class "calendar-preview-close"
                 , onClick CalendarPreviewClosed
                 , type_ "button"
@@ -2527,6 +2861,79 @@ calendarPreviewWindowRadius =
     5
 
 
+{-| `calendarEvents model`, sorted chronologically -- what `calendarPreviewEvents` windows and
+`CalendarPreviewStepped` steps through.
+-}
+calendarPreviewSorted : Model -> List ( String, Event, Occasion )
+calendarPreviewSorted model =
+    calendarEvents model
+        |> List.sortBy
+            (\( _, _, occasion ) ->
+                Events.occasionStartsOrEndsAt occasion
+                    |> Maybe.withDefault (Time.millisToPosix 0)
+                    |> Time.posixToMillis
+            )
+
+
+{-| Makes `maybeKey` the viewed card -- only the fragment changes (and the dialog scrolls);
+`calendarPreview`, and so `?calendar_preview=`, stays the event originally tapped. A no-op for
+`Nothing`.
+-}
+viewCalendarPreviewKey : Model -> Maybe String -> ( Model, Effect Msg )
+viewCalendarPreviewKey model maybeKey =
+    case maybeKey of
+        Just key ->
+            let
+                newModel : Model
+                newModel =
+                    { model | calendarPreviewViewed = Just key, pendingCalendarPreviewScroll = Nothing }
+            in
+            ( newModel, Effect.batch [ scrollToCalendarPreviewCard 60 key, pushCalendarPreviewHash newModel key ] )
+
+        Nothing ->
+            ( model, Effect.none )
+
+
+{-| The key `delta` places away from the card currently being viewed (`calendarPreviewViewed`,
+else `calendarPreview`) among the modal's own rendered cards (`calendarPreviewEvents`), clamped to
+its ends -- `Nothing` if the modal is closed or that card isn't among them.
+-}
+calendarPreviewSteppedKey : Model -> Int -> Maybe String
+calendarPreviewSteppedKey model delta =
+    case calendarPreviewPosition model of
+        Just idx ->
+            let
+                keys : List String
+                keys =
+                    calendarPreviewEvents model |> List.map (\( host, _, occasion ) -> eventAnimationKey host occasion)
+            in
+            keys |> List.drop (clamp 0 (List.length keys - 1) (idx + delta)) |> List.head
+
+        Nothing ->
+            Nothing
+
+
+{-| The viewed card's index within `calendarPreviewEvents`.
+-}
+calendarPreviewPosition : Model -> Maybe Int
+calendarPreviewPosition model =
+    case ( model.calendarPreviewViewed, model.calendarPreview ) of
+        ( _, Nothing ) ->
+            Nothing
+
+        ( viewed, Just opened ) ->
+            let
+                viewedKey : String
+                viewedKey =
+                    Maybe.withDefault opened viewed
+            in
+            calendarPreviewEvents model
+                |> List.indexedMap (\i ( host, _, occasion ) -> ( i, eventAnimationKey host occasion ))
+                |> List.filter (\( _, k ) -> k == viewedKey)
+                |> List.head
+                |> Maybe.map Tuple.first
+
+
 {-| `calendarEvents model`, sorted chronologically (mirrors `visibleAnimations`'
 own sort key) and windowed down to `calendarPreviewWindowRadius` entries on
 either side of `model.calendarPreview`'s own tapped key -- empty while the
@@ -2544,13 +2951,7 @@ calendarPreviewEvents model =
             let
                 sorted : List ( String, Event, Occasion )
                 sorted =
-                    calendarEvents model
-                        |> List.sortBy
-                            (\( _, _, occasion ) ->
-                                Events.occasionStartsOrEndsAt occasion
-                                    |> Maybe.withDefault (Time.millisToPosix 0)
-                                    |> Time.posixToMillis
-                            )
+                    calendarPreviewSorted model
 
                 targetIndex : Maybe Int
                 targetIndex =
@@ -2587,7 +2988,9 @@ calendarPreviewCardView shared model ( host, event, occasion ) =
             model.calendarPreview == Just key
     in
     div [ id (calendarPreviewCardDomId key), class "calendar-preview-card", onMouseDown (CalendarPreviewCardNavigated key) ]
-        [ eventCardView shared False current model.showSyncSources model.showSyncDestinations model.availableSyncDestinations model.pushStatuses ( host, event, occasion ) ]
+        [ eventCardView shared False current model.showSyncSources model.showSyncDestinations model.availableSyncDestinations model.pushStatuses model ( host, event, occasion )
+            |> FederatedAuthors.withWarningOverlay (isUnverifiedEvent model host event)
+        ]
 
 
 
@@ -2706,40 +3109,40 @@ own active-tab convention) is added while the filter is on.
 -}
 hideStartedOrLongButtonView : Model -> Html Msg
 hideStartedOrLongButtonView model =
-        button
-            [ classes
-                ("filter-icon-button"
-                    :: (if model.hideStartedOrLongEvents then
-                            [ "background-color-primary" ]
+    button
+        [ classes
+            ("filter-icon-button"
+                :: (if model.hideStartedOrLongEvents then
+                        [ "background-color-primary" ]
 
-                        else
-                            []
-                       )
-                    ++ (if anyStartedEvents model then
+                    else
+                        []
+                   )
+                ++ (if anyStartedEvents model then
                         []
 
                     else
                         [ "hidden" ]
                    )
-                )
-            , onClick HideStartedEventsToggled
-            , title
-                (if model.mode == Calendar then
-                    if model.hideStartedOrLongEvents then
-                        "Showing events that are under " ++ String.fromInt longEventThresholdHours ++ " hours"
+            )
+        , onClick HideStartedEventsToggled
+        , title
+            (if model.mode == Calendar then
+                if model.hideStartedOrLongEvents then
+                    "Showing events that are under " ++ String.fromInt longEventThresholdHours ++ " hours"
 
-                    else
-                        "Hide events that are " ++ String.fromInt longEventThresholdHours ++ "+ hours"
+                else
+                    "Hide events that are " ++ String.fromInt longEventThresholdHours ++ "+ hours"
 
-                 else if model.hideStartedOrLongEvents then
-                    "Showing only events that haven't started"
+             else if model.hideStartedOrLongEvents then
+                "Showing only events that haven't started"
 
-                 else
-                    "Hide events that have already started"
-                )
-            , type_ "button"
-            ]
-            [ text "▽" ]
+             else
+                "Hide events that have already started"
+            )
+        , type_ "button"
+        ]
+        [ text "▽" ]
 
 
 {-| The cutoff `tabsView`'s "Events After" input shows -- `model.endsAfter`,
@@ -3149,7 +3552,7 @@ eventsListView shared model =
             Html.Keyed.node "div"
                 [ class containerClass ]
                 (List.map
-                    (eventAnimationView shared model.embeddedPage model.showSyncSources model.showSyncDestinations model.availableSyncDestinations model.pushStatuses axis)
+                    (eventAnimationView shared model.embeddedPage model.showSyncSources model.showSyncDestinations model.availableSyncDestinations model.pushStatuses model axis)
                     animations
                     ++ List.map (calendarAnimationView model.embeddedPage) calendarItems
                 )
@@ -3207,8 +3610,8 @@ The inner div's `event-card-move` class (see `events.css`) sets
 `transform-origin: top left` -- see `UI.Flip.startMoveScaled`'s own doc for
 why that's needed alongside a scale.
 -}
-eventAnimationView : Shared.Model -> Bool -> Bool -> Bool -> Maybe (List SyncDestination) -> Dict String SubmitStatus -> UI.Flip.Axis -> ( String, EventAnimation ) -> ( String, Html Msg )
-eventAnimationView shared embeddedPage showSyncSources showSyncDestinations availableSyncDestinations pushStatuses axis ( key, anim ) =
+eventAnimationView : Shared.Model -> Bool -> Bool -> Bool -> Maybe (List SyncDestination) -> Dict String SubmitStatus -> Model -> UI.Flip.Axis -> ( String, EventAnimation ) -> ( String, Html Msg )
+eventAnimationView shared embeddedPage showSyncSources showSyncDestinations availableSyncDestinations pushStatuses model axis ( key, anim ) =
     let
         pointerEventsAttr : List (Html.Attribute Msg)
         pointerEventsAttr =
@@ -3221,7 +3624,9 @@ eventAnimationView shared embeddedPage showSyncSources showSyncDestinations avai
     ( key
     , div (id (eventCardDomId key) :: UI.Flip.itemAttributes axis anim.flip anim.move.moving)
         [ div (class "event-card-move" :: pointerEventsAttr ++ UI.Flip.moveAttributes anim.move)
-            [ eventCardView shared embeddedPage False showSyncSources showSyncDestinations availableSyncDestinations pushStatuses ( anim.host, anim.event, anim.occasion ) ]
+            [ eventCardView shared embeddedPage False showSyncSources showSyncDestinations availableSyncDestinations pushStatuses model ( anim.host, anim.event, anim.occasion )
+                |> FederatedAuthors.withWarningOverlay (isUnverifiedEvent model anim.host anim.event)
+            ]
         ]
     )
 
@@ -3235,8 +3640,8 @@ wins" convention `Components.Pages.PostsPage.postCardView` uses for a plain
 the same post, rather than `starred` alone reflecting a just-toggled state
 the rendered count doesn't yet.
 -}
-eventCardView : Shared.Model -> Bool -> Bool -> Bool -> Bool -> Maybe (List SyncDestination) -> Dict String SubmitStatus -> ( String, Event, Occasion ) -> Html Msg
-eventCardView shared embeddedPage current showSyncSources showSyncDestinations availableSyncDestinations pushStatuses ( host, event, occasion ) =
+eventCardView : Shared.Model -> Bool -> Bool -> Bool -> Bool -> Maybe (List SyncDestination) -> Dict String SubmitStatus -> Model -> ( String, Event, Occasion ) -> Html Msg
+eventCardView shared embeddedPage current showSyncSources showSyncDestinations availableSyncDestinations pushStatuses model ( host, event, occasion ) =
     let
         maybeServer : Maybe RellmServer
         maybeServer =
@@ -3315,6 +3720,39 @@ eventCardView shared embeddedPage current showSyncSources showSyncDestinations a
         onDelete : String -> String -> Msg
         onDelete destinationId destinationLabel =
             SharedMsg (Shared.RequestDelete (Shared.ConfirmOccasionSyncDestinationDelete occasion destinationId destinationLabel host))
+
+        cardKey : String
+        cardKey =
+            eventAnimationKey host occasion
+
+        exportSlot : Html Msg
+        exportSlot =
+            EventExport.view
+                { toggle = ExportOccasionToggled cardKey
+                , close = ExportOccasionClosed
+                , isOpen = model.exportOpenFor == Just cardKey
+                , small = True
+                , serverHost = host
+                , anonymousAuthTokens = model.anonymousAuthTokens
+                , now = shared.time.now
+                , event = event
+                , occasion = occasion
+                }
+
+        rsvpSlot : Html Msg
+        rsvpSlot =
+            Rsvps.view (RsvpsMsg host occasionPostId)
+                { basePath = shared.basePath
+                , viewingServerHost = shared.accounts.mainFrontendHost
+                , eventServerHost = host
+                , maybeServer = maybeServer
+                , maybeAccount = maybeAccount
+                , now = shared.time.now
+                , compact = True
+                , event = event
+                , occasion = occasion
+                }
+                (rsvpModelFor model host occasionPostId)
     in
     Events.eventCard
         shared.time
@@ -3337,5 +3775,6 @@ eventCardView shared embeddedPage current showSyncSources showSyncDestinations a
         pushError
         onPush
         onDelete
+        { rsvps = rsvpSlot, export = exportSlot }
         event
         displayOccasion

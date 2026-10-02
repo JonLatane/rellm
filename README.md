@@ -412,7 +412,7 @@ See also: [Sync Destinations](#sync-destinations)
 
 `configuration.ics_subscription_url` is a plain iCal (`.ics`) subscription URL. The background job fetches and parses it on each sync, creating/updating one [`Event`](https://rellm.org/docs/protocol#rellm-Event) (and one [`Occasion`](https://rellm.org/docs/protocol#rellm-Occasion) per occurrence) per iCal `VEVENT`, recomputing `event_count`/`occasion_count`. No auth/credentials are supported yet - only public iCal URLs.
 
-Rellm also serves its own Events back out as an ICS feed (`GET /calendar.ics`, optionally `?user_id={id}`) - the reverse direction of a `SyncSource`'s own subscription, for others to subscribe to a Rellm server or user.
+Rellm also serves its own Events back out as an ICS feed (`GET /calendar.ics`, optionally `?user_id={id}`, or `?post_id={id}` for a single Event's (or, given an Occasion's id, just that Occasion's) calendar -- with an optional `anonymous_auth_token`, passed through to `GetEvents`, for anonymous RSVPers' hidden locations) - the reverse direction of a `SyncSource`'s own subscription, for others to subscribe to a Rellm server or user.
 
 ##### RSS
 
@@ -600,7 +600,7 @@ linking any unique [`Group`](https://rellm.org/docs/protocol#rellm-Group) to any
 
 ### Events
 
-[`Event`](https://rellm.org/docs/protocol#rellm-Event)s are a thin layer atop [`Post`](https://rellm.org/docs/protocol#rellm-Post)s. Any Event has a single Post, as well as at least one Occasion. An Occasion has a start time, end time, location, and RSVP/attendance data. Group Events work through the [`GroupPost`](https://rellm.org/docs/protocol#rellm-GroupPost) mechanism.
+[`Event`](https://rellm.org/docs/protocol#rellm-Event)s are a thin layer atop [`Post`](https://rellm.org/docs/protocol#rellm-Post)s. Any Event has a single Post, as well as at least one Occasion. An Occasion has a start time, end time, location, and RSVP data ([`RSVP`](https://rellm.org/docs/protocol#rellm-RSVP)s). Group Events work through the [`GroupPost`](https://rellm.org/docs/protocol#rellm-GroupPost) mechanism.
 
 An [`Event`](https://rellm.org/docs/protocol#rellm-Event)'s ID *is* its own [`Post`](https://rellm.org/docs/protocol#rellm-Post)'s ID, and likewise an [`Occasion`](https://rellm.org/docs/protocol#rellm-Occasion)'s ID is its own Post's ID - neither carries a separate surrogate ID. [`GetEventsRequest.post_id`](https://rellm.org/docs/protocol#rellm-GetEventsRequest) looks a single Event up either way (by its own Post ID, or by any of its Occasions' Post IDs), always returning the whole Event with all its Occasions.
 

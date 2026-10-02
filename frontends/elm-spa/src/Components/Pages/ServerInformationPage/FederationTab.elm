@@ -3,7 +3,7 @@ module Components.Pages.ServerInformationPage.FederationTab exposing (Model, Msg
 {-| The Federation tab of `Components.Pages.ServerInformationPage` -- the server's federated-server
 chip strip (add/remove/reorder-animated via `UI.Flip`, see `FederationEdit`'s own doc), and the
 Facebook App ID/Secret an admin connects so users can create Facebook/Instagram Sync Destinations
-for their Posts and Occasions (see `logic::facebook_sync` on the backend). Both are backed by fields
+for their Posts and Occasions (see `logic::sync_destinations::facebook_sync` on the backend). Both are backed by fields
 on the same `ServerConfiguration` (`federationInfo`/`federationInfo.facebookAuthConfig`), saved
 through the same `AccountsPanel.updateServerConfig` "fetch fresh copy, then write" dance every other
 editor on this page uses. (The Web Push VAPID key editor used to live here too -- moved to
@@ -78,6 +78,10 @@ type alias Model =
     -- provides is enough to catch any later change (e.g. a server that reconnects after starting
     -- out disconnected).
     , mastodonServerConfigSeen : Bool
+
+    -- Status of the `unsecureLocalhostAuthSection` checkbox's save -- it saves on toggle, so it
+    -- needs no separate edit-mode state like the sections around it.
+    , unsecureLocalhostStatus : AccountsPanel.FormStatus
     }
 
 
@@ -99,6 +103,8 @@ type Msg
     | FederatedServerMoveSettled String
     | AnimateFederatedServerFlip Animation.Msg
     | AnimateFederatedServerMove Animation.Msg
+    | UnsecureLocalhostToggled Bool
+    | GotUnsecureLocalhostSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, ServerConfiguration ))
     | MastodonServersEditClicked
     | MastodonServersCancelClicked
     | MastodonServersSaveClicked
@@ -228,6 +234,7 @@ init =
     , mastodonServerLogos = Dict.empty
     , mastodonServerLogoFetchesStarted = Set.empty
     , mastodonServerConfigSeen = False
+    , unsecureLocalhostStatus = AccountsPanel.Idle
     }
 
 
@@ -884,6 +891,29 @@ updateMsg shared targetHost isSecure maybeServer msg model =
         FacebookAppIdCancelClicked ->
             ( { model | facebookAppIdEdit = Nothing }, Effect.none )
 
+        UnsecureLocalhostToggled enabled ->
+            case Common.adminAccountFor shared targetHost of
+                Just account ->
+                    ( { model | unsecureLocalhostStatus = AccountsPanel.Submitting }
+                    , AccountsPanel.updateServerConfig shared.accounts ( Just account.userId, targetHost ) (applyUnsecureLocalhost enabled)
+                        |> Task.attempt GotUnsecureLocalhostSaveResult
+                        |> Effect.fromCmd
+                    )
+
+                Nothing ->
+                    ( model, Effect.none )
+
+        GotUnsecureLocalhostSaveResult (Ok ( maybeAccountsPanelMsg, newConfig )) ->
+            ( { model | unsecureLocalhostStatus = AccountsPanel.Idle }
+            , Effect.batch
+                [ Common.accountsPanelEffect maybeAccountsPanelMsg
+                , Effect.fromShared (Shared.AccountsPanelMsg (AccountsPanel.GotServerConfigSaveResult targetHost newConfig))
+                ]
+            )
+
+        GotUnsecureLocalhostSaveResult (Err err) ->
+            ( { model | unsecureLocalhostStatus = AccountsPanel.Errored (AccountsPanel.grpcErrorToString err) }, Effect.none )
+
         FacebookAppIdSaveClicked ->
             case ( model.facebookAppIdEdit, Common.adminAccountFor shared targetHost ) of
                 ( Just edit, Just account ) ->
@@ -1036,6 +1066,7 @@ applyFederatedServers servers config =
         | federationInfo =
             Just
                 { servers = servers
+                , unsecureLocalhostFederatedAuthEnabled = config.federationInfo |> Maybe.andThen .unsecureLocalhostFederatedAuthEnabled
                 , facebookAuthConfig = config.federationInfo |> Maybe.andThen .facebookAuthConfig
                 , xTwitterAuthConfig = config.federationInfo |> Maybe.andThen .xTwitterAuthConfig
                 , mastodonServers = config.federationInfo |> Maybe.map .mastodonServers |> Maybe.withDefault []
@@ -1053,6 +1084,7 @@ applyMastodonServers mastodonServers config =
         | federationInfo =
             Just
                 { servers = config.federationInfo |> Maybe.map .servers |> Maybe.withDefault []
+                , unsecureLocalhostFederatedAuthEnabled = config.federationInfo |> Maybe.andThen .unsecureLocalhostFederatedAuthEnabled
                 , facebookAuthConfig = config.federationInfo |> Maybe.andThen .facebookAuthConfig
                 , xTwitterAuthConfig = config.federationInfo |> Maybe.andThen .xTwitterAuthConfig
                 , mastodonServers = mastodonServers
@@ -1075,6 +1107,22 @@ toSavedMastodonServer mastodonServerEdit =
     { server | appSecret = mastodonServerEdit.pendingAppSecret }
 
 
+{-| `UnsecureLocalhostToggled`'s transform -- overlays just
+`federationInfo.unsecureLocalhostFederatedAuthEnabled` onto a freshly re-fetched `ServerConfiguration`.
+-}
+applyUnsecureLocalhost : Bool -> ServerConfiguration -> ServerConfiguration
+applyUnsecureLocalhost enabled config =
+    let
+        federationInfo : Proto.Rellm.FederationInfo
+        federationInfo =
+            Maybe.withDefault { servers = [], unsecureLocalhostFederatedAuthEnabled = Nothing, facebookAuthConfig = Nothing, xTwitterAuthConfig = Nothing, mastodonServers = [] } config.federationInfo
+    in
+    { config
+        | federationInfo =
+            Just { federationInfo | unsecureLocalhostFederatedAuthEnabled = Just enabled }
+    }
+
+
 {-| `FacebookAppIdSaveClicked`'s transform, passed to `AccountsPanel.updateServerConfig` the same
 way `applyFederatedServers`'s result is -- overlays a new `appId` onto a freshly re-fetched
 `ServerConfiguration`'s `federationInfo.facebookAuthConfig`, leaving `servers` untouched. `appSecret`
@@ -1087,7 +1135,7 @@ applyFacebookAppId appId config =
     let
         federationInfo : Proto.Rellm.FederationInfo
         federationInfo =
-            Maybe.withDefault { servers = [], facebookAuthConfig = Nothing, xTwitterAuthConfig = Nothing, mastodonServers = [] } config.federationInfo
+            Maybe.withDefault { servers = [], unsecureLocalhostFederatedAuthEnabled = Nothing, facebookAuthConfig = Nothing, xTwitterAuthConfig = Nothing, mastodonServers = [] } config.federationInfo
     in
     { config
         | federationInfo =
@@ -1104,7 +1152,7 @@ applyFacebookAppSecret appSecret config =
     let
         federationInfo : Proto.Rellm.FederationInfo
         federationInfo =
-            Maybe.withDefault { servers = [], facebookAuthConfig = Nothing, xTwitterAuthConfig = Nothing, mastodonServers = [] } config.federationInfo
+            Maybe.withDefault { servers = [], unsecureLocalhostFederatedAuthEnabled = Nothing, facebookAuthConfig = Nothing, xTwitterAuthConfig = Nothing, mastodonServers = [] } config.federationInfo
 
         existingAppId : String
         existingAppId =
@@ -1125,7 +1173,7 @@ applyXTwitterClientId clientId config =
     let
         federationInfo : Proto.Rellm.FederationInfo
         federationInfo =
-            Maybe.withDefault { servers = [], facebookAuthConfig = Nothing, xTwitterAuthConfig = Nothing, mastodonServers = [] } config.federationInfo
+            Maybe.withDefault { servers = [], unsecureLocalhostFederatedAuthEnabled = Nothing, facebookAuthConfig = Nothing, xTwitterAuthConfig = Nothing, mastodonServers = [] } config.federationInfo
     in
     { config
         | federationInfo =
@@ -1141,7 +1189,7 @@ applyXTwitterClientSecret clientSecret config =
     let
         federationInfo : Proto.Rellm.FederationInfo
         federationInfo =
-            Maybe.withDefault { servers = [], facebookAuthConfig = Nothing, xTwitterAuthConfig = Nothing, mastodonServers = [] } config.federationInfo
+            Maybe.withDefault { servers = [], unsecureLocalhostFederatedAuthEnabled = Nothing, facebookAuthConfig = Nothing, xTwitterAuthConfig = Nothing, mastodonServers = [] } config.federationInfo
 
         existingClientId : String
         existingClientId =
@@ -1276,9 +1324,42 @@ view shared server maybeAdminAccount model =
 
             _ ->
                 text ""
+        , unsecureLocalhostAuthSection server model maybeAdminAccount
         , mastodonServersSection server model maybeAdminAccount
         , facebookAuthConfigSection server model maybeAdminAccount
         , xTwitterAuthConfigSection server model maybeAdminAccount
+        ]
+
+
+{-| `federationInfo.unsecure_localhost_federated_auth_enabled`: whether federated ("Sign in from...")
+auth may hand tokens to a plaintext `http://localhost` frontend, for local development. Admins get a
+checkbox that saves immediately; everyone else sees the current value read-only. Frontend-enforced
+only -- see the field's own doc in `federation.proto`.
+-}
+unsecureLocalhostAuthSection : RellmServer -> Model -> Maybe RellmAccount -> Html Msg
+unsecureLocalhostAuthSection server model maybeAdminAccount =
+    let
+        enabled : Bool
+        enabled =
+            RellmServers.unsecureLocalhostAuthEnabled (RellmServers.configurationOf server)
+    in
+    div [ class "server-details-unsecure-localhost-auth" ]
+        [ h3 [ class "section-title" ] [ text "Developer Access" ]
+        , Common.settingsRow "Allow federated sign-in to http://localhost"
+            (case maybeAdminAccount of
+                Just _ ->
+                    Common.flagSwitch enabled (UnsecureLocalhostToggled (not enabled))
+
+                Nothing ->
+                    Common.switchDisplay enabled
+            )
+        , Common.settingsNote "This is cosmetic. It's nothing special for an AI to get around if it's running the Elm app, which compiles in literal seconds."
+        , case model.unsecureLocalhostStatus of
+            AccountsPanel.Errored err ->
+                div [ class "auth-error" ] [ text err ]
+
+            _ ->
+                text ""
         ]
 
 
@@ -1671,7 +1752,7 @@ facebookAppSecretRow maybeEdit maybeAdminAccount =
 {-| Mirrors `facebookAuthConfigSection` exactly, against `federationInfo.xTwitterAuthConfig`
 instead -- one admin-registered X Developer App (Client ID + Client Secret), shared by every user's
 own connected `XTwitterAccount` (see `protos/sync.proto`'s doc on that message, and
-`logic::x_twitter_sync` on the backend).
+`logic::sync_destinations::x_twitter_sync` on the backend).
 -}
 xTwitterAuthConfigSection : RellmServer -> Model -> Maybe RellmAccount -> Html Msg
 xTwitterAuthConfigSection server model maybeAdminAccount =

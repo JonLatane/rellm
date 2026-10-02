@@ -1,5 +1,5 @@
-//! Specs for `logic::market_fulfillment::fulfill_purchase` -- pure DB logic (no Stripe round-trip
-//! needed, unlike `web::stripe_webhook`/`logic::market_renewal`), so unlike those it's exercised
+//! Specs for `logic::market::market_fulfillment::fulfill_purchase` -- pure DB logic (no Stripe round-trip
+//! needed, unlike `web::stripe_webhook`/`logic::market::market_renewal`), so unlike those it's exercised
 //! directly here rather than being out of scope for unit tests.
 
 use diesel::*;

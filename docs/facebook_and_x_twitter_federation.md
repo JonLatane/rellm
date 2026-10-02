@@ -42,7 +42,7 @@ so its Page post is simply the whole feature for Posts.)
 
 ## What's in the post
 
-`logic::sync_message::build_occasion_message`/`build_post_message` build one
+`logic::sync_destinations::sync_message::build_occasion_message`/`build_post_message` build one
 platform-agnostic `SyncMessage` per sync (shared by every [`SyncDestination`](https://rellm.org/docs/protocol#rellm-SyncDestination) platform, not just
 Facebook) from the content's own [`Post`](https://rellm.org/docs/protocol#rellm-Post) (`title`/`content`/`link`) and, for an [`Occasion`](https://rellm.org/docs/protocol#rellm-Occasion),
 also its `starts_at`/`ends_at`/`location`:

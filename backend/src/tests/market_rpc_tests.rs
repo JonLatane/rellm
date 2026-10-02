@@ -2,7 +2,7 @@
 //! `Permission::Admin` gating, `GetMarketProducts`' delisted-product visibility, and
 //! `MakeMarketPurchase`'s up-front validation (delisted products, `RellmHostingPurchaseDetails`
 //! requiredness, and Stripe-not-configured). Fulfillment itself (`web::stripe_webhook`,
-//! `logic::market_renewal`) isn't exercised here -- both require a real (or mocked) Stripe API
+//! `logic::market::market_renewal`) isn't exercised here -- both require a real (or mocked) Stripe API
 //! round-trip, out of scope for these RPC-level specs.
 
 use diesel::prelude::*;

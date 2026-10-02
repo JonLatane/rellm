@@ -37,9 +37,9 @@ final $typed_data.Uint8List eventListingTypeDescriptor = $convert.base64Decode(
     'dST1VQX0VWRU5UUxAKEiMKH0dST1VQX0VWRU5UU19QRU5ESU5HX01PREVSQVRJT04QCxIWChJO'
     'RVdMWV9BRERFRF9FVkVOVFMQFA==');
 
-@$core.Deprecated('Use attendanceStatusDescriptor instead')
-const AttendanceStatus$json = {
-  '1': 'AttendanceStatus',
+@$core.Deprecated('Use rsvpStatusDescriptor instead')
+const RsvpStatus$json = {
+  '1': 'RsvpStatus',
   '2': [
     {'1': 'INTERESTED', '2': 0},
     {'1': 'REQUESTED', '2': 1},
@@ -48,10 +48,10 @@ const AttendanceStatus$json = {
   ],
 };
 
-/// Descriptor for `AttendanceStatus`. Decode as a `google.protobuf.EnumDescriptorProto`.
-final $typed_data.Uint8List attendanceStatusDescriptor = $convert.base64Decode(
-    'ChBBdHRlbmRhbmNlU3RhdHVzEg4KCklOVEVSRVNURUQQABINCglSRVFVRVNURUQQARIJCgVHT0'
-    'lORxACEg0KCU5PVF9HT0lORxAD');
+/// Descriptor for `RsvpStatus`. Decode as a `google.protobuf.EnumDescriptorProto`.
+final $typed_data.Uint8List rsvpStatusDescriptor = $convert.base64Decode(
+    'CgpSc3ZwU3RhdHVzEg4KCklOVEVSRVNURUQQABINCglSRVFVRVNURUQQARIJCgVHT0lORxACEg'
+    '0KCU5PVF9HT0lORxAD');
 
 @$core.Deprecated('Use getEventsRequestDescriptor instead')
 const GetEventsRequest$json = {
@@ -61,7 +61,7 @@ const GetEventsRequest$json = {
     {'1': 'group_id', '3': 3, '4': 1, '5': 9, '9': 1, '10': 'groupId', '17': true},
     {'1': 'time_filter', '3': 5, '4': 1, '5': 11, '6': '.rellm.TimeFilter', '9': 2, '10': 'timeFilter', '17': true},
     {'1': 'attendee_id', '3': 6, '4': 1, '5': 9, '9': 3, '10': 'attendeeId', '17': true},
-    {'1': 'attendance_statuses', '3': 7, '4': 3, '5': 14, '6': '.rellm.AttendanceStatus', '10': 'attendanceStatuses'},
+    {'1': 'rsvp_statuses', '3': 7, '4': 3, '5': 14, '6': '.rellm.RsvpStatus', '10': 'rsvpStatuses'},
     {'1': 'post_id', '3': 8, '4': 1, '5': 9, '9': 4, '10': 'postId', '17': true},
     {'1': 'listing_type', '3': 10, '4': 1, '5': 14, '6': '.rellm.EventListingType', '10': 'listingType'},
     {'1': 'search_text', '3': 11, '4': 1, '5': 9, '9': 5, '10': 'searchText', '17': true},
@@ -89,16 +89,15 @@ final $typed_data.Uint8List getEventsRequestDescriptor = $convert.base64Decode(
     'ChBHZXRFdmVudHNSZXF1ZXN0EikKDmF1dGhvcl91c2VyX2lkGAIgASgJSABSDGF1dGhvclVzZX'
     'JJZIgBARIeCghncm91cF9pZBgDIAEoCUgBUgdncm91cElkiAEBEjcKC3RpbWVfZmlsdGVyGAUg'
     'ASgLMhEucmVsbG0uVGltZUZpbHRlckgCUgp0aW1lRmlsdGVyiAEBEiQKC2F0dGVuZGVlX2lkGA'
-    'YgASgJSANSCmF0dGVuZGVlSWSIAQESSAoTYXR0ZW5kYW5jZV9zdGF0dXNlcxgHIAMoDjIXLnJl'
-    'bGxtLkF0dGVuZGFuY2VTdGF0dXNSEmF0dGVuZGFuY2VTdGF0dXNlcxIcCgdwb3N0X2lkGAggAS'
-    'gJSARSBnBvc3RJZIgBARI6CgxsaXN0aW5nX3R5cGUYCiABKA4yFy5yZWxsbS5FdmVudExpc3Rp'
-    'bmdUeXBlUgtsaXN0aW5nVHlwZRIkCgtzZWFyY2hfdGV4dBgLIAEoCUgFUgpzZWFyY2hUZXh0iA'
-    'EBEioKEW9jY2FzaW9uX3Bvc3RfaWRzGAwgAygJUg9vY2Nhc2lvblBvc3RJZHMSRgodYW5vbnlt'
-    'b3VzX2F0dGVuZGVlX2F1dGhfdG9rZW4YDSABKAlIBlIaYW5vbnltb3VzQXR0ZW5kZWVBdXRoVG'
-    '9rZW6IAQFCEQoPX2F1dGhvcl91c2VyX2lkQgsKCV9ncm91cF9pZEIOCgxfdGltZV9maWx0ZXJC'
-    'DgoMX2F0dGVuZGVlX2lkQgoKCF9wb3N0X2lkQg4KDF9zZWFyY2hfdGV4dEIgCh5fYW5vbnltb3'
-    'VzX2F0dGVuZGVlX2F1dGhfdG9rZW5KBAgBEAJKBAgEEAVSCGV2ZW50X2lkUgtvY2Nhc2lvbl9p'
-    'ZA==');
+    'YgASgJSANSCmF0dGVuZGVlSWSIAQESNgoNcnN2cF9zdGF0dXNlcxgHIAMoDjIRLnJlbGxtLlJz'
+    'dnBTdGF0dXNSDHJzdnBTdGF0dXNlcxIcCgdwb3N0X2lkGAggASgJSARSBnBvc3RJZIgBARI6Cg'
+    'xsaXN0aW5nX3R5cGUYCiABKA4yFy5yZWxsbS5FdmVudExpc3RpbmdUeXBlUgtsaXN0aW5nVHlw'
+    'ZRIkCgtzZWFyY2hfdGV4dBgLIAEoCUgFUgpzZWFyY2hUZXh0iAEBEioKEW9jY2FzaW9uX3Bvc3'
+    'RfaWRzGAwgAygJUg9vY2Nhc2lvblBvc3RJZHMSRgodYW5vbnltb3VzX2F0dGVuZGVlX2F1dGhf'
+    'dG9rZW4YDSABKAlIBlIaYW5vbnltb3VzQXR0ZW5kZWVBdXRoVG9rZW6IAQFCEQoPX2F1dGhvcl'
+    '91c2VyX2lkQgsKCV9ncm91cF9pZEIOCgxfdGltZV9maWx0ZXJCDgoMX2F0dGVuZGVlX2lkQgoK'
+    'CF9wb3N0X2lkQg4KDF9zZWFyY2hfdGV4dEIgCh5fYW5vbnltb3VzX2F0dGVuZGVlX2F1dGhfdG'
+    '9rZW5KBAgBEAJKBAgEEAVSCGV2ZW50X2lkUgtvY2Nhc2lvbl9pZA==');
 
 @$core.Deprecated('Use timeFilterDescriptor instead')
 const TimeFilter$json = {
@@ -230,16 +229,16 @@ const Occasion$json = {
     {'1': 'ends_at', '3': 6, '4': 1, '5': 11, '6': '.google.protobuf.Timestamp', '10': 'endsAt'},
     {'1': 'location', '3': 7, '4': 1, '5': 11, '6': '.rellm.Location', '9': 0, '10': 'location', '17': true},
     {'1': 'sync_missing_since', '3': 9, '4': 1, '5': 11, '6': '.google.protobuf.Timestamp', '9': 1, '10': 'syncMissingSince', '17': true},
-    {'1': 'attendances', '3': 10, '4': 1, '5': 11, '6': '.rellm.EventAttendances', '9': 2, '10': 'attendances', '17': true},
-    {'1': 'current_user_attendance', '3': 11, '4': 1, '5': 11, '6': '.rellm.EventAttendance', '9': 3, '10': 'currentUserAttendance', '17': true},
+    {'1': 'rsvps', '3': 10, '4': 1, '5': 11, '6': '.rellm.Rsvps', '9': 2, '10': 'rsvps', '17': true},
+    {'1': 'current_user_rsvp', '3': 11, '4': 1, '5': 11, '6': '.rellm.Rsvp', '9': 3, '10': 'currentUserRsvp', '17': true},
     {'1': 'sync_destinations', '3': 12, '4': 3, '5': 11, '6': '.rellm.SyncDestinationStatus', '10': 'syncDestinations'},
     {'1': 'timezone', '3': 13, '4': 1, '5': 9, '9': 4, '10': 'timezone', '17': true},
   ],
   '8': [
     {'1': '_location'},
     {'1': '_sync_missing_since'},
-    {'1': '_attendances'},
-    {'1': '_current_user_attendance'},
+    {'1': '_rsvps'},
+    {'1': '_current_user_rsvp'},
     {'1': '_timezone'},
   ],
   '9': [
@@ -256,14 +255,13 @@ final $typed_data.Uint8List occasionDescriptor = $convert.base64Decode(
     'F0EjMKB2VuZHNfYXQYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wUgZlbmRzQXQS'
     'MAoIbG9jYXRpb24YByABKAsyDy5yZWxsbS5Mb2NhdGlvbkgAUghsb2NhdGlvbogBARJNChJzeW'
     '5jX21pc3Npbmdfc2luY2UYCSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wSAFSEHN5'
-    'bmNNaXNzaW5nU2luY2WIAQESPgoLYXR0ZW5kYW5jZXMYCiABKAsyFy5yZWxsbS5FdmVudEF0dG'
-    'VuZGFuY2VzSAJSC2F0dGVuZGFuY2VziAEBElMKF2N1cnJlbnRfdXNlcl9hdHRlbmRhbmNlGAsg'
-    'ASgLMhYucmVsbG0uRXZlbnRBdHRlbmRhbmNlSANSFWN1cnJlbnRVc2VyQXR0ZW5kYW5jZYgBAR'
-    'JJChFzeW5jX2Rlc3RpbmF0aW9ucxgMIAMoCzIcLnJlbGxtLlN5bmNEZXN0aW5hdGlvblN0YXR1'
-    'c1IQc3luY0Rlc3RpbmF0aW9ucxIfCgh0aW1lem9uZRgNIAEoCUgEUgh0aW1lem9uZYgBAUILCg'
-    'lfbG9jYXRpb25CFQoTX3N5bmNfbWlzc2luZ19zaW5jZUIOCgxfYXR0ZW5kYW5jZXNCGgoYX2N1'
-    'cnJlbnRfdXNlcl9hdHRlbmRhbmNlQgsKCV90aW1lem9uZUoECAgQCVIXc3luY19zb3VyY2VfaW'
-    '5zdGFuY2VfaWQ=');
+    'bmNNaXNzaW5nU2luY2WIAQESJwoFcnN2cHMYCiABKAsyDC5yZWxsbS5Sc3Zwc0gCUgVyc3Zwc4'
+    'gBARI8ChFjdXJyZW50X3VzZXJfcnN2cBgLIAEoCzILLnJlbGxtLlJzdnBIA1IPY3VycmVudFVz'
+    'ZXJSc3ZwiAEBEkkKEXN5bmNfZGVzdGluYXRpb25zGAwgAygLMhwucmVsbG0uU3luY0Rlc3Rpbm'
+    'F0aW9uU3RhdHVzUhBzeW5jRGVzdGluYXRpb25zEh8KCHRpbWV6b25lGA0gASgJSARSCHRpbWV6'
+    'b25liAEBQgsKCV9sb2NhdGlvbkIVChNfc3luY19taXNzaW5nX3NpbmNlQggKBl9yc3Zwc0IUCh'
+    'JfY3VycmVudF91c2VyX3JzdnBCCwoJX3RpbWV6b25lSgQICBAJUhdzeW5jX3NvdXJjZV9pbnN0'
+    'YW5jZV9pZA==');
 
 @$core.Deprecated('Use occasionInfoDescriptor instead')
 const OccasionInfo$json = {
@@ -323,9 +321,9 @@ final $typed_data.Uint8List occasionRsvpInfoDescriptor = $convert.base64Decode(
     'dnBzQhcKFV9pbnRlcmVzdGVkX2F0dGVuZGVlc0IQCg5faW52aXRlZF9yc3Zwc0IUChJfaW52aX'
     'RlZF9hdHRlbmRlZXM=');
 
-@$core.Deprecated('Use getEventAttendancesRequestDescriptor instead')
-const GetEventAttendancesRequest$json = {
-  '1': 'GetEventAttendancesRequest',
+@$core.Deprecated('Use getRsvpsRequestDescriptor instead')
+const GetRsvpsRequest$json = {
+  '1': 'GetRsvpsRequest',
   '2': [
     {'1': 'occasion_id', '3': 1, '4': 1, '5': 9, '10': 'occasionId'},
     {'1': 'anonymous_attendee_auth_token', '3': 2, '4': 1, '5': 9, '9': 0, '10': 'anonymousAttendeeAuthToken', '17': true},
@@ -335,41 +333,57 @@ const GetEventAttendancesRequest$json = {
   ],
 };
 
-/// Descriptor for `GetEventAttendancesRequest`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List getEventAttendancesRequestDescriptor = $convert.base64Decode(
-    'ChpHZXRFdmVudEF0dGVuZGFuY2VzUmVxdWVzdBIfCgtvY2Nhc2lvbl9pZBgBIAEoCVIKb2NjYX'
-    'Npb25JZBJGCh1hbm9ueW1vdXNfYXR0ZW5kZWVfYXV0aF90b2tlbhgCIAEoCUgAUhphbm9ueW1v'
-    'dXNBdHRlbmRlZUF1dGhUb2tlbogBAUIgCh5fYW5vbnltb3VzX2F0dGVuZGVlX2F1dGhfdG9rZW'
-    '4=');
+/// Descriptor for `GetRsvpsRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List getRsvpsRequestDescriptor = $convert.base64Decode(
+    'Cg9HZXRSc3Zwc1JlcXVlc3QSHwoLb2NjYXNpb25faWQYASABKAlSCm9jY2FzaW9uSWQSRgodYW'
+    '5vbnltb3VzX2F0dGVuZGVlX2F1dGhfdG9rZW4YAiABKAlIAFIaYW5vbnltb3VzQXR0ZW5kZWVB'
+    'dXRoVG9rZW6IAQFCIAoeX2Fub255bW91c19hdHRlbmRlZV9hdXRoX3Rva2Vu');
 
-@$core.Deprecated('Use eventAttendancesDescriptor instead')
-const EventAttendances$json = {
-  '1': 'EventAttendances',
+@$core.Deprecated('Use rsvpsDescriptor instead')
+const Rsvps$json = {
+  '1': 'Rsvps',
   '2': [
-    {'1': 'attendances', '3': 1, '4': 3, '5': 11, '6': '.rellm.EventAttendance', '10': 'attendances'},
+    {'1': 'rsvps', '3': 1, '4': 3, '5': 11, '6': '.rellm.Rsvp', '10': 'rsvps'},
     {'1': 'hidden_location', '3': 2, '4': 1, '5': 11, '6': '.rellm.Location', '9': 0, '10': 'hiddenLocation', '17': true},
+    {'1': 'going_count', '3': 3, '4': 1, '5': 13, '10': 'goingCount'},
+    {'1': 'going_attendees', '3': 4, '4': 1, '5': 13, '10': 'goingAttendees'},
+    {'1': 'interested_count', '3': 5, '4': 1, '5': 13, '10': 'interestedCount'},
+    {'1': 'interested_attendees', '3': 6, '4': 1, '5': 13, '10': 'interestedAttendees'},
+    {'1': 'requested_count', '3': 7, '4': 1, '5': 13, '10': 'requestedCount'},
+    {'1': 'requested_attendees', '3': 8, '4': 1, '5': 13, '10': 'requestedAttendees'},
+    {'1': 'not_going_count', '3': 9, '4': 1, '5': 13, '10': 'notGoingCount'},
+    {'1': 'not_going_attendees', '3': 10, '4': 1, '5': 13, '10': 'notGoingAttendees'},
+    {'1': 'pending_count', '3': 11, '4': 1, '5': 13, '10': 'pendingCount'},
+    {'1': 'pending_attendees', '3': 12, '4': 1, '5': 13, '10': 'pendingAttendees'},
   ],
   '8': [
     {'1': '_hidden_location'},
   ],
 };
 
-/// Descriptor for `EventAttendances`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List eventAttendancesDescriptor = $convert.base64Decode(
-    'ChBFdmVudEF0dGVuZGFuY2VzEjgKC2F0dGVuZGFuY2VzGAEgAygLMhYucmVsbG0uRXZlbnRBdH'
-    'RlbmRhbmNlUgthdHRlbmRhbmNlcxI9Cg9oaWRkZW5fbG9jYXRpb24YAiABKAsyDy5yZWxsbS5M'
-    'b2NhdGlvbkgAUg5oaWRkZW5Mb2NhdGlvbogBAUISChBfaGlkZGVuX2xvY2F0aW9u');
+/// Descriptor for `Rsvps`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List rsvpsDescriptor = $convert.base64Decode(
+    'CgVSc3ZwcxIhCgVyc3ZwcxgBIAMoCzILLnJlbGxtLlJzdnBSBXJzdnBzEj0KD2hpZGRlbl9sb2'
+    'NhdGlvbhgCIAEoCzIPLnJlbGxtLkxvY2F0aW9uSABSDmhpZGRlbkxvY2F0aW9uiAEBEh8KC2dv'
+    'aW5nX2NvdW50GAMgASgNUgpnb2luZ0NvdW50EicKD2dvaW5nX2F0dGVuZGVlcxgEIAEoDVIOZ2'
+    '9pbmdBdHRlbmRlZXMSKQoQaW50ZXJlc3RlZF9jb3VudBgFIAEoDVIPaW50ZXJlc3RlZENvdW50'
+    'EjEKFGludGVyZXN0ZWRfYXR0ZW5kZWVzGAYgASgNUhNpbnRlcmVzdGVkQXR0ZW5kZWVzEicKD3'
+    'JlcXVlc3RlZF9jb3VudBgHIAEoDVIOcmVxdWVzdGVkQ291bnQSLwoTcmVxdWVzdGVkX2F0dGVu'
+    'ZGVlcxgIIAEoDVIScmVxdWVzdGVkQXR0ZW5kZWVzEiYKD25vdF9nb2luZ19jb3VudBgJIAEoDV'
+    'INbm90R29pbmdDb3VudBIuChNub3RfZ29pbmdfYXR0ZW5kZWVzGAogASgNUhFub3RHb2luZ0F0'
+    'dGVuZGVlcxIjCg1wZW5kaW5nX2NvdW50GAsgASgNUgxwZW5kaW5nQ291bnQSKwoRcGVuZGluZ1'
+    '9hdHRlbmRlZXMYDCABKA1SEHBlbmRpbmdBdHRlbmRlZXNCEgoQX2hpZGRlbl9sb2NhdGlvbg==');
 
-@$core.Deprecated('Use eventAttendanceDescriptor instead')
-const EventAttendance$json = {
-  '1': 'EventAttendance',
+@$core.Deprecated('Use rsvpDescriptor instead')
+const Rsvp$json = {
+  '1': 'Rsvp',
   '2': [
     {'1': 'id', '3': 1, '4': 1, '5': 9, '10': 'id'},
     {'1': 'occasion_id', '3': 2, '4': 1, '5': 9, '10': 'occasionId'},
     {'1': 'user_attendee', '3': 3, '4': 1, '5': 11, '6': '.rellm.UserAttendee', '9': 0, '10': 'userAttendee'},
     {'1': 'anonymous_attendee', '3': 4, '4': 1, '5': 11, '6': '.rellm.AnonymousAttendee', '9': 0, '10': 'anonymousAttendee'},
     {'1': 'number_of_guests', '3': 5, '4': 1, '5': 13, '10': 'numberOfGuests'},
-    {'1': 'status', '3': 6, '4': 1, '5': 14, '6': '.rellm.AttendanceStatus', '10': 'status'},
+    {'1': 'status', '3': 6, '4': 1, '5': 14, '6': '.rellm.RsvpStatus', '10': 'status'},
     {'1': 'inviting_user_id', '3': 7, '4': 1, '5': 9, '9': 1, '10': 'invitingUserId', '17': true},
     {'1': 'private_note', '3': 8, '4': 1, '5': 9, '10': 'privateNote'},
     {'1': 'public_note', '3': 9, '4': 1, '5': 9, '10': 'publicNote'},
@@ -384,20 +398,20 @@ const EventAttendance$json = {
   ],
 };
 
-/// Descriptor for `EventAttendance`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List eventAttendanceDescriptor = $convert.base64Decode(
-    'Cg9FdmVudEF0dGVuZGFuY2USDgoCaWQYASABKAlSAmlkEh8KC29jY2FzaW9uX2lkGAIgASgJUg'
-    'pvY2Nhc2lvbklkEjoKDXVzZXJfYXR0ZW5kZWUYAyABKAsyEy5yZWxsbS5Vc2VyQXR0ZW5kZWVI'
-    'AFIMdXNlckF0dGVuZGVlEkkKEmFub255bW91c19hdHRlbmRlZRgEIAEoCzIYLnJlbGxtLkFub2'
-    '55bW91c0F0dGVuZGVlSABSEWFub255bW91c0F0dGVuZGVlEigKEG51bWJlcl9vZl9ndWVzdHMY'
-    'BSABKA1SDm51bWJlck9mR3Vlc3RzEi8KBnN0YXR1cxgGIAEoDjIXLnJlbGxtLkF0dGVuZGFuY2'
-    'VTdGF0dXNSBnN0YXR1cxItChBpbnZpdGluZ191c2VyX2lkGAcgASgJSAFSDmludml0aW5nVXNl'
-    'cklkiAEBEiEKDHByaXZhdGVfbm90ZRgIIAEoCVILcHJpdmF0ZU5vdGUSHwoLcHVibGljX25vdG'
-    'UYCSABKAlSCnB1YmxpY05vdGUSMQoKbW9kZXJhdGlvbhgKIAEoDjIRLnJlbGxtLk1vZGVyYXRp'
-    'b25SCm1vZGVyYXRpb24SOQoKY3JlYXRlZF9hdBgLIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW'
-    '1lc3RhbXBSCWNyZWF0ZWRBdBI+Cgp1cGRhdGVkX2F0GAwgASgLMhouZ29vZ2xlLnByb3RvYnVm'
-    'LlRpbWVzdGFtcEgCUgl1cGRhdGVkQXSIAQFCCgoIYXR0ZW5kZWVCEwoRX2ludml0aW5nX3VzZX'
-    'JfaWRCDQoLX3VwZGF0ZWRfYXQ=');
+/// Descriptor for `Rsvp`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List rsvpDescriptor = $convert.base64Decode(
+    'CgRSc3ZwEg4KAmlkGAEgASgJUgJpZBIfCgtvY2Nhc2lvbl9pZBgCIAEoCVIKb2NjYXNpb25JZB'
+    'I6Cg11c2VyX2F0dGVuZGVlGAMgASgLMhMucmVsbG0uVXNlckF0dGVuZGVlSABSDHVzZXJBdHRl'
+    'bmRlZRJJChJhbm9ueW1vdXNfYXR0ZW5kZWUYBCABKAsyGC5yZWxsbS5Bbm9ueW1vdXNBdHRlbm'
+    'RlZUgAUhFhbm9ueW1vdXNBdHRlbmRlZRIoChBudW1iZXJfb2ZfZ3Vlc3RzGAUgASgNUg5udW1i'
+    'ZXJPZkd1ZXN0cxIpCgZzdGF0dXMYBiABKA4yES5yZWxsbS5Sc3ZwU3RhdHVzUgZzdGF0dXMSLQ'
+    'oQaW52aXRpbmdfdXNlcl9pZBgHIAEoCUgBUg5pbnZpdGluZ1VzZXJJZIgBARIhCgxwcml2YXRl'
+    'X25vdGUYCCABKAlSC3ByaXZhdGVOb3RlEh8KC3B1YmxpY19ub3RlGAkgASgJUgpwdWJsaWNOb3'
+    'RlEjEKCm1vZGVyYXRpb24YCiABKA4yES5yZWxsbS5Nb2RlcmF0aW9uUgptb2RlcmF0aW9uEjkK'
+    'CmNyZWF0ZWRfYXQYCyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wUgljcmVhdGVkQX'
+    'QSPgoKdXBkYXRlZF9hdBgMIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBIAlIJdXBk'
+    'YXRlZEF0iAEBQgoKCGF0dGVuZGVlQhMKEV9pbnZpdGluZ191c2VyX2lkQg0KC191cGRhdGVkX2'
+    'F0');
 
 @$core.Deprecated('Use anonymousAttendeeDescriptor instead')
 const AnonymousAttendee$json = {

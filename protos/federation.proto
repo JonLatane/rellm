@@ -14,6 +14,15 @@ message FederationInfo {
   // A list of servers that this server will federate with.
   repeated FederatedServer servers = 1;
 
+  // If true, this server permits cross-server ("Sign in from...") federated auth to hand tokens to a
+  // plaintext `http://localhost` frontend, for local development. Frontends should otherwise refuse
+  // to send/receive federated auth tokens for `localhost`, and should show a warning to the user
+  // whenever they do proceed. Unset (including on servers predating this field) means false.
+  //
+  // Note this is only a frontend-enforced measure: the backend can't stop a modified client from
+  // moving its own tokens wherever it likes.
+  optional bool unsecure_localhost_federated_auth_enabled = 5;
+
   // Facebook authentication configuration for the server. If set, allows users to create Facebook (and Instagram) SyncDestinations for their Posts and Occasions.
   optional FacebookAuthConfig facebook_auth_config = 2;
 

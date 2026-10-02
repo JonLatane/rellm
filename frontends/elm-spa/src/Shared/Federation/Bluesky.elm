@@ -7,10 +7,13 @@ module Shared.Federation.Bluesky exposing
     , fetchAuthorFeed
     , fetchFollowers
     , fetchFollows
+    , fetchLikes
     , fetchPost
     , fetchPosts
+    , fetchThread
     , searchActors
     , searchPosts
+    , setLike
     , toPost
     , toPostIncludingSensitiveMedia
     )
@@ -22,7 +25,8 @@ concept AT Proto's federated network has (every PDS only ever serves its own use
 not a "local instance timeline" the way a Mastodon server does), so `fetchPosts` is a connected
 account's own home timeline; `searchPosts`/`fetchPost` are both exceptions -- real endpoints that
 read the wider public network rather than just the connected account's own timeline, still requiring
-the same auth (there's no anonymous access to anything on Bluesky, unlike Mastodon). See
+the same auth -- except `fetchPost`/`fetchThread`, which fall back to Bluesky's public AppView with no
+account at all (see `readHost`). See
 `Components.Pages.PostsPage.fetchFeedSource`'s `BlueskyFeed` case (`fetchPosts`/`searchPosts`) and
 `Components.Pages.PostPage.init` (`fetchPost`, when a route's post id parses as
 `Components.Posts.BlueskyPostId`) for how each gets wired into a real page.
@@ -40,12 +44,13 @@ doc already covers for reading someone else's public post.
 import Http
 import Iso8601
 import Json.Decode as Decode exposing (Decoder)
-import Proto.Rellm exposing (Author, MediaReference, Post, defaultAuthor, defaultMediaReference, defaultMediaSize, defaultPost, wrapMediaReference)
+import Json.Encode as Encode
+import Proto.Rellm exposing (Author, MediaReference, Post, defaultAuthor, defaultMediaReference, defaultMediaSize, defaultPost, wrapMediaReference, wrapPost)
 import Proto.Rellm.MediaConversion exposing (MediaConversion(..))
 import Proto.Rellm.PostContext exposing (PostContext(..))
 import Proto.Rellm.Visibility exposing (Visibility(..))
 import Shared.Conversions exposing (int64FromInt, posixToTimestamp)
-import Shared.Federation.Common exposing (jsonResolver, nonEmpty, sensitiveMediaHiddenId)
+import Shared.Federation.Common exposing (Thread, jsonResolver, nonEmpty, sensitiveMediaHiddenId)
 import Task exposing (Task)
 import Time
 import Url
@@ -365,6 +370,29 @@ searchDecoder =
         |> Decode.andThen (\f -> Decode.map f (countDecoder [ "replyCount" ]))
 
 
+{-| For `fetchPost`/`fetchThread` only (public, read-only data): an empty `accessToken` means "no
+connected account" and reads anonymously from Bluesky's public AppView (`public.api.bsky.app`, which
+unlike the `bsky.social` PDS entryway every other call here uses serves public posts/threads with no
+auth at all); anything else is the usual authenticated `bsky.social` read.
+-}
+readHost : String -> String
+readHost accessToken =
+    if accessToken == "" then
+        "https://public.api.bsky.app"
+
+    else
+        "https://bsky.social"
+
+
+readHeaders : String -> List Http.Header
+readHeaders accessToken =
+    if accessToken == "" then
+        []
+
+    else
+        [ Http.header "Authorization" ("Bearer " ++ accessToken) ]
+
+
 {-| `GET /xrpc/app.bsky.feed.getPosts` for a single `uri` -- a real single-post lookup by AT URI,
 authenticated the same way `searchPosts` is (any connected account's token works; this reads public
 data regardless of whose token it is). A batch API in general (`uris` takes a comma-separated list),
@@ -382,8 +410,8 @@ fetchPost : String -> String -> Task Http.Error ( Post, Bool )
 fetchPost accessToken uri =
     Http.task
         { method = "GET"
-        , headers = [ Http.header "Authorization" ("Bearer " ++ accessToken) ]
-        , url = "https://bsky.social/xrpc/app.bsky.feed.getPosts?uris=" ++ Url.percentEncode uri
+        , headers = readHeaders accessToken
+        , url = readHost accessToken ++ "/xrpc/app.bsky.feed.getPosts?uris=" ++ Url.percentEncode uri
         , body = Http.emptyBody
         , resolver =
             jsonResolver
@@ -402,6 +430,211 @@ fetchPost accessToken uri =
         , timeout = Just 10000
         }
         |> Task.map (\feedPost -> ( toPostIncludingSensitiveMedia feedPost, feedPost.sensitive ))
+
+
+{-| One node of `app.bsky.feed.getPostThread`'s nested `thread` -- a post and its (recursively
+nested) replies. Replies that are `#notFoundPost`/`#blockedPost` (no `post` field) are dropped
+by `threadNodeDecoder`.
+-}
+type ThreadNode
+    = ThreadNode FeedPost (List ThreadNode)
+
+
+threadNodeDecoder : Decoder ThreadNode
+threadNodeDecoder =
+    Decode.map2 ThreadNode
+        (Decode.field "post" searchDecoder)
+        (Decode.oneOf
+            [ Decode.field "replies"
+                (Decode.list (Decode.oneOf [ Decode.lazy (\_ -> threadNodeDecoder) |> Decode.map Just, Decode.succeed Nothing ])
+                    |> Decode.map (List.filterMap identity)
+                )
+            , Decode.succeed []
+            ]
+        )
+
+
+{-| The chain of `parent`s above a thread node (each itself a node with its own `parent`), oldest
+first -- `[]` once there's no further (visible) `parent`.
+-}
+parentChainDecoder : Decoder (List FeedPost)
+parentChainDecoder =
+    Decode.oneOf
+        [ Decode.field "parent"
+            (Decode.oneOf
+                [ Decode.map2 (\post above -> above ++ [ post ])
+                    (Decode.field "post" searchDecoder)
+                    (Decode.lazy (\_ -> parentChainDecoder))
+                , Decode.succeed []
+                ]
+            )
+        , Decode.succeed []
+        ]
+
+
+threadNodeToPost : ThreadNode -> Post
+threadNodeToPost (ThreadNode feedPost children) =
+    let
+        post : Post
+        post =
+            toPost feedPost
+    in
+    { post | replies = List.map (threadNodeToPost >> wrapPost) children }
+
+
+{-| `GET /xrpc/app.bsky.feed.getPostThread` for `uri` -- AT Proto already nests replies, so unlike
+`Shared.Federation.Mastodon.fetchThread` there's no tree-building here, just translation. Same auth
+as every other fetch in this module. `depth=10` replies deep, `parentHeight=20` ancestors up.
+-}
+fetchThread : String -> String -> Task Http.Error Thread
+fetchThread accessToken uri =
+    Http.task
+        { method = "GET"
+        , headers = readHeaders accessToken
+        , url = readHost accessToken ++ "/xrpc/app.bsky.feed.getPostThread?depth=10&parentHeight=20&uri=" ++ Url.percentEncode uri
+        , body = Http.emptyBody
+        , resolver =
+            jsonResolver
+                (Decode.field "thread"
+                    (Decode.map2 Tuple.pair
+                        parentChainDecoder
+                        (Decode.oneOf
+                            [ Decode.field "replies"
+                                (Decode.list (Decode.oneOf [ threadNodeDecoder |> Decode.map Just, Decode.succeed Nothing ])
+                                    |> Decode.map (List.filterMap identity)
+                                )
+                            , Decode.succeed []
+                            ]
+                        )
+                    )
+                )
+                (\metadata _ -> Http.BadStatus metadata.statusCode)
+        , timeout = Just 10000
+        }
+        |> Task.map
+            (\( ancestors, replies ) ->
+                { ancestors = List.map toPost ancestors
+                , replies = List.map threadNodeToPost replies
+                }
+            )
+
+
+{-| `app.bsky.feed.getActorLikes` for `actor` (the connected account's own handle -- AT Proto only
+serves this for the authenticated account itself) -- its own server-side likes, newest first, as
+`Post`s (see `Shared.StarredPanel`'s "Server" tab).
+-}
+fetchLikes : String -> String -> Task Http.Error (List Post)
+fetchLikes accessToken actor =
+    Http.task
+        { method = "GET"
+        , headers = [ Http.header "Authorization" ("Bearer " ++ accessToken) ]
+        , url = "https://bsky.social/xrpc/app.bsky.feed.getActorLikes?limit=50&actor=" ++ Url.percentEncode actor
+        , body = Http.emptyBody
+        , resolver = jsonResolver (Decode.field "feed" (Decode.list decoder)) (\metadata _ -> Http.BadStatus metadata.statusCode)
+        , timeout = Just 10000
+        }
+        |> Task.map (List.map toPost)
+
+
+{-| A post's `cid` (needed to reference it in a like record) and, if the authenticated viewer has
+already liked it, that like record's own `at://` URI (needed to delete it again) -- both from
+`app.bsky.feed.getPosts`' `postView`.
+-}
+type alias PostRef =
+    { cid : String
+    , viewerLike : Maybe String
+    }
+
+
+fetchPostRef : String -> String -> Task Http.Error PostRef
+fetchPostRef accessToken uri =
+    Http.task
+        { method = "GET"
+        , headers = [ Http.header "Authorization" ("Bearer " ++ accessToken) ]
+        , url = "https://bsky.social/xrpc/app.bsky.feed.getPosts?uris=" ++ Url.percentEncode uri
+        , body = Http.emptyBody
+        , resolver =
+            jsonResolver
+                (Decode.field "posts"
+                    (Decode.list
+                        (Decode.map2 PostRef
+                            (Decode.field "cid" Decode.string)
+                            (Decode.maybe (Decode.at [ "viewer", "like" ] Decode.string))
+                        )
+                    )
+                    |> Decode.andThen
+                        (\refs ->
+                            case refs of
+                                first :: _ ->
+                                    Decode.succeed first
+
+                                [] ->
+                                    Decode.fail "post not found"
+                        )
+                )
+                (\metadata _ -> Http.BadStatus metadata.statusCode)
+        , timeout = Just 10000
+        }
+
+
+{-| Likes (`like = True`) or un-likes the post at `uri` as `repo` (the connected account's own handle
+-- `com.atproto.repo.*` accepts a handle or DID there). Likes create an `app.bsky.feed.like` record
+via `com.atproto.repo.createRecord`; un-likes look up the existing like record's URI from the post's
+own `viewer.like` and `deleteRecord` its `rkey`. Both are no-ops if the post is already in the
+requested state. Needs an App Password with default (non-read-only) access, which is what Rellm's
+connect form always asks for.
+-}
+setLike : Bool -> String -> String -> String -> Task Http.Error ()
+setLike like repo accessToken uri =
+    fetchPostRef accessToken uri
+        |> Task.andThen
+            (\ref ->
+                case ( like, ref.viewerLike ) of
+                    ( True, Nothing ) ->
+                        Time.now
+                            |> Task.andThen
+                                (\now ->
+                                    repoWrite accessToken
+                                        "createRecord"
+                                        (Encode.object
+                                            [ ( "repo", Encode.string repo )
+                                            , ( "collection", Encode.string "app.bsky.feed.like" )
+                                            , ( "record"
+                                              , Encode.object
+                                                    [ ( "$type", Encode.string "app.bsky.feed.like" )
+                                                    , ( "subject", Encode.object [ ( "uri", Encode.string uri ), ( "cid", Encode.string ref.cid ) ] )
+                                                    , ( "createdAt", Encode.string (Iso8601.fromTime now) )
+                                                    ]
+                                              )
+                                            ]
+                                        )
+                                )
+
+                    ( False, Just likeUri ) ->
+                        repoWrite accessToken
+                            "deleteRecord"
+                            (Encode.object
+                                [ ( "repo", Encode.string repo )
+                                , ( "collection", Encode.string "app.bsky.feed.like" )
+                                , ( "rkey", Encode.string (likeUri |> String.split "/" |> List.reverse |> List.head |> Maybe.withDefault "") )
+                                ]
+                            )
+
+                    _ ->
+                        Task.succeed ()
+            )
+
+
+repoWrite : String -> String -> Encode.Value -> Task Http.Error ()
+repoWrite accessToken method body =
+    Http.task
+        { method = "POST"
+        , headers = [ Http.header "Authorization" ("Bearer " ++ accessToken) ]
+        , url = "https://bsky.social/xrpc/com.atproto.repo." ++ method
+        , body = Http.jsonBody body
+        , resolver = jsonResolver (Decode.succeed ()) (\metadata _ -> Http.BadStatus metadata.statusCode)
+        , timeout = Just 10000
+        }
 
 
 {-| `at://{did}/app.bsky.feed.post/{rkey}` -> `https://bsky.app/profile/{handle}/post/{rkey}` --

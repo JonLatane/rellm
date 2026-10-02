@@ -24,14 +24,20 @@ pub use delete_event::delete_event;
 mod get_events;
 pub use get_events::*;
 
-mod upsert_event_attendance;
-pub use upsert_event_attendance::upsert_event_attendance;
+mod upsert_rsvp;
+pub use upsert_rsvp::upsert_rsvp;
 
-mod delete_event_attendance;
-pub use delete_event_attendance::delete_event_attendance;
+mod delete_rsvp;
+pub use delete_rsvp::delete_rsvp;
 
-mod get_event_attendances;
-pub use get_event_attendances::get_event_attendances;
+mod anonymous_tokens;
+pub use anonymous_tokens::parse_anonymous_auth_tokens;
+
+mod rsvp_counts;
+pub use rsvp_counts::{RsvpCounts, MAX_RSVPS_PER_OCCASION};
+
+mod get_rsvps;
+pub use get_rsvps::get_rsvps;
 
 mod sync_occasion;
 pub use sync_occasion::sync_occasion;

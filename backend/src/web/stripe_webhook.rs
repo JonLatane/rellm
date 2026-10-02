@@ -3,7 +3,7 @@
 //! for an initial (non-renewal) purchase. `rpcs::market::make_market_purchase` only ever creates a
 //! Stripe Checkout Session and hands back its URL; nothing is recorded in this server's own DB
 //! until Stripe confirms payment by calling back here with `checkout.session.completed`. Recurring
-//! renewals instead go through `logic::market_renewal`, which creates its own `MarketPurchase`/
+//! renewals instead go through `logic::market::market_renewal`, which creates its own `MarketPurchase`/
 //! `MarketPayment` rows directly (no webhook round-trip needed there since the server itself
 //! initiates those off-session charges).
 //!
@@ -12,7 +12,7 @@
 //! minute timestamp tolerance) before the body is trusted at all -- mirrors Stripe's own
 //! recommended verification scheme (https://stripe.com/docs/webhooks/signatures), implemented by
 //! hand via `ring::hmac` (already a dependency) rather than pulling in the Stripe SDK crate, same
-//! "plain REST, no SDK" approach as `logic::stripe_sync` itself.
+//! "plain REST, no SDK" approach as `logic::stripe_payments` itself.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -24,7 +24,7 @@ use rocket::{routes, Data, Route, State};
 use serde_json::Value;
 
 use crate::db_connection::PgPooledConnection;
-use crate::logic::{advance_by_period, fulfill_purchase, stripe_sync};
+use crate::logic::{advance_by_period, fulfill_purchase, stripe_payments};
 use crate::marshaling::{
     rellm_hosting_details_to_json, ToDbId, ToProtoPurchasePeriod, ToProtoPurchaseType,
 };
@@ -64,7 +64,7 @@ async fn stripe_webhook(
         Err(_) => return Status::InternalServerError,
     };
     let Some(stripe_config) =
-        stripe_sync::server_stripe_config(&mut conn).filter(|c| c.stripe_enabled)
+        stripe_payments::server_stripe_config(&mut conn).filter(|c| c.stripe_enabled)
     else {
         log::warn!("Received Stripe webhook, but Stripe isn't configured/enabled -- ignoring");
         return Status::ServiceUnavailable;
@@ -219,8 +219,8 @@ fn handle_checkout_session_completed(
         .and_then(|v| v.as_str())
         .map(str::to_string);
     let payment_method = payment_intent_id.as_ref().and_then(|payment_intent_id| {
-        stripe_sync::get_payment_intent_payment_method_at(
-            stripe_sync::DEFAULT_BASE_URL,
+        stripe_payments::get_payment_intent_payment_method_at(
+            stripe_payments::DEFAULT_BASE_URL,
             &stripe_config.stripe_secret_key,
             payment_intent_id,
         )

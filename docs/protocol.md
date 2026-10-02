@@ -87,21 +87,21 @@
     - [AnonymousAttendee](#rellm-AnonymousAttendee)
     - [DeleteOccasionSyncDestinationRequest](#rellm-DeleteOccasionSyncDestinationRequest)
     - [Event](#rellm-Event)
-    - [EventAttendance](#rellm-EventAttendance)
-    - [EventAttendances](#rellm-EventAttendances)
     - [EventInfo](#rellm-EventInfo)
-    - [GetEventAttendancesRequest](#rellm-GetEventAttendancesRequest)
     - [GetEventsRequest](#rellm-GetEventsRequest)
     - [GetEventsResponse](#rellm-GetEventsResponse)
+    - [GetRsvpsRequest](#rellm-GetRsvpsRequest)
     - [Occasion](#rellm-Occasion)
     - [OccasionInfo](#rellm-OccasionInfo)
     - [OccasionRsvpInfo](#rellm-OccasionRsvpInfo)
+    - [Rsvp](#rellm-Rsvp)
+    - [Rsvps](#rellm-Rsvps)
     - [SyncOccasionRequest](#rellm-SyncOccasionRequest)
     - [TimeFilter](#rellm-TimeFilter)
     - [UserAttendee](#rellm-UserAttendee)
   
-    - [AttendanceStatus](#rellm-AttendanceStatus)
     - [EventListingType](#rellm-EventListingType)
+    - [RsvpStatus](#rellm-RsvpStatus)
   
 - [groups.proto](#groups-proto)
     - [GetGroupsRequest](#rellm-GetGroupsRequest)
@@ -708,7 +708,7 @@ An [`Occasion`](#rellm-Occasion) is the actual time-boxed occurrence of an [`Eve
 it carries the `starts_at`/`ends_at` timestamps and optional [`Location`](#rellm-Location) that the parent [`Event`](#rellm-Event) itself does not have.
 An [`Event`](#rellm-Event) with zero Occasions is meaningless (no time or place to attach to), so every [`Event`](#rellm-Event) must have at least one.
 
-    - **EventAttendances**: An [`EventAttendance`](#rellm-EventAttendance) (an &#34;RSVP&#34;) tracks one attendee&#39;s status
+    - **Rsvps**: An [`Rsvp`](#rellm-Rsvp) tracks one attendee&#39;s status
     (`INTERESTED`, `REQUESTED`, `GOING`, `NOT_GOING`) for a specific [`Occasion`](#rellm-Occasion). Attendees may be logged-in [`User`](#rellm-User)s
     or anonymous (tracked via [`AnonymousAttendee`](#rellm-AnonymousAttendee) plus an `auth_token`), and are subject to their own [`Moderation`](#rellm-Moderation),
     independent of the Event&#39;s/Occasion&#39;s own Post moderation.
@@ -805,6 +805,22 @@ generated in its place, so it can&#39;t be reused for a second transfer.
 
 See the two [Web UI](#authtopublic_keyrequesting_host-and-authfromencrypted_account_auth_tokens-receiving-side)
 page routes below for the exact URL/crypto shape.
+
+##### Developer option: signing in to an unsecure `localhost`
+For local development, a frontend running at plaintext `http://localhost[:port]` can be the *requesting* side of the
+flow above (e.g. signing in to your local dev server using an account from a production server). Since the
+encrypted tokens are then handed to a non-TLS origin, this is **off by default** and opt-in per *sending* server:
+an admin turns on `FederationInfo.unsecure_localhost_federated_auth_enabled` (checkbox on the Elm frontend&#39;s Server
+Information &gt; Federation tab, saved on toggle). Without it:
+* [`/auth/to`](#authtopublic_keyrequesting_host-sending-side) refuses to log in or redirect when `{requesting_host}`
+is `localhost`, disabling its submit button and showing an error;
+* [`/auth/from`](#authfromencrypted_account_auth_tokens-receiving-side), when loaded over plain `http://`, will not
+call [`GetCurrentUser`](#grpc-api-GetCurrentUser) with tokens from a server that hasn&#39;t opted in.
+
+With it enabled, `/auth/to` redirects to `http://localhost/...` (rather than `https://`) and shows a warning that the
+sign-in is going to an unsecure localhost; only `localhost` is ever allowed over `http://`. This is purely a
+frontend-enforced guard -- the backend can&#39;t stop a modified client from moving its own tokens anywhere -- so only
+enable it on servers used for development.
 
 ### Federation
 Whereas other federated social networks (e.g. ActivityPub) have both client-server and server-server APIs,
@@ -977,6 +993,22 @@ the Events page, and the user profile pages for all users with events in the las
 ##### `GET /calendar.ics?user_id={id}`: User Calendar
 &#34;Subscribe&#34; to a user&#39;s calendar at, for instance, `https://jonline.io/calendar.ics?user_id=CruFm` to get a
 calendar of all public events for that user.
+
+##### `GET /calendar.ics?post_id={id}`: Event or Occasion Calendar
+Serves a calendar for a single [`Event`](#rellm-Event) -- e.g. for an &#34;Add to Calendar&#34; download. If `post_id` is
+the Event&#39;s own Post ID, every one of its [`Occasion`](#rellm-Occasion)s is included; if it is an Occasion&#39;s Post ID,
+only that Occasion is. `post_id` takes precedence over `user_id`, and the calendar is named after the Event&#39;s title.
+Each VEVENT has a stable `UID` of `{occasion_post_id}@{frontend_domain}`, so re-importing updates rather than
+duplicates. In the Elm frontend, this powers the event/occasion &#34;Add to Calendar&#34; export.
+
+##### `GET /calendar.ics?anonymous_auth_token={token}`: Anonymous RSVP Calendar
+Optional on any of the `/calendar.ics` forms above. Passed straight through to
+`GetEventsRequest.anonymous_attendee_auth_token`, so it accepts the same forms: a plain `&lt;token&gt;`, or several as
+`&lt;occasionId&gt;-&lt;token&gt;--&lt;occasionId&gt;-&lt;token&gt;...` (as in the web frontends&#39; `?anonymousAuthToken=` parameter). It reveals
+the real location of Occasions whose location is hidden until the viewer&#39;s RSVP is approved
+(`EventInfo.hide_location_until_rsvp_approved`), and adds a &#34;manage your RSVP&#34; link
+(`/event/{occasion_id}?anonymousAuthToken={token}`) to the description of each Occasion the token holds an RSVP for.
+Treat such URLs as secrets, since the token alone grants control of that RSVP.
 
 ##### `GET /rss.xml` / `GET /atom.xml`: Server Posts Feed
 The reverse direction of a `SyncSource`&#39;s own RSS/Atom subscription (see the SyncSources section above): serves
@@ -1214,9 +1246,9 @@ discarded and a fresh keypair generated, so it&#39;s single-use per completed/fa
 | CancelMarketSubscription | [MarketSubscription](#rellm-MarketSubscription) | [MarketSubscription](#rellm-MarketSubscription) | Cancels a MarketSubscription by setting `canceled_at` to now -- entitlement (media storage quota, granted permissions, etc.) stays active until whichever is later of `renews_at`/`canceled_at`; the `renew_market_subscriptions` background job is what actually revokes it and sets `service_terminated_at`, once both have passed. *Authenticated* -- the subscription&#39;s own buyer, or an Admin. |
 | UpdateMarketSubscription | [MarketSubscription](#rellm-MarketSubscription) | [MarketSubscription](#rellm-MarketSubscription) | Appends to a `PURCHASE_TYPE_RELLM_HOSTING` MarketSubscription&#39;s own `fulfillment_notes` (nothing else -- every other field, including `additional_information`, is immutable after purchase and silently ignored if changed) -- backs `/market/fulfillment`. A new entry must be appended (not inserted/reordered/removed) after whatever&#39;s already stored, and its `user_id` must match the caller&#39;s own -- the server stamps `created_at` itself, ignoring whatever the client sent. Its `note` text is required unless the entry also changes `fulfillment_status` from the previous entry&#39;s own value (see `FulfillmentNote.note`&#39;s own doc). `fulfillment_status` on the returned `RellmHostingSubscriptionDetails` is always the last appended entry&#39;s own value -- there&#39;s no way to set it independently of a note. *Authenticated*, requires Admin (for now -- see that field&#39;s own doc on why this may loosen to &#34;buyer, or Admin&#34; later). |
 | GenerateMedia | [GenerateMediaRequest](#rellm-GenerateMediaRequest) | [Media](#rellm-Media) | Generates (or edits, given reference `media_ids`) an image via one of the current user&#39;s AIModels, storing it as a new Media and, if `target` is set, attaching it to that Post/Event. *Authenticated* - caller must own or have been granted access to the chosen AIProvider, and (if `target` is set) have edit access to that Post/Event. A grantee (never the provider&#39;s own owner) spends real AIProviderGrant.tokens_remaining on every call - the provider&#39;s own reported token usage once generation succeeds, or (rejected before any request is even sent to the provider) a rough pre-flight estimate of the request&#39;s input cost alone, whichever catches an insufficient balance first. |
-| GetEventAttendances | [GetEventAttendancesRequest](#rellm-GetEventAttendancesRequest) | [EventAttendances](#rellm-EventAttendances) | Gets EventAttendances for an Occasion. *Publicly accessible **or** Authenticated.* |
-| UpsertEventAttendance | [EventAttendance](#rellm-EventAttendance) | [EventAttendance](#rellm-EventAttendance) | Upsert an EventAttendance. *Publicly accessible **or** Authenticated, with anonymous RSVP support.* See [EventAttendance](#rellm-EventAttendance) and [AnonymousAttendee](#rellm-AnonymousAttendee) for details. tl;dr: Anonymous RSVPs may updated/deleted with the `AnonymousAttendee.auth_token` returned by this RPC (the client should save this for the user, and ideally, offer a link with the token). |
-| DeleteEventAttendance | [EventAttendance](#rellm-EventAttendance) | [.google.protobuf.Empty](#google-protobuf-Empty) | Delete an EventAttendance. *Publicly accessible **or** Authenticated, with anonymous RSVP support.* |
+| GetRsvps | [GetRsvpsRequest](#rellm-GetRsvpsRequest) | [Rsvps](#rellm-Rsvps) | Gets Rsvps for an Occasion. *Publicly accessible **or** Authenticated.* |
+| UpsertRsvp | [Rsvp](#rellm-Rsvp) | [Rsvp](#rellm-Rsvp) | Upsert an Rsvp. *Publicly accessible **or** Authenticated, with anonymous RSVP support.* See [Rsvp](#rellm-Rsvp) and [AnonymousAttendee](#rellm-AnonymousAttendee) for details. tl;dr: Anonymous RSVPs may updated/deleted with the `AnonymousAttendee.auth_token` returned by this RPC (the client should save this for the user, and ideally, offer a link with the token). |
+| DeleteRsvp | [Rsvp](#rellm-Rsvp) | [.google.protobuf.Empty](#google-protobuf-Empty) | Delete an Rsvp. *Publicly accessible **or** Authenticated, with anonymous RSVP support.* |
 | FederateProfile | [FederatedAccount](#rellm-FederatedAccount) | [FederatedAccount](#rellm-FederatedAccount) | Federate the current user&#39;s profile with another user profile. *Authenticated*. |
 | DefederateProfile | [FederatedAccount](#rellm-FederatedAccount) | [.google.protobuf.Empty](#google-protobuf-Empty) | Authenticated*. |
 | ConfigureServer | [ServerConfiguration](#rellm-ServerConfiguration) | [ServerConfiguration](#rellm-ServerConfiguration) | Configure the server (i.e. the response to [`GetServerConfiguration`](#grpc-api-GetServerConfiguration)). *Authenticated.* Requires `ADMIN` permissions. Editing `cluster_resources` additionally requires `EDIT_CLUSTER_SETTINGS` - see that field&#39;s own doc. Editing [`supported_contact_protocols`](#rellm-ServerConfiguration) is validated, not just stored -- see [`ContactProtocol`](#rellm-ContactProtocol)&#39;s own doc. |
@@ -2700,7 +2732,7 @@ make them visible to the event creator.
 | ----- | ---- | ----- | ----------- |
 | name | [string](#string) |  | A name for the anonymous user. For instance, &#34;Bob Gomez&#34; or &#34;The guy on your front porch.&#34; |
 | contact_methods | [ContactMethod](#rellm-ContactMethod) | repeated | Contact methods for anonymous attendees. Currently not linked to Contact methods for users. |
-| auth_token | [string](#string) | optional | Used to allow anonymous users to RSVP to an event. Generated by the server when an event attendance is upserted for the first time. Subsequent attendance upserts, with the same occasion_id and anonymous_attendee.auth_token, will update existing anonymous attendance records. Invalid auth tokens used during upserts will always create a new [`EventAttendance`](#rellm-EventAttendance). |
+| auth_token | [string](#string) | optional | Used to allow anonymous users to RSVP to an event. Generated by the server when an RSVP is upserted for the first time. Subsequent RSVP upserts, with the same occasion_id and anonymous_attendee.auth_token, will update existing anonymous RSVP records. Invalid auth tokens used during upserts will always create a new [`Rsvp`](#rellm-Rsvp). |
 
 
 
@@ -2744,51 +2776,6 @@ about the `Event`. Actual time data lies in its `Occasions`.
 
 
 
-<a name="rellm-EventAttendance"></a>
-
-### EventAttendance
-Could be called an &#34;RSVP.&#34; Describes the attendance of a user at an [`Occasion`](#rellm-Occasion). Such as:
-* A user&#39;s RSVP to an [`Occasion`](#rellm-Occasion) (one of `INTERESTED`, `GOING`, `NOT_GOING`, or , `REQUESTED` (i.e. invited)).
-* Invitation status of a user to an [`Occasion`](#rellm-Occasion).
-* [`ContactMethod`](#rellm-ContactMethod)-driven management for anonymous RSVPs to an [`Occasion`](#rellm-Occasion).
-
-
-| Field | Type | Label | Description |
-| ----- | ---- | ----- | ----------- |
-| id | [string](#string) |  | Unique server-generated ID for the attendance. |
-| occasion_id | [string](#string) |  | ID of the [`Occasion`](#rellm-Occasion) the attendance is for. |
-| user_attendee | [UserAttendee](#rellm-UserAttendee) |  | If the attendance is non-anonymous, core data about the user. |
-| anonymous_attendee | [AnonymousAttendee](#rellm-AnonymousAttendee) |  | If the attendance is anonymous, core data about the anonymous attendee. |
-| number_of_guests | [uint32](#uint32) |  | Number of guests including the RSVPing user. (Minimum 1). |
-| status | [AttendanceStatus](#rellm-AttendanceStatus) |  | The user&#39;s RSVP to an [`Occasion`](#rellm-Occasion) (one of `INTERESTED`, `REQUESTED` (i.e. invited), `GOING`, `NOT_GOING`) |
-| inviting_user_id | [string](#string) | optional | User who invited the attendee. (Not yet used.) |
-| private_note | [string](#string) |  | Public note for everyone who can see the event to see. |
-| public_note | [string](#string) |  | Private note for the event owner. |
-| moderation | [Moderation](#rellm-Moderation) |  | Moderation status for the attendance. Moderated by the [`Event`](#rellm-Event) owner (or [`Occasion`](#rellm-Occasion) owner if applicable). |
-| created_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  | The time the attendance was created. |
-| updated_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional | The time the attendance was last updated. |
-
-
-
-
-
-
-<a name="rellm-EventAttendances"></a>
-
-### EventAttendances
-Response to get RSVP data for an event.
-
-
-| Field | Type | Label | Description |
-| ----- | ---- | ----- | ----------- |
-| attendances | [EventAttendance](#rellm-EventAttendance) | repeated | The attendance data for the event, in no particular order. |
-| hidden_location | [Location](#rellm-Location) | optional | When `hide_location_until_rsvp_approved` is set, the location of the event. |
-
-
-
-
-
-
 <a name="rellm-EventInfo"></a>
 
 ### EventInfo
@@ -2801,24 +2788,8 @@ Stored as JSON in the database.
 | allows_rsvps | [bool](#bool) | optional | Whether to allow RSVPs for the event. |
 | allows_anonymous_rsvps | [bool](#bool) | optional | Whether to allow anonymous RSVPs for the event. |
 | max_attendees | [uint32](#uint32) | optional | Limit the max number of attendees. No effect unless `allows_rsvps` is true. Not yet supported. |
-| hide_location_until_rsvp_approved | [bool](#bool) | optional | Hide the location until the user RSVPs (and it&#39;s accepted). From a system perspective, when this is set, Events will not include the [`Location`](#rellm-Location) until the user has RSVP&#39;d. Location will always be returned in EventAttendances if the request for the EventAttendances came from a (logged in or anonymous) user whose attendance is approved (or the event owner). |
+| hide_location_until_rsvp_approved | [bool](#bool) | optional | Hide the location until the user RSVPs (and it&#39;s accepted). From a system perspective, when this is set, Events will not include the [`Location`](#rellm-Location) until the user has RSVP&#39;d. Location will always be returned in `Rsvps` if the request for the `Rsvps` came from a (logged in or anonymous) user whose RSVP is approved (or the event owner). |
 | default_rsvp_moderation | [Moderation](#rellm-Moderation) | optional | Default moderation for RSVPs from logged-in users (either `PENDING` or `APPROVED`). Anonymous RSVPs are always moderated (default to `PENDING`). |
-
-
-
-
-
-
-<a name="rellm-GetEventAttendancesRequest"></a>
-
-### GetEventAttendancesRequest
-Request to get RSVP data for an event.
-
-
-| Field | Type | Label | Description |
-| ----- | ---- | ----- | ----------- |
-| occasion_id | [string](#string) |  | The ID of the event to get RSVP data for. |
-| anonymous_attendee_auth_token | [string](#string) | optional | If set, and if the token has an RSVP for this even, request that RSVP data in addition to the rest of the RSVP data. (The event creator can always see and moderate anonymous RSVPs.) |
 
 
 
@@ -2848,13 +2819,13 @@ Valid GetEventsRequest formats:
 | author_user_id | [string](#string) | optional | Limits results to those by the given author user ID. |
 | group_id | [string](#string) | optional | Limits results to those in the given group ID (via [`GroupPost`](#rellm-GroupPost) association&#39;s for the Event&#39;s internal [`Post`](#rellm-Post)). |
 | time_filter | [TimeFilter](#rellm-TimeFilter) | optional | Filters returned [`Occasion`](#rellm-Occasion)s by time. |
-| attendee_id | [string](#string) | optional | If set, only returns events that the given user is attending. If `attendance_statuses` is also set, returns events where that user&#39;s status is one of the given statuses. |
-| attendance_statuses | [AttendanceStatus](#rellm-AttendanceStatus) | repeated | If set, only return events for which the current user&#39;s attendance status matches one of the given statuses. If `attendee_id` is also set, only returns events where the given user&#39;s status matches one of the given statuses. |
+| attendee_id | [string](#string) | optional | If set, only returns events that the given user is attending. If `rsvp_statuses` is also set, returns events where that user&#39;s status is one of the given statuses. |
+| rsvp_statuses | [RsvpStatus](#rellm-RsvpStatus) | repeated | If set, only return events for which the current user&#39;s RSVP status matches one of the given statuses. If `attendee_id` is also set, only returns events where the given user&#39;s status matches one of the given statuses. |
 | post_id | [string](#string) | optional | Finds Events for the Post with the given ID. The Post should have a [`PostContext`](#rellm-PostContext) of `EVENT` or `OCCASION`. |
 | listing_type | [EventListingType](#rellm-EventListingType) |  | The listing type, e.g. `ALL_ACCESSIBLE_EVENTS`, `FOLLOWING_EVENTS`, `MY_GROUPS_EVENTS`, `DIRECT_EVENTS`, `GROUP_EVENTS`, `GROUP_EVENTS_PENDING_MODERATION`. |
 | search_text | [string](#string) | optional | Search text for full-text search. |
 | occasion_post_ids | [string](#string) | repeated | Loads multiple events by their occasions&#39; Post IDs - returns one Event per matching Occasion (see GetEventsResponse&#39;s own doc), not the requested Occasion&#39;s whole parent Event&#39;s full occasion list. |
-| anonymous_attendee_auth_token | [string](#string) | optional | Auth token proving ownership of an anonymous RSVP, mirroring `GetEventAttendancesRequest.anonymous_attendee_auth_token`. Lets an anonymous attendee&#39;s own (possibly still-`PENDING`) [`EventAttendance`](#rellm-EventAttendance) and its `Occasion.location` (when `EventInfo.hide_location_until_rsvp_approved` is set) surface via each returned `Occasion.attendances`/`current_user_attendance`, same as a logged-in user&#39;s own RSVP does automatically. |
+| anonymous_attendee_auth_token | [string](#string) | optional | Auth token(s) proving ownership of anonymous RSVPs, mirroring `GetRsvpsRequest.anonymous_attendee_auth_token`. Either a plain `&lt;token&gt;`, or several at once as `&lt;occasionId&gt;-&lt;token&gt;--&lt;occasionId&gt;-&lt;token&gt;...` (the form the web frontends keep in their `?anonymousAuthToken=` URL parameter, so it can be passed straight through) -- the occasion id prefix is only advisory; every token is tried against every returned occasion&#39;s RSVPs. Lets an anonymous attendee&#39;s own (possibly still-`PENDING`) [`Rsvp`](#rellm-Rsvp) and its `Occasion.location` (when `EventInfo.hide_location_until_rsvp_approved` is set) surface via each returned `Occasion.rsvps`/`current_user_rsvp`, same as a logged-in user&#39;s own RSVP does automatically. |
 
 
 
@@ -2886,6 +2857,22 @@ effectively &#34;compacts&#34; all response into its own internal Events store, 
 
 
 
+<a name="rellm-GetRsvpsRequest"></a>
+
+### GetRsvpsRequest
+Request to get RSVP data for an event.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| occasion_id | [string](#string) |  | The ID of the event to get RSVP data for. |
+| anonymous_attendee_auth_token | [string](#string) | optional | If set, and if the token has an RSVP for this even, request that RSVP data in addition to the rest of the RSVP data. (The event creator can always see and moderate anonymous RSVPs.) Takes the same plain / multi-occasion forms as `GetEventsRequest.anonymous_attendee_auth_token`. |
+
+
+
+
+
+
 <a name="rellm-Occasion"></a>
 
 ### Occasion
@@ -2903,8 +2890,8 @@ a [`Location`](#rellm-Location), and an optional [`Post`](#rellm-Post) (and disc
 | ends_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  | The time the event ends (UTC/Timestamp format). |
 | location | [Location](#rellm-Location) | optional | The location of the event. |
 | sync_missing_since | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional | The time since this event &#34;disappeared&#34; from the sync source. It is up to the owner whether this means it should be deleted. |
-| attendances | [EventAttendances](#rellm-EventAttendances) | optional | RSVP &#43; invite data for this Occasion. |
-| current_user_attendance | [EventAttendance](#rellm-EventAttendance) | optional | If the request was made by a logged-in user, this is the current user&#39;s attendance for this Occasion. |
+| rsvps | [Rsvps](#rellm-Rsvps) | optional | RSVP &#43; invite data for this Occasion. |
+| current_user_rsvp | [Rsvp](#rellm-Rsvp) | optional | If the request was made by a logged-in user, this is the current user&#39;s RSVP for this Occasion. |
 | sync_destinations | [SyncDestinationStatus](#rellm-SyncDestinationStatus) | repeated | SyncDestinations this Occasion has been synced (cross-posted) to, and their status. |
 | timezone | [string](#string) | optional | A time zone for the Occasion. Used when serializing it for, e.g., Facebook or Instagram posts, or generating media. |
 
@@ -2947,6 +2934,63 @@ Curently, the `optional` counts below are *never* returned by the API.
 | interested_attendees | [uint32](#uint32) | optional | The number of attendees who have signaled interest in the event. (RSVPs may have multiple attendees, i.e. guests.) |
 | invited_rsvps | [uint32](#uint32) | optional | The number of users who have been invited to the event. |
 | invited_attendees | [uint32](#uint32) | optional | The number of attendees who have been invited to the event. (RSVPs may have multiple attendees, i.e. guests.) |
+
+
+
+
+
+
+<a name="rellm-Rsvp"></a>
+
+### Rsvp
+An RSVP: describes a user&#39;s attendance at an [`Occasion`](#rellm-Occasion). Such as:
+* A user&#39;s RSVP to an [`Occasion`](#rellm-Occasion) (one of `INTERESTED`, `GOING`, `NOT_GOING`, or , `REQUESTED` (i.e. invited)).
+* Invitation status of a user to an [`Occasion`](#rellm-Occasion).
+* [`ContactMethod`](#rellm-ContactMethod)-driven management for anonymous RSVPs to an [`Occasion`](#rellm-Occasion).
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| id | [string](#string) |  | Unique server-generated ID for the RSVP. |
+| occasion_id | [string](#string) |  | ID of the [`Occasion`](#rellm-Occasion) the RSVP is for. |
+| user_attendee | [UserAttendee](#rellm-UserAttendee) |  | If the RSVP is non-anonymous, core data about the user. |
+| anonymous_attendee | [AnonymousAttendee](#rellm-AnonymousAttendee) |  | If the RSVP is anonymous, core data about the anonymous attendee. |
+| number_of_guests | [uint32](#uint32) |  | Number of guests including the RSVPing user. (Minimum 1). |
+| status | [RsvpStatus](#rellm-RsvpStatus) |  | The user&#39;s RSVP to an [`Occasion`](#rellm-Occasion) (one of `INTERESTED`, `REQUESTED` (i.e. invited), `GOING`, `NOT_GOING`) |
+| inviting_user_id | [string](#string) | optional | User who invited the attendee. (Not yet used.) |
+| private_note | [string](#string) |  | Public note for everyone who can see the event to see. |
+| public_note | [string](#string) |  | Private note for the event owner. |
+| moderation | [Moderation](#rellm-Moderation) |  | Moderation status for the RSVP. Moderated by the [`Event`](#rellm-Event) owner (or [`Occasion`](#rellm-Occasion) owner if applicable). |
+| created_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  | The time the RSVP was created. |
+| updated_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional | The time the RSVP was last updated. |
+
+
+
+
+
+
+<a name="rellm-Rsvps"></a>
+
+### Rsvps
+Response to get RSVP data for an event.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| rsvps | [Rsvp](#rellm-Rsvp) | repeated | The RSVP data for the event, in no particular order. |
+| hidden_location | [Location](#rellm-Location) | optional | When `hide_location_until_rsvp_approved` is set, the location of the event. |
+| going_count | [uint32](#uint32) |  | Totals over *every* RSVP the viewer is allowed to see for the Occasion -- not just the ones returned in `rsvps`. `GetEvents` caps how many `rsvps` it returns per Occasion (for big events), so these counts can be *greater than* `rsvps.length` -- much like `Post.reply_count` can exceed the replies actually loaded. (`GetRsvps` is not capped, so there they match `rsvps` exactly.)
+
+`*_count` is a number of RSVPs; `*_attendees` is the sum of their `number_of_guests`. The per-status counts only include RSVPs whose moderation passes (`UNMODERATED`/`APPROVED`) -- the ones everyone can see. `pending_*` counts the `PENDING` ones the viewer can see (their own, or all of them for the event owner), whatever their status. `REJECTED` RSVPs are not counted. |
+| going_attendees | [uint32](#uint32) |  |  |
+| interested_count | [uint32](#uint32) |  |  |
+| interested_attendees | [uint32](#uint32) |  |  |
+| requested_count | [uint32](#uint32) |  |  |
+| requested_attendees | [uint32](#uint32) |  |  |
+| not_going_count | [uint32](#uint32) |  |  |
+| not_going_attendees | [uint32](#uint32) |  |  |
+| pending_count | [uint32](#uint32) |  |  |
+| pending_attendees | [uint32](#uint32) |  |  |
 
 
 
@@ -3009,25 +3053,6 @@ Wire-identical to [Author](#rellm-Author), but with a different name to avoid co
  
 
 
-<a name="rellm-AttendanceStatus"></a>
-
-### AttendanceStatus
-Occasion attendance statuses. State transitions may generally happen
-in any direction, but:
-* `REQUESTED` can only be selected if another user invited the user whose attendance is being described.
-* `GOING` and `NOT_GOING` cannot be selected if the Occasion has ended (end time is in the past).
-* `WENT` and `DID_NOT_GO` cannot be selected if the Occasion has not started (start time is in the future).
-`INTERESTED` and `REQUESTED` can apply regardless of whether an event has started or ended.
-
-| Name | Number | Description |
-| ---- | ------ | ----------- |
-| INTERESTED | 0 | The user is (or was) interested in attending. This is the default status. |
-| REQUESTED | 1 | Another user has invited the user to the event. |
-| GOING | 2 | The user plans to go to the event, or went to the event. |
-| NOT_GOING | 3 | The user does not plan to go to the event, or did not go to the event. |
-
-
-
 <a name="rellm-EventListingType"></a>
 
 ### EventListingType
@@ -3046,6 +3071,25 @@ Events returned are ordered by start time unless otherwise specified (specifical
 | GROUP_EVENTS | 10 | Returns events from a specific group. Requires group_id parameterRequires group_id parameter |
 | GROUP_EVENTS_PENDING_MODERATION | 11 | Returns pending_moderation events from a specific group. Requires group_id parameter and user must have group (or server) admin permissions. |
 | NEWLY_ADDED_EVENTS | 20 | Returns events from either `ALL_ACCESSIBLE_EVENTS` or a specific author (with optional author_user_id parameter). Returned Occasions will be ordered by creation time rather than start time. |
+
+
+
+<a name="rellm-RsvpStatus"></a>
+
+### RsvpStatus
+Occasion RSVP statuses. State transitions may generally happen
+in any direction, but:
+* `REQUESTED` can only be selected if another user invited the user whose RSVP is being described.
+* `GOING` and `NOT_GOING` cannot be selected if the Occasion has ended (end time is in the past).
+* `WENT` and `DID_NOT_GO` cannot be selected if the Occasion has not started (start time is in the future).
+`INTERESTED` and `REQUESTED` can apply regardless of whether an event has started or ended.
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| INTERESTED | 0 | The user is (or was) interested in attending. This is the default status. |
+| REQUESTED | 1 | Another user has invited the user to the event. |
+| GOING | 2 | The user plans to go to the event, or went to the event. |
+| NOT_GOING | 3 | The user does not plan to go to the event, or did not go to the event. |
 
 
  
@@ -3989,6 +4033,9 @@ The federation configuration for a Rellm server.
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | servers | [FederatedServer](#rellm-FederatedServer) | repeated | A list of servers that this server will federate with. |
+| unsecure_localhost_federated_auth_enabled | [bool](#bool) | optional | If true, this server permits cross-server (&#34;Sign in from...&#34;) federated auth to hand tokens to a plaintext `http://localhost` frontend, for local development. Frontends should otherwise refuse to send/receive federated auth tokens for `localhost`, and should show a warning to the user whenever they do proceed. Unset (including on servers predating this field) means false.
+
+Note this is only a frontend-enforced measure: the backend can&#39;t stop a modified client from moving its own tokens wherever it likes. |
 | facebook_auth_config | [FacebookAuthConfig](#rellm-FacebookAuthConfig) | optional | Facebook authentication configuration for the server. If set, allows users to create Facebook (and Instagram) SyncDestinations for their Posts and Occasions. |
 | x_twitter_auth_config | [XTwitterAuthConfig](#rellm-XTwitterAuthConfig) | optional | X (Twitter) authentication configuration for the server. If set, allows users to create X (Twitter) SyncDestinations for their Posts and Occasions - an admin registers one X Developer App here, and every user on the server connects their own X account through it via OAuth, the same relationship `facebook_auth_config` has to individual Facebook Pages. Until set, [`XTwitterAccount`](#rellm-XTwitterAccount) SyncDestinations always fail with `x_twitter_app_not_configured`. |
 | mastodon_servers | [MastodonServer](#rellm-MastodonServer) | repeated | Mastodon instances this server has a registered OAuth app on, letting users connect/read their own account on that instance. Unlike Facebook/X, Mastodon has no single central platform to register an app against - every instance is its own separate OAuth authority, so an admin has to register an app on each instance individually before users on it can connect. If a user&#39;s instance isn&#39;t listed here, clients should surface a &#34;not configured&#34; alert rather than attempting to open an OAuth popup with no app to authorize against. (A client could instead dynamically self-register a throwaway app with the instance directly, via Mastodon&#39;s own `POST /api/v1/apps`, and skip this entirely - Mastodon itself supports that. But that&#39;s a client-side choice the Rellm protocol doesn&#39;t get involved in either way: this field only covers the admin-pre-registered path, which is what lets an app ID be shown/reused consistently across every client on this server rather than each one self-registering its own.) |
@@ -4693,7 +4740,7 @@ it&#39;s still a separate message.
 | ----- | ---- | ----- | ----------- |
 | ai_provider_id | [string](#string) |  | Which `AIProvider` this grant is against. |
 | model_names | [string](#string) | repeated | Which of that provider&#39;s models the grant covers. |
-| tokens | [uint64](#uint64) |  | The buyer&#39;s new total token balance for `ai_provider_id`/`model_names`, replacing (not adding to) whatever balance remained -- see `logic::market_fulfillment::fulfill_purchase`&#39;s `AiGrants` arm. |
+| tokens | [uint64](#uint64) |  | The buyer&#39;s new total token balance for `ai_provider_id`/`model_names`, replacing (not adding to) whatever balance remained -- see `logic::market::market_fulfillment::fulfill_purchase`&#39;s `AiGrants` arm. |
 
 
 
@@ -4712,7 +4759,7 @@ see that message&#39;s own doc for why it&#39;s still a distinct type.
 | ----- | ---- | ----- | ----------- |
 | ai_provider_id | [string](#string) |  | Which `AIProvider` this grant is against. |
 | model_names | [string](#string) | repeated | Which of that provider&#39;s models the grant covers. |
-| tokens | [uint64](#uint64) |  | How many tokens this product/subscription grants the buyer each time it&#39;s (re-)fulfilled, replacing (not adding to) whatever balance remained -- see `logic::market_fulfillment::fulfill_purchase`&#39;s `AiGrants` arm. |
+| tokens | [uint64](#uint64) |  | How many tokens this product/subscription grants the buyer each time it&#39;s (re-)fulfilled, replacing (not adding to) whatever balance remained -- see `logic::market::market_fulfillment::fulfill_purchase`&#39;s `AiGrants` arm. |
 
 
 
@@ -4900,8 +4947,8 @@ supplied by the client is ignored -- see that field&#39;s own doc).
 | id | [string](#string) |  |  |
 | type | [PurchaseType](#rellm-PurchaseType) |  | What this product grants once purchased -- see `PurchaseType`&#39;s own doc for what each value does. Never changeable after product creation (`UpdateMarketProduct` silently ignores any change to this field) -- changing what a product *is* after people have already bought it would silently change existing buyers&#39; entitlements out from under them; a product whose type needs to change is delisted and replaced with a new one instead. |
 | period | [PurchasePeriod](#rellm-PurchasePeriod) |  | How often this product bills, if at all -- see `PurchasePeriod`&#39;s own doc. Never changeable after product creation, same reasoning as `type` above. |
-| amount | [uint32](#uint32) |  | The price, in the smallest unit of `currency` (e.g. cents for USD) -- except for a zero-decimal currency like JPY, where this is already the whole unit (see `logic::stripe_sync::is_zero_decimal_currency`). |
-| currency | [uint32](#uint32) |  | The ISO 4217 numeric currency code this product is priced in (e.g. `840` for USD, `392` for JPY) -- see `logic::market_summary`&#39;s currency table for the full set of currencies a server actually supports pricing in today. |
+| amount | [uint32](#uint32) |  | The price, in the smallest unit of `currency` (e.g. cents for USD) -- except for a zero-decimal currency like JPY, where this is already the whole unit (see `logic::stripe_payments::is_zero_decimal_currency`). |
+| currency | [uint32](#uint32) |  | The ISO 4217 numeric currency code this product is priced in (e.g. `840` for USD, `392` for JPY) -- see `logic::market::market_summary`&#39;s currency table for the full set of currencies a server actually supports pricing in today. |
 | available_count | [uint32](#uint32) |  | Number of subscription &#34;slots&#34; available for this product (admin-set) -- `0` means unlimited. Once `sold_count &gt;= available_count` (and `available_count &gt; 0`), `MakeMarketPurchase` rejects further purchases with `product_sold_out`. |
 | sold_count | [uint32](#uint32) |  | Number of subscriptions actually sold, maintained server-side (never client-settable -- `UpdateMarketProduct` silently ignores any client-sent value for this field). Incremented when a purchase&#39;s Stripe Checkout Session completes; decremented when the resulting `MarketSubscription` is actually canceled (`CancelMarketSubscription`), freeing the slot for a new buyer. |
 | media_storage_subscription_details | [MediaStorageSubscriptionDetails](#rellm-MediaStorageSubscriptionDetails) |  |  |
@@ -4921,7 +4968,7 @@ supplied by the client is ignored -- see that field&#39;s own doc).
 ### MarketPurchase
 One completed billing event -- the initial purchase or a later recurring renewal charge -- for a
 single product. Created only from `web::stripe_webhook` (the initial purchase, on
-`checkout.session.completed`) or `logic::market_renewal` (each subsequent recurring charge),
+`checkout.session.completed`) or `logic::market::market_renewal` (each subsequent recurring charge),
 never directly by `MakeMarketPurchase` itself (see that RPC&#39;s own doc). MarketPurchases are
 immutable via the API&#43;CLI once created -- there is no `UpdateMarketPurchase` RPC; the payments,
 refunds, and (for a subscription) fulfillment information that accumulate against a purchase over
@@ -4935,7 +4982,7 @@ time live in their own separate messages/tables instead of ever rewriting this o
 | type | [PurchaseType](#rellm-PurchaseType) |  | What this purchase grants -- copied from (and always matching) `market_product.type` at the time of purchase. Denormalized here (rather than requiring a lookup through `market_product`) so a client can branch on `details`&#39; oneof case without needing `market_product` populated. |
 | market_product | [MarketProduct](#rellm-MarketProduct) |  | The `MarketProduct` this purchase was made against, as it existed at the time it was fetched -- may since have changed price/details/been delisted; this purchase&#39;s own `amount`-equivalent fields live on whichever `MarketPayment`s are attached, not here. |
 | market_subscription | [MarketSubscription](#rellm-MarketSubscription) | optional | The subscription this purchase belongs to -- every purchase gets one, including a `PURCHASE_PERIOD_INDEFINITE` one-time purchase (see `MarketSubscription`&#39;s own doc), so `Optional` here really only means &#34;always unset when this `MarketPurchase` is itself embedded inside a `MarketSubscription.billing_history`&#34; (there&#39;d be no point recursing into the same subscription again). Note: this circular relationship should be handled by the Rust marshaling side. |
-| market_payments | [MarketPayment](#rellm-MarketPayment) | repeated | Every payment recorded against this purchase, oldest first -- ordinarily just one, but a failed charge that&#39;s later retried (see `logic::market_renewal`) can leave more than one row. |
+| market_payments | [MarketPayment](#rellm-MarketPayment) | repeated | Every payment recorded against this purchase, oldest first -- ordinarily just one, but a failed charge that&#39;s later retried (see `logic::market::market_renewal`) can leave more than one row. |
 | market_refunds | [MarketRefund](#rellm-MarketRefund) | repeated | Every refund recorded against this purchase, oldest first -- empty for the common case of a purchase that was never refunded. |
 | media_storage_purchase_details | [MediaStoragePurchaseDetails](#rellm-MediaStoragePurchaseDetails) |  |  |
 | ai_grant_purchase_details | [AIGrantPurchaseDetails](#rellm-AIGrantPurchaseDetails) |  |  |
@@ -5017,7 +5064,7 @@ other purchase type gets, even though it never actually bills again.
 | created_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  | When this subscription was first created (i.e. when the initial `MarketPurchase` was fulfilled). |
 | renews_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional | When the next renewal charge is due. Always unset for a `PURCHASE_PERIOD_INDEFINITE` subscription (see this message&#39;s own doc) -- there is no next charge. Otherwise, advanced by one `period` on every successful renewal (`renew_market_subscriptions.rs`); left untouched once `canceled_at` is set, since a canceled subscription never renews again regardless of what this still says. |
 | canceled_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional | Set once the subscription will no longer renew -- either the buyer/admin explicitly canceled it (CancelMarketSubscription) or a renewal charge failed. The subscription&#39;s entitlement (media storage quota, granted permissions, etc.) stays active until whichever is later of renews_at/canceled_at, at which point renew_market_subscriptions.rs revokes it and sets service_terminated_at. Also the moment `MarketProduct.sold_count` is decremented, freeing this subscription&#39;s slot for a new buyer (see that field&#39;s own doc). |
-| service_terminated_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional | The time permissions were removed, media storage quotas reset, etc. -- i.e. when `logic::market_fulfillment::terminate_entitlement` actually ran for this subscription. Always unset while `canceled_at` is unset; may remain unset for a while *after* `canceled_at` is set, since the entitlement intentionally stays active until the later of `renews_at`/`canceled_at` (see `canceled_at`&#39;s own doc) -- a buyer who cancels mid-period keeps what they already paid for through the end of that period. |
+| service_terminated_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional | The time permissions were removed, media storage quotas reset, etc. -- i.e. when `logic::market::market_fulfillment::terminate_entitlement` actually ran for this subscription. Always unset while `canceled_at` is unset; may remain unset for a while *after* `canceled_at` is set, since the entitlement intentionally stays active until the later of `renews_at`/`canceled_at` (see `canceled_at`&#39;s own doc) -- a buyer who cancels mid-period keeps what they already paid for through the end of that period. |
 
 
 
@@ -5032,13 +5079,13 @@ originating `MarketProduct.details` at the moment this purchase was fulfilled (s
 `MarketPurchase.details`&#39; own doc). Field-for-field identical to
 `MediaStorageSubscriptionDetails` -- kept as its own message only so the Purchase- and
 Subscription-side `oneof`s stay independent Rust types (see
-`logic::market_fulfillment::terminate_entitlement`&#39;s own doc for why that distinction matters
+`logic::market::market_fulfillment::terminate_entitlement`&#39;s own doc for why that distinction matters
 for `PermissionsAccessPurchaseDetails`/`PermissionsAccessSubscriptionDetails`).
 
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| allocation_bytes | [uint64](#uint64) |  | The buyer&#39;s new total media storage allocation, replacing (not adding to) whatever quota they already had -- see `logic::market_fulfillment::fulfill_purchase`&#39;s `MediaStorage` arm. |
+| allocation_bytes | [uint64](#uint64) |  | The buyer&#39;s new total media storage allocation, replacing (not adding to) whatever quota they already had -- see `logic::market::market_fulfillment::fulfill_purchase`&#39;s `MediaStorage` arm. |
 
 
 
@@ -5055,7 +5102,7 @@ what a media storage product actually grants. Field-for-field identical to
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| allocation_bytes | [uint64](#uint64) |  | How much media storage this product/subscription grants the buyer, replacing (not adding to) whatever quota they already had -- see `logic::market_fulfillment::fulfill_purchase`&#39;s `MediaStorage` arm. |
+| allocation_bytes | [uint64](#uint64) |  | How much media storage this product/subscription grants the buyer, replacing (not adding to) whatever quota they already had -- see `logic::market::market_fulfillment::fulfill_purchase`&#39;s `MediaStorage` arm. |
 
 
 
@@ -5068,14 +5115,14 @@ what a media storage product actually grants. Field-for-field identical to
 `MarketPurchase.details`&#39; `PURCHASE_TYPE_PERMISSIONS_ACCESS` variant -- copied verbatim from the
 originating `MarketProduct.details` at the moment this purchase was fulfilled. Field-for-field
 identical to `PermissionsAccessSubscriptionDetails`, but kept as a genuinely distinct Rust type
-(not just documentation) -- see `logic::market_fulfillment::terminate_entitlement`&#39;s own doc,
+(not just documentation) -- see `logic::market::market_fulfillment::terminate_entitlement`&#39;s own doc,
 which parses a `MarketSubscription`&#39;s `details` as `PermissionsAccessSubscriptionDetails`
 specifically (never this message) when clawing back a lapsed grant.
 
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| permissions | [Permission](#rellm-Permission) | repeated | The permissions this purchase granted -- see `logic::market_fulfillment::fulfill_purchase`&#39;s `PermissionsAccess` arm (adds these to the buyer&#39;s `User.permissions`, union-style). |
+| permissions | [Permission](#rellm-Permission) | repeated | The permissions this purchase granted -- see `logic::market::market_fulfillment::fulfill_purchase`&#39;s `PermissionsAccess` arm (adds these to the buyer&#39;s `User.permissions`, union-style). |
 | name | [string](#string) |  | Admin-authored product name shown for this purchase (e.g. on `/market/fulfillment`&#39;s billing history) -- copied from `PermissionsAccessSubscriptionDetails.name` at the moment this purchase was fulfilled. Unlike the other three purchase-detail messages&#39; implicit, Elm-computed display names, permissions-access products have no fixed bundle of permissions to describe generically, so an admin names/describes each one by hand. |
 | description | [string](#string) |  | Admin-authored, Markdown-formatted product description -- copied from `PermissionsAccessSubscriptionDetails.description` the same way `name` above is. |
 
@@ -5090,13 +5137,13 @@ specifically (never this message) when clawing back a lapsed grant.
 `MarketProduct.details`/`MarketSubscription.details`&#39; `PURCHASE_TYPE_PERMISSIONS_ACCESS`
 variant -- what a permissions-bundle product actually grants. Field-for-field identical to
 `PermissionsAccessPurchaseDetails` -- see that message&#39;s own doc for why it&#39;s still a distinct
-type (that distinction is exactly what lets `logic::market_fulfillment::terminate_entitlement`
+type (that distinction is exactly what lets `logic::market::market_fulfillment::terminate_entitlement`
 tell &#34;what to claw back&#34; apart from &#34;what was originally billed&#34;).
 
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| permissions | [Permission](#rellm-Permission) | repeated | Which `Permission`s this product/subscription grants the buyer -- see `logic::market_fulfillment::fulfill_purchase`&#39;s `PermissionsAccess` arm (union-added to the buyer&#39;s own `User.permissions`, never replacing what they already had) and `terminate_entitlement`&#39;s own arm (the exact claw-back set on cancellation/expiry). Intentionally excludes permissions dangerous or nonsensical to sell this way -- e.g. &#34;Grant Basic Permissions,&#34; any &#34;Moderate&#34;/&#34;Read All System Messages&#34; permission, &#34;Admin,&#34; &#34;View Private Contact Methods,&#34; and &#34;Edit Cluster Settings&#34; must never appear in a Market product&#39;s own `permissions` list. Enforced server-side on `CreateMarketProduct`/ `UpdateMarketProduct` (rejected with `permission_not_purchasable`) and again on `MakeMarketPurchase` (defense in depth, in case a permission is later removed from the purchasable set after a product granting it already exists) -- see `rpcs::market::create_market_product::PURCHASABLE_PERMISSIONS`. NOTE: that Rust list is an explicit include-list, not an exclude-list -- described here as an exclusion for readability, but implemented as &#34;only these permissions are purchasable&#34; so a newly-added `Permission` is never purchasable by default; it has to be deliberately added to that list. |
+| permissions | [Permission](#rellm-Permission) | repeated | Which `Permission`s this product/subscription grants the buyer -- see `logic::market::market_fulfillment::fulfill_purchase`&#39;s `PermissionsAccess` arm (union-added to the buyer&#39;s own `User.permissions`, never replacing what they already had) and `terminate_entitlement`&#39;s own arm (the exact claw-back set on cancellation/expiry). Intentionally excludes permissions dangerous or nonsensical to sell this way -- e.g. &#34;Grant Basic Permissions,&#34; any &#34;Moderate&#34;/&#34;Read All System Messages&#34; permission, &#34;Admin,&#34; &#34;View Private Contact Methods,&#34; and &#34;Edit Cluster Settings&#34; must never appear in a Market product&#39;s own `permissions` list. Enforced server-side on `CreateMarketProduct`/ `UpdateMarketProduct` (rejected with `permission_not_purchasable`) and again on `MakeMarketPurchase` (defense in depth, in case a permission is later removed from the purchasable set after a product granting it already exists) -- see `rpcs::market::create_market_product::PURCHASABLE_PERMISSIONS`. NOTE: that Rust list is an explicit include-list, not an exclude-list -- described here as an exclusion for readability, but implemented as &#34;only these permissions are purchasable&#34; so a newly-added `Permission` is never purchasable by default; it has to be deliberately added to that list. |
 | name | [string](#string) |  | Admin-authored product name -- unlike `MediaStorageSubscriptionDetails`/`AIGrantSubscriptionDetails`/ `RellmHostingSubscriptionDetails` (which get an implicit, Elm-computed display name from their own fields, since they each describe one fixed kind of thing), a permissions-access product&#39;s `permissions` list can be any admin-chosen bundle, so there&#39;s no generic way to name it automatically. Required for a purchasable product (`CreateMarketProduct`/`UpdateMarketProduct` reject a `PermissionsAccessSubscriptionDetails` with a blank `name`). On a `MarketSubscription`: copied from the originating `MarketProduct.details.name` at the time the subscription was created, same as every other field on this message. |
 | description | [string](#string) |  | Admin-authored, Markdown-formatted product description shown on the product&#39;s own page -- same &#34;no generic implicit description&#34; reasoning as `name` above. On a `MarketSubscription`: copied the same way `name` is. |
 
@@ -5150,7 +5197,7 @@ no `*PurchaseDetails` counterpart, since they&#39;re only ever meaningful on the
 | domain | [string](#string) |  | On a `MarketProduct`: unset/meaningless (a product isn&#39;t tied to any one domain). On a `MarketSubscription`: the domain the buyer wants their new Rellm instance reachable at, from `RellmHostingPurchaseDetails.domain`. |
 | contact_email | [string](#string) |  | On a `MarketProduct`: unset/meaningless. On a `MarketSubscription`: where the fulfilling admin should reach the buyer about this order, from `RellmHostingPurchaseDetails.contact_email`. |
 | additional_information | [string](#string) |  | Immutable after purchase -- the buyer&#39;s own notes to the admin fulfilling this order. Never editable via UpdateMarketSubscription (see that RPC&#39;s own doc); `fulfillment_notes` below is the admin/buyer conversation about fulfilling it. |
-| fulfillment_status | [FulfillmentStatus](#rellm-FulfillmentStatus) |  | Where this Rellm hosting order currently stands -- Rellm hosting is deliberately not automated (see `market.proto`&#39;s own top-of-file notes and `logic::market_fulfillment::fulfill_purchase`&#39;s `RellmHosting` no-op arm), so this is the one manual &#34;how far along is this order&#34; signal, shown on `/market/fulfillment` (`GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN`). Never independently settable by a client -- always server-derived as whatever `fulfillment_notes`&#39; own last entry&#39;s `fulfillment_status` says (or `FULFILLMENT_STATUS_AWAITING_HOST_ADMIN` if `fulfillment_notes` is empty), so this field can never drift out of sync with the history that explains *why* it&#39;s in that state. |
+| fulfillment_status | [FulfillmentStatus](#rellm-FulfillmentStatus) |  | Where this Rellm hosting order currently stands -- Rellm hosting is deliberately not automated (see `market.proto`&#39;s own top-of-file notes and `logic::market::market_fulfillment::fulfill_purchase`&#39;s `RellmHosting` no-op arm), so this is the one manual &#34;how far along is this order&#34; signal, shown on `/market/fulfillment` (`GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN`). Never independently settable by a client -- always server-derived as whatever `fulfillment_notes`&#39; own last entry&#39;s `fulfillment_status` says (or `FULFILLMENT_STATUS_AWAITING_HOST_ADMIN` if `fulfillment_notes` is empty), so this field can never drift out of sync with the history that explains *why* it&#39;s in that state. |
 | fulfillment_notes | [FulfillmentNote](#rellm-FulfillmentNote) | repeated | The admin/buyer conversation about fulfilling this order -- oldest to newest, append-only (see `UpdateMarketSubscription`&#39;s own doc: a new entry can only ever be appended after whatever&#39;s already here, never inserted/reordered/removed, and its `user_id` must match whoever&#39;s actually making the request -- the server stamps `created_at` itself). |
 
 
@@ -5206,7 +5253,7 @@ created (see that message&#39;s own doc) -- same reasoning as `PurchaseType`&#39
 
 ### PurchaseType
 What a `MarketProduct`/`MarketPurchase`/`MarketSubscription` actually grants the buyer once
-fulfilled -- see `logic::market_fulfillment::fulfill_purchase` (the Rust match on this same enum)
+fulfilled -- see `logic::market::market_fulfillment::fulfill_purchase` (the Rust match on this same enum)
 for exactly what each value does. Immutable on a `MarketProduct` once created (see that message&#39;s
 own doc) -- changing what a product *is* after people have already bought it would silently
 change existing buyers&#39; entitlements out from under them, so a product whose type needs to change
@@ -5217,7 +5264,7 @@ is delisted and replaced with a new one instead.
 | PURCHASE_TYPE_MEDIA_STORAGE | 0 | Extra media storage allocation -- fulfillment sets the buyer&#39;s `User.media_storage_limit_bytes` to `MediaStoragePurchaseDetails.allocation_bytes` outright (not additive with any existing quota). On cancellation/expiry, reverts to the server&#39;s current configured default allocation (`ServerConfiguration.media_settings.default_user_media_allocation_bytes`), not to unlimited. |
 | PURCHASE_TYPE_AI_GRANTS | 1 | AI provider token grants -- fulfillment resets (never adds to) the buyer&#39;s `AIProviderGrant.tokens_remaining` for `AIGrantPurchaseDetails.ai_provider_id`/`model_names` to `AIGrantPurchaseDetails.tokens`, same &#34;reset, don&#39;t add&#34; semantics every renewal uses. Not automatically revoked on cancellation/expiry -- whatever tokens remain when the subscription lapses just aren&#39;t replenished again. |
 | PURCHASE_TYPE_RELLM_HOSTING | 2 | A dedicated Rellm server instance, hosted and administered by Jon. Deliberately NOT automated -- fulfillment applies no entitlement at all; an admin provisions the server by hand and tracks progress via `RellmHostingSubscriptionDetails.fulfillment_status`/`fulfillment_notes` on the `/market/fulfillment` admin page. Not automatically revoked on cancellation/expiry either (out of scope for this MVP -- an admin handles teardown manually too). |
-| PURCHASE_TYPE_PERMISSIONS_ACCESS | 3 | A bundle of `Permission`s (e.g. `SYNC_EVENTS_TO_FACEBOOK`) granted directly to the buyer&#39;s own `User.permissions`, union-style -- fulfillment only ever adds permissions the buyer doesn&#39;t already have from some other source, never removes any. Unlike the other three types, this ONE eventually claws back what it granted: once cancellation/expiry actually takes effect (see `MarketSubscription.canceled_at`/`service_terminated_at`), `logic::market_fulfillment:: terminate_entitlement` removes exactly the permissions this subscription granted (a plain set difference, not a reconciliation against any other subscription/grant the buyer might also hold). |
+| PURCHASE_TYPE_PERMISSIONS_ACCESS | 3 | A bundle of `Permission`s (e.g. `SYNC_EVENTS_TO_FACEBOOK`) granted directly to the buyer&#39;s own `User.permissions`, union-style -- fulfillment only ever adds permissions the buyer doesn&#39;t already have from some other source, never removes any. Unlike the other three types, this ONE eventually claws back what it granted: once cancellation/expiry actually takes effect (see `MarketSubscription.canceled_at`/`service_terminated_at`), `logic::market::market_fulfillment:: terminate_entitlement` removes exactly the permissions this subscription granted (a plain set difference, not a reconciliation against any other subscription/grant the buyer might also hold). |
 
 
  

@@ -8,7 +8,7 @@ use rellm::schema::server_configurations::dsl::*;
 use rellm::{db_connection, init_bin_logging, init_crypto, models};
 
 /// Admin escape hatch for a stuck `ClusterResourceLock` (see that message's own doc in
-/// server_configuration.proto): if a `generate_preview_images` job dies after acquiring the
+/// server_configuration.proto): if a `generate_link_preview_images` job dies after acquiring the
 /// cluster's browser lock but before calling `FreeClusterResources` (a crash, an OOM-killed pod,
 /// `kubectl delete` mid-run), the lock is never released on its own -- it's persisted on the
 /// conductor's `server_configurations` row, not tied to that job's process lifetime. Run this

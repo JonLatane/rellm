@@ -1,4 +1,4 @@
-//! Specs for `logic::market_renewal::terminate_subscriptions_of_type` -- the delayed
+//! Specs for `logic::market::market_renewal::terminate_subscriptions_of_type` -- the delayed
 //! entitlement-revocation half of subscription cancellation (see that function's own doc, and
 //! `MarketSubscription.canceled_at`/`service_terminated_at`'s proto docs). Exercised directly here
 //! (not through the `CancelMarketSubscription` RPC, which only ever sets `canceled_at`) since it's

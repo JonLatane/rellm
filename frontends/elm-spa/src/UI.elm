@@ -166,7 +166,7 @@ headerNav shared currentRoute =
         -- *positioned* ancestor, not the immediate parent) so taps inside the
         -- open panel don't also bubble up to this `Shared.ScrollToTop`
         -- tap-anywhere handler.
-        , if Set.isEmpty shared.panels.starredPanel.starredPostIds then
+        , if not (StarredPanel.hasAnyStars shared.panels.starredPanel) then
             text ""
 
           else
@@ -3822,6 +3822,12 @@ deleteConfirmationModal shared =
                             , "Delete"
                             )
 
+                        Shared.ConfirmNewAnonymousRsvp _ _ ->
+                            ( "Start a New RSVP?"
+                            , "Make sure you've saved your private RSVP link first. Starting a new anonymous RSVP makes this browser forget the current one -- without that link, you won't be able to edit or delete it later."
+                            , "New RSVP"
+                            )
+
                         Shared.ConfirmUserDelete user _ ->
                             ( "Delete User?"
                             , "Delete "
@@ -4002,7 +4008,7 @@ starredPostsToggle shared =
     div
         [ classes <|
             "starred-menu"
-                :: (if Set.isEmpty shared.panels.starredPanel.starredPostIds then
+                :: (if not (StarredPanel.hasAnyStars shared.panels.starredPanel) then
                         [ "hidden" ]
 
                     else
@@ -4023,7 +4029,7 @@ starredPostsToggle shared =
                     , "border-color-primary-text"
                     ]
                 ]
-                [ text (String.fromInt (Set.size shared.panels.starredPanel.starredPostIds)) ]
+                [ text (String.fromInt (StarredPanel.totalStarCount shared.panels.starredPanel)) ]
             ]
         ]
 
@@ -4042,6 +4048,7 @@ starredPanel shared currentRoute =
         (StarredPanel.view
             shared.time
             shared.basePath
+            (BrowserInfo.name shared.browser)
             shared.accounts
             (currentStarredPostKey shared currentRoute)
             (currentStarredOccasionKey shared currentRoute)

@@ -1,5 +1,5 @@
 //! RPCs backing `protos/market.proto`'s Rellm Marketplace -- see that file's own header comment
-//! and `logic::market_fulfillment`/`logic::market_renewal`/`logic::stripe_sync`/
+//! and `logic::market::market_fulfillment`/`logic::market::market_renewal`/`logic::stripe_payments`/
 //! `web::stripe_webhook` for the fulfillment/renewal/Stripe side of the feature.
 
 mod get_market_products;

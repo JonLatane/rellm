@@ -33,12 +33,12 @@ message GetEventsRequest {
   optional string group_id = 3;
   // Filters returned [`Occasion`](#rellm-Occasion)s by time.
   optional TimeFilter time_filter = 5;
-  // If set, only returns events that the given user is attending. If `attendance_statuses` is also set, 
+  // If set, only returns events that the given user is attending. If `rsvp_statuses` is also set, 
   // returns events where that user's status is one of the given statuses.
   optional string attendee_id = 6;
-  // If set, only return events for which the current user's attendance status matches one of the given statuses. If `attendee_id` is also set,
+  // If set, only return events for which the current user's RSVP status matches one of the given statuses. If `attendee_id` is also set,
   // only returns events where the given user's status matches one of the given statuses.
-  repeated AttendanceStatus attendance_statuses = 7;
+  repeated RsvpStatus rsvp_statuses = 7;
   // Finds Events for the Post with the given ID. The Post should have a [`PostContext`](#rellm-PostContext) of `EVENT` or `OCCASION`.
   optional string post_id = 8;
   // The listing type, e.g. `ALL_ACCESSIBLE_EVENTS`, `FOLLOWING_EVENTS`, `MY_GROUPS_EVENTS`, `DIRECT_EVENTS`, `GROUP_EVENTS`, `GROUP_EVENTS_PENDING_MODERATION`.
@@ -49,11 +49,14 @@ message GetEventsRequest {
   // Event per matching Occasion (see GetEventsResponse's own doc), not
   // the requested Occasion's whole parent Event's full occasion list.
   repeated string occasion_post_ids = 12;
-  // Auth token proving ownership of an anonymous RSVP, mirroring
-  // `GetEventAttendancesRequest.anonymous_attendee_auth_token`. Lets an anonymous attendee's own
-  // (possibly still-`PENDING`) [`EventAttendance`](#rellm-EventAttendance) and its `Occasion.location` (when
+  // Auth token(s) proving ownership of anonymous RSVPs, mirroring
+  // `GetRsvpsRequest.anonymous_attendee_auth_token`. Either a plain `<token>`, or several at once as
+  // `<occasionId>-<token>--<occasionId>-<token>...` (the form the web frontends keep in their
+  // `?anonymousAuthToken=` URL parameter, so it can be passed straight through) -- the occasion id
+  // prefix is only advisory; every token is tried against every returned occasion's RSVPs. Lets an anonymous attendee's own
+  // (possibly still-`PENDING`) [`Rsvp`](#rellm-Rsvp) and its `Occasion.location` (when
   // `EventInfo.hide_location_until_rsvp_approved` is set) surface via each returned
-  // `Occasion.attendances`/`current_user_attendance`, same as a logged-in user's own RSVP
+  // `Occasion.rsvps`/`current_user_rsvp`, same as a logged-in user's own RSVP
   // does automatically.
   optional string anonymous_attendee_auth_token = 13;
 }
@@ -160,8 +163,8 @@ message EventInfo {
   optional uint32 max_attendees = 3;
   // Hide the location until the user RSVPs (and it's accepted).
   // From a system perspective, when this is set, Events will not include the [`Location`](#rellm-Location) until the user has RSVP'd.
-  // Location will always be returned in EventAttendances if the request for the EventAttendances came from a (logged in or anonymous)
-  // user whose attendance is approved (or the event owner).
+  // Location will always be returned in `Rsvps` if the request for the `Rsvps` came from a (logged in or anonymous)
+  // user whose RSVP is approved (or the event owner).
   optional bool hide_location_until_rsvp_approved = 4;
   // Default moderation for RSVPs from logged-in users (either `PENDING` or `APPROVED`).
   // Anonymous RSVPs are always moderated (default to `PENDING`).
@@ -191,9 +194,9 @@ message Occasion {
   // It is up to the owner whether this means it should be deleted.
   optional google.protobuf.Timestamp sync_missing_since = 9;
   // RSVP + invite data for this Occasion.
-  optional EventAttendances attendances = 10;
-  // If the request was made by a logged-in user, this is the current user's attendance for this Occasion.
-  optional EventAttendance current_user_attendance = 11;
+  optional Rsvps rsvps = 10;
+  // If the request was made by a logged-in user, this is the current user's RSVP for this Occasion.
+  optional Rsvp current_user_rsvp = 11;
   // SyncDestinations this Occasion has been synced (cross-posted) to, and their status.
   repeated SyncDestinationStatus sync_destinations = 12;
 
@@ -236,13 +239,13 @@ message OccasionRsvpInfo {
   optional uint32 invited_attendees = 9;
 }
 
-// Occasion attendance statuses. State transitions may generally happen
+// Occasion RSVP statuses. State transitions may generally happen
 // in any direction, but:
-// * `REQUESTED` can only be selected if another user invited the user whose attendance is being described.
+// * `REQUESTED` can only be selected if another user invited the user whose RSVP is being described.
 // * `GOING` and `NOT_GOING` cannot be selected if the Occasion has ended (end time is in the past).
 // * `WENT` and `DID_NOT_GO` cannot be selected if the Occasion has not started (start time is in the future).
 // `INTERESTED` and `REQUESTED` can apply regardless of whether an event has started or ended.
-enum AttendanceStatus {
+enum RsvpStatus {
   // The user is (or was) interested in attending. This is the default status.
   INTERESTED = 0;
   // Another user has invited the user to the event.
@@ -254,54 +257,75 @@ enum AttendanceStatus {
 }
 
 // Request to get RSVP data for an event.
-message GetEventAttendancesRequest {
+message GetRsvpsRequest {
   // The ID of the event to get RSVP data for.
   string occasion_id = 1;
   // If set, and if the token has an RSVP for this even, request that RSVP data
   // in addition to the rest of the RSVP data. (The event creator can always
-  // see and moderate anonymous RSVPs.)
+  // see and moderate anonymous RSVPs.) Takes the same plain / multi-occasion forms as
+  // `GetEventsRequest.anonymous_attendee_auth_token`.
   optional string anonymous_attendee_auth_token = 2;
 }
 
 // Response to get RSVP data for an event.
-message EventAttendances {
-  // The attendance data for the event, in no particular order.
-  repeated EventAttendance attendances = 1;
+message Rsvps {
+  // The RSVP data for the event, in no particular order.
+  repeated Rsvp rsvps = 1;
   // When `hide_location_until_rsvp_approved` is set, the location of the event.
   optional Location hidden_location = 2;
+
+  // Totals over *every* RSVP the viewer is allowed to see for the Occasion -- not just the ones
+  // returned in `rsvps`. `GetEvents` caps how many `rsvps` it returns per Occasion (for big events),
+  // so these counts can be *greater than* `rsvps.length` -- much like `Post.reply_count` can exceed
+  // the replies actually loaded. (`GetRsvps` is not capped, so there they match `rsvps` exactly.)
+  //
+  // `*_count` is a number of RSVPs; `*_attendees` is the sum of their `number_of_guests`. The
+  // per-status counts only include RSVPs whose moderation passes (`UNMODERATED`/`APPROVED`) -- the
+  // ones everyone can see. `pending_*` counts the `PENDING` ones the viewer can see (their own, or
+  // all of them for the event owner), whatever their status. `REJECTED` RSVPs are not counted.
+  uint32 going_count = 3;
+  uint32 going_attendees = 4;
+  uint32 interested_count = 5;
+  uint32 interested_attendees = 6;
+  uint32 requested_count = 7;
+  uint32 requested_attendees = 8;
+  uint32 not_going_count = 9;
+  uint32 not_going_attendees = 10;
+  uint32 pending_count = 11;
+  uint32 pending_attendees = 12;
 }
 
-// Could be called an "RSVP." Describes the attendance of a user at an [`Occasion`](#rellm-Occasion). Such as:
+// An RSVP: describes a user's attendance at an [`Occasion`](#rellm-Occasion). Such as:
 // * A user's RSVP to an [`Occasion`](#rellm-Occasion) (one of `INTERESTED`, `GOING`, `NOT_GOING`, or , `REQUESTED` (i.e. invited)).
 // * Invitation status of a user to an [`Occasion`](#rellm-Occasion).
 // * [`ContactMethod`](#rellm-ContactMethod)-driven management for anonymous RSVPs to an [`Occasion`](#rellm-Occasion).
-message EventAttendance {
-  // Unique server-generated ID for the attendance.
+message Rsvp {
+  // Unique server-generated ID for the RSVP.
   string id = 1;
-  // ID of the [`Occasion`](#rellm-Occasion) the attendance is for.
+  // ID of the [`Occasion`](#rellm-Occasion) the RSVP is for.
   string occasion_id = 2;
 
   oneof attendee {
-    // If the attendance is non-anonymous, core data about the user.
+    // If the RSVP is non-anonymous, core data about the user.
     UserAttendee user_attendee = 3;
-    // If the attendance is anonymous, core data about the anonymous attendee.
+    // If the RSVP is anonymous, core data about the anonymous attendee.
     AnonymousAttendee anonymous_attendee = 4;
   }
   // Number of guests including the RSVPing user. (Minimum 1).
   uint32 number_of_guests = 5;
   // The user's RSVP to an [`Occasion`](#rellm-Occasion) (one of `INTERESTED`, `REQUESTED` (i.e. invited), `GOING`, `NOT_GOING`)
-  AttendanceStatus status = 6;
+  RsvpStatus status = 6;
   // User who invited the attendee. (Not yet used.)
   optional string inviting_user_id = 7;
   // Public note for everyone who can see the event to see.
   string private_note = 8;
   // Private note for the event owner.
   string public_note = 9;
-  // Moderation status for the attendance. Moderated by the [`Event`](#rellm-Event) owner (or [`Occasion`](#rellm-Occasion) owner if applicable).
+  // Moderation status for the RSVP. Moderated by the [`Event`](#rellm-Event) owner (or [`Occasion`](#rellm-Occasion) owner if applicable).
   Moderation moderation = 10;
-  // The time the attendance was created.
+  // The time the RSVP was created.
   google.protobuf.Timestamp created_at = 11;
-  // The time the attendance was last updated.
+  // The time the RSVP was last updated.
   optional google.protobuf.Timestamp updated_at = 12;
 }
 
@@ -315,9 +339,9 @@ message AnonymousAttendee {
   // Contact methods for anonymous attendees. Currently not linked to Contact methods for users.
   repeated ContactMethod contact_methods = 2;
   // Used to allow anonymous users to RSVP to an event. Generated by the server
-  // when an event attendance is upserted for the first time. Subsequent attendance
+  // when an RSVP is upserted for the first time. Subsequent RSVP
   // upserts, with the same occasion_id and anonymous_attendee.auth_token,
-  // will update existing anonymous attendance records. Invalid auth tokens used during upserts will always create a new [`EventAttendance`](#rellm-EventAttendance).
+  // will update existing anonymous RSVP records. Invalid auth tokens used during upserts will always create a new [`Rsvp`](#rellm-Rsvp).
   optional string auth_token = 3;
 }
 

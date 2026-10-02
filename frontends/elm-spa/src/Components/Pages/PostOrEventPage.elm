@@ -32,6 +32,7 @@ import Browser.Navigation
 import Components.Events as Events
 import Components.Pages.EventPage as EventPage
 import Components.Pages.PostPage as PostPage
+import Dict exposing (Dict)
 import Effect exposing (Effect)
 import Grpc
 import Html exposing (Html, text)
@@ -57,6 +58,7 @@ type alias ResolvingModel =
     { targetHost : String
     , rawId : String
     , pageIsSecure : Bool
+    , query : Dict String String
     , navKey : Browser.Navigation.Key
     , fetchStarted : Bool
     }
@@ -76,8 +78,8 @@ id character at all), so it's stripped here, once, before the actual id is used 
 every fetch/sub-page from this point on gets the real id, same as if `/post/:id`/`/event/:id` had
 been visited directly.
 -}
-init : Shared.Model -> Bool -> String -> Browser.Navigation.Key -> ( Model, Effect Msg )
-init shared pageIsSecure rawSegment navKey =
+init : Shared.Model -> Bool -> Dict String String -> String -> Browser.Navigation.Key -> ( Model, Effect Msg )
+init shared pageIsSecure query rawSegment navKey =
     let
         rawId : String
         rawId =
@@ -91,6 +93,7 @@ init shared pageIsSecure rawSegment navKey =
                 { targetHost = targetHost
                 , rawId = rawId
                 , pageIsSecure = pageIsSecure
+                , query = query
                 , navKey = navKey
                 , fetchStarted = False
                 }
@@ -113,7 +116,7 @@ fetchIfReady shared resolving =
         case RellmServers.knownConnectedRellmServer shared.accounts.servers resolving.targetHost of
             Just _ ->
                 ( { resolving | fetchStarted = True }
-                , Events.fetchEvent shared.accounts (maybeAccountServerFor shared resolving) resolving.rawId
+                , Events.fetchEvent shared.accounts (maybeAccountServerFor shared resolving) Nothing resolving.rawId
                     |> Task.attempt GotResolveResult
                     |> Effect.fromCmd
                 )
@@ -198,7 +201,7 @@ asPost shared resolving =
 
 asEvent : Shared.Model -> ResolvingModel -> ( Model, Effect Msg )
 asEvent shared resolving =
-    EventPage.init shared resolving.pageIsSecure resolving.rawId resolving.navKey
+    EventPage.init shared resolving.pageIsSecure resolving.query resolving.rawId resolving.navKey
         |> Tuple.mapFirst Event
         |> Tuple.mapSecond (Effect.map EventMsg)
 

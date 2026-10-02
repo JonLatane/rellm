@@ -30,11 +30,13 @@ const FederationInfo$json = {
   '1': 'FederationInfo',
   '2': [
     {'1': 'servers', '3': 1, '4': 3, '5': 11, '6': '.rellm.FederatedServer', '10': 'servers'},
-    {'1': 'facebook_auth_config', '3': 2, '4': 1, '5': 11, '6': '.rellm.FacebookAuthConfig', '9': 0, '10': 'facebookAuthConfig', '17': true},
-    {'1': 'x_twitter_auth_config', '3': 3, '4': 1, '5': 11, '6': '.rellm.XTwitterAuthConfig', '9': 1, '10': 'xTwitterAuthConfig', '17': true},
+    {'1': 'unsecure_localhost_federated_auth_enabled', '3': 5, '4': 1, '5': 8, '9': 0, '10': 'unsecureLocalhostFederatedAuthEnabled', '17': true},
+    {'1': 'facebook_auth_config', '3': 2, '4': 1, '5': 11, '6': '.rellm.FacebookAuthConfig', '9': 1, '10': 'facebookAuthConfig', '17': true},
+    {'1': 'x_twitter_auth_config', '3': 3, '4': 1, '5': 11, '6': '.rellm.XTwitterAuthConfig', '9': 2, '10': 'xTwitterAuthConfig', '17': true},
     {'1': 'mastodon_servers', '3': 4, '4': 3, '5': 11, '6': '.rellm.MastodonServer', '10': 'mastodonServers'},
   ],
   '8': [
+    {'1': '_unsecure_localhost_federated_auth_enabled'},
     {'1': '_facebook_auth_config'},
     {'1': '_x_twitter_auth_config'},
   ],
@@ -43,12 +45,14 @@ const FederationInfo$json = {
 /// Descriptor for `FederationInfo`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List federationInfoDescriptor = $convert.base64Decode(
     'Cg5GZWRlcmF0aW9uSW5mbxIwCgdzZXJ2ZXJzGAEgAygLMhYucmVsbG0uRmVkZXJhdGVkU2Vydm'
-    'VyUgdzZXJ2ZXJzElAKFGZhY2Vib29rX2F1dGhfY29uZmlnGAIgASgLMhkucmVsbG0uRmFjZWJv'
-    'b2tBdXRoQ29uZmlnSABSEmZhY2Vib29rQXV0aENvbmZpZ4gBARJRChV4X3R3aXR0ZXJfYXV0aF'
-    '9jb25maWcYAyABKAsyGS5yZWxsbS5YVHdpdHRlckF1dGhDb25maWdIAVISeFR3aXR0ZXJBdXRo'
-    'Q29uZmlniAEBEkAKEG1hc3RvZG9uX3NlcnZlcnMYBCADKAsyFS5yZWxsbS5NYXN0b2RvblNlcn'
-    'ZlclIPbWFzdG9kb25TZXJ2ZXJzQhcKFV9mYWNlYm9va19hdXRoX2NvbmZpZ0IYChZfeF90d2l0'
-    'dGVyX2F1dGhfY29uZmln');
+    'VyUgdzZXJ2ZXJzEl0KKXVuc2VjdXJlX2xvY2FsaG9zdF9mZWRlcmF0ZWRfYXV0aF9lbmFibGVk'
+    'GAUgASgISABSJXVuc2VjdXJlTG9jYWxob3N0RmVkZXJhdGVkQXV0aEVuYWJsZWSIAQESUAoUZm'
+    'FjZWJvb2tfYXV0aF9jb25maWcYAiABKAsyGS5yZWxsbS5GYWNlYm9va0F1dGhDb25maWdIAVIS'
+    'ZmFjZWJvb2tBdXRoQ29uZmlniAEBElEKFXhfdHdpdHRlcl9hdXRoX2NvbmZpZxgDIAEoCzIZLn'
+    'JlbGxtLlhUd2l0dGVyQXV0aENvbmZpZ0gCUhJ4VHdpdHRlckF1dGhDb25maWeIAQESQAoQbWFz'
+    'dG9kb25fc2VydmVycxgEIAMoCzIVLnJlbGxtLk1hc3RvZG9uU2VydmVyUg9tYXN0b2RvblNlcn'
+    'ZlcnNCLAoqX3Vuc2VjdXJlX2xvY2FsaG9zdF9mZWRlcmF0ZWRfYXV0aF9lbmFibGVkQhcKFV9m'
+    'YWNlYm9va19hdXRoX2NvbmZpZ0IYChZfeF90d2l0dGVyX2F1dGhfY29uZmln');
 
 @$core.Deprecated('Use federatedServerDescriptor instead')
 const FederatedServer$json = {

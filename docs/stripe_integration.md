@@ -3,8 +3,8 @@
 Rellm's Market ([`protos/market.proto`](../protos/market.proto)) bills through Stripe Checkout.
 Every server "brings its own" Stripe account -- there's no Stripe Connect/platform setup, no shared
 Rellm-operated account, and no Stripe SDK crate (every call is a plain `reqwest` REST request, same
-pattern as [`logic::twilio_sync`](../backend/src/logic/twilio_sync.rs)). Implementation:
-[`backend/src/logic/stripe_sync.rs`](../backend/src/logic/stripe_sync.rs) (the actual API calls),
+pattern as [`logic::twilio_sms`](../backend/src/logic/twilio_sms.rs)). Implementation:
+[`backend/src/logic/stripe_payments.rs`](../backend/src/logic/stripe_payments.rs) (the actual API calls),
 [`backend/src/rpcs/market/make_market_purchase.rs`](../backend/src/rpcs/market/make_market_purchase.rs)
 (starts a checkout), [`backend/src/web/stripe_webhook.rs`](../backend/src/web/stripe_webhook.rs)
 (fulfills a completed purchase), and
@@ -114,7 +114,7 @@ that's what greys out the "Buy" button with "Stripe is not configured" on `/mark
   webhook, never from `MakeMarketPurchase` itself, so an abandoned checkout never leaves a
   half-created `MarketPurchase`/`MarketSubscription` behind. Idempotent: a redelivered event is a
   no-op if a `MarketPurchase` already exists for that Checkout Session id.
-- **Renewals** (`logic::market_renewal`) -- recurring (`ANNUAL`/`MONTHLY`) subscriptions are billed
+- **Renewals** (`logic::market::market_renewal`) -- recurring (`ANNUAL`/`MONTHLY`) subscriptions are billed
   by this server itself calling `create_off_session_payment_intent_at` against the saved
   Customer/PaymentMethod, not through another Checkout Session or Stripe's own Billing/Subscriptions
   product.

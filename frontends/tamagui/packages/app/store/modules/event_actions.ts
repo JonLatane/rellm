@@ -1,4 +1,4 @@
-import { Event, EventAttendances, Occasion, EventListingType, GetEventAttendancesRequest, GetEventsRequest, GetEventsResponse, TimeFilter } from "@rellm/api";
+import { Event, Rsvps, Occasion, EventListingType, GetRsvpsRequest, GetEventsRequest, GetEventsResponse, TimeFilter } from "@rellm/api";
 import {
   AsyncThunk,
   createAsyncThunk
@@ -98,17 +98,17 @@ export const loadEvent: AsyncThunk<IdentifiedEvent, LoadEvent, any> = createAsyn
   }
 );
 
-export type LoadRsvpData = GetEventAttendancesRequest & AccountOrServer;
-export const loadRsvpData: AsyncThunk<EventAttendances, LoadRsvpData, any> = createAsyncThunk<EventAttendances, LoadRsvpData>(
+export type LoadRsvpData = GetRsvpsRequest & AccountOrServer;
+export const loadRsvpData: AsyncThunk<Rsvps, LoadRsvpData, any> = createAsyncThunk<Rsvps, LoadRsvpData>(
   "events/loadRsvpData",
   async (request) => {
     const client = await getCredentialClient(request);
 
-    const eventAttendancesResponse = await client.getEventAttendances({
+    const eventRsvpsResponse = await client.getRsvps({
       occasionId: request.occasionId,
       anonymousAttendeeAuthToken: request.anonymousAttendeeAuthToken
     }, client.credential);
 
-    return eventAttendancesResponse;
+    return eventRsvpsResponse;
   }
 );

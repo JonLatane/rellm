@@ -29,7 +29,7 @@ pub fn start_contact_method_verification(
 }
 
 /// Same as `start_contact_method_verification`, but against an arbitrary provider API `base_url`
-/// (see `logic::contact_verification::send_verification_sms`'s own `base_url` doc) -- lets specs
+/// (see `logic::contact_methods::contact_verification::send_verification_sms`'s own `base_url` doc) -- lets specs
 /// point whichever provider ends up selected at a local mock server instead of the real Twilio/Bird
 /// API (see `factories::serve_capturing`).
 pub fn start_contact_method_verification_at(

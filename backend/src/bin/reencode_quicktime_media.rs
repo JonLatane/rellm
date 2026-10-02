@@ -10,7 +10,7 @@ use rellm::{db_connection, init_bin_logging, init_crypto, object_storage_connect
 const BATCH_SIZE: i64 = 50;
 
 /// One-off, manually-run cleanup for `Media` rows whose resized (`small`/`medium`/`large`) copies
-/// are still tagged `video/quicktime` from before `logic::media_conversion::resized_content_type`
+/// are still tagged `video/quicktime` from before `logic::media::media_conversion::resized_content_type`
 /// started re-muxing them to `video/mp4`. Chrome refuses to play `video/quicktime` inline when a
 /// media URL is navigated to directly (e.g. opened/shared in its own tab), downloading it instead
 /// regardless of the actual codec inside -- so those rows currently trigger a download in Chrome

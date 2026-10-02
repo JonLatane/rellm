@@ -639,23 +639,23 @@ impl Rellm for RellmService {
         authenticated_rpc!(self, rpcs::make_market_purchase, request)
     }
 
-    async fn upsert_event_attendance(
+    async fn upsert_rsvp(
         &self,
-        request: Request<EventAttendance>,
-    ) -> Result<Response<EventAttendance>, Status> {
-        unauthenticated_rpc!(self, rpcs::upsert_event_attendance, request)
+        request: Request<Rsvp>,
+    ) -> Result<Response<Rsvp>, Status> {
+        unauthenticated_rpc!(self, rpcs::upsert_rsvp, request)
     }
-    async fn delete_event_attendance(
+    async fn delete_rsvp(
         &self,
-        request: Request<EventAttendance>,
+        request: Request<Rsvp>,
     ) -> Result<Response<()>, Status> {
-        unauthenticated_rpc!(self, rpcs::delete_event_attendance, request)
+        unauthenticated_rpc!(self, rpcs::delete_rsvp, request)
     }
-    async fn get_event_attendances(
+    async fn get_rsvps(
         &self,
-        request: Request<GetEventAttendancesRequest>,
-    ) -> Result<Response<EventAttendances>, Status> {
-        unauthenticated_rpc!(self, rpcs::get_event_attendances, request)
+        request: Request<GetRsvpsRequest>,
+    ) -> Result<Response<Rsvps>, Status> {
+        unauthenticated_rpc!(self, rpcs::get_rsvps, request)
     }
 
     async fn federate_profile(
