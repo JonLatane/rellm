@@ -33,6 +33,7 @@ import Browser.Navigation
 import Components.AIProviders as AIProviders
 import Components.Markdown as Markdown
 import Components.Market as Market
+import Components.FederatedAuthors exposing (FederatedAuthor)
 import Components.Pages.EventsPage as EventsPage
 import Components.Pages.PostsPage as PostsPage
 import Components.Posts as Posts
@@ -88,6 +89,13 @@ type alias Model =
     , connectStatus : ServerDependentView.ConnectStatus
     , pageIsSecure : Bool
     , federatedProfiles : Dict String FederatedProfileStatus
+
+    -- The viewer's own choice (via the toggle) of whether the embedded `PostsPage`/`EventsPage`
+    -- copies also show the posts/events of every loaded entry in `federatedProfiles`, not just
+    -- this profile's own. `Nothing` until they touch it, in which case `federatedFeedsEnabled`
+    -- decides: on by default, unless some profile is unverified (a profile can be linked
+    -- without its own consent), which makes it opt-in.
+    , federatedFeedsChoice : Maybe Bool
     , realNameEdit : Maybe RealNameEdit
     , usernameEdit : Maybe UsernameEdit
     , avatarEdit : Maybe AvatarEdit
@@ -225,6 +233,7 @@ type Msg
     | PermissionsCancelClicked
     | PermissionsSaveClicked
     | GotPermissionsSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, User ))
+    | FederatedFeedsToggled
     | FederatedProfilesEditClicked
     | FederatedProfilesDoneClicked
     | FederatedProfileAddSelectionChanged String
@@ -1072,6 +1081,7 @@ init shared pageIsSecure targetHost lookup navKey path query fragment =
             , connectStatus = ServerDependentView.NotConnected
             , pageIsSecure = pageIsSecure
             , federatedProfiles = Dict.empty
+            , federatedFeedsChoice = Nothing
             , realNameEdit = Nothing
             , usernameEdit = Nothing
             , avatarEdit = Nothing
@@ -1492,15 +1502,18 @@ updateInner shared msg model =
                                 Nothing ->
                                     Effect.none
                     in
-                    ( { postsResyncedModel | pendingScrollSectionId = Nothing }
-                    , Effect.batch
-                        [ Effect.map ResolverMsg resolverEffect
-                        , federatedEffect
-                        , postsInitEffect
-                        , eventsInitEffect
-                        , scrollEffect
-                        ]
-                    )
+                    syncFederatedAuthors shared { postsResyncedModel | pendingScrollSectionId = Nothing }
+                        |> Tuple.mapSecond
+                            (\syncEffect ->
+                                Effect.batch
+                                    [ Effect.map ResolverMsg resolverEffect
+                                    , federatedEffect
+                                    , postsInitEffect
+                                    , eventsInitEffect
+                                    , scrollEffect
+                                    , syncEffect
+                                    ]
+                            )
 
                 _ ->
                     ( newModel, Effect.map ResolverMsg resolverEffect )
@@ -2652,6 +2665,14 @@ updateInner shared msg model =
               }
             , Effect.none
             )
+
+        FederatedFeedsToggled ->
+            case model.resolver.status of
+                Resolver.Loaded user ->
+                    syncFederatedAuthors shared { model | federatedFeedsChoice = Just (not (federatedFeedsEnabled model user)) }
+
+                _ ->
+                    ( model, Effect.none )
 
         FederatedProfilesEditClicked ->
             ( { model
@@ -3990,9 +4011,16 @@ updateInner shared msg model =
             )
 
         GotFederatedServer account (Err _) ->
-            ( { model | federatedProfiles = Dict.insert (federatedKey account) FederatedProfileFailed model.federatedProfiles }
-            , Effect.none
-            )
+            -- A known-but-unconnected placeholder server may still answer the user fetch
+            -- itself (it just couldn't be fully connected to); an unknown one can't.
+            case RellmServers.rellmServerForHost shared.accounts.servers account.host of
+                Just _ ->
+                    ( model, fetchFederatedUserEffect shared account )
+
+                Nothing ->
+                    ( { model | federatedProfiles = Dict.insert (federatedKey account) FederatedProfileFailed model.federatedProfiles }
+                    , Effect.none
+                    )
 
         GotFederatedUser key (Ok ( maybeAccountsPanelMsg, response )) ->
             let
@@ -4007,7 +4035,8 @@ updateInner shared msg model =
                         |> Maybe.map FederatedProfileLoaded
                         |> Maybe.withDefault FederatedProfileFailed
             in
-            ( { model | federatedProfiles = Dict.insert key newStatus model.federatedProfiles }, accountEffect )
+            syncFederatedAuthors shared { model | federatedProfiles = Dict.insert key newStatus model.federatedProfiles }
+                |> Tuple.mapSecond (\syncEffect -> Effect.batch [ accountEffect, syncEffect ])
 
         GotFederatedUser key (Err _) ->
             ( { model | federatedProfiles = Dict.insert key FederatedProfileFailed model.federatedProfiles }
@@ -4155,6 +4184,106 @@ accountLabel account =
     account.username ++ "@" ++ account.server ++ " (" ++ account.userId ++ ")"
 
 
+{-| Whether federated feeds are on: the viewer's explicit `federatedFeedsChoice` if any, else
+on only once every federated profile has settled (none still loading) and none of the loaded
+ones is unverified -- so it flips on by itself after the verification fetches finish, and stays
+off (opt-in) as soon as one profile turns out not to link back. Failed profiles can't be shown
+at all, so they don't count either way.
+-}
+federatedFeedsEnabled : Model -> User -> Bool
+federatedFeedsEnabled model user =
+    case model.federatedFeedsChoice of
+        Just choice ->
+            choice
+
+        Nothing ->
+            let
+                statuses : List FederatedProfileStatus
+                statuses =
+                    user.federatedProfiles
+                        |> List.filterMap (\account -> Dict.get (federatedKey account) model.federatedProfiles)
+            in
+            List.length statuses
+                == List.length user.federatedProfiles
+                && List.all
+                    (\status ->
+                        case status of
+                            FederatedProfileLoading ->
+                                False
+
+                            FederatedProfileLoaded federatedUser ->
+                                reciprocated model.resolver.targetHost user federatedUser
+
+                            FederatedProfileFailed ->
+                                True
+                    )
+                    statuses
+
+
+{-| The profiles the embedded `PostsPage`/`EventsPage` copies should also show, per
+`federatedFeedsEnabled` -- every entry of `user.federatedProfiles` that has actually loaded (an
+unloaded or failed one can't be verified, so it's skipped until it does), each marked `verified`
+iff it links back (see `reciprocated`). Always empty while federation is off.
+-}
+federatedAuthors : Model -> User -> List FederatedAuthor
+federatedAuthors model user =
+    if federatedFeedsEnabled model user then
+        user.federatedProfiles
+            |> List.filterMap
+                (\account ->
+                    case Dict.get (federatedKey account) model.federatedProfiles of
+                        Just (FederatedProfileLoaded federatedUser) ->
+                            Just
+                                { host = account.host
+                                , userId = account.userId
+                                , verified = reciprocated model.resolver.targetHost user federatedUser
+                                }
+
+                        _ ->
+                            Nothing
+                )
+
+    else
+        []
+
+
+{-| Pushes `federatedAuthors` into both embedded copies (a no-op in each once it's unchanged, and
+before they've been `init`ed at all). Called whenever the toggle, the resolved `User`, or any
+federated profile's load state changes.
+-}
+syncFederatedAuthors : Shared.Model -> Model -> ( Model, Effect Msg )
+syncFederatedAuthors shared model =
+    let
+        authors : List FederatedAuthor
+        authors =
+            case model.resolver.status of
+                Resolver.Loaded user ->
+                    federatedAuthors model user
+
+                _ ->
+                    []
+
+        ( newPosts, postsEffect ) =
+            case model.posts of
+                Just postsModel ->
+                    PostsPage.update shared (PostsPage.federatedAuthorsChanged authors) postsModel
+                        |> Tuple.mapBoth Just (Effect.map PostsMsg)
+
+                Nothing ->
+                    ( Nothing, Effect.none )
+
+        ( newEvents, eventsEffect ) =
+            case model.events of
+                Just eventsModel ->
+                    EventsPage.update shared (EventsPage.federatedAuthorsChanged authors) eventsModel
+                        |> Tuple.mapBoth Just (Effect.map EventsMsg)
+
+                Nothing ->
+                    ( Nothing, Effect.none )
+    in
+    ( { model | posts = newPosts, events = newEvents }, Effect.batch [ postsEffect, eventsEffect ] )
+
+
 {-| Kicks off a fetch for every entry in `user.federatedProfiles` that isn't
 already loading/loaded/failed -- grouping isn't needed the way
 `Shared.StarredPanel.kickOffFetches` groups by host, since a `User`
@@ -4192,10 +4321,13 @@ fetchFederated shared pageIsSecure account ( statuses, effects ) =
         newStatuses =
             Dict.insert (federatedKey account) FederatedProfileLoading statuses
     in
-    case RellmServers.rellmServerForHost shared.accounts.servers account.host of
+    case RellmServers.rellmServerForHost shared.accounts.servers account.host |> Maybe.andThen .connected of
         Just _ ->
             ( newStatuses, effects ++ [ fetchFederatedUserEffect shared account ] )
 
+        -- Either unknown, or only a placeholder (`connected == Nothing`: persisted but not
+        -- yet -- or never -- reconnected, with just default branding) -- either way, connect
+        -- now so `UI.EmittedStylesheet` has this server's real colors for its chip.
         Nothing ->
             ( newStatuses
             , effects
@@ -6276,7 +6408,24 @@ federatedProfilesSection shared model server canEdit user =
                         |> List.map (federatedProfileEntry shared model server user model.federatedProfilesEdit)
                    )
                 ++ federatedProfilesEditControls shared model server canEdit user
+                ++ [ federatedFeedsToggle model user ]
             )
+
+
+{-| The checkbox driving `federatedFeedsChoice` -- only shown with at least one federated
+profile to include. Unverified ones (⚠️ in `federatedProfileLink`) are still included once
+enabled, flagged on each of their cards/calendar entries -- see `Components.FederatedAuthors`.
+-}
+federatedFeedsToggle : Model -> User -> Html Msg
+federatedFeedsToggle model user =
+    if List.isEmpty user.federatedProfiles then
+        text ""
+
+    else
+        label [ class "profile-federated-feeds-toggle" ]
+            [ input [ type_ "checkbox", checked (federatedFeedsEnabled model user), onClick FederatedFeedsToggled ] []
+            , text " Include events and posts from federated profiles"
+            ]
 
 
 {-| One federated profile entry: its `federatedProfileLink`, plus (only while
@@ -6415,6 +6564,15 @@ federatedProfileLink shared model server user account =
         )
 
 
+{-| Whether `federatedUser` (fetched from its own server) lists `user` (on `userHost`) back --
+one of its own `federatedProfiles` names `userHost`/`user.id`.
+-}
+reciprocated : String -> User -> User -> Bool
+reciprocated userHost user federatedUser =
+    List.any (\account -> account.host == userHost && account.userId == user.id)
+        federatedUser.federatedProfiles
+
+
 {-| ✅ if `federatedUser` (fetched from its own server) also lists `user`
 back -- one of its own `federatedProfiles` names `server.frontendHost`/
 `user.id` -- confirming the two profiles actually link to _each other_, not
@@ -6423,13 +6581,7 @@ side, or never confirmed).
 -}
 crossCheckBadge : RellmServer -> User -> User -> Html Msg
 crossCheckBadge server user federatedUser =
-    let
-        reciprocated : Bool
-        reciprocated =
-            List.any (\account -> account.host == server.frontendHost && account.userId == user.id)
-                federatedUser.federatedProfiles
-    in
-    if reciprocated then
+    if reciprocated server.frontendHost user federatedUser then
         span [ class "profile-federated-badge", title "Both profiles link to each other" ] [ text "✅" ]
 
     else

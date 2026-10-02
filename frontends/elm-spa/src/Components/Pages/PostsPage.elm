@@ -3,6 +3,7 @@ module Components.Pages.PostsPage exposing
     , Model
     , Msg
     , exportButtonView
+    , federatedAuthorsChanged
     , fromShared
     , init
     , searchTextChanged
@@ -28,6 +29,7 @@ posts and adding this module's own "Posts | <name>" heading, via
 
 import Animation
 import Browser.Navigation
+import Components.FederatedAuthors as FederatedAuthors exposing (FederatedAuthor)
 import Components.MediaRenderer as MediaRenderer
 import Components.Posts as Posts
 import Components.Users exposing (usernameHref)
@@ -77,6 +79,11 @@ type alias Model =
     { postsByServer : Dict String ServerFeed
     , postAnimations : Dict String PostAnimation
     , author : Maybe ( String, User )
+
+    -- Extra profiles (beyond `author`) whose posts are fetched and shown alongside it -- only ever
+    -- non-empty on `Components.Pages.UserProfilePage`'s embedded copy, set via
+    -- `FederatedAuthorsChanged`. See `Components.FederatedAuthors`.
+    , federatedAuthors : List FederatedAuthor
 
     -- Set only by `Components.Pages.MastodonUserProfilePage`/`BlueskyUserProfilePage`'s own embedded
     -- copy, to a `MastodonAccountFeed`/`BlueskyAuthorFeed` naming the one profile being viewed --
@@ -218,6 +225,8 @@ type Msg
       -- section-expanded toggle (see `Model.showSyncDestinations`'s own doc),
       -- not by anything in this page's own UI.
     | ShowSyncDestinationsChanged Bool
+      -- Replaces `model.federatedAuthors` -- see `federatedAuthorsChanged`.
+    | FederatedAuthorsChanged (List FederatedAuthor)
       -- The Push button on a card's `Posts.postCard`-rendered sync
       -- destination row (see `Model.availableSyncDestinations`'s own doc) --
       -- host/postId/syncDestinationId, keyed into `Model.pushStatuses` via
@@ -251,6 +260,10 @@ detected as "the acting credential changed" and trigger a re-fetch.
 type alias ServerFeed =
     { status : ServerPosts
     , accountId : Maybe String
+
+    -- The real server host the posts came from -- `postsByServer`'s own key is `feedSourceKey`,
+    -- which for a `RellmFederatedAuthor` isn't just the host (two profiles can share one).
+    , host : String
     }
 
 
@@ -265,6 +278,7 @@ they just reach different APIs, with different capabilities, to do it. See `feed
 -}
 type FeedSource
     = RellmServer RellmServer
+    | RellmFederatedAuthor RellmServer String
     | MastodonInstance String
     | BlueskyFeed BlueskyAccount
     | MastodonAccountFeed { instanceHost : String, accountId : String, username : String }
@@ -287,6 +301,9 @@ feedSourceKey source =
     case source of
         RellmServer server ->
             server.frontendHost
+
+        RellmFederatedAuthor server userId ->
+            server.frontendHost ++ "/user/" ++ userId
 
         MastodonInstance host ->
             "mastodon:" ++ host
@@ -315,6 +332,10 @@ feedSourceAccountId : Shared.Model -> FeedSource -> Maybe String
 feedSourceAccountId shared source =
     case source of
         RellmServer server ->
+            RellmAccounts.enabledRellmAccountForServer shared.accounts.accounts server.frontendHost
+                |> Maybe.map RellmAccounts.rellmAccountId
+
+        RellmFederatedAuthor server _ ->
             RellmAccounts.enabledRellmAccountForServer shared.accounts.accounts server.frontendHost
                 |> Maybe.map RellmAccounts.rellmAccountId
 
@@ -475,6 +496,7 @@ init shared author navKey path query embeddedPage availableSyncDestinations prof
                 { postsByServer = Dict.empty
                 , postAnimations = Dict.empty
                 , author = author
+                , federatedAuthors = []
                 , profileFeedSource = profileFeedSource
                 , embeddedPage = embeddedPage
                 , navKey = navKey
@@ -568,6 +590,16 @@ showSyncDestinationsChanged =
     ShowSyncDestinationsChanged
 
 
+{-| Replaces the extra profiles (beyond `author`) this feed also shows -- driven by
+`Components.Pages.UserProfilePage`'s own federation toggle and its loaded `federatedProfiles`
+(see `Components.FederatedAuthors`). Mirrors `showSyncDestinationsChanged`'s own reason for
+existing: exposes this one message without exposing `Msg`'s constructors.
+-}
+federatedAuthorsChanged : List FederatedAuthor -> Msg
+federatedAuthorsChanged =
+    FederatedAuthorsChanged
+
+
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
 update shared msg model =
     let
@@ -606,7 +638,7 @@ updateInner shared msg model =
                         rawPosts
 
                     else
-                        rawPosts |> List.filter (\post -> not (Set.member post.id (customNavPostIds shared host)))
+                        rawPosts |> List.filter (\post -> not (Set.member post.id (customNavPostIds shared (feedHost model host))))
             in
             ( { model
                 | postsByServer =
@@ -666,7 +698,7 @@ updateInner shared msg model =
                         -- override) is needed instead to actually re-run `GotFeedPosts`'
                         -- `customNavPostIds` filter with the new toggle state.
                         Shared.AccountsPanelMsg (AccountsPanel.DebugTabMsg DebugTab.ToggleShowCustomNavPosts) ->
-                            refetchFeeds shared model (List.map RellmServer (relevantServers shared model))
+                            refetchFeeds shared model (List.map RellmServer (relevantServers shared model) ++ federatedAuthorSources shared model)
 
                         Shared.AccountsPanelMsg _ ->
                             fetchNewFeeds shared model
@@ -681,7 +713,13 @@ updateInner shared msg model =
                         Shared.GotPostSyncDestinationDeleteResult host (Ok _) ->
                             case RellmServers.rellmServerForHost shared.accounts.servers host of
                                 Just server ->
-                                    refetchFeeds shared model [ RellmServer server ]
+                                    refetchFeeds shared
+                                        model
+                                        (RellmServer server
+                                            :: (federatedAuthorSources shared model
+                                                    |> List.filter (\source -> feedSourceHost source == host)
+                                               )
+                                        )
 
                                 Nothing ->
                                     ( model, Effect.none )
@@ -819,6 +857,15 @@ updateInner shared msg model =
         ShowSyncDestinationsChanged showSyncDestinations ->
             ( { model | showSyncDestinations = showSyncDestinations }, Effect.none )
 
+        FederatedAuthorsChanged authors ->
+            if authors == model.federatedAuthors then
+                ( model, Effect.none )
+
+            else
+                -- Fetches any newly-listed profile, drops any no-longer-listed one (see
+                -- `refetchFeeds`' own pruning), and leaves already-`Loaded` ones alone.
+                fetchNewFeeds shared { model | federatedAuthors = authors }
+
         PushPostToDestination host postId syncDestinationId ->
             let
                 key : String
@@ -899,6 +946,14 @@ updateInner shared msg model =
                 -- A later `CopyLinkClicked` already bumped `copyLinkGeneration` past this
                 -- timer's -- it's stale, ignore it.
                 ( model, Effect.none )
+
+
+{-| The real server host behind a `postsByServer` key (see `feedSourceKey`) -- the key itself
+for anything not yet (or no longer) in the dict.
+-}
+feedHost : Model -> String -> String
+feedHost model key =
+    Dict.get key model.postsByServer |> Maybe.map .host |> Maybe.withDefault key
 
 
 pushStatusKey : String -> String -> String
@@ -1011,6 +1066,7 @@ relevantFeedSources shared model =
 
         Nothing ->
             List.map RellmServer (relevantServers shared model)
+                ++ federatedAuthorSources shared model
                 ++ (if model.author /= Nothing then
                         []
 
@@ -1018,6 +1074,42 @@ relevantFeedSources shared model =
                         List.map MastodonInstance (mastodonHostsToFetch shared)
                             ++ List.map BlueskyFeed (List.filter .enabled shared.accounts.blueskyAccounts)
                    )
+
+
+{-| One `RellmFederatedAuthor` per `model.federatedAuthors` entry whose server is known, minus the
+page's own `author` itself (a profile can list itself, or be listed back by another one). Always
+empty without an `author` -- there's no one to federate.
+-}
+federatedAuthorSources : Shared.Model -> Model -> List FeedSource
+federatedAuthorSources shared model =
+    case model.author of
+        Just ( authorHost, author ) ->
+            model.federatedAuthors
+                |> List.filter (\a -> not (a.host == authorHost && a.userId == author.id))
+                |> List.filterMap
+                    (\a ->
+                        RellmServers.rellmServerForHost shared.accounts.servers a.host
+                            |> Maybe.map (\server -> RellmFederatedAuthor server a.userId)
+                    )
+
+        Nothing ->
+            []
+
+
+{-| The real server host a `FeedSource` posts come from (its `feedSourceKey` for Mastodon/Bluesky,
+whose synthetic keys are already what cards treat as their host).
+-}
+feedSourceHost : FeedSource -> String
+feedSourceHost source =
+    case source of
+        RellmServer server ->
+            server.frontendHost
+
+        RellmFederatedAuthor server _ ->
+            server.frontendHost
+
+        _ ->
+            feedSourceKey source
 
 
 {-| Every Mastodon instance host worth fetching -- both accounts connected via OAuth
@@ -1038,6 +1130,31 @@ mastodonHostsToFetch shared =
         |> Set.toList
 
 
+{-| One real `GetPosts` fetch of `server`, scoped to `authorId` (the page's own `author`, or one `RellmFederatedAuthor`'s profile) and settling as `source`'s own `GotFeedPosts`. -}
+fetchRellmPosts : Shared.Model -> Model -> FeedSource -> RellmServer -> Maybe String -> Effect Msg
+fetchRellmPosts shared model source server authorId =
+    let
+        cutoff : Maybe Time.Posix
+        cutoff =
+            if model.tab == PostsBeforeDate then
+                model.publishedBefore
+
+            else
+                Nothing
+    in
+    Posts.fetchPosts
+        shared.accounts
+        ( RellmAccounts.enabledRellmAccountForServer shared.accounts.accounts server.frontendHost |> Maybe.map .userId
+        , server.frontendHost
+        )
+        authorId
+        model.searchText
+        model.context
+        cutoff
+        |> Task.attempt (fromServerResult >> GotFeedPosts (feedSourceKey source))
+        |> Effect.fromCmd
+
+
 {-| Actually fires one `FeedSource`'s fetch -- a real `GetPosts` RPC (author-scoped, search/context/
 cutoff-aware) for a `RellmServer`, or an unauthenticated/self-authenticated plain `Task.attempt`
 against Mastodon's/Bluesky's own REST API for the other two, translated via
@@ -1052,26 +1169,10 @@ fetchFeedSource : Shared.Model -> Model -> FeedSource -> Effect Msg
 fetchFeedSource shared model source =
     case source of
         RellmServer server ->
-            let
-                cutoff : Maybe Time.Posix
-                cutoff =
-                    if model.tab == PostsBeforeDate then
-                        model.publishedBefore
+            fetchRellmPosts shared model source server (model.author |> Maybe.map (Tuple.second >> .id))
 
-                    else
-                        Nothing
-            in
-            Posts.fetchPosts
-                shared.accounts
-                ( RellmAccounts.enabledRellmAccountForServer shared.accounts.accounts server.frontendHost |> Maybe.map .userId
-                , server.frontendHost
-                )
-                (model.author |> Maybe.map (Tuple.second >> .id))
-                model.searchText
-                model.context
-                cutoff
-                |> Task.attempt (fromServerResult >> GotFeedPosts server.frontendHost)
-                |> Effect.fromCmd
+        RellmFederatedAuthor server userId ->
+            fetchRellmPosts shared model source server (Just userId)
 
         MastodonInstance host ->
             Mastodon.fetchPosts host
@@ -1186,7 +1287,7 @@ refetchFeeds shared model sourcesToFetch =
                                 )
                 in
                 Dict.insert key
-                    { status = Maybe.withDefault Loading statusIfSameAccount, accountId = accountId }
+                    { status = Maybe.withDefault Loading statusIfSameAccount, accountId = accountId, host = feedSourceHost source }
                     dict
         in
         ( { model
@@ -1253,6 +1354,7 @@ applySearchChange shared model =
         sourcesToRefetch : List FeedSource
         sourcesToRefetch =
             List.map RellmServer (relevantServers shared model)
+                ++ federatedAuthorSources shared model
                 ++ (if model.author == Nothing then
                         List.map BlueskyFeed (List.filter .enabled shared.accounts.blueskyAccounts)
 
@@ -1491,12 +1593,12 @@ syncAnimations model =
             model.postsByServer
                 |> Dict.toList
                 |> List.concatMap
-                    (\( host, feed ) ->
+                    (\( _, feed ) ->
                         case feed.status of
                             Loaded posts ->
                                 posts
                                     |> List.filter (\post -> post.context == model.context)
-                                    |> List.map (\post -> ( postAnimationKey host post, ( host, post ) ))
+                                    |> List.map (\post -> ( postAnimationKey feed.host post, ( feed.host, post ) ))
 
                             _ ->
                                 []
@@ -1920,7 +2022,7 @@ postsListView shared model =
         else
             Html.Keyed.node "div"
                 [ class "posts-list flip-animated-column" ]
-                (List.map (postAnimationView shared model.showSyncDestinations model.availableSyncDestinations model.pushStatuses) sortedAnimations)
+                (List.map (postAnimationView shared model.federatedAuthors model.showSyncDestinations model.availableSyncDestinations model.pushStatuses) sortedAnimations)
 
 
 {-| Wraps `Posts.postCard` in a fading/scaling/collapsing animated `<div>`
@@ -1936,8 +2038,8 @@ border; it also carries `pointer-events: none` while `removing` so a
 fading-out card (e.g. from a just-disabled server) can't be clicked/starred
 while it's on its way out.
 -}
-postAnimationView : Shared.Model -> Bool -> Maybe (List SyncDestination) -> Dict String SubmitStatus -> ( String, PostAnimation ) -> ( String, Html Msg )
-postAnimationView shared showSyncDestinations availableSyncDestinations pushStatuses ( key, anim ) =
+postAnimationView : Shared.Model -> List FederatedAuthor -> Bool -> Maybe (List SyncDestination) -> Dict String SubmitStatus -> ( String, PostAnimation ) -> ( String, Html Msg )
+postAnimationView shared federatedAuthors showSyncDestinations availableSyncDestinations pushStatuses ( key, anim ) =
     let
         pointerEventsAttr : List (Html.Attribute Msg)
         pointerEventsAttr =
@@ -1949,7 +2051,12 @@ postAnimationView shared showSyncDestinations availableSyncDestinations pushStat
     in
     ( key
     , div (UI.Flip.itemAttributes UI.Flip.Vertical anim.flip False)
-        [ div pointerEventsAttr [ postCardView shared showSyncDestinations availableSyncDestinations pushStatuses ( anim.host, anim.post ) ] ]
+        [ div pointerEventsAttr
+            [ postCardView shared showSyncDestinations availableSyncDestinations pushStatuses ( anim.host, anim.post )
+                |> FederatedAuthors.withWarningOverlay
+                    (FederatedAuthors.isUnverified federatedAuthors anim.host (anim.post.author |> Maybe.map .userId))
+            ]
+        ]
     )
 
 

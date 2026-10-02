@@ -157,50 +157,59 @@ serverRules darkMode mainTheme mainFrontendHost server =
 
         listItemColorRule : String
         listItemColorRule =
-            withDescendants selector ".list-item-bordered-color-primary" ++ " { border-left: 4px solid " ++ theme.primaryAnchorColor ++ "; border-bottom: 2px solid " ++ theme.primaryAnchorColor ++ "; border-top: 1px solid " ++ theme.navAnchorColor ++ "88; border-right: 1px solid " ++ theme.navAnchorColor ++ "88; border-radius: 4px; }\n"
+            withDescendantsAndDirectPriority selector ".list-item-bordered-color-primary" ++ " { border-left: 4px solid " ++ theme.primaryAnchorColor ++ "; border-bottom: 2px solid " ++ theme.primaryAnchorColor ++ "; border-top: 1px solid " ++ theme.navAnchorColor ++ "88; border-right: 1px solid " ++ theme.navAnchorColor ++ "88; border-radius: 4px; }\n"
     in
     String.concat
-        [ colorRule (withDescendants selector ".background-color-primary") theme.primaryColor theme.primaryTextColor
+        [ colorRule (withDescendantsAndDirectPriority selector ".background-color-primary") theme.primaryColor theme.primaryTextColor
         , textColorRule (selector ++ ".background-color-primary:not(.navbar, .account-row) a") <|
             if theme.primaryLuma > 0.55 then
                 theme.navDarkColor
 
             else
                 theme.navLightColor
-        , colorRule (withDescendants selector ".background-color-primary-5") (theme.primaryColor ++ "05") theme.textColor
-        , colorRule (withDescendants selector ".background-color-primary-10") (theme.primaryColor ++ "10") theme.textColor
-        , colorRule (withDescendants selector ".background-color-primary-25") (theme.primaryColor ++ "40") theme.textColor
-        , colorRule (withDescendants selector ".background-color-primary-50") (theme.primaryColor ++ "80") theme.textColor
-        , colorRule (withDescendants selector ".background-color-nav") theme.navColor theme.navTextColor
-        , colorRule (withDescendants selector ".background-color-nav-contrast") theme.navContrastColor theme.backgroundColor
-        , colorRule (withDescendants selector ".background-color-accent") theme.accentColor theme.accentTextColor
-        , colorRule (withDescendants selector ".background-color-accent-5") (theme.accentColor ++ "08") theme.textColor
-        , colorRule (withDescendants selector ".background-color-accent-10") (theme.accentColor ++ "10") theme.textColor
-        , colorRule (withDescendants selector ".background-color-accent-anchor") theme.accentAnchorColor theme.backgroundColor
-        , colorRule (withDescendants selector ".background-color-primary-background") theme.primaryBgColor theme.textColor
-        , borderColorRule (withDescendants selector ".border-color-primary") theme.primaryColor
-        , borderColorRule (withDescendants selector ".border-color-nav") theme.navColor
-        , borderColorRule (withDescendants selector ".border-color-accent") theme.accentColor
-        , borderColorRule (withDescendants selector ".border-color-primary-text") theme.primaryTextColor
-        , borderColorRule (withDescendants selector ".border-color-primary-anchor") theme.primaryAnchorColor
-        , borderColorRule (withDescendants selector ".border-color-primary-anchor-50") (theme.primaryAnchorColor ++ "80")
-        , borderColorRule (withDescendants selector ".border-color-nav-text") theme.navTextColor
-        , borderColorRule (withDescendants selector ".hover-border-color-primary-anchor:hover") theme.primaryAnchorColor
+        , colorRule (withDescendantsAndDirectPriority selector ".background-color-primary-5") (theme.primaryColor ++ "05") theme.textColor
+        , colorRule (withDescendantsAndDirectPriority selector ".background-color-primary-10") (theme.primaryColor ++ "10") theme.textColor
+        , colorRule (withDescendantsAndDirectPriority selector ".background-color-primary-25") (theme.primaryColor ++ "40") theme.textColor
+        , colorRule (withDescendantsAndDirectPriority selector ".background-color-primary-50") (theme.primaryColor ++ "80") theme.textColor
+        , colorRule (withDescendantsAndDirectPriority selector ".background-color-nav") theme.navColor theme.navTextColor
+        , colorRule (withDescendantsAndDirectPriority selector ".background-color-nav-contrast") theme.navContrastColor theme.backgroundColor
+        , colorRule (withDescendantsAndDirectPriority selector ".background-color-accent") theme.accentColor theme.accentTextColor
+        , colorRule (withDescendantsAndDirectPriority selector ".background-color-accent-5") (theme.accentColor ++ "08") theme.textColor
+        , colorRule (withDescendantsAndDirectPriority selector ".background-color-accent-10") (theme.accentColor ++ "10") theme.textColor
+        , colorRule (withDescendantsAndDirectPriority selector ".background-color-accent-anchor") theme.accentAnchorColor theme.backgroundColor
+        , colorRule (withDescendantsAndDirectPriority selector ".background-color-primary-background") theme.primaryBgColor theme.textColor
+        , borderColorRule (withDescendantsAndDirectPriority selector ".border-color-primary") theme.primaryColor
+        , borderColorRule (withDescendantsAndDirectPriority selector ".border-color-nav") theme.navColor
+        , borderColorRule (withDescendantsAndDirectPriority selector ".border-color-accent") theme.accentColor
+        , borderColorRule (withDescendantsAndDirectPriority selector ".border-color-primary-text") theme.primaryTextColor
+        , borderColorRule (withDescendantsAndDirectPriority selector ".border-color-primary-anchor") theme.primaryAnchorColor
+        , borderColorRule (withDescendantsAndDirectPriority selector ".border-color-primary-anchor-50") (theme.primaryAnchorColor ++ "80")
+        , borderColorRule (withDescendantsAndDirectPriority selector ".border-color-nav-text") theme.navTextColor
+        , borderColorRule (withDescendantsAndDirectPriority selector ".hover-border-color-primary-anchor:hover") theme.primaryAnchorColor
         , listItemColorRule
-        , borderLeftThickColorRule (withDescendants selector ".border-left-thick-color-primary") theme.primaryColor
+        , borderLeftThickColorRule (withDescendantsAndDirectPriority selector ".border-left-thick-color-primary") theme.primaryColor
         , textColorRule (selector ++ ".post-star.starred") theme.primaryAnchorColor
         , backgroundOnlyColorRule (selector ++ ".post-card-current .post-star") (theme.backgroundColor ++ "80")
         , backgroundOnlyColorRule (selector ++ ".event-card-current .post-star") (theme.backgroundColor ++ "80")
         , ".server-chip-bottom" ++ selector ++ " .switch input:checked + .slider { background: " ++ switchOnColor ++ "; }\n"
-        , textColorRule (withDescendants selector ".text-color-primary-anchor") theme.primaryAnchorColor
+        , textColorRule (withDescendantsAndDirectPriority selector ".text-color-primary-anchor") theme.primaryAnchorColor
         , textColorRule ("a" ++ selector) theme.primaryAnchorColor
         , accountRowSwitchRule
         ]
 
 
-withDescendants : String -> String -> String
-withDescendants selector subselector =
-    selector ++ subselector ++ ", " ++ selector ++ " " ++ subselector
+{-| Applies a rule both to an element carrying `selector` (a server's class) and the sub-class
+directly (`.server-X.sub`), and to any `.sub` nested anywhere beneath a `.server-X` ancestor.
+
+The direct form repeats `selector` once more (`.server-X.sub.server-X`), purely to out-rank
+the descendant form by specificity (0,3,0 vs 0,2,0) instead of reaching for `!important`:
+otherwise an element explicitly tagged for server A that's nested inside server B's
+container (e.g. a federated profile's chip inside its own page's `.server-B` wrapper) ties
+with B's descendant rule, and whichever server's rules were emitted last wins.
+-}
+withDescendantsAndDirectPriority : String -> String -> String
+withDescendantsAndDirectPriority selector subselector =
+    selector ++ subselector ++ selector ++ ", " ++ selector ++ " " ++ subselector
 
 
 colorRule : String -> String -> String -> String
