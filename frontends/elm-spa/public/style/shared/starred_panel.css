@@ -218,13 +218,6 @@
   display: block;
 }
 
-.flip-animated-item.flip-moving .starred-post-entry .post-card,
-.flip-animated-item.flip-moving .starred-post-entry .post-error {
-  /* flex: 1 1 auto;
-  min-width: 0; */
-  backdrop-filter: blur(4px);
-}
-
 .starred-post-context {
   align-self: flex-start;
   font-size: 0.75rem;
