@@ -5,6 +5,7 @@ import Components.Markdown as Markdown
 import Components.Posts as Posts
 import Components.SyncSources as SyncSources
 import Components.Users as Users
+import Components.Users.Username as Username
 import Dict
 import Gen.Route as Route exposing (Route)
 import Html exposing (Attribute, Html, a, button, div, header, hr, img, input, label, li, main_, nav, option, p, select, span, text, ul)
@@ -1604,7 +1605,7 @@ mastodonConnectSection shared =
         text ""
 
     else
-        div [ class "mastodon-connect-account-list" ] (List.map (mastodonConnectButton shared) connectable)
+        div [ class "mastodon-connect-account-list", style "display" "flex", style "flex-direction" "column", style "gap" "0.4rem" ] (List.map (mastodonConnectButton shared) connectable)
 
 
 {-| The "Auth Unavailable" notice for an admin-registered instance with no `appId` now lives on that
@@ -1635,17 +1636,14 @@ mastodonConnectButton shared mastodonServer =
         , classes
             [ "mastodon-connect-account-button"
             , hostnameToCSSClass domain
-            , if isDisabled then
-                ""
-
-              else
-                "background-color-primary"
+            , "background-color-primary"
             ]
+        , style "width" "100%"
         , onClick (Shared.AccountsPanelMsg (AccountsPanel.MastodonConnectClicked domain))
         , disabled isDisabled
         , title
             (if hasAppId then
-                "Connect an account on " ++ domain
+                "Sign in from " ++ domain
 
              else
                 domain ++ " hasn't been configured for Mastodon sign-in by this server's admin yet."
@@ -1656,7 +1654,7 @@ mastodonConnectButton shared mastodonServer =
                 "Connecting to " ++ domain ++ "…"
 
              else
-                "Connect Account on " ++ domain
+                "Sign in from " ++ domain ++ "..."
             )
         ]
 
@@ -1759,7 +1757,11 @@ mastodonServerFeedChip shared count index instance =
             :: classes [ "server-chip", mainHostClass, "border-color-accent" ]
             :: reorderInfo.moveAttrs
         )
-        [ div [ classes [ "server-chip-top", mainHostClass, "background-color-nav" ] ]
+        [ div
+            [ classes [ "server-chip-top", "selectable", mainHostClass, "background-color-nav" ]
+            , onClick (Shared.AccountsPanelMsg (AccountsPanel.MastodonServerChipClicked instance.host))
+            , title "Use this instance in the Mastodon form"
+            ]
             ([ div [ class "server-chip-logo-row" ]
                 [ div [ classList [ ( "reorder-arrow", True ), ( "reorder-arrow-hidden", not reorderInfo.showBackward ) ] ] [ reorderInfo.reorderPair.backward ]
                 , federatedFeedLogoImage False (instance.host ++ " logo") instance.logoUrl
@@ -1797,6 +1799,17 @@ button of its own -- `addAccountServerFormTabBar`'s shared "←" collapses the w
 -}
 mastodonServerFormView : Shared.Model -> Html Shared.Msg
 mastodonServerFormView shared =
+    let
+        host : String
+        host =
+            String.trim shared.accounts.browseMastodonInstanceInput
+
+        -- Same show/hide rule as the Rellm form's "Add Server" button (`knownServer`), except the
+        -- button is hidden rather than disabled while the field is empty.
+        alreadyBrowsed : Bool
+        alreadyBrowsed =
+            List.any (\i -> i.host == host) shared.accounts.browsedMastodonInstances
+    in
     Html.form
         [ class "server-details-federation-add", onSubmit (Shared.AccountsPanelMsg AccountsPanel.BrowseMastodonInstanceClicked) ]
         [ input
@@ -1805,13 +1818,21 @@ mastodonServerFormView shared =
             , attribute "autocorrect" "off"
             , spellcheck False
             , placeholder "mastodon.world"
+            , style "flex" "1 1 100%"
+            , style "box-sizing" "border-box"
             , value shared.accounts.browseMastodonInstanceInput
             , onInput (Shared.AccountsPanelMsg << AccountsPanel.BrowseMastodonInstanceInputChanged)
             ]
             []
-        , button
-            [ disabled (String.isEmpty (String.trim shared.accounts.browseMastodonInstanceInput)) ]
-            [ text "+ Browse Instance" ]
+        , if alreadyBrowsed || String.isEmpty host then
+            text ""
+
+          else
+            button
+                [ class "background-color-nav"
+                , style "flex" "1 1 100%"
+                ]
+                [ text "Add Instance" ]
         ]
 
 
@@ -1838,6 +1859,8 @@ blueskyConnectFormView form =
             , attribute "autocorrect" "off"
             , spellcheck False
             , placeholder "handle.bsky.social"
+            , style "flex" "1 1 100%"
+            , style "box-sizing" "border-box"
             , value form.handle
             , onInput (Shared.AccountsPanelMsg << AccountsPanel.BlueskyHandleChanged)
             , disabled submitting
@@ -1848,13 +1871,26 @@ blueskyConnectFormView form =
             , name "current-password"
             , attribute "autocomplete" "current-password"
             , placeholder "App Password"
+            , style "flex" "1 1 100%"
+            , style "box-sizing" "border-box"
             , value form.appPassword
             , onInput (Shared.AccountsPanelMsg << AccountsPanel.BlueskyAppPasswordChanged)
             , disabled submitting
             ]
             []
+        , a
+            [ href "https://bsky.app/settings/app-passwords"
+            , target "_blank"
+            , attribute "rel" "noopener noreferrer"
+            , style "font-size" "0.8em"
+            , style "text-decoration" "underline"
+            ]
+            [ text "Create an App Password on bsky.app ↗" ]
         , button
-            [ disabled (submitting || String.isEmpty form.handle || String.isEmpty form.appPassword) ]
+            [ class "background-color-primary"
+            , style "margin-left" "auto"
+            , disabled (submitting || String.isEmpty form.handle || String.isEmpty form.appPassword)
+            ]
             [ text
                 (if submitting then
                     "Connecting…"
@@ -3227,6 +3263,31 @@ rellmAddAccountServerForm shared currentRoute =
         accountFieldsDisabled =
             not knownServer || submitting
 
+        -- Log In accepts whatever an existing account is called, so it only needs non-empty
+        -- fields; Create Account holds the username to `Username.validate` (same check
+        -- `ChooseCreateAccountClicked` makes) and the password to the backend's 8-character minimum
+        -- (see `CreateAccountRequest.password`). The server field's validity is `knownServer`,
+        -- already part of `accountFieldsDisabled`.
+        trimmedUsername : String
+        trimmedUsername =
+            String.trim form.username
+
+        loginUsernameInvalid : Bool
+        loginUsernameInvalid =
+            String.isEmpty trimmedUsername
+
+        createUsernameInvalid : Bool
+        createUsernameInvalid =
+            Username.validate trimmedUsername /= Nothing
+
+        loginPasswordInvalid : Bool
+        loginPasswordInvalid =
+            String.isEmpty form.password
+
+        createPasswordInvalid : Bool
+        createPasswordInvalid =
+            String.length form.password < 8
+
         -- Username/password auth is only ever offered for our own main
         -- server, unless an admin has flipped
         -- `DebugTab.allowUsernamePasswordForOtherHosts` -- see
@@ -3365,7 +3426,15 @@ rellmAddAccountServerForm shared currentRoute =
                     -- Enter here defaults to the Log In path (see
                     -- `ChooseLoginClicked`) -- the more common case, per the
                     -- Password field's own `autocomplete` choice below.
-                    , onEnter (Shared.AccountsPanelMsg AccountsPanel.ChooseLoginClicked)
+                    , onEnter
+                        (Shared.AccountsPanelMsg
+                            (if loginUsernameInvalid then
+                                AccountsPanel.NoOp
+
+                             else
+                                AccountsPanel.ChooseLoginClicked
+                            )
+                        )
                     , disabled accountFieldsDisabled
                     ]
                     []
@@ -3416,7 +3485,22 @@ rellmAddAccountServerForm shared currentRoute =
                             , placeholder "Password"
                             , value form.password
                             , onInput (AccountsPanel.PasswordChanged >> Shared.AccountsPanelMsg)
-                            , onEnter (Shared.AccountsPanelMsg submitMsg)
+                            , onEnter
+                                (Shared.AccountsPanelMsg
+                                    (if accountType == AccountsPanel.CreateNewAccount then
+                                        if createUsernameInvalid || createPasswordInvalid then
+                                            AccountsPanel.NoOp
+
+                                        else
+                                            submitMsg
+
+                                     else if loginUsernameInvalid || loginPasswordInvalid then
+                                        AccountsPanel.NoOp
+
+                                     else
+                                        submitMsg
+                                    )
+                                )
                             , disabled accountFieldsDisabled
                             ]
                             []
@@ -3460,14 +3544,14 @@ rellmAddAccountServerForm shared currentRoute =
                         [ button
                             [ type_ "button"
                             , onClick (Shared.AccountsPanelMsg AccountsPanel.ChooseLoginClicked)
-                            , disabled accountFieldsDisabled
+                            , disabled (accountFieldsDisabled || loginUsernameInvalid)
                             , classes [ hostnameToCSSClass <| formThemeHost shared.accounts, "background-color-primary" ]
                             ]
                             [ text "Login" ]
                         , button
                             [ type_ "button"
                             , onClick (Shared.AccountsPanelMsg AccountsPanel.ChooseCreateAccountClicked)
-                            , disabled accountFieldsDisabled
+                            , disabled (accountFieldsDisabled || createUsernameInvalid)
                             , classes [ hostnameToCSSClass <| formThemeHost shared.accounts, "background-color-nav" ]
                             ]
                             [ text "Create Account" ]
@@ -3499,7 +3583,15 @@ rellmAddAccountServerForm shared currentRoute =
                               -- dispatching `submitMsg` itself via `onClick` -- doing
                               -- both would submit twice per click.
                               type_ "submit"
-                            , disabled accountFieldsDisabled
+                            , disabled
+                                (accountFieldsDisabled
+                                    || (if accountType == AccountsPanel.CreateNewAccount then
+                                            createUsernameInvalid || createPasswordInvalid
+
+                                        else
+                                            loginUsernameInvalid || loginPasswordInvalid
+                                       )
+                                )
                             , classes
                                 [ hostnameToCSSClass <| formThemeHost shared.accounts
                                 , if accountType == AccountsPanel.CreateNewAccount then

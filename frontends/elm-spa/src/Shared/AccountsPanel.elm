@@ -445,6 +445,7 @@ type Msg
     | MainServerSelected String
     | ResetMainFrontendHost
     | ServerChipClicked String
+    | MastodonServerChipClicked String
     | SetWebUserInterfaceClicked String WebUserInterface
     | GotSetWebUserInterfaceResult (Result Grpc.Error ( RellmAccount, ServerConfiguration ))
     | RenameServerClicked String String
@@ -3167,7 +3168,15 @@ sendUpdate req msg model =
             ( newModel, persist newModel )
 
         ServerChipClicked frontendHost ->
-            ( setServerField frontendHost model, Cmd.none )
+            -- Also opens the Rellm tab of the add-account/server form, same as "Add Account/Server".
+            ( setServerField frontendHost { model | addAccountServerFormType = Just RellmServerFormType }, Cmd.none )
+
+        MastodonServerChipClicked host ->
+            -- Mirror of `ServerChipClicked` for a browsed Mastodon instance's chip: fills the
+            -- Mastodon tab's host field and opens that tab.
+            ( { model | addAccountServerFormType = Just MastodonServerFormType, browseMastodonInstanceInput = host }
+            , Cmd.none
+            )
 
         SetWebUserInterfaceClicked id ui ->
             let
