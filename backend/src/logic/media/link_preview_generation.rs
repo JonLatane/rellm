@@ -31,7 +31,7 @@ use crate::logic::update_media_storage_used;
 use crate::marshaling::*;
 use crate::models::{self, get_user, Post};
 use crate::protos::{MediaConversion, Visibility};
-use crate::schema::{media, posts};
+use crate::schema::{link_preview_attempts, media, posts};
 
 /// Hard wall-clock cap on capturing a single page.
 pub const PREVIEW_TIMEOUT: Duration = Duration::from_secs(90);
@@ -462,7 +462,7 @@ fn sniff_image_type(bytes: &[u8]) -> Option<(&'static str, &'static str)> {
 /// link-local incl. cloud metadata, multicast, unspecified, unique-local). The main image URL is
 /// controlled by whoever controls the linked page, so without this the job is an SSRF vector into
 /// the cluster's internal network.
-fn is_forbidden_ip(ip: std::net::IpAddr) -> bool {
+pub fn is_forbidden_ip(ip: std::net::IpAddr) -> bool {
     use std::net::IpAddr;
     match ip {
         IpAddr::V4(v4) => {
@@ -489,20 +489,49 @@ fn is_forbidden_ip(ip: std::net::IpAddr) -> bool {
     }
 }
 
-/// Errors unless `url` is http(s) and every address its host resolves to is publicly routable.
-async fn ensure_public_http_url(url: &reqwest::Url) -> Result<(), anyhow::Error> {
+/// Errors unless `url` is http(s) and, if its host is an IP literal, that IP is publicly routable.
+/// Hostnames are vetted at connect time instead, by [`PublicOnlyResolver`] -- checking them here
+/// too would leave a window for DNS rebinding between this lookup and the connection's own.
+fn ensure_public_http_url(url: &reqwest::Url) -> Result<(), anyhow::Error> {
     if !matches!(url.scheme(), "http" | "https") {
         anyhow::bail!("Refusing non-http(s) image URL {}", url);
     }
     let host = url
         .host_str()
         .ok_or_else(|| anyhow::anyhow!("Image URL {} has no host", url))?;
-    let port = url.port_or_known_default().unwrap_or(80);
-    let addrs: Vec<_> = tokio::net::lookup_host((host, port)).await?.collect();
-    if addrs.is_empty() || addrs.iter().any(|a| is_forbidden_ip(a.ip())) {
-        anyhow::bail!("Refusing to fetch image from non-public host {}", host);
+    // `host_str` keeps an IPv6 literal's brackets.
+    if let Ok(ip) = host.trim_start_matches('[').trim_end_matches(']').parse::<std::net::IpAddr>() {
+        if is_forbidden_ip(ip) {
+            anyhow::bail!("Refusing to fetch image from non-public address {}", ip);
+        }
     }
     Ok(())
+}
+
+/// The DNS resolver the image-download client uses: resolves normally, then drops every
+/// non-public address. Because the HTTP client connects to exactly the addresses this returns
+/// (it never re-resolves), there's no gap for DNS rebinding to swap in an internal address after
+/// the check -- the check *is* the resolution the connection uses. (IP-literal hosts skip DNS
+/// entirely; `ensure_public_http_url` covers those.)
+struct PublicOnlyResolver;
+
+impl reqwest::dns::Resolve for PublicOnlyResolver {
+    fn resolve(&self, name: reqwest::dns::Name) -> reqwest::dns::Resolving {
+        Box::pin(async move {
+            let host = name.as_str().to_string();
+            let addrs: Vec<std::net::SocketAddr> = tokio::net::lookup_host((host.as_str(), 0))
+                .await?
+                .filter(|a| !is_forbidden_ip(a.ip()))
+                .collect();
+            if addrs.is_empty() {
+                let err: Box<dyn std::error::Error + Send + Sync> =
+                    format!("{} resolves to no public addresses", host).into();
+                return Err(err);
+            }
+            let addrs: reqwest::dns::Addrs = Box::new(addrs.into_iter());
+            Ok(addrs)
+        })
+    }
 }
 
 const MAX_IMAGE_REDIRECTS: usize = 5;
@@ -512,16 +541,18 @@ async fn download_main_image(
     referer: &str,
 ) -> Result<(Vec<u8>, &'static str, &'static str), anyhow::Error> {
     crate::init_crypto();
-    // Redirects are followed by hand so each hop's host can be vetted (see `is_forbidden_ip`).
+    // Redirects are followed by hand so each hop's scheme/IP literal can be vetted (see
+    // `is_forbidden_ip`); hostnames are vetted by `PublicOnlyResolver` on every connection.
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(20))
         .redirect(reqwest::redirect::Policy::none())
+        .dns_resolver(PublicOnlyResolver)
         .user_agent("Mozilla/5.0 (compatible; JonlineLinkPreview/1.0)")
         .build()?;
     let mut current = reqwest::Url::parse(image_url)?;
     let mut hops = 0;
     let response = loop {
-        ensure_public_http_url(&current).await?;
+        ensure_public_http_url(&current)?;
         let response = client
             .get(current.clone())
             .header("Referer", referer)
@@ -599,6 +630,65 @@ async fn store_generated_media(
     Ok(media.id)
 }
 
+/// After this many failed `generate_previews_for_post` runs a post is left alone by the
+/// `generate_link_preview_images` job (see `record_failed_attempt`); `regenerate_link_preview_images_for_post`
+/// still works on it, and clears the count on success.
+pub const MAX_PREVIEW_ATTEMPTS: i32 = 5;
+
+/// Notes one more failed preview generation for `post_id`, so the batch query in
+/// `generate_link_preview_images` can both deprioritize it (least-recently-attempted first) and
+/// eventually give up on it (`MAX_PREVIEW_ATTEMPTS`) instead of retrying a permanently broken link
+/// every run and crowding healthy posts out of the batch.
+pub fn record_failed_attempt(post_id: i64, conn: &mut PgPooledConnection) {
+    let result = insert_into(link_preview_attempts::table)
+        .values((
+            link_preview_attempts::post_id.eq(post_id),
+            link_preview_attempts::attempts.eq(1),
+        ))
+        .on_conflict(link_preview_attempts::post_id)
+        .do_update()
+        .set((
+            link_preview_attempts::attempts.eq(link_preview_attempts::attempts + 1),
+            link_preview_attempts::last_attempt_at.eq(diesel::dsl::now),
+        ))
+        .execute(conn);
+    if let Err(e) = result {
+        log::error!("Failed to record preview attempt for post {}: {:?}", post_id, e);
+    }
+}
+
+/// Forgets `post_id`'s failed attempts -- on success, or when its previews are deleted so it's
+/// eligible again.
+pub fn clear_failed_attempts(post_id: i64, conn: &mut PgPooledConnection) {
+    if let Err(e) = delete(link_preview_attempts::table.filter(link_preview_attempts::post_id.eq(post_id))).execute(conn) {
+        log::error!("Failed to clear preview attempts for post {}: {:?}", post_id, e);
+    }
+}
+
+/// Up to `limit` posts with a link and no generated previews yet, never-attempted ones first, then
+/// least-recently-attempted, skipping any at `MAX_PREVIEW_ATTEMPTS`.
+pub fn posts_needing_previews(
+    limit: i64,
+    conn: &mut PgPooledConnection,
+) -> Result<Vec<Post>, diesel::result::Error> {
+    posts::table
+        .left_join(link_preview_attempts::table)
+        .filter(posts::link.is_not_null())
+        .filter(posts::media_generated.eq(false))
+        .filter(
+            link_preview_attempts::attempts
+                .is_null()
+                .or(link_preview_attempts::attempts.lt(MAX_PREVIEW_ATTEMPTS)),
+        )
+        .order((
+            link_preview_attempts::last_attempt_at.asc().nulls_first(),
+            posts::id.asc(),
+        ))
+        .select(models::POST_COLUMNS)
+        .limit(limit)
+        .load::<Post>(conn)
+}
+
 /// Generates the preview media for `post`'s link and prepends it to the post's media -- main image
 /// first (if one was found), then the page screenshot -- and marks the post `media_generated`.
 /// Doesn't check whether previews were already generated; callers decide that. On error nothing
@@ -663,6 +753,7 @@ pub async fn generate_previews_for_post(
         .filter(posts::id.eq(post.id))
         .set((posts::media.eq(new_media), posts::media_generated.eq(true)))
         .execute(conn)?;
+    clear_failed_attempts(post.id, conn);
 
     if let Err(e) = update_media_storage_used(user_id, conn) {
         log::error!("Failed to update media_storage_bytes_used for user {}: {:?}", user_id, e);

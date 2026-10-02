@@ -4,14 +4,11 @@ extern crate rellm;
 
 use std::sync::Arc;
 
-use diesel::*;
-
 use rellm::logic::{
-    acquire_cluster_lock, generate_previews_for_post, release_cluster_lock, start_browser,
+    acquire_cluster_lock, generate_previews_for_post, posts_needing_previews, record_failed_attempt,
+    release_cluster_lock, start_browser,
 };
-use rellm::models::{Post, POST_COLUMNS};
 use rellm::protos::{ClusterResource, ClusterResources};
-use rellm::schema::posts;
 use rellm::init_crypto;
 use rellm::{db_connection, init_bin_logging, object_storage_connection, rpcs};
 
@@ -24,13 +21,7 @@ async fn main() {
     let pool = db_connection::establish_job_pool();
     let mut conn = pool.get().expect("Failed to get DB connection");
 
-    let posts_to_update = posts::table
-        .filter(posts::link.is_not_null())
-        .filter(posts::media_generated.eq(false))
-        .select(POST_COLUMNS)
-        .limit(100)
-        .load::<Post>(&mut conn)
-        .unwrap();
+    let posts_to_update = posts_needing_previews(100, &mut conn).unwrap();
     log::info!("Got {} posts to update.", posts_to_update.len());
 
     if posts_to_update.is_empty() {
@@ -67,6 +58,7 @@ async fn main() {
     for post in posts_to_update {
         if let Err(e) = generate_previews_for_post(&post, &browser, &mut conn, &bucket).await {
             log::error!("Failed to generate previews for post {}: {}", post.id, e);
+            record_failed_attempt(post.id, &mut conn);
         }
     }
 

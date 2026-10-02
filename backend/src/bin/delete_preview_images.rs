@@ -24,5 +24,10 @@ pub fn main() {
         .execute(&mut conn)
         .unwrap();
 
+    // Everything's eligible for regeneration again, including posts that had given up.
+    delete(link_preview_attempts::table)
+        .execute(&mut conn)
+        .unwrap();
+
     log::info!("Done unlinking preview images.");
 }

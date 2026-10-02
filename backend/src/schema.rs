@@ -172,6 +172,14 @@ diesel::table! {
 }
 
 diesel::table! {
+    link_preview_attempts (post_id) {
+        post_id -> Int8,
+        attempts -> Int4,
+        last_attempt_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     market_payments (id) {
         id -> Int8,
         purchase_id -> Int8,
@@ -545,6 +553,7 @@ diesel::joinable!(group_posts -> groups (group_id));
 diesel::joinable!(group_posts -> posts (post_id));
 diesel::joinable!(group_posts -> users (user_id));
 diesel::joinable!(groups -> media (avatar_media_id));
+diesel::joinable!(link_preview_attempts -> posts (post_id));
 diesel::joinable!(market_payments -> market_purchases (purchase_id));
 diesel::joinable!(market_purchases -> market_products (product_id));
 diesel::joinable!(market_purchases -> market_subscriptions (subscription_id));
@@ -586,6 +595,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     follows,
     group_posts,
     groups,
+    link_preview_attempts,
     market_payments,
     market_products,
     market_purchases,

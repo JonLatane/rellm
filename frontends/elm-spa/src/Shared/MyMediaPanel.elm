@@ -37,9 +37,10 @@ a drop target (`view`'s root `on "drop"`) -- both funnel into the same
 `Authorization` header, and an optional `Filename` header, returning the new
 media's ID as a plaintext body on success. This mirrors
 `frontends/tamagui`'s `media_uploader.tsx`, minus the client-side image
-downscaling (`resize_media.ts`) and upload-progress bar (elm/http's
-`Http.task` has no progress-event equivalent short of a `Cmd`+subscription
-pair, not worth the added complexity here).
+downscaling (`resize_media.ts`). Upload progress comes from a tracked
+`Http.request` (`uploadTrackerId`) + `Http.track` subscription, so the token
+is first resolved/refreshed via a `Task` (`GotUploadCredentials`) and the
+request itself is then sent as a plain `Cmd`.
 
 -}
 
@@ -86,6 +87,12 @@ type alias Model =
     , selectionType : Maybe SelectionType
     , status : FetchStatus
     , uploadStatus : UploadStatus
+      -- Pending upload jobs -- a set, not a FIFO queue: the smallest is taken next --
+      -- waiting behind the one in `uploadStatus`,
+      -- and the current batch's byte totals for the overall progress meter.
+    , pendingUploads : List File
+    , uploadTotalBytes : Int
+    , uploadDoneBytes : Int
 
     -- Whether a drag is currently hovering anywhere over this panel -- see
     -- `view`'s `on "dragenter"`/`"dragleave"`. Purely a CSS hook
@@ -186,16 +193,17 @@ type Msg
       -- needs an `onImageClicked : String -> msg` to attach.
     | MediaItemClicked String
       -- The header's "Add" button -- opens the OS file picker; the file it
-      -- comes back with (`GotFile`) is uploaded the same way a `Drop` is.
+      -- comes back with (`GotFiles`, multi-select allowed) is uploaded the same way a `Drop` is.
     | AddClicked
-    | GotFile File
-      -- Every file dropped anywhere on this panel (see `view`) -- only the
-      -- first is actually uploaded (one at a time, same as `AddClicked`'s own
-      -- picker), the rest are silently ignored rather than queued.
+    | GotFiles File (List File)
+      -- Every file dropped anywhere on this panel (see `view`) -- uploaded
+      -- one at a time, smallest first (see `pendingUploads`).
     | Drop (List File)
     | DragEnter
     | DragLeave
-    | GotUploadResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, String ))
+    | GotUploadCredentials File (Result Grpc.Error ( Maybe AccountsPanel.Msg, ( RellmServer, String ) ))
+    | UploadProgress Http.Progress
+    | GotUploadResult (Result Grpc.Error String)
       -- The delete button on a grid item (see `mediaItemView`) -- doesn't
       -- delete anything itself, just bubbles `media` up through `update`'s
       -- own extra return value for `Shared.update` to turn into a
@@ -303,7 +311,7 @@ without a separate field for it.
 -}
 type UploadStatus
     = NotUploading
-    | Uploading File
+    | Uploading File (Maybe Float)
     | UploadFailed File String
 
 
@@ -332,6 +340,9 @@ init =
     , selectionType = Nothing
     , status = NotFetched
     , uploadStatus = NotUploading
+    , pendingUploads = []
+    , uploadTotalBytes = 0
+    , uploadDoneBytes = 0
     , isDraggingOver = False
     , deletingIds = Set.empty
     , deleteError = Nothing
@@ -364,7 +375,12 @@ subscriptions : Model -> Sub Msg
 subscriptions model =
     if isOpen model then
         Sub.batch
-            [ UI.Flip.subscription AnimateItemFlip
+            [ if isUploading model.uploadStatus then
+                Http.track uploadTrackerId UploadProgress
+
+              else
+                Sub.none
+            , UI.Flip.subscription AnimateItemFlip
                 (List.map .flip (Dict.values model.mediaAnimations) ++ Dict.values model.selectedMediaAnimations)
             , UI.Flip.moveSubscription AnimateSelectedMediaMove (Dict.values model.selectedMediaMoveAnimations)
             ]
@@ -441,6 +457,9 @@ sendUpdate accountsPanelModel msg model =
                     , selectionType = selectionType
                     , status = Fetching
                     , uploadStatus = NotUploading
+                    , pendingUploads = []
+                    , uploadTotalBytes = 0
+                    , uploadDoneBytes = 0
                     , isDraggingOver = False
                     , deletingIds = Set.empty
                     , deleteError = Nothing
@@ -583,18 +602,13 @@ sendUpdate accountsPanelModel msg model =
                     ( model, Cmd.none, ( Nothing, Nothing ) )
 
         AddClicked ->
-            ( model, File.Select.file acceptedMimeTypes GotFile, ( Nothing, Nothing ) )
+            ( model, File.Select.files acceptedMimeTypes GotFiles, ( Nothing, Nothing ) )
 
-        GotFile file ->
-            startUpload accountsPanelModel model file
+        GotFiles file rest ->
+            startUploads accountsPanelModel model (file :: rest)
 
         Drop files ->
-            case List.head files of
-                Just file ->
-                    startUpload accountsPanelModel { model | isDraggingOver = False } file
-
-                Nothing ->
-                    ( { model | isDraggingOver = False }, Cmd.none, ( Nothing, Nothing ) )
+            startUploads accountsPanelModel { model | isDraggingOver = False } files
 
         DragEnter ->
             ( { model | isDraggingOver = True }, Cmd.none, ( Nothing, Nothing ) )
@@ -602,7 +616,36 @@ sendUpdate accountsPanelModel msg model =
         DragLeave ->
             ( { model | isDraggingOver = False }, Cmd.none, ( Nothing, Nothing ) )
 
-        GotUploadResult (Ok ( maybeAccountsPanelMsg, uploadedMediaId )) ->
+        GotUploadCredentials file (Ok ( maybeAccountsPanelMsg, ( server, token ) )) ->
+            ( model
+            , postMediaCmd server token file
+            , ( maybeAccountsPanelMsg, Nothing )
+            )
+
+        GotUploadCredentials file (Err err) ->
+            ( { model | uploadStatus = UploadFailed file (AccountsPanel.grpcErrorToString err), pendingUploads = [] }, Cmd.none, ( Nothing, Nothing ) )
+
+        UploadProgress progress ->
+            case ( model.uploadStatus, progress ) of
+                ( Uploading file _, Http.Sending { sent, size } ) ->
+                    ( { model
+                        | uploadStatus =
+                            Uploading file
+                                (if size == 0 then
+                                    Nothing
+
+                                 else
+                                    Just (toFloat sent / toFloat size)
+                                )
+                      }
+                    , Cmd.none
+                    , ( Nothing, Nothing )
+                    )
+
+                _ ->
+                    ( model, Cmd.none, ( Nothing, Nothing ) )
+
+        GotUploadResult (Ok uploadedMediaId) ->
             -- Re-fetch to show the new item -- cheaper to just re-run the
             -- same `GetMedia` `Open` already does than to splice a new `Media`
             -- into `Fetched`'s list, since `POST /media`'s response is just a
@@ -617,6 +660,16 @@ sendUpdate accountsPanelModel msg model =
             -- `selectedMedia` -- a freshly-uploaded item should land in the
             -- selection the same as tapping an already-there grid item would.
             let
+                -- The finished file's bytes join the batch's overall progress.
+                finishedModel : Model
+                finishedModel =
+                    case model.uploadStatus of
+                        Uploading file _ ->
+                            { model | uploadStatus = NotUploading, uploadDoneBytes = model.uploadDoneBytes + File.size file }
+
+                        _ ->
+                            { model | uploadStatus = NotUploading }
+
                 pendingUploadSelection : Maybe String
                 pendingUploadSelection =
                     case model.selectionType of
@@ -628,18 +681,25 @@ sendUpdate accountsPanelModel msg model =
             in
             case resolve accountsPanelModel model.targetHost of
                 Ok resolved ->
-                    ( { model | uploadStatus = NotUploading, pendingUploadSelection = pendingUploadSelection }
-                    , fetchTask accountsPanelModel resolved.account model.searchText |> Task.attempt GotMediaResult
-                    , ( maybeAccountsPanelMsg, Nothing )
+                    let
+                        ( nextModel, nextCmd, _ ) =
+                            startUploads accountsPanelModel { finishedModel | pendingUploadSelection = pendingUploadSelection } []
+                    in
+                    ( nextModel
+                    , Cmd.batch
+                        [ fetchTask accountsPanelModel resolved.account model.searchText |> Task.attempt GotMediaResult
+                        , nextCmd
+                        ]
+                    , ( Nothing, Nothing )
                     )
 
                 Err _ ->
-                    ( { model | uploadStatus = NotUploading, pendingUploadSelection = pendingUploadSelection }, Cmd.none, ( maybeAccountsPanelMsg, Nothing ) )
+                    ( { finishedModel | pendingUploads = [], pendingUploadSelection = pendingUploadSelection }, Cmd.none, ( Nothing, Nothing ) )
 
         GotUploadResult (Err err) ->
             case model.uploadStatus of
-                Uploading file ->
-                    ( { model | uploadStatus = UploadFailed file (AccountsPanel.grpcErrorToString err) }, Cmd.none, ( Nothing, Nothing ) )
+                Uploading file _ ->
+                    ( { model | uploadStatus = UploadFailed file (AccountsPanel.grpcErrorToString err), pendingUploads = [] }, Cmd.none, ( Nothing, Nothing ) )
 
                 _ ->
                     ( model, Cmd.none, ( Nothing, Nothing ) )
@@ -888,18 +948,65 @@ syncMediaAnimations model =
 `Open` makes) since either can land well after the account this panel was
 opened for stopped being usable (signed out mid-pick, server disabled, ...).
 -}
-startUpload : AccountsPanel.Model -> Model -> File -> ( Model, Cmd Msg, ( Maybe AccountsPanel.Msg, Maybe Media ) )
-startUpload accountsPanelModel model file =
-    case resolve accountsPanelModel model.targetHost of
-        Ok resolved ->
-            ( { model | uploadStatus = Uploading file }
-            , uploadTask accountsPanelModel resolved model.targetHost file
-                |> Task.attempt GotUploadResult
-            , ( Nothing, Nothing )
-            )
+startUploads : AccountsPanel.Model -> Model -> List File -> ( Model, Cmd Msg, ( Maybe AccountsPanel.Msg, Maybe Media ) )
+startUploads accountsPanelModel model files =
+    let
+        combined : List File
+        combined =
+            model.pendingUploads ++ files
 
-        Err err ->
-            ( { model | uploadStatus = UploadFailed file err }, Cmd.none, ( Nothing, Nothing ) )
+        addedBytes : Int
+        addedBytes =
+            List.sum (List.map File.size files)
+
+        -- Files arriving while idle (nothing pending) begin a fresh batch; the
+        -- overall meter restarts from zero.
+        isNewBatch : Bool
+        isNewBatch =
+            List.isEmpty model.pendingUploads && not (isUploading model.uploadStatus)
+
+        batched : Model
+        batched =
+            if isNewBatch then
+                { model | uploadTotalBytes = addedBytes, uploadDoneBytes = 0 }
+
+            else
+                { model | uploadTotalBytes = model.uploadTotalBytes + addedBytes }
+    in
+    case ( model.uploadStatus, takeSmallest combined ) of
+        ( Uploading _ _, _ ) ->
+            -- Already mid-upload: the new files join the pending set, as if they'd
+            -- all been added together.
+            ( { batched | pendingUploads = combined }, Cmd.none, ( Nothing, Nothing ) )
+
+        ( _, Just ( file, rest ) ) ->
+            case resolve accountsPanelModel model.targetHost of
+                Ok resolved ->
+                    ( { batched | uploadStatus = Uploading file (Just 0), pendingUploads = rest }
+                    , uploadTask accountsPanelModel resolved model.targetHost file
+                        |> Task.attempt (GotUploadCredentials file)
+                    , ( Nothing, Nothing )
+                    )
+
+                Err err ->
+                    ( { batched | uploadStatus = UploadFailed file err, pendingUploads = [] }, Cmd.none, ( Nothing, Nothing ) )
+
+        ( _, Nothing ) ->
+            ( batched, Cmd.none, ( Nothing, Nothing ) )
+
+
+{-| The smallest file (first, on ties) and the rest in their original order --
+pending uploads are always taken smallest-first, so small files aren't stuck behind
+a big one.
+-}
+takeSmallest : List File -> Maybe ( File, List File )
+takeSmallest files =
+    case List.sortBy (\( _, file ) -> File.size file) (List.indexedMap Tuple.pair files) |> List.head of
+        Nothing ->
+            Nothing
+
+        Just ( index, smallest ) ->
+            Just ( smallest, List.take index files ++ List.drop (index + 1) files )
 
 
 {-| By extension, same allowlist `frontends/tamagui`'s `media_uploader.tsx`
@@ -986,28 +1093,35 @@ deleteTask accountsPanelModel account media =
 keeps `performWithAccountServer`'s resolution meaningful even though this only
 ever runs for the account this panel was opened for.
 -}
-uploadTask : AccountsPanel.Model -> Resolved -> String -> File -> Task Grpc.Error ( Maybe AccountsPanel.Msg, String )
+uploadTask : AccountsPanel.Model -> Resolved -> String -> File -> Task Grpc.Error ( Maybe AccountsPanel.Msg, ( RellmServer, String ) )
 uploadTask accountsPanelModel resolved host file =
     AccountsPanel.performWithAccountServer
         accountsPanelModel
         ( Just resolved.account.userId, host )
-        (\server token -> postMediaTask server token file)
+        (\server token -> Task.succeed ( server, token ))
+
+
+{-| Tracker id for the one upload in flight (`Http.track`/`Http.cancel`). -}
+uploadTrackerId : String
+uploadTrackerId =
+    "my-media-panel-upload"
 
 
 {-| The actual `POST {backendHost}/media` -- see the module doc. `Http.fileBody`
 sets `Content-Type` from `file`'s own MIME type, so only `Authorization`/
 `Filename` need to be added as headers.
 -}
-postMediaTask : RellmServer -> String -> File -> Task Grpc.Error String
-postMediaTask server token file =
+postMediaCmd : RellmServer -> String -> File -> Cmd Msg
+postMediaCmd server token file =
     case RellmServers.connectionOf server of
         -- `server` is reached via `performWithAccountServer`, which only ever
         -- resolves to a connected server -- unreachable in practice.
         Nothing ->
-            Task.fail Grpc.NetworkError
+            Task.perform GotUploadResult (Task.succeed (Err Grpc.NetworkError))
+                |> always (Task.attempt GotUploadResult (Task.fail Grpc.NetworkError))
 
         Just connection ->
-            Http.task
+            Http.request
                 { method = "POST"
                 , headers =
                     [ Http.header "Authorization" token
@@ -1015,8 +1129,9 @@ postMediaTask server token file =
                     ]
                 , url = RellmServers.mediaBaseUrl connection ++ "/media"
                 , body = Http.fileBody file
-                , resolver = Http.stringResolver toGrpcResult
+                , expect = Http.expectStringResponse GotUploadResult toGrpcResult
                 , timeout = Nothing
+                , tracker = Just uploadTrackerId
                 }
 
 
@@ -1164,7 +1279,7 @@ viewWith embedded windowWidth accountsPanelModel model =
         [ div [ class "my-media-panel-header" ]
             [ span [ class "my-media-panel-title" ] [ text (headerTitle model.selectionType) ]
             , div [ class "my-media-panel-header-right" ]
-                [ uploadStatusView model.uploadStatus
+                [ uploadStatusView model
                 , deleteStatusView model.deleteError
                 , storageUsageView accountsPanelModel model
                 , accountBadge accountsPanelModel model
@@ -1250,7 +1365,7 @@ mediaAllowed selectionType media =
 isUploading : UploadStatus -> Bool
 isUploading status =
     case status of
-        Uploading _ ->
+        Uploading _ _ ->
             True
 
         _ ->
@@ -1273,14 +1388,52 @@ droppedFilesDecoder =
     Decode.field "dataTransfer" (Decode.field "files" (Decode.list File.decoder))
 
 
-uploadStatusView : UploadStatus -> Html Msg
-uploadStatusView status =
-    case status of
+uploadStatusView : Model -> Html Msg
+uploadStatusView model =
+    case model.uploadStatus of
         NotUploading ->
             text ""
 
-        Uploading file ->
-            span [ class "my-media-panel-upload-status" ] [ text ("Uploading " ++ File.name file ++ "…") ]
+        Uploading file progress ->
+            let
+                fileFraction : Float
+                fileFraction =
+                    Maybe.withDefault 0 progress
+
+                isBatch : Bool
+                isBatch =
+                    not (List.isEmpty model.pendingUploads) || model.uploadDoneBytes > 0
+
+                overallFraction : Float
+                overallFraction =
+                    if model.uploadTotalBytes <= 0 then
+                        0
+
+                    else
+                        (toFloat model.uploadDoneBytes + fileFraction * toFloat (File.size file)) / toFloat model.uploadTotalBytes
+
+                meter : Float -> Html Msg
+                meter fraction =
+                    Html.progress
+                        [ class "my-media-panel-upload-progress"
+                        , Html.Attributes.max "1"
+                        , Html.Attributes.value (String.fromFloat fraction)
+                        ]
+                        []
+            in
+            span [ class "my-media-panel-upload-status" ]
+                ([ text ("Uploading " ++ File.name file ++ "… " ++ String.fromInt (round (100 * fileFraction)) ++ "%")
+                 , meter fileFraction
+                 ]
+                    ++ (if isBatch then
+                            [ meter overallFraction
+                            , text ("Overall " ++ String.fromInt (round (100 * overallFraction)) ++ "% (" ++ String.fromInt (List.length model.pendingUploads) ++ " more)")
+                            ]
+
+                        else
+                            []
+                       )
+                )
 
         UploadFailed file err ->
             span [ classes [ "my-media-panel-upload-status", "my-media-panel-upload-error" ] ]
