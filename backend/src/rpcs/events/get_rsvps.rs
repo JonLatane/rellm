@@ -110,7 +110,11 @@ pub fn get_rsvps(
         .map(|id| id.unwrap_or(0))
         .collect();
     let lookup = load_media_lookup(media_ids, conn);
-    Ok(Rsvps {
+    let mut counts = super::RsvpCounts::default();
+    for (a, _) in &rsvps {
+        counts.add(&a.status, &a.moderation, 1, a.number_of_guests.max(0) as u32);
+    }
+    let mut result = Rsvps {
         rsvps: rsvps
             .into_iter()
             .map(|(a, attendee)| {
@@ -143,5 +147,8 @@ pub fn get_rsvps(
             .collect(),
 
         hidden_location,
-    })
+        ..Default::default()
+    };
+    counts.apply_to(&mut result);
+    Ok(result)
 }

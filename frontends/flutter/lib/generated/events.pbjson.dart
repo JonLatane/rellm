@@ -345,6 +345,16 @@ const Rsvps$json = {
   '2': [
     {'1': 'rsvps', '3': 1, '4': 3, '5': 11, '6': '.rellm.Rsvp', '10': 'rsvps'},
     {'1': 'hidden_location', '3': 2, '4': 1, '5': 11, '6': '.rellm.Location', '9': 0, '10': 'hiddenLocation', '17': true},
+    {'1': 'going_count', '3': 3, '4': 1, '5': 13, '10': 'goingCount'},
+    {'1': 'going_attendees', '3': 4, '4': 1, '5': 13, '10': 'goingAttendees'},
+    {'1': 'interested_count', '3': 5, '4': 1, '5': 13, '10': 'interestedCount'},
+    {'1': 'interested_attendees', '3': 6, '4': 1, '5': 13, '10': 'interestedAttendees'},
+    {'1': 'requested_count', '3': 7, '4': 1, '5': 13, '10': 'requestedCount'},
+    {'1': 'requested_attendees', '3': 8, '4': 1, '5': 13, '10': 'requestedAttendees'},
+    {'1': 'not_going_count', '3': 9, '4': 1, '5': 13, '10': 'notGoingCount'},
+    {'1': 'not_going_attendees', '3': 10, '4': 1, '5': 13, '10': 'notGoingAttendees'},
+    {'1': 'pending_count', '3': 11, '4': 1, '5': 13, '10': 'pendingCount'},
+    {'1': 'pending_attendees', '3': 12, '4': 1, '5': 13, '10': 'pendingAttendees'},
   ],
   '8': [
     {'1': '_hidden_location'},
@@ -354,8 +364,15 @@ const Rsvps$json = {
 /// Descriptor for `Rsvps`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List rsvpsDescriptor = $convert.base64Decode(
     'CgVSc3ZwcxIhCgVyc3ZwcxgBIAMoCzILLnJlbGxtLlJzdnBSBXJzdnBzEj0KD2hpZGRlbl9sb2'
-    'NhdGlvbhgCIAEoCzIPLnJlbGxtLkxvY2F0aW9uSABSDmhpZGRlbkxvY2F0aW9uiAEBQhIKEF9o'
-    'aWRkZW5fbG9jYXRpb24=');
+    'NhdGlvbhgCIAEoCzIPLnJlbGxtLkxvY2F0aW9uSABSDmhpZGRlbkxvY2F0aW9uiAEBEh8KC2dv'
+    'aW5nX2NvdW50GAMgASgNUgpnb2luZ0NvdW50EicKD2dvaW5nX2F0dGVuZGVlcxgEIAEoDVIOZ2'
+    '9pbmdBdHRlbmRlZXMSKQoQaW50ZXJlc3RlZF9jb3VudBgFIAEoDVIPaW50ZXJlc3RlZENvdW50'
+    'EjEKFGludGVyZXN0ZWRfYXR0ZW5kZWVzGAYgASgNUhNpbnRlcmVzdGVkQXR0ZW5kZWVzEicKD3'
+    'JlcXVlc3RlZF9jb3VudBgHIAEoDVIOcmVxdWVzdGVkQ291bnQSLwoTcmVxdWVzdGVkX2F0dGVu'
+    'ZGVlcxgIIAEoDVIScmVxdWVzdGVkQXR0ZW5kZWVzEiYKD25vdF9nb2luZ19jb3VudBgJIAEoDV'
+    'INbm90R29pbmdDb3VudBIuChNub3RfZ29pbmdfYXR0ZW5kZWVzGAogASgNUhFub3RHb2luZ0F0'
+    'dGVuZGVlcxIjCg1wZW5kaW5nX2NvdW50GAsgASgNUgxwZW5kaW5nQ291bnQSKwoRcGVuZGluZ1'
+    '9hdHRlbmRlZXMYDCABKA1SEHBlbmRpbmdBdHRlbmRlZXNCEgoQX2hpZGRlbl9sb2NhdGlvbg==');
 
 @$core.Deprecated('Use rsvpDescriptor instead')
 const Rsvp$json = {

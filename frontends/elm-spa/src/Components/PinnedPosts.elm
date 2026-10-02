@@ -698,6 +698,7 @@ pinnedOccasionView config model postId rawPost =
                         (\_ -> Nothing)
                         (\_ -> config.noOp)
                         (\_ _ -> config.noOp)
+                        (text "")
                         event
                         displayOccasion
                     ]

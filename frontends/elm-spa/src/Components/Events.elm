@@ -64,19 +64,22 @@ import UI.Classes exposing (classes, hostnameToCSSClass)
 `Event` back, not just the one asked for) containing the `Occasion`
 whose own `Post` id is `occasionPostId`, from `maybeAccountServer`'s
 server, authenticated as its account if any, anonymous otherwise -- same
-auth/refresh handling as `Components.Posts.fetchPost`.
+auth/refresh handling as `Components.Posts.fetchPost`. `anonymousAuthToken` is the viewer's
+private anonymous-RSVP token, if any: it makes the response's `Occasion.rsvps`/`location` include
+that anonymous attendee's own (possibly still-pending) RSVP, see `Components.Rsvps`.
 -}
 fetchEvent :
     AccountsPanel.Model
     -> AccountsPanel.MaybeAccountServer
+    -> Maybe String
     -> String
     -> Task Grpc.Error ( Maybe AccountsPanel.Msg, GetEventsResponse )
-fetchEvent accountsPanelModel maybeAccountServer occasionPostId =
+fetchEvent accountsPanelModel maybeAccountServer anonymousAuthToken occasionPostId =
     performWithOptionalAccountServer
         accountsPanelModel
         maybeAccountServer
         (\server maybeToken ->
-            Grpc.new Rellm.getEvents { defaultGetEventsRequest | postId = Just occasionPostId }
+            Grpc.new Rellm.getEvents { defaultGetEventsRequest | postId = Just occasionPostId, anonymousAttendeeAuthToken = anonymousAuthToken }
                 |> Grpc.setHost (RellmServers.rellmServerUrl server)
                 |> withAccessToken maybeToken
                 |> Grpc.toTask
@@ -718,6 +721,9 @@ caller that ever passes `True` (see `UI.currentStarredOccasionKey`);
 `showSyncDestinations` fields, which `EventsPage.eventCardView` threads
 straight through.
 
+`rsvpSlot` is the card's already-built RSVP block (`Components.Rsvps.view`, compact), or
+`text ""` for callers with nothing interactive to offer (e.g. read-only previews).
+
 `availableSyncDestinations`/`isPushing`/`pushError`/`onPush`/`onDelete` thread
 straight into `eventSyncDestinationsView`'s own params of the same name/shape
 -- see that function's own doc. `availableSyncDestinations` is `Nothing` for
@@ -746,10 +752,11 @@ eventCard :
     -> (String -> Maybe String)
     -> (String -> msg)
     -> (String -> String -> msg)
+    -> Html msg
     -> Event
     -> Occasion
     -> Html msg
-eventCard time basePath viewingServerHost eventServerHost maybeServer maybeAccount onMediaClicked mediaPlayState onMediaPlayClicked mediaSizing starred onStarClicked current showSyncSource showSyncDestinations availableSyncDestinations isPushing pushError onPush onDelete event occasion =
+eventCard time basePath viewingServerHost eventServerHost maybeServer maybeAccount onMediaClicked mediaPlayState onMediaPlayClicked mediaSizing starred onStarClicked current showSyncSource showSyncDestinations availableSyncDestinations isPushing pushError onPush onDelete rsvpSlot event occasion =
     case event.post of
         Nothing ->
             text ""
@@ -847,6 +854,7 @@ eventCard time basePath viewingServerHost eventServerHost maybeServer maybeAccou
                         Nothing ->
                             text ""
                     ]
+                , rsvpSlot
                 , if showSyncSource then
                     syncSourceView event
 

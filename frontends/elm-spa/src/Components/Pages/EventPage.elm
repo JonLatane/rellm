@@ -58,6 +58,7 @@ import Components.Markdown as Markdown
 import Components.MediaRenderer as MediaRenderer
 import Components.MultiMediaRenderer as MultiMediaRenderer
 import Components.Posts as Posts
+import Components.Rsvps as Rsvps
 import Components.ServerDependentView as ServerDependentView
 import Components.SyncDestinations as SyncDestinations
 import Components.Users as Users
@@ -173,6 +174,19 @@ type alias Model =
     -- `Events.eventSyncDestinationsView`'s own doc for how `Just`/`Nothing` here changes rendering.
     , availableSyncDestinations : Maybe (List SyncDestination)
 
+    -- Per-`Occasion` RSVP UI state (`Components.Rsvps`), keyed by occasion id and created lazily
+    -- (see `rsvpModelFor`) -- the RSVP _data_ itself rides along on `GetEvents`' occasions, so
+    -- there's never an RSVP-specific fetch.
+    , rsvpModels : Dict String Rsvps.Model
+
+    -- The raw `?anonymousAuthToken=` query parameter (see `Rsvps.parseAnonymousAuthToken`),
+    -- sent with every `GetEvents` so an anonymous attendee's own RSVP comes back. Updated (and
+    -- mirrored into the URL) when an anonymous RSVP is created/deleted.
+    , rsvpTokenParam : Maybe String
+
+    -- `?section=rsvp` -- expands the list of everyone's RSVPs.
+    , rsvpSectionRequested : Bool
+
     -- Captured once at `init` -- see the module doc.
     , pageIsSecure : Bool
     , navKey : Browser.Navigation.Key
@@ -181,6 +195,8 @@ type alias Model =
 
 type Msg
     = GotEvent (Result Grpc.Error ( Maybe AccountsPanel.Msg, Proto.Rellm.GetEventsResponse ))
+      -- One occasion's RSVP form/list (see `Components.Rsvps`), keyed by occasion id.
+    | RsvpsMsg String Rsvps.Msg
     | MediaClicked Post String
       -- The Event's own `Post`'s media-edit button (see `eventDetailView`) --
       -- opens the shared `Shared.MyMediaPanel` chooser in `MultiSelect` mode,
@@ -494,8 +510,8 @@ or a short-URL id with its own reserved leading character stripped, for
 `Components.Pages.PostOrEventPage` -- see that module's own doc). Genuinely
 the viewed `Occasion`'s own `Post` id -- see the module doc.
 -}
-init : Shared.Model -> Bool -> String -> Browser.Navigation.Key -> ( Model, Effect Msg )
-init shared pageIsSecure rawPostId navKey =
+init : Shared.Model -> Bool -> Dict String String -> String -> Browser.Navigation.Key -> ( Model, Effect Msg )
+init shared pageIsSecure query rawPostId navKey =
     let
         ( eventId, targetHost ) =
             Events.parseEventRouteId shared.accounts.mainFrontendHost rawPostId
@@ -522,6 +538,9 @@ init shared pageIsSecure rawPostId navKey =
                 , addMoreMenu = Nothing
                 , syncDestinationPushStatuses = Dict.empty
                 , availableSyncDestinations = Nothing
+                , rsvpModels = Dict.empty
+                , rsvpTokenParam = Dict.get "anonymousAuthToken" query
+                , rsvpSectionRequested = Dict.get "section" query == Just "rsvp"
                 , pageIsSecure = pageIsSecure
                 , navKey = navKey
                 }
@@ -549,6 +568,62 @@ subscriptions model =
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
 update shared msg model =
     case msg of
+        RsvpsMsg occasionId rsvpsMsg ->
+            case model.eventStatus of
+                EventLoaded event loadedOccasion ->
+                    let
+                        occasion : Occasion
+                        occasion =
+                            event.occasions
+                                |> List.filter (\o -> Rsvps.occasionIdOf o == occasionId)
+                                |> List.head
+                                |> Maybe.withDefault loadedOccasion
+
+                        ( newRsvpModel, rsvpCmd, outcome ) =
+                            Rsvps.update
+                                { accounts = shared.accounts
+                                , targetHost = model.targetHost
+                                , event = event
+                                , occasion = occasion
+                                }
+                                rsvpsMsg
+                                (rsvpModelFor model occasionId)
+
+                        -- Keep the page URL's private-link token in step, so a reload (or a
+                        -- copied address bar) still finds the anonymous RSVP.
+                        ( newTokenParam, urlCmd ) =
+                            case outcome.tokenChange of
+                                Just newToken ->
+                                    ( newToken
+                                    , Browser.Navigation.replaceUrl model.navKey
+                                        (Events.occasionHref shared.basePath shared.accounts.mainFrontendHost model.targetHost occasion
+                                            ++ (case newToken of
+                                                    Just token ->
+                                                        "?anonymousAuthToken=" ++ token
+
+                                                    Nothing ->
+                                                        ""
+                                               )
+                                        )
+                                    )
+
+                                Nothing ->
+                                    ( model.rsvpTokenParam, Cmd.none )
+                    in
+                    ( { model
+                        | rsvpModels = Dict.insert occasionId newRsvpModel model.rsvpModels
+                        , rsvpTokenParam = newTokenParam
+                      }
+                    , Effect.batch
+                        [ Cmd.map (RsvpsMsg occasionId) rsvpCmd |> Effect.fromCmd
+                        , urlCmd |> Effect.fromCmd
+                        , accountsPanelEffect outcome.accountsPanelMsg
+                        ]
+                    )
+
+                _ ->
+                    ( model, Effect.none )
+
         GotEvent (Ok ( maybeAccountsPanelMsg, response )) ->
             let
                 accountEffect : Effect Msg
@@ -1512,7 +1587,7 @@ fetchIfReady shared model =
         case RellmServers.knownConnectedRellmServer shared.accounts.servers model.targetHost of
             Just _ ->
                 ( { model | fetchStarted = True, fetchedAccountId = currentAccountId shared model }
-                , Events.fetchEvent shared.accounts (maybeAccountServerFor shared model) model.occasionId
+                , Events.fetchEvent shared.accounts (maybeAccountServerFor shared model) (anonymousTokenFor model model.occasionId) model.occasionId
                     |> Task.attempt GotEvent
                     |> Effect.fromCmd
                 )
@@ -1531,10 +1606,26 @@ successful save to the Event's own primary `Post`'s content
 refetch : Shared.Model -> Model -> ( Model, Effect Msg )
 refetch shared model =
     ( { model | fetchedAccountId = currentAccountId shared model }
-    , Events.fetchEvent shared.accounts (maybeAccountServerFor shared model) model.occasionId
+    , Events.fetchEvent shared.accounts (maybeAccountServerFor shared model) (anonymousTokenFor model model.occasionId) model.occasionId
         |> Task.attempt GotEvent
         |> Effect.fromCmd
     )
+
+
+{-| The anonymous RSVP token (if any) for `occasionId` -- see `rsvpTokenParam`.
+-}
+anonymousTokenFor : Model -> String -> Maybe String
+anonymousTokenFor model occasionId =
+    model.rsvpTokenParam |> Maybe.andThen (Rsvps.parseAnonymousAuthToken occasionId)
+
+
+{-| `occasionId`'s RSVP UI state -- a fresh one (seeded from the URL's token/`?section=rsvp`) if
+none exists yet.
+-}
+rsvpModelFor : Model -> String -> Rsvps.Model
+rsvpModelFor model occasionId =
+    Dict.get occasionId model.rsvpModels
+        |> Maybe.withDefault (Rsvps.init (anonymousTokenFor model occasionId) model.rsvpSectionRequested)
 
 
 maybeAccountServerFor : Shared.Model -> Model -> AccountsPanel.MaybeAccountServer
@@ -2161,6 +2252,18 @@ eventDetailView shared model event occasion =
                             , moderationView maybeAccount model.moderationEdit event eventPost
                             ]
                         , occasionDetailAndStrip
+                        , Rsvps.view (RsvpsMsg (Rsvps.occasionIdOf occasion))
+                            { basePath = shared.basePath
+                            , viewingServerHost = shared.accounts.mainFrontendHost
+                            , eventServerHost = model.targetHost
+                            , maybeServer = maybeServer
+                            , maybeAccount = maybeAccount
+                            , now = shared.time.now
+                            , compact = False
+                            , event = event
+                            , occasion = occasion
+                            }
+                            (rsvpModelFor model (Rsvps.occasionIdOf occasion))
                         , case maybeServer of
                             Just server ->
                                 let

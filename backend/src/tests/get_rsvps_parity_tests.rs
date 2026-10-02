@@ -158,6 +158,17 @@ fn via_get_rsvps(
     .expect("get_rsvps failed")
 }
 
+/// Every per-status/pending total on `Rsvps`, as (count, attendees) pairs.
+fn count_fields(rsvps: &Rsvps) -> [(u32, u32); 5] {
+    [
+        (rsvps.going_count, rsvps.going_attendees),
+        (rsvps.interested_count, rsvps.interested_attendees),
+        (rsvps.requested_count, rsvps.requested_attendees),
+        (rsvps.not_going_count, rsvps.not_going_attendees),
+        (rsvps.pending_count, rsvps.pending_attendees),
+    ]
+}
+
 fn notes_by_id(rsvps: &Rsvps) -> BTreeMap<String, String> {
     rsvps
         .rsvps
@@ -195,6 +206,11 @@ fn assert_parity(
         notes_by_id(&rsvps),
         "get_events and get_rsvps disagree on which rsvps are visible \
          and/or their private_note redaction"
+    );
+    assert_eq!(
+        count_fields(&events_rsvps),
+        count_fields(&rsvps),
+        "get_events and get_rsvps disagree on the Rsvps totals"
     );
     assert_eq!(
         events_rsvps.hidden_location.is_some(),
@@ -399,6 +415,85 @@ fn event_owner_sees_every_rsvp_unredacted_and_the_real_location() {
             events_occasion.current_user_rsvp.is_none(),
             "the owner never RSVP'd to their own event in this scenario"
         );
+        Ok(())
+    });
+}
+
+#[test]
+fn get_events_caps_returned_rsvps_but_totals_cover_all_of_them() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, Status, _>(|conn| {
+        let owner = create_user(conn, "geap_cap_owner");
+        let (event, _) = create_event(
+            conn,
+            &owner,
+            EventOpts {
+                visibility: Visibility::GlobalPublic,
+                ..Default::default()
+            },
+        );
+        let (occasion, _) = create_occasion(
+            conn,
+            &event,
+            Some(&owner),
+            OccasionOpts {
+                visibility: Visibility::GlobalPublic,
+                ..Default::default()
+            },
+        );
+
+        let total = crate::rpcs::events::MAX_RSVPS_PER_OCCASION as usize + 5;
+        for i in 0..total {
+            create_rsvp(
+                conn,
+                &occasion,
+                RsvpOpts {
+                    anonymous_attendee: Some(serde_json::json!({
+                        "name": format!("guest {i}"),
+                        "auth_token": format!("gea_cap_token_{i}"),
+                    })),
+                    status: RsvpStatus::Interested,
+                    ..Default::default()
+                },
+            );
+        }
+        // The viewer's own (last-created, so it would be cut first by id order alone) RSVP, plus one
+        // GOING one -- both must beat plain INTERESTED ones for the cap.
+        let own_token = format!("gea_cap_token_{}", total - 1);
+        create_rsvp(
+            conn,
+            &occasion,
+            RsvpOpts {
+                anonymous_attendee: Some(serde_json::json!({ "name": "going", "auth_token": "going_token" })),
+                status: RsvpStatus::Going,
+                ..Default::default()
+            },
+        );
+
+        let via_events = via_get_events(conn, &None, occasion.post_id, Some(own_token.clone()));
+        let events_rsvps = via_events.rsvps.unwrap();
+        assert_eq!(
+            events_rsvps.rsvps.len(),
+            crate::rpcs::events::MAX_RSVPS_PER_OCCASION as usize
+        );
+        assert_eq!(events_rsvps.interested_count as usize, total);
+        assert_eq!(events_rsvps.going_count, 1);
+        assert!(
+            events_rsvps
+                .rsvps
+                .iter()
+                .any(|r| r.status == RsvpStatus::Going as i32),
+            "GOING outranks INTERESTED when capping"
+        );
+        assert!(
+            via_events.current_user_rsvp.is_some(),
+            "the viewer's own RSVP is always among the returned ones"
+        );
+
+        // `get_rsvps` isn't capped.
+        let uncapped = via_get_rsvps(conn, &None, occasion.post_id, None);
+        assert_eq!(uncapped.rsvps.len(), total + 1);
+        assert_eq!(uncapped.interested_count as usize, total);
         Ok(())
     });
 }

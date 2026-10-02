@@ -473,7 +473,30 @@ export interface Rsvps {
   /** The RSVP data for the event, in no particular order. */
   rsvps: Rsvp[];
   /** When `hide_location_until_rsvp_approved` is set, the location of the event. */
-  hiddenLocation?: Location | undefined;
+  hiddenLocation?:
+    | Location
+    | undefined;
+  /**
+   * Totals over *every* RSVP the viewer is allowed to see for the Occasion -- not just the ones
+   * returned in `rsvps`. `GetEvents` caps how many `rsvps` it returns per Occasion (for big events),
+   * so these counts can be *greater than* `rsvps.length` -- much like `Post.reply_count` can exceed
+   * the replies actually loaded. (`GetRsvps` is not capped, so there they match `rsvps` exactly.)
+   *
+   * `*_count` is a number of RSVPs; `*_attendees` is the sum of their `number_of_guests`. The
+   * per-status counts only include RSVPs whose moderation passes (`UNMODERATED`/`APPROVED`) -- the
+   * ones everyone can see. `pending_*` counts the `PENDING` ones the viewer can see (their own, or
+   * all of them for the event owner), whatever their status. `REJECTED` RSVPs are not counted.
+   */
+  goingCount: number;
+  goingAttendees: number;
+  interestedCount: number;
+  interestedAttendees: number;
+  requestedCount: number;
+  requestedAttendees: number;
+  notGoingCount: number;
+  notGoingAttendees: number;
+  pendingCount: number;
+  pendingAttendees: number;
 }
 
 /**
@@ -1919,7 +1942,20 @@ export const GetRsvpsRequest: MessageFns<GetRsvpsRequest> = {
 };
 
 function createBaseRsvps(): Rsvps {
-  return { rsvps: [], hiddenLocation: undefined };
+  return {
+    rsvps: [],
+    hiddenLocation: undefined,
+    goingCount: 0,
+    goingAttendees: 0,
+    interestedCount: 0,
+    interestedAttendees: 0,
+    requestedCount: 0,
+    requestedAttendees: 0,
+    notGoingCount: 0,
+    notGoingAttendees: 0,
+    pendingCount: 0,
+    pendingAttendees: 0,
+  };
 }
 
 export const Rsvps: MessageFns<Rsvps> = {
@@ -1929,6 +1965,36 @@ export const Rsvps: MessageFns<Rsvps> = {
     }
     if (message.hiddenLocation !== undefined) {
       Location.encode(message.hiddenLocation, writer.uint32(18).fork()).join();
+    }
+    if (message.goingCount !== 0) {
+      writer.uint32(24).uint32(message.goingCount);
+    }
+    if (message.goingAttendees !== 0) {
+      writer.uint32(32).uint32(message.goingAttendees);
+    }
+    if (message.interestedCount !== 0) {
+      writer.uint32(40).uint32(message.interestedCount);
+    }
+    if (message.interestedAttendees !== 0) {
+      writer.uint32(48).uint32(message.interestedAttendees);
+    }
+    if (message.requestedCount !== 0) {
+      writer.uint32(56).uint32(message.requestedCount);
+    }
+    if (message.requestedAttendees !== 0) {
+      writer.uint32(64).uint32(message.requestedAttendees);
+    }
+    if (message.notGoingCount !== 0) {
+      writer.uint32(72).uint32(message.notGoingCount);
+    }
+    if (message.notGoingAttendees !== 0) {
+      writer.uint32(80).uint32(message.notGoingAttendees);
+    }
+    if (message.pendingCount !== 0) {
+      writer.uint32(88).uint32(message.pendingCount);
+    }
+    if (message.pendingAttendees !== 0) {
+      writer.uint32(96).uint32(message.pendingAttendees);
     }
     return writer;
   },
@@ -1956,6 +2022,86 @@ export const Rsvps: MessageFns<Rsvps> = {
           message.hiddenLocation = Location.decode(reader, reader.uint32());
           continue;
         }
+        case 3: {
+          if (tag !== 24) {
+            break;
+          }
+
+          message.goingCount = reader.uint32();
+          continue;
+        }
+        case 4: {
+          if (tag !== 32) {
+            break;
+          }
+
+          message.goingAttendees = reader.uint32();
+          continue;
+        }
+        case 5: {
+          if (tag !== 40) {
+            break;
+          }
+
+          message.interestedCount = reader.uint32();
+          continue;
+        }
+        case 6: {
+          if (tag !== 48) {
+            break;
+          }
+
+          message.interestedAttendees = reader.uint32();
+          continue;
+        }
+        case 7: {
+          if (tag !== 56) {
+            break;
+          }
+
+          message.requestedCount = reader.uint32();
+          continue;
+        }
+        case 8: {
+          if (tag !== 64) {
+            break;
+          }
+
+          message.requestedAttendees = reader.uint32();
+          continue;
+        }
+        case 9: {
+          if (tag !== 72) {
+            break;
+          }
+
+          message.notGoingCount = reader.uint32();
+          continue;
+        }
+        case 10: {
+          if (tag !== 80) {
+            break;
+          }
+
+          message.notGoingAttendees = reader.uint32();
+          continue;
+        }
+        case 11: {
+          if (tag !== 88) {
+            break;
+          }
+
+          message.pendingCount = reader.uint32();
+          continue;
+        }
+        case 12: {
+          if (tag !== 96) {
+            break;
+          }
+
+          message.pendingAttendees = reader.uint32();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1969,6 +2115,16 @@ export const Rsvps: MessageFns<Rsvps> = {
     return {
       rsvps: globalThis.Array.isArray(object?.rsvps) ? object.rsvps.map((e: any) => Rsvp.fromJSON(e)) : [],
       hiddenLocation: isSet(object.hiddenLocation) ? Location.fromJSON(object.hiddenLocation) : undefined,
+      goingCount: isSet(object.goingCount) ? globalThis.Number(object.goingCount) : 0,
+      goingAttendees: isSet(object.goingAttendees) ? globalThis.Number(object.goingAttendees) : 0,
+      interestedCount: isSet(object.interestedCount) ? globalThis.Number(object.interestedCount) : 0,
+      interestedAttendees: isSet(object.interestedAttendees) ? globalThis.Number(object.interestedAttendees) : 0,
+      requestedCount: isSet(object.requestedCount) ? globalThis.Number(object.requestedCount) : 0,
+      requestedAttendees: isSet(object.requestedAttendees) ? globalThis.Number(object.requestedAttendees) : 0,
+      notGoingCount: isSet(object.notGoingCount) ? globalThis.Number(object.notGoingCount) : 0,
+      notGoingAttendees: isSet(object.notGoingAttendees) ? globalThis.Number(object.notGoingAttendees) : 0,
+      pendingCount: isSet(object.pendingCount) ? globalThis.Number(object.pendingCount) : 0,
+      pendingAttendees: isSet(object.pendingAttendees) ? globalThis.Number(object.pendingAttendees) : 0,
     };
   },
 
@@ -1979,6 +2135,36 @@ export const Rsvps: MessageFns<Rsvps> = {
     }
     if (message.hiddenLocation !== undefined) {
       obj.hiddenLocation = Location.toJSON(message.hiddenLocation);
+    }
+    if (message.goingCount !== 0) {
+      obj.goingCount = Math.round(message.goingCount);
+    }
+    if (message.goingAttendees !== 0) {
+      obj.goingAttendees = Math.round(message.goingAttendees);
+    }
+    if (message.interestedCount !== 0) {
+      obj.interestedCount = Math.round(message.interestedCount);
+    }
+    if (message.interestedAttendees !== 0) {
+      obj.interestedAttendees = Math.round(message.interestedAttendees);
+    }
+    if (message.requestedCount !== 0) {
+      obj.requestedCount = Math.round(message.requestedCount);
+    }
+    if (message.requestedAttendees !== 0) {
+      obj.requestedAttendees = Math.round(message.requestedAttendees);
+    }
+    if (message.notGoingCount !== 0) {
+      obj.notGoingCount = Math.round(message.notGoingCount);
+    }
+    if (message.notGoingAttendees !== 0) {
+      obj.notGoingAttendees = Math.round(message.notGoingAttendees);
+    }
+    if (message.pendingCount !== 0) {
+      obj.pendingCount = Math.round(message.pendingCount);
+    }
+    if (message.pendingAttendees !== 0) {
+      obj.pendingAttendees = Math.round(message.pendingAttendees);
     }
     return obj;
   },
@@ -1992,6 +2178,16 @@ export const Rsvps: MessageFns<Rsvps> = {
     message.hiddenLocation = (object.hiddenLocation !== undefined && object.hiddenLocation !== null)
       ? Location.fromPartial(object.hiddenLocation)
       : undefined;
+    message.goingCount = object.goingCount ?? 0;
+    message.goingAttendees = object.goingAttendees ?? 0;
+    message.interestedCount = object.interestedCount ?? 0;
+    message.interestedAttendees = object.interestedAttendees ?? 0;
+    message.requestedCount = object.requestedCount ?? 0;
+    message.requestedAttendees = object.requestedAttendees ?? 0;
+    message.notGoingCount = object.notGoingCount ?? 0;
+    message.notGoingAttendees = object.notGoingAttendees ?? 0;
+    message.pendingCount = object.pendingCount ?? 0;
+    message.pendingAttendees = object.pendingAttendees ?? 0;
     return message;
   },
 };

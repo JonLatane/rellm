@@ -4939,9 +4939,34 @@ type alias Proto__Rellm__Rsvp =
 {-| The field numbers for the fields of `Proto__Rellm__Rsvps`. This is mostly useful for internals, like documentation generation.
 
 -}
-fieldNumbersProto__Rellm__Rsvps : { rsvps : Int, hiddenLocation : Int }
+fieldNumbersProto__Rellm__Rsvps :
+    { rsvps : Int
+    , hiddenLocation : Int
+    , goingCount : Int
+    , goingAttendees : Int
+    , interestedCount : Int
+    , interestedAttendees : Int
+    , requestedCount : Int
+    , requestedAttendees : Int
+    , notGoingCount : Int
+    , notGoingAttendees : Int
+    , pendingCount : Int
+    , pendingAttendees : Int
+    }
 fieldNumbersProto__Rellm__Rsvps =
-    { rsvps = 1, hiddenLocation = 2 }
+    { rsvps = 1
+    , hiddenLocation = 2
+    , goingCount = 3
+    , goingAttendees = 4
+    , interestedCount = 5
+    , interestedAttendees = 6
+    , requestedCount = 7
+    , requestedAttendees = 8
+    , notGoingCount = 9
+    , notGoingAttendees = 10
+    , pendingCount = 11
+    , pendingAttendees = 12
+    }
 
 
 {-| Default for Proto__Rellm__Rsvps. Should only be used for 'required' decoders as an initial value.
@@ -4949,7 +4974,19 @@ fieldNumbersProto__Rellm__Rsvps =
 -}
 defaultProto__Rellm__Rsvps : Proto__Rellm__Rsvps
 defaultProto__Rellm__Rsvps =
-    { rsvps = [], hiddenLocation = Nothing }
+    { rsvps = []
+    , hiddenLocation = Nothing
+    , goingCount = 0
+    , goingAttendees = 0
+    , interestedCount = 0
+    , interestedAttendees = 0
+    , requestedCount = 0
+    , requestedAttendees = 0
+    , notGoingCount = 0
+    , notGoingAttendees = 0
+    , pendingCount = 0
+    , pendingAttendees = 0
+    }
 
 
 {-| Declares how to decode a `Proto__Rellm__Rsvps` from Bytes. To actually perform the conversion from Bytes, you need to use Protobuf.Decode.decode from eriktim/elm-protocol-buffers.
@@ -4964,6 +5001,16 @@ decodeProto__Rellm__Rsvps =
             2
             (Protobuf.Decode.map Just decodeProto__Rellm__Location)
             (\a r -> { r | hiddenLocation = a })
+        , Protobuf.Decode.optional 3 Protobuf.Decode.uint32 (\a r -> { r | goingCount = a })
+        , Protobuf.Decode.optional 4 Protobuf.Decode.uint32 (\a r -> { r | goingAttendees = a })
+        , Protobuf.Decode.optional 5 Protobuf.Decode.uint32 (\a r -> { r | interestedCount = a })
+        , Protobuf.Decode.optional 6 Protobuf.Decode.uint32 (\a r -> { r | interestedAttendees = a })
+        , Protobuf.Decode.optional 7 Protobuf.Decode.uint32 (\a r -> { r | requestedCount = a })
+        , Protobuf.Decode.optional 8 Protobuf.Decode.uint32 (\a r -> { r | requestedAttendees = a })
+        , Protobuf.Decode.optional 9 Protobuf.Decode.uint32 (\a r -> { r | notGoingCount = a })
+        , Protobuf.Decode.optional 10 Protobuf.Decode.uint32 (\a r -> { r | notGoingAttendees = a })
+        , Protobuf.Decode.optional 11 Protobuf.Decode.uint32 (\a r -> { r | pendingCount = a })
+        , Protobuf.Decode.optional 12 Protobuf.Decode.uint32 (\a r -> { r | pendingAttendees = a })
         ]
 
 
@@ -4975,6 +5022,16 @@ encodeProto__Rellm__Rsvps value =
     Protobuf.Encode.message
         [ ( 1, (Protobuf.Encode.list encodeProto__Rellm__Rsvp) value.rsvps )
         , ( 2, (Maybe.map encodeProto__Rellm__Location >> Maybe.withDefault Protobuf.Encode.none) value.hiddenLocation )
+        , ( 3, Protobuf.Encode.uint32 value.goingCount )
+        , ( 4, Protobuf.Encode.uint32 value.goingAttendees )
+        , ( 5, Protobuf.Encode.uint32 value.interestedCount )
+        , ( 6, Protobuf.Encode.uint32 value.interestedAttendees )
+        , ( 7, Protobuf.Encode.uint32 value.requestedCount )
+        , ( 8, Protobuf.Encode.uint32 value.requestedAttendees )
+        , ( 9, Protobuf.Encode.uint32 value.notGoingCount )
+        , ( 10, Protobuf.Encode.uint32 value.notGoingAttendees )
+        , ( 11, Protobuf.Encode.uint32 value.pendingCount )
+        , ( 12, Protobuf.Encode.uint32 value.pendingAttendees )
         ]
 
 
@@ -4982,7 +5039,19 @@ encodeProto__Rellm__Rsvps value =
 
 -}
 type alias Proto__Rellm__Rsvps =
-    { rsvps : List Proto__Rellm__Rsvp, hiddenLocation : Maybe Proto__Rellm__Location }
+    { rsvps : List Proto__Rellm__Rsvp
+    , hiddenLocation : Maybe Proto__Rellm__Location
+    , goingCount : Int
+    , goingAttendees : Int
+    , interestedCount : Int
+    , interestedAttendees : Int
+    , requestedCount : Int
+    , requestedAttendees : Int
+    , notGoingCount : Int
+    , notGoingAttendees : Int
+    , pendingCount : Int
+    , pendingAttendees : Int
+    }
 
 
 {-| The field numbers for the fields of `Proto__Rellm__GetRsvpsRequest`. This is mostly useful for internals, like documentation generation.

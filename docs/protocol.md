@@ -2947,6 +2947,18 @@ Response to get RSVP data for an event.
 | ----- | ---- | ----- | ----------- |
 | rsvps | [Rsvp](#rellm-Rsvp) | repeated | The RSVP data for the event, in no particular order. |
 | hidden_location | [Location](#rellm-Location) | optional | When `hide_location_until_rsvp_approved` is set, the location of the event. |
+| going_count | [uint32](#uint32) |  | Totals over *every* RSVP the viewer is allowed to see for the Occasion -- not just the ones returned in `rsvps`. `GetEvents` caps how many `rsvps` it returns per Occasion (for big events), so these counts can be *greater than* `rsvps.length` -- much like `Post.reply_count` can exceed the replies actually loaded. (`GetRsvps` is not capped, so there they match `rsvps` exactly.)
+
+`*_count` is a number of RSVPs; `*_attendees` is the sum of their `number_of_guests`. The per-status counts only include RSVPs whose moderation passes (`UNMODERATED`/`APPROVED`) -- the ones everyone can see. `pending_*` counts the `PENDING` ones the viewer can see (their own, or all of them for the event owner), whatever their status. `REJECTED` RSVPs are not counted. |
+| going_attendees | [uint32](#uint32) |  |  |
+| interested_count | [uint32](#uint32) |  |  |
+| interested_attendees | [uint32](#uint32) |  |  |
+| requested_count | [uint32](#uint32) |  |  |
+| requested_attendees | [uint32](#uint32) |  |  |
+| not_going_count | [uint32](#uint32) |  |  |
+| not_going_attendees | [uint32](#uint32) |  |  |
+| pending_count | [uint32](#uint32) |  |  |
+| pending_attendees | [uint32](#uint32) |  |  |
 
 
 

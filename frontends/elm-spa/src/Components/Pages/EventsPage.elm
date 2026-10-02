@@ -45,6 +45,7 @@ import Browser.Navigation
 import Components.Events as Events
 import Components.MediaRenderer as MediaRenderer
 import Components.Posts as Posts
+import Components.Rsvps as Rsvps
 import Components.Users exposing (usernameHref)
 import Components.Users.ProfileHeading as ProfileHeading
 import Dict exposing (Dict)
@@ -284,11 +285,18 @@ type alias Model =
     -- only needs to key by `destinationId`) -- drives the `isPushing`/
     -- `pushError` closures `eventCardView` builds for `Events.eventCard`.
     , pushStatuses : Dict String SubmitStatus
+
+    -- Per-card RSVP UI state (`Components.Rsvps`), keyed by `eventAnimationKey` and created
+    -- lazily. The RSVP _data_ is whatever `GetEvents` already attached to each `Occasion` --
+    -- cards never fetch RSVPs separately -- with this viewer's own upserts/deletes overlaid by
+    -- `Rsvps.applyEdits`.
+    , rsvpModels : Dict String Rsvps.Model
     }
 
 
 type Msg
-    = GotServerEvents String (Result Grpc.Error ( Maybe AccountsPanel.Msg, Proto.Rellm.GetEventsResponse ))
+    = RsvpsMsg String String Rsvps.Msg
+    | GotServerEvents String (Result Grpc.Error ( Maybe AccountsPanel.Msg, Proto.Rellm.GetEventsResponse ))
     | GotNow Time.Posix
     | Poll
     | Animate Animation.Msg
@@ -657,6 +665,7 @@ init shared author navKey path query fragment embeddedPage syncsCalendarPreferen
                 , embeddingPageSearchesPosts = embeddingPageSearchesPosts
                 , calendarDisplayModeOverride = calendarDisplayModeOverride
                 , pushStatuses = Dict.empty
+                , rsvpModels = Dict.empty
                 }
                 |> Tuple.mapFirst syncCalendarAnimations
     in
@@ -739,6 +748,37 @@ showSyncDestinationsChanged =
     ShowSyncDestinationsChanged
 
 
+{-| The currently-listed `Event`/`Occasion` for a card (`host`, occasion post id) -- whichever card
+animation still holds it, else the host's loaded feed (what calendar-preview cards render from).
+-}
+findEventAndOccasion : Model -> String -> String -> Maybe ( Event, Occasion )
+findEventAndOccasion model host occasionId =
+    let
+        matches : Occasion -> Bool
+        matches occasion =
+            Rsvps.occasionIdOf occasion == occasionId
+
+        fromAnimations : Maybe ( Event, Occasion )
+        fromAnimations =
+            model.eventAnimations
+                |> Dict.values
+                |> List.filter (\anim -> anim.host == host && matches anim.occasion)
+                |> List.head
+                |> Maybe.map (\anim -> ( anim.event, anim.occasion ))
+    in
+    case fromAnimations of
+        Just found ->
+            Just found
+
+        Nothing ->
+            case Dict.get host model.eventsByServer |> Maybe.map .status of
+                Just (Loaded pairs) ->
+                    pairs |> List.filter (\( _, occasion ) -> matches occasion) |> List.head
+
+                _ ->
+                    Nothing
+
+
 accountsPanelEffect : Maybe AccountsPanel.Msg -> Effect Msg
 accountsPanelEffect maybeAccountsPanelMsg =
     maybeAccountsPanelMsg
@@ -765,6 +805,30 @@ update shared msg model =
 updateInner : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
 updateInner shared msg model =
     case msg of
+        RsvpsMsg host occasionId rsvpsMsg ->
+            case findEventAndOccasion model host occasionId of
+                Just ( event, occasion ) ->
+                    let
+                        key : String
+                        key =
+                            host ++ "@" ++ occasionId
+
+                        ( newRsvpModel, rsvpCmd, outcome ) =
+                            Rsvps.update
+                                { accounts = shared.accounts, targetHost = host, event = event, occasion = occasion }
+                                rsvpsMsg
+                                (Dict.get key model.rsvpModels |> Maybe.withDefault (Rsvps.init Nothing False))
+                    in
+                    ( { model | rsvpModels = Dict.insert key newRsvpModel model.rsvpModels }
+                    , Effect.batch
+                        [ Cmd.map (RsvpsMsg host occasionId) rsvpCmd |> Effect.fromCmd
+                        , accountsPanelEffect outcome.accountsPanelMsg
+                        ]
+                    )
+
+                Nothing ->
+                    ( model, Effect.none )
+
         GotServerEvents frontendHost (Ok ( maybeAccountsPanelMsg, response )) ->
             ( { model
                 | eventsByServer =
@@ -2587,7 +2651,7 @@ calendarPreviewCardView shared model ( host, event, occasion ) =
             model.calendarPreview == Just key
     in
     div [ id (calendarPreviewCardDomId key), class "calendar-preview-card", onMouseDown (CalendarPreviewCardNavigated key) ]
-        [ eventCardView shared False current model.showSyncSources model.showSyncDestinations model.availableSyncDestinations model.pushStatuses ( host, event, occasion ) ]
+        [ eventCardView shared False current model.showSyncSources model.showSyncDestinations model.availableSyncDestinations model.pushStatuses model.rsvpModels ( host, event, occasion ) ]
 
 
 
@@ -3149,7 +3213,7 @@ eventsListView shared model =
             Html.Keyed.node "div"
                 [ class containerClass ]
                 (List.map
-                    (eventAnimationView shared model.embeddedPage model.showSyncSources model.showSyncDestinations model.availableSyncDestinations model.pushStatuses axis)
+                    (eventAnimationView shared model.embeddedPage model.showSyncSources model.showSyncDestinations model.availableSyncDestinations model.pushStatuses model.rsvpModels axis)
                     animations
                     ++ List.map (calendarAnimationView model.embeddedPage) calendarItems
                 )
@@ -3207,8 +3271,8 @@ The inner div's `event-card-move` class (see `events.css`) sets
 `transform-origin: top left` -- see `UI.Flip.startMoveScaled`'s own doc for
 why that's needed alongside a scale.
 -}
-eventAnimationView : Shared.Model -> Bool -> Bool -> Bool -> Maybe (List SyncDestination) -> Dict String SubmitStatus -> UI.Flip.Axis -> ( String, EventAnimation ) -> ( String, Html Msg )
-eventAnimationView shared embeddedPage showSyncSources showSyncDestinations availableSyncDestinations pushStatuses axis ( key, anim ) =
+eventAnimationView : Shared.Model -> Bool -> Bool -> Bool -> Maybe (List SyncDestination) -> Dict String SubmitStatus -> Dict String Rsvps.Model -> UI.Flip.Axis -> ( String, EventAnimation ) -> ( String, Html Msg )
+eventAnimationView shared embeddedPage showSyncSources showSyncDestinations availableSyncDestinations pushStatuses rsvpModels axis ( key, anim ) =
     let
         pointerEventsAttr : List (Html.Attribute Msg)
         pointerEventsAttr =
@@ -3221,7 +3285,7 @@ eventAnimationView shared embeddedPage showSyncSources showSyncDestinations avai
     ( key
     , div (id (eventCardDomId key) :: UI.Flip.itemAttributes axis anim.flip anim.move.moving)
         [ div (class "event-card-move" :: pointerEventsAttr ++ UI.Flip.moveAttributes anim.move)
-            [ eventCardView shared embeddedPage False showSyncSources showSyncDestinations availableSyncDestinations pushStatuses ( anim.host, anim.event, anim.occasion ) ]
+            [ eventCardView shared embeddedPage False showSyncSources showSyncDestinations availableSyncDestinations pushStatuses rsvpModels ( anim.host, anim.event, anim.occasion ) ]
         ]
     )
 
@@ -3235,8 +3299,8 @@ wins" convention `Components.Pages.PostsPage.postCardView` uses for a plain
 the same post, rather than `starred` alone reflecting a just-toggled state
 the rendered count doesn't yet.
 -}
-eventCardView : Shared.Model -> Bool -> Bool -> Bool -> Bool -> Maybe (List SyncDestination) -> Dict String SubmitStatus -> ( String, Event, Occasion ) -> Html Msg
-eventCardView shared embeddedPage current showSyncSources showSyncDestinations availableSyncDestinations pushStatuses ( host, event, occasion ) =
+eventCardView : Shared.Model -> Bool -> Bool -> Bool -> Bool -> Maybe (List SyncDestination) -> Dict String SubmitStatus -> Dict String Rsvps.Model -> ( String, Event, Occasion ) -> Html Msg
+eventCardView shared embeddedPage current showSyncSources showSyncDestinations availableSyncDestinations pushStatuses rsvpModels ( host, event, occasion ) =
     let
         maybeServer : Maybe RellmServer
         maybeServer =
@@ -3315,6 +3379,21 @@ eventCardView shared embeddedPage current showSyncSources showSyncDestinations a
         onDelete : String -> String -> Msg
         onDelete destinationId destinationLabel =
             SharedMsg (Shared.RequestDelete (Shared.ConfirmOccasionSyncDestinationDelete occasion destinationId destinationLabel host))
+
+        rsvpSlot : Html Msg
+        rsvpSlot =
+            Rsvps.view (RsvpsMsg host occasionPostId)
+                { basePath = shared.basePath
+                , viewingServerHost = shared.accounts.mainFrontendHost
+                , eventServerHost = host
+                , maybeServer = maybeServer
+                , maybeAccount = maybeAccount
+                , now = shared.time.now
+                , compact = True
+                , event = event
+                , occasion = occasion
+                }
+                (Dict.get (host ++ "@" ++ occasionPostId) rsvpModels |> Maybe.withDefault (Rsvps.init Nothing False))
     in
     Events.eventCard
         shared.time
@@ -3337,5 +3416,6 @@ eventCardView shared embeddedPage current showSyncSources showSyncDestinations a
         pushError
         onPush
         onDelete
+        rsvpSlot
         event
         displayOccasion

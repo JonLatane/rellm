@@ -30,6 +30,9 @@ pub use upsert_rsvp::upsert_rsvp;
 mod delete_rsvp;
 pub use delete_rsvp::delete_rsvp;
 
+mod rsvp_counts;
+pub use rsvp_counts::{RsvpCounts, MAX_RSVPS_PER_OCCASION};
+
 mod get_rsvps;
 pub use get_rsvps::get_rsvps;
 

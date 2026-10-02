@@ -6101,8 +6101,26 @@ directory</a> is (<code>{name}</code> denotes a
           <td>optional</td>
           <td>When <code>hide_location_until_rsvp_approved</code> is set, the location of the event.</td>
         </tr>
+        <tr>
+          <td>going_count</td>
+          <td><a href="#uint32">uint32</a></td>
+          <td></td>
+          <td>Totals over <em>every</em> RSVP the viewer is allowed to see for the Occasion -- not just the ones returned in <code>rsvps</code>. <code>GetEvents</code> caps how many <code>rsvps</code> it returns per Occasion (for big events), so these counts can be <em>greater than</em> <code>rsvps.length</code> -- much like <code>Post.reply_count</code> can exceed the replies actually loaded. (<code>GetRsvps</code> is not capped, so there they match <code>rsvps</code> exactly.)</td>
+        </tr>
       </tbody>
     </table>
+    <p>
+      <code>*_count</code> is a number of RSVPs; <code>*_attendees</code> is the sum of their <code>number_of_guests</code>. The per-status counts only include RSVPs whose moderation passes (<code>UNMODERATED</code>/<code>APPROVED</code>) -- the ones everyone can see. <code>pending_*</code> counts the <code>PENDING</code> ones the viewer can see (their own, or all of them for the event owner), whatever their status. <code>REJECTED</code> RSVPs are not counted. |
+      | going_attendees | <a href="#uint32">uint32</a> | | |
+      | interested_count | <a href="#uint32">uint32</a> | | |
+      | interested_attendees | <a href="#uint32">uint32</a> | | |
+      | requested_count | <a href="#uint32">uint32</a> | | |
+      | requested_attendees | <a href="#uint32">uint32</a> | | |
+      | not_going_count | <a href="#uint32">uint32</a> | | |
+      | not_going_attendees | <a href="#uint32">uint32</a> | | |
+      | pending_count | <a href="#uint32">uint32</a> | | |
+      | pending_attendees | <a href="#uint32">uint32</a> | | |
+    </p>
     <p><a name="rellm-SyncOccasionRequest"></a></p>
     <h3 id="syncoccasionrequest"><a class="anchor" aria-hidden="true" tabindex="-1" href="#syncoccasionrequest"><span class="octicon octicon-link"></span></a>SyncOccasionRequest</h3>
     <p>Syncs (cross-posts) a single Occasion to one SyncDestination.</p>

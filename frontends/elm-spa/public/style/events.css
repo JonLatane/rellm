@@ -1263,3 +1263,277 @@
   color: var(--muted);
   font-size: 0.85rem;
 }
+/* ---- RSVPs (`Components.Rsvps`) ----------------------------------------------------------
+   One block per Occasion, on the detail page and (compact) inside each `.event-card`. `position:
+   relative` keeps it painted above `.event-card-link-overlay` (see that rule), so its buttons and
+   inputs are independently clickable rather than navigating the card. */
+.event-rsvps {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0.6rem 0;
+  padding: 0.4rem;
+  border-radius: 8px;
+}
+
+.rsvp-mode-buttons {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.rsvp-mode-button {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.rsvp-mode-button-open {
+  background: var(--chip-bg);
+}
+
+.rsvp-mode-button-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 0.85rem;
+}
+
+.rsvp-mode-button-status {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.rsvp-login-hint,
+.rsvp-note {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.rsvp-error {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--error, #c0392b);
+}
+
+.rsvp-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.rsvp-name-input,
+.rsvp-guests-select,
+.rsvp-note-input,
+.rsvp-moderation-select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.rsvp-note-input {
+  min-height: 4rem;
+  resize: vertical;
+}
+
+.rsvp-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.rsvp-details-toggle {
+  align-self: flex-start;
+  padding: 0.2rem 0.4rem;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.rsvp-anonymous-explainer p {
+  margin: 0 0 0.25rem;
+  font-size: 0.8rem;
+}
+
+.rsvp-status-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.rsvp-status-buttons {
+  flex: 1;
+  display: flex;
+  gap: 0.3rem;
+}
+
+.rsvp-status-button {
+  flex: 1;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.rsvp-status-button-selected {
+  background: var(--chip-bg);
+  font-weight: 700;
+  border-color: currentColor;
+}
+
+.rsvp-status-button:disabled,
+.rsvp-mode-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.rsvp-save-indicator {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.rsvp-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.rsvp-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.5rem;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.8rem;
+  text-align: left;
+  text-decoration: none;
+}
+
+.rsvp-summary-button,
+.rsvp-summary-link {
+  cursor: pointer;
+}
+
+.rsvp-summary-empty {
+  opacity: 0.7;
+}
+
+.rsvp-summary-rows {
+  flex: 1;
+}
+
+.rsvp-summary-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.rsvp-summary-pending {
+  font-weight: 700;
+}
+
+.rsvp-summary-going {
+  color: var(--primary-anchor, inherit);
+}
+
+.rsvp-summary-interested {
+  color: var(--nav-anchor, inherit);
+}
+
+.rsvp-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.rsvp-card-section-heading {
+  margin: 0.4rem 0 0.3rem;
+  text-align: center;
+  font-size: 1.1rem;
+}
+
+.rsvp-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-bottom: 0.4rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.rsvp-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.rsvp-card-attendee {
+  flex: 1;
+  min-width: 0;
+}
+
+.rsvp-card-anonymous {
+  display: flex;
+  flex-direction: column;
+}
+
+.rsvp-card-anonymous-label,
+.rsvp-card-guests,
+.rsvp-card-private-heading {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.rsvp-card-anonymous-name {
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.rsvp-card-status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 0.85rem;
+}
+
+.rsvp-card-edit {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.rsvp-card-note {
+  font-size: 0.9rem;
+}

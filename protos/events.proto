@@ -269,6 +269,26 @@ message Rsvps {
   repeated Rsvp rsvps = 1;
   // When `hide_location_until_rsvp_approved` is set, the location of the event.
   optional Location hidden_location = 2;
+
+  // Totals over *every* RSVP the viewer is allowed to see for the Occasion -- not just the ones
+  // returned in `rsvps`. `GetEvents` caps how many `rsvps` it returns per Occasion (for big events),
+  // so these counts can be *greater than* `rsvps.length` -- much like `Post.reply_count` can exceed
+  // the replies actually loaded. (`GetRsvps` is not capped, so there they match `rsvps` exactly.)
+  //
+  // `*_count` is a number of RSVPs; `*_attendees` is the sum of their `number_of_guests`. The
+  // per-status counts only include RSVPs whose moderation passes (`UNMODERATED`/`APPROVED`) -- the
+  // ones everyone can see. `pending_*` counts the `PENDING` ones the viewer can see (their own, or
+  // all of them for the event owner), whatever their status. `REJECTED` RSVPs are not counted.
+  uint32 going_count = 3;
+  uint32 going_attendees = 4;
+  uint32 interested_count = 5;
+  uint32 interested_attendees = 6;
+  uint32 requested_count = 7;
+  uint32 requested_attendees = 8;
+  uint32 not_going_count = 9;
+  uint32 not_going_attendees = 10;
+  uint32 pending_count = 11;
+  uint32 pending_attendees = 12;
 }
 
 // An RSVP: describes a user's attendance at an [`Occasion`](#rellm-Occasion). Such as:

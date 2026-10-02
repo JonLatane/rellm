@@ -6,7 +6,6 @@ use diesel_full_text_search::{
     TsVectorExtensions,
 };
 use log::info;
-use serde_json::json;
 use tonic::{Code, Status};
 
 use crate::db_connection::PgPooledConnection;
@@ -16,6 +15,7 @@ use crate::models;
 use crate::models::AUTHOR_COLUMNS;
 use crate::models::{get_group, get_membership};
 use crate::protos::*;
+use crate::rpcs::events::rsvp_counts::load_visible_rsvp_counts_and_ids;
 use crate::rpcs::validate_group_permission;
 use crate::rpcs::validations::PASSING_MODERATIONS;
 use crate::schema::*;
@@ -150,21 +150,25 @@ fn attach_occasion_rsvps(
         .map(|(occasion_id, _)| *occasion_id)
         .collect();
 
-    let rsvps: Vec<(models::Rsvp, Option<models::Author>)> =
-        rsvps::table
-            .left_join(users::table.on(rsvps::user_id.eq(users::id.nullable())))
-            .select((rsvps::all_columns, AUTHOR_COLUMNS.nullable()))
-            .filter(rsvps::occasion_id.eq_any(&occasion_ids))
-            .filter(
-                rsvps::occasion_id
-                    .eq_any(&owned_occasion_ids)
-                    .or(rsvps::moderation.eq_any(PASSING_MODERATIONS))
-                    .or(rsvps::user_id.eq(current_user_id.unwrap_or(0)))
-                    .or(rsvps::anonymous_attendee
-                        .contains(json!({"auth_token": anonymous_auth_token}))),
-            )
-            .load::<(models::Rsvp, Option<models::Author>)>(conn)
-            .unwrap_or_default();
+    // Totals over everything the viewer can see, plus the ids of (at most
+    // `MAX_RSVPS_PER_OCCASION` per occasion of) those RSVPs -- see `rsvp_counts` for the visibility
+    // rules (mirroring `get_rsvps`' own filter) and ordering. One counts query + one ids query for
+    // the whole response, however many occasions it carries.
+    let (counts_by_occasion, rsvp_ids) = load_visible_rsvp_counts_and_ids(
+        &occasion_ids,
+        &owned_occasion_ids,
+        current_user_id,
+        anonymous_auth_token,
+        conn,
+    );
+
+    let rsvps: Vec<(models::Rsvp, Option<models::Author>)> = rsvps::table
+        .left_join(users::table.on(rsvps::user_id.eq(users::id.nullable())))
+        .select((rsvps::all_columns, AUTHOR_COLUMNS.nullable()))
+        .filter(rsvps::id.eq_any(&rsvp_ids))
+        .order(rsvps::id.asc())
+        .load::<(models::Rsvp, Option<models::Author>)>(conn)
+        .unwrap_or_default();
 
     let media_ids = rsvps
         .iter()
@@ -217,7 +221,7 @@ fn attach_occasion_rsvps(
                 .find(|(a, _)| is_viewers_own(a))
                 .map(|entry| entry.to_proto(true, true, media_lookup.as_ref()));
 
-            occasion_proto.rsvps = Some(Rsvps {
+            let mut rsvps_proto = Rsvps {
                 rsvps: occasion_rsvps
                     .iter()
                     .map(|entry| {
@@ -230,7 +234,12 @@ fn attach_occasion_rsvps(
                     })
                     .collect(),
                 hidden_location: visible_location,
-            });
+                ..Default::default()
+            };
+            if let Some(counts) = counts_by_occasion.get(&occasion.post_id) {
+                counts.apply_to(&mut rsvps_proto);
+            }
+            occasion_proto.rsvps = Some(rsvps_proto);
         }
     }
 }

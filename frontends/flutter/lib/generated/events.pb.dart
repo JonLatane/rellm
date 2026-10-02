@@ -1239,6 +1239,16 @@ class Rsvps extends $pb.GeneratedMessage {
   factory Rsvps({
     $core.Iterable<Rsvp>? rsvps,
     $16.Location? hiddenLocation,
+    $core.int? goingCount,
+    $core.int? goingAttendees,
+    $core.int? interestedCount,
+    $core.int? interestedAttendees,
+    $core.int? requestedCount,
+    $core.int? requestedAttendees,
+    $core.int? notGoingCount,
+    $core.int? notGoingAttendees,
+    $core.int? pendingCount,
+    $core.int? pendingAttendees,
   }) {
     final $result = create();
     if (rsvps != null) {
@@ -1246,6 +1256,36 @@ class Rsvps extends $pb.GeneratedMessage {
     }
     if (hiddenLocation != null) {
       $result.hiddenLocation = hiddenLocation;
+    }
+    if (goingCount != null) {
+      $result.goingCount = goingCount;
+    }
+    if (goingAttendees != null) {
+      $result.goingAttendees = goingAttendees;
+    }
+    if (interestedCount != null) {
+      $result.interestedCount = interestedCount;
+    }
+    if (interestedAttendees != null) {
+      $result.interestedAttendees = interestedAttendees;
+    }
+    if (requestedCount != null) {
+      $result.requestedCount = requestedCount;
+    }
+    if (requestedAttendees != null) {
+      $result.requestedAttendees = requestedAttendees;
+    }
+    if (notGoingCount != null) {
+      $result.notGoingCount = notGoingCount;
+    }
+    if (notGoingAttendees != null) {
+      $result.notGoingAttendees = notGoingAttendees;
+    }
+    if (pendingCount != null) {
+      $result.pendingCount = pendingCount;
+    }
+    if (pendingAttendees != null) {
+      $result.pendingAttendees = pendingAttendees;
     }
     return $result;
   }
@@ -1256,6 +1296,16 @@ class Rsvps extends $pb.GeneratedMessage {
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'Rsvps', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
     ..pc<Rsvp>(1, _omitFieldNames ? '' : 'rsvps', $pb.PbFieldType.PM, subBuilder: Rsvp.create)
     ..aOM<$16.Location>(2, _omitFieldNames ? '' : 'hiddenLocation', subBuilder: $16.Location.create)
+    ..a<$core.int>(3, _omitFieldNames ? '' : 'goingCount', $pb.PbFieldType.OU3)
+    ..a<$core.int>(4, _omitFieldNames ? '' : 'goingAttendees', $pb.PbFieldType.OU3)
+    ..a<$core.int>(5, _omitFieldNames ? '' : 'interestedCount', $pb.PbFieldType.OU3)
+    ..a<$core.int>(6, _omitFieldNames ? '' : 'interestedAttendees', $pb.PbFieldType.OU3)
+    ..a<$core.int>(7, _omitFieldNames ? '' : 'requestedCount', $pb.PbFieldType.OU3)
+    ..a<$core.int>(8, _omitFieldNames ? '' : 'requestedAttendees', $pb.PbFieldType.OU3)
+    ..a<$core.int>(9, _omitFieldNames ? '' : 'notGoingCount', $pb.PbFieldType.OU3)
+    ..a<$core.int>(10, _omitFieldNames ? '' : 'notGoingAttendees', $pb.PbFieldType.OU3)
+    ..a<$core.int>(11, _omitFieldNames ? '' : 'pendingCount', $pb.PbFieldType.OU3)
+    ..a<$core.int>(12, _omitFieldNames ? '' : 'pendingAttendees', $pb.PbFieldType.OU3)
     ..hasRequiredFields = false
   ;
 
@@ -1295,6 +1345,105 @@ class Rsvps extends $pb.GeneratedMessage {
   void clearHiddenLocation() => clearField(2);
   @$pb.TagNumber(2)
   $16.Location ensureHiddenLocation() => $_ensure(1);
+
+  ///  Totals over *every* RSVP the viewer is allowed to see for the Occasion -- not just the ones
+  ///  returned in `rsvps`. `GetEvents` caps how many `rsvps` it returns per Occasion (for big events),
+  ///  so these counts can be *greater than* `rsvps.length` -- much like `Post.reply_count` can exceed
+  ///  the replies actually loaded. (`GetRsvps` is not capped, so there they match `rsvps` exactly.)
+  ///
+  ///  `*_count` is a number of RSVPs; `*_attendees` is the sum of their `number_of_guests`. The
+  ///  per-status counts only include RSVPs whose moderation passes (`UNMODERATED`/`APPROVED`) -- the
+  ///  ones everyone can see. `pending_*` counts the `PENDING` ones the viewer can see (their own, or
+  ///  all of them for the event owner), whatever their status. `REJECTED` RSVPs are not counted.
+  @$pb.TagNumber(3)
+  $core.int get goingCount => $_getIZ(2);
+  @$pb.TagNumber(3)
+  set goingCount($core.int v) { $_setUnsignedInt32(2, v); }
+  @$pb.TagNumber(3)
+  $core.bool hasGoingCount() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearGoingCount() => clearField(3);
+
+  @$pb.TagNumber(4)
+  $core.int get goingAttendees => $_getIZ(3);
+  @$pb.TagNumber(4)
+  set goingAttendees($core.int v) { $_setUnsignedInt32(3, v); }
+  @$pb.TagNumber(4)
+  $core.bool hasGoingAttendees() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearGoingAttendees() => clearField(4);
+
+  @$pb.TagNumber(5)
+  $core.int get interestedCount => $_getIZ(4);
+  @$pb.TagNumber(5)
+  set interestedCount($core.int v) { $_setUnsignedInt32(4, v); }
+  @$pb.TagNumber(5)
+  $core.bool hasInterestedCount() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearInterestedCount() => clearField(5);
+
+  @$pb.TagNumber(6)
+  $core.int get interestedAttendees => $_getIZ(5);
+  @$pb.TagNumber(6)
+  set interestedAttendees($core.int v) { $_setUnsignedInt32(5, v); }
+  @$pb.TagNumber(6)
+  $core.bool hasInterestedAttendees() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearInterestedAttendees() => clearField(6);
+
+  @$pb.TagNumber(7)
+  $core.int get requestedCount => $_getIZ(6);
+  @$pb.TagNumber(7)
+  set requestedCount($core.int v) { $_setUnsignedInt32(6, v); }
+  @$pb.TagNumber(7)
+  $core.bool hasRequestedCount() => $_has(6);
+  @$pb.TagNumber(7)
+  void clearRequestedCount() => clearField(7);
+
+  @$pb.TagNumber(8)
+  $core.int get requestedAttendees => $_getIZ(7);
+  @$pb.TagNumber(8)
+  set requestedAttendees($core.int v) { $_setUnsignedInt32(7, v); }
+  @$pb.TagNumber(8)
+  $core.bool hasRequestedAttendees() => $_has(7);
+  @$pb.TagNumber(8)
+  void clearRequestedAttendees() => clearField(8);
+
+  @$pb.TagNumber(9)
+  $core.int get notGoingCount => $_getIZ(8);
+  @$pb.TagNumber(9)
+  set notGoingCount($core.int v) { $_setUnsignedInt32(8, v); }
+  @$pb.TagNumber(9)
+  $core.bool hasNotGoingCount() => $_has(8);
+  @$pb.TagNumber(9)
+  void clearNotGoingCount() => clearField(9);
+
+  @$pb.TagNumber(10)
+  $core.int get notGoingAttendees => $_getIZ(9);
+  @$pb.TagNumber(10)
+  set notGoingAttendees($core.int v) { $_setUnsignedInt32(9, v); }
+  @$pb.TagNumber(10)
+  $core.bool hasNotGoingAttendees() => $_has(9);
+  @$pb.TagNumber(10)
+  void clearNotGoingAttendees() => clearField(10);
+
+  @$pb.TagNumber(11)
+  $core.int get pendingCount => $_getIZ(10);
+  @$pb.TagNumber(11)
+  set pendingCount($core.int v) { $_setUnsignedInt32(10, v); }
+  @$pb.TagNumber(11)
+  $core.bool hasPendingCount() => $_has(10);
+  @$pb.TagNumber(11)
+  void clearPendingCount() => clearField(11);
+
+  @$pb.TagNumber(12)
+  $core.int get pendingAttendees => $_getIZ(11);
+  @$pb.TagNumber(12)
+  set pendingAttendees($core.int v) { $_setUnsignedInt32(11, v); }
+  @$pb.TagNumber(12)
+  $core.bool hasPendingAttendees() => $_has(11);
+  @$pb.TagNumber(12)
+  void clearPendingAttendees() => clearField(12);
 }
 
 enum Rsvp_Attendee {
