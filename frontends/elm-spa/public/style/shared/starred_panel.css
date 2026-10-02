@@ -138,8 +138,35 @@
    a direct child of `.navbar` (see that class's own doc above). */
 .starred-panel-organize-button {
   font-weight: 400;
-  font-size: 0.8rem;
-  padding: 0.2rem 0.5rem;
+  font-size: 0.9rem;
+  /* A small circle holding just the ⇅ glyph (its meaning is in the `title`). */
+  flex: 0 0 auto;
+  width: 1.8rem;
+  height: 1.8rem;
+  padding: 0;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Shown/hidden by animating to nothing rather than being added/removed -- same approach as
+   `.filter-icon-button.hidden` (`ui/filter_bar.css`, `EventsPage`'s filter button). The negative
+   margin cancels `.starred-panel-header`'s own `gap` while it's collapsed. */
+.starred-panel-organize-button {
+  border: 1px solid var(--border);
+  opacity: 1;
+  transition: width 0.2s ease, height 0.2s ease, margin 0.2s ease, opacity 0.2s ease, padding 0.2s ease, border 0.2s ease;
+}
+
+.starred-panel-organize-button.hidden {
+  width: 0px;
+  height: 0px;
+  opacity: 0;
+  margin-left: -0.5rem;
+  pointer-events: none;
+  padding: 0px;
+  border: 0px;
 }
 
 .starred-panel-empty {
@@ -183,6 +210,14 @@
   display: none;
 }
 
+/* ...except a Mastodon/Bluesky card's content preview (`.post-card-federated`, see
+   `Components.Posts.postCardView`): those have no title row to stand in for it, so hiding it would
+   leave the card with nothing but an author. Keeps `.post-card-content-preview`'s own max-height
+   truncation and `pointer-events: none` (the card-wide link overlay still takes the click). */
+.starred-post-entry .post-card-federated .post-card-content-preview {
+  display: block;
+}
+
 .flip-animated-item.flip-moving .starred-post-entry .post-card,
 .flip-animated-item.flip-moving .starred-post-entry .post-error {
   /* flex: 1 1 auto;
@@ -200,4 +235,94 @@
   background: var(--chip-bg);
   border-radius: 4px;
   padding: 0.1rem 0.4rem;
+}
+/* "Browser"/"Server" tab pair -- only rendered when both browser- and server-side (Mastodon
+   favourite / Bluesky like) stars exist; see Shared/StarredPanel.elm's `view`. */
+.starred-panel-tabs {
+  display: flex;
+  gap: 0.25rem;
+  /* Sits in `.starred-panel-header` between the title and the Organize button, taking the space
+     between them. */
+  flex: 1 1 auto;
+  margin: 0;
+}
+
+.starred-panel-tab {
+  flex: 1;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.85rem;
+  opacity: 0.6;
+}
+
+.starred-panel-tab.active {
+  opacity: 1;
+  font-weight: 700;
+}
+
+/* Server tab: an account's heading chip (a row of the one unified FLIP list, see
+   `Shared.StarredPanel.serverChipView`) -- full width, chevron pushed to the far right; clicking it
+   collapses/expands that account's posts. The chevron itself is `profiles.css`'s
+   `.expandable-section-arrow` (one static glyph rotated by CSS, as in `SettingsTab`). */
+.starred-server-account-chip {
+  align-self: stretch;
+  cursor: pointer;
+}
+
+.starred-server-group-arrow {
+  margin-left: auto;
+  padding-left: 0.5rem;
+}
+
+/* One row layout for both tabs -- a left slot (the sort arrows on the Browser tab) then the card -- so
+   a post starred in both is the same FLIP row on each, moving only vertically between them. On the
+   Server tab (`-grouped`) the arrows fade out and the slot shows the account section's colored bar
+   instead (`SettingsTab`'s collapsible-section look; its color comes from the
+   `border-color-primary-anchor-50` class the row is rendered with, inherited here). */
+.starred-post-row {
+  position: relative;
+}
+
+.starred-post-row .reorder-buttons {
+  transition: opacity 0.25s ease, visibility 0s;
+}
+
+.starred-post-row-grouped .reorder-buttons {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.25s ease, visibility 0s 0.25s;
+}
+
+.starred-post-row-grouped::before {
+  content: "";
+  position: absolute;
+  left: 0.5rem;
+  top: 0;
+  bottom: 0;
+  border-left: 5px solid;
+  border-color: inherit;
+  animation: starred-bar-in 0.25s ease;
+}
+
+@keyframes starred-bar-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+/* `flip.css` gives every `.flip-animated-item`'s child a `padding-bottom` (standing in for a `gap`)
+   that normally disappears along with the item once it's actually removed. Items in this one list
+   instead stay mounted while collapsed -- hidden by the other tab, or by a collapsed Server-tab
+   section -- so that padding would otherwise leave a dead strip per hidden item. Shrinks it away
+   with the collapse instead. */
+.starred-panel-list .flip-animated-item > * {
+  transition: padding-bottom 0.25s ease;
+}
+
+.starred-panel-list .flip-animated-item.flip-collapsed > * {
+  padding-bottom: 0;
 }

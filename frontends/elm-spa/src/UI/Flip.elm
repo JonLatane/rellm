@@ -11,7 +11,9 @@ module UI.Flip exposing
     , enter
     , flipDurationMs
     , itemAttributes
+    , measure
     , measureElementsCmd
+    , measuredResults
     , moveAnimate
     , moveAttributes
     , moveListItemBy
@@ -838,17 +840,51 @@ See `Components.Pages.EventsPage`'s `DisplayModeChanged`/`GotMeasuredRects`/
 `ReadyToMeasureNew` for the full recipe this mirrors.
 
 -}
-measureElementsCmd : (String -> String) -> List String -> Cmd msg
-measureElementsCmd domId keys =
-    keys
-        |> Encode.list
-            (\key ->
-                Encode.object
-                    [ ( "key", Encode.string key )
-                    , ( "id", Encode.string (domId key) )
-                    ]
-            )
+measureElementsCmd : String -> (String -> String) -> List String -> Cmd msg
+measureElementsCmd owner domId keys =
+    measure owner (List.map (\key -> ( key, domId key )) keys)
+
+
+{-| `Ports.measureElements`, tagged with `owner` -- a name unique to the calling component (its "self":
+e.g. `"starred-panel"`) that the JS side echoes back on the result, so each of the several components
+sharing `Ports.elementsMeasured`'s single, untargeted `Sub` can tell its own results (via
+`measuredResults`) from another's landing between its own two FLIP measurements. Each pair is
+`( key, domId )`.
+-}
+measure : String -> List ( String, String ) -> Cmd msg
+measure owner pairs =
+    Encode.object
+        [ ( "owner", Encode.string owner )
+        , ( "items"
+          , Encode.list
+                (\( key, domId ) ->
+                    Encode.object
+                        [ ( "key", Encode.string key )
+                        , ( "id", Encode.string domId )
+                        ]
+                )
+                pairs
+          )
+        ]
         |> Ports.measureElements
+
+
+{-| The `results` array of a `Ports.elementsMeasured` payload (what `rectsDecoder`/a caller's own
+decoder then reads) if -- and only if -- it answers a `measure` call made with this same `owner`;
+`Nothing` for another component's result, which the caller should ignore outright.
+-}
+measuredResults : String -> Decode.Value -> Maybe Decode.Value
+measuredResults owner payload =
+    case Decode.decodeValue (Decode.field "owner" Decode.string) payload of
+        Ok payloadOwner ->
+            if payloadOwner == owner then
+                Decode.decodeValue (Decode.field "results" Decode.value) payload |> Result.toMaybe
+
+            else
+                Nothing
+
+        Err _ ->
+            Nothing
 
 
 

@@ -7,9 +7,13 @@ module Shared.Federation.Mastodon exposing
     , fetchFollowers
     , fetchFollowing
     , fetchPosts
+    , fetchFavourites
     , fetchStatus
+    , fetchThread
     , lookupAccount
+    , resolveStatusId
     , searchAccounts
+    , setFavourite
     , toPost
     , toPostIncludingSensitiveMedia
     )
@@ -32,15 +36,16 @@ all, same as `fetchPosts`/`fetchStatus` already rely on for the local timeline/s
 
 -}
 
+import Dict exposing (Dict)
 import Http
 import Iso8601
 import Json.Decode as Decode exposing (Decoder)
-import Proto.Rellm exposing (Author, MediaReference, Post, defaultAuthor, defaultMediaReference, defaultMediaSize, defaultPost, wrapMediaReference)
+import Proto.Rellm exposing (Author, MediaReference, Post, defaultAuthor, defaultMediaReference, defaultMediaSize, defaultPost, wrapMediaReference, wrapPost)
 import Proto.Rellm.MediaConversion exposing (MediaConversion(..))
 import Proto.Rellm.PostContext exposing (PostContext(..))
 import Proto.Rellm.Visibility exposing (Visibility(..))
 import Shared.Conversions exposing (int64FromInt, posixToTimestamp)
-import Shared.Federation.Common exposing (jsonResolver, nonEmpty, sensitiveMediaHiddenId)
+import Shared.Federation.Common exposing (Thread, jsonResolver, nonEmpty, sensitiveMediaHiddenId)
 import Task exposing (Task)
 import Time
 import Url
@@ -315,6 +320,140 @@ fetchStatus instanceHost statusId =
         , timeout = Just 10000
         }
         |> Task.map (\status -> ( toPostIncludingSensitiveMedia instanceHost status, status.sensitive ))
+
+
+{-| `GET /api/v1/statuses/:id/context` -- the status' whole conversation, unauthenticated for a public
+status (same reasoning as `fetchStatus`). Mastodon returns two _flat_ lists (`ancestors`, oldest first;
+`descendants`, in thread order), so this folds `descendants` back into a tree via each status'
+`in_reply_to_id` (see `buildReplyTree`) -- a `Thread`'s `replies` are the direct children of `statusId`
+itself, each carrying its own nested `Post.replies`. Uses `toPost`, not `toPostIncludingSensitiveMedia`:
+a reply's media is a feed/card-style context (`Components.Posts.replyCard`'s own hidden-placeholder
+gate links through to the reply's own page for revealing it).
+-}
+fetchThread : String -> String -> Task Http.Error Thread
+fetchThread instanceHost statusId =
+    Http.task
+        { method = "GET"
+        , headers = []
+        , url = "https://" ++ instanceHost ++ "/api/v1/statuses/" ++ statusId ++ "/context"
+        , body = Http.emptyBody
+        , resolver =
+            jsonResolver
+                (Decode.map2 Tuple.pair
+                    (Decode.field "ancestors" (Decode.list decoder))
+                    (Decode.field "descendants" (Decode.list decoder))
+                )
+                (\metadata _ -> Http.BadStatus metadata.statusCode)
+        , timeout = Just 10000
+        }
+        |> Task.map
+            (\( ancestors, descendants ) ->
+                { ancestors = List.map (toPost instanceHost) ancestors
+                , replies = buildReplyTree instanceHost (groupByParent descendants) statusId
+                }
+            )
+
+
+groupByParent : List Status -> Dict String (List Status)
+groupByParent statuses =
+    List.foldr
+        (\status acc ->
+            case status.inReplyToId of
+                Just parentId ->
+                    Dict.update parentId (\existing -> Just (status :: Maybe.withDefault [] existing)) acc
+
+                Nothing ->
+                    acc
+        )
+        Dict.empty
+        statuses
+
+
+{-| Every status replying (directly) to `parentId`, each recursively carrying its own replies in
+`Post.replies` -- `childrenByParent`'s lists are already in `descendants`' own order (see
+`groupByParent`'s `foldr`). Terminates since a status can't be its own ancestor.
+-}
+buildReplyTree : String -> Dict String (List Status) -> String -> List Post
+buildReplyTree instanceHost childrenByParent parentId =
+    Dict.get parentId childrenByParent
+        |> Maybe.withDefault []
+        |> List.map
+            (\status ->
+                let
+                    post : Post
+                    post =
+                        toPost instanceHost status
+                in
+                { post | replies = buildReplyTree instanceHost childrenByParent status.id |> List.map wrapPost }
+            )
+
+
+{-| `POST /api/v1/statuses/:id/favourite` (or `/unfavourite`) against `instanceHost`, authenticated
+with `accessToken` -- needs the `write:favourites` OAuth scope (see `public/index.html`'s
+`mastodonRegisterApp`/authorize URL), which a token connected before that scope was requested won't
+have (the instance answers 403, surfacing as `Http.BadStatus 403`). Idempotent on Mastodon's own side
+(favouriting an already-favourited status just returns it again), so callers needn't check first.
+-}
+setFavourite : Bool -> String -> String -> String -> Task Http.Error ()
+setFavourite favourite instanceHost accessToken statusId =
+    Http.task
+        { method = "POST"
+        , headers = [ Http.header "Authorization" ("Bearer " ++ accessToken) ]
+        , url = "https://" ++ instanceHost ++ "/api/v1/statuses/" ++ statusId ++ "/" ++ (if favourite then "favourite" else "unfavourite")
+        , body = Http.emptyBody
+        , resolver = jsonResolver (Decode.succeed ()) (\metadata _ -> Http.BadStatus metadata.statusCode)
+        , timeout = Just 10000
+        }
+
+
+{-| `GET /api/v2/search?resolve=true` for a status' public `url` -- the id that same status has on
+`instanceHost`, which is what that instance's favourite endpoint needs. A status' id is only
+meaningful to the instance it came from, so starring a post viewed through some other instance first
+has to find (federating it in, if needed) its copy on the connected account's own one. Fails (an
+`Http.BadBody`) if the instance can't resolve it.
+-}
+resolveStatusId : String -> String -> String -> Task Http.Error String
+resolveStatusId instanceHost accessToken statusUrl =
+    Http.task
+        { method = "GET"
+        , headers = [ Http.header "Authorization" ("Bearer " ++ accessToken) ]
+        , url = "https://" ++ instanceHost ++ "/api/v2/search?type=statuses&resolve=true&limit=1&q=" ++ Url.percentEncode statusUrl
+        , body = Http.emptyBody
+        , resolver =
+            jsonResolver
+                (Decode.field "statuses" (Decode.list (Decode.field "id" Decode.string))
+                    |> Decode.andThen
+                        (\ids ->
+                            case ids of
+                                first :: _ ->
+                                    Decode.succeed first
+
+                                [] ->
+                                    Decode.fail "status not found"
+                        )
+                )
+                (\metadata _ -> Http.BadStatus metadata.statusCode)
+        , timeout = Just 10000
+        }
+
+
+{-| `GET /api/v1/favourites?limit=40` -- the connected account's own server-side favourites, newest
+first (first page only; Mastodon paginates via a `Link` header this doesn't follow). Needs the
+`read:favourites` scope -- covered by the `read` scope Rellm has always requested. Statuses are
+translated with `toPost instanceHost` -- see `Shared.StarredPanel`'s own doc on how these show up as
+its "Server" tab.
+-}
+fetchFavourites : String -> String -> Task Http.Error (List Post)
+fetchFavourites instanceHost accessToken =
+    Http.task
+        { method = "GET"
+        , headers = [ Http.header "Authorization" ("Bearer " ++ accessToken) ]
+        , url = "https://" ++ instanceHost ++ "/api/v1/favourites?limit=40"
+        , body = Http.emptyBody
+        , resolver = jsonResolver (Decode.list decoder) (\metadata _ -> Http.BadStatus metadata.statusCode)
+        , timeout = Just 10000
+        }
+        |> Task.map (List.map (toPost instanceHost))
 
 
 toAuthor : String -> Status -> Author

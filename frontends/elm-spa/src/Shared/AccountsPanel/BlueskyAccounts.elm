@@ -112,7 +112,37 @@ disableOtherBlueskyAccounts keepEnabledHandle accounts =
 
 decoder : Decoder (List BlueskyAccount)
 decoder =
-    Decode.list accountDecoder
+    Decode.list accountDecoder |> Decode.map dedupeByHandle
+
+
+{-| One account per handle (case-insensitive), in order of first appearance -- cleans up the
+duplicates an earlier version of reconnecting left behind (a reconnect used to add a second entry
+instead of replacing the first). Of duplicates, prefers one not flagged `needsReauth`, else the first.
+-}
+dedupeByHandle : List BlueskyAccount -> List BlueskyAccount
+dedupeByHandle accounts =
+    let
+        handleKey : BlueskyAccount -> String
+        handleKey a =
+            String.toLower a.handle
+
+        best : BlueskyAccount -> BlueskyAccount
+        best first =
+            accounts
+                |> List.filter (\a -> handleKey a == handleKey first && not a.needsReauth)
+                |> List.head
+                |> Maybe.withDefault first
+    in
+    List.foldl
+        (\a seen ->
+            if List.any (\b -> handleKey b == handleKey a) seen then
+                seen
+
+            else
+                seen ++ [ best a ]
+        )
+        []
+        accounts
 
 
 accountDecoder : Decoder BlueskyAccount

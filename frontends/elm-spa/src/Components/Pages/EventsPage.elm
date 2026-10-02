@@ -42,6 +42,7 @@ difference away" FLIP recipe.
 
 import Animation
 import Browser.Dom as Dom
+import Browser.Events
 import Browser.Navigation
 import Components.Events as Events
 import Components.FederatedAuthors as FederatedAuthors exposing (FederatedAuthor)
@@ -55,7 +56,7 @@ import Dict exposing (Dict)
 import Effect exposing (Effect)
 import Grpc
 import Html exposing (Html, a, button, div, h2, h3, input, p, span, text)
-import Html.Attributes exposing (class, href, id, placeholder, style, target, title, type_, value)
+import Html.Attributes exposing (class, disabled, href, id, placeholder, style, target, title, type_, value)
 import Html.Events exposing (onClick, onInput, onMouseDown, preventDefaultOn)
 import Html.Keyed
 import Json.Decode as Decode
@@ -118,6 +119,13 @@ type alias Model =
     -- `pushUrl` the navigation function, so opening/closing it never itself
     -- spams browser history (mirrors every other filter this page persists).
     , calendarPreview : Maybe String
+
+    -- Which card the modal is currently _viewing_ -- set by stepping through it
+    -- (`CalendarPreviewStepped`) or clicking a card (`CalendarPreviewCardNavigated`), and
+    -- mirrored only in the URL's `#calendar-preview-<key>` fragment, never `calendarPreview`
+    -- itself (which stays the event originally tapped, as `?calendar_preview=`). `Nothing`
+    -- means "still at `calendarPreview`". Seeded from that same fragment at `init`.
+    , calendarPreviewViewed : Maybe String
 
     -- A `calendarPreviewCardView` key waiting for `calendarPreviewEvents` to
     -- actually contain it before `scrollToCalendarPreviewCard` can do
@@ -427,6 +435,12 @@ type Msg
       -- Closes `calendarPreviewModalView`'s modal -- its own close button or
       -- backdrop click.
     | CalendarPreviewClosed
+      -- Moves the open modal's current event by this many places (-1/+1: the header arrows and
+      -- left/right keys), clamped to the ends -- see `calendarPreviewSorted`.
+    | CalendarPreviewStepped Int
+      -- The header slider (`calendarPreviewModalView`) moving to this index among
+      -- `calendarPreviewEvents` -- same effect as stepping, just to an absolute position.
+    | CalendarPreviewSeeked Int
       -- `scrollToCalendarPreviewCard`'s measurement resolving -- mirrors
       -- `Pages.Event.PostId_.GotScrollTarget` exactly, including giving up
       -- silently (`Err`) if the strip/card aren't found (e.g. the modal was
@@ -679,6 +693,7 @@ init shared author navKey path query fragment embeddedPage syncsCalendarPreferen
                 , eventAnimations = Dict.empty
                 , calendarAnimations = Dict.empty
                 , calendarPreview = calendarPreview
+                , calendarPreviewViewed = calendarPreviewKeyFromFragment fragment
                 , pendingCalendarPreviewScroll = pendingCalendarPreviewScroll
                 , mode = Dict.get "display" query |> Maybe.andThen displayModeFromParam |> Maybe.withDefault computedDefaultDisplayMode
                 , defaultDisplayMode = computedDefaultDisplayMode
@@ -744,6 +759,31 @@ subscriptions model =
         , UI.Flip.subscription Animate (List.map .flip (Dict.values model.eventAnimations) ++ List.map .flip (Dict.values model.calendarAnimations))
         , UI.Flip.moveSubscription AnimateMove (List.map .move (Dict.values model.eventAnimations))
         , Ports.calendarEventClicked CalendarEventClicked
+
+        -- Esc closes `calendarPreviewModalView`'s modal, left/right step through its events --
+        -- only while it's actually open.
+        , if model.calendarPreview /= Nothing then
+            Browser.Events.onKeyDown
+                (Decode.field "key" Decode.string
+                    |> Decode.andThen
+                        (\key ->
+                            case key of
+                                "Escape" ->
+                                    Decode.succeed CalendarPreviewClosed
+
+                                "ArrowLeft" ->
+                                    Decode.succeed (CalendarPreviewStepped -1)
+
+                                "ArrowRight" ->
+                                    Decode.succeed (CalendarPreviewStepped 1)
+
+                                _ ->
+                                    Decode.fail "Not a calendar preview key"
+                        )
+                )
+
+          else
+            Sub.none
         ]
 
 
@@ -1132,11 +1172,16 @@ updateInner shared msg model =
                 )
 
         GotMeasuredRects value ->
-            case Decode.decodeValue rectsDecoder value of
-                Err _ ->
+            case UI.Flip.measuredResults measureOwner value |> Maybe.map (Decode.decodeValue rectsDecoder) of
+                -- Another component's measurement result (`Ports.elementsMeasured` is shared) --
+                -- not ours to act on.
+                Nothing ->
+                    ( model, Effect.none )
+
+                Just (Err _) ->
                     applyMeasurementFailure model
 
-                Ok rects ->
+                Just (Ok rects) ->
                     case model.measurementPhase of
                         NotMeasuring ->
                             -- A stray/late result with nothing pending -- ignore.
@@ -1385,15 +1430,26 @@ updateInner shared msg model =
             let
                 newModel : Model
                 newModel =
-                    { model | calendarPreview = Just key, pendingCalendarPreviewScroll = Nothing }
+                    { model | calendarPreview = Just key, calendarPreviewViewed = Nothing, pendingCalendarPreviewScroll = Nothing }
             in
             ( newModel, Effect.batch [ scrollToCalendarPreviewCard 60 key, pushUrl newModel ] )
+
+        CalendarPreviewStepped delta ->
+            viewCalendarPreviewKey model (calendarPreviewSteppedKey model delta)
+
+        CalendarPreviewSeeked index ->
+            viewCalendarPreviewKey model
+                (calendarPreviewEvents model
+                    |> List.drop index
+                    |> List.head
+                    |> Maybe.map (\( host, _, occasion ) -> eventAnimationKey host occasion)
+                )
 
         CalendarPreviewClosed ->
             let
                 newModel : Model
                 newModel =
-                    { model | calendarPreview = Nothing, pendingCalendarPreviewScroll = Nothing }
+                    { model | calendarPreview = Nothing, calendarPreviewViewed = Nothing, pendingCalendarPreviewScroll = Nothing }
             in
             ( newModel, pushUrl newModel )
 
@@ -1412,7 +1468,7 @@ updateInner shared msg model =
             ( { model | pendingCalendarPreviewScroll = Nothing }, Effect.none )
 
         CalendarPreviewCardNavigated key ->
-            ( model, pushCalendarPreviewHash model key )
+            ( { model | calendarPreviewViewed = Just key }, pushCalendarPreviewHash model key )
 
 
 {-| `GotMeasuredRects`'s fallback for a payload that failed to decode (should
@@ -2306,16 +2362,15 @@ is. See that port's own doc for why this replaces a `Task.sequence` over
 -}
 measureElementsEffect : List String -> Effect Msg
 measureElementsEffect keys =
-    keys
-        |> Encode.list
-            (\key ->
-                Encode.object
-                    [ ( "key", Encode.string key )
-                    , ( "id", Encode.string (eventCardDomId key) )
-                    ]
-            )
-        |> Ports.measureElements
+    UI.Flip.measureElementsCmd measureOwner eventCardDomId keys
         |> Effect.fromCmd
+
+
+{-| This page's "self" for `UI.Flip.measure`/`measuredResults`.
+-}
+measureOwner : String
+measureOwner =
+    "events-page"
 
 
 
@@ -2730,11 +2785,55 @@ calendarPreviewModalView shared model =
         isOpen : Bool
         isOpen =
             model.calendarPreview /= Nothing
+
+        cardCount : Int
+        cardCount =
+            List.length (calendarPreviewEvents model)
+
+        currentIndex : Maybe Int
+        currentIndex =
+            calendarPreviewPosition model
+
+        hasPrevious : Bool
+        hasPrevious =
+            currentIndex |> Maybe.map (\i -> i > 0) |> Maybe.withDefault False
+
+        hasNext : Bool
+        hasNext =
+            currentIndex |> Maybe.map (\i -> i < cardCount - 1) |> Maybe.withDefault False
     in
     div []
         [ UI.Modal.backdrop isOpen CalendarPreviewClosed
         , div [ classes [ "calendar-preview-modal", openClosedClass isOpen ] ]
-            [ button
+            [ div [ class "calendar-preview-nav-bar" ]
+                [ button
+                    [ class "calendar-preview-nav"
+                    , onClick (CalendarPreviewStepped -1)
+                    , type_ "button"
+                    , title "Previous event (←)"
+                    , disabled (not hasPrevious)
+                    ]
+                    [ text "‹" ]
+                , input
+                    [ class "calendar-preview-slider"
+                    , type_ "range"
+                    , Html.Attributes.min "0"
+                    , Html.Attributes.max (String.fromInt (max 0 (cardCount - 1)))
+                    , value (String.fromInt (Maybe.withDefault 0 currentIndex))
+                    , onInput (\v -> CalendarPreviewSeeked (String.toInt v |> Maybe.withDefault 0))
+                    , disabled (cardCount < 2)
+                    ]
+                    []
+                , button
+                    [ class "calendar-preview-nav"
+                    , onClick (CalendarPreviewStepped 1)
+                    , type_ "button"
+                    , title "Next event (→)"
+                    , disabled (not hasNext)
+                    ]
+                    [ text "›" ]
+                ]
+            , button
                 [ class "calendar-preview-close"
                 , onClick CalendarPreviewClosed
                 , type_ "button"
@@ -2762,6 +2861,79 @@ calendarPreviewWindowRadius =
     5
 
 
+{-| `calendarEvents model`, sorted chronologically -- what `calendarPreviewEvents` windows and
+`CalendarPreviewStepped` steps through.
+-}
+calendarPreviewSorted : Model -> List ( String, Event, Occasion )
+calendarPreviewSorted model =
+    calendarEvents model
+        |> List.sortBy
+            (\( _, _, occasion ) ->
+                Events.occasionStartsOrEndsAt occasion
+                    |> Maybe.withDefault (Time.millisToPosix 0)
+                    |> Time.posixToMillis
+            )
+
+
+{-| Makes `maybeKey` the viewed card -- only the fragment changes (and the dialog scrolls);
+`calendarPreview`, and so `?calendar_preview=`, stays the event originally tapped. A no-op for
+`Nothing`.
+-}
+viewCalendarPreviewKey : Model -> Maybe String -> ( Model, Effect Msg )
+viewCalendarPreviewKey model maybeKey =
+    case maybeKey of
+        Just key ->
+            let
+                newModel : Model
+                newModel =
+                    { model | calendarPreviewViewed = Just key, pendingCalendarPreviewScroll = Nothing }
+            in
+            ( newModel, Effect.batch [ scrollToCalendarPreviewCard 60 key, pushCalendarPreviewHash newModel key ] )
+
+        Nothing ->
+            ( model, Effect.none )
+
+
+{-| The key `delta` places away from the card currently being viewed (`calendarPreviewViewed`,
+else `calendarPreview`) among the modal's own rendered cards (`calendarPreviewEvents`), clamped to
+its ends -- `Nothing` if the modal is closed or that card isn't among them.
+-}
+calendarPreviewSteppedKey : Model -> Int -> Maybe String
+calendarPreviewSteppedKey model delta =
+    let
+        keys : List String
+        keys =
+            calendarPreviewEvents model |> List.map (\( host, _, occasion ) -> eventAnimationKey host occasion)
+    in
+    case calendarPreviewPosition model of
+        Just idx ->
+            keys |> List.drop (clamp 0 (List.length keys - 1) (idx + delta)) |> List.head
+
+        Nothing ->
+            Nothing
+
+
+{-| The viewed card's index within `calendarPreviewEvents`.
+-}
+calendarPreviewPosition : Model -> Maybe Int
+calendarPreviewPosition model =
+    case ( model.calendarPreviewViewed, model.calendarPreview ) of
+        ( _, Nothing ) ->
+            Nothing
+
+        ( viewed, Just opened ) ->
+            let
+                viewedKey : String
+                viewedKey =
+                    Maybe.withDefault opened viewed
+            in
+            calendarPreviewEvents model
+                |> List.indexedMap (\i ( host, _, occasion ) -> ( i, eventAnimationKey host occasion ))
+                |> List.filter (\( _, k ) -> k == viewedKey)
+                |> List.head
+                |> Maybe.map Tuple.first
+
+
 {-| `calendarEvents model`, sorted chronologically (mirrors `visibleAnimations`'
 own sort key) and windowed down to `calendarPreviewWindowRadius` entries on
 either side of `model.calendarPreview`'s own tapped key -- empty while the
@@ -2779,13 +2951,7 @@ calendarPreviewEvents model =
             let
                 sorted : List ( String, Event, Occasion )
                 sorted =
-                    calendarEvents model
-                        |> List.sortBy
-                            (\( _, _, occasion ) ->
-                                Events.occasionStartsOrEndsAt occasion
-                                    |> Maybe.withDefault (Time.millisToPosix 0)
-                                    |> Time.posixToMillis
-                            )
+                    calendarPreviewSorted model
 
                 targetIndex : Maybe Int
                 targetIndex =

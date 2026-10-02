@@ -1743,7 +1743,8 @@ zoomSliderView windowWidth model =
     div [ class "my-media-panel-zoom" ]
         [ span [ class "my-media-panel-zoom-icon" ] [ text "🔍" ]
         , input
-            [ type_ "range"
+            [ classes [ hostnameToCSSClass model.targetHost, "accent-color-accent" ]
+            , type_ "range"
             , Html.Attributes.min (String.fromFloat (logBase e minZoom))
             , Html.Attributes.max (String.fromFloat (logBase e (max (minZoom + 1) (min 800 (0.9 * toFloat windowWidth)))))
             , step "0.01"

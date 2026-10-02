@@ -59,6 +59,7 @@ import Shared.Time as SharedTime
 import Shared.UserPreferences as UserPreferences
 import Task
 import UI.Classes exposing (classes, openClosedClass)
+import UI.Flip
 
 
 type alias Model =
@@ -282,13 +283,14 @@ update shared msg model =
             ( model, measureContentEffect postIds )
 
         GotContentHeights value ->
-            case Decode.decodeValue contentHeightsDecoder value of
-                Ok entries ->
+            case UI.Flip.measuredResults measureOwner value |> Maybe.map (Decode.decodeValue contentHeightsDecoder) of
+                Just (Ok entries) ->
                     ( { model | contentHeights = List.foldl (\( postId, height ) -> Dict.insert postId height) model.contentHeights entries }
                     , Effect.none
                     )
 
-                Err _ ->
+                -- Malformed, or another component's result (`Ports.elementsMeasured` is shared).
+                _ ->
                     ( model, Effect.none )
 
 
@@ -393,16 +395,15 @@ FLIP-style before/after pair to keep apart).
 -}
 measureContentEffect : List String -> Effect Msg
 measureContentEffect postIds =
-    postIds
-        |> Encode.list
-            (\postId ->
-                Encode.object
-                    [ ( "key", Encode.string postId )
-                    , ( "id", Encode.string (Posts.postDetailContentDomId postId) )
-                    ]
-            )
-        |> Ports.measureElements
+    UI.Flip.measureElementsCmd measureOwner Posts.postDetailContentDomId postIds
         |> Effect.fromCmd
+
+
+{-| This component's "self" for `UI.Flip.measure`/`measuredResults`.
+-}
+measureOwner : String
+measureOwner =
+    "pinned-posts"
 
 
 {-| Decodes `Ports.elementsMeasured`'s payload for a `measureContentEffect` call -- `key` is the

@@ -78,6 +78,7 @@ import Task exposing (Task)
 import Time
 import UI.Classes exposing (classes, hostnameToCSSClass)
 import UI.HtmlEvents exposing (stopPropagationAndPreventDefaultOnClick)
+import Url
 
 
 {-| Fetches a single post (including reply/preview data) from
@@ -687,7 +688,10 @@ below -- a reply is never synced to anything.
 -}
 postCard : SharedTime.Model -> String -> String -> String -> Maybe RellmServer -> Maybe RellmAccount -> (String -> msg) -> MediaRenderer.Model -> (String -> msg) -> Bool -> Bool -> Bool -> Maybe msg -> Bool -> Maybe (List SyncDestination) -> (String -> Bool) -> (String -> Maybe String) -> (String -> msg) -> (String -> String -> msg) -> Post -> Html msg
 postCard time basePath viewingServerHost postServerHost maybeServer maybeAccount onMediaClicked mediaPlayState onMediaPlayClicked extraSmallMedia current starred onStarClicked showSyncDestinations availableSyncDestinations isPushing pushError onPush onDelete post =
-    if post.context == REPLY then
+    -- A federated reply still gets the full-card-link `postCardView` (content preview, no title) --
+    -- `replyCard` has no card-wide link overlay, which a Starred/feed card needs; only a real thread
+    -- (`Components.FederatedThread`) calls `replyCard` directly for federated replies.
+    if post.context == REPLY && not (isFederatedHost postServerHost) then
         replyCard basePath viewingServerHost postServerHost maybeServer maybeAccount onMediaClicked mediaPlayState onMediaPlayClicked 0 True False False Nothing Nothing Nothing post
 
     else
@@ -1237,13 +1241,17 @@ as plain `/post/:id`; anything else includes its host, `/post/:id@host`, so
 postHref : String -> String -> String -> Post -> String
 postHref basePath viewingServerHost postServerHost post =
     let
+        -- A Bluesky post's id is an `at://did:.../app.bsky.feed.post/rkey` URI -- its slashes would
+        -- otherwise split the one `:postId` route segment into several (a "Page not found"), so
+        -- federated ids are percent-encoded (`Url.Parser.string` decodes them back on the way in).
+        -- A real Rellm id is a plain UUID, unaffected either way.
         postId : String
         postId =
             if postServerHost == viewingServerHost then
                 post.id
 
             else
-                post.id ++ "@" ++ postServerHost
+                Url.percentEncode post.id ++ "@" ++ postServerHost
     in
     basePath ++ Gen.Route.toHref (Gen.Route.Post__PostId_ { postId = postId })
 
@@ -1636,7 +1644,11 @@ parsePostRouteId : String -> String -> ( String, String )
 parsePostRouteId mainFrontendHost rawPostId =
     case String.split "@" rawPostId of
         [ id, host ] ->
-            ( id, host )
+            -- `postHref` percent-encodes a federated id (a Bluesky `at://...` URI); decode it back
+            -- here rather than trusting the router to (`Url.Parser.string` hands the segment
+            -- through still encoded), or the fetch would encode it a second time. A no-op for an
+            -- id with nothing encoded in it.
+            ( Url.percentDecode id |> Maybe.withDefault id, host )
 
         _ ->
             ( rawPostId, mainFrontendHost )

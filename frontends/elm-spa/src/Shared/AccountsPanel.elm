@@ -3690,16 +3690,31 @@ sendUpdate req msg model =
 
         GotBlueskyConnectResult (Ok connectedAccount) ->
             let
+                sameHandle : BlueskyAccount -> Bool
+                sameHandle a =
+                    String.toLower a.handle == String.toLower connectedAccount.handle
+
+                -- A reconnect (see `ReconnectBlueskyAccountClicked`) of an already-listed handle
+                -- replaces that entry -- keeping its place in the list -- rather than adding a
+                -- second one alongside it.
                 account : BlueskyAccount
                 account =
-                    { connectedAccount | sortOrder = nextFrontAccountSortOrder model }
+                    { connectedAccount
+                        | sortOrder =
+                            model.blueskyAccounts
+                                |> List.filter sameHandle
+                                |> List.head
+                                |> Maybe.map .sortOrder
+                                |> Maybe.withDefault (nextFrontAccountSortOrder model)
+                    }
 
                 -- `account.enabled` is always `True` fresh out of `createSessionTask` -- disables
                 -- every previously-connected Bluesky account so this new one becomes the sole
                 -- enabled one. See `BlueskyAccounts.disableOtherBlueskyAccounts`'s own doc.
                 newAccounts : List BlueskyAccount
                 newAccounts =
-                    BlueskyAccounts.disableOtherBlueskyAccounts account.handle (account :: model.blueskyAccounts)
+                    BlueskyAccounts.disableOtherBlueskyAccounts account.handle
+                        (account :: List.filter (not << sameHandle) model.blueskyAccounts)
             in
             ( { model | blueskyConnectForm = emptyBlueskyConnectForm, blueskyAccounts = newAccounts }
             , Cmd.batch
@@ -3837,10 +3852,8 @@ sendUpdate req msg model =
             -- Opens the same Bluesky tab/form `BlueskyConnectClicked` submits, pre-filled with
             -- `handle` -- there's no way to "refresh" past a fully revoked/expired refresh token
             -- short of a brand new `createSessionTask` call with a fresh App Password, same as
-            -- disconnecting and reconnecting from scratch. `GotBlueskyConnectResult`'s own handling
-            -- doesn't special-case this: a successful reconnect just prepends a new `BlueskyAccount`
-            -- (see that handler), so the caller is expected to remove the old, now-redundant entry
-            -- via `RemoveBlueskyAccountClicked` themselves if they don't want both.
+            -- disconnecting and reconnecting from scratch. `GotBlueskyConnectResult` replaces the
+            -- old entry for the same handle with the fresh one.
             ( { model
                 | addAccountServerFormType = Just BlueskyAccountFormType
                 , blueskyConnectForm = { emptyBlueskyConnectForm | handle = handle }

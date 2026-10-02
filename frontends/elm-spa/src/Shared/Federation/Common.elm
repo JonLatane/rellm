@@ -1,4 +1,4 @@
-module Shared.Federation.Common exposing (jsonResolver, nonEmpty, sensitiveMediaHiddenId)
+module Shared.Federation.Common exposing (Thread, emptyThread, jsonResolver, nonEmpty, sensitiveMediaHiddenId)
 
 {-| Small helpers shared across Rellm's federation-protocol integrations -- currently
 `Shared.Federation.Mastodon`/`Bluesky`'s own post-fetching, and `Shared.AccountsPanel`'s Mastodon/
@@ -8,6 +8,7 @@ for the bits those would otherwise each duplicate.
 
 import Http
 import Json.Decode as Decode
+import Proto.Rellm exposing (Post)
 
 
 {-| A reserved `MediaReference.id` (never a real Rellm media id, which is always a UUID) that
@@ -23,6 +24,23 @@ for it without importing either.
 sensitiveMediaHiddenId : String
 sensitiveMediaHiddenId =
     "sensitive-media-hidden"
+
+
+{-| A federated post's surrounding conversation, already translated into Rellm `Post`s: `ancestors`
+is the chain of posts it replies to (oldest first), `replies` its direct replies, each carrying its own
+nested replies in `Post.replies` (see `Shared.Federation.Mastodon.fetchThread`/
+`Shared.Federation.Bluesky.fetchThread` for how each service's own thread shape is folded into this).
+Rendered by `Components.FederatedThread`.
+-}
+type alias Thread =
+    { ancestors : List Post
+    , replies : List Post
+    }
+
+
+emptyThread : Thread
+emptyThread =
+    { ancestors = [], replies = [] }
 
 
 {-| `""` -> `Nothing`, anything else -> `Just` itself -- several third-party APIs (Mastodon's

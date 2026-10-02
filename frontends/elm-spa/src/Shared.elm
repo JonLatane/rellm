@@ -542,10 +542,20 @@ init basePath req flags =
                 }
             , mediaRenderer = MediaRenderer.init
             }
+
+        -- Already-connected Mastodon/Bluesky accounts' server-side stars, so starred posts show
+        -- as starred everywhere straight away -- see `StarredPanel.refreshServerStars`.
+        ( starredPanelWithServerStars, serverStarsCmd ) =
+            StarredPanel.refreshServerStars accountsPanelModel model.panels.starredPanel
+
+        panelsWithServerStars : Panels
+        panelsWithServerStars =
+            model.panels
     in
-    ( model
+    ( { model | panels = { panelsWithServerStars | starredPanel = starredPanelWithServerStars } }
     , Cmd.batch
-        [ Cmd.map AccountsPanelMsg accountsPanelCmd
+        [ Cmd.map StarredPanelMsg serverStarsCmd
+        , Cmd.map AccountsPanelMsg accountsPanelCmd
         , Cmd.map FederatedAuthMsg federatedAuthCmd
         , Ports.setTheme (themePreferenceToString themePreference)
 
@@ -631,8 +641,17 @@ sharedUpdate req msg model =
                 changedHosts =
                     starredPostsRefreshHosts model.accounts subModel
 
-                ( refreshedStarredPanel, refreshCmd ) =
+                ( hostRefreshedStarredPanel, hostRefreshCmd ) =
                     StarredPanel.refreshHosts subModel changedHosts panels.starredPanel
+
+                -- Connecting/disconnecting/switching a Mastodon/Bluesky account changes whose
+                -- server-side stars apply -- see `StarredPanel.refreshServerStars`.
+                ( refreshedStarredPanel, serverStarsCmd ) =
+                    StarredPanel.refreshServerStars subModel hostRefreshedStarredPanel
+
+                refreshCmd : Cmd StarredPanel.Msg
+                refreshCmd =
+                    Cmd.batch [ hostRefreshCmd, serverStarsCmd ]
 
                 -- Mirrors `Pages.Messages`' own `SharedMsg (Shared.AccountsPanelMsg
                 -- _)` handling (`applyPageMsg shared MessagesPage.Poll model`) --

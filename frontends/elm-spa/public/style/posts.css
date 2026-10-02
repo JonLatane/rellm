@@ -310,6 +310,13 @@
    truncated by its `max-height` -- the fade signals "there's more below the
    cutoff", which would be misleading over a short message that isn't being
    cut off at all. */
+/* The highlighted card (`current` -- the post being viewed, see `Components.Posts.postCardView`) shows
+   its content preview in the card's own text color, not the muted one -- the muted gray doesn't read
+   well on `.post-card-current`'s filled background. */
+.post-card-current .post-card-content-preview {
+  color: inherit;
+}
+
 .post-card-content-preview-fade {
   mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
   -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
@@ -929,4 +936,17 @@
 .post-reply-loading {
   color: var(--muted);
   font-size: 0.85rem;
+}
+/* A Mastodon/Bluesky post's conversation -- see Components/FederatedThread.elm. The replies
+   themselves are plain `.post-reply-item`s above. */
+.federated-thread-ancestors {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 0.75rem;
+  opacity: 0.85;
+}
+
+.federated-thread-heading {
+  margin: 1rem 0 0.5rem;
+  font-size: 1rem;
 }

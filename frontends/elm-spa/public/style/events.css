@@ -819,6 +819,76 @@
   color: var(--fg);
 }
 
+.calendar-preview-nav-bar {
+  position: absolute;
+  top: 0.5rem;
+  right: 3rem; /* left of `.calendar-preview-close` (right: 0.5rem, 2rem wide) */
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.calendar-preview-nav {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--panel-bg);
+  color: var(--fg);
+}
+
+.calendar-preview-nav:disabled {
+  opacity: 0.35;
+}
+
+/* A plain "horizontal position" control rather than a progress bar: `appearance: none`
+   drops the browser's own filled/unfilled track styling (Chrome paints the left side in
+   its accent color), leaving a thin neutral line either side of a knob in the
+   main server's accent color (`--slider-accent`, see `UI.EmittedStylesheet`). */
+.calendar-preview-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: min(30vw, 160px);
+  height: 1.25rem;
+  background: transparent;
+  cursor: pointer;
+}
+
+.calendar-preview-slider:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.calendar-preview-slider::-webkit-slider-runnable-track {
+  height: 2px;
+  background: var(--border);
+}
+
+.calendar-preview-slider::-moz-range-track {
+  height: 2px;
+  background: var(--border);
+}
+
+.calendar-preview-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 1rem;
+  height: 1rem;
+  margin-top: calc((2px - 1rem) / 2);
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--slider-accent, var(--fg));
+}
+
+.calendar-preview-slider::-moz-range-thumb {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--slider-accent, var(--fg));
+}
+
 /* Mirrors `.events-strip` (below) -- horizontally-scrolling, smoothly (see
    `scrollToCalendarPreviewCard`'s own doc for why the actual scroll is a
    port call rather than `Browser.Dom.setViewportOf`, same reasoning as
