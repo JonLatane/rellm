@@ -16,6 +16,10 @@
     - [Example Kubernetes Cluster Setups](#example-kubernetes-cluster-setups)
       - [K8s cluster with multiple Kubernetes LoadBalancers (without a shared ingress)](#k8s-cluster-with-multiple-kubernetes-loadbalancers-without-a-shared-ingress)
       - [K8s cluster with multiple Rellm servers/deployments behind a single shared LoadBalancer](#k8s-cluster-with-multiple-rellm-serversdeployments-behind-a-single-shared-loadbalancer)
+  - [Maximally-Efficient Configuration](#maximally-efficient-configuration)
+    - [One-time cluster setup](#one-time-cluster-setup)
+    - [Adding a site](#adding-a-site)
+    - [Day-to-day](#day-to-day)
   - [Upgrading your deployed PostgreSQL](#upgrading-your-deployed-postgresql)
   - [Rolling out manifest changes](#rolling-out-manifest-changes)
   - [Deploy scripts](#deploy-scripts)
@@ -256,6 +260,129 @@ This is how Rellm was originally deployed, and still is by default for a single 
 #### K8s cluster with multiple Rellm servers/deployments behind a single shared LoadBalancer
 This is what [`deploys/ingress/`](./ingress/README.md) sets up.
 ![System with multiple Kubernetes LoadBalancers](https://github.com/JonLatane/rellm/blob/main/docs/architecture/Traefik_Kubernetes_Deployment.svg)
+
+## Maximally-Efficient Configuration
+This is how the Rellm author's own cluster runs, and the setup to use if you want to host *many* sites cheaply: **one** LoadBalancer, **one** mail server and **one** Postgres/object storage pair shared by every site, so each additional site costs little more than its own pods.
+
+| Shared piece | Namespace | What it replaces (per site) | Docs |
+|---|---|---|---|
+| **Traefik** - one `LoadBalancer`/external IP routing every domain by SNI/`Host`, plus plain TCP `:25` for mail | `traefik-ingress` | a `LoadBalancer` per site (~$12/mo each) | [`ingress/`](./ingress/README.md) |
+| **Stalwart** - one internet-facing SMTP server; hands each domain's mail to that site's `rellm` | `rellm-email` | a mail server per site | [`email/`](./email/README.md) |
+| **Central storage** - one Postgres + one Silo (2 PVCs total); each site gets its own database/bucket and a role/user restricted to just that | `rellm-storage` | 2 PVCs per site (DOKS caps a cluster at 15) | [`central_storage/`](./central_storage/README.md) |
+
+Each site is then just a namespace holding `rellm` (x2), `rellm-jobs`, `rellm-preview-generator`, its `rellm-tls` certificate Secret and its `rellm-central-data` credentials Secret. See the [diagram](https://github.com/JonLatane/rellm/blob/main/docs/architecture/Traefik_Kubernetes_Deployment.svg). Sites deploy from CI by image tag only ([Rolling out manifest changes](#rolling-out-manifest-changes)).
+
+Commands below assume `kubectl` points at the right cluster (`kubectl config current-context`). One-time setup runs from the **repo root** (the root `Makefile` has passthroughs and needs no `NAMESPACE`); per-site steps run from `deploys/` with `NAMESPACE` set.
+
+### One-time cluster setup
+Do these once per cluster, in this order.
+
+1. **Central storage** (needs `openssl` locally; the commands in [Adding a site](#adding-a-site) also need `mc`, `brew install minio/stable/mc`). Generates random admin credentials into Secrets in `rellm-storage` and creates the shared Postgres and Silo:
+
+   ```bash
+   make create_central_storage
+   make -C deploys/central_storage wait_central_postgres_ready wait_central_object_storage_ready
+   ```
+
+   Defaults are 10Gi (Postgres) / 20Gi (Silo); grow them later with `make -C deploys/central_storage resize_central_*_pvc SIZE=...` (grow-only).
+2. **Traefik ingress** - the single shared LoadBalancer:
+
+   ```bash
+   make create_ingress
+   make get_ingress_external_ip      # the one IP every domain's A record points at
+   ```
+3. **Cert-Manager** - issues each site's Let's Encrypt certificate (installed once; each site's DigitalOcean credential is created per site below):
+
+   ```bash
+   make -C deploys/generated_certs deploy_certmanager
+   ```
+4. **Stalwart** (shared mail server). It sits *behind* the Traefik you just installed (port 25 enters through Traefik's `smtp` entrypoint), so do this after step 2.
+   1. Pre-set Stalwart's admin password. Choose your own - there is deliberately no default, and `add_email_domain` below authenticates with it:
+
+      ```bash
+      ADMIN_PASSWORD='<a long random password>' make create_email_admin_secret
+      ```
+      This must happen **before** `create_email`: Stalwart only reads it on a completely empty data volume.
+   2. Install it:
+
+      ```bash
+      make create_email
+      ```
+   3. Open its admin UI / setup wizard (`ClusterIP`-only, never exposed publicly) and log in as `admin` with that password:
+
+      ```bash
+      make deploy_email_admin_port_forward     # then open http://localhost:8080
+      ```
+      On a fresh volume Stalwart boots into the wizard. Choose **RocksDB** for storage (its PVC holds only Stalwart's own config and queue - never user mailboxes) and send logging to the **console** so `kubectl logs -n rellm-email deployment/stalwart` shows something. Stop the port-forward when done.
+   4. Confirm your provider lets inbound traffic reach port 25 (some block it by default and need a ticket), and that the Traefik LoadBalancer forwards TCP `:25`. `make deploy_email_get_ip` prints the IP your MX records resolve to - it's the same ingress IP.
+   5. Smoke test, bypassing DNS: `openssl s_client -connect <ingress-ip>:25 -crlf` should show Stalwart's `220 ... ESMTP` banner. Full details and troubleshooting: [`email/README.md`](./email/README.md).
+
+### Adding a site
+Per site (shown for namespace `my-site` and domain `my-site.example.com`; the namespace name becomes its database, bucket and credentials' name, so use lowercase letters, digits and `-`, at least 3 characters). From `deploys/`:
+
+```bash
+cd deploys
+export NAMESPACE=my-site
+export DOMAIN=my-site.example.com
+```
+
+**DNS first.** Point an `A` record for `$DOMAIN` at the ingress IP (`make get_ingress_external_ip`). Certificates use DNS-01 through DigitalOcean (for the apex and `*.$DOMAIN`), so `$DOMAIN` must be a DigitalOcean DNS zone - delegate it with `NS` records from wherever the parent domain lives - and the API token you give Cert-Manager needs write access to it.
+
+1. **Provision the site's slice of central storage** - database + role, bucket + user, and a `rellm-central-data` Secret with fresh random credentials, each restricted to only this site's data (also creates the namespace):
+
+   ```bash
+   make create_backend_central_data
+   ```
+2. **Deploy the backend** (reads that Secret):
+
+   ```bash
+   make create_internal_central_data_backend
+   ```
+3. **TLS.** Prompts for the provider (press Enter for `digitalocean`), your DigitalOcean API token (hidden), the domain and an admin email. The certificate can take a few minutes; the pods read it at startup, so restart them once it's `READY`:
+
+   ```bash
+   make deploy_certmanager_credential
+   kubectl get certificate -n $NAMESPACE -w     # wait for READY=True
+   make restart_backend
+   ```
+4. **Route the domain through Traefik:**
+
+   ```bash
+   make add_ingress_domain
+   ```
+
+   Verify with `curl -I https://$DOMAIN` and `grpcurl $DOMAIN:27707 list`. If the site 404s or hangs right after, bounce Traefik (`kubectl rollout restart deployment traefik -n traefik-ingress`) - it briefly interrupts every domain, so only if needed.
+5. **Email (optional)** - Stalwart must already be set up (above) and step 2 deployed, since the mail hook calls this namespace's `rellm` on port 27705:
+
+   ```bash
+   make add_email_domain
+   make list_email_domains          # confirm it's listed
+   ```
+
+   Then add these records in the DNS zone:
+
+   | Type | Name | Value |
+   |---|---|---|
+   | `MX` | `@` | `my-site.example.com.` priority `10` (the `A` record sends it to Traefik; any name resolving to the ingress IP works) |
+   | `TXT` | `@` | `v=spf1 mx ~all` |
+   | `TXT` | `_dmarc` | `v=DMARC1; p=none; rua=mailto:you@example.com` |
+
+   Mail is receive-only. Test before relying on DNS - create a real user on the site first (mail to an unknown username is accepted, then silently dropped), then:
+
+   ```bash
+   swaks --to <username>@$DOMAIN --server "$(make get_ingress_external_ip)" --header "Subject: Test" --body "Test message."
+   kubectl logs -f deployment/stalwart -n rellm-email      # accepted, hook fired?
+   kubectl logs -f deployment/rellm -n $NAMESPACE          # POST /email arrived?
+   ```
+
+   `550 5.1.2 Relay not allowed` with the domain listed means Stalwart cached an earlier "no such domain": `make deploy_email_restart`, then retry.
+6. **Save the credentials** - these Secrets are the only copy: `make get_all_storage_credentials`.
+7. **Keep it current in CI.** CI only bumps image tags on namespaces it knows about, so add a deploy job for the new namespace in `.github/workflows/server_ci_cd.yml` (copy an existing one, such as `deploy_rellm_org`). Until then the site runs the image from step 2 (the manifests' base version).
+
+### Day-to-day
+- **Deploys:** push to `main`; CI bumps each site's image tags. Manifest changes are rolled out deliberately - see [Rolling out manifest changes](#rolling-out-manifest-changes).
+- **Capacity:** `make -C deploys/central_storage get_central_postgres_pvc_size get_central_object_storage_pvc_size`, and grow with the `resize_central_*_pvc` targets. The central Postgres and Silo are shared by every site and have no backup or upgrade path yet (see [Central Storage](#central-storage-sharing-postgresobject-storage-across-many-namespaces)).
+- **Retiring a site:** delete its namespace, then `NAMESPACE=my-site CONFIRM=my-site make delete_backend_central_data` to permanently remove its database, bucket and credentials. `make remove_ingress_domain` and `make remove_email_domain` take it out of Traefik and Stalwart.
 
 ## Upgrading your deployed PostgreSQL
 _(This section covers a namespace's own Postgres. [Central storage](./central_storage/README.md)'s shared Postgres has no dump/upgrade targets yet.)_

@@ -66,6 +66,7 @@ import Proto.Rellm.Rellm as Rellm
 import Proto.Rellm.Visibility exposing (Visibility(..))
 import Proto.Rellm.WebUserInterface exposing (WebUserInterface)
 import Request exposing (Request)
+import Components.Users.Username as Username
 import Set
 import Shared.AccountsPanel.AdminTab as AdminTab
 import Shared.AccountsPanel.BlueskyAccounts as BlueskyAccounts exposing (BlueskyAccount)
@@ -1633,12 +1634,22 @@ sendUpdate req msg model =
                 form =
                     model.accountForm
             in
-            ( model
-                |> updateForm (\f -> { f | status = Submitting })
-                |> updateAddServerForm (\f -> { f | status = clearErrored f.status })
-            , RellmServers.resolveHost (RellmServers.isSecure req) model.servers (String.trim form.server)
-                |> Task.attempt GotCreateAccountServerInfo
-            )
+            -- Same rules as `UserProfilePage`'s Edit Username (and unlike Log In, which has to
+            -- keep accepting whatever an existing account is called).
+            case Username.validate (String.trim form.username) of
+                Just problem ->
+                    ( updateForm (\f -> { f | status = Errored problem }) model, Cmd.none )
+
+                Nothing ->
+                    ( model
+                        |> updateForm (\f -> { f | status = Submitting })
+                        |> updateAddServerForm (\f -> { f | status = clearErrored f.status })
+                    , RellmServers.resolveHost
+                        (RellmServers.isSecure req)
+                        model.servers
+                        (String.trim form.server)
+                        |> Task.attempt GotCreateAccountServerInfo
+                    )
 
         NewAccountBackClicked ->
             ( { model | newAccountType = Nothing, acceptedCreateAccount = Nothing }
@@ -1730,7 +1741,7 @@ sendUpdate req msg model =
                         | createAccountConfirmation =
                             Just
                                 { server = RellmServers.rellmServerFrom connection True config
-                                , username = form.username
+                                , username = String.trim form.username
                                 , reachedBottom = False
                                 }
                     }

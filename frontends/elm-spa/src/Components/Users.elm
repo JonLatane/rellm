@@ -64,7 +64,7 @@ import Proto.Rellm.Permission exposing (Permission(..))
 import Proto.Rellm.Rellm as Rellm
 import Proto.Rellm.UserListingType exposing (UserListingType(..))
 import Proto.Rellm.Visibility exposing (Visibility(..))
-import Set exposing (Set)
+import Components.Users.Username as Username
 import Shared.AccountsPanel as AccountsPanel exposing (performWithAccountServer, performWithOptionalAccountServer)
 import Shared.AccountsPanel.RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer, withAccessToken)
@@ -426,21 +426,12 @@ deleteFollow accountsPanelModel maybeAccountServer follow =
 -- ROUTE / LINKS
 
 
-{-| Usernames that can't be routed to via `/:username[@host]` since they'd
-collide with this app's own top-level routes (`Pages.About`, `Pages.People`,
-elm-spa's builtin `not-found`) or the `/user`/`/post` prefixes themselves --
-e.g. a user named "about" is only ever reachable via `/user/:id[@host]`, never
-`/about[@host]`. Compared case-insensitively, since the collision is with the
-URL segment, not the display name.
+{-| Whether `username` collides with one of this app's own top-level routes, so can't be reached
+via `/:username[@host]` (only `/user/:id[@host]`) -- see `Components.Users.Username.isReserved`.
 -}
-reservedUsernames : Set String
-reservedUsernames =
-    Set.fromList [ "about", "not-found", "user", "post", "people" ]
-
-
 isReservedUsername : String -> Bool
-isReservedUsername username =
-    Set.member (String.toLower (String.trim username)) reservedUsernames
+isReservedUsername =
+    Username.isReserved
 
 
 {-| Whether `segment`'s first character is one no username (`^[\w.-]+$`, `Users`' own

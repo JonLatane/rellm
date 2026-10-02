@@ -43,6 +43,7 @@ import Components.Users as Users
 import Components.Users.FollowStatusAndButton as FollowStatusAndButton
 import Components.Users.ProfileHeading as ProfileHeading
 import Components.Users.Resolver as Resolver
+import Components.Users.Username as Username
 import Dict exposing (Dict)
 import Effect exposing (Effect)
 import Gen.Route
@@ -88,6 +89,7 @@ type alias Model =
     , pageIsSecure : Bool
     , federatedProfiles : Dict String FederatedProfileStatus
     , realNameEdit : Maybe RealNameEdit
+    , usernameEdit : Maybe UsernameEdit
     , avatarEdit : Maybe AvatarEdit
     , visibilityEdit : Maybe VisibilityEdit
     , moderationEdit : Maybe ModerationEdit
@@ -155,6 +157,11 @@ type Msg
     | RealNameCancelClicked
     | RealNameSaveClicked
     | GotRealNameSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, User ))
+    | UsernameEditClicked
+    | UsernameInputChanged String
+    | UsernameCancelClicked
+    | UsernameSaveClicked
+    | GotUsernameSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, User ))
     | AvatarEditClicked
     | AvatarRemoveClicked
     | AvatarCancelClicked
@@ -328,6 +335,16 @@ edited -- `input` is the in-progress value, independent of `status.user.realName
 until `RealNameSaveClicked` succeeds.
 -}
 type alias RealNameEdit =
+    { input : String
+    , status : SubmitStatus
+    }
+
+
+{-| Live only while the Username field (see `Model.usernameEdit`) is being edited --
+`RealNameEdit`'s twin. Unlike a Real Name, a username is also (for a `Resolver.ByUsername`
+route) part of this page's own URL, so `GotUsernameSaveResult` has to replace that too.
+-}
+type alias UsernameEdit =
     { input : String
     , status : SubmitStatus
     }
@@ -1056,6 +1073,7 @@ init shared pageIsSecure targetHost lookup navKey path query fragment =
             , pageIsSecure = pageIsSecure
             , federatedProfiles = Dict.empty
             , realNameEdit = Nothing
+            , usernameEdit = Nothing
             , avatarEdit = Nothing
             , visibilityEdit = Nothing
             , moderationEdit = Nothing
@@ -1779,6 +1797,104 @@ updateInner shared msg model =
             ( { model
                 | realNameEdit =
                     model.realNameEdit |> Maybe.map (\edit -> { edit | status = SubmitFailed (AccountsPanel.grpcErrorToString err) })
+              }
+            , Effect.none
+            )
+
+        UsernameEditClicked ->
+            case model.resolver.status of
+                Resolver.Loaded user ->
+                    ( { model | usernameEdit = Just { input = user.username, status = Idle } }, Effect.none )
+
+                _ ->
+                    ( model, Effect.none )
+
+        UsernameInputChanged input ->
+            ( { model | usernameEdit = model.usernameEdit |> Maybe.map (\edit -> { edit | input = input, status = Idle }) }
+            , Effect.none
+            )
+
+        UsernameCancelClicked ->
+            ( { model | usernameEdit = Nothing }, Effect.none )
+
+        UsernameSaveClicked ->
+            case ( model.resolver.status, model.usernameEdit, serverAndAccount shared model ) of
+                ( Resolver.Loaded user, Just edit, Just ( server, account ) ) ->
+                    let
+                        newUsername : String
+                        newUsername =
+                            String.trim edit.input
+                    in
+                    if newUsername == user.username then
+                        ( { model | usernameEdit = Nothing }, Effect.none )
+
+                    else
+                        case Username.validate newUsername of
+                            Just problem ->
+                                ( { model | usernameEdit = Just { edit | status = SubmitFailed problem } }, Effect.none )
+
+                            Nothing ->
+                                ( { model | usernameEdit = Just { edit | status = Submitting } }
+                                , Users.updateUser shared.accounts ( Just account.userId, server.frontendHost ) user.id (\freshUser -> { freshUser | username = newUsername })
+                                    |> Task.attempt GotUsernameSaveResult
+                                    |> Effect.fromCmd
+                                )
+
+                _ ->
+                    ( model, Effect.none )
+
+        GotUsernameSaveResult (Ok ( maybeAccountsPanelMsg, updatedUser )) ->
+            let
+                resolver : Resolver.Model
+                resolver =
+                    withResolvedUser updatedUser model.resolver
+
+                -- Only a `/:username[@host]` route embeds the (now stale) username; a
+                -- `/user/:id[@host]` one stays valid as-is. `replaceUrl` (not `pushUrl`) so
+                -- Back doesn't land on a URL that 404s now.
+                ( newResolver, urlEffect ) =
+                    case ( model.resolver.lookup, serverAndAccount shared model ) of
+                        ( Resolver.ByUsername _, Just ( server, _ ) ) ->
+                            ( { resolver | lookup = Resolver.ByUsername updatedUser.username }
+                            , Browser.Navigation.replaceUrl model.navKey
+                                (Users.usernameHref shared.basePath shared.accounts.mainFrontendHost server.frontendHost updatedUser.username)
+                                |> Effect.fromCmd
+                            )
+
+                        _ ->
+                            ( resolver, Effect.none )
+
+                -- Keeps the Accounts panel's own copy of *our* username in step, rather than
+                -- waiting for the next `GetCurrentUser` refresh.
+                accountRefreshEffect : Effect Msg
+                accountRefreshEffect =
+                    case serverAndAccount shared model of
+                        Just ( _, account ) ->
+                            if account.userId == updatedUser.id then
+                                Shared.AccountsPanelMsg
+                                    (AccountsPanel.GotPermissionsRefresh (RellmAccounts.rellmAccountId account) (Ok ( account, updatedUser )))
+                                    |> Effect.fromShared
+
+                            else
+                                Effect.none
+
+                        Nothing ->
+                            Effect.none
+            in
+            ( { model | resolver = newResolver, usernameEdit = Nothing }
+            , Effect.batch [ accountsPanelEffect maybeAccountsPanelMsg, urlEffect, accountRefreshEffect ]
+            )
+
+        GotUsernameSaveResult (Err err) ->
+            ( { model
+                | usernameEdit =
+                    model.usernameEdit
+                        |> Maybe.map
+                            (\edit ->
+                                { edit
+                                    | status = SubmitFailed (AccountsPanel.grpcErrorToString err ++ " (the username may be taken or invalid)")
+                                }
+                            )
               }
             , Effect.none
             )
@@ -4679,7 +4795,7 @@ profileDetail shared model server maybeAccount user =
             [ div [ class "profile-header" ]
                 [ avatarView canEdit server maybeAccount model.avatarEdit user
                 , div [ class "profile-header-names" ]
-                    [ ProfileHeading.usernameHeading user
+                    [ usernameView canEdit model.usernameEdit user
                     , realNameView canEdit model.realNameEdit user
                     ]
 
@@ -4875,6 +4991,41 @@ avatarPreviewUrl server maybeAccount maybeEdit user =
 
         Just AvatarRemoved ->
             Nothing
+
+
+{-| The username heading atop the profile -- `ProfileHeading.usernameHeading` plus (for `canEdit`
+viewers) an "Edit Username" button, swapped for an inline input/Save/Cancel form while
+`model.usernameEdit` is `Just`.
+-}
+usernameView : Bool -> Maybe UsernameEdit -> User -> Html Msg
+usernameView canEdit maybeEdit user =
+    case maybeEdit of
+        Just edit ->
+            div [ class "profile-real-name-edit" ]
+                [ input
+                    [ class "profile-real-name-input"
+                    , value edit.input
+                    , onInput UsernameInputChanged
+                    , placeholder "Username"
+                    , attribute "autocapitalize" "none"
+                    , attribute "autocorrect" "off"
+                    , attribute "spellcheck" "false"
+                    ]
+                    []
+                , editSaveButton UsernameSaveClicked edit.status
+                , editCancelButton UsernameCancelClicked edit.status
+                , editErrorView edit.status
+                ]
+
+        Nothing ->
+            div [ class "profile-real-name-display" ]
+                [ ProfileHeading.usernameHeading user
+                , if canEdit then
+                    button [ class "profile-edit-button", onClick UsernameEditClicked ] [ text "Edit Username" ]
+
+                  else
+                    text ""
+                ]
 
 
 {-| The Real Name line -- plain text (plus an Edit button, if `canEdit`) when
