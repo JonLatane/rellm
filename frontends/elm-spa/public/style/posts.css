@@ -103,6 +103,9 @@
 .pinned-posts-content {
   display: grid;
   grid-template-rows: 1fr;
+  /* `minmax(0, 1fr)`, not the implicit `auto` column: that sizes to the cards' min-content width, so
+     wide content (long words, media, code) pushed the whole section past the viewport. */
+  grid-template-columns: minmax(0, 1fr);
   margin-bottom: 1.5rem;
   transition: grid-template-rows 0.2s ease, margin-bottom 0.2s ease, opacity 0.2s ease;
   opacity: 1;
@@ -124,9 +127,11 @@
 .pinned-posts-content > * {
   /* overflow: hidden; */
   min-height: 0;
+  min-width: 0;
 }
 
 .pinned-posts-list {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;

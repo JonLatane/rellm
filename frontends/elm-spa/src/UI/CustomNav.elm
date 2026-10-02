@@ -309,7 +309,7 @@ toProtoHomeConfig config =
             }
 
 
-{-| The four tabs Rellm shows today (`Events`/`Posts`/`People`/`About`, see `UI.eventsLink`/etc.)
+{-| The eight tabs Rellm shows by default (`Events`/`Posts`/`Media`/`Video`/`Audio`/`People`/`Market`/`About`, see `UI.eventsLink`/etc.)
 recast as `CustomTab`s -- both `effectiveTabs`' fallback for an unset `CustomNavigationTabSet.tabs`,
 and `SettingsTab`'s starting point for a freshly-opened editor. Each one's `path` is just
 `defaultPathFor`'s own slug for its `target` -- see that function's own doc.
@@ -318,7 +318,11 @@ defaultTabs : List CustomTab
 defaultTabs =
     [ { target = TargetTab EVENTSTAB, icon = EmojiIcon "📅", title = Nothing, path = defaultPathFor (TargetTab EVENTSTAB) }
     , { target = TargetTab POSTSTAB, icon = EmojiIcon "📝", title = Nothing, path = defaultPathFor (TargetTab POSTSTAB) }
+    , { target = TargetTab MEDIATAB, icon = EmojiIcon "🎨", title = Nothing, path = defaultPathFor (TargetTab MEDIATAB) }
+    , { target = TargetTab VIDEOTAB, icon = EmojiIcon "🎥", title = Nothing, path = defaultPathFor (TargetTab VIDEOTAB) }
+    , { target = TargetTab AUDIOTAB, icon = EmojiIcon "🎵", title = Nothing, path = defaultPathFor (TargetTab AUDIOTAB) }
     , { target = TargetTab PEOPLETAB, icon = EmojiIcon "👥", title = Nothing, path = defaultPathFor (TargetTab PEOPLETAB) }
+    , { target = TargetTab MARKETTAB, icon = EmojiIcon "🛒", title = Nothing, path = defaultPathFor (TargetTab MARKETTAB) }
     , { target = TargetTab ABOUTTAB, icon = EmojiIcon "i", title = Nothing, path = defaultPathFor (TargetTab ABOUTTAB) }
     ]
 
