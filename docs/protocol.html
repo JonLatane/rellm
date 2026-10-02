@@ -5739,7 +5739,7 @@ directory</a> is (<code>{name}</code> denotes a
           <td>anonymous_attendee_auth_token</td>
           <td><a href="#string">string</a></td>
           <td>optional</td>
-          <td>Auth token proving ownership of an anonymous RSVP, mirroring <code>GetRsvpsRequest.anonymous_attendee_auth_token</code>. Lets an anonymous attendee's own (possibly still-<code>PENDING</code>) <a href="#rellm-Rsvp"><code>Rsvp</code></a> and its <code>Occasion.location</code> (when <code>EventInfo.hide_location_until_rsvp_approved</code> is set) surface via each returned <code>Occasion.rsvps</code>/<code>current_user_rsvp</code>, same as a logged-in user's own RSVP does automatically.</td>
+          <td>Auth token(s) proving ownership of anonymous RSVPs, mirroring <code>GetRsvpsRequest.anonymous_attendee_auth_token</code>. Either a plain <code>&#x26;lt;token&#x26;gt;</code>, or several at once as <code>&#x26;lt;occasionId&#x26;gt;-&#x26;lt;token&#x26;gt;--&#x26;lt;occasionId&#x26;gt;-&#x26;lt;token&#x26;gt;...</code> (the form the web frontends keep in their <code>?anonymousAuthToken=</code> URL parameter, so it can be passed straight through) -- the occasion id prefix is only advisory; every token is tried against every returned occasion's RSVPs. Lets an anonymous attendee's own (possibly still-<code>PENDING</code>) <a href="#rellm-Rsvp"><code>Rsvp</code></a> and its <code>Occasion.location</code> (when <code>EventInfo.hide_location_until_rsvp_approved</code> is set) surface via each returned <code>Occasion.rsvps</code>/<code>current_user_rsvp</code>, same as a logged-in user's own RSVP does automatically.</td>
         </tr>
       </tbody>
     </table>
@@ -5799,7 +5799,7 @@ directory</a> is (<code>{name}</code> denotes a
           <td>anonymous_attendee_auth_token</td>
           <td><a href="#string">string</a></td>
           <td>optional</td>
-          <td>If set, and if the token has an RSVP for this even, request that RSVP data in addition to the rest of the RSVP data. (The event creator can always see and moderate anonymous RSVPs.)</td>
+          <td>If set, and if the token has an RSVP for this even, request that RSVP data in addition to the rest of the RSVP data. (The event creator can always see and moderate anonymous RSVPs.) Takes the same plain / multi-occasion forms as <code>GetEventsRequest.anonymous_attendee_auth_token</code>.</td>
         </tr>
       </tbody>
     </table>

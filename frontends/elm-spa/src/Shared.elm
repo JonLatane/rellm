@@ -208,6 +208,8 @@ type Msg
       -- `Components.Pages.UserProfilePage`'s embedded `EventsPage` copy) can
       -- re-scope its refetch to just `host`'s server the same way.
     | GotOccasionSyncDestinationDeleteResult String (Result Grpc.Error ( Maybe AccountsPanel.Msg, () ))
+      -- `ConfirmNewAnonymousRsvp` confirmed -- occasion id, then `targetHost`.
+    | NewAnonymousRsvpConfirmed String String
       -- `ConfirmPostSyncDestinationDelete`'s own result -- mirrors
       -- `GotOccasionSyncDestinationDeleteResult`'s own doc exactly, just
       -- for `Components.Pages.PostPage`/`Components.Pages.UserProfilePage`'s
@@ -347,6 +349,11 @@ type DeleteConfirmation
       -- `backend/src/rpcs/events/get_events.rs`'s own `INNER JOIN`, which
       -- makes a zero-occasion Event unretrievable anyway).
     | ConfirmOccasionDelete Occasion Event String
+      -- "New RSVP" on an anonymous RSVP (`Components.Rsvps`): starting over forgets the current
+      -- private link, so it's confirmed first. Carries the occasion id and its acting `targetHost`;
+      -- unlike the others, `ConfirmDelete` just reports back with `NewAnonymousRsvpConfirmed` and
+      -- lets whichever page owns that RSVP form do the (purely local) reset.
+    | ConfirmNewAnonymousRsvp String String
     | ConfirmUserDelete User String
       -- Un-syncs `instance` from the `SyncDestination` (`String`) whose
       -- display name is the trailing-but-one `String` (for the confirmation
@@ -1999,6 +2006,11 @@ sharedUpdate req msg model =
                         |> Task.attempt GotOccasionDeleteResult
                     )
 
+                Just (ConfirmNewAnonymousRsvp occasionId host) ->
+                    ( { model | panels = { panels | confirmingDeleteFor = Nothing } }
+                    , Task.perform (\_ -> NewAnonymousRsvpConfirmed occasionId host) (Task.succeed ())
+                    )
+
                 Just (ConfirmUserDelete user host) ->
                     ( { model | panels = { panels | confirmingDeleteFor = Nothing } }
                     , Users.deleteUser
@@ -2087,6 +2099,10 @@ sharedUpdate req msg model =
             ( { model | accounts = accountsPanelModel }, Cmd.map AccountsPanelMsg accountsPanelCmd )
 
         GotOccasionSyncDestinationDeleteResult _ (Err _) ->
+            ( model, Cmd.none )
+
+        -- Purely a page-level signal (see `ConfirmNewAnonymousRsvp`) -- nothing for Shared itself to do.
+        NewAnonymousRsvpConfirmed _ _ ->
             ( model, Cmd.none )
 
         GotPostSyncDestinationDeleteResult _ (Ok ( maybeAccountsPanelMsg, _ )) ->

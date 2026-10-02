@@ -4,8 +4,11 @@ module Components.Rsvps exposing
     , Outcome
     , ViewConfig
     , init
+    , newAnonymousRsvpConfirmed
     , occasionIdOf
     , parseAnonymousAuthToken
+    , rsvpsAllowed
+    , setAnonymousAuthToken
     , update
     , view
     )
@@ -40,7 +43,7 @@ import Components.Markdown as Markdown
 import Components.Posts as Posts
 import Grpc
 import Html exposing (Html, a, button, div, h3, option, p, select, span, text, textarea)
-import Html.Attributes exposing (attribute, class, disabled, href, placeholder, selected, value)
+import Html.Attributes exposing (attribute, class, disabled, href, placeholder, rel, selected, target, value)
 import Html.Events exposing (onClick, onInput)
 import Proto.Google.Protobuf
 import Proto.Rellm
@@ -63,7 +66,7 @@ import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccoun
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer, withAccessToken)
 import Task exposing (Task)
 import Time
-import UI.Classes exposing (classes)
+import UI.Classes exposing (classes, openClosedClass)
 
 
 type Mode
@@ -103,6 +106,11 @@ type alias Model =
     , pending : Pending
     , showDetails : Bool
     , showCards : Bool
+
+    -- Whether the list of everyone's RSVPs has ever been opened: it's only mounted from then on, so
+    -- it can animate closed (see `.rsvp-cards-wrap`) without every card in a long listing paying
+    -- for a list nobody opened.
+    , cardsEverShown : Bool
     , confirmingDelete : Bool
     , submit : SubmitStatus
 
@@ -126,6 +134,7 @@ type Msg
     | DeleteCancelled
     | DeleteConfirmed
     | NewAnonymousRsvpClicked
+    | NewAnonymousRsvpConfirmed
     | EditClicked Mode
     | ModerationChanged Rsvp String
     | GotUpsert Bool (Result Grpc.Error ( Maybe AccountsPanel.Msg, Rsvp ))
@@ -149,6 +158,11 @@ type alias Context =
 type alias Outcome =
     { accountsPanelMsg : Maybe AccountsPanel.Msg
     , tokenChange : Maybe (Maybe String)
+
+    -- "New RSVP" was clicked: the host should ask for confirmation
+    -- (`Shared.ConfirmNewAnonymousRsvp`) and, once confirmed, send back `newAnonymousRsvpConfirmed`
+    -- -- starting over forgets the current private link, so it's not done on a bare click.
+    , confirmNewAnonymousRsvp : Bool
     }
 
 
@@ -188,6 +202,7 @@ init anonymousAuthToken showCards =
     , pending = noPending
     , showDetails = False
     , showCards = showCards
+    , cardsEverShown = showCards
     , confirmingDelete = False
     , submit = Idle
     , anonymousAuthToken = anonymousAuthToken
@@ -200,38 +215,93 @@ noPending =
 
 
 {-| The `anonymousAuthToken` query parameter's value for `occasionId`. Accepts both the plain
-`<token>` form (saveable per-occasion links) and the `<occasionId>-<token>--<occasionId>-<token>`
-multi-occasion form the React app also understands.
+`<token>` form (saveable per-occasion links; applies to whichever occasion the page is about) and
+the `<occasionId>-<token>--<occasionId>-<token>` multi-occasion form, which can hold one token per
+occasion for pages that show several (the web frontends all share this format, and the backend
+accepts it too -- see `rpcs::events::parse_anonymous_auth_tokens`).
 -}
 parseAnonymousAuthToken : String -> String -> Maybe String
 parseAnonymousAuthToken occasionId raw =
-    if String.isEmpty (String.trim raw) then
+    let
+        trimmed : String
+        trimmed =
+            String.trim raw
+    in
+    if String.isEmpty trimmed then
+        Nothing
+
+    else if not (String.contains "-" trimmed) then
+        Just trimmed
+
+    else
+        tokenPairs trimmed
+            |> List.filter (\( id, _ ) -> id == occasionId)
+            |> List.head
+            |> Maybe.map Tuple.second
+
+
+tokenPairs : String -> List ( String, String )
+tokenPairs raw =
+    raw
+        |> String.split "--"
+        |> List.filterMap
+            (\part ->
+                case String.split "-" (String.trim part) of
+                    [ id, token ] ->
+                        if String.isEmpty id || String.isEmpty token then
+                            Nothing
+
+                        else
+                            Just ( id, token )
+
+                    _ ->
+                        Nothing
+            )
+
+
+{-| The new raw `anonymousAuthToken` parameter after `occasionId`'s token becomes `newToken`
+(`Nothing` removes it), keeping every other occasion's token -- always written in the
+`<occasionId>-<token>--...` form; `Nothing` once none are left. A plain-form `raw` (see
+`parseAnonymousAuthToken`) is by definition `occasionId`'s own, so it's replaced outright.
+-}
+setAnonymousAuthToken : String -> Maybe String -> Maybe String -> Maybe String
+setAnonymousAuthToken occasionId newToken raw =
+    let
+        others : List ( String, String )
+        others =
+            case raw of
+                Just value ->
+                    if String.contains "-" value then
+                        tokenPairs value |> List.filter (\( id, _ ) -> id /= occasionId)
+
+                    else
+                        []
+
+                Nothing ->
+                    []
+
+        pairs : List ( String, String )
+        pairs =
+            case newToken of
+                Just token ->
+                    others ++ [ ( occasionId, token ) ]
+
+                Nothing ->
+                    others
+    in
+    if List.isEmpty pairs then
         Nothing
 
     else
-        let
-            pairs : List ( String, String )
-            pairs =
-                raw
-                    |> String.split "--"
-                    |> List.filterMap
-                        (\part ->
-                            case String.split "-" (String.trim part) of
-                                [ id, token ] ->
-                                    Just ( id, token )
+        pairs |> List.map (\( id, token ) -> id ++ "-" ++ token) |> String.join "--" |> Just
 
-                                _ ->
-                                    Nothing
-                        )
-        in
-        if List.isEmpty pairs && not (String.contains "-" raw) then
-            Just (String.trim raw)
 
-        else
-            pairs
-                |> List.filter (\( id, _ ) -> id == occasionId)
-                |> List.head
-                |> Maybe.map Tuple.second
+{-| What a host sends back to a card/page's `Model` once its `Shared.ConfirmNewAnonymousRsvp`
+modal is confirmed -- see `Outcome.confirmNewAnonymousRsvp`.
+-}
+newAnonymousRsvpConfirmed : Msg
+newAnonymousRsvpConfirmed =
+    NewAnonymousRsvpConfirmed
 
 
 occasionIdOf : Occasion -> String
@@ -573,7 +643,7 @@ deleteTask ctx rsvp =
 
 noOutcome : Outcome
 noOutcome =
-    { accountsPanelMsg = Nothing, tokenChange = Nothing }
+    { accountsPanelMsg = Nothing, tokenChange = Nothing, confirmNewAnonymousRsvp = False }
 
 
 update : Context -> Msg -> Model -> ( Model, Cmd Msg, Outcome )
@@ -663,7 +733,7 @@ update ctx msg model =
             ( { model | showDetails = not model.showDetails }, Cmd.none, noOutcome )
 
         ToggleCards ->
-            ( { model | showCards = not model.showCards }, Cmd.none, noOutcome )
+            ( { model | showCards = not model.showCards, cardsEverShown = True }, Cmd.none, noOutcome )
 
         SaveClicked ->
             case values.status of
@@ -695,6 +765,9 @@ update ctx msg model =
                     ( { model | confirmingDelete = False }, Cmd.none, noOutcome )
 
         NewAnonymousRsvpClicked ->
+            ( model, Cmd.none, { noOutcome | confirmNewAnonymousRsvp = True } )
+
+        NewAnonymousRsvpConfirmed ->
             ( { model | anonymousAuthToken = Nothing, pending = noPending, submit = Idle }
             , Cmd.none
             , { noOutcome | tokenChange = Just Nothing }
@@ -738,8 +811,9 @@ update ctx msg model =
                 , anonymousAuthToken = newToken
               }
             , Cmd.none
-            , { accountsPanelMsg = accountsPanelMsg
-              , tokenChange =
+            , { noOutcome
+                | accountsPanelMsg = accountsPanelMsg
+                , tokenChange =
                     if newToken /= model.anonymousAuthToken then
                         Just newToken
 
@@ -775,8 +849,9 @@ update ctx msg model =
                         model.anonymousAuthToken
               }
             , Cmd.none
-            , { accountsPanelMsg = accountsPanelMsg
-              , tokenChange =
+            , { noOutcome
+                | accountsPanelMsg = accountsPanelMsg
+                , tokenChange =
                     if wasAnonymous then
                         Just Nothing
 
@@ -904,17 +979,25 @@ blockView cfg allowsAnonymous model =
                         "false"
                     )
                 ]
-                [ span [ class "rsvp-mode-button-icon" ]
-                    [ text
-                        (if model.mode == Just mode then
-                            "▾"
-
-                         else if currentForMode == Nothing then
-                            "＋"
-
-                         else
-                            "✎"
-                        )
+                [ span [ classes [ "rsvp-mode-button-icon", openClosedClass (model.mode == Just mode) ] ]
+                    [ -- Three glyphs cross-fading/rotating in place rather than one being swapped
+                      -- for another: a chevron while the form is open, else a "+" (no RSVP yet,
+                      -- turning 45° into an "x"-like shape as it opens) or a pencil (editing one).
+                      span [ classes [ "rsvp-mode-icon-chevron", openClosedClass (model.mode == Just mode) ] ] [ text "▼" ]
+                    , span
+                        [ classes
+                            [ "rsvp-mode-icon-plus"
+                            , openClosedClass (model.mode /= Just mode && currentForMode == Nothing)
+                            ]
+                        ]
+                        [ text "＋" ]
+                    , span
+                        [ classes
+                            [ "rsvp-mode-icon-edit"
+                            , openClosedClass (model.mode /= Just mode && currentForMode /= Nothing)
+                            ]
+                        ]
+                        [ text "✎" ]
                     ]
                 , span [ class "rsvp-mode-button-label" ]
                     [ text label
@@ -955,7 +1038,7 @@ blockView cfg allowsAnonymous model =
             Nothing ->
                 text ""
         , summaryView cfg model isOwner occasion
-        , if model.showCards && not cfg.compact then
+        , if model.cardsEverShown then
             cardsView cfg isPast isOwner model rsvps currentUser currentAnon
 
           else
@@ -1037,15 +1120,8 @@ formView cfg isPast mode model currentUser currentAnon =
             UserMode ->
                 text ""
         , button [ class "rsvp-details-toggle", onClick ToggleDetails, attribute "aria-expanded" (boolAttr model.showDetails) ]
-            [ text
-                ((if model.showDetails then
-                    "▾ "
-
-                  else
-                    "▸ "
-                 )
-                    ++ "Attendees & Notes"
-                )
+            [ span [ classes [ "expandable-section-arrow", openClosedClass model.showDetails ] ] [ text "▼" ]
+            , text " Attendees & Notes"
             ]
         , if model.showDetails then
             div [ class "rsvp-details" ]
@@ -1128,7 +1204,7 @@ formView cfg isPast mode model currentUser currentAnon =
                 in
                 p [ class "rsvp-note" ]
                     [ text "Save "
-                    , a [ href (occasionPath ++ "?anonymousAuthToken=" ++ token) ] [ text "this private RSVP link" ]
+                    , a [ href (occasionPath ++ "?anonymousAuthToken=" ++ token), target "_blank", rel "noopener noreferrer" ] [ text "this private RSVP link" ]
                     , text " to update your RSVP later."
                     ]
 
@@ -1343,8 +1419,8 @@ formatCount ( rsvpCount, attendees ) =
                )
 
 
-{-| The "Going 3 RSVPs / Interested ..." summary: a toggle for the RSVP list on the detail page,
-a link to it (`?section=rsvp`) in compact mode.
+{-| The "Going 3 RSVPs / Interested ..." summary, doubling as the expand/collapse toggle for the
+list of everyone's RSVPs (`cardsView`) -- on cards as well as the detail page.
 -}
 summaryView : ViewConfig -> Model -> Bool -> Occasion -> Html Msg
 summaryView cfg model isOwner occasion =
@@ -1415,25 +1491,11 @@ summaryView cfg model isOwner occasion =
                     text ""
                 ]
             , span [ class "rsvp-summary-chevron" ]
-                [ text
-                    (if model.showCards && not cfg.compact then
-                        "▾"
-
-                     else
-                        "▸"
-                    )
-                ]
+                [ span [ classes [ "expandable-section-arrow", openClosedClass model.showCards ] ] [ text "▼" ] ]
             ]
     in
     if List.isEmpty rsvps && totals == emptyTotals then
         div [ classes [ "rsvp-summary", "rsvp-summary-empty" ] ] content
-
-    else if cfg.compact then
-        a
-            [ classes [ "rsvp-summary", "rsvp-summary-link" ]
-            , href (Events.occasionHref cfg.basePath cfg.viewingServerHost cfg.eventServerHost cfg.occasion ++ "?section=rsvp")
-            ]
-            content
 
     else
         button [ classes [ "rsvp-summary", "rsvp-summary-button" ], onClick ToggleCards, attribute "aria-expanded" (boolAttr model.showCards) ]
@@ -1510,24 +1572,31 @@ cardsView cfg isPast isOwner model rsvps currentUser currentAnon =
         plain : List Rsvp -> List ( Rsvp, Maybe Mode )
         plain =
             List.map (\rsvp -> ( rsvp, Nothing ))
-    in
-    div [ class "rsvp-cards" ]
-        [ section
-            (if List.length yours /= 1 then
-                "Your RSVPs"
 
-             else
-                "Your RSVP"
-            )
-            (List.filterMap identity
-                [ currentAnon |> Maybe.map (\rsvp -> ( rsvp, Just AnonymousMode ))
-                , currentUser |> Maybe.map (\rsvp -> ( rsvp, Just UserMode ))
-                ]
-            )
-        , section "Pending RSVPs" (plain pending)
-        , section "Others' RSVPs" (plain others)
-        , section "Rejected RSVPs" (plain rejected)
+        sections : List (Html Msg)
+        sections =
+            [ section
+                (if List.length yours /= 1 then
+                    "Your RSVPs"
+
+                 else
+                    "Your RSVP"
+                )
+                (List.filterMap identity
+                    [ currentAnon |> Maybe.map (\rsvp -> ( rsvp, Just AnonymousMode ))
+                    , currentUser |> Maybe.map (\rsvp -> ( rsvp, Just UserMode ))
+                    ]
+                )
+            , section "Pending RSVPs" (plain pending)
+            , section "Others' RSVPs" (plain others)
+            , section "Rejected RSVPs" (plain rejected)
+            ]
+    in
+    div [ classes [ "rsvp-cards-wrap", openClosedClass model.showCards ] ]
+        [ div [ classes [ "rsvp-cards", if cfg.compact then "rsvp-cards-compact" else "rsvp-cards-detail" ] ]
+            sections
         ]
+
 
 
 cardView : ViewConfig -> Bool -> Bool -> Model -> Maybe Mode -> Rsvp -> Html Msg

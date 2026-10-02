@@ -10,7 +10,7 @@
 
 use std::collections::HashMap;
 
-use diesel::sql_types::{Array, BigInt, Nullable, Text};
+use diesel::sql_types::{Array, BigInt, Text};
 use diesel::*;
 
 use crate::db_connection::PgPooledConnection;
@@ -65,12 +65,13 @@ impl RsvpCounts {
 }
 
 // Binds: $1 occasion ids, $2 occasion ids the viewer owns, $3 viewer's user id (0 if anonymous),
-// $4 viewer's anonymous auth token (nullable), $5 passing moderations.
+// $4 the viewer's anonymous auth tokens (any may match; see `anonymous_tokens`), $5 passing
+// moderations.
 const VISIBLE_RSVPS_WHERE: &str = "occasion_id = ANY($1) AND ( \
         occasion_id = ANY($2) \
         OR moderation = ANY($5) \
         OR user_id = $3 \
-        OR ($4::text IS NOT NULL AND anonymous_attendee @> jsonb_build_object('auth_token', $4::text)) \
+        OR anonymous_attendee ->> 'auth_token' = ANY($4) \
     )";
 
 #[derive(QueryableByName)]
@@ -101,12 +102,11 @@ pub fn load_visible_rsvp_counts_and_ids(
     occasion_ids: &[i64],
     owned_occasion_ids: &[i64],
     current_user_id: Option<i64>,
-    anonymous_auth_token: Option<&str>,
+    anonymous_auth_tokens: &[String],
     conn: &mut PgPooledConnection,
 ) -> (HashMap<i64, RsvpCounts>, Vec<i64>) {
     let passing: Vec<String> = PASSING_MODERATIONS.iter().map(|m| m.to_string()).collect();
     let viewer_id = current_user_id.unwrap_or(0);
-    let token = anonymous_auth_token.map(|t| t.to_string());
 
     let count_rows: Vec<CountRow> = sql_query(format!(
         "SELECT occasion_id, status, moderation, COUNT(*)::bigint AS rsvp_count, \
@@ -116,7 +116,7 @@ pub fn load_visible_rsvp_counts_and_ids(
     .bind::<Array<BigInt>, _>(occasion_ids)
     .bind::<Array<BigInt>, _>(owned_occasion_ids)
     .bind::<BigInt, _>(viewer_id)
-    .bind::<Nullable<Text>, _>(&token)
+    .bind::<Array<Text>, _>(anonymous_auth_tokens)
     .bind::<Array<Text>, _>(&passing)
     .load(conn)
     .unwrap_or_default();
@@ -136,8 +136,7 @@ pub fn load_visible_rsvp_counts_and_ids(
            SELECT id, occasion_id, row_number() OVER ( \
              PARTITION BY occasion_id \
              ORDER BY \
-               COALESCE(user_id = $3 OR ($4::text IS NOT NULL \
-                  AND anonymous_attendee @> jsonb_build_object('auth_token', $4::text)), false) DESC, \
+               COALESCE(user_id = $3 OR anonymous_attendee ->> 'auth_token' = ANY($4), false) DESC, \
                (moderation = 'PENDING') DESC, \
                CASE status WHEN 'GOING' THEN 0 WHEN 'REQUESTED' THEN 1 \
                            WHEN 'INTERESTED' THEN 2 ELSE 3 END, \
@@ -149,7 +148,7 @@ pub fn load_visible_rsvp_counts_and_ids(
     .bind::<Array<BigInt>, _>(occasion_ids)
     .bind::<Array<BigInt>, _>(owned_occasion_ids)
     .bind::<BigInt, _>(viewer_id)
-    .bind::<Nullable<Text>, _>(&token)
+    .bind::<Array<Text>, _>(anonymous_auth_tokens)
     .bind::<Array<Text>, _>(&passing)
     .bind::<BigInt, _>(MAX_RSVPS_PER_OCCASION)
     .load(conn)

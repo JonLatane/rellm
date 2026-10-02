@@ -2793,7 +2793,7 @@ Valid GetEventsRequest formats:
 | listing_type | [EventListingType](#rellm-EventListingType) |  | The listing type, e.g. `ALL_ACCESSIBLE_EVENTS`, `FOLLOWING_EVENTS`, `MY_GROUPS_EVENTS`, `DIRECT_EVENTS`, `GROUP_EVENTS`, `GROUP_EVENTS_PENDING_MODERATION`. |
 | search_text | [string](#string) | optional | Search text for full-text search. |
 | occasion_post_ids | [string](#string) | repeated | Loads multiple events by their occasions&#39; Post IDs - returns one Event per matching Occasion (see GetEventsResponse&#39;s own doc), not the requested Occasion&#39;s whole parent Event&#39;s full occasion list. |
-| anonymous_attendee_auth_token | [string](#string) | optional | Auth token proving ownership of an anonymous RSVP, mirroring `GetRsvpsRequest.anonymous_attendee_auth_token`. Lets an anonymous attendee&#39;s own (possibly still-`PENDING`) [`Rsvp`](#rellm-Rsvp) and its `Occasion.location` (when `EventInfo.hide_location_until_rsvp_approved` is set) surface via each returned `Occasion.rsvps`/`current_user_rsvp`, same as a logged-in user&#39;s own RSVP does automatically. |
+| anonymous_attendee_auth_token | [string](#string) | optional | Auth token(s) proving ownership of anonymous RSVPs, mirroring `GetRsvpsRequest.anonymous_attendee_auth_token`. Either a plain `&lt;token&gt;`, or several at once as `&lt;occasionId&gt;-&lt;token&gt;--&lt;occasionId&gt;-&lt;token&gt;...` (the form the web frontends keep in their `?anonymousAuthToken=` URL parameter, so it can be passed straight through) -- the occasion id prefix is only advisory; every token is tried against every returned occasion&#39;s RSVPs. Lets an anonymous attendee&#39;s own (possibly still-`PENDING`) [`Rsvp`](#rellm-Rsvp) and its `Occasion.location` (when `EventInfo.hide_location_until_rsvp_approved` is set) surface via each returned `Occasion.rsvps`/`current_user_rsvp`, same as a logged-in user&#39;s own RSVP does automatically. |
 
 
 
@@ -2834,7 +2834,7 @@ Request to get RSVP data for an event.
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | occasion_id | [string](#string) |  | The ID of the event to get RSVP data for. |
-| anonymous_attendee_auth_token | [string](#string) | optional | If set, and if the token has an RSVP for this even, request that RSVP data in addition to the rest of the RSVP data. (The event creator can always see and moderate anonymous RSVPs.) |
+| anonymous_attendee_auth_token | [string](#string) | optional | If set, and if the token has an RSVP for this even, request that RSVP data in addition to the rest of the RSVP data. (The event creator can always see and moderate anonymous RSVPs.) Takes the same plain / multi-occasion forms as `GetEventsRequest.anonymous_attendee_auth_token`. |
 
 
 

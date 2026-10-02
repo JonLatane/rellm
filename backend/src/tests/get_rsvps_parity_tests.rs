@@ -358,6 +358,39 @@ fn anonymous_attendee_sees_their_own_pending_row_via_auth_token() {
 }
 
 #[test]
+fn multi_occasion_token_param_unlocks_the_matching_rsvp_in_both_rpcs() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, Status, _>(|conn| {
+        let scenario = build_scenario(conn, "multi");
+        let occasion_id = scenario.occasion.post_id.to_proto_id();
+
+        // The `<occasionId>-<token>--<occasionId>-<token>` form the web frontends keep in
+        // `?anonymousAuthToken=`, with someone else's (unrelated) pair alongside ours.
+        let (events_occasion, rsvps) = assert_parity(
+            conn,
+            &None,
+            scenario.occasion.post_id,
+            Some(format!(
+                "other-unrelated_token--{occasion_id}-{ANONYMOUS_AUTH_TOKEN}"
+            )),
+        );
+
+        assert!(
+            rsvps
+                .rsvps
+                .iter()
+                .any(|r| r.id == scenario.anonymous_rsvp.id.to_proto_id()),
+            "the matching pair should unlock the anonymous attendee's own row"
+        );
+        assert_eq!(
+            events_occasion.current_user_rsvp.map(|r| r.id),
+            Some(scenario.anonymous_rsvp.id.to_proto_id())
+        );
+        Ok(())
+    });
+}
+
+#[test]
 fn wrong_auth_token_is_treated_like_no_token() {
     let mut conn = test_conn();
     conn.test_transaction::<_, Status, _>(|conn| {

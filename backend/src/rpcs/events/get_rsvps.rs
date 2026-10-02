@@ -1,5 +1,4 @@
 use diesel::*;
-use serde_json::json;
 // use serde_json::json;
 use tonic::{Code, Status};
 
@@ -53,6 +52,8 @@ pub fn get_rsvps(
         }
     }
 
+    let anonymous_auth_tokens =
+        super::parse_anonymous_auth_tokens(request.anonymous_attendee_auth_token.as_deref());
     let mut rsvps_query = rsvps::table
         .left_join(users::table.on(rsvps::user_id.eq(users::id.nullable())))
         .select((rsvps::all_columns, AUTHOR_COLUMNS.nullable()))
@@ -66,7 +67,8 @@ pub fn get_rsvps(
                 .or(rsvps::user_id
                     .eq(user.map(|u| u.id).unwrap_or(0))
                     .or(rsvps::anonymous_attendee
-                        .contains(json!({"auth_token": request.anonymous_attendee_auth_token})))),
+                        .retrieve_as_text("auth_token")
+                        .eq_any(&anonymous_auth_tokens))),
         );
     }
 
@@ -86,12 +88,7 @@ pub fn get_rsvps(
         || rsvps.iter().any(|(a, _)| {
             a.moderation == Moderation::Approved.to_string_moderation()
                 && ((user.is_some() && a.user_id == user.map(|u| u.id))
-                    || (request.anonymous_attendee_auth_token.is_some()
-                        && a.anonymous_attendee.is_some()
-                        && a.anonymous_attendee.as_ref().unwrap()["auth_token"]
-                            .as_str()
-                            .unwrap()
-                            == request.anonymous_attendee_auth_token.as_ref().unwrap()))
+                    || is_anonymous_attendee(a, &anonymous_auth_tokens))
         });
 
     let hidden_location = if is_approved_attendee
@@ -119,23 +116,7 @@ pub fn get_rsvps(
             .into_iter()
             .map(|(a, attendee)| {
                 let is_current_anonymous_attendeee =
-                    request.anonymous_attendee_auth_token.is_some()
-                        && a.anonymous_attendee.is_some()
-                        && match (a.clone(), attendee.clone())
-                            .to_proto(true, false, lookup.as_ref())
-                            .attendee
-                            .unwrap()
-                        {
-                            rsvp::Attendee::AnonymousAttendee(anonymous_attendee) => {
-                                anonymous_attendee.auth_token.unwrap()
-                                    == request
-                                        .anonymous_attendee_auth_token
-                                        .as_ref()
-                                        .unwrap()
-                                        .clone()
-                            }
-                            _ => false,
-                        };
+                    is_anonymous_attendee(&a, &anonymous_auth_tokens);
 
                 let is_current_user_attendee =
                     a.user_id.is_some() && user.is_some() && a.user_id.unwrap() == user.unwrap().id;
@@ -151,4 +132,14 @@ pub fn get_rsvps(
     };
     counts.apply_to(&mut result);
     Ok(result)
+}
+
+/// Whether `rsvp` is an anonymous RSVP whose private token is one of `tokens`.
+fn is_anonymous_attendee(rsvp: &models::Rsvp, tokens: &[String]) -> bool {
+    rsvp.anonymous_attendee
+        .as_ref()
+        .and_then(|a| a.get("auth_token"))
+        .and_then(|t| t.as_str())
+        .map(|token| tokens.iter().any(|t| t == token))
+        .unwrap_or(false)
 }

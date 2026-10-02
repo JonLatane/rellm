@@ -30,6 +30,9 @@ pub use upsert_rsvp::upsert_rsvp;
 mod delete_rsvp;
 pub use delete_rsvp::delete_rsvp;
 
+mod anonymous_tokens;
+pub use anonymous_tokens::parse_anonymous_auth_tokens;
+
 mod rsvp_counts;
 pub use rsvp_counts::{RsvpCounts, MAX_RSVPS_PER_OCCASION};
 

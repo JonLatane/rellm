@@ -3822,6 +3822,12 @@ deleteConfirmationModal shared =
                             , "Delete"
                             )
 
+                        Shared.ConfirmNewAnonymousRsvp _ _ ->
+                            ( "Start a New RSVP?"
+                            , "Make sure you've saved your private RSVP link first. Starting a new anonymous RSVP makes this browser forget the current one -- without that link, you won't be able to edit or delete it later."
+                            , "New RSVP"
+                            )
+
                         Shared.ConfirmUserDelete user _ ->
                             ( "Delete User?"
                             , "Delete "

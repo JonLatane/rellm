@@ -412,7 +412,7 @@ See also: [Sync Destinations](#sync-destinations)
 
 `configuration.ics_subscription_url` is a plain iCal (`.ics`) subscription URL. The background job fetches and parses it on each sync, creating/updating one [`Event`](https://rellm.org/docs/protocol#rellm-Event) (and one [`Occasion`](https://rellm.org/docs/protocol#rellm-Occasion) per occurrence) per iCal `VEVENT`, recomputing `event_count`/`occasion_count`. No auth/credentials are supported yet - only public iCal URLs.
 
-Rellm also serves its own Events back out as an ICS feed (`GET /calendar.ics`, optionally `?user_id={id}`) - the reverse direction of a `SyncSource`'s own subscription, for others to subscribe to a Rellm server or user.
+Rellm also serves its own Events back out as an ICS feed (`GET /calendar.ics`, optionally `?user_id={id}`, or `?post_id={id}` for a single Event's (or, given an Occasion's id, just that Occasion's) calendar -- with an optional `anonymous_auth_token`, passed through to `GetEvents`, for anonymous RSVPers' hidden locations) - the reverse direction of a `SyncSource`'s own subscription, for others to subscribe to a Rellm server or user.
 
 ##### RSS
 

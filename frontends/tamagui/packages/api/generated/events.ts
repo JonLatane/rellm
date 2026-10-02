@@ -229,8 +229,11 @@ export interface GetEventsRequest {
    */
   occasionPostIds: string[];
   /**
-   * Auth token proving ownership of an anonymous RSVP, mirroring
-   * `GetRsvpsRequest.anonymous_attendee_auth_token`. Lets an anonymous attendee's own
+   * Auth token(s) proving ownership of anonymous RSVPs, mirroring
+   * `GetRsvpsRequest.anonymous_attendee_auth_token`. Either a plain `<token>`, or several at once as
+   * `<occasionId>-<token>--<occasionId>-<token>...` (the form the web frontends keep in their
+   * `?anonymousAuthToken=` URL parameter, so it can be passed straight through) -- the occasion id
+   * prefix is only advisory; every token is tried against every returned occasion's RSVPs. Lets an anonymous attendee's own
    * (possibly still-`PENDING`) [`Rsvp`](#rellm-Rsvp) and its `Occasion.location` (when
    * `EventInfo.hide_location_until_rsvp_approved` is set) surface via each returned
    * `Occasion.rsvps`/`current_user_rsvp`, same as a logged-in user's own RSVP
@@ -463,7 +466,8 @@ export interface GetRsvpsRequest {
   /**
    * If set, and if the token has an RSVP for this even, request that RSVP data
    * in addition to the rest of the RSVP data. (The event creator can always
-   * see and moderate anonymous RSVPs.)
+   * see and moderate anonymous RSVPs.) Takes the same plain / multi-occasion forms as
+   * `GetEventsRequest.anonymous_attendee_auth_token`.
    */
   anonymousAttendeeAuthToken?: string | undefined;
 }

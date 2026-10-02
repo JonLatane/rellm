@@ -15,6 +15,7 @@ use crate::models;
 use crate::models::AUTHOR_COLUMNS;
 use crate::models::{get_group, get_membership};
 use crate::protos::*;
+use crate::rpcs::events::parse_anonymous_auth_tokens;
 use crate::rpcs::events::rsvp_counts::load_visible_rsvp_counts_and_ids;
 use crate::rpcs::validate_group_permission;
 use crate::rpcs::validations::PASSING_MODERATIONS;
@@ -81,17 +82,13 @@ struct OccasionRsvpContext {
     hide_location_until_rsvp_approved: bool,
 }
 
-fn rsvp_matches_anonymous_token(
-    rsvp: &models::Rsvp,
-    token: Option<&str>,
-) -> bool {
-    token.is_some()
-        && rsvp
-            .anonymous_attendee
-            .as_ref()
-            .and_then(|a| a.get("auth_token"))
-            .and_then(|t| t.as_str())
-            == token
+fn rsvp_matches_anonymous_token(rsvp: &models::Rsvp, tokens: &[String]) -> bool {
+    rsvp.anonymous_attendee
+        .as_ref()
+        .and_then(|a| a.get("auth_token"))
+        .and_then(|t| t.as_str())
+        .map(|token| tokens.iter().any(|t| t == token))
+        .unwrap_or(false)
 }
 
 // Loads rsvp info for every `Occasion` about to be returned, in one query keyed by
@@ -119,7 +116,8 @@ fn attach_occasion_rsvps(
     conn: &mut PgPooledConnection,
 ) {
     let current_user_id = user.map(|u| u.id);
-    let anonymous_auth_token = request.anonymous_attendee_auth_token.as_deref();
+    let anonymous_auth_tokens =
+        parse_anonymous_auth_tokens(request.anonymous_attendee_auth_token.as_deref());
 
     let mut context_by_occasion: HashMap<i64, OccasionRsvpContext> = HashMap::new();
     for MarshalableEvent(event, event_post, occasions) in result {
@@ -158,7 +156,7 @@ fn attach_occasion_rsvps(
         &occasion_ids,
         &owned_occasion_ids,
         current_user_id,
-        anonymous_auth_token,
+        &anonymous_auth_tokens,
         conn,
     );
 
@@ -200,7 +198,7 @@ fn attach_occasion_rsvps(
 
             let is_viewers_own = |a: &models::Rsvp| {
                 (current_user_id.is_some() && a.user_id == current_user_id)
-                    || rsvp_matches_anonymous_token(a, anonymous_auth_token)
+                    || rsvp_matches_anonymous_token(a, &anonymous_auth_tokens)
             };
 
             let is_approved_attendee = is_owner

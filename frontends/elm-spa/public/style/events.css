@@ -145,7 +145,10 @@
    `margin-left: auto` -- once the two no longer fit side by side. */
 .event-occasion-detail {
   display: flex;
-  flex-wrap: wrap;
+  /* Never wraps: the time/location stack shrinks (and wraps its own text) instead, so the actions
+     (`.event-occasion-detail-actions`, with the export button) always stay beside the time rather
+     than dropping to their own line. */
+  flex-wrap: nowrap;
   align-items: flex-start;
   gap: 0.3rem;
   margin: 0 0 1rem;
@@ -165,7 +168,7 @@
   flex-direction: column;
   gap: 0.3rem;
   flex: 1 1 auto;
-  min-width: 12rem;
+  min-width: 0;
 }
 
 .event-occasion-when {
@@ -1536,4 +1539,143 @@
 
 .rsvp-card-note {
   font-size: 0.9rem;
+}
+
+/* ---- Per-occasion "Add to Calendar" (`Components.EventExport`) -----------------------------
+   A circular `.filter-icon-button` whose `.popover` (ui/popover.css, right-anchored) drops down
+   and to the left of it. On the detail page it sits at the far right of
+   `.event-occasion-detail`; on a card (`.event-export-small`) it sits at the right end of the time row, above
+   `.event-card-link-overlay` (via `position: relative`), so clicking it never navigates the card. */
+.event-occasion-detail-actions {
+  display: flex;
+  flex: 0 0 auto;
+  /* Only the "+ Add More" pill beside the export button may wrap -- under it, still right-aligned. */
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: flex-start;
+  gap: 0.4rem;
+  margin-left: auto;
+  max-width: 60%;
+}
+
+.event-export-popover {
+  width: 13rem;
+}
+
+.event-export-popover-heading {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.event-export-option {
+  font-size: 0.9rem;
+  padding: 0.15rem 0;
+  overflow-wrap: break-word;
+}
+
+.event-export-small {
+  position: relative;
+  z-index: 2;
+  margin-left: auto;
+}
+
+/* The card's time row: the time on the left, the export button at the right end. */
+.event-card-when {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.event-export-small .filter-icon-button {
+  width: 1.6rem;
+  height: 1.6rem;
+  font-size: 0.8rem;
+}
+
+
+/* The list of everyone's RSVPs (`Components.Rsvps.cardsView`) -- expands/collapses via the same
+   `grid-template-rows` 0fr/1fr trick `.expandable-section-content` (profiles.css, also used by
+   `SettingsTab`) does, including its "the direct child is `overflow`/`min-height: 0`" structure.
+   Mounted once first opened (`Model.cardsEverShown`) and then only toggled `is-open`/`is-closed`,
+   so it can animate closed. The child scrolls vertically once it hits its max height: more
+   generous on the detail page than inside a card. `visibility` flips after the collapse finishes
+   so a closed list is out of the tab order. */
+.rsvp-cards-wrap {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.2s ease, visibility 0s 0.2s;
+  visibility: hidden;
+}
+
+.rsvp-cards-wrap.is-open {
+  grid-template-rows: 1fr;
+  visibility: visible;
+  transition: grid-template-rows 0.2s ease, visibility 0s 0s;
+}
+
+.rsvp-cards-wrap.is-closed {
+  pointer-events: none;
+}
+
+.rsvp-cards-wrap > .rsvp-cards {
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.rsvp-cards-detail {
+  max-height: max(180px, 67vh);
+}
+
+.rsvp-cards-compact {
+  max-height: max(180px, 19vh);
+}
+
+/* `.rsvp-mode-button`'s icon (`Components.Rsvps.modeButton`): chevron/plus/pencil stacked in one
+   box and cross-faded (the chevron also rotating, the plus turning as the form opens) by their own
+   `is-open`/`is-closed` classes, rather than one glyph being swapped for another -- the same
+   idea as `.expandable-section-arrow` (profiles.css), which also rotates in place. */
+.rsvp-mode-button-icon {
+  position: relative;
+  display: inline-block;
+  width: 1.2rem;
+  height: 1.2rem;
+  flex-shrink: 0;
+}
+
+.rsvp-mode-button-icon > span {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.rsvp-mode-button-icon > .is-closed {
+  opacity: 0;
+}
+
+.rsvp-mode-button-icon > .is-open {
+  opacity: 1;
+}
+
+.rsvp-mode-icon-chevron {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.rsvp-mode-icon-chevron.is-closed {
+  transform: rotate(-90deg);
+}
+
+.rsvp-mode-button-icon.is-open .rsvp-mode-icon-plus {
+  transform: rotate(45deg);
+}
+
+.rsvp-details-toggle .expandable-section-arrow {
+  margin-right: 0.2rem;
+  font-size: 0.8rem;
 }

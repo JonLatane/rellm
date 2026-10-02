@@ -45,6 +45,7 @@ import Browser.Navigation
 import Components.Events as Events
 import Components.MediaRenderer as MediaRenderer
 import Components.Posts as Posts
+import Components.EventExport as EventExport
 import Components.Rsvps as Rsvps
 import Components.Users exposing (usernameHref)
 import Components.Users.ProfileHeading as ProfileHeading
@@ -291,11 +292,22 @@ type alias Model =
     -- cards never fetch RSVPs separately -- with this viewer's own upserts/deletes overlaid by
     -- `Rsvps.applyEdits`.
     , rsvpModels : Dict String Rsvps.Model
+
+    -- The raw `?anonymousAuthToken=` URL parameter (see `Rsvps.parseAnonymousAuthToken`): every
+    -- anonymous RSVP token this browser holds, across occasions. Sent with each `GetEvents` (the
+    -- backend takes the same format) so those RSVPs show up on their cards, and kept in the URL as
+    -- anonymous RSVPs are created/deleted from a card.
+    , anonymousAuthTokens : Maybe String
+
+    -- The card (`eventAnimationKey`) whose "Add to Calendar" popdown is open, if any.
+    , exportOpenFor : Maybe String
     }
 
 
 type Msg
     = RsvpsMsg String String Rsvps.Msg
+    | ExportOccasionToggled String
+    | ExportOccasionClosed
     | GotServerEvents String (Result Grpc.Error ( Maybe AccountsPanel.Msg, Proto.Rellm.GetEventsResponse ))
     | GotNow Time.Posix
     | Poll
@@ -666,6 +678,8 @@ init shared author navKey path query fragment embeddedPage syncsCalendarPreferen
                 , calendarDisplayModeOverride = calendarDisplayModeOverride
                 , pushStatuses = Dict.empty
                 , rsvpModels = Dict.empty
+                , anonymousAuthTokens = Dict.get "anonymousAuthToken" query
+                , exportOpenFor = Nothing
                 }
                 |> Tuple.mapFirst syncCalendarAnimations
     in
@@ -748,6 +762,16 @@ showSyncDestinationsChanged =
     ShowSyncDestinationsChanged
 
 
+{-| A card's RSVP UI state -- a fresh one (seeded with this occasion's token from the URL, if any)
+until the viewer first interacts with it.
+-}
+rsvpModelFor : Model -> String -> String -> Rsvps.Model
+rsvpModelFor model host occasionId =
+    Dict.get (host ++ "@" ++ occasionId) model.rsvpModels
+        |> Maybe.withDefault
+            (Rsvps.init (model.anonymousAuthTokens |> Maybe.andThen (Rsvps.parseAnonymousAuthToken occasionId)) False)
+
+
 {-| The currently-listed `Event`/`Occasion` for a card (`host`, occasion post id) -- whichever card
 animation still holds it, else the host's loaded feed (what calendar-preview cards render from).
 -}
@@ -817,17 +841,64 @@ updateInner shared msg model =
                             Rsvps.update
                                 { accounts = shared.accounts, targetHost = host, event = event, occasion = occasion }
                                 rsvpsMsg
-                                (Dict.get key model.rsvpModels |> Maybe.withDefault (Rsvps.init Nothing False))
+                                (rsvpModelFor model host occasionId)
+
+                        -- A card's anonymous RSVP created/deleted: keep the URL's (multi-occasion)
+                        -- token parameter in step, so reloading this listing still shows it.
+                        tokensChanged : Bool
+                        tokensChanged =
+                            outcome.tokenChange /= Nothing
+
+                        updatedModel : Model
+                        updatedModel =
+                            { model
+                                | rsvpModels = Dict.insert key newRsvpModel model.rsvpModels
+                                , anonymousAuthTokens =
+                                    case outcome.tokenChange of
+                                        Just newToken ->
+                                            Rsvps.setAnonymousAuthToken occasionId newToken model.anonymousAuthTokens
+
+                                        Nothing ->
+                                            model.anonymousAuthTokens
+                            }
                     in
-                    ( { model | rsvpModels = Dict.insert key newRsvpModel model.rsvpModels }
+                    ( updatedModel
                     , Effect.batch
                         [ Cmd.map (RsvpsMsg host occasionId) rsvpCmd |> Effect.fromCmd
                         , accountsPanelEffect outcome.accountsPanelMsg
+                        , if tokensChanged then
+                            pushUrl updatedModel
+
+                          else
+                            Effect.none
+                        , if outcome.confirmNewAnonymousRsvp then
+                            Effect.fromShared (Shared.RequestDelete (Shared.ConfirmNewAnonymousRsvp occasionId host))
+
+                          else
+                            Effect.none
                         ]
                     )
 
                 Nothing ->
                     ( model, Effect.none )
+
+        SharedMsg (Shared.NewAnonymousRsvpConfirmed occasionId host) ->
+            update shared (RsvpsMsg host occasionId Rsvps.newAnonymousRsvpConfirmed) model
+
+        ExportOccasionToggled key ->
+            ( { model
+                | exportOpenFor =
+                    if model.exportOpenFor == Just key then
+                        Nothing
+
+                    else
+                        Just key
+              }
+            , Effect.none
+            )
+
+        ExportOccasionClosed ->
+            ( { model | exportOpenFor = Nothing }, Effect.none )
 
         GotServerEvents frontendHost (Ok ( maybeAccountsPanelMsg, response )) ->
             ( { model
@@ -1452,6 +1523,13 @@ queryParams model =
                 Nothing ->
                     []
            )
+        ++ (case model.anonymousAuthTokens of
+                Just tokens ->
+                    [ Url.Builder.string "anonymousAuthToken" tokens ]
+
+                Nothing ->
+                    []
+           )
 
 
 {-| `pushUrl`, but only once every card has actually finished its
@@ -1628,6 +1706,7 @@ fetchServerEffect shared model endsAfter server =
         (model.author |> Maybe.map (Tuple.second >> .id))
         model.searchText
         (queryEndsAfter shared model endsAfter)
+        model.anonymousAuthTokens
         |> Task.attempt (GotServerEvents server.frontendHost)
         |> Effect.fromCmd
 
@@ -2651,7 +2730,7 @@ calendarPreviewCardView shared model ( host, event, occasion ) =
             model.calendarPreview == Just key
     in
     div [ id (calendarPreviewCardDomId key), class "calendar-preview-card", onMouseDown (CalendarPreviewCardNavigated key) ]
-        [ eventCardView shared False current model.showSyncSources model.showSyncDestinations model.availableSyncDestinations model.pushStatuses model.rsvpModels ( host, event, occasion ) ]
+        [ eventCardView shared False current model.showSyncSources model.showSyncDestinations model.availableSyncDestinations model.pushStatuses model ( host, event, occasion ) ]
 
 
 
@@ -3213,7 +3292,7 @@ eventsListView shared model =
             Html.Keyed.node "div"
                 [ class containerClass ]
                 (List.map
-                    (eventAnimationView shared model.embeddedPage model.showSyncSources model.showSyncDestinations model.availableSyncDestinations model.pushStatuses model.rsvpModels axis)
+                    (eventAnimationView shared model.embeddedPage model.showSyncSources model.showSyncDestinations model.availableSyncDestinations model.pushStatuses model axis)
                     animations
                     ++ List.map (calendarAnimationView model.embeddedPage) calendarItems
                 )
@@ -3271,8 +3350,8 @@ The inner div's `event-card-move` class (see `events.css`) sets
 `transform-origin: top left` -- see `UI.Flip.startMoveScaled`'s own doc for
 why that's needed alongside a scale.
 -}
-eventAnimationView : Shared.Model -> Bool -> Bool -> Bool -> Maybe (List SyncDestination) -> Dict String SubmitStatus -> Dict String Rsvps.Model -> UI.Flip.Axis -> ( String, EventAnimation ) -> ( String, Html Msg )
-eventAnimationView shared embeddedPage showSyncSources showSyncDestinations availableSyncDestinations pushStatuses rsvpModels axis ( key, anim ) =
+eventAnimationView : Shared.Model -> Bool -> Bool -> Bool -> Maybe (List SyncDestination) -> Dict String SubmitStatus -> Model -> UI.Flip.Axis -> ( String, EventAnimation ) -> ( String, Html Msg )
+eventAnimationView shared embeddedPage showSyncSources showSyncDestinations availableSyncDestinations pushStatuses model axis ( key, anim ) =
     let
         pointerEventsAttr : List (Html.Attribute Msg)
         pointerEventsAttr =
@@ -3285,7 +3364,7 @@ eventAnimationView shared embeddedPage showSyncSources showSyncDestinations avai
     ( key
     , div (id (eventCardDomId key) :: UI.Flip.itemAttributes axis anim.flip anim.move.moving)
         [ div (class "event-card-move" :: pointerEventsAttr ++ UI.Flip.moveAttributes anim.move)
-            [ eventCardView shared embeddedPage False showSyncSources showSyncDestinations availableSyncDestinations pushStatuses rsvpModels ( anim.host, anim.event, anim.occasion ) ]
+            [ eventCardView shared embeddedPage False showSyncSources showSyncDestinations availableSyncDestinations pushStatuses model ( anim.host, anim.event, anim.occasion ) ]
         ]
     )
 
@@ -3299,8 +3378,8 @@ wins" convention `Components.Pages.PostsPage.postCardView` uses for a plain
 the same post, rather than `starred` alone reflecting a just-toggled state
 the rendered count doesn't yet.
 -}
-eventCardView : Shared.Model -> Bool -> Bool -> Bool -> Bool -> Maybe (List SyncDestination) -> Dict String SubmitStatus -> Dict String Rsvps.Model -> ( String, Event, Occasion ) -> Html Msg
-eventCardView shared embeddedPage current showSyncSources showSyncDestinations availableSyncDestinations pushStatuses rsvpModels ( host, event, occasion ) =
+eventCardView : Shared.Model -> Bool -> Bool -> Bool -> Bool -> Maybe (List SyncDestination) -> Dict String SubmitStatus -> Model -> ( String, Event, Occasion ) -> Html Msg
+eventCardView shared embeddedPage current showSyncSources showSyncDestinations availableSyncDestinations pushStatuses model ( host, event, occasion ) =
     let
         maybeServer : Maybe RellmServer
         maybeServer =
@@ -3380,6 +3459,24 @@ eventCardView shared embeddedPage current showSyncSources showSyncDestinations a
         onDelete destinationId destinationLabel =
             SharedMsg (Shared.RequestDelete (Shared.ConfirmOccasionSyncDestinationDelete occasion destinationId destinationLabel host))
 
+        cardKey : String
+        cardKey =
+            eventAnimationKey host occasion
+
+        exportSlot : Html Msg
+        exportSlot =
+            EventExport.view
+                { toggle = ExportOccasionToggled cardKey
+                , close = ExportOccasionClosed
+                , isOpen = model.exportOpenFor == Just cardKey
+                , small = True
+                , serverHost = host
+                , anonymousAuthTokens = model.anonymousAuthTokens
+                , now = shared.time.now
+                , event = event
+                , occasion = occasion
+                }
+
         rsvpSlot : Html Msg
         rsvpSlot =
             Rsvps.view (RsvpsMsg host occasionPostId)
@@ -3393,7 +3490,7 @@ eventCardView shared embeddedPage current showSyncSources showSyncDestinations a
                 , event = event
                 , occasion = occasion
                 }
-                (Dict.get (host ++ "@" ++ occasionPostId) rsvpModels |> Maybe.withDefault (Rsvps.init Nothing False))
+                (rsvpModelFor model host occasionPostId)
     in
     Events.eventCard
         shared.time
@@ -3416,6 +3513,6 @@ eventCardView shared embeddedPage current showSyncSources showSyncDestinations a
         pushError
         onPush
         onDelete
-        rsvpSlot
+        { rsvps = rsvpSlot, export = exportSlot }
         event
         displayOccasion

@@ -53,6 +53,7 @@ import Browser.Dom as Dom
 import Browser.Navigation
 import Components.AIProviders as AIProviders
 import Components.Authors as Authors
+import Components.EventExport as EventExport
 import Components.Events as Events
 import Components.Markdown as Markdown
 import Components.MediaRenderer as MediaRenderer
@@ -187,6 +188,9 @@ type alias Model =
     -- `?section=rsvp` -- expands the list of everyone's RSVPs.
     , rsvpSectionRequested : Bool
 
+    -- Whether the "Add to Calendar" popdown (`Components.EventExport`) is open.
+    , exportOpen : Bool
+
     -- Captured once at `init` -- see the module doc.
     , pageIsSecure : Bool
     , navKey : Browser.Navigation.Key
@@ -197,6 +201,8 @@ type Msg
     = GotEvent (Result Grpc.Error ( Maybe AccountsPanel.Msg, Proto.Rellm.GetEventsResponse ))
       -- One occasion's RSVP form/list (see `Components.Rsvps`), keyed by occasion id.
     | RsvpsMsg String Rsvps.Msg
+    | ExportToggled
+    | ExportClosed
     | MediaClicked Post String
       -- The Event's own `Post`'s media-edit button (see `eventDetailView`) --
       -- opens the shared `Shared.MyMediaPanel` chooser in `MultiSelect` mode,
@@ -541,6 +547,7 @@ init shared pageIsSecure query rawPostId navKey =
                 , rsvpModels = Dict.empty
                 , rsvpTokenParam = Dict.get "anonymousAuthToken" query
                 , rsvpSectionRequested = Dict.get "section" query == Just "rsvp"
+                , exportOpen = False
                 , pageIsSecure = pageIsSecure
                 , navKey = navKey
                 }
@@ -591,15 +598,22 @@ update shared msg model =
 
                         -- Keep the page URL's private-link token in step, so a reload (or a
                         -- copied address bar) still finds the anonymous RSVP.
+                        -- (The param can hold other occasions' tokens too -- see
+                        -- `Rsvps.setAnonymousAuthToken` -- all of which are kept.)
                         ( newTokenParam, urlCmd ) =
                             case outcome.tokenChange of
                                 Just newToken ->
-                                    ( newToken
+                                    let
+                                        updatedParam : Maybe String
+                                        updatedParam =
+                                            Rsvps.setAnonymousAuthToken occasionId newToken model.rsvpTokenParam
+                                    in
+                                    ( updatedParam
                                     , Browser.Navigation.replaceUrl model.navKey
                                         (Events.occasionHref shared.basePath shared.accounts.mainFrontendHost model.targetHost occasion
-                                            ++ (case newToken of
-                                                    Just token ->
-                                                        "?anonymousAuthToken=" ++ token
+                                            ++ (case updatedParam of
+                                                    Just param ->
+                                                        "?anonymousAuthToken=" ++ param
 
                                                     Nothing ->
                                                         ""
@@ -618,11 +632,29 @@ update shared msg model =
                         [ Cmd.map (RsvpsMsg occasionId) rsvpCmd |> Effect.fromCmd
                         , urlCmd |> Effect.fromCmd
                         , accountsPanelEffect outcome.accountsPanelMsg
+                        , if outcome.confirmNewAnonymousRsvp then
+                            Effect.fromShared (Shared.RequestDelete (Shared.ConfirmNewAnonymousRsvp occasionId model.targetHost))
+
+                          else
+                            Effect.none
                         ]
                     )
 
                 _ ->
                     ( model, Effect.none )
+
+        SharedMsg (Shared.NewAnonymousRsvpConfirmed occasionId host) ->
+            if host == model.targetHost then
+                update shared (RsvpsMsg occasionId Rsvps.newAnonymousRsvpConfirmed) model
+
+            else
+                ( model, Effect.none )
+
+        ExportToggled ->
+            ( { model | exportOpen = not model.exportOpen }, Effect.none )
+
+        ExportClosed ->
+            ( { model | exportOpen = False }, Effect.none )
 
         GotEvent (Ok ( maybeAccountsPanelMsg, response )) ->
             let
@@ -1587,7 +1619,7 @@ fetchIfReady shared model =
         case RellmServers.knownConnectedRellmServer shared.accounts.servers model.targetHost of
             Just _ ->
                 ( { model | fetchStarted = True, fetchedAccountId = currentAccountId shared model }
-                , Events.fetchEvent shared.accounts (maybeAccountServerFor shared model) (anonymousTokenFor model model.occasionId) model.occasionId
+                , Events.fetchEvent shared.accounts (maybeAccountServerFor shared model) model.rsvpTokenParam model.occasionId
                     |> Task.attempt GotEvent
                     |> Effect.fromCmd
                 )
@@ -1606,7 +1638,7 @@ successful save to the Event's own primary `Post`'s content
 refetch : Shared.Model -> Model -> ( Model, Effect Msg )
 refetch shared model =
     ( { model | fetchedAccountId = currentAccountId shared model }
-    , Events.fetchEvent shared.accounts (maybeAccountServerFor shared model) (anonymousTokenFor model model.occasionId) model.occasionId
+    , Events.fetchEvent shared.accounts (maybeAccountServerFor shared model) model.rsvpTokenParam model.occasionId
         |> Task.attempt GotEvent
         |> Effect.fromCmd
     )
@@ -2217,11 +2249,24 @@ eventDetailView shared model event occasion =
                                     [ occasionTimeView shared maybeAccount model.occasionTimeEdit eventPost occasion
                                     , occasionLocationView maybeAccount model.occasionLocationEdit eventPost occasion
                                     ]
-                                , if hasMultipleOccasions then
-                                    text ""
+                                , div [ class "event-occasion-detail-actions" ]
+                                    [ EventExport.view
+                                        { toggle = ExportToggled
+                                        , close = ExportClosed
+                                        , isOpen = model.exportOpen
+                                        , small = False
+                                        , serverHost = model.targetHost
+                                        , anonymousAuthTokens = model.rsvpTokenParam
+                                        , now = shared.time.now
+                                        , event = event
+                                        , occasion = occasion
+                                        }
+                                    , if hasMultipleOccasions then
+                                        text ""
 
-                                  else
-                                    addMore
+                                      else
+                                        addMore
+                                    ]
                                 ]
                             , occasionHistoryView shared
                                 model
