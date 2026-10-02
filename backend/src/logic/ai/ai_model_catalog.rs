@@ -65,7 +65,7 @@ pub const DIGITALOCEAN_MODELS: &[ModelInfo] = &[
 /// `CreateAIProvider` (see that message's own proto doc).
 pub const ANTHROPIC_MODELS: &[ModelInfo] = &[];
 
-/// A friendlier display name for a model, e.g. for `logic::market_summary`'s human-readable
+/// A friendlier display name for a model, e.g. for `logic::market::market_summary`'s human-readable
 /// `MarketProduct` descriptions -- Rellm's own "Nano Banana" nicknames for the Gemini image family
 /// (see `GEMINI_MODELS`'s own doc), falling back to the raw provider-API model name for every
 /// other model, which has no comparable nickname in common use.

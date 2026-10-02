@@ -11,7 +11,7 @@ use crate::logic::{
     server_bird_config, server_facebook_app_credentials, server_telnyx_config,
     server_twilio_config, server_x_twitter_app_credentials,
 };
-use crate::logic::stripe_sync::server_stripe_config;
+use crate::logic::stripe_payments::server_stripe_config;
 use crate::protos::*;
 use crate::rpcs::{configure_server, get_server_configuration, get_server_configuration_proto};
 use crate::tests::factories::*;

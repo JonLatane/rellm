@@ -1,4 +1,4 @@
-//! Specs for `logic::facebook_sync`'s Graph API interaction correctness (token exchange, Page
+//! Specs for `logic::sync_destinations::facebook_sync`'s Graph API interaction correctness (token exchange, Page
 //! lookup, posting, Instagram's linked-account lookup + 2-step publish flow) run against
 //! `factories::serve_facebook_graph_api`/`factories::serve_facebook_graph_api_instagram` instead of
 //! the real Facebook/Instagram Graph API. RPC-level permission/ownership handling is covered

@@ -13,7 +13,7 @@ use crate::marshaling::{ToProtoPermissions, ToProtoPurchasePeriod, ToProtoPurcha
 use crate::protos::*;
 
 /// ISO 4217 numeric currency code -> the display Jon asked for: `$` for USD, otherwise a bare
-/// "<amount> <ALPHA3>" -- matches `stripe_sync::currency_code`'s own supported-currency set exactly
+/// "<amount> <ALPHA3>" -- matches `stripe_payments::currency_code`'s own supported-currency set exactly
 /// (every currency displayable here is actually purchasable), plus a permissive fallback for any
 /// other currency code a client might have set directly.
 fn format_price(amount: u32, currency: u32) -> String {
@@ -31,11 +31,11 @@ fn format_price(amount: u32, currency: u32) -> String {
 }
 
 /// `amount` is minor units (e.g. cents) for every currency except a zero-decimal one (see
-/// `stripe_sync::is_zero_decimal_currency`, e.g. JPY), where it's already the whole-unit amount --
+/// `stripe_payments::is_zero_decimal_currency`, e.g. JPY), where it's already the whole-unit amount --
 /// integer arithmetic throughout (no float rounding surprises), comma-grouped major-unit thousands,
 /// and the minor-unit part dropped entirely when it's zero (`100` -> `"1"`, not `"1.00"`).
 fn format_amount_with_commas(amount: u32, currency: u32) -> String {
-    let (major, minor) = if crate::logic::stripe_sync::is_zero_decimal_currency(currency) {
+    let (major, minor) = if crate::logic::stripe_payments::is_zero_decimal_currency(currency) {
         (amount, 0)
     } else {
         (amount / 100, amount % 100)
@@ -132,7 +132,7 @@ fn resource_description(product: &MarketProduct) -> String {
             } else {
                 d.model_names
                     .iter()
-                    .map(|m| crate::logic::ai_model_catalog::display_name(m))
+                    .map(|m| crate::logic::ai::ai_model_catalog::display_name(m))
                     .collect::<Vec<_>>()
                     .join("/")
             };
@@ -272,7 +272,7 @@ pub fn stripe_product_name(product: &MarketProduct, server_short_name: &str) -> 
 /// Falls back to "AI models" for a product with no models configured yet.
 fn ai_grant_model_names_joined(model_names: &[String]) -> String {
     let names: Vec<String> =
-        model_names.iter().map(|m| crate::logic::ai_model_catalog::display_name(m)).collect();
+        model_names.iter().map(|m| crate::logic::ai::ai_model_catalog::display_name(m)).collect();
     match names.as_slice() {
         [] => "AI models".to_string(),
         [only] => only.clone(),

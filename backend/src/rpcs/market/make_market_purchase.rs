@@ -1,7 +1,7 @@
 use tonic::{Code, Status};
 
 use crate::db_connection::PgPooledConnection;
-use crate::logic::{stripe_product_name, stripe_sync};
+use crate::logic::{stripe_product_name, stripe_payments};
 use crate::marshaling::*;
 use crate::models;
 use crate::protos::*;
@@ -12,7 +12,7 @@ use crate::rpcs::market::create_market_product::validate_permissions_are_purchas
 /// Session and returns its hosted URL. Deliberately does **not** create any `MarketPurchase`/
 /// `MarketSubscription` row itself -- see this RPC's own proto doc: fulfillment only ever happens
 /// from `web::stripe_webhook`'s `checkout.session.completed` handler (or, for recurring
-/// subscriptions, `logic::market_renewal`), so an abandoned checkout never leaves a half-created
+/// subscriptions, `logic::market::market_renewal`), so an abandoned checkout never leaves a half-created
 /// purchase behind.
 pub fn make_market_purchase(
     request: MakeMarketPurchaseRequest,
@@ -74,7 +74,7 @@ pub fn make_market_purchase(
     // `ToProtoServerConfiguration::to_proto` always blanks `stripe_secret_key` (write-only, same as
     // `TwilioConfig.twilio_api_key_secret`), so reading it off the *proto* form here would find it
     // empty and report "not configured" even on a fully-configured server.
-    let stripe_config = stripe_sync::usable_server_stripe_config(conn)
+    let stripe_config = stripe_payments::usable_server_stripe_config(conn)
         .ok_or_else(|| Status::new(Code::FailedPrecondition, "stripe_not_configured"))?;
 
     // Same constraint `rpcs::posts::sync_post` documents on its own `post_url`/`media` -- this is a
@@ -91,7 +91,7 @@ pub fn make_market_purchase(
     let success_url = format!("https://{frontend_host}/market/product/{}", product.id.to_proto_id());
     let cancel_url = success_url.clone();
 
-    let currency = stripe_sync::currency_code(product.currency as u32)?;
+    let currency = stripe_payments::currency_code(product.currency as u32)?;
 
     let mut metadata: Vec<(String, String)> = vec![
         ("rellm_user_id".to_string(), current_user.id.to_proto_id()),
@@ -130,11 +130,11 @@ pub fn make_market_purchase(
             .map(|v| v.trim_start_matches("mailto:").to_string())
     }).flatten();
 
-    let checkout_url = stripe_sync::create_checkout_session_at(
-        stripe_sync::DEFAULT_BASE_URL,
+    let checkout_url = stripe_payments::create_checkout_session_at(
+        stripe_payments::DEFAULT_BASE_URL,
         &stripe_config.stripe_secret_key,
-        stripe_sync::CreateCheckoutSessionParams {
-            line_item: stripe_sync::CheckoutLineItem {
+        stripe_payments::CreateCheckoutSessionParams {
+            line_item: stripe_payments::CheckoutLineItem {
                 currency,
                 unit_amount: product.amount as u32,
                 product_name: stripe_product_name(

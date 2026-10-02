@@ -9689,7 +9689,7 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>tokens</td>
           <td><a href="#uint64">uint64</a></td>
           <td></td>
-          <td>The buyer's new total token balance for <code>ai_provider_id</code>/<code>model_names</code>, replacing (not adding to) whatever balance remained -- see <code>logic::market_fulfillment::fulfill_purchase</code>'s <code>AiGrants</code> arm.</td>
+          <td>The buyer's new total token balance for <code>ai_provider_id</code>/<code>model_names</code>, replacing (not adding to) whatever balance remained -- see <code>logic::market::market_fulfillment::fulfill_purchase</code>'s <code>AiGrants</code> arm.</td>
         </tr>
       </tbody>
     </table>
@@ -9726,7 +9726,7 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>tokens</td>
           <td><a href="#uint64">uint64</a></td>
           <td></td>
-          <td>How many tokens this product/subscription grants the buyer each time it's (re-)fulfilled, replacing (not adding to) whatever balance remained -- see <code>logic::market_fulfillment::fulfill_purchase</code>'s <code>AiGrants</code> arm.</td>
+          <td>How many tokens this product/subscription grants the buyer each time it's (re-)fulfilled, replacing (not adding to) whatever balance remained -- see <code>logic::market::market_fulfillment::fulfill_purchase</code>'s <code>AiGrants</code> arm.</td>
         </tr>
       </tbody>
     </table>
@@ -10043,13 +10043,13 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>amount</td>
           <td><a href="#uint32">uint32</a></td>
           <td></td>
-          <td>The price, in the smallest unit of <code>currency</code> (e.g. cents for USD) -- except for a zero-decimal currency like JPY, where this is already the whole unit (see <code>logic::stripe_sync::is_zero_decimal_currency</code>).</td>
+          <td>The price, in the smallest unit of <code>currency</code> (e.g. cents for USD) -- except for a zero-decimal currency like JPY, where this is already the whole unit (see <code>logic::stripe_payments::is_zero_decimal_currency</code>).</td>
         </tr>
         <tr>
           <td>currency</td>
           <td><a href="#uint32">uint32</a></td>
           <td></td>
-          <td>The ISO 4217 numeric currency code this product is priced in (e.g. <code>840</code> for USD, <code>392</code> for JPY) -- see <code>logic::market_summary</code>'s currency table for the full set of currencies a server actually supports pricing in today.</td>
+          <td>The ISO 4217 numeric currency code this product is priced in (e.g. <code>840</code> for USD, <code>392</code> for JPY) -- see <code>logic::market::market_summary</code>'s currency table for the full set of currencies a server actually supports pricing in today.</td>
         </tr>
         <tr>
           <td>available_count</td>
@@ -10106,7 +10106,7 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
     <p>
       One completed billing event -- the initial purchase or a later recurring renewal charge -- for a
       single product. Created only from <code>web::stripe_webhook</code> (the initial purchase, on
-      <code>checkout.session.completed</code>) or <code>logic::market_renewal</code> (each subsequent recurring charge),
+      <code>checkout.session.completed</code>) or <code>logic::market::market_renewal</code> (each subsequent recurring charge),
       never directly by <code>MakeMarketPurchase</code> itself (see that RPC's own doc). MarketPurchases are
       immutable via the API+CLI once created -- there is no <code>UpdateMarketPurchase</code> RPC; the payments,
       refunds, and (for a subscription) fulfillment information that accumulate against a purchase over
@@ -10156,7 +10156,7 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>market_payments</td>
           <td><a href="#rellm-MarketPayment">MarketPayment</a></td>
           <td>repeated</td>
-          <td>Every payment recorded against this purchase, oldest first -- ordinarily just one, but a failed charge that's later retried (see <code>logic::market_renewal</code>) can leave more than one row.</td>
+          <td>Every payment recorded against this purchase, oldest first -- ordinarily just one, but a failed charge that's later retried (see <code>logic::market::market_renewal</code>) can leave more than one row.</td>
         </tr>
         <tr>
           <td>market_refunds</td>
@@ -10402,7 +10402,7 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>service_terminated_at</td>
           <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
           <td>optional</td>
-          <td>The time permissions were removed, media storage quotas reset, etc. -- i.e. when <code>logic::market_fulfillment::terminate_entitlement</code> actually ran for this subscription. Always unset while <code>canceled_at</code> is unset; may remain unset for a while <em>after</em> <code>canceled_at</code> is set, since the entitlement intentionally stays active until the later of <code>renews_at</code>/<code>canceled_at</code> (see <code>canceled_at</code>'s own doc) -- a buyer who cancels mid-period keeps what they already paid for through the end of that period.</td>
+          <td>The time permissions were removed, media storage quotas reset, etc. -- i.e. when <code>logic::market::market_fulfillment::terminate_entitlement</code> actually ran for this subscription. Always unset while <code>canceled_at</code> is unset; may remain unset for a while <em>after</em> <code>canceled_at</code> is set, since the entitlement intentionally stays active until the later of <code>renews_at</code>/<code>canceled_at</code> (see <code>canceled_at</code>'s own doc) -- a buyer who cancels mid-period keeps what they already paid for through the end of that period.</td>
         </tr>
       </tbody>
     </table>
@@ -10414,7 +10414,7 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
       <code>MarketPurchase.details</code>' own doc). Field-for-field identical to
       <code>MediaStorageSubscriptionDetails</code> -- kept as its own message only so the Purchase- and
       Subscription-side <code>oneof</code>s stay independent Rust types (see
-      <code>logic::market_fulfillment::terminate_entitlement</code>'s own doc for why that distinction matters
+      <code>logic::market::market_fulfillment::terminate_entitlement</code>'s own doc for why that distinction matters
       for <code>PermissionsAccessPurchaseDetails</code>/<code>PermissionsAccessSubscriptionDetails</code>).
     </p>
     <table>
@@ -10431,7 +10431,7 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>allocation_bytes</td>
           <td><a href="#uint64">uint64</a></td>
           <td></td>
-          <td>The buyer's new total media storage allocation, replacing (not adding to) whatever quota they already had -- see <code>logic::market_fulfillment::fulfill_purchase</code>'s <code>MediaStorage</code> arm.</td>
+          <td>The buyer's new total media storage allocation, replacing (not adding to) whatever quota they already had -- see <code>logic::market::market_fulfillment::fulfill_purchase</code>'s <code>MediaStorage</code> arm.</td>
         </tr>
       </tbody>
     </table>
@@ -10456,7 +10456,7 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>allocation_bytes</td>
           <td><a href="#uint64">uint64</a></td>
           <td></td>
-          <td>How much media storage this product/subscription grants the buyer, replacing (not adding to) whatever quota they already had -- see <code>logic::market_fulfillment::fulfill_purchase</code>'s <code>MediaStorage</code> arm.</td>
+          <td>How much media storage this product/subscription grants the buyer, replacing (not adding to) whatever quota they already had -- see <code>logic::market::market_fulfillment::fulfill_purchase</code>'s <code>MediaStorage</code> arm.</td>
         </tr>
       </tbody>
     </table>
@@ -10466,7 +10466,7 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
       <code>MarketPurchase.details</code>' <code>PURCHASE_TYPE_PERMISSIONS_ACCESS</code> variant -- copied verbatim from the
       originating <code>MarketProduct.details</code> at the moment this purchase was fulfilled. Field-for-field
       identical to <code>PermissionsAccessSubscriptionDetails</code>, but kept as a genuinely distinct Rust type
-      (not just documentation) -- see <code>logic::market_fulfillment::terminate_entitlement</code>'s own doc,
+      (not just documentation) -- see <code>logic::market::market_fulfillment::terminate_entitlement</code>'s own doc,
       which parses a <code>MarketSubscription</code>'s <code>details</code> as <code>PermissionsAccessSubscriptionDetails</code>
       specifically (never this message) when clawing back a lapsed grant.
     </p>
@@ -10484,7 +10484,7 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>permissions</td>
           <td><a href="#rellm-Permission">Permission</a></td>
           <td>repeated</td>
-          <td>The permissions this purchase granted -- see <code>logic::market_fulfillment::fulfill_purchase</code>'s <code>PermissionsAccess</code> arm (adds these to the buyer's <code>User.permissions</code>, union-style).</td>
+          <td>The permissions this purchase granted -- see <code>logic::market::market_fulfillment::fulfill_purchase</code>'s <code>PermissionsAccess</code> arm (adds these to the buyer's <code>User.permissions</code>, union-style).</td>
         </tr>
         <tr>
           <td>name</td>
@@ -10506,7 +10506,7 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
       <code>MarketProduct.details</code>/<code>MarketSubscription.details</code>' <code>PURCHASE_TYPE_PERMISSIONS_ACCESS</code>
       variant -- what a permissions-bundle product actually grants. Field-for-field identical to
       <code>PermissionsAccessPurchaseDetails</code> -- see that message's own doc for why it's still a distinct
-      type (that distinction is exactly what lets <code>logic::market_fulfillment::terminate_entitlement</code>
+      type (that distinction is exactly what lets <code>logic::market::market_fulfillment::terminate_entitlement</code>
       tell "what to claw back" apart from "what was originally billed").
     </p>
     <table>
@@ -10523,7 +10523,7 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>permissions</td>
           <td><a href="#rellm-Permission">Permission</a></td>
           <td>repeated</td>
-          <td>Which <code>Permission</code>s this product/subscription grants the buyer -- see <code>logic::market_fulfillment::fulfill_purchase</code>'s <code>PermissionsAccess</code> arm (union-added to the buyer's own <code>User.permissions</code>, never replacing what they already had) and <code>terminate_entitlement</code>'s own arm (the exact claw-back set on cancellation/expiry). Intentionally excludes permissions dangerous or nonsensical to sell this way -- e.g. "Grant Basic Permissions," any "Moderate"/"Read All System Messages" permission, "Admin," "View Private Contact Methods," and "Edit Cluster Settings" must never appear in a Market product's own <code>permissions</code> list. Enforced server-side on <code>CreateMarketProduct</code>/ <code>UpdateMarketProduct</code> (rejected with <code>permission_not_purchasable</code>) and again on <code>MakeMarketPurchase</code> (defense in depth, in case a permission is later removed from the purchasable set after a product granting it already exists) -- see <code>rpcs::market::create_market_product::PURCHASABLE_PERMISSIONS</code>. NOTE: that Rust list is an explicit include-list, not an exclude-list -- described here as an exclusion for readability, but implemented as "only these permissions are purchasable" so a newly-added <code>Permission</code> is never purchasable by default; it has to be deliberately added to that list.</td>
+          <td>Which <code>Permission</code>s this product/subscription grants the buyer -- see <code>logic::market::market_fulfillment::fulfill_purchase</code>'s <code>PermissionsAccess</code> arm (union-added to the buyer's own <code>User.permissions</code>, never replacing what they already had) and <code>terminate_entitlement</code>'s own arm (the exact claw-back set on cancellation/expiry). Intentionally excludes permissions dangerous or nonsensical to sell this way -- e.g. "Grant Basic Permissions," any "Moderate"/"Read All System Messages" permission, "Admin," "View Private Contact Methods," and "Edit Cluster Settings" must never appear in a Market product's own <code>permissions</code> list. Enforced server-side on <code>CreateMarketProduct</code>/ <code>UpdateMarketProduct</code> (rejected with <code>permission_not_purchasable</code>) and again on <code>MakeMarketPurchase</code> (defense in depth, in case a permission is later removed from the purchasable set after a product granting it already exists) -- see <code>rpcs::market::create_market_product::PURCHASABLE_PERMISSIONS</code>. NOTE: that Rust list is an explicit include-list, not an exclude-list -- described here as an exclusion for readability, but implemented as "only these permissions are purchasable" so a newly-added <code>Permission</code> is never purchasable by default; it has to be deliberately added to that list.</td>
         </tr>
         <tr>
           <td>name</td>
@@ -10658,7 +10658,7 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>fulfillment_status</td>
           <td><a href="#rellm-FulfillmentStatus">FulfillmentStatus</a></td>
           <td></td>
-          <td>Where this Rellm hosting order currently stands -- Rellm hosting is deliberately not automated (see <code>market.proto</code>'s own top-of-file notes and <code>logic::market_fulfillment::fulfill_purchase</code>'s <code>RellmHosting</code> no-op arm), so this is the one manual "how far along is this order" signal, shown on <code>/market/fulfillment</code> (<code>GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN</code>). Never independently settable by a client -- always server-derived as whatever <code>fulfillment_notes</code>' own last entry's <code>fulfillment_status</code> says (or <code>FULFILLMENT_STATUS_AWAITING_HOST_ADMIN</code> if <code>fulfillment_notes</code> is empty), so this field can never drift out of sync with the history that explains <em>why</em> it's in that state.</td>
+          <td>Where this Rellm hosting order currently stands -- Rellm hosting is deliberately not automated (see <code>market.proto</code>'s own top-of-file notes and <code>logic::market::market_fulfillment::fulfill_purchase</code>'s <code>RellmHosting</code> no-op arm), so this is the one manual "how far along is this order" signal, shown on <code>/market/fulfillment</code> (<code>GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN</code>). Never independently settable by a client -- always server-derived as whatever <code>fulfillment_notes</code>' own last entry's <code>fulfillment_status</code> says (or <code>FULFILLMENT_STATUS_AWAITING_HOST_ADMIN</code> if <code>fulfillment_notes</code> is empty), so this field can never drift out of sync with the history that explains <em>why</em> it's in that state.</td>
         </tr>
         <tr>
           <td>fulfillment_notes</td>
@@ -10761,7 +10761,7 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
     <h3 id="purchasetype"><a class="anchor" aria-hidden="true" tabindex="-1" href="#purchasetype"><span class="octicon octicon-link"></span></a>PurchaseType</h3>
     <p>
       What a <code>MarketProduct</code>/<code>MarketPurchase</code>/<code>MarketSubscription</code> actually grants the buyer once
-      fulfilled -- see <code>logic::market_fulfillment::fulfill_purchase</code> (the Rust match on this same enum)
+      fulfilled -- see <code>logic::market::market_fulfillment::fulfill_purchase</code> (the Rust match on this same enum)
       for exactly what each value does. Immutable on a <code>MarketProduct</code> once created (see that message's
       own doc) -- changing what a product <em>is</em> after people have already bought it would silently
       change existing buyers' entitlements out from under them, so a product whose type needs to change
@@ -10794,7 +10794,7 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
         <tr>
           <td>PURCHASE_TYPE_PERMISSIONS_ACCESS</td>
           <td>3</td>
-          <td>A bundle of <code>Permission</code>s (e.g. <code>SYNC_EVENTS_TO_FACEBOOK</code>) granted directly to the buyer's own <code>User.permissions</code>, union-style -- fulfillment only ever adds permissions the buyer doesn't already have from some other source, never removes any. Unlike the other three types, this ONE eventually claws back what it granted: once cancellation/expiry actually takes effect (see <code>MarketSubscription.canceled_at</code>/<code>service_terminated_at</code>), <code>logic::market_fulfillment:: terminate_entitlement</code> removes exactly the permissions this subscription granted (a plain set difference, not a reconciliation against any other subscription/grant the buyer might also hold).</td>
+          <td>A bundle of <code>Permission</code>s (e.g. <code>SYNC_EVENTS_TO_FACEBOOK</code>) granted directly to the buyer's own <code>User.permissions</code>, union-style -- fulfillment only ever adds permissions the buyer doesn't already have from some other source, never removes any. Unlike the other three types, this ONE eventually claws back what it granted: once cancellation/expiry actually takes effect (see <code>MarketSubscription.canceled_at</code>/<code>service_terminated_at</code>), <code>logic::market::market_fulfillment:: terminate_entitlement</code> removes exactly the permissions this subscription granted (a plain set difference, not a reconciliation against any other subscription/grant the buyer might also hold).</td>
         </tr>
       </tbody>
     </table>

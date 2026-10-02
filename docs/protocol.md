@@ -4693,7 +4693,7 @@ it&#39;s still a separate message.
 | ----- | ---- | ----- | ----------- |
 | ai_provider_id | [string](#string) |  | Which `AIProvider` this grant is against. |
 | model_names | [string](#string) | repeated | Which of that provider&#39;s models the grant covers. |
-| tokens | [uint64](#uint64) |  | The buyer&#39;s new total token balance for `ai_provider_id`/`model_names`, replacing (not adding to) whatever balance remained -- see `logic::market_fulfillment::fulfill_purchase`&#39;s `AiGrants` arm. |
+| tokens | [uint64](#uint64) |  | The buyer&#39;s new total token balance for `ai_provider_id`/`model_names`, replacing (not adding to) whatever balance remained -- see `logic::market::market_fulfillment::fulfill_purchase`&#39;s `AiGrants` arm. |
 
 
 
@@ -4712,7 +4712,7 @@ see that message&#39;s own doc for why it&#39;s still a distinct type.
 | ----- | ---- | ----- | ----------- |
 | ai_provider_id | [string](#string) |  | Which `AIProvider` this grant is against. |
 | model_names | [string](#string) | repeated | Which of that provider&#39;s models the grant covers. |
-| tokens | [uint64](#uint64) |  | How many tokens this product/subscription grants the buyer each time it&#39;s (re-)fulfilled, replacing (not adding to) whatever balance remained -- see `logic::market_fulfillment::fulfill_purchase`&#39;s `AiGrants` arm. |
+| tokens | [uint64](#uint64) |  | How many tokens this product/subscription grants the buyer each time it&#39;s (re-)fulfilled, replacing (not adding to) whatever balance remained -- see `logic::market::market_fulfillment::fulfill_purchase`&#39;s `AiGrants` arm. |
 
 
 
@@ -4900,8 +4900,8 @@ supplied by the client is ignored -- see that field&#39;s own doc).
 | id | [string](#string) |  |  |
 | type | [PurchaseType](#rellm-PurchaseType) |  | What this product grants once purchased -- see `PurchaseType`&#39;s own doc for what each value does. Never changeable after product creation (`UpdateMarketProduct` silently ignores any change to this field) -- changing what a product *is* after people have already bought it would silently change existing buyers&#39; entitlements out from under them; a product whose type needs to change is delisted and replaced with a new one instead. |
 | period | [PurchasePeriod](#rellm-PurchasePeriod) |  | How often this product bills, if at all -- see `PurchasePeriod`&#39;s own doc. Never changeable after product creation, same reasoning as `type` above. |
-| amount | [uint32](#uint32) |  | The price, in the smallest unit of `currency` (e.g. cents for USD) -- except for a zero-decimal currency like JPY, where this is already the whole unit (see `logic::stripe_sync::is_zero_decimal_currency`). |
-| currency | [uint32](#uint32) |  | The ISO 4217 numeric currency code this product is priced in (e.g. `840` for USD, `392` for JPY) -- see `logic::market_summary`&#39;s currency table for the full set of currencies a server actually supports pricing in today. |
+| amount | [uint32](#uint32) |  | The price, in the smallest unit of `currency` (e.g. cents for USD) -- except for a zero-decimal currency like JPY, where this is already the whole unit (see `logic::stripe_payments::is_zero_decimal_currency`). |
+| currency | [uint32](#uint32) |  | The ISO 4217 numeric currency code this product is priced in (e.g. `840` for USD, `392` for JPY) -- see `logic::market::market_summary`&#39;s currency table for the full set of currencies a server actually supports pricing in today. |
 | available_count | [uint32](#uint32) |  | Number of subscription &#34;slots&#34; available for this product (admin-set) -- `0` means unlimited. Once `sold_count &gt;= available_count` (and `available_count &gt; 0`), `MakeMarketPurchase` rejects further purchases with `product_sold_out`. |
 | sold_count | [uint32](#uint32) |  | Number of subscriptions actually sold, maintained server-side (never client-settable -- `UpdateMarketProduct` silently ignores any client-sent value for this field). Incremented when a purchase&#39;s Stripe Checkout Session completes; decremented when the resulting `MarketSubscription` is actually canceled (`CancelMarketSubscription`), freeing the slot for a new buyer. |
 | media_storage_subscription_details | [MediaStorageSubscriptionDetails](#rellm-MediaStorageSubscriptionDetails) |  |  |
@@ -4921,7 +4921,7 @@ supplied by the client is ignored -- see that field&#39;s own doc).
 ### MarketPurchase
 One completed billing event -- the initial purchase or a later recurring renewal charge -- for a
 single product. Created only from `web::stripe_webhook` (the initial purchase, on
-`checkout.session.completed`) or `logic::market_renewal` (each subsequent recurring charge),
+`checkout.session.completed`) or `logic::market::market_renewal` (each subsequent recurring charge),
 never directly by `MakeMarketPurchase` itself (see that RPC&#39;s own doc). MarketPurchases are
 immutable via the API&#43;CLI once created -- there is no `UpdateMarketPurchase` RPC; the payments,
 refunds, and (for a subscription) fulfillment information that accumulate against a purchase over
@@ -4935,7 +4935,7 @@ time live in their own separate messages/tables instead of ever rewriting this o
 | type | [PurchaseType](#rellm-PurchaseType) |  | What this purchase grants -- copied from (and always matching) `market_product.type` at the time of purchase. Denormalized here (rather than requiring a lookup through `market_product`) so a client can branch on `details`&#39; oneof case without needing `market_product` populated. |
 | market_product | [MarketProduct](#rellm-MarketProduct) |  | The `MarketProduct` this purchase was made against, as it existed at the time it was fetched -- may since have changed price/details/been delisted; this purchase&#39;s own `amount`-equivalent fields live on whichever `MarketPayment`s are attached, not here. |
 | market_subscription | [MarketSubscription](#rellm-MarketSubscription) | optional | The subscription this purchase belongs to -- every purchase gets one, including a `PURCHASE_PERIOD_INDEFINITE` one-time purchase (see `MarketSubscription`&#39;s own doc), so `Optional` here really only means &#34;always unset when this `MarketPurchase` is itself embedded inside a `MarketSubscription.billing_history`&#34; (there&#39;d be no point recursing into the same subscription again). Note: this circular relationship should be handled by the Rust marshaling side. |
-| market_payments | [MarketPayment](#rellm-MarketPayment) | repeated | Every payment recorded against this purchase, oldest first -- ordinarily just one, but a failed charge that&#39;s later retried (see `logic::market_renewal`) can leave more than one row. |
+| market_payments | [MarketPayment](#rellm-MarketPayment) | repeated | Every payment recorded against this purchase, oldest first -- ordinarily just one, but a failed charge that&#39;s later retried (see `logic::market::market_renewal`) can leave more than one row. |
 | market_refunds | [MarketRefund](#rellm-MarketRefund) | repeated | Every refund recorded against this purchase, oldest first -- empty for the common case of a purchase that was never refunded. |
 | media_storage_purchase_details | [MediaStoragePurchaseDetails](#rellm-MediaStoragePurchaseDetails) |  |  |
 | ai_grant_purchase_details | [AIGrantPurchaseDetails](#rellm-AIGrantPurchaseDetails) |  |  |
@@ -5017,7 +5017,7 @@ other purchase type gets, even though it never actually bills again.
 | created_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  | When this subscription was first created (i.e. when the initial `MarketPurchase` was fulfilled). |
 | renews_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional | When the next renewal charge is due. Always unset for a `PURCHASE_PERIOD_INDEFINITE` subscription (see this message&#39;s own doc) -- there is no next charge. Otherwise, advanced by one `period` on every successful renewal (`renew_market_subscriptions.rs`); left untouched once `canceled_at` is set, since a canceled subscription never renews again regardless of what this still says. |
 | canceled_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional | Set once the subscription will no longer renew -- either the buyer/admin explicitly canceled it (CancelMarketSubscription) or a renewal charge failed. The subscription&#39;s entitlement (media storage quota, granted permissions, etc.) stays active until whichever is later of renews_at/canceled_at, at which point renew_market_subscriptions.rs revokes it and sets service_terminated_at. Also the moment `MarketProduct.sold_count` is decremented, freeing this subscription&#39;s slot for a new buyer (see that field&#39;s own doc). |
-| service_terminated_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional | The time permissions were removed, media storage quotas reset, etc. -- i.e. when `logic::market_fulfillment::terminate_entitlement` actually ran for this subscription. Always unset while `canceled_at` is unset; may remain unset for a while *after* `canceled_at` is set, since the entitlement intentionally stays active until the later of `renews_at`/`canceled_at` (see `canceled_at`&#39;s own doc) -- a buyer who cancels mid-period keeps what they already paid for through the end of that period. |
+| service_terminated_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional | The time permissions were removed, media storage quotas reset, etc. -- i.e. when `logic::market::market_fulfillment::terminate_entitlement` actually ran for this subscription. Always unset while `canceled_at` is unset; may remain unset for a while *after* `canceled_at` is set, since the entitlement intentionally stays active until the later of `renews_at`/`canceled_at` (see `canceled_at`&#39;s own doc) -- a buyer who cancels mid-period keeps what they already paid for through the end of that period. |
 
 
 
@@ -5032,13 +5032,13 @@ originating `MarketProduct.details` at the moment this purchase was fulfilled (s
 `MarketPurchase.details`&#39; own doc). Field-for-field identical to
 `MediaStorageSubscriptionDetails` -- kept as its own message only so the Purchase- and
 Subscription-side `oneof`s stay independent Rust types (see
-`logic::market_fulfillment::terminate_entitlement`&#39;s own doc for why that distinction matters
+`logic::market::market_fulfillment::terminate_entitlement`&#39;s own doc for why that distinction matters
 for `PermissionsAccessPurchaseDetails`/`PermissionsAccessSubscriptionDetails`).
 
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| allocation_bytes | [uint64](#uint64) |  | The buyer&#39;s new total media storage allocation, replacing (not adding to) whatever quota they already had -- see `logic::market_fulfillment::fulfill_purchase`&#39;s `MediaStorage` arm. |
+| allocation_bytes | [uint64](#uint64) |  | The buyer&#39;s new total media storage allocation, replacing (not adding to) whatever quota they already had -- see `logic::market::market_fulfillment::fulfill_purchase`&#39;s `MediaStorage` arm. |
 
 
 
@@ -5055,7 +5055,7 @@ what a media storage product actually grants. Field-for-field identical to
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| allocation_bytes | [uint64](#uint64) |  | How much media storage this product/subscription grants the buyer, replacing (not adding to) whatever quota they already had -- see `logic::market_fulfillment::fulfill_purchase`&#39;s `MediaStorage` arm. |
+| allocation_bytes | [uint64](#uint64) |  | How much media storage this product/subscription grants the buyer, replacing (not adding to) whatever quota they already had -- see `logic::market::market_fulfillment::fulfill_purchase`&#39;s `MediaStorage` arm. |
 
 
 
@@ -5068,14 +5068,14 @@ what a media storage product actually grants. Field-for-field identical to
 `MarketPurchase.details`&#39; `PURCHASE_TYPE_PERMISSIONS_ACCESS` variant -- copied verbatim from the
 originating `MarketProduct.details` at the moment this purchase was fulfilled. Field-for-field
 identical to `PermissionsAccessSubscriptionDetails`, but kept as a genuinely distinct Rust type
-(not just documentation) -- see `logic::market_fulfillment::terminate_entitlement`&#39;s own doc,
+(not just documentation) -- see `logic::market::market_fulfillment::terminate_entitlement`&#39;s own doc,
 which parses a `MarketSubscription`&#39;s `details` as `PermissionsAccessSubscriptionDetails`
 specifically (never this message) when clawing back a lapsed grant.
 
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| permissions | [Permission](#rellm-Permission) | repeated | The permissions this purchase granted -- see `logic::market_fulfillment::fulfill_purchase`&#39;s `PermissionsAccess` arm (adds these to the buyer&#39;s `User.permissions`, union-style). |
+| permissions | [Permission](#rellm-Permission) | repeated | The permissions this purchase granted -- see `logic::market::market_fulfillment::fulfill_purchase`&#39;s `PermissionsAccess` arm (adds these to the buyer&#39;s `User.permissions`, union-style). |
 | name | [string](#string) |  | Admin-authored product name shown for this purchase (e.g. on `/market/fulfillment`&#39;s billing history) -- copied from `PermissionsAccessSubscriptionDetails.name` at the moment this purchase was fulfilled. Unlike the other three purchase-detail messages&#39; implicit, Elm-computed display names, permissions-access products have no fixed bundle of permissions to describe generically, so an admin names/describes each one by hand. |
 | description | [string](#string) |  | Admin-authored, Markdown-formatted product description -- copied from `PermissionsAccessSubscriptionDetails.description` the same way `name` above is. |
 
@@ -5090,13 +5090,13 @@ specifically (never this message) when clawing back a lapsed grant.
 `MarketProduct.details`/`MarketSubscription.details`&#39; `PURCHASE_TYPE_PERMISSIONS_ACCESS`
 variant -- what a permissions-bundle product actually grants. Field-for-field identical to
 `PermissionsAccessPurchaseDetails` -- see that message&#39;s own doc for why it&#39;s still a distinct
-type (that distinction is exactly what lets `logic::market_fulfillment::terminate_entitlement`
+type (that distinction is exactly what lets `logic::market::market_fulfillment::terminate_entitlement`
 tell &#34;what to claw back&#34; apart from &#34;what was originally billed&#34;).
 
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| permissions | [Permission](#rellm-Permission) | repeated | Which `Permission`s this product/subscription grants the buyer -- see `logic::market_fulfillment::fulfill_purchase`&#39;s `PermissionsAccess` arm (union-added to the buyer&#39;s own `User.permissions`, never replacing what they already had) and `terminate_entitlement`&#39;s own arm (the exact claw-back set on cancellation/expiry). Intentionally excludes permissions dangerous or nonsensical to sell this way -- e.g. &#34;Grant Basic Permissions,&#34; any &#34;Moderate&#34;/&#34;Read All System Messages&#34; permission, &#34;Admin,&#34; &#34;View Private Contact Methods,&#34; and &#34;Edit Cluster Settings&#34; must never appear in a Market product&#39;s own `permissions` list. Enforced server-side on `CreateMarketProduct`/ `UpdateMarketProduct` (rejected with `permission_not_purchasable`) and again on `MakeMarketPurchase` (defense in depth, in case a permission is later removed from the purchasable set after a product granting it already exists) -- see `rpcs::market::create_market_product::PURCHASABLE_PERMISSIONS`. NOTE: that Rust list is an explicit include-list, not an exclude-list -- described here as an exclusion for readability, but implemented as &#34;only these permissions are purchasable&#34; so a newly-added `Permission` is never purchasable by default; it has to be deliberately added to that list. |
+| permissions | [Permission](#rellm-Permission) | repeated | Which `Permission`s this product/subscription grants the buyer -- see `logic::market::market_fulfillment::fulfill_purchase`&#39;s `PermissionsAccess` arm (union-added to the buyer&#39;s own `User.permissions`, never replacing what they already had) and `terminate_entitlement`&#39;s own arm (the exact claw-back set on cancellation/expiry). Intentionally excludes permissions dangerous or nonsensical to sell this way -- e.g. &#34;Grant Basic Permissions,&#34; any &#34;Moderate&#34;/&#34;Read All System Messages&#34; permission, &#34;Admin,&#34; &#34;View Private Contact Methods,&#34; and &#34;Edit Cluster Settings&#34; must never appear in a Market product&#39;s own `permissions` list. Enforced server-side on `CreateMarketProduct`/ `UpdateMarketProduct` (rejected with `permission_not_purchasable`) and again on `MakeMarketPurchase` (defense in depth, in case a permission is later removed from the purchasable set after a product granting it already exists) -- see `rpcs::market::create_market_product::PURCHASABLE_PERMISSIONS`. NOTE: that Rust list is an explicit include-list, not an exclude-list -- described here as an exclusion for readability, but implemented as &#34;only these permissions are purchasable&#34; so a newly-added `Permission` is never purchasable by default; it has to be deliberately added to that list. |
 | name | [string](#string) |  | Admin-authored product name -- unlike `MediaStorageSubscriptionDetails`/`AIGrantSubscriptionDetails`/ `RellmHostingSubscriptionDetails` (which get an implicit, Elm-computed display name from their own fields, since they each describe one fixed kind of thing), a permissions-access product&#39;s `permissions` list can be any admin-chosen bundle, so there&#39;s no generic way to name it automatically. Required for a purchasable product (`CreateMarketProduct`/`UpdateMarketProduct` reject a `PermissionsAccessSubscriptionDetails` with a blank `name`). On a `MarketSubscription`: copied from the originating `MarketProduct.details.name` at the time the subscription was created, same as every other field on this message. |
 | description | [string](#string) |  | Admin-authored, Markdown-formatted product description shown on the product&#39;s own page -- same &#34;no generic implicit description&#34; reasoning as `name` above. On a `MarketSubscription`: copied the same way `name` is. |
 
@@ -5150,7 +5150,7 @@ no `*PurchaseDetails` counterpart, since they&#39;re only ever meaningful on the
 | domain | [string](#string) |  | On a `MarketProduct`: unset/meaningless (a product isn&#39;t tied to any one domain). On a `MarketSubscription`: the domain the buyer wants their new Rellm instance reachable at, from `RellmHostingPurchaseDetails.domain`. |
 | contact_email | [string](#string) |  | On a `MarketProduct`: unset/meaningless. On a `MarketSubscription`: where the fulfilling admin should reach the buyer about this order, from `RellmHostingPurchaseDetails.contact_email`. |
 | additional_information | [string](#string) |  | Immutable after purchase -- the buyer&#39;s own notes to the admin fulfilling this order. Never editable via UpdateMarketSubscription (see that RPC&#39;s own doc); `fulfillment_notes` below is the admin/buyer conversation about fulfilling it. |
-| fulfillment_status | [FulfillmentStatus](#rellm-FulfillmentStatus) |  | Where this Rellm hosting order currently stands -- Rellm hosting is deliberately not automated (see `market.proto`&#39;s own top-of-file notes and `logic::market_fulfillment::fulfill_purchase`&#39;s `RellmHosting` no-op arm), so this is the one manual &#34;how far along is this order&#34; signal, shown on `/market/fulfillment` (`GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN`). Never independently settable by a client -- always server-derived as whatever `fulfillment_notes`&#39; own last entry&#39;s `fulfillment_status` says (or `FULFILLMENT_STATUS_AWAITING_HOST_ADMIN` if `fulfillment_notes` is empty), so this field can never drift out of sync with the history that explains *why* it&#39;s in that state. |
+| fulfillment_status | [FulfillmentStatus](#rellm-FulfillmentStatus) |  | Where this Rellm hosting order currently stands -- Rellm hosting is deliberately not automated (see `market.proto`&#39;s own top-of-file notes and `logic::market::market_fulfillment::fulfill_purchase`&#39;s `RellmHosting` no-op arm), so this is the one manual &#34;how far along is this order&#34; signal, shown on `/market/fulfillment` (`GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN`). Never independently settable by a client -- always server-derived as whatever `fulfillment_notes`&#39; own last entry&#39;s `fulfillment_status` says (or `FULFILLMENT_STATUS_AWAITING_HOST_ADMIN` if `fulfillment_notes` is empty), so this field can never drift out of sync with the history that explains *why* it&#39;s in that state. |
 | fulfillment_notes | [FulfillmentNote](#rellm-FulfillmentNote) | repeated | The admin/buyer conversation about fulfilling this order -- oldest to newest, append-only (see `UpdateMarketSubscription`&#39;s own doc: a new entry can only ever be appended after whatever&#39;s already here, never inserted/reordered/removed, and its `user_id` must match whoever&#39;s actually making the request -- the server stamps `created_at` itself). |
 
 
@@ -5206,7 +5206,7 @@ created (see that message&#39;s own doc) -- same reasoning as `PurchaseType`&#39
 
 ### PurchaseType
 What a `MarketProduct`/`MarketPurchase`/`MarketSubscription` actually grants the buyer once
-fulfilled -- see `logic::market_fulfillment::fulfill_purchase` (the Rust match on this same enum)
+fulfilled -- see `logic::market::market_fulfillment::fulfill_purchase` (the Rust match on this same enum)
 for exactly what each value does. Immutable on a `MarketProduct` once created (see that message&#39;s
 own doc) -- changing what a product *is* after people have already bought it would silently
 change existing buyers&#39; entitlements out from under them, so a product whose type needs to change
@@ -5217,7 +5217,7 @@ is delisted and replaced with a new one instead.
 | PURCHASE_TYPE_MEDIA_STORAGE | 0 | Extra media storage allocation -- fulfillment sets the buyer&#39;s `User.media_storage_limit_bytes` to `MediaStoragePurchaseDetails.allocation_bytes` outright (not additive with any existing quota). On cancellation/expiry, reverts to the server&#39;s current configured default allocation (`ServerConfiguration.media_settings.default_user_media_allocation_bytes`), not to unlimited. |
 | PURCHASE_TYPE_AI_GRANTS | 1 | AI provider token grants -- fulfillment resets (never adds to) the buyer&#39;s `AIProviderGrant.tokens_remaining` for `AIGrantPurchaseDetails.ai_provider_id`/`model_names` to `AIGrantPurchaseDetails.tokens`, same &#34;reset, don&#39;t add&#34; semantics every renewal uses. Not automatically revoked on cancellation/expiry -- whatever tokens remain when the subscription lapses just aren&#39;t replenished again. |
 | PURCHASE_TYPE_RELLM_HOSTING | 2 | A dedicated Rellm server instance, hosted and administered by Jon. Deliberately NOT automated -- fulfillment applies no entitlement at all; an admin provisions the server by hand and tracks progress via `RellmHostingSubscriptionDetails.fulfillment_status`/`fulfillment_notes` on the `/market/fulfillment` admin page. Not automatically revoked on cancellation/expiry either (out of scope for this MVP -- an admin handles teardown manually too). |
-| PURCHASE_TYPE_PERMISSIONS_ACCESS | 3 | A bundle of `Permission`s (e.g. `SYNC_EVENTS_TO_FACEBOOK`) granted directly to the buyer&#39;s own `User.permissions`, union-style -- fulfillment only ever adds permissions the buyer doesn&#39;t already have from some other source, never removes any. Unlike the other three types, this ONE eventually claws back what it granted: once cancellation/expiry actually takes effect (see `MarketSubscription.canceled_at`/`service_terminated_at`), `logic::market_fulfillment:: terminate_entitlement` removes exactly the permissions this subscription granted (a plain set difference, not a reconciliation against any other subscription/grant the buyer might also hold). |
+| PURCHASE_TYPE_PERMISSIONS_ACCESS | 3 | A bundle of `Permission`s (e.g. `SYNC_EVENTS_TO_FACEBOOK`) granted directly to the buyer&#39;s own `User.permissions`, union-style -- fulfillment only ever adds permissions the buyer doesn&#39;t already have from some other source, never removes any. Unlike the other three types, this ONE eventually claws back what it granted: once cancellation/expiry actually takes effect (see `MarketSubscription.canceled_at`/`service_terminated_at`), `logic::market::market_fulfillment:: terminate_entitlement` removes exactly the permissions this subscription granted (a plain set difference, not a reconciliation against any other subscription/grant the buyer might also hold). |
 
 
  

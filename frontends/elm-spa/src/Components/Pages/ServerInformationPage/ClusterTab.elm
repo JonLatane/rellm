@@ -370,7 +370,7 @@ fetchAuthenticatedServerConfiguration shared targetHost account =
 {-| Calls `FreeClusterResources`, authenticated as `account` -- see that RPC's own doc on why an
 `EDIT_CLUSTER_SETTINGS` admin can free _any_ namespace's lock this way (`namespaceId` here is the
 lock's holder, not necessarily `account`'s own), unlike the cluster-internal
-`cluster-shared-secret` path `generate_preview_images` itself uses.
+`cluster-shared-secret` path `generate_link_preview_images` itself uses.
 -}
 freeClusterResource : Shared.Model -> String -> RellmAccount -> String -> ClusterResource -> Effect Msg
 freeClusterResource shared targetHost account namespaceId resource =

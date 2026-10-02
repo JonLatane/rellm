@@ -82,8 +82,9 @@ release_be_build_binary: ../../backend/target/release/rellm__server_release
 	cd ../.. && mv backend/target/release/disable_cdn_grpc backend/target/release/disable_cdn_grpc__server_release
 	cd ../.. && mv backend/target/release/delete_expired_tokens backend/target/release/delete_expired_tokens__server_release
 	cd ../.. && mv backend/target/release/delete_unowned_media backend/target/release/delete_unowned_media__server_release
-	cd ../.. && mv backend/target/release/generate_preview_images backend/target/release/generate_preview_images__server_release
+	cd ../.. && mv backend/target/release/generate_link_preview_images backend/target/release/generate_link_preview_images__server_release
 	cd ../.. && mv backend/target/release/delete_preview_images backend/target/release/delete_preview_images__server_release
+	cd ../.. && mv backend/target/release/regenerate_link_preview_images_for_post backend/target/release/regenerate_link_preview_images_for_post__server_release
 	cd ../.. && mv backend/target/release/set_permission backend/target/release/set_permission__server_release
 	cd ../.. && mv backend/target/release/to_db_id backend/target/release/to_db_id__server_release
 	cd ../.. && mv backend/target/release/to_proto_id backend/target/release/to_proto_id__server_release

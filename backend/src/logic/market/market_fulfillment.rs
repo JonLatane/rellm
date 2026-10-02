@@ -1,6 +1,6 @@
 //! Applies the actual entitlement for a completed Marketplace purchase -- called from both
 //! `web::stripe_webhook` (the initial purchase, on `checkout.session.completed`) and
-//! `logic::market_renewal` (every subsequent recurring charge). Never called from
+//! `logic::market::market_renewal` (every subsequent recurring charge). Never called from
 //! `rpcs::market::make_market_purchase` itself -- see that RPC's own doc on why fulfillment is
 //! webhook/renewal-driven only.
 
@@ -72,7 +72,7 @@ pub fn fulfill_purchase(
         // source) -- "just grant the permissions to the subscribed user," per Jon's own framing.
         // Unlike `AiGrants`, a lapsed/canceled `PermissionsAccess` subscription *does* eventually
         // claw back the permissions it granted -- see `terminate_entitlement` below -- just not
-        // immediately: the entitlement stays in effect until `logic::market_renewal`'s
+        // immediately: the entitlement stays in effect until `logic::market::market_renewal`'s
         // `terminate_subscriptions_of_type` finds both `renews_at`/`canceled_at` have passed, same
         // no-retry/no-reconciliation MVP simplicity as the rest of this module.
         PurchaseType::PermissionsAccess => {
@@ -109,7 +109,7 @@ pub fn fulfill_purchase(
 /// shape `market_marshaling::subscription_details_to_proto` uses, NOT the `*PurchaseDetails` shape
 /// `fulfill_purchase` itself parses -- field-for-field identical for every variant today, but the
 /// distinct Rust types matter for `PermissionsAccess` below). Called only from
-/// `logic::market_renewal::terminate_subscriptions_of_type`, once a subscription's cancellation has
+/// `logic::market::market_renewal::terminate_subscriptions_of_type`, once a subscription's cancellation has
 /// actually taken effect (see that function's own doc).
 pub fn terminate_entitlement(
     purchase_type: PurchaseType,

@@ -1,4 +1,4 @@
-//! Specs for `logic::bluesky_sync`'s AT Protocol interaction correctness (session creation,
+//! Specs for `logic::sync_destinations::bluesky_sync`'s AT Protocol interaction correctness (session creation,
 //! posting, and proactive text truncation), run against `factories::serve_bluesky_api` instead of
 //! the real Bluesky API. RPC-level permission/ownership handling is covered separately by
 //! `sync_destination_rpc_tests`/`post_sync_rpc_tests`.

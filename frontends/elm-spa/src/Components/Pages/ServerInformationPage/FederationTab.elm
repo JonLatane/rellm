@@ -3,7 +3,7 @@ module Components.Pages.ServerInformationPage.FederationTab exposing (Model, Msg
 {-| The Federation tab of `Components.Pages.ServerInformationPage` -- the server's federated-server
 chip strip (add/remove/reorder-animated via `UI.Flip`, see `FederationEdit`'s own doc), and the
 Facebook App ID/Secret an admin connects so users can create Facebook/Instagram Sync Destinations
-for their Posts and Occasions (see `logic::facebook_sync` on the backend). Both are backed by fields
+for their Posts and Occasions (see `logic::sync_destinations::facebook_sync` on the backend). Both are backed by fields
 on the same `ServerConfiguration` (`federationInfo`/`federationInfo.facebookAuthConfig`), saved
 through the same `AccountsPanel.updateServerConfig` "fetch fresh copy, then write" dance every other
 editor on this page uses. (The Web Push VAPID key editor used to live here too -- moved to
@@ -1671,7 +1671,7 @@ facebookAppSecretRow maybeEdit maybeAdminAccount =
 {-| Mirrors `facebookAuthConfigSection` exactly, against `federationInfo.xTwitterAuthConfig`
 instead -- one admin-registered X Developer App (Client ID + Client Secret), shared by every user's
 own connected `XTwitterAccount` (see `protos/sync.proto`'s doc on that message, and
-`logic::x_twitter_sync` on the backend).
+`logic::sync_destinations::x_twitter_sync` on the backend).
 -}
 xTwitterAuthConfigSection : RellmServer -> Model -> Maybe RellmAccount -> Html Msg
 xTwitterAuthConfigSection server model maybeAdminAccount =

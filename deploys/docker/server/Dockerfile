@@ -30,7 +30,7 @@ COPY backend/target/release/repair_email_messages__server_release /opt/repair_em
 COPY backend/target/release/fix_duplicate_synced_events__server_release /opt/fix_duplicate_synced_events
 
 # TODO(2026-09-13): one-off cleanup for resized (small/medium/large) video Media re-muxed to MP4 by
-# logic::media_conversion::resized_content_type (see its own doc comment -- Chrome refuses to play
+# logic::media::media_conversion::resized_content_type (see its own doc comment -- Chrome refuses to play
 # video/quicktime inline when a media URL is navigated to directly) -- delete this binary
 # (backend/src/bin/reencode_quicktime_media.rs), this COPY line, and its entry in
 # server_ci_cd.yml's "Rename Rust binaries for Dockerfiles" step once it's been run against every
@@ -52,7 +52,7 @@ COPY backend/target/release/to_proto_id__server_release /opt/to_proto_id
 
 # Browser preview generator job binary. NOTE: USELESS (crashes) without a Chrome instance running against
 # port 9222. See the Dockerfile in backend/docker/preview_generator for setup steps for Brave.
-COPY backend/target/release/generate_preview_images__server_release /opt/generate_preview_images
+COPY backend/target/release/generate_link_preview_images__server_release /opt/generate_link_preview_images
 
 # Flutter web app release (served from the filesystem by Rocket within Rellm)
 COPY frontends/flutter/build/web/ /opt/flutter_web

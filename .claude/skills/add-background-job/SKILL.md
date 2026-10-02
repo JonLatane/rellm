@@ -8,7 +8,7 @@ Rellm's background jobs are small standalone binaries under `backend/src/bin/*.r
 ## 1. The binary: `backend/src/bin/<job_name>.rs`
 
 - Put the actual logic in `backend/src/logic/` (e.g. `logic/event_sync.rs`) if it's non-trivial or needs to be unit-testable/reused by an RPC handler; keep the `bin/` file itself thin (connect, query what's due, call logic, log, exit).
-- Boilerplate (copy `delete_expired_tokens.rs` for a sync job, or `delete_unowned_media.rs`/`generate_preview_images.rs` for an async one needing `#[tokio::main]`, e.g. object storage/HTTP):
+- Boilerplate (copy `delete_expired_tokens.rs` for a sync job, or `delete_unowned_media.rs`/`generate_link_preview_images.rs` for an async one needing `#[tokio::main]`, e.g. object storage/HTTP):
   ```rust
   extern crate diesel;
   extern crate rellm;

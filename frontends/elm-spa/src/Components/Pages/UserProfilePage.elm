@@ -718,7 +718,7 @@ initSyncSources =
 login (`fetchFacebookPages`) -- `id`/`name` only. The per-page access token that endpoint also
 returns is never used: the backend re-derives its own long-lived Page token server-side from the
 short-lived _user_ token this page already has, via `FacebookPage.shortLivedUserAccessToken` (see
-`logic::facebook_sync::connect_facebook_page` on the backend).
+`logic::sync_destinations::facebook_sync::connect_facebook_page` on the backend).
 -}
 type alias FacebookPageOption =
     { id : String
@@ -4364,7 +4364,7 @@ startFacebookLogin shared model platform =
 
 {-| `GotFacebookLinkResult (Err err)`'s message, with one friendlier substitution: the server's
 raw `instagram_no_linked_business_account` `FailedPrecondition` message (see
-`logic::facebook_sync::get_linked_instagram_business_account` on the backend) becomes an
+`logic::sync_destinations::instagram_sync::get_linked_instagram_business_account` on the backend) becomes an
 actionable sentence instead of a bare error code -- every other failure (including any other
 Instagram/Facebook error) falls through to the same `AccountsPanel.grpcErrorToString` rendering
 every other RPC failure in this file uses.

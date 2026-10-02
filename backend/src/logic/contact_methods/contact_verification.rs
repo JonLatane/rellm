@@ -15,7 +15,7 @@
 use tonic::{Code, Status};
 
 use crate::db_connection::PgPooledConnection;
-use crate::logic::{bird_sync, telnyx_sync, twilio_sync};
+use crate::logic::{bird_sms, telnyx_sms, twilio_sms};
 use crate::marshaling::ToProtoServerConfiguration;
 use crate::protos::{BirdConfig, ContactProtocol, TelnyxConfig, TwilioConfig, ContactVerificationApi};
 use crate::rpcs::get_server_configuration_model;
@@ -133,7 +133,7 @@ pub fn available_verification_apis(conn: &mut PgPooledConnection) -> Vec<Contact
 /// `available_verification_apis` prefers first. Fails with `verification_not_configured` if no
 /// provider is available. `base_url`, if `Some`, overrides *whichever* provider ends up selected --
 /// lets specs point at a local mock server regardless of which provider they've configured (see
-/// `start_contact_method_verification_at`, and `bird_sync`/`twilio_sync`'s own `_at`-suffixed
+/// `start_contact_method_verification_at`, and `bird_sms`/`twilio_sms`'s own `_at`-suffixed
 /// testable variants).
 pub fn send_verification_sms(
     base_url: Option<&str>,
@@ -146,22 +146,22 @@ pub fn send_verification_sms(
         Some(ContactVerificationApi::Twilio) => {
             let config = server_twilio_config(conn)
                 .ok_or_else(|| Status::new(Code::FailedPrecondition, "twilio_not_configured"))?;
-            let base_url = base_url.unwrap_or(twilio_sync::DEFAULT_BASE_URL);
-            twilio_sync::send_sms_at(base_url, &config, to, &body)
+            let base_url = base_url.unwrap_or(twilio_sms::DEFAULT_BASE_URL);
+            twilio_sms::send_sms_at(base_url, &config, to, &body)
         }
         Some(ContactVerificationApi::Bird) => {
             let config = server_bird_config(conn)
                 .ok_or_else(|| Status::new(Code::FailedPrecondition, "bird_not_configured"))?;
             let base_url = base_url
                 .map(|u| u.to_string())
-                .unwrap_or_else(|| bird_sync::default_base_url(&config.bird_region));
-            bird_sync::send_sms_at(&base_url, &config, to, &body)
+                .unwrap_or_else(|| bird_sms::default_base_url(&config.bird_region));
+            bird_sms::send_sms_at(&base_url, &config, to, &body)
         }
         Some(ContactVerificationApi::Telnyx) => {
             let config = server_telnyx_config(conn)
                 .ok_or_else(|| Status::new(Code::FailedPrecondition, "telnyx_not_configured"))?;
-            let base_url = base_url.unwrap_or(telnyx_sync::DEFAULT_BASE_URL);
-            telnyx_sync::send_sms_at(base_url, &config, to, &body)
+            let base_url = base_url.unwrap_or(telnyx_sms::DEFAULT_BASE_URL);
+            telnyx_sms::send_sms_at(base_url, &config, to, &body)
         }
         None => Err(Status::new(
             Code::FailedPrecondition,

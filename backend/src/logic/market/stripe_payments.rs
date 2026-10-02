@@ -1,5 +1,5 @@
 //! REST calls to Stripe's API (`api.stripe.com`), backing `protos/market.proto`'s Rellm
-//! Marketplace -- mirrors `logic::twilio_sync`'s `_at`-suffixed testable shape (Bearer auth,
+//! Marketplace -- mirrors `logic::twilio_sms`'s `_at`-suffixed testable shape (Bearer auth,
 //! form-encoded body, since Stripe's REST API is form-encoded exactly like Twilio's). No Stripe
 //! SDK crate -- plain `reqwest`, same as every other external-provider integration in this repo.
 
@@ -14,7 +14,7 @@ pub const DEFAULT_BASE_URL: &str = "https://api.stripe.com";
 
 /// This server's own `StripeConfig`, straight off the DB (not admin-stripped -- only ever called
 /// from server-side logic, never handed to a client) -- mirrors
-/// `logic::contact_verification::server_twilio_config`/`server_bird_config`.
+/// `logic::contact_methods::contact_verification::server_twilio_config`/`server_bird_config`.
 pub fn server_stripe_config(conn: &mut PgPooledConnection) -> Option<StripeConfig> {
     get_server_configuration_model(conn)
         .ok()
@@ -24,7 +24,7 @@ pub fn server_stripe_config(conn: &mut PgPooledConnection) -> Option<StripeConfi
 
 /// Same as `server_stripe_config`, but additionally requires `stripe_enabled` and a non-blank
 /// `stripe_secret_key` -- what every real caller (`rpcs::market::make_market_purchase`,
-/// `logic::market_renewal`) actually needs before it can call the Stripe API at all.
+/// `logic::market::market_renewal`) actually needs before it can call the Stripe API at all.
 pub fn usable_server_stripe_config(conn: &mut PgPooledConnection) -> Option<StripeConfig> {
     server_stripe_config(conn).filter(|c| c.stripe_enabled && !c.stripe_secret_key.is_empty())
 }
@@ -112,7 +112,7 @@ pub fn sanitize_statement_descriptor(raw: &str) -> String {
 /// so the resulting PaymentMethod can be reused for off-session renewal charges later) and returns
 /// its hosted `url` to redirect the buyer's browser to. See `rpcs::market::make_market_purchase`
 /// for the one real caller; `base_url` is only ever overridden by specs (pointed at a local mock
-/// server instead of the real Stripe API, mirroring `twilio_sync::send_sms_at`).
+/// server instead of the real Stripe API, mirroring `twilio_sms::send_sms_at`).
 pub fn create_checkout_session_at(
     base_url: &str,
     secret_key: &str,
@@ -297,7 +297,7 @@ pub struct OffSessionPaymentIntentResult {
 }
 
 /// Charges a renewal via a previously-saved Customer/PaymentMethod pair (`off_session=true,
-/// confirm=true`) -- used by `logic::market_renewal`. Returns `Err` (mapped by the caller to
+/// confirm=true`) -- used by `logic::market::market_renewal`. Returns `Err` (mapped by the caller to
 /// "cancel the subscription, no retry" -- see `market_renewal`'s own doc) on any non-`succeeded`
 /// result, including one requiring further authentication (`requires_action`), since there's no
 /// user present to complete it off-session.

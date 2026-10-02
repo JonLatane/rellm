@@ -9,7 +9,7 @@
 use tonic::{Code, Status};
 
 use crate::logic::http_client::{blocking_json_request, run_blocking};
-use crate::logic::sync_message::truncate_for_bluesky;
+use crate::logic::truncate_for_bluesky;
 use crate::logic::{MediaAttachment, SyncMessage};
 use crate::models;
 

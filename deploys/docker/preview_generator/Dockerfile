@@ -1,17 +1,19 @@
 FROM --platform=linux/amd64 debian:testing-slim
 
-# The preview generator image only includes the background job binary and a tool to delete images. Other Rellm binaries aren't really useful;
+# The preview generator image only includes the background job binary, a tool to delete images, and a one-off tool to regenerate one post's previews. Other Rellm binaries aren't really useful;
 # the bulk of this image will be the Chrome distro included.
 #
-# generate_preview_images launches its own headless Brave instance internally (see start_browser()
-# in backend/src/bin/generate_preview_images.rs) -- it doesn't need one already running. The
+# generate_link_preview_images launches its own headless Brave instance internally (see start_browser()
+# in backend/src/logic/media/link_preview_generation.rs) -- it doesn't need one already running. The
 # entrypoint just loops that binary on an interval via preview_generator_job.sh, run as a single
 # persistent pod (deploys/k8s/preview_generator.yaml) rather than a per-invocation K8s CronJob.
-COPY backend/target/release/generate_preview_images__server_release /opt/generate_preview_images
+COPY backend/target/release/generate_link_preview_images__server_release /opt/generate_link_preview_images
 COPY backend/target/release/delete_preview_images__server_release /opt/delete_preview_images
+# One-off: regenerate previews for a single post ID (integer or proto ID), even if it already has some.
+COPY backend/target/release/regenerate_link_preview_images_for_post__server_release /opt/regenerate_link_preview_images_for_post
 
-# Runs generate_preview_images on a loop -- see backend/preview_generator_job.sh. Lives
-# alongside it in /opt, unsuffixed, so its "./generate_preview_images" call finds it directly.
+# Runs generate_link_preview_images on a loop -- see backend/preview_generator_job.sh. Lives
+# alongside it in /opt, unsuffixed, so its "./generate_link_preview_images" call finds it directly.
 COPY backend/preview_generator_job.sh /opt/preview_generator_job.sh
 
 # Setup the environment for the preview generator.

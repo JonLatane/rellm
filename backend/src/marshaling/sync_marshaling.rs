@@ -166,8 +166,8 @@ pub fn attach_synced_counts(destinations: &mut [SyncDestination], conn: &mut PgP
 /// {"handle", "did", "app_password"}}`, `{"x_twitter_account": {"x_user_id", "username",
 /// "access_token", "refresh_token", "expires_at"}}`. The secret field in each (`access_token`/
 /// `app_password`/`refresh_token`) is intentionally never
-/// surfaced back here; it's server-side only (see `logic::facebook_sync`/`logic::mastodon_sync`/
-/// `logic::bluesky_sync`/`logic::x_twitter_sync`).
+/// surfaced back here; it's server-side only (see `logic::sync_destinations::facebook_sync`/`logic::sync_destinations::mastodon_sync`/
+/// `logic::sync_destinations::bluesky_sync`/`logic::sync_destinations::x_twitter_sync`).
 pub fn destination_configuration_to_proto(
     configuration: &serde_json::Value,
 ) -> Option<sync_destination::Configuration> {

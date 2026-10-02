@@ -127,7 +127,7 @@ fn create_succeeds_with_only_sync_posts_to_facebook_permission() {
 
         // Once an app is configured, create_sync_destination goes on to hit the real Graph API
         // base URL, which isn't reachable in tests -- see `facebook_sync_tests` for coverage of
-        // the actual Graph API interaction (against a mock server) via `logic::facebook_sync`'s
+        // the actual Graph API interaction (against a mock server) via `logic::sync_destinations::facebook_sync`'s
         // `_at` functions. Reaching `FailedPrecondition` (rather than the permission check's
         // `InvalidArgument`) proves `SyncPostsToFacebook` alone is sufficient here.
         let err = create_sync_destination(
@@ -192,7 +192,7 @@ fn create_succeeds_and_owner_is_always_current_user() {
 
         // Once an app is configured, create_sync_destination goes on to hit the real Graph API
         // base URL, which isn't reachable in tests -- see `facebook_sync_tests` for coverage of
-        // the actual Graph API interaction (against a mock server) via `logic::facebook_sync`'s
+        // the actual Graph API interaction (against a mock server) via `logic::sync_destinations::facebook_sync`'s
         // `_at` functions.
         let err = create_sync_destination(
             facebook_page_request("123", "short-lived-token"),
@@ -723,7 +723,7 @@ fn create_threads_account_succeeds_with_only_sync_posts_to_threads_permission() 
         // Once the platform-specific permission passes and the redirect_uri is derivable, this
         // reaches the real (unreachable in tests) `graph.threads.net` -- proving the permission
         // gate, not full connect success (see `threads_sync_tests` for coverage of the actual
-        // Threads Graph API interaction against a mock server via `logic::threads_sync`'s `_at`
+        // Threads Graph API interaction against a mock server via `logic::sync_destinations::threads_sync`'s `_at`
         // functions).
         let err = create_sync_destination(
             threads_account_request("test-code"),
@@ -742,7 +742,7 @@ fn create_threads_account_fails_when_redirect_uri_is_not_derivable() {
     let mut conn = test_conn();
     conn.test_transaction::<_, tonic::Status, _>(|conn| {
         // Facebook app configured, but no `external_cdn_config.frontend_host` -- can't derive the
-        // OAuth `redirect_uri` (see `logic::threads_sync::threads_redirect_uri`).
+        // OAuth `redirect_uri` (see `logic::sync_destinations::threads_sync::threads_redirect_uri`).
         configure_facebook_app(conn, "test-app-id", "test-app-secret");
         let user = create_user(conn, "sdt_th_nohost");
         let user = grant_permissions(conn, &user, vec![Permission::SyncEventsToThreads]);
@@ -834,7 +834,7 @@ fn create_x_twitter_account_succeeds_with_only_sync_posts_to_x_twitter_permissio
         // Once the platform-specific permission passes and the redirect_uri is derivable, this
         // reaches the real (unreachable in tests) `api.x.com`, proving the permission gate, not
         // full connect success (see `x_twitter_sync_tests` for coverage of the actual X API
-        // interaction against a mock server via `logic::x_twitter_sync`'s `_at` functions).
+        // interaction against a mock server via `logic::sync_destinations::x_twitter_sync`'s `_at` functions).
         let err = create_sync_destination(x_twitter_account_request("code", "verifier"), &user, conn)
             .unwrap_err();
         assert_eq!(err.code(), Code::FailedPrecondition);
@@ -848,7 +848,7 @@ fn create_x_twitter_account_fails_when_redirect_uri_is_not_derivable() {
     let mut conn = test_conn();
     conn.test_transaction::<_, tonic::Status, _>(|conn| {
         // X app configured, but no `external_cdn_config.frontend_host` -- can't derive the OAuth
-        // `redirect_uri` (see `logic::x_twitter_sync::x_twitter_redirect_uri`).
+        // `redirect_uri` (see `logic::sync_destinations::x_twitter_sync::x_twitter_redirect_uri`).
         configure_x_twitter_app(conn, "test-client-id", "test-client-secret");
         let user = create_user(conn, "sdt_x_nohost");
         let user = grant_permissions(conn, &user, vec![Permission::SyncEventsToXTwitter]);

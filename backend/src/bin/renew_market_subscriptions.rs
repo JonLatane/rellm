@@ -10,7 +10,7 @@ use rellm::{db_connection, init_bin_logging, init_crypto};
 /// pass -- one binary rather than four, unlike most
 /// other background jobs in this file, since the four types share one table
 /// (`market_subscriptions.product_type` distinguishes them) and the exact same renewal logic
-/// (`logic::market_renewal::renew_subscriptions_of_type`), just filtered differently. Also
+/// (`logic::market::market_renewal::renew_subscriptions_of_type`), just filtered differently. Also
 /// terminates (revokes the entitlement of) every subscription whose cancellation has actually
 /// taken effect via `terminate_subscriptions_of_type` -- see that function's own doc.
 pub fn main() {

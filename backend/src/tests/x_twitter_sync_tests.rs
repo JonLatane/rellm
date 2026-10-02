@@ -1,4 +1,4 @@
-//! Specs for `logic::x_twitter_sync`'s X API v2 interaction correctness (code exchange, token
+//! Specs for `logic::sync_destinations::x_twitter_sync`'s X API v2 interaction correctness (code exchange, token
 //! refresh, `users/me` lookup, posting -- including image upload and the refresh-before-post path)
 //! run against `factories::serve_x_twitter_api`/`factories::serve_capturing` instead of the real X
 //! API. RPC-level permission/ownership handling is covered separately by `sync_destination_rpc_tests`.

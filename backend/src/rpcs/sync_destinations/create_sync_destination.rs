@@ -148,7 +148,7 @@ pub fn create_sync_destination(
             ..
         })) if !handle.trim().is_empty() && !app_password.trim().is_empty() => {
             // Only used to validate the handle/app-password pair (and learn the `did`) -- the
-            // session JWT itself is discarded; `logic::bluesky_sync::post_record` re-authenticates
+            // session JWT itself is discarded; `logic::sync_destinations::bluesky_sync::post_record` re-authenticates
             // fresh on every post instead of storing/refreshing it.
             let (did, _access_jwt) = create_session(&handle, &app_password)?;
             json!({
@@ -167,7 +167,7 @@ pub fn create_sync_destination(
             // One admin-registered X Developer App (`server_x_twitter_app_credentials`) shared by
             // every user's own connected account -- see `XTwitterAccount`'s own proto doc. X
             // mandates PKCE, unlike Threads' plain code exchange, hence `code_verifier` alongside
-            // `authorization_code` (see `logic::x_twitter_sync`'s module doc for why the popup
+            // `authorization_code` (see `logic::sync_destinations::x_twitter_sync`'s module doc for why the popup
             // uses the weaker `plain` PKCE method rather than `S256`).
             let (client_id, client_secret) = server_x_twitter_app_credentials(conn)?;
             let redirect_uri = x_twitter_redirect_uri(conn)?;

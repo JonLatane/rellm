@@ -1,6 +1,6 @@
-//! Sends outbound SMS via Telnyx's Messaging API, for `logic::contact_verification`'s dispatcher --
+//! Sends outbound SMS via Telnyx's Messaging API, for `logic::contact_methods::contact_verification`'s dispatcher --
 //! another Twilio alternative, with a simpler single-API-key auth model like Bird's.
-//! `send_sms_at` mirrors `logic::twilio_sync::send_sms_at`/`logic::bird_sync::send_sms_at`'s own
+//! `send_sms_at` mirrors `logic::twilio_sms::send_sms_at`/`logic::bird_sms::send_sms_at`'s own
 //! `_at`-suffixed testable variants (lets specs point this at a local mock server instead of the
 //! real Telnyx API -- see `factories::serve_capturing`).
 //!

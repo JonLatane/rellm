@@ -9,7 +9,7 @@
 //! - Unlike Facebook/Instagram, there's no "choose a Page" step -- Threads OAuth directly
 //!   authorizes the user's own single Threads account.
 //! - Unlike Instagram, Threads posting supports **text-only** posts -- `post_thread` doesn't
-//!   early-return when `message.media` is empty the way `facebook_sync::post_to_instagram` does.
+//!   early-return when `message.media` is empty the way `instagram_sync::post_to_instagram` does.
 //!
 //! Threads API is a product/"use case" added to this server's *existing* Meta App (see
 //! `FacebookAuthConfig`/`server_facebook_app_credentials`), not a separately-registered app, so
@@ -214,7 +214,7 @@ pub fn get_username_at(
 /// Instagram, **text-only is valid** -- doesn't early-return on empty `message.media`. A 3-step
 /// flow: create a media container (`media_type=TEXT`/`IMAGE`/`VIDEO` depending on `message.media`),
 /// publish it, then fetch the published post's real `permalink` (the publish step only returns an
-/// opaque ID) -- mirrors `facebook_sync::post_to_instagram`'s shape. Returns `(post_id, permalink)`.
+/// opaque ID) -- mirrors `instagram_sync::post_to_instagram`'s shape. Returns `(post_id, permalink)`.
 pub fn post_thread(
     destination: &models::SyncDestination,
     message: &SyncMessage,
@@ -255,7 +255,7 @@ pub fn post_thread_at(
         }
         Some(media) => {
             // Default to IMAGE for anything that isn't explicitly video (mirrors
-            // `facebook_sync::post_to_instagram`'s image-by-default handling).
+            // `instagram_sync::post_to_instagram`'s image-by-default handling).
             create_params.push(("media_type", "IMAGE"));
             create_params.push(("image_url", media.url.as_str()));
         }

@@ -1,4 +1,4 @@
-//! Specs for `logic::threads_sync`'s Graph API interaction correctness (code exchange, long-lived
+//! Specs for `logic::sync_destinations::threads_sync`'s Graph API interaction correctness (code exchange, long-lived
 //! token exchange, username lookup, posting -- including media type selection), run against
 //! `factories::serve_threads_api`/`factories::serve_capturing` instead of the real Threads API.
 //! RPC-level permission/ownership handling is covered separately by `sync_destination_rpc_tests`.

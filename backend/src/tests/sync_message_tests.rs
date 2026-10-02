@@ -1,4 +1,4 @@
-//! Specs for `logic::sync_message`'s `SyncMessage` builders and Bluesky truncation helper --
+//! Specs for `logic::sync_destinations::sync_message`'s `SyncMessage` builders and Bluesky truncation helper --
 //! pure functions, no network/DB involved.
 
 use chrono::TimeZone;

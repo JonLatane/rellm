@@ -1,5 +1,5 @@
-//! Sends outbound SMS via Twilio's Programmable Messaging REST API, for `logic::contact_verification`'s
-//! dispatcher. `send_sms_at` mirrors `logic::x_twitter_sync`'s own `_at`-suffixed testable variants
+//! Sends outbound SMS via Twilio's Programmable Messaging REST API, for `logic::contact_methods::contact_verification`'s
+//! dispatcher. `send_sms_at` mirrors `logic::sync_destinations::x_twitter_sync`'s own `_at`-suffixed testable variants
 //! (lets specs point this at a local mock server instead of the real Twilio API -- see
 //! `factories::serve_capturing`).
 

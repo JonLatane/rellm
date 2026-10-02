@@ -1,4 +1,4 @@
-# A single persistent pod that loops generate_preview_images on an interval (see
+# A single persistent pod that loops generate_link_preview_images on an interval (see
 # backend/preview_generator_job.sh, baked into this image's ENTRYPOINT). Replaced the old
 # per-minute `generate-preview-images` CronJob -- that many Job executions piling up across
 # every tenant namespace at once was adding to cluster resource pressure.

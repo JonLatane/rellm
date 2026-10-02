@@ -1,7 +1,7 @@
 //! Cluster-wide resource locking for `bin/` background jobs -- see `ClusterResources`'s own doc in
 //! server_configuration.proto for the overall design (a "conductor" instance brokers
 //! `LockClusterResources`/`FreeClusterResources` for every instance in a cluster, including
-//! itself). Shared between `bin/generate_preview_images.rs` (the `CLUSTER_RESOURCE_BROWSER` job
+//! itself). Shared between `bin/generate_link_preview_images.rs` (the `CLUSTER_RESOURCE_BROWSER` job
 //! that motivated all of this) and `bin/convert_media_sizes.rs` (`CLUSTER_RESOURCE_FFMPEG`/
 //! `CLUSTER_RESOURCE_IMAGEMAGICK`), so both jobs poll/connect/release identically.
 

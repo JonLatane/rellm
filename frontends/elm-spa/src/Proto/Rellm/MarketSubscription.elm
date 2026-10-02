@@ -21,8 +21,8 @@ import Proto.Rellm.Internals_
  originating `MarketProduct.details` at creation time (or, for `PURCHASE_TYPE_RELLM_HOSTING`,
  built from the buyer's own checkout-time input -- see `RellmHostingPurchaseDetails`'s own doc
  for the same caveat that applies here), frozen from then on even if the product later changes.
- Re-applied on every renewal via `logic::market_fulfillment::fulfill_purchase`, and read back by
- `logic::market_fulfillment::terminate_entitlement` to know exactly what to claw back on
+ Re-applied on every renewal via `logic::market::market_fulfillment::fulfill_purchase`, and read back by
+ `logic::market::market_fulfillment::terminate_entitlement` to know exactly what to claw back on
  cancellation.
 
 

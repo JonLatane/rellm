@@ -1,7 +1,7 @@
 //! Sends outbound SMS via Bird's (bird.com, formerly MessageBird) Messages API, for
-//! `logic::contact_verification`'s dispatcher -- a cheaper Twilio alternative with a simpler,
-//! single-API-key auth model. `send_sms_at` mirrors `logic::twilio_sync::send_sms_at`/
-//! `logic::x_twitter_sync`'s own `_at`-suffixed testable variants (lets specs point this at a local
+//! `logic::contact_methods::contact_verification`'s dispatcher -- a cheaper Twilio alternative with a simpler,
+//! single-API-key auth model. `send_sms_at` mirrors `logic::twilio_sms::send_sms_at`/
+//! `logic::sync_destinations::x_twitter_sync`'s own `_at`-suffixed testable variants (lets specs point this at a local
 //! mock server instead of the real Bird API -- see `factories::serve_capturing`).
 //!
 //! API shape (`docs.bird.com`): `POST https://{region}.platform.bird.com/v1/sms/messages`,

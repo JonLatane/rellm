@@ -14,7 +14,7 @@ import 'dart:core' as $core;
 import 'package:protobuf/protobuf.dart' as $pb;
 
 /// What a `MarketProduct`/`MarketPurchase`/`MarketSubscription` actually grants the buyer once
-/// fulfilled -- see `logic::market_fulfillment::fulfill_purchase` (the Rust match on this same enum)
+/// fulfilled -- see `logic::market::market_fulfillment::fulfill_purchase` (the Rust match on this same enum)
 /// for exactly what each value does. Immutable on a `MarketProduct` once created (see that message's
 /// own doc) -- changing what a product *is* after people have already bought it would silently
 /// change existing buyers' entitlements out from under them, so a product whose type needs to change

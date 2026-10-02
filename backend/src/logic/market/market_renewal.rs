@@ -8,7 +8,7 @@ use diesel::*;
 use tonic::Status;
 
 use crate::db_connection::PgPooledConnection;
-use crate::logic::{fulfill_purchase, stripe_sync, terminate_entitlement};
+use crate::logic::{fulfill_purchase, stripe_payments, terminate_entitlement};
 use crate::marshaling::{ToProtoId, ToStringPurchaseType};
 use crate::models;
 use crate::protos::*;
@@ -36,7 +36,7 @@ pub fn renew_subscriptions_of_type(
     // `usable_server_stripe_config`, not `get_server_configuration_proto(conn)?.stripe_config` --
     // see `rpcs::market::make_market_purchase`'s identical comment: the proto form always blanks
     // `stripe_secret_key`.
-    let Some(stripe_config) = stripe_sync::usable_server_stripe_config(conn) else {
+    let Some(stripe_config) = stripe_payments::usable_server_stripe_config(conn) else {
         log::warn!(
             "{} subscriptions due to renew, but Stripe isn't configured -- ending them all",
             due.len()
@@ -75,12 +75,12 @@ fn renew_one(
         .stripe_payment_method_id
         .clone()
         .ok_or_else(|| Status::new(tonic::Code::FailedPrecondition, "no_stripe_payment_method_on_file"))?;
-    let currency = stripe_sync::currency_code(subscription.currency as u32)?;
+    let currency = stripe_payments::currency_code(subscription.currency as u32)?;
 
-    let result = stripe_sync::create_off_session_payment_intent_at(
-        stripe_sync::DEFAULT_BASE_URL,
+    let result = stripe_payments::create_off_session_payment_intent_at(
+        stripe_payments::DEFAULT_BASE_URL,
         &stripe_config.stripe_secret_key,
-        stripe_sync::OffSessionPaymentIntentParams {
+        stripe_payments::OffSessionPaymentIntentParams {
             customer_id,
             payment_method_id: payment_method_id.clone(),
             currency,
@@ -94,8 +94,8 @@ fn renew_one(
     // Best-effort -- a card lookup failure shouldn't fail an otherwise-successful renewal charge,
     // it just means this MarketPayment's `method` goes unset (same as any other resolution
     // failure -- see `marshaling::method_json_to_market_payment_method`'s own doc).
-    let method_json = stripe_sync::get_payment_method_card_at(
-        stripe_sync::DEFAULT_BASE_URL,
+    let method_json = stripe_payments::get_payment_method_card_at(
+        stripe_payments::DEFAULT_BASE_URL,
         &stripe_config.stripe_secret_key,
         &payment_method_id,
     )
@@ -171,7 +171,7 @@ fn end_subscription(subscription_id: i64, conn: &mut PgPooledConnection) {
 /// cancellation: `CancelMarketSubscription`/a failed renewal charge only ever sets `canceled_at`,
 /// leaving the entitlement (media storage quota, granted permissions) in effect until whichever
 /// is later of `renews_at`/`canceled_at` has passed -- this function is what actually claws the
-/// entitlement back, via `logic::market_fulfillment::terminate_entitlement`, once that's true, and
+/// entitlement back, via `logic::market::market_fulfillment::terminate_entitlement`, once that's true, and
 /// stamps `service_terminated_at` so it's never reprocessed. Same "one bad row never blocks the
 /// batch" philosophy as `renew_subscriptions_of_type`: a `terminate_entitlement` failure for one
 /// subscription is logged and skipped (its `service_terminated_at` stays unset, so it's retried

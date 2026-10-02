@@ -177,7 +177,7 @@ async fn bird_receive(
 
     // Bird's webhook envelope is `{"type": "<event>", "data": {...}}`; only `sms.received` (an
     // inbound SMS) matters here. `data.from`/`data.text` mirror the plain `to`/`from`/`text` shape
-    // Bird's own SMS Messages API resource uses (see `logic::bird_sync`'s own doc) -- `data.body`
+    // Bird's own SMS Messages API resource uses (see `logic::bird_sms`'s own doc) -- `data.body`
     // is also accepted since Bird's exact inbound field name isn't publicly documented as of this
     // writing.
     if event.get("type").and_then(Value::as_str) != Some("sms.received") {
