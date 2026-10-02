@@ -11,7 +11,6 @@ module UI.Flip exposing
     , enter
     , flipDurationMs
     , itemAttributes
-    , measure
     , measureElementsCmd
     , measuredResults
     , moveAnimate

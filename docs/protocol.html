@@ -8413,25 +8413,19 @@ directory</a> is (<code>{name}</code> denotes a
           <td>A list of servers that this server will federate with.</td>
         </tr>
         <tr>
-          <td>facebook_auth_config</td>
-          <td><a href="#rellm-FacebookAuthConfig">FacebookAuthConfig</a></td>
+          <td>unsecure_localhost_federated_auth_enabled</td>
+          <td><a href="#bool">bool</a></td>
           <td>optional</td>
-          <td>Facebook authentication configuration for the server. If set, allows users to create Facebook (and Instagram) SyncDestinations for their Posts and Occasions.</td>
-        </tr>
-        <tr>
-          <td>x_twitter_auth_config</td>
-          <td><a href="#rellm-XTwitterAuthConfig">XTwitterAuthConfig</a></td>
-          <td>optional</td>
-          <td>X (Twitter) authentication configuration for the server. If set, allows users to create X (Twitter) SyncDestinations for their Posts and Occasions - an admin registers one X Developer App here, and every user on the server connects their own X account through it via OAuth, the same relationship <code>facebook_auth_config</code> has to individual Facebook Pages. Until set, <a href="#rellm-XTwitterAccount"><code>XTwitterAccount</code></a> SyncDestinations always fail with <code>x_twitter_app_not_configured</code>.</td>
-        </tr>
-        <tr>
-          <td>mastodon_servers</td>
-          <td><a href="#rellm-MastodonServer">MastodonServer</a></td>
-          <td>repeated</td>
-          <td>Mastodon instances this server has a registered OAuth app on, letting users connect/read their own account on that instance. Unlike Facebook/X, Mastodon has no single central platform to register an app against - every instance is its own separate OAuth authority, so an admin has to register an app on each instance individually before users on it can connect. If a user's instance isn't listed here, clients should surface a "not configured" alert rather than attempting to open an OAuth popup with no app to authorize against. (A client could instead dynamically self-register a throwaway app with the instance directly, via Mastodon's own <code>POST /api/v1/apps</code>, and skip this entirely - Mastodon itself supports that. But that's a client-side choice the Rellm protocol doesn't get involved in either way: this field only covers the admin-pre-registered path, which is what lets an app ID be shown/reused consistently across every client on this server rather than each one self-registering its own.)</td>
+          <td>If true, this server permits cross-server ("Sign in from...") federated auth to hand tokens to a plaintext <code>http://localhost</code> frontend, for local development. Frontends should otherwise refuse to send/receive federated auth tokens for <code>localhost</code>, and should show a warning to the user whenever they do proceed. Unset (including on servers predating this field) means false.</td>
         </tr>
       </tbody>
     </table>
+    <p>
+      Note this is only a frontend-enforced measure: the backend can't stop a modified client from moving its own tokens wherever it likes. |
+      | facebook_auth_config | <a href="#rellm-FacebookAuthConfig">FacebookAuthConfig</a> | optional | Facebook authentication configuration for the server. If set, allows users to create Facebook (and Instagram) SyncDestinations for their Posts and Occasions. |
+      | x_twitter_auth_config | <a href="#rellm-XTwitterAuthConfig">XTwitterAuthConfig</a> | optional | X (Twitter) authentication configuration for the server. If set, allows users to create X (Twitter) SyncDestinations for their Posts and Occasions - an admin registers one X Developer App here, and every user on the server connects their own X account through it via OAuth, the same relationship <code>facebook_auth_config</code> has to individual Facebook Pages. Until set, <a href="#rellm-XTwitterAccount"><code>XTwitterAccount</code></a> SyncDestinations always fail with <code>x_twitter_app_not_configured</code>. |
+      | mastodon_servers | <a href="#rellm-MastodonServer">MastodonServer</a> | repeated | Mastodon instances this server has a registered OAuth app on, letting users connect/read their own account on that instance. Unlike Facebook/X, Mastodon has no single central platform to register an app against - every instance is its own separate OAuth authority, so an admin has to register an app on each instance individually before users on it can connect. If a user's instance isn't listed here, clients should surface a "not configured" alert rather than attempting to open an OAuth popup with no app to authorize against. (A client could instead dynamically self-register a throwaway app with the instance directly, via Mastodon's own <code>POST /api/v1/apps</code>, and skip this entirely - Mastodon itself supports that. But that's a client-side choice the Rellm protocol doesn't get involved in either way: this field only covers the admin-pre-registered path, which is what lets an app ID be shown/reused consistently across every client on this server rather than each one self-registering its own.) |
+    </p>
     <p><a name="rellm-GetServiceVersionResponse"></a></p>
     <h3 id="getserviceversionresponse"><a class="anchor" aria-hidden="true" tabindex="-1" href="#getserviceversionresponse"><span class="octicon octicon-link"></span></a>GetServiceVersionResponse</h3>
     <p>Version information for the Rellm server.</p>

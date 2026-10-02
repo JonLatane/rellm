@@ -10711,9 +10711,19 @@ type alias Proto__Rellm__FederatedServer =
 
 -}
 fieldNumbersProto__Rellm__FederationInfo :
-    { servers : Int, facebookAuthConfig : Int, xTwitterAuthConfig : Int, mastodonServers : Int }
+    { servers : Int
+    , unsecureLocalhostFederatedAuthEnabled : Int
+    , facebookAuthConfig : Int
+    , xTwitterAuthConfig : Int
+    , mastodonServers : Int
+    }
 fieldNumbersProto__Rellm__FederationInfo =
-    { servers = 1, facebookAuthConfig = 2, xTwitterAuthConfig = 3, mastodonServers = 4 }
+    { servers = 1
+    , unsecureLocalhostFederatedAuthEnabled = 5
+    , facebookAuthConfig = 2
+    , xTwitterAuthConfig = 3
+    , mastodonServers = 4
+    }
 
 
 {-| Default for Proto__Rellm__FederationInfo. Should only be used for 'required' decoders as an initial value.
@@ -10721,7 +10731,12 @@ fieldNumbersProto__Rellm__FederationInfo =
 -}
 defaultProto__Rellm__FederationInfo : Proto__Rellm__FederationInfo
 defaultProto__Rellm__FederationInfo =
-    { servers = [], facebookAuthConfig = Nothing, xTwitterAuthConfig = Nothing, mastodonServers = [] }
+    { servers = []
+    , unsecureLocalhostFederatedAuthEnabled = Nothing
+    , facebookAuthConfig = Nothing
+    , xTwitterAuthConfig = Nothing
+    , mastodonServers = []
+    }
 
 
 {-| Declares how to decode a `Proto__Rellm__FederationInfo` from Bytes. To actually perform the conversion from Bytes, you need to use Protobuf.Decode.decode from eriktim/elm-protocol-buffers.
@@ -10732,6 +10747,10 @@ decodeProto__Rellm__FederationInfo =
     Protobuf.Decode.message
         defaultProto__Rellm__FederationInfo
         [ Protobuf.Decode.repeated 1 decodeProto__Rellm__FederatedServer .servers (\a r -> { r | servers = a })
+        , Protobuf.Decode.optional
+            5
+            (Protobuf.Decode.map Just Protobuf.Decode.bool)
+            (\a r -> { r | unsecureLocalhostFederatedAuthEnabled = a })
         , Protobuf.Decode.optional
             2
             (Protobuf.Decode.map Just decodeProto__Rellm__FacebookAuthConfig)
@@ -10755,6 +10774,10 @@ encodeProto__Rellm__FederationInfo : Proto__Rellm__FederationInfo -> Protobuf.En
 encodeProto__Rellm__FederationInfo value =
     Protobuf.Encode.message
         [ ( 1, (Protobuf.Encode.list encodeProto__Rellm__FederatedServer) value.servers )
+        , ( 5
+          , (Maybe.map Protobuf.Encode.bool >> Maybe.withDefault Protobuf.Encode.none)
+                value.unsecureLocalhostFederatedAuthEnabled
+          )
         , ( 2
           , (Maybe.map encodeProto__Rellm__FacebookAuthConfig >> Maybe.withDefault Protobuf.Encode.none)
                 value.facebookAuthConfig
@@ -10772,6 +10795,7 @@ encodeProto__Rellm__FederationInfo value =
 -}
 type alias Proto__Rellm__FederationInfo =
     { servers : List Proto__Rellm__FederatedServer
+    , unsecureLocalhostFederatedAuthEnabled : Maybe Bool
     , facebookAuthConfig : Maybe Proto__Rellm__FacebookAuthConfig
     , xTwitterAuthConfig : Maybe Proto__Rellm__XTwitterAuthConfig
     , mastodonServers : List Proto__Rellm__MastodonServer

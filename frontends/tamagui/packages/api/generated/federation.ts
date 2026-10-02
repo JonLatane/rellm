@@ -22,6 +22,18 @@ export interface GetServiceVersionResponse {
 export interface FederationInfo {
   /** A list of servers that this server will federate with. */
   servers: FederatedServer[];
+  /**
+   * If true, this server permits cross-server ("Sign in from...") federated auth to hand tokens to a
+   * plaintext `http://localhost` frontend, for local development. Frontends should otherwise refuse
+   * to send/receive federated auth tokens for `localhost`, and should show a warning to the user
+   * whenever they do proceed. Unset (including on servers predating this field) means false.
+   *
+   * Note this is only a frontend-enforced measure: the backend can't stop a modified client from
+   * moving its own tokens wherever it likes.
+   */
+  unsecureLocalhostFederatedAuthEnabled?:
+    | boolean
+    | undefined;
   /** Facebook authentication configuration for the server. If set, allows users to create Facebook (and Instagram) SyncDestinations for their Posts and Occasions. */
   facebookAuthConfig?:
     | FacebookAuthConfig
@@ -195,13 +207,22 @@ export const GetServiceVersionResponse: MessageFns<GetServiceVersionResponse> = 
 };
 
 function createBaseFederationInfo(): FederationInfo {
-  return { servers: [], facebookAuthConfig: undefined, xTwitterAuthConfig: undefined, mastodonServers: [] };
+  return {
+    servers: [],
+    unsecureLocalhostFederatedAuthEnabled: undefined,
+    facebookAuthConfig: undefined,
+    xTwitterAuthConfig: undefined,
+    mastodonServers: [],
+  };
 }
 
 export const FederationInfo: MessageFns<FederationInfo> = {
   encode(message: FederationInfo, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     for (const v of message.servers) {
       FederatedServer.encode(v!, writer.uint32(10).fork()).join();
+    }
+    if (message.unsecureLocalhostFederatedAuthEnabled !== undefined) {
+      writer.uint32(40).bool(message.unsecureLocalhostFederatedAuthEnabled);
     }
     if (message.facebookAuthConfig !== undefined) {
       FacebookAuthConfig.encode(message.facebookAuthConfig, writer.uint32(18).fork()).join();
@@ -228,6 +249,14 @@ export const FederationInfo: MessageFns<FederationInfo> = {
           }
 
           message.servers.push(FederatedServer.decode(reader, reader.uint32()));
+          continue;
+        }
+        case 5: {
+          if (tag !== 40) {
+            break;
+          }
+
+          message.unsecureLocalhostFederatedAuthEnabled = reader.bool();
           continue;
         }
         case 2: {
@@ -268,6 +297,9 @@ export const FederationInfo: MessageFns<FederationInfo> = {
       servers: globalThis.Array.isArray(object?.servers)
         ? object.servers.map((e: any) => FederatedServer.fromJSON(e))
         : [],
+      unsecureLocalhostFederatedAuthEnabled: isSet(object.unsecureLocalhostFederatedAuthEnabled)
+        ? globalThis.Boolean(object.unsecureLocalhostFederatedAuthEnabled)
+        : undefined,
       facebookAuthConfig: isSet(object.facebookAuthConfig)
         ? FacebookAuthConfig.fromJSON(object.facebookAuthConfig)
         : undefined,
@@ -284,6 +316,9 @@ export const FederationInfo: MessageFns<FederationInfo> = {
     const obj: any = {};
     if (message.servers?.length) {
       obj.servers = message.servers.map((e) => FederatedServer.toJSON(e));
+    }
+    if (message.unsecureLocalhostFederatedAuthEnabled !== undefined) {
+      obj.unsecureLocalhostFederatedAuthEnabled = message.unsecureLocalhostFederatedAuthEnabled;
     }
     if (message.facebookAuthConfig !== undefined) {
       obj.facebookAuthConfig = FacebookAuthConfig.toJSON(message.facebookAuthConfig);
@@ -303,6 +338,7 @@ export const FederationInfo: MessageFns<FederationInfo> = {
   fromPartial<I extends Exact<DeepPartial<FederationInfo>, I>>(object: I): FederationInfo {
     const message = createBaseFederationInfo();
     message.servers = object.servers?.map((e) => FederatedServer.fromPartial(e)) || [];
+    message.unsecureLocalhostFederatedAuthEnabled = object.unsecureLocalhostFederatedAuthEnabled ?? undefined;
     message.facebookAuthConfig = (object.facebookAuthConfig !== undefined && object.facebookAuthConfig !== null)
       ? FacebookAuthConfig.fromPartial(object.facebookAuthConfig)
       : undefined;

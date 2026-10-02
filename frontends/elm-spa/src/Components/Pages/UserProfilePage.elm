@@ -31,9 +31,9 @@ but none of this module's profile-editing machinery.
 import Browser.Dom as Dom
 import Browser.Navigation
 import Components.AIProviders as AIProviders
+import Components.FederatedAuthors exposing (FederatedAuthor)
 import Components.Markdown as Markdown
 import Components.Market as Market
-import Components.FederatedAuthors exposing (FederatedAuthor)
 import Components.Pages.EventsPage as EventsPage
 import Components.Pages.PostsPage as PostsPage
 import Components.Posts as Posts
@@ -1488,23 +1488,24 @@ updateInner shared msg model =
                                     eventsResyncedModel.posts
                                         |> Maybe.map (\pm -> { pm | availableSyncDestinations = Just user.syncDestinations })
                             }
-
-                        -- `Model.pendingScrollSectionId`'s own doc: only set on the very
-                        -- first `Loaded` (from `init`'s own fragment), and always cleared
-                        -- right after, so a later refetch's re-`Loaded` (e.g. after a
-                        -- follow/unfollow) doesn't keep scrolling back to it.
-                        scrollEffect : Effect Msg
-                        scrollEffect =
-                            case model.pendingScrollSectionId of
-                                Just sectionId ->
-                                    Effect.fromCmd (scrollToProfileSectionCmd sectionId)
-
-                                Nothing ->
-                                    Effect.none
                     in
                     syncFederatedAuthors shared { postsResyncedModel | pendingScrollSectionId = Nothing }
                         |> Tuple.mapSecond
                             (\syncEffect ->
+                                let
+                                    -- `Model.pendingScrollSectionId`'s own doc: only set on the very
+                                    -- first `Loaded` (from `init`'s own fragment), and always cleared
+                                    -- right after, so a later refetch's re-`Loaded` (e.g. after a
+                                    -- follow/unfollow) doesn't keep scrolling back to it.
+                                    scrollEffect : Effect Msg
+                                    scrollEffect =
+                                        case model.pendingScrollSectionId of
+                                            Just sectionId ->
+                                                Effect.fromCmd (scrollToProfileSectionCmd sectionId)
+
+                                            Nothing ->
+                                                Effect.none
+                                in
                                 Effect.batch
                                     [ Effect.map ResolverMsg resolverEffect
                                     , federatedEffect
@@ -4024,10 +4025,6 @@ updateInner shared msg model =
 
         GotFederatedUser key (Ok ( maybeAccountsPanelMsg, response )) ->
             let
-                accountEffect : Effect Msg
-                accountEffect =
-                    accountsPanelEffect maybeAccountsPanelMsg
-
                 newStatus : FederatedProfileStatus
                 newStatus =
                     response.users
@@ -4036,7 +4033,15 @@ updateInner shared msg model =
                         |> Maybe.withDefault FederatedProfileFailed
             in
             syncFederatedAuthors shared { model | federatedProfiles = Dict.insert key newStatus model.federatedProfiles }
-                |> Tuple.mapSecond (\syncEffect -> Effect.batch [ accountEffect, syncEffect ])
+                |> Tuple.mapSecond
+                    (\syncEffect ->
+                        let
+                            accountEffect : Effect Msg
+                            accountEffect =
+                                accountsPanelEffect maybeAccountsPanelMsg
+                        in
+                        Effect.batch [ accountEffect, syncEffect ]
+                    )
 
         GotFederatedUser key (Err _) ->
             ( { model | federatedProfiles = Dict.insert key FederatedProfileFailed model.federatedProfiles }
@@ -5709,7 +5714,7 @@ phoneVerificationView maybePhoneVerification maybePhone =
 {-| "Delete Phone"/"Delete Email" -- rather than deleting outright, opens
 `Shared.DeleteConfirmation`'s modal (`Shared.RequestDelete (Shared.ConfirmPhoneDelete contactMethod
 host)`/`ConfirmEmailDelete`), which carries the whole `ContactMethod` along (not just its `value`)
-so `UI.deleteConfirmationModal` can warn -- via its own `verifiedAt` -- that deleting a *verified*
+so `UI.deleteConfirmationModal` can warn -- via its own `verifiedAt` -- that deleting a _verified_
 one means re-verifying if it's ever added back. `ConfirmDelete`'s own handling `UpdateUser`s the
 field to `Nothing`/`null` outright rather than just blanking `value` (a zero-length phone/email
 isn't a meaningful state on its own, and leaving stale visibility/consent/verification behind for a

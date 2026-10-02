@@ -2,7 +2,6 @@ module Components.FederatedAuthors exposing
     ( FederatedAuthor
     , isUnverified
     , unverifiedTitle
-    , warningBadge
     , withWarningOverlay
     )
 

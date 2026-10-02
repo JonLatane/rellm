@@ -47,7 +47,6 @@ import Html exposing (Html, button, div, span, text)
 import Html.Attributes exposing (class, type_)
 import Html.Events exposing (onClick)
 import Json.Decode as Decode
-import Json.Encode as Encode
 import Ports
 import Proto.Rellm exposing (Event, GetEventsResponse, GetPostsResponse, Occasion, Post)
 import Proto.Rellm.PostContext exposing (PostContext(..))

@@ -49,10 +49,10 @@ import Html.Attributes exposing (alt, attribute, class, id, src, style, title)
 import Html.Events exposing (onClick)
 import Html.Keyed
 import Http
-import Process
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Ports
+import Process
 import Proto.Rellm exposing (Event, GetEventsResponse, GetPostsResponse, Occasion, Post, defaultPost)
 import Proto.Rellm.PostContext exposing (PostContext(..))
 import Proto.Rellm.Rellm as Rellm
@@ -511,45 +511,9 @@ sendUpdate accountsPanelModel msg model =
                 starring =
                     not (isStarred host post model)
 
-                inBrowser : Bool
-                inBrowser =
-                    Set.member key model.starredPostIds
-
-                inServer : Bool
-                inServer =
-                    serverStarContains host post model
-
                 account : Maybe ServerAccount
                 account =
                     serverAccountFor accountsPanelModel host
-
-                -- Where the account's own server-side stars are filed (a Mastodon post from some
-                -- other instance still goes under the account's).
-                serverHost : String
-                serverHost =
-                    account |> Maybe.map serverHostOf |> Maybe.withDefault host
-
-                -- On unstarring, a server-side entry for this same post under a *different* key
-                -- (the same status on the account's own instance) goes right away; the same-key one
-                -- is removed with the fade, by `finishUnstar`.
-                withoutOtherKeyCopies : Dict String ServerStars -> Dict String ServerStars
-                withoutOtherKeyCopies =
-                    Dict.map
-                        (\listHost stars ->
-                            case stars.status of
-                                ServerStarsLoaded posts ->
-                                    { stars
-                                        | status =
-                                            ServerStarsLoaded
-                                                (List.filter
-                                                    (\p -> starKey listHost p == key || not (sameStarredPost (canonicalHost host) post listHost p))
-                                                    posts
-                                                )
-                                    }
-
-                                _ ->
-                                    stars
-                        )
 
                 newPosts : Dict String PostFetchStatus
                 newPosts =
@@ -566,6 +530,12 @@ sendUpdate accountsPanelModel msg model =
             in
             if starring then
                 let
+                    -- Where the account's own server-side stars are filed (a Mastodon post from some
+                    -- other instance still goes under the account's).
+                    serverHost : String
+                    serverHost =
+                        account |> Maybe.map serverHostOf |> Maybe.withDefault host
+
                     newStarredPostIds : Set String
                     newStarredPostIds =
                         Set.insert key model.starredPostIds
@@ -586,32 +556,66 @@ sendUpdate accountsPanelModel msg model =
                 , Nothing
                 )
 
-            else if not inBrowser && not inServer then
-                ( model, pushCmd, Nothing )
-
-            else if model.showStarredPanel then
-                -- Fades out (in whichever tab it's showing in); `FinishUnstar` does the real
-                -- removal from both the browser and server-side lists -- see `finishUnstar`.
-                let
-                    currentState : UI.Flip.State Msg
-                    currentState =
-                        Dict.get key model.starAnimations |> Maybe.withDefault UI.Flip.restingState
-                in
-                ( { model
-                    | posts = newPosts
-                    , serverStars = withoutOtherKeyCopies model.serverStars
-                    , starAnimations = Dict.insert key (UI.Flip.remove (FinishUnstar key) currentState) model.starAnimations
-                  }
-                , pushCmd
-                , Nothing
-                )
-
             else
                 let
-                    ( finishedModel, finishCmd ) =
-                        finishUnstar key { model | posts = newPosts, serverStars = withoutOtherKeyCopies model.serverStars }
+                    inBrowser : Bool
+                    inBrowser =
+                        Set.member key model.starredPostIds
+
+                    inServer : Bool
+                    inServer =
+                        serverStarContains host post model
                 in
-                ( finishedModel, Cmd.batch [ finishCmd, pushCmd ], Nothing )
+                if not inBrowser && not inServer then
+                    ( model, pushCmd, Nothing )
+
+                else
+                    let
+                        -- On unstarring, a server-side entry for this same post under a *different* key
+                        -- (the same status on the account's own instance) goes right away; the same-key one
+                        -- is removed with the fade, by `finishUnstar`.
+                        withoutOtherKeyCopies : Dict String ServerStars -> Dict String ServerStars
+                        withoutOtherKeyCopies =
+                            Dict.map
+                                (\listHost stars ->
+                                    case stars.status of
+                                        ServerStarsLoaded posts ->
+                                            { stars
+                                                | status =
+                                                    ServerStarsLoaded
+                                                        (List.filter
+                                                            (\p -> starKey listHost p == key || not (sameStarredPost (canonicalHost host) post listHost p))
+                                                            posts
+                                                        )
+                                            }
+
+                                        _ ->
+                                            stars
+                                )
+                    in
+                    if model.showStarredPanel then
+                        -- Fades out (in whichever tab it's showing in); `FinishUnstar` does the real
+                        -- removal from both the browser and server-side lists -- see `finishUnstar`.
+                        let
+                            currentState : UI.Flip.State Msg
+                            currentState =
+                                Dict.get key model.starAnimations |> Maybe.withDefault UI.Flip.restingState
+                        in
+                        ( { model
+                            | posts = newPosts
+                            , serverStars = withoutOtherKeyCopies model.serverStars
+                            , starAnimations = Dict.insert key (UI.Flip.remove (FinishUnstar key) currentState) model.starAnimations
+                          }
+                        , pushCmd
+                        , Nothing
+                        )
+
+                    else
+                        let
+                            ( finishedModel, finishCmd ) =
+                                finishUnstar key { model | posts = newPosts, serverStars = withoutOtherKeyCopies model.serverStars }
+                        in
+                        ( finishedModel, Cmd.batch [ finishCmd, pushCmd ], Nothing )
 
         GotServerStars host account (Ok ( maybeAccountsPanelMsg, posts )) ->
             ( if Dict.get host model.serverStars |> Maybe.map .account |> (==) (Just account) then
@@ -1837,6 +1841,7 @@ totalStarCount model =
           )
 
 
+
 -- THE UNIFIED LIST
 
 
@@ -1947,7 +1952,17 @@ allItems model =
 
 allItemKeys : Model -> List String
 allItemKeys model =
-    allItems model |> List.map itemKey |> List.foldl (\k acc -> if List.member k acc then acc else k :: acc) [] |> List.reverse
+    allItems model |> List.map itemKey
+        |> List.foldl
+            (\k acc ->
+                if List.member k acc then
+                    acc
+
+                else
+                    k :: acc
+            )
+            []
+        |> List.reverse
 
 
 {-| Render order for the one keyed list: whatever the showing tab shows, in its order, then
@@ -2045,6 +2060,7 @@ postStatusFor model key =
                     other
 
 
+
 -- VIEW
 
 
@@ -2117,12 +2133,11 @@ view time basePath browserName accountsPanelModel currentPostKey currentOccasion
                                     [ attribute "tabindex" "-1", attribute "aria-hidden" "true" ]
                                )
                         )
-                        [ text "\u{21C5}" ]
+                        [ text "⇅" ]
                     ]
                    )
             )
-            :: []
-            ++ (if not hasBrowser && not hasServer then
+            :: (if not hasBrowser && not hasServer then
                     [ div [ class "starred-panel-empty" ] [ text "No starred posts yet." ] ]
 
                 else
@@ -2262,11 +2277,11 @@ serverChipView accountsPanelModel model host =
                         Nothing ->
                             div [ classes [ "placeholder", "account-avatar" ] ] [ text (RellmServers.initialLetter name) ]
                     , div [ class "account-row-label" ]
-                        [ div [ class "account-row-username" ] [ text ("\u{21C4} " ++ name) ]
+                        [ div [ class "account-row-username" ] [ text ("⇄ " ++ name) ]
                         , div [ classes [ "account-row-server-badge", mainHostClass, "background-color-primary" ] ] [ text badge ]
                         ]
                     , div [ class "starred-server-group-arrow" ]
-                        [ span [ classes [ "expandable-section-arrow", openClosedClass (not collapsed) ] ] [ text "\u{25BC}" ] ]
+                        [ span [ classes [ "expandable-section-arrow", openClosedClass (not collapsed) ] ] [ text "▼" ] ]
                     ]
                 ]
     in
@@ -2278,7 +2293,7 @@ serverChipView accountsPanelModel model host =
             chip ( a.avatarUrl, a.displayName |> Maybe.withDefault ("@" ++ a.handle), "@" ++ a.handle )
 
         Nothing ->
-            chip ( Nothing, String.dropLeft 1 (String.fromList (List.drop (String.length "mastodon") (String.toList host))), host )
+            chip ( Nothing, String.dropLeft 1 (String.fromList (List.drop 8 (String.toList host))), host )
 
 
 {-| Wraps `starredPostView`'s content with `UI.Flip`'s slide-on-reorder

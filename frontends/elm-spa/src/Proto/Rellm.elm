@@ -8794,7 +8794,12 @@ type alias FederatedServer =
 
 -}
 fieldNumbersFederationInfo :
-    { servers : Int, facebookAuthConfig : Int, xTwitterAuthConfig : Int, mastodonServers : Int }
+    { servers : Int
+    , unsecureLocalhostFederatedAuthEnabled : Int
+    , facebookAuthConfig : Int
+    , xTwitterAuthConfig : Int
+    , mastodonServers : Int
+    }
 fieldNumbersFederationInfo =
     Proto.Rellm.Internals_.fieldNumbersProto__Rellm__FederationInfo
 

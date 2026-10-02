@@ -55,7 +55,7 @@ own coordinating logic.
 import Grpc
 import Json.Decode as Decode exposing (Decoder)
 import Json.Encode as Encode
-import Proto.Rellm exposing (AIModel, AccessTokenResponse, ContactMethod, ExpirableToken, MarketSubscription, SyncDestination, SyncSource, User)
+import Proto.Rellm exposing (AIModel, AccessTokenResponse, ContactMethod, ExpirableToken, MarketSubscription, ServerConfiguration, SyncDestination, SyncSource, User)
 import Proto.Rellm.Permission exposing (Permission(..), fieldNumbersPermission)
 import Proto.Rellm.Rellm as Rellm
 import Proto.Rellm.Visibility exposing (Visibility(..))
@@ -560,23 +560,36 @@ which, for a server this browser didn't already have connected, means `negotiate
 effectively runs twice (once here, once inside that handler's own reconnect). Not worth optimizing
 away: it only happens in the background, after this page has already redirected the user onward.
 -}
-resolveFederatedRellmAccountTokens : Bool -> List RellmServer -> RellmAccountAuthTokens -> Task Grpc.Error User
+resolveFederatedRellmAccountTokens : Bool -> List RellmServer -> RellmAccountAuthTokens -> Task Grpc.Error (Maybe User)
 resolveFederatedRellmAccountTokens pageIsSecure servers tokens =
     let
-        getCurrentUser : Connection -> Task Grpc.Error User
-        getCurrentUser connection =
-            Grpc.new Rellm.getCurrentUser {}
-                |> Grpc.setHost (RellmServers.connectionUrl connection)
-                |> RellmServers.withAccessToken (Just tokens.accessToken.token)
-                |> Grpc.toTask
+        -- `Nothing` if this page is plaintext `http://localhost` (the only plaintext origin
+        -- federated auth tolerates) and `tokens.server` hasn't opted in to that -- see
+        -- `RellmServers.unsecureLocalhostAuthEnabled`.
+        getCurrentUser : Connection -> ServerConfiguration -> Task Grpc.Error (Maybe User)
+        getCurrentUser connection config =
+            if pageIsSecure || RellmServers.unsecureLocalhostAuthEnabled config then
+                Grpc.new Rellm.getCurrentUser {}
+                    |> Grpc.setHost (RellmServers.connectionUrl connection)
+                    |> RellmServers.withAccessToken (Just tokens.accessToken.token)
+                    |> Grpc.toTask
+                    |> Task.map Just
+
+            else
+                Task.succeed Nothing
     in
-    case servers |> List.filter (\s -> s.frontendHost == tokens.server && s.connected /= Nothing) |> List.head |> Maybe.andThen RellmServers.connectionOf of
-        Just connection ->
-            getCurrentUser connection
+    case servers |> List.filter (\s -> s.frontendHost == tokens.server && s.connected /= Nothing) |> List.head of
+        Just server ->
+            case RellmServers.connectionOf server of
+                Just connection ->
+                    getCurrentUser connection (RellmServers.configurationOf server)
+
+                Nothing ->
+                    Task.fail Grpc.NetworkError
 
         Nothing ->
             RellmServers.negotiateRellmServerConfig pageIsSecure tokens.server
-                |> Task.andThen (\( connection, _ ) -> getCurrentUser connection)
+                |> Task.andThen (\( connection, config ) -> getCurrentUser connection config)
 
 
 {-| Ensures `account`'s access token is valid as of now (refreshing it first

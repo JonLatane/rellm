@@ -760,6 +760,7 @@ pub fn configure_facebook_app(conn: &mut PgPooledConnection, app_id: &str, app_s
         }),
         x_twitter_auth_config: None,
         mastodon_servers: vec![],
+        unsecure_localhost_federated_auth_enabled: None,
     })
     .unwrap();
     insert_into(server_configurations::table)
@@ -787,6 +788,7 @@ pub fn configure_facebook_app_and_frontend_host(
         }),
         x_twitter_auth_config: None,
         mastodon_servers: vec![],
+        unsecure_localhost_federated_auth_enabled: None,
     })
     .unwrap();
     new_config.external_cdn_config = Some(
@@ -815,6 +817,7 @@ pub fn configure_x_twitter_app(conn: &mut PgPooledConnection, client_id: &str, c
             client_secret: client_secret.to_string(),
         }),
         mastodon_servers: vec![],
+        unsecure_localhost_federated_auth_enabled: None,
     })
     .unwrap();
     insert_into(server_configurations::table)
@@ -842,6 +845,7 @@ pub fn configure_x_twitter_app_and_frontend_host(
             client_secret: client_secret.to_string(),
         }),
         mastodon_servers: vec![],
+        unsecure_localhost_federated_auth_enabled: None,
     })
     .unwrap();
     new_config.external_cdn_config = Some(

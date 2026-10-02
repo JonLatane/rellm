@@ -303,6 +303,13 @@
   color: var(--muted);
 }
 
+.server-details-feature-settings-note {
+  margin: 0;
+  padding: 0 0 0.3rem 0;
+  font-size: 0.8em;
+  opacity: 0.6;
+}
+
 .server-details-feature-settings-value {
   font-family: monospace;
   word-break: break-all;

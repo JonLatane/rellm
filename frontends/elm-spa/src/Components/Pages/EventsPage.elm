@@ -44,11 +44,11 @@ import Animation
 import Browser.Dom as Dom
 import Browser.Events
 import Browser.Navigation
+import Components.EventExport as EventExport
 import Components.Events as Events
 import Components.FederatedAuthors as FederatedAuthors exposing (FederatedAuthor)
 import Components.MediaRenderer as MediaRenderer
 import Components.Posts as Posts
-import Components.EventExport as EventExport
 import Components.Rsvps as Rsvps
 import Components.Users exposing (usernameHref)
 import Components.Users.ProfileHeading as ProfileHeading
@@ -2900,13 +2900,13 @@ its ends -- `Nothing` if the modal is closed or that card isn't among them.
 -}
 calendarPreviewSteppedKey : Model -> Int -> Maybe String
 calendarPreviewSteppedKey model delta =
-    let
-        keys : List String
-        keys =
-            calendarPreviewEvents model |> List.map (\( host, _, occasion ) -> eventAnimationKey host occasion)
-    in
     case calendarPreviewPosition model of
         Just idx ->
+            let
+                keys : List String
+                keys =
+                    calendarPreviewEvents model |> List.map (\( host, _, occasion ) -> eventAnimationKey host occasion)
+            in
             keys |> List.drop (clamp 0 (List.length keys - 1) (idx + delta)) |> List.head
 
         Nothing ->
@@ -3109,40 +3109,40 @@ own active-tab convention) is added while the filter is on.
 -}
 hideStartedOrLongButtonView : Model -> Html Msg
 hideStartedOrLongButtonView model =
-        button
-            [ classes
-                ("filter-icon-button"
-                    :: (if model.hideStartedOrLongEvents then
-                            [ "background-color-primary" ]
+    button
+        [ classes
+            ("filter-icon-button"
+                :: (if model.hideStartedOrLongEvents then
+                        [ "background-color-primary" ]
 
-                        else
-                            []
-                       )
-                    ++ (if anyStartedEvents model then
+                    else
+                        []
+                   )
+                ++ (if anyStartedEvents model then
                         []
 
                     else
                         [ "hidden" ]
                    )
-                )
-            , onClick HideStartedEventsToggled
-            , title
-                (if model.mode == Calendar then
-                    if model.hideStartedOrLongEvents then
-                        "Showing events that are under " ++ String.fromInt longEventThresholdHours ++ " hours"
+            )
+        , onClick HideStartedEventsToggled
+        , title
+            (if model.mode == Calendar then
+                if model.hideStartedOrLongEvents then
+                    "Showing events that are under " ++ String.fromInt longEventThresholdHours ++ " hours"
 
-                    else
-                        "Hide events that are " ++ String.fromInt longEventThresholdHours ++ "+ hours"
+                else
+                    "Hide events that are " ++ String.fromInt longEventThresholdHours ++ "+ hours"
 
-                 else if model.hideStartedOrLongEvents then
-                    "Showing only events that haven't started"
+             else if model.hideStartedOrLongEvents then
+                "Showing only events that haven't started"
 
-                 else
-                    "Hide events that have already started"
-                )
-            , type_ "button"
-            ]
-            [ text "▽" ]
+             else
+                "Hide events that have already started"
+            )
+        , type_ "button"
+        ]
+        [ text "▽" ]
 
 
 {-| The cutoff `tabsView`'s "Events After" input shows -- `model.endsAfter`,
