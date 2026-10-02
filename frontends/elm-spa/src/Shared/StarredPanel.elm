@@ -1,4 +1,4 @@
-module Shared.StarredPanel exposing (Model, Msg(..), freshestPost, hasAnyStars, init, isStarred, rawKey, refreshHosts, refreshServerStars, subscriptions, toggleStarMsg, totalStarCount, update, view)
+module Shared.StarredPanel exposing (Model, Msg(..), freshestPost, hasAnyStars, init, isStarred, rawKey, refreshHosts, refreshServerStars, subscriptions, hasPendingFetches, toggleStarMsg, totalStarCount, update, view)
 
 {-| Tracks which Posts the user has starred, in this browser. `StarPost`/
 `UnstarPost` (see `protos/rellm.proto`) are auth-less, "friendly" counters
@@ -2628,6 +2628,37 @@ groupByHost pairs =
             (\( postId, host ) -> Dict.update host (\existing -> Just (postId :: Maybe.withDefault [] existing)))
             Dict.empty
         |> Dict.toList
+
+
+{-| Whether any starred post or occasion is still waiting on a fetch that `PollStarredPosts` would
+(re)try -- what `Shared.subscriptions` gates its poll timer on, so an open panel with everything
+loaded (or permanently failed) isn't woken (and re-rendered) every 1.5s for nothing.
+-}
+hasPendingFetches : Model -> Bool
+hasPendingFetches model =
+    let
+        postPending : Bool
+        postPending =
+            model.starredPostIds
+                |> Set.toList
+                |> List.filterMap parseStarKey
+                |> List.any (\( postId, host ) -> needsFetch model.posts (rawKey postId host))
+
+        eventPending : Bool
+        eventPending =
+            model.posts
+                |> Dict.toList
+                |> List.any
+                    (\( key, status ) ->
+                        case status of
+                            PostFetchLoaded _ post ->
+                                post.context == OCCASION && needsEventFetch model.events key
+
+                            _ ->
+                                False
+                    )
+    in
+    postPending || eventPending
 
 
 needsFetch : Dict String PostFetchStatus -> String -> Bool

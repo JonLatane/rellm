@@ -599,7 +599,7 @@ subscriptions model =
         , Sub.map MyMediaPanelMsg (MyMediaPanel.subscriptions model.panels.myMediaPanel)
         , Sub.map MessagingPanelMsg (MessagingPanel.subscriptions model.panels.messagingPanel)
         , Sub.map MarkdownPanelMsg (MarkdownPanel.subscriptions model.panels.markdownPanel)
-        , if model.panels.starredPanel.showStarredPanel then
+        , if model.panels.starredPanel.showStarredPanel && StarredPanel.hasPendingFetches model.panels.starredPanel then
             Time.every 1500 (\_ -> StarredPanelMsg StarredPanel.PollStarredPosts)
 
           else
