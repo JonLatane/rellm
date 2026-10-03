@@ -20,6 +20,8 @@ import Request
 import Shared
 import Shared.AccountsPanel.RellmServers as RellmServers
 import UI
+import Proto.Rellm.NavigationTab exposing (NavigationTab(..))
+import UI.CustomNav as CustomNav
 import View exposing (View)
 
 
@@ -48,7 +50,7 @@ init shared req =
 
 view : Shared.Model -> Request.With Params -> Model -> View Msg
 view shared req model =
-    { title = UI.pageTitle shared [ "About" ]
+    { title = UI.pageTitle shared [ CustomNav.tabTitle shared ABOUTTAB ]
     , body =
         UI.layout shared
             req.route

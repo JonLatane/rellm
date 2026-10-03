@@ -16,6 +16,8 @@ import Page
 import Request
 import Shared
 import UI
+import Proto.Rellm.NavigationTab exposing (NavigationTab(..))
+import UI.CustomNav as CustomNav
 import View exposing (View)
 
 
@@ -49,7 +51,7 @@ update shared msg model =
 
 view : Shared.Model -> Request.With Params -> Model -> View Msg
 view shared req model =
-    { title = UI.pageTitle shared []
+    { title = UI.pageTitle shared [ CustomNav.tabTitle shared EVENTSTAB ]
     , body =
         UI.layout shared
             req.route

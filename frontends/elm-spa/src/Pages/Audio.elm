@@ -11,6 +11,8 @@ import Page
 import Request
 import Shared
 import UI
+import Proto.Rellm.NavigationTab exposing (NavigationTab(..))
+import UI.CustomNav as CustomNav
 import View exposing (View)
 
 
@@ -44,7 +46,7 @@ update shared msg model =
 
 view : Shared.Model -> Request.With Params -> Model -> View Msg
 view shared req model =
-    { title = UI.pageTitle shared [ "Audio" ]
+    { title = UI.pageTitle shared [ CustomNav.tabTitle shared AUDIOTAB ]
     , body =
         UI.layout shared
             req.route

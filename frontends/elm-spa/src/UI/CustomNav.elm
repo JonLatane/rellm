@@ -11,6 +11,7 @@ module UI.CustomNav exposing
     , defaultHomePageConfig
     , defaultPathFor
     , effectiveTabStyle
+    , tabTitle
     , effectiveTabs
     , homeConfig
     , homeTargetKindFromText
@@ -731,6 +732,19 @@ isCurrentTab tabs tab currentRoute =
             |> List.head
             |> Maybe.map ((==) tab)
             |> Maybe.withDefault False
+
+
+{-| The title to show for built-in page `navTab` (e.g. in the browser tab's `Events | Server Name`):
+the `title` an admin gave the main server's first `effectiveTabs` entry targeting it, falling back to
+`navigationTabLabel` when it's unset, unconfigured, or no tab targets it.
+-}
+tabTitle : Shared.Model -> NavigationTab -> String
+tabTitle shared navTab =
+    effectiveTabs (mainServerCustomTabs shared)
+        |> List.filter (\tab -> tab.target == TargetTab navTab)
+        |> List.head
+        |> Maybe.map resolvedTitle
+        |> Maybe.withDefault (navigationTabLabel navTab)
 
 
 {-| The href of the main server's own top-nav tab for built-in page `navTab` (e.g. `POSTSTAB` ->

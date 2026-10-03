@@ -582,22 +582,22 @@ titleFor shared req model =
                     [ BlueskyUserProfilePage.title subModel ]
 
                 EmbeddedEvents _ ->
-                    []
+                    [ CustomNav.tabTitle shared EVENTSTAB ]
 
                 EmbeddedPosts _ ->
-                    [ "Posts" ]
+                    [ CustomNav.tabTitle shared POSTSTAB ]
 
                 EmbeddedPeople _ ->
-                    [ "People" ]
+                    [ CustomNav.tabTitle shared PEOPLETAB ]
 
                 EmbeddedAbout _ ->
-                    [ "About" ]
+                    [ CustomNav.tabTitle shared ABOUTTAB ]
 
                 EmbeddedMarket _ ->
-                    [ "Market" ]
+                    [ CustomNav.tabTitle shared MARKETTAB ]
 
                 EmbeddedMedia _ ->
-                    [ "Media" ]
+                    [ CustomNav.tabTitle shared MEDIATAB ]
 
                 EmbeddedPost subModel ->
                     [ PostPage.titleFor subModel ]

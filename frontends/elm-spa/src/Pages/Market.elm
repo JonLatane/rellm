@@ -25,6 +25,8 @@ import Request
 import Shared
 import Shared.AccountsPanel.RellmServers as RellmServers
 import UI
+import Proto.Rellm.NavigationTab exposing (NavigationTab(..))
+import UI.CustomNav as CustomNav
 import View exposing (View)
 
 
@@ -204,7 +206,7 @@ replaceInstance host updatedInstance instances =
 
 view : Shared.Model -> Request.With Params -> Model -> View Msg
 view shared req model =
-    { title = UI.pageTitle shared [ "Market" ]
+    { title = UI.pageTitle shared [ CustomNav.tabTitle shared MARKETTAB ]
     , body =
         UI.layout shared
             req.route
