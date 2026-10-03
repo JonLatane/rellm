@@ -972,7 +972,18 @@ export interface MediaSettings {
    * storage itself), so unlike that field this is never incrementally adjusted between runs.
    */
   serverObjectStorageUsageBytes: number;
-  serverObjectStorageUsageCalculatedAt: string | undefined;
+  serverObjectStorageUsageCalculatedAt:
+    | string
+    | undefined;
+  /**
+   * Turns off the `generate_link_preview_images` background job's generation of preview media
+   * (the page's main image and a screenshot) for posts with links. Off by default (i.e. generation
+   * is *on*), including for servers configured before this field existed. Doesn't affect
+   * previews that already exist -- see
+   * [`DeleteLinkPreviewImages`](#grpc-api-DeleteLinkPreviewImages) for that. Editable by anyone
+   * who can `ConfigureServer` (`ADMIN`).
+   */
+  disableLinkPreviewImages: boolean;
 }
 
 /**
@@ -2918,6 +2929,7 @@ function createBaseMediaSettings(): MediaSettings {
     serverMediaUsageCalculatedAt: undefined,
     serverObjectStorageUsageBytes: 0,
     serverObjectStorageUsageCalculatedAt: undefined,
+    disableLinkPreviewImages: false,
   };
 }
 
@@ -2955,6 +2967,9 @@ export const MediaSettings: MessageFns<MediaSettings> = {
     }
     if (message.serverObjectStorageUsageCalculatedAt !== undefined) {
       Timestamp.encode(toTimestamp(message.serverObjectStorageUsageCalculatedAt), writer.uint32(74).fork()).join();
+    }
+    if (message.disableLinkPreviewImages !== false) {
+      writer.uint32(80).bool(message.disableLinkPreviewImages);
     }
     return writer;
   },
@@ -3054,6 +3069,14 @@ export const MediaSettings: MessageFns<MediaSettings> = {
           message.serverObjectStorageUsageCalculatedAt = fromTimestamp(Timestamp.decode(reader, reader.uint32()));
           continue;
         }
+        case 10: {
+          if (tag !== 80) {
+            break;
+          }
+
+          message.disableLinkPreviewImages = reader.bool();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -3090,6 +3113,9 @@ export const MediaSettings: MessageFns<MediaSettings> = {
       serverObjectStorageUsageCalculatedAt: isSet(object.serverObjectStorageUsageCalculatedAt)
         ? globalThis.String(object.serverObjectStorageUsageCalculatedAt)
         : undefined,
+      disableLinkPreviewImages: isSet(object.disableLinkPreviewImages)
+        ? globalThis.Boolean(object.disableLinkPreviewImages)
+        : false,
     };
   },
 
@@ -3128,6 +3154,9 @@ export const MediaSettings: MessageFns<MediaSettings> = {
     if (message.serverObjectStorageUsageCalculatedAt !== undefined) {
       obj.serverObjectStorageUsageCalculatedAt = message.serverObjectStorageUsageCalculatedAt;
     }
+    if (message.disableLinkPreviewImages !== false) {
+      obj.disableLinkPreviewImages = message.disableLinkPreviewImages;
+    }
     return obj;
   },
 
@@ -3147,6 +3176,7 @@ export const MediaSettings: MessageFns<MediaSettings> = {
     message.serverMediaUsageCalculatedAt = object.serverMediaUsageCalculatedAt ?? undefined;
     message.serverObjectStorageUsageBytes = object.serverObjectStorageUsageBytes ?? 0;
     message.serverObjectStorageUsageCalculatedAt = object.serverObjectStorageUsageCalculatedAt ?? undefined;
+    message.disableLinkPreviewImages = object.disableLinkPreviewImages ?? false;
     return message;
   },
 };

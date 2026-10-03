@@ -59,7 +59,7 @@ RELLM_COMMANDS=(
   local_object_storage_start local_object_storage_create local_object_storage_delete
   delete_expired_tokens delete_unowned_media sync_sources update_user_counts convert_media_sizes renew_market_subscriptions generate_link_preview_images regenerate_link_preview_images_for_post
   calculate_server_media_usage calculate_server_object_storage_usage
-  set_permission delete_preview_images disable_cdn_grpc free_all_cluster_resources
+  set_permission delete_link_preview_images disable_cdn_grpc free_all_cluster_resources
   to_db_id to_proto_id grpcurl
   deploy
   completion
@@ -186,7 +186,8 @@ Commands:
 
     set_permission           Grant/revoke a global permission for a user by username
                              e.g.: rellm set_permission <my_admin_username> admin on
-    delete_preview_images    Delete generated preview images, e.g. to force regeneration
+    delete_link_preview_images
+                             Delete generated preview images, e.g. to force regeneration
     disable_cdn_grpc         Disable the experimental gRPC CDN settings, as an "escape hatch" in case you
                              mess up your CDN configuration in the web UI and lose gRPC access.
     free_all_cluster_resources
@@ -477,8 +478,8 @@ set_permission() {
   _rellm_exec_bin set_permission "$@"
 }
 
-delete_preview_images() {
-  _rellm_exec_bin delete_preview_images "$@"
+delete_link_preview_images() {
+  _rellm_exec_bin delete_link_preview_images "$@"
 }
 
 disable_cdn_grpc() {

@@ -1,5 +1,5 @@
-//! Specs for `posts_needing_previews`' ordering/backoff (so a permanently failing link can't hog
-//! the `generate_link_preview_images` batch) and the SSRF address filter.
+//! Specs for `posts_needing_previews`' ordering (newest first only for big backlogs) and attempt cap (so a permanently
+//! failing link can't hog the `generate_link_preview_images` batch) and the SSRF address filter.
 
 use std::net::IpAddr;
 
@@ -7,7 +7,7 @@ use diesel::prelude::*;
 
 use crate::logic::{
     clear_failed_attempts, is_forbidden_ip, posts_needing_previews, record_failed_attempt,
-    MAX_PREVIEW_ATTEMPTS,
+    MAX_PREVIEW_ATTEMPTS, NEWEST_FIRST_BACKLOG_THRESHOLD,
 };
 use crate::schema::posts;
 use crate::tests::factories::*;
@@ -30,17 +30,17 @@ fn needing(conn: &mut crate::db_connection::PgPooledConnection) -> Vec<i64> {
 }
 
 #[test]
-fn failed_posts_sort_last_and_are_dropped_at_the_cap() {
+fn failed_posts_are_dropped_at_the_cap_and_small_backlogs_go_oldest_first() {
     let mut conn = test_conn();
     conn.test_transaction::<_, tonic::Status, _>(|conn| {
         let user = create_user(conn, "lpa_user");
         let broken = linked_post(conn, &user);
         let healthy = linked_post(conn, &user);
 
-        assert_eq!(needing(conn), vec![broken, healthy]);
+        assert_eq!(needing(conn), vec![broken, healthy], "small backlogs go oldest first");
 
         record_failed_attempt(broken, conn);
-        assert_eq!(needing(conn), vec![healthy, broken], "attempted posts sort after fresh ones");
+        assert_eq!(needing(conn), vec![broken, healthy], "a failed attempt doesn't change the order");
 
         for _ in 1..MAX_PREVIEW_ATTEMPTS {
             record_failed_attempt(broken, conn);
@@ -49,6 +49,29 @@ fn failed_posts_sort_last_and_are_dropped_at_the_cap() {
 
         clear_failed_attempts(broken, conn);
         assert_eq!(needing(conn), vec![broken, healthy]);
+        Ok(())
+    });
+}
+
+#[test]
+fn big_backlogs_go_newest_first() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let user = create_user(conn, "lpa_backlog_user");
+        let mut ids: Vec<i64> = (0..=NEWEST_FIRST_BACKLOG_THRESHOLD)
+            .map(|_| linked_post(conn, &user))
+            .collect();
+        ids.reverse();
+        assert_eq!(needing(conn), ids, "more than the threshold -> highest id first");
+
+        // Dropping back to the threshold flips to oldest first.
+        let newest = ids.remove(0);
+        diesel::update(posts::table.filter(posts::id.eq(newest)))
+            .set(posts::media_generated.eq(true))
+            .execute(conn)
+            .unwrap();
+        ids.reverse();
+        assert_eq!(needing(conn), ids, "at the threshold -> lowest id first");
         Ok(())
     });
 }

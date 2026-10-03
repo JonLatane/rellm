@@ -405,6 +405,7 @@ const MediaSettings$json = {
     {'1': 'server_media_usage_calculated_at', '3': 7, '4': 1, '5': 11, '6': '.google.protobuf.Timestamp', '10': 'serverMediaUsageCalculatedAt'},
     {'1': 'server_object_storage_usage_bytes', '3': 8, '4': 1, '5': 4, '10': 'serverObjectStorageUsageBytes'},
     {'1': 'server_object_storage_usage_calculated_at', '3': 9, '4': 1, '5': 11, '6': '.google.protobuf.Timestamp', '10': 'serverObjectStorageUsageCalculatedAt'},
+    {'1': 'disable_link_preview_images', '3': 10, '4': 1, '5': 8, '10': 'disableLinkPreviewImages'},
   ],
 };
 
@@ -424,7 +425,8 @@ final $typed_data.Uint8List mediaSettingsDescriptor = $convert.base64Decode(
     'xjdWxhdGVkQXQSSAohc2VydmVyX29iamVjdF9zdG9yYWdlX3VzYWdlX2J5dGVzGAggASgEUh1z'
     'ZXJ2ZXJPYmplY3RTdG9yYWdlVXNhZ2VCeXRlcxJzCilzZXJ2ZXJfb2JqZWN0X3N0b3JhZ2VfdX'
     'NhZ2VfY2FsY3VsYXRlZF9hdBgJIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBSJHNl'
-    'cnZlck9iamVjdFN0b3JhZ2VVc2FnZUNhbGN1bGF0ZWRBdA==');
+    'cnZlck9iamVjdFN0b3JhZ2VVc2FnZUNhbGN1bGF0ZWRBdBI9ChtkaXNhYmxlX2xpbmtfcHJldm'
+    'lld19pbWFnZXMYCiABKAhSGGRpc2FibGVMaW5rUHJldmlld0ltYWdlcw==');
 
 @$core.Deprecated('Use marketSettingsDescriptor instead')
 const MarketSettings$json = {

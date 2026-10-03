@@ -5,7 +5,8 @@ extern crate rellm;
 use std::sync::Arc;
 
 use rellm::logic::{
-    acquire_cluster_lock, generate_previews_for_post, posts_needing_previews, record_failed_attempt,
+    acquire_cluster_lock, generate_previews_for_post, link_preview_generation_enabled,
+    posts_needing_previews, record_failed_attempt,
     release_cluster_lock, start_browser,
 };
 use rellm::protos::{ClusterResource, ClusterResources};
@@ -20,6 +21,11 @@ async fn main() {
     log::info!("Connecting to DB...");
     let pool = db_connection::establish_job_pool();
     let mut conn = pool.get().expect("Failed to get DB connection");
+
+    if !link_preview_generation_enabled(&mut conn).expect("Failed to load server configuration") {
+        log::info!("Link preview image generation is disabled in MediaSettings, exiting.");
+        return;
+    }
 
     let posts_to_update = posts_needing_previews(100, &mut conn).unwrap();
     log::info!("Got {} posts to update.", posts_to_update.len());

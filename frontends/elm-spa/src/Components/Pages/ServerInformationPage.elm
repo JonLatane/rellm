@@ -475,6 +475,7 @@ updateInner shared msg model =
                     { model
                         | aboutTab = AboutTab.applySharedMsg subMsg model.aboutTab
                         , themeTab = ThemeTab.applySharedMsg subMsg model.themeTab
+                        , settingsTab = SettingsTab.applySharedMsg subMsg model.settingsTab
                     }
 
                 ( clusterTabModel, clusterTabEffect ) =

@@ -2264,6 +2264,18 @@ directory</a> is (<code>{name}</code> denotes a
           <td>Configure the server (i.e. the response to <a href="#grpc-api-GetServerConfiguration"><code>GetServerConfiguration</code></a>). <em>Authenticated.</em> Requires <code>ADMIN</code> permissions. Editing <code>cluster_resources</code> additionally requires <code>EDIT_CLUSTER_SETTINGS</code> - see that field's own doc. Editing <a href="#rellm-ServerConfiguration"><code>supported_contact_protocols</code></a> is validated, not just stored -- see <a href="#rellm-ContactProtocol"><code>ContactProtocol</code></a>'s own doc.</td>
         </tr>
         <tr>
+          <td>DeleteLinkPreviewImages</td>
+          <td><a href="#google-protobuf-Empty">.google.protobuf.Empty</a></td>
+          <td><a href="#google-protobuf-Empty">.google.protobuf.Empty</a></td>
+          <td>Unlinks all generated link preview images (see <a href="#rellm-MediaSettings"><code>MediaSettings.disable_link_preview_images</code></a>) from their posts and makes every post with a link eligible for preview generation again -- including posts that had given up after repeated failures. The old preview media is orphaned, not deleted: it's removed from storage by the next <a href="#grpc-api-DeleteUnownedMedia"><code>DeleteUnownedMedia</code></a> run (the periodic <code>delete_unowned_media</code> job, or call it directly). <em>Authenticated.</em> Requires <code>ADMIN</code> permissions.</td>
+        </tr>
+        <tr>
+          <td>DeleteUnownedMedia</td>
+          <td><a href="#google-protobuf-Empty">.google.protobuf.Empty</a></td>
+          <td><a href="#google-protobuf-Empty">.google.protobuf.Empty</a></td>
+          <td>Deletes all Media with no owner (e.g. orphaned by <a href="#grpc-api-DeleteLinkPreviewImages"><code>DeleteLinkPreviewImages</code></a> or by deleted users) from object storage and the database, and removes it from any posts still referencing it. <em>Authenticated.</em> Requires <code>ADMIN</code> permissions.</td>
+        </tr>
+        <tr>
           <td>LockClusterResources</td>
           <td><a href="#rellm-LockClusterResourcesRequest">LockClusterResourcesRequest</a></td>
           <td><a href="#rellm-LockClusterResourcesResponse">LockClusterResourcesResponse</a></td>
@@ -7433,6 +7445,12 @@ directory</a> is (<code>{name}</code> denotes a
           <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
           <td></td>
           <td></td>
+        </tr>
+        <tr>
+          <td>disable_link_preview_images</td>
+          <td><a href="#bool">bool</a></td>
+          <td></td>
+          <td>Turns off the <code>generate_link_preview_images</code> background job's generation of preview media (the page's main image and a screenshot) for posts with links. Off by default (i.e. generation is <em>on</em>), including for servers configured before this field existed. Doesn't affect previews that already exist -- see <a href="#grpc-api-DeleteLinkPreviewImages"><code>DeleteLinkPreviewImages</code></a> for that. Editable by anyone who can <code>ConfigureServer</code> (<code>ADMIN</code>).</td>
         </tr>
       </tbody>
     </table>

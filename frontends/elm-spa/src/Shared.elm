@@ -26,6 +26,7 @@ import Browser.Dom as Dom
 import Browser.Events
 import Browser.Navigation as Nav
 import Components.Events as Events
+import Components.MediaMaintenance as MediaMaintenance
 import Components.MediaRenderer as MediaRenderer
 import Components.Pages.MessagesPage as MessagesPage
 import Components.Posts as Posts
@@ -197,6 +198,9 @@ type Msg
       -- `Pages.Event.PostId_`'s own `SharedMsg` handling can update their
       -- own list/navigate away on success.
     | GotSyncSourceDeleteResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, () ))
+      -- `ConfirmDeleteLinkPreviewImages`'s result -- forwarded to the active page like the others;
+      -- `SettingsTab.applySharedMsg` shows it next to its Media Settings buttons.
+    | GotLinkPreviewImagesDeleteResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, () ))
     | GotPostDeleteResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, Post ))
     | GotEventDeleteResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, Event ))
       -- `ConfirmOccasionDelete`'s own result -- unlike `GotEventDeleteResult`
@@ -395,6 +399,11 @@ type DeleteConfirmation
       -- replaces used to.
     | ConfirmPhoneDelete ContactMethod String
     | ConfirmEmailDelete ContactMethod String
+      -- "Delete Link Preview Images" in `SettingsTab`'s Media Settings -- carries only the acting
+      -- `targetHost`; same "no Shared-owned home, `ConfirmDelete` fires the RPC directly" shape as
+      -- the others (`MediaMaintenance.deleteLinkPreviewImages`), reporting back with
+      -- `GotLinkPreviewImagesDeleteResult`.
+    | ConfirmDeleteLinkPreviewImages String
 
 
 {-| Every app-wide "Panel" other than the Accounts Panel (see `Model.accounts`
@@ -2008,6 +2017,14 @@ sharedUpdate req msg model =
                         |> Task.attempt GotSyncSourceDeleteResult
                     )
 
+                Just (ConfirmDeleteLinkPreviewImages host) ->
+                    ( { model | panels = { panels | confirmingDeleteFor = Nothing } }
+                    , MediaMaintenance.deleteLinkPreviewImages
+                        model.accounts
+                        ( RellmAccounts.enabledRellmAccountForServer model.accounts.accounts host |> Maybe.map .userId, host )
+                        |> Task.attempt GotLinkPreviewImagesDeleteResult
+                    )
+
                 Just (ConfirmPostDelete post host) ->
                     ( { model | panels = { panels | confirmingDeleteFor = Nothing } }
                     , Posts.deletePost
@@ -2117,6 +2134,21 @@ sharedUpdate req msg model =
             ( { model | accounts = accountsPanelModel }, Cmd.map AccountsPanelMsg accountsPanelCmd )
 
         GotSyncSourceDeleteResult (Err _) ->
+            ( model, Cmd.none )
+
+        GotLinkPreviewImagesDeleteResult (Ok ( maybeAccountsPanelMsg, _ )) ->
+            let
+                ( accountsPanelModel, accountsPanelCmd ) =
+                    case maybeAccountsPanelMsg of
+                        Just accountsPanelMsg ->
+                            AccountsPanel.update req accountsPanelMsg model.accounts
+
+                        Nothing ->
+                            ( model.accounts, Cmd.none )
+            in
+            ( { model | accounts = accountsPanelModel }, Cmd.map AccountsPanelMsg accountsPanelCmd )
+
+        GotLinkPreviewImagesDeleteResult (Err _) ->
             ( model, Cmd.none )
 
         GotOccasionSyncDestinationDeleteResult _ (Ok ( maybeAccountsPanelMsg, _ )) ->

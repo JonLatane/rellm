@@ -668,28 +668,49 @@ pub fn clear_failed_attempts(post_id: i64, conn: &mut PgPooledConnection) {
     }
 }
 
-/// Up to `limit` posts with a link and no generated previews yet, never-attempted ones first, then
-/// least-recently-attempted, skipping any at `MAX_PREVIEW_ATTEMPTS`.
+/// Whether this server has link preview generation turned on
+/// (i.e. `MediaSettings.disable_link_preview_images` isn't set).
+pub fn link_preview_generation_enabled(
+    conn: &mut PgPooledConnection,
+) -> Result<bool, diesel::result::Error> {
+    let config = crate::rpcs::get_server_configuration_model(conn)
+        .map_err(|e| {
+            log::error!("Failed to load server configuration: {:?}", e);
+            diesel::result::Error::NotFound
+        })?;
+    Ok(!normalized_media_settings(config.media_settings)
+        .disable_link_preview_images)
+}
+
+/// Backlogs bigger than this are worked newest-first; smaller ones oldest-first.
+pub const NEWEST_FIRST_BACKLOG_THRESHOLD: i64 = 20;
+
+/// Up to `limit` posts with a link and no generated previews yet, skipping any at
+/// `MAX_PREVIEW_ATTEMPTS`. If more than `NEWEST_FIRST_BACKLOG_THRESHOLD` posts need previews they
+/// come newest (highest id) first, so fresh posts aren't stuck behind a big backlog; otherwise
+/// oldest first.
 pub fn posts_needing_previews(
     limit: i64,
     conn: &mut PgPooledConnection,
 ) -> Result<Vec<Post>, diesel::result::Error> {
-    posts::table
-        .left_join(link_preview_attempts::table)
-        .filter(posts::link.is_not_null())
-        .filter(posts::media_generated.eq(false))
-        .filter(
-            link_preview_attempts::attempts
-                .is_null()
-                .or(link_preview_attempts::attempts.lt(MAX_PREVIEW_ATTEMPTS)),
-        )
-        .order((
-            link_preview_attempts::last_attempt_at.asc().nulls_first(),
-            posts::id.asc(),
-        ))
-        .select(models::POST_COLUMNS)
-        .limit(limit)
-        .load::<Post>(conn)
+    let eligible = || {
+        posts::table
+            .left_join(link_preview_attempts::table)
+            .filter(posts::link.is_not_null())
+            .filter(posts::media_generated.eq(false))
+            .filter(
+                link_preview_attempts::attempts
+                    .is_null()
+                    .or(link_preview_attempts::attempts.lt(MAX_PREVIEW_ATTEMPTS)),
+            )
+    };
+    let backlog: i64 = eligible().count().get_result(conn)?;
+    let query = eligible().select(models::POST_COLUMNS).limit(limit);
+    if backlog > NEWEST_FIRST_BACKLOG_THRESHOLD {
+        query.order(posts::id.desc()).load::<Post>(conn)
+    } else {
+        query.order(posts::id.asc()).load::<Post>(conn)
+    }
 }
 
 /// Generates the preview media for `post`'s link and appends it after the post's existing media --

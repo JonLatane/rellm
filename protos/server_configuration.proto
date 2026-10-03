@@ -406,6 +406,14 @@ message MediaSettings {
   // storage itself), so unlike that field this is never incrementally adjusted between runs.
   uint64 server_object_storage_usage_bytes = 8;
   google.protobuf.Timestamp server_object_storage_usage_calculated_at = 9;
+
+  // Turns off the `generate_link_preview_images` background job's generation of preview media
+  // (the page's main image and a screenshot) for posts with links. Off by default (i.e. generation
+  // is *on*), including for servers configured before this field existed. Doesn't affect
+  // previews that already exist -- see
+  // [`DeleteLinkPreviewImages`](#grpc-api-DeleteLinkPreviewImages) for that. Editable by anyone
+  // who can `ConfigureServer` (`ADMIN`).
+  bool disable_link_preview_images = 10;
 }
 
 // Whether this server's `/market` is open -- an explicit, admin-set toggle independent of

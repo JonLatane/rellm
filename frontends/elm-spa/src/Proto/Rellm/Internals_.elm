@@ -2608,6 +2608,7 @@ fieldNumbersProto__Rellm__MediaSettings :
     , serverMediaUsageCalculatedAt : Int
     , serverObjectStorageUsageBytes : Int
     , serverObjectStorageUsageCalculatedAt : Int
+    , disableLinkPreviewImages : Int
     }
 fieldNumbersProto__Rellm__MediaSettings =
     { visible = 1
@@ -2621,6 +2622,7 @@ fieldNumbersProto__Rellm__MediaSettings =
     , serverMediaUsageCalculatedAt = 7
     , serverObjectStorageUsageBytes = 8
     , serverObjectStorageUsageCalculatedAt = 9
+    , disableLinkPreviewImages = 10
     }
 
 
@@ -2640,6 +2642,7 @@ defaultProto__Rellm__MediaSettings =
     , serverMediaUsageCalculatedAt = Nothing
     , serverObjectStorageUsageBytes = Protobuf.Types.Int64.fromInts 0 0
     , serverObjectStorageUsageCalculatedAt = Nothing
+    , disableLinkPreviewImages = False
     }
 
 
@@ -2667,6 +2670,7 @@ decodeProto__Rellm__MediaSettings =
             9
             (Protobuf.Decode.map Just Proto.Google.Protobuf.Internals_.decodeProto__Google__Protobuf__Timestamp)
             (\a r -> { r | serverObjectStorageUsageCalculatedAt = a })
+        , Protobuf.Decode.optional 10 Protobuf.Decode.bool (\a r -> { r | disableLinkPreviewImages = a })
         ]
 
 
@@ -2697,6 +2701,7 @@ encodeProto__Rellm__MediaSettings value =
             )
                 value.serverObjectStorageUsageCalculatedAt
           )
+        , ( 10, Protobuf.Encode.bool value.disableLinkPreviewImages )
         ]
 
 
@@ -2715,6 +2720,7 @@ type alias Proto__Rellm__MediaSettings =
     , serverMediaUsageCalculatedAt : Maybe Proto.Google.Protobuf.Internals_.Proto__Google__Protobuf__Timestamp
     , serverObjectStorageUsageBytes : Protobuf.Types.Int64.Int64
     , serverObjectStorageUsageCalculatedAt : Maybe Proto.Google.Protobuf.Internals_.Proto__Google__Protobuf__Timestamp
+    , disableLinkPreviewImages : Bool
     }
 
 

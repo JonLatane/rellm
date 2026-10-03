@@ -365,6 +365,14 @@ class RellmClient extends $grpc.Client {
       '/rellm.Rellm/ConfigureServer',
       ($2.ServerConfiguration value) => value.writeToBuffer(),
       ($core.List<$core.int> value) => $2.ServerConfiguration.fromBuffer(value));
+  static final _$deleteLinkPreviewImages = $grpc.ClientMethod<$0.Empty, $0.Empty>(
+      '/rellm.Rellm/DeleteLinkPreviewImages',
+      ($0.Empty value) => value.writeToBuffer(),
+      ($core.List<$core.int> value) => $0.Empty.fromBuffer(value));
+  static final _$deleteUnownedMedia = $grpc.ClientMethod<$0.Empty, $0.Empty>(
+      '/rellm.Rellm/DeleteUnownedMedia',
+      ($0.Empty value) => value.writeToBuffer(),
+      ($core.List<$core.int> value) => $0.Empty.fromBuffer(value));
   static final _$lockClusterResources = $grpc.ClientMethod<$2.LockClusterResourcesRequest, $2.LockClusterResourcesResponse>(
       '/rellm.Rellm/LockClusterResources',
       ($2.LockClusterResourcesRequest value) => value.writeToBuffer(),
@@ -718,6 +726,14 @@ class RellmClient extends $grpc.Client {
 
   $grpc.ResponseFuture<$2.ServerConfiguration> configureServer($2.ServerConfiguration request, {$grpc.CallOptions? options}) {
     return $createUnaryCall(_$configureServer, request, options: options);
+  }
+
+  $grpc.ResponseFuture<$0.Empty> deleteLinkPreviewImages($0.Empty request, {$grpc.CallOptions? options}) {
+    return $createUnaryCall(_$deleteLinkPreviewImages, request, options: options);
+  }
+
+  $grpc.ResponseFuture<$0.Empty> deleteUnownedMedia($0.Empty request, {$grpc.CallOptions? options}) {
+    return $createUnaryCall(_$deleteUnownedMedia, request, options: options);
   }
 
   $grpc.ResponseFuture<$2.LockClusterResourcesResponse> lockClusterResources($2.LockClusterResourcesRequest request, {$grpc.CallOptions? options}) {
@@ -1323,6 +1339,20 @@ abstract class RellmServiceBase extends $grpc.Service {
         false,
         ($core.List<$core.int> value) => $2.ServerConfiguration.fromBuffer(value),
         ($2.ServerConfiguration value) => value.writeToBuffer()));
+    $addMethod($grpc.ServiceMethod<$0.Empty, $0.Empty>(
+        'DeleteLinkPreviewImages',
+        deleteLinkPreviewImages_Pre,
+        false,
+        false,
+        ($core.List<$core.int> value) => $0.Empty.fromBuffer(value),
+        ($0.Empty value) => value.writeToBuffer()));
+    $addMethod($grpc.ServiceMethod<$0.Empty, $0.Empty>(
+        'DeleteUnownedMedia',
+        deleteUnownedMedia_Pre,
+        false,
+        false,
+        ($core.List<$core.int> value) => $0.Empty.fromBuffer(value),
+        ($0.Empty value) => value.writeToBuffer()));
     $addMethod($grpc.ServiceMethod<$2.LockClusterResourcesRequest, $2.LockClusterResourcesResponse>(
         'LockClusterResources',
         lockClusterResources_Pre,
@@ -1685,6 +1715,14 @@ abstract class RellmServiceBase extends $grpc.Service {
     return configureServer(call, await request);
   }
 
+  $async.Future<$0.Empty> deleteLinkPreviewImages_Pre($grpc.ServiceCall call, $async.Future<$0.Empty> request) async {
+    return deleteLinkPreviewImages(call, await request);
+  }
+
+  $async.Future<$0.Empty> deleteUnownedMedia_Pre($grpc.ServiceCall call, $async.Future<$0.Empty> request) async {
+    return deleteUnownedMedia(call, await request);
+  }
+
   $async.Future<$2.LockClusterResourcesResponse> lockClusterResources_Pre($grpc.ServiceCall call, $async.Future<$2.LockClusterResourcesRequest> request) async {
     return lockClusterResources(call, await request);
   }
@@ -1784,6 +1822,8 @@ abstract class RellmServiceBase extends $grpc.Service {
   $async.Future<$1.FederatedAccount> federateProfile($grpc.ServiceCall call, $1.FederatedAccount request);
   $async.Future<$0.Empty> defederateProfile($grpc.ServiceCall call, $1.FederatedAccount request);
   $async.Future<$2.ServerConfiguration> configureServer($grpc.ServiceCall call, $2.ServerConfiguration request);
+  $async.Future<$0.Empty> deleteLinkPreviewImages($grpc.ServiceCall call, $0.Empty request);
+  $async.Future<$0.Empty> deleteUnownedMedia($grpc.ServiceCall call, $0.Empty request);
   $async.Future<$2.LockClusterResourcesResponse> lockClusterResources($grpc.ServiceCall call, $2.LockClusterResourcesRequest request);
   $async.Future<$0.Empty> freeClusterResources($grpc.ServiceCall call, $2.FreeClusterResourcesRequest request);
   $async.Future<$0.Empty> resetData($grpc.ServiceCall call, $0.Empty request);

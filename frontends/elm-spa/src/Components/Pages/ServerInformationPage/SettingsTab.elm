@@ -1,4 +1,4 @@
-module Components.Pages.ServerInformationPage.SettingsTab exposing (Model, Msg, init, update, view)
+module Components.Pages.ServerInformationPage.SettingsTab exposing (Model, Msg, applySharedMsg, init, update, view)
 
 {-| The Settings tab of `Components.Pages.ServerInformationPage` -- the three server-wide grantable
 permission sets (Anonymous/Default/Basic User Permissions, `permissionsSection`, one per
@@ -9,6 +9,7 @@ Media, `featureSettingsSection`, one per `FeatureSettingsSet`). Both mirror
 write" RPC helper) instead of a `User`'s `permissions`.
 -}
 
+import Components.MediaMaintenance as MediaMaintenance
 import Components.Pages.ServerInformationPage.Common as Common
 import Components.Posts as Posts
 import Components.Users as Users
@@ -26,7 +27,7 @@ import Protobuf.Types.Int64 exposing (Int64)
 import Set exposing (Set)
 import Shared
 import Shared.AccountsPanel as AccountsPanel
-import Shared.AccountsPanel.RellmAccounts exposing (RellmAccount)
+import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer)
 import Shared.ByteFormat as ByteFormat
 import Shared.Conversions as Conversions
@@ -50,7 +51,19 @@ type alias Model =
     , eventSettingsEdit : Maybe FeatureSettingsEdit
     , mediaSettingsEdit : Maybe FeatureSettingsEdit
     , collapsedFeatureSettings : Set String
+    , mediaMaintenanceStatus : MediaMaintenanceStatus
     }
+
+
+{-| What the Media Settings section's "Delete Link Preview Images"/"Delete Unowned Media" buttons last did
+-- `MediaMaintenanceRunning` while one's RPC is in flight (both buttons disabled), then
+`MediaMaintenanceDone`/`MediaMaintenanceFailed` with a message shown beneath them.
+-}
+type MediaMaintenanceStatus
+    = MediaMaintenanceIdle
+    | MediaMaintenanceRunning
+    | MediaMaintenanceDone String
+    | MediaMaintenanceFailed String
 
 
 type Msg
@@ -73,6 +86,10 @@ type Msg
     | FeatureSettingsShowStartedOrLongEventsToggled FeatureSettingsSet
     | FeatureSettingsLicensedMediaGloballyToggled FeatureSettingsSet
     | FeatureSettingsBlockCorsToggled FeatureSettingsSet
+    | FeatureSettingsGenerateLinkPreviewImagesToggled FeatureSettingsSet
+    | DeleteLinkPreviewImagesClicked
+    | DeleteUnownedMediaClicked
+    | GotDeleteUnownedMediaResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, () ))
     | FeatureSettingsMediaAllocationTextChanged FeatureSettingsSet String
     | FeatureSettingsMediaAllocationUnitChanged FeatureSettingsSet String
     | FeatureSettingsServerMediaAllocationTextChanged FeatureSettingsSet String
@@ -153,6 +170,7 @@ type alias FeatureSettingsEdit =
     -- `server_configuration.proto`.
     , licensedMediaVisibleGlobally : Bool
     , blockCorsAnonymousMediaAccess : Bool
+    , generateLinkPreviewImages : Bool
     , mediaAllocationText : String
     , mediaAllocationUnit : ByteFormat.ByteUnit
 
@@ -188,6 +206,7 @@ init =
     , eventSettingsEdit = Nothing
     , mediaSettingsEdit = Nothing
     , collapsedFeatureSettings = Set.empty
+    , mediaMaintenanceStatus = MediaMaintenanceIdle
     }
 
 
@@ -333,6 +352,7 @@ update shared targetHost maybeServer msg model =
                             , showStartedOrLongEventsByDefault = Maybe.withDefault False current.showStartedOrLongEventsByDefault
                             , licensedMediaVisibleGlobally = Maybe.withDefault False current.licensedMediaVisibleGlobally
                             , blockCorsAnonymousMediaAccess = Maybe.withDefault False current.blockCorsAnonymousMediaAccess
+                            , generateLinkPreviewImages = Maybe.withDefault True current.generateLinkPreviewImages
                             , mediaAllocationText = String.fromFloat (toFloat mediaAllocationBytes / toFloat (ByteFormat.byteUnitBytes mediaAllocationUnit))
                             , mediaAllocationUnit = mediaAllocationUnit
                             , serverMediaAllocationText = String.fromFloat (toFloat serverMediaAllocationBytes / toFloat (ByteFormat.byteUnitBytes serverMediaAllocationUnit))
@@ -419,6 +439,36 @@ update shared targetHost maybeServer msg model =
             ( setFeatureSettingsEditFor set
                 (featureSettingsEditFor set model |> Maybe.map (\edit -> { edit | blockCorsAnonymousMediaAccess = not edit.blockCorsAnonymousMediaAccess }))
                 model
+            , Effect.none
+            )
+
+        FeatureSettingsGenerateLinkPreviewImagesToggled set ->
+            ( setFeatureSettingsEditFor set
+                (featureSettingsEditFor set model |> Maybe.map (\edit -> { edit | generateLinkPreviewImages = not edit.generateLinkPreviewImages }))
+                model
+            , Effect.none
+            )
+
+        DeleteLinkPreviewImagesClicked ->
+            ( model
+            , Effect.fromShared (Shared.RequestDelete (Shared.ConfirmDeleteLinkPreviewImages targetHost))
+            )
+
+        DeleteUnownedMediaClicked ->
+            ( { model | mediaMaintenanceStatus = MediaMaintenanceRunning }
+            , MediaMaintenance.deleteUnownedMedia shared.accounts
+                ( RellmAccounts.enabledRellmAccountForServer shared.accounts.accounts targetHost |> Maybe.map .userId, targetHost )
+                |> Task.attempt GotDeleteUnownedMediaResult
+                |> Effect.fromCmd
+            )
+
+        GotDeleteUnownedMediaResult (Ok ( maybeAccountsPanelMsg, _ )) ->
+            ( { model | mediaMaintenanceStatus = MediaMaintenanceDone "Unowned media deleted." }
+            , Common.accountsPanelEffect maybeAccountsPanelMsg
+            )
+
+        GotDeleteUnownedMediaResult (Err err) ->
+            ( { model | mediaMaintenanceStatus = MediaMaintenanceFailed (AccountsPanel.grpcErrorToString err) }
             , Effect.none
             )
 
@@ -736,6 +786,9 @@ type alias FeatureSettingsSummary =
     , showStartedOrLongEventsByDefault : Maybe Bool
     , licensedMediaVisibleGlobally : Maybe Bool
     , blockCorsAnonymousMediaAccess : Maybe Bool
+
+    -- The positive form of `MediaSettings.disable_link_preview_images`.
+    , generateLinkPreviewImages : Maybe Bool
     , mediaAllocationBytes : Maybe Int
 
     -- `MediaFeatureSettings`-only -- see `FeatureSettingsEdit`'s matching fields for why these are
@@ -770,7 +823,7 @@ currentFeatureSettingsFor set config =
                 s =
                     Maybe.withDefault defaultFeatureSettings config.peopleSettings
             in
-            { visible = s.visible, moderation = s.defaultModeration, visibility = s.defaultVisibility, aliasSingular = s.aliasSingular, aliasPlural = s.aliasPlural, enableReplies = Nothing, calendarLookbackDays = Nothing, calendarDisplayMode = Nothing, showStartedOrLongEventsByDefault = Nothing, licensedMediaVisibleGlobally = Nothing, blockCorsAnonymousMediaAccess = Nothing, mediaAllocationBytes = Nothing, serverMediaAllocationBytes = Nothing, serverMediaUsageBytes = Nothing, serverMediaUsageCalculatedAt = Nothing, serverObjectStorageUsageBytes = Nothing, serverObjectStorageUsageCalculatedAt = Nothing }
+            { visible = s.visible, moderation = s.defaultModeration, visibility = s.defaultVisibility, aliasSingular = s.aliasSingular, aliasPlural = s.aliasPlural, enableReplies = Nothing, calendarLookbackDays = Nothing, calendarDisplayMode = Nothing, showStartedOrLongEventsByDefault = Nothing, licensedMediaVisibleGlobally = Nothing, blockCorsAnonymousMediaAccess = Nothing, generateLinkPreviewImages = Nothing, mediaAllocationBytes = Nothing, serverMediaAllocationBytes = Nothing, serverMediaUsageBytes = Nothing, serverMediaUsageCalculatedAt = Nothing, serverObjectStorageUsageBytes = Nothing, serverObjectStorageUsageCalculatedAt = Nothing }
 
         GroupFeatureSettings ->
             let
@@ -778,7 +831,7 @@ currentFeatureSettingsFor set config =
                 s =
                     Maybe.withDefault defaultFeatureSettings config.groupSettings
             in
-            { visible = s.visible, moderation = s.defaultModeration, visibility = s.defaultVisibility, aliasSingular = s.aliasSingular, aliasPlural = s.aliasPlural, enableReplies = Nothing, calendarLookbackDays = Nothing, calendarDisplayMode = Nothing, showStartedOrLongEventsByDefault = Nothing, licensedMediaVisibleGlobally = Nothing, blockCorsAnonymousMediaAccess = Nothing, mediaAllocationBytes = Nothing, serverMediaAllocationBytes = Nothing, serverMediaUsageBytes = Nothing, serverMediaUsageCalculatedAt = Nothing, serverObjectStorageUsageBytes = Nothing, serverObjectStorageUsageCalculatedAt = Nothing }
+            { visible = s.visible, moderation = s.defaultModeration, visibility = s.defaultVisibility, aliasSingular = s.aliasSingular, aliasPlural = s.aliasPlural, enableReplies = Nothing, calendarLookbackDays = Nothing, calendarDisplayMode = Nothing, showStartedOrLongEventsByDefault = Nothing, licensedMediaVisibleGlobally = Nothing, blockCorsAnonymousMediaAccess = Nothing, generateLinkPreviewImages = Nothing, mediaAllocationBytes = Nothing, serverMediaAllocationBytes = Nothing, serverMediaUsageBytes = Nothing, serverMediaUsageCalculatedAt = Nothing, serverObjectStorageUsageBytes = Nothing, serverObjectStorageUsageCalculatedAt = Nothing }
 
         PostFeatureSettings ->
             let
@@ -786,7 +839,7 @@ currentFeatureSettingsFor set config =
                 s =
                     Maybe.withDefault defaultPostSettings config.postSettings
             in
-            { visible = s.visible, moderation = s.defaultModeration, visibility = s.defaultVisibility, aliasSingular = s.aliasSingular, aliasPlural = s.aliasPlural, enableReplies = s.enableReplies, calendarLookbackDays = Nothing, calendarDisplayMode = Nothing, showStartedOrLongEventsByDefault = Nothing, licensedMediaVisibleGlobally = Nothing, blockCorsAnonymousMediaAccess = Nothing, mediaAllocationBytes = Nothing, serverMediaAllocationBytes = Nothing, serverMediaUsageBytes = Nothing, serverMediaUsageCalculatedAt = Nothing, serverObjectStorageUsageBytes = Nothing, serverObjectStorageUsageCalculatedAt = Nothing }
+            { visible = s.visible, moderation = s.defaultModeration, visibility = s.defaultVisibility, aliasSingular = s.aliasSingular, aliasPlural = s.aliasPlural, enableReplies = s.enableReplies, calendarLookbackDays = Nothing, calendarDisplayMode = Nothing, showStartedOrLongEventsByDefault = Nothing, licensedMediaVisibleGlobally = Nothing, blockCorsAnonymousMediaAccess = Nothing, generateLinkPreviewImages = Nothing, mediaAllocationBytes = Nothing, serverMediaAllocationBytes = Nothing, serverMediaUsageBytes = Nothing, serverMediaUsageCalculatedAt = Nothing, serverObjectStorageUsageBytes = Nothing, serverObjectStorageUsageCalculatedAt = Nothing }
 
         EventFeatureSettings ->
             let
@@ -794,7 +847,7 @@ currentFeatureSettingsFor set config =
                 s =
                     Maybe.withDefault defaultEventSettings config.eventSettings
             in
-            { visible = s.visible, moderation = s.defaultModeration, visibility = s.defaultVisibility, aliasSingular = s.aliasSingular, aliasPlural = s.aliasPlural, enableReplies = s.enableReplies, calendarLookbackDays = s.calendarLookbackDays, calendarDisplayMode = Just s.defaultCalendarDisplayMode, showStartedOrLongEventsByDefault = Just s.showStartedOrLongEventsByDefault, licensedMediaVisibleGlobally = Nothing, blockCorsAnonymousMediaAccess = Nothing, mediaAllocationBytes = Nothing, serverMediaAllocationBytes = Nothing, serverMediaUsageBytes = Nothing, serverMediaUsageCalculatedAt = Nothing, serverObjectStorageUsageBytes = Nothing, serverObjectStorageUsageCalculatedAt = Nothing }
+            { visible = s.visible, moderation = s.defaultModeration, visibility = s.defaultVisibility, aliasSingular = s.aliasSingular, aliasPlural = s.aliasPlural, enableReplies = s.enableReplies, calendarLookbackDays = s.calendarLookbackDays, calendarDisplayMode = Just s.defaultCalendarDisplayMode, showStartedOrLongEventsByDefault = Just s.showStartedOrLongEventsByDefault, licensedMediaVisibleGlobally = Nothing, blockCorsAnonymousMediaAccess = Nothing, generateLinkPreviewImages = Nothing, mediaAllocationBytes = Nothing, serverMediaAllocationBytes = Nothing, serverMediaUsageBytes = Nothing, serverMediaUsageCalculatedAt = Nothing, serverObjectStorageUsageBytes = Nothing, serverObjectStorageUsageCalculatedAt = Nothing }
 
         MediaFeatureSettings ->
             let
@@ -813,6 +866,7 @@ currentFeatureSettingsFor set config =
             , showStartedOrLongEventsByDefault = Nothing
             , licensedMediaVisibleGlobally = Just s.licensedMediaVisibleGlobally
             , blockCorsAnonymousMediaAccess = Just s.blockCorsAnonymousMediaAccess
+            , generateLinkPreviewImages = Just (not s.disableLinkPreviewImages)
             , mediaAllocationBytes = Just (Conversions.int64ToInt s.defaultUserMediaAllocationBytes)
             , serverMediaAllocationBytes = Just (Conversions.int64ToInt s.serverMediaAllocationBytes)
             , serverMediaUsageBytes = Just (Conversions.int64ToInt s.serverMediaUsageBytes)
@@ -966,6 +1020,7 @@ applyFeatureSettingsFor set edit config =
                             , serverMediaAllocationBytes = serverMediaAllocationBytes
                             , licensedMediaVisibleGlobally = edit.licensedMediaVisibleGlobally
                             , blockCorsAnonymousMediaAccess = edit.blockCorsAnonymousMediaAccess
+                            , disableLinkPreviewImages = not edit.generateLinkPreviewImages
                         }
             }
 
@@ -1027,10 +1082,11 @@ view shared server maybeAdminAccount model =
          , permissionsSection DefaultPermissions "Default User Permissions" maybeAdminAccount model.defaultPermissionsEdit config.defaultUserPermissions
          , permissionsSection BasicPermissions "Basic User Permissions" maybeAdminAccount model.basicPermissionsEdit config.basicUserPermissions
          ]
-            ++ ([ PeopleFeatureSettings, GroupFeatureSettings, PostFeatureSettings, EventFeatureSettings, MediaFeatureSettings ]
+            ++ ([ PeopleFeatureSettings, MediaFeatureSettings, PostFeatureSettings, EventFeatureSettings, GroupFeatureSettings ]
                     |> List.map
                         (\set ->
                             featureSettingsSection shared.time
+                                model.mediaMaintenanceStatus
                                 set
                                 maybeAdminAccount
                                 (featureSettingsEditFor set model)
@@ -1129,8 +1185,8 @@ arrow is a single static "▼" rotated via `.expandable-section-arrow.is-open` i
 between "▸"/"▾".
 
 -}
-featureSettingsSection : SharedTime.Model -> FeatureSettingsSet -> Maybe RellmAccount -> Maybe FeatureSettingsEdit -> Bool -> FeatureSettingsSummary -> Html Msg
-featureSettingsSection time set maybeAdminAccount maybeEdit collapsed current =
+featureSettingsSection : SharedTime.Model -> MediaMaintenanceStatus -> FeatureSettingsSet -> Maybe RellmAccount -> Maybe FeatureSettingsEdit -> Bool -> FeatureSettingsSummary -> Html Msg
+featureSettingsSection time maintenanceStatus set maybeAdminAccount maybeEdit collapsed current =
     let
         expanded : Bool
         expanded =
@@ -1153,9 +1209,71 @@ featureSettingsSection time set maybeAdminAccount maybeEdit collapsed current =
 
                     Nothing ->
                         featureSettingsDisplayView time set maybeAdminAccount current
+                , if set == MediaFeatureSettings && maybeAdminAccount /= Nothing then
+                    mediaMaintenanceView maintenanceStatus
+
+                  else
+                    text ""
                 ]
             ]
         ]
+
+
+{-| The admin-only "Delete Link Preview Images"/"Delete Unowned Media" buttons (and the last result)
+shown at the bottom of the Media Settings section. Deleting link preview images goes through the
+shared delete-confirmation dialog (`Shared.ConfirmDeleteLinkPreviewImages`) and reports back via
+`applySharedMsg`; deleting unowned media runs directly. Both are disabled while either is in flight.
+-}
+mediaMaintenanceView : MediaMaintenanceStatus -> Html Msg
+mediaMaintenanceView status =
+    let
+        running : Bool
+        running =
+            status == MediaMaintenanceRunning
+    in
+    div [ Html.Attributes.class "server-details-feature-settings-actions" ]
+        [ button
+            [ Html.Attributes.class "server-details-rename-button"
+            , onClick DeleteLinkPreviewImagesClicked
+            , disabled running
+            ]
+            [ text "Delete Link Preview Images" ]
+        , button
+            [ Html.Attributes.class "server-details-rename-button"
+            , onClick DeleteUnownedMediaClicked
+            , disabled running
+            ]
+            [ text "Delete Unowned Media" ]
+        , case status of
+            MediaMaintenanceIdle ->
+                text ""
+
+            MediaMaintenanceRunning ->
+                p [] [ text "Working…" ]
+
+            MediaMaintenanceDone message ->
+                p [] [ text message ]
+
+            MediaMaintenanceFailed message ->
+                p [ Html.Attributes.class "server-details-error" ] [ text message ]
+        ]
+
+
+{-| Picks up `Shared.GotLinkPreviewImagesDeleteResult` (fired by `Shared.update` once the user
+confirms `Shared.ConfirmDeleteLinkPreviewImages`) -- see `Components.Pages.ServerInformationPage`'s
+`SharedMsg` handling, which forwards every `Shared.Msg` here.
+-}
+applySharedMsg : Shared.Msg -> Model -> Model
+applySharedMsg subMsg model =
+    case subMsg of
+        Shared.GotLinkPreviewImagesDeleteResult (Ok _) ->
+            { model | mediaMaintenanceStatus = MediaMaintenanceDone "Link preview images unlinked. Run Delete Unowned Media to remove them from storage." }
+
+        Shared.GotLinkPreviewImagesDeleteResult (Err err) ->
+            { model | mediaMaintenanceStatus = MediaMaintenanceFailed (AccountsPanel.grpcErrorToString err) }
+
+        _ ->
+            model
 
 
 {-| The non-editing body of a `featureSettingsSection` -- `visible`/`enableReplies` are always
@@ -1213,6 +1331,7 @@ featureSettingsDisplayView time set maybeAdminAccount current =
             , if fields.mediaAllocation then
                 [ Common.settingsRow "Licensed Media Visible Globally" (Common.switchDisplay (Maybe.withDefault False current.licensedMediaVisibleGlobally))
                 , Common.settingsRow "Block CORS Anonymous Media Access" (Common.switchDisplay (Maybe.withDefault False current.blockCorsAnonymousMediaAccess))
+                , Common.settingsRow "Generate Link Preview Images" (Common.switchDisplay (Maybe.withDefault True current.generateLinkPreviewImages))
                 ]
 
               else
@@ -1351,6 +1470,7 @@ featureSettingsEditView time set edit =
             , if fields.mediaAllocation then
                 [ Common.settingsRow "Licensed Media Visible Globally" (Common.flagSwitch edit.licensedMediaVisibleGlobally (FeatureSettingsLicensedMediaGloballyToggled set))
                 , Common.settingsRow "Block CORS Anonymous Media Access" (Common.flagSwitch edit.blockCorsAnonymousMediaAccess (FeatureSettingsBlockCorsToggled set))
+                , Common.settingsRow "Generate Link Preview Images" (Common.flagSwitch edit.generateLinkPreviewImages (FeatureSettingsGenerateLinkPreviewImagesToggled set))
                 ]
 
               else

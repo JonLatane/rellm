@@ -194,6 +194,14 @@ impl Rellm for RellmService {
         authenticated_rpc!(self, rpcs::configure_server, request)
     }
 
+    async fn delete_link_preview_images(&self, request: Request<()>) -> Result<Response<()>, Status> {
+        authenticated_rpc!(self, rpcs::delete_link_preview_images, request)
+    }
+
+    async fn delete_unowned_media(&self, request: Request<()>) -> Result<Response<()>, Status> {
+        authenticated_bucket_rpc!(self, rpcs::delete_unowned_media, request)
+    }
+
     async fn reset_data(&self, request: Request<()>) -> Result<Response<()>, Status> {
         authenticated_rpc!(self, rpcs::reset_data, request)
     }

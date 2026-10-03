@@ -1242,6 +1242,21 @@ service Rellm {
   // stored -- see [`ContactProtocol`](#rellm-ContactProtocol)'s own doc.
   rpc ConfigureServer(ServerConfiguration) returns (ServerConfiguration) {}
 
+  // Unlinks all generated link preview images (see
+  // [`MediaSettings.disable_link_preview_images`](#rellm-MediaSettings)) from their posts and
+  // makes every post with a link eligible for preview generation again -- including posts that
+  // had given up after repeated failures. The old preview media is orphaned, not deleted: it's
+  // removed from storage by the next [`DeleteUnownedMedia`](#grpc-api-DeleteUnownedMedia) run
+  // (the periodic `delete_unowned_media` job, or call it directly). *Authenticated.* Requires
+  // `ADMIN` permissions.
+  rpc DeleteLinkPreviewImages(google.protobuf.Empty) returns (google.protobuf.Empty) {}
+
+  // Deletes all Media with no owner (e.g. orphaned by
+  // [`DeleteLinkPreviewImages`](#grpc-api-DeleteLinkPreviewImages) or by deleted users) from
+  // object storage and the database, and removes it from any posts still referencing it.
+  // *Authenticated.* Requires `ADMIN` permissions.
+  rpc DeleteUnownedMedia(google.protobuf.Empty) returns (google.protobuf.Empty) {}
+
   // Attempts to acquire one or more `ClusterResource` locks on behalf of `namespace_id`. *Not
   // part of the authenticated-user auth system* - this is server-to-server, cluster-internal
   // coordination, authorized *entirely* by the `cluster-shared-secret` gRPC metadata header

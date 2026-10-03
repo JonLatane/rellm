@@ -1444,6 +1444,7 @@ fieldNumbersMediaSettings :
     , serverMediaUsageCalculatedAt : Int
     , serverObjectStorageUsageBytes : Int
     , serverObjectStorageUsageCalculatedAt : Int
+    , disableLinkPreviewImages : Int
     }
 fieldNumbersMediaSettings =
     Proto.Rellm.Internals_.fieldNumbersProto__Rellm__MediaSettings
@@ -1554,6 +1555,16 @@ encodeMediaSettings =
  `calculate_server_object_storage_usage` background job (every 4h) -- this is a drift check
  against `server_media_usage_bytes` above (which is derived from the `media` table, not object
  storage itself), so unlike that field this is never incrementally adjusted between runs.
+
+
+### disableLinkPreviewImages
+
+ Turns off the `generate_link_preview_images` background job's generation of preview media
+ (the page's main image and a screenshot) for posts with links. Off by default (i.e. generation
+ is *on*), including for servers configured before this field existed. Doesn't affect
+ previews that already exist -- see
+ [`DeleteLinkPreviewImages`](#grpc-api-DeleteLinkPreviewImages) for that. Editable by anyone
+ who can `ConfigureServer` (`ADMIN`).
 
 
 -}

@@ -1,7 +1,7 @@
 extern crate diesel;
 extern crate rellm;
-use diesel::*;
-use rellm::schema::{media, posts};
+
+use rellm::logic::delete_unowned_media;
 use rellm::{db_connection, init_bin_logging, init_crypto, object_storage_connection};
 
 #[tokio::main]
@@ -15,42 +15,8 @@ async fn main() {
         .await
         .expect("Failed to connect to object storage");
 
-    let mut unowned_media = media::table
-        .filter(media::user_id.is_null())
-        .load::<rellm::models::Media>(&mut conn)
-        .expect("Failed to load Unowned Media");
-
-    for media in unowned_media.iter_mut() {
-        log::info!("Deleting Media: {:?}", media);
-        let posts = posts::table
-            .filter(posts::media.contains(vec![media.id]))
-            .select(rellm::models::POST_COLUMNS)
-            .load::<rellm::models::Post>(&mut conn)
-            .expect("Failed to load Posts with Media");
-        for post in posts {
-            log::info!("Removing Media {} from Post {}", media.id, post.id);
-            let mut post_media = post.media.clone();
-            post_media.retain(|&x| x != Some(media.id));
-            let _ = diesel::update(posts::table.find(post.id))
-                .set(posts::media.eq(post_media))
-                .execute(&mut conn)
-                .expect("Failed to update Post");
-        }
-
-        for size in media.sizes() {
-            if let Err(e) = bucket.delete_object(&size.object_storage_path).await {
-                log::error!(
-                    "Failed to delete object storage object {} for Media {}: {:?}. Proceeding through remaining media.",
-                    size.object_storage_path,
-                    media.id,
-                    e
-                );
-            }
-        }
-        delete(media::table.find(media.id))
-            .execute(&mut conn)
-            .expect("Failed to delete Media");
-        log::info!("Deleted Media: {:?}", media);
-    }
+    delete_unowned_media(&mut conn, &bucket)
+        .await
+        .expect("Failed to delete unowned media");
     log::info!("Done Deleting Unowned Media.");
 }

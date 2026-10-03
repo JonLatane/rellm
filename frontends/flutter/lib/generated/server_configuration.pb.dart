@@ -1201,6 +1201,7 @@ class MediaSettings extends $pb.GeneratedMessage {
     $13.Timestamp? serverMediaUsageCalculatedAt,
     $fixnum.Int64? serverObjectStorageUsageBytes,
     $13.Timestamp? serverObjectStorageUsageCalculatedAt,
+    $core.bool? disableLinkPreviewImages,
     $core.bool? blockCorsAnonymousMediaAccess,
     $core.bool? licensedMediaVisibleGlobally,
   }) {
@@ -1232,6 +1233,9 @@ class MediaSettings extends $pb.GeneratedMessage {
     if (serverObjectStorageUsageCalculatedAt != null) {
       $result.serverObjectStorageUsageCalculatedAt = serverObjectStorageUsageCalculatedAt;
     }
+    if (disableLinkPreviewImages != null) {
+      $result.disableLinkPreviewImages = disableLinkPreviewImages;
+    }
     if (blockCorsAnonymousMediaAccess != null) {
       $result.blockCorsAnonymousMediaAccess = blockCorsAnonymousMediaAccess;
     }
@@ -1254,6 +1258,7 @@ class MediaSettings extends $pb.GeneratedMessage {
     ..aOM<$13.Timestamp>(7, _omitFieldNames ? '' : 'serverMediaUsageCalculatedAt', subBuilder: $13.Timestamp.create)
     ..a<$fixnum.Int64>(8, _omitFieldNames ? '' : 'serverObjectStorageUsageBytes', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
     ..aOM<$13.Timestamp>(9, _omitFieldNames ? '' : 'serverObjectStorageUsageCalculatedAt', subBuilder: $13.Timestamp.create)
+    ..aOB(10, _omitFieldNames ? '' : 'disableLinkPreviewImages')
     ..aOB(20, _omitFieldNames ? '' : 'blockCorsAnonymousMediaAccess')
     ..aOB(21, _omitFieldNames ? '' : 'licensedMediaVisibleGlobally')
     ..hasRequiredFields = false
@@ -1395,16 +1400,31 @@ class MediaSettings extends $pb.GeneratedMessage {
   @$pb.TagNumber(9)
   $13.Timestamp ensureServerObjectStorageUsageCalculatedAt() => $_ensure(8);
 
+  /// Turns off the `generate_link_preview_images` background job's generation of preview media
+  /// (the page's main image and a screenshot) for posts with links. Off by default (i.e. generation
+  /// is *on*), including for servers configured before this field existed. Doesn't affect
+  /// previews that already exist -- see
+  /// [`DeleteLinkPreviewImages`](#grpc-api-DeleteLinkPreviewImages) for that. Editable by anyone
+  /// who can `ConfigureServer` (`ADMIN`).
+  @$pb.TagNumber(10)
+  $core.bool get disableLinkPreviewImages => $_getBF(9);
+  @$pb.TagNumber(10)
+  set disableLinkPreviewImages($core.bool v) { $_setBool(9, v); }
+  @$pb.TagNumber(10)
+  $core.bool hasDisableLinkPreviewImages() => $_has(9);
+  @$pb.TagNumber(10)
+  void clearDisableLinkPreviewImages() => clearField(10);
+
   /// "Block CORS Anonymous Media Access". When set, `GET /media/{id}` responses to *unauthenticated*
   /// requests omit CORS `Access-Control-Allow-*` headers even for `GLOBAL_PUBLIC` media, so browsers
   /// block other sites' scripts from reading them (plain `<img>`/`<video>` embeds still work).
   /// Authenticated requests are unaffected.
   @$pb.TagNumber(20)
-  $core.bool get blockCorsAnonymousMediaAccess => $_getBF(9);
+  $core.bool get blockCorsAnonymousMediaAccess => $_getBF(10);
   @$pb.TagNumber(20)
-  set blockCorsAnonymousMediaAccess($core.bool v) { $_setBool(9, v); }
+  set blockCorsAnonymousMediaAccess($core.bool v) { $_setBool(10, v); }
   @$pb.TagNumber(20)
-  $core.bool hasBlockCorsAnonymousMediaAccess() => $_has(9);
+  $core.bool hasBlockCorsAnonymousMediaAccess() => $_has(10);
   @$pb.TagNumber(20)
   void clearBlockCorsAnonymousMediaAccess() => clearField(20);
 
@@ -1413,11 +1433,11 @@ class MediaSettings extends $pb.GeneratedMessage {
   /// (the default), `LICENSED` media is only visible to logged-in users -- like `SERVER_PUBLIC` --
   /// plus its owner and admins. Either way, its full-quality bytes still require an active License.
   @$pb.TagNumber(21)
-  $core.bool get licensedMediaVisibleGlobally => $_getBF(10);
+  $core.bool get licensedMediaVisibleGlobally => $_getBF(11);
   @$pb.TagNumber(21)
-  set licensedMediaVisibleGlobally($core.bool v) { $_setBool(10, v); }
+  set licensedMediaVisibleGlobally($core.bool v) { $_setBool(11, v); }
   @$pb.TagNumber(21)
-  $core.bool hasLicensedMediaVisibleGlobally() => $_has(10);
+  $core.bool hasLicensedMediaVisibleGlobally() => $_has(11);
   @$pb.TagNumber(21)
   void clearLicensedMediaVisibleGlobally() => clearField(21);
 }

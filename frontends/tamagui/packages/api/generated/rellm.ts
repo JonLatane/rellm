@@ -1959,6 +1959,37 @@ export const RellmDefinition = {
       options: {},
     },
     /**
+     * Unlinks all generated link preview images (see
+     * [`MediaSettings.disable_link_preview_images`](#rellm-MediaSettings)) from their posts and
+     * makes every post with a link eligible for preview generation again -- including posts that
+     * had given up after repeated failures. The old preview media is orphaned, not deleted: it's
+     * removed from storage by the next [`DeleteUnownedMedia`](#grpc-api-DeleteUnownedMedia) run
+     * (the periodic `delete_unowned_media` job, or call it directly). *Authenticated.* Requires
+     * `ADMIN` permissions.
+     */
+    deleteLinkPreviewImages: {
+      name: "DeleteLinkPreviewImages",
+      requestType: Empty,
+      requestStream: false,
+      responseType: Empty,
+      responseStream: false,
+      options: {},
+    },
+    /**
+     * Deletes all Media with no owner (e.g. orphaned by
+     * [`DeleteLinkPreviewImages`](#grpc-api-DeleteLinkPreviewImages) or by deleted users) from
+     * object storage and the database, and removes it from any posts still referencing it.
+     * *Authenticated.* Requires `ADMIN` permissions.
+     */
+    deleteUnownedMedia: {
+      name: "DeleteUnownedMedia",
+      requestType: Empty,
+      requestStream: false,
+      responseType: Empty,
+      responseStream: false,
+      options: {},
+    },
+    /**
      * Attempts to acquire one or more `ClusterResource` locks on behalf of `namespace_id`. *Not
      * part of the authenticated-user auth system* - this is server-to-server, cluster-internal
      * coordination, authorized *entirely* by the `cluster-shared-secret` gRPC metadata header
@@ -2468,6 +2499,23 @@ export interface RellmServiceImplementation<CallContextExt = {}> {
     context: CallContext & CallContextExt,
   ): Promise<DeepPartial<ServerConfiguration>>;
   /**
+   * Unlinks all generated link preview images (see
+   * [`MediaSettings.disable_link_preview_images`](#rellm-MediaSettings)) from their posts and
+   * makes every post with a link eligible for preview generation again -- including posts that
+   * had given up after repeated failures. The old preview media is orphaned, not deleted: it's
+   * removed from storage by the next [`DeleteUnownedMedia`](#grpc-api-DeleteUnownedMedia) run
+   * (the periodic `delete_unowned_media` job, or call it directly). *Authenticated.* Requires
+   * `ADMIN` permissions.
+   */
+  deleteLinkPreviewImages(request: Empty, context: CallContext & CallContextExt): Promise<DeepPartial<Empty>>;
+  /**
+   * Deletes all Media with no owner (e.g. orphaned by
+   * [`DeleteLinkPreviewImages`](#grpc-api-DeleteLinkPreviewImages) or by deleted users) from
+   * object storage and the database, and removes it from any posts still referencing it.
+   * *Authenticated.* Requires `ADMIN` permissions.
+   */
+  deleteUnownedMedia(request: Empty, context: CallContext & CallContextExt): Promise<DeepPartial<Empty>>;
+  /**
    * Attempts to acquire one or more `ClusterResource` locks on behalf of `namespace_id`. *Not
    * part of the authenticated-user auth system* - this is server-to-server, cluster-internal
    * coordination, authorized *entirely* by the `cluster-shared-secret` gRPC metadata header
@@ -2953,6 +3001,23 @@ export interface RellmClient<CallOptionsExt = {}> {
     request: DeepPartial<ServerConfiguration>,
     options?: CallOptions & CallOptionsExt,
   ): Promise<ServerConfiguration>;
+  /**
+   * Unlinks all generated link preview images (see
+   * [`MediaSettings.disable_link_preview_images`](#rellm-MediaSettings)) from their posts and
+   * makes every post with a link eligible for preview generation again -- including posts that
+   * had given up after repeated failures. The old preview media is orphaned, not deleted: it's
+   * removed from storage by the next [`DeleteUnownedMedia`](#grpc-api-DeleteUnownedMedia) run
+   * (the periodic `delete_unowned_media` job, or call it directly). *Authenticated.* Requires
+   * `ADMIN` permissions.
+   */
+  deleteLinkPreviewImages(request: DeepPartial<Empty>, options?: CallOptions & CallOptionsExt): Promise<Empty>;
+  /**
+   * Deletes all Media with no owner (e.g. orphaned by
+   * [`DeleteLinkPreviewImages`](#grpc-api-DeleteLinkPreviewImages) or by deleted users) from
+   * object storage and the database, and removes it from any posts still referencing it.
+   * *Authenticated.* Requires `ADMIN` permissions.
+   */
+  deleteUnownedMedia(request: DeepPartial<Empty>, options?: CallOptions & CallOptionsExt): Promise<Empty>;
   /**
    * Attempts to acquire one or more `ClusterResource` locks on behalf of `namespace_id`. *Not
    * part of the authenticated-user auth system* - this is server-to-server, cluster-internal

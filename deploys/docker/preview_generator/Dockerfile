@@ -8,7 +8,7 @@ FROM --platform=linux/amd64 debian:testing-slim
 # entrypoint just loops that binary on an interval via preview_generator_job.sh, run as a single
 # persistent pod (deploys/k8s/preview_generator.yaml) rather than a per-invocation K8s CronJob.
 COPY backend/target/release/generate_link_preview_images__server_release /opt/generate_link_preview_images
-COPY backend/target/release/delete_preview_images__server_release /opt/delete_preview_images
+COPY backend/target/release/delete_link_preview_images__server_release /opt/delete_link_preview_images
 # One-off: regenerate previews for a single post ID (integer or proto ID), even if it already has some.
 COPY backend/target/release/regenerate_link_preview_images_for_post__server_release /opt/regenerate_link_preview_images_for_post
 
