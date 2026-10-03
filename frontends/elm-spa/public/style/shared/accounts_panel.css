@@ -1658,3 +1658,41 @@
 .collapsible.is-closed {
   pointer-events: none;
 }
+
+/* The Rellm/Mastodon/Bluesky tab panes (`UI.addAccountServerFormBody`), left to right in that order.
+   Switching tabs animates the outgoing pane's `flex-grow`/`max-height`/`opacity` to 0 while the
+   incoming one's grow to fill the row. Everything inside must be single-line (nowrap + ellipsis)
+   so a pane squeezed to ~0 width doesn't reflow into a tall column of wrapped text mid-animation. */
+.add-account-server-panes {
+  display: flex;
+}
+
+.add-account-server-pane {
+  flex: 0 1 0;
+  min-width: 0;
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  visibility: hidden;
+  transition: flex-grow 0.25s ease, max-height 0.25s ease, opacity 0.25s ease, visibility 0s 0.25s;
+}
+
+.add-account-server-pane.is-active {
+  flex: 1 1 0;
+  max-height: 24rem;
+  opacity: 1;
+  visibility: visible;
+  transition: flex-grow 0.25s ease, max-height 0.25s ease, opacity 0.25s ease, visibility 0s 0s;
+}
+
+.add-account-server-pane button,
+.add-account-server-pane input,
+.add-account-server-pane a,
+.add-account-server-pane label,
+.add-account-server-pane p,
+.add-account-server-pane span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}

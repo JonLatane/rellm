@@ -1888,26 +1888,38 @@ blueskyConnectFormView form =
             , disabled submitting
             ]
             []
-        , a
-            [ href "https://bsky.app/settings/app-passwords"
-            , target "_blank"
-            , attribute "rel" "noopener noreferrer"
-            , style "font-size" "0.8em"
-            , style "text-decoration" "underline"
+        , -- One non-wrapping row (the form itself is `flex-wrap`), so squeezing the pane mid
+          -- tab-switch animation ellipsises the link/button instead of wrapping them.
+          div
+            [ style "display" "flex"
+            , style "flex" "1 1 100%"
+            , style "flex-wrap" "nowrap"
+            , style "align-items" "center"
+            , style "gap" "0.4rem"
+            , style "min-width" "0"
             ]
-            [ text "Create an App Password on bsky.app ↗" ]
-        , button
-            [ class "background-color-primary"
-            , style "margin-left" "auto"
-            , disabled (submitting || String.isEmpty form.handle || String.isEmpty form.appPassword)
-            ]
-            [ text
-                (if submitting then
-                    "Connecting…"
+            [ a
+                [ href "https://bsky.app/settings/app-passwords"
+                , target "_blank"
+                , attribute "rel" "noopener noreferrer"
+                , style "font-size" "0.8em"
+                , style "text-decoration" "underline"
+                , style "flex" "1 1 0"
+                ]
+                [ text "Create an App Password on bsky.app ↗" ]
+            , button
+                [ class "background-color-primary"
+                , style "flex" "0 1 auto"
+                , disabled (submitting || String.isEmpty form.handle || String.isEmpty form.appPassword)
+                ]
+                [ text
+                    (if submitting then
+                        "Connecting…"
 
-                 else
-                    "Connect"
-                )
+                     else
+                        "Connect"
+                    )
+                ]
             ]
         , case form.status of
             AccountsPanel.Errored err ->
@@ -3150,25 +3162,48 @@ addAccountServerHeaderRow shared =
 see `AccountsPanel.AccountOrServerFormType`) -- collapsed to zero height via the same
 `grid-template-rows` 1fr/0fr trick `.account-avatar-menu` uses (`.add-account-server-form-body`/
 `.is-open`) in step with `addAccountServerHeaderRow`'s own horizontal collapse, rather than appearing/
-disappearing outright. Always renders the _active_ tab's fields (never all three at once) -- switching
-tabs while already open just reflows the row's own natural height, with no separate animation of its
-own.
+disappearing outright. All three tabs' panes are always mounted side by side; switching tabs
+animates their width/max-height/opacity (see `.add-account-server-pane`), so every control inside
+must stay single-line (nowrap + ellipsis).
 -}
 addAccountServerFormBody : Shared.Model -> Route -> Html Shared.Msg
 addAccountServerFormBody shared currentRoute =
-    div [ classes [ "add-account-server-form-body", openClosedClass (AccountsPanel.shouldShowAddAccountForm shared.accounts) ] ]
-        [ case AccountsPanel.activeAddAccountServerFormType shared.accounts of
-            AccountsPanel.RellmServerFormType ->
-                rellmAddAccountServerForm shared currentRoute
+    let
+        activeType : AccountsPanel.AccountOrServerFormType
+        activeType =
+            AccountsPanel.activeAddAccountServerFormType shared.accounts
 
-            AccountsPanel.MastodonServerFormType ->
-                div [ class "account-form" ]
+        -- Rellm is "left" of Mastodon is "left" of Bluesky -- all three are always mounted, so
+        -- switching tabs animates the outgoing pane's width/max-height down to 0 while the
+        -- incoming one's grows to fill the row (see `.add-account-server-pane`).
+        pane : AccountsPanel.AccountOrServerFormType -> Html Shared.Msg -> Html Shared.Msg
+        pane paneType content =
+            div
+                ([ classList
+                    [ ( "add-account-server-pane", True )
+                    , ( "is-active", paneType == activeType )
+                    ]
+                 ]
+                    ++ (if paneType == activeType then
+                            []
+
+                        else
+                            [ attribute "inert" "", attribute "aria-hidden" "true" ]
+                       )
+                )
+                [ content ]
+    in
+    div [ classes [ "add-account-server-form-body", openClosedClass (AccountsPanel.shouldShowAddAccountForm shared.accounts) ] ]
+        [ div [ class "add-account-server-panes" ]
+            [ pane AccountsPanel.RellmServerFormType (rellmAddAccountServerForm shared currentRoute)
+            , pane AccountsPanel.MastodonServerFormType
+                (div [ class "account-form" ]
                     [ mastodonServerFormView shared
                     , mastodonConnectSection shared
                     ]
-
-            AccountsPanel.BlueskyAccountFormType ->
-                blueskyConnectFormView shared.accounts.blueskyConnectForm
+                )
+            , pane AccountsPanel.BlueskyAccountFormType (blueskyConnectFormView shared.accounts.blueskyConnectForm)
+            ]
         ]
 
 
