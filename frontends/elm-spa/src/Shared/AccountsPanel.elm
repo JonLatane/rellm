@@ -1481,6 +1481,23 @@ small) to run after every single message.
 -}
 update : Request -> Msg -> Model -> ( Model, Cmd Msg )
 update req msg model =
+    case msg of
+        -- A login/create cancelled (`HideAddAccountFormClicked` resets the status to `Idle`) while
+        -- its request was in flight: drop the late result rather than signing in behind the
+        -- user's back. Both senders (`LoginClicked`/`CreateAccountClicked`) set `Submitting` first.
+        GotAuthResult _ ->
+            if model.accountForm.status /= Submitting then
+                ( model, Cmd.none )
+
+            else
+                updateHelp req msg model
+
+        _ ->
+            updateHelp req msg model
+
+
+updateHelp : Request -> Msg -> Model -> ( Model, Cmd Msg )
+updateHelp req msg model =
     let
         ( updatedModel, cmd ) =
             sendUpdate req msg model
@@ -1659,7 +1676,14 @@ sendUpdate req msg model =
             )
 
         HideAddAccountFormClicked ->
-            ( { model | addAccountServerFormType = Nothing }, Cmd.none )
+            -- The "←" collapse button also abandons any Rellm login/create flow in progress: back
+            -- to the Username step (`NewAccountBackClicked`'s own reset), no pending create-account
+            -- confirmation, password cleared, and no in-flight/errored status -- an `Idle` status is
+            -- also what makes a still-pending `GotAuthResult` get ignored (see its guard clause).
+            ( { model | addAccountServerFormType = Nothing, newAccountType = Nothing, acceptedCreateAccount = Nothing, createAccountConfirmation = Nothing }
+                |> updateForm (\f -> { f | password = "", showPasswordAsText = False, status = Idle })
+            , Cmd.none
+            )
 
         LoginClicked ->
             let
