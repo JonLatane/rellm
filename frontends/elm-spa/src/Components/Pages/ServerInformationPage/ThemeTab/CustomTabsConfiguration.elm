@@ -19,11 +19,11 @@ import Dict exposing (Dict)
 import Effect exposing (Effect)
 import Grpc
 import Html exposing (Html, button, div, h3, input, option, select, span, text)
-import Html.Attributes exposing (id, placeholder, selected, value)
+import Html.Attributes exposing (disabled, id, placeholder, selected, value)
 import Html.Events exposing (onClick, onInput)
 import Html.Keyed
 import Proto.Rellm exposing (ServerConfiguration, defaultCustomNavigationTabSet)
-import Proto.Rellm.NavigationTab exposing (NavigationTab(..))
+import Proto.Rellm.NavigationTab exposing (NavigationTab)
 import Proto.Rellm.NavigationTabStyle exposing (NavigationTabStyle)
 import Shared
 import Shared.AccountsPanel as AccountsPanel
@@ -224,13 +224,34 @@ update shared targetHost maybeServer msg model =
                         entryId =
                             "tab-" ++ String.fromInt edit.nextEntryId
 
+                        -- Each built-in page may back at most one tab (the backend enforces it too),
+                        -- so a new tab gets the first one not already taken, else a Custom Post.
+                        newTarget : CustomNav.CustomTabTarget
+                        newTarget =
+                            CustomNav.selectableTargetKinds
+                                |> List.filterMap
+                                    (\kind ->
+                                        case kind of
+                                            CustomNav.KindTab navTab ->
+                                                if builtinTabTaken Nothing navTab edit then
+                                                    Nothing
+
+                                                else
+                                                    Just (CustomNav.TargetTab navTab)
+
+                                            _ ->
+                                                Nothing
+                                    )
+                                |> List.head
+                                |> Maybe.withDefault (CustomNav.TargetPost "")
+
                         newEntry : CustomTabEntry
                         newEntry =
                             { entryId = entryId
-                            , target = CustomNav.TargetTab EVENTSTAB
+                            , target = newTarget
                             , icon = CustomNav.EmojiIcon "✨"
                             , title = ""
-                            , path = CustomNav.defaultPathFor (CustomNav.TargetTab EVENTSTAB)
+                            , path = CustomNav.defaultPathFor newTarget
                             }
                     in
                     ( { model
@@ -906,7 +927,7 @@ customTabEditChip server edit count index entry =
             ]
         , div [ classes [ "server-chip-bottom", "background-color-nav", "custom-tab-chip-edit-fields" ] ]
             (List.concat
-                [ [ customTabTargetSelect entry ]
+                [ [ customTabTargetSelect edit entry ]
                 , case entry.target of
                     CustomNav.TargetPost postId ->
                         [ input
@@ -990,14 +1011,33 @@ customTabIconEditor server entry =
         ]
 
 
-customTabTargetSelect : CustomTabEntry -> Html Msg
-customTabTargetSelect entry =
+{-| Whether built-in page `navTab` already backs a tab in `edit.pending` other than `exceptEntryId`'s.
+Each built-in page may back at most one custom tab (the backend rejects duplicates).
+-}
+builtinTabTaken : Maybe String -> NavigationTab -> CustomTabsEdit -> Bool
+builtinTabTaken exceptEntryId navTab edit =
+    edit.pending
+        |> List.any (\other -> Just other.entryId /= exceptEntryId && other.target == CustomNav.TargetTab navTab)
+
+
+customTabTargetSelect : CustomTabsEdit -> CustomTabEntry -> Html Msg
+customTabTargetSelect edit entry =
     select [ onInput (CustomTabTargetKindChanged entry.entryId) ]
         (CustomNav.selectableTargetKinds
             |> List.map
                 (\kind ->
                     option
-                        [ value (CustomNav.targetKindText kind), selected (CustomNav.targetKind entry.target == kind) ]
+                        [ value (CustomNav.targetKindText kind)
+                        , selected (CustomNav.targetKind entry.target == kind)
+                        , disabled
+                            (case kind of
+                                CustomNav.KindTab navTab ->
+                                    builtinTabTaken (Just entry.entryId) navTab edit
+
+                                _ ->
+                                    False
+                            )
+                        ]
                         [ text (CustomNav.targetKindText kind) ]
                 )
         )

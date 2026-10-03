@@ -603,6 +603,7 @@ customTabLinks shared currentRoute =
     case mainServer shared |> Maybe.andThen (\server -> (RellmServers.configurationOf server).customTabs |> Maybe.map (Tuple.pair server)) of
         Just ( server, customTabs ) ->
             let
+                tabs : List CustomNav.CustomTab
                 tabs =
                     CustomNav.effectiveTabs (Just customTabs)
             in

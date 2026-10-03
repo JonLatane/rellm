@@ -36,6 +36,8 @@ pub fn validate_configuration(config: &ServerConfiguration) -> Result<(), Status
         }
 
         let mut seen_paths = HashSet::new();
+        // Each built-in page (Posts, Events, Media, ...) may back at most one custom tab.
+        let mut seen_tab_targets = HashSet::new();
         for tab in &custom_tabs.tabs {
             let is_profile_tab = matches!(
                 tab.target.as_ref(),
@@ -47,6 +49,15 @@ pub fn validate_configuration(config: &ServerConfiguration) -> Result<(), Status
                     Code::InvalidArgument,
                     "custom_tab_paths_must_be_distinct",
                 ));
+            }
+
+            if let Some(custom_navigation_tab::Target::Tab(builtin)) = tab.target.as_ref() {
+                if !seen_tab_targets.insert(*builtin) {
+                    return Err(Status::new(
+                        Code::InvalidArgument,
+                        "custom_tab_targets_must_be_distinct",
+                    ));
+                }
             }
 
             // "events", "posts", "people", "about", and "market" are reserved as top-level paths
