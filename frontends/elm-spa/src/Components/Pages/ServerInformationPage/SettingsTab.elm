@@ -1231,19 +1231,21 @@ mediaMaintenanceView status =
         running =
             status == MediaMaintenanceRunning
     in
-    div [ Html.Attributes.class "server-details-feature-settings-actions" ]
-        [ button
-            [ Html.Attributes.class "server-details-rename-button"
-            , onClick DeleteLinkPreviewImagesClicked
-            , disabled running
+    div []
+        [ div [ Html.Attributes.class "server-details-feature-settings-actions" ]
+            [ button
+                [ Html.Attributes.class "server-details-rename-button"
+                , onClick DeleteLinkPreviewImagesClicked
+                , disabled running
+                ]
+                [ text "Delete Link Preview Images" ]
+            , button
+                [ Html.Attributes.class "server-details-rename-button"
+                , onClick DeleteUnownedMediaClicked
+                , disabled running
+                ]
+                [ text "Delete Unowned Media" ]
             ]
-            [ text "Delete Link Preview Images" ]
-        , button
-            [ Html.Attributes.class "server-details-rename-button"
-            , onClick DeleteUnownedMediaClicked
-            , disabled running
-            ]
-            [ text "Delete Unowned Media" ]
         , case status of
             MediaMaintenanceIdle ->
                 text ""
