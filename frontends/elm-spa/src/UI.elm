@@ -78,8 +78,37 @@ layout shared currentRoute toMsg children =
     , Html.map toMsg (myMediaPanel shared)
     , Html.map toMsg (mediaViewerPanel shared)
     , Html.map toMsg (federatedSignInNoticeView shared)
-    , div [ classes [ "container", hostnameToCSSClass shared.accounts.mainFrontendHost ] ] [ main_ [] (children ++ [ scrollPreserver shared ]) ]
+    , div [ classes [ "container", hostnameToCSSClass shared.accounts.mainFrontendHost ] ]
+        [ main_ []
+            [ pageSlideWrapper shared currentRoute children
+            , scrollPreserver shared
+            ]
+        ]
     ]
+
+
+{-| Wraps a page's content so that navigating between top-nav tabs (`Shared.Model.pageSlide`, set by
+`Main.elm`'s `ChangedUrl` via `UI.CustomNav.pageSlideFor`) slides the new page in from the left or
+right, the same CSS keyframe approach `MediaViewerPanel` uses for paging. Keyed by route only while a
+slide is pending, so the node is freshly mounted (which is what starts the CSS animation) on exactly
+those navigations; every other navigation keeps one stable key, so nothing remounts that didn't
+already (e.g. `Pages.Event.PostId_`'s sibling-occasion switch, see `Main.elm`'s change 5).
+-}
+pageSlideWrapper : Shared.Model -> Route -> List (Html msg) -> Html msg
+pageSlideWrapper shared currentRoute children =
+    let
+        ( key, slideClass ) =
+            case shared.pageSlide of
+                Just Shared.PageSlideFromLeft ->
+                    ( "slide-" ++ Route.toHref currentRoute, "page-slide-from-left" )
+
+                Just Shared.PageSlideFromRight ->
+                    ( "slide-" ++ Route.toHref currentRoute, "page-slide-from-right" )
+
+                Nothing ->
+                    ( "page", "" )
+    in
+    Html.Keyed.node "div" [] [ ( key, div [ class slideClass ] children ) ]
 
 
 {-| A brief "Signed in as ..." toast for `AccountsPanel.Model.federatedSignInNotice` -- see that
@@ -2656,7 +2685,7 @@ contactMethodEditErrorView status =
 `Components.Pages.UserProfilePage.contactMethodDeleteButton`: rather than deleting outright, opens
 `Shared.DeleteConfirmation`'s modal (`Shared.RequestDelete (Shared.ConfirmPhoneDelete contactMethod
 account.server)`/`ConfirmEmailDelete`), which carries the whole `ContactMethod` along so
-`UI.deleteConfirmationModal` can warn (via its own `verifiedAt`) that a *verified* one means
+`UI.deleteConfirmationModal` can warn (via its own `verifiedAt`) that a _verified_ one means
 re-verifying if it's ever added back -- see `Shared.DeleteConfirmation`'s own doc on why this and
 that page's copy both fire `Shared.ConfirmDelete`'s RPC directly rather than routing through
 `Shared.AccountsPanel.Model`. Hidden entirely once there's nothing to delete.
@@ -3179,12 +3208,11 @@ addAccountServerFormBody shared currentRoute =
         pane : AccountsPanel.AccountOrServerFormType -> Html Shared.Msg -> Html Shared.Msg
         pane paneType content =
             div
-                ([ classList
+                (classList
                     [ ( "add-account-server-pane", True )
                     , ( "is-active", paneType == activeType )
                     ]
-                 ]
-                    ++ (if paneType == activeType then
+                    :: (if paneType == activeType then
                             []
 
                         else
@@ -3578,7 +3606,6 @@ rellmAddAccountServerForm shared currentRoute =
 
                 Nothing ->
                     text ""
-
             )
         , collapsible showUsernamePasswordFields
             []
@@ -3655,7 +3682,6 @@ rellmAddAccountServerForm shared currentRoute =
                             ]
                         ]
                 )
-
             )
         , signInFromButton shared currentRoute accountFieldsDisabled
         , case ( form.status, addForm.status ) of
@@ -3724,26 +3750,27 @@ signInFromButton shared currentRoute accountFieldsDisabled =
             collapsible visible
                 []
                 (div [ class "sign-in-from-row" ]
-                [ --hideAddAccountFormButton shared accountFieldsDisabled
-                  button
-                    [ type_ "button"
-                    , onClick
-                        (Shared.NavigateExternal
-                            ("https://"
-                                ++ server
-                                ++ "/elm/auth/to/"
-                                ++ FederatedAuth.publicKeyToUrlString publicKey
-                                ++ "@"
-                                ++ accountsPanelModel.browsingHost
-                                ++ "?start_path="
-                                ++ Url.percentEncode (Route.toHref currentRoute)
+                    [ --hideAddAccountFormButton shared accountFieldsDisabled
+                      button
+                        [ type_ "button"
+                        , onClick
+                            (Shared.NavigateExternal
+                                ("https://"
+                                    ++ server
+                                    ++ "/elm/auth/to/"
+                                    ++ FederatedAuth.publicKeyToUrlString publicKey
+                                    ++ "@"
+                                    ++ accountsPanelModel.browsingHost
+                                    ++ "?start_path="
+                                    ++ Url.percentEncode (Route.toHref currentRoute)
+                                )
                             )
-                        )
-                    , disabled accountFieldsDisabled
-                    , classes [ "sign-in-from-button", hostnameToCSSClass <| formThemeHost accountsPanelModel, "background-color-primary" ]
+                        , disabled accountFieldsDisabled
+                        , classes [ "sign-in-from-button", hostnameToCSSClass <| formThemeHost accountsPanelModel, "background-color-primary" ]
+                        ]
+                        [ text ("Sign in from " ++ server ++ "…") ]
                     ]
-                    [ text ("Sign in from " ++ server ++ "…") ]
-                ])
+                )
 
         _ ->
             text ""
@@ -4094,40 +4121,40 @@ newPostToggle : Shared.Model -> Html Shared.Msg
 newPostToggle shared =
     div
         [ classes <|
-            "create-new-button" :: (if CreateNewPanel.hasEligibleAccount shared.accounts then
+            "create-new-button"
+                :: (if CreateNewPanel.hasEligibleAccount shared.accounts then
                         []
 
                     else
                         [ "hidden" ]
                    )
+
         -- , stopPropagationOn "click" (Decode.succeed ( Shared.CreateNewPanelMsg CreateNewPanel.ToggleOpen, True ))
         -- , title "Create New"
         ]
-        [ 
-            button
-        [ classes <|
-            [ "nav-menu-toggle", "circular", openClosedClass (CreateNewPanel.isOpen shared.panels.createNewPanel) ]
-        , stopPropagationOn "click" (Decode.succeed ( Shared.CreateNewPanelMsg CreateNewPanel.ToggleOpen, True ))
-        , title "Create New"
+        [ button
+            [ classes <|
+                [ "nav-menu-toggle", "circular", openClosedClass (CreateNewPanel.isOpen shared.panels.createNewPanel) ]
+            , stopPropagationOn "click" (Decode.succeed ( Shared.CreateNewPanelMsg CreateNewPanel.ToggleOpen, True ))
+            , title "Create New"
+            ]
+            [ text "+" ]
         ]
-        [ text "+" ]
-         ]
-    -- button
-    --     [ classes <|
-    --         [ "create-new-button", "nav-menu-toggle", "circular", openClosedClass (CreateNewPanel.isOpen shared.panels.createNewPanel) ]
-    --             ++ (if CreateNewPanel.hasEligibleAccount shared.accounts then
-    --                     []
-
-    --                 else
-    --                     [ "hidden" ]
-    --                )
-    --     , stopPropagationOn "click" (Decode.succeed ( Shared.CreateNewPanelMsg CreateNewPanel.ToggleOpen, True ))
-    --     , title "Create New"
-    --     ]
-    --     [ text "+" ]
 
 
 
+-- button
+--     [ classes <|
+--         [ "create-new-button", "nav-menu-toggle", "circular", openClosedClass (CreateNewPanel.isOpen shared.panels.createNewPanel) ]
+--             ++ (if CreateNewPanel.hasEligibleAccount shared.accounts then
+--                     []
+--                 else
+--                     [ "hidden" ]
+--                )
+--     , stopPropagationOn "click" (Decode.succeed ( Shared.CreateNewPanelMsg CreateNewPanel.ToggleOpen, True ))
+--     , title "Create New"
+--     ]
+--     [ text "+" ]
 -- STARRED POSTS TOGGLE
 
 

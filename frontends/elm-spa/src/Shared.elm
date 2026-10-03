@@ -3,6 +3,7 @@ module Shared exposing
     , Flags
     , Model
     , Msg(..)
+    , PageSlide(..)
     , NavAnimationState
     , ThemePreference(..)
     , basePathFromPath
@@ -100,6 +101,11 @@ type alias Model =
     -- `Main.elm`'s `ChangedUrl`, which fires `ShowScrollPreserver` only for
     -- navigations it recognizes as the browser's back button.
     , scrollPreserverVisible : Bool
+
+    -- Which side the page just navigated to should slide in from -- `Just` only for a navigation
+    -- between top-nav tabs (see `UI.CustomNav.pageSlideFor`, set by `Main.elm`'s `ChangedUrl`),
+    -- `Nothing` for every other navigation. Consumed by `UI.layout`'s keyed page wrapper.
+    , pageSlide : Maybe PageSlide
 
     -- Drives the Home link's scroll-triggered shrink animation -- kept in
     -- sync via `.nav-links-scroll`'s `scroll` event
@@ -413,6 +419,13 @@ type alias Panels =
     }
 
 
+{-| See `Model.pageSlide`.
+-}
+type PageSlide
+    = PageSlideFromLeft
+    | PageSlideFromRight
+
+
 {-| The live scroll metrics of `.nav-links-scroll` (see `UI.headerNav`),
 read off its `scroll` event (`UI.navLinksScrollDecoder`) -- drives the Home
 link's (`.nav-link-home`, `UI.navLink`) scroll-triggered shrink animation.
@@ -521,6 +534,7 @@ init basePath req flags =
             , basePath = basePath
             , browser = browser
             , scrollPreserverVisible = False
+            , pageSlide = Nothing
             , navAnimationState =
                 { scrollLeft = 0
                 , scrollWidth = 0

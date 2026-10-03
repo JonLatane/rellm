@@ -395,3 +395,22 @@ pre {
   padding: 0;
   cursor: pointer;
 }
+/* Top-nav tab navigation (`UI.pageSlideWrapper`): the freshly mounted page slides/fades in from the
+   side its tab sits on -- same idea as `media_viewer_panel.css`'s slide-in keyframes. */
+.page-slide-from-right {
+  animation: 0.25s ease both page-slide-in-from-right;
+}
+
+.page-slide-from-left {
+  animation: 0.25s ease both page-slide-in-from-left;
+}
+
+@keyframes page-slide-in-from-right {
+  from { opacity: 0; transform: translateX(40%); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes page-slide-in-from-left {
+  from { opacity: 0; transform: translateX(-40%); }
+  to { opacity: 1; transform: none; }
+}

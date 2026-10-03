@@ -101,6 +101,7 @@ import Pages.UsernameOrCustomTab_.Friends
 import Pages.UsernameOrCustomTab_.Posts
 import Request
 import Shared
+import UI.CustomNav as CustomNav
 import Url exposing (Url)
 import View
 
@@ -218,7 +219,7 @@ update msg model =
                             ( page, effect ) =
                                 Pages.update occasionMsg model.page model.shared url model.key
                         in
-                        ( { model | url = url, page = page }
+                        ( { model | url = url, page = page, shared = clearPageSlide model.shared }
                         , Effect.toCmd ( Shared, Page ) effect
                         )
 
@@ -239,12 +240,19 @@ update msg model =
                                 else
                                     model.backStack
 
-                            ( shared, sharedCmd ) =
+                            ( shared0, sharedCmd ) =
                                 if isBackNav then
                                     Shared.update (Request.create () url model.key) Shared.ShowScrollPreserver model.shared
 
                                 else
                                     ( model.shared, Cmd.none )
+
+                            -- Slide the new page in from the side its top-nav tab sits on, if
+                            -- this is a nav-tab-to-nav-tab navigation (see
+                            -- `CustomNav.pageSlideFor`); cleared (`Nothing`) otherwise.
+                            shared : Shared.Model
+                            shared =
+                                { shared0 | pageSlide = CustomNav.pageSlideFor shared0 (Route.fromUrl model.url) (Route.fromUrl url) }
                         in
                         ( { model | url = url, page = page, shared = shared, backStack = backStack }
                         , Cmd.batch
@@ -323,6 +331,11 @@ update msg model =
             ( { model | page = notifiedPage, shared = shared }
             , Cmd.batch [ sharedCmd, notifyCmd, Effect.toCmd ( Shared, Page ) remainingEffect ]
             )
+
+
+clearPageSlide : Shared.Model -> Shared.Model
+clearPageSlide shared =
+    { shared | pageSlide = Nothing }
 
 
 {-| `ChangedUrl`'s own change 5 (see the module doc) -- `Just` only when both

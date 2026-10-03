@@ -16,6 +16,7 @@ module UI.CustomNav exposing
     , homeTargetKindFromText
     , iconView
     , navLinkView
+    , pageSlideFor
     , navigationTabStyleClass
     , navigationTabStyleFromText
     , navigationTabStyleText
@@ -660,6 +661,118 @@ iconView server icon =
                     text "🖼️"
 
 
+tabRoute : CustomTab -> Route
+tabRoute tab =
+    Route.UsernameOrCustomTab_ { usernameOrCustomTab = tab.path }
+
+
+canonicalRouteOf : CustomTab -> Route
+canonicalRouteOf tab =
+    case tab.target of
+        TargetTab HOMETAB ->
+            Route.Home_
+
+        TargetTab EVENTSTAB ->
+            Route.Events
+
+        TargetTab POSTSTAB ->
+            Route.Posts
+
+        TargetTab PEOPLETAB ->
+            Route.People
+
+        TargetTab ABOUTTAB ->
+            Route.About
+
+        TargetTab MARKETTAB ->
+            Route.Market
+
+        TargetTab MEDIATAB ->
+            Route.Media
+
+        TargetTab VIDEOTAB ->
+            Route.Video
+
+        TargetTab AUDIOTAB ->
+            Route.Audio
+
+        TargetTab IMAGESTAB ->
+            Route.Images
+
+        TargetTab (NavigationTabUnrecognized_ _) ->
+            tabRoute tab
+
+        TargetPost postId ->
+            Route.Post__PostId_ { postId = postId }
+
+        TargetProfile ->
+            tabRoute tab
+
+
+tabMatchesRoute : CustomTab -> Route -> Bool
+tabMatchesRoute tab currentRoute =
+    currentRoute == tabRoute tab || currentRoute == canonicalRouteOf tab || (tab.target == TargetTab VIDEOTAB && currentRoute == Route.Videos)
+
+
+{-| A route's position in the top nav, left to right: Home is always 0, then each of the main server's
+`effectiveTabs` in order (1, 2, ...). `Nothing` for any route that isn't a nav tab's destination.
+-}
+navTabIndex : Shared.Model -> Route -> Maybe Int
+navTabIndex shared route =
+    if route == Route.Home_ then
+        Just 0
+
+    else
+        let
+            tabs : List CustomTab
+            tabs =
+                effectiveTabs (mainServerCustomTabs shared)
+        in
+        tabs
+            |> List.indexedMap Tuple.pair
+            |> List.filter (\( _, tab ) -> tabMatchesRoute tab route)
+            |> List.head
+            |> Maybe.map (\( i, _ ) -> i + 1)
+
+
+mainServerCustomTabs : Shared.Model -> Maybe CustomNavigationTabSet
+mainServerCustomTabs shared =
+    RellmServers.rellmServerForHost shared.accounts.servers shared.accounts.mainFrontendHost
+        |> Maybe.andThen (\server -> (RellmServers.configurationOf server).customTabs)
+
+
+{-| Which side the page at `to` should slide in from when navigating there from `from`, if either is a
+top-nav tab destination: Home always slides in from the left; another tab slides in from the right
+("forward") unless `from` is a tab further right, in which case from the left. Landing on a tab from
+a non-tab page also counts as forward. `Nothing` -- no animation -- when `to` isn't a nav tab at all
+(a post, a profile, ...) or `from` and `to` are the same tab.
+-}
+pageSlideFor : Shared.Model -> Route -> Route -> Maybe Shared.PageSlide
+pageSlideFor shared from to =
+    case navTabIndex shared to of
+        Nothing ->
+            Nothing
+
+        Just toIndex ->
+            if to == Route.Home_ then
+                Just Shared.PageSlideFromLeft
+
+            else
+                case navTabIndex shared from of
+                    Just fromIndex ->
+                        if toIndex > fromIndex then
+                            Just Shared.PageSlideFromRight
+
+                        else if toIndex < fromIndex then
+                            Just Shared.PageSlideFromLeft
+
+                        else
+                            Nothing
+
+                    Nothing ->
+                        Just Shared.PageSlideFromRight
+
+
 {-| One custom tab's actual top-nav link -- same `.nav-link`/`background-color-nav`-when-current
 treatment as `UI.eventsLink`/`UI.postsLink`/`UI.peopleLink`/`UI.aboutLink`, just generic over any
 `CustomTab` instead of one hard-coded route/glyph each. `server` is whichever server's
@@ -685,53 +798,11 @@ navLinkView shared currentRoute server tab =
     let
         route : Route
         route =
-            Route.UsernameOrCustomTab_ { usernameOrCustomTab = tab.path }
-
-        canonicalRoute : Route
-        canonicalRoute =
-            case tab.target of
-                TargetTab HOMETAB ->
-                    Route.Home_
-
-                TargetTab EVENTSTAB ->
-                    Route.Events
-
-                TargetTab POSTSTAB ->
-                    Route.Posts
-
-                TargetTab PEOPLETAB ->
-                    Route.People
-
-                TargetTab ABOUTTAB ->
-                    Route.About
-
-                TargetTab MARKETTAB ->
-                    Route.Market
-
-                TargetTab MEDIATAB ->
-                    Route.Media
-
-                TargetTab VIDEOTAB ->
-                    Route.Video
-
-                TargetTab AUDIOTAB ->
-                    Route.Audio
-
-                TargetTab IMAGESTAB ->
-                    Route.Images
-
-                TargetTab (NavigationTabUnrecognized_ _) ->
-                    route
-
-                TargetPost postId ->
-                    Route.Post__PostId_ { postId = postId }
-
-                TargetProfile ->
-                    route
+            tabRoute tab
 
         isCurrent : Bool
         isCurrent =
-            currentRoute == route || currentRoute == canonicalRoute || (tab.target == TargetTab VIDEOTAB && currentRoute == Route.Videos)
+            tabMatchesRoute tab currentRoute
     in
     a
         [ href (shared.basePath ++ Route.toHref route)
