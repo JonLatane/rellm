@@ -715,6 +715,24 @@ tabMatchesRoute tab currentRoute =
     currentRoute == tabRoute tab || currentRoute == canonicalRouteOf tab || (tab.target == TargetTab VIDEOTAB && currentRoute == Route.Videos)
 
 
+{-| Whether `tab` is _the_ current tab among `tabs`. Several tabs can share one `target` (e.g. "Events"
+and "Music" both pointing at `EVENTSTAB`), and then the target's canonical route (`/events`) matches all
+of them via `tabMatchesRoute`. So: a tab whose own path is the current route wins outright; only if
+no tab's own path matches does the canonical fallback apply, and then just to the first matching tab.
+-}
+isCurrentTab : List CustomTab -> CustomTab -> Route -> Bool
+isCurrentTab tabs tab currentRoute =
+    if List.any (\t -> currentRoute == tabRoute t) tabs then
+        currentRoute == tabRoute tab
+
+    else
+        tabs
+            |> List.filter (\t -> tabMatchesRoute t currentRoute)
+            |> List.head
+            |> Maybe.map ((==) tab)
+            |> Maybe.withDefault False
+
+
 {-| The href of the main server's own top-nav tab for built-in page `navTab` (e.g. `POSTSTAB` ->
 `/posts`, or whatever path an admin gave that tab in `customTabs`), falling back to
 `defaultPathFor`'s slug if no configured tab targets it. Includes `basePath`.
@@ -745,7 +763,7 @@ navTabIndex shared route =
         in
         tabs
             |> List.indexedMap Tuple.pair
-            |> List.filter (\( _, tab ) -> tabMatchesRoute tab route)
+            |> List.filter (\( _, tab ) -> isCurrentTab tabs tab route)
             |> List.head
             |> Maybe.map (\( i, _ ) -> i + 1)
 
@@ -808,8 +826,8 @@ should still see the "Events" tab (now living at `/gigs`) highlighted as current
 relevant for `TargetPost`/`TargetProfile`, whose only route _is_ their own `path` either way.
 
 -}
-navLinkView : Shared.Model -> Route -> RellmServer -> CustomTab -> Html msg
-navLinkView shared currentRoute server tab =
+navLinkView : Shared.Model -> Route -> RellmServer -> List CustomTab -> CustomTab -> Html msg
+navLinkView shared currentRoute server tabs tab =
     let
         route : Route
         route =
@@ -817,7 +835,7 @@ navLinkView shared currentRoute server tab =
 
         isCurrent : Bool
         isCurrent =
-            tabMatchesRoute tab currentRoute
+            isCurrentTab tabs tab currentRoute
     in
     a
         [ href (shared.basePath ++ Route.toHref route)

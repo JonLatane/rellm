@@ -602,7 +602,11 @@ customTabLinks : Shared.Model -> Route -> List (Html Shared.Msg)
 customTabLinks shared currentRoute =
     case mainServer shared |> Maybe.andThen (\server -> (RellmServers.configurationOf server).customTabs |> Maybe.map (Tuple.pair server)) of
         Just ( server, customTabs ) ->
-            CustomNav.effectiveTabs (Just customTabs) |> List.map (CustomNav.navLinkView shared currentRoute server)
+            let
+                tabs =
+                    CustomNav.effectiveTabs (Just customTabs)
+            in
+            tabs |> List.map (CustomNav.navLinkView shared currentRoute server tabs)
 
         Nothing ->
             [ eventsLink shared currentRoute
