@@ -18,7 +18,7 @@ import Components.Pages.ServerInformationPage.ThemeTab.CustomTabsConfiguration a
 import Effect exposing (Effect)
 import Grpc
 import Html exposing (Html, div, h3, img, input, p, span, text)
-import Html.Attributes exposing (class, disabled, src, style, type_, value)
+import Html.Attributes exposing (class, disabled, src, style, title, type_, value)
 import Html.Events exposing (onClick, onInput)
 import Proto.Rellm exposing (ServerConfiguration, defaultMediaReference, defaultServerColors, defaultServerInfo, defaultServerLogo)
 import Proto.Rellm.WebUserInterface exposing (WebUserInterface(..))
@@ -41,6 +41,7 @@ type alias Model =
     { logoEdit : Maybe LogoEdit
     , primaryColorEdit : Maybe ColorEdit
     , navigationColorEdit : Maybe ColorEdit
+    , swapStatus : AccountsPanel.FormStatus
     , colorMetaExpanded : Bool
     , customTabsConfig : CustomTabsConfiguration.Model
     }
@@ -57,6 +58,8 @@ type Msg
     | ColorCancelClicked ServerColorField
     | ColorSaveClicked ServerColorField
     | GotColorSaveResult ServerColorField (Result Grpc.Error ( Maybe AccountsPanel.Msg, ServerConfiguration ))
+    | SwapColorsClicked
+    | GotSwapColorsResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, ServerConfiguration ))
     | ColorMetaExpandedToggled
     | SharedMsg Shared.Msg
     | CustomTabsConfigurationMsg CustomTabsConfiguration.Msg
@@ -108,6 +111,7 @@ init =
     { logoEdit = Nothing
     , primaryColorEdit = Nothing
     , navigationColorEdit = Nothing
+    , swapStatus = AccountsPanel.Idle
     , colorMetaExpanded = False
     , customTabsConfig = CustomTabsConfiguration.init
     }
@@ -239,6 +243,29 @@ update shared targetHost maybeServer msg model =
             , Effect.none
             )
 
+        SwapColorsClicked ->
+            case Common.adminAccountFor shared targetHost of
+                Just account ->
+                    ( { model | swapStatus = AccountsPanel.Submitting }
+                    , AccountsPanel.updateServerConfig shared.accounts ( Just account.userId, targetHost ) swapColors
+                        |> Task.attempt GotSwapColorsResult
+                        |> Effect.fromCmd
+                    )
+
+                Nothing ->
+                    ( model, Effect.none )
+
+        GotSwapColorsResult (Ok ( maybeAccountsPanelMsg, newConfig )) ->
+            ( { model | swapStatus = AccountsPanel.Idle }
+            , Effect.batch
+                [ Common.accountsPanelEffect maybeAccountsPanelMsg
+                , Effect.fromShared (Shared.AccountsPanelMsg (AccountsPanel.GotServerConfigSaveResult targetHost newConfig))
+                ]
+            )
+
+        GotSwapColorsResult (Err err) ->
+            ( { model | swapStatus = AccountsPanel.Errored (AccountsPanel.grpcErrorToString err) }, Effect.none )
+
         ColorMetaExpandedToggled ->
             ( { model | colorMetaExpanded = not model.colorMetaExpanded }, Effect.none )
 
@@ -348,6 +375,23 @@ applyColorFor field argb config =
     { config | serverInfo = Just { info | colors = Just newColors } }
 
 
+{-| `SwapColorsClicked`'s transform: exchanges `colors.primary` and `colors.navigation` on the freshly
+re-fetched config, leaving everything else untouched.
+-}
+swapColors : ServerConfiguration -> ServerConfiguration
+swapColors config =
+    let
+        info : Proto.Rellm.ServerInfo
+        info =
+            Maybe.withDefault defaultServerInfo config.serverInfo
+
+        colors : Proto.Rellm.ServerColors
+        colors =
+            Maybe.withDefault defaultServerColors info.colors
+    in
+    { config | serverInfo = Just { info | colors = Just { colors | primary = colors.navigation, navigation = colors.primary } } }
+
+
 {-| `model`'s in-progress `ColorEdit` for one `ServerColorField`, alongside its setter
 `setColorEditFor` just below.
 -}
@@ -393,6 +437,7 @@ view shared server maybeAdminAccount model =
     div [ class "server-details-tab-content server-details-theme" ]
         [ logoEditorView maybeAdminAccount model.logoEdit server (info.logo |> Maybe.andThen .squareMediaId)
         , colorEditorRow PrimaryColor "Primary Color" maybeAdminAccount model.primaryColorEdit (info.colors |> Maybe.andThen .primary)
+        , swapColorsRow maybeAdminAccount model
         , colorEditorRow NavigationColor "Navigation Color" maybeAdminAccount model.navigationColorEdit (info.colors |> Maybe.andThen .navigation)
         , accentColorPreviewRow model info
         , colorMetaSection shared model info
@@ -462,6 +507,31 @@ colorEditorRow field label_ maybeAdminAccount maybeEdit argb =
                     Nothing ->
                         text ""
                 ]
+
+
+{-| The admin-only "swap" button, right-aligned between the two color rows: one-tap exchange of Primary and Navigation colors, saved
+immediately like any other color edit. Hidden for non-admins and while either color is mid-edit
+(the swap would be written over a stale pending value).
+-}
+swapColorsRow : Maybe RellmAccount -> Model -> Html Msg
+swapColorsRow maybeAdminAccount model =
+    case ( maybeAdminAccount, model.primaryColorEdit, model.navigationColorEdit ) of
+        ( Just _, Nothing, Nothing ) ->
+            div [ class "server-details-color-row", style "justify-content" "flex-end" ]
+                [ Html.button
+                    [ class "server-details-rename-button"
+                    , type_ "button"
+                    , title "Swap Primary and Navigation colors"
+                    , Html.Attributes.attribute "aria-label" "Swap Primary and Navigation colors"
+                    , onClick SwapColorsClicked
+                    , disabled (model.swapStatus == AccountsPanel.Submitting)
+                    ]
+                    [ text "⇅ Swap" ]
+                , Common.editErrorView model.swapStatus
+                ]
+
+        _ ->
+            text ""
 
 
 {-| A read-only preview of `UI.ServerTheme.accentColor` -- whichever of Primary/Navigation is more

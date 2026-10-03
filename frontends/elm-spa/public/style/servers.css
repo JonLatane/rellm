@@ -214,6 +214,14 @@
 
 .server-details-logo {
   margin-bottom: 1rem;
+  text-align: center;
+}
+
+.server-details-logo > div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .server-details-logo-image {
@@ -226,8 +234,8 @@
 
 .server-details-logo-edit-actions {
   display: flex;
+  justify-content: center;
   gap: 0.5rem;
-  margin-top: 0.5rem;
 }
 
 .server-details-setting,
