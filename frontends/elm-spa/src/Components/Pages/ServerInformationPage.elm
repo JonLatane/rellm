@@ -61,9 +61,10 @@ import Dict exposing (Dict)
 import Effect exposing (Effect)
 import Grpc
 import Html exposing (Html, button, div, p, text)
-import Html.Attributes exposing (class)
+import Html.Attributes exposing (class, classList)
 import Html.Events exposing (onClick)
 import Html.Keyed
+import Process
 import Proto.Rellm exposing (GetServiceVersionResponse, GetUsersResponse, defaultGetUsersRequest)
 import Proto.Rellm.Permission exposing (Permission(..))
 import Proto.Rellm.Rellm as Rellm
@@ -88,6 +89,16 @@ type alias Model =
     , path : String
     , ownServerStatus : OwnServerStatus
     , activeTab : Tab
+
+    -- Which way the last tab switch went in `tabBar` order, purely to pick a slide-in direction
+    -- (see `tabPanes`). `Nothing` on first load, so the initial tab just appears.
+    , slideDirection : Maybe SlideDirection
+
+    -- The tab we just left, kept mounted (shrinking/sliding out) until the animation ends.
+    -- `tabSwitchSeq` tags each switch so a stale `TabTransitionFinished` from an earlier,
+    -- interrupted switch doesn't cut a newer one short.
+    , leavingTab : Maybe Tab
+    , tabSwitchSeq : Int
     , adminsStatus : AboutTab.AdminsStatus
     , versionStatus : AboutTab.VersionStatus
     , aboutTab : AboutTab.Model
@@ -103,6 +114,7 @@ type alias Model =
 
 type Msg
     = TabSelected Tab
+    | TabTransitionFinished Int
     | GotOwnServerResult (Result Grpc.Error RellmServer)
     | AddServerClicked RellmServer
     | GotAdmins (Result Grpc.Error GetUsersResponse)
@@ -233,6 +245,9 @@ init shared pageIsSecure targetHost navKey path query =
             , path = path
             , ownServerStatus = LoadingOwnServer
             , activeTab = Dict.get "tab" query |> Maybe.andThen tabFromParam |> Maybe.withDefault TabAbout
+            , slideDirection = Nothing
+            , leavingTab = Nothing
+            , tabSwitchSeq = 0
             , adminsStatus = AboutTab.AdminsNotLoaded
             , versionStatus = AboutTab.VersionNotLoaded
             , aboutTab = AboutTab.init
@@ -320,11 +335,34 @@ update shared msg model =
 updateInner : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
 updateInner shared msg model =
     case msg of
+        TabTransitionFinished seq ->
+            if seq == model.tabSwitchSeq then
+                ( { model | leavingTab = Nothing }, Effect.none )
+
+            else
+                ( model, Effect.none )
+
         TabSelected tab ->
             let
                 newModel : Model
                 newModel =
-                    { model | activeTab = tab }
+                    if tab == model.activeTab then
+                        model
+
+                    else
+                        { model
+                            | activeTab = tab
+                            , leavingTab = Just model.activeTab
+                            , tabSwitchSeq = model.tabSwitchSeq + 1
+                            , slideDirection =
+                                Just
+                                    (if tabIndex tab > tabIndex model.activeTab then
+                                        SlideFromRight
+
+                                     else
+                                        SlideFromLeft
+                                    )
+                        }
 
                 ( clusterTabModel, clusterTabEffect ) =
                     activateClusterTab shared newModel
@@ -336,7 +374,19 @@ updateInner shared msg model =
                     activateMarketTab shared newModel
             in
             ( { newModel | clusterTab = clusterTabModel, contactIntegrationsTab = contactIntegrationsTabModel, marketTab = marketTabModel }
-            , Effect.batch [ pushTabUrl newModel, clusterTabEffect, contactIntegrationsTabEffect, marketTabEffect ]
+            , Effect.batch
+                [ pushTabUrl newModel
+                , clusterTabEffect
+                , contactIntegrationsTabEffect
+                , marketTabEffect
+                , if newModel.tabSwitchSeq /= model.tabSwitchSeq then
+                    Process.sleep 260
+                        |> Task.perform (\_ -> TabTransitionFinished newModel.tabSwitchSeq)
+                        |> Effect.fromCmd
+
+                  else
+                    Effect.none
+                ]
             )
 
         GotOwnServerResult (Ok server) ->
@@ -618,7 +668,7 @@ view shared model =
                 [ class "server-details" ]
                 [ ( "add-server", addServerButton shared model server )
                 , ( "tab-bar", tabBar shared model )
-                , ( tabParam model.activeTab, tabContent shared model server )
+                , ( "tab-panes", tabPanes shared model server )
                 ]
 
         Nothing ->
@@ -688,14 +738,90 @@ tabButton model ( tab, label_ ) =
         [ text label_ ]
 
 
-tabContent : Shared.Model -> Model -> RellmServer -> Html Msg
-tabContent shared model server =
+type SlideDirection
+    = SlideFromLeft
+    | SlideFromRight
+
+
+{-| The active tab's content slides in from the side its tab sits on in `tabBar` (the same "new one in
+from left or right" CSS keyframe approach `MediaViewerPanel` uses for paging), while -- for the ~250ms
+after a switch -- the tab we just left stays mounted, stacked in the same grid cell, collapsing
+to zero height as the new one grows from zero. The container is as tall as the taller of the two, so
+the page height (and everything below it) animates up/down instead of snapping. See
+`.server-details-panes` in servers.css. Children are keyed by tab, so the leaving pane's DOM survives
+the switch and the entering pane's fresh mount is what starts its animation.
+-}
+tabPanes : Shared.Model -> Model -> RellmServer -> Html Msg
+tabPanes shared model server =
+    let
+        pane : List ( String, Bool ) -> Tab -> ( String, Html Msg )
+        pane classes_ tab =
+            ( tabParam tab
+            , div [ classList (( "server-details-pane", True ) :: classes_) ]
+                [ div [ class "server-details-pane-inner" ] [ tabContent shared model server tab ] ]
+            )
+
+        fromLeft : Bool
+        fromLeft =
+            model.slideDirection == Just SlideFromLeft
+    in
+    Html.Keyed.node "div"
+        [ class "server-details-panes" ]
+        (pane
+            [ ( "is-entering", model.slideDirection /= Nothing )
+            , ( "from-left", fromLeft )
+            , ( "from-right", not fromLeft )
+            ]
+            model.activeTab
+            :: (case model.leavingTab of
+                    Just leaving ->
+                        [ pane [ ( "is-leaving", True ), ( "from-left", fromLeft ), ( "from-right", not fromLeft ) ] leaving ]
+
+                    Nothing ->
+                        []
+               )
+        )
+
+
+{-| Position in `tabBar`'s left-to-right order -- decides which side the entering/leaving panes sit
+on during a switch.
+-}
+tabIndex : Tab -> Int
+tabIndex tab =
+    case tab of
+        TabAbout ->
+            0
+
+        TabTheme ->
+            1
+
+        TabSettings ->
+            2
+
+        TabFederation ->
+            3
+
+        TabMarket ->
+            4
+
+        TabContactIntegrations ->
+            5
+
+        TabCdn ->
+            6
+
+        TabCluster ->
+            7
+
+
+tabContent : Shared.Model -> Model -> RellmServer -> Tab -> Html Msg
+tabContent shared model server tab =
     let
         maybeAdminAccount : Maybe RellmAccount
         maybeAdminAccount =
             Common.adminAccountFor shared model.targetHost
     in
-    case model.activeTab of
+    case tab of
         TabAbout ->
             Html.map AboutTabMsg (AboutTab.view shared server maybeAdminAccount model.adminsStatus model.versionStatus model.aboutTab)
 

@@ -607,3 +607,66 @@
   padding-top: 1.5rem;
   border-top: 1px solid var(--border);
 }
+/* Tab-switch animation for `ServerInformationPage.tabPanes`. The entering pane (freshly mounted --
+   hence keyframes, not transitions) slides/fades in from the side its tab sits on in the tab bar,
+   like `media_viewer_panel.css`'s slide-in keyframes; the leaving pane slides/fades out the other
+   way. Both sit in the same grid cell (`grid-area: 1 / 1`, `align-self: start` so each is exactly its
+   own content height) and animate `grid-template-rows` 0fr <-> 1fr -- the same height trick as
+   `.expandable-section-content` -- so the container (the taller of the two) grows/shrinks smoothly
+   and the page below moves up/down with it. */
+.server-details-panes {
+  display: grid;
+  overflow-x: clip;
+}
+
+.server-details-pane {
+  grid-area: 1 / 1;
+  align-self: start;
+  min-width: 0;
+  display: grid;
+  grid-template-rows: 1fr;
+}
+
+.server-details-pane-inner {
+  min-height: 0;
+  min-width: 0;
+}
+
+.server-details-pane.is-entering,
+.server-details-pane.is-leaving {
+  animation: 0.25s ease both;
+}
+
+.server-details-pane.is-entering > .server-details-pane-inner,
+.server-details-pane.is-leaving > .server-details-pane-inner {
+  overflow: hidden;
+}
+
+.server-details-pane.is-leaving {
+  pointer-events: none;
+}
+
+.server-details-pane.is-entering.from-right { animation-name: server-details-pane-in-from-right; }
+.server-details-pane.is-entering.from-left { animation-name: server-details-pane-in-from-left; }
+.server-details-pane.is-leaving.from-right { animation-name: server-details-pane-out-to-left; }
+.server-details-pane.is-leaving.from-left { animation-name: server-details-pane-out-to-right; }
+
+@keyframes server-details-pane-in-from-right {
+  from { opacity: 0; transform: translateX(8%); grid-template-rows: 0fr; }
+  to { opacity: 1; transform: none; grid-template-rows: 1fr; }
+}
+
+@keyframes server-details-pane-in-from-left {
+  from { opacity: 0; transform: translateX(-8%); grid-template-rows: 0fr; }
+  to { opacity: 1; transform: none; grid-template-rows: 1fr; }
+}
+
+@keyframes server-details-pane-out-to-left {
+  from { opacity: 1; transform: none; grid-template-rows: 1fr; }
+  to { opacity: 0; transform: translateX(-8%); grid-template-rows: 0fr; }
+}
+
+@keyframes server-details-pane-out-to-right {
+  from { opacity: 1; transform: none; grid-template-rows: 1fr; }
+  to { opacity: 0; transform: translateX(8%); grid-template-rows: 0fr; }
+}
