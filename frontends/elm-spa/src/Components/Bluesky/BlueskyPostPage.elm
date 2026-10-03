@@ -68,7 +68,7 @@ type PostStatus
 
 
 type Msg
-    = GotPost String (Result Http.Error ( Maybe BlueskyAccount, ( Post, Bool ), Thread ))
+    = GotPost ( String, String ) (Result Http.Error ( Maybe BlueskyAccount, ( Post, Bool ), Thread ))
     | MediaPlayClicked String
     | MediaImageClicked String
     | ThreadMediaClicked Post String
@@ -88,9 +88,13 @@ of the rotated/reauth-needed account this can come back with.
 init : Shared.Model -> String -> ( Model, Effect Msg )
 init shared uri =
     let
-        actingHandle : String
-        actingHandle =
-            List.head shared.accounts.blueskyAccounts |> Maybe.map .handle |> Maybe.withDefault ""
+        -- The handle and the refresh token this fetch starts with -- see
+        -- `AccountsPanel.MarkBlueskyAccountNeedsReauth` on why the token is needed.
+        actingAccount : ( String, String )
+        actingAccount =
+            List.head shared.accounts.blueskyAccounts
+                |> Maybe.map (\a -> ( a.handle, a.refreshToken ))
+                |> Maybe.withDefault ( "", "" )
 
         fetchTask : Task.Task Http.Error ( Maybe BlueskyAccount, ( Post, Bool ), Thread )
         fetchTask =
@@ -130,7 +134,7 @@ init shared uri =
                             )
     in
     ( { uri = uri, postStatus = LoadingPost, sensitiveMediaRevealed = False, thread = Common.emptyThread, replies = PostReplies.initStatic "bluesky:" [] }
-    , fetchTask |> Task.attempt (GotPost actingHandle) |> Effect.fromCmd
+    , fetchTask |> Task.attempt (GotPost actingAccount) |> Effect.fromCmd
     )
 
 
@@ -157,10 +161,10 @@ update msg model =
                 |> Maybe.withDefault Effect.none
             )
 
-        GotPost handle (Err err) ->
+        GotPost ( handle, refreshToken ) (Err err) ->
             ( { model | postStatus = PostFailed }
             , if BlueskyAccounts.isReauthError err && handle /= "" then
-                Effect.fromShared (Shared.AccountsPanelMsg (AccountsPanel.MarkBlueskyAccountNeedsReauth handle))
+                Effect.fromShared (Shared.AccountsPanelMsg (AccountsPanel.MarkBlueskyAccountNeedsReauth handle refreshToken))
 
               else
                 Effect.none

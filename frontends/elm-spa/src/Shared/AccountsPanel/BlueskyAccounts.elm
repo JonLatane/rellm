@@ -24,12 +24,14 @@ that react to user actions and persist the result.
 
 -}
 
+import Base64
 import Http
 import Json.Decode as Decode exposing (Decoder)
 import Json.Encode as Encode
 import Shared.AccountsPanel.SortOrder exposing (sortOrderDecoder)
 import Shared.Federation.Common exposing (jsonResolver, nonEmpty)
 import Task exposing (Task)
+import Time
 
 
 {-| A Bluesky (AT Protocol) account connected via `UI.blueskyConnectSection`'s form -- unlike
@@ -242,7 +244,7 @@ refreshSessionTask account =
         , body = Http.emptyBody
         , resolver =
             jsonResolver refreshedTokensDecoder
-                (\metadata body -> Http.BadBody (errorBody body |> Maybe.withDefault ("HTTP " ++ String.fromInt metadata.statusCode)))
+                (\metadata _ -> Http.BadStatus metadata.statusCode)
         , timeout = Just 10000
         }
         |> Task.map
@@ -258,57 +260,149 @@ refreshedTokensDecoder =
         (Decode.field "refreshJwt" Decode.string)
 
 
-{-| Ensures `account`'s access token still works around performing `req`: tries `req` with the
-current `accessToken` first, and only attempts a refresh (see `refreshSessionTask`) if that comes
-back `Http.BadStatus _` -- AT Proto's exact status code/error-body shape for "this token is
-expired" (historically inconsistent across its own endpoints) isn't worth depending on precisely
-here, so _any_ bad-status response is treated as a "maybe expired, worth one refresh-and-retry"
-signal. If the refresh itself fails (refresh token revoked/expired past its own, much longer
-lifetime, or a network error), this surfaces the _original_ `req` failure rather than the refresh's
-own -- callers should treat a final `Http.BadStatus _` here as "this account needs
-`needsReauth = True`" (see `isReauthError`), same shape `RellmAccounts.applyPermissionsRefreshResult`
-already uses for `RellmAccount.needsPassword`. On a successful refresh, retries `req` exactly once
-with the new access token and returns the _updated_ `account` alongside whatever it resolves to
-(or that retry's own failure, uninterrupted, if it fails for an unrelated reason) -- either way,
-callers should persist the returned account whenever this succeeds, since its tokens may have
-rotated even though the caller never asked for that explicitly.
+{-| Ensures `account`'s access token works around performing `req`. Two layers:
+
+  - **Proactive**: the access token is a JWT, so its own `exp` claim says when it dies (see
+    `accessTokenExpiring`) -- if that's within a minute (or it's unreadable), refresh _before_
+    sending `req` rather than burning a failed request first. This keeps the refresh token's
+    single-use rotation from being exercised in a flurry of concurrent reactive retries.
+  - **Reactive**: if `req` still comes back `Http.BadStatus 400`/`401` (AT Proto's "ExpiredToken"/
+    "InvalidToken" statuses -- the body isn't visible from here, so a 400 for some unrelated reason
+    costs one needless refresh), refresh once (unless the proactive step just did) and retry `req`
+    once. Other statuses (404, 429, 5xx) are real answers and pass through untouched.
+
+If a refresh is rejected with a 400/401 (the refresh token itself is revoked/expired/already
+rotated), this fails with `reauthRequiredError`, the only error `isReauthError` recognizes. Any other
+refresh failure (network, 5xx, rate limit) just surfaces the original `req` failure -- the session may
+well be fine. Callers should persist the returned account whenever this succeeds, since its tokens
+may have rotated.
+
 -}
 performWithBlueskyAccount : BlueskyAccount -> (String -> Task Http.Error a) -> Task Http.Error ( BlueskyAccount, a )
 performWithBlueskyAccount account req =
-    req account.accessToken
-        |> Task.map (\result -> ( account, result ))
-        |> Task.onError
-            (\originalError ->
-                case originalError of
-                    Http.BadStatus _ ->
-                        refreshSessionTask account
-                            |> Task.mapError (\_ -> originalError)
-                            |> Task.andThen
-                                (\refreshedAccount ->
-                                    req refreshedAccount.accessToken
-                                        |> Task.map (\result -> ( refreshedAccount, result ))
-                                )
+    let
+        run : Bool -> BlueskyAccount -> Task Http.Error ( BlueskyAccount, a )
+        run justRefreshed current =
+            req current.accessToken
+                |> Task.map (\result -> ( current, result ))
+                |> Task.onError
+                    (\originalError ->
+                        if justRefreshed || not (isExpiredTokenStatus originalError) then
+                            Task.fail originalError
 
-                    _ ->
-                        Task.fail originalError
+                        else
+                            refreshOrFail current
+                                |> Task.onError
+                                    (\refreshError ->
+                                        if isReauthError refreshError then
+                                            Task.fail refreshError
+
+                                        else
+                                            Task.fail originalError
+                                    )
+                                |> Task.andThen
+                                    (\refreshedAccount ->
+                                        req refreshedAccount.accessToken
+                                            |> Task.map (\result -> ( refreshedAccount, result ))
+                                    )
+                    )
+    in
+    Time.now
+        |> Task.andThen
+            (\now ->
+                if accessTokenExpiring now account.accessToken then
+                    refreshOrFail account
+                        |> Task.map (\refreshed -> ( True, refreshed ))
+                        |> Task.onError
+                            (\err ->
+                                if isReauthError err then
+                                    Task.fail err
+
+                                else
+                                    -- Transient refresh failure: the old token may still work.
+                                    Task.succeed ( False, account )
+                            )
+                        |> Task.andThen (\( justRefreshed, current ) -> run justRefreshed current)
+
+                else
+                    run False account
             )
 
 
-{-| Whether an `Http.Error` (from `performWithBlueskyAccount`, once every refresh-and-retry
-possibility is exhausted) means this account needs a fresh App Password rather than being some
-unrelated/transient failure -- mirrors `Grpc.Unauthenticated`'s own role in
-`RellmAccounts.applyPermissionsRefreshResult`. Deliberately as broad as `performWithBlueskyAccount`'s
-own retry trigger (any `Http.BadStatus _`), for the same reason: a more specific check would need to
-depend on AT Proto's own not-fully-consistent error body shape across endpoints.
--}
-isReauthError : Http.Error -> Bool
-isReauthError err =
+isExpiredTokenStatus : Http.Error -> Bool
+isExpiredTokenStatus err =
     case err of
-        Http.BadStatus _ ->
-            True
+        Http.BadStatus status ->
+            status == 400 || status == 401
 
         _ ->
             False
+
+
+{-| `refreshSessionTask`, but a 400/401 rejection (the refresh token itself is dead) becomes
+`reauthRequiredError`; anything else is passed through as-is.
+-}
+refreshOrFail : BlueskyAccount -> Task Http.Error BlueskyAccount
+refreshOrFail account =
+    refreshSessionTask account
+        |> Task.mapError
+            (\err ->
+                if isExpiredTokenStatus err then
+                    reauthRequiredError
+
+                else
+                    err
+            )
+
+
+reauthRequiredError : Http.Error
+reauthRequiredError =
+    Http.BadBody "bluesky-reauth-required"
+
+
+{-| Whether `token` (an access JWT) expires within the next minute -- or can't be read at all, in
+which case refreshing is the safe call.
+-}
+accessTokenExpiring : Time.Posix -> String -> Bool
+accessTokenExpiring now token =
+    case jwtExpiry token of
+        Just expSeconds ->
+            expSeconds * 1000 - Time.posixToMillis now < 60 * 1000
+
+        Nothing ->
+            True
+
+
+{-| The `exp` claim (seconds since the epoch) of a JWT -- its middle, base64url-encoded segment is
+plain JSON. Signature isn't checked; this only schedules a refresh.
+-}
+jwtExpiry : String -> Maybe Int
+jwtExpiry token =
+    case String.split "." token of
+        [ _, payload, _ ] ->
+            let
+                standard : String
+                standard =
+                    payload |> String.replace "-" "+" |> String.replace "_" "/"
+            in
+            String.padRight (4 * ceiling (toFloat (String.length standard) / 4)) '=' standard
+                |> Base64.toString
+                |> Maybe.andThen (Decode.decodeString (Decode.field "exp" Decode.int) >> Result.toMaybe)
+
+        _ ->
+            Nothing
+
+
+{-| Whether an `Http.Error` (from `performWithBlueskyAccount`) means this account's refresh token
+was rejected, so it needs a fresh App Password rather than hitting some unrelated/transient failure.
+Only `reauthRequiredError` -- i.e. a 400/401 from `refreshSession` itself -- counts; an ordinary 404/
+429/5xx from a feed request does not. Callers send the refresh token they used alongside it (see
+`Shared.AccountsPanel.MarkBlueskyAccountNeedsReauth`) so a stale failure can't clobber a session
+another request already successfully rotated.
+-}
+isReauthError : Http.Error -> Bool
+isReauthError err =
+    err == reauthRequiredError
 
 
 {-| `com.atproto.server.createSession`'s error responses are `{ error : String, message : String }`

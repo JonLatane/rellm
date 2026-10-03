@@ -228,7 +228,7 @@ fromBlueskyResult account result =
         Err err ->
             UsersFailed
                 (if BlueskyAccounts.isReauthError err then
-                    Just (AccountsPanel.MarkBlueskyAccountNeedsReauth account.handle)
+                    Just (AccountsPanel.MarkBlueskyAccountNeedsReauth account.handle account.refreshToken)
 
                  else
                     Nothing

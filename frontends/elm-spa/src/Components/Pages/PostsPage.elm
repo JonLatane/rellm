@@ -407,7 +407,7 @@ fromBlueskyResult account result =
         Err err ->
             FeedFailed
                 (if BlueskyAccounts.isReauthError err then
-                    Just (AccountsPanel.MarkBlueskyAccountNeedsReauth account.handle)
+                    Just (AccountsPanel.MarkBlueskyAccountNeedsReauth account.handle account.refreshToken)
 
                  else
                     Nothing

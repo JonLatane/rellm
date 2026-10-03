@@ -1680,7 +1680,7 @@ fetchServerStars : String -> ServerAccount -> Cmd Msg
 fetchServerStars host account =
     case account of
         MastodonServerAccount a ->
-            withMastodonAccount a (\token -> Mastodon.fetchFavourites a.instanceHost token)
+            MastodonAccounts.performWithMastodonAccount a (\token -> Mastodon.fetchFavourites a.instanceHost token)
                 |> Task.map (\( refreshed, posts ) -> ( rotatedMastodon a refreshed, posts ))
                 |> Task.attempt (GotServerStars host (serverAccountKey account))
 
@@ -1714,7 +1714,7 @@ pushServerStar host account starring post =
                             Nothing ->
                                 Task.fail (Http.BadStatus 404)
             in
-            withMastodonAccount a
+            MastodonAccounts.performWithMastodonAccount a
                 (\token ->
                     localId token
                         |> Task.andThen (\id -> Mastodon.setFavourite starring a.instanceHost token id)
@@ -1722,18 +1722,11 @@ pushServerStar host account starring post =
                 |> Task.map (\( refreshed, () ) -> rotatedMastodon a refreshed)
                 |> Task.onError
                     (\err ->
-                        case err of
-                            Http.BadStatus code ->
-                                Task.succeed
-                                    (if code == 401 || code == 403 then
-                                        Just (AccountsPanel.MarkMastodonAccountNeedsReauth a.instanceHost)
+                        if MastodonAccounts.isReauthError err then
+                            Task.succeed (Just (AccountsPanel.MarkMastodonAccountNeedsReauth a.instanceHost a.accessToken))
 
-                                     else
-                                        Nothing
-                                    )
-
-                            _ ->
-                                Task.succeed Nothing
+                        else
+                            Task.succeed Nothing
                     )
                 |> Task.perform GotServerStarPushed
 
@@ -1742,25 +1735,6 @@ pushServerStar host account starring post =
                 |> Task.map (\( refreshed, () ) -> rotatedBluesky a refreshed)
                 |> Task.onError (\_ -> Task.succeed Nothing)
                 |> Task.perform GotServerStarPushed
-
-
-{-| `MastodonAccounts.performWithMastodonAccount`, but only refreshing the token on a 401 -- its own
-"any bad status" trigger would burn a (rotating) refresh token on, say, a 403 for a missing scope,
-and a refresh whose retry then fails drops the rotated tokens on the floor.
--}
-withMastodonAccount : MastodonAccount -> (String -> Task.Task Http.Error a) -> Task.Task Http.Error ( MastodonAccount, a )
-withMastodonAccount account req =
-    req account.accessToken
-        |> Task.map (\result -> ( account, result ))
-        |> Task.onError
-            (\err ->
-                case err of
-                    Http.BadStatus 401 ->
-                        MastodonAccounts.performWithMastodonAccount account req
-
-                    _ ->
-                        Task.fail err
-            )
 
 
 rotatedMastodon : MastodonAccount -> MastodonAccount -> Maybe AccountsPanel.Msg

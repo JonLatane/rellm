@@ -481,7 +481,7 @@ type Msg
     | GotMastodonLoginResult Decode.Value
     | GotMastodonVerifyCredentialsResult String MastodonAccounts.MastodonLoginResult (Result Http.Error String)
     | MastodonAccountRefreshed MastodonAccounts.MastodonAccount
-    | MarkMastodonAccountNeedsReauth String
+    | MarkMastodonAccountNeedsReauth String String
     | AddAccountServerFormTypeSelected AccountOrServerFormType
     | BlueskyHandleChanged String
     | BlueskyAppPasswordChanged String
@@ -492,7 +492,7 @@ type Msg
     | FinishRemoveBlueskyAccount String
     | ToggleBlueskyAccountEnabled String
     | BlueskyAccountRefreshed BlueskyAccount
-    | MarkBlueskyAccountNeedsReauth String
+    | MarkBlueskyAccountNeedsReauth String String
     | ReconnectBlueskyAccountClicked String
     | BrowseMastodonInstanceInputChanged String
     | BrowseMastodonInstanceClicked
@@ -3681,7 +3681,9 @@ sendUpdate req msg model =
             in
             ( newModel, Ports.persistMastodonAccountsAndServers (encodeMastodonAccountsAndServers newModel) )
 
-        MarkMastodonAccountNeedsReauth instanceHost ->
+        MarkMastodonAccountNeedsReauth instanceHost failedAccessToken ->
+            -- Ignored if the stored account's access token has since changed (a concurrent request
+            -- already rotated it) -- see `MarkBlueskyAccountNeedsReauth`.
             -- Sent once `MastodonAccounts.performWithMastodonAccount`'s own refresh-and-retry has
             -- been exhausted (see `MastodonAccounts.isReauthError`) -- mirrors
             -- `MarkBlueskyAccountNeedsReauth` exactly. There's no remove/disconnect UI for a Mastodon
@@ -3694,7 +3696,7 @@ sendUpdate req msg model =
                         | mastodonAccounts =
                             List.map
                                 (\a ->
-                                    if a.instanceHost == instanceHost then
+                                    if a.instanceHost == instanceHost && a.accessToken == failedAccessToken then
                                         { a | needsReauth = True }
 
                                     else
@@ -3860,9 +3862,13 @@ sendUpdate req msg model =
             in
             ( { model | blueskyAccounts = newAccounts }, Ports.persistBlueskyAccounts (BlueskyAccounts.encodeList newAccounts) )
 
-        MarkBlueskyAccountNeedsReauth handle ->
-            -- Sent once `BlueskyAccounts.performWithBlueskyAccount`'s own refresh-and-retry has been
-            -- exhausted (see `BlueskyAccounts.isReauthError`) -- `handle`'s refresh token itself is no
+        MarkBlueskyAccountNeedsReauth handle failedRefreshToken ->
+            -- `failedRefreshToken` is the refresh token the rejected request started with. Ignored if
+            -- the stored account has since moved on to a different one: refresh tokens are
+            -- single-use, so when several requests race, the losers' refreshes get rejected even
+            -- though the winner's rotation (`BlueskyAccountRefreshed`) left the session healthy.
+            -- Sent once `BlueskyAccounts.performWithBlueskyAccount`'s own refresh has been
+            -- rejected (see `BlueskyAccounts.isReauthError`) -- `handle`'s refresh token itself is no
             -- longer valid, so there's no automatic recovery left; `UI.blueskyAccountRow` shows a
             -- "Reconnect" button (`ReconnectBlueskyAccountClicked`) for any account in this state,
             -- mirroring `RellmAccount.needsPassword`'s own "Reauthentication Required" button.
@@ -3871,7 +3877,7 @@ sendUpdate req msg model =
                 newAccounts =
                     List.map
                         (\a ->
-                            if a.handle == handle then
+                            if a.handle == handle && a.refreshToken == failedRefreshToken then
                                 { a | needsReauth = True }
 
                             else
@@ -4280,7 +4286,7 @@ healthCheckMastodonAccountCmd account =
         |> Task.onError
             (\err ->
                 if MastodonAccounts.isReauthError err then
-                    Task.succeed (MarkMastodonAccountNeedsReauth account.instanceHost)
+                    Task.succeed (MarkMastodonAccountNeedsReauth account.instanceHost account.accessToken)
 
                 else
                     Task.succeed NoOp

@@ -228,16 +228,18 @@ refreshedTokensDecoder =
 
 
 {-| Ensures `account`'s access token still works around performing `req`: tries `req` with the
-current `accessToken` first, and only attempts a refresh (see `refreshSessionTask`) if that comes
-back `Http.BadStatus _`, mirroring `Shared.AccountsPanel.BlueskyAccounts.performWithBlueskyAccount`'s
-own reasoning for why a broad "any bad status" check is the right trigger here too (Mastodon's own
-error body shape for "token expired/revoked" isn't worth depending on precisely). If `account` has no
-`refreshToken` at all (see that field's own doc), `refreshSessionTask` fails immediately, so this
-surfaces the _original_ `req` failure unchanged, same outcome as a refresh that's attempted and fails.
-On a successful refresh, retries `req` exactly once with the new access token and returns the
-_updated_ `account` alongside whatever it resolves to -- callers should persist the returned account
-whenever this succeeds, since its tokens may have rotated even without the caller asking for that
-explicitly.
+current `accessToken` first, and only on `Http.BadStatus 401` (Mastodon's "token expired/revoked";
+a 403 is a missing scope and a 404/429/5xx are real answers, none worth burning a rotating refresh
+token on) attempts a refresh (see `refreshSessionTask`) and retries `req` once with the new access
+token, returning the _updated_ `account` -- callers should persist it whenever this succeeds.
+
+If the token is rejected and the refresh can't fix it -- no `refreshToken` at all (see that field's
+own doc), or the instance rejects the refresh with a 400/401 (`invalid_grant`) -- this fails with
+`reauthRequiredError`, the only error `isReauthError` recognizes. Any other refresh failure (network,
+5xx) surfaces the original `req` failure instead: the session may well be fine.
+
+There's no proactive (pre-expiry) refresh here, unlike Rellm/Bluesky: Mastodon access tokens aren't
+JWTs, and most instances issue non-expiring ones, so the reactive 401 path is the common one anyway.
 -}
 performWithMastodonAccount : MastodonAccount -> (String -> Task Http.Error a) -> Task Http.Error ( MastodonAccount, a )
 performWithMastodonAccount account req =
@@ -246,30 +248,48 @@ performWithMastodonAccount account req =
         |> Task.onError
             (\originalError ->
                 case originalError of
-                    Http.BadStatus _ ->
-                        refreshSessionTask account
-                            |> Task.mapError (\_ -> originalError)
-                            |> Task.andThen
-                                (\refreshedAccount ->
-                                    req refreshedAccount.accessToken
-                                        |> Task.map (\result -> ( refreshedAccount, result ))
-                                )
+                    Http.BadStatus 401 ->
+                        case account.refreshToken of
+                            Nothing ->
+                                Task.fail reauthRequiredError
+
+                            Just _ ->
+                                refreshSessionTask account
+                                    |> Task.mapError
+                                        (\refreshError ->
+                                            case refreshError of
+                                                Http.BadStatus status ->
+                                                    if status == 400 || status == 401 then
+                                                        reauthRequiredError
+
+                                                    else
+                                                        originalError
+
+                                                _ ->
+                                                    originalError
+                                        )
+                                    |> Task.andThen
+                                        (\refreshedAccount ->
+                                            req refreshedAccount.accessToken
+                                                |> Task.map (\result -> ( refreshedAccount, result ))
+                                        )
 
                     _ ->
                         Task.fail originalError
             )
 
 
-{-| Whether an `Http.Error` (from `performWithMastodonAccount`, once every refresh-and-retry
-possibility is exhausted) means this account needs a full reconnect rather than being some
-unrelated/transient failure -- mirrors `Shared.AccountsPanel.BlueskyAccounts.isReauthError` exactly,
-for the same reason (no reliably distinct error shape to key off instead).
+reauthRequiredError : Http.Error
+reauthRequiredError =
+    Http.BadBody "mastodon-reauth-required"
+
+
+{-| Whether an `Http.Error` (from `performWithMastodonAccount`) means this account needs a full
+reconnect: its token was rejected and couldn't be refreshed. An ordinary 403/404/429/5xx doesn't
+count. Callers send the access token they used alongside it (see
+`Shared.AccountsPanel.MarkMastodonAccountNeedsReauth`) so a stale failure can't clobber a session
+another request already rotated.
 -}
 isReauthError : Http.Error -> Bool
 isReauthError err =
-    case err of
-        Http.BadStatus _ ->
-            True
-
-        _ ->
-            False
+    err == reauthRequiredError

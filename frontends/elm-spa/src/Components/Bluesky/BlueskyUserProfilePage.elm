@@ -53,7 +53,7 @@ type ProfileStatus
 
 
 type Msg
-    = GotProfile (Result Http.Error ( BlueskyAccount, Bluesky.ActorProfile ))
+    = GotProfile ( String, String ) (Result Http.Error ( BlueskyAccount, Bluesky.ActorProfile ))
     | PostsMsg PostsPage.Msg
     | SharedMsgReceived Shared.Msg
 
@@ -68,6 +68,13 @@ be connected at all).
 init : Shared.Model -> String -> Browser.Navigation.Key -> String -> Dict String String -> ( Model, Effect Msg )
 init shared handle navKey path query =
     let
+        -- Handle + refresh token this fetch starts with, for `MarkBlueskyAccountNeedsReauth`.
+        actingAccount : ( String, String )
+        actingAccount =
+            List.head shared.accounts.blueskyAccounts
+                |> Maybe.map (\a -> ( a.handle, a.refreshToken ))
+                |> Maybe.withDefault ( "", "" )
+
         fetchTask : Task.Task Http.Error ( BlueskyAccount, Bluesky.ActorProfile )
         fetchTask =
             case shared.accounts.blueskyAccounts of
@@ -85,7 +92,7 @@ init shared handle navKey path query =
       , query = query
       }
     , fetchTask
-        |> Task.attempt GotProfile
+        |> Task.attempt (GotProfile actingAccount)
         |> Effect.fromCmd
     )
 
@@ -93,7 +100,7 @@ init shared handle navKey path query =
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
 update shared msg model =
     case msg of
-        GotProfile (Ok ( account, profile )) ->
+        GotProfile _ (Ok ( account, profile )) ->
             let
                 ( postsModel, postsEffect ) =
                     PostsPage.init shared
@@ -112,18 +119,13 @@ update shared msg model =
                 ]
             )
 
-        GotProfile (Err err) ->
+        GotProfile ( accountHandle, refreshToken ) (Err err) ->
             ( { model | profileStatus = ProfileFailed }
-            , case shared.accounts.blueskyAccounts of
-                account :: _ ->
-                    if BlueskyAccounts.isReauthError err then
-                        Effect.fromShared (Shared.AccountsPanelMsg (AccountsPanel.MarkBlueskyAccountNeedsReauth account.handle))
+            , if BlueskyAccounts.isReauthError err && accountHandle /= "" then
+                Effect.fromShared (Shared.AccountsPanelMsg (AccountsPanel.MarkBlueskyAccountNeedsReauth accountHandle refreshToken))
 
-                    else
-                        Effect.none
-
-                [] ->
-                    Effect.none
+              else
+                Effect.none
             )
 
         PostsMsg subMsg ->
