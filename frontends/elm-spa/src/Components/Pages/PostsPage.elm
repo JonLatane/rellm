@@ -45,6 +45,7 @@ import Http
 import Json.Decode as Decode
 import Ports
 import Process
+import Proto.Rellm.NavigationTab exposing (NavigationTab(..))
 import Proto.Rellm exposing (Post, SyncDestination, User)
 import Proto.Rellm.PostContext exposing (PostContext(..))
 import Set exposing (Set)
@@ -1862,6 +1863,37 @@ Posts feed can be subscribed to as either format (see `logic::sync_sources::feed
 -}
 exportButtonView : Shared.Model -> Model -> Html Msg
 exportButtonView shared model =
+    if model.embeddedPage then
+        div [ class "embedded-export-group" ]
+            [ fullscreenButtonView shared model, exportButtonOnlyView shared model ]
+
+    else
+        exportButtonOnlyView shared model
+
+
+{-| A circular "⛶" link just left of an embedded copy's export button, to the full Posts page --
+`/{username}/posts` for an author-scoped copy, else the main server's own Posts tab (`/posts`, or
+whatever path `customTabs` gives it, see `CustomNav.tabHref`).
+-}
+fullscreenButtonView : Shared.Model -> Model -> Html msg
+fullscreenButtonView shared model =
+    a
+        [ classes [ "filter-icon-button", "fullscreen-button" ]
+        , href
+            (case model.author of
+                Just ( host, author ) ->
+                    usernameHref shared.basePath shared.accounts.mainFrontendHost host author.username ++ "/posts"
+
+                Nothing ->
+                    CustomNav.tabHref shared POSTSTAB
+            )
+        , title "Open full Posts page"
+        ]
+        [ text "⛶" ]
+
+
+exportButtonOnlyView : Shared.Model -> Model -> Html Msg
+exportButtonOnlyView shared model =
     div [ classes [ "posts-export", "popover-anchor" ] ]
         [ button
             [ classes [ "filter-icon-button", "popover-toggle", "background-color-nav", openClosedClass model.exportPopoverOpen ]

@@ -1756,3 +1756,33 @@
   font-size: 0.8rem;
   white-space: nowrap;
 }
+
+/* Embedded (Home/profile) copies of the Events/Posts feeds: smaller circular icon buttons -- the hide-
+   started filter, the export dropdown, and the "⛶" full-page link (`EventsPage.fullscreenButtonView`/
+   `PostsPage.fullscreenButtonView`). `.embedded-export-group` is `PostsPage.exportButtonView`'s
+   wrapper for an embedded copy. */
+.embedded-export-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.embedded-export-group .filter-icon-button,
+.events-controls-row .filter-icon-button {
+  width: 1.6rem;
+  height: 1.6rem;
+  font-size: 0.8rem;
+  text-decoration: none;
+}
+
+.events-controls-row .filter-icon-button.hidden {
+  width: 0;
+  height: 0;
+}
+
+/* Neutral chip look for the "⛶" full-page links, same colors as `.panel-icon-button`
+   (accounts_panel.css) rather than the server-tinted `background-color-nav`. */
+.filter-icon-button.fullscreen-button {
+  background: var(--chip-bg);
+  color: var(--fg);
+}

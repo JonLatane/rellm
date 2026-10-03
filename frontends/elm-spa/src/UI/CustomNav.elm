@@ -17,6 +17,7 @@ module UI.CustomNav exposing
     , iconView
     , navLinkView
     , pageSlideFor
+    , tabHref
     , navigationTabStyleClass
     , navigationTabStyleFromText
     , navigationTabStyleText
@@ -712,6 +713,20 @@ canonicalRouteOf tab =
 tabMatchesRoute : CustomTab -> Route -> Bool
 tabMatchesRoute tab currentRoute =
     currentRoute == tabRoute tab || currentRoute == canonicalRouteOf tab || (tab.target == TargetTab VIDEOTAB && currentRoute == Route.Videos)
+
+
+{-| The href of the main server's own top-nav tab for built-in page `navTab` (e.g. `POSTSTAB` ->
+`/posts`, or whatever path an admin gave that tab in `customTabs`), falling back to
+`defaultPathFor`'s slug if no configured tab targets it. Includes `basePath`.
+-}
+tabHref : Shared.Model -> NavigationTab -> String
+tabHref shared navTab =
+    effectiveTabs (mainServerCustomTabs shared)
+        |> List.filter (\tab -> tab.target == TargetTab navTab)
+        |> List.head
+        |> Maybe.map .path
+        |> Maybe.withDefault (defaultPathFor (TargetTab navTab))
+        |> (\path -> shared.basePath ++ "/" ++ path)
 
 
 {-| A route's position in the top nav, left to right: Home is always 0, then each of the main server's

@@ -79,7 +79,9 @@ import Shared.Time as SharedTime
 import Shared.UserPreferences as UserPreferences
 import Task
 import Time
+import Proto.Rellm.NavigationTab exposing (NavigationTab(..))
 import UI.Classes exposing (classes, hostnameToCSSClass, openClosedClass)
+import UI.CustomNav as CustomNav
 import UI.Flip
 import UI.Modal
 import Url.Builder
@@ -3037,6 +3039,7 @@ view shared showAuthorHeading model =
                     [ tabsView shared model
                     , div [ class "events-controls-trailing" ]
                         [ modeButtonsView shared model.embeddedPage model.mode
+                        , fullscreenButtonView shared model
                         , exportButtonView shared model
                         ]
                     ]
@@ -3056,6 +3059,27 @@ view shared showAuthorHeading model =
         , eventsListView shared model
         , calendarPreviewModalView shared model
         ]
+
+
+{-| A circular "⛶" link just left of an embedded copy's export button, to the full Events page --
+`/{username}/events` for an author-scoped copy, else the main server's own Events tab (`/events`, or
+whatever path `customTabs` gives it, see `CustomNav.tabHref`).
+-}
+fullscreenButtonView : Shared.Model -> Model -> Html msg
+fullscreenButtonView shared model =
+    a
+        [ classes [ "filter-icon-button", "fullscreen-button" ]
+        , href
+            (case model.author of
+                Just ( host, author ) ->
+                    usernameHref shared.basePath shared.accounts.mainFrontendHost host author.username ++ "/events"
+
+                Nothing ->
+                    CustomNav.tabHref shared EVENTSTAB
+            )
+        , title "Open full Events page"
+        ]
+        [ text "⛶" ]
 
 
 {-| "Events" alone once there's an `author` to filter by, upgraded to
