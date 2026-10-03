@@ -211,6 +211,7 @@ type Msg
       -- actually landing in the model and firing the *second*
       -- `UI.Flip.measureElementsCmd` -- see that function's own doc for why.
     | ReadyToMeasureNewGroupPositions
+    | TabLeaveFinished ViewChange
     | GotStarredPost String (Result Grpc.Error ( Maybe AccountsPanel.Msg, GetPostsResponse ))
       -- `kickOffEventFetches`'s batched `GetEvents` reply for one server's
       -- worth of `OCCASION`-context starred posts -- `host`/the
@@ -293,6 +294,10 @@ type GroupMeasurementPhase
       -- A tab switch: the old positions of every post staying visible are in
       -- flight; the change is applied once they arrive (see `beginViewChange`).
     | AwaitingOldViewRects ViewChange
+      -- A tab switch whose outgoing items are fading/collapsing in place (they can't also be
+      -- reordered in the same patch -- see `UI.Flip.remove`); once that's had time to run,
+      -- `TabLeaveFinished` carries on with the measure round trip.
+    | AwaitingTabLeave ViewChange
     | AwaitingNewGroupRects (Dict String UI.Flip.Rect)
 
 
@@ -707,11 +712,21 @@ sendUpdate accountsPanelModel msg model =
             )
 
         SetStarredTab tab ->
-            if tab == model.activeTab then
+            if tab == model.activeTab || model.groupMeasurementPhase /= NotMeasuringGroup then
                 ( model, Cmd.none, Nothing )
 
             else
                 beginViewChange (SwitchTab tab) model
+
+        TabLeaveFinished change ->
+            if model.groupMeasurementPhase == AwaitingTabLeave change then
+                ( { model | groupMeasurementPhase = AwaitingOldViewRects change }
+                , UI.Flip.measureElementsCmd measureOwner starEntryDomId (sharedPostKeys change model)
+                , Nothing
+                )
+
+            else
+                ( model, Cmd.none, Nothing )
 
         GotStarredFederatedPost key (Ok post) ->
             let
@@ -903,11 +918,16 @@ sendUpdate accountsPanelModel msg model =
                                     -- port) -- ignore.
                                     ( model, Cmd.none, Nothing )
 
+                                AwaitingTabLeave _ ->
+                                    -- Still fading the outgoing items; not our measurement.
+                                    ( model, Cmd.none, Nothing )
+
                                 AwaitingOldViewRects change ->
                                     let
                                         changedModel : Model
                                         changedModel =
                                             applyViewChange change model
+                                                |> enterNewlyShownItems model
                                     in
                                     ( { changedModel | groupMeasurementPhase = AwaitingNewGroupRects rects }
                                     , Task.attempt (\_ -> ReadyToMeasureNewGroupPositions) Dom.getViewport
@@ -1326,6 +1346,9 @@ applyGroupMeasurementFailure model =
                     applyViewChange change model
             in
             ( { changedModel | groupMeasurementPhase = NotMeasuringGroup }, Cmd.none )
+
+        AwaitingTabLeave change ->
+            ( { model | groupMeasurementPhase = NotMeasuringGroup } |> applyViewChange change, Cmd.none )
 
         AwaitingNewGroupRects _ ->
             ( { model | groupMeasurementPhase = NotMeasuringGroup }, Cmd.none )
@@ -2008,11 +2031,65 @@ applyViewChange change model =
 {-| Starts a tab switch as a FLIP: measure where every post that'll still be
 shown afterwards is now; `GotMeasuredGroupRects` then applies `change`, waits a frame, and measures
 again so each of those posts slides from its old spot to its new one -- the same round trip
-`OrganizeStarred` does. Posts that stop being shown just disappear (animating their collapse while
-also moving them in the DOM gets cancelled by the browser anyway -- see `UI.Flip.remove`'s doc).
+`OrganizeStarred` does. Posts that stop being shown first collapse in place (`AwaitingTabLeave`), since
+animating their collapse while also moving them in the DOM gets cancelled by the browser -- see
+`UI.Flip.remove`'s doc.
 -}
 beginViewChange : ViewChange -> Model -> ( Model, Cmd Msg, Maybe AccountsPanel.Msg )
 beginViewChange change model =
+    let
+        leavingKeys : List String
+        leavingKeys =
+            tabChangeKeys model (applyViewChange change model)
+    in
+    if List.isEmpty leavingKeys then
+        ( { model | groupMeasurementPhase = AwaitingOldViewRects change }
+        , UI.Flip.measureElementsCmd measureOwner starEntryDomId (sharedPostKeys change model)
+        , Nothing
+        )
+
+    else
+        -- Fade the outgoing items away where they are first, then reorder.
+        ( { model
+            | groupMeasurementPhase = AwaitingTabLeave change
+            , starAnimations =
+                List.foldl
+                    (\key acc ->
+                        case Dict.get key acc of
+                            Just state ->
+                                if state.removing then
+                                    acc
+
+                                else
+                                    Dict.insert key (UI.Flip.remove NoOp state) acc
+
+                            Nothing ->
+                                acc
+                    )
+                    model.starAnimations
+                    leavingKeys
+          }
+        , Process.sleep (UI.Flip.flipDurationMs + 20) |> Task.perform (\_ -> TabLeaveFinished change)
+        , Nothing
+        )
+
+
+{-| Keys of the items `before` shows that `after` doesn't.
+-}
+tabChangeKeys : Model -> Model -> List String
+tabChangeKeys before after =
+    let
+        keysOf : Model -> List String
+        keysOf m =
+            tabItems (effectiveTab m) m |> List.map itemKey
+    in
+    List.filter (\key -> not (List.member key (keysOf after))) (keysOf before)
+
+
+{-| Posts shown both before and after `change` -- the ones that slide.
+-}
+sharedPostKeys : ViewChange -> Model -> List String
+sharedPostKeys change model =
     let
         shownPostKeys : Model -> List String
         shownPostKeys m =
@@ -2021,15 +2098,27 @@ beginViewChange change model =
         afterKeys : List String
         afterKeys =
             shownPostKeys (applyViewChange change model)
-
-        sharedKeys : List String
-        sharedKeys =
-            List.filter (\key -> List.member key afterKeys) (shownPostKeys model)
     in
-    ( { model | groupMeasurementPhase = AwaitingOldViewRects change }
-    , UI.Flip.measureElementsCmd measureOwner starEntryDomId sharedKeys
-    , Nothing
-    )
+    List.filter (\key -> List.member key afterKeys) (shownPostKeys model)
+
+
+{-| Gives every item `after` shows that `before` didn't a fresh `UI.Flip.enter`, so it fades/expands in
+once it's been moved into place (still collapsed, so the move doesn't cancel the transition). Posts in
+a collapsed Server-tab section stay collapsed.
+-}
+enterNewlyShownItems : Model -> Model -> Model
+enterNewlyShownItems before after =
+    let
+        collapsed : String -> Bool
+        collapsed key =
+            Dict.get key after.collapseAnimations |> Maybe.map .removing |> Maybe.withDefault False
+    in
+    { after
+        | starAnimations =
+            tabChangeKeys after before
+                |> List.filter (not << collapsed)
+                |> List.foldl (\key acc -> Dict.insert key UI.Flip.enter acc) after.starAnimations
+    }
 
 
 {-| The post `key` is showing as: its browser-side fetch if that's loaded, else a server-side list's
@@ -2198,7 +2287,7 @@ effectiveFlipState model tab shown key =
             own =
                 Dict.get key model.starAnimations |> Maybe.withDefault UI.Flip.restingState
         in
-        if own.removing || tab /= ServerTab then
+        if own.removing || own.entering || tab /= ServerTab then
             own
 
         else

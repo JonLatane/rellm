@@ -648,10 +648,20 @@ update accountsPanelModel msg model =
 
             else
                 let
-                    ( newModel, cmd ) =
-                        expand accountsPanelModel
+                    -- The embedded panel is an accordion: opening one group closes the rest.
+                    openedModel : Model
+                    openedModel =
+                        if model.embeddedPanel then
+                            { model
+                                | inlineOpenGroups = Set.singleton key
+                                , fullyExpandedGroups = Set.filter ((==) key) model.fullyExpandedGroups
+                            }
+
+                        else
                             { model | inlineOpenGroups = Set.insert key model.inlineOpenGroups }
-                            summary.conversation
+
+                    ( newModel, cmd ) =
+                        expand accountsPanelModel openedModel summary.conversation
                 in
                 ( syncSidebarAnimations newModel, cmd, Nothing )
 
