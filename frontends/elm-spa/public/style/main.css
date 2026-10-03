@@ -396,13 +396,18 @@ pre {
   cursor: pointer;
 }
 /* Top-nav tab navigation (`UI.pageSlideWrapper`): the freshly mounted page slides/fades in from the
-   side its tab sits on -- same idea as `media_viewer_panel.css`'s slide-in keyframes. */
+   side its tab sits on -- same idea as `media_viewer_panel.css`'s slide-in keyframes. Fill-mode is
+   `backwards`, not `both`/`forwards`: a forwards-filled opacity/transform animation keeps the page
+   wrapper a stacking context/compositing "Backdrop Root" forever after, which clips any
+   `backdrop-filter` descendant (the `position: fixed` modal/shared backdrops) to the wrapper's own
+   box -- the blur then covers only the centered column. The end keyframe equals the element's normal
+   style anyway. */
 .page-slide-from-right {
-  animation: 0.25s ease both page-slide-in-from-right;
+  animation: 0.25s ease backwards page-slide-in-from-right;
 }
 
 .page-slide-from-left {
-  animation: 0.25s ease both page-slide-in-from-left;
+  animation: 0.25s ease backwards page-slide-in-from-left;
 }
 
 @keyframes page-slide-in-from-right {
