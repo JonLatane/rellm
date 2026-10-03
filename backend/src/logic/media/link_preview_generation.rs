@@ -6,8 +6,11 @@
 //! cookie/consent banner, then produce up to two generated `Media`:
 //!
 //! 1. the page's "main image" (largest visible content image, falling back to `og:image`), if one
-//!    can be detected and downloaded -- placed *first* on the post, and
+//!    can be detected and downloaded, and
 //! 2. a screenshot of the page.
+//!
+//! Both are appended to the post's existing media (main image, then screenshot), so any
+//! user-provided media stays first.
 //!
 //! Browser discovery ([`find_browser_executable`]) works across macOS, Debian/Ubuntu, Fedora/RHEL,
 //! Arch, and the Docker image; set `PREVIEW_BROWSER_PATH` to force a specific binary.
@@ -689,8 +692,8 @@ pub fn posts_needing_previews(
         .load::<Post>(conn)
 }
 
-/// Generates the preview media for `post`'s link and prepends it to the post's media -- main image
-/// first (if one was found), then the page screenshot -- and marks the post `media_generated`.
+/// Generates the preview media for `post`'s link and appends it after the post's existing media --
+/// main image first (if one was found), then the page screenshot -- and marks the post `media_generated`.
 /// Doesn't check whether previews were already generated; callers decide that. On error nothing
 /// is changed on the post.
 pub async fn generate_previews_for_post(
@@ -717,7 +720,7 @@ pub async fn generate_previews_for_post(
         capture.main_image_url
     );
 
-    let mut new_media: Vec<Option<i64>> = vec![];
+    let mut new_media: Vec<Option<i64>> = post.media.clone();
 
     if let Some(image_url) = &capture.main_image_url {
         match download_main_image(image_url, &url).await {
@@ -748,7 +751,6 @@ pub async fn generate_previews_for_post(
     .await?;
     new_media.push(Some(screenshot_id));
 
-    new_media.extend(post.media.clone());
     update(posts::table)
         .filter(posts::id.eq(post.id))
         .set((posts::media.eq(new_media), posts::media_generated.eq(true)))
