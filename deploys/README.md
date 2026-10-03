@@ -410,7 +410,7 @@ Everything routine is a `make` target; the shell scripts under `deploys/` are fo
 * **`deploys/`** -- tasks that may recur, or that other things call:
   * `transition_jonline_namespace_to_central_storage.sh` (`make transition_backend_to_central_data`): moves a namespace onto [central storage](./central_storage/README.md), with downtime, verifying the copy and leaving the old storage untouched.
   * `.github/workflows/scripts/set_backend_images.sh`: what CI runs to deploy -- bumps the image tags of a namespace's `rellm`/`rellm-jobs`/`rellm-preview-generator` Deployments (`kubectl set image`) and nothing else.
-  * `copy_server_configuration.sh` (`make copy_server_configuration`): copies one `server_configurations` column between two namespaces' databases (per-namespace or central).
+  * `copy_server_configuration.sh` (`make copy_server_configuration`): copies one `server_configurations` column between two namespaces' databases (per-namespace or central). Convenience wrappers: `make copy_server_cluster_configuration` (`cluster_resources`, rewriting its `namespace_id` to the target) and `make copy_server_vapid_configuration` (`web_push_config`). All take `SOURCE=` and `TARGET=`.
   * `distributables.sh`: sourced by the Homebrew/Linux `rellm` launchers; not run directly.
 * **`central_storage/provision_namespace.sh`** (`make create_backend_central_data`): creates a namespace's database/role, bucket/user and credentials Secret in central storage.
 * **`central_storage/deprovision_namespace.sh`** (`make delete_backend_central_data`): the reverse -- permanently removes a namespace's central-storage data and credentials (smoke-test cleanup, retiring a site).

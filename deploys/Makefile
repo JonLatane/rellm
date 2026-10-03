@@ -9,7 +9,7 @@
 # below) and get_all_storage_credentials (reads every namespace) are the exceptions -- they don't
 # act on a single NAMESPACE, so they're carved out of this guard.
 ifndef NAMESPACE
-ifeq ($(filter copy_server_configuration get_all_storage_credentials,$(MAKECMDGOALS)),)
+ifeq ($(filter copy_server_configuration copy_server_cluster_configuration copy_server_vapid_configuration get_all_storage_credentials,$(MAKECMDGOALS)),)
 $(error NAMESPACE is required, e.g. NAMESPACE=rellm make create_external_backend)
 endif
 endif
@@ -594,3 +594,16 @@ certs_gen_test_pass_openssl_verify:
 #   make copy_server_configuration SOURCE=rellm-org TARGET=jonline COLUMN=stripe_config
 copy_server_configuration:
 	./copy_server_configuration.sh --source $(SOURCE) --destination $(TARGET) --column $(COLUMN)
+
+# Like copy_server_configuration for cluster_resources, but also replaces the copied value's
+# namespace_id with TARGET, so TARGET identifies itself to the cluster conductor as itself.
+#
+#   make copy_server_cluster_configuration SOURCE=rellm-org TARGET=neurospicysteve-bullcity-social
+copy_server_cluster_configuration:
+	./copy_server_configuration.sh --source $(SOURCE) --destination $(TARGET) --column cluster_resources --set-cluster-namespace-id
+
+# Convenience for copying web_push_config (the VAPID keypair) -- see copy_server_configuration.
+#
+#   make copy_server_vapid_configuration SOURCE=rellm-org TARGET=neurospicysteve-bullcity-social
+copy_server_vapid_configuration:
+	./copy_server_configuration.sh --source $(SOURCE) --destination $(TARGET) --column web_push_config

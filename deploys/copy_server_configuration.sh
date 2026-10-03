@@ -1,4 +1,4 @@
-#!/usr/bin/env zsh
+#!/usr/bin/env bash
 # Copies one `server_configurations` column's value from one namespace's active row to another's
 # -- e.g. copying `stripe_config` from `rellm-org` to `jonline` after setting up Stripe once and
 # wanting every community to bill through the same account.
@@ -25,13 +25,16 @@
 # never echoed -- so it never appears in your terminal, shell history, or a `set -x` trace, and
 # never even reaches your process list (unlike a `-v`/`-c` argument would).
 #
+# With `--set-cluster-namespace-id` (only valid with `--column cluster_resources`), the copied
+# value's `namespace_id` is replaced with the destination namespace -- so the destination
+# identifies itself to the cluster conductor as itself, not as the source. Everything else in the
+# copied value (conductor_host, cluster_shared_secret, conductor_state, ...) is copied unchanged.
+#
 # Prerequisites: kubectl pointed at the right cluster (see data_migrations/cutover_jonline_namespace.sh's own doc
 # for the `doctl kubernetes cluster kubeconfig save` incantation), psql installed locally (15+,
 # for `\getenv`).
 set -euo pipefail
 
-# Captured up front -- inside a zsh function, $0 is the function's own name, not the script's (a
-# real difference from bash), so usage() below can't just read $0 itself.
 SCRIPT_NAME=$0
 
 PG_PORT=5432
@@ -49,7 +52,6 @@ PG_DB=""
 # `id`/`active`/`created_at`/`updated_at`, which this script manages itself (see the header doc
 # above). Keep this in sync with backend/src/schema.rs's own `server_configurations` table! --
 # there's no way to derive it live without a DB round-trip this script doesn't otherwise need.
-typeset -a COPYABLE_COLUMNS
 COPYABLE_COLUMNS=(
   server_info anonymous_user_permissions default_user_permissions basic_user_permissions
   people_settings group_settings post_settings event_settings external_cdn_config
@@ -59,7 +61,7 @@ COPYABLE_COLUMNS=(
 )
 
 usage() {
-  echo "Usage: $SCRIPT_NAME --source <namespace> --destination <namespace> --column <column>" >&2
+  echo "Usage: $SCRIPT_NAME --source <namespace> --destination <namespace> --column <column> [--set-cluster-namespace-id]" >&2
   echo >&2
   echo "Copyable columns:" >&2
   printf '  %s\n' "${COPYABLE_COLUMNS[@]}" >&2
@@ -69,17 +71,24 @@ usage() {
 SOURCE_NS=""
 DEST_NS=""
 COLUMN=""
+SET_CLUSTER_NAMESPACE_ID=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --source) SOURCE_NS="${2:-}"; shift 2 ;;
     --destination) DEST_NS="${2:-}"; shift 2 ;;
     --column) COLUMN="${2:-}"; shift 2 ;;
+    --set-cluster-namespace-id) SET_CLUSTER_NAMESPACE_ID=1; shift ;;
     -h|--help) usage ;;
     *) echo "Unknown argument: $1" >&2; usage ;;
   esac
 done
 
 [[ -n "$SOURCE_NS" && -n "$DEST_NS" && -n "$COLUMN" ]] || usage
+
+if [[ "$SET_CLUSTER_NAMESPACE_ID" == 1 && "$COLUMN" != cluster_resources ]]; then
+  echo "--set-cluster-namespace-id only applies to --column cluster_resources." >&2
+  exit 1
+fi
 
 if [[ "$SOURCE_NS" == "$DEST_NS" ]]; then
   echo "Source and destination namespaces are the same ($SOURCE_NS) -- nothing to do." >&2
@@ -107,7 +116,8 @@ resolve_pg() {
     # postgres://<user>:<password>@<host>/<db>
     local rest=${url#postgres://}
     PG_USER=${rest%%:*}
-    PG_PASSWORD=${${rest#*:}%%@*}
+    PG_PASSWORD=${rest#*:}
+    PG_PASSWORD=${PG_PASSWORD%%@*}
     PG_DB=${url##*/}
     PG_FWD_NS=$STORAGE_NAMESPACE
     PG_FWD_TARGET=pod/rellm-central-postgres-0
@@ -125,7 +135,7 @@ resolve_pg() {
 }
 
 # Port-forwards $1's rellm-postgres to a scratch local port, waits until it's actually accepting
-# connections (a plain psql retry loop -- portable across zsh, unlike bash's /dev/tcp), and leaves
+# connections (a plain psql retry loop -- portable across shells, unlike bash's /dev/tcp), and leaves
 # PF_PID/PF_PORT set for the caller. Always paired with stop_port_forward.
 PF_PID=""
 PF_PORT=""
@@ -184,18 +194,26 @@ for col in "${COPYABLE_COLUMNS[@]}"; do
     if [[ "$NEW_VALUE_IS_NULL" == 1 ]]; then
       SELECT_LIST+="NULL, "
     else
-      SELECT_LIST+=":'new_value', "
+      if [[ "$SET_CLUSTER_NAMESPACE_ID" == 1 ]]; then
+        SELECT_LIST+="jsonb_set(:'new_value'::jsonb, '{namespace_id}', to_jsonb(:'dest_ns'::text)), "
+      else
+        SELECT_LIST+=":'new_value', "
+      fi
     fi
   else
     SELECT_LIST+="$col, "
   fi
 done
 SELECT_LIST="${SELECT_LIST%, }"
-COLUMN_LIST="${(j:, :)COPYABLE_COLUMNS}"
+COLUMN_LIST=""
+for col in "${COPYABLE_COLUMNS[@]}"; do
+  COLUMN_LIST+="$col, "
+done
+COLUMN_LIST="${COLUMN_LIST%, }"
 
 start_port_forward "$DEST_NS"
 export COPY_SERVER_CONFIGURATION_NEW_VALUE="$NEW_VALUE"
-run_psql <<SQL
+run_psql -v "dest_ns=$DEST_NS" <<SQL
 BEGIN;
 SELECT id AS old_id FROM server_configurations WHERE active = true \gset
 \getenv new_value COPY_SERVER_CONFIGURATION_NEW_VALUE
