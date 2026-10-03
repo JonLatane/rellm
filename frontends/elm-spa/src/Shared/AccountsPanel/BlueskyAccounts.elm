@@ -292,13 +292,13 @@ performWithBlueskyAccount account req =
 
                         else
                             refreshOrFail current
-                                |> Task.onError
+                                |> Task.mapError
                                     (\refreshError ->
                                         if isReauthError refreshError then
-                                            Task.fail refreshError
+                                            refreshError
 
                                         else
-                                            Task.fail originalError
+                                            originalError
                                     )
                                 |> Task.andThen
                                     (\refreshedAccount ->
