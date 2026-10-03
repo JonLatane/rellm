@@ -79,6 +79,14 @@ _background_jobs_resolve_bin() {
   echo "cargo run --bin ${name} --"
 }
 
+# Prefixes each stdin line with "[name] ".
+_background_jobs_label() {
+  local line
+  while IFS= read -r line || [ -n "$line" ]; do
+    printf '[%s] %s\n' "$1" "$line"
+  done
+}
+
 _background_jobs_run_loop() {
   local name="$1" delay="$2" interval="$3"
 
@@ -95,7 +103,17 @@ _background_jobs_run_loop() {
     local bin
     bin="$(_background_jobs_resolve_bin "$name")"
     echo "[background_jobs] running ${name} (${bin})..."
-    if ! $bin; then
+    local status=0
+    if [ "${RELLM_LABEL_JOB_OUTPUT:-1}" != "0" ]; then
+      # Prefix each job's output (stderr merged in) with "[job_name] " so interleaved
+      # logs -- kubectl logs on the jobs pod, the launchers' server_and_jobs -- show which
+      # job printed what. Set RELLM_LABEL_JOB_OUTPUT=0 to disable. (pipefail makes the
+      # pipeline's status the job's own.)
+      $bin 2>&1 | _background_jobs_label "$name" || status=$?
+    else
+      $bin || status=$?
+    fi
+    if [ "$status" -ne 0 ]; then
       echo "[background_jobs] ${name} failed" >&2
     fi
     sleep "$interval"

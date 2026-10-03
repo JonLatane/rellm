@@ -1115,6 +1115,22 @@ jobs:
               generate_completions_from_executable(bin/"rellm", "completion", shells: [:bash, :zsh])
             end
 
+            # `brew services start rellm` -- runs `rellm server_and_jobs`. The launcher
+            # itself writes the merged, [server]/[jobs]-labeled output to
+            # RELLM_LOG_FILE with size-based rotation and mirrors it to syslog (see
+            # docs/rellm_homebrew.sh), so launchd's own log only catches launcher errors.
+            # opt_bin (not bin) survives upgrades; std_service_path_env puts Homebrew's
+            # bin on PATH for the jobs' optional ImageMagick/ffmpeg.
+            service do
+              run [opt_bin/"rellm", "server_and_jobs"]
+              keep_alive true
+              environment_variables PATH: std_service_path_env,
+                                    RELLM_LOG_FILE: "#{var}/log/rellm.log",
+                                    RELLM_SYSLOG: "1"
+              log_path var/"log/rellm-service.log"
+              error_log_path var/"log/rellm-service.log"
+            end
+
             test do
               system "#{bin}/rellm", "version"
             end
