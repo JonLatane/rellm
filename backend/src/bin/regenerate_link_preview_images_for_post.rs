@@ -2,18 +2,17 @@ extern crate anyhow;
 extern crate diesel;
 extern crate rellm;
 
-use std::sync::Arc;
-
 use diesel::*;
 
-use rellm::logic::{generate_previews_for_post, start_browser};
+use rellm::logic::{generate_previews_for_post, LazyBrowser};
 use rellm::marshaling::*;
 use rellm::models::{Post, POST_COLUMNS};
 use rellm::schema::posts;
 use rellm::{db_connection, init_bin_logging, init_crypto, object_storage_connection};
 
-/// Generates preview images (main image + page screenshot) for one post's link and adds them to the
-/// post, even if it already has generated previews. Requires a Chrome/Brave install (see
+/// Generates a preview image (page metadata image, else browser-found main image, else a page
+/// screenshot) for one post's link and adds it to the post, even if it already has generated
+/// previews. May need a Chrome/Brave install (see
 /// `logic::media::link_preview_generation::find_browser_executable`), so it's only shipped in the
 /// preview_generator image.
 ///
@@ -45,10 +44,13 @@ async fn main() {
     let bucket = object_storage_connection::get_and_test_bucket()
         .await
         .expect("Failed to connect to object storage");
-    let browser = Arc::new(start_browser().expect("Failed to start browser"));
+    // No cluster lock here (a deliberate one-off), and the browser only starts if the page's
+    // metadata image doesn't pan out.
+    let mut browser = LazyBrowser::new(None);
 
-    generate_previews_for_post(&post, &browser, &mut conn, &bucket)
+    generate_previews_for_post(&post, &mut browser, &mut conn, &bucket)
         .await
         .expect("Failed to generate previews");
+    browser.release().await;
     log::info!("Done: added generated previews to post {}.", post_id.to_proto_id());
 }

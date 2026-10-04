@@ -9,6 +9,7 @@ mod contact_method_visibility_tests;
 mod create_post_tests;
 mod delete_rsvp_tests;
 mod link_preview_attempts_tests;
+mod link_preview_metadata_tests;
 mod delete_event_tests;
 mod delete_follow_tests;
 mod delete_group_tests;
