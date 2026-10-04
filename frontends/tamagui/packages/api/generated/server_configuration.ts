@@ -976,14 +976,27 @@ export interface MediaSettings {
     | string
     | undefined;
   /**
-   * Turns off the `generate_link_preview_images` background job's generation of preview media
-   * (the page's main image and a screenshot) for posts with links. Off by default (i.e. generation
+   * Turns off the `generate_link_preview_images` background job's generation of a preview image
+   * (the page's main image, or failing that a screenshot of it) for posts with links. Off by default (i.e. generation
    * is *on*), including for servers configured before this field existed. Doesn't affect
    * previews that already exist -- see
    * [`DeleteLinkPreviewImages`](#grpc-api-DeleteLinkPreviewImages) for that. Editable by anyone
    * who can `ConfigureServer` (`ADMIN`).
    */
   disableLinkPreviewImages: boolean;
+  /**
+   * Whether link preview generation first tries the page's own metadata image
+   * (`og:image`/`twitter:image`), found by simply fetching the page's HTML -- no browser needed,
+   * so it's much cheaper -- and only falls back to loading the page in a browser if there isn't
+   * one (or it's under 1KB, e.g. a tracking pixel). Off by default, in which case every link goes
+   * straight to the browser: its main-image detection (the largest visible content image, else
+   * the metadata image), else a screenshot. Either way a post gets exactly one generated preview.
+   * Metadata images are what the page *declares* as its preview, which for some sites is a generic
+   * site-wide logo rather than anything about the linked page -- hence opt-in. Has no effect while
+   * `disable_link_preview_images` is set, nor on existing previews (see
+   * [`DeleteLinkPreviewImages`](#grpc-api-DeleteLinkPreviewImages) to regenerate those).
+   */
+  preferMetadataForLinkPreviewImages: boolean;
 }
 
 /**
@@ -2930,6 +2943,7 @@ function createBaseMediaSettings(): MediaSettings {
     serverObjectStorageUsageBytes: 0,
     serverObjectStorageUsageCalculatedAt: undefined,
     disableLinkPreviewImages: false,
+    preferMetadataForLinkPreviewImages: false,
   };
 }
 
@@ -2970,6 +2984,9 @@ export const MediaSettings: MessageFns<MediaSettings> = {
     }
     if (message.disableLinkPreviewImages !== false) {
       writer.uint32(80).bool(message.disableLinkPreviewImages);
+    }
+    if (message.preferMetadataForLinkPreviewImages !== false) {
+      writer.uint32(88).bool(message.preferMetadataForLinkPreviewImages);
     }
     return writer;
   },
@@ -3077,6 +3094,14 @@ export const MediaSettings: MessageFns<MediaSettings> = {
           message.disableLinkPreviewImages = reader.bool();
           continue;
         }
+        case 11: {
+          if (tag !== 88) {
+            break;
+          }
+
+          message.preferMetadataForLinkPreviewImages = reader.bool();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -3115,6 +3140,9 @@ export const MediaSettings: MessageFns<MediaSettings> = {
         : undefined,
       disableLinkPreviewImages: isSet(object.disableLinkPreviewImages)
         ? globalThis.Boolean(object.disableLinkPreviewImages)
+        : false,
+      preferMetadataForLinkPreviewImages: isSet(object.preferMetadataForLinkPreviewImages)
+        ? globalThis.Boolean(object.preferMetadataForLinkPreviewImages)
         : false,
     };
   },
@@ -3157,6 +3185,9 @@ export const MediaSettings: MessageFns<MediaSettings> = {
     if (message.disableLinkPreviewImages !== false) {
       obj.disableLinkPreviewImages = message.disableLinkPreviewImages;
     }
+    if (message.preferMetadataForLinkPreviewImages !== false) {
+      obj.preferMetadataForLinkPreviewImages = message.preferMetadataForLinkPreviewImages;
+    }
     return obj;
   },
 
@@ -3177,6 +3208,7 @@ export const MediaSettings: MessageFns<MediaSettings> = {
     message.serverObjectStorageUsageBytes = object.serverObjectStorageUsageBytes ?? 0;
     message.serverObjectStorageUsageCalculatedAt = object.serverObjectStorageUsageCalculatedAt ?? undefined;
     message.disableLinkPreviewImages = object.disableLinkPreviewImages ?? false;
+    message.preferMetadataForLinkPreviewImages = object.preferMetadataForLinkPreviewImages ?? false;
     return message;
   },
 };

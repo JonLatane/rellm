@@ -16,6 +16,8 @@ module Shared.AccountsPanel.RellmServers exposing
     , encodePersistedRellmServer
     , initialLetter
     , isLocalhost
+    , elmPrefix
+    , returnHost
     , isSecure
     , unsecureLocalhostAuthEnabled
     , knownConnectedRellmServer
@@ -713,6 +715,32 @@ cross-server auth is ever allowed to talk to over plain `http://` (see `unsecure
 isLocalhost : String -> Bool
 isLocalhost host =
     (String.split ":" host |> List.head |> Maybe.withDefault "" |> String.toLower) == "localhost"
+
+
+{-| The host (plus `:port`, when served on a non-default one) a federated sign-in should return
+to -- lets sessions on different ports (e.g. local Elm dev server vs. Rust server) each get sent
+back to the one they came from.
+-}
+returnHost : String -> Maybe Int -> String
+returnHost host port_ =
+    case port_ of
+        Just p ->
+            host ++ ":" ++ String.fromInt p
+
+        Nothing ->
+            host
+
+
+{-| The path prefix of the Elm app at `host[:port]`: the Elm dev server (port 1234) serves it at
+the root, everything else (the Rust server) under `/elm`.
+-}
+elmPrefix : String -> String
+elmPrefix host =
+    if String.endsWith ":1234" host then
+        ""
+
+    else
+        "/elm"
 
 
 {-| Whether `config`'s server has opted in (`FederationInfo.unsecure_localhost_federated_auth_enabled`)

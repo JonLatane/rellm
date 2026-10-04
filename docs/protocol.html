@@ -7461,7 +7461,13 @@ directory</a> is (<code>{name}</code> denotes a
           <td>disable_link_preview_images</td>
           <td><a href="#bool">bool</a></td>
           <td></td>
-          <td>Turns off the <code>generate_link_preview_images</code> background job's generation of preview media (the page's main image and a screenshot) for posts with links. Off by default (i.e. generation is <em>on</em>), including for servers configured before this field existed. Doesn't affect previews that already exist -- see <a href="#grpc-api-DeleteLinkPreviewImages"><code>DeleteLinkPreviewImages</code></a> for that. Editable by anyone who can <code>ConfigureServer</code> (<code>ADMIN</code>).</td>
+          <td>Turns off the <code>generate_link_preview_images</code> background job's generation of a preview image (the page's main image, or failing that a screenshot of it) for posts with links. Off by default (i.e. generation is <em>on</em>), including for servers configured before this field existed. Doesn't affect previews that already exist -- see <a href="#grpc-api-DeleteLinkPreviewImages"><code>DeleteLinkPreviewImages</code></a> for that. Editable by anyone who can <code>ConfigureServer</code> (<code>ADMIN</code>).</td>
+        </tr>
+        <tr>
+          <td>prefer_metadata_for_link_preview_images</td>
+          <td><a href="#bool">bool</a></td>
+          <td></td>
+          <td>Whether link preview generation first tries the page's own metadata image (<code>og:image</code>/<code>twitter:image</code>), found by simply fetching the page's HTML -- no browser needed, so it's much cheaper -- and only falls back to loading the page in a browser if there isn't one (or it's under 1KB, e.g. a tracking pixel). Off by default, in which case every link goes straight to the browser: its main-image detection (the largest visible content image, else the metadata image), else a screenshot. Either way a post gets exactly one generated preview. Metadata images are what the page <em>declares</em> as its preview, which for some sites is a generic site-wide logo rather than anything about the linked page -- hence opt-in. Has no effect while <code>disable_link_preview_images</code> is set, nor on existing previews (see <a href="#grpc-api-DeleteLinkPreviewImages"><code>DeleteLinkPreviewImages</code></a> to regenerate those).</td>
         </tr>
       </tbody>
     </table>

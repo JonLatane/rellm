@@ -3,7 +3,7 @@ extern crate diesel;
 extern crate rellm;
 
 use rellm::logic::{
-    generate_previews_for_post, link_preview_generation_enabled, posts_needing_previews,
+    generate_previews_for_post, link_preview_settings, posts_needing_previews,
     record_failed_attempt, BrowserUnavailable, LazyBrowser,
 };
 use rellm::protos::ClusterResources;
@@ -19,7 +19,8 @@ async fn main() {
     let pool = db_connection::establish_job_pool();
     let mut conn = pool.get().expect("Failed to get DB connection");
 
-    if !link_preview_generation_enabled(&mut conn).expect("Failed to load server configuration") {
+    let settings = link_preview_settings(&mut conn).expect("Failed to load server configuration");
+    if !settings.generation_enabled {
         log::info!("Link preview image generation is disabled in MediaSettings, exiting.");
         return;
     }
@@ -46,7 +47,7 @@ async fn main() {
     let mut browser = LazyBrowser::new(cluster_resources);
 
     for post in posts_to_update {
-        if let Err(e) = generate_previews_for_post(&post, &mut browser, &mut conn, &bucket).await {
+        if let Err(e) = generate_previews_for_post(&post, settings.prefer_metadata, &mut browser, &mut conn, &bucket).await {
             if e.downcast_ref::<BrowserUnavailable>().is_some() {
                 // Not the post's fault, so don't count an attempt against it -- and the rest of
                 // the batch would hit the same wall, so skip them (metadata-only posts get

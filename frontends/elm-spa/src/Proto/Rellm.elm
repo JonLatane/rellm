@@ -1445,6 +1445,7 @@ fieldNumbersMediaSettings :
     , serverObjectStorageUsageBytes : Int
     , serverObjectStorageUsageCalculatedAt : Int
     , disableLinkPreviewImages : Int
+    , preferMetadataForLinkPreviewImages : Int
     }
 fieldNumbersMediaSettings =
     Proto.Rellm.Internals_.fieldNumbersProto__Rellm__MediaSettings
@@ -1559,12 +1560,26 @@ encodeMediaSettings =
 
 ### disableLinkPreviewImages
 
- Turns off the `generate_link_preview_images` background job's generation of preview media
- (the page's main image and a screenshot) for posts with links. Off by default (i.e. generation
+ Turns off the `generate_link_preview_images` background job's generation of a preview image
+ (the page's main image, or failing that a screenshot of it) for posts with links. Off by default (i.e. generation
  is *on*), including for servers configured before this field existed. Doesn't affect
  previews that already exist -- see
  [`DeleteLinkPreviewImages`](#grpc-api-DeleteLinkPreviewImages) for that. Editable by anyone
  who can `ConfigureServer` (`ADMIN`).
+
+
+### preferMetadataForLinkPreviewImages
+
+ Whether link preview generation first tries the page's own metadata image
+ (`og:image`/`twitter:image`), found by simply fetching the page's HTML -- no browser needed,
+ so it's much cheaper -- and only falls back to loading the page in a browser if there isn't
+ one (or it's under 1KB, e.g. a tracking pixel). Off by default, in which case every link goes
+ straight to the browser: its main-image detection (the largest visible content image, else
+ the metadata image), else a screenshot. Either way a post gets exactly one generated preview.
+ Metadata images are what the page *declares* as its preview, which for some sites is a generic
+ site-wide logo rather than anything about the linked page -- hence opt-in. Has no effect while
+ `disable_link_preview_images` is set, nor on existing previews (see
+ [`DeleteLinkPreviewImages`](#grpc-api-DeleteLinkPreviewImages) to regenerate those).
 
 
 -}

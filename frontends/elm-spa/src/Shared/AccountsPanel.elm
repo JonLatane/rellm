@@ -183,6 +183,11 @@ type alias Model =
     -- session -- it's a plain SPA reload to change it).
     , browsingHost : String
 
+    -- `browsingHost`'s port as served (`Nothing` for default 80/443). Only used
+    -- to give localhost federated sign-in a port-accurate return address (see
+    -- `UI.signInFromButton`/`Pages.Auth.To.Key_`).
+    , browsingPort : Maybe Int
+
     -- Whether `browsingHost`'s own `ServerConfiguration` request has settled,
     -- success or failure alike -- flips `True` exactly once, in
     -- `GotMainServerResult` (a first-ever visit to this host) or
@@ -1402,6 +1407,7 @@ init req flags blueskyAccountsFlags mastodonAccountsAndServersFlags =
       , createAccountConfirmation = Nothing
       , acceptedCreateAccount = Nothing
       , browsingHost = browsingHost
+      , browsingPort = req.url.port_
       , browsingHostConfigResolved = False
       , mainFrontendHost = browsingHost
       , moveAnimations = Dict.empty

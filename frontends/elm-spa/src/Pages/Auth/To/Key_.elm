@@ -271,7 +271,8 @@ update shared msg model =
                             "https://"
                          )
                             ++ model.requestingHost
-                            ++ "/elm/auth/from/"
+                            ++ RellmServers.elmPrefix model.requestingHost
+                            ++ "/auth/from/"
                             ++ ciphertext
                             ++ (case model.startPath of
                                     Just startPath ->

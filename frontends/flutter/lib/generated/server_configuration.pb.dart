@@ -1202,6 +1202,7 @@ class MediaSettings extends $pb.GeneratedMessage {
     $fixnum.Int64? serverObjectStorageUsageBytes,
     $13.Timestamp? serverObjectStorageUsageCalculatedAt,
     $core.bool? disableLinkPreviewImages,
+    $core.bool? preferMetadataForLinkPreviewImages,
     $core.bool? blockCorsAnonymousMediaAccess,
     $core.bool? licensedMediaVisibleGlobally,
   }) {
@@ -1236,6 +1237,9 @@ class MediaSettings extends $pb.GeneratedMessage {
     if (disableLinkPreviewImages != null) {
       $result.disableLinkPreviewImages = disableLinkPreviewImages;
     }
+    if (preferMetadataForLinkPreviewImages != null) {
+      $result.preferMetadataForLinkPreviewImages = preferMetadataForLinkPreviewImages;
+    }
     if (blockCorsAnonymousMediaAccess != null) {
       $result.blockCorsAnonymousMediaAccess = blockCorsAnonymousMediaAccess;
     }
@@ -1259,6 +1263,7 @@ class MediaSettings extends $pb.GeneratedMessage {
     ..a<$fixnum.Int64>(8, _omitFieldNames ? '' : 'serverObjectStorageUsageBytes', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
     ..aOM<$13.Timestamp>(9, _omitFieldNames ? '' : 'serverObjectStorageUsageCalculatedAt', subBuilder: $13.Timestamp.create)
     ..aOB(10, _omitFieldNames ? '' : 'disableLinkPreviewImages')
+    ..aOB(11, _omitFieldNames ? '' : 'preferMetadataForLinkPreviewImages')
     ..aOB(20, _omitFieldNames ? '' : 'blockCorsAnonymousMediaAccess')
     ..aOB(21, _omitFieldNames ? '' : 'licensedMediaVisibleGlobally')
     ..hasRequiredFields = false
@@ -1400,8 +1405,8 @@ class MediaSettings extends $pb.GeneratedMessage {
   @$pb.TagNumber(9)
   $13.Timestamp ensureServerObjectStorageUsageCalculatedAt() => $_ensure(8);
 
-  /// Turns off the `generate_link_preview_images` background job's generation of preview media
-  /// (the page's main image and a screenshot) for posts with links. Off by default (i.e. generation
+  /// Turns off the `generate_link_preview_images` background job's generation of a preview image
+  /// (the page's main image, or failing that a screenshot of it) for posts with links. Off by default (i.e. generation
   /// is *on*), including for servers configured before this field existed. Doesn't affect
   /// previews that already exist -- see
   /// [`DeleteLinkPreviewImages`](#grpc-api-DeleteLinkPreviewImages) for that. Editable by anyone
@@ -1415,16 +1420,35 @@ class MediaSettings extends $pb.GeneratedMessage {
   @$pb.TagNumber(10)
   void clearDisableLinkPreviewImages() => clearField(10);
 
+  /// Whether link preview generation first tries the page's own metadata image
+  /// (`og:image`/`twitter:image`), found by simply fetching the page's HTML -- no browser needed,
+  /// so it's much cheaper -- and only falls back to loading the page in a browser if there isn't
+  /// one (or it's under 1KB, e.g. a tracking pixel). Off by default, in which case every link goes
+  /// straight to the browser: its main-image detection (the largest visible content image, else
+  /// the metadata image), else a screenshot. Either way a post gets exactly one generated preview.
+  /// Metadata images are what the page *declares* as its preview, which for some sites is a generic
+  /// site-wide logo rather than anything about the linked page -- hence opt-in. Has no effect while
+  /// `disable_link_preview_images` is set, nor on existing previews (see
+  /// [`DeleteLinkPreviewImages`](#grpc-api-DeleteLinkPreviewImages) to regenerate those).
+  @$pb.TagNumber(11)
+  $core.bool get preferMetadataForLinkPreviewImages => $_getBF(10);
+  @$pb.TagNumber(11)
+  set preferMetadataForLinkPreviewImages($core.bool v) { $_setBool(10, v); }
+  @$pb.TagNumber(11)
+  $core.bool hasPreferMetadataForLinkPreviewImages() => $_has(10);
+  @$pb.TagNumber(11)
+  void clearPreferMetadataForLinkPreviewImages() => clearField(11);
+
   /// "Block CORS Anonymous Media Access". When set, `GET /media/{id}` responses to *unauthenticated*
   /// requests omit CORS `Access-Control-Allow-*` headers even for `GLOBAL_PUBLIC` media, so browsers
   /// block other sites' scripts from reading them (plain `<img>`/`<video>` embeds still work).
   /// Authenticated requests are unaffected.
   @$pb.TagNumber(20)
-  $core.bool get blockCorsAnonymousMediaAccess => $_getBF(10);
+  $core.bool get blockCorsAnonymousMediaAccess => $_getBF(11);
   @$pb.TagNumber(20)
-  set blockCorsAnonymousMediaAccess($core.bool v) { $_setBool(10, v); }
+  set blockCorsAnonymousMediaAccess($core.bool v) { $_setBool(11, v); }
   @$pb.TagNumber(20)
-  $core.bool hasBlockCorsAnonymousMediaAccess() => $_has(10);
+  $core.bool hasBlockCorsAnonymousMediaAccess() => $_has(11);
   @$pb.TagNumber(20)
   void clearBlockCorsAnonymousMediaAccess() => clearField(20);
 
@@ -1433,11 +1457,11 @@ class MediaSettings extends $pb.GeneratedMessage {
   /// (the default), `LICENSED` media is only visible to logged-in users -- like `SERVER_PUBLIC` --
   /// plus its owner and admins. Either way, its full-quality bytes still require an active License.
   @$pb.TagNumber(21)
-  $core.bool get licensedMediaVisibleGlobally => $_getBF(11);
+  $core.bool get licensedMediaVisibleGlobally => $_getBF(12);
   @$pb.TagNumber(21)
-  set licensedMediaVisibleGlobally($core.bool v) { $_setBool(11, v); }
+  set licensedMediaVisibleGlobally($core.bool v) { $_setBool(12, v); }
   @$pb.TagNumber(21)
-  $core.bool hasLicensedMediaVisibleGlobally() => $_has(11);
+  $core.bool hasLicensedMediaVisibleGlobally() => $_has(12);
   @$pb.TagNumber(21)
   void clearLicensedMediaVisibleGlobally() => clearField(21);
 }

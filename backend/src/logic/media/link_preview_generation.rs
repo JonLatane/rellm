@@ -4,12 +4,12 @@
 //!
 //! For a post's link we produce exactly one generated `Media`, trying in order:
 //!
-//! 1. the page's metadata image (`og:image`/`twitter:image`), found by simply fetching the page's
-//!    HTML -- no browser needed -- if it downloads, is a supported image, and is over
-//!    [`MIN_METADATA_IMAGE_BYTES`];
+//! 1. (only with `MediaSettings.prefer_metadata_for_link_preview_images`) the page's metadata image
+//!    (`og:image`/`twitter:image`), found by simply fetching the page's HTML -- no browser needed
+//!    -- if it downloads, is a supported image, and is over [`MIN_METADATA_IMAGE_BYTES`];
 //! 2. otherwise, load the page in a headless Chromium-family browser, try to dismiss any
 //!    cookie/consent banner, and use the page's "main image" (largest visible content image,
-//!    falling back to the metadata image again) if one can be detected and downloaded;
+//!    falling back to the metadata image) if one can be detected and downloaded;
 //! 3. otherwise, a screenshot of that browser-rendered page.
 //!
 //! The result is appended to the post's existing media, so any user-provided media stays first.
@@ -903,18 +903,28 @@ pub fn clear_failed_attempts(post_id: i64, conn: &mut PgPooledConnection) {
     }
 }
 
-/// Whether this server has link preview generation turned on
-/// (i.e. `MediaSettings.disable_link_preview_images` isn't set).
-pub fn link_preview_generation_enabled(
+/// The `MediaSettings` that govern link preview generation.
+#[derive(Debug, Clone, Copy)]
+pub struct LinkPreviewSettings {
+    /// `!MediaSettings.disable_link_preview_images`.
+    pub generation_enabled: bool,
+    /// `MediaSettings.prefer_metadata_for_link_preview_images` -- see
+    /// [`generate_previews_for_post`].
+    pub prefer_metadata: bool,
+}
+
+pub fn link_preview_settings(
     conn: &mut PgPooledConnection,
-) -> Result<bool, diesel::result::Error> {
-    let config = crate::rpcs::get_server_configuration_model(conn)
-        .map_err(|e| {
-            log::error!("Failed to load server configuration: {:?}", e);
-            diesel::result::Error::NotFound
-        })?;
-    Ok(!normalized_media_settings(config.media_settings)
-        .disable_link_preview_images)
+) -> Result<LinkPreviewSettings, diesel::result::Error> {
+    let config = crate::rpcs::get_server_configuration_model(conn).map_err(|e| {
+        log::error!("Failed to load server configuration: {:?}", e);
+        diesel::result::Error::NotFound
+    })?;
+    let media_settings = normalized_media_settings(config.media_settings);
+    Ok(LinkPreviewSettings {
+        generation_enabled: !media_settings.disable_link_preview_images,
+        prefer_metadata: media_settings.prefer_metadata_for_link_preview_images,
+    })
 }
 
 /// Backlogs bigger than this are worked newest-first; smaller ones oldest-first.
@@ -948,13 +958,14 @@ pub fn posts_needing_previews(
     }
 }
 
-/// Generates a single preview `Media` for `post`'s link -- metadata image, else the browser-found
-/// main image, else a browser screenshot (see the module doc) -- appends it after the post's
+/// Generates a single preview `Media` for `post`'s link -- metadata image (if `prefer_metadata`),
+/// else the browser-found main image, else a browser screenshot (see the module doc) -- appends it after the post's
 /// existing media and marks the post `media_generated`. Doesn't check whether previews were already
 /// generated; callers decide that. On error nothing is changed on the post. A
 /// [`BrowserUnavailable`] error means the browser was needed but couldn't be had.
 pub async fn generate_previews_for_post(
     post: &Post,
+    prefer_metadata: bool,
     browser: &mut LazyBrowser,
     conn: &mut PgPooledConnection,
     bucket: &Bucket,
@@ -973,14 +984,16 @@ pub async fn generate_previews_for_post(
     // (label, extension, content type, bytes)
     let mut preview: Option<(&str, &str, &str, Vec<u8>)> = None;
 
-    // 1. Page metadata, no browser.
-    match find_metadata_image(&url).await {
-        Ok(Some((bytes, content_type, extension))) => {
-            log::info!("Using metadata image for {} ({} bytes)", url, bytes.len());
-            preview = Some(("main_image", extension, content_type, bytes));
+    // 1. Page metadata, no browser -- only if the server's opted into preferring it.
+    if prefer_metadata {
+        match find_metadata_image(&url).await {
+            Ok(Some((bytes, content_type, extension))) => {
+                log::info!("Using metadata image for {} ({} bytes)", url, bytes.len());
+                preview = Some(("main_image", extension, content_type, bytes));
+            }
+            Ok(None) => log::info!("No usable metadata image for {}; using the browser.", url),
+            Err(e) => log::info!("Couldn't fetch {} for metadata ({}); using the browser.", url, e),
         }
-        Ok(None) => log::info!("No usable metadata image for {}; using the browser.", url),
-        Err(e) => log::info!("Couldn't fetch {} for metadata ({}); using the browser.", url, e),
     }
 
     // 2. The browser's main-image detection, 3. else a screenshot.

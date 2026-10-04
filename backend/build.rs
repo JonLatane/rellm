@@ -37,6 +37,12 @@ fn main() {
             "MediaSettings.disable_link_preview_images",
             "#[serde(default)]",
         )
+        // Same idea, for `MediaSettings.prefer_metadata_for_link_preview_images`, defaulting to
+        // `false` (every link goes straight to the browser).
+        .field_attribute(
+            "MediaSettings.prefer_metadata_for_link_preview_images",
+            "#[serde(default)]",
+        )
         // Same idea, for `ClusterConductorState.limits` (added alongside `ClusterResourceLimit`,
         // after `cluster_resources.conductor_state` had already accumulated real stored data, e.g.
         // `locks`) -- lets that pre-existing JSON deserialize instead of erroring on the newly

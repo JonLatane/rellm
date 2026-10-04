@@ -3789,7 +3789,7 @@ signInFromButton shared currentRoute accountFieldsDisabled =
                                     ++ "/elm/auth/to/"
                                     ++ FederatedAuth.publicKeyToUrlString publicKey
                                     ++ "@"
-                                    ++ accountsPanelModel.browsingHost
+                                    ++ RellmServers.returnHost accountsPanelModel.browsingHost accountsPanelModel.browsingPort
                                     ++ "?start_path="
                                     ++ Url.percentEncode (Route.toHref currentRoute)
                                 )
