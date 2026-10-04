@@ -4214,6 +4214,12 @@ directory</a> is (<code>{name}</code> denotes a
           <td>optional</td>
           <td></td>
         </tr>
+        <tr>
+          <td>cover_art_media_id</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td>For audio media: the ID of another, <em>image</em> <code>Media</code> item to show as this track's cover art, overriding the art embedded in the file (<code>AUDIO_COVER_ART_*</code>). Must be an image belonging to the caller (or the caller must be an Admin); validated by <code>UpdateMedia</code>. Clients render it as <code>GET /media/{cover_art_media_id}?size=medium</code>, so only viewers who can see that image itself get it (others fall back to the embedded art/placeholder) -- give it a visibility at least as open as the track's. Unset/blank clears it.</td>
+        </tr>
       </tbody>
     </table>
     <p><a name="rellm-MediaReference"></a></p>

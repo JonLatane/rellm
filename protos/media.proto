@@ -195,6 +195,14 @@ message MediaMetadata {
   // `convert_media_sizes` background job regenerates it.
   optional uint64 unlicensed_preview_start_ms = 12;
   optional uint64 unlicensed_preview_end_ms = 13;
+
+  // For audio media: the ID of another, *image* `Media` item to show as this track's cover art,
+  // overriding the art embedded in the file (`AUDIO_COVER_ART_*`). Must be an image belonging to the
+  // caller (or the caller must be an Admin); validated by `UpdateMedia`. Clients render it as
+  // `GET /media/{cover_art_media_id}?size=medium`, so only viewers who can see that image itself get it
+  // (others fall back to the embedded art/placeholder) -- give it a visibility at least as open as the
+  // track's. Unset/blank clears it.
+  optional string cover_art_media_id = 14;
 }
 
 // Grants `licensed_to` access to a `LICENSED` [`Media`](#rellm-Media) item's full-quality bytes.

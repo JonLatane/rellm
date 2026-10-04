@@ -1,0 +1,365 @@
+/* `Shared.AudioPlayerPanel`: the persistent bottom "now playing" bar, which expands upward to the top nav.
+
+   z-index 27 -- just under `.navbar` (28, see nav.css), so it never covers the nav even on a very short
+   viewport, and under the fullscreen media viewer (33). Always rendered; `is-closed` just hides it (and its fixed box ignores clicks). */
+.audio-player-panel {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 27;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  background: var(--panel-bg);
+  color: var(--fg);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.25);
+  padding-bottom: env(safe-area-inset-bottom);
+  /* An explicit height (rather than `top: 0`/`auto`) in both states is what lets expanding animate. */
+  height: calc(4.5rem + env(safe-area-inset-bottom));
+  overflow: hidden;
+  transition: height 0.35s cubic-bezier(0.32, 0.72, 0, 1), padding-top 0.35s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.2s ease, transform 0.2s ease;
+}
+
+.audio-player-panel.is-closed {
+  opacity: 0;
+  transform: translateY(100%);
+  pointer-events: none;
+}
+
+.audio-player-panel.is-closed * {
+  pointer-events: none;
+}
+
+/* Expanded, the panel grows to (at most) 60% of the viewport height; its content scrolls if it needs more. */
+.audio-player-panel.is-expanded {
+  height: 60vh;
+  height: 60dvh;
+}
+
+.audio-player-spacer.is-active {
+  height: 4.5rem;
+}
+
+.audio-player-audio,
+.audio-player-preload {
+  display: none;
+}
+
+.audio-player-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: 0 0 auto;
+  height: 4.5rem;
+  /* Leaves room for the Elm debugger's mini control in debug builds (see index.html). */
+  padding: 0 calc(0.75rem + var(--elm-debugger-inset-right, 0px)) 0 0.75rem;
+}
+
+.audio-player-transport {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex: 0 0 auto;
+}
+
+/* Title and "artist · album", truncated to a fixed width -- dropped on narrow screens, where the seek
+   track needs the room more (the expanded view still shows everything). */
+.audio-player-now-playing {
+  flex: 0 0 11rem;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.audio-player-now-playing {
+  cursor: pointer;
+}
+
+.audio-player-now-playing-title,
+.audio-player-now-playing-credits {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audio-player-now-playing-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.audio-player-now-playing-credits {
+  font-size: 0.72rem;
+  opacity: 0.7;
+}
+
+@media (max-width: 640px) {
+  .audio-player-now-playing {
+    display: none;
+  }
+}
+
+.audio-player-button {
+  flex: 0 0 auto;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+
+.audio-player-button:hover {
+  background: rgba(127, 127, 127, 0.25);
+}
+
+.audio-player-play {
+  width: 2.75rem;
+  height: 2.75rem;
+  background: var(--fg);
+  color: var(--panel-bg);
+}
+
+.audio-player-play:hover {
+  background: var(--fg);
+  opacity: 0.85;
+}
+
+/* The arrow points up when collapsed ("expand"), and flips down once expanded. */
+.audio-player-expand {
+  font-weight: 700;
+  transition: transform 0.2s ease;
+}
+
+.audio-player-panel.is-expanded .audio-player-expand {
+  transform: rotate(180deg);
+}
+
+/* Waveform + progress tint + click-to-seek surface, shared by the bar and the expanded view. */
+.audio-player-seek {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  background: rgba(127, 127, 127, 0.15);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.audio-player-seek-bar {
+  height: 3rem;
+}
+
+.audio-player-seek-large {
+  width: min(640px, 100%);
+  height: 3.25rem;
+  flex: 0 0 auto;
+}
+
+.audio-player-waveform {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  pointer-events: none;
+}
+
+/* How much of each quality of the track has been downloaded (`--buffered-*`, set by index.html): stacked
+   bands (Low, Medium, High, Original from the top) behind the playback progress, so loading is visible even
+   in the collapsed bar. Only qualities with something downloaded take any height -- the track is split
+   into as many equal bands (1-4) as have started loading. */
+.audio-player-buffered {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  pointer-events: none;
+}
+
+.audio-player-buffered-band {
+  /* `flex-grow` is 0 until the band's quality has anything (>= 0.1%), then 1 -- an empty one takes no height. */
+  flex: 0 1 0;
+  width: 0;
+  background: rgba(127, 127, 127, 0.3);
+  transition: width 0.3s ease;
+}
+
+.audio-player-buffered-low {
+  width: calc(var(--buffered-low, 0) * 100%);
+  flex-grow: min(1, calc(var(--buffered-low, 0) * 1000));
+}
+
+.audio-player-buffered-medium {
+  width: calc(var(--buffered-medium, 0) * 100%);
+  flex-grow: min(1, calc(var(--buffered-medium, 0) * 1000));
+}
+
+.audio-player-buffered-high {
+  width: calc(var(--buffered-high, 0) * 100%);
+  flex-grow: min(1, calc(var(--buffered-high, 0) * 1000));
+}
+
+.audio-player-buffered-original {
+  width: calc(var(--buffered-original, 0) * 100%);
+  flex-grow: min(1, calc(var(--buffered-original, 0) * 1000));
+}
+
+.audio-player-progress {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  background: rgba(74, 158, 255, 0.4);
+  border-right: 2px solid rgb(74, 158, 255);
+  pointer-events: none;
+}
+
+.audio-player-seek-hit {
+  position: absolute;
+  inset: 0;
+  cursor: pointer;
+  /* Horizontal drags scrub (see index.html) rather than scroll/zoom the page on touch screens. */
+  touch-action: none;
+  user-select: none;
+}
+
+/* While dragging, the tint follows the pointer exactly (`--scrub-fraction`, set by index.html) rather than
+   the audio element's slightly lagging reported position. */
+.audio-player-panel.is-scrubbing .audio-player-progress {
+  width: var(--scrub-fraction, 0%) !important;
+  transition: none;
+}
+
+.audio-player-expanded {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.6rem 1rem;
+  text-align: center;
+  transition: opacity 0.3s ease 0.1s, visibility 0s;
+}
+
+/* Collapsed, the expanded content stays mounted (so it can fade/slide as the panel grows) but takes no
+   space and can't be interacted with. */
+.audio-player-panel.is-collapsed .audio-player-expanded {
+  flex-basis: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  opacity: 0;
+  visibility: hidden;
+  /* Hide (visibility) only once the panel has finished shrinking. */
+  transition: opacity 0.15s ease, visibility 0s 0.35s;
+}
+
+.audio-player-cover {
+  flex: 0 0 auto;
+  /* Sized from what's left of the 60vh panel after the bar and the text/controls below it (~360px), so
+     the cover shrinks rather than pushing those off a short panel -- never under 96px. */
+  width: clamp(96px, calc(60vh - 360px), min(360px, 70vw));
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 10px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.3);
+}
+
+.audio-player-cover.placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(127, 127, 127, 0.25);
+  font-size: 5rem;
+}
+
+.audio-player-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.audio-player-artist {
+  opacity: 0.75;
+}
+
+.audio-player-quality {
+  font-size: 0.8rem;
+}
+
+.audio-player-quality-status {
+  margin-top: 0.3rem;
+  font-size: 0.75rem;
+  opacity: 0.65;
+}
+
+.audio-player-quality select {
+  max-width: 100%;
+  padding: 0.25rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.audio-player-times {
+  display: flex;
+  justify-content: space-between;
+  width: min(640px, 100%);
+  font-size: 0.8rem;
+  opacity: 0.7;
+}
+
+/* Edit / close buttons in the expanded panel's top corners (positioned against the fixed panel itself). */
+.audio-player-corner-button {
+  position: absolute;
+  top: 0.6rem;
+  background: rgba(127, 127, 127, 0.18);
+  z-index: 1;
+}
+
+.audio-player-corner-left {
+  left: 0.75rem;
+}
+
+.audio-player-corner-right {
+  right: 0.75rem;
+}
+
+.audio-player-close {
+  color: #e5484d;
+  font-weight: 700;
+}
+
+.audio-player-text-button {
+  padding: 0.4rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.audio-player-text-button:hover {
+  background: rgba(127, 127, 127, 0.25);
+}
+
+/* The cover art with a small "Edit Cover Art" button below it, flush with the art's right edge (the row
+   shrink-wraps to the art's width). */
+.audio-player-cover-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.3rem;
+  flex: 0 0 auto;
+}
+
+.audio-player-edit-cover-art {
+  padding: 0.15rem 0.65rem;
+  font-size: 0.72rem;
+  white-space: nowrap;
+}

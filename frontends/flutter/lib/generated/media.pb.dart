@@ -416,6 +416,7 @@ class MediaMetadata extends $pb.GeneratedMessage {
     $core.String? publisher,
     $fixnum.Int64? unlicensedPreviewStartMs,
     $fixnum.Int64? unlicensedPreviewEndMs,
+    $core.String? coverArtMediaId,
   }) {
     final $result = create();
     if (videoPreviewTimeMs != null) {
@@ -457,6 +458,9 @@ class MediaMetadata extends $pb.GeneratedMessage {
     if (unlicensedPreviewEndMs != null) {
       $result.unlicensedPreviewEndMs = unlicensedPreviewEndMs;
     }
+    if (coverArtMediaId != null) {
+      $result.coverArtMediaId = coverArtMediaId;
+    }
     return $result;
   }
   MediaMetadata._() : super();
@@ -477,6 +481,7 @@ class MediaMetadata extends $pb.GeneratedMessage {
     ..aOS(11, _omitFieldNames ? '' : 'publisher')
     ..a<$fixnum.Int64>(12, _omitFieldNames ? '' : 'unlicensedPreviewStartMs', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
     ..a<$fixnum.Int64>(13, _omitFieldNames ? '' : 'unlicensedPreviewEndMs', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
+    ..aOS(14, _omitFieldNames ? '' : 'coverArtMediaId')
     ..hasRequiredFields = false
   ;
 
@@ -633,6 +638,21 @@ class MediaMetadata extends $pb.GeneratedMessage {
   $core.bool hasUnlicensedPreviewEndMs() => $_has(12);
   @$pb.TagNumber(13)
   void clearUnlicensedPreviewEndMs() => clearField(13);
+
+  /// For audio media: the ID of another, *image* `Media` item to show as this track's cover art,
+  /// overriding the art embedded in the file (`AUDIO_COVER_ART_*`). Must be an image belonging to the
+  /// caller (or the caller must be an Admin); validated by `UpdateMedia`. Clients render it as
+  /// `GET /media/{cover_art_media_id}?size=medium`, so only viewers who can see that image itself get it
+  /// (others fall back to the embedded art/placeholder) -- give it a visibility at least as open as the
+  /// track's. Unset/blank clears it.
+  @$pb.TagNumber(14)
+  $core.String get coverArtMediaId => $_getSZ(13);
+  @$pb.TagNumber(14)
+  set coverArtMediaId($core.String v) { $_setString(13, v); }
+  @$pb.TagNumber(14)
+  $core.bool hasCoverArtMediaId() => $_has(13);
+  @$pb.TagNumber(14)
+  void clearCoverArtMediaId() => clearField(14);
 }
 
 /// Grants `licensed_to` access to a `LICENSED` [`Media`](#rellm-Media) item's full-quality bytes.

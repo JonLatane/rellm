@@ -37,6 +37,7 @@ import Shared.CreateNewPanel as CreateNewPanel
 import Shared.FederatedAuth as FederatedAuth
 import Shared.MarkdownPanel as MarkdownPanel
 import Shared.MediaGeneratorPanel as MediaGeneratorPanel
+import Shared.AudioPlayerPanel as AudioPlayerPanel
 import Shared.MediaViewerPanel as MediaViewerPanel
 import Shared.MessagingPanel as MessagingPanel
 import Shared.MyMediaPanel as MyMediaPanel
@@ -77,11 +78,26 @@ layout shared currentRoute toMsg children =
     , Html.map toMsg (mediaGeneratorPanel shared)
     , Html.map toMsg (myMediaPanel shared)
     , Html.map toMsg (mediaViewerPanel shared)
+    , Html.map toMsg (audioPlayerPanel shared)
     , Html.map toMsg (federatedSignInNoticeView shared)
     , div [ classes [ "container", hostnameToCSSClass shared.accounts.mainFrontendHost ] ]
         [ main_ []
             [ pageSlideWrapper shared currentRoute children
             , scrollPreserver shared
+
+            -- Keeps the bottom of the page clear of the persistent player bar while it's up.
+            , div
+                [ classes
+                    ("audio-player-spacer"
+                        :: (if AudioPlayerPanel.currentMedia shared.panels.audioPlayerPanel /= Nothing then
+                                [ "is-active" ]
+
+                            else
+                                []
+                           )
+                    )
+                ]
+                []
             ]
         ]
     ]
@@ -339,6 +355,14 @@ sharedBackdrop shared =
               }
             , { isOpen = shared.breadcrumbs.viewingPost /= Nothing || shared.breadcrumbs.viewingHost
               , closeMsg = Shared.BreadcrumbsMsg Breadcrumbs.CloseViewer
+              , blurs = True
+              }
+
+            -- The expanded audio player (z-index 27, see audio_player_panel.css) sits above this backdrop
+            -- (10) but below `.navbar` (28) and everything above it -- so it's last in this list: a
+            -- background tap peels off every panel in front of it first, then collapses the player.
+            , { isOpen = shared.panels.audioPlayerPanel.expanded && AudioPlayerPanel.currentMedia shared.panels.audioPlayerPanel /= Nothing
+              , closeMsg = Shared.AudioPlayerPanelMsg AudioPlayerPanel.ToggleExpanded
               , blurs = True
               }
             ]
@@ -4531,6 +4555,16 @@ nav's own dropdowns are then opened over it.
 mediaViewerPanel : Shared.Model -> Html Shared.Msg
 mediaViewerPanel shared =
     Html.map Shared.MediaViewerPanelMsg (MediaViewerPanel.view shared.accounts shared.panels.mediaViewerPanel)
+
+
+{-| The persistent bottom "now playing" bar (see `Shared.AudioPlayerPanel`) -- opened contextually (by
+playing audio from `Components.MediaFeed`), so mounted directly in `layout` like `mediaViewerPanel`. Sits
+below `.navbar` (see `audio_player_panel.css`) so even expanded it never covers the nav, and below the
+fullscreen viewer.
+-}
+audioPlayerPanel : Shared.Model -> Html Shared.Msg
+audioPlayerPanel shared =
+    Html.map Shared.AudioPlayerPanelMsg (AudioPlayerPanel.view shared.accounts shared.panels.audioPlayerPanel)
 
 
 {-| Flutter is included for parity with the other two, but permanently

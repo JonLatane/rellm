@@ -124,6 +124,7 @@ const MediaMetadata$json = {
     {'1': 'publisher', '3': 11, '4': 1, '5': 9, '9': 10, '10': 'publisher', '17': true},
     {'1': 'unlicensed_preview_start_ms', '3': 12, '4': 1, '5': 4, '9': 11, '10': 'unlicensedPreviewStartMs', '17': true},
     {'1': 'unlicensed_preview_end_ms', '3': 13, '4': 1, '5': 4, '9': 12, '10': 'unlicensedPreviewEndMs', '17': true},
+    {'1': 'cover_art_media_id', '3': 14, '4': 1, '5': 9, '9': 13, '10': 'coverArtMediaId', '17': true},
   ],
   '8': [
     {'1': '_video_preview_time_ms'},
@@ -139,6 +140,7 @@ const MediaMetadata$json = {
     {'1': '_publisher'},
     {'1': '_unlicensed_preview_start_ms'},
     {'1': '_unlicensed_preview_end_ms'},
+    {'1': '_cover_art_media_id'},
   ],
 };
 
@@ -153,10 +155,12 @@ final $typed_data.Uint8List mediaMetadataDescriptor = $convert.base64Decode(
     'cnJhdG9yiAEBEiEKCXB1Ymxpc2hlchgLIAEoCUgKUglwdWJsaXNoZXKIAQESQgobdW5saWNlbn'
     'NlZF9wcmV2aWV3X3N0YXJ0X21zGAwgASgESAtSGHVubGljZW5zZWRQcmV2aWV3U3RhcnRNc4gB'
     'ARI+Chl1bmxpY2Vuc2VkX3ByZXZpZXdfZW5kX21zGA0gASgESAxSFnVubGljZW5zZWRQcmV2aW'
-    'V3RW5kTXOIAQFCGAoWX3ZpZGVvX3ByZXZpZXdfdGltZV9tc0IJCgdfYXJ0aXN0QggKBl9hbGJ1'
-    'bUILCglfY29tcG9zZXJCCwoJX2RpcmVjdG9yQgsKCV9wcm9kdWNlckILCglfc3RhcnJpbmdCBw'
-    'oFX2Nhc3RCBwoFX2NyZXdCCwoJX25hcnJhdG9yQgwKCl9wdWJsaXNoZXJCHgocX3VubGljZW5z'
-    'ZWRfcHJldmlld19zdGFydF9tc0IcChpfdW5saWNlbnNlZF9wcmV2aWV3X2VuZF9tcw==');
+    'V3RW5kTXOIAQESMAoSY292ZXJfYXJ0X21lZGlhX2lkGA4gASgJSA1SD2NvdmVyQXJ0TWVkaWFJ'
+    'ZIgBAUIYChZfdmlkZW9fcHJldmlld190aW1lX21zQgkKB19hcnRpc3RCCAoGX2FsYnVtQgsKCV'
+    '9jb21wb3NlckILCglfZGlyZWN0b3JCCwoJX3Byb2R1Y2VyQgsKCV9zdGFycmluZ0IHCgVfY2Fz'
+    'dEIHCgVfY3Jld0ILCglfbmFycmF0b3JCDAoKX3B1Ymxpc2hlckIeChxfdW5saWNlbnNlZF9wcm'
+    'V2aWV3X3N0YXJ0X21zQhwKGl91bmxpY2Vuc2VkX3ByZXZpZXdfZW5kX21zQhUKE19jb3Zlcl9h'
+    'cnRfbWVkaWFfaWQ=');
 
 @$core.Deprecated('Use licenseDescriptor instead')
 const License$json = {

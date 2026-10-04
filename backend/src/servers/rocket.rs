@@ -5,6 +5,7 @@ use crate::{report_error, web};
 
 use ::log::{info, warn};
 use rocket::*;
+use rocket::http::MediaType;
 use rocket_async_compression::Compression;
 use tokio::task::JoinHandle;
 
@@ -165,7 +166,18 @@ fn create_rocket<T: rocket::figment::Provider>(
         //     level: Some(async_compression::Level::Fastest),
         //     ..Default::default()
         // })
-        server.attach(Compression::with_level(async_compression::Level::Fastest))
+        // Audio/video/images are already compressed -- brotli/gzip on top only burns CPU and, worse for
+        // media, replaces the `Content-Length` with a chunked stream the browser can't size or seek in
+        // (and mangles `Range` responses, see `web::media::RangedFile`). Serve them as stored.
+        let mut compression = Compression::with_level(async_compression::Level::Fastest);
+        for media_type in [
+            MediaType::new("audio", "*"),
+            MediaType::new("video", "*"),
+            MediaType::new("image", "*"),
+        ] {
+            compression.excluded_content_types().push(media_type);
+        }
+        server.attach(compression)
     }
 }
 

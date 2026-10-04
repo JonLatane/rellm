@@ -48,6 +48,7 @@ import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer, withAccessToken)
 import Shared.Conversions exposing (timestampToPosix)
+import Shared.AudioPlayerPanel as AudioPlayerPanel
 import Shared.MediaViewerPanel as MediaViewerPanel
 import Shared.Time as SharedTime
 import Task
@@ -299,17 +300,31 @@ update shared msg model =
         MediaClicked host mediaId ->
             ( model
             , Effect.fromShared
-                (Shared.MediaViewerPanelMsg
-                    (MediaViewerPanel.Open
-                        (Dict.get host model.feeds
-                            |> Maybe.map .media
-                            |> Maybe.withDefault []
-                            |> List.map MediaViewerPanel.mediaToReference
+                (if model.kind == Audio then
+                    -- Audio plays in the persistent bottom player, queueing the tracks listed here.
+                    Shared.AudioPlayerPanelMsg
+                        (AudioPlayerPanel.Open
+                            (Dict.get host model.feeds
+                                |> Maybe.map .media
+                                |> Maybe.withDefault []
+                                |> List.map MediaViewerPanel.mediaToReference
+                            )
+                            mediaId
+                            host
                         )
-                        Nothing
-                        mediaId
-                        host
-                    )
+
+                 else
+                    Shared.MediaViewerPanelMsg
+                        (MediaViewerPanel.Open
+                            (Dict.get host model.feeds
+                                |> Maybe.map .media
+                                |> Maybe.withDefault []
+                                |> List.map MediaViewerPanel.mediaToReference
+                            )
+                            Nothing
+                            mediaId
+                            host
+                        )
                 )
             )
 
@@ -483,13 +498,20 @@ thumbnailUrl kind maybeServer media =
             ifGenerated VIDEOPREVIEWTHUMBNAILMEDIUM "video_preview_medium"
 
         Audio ->
-            -- The embedded cover art when the file has any, else the waveform.
-            case ifGenerated AUDIOCOVERARTSMALL "audio_cover_art_small" of
-                Just coverArt ->
-                    Just coverArt
+            -- The cover art picked for the track, else what's embedded in the file, else the waveform.
+            case media.metadata |> Maybe.andThen .coverArtMediaId of
+                Just coverArtId ->
+                    maybeServer
+                        |> Maybe.andThen (\server -> RellmServers.mediaUrl server coverArtId)
+                        |> Maybe.map (\url -> url ++ "?size=small")
 
                 Nothing ->
-                    ifGenerated AUDIOPREVIEWTHUMBNAILSMALL "audio_preview_small"
+                    case ifGenerated AUDIOCOVERARTSMALL "audio_cover_art_small" of
+                        Just coverArt ->
+                            Just coverArt
+
+                        Nothing ->
+                            ifGenerated AUDIOPREVIEWTHUMBNAILSMALL "audio_preview_small"
 
         -- Images are their own thumbnails: `size=medium` falls back to the original when the
         -- image is already small enough that no resized copy was generated.

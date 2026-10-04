@@ -2088,6 +2088,7 @@ own columns.
 | publisher | [string](#string) | optional |  |
 | unlicensed_preview_start_ms | [uint64](#uint64) | optional | For audio and video media only: the range of the original (in milliseconds) that is cropped into the `UNLICENSED_PREVIEW_MEDIUM` conversion served to viewers without a license for `LICENSED` media. Unset start defaults to 0; unset end defaults to start &#43; 30s (clamped to the media&#39;s duration). Changing either invalidates (deletes) any existing `UNLICENSED_PREVIEW_MEDIUM` size so the `convert_media_sizes` background job regenerates it. |
 | unlicensed_preview_end_ms | [uint64](#uint64) | optional |  |
+| cover_art_media_id | [string](#string) | optional | For audio media: the ID of another, *image* `Media` item to show as this track&#39;s cover art, overriding the art embedded in the file (`AUDIO_COVER_ART_*`). Must be an image belonging to the caller (or the caller must be an Admin); validated by `UpdateMedia`. Clients render it as `GET /media/{cover_art_media_id}?size=medium`, so only viewers who can see that image itself get it (others fall back to the embedded art/placeholder) -- give it a visibility at least as open as the track&#39;s. Unset/blank clears it. |
 
 
 

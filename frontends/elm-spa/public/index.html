@@ -73,6 +73,7 @@
     document.write('<link rel="stylesheet" href="' + rellmBasePath + '/style/shared/media_generator_panel.css">');
     document.write('<link rel="stylesheet" href="' + rellmBasePath + '/style/shared/create_new_panel.css">');
     document.write('<link rel="stylesheet" href="' + rellmBasePath + '/style/shared/media_viewer_panel.css">');
+    document.write('<link rel="stylesheet" href="' + rellmBasePath + '/style/shared/audio_player_panel.css">');
     document.write('<link rel="stylesheet" href="' + rellmBasePath + '/style/shared/messaging_panel.css">');
 
     // Markdown rendering (see `public/markdown.js`) -- vendored rather than
@@ -752,6 +753,219 @@
         }, true);
       });
     })();
+
+    // In Elm debug builds the debugger's mini control (a fixed `<div>` 2em from the bottom-right corner,
+    // containing exactly an `<svg>` and a `<span>`) would sit on top of the persistent media player's bar. Measure it and publish how much room it takes as
+    // `--elm-debugger-inset-right`, which audio_player_panel.css pads the bar by. Release builds never
+    // have such an element, so the variable stays unset (0).
+    (function () {
+      function measure() {
+        var inset = 0;
+        document.querySelectorAll('[style*="position: fixed"]').forEach(function (el) {
+          if (el.style.bottom === '2em' && el.style.right === '2em' && el.children.length === 2 &&
+              el.children[0].tagName.toLowerCase() === 'svg' && el.children[1].tagName === 'SPAN') {
+            var rect = el.getBoundingClientRect();
+            if (rect.width > 0) { inset = Math.max(inset, window.innerWidth - rect.left + 8); }
+          }
+        });
+        if (inset > 0) { document.documentElement.style.setProperty('--elm-debugger-inset-right', inset + 'px'); }
+        else { document.documentElement.style.removeProperty('--elm-debugger-inset-right'); }
+      }
+      new MutationObserver(measure).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] });
+      window.addEventListener('resize', measure);
+      measure();
+    })();
+
+    // Drag-scrubbing on the audio player's seek track (`.audio-player-seek-hit`): press, or drag along it, to
+    // seek the playing audio continuously -- like the native control, playback carries on meanwhile. Seeks
+    // are coalesced to one per animation frame. While dragging, `is-scrubbing` on the panel makes the
+    // progress tint follow the pointer (`--scrub-fraction`, see audio_player_panel.css) instead of the
+    // slightly lagging `timeupdate` position. A plain click still seeks via Elm's own click handler.
+    (function () {
+      var dragging = null;
+      var pending = null;
+      function fractionOf(e) {
+        var rect = dragging.getBoundingClientRect();
+        return Math.min(1, Math.max(0, (e.clientX - rect.left) / Math.max(1, rect.width)));
+      }
+      function flush() {
+        var fraction = pending;
+        pending = null;
+        if (fraction === null || !dragging) { return; }
+        var audio = document.querySelector('.audio-player-audio-active');
+        if (audio && isFinite(audio.duration) && audio.duration > 0) { audio.currentTime = fraction * audio.duration; }
+      }
+      function seekTo(e) {
+        var fraction = fractionOf(e);
+        var panel = dragging.closest('.audio-player-panel');
+        if (panel) { panel.style.setProperty('--scrub-fraction', fraction * 100 + '%'); }
+        if (pending === null) { requestAnimationFrame(flush); }
+        pending = fraction;
+      }
+      function endDrag() {
+        if (!dragging) { return; }
+        var panel = dragging.closest('.audio-player-panel');
+        flush();
+        if (panel) { panel.classList.remove('is-scrubbing'); }
+        dragging = null;
+      }
+      document.addEventListener('pointerdown', function (e) {
+        if (!e.target.classList || !e.target.classList.contains('audio-player-seek-hit') || e.button > 0) { return; }
+        dragging = e.target;
+        try { dragging.setPointerCapture(e.pointerId); } catch (err) { /* synthetic/stale pointer */ }
+        var panel = dragging.closest('.audio-player-panel');
+        if (panel) { panel.classList.add('is-scrubbing'); }
+        seekTo(e);
+      }, true);
+      document.addEventListener('pointermove', function (e) { if (dragging) { seekTo(e); } }, true);
+      ['pointerup', 'pointercancel'].forEach(function (type) { document.addEventListener(type, endDrag, true); });
+    })();
+
+    // The expanded media player's keyboard shortcuts (Space, Left/Right -- see
+    // AudioPlayerPanel.subscriptions) are handled in Elm; this only stops the keys' default effects (page
+    // scroll, activating a focused button on Space) while it's expanded. Keyup too, since a button
+    // activates on Space's keyup.
+    ['keydown', 'keyup'].forEach(function (type) {
+      document.addEventListener(type, function (e) {
+        if (!document.querySelector('.audio-player-panel.is-expanded.is-open')) { return; }
+        if (e.key !== ' ' && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') { return; }
+        var tag = e.target && e.target.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (e.target && e.target.isContentEditable)) { return; }
+        e.preventDefault();
+      }, true);
+    });
+
+    // The persistent player's two `<audio>` slots (see AudioPlayerPanel.elm's `Slot`): one is
+    // `.audio-player-audio-active`, the other `.audio-player-audio-candidate`. Media events don't bubble,
+    // hence the capture-phase document listeners.
+    //
+    // 1. Per-quality download progress of the current track (`--buffered-*` on `.audio-player-panel`, see
+    //    `publishBuffered`). TimeRanges can't be read from Elm's event decoders, hence this.
+    // 2. Quality switching/upgrading without losing the place: the candidate slot loads another copy of the
+    //    track and, once it's ready, fires a `rellmcandidateready` event that Elm answers with a "handoff"
+    //    command. Ready means: for a user-picked quality, seeked to the playback point with ~15s buffered
+    //    ahead of it (or reaching the end); for the automatic start-low-then-upgrade
+    //    (`data-require-full="true"`), the *entire* file downloaded -- it loads from the start, unseeked,
+    //    so the download is one contiguous range.
+    (function () {
+      var AHEAD_SECONDS = 15;
+      function activeAudio() { return document.querySelector('.audio-player-audio-active'); }
+      function candidateAudio() { return document.querySelector('.audio-player-audio-candidate'); }
+      function rangeContaining(audio, time) {
+        for (var i = 0; i < audio.buffered.length; i++) {
+          if (audio.buffered.start(i) <= time && time <= audio.buffered.end(i)) {
+            return { start: audio.buffered.start(i), end: audio.buffered.end(i) };
+          }
+        }
+        return null;
+      }
+      // How much of each quality of the current track has been downloaded (0..1, all buffered ranges
+      // together), remembered per track so a quality that's been swapped out of its slot still shows.
+      // Published as `--buffered-low|medium|high|original` on `.audio-player-panel`, which
+      // audio_player_panel.css draws as stacked bands behind the playback progress.
+      var bufferedByTrack = {};
+      function qualityOf(src) {
+        var size = /[?&]size=([a-z]+)/.exec(src);
+        return !size ? 'medium' : size[1] === 'small' ? 'low' : size[1] === 'large' ? 'high' : size[1];
+      }
+      function coverage(audio) {
+        if (!isFinite(audio.duration) || audio.duration <= 0) { return 0; }
+        var total = 0;
+        for (var i = 0; i < audio.buffered.length; i++) { total += audio.buffered.end(i) - audio.buffered.start(i); }
+        return Math.min(1, total / audio.duration);
+      }
+      function publishBuffered() {
+        var slots = document.querySelectorAll('.audio-player-audio');
+        var panel = document.querySelector('.audio-player-panel');
+        if (!panel) { return; }
+        slots.forEach(function (audio) {
+          // Slots being released (no `src` attribute left) report empty buffers -- ignore them, and
+          // never let a number go down (a released slot's download was still real progress).
+          if (!audio.currentSrc || !audio.getAttribute('src')) { return; }
+          var base = audio.currentSrc.split('?')[0];
+          var quality = qualityOf(audio.currentSrc);
+          bufferedByTrack[base] = bufferedByTrack[base] || {};
+          bufferedByTrack[base][quality] = Math.max(bufferedByTrack[base][quality] || 0, coverage(audio));
+        });
+        var active = document.querySelector('.audio-player-audio-active');
+        var entry = (active && active.currentSrc && bufferedByTrack[active.currentSrc.split('?')[0]]) || {};
+        ['low', 'medium', 'high', 'original'].forEach(function (quality) {
+          panel.style.setProperty('--buffered-' + quality, entry[quality] || 0);
+        });
+      }
+      var lastReseek = 0;
+      function checkCandidate() {
+        var a = activeAudio();
+        var c = candidateAudio();
+        if (!a || !c || !c.currentSrc || c.readyState < 1 || !isFinite(c.duration)) { return; }
+        if (c.dataset.requireFull === 'true') {
+          if (c.buffered.length === 1 && c.buffered.start(0) <= 0.25 && c.buffered.end(0) >= c.duration - 0.25 &&
+              c.dataset.readySent !== c.currentSrc) {
+            c.dataset.readySent = c.currentSrc;
+            c.dispatchEvent(new CustomEvent('rellmcandidateready'));
+          }
+          return;
+        }
+        var position = a.currentTime;
+        var range = rangeContaining(c, position + 0.5);
+        if (range && (range.end - position >= AHEAD_SECONDS || range.end >= c.duration - 0.25)) {
+          if (c.dataset.readySent !== c.currentSrc) {
+            c.dataset.readySent = c.currentSrc;
+            c.dispatchEvent(new CustomEvent('rellmcandidateready'));
+          }
+        } else if (!range && Date.now() - lastReseek > 1500) {
+          // Playback has moved past what the candidate buffered: re-aim it a little ahead of now.
+          lastReseek = Date.now();
+          c.currentTime = Math.min(position + 3, Math.max(0, c.duration - 0.5));
+        }
+      }
+      ['progress', 'timeupdate', 'loadedmetadata', 'durationchange', 'seeked', 'emptied', 'loadstart', 'canplaythrough'].forEach(function (type) {
+        document.addEventListener(type, function (e) {
+          var el = e.target;
+          if (!el.classList || !el.classList.contains('audio-player-audio')) { return; }
+          if (type === 'loadstart') { delete el.dataset.readySent; }
+          publishBuffered();
+          if (type === 'loadedmetadata' && el.classList.contains('audio-player-audio-candidate') && el.dataset.requireFull !== 'true') {
+            var a = activeAudio();
+            if (a && isFinite(el.duration)) { el.currentTime = Math.min(a.currentTime + 2, Math.max(0, el.duration - 0.5)); }
+          }
+          checkCandidate();
+        }, true);
+      });
+    })();
+
+    // See Ports.elm's controlAudioPlayer doc comment.
+    app.ports.controlAudioPlayer.subscribe(function (payload) {
+      var el = document.querySelector('.audio-player-audio-active');
+      if (payload.action === 'release') {
+        // Drop whatever a slot has loaded (removing `src` alone doesn't stop a load in progress).
+        var slot = document.querySelector('.audio-player-audio[data-slot="' + payload.slot + '"]');
+        if (slot) { slot.pause(); slot.removeAttribute('src'); slot.load(); }
+        return;
+      }
+      if (payload.action === 'handoff') {
+        // Switch playback to the (buffered) candidate at exactly the current position.
+        var candidate = document.querySelector('.audio-player-audio-candidate');
+        if (!el || !candidate) { return; }
+        var wasPlaying = !el.paused;
+        candidate.currentTime = el.currentTime;
+        if (wasPlaying) { candidate.play().catch(function () {}); }
+        el.pause();
+        el.removeAttribute('src');
+        el.load();
+        return;
+      }
+      if (!el) { return; }
+      if (payload.action === 'toggle') {
+        if (el.paused) { el.play().catch(function () {}); } else { el.pause(); }
+      } else if (payload.action === 'play') {
+        el.play().catch(function () {});
+      } else if (payload.action === 'pause') {
+        el.pause();
+      } else if (payload.action === 'seek') {
+        el.currentTime = payload.timeMs / 1000;
+      }
+    });
 
     app.ports.scrubMedia.subscribe(function (payload) {
       var attempts = 0;

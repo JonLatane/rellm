@@ -1,4 +1,4 @@
-module Shared.MediaViewerPanel exposing (CreditField, MediaEdit, Model, Msg(..), formatMs, freshEdit, init, mediaToReference, metadataWithEdits, subscriptions, update, view)
+module Shared.MediaViewerPanel exposing (CreditField, MediaEdit, Model, Msg(..), canEditMedia, formatMs, freshEdit, init, mediaToReference, metadataWithEdits, subscriptions, update, view)
 
 {-| A single, app-wide fullscreen image/video viewer -- an alternate,
 "big"/fullscreen rendering of a `Post`'s `media` (compare
@@ -23,8 +23,8 @@ import Components.MediaRenderer as MediaRenderer
 import Components.Posts as Posts
 import Dict exposing (Dict)
 import Grpc
-import Html exposing (Html, button, div, input, option, select, span, text, textarea)
-import Html.Attributes exposing (class, disabled, placeholder, selected, step, type_, value)
+import Html exposing (Html, button, div, img, input, option, select, span, text, textarea)
+import Html.Attributes exposing (alt, class, src, disabled, placeholder, selected, step, type_, value)
 import Html.Events exposing (on, onClick, onInput, preventDefaultOn, stopPropagationOn)
 import Html.Keyed
 import Json.Decode as Decode
@@ -42,7 +42,7 @@ import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer, 
 import Shared.ByteFormat as ByteFormat
 import Shared.Conversions exposing (int64FromInt, int64ToInt)
 import Task
-import UI.Classes exposing (classes, openClosedClass)
+import UI.Classes exposing (classes, hostnameToCSSClass, openClosedClass)
 
 
 type alias Model =
@@ -95,6 +95,19 @@ type alias Model =
     -- in-progress *edit* (unsaved name/description text, in-flight size deletions) never carries
     -- over from one item to the next -- only the "am I editing" state can.
     , edit : Maybe MediaEdit
+
+    -- Whether audio/video starts playing on its own when shown (the default). `Open` always resets it
+    -- to `True`; `OpenedForEditing` turns it off for that session -- used when `Shared.AudioPlayerPanel`
+    -- hands a track over for editing, since that panel is already playing it.
+    , autoplay : Bool
+
+    -- Opened just to edit (see `OpenedForEditing`), so there's no view mode to cancel back to: the form
+    -- has no Cancel button. `Open` resets it.
+    , editOnly : Bool
+
+    -- While the cover art chooser (`Shared.MyMediaPanel`, which sits beneath this panel) is open, this
+    -- panel steps aside -- see `ChooseCoverArtClicked`.
+    , choosingCoverArt : Bool
     }
 
 
@@ -132,6 +145,9 @@ type alias MediaEdit =
     , videoPreviewTimeMs : Maybe Int
     , unlicensedPreviewStartMs : Maybe Int
     , unlicensedPreviewEndMs : Maybe Int
+
+    -- Audio only: the chosen cover art, an image `Media` id (`MediaMetadata.cover_art_media_id`).
+    , coverArtMediaId : Maybe String
 
     -- The playing element's total length, reported back by `Ports.mediaDurationReported` after
     -- `Ports.scrubMedia`'s duration probe -- sliders (see `view`) only render once it's known.
@@ -300,6 +316,12 @@ metadataWithEdits isAudioOrVideo isVideo_ edit base =
 
             else
                 Nothing
+        , coverArtMediaId =
+            if isAudioOrVideo then
+                edit.coverArtMediaId
+
+            else
+                withCredits.coverArtMediaId
         , unlicensedPreviewEndMs =
             if isAudioOrVideo then
                 toInt64 edit.unlicensedPreviewEndMs
@@ -397,6 +419,16 @@ type
     | EditClicked
     | EditCancelClicked
     | NoOp
+    | -- From `Shared.update` when `Shared.AudioPlayerPanel` hands a track over for editing: no autoplay (that
+      -- panel is already playing it) and no Cancel (nothing to go back to).
+      OpenedForEditing
+      -- Opens `Shared.MyMediaPanel` as a single-image chooser (`Shared.update` does that part) and steps
+      -- this panel aside until it closes.
+    | ChooseCoverArtClicked
+      -- From `Shared.update`, when that chooser picks/closes.
+    | CoverArtChosen String
+    | CoverArtChooserClosed
+    | CoverArtRemoved
     | EditNameChanged String
     | EditDescriptionChanged String
     | VisibilityChanged String
@@ -425,7 +457,7 @@ type Direction
 
 init : Model
 init =
-    { media = [], currentMediaReference = Nothing, maybePost = Nothing, targetHost = "", direction = Entering, touchStart = Nothing, preloadFor = Nothing, edit = Nothing }
+    { media = [], currentMediaReference = Nothing, maybePost = Nothing, targetHost = "", direction = Entering, touchStart = Nothing, preloadFor = Nothing, edit = Nothing, autoplay = True, editOnly = False, choosingCoverArt = False }
 
 
 {-| Left/right arrow keys page `Prev`/`Next`, same as the toolbar's `‹`/`›`
@@ -827,6 +859,7 @@ freshEdit media =
     , videoPreviewTimeMs = toMs metadata.videoPreviewTimeMs
     , unlicensedPreviewStartMs = toMs metadata.unlicensedPreviewStartMs
     , unlicensedPreviewEndMs = toMs metadata.unlicensedPreviewEndMs
+    , coverArtMediaId = metadata.coverArtMediaId
     , durationMs = Nothing
     , status = Idle
     , deletingSizes = []
@@ -890,9 +923,32 @@ updatePure msg model =
               , touchStart = Nothing
               , preloadFor = Nothing
               , edit = Nothing
+              , autoplay = True
+              , editOnly = False
+              , choosingCoverArt = False
               }
             , schedulePreload newCurrent
             )
+
+        OpenedForEditing ->
+            ( { model | autoplay = False, editOnly = True }, Cmd.none )
+
+        ChooseCoverArtClicked ->
+            ( { model | choosingCoverArt = True }, Cmd.none )
+
+        CoverArtChosen mediaId ->
+            ( { model
+                | choosingCoverArt = False
+                , edit = model.edit |> Maybe.map (\edit -> { edit | coverArtMediaId = Just mediaId })
+              }
+            , Cmd.none
+            )
+
+        CoverArtChooserClosed ->
+            ( { model | choosingCoverArt = False }, Cmd.none )
+
+        CoverArtRemoved ->
+            ( { model | edit = model.edit |> Maybe.map (\edit -> { edit | coverArtMediaId = Nothing }) }, Cmd.none )
 
         SetCurrent id ->
             case validCurrent model.media id of
@@ -1185,6 +1241,28 @@ view accountsPanelModel model =
                     ]
                 ]
 
+        -- The chosen cover art (or the embedded one/placeholder), with Choose/Remove -- same chooser
+        -- convention as a profile's avatar.
+        coverArtRow : MediaEdit -> Html Msg
+        coverArtRow edit =
+            div [ class "media-viewer-panel-edit-field media-viewer-panel-edit-cover-art" ]
+                [ text "Cover art"
+                , div [ class "media-viewer-panel-edit-cover-art-controls" ]
+                    [ case ( edit.coverArtMediaId, maybeServer ) of
+                        ( Just coverArtId, Just server ) ->
+                            img [ class "media-viewer-panel-edit-cover-art-preview", src (MediaRenderer.coverArtUrl server maybeAccount coverArtId), alt "" ] []
+
+                        _ ->
+                            div [ classes [ "media-viewer-panel-edit-cover-art-preview", "placeholder" ] ] [ text "🎵" ]
+                    , button [ class "media-viewer-panel-edit-cover-art-choose", onClick ChooseCoverArtClicked ] [ text "Choose…" ]
+                    , if edit.coverArtMediaId /= Nothing then
+                        button [ class "media-viewer-panel-edit-cover-art-remove", onClick CoverArtRemoved ] [ text "Remove" ]
+
+                      else
+                        text ""
+                    ]
+                ]
+
         creditField : MediaEdit -> CreditField -> Maybe (Html Msg)
         creditField edit field =
             let
@@ -1289,10 +1367,18 @@ view accountsPanelModel model =
                                 else
                                     []
                                )
+                            ++ (if isAudio media then
+                                    [ coverArtRow edit ]
+
+                                else
+                                    []
+                               )
                             ++ [ div [ class "media-viewer-panel-edit-add-credits" ] (List.filterMap (addCreditButton edit) allCreditFields)
                                , div [ class "media-viewer-panel-edit-actions" ]
                                     [ button
-                                        [ class "media-viewer-panel-edit-save"
+                                        [ -- Tinted with the track's server's brand color (see `UI.EmittedStylesheet`'s
+                                          -- utility classes; this panel isn't inside the nav, so it names the host itself).
+                                          classes [ "media-viewer-panel-edit-save", hostnameToCSSClass model.targetHost, "background-color-primary" ]
                                         , onClick EditSaveClicked
                                         , disabled (edit.status == Submitting)
                                         ]
@@ -1304,7 +1390,13 @@ view accountsPanelModel model =
                                                 "Save"
                                             )
                                         ]
-                                    , button [ class "media-viewer-panel-edit-cancel", onClick EditCancelClicked ] [ text "Cancel" ]
+                                    , -- No Cancel when this panel was opened just to edit (from the audio player's Edit
+                                      -- button): there's no view mode to go back to -- tap outside to dismiss.
+                                      if model.editOnly then
+                                        text ""
+
+                                      else
+                                        button [ class "media-viewer-panel-edit-cancel", onClick EditCancelClicked ] [ text "Cancel" ]
                                     ]
                                , case edit.status of
                                     SubmitFailed err ->
@@ -1323,7 +1415,16 @@ view accountsPanelModel model =
                         )
     in
     div
-        [ classes [ "media-viewer-panel", "nav-panel", openClosedClass (isOpen model) ]
+        [ classes
+            ([ "media-viewer-panel", "nav-panel", openClosedClass (isOpen model) ]
+                ++ (if model.choosingCoverArt then
+                        -- Steps aside for `Shared.MyMediaPanel`, which sits beneath this panel.
+                        [ "is-yielding" ]
+
+                    else
+                        []
+                   )
+            )
         , onClick CloseClicked
         ]
         [ div [ class "media-viewer-panel-header" ] indexLabel
@@ -1359,7 +1460,22 @@ view accountsPanelModel model =
                                 , preventDefaultOn "touchmove" (Decode.succeed ( TouchMove, model.touchStart /= Nothing ))
                                 , on "touchend" (touchPoint "changedTouches" TouchEnd)
                                 ]
-                                [ MediaRenderer.viewAutoplay MediaRenderer.Natural MediaRenderer.ToWidthAndHeight server maybeAccount True MediaRenderer.init SetCurrent SetCurrent media ]
+                                [ (if model.autoplay then
+                                    MediaRenderer.viewAutoplay
+
+                                   else
+                                    MediaRenderer.view
+                                  )
+                                    MediaRenderer.Natural
+                                    MediaRenderer.ToWidthAndHeight
+                                    server
+                                    maybeAccount
+                                    True
+                                    MediaRenderer.init
+                                    SetCurrent
+                                    SetCurrent
+                                    media
+                                ]
                           )
                         ]
 
@@ -1389,7 +1505,9 @@ view accountsPanelModel model =
                     text ""
             , case currentMedia of
                 Just media ->
-                    if canEditMedia maybeAccount media then
+                    -- Not while already editing (e.g. opened from the audio player's Edit button): the form
+                    -- has its own Save/Cancel, and tapping this again would just discard in-progress edits.
+                    if model.edit == Nothing && canEditMedia maybeAccount media then
                         button [ class "media-viewer-panel-edit-toggle", stopClick EditClicked ] [ text "Edit" ]
 
                     else

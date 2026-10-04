@@ -50,6 +50,7 @@ import Shared.CreateNewPanel as CreateNewPanel
 import Shared.FederatedAuth as FederatedAuth
 import Shared.MarkdownPanel as MarkdownPanel
 import Shared.MediaGeneratorPanel as MediaGeneratorPanel
+import Shared.AudioPlayerPanel as AudioPlayerPanel
 import Shared.MediaViewerPanel as MediaViewerPanel
 import Shared.MessagingPanel as MessagingPanel
 import Shared.PushNotificationLink as PushNotificationLink
@@ -146,6 +147,7 @@ type Msg
     | MarkdownPanelMsg MarkdownPanel.Msg
     | MediaGeneratorPanelMsg MediaGeneratorPanel.Msg
     | MediaViewerPanelMsg MediaViewerPanel.Msg
+    | AudioPlayerPanelMsg AudioPlayerPanel.Msg
     | MediaRendererMsg MediaRenderer.Msg
     | MyMediaPanelMsg MyMediaPanel.Msg
     | MyMediaPanelOpenForAccount RellmAccount
@@ -421,6 +423,7 @@ type alias Panels =
     , markdownPanel : MarkdownPanel.Model
     , mediaGeneratorPanel : MediaGeneratorPanel.Model
     , mediaViewerPanel : MediaViewerPanel.Model
+    , audioPlayerPanel : AudioPlayerPanel.Model
     , myMediaPanel : MyMediaPanel.Model
     , createNewPanel : CreateNewPanel.Model
     , messagingPanel : MessagingPanel.Model
@@ -532,6 +535,7 @@ init basePath req flags =
                 , markdownPanel = MarkdownPanel.init
                 , mediaGeneratorPanel = MediaGeneratorPanel.init
                 , mediaViewerPanel = MediaViewerPanel.init
+                , audioPlayerPanel = AudioPlayerPanel.init
                 , myMediaPanel = MyMediaPanel.init
                 , createNewPanel = CreateNewPanel.init
                 , messagingPanel = MessagingPanel.init
@@ -619,6 +623,14 @@ subscriptions model =
         , Sub.map FederatedAuthMsg FederatedAuth.subscriptions
         , Sub.map StarredPanelMsg (StarredPanel.subscriptions model.panels.starredPanel)
         , Sub.map MediaViewerPanelMsg (MediaViewerPanel.subscriptions model.panels.mediaViewerPanel)
+
+        -- The viewer pages with the same arrow keys -- while it's open (e.g. editing a track from the
+        -- player) it gets them, not the player underneath.
+        , if model.panels.mediaViewerPanel.currentMediaReference == Nothing then
+            Sub.map AudioPlayerPanelMsg (AudioPlayerPanel.subscriptions model.panels.audioPlayerPanel)
+
+          else
+            Sub.none
         , Sub.map MyMediaPanelMsg (MyMediaPanel.subscriptions model.panels.myMediaPanel)
         , Sub.map MessagingPanelMsg (MessagingPanel.subscriptions model.panels.messagingPanel)
         , Sub.map MarkdownPanelMsg (MarkdownPanel.subscriptions model.panels.markdownPanel)
@@ -644,8 +656,68 @@ update req msg model =
     let
         ( newModel, cmd ) =
             sharedUpdate req msg model
+
+        -- Cover art picking spans three panels (the audio player, the viewer's edit form and
+        -- `Shared.MyMediaPanel`'s chooser), so its hand-offs are chained here -- see `coverArtFollowUp`.
+        ( followedModel, followCmd ) =
+            coverArtFollowUp req msg model newModel
     in
-    ( newModel, Cmd.batch [ cmd, navBarColorCmd model newModel, splashHiddenCmd model newModel ] )
+    ( followedModel, Cmd.batch [ cmd, followCmd, navBarColorCmd model newModel, splashHiddenCmd model newModel ] )
+
+
+{-| The follow-on messages of cover art editing (see `MediaViewerPanel.ChooseCoverArtClicked`), dispatched
+after `sharedUpdate` has handled `msg` itself:
+
+  - the player's "Edit Cover Art" button, once it has opened the viewer in edit mode, asks the viewer to
+    start choosing;
+  - the viewer starting to choose opens `Shared.MyMediaPanel` as a single-image chooser;
+  - the chooser then reports its pick (or a cancel), which goes back to the viewer -- gated on the viewer
+    actually waiting for one, so an unrelated media pick/close elsewhere is never mistaken for it.
+
+-}
+coverArtFollowUp : Request -> Msg -> Model -> Model -> ( Model, Cmd Msg )
+coverArtFollowUp req msg oldModel newModel =
+    let
+        chain : Msg -> ( Model, Cmd Msg )
+        chain next =
+            sharedUpdate req next newModel
+    in
+    case msg of
+        AudioPlayerPanelMsg AudioPlayerPanel.EditCoverArtClicked ->
+            chain (MediaViewerPanelMsg MediaViewerPanel.ChooseCoverArtClicked)
+                |> (\( chainedModel, chainedCmd ) ->
+                        let
+                            ( finalModel, finalCmd ) =
+                                coverArtFollowUp req (MediaViewerPanelMsg MediaViewerPanel.ChooseCoverArtClicked) newModel chainedModel
+                        in
+                        ( finalModel, Cmd.batch [ chainedCmd, finalCmd ] )
+                   )
+
+        MediaViewerPanelMsg MediaViewerPanel.ChooseCoverArtClicked ->
+            chain
+                (MyMediaPanelMsg
+                    (MyMediaPanel.Open
+                        (Just (MyMediaPanel.SingleSelect { imagesOnly = True, initialSelection = Nothing }))
+                        newModel.panels.mediaViewerPanel.targetHost
+                    )
+                )
+
+        MyMediaPanelMsg (MyMediaPanel.MediaItemClicked mediaId) ->
+            if oldModel.panels.mediaViewerPanel.choosingCoverArt then
+                chain (MediaViewerPanelMsg (MediaViewerPanel.CoverArtChosen mediaId))
+
+            else
+                ( newModel, Cmd.none )
+
+        MyMediaPanelMsg MyMediaPanel.CloseClicked ->
+            if oldModel.panels.mediaViewerPanel.choosingCoverArt then
+                chain (MediaViewerPanelMsg MediaViewerPanel.CoverArtChooserClosed)
+
+            else
+                ( newModel, Cmd.none )
+
+        _ ->
+            ( newModel, Cmd.none )
 
 
 sharedUpdate : Request -> Msg -> Model -> ( Model, Cmd Msg )
@@ -958,6 +1030,41 @@ sharedUpdate req msg model =
                 [ Cmd.map MediaViewerPanelMsg subCmd
                 , Cmd.map AccountsPanelMsg accountsPanelCmd
                 ]
+            )
+
+        AudioPlayerPanelMsg subMsg ->
+            let
+                panels : Panels
+                panels =
+                    model.panels
+
+                ( subModel, subCmd ) =
+                    AudioPlayerPanel.update subMsg panels.audioPlayerPanel
+
+                -- The player's Edit button hands the current track to the viewer's editor.
+                ( viewerModel, viewerCmd ) =
+                    case ( subMsg == AudioPlayerPanel.EditClicked || subMsg == AudioPlayerPanel.EditCoverArtClicked, AudioPlayerPanel.currentMedia subModel ) of
+                        ( True, Just media ) ->
+                            let
+                                ( opened, openCmd, _ ) =
+                                    MediaViewerPanel.update model.accounts
+                                        (MediaViewerPanel.Open [ media ] Nothing media.id subModel.targetHost)
+                                        panels.mediaViewerPanel
+
+                                -- The player is already playing this track.
+                                ( quiet, _, _ ) =
+                                    MediaViewerPanel.update model.accounts MediaViewerPanel.OpenedForEditing opened
+
+                                ( editing, editCmd, _ ) =
+                                    MediaViewerPanel.update model.accounts MediaViewerPanel.EditClicked quiet
+                            in
+                            ( editing, Cmd.map MediaViewerPanelMsg (Cmd.batch [ openCmd, editCmd ]) )
+
+                        _ ->
+                            ( panels.mediaViewerPanel, Cmd.none )
+            in
+            ( { model | panels = { panels | audioPlayerPanel = subModel, mediaViewerPanel = viewerModel } }
+            , Cmd.batch [ Cmd.map AudioPlayerPanelMsg subCmd, viewerCmd ]
             )
 
         MediaRendererMsg subMsg ->

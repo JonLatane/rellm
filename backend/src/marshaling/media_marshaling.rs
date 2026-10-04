@@ -157,6 +157,7 @@ impl ToProtoMediaMetadata for models::MediaMetadata {
             publisher: self.publisher.clone(),
             unlicensed_preview_start_ms: self.unlicensed_preview_start_ms.map(|ms| ms as u64),
             unlicensed_preview_end_ms: self.unlicensed_preview_end_ms.map(|ms| ms as u64),
+            cover_art_media_id: self.cover_art_media_id.map(|id| id.to_proto_id()),
         }
     }
 }

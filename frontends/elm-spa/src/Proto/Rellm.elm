@@ -10012,6 +10012,7 @@ fieldNumbersMediaMetadata :
     , publisher : Int
     , unlicensedPreviewStartMs : Int
     , unlicensedPreviewEndMs : Int
+    , coverArtMediaId : Int
     }
 fieldNumbersMediaMetadata =
     Proto.Rellm.Internals_.fieldNumbersProto__Rellm__MediaMetadata

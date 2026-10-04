@@ -341,7 +341,18 @@ export interface MediaMetadata {
    * `convert_media_sizes` background job regenerates it.
    */
   unlicensedPreviewStartMs?: number | undefined;
-  unlicensedPreviewEndMs?: number | undefined;
+  unlicensedPreviewEndMs?:
+    | number
+    | undefined;
+  /**
+   * For audio media: the ID of another, *image* `Media` item to show as this track's cover art,
+   * overriding the art embedded in the file (`AUDIO_COVER_ART_*`). Must be an image belonging to the
+   * caller (or the caller must be an Admin); validated by `UpdateMedia`. Clients render it as
+   * `GET /media/{cover_art_media_id}?size=medium`, so only viewers who can see that image itself get it
+   * (others fall back to the embedded art/placeholder) -- give it a visibility at least as open as the
+   * track's. Unset/blank clears it.
+   */
+  coverArtMediaId?: string | undefined;
 }
 
 /**
@@ -871,6 +882,7 @@ function createBaseMediaMetadata(): MediaMetadata {
     publisher: undefined,
     unlicensedPreviewStartMs: undefined,
     unlicensedPreviewEndMs: undefined,
+    coverArtMediaId: undefined,
   };
 }
 
@@ -914,6 +926,9 @@ export const MediaMetadata: MessageFns<MediaMetadata> = {
     }
     if (message.unlicensedPreviewEndMs !== undefined) {
       writer.uint32(104).uint64(message.unlicensedPreviewEndMs);
+    }
+    if (message.coverArtMediaId !== undefined) {
+      writer.uint32(114).string(message.coverArtMediaId);
     }
     return writer;
   },
@@ -1029,6 +1044,14 @@ export const MediaMetadata: MessageFns<MediaMetadata> = {
           message.unlicensedPreviewEndMs = longToNumber(reader.uint64());
           continue;
         }
+        case 14: {
+          if (tag !== 114) {
+            break;
+          }
+
+          message.coverArtMediaId = reader.string();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1057,6 +1080,7 @@ export const MediaMetadata: MessageFns<MediaMetadata> = {
       unlicensedPreviewEndMs: isSet(object.unlicensedPreviewEndMs)
         ? globalThis.Number(object.unlicensedPreviewEndMs)
         : undefined,
+      coverArtMediaId: isSet(object.coverArtMediaId) ? globalThis.String(object.coverArtMediaId) : undefined,
     };
   },
 
@@ -1101,6 +1125,9 @@ export const MediaMetadata: MessageFns<MediaMetadata> = {
     if (message.unlicensedPreviewEndMs !== undefined) {
       obj.unlicensedPreviewEndMs = Math.round(message.unlicensedPreviewEndMs);
     }
+    if (message.coverArtMediaId !== undefined) {
+      obj.coverArtMediaId = message.coverArtMediaId;
+    }
     return obj;
   },
 
@@ -1122,6 +1149,7 @@ export const MediaMetadata: MessageFns<MediaMetadata> = {
     message.publisher = object.publisher ?? undefined;
     message.unlicensedPreviewStartMs = object.unlicensedPreviewStartMs ?? undefined;
     message.unlicensedPreviewEndMs = object.unlicensedPreviewEndMs ?? undefined;
+    message.coverArtMediaId = object.coverArtMediaId ?? undefined;
     return message;
   },
 };

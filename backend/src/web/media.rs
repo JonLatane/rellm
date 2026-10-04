@@ -206,6 +206,83 @@ impl<'r, 'o: 'r, R: rocket::response::Responder<'r, 'o>> rocket::response::Respo
     }
 }
 
+/// The most a single `Range` response carries -- an open-ended request (`bytes=N-`, which is how
+/// browsers stream and seek audio/video) gets this much from `N` and the client just asks again for
+/// the rest, so a long file is never read into memory whole.
+const MAX_RANGE_RESPONSE_BYTES: u64 = 4 * 1024 * 1024;
+
+/// A `NamedFile` that honors HTTP `Range` requests (a single `bytes=` range), replying `206 Partial
+/// Content`, and advertises `Accept-Ranges: bytes` otherwise. Without it browsers can't seek in
+/// audio/video until the whole file has downloaded (Rocket's own `NamedFile` ignores `Range`).
+pub struct RangedFile(pub NamedFile);
+
+/// `Range: bytes=...` -> inclusive `(start, end)` within a file of `total` bytes. `Err(())` is an
+/// unsatisfiable range (416); `Ok(None)` is no/unsupported `Range` header (serve everything).
+fn parse_range(header: Option<&str>, total: u64) -> Result<Option<(u64, u64)>, ()> {
+    let Some(spec) = header.and_then(|h| h.trim().strip_prefix("bytes=")) else {
+        return Ok(None);
+    };
+    if spec.contains(',') {
+        return Ok(None); // multi-range: not supported, fall back to the whole file
+    }
+    let Some((start, end)) = spec.split_once('-') else {
+        return Ok(None);
+    };
+    let (start, end) = match (start.trim(), end.trim()) {
+        ("", "") => return Ok(None),
+        // Suffix range: the last N bytes.
+        ("", n) => {
+            let n: u64 = n.parse().map_err(|_| ())?;
+            if n == 0 || total == 0 {
+                return Err(());
+            }
+            (total.saturating_sub(n), total - 1)
+        }
+        (start, "") => (start.parse().map_err(|_| ())?, total.saturating_sub(1)),
+        (start, end) => (start.parse().map_err(|_| ())?, end.parse().map_err(|_| ())?),
+    };
+    if total == 0 || start > end || start >= total {
+        return Err(());
+    }
+    Ok(Some((start, end.min(total - 1))))
+}
+
+impl<'r> rocket::response::Responder<'r, 'static> for RangedFile {
+    fn respond_to(self, request: &'r rocket::Request<'_>) -> rocket::response::Result<'static> {
+        use std::io::{Read, Seek, SeekFrom};
+        let total = std::fs::metadata(self.0.path()).map(|m| m.len()).unwrap_or(0);
+        let range = parse_range(request.headers().get_one("Range"), total);
+        let mut response = match range {
+            Ok(None) => self.0.respond_to(request)?,
+            Err(()) => {
+                let mut response = rocket::Response::new();
+                response.set_status(Status::RangeNotSatisfiable);
+                response.set_raw_header("Content-Range", format!("bytes */{}", total));
+                response
+            }
+            Ok(Some((start, end))) => {
+                let end = end.min(start + MAX_RANGE_RESPONSE_BYTES - 1);
+                let mut buffer = vec![0u8; (end - start + 1) as usize];
+                let read = std::fs::File::open(self.0.path()).and_then(|mut file| {
+                    file.seek(SeekFrom::Start(start))?;
+                    file.read_exact(&mut buffer)
+                });
+                if read.is_err() {
+                    return Err(Status::InternalServerError);
+                }
+                let mut response = rocket::Response::build()
+                    .status(Status::PartialContent)
+                    .sized_body(buffer.len(), std::io::Cursor::new(buffer))
+                    .finalize();
+                response.set_raw_header("Content-Range", format!("bytes {}-{}/{}", start, end, total));
+                response
+            }
+        };
+        response.set_raw_header("Accept-Ranges", "bytes");
+        Ok(response)
+    }
+}
+
 #[rocket::get("/media/<id>?<authorization>&<size>")]
 pub async fn media_file<'a>(
     id: &str,
@@ -214,7 +291,7 @@ pub async fn media_file<'a>(
     cookies: &CookieJar<'_>,
     state: &State<RocketState>,
     auth_header: Option<AuthHeader<'_>>,
-) -> Result<MediaResponse<CacheResponse<(ContentType, NamedFile)>>, Status> {
+) -> Result<MediaResponse<CacheResponse<(ContentType, RangedFile)>>, Status> {
     log::info!("media_file: {:?}, size: {:?}", id, size);
     let user = get_media_user(authorization, auth_header, cookies, state).ok();
 
@@ -260,7 +337,7 @@ pub async fn media_file<'a>(
         }
     };
     Ok(MediaResponse {
-        inner: CacheResponse::new(data, cache_control),
+        inner: CacheResponse::new((data.0, RangedFile(data.1)), cache_control),
         block_cors,
         vary_on_auth: licensed || block_cors,
     })

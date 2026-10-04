@@ -81,6 +81,27 @@ pub async fn update_media(
                 publisher: blank_to_none(m.publisher.clone()),
                 unlicensed_preview_start_ms: m.unlicensed_preview_start_ms.map(|ms| ms as i64),
                 unlicensed_preview_end_ms: m.unlicensed_preview_end_ms.map(|ms| ms as i64),
+                cover_art_media_id: match blank_to_none(m.cover_art_media_id.clone()) {
+                    None => None,
+                    Some(id) => {
+                        let art_id = id.to_db_id_or_err("cover_art_media_id")?;
+                        // Unchanged is always fine; a new pick must be an image the caller owns (or an Admin).
+                        if Some(art_id) != current_metadata.cover_art_media_id {
+                            let art = models::get_media(art_id, conn)
+                                .map_err(|_| Status::new(Code::InvalidArgument, "cover_art_not_found"))?;
+                            let is_image = art
+                                .original()
+                                .is_some_and(|o| o.content_type.starts_with("image/"));
+                            if !is_image {
+                                return Err(Status::new(Code::InvalidArgument, "cover_art_must_be_image"));
+                            }
+                            if art.user_id != Some(current_user.id) {
+                                validate_any_permission(&Some(current_user), vec![Permission::Admin])?;
+                            }
+                        }
+                        Some(art_id)
+                    }
+                },
             };
             let has_unlicensed_preview = new_metadata.unlicensed_preview_start_ms.is_some()
                 || new_metadata.unlicensed_preview_end_ms.is_some();

@@ -496,3 +496,32 @@
   max-height: 55vh;
   overflow-y: auto;
 }
+
+/* While the cover art chooser (`Shared.MyMediaPanel`, which sits below this panel) is open, this panel
+   steps aside rather than covering it -- see `MediaViewerPanel.ChooseCoverArtClicked`. */
+.media-viewer-panel.is-yielding,
+.media-viewer-panel.is-yielding * {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.media-viewer-panel-edit-cover-art-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.media-viewer-panel-edit-cover-art-preview {
+  width: 3.5rem;
+  height: 3.5rem;
+  object-fit: cover;
+  border-radius: 6px;
+}
+
+.media-viewer-panel-edit-cover-art-preview.placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(127, 127, 127, 0.25);
+  font-size: 1.6rem;
+}

@@ -5,6 +5,7 @@ port module Ports exposing
     , calendarEventClicked
     , checkPushSubscription
     , clearFederatedAuthKeyPair
+    , controlAudioPlayer
     , copyToClipboard
     , elementsMeasured
     , facebookLoginPopup
@@ -505,3 +506,10 @@ port scrubMedia : Encode.Value -> Cmd msg
 {-| Reply to `scrubMedia`'s duration probe: the media element's total length, in milliseconds.
 -}
 port mediaDurationReported : (Float -> msg) -> Sub msg
+
+
+{-| Imperative commands for `Shared.AudioPlayerPanel`'s `<audio>` (`.audio-player-audio`):
+`{ action : "toggle" | "play" | "pause" | "seek", timeMs : Float }` -- `timeMs` only for `"seek"`. Its
+state flows back through the element's own events (see that module), not a return port.
+-}
+port controlAudioPlayer : Encode.Value -> Cmd msg

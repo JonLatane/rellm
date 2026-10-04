@@ -124,6 +124,9 @@ pub struct MediaMetadata {
     pub unlicensed_preview_start_ms: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub unlicensed_preview_end_ms: Option<i64>,
+    /// DB id of the image `Media` chosen as this item's cover art -- see `MediaMetadata.cover_art_media_id`.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub cover_art_media_id: Option<i64>,
 }
 
 /// Default length of the `UNLICENSED_PREVIEW_MEDIUM` crop when `unlicensed_preview_end_ms` is unset.

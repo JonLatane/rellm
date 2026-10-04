@@ -1,4 +1,4 @@
-module Components.MediaRenderer exposing (MediaSize(..), Model, Msg(..), ResolutionTier(..), SizeConstraint(..), contentTypeOf, init, update, view, viewAutoplay, viewWithResolution)
+module Components.MediaRenderer exposing (MediaSize(..), Model, Msg(..), ResolutionTier(..), SizeConstraint(..), contentTypeOf, init, update, view, viewAutoplay, viewWithResolution, authorizedUrl, coverArtUrl, thumbnailUrl, url)
 
 {-| Renders a single `Proto.Rellm.MediaReference` -- an image, a video, or
 (for anything else, e.g. a PDF) a browser-native `<object>` embed with a
@@ -69,7 +69,7 @@ import Html exposing (Html, a, audio, button, div, img, input, object, text, vid
 import Html.Attributes exposing (alt, attribute, class, controls, href, property, src, style, target, type_)
 import Html.Events exposing (onClick)
 import Json.Encode as Encode
-import Proto.Rellm as Rellm exposing (MediaReference)
+import Proto.Rellm as Rellm exposing (MediaReference, defaultMediaReference)
 import Proto.Rellm.MediaConversion exposing (MediaConversion(..))
 import Set exposing (Set)
 import Shared.AccountsPanel.RellmAccounts exposing (RellmAccount)
@@ -321,14 +321,26 @@ viewHelper forceAutoplay tierOverride mediaSize sizeConstraint server maybeAccou
                 showAsAudio =
                     preloadVideo || not hasWaveform || clickedToPlay
 
+                -- The cover art picked for the track (an image of its own) wins over what's embedded.
+                chosenCoverArt : Maybe String
+                chosenCoverArt =
+                    media.metadata |> Maybe.andThen .coverArtMediaId
+
                 -- The file's embedded cover art, if the server extracted any. Shown only in the media
                 -- viewer (see `media.css`); lists/posts keep their compact waveform-only layout.
                 coverArt : List (Html msg)
                 coverArt =
-                    if media.sizes |> List.any (\size -> size.conversion == AUDIOCOVERARTMEDIUM) then
+                    if chosenCoverArt /= Nothing || (media.sizes |> List.any (\size -> size.conversion == AUDIOCOVERARTMEDIUM)) then
                         [ img
                             [ class "media-renderer-audio-cover"
-                            , src (authorizedUrl [ "size=audio_cover_art_medium" ] server maybeAccount media)
+                            , src
+                                (case chosenCoverArt of
+                                    Just coverArtId ->
+                                        coverArtUrl server maybeAccount coverArtId
+
+                                    Nothing ->
+                                        authorizedUrl [ "size=audio_cover_art_medium" ] server maybeAccount media
+                                )
                             , alt (Maybe.withDefault "" media.name)
                             ]
                             []
@@ -549,6 +561,14 @@ thumbnailUrl kind tier server maybeAccount media =
             [ "size=" ++ kind ++ "_preview_" ++ tierName ]
     in
     authorizedUrl sizeParam server maybeAccount media
+
+
+{-| The URL of an audio track's chosen cover art (`MediaMetadata.cover_art_media_id`, an image `Media` of its
+own), at `size=medium`.
+-}
+coverArtUrl : RellmServer -> Maybe RellmAccount -> String -> String
+coverArtUrl server maybeAccount coverArtMediaId =
+    authorizedUrl [ "size=medium" ] server maybeAccount { defaultMediaReference | id = coverArtMediaId }
 
 
 {-| Shared by `url`/`thumbnailUrl` -- `media`'s base `/media/{id}` URL plus `sizeParam` and (if

@@ -412,7 +412,15 @@ update accountsPanelModel msg model =
         maybeMediaViewerPanelMsg =
             case ( msg, model.selectionType ) of
                 ( MediaItemClicked mediaId, Nothing ) ->
-                    Just (MediaViewerPanel.Open (browseMediaReferences model) Nothing mediaId model.targetHost)
+                    -- Only while actually open: a chooser's pick is delivered a second time (forwarded to
+                    -- the page, then back through `Shared.update`) after it has already closed itself, and
+                    -- a closed panel's `selectionType` is `Nothing` too -- that echo must not open the
+                    -- viewer (on an empty list, closing whatever was already showing).
+                    if isOpen model then
+                        Just (MediaViewerPanel.Open (browseMediaReferences model) Nothing mediaId model.targetHost)
+
+                    else
+                        Nothing
 
                 _ ->
                     Nothing

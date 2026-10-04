@@ -11963,6 +11963,7 @@ fieldNumbersProto__Rellm__MediaMetadata :
     , publisher : Int
     , unlicensedPreviewStartMs : Int
     , unlicensedPreviewEndMs : Int
+    , coverArtMediaId : Int
     }
 fieldNumbersProto__Rellm__MediaMetadata =
     { videoPreviewTimeMs = 1
@@ -11978,6 +11979,7 @@ fieldNumbersProto__Rellm__MediaMetadata =
     , publisher = 11
     , unlicensedPreviewStartMs = 12
     , unlicensedPreviewEndMs = 13
+    , coverArtMediaId = 14
     }
 
 
@@ -11999,6 +12001,7 @@ defaultProto__Rellm__MediaMetadata =
     , publisher = Nothing
     , unlicensedPreviewStartMs = Nothing
     , unlicensedPreviewEndMs = Nothing
+    , coverArtMediaId = Nothing
     }
 
 
@@ -12031,6 +12034,10 @@ decodeProto__Rellm__MediaMetadata =
             13
             (Protobuf.Decode.map Just Protobuf.Decode.uint64)
             (\a r -> { r | unlicensedPreviewEndMs = a })
+        , Protobuf.Decode.optional
+            14
+            (Protobuf.Decode.map Just Protobuf.Decode.string)
+            (\a r -> { r | coverArtMediaId = a })
         ]
 
 
@@ -12057,6 +12064,7 @@ encodeProto__Rellm__MediaMetadata value =
         , ( 13
           , (Maybe.map Protobuf.Encode.uint64 >> Maybe.withDefault Protobuf.Encode.none) value.unlicensedPreviewEndMs
           )
+        , ( 14, (Maybe.map Protobuf.Encode.string >> Maybe.withDefault Protobuf.Encode.none) value.coverArtMediaId )
         ]
 
 
@@ -12077,6 +12085,7 @@ type alias Proto__Rellm__MediaMetadata =
     , publisher : Maybe String
     , unlicensedPreviewStartMs : Maybe Protobuf.Types.Int64.Int64
     , unlicensedPreviewEndMs : Maybe Protobuf.Types.Int64.Int64
+    , coverArtMediaId : Maybe String
     }
 
 
