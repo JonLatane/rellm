@@ -40,6 +40,7 @@ import Process
 import Proto.Google.Protobuf
 import Proto.Rellm exposing (ContactMethod, Event, Media, Occasion, Post, SyncSource, User)
 import Proto.Rellm.ContactConsentState exposing (ContactConsentState(..))
+import Proto.Rellm.WebUserInterface exposing (WebUserInterface(..))
 import Request exposing (Request)
 import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccount)
@@ -662,7 +663,62 @@ update req msg model =
         ( followedModel, followCmd ) =
             coverArtFollowUp req msg model newModel
     in
-    ( followedModel, Cmd.batch [ cmd, followCmd, navBarColorCmd model newModel, splashHiddenCmd model newModel ] )
+    case rootRedirectCmd req msg model of
+        Just redirect ->
+            -- Leaving the page anyway: skip the rest (notably hiding the splash, which would flash
+            -- this soon-to-be-replaced page).
+            ( followedModel, Cmd.batch [ cmd, redirect ] )
+
+        Nothing ->
+            ( followedModel, Cmd.batch [ cmd, followCmd, navBarColorCmd model newModel, splashHiddenCmd model newModel ] )
+
+
+{-| When the app is being served at `/elm` but `browsingHost`'s own freshly-fetched
+`ServerConfiguration` (`GotMainServerResult`'s `Ok` -- never a persisted/cached one, which could be
+stale) says its default web UI is this Elm app, `location.replace`s to the same path/query/fragment at
+the root, where the backend serves it too (see `ElmSpaAtRoot` in `backend/src/web/elm_web.rs`, which
+gates on the same setting). Skipped when the config belongs to a different host than we're browsing
+(`resolvedFrontendHost` -- the CDN-backend case), and for `/elm/auth/*` and the OAuth callback, which
+are mid-flow and must finish where they started.
+-}
+rootRedirectCmd : Request -> Msg -> Model -> Maybe (Cmd Msg)
+rootRedirectCmd req msg model =
+    case msg of
+        AccountsPanelMsg (AccountsPanel.GotMainServerResult (Ok ( _, config ))) ->
+            let
+                path : String
+                path =
+                    req.url.path
+
+                isElmUi : Bool
+                isElmUi =
+                    (config.serverInfo |> Maybe.andThen .webUserInterface) == Just ELMSPA
+
+                exempt : Bool
+                exempt =
+                    String.startsWith "/elm/auth/" path || path == "/elm/oauth-callback.html"
+            in
+            if
+                model.basePath
+                    == "/elm"
+                    && isElmUi
+                    && not exempt
+                    && RellmServers.resolvedFrontendHost model.accounts.browsingHost config
+                    == model.accounts.browsingHost
+            then
+                Just
+                    (Ports.replaceLocation
+                        ((String.dropLeft 4 path |> (\p -> if p == "" then "/" else p))
+                            ++ (req.url.query |> Maybe.map ((++) "?") |> Maybe.withDefault "")
+                            ++ (req.url.fragment |> Maybe.map ((++) "#") |> Maybe.withDefault "")
+                        )
+                    )
+
+            else
+                Nothing
+
+        _ ->
+            Nothing
 
 
 {-| The follow-on messages of cover art editing (see `MediaViewerPanel.ChooseCoverArtClicked`), dispatched

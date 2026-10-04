@@ -18,6 +18,7 @@ port module Ports exposing
     , federatedAuthKeyPairGenerated
     , flipChildren
     , hideSplash
+    , replaceLocation
     , mastodonAccountsAndServersUpdated
     , measureElements
     , mediaDurationReported
@@ -268,6 +269,13 @@ failure alike -- see `Shared.AccountsPanel.Model.browsingHostConfigResolved`.
 Fire-and-forget, same as `setNavBarColor`/`copyToClipboard`.
 -}
 port hideSplash : () -> Cmd msg
+
+
+{-| `window.location.replace(url)` -- a full page load that _replaces_ the current history entry
+(unlike `Browser.Navigation.load`, which pushes one, so Back would just redirect again). Used by
+`Shared.rootRedirectCmd`.
+-}
+port replaceLocation : String -> Cmd msg
 
 
 {-| Writes `text` to the system clipboard via `navigator.clipboard.writeText`

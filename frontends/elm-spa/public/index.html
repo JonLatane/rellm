@@ -406,6 +406,10 @@
       }, 110);
     });
 
+    app.ports.replaceLocation.subscribe(function (url) {
+      window.location.replace(url);
+    });
+
     app.ports.copyToClipboard.subscribe(function (text) {
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(text);
