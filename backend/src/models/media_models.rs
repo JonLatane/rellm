@@ -205,6 +205,14 @@ pub const AUDIO_PREVIEW_CONVERSIONS: [MediaConversion; 3] = [
     MediaConversion::AudioPreviewThumbnailLarge,
 ];
 
+/// The 3 auto-generated `image/jpeg` cover-art sizes `convert_media` produces for *audio* `Media`
+/// items that have embedded cover art -- see each variant's own doc in `media.proto`.
+pub const AUDIO_COVER_ART_CONVERSIONS: [MediaConversion; 3] = [
+    MediaConversion::AudioCoverArtSmall,
+    MediaConversion::AudioCoverArtMedium,
+    MediaConversion::AudioCoverArtLarge,
+];
+
 /// The single auto-generated cropped preview `convert_media` produces for *audio and video* `Media`
 /// items, served to viewers without a `License` -- see `UNLICENSED_PREVIEW_MEDIUM` in `media.proto`.
 pub const UNLICENSED_PREVIEW_CONVERSIONS: [MediaConversion; 1] =
@@ -227,14 +235,17 @@ impl MediaConversionExt for MediaConversion {
             MediaConversion::Original => 0,
             MediaConversion::Small
             | MediaConversion::VideoPreviewThumbnailSmall
-            | MediaConversion::AudioPreviewThumbnailSmall => 320,
+            | MediaConversion::AudioPreviewThumbnailSmall
+            | MediaConversion::AudioCoverArtSmall => 320,
             MediaConversion::Medium
             | MediaConversion::VideoPreviewThumbnailMedium
             | MediaConversion::AudioPreviewThumbnailMedium
+            | MediaConversion::AudioCoverArtMedium
             | MediaConversion::UnlicensedPreviewMedium => 800,
             MediaConversion::Large
             | MediaConversion::VideoPreviewThumbnailLarge
-            | MediaConversion::AudioPreviewThumbnailLarge => 1600,
+            | MediaConversion::AudioPreviewThumbnailLarge
+            | MediaConversion::AudioCoverArtLarge => 1600,
         }
     }
 
@@ -250,6 +261,9 @@ impl MediaConversionExt for MediaConversion {
             MediaConversion::AudioPreviewThumbnailSmall => "audio_preview_thumbnail_small",
             MediaConversion::AudioPreviewThumbnailMedium => "audio_preview_thumbnail_medium",
             MediaConversion::AudioPreviewThumbnailLarge => "audio_preview_thumbnail_large",
+            MediaConversion::AudioCoverArtSmall => "audio_cover_art_small",
+            MediaConversion::AudioCoverArtMedium => "audio_cover_art_medium",
+            MediaConversion::AudioCoverArtLarge => "audio_cover_art_large",
             MediaConversion::UnlicensedPreviewMedium => "unlicensed_preview_medium",
         }
     }

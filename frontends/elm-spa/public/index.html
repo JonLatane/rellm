@@ -709,6 +709,50 @@
       timeout = setTimeout(function () { observer.disconnect(); }, 500);
     });
 
+    // Audio seek slider + waveform progress in the media viewer (see MediaRenderer.elm's
+    // `media-renderer-audio-slider`/`-progress`). Delegated at the document so it survives Elm
+    // re-rendering the nodes. Media events don't bubble, hence capture.
+    (function () {
+      var slider = null; // the slider currently being dragged, if any
+      function preview(el) { return el.closest('.media-renderer-audio-preview'); }
+      function sync(audio) {
+        var wrapper = preview(audio);
+        if (!wrapper || !audio.closest('.media-viewer-panel-media')) { return; }
+        var fraction = isFinite(audio.duration) && audio.duration > 0 ? audio.currentTime / audio.duration : 0;
+        wrapper.style.setProperty('--audio-progress', fraction);
+        var range = wrapper.querySelector('.media-renderer-audio-slider');
+        if (range && range !== slider) { range.value = Math.round(fraction * 1000); }
+      }
+      ['timeupdate', 'seeked', 'loadedmetadata', 'durationchange', 'emptied'].forEach(function (type) {
+        document.addEventListener(type, function (e) {
+          if (e.target.tagName === 'AUDIO') { sync(e.target); }
+        }, true);
+      });
+      document.addEventListener('input', function (e) {
+        if (!e.target.classList || !e.target.classList.contains('media-renderer-audio-slider')) { return; }
+        var wrapper = preview(e.target);
+        var audio = wrapper && wrapper.querySelector('audio');
+        if (!audio || !isFinite(audio.duration)) { return; }
+        slider = e.target;
+        audio.currentTime = (e.target.value / 1000) * audio.duration;
+        wrapper.style.setProperty('--audio-progress', e.target.value / 1000);
+      }, true);
+      ['change', 'pointerup', 'blur'].forEach(function (type) {
+        document.addEventListener(type, function (e) {
+          if (e.target === slider) { slider = null; }
+        }, true);
+      });
+      // Keep the slider's pointer/touch/key events from also paging/closing the viewer (swipe
+      // navigation, arrow keys, click-to-close) -- default actions (dragging the thumb) are unaffected.
+      ['touchstart', 'touchmove', 'touchend', 'click', 'keydown'].forEach(function (type) {
+        document.addEventListener(type, function (e) {
+          if (e.target.classList && e.target.classList.contains('media-renderer-audio-slider')) {
+            e.stopPropagation();
+          }
+        }, true);
+      });
+    })();
+
     app.ports.scrubMedia.subscribe(function (payload) {
       var attempts = 0;
       (function run() {

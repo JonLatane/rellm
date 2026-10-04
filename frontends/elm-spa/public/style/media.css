@@ -47,6 +47,62 @@
   border-radius: 4px;
 }
 
+/* The waveform with a progress tint over the part already played (see `--audio-progress`, set by
+   `public/index.html`'s audio listeners). */
+.media-renderer-audio-waveform {
+  position: relative;
+}
+
+.media-renderer-audio-progress {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: calc(var(--audio-progress, 0) * 100%);
+  background: rgba(74, 158, 255, 0.4);
+  border-right: 2px solid rgb(74, 158, 255);
+  border-radius: 4px 0 0 4px;
+  pointer-events: none;
+}
+
+/* Embedded cover art: viewer only, centered above the waveform. */
+.media-renderer-audio-cover {
+  display: none;
+}
+
+.media-viewer-panel-media .media-renderer-audio-cover {
+  display: block;
+  width: min(320px, 70vw);
+  max-height: 40vh;
+  object-fit: contain;
+  margin: 0 auto 0.75rem;
+  border-radius: 6px;
+}
+
+/* The seek slider is only for the media viewer panel; everywhere else the native controls do. */
+.media-renderer-audio-slider {
+  display: none;
+}
+
+/* In the viewer the player gets a real width: without a waveform image (not generated yet, or
+   none for this item) nothing else sizes the inline-block wrapper, and the controls collapse. */
+.media-viewer-panel-media .media-renderer-audio-preview {
+  display: block;
+  width: min(640px, 90vw);
+}
+
+.media-viewer-panel-media .media-renderer-audio {
+  width: 100%;
+}
+
+.media-viewer-panel-media .media-renderer-audio-slider {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0.4rem 0;
+  cursor: pointer;
+}
+
 .media-renderer-audio {
   display: block;
   box-sizing: border-box;

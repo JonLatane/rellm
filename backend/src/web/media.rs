@@ -336,7 +336,7 @@ pub fn viewer_holds_active_license(
 
 /// Sizes anyone may fetch for `LICENSED` media: the cropped preview itself, plus still-image
 /// thumbnails (video poster frames, audio waveforms, and an image's own `Small`).
-const UNLICENSED_VIEWABLE_CONVERSIONS: [MediaConversion; 8] = [
+const UNLICENSED_VIEWABLE_CONVERSIONS: [MediaConversion; 11] = [
     MediaConversion::UnlicensedPreviewMedium,
     MediaConversion::Small,
     MediaConversion::VideoPreviewThumbnailSmall,
@@ -345,6 +345,9 @@ const UNLICENSED_VIEWABLE_CONVERSIONS: [MediaConversion; 8] = [
     MediaConversion::AudioPreviewThumbnailSmall,
     MediaConversion::AudioPreviewThumbnailMedium,
     MediaConversion::AudioPreviewThumbnailLarge,
+    MediaConversion::AudioCoverArtSmall,
+    MediaConversion::AudioCoverArtMedium,
+    MediaConversion::AudioCoverArtLarge,
 ];
 
 /// Like `resolve_media_size`, but for a viewer without full access to a `LICENSED` item (see
@@ -409,6 +412,9 @@ fn requested_conversion(size: Option<&str>) -> MediaConversion {
         Some("audio_preview_small") => MediaConversion::AudioPreviewThumbnailSmall,
         Some("audio_preview_medium") => MediaConversion::AudioPreviewThumbnailMedium,
         Some("audio_preview_large") => MediaConversion::AudioPreviewThumbnailLarge,
+        Some("audio_cover_art_small") => MediaConversion::AudioCoverArtSmall,
+        Some("audio_cover_art_medium") => MediaConversion::AudioCoverArtMedium,
+        Some("audio_cover_art_large") => MediaConversion::AudioCoverArtLarge,
         Some("unlicensed_preview") => MediaConversion::UnlicensedPreviewMedium,
         _ => MediaConversion::Medium,
     }

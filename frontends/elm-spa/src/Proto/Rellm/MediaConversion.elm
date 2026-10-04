@@ -57,6 +57,15 @@ fieldNumbersMediaConversion n_ =
         UNLICENSEDPREVIEWMEDIUM ->
             13
 
+        AUDIOCOVERARTSMALL ->
+            15
+
+        AUDIOCOVERARTMEDIUM ->
+            16
+
+        AUDIOCOVERARTLARGE ->
+            17
+
         MediaConversionUnrecognized_ m_ ->
             m_
 
@@ -109,6 +118,15 @@ encodeMediaConversion value =
             UNLICENSEDPREVIEWMEDIUM ->
                 13
 
+            AUDIOCOVERARTSMALL ->
+                15
+
+            AUDIOCOVERARTMEDIUM ->
+                16
+
+            AUDIOCOVERARTLARGE ->
+                17
+
             MediaConversionUnrecognized_ i ->
                 i
 
@@ -155,6 +173,15 @@ decodeMediaConversion =
                     13 ->
                         UNLICENSEDPREVIEWMEDIUM
 
+                    15 ->
+                        AUDIOCOVERARTSMALL
+
+                    16 ->
+                        AUDIOCOVERARTMEDIUM
+
+                    17 ->
+                        AUDIOCOVERARTLARGE
+
                     _ ->
                         MediaConversionUnrecognized_ i
             )
@@ -175,4 +202,7 @@ type MediaConversion
     | AUDIOPREVIEWTHUMBNAILMEDIUM
     | AUDIOPREVIEWTHUMBNAILLARGE
     | UNLICENSEDPREVIEWMEDIUM
+    | AUDIOCOVERARTSMALL
+    | AUDIOCOVERARTMEDIUM
+    | AUDIOCOVERARTLARGE
     | MediaConversionUnrecognized_ Int

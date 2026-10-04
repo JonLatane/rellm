@@ -1022,7 +1022,7 @@ searchDebounceMs =
 
 acceptedMimeTypes : List String
 acceptedMimeTypes =
-    [ "image/jpeg", "image/png", "image/svg+xml", "image/webp", "image/gif", "application/pdf", "video/mp4", "video/quicktime", "video/webm", "audio/mpeg", "audio/ogg" ]
+    [ "image/jpeg", "image/png", "image/svg+xml", "image/webp", "image/gif", "application/pdf", "video/mp4", "video/quicktime", "video/webm", "audio/mpeg", "audio/ogg", "audio/wav", "audio/x-wav", "audio/flac" ]
 
 
 {-| Verifies `host` is actually usable right now -- it resolves to a known,

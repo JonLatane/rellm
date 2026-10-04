@@ -20,14 +20,41 @@ use s3::Bucket;
 
 use crate::db_connection::PgPooledConnection;
 use crate::logic::{adjust_server_media_usage_bytes, update_media_storage_used};
-use crate::models::{blank_to_none, Media, MediaConversionExt, MediaMetadata, MediaSize, AUDIO_PREVIEW_CONVERSIONS, RESIZED_CONVERSIONS, VIDEO_PREVIEW_CONVERSIONS};
+use crate::models::{blank_to_none, Media, MediaConversionExt, MediaMetadata, MediaSize, AUDIO_COVER_ART_CONVERSIONS, AUDIO_PREVIEW_CONVERSIONS, RESIZED_CONVERSIONS, VIDEO_PREVIEW_CONVERSIONS};
 use crate::protos::MediaConversion;
 use crate::schema::media;
 
 pub const CONVERTIBLE_CONTENT_TYPES: [&str; 3] = ["image/png", "image/jpeg", "image/jpg"];
 pub const VIDEO_CONVERTIBLE_CONTENT_TYPES: [&str; 3] =
     ["video/mp4", "video/quicktime", "video/webm"];
-pub const AUDIO_CONVERTIBLE_CONTENT_TYPES: [&str; 2] = ["audio/mpeg", "audio/ogg"];
+/// WAV/FLAC are accepted too (and get the same waveform/compressed copies as the lossy formats) --
+/// browsers and tools disagree on their MIME types, hence the aliases.
+pub const AUDIO_CONVERTIBLE_CONTENT_TYPES: [&str; 8] = [
+    "audio/mpeg",
+    "audio/ogg",
+    "audio/wav",
+    "audio/x-wav",
+    "audio/wave",
+    "audio/vnd.wave",
+    "audio/flac",
+    "audio/x-flac",
+];
+
+/// Content type of the compressed `small`/`medium`/`large` copies of audio: AAC-LC in an MP4
+/// (`.m4a`) container. Plays in every browser (including Safari/iOS, which Ogg Opus doesn't yet
+/// reliably), and at these bitrates is comparable to what streaming services serve.
+const COMPRESSED_AUDIO_CONTENT_TYPE: &str = "audio/mp4";
+
+/// Target AAC bitrate (kbps) of an audio `small`/`medium`/`large` copy: data-saver, the default
+/// (`medium`, what lists and inline players request) and high quality (`large`, what the full-size
+/// viewer requests).
+fn audio_bitrate_kbps(conversion: MediaConversion) -> u32 {
+    match conversion {
+        MediaConversion::Small => 64,
+        MediaConversion::Medium => 128,
+        _ => 256,
+    }
+}
 
 pub fn is_audio_content_type(content_type: &str) -> bool {
     AUDIO_CONVERTIBLE_CONTENT_TYPES.contains(&content_type)
@@ -346,6 +373,81 @@ impl FFmpeg {
         Ok((seconds * 1000.0).round() as u64)
     }
 
+    /// Whether `path` carries embedded cover art -- for an audio file, any video stream at all (ID3
+    /// `APIC`, FLAC/Vorbis pictures and MP4 `covr` atoms all surface to ffprobe as an attached-picture
+    /// video stream).
+    fn has_cover_art(&self, path: &Path) -> Result<bool> {
+        let output = Command::new("ffprobe")
+            .args(["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=codec_type", "-of", "csv=p=0"])
+            .arg(path)
+            .output()
+            .context("failed to run ffprobe")?;
+        if !output.status.success() {
+            bail!(
+                "ffprobe exited with {}: {}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        Ok(!String::from_utf8_lossy(&output.stdout).trim().is_empty())
+    }
+
+    /// Extracts `input`'s embedded cover art as an `image/jpeg` fitting within
+    /// `max_dimension`x`max_dimension` (aspect ratio kept, never upscaled).
+    fn cover_art(&self, input: &Path, output: &Path, max_dimension: u32) -> Result<()> {
+        let status = Command::new("ffmpeg")
+            .args(["-y", "-nostdin", "-i"])
+            .arg(input)
+            .args(["-an", "-map", "0:v:0", "-frames:v", "1", "-vf"])
+            .arg(format!(
+                "scale='min({0},iw)':'min({0},ih)':force_original_aspect_ratio=decrease",
+                max_dimension
+            ))
+            .args(["-q:v", "3"])
+            .arg(output)
+            .status()
+            .context("failed to run ffmpeg")?;
+        if !status.success() {
+            bail!("ffmpeg exited with {}", status);
+        }
+        Ok(())
+    }
+
+    /// Overall bitrate of `path` in bits/second, if ffprobe can tell.
+    fn bit_rate(&self, path: &Path) -> Result<Option<u64>> {
+        let output = Command::new("ffprobe")
+            .args(["-v", "error", "-show_entries", "format=bit_rate", "-of", "default=noprint_wrappers=1:nokey=1"])
+            .arg(path)
+            .output()
+            .context("failed to run ffprobe")?;
+        if !output.status.success() {
+            bail!(
+                "ffprobe exited with {}: {}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        Ok(String::from_utf8_lossy(&output.stdout).trim().parse().ok())
+    }
+
+    /// Re-encodes `input`'s audio as AAC-LC at `kbps` into an `.m4a` -- cover art/video streams
+    /// dropped (`-vn`), tags kept, `+faststart` so playback can begin before the download ends.
+    fn compress_audio(&self, input: &Path, output: &Path, kbps: u32) -> Result<()> {
+        let status = Command::new("ffmpeg")
+            .args(["-y", "-nostdin", "-i"])
+            .arg(input)
+            .args(["-vn", "-c:a", "aac", "-b:a"])
+            .arg(format!("{kbps}k"))
+            .args(["-movflags", "+faststart"])
+            .arg(output)
+            .status()
+            .context("failed to run ffmpeg")?;
+        if !status.success() {
+            bail!("ffmpeg exited with {}", status);
+        }
+        Ok(())
+    }
+
     /// The container-level metadata tags of `path` (ID3 for MP3, Vorbis comments for Ogg/WebM,
     /// QuickTime/iTunes atoms for MP4/MOV, ...), as `ffprobe` normalizes them, keys lowercased. See
     /// `credits_from_tags` for which map to which `MediaMetadata` credit.
@@ -526,6 +628,22 @@ pub fn credits_from_tags(tags: &HashMap<String, String>) -> MediaMetadata {
     }
 }
 
+/// The file's own `title` tag, when it should replace `item.name` -- i.e. the name is still the
+/// upload's filename (the last segment of the original's object storage path, after the
+/// `{uuid}-` prefix `create_media` adds) or blank, so a name the owner has since edited is kept.
+fn title_name_override(
+    item: &Media,
+    original_object_storage_path: &str,
+    tags: &HashMap<String, String>,
+) -> Option<String> {
+    let title = blank_to_none(tags.get("title").cloned())?.trim().to_string();
+    let still_filename = match item.name.as_deref().map(str::trim) {
+        None | Some("") => true,
+        Some(name) => original_object_storage_path.ends_with(&format!("-{name}")),
+    };
+    (still_filename && item.name.as_deref() != Some(title.as_str())).then_some(title)
+}
+
 fn command_exists(program: &str) -> bool {
     Command::new(program)
         .arg("-version")
@@ -543,6 +661,9 @@ fn extension_for_content_type(content_type: &str) -> Result<&'static str> {
         "video/webm" => Ok("webm"),
         "audio/mpeg" => Ok("mp3"),
         "audio/ogg" => Ok("ogg"),
+        "audio/wav" | "audio/x-wav" | "audio/wave" | "audio/vnd.wave" => Ok("wav"),
+        "audio/flac" | "audio/x-flac" => Ok("flac"),
+        "audio/mp4" => Ok("m4a"),
         other => bail!("unsupported content type: {other}"),
     }
 }
@@ -736,6 +857,88 @@ pub async fn convert_media(
         }
     }
 
+    // Audio-only: compressed AAC copies at 3 quality tiers. A tier is skipped when the original's
+    // own bitrate is already at or below it (re-encoding would only make it bigger/worse) -- the
+    // server then falls back to the original for that size, as for images that already fit.
+    if let Converter::Audio(ffmpeg) = &converter {
+        let original_bit_rate = ffmpeg.bit_rate(&input_path).unwrap_or(None);
+        for conversion in RESIZED_CONVERSIONS {
+            let kbps = audio_bitrate_kbps(conversion);
+            if original_bit_rate.is_some_and(|bps| bps <= kbps as u64 * 1000) {
+                log::info!(
+                    "Media {} ({:?} bps) already at or below '{}' ({} kbps) -- skipping",
+                    item.id,
+                    original_bit_rate,
+                    conversion.key(),
+                    kbps
+                );
+                continue;
+            }
+            let output_path = tmp_dir.join(format!("{}-{}.m4a", item.id, conversion.key()));
+            ffmpeg.compress_audio(&input_path, &output_path, kbps)?;
+            let output_bytes = std::fs::read(&output_path)?;
+            let _ = std::fs::remove_file(&output_path);
+
+            let converted_object_storage_path = format!("{}.{}", sizes[0].object_storage_path, conversion.key());
+            bucket
+                .put_object_with_content_type(&converted_object_storage_path, &output_bytes, COMPRESSED_AUDIO_CONTENT_TYPE)
+                .await
+                .context("failed to upload compressed audio to object storage")?;
+            log::info!(
+                "Media {}: generated '{}' ({} kbps, {} bytes) at {}",
+                item.id,
+                conversion.key(),
+                kbps,
+                output_bytes.len(),
+                converted_object_storage_path
+            );
+            sizes.push(MediaSize {
+                conversion: conversion as i32,
+                object_storage_path: converted_object_storage_path,
+                content_type: COMPRESSED_AUDIO_CONTENT_TYPE.to_string(),
+                size_bytes: output_bytes.len() as i64,
+                aspect_ratio: None,
+            });
+        }
+    }
+
+    // Audio-only: the embedded cover art, if any, as `image/jpeg` at the 3 dimension tiers.
+    // Best-effort -- a file whose art ffmpeg can't decode just gets no cover art sizes.
+    if let Converter::Audio(ffmpeg) = &converter {
+        if ffmpeg.has_cover_art(&input_path).unwrap_or(false) {
+            let art_aspect_ratio = ffmpeg.dimensions(&input_path).ok().map(|(w, h)| w as f32 / h as f32);
+            for conversion in AUDIO_COVER_ART_CONVERSIONS {
+                let output_path = tmp_dir.join(format!("{}-{}.jpg", item.id, conversion.key()));
+                if let Err(e) = ffmpeg.cover_art(&input_path, &output_path, conversion.max_dimension()) {
+                    log::warn!("Media {}: couldn't extract cover art (skipping): {:#}", item.id, e);
+                    break;
+                }
+                let output_bytes = std::fs::read(&output_path)?;
+                let _ = std::fs::remove_file(&output_path);
+
+                let converted_object_storage_path = format!("{}.{}", sizes[0].object_storage_path, conversion.key());
+                bucket
+                    .put_object_with_content_type(&converted_object_storage_path, &output_bytes, "image/jpeg")
+                    .await
+                    .context("failed to upload audio cover art to object storage")?;
+                log::info!(
+                    "Media {}: generated '{}' ({} bytes) at {}",
+                    item.id,
+                    conversion.key(),
+                    output_bytes.len(),
+                    converted_object_storage_path
+                );
+                sizes.push(MediaSize {
+                    conversion: conversion as i32,
+                    object_storage_path: converted_object_storage_path,
+                    content_type: "image/jpeg".to_string(),
+                    size_bytes: output_bytes.len() as i64,
+                    aspect_ratio: art_aspect_ratio,
+                });
+            }
+        }
+    }
+
     // Audio-only: `image/png` waveforms of the whole file at the 3 width tiers.
     if let Converter::Audio(ffmpeg) = &converter {
         for conversion in AUDIO_PREVIEW_CONVERSIONS {
@@ -777,8 +980,11 @@ pub async fn convert_media(
             let is_video = matches!(converter, Converter::Video(_));
             let content_type = if is_video {
                 resized_content_type.clone()
+            } else if sizes[0].content_type == "audio/ogg" {
+                "audio/ogg".to_string()
             } else {
-                sizes[0].content_type.clone()
+                // MP3 stays MP3; WAV/FLAC (far too big for a "preview") become MP3 too.
+                "audio/mpeg".to_string()
             };
             let conversion = MediaConversion::UnlicensedPreviewMedium;
             let output_path = tmp_dir.join(format!(
@@ -829,10 +1035,14 @@ pub async fn convert_media(
     // blank credits from the file's own tags. Best-effort -- unreadable/missing tags are logged and
     // skipped, never failing the conversion.
     let mut metadata = item.metadata();
+    let mut title_name: Option<String> = None;
     let credits_changed = match &converter {
         Converter::Audio(ffmpeg) | Converter::Video(ffmpeg) if item.sizes().len() <= 1 => {
             match ffmpeg.tags(&input_path) {
-                Ok(tags) => metadata.fill_missing_credits(&credits_from_tags(&tags)),
+                Ok(tags) => {
+                    title_name = title_name_override(&item, &sizes[0].object_storage_path, &tags);
+                    metadata.fill_missing_credits(&credits_from_tags(&tags))
+                }
                 Err(e) => {
                     log::warn!("Media {}: couldn't read tags (skipping): {:#}", item.id, e);
                     false
@@ -853,6 +1063,11 @@ pub async fn convert_media(
     if credits_changed {
         diesel::update(media::table.find(item.id))
             .set(media::metadata.eq(serde_json::to_value(&metadata)?))
+            .execute(conn)?;
+    }
+    if let Some(name) = title_name {
+        diesel::update(media::table.find(item.id))
+            .set(media::name.eq(Some(name)))
             .execute(conn)?;
     }
 
@@ -948,6 +1163,77 @@ pub async fn strip_quicktime_resized_sizes(
 
     log::info!(
         "Media {}: stripped {} QuickTime-tagged resized size(s); marked unprocessed for regeneration.",
+        item.id,
+        removed.len()
+    );
+    Ok(true)
+}
+
+/// Already-`processed` audio `Media` rows (original content type `audio/*`), paged by `id` via
+/// `min_id` -- see `media_with_quicktime_resized_sizes` for why paging rather than a filter.
+/// For `bin/reconvert_audio_media.rs`.
+pub fn audio_media(conn: &mut PgPooledConnection, min_id: i64, limit: i64) -> QueryResult<Vec<Media>> {
+    media::table
+        .filter(media::id.gt(min_id))
+        .filter(media::processed.eq(true))
+        .filter(sql::<Bool>(
+            r#"EXISTS (
+                SELECT 1 FROM jsonb_array_elements(sizes) e
+                WHERE (e->>'conversion')::int = 0
+                AND e->>'content_type' LIKE 'audio/%'
+            )"#,
+        ))
+        .order(media::id.asc())
+        .limit(limit)
+        .load::<Media>(conn)
+}
+
+/// Strips every derived (non-`Original`) `sizes` entry from audio `item` -- deleting their object
+/// storage objects -- and marks it unprocessed, so `convert_media_sizes` regenerates the lot with
+/// the current recipe (compressed AAC tiers, waveforms, embedded cover art, tag seeding of blank
+/// credits/name -- see `convert_media`). Like `strip_quicktime_resized_sizes`, leaves rows whose
+/// original is gone alone (`Ok(false)`), since there'd be nothing to regenerate from.
+pub async fn strip_derived_audio_sizes(
+    item: &Media,
+    bucket: &Bucket,
+    conn: &mut PgPooledConnection,
+) -> Result<bool> {
+    let Some(original) = item.original() else {
+        return Ok(false);
+    };
+    if bucket.head_object(&original.object_storage_path).await.is_err() {
+        return Ok(false);
+    }
+
+    let (kept, removed): (Vec<MediaSize>, Vec<MediaSize>) = item
+        .sizes()
+        .into_iter()
+        .partition(|s| s.conversion() == MediaConversion::Original);
+    for size in &removed {
+        if let Err(e) = bucket.delete_object(&size.object_storage_path).await {
+            log::warn!(
+                "Media {}: failed to delete stale object storage object {}: {:?}",
+                item.id,
+                size.object_storage_path,
+                e
+            );
+        }
+    }
+
+    diesel::update(media::table.find(item.id))
+        .set((
+            media::sizes.eq(serde_json::to_value(&kept)?),
+            media::processed.eq(false),
+        ))
+        .execute(conn)?;
+    if let Some(user_id) = item.user_id {
+        update_media_storage_used(user_id, conn)?;
+    }
+    let removed_bytes: i64 = removed.iter().map(|s| s.size_bytes).sum();
+    adjust_server_media_usage_bytes(conn, -removed_bytes)?;
+
+    log::info!(
+        "Media {}: stripped {} derived size(s); marked unprocessed for regeneration.",
         item.id,
         removed.len()
     );

@@ -30,6 +30,7 @@ Mounted by `Components.Pages.MediaPage`, which `Pages.Video`/`Pages.Audio`/`Page
 
 -}
 
+import Components.Authors as Authors
 import Components.Users as Users
 import Dict exposing (Dict)
 import Effect exposing (Effect)
@@ -482,7 +483,13 @@ thumbnailUrl kind maybeServer media =
             ifGenerated VIDEOPREVIEWTHUMBNAILMEDIUM "video_preview_medium"
 
         Audio ->
-            ifGenerated AUDIOPREVIEWTHUMBNAILSMALL "audio_preview_small"
+            -- The embedded cover art when the file has any, else the waveform.
+            case ifGenerated AUDIOCOVERARTSMALL "audio_cover_art_small" of
+                Just coverArt ->
+                    Just coverArt
+
+                Nothing ->
+                    ifGenerated AUDIOPREVIEWTHUMBNAILSMALL "audio_preview_small"
 
         -- Images are their own thumbnails: `size=medium` falls back to the original when the
         -- image is already small enough that no resized copy was generated.
@@ -524,12 +531,42 @@ authorName media =
 
 authorLink : Shared.Model -> String -> Media -> Html msg
 authorLink shared host media =
+    authorLinkWith shared host Nothing False media
+
+
+{-| `authorLink` with the author's small avatar (or initial-letter placeholder) in front of their
+name -- audio/video rows, where there's room for it.
+-}
+authorLinkWithAvatar : Shared.Model -> String -> Maybe RellmServer -> Media -> Html msg
+authorLinkWithAvatar shared host maybeServer media =
+    authorLinkWith shared host maybeServer True media
+
+
+authorLinkWith : Shared.Model -> String -> Maybe RellmServer -> Bool -> Media -> Html msg
+authorLinkWith shared host maybeServer withAvatar media =
+    let
+        contents : String -> List (Html msg)
+        contents name =
+            if withAvatar then
+                [ Authors.avatar name (Authors.avatarUrl maybeServer Nothing media.author), text name ]
+
+            else
+                [ text name ]
+
+        authorClass : String
+        authorClass =
+            if withAvatar then
+                "media-card-author media-card-author-with-avatar"
+
+            else
+                "media-card-author"
+    in
     case ( authorName media, media.author |> Maybe.andThen .username ) of
         ( Just name, Just username ) ->
-            a [ class "media-card-author", href (Users.usernameHref shared.basePath shared.accounts.mainFrontendHost host username) ] [ text name ]
+            a [ class authorClass, href (Users.usernameHref shared.basePath shared.accounts.mainFrontendHost host username) ] (contents name)
 
         ( Just name, Nothing ) ->
-            span [ class "media-card-author" ] [ text name ]
+            span [ class authorClass ] (contents name)
 
         _ ->
             text ""
@@ -600,7 +637,7 @@ videoCard shared showHost host maybeServer media =
         , div [ class "media-card-meta" ]
             [ button [ class "media-card-title", onClick (MediaClicked host media.id) ] [ text (mediaTitle media) ]
             , div [ class "media-card-sub" ]
-                [ authorLink shared host media
+                [ authorLinkWithAvatar shared host maybeServer media
                 , span [ class "media-card-date" ] [ text (createdLabel shared media) ]
                 ]
             , hostBadge showHost host
@@ -638,7 +675,7 @@ audioRow shared showHost host maybeServer media =
               else
                 div [ class "media-card-credits" ] [ text credits ]
             , div [ class "media-card-sub" ]
-                [ authorLink shared host media
+                [ authorLinkWithAvatar shared host maybeServer media
                 , span [ class "media-card-date" ] [ text (createdLabel shared media) ]
                 ]
             ]

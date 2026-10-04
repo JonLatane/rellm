@@ -37,6 +37,12 @@ COPY backend/target/release/fix_duplicate_synced_events__server_release /opt/fix
 # deployed namespace that's ever stored video Media.
 COPY backend/target/release/reencode_quicktime_media__server_release /opt/reencode_quicktime_media
 
+# TODO: one-off requeue of already-converted audio Media for the AAC tiers/waveforms/cover art
+# added to convert_media -- delete this binary (backend/src/bin/reconvert_audio_media.rs), this COPY
+# line, and its entry in server_ci_cd.yml's "Rename Rust binaries for Dockerfiles" step once it's
+# been run against every deployed namespace that's ever stored audio Media.
+COPY backend/target/release/reconvert_audio_media__server_release /opt/reconvert_audio_media
+
 # Runs all the above background job binaries on a loop -- see backend/background_jobs.sh. Lives
 # alongside them in /opt, unsuffixed, so its "./binary_name" resolution step finds them directly
 # (same layout as the Homebrew macOS package). Used by the rellm-jobs Deployment in

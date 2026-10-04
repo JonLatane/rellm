@@ -26,6 +26,9 @@ class MediaConversion extends $pb.ProtobufEnum {
   static const MediaConversion AUDIO_PREVIEW_THUMBNAIL_MEDIUM = MediaConversion._(11, _omitEnumNames ? '' : 'AUDIO_PREVIEW_THUMBNAIL_MEDIUM');
   static const MediaConversion AUDIO_PREVIEW_THUMBNAIL_LARGE = MediaConversion._(12, _omitEnumNames ? '' : 'AUDIO_PREVIEW_THUMBNAIL_LARGE');
   static const MediaConversion UNLICENSED_PREVIEW_MEDIUM = MediaConversion._(13, _omitEnumNames ? '' : 'UNLICENSED_PREVIEW_MEDIUM');
+  static const MediaConversion AUDIO_COVER_ART_SMALL = MediaConversion._(15, _omitEnumNames ? '' : 'AUDIO_COVER_ART_SMALL');
+  static const MediaConversion AUDIO_COVER_ART_MEDIUM = MediaConversion._(16, _omitEnumNames ? '' : 'AUDIO_COVER_ART_MEDIUM');
+  static const MediaConversion AUDIO_COVER_ART_LARGE = MediaConversion._(17, _omitEnumNames ? '' : 'AUDIO_COVER_ART_LARGE');
 
   static const $core.List<MediaConversion> values = <MediaConversion> [
     MEDIA_CONVERSION_ORIGINAL,
@@ -39,6 +42,9 @@ class MediaConversion extends $pb.ProtobufEnum {
     AUDIO_PREVIEW_THUMBNAIL_MEDIUM,
     AUDIO_PREVIEW_THUMBNAIL_LARGE,
     UNLICENSED_PREVIEW_MEDIUM,
+    AUDIO_COVER_ART_SMALL,
+    AUDIO_COVER_ART_MEDIUM,
+    AUDIO_COVER_ART_LARGE,
   ];
 
   static final $core.Map<$core.int, MediaConversion> _byValue = $pb.ProtobufEnum.initByValue(values);

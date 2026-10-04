@@ -65,7 +65,7 @@ rendered.
 
 -}
 
-import Html exposing (Html, a, audio, button, div, img, object, text, video)
+import Html exposing (Html, a, audio, button, div, img, input, object, text, video)
 import Html.Attributes exposing (alt, attribute, class, controls, href, property, src, style, target, type_)
 import Html.Events exposing (onClick)
 import Json.Encode as Encode
@@ -321,17 +321,39 @@ viewHelper forceAutoplay tierOverride mediaSize sizeConstraint server maybeAccou
                 showAsAudio =
                     preloadVideo || not hasWaveform || clickedToPlay
 
+                -- The file's embedded cover art, if the server extracted any. Shown only in the media
+                -- viewer (see `media.css`); lists/posts keep their compact waveform-only layout.
+                coverArt : List (Html msg)
+                coverArt =
+                    if media.sizes |> List.any (\size -> size.conversion == AUDIOCOVERARTMEDIUM) then
+                        [ img
+                            [ class "media-renderer-audio-cover"
+                            , src (authorizedUrl [ "size=audio_cover_art_medium" ] server maybeAccount media)
+                            , alt (Maybe.withDefault "" media.name)
+                            ]
+                            []
+                        ]
+
+                    else
+                        []
+
                 waveform : List (Html msg)
                 waveform =
                     if hasWaveform then
-                        [ img
-                            [ class ("media-renderer-audio-preview-image " ++ sizeClass)
-                            , src (thumbnailUrl "audio" thumbTier server maybeAccount media)
-                            , alt (Maybe.withDefault "" media.name)
-                            , onClick (onPlayClicked media.id)
-                            , attribute "loading" "lazy"
+                        [ div [ class "media-renderer-audio-waveform" ]
+                            [ img
+                                [ class ("media-renderer-audio-preview-image " ++ sizeClass)
+                                , src (thumbnailUrl "audio" thumbTier server maybeAccount media)
+                                , alt (Maybe.withDefault "" media.name)
+                                , onClick (onPlayClicked media.id)
+                                , attribute "loading" "lazy"
+                                ]
+                                []
+
+                            -- Playback progress: `public/index.html` sets `--audio-progress` (0..1) on the
+                            -- `.media-renderer-audio-preview` ancestor as the `<audio>` plays/seeks.
+                            , div [ class "media-renderer-audio-progress" ] []
                             ]
-                            []
                         ]
 
                     else
@@ -359,7 +381,10 @@ viewHelper forceAutoplay tierOverride mediaSize sizeConstraint server maybeAccou
                             autoplay =
                                 forceAutoplay || (not preloadVideo && clickedToPlay)
                         in
-                        [ audio
+                        [ -- Only shown inside the media viewer (see `media.css`); `public/index.html` keeps
+                          -- it in sync with, and seeks, the `<audio>` below.
+                          input [ class "media-renderer-audio-slider", type_ "range", Html.Attributes.min "0", Html.Attributes.max "1000", Html.Attributes.value "0", attribute "aria-label" "Seek" ] []
+                        , audio
                             ([ class ("media-renderer-audio " ++ sizeClass)
                              , controls True
                              , attribute "preload"
@@ -385,7 +410,7 @@ viewHelper forceAutoplay tierOverride mediaSize sizeConstraint server maybeAccou
                         []
             in
             div [ class "media-renderer-audio-preview" ]
-                (waveform ++ playButton ++ player)
+                (coverArt ++ waveform ++ playButton ++ player)
 
         _ ->
             object [ class ("media-renderer-object " ++ sizeClass), attribute "data" mediaUrl, type_ (contentTypeOf media) ]

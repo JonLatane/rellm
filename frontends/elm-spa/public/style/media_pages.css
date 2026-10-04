@@ -163,6 +163,12 @@
   font-weight: 600;
 }
 
+.media-card-author-with-avatar {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
 .media-card-badge {
   position: absolute;
   top: 0.4rem;

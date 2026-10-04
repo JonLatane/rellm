@@ -1145,6 +1145,15 @@ view accountsPanelModel model =
                 AUDIOPREVIEWTHUMBNAILLARGE ->
                     "Audio Waveform (Large)"
 
+                AUDIOCOVERARTSMALL ->
+                    "Cover Art (Small)"
+
+                AUDIOCOVERARTMEDIUM ->
+                    "Cover Art (Medium)"
+
+                AUDIOCOVERARTLARGE ->
+                    "Cover Art (Large)"
+
                 UNLICENSEDPREVIEWMEDIUM ->
                     "Unlicensed Preview (Medium)"
 

@@ -215,9 +215,28 @@ fn load_page(
     media_rows.truncate(PAGE_SIZE as usize);
 
     let authors = authors_by_id(&media_rows, conn);
+    // `ToProtoMedia::to_proto` leaves `Author.avatar` unresolved (see its doc), but a listing's
+    // cards want to show the author's avatar -- batch-resolve them here, one level deep.
+    let avatar_lookup = load_media_lookup(
+        authors.values().filter_map(|a| a.avatar_media_id).collect(),
+        conn,
+    );
     let media = media_rows
         .iter()
-        .map(|media| media.to_proto(&media.user_id.and_then(|uid| authors.get(&uid).cloned())))
+        .map(|media| {
+            let author = media.user_id.and_then(|uid| authors.get(&uid).cloned());
+            let mut proto = media.to_proto(&author);
+            if let (Some(proto_author), Some(avatar_id)) = (
+                proto.author.as_mut(),
+                author.as_ref().and_then(|a| a.avatar_media_id),
+            ) {
+                proto_author.avatar = avatar_lookup
+                    .as_ref()
+                    .find_media(avatar_id)
+                    .map(|media_ref| Box::new(media_ref.to_proto(&None)));
+            }
+            proto
+        })
         .collect::<Vec<_>>();
     log::info!("GetMedia response_length: {:?}", media.len());
     Ok(GetMediaResponse { media, has_next_page })

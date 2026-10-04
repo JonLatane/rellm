@@ -177,6 +177,13 @@
   pointer-events: auto;
 }
 
+/* Audio: the waveform, seek slider and native `<audio controls>` are all real, tappable content
+   too -- without this they inherit `none` from `.media-viewer-panel-content`, so a tap on them falls
+   through to the root and closes the panel. */
+.media-viewer-panel-content .media-renderer-audio-preview {
+  pointer-events: auto;
+}
+
 /* The nav buttons page `Shared.MediaViewerPanel`'s `currentMediaReference`
    to a different `MediaReference`, which (see `view`'s `Html.Keyed.node`)
    swaps in a whole new `.media-viewer-panel-media` DOM node keyed on that
