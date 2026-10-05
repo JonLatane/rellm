@@ -258,6 +258,27 @@
 
 /* Collapsed, the expanded content stays mounted (so it can fade/slide as the panel grows) but takes no
    space and can't be interacted with. */
+/* The expanding part takes no pointer input while collapsed, and for the first 500ms after expanding -- so
+   mashing the expand/collapse chevron can't land a click on whatever (e.g. the close button) the growing panel
+   puts under the finger. Collapsing drops the animation, so it goes back to `none` immediately. */
+.audio-player-expanded {
+  pointer-events: none;
+}
+
+.audio-player-panel.is-expanded .audio-player-expanded {
+  animation: audio-player-enable-pointer-events 0s linear 0.5s forwards;
+}
+
+@keyframes audio-player-enable-pointer-events {
+  from {
+    pointer-events: none;
+  }
+
+  to {
+    pointer-events: auto;
+  }
+}
+
 .audio-player-panel.is-collapsed .audio-player-expanded {
   flex-basis: 0;
   padding-top: 0;
