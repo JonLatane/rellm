@@ -32,6 +32,7 @@ CSS is in `public/style/ui/drag.css` (already linked from `index.html`); nothing
 - **Keys vs. DOM ids**: `keys` are the list's own keys; `domId key` must give the id of the element the measurement should read (the one that carries the move transform).
 - **Horizontal lists assume a single row** (only x is compared); no auto-scroll while dragging a scrolling strip (Servers strip clips at the panel edge).
 - A `.flip-moving` item turns `display: grid` into `display: flex`, which shrinks short-content rows (Bluesky account) while sliding — `flip.css` has a `.flip-animated-column ... > * { flex: 1 1 auto }` fix; keep it in mind for any new vertical FLIP list.
+- **Port replies must be async.** Elm registers a subscription (here `UI.Drag.subscriptions`, live only while a measurement is in flight) *after* running the same update step's commands, so a `measureElements` reply sent synchronously can arrive before it and be silently dropped -- the drag measured once, then never reordered anything (taps were fine; mouse and touch both). `index.html` now answers via `setTimeout(..., 0)`; keep it that way.
 - `Ports.elementsMeasured` is one shared untargeted port: `UI.Drag` tags its requests `"drag:" ++ owner` and ignores everyone else's results, so `owner` must be unique per list.
 
 ## Testing

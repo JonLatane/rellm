@@ -1088,7 +1088,13 @@
           height: rect.height
         });
       }
-      app.ports.elementsMeasured.send({ owner: request.owner, results: results });
+      // Replied to asynchronously: Elm registers the `elementsMeasured` subscription a command's own
+      // update step asks for only *after* running that step's commands, so a reply sent synchronously from
+      // here can land before it and be dropped (what `UI.Drag`'s own measurement -- subscribed only while one
+      // is in flight -- kept hitting).
+      setTimeout(function () {
+        app.ports.elementsMeasured.send({ owner: request.owner, results: results });
+      }, 0);
     });
 
     // Renders/refreshes a FullCalendar instance inside the given container

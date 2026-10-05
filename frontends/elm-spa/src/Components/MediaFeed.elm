@@ -38,6 +38,8 @@ import Grpc
 import Html exposing (Html, a, button, div, img, input, span, text)
 import Html.Attributes exposing (attribute, class, disabled, href, placeholder, src, type_, value)
 import Html.Events exposing (onClick, onInput)
+import Html.Keyed
+import Json.Encode as Encode
 import Process
 import Proto.Rellm exposing (GetMediaRequest, GetMediaResponse, Media, MediaMetadata, defaultGetMediaRequest, defaultMediaMetadata)
 import Proto.Rellm.MediaConversion exposing (MediaConversion(..))
@@ -73,6 +75,10 @@ type alias Model =
 
     -- One per enabled server, keyed by `frontendHost` -- see `retryFetch`.
     , feeds : Dict String HostFeed
+
+    -- Bumped after every add-to-queue pick, which re-creates the rows' hidden `<select>`s (see
+    -- `queueButton`) so they're blank again.
+    , queueGeneration : Int
     }
 
 
@@ -102,6 +108,8 @@ type Msg
     | SearchDebounced Int
     | LoadMoreClicked
     | MediaClicked String String
+      -- host, media id, picked `<option>` value ("next" or "last")
+    | QueuePicked String String String
 
 
 {-| `searchText` seeds the search box (and the first fetch) -- e.g. from a `?search_text=` URL parameter; blank
@@ -109,7 +117,7 @@ for none.
 -}
 init : Shared.Model -> Kind -> String -> ( Model, Effect Msg )
 init shared kind searchText =
-    retryFetch shared { kind = kind, searchText = searchText, searchVersion = 0, feeds = Dict.empty }
+    retryFetch shared { kind = kind, searchText = searchText, searchVersion = 0, feeds = Dict.empty, queueGeneration = 0 }
 
 
 emptyHostFeed : HostFeed
@@ -300,6 +308,28 @@ update shared msg model =
                 |> Effect.batch
             )
 
+        QueuePicked host mediaId choice ->
+            ( { model | queueGeneration = model.queueGeneration + 1 }
+            , case Dict.get host model.feeds |> Maybe.andThen (\feed -> feed.media |> List.filter (\media -> media.id == mediaId) |> List.head) of
+                Just media ->
+                    Effect.fromShared
+                        (Shared.AudioPlayerPanelMsg
+                            (AudioPlayerPanel.Enqueue
+                                (if choice == "next" then
+                                    AudioPlayerPanel.PlayNext
+
+                                 else
+                                    AudioPlayerPanel.PlayLast
+                                )
+                                (MediaViewerPanel.mediaToReference media)
+                                host
+                            )
+                        )
+
+                Nothing ->
+                    Effect.none
+            )
+
         MediaClicked host mediaId ->
             ( model
             , Effect.fromShared
@@ -376,7 +406,7 @@ view shared model =
                     videoCard shared showHost host maybeServer media
 
                 Audio ->
-                    audioRow shared showHost host maybeServer media
+                    audioRow shared model.queueGeneration showHost host maybeServer media
 
                 Images ->
                     imageTile shared showHost host maybeServer media
@@ -675,8 +705,8 @@ videoCard shared showHost host maybeServer media =
         ]
 
 
-audioRow : Shared.Model -> Bool -> String -> Maybe RellmServer -> Media -> Html Msg
-audioRow shared showHost host maybeServer media =
+audioRow : Shared.Model -> Int -> Bool -> String -> Maybe RellmServer -> Media -> Html Msg
+audioRow shared queueGeneration showHost host maybeServer media =
     let
         credits : String
         credits =
@@ -755,6 +785,33 @@ audioRow shared showHost host maybeServer media =
                 ]
             ]
         , licensedBadge media
+        , queueButton queueGeneration host media
+        ]
+
+
+{-| The row's add-to-queue button: the queue glyph over a transparent native `<select>` that fills it, so
+tapping opens the platform's own picker with just the two choices. The select has no selection (`selectedIndex`
+-1) so either choice fires `change` -- and is re-created (`generation`) after each pick to go blank again.
+(Only the Audio page's rows have this; the player's own queue rows don't.)
+-}
+queueButton : Int -> String -> Media -> Html Msg
+queueButton generation host media =
+    Html.Keyed.node "span"
+        [ class "audio-row-queue" ]
+        [ ( String.fromInt generation
+          , span [ class "audio-row-queue-inner", attribute "title" "Add to queue" ]
+                [ AudioPlayerPanel.queueIcon
+                , Html.select
+                    [ class "audio-row-queue-select"
+                    , attribute "aria-label" ("Add " ++ mediaTitle media ++ " to queue")
+                    , Html.Attributes.property "selectedIndex" (Encode.int -1)
+                    , onInput (QueuePicked host media.id)
+                    ]
+                    [ Html.option [ value "next" ] [ text "Add Next In Queue" ]
+                    , Html.option [ value "last" ] [ text "Add To Queue" ]
+                    ]
+                ]
+          )
         ]
 
 

@@ -424,3 +424,35 @@
   font-weight: 400;
   align-self: center;
 }
+
+/* Add-to-queue button at the end of an Audio page row (`queueButton`): the glyph, with an invisible native
+   `<select>` stretched over it to take the tap. (16px font so iOS doesn't zoom the page on focus.) */
+.audio-row-queue {
+  flex: 0 0 auto;
+}
+
+.audio-row-queue-inner {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+
+.audio-row-queue-inner:hover {
+  background: rgba(127, 127, 127, 0.25);
+}
+
+.audio-row-queue-select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  font-size: 16px;
+}
