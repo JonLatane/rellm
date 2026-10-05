@@ -29,6 +29,7 @@ import Shared.AccountsPanel.MastodonAccounts exposing (MastodonAccount)
 import Shared.AccountsPanel.MastodonServers exposing (BrowsedMastodonInstance)
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (Branding, RellmServer)
+import Shared.AudioPlayerPanel as AudioPlayerPanel
 import Shared.Breadcrumbs as Breadcrumbs
 import Shared.BrowserInfo as BrowserInfo
 import Shared.ByteFormat as ByteFormat
@@ -37,7 +38,6 @@ import Shared.CreateNewPanel as CreateNewPanel
 import Shared.FederatedAuth as FederatedAuth
 import Shared.MarkdownPanel as MarkdownPanel
 import Shared.MediaGeneratorPanel as MediaGeneratorPanel
-import Shared.AudioPlayerPanel as AudioPlayerPanel
 import Shared.MediaViewerPanel as MediaViewerPanel
 import Shared.MessagingPanel as MessagingPanel
 import Shared.MyMediaPanel as MyMediaPanel
@@ -45,6 +45,7 @@ import Shared.StarredPanel as StarredPanel
 import Shared.Time as SharedTime
 import UI.Classes exposing (classes, hostnameToCSSClass, openClosedClass)
 import UI.CustomNav as CustomNav
+import UI.Drag
 import UI.EmittedStylesheet as EmittedStylesheet
 import UI.Flip
 import UI.HtmlEvents exposing (stopPropagationAndPreventDefaultOnClick)
@@ -1216,6 +1217,10 @@ combinedServerFeedItemsStrip shared =
         (List.indexedMap
             (\index item -> ( AccountsPanel.combinedServerFeedItemKey item, combinedServerFeedItemChipFlip shared count index item ))
             items
+            -- A fixed-position child, so it's out of the strip's flow (see `UI.Drag.overlay`).
+            ++ (UI.Drag.overlay (Shared.AccountsPanelMsg << AccountsPanel.ServerDragMsg) UI.Flip.Horizontal shared.accounts.serverDrag
+                    |> List.map (Tuple.pair "drag-overlay")
+               )
         )
 
 
@@ -1301,7 +1306,7 @@ feedItemReorderInfo shared count index key =
         -- this item"/switch-input click targets, so a plain `onClick` here would also fire those.
         stopClick : Shared.Msg -> Attribute Shared.Msg
         stopClick msg =
-            stopPropagationOn "click" (Decode.succeed ( msg, True ))
+            UI.Drag.onClickStoppingPropagation shared.accounts.serverDrag msg
 
         showBackward : Bool
         showBackward =
@@ -1318,6 +1323,7 @@ feedItemReorderInfo shared count index key =
                 , moveForward = stopClick (Shared.AccountsPanelMsg (AccountsPanel.MoveServerFeedItemRightClicked key))
                 , canMoveBackward = showBackward
                 , canMoveForward = showForward
+                , dragAttrs = UI.Drag.handleAttrs (Shared.AccountsPanelMsg << AccountsPanel.ServerDragMsg) UI.Flip.Horizontal key shared.accounts.serverDrag
                 }
     in
     { moveAttrs = moveAttrs, reorderPair = reorderPair, showBackward = showBackward, showForward = showForward }
@@ -2023,6 +2029,10 @@ accountsList shared =
             (List.indexedMap
                 (\index item -> ( AccountsPanel.combinedAccountItemKey item, combinedAccountItemRowFlip shared count mainCount index item ))
                 items
+                -- A fixed-position child, so it's out of the list's flow (see `UI.Drag.overlay`).
+                ++ (UI.Drag.overlay (Shared.AccountsPanelMsg << AccountsPanel.AccountDragMsg) UI.Flip.Vertical shared.accounts.accountDrag
+                        |> List.map (Tuple.pair "drag-overlay")
+                   )
             )
 
 
@@ -2176,10 +2186,11 @@ accountItemReorderInfo shared count mainCount index key =
         reorderPair : { backward : Html Shared.Msg, forward : Html Shared.Msg }
         reorderPair =
             UI.Flip.reorderButtonPair UI.Flip.Vertical
-                { moveBackward = onClick (Shared.AccountsPanelMsg (AccountsPanel.MoveAccountItemUpClicked key))
-                , moveForward = onClick (Shared.AccountsPanelMsg (AccountsPanel.MoveAccountItemDownClicked key))
+                { moveBackward = UI.Drag.onClick shared.accounts.accountDrag (Shared.AccountsPanelMsg (AccountsPanel.MoveAccountItemUpClicked key))
+                , moveForward = UI.Drag.onClick shared.accounts.accountDrag (Shared.AccountsPanelMsg (AccountsPanel.MoveAccountItemDownClicked key))
                 , canMoveBackward = canMoveUp
                 , canMoveForward = canMoveDown
+                , dragAttrs = UI.Drag.handleAttrs (Shared.AccountsPanelMsg << AccountsPanel.AccountDragMsg) UI.Flip.Vertical key shared.accounts.accountDrag
                 }
     in
     { moveAttrs = moveAttrs, reorderPair = reorderPair, canMoveUp = canMoveUp, canMoveDown = canMoveDown }

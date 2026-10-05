@@ -19,10 +19,9 @@ import Effect exposing (Effect)
 import Grpc
 import Html exposing (Html, button, div, h3, img, input, p, span, text)
 import Html.Attributes exposing (alt, class, disabled, id, placeholder, src, title, value)
-import Html.Events exposing (onClick, onInput, stopPropagationOn)
+import Html.Events exposing (onClick, onInput)
 import Html.Keyed
 import Http
-import Json.Decode as Decode
 import Proto.Rellm exposing (FederatedServer, MastodonServer, ServerConfiguration)
 import Set exposing (Set)
 import Shared
@@ -33,6 +32,7 @@ import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer)
 import Task
 import Time
 import UI.Classes exposing (classes, hostnameToCSSClass)
+import UI.Drag
 import UI.Flip
 
 
@@ -121,6 +121,8 @@ type Msg
     | MastodonServerMoveSettled String
     | AnimateMastodonServerFlip Animation.Msg
     | AnimateMastodonServerMove Animation.Msg
+    | FederatedServerDragMsg UI.Drag.Msg
+    | MastodonServerDragMsg UI.Drag.Msg
     | MastodonAppIdChanged String String
     | MastodonAppSecretEditClicked String
     | MastodonAppSecretChanged String String
@@ -172,6 +174,9 @@ type alias FederationEdit =
     , status : AccountsPanel.FormStatus
     , itemAnimations : Dict String (UI.Flip.State Msg)
     , moveAnimations : Dict String (UI.Flip.MoveState Msg)
+
+    -- Drag-to-reorder by the chips' ◀/▶ arrows -- see `UI.Drag`.
+    , drag : UI.Drag.State
     }
 
 
@@ -189,6 +194,9 @@ type alias MastodonServersEdit =
     , status : AccountsPanel.FormStatus
     , itemAnimations : Dict String (UI.Flip.State Msg)
     , moveAnimations : Dict String (UI.Flip.MoveState Msg)
+
+    -- Drag-to-reorder by the chips' ◀/▶ arrows -- see `UI.Drag`.
+    , drag : UI.Drag.State
     }
 
 
@@ -246,6 +254,7 @@ subscriptions model =
                 Sub.batch
                     [ UI.Flip.subscription AnimateFederatedServerFlip (Dict.values edit.itemAnimations)
                     , UI.Flip.moveSubscription AnimateFederatedServerMove (Dict.values edit.moveAnimations)
+                    , Sub.map FederatedServerDragMsg (UI.Drag.subscriptions edit.drag)
                     ]
 
             Nothing ->
@@ -255,6 +264,7 @@ subscriptions model =
                 Sub.batch
                     [ UI.Flip.subscription AnimateMastodonServerFlip (Dict.values edit.itemAnimations)
                     , UI.Flip.moveSubscription AnimateMastodonServerMove (Dict.values edit.moveAnimations)
+                    , Sub.map MastodonServerDragMsg (UI.Drag.subscriptions edit.drag)
                     ]
 
             Nothing ->
@@ -366,6 +376,7 @@ updateMsg shared targetHost isSecure maybeServer msg model =
                                 , status = AccountsPanel.Idle
                                 , itemAnimations = savedServers |> List.map (\federatedServer -> ( federatedServer.host, UI.Flip.restingState )) |> Dict.fromList
                                 , moveAnimations = Dict.empty
+                                , drag = UI.Drag.init
                                 }
                       }
                     , Effect.none
@@ -537,6 +548,52 @@ updateMsg shared targetHost isSecure maybeServer msg model =
             , Effect.none
             )
 
+        FederatedServerDragMsg dragMsg ->
+            case model.federationEdit of
+                Just edit ->
+                    let
+                        ( newDrag, dragCmd, outputs ) =
+                            UI.Drag.update (federatedServerDragConfig edit) dragMsg edit.drag
+
+                        applyOutput : UI.Drag.Output -> FederationEdit -> FederationEdit
+                        applyOutput output current =
+                            case output of
+                                UI.Drag.Reordered newKeys ->
+                                    { current | pending = UI.Drag.reorderByKeys .host newKeys current.pending }
+
+                                UI.Drag.Slide slides ->
+                                    { current | moveAnimations = UI.Drag.applySlides FederatedServerMoveSettled slides current.moveAnimations }
+                    in
+                    ( { model | federationEdit = Just (List.foldl applyOutput { edit | drag = newDrag } outputs) }
+                    , Effect.fromCmd (Cmd.map FederatedServerDragMsg dragCmd)
+                    )
+
+                Nothing ->
+                    ( model, Effect.none )
+
+        MastodonServerDragMsg dragMsg ->
+            case model.mastodonServersEdit of
+                Just edit ->
+                    let
+                        ( newDrag, dragCmd, outputs ) =
+                            UI.Drag.update (mastodonServerDragConfig edit) dragMsg edit.drag
+
+                        applyOutput : UI.Drag.Output -> MastodonServersEdit -> MastodonServersEdit
+                        applyOutput output current =
+                            case output of
+                                UI.Drag.Reordered newKeys ->
+                                    { current | pending = UI.Drag.reorderByKeys (.server >> .domain) newKeys current.pending }
+
+                                UI.Drag.Slide slides ->
+                                    { current | moveAnimations = UI.Drag.applySlides MastodonServerMoveSettled slides current.moveAnimations }
+                    in
+                    ( { model | mastodonServersEdit = Just (List.foldl applyOutput { edit | drag = newDrag } outputs) }
+                    , Effect.fromCmd (Cmd.map MastodonServerDragMsg dragCmd)
+                    )
+
+                Nothing ->
+                    ( model, Effect.none )
+
         FederatedServerMoveSettled host ->
             ( { model
                 | federationEdit =
@@ -602,6 +659,7 @@ updateMsg shared targetHost isSecure maybeServer msg model =
                                 , status = AccountsPanel.Idle
                                 , itemAnimations = savedServers |> List.map (\mastodonServer -> ( mastodonServer.domain, UI.Flip.restingState )) |> Dict.fromList
                                 , moveAnimations = Dict.empty
+                                , drag = UI.Drag.init
                                 }
                       }
                     , Effect.none
@@ -1221,6 +1279,39 @@ mapPendingHost host fn edit =
     }
 
 
+{-| `UI.Drag`'s view of the federated-server chips: one free-for-all horizontal strip.
+-}
+federatedServerDragConfig : FederationEdit -> UI.Drag.Config
+federatedServerDragConfig edit =
+    { axis = UI.Flip.Horizontal
+    , owner = "federated-servers"
+    , domId = federatedServerChipDomId
+    , keys = List.map .host edit.pending
+    , groupOf = \_ -> ""
+    }
+
+
+{-| Likewise for the Mastodon-server chips.
+-}
+mastodonServerDragConfig : MastodonServersEdit -> UI.Drag.Config
+mastodonServerDragConfig edit =
+    { axis = UI.Flip.Horizontal
+    , owner = "mastodon-servers"
+    , domId = mastodonServerChipDomId
+    , keys = List.map (.server >> .domain) edit.pending
+    , groupOf = \_ -> ""
+    }
+
+
+draggingClass : UI.Drag.State -> String -> List String
+draggingClass drag key =
+    if UI.Drag.isDragging drag key then
+        [ "reorder-dragging" ]
+
+    else
+        []
+
+
 {-| The DOM `id` a federated-server chip is rendered with while `federationEdit` is active -- the
 `UI.Flip.Horizontal` counterpart of `AccountsPanel.feedItemChipDomId`, for
 `MoveFederatedServerLeftClicked`/`MoveFederatedServerRightClicked` to measure. Deliberately its own
@@ -1466,6 +1557,8 @@ mastodonServersEditorView logos edit =
             (List.indexedMap
                 (\index mastodonServerEdit -> ( mastodonServerEdit.server.domain, mastodonServerEditChipFlip logos edit (List.length edit.pending) index mastodonServerEdit ))
                 edit.pending
+                -- A fixed-position child, so it's out of the strip's flow (see `UI.Drag.overlay`).
+                ++ (UI.Drag.overlay MastodonServerDragMsg UI.Flip.Horizontal edit.drag |> List.map (Tuple.pair "drag-overlay"))
             )
         , div [ class "server-details-federation-add" ]
             [ input
@@ -1543,7 +1636,7 @@ mastodonServerEditChip logos edit count index mastodonServerEdit =
 
         stopClick : Msg -> Html.Attribute Msg
         stopClick msg =
-            stopPropagationOn "click" (Decode.succeed ( msg, True ))
+            UI.Drag.onClickStoppingPropagation edit.drag msg
 
         showBackward : Bool
         showBackward =
@@ -1560,11 +1653,15 @@ mastodonServerEditChip logos edit count index mastodonServerEdit =
                 , moveForward = stopClick (MoveMastodonServerRightClicked domain)
                 , canMoveBackward = showBackward
                 , canMoveForward = showForward
+                , dragAttrs = UI.Drag.handleAttrs MastodonServerDragMsg UI.Flip.Horizontal domain edit.drag
                 }
     in
     div
         (id (mastodonServerChipDomId domain)
-            :: classes [ "server-chip", "federated-server-chip", "federated-server-chip-edit", "mastodon-server-chip-edit", hostnameToCSSClass domain ]
+            :: classes
+                ([ "server-chip", "federated-server-chip", "federated-server-chip-edit", "mastodon-server-chip-edit", hostnameToCSSClass domain ]
+                    ++ draggingClass edit.drag domain
+                )
             :: moveAttrs
         )
         [ div [ classes [ "server-chip-top", "background-color-primary" ] ]
@@ -1916,6 +2013,8 @@ federationEditorView shared edit =
             (List.indexedMap
                 (\index federatedServer -> ( federatedServer.host, federatedServerEditChipFlip shared edit (List.length edit.pending) index federatedServer ))
                 edit.pending
+                -- A fixed-position child, so it's out of the strip's flow (see `UI.Drag.overlay`).
+                ++ (UI.Drag.overlay FederatedServerDragMsg UI.Flip.Horizontal edit.drag |> List.map (Tuple.pair "drag-overlay"))
             )
         , div [ class "server-details-federation-add" ]
             [ input
@@ -1995,7 +2094,7 @@ federatedServerEditChip shared edit count index federatedServer =
 
         stopClick : Msg -> Html.Attribute Msg
         stopClick msg =
-            stopPropagationOn "click" (Decode.succeed ( msg, True ))
+            UI.Drag.onClickStoppingPropagation edit.drag msg
 
         showBackward : Bool
         showBackward =
@@ -2012,11 +2111,15 @@ federatedServerEditChip shared edit count index federatedServer =
                 , moveForward = stopClick (MoveFederatedServerRightClicked host)
                 , canMoveBackward = showBackward
                 , canMoveForward = showForward
+                , dragAttrs = UI.Drag.handleAttrs FederatedServerDragMsg UI.Flip.Horizontal host edit.drag
                 }
     in
     div
         (id (federatedServerChipDomId host)
-            :: classes [ "server-chip", "federated-server-chip", "federated-server-chip-edit", hostnameToCSSClass host ]
+            :: classes
+                ([ "server-chip", "federated-server-chip", "federated-server-chip-edit", hostnameToCSSClass host ]
+                    ++ draggingClass edit.drag host
+                )
             :: moveAttrs
         )
         [ div [ classes [ "server-chip-top", "background-color-primary" ] ]

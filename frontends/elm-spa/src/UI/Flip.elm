@@ -59,7 +59,6 @@ import Browser.Dom as Dom
 import Dict exposing (Dict)
 import Html exposing (Attribute, Html, button, div, text)
 import Html.Attributes exposing (class, classList, disabled, title)
-import Html.Events exposing (onClick)
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Ports
@@ -895,16 +894,18 @@ list's controls -- glyph/title implied by `axis`. Returns the two buttons
 separately (rather than assembling them into one container) since callers
 arrange the pair differently: `reorderButtons` below stacks them into one
 `.reorder-buttons` element for a vertical list; `UI.serverChip` instead splits
-them to either side of a horizontal list's item content. Takes the click
+them to either side of a horizontal list's item content. `dragAttrs` (`UI.Drag.handleAttrs`, or `[]`
+for a list without drag-to-reorder) goes on each button, making the arrows themselves the drag areas.
+Takes the click
 `Attribute` itself (rather than a bare `msg`) so a caller whose pair sits
 _inside_ some other clickable element can pass `stopPropagationOn "click" ...`
 instead of a plain `onClick`, so tapping an arrow doesn't also trigger that.
 -}
 reorderButtonPair :
     Axis
-    -> { moveBackward : Attribute msg, moveForward : Attribute msg, canMoveBackward : Bool, canMoveForward : Bool }
+    -> { moveBackward : Attribute msg, moveForward : Attribute msg, canMoveBackward : Bool, canMoveForward : Bool, dragAttrs : List (Attribute msg) }
     -> { backward : Html msg, forward : Html msg }
-reorderButtonPair axis { moveBackward, moveForward, canMoveBackward, canMoveForward } =
+reorderButtonPair axis { moveBackward, moveForward, canMoveBackward, canMoveForward, dragAttrs } =
     let
         ( ( backwardGlyph, backwardTitle ), ( forwardGlyph, forwardTitle ) ) =
             case axis of
@@ -915,25 +916,27 @@ reorderButtonPair axis { moveBackward, moveForward, canMoveBackward, canMoveForw
                     ( ( "◀", "Move left" ), ( "▶", "Move right" ) )
     in
     { backward =
-        button [ class "reorder-btn", moveBackward, disabled (not canMoveBackward), title backwardTitle ] [ text backwardGlyph ]
+        button ([ class "reorder-btn", moveBackward, disabled (not canMoveBackward), title backwardTitle ] ++ dragAttrs) [ text backwardGlyph ]
     , forward =
-        button [ class "reorder-btn", moveForward, disabled (not canMoveForward), title forwardTitle ] [ text forwardGlyph ]
+        button ([ class "reorder-btn", moveForward, disabled (not canMoveForward), title forwardTitle ] ++ dragAttrs) [ text forwardGlyph ]
     }
 
 
 {-| Stacked ▲/▼ pair for a `Vertical` list (Accounts, Starred), just
-left of that row's own content.
+left of that row's own content. `dragAttrs` goes on the whole pair's container, so the area _between_
+and around the two arrows drags too.
 -}
-reorderButtons : { moveUp : msg, moveDown : msg, canMoveUp : Bool, canMoveDown : Bool } -> Html msg
-reorderButtons { moveUp, moveDown, canMoveUp, canMoveDown } =
+reorderButtons : { moveUp : Attribute msg, moveDown : Attribute msg, canMoveUp : Bool, canMoveDown : Bool, dragAttrs : List (Attribute msg) } -> Html msg
+reorderButtons { moveUp, moveDown, canMoveUp, canMoveDown, dragAttrs } =
     let
         pair : { backward : Html msg, forward : Html msg }
         pair =
             reorderButtonPair Vertical
-                { moveBackward = onClick moveUp
-                , moveForward = onClick moveDown
+                { moveBackward = moveUp
+                , moveForward = moveDown
                 , canMoveBackward = canMoveUp
                 , canMoveForward = canMoveDown
+                , dragAttrs = []
                 }
     in
-    div [ class "reorder-buttons" ] [ pair.backward, pair.forward ]
+    div (class "reorder-buttons" :: dragAttrs) [ pair.backward, pair.forward ]

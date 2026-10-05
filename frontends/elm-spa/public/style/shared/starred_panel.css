@@ -327,29 +327,6 @@
   padding-bottom: 0;
 }
 
-/* Drag-to-reorder: the ▲/▼ area doubles as a drag handle (see `dragHandleAttrs`). `touch-action: none`
-   keeps a touch drag from scrolling the panel instead. */
-.starred-drag-handle {
-  display: flex;
-  flex: 0 0 auto;
-  touch-action: none;
-  cursor: grab;
-  user-select: none;
-  -webkit-user-select: none;
-}
-
-.starred-post-row-grouped .starred-drag-handle {
+.starred-post-row-grouped .drag-handle {
   pointer-events: none;
-}
-
-.starred-post-row-dragging {
-  opacity: 0.85;
-}
-
-.starred-drag-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 10000;
-  cursor: grabbing;
-  touch-action: none;
 }

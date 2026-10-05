@@ -71,6 +71,7 @@ import Shared.MediaViewerPanel as MediaViewerPanel
 import Task exposing (Task)
 import Time
 import UI.Classes exposing (classes, hostnameToCSSClass, openClosedClass)
+import UI.Drag
 import UI.Flip
 
 
@@ -156,6 +157,9 @@ type alias Model =
     -- this panel's own selected-media strip instead of the Servers strip.
     , selectedMediaMoveAnimations : Dict String (UI.Flip.MoveState Msg)
 
+    -- Drag-to-reorder by the strip items' ◀/▶ arrows -- see `UI.Drag`.
+    , selectedMediaDrag : UI.Drag.State
+
     -- The id of a just-uploaded item awaiting its post-upload refetch, while
     -- `selectionType` is `Just (MultiSelect _)` -- `GotUploadResult` stashes
     -- it here (there's nothing else to key it by, `POST /media`'s response is
@@ -240,6 +244,7 @@ type Msg
     | GotPreMoveSelectedMediaPositions String String Int (Result Dom.Error ( Dom.Element, Dom.Element ))
     | AnimateSelectedMediaMove Animation.Msg
     | SelectedMediaMoveSettled String
+    | SelectedMediaDragMsg UI.Drag.Msg
       -- The delete button on a selected-media strip item (see
       -- `selectedMediaItemView`) -- unlike the browse grid's own
       -- `DeleteClicked`, this doesn't call `DeleteMedia` at all (it's only
@@ -352,6 +357,7 @@ init =
     , selectedMedia = []
     , selectedMediaAnimations = Dict.empty
     , selectedMediaMoveAnimations = Dict.empty
+    , selectedMediaDrag = UI.Drag.init
     , pendingUploadSelection = Nothing
     , searchText = ""
     , searchVersion = 0
@@ -384,6 +390,7 @@ subscriptions model =
             , UI.Flip.subscription AnimateItemFlip
                 (List.map .flip (Dict.values model.mediaAnimations) ++ Dict.values model.selectedMediaAnimations)
             , UI.Flip.moveSubscription AnimateSelectedMediaMove (Dict.values model.selectedMediaMoveAnimations)
+            , Sub.map SelectedMediaDragMsg (UI.Drag.subscriptions model.selectedMediaDrag)
             ]
 
     else
@@ -488,6 +495,7 @@ sendUpdate accountsPanelModel msg model =
                             |> List.map (\media -> ( media.id, UI.Flip.restingState ))
                             |> Dict.fromList
                     , selectedMediaMoveAnimations = Dict.empty
+                    , selectedMediaDrag = UI.Drag.init
                     , pendingUploadSelection = Nothing
                     , searchText = ""
                     , searchVersion = 0
@@ -848,6 +856,25 @@ sendUpdate accountsPanelModel msg model =
             in
             ( { model | selectedMediaMoveAnimations = newSelectedMediaMoveAnimations }, Cmd.batch cmds, ( Nothing, Nothing ) )
 
+        SelectedMediaDragMsg dragMsg ->
+            let
+                ( newDrag, dragCmd, outputs ) =
+                    UI.Drag.update (selectedMediaDragConfig model) dragMsg model.selectedMediaDrag
+
+                applyOutput : UI.Drag.Output -> Model -> Model
+                applyOutput output current =
+                    case output of
+                        UI.Drag.Reordered newKeys ->
+                            { current | selectedMedia = UI.Drag.reorderByKeys .id newKeys current.selectedMedia }
+
+                        UI.Drag.Slide slides ->
+                            { current | selectedMediaMoveAnimations = UI.Drag.applySlides SelectedMediaMoveSettled slides current.selectedMediaMoveAnimations }
+            in
+            ( List.foldl applyOutput { model | selectedMediaDrag = newDrag } outputs
+            , Cmd.map SelectedMediaDragMsg dragCmd
+            , ( Nothing, Nothing )
+            )
+
         SelectedMediaMoveSettled mediaId ->
             ( { model
                 | selectedMediaMoveAnimations =
@@ -914,6 +941,18 @@ mirroring `AccountsPanel.feedItemChipDomId`.
 selectedMediaDomId : String -> String
 selectedMediaDomId mediaId =
     "my-media-panel-selected-" ++ mediaId
+
+
+{-| `UI.Drag`'s view of the selected-media strip: one free-for-all horizontal row.
+-}
+selectedMediaDragConfig : Model -> UI.Drag.Config
+selectedMediaDragConfig model =
+    { axis = UI.Flip.Horizontal
+    , owner = "my-media-selected"
+    , domId = selectedMediaDomId
+    , keys = List.map .id model.selectedMedia
+    , groupOf = \_ -> ""
+    }
 
 
 {-| Reconciles `mediaAnimations` with `status`'s current `Fetched` list:
@@ -1759,6 +1798,8 @@ selectedMediaStripView accountsPanelModel model =
                 (List.indexedMap
                     (\index media -> ( media.id, selectedMediaItemFlip resolved.server resolved.account model count index media ))
                     model.selectedMedia
+                    -- A fixed-position child, so it's out of the strip's flow (see `UI.Drag.overlay`).
+                    ++ (UI.Drag.overlay SelectedMediaDragMsg UI.Flip.Horizontal model.selectedMediaDrag |> List.map (Tuple.pair "drag-overlay"))
                 )
 
         _ ->
@@ -1792,7 +1833,7 @@ selectedMediaItemFlip server account model count index media =
                 []
     in
     div (UI.Flip.itemAttributes UI.Flip.Horizontal flipState isMoving)
-        [ div pointerEventsAttr [ selectedMediaItemView server account model.selectedMediaMoveAnimations count index media ] ]
+        [ div pointerEventsAttr [ selectedMediaItemView server account model.selectedMediaMoveAnimations model.selectedMediaDrag count index media ] ]
 
 
 {-| One selected-media strip item: an `ExtraSmall` preview (tapping it is a
@@ -1804,8 +1845,8 @@ server does, so unlike `serverChip` both ends are only ever gated by
 selection outright (`RemoveSelectedMediaClicked`) -- no confirmation, see
 that message's own doc for why.
 -}
-selectedMediaItemView : RellmServer -> RellmAccount -> Dict String (UI.Flip.MoveState Msg) -> Int -> Int -> MediaReference -> Html Msg
-selectedMediaItemView server account moveAnimations count index media =
+selectedMediaItemView : RellmServer -> RellmAccount -> Dict String (UI.Flip.MoveState Msg) -> UI.Drag.State -> Int -> Int -> MediaReference -> Html Msg
+selectedMediaItemView server account moveAnimations drag count index media =
     let
         moveAttrs : List (Html.Attribute Msg)
         moveAttrs =
@@ -1822,14 +1863,26 @@ selectedMediaItemView server account moveAnimations count index media =
         reorderPair : { backward : Html Msg, forward : Html Msg }
         reorderPair =
             UI.Flip.reorderButtonPair UI.Flip.Horizontal
-                { moveBackward = onClick (MoveSelectedMediaLeftClicked media.id)
-                , moveForward = onClick (MoveSelectedMediaRightClicked media.id)
+                { moveBackward = UI.Drag.onClick drag (MoveSelectedMediaLeftClicked media.id)
+                , moveForward = UI.Drag.onClick drag (MoveSelectedMediaRightClicked media.id)
                 , canMoveBackward = canMoveBackward
                 , canMoveForward = canMoveForward
+                , dragAttrs = UI.Drag.handleAttrs SelectedMediaDragMsg UI.Flip.Horizontal media.id drag
                 }
     in
     div
-        (id (selectedMediaDomId media.id) :: class "my-media-panel-selected-item" :: moveAttrs)
+        (id (selectedMediaDomId media.id)
+            :: classes
+                ("my-media-panel-selected-item"
+                    :: (if UI.Drag.isDragging drag media.id then
+                            [ "reorder-dragging" ]
+
+                        else
+                            []
+                       )
+                )
+            :: moveAttrs
+        )
         [ div [ class "my-media-panel-selected-item-preview" ]
             [ MediaRenderer.view MediaRenderer.ExtraSmall MediaRenderer.ToWidthAndHeight server (Just account) False MediaRenderer.init (\_ -> NoOp) (\_ -> NoOp) media ]
         , div [ class "my-media-panel-selected-item-controls" ]

@@ -352,3 +352,68 @@
     opacity: 1;
   }
 }
+
+/* The track the persistent audio player has loaded: an equalizer over its cover (animated while playing, flat
+   when paused), a tinted row and an accented title. */
+.audio-row.is-now-playing {
+  background: rgba(74, 158, 255, 0.1);
+}
+
+.audio-row.is-now-playing .media-card-title {
+  color: rgb(74, 158, 255);
+}
+
+.media-card-now-playing {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 3px;
+  padding: 28% 30%;
+  box-sizing: border-box;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.media-card-now-playing span {
+  flex: 1 1 0;
+  max-width: 6px;
+  height: 25%;
+  border-radius: 2px;
+  background: white;
+  transform-origin: bottom;
+}
+
+.audio-row.is-playing .media-card-now-playing span {
+  animation: media-card-equalizer 0.9s ease-in-out infinite;
+}
+
+.audio-row.is-playing .media-card-now-playing span:nth-child(2) {
+  animation-delay: -0.3s;
+}
+
+.audio-row.is-playing .media-card-now-playing span:nth-child(3) {
+  animation-delay: -0.6s;
+}
+
+.audio-row.is-playing .media-card-now-playing span:nth-child(4) {
+  animation-delay: -0.15s;
+}
+
+@keyframes media-card-equalizer {
+  0%,
+  100% {
+    height: 20%;
+  }
+
+  50% {
+    height: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .audio-row.is-playing .media-card-now-playing span {
+    animation: none;
+    height: 60%;
+  }
+}

@@ -53,6 +53,7 @@
     document.write('<link rel="stylesheet" href="' + rellmBasePath + '/style/ui/switch.css">');
     document.write('<link rel="stylesheet" href="' + rellmBasePath + '/style/ui/flip.css">');
     document.write('<link rel="stylesheet" href="' + rellmBasePath + '/style/ui/reordering.css">');
+    document.write('<link rel="stylesheet" href="' + rellmBasePath + '/style/ui/drag.css">');
     document.write('<link rel="stylesheet" href="' + rellmBasePath + '/style/ui/popover.css">');
     document.write('<link rel="stylesheet" href="' + rellmBasePath + '/style/ui/filter_bar.css">');
 
@@ -1025,18 +1026,22 @@
         var el = document.getElementById(items[i].id);
         if (!el) { continue; }
         var rect = el.getBoundingClientRect();
-        // `layoutY` is `y` with any in-flight translate (a FLIP slide) taken back out -- where the
-        // element actually sits in the layout, for callers interrupting a slide with another.
+        // `layoutX`/`layoutY` are `x`/`y` with any in-flight translate (a FLIP slide) taken back out --
+        // where the element actually sits in the layout, for callers interrupting a slide with another
+        // (see `UI.Drag`).
         var transform = window.getComputedStyle(el).transform;
+        var translateX = 0;
         var translateY = 0;
         if (transform && transform !== "none") {
           var matrix = new DOMMatrixReadOnly(transform);
+          translateX = matrix.m41;
           translateY = matrix.m42;
         }
         results.push({
           key: items[i].key,
           x: rect.left + window.pageXOffset,
           y: rect.top + window.pageYOffset,
+          layoutX: rect.left + window.pageXOffset - translateX,
           layoutY: rect.top + window.pageYOffset - translateY,
           width: rect.width,
           height: rect.height

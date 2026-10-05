@@ -1,4 +1,4 @@
-module Shared.StarredPanel exposing (Model, Msg(..), dragTargetOrder, freshestPost, hasAnyStars, hasPendingFetches, init, isStarred, layoutYs, rawKey, refreshHosts, refreshServerStars, subscriptions, toggleStarMsg, totalStarCount, update, view)
+module Shared.StarredPanel exposing (Model, Msg(..), freshestPost, hasAnyStars, hasPendingFetches, init, isStarred, rawKey, refreshHosts, refreshServerStars, subscriptions, toggleStarMsg, totalStarCount, update, view)
 
 {-| Tracks which Posts the user has starred, in this browser. `StarPost`/
 `UnstarPost` (see `protos/rellm.proto`) are auth-less, "friendly" counters
@@ -46,7 +46,7 @@ import Dict exposing (Dict)
 import Grpc
 import Html exposing (Html, button, div, img, span, text)
 import Html.Attributes exposing (alt, attribute, class, id, src, style, title)
-import Html.Events exposing (on, onClick)
+import Html.Events exposing (onClick)
 import Html.Keyed
 import Http
 import Json.Decode as Decode
@@ -68,6 +68,7 @@ import Shared.MediaViewerPanel as MediaViewerPanel
 import Shared.Time as SharedTime
 import Task
 import UI.Classes exposing (classes, escapeCSSClass, hostnameToCSSClass, openClosedClass)
+import UI.Drag
 import UI.Flip
 
 
@@ -132,24 +133,8 @@ type alias Model =
     -- `effectiveFlipState`.
     , collapseAnimations : Dict String (UI.Flip.State Msg)
 
-    -- A press on a Browser-tab row's ▲/▼ handle (see `DragState`); `Nothing` when none is in progress.
-    , drag : Maybe DragState
-
-    -- Set when a drag that actually moved just ended, so the `click` the browser may still send
-    -- the ▲/▼ button it started on isn't also taken as a tap -- see `DragEnded`.
-    , suppressMoveClick : Bool
-    }
-
-
-{-| Dragging a row by its ▲/▼ handle to reorder it. `pageY` is the pointer's latest page-relative
-y (same coordinate space as `Browser.Dom.Element`); `active` flips on once it's moved past a small
-threshold from `startY`, so a plain tap on ▲/▼ still just clicks.
--}
-type alias DragState =
-    { key : String
-    , startY : Float
-    , pageY : Float
-    , active : Bool
+    -- Drag-to-reorder by the ▲/▼ arrows (Browser tab only) -- see `UI.Drag`.
+    , drag : UI.Drag.State
     }
 
 
@@ -242,12 +227,7 @@ type Msg
     | PollStarredPosts
     | MoveStarUpClicked String
     | MoveStarDownClicked String
-      -- Touch/mouse drag on a row's ▲/▼ handle: `DragStarted` carries the row's key and pointer
-      -- `pageY`. See `dragCheck`.
-    | DragStarted String Float
-    | DragMoved Float
-    | DragEnded
-    | ClearMoveClickGuard
+    | DragMsg UI.Drag.Msg
     | GotPreMoveStarPositions String String Int (Result Dom.Error ( Dom.Element, Dom.Element ))
     | AnimateMove Animation.Msg
     | MoveSettled String
@@ -324,9 +304,6 @@ type GroupMeasurementPhase
       -- `TabLeaveFinished` carries on with the measure round trip.
     | AwaitingTabLeave ViewChange
     | AwaitingNewGroupRects (Dict String UI.Flip.Rect)
-      -- A drag's measurement of every row's current position (carrying the dragged row's key and the
-      -- pointer's `pageY` it was taken for) -- see `dragCheck`.
-    | AwaitingDragRects String Float
 
 
 {-| `flags` is the raw, persisted `List String` (see `Ports.persistStarredPosts`)
@@ -369,8 +346,7 @@ init flags =
     , collapsedServerGroups = Set.empty
     , serverRefetchCounter = 0
     , collapseAnimations = Dict.empty
-    , drag = Nothing
-    , suppressMoveClick = False
+    , drag = UI.Drag.init
     }
 
 
@@ -404,6 +380,11 @@ subscriptions model =
         -- flight when the panel gets closed mid-animation (`CloseStarredPanel`/
         -- `ToggleStarredPanel` don't cancel one) still needs this to keep
         -- ticking so its own `FinishUnstar` ever actually fires.
+        , if model.showStarredPanel then
+            Sub.map DragMsg (UI.Drag.subscriptions model.drag)
+
+          else
+            Sub.none
         , UI.Flip.subscription AnimateItemFlip (Dict.values model.starAnimations ++ Dict.values model.collapseAnimations)
         , Ports.starredPostsUpdated StarredPostsBroadcastReceived
         ]
@@ -952,30 +933,6 @@ sendUpdate accountsPanelModel msg model =
                                     -- Still fading the outgoing items; not our measurement.
                                     ( model, Cmd.none, Nothing )
 
-                                AwaitingDragRects key pageY ->
-                                    let
-                                        newOrder : List String
-                                        newOrder =
-                                            if model.drag == Nothing then
-                                                model.starOrder
-
-                                            else
-                                                dragTargetOrder key pageY rects (layoutYs results) model.starOrder
-                                    in
-                                    if newOrder == model.starOrder then
-                                        ( { model | groupMeasurementPhase = NotMeasuringGroup }, Cmd.none, Nothing )
-
-                                    else
-                                        -- These are already the "before" rects, so this is
-                                        -- `AwaitingOldGroupRects`'s handling, minus its own measurement.
-                                        ( { model | starOrder = newOrder, groupMeasurementPhase = AwaitingNewGroupRects rects }
-                                        , Cmd.batch
-                                            [ persistCmd newOrder
-                                            , Task.attempt (\_ -> ReadyToMeasureNewGroupPositions) Dom.getViewport
-                                            ]
-                                        , Nothing
-                                        )
-
                                 AwaitingOldViewRects change ->
                                     let
                                         changedModel : Model
@@ -1010,22 +967,21 @@ sendUpdate accountsPanelModel msg model =
                                                 Just newRect ->
                                                     Dict.insert key
                                                         (UI.Flip.startMove (MoveSettled key)
-                                                            ( oldRect.x - newRect.x, oldRect.y - (Dict.get key (layoutYs results) |> Maybe.withDefault newRect.y) )
+                                                            ( oldRect.x - newRect.x, oldRect.y - newRect.y )
                                                             (Dict.get key anims |> Maybe.withDefault UI.Flip.atRest)
                                                         )
                                                         anims
 
                                                 Nothing ->
                                                     anims
-
-                                        ( checkedModel, checkCmd ) =
-                                            dragCheck
-                                                { model
-                                                    | moveAnimations = Dict.foldl startMoveFor model.moveAnimations oldRects
-                                                    , groupMeasurementPhase = NotMeasuringGroup
-                                                }
                                     in
-                                    ( checkedModel, checkCmd, Nothing )
+                                    ( { model
+                                        | moveAnimations = Dict.foldl startMoveFor model.moveAnimations oldRects
+                                        , groupMeasurementPhase = NotMeasuringGroup
+                                      }
+                                    , Cmd.none
+                                    , Nothing
+                                    )
 
         ReadyToMeasureNewGroupPositions ->
             case model.groupMeasurementPhase of
@@ -1098,60 +1054,10 @@ sendUpdate accountsPanelModel msg model =
             )
 
         MoveStarUpClicked key ->
-            if model.suppressMoveClick then
-                ( model, Cmd.none, Nothing )
-
-            else
-                ( model, UI.Flip.beginReorder identity starEntryDomId GotPreMoveStarPositions -1 key model.starOrder, Nothing )
+            ( model, UI.Flip.beginReorder identity starEntryDomId GotPreMoveStarPositions -1 key model.starOrder, Nothing )
 
         MoveStarDownClicked key ->
-            if model.suppressMoveClick then
-                ( model, Cmd.none, Nothing )
-
-            else
-                ( model, UI.Flip.beginReorder identity starEntryDomId GotPreMoveStarPositions 1 key model.starOrder, Nothing )
-
-        DragStarted key pageY ->
-            ( { model | drag = Just { key = key, startY = pageY, pageY = pageY, active = False } }, Cmd.none, Nothing )
-
-        DragMoved pageY ->
-            case model.drag of
-                Nothing ->
-                    ( model, Cmd.none, Nothing )
-
-                Just drag ->
-                    let
-                        newDrag : DragState
-                        newDrag =
-                            { drag | pageY = pageY, active = drag.active || abs (pageY - drag.startY) > 4 }
-
-                        newModel : Model
-                        newModel =
-                            { model | drag = Just newDrag }
-
-                        ( checkedModel, checkCmd ) =
-                            dragCheck newModel
-                    in
-                    ( checkedModel, checkCmd, Nothing )
-
-        DragEnded ->
-            case model.drag of
-                Just { active } ->
-                    if active then
-                        -- The browser's `click` (if any) follows the pointer-up right away; drop it.
-                        ( { model | drag = Nothing, suppressMoveClick = True }
-                        , Process.sleep 100 |> Task.perform (\_ -> ClearMoveClickGuard)
-                        , Nothing
-                        )
-
-                    else
-                        ( { model | drag = Nothing }, Cmd.none, Nothing )
-
-                Nothing ->
-                    ( model, Cmd.none, Nothing )
-
-        ClearMoveClickGuard ->
-            ( { model | suppressMoveClick = False }, Cmd.none, Nothing )
+            ( model, UI.Flip.beginReorder identity starEntryDomId GotPreMoveStarPositions 1 key model.starOrder, Nothing )
 
         GotPreMoveStarPositions key _ offset (Err _) ->
             -- Couldn't measure -- e.g. an entry not actually mounted -- fall
@@ -1189,6 +1095,25 @@ sendUpdate accountsPanelModel msg model =
             , Nothing
             )
 
+        DragMsg dragMsg ->
+            let
+                ( newDrag, dragCmd, outputs ) =
+                    UI.Drag.update (dragConfig model) dragMsg model.drag
+
+                applyOutput : UI.Drag.Output -> ( Model, List (Cmd Msg) ) -> ( Model, List (Cmd Msg) )
+                applyOutput output ( current, cmds ) =
+                    case output of
+                        UI.Drag.Reordered newOrder ->
+                            ( { current | starOrder = newOrder }, persistCmd newOrder :: cmds )
+
+                        UI.Drag.Slide slides ->
+                            ( { current | moveAnimations = UI.Drag.applySlides MoveSettled slides current.moveAnimations }, cmds )
+
+                ( newModel, persistCmds ) =
+                    List.foldl applyOutput ( { model | drag = newDrag }, [] ) outputs
+            in
+            ( newModel, Cmd.batch (Cmd.map DragMsg dragCmd :: persistCmds), Nothing )
+
         AnimateMove animMsg ->
             let
                 step : String -> UI.Flip.MoveState Msg -> ( Dict String (UI.Flip.MoveState Msg), List (Cmd Msg) ) -> ( Dict String (UI.Flip.MoveState Msg), List (Cmd Msg) )
@@ -1208,16 +1133,10 @@ sendUpdate accountsPanelModel msg model =
             )
 
         MoveSettled key ->
-            -- A held drag may owe another swap now that the slide is done (no pointer move needed).
-            let
-                newModel : Model
-                newModel =
-                    { model | moveAnimations = Dict.update key (Maybe.map (\state -> { state | moving = False })) model.moveAnimations }
-
-                ( checkedModel, checkCmd ) =
-                    dragCheck newModel
-            in
-            ( checkedModel, checkCmd, Nothing )
+            ( { model | moveAnimations = Dict.update key (Maybe.map (\state -> { state | moving = False })) model.moveAnimations }
+            , Cmd.none
+            , Nothing
+            )
 
         MediaClicked _ _ _ ->
             -- Handled by `update`, above -- see its own doc comment. Doesn't
@@ -1275,66 +1194,6 @@ sendUpdate accountsPanelModel msg model =
                                 }
                     in
                     ( fetchedModel, cmd, Nothing )
-
-
-{-| While a drag is active (and not already mid-measurement), measures every row so
-`GotMeasuredGroupRects` can drop the dragged one straight into the slot under the pointer -- however
-many rows away that is -- via the same measure/reorder/measure FLIP round trip `OrganizeStarred` uses.
-It doesn't wait for earlier slides to finish: targets are judged by each row's `layoutY` (transform
-taken out), and the new slide starts from where the row visibly is -- see `layoutYs`.
--}
-dragCheck : Model -> ( Model, Cmd Msg )
-dragCheck model =
-    case model.drag of
-        Just drag ->
-            if drag.active && model.groupMeasurementPhase == NotMeasuringGroup then
-                ( { model | groupMeasurementPhase = AwaitingDragRects drag.key drag.pageY }
-                , UI.Flip.measureElementsCmd measureOwner starEntryDomId model.starOrder
-                )
-
-            else
-                ( model, Cmd.none )
-
-        Nothing ->
-            ( model, Cmd.none )
-
-
-{-| Each measured row's transform-free y (`layoutY` -- see `index.html`'s `measureElements`), so a new
-slide can start while an earlier one is still running: measured `y`s include the in-flight translate.
--}
-layoutYs : Decode.Value -> Dict String Float
-layoutYs results =
-    Decode.map2 Tuple.pair (Decode.field "key" Decode.string) (Decode.field "layoutY" Decode.float)
-        |> Decode.list
-        |> Decode.map Dict.fromList
-        |> (\decoder -> Decode.decodeValue decoder results)
-        |> Result.withDefault Dict.empty
-
-
-{-| `key` moved to wherever `pageY` falls among the other rows' vertical midlines.
--}
-dragTargetOrder : String -> Float -> Dict String UI.Flip.Rect -> Dict String Float -> List String -> List String
-dragTargetOrder key pageY rects layouts order =
-    let
-        others : List String
-        others =
-            List.filter ((/=) key) order
-
-        passed : Int
-        passed =
-            others
-                |> List.filter
-                    (\other ->
-                        case Dict.get other rects of
-                            Just rect ->
-                                Dict.get other layouts |> Maybe.withDefault rect.y |> (\y -> y + rect.height / 2 < pageY)
-
-                            Nothing ->
-                                False
-                    )
-                |> List.length
-    in
-    List.take passed others ++ key :: List.drop passed others
 
 
 {-| Inserts a fresh `UI.Flip.enter` into `starAnimations` for any starred
@@ -1524,8 +1383,17 @@ applyGroupMeasurementFailure model =
         AwaitingNewGroupRects _ ->
             ( { model | groupMeasurementPhase = NotMeasuringGroup }, Cmd.none )
 
-        AwaitingDragRects _ _ ->
-            ( { model | groupMeasurementPhase = NotMeasuringGroup }, Cmd.none )
+
+{-| The Browser tab's list as `UI.Drag` sees it: one free-for-all column of every starred post.
+-}
+dragConfig : Model -> UI.Drag.Config
+dragConfig model =
+    { axis = UI.Flip.Vertical
+    , owner = "starred-panel"
+    , domId = starEntryDomId
+    , keys = model.starOrder
+    , groupOf = \_ -> ""
+    }
 
 
 persistCmd : List String -> Cmd Msg
@@ -2390,7 +2258,7 @@ view time basePath browserName accountsPanelModel currentPostKey currentOccasion
                         )
                     ]
                )
-            ++ dragOverlay model
+            ++ UI.Drag.overlay DragMsg UI.Flip.Vertical model.drag
         )
 
 
@@ -2566,8 +2434,8 @@ starredPostRow time basePath accountsPanelModel currentPostKey currentOccasionId
         (id (starEntryDomId key)
             :: classes
                 ("starred-post-row"
-                    :: (if (model.drag |> Maybe.map (\d -> d.active && d.key == key)) == Just True then
-                            [ "starred-post-row-dragging" ]
+                    :: (if UI.Drag.isDragging model.drag key then
+                            [ "reorder-dragging" ]
 
                         else
                             []
@@ -2585,72 +2453,22 @@ starredPostRow time basePath accountsPanelModel currentPostKey currentOccasionId
         -- left slot holds the sort arrows on the Browser tab and (via CSS, `-grouped`) the section's
         -- colored bar on the Server tab, leaving the card's own x position unchanged -- it just
         -- slides up/down.
-        [ div (dragHandleAttrs model tab key)
-            [ UI.Flip.reorderButtons
-                { moveUp = MoveStarUpClicked key
-                , moveDown = MoveStarDownClicked key
-                , canMoveUp = index > 0
-                , canMoveDown = index < count - 1
-                }
-            ]
-        , starredPostView time basePath accountsPanelModel currentPostKey currentOccasionId model mediaRendererModel key
-        ]
+        [ UI.Flip.reorderButtons
+            { moveUp = UI.Drag.onClick model.drag (MoveStarUpClicked key)
+            , moveDown = UI.Drag.onClick model.drag (MoveStarDownClicked key)
+            , canMoveUp = index > 0
+            , canMoveDown = index < count - 1
 
-
-{-| Pointer handlers making a row's ▲/▼ area draggable (Browser tab only -- the Server tab hides it).
-Pointerdown starts the drag; the move/up/cancel handlers are only attached while this row is the one
-being dragged. A mouse drag quickly leaves this small area, so `dragOverlay` takes over receiving its
-events; a touch's events keep targeting the element the touch began on, which is why these exist too.
--}
-dragHandleAttrs : Model -> StarredTab -> String -> List (Html.Attribute Msg)
-dragHandleAttrs model tab key =
-    if tab /= BrowserTab then
-        [ class "starred-drag-handle" ]
-
-    else
-        class "starred-drag-handle"
-            :: on "pointerdown"
-                (Decode.field "isPrimary" Decode.bool
-                    |> Decode.andThen
-                        (\primary ->
-                            if primary then
-                                Decode.map (DragStarted key) (Decode.field "pageY" Decode.float)
-
-                            else
-                                Decode.fail "not primary"
-                        )
-                )
-            :: (if (model.drag |> Maybe.map .key) == Just key then
-                    dragPointerAttrs
+            -- The Server tab hides these arrows (the section's colored bar takes their slot).
+            , dragAttrs =
+                if tab == BrowserTab then
+                    UI.Drag.handleAttrs DragMsg UI.Flip.Vertical key model.drag
 
                 else
                     []
-               )
-
-
-dragPointerAttrs : List (Html.Attribute Msg)
-dragPointerAttrs =
-    [ on "pointermove" (Decode.map DragMoved (Decode.field "pageY" Decode.float))
-    , on "pointerup" (Decode.succeed DragEnded)
-    , on "pointercancel" (Decode.succeed DragEnded)
-    ]
-
-
-{-| Full-screen transparent catcher shown while a drag is active, so a mouse drag keeps getting
-pointer events wherever it goes -- see `dragHandleAttrs`.
--}
-dragOverlay : Model -> List (Html Msg)
-dragOverlay model =
-    case model.drag of
-        Just { active } ->
-            if active then
-                [ div (class "starred-drag-overlay" :: dragPointerAttrs) [] ]
-
-            else
-                []
-
-        Nothing ->
-            []
+            }
+        , starredPostView time basePath accountsPanelModel currentPostKey currentOccasionId model mediaRendererModel key
+        ]
 
 
 starredPostView : SharedTime.Model -> String -> AccountsPanel.Model -> Maybe String -> Maybe String -> Model -> MediaRenderer.Model -> String -> Html Msg

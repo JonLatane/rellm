@@ -678,8 +678,38 @@ audioRow shared showHost host maybeServer media =
         credits : String
         credits =
             creditsLine Audio (Maybe.withDefault defaultMediaMetadata media.metadata)
+
+        -- `Just playing` for the track the persistent audio player has loaded (`playing` = actually
+        -- playing vs. paused), `Nothing` for every other row.
+        nowPlaying : Maybe Bool
+        nowPlaying =
+            let
+                player : AudioPlayerPanel.Model
+                player =
+                    shared.panels.audioPlayerPanel
+            in
+            if player.currentId == Just media.id && player.targetHost == host then
+                Just player.playing
+
+            else
+                Nothing
     in
-    div [ class "media-card audio-row" ]
+    div
+        [ classes
+            ("media-card"
+                :: "audio-row"
+                :: (case nowPlaying of
+                        Just True ->
+                            [ "is-now-playing", "is-playing" ]
+
+                        Just False ->
+                            [ "is-now-playing" ]
+
+                        Nothing ->
+                            []
+                   )
+            )
+        ]
         [ button [ class "media-card-thumb", onClick (MediaClicked host media.id), attribute "aria-label" ("Play " ++ mediaTitle media) ]
             [ case thumbnailUrl Audio maybeServer media of
                 Just url ->
@@ -687,7 +717,24 @@ audioRow shared showHost host maybeServer media =
 
                 Nothing ->
                     span [ class "media-card-thumb-placeholder" ] [ text "🎵" ]
-            , span [ class "media-card-play" ] [ text "▶" ]
+            , case nowPlaying of
+                -- A live equalizer over the cover (bars bounce while playing, rest flat when paused).
+                Just playing ->
+                    span
+                        [ class "media-card-now-playing"
+                        , attribute "role" "img"
+                        , attribute "aria-label"
+                            (if playing then
+                                "Now playing"
+
+                             else
+                                "Paused"
+                            )
+                        ]
+                        [ span [] [], span [] [], span [] [], span [] [] ]
+
+                Nothing ->
+                    span [ class "media-card-play" ] [ text "▶" ]
             ]
         , div [ class "media-card-meta" ]
             [ button [ class "media-card-title", onClick (MediaClicked host media.id) ] [ text (mediaTitle media) ]

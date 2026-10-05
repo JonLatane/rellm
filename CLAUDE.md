@@ -13,7 +13,7 @@ Rellm (formerly Jonline; the checkout directory and some old docs/memory still s
 - `frontends/flutter/` — Flutter app.
 - `deploys/` — Kubernetes/Docker/release scripts (own Makefile); `docs/` — protocol docs generated from protos; `.github/workflows/` — CI/CD.
 
-Repo-local skills in `.claude/skills/` (run-backend, run-elm, run-tamagui, rebuild-protos, elm-call-rpc, elm-add-panel, add-background-job) cover the detailed procedures below — use them.
+Repo-local skills in `.claude/skills/` (run-backend, run-elm, run-tamagui, rebuild-protos, elm-call-rpc, elm-add-panel, elm-add-drag-reorder, add-background-job) cover the detailed procedures below — use them.
 
 ## Commands
 
@@ -48,7 +48,7 @@ Root `Makefile` delegates to per-project Makefiles (`make run_backend|run_elm|ru
 
 - elm-spa conventions: `src/Pages/**` are routes (file path = URL), `Shared.elm` holds app-wide model; `gen/` code is generated.
 - `Effect.elm` wraps `Cmd` and adds `fromShared`, letting pages send messages to `Shared` (which owns global panels). App-wide overlay panels live in `src/Shared/*Panel.elm` and are driven from `Shared.Model` (see `elm-add-panel` skill). With multiple server instances, `Effect.fromShared` broadcasts can fan out per instance — dedup them or toggles cancel out.
-- `src/Components/` are reusable views/data components; `src/UI/` is the shared widget kit (incl. `UI.Flip` for FLIP animations — see the reorder-cancels-CSS-transition note on its `remove`).
+- `src/Components/` are reusable views/data components; `src/UI/` is the shared widget kit (incl. `UI.Flip` for FLIP animations — see the reorder-cancels-CSS-transition note on its `remove` — and `UI.Drag` for drag-to-reorder on top of it; see the `elm-add-drag-reorder` skill).
 - Backend calls go through generated `src/Proto/**` gRPC-Web bindings (see `elm-call-rpc` skill). The client talks to multiple Rellm servers (`Shared/AccountsPanel`, `Shared/Federation`); remote prod servers may lack newly added RPCs, so test writes against a local server.
 - Use the run-elm driver (`.claude/skills/run-elm/driver.mjs`, Playwright) to verify UI/animation behavior in a live browser rather than relying on code reading.
 

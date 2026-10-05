@@ -84,6 +84,16 @@
   max-height: 100%;
 }
 
+/* `.flip-moving`'s `display: flex` (above) lets a flex item shrink to its content's width, where the
+   grid it replaces stretched it to fill the track -- so in a vertical list a row with short content
+   (e.g. a Bluesky account) visibly narrowed for the length of its slide. Growing to fill the line
+   (with `min-width: 0` keeping the clamp described above) makes it the same width as when at rest.
+   Vertical lists only: a horizontal strip's chips are meant to keep their natural widths. */
+.flip-animated-column .flip-animated-item.flip-moving>* {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 
 .flip-animated-column .flip-animated-item:last-child>* {
   padding-bottom: 0;

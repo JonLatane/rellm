@@ -1,0 +1,23 @@
+/* Drag-to-reorder (see `UI.Drag`): the reorder arrows double as drag handles. `touch-action: none`
+   keeps a touch drag from scrolling the page/panel instead; `user-select: none` keeps a mouse drag
+   from selecting text. */
+.drag-handle {
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Mounted only while a drag is live, so a mouse drag keeps getting pointer events anywhere. */
+.drag-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  cursor: grabbing;
+  touch-action: none;
+}
+
+/* The item being carried. */
+.reorder-dragging {
+  opacity: 0.85;
+}

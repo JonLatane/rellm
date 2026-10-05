@@ -33,6 +33,7 @@ import Shared.MyMediaPanel as MyMediaPanel
 import Task
 import UI.Classes exposing (classes, hostnameToCSSClass)
 import UI.CustomNav as CustomNav
+import UI.Drag
 import UI.Flip
 
 
@@ -74,6 +75,7 @@ type Msg
     | CustomTabMoveSettled String
     | AnimateCustomTabFlip Animation.Msg
     | AnimateCustomTabMove Animation.Msg
+    | CustomTabDragMsg UI.Drag.Msg
 
 
 {-| Live only while `ServerConfiguration.customTabs`' `tabs` list (see `UI.CustomNav.effectiveTabs`)
@@ -112,6 +114,9 @@ type alias CustomTabsEdit =
     , status : AccountsPanel.FormStatus
     , itemAnimations : Dict String (UI.Flip.State Msg)
     , moveAnimations : Dict String (UI.Flip.MoveState Msg)
+
+    -- Drag-to-reorder by the chips' ◀/▶ arrows -- see `UI.Drag`.
+    , drag : UI.Drag.State
     }
 
 
@@ -144,6 +149,7 @@ subscriptions model =
             Sub.batch
                 [ UI.Flip.subscription AnimateCustomTabFlip (Dict.values edit.itemAnimations)
                 , UI.Flip.moveSubscription AnimateCustomTabMove (Dict.values edit.moveAnimations)
+                , Sub.map CustomTabDragMsg (UI.Drag.subscriptions edit.drag)
                 ]
 
         Nothing ->
@@ -180,6 +186,7 @@ update shared targetHost maybeServer msg model =
                                 , status = AccountsPanel.Idle
                                 , itemAnimations = entries |> List.map (\entry -> ( entry.entryId, UI.Flip.restingState )) |> Dict.fromList
                                 , moveAnimations = Dict.empty
+                                , drag = UI.Drag.init
                                 }
                       }
                     , Effect.none
@@ -405,6 +412,29 @@ update shared targetHost maybeServer msg model =
               }
             , Effect.none
             )
+
+        CustomTabDragMsg dragMsg ->
+            case model.customTabsEdit of
+                Just edit ->
+                    let
+                        ( newDrag, dragCmd, outputs ) =
+                            UI.Drag.update (dragConfig edit) dragMsg edit.drag
+
+                        applyOutput : UI.Drag.Output -> CustomTabsEdit -> CustomTabsEdit
+                        applyOutput output current =
+                            case output of
+                                UI.Drag.Reordered newKeys ->
+                                    { current | pending = UI.Drag.reorderByKeys .entryId newKeys current.pending }
+
+                                UI.Drag.Slide slides ->
+                                    { current | moveAnimations = UI.Drag.applySlides CustomTabMoveSettled slides current.moveAnimations }
+                    in
+                    ( { model | customTabsEdit = Just (List.foldl applyOutput { edit | drag = newDrag } outputs) }
+                    , Effect.fromCmd (Cmd.map CustomTabDragMsg dragCmd)
+                    )
+
+                Nothing ->
+                    ( model, Effect.none )
 
         CustomTabMoveSettled entryId ->
             ( { model
@@ -711,6 +741,19 @@ parsePinnedPostIds text =
         |> List.filter (not << String.isEmpty)
 
 
+{-| `UI.Drag`'s view of the tab chips: one free-for-all horizontal strip (the Home chip in front of it
+isn't part of `pending`, so it's never measured or moved).
+-}
+dragConfig : CustomTabsEdit -> UI.Drag.Config
+dragConfig edit =
+    { axis = UI.Flip.Horizontal
+    , owner = "custom-tabs"
+    , domId = customTabChipDomId
+    , keys = List.map .entryId edit.pending
+    , groupOf = \_ -> ""
+    }
+
+
 {-| The DOM `id` a custom-tab chip is rendered with while `customTabsEdit` is active -- the
 `UI.Flip.Horizontal` counterpart `MoveCustomTabLeftClicked`/`MoveCustomTabRightClicked` measure.
 Mirrors `FederationTab.federatedServerChipDomId`.
@@ -846,6 +889,8 @@ customTabsEditorView server edit =
                         |> List.indexedMap
                             (\index entry -> ( entry.entryId, customTabEditChipFlip server edit (List.length edit.pending) index entry ))
                    )
+                -- A fixed-position child, so it's out of the strip's flow (see `UI.Drag.overlay`).
+                ++ (UI.Drag.overlay CustomTabDragMsg UI.Flip.Horizontal edit.drag |> List.map (Tuple.pair "drag-overlay"))
             )
         , div [ Html.Attributes.class "server-details-permissions-actions" ]
             [ button [ Html.Attributes.class "server-details-rename-button", onClick CustomTabAddClicked ] [ text "Add Tab" ] ]
@@ -907,15 +952,24 @@ customTabEditChip server edit count index entry =
         reorderPair : { backward : Html Msg, forward : Html Msg }
         reorderPair =
             UI.Flip.reorderButtonPair UI.Flip.Horizontal
-                { moveBackward = onClick (MoveCustomTabLeftClicked entry.entryId)
-                , moveForward = onClick (MoveCustomTabRightClicked entry.entryId)
+                { moveBackward = UI.Drag.onClick edit.drag (MoveCustomTabLeftClicked entry.entryId)
+                , moveForward = UI.Drag.onClick edit.drag (MoveCustomTabRightClicked entry.entryId)
                 , canMoveBackward = showBackward
                 , canMoveForward = showForward
+                , dragAttrs = UI.Drag.handleAttrs CustomTabDragMsg UI.Flip.Horizontal entry.entryId edit.drag
                 }
     in
     div
         (id (customTabChipDomId entry.entryId)
-            :: classes [ "server-chip", "custom-tab-chip", "custom-tab-chip-edit", hostnameToCSSClass server.frontendHost ]
+            :: classes
+                ([ "server-chip", "custom-tab-chip", "custom-tab-chip-edit", hostnameToCSSClass server.frontendHost ]
+                    ++ (if UI.Drag.isDragging edit.drag entry.entryId then
+                            [ "reorder-dragging" ]
+
+                        else
+                            []
+                       )
+                )
             :: moveAttrs
         )
         [ div [ classes [ "server-chip-top", "background-color-primary" ] ]

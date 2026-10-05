@@ -15,6 +15,7 @@ module Shared.AccountsPanel exposing
     , Tab(..)
     , accountRowDomId
     , activeAddAccountServerFormType
+    , canUsePushNotifications
     , combinedAccountItemKey
     , combinedAccountItems
     , combinedServerFeedItemKey
@@ -28,7 +29,6 @@ module Shared.AccountsPanel exposing
     , grpcErrorToString
     , hasAdminAccount
     , init
-    , canUsePushNotifications
     , isFocusedAccount
     , isKnownServer
     , isMainServer
@@ -54,6 +54,7 @@ working connection.
 
 import Animation
 import Browser.Dom as Dom
+import Components.Users.Username as Username
 import Dict exposing (Dict)
 import Grpc
 import Http
@@ -66,7 +67,6 @@ import Proto.Rellm.Rellm as Rellm
 import Proto.Rellm.Visibility exposing (Visibility(..))
 import Proto.Rellm.WebUserInterface exposing (WebUserInterface)
 import Request exposing (Request)
-import Components.Users.Username as Username
 import Set
 import Shared.AccountsPanel.AdminTab as AdminTab
 import Shared.AccountsPanel.BlueskyAccounts as BlueskyAccounts exposing (BlueskyAccount)
@@ -80,6 +80,7 @@ import Shared.Conversions as Conversions
 import Task exposing (Task)
 import Time
 import UI.Classes exposing (escapeCSSClass)
+import UI.Drag
 import UI.Flip
 import UI.ServerTheme
 
@@ -228,6 +229,11 @@ type alias Model =
     -- feed item key happening to collide as plain strings would otherwise cross-wire their
     -- animations.
     , serverMoveAnimations : Dict String (UI.Flip.MoveState Msg)
+
+    -- Drag-to-reorder by each list's reorder arrows (see `UI.Drag`): the account list (vertical) and
+    -- the server feed strip (horizontal) are independent lists, so each has its own state.
+    , accountDrag : UI.Drag.State
+    , serverDrag : UI.Drag.State
 
     -- Each combined account item's enter/leave `UI.Flip.State` (see `CombinedAccountItem`), keyed
     -- by `combinedAccountItemKey` -- `update`'s very last step (see `syncItemAnimations`) is always
@@ -464,6 +470,8 @@ type Msg
     | MoveAccountItemUpClicked String
     | MoveAccountItemDownClicked String
     | GotPreMoveAccountItemPositions String String (Result Dom.Error ( Dom.Element, Dom.Element ))
+    | AccountDragMsg UI.Drag.Msg
+    | ServerDragMsg UI.Drag.Msg
     | MoveServerFeedItemLeftClicked String
     | MoveServerFeedItemRightClicked String
     | GotPreMoveServerFeedItemPositions String String (Result Dom.Error ( Dom.Element, Dom.Element ))
@@ -786,6 +794,113 @@ updateFocusedAccountPhone updatedContactMethod model =
 serverFeedItemChipDomId : String -> String
 serverFeedItemChipDomId key =
     "server-chip-" ++ escapeCSSClass key
+
+
+{-| `UI.Drag`'s view of the combined account list: a vertical column where the `mainFrontendHost`
+server's accounts (always the leading group -- see `combinedAccountItems`) and everyone else's are
+separate groups, since an account can't be dragged across that boundary (the arrows hide there too).
+-}
+accountDragConfig : Model -> UI.Drag.Config
+accountDragConfig model =
+    let
+        mainKeys : List String
+        mainKeys =
+            model.accounts
+                |> List.filter (\a -> a.server == model.mainFrontendHost)
+                |> List.map (\a -> "account:" ++ rellmAccountId a)
+    in
+    { axis = UI.Flip.Vertical
+    , owner = "accounts-list"
+    , domId = accountRowDomId
+    , keys = combinedAccountItems model |> List.map combinedAccountItemKey
+    , groupOf =
+        \key ->
+            if List.member key mainKeys then
+                "main"
+
+            else
+                "other"
+    }
+
+
+{-| `UI.Drag`'s view of the combined server feed strip: a horizontal row where the pinned
+`mainFrontendHost` server is a group of one, so nothing is ever dragged past it.
+-}
+serverDragConfig : Model -> UI.Drag.Config
+serverDragConfig model =
+    { axis = UI.Flip.Horizontal
+    , owner = "servers-strip"
+    , domId = serverFeedItemChipDomId
+    , keys = combinedServerFeedItems model |> List.map combinedServerFeedItemKey
+    , groupOf =
+        \key ->
+            if key == "server:" ++ model.mainFrontendHost then
+                "pinned"
+
+            else
+                "movable"
+    }
+
+
+{-| Writes a dragged-into `newKeys` order back as `sortOrder`s: within each `groupOf` group, the group's
+existing `sortOrder` values (sorted) are handed out to its items in their new order -- so unlike a
+single adjacent swap (`swapSortOrders`), any number of items can move at once, and items of other
+groups, and the values they hold, are untouched.
+-}
+applyDraggedOrder : SortOrderSpace -> (String -> String) -> List String -> List String -> Model -> Model
+applyDraggedOrder space groupOf oldKeys newKeys model =
+    let
+        groups : List String
+        groups =
+            oldKeys |> List.map groupOf |> Set.fromList |> Set.toList
+
+        inGroup : String -> List String -> List String
+        inGroup group =
+            List.filter (\key -> groupOf key == group)
+
+        reorderGroup : String -> Model -> Model
+        reorderGroup group current =
+            let
+                oldGroup : List String
+                oldGroup =
+                    inGroup group oldKeys
+
+                newGroup : List String
+                newGroup =
+                    inGroup group newKeys
+            in
+            if oldGroup == newGroup then
+                current
+
+            else
+                let
+                    sortOrders : List Int
+                    sortOrders =
+                        oldGroup |> List.filterMap (\key -> space.itemSortOrder key model) |> List.sort
+                in
+                List.map2 Tuple.pair newGroup sortOrders
+                    |> List.foldl (\( key, sortOrder ) -> space.setItemSortOrder key sortOrder) current
+    in
+    List.foldl reorderGroup model groups
+
+
+persistIfReordered : List UI.Drag.Output -> Model -> Cmd Msg
+persistIfReordered outputs model =
+    if List.any isReordered outputs then
+        persistCombinedItemOrder model
+
+    else
+        Cmd.none
+
+
+isReordered : UI.Drag.Output -> Bool
+isReordered output =
+    case output of
+        UI.Drag.Reordered _ ->
+            True
+
+        UI.Drag.Slide _ ->
+            False
 
 
 {-| The bookkeeping any reorderable combined-item list built from several otherwise-separate
@@ -1412,6 +1527,8 @@ init req flags blueskyAccountsFlags mastodonAccountsAndServersFlags =
       , mainFrontendHost = browsingHost
       , moveAnimations = Dict.empty
       , serverMoveAnimations = Dict.empty
+      , accountDrag = UI.Drag.init
+      , serverDrag = UI.Drag.init
 
       -- Seeded with a *resting* (not `enter`) state for everything already
       -- persisted, so `syncItemAnimations` -- which would otherwise treat any
@@ -1466,6 +1583,8 @@ subscriptions model =
     Sub.batch
         [ UI.Flip.moveSubscription AnimateMove
             (Dict.values model.moveAnimations ++ Dict.values model.serverMoveAnimations)
+        , Sub.map AccountDragMsg (UI.Drag.subscriptions model.accountDrag)
+        , Sub.map ServerDragMsg (UI.Drag.subscriptions model.serverDrag)
         , UI.Flip.subscription AnimateItemFlip
             (Dict.values model.accountAnimations ++ Dict.values model.serverAnimations)
         , Ports.accountsAndServersUpdated AccountsAndServersBroadcastReceived
@@ -2453,6 +2572,58 @@ sendUpdate req msg model =
                     UI.Flip.applyReorder UI.Flip.Horizontal ServerFeedItemMoveSettled id neighborId chipEl neighborEl newModel.serverMoveAnimations
               }
             , persistCombinedItemOrder newModel
+            )
+
+        AccountDragMsg dragMsg ->
+            let
+                config : UI.Drag.Config
+                config =
+                    accountDragConfig model
+
+                ( newDrag, dragCmd, outputs ) =
+                    UI.Drag.update config dragMsg model.accountDrag
+
+                applyOutput : UI.Drag.Output -> Model -> Model
+                applyOutput output current =
+                    case output of
+                        UI.Drag.Reordered newKeys ->
+                            applyDraggedOrder accountItemSortOrderSpace config.groupOf config.keys newKeys current
+
+                        UI.Drag.Slide slides ->
+                            { current | moveAnimations = UI.Drag.applySlides AccountItemMoveSettled slides current.moveAnimations }
+
+                newModel : Model
+                newModel =
+                    List.foldl applyOutput { model | accountDrag = newDrag } outputs
+            in
+            ( newModel
+            , Cmd.batch [ Cmd.map AccountDragMsg dragCmd, persistIfReordered outputs newModel ]
+            )
+
+        ServerDragMsg dragMsg ->
+            let
+                config : UI.Drag.Config
+                config =
+                    serverDragConfig model
+
+                ( newDrag, dragCmd, outputs ) =
+                    UI.Drag.update config dragMsg model.serverDrag
+
+                applyOutput : UI.Drag.Output -> Model -> Model
+                applyOutput output current =
+                    case output of
+                        UI.Drag.Reordered newKeys ->
+                            applyDraggedOrder serverFeedItemSortOrderSpace config.groupOf config.keys newKeys current
+
+                        UI.Drag.Slide slides ->
+                            { current | serverMoveAnimations = UI.Drag.applySlides ServerFeedItemMoveSettled slides current.serverMoveAnimations }
+
+                newModel : Model
+                newModel =
+                    List.foldl applyOutput { model | serverDrag = newDrag } outputs
+            in
+            ( newModel
+            , Cmd.batch [ Cmd.map ServerDragMsg dragCmd, persistIfReordered outputs newModel ]
             )
 
         AnimateMove animMsg ->
