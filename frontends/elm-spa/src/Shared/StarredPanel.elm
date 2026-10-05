@@ -135,6 +135,31 @@ type alias Model =
 
     -- Drag-to-reorder by the ▲/▼ arrows (Browser tab only) -- see `UI.Drag`.
     , drag : UI.Drag.State
+
+    -- Set for the length of a tab switch's simultaneous leave/enter -- see `TabTransition`.
+    , transition : Maybe TabTransition
+    }
+
+
+{-| A tab switch while it's mid-flight: the outgoing tab's own items collapse in place at the same
+moment the incoming tab's items expand, rather than one after the other. `activeTab` already names
+the _new_ tab, but the one keyed list keeps rendering in `order` (below) until things settle, because
+any DOM move cancels a CSS transition on the moved node (see `UI.Flip.remove`). So the incoming items
+(hidden, so no visible change) are first pre-placed where they'll end up -- a DOM reorder that may
+well shuffle nodes (Elm's keyed diff is free to move the old ones rather than the new ones) -- and
+only a frame later, once that's done, do the outgoing items start collapsing and the incoming ones
+expanding (`enterStarted`), with no DOM move left to cancel anything. Only afterwards does the final
+reorder run -- the usual measure/reorder/measure slide for the posts both tabs share.
+
+`from` is the old tab (outgoing items keep its row styling while collapsing); `leaving`/`entering` are
+`itemKey`s; `order` is every key that stays mounted-and-visible during the transition, in render order.
+-}
+type alias TabTransition =
+    { from : StarredTab
+    , leaving : Set String
+    , entering : List String
+    , order : List String
+    , enterStarted : Bool
     }
 
 
@@ -216,6 +241,10 @@ type Msg
       -- `UI.Flip.measureElementsCmd` -- see that function's own doc for why.
     | ReadyToMeasureNewGroupPositions
     | TabLeaveFinished ViewChange
+      -- One frame after a tab switch starts (the incoming items having been moved into place,
+      -- collapsed): the outgoing items collapse and the incoming ones expand, together -- see
+      -- `TabTransition`.
+    | EnterTabItems ViewChange
     | GotStarredPost String (Result Grpc.Error ( Maybe AccountsPanel.Msg, GetPostsResponse ))
       -- `kickOffEventFetches`'s batched `GetEvents` reply for one server's
       -- worth of `OCCASION`-context starred posts -- `host`/the
@@ -347,6 +376,7 @@ init flags =
     , serverRefetchCounter = 0
     , collapseAnimations = Dict.empty
     , drag = UI.Drag.init
+    , transition = Nothing
     }
 
 
@@ -729,6 +759,28 @@ sendUpdate accountsPanelModel msg model =
             else
                 beginViewChange (SwitchTab tab) model
 
+        EnterTabItems change ->
+            case ( model.groupMeasurementPhase == AwaitingTabLeave change, model.transition ) of
+                ( True, Just transition ) ->
+                    let
+                        collapsed : String -> Bool
+                        collapsed key =
+                            Dict.get key model.collapseAnimations |> Maybe.map .removing |> Maybe.withDefault False
+                    in
+                    ( { model
+                        | transition = Just { transition | enterStarted = True }
+                        , starAnimations =
+                            transition.entering
+                                |> List.filter (not << collapsed)
+                                |> List.foldl (\key acc -> Dict.insert key UI.Flip.enter acc) (collapseKeys (Set.toList transition.leaving) model.starAnimations)
+                      }
+                    , Cmd.none
+                    , Nothing
+                    )
+
+                _ ->
+                    ( model, Cmd.none, Nothing )
+
         TabLeaveFinished change ->
             if model.groupMeasurementPhase == AwaitingTabLeave change then
                 ( { model | groupMeasurementPhase = AwaitingOldViewRects change }
@@ -937,7 +989,7 @@ sendUpdate accountsPanelModel msg model =
                                     let
                                         changedModel : Model
                                         changedModel =
-                                            applyViewChange change model
+                                            applyViewChange change { model | transition = Nothing }
                                                 |> enterNewlyShownItems model
                                     in
                                     ( { changedModel | groupMeasurementPhase = AwaitingNewGroupRects rects }
@@ -1375,10 +1427,10 @@ applyGroupMeasurementFailure model =
                 changedModel =
                     applyViewChange change model
             in
-            ( { changedModel | groupMeasurementPhase = NotMeasuringGroup }, Cmd.none )
+            ( { changedModel | groupMeasurementPhase = NotMeasuringGroup, transition = Nothing }, Cmd.none )
 
         AwaitingTabLeave change ->
-            ( { model | groupMeasurementPhase = NotMeasuringGroup } |> applyViewChange change, Cmd.none )
+            ( { model | groupMeasurementPhase = NotMeasuringGroup, transition = Nothing } |> applyViewChange change, Cmd.none )
 
         AwaitingNewGroupRects _ ->
             ( { model | groupMeasurementPhase = NotMeasuringGroup }, Cmd.none )
@@ -2011,13 +2063,29 @@ everything else (rendered instantly hidden -- see `view`). Each `Bool` is "shown
 orderedItems : Model -> List ( StarredItem, Bool )
 orderedItems model =
     let
-        shown : List StarredItem
-        shown =
-            tabItems (effectiveTab model) model
+        shownWithFlags : List ( StarredItem, Bool )
+        shownWithFlags =
+            case model.transition of
+                Just transition ->
+                    let
+                        byKey : Dict String StarredItem
+                        byKey =
+                            allItems model |> List.map (\item -> ( itemKey item, item )) |> Dict.fromList
+                    in
+                    -- Incoming items stay hidden until `EnterTabItems` -- see `TabTransition`.
+                    transition.order
+                        |> List.filterMap
+                            (\key ->
+                                Dict.get key byKey
+                                    |> Maybe.map (\item -> ( item, transition.enterStarted || not (List.member key transition.entering) ))
+                            )
+
+                Nothing ->
+                    tabItems (effectiveTab model) model |> List.map (\item -> ( item, True ))
 
         shownKeys : Set String
         shownKeys =
-            shown |> List.map itemKey |> Set.fromList
+            shownWithFlags |> List.map (Tuple.first >> itemKey) |> Set.fromList
 
         rest : List StarredItem
         rest =
@@ -2035,7 +2103,7 @@ orderedItems model =
                 |> Tuple.second
                 |> List.reverse
     in
-    List.map (\item -> ( item, True )) shown ++ List.map (\item -> ( item, False )) rest
+    shownWithFlags ++ List.map (\item -> ( item, False )) rest
 
 
 applyViewChange : ViewChange -> Model -> Model
@@ -2066,29 +2134,98 @@ beginViewChange change model =
         )
 
     else
-        -- Fade the outgoing items away where they are first, then reorder.
-        ( { model
-            | groupMeasurementPhase = AwaitingTabLeave change
-            , starAnimations =
+        -- The outgoing items collapse where they are while the incoming ones expand -- both at once;
+        -- the reorder slide for the posts both tabs share waits until they're done. See `TabTransition`.
+        let
+            switched : Model
+            switched =
+                applyViewChange change model
+
+            keysOf : Model -> List String
+            keysOf m =
+                tabItems (effectiveTab m) m |> List.map itemKey
+
+            enteringKeys : List String
+            enteringKeys =
+                tabChangeKeys switched model
+
+            -- Everything outgoing stays put, in its old order; each incoming item goes right after
+            -- whichever item precedes it in the new tab (or at the very front), i.e. close to where
+            -- it'll finally sit.
+            order : List String
+            order =
                 List.foldl
-                    (\key acc ->
-                        case Dict.get key acc of
-                            Just state ->
-                                if state.removing then
-                                    acc
+                    (\key ( acc, previous ) ->
+                        if List.member key acc then
+                            ( acc, Just key )
 
-                                else
-                                    Dict.insert key (UI.Flip.remove NoOp state) acc
-
-                            Nothing ->
-                                acc
+                        else
+                            ( insertAfter previous key acc, Just key )
                     )
-                    model.starAnimations
-                    leavingKeys
+                    ( keysOf model, Nothing )
+                    (keysOf switched)
+                    |> Tuple.first
+        in
+        ( { switched
+            | groupMeasurementPhase = AwaitingTabLeave change
+            , transition =
+                Just
+                    { from = effectiveTab model
+                    , leaving = Set.fromList leavingKeys
+                    , entering = enteringKeys
+                    , order = order
+                    , enterStarted = False
+                    }
           }
-        , Process.sleep (UI.Flip.flipDurationMs + 20) |> Task.perform (\_ -> TabLeaveFinished change)
+        , Cmd.batch
+            [ Task.attempt (\_ -> EnterTabItems change) Dom.getViewport
+            , Process.sleep (UI.Flip.flipDurationMs + 60) |> Task.perform (\_ -> TabLeaveFinished change)
+            ]
         , Nothing
         )
+
+
+{-| Starts the collapse-in-place of every one of `keys` (`UI.Flip.remove`; an already-removing one is
+left alone).
+-}
+collapseKeys : List String -> Dict String (UI.Flip.State Msg) -> Dict String (UI.Flip.State Msg)
+collapseKeys keys animations =
+    List.foldl
+        (\key acc ->
+            case Dict.get key acc of
+                Just state ->
+                    if state.removing then
+                        acc
+
+                    else
+                        Dict.insert key (UI.Flip.remove NoOp state) acc
+
+                Nothing ->
+                    acc
+        )
+        animations
+        keys
+
+
+{-| `key` inserted right after `previous` in `keys` (at the front if `previous` is `Nothing` or absent).
+-}
+insertAfter : Maybe String -> String -> List String -> List String
+insertAfter previous key keys =
+    case previous |> Maybe.andThen (\p -> indexOf p keys) of
+        Just i ->
+            List.take (i + 1) keys ++ key :: List.drop (i + 1) keys
+
+        Nothing ->
+            key :: keys
+
+
+indexOf : String -> List String -> Maybe Int
+indexOf target keys =
+    keys
+        |> List.indexedMap Tuple.pair
+        |> List.filter (\( _, key ) -> key == target)
+        |> List.head
+        |> Maybe.map Tuple.first
 
 
 {-| Keys of the items `before` shows that `after` doesn't.
@@ -2253,7 +2390,7 @@ view time basePath browserName accountsPanelModel currentPostKey currentOccasion
                     [ Html.Keyed.node "div"
                         [ classes [ "starred-panel-list", "flip-animated-column" ] ]
                         (List.map
-                            (\( item, shown ) -> renderStarredItem time basePath accountsPanelModel currentPostKey currentOccasionId model mediaRendererModel tab shown item)
+                            (\( item, shown ) -> renderStarredItem time basePath accountsPanelModel currentPostKey currentOccasionId model mediaRendererModel (rowTab model tab item) shown item)
                             (orderedItems model)
                         )
                     ]
@@ -2277,6 +2414,23 @@ starredTabButton activeTab tab label =
         , onClick (SetStarredTab tab)
         ]
         [ text label ]
+
+
+{-| The tab whose row styling `item` renders with: an item still collapsing out during a `TabTransition`
+keeps its old tab's look until it's gone, everything else uses the (already switched) showing tab.
+-}
+rowTab : Model -> StarredTab -> StarredItem -> StarredTab
+rowTab model tab item =
+    case model.transition of
+        Just transition ->
+            if Set.member (itemKey item) transition.leaving then
+                transition.from
+
+            else
+                tab
+
+        Nothing ->
+            tab
 
 
 {-| An instantly-collapsed, invisible `UI.Flip.State` -- how an item the showing tab doesn't show
