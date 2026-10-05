@@ -743,13 +743,15 @@ audioRow shared showHost host maybeServer media =
 
               else
                 div [ class "media-card-credits" ] [ text credits ]
-            , div [ class "media-card-sub" ]
+            , -- The server badge sits beside the author (wrapping with the line on narrow screens) rather
+              -- than as a column of its own at the row's right edge.
+              div [ class "media-card-sub" ]
                 [ authorLinkWithAvatar shared host maybeServer media
+                , hostBadge showHost host
                 , span [ class "media-card-date" ] [ text (createdLabel shared media) ]
                 ]
             ]
         , licensedBadge media
-        , hostBadge showHost host
         ]
 
 

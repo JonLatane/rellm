@@ -417,3 +417,10 @@
     height: 60%;
   }
 }
+
+/* On the Audio page the server badge is a quiet, regular-weight tag next to the author's name (see
+   `audioRow`), not a bold chip in its own column. */
+.audio-row .media-card-host {
+  font-weight: 400;
+  align-self: center;
+}
