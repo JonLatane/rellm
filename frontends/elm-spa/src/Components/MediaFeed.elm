@@ -104,9 +104,12 @@ type Msg
     | MediaClicked String String
 
 
-init : Shared.Model -> Kind -> ( Model, Effect Msg )
-init shared kind =
-    retryFetch shared { kind = kind, searchText = "", searchVersion = 0, feeds = Dict.empty }
+{-| `searchText` seeds the search box (and the first fetch) -- e.g. from a `?search_text=` URL parameter; blank
+for none.
+-}
+init : Shared.Model -> Kind -> String -> ( Model, Effect Msg )
+init shared kind searchText =
+    retryFetch shared { kind = kind, searchText = searchText, searchVersion = 0, feeds = Dict.empty }
 
 
 emptyHostFeed : HostFeed

@@ -143,12 +143,33 @@ pub struct MediaMetadata {
     pub start_key: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub end_key: Option<String>,
+    /// Internal (never sent to clients): set by `UpdateMedia` when only the *tag-relevant* fields (name,
+    /// description, credits) changed on an already-converted audio/video item and the item was marked unprocessed
+    /// for it -- `convert_media` then just rewrites the tags of the existing converted copies (a fast remux, see
+    /// `retag_media`) instead of re-encoding everything.
+    #[serde(skip_serializing_if = "std::ops::Not::not", default)]
+    pub retag_only: bool,
 }
 
 /// Default length of the `UNLICENSED_PREVIEW_MEDIUM` crop when `unlicensed_preview_end_ms` is unset.
 pub const DEFAULT_UNLICENSED_PREVIEW_LENGTH_MS: u64 = 30_000;
 
 impl MediaMetadata {
+    /// Whether any credit that ends up in a converted copy's file tags (artist, album, composer, publisher and
+    /// the film credits) differs between `self` and `other` -- see `logic::media::media_conversion::output_tags`.
+    pub fn tag_credits_differ(&self, other: &MediaMetadata) -> bool {
+        self.artist != other.artist
+            || self.album != other.album
+            || self.composer != other.composer
+            || self.publisher != other.publisher
+            || self.director != other.director
+            || self.producer != other.producer
+            || self.starring != other.starring
+            || self.cast != other.cast
+            || self.crew != other.crew
+            || self.narrator != other.narrator
+    }
+
     /// Fills every *unset* credit (and the musical `start_bpm`/`end_bpm`/`min_bpm`/`max_bpm`/`start_key`/`end_key`) from `tags` -- a
     /// `MediaMetadata` built from `ffprobe` container tags (see `credits_from_tags`) or from audio
     /// analysis -- without touching any already-set one. Returns whether anything changed.

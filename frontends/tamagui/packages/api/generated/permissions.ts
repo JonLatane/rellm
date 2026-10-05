@@ -239,6 +239,23 @@ export enum Permission {
    * (e.g. via the `set_permission` binary).
    */
   EDIT_SERVER_MEDIA_ALLOCATION = 10003,
+  /**
+   * VIEW_SERVER_LOGS - Allow the user to read the server's recent logs via
+   * [`GetServerLogs`](#grpc-api-GetServerLogs).
+   *
+   * Server logs can contain other users' usernames, IP addresses and request details, and error
+   * output (panics, failed connections) that can echo server configuration. So - same reasoning as
+   * `EDIT_CLUSTER_SETTINGS` and `EDIT_SERVER_MEDIA_ALLOCATION` above - this is kept separate from
+   * `ADMIN` and `ADMIN` does **not** imply it: `GetServerLogs` requires this permission *exactly*.
+   * It is also deliberately *not* grantable via [`UpdateUser`](#grpc-api-UpdateUser) - an
+   * `UpdateUser` request can neither grant nor revoke it, it is always carried forward from what
+   * the user already has - and is only settable directly in the database (e.g. via the
+   * `set_permission` binary), so granting it is always a deliberate operator action.
+   *
+   * Clients should recognize and display it (e.g. on a user's profile) but must **not** offer it in
+   * "grant permission" pickers.
+   */
+  VIEW_SERVER_LOGS = 10004,
   UNRECOGNIZED = -1,
 }
 
@@ -412,6 +429,9 @@ export function permissionFromJSON(object: any): Permission {
     case 10003:
     case "EDIT_SERVER_MEDIA_ALLOCATION":
       return Permission.EDIT_SERVER_MEDIA_ALLOCATION;
+    case 10004:
+    case "VIEW_SERVER_LOGS":
+      return Permission.VIEW_SERVER_LOGS;
     case -1:
     case "UNRECOGNIZED":
     default:
@@ -533,6 +553,8 @@ export function permissionToJSON(object: Permission): string {
       return "EDIT_CLUSTER_SETTINGS";
     case Permission.EDIT_SERVER_MEDIA_ALLOCATION:
       return "EDIT_SERVER_MEDIA_ALLOCATION";
+    case Permission.VIEW_SERVER_LOGS:
+      return "VIEW_SERVER_LOGS";
     case Permission.UNRECOGNIZED:
     default:
       return "UNRECOGNIZED";

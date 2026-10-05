@@ -85,9 +85,56 @@ pub fn init_service_logging() {
         .init();
 }
 
+/// Set (by `background_jobs.sh` / `preview_generator_job.sh`) to a job's name to make
+/// [`init_bin_logging`] format that bin's logs like the server's, tagged with the job name.
+pub const JOB_NAME_ENV_VAR: &str = "RELLM_LOG_JOB_NAME";
+
 /// Designed to be called from the main function of a bin command.
-/// Writes to STDOUT without timestamps.
+///
+/// By default writes to STDOUT with *no* timestamp or level, because several bins are CLI tools
+/// whose result is printed through `log::info!` (`to_proto_id`, `to_db_id`, ...), and that output
+/// has to stay bare enough to copy or parse.
+///
+/// When [`JOB_NAME_ENV_VAR`] is set (the periodic job wrappers do this), logs instead look like
+/// the server's -- `[2026-10-05T12:00:00Z INFO  delete_expired_tokens] message` -- with the level
+/// in color. See [`init_job_logging`].
 pub fn init_bin_logging() {
+    match env::var(JOB_NAME_ENV_VAR) {
+        Ok(job_name) if !job_name.is_empty() => init_job_logging(job_name),
+        _ => init_plain_bin_logging(),
+    }
+}
+
+/// `[<UTC timestamp> <LEVEL, padded to 5> <job_name>] <message>`, with the level colored the way
+/// `env_logger`'s own default format colors it. Color is forced on (job output is piped, so
+/// `env_logger`'s terminal detection would always turn it off) unless `NO_COLOR` is set.
+fn init_job_logging(job_name: String) {
+    use std::io::Write;
+
+    let write_style = match env::var_os("NO_COLOR") {
+        Some(no_color) if !no_color.is_empty() => env_logger::WriteStyle::Never,
+        _ => env_logger::WriteStyle::Always,
+    };
+    env_logger::builder()
+        .target(env_logger::Target::Stdout)
+        .filter_level(log::LevelFilter::Info)
+        .write_style(write_style)
+        .format(move |buf, record| {
+            let timestamp = buf.timestamp_seconds();
+            let level_style = buf.default_level_style(record.level());
+            writeln!(
+                buf,
+                "[{timestamp} {level_style}{level:<5}{level_style:#} {job_name}] {args}",
+                level = record.level(),
+                args = record.args(),
+            )
+        })
+        .parse_env("RUST_LOG")
+        .init();
+}
+
+/// Writes to STDOUT without timestamps.
+fn init_plain_bin_logging() {
     env_logger::builder()
         .target(env_logger::Target::Stdout)
         .filter_level(log::LevelFilter::Info)

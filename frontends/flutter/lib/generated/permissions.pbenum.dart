@@ -75,6 +75,7 @@ class Permission extends $pb.ProtobufEnum {
   static const Permission VIEW_PRIVATE_CONTACT_METHODS = Permission._(10001, _omitEnumNames ? '' : 'VIEW_PRIVATE_CONTACT_METHODS');
   static const Permission EDIT_CLUSTER_SETTINGS = Permission._(10002, _omitEnumNames ? '' : 'EDIT_CLUSTER_SETTINGS');
   static const Permission EDIT_SERVER_MEDIA_ALLOCATION = Permission._(10003, _omitEnumNames ? '' : 'EDIT_SERVER_MEDIA_ALLOCATION');
+  static const Permission VIEW_SERVER_LOGS = Permission._(10004, _omitEnumNames ? '' : 'VIEW_SERVER_LOGS');
 
   static const $core.List<Permission> values = <Permission> [
     PERMISSION_UNKNOWN,
@@ -133,6 +134,7 @@ class Permission extends $pb.ProtobufEnum {
     VIEW_PRIVATE_CONTACT_METHODS,
     EDIT_CLUSTER_SETTINGS,
     EDIT_SERVER_MEDIA_ALLOCATION,
+    VIEW_SERVER_LOGS,
   ];
 
   static final $core.Map<$core.int, Permission> _byValue = $pb.ProtobufEnum.initByValue(values);

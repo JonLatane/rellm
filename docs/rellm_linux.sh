@@ -66,6 +66,22 @@ RELLM_COMMANDS=(
   install show_latest update cleanup_updates uninstall
 )
 
+# What `rellm help` says about `rellm help deploys`: the release this package was built from (what
+# `rellm-server --version` prints, i.e. the GitHub release tag without its "v"), and where
+# deploys/README.md lives on GitHub as of that release. Falls back to the main branch if the server
+# binary can't be run (e.g. this script is being run standalone, outside a release package).
+_rellm_help_release_info() {
+  local release
+  release="$(server --version 2>/dev/null | head -n 1)" || release=""
+  if [ -n "$release" ]; then
+    RELLM_HELP_RELEASE="release $release"
+    RELLM_HELP_README_URL="https://github.com/JonLatane/rellm/blob/v${release}/deploys/README.md"
+  else
+    RELLM_HELP_RELEASE="the main branch (this isn't a release package)"
+    RELLM_HELP_README_URL="https://github.com/JonLatane/rellm/blob/main/deploys/README.md"
+  fi
+}
+
 rellm_help() {
   # jobs'/deploys' real paths vary with wherever the tarball was extracted (see
   # _rellm_package_dir) -- unlike @@RELLM_PACKAGE_BASE_DIR@@ below, which
@@ -74,7 +90,8 @@ rellm_help() {
   local jobs_script_path deploys_dir_path
   jobs_script_path="$(_rellm_package_dir)/background_jobs.sh"
   deploys_dir_path="$(_rellm_package_dir)/opt/deploys"
-  cat <<'RELLM_HELP_EOF' | sed -e "s|@@JOBS_SCRIPT_PATH@@|$jobs_script_path|" -e "s|@@DEPLOYS_DIR_PATH@@|$deploys_dir_path|"
+  _rellm_help_release_info
+  cat <<'RELLM_HELP_EOF' | sed -e "s|@@JOBS_SCRIPT_PATH@@|$jobs_script_path|" -e "s|@@DEPLOYS_DIR_PATH@@|$deploys_dir_path|" -e "s|@@RELLM_RELEASE@@|$RELLM_HELP_RELEASE|" -e "s|@@RELLM_DEPLOYS_README_URL@@|$RELLM_HELP_README_URL|"
 rellm - launcher for the Rellm server and its local dev dependencies
 
 Usage: rellm <command> [args...]
@@ -112,7 +129,8 @@ Commands:
                              convert_media_sizes every 10m, renew_market_subscriptions every 1h, ...
     version                  Print the Rellm server version (rellm-server --version)
     local_instances_stop     Stop any running rellm-server processes
-    help                     Show this help text
+    help                     Show this help text. `rellm help deploys` shows the deployment
+                             guide (deploys/README.md) in your $PAGER (less, more, ...)
 
   Logging (server_and_jobs only; set in the environment or ~/.rellm):
 
@@ -212,6 +230,32 @@ Commands:
                              default. See @@DEPLOYS_DIR_PATH@@/README.md (bundled alongside
                              this package) for the full target reference.
 
+                             -n <ns> / --namespace <ns> work in place of NAMESPACE=<ns> (as with kubectl).
+                             --domain <domain> works in place of DOMAIN=<domain> (for add_ingress_domain,
+                             add_email_domain and their remove_* counterparts).
+                             --confirm <namespace> works in place of CONFIRM=<namespace> (for the
+                             destructive targets that ask you to retype the namespace).
+                             (So to make a dry run, spell it --dry-run, not -n.)
+
+                             Viewing logs (see "Viewing Logs" in deploys/README.md); they all take
+                             -n <ns>, and --lines <n> to limit each pod's history:
+                               rellm deploy view_logs -n my_namespace --tail
+                                                              Follow every pod in the namespace
+                               rellm deploy view_server_logs -n my_namespace     Print the server's logs
+                                                              (all replicas, merged) and return
+                               rellm deploy view_job_logs -n my_namespace --tail
+                                                              Follow the background jobs' logs
+                               rellm deploy view_preview_generator_logs -n my_namespace
+                               rellm deploy view_tmux_logs -n my_namespace       Follow Server, Jobs and
+                                                              Preview Generator logs side by side in
+                                                              tmux (always follows; ignores --tail)
+                             --tail follows a log (like `tail -f`) instead of returning.
+
+                             `rellm help deploys` shows the full deployment guide in your $PAGER
+                             (less, more, ...). It's just a local copy of
+                             @@RELLM_DEPLOYS_README_URL@@
+                             as of @@RELLM_RELEASE@@.
+
   Shell completion:
 
     completion <bash|zsh>    Print a tab-completion script for the given shell. Add ONE of
@@ -239,8 +283,25 @@ Commands:
 RELLM_HELP_EOF
 }
 
+# `rellm help deploys`: the deployment guide (deploys/README.md), in $PAGER.
+_rellm_help_deploys() {
+  local deploys_dir
+  deploys_dir="$(_rellm_deploys_dir)"
+  [ -f "$deploys_dir/distributables.sh" ] || { echo "rellm help deploys: can't find $deploys_dir/distributables.sh." >&2; exit 1; }
+  . "$deploys_dir/distributables.sh"
+  _rellm_deploys_help "$deploys_dir"
+}
+
 help() {
-  rellm_help
+  case "${1:-}" in
+    "") rellm_help ;;
+    deploys) _rellm_help_deploys ;;
+    *)
+      echo "Unknown help topic: $1" >&2
+      echo "Usage: rellm help [deploys]" >&2
+      exit 1
+      ;;
+  esac
 }
 
 local_db_create() {
@@ -340,9 +401,14 @@ _rellm_exec_bin() {
 }
 
 # --- Log handling for server_and_jobs -------------------------------------
-# Every line the server and jobs print is prefixed "[server] " / "[jobs] " (jobs
-# additionally tag themselves, e.g. "[jobs] [sync_sources] ..."), with stderr (panics,
-# tool errors) merged into the same stream as stdout. Optional environment variables
+# Every line the server and jobs print is prefixed "[server] " / "[jobs] ", with stderr (panics,
+# tool errors) merged into the same stream as stdout. Each job logs like the server does,
+# "[<UTC timestamp> LEVEL job_name] message" (e.g.
+# "[jobs] [2026-10-05T12:00:00Z INFO  sync_sources] Syncing Sync Sources..."), so a job's own
+# lines already name it; output that isn't a log record (a panic, say) is tagged "[jobs]
+# [sync_sources] ..." instead (see backend/background_jobs.sh). The LEVEL in a job's lines is
+# colored with ANSI escape codes -- set NO_COLOR=1 (in the environment, or in ~/.rellm) for plain
+# text, e.g. when logging to RELLM_LOG_FILE or syslog. Optional environment variables
 # (set in the environment, or in ~/.rellm):
 #   RELLM_LOG_FILE        Append to this file (rotated, see below) instead of stdout.
 #   RELLM_LOG_MAX_BYTES   Rotate RELLM_LOG_FILE once it passes this size (default
@@ -531,6 +597,15 @@ _rellm_deploy_targets() {
   _rellm_deploys_list_targets "$deploys_dir"
 }
 
+# Used by `completion`'s namespace completion after `rellm deploy ... -n`.
+_rellm_deploy_namespaces() {
+  local deploys_dir
+  deploys_dir="$(_rellm_deploys_dir)"
+  [ -f "$deploys_dir/distributables.sh" ] || return 0
+  . "$deploys_dir/distributables.sh"
+  _rellm_deploys_list_namespaces
+}
+
 environment() {
   cat "$RELLM_ENV"
 }
@@ -697,6 +772,8 @@ uninstall() {
 # `rellm --list-commands` (backed by RELLM_COMMANDS above) for top-level command completion,
 # and -- once `deploy` is the first word -- to `rellm --list-deploy-targets` (backed by
 # _rellm_deploy_targets, which delegates to `make`'s own Makefile parser) for target completion,
+# and, after `-n`/`--namespace`, to `rellm --list-namespaces` (the cluster's namespaces, via
+# kubectl) for namespace completion,
 # so both stay in sync as commands/targets are added without needing to regenerate/re-source
 # anything.
 completion() {
@@ -704,12 +781,21 @@ completion() {
     bash)
       cat <<'RELLM_BASH_COMPLETION_EOF'
 _rellm_complete() {
-  local cur
+  local cur prev
   cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
   if [ "$COMP_CWORD" -eq 1 ]; then
     COMPREPLY=( $(compgen -W "$(rellm --list-commands)" -- "$cur") )
+  elif [ "${COMP_WORDS[1]}" = "help" ]; then
+    COMPREPLY=( $(compgen -W "deploys" -- "$cur") )
   elif [ "${COMP_WORDS[1]}" = "deploy" ]; then
-    COMPREPLY=( $(compgen -W "$(rellm --list-deploy-targets)" -- "$cur") )
+    if [ "$prev" = "-n" ] || [ "$prev" = "--namespace" ]; then
+      COMPREPLY=( $(compgen -W "$(rellm --list-namespaces)" -- "$cur") )
+    elif [ "${cur#-}" != "$cur" ]; then
+      COMPREPLY=( $(compgen -W "-n --namespace --domain --confirm --tail --lines" -- "$cur") )
+    else
+      COMPREPLY=( $(compgen -W "$(rellm --list-deploy-targets)" -- "$cur") )
+    fi
   fi
 }
 complete -F _rellm_complete rellm
@@ -719,7 +805,25 @@ RELLM_BASH_COMPLETION_EOF
       cat <<'RELLM_ZSH_COMPLETION_EOF'
 #compdef rellm
 _rellm() {
+  if (( CURRENT >= 3 )) && [[ ${words[2]} == help ]]; then
+    local -a topics
+    topics=(deploys)
+    _describe 'help topic' topics
+    return
+  fi
   if (( CURRENT >= 3 )) && [[ ${words[2]} == deploy ]]; then
+    if [[ ${words[CURRENT-1]} == (-n|--namespace) ]]; then
+      local -a namespaces
+      namespaces=(${(f)"$(rellm --list-namespaces)"})
+      _describe 'namespace' namespaces
+      return
+    fi
+    if [[ ${words[CURRENT]} == -* ]]; then
+      local -a flags
+      flags=('-n:Kubernetes namespace' '--namespace:Kubernetes namespace' '--domain:Domain, for the *_domain targets' '--confirm:Retype the namespace to confirm a destructive target' '--tail:Follow logs' '--lines:Limit logs to the last N lines per pod')
+      _describe 'flag' flags
+      return
+    fi
     local -a targets
     targets=(${(f)"$(rellm --list-deploy-targets)"})
     _describe 'deploy target' targets
@@ -764,6 +868,8 @@ if [ "$cmd" = "--list-commands" ]; then
   printf '%s\n' "${RELLM_COMMANDS[@]}"
 elif [ "$cmd" = "--list-deploy-targets" ]; then
   _rellm_deploy_targets
+elif [ "$cmd" = "--list-namespaces" ]; then
+  _rellm_deploy_namespaces
 elif _rellm_is_command "$cmd"; then
   "$cmd" "$@"
 else

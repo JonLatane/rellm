@@ -62,6 +62,9 @@ type alias Model =
     , navKey : Browser.Navigation.Key
     , path : String
 
+    -- `?search_text=` -- seeds the search box of whichever feed tab is entered first.
+    , initialSearch : String
+
     -- Each is created lazily by `enterTab`, the first time its tab is shown, so e.g. landing on
     -- the Video tab never fetches audio.
     , video : Maybe MediaFeed.Model
@@ -151,6 +154,7 @@ init shared mode navKey path query =
                 , tab = tab
                 , navKey = navKey
                 , path = path
+                , initialSearch = Dict.get "search_text" query |> Maybe.withDefault ""
                 , video = Nothing
                 , audio = Nothing
                 , images = Nothing
@@ -178,7 +182,7 @@ enterTab shared model =
                     ( model, Effect.none )
 
                 Nothing ->
-                    MediaFeed.init shared MediaFeed.Videos
+                    MediaFeed.init shared MediaFeed.Videos model.initialSearch
                         |> Tuple.mapFirst (\feed -> { model | video = Just feed })
                         |> Tuple.mapSecond (Effect.map VideoMsg)
 
@@ -188,7 +192,7 @@ enterTab shared model =
                     ( model, Effect.none )
 
                 Nothing ->
-                    MediaFeed.init shared MediaFeed.Audio
+                    MediaFeed.init shared MediaFeed.Audio model.initialSearch
                         |> Tuple.mapFirst (\feed -> { model | audio = Just feed })
                         |> Tuple.mapSecond (Effect.map AudioMsg)
 
@@ -198,7 +202,7 @@ enterTab shared model =
                     ( model, Effect.none )
 
                 Nothing ->
-                    MediaFeed.init shared MediaFeed.Images
+                    MediaFeed.init shared MediaFeed.Images model.initialSearch
                         |> Tuple.mapFirst (\feed -> { model | images = Just feed })
                         |> Tuple.mapSecond (Effect.map ImagesMsg)
 

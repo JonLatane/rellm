@@ -6,10 +6,22 @@
 # convention in ingress/Makefile and email/Makefile) -- nearly every target here acts on a specific
 # namespace, and silently defaulting to "rellm" risks operating on the wrong cluster/namespace.
 # copy_server_configuration (takes SOURCE/TARGET namespaces of its own, see that target's own doc
-# below) and get_all_storage_credentials (reads every namespace) are the exceptions -- they don't
-# act on a single NAMESPACE, so they're carved out of this guard.
+# below), get_all_storage_credentials (reads every namespace) and the cluster-wide ingress/email/
+# central storage/Cert-Manager targets (see their passthroughs below -- they act on shared
+# namespaces like traefik-ingress and rellm-storage) are the exceptions -- they don't act on a
+# single NAMESPACE, so they're carved out of this guard. (This is what lets `rellm deploy
+# create_ingress` etc. work without `-n`.)
+NAMESPACE_FREE_TARGETS := copy_server_configuration copy_server_cluster_configuration copy_server_vapid_configuration get_all_storage_credentials \
+	generate_vapid_push_key_pair \
+	create_ingress remove_ingress deploy_ingress_ensure_namespace deploy_ingress_crds deploy_ingress_controller_create deploy_ingress_controller_update deploy_ingress_controller_delete deploy_ingress_monitor_rollout deploy_ingress_restart get_ingress_external_ip list_ingress_domains \
+	create_email update_email restart_email remove_email create_email_admin_secret deploy_email_get_ip deploy_email_restart deploy_email_monitor_rollout deploy_email_admin_port_forward deploy_email_admin_stop_port_forwarding list_email_domains \
+	create_central_storage update_central_storage delete_central_storage restart_central_storage get_central_storage_all wait_central_postgres_ready wait_central_object_storage_ready get_central_postgres_pvc_size get_central_object_storage_pvc_size resize_central_postgres_pvc resize_central_object_storage_pvc \
+	deploy_certmanager \
+	test
+# Skipped only if *every* goal is one of those (and there is at least one -- the default goal needs
+# NAMESPACE), so `make create_ingress create_backend_data` still demands it.
 ifndef NAMESPACE
-ifeq ($(filter copy_server_configuration copy_server_cluster_configuration copy_server_vapid_configuration get_all_storage_credentials,$(MAKECMDGOALS)),)
+ifneq ($(and $(MAKECMDGOALS),$(if $(filter-out $(NAMESPACE_FREE_TARGETS),$(MAKECMDGOALS)),,ok)),ok)
 $(error NAMESPACE is required, e.g. NAMESPACE=rellm make create_external_backend)
 endif
 endif
@@ -154,6 +166,28 @@ get_backend_external_ip:
 
 get_backend_all:
 	kubectl get all -n $(NAMESPACE)
+
+# Tests for this directory's Makefiles and scripts (see tests/lib.sh); they need no cluster.
+# `make test` runs them all; `bash tests/run.sh guard flags` runs just those files.
+test:
+	@bash tests/run.sh
+
+# Logs -- see kubernetes_logs.sh. view_logs merges every pod in the namespace (server, jobs, preview generator
+# and anything else running there) into one stream; view_server_logs merges just the server's replicas.
+# LOG_TAIL=1 follows the logs (like `tail -f`) instead of printing them and returning; LOG_LINES=<n>
+# limits it to the last <n> lines per pod. `rellm deploy` turns `-n <ns>`, `--tail` and `--lines <n>`
+# into NAMESPACE=, LOG_TAIL=1 and LOG_LINES= for you. view_tmux_logs always follows.
+KUBERNETES_LOGS_FLAGS = $(if $(LOG_TAIL),--tail) $(if $(LOG_LINES),--lines $(LOG_LINES))
+view_logs:
+	@bash ./kubernetes_logs.sh all --namespace $(NAMESPACE) $(KUBERNETES_LOGS_FLAGS)
+view_server_logs:
+	@bash ./kubernetes_logs.sh server --namespace $(NAMESPACE) $(KUBERNETES_LOGS_FLAGS)
+view_job_logs:
+	@bash ./kubernetes_logs.sh jobs --namespace $(NAMESPACE) $(KUBERNETES_LOGS_FLAGS)
+view_preview_generator_logs:
+	@bash ./kubernetes_logs.sh preview_generator --namespace $(NAMESPACE) $(KUBERNETES_LOGS_FLAGS)
+view_tmux_logs:
+	@bash ./kubernetes_logs.sh tmux --namespace $(NAMESPACE) $(KUBERNETES_LOGS_FLAGS)
 
 deploy_be_get_pods:
 	kubectl get pods --selector=app=rellm -n $(NAMESPACE)
@@ -464,62 +498,62 @@ generate_vapid_push_key_pair:
 # runs `make -C deploys` -- can also reach ingress/email/cert targets without a separate `-C`.
 ############################################################################
 create_ingress:
-	$(MAKE) -C ingress create_ingress
+	@$(MAKE) -C ingress create_ingress
 remove_ingress:
-	$(MAKE) -C ingress remove_ingress
+	@$(MAKE) -C ingress remove_ingress
 deploy_ingress_ensure_namespace:
-	$(MAKE) -C ingress deploy_ingress_ensure_namespace
+	@$(MAKE) -C ingress deploy_ingress_ensure_namespace
 deploy_ingress_crds:
-	$(MAKE) -C ingress deploy_ingress_crds
+	@$(MAKE) -C ingress deploy_ingress_crds
 deploy_ingress_controller_create:
-	$(MAKE) -C ingress deploy_ingress_controller_create
+	@$(MAKE) -C ingress deploy_ingress_controller_create
 deploy_ingress_controller_update:
-	$(MAKE) -C ingress deploy_ingress_controller_update
+	@$(MAKE) -C ingress deploy_ingress_controller_update
 deploy_ingress_controller_delete:
-	$(MAKE) -C ingress deploy_ingress_controller_delete
+	@$(MAKE) -C ingress deploy_ingress_controller_delete
 deploy_ingress_monitor_rollout:
-	$(MAKE) -C ingress deploy_ingress_monitor_rollout
+	@$(MAKE) -C ingress deploy_ingress_monitor_rollout
 deploy_ingress_restart:
-	$(MAKE) -C ingress deploy_ingress_restart
+	@$(MAKE) -C ingress deploy_ingress_restart
 get_ingress_external_ip:
-	$(MAKE) -C ingress get_ingress_external_ip
+	@$(MAKE) -C ingress get_ingress_external_ip
 add_ingress_domain:
-	$(MAKE) -C ingress add_ingress_domain
+	@$(MAKE) -C ingress add_ingress_domain
 remove_ingress_domain:
-	$(MAKE) -C ingress remove_ingress_domain
+	@$(MAKE) -C ingress remove_ingress_domain
 list_ingress_domains:
-	$(MAKE) -C ingress list_ingress_domains
+	@$(MAKE) -C ingress list_ingress_domains
 
 ############################################################################
 # EMAIL-RELATED TARGETS: passthroughs to deploys/email/Makefile. See that Makefile's own
 # comments for the create_email_admin_secret -> create_email -> add_email_domain ordering.
 ############################################################################
 create_email:
-	$(MAKE) -C email create_email
+	@$(MAKE) -C email create_email
 update_email:
-	$(MAKE) -C email update_email
+	@$(MAKE) -C email update_email
 restart_email:
-	$(MAKE) -C email restart_email
+	@$(MAKE) -C email restart_email
 remove_email:
-	$(MAKE) -C email remove_email
+	@$(MAKE) -C email remove_email
 create_email_admin_secret:
-	$(MAKE) -C email create_email_admin_secret
+	@$(MAKE) -C email create_email_admin_secret
 deploy_email_get_ip:
-	$(MAKE) -C email deploy_email_get_ip
+	@$(MAKE) -C email deploy_email_get_ip
 deploy_email_restart:
-	$(MAKE) -C email deploy_email_restart
+	@$(MAKE) -C email deploy_email_restart
 deploy_email_monitor_rollout:
-	$(MAKE) -C email deploy_email_monitor_rollout
+	@$(MAKE) -C email deploy_email_monitor_rollout
 deploy_email_admin_port_forward:
-	$(MAKE) -C email deploy_email_admin_port_forward
+	@$(MAKE) -C email deploy_email_admin_port_forward
 deploy_email_admin_stop_port_forwarding:
-	$(MAKE) -C email deploy_email_admin_stop_port_forwarding
+	@$(MAKE) -C email deploy_email_admin_stop_port_forwarding
 add_email_domain:
-	$(MAKE) -C email add_email_domain
+	@$(MAKE) -C email add_email_domain
 remove_email_domain:
-	$(MAKE) -C email remove_email_domain
+	@$(MAKE) -C email remove_email_domain
 list_email_domains:
-	$(MAKE) -C email list_email_domains
+	@$(MAKE) -C email list_email_domains
 
 ############################################################################
 # CENTRAL STORAGE-RELATED TARGETS: passthroughs to deploys/central_storage/Makefile. See that
@@ -527,15 +561,27 @@ list_email_domains:
 # above are what you actually run per-namespace once the shared instances below exist.
 ############################################################################
 create_central_storage:
-	$(MAKE) -C central_storage create_central_storage
+	@$(MAKE) -C central_storage create_central_storage
 update_central_storage:
-	$(MAKE) -C central_storage update_central_storage
+	@$(MAKE) -C central_storage update_central_storage
 delete_central_storage:
-	$(MAKE) -C central_storage delete_central_storage
+	@$(MAKE) -C central_storage delete_central_storage
 restart_central_storage:
-	$(MAKE) -C central_storage restart_central_storage
+	@$(MAKE) -C central_storage restart_central_storage
 get_central_storage_all:
-	$(MAKE) -C central_storage get_central_storage_all
+	@$(MAKE) -C central_storage get_central_storage_all
+wait_central_postgres_ready:
+	@$(MAKE) -C central_storage wait_central_postgres_ready
+wait_central_object_storage_ready:
+	@$(MAKE) -C central_storage wait_central_object_storage_ready
+get_central_postgres_pvc_size:
+	@$(MAKE) -C central_storage get_central_postgres_pvc_size
+get_central_object_storage_pvc_size:
+	@$(MAKE) -C central_storage get_central_object_storage_pvc_size
+resize_central_postgres_pvc:
+	@$(MAKE) -C central_storage resize_central_postgres_pvc
+resize_central_object_storage_pvc:
+	@$(MAKE) -C central_storage resize_central_object_storage_pvc
 
 ############################################################################
 # TLS CERTIFICATE-RELATED TARGETS: passthroughs to deploys/generated_certs/Makefile.
@@ -545,45 +591,45 @@ get_central_storage_all:
 # them itself above.
 ############################################################################
 deploy_certmanager:
-	$(MAKE) -C generated_certs deploy_certmanager
+	@$(MAKE) -C generated_certs deploy_certmanager
 deploy_certmanager_credential:
-	$(MAKE) -C generated_certs deploy_certmanager_credential
+	@$(MAKE) -C generated_certs deploy_certmanager_credential
 deploy_certmanager_credential_apply:
-	$(MAKE) -C generated_certs deploy_certmanager_credential_apply
+	@$(MAKE) -C generated_certs deploy_certmanager_credential_apply
 deploy_certmanager_credential_clean:
-	$(MAKE) -C generated_certs deploy_certmanager_credential_clean
+	@$(MAKE) -C generated_certs deploy_certmanager_credential_clean
 deploy_certmanager_credential_digitalocean_clean:
-	$(MAKE) -C generated_certs deploy_certmanager_credential_digitalocean_clean
+	@$(MAKE) -C generated_certs deploy_certmanager_credential_digitalocean_clean
 deploy_certmanager_credential_digitalocean_store_apitoken:
-	$(MAKE) -C generated_certs deploy_certmanager_credential_digitalocean_store_apitoken
+	@$(MAKE) -C generated_certs deploy_certmanager_credential_digitalocean_store_apitoken
 deploy_certmanager_credential_digitalocean_prepare:
-	$(MAKE) -C generated_certs deploy_certmanager_credential_digitalocean_prepare
+	@$(MAKE) -C generated_certs deploy_certmanager_credential_digitalocean_prepare
 deploy_certmanager_credential_digitalocean_apply:
-	$(MAKE) -C generated_certs deploy_certmanager_credential_digitalocean_apply
+	@$(MAKE) -C generated_certs deploy_certmanager_credential_digitalocean_apply
 deploy_certmanager_credential_digitalocean_delete:
-	$(MAKE) -C generated_certs deploy_certmanager_credential_digitalocean_delete
+	@$(MAKE) -C generated_certs deploy_certmanager_credential_digitalocean_delete
 certs_generate:
-	$(MAKE) -C generated_certs certs_generate
+	@$(MAKE) -C generated_certs certs_generate
 certs_ca_generate:
-	$(MAKE) -C generated_certs certs_ca_generate
+	@$(MAKE) -C generated_certs certs_ca_generate
 certs_server_generate:
-	$(MAKE) -C generated_certs certs_server_generate
+	@$(MAKE) -C generated_certs certs_server_generate
 certs_store_in_k8s:
-	$(MAKE) -C generated_certs certs_store_in_k8s
+	@$(MAKE) -C generated_certs certs_store_in_k8s
 certs_delete_from_k8s:
-	$(MAKE) -C generated_certs certs_delete_from_k8s
+	@$(MAKE) -C generated_certs certs_delete_from_k8s
 certs_server_store_in_k8s:
-	$(MAKE) -C generated_certs certs_server_store_in_k8s
+	@$(MAKE) -C generated_certs certs_server_store_in_k8s
 certs_server_delete_from_k8s:
-	$(MAKE) -C generated_certs certs_server_delete_from_k8s
+	@$(MAKE) -C generated_certs certs_server_delete_from_k8s
 certs_ca_store_in_k8s:
-	$(MAKE) -C generated_certs certs_ca_store_in_k8s
+	@$(MAKE) -C generated_certs certs_ca_store_in_k8s
 certs_ca_delete_from_k8s:
-	$(MAKE) -C generated_certs certs_ca_delete_from_k8s
+	@$(MAKE) -C generated_certs certs_ca_delete_from_k8s
 certs_gen_test:
-	$(MAKE) -C generated_certs certs_gen_test
+	@$(MAKE) -C generated_certs certs_gen_test
 certs_gen_test_pass_openssl_verify:
-	$(MAKE) -C generated_certs certs_gen_test_pass_openssl_verify
+	@$(MAKE) -C generated_certs certs_gen_test_pass_openssl_verify
 
 # Copies one server_configurations column (e.g. stripe_config, twilio_config) from SOURCE's
 # active row to TARGET's -- see copy_server_configuration.sh's own doc for exactly how (clones

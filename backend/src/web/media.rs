@@ -3,10 +3,11 @@ use std::str::FromStr;
 use crate::db_connection::*;
 use crate::logic::{
     adjust_server_media_usage_bytes, is_audio_content_type, is_video_content_type,
-    update_media_storage_used,
+    is_version_suffix, object_path_version_base, update_media_storage_used,
 };
 use crate::marshaling::*;
 use crate::models;
+use crate::models::MediaConversionExt;
 use crate::protos::{MediaConversion, Permission, Visibility};
 use crate::rpcs::get_server_configuration_proto;
 use crate::schema;
@@ -189,6 +190,9 @@ pub struct MediaResponse<R> {
     inner: R,
     block_cors: bool,
     vary_on_auth: bool,
+    /// `Content-Disposition` to attach (`?download=true`), so the browser saves the file under a proper name even
+    /// cross-origin, where the `<a download>` attribute is ignored.
+    content_disposition: Option<String>,
 }
 
 impl<'r, 'o: 'r, R: rocket::response::Responder<'r, 'o>> rocket::response::Responder<'r, 'o>
@@ -201,6 +205,9 @@ impl<'r, 'o: 'r, R: rocket::response::Responder<'r, 'o>> rocket::response::Respo
         }
         if self.vary_on_auth {
             response.set_header(rocket::http::Header::new("Vary", "Authorization, Cookie"));
+        }
+        if let Some(content_disposition) = self.content_disposition {
+            response.set_header(rocket::http::Header::new("Content-Disposition", content_disposition));
         }
         Ok(response)
     }
@@ -283,11 +290,67 @@ impl<'r> rocket::response::Responder<'r, 'static> for RangedFile {
     }
 }
 
-#[rocket::get("/media/<id>?<authorization>&<size>")]
+/// The name to save a download of `name` (or, unnamed, of media `fallback_id`) under: the name, a suffix saying which
+/// copy was actually served (`conversion` -- which can differ from the requested `size`, e.g. an unlicensed viewer
+/// asking for `large` is handed the preview), and an extension matching `content_type`. Path separators in the
+/// name become `_`.
+fn download_filename(
+    name: Option<&str>,
+    fallback_id: &str,
+    conversion: Option<MediaConversion>,
+    content_type: &ContentType,
+) -> String {
+    let base = name
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(str::to_owned)
+        .unwrap_or_else(|| format!("media-{fallback_id}"))
+        .replace(['/', '\\'], "_");
+    let suffix = match conversion {
+        Some(MediaConversion::Original) => " (original)".to_owned(),
+        Some(MediaConversion::Small) => " (low)".to_owned(),
+        Some(MediaConversion::Medium) => " (medium)".to_owned(),
+        Some(MediaConversion::Large) => " (high)".to_owned(),
+        Some(MediaConversion::UnlicensedPreviewMedium) => " (preview)".to_owned(),
+        Some(other) => format!(" ({})", other.key()),
+        None => String::new(),
+    };
+    let extension = match content_type.to_string().as_str() {
+        "audio/mp4" => Some("m4a".to_owned()),
+        "audio/mpeg" => Some("mp3".to_owned()),
+        "audio/wav" | "audio/x-wav" | "audio/wave" | "audio/vnd.wave" => Some("wav".to_owned()),
+        _ => content_type.extension().map(|e| e.to_string()),
+    };
+    match extension {
+        Some(extension) => format!("{base}{suffix}.{extension}"),
+        None => format!("{base}{suffix}"),
+    }
+}
+
+/// `attachment; filename="..."; filename*=UTF-8''...` for saving a download as `filename`.
+fn content_disposition_attachment(filename: &str) -> String {
+    // Plain-ASCII fallback (quotes/control characters/non-ASCII dropped) + the exact name, percent-encoded (RFC 5987).
+    let ascii: String = filename
+        .chars()
+        .map(|c| if c.is_ascii() && !c.is_ascii_control() && c != '"' && c != '\\' { c } else { '_' })
+        .collect();
+    let mut encoded = String::new();
+    for byte in filename.bytes() {
+        if byte.is_ascii_alphanumeric() || b"-_.~".contains(&byte) {
+            encoded.push(byte as char);
+        } else {
+            encoded.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    format!("attachment; filename=\"{ascii}\"; filename*=UTF-8''{encoded}")
+}
+
+#[rocket::get("/media/<id>?<authorization>&<size>&<download>")]
 pub async fn media_file<'a>(
     id: &str,
     authorization: Option<String>,
     size: Option<String>,
+    download: Option<bool>,
     cookies: &CookieJar<'_>,
     state: &State<RocketState>,
     auth_header: Option<AuthHeader<'_>>,
@@ -312,7 +375,21 @@ pub async fn media_file<'a>(
     let has_full_access = !licensed || viewer_has_full_access(&media, user.as_ref(), state);
     let (object_storage_path, content_type) =
         resolve_media_size_for_viewer(&media, size.as_deref(), has_full_access)?;
+    // Which copy this actually is (not necessarily the one `size` asked for), for the download's filename.
+    let served_conversion = media
+        .sizes()
+        .into_iter()
+        .find(|s| s.object_storage_path == object_storage_path)
+        .map(|s| s.conversion());
     let data = load_media_file(object_storage_path, content_type, state).await?;
+    let content_disposition = download.unwrap_or(false).then(|| {
+        content_disposition_attachment(&download_filename(
+            media.name.as_deref(),
+            &media.id.to_proto_id(),
+            served_conversion,
+            &data.0,
+        ))
+    });
 
     // Anonymous requests to servers with `block_cors_anonymous_media_access` get no CORS headers,
     // even for `GLOBAL_PUBLIC` media. (Authenticated requests are unaffected.)
@@ -340,6 +417,7 @@ pub async fn media_file<'a>(
         inner: CacheResponse::new((data.0, RangedFile(data.1)), cache_control),
         block_cors,
         vary_on_auth: licensed || block_cors,
+        content_disposition,
     })
 }
 
@@ -556,6 +634,37 @@ pub async fn load_media_file_data_preferring<'a>(
     load_media_file(object_storage_path, content_type, state).await
 }
 
+/// Deletes the cached files (see [`load_media_file`]) of *earlier versions* of the object just cached at
+/// `local_filename` -- `<base>.<other version>.mediafile`, plus the unversioned `<base>.mediafile` of a copy generated
+/// before versioning. Regenerating or retagging a media copy writes it to a new, versioned object path (see
+/// `versioned_object_path`), which is what stops this cache serving stale bytes, but nothing else would ever remove
+/// the superseded files: this process's tempdir lasts until it restarts, so they'd pile up with every edit.
+/// Best-effort -- anything that can't be removed is left alone. A request still reading an evicted file is unaffected
+/// (the open file stays readable).
+fn evict_superseded_cache_files(local_filename: &str, object_storage_path: &str) {
+    let Some(base) = object_path_version_base(object_storage_path) else { return };
+    let local = std::path::Path::new(local_filename);
+    let (Some(dir), Some(own_name)) = (local.parent(), local.file_name().and_then(|n| n.to_str())) else { return };
+    let Some(base_name) = base.rsplit('/').next() else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let file_name = entry.file_name();
+        let Some(file_name) = file_name.to_str() else { continue };
+        if file_name != own_name && is_superseded_version_of(file_name, base_name) {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+}
+
+/// Whether the cache file `file_name` holds another version of the object whose path ends in `base_name` (without
+/// its version): `<base_name>.mediafile` or `<base_name>.<version>.mediafile`.
+fn is_superseded_version_of(file_name: &str, base_name: &str) -> bool {
+    let Some(rest) = file_name.strip_prefix(base_name).and_then(|r| r.strip_suffix(".mediafile")) else {
+        return false;
+    };
+    rest.is_empty() || rest.strip_prefix('.').is_some_and(is_version_suffix)
+}
+
 async fn load_media_file(
     object_storage_path: String,
     content_type: String,
@@ -581,12 +690,13 @@ async fn load_media_file(
             .map_err(|_| Status::InternalServerError)?;
         let _status_code = state
             .bucket
-            .get_object_to_writer(object_storage_path, &mut async_output_file)
+            .get_object_to_writer(object_storage_path.clone(), &mut async_output_file)
             .await
             .map_err(|_| Status::InternalServerError)?;
 
         // Rename tempfile to final filename
         std::fs::rename(temp_filename, &local_filename).map_err(|_| Status::InternalServerError)?;
+        evict_superseded_cache_files(&local_filename, &object_storage_path);
     }
 
     let media_type =
@@ -698,5 +808,85 @@ fn get_auth_user_id(access_token: String, conn: &mut PgPooledConnection) -> Resu
     match user_id {
         Ok(user_id) => Ok(user_id),
         Err(_) => Err(Status::Unauthorized),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn content_type(s: &str) -> ContentType {
+        ContentType(MediaType::from_str(s).unwrap())
+    }
+
+    #[test]
+    fn download_filename_names_the_copy_actually_served() {
+        let audio = content_type("audio/mp4");
+        let name = |conversion| download_filename(Some("So What"), "abc", conversion, &audio);
+        assert_eq!(name(Some(MediaConversion::Small)), "So What (low).m4a");
+        assert_eq!(name(Some(MediaConversion::Medium)), "So What (medium).m4a");
+        assert_eq!(name(Some(MediaConversion::Large)), "So What (high).m4a");
+        assert_eq!(name(Some(MediaConversion::Original)), "So What (original).m4a");
+        // What an unlicensed viewer who asked for `large` really gets.
+        assert_eq!(name(Some(MediaConversion::UnlicensedPreviewMedium)), "So What (preview).m4a");
+        assert_eq!(name(None), "So What.m4a");
+    }
+
+    #[test]
+    fn download_filename_falls_back_to_the_id_and_never_has_path_separators() {
+        let mp3 = content_type("audio/mpeg");
+        assert_eq!(download_filename(None, "abc", Some(MediaConversion::Medium), &mp3), "media-abc (medium).mp3");
+        assert_eq!(download_filename(Some("  "), "abc", None, &mp3), "media-abc.mp3");
+        assert_eq!(download_filename(Some("AC/DC \\ Live"), "abc", None, &mp3), "AC_DC _ Live.mp3");
+    }
+
+    #[test]
+    fn content_disposition_escapes_quotes_and_non_ascii() {
+        let header = content_disposition_attachment("Caf\u{e9} \"Live\".m4a");
+        assert_eq!(header, "attachment; filename=\"Caf_ _Live_.m4a\"; filename*=UTF-8''Caf%C3%A9%20%22Live%22.m4a");
+        assert!(!header.contains('\n') && !header.contains('\r'));
+    }
+
+    #[test]
+    fn only_other_versions_of_the_same_object_are_superseded() {
+        let base = "uuid-song.mp3.medium";
+        assert!(is_superseded_version_of("uuid-song.mp3.medium.1790000000000.mediafile", base));
+        // A copy from before versioning.
+        assert!(is_superseded_version_of("uuid-song.mp3.medium.mediafile", base));
+        // Other copies of the same item, the original, and other items are left alone.
+        assert!(!is_superseded_version_of("uuid-song.mp3.large.1790000000000.mediafile", base));
+        assert!(!is_superseded_version_of("uuid-song.mp3.mediafile", base));
+        assert!(!is_superseded_version_of("other-uuid-song.mp3.medium.1790000000000.mediafile", base));
+        assert!(!is_superseded_version_of("uuid-song.mp3.medium.1790000000000.mediafile-download-x", base));
+        assert!(!is_superseded_version_of("uuid-song.mp3.medium.2024.mediafile", base));
+    }
+
+    #[test]
+    fn evicting_removes_old_versions_and_keeps_everything_else() {
+        let dir = tempfile::tempdir().unwrap();
+        let touch = |name: &str| std::fs::write(dir.path().join(name), b"x").unwrap();
+        let exists = |name: &str| dir.path().join(name).exists();
+        touch("uuid-song.mp3.medium.1790000000000.mediafile");
+        touch("uuid-song.mp3.medium.1790000000001.mediafile");
+        touch("uuid-song.mp3.medium.mediafile");
+        touch("uuid-song.mp3.large.1790000000000.mediafile");
+        touch("uuid-song.mp3.mediafile");
+
+        let new_path = "user/1-x/uuid-song.mp3.medium.1790000000002";
+        let local = dir.path().join("uuid-song.mp3.medium.1790000000002.mediafile");
+        std::fs::write(&local, b"new").unwrap();
+        evict_superseded_cache_files(local.to_str().unwrap(), new_path);
+
+        assert!(local.exists());
+        assert!(!exists("uuid-song.mp3.medium.1790000000000.mediafile"));
+        assert!(!exists("uuid-song.mp3.medium.1790000000001.mediafile"));
+        assert!(!exists("uuid-song.mp3.medium.mediafile"));
+        assert!(exists("uuid-song.mp3.large.1790000000000.mediafile"));
+        assert!(exists("uuid-song.mp3.mediafile"));
+
+        // An unversioned object (the original) has no earlier versions to evict.
+        let original = dir.path().join("uuid-song.mp3.mediafile");
+        evict_superseded_cache_files(original.to_str().unwrap(), "user/1-x/uuid-song.mp3");
+        assert!(exists("uuid-song.mp3.large.1790000000000.mediafile"));
     }
 }

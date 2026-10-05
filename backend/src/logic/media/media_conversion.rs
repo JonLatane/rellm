@@ -299,6 +299,7 @@ impl FFmpeg {
         output: &Path,
         max_dimension: u32,
         content_type: &str,
+        tags: &OutputTags,
     ) -> Result<()> {
         let mut command = Command::new("ffmpeg");
         command
@@ -306,6 +307,7 @@ impl FFmpeg {
             .arg("-nostdin")
             .arg("-i")
             .arg(input)
+            .args(metadata_args(tags))
             .arg("-vf")
             .arg(format!(
                 "scale='min({0},iw)':'min({0},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2",
@@ -333,7 +335,7 @@ impl FFmpeg {
                 "-c:a",
                 "aac",
                 "-movflags",
-                "+faststart",
+                "+faststart+use_metadata_tags",
             ]);
         }
         let status = command
@@ -433,13 +435,14 @@ impl FFmpeg {
 
     /// Re-encodes `input`'s audio as AAC-LC at `kbps` into an `.m4a` -- cover art/video streams
     /// dropped (`-vn`), tags kept, `+faststart` so playback can begin before the download ends.
-    fn compress_audio(&self, input: &Path, output: &Path, kbps: u32) -> Result<()> {
+    fn compress_audio(&self, input: &Path, output: &Path, kbps: u32, tags: &OutputTags) -> Result<()> {
         let status = Command::new("ffmpeg")
             .args(["-y", "-nostdin", "-i"])
             .arg(input)
+            .args(metadata_args(tags))
             .args(["-vn", "-c:a", "aac", "-b:a"])
             .arg(format!("{kbps}k"))
-            .args(["-movflags", "+faststart"])
+            .args(["-movflags", "+faststart+use_metadata_tags"])
             .arg(output)
             .status()
             .context("failed to run ffmpeg")?;
@@ -518,6 +521,7 @@ impl FFmpeg {
         is_video: bool,
         max_dimension: u32,
         content_type: &str,
+        tags: &OutputTags,
     ) -> Result<()> {
         let mut command = Command::new("ffmpeg");
         command
@@ -525,6 +529,7 @@ impl FFmpeg {
             .arg("-nostdin")
             .arg("-i")
             .arg(input)
+            .args(metadata_args(tags))
             .arg("-ss")
             .arg(format!("{:.3}", start_ms as f64 / 1000.0))
             .arg("-t")
@@ -539,7 +544,7 @@ impl FFmpeg {
             } else {
                 command.args([
                     "-c:v", "libx264", "-preset", "veryfast", "-crf", "28", "-c:a", "aac", "-b:a",
-                    "96k", "-movflags", "+faststart",
+                    "96k", "-movflags", "+faststart+use_metadata_tags",
                 ]);
             }
         } else if content_type == "audio/ogg" {
@@ -551,6 +556,31 @@ impl FFmpeg {
             .arg(output)
             .status()
             .context("failed to run ffmpeg")?;
+        if !status.success() {
+            bail!("ffmpeg exited with {}", status);
+        }
+        Ok(())
+    }
+}
+
+impl FFmpeg {
+    /// Rewrites `input`'s tags without re-encoding: every stream (cover art included) is copied untouched into
+    /// `output` (data streams aside), keeping the tags it has but overriding the managed ones (see `output_tags`) -- fast, and
+    /// lossless, so it can be applied to an already-converted copy as often as the owner edits.
+    fn retag(&self, input: &Path, output: &Path, tags: &OutputTags, content_type: &str) -> Result<()> {
+        let mut command = Command::new("ffmpeg");
+        command
+            .args(["-y", "-nostdin", "-i"])
+            .arg(input)
+            // Explicit stream types rather than `-map 0`: that also maps data/timecode streams (QuickTime-sourced
+            // video has them), which can't be copied into MP4 and would fail the whole remux. Cover art is a video
+            // stream, so `0:v?` keeps it; the converted copies have no data streams worth keeping.
+            .args(["-map", "0:v?", "-map", "0:a?", "-map", "0:s?", "-dn", "-c", "copy", "-map_metadata", "0"])
+            .args(metadata_args(tags));
+        if matches!(content_type, "audio/mp4" | "video/mp4" | "video/quicktime") {
+            command.args(["-movflags", "+faststart+use_metadata_tags"]);
+        }
+        let status = command.arg(output).status().context("failed to run ffmpeg")?;
         if !status.success() {
             bail!("ffmpeg exited with {}", status);
         }
@@ -675,6 +705,120 @@ fn title_name_override(
     (still_filename && item.name.as_deref() != Some(title.as_str())).then_some(title)
 }
 
+/// Digits in a version suffix (a unix-ms timestamp is 13 until the year 2286); anything shorter after the last `.`
+/// (a `.2024`-style extension, say) isn't mistaken for one.
+const MIN_VERSION_SUFFIX_DIGITS: usize = 12;
+
+/// `path` without its version suffix (see [`versioned_object_path`]), or `None` if it has none (the original upload,
+/// or a copy generated before versioning). `web::media` uses this to evict cached files of superseded versions.
+pub fn object_path_version_base(path: &str) -> Option<&str> {
+    match path.rsplit_once('.') {
+        Some((head, tail)) if is_version_suffix(tail) => Some(head),
+        _ => None,
+    }
+}
+
+/// Whether `s` (what follows the last `.` of an object path) is a version suffix.
+pub fn is_version_suffix(s: &str) -> bool {
+    s.len() >= MIN_VERSION_SUFFIX_DIGITS && s.bytes().all(|b| b.is_ascii_digit())
+}
+
+/// `path` with a fresh version suffix (`<path>.<unix ms>`, replacing a previous one). Every generated or retagged copy
+/// is written to a *new* object path rather than over the old one: the web server keeps downloaded objects on local
+/// disk keyed by path (see `web::media::load_media_file`), and would otherwise keep serving the stale copy.
+fn versioned_object_path(path: &str) -> String {
+    let base = object_path_version_base(path).unwrap_or(path);
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    format!("{base}.{now_ms}")
+}
+
+/// Objects a conversion run has uploaded to object storage that the database doesn't reference yet. Because every
+/// copy gets a fresh versioned path, a run that fails (or loses a race -- see `retag_media`) before recording them
+/// would otherwise leave them orphaned -- and the job retries every run, so on a persistent failure they'd pile up.
+/// `convert_media` deletes whatever is still pending when it finishes uncommitted.
+#[derive(Default)]
+struct PendingUploads {
+    paths: Vec<String>,
+    /// Set once the DB points at the uploaded objects: from then on they're live, and must not be deleted.
+    committed: bool,
+}
+
+impl PendingUploads {
+    async fn put(&mut self, bucket: &Bucket, path: &str, bytes: &[u8], content_type: &str) -> Result<()> {
+        bucket.put_object_with_content_type(path, bytes, content_type).await?;
+        self.paths.push(path.to_string());
+        Ok(())
+    }
+
+    fn commit(&mut self) {
+        self.committed = true;
+        self.paths.clear();
+    }
+
+    /// Deletes the not-yet-committed uploads (best-effort: an object that can't be deleted is only logged).
+    async fn discard(&mut self, bucket: &Bucket, media_id: i64) {
+        for path in self.paths.drain(..) {
+            match bucket.delete_object(&path).await {
+                Ok(_) => log::info!("Media {media_id}: deleted uncommitted upload {path}"),
+                Err(e) => log::warn!("Media {media_id}: failed to delete uncommitted upload {path}: {e:?}"),
+            }
+        }
+    }
+}
+
+/// Object path for `conversion_key`'s copy of the item whose original is at `original_path`.
+fn derived_object_path(original_path: &str, conversion_key: &str) -> String {
+    versioned_object_path(&format!("{original_path}.{conversion_key}"))
+}
+
+/// File tags (`(key, value)`, an empty value clearing that tag) written into converted audio/video copies.
+pub type OutputTags = Vec<(&'static str, String)>;
+
+/// The tags a converted copy of `name`/`description`/`metadata` carries -- always *every* managed key, so a credit
+/// the owner cleared is cleared in the file too (`ffmpeg -metadata key=` deletes it) instead of surviving from the
+/// copy the original's tags were inherited from. `title` is the media name; `comment` its description; the rest are
+/// the credits (ID3 `TPE1`/`TALB`/`TCOM`/`TPUB`/..., Vorbis comments, MP4 atoms -- whichever the container uses; keys
+/// with no standard slot are stored as custom tags). `preview` marks the licensed-viewer preview crop
+/// (`UNLICENSED_PREVIEW_MEDIUM`): its title is prefixed `[Preview]` so it can't be mistaken for the full track.
+pub fn output_tags(
+    name: Option<&str>,
+    description: Option<&str>,
+    metadata: &MediaMetadata,
+    preview: bool,
+) -> OutputTags {
+    let clean = |value: Option<&str>| value.map(str::trim).unwrap_or("").to_string();
+    let title = clean(name);
+    let title = match (preview, title.is_empty()) {
+        (false, _) => title,
+        (true, true) => "[Preview]".to_string(),
+        (true, false) => format!("[Preview] {title}"),
+    };
+    vec![
+        ("title", title),
+        ("artist", clean(metadata.artist.as_deref())),
+        ("album", clean(metadata.album.as_deref())),
+        ("composer", clean(metadata.composer.as_deref())),
+        ("publisher", clean(metadata.publisher.as_deref())),
+        ("comment", clean(description)),
+        ("director", clean(metadata.director.as_deref())),
+        ("producer", clean(metadata.producer.as_deref())),
+        ("starring", clean(metadata.starring.as_deref())),
+        ("cast", clean(metadata.cast.as_deref())),
+        ("crew", clean(metadata.crew.as_deref())),
+        ("narrator", clean(metadata.narrator.as_deref())),
+    ]
+}
+
+/// `-metadata key=value` ffmpeg arguments for `tags`.
+fn metadata_args(tags: &OutputTags) -> Vec<String> {
+    tags.iter()
+        .flat_map(|(key, value)| ["-metadata".to_string(), format!("{key}={value}")])
+        .collect()
+}
+
 fn command_exists(program: &str) -> bool {
     Command::new(program)
         .arg("-version")
@@ -737,13 +881,112 @@ impl Converter<'_> {
         output: &Path,
         max_dimension: u32,
         content_type: &str,
+        tags: &OutputTags,
     ) -> Result<()> {
         match self {
             Converter::Image(imagemagick) => imagemagick.resize(input, output, max_dimension),
-            Converter::Video(ffmpeg) => ffmpeg.resize(input, output, max_dimension, content_type),
+            Converter::Video(ffmpeg) => ffmpeg.resize(input, output, max_dimension, content_type, tags),
             Converter::Audio(_) => bail!("audio has no resized copies"),
         }
     }
+}
+
+/// Brings the file tags of `item`'s existing converted audio/video copies (small/medium/large, the licensed preview,
+/// ...) up to date with its current name/description/credits -- see `output_tags` -- by remuxing each copy with
+/// `FFmpeg::retag` instead of re-encoding, then marks `item` `processed` again. Queued by `UpdateMedia` (via
+/// `MediaMetadata.retag_only`) when only those fields changed. The original upload is deliberately left as
+/// uploaded, and image copies (waveforms, cover art) carry no tags, so both are skipped.
+async fn retag_media(
+    item: &Media,
+    ffmpeg: &FFmpeg,
+    bucket: &Bucket,
+    tmp_dir: &Path,
+    conn: &mut PgPooledConnection,
+    pending: &mut PendingUploads,
+) -> Result<()> {
+    let mut metadata = item.metadata();
+    metadata.retag_only = false;
+    let mut sizes = item.sizes();
+    let mut added_bytes: i64 = 0;
+    // The pre-retag objects, deleted once the DB points at their replacements.
+    let mut replaced_paths: Vec<String> = Vec::new();
+
+    for size in sizes.iter_mut() {
+        let is_av = size.content_type.starts_with("audio/") || size.content_type.starts_with("video/");
+        if size.conversion() == MediaConversion::Original || !is_av {
+            continue;
+        }
+        let Ok(extension) = extension_for_content_type(&size.content_type) else {
+            log::warn!("Media {}: can't retag a '{}' copy (skipping)", item.id, size.content_type);
+            continue;
+        };
+        let preview = size.conversion() == MediaConversion::UnlicensedPreviewMedium;
+        let tags = output_tags(item.name.as_deref(), item.description.as_deref(), &metadata, preview);
+
+        let input_path = tmp_dir.join(format!("{}-retag-in-{}.{}", item.id, size.conversion, extension));
+        let output_path = tmp_dir.join(format!("{}-retag-out-{}.{}", item.id, size.conversion, extension));
+        let existing = bucket
+            .get_object(&size.object_storage_path)
+            .await
+            .with_context(|| format!("failed to download {} to retag", size.object_storage_path))?;
+        std::fs::write(&input_path, existing.as_slice())?;
+        let result = ffmpeg.retag(&input_path, &output_path, &tags, &size.content_type);
+        let _ = std::fs::remove_file(&input_path);
+        result?;
+        let retagged = std::fs::read(&output_path)?;
+        let _ = std::fs::remove_file(&output_path);
+
+        let new_path = versioned_object_path(&size.object_storage_path);
+        pending
+            .put(bucket, &new_path, &retagged, &size.content_type)
+            .await
+            .with_context(|| format!("failed to upload retagged {new_path}"))?;
+        replaced_paths.push(std::mem::replace(&mut size.object_storage_path, new_path));
+        added_bytes += retagged.len() as i64 - size.size_bytes;
+        log::info!(
+            "Media {}: retagged '{}' ({} -> {} bytes)",
+            item.id,
+            size.conversion().key(),
+            size.size_bytes,
+            retagged.len()
+        );
+        size.size_bytes = retagged.len() as i64;
+    }
+
+    // Only if the row is still what this run started from: it took a while to download, remux and upload every copy,
+    // and an `UpdateMedia` in that time (new name/credits, invalidated sizes) must not be overwritten with this run's
+    // stale metadata/sizes -- nor have its own pending retag marked done. If it changed, drop this run's uploads
+    // (`convert_media` deletes them, as nothing was committed); the edit left the item unprocessed with
+    // `retag_only`, so the next run retags from the new values.
+    let updated = diesel::update(
+        media::table
+            .find(item.id)
+            .filter(media::name.is_not_distinct_from(item.name.clone()))
+            .filter(media::description.is_not_distinct_from(item.description.clone()))
+            .filter(media::metadata.eq(item.metadata.clone()))
+            .filter(media::sizes.eq(item.sizes.clone())),
+    )
+    .set((
+        media::sizes.eq(serde_json::to_value(&sizes)?),
+        media::metadata.eq(serde_json::to_value(&metadata)?),
+        media::processed.eq(true),
+    ))
+    .execute(conn)?;
+    if updated == 0 {
+        log::info!("Media {}: edited while being retagged; discarding this retag (it will run again)", item.id);
+        return Ok(());
+    }
+    pending.commit();
+    for path in &replaced_paths {
+        if let Err(e) = bucket.delete_object(path).await {
+            log::warn!("Media {}: failed to delete replaced object {}: {:?}", item.id, path, e);
+        }
+    }
+    if let Some(user_id) = item.user_id {
+        update_media_storage_used(user_id, conn)?;
+    }
+    adjust_server_media_usage_bytes(conn, added_bytes)?;
+    Ok(())
 }
 
 /// Downloads `item`'s original from object storage, generates any `RESIZED_CONVERSIONS` entry it's larger
@@ -764,6 +1007,41 @@ pub async fn convert_media(
     tmp_dir: &Path,
     conn: &mut PgPooledConnection,
 ) -> Result<()> {
+    let mut pending = PendingUploads::default();
+    let result = convert_media_inner(item, imagemagick, ffmpeg, bucket, tmp_dir, conn, &mut pending).await;
+    // Whether it failed or bowed out (a retag that lost a race), nothing the DB doesn't reference may be left behind.
+    pending.discard(bucket, item.id).await;
+    result
+}
+
+async fn convert_media_inner(
+    item: &Media,
+    imagemagick: Option<&ImageMagick>,
+    ffmpeg: Option<&FFmpeg>,
+    bucket: &Bucket,
+    tmp_dir: &Path,
+    conn: &mut PgPooledConnection,
+    pending: &mut PendingUploads,
+) -> Result<()> {
+    // Only name/description/credits changed since it was last converted (see `MediaMetadata.retag_only`): rewrite the
+    // existing copies' tags rather than regenerating them. If that fails *before* anything was committed (an ffmpeg
+    // error on some odd stream layout, say), fall back to regenerating the copies -- otherwise the item would stay
+    // queued, and fail the same way, on every run.
+    if item.metadata().retag_only && item.sizes().len() > 1 {
+        let retagged = match ffmpeg {
+            Some(ffmpeg) => retag_media(item, ffmpeg, bucket, tmp_dir, conn, pending).await,
+            None => Err(anyhow::anyhow!("ffmpeg not found on $PATH; cannot retag audio/video Media")),
+        };
+        match retagged {
+            Ok(()) => return Ok(()),
+            Err(e) if pending.committed => return Err(e),
+            Err(e) => {
+                log::warn!("Media {}: retag failed ({:#}); regenerating its copies instead", item.id, e);
+                pending.discard(bucket, item.id).await;
+            }
+        }
+    }
+
     let mut original = item
         .original()
         .context("Media has no MEDIA_CONVERSION_ORIGINAL size")?;
@@ -786,6 +1064,58 @@ pub async fn convert_media(
         .await
         .context("failed to download original from object storage")?;
     std::fs::write(&input_path, original_bytes.as_slice())?;
+
+    // Done *before* the copies are generated, so they're tagged with the seeded values (not the bare filename):
+    // audio/video, first conversion only (i.e. the item has nothing but its original so far -- a
+    // reconversion after an edit shouldn't re-fill a credit the owner deliberately cleared): seed
+    // blank credits from the file's own tags. Best-effort -- unreadable/missing tags are logged and
+    // skipped, never failing the conversion.
+    let mut metadata = item.metadata();
+    // A full conversion regenerates every copy with the current values, so a pending retag is moot.
+    metadata.retag_only = false;
+    let mut title_name: Option<String> = None;
+    let credits_changed = match &converter {
+        Converter::Audio(ffmpeg) | Converter::Video(ffmpeg) if item.sizes().len() <= 1 => {
+            match ffmpeg.tags(&input_path) {
+                Ok(tags) => {
+                    title_name = title_name_override(&item, &original.object_storage_path, &tags);
+                    metadata.fill_missing_credits(&credits_from_tags(&tags))
+                }
+                Err(e) => {
+                    log::warn!("Media {}: couldn't read tags (skipping): {:#}", item.id, e);
+                    false
+                }
+            }
+        }
+        _ => false,
+    };
+
+    // Audio, first conversion only: whatever tempo/key the tags didn't supply is estimated from the
+    // audio itself (see `audio_analysis`). Best-effort, like the tags above.
+    let analysis_changed = match &converter {
+        Converter::Audio(_)
+            if item.sizes().len() <= 1 && needs_analysis(&metadata) =>
+        {
+            match analyze_audio_file(&input_path) {
+                Ok(analysis) => {
+                    log::info!("Media {}: analyzed {:?}", item.id, analysis);
+                    metadata.fill_missing_credits(&analysis.into_metadata())
+                }
+                Err(e) => {
+                    log::warn!("Media {}: couldn't analyze tempo/key (skipping): {:#}", item.id, e);
+                    false
+                }
+            }
+        }
+        _ => false,
+    };
+    let credits_changed = credits_changed || analysis_changed;
+
+    // The tags every generated copy carries: the item's name/description/credits as they stand (including what was
+    // just seeded from the file's own tags) -- the licensed preview with a "[Preview]" title.
+    let tag_name: Option<String> = title_name.clone().or_else(|| item.name.clone());
+    let tags = output_tags(tag_name.as_deref(), item.description.as_deref(), &metadata, false);
+    let preview_tags = output_tags(tag_name.as_deref(), item.description.as_deref(), &metadata, true);
 
     // Audio has no dimensions: skip resizing entirely and leave the original's `aspect_ratio` unset.
     let is_audio = matches!(converter, Converter::Audio(_));
@@ -824,13 +1154,14 @@ pub async fn convert_media(
             &output_path,
             conversion.max_dimension(),
             &resized_content_type,
+            &tags,
         )?;
         let output_bytes = std::fs::read(&output_path)?;
         let _ = std::fs::remove_file(&output_path);
 
-        let converted_object_storage_path = format!("{}.{}", sizes[0].object_storage_path, conversion.key());
-        bucket
-            .put_object_with_content_type(&converted_object_storage_path, &output_bytes, &resized_content_type)
+        let converted_object_storage_path = derived_object_path(&sizes[0].object_storage_path, conversion.key());
+        pending
+            .put(bucket, &converted_object_storage_path, &output_bytes, &resized_content_type)
             .await
             .context("failed to upload converted size to object storage")?;
 
@@ -865,9 +1196,9 @@ pub async fn convert_media(
             let output_bytes = std::fs::read(&output_path)?;
             let _ = std::fs::remove_file(&output_path);
 
-            let converted_object_storage_path = format!("{}.{}", sizes[0].object_storage_path, conversion.key());
-            bucket
-                .put_object_with_content_type(&converted_object_storage_path, &output_bytes, "image/jpeg")
+            let converted_object_storage_path = derived_object_path(&sizes[0].object_storage_path, conversion.key());
+            pending
+                .put(bucket, &converted_object_storage_path, &output_bytes, "image/jpeg")
                 .await
                 .context("failed to upload video preview thumbnail to object storage")?;
 
@@ -906,13 +1237,13 @@ pub async fn convert_media(
                 continue;
             }
             let output_path = tmp_dir.join(format!("{}-{}.m4a", item.id, conversion.key()));
-            ffmpeg.compress_audio(&input_path, &output_path, kbps)?;
+            ffmpeg.compress_audio(&input_path, &output_path, kbps, &tags)?;
             let output_bytes = std::fs::read(&output_path)?;
             let _ = std::fs::remove_file(&output_path);
 
-            let converted_object_storage_path = format!("{}.{}", sizes[0].object_storage_path, conversion.key());
-            bucket
-                .put_object_with_content_type(&converted_object_storage_path, &output_bytes, COMPRESSED_AUDIO_CONTENT_TYPE)
+            let converted_object_storage_path = derived_object_path(&sizes[0].object_storage_path, conversion.key());
+            pending
+                .put(bucket, &converted_object_storage_path, &output_bytes, COMPRESSED_AUDIO_CONTENT_TYPE)
                 .await
                 .context("failed to upload compressed audio to object storage")?;
             log::info!(
@@ -947,9 +1278,9 @@ pub async fn convert_media(
                 let output_bytes = std::fs::read(&output_path)?;
                 let _ = std::fs::remove_file(&output_path);
 
-                let converted_object_storage_path = format!("{}.{}", sizes[0].object_storage_path, conversion.key());
-                bucket
-                    .put_object_with_content_type(&converted_object_storage_path, &output_bytes, "image/jpeg")
+                let converted_object_storage_path = derived_object_path(&sizes[0].object_storage_path, conversion.key());
+                pending
+                    .put(bucket, &converted_object_storage_path, &output_bytes, "image/jpeg")
                     .await
                     .context("failed to upload audio cover art to object storage")?;
                 log::info!(
@@ -978,9 +1309,9 @@ pub async fn convert_media(
             let output_bytes = std::fs::read(&output_path)?;
             let _ = std::fs::remove_file(&output_path);
 
-            let converted_object_storage_path = format!("{}.{}", sizes[0].object_storage_path, conversion.key());
-            bucket
-                .put_object_with_content_type(&converted_object_storage_path, &output_bytes, "image/png")
+            let converted_object_storage_path = derived_object_path(&sizes[0].object_storage_path, conversion.key());
+            pending
+                .put(bucket, &converted_object_storage_path, &output_bytes, "image/png")
                 .await
                 .context("failed to upload audio waveform thumbnail to object storage")?;
 
@@ -1032,14 +1363,15 @@ pub async fn convert_media(
                 is_video,
                 conversion.max_dimension(),
                 &content_type,
+                &preview_tags,
             )?;
             let output_bytes = std::fs::read(&output_path)?;
             let _ = std::fs::remove_file(&output_path);
 
             let converted_object_storage_path =
-                format!("{}.{}", sizes[0].object_storage_path, conversion.key());
-            bucket
-                .put_object_with_content_type(&converted_object_storage_path, &output_bytes, &content_type)
+                derived_object_path(&sizes[0].object_storage_path, conversion.key());
+            pending
+                .put(bucket, &converted_object_storage_path, &output_bytes, &content_type)
                 .await
                 .context("failed to upload unlicensed preview to object storage")?;
             log::info!(
@@ -1061,49 +1393,6 @@ pub async fn convert_media(
         }
     }
 
-    // Audio/video, first conversion only (i.e. the item has nothing but its original so far -- a
-    // reconversion after an edit shouldn't re-fill a credit the owner deliberately cleared): seed
-    // blank credits from the file's own tags. Best-effort -- unreadable/missing tags are logged and
-    // skipped, never failing the conversion.
-    let mut metadata = item.metadata();
-    let mut title_name: Option<String> = None;
-    let credits_changed = match &converter {
-        Converter::Audio(ffmpeg) | Converter::Video(ffmpeg) if item.sizes().len() <= 1 => {
-            match ffmpeg.tags(&input_path) {
-                Ok(tags) => {
-                    title_name = title_name_override(&item, &sizes[0].object_storage_path, &tags);
-                    metadata.fill_missing_credits(&credits_from_tags(&tags))
-                }
-                Err(e) => {
-                    log::warn!("Media {}: couldn't read tags (skipping): {:#}", item.id, e);
-                    false
-                }
-            }
-        }
-        _ => false,
-    };
-
-    // Audio, first conversion only: whatever tempo/key the tags didn't supply is estimated from the
-    // audio itself (see `audio_analysis`). Best-effort, like the tags above.
-    let analysis_changed = match &converter {
-        Converter::Audio(_)
-            if item.sizes().len() <= 1 && needs_analysis(&metadata) =>
-        {
-            match analyze_audio_file(&input_path) {
-                Ok(analysis) => {
-                    log::info!("Media {}: analyzed {:?}", item.id, analysis);
-                    metadata.fill_missing_credits(&analysis.into_metadata())
-                }
-                Err(e) => {
-                    log::warn!("Media {}: couldn't analyze tempo/key (skipping): {:#}", item.id, e);
-                    false
-                }
-            }
-        }
-        _ => false,
-    };
-    let credits_changed = credits_changed || analysis_changed;
-
     let _ = std::fs::remove_file(&input_path);
 
     diesel::update(media::table.find(item.id))
@@ -1112,7 +1401,8 @@ pub async fn convert_media(
             media::processed.eq(true),
         ))
         .execute(conn)?;
-    if credits_changed {
+    pending.commit();
+    if credits_changed || item.metadata().retag_only {
         diesel::update(media::table.find(item.id))
             .set(media::metadata.eq(serde_json::to_value(&metadata)?))
             .execute(conn)?;
@@ -1128,9 +1418,22 @@ pub async fn convert_media(
     }
     // `sizes[0]` is the original, carried over unchanged (its `size_bytes` doesn't change here,
     // only `aspect_ratio` gets backfilled) -- every entry after it is newly generated by this run,
-    // so that's the actual added weight.
+    // so that's the added weight...
     let added_bytes: i64 = sizes.iter().skip(1).map(|s| s.size_bytes).sum();
-    adjust_server_media_usage_bytes(conn, added_bytes)?;
+    // ...minus whatever copies this reconversion replaced (each regeneration writes a new object path -- see
+    // `versioned_object_path` -- so the previous objects are now orphans): delete them and stop counting them.
+    let replaced: Vec<MediaSize> = item
+        .sizes()
+        .into_iter()
+        .filter(|old| old.conversion() != MediaConversion::Original)
+        .collect();
+    for old in &replaced {
+        if let Err(e) = bucket.delete_object(&old.object_storage_path).await {
+            log::warn!("Media {}: failed to delete replaced object {}: {:?}", item.id, old.object_storage_path, e);
+        }
+    }
+    let replaced_bytes: i64 = replaced.iter().map(|old| old.size_bytes).sum();
+    adjust_server_media_usage_bytes(conn, added_bytes - replaced_bytes)?;
 
     Ok(())
 }
@@ -1459,5 +1762,84 @@ mod tag_tests {
         let _ = std::fs::remove_file(&path);
         assert_eq!(credits.artist.as_deref(), Some("Test Artist"));
         assert_eq!(credits.composer.as_deref(), Some("Test Composer"));
+    }
+
+    #[test]
+    fn versioned_paths_are_fresh_each_time_and_replace_a_previous_version() {
+        let first = derived_object_path("user/1-x/uuid-song.mp3", "medium");
+        assert!(first.starts_with("user/1-x/uuid-song.mp3.medium."));
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        let second = versioned_object_path(&first);
+        assert_ne!(first, second, "a new version is a new object path");
+        assert_eq!(
+            second.matches("medium").count(),
+            1,
+            "the old version suffix is replaced, not stacked: {second}"
+        );
+        // A path with no version suffix (the original upload, or a pre-versioning copy) just gets one.
+        assert!(versioned_object_path("a/b-c.mp3").starts_with("a/b-c.mp3."));
+        // A short numeric extension isn't mistaken for a version.
+        assert!(versioned_object_path("a/b.2024").starts_with("a/b.2024."));
+        assert_eq!(object_path_version_base("a/b.mp3.medium.1790000000000"), Some("a/b.mp3.medium"));
+        assert_eq!(object_path_version_base("a/b.mp3"), None);
+        assert_eq!(object_path_version_base("a/b.2024"), None);
+    }
+
+    fn tag<'a>(tags: &'a OutputTags, key: &str) -> &'a str {
+        tags.iter().find(|(k, _)| *k == key).map(|(_, v)| v.as_str()).unwrap()
+    }
+
+    #[test]
+    fn output_tags_carry_the_name_description_and_credits_and_clear_blanks() {
+        let metadata = MediaMetadata { artist: Some(" Miles ".to_string()), ..Default::default() };
+        let tags = output_tags(Some(" So What "), Some("Live"), &metadata, false);
+        assert_eq!(tag(&tags, "title"), "So What");
+        assert_eq!(tag(&tags, "artist"), "Miles");
+        assert_eq!(tag(&tags, "comment"), "Live");
+        // Unset credits are present but empty -- `-metadata album=` clears a stale inherited tag.
+        assert_eq!(tag(&tags, "album"), "");
+        assert!(metadata_args(&tags).windows(2).any(|w| w == ["-metadata", "album="]));
+    }
+
+    #[test]
+    fn preview_copies_get_a_preview_title_prefix() {
+        let metadata = MediaMetadata::default();
+        assert_eq!(tag(&output_tags(Some("So What"), None, &metadata, true), "title"), "[Preview] So What");
+        assert_eq!(tag(&output_tags(None, None, &metadata, true), "title"), "[Preview]");
+        assert_eq!(tag(&output_tags(Some("So What"), None, &metadata, false), "title"), "So What");
+    }
+
+    #[test]
+    fn tag_credits_differ_only_for_tagged_credits() {
+        let base = MediaMetadata { artist: Some("A".to_string()), ..Default::default() };
+        assert!(!base.tag_credits_differ(&base.clone()));
+        assert!(base.tag_credits_differ(&MediaMetadata { artist: Some("B".to_string()), ..Default::default() }));
+        // Tempo, key and preview bounds aren't file tags, so changing them never queues a retag.
+        assert!(!base.tag_credits_differ(&MediaMetadata { start_bpm: Some(120.0), ..base.clone() }));
+    }
+
+    /// End to end against the real `ffmpeg`: a remux rewrites (and clears) tags without touching the audio.
+    #[test]
+    fn retag_rewrites_tags_without_reencoding() {
+        let Some(ffmpeg) = FFmpeg::detect() else { return };
+        let dir = std::env::temp_dir();
+        let input = dir.join(format!("rellm-retag-in-{}.mp3", std::process::id()));
+        let output = dir.join(format!("rellm-retag-out-{}.mp3", std::process::id()));
+        let status = Command::new("ffmpeg")
+            .args(["-y", "-nostdin", "-loglevel", "error", "-f", "lavfi", "-i", "sine=duration=1"])
+            .args(["-metadata", "title=Old Title", "-metadata", "artist=Old Artist", "-metadata", "album=Old Album"])
+            .arg(&input)
+            .status()
+            .unwrap();
+        assert!(status.success());
+        let metadata = MediaMetadata { artist: Some("New Artist".to_string()), ..Default::default() };
+        let tags = output_tags(Some("New Title"), None, &metadata, true);
+        ffmpeg.retag(&input, &output, &tags, "audio/mpeg").unwrap();
+        let written = ffmpeg.tags(&output).unwrap();
+        let _ = std::fs::remove_file(&input);
+        let _ = std::fs::remove_file(&output);
+        assert_eq!(written.get("title").map(String::as_str), Some("[Preview] New Title"));
+        assert_eq!(written.get("artist").map(String::as_str), Some("New Artist"));
+        assert_eq!(written.get("album"), None, "a credit that's now unset is cleared from the file");
     }
 }

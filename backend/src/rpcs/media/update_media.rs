@@ -23,6 +23,10 @@ use crate::rpcs::validations::*;
 /// - `request.metadata` unset leaves metadata untouched. If set, it *replaces* all of it (every
 ///   credit/preview field not included becomes unset), with blank credit strings saved as null.
 ///   `unlicensed_preview_*` may only be set on audio/video media.
+/// - Changing the `name`, `description` or a tag-relevant credit on a converted audio/video item queues a *retag*:
+///   the item is marked unprocessed with `MediaMetadata.retag_only`, and the `convert_media_sizes` job rewrites the
+///   tags of its existing converted copies (small/medium/large and the licensed preview) with a lossless remux --
+///   the original upload is left untouched.
 /// - If `video_preview_time_ms` changes on a video, existing `VIDEO_PREVIEW_THUMBNAIL_*` sizes are
 ///   stale (captured at the old time); likewise `UNLICENSED_PREVIEW_MEDIUM` when either
 ///   `unlicensed_preview_*` bound changes. Stale sizes are deleted here (from `sizes` and their
@@ -87,6 +91,7 @@ pub async fn update_media(
                 max_bpm: m.max_bpm,
                 start_key: blank_to_none(m.start_key.clone()),
                 end_key: blank_to_none(m.end_key.clone()),
+                retag_only: false,
                 cover_art_media_id: match blank_to_none(m.cover_art_media_id.clone()) {
                     None => None,
                     Some(id) => {
@@ -159,6 +164,20 @@ pub async fn update_media(
         || new_metadata.unlicensed_preview_end_ms != current_metadata.unlicensed_preview_end_ms;
     let invalidate_any = invalidate_video_thumbnails || invalidate_unlicensed_preview;
 
+    // The name/description/credits end up in the converted copies' file tags (see `output_tags`). Changing them on
+    // an already-converted audio/video item queues a cheap *retag* of those copies (not a re-encode) -- unless
+    // something above already forces a full regeneration, which picks the new values up anyway. A retag still
+    // pending from an earlier edit stays pending.
+    let tags_changed = request.name != affected_media.name
+        || request.description != affected_media.description
+        || new_metadata.tag_credits_differ(&current_metadata);
+    let retag_pending = current_metadata.retag_only && !affected_media.processed;
+    let retag_needed = !invalidate_any
+        && is_audio_or_video
+        && affected_media.sizes().len() > 1
+        && ((tags_changed && affected_media.processed) || retag_pending);
+    let new_metadata = models::MediaMetadata { retag_only: retag_needed, ..new_metadata };
+
     let (kept_sizes, removed_sizes): (Vec<models::MediaSize>, Vec<models::MediaSize>) =
         affected_media.sizes().into_iter().partition(|s| {
             !(invalidate_video_thumbnails && VIDEO_PREVIEW_CONVERSIONS.contains(&s.conversion())
@@ -173,7 +192,7 @@ pub async fn update_media(
             media::visibility.eq(new_visibility),
             media::metadata.eq(serde_json::to_value(&new_metadata).unwrap()),
             media::sizes.eq(serde_json::to_value(&kept_sizes).unwrap()),
-            media::processed.eq(affected_media.processed && !invalidate_any),
+            media::processed.eq(affected_media.processed && !invalidate_any && !retag_needed),
         ))
         .get_result::<models::Media>(conn)
         .map_err(|e| {

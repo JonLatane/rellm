@@ -1,4 +1,4 @@
-module Shared.AudioPlayerPanel exposing (Model, Msg(..), currentMedia, init, isExpanded, subscriptions, update, view)
+module Shared.AudioPlayerPanel exposing (Model, Msg(..), TrackLink, currentMedia, init, isExpanded, subscriptions, trackFragment, trackLinkFromFragment, update, view)
 
 {-| A persistent, app-wide audio player -- the companion to `Shared.MediaViewerPanel`. Where the viewer is a
 fullscreen, view-blocking carousel (with editing), this is a "now playing" bar docked to the bottom of the
@@ -18,12 +18,13 @@ The neighboring tracks of the queue are fetched ahead of time with hidden `prelo
 import Components.MediaRenderer as MediaRenderer exposing (ResolutionTier(..))
 import Components.Posts as Posts
 import Browser.Events
-import Html exposing (Html, audio, button, div, img, option, select, span, text)
-import Html.Attributes exposing (alt, attribute, class, selected, src, style, value)
+import Html exposing (Html, a, audio, button, div, h3, img, option, select, span, text)
+import Html.Attributes exposing (alt, attribute, class, href, selected, src, style, target, value)
 import Html.Events exposing (on, onClick, onInput, stopPropagationOn)
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Ports
+import Process
 import Proto.Rellm exposing (MediaMetadata, MediaReference, defaultMediaMetadata)
 import Proto.Rellm.MediaConversion exposing (MediaConversion(..))
 import Shared.AccountsPanel as AccountsPanel
@@ -32,7 +33,8 @@ import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer)
 import Shared.ByteFormat as ByteFormat
 import Shared.Conversions exposing (int64ToInt)
 import Shared.MediaViewerPanel as MediaViewerPanel
-import UI.Classes exposing (classes, openClosedClass)
+import Task
+import UI.Classes exposing (classes, hostnameToCSSClass, openClosedClass)
 
 
 {-| Which stored copy of a track to stream -- the audio `small`/`medium`/`large` AAC tiers the conversion job
@@ -95,17 +97,42 @@ type alias Model =
     -- the first byte, which stalls playback (badly on iOS Safari). Same gate for the neighbors' preloads.
     , pendingUpgrade : Maybe Source
     , activeLoaded : Bool
+
+    -- A `#track-<id>[@host]` link (see `trackLinkFromFragment`) waiting for its server to connect so the track
+    -- can be fetched; `Shared.update` clears it when it starts that fetch.
+    , pendingTrackLink : Maybe TrackLink
+
+    -- `scheme://host[:port]` this app is served from -- what a shared link to a track starts with.
+    , origin : String
+
+    -- The Download/Share popover (top-left of the expanded panel): whether it's open, and whether "Copy Link" was
+    -- pressed in the last 5s (`copyGeneration` debounces that "Copied!" label, as on the Posts page).
+    , sharePopoverOpen : Bool
+    , linkCopied : Bool
+    , copyGeneration : Int
+
+    -- While expanded, the URL fragment (`Just Nothing` = none) that was in place before `Shared.update` set
+    -- `#track-<id>`, so collapsing can put it back. `Nothing` when not expanded.
+    , savedFragment : Maybe (Maybe String)
     }
 
 
 type Msg
     = -- queue, id to start playing, host
       Open (List MediaReference) String String
+      -- Like `Open`, but doesn't start playback and leaves the player expanded: a `#track-<id>` link (browsers
+      -- block autoplay from links anyway). Playback -- and the higher-quality upgrade -- wait for the first Play.
+    | Load (List MediaReference) String String
     | Next
     | Prev
     | TogglePlay
     | ToggleExpanded
     | Close
+    | ToggleShare
+    | ShareClosed
+      -- The link text to copy (built in `view`, which knows the main server).
+    | CopyLinkClicked String
+    | CopyLinkTimeout Int
       -- 0..1 through the track
     | SeekToFraction Float
     | TimeUpdated Slot Float Float
@@ -124,7 +151,7 @@ type Msg
 
 init : Model
 init =
-    { queue = [], currentId = Nothing, targetHost = "", expanded = False, playing = False, positionMs = 0, durationMs = 0, quality = High, activeSlot = SlotA, slotA = Nothing, slotB = Nothing, autoStart = False, pendingUpgrade = Nothing, activeLoaded = False }
+    { queue = [], currentId = Nothing, targetHost = "", expanded = False, playing = False, positionMs = 0, durationMs = 0, quality = High, activeSlot = SlotA, slotA = Nothing, slotB = Nothing, autoStart = False, pendingUpgrade = Nothing, activeLoaded = False, pendingTrackLink = Nothing, origin = "", sharePopoverOpen = False, linkCopied = False, copyGeneration = 0, savedFragment = Nothing }
 
 
 {-| Whether the panel is actually shown expanded: the user's choice (`Model.expanded`), unless the fullscreen
@@ -228,6 +255,76 @@ urlFor server maybeAccount media quality =
 
         OriginalQuality ->
             MediaRenderer.authorizedUrl [ "size=original" ] server maybeAccount media
+
+
+{-| Starts the held-back higher-quality download (`pendingUpgrade`) once the active copy has fully downloaded AND
+playback is under way.
+-}
+releaseUpgradeIfPlaying : Model -> Model
+releaseUpgradeIfPlaying model =
+    case model.pendingUpgrade of
+        Just upgrade ->
+            if model.activeLoaded && model.playing then
+                { model | pendingUpgrade = Nothing } |> setSlot (otherSlot model.activeSlot) (Just upgrade)
+
+            else
+                model
+
+        Nothing ->
+            model
+
+
+{-| A parsed `#track-<id>[@host]` link: the track, and (federated links) the server it lives on -- `Nothing` meaning
+the server the link was opened on.
+-}
+type alias TrackLink =
+    { id : String, host : Maybe String }
+
+
+{-| `track-<id>` or `track-<id>@<host>` in a URL fragment (`https://rellm.org#track-abcd123@other.example`) -> the
+link; `Nothing` for any other fragment (other pages use fragments of their own).
+-}
+trackLinkFromFragment : Maybe String -> Maybe TrackLink
+trackLinkFromFragment fragment =
+    fragment
+        |> Maybe.andThen
+            (\f ->
+                if String.startsWith "track-" f then
+                    case String.split "@" (String.dropLeft 6 f) of
+                        [ id ] ->
+                            nonEmpty id |> Maybe.map (\i -> { id = i, host = Nothing })
+
+                        [ id, host ] ->
+                            nonEmpty id |> Maybe.map (\i -> { id = i, host = nonEmpty host })
+
+                        _ ->
+                            Nothing
+
+                else
+                    Nothing
+            )
+
+
+{-| The fragment (without `#`) that links to track `id` on `trackHost`, as seen from `mainHost` (the server this app
+was opened on): `track-<id>`, plus `@<trackHost>` when the track is on another server.
+-}
+trackFragment : String -> String -> String -> String
+trackFragment mainHost trackHost id =
+    "track-"
+        ++ id
+        ++ (if trackHost == mainHost || trackHost == "" then
+                ""
+
+            else
+                "@" ++ trackHost
+           )
+
+
+{-| The shareable link to `media`'s track: this app's own origin plus its (federated) track fragment.
+-}
+shareLink : String -> Model -> MediaReference -> String
+shareLink mainHost model media =
+    model.origin ++ "#" ++ trackFragment mainHost model.targetHost media.id
 
 
 slotSource : Slot -> Model -> Maybe Source
@@ -412,6 +509,20 @@ update msg model =
                 Nothing ->
                     ( model, Cmd.none )
 
+        Load queue id host ->
+            case queue |> List.filter (\m -> m.id == id) |> List.head of
+                Just media ->
+                    if model.currentId == Just id && model.targetHost == host then
+                        -- Already the loaded track: just show it.
+                        ( { model | expanded = True }, Cmd.none )
+
+                    else
+                        beginTrack media { model | queue = queue, targetHost = host }
+                            |> Tuple.mapFirst (\loaded -> { loaded | playing = False, autoStart = False, expanded = True })
+
+                Nothing ->
+                    ( model, Cmd.none )
+
         Next ->
             case adjacent 1 model of
                 Just media ->
@@ -433,10 +544,31 @@ update msg model =
             ( model, command "toggle" Nothing )
 
         ToggleExpanded ->
-            ( { model | expanded = not model.expanded }, Cmd.none )
+            ( { model | expanded = not model.expanded, sharePopoverOpen = False }, Cmd.none )
+
+        ToggleShare ->
+            ( { model | sharePopoverOpen = not model.sharePopoverOpen }, Cmd.none )
+
+        ShareClosed ->
+            ( { model | sharePopoverOpen = False }, Cmd.none )
+
+        CopyLinkClicked link ->
+            ( { model | linkCopied = True, copyGeneration = model.copyGeneration + 1 }
+            , Cmd.batch
+                [ Ports.copyToClipboard link
+                , Process.sleep 5000 |> Task.perform (\_ -> CopyLinkTimeout (model.copyGeneration + 1))
+                ]
+            )
+
+        CopyLinkTimeout generation ->
+            if generation == model.copyGeneration then
+                ( { model | linkCopied = False }, Cmd.none )
+
+            else
+                ( model, Cmd.none )
 
         Close ->
-            ( { model | queue = [], currentId = Nothing, expanded = False, playing = False, positionMs = 0, durationMs = 0, slotA = Nothing, slotB = Nothing, autoStart = False, pendingUpgrade = Nothing, activeLoaded = False }
+            ( { model | queue = [], currentId = Nothing, expanded = False, sharePopoverOpen = False, playing = False, positionMs = 0, durationMs = 0, slotA = Nothing, slotB = Nothing, autoStart = False, pendingUpgrade = Nothing, activeLoaded = False }
             , Cmd.batch [ releaseSlot SlotA, releaseSlot SlotB ]
             )
 
@@ -452,7 +584,7 @@ update msg model =
 
         PlayStateChanged slot playing ->
             if slot == model.activeSlot then
-                ( { model | playing = playing }, Cmd.none )
+                ( releaseUpgradeIfPlaying { model | playing = playing }, Cmd.none )
 
             else
                 ( model, Cmd.none )
@@ -481,18 +613,10 @@ update msg model =
                 ( model, Cmd.none )
 
             else
-                -- Now it's safe to start the upgrade download (if any); the preloads render once `activeLoaded`.
-                ( { model | activeLoaded = True, pendingUpgrade = Nothing }
-                    |> (\loaded ->
-                            case model.pendingUpgrade of
-                                Just upgrade ->
-                                    setSlot (otherSlot model.activeSlot) (Just upgrade) loaded
-
-                                Nothing ->
-                                    loaded
-                       )
-                , Cmd.none
-                )
+                -- Now it's safe to start the upgrade download (if any), once something is actually playing --
+                -- a freshly opened `#track-` link downloads nothing beyond its first copy until Play. The
+                -- preloads render once `activeLoaded`.
+                ( releaseUpgradeIfPlaying { model | activeLoaded = True }, Cmd.none )
 
         CandidateReady slot ->
             -- The background slot has enough buffered at the playback point: hand playback over to it.
@@ -746,6 +870,83 @@ view viewerOpen accountsPanelModel model =
                     ]
                 ]
 
+        -- "Download/Share" (top-left of the expanded panel), modelled on the Posts page's Export popover (see
+        -- `ui/popover.css`) but opening down-right, since this button is on the left: a link to just this track
+        -- (federated when it's on another server), a copy button, and downloads of the low/medium/high copies.
+        sharePopover : MediaReference -> Html Msg
+        sharePopover media =
+            let
+                link : String
+                link =
+                    shareLink accountsPanelModel.mainFrontendHost model media
+
+                downloads : List ( String, String )
+                downloads =
+                    [ ( MEDIACONVERSIONSMALL, "small", "Low (64 kbps)" )
+                    , ( MEDIACONVERSIONMEDIUM, "medium", "Medium (128 kbps)" )
+                    , ( MEDIACONVERSIONLARGE, "large", "High (256 kbps)" )
+                    ]
+                        |> List.filter (\( conversion, _, _ ) -> has conversion media)
+                        |> List.map (\( _, sizeParam, label ) -> ( sizeParam, label ))
+                        |> (\stored ->
+                                if List.isEmpty stored then
+                                    -- Nothing converted (yet): the original is all there is.
+                                    [ ( "original", "Original" ) ]
+
+                                else
+                                    stored
+                           )
+
+                downloadUrl : String -> String
+                downloadUrl sizeParam =
+                    maybeServer
+                        |> Maybe.map (\server -> MediaRenderer.authorizedUrl [ "size=" ++ sizeParam, "download=true" ] server maybeAccount media)
+                        |> Maybe.withDefault ""
+            in
+            div [ classes [ "audio-player-share", "popover-anchor" ] ]
+                [ button
+                    [ classes [ "audio-player-button", "audio-player-corner-button", "popover-toggle", openClosedClass model.sharePopoverOpen ]
+                    , attribute "aria-label" "Download or share"
+                    , attribute "title" "Download or share"
+                    , onClick ToggleShare
+                    ]
+                    [ text "⤓" ]
+                , div [ classes [ "popover-backdrop", openClosedClass model.sharePopoverOpen ], onClick ShareClosed ] []
+                , div [ classes [ "audio-player-share-popover", "popover", openClosedClass model.sharePopoverOpen ] ]
+                    [ h3 [ class "audio-player-share-heading" ] [ text "Share" ]
+                    , a [ href link, class "audio-player-share-link" ] [ text link ]
+                    , button
+                        [ classes [ "audio-player-share-copy", hostnameToCSSClass accountsPanelModel.mainFrontendHost, "background-color-primary" ]
+                        , onClick (CopyLinkClicked link)
+                        ]
+                        [ span [ class "audio-player-share-copy-icon" ] [ text "⎘" ]
+                        , span []
+                            [ text
+                                (if model.linkCopied then
+                                    "Copied!"
+
+                                 else
+                                    "Copy Link"
+                                )
+                            ]
+                        ]
+                    , h3 [ class "audio-player-share-heading" ] [ text "Download" ]
+                    , div [ class "audio-player-share-downloads" ]
+                        (downloads
+                            |> List.map
+                                (\( sizeParam, label ) ->
+                                    a
+                                        [ href (downloadUrl sizeParam)
+                                        , attribute "download" ""
+                                        , target "_blank"
+                                        , class "audio-player-share-link"
+                                        ]
+                                        [ text label ]
+                                )
+                        )
+                    ]
+                ]
+
         title : MediaReference -> String
         title media =
             media.name |> Maybe.map String.trim |> Maybe.andThen nonEmpty |> Maybe.withDefault "Untitled"
@@ -816,17 +1017,20 @@ view viewerOpen accountsPanelModel model =
             div [ class "audio-player-expanded" ]
                 [ -- Circular glyph buttons in the panel's top corners: edit (left, for whoever can edit the
                   -- track) and close player (right, red).
-                  if MediaViewerPanel.canEditMedia maybeAccount media then
-                    button
-                        [ classes [ "audio-player-button", "audio-player-corner-button", "audio-player-corner-left" ]
-                        , attribute "aria-label" "Edit track"
-                        , attribute "title" "Edit track"
-                        , onClick EditClicked
-                        ]
-                        [ text "✎" ]
+                  div [ class "audio-player-corner-left-group" ]
+                    [ sharePopover media
+                    , if MediaViewerPanel.canEditMedia maybeAccount media then
+                        button
+                            [ classes [ "audio-player-button", "audio-player-corner-button" ]
+                            , attribute "aria-label" "Edit track"
+                            , attribute "title" "Edit track"
+                            , onClick EditClicked
+                            ]
+                            [ text "✎" ]
 
-                  else
-                    text ""
+                      else
+                        text ""
+                    ]
                 , button
                     [ classes [ "audio-player-button", "audio-player-corner-button", "audio-player-corner-right", "audio-player-close" ]
                     , attribute "aria-label" "Close player"

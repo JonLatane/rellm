@@ -14,7 +14,9 @@ update_email:
 	kubectl apply -f k8s/stalwart.yaml -n rellm-email
 restart_email:
 	kubectl rollout restart deployment stalwart -n rellm-email
+# Deletes the shared mail server's Namespace, PVC and Deployment (so, its stored mail), hence CONFIRM.
 remove_email:
+	@test "$(CONFIRM)" = "rellm-email" || (echo "This deletes the shared Stalwart mail server in rellm-email, including its data volume. Re-run with CONFIRM=rellm-email." >&2 && exit 1)
 	kubectl delete -f k8s/stalwart.yaml -n rellm-email
 
 # create_email_admin_secret: pre-codes Stalwart's initial admin credentials into a Secret instead

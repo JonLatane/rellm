@@ -29,6 +29,11 @@ K8S_PROVIDER ?= digitalocean
 create_central_storage: create_central_postgres create_central_object_storage
 update_central_storage: update_central_postgres update_central_object_storage
 delete_central_storage: delete_central_postgres delete_central_object_storage
+# Every delete_central_* target below depends on this: they remove the shared database/object storage
+# every site on the cluster points at. CONFIRM must be $(STORAGE_NAMESPACE) (the namespace they delete
+# from); make runs this once even when several of them are in play (delete_central_storage).
+check_delete_central_storage_confirmed:
+	@test "$(CONFIRM)" = "$(STORAGE_NAMESPACE)" || (echo "This deletes central storage in $(STORAGE_NAMESPACE) -- the shared Postgres/object storage EVERY site on the cluster uses. Re-run with CONFIRM=$(STORAGE_NAMESPACE)." >&2 && exit 1)
 restart_central_storage: restart_central_postgres restart_central_object_storage
 
 deploy_central_storage_ensure_namespace:
@@ -65,12 +70,12 @@ create_central_postgres: deploy_central_storage_ensure_namespace deploy_central_
 	kubectl create -f k8s/k8s-central-postgres-$(K8S_PROVIDER).yaml --save-config -n $(STORAGE_NAMESPACE)
 update_central_postgres:
 	kubectl apply -f k8s/k8s-central-postgres-$(K8S_PROVIDER).yaml -n $(STORAGE_NAMESPACE)
-delete_central_postgres:
+delete_central_postgres: check_delete_central_storage_confirmed
 	- kubectl delete -f k8s/k8s-central-postgres-$(K8S_PROVIDER).yaml -n $(STORAGE_NAMESPACE)
 # Separate from delete_central_postgres since it's rarely wanted -- see
 # k8s/k8s-central-postgres-pvc-digitalocean.yaml's sibling comment for why this is split out at
 # all (data itself is safe either way, PV reclaimPolicy is Retain -- this just orphans the PVC).
-delete_central_postgres_pvc:
+delete_central_postgres_pvc: check_delete_central_storage_confirmed
 	- kubectl delete -f k8s/k8s-central-postgres-pvc-$(K8S_PROVIDER).yaml -n $(STORAGE_NAMESPACE)
 
 # REQUESTED is what's asked for (spec.resources.requests.storage); ACTUAL is what's live
@@ -105,9 +110,9 @@ create_central_object_storage: deploy_central_storage_ensure_namespace deploy_ce
 	kubectl create -f k8s/k8s-central-object-storage-$(K8S_PROVIDER).yaml --save-config -n $(STORAGE_NAMESPACE)
 update_central_object_storage:
 	kubectl apply -f k8s/k8s-central-object-storage-$(K8S_PROVIDER).yaml -n $(STORAGE_NAMESPACE)
-delete_central_object_storage:
+delete_central_object_storage: check_delete_central_storage_confirmed
 	- kubectl delete -f k8s/k8s-central-object-storage-$(K8S_PROVIDER).yaml -n $(STORAGE_NAMESPACE)
-delete_central_object_storage_pvc:
+delete_central_object_storage_pvc: check_delete_central_storage_confirmed
 	- kubectl delete -f k8s/k8s-central-object-storage-pvc-$(K8S_PROVIDER).yaml -n $(STORAGE_NAMESPACE)
 
 # See get_central_postgres_pvc_size's identical comment.
