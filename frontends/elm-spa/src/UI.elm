@@ -1136,7 +1136,21 @@ accountsAndServersTab shared currentRoute =
         , recommendedServersStrip shared
         , div [ class "panel-divider" ] []
         , accountsList shared
-        , div [ class "panel-divider" ] []
+
+        -- Folds away alongside the (fully hidden) accounts list, rather than leaving two dividers
+        -- stacked -- same condition as every row collapsing in `combinedAccountItemRowFlip`.
+        , div
+            [ classes
+                ("panel-divider"
+                    :: (if accountsListFullyHidden shared then
+                            [ "panel-divider-collapsed" ]
+
+                        else
+                            []
+                       )
+                )
+            ]
+            []
         , formView shared currentRoute
         ]
 
@@ -2036,30 +2050,27 @@ accountsList shared =
             )
 
 
+{-| Whether every row of `accountsList` is collapsed away: the Add Account/Server form is open, and
+not to reauthenticate one account (`AccountsPanel.reauthenticatingAccount`). Always `False` with no
+accounts, since "No accounts yet." isn't a row and stays put.
+-}
+accountsListFullyHidden : Shared.Model -> Bool
+accountsListFullyHidden shared =
+    shared.accounts.addAccountServerFormType
+        /= Nothing
+        && shared.accounts.reauthenticatingAccount
+        == Nothing
+        && not (List.isEmpty (AccountsPanel.combinedAccountItems shared.accounts))
+
+
 {-| Whether the New Account/Login flow (`Password Required` included -- see
 `AccountsPanel.ReauthenticateButtonClicked`) is currently active --
-`accountRowFlip`/`accountRow` use this to collapse every account row out of
-the way except whichever one `accountMatchesForm` says the Server/Username
-fields are actually naming, so the account list doesn't crowd out that flow
-with rows unrelated to it.
+`accountItemReorderInfo` uses this to hide the reorder buttons. (Which rows
+show while the form is open is `combinedAccountItemRowFlip`'s call.)
 -}
 newAccountFlowActive : Shared.Model -> Bool
 newAccountFlowActive shared =
     shared.accounts.newAccountType /= Nothing
-
-
-{-| Whether `account` is the one the Server/Username fields (see
-`AccountsPanel.AccountForm`) currently name -- the one row `newAccountFlowActive`
-leaves visible.
--}
-accountMatchesForm : Shared.Model -> RellmAccount -> Bool
-accountMatchesForm shared account =
-    let
-        form : AccountsPanel.AccountForm
-        form =
-            shared.accounts.accountForm
-    in
-    String.trim form.server == account.server && String.trim form.username == account.username
 
 
 {-| Wraps one `CombinedAccountItem`'s row (`accountRow`/`mastodonAccountRow`/`blueskyAccountRow`) in
@@ -2070,10 +2081,9 @@ spacing; the row itself -- with its _own_, independent reorder-slide `moveAttrs`
 further in, so the two animations (fade/collapse vs. reorder-slide) apply to different elements and
 never fight over the same `transform`.
 
-Also collapsed (same `flip-collapsed` FLIP treatment as a real removal, via
-`newAccountFlowActive`/`accountMatchesForm`) for every item other than the Rellm account the New
-Account/Login flow's Server/Username fields currently name, while that flow is active -- every
-Mastodon/Bluesky item included, since neither is what that flow could ever be naming -- reusing the
+Also collapsed (same `flip-collapsed` FLIP treatment as a real removal) for every item while the
+Add Account/Server form is open (`addAccountServerFormType`) -- except the one Rellm account a
+"Reauthentication Required" button opened it for (`reauthenticatingAccount`), if any -- reusing the
 same collapsing-grid-track CSS transition rather than a separate ad hoc show/hide animation.
 
 -}
@@ -2091,10 +2101,11 @@ combinedAccountItemRowFlip shared count mainCount index item =
 
         hiddenByNewAccountFlow : Bool
         hiddenByNewAccountFlow =
-            newAccountFlowActive shared
-                && (case item of
-                        AccountsPanel.CombinedRellmAccount account ->
-                            not (accountMatchesForm shared account)
+            shared.accounts.addAccountServerFormType
+                /= Nothing
+                && (case ( item, shared.accounts.reauthenticatingAccount ) of
+                        ( AccountsPanel.CombinedRellmAccount account, Just ( server, username ) ) ->
+                            not (account.server == server && account.username == username)
 
                         _ ->
                             True

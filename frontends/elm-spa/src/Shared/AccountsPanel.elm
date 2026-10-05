@@ -147,6 +147,13 @@ type alias Model =
     -- `activeAddAccountServerFormType`) when `accounts` is empty.
     , addAccountServerFormType : Maybe AccountOrServerFormType
 
+    -- The (server, username) of the account a "Reauthentication Required"/"Password Required"
+    -- button (see `ReauthenticateButtonClicked`) opened the form for. While the form is open
+    -- (`addAccountServerFormType /= Nothing`), `UI.accountsList` hides every account row -- except
+    -- this one, when set. Every other way of opening the form (`ShowAddAccountFormClicked`,
+    -- `ServerChipClicked`, ...) clears it, so the whole list hides instead.
+    , reauthenticatingAccount : Maybe ( String, String )
+
     -- Once the Username field names a known server, whether (and which of)
     -- "Log In"/"Create Account" has been picked -- see `ChooseLoginClicked`/
     -- `ChooseCreateAccountClicked`. `Nothing` while still at the
@@ -1518,6 +1525,7 @@ init req flags blueskyAccountsFlags mastodonAccountsAndServersFlags =
       , focusedAccount = Nothing
       , focusedAccountContactMethods = Nothing
       , addAccountServerFormType = Nothing
+      , reauthenticatingAccount = Nothing
       , newAccountType = Nothing
       , createAccountConfirmation = Nothing
       , acceptedCreateAccount = Nothing
@@ -1805,7 +1813,7 @@ sendUpdate req msg model =
             -- to the Username step (`NewAccountBackClicked`'s own reset), no pending create-account
             -- confirmation, password cleared, and no in-flight/errored status -- an `Idle` status is
             -- also what makes a still-pending `GotAuthResult` get ignored (see its guard clause).
-            ( { model | addAccountServerFormType = Nothing, newAccountType = Nothing, acceptedCreateAccount = Nothing, createAccountConfirmation = Nothing }
+            ( { model | addAccountServerFormType = Nothing, reauthenticatingAccount = Nothing, newAccountType = Nothing, acceptedCreateAccount = Nothing, createAccountConfirmation = Nothing }
                 |> updateForm (\f -> { f | password = "", showPasswordAsText = False, status = Idle })
             , Cmd.none
             )
@@ -3295,7 +3303,7 @@ sendUpdate req msg model =
             )
 
         ShowAddAccountFormClicked ->
-            ( { model | addAccountServerFormType = Just RellmServerFormType }, Cmd.none )
+            ( { model | addAccountServerFormType = Just RellmServerFormType, reauthenticatingAccount = Nothing }, Cmd.none )
 
         AddAccountServerFormTypeSelected formType ->
             ( { model | addAccountServerFormType = Just formType }, Cmd.none )
@@ -3307,6 +3315,7 @@ sendUpdate req msg model =
             -- token's been rejected (see `GotPermissionsRefresh`).
             ( { model
                 | addAccountServerFormType = Just RellmServerFormType
+                , reauthenticatingAccount = Just ( account.server, account.username )
                 , newAccountType = Just LoginToAccount
                 , accountForm =
                     { server = account.server
@@ -3370,12 +3379,12 @@ sendUpdate req msg model =
 
         ServerChipClicked frontendHost ->
             -- Also opens the Rellm tab of the add-account/server form, same as "Add Account/Server".
-            ( setServerField frontendHost { model | addAccountServerFormType = Just RellmServerFormType }, Cmd.none )
+            ( setServerField frontendHost { model | addAccountServerFormType = Just RellmServerFormType, reauthenticatingAccount = Nothing }, Cmd.none )
 
         MastodonServerChipClicked host ->
             -- Mirror of `ServerChipClicked` for a browsed Mastodon instance's chip: fills the
             -- Mastodon tab's host field and opens that tab.
-            ( { model | addAccountServerFormType = Just MastodonServerFormType, browseMastodonInstanceInput = host }
+            ( { model | addAccountServerFormType = Just MastodonServerFormType, reauthenticatingAccount = Nothing, browseMastodonInstanceInput = host }
             , Cmd.none
             )
 
@@ -4072,6 +4081,7 @@ sendUpdate req msg model =
             -- old entry for the same handle with the fresh one.
             ( { model
                 | addAccountServerFormType = Just BlueskyAccountFormType
+                , reauthenticatingAccount = Nothing
                 , blueskyConnectForm = { emptyBlueskyConnectForm | handle = handle }
               }
             , Cmd.none
@@ -4351,7 +4361,7 @@ collapseAddAccountFormIfIdle model =
         model
 
     else
-        { model | addAccountServerFormType = Nothing }
+        { model | addAccountServerFormType = Nothing, reauthenticatingAccount = Nothing }
 
 
 {-| Servers whose data should be included when aggregating across all of

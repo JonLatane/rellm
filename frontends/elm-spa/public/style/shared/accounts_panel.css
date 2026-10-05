@@ -421,6 +421,14 @@
   height: 1px;
   background: var(--border);
   margin: 0.25rem 0;
+  transition: margin 0.25s ease, height 0.25s ease, opacity 0.25s ease;
+}
+
+/* Folds a divider away (see UI.elm's `accountsListFullyHidden`). */
+.panel-divider.panel-divider-collapsed {
+  height: 0;
+  margin: 0;
+  opacity: 0;
 }
 
 
@@ -720,13 +728,14 @@
 }
 
 .accounts-list .flip-animated-item {
-  transition: margin 0.2s ease;
+  /* Must repeat flip.css's collapse transitions -- overriding `transition` here replaces them,
+     which made collapsing rows (removal, Add Account/Server form open) snap shut instantly. */
+  transition: margin 0.2s ease, grid-template-rows 0.25s ease;
   margin: 0px;
 }
 
 .accounts-list .flip-animated-item.flip-collapsed {
   grid-template-rows: 0fr;
-  grid-template-columns: 0fr;
   margin-top: -5px;
   margin-bottom: -5px;
 }
