@@ -257,7 +257,10 @@ jobs:
           restore-keys: |
             rellm-elm-build-${{ runner.os }}-
 
-      - run: npm install --global elm elm-spa
+      # Elm, elm-spa, elm-test-rs and elm-review are pinned in package.json/package-lock.json so CI
+      # can't drift onto a newer Elm than elm.json declares.
+      - working-directory: frontends/elm-spa
+        run: npm ci
 
       - working-directory: frontends/elm-spa
         run: make test

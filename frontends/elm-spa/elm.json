@@ -5,7 +5,7 @@
         ".elm-spa/defaults",
         ".elm-spa/generated"
     ],
-    "elm-version": "0.19.2",
+    "elm-version": "0.19.3",
     "dependencies": {
         "direct": {
             "anmolitor/elm-grpc": "1.1.0",

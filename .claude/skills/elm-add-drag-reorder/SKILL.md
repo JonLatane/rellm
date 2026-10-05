@@ -36,5 +36,5 @@ CSS is in `public/style/ui/drag.css` (already linked from `index.html`); nothing
 
 ## Testing
 
-- Pure logic: `tests/DragTests.elm` (`targetOrder`, `slotRange`, `reorderByKeys`) — extend when changing it. `make test` = elm-review + elm-test.
+- Pure logic: `tests/DragTests.elm` (`targetOrder`, `slotRange`, `reorderByKeys`) — extend when changing it. `make test` = elm-review + elm-test-rs.
 - Real behavior needs a browser; use the `run-elm` driver / a throwaway Playwright script (import from `.claude/skills/run-elm/node_modules`): seed `localStorage.rellmStarredPosts` with fake keys (`["a@h1.test", ...]`), open the Starred panel (narrow viewport shows the ⭐ toggle in the nav), `mouse.down` on an arrow, step `mouse.move` in ~15px steps with 16ms waits, assert row order/`localStorage` after `mouse.up`. Count `getBoundingClientRect` calls (monkeypatch) over a few seconds of jiggling inside one slot to check the linger fix: should be ~one measurement pass, not hundreds.

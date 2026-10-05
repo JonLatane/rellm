@@ -20,7 +20,7 @@ import Test exposing (Test, describe, test)
 
 suite : Test
 suite =
-    describe "Components.Market"
+    describe "Components.Market helpers"
         [ currencyLabelSuite
         , amountInputLabelSuite
         , formatAmountSuite
