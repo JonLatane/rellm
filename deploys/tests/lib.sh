@@ -14,6 +14,11 @@
 
 set -u
 
+# These tests run make themselves, against a sandbox. When they're started by `make -C deploys test` (as CI does)
+# they inherit that make's MAKELEVEL/MAKEFLAGS, which makes GNU make 4+ treat every make here as a sub-make and
+# print "make[1]: Entering directory ..." lines -- even with -s -- into output that tests parse. Start clean.
+unset MAKELEVEL MAKEFLAGS MFLAGS
+
 TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEPLOYS_SRC="$(dirname "$TESTS_DIR")"
 REPO_ROOT="$(dirname "$DEPLOYS_SRC")"
@@ -179,7 +184,7 @@ mk_dry() {
 
 # make_var <NAME> -> the value of a variable defined in deploys/Makefile.
 make_var() {
-  (cd "$SANDBOX/deploys" && make -s -f Makefile -f "$SANDBOX/print.mk" NAMESPACE=x "print-$1" </dev/null 2>/dev/null)
+  (cd "$SANDBOX/deploys" && make -s --no-print-directory -f Makefile -f "$SANDBOX/print.mk" NAMESPACE=x "print-$1" </dev/null 2>/dev/null)
 }
 
 # install_launchers: builds both `rellm` launchers inside the sandbox, laid out like the real
