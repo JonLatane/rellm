@@ -704,7 +704,7 @@ jobs:
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/rellm:${{ steps.vars.outputs.be_version }},${{ secrets.DOCKERHUB_USERNAME }}/rellm:${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
           context: .
           file: ./deploys/docker/server/Dockerfile
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
 
   push_preview_generator:
     name: "DockerHub: Preview Generator"
@@ -755,7 +755,7 @@ jobs:
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/rellm_preview_generator:${{ steps.vars.outputs.be_version }},${{ secrets.DOCKERHUB_USERNAME }}/rellm_preview_generator:${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
           context: .
           file: ./deploys/docker/preview_generator/Dockerfile
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
 
   deploy_jonlineio_server:
     name: Deploy Jonline.io Server

@@ -1,4 +1,4 @@
-FROM --platform=linux/amd64 debian:testing-slim
+FROM debian:testing-slim
 
 # The preview generator image only includes the background job binary, a tool to delete images, and a one-off tool to regenerate one post's previews. Other Rellm binaries aren't really useful;
 # the bulk of this image will be the Chrome distro included.

@@ -91,17 +91,17 @@ release_be_build_binary: ../../backend/target/release/rellm__server_release
 	cd ../.. && mv backend/target/release/load_balancer backend/target/release/load_balancer__server_release
 
 release_be_push_local: local_registry_create release_be_build_binary release_web_builds
-	cd ../.. && docker build . -t $(LOCAL_REGISTRY)/rellm -f deploys/docker/server/Dockerfile
+	cd ../.. && docker build --platform linux/amd64 . -t $(LOCAL_REGISTRY)/rellm -f deploys/docker/server/Dockerfile
 	docker push $(LOCAL_REGISTRY)/rellm
-	cd ../.. && docker build . -t $(LOCAL_REGISTRY)/rellm_preview_generator -f deploys/docker/preview_generator/Dockerfile
+	cd ../.. && docker build --platform linux/amd64 . -t $(LOCAL_REGISTRY)/rellm_preview_generator -f deploys/docker/preview_generator/Dockerfile
 	docker push $(LOCAL_REGISTRY)/rellm_preview_generator
 
 release_be_push_cloud: release_be_build_binary release_web_builds _push_be_cloud_release
 release_be_fe_only_push_cloud: release_web_builds _push_be_cloud_release
 _push_be_cloud_release:
-	cd ../.. && docker build . -t $(CLOUD_REGISTRY)/rellm:$(BE_VERSION) -f deploys/docker/server/Dockerfile
+	cd ../.. && docker build --platform linux/amd64 . -t $(CLOUD_REGISTRY)/rellm:$(BE_VERSION) -f deploys/docker/server/Dockerfile
 	docker push $(CLOUD_REGISTRY)/rellm:$(BE_VERSION)
 	docker tag $(CLOUD_REGISTRY)/rellm:$(BE_VERSION) $(CLOUD_REGISTRY)/rellm:latest
-	cd ../.. && docker build . -t $(CLOUD_REGISTRY)/rellm_preview_generator:$(BE_VERSION) -f deploys/docker/preview_generator/Dockerfile
+	cd ../.. && docker build --platform linux/amd64 . -t $(CLOUD_REGISTRY)/rellm_preview_generator:$(BE_VERSION) -f deploys/docker/preview_generator/Dockerfile
 	docker push $(CLOUD_REGISTRY)/rellm_preview_generator:$(BE_VERSION)
 	docker tag $(CLOUD_REGISTRY)/rellm_preview_generator:$(BE_VERSION) $(CLOUD_REGISTRY)/rellm_preview_generator:latest

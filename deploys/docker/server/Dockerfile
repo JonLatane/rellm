@@ -1,4 +1,4 @@
-FROM --platform=linux/amd64 debian:testing-slim
+FROM debian:testing-slim
 
 # This hash is used by the GetServiceVersion RPC.
 COPY deploys/docker/continuous_delivery_hash /opt/continuous_delivery_hash
