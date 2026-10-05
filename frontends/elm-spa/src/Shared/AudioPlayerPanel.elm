@@ -1,4 +1,4 @@
-module Shared.AudioPlayerPanel exposing (Model, Msg(..), TrackLink, currentMedia, init, isExpanded, subscriptions, trackFragment, trackLinkFromFragment, update, view)
+module Shared.AudioPlayerPanel exposing (Model, Msg(..), Placement(..), TrackLink, currentMedia, init, isExpanded, queueIcon, subscriptions, trackFragment, trackLinkFromFragment, update, view)
 
 {-| A persistent, app-wide audio player -- the companion to `Shared.MediaViewerPanel`. Where the viewer is a
 fullscreen, view-blocking carousel (with editing), this is a "now playing" bar docked to the bottom of the
@@ -13,19 +13,29 @@ granted by the first tap carries over to every later track; its events feed `Tim
 `PlayStateChanged`/`Ended`, and imperative commands (toggle, seek) go out through `Ports.controlAudioPlayer`.
 The neighboring tracks of the queue are fetched ahead of time with hidden `preload` elements.
 
+The queue pane (toggled from the expanded panel's top-left) lists the tracks to play, as the Audio page's track
+chips; rows reorder with the Starred panel's arrows (tap, or drag them -- `UI.Drag`) with FLIP slides. Tracks join
+it from the Audio page rows' add-to-queue picker (`Enqueue`); a queue can mix servers' tracks, so each entry
+carries its host (`QueueItem`).
+
 -}
 
+import Animation
+import Browser.Dom as Dom
+import Browser.Events
+import Components.Authors as Authors
 import Components.MediaRenderer as MediaRenderer exposing (ResolutionTier(..))
 import Components.Posts as Posts
-import Browser.Events
+import Dict exposing (Dict)
 import Html exposing (Html, a, audio, button, div, h3, img, option, select, span, text)
-import Html.Attributes exposing (alt, attribute, class, href, selected, src, style, target, value)
+import Html.Keyed
+import Html.Attributes exposing (alt, attribute, class, href, id, selected, src, style, target, value)
 import Html.Events exposing (on, onClick, onInput, stopPropagationOn)
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Ports
 import Process
-import Proto.Rellm exposing (MediaMetadata, MediaReference, defaultMediaMetadata)
+import Proto.Rellm exposing (Author, MediaMetadata, MediaReference, defaultMediaMetadata, defaultMediaReference, unwrapAuthor)
 import Proto.Rellm.MediaConversion exposing (MediaConversion(..))
 import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccount)
@@ -35,6 +45,8 @@ import Shared.Conversions exposing (int64ToInt)
 import Shared.MediaViewerPanel as MediaViewerPanel
 import Task
 import UI.Classes exposing (classes, hostnameToCSSClass, openClosedClass)
+import UI.Drag
+import UI.Flip
 
 
 {-| Which stored copy of a track to stream -- the audio `small`/`medium`/`large` AAC tiers the conversion job
@@ -64,16 +76,32 @@ slot that may only take over once its copy is *completely* downloaded (the autom
 ratchet); without it (the user explicitly picked a quality), ~15s buffered at the playback point is enough.
 -}
 type alias Source =
-    { mediaId : String, quality : Quality, requireFull : Bool }
+    { mediaId : String, host : String, quality : Quality, requireFull : Bool }
+
+
+{-| A track in the queue, with the server it lives on -- a queue can mix servers' tracks (see `Enqueue`).
+-}
+type alias QueueItem =
+    { media : MediaReference, host : String }
+
+
+{-| Where `Enqueue` puts a track: right after the one playing, or at the very end.
+-}
+type Placement
+    = PlayNext
+    | PlayLast
 
 
 type alias Model =
-    { -- The tracks on the list the user started playback from, in display order.
-      queue : List MediaReference
+    { -- The tracks on the list the user started playback from (plus any they've queued since), in play
+      -- order. At most one entry per track (see `Enqueue`).
+      queue : List QueueItem
+
+    -- The current track is the queue item with this media id on `targetHost`.
     , currentId : Maybe String
 
     -- Same convention as `Shared.MediaViewerPanel.Model.targetHost`: resolves to the `Server`/`Account`
-    -- the queue's media belongs to.
+    -- the current track belongs to.
     , targetHost : String
     , expanded : Bool
 
@@ -114,6 +142,12 @@ type alias Model =
     -- While expanded, the URL fragment (`Just Nothing` = none) that was in place before `Shared.update` set
     -- `#track-<id>`, so collapsing can put it back. `Nothing` when not expanded.
     , savedFragment : Maybe (Maybe String)
+
+    -- The queue pane (a split pane on the left of the expanded panel on wide screens, the whole panel on
+    -- narrow ones), its rows' FLIP slide animations and its drag-to-reorder state (see `UI.Drag`).
+    , queueOpen : Bool
+    , moveAnimations : Dict String (UI.Flip.MoveState Msg)
+    , drag : UI.Drag.State
     }
 
 
@@ -123,6 +157,17 @@ type Msg
       -- Like `Open`, but doesn't start playback and leaves the player expanded: a `#track-<id>` link (browsers
       -- block autoplay from links anyway). Playback -- and the higher-quality upgrade -- wait for the first Play.
     | Load (List MediaReference) String String
+      -- Adds a track (and the host it's on) to the queue -- starting it if nothing's loaded yet.
+    | Enqueue Placement MediaReference String
+    | ToggleQueue
+      -- A queue row was tapped: play it (queue item key).
+    | PlayQueued String
+    | MoveUpClicked String
+    | MoveDownClicked String
+    | GotPreMovePositions String String Int (Result Dom.Error ( Dom.Element, Dom.Element ))
+    | DragMsg UI.Drag.Msg
+    | AnimateMove Animation.Msg
+    | MoveSettled String
     | Next
     | Prev
     | TogglePlay
@@ -151,7 +196,7 @@ type Msg
 
 init : Model
 init =
-    { queue = [], currentId = Nothing, targetHost = "", expanded = False, playing = False, positionMs = 0, durationMs = 0, quality = High, activeSlot = SlotA, slotA = Nothing, slotB = Nothing, autoStart = False, pendingUpgrade = Nothing, activeLoaded = False, pendingTrackLink = Nothing, origin = "", sharePopoverOpen = False, linkCopied = False, copyGeneration = 0, savedFragment = Nothing }
+    { queue = [], currentId = Nothing, targetHost = "", expanded = False, playing = False, positionMs = 0, durationMs = 0, quality = High, activeSlot = SlotA, slotA = Nothing, slotB = Nothing, autoStart = False, pendingUpgrade = Nothing, activeLoaded = False, pendingTrackLink = Nothing, origin = "", sharePopoverOpen = False, linkCopied = False, copyGeneration = 0, savedFragment = Nothing, queueOpen = False, moveAnimations = Dict.empty, drag = UI.Drag.init }
 
 
 {-| Whether the panel is actually shown expanded: the user's choice (`Model.expanded`), unless the fullscreen
@@ -167,15 +212,36 @@ isExpanded viewerOpen model =
 -}
 currentMedia : Model -> Maybe MediaReference
 currentMedia model =
-    model.currentId
-        |> Maybe.andThen (\id -> List.filter (\m -> m.id == id) model.queue |> List.head)
+    currentItem model |> Maybe.map .media
 
 
-adjacent : Int -> Model -> Maybe MediaReference
+currentItem : Model -> Maybe QueueItem
+currentItem model =
+    model.queue |> List.filter (isCurrent model) |> List.head
+
+
+isCurrent : Model -> QueueItem -> Bool
+isCurrent model item =
+    Just item.media.id == model.currentId && item.host == model.targetHost
+
+
+{-| Identifies a queue entry (ids are only unique per server).
+-}
+itemKey : QueueItem -> String
+itemKey item =
+    item.host ++ "/" ++ item.media.id
+
+
+queueDomId : String -> String
+queueDomId key =
+    "audio-queue-" ++ String.map (\c -> if Char.isAlphaNum c then c else '-') key
+
+
+adjacent : Int -> Model -> Maybe QueueItem
 adjacent offset model =
     model.queue
         |> List.indexedMap Tuple.pair
-        |> List.filter (\( _, m ) -> Just m.id == model.currentId)
+        |> List.filter (\( _, item ) -> isCurrent model item)
         |> List.head
         |> Maybe.map (\( i, _ ) -> i + offset)
         |> Maybe.andThen
@@ -186,6 +252,34 @@ adjacent offset model =
                 else
                     model.queue |> List.drop target |> List.head
             )
+
+
+{-| Puts `item` in the queue: removed from wherever it was, then right after the current track (`PlayNext`) or at the
+end (`PlayLast`). The current track itself stays put.
+-}
+enqueue : Placement -> QueueItem -> Model -> Model
+enqueue placement item model =
+    let
+        others : List QueueItem
+        others =
+            List.filter (\queued -> itemKey queued /= itemKey item) model.queue
+    in
+    case placement of
+        PlayLast ->
+            { model | queue = others ++ [ item ] }
+
+        PlayNext ->
+            let
+                after : Int
+                after =
+                    others
+                        |> List.indexedMap Tuple.pair
+                        |> List.filter (\( _, queued ) -> isCurrent model queued)
+                        |> List.head
+                        |> Maybe.map (\( i, _ ) -> i + 1)
+                        |> Maybe.withDefault (List.length others)
+            in
+            { model | queue = List.take after others ++ item :: List.drop after others }
 
 
 has : MediaConversion -> MediaReference -> Bool
@@ -371,9 +465,13 @@ slotName slot =
 slot starts loading the wanted quality right away to take over once it's buffered. (A slot is only
 released -- `Cmd`ed to drop its media -- when it goes from loaded to empty.)
 -}
-beginTrack : MediaReference -> Model -> ( Model, Cmd Msg )
-beginTrack media model =
+beginTrack : QueueItem -> Model -> ( Model, Cmd Msg )
+beginTrack item model =
     let
+        media : MediaReference
+        media =
+            item.media
+
         wanted : Quality
         wanted =
             resolve media model.quality
@@ -384,7 +482,7 @@ beginTrack media model =
 
         startSource : Source
         startSource =
-            { mediaId = media.id, quality = start, requireFull = False }
+            { mediaId = media.id, host = item.host, quality = start, requireFull = False }
 
         sameAsLoaded : Bool
         sameAsLoaded =
@@ -393,7 +491,7 @@ beginTrack media model =
         upgrade : Maybe Source
         upgrade =
             if wanted /= start then
-                Just { mediaId = media.id, quality = wanted, requireFull = True }
+                Just { mediaId = media.id, host = item.host, quality = wanted, requireFull = True }
 
             else
                 Nothing
@@ -402,6 +500,7 @@ beginTrack media model =
         withTrack =
             { model
                 | currentId = Just media.id
+                , targetHost = item.host
                 , positionMs = 0
                 , durationMs = 0
                 , playing = True
@@ -461,11 +560,21 @@ scroll, button activation) -- a `Browser.Events` subscription can't.
 -}
 subscriptions : Model -> Sub Msg
 subscriptions model =
-    if model.expanded && model.currentId /= Nothing then
-        Browser.Events.onKeyDown keyDecoder
+    Sub.batch
+        [ if model.expanded && model.currentId /= Nothing then
+            Browser.Events.onKeyDown keyDecoder
 
-    else
-        Sub.none
+          else
+            Sub.none
+        , if model.queueOpen then
+            Sub.batch
+                [ UI.Flip.moveSubscription AnimateMove (Dict.values model.moveAnimations)
+                , Sub.map DragMsg (UI.Drag.subscriptions model.drag)
+                ]
+
+          else
+            Sub.none
+        ]
 
 
 keyDecoder : Decode.Decoder Msg
@@ -502,26 +611,121 @@ update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         Open queue id host ->
-            case queue |> List.filter (\m -> m.id == id) |> List.head of
-                Just media ->
-                    beginTrack media { model | queue = queue, targetHost = host }
+            let
+                items : List QueueItem
+                items =
+                    List.map (\media -> { media = media, host = host }) queue
+            in
+            case items |> List.filter (\item -> item.media.id == id) |> List.head of
+                Just item ->
+                    beginTrack item { model | queue = items }
 
                 Nothing ->
                     ( model, Cmd.none )
 
         Load queue id host ->
-            case queue |> List.filter (\m -> m.id == id) |> List.head of
-                Just media ->
+            let
+                items : List QueueItem
+                items =
+                    List.map (\media -> { media = media, host = host }) queue
+            in
+            case items |> List.filter (\item -> item.media.id == id) |> List.head of
+                Just item ->
                     if model.currentId == Just id && model.targetHost == host then
                         -- Already the loaded track: just show it.
                         ( { model | expanded = True }, Cmd.none )
 
                     else
-                        beginTrack media { model | queue = queue, targetHost = host }
+                        beginTrack item { model | queue = items }
                             |> Tuple.mapFirst (\loaded -> { loaded | playing = False, autoStart = False, expanded = True })
 
                 Nothing ->
                     ( model, Cmd.none )
+
+        Enqueue placement media host ->
+            let
+                item : QueueItem
+                item =
+                    { media = media, host = host }
+            in
+            if model.currentId == Nothing then
+                -- Nothing loaded: the queued track just starts.
+                beginTrack item { model | queue = [ item ] }
+
+            else if isCurrent model item then
+                ( model, Cmd.none )
+
+            else
+                ( enqueue placement item model, Cmd.none )
+
+        ToggleQueue ->
+            ( { model | queueOpen = not model.queueOpen, sharePopoverOpen = False }, Cmd.none )
+
+        PlayQueued key ->
+            case model.queue |> List.filter (\item -> itemKey item == key) |> List.head of
+                Just item ->
+                    if isCurrent model item then
+                        ( model, command "toggle" Nothing )
+
+                    else
+                        beginTrack item model
+
+                Nothing ->
+                    ( model, Cmd.none )
+
+        MoveUpClicked key ->
+            ( model, UI.Flip.beginReorder itemKey queueDomId GotPreMovePositions -1 key model.queue )
+
+        MoveDownClicked key ->
+            ( model, UI.Flip.beginReorder itemKey queueDomId GotPreMovePositions 1 key model.queue )
+
+        GotPreMovePositions key _ offset (Err _) ->
+            -- Couldn't measure: reorder without the slide.
+            ( { model | queue = UI.Flip.moveListItemBy itemKey offset key model.queue }, Cmd.none )
+
+        GotPreMovePositions key neighborKey offset (Ok ( entryEl, neighborEl )) ->
+            -- Same as `Shared.StarredPanel`: both rows' post-swap positions follow from this one pre-swap
+            -- measurement, so the slide's starting transform is set in the same update as the reorder.
+            ( { model
+                | queue = UI.Flip.moveListItemBy itemKey offset key model.queue
+                , moveAnimations = UI.Flip.applyReorder UI.Flip.Vertical MoveSettled key neighborKey entryEl neighborEl model.moveAnimations
+              }
+            , Cmd.none
+            )
+
+        DragMsg dragMsg ->
+            let
+                ( newDrag, dragCmd, outputs ) =
+                    UI.Drag.update (dragConfig model) dragMsg model.drag
+
+                applyOutput : UI.Drag.Output -> Model -> Model
+                applyOutput output current =
+                    case output of
+                        UI.Drag.Reordered newOrder ->
+                            { current | queue = UI.Drag.reorderByKeys itemKey newOrder current.queue }
+
+                        UI.Drag.Slide slides ->
+                            { current | moveAnimations = UI.Drag.applySlides MoveSettled slides current.moveAnimations }
+            in
+            ( List.foldl applyOutput { model | drag = newDrag } outputs, Cmd.map DragMsg dragCmd )
+
+        AnimateMove animMsg ->
+            let
+                step : String -> UI.Flip.MoveState Msg -> ( Dict String (UI.Flip.MoveState Msg), List (Cmd Msg) ) -> ( Dict String (UI.Flip.MoveState Msg), List (Cmd Msg) )
+                step key state ( states, cmds ) =
+                    let
+                        ( newState, cmd ) =
+                            UI.Flip.moveAnimate animMsg state
+                    in
+                    ( Dict.insert key newState states, cmd :: cmds )
+
+                ( newAnimations, moveCmds ) =
+                    Dict.foldl step ( Dict.empty, [] ) model.moveAnimations
+            in
+            ( { model | moveAnimations = newAnimations }, Cmd.batch moveCmds )
+
+        MoveSettled key ->
+            ( { model | moveAnimations = Dict.update key (Maybe.map (\state -> { state | moving = False })) model.moveAnimations }, Cmd.none )
 
         Next ->
             case adjacent 1 model of
@@ -568,7 +772,7 @@ update msg model =
                 ( model, Cmd.none )
 
         Close ->
-            ( { model | queue = [], currentId = Nothing, expanded = False, sharePopoverOpen = False, playing = False, positionMs = 0, durationMs = 0, slotA = Nothing, slotB = Nothing, autoStart = False, pendingUpgrade = Nothing, activeLoaded = False }
+            ( { model | queue = [], currentId = Nothing, expanded = False, queueOpen = False, moveAnimations = Dict.empty, drag = UI.Drag.init, sharePopoverOpen = False, playing = False, positionMs = 0, durationMs = 0, slotA = Nothing, slotB = Nothing, autoStart = False, pendingUpgrade = Nothing, activeLoaded = False }
             , Cmd.batch [ releaseSlot SlotA, releaseSlot SlotB ]
             )
 
@@ -647,7 +851,7 @@ update msg model =
                                 Nothing
 
                             else
-                                Just { mediaId = media.id, quality = wanted, requireFull = False }
+                                Just { mediaId = media.id, host = model.targetHost, quality = wanted, requireFull = False }
 
                         updated : Model
                         updated =
@@ -663,10 +867,22 @@ update msg model =
             ( model, Cmd.none )
 
         MediaUpdated updated ->
-            ( { model | queue = model.queue |> List.map (\m -> if m.id == updated.id then updated else m) }, Cmd.none )
+            ( { model | queue = model.queue |> List.map (\item -> if item.media.id == updated.id then { item | media = updated } else item) }, Cmd.none )
 
         NoOp ->
             ( model, Cmd.none )
+
+
+{-| The queue as `UI.Drag` sees it: one free-for-all column.
+-}
+dragConfig : Model -> UI.Drag.Config
+dragConfig model =
+    { axis = UI.Flip.Vertical
+    , owner = "audio-player-queue"
+    , domId = queueDomId
+    , keys = List.map itemKey model.queue
+    , groupOf = \_ -> ""
+    }
 
 
 {-| See `Ports.controlAudioPlayer`.
@@ -706,11 +922,23 @@ view viewerOpen accountsPanelModel model =
         maybeMedia =
             currentMedia model
 
+        serverFor : String -> Maybe RellmServer
+        serverFor host =
+            Posts.mediaServer (RellmServers.rellmServerForHost accountsPanelModel.servers host) host
+
+        accountFor : String -> Maybe RellmAccount
+        accountFor host =
+            RellmAccounts.enabledRellmAccountForServer accountsPanelModel.accounts host
+
         sourceUrl : Source -> String
         sourceUrl source =
-            case ( maybeServer, model.queue |> List.filter (\m -> m.id == source.mediaId) |> List.head ) of
-                ( Just server, Just media ) ->
-                    urlFor server maybeAccount media source.quality
+            case
+                ( serverFor source.host
+                , model.queue |> List.filter (\item -> item.media.id == source.mediaId && item.host == source.host) |> List.head
+                )
+            of
+                ( Just server, Just item ) ->
+                    urlFor server (accountFor source.host) item.media source.quality
 
                 _ ->
                     ""
@@ -1014,11 +1242,51 @@ view viewerOpen accountsPanelModel model =
 
         expandedContent : MediaReference -> Html Msg
         expandedContent media =
+            div [ class "audio-player-body" ]
+                [ queuePane
+                , nowPlayingPane media
+                , cornerButtons media
+                ]
+
+        nowPlayingPane : MediaReference -> Html Msg
+        nowPlayingPane media =
             div [ class "audio-player-expanded" ]
+                [ coverArt media
+                , div [ class "audio-player-title" ] [ text (title media) ]
+                , if artist media == "" then
+                    text ""
+
+                  else
+                    div [ class "audio-player-artist" ] [ text (artist media) ]
+                , seekTrack "audio-player-seek-large" media
+                , qualitySelect media
+                , div [ class "audio-player-times" ]
+                    [ span [] [ text (formatTime model.positionMs) ]
+                    , span [] [ text (formatTime model.durationMs) ]
+                    ]
+                ]
+
+        cornerButtons : MediaReference -> Html Msg
+        cornerButtons media =
+            div [ class "audio-player-corners" ]
                 [ -- Circular glyph buttons in the panel's top corners: edit (left, for whoever can edit the
                   -- track) and close player (right, red).
                   div [ class "audio-player-corner-left-group" ]
                     [ sharePopover media
+                    , button
+                        [ classes [ "audio-player-button", "audio-player-corner-button", "audio-player-queue-toggle" ]
+                        , attribute "aria-label" "Queue"
+                        , attribute "aria-pressed"
+                            (if model.queueOpen then
+                                "true"
+
+                             else
+                                "false"
+                            )
+                        , attribute "title" "Queue"
+                        , onClick ToggleQueue
+                        ]
+                        [ queueIcon ]
                     , if MediaViewerPanel.canEditMedia maybeAccount media then
                         button
                             [ classes [ "audio-player-button", "audio-player-corner-button" ]
@@ -1038,20 +1306,173 @@ view viewerOpen accountsPanelModel model =
                     , onClick Close
                     ]
                     [ text "✕" ]
-                , coverArt media
-                , div [ class "audio-player-title" ] [ text (title media) ]
-                , if artist media == "" then
-                    text ""
+                ]
 
-                  else
-                    div [ class "audio-player-artist" ] [ text (artist media) ]
-                , seekTrack "audio-player-seek-large" media
-                , qualitySelect media
-                , div [ class "audio-player-times" ]
-                    [ span [] [ text (formatTime model.positionMs) ]
-                    , span [] [ text (formatTime model.durationMs) ]
+        -- The queue: the Audio page's track chips (see `media_pages.css`'s `.audio-row`), each with the
+        -- Starred panel's reorder arrows -- tap to move one slot, or press and drag them to carry the row
+        -- anywhere (`UI.Drag`), with the rows FLIP-sliding into place.
+        queuePane : Html Msg
+        queuePane =
+            div [ class "audio-player-queue" ]
+                [ div [ class "audio-player-queue-header" ]
+                    [ text "Queue"
+                    , span [ class "audio-player-queue-count" ] [ text (String.fromInt (List.length model.queue)) ]
+                    ]
+                , Html.Keyed.node "div"
+                    [ classes [ "audio-player-queue-list", "flip-animated-column" ] ]
+                    (List.indexedMap queueRow model.queue
+                        ++ (UI.Drag.overlay DragMsg UI.Flip.Vertical model.drag |> List.map (Tuple.pair "drag-overlay"))
+                    )
+                ]
+
+        queueRow : Int -> QueueItem -> ( String, Html Msg )
+        queueRow index item =
+            let
+                key : String
+                key =
+                    itemKey item
+
+                media : MediaReference
+                media =
+                    item.media
+
+                server : Maybe RellmServer
+                server =
+                    serverFor item.host
+
+                account : Maybe RellmAccount
+                account =
+                    accountFor item.host
+
+                nowPlayingState : Maybe Bool
+                nowPlayingState =
+                    if isCurrent model item then
+                        Just model.playing
+
+                    else
+                        Nothing
+
+                thumbUrl : Maybe String
+                thumbUrl =
+                    case ( server, media.metadata |> Maybe.andThen .coverArtMediaId ) of
+                        ( Just srv, Just coverArtId ) ->
+                            Just (MediaRenderer.authorizedUrl [ "size=small" ] srv account { defaultMediaReference | id = coverArtId })
+
+                        ( Just srv, Nothing ) ->
+                            if has AUDIOCOVERARTSMALL media then
+                                Just (MediaRenderer.authorizedUrl [ "size=audio_cover_art_small" ] srv account media)
+
+                            else if has AUDIOPREVIEWTHUMBNAILSMALL media then
+                                Just (MediaRenderer.thumbnailUrl "audio" TierSmall srv account media)
+
+                            else
+                                Nothing
+
+                        _ ->
+                            Nothing
+
+                metadata : MediaMetadata
+                metadata =
+                    Maybe.withDefault defaultMediaMetadata media.metadata
+
+                credits : String
+                credits =
+                    [ metadata.artist, metadata.album ]
+                        |> List.filterMap (Maybe.andThen (String.trim >> nonEmpty))
+                        |> String.join " · "
+
+                author : Maybe Author
+                author =
+                    Maybe.map unwrapAuthor media.author
+
+                authorName : Maybe String
+                authorName =
+                    author
+                        |> Maybe.andThen
+                            (\a ->
+                                a.realName
+                                    |> Maybe.andThen (String.trim >> nonEmpty)
+                                    |> Maybe.map Just
+                                    |> Maybe.withDefault a.username
+                            )
+
+                moveAttrs : List (Html.Attribute Msg)
+                moveAttrs =
+                    model.moveAnimations
+                        |> Dict.get key
+                        |> Maybe.map UI.Flip.moveAttributes
+                        |> Maybe.withDefault []
+            in
+            ( key
+            , div
+                (id (queueDomId key)
+                    :: classes
+                        ([ "media-card", "audio-row", "audio-queue-row" ]
+                            ++ (case nowPlayingState of
+                                    Just True ->
+                                        [ "is-now-playing", "is-playing" ]
+
+                                    Just False ->
+                                        [ "is-now-playing" ]
+
+                                    Nothing ->
+                                        []
+                               )
+                            ++ (if UI.Drag.isDragging model.drag key then
+                                    [ "reorder-dragging" ]
+
+                                else
+                                    []
+                               )
+                        )
+                    :: moveAttrs
+                )
+                [ UI.Flip.reorderButtons
+                    { moveUp = UI.Drag.onClick model.drag (MoveUpClicked key)
+                    , moveDown = UI.Drag.onClick model.drag (MoveDownClicked key)
+                    , canMoveUp = index > 0
+                    , canMoveDown = index < List.length model.queue - 1
+                    , dragAttrs = UI.Drag.handleAttrs DragMsg UI.Flip.Vertical key model.drag
+                    }
+                , button [ class "media-card-thumb", onClick (PlayQueued key), attribute "aria-label" ("Play " ++ title media) ]
+                    [ case thumbUrl of
+                        Just url ->
+                            img [ src url, alt "", attribute "loading" "lazy" ] []
+
+                        Nothing ->
+                            span [ class "media-card-thumb-placeholder" ] [ text "🎵" ]
+                    , case nowPlayingState of
+                        Just _ ->
+                            span [ class "media-card-now-playing", attribute "role" "img", attribute "aria-label" "Now playing" ]
+                                [ span [] [], span [] [], span [] [], span [] [] ]
+
+                        Nothing ->
+                            span [ class "media-card-play" ] [ text "▶" ]
+                    ]
+                , div [ class "media-card-meta" ]
+                    [ button [ class "media-card-title", onClick (PlayQueued key) ] [ text (title media) ]
+                    , if credits == "" then
+                        text ""
+
+                      else
+                        div [ class "media-card-credits" ] [ text credits ]
+                    , div [ class "media-card-sub" ]
+                        [ case authorName of
+                            Just name ->
+                                span [ class "media-card-author media-card-author-with-avatar" ]
+                                    [ Authors.avatar name (Authors.avatarUrl server Nothing author), text name ]
+
+                            Nothing ->
+                                text ""
+                        , if item.host /= accountsPanelModel.mainFrontendHost then
+                            span [ classes [ "media-card-host", hostnameToCSSClass item.host, "background-color-primary" ] ] [ text item.host ]
+
+                          else
+                            text ""
+                        ]
                     ]
                 ]
+            )
 
         -- Neighboring tracks, fetched ahead so Next/Prev (and the end of a track) start instantly. Only
         -- the next track gets a full `auto` preload; the previous one just its metadata -- every preloading
@@ -1066,13 +1487,13 @@ view viewerOpen accountsPanelModel model =
                 -- Not until the playing track has fully downloaded -- see `Model.pendingUpgrade`.
                 []
             )
-                |> List.filterMap (\( maybeMedia_, preload ) -> maybeMedia_ |> Maybe.map (\media -> ( media, preload )))
+                |> List.filterMap (\( maybeItem, preload ) -> maybeItem |> Maybe.map (\item -> ( item, preload )))
                 |> List.map
-                    (\( media, preload ) ->
+                    (\( item, preload ) ->
                         audio
                             [ class "audio-player-preload"
                             , attribute "preload" preload
-                            , src (sourceUrl { mediaId = media.id, quality = startQuality media model.quality, requireFull = False })
+                            , src (sourceUrl { mediaId = item.media.id, host = item.host, quality = startQuality item.media model.quality, requireFull = False })
                             ]
                             []
                     )
@@ -1123,6 +1544,11 @@ view viewerOpen accountsPanelModel model =
 
               else
                 ""
+            , if model.queueOpen then
+                "is-queue-open"
+
+              else
+                ""
             , if expanded then
                 "is-expanded"
 
@@ -1156,6 +1582,13 @@ prevIcon =
 nextIcon : Html msg
 nextIcon =
     span [ class "audio-player-icon audio-player-icon-next", attribute "aria-hidden" "true" ] []
+
+
+{-| The queue glyph (three list lines) -- also what the Audio page's rows' add-to-queue buttons show.
+-}
+queueIcon : Html msg
+queueIcon =
+    span [ class "audio-player-icon audio-player-icon-queue", attribute "aria-hidden" "true" ] []
 
 
 pauseIcon : Html msg

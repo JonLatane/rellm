@@ -248,24 +248,36 @@
   flex-direction: column;
   align-items: center;
   gap: 0.4rem;
-  flex: 1 1 auto;
+  flex: 1 1 0;
+  min-width: 0;
   min-height: 0;
   overflow-y: auto;
   padding: 0.6rem 1rem;
   text-align: center;
+  transition: flex-basis 0.35s cubic-bezier(0.32, 0.72, 0, 1), padding 0.35s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.25s ease;
+}
+
+/* The expanded area: the queue pane (left, when open) beside the now-playing column (`.audio-player-expanded`).
+   Collapsing the panel hides this whole row. */
+.audio-player-body {
+  display: flex;
+  flex-direction: row;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
   transition: opacity 0.3s ease 0.1s, visibility 0s;
 }
 
-/* Collapsed, the expanded content stays mounted (so it can fade/slide as the panel grows) but takes no
+/* Collapsed, the expanded area stays mounted (so it can fade/slide as the panel grows) but takes no
    space and can't be interacted with. */
 /* The expanding part takes no pointer input while collapsed, and for the first 500ms after expanding -- so
    mashing the expand/collapse chevron can't land a click on whatever (e.g. the close button) the growing panel
    puts under the finger. Collapsing drops the animation, so it goes back to `none` immediately. */
-.audio-player-expanded {
+.audio-player-body {
   pointer-events: none;
 }
 
-.audio-player-panel.is-expanded .audio-player-expanded {
+.audio-player-panel.is-expanded .audio-player-body {
   animation: audio-player-enable-pointer-events 0s linear 0.5s forwards;
 }
 
@@ -279,10 +291,8 @@
   }
 }
 
-.audio-player-panel.is-collapsed .audio-player-expanded {
+.audio-player-panel.is-collapsed .audio-player-body {
   flex-basis: 0;
-  padding-top: 0;
-  padding-bottom: 0;
   opacity: 0;
   visibility: hidden;
   /* Hide (visibility) only once the panel has finished shrinking. */
@@ -515,4 +525,84 @@
 
 .audio-player-share-copy-icon {
   flex-shrink: 0;
+}
+
+/* The queue pane: a split pane on the left on wide screens (sliding open), the whole expanded area on narrow ones.
+   Its rows are the Audio page's `.audio-row` chips (media_pages.css). */
+.audio-player-queue {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 0;
+  min-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  border-right: 1px solid transparent;
+  transition: flex-basis 0.35s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.25s ease;
+}
+
+.audio-player-panel.is-queue-open .audio-player-queue {
+  flex-basis: min(26rem, 42%);
+  opacity: 1;
+  border-right-color: var(--border);
+}
+
+/* Clears the corner buttons, which sit over the pane's top. */
+.audio-player-queue-header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex: 0 0 auto;
+  padding: 3.3rem 1rem 0.4rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.audio-player-queue-count {
+  font-size: 0.8rem;
+  font-weight: 400;
+  opacity: 0.6;
+}
+
+.audio-player-queue-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 0.5rem 0.5rem;
+}
+
+.audio-queue-row {
+  position: relative;
+  flex: 0 0 auto;
+  text-align: left;
+}
+
+@media (max-width: 720px) {
+  .audio-player-panel.is-queue-open .audio-player-queue {
+    flex-basis: 100%;
+    border-right-color: transparent;
+  }
+
+  /* The queue takes the whole width: the now-playing column slides away. */
+  .audio-player-panel.is-queue-open .audio-player-expanded {
+    flex-basis: 0;
+    padding-left: 0;
+    padding-right: 0;
+    opacity: 0;
+    overflow: hidden;
+  }
+}
+
+.audio-player-queue-toggle[aria-pressed="true"] {
+  background: rgba(74, 158, 255, 0.35);
+}
+
+/* Queue glyph: three list lines. Also used by the Audio page rows' add-to-queue buttons. */
+.audio-player-icon-queue::before {
+  left: 0.08em;
+  top: 0.2em;
+  width: 0.84em;
+  height: 0.12em;
+  background: currentColor;
+  border-radius: 1px;
+  box-shadow: 0 0.26em 0 currentColor, 0 0.52em 0 currentColor;
 }
