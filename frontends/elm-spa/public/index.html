@@ -686,7 +686,10 @@
     // after the last one, a session that began while playing resumes from the recorded position.
     var rellmScrub = null;
     function rellmScrubElement() {
-      return document.querySelector('.media-viewer-panel-media video, .media-viewer-panel-media audio');
+      // The viewer's own `<video>`/`<audio>`, or -- when it was opened just to edit an audio file from the
+      // persistent player (no element of its own) -- the player's, so the preview sliders still work.
+      return document.querySelector('.media-viewer-panel-media video, .media-viewer-panel-media audio') ||
+        document.querySelector('.audio-player-audio-active');
     }
     app.ports.flipChildren.subscribe(function (payload) {
       var el = document.getElementById(payload.id);

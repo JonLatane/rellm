@@ -580,3 +580,8 @@
   background: rgba(127, 127, 127, 0.25);
   font-size: 1.6rem;
 }
+
+/* Leaves room for the collapsed audio player bar (4.5rem tall, docked along the bottom, above this panel). */
+.media-viewer-panel.nav-panel.has-audio-player {
+  bottom: calc(4.5rem + env(safe-area-inset-bottom));
+}

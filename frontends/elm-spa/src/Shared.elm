@@ -721,12 +721,11 @@ rootRedirectCmd req msg model =
             Nothing
 
 
-{-| The follow-on messages of cover art editing (see `MediaViewerPanel.ChooseCoverArtClicked`), dispatched
-after `sharedUpdate` has handled `msg` itself:
+{-| Follow-on messages between the audio player, the viewer and the media chooser, dispatched after
+`sharedUpdate` has handled `msg` itself:
 
-  - the player's "Edit Cover Art" button, once it has opened the viewer in edit mode, asks the viewer to
-    start choosing;
-  - the viewer starting to choose opens `Shared.MyMediaPanel` as a single-image chooser;
+  - a saved edit in the viewer refreshes the player's copy of the track;
+  - the viewer starting to choose cover art (`MediaViewerPanel.ChooseCoverArtClicked`) opens `Shared.MyMediaPanel` as a single-image chooser;
   - the chooser then reports its pick (or a cancel), which goes back to the viewer -- gated on the viewer
     actually waiting for one, so an unrelated media pick/close elsewhere is never mistaken for it.
 
@@ -739,15 +738,9 @@ coverArtFollowUp req msg oldModel newModel =
             sharedUpdate req next newModel
     in
     case msg of
-        AudioPlayerPanelMsg AudioPlayerPanel.EditCoverArtClicked ->
-            chain (MediaViewerPanelMsg MediaViewerPanel.ChooseCoverArtClicked)
-                |> (\( chainedModel, chainedCmd ) ->
-                        let
-                            ( finalModel, finalCmd ) =
-                                coverArtFollowUp req (MediaViewerPanelMsg MediaViewerPanel.ChooseCoverArtClicked) newModel chainedModel
-                        in
-                        ( finalModel, Cmd.batch [ chainedCmd, finalCmd ] )
-                   )
+        -- An edit saved in the viewer: the audio player keeps its own copy of the queue -- refresh it.
+        MediaViewerPanelMsg (MediaViewerPanel.GotEditSaveResult (Ok ( _, updated ))) ->
+            chain (AudioPlayerPanelMsg (AudioPlayerPanel.MediaUpdated (MediaViewerPanel.mediaToReference updated)))
 
         MediaViewerPanelMsg MediaViewerPanel.ChooseCoverArtClicked ->
             chain
@@ -1099,7 +1092,7 @@ sharedUpdate req msg model =
 
                 -- The player's Edit button hands the current track to the viewer's editor.
                 ( viewerModel, viewerCmd ) =
-                    case ( subMsg == AudioPlayerPanel.EditClicked || subMsg == AudioPlayerPanel.EditCoverArtClicked, AudioPlayerPanel.currentMedia subModel ) of
+                    case ( subMsg == AudioPlayerPanel.EditClicked, AudioPlayerPanel.currentMedia subModel ) of
                         ( True, Just media ) ->
                             let
                                 ( opened, openCmd, _ ) =

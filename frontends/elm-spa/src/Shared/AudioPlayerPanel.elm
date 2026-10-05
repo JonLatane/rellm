@@ -1,4 +1,4 @@
-module Shared.AudioPlayerPanel exposing (Model, Msg(..), currentMedia, init, subscriptions, update, view)
+module Shared.AudioPlayerPanel exposing (Model, Msg(..), currentMedia, init, isExpanded, subscriptions, update, view)
 
 {-| A persistent, app-wide audio player -- the companion to `Shared.MediaViewerPanel`. Where the viewer is a
 fullscreen, view-blocking carousel (with editing), this is a "now playing" bar docked to the bottom of the
@@ -117,14 +117,23 @@ type Msg
     | CandidateReady Slot
     | QualityChanged String
     | EditClicked
-      -- Like `EditClicked`, but then goes straight to choosing the track's cover art (see `Shared.update`).
-    | EditCoverArtClicked
+      -- The viewer saved an edit to a track: refresh this panel's copy of it (see `Shared.update`).
+    | MediaUpdated MediaReference
     | NoOp
 
 
 init : Model
 init =
     { queue = [], currentId = Nothing, targetHost = "", expanded = False, playing = False, positionMs = 0, durationMs = 0, quality = High, activeSlot = SlotA, slotA = Nothing, slotB = Nothing, autoStart = False, pendingUpgrade = Nothing, activeLoaded = False }
+
+
+{-| Whether the panel is actually shown expanded: the user's choice (`Model.expanded`), unless the fullscreen
+media viewer is open (`viewerOpen`) -- then it's forced down to the collapsed bar (which stays on top of the
+viewer, so playback can still be controlled) and springs back to expanded when the viewer closes.
+-}
+isExpanded : Bool -> Model -> Bool
+isExpanded viewerOpen model =
+    model.expanded && not viewerOpen && model.currentId /= Nothing
 
 
 {-| The track being played, if any.
@@ -349,7 +358,7 @@ releaseSlot slot =
     Ports.controlAudioPlayer (Encode.object [ ( "action", Encode.string "release" ), ( "slot", Encode.string (slotName slot) ) ])
 
 
-{-| While expanded: Space plays/pauses, Left/Right go to the previous/next track. Not while typing in (or
+{-| While expanded: Esc collapses it, Space plays/pauses, Left/Right go to the previous/next track. Not while typing in (or
 operating) a text field or `<select>`. `public/index.html` suppresses the keys' default effects (page
 scroll, button activation) -- a `Browser.Events` subscription can't.
 -}
@@ -369,7 +378,11 @@ keyDecoder =
         (Decode.at [ "target", "tagName" ] Decode.string |> Decode.maybe)
         |> Decode.andThen
             (\( key, maybeTag ) ->
-                if List.member (Maybe.withDefault "" maybeTag) [ "INPUT", "TEXTAREA", "SELECT" ] then
+                if key == "Escape" then
+                    -- Collapses even from inside the quality `<select>`. (Only subscribed while expanded.)
+                    Decode.succeed ToggleExpanded
+
+                else if List.member (Maybe.withDefault "" maybeTag) [ "INPUT", "TEXTAREA", "SELECT" ] then
                     Decode.fail "typing"
 
                 else
@@ -525,8 +538,8 @@ update msg model =
             -- Handled by `Shared.update` (it needs `Shared.MediaViewerPanel`'s model too).
             ( model, Cmd.none )
 
-        EditCoverArtClicked ->
-            ( model, Cmd.none )
+        MediaUpdated updated ->
+            ( { model | queue = model.queue |> List.map (\m -> if m.id == updated.id then updated else m) }, Cmd.none )
 
         NoOp ->
             ( model, Cmd.none )
@@ -550,9 +563,13 @@ command action maybeMs =
         )
 
 
-view : AccountsPanel.Model -> Model -> Html Msg
-view accountsPanelModel model =
+view : Bool -> AccountsPanel.Model -> Model -> Html Msg
+view viewerOpen accountsPanelModel model =
     let
+        expanded : Bool
+        expanded =
+            isExpanded viewerOpen model
+
         maybeServer : Maybe RellmServer
         maybeServer =
             Posts.mediaServer (RellmServers.rellmServerForHost accountsPanelModel.servers model.targetHost) model.targetHost
@@ -648,18 +665,6 @@ view accountsPanelModel model =
 
                 _ ->
                     div [ classes [ "audio-player-cover", "placeholder" ] ] [ text "🎵" ]
-
-        -- The art, with (for someone who can edit the track) an "Edit Cover Art" button to its right.
-        coverArtRow : MediaReference -> Html Msg
-        coverArtRow media =
-            div [ class "audio-player-cover-row" ]
-                [ coverArt media
-                , if MediaViewerPanel.canEditMedia maybeAccount media then
-                    button [ class "audio-player-text-button audio-player-edit-cover-art", onClick EditCoverArtClicked ] [ text "Edit Cover Art" ]
-
-                  else
-                    text ""
-                ]
 
         -- The qualities this track actually has stored (always the original). The selection shown is the
         -- chosen one if available, else the original -- which is what the server falls back to.
@@ -767,7 +772,13 @@ view accountsPanelModel model =
                 [ class "audio-player-now-playing"
                 , attribute "role" "button"
                 , -- Same as the arrow button on the right: expands, or collapses once expanded.
-                  onClick ToggleExpanded
+                  onClick
+                    (if viewerOpen then
+                        NoOp
+
+                     else
+                        ToggleExpanded
+                    )
                 ]
                 [ div [ class "audio-player-now-playing-title" ] [ text (title media) ]
                 , if credits == "" then
@@ -786,12 +797,15 @@ view accountsPanelModel model =
                 , button
                     [ class "audio-player-button audio-player-expand"
                     , attribute "aria-label"
-                        (if model.expanded then
+                        (if expanded then
                             "Collapse player"
 
                          else
                             "Expand player"
                         )
+
+                    -- Inert while the viewer is up: the player is forced collapsed then.
+                    , Html.Attributes.disabled viewerOpen
                     , onClick ToggleExpanded
                     ]
                     [ text "⌃" ]
@@ -820,7 +834,7 @@ view accountsPanelModel model =
                     , onClick Close
                     ]
                     [ text "✕" ]
-                , coverArtRow media
+                , coverArt media
                 , div [ class "audio-player-title" ] [ text (title media) ]
                 , if artist media == "" then
                     text ""
@@ -899,7 +913,13 @@ view accountsPanelModel model =
         [ classes
             [ "audio-player-panel"
             , openClosedClass isOpen
-            , if model.expanded then
+            , if viewerOpen then
+                -- Sits above the fullscreen viewer then (see audio_player_panel.css).
+                "is-above-viewer"
+
+              else
+                ""
+            , if expanded then
                 "is-expanded"
 
               else

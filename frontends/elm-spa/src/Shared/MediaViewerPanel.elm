@@ -647,6 +647,9 @@ type
     | EditClicked
     | EditCancelClicked
     | NoOp
+      -- Esc: leave edit mode (or, when opened just to edit from the audio player, close the panel back
+      -- to it); otherwise close the panel.
+    | EscapePressed
     | -- From `Shared.update` when `Shared.AudioPlayerPanel` hands a track over for editing: no autoplay (that
       -- panel is already playing it) and no Cancel (nothing to go back to).
       OpenedForEditing
@@ -885,6 +888,15 @@ update accountsPanelModel msg model =
                             )
                 , edit = Nothing
               }
+                |> (\saved ->
+                        -- Opened just to edit (from the audio player): nothing else to show, so saving
+                        -- closes the viewer -- the player springs back open.
+                        if model.editOnly then
+                            init
+
+                        else
+                            saved
+                   )
             , Cmd.none
             , maybeAccountsPanelMsg
             )
@@ -1165,6 +1177,23 @@ updatePure msg model =
             , schedulePreload newCurrent
             )
 
+        EscapePressed ->
+            if model.choosingCoverArt then
+                -- The cover art chooser (a separate panel) is up; leave this one alone.
+                ( model, Cmd.none )
+
+            else
+                case model.edit of
+                    Just _ ->
+                        if model.editOnly then
+                            ( init, Cmd.none )
+
+                        else
+                            ( { model | edit = Nothing }, Cmd.none )
+
+                    Nothing ->
+                        ( init, Cmd.none )
+
         OpenedForEditing ->
             ( { model | autoplay = False, editOnly = True }, Cmd.none )
 
@@ -1310,8 +1339,8 @@ applySwipe ( startX, startY ) ( endX, endY ) model =
         ( model, Cmd.none )
 
 
-view : AccountsPanel.Model -> Model -> Html Msg
-view accountsPanelModel model =
+view : Bool -> AccountsPanel.Model -> Model -> Html Msg
+view audioPlayerActive accountsPanelModel model =
     let
         currentMedia : Maybe MediaReference
         currentMedia =
@@ -1729,6 +1758,13 @@ view accountsPanelModel model =
     div
         [ classes
             ([ "media-viewer-panel", "nav-panel", openClosedClass (isOpen model) ]
+                ++ (if audioPlayerActive then
+                        -- Leaves room for the collapsed audio player bar docked along the bottom.
+                        [ "has-audio-player" ]
+
+                    else
+                        []
+                   )
                 ++ (if model.choosingCoverArt then
                         -- Steps aside for `Shared.MyMediaPanel`, which sits beneath this panel.
                         [ "is-yielding" ]
@@ -1741,7 +1777,13 @@ view accountsPanelModel model =
         ]
         [ div [ class "media-viewer-panel-header" ] indexLabel
         , div [ class "media-viewer-panel-content" ]
-            [ case ( currentMedia, maybeServer ) of
+            [ case
+                ( -- Opened just to edit an audio file from the audio player: no second player/waveform up top --
+                  -- the player bar is already there (the form's preview sliders use *its* `<audio>`).
+                  currentMedia |> Maybe.andThen (\m -> if model.editOnly && isAudio m then Nothing else Just m)
+                , maybeServer
+                )
+              of
                 ( Just media, Just server ) ->
                     -- Keyed on `media.id` so paging to a different item swaps
                     -- in a brand-new DOM node rather than patching the old
@@ -1911,8 +1953,11 @@ keyDecoder =
                     "ArrowRight" ->
                         Decode.succeed Next
 
+                    "Escape" ->
+                        Decode.succeed EscapePressed
+
                     _ ->
-                        Decode.fail "not an arrow key"
+                        Decode.fail "not a handled key"
             )
 
 

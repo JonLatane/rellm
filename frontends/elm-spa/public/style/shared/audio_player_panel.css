@@ -116,6 +116,16 @@
   background: rgba(127, 127, 127, 0.25);
 }
 
+/* The expand chevron is inert while the media viewer is open (the player is forced collapsed then): no
+   hover highlight, no pointer cursor. */
+.audio-player-button:disabled {
+  cursor: default;
+}
+
+.audio-player-button:disabled:hover {
+  background: transparent;
+}
+
 .audio-player-play {
   width: 2.75rem;
   height: 2.75rem;
@@ -348,22 +358,6 @@
   background: rgba(127, 127, 127, 0.25);
 }
 
-/* The cover art with a small "Edit Cover Art" button below it, flush with the art's right edge (the row
-   shrink-wraps to the art's width). */
-.audio-player-cover-row {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0.3rem;
-  flex: 0 0 auto;
-}
-
-.audio-player-edit-cover-art {
-  padding: 0.15rem 0.65rem;
-  font-size: 0.72rem;
-  white-space: nowrap;
-}
-
 /* Transport glyphs drawn from boxes/borders rather than text, so iOS can't swap them for color emoji. Each is
    a 1em square box in the button's text color (`currentColor`). */
 .audio-player-icon {
@@ -429,4 +423,11 @@
   height: 0.76em;
   background: currentColor;
   border-radius: 1px;
+}
+
+/* While the fullscreen media viewer (z-index 33) is open the player sits on top of it -- collapsed only (see
+   `AudioPlayerPanel.isExpanded`) -- so playback stays controllable while browsing/editing media. The viewer
+   leaves room for the bar (`.media-viewer-panel.has-audio-player`). */
+.audio-player-panel.is-above-viewer {
+  z-index: 34;
 }
