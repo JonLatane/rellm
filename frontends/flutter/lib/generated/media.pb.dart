@@ -417,6 +417,12 @@ class MediaMetadata extends $pb.GeneratedMessage {
     $fixnum.Int64? unlicensedPreviewStartMs,
     $fixnum.Int64? unlicensedPreviewEndMs,
     $core.String? coverArtMediaId,
+    $core.double? startBpm,
+    $core.double? endBpm,
+    $core.double? minBpm,
+    $core.double? maxBpm,
+    $core.String? startKey,
+    $core.String? endKey,
   }) {
     final $result = create();
     if (videoPreviewTimeMs != null) {
@@ -461,6 +467,24 @@ class MediaMetadata extends $pb.GeneratedMessage {
     if (coverArtMediaId != null) {
       $result.coverArtMediaId = coverArtMediaId;
     }
+    if (startBpm != null) {
+      $result.startBpm = startBpm;
+    }
+    if (endBpm != null) {
+      $result.endBpm = endBpm;
+    }
+    if (minBpm != null) {
+      $result.minBpm = minBpm;
+    }
+    if (maxBpm != null) {
+      $result.maxBpm = maxBpm;
+    }
+    if (startKey != null) {
+      $result.startKey = startKey;
+    }
+    if (endKey != null) {
+      $result.endKey = endKey;
+    }
     return $result;
   }
   MediaMetadata._() : super();
@@ -482,6 +506,12 @@ class MediaMetadata extends $pb.GeneratedMessage {
     ..a<$fixnum.Int64>(12, _omitFieldNames ? '' : 'unlicensedPreviewStartMs', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
     ..a<$fixnum.Int64>(13, _omitFieldNames ? '' : 'unlicensedPreviewEndMs', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
     ..aOS(14, _omitFieldNames ? '' : 'coverArtMediaId')
+    ..a<$core.double>(15, _omitFieldNames ? '' : 'startBpm', $pb.PbFieldType.OF)
+    ..a<$core.double>(16, _omitFieldNames ? '' : 'endBpm', $pb.PbFieldType.OF)
+    ..a<$core.double>(17, _omitFieldNames ? '' : 'minBpm', $pb.PbFieldType.OF)
+    ..a<$core.double>(18, _omitFieldNames ? '' : 'maxBpm', $pb.PbFieldType.OF)
+    ..aOS(19, _omitFieldNames ? '' : 'startKey')
+    ..aOS(20, _omitFieldNames ? '' : 'endKey')
     ..hasRequiredFields = false
   ;
 
@@ -653,6 +683,95 @@ class MediaMetadata extends $pb.GeneratedMessage {
   $core.bool hasCoverArtMediaId() => $_has(13);
   @$pb.TagNumber(14)
   void clearCoverArtMediaId() => clearField(14);
+
+  ///  For audio media: the track's tempo, in beats per minute -- at its start (`start_bpm`), at its end
+  ///  (`end_bpm`), and the slowest and fastest it gets anywhere in the track (`min_bpm`/`max_bpm`). For a
+  ///  steady track all four are about equal. Each must be finite, greater than 0 and at most 999, and
+  ///  `min_bpm` must not exceed `max_bpm`, else `UpdateMedia` fails with `INVALID_ARGUMENT`
+  ///  (`invalid_start_bpm`/`invalid_end_bpm`/`invalid_min_bpm`/`invalid_max_bpm`/`min_bpm_exceeds_max_bpm`).
+  ///  Fractions are fine (`127.5`). Unset clears it. (`start_bpm`/`end_bpm` aren't required to fall within
+  ///  `min_bpm`..`max_bpm`; clients may treat that as a hint to fix one.)
+  ///
+  ///  Seeded when the track is first converted (`convert_media_sizes`): from the file's own BPM tag
+  ///  (ID3 `TBPM`/Vorbis `BPM`, which sets all four) if it has one, otherwise estimated from the audio --
+  ///  the first and last 30s (silence trimmed) analyzed for start/end, and sliding 20s windows across the
+  ///  whole track for min/max. Estimates are best-effort: half/double time mistakes are the usual failure,
+  ///  so owners can correct them via `UpdateMedia`. Only ever filled while unset; an owner's edit (or
+  ///  clearing) is never overwritten by a later conversion.
+  @$pb.TagNumber(15)
+  $core.double get startBpm => $_getN(14);
+  @$pb.TagNumber(15)
+  set startBpm($core.double v) { $_setFloat(14, v); }
+  @$pb.TagNumber(15)
+  $core.bool hasStartBpm() => $_has(14);
+  @$pb.TagNumber(15)
+  void clearStartBpm() => clearField(15);
+
+  @$pb.TagNumber(16)
+  $core.double get endBpm => $_getN(15);
+  @$pb.TagNumber(16)
+  set endBpm($core.double v) { $_setFloat(15, v); }
+  @$pb.TagNumber(16)
+  $core.bool hasEndBpm() => $_has(15);
+  @$pb.TagNumber(16)
+  void clearEndBpm() => clearField(16);
+
+  @$pb.TagNumber(17)
+  $core.double get minBpm => $_getN(16);
+  @$pb.TagNumber(17)
+  set minBpm($core.double v) { $_setFloat(16, v); }
+  @$pb.TagNumber(17)
+  $core.bool hasMinBpm() => $_has(16);
+  @$pb.TagNumber(17)
+  void clearMinBpm() => clearField(17);
+
+  @$pb.TagNumber(18)
+  $core.double get maxBpm => $_getN(17);
+  @$pb.TagNumber(18)
+  set maxBpm($core.double v) { $_setFloat(17, v); }
+  @$pb.TagNumber(18)
+  $core.bool hasMaxBpm() => $_has(17);
+  @$pb.TagNumber(18)
+  void clearMaxBpm() => clearField(18);
+
+  ///  For audio media: the track's musical key at its start (`start_key`) and end (`end_key`) -- equal
+  ///  for a track that doesn't modulate. Each is formatted `<tonic><accidental?><mode?>`:
+  ///    - tonic: one uppercase letter `A`-`G`;
+  ///    - accidental (optional): a sharp or flat, any of
+  ///        sharp: `#` (ASCII), `♯` (U+266F), `＃` (U+FF03), `﹟` (U+FE5F)
+  ///        flat:  `b` (ASCII lowercase), `♭` (U+266D)
+  ///      optionally followed by the emoji variation selector U+FE0F (what emoji keyboards insert, e.g. `♭️`);
+  ///    - mode (optional): `m` or `-` for minor, `M` for major; no mode means major.
+  ///  E.g. `C#m`, `DbM`, `Db`, `F`, `Am`, `B♭-`, `F♯m`. Case matters (`am` and `db` are invalid), and `b` is
+  ///  only a flat *after* the tonic letter (`Bb` = B-flat; `B` = B). At most one accidental: double
+  ///  sharps/flats (`C##`, `Dbb`, `𝄪`, `𝄫`) aren't accepted, nor are naturals (`♮`) -- omit the accidental.
+  ///  Stored exactly as sent (trimmed), so the client's chosen glyphs round-trip;
+  ///  `UpdateMedia` fails with `INVALID_ARGUMENT` (`invalid_start_key`/`invalid_end_key`) for anything else.
+  ///  Unset (or blank) clears it. Validated identically by the Elm client
+  ///  (`Shared.MediaViewerPanel.keyError`) and the backend (`models::is_valid_musical_key`) -- keep them in sync.
+  ///
+  ///  Seeded like the BPMs: from the file's key tag (ID3 `TKEY`/`INITIALKEY`, which sets both; spelled-out
+  ///  forms like `A minor` are normalized to `Am`; Camelot codes like `8A` are ignored), else estimated
+  ///  from the first/last 30s of the audio. Estimates use bare majors and `m` minors, flats for
+  ///  `Db`/`Eb`/`Ab`/`Bb` and sharps for `F#`/`C#m`/`G#m`/`F#m` (e.g. `Bb`, `F#m`), and often confuse
+  ///  relative major/minor (`C` vs `Am`).
+  @$pb.TagNumber(19)
+  $core.String get startKey => $_getSZ(18);
+  @$pb.TagNumber(19)
+  set startKey($core.String v) { $_setString(18, v); }
+  @$pb.TagNumber(19)
+  $core.bool hasStartKey() => $_has(18);
+  @$pb.TagNumber(19)
+  void clearStartKey() => clearField(19);
+
+  @$pb.TagNumber(20)
+  $core.String get endKey => $_getSZ(19);
+  @$pb.TagNumber(20)
+  set endKey($core.String v) { $_setString(19, v); }
+  @$pb.TagNumber(20)
+  $core.bool hasEndKey() => $_has(19);
+  @$pb.TagNumber(20)
+  void clearEndKey() => clearField(20);
 }
 
 /// Grants `licensed_to` access to a `LICENSED` [`Media`](#rellm-Media) item's full-quality bytes.

@@ -1,4 +1,4 @@
-module Shared.MediaViewerPanel exposing (CreditField, MediaEdit, Model, Msg(..), canEditMedia, formatMs, freshEdit, init, mediaToReference, metadataWithEdits, subscriptions, update, view)
+module Shared.MediaViewerPanel exposing (CreditField, MediaEdit, Model, Msg(..), canEditMedia, fieldErrors, formatMs, freshEdit, init, isValidKey, mediaToReference, metadataWithEdits, parseBpm, subscriptions, update, view)
 
 {-| A single, app-wide fullscreen image/video viewer -- an alternate,
 "big"/fullscreen rendering of a `Post`'s `media` (compare
@@ -24,7 +24,7 @@ import Components.Posts as Posts
 import Dict exposing (Dict)
 import Grpc
 import Html exposing (Html, button, div, img, input, option, select, span, text, textarea)
-import Html.Attributes exposing (alt, class, src, disabled, placeholder, selected, step, type_, value)
+import Html.Attributes exposing (alt, attribute, class, src, style, disabled, placeholder, selected, step, type_, value)
 import Html.Events exposing (on, onClick, onInput, preventDefaultOn, stopPropagationOn)
 import Html.Keyed
 import Json.Decode as Decode
@@ -154,12 +154,18 @@ type alias MediaEdit =
     , durationMs : Maybe Int
     , status : SubmitStatus
     , deletingSizes : List MediaConversion
+
+    -- Whether the stored-versions list (sizes, with Delete buttons) is open; collapsed it's just a
+    -- proportional bar graph of the versions -- see `ToggleSizesExpanded`.
+    , sizesExpanded : Bool
     , deleteSizeError : Maybe String
     }
 
 
-{-| The credits `MediaMetadata` carries (artist, album, ...), in the order they appear between Title
-and Description when set -- see `allCreditFields`.
+{-| The credits `MediaMetadata` carries (artist, album, ...) plus, for audio, its musical `StartBpm`/
+`EndBpm`/`MinBpm`/`MaxBpm`/`StartKey`/`EndKey` -- all edited the same way (an "Add X" button reveals
+a blank field), in the order they appear between Title and Description when set -- see
+`allCreditFields`. The musical ones are validated (`fieldError`) rather than free text.
 -}
 type CreditField
     = Artist
@@ -172,11 +178,45 @@ type CreditField
     | Crew
     | Narrator
     | Publisher
+    | StartBpm
+    | EndBpm
+    | MinBpm
+    | MaxBpm
+    | StartKey
+    | EndKey
 
 
 allCreditFields : List CreditField
 allCreditFields =
-    [ Artist, Album, Composer, Director, Producer, Starring, Cast, Crew, Narrator, Publisher ]
+    [ Artist, Album, Composer, Director, Producer, Starring, Cast, Crew, Narrator, Publisher ] ++ musicFields
+
+
+{-| The audio-only fields among `allCreditFields`.
+-}
+musicFields : List CreditField
+musicFields =
+    [ StartBpm, EndBpm, MinBpm, MaxBpm, StartKey, EndKey ]
+
+
+isMusicField : CreditField -> Bool
+isMusicField field =
+    List.member field musicFields
+
+
+isBpmField : CreditField -> Bool
+isBpmField field =
+    List.member field [ StartBpm, EndBpm, MinBpm, MaxBpm ]
+
+
+{-| The fields editable for `media`: the musical ones only for audio.
+-}
+editableFieldsFor : MediaReference -> List CreditField
+editableFieldsFor media =
+    if isAudio media then
+        allCreditFields
+
+    else
+        List.filter (not << isMusicField) allCreditFields
 
 
 creditLabel : CreditField -> String
@@ -212,6 +252,24 @@ creditLabel field =
         Publisher ->
             "Publisher"
 
+        StartBpm ->
+            "Start BPM"
+
+        EndBpm ->
+            "End BPM"
+
+        MinBpm ->
+            "Min BPM"
+
+        MaxBpm ->
+            "Max BPM"
+
+        StartKey ->
+            "Start Key"
+
+        EndKey ->
+            "End Key"
+
 
 creditFromMetadata : CreditField -> MediaMetadata -> Maybe String
 creditFromMetadata field metadata =
@@ -246,6 +304,24 @@ creditFromMetadata field metadata =
         Publisher ->
             metadata.publisher
 
+        StartBpm ->
+            Maybe.map formatBpm metadata.startBpm
+
+        EndBpm ->
+            Maybe.map formatBpm metadata.endBpm
+
+        MinBpm ->
+            Maybe.map formatBpm metadata.minBpm
+
+        MaxBpm ->
+            Maybe.map formatBpm metadata.maxBpm
+
+        StartKey ->
+            metadata.startKey
+
+        EndKey ->
+            metadata.endKey
+
 
 creditIntoMetadata : CreditField -> Maybe String -> MediaMetadata -> MediaMetadata
 creditIntoMetadata field value metadata =
@@ -279,6 +355,158 @@ creditIntoMetadata field value metadata =
 
         Publisher ->
             { metadata | publisher = value }
+
+        StartBpm ->
+            { metadata | startBpm = value |> Maybe.andThen parseBpm }
+
+        EndBpm ->
+            { metadata | endBpm = value |> Maybe.andThen parseBpm }
+
+        MinBpm ->
+            { metadata | minBpm = value |> Maybe.andThen parseBpm }
+
+        MaxBpm ->
+            { metadata | maxBpm = value |> Maybe.andThen parseBpm }
+
+        StartKey ->
+            { metadata | startKey = value }
+
+        EndKey ->
+            { metadata | endKey = value }
+
+
+{-| A BPM as shown in its input: the stored `float` (32-bit, so `127.3` comes back as
+`127.30000305…`) rounded to 3 places.
+-}
+formatBpm : Float -> String
+formatBpm bpm =
+    String.fromFloat (toFloat (round (bpm * 1000)) / 1000)
+
+
+{-| Mirrors the backend's `models::is_valid_bpm`: a number above 0, at most `maxBpm`.
+-}
+parseBpm : String -> Maybe Float
+parseBpm text =
+    String.toFloat (String.trim text)
+        |> Maybe.andThen
+            (\bpm ->
+                if bpm > 0 && bpm <= maxBpm && not (isInfinite bpm) then
+                    Just bpm
+
+                else
+                    Nothing
+            )
+
+
+maxBpm : Float
+maxBpm =
+    999
+
+
+{-| Mirrors the backend's `models::is_valid_musical_key` (documented on `MediaMetadata.start_key` in
+`protos/media.proto`) -- keep them in sync: a letter `A`-`G`, then at most one accidental (`#`, `b`,
+`♯`, `♭`, `＃`, `﹟`; never double sharps/flats) optionally followed by the emoji variation selector
+U+FE0F, then optionally `m`/`-` (minor) or `M` (major). Case matters; `key` isn't trimmed here.
+-}
+isValidKey : String -> Bool
+isValidKey key =
+    let
+        afterAccidental : List Char -> List Char
+        afterAccidental rest =
+            case rest of
+                '\u{FE0F}' :: more ->
+                    more
+
+                _ ->
+                    rest
+
+        validAfterTonic : List Char -> Bool
+        validAfterTonic rest =
+            case rest of
+                accidental :: more ->
+                    if List.member accidental [ '#', 'b', '♯', '♭', '＃', '﹟' ] then
+                        validMode (afterAccidental more)
+
+                    else
+                        validMode rest
+
+                [] ->
+                    True
+
+        validMode : List Char -> Bool
+        validMode rest =
+            case rest of
+                [] ->
+                    True
+
+                [ mode ] ->
+                    List.member mode [ 'm', 'M', '-' ]
+
+                _ ->
+                    False
+    in
+    case String.toList key of
+        tonic :: rest ->
+            List.member tonic [ 'A', 'B', 'C', 'D', 'E', 'F', 'G' ] && validAfterTonic rest
+
+        [] ->
+            False
+
+
+{-| Why `field`'s (trimmed) `text` can't be saved, if it can't; blank is always fine (it clears the field).
+-}
+fieldError : CreditField -> String -> Maybe String
+fieldError field text =
+    if isBlank text then
+        Nothing
+
+    else if isBpmField field then
+        if parseBpm text == Nothing then
+            Just "Enter a number above 0, up to 999"
+
+        else
+            Nothing
+
+    else if field == StartKey || field == EndKey then
+        if isValidKey (String.trim text) then
+            Nothing
+
+        else
+            Just "A letter A–G, then ♯ or ♭ (or # or b) if needed, then m for minor or M for major (or nothing): F♯m, Bb, C"
+
+    else
+        Nothing
+
+
+{-| Everything keeping `edit` from being saved, keyed by `creditLabel`: each field's own `fieldError`,
+plus Min BPM above Max BPM (which the backend rejects too).
+-}
+fieldErrors : MediaEdit -> Dict String String
+fieldErrors edit =
+    let
+        textOf : CreditField -> String
+        textOf field =
+            Dict.get (creditLabel field) edit.credits |> Maybe.withDefault ""
+
+        own : List ( String, String )
+        own =
+            allCreditFields
+                |> List.filterMap (\field -> fieldError field (textOf field) |> Maybe.map (Tuple.pair (creditLabel field)))
+
+        range : List ( String, String )
+        range =
+            case ( parseBpm (textOf MinBpm), parseBpm (textOf MaxBpm) ) of
+                ( Just low, Just high ) ->
+                    if low > high then
+                        [ ( creditLabel MinBpm, "Min BPM can't be above Max BPM" ) ]
+
+                    else
+                        []
+
+                _ ->
+                    []
+    in
+    Dict.fromList (range ++ own)
 
 
 {-| What `UpdateMedia` is sent as `metadata`: `base` (the item's current metadata) with every
@@ -429,6 +657,7 @@ type
     | CoverArtChosen String
     | CoverArtChooserClosed
     | CoverArtRemoved
+    | ToggleSizesExpanded
     | EditNameChanged String
     | EditDescriptionChanged String
     | VisibilityChanged String
@@ -622,17 +851,22 @@ update accountsPanelModel msg model =
         EditSaveClicked ->
             case ( currentMedia, model.edit, maybeAccount ) of
                 ( Just media, Just edit, Just account ) ->
-                    ( { model | edit = Just { edit | status = Submitting } }
-                    , updateMediaTask accountsPanelModel
-                        account
-                        media.id
-                        edit.name
-                        edit.description
-                        edit.visibility
-                        (metadataWithEdits (isAudio media || isVideo media) (isVideo media) edit (Maybe.withDefault defaultMediaMetadata media.metadata))
-                        |> Task.attempt GotEditSaveResult
-                    , Nothing
-                    )
+                    -- The Save button is disabled while `fieldErrors` is non-empty; this is the backstop.
+                    if not (Dict.isEmpty (fieldErrors edit)) then
+                        ( model, Cmd.none, Nothing )
+
+                    else
+                        ( { model | edit = Just { edit | status = Submitting } }
+                        , updateMediaTask accountsPanelModel
+                            account
+                            media.id
+                            edit.name
+                            edit.description
+                            edit.visibility
+                            (metadataWithEdits (isAudio media || isVideo media) (isVideo media) edit (Maybe.withDefault defaultMediaMetadata media.metadata))
+                            |> Task.attempt GotEditSaveResult
+                        , Nothing
+                        )
 
                 _ ->
                     ( model, Cmd.none, Nothing )
@@ -863,6 +1097,7 @@ freshEdit media =
     , durationMs = Nothing
     , status = Idle
     , deletingSizes = []
+    , sizesExpanded = False
     , deleteSizeError = Nothing
     }
 
@@ -946,6 +1181,9 @@ updatePure msg model =
 
         CoverArtChooserClosed ->
             ( { model | choosingCoverArt = False }, Cmd.none )
+
+        ToggleSizesExpanded ->
+            ( { model | edit = model.edit |> Maybe.map (\edit -> { edit | sizesExpanded = not edit.sizesExpanded }) }, Cmd.none )
 
         CoverArtRemoved ->
             ( { model | edit = model.edit |> Maybe.map (\edit -> { edit | coverArtMediaId = Nothing }) }, Cmd.none )
@@ -1241,6 +1479,61 @@ view accountsPanelModel model =
                     ]
                 ]
 
+        -- The stored versions of the item, largest first: collapsed, just the total size over a labelless
+        -- bar graph (segments proportional to size, alternating the server's primary/nav colors) that
+        -- doubles as the expand button; expanded, a vertical list with each version's size and a Delete button.
+        sizesSection : MediaEdit -> MediaReference -> Html Msg
+        sizesSection edit media =
+            let
+                sorted : List MediaSize
+                sorted =
+                    media.sizes |> List.sortBy (\size -> negate (int64ToInt size.sizeBytes))
+            in
+            div [ class "media-viewer-panel-edit-sizes" ]
+                (button
+                    [ classes [ "media-viewer-panel-edit-sizes-toggle", hostnameToCSSClass model.targetHost ]
+                    , attribute "aria-expanded"
+                        (if edit.sizesExpanded then
+                            "true"
+
+                         else
+                            "false"
+                        )
+                    , attribute "aria-label" "Stored versions"
+                    , stopClick ToggleSizesExpanded
+                    ]
+                    [ -- Over the bar: the total of the original and every conversion.
+                      div [ class "media-viewer-panel-edit-sizes-header" ]
+                        [ span [] [ text (ByteFormat.formatBytes (List.sum (List.map (\size -> int64ToInt size.sizeBytes) sorted))) ]
+                        , span [ class "media-viewer-panel-edit-sizes-chevron" ] []
+                        ]
+                    , div [ class "media-viewer-panel-edit-sizes-bar" ]
+                        (sorted
+                            |> List.indexedMap
+                                (\index size ->
+                                    div
+                                        [ classes
+                                            [ "media-viewer-panel-edit-sizes-segment"
+                                            , if modBy 2 index == 0 then
+                                                "background-color-primary"
+
+                                              else
+                                                "background-color-nav"
+                                            ]
+                                        , style "flex" (String.fromInt (max 1 (int64ToInt size.sizeBytes)) ++ " 1 0")
+                                        ]
+                                        []
+                                )
+                        )
+                    ]
+                    :: (if edit.sizesExpanded then
+                            [ div [ class "media-viewer-panel-edit-sizes-list" ] (sorted |> List.map (sizeDeleteButton edit)) ]
+
+                        else
+                            []
+                       )
+                )
+
         -- The chosen cover art (or the embedded one/placeholder), with Choose/Remove -- same chooser
         -- convention as a profile's avatar.
         coverArtRow : MediaEdit -> Html Msg
@@ -1271,11 +1564,30 @@ view accountsPanelModel model =
                     Dict.get (creditLabel field) edit.credits |> Maybe.withDefault ""
             in
             if not (isBlank current) || edit.openBlankCredit == Just field then
+                let
+                    inputAttributes : List (Html.Attribute Msg)
+                    inputAttributes =
+                        if isBpmField field then
+                            [ type_ "number", Html.Attributes.min "0", Html.Attributes.max (String.fromFloat maxBpm), step "any", attribute "inputmode" "decimal", placeholder "BPM" ]
+
+                        else if isMusicField field then
+                            [ placeholder "e.g. F♯m", attribute "autocapitalize" "characters", attribute "spellcheck" "false" ]
+
+                        else
+                            [ placeholder (creditLabel field) ]
+                in
                 Just
                     (div [ class "media-viewer-panel-edit-field media-viewer-panel-edit-credit" ]
-                        [ text (creditLabel field)
-                        , input [ value current, onInput (CreditChanged field), placeholder (creditLabel field) ] []
-                        ]
+                        (text (creditLabel field)
+                            :: input (value current :: onInput (CreditChanged field) :: inputAttributes) []
+                            :: (case Dict.get (creditLabel field) (fieldErrors edit) of
+                                    Just err ->
+                                        [ div [ class "media-viewer-panel-edit-error" ] [ text err ] ]
+
+                                    Nothing ->
+                                        []
+                               )
+                        )
                     )
 
             else
@@ -1344,7 +1656,7 @@ view accountsPanelModel model =
                             [ text "Name"
                             , input [ value edit.name, onInput EditNameChanged, placeholder "Untitled" ] []
                             ]
-                            :: List.filterMap (creditField edit) allCreditFields
+                            :: List.filterMap (creditField edit) (editableFieldsFor media)
                             ++ [ div [ class "media-viewer-panel-edit-field" ]
                                     [ text "Description"
                                     , textarea [ value edit.description, onInput EditDescriptionChanged ] []
@@ -1373,14 +1685,14 @@ view accountsPanelModel model =
                                 else
                                     []
                                )
-                            ++ [ div [ class "media-viewer-panel-edit-add-credits" ] (List.filterMap (addCreditButton edit) allCreditFields)
+                            ++ [ div [ class "media-viewer-panel-edit-add-credits" ] (List.filterMap (addCreditButton edit) (editableFieldsFor media))
                                , div [ class "media-viewer-panel-edit-actions" ]
                                     [ button
                                         [ -- Tinted with the track's server's brand color (see `UI.EmittedStylesheet`'s
                                           -- utility classes; this panel isn't inside the nav, so it names the host itself).
                                           classes [ "media-viewer-panel-edit-save", hostnameToCSSClass model.targetHost, "background-color-primary" ]
                                         , onClick EditSaveClicked
-                                        , disabled (edit.status == Submitting)
+                                        , disabled (edit.status == Submitting || not (Dict.isEmpty (fieldErrors edit)))
                                         ]
                                         [ text
                                             (if edit.status == Submitting then
@@ -1404,7 +1716,7 @@ view accountsPanelModel model =
 
                                     _ ->
                                         text ""
-                               , div [ class "media-viewer-panel-edit-sizes" ] (media.sizes |> List.map (sizeDeleteButton edit))
+                               , sizesSection edit media
                                , case edit.deleteSizeError of
                                     Just err ->
                                         div [ class "media-viewer-panel-edit-error" ] [ text err ]

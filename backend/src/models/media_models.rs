@@ -127,14 +127,31 @@ pub struct MediaMetadata {
     /// DB id of the image `Media` chosen as this item's cover art -- see `MediaMetadata.cover_art_media_id`.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub cover_art_media_id: Option<i64>,
+    /// Tempo (beats per minute) at the start/end of an audio track, and its slowest/fastest -- see
+    /// `MediaMetadata.start_bpm`.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub start_bpm: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub end_bpm: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub min_bpm: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub max_bpm: Option<f32>,
+    /// Musical key at the start/end of an audio track, e.g. `C#m`/`Db` -- see `is_valid_musical_key`
+    /// for the accepted format.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub start_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub end_key: Option<String>,
 }
 
 /// Default length of the `UNLICENSED_PREVIEW_MEDIUM` crop when `unlicensed_preview_end_ms` is unset.
 pub const DEFAULT_UNLICENSED_PREVIEW_LENGTH_MS: u64 = 30_000;
 
 impl MediaMetadata {
-    /// Fills every *unset* credit from `tags` (an `ffprobe` container-tag map, keys lowercased --
-    /// see `credits_from_tags`) without touching any already-set one. Returns whether anything changed.
+    /// Fills every *unset* credit (and the musical `start_bpm`/`end_bpm`/`min_bpm`/`max_bpm`/`start_key`/`end_key`) from `tags` -- a
+    /// `MediaMetadata` built from `ffprobe` container tags (see `credits_from_tags`) or from audio
+    /// analysis -- without touching any already-set one. Returns whether anything changed.
     pub fn fill_missing_credits(&mut self, tags: &MediaMetadata) -> bool {
         let mut changed = false;
         macro_rules! fill {
@@ -145,9 +162,40 @@ impl MediaMetadata {
                 }
             )*};
         }
-        fill!(artist, album, composer, director, producer, starring, cast, crew, narrator, publisher);
+        fill!(artist, album, composer, director, producer, starring, cast, crew, narrator, publisher, start_bpm, end_bpm, min_bpm, max_bpm, start_key, end_key);
         changed
     }
+}
+
+/// Largest BPM `update_media` accepts (and smallest positive one is anything above 0) -- generous
+/// on both ends so unusual music (very slow doom, extreme gabber) isn't rejected.
+pub const MAX_BPM: f32 = 999.0;
+
+/// Whether `bpm` is a valid `start_bpm`/`end_bpm`/`min_bpm`/`max_bpm`: finite, greater than 0, and at most `MAX_BPM`.
+pub fn is_valid_bpm(bpm: f32) -> bool {
+    bpm.is_finite() && bpm > 0.0 && bpm <= MAX_BPM
+}
+
+/// Accidental characters accepted after a key's letter: ASCII `#`/`b` and the Unicode sharps/flats
+/// (`♯` U+266F, `♭` U+266D, fullwidth/small `＃` `﹟`). Only single accidentals: double sharps/flats
+/// (`𝄪`, `𝄫`, `##`, `bb`) aren't valid keys. A trailing
+/// emoji-presentation selector (U+FE0F) is allowed after the accidental, since `♯️`/`♭️` are what
+/// emoji keyboards insert. Mirrored by `Shared.MediaViewerPanel.keyError` in the Elm client.
+const SHARP_FLAT_CHARS: &[char] = &['#', 'b', '♯', '♭', '＃', '﹟'];
+
+/// Whether `key` is a valid `MediaMetadata.start_key`/`end_key`: a letter `A`-`G`, then an optional sharp/flat
+/// (see `SHARP_FLAT_CHARS`), then an optional `m`/`-` (minor) or `M` (major) suffix.
+/// E.g. `C#m`, `DbM`, `Db`, `F`, `Am`, `B♭-`.
+pub fn is_valid_musical_key(key: &str) -> bool {
+    let mut chars = key.chars().peekable();
+    if !matches!(chars.next(), Some('A'..='G')) {
+        return false;
+    }
+    if chars.next_if(|c| SHARP_FLAT_CHARS.contains(c)).is_some() {
+        chars.next_if(|c| *c == '\u{FE0F}');
+    }
+    chars.next_if(|c| matches!(c, 'm' | 'M' | '-'));
+    chars.next().is_none()
 }
 
 /// Trims a credit field, mapping blank to `None` -- "If user blanks a value and saves, it saves as null".

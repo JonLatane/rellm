@@ -203,6 +203,49 @@ message MediaMetadata {
   // (others fall back to the embedded art/placeholder) -- give it a visibility at least as open as the
   // track's. Unset/blank clears it.
   optional string cover_art_media_id = 14;
+
+  // For audio media: the track's tempo, in beats per minute -- at its start (`start_bpm`), at its end
+  // (`end_bpm`), and the slowest and fastest it gets anywhere in the track (`min_bpm`/`max_bpm`). For a
+  // steady track all four are about equal. Each must be finite, greater than 0 and at most 999, and
+  // `min_bpm` must not exceed `max_bpm`, else `UpdateMedia` fails with `INVALID_ARGUMENT`
+  // (`invalid_start_bpm`/`invalid_end_bpm`/`invalid_min_bpm`/`invalid_max_bpm`/`min_bpm_exceeds_max_bpm`).
+  // Fractions are fine (`127.5`). Unset clears it. (`start_bpm`/`end_bpm` aren't required to fall within
+  // `min_bpm`..`max_bpm`; clients may treat that as a hint to fix one.)
+  //
+  // Seeded when the track is first converted (`convert_media_sizes`): from the file's own BPM tag
+  // (ID3 `TBPM`/Vorbis `BPM`, which sets all four) if it has one, otherwise estimated from the audio --
+  // the first and last 30s (silence trimmed) analyzed for start/end, and sliding 20s windows across the
+  // whole track for min/max. Estimates are best-effort: half/double time mistakes are the usual failure,
+  // so owners can correct them via `UpdateMedia`. Only ever filled while unset; an owner's edit (or
+  // clearing) is never overwritten by a later conversion.
+  optional float start_bpm = 15;
+  optional float end_bpm = 16;
+  optional float min_bpm = 17;
+  optional float max_bpm = 18;
+
+  // For audio media: the track's musical key at its start (`start_key`) and end (`end_key`) -- equal
+  // for a track that doesn't modulate. Each is formatted `<tonic><accidental?><mode?>`:
+  //   - tonic: one uppercase letter `A`-`G`;
+  //   - accidental (optional): a sharp or flat, any of
+  //       sharp: `#` (ASCII), `♯` (U+266F), `＃` (U+FF03), `﹟` (U+FE5F)
+  //       flat:  `b` (ASCII lowercase), `♭` (U+266D)
+  //     optionally followed by the emoji variation selector U+FE0F (what emoji keyboards insert, e.g. `♭️`);
+  //   - mode (optional): `m` or `-` for minor, `M` for major; no mode means major.
+  // E.g. `C#m`, `DbM`, `Db`, `F`, `Am`, `B♭-`, `F♯m`. Case matters (`am` and `db` are invalid), and `b` is
+  // only a flat *after* the tonic letter (`Bb` = B-flat; `B` = B). At most one accidental: double
+  // sharps/flats (`C##`, `Dbb`, `𝄪`, `𝄫`) aren't accepted, nor are naturals (`♮`) -- omit the accidental.
+  // Stored exactly as sent (trimmed), so the client's chosen glyphs round-trip;
+  // `UpdateMedia` fails with `INVALID_ARGUMENT` (`invalid_start_key`/`invalid_end_key`) for anything else.
+  // Unset (or blank) clears it. Validated identically by the Elm client
+  // (`Shared.MediaViewerPanel.keyError`) and the backend (`models::is_valid_musical_key`) -- keep them in sync.
+  //
+  // Seeded like the BPMs: from the file's key tag (ID3 `TKEY`/`INITIALKEY`, which sets both; spelled-out
+  // forms like `A minor` are normalized to `Am`; Camelot codes like `8A` are ignored), else estimated
+  // from the first/last 30s of the audio. Estimates use bare majors and `m` minors, flats for
+  // `Db`/`Eb`/`Ab`/`Bb` and sharps for `F#`/`C#m`/`G#m`/`F#m` (e.g. `Bb`, `F#m`), and often confuse
+  // relative major/minor (`C` vs `Am`).
+  optional string start_key = 19;
+  optional string end_key = 20;
 }
 
 // Grants `licensed_to` access to a `LICENSED` [`Media`](#rellm-Media) item's full-quality bytes.

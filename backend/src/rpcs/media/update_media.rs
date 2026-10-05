@@ -8,7 +8,7 @@ use crate::logic::{
     update_media_storage_used,
 };
 use crate::marshaling::*;
-use crate::models::{self, blank_to_none, UNLICENSED_PREVIEW_CONVERSIONS, VIDEO_PREVIEW_CONVERSIONS};
+use crate::models::{self, blank_to_none, is_valid_bpm, is_valid_musical_key, UNLICENSED_PREVIEW_CONVERSIONS, VIDEO_PREVIEW_CONVERSIONS};
 use crate::protos::*;
 use crate::schema::media;
 
@@ -81,6 +81,12 @@ pub async fn update_media(
                 publisher: blank_to_none(m.publisher.clone()),
                 unlicensed_preview_start_ms: m.unlicensed_preview_start_ms.map(|ms| ms as i64),
                 unlicensed_preview_end_ms: m.unlicensed_preview_end_ms.map(|ms| ms as i64),
+                start_bpm: m.start_bpm,
+                end_bpm: m.end_bpm,
+                min_bpm: m.min_bpm,
+                max_bpm: m.max_bpm,
+                start_key: blank_to_none(m.start_key.clone()),
+                end_key: blank_to_none(m.end_key.clone()),
                 cover_art_media_id: match blank_to_none(m.cover_art_media_id.clone()) {
                     None => None,
                     Some(id) => {
@@ -103,6 +109,26 @@ pub async fn update_media(
                     }
                 },
             };
+            for (field, bpm) in [
+                ("start_bpm", new_metadata.start_bpm),
+                ("end_bpm", new_metadata.end_bpm),
+                ("min_bpm", new_metadata.min_bpm),
+                ("max_bpm", new_metadata.max_bpm),
+            ] {
+                if bpm.is_some_and(|bpm| !is_valid_bpm(bpm)) {
+                    return Err(Status::new(Code::InvalidArgument, format!("invalid_{field}")));
+                }
+            }
+            if let (Some(min), Some(max)) = (new_metadata.min_bpm, new_metadata.max_bpm) {
+                if min > max {
+                    return Err(Status::new(Code::InvalidArgument, "min_bpm_exceeds_max_bpm"));
+                }
+            }
+            for (field, key) in [("start_key", &new_metadata.start_key), ("end_key", &new_metadata.end_key)] {
+                if key.as_deref().is_some_and(|key| !is_valid_musical_key(key)) {
+                    return Err(Status::new(Code::InvalidArgument, format!("invalid_{field}")));
+                }
+            }
             let has_unlicensed_preview = new_metadata.unlicensed_preview_start_ms.is_some()
                 || new_metadata.unlicensed_preview_end_ms.is_some();
             if has_unlicensed_preview && !is_audio_or_video {

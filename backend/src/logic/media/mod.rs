@@ -1,3 +1,6 @@
+mod audio_analysis;
+pub use audio_analysis::*;
+
 mod media_conversion;
 pub use media_conversion::*;
 

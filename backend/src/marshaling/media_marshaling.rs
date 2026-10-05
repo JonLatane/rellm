@@ -158,6 +158,12 @@ impl ToProtoMediaMetadata for models::MediaMetadata {
             unlicensed_preview_start_ms: self.unlicensed_preview_start_ms.map(|ms| ms as u64),
             unlicensed_preview_end_ms: self.unlicensed_preview_end_ms.map(|ms| ms as u64),
             cover_art_media_id: self.cover_art_media_id.map(|id| id.to_proto_id()),
+            start_bpm: self.start_bpm,
+            end_bpm: self.end_bpm,
+            min_bpm: self.min_bpm,
+            max_bpm: self.max_bpm,
+            start_key: self.start_key.clone(),
+            end_key: self.end_key.clone(),
         }
     }
 }

@@ -11970,6 +11970,12 @@ fieldNumbersProto__Rellm__MediaMetadata :
     , unlicensedPreviewStartMs : Int
     , unlicensedPreviewEndMs : Int
     , coverArtMediaId : Int
+    , startBpm : Int
+    , endBpm : Int
+    , minBpm : Int
+    , maxBpm : Int
+    , startKey : Int
+    , endKey : Int
     }
 fieldNumbersProto__Rellm__MediaMetadata =
     { videoPreviewTimeMs = 1
@@ -11986,6 +11992,12 @@ fieldNumbersProto__Rellm__MediaMetadata =
     , unlicensedPreviewStartMs = 12
     , unlicensedPreviewEndMs = 13
     , coverArtMediaId = 14
+    , startBpm = 15
+    , endBpm = 16
+    , minBpm = 17
+    , maxBpm = 18
+    , startKey = 19
+    , endKey = 20
     }
 
 
@@ -12008,6 +12020,12 @@ defaultProto__Rellm__MediaMetadata =
     , unlicensedPreviewStartMs = Nothing
     , unlicensedPreviewEndMs = Nothing
     , coverArtMediaId = Nothing
+    , startBpm = Nothing
+    , endBpm = Nothing
+    , minBpm = Nothing
+    , maxBpm = Nothing
+    , startKey = Nothing
+    , endKey = Nothing
     }
 
 
@@ -12044,6 +12062,12 @@ decodeProto__Rellm__MediaMetadata =
             14
             (Protobuf.Decode.map Just Protobuf.Decode.string)
             (\a r -> { r | coverArtMediaId = a })
+        , Protobuf.Decode.optional 15 (Protobuf.Decode.map Just Protobuf.Decode.float) (\a r -> { r | startBpm = a })
+        , Protobuf.Decode.optional 16 (Protobuf.Decode.map Just Protobuf.Decode.float) (\a r -> { r | endBpm = a })
+        , Protobuf.Decode.optional 17 (Protobuf.Decode.map Just Protobuf.Decode.float) (\a r -> { r | minBpm = a })
+        , Protobuf.Decode.optional 18 (Protobuf.Decode.map Just Protobuf.Decode.float) (\a r -> { r | maxBpm = a })
+        , Protobuf.Decode.optional 19 (Protobuf.Decode.map Just Protobuf.Decode.string) (\a r -> { r | startKey = a })
+        , Protobuf.Decode.optional 20 (Protobuf.Decode.map Just Protobuf.Decode.string) (\a r -> { r | endKey = a })
         ]
 
 
@@ -12071,6 +12095,12 @@ encodeProto__Rellm__MediaMetadata value =
           , (Maybe.map Protobuf.Encode.uint64 >> Maybe.withDefault Protobuf.Encode.none) value.unlicensedPreviewEndMs
           )
         , ( 14, (Maybe.map Protobuf.Encode.string >> Maybe.withDefault Protobuf.Encode.none) value.coverArtMediaId )
+        , ( 15, (Maybe.map Protobuf.Encode.float >> Maybe.withDefault Protobuf.Encode.none) value.startBpm )
+        , ( 16, (Maybe.map Protobuf.Encode.float >> Maybe.withDefault Protobuf.Encode.none) value.endBpm )
+        , ( 17, (Maybe.map Protobuf.Encode.float >> Maybe.withDefault Protobuf.Encode.none) value.minBpm )
+        , ( 18, (Maybe.map Protobuf.Encode.float >> Maybe.withDefault Protobuf.Encode.none) value.maxBpm )
+        , ( 19, (Maybe.map Protobuf.Encode.string >> Maybe.withDefault Protobuf.Encode.none) value.startKey )
+        , ( 20, (Maybe.map Protobuf.Encode.string >> Maybe.withDefault Protobuf.Encode.none) value.endKey )
         ]
 
 
@@ -12092,6 +12122,12 @@ type alias Proto__Rellm__MediaMetadata =
     , unlicensedPreviewStartMs : Maybe Protobuf.Types.Int64.Int64
     , unlicensedPreviewEndMs : Maybe Protobuf.Types.Int64.Int64
     , coverArtMediaId : Maybe String
+    , startBpm : Maybe Float
+    , endBpm : Maybe Float
+    , minBpm : Maybe Float
+    , maxBpm : Maybe Float
+    , startKey : Maybe String
+    , endKey : Maybe String
     }
 
 

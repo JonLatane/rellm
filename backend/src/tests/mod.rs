@@ -1,5 +1,6 @@
 pub mod factories;
 
+mod backfill_audio_metadata_tests;
 mod bluesky_sync_tests;
 mod configure_server_cluster_resources_tests;
 mod configure_server_media_allocation_tests;

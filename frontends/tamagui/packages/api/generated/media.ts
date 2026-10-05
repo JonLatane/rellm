@@ -352,7 +352,56 @@ export interface MediaMetadata {
    * (others fall back to the embedded art/placeholder) -- give it a visibility at least as open as the
    * track's. Unset/blank clears it.
    */
-  coverArtMediaId?: string | undefined;
+  coverArtMediaId?:
+    | string
+    | undefined;
+  /**
+   * For audio media: the track's tempo, in beats per minute -- at its start (`start_bpm`), at its end
+   * (`end_bpm`), and the slowest and fastest it gets anywhere in the track (`min_bpm`/`max_bpm`). For a
+   * steady track all four are about equal. Each must be finite, greater than 0 and at most 999, and
+   * `min_bpm` must not exceed `max_bpm`, else `UpdateMedia` fails with `INVALID_ARGUMENT`
+   * (`invalid_start_bpm`/`invalid_end_bpm`/`invalid_min_bpm`/`invalid_max_bpm`/`min_bpm_exceeds_max_bpm`).
+   * Fractions are fine (`127.5`). Unset clears it. (`start_bpm`/`end_bpm` aren't required to fall within
+   * `min_bpm`..`max_bpm`; clients may treat that as a hint to fix one.)
+   *
+   * Seeded when the track is first converted (`convert_media_sizes`): from the file's own BPM tag
+   * (ID3 `TBPM`/Vorbis `BPM`, which sets all four) if it has one, otherwise estimated from the audio --
+   * the first and last 30s (silence trimmed) analyzed for start/end, and sliding 20s windows across the
+   * whole track for min/max. Estimates are best-effort: half/double time mistakes are the usual failure,
+   * so owners can correct them via `UpdateMedia`. Only ever filled while unset; an owner's edit (or
+   * clearing) is never overwritten by a later conversion.
+   */
+  startBpm?: number | undefined;
+  endBpm?: number | undefined;
+  minBpm?: number | undefined;
+  maxBpm?:
+    | number
+    | undefined;
+  /**
+   * For audio media: the track's musical key at its start (`start_key`) and end (`end_key`) -- equal
+   * for a track that doesn't modulate. Each is formatted `<tonic><accidental?><mode?>`:
+   *   - tonic: one uppercase letter `A`-`G`;
+   *   - accidental (optional): a sharp or flat, any of
+   *       sharp: `#` (ASCII), `♯` (U+266F), `＃` (U+FF03), `﹟` (U+FE5F)
+   *       flat:  `b` (ASCII lowercase), `♭` (U+266D)
+   *     optionally followed by the emoji variation selector U+FE0F (what emoji keyboards insert, e.g. `♭️`);
+   *   - mode (optional): `m` or `-` for minor, `M` for major; no mode means major.
+   * E.g. `C#m`, `DbM`, `Db`, `F`, `Am`, `B♭-`, `F♯m`. Case matters (`am` and `db` are invalid), and `b` is
+   * only a flat *after* the tonic letter (`Bb` = B-flat; `B` = B). At most one accidental: double
+   * sharps/flats (`C##`, `Dbb`, `𝄪`, `𝄫`) aren't accepted, nor are naturals (`♮`) -- omit the accidental.
+   * Stored exactly as sent (trimmed), so the client's chosen glyphs round-trip;
+   * `UpdateMedia` fails with `INVALID_ARGUMENT` (`invalid_start_key`/`invalid_end_key`) for anything else.
+   * Unset (or blank) clears it. Validated identically by the Elm client
+   * (`Shared.MediaViewerPanel.keyError`) and the backend (`models::is_valid_musical_key`) -- keep them in sync.
+   *
+   * Seeded like the BPMs: from the file's key tag (ID3 `TKEY`/`INITIALKEY`, which sets both; spelled-out
+   * forms like `A minor` are normalized to `Am`; Camelot codes like `8A` are ignored), else estimated
+   * from the first/last 30s of the audio. Estimates use bare majors and `m` minors, flats for
+   * `Db`/`Eb`/`Ab`/`Bb` and sharps for `F#`/`C#m`/`G#m`/`F#m` (e.g. `Bb`, `F#m`), and often confuse
+   * relative major/minor (`C` vs `Am`).
+   */
+  startKey?: string | undefined;
+  endKey?: string | undefined;
 }
 
 /**
@@ -883,6 +932,12 @@ function createBaseMediaMetadata(): MediaMetadata {
     unlicensedPreviewStartMs: undefined,
     unlicensedPreviewEndMs: undefined,
     coverArtMediaId: undefined,
+    startBpm: undefined,
+    endBpm: undefined,
+    minBpm: undefined,
+    maxBpm: undefined,
+    startKey: undefined,
+    endKey: undefined,
   };
 }
 
@@ -929,6 +984,24 @@ export const MediaMetadata: MessageFns<MediaMetadata> = {
     }
     if (message.coverArtMediaId !== undefined) {
       writer.uint32(114).string(message.coverArtMediaId);
+    }
+    if (message.startBpm !== undefined) {
+      writer.uint32(125).float(message.startBpm);
+    }
+    if (message.endBpm !== undefined) {
+      writer.uint32(133).float(message.endBpm);
+    }
+    if (message.minBpm !== undefined) {
+      writer.uint32(141).float(message.minBpm);
+    }
+    if (message.maxBpm !== undefined) {
+      writer.uint32(149).float(message.maxBpm);
+    }
+    if (message.startKey !== undefined) {
+      writer.uint32(154).string(message.startKey);
+    }
+    if (message.endKey !== undefined) {
+      writer.uint32(162).string(message.endKey);
     }
     return writer;
   },
@@ -1052,6 +1125,54 @@ export const MediaMetadata: MessageFns<MediaMetadata> = {
           message.coverArtMediaId = reader.string();
           continue;
         }
+        case 15: {
+          if (tag !== 125) {
+            break;
+          }
+
+          message.startBpm = reader.float();
+          continue;
+        }
+        case 16: {
+          if (tag !== 133) {
+            break;
+          }
+
+          message.endBpm = reader.float();
+          continue;
+        }
+        case 17: {
+          if (tag !== 141) {
+            break;
+          }
+
+          message.minBpm = reader.float();
+          continue;
+        }
+        case 18: {
+          if (tag !== 149) {
+            break;
+          }
+
+          message.maxBpm = reader.float();
+          continue;
+        }
+        case 19: {
+          if (tag !== 154) {
+            break;
+          }
+
+          message.startKey = reader.string();
+          continue;
+        }
+        case 20: {
+          if (tag !== 162) {
+            break;
+          }
+
+          message.endKey = reader.string();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1081,6 +1202,12 @@ export const MediaMetadata: MessageFns<MediaMetadata> = {
         ? globalThis.Number(object.unlicensedPreviewEndMs)
         : undefined,
       coverArtMediaId: isSet(object.coverArtMediaId) ? globalThis.String(object.coverArtMediaId) : undefined,
+      startBpm: isSet(object.startBpm) ? globalThis.Number(object.startBpm) : undefined,
+      endBpm: isSet(object.endBpm) ? globalThis.Number(object.endBpm) : undefined,
+      minBpm: isSet(object.minBpm) ? globalThis.Number(object.minBpm) : undefined,
+      maxBpm: isSet(object.maxBpm) ? globalThis.Number(object.maxBpm) : undefined,
+      startKey: isSet(object.startKey) ? globalThis.String(object.startKey) : undefined,
+      endKey: isSet(object.endKey) ? globalThis.String(object.endKey) : undefined,
     };
   },
 
@@ -1128,6 +1255,24 @@ export const MediaMetadata: MessageFns<MediaMetadata> = {
     if (message.coverArtMediaId !== undefined) {
       obj.coverArtMediaId = message.coverArtMediaId;
     }
+    if (message.startBpm !== undefined) {
+      obj.startBpm = message.startBpm;
+    }
+    if (message.endBpm !== undefined) {
+      obj.endBpm = message.endBpm;
+    }
+    if (message.minBpm !== undefined) {
+      obj.minBpm = message.minBpm;
+    }
+    if (message.maxBpm !== undefined) {
+      obj.maxBpm = message.maxBpm;
+    }
+    if (message.startKey !== undefined) {
+      obj.startKey = message.startKey;
+    }
+    if (message.endKey !== undefined) {
+      obj.endKey = message.endKey;
+    }
     return obj;
   },
 
@@ -1150,6 +1295,12 @@ export const MediaMetadata: MessageFns<MediaMetadata> = {
     message.unlicensedPreviewStartMs = object.unlicensedPreviewStartMs ?? undefined;
     message.unlicensedPreviewEndMs = object.unlicensedPreviewEndMs ?? undefined;
     message.coverArtMediaId = object.coverArtMediaId ?? undefined;
+    message.startBpm = object.startBpm ?? undefined;
+    message.endBpm = object.endBpm ?? undefined;
+    message.minBpm = object.minBpm ?? undefined;
+    message.maxBpm = object.maxBpm ?? undefined;
+    message.startKey = object.startKey ?? undefined;
+    message.endKey = object.endKey ?? undefined;
     return message;
   },
 };

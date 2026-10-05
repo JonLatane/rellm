@@ -559,7 +559,7 @@ view accountsPanelModel model =
         transport : Html Msg
         transport =
             div [ class "audio-player-transport" ]
-                [ button [ class "audio-player-button", attribute "aria-label" "Previous track", onClick Prev ] [ text "⏮" ]
+                [ button [ class "audio-player-button", attribute "aria-label" "Previous track", onClick Prev ] [ prevIcon ]
                 , button
                     [ classes [ "audio-player-button", "audio-player-play" ]
                     , attribute "aria-label"
@@ -571,20 +571,18 @@ view accountsPanelModel model =
                         )
                     , onClick TogglePlay
                     ]
-                    [ text
-                        (if model.playing then
-                            "⏸"
+                    [ if model.playing then
+                        pauseIcon
 
-                         else
-                            "▶"
-                        )
+                      else
+                        text "▶"
                     ]
                 , button
                     [ class "audio-player-button"
                     , attribute "aria-label" "Next track"
                     , onClick Next
                     ]
-                    [ text "⏭" ]
+                    [ nextIcon ]
                 ]
 
         -- The cover art picked for the track (`MediaMetadata.cover_art_media_id`) wins over the art embedded in
@@ -863,6 +861,25 @@ view accountsPanelModel model =
                         []
                )
         )
+
+
+{-| Transport glyphs drawn with CSS shapes (see `audio_player_panel.css`): iOS renders the Unicode ⏮ ⏸ ⏭ as
+color emoji, which no text-variation selector reliably fixes. (▶ is left as text -- it renders as a plain glyph
+everywhere.) They size with the button's font size and take its text color.
+-}
+prevIcon : Html msg
+prevIcon =
+    span [ class "audio-player-icon audio-player-icon-prev", attribute "aria-hidden" "true" ] []
+
+
+nextIcon : Html msg
+nextIcon =
+    span [ class "audio-player-icon audio-player-icon-next", attribute "aria-hidden" "true" ] []
+
+
+pauseIcon : Html msg
+pauseIcon =
+    span [ class "audio-player-icon audio-player-icon-pause", attribute "aria-hidden" "true" ] []
 
 
 timeDecoder : Slot -> Decode.Decoder Msg

@@ -430,15 +430,70 @@
 
 .media-viewer-panel-edit-sizes {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 0.5rem;
   border-top: 1px solid rgba(255, 255, 255, 0.2);
   padding-top: 0.5rem;
 }
 
+/* The collapse/expand control: a labelless bar graph of the stored versions, largest to smallest, each
+   segment's width proportional to its size (colors alternate primary/nav for the item's server). */
+.media-viewer-panel-edit-sizes-toggle {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  color: white;
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* The total size of every stored version, with a chevron that flips when the list is open. */
+.media-viewer-panel-edit-sizes-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.media-viewer-panel-edit-sizes-chevron::after {
+  content: "\25BE";
+  display: inline-block;
+  transition: transform 0.2s ease;
+}
+
+.media-viewer-panel-edit-sizes-toggle[aria-expanded="true"] .media-viewer-panel-edit-sizes-chevron::after {
+  transform: rotate(180deg);
+}
+
+.media-viewer-panel-edit-sizes-bar {
+  display: flex;
+  width: 100%;
+  height: 0.9rem;
+  gap: 2px;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.media-viewer-panel-edit-sizes-segment {
+  min-width: 3px;
+}
+
+/* Vertical list, largest first: label left, Delete right. */
+.media-viewer-panel-edit-sizes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
 .media-viewer-panel-edit-size {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 0.4rem;
   font-size: 0.85rem;
 }

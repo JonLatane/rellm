@@ -20,8 +20,9 @@ use s3::Bucket;
 
 use crate::db_connection::PgPooledConnection;
 use crate::logic::{adjust_server_media_usage_bytes, update_media_storage_used};
-use crate::models::{blank_to_none, Media, MediaConversionExt, MediaMetadata, MediaSize, AUDIO_COVER_ART_CONVERSIONS, AUDIO_PREVIEW_CONVERSIONS, RESIZED_CONVERSIONS, VIDEO_PREVIEW_CONVERSIONS};
+use crate::models::{blank_to_none, is_valid_bpm, is_valid_musical_key, Media, MediaConversionExt, MediaMetadata, MediaSize, AUDIO_COVER_ART_CONVERSIONS, AUDIO_PREVIEW_CONVERSIONS, RESIZED_CONVERSIONS, VIDEO_PREVIEW_CONVERSIONS};
 use crate::protos::MediaConversion;
+use super::audio_analysis::analyze_audio_file;
 use crate::schema::media;
 
 pub const CONVERTIBLE_CONTENT_TYPES: [&str; 3] = ["image/png", "image/jpeg", "image/jpg"];
@@ -604,16 +605,29 @@ pub fn parse_ffprobe_tags(json: &str) -> Result<HashMap<String, String>> {
         .unwrap_or_default())
 }
 
-/// Maps container tags to `MediaMetadata` credits (only the credit fields are populated). The first
-/// non-blank tag among each credit's aliases wins: ID3/Vorbis/iTunes/Matroska all spell these a
-/// little differently (`artist`/`performer`/`album_artist`, `actor`/`actors`/`starring`, ...).
+/// Maps container tags to `MediaMetadata` credits plus musical `start_bpm`/`end_bpm`/`min_bpm`/
+/// `max_bpm`/`start_key`/`end_key` (only those fields are populated). The first non-blank tag among each credit's aliases wins:
+/// ID3/Vorbis/iTunes/Matroska all spell these a little differently (`artist`/`performer`/
+/// `album_artist`, `actor`/`actors`/`starring`, ...). A file's single `BPM` tag (ID3 `TBPM`) can't
+/// say how the tempo changes, so it seeds all four BPM fields (likewise a single key tag both keys); keys are normalized by
+/// `key_from_tag`, and a tag that isn't a recognizable key/BPM is ignored.
 pub fn credits_from_tags(tags: &HashMap<String, String>) -> MediaMetadata {
     let pick = |aliases: &[&str]| {
         aliases
             .iter()
             .find_map(|alias| blank_to_none(tags.get(*alias).cloned()))
     };
+    let key = pick(&["initialkey", "initial_key", "tkey", "key"]).and_then(|key| key_from_tag(&key));
+    let bpm = pick(&["bpm", "tbpm", "tempo", "beats_per_minute"])
+        .and_then(|bpm| bpm.parse::<f32>().ok())
+        .filter(|bpm| is_valid_bpm(*bpm));
     MediaMetadata {
+        start_bpm: bpm,
+        end_bpm: bpm,
+        min_bpm: bpm,
+        max_bpm: bpm,
+        start_key: key.clone(),
+        end_key: key,
         artist: pick(&["artist", "performer", "album_artist"]),
         album: pick(&["album"]),
         composer: pick(&["composer"]),
@@ -626,6 +640,23 @@ pub fn credits_from_tags(tags: &HashMap<String, String>) -> MediaMetadata {
         publisher: pick(&["publisher", "label"]),
         ..Default::default()
     }
+}
+
+/// A key tag as a valid `MediaMetadata.key` (see `is_valid_musical_key`), or `None`. Besides already-valid
+/// keys (`Am`, `C#m`), taggers commonly write spelled-out keys: `A minor`, `Db major`, `F# Min`, `Bb`.
+pub fn key_from_tag(tag: &str) -> Option<String> {
+    let tag = tag.trim();
+    if is_valid_musical_key(tag) {
+        return Some(tag.to_string());
+    }
+    let (tonic, mode) = tag.split_once(char::is_whitespace)?;
+    let suffix = match mode.trim().to_lowercase().as_str() {
+        "minor" | "min" => "m",
+        "major" | "maj" => "",
+        _ => return None,
+    };
+    let key = format!("{tonic}{suffix}");
+    is_valid_musical_key(&key).then_some(key)
 }
 
 /// The file's own `title` tag, when it should replace `item.name` -- i.e. the name is still the
@@ -1052,6 +1083,27 @@ pub async fn convert_media(
         _ => false,
     };
 
+    // Audio, first conversion only: whatever tempo/key the tags didn't supply is estimated from the
+    // audio itself (see `audio_analysis`). Best-effort, like the tags above.
+    let analysis_changed = match &converter {
+        Converter::Audio(_)
+            if item.sizes().len() <= 1 && needs_analysis(&metadata) =>
+        {
+            match analyze_audio_file(&input_path) {
+                Ok(analysis) => {
+                    log::info!("Media {}: analyzed {:?}", item.id, analysis);
+                    metadata.fill_missing_credits(&analysis.into_metadata())
+                }
+                Err(e) => {
+                    log::warn!("Media {}: couldn't analyze tempo/key (skipping): {:#}", item.id, e);
+                    false
+                }
+            }
+        }
+        _ => false,
+    };
+    let credits_changed = credits_changed || analysis_changed;
+
     let _ = std::fs::remove_file(&input_path);
 
     diesel::update(media::table.find(item.id))
@@ -1188,6 +1240,80 @@ pub fn audio_media(conn: &mut PgPooledConnection, min_id: i64, limit: i64) -> Qu
         .load::<Media>(conn)
 }
 
+/// Whether any of `metadata`'s musical (`audio_analysis`-estimable) fields is still unset.
+fn needs_analysis(metadata: &MediaMetadata) -> bool {
+    [metadata.start_bpm, metadata.end_bpm, metadata.min_bpm, metadata.max_bpm]
+        .iter()
+        .any(Option::is_none)
+        || metadata.start_key.is_none()
+        || metadata.end_key.is_none()
+}
+
+/// Which of `convert_media`'s metadata seeding steps `backfill_audio_metadata` runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MetadataBackfill {
+    /// Read the file's own tags: credits (artist, composer, ...) and any BPM/key tags.
+    pub stored: bool,
+    /// Estimate BPM/key from the audio itself (see `audio_analysis`).
+    pub calculated: bool,
+}
+
+/// Seeds *unset* metadata of an already-converted audio `item` from its original -- the same steps
+/// `convert_media` runs on a first conversion (`which` picks the steps) but without touching its
+/// sizes, so it's cheap enough to run across a whole library (`bin/reconvert_audio_media.rs`'s
+/// `--stored-metadata-only`/`--calculated-metadata-only`). Tags run before analysis, so a file's own
+/// BPM/key tag wins over an estimate. Never overwrites a set field, and merges into the row's
+/// *current* metadata (re-read after the slow part) so a concurrent owner edit isn't clobbered.
+/// Unlike `convert_media`'s first-conversion seeding, a credit the owner deliberately cleared is
+/// filled again by `stored`. Does not rename the item from its `title` tag. Returns whether anything changed.
+pub async fn backfill_audio_metadata(
+    item: &Media,
+    which: MetadataBackfill,
+    ffmpeg: &FFmpeg,
+    bucket: &Bucket,
+    tmp_dir: &Path,
+    conn: &mut PgPooledConnection,
+) -> Result<bool> {
+    let calculate = which.calculated && needs_analysis(&item.metadata());
+    if !which.stored && !calculate {
+        return Ok(false);
+    }
+    let original = item.original().context("Media has no MEDIA_CONVERSION_ORIGINAL size")?;
+    let input_path = tmp_dir.join(format!(
+        "{}-backfill.{}",
+        item.id,
+        extension_for_content_type(&original.content_type)?
+    ));
+    let original_bytes = bucket
+        .get_object(&original.object_storage_path)
+        .await
+        .context("failed to download original from object storage")?;
+    std::fs::write(&input_path, original_bytes.as_slice())?;
+
+    let found = (|| -> Result<MediaMetadata> {
+        let mut found = MediaMetadata::default();
+        if which.stored {
+            found = credits_from_tags(&ffmpeg.tags(&input_path).context("couldn't read tags")?);
+        }
+        if calculate {
+            found.fill_missing_credits(&analyze_audio_file(&input_path)?.into_metadata());
+        }
+        Ok(found)
+    })();
+    let _ = std::fs::remove_file(&input_path);
+
+    let mut metadata = crate::models::get_media(item.id, conn)
+        .map_err(|e| anyhow::anyhow!("failed to re-read media: {}", e))?
+        .metadata();
+    let changed = metadata.fill_missing_credits(&found?);
+    if changed {
+        diesel::update(media::table.find(item.id))
+            .set(media::metadata.eq(serde_json::to_value(&metadata)?))
+            .execute(conn)?;
+    }
+    Ok(changed)
+}
+
 /// Strips every derived (non-`Original`) `sizes` entry from audio `item` -- deleting their object
 /// storage objects -- and marks it unprocessed, so `convert_media_sizes` regenerates the lot with
 /// the current recipe (compressed AAC tiers, waveforms, embedded cover art, tag seeding of blank
@@ -1276,6 +1402,35 @@ mod tag_tests {
         assert_eq!(credits.starring.as_deref(), Some("Someone"));
         assert_eq!(credits.publisher.as_deref(), Some("Impulse!"));
         assert_eq!(credits.composer, None);
+    }
+
+    #[test]
+    fn bpm_and_key_tags_seed_musical_fields() {
+        let tags: HashMap<String, String> = [("tbpm", "128"), ("tkey", "F# minor")]
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        let metadata = credits_from_tags(&tags);
+        assert_eq!((metadata.start_bpm, metadata.end_bpm), (Some(128.0), Some(128.0)));
+        assert_eq!((metadata.min_bpm, metadata.max_bpm), (Some(128.0), Some(128.0)));
+        assert_eq!((metadata.start_key.as_deref(), metadata.end_key.as_deref()), (Some("F#m"), Some("F#m")));
+
+        let junk: HashMap<String, String> = [("bpm", "fast"), ("initialkey", "8A")]
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        let metadata = credits_from_tags(&junk);
+        assert_eq!((metadata.start_bpm, metadata.max_bpm, metadata.start_key), (None, None, None));
+    }
+
+    #[test]
+    fn key_tags_are_normalized() {
+        assert_eq!(key_from_tag(" Am ").as_deref(), Some("Am"));
+        assert_eq!(key_from_tag("A minor").as_deref(), Some("Am"));
+        assert_eq!(key_from_tag("Db Major").as_deref(), Some("Db"));
+        assert_eq!(key_from_tag("Bb min").as_deref(), Some("Bbm"));
+        assert_eq!(key_from_tag("H"), None);
+        assert_eq!(key_from_tag("C lydian"), None);
     }
 
     #[test]

@@ -524,3 +524,100 @@ fn unlicensed_preview_bounds_are_rejected_on_non_audio_video_media() {
         Ok(())
     });
 }
+
+#[test]
+fn musical_key_validation_accepts_documented_forms_only() {
+    use crate::models::is_valid_musical_key;
+    for key in ["C#m", "DbM", "Db", "F", "Am", "B♭-", "F♯m", "E♭️M", "C＃", "D﹟m", "B", "Bb"] {
+        assert!(is_valid_musical_key(key), "{key} should be valid");
+    }
+    for key in ["", "H", "am", "db", "C##", "Cbb", "C♮", "A𝄪", "G𝄫m", "Dbb", "F♯♯", "Cmm", "C minor", " C", "C ", "Cx", "H#", "#C", "m", "C#M7"] {
+        assert!(!is_valid_musical_key(key), "{key:?} should be invalid");
+    }
+}
+
+#[test]
+fn bpms_and_keys_are_saved_trimmed_and_blank_key_clears() {
+    let tb = test_bucket();
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let user = create_user(conn, "umt_bpm_key");
+        let media = create_media(conn, Some(&user), &unique_path("bpm-key"));
+        let update = |conn: &mut _, metadata: ProtoMediaMetadata| {
+            tb.block_on(update_media(
+                Media { id: media.id.to_proto_id(), metadata: Some(metadata), ..Default::default() },
+                &user,
+                conn,
+                &tb.bucket,
+            ))
+        };
+
+        let saved = update(
+            conn,
+            ProtoMediaMetadata {
+                start_bpm: Some(127.5),
+                end_bpm: Some(130.0),
+                min_bpm: Some(120.0),
+                max_bpm: Some(130.0),
+                start_key: Some(" F♯m ".to_string()),
+                end_key: Some("Ab".to_string()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let metadata = saved.metadata.unwrap();
+        assert_eq!((metadata.start_bpm, metadata.end_bpm), (Some(127.5), Some(130.0)));
+        assert_eq!((metadata.min_bpm, metadata.max_bpm), (Some(120.0), Some(130.0)));
+        assert_eq!(metadata.start_key.as_deref(), Some("F♯m"));
+        assert_eq!(metadata.end_key.as_deref(), Some("Ab"));
+
+        let cleared = update(
+            conn,
+            ProtoMediaMetadata { start_key: Some("  ".to_string()), end_key: Some("Ab".to_string()), ..Default::default() },
+        )
+        .unwrap();
+        let metadata = cleared.metadata.unwrap();
+        assert_eq!((metadata.start_bpm, metadata.end_bpm, metadata.min_bpm, metadata.max_bpm), (None, None, None, None));
+        assert_eq!((metadata.start_key.as_deref(), metadata.end_key.as_deref()), (None, Some("Ab")));
+        Ok(())
+    });
+}
+
+#[test]
+fn invalid_bpms_and_keys_are_rejected() {
+    let tb = test_bucket();
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let user = create_user(conn, "umt_bad_bpm_key");
+        let media = create_media(conn, Some(&user), &unique_path("bad-bpm-key"));
+        let key = |k: &str| Some(k.to_string());
+        for (metadata, message) in [
+            (ProtoMediaMetadata { start_bpm: Some(0.0), ..Default::default() }, "invalid_start_bpm"),
+            (ProtoMediaMetadata { start_bpm: Some(-5.0), ..Default::default() }, "invalid_start_bpm"),
+            (ProtoMediaMetadata { end_bpm: Some(1000.0), ..Default::default() }, "invalid_end_bpm"),
+            (ProtoMediaMetadata { end_bpm: Some(f32::NAN), ..Default::default() }, "invalid_end_bpm"),
+            (ProtoMediaMetadata { min_bpm: Some(0.0), ..Default::default() }, "invalid_min_bpm"),
+            (ProtoMediaMetadata { max_bpm: Some(f32::INFINITY), ..Default::default() }, "invalid_max_bpm"),
+            (
+                ProtoMediaMetadata { min_bpm: Some(131.0), max_bpm: Some(130.0), ..Default::default() },
+                "min_bpm_exceeds_max_bpm",
+            ),
+            (ProtoMediaMetadata { start_key: key("H"), ..Default::default() }, "invalid_start_key"),
+            (ProtoMediaMetadata { end_key: key("c#m"), ..Default::default() }, "invalid_end_key"),
+            (ProtoMediaMetadata { end_key: key("C𝄪"), ..Default::default() }, "invalid_end_key"),
+            (ProtoMediaMetadata { start_key: key("Dbb"), ..Default::default() }, "invalid_start_key"),
+        ] {
+            let err = tb
+                .block_on(update_media(
+                    Media { id: media.id.to_proto_id(), metadata: Some(metadata), ..Default::default() },
+                    &user,
+                    conn,
+                    &tb.bucket,
+                ))
+                .unwrap_err();
+            assert_eq!(err.code(), tonic::Code::InvalidArgument);
+            assert_eq!(err.message(), message);
+        }
+        Ok(())
+    });
+}

@@ -125,6 +125,12 @@ const MediaMetadata$json = {
     {'1': 'unlicensed_preview_start_ms', '3': 12, '4': 1, '5': 4, '9': 11, '10': 'unlicensedPreviewStartMs', '17': true},
     {'1': 'unlicensed_preview_end_ms', '3': 13, '4': 1, '5': 4, '9': 12, '10': 'unlicensedPreviewEndMs', '17': true},
     {'1': 'cover_art_media_id', '3': 14, '4': 1, '5': 9, '9': 13, '10': 'coverArtMediaId', '17': true},
+    {'1': 'start_bpm', '3': 15, '4': 1, '5': 2, '9': 14, '10': 'startBpm', '17': true},
+    {'1': 'end_bpm', '3': 16, '4': 1, '5': 2, '9': 15, '10': 'endBpm', '17': true},
+    {'1': 'min_bpm', '3': 17, '4': 1, '5': 2, '9': 16, '10': 'minBpm', '17': true},
+    {'1': 'max_bpm', '3': 18, '4': 1, '5': 2, '9': 17, '10': 'maxBpm', '17': true},
+    {'1': 'start_key', '3': 19, '4': 1, '5': 9, '9': 18, '10': 'startKey', '17': true},
+    {'1': 'end_key', '3': 20, '4': 1, '5': 9, '9': 19, '10': 'endKey', '17': true},
   ],
   '8': [
     {'1': '_video_preview_time_ms'},
@@ -141,6 +147,12 @@ const MediaMetadata$json = {
     {'1': '_unlicensed_preview_start_ms'},
     {'1': '_unlicensed_preview_end_ms'},
     {'1': '_cover_art_media_id'},
+    {'1': '_start_bpm'},
+    {'1': '_end_bpm'},
+    {'1': '_min_bpm'},
+    {'1': '_max_bpm'},
+    {'1': '_start_key'},
+    {'1': '_end_key'},
   ],
 };
 
@@ -156,11 +168,15 @@ final $typed_data.Uint8List mediaMetadataDescriptor = $convert.base64Decode(
     'NlZF9wcmV2aWV3X3N0YXJ0X21zGAwgASgESAtSGHVubGljZW5zZWRQcmV2aWV3U3RhcnRNc4gB'
     'ARI+Chl1bmxpY2Vuc2VkX3ByZXZpZXdfZW5kX21zGA0gASgESAxSFnVubGljZW5zZWRQcmV2aW'
     'V3RW5kTXOIAQESMAoSY292ZXJfYXJ0X21lZGlhX2lkGA4gASgJSA1SD2NvdmVyQXJ0TWVkaWFJ'
-    'ZIgBAUIYChZfdmlkZW9fcHJldmlld190aW1lX21zQgkKB19hcnRpc3RCCAoGX2FsYnVtQgsKCV'
-    '9jb21wb3NlckILCglfZGlyZWN0b3JCCwoJX3Byb2R1Y2VyQgsKCV9zdGFycmluZ0IHCgVfY2Fz'
-    'dEIHCgVfY3Jld0ILCglfbmFycmF0b3JCDAoKX3B1Ymxpc2hlckIeChxfdW5saWNlbnNlZF9wcm'
-    'V2aWV3X3N0YXJ0X21zQhwKGl91bmxpY2Vuc2VkX3ByZXZpZXdfZW5kX21zQhUKE19jb3Zlcl9h'
-    'cnRfbWVkaWFfaWQ=');
+    'ZIgBARIgCglzdGFydF9icG0YDyABKAJIDlIIc3RhcnRCcG2IAQESHAoHZW5kX2JwbRgQIAEoAk'
+    'gPUgZlbmRCcG2IAQESHAoHbWluX2JwbRgRIAEoAkgQUgZtaW5CcG2IAQESHAoHbWF4X2JwbRgS'
+    'IAEoAkgRUgZtYXhCcG2IAQESIAoJc3RhcnRfa2V5GBMgASgJSBJSCHN0YXJ0S2V5iAEBEhwKB2'
+    'VuZF9rZXkYFCABKAlIE1IGZW5kS2V5iAEBQhgKFl92aWRlb19wcmV2aWV3X3RpbWVfbXNCCQoH'
+    'X2FydGlzdEIICgZfYWxidW1CCwoJX2NvbXBvc2VyQgsKCV9kaXJlY3RvckILCglfcHJvZHVjZX'
+    'JCCwoJX3N0YXJyaW5nQgcKBV9jYXN0QgcKBV9jcmV3QgsKCV9uYXJyYXRvckIMCgpfcHVibGlz'
+    'aGVyQh4KHF91bmxpY2Vuc2VkX3ByZXZpZXdfc3RhcnRfbXNCHAoaX3VubGljZW5zZWRfcHJldm'
+    'lld19lbmRfbXNCFQoTX2NvdmVyX2FydF9tZWRpYV9pZEIMCgpfc3RhcnRfYnBtQgoKCF9lbmRf'
+    'YnBtQgoKCF9taW5fYnBtQgoKCF9tYXhfYnBtQgwKCl9zdGFydF9rZXlCCgoIX2VuZF9rZXk=');
 
 @$core.Deprecated('Use licenseDescriptor instead')
 const License$json = {

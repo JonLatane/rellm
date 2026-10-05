@@ -10028,6 +10028,12 @@ fieldNumbersMediaMetadata :
     , unlicensedPreviewStartMs : Int
     , unlicensedPreviewEndMs : Int
     , coverArtMediaId : Int
+    , startBpm : Int
+    , endBpm : Int
+    , minBpm : Int
+    , maxBpm : Int
+    , startKey : Int
+    , endKey : Int
     }
 fieldNumbersMediaMetadata =
     Proto.Rellm.Internals_.fieldNumbersProto__Rellm__MediaMetadata

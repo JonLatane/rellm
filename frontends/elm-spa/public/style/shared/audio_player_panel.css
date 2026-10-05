@@ -363,3 +363,70 @@
   font-size: 0.72rem;
   white-space: nowrap;
 }
+
+/* Transport glyphs drawn from boxes/borders rather than text, so iOS can't swap them for color emoji. Each is
+   a 1em square box in the button's text color (`currentColor`). */
+.audio-player-icon {
+  position: relative;
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  vertical-align: middle;
+}
+
+.audio-player-icon::before,
+.audio-player-icon::after {
+  content: "";
+  position: absolute;
+  top: 0.12em;
+  box-sizing: border-box;
+}
+
+/* Pause: two bars. */
+.audio-player-icon-pause::before,
+.audio-player-icon-pause::after {
+  width: 0.24em;
+  height: 0.76em;
+  background: currentColor;
+  border-radius: 1px;
+}
+
+.audio-player-icon-pause::before {
+  left: 0.16em;
+}
+
+.audio-player-icon-pause::after {
+  left: 0.6em;
+}
+
+/* Previous: a bar, then a left-pointing triangle. */
+.audio-player-icon-prev::before {
+  left: 0.08em;
+  width: 0.17em;
+  height: 0.76em;
+  background: currentColor;
+  border-radius: 1px;
+}
+
+.audio-player-icon-prev::after {
+  left: 0.3em;
+  border-style: solid;
+  border-width: 0.38em 0.6em 0.38em 0;
+  border-color: transparent currentColor transparent transparent;
+}
+
+/* Next: a right-pointing triangle, then a bar. */
+.audio-player-icon-next::before {
+  left: 0.1em;
+  border-style: solid;
+  border-width: 0.38em 0 0.38em 0.6em;
+  border-color: transparent transparent transparent currentColor;
+}
+
+.audio-player-icon-next::after {
+  left: 0.75em;
+  width: 0.17em;
+  height: 0.76em;
+  background: currentColor;
+  border-radius: 1px;
+}
