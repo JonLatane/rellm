@@ -3131,8 +3131,15 @@ directory</a> is (<code>{name}</code> denotes a
           <td>10003</td>
           <td>Allow the user to edit <a href="#rellm-MediaSettings"><code>MediaSettings.server_media_allocation_bytes</code></a> via <a href="#grpc-api-ConfigureServer"><code>ConfigureServer</code></a>. Raising this cap changes how much total Media storage the server will accept across every user, so - same reasoning as <code>EDIT_CLUSTER_SETTINGS</code> above - it's kept separate from <code>ADMIN</code> and deliberately <em>not</em> grantable via <a href="#grpc-api-UpdateUser"><code>UpdateUser</code></a>, only settable directly in the database (e.g. via the <code>set_permission</code> binary).</td>
         </tr>
+        <tr>
+          <td>VIEW_SERVER_LOGS</td>
+          <td>10004</td>
+          <td>Allow the user to read the server's recent logs via <a href="#grpc-api-GetServerLogs"><code>GetServerLogs</code></a>.</td>
+        </tr>
       </tbody>
     </table>
+    <p>Server logs can contain other users' usernames, IP addresses and request details, and error output (panics, failed connections) that can echo server configuration. So - same reasoning as <code>EDIT_CLUSTER_SETTINGS</code> and <code>EDIT_SERVER_MEDIA_ALLOCATION</code> above - this is kept separate from <code>ADMIN</code> and <code>ADMIN</code> does <strong>not</strong> imply it: <code>GetServerLogs</code> requires this permission <em>exactly</em>. It is also deliberately <em>not</em> grantable via <a href="#grpc-api-UpdateUser"><code>UpdateUser</code></a> - an <code>UpdateUser</code> request can neither grant nor revoke it, it is always carried forward from what the user already has - and is only settable directly in the database (e.g. via the <code>set_permission</code> binary), so granting it is always a deliberate operator action.</p>
+    <p>Clients should recognize and display it (e.g. on a user's profile) but must <strong>not</strong> offer it in "grant permission" pickers. |</p>
     <p><a name="users-proto"></a></p>
     <p align="right"><a href="#top">Top</a></p>
     <h2 id="usersproto"><a class="anchor" aria-hidden="true" tabindex="-1" href="#usersproto"><span class="octicon octicon-link"></span></a>users.proto</h2>

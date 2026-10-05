@@ -185,7 +185,7 @@ Rellm has an intuitive (helm-less) mechanism and conventions for templating Rell
 
 If you installed Rellm via [Homebrew](#macos-install-and-run-via-homebrew) or the [Linux package](#linux-self-updateable-tarbz2-with-arm64-and-amd64-binaries-and-launcher), both bundle a full copy of the `deploys/` directory - so `rellm deploy <targets...>` runs the exact same `kubectl`-powered `make` targets described in [Quick deploy to your own cluster](#quick-deploy-to-your-own-cluster) and [`deploys/README.md`](https://github.com/JonLatane/rellm/blob/main/deploys/README.md), without cloning this repo. For example: `rellm deploy create_backend_data create_external_backend NAMESPACE=my-rellm-instance-namespace`.
 
-Tab-completion is available for both `rellm`'s own subcommands and `rellm deploy`'s targets. Homebrew wires this up automatically when you `brew install`; on Linux there's no package manager to hook into, so you'll want to add it yourself - see the "Optional: tab-completion" step of [3 minute startup on Linux](#3-minute-startup-on-linux).
+`rellm help deploys` shows the full [`deploys/README.md`](https://github.com/JonLatane/rellm/blob/main/deploys/README.md) in your pager. Tab-completion is available for both `rellm`'s own subcommands and `rellm deploy`'s targets, flags, and (after `-n`/`--namespace`) your cluster's namespaces. Homebrew wires this up automatically when you `brew install`; on Linux there's no package manager to hook into, so you'll want to add it yourself - see the "Optional: tab-completion" step of [3 minute startup on Linux](#3-minute-startup-on-linux).
 
 #### Live (DigitalOcean Kubernetes/DOKS) deployments
 
@@ -483,6 +483,11 @@ rellm deploy create_backend_data create_external_backend NAMESPACE=my-rellm-inst
 
 # Get the IP for your backend. It may read <none> until DigitalOcean/DOKS/K8s finishes LoadBalancer setup for your instance.
 rellm deploy get_backend_external_ip NAMESPACE=my-rellm-instance-namespace
+
+# `-n <ns>`/`--namespace <ns>` work just like they do for kubectl, in place of NAMESPACE=<ns>. Logs (see deploys/README.md's "Viewing Logs"):
+rellm deploy view_server_logs -n jonline # Print server logs for Jonline and return
+rellm deploy view_job_logs -n jonline --tail # Tail job logs for Jonline
+rellm deploy view_tmux_logs -n jonline # Start a tmux session tailing Server, Jobs and Preview Generator logs side by side
 ```
 
 From here, you can simply point your DNS for whatever domain at the LoadBalancer that should appear in your DigitalOcean dashboard.

@@ -192,6 +192,9 @@ fieldNumbersPermission n_ =
         EDITSERVERMEDIAALLOCATION ->
             10003
 
+        VIEWSERVERLOGS ->
+            10004
+
         PermissionUnrecognized_ m_ ->
             m_
 
@@ -379,6 +382,9 @@ encodePermission value =
             EDITSERVERMEDIAALLOCATION ->
                 10003
 
+            VIEWSERVERLOGS ->
+                10004
+
             PermissionUnrecognized_ i ->
                 i
 
@@ -560,6 +566,9 @@ decodePermission =
                     10003 ->
                         EDITSERVERMEDIAALLOCATION
 
+                    10004 ->
+                        VIEWSERVERLOGS
+
                     _ ->
                         PermissionUnrecognized_ i
             )
@@ -625,4 +634,5 @@ type Permission
     | VIEWPRIVATECONTACTMETHODS
     | EDITCLUSTERSETTINGS
     | EDITSERVERMEDIAALLOCATION
+    | VIEWSERVERLOGS
     | PermissionUnrecognized_ Int

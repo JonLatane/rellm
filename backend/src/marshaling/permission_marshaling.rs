@@ -4,7 +4,7 @@ use crate::itertools::Itertools;
 use crate::protos::Permission::*;
 use crate::protos::*;
 
-pub const ALL_PERMISSIONS: [Permission; 55] = [
+pub const ALL_PERMISSIONS: [Permission; 56] = [
     Unknown,
     ViewUsers,
     PublishUsersLocally,
@@ -60,6 +60,7 @@ pub const ALL_PERMISSIONS: [Permission; 55] = [
     ViewPrivateContactMethods,
     EditClusterSettings,
     EditServerMediaAllocation,
+    ViewServerLogs,
 ];
 
 pub trait ToProtoPermission {

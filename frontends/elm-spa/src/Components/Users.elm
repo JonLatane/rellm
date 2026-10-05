@@ -1065,6 +1065,9 @@ permissionText permission =
         EDITSERVERMEDIAALLOCATION ->
             "Edit Server Media Allocation"
 
+        VIEWSERVERLOGS ->
+            "View Server Logs"
+
         SYNCEVENTSTOFACEBOOK ->
             "Sync Events To Facebook"
 

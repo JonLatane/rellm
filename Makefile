@@ -7,6 +7,14 @@ default: protos docs graphs
 
 run_backend:
 	$(MAKE) -C backend run
+# Periodic jobs (delete_expired_tokens, sync_sources, ...), each in a forked loop; see backend/background_jobs.sh.
+run_background_jobs:
+	cd backend && ./background_jobs.sh
+# Link-preview image generator (generate_link_preview_images, which launches its own headless Brave)
+# on a 120s loop, like backend/preview_generator_job.sh does in prod -- but via `cargo run`, since that
+# script expects a prebuilt ./generate_link_preview_images next to it and has a random startup delay.
+run_preview_generator:
+	cd backend && while true; do RELLM_LOG_JOB_NAME=generate_link_preview_images cargo run --bin generate_link_preview_images; sleep 120; done
 run_elm:
 	$(MAKE) -C frontends/elm-spa run
 run_tamagui:
@@ -16,6 +24,12 @@ run_flutter:
 
 stop_backend:
 	$(MAKE) -C backend local_instances_stop
+# TERM makes background_jobs.sh's trap kill each job loop's process group (incl. any `cargo run` child).
+stop_background_jobs:
+	-pkill -TERM -f '[b]ackground_jobs.sh'
+# Matches the loop's shell, cargo and the binary at once. The [g] keeps pkill from matching its own sh -c.
+stop_preview_generator:
+	-pkill -TERM -f '[g]enerate_link_preview_images'
 stop_elm:
 	$(MAKE) -C frontends/elm-spa stop_background_servers
 # Next.js dev server (`yarn web`) listens on port 3000 by default.
@@ -28,6 +42,8 @@ stop_flutter:
 # Tries every dev server; `-` ignores failures from ones that aren't running.
 stop_dev_servers:
 	-$(MAKE) stop_backend
+	-$(MAKE) stop_background_jobs
+	-$(MAKE) stop_preview_generator
 	-$(MAKE) stop_elm
 	-$(MAKE) stop_tamagui
 	-$(MAKE) stop_flutter
@@ -49,16 +65,78 @@ run_tmux:
 		set-option -g set-titles-string 'rellm: run_tmux' \; \
 		rename-window 'rellm: run_tmux' \; \
 		select-pane -T 'Backend' \; \
-		send-keys 'make run_backend' C-m \; \
+		send-keys 'cd backend' C-m \; \
+		send-keys 'make run' C-m \; \
 		split-window -h \; \
 		select-pane -T 'Elm' \; \
-		send-keys 'make run_elm' C-m \; \
+		send-keys 'cd frontends/elm-spa' C-m \; \
+		send-keys 'make run' C-m \; \
 		select-pane -L \; \
 		attach-session
 
-fresh_run_tmux:
-	$(MAKE) stop_dev_servers
-	$(MAKE) run_tmux
+fresh_run_tmux: stop_dev_servers run_tmux
+
+# Same as run_tmux, with the background jobs (backend/background_jobs.sh) in a "Jobs" pane on the
+# far left: Jobs | Backend | Elm. `select-layout even-horizontal` evens out the three panes (the
+# successive `split-window -h`s would otherwise leave Jobs with half the width).
+run_tmux_with_jobs:
+	-tmux kill-session -t rellm 2>/dev/null
+	tmux new-session -d -s rellm \; \
+		set-option -g mouse on \; \
+		set-option -g pane-border-status top \; \
+		set-option -g automatic-rename off \; \
+		set-option -g set-titles on \; \
+		set-option -g set-titles-string 'rellm: run_tmux_with_jobs' \; \
+		rename-window 'rellm: run_tmux_with_jobs' \; \
+		select-pane -T 'Jobs' \; \
+		send-keys 'cd backend' C-m \; \
+		send-keys './background_jobs.sh' C-m \; \
+		split-window -h \; \
+		select-pane -T 'Backend' \; \
+		send-keys 'cd backend' C-m \; \
+		send-keys 'make run' C-m \; \
+		split-window -h \; \
+		select-pane -T 'Elm' \; \
+		send-keys 'cd frontends/elm-spa' C-m \; \
+		send-keys 'make run' C-m \; \
+		select-layout even-horizontal \; \
+		select-pane -L \; \
+		select-pane -L \; \
+		attach-session
+
+fresh_run_tmux_with_jobs: stop_dev_servers run_tmux_with_jobs
+
+# Same again, with the preview generator on the far left too: Preview Generator | Jobs | Backend | Elm.
+run_tmux_with_everything:
+	-tmux kill-session -t rellm 2>/dev/null
+	tmux new-session -d -s rellm \; \
+		set-option -g mouse on \; \
+		set-option -g pane-border-status top \; \
+		set-option -g automatic-rename off \; \
+		set-option -g set-titles on \; \
+		set-option -g set-titles-string 'rellm: run_tmux_with_everything' \; \
+		rename-window 'rellm: run_tmux_with_everything' \; \
+		select-pane -T 'Preview Generator' \; \
+		send-keys 'make run_preview_generator' C-m \; \
+		split-window -h \; \
+		select-pane -T 'Jobs' \; \
+		send-keys 'cd backend' C-m \; \
+		send-keys './background_jobs.sh' C-m \; \
+		split-window -h \; \
+		select-pane -T 'Backend' \; \
+		send-keys 'cd backend' C-m \; \
+		send-keys 'make run' C-m \; \
+		split-window -h \; \
+		select-pane -T 'Elm' \; \
+		send-keys 'cd frontends/elm-spa' C-m \; \
+		send-keys 'make run' C-m \; \
+		select-layout even-horizontal \; \
+		select-pane -L \; \
+		select-pane -L \; \
+		select-pane -L \; \
+		attach-session
+
+fresh_run_tmux_with_everything: stop_dev_servers run_tmux_with_everything
 
 build_backend:
 	$(MAKE) -C backend build
@@ -79,6 +157,9 @@ test_tamagui:
 	$(MAKE) -C frontends/tamagui test
 test_flutter:
 	$(MAKE) -C frontends/flutter test
+# Tests for deploys/'s Makefiles and scripts; no cluster needed (see deploys/README.md).
+test_deploys:
+	$(MAKE) -C deploys test
 
 
 ############################################################################

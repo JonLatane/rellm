@@ -3,8 +3,8 @@ module Shared exposing
     , Flags
     , Model
     , Msg(..)
-    , PageSlide(..)
     , NavAnimationState
+    , PageSlide(..)
     , ThemePreference(..)
     , basePathFromPath
     , effectiveDarkMode
@@ -38,24 +38,25 @@ import Json.Encode as Encode
 import Ports
 import Process
 import Proto.Google.Protobuf
-import Proto.Rellm exposing (ContactMethod, Event, Media, Occasion, Post, SyncSource, User)
+import Proto.Rellm exposing (ContactMethod, Event, GetMediaResponse, Media, Occasion, Post, SyncSource, User, defaultGetMediaRequest)
 import Proto.Rellm.ContactConsentState exposing (ContactConsentState(..))
+import Proto.Rellm.Rellm as Rellm
 import Proto.Rellm.WebUserInterface exposing (WebUserInterface(..))
 import Request exposing (Request)
 import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccount)
-import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer)
-import Shared.BrowserInfo as BrowserInfo
+import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer, withAccessToken)
+import Shared.AudioPlayerPanel as AudioPlayerPanel
 import Shared.Breadcrumbs as Breadcrumbs
+import Shared.BrowserInfo as BrowserInfo
 import Shared.CreateNewPanel as CreateNewPanel
 import Shared.FederatedAuth as FederatedAuth
 import Shared.MarkdownPanel as MarkdownPanel
 import Shared.MediaGeneratorPanel as MediaGeneratorPanel
-import Shared.AudioPlayerPanel as AudioPlayerPanel
 import Shared.MediaViewerPanel as MediaViewerPanel
 import Shared.MessagingPanel as MessagingPanel
-import Shared.PushNotificationLink as PushNotificationLink
 import Shared.MyMediaPanel as MyMediaPanel
+import Shared.PushNotificationLink as PushNotificationLink
 import Shared.StarredPanel as StarredPanel
 import Shared.Time as SharedTime
 import Shared.UserPreferences as UserPreferences
@@ -149,6 +150,11 @@ type Msg
     | MediaGeneratorPanelMsg MediaGeneratorPanel.Msg
     | MediaViewerPanelMsg MediaViewerPanel.Msg
     | AudioPlayerPanelMsg AudioPlayerPanel.Msg
+      -- The URL fragment changed (`Main`'s `ChangedUrl`): a `#track-<id>` one opens that track in the audio
+      -- player -- see `AudioPlayerPanel.trackLinkFromFragment`.
+    | TrackLinkChanged (Maybe String)
+    | -- The server the link named (the main one when it named none), and what it returned.
+      GotLinkedTrack String (Result Grpc.Error ( Maybe AccountsPanel.Msg, GetMediaResponse ))
     | MediaRendererMsg MediaRenderer.Msg
     | MyMediaPanelMsg MyMediaPanel.Msg
     | MyMediaPanelOpenForAccount RellmAccount
@@ -536,7 +542,17 @@ init basePath req flags =
                 , markdownPanel = MarkdownPanel.init
                 , mediaGeneratorPanel = MediaGeneratorPanel.init
                 , mediaViewerPanel = MediaViewerPanel.init
-                , audioPlayerPanel = AudioPlayerPanel.init
+                , audioPlayerPanel =
+                    let
+                        player : AudioPlayerPanel.Model
+                        player =
+                            AudioPlayerPanel.init
+                    in
+                    -- A `#track-<id>` link: fetched once the server connects (see `trackLinkFetch`).
+                    { player
+                        | pendingTrackLink = AudioPlayerPanel.trackLinkFromFragment req.url.fragment
+                        , origin = originOf req.url
+                    }
                 , myMediaPanel = MyMediaPanel.init
                 , createNewPanel = CreateNewPanel.init
                 , messagingPanel = MessagingPanel.init
@@ -662,15 +678,171 @@ update req msg model =
         -- `Shared.MyMediaPanel`'s chooser), so its hand-offs are chained here -- see `coverArtFollowUp`.
         ( followedModel, followCmd ) =
             coverArtFollowUp req msg model newModel
+
+        -- `#track-<id>` links, both ways: fetch a linked track once its server is connected, and mirror the
+        -- player's expanded track into the URL.
+        ( linkedModel, linkCmd ) =
+            trackLinkFetch followedModel
+
+        ( hashedModel, hashCmd ) =
+            trackHashSync req model linkedModel
     in
     case rootRedirectCmd req msg model of
         Just redirect ->
             -- Leaving the page anyway: skip the rest (notably hiding the splash, which would flash
             -- this soon-to-be-replaced page).
-            ( followedModel, Cmd.batch [ cmd, redirect ] )
+            ( hashedModel, Cmd.batch [ cmd, redirect ] )
 
         Nothing ->
-            ( followedModel, Cmd.batch [ cmd, followCmd, navBarColorCmd model newModel, splashHiddenCmd model newModel ] )
+            ( hashedModel, Cmd.batch [ cmd, followCmd, linkCmd, hashCmd, navBarColorCmd model newModel, splashHiddenCmd model newModel ] )
+
+
+{-| `scheme://host[:port]` of `url` -- what a shared link to a track starts with.
+-}
+originOf : Url -> String
+originOf url =
+    Url.toString { url | path = "", query = Nothing, fragment = Nothing }
+
+
+{-| Starts fetching the track a `#track-<id>` link (`AudioPlayerPanel.Model.pendingTrackLink`) points at, as soon as
+the main server is connected -- tried after every `Shared` message, like the media pages' own `retryFetch`, since
+at startup the server is usually still connecting. The result arrives as `GotLinkedTrack`.
+-}
+trackLinkFetch : Model -> ( Model, Cmd Msg )
+trackLinkFetch model =
+    let
+        panels : Panels
+        panels =
+            model.panels
+    in
+    case panels.audioPlayerPanel.pendingTrackLink of
+        Just link ->
+            let
+                -- A federated link (`#track-<id>@<host>`) names the server the track lives on.
+                host : String
+                host =
+                    Maybe.withDefault model.accounts.mainFrontendHost link.host
+            in
+            if RellmServers.knownConnectedRellmServer model.accounts.servers host /= Nothing then
+                let
+                    player : AudioPlayerPanel.Model
+                    player =
+                        panels.audioPlayerPanel
+                in
+                ( { model | panels = { panels | audioPlayerPanel = { player | pendingTrackLink = Nothing } } }
+                , AccountsPanel.performWithOptionalAccountServer
+                    model.accounts
+                    ( RellmAccounts.enabledRellmAccountForServer model.accounts.accounts host |> Maybe.map .userId, host )
+                    (\server maybeToken ->
+                        Grpc.new Rellm.getMedia { defaultGetMediaRequest | mediaId = Just link.id }
+                            |> Grpc.setHost (RellmServers.rellmServerUrl server)
+                            |> withAccessToken maybeToken
+                            |> Grpc.toTask
+                    )
+                    |> Task.attempt (GotLinkedTrack host)
+                )
+
+            else
+                ( model, Cmd.none )
+
+        Nothing ->
+            ( model, Cmd.none )
+
+
+{-| Keeps the URL fragment in step with the audio player: expanding it sets `#track-<id>` (remembering whatever
+fragment was there), moving to another track while expanded updates it, and collapsing -- or closing the player --
+puts the remembered fragment back. Done with `replaceUrl`, so it doesn't fill the history. Only reverts a fragment
+that is still one of ours. `before`/`after` are the models around one `update`; a viewer that merely forces the player
+collapsed doesn't count (that doesn't touch `expanded`).
+-}
+trackHashSync : Request -> Model -> Model -> ( Model, Cmd Msg )
+trackHashSync req before after =
+    let
+        panels : Panels
+        panels =
+            after.panels
+
+        old : AudioPlayerPanel.Model
+        old =
+            before.panels.audioPlayerPanel
+
+        player : AudioPlayerPanel.Model
+        player =
+            panels.audioPlayerPanel
+
+        wasOn : Bool
+        wasOn =
+            old.expanded && old.currentId /= Nothing
+
+        isOn : Bool
+        isOn =
+            player.expanded && player.currentId /= Nothing
+
+        replaceFragment : Maybe String -> Cmd Msg
+        replaceFragment fragment =
+            let
+                url : Url
+                url =
+                    req.url
+            in
+            if fragment == url.fragment then
+                Cmd.none
+
+            else
+                let
+                    fullPath : String
+                    fullPath =
+                        if after.basePath == "" then
+                            url.path
+
+                        else if url.path == "/" then
+                            after.basePath ++ "/"
+
+                        else
+                            after.basePath ++ url.path
+                in
+                Nav.replaceUrl req.key (Url.toString { url | path = fullPath, fragment = fragment })
+
+        -- `track-<id>`, plus `@<host>` when the track lives on a server other than the one this app was opened on.
+        trackFragmentOf : String -> String
+        trackFragmentOf id =
+            AudioPlayerPanel.trackFragment after.accounts.mainFrontendHost player.targetHost id
+
+        withSaved : Maybe (Maybe String) -> Model
+        withSaved saved =
+            { after | panels = { panels | audioPlayerPanel = { player | savedFragment = saved } } }
+    in
+    case ( wasOn, isOn, player.currentId ) of
+        ( False, True, Just id ) ->
+            -- Remember what was there (unless it's already a track link, e.g. we got here from one).
+            ( withSaved
+                (Just
+                    (if AudioPlayerPanel.trackLinkFromFragment req.url.fragment /= Nothing then
+                        Nothing
+
+                     else
+                        req.url.fragment
+                    )
+                )
+            , replaceFragment (Just (trackFragmentOf id))
+            )
+
+        ( True, True, Just id ) ->
+            if old.currentId /= player.currentId then
+                ( after, replaceFragment (Just (trackFragmentOf id)) )
+
+            else
+                ( after, Cmd.none )
+
+        ( True, False, _ ) ->
+            if AudioPlayerPanel.trackLinkFromFragment req.url.fragment /= Nothing then
+                ( withSaved Nothing, replaceFragment (old.savedFragment |> Maybe.withDefault Nothing) )
+
+            else
+                ( withSaved Nothing, Cmd.none )
+
+        _ ->
+            ( after, Cmd.none )
 
 
 {-| When the app is being served at `/elm` but `browsingHost`'s own freshly-fetched
@@ -708,7 +880,15 @@ rootRedirectCmd req msg model =
             then
                 Just
                     (Ports.replaceLocation
-                        ((String.dropLeft 4 path |> (\p -> if p == "" then "/" else p))
+                        ((String.dropLeft 4 path
+                            |> (\p ->
+                                    if p == "" then
+                                        "/"
+
+                                    else
+                                        p
+                               )
+                         )
                             ++ (req.url.query |> Maybe.map ((++) "?") |> Maybe.withDefault "")
                             ++ (req.url.fragment |> Maybe.map ((++) "#") |> Maybe.withDefault "")
                         )
@@ -1080,6 +1260,67 @@ sharedUpdate req msg model =
                 , Cmd.map AccountsPanelMsg accountsPanelCmd
                 ]
             )
+
+        TrackLinkChanged fragment ->
+            case AudioPlayerPanel.trackLinkFromFragment fragment of
+                -- Our own `replaceUrl` after expanding/changing track echoes back here: nothing to do.
+                Just link ->
+                    let
+                        panels : Panels
+                        panels =
+                            model.panels
+
+                        player : AudioPlayerPanel.Model
+                        player =
+                            panels.audioPlayerPanel
+                    in
+                    if player.currentId == Just link.id && player.targetHost == Maybe.withDefault model.accounts.mainFrontendHost link.host then
+                        ( model, Cmd.none )
+
+                    else
+                        ( { model | panels = { panels | audioPlayerPanel = { player | pendingTrackLink = Just link } } }, Cmd.none )
+
+                Nothing ->
+                    ( model, Cmd.none )
+
+        GotLinkedTrack host result ->
+            case result of
+                Ok ( maybeAccountsPanelMsg, response ) ->
+                    let
+                        ( accountsPanelModel, accountsPanelCmd ) =
+                            case maybeAccountsPanelMsg of
+                                Just accountsPanelMsg ->
+                                    AccountsPanel.update req accountsPanelMsg model.accounts
+
+                                Nothing ->
+                                    ( model.accounts, Cmd.none )
+
+                        withAccounts : Model
+                        withAccounts =
+                            { model | accounts = accountsPanelModel }
+                    in
+                    case List.head response.media of
+                        Just media ->
+                            let
+                                ( loaded, loadCmd ) =
+                                    sharedUpdate req
+                                        (AudioPlayerPanelMsg
+                                            (AudioPlayerPanel.Load
+                                                [ MediaViewerPanel.mediaToReference media ]
+                                                media.id
+                                                host
+                                            )
+                                        )
+                                        withAccounts
+                            in
+                            ( loaded, Cmd.batch [ Cmd.map AccountsPanelMsg accountsPanelCmd, loadCmd ] )
+
+                        Nothing ->
+                            ( withAccounts, Cmd.map AccountsPanelMsg accountsPanelCmd )
+
+                -- Missing, private or unreachable: the link just doesn't open anything.
+                Err _ ->
+                    ( model, Cmd.none )
 
         AudioPlayerPanelMsg subMsg ->
             let

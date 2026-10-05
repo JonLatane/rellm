@@ -102,6 +102,7 @@ import Pages.UsernameOrCustomTab_.Posts
 import Request
 import Shared
 import UI.CustomNav as CustomNav
+import Task
 import Url exposing (Url)
 import View
 
@@ -185,8 +186,35 @@ subscriptions model =
 -- UPDATE
 
 
+{-| `innerUpdate`, plus: when a `ChangedUrl` changed the URL's fragment (a pasted `#track-<id>` link, or the browser's
+back/forward between fragments), tells `Shared` -- see `Shared.TrackLinkChanged`. (The initial URL's fragment is
+read by `Shared.init` itself.)
+-}
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
+    let
+        ( newModel, cmd ) =
+            innerUpdate msg model
+    in
+    case msg of
+        ChangedUrl _ ->
+            if newModel.url.fragment /= model.url.fragment then
+                ( newModel
+                , Cmd.batch
+                    [ cmd
+                    , Task.perform (\_ -> Shared (Shared.TrackLinkChanged newModel.url.fragment)) (Task.succeed ())
+                    ]
+                )
+
+            else
+                ( newModel, cmd )
+
+        _ ->
+            ( newModel, cmd )
+
+
+innerUpdate : Msg -> Model -> ( Model, Cmd Msg )
+innerUpdate msg model =
     case msg of
         ClickedLink (Browser.Internal url) ->
             ( { model | backStack = model.url :: model.backStack }

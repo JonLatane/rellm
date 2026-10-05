@@ -189,6 +189,9 @@ pub struct MediaResponse<R> {
     inner: R,
     block_cors: bool,
     vary_on_auth: bool,
+    /// `Content-Disposition` to attach (`?download=true`), so the browser saves the file under a proper name even
+    /// cross-origin, where the `<a download>` attribute is ignored.
+    content_disposition: Option<String>,
 }
 
 impl<'r, 'o: 'r, R: rocket::response::Responder<'r, 'o>> rocket::response::Responder<'r, 'o>
@@ -201,6 +204,9 @@ impl<'r, 'o: 'r, R: rocket::response::Responder<'r, 'o>> rocket::response::Respo
         }
         if self.vary_on_auth {
             response.set_header(rocket::http::Header::new("Vary", "Authorization, Cookie"));
+        }
+        if let Some(content_disposition) = self.content_disposition {
+            response.set_header(rocket::http::Header::new("Content-Disposition", content_disposition));
         }
         Ok(response)
     }
@@ -283,11 +289,55 @@ impl<'r> rocket::response::Responder<'r, 'static> for RangedFile {
     }
 }
 
-#[rocket::get("/media/<id>?<authorization>&<size>")]
+/// `attachment; filename="..."; filename*=UTF-8''...` for saving `media` under its own name (plus a size suffix and
+/// an extension matching `content_type`).
+fn download_content_disposition(media: &models::Media, size: Option<&str>, content_type: &ContentType) -> String {
+    let base = media
+        .name
+        .as_deref()
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(str::to_owned)
+        .unwrap_or_else(|| format!("media-{}", media.id.to_proto_id()));
+    let suffix = match size {
+        Some("small") => " (low)",
+        Some("large") => " (high)",
+        Some("original") => " (original)",
+        None | Some("medium") => " (medium)",
+        _ => "",
+    };
+    let extension = match content_type.to_string().as_str() {
+        "audio/mp4" => Some("m4a".to_owned()),
+        "audio/mpeg" => Some("mp3".to_owned()),
+        "audio/wav" | "audio/x-wav" | "audio/wave" | "audio/vnd.wave" => Some("wav".to_owned()),
+        _ => content_type.extension().map(|e| e.to_string()),
+    };
+    let filename = match extension {
+        Some(extension) => format!("{base}{suffix}.{extension}"),
+        None => format!("{base}{suffix}"),
+    };
+    // Plain-ASCII fallback (quotes/control characters/non-ASCII dropped) + the exact name, percent-encoded (RFC 5987).
+    let ascii: String = filename
+        .chars()
+        .map(|c| if c.is_ascii() && !c.is_ascii_control() && c != '"' && c != '\\' { c } else { '_' })
+        .collect();
+    let mut encoded = String::new();
+    for byte in filename.bytes() {
+        if byte.is_ascii_alphanumeric() || b"-_.~".contains(&byte) {
+            encoded.push(byte as char);
+        } else {
+            encoded.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    format!("attachment; filename=\"{ascii}\"; filename*=UTF-8''{encoded}")
+}
+
+#[rocket::get("/media/<id>?<authorization>&<size>&<download>")]
 pub async fn media_file<'a>(
     id: &str,
     authorization: Option<String>,
     size: Option<String>,
+    download: Option<bool>,
     cookies: &CookieJar<'_>,
     state: &State<RocketState>,
     auth_header: Option<AuthHeader<'_>>,
@@ -313,6 +363,9 @@ pub async fn media_file<'a>(
     let (object_storage_path, content_type) =
         resolve_media_size_for_viewer(&media, size.as_deref(), has_full_access)?;
     let data = load_media_file(object_storage_path, content_type, state).await?;
+    let content_disposition = download
+        .unwrap_or(false)
+        .then(|| download_content_disposition(&media, size.as_deref(), &data.0));
 
     // Anonymous requests to servers with `block_cors_anonymous_media_access` get no CORS headers,
     // even for `GLOBAL_PUBLIC` media. (Authenticated requests are unaffected.)
@@ -340,6 +393,7 @@ pub async fn media_file<'a>(
         inner: CacheResponse::new((data.0, RangedFile(data.1)), cache_control),
         block_cors,
         vary_on_auth: licensed || block_cors,
+        content_disposition,
     })
 }
 

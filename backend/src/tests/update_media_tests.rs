@@ -621,3 +621,167 @@ fn invalid_bpms_and_keys_are_rejected() {
         Ok(())
     });
 }
+
+/// An audio item that's already been converted: an original plus one converted copy, marked processed.
+fn converted_audio(conn: &mut crate::db_connection::PgPooledConnection, owner: &models::User) -> models::Media {
+    let media = create_media_with_opts(
+        conn,
+        Some(owner),
+        MediaOpts { content_type: "audio/mpeg", name: Some("Old Name"), ..Default::default() },
+    );
+    let original = media.original().expect("has an original");
+    let media = set_media_sizes(
+        conn,
+        &media,
+        vec![
+            original.clone(),
+            MediaSize {
+                conversion: MediaConversion::Medium as i32,
+                object_storage_path: unique_path("converted"),
+                content_type: "audio/mp4".to_string(),
+                size_bytes: 5,
+                aspect_ratio: None,
+            },
+        ],
+    );
+    diesel::update(crate::schema::media::table.find(media.id))
+        .set(crate::schema::media::processed.eq(true))
+        .get_result::<models::Media>(conn)
+        .unwrap()
+}
+
+fn reload(conn: &mut crate::db_connection::PgPooledConnection, id: i64) -> models::Media {
+    crate::schema::media::table.find(id).first::<models::Media>(conn).unwrap()
+}
+
+#[test]
+fn renaming_a_converted_audio_item_queues_a_retag_not_a_regeneration() {
+    let tb = test_bucket();
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let user = create_user(conn, "umt_retag");
+        let media = converted_audio(conn, &user);
+
+        tb.block_on(update_media(
+            Media { id: media.id.to_proto_id(), name: Some("New Name".to_string()), ..Default::default() },
+            &user,
+            conn,
+            &tb.bucket,
+        ))
+        .expect("rename should succeed");
+
+        let stored = reload(conn, media.id);
+        assert!(!stored.processed, "queued for the convert_media_sizes job");
+        assert!(stored.metadata().retag_only, "...as a cheap retag, not a full regeneration");
+        assert_eq!(stored.sizes().len(), 2, "the converted copy is kept (it's remuxed in place, not deleted)");
+        Ok(())
+    });
+}
+
+#[test]
+fn changing_a_tagged_credit_queues_a_retag() {
+    let tb = test_bucket();
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let user = create_user(conn, "umt_retag_credit");
+        let media = converted_audio(conn, &user);
+
+        tb.block_on(update_media(
+            Media {
+                id: media.id.to_proto_id(),
+                name: Some("Old Name".to_string()),
+                metadata: Some(ProtoMediaMetadata { artist: Some("New Artist".to_string()), ..Default::default() }),
+                ..Default::default()
+            },
+            &user,
+            conn,
+            &tb.bucket,
+        ))
+        .expect("update should succeed");
+
+        let stored = reload(conn, media.id);
+        assert!(!stored.processed);
+        assert!(stored.metadata().retag_only);
+        Ok(())
+    });
+}
+
+#[test]
+fn an_update_that_changes_no_tags_leaves_the_item_processed() {
+    let tb = test_bucket();
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let user = create_user(conn, "umt_retag_none");
+        let media = converted_audio(conn, &user);
+
+        // Same name, only the visibility changes.
+        tb.block_on(update_media(
+            Media {
+                id: media.id.to_proto_id(),
+                name: Some("Old Name".to_string()),
+                visibility: Visibility::GlobalPublic as i32,
+                ..Default::default()
+            },
+            &user,
+            conn,
+            &tb.bucket,
+        ))
+        .expect("update should succeed");
+
+        let stored = reload(conn, media.id);
+        assert!(stored.processed, "nothing tag-relevant changed");
+        assert!(!stored.metadata().retag_only);
+        Ok(())
+    });
+}
+
+#[test]
+fn a_pending_retag_survives_a_second_edit() {
+    let tb = test_bucket();
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let user = create_user(conn, "umt_retag_twice");
+        let media = converted_audio(conn, &user);
+        for name in ["First", "Second"] {
+            tb.block_on(update_media(
+                Media { id: media.id.to_proto_id(), name: Some(name.to_string()), ..Default::default() },
+                &user,
+                conn,
+                &tb.bucket,
+            ))
+            .expect("rename should succeed");
+        }
+
+        let stored = reload(conn, media.id);
+        assert!(!stored.processed);
+        assert!(stored.metadata().retag_only, "still a retag, not escalated to a full reconversion");
+        Ok(())
+    });
+}
+
+#[test]
+fn renaming_an_image_never_queues_anything() {
+    let tb = test_bucket();
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let user = create_user(conn, "umt_retag_image");
+        let media = create_media(conn, Some(&user), &unique_path("image"));
+        diesel::update(crate::schema::media::table.find(media.id))
+            .set(crate::schema::media::processed.eq(true))
+            .execute(conn)
+            .unwrap();
+
+        tb.block_on(update_media(
+            Media { id: media.id.to_proto_id(), name: Some("Renamed".to_string()), ..Default::default() },
+            &user,
+            conn,
+            &tb.bucket,
+        ))
+        .expect("rename should succeed");
+
+        let stored = reload(conn, media.id);
+        assert!(stored.processed, "an image has no tagged copies to refresh");
+        assert!(!stored.metadata().retag_only);
+        Ok(())
+    });
+}

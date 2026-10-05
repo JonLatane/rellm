@@ -452,3 +452,67 @@
 .audio-player-panel.is-above-viewer {
   z-index: 34;
 }
+
+/* Top-left of the expanded panel: Download/Share, then Edit, side by side. (Overrides the absolute
+   positioning `.audio-player-corner-button` gives a lone corner button.) */
+.audio-player-corner-left-group {
+  position: absolute;
+  top: 0.6rem;
+  left: 0.75rem;
+  z-index: 2;
+  display: flex;
+  gap: 0.4rem;
+}
+
+.audio-player-corner-left-group .audio-player-corner-button {
+  position: static;
+}
+
+/* The Download/Share popover (structure from ui/popover.css, as on the Posts page's Export button) -- opens
+   down and to the *right* of its toggle, since the toggle is at the left edge. */
+.audio-player-share-popover {
+  left: 0;
+  right: auto;
+  width: min(320px, 80vw);
+  border-top-left-radius: 0;
+  border-top-right-radius: 0.6rem;
+  font-size: 0.85rem;
+  text-align: left;
+  color: var(--fg);
+}
+
+.audio-player-share-heading {
+  margin: 0;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.7;
+}
+
+.audio-player-share-link {
+  color: inherit;
+  text-decoration: underline;
+  overflow-wrap: anywhere;
+}
+
+.audio-player-share-downloads {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.audio-player-share-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  align-self: flex-start;
+  padding: 0.3rem 0.8rem;
+  border: none;
+  border-radius: 999px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.audio-player-share-copy-icon {
+  flex-shrink: 0;
+}

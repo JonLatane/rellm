@@ -998,6 +998,12 @@ permissionFromInt n =
         10002 ->
             EDITCLUSTERSETTINGS
 
+        10003 ->
+            EDITSERVERMEDIAALLOCATION
+
+        10004 ->
+            VIEWSERVERLOGS
+
         other ->
             PermissionUnrecognized_ other
 

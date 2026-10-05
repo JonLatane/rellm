@@ -18,12 +18,35 @@ set -euo pipefail
 # loop's own shell.
 set -m
 
+# Logs in the same shape generate_link_preview_images (and the rellm server) log in:
+#   [2026-10-05T12:00:00Z INFO  preview_generator_job] message
+# with the level colored like env_logger's defaults. A deliberate duplicate of the same helper in
+# background_jobs.sh. ERROR/WARN go to stderr. Honors NO_COLOR.
+_log() {
+  local level="$1" color="" reset=""
+  shift
+  if [ -z "${NO_COLOR:-}" ]; then
+    reset=$'\033[0m'
+    case "$level" in
+      ERROR) color=$'\033[31m' ;;
+      WARN)  color=$'\033[33m' ;;
+      INFO)  color=$'\033[32m' ;;
+    esac
+  fi
+  local out
+  out="$(printf '[%s %s%-5s%s preview_generator_job] %s' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$color" "$level" "$reset" "$*")"
+  case "$level" in
+    ERROR|WARN) printf '%s\n' "$out" >&2 ;;
+    *) printf '%s\n' "$out" ;;
+  esac
+}
+
 STARTUP_DELAY=$(( RANDOM % 121 ))
 INTERVAL=120
 
 cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
 
-echo "[preview_generator_job] starting in ${STARTUP_DELAY}s..."
+_log INFO "starting in ${STARTUP_DELAY}s..."
 sleep "$STARTUP_DELAY"
 
 pid=""
@@ -35,10 +58,11 @@ trap '
 ' TERM INT
 
 while true; do
-  echo "[preview_generator_job] running generate_link_preview_images..."
-  ./generate_link_preview_images &
+  _log INFO "running generate_link_preview_images..."
+  # RELLM_LOG_JOB_NAME makes the binary log "[<timestamp> LEVEL generate_link_preview_images] ...".
+  RELLM_LOG_JOB_NAME=generate_link_preview_images ./generate_link_preview_images &
   pid="$!"
-  wait "$pid" || echo "[preview_generator_job] generate_link_preview_images failed" >&2
+  wait "$pid" || _log ERROR "generate_link_preview_images failed"
   pid=""
   sleep "$INTERVAL"
 done

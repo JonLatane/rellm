@@ -3,6 +3,10 @@
 A single shared Postgres + [Silo](https://github.com/pgsty/silo) (S3-compatible object storage)
 instance that many Rellm namespaces can point at instead of each provisioning their own.
 
+> A shared [Valkey](#central-valkey-planned) (realtime server logs) is **planned**. Its users live in
+> a Secret rather than in Valkey itself -- read [that section's warning](#central-valkey-planned)
+> before deploying or operating it.
+
 ## Why
 
 A normal Rellm deploy (`create_backend_data` in `../Makefile`) provisions its own Postgres and
@@ -118,6 +122,45 @@ namespace and stored in that namespace's `rellm-central-data` Secret (read by
 Not covered: there is no NetworkPolicy, so any pod in the cluster can still *attempt* to reach the
 shared instances (it just can't authenticate as another site), and anyone with `kubectl exec` on the
 Postgres pod is trusted (local socket connections are `trust`, as in the stock image).
+
+## Central Valkey (planned)
+
+> **Planned, not implemented yet.** Nothing in this section exists in the repo today (no manifest,
+> no `make` targets, no scripts). It is documented here so that the one thing people get wrong is
+> written down *before* it is built. The full plan is
+> [`docs/planning/get_server_logs_rpc.md`](../../docs/planning/get_server_logs_rpc.md).
+
+A third shared instance next to Postgres and Silo: a single [Valkey](https://valkey.io) (BSD-licensed
+Redis fork) in `rellm-storage`, holding each namespace's recent server logs (capped Streams) for the
+`GetServerLogs` RPC. It is optional and fail-open: sites without it, or with it down, lose only that
+feature. It adds **no PVC** (no persistence), so it doesn't touch the 15-volume budget this whole
+directory exists to protect.
+
+> [!WARNING]
+> **Valkey's users are NOT stored in Valkey. They live in a Secret.**
+>
+> Because central Valkey has no volume, its ACL users (`admin`, `probe`, and each namespace's
+> `<ns>-writer` / `<ns>-reader`) are defined by the Secret **`rellm-central-valkey-acl`** in
+> `rellm-storage`, and an `initContainer` rebuilds Valkey's ACL file from it on **every pod start**.
+>
+> * **Never create or change a user with only `ACL SETUSER`.** It works until Valkey next restarts or
+>   is rescheduled; then the user vanishes, that site's login fails, and **its logs silently stop**
+>   (the site itself keeps working). `ACL SAVE` doesn't help (the ACL file is on an `emptyDir`).
+> * **Never delete, recreate or `kubectl apply` a stale copy over `rellm-central-valkey-acl`.** It has
+>   one key per namespace; change it only with per-key patches (the provisioning scripts do). Losing
+>   it means every site loses realtime logs until each is re-provisioned.
+> * Restarting Valkey **wipes buffered logs** (they are "recent logs only") but **keeps every user**,
+>   provided that Secret is intact.
+> * The Secret holds password **hashes** only; plaintext lives in each namespace's own
+>   `rellm-central-valkey` Secret. Back up both with the rest of your cluster Secrets.
+> * Keep the `default` user `off`: Valkey's default user is otherwise passwordless and fully
+>   privileged over the network.
+
+Differences from Postgres/Silo worth knowing up front: logs themselves are disposable (a restart
+clears them), isolation is by ACL key pattern (`~logs:<namespace>:*`) rather than by separate
+database/bucket, and the same "no NetworkPolicy" caveat in
+[Credentials and isolation](#credentials-and-isolation) applies, so a NetworkPolicy covering all
+three instances is part of the plan.
 
 ## CI
 
