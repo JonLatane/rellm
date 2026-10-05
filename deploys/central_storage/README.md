@@ -34,7 +34,7 @@ other target in this repo assumes the `rellm-storage` default -- see `../Makefil
 
 `update_central_storage`, `restart_central_storage`, `delete_central_storage` and
 `get_central_storage_all` mirror `create_central_storage` for the usual update/restart/teardown/
-inspect lifecycle -- see the `Makefile` for the finer-grained `*_postgres`/`*_object_storage`
+inspect lifecycle (`delete_central_storage` needs `CONFIRM=rellm-storage`, since every site's data lives there) -- see the `Makefile` for the finer-grained `*_postgres`/`*_object_storage`
 targets these wrap (e.g. `delete_central_postgres_pvc`, which -- like its per-namespace
 counterpart in `../Makefile` -- is deliberately never bundled into a `delete_*` target, since the
 underlying volume's `reclaimPolicy: Retain` means data survives either way, but releasing the PVC

@@ -17,7 +17,11 @@ not_passed_through_central_storage="
   deploy_central_storage_ensure_namespace deploy_central_storage_ensure_storageclass_retain
   create_central_postgres_credentials create_central_object_storage_credentials
   create_central_postgres update_central_postgres delete_central_postgres delete_central_postgres_pvc restart_central_postgres
-  create_central_object_storage update_central_object_storage delete_central_object_storage delete_central_object_storage_pvc restart_central_object_storage"
+  create_central_object_storage update_central_object_storage delete_central_object_storage delete_central_object_storage_pvc restart_central_object_storage
+  check_delete_central_storage_confirmed"
+
+# The CONFIRM check deploy_ingress_controller_delete (and so remove_ingress) depends on.
+not_passed_through_ingress="check_ingress_delete_confirmed"
 
 # generated_certs/Makefile duplicates these verbatim "for standalone use from within that directory";
 # deploys/Makefile defines them itself.
@@ -28,6 +32,7 @@ for dir in ingress email central_storage generated_certs; do
   for target in $sub_targets; do
     case "$dir" in
       central_storage) in_list "$target" "$not_passed_through_central_storage" && continue ;;
+      ingress) in_list "$target" "$not_passed_through_ingress" && continue ;;
       generated_certs) in_list "$target" "$defined_at_top_generated_certs" && continue ;;
     esac
     if ! in_list "$target" "$top_targets"; then

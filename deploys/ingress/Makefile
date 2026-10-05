@@ -44,8 +44,13 @@ deploy_ingress_controller_create: deploy_ingress_ensure_namespace
 deploy_ingress_controller_update:
 	kubectl apply -f k8s/traefik.yaml -n $(INGRESS_NAMESPACE)
 	$(MAKE) deploy_ingress_monitor_rollout
-deploy_ingress_controller_delete:
+# Takes down every site's HTTP(S) routing at once, so -- like deploys/Makefile's other destructive
+# targets -- it needs CONFIRM=$(INGRESS_NAMESPACE) (the namespace it deletes from) typed out.
+deploy_ingress_controller_delete: check_ingress_delete_confirmed
 	kubectl delete -f k8s/traefik.yaml -n $(INGRESS_NAMESPACE)
+
+check_ingress_delete_confirmed:
+	@test "$(CONFIRM)" = "$(INGRESS_NAMESPACE)" || (echo "This deletes the shared Traefik controller in $(INGRESS_NAMESPACE), taking down routing for EVERY domain on the cluster. Re-run with CONFIRM=$(INGRESS_NAMESPACE)." >&2 && exit 1)
 
 deploy_ingress_monitor_rollout:
 	kubectl rollout status deployment/traefik -n $(INGRESS_NAMESPACE) --timeout 2m

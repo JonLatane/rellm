@@ -1,5 +1,5 @@
 #!/bin/bash
-# kubernetes_logs.sh (behind view_server_logs, view_job_logs, view_preview_generator_logs and
+# kubernetes_logs.sh (behind view_logs, view_server_logs, view_job_logs, view_preview_generator_logs and
 # view_tmux_logs), against stub kubectl/tmux.
 . "$(dirname "$0")/lib.sh"
 sandbox_init
@@ -25,6 +25,19 @@ reset_stub_log
 logs preview_generator -n my-ns
 check_contains "preview generator logs: selects rellm-preview-generator" "$(stub_calls)" "-l app=rellm-preview-generator"
 
+reset_stub_log
+logs all -n my-ns
+check_status "all logs: exit status" 0 "$STATUS"
+check_contains "all logs: selects every pod in the namespace, all containers" "$(stub_calls)" "logs -n my-ns -l !rellm-no-such-label --all-containers --prefix --timestamps --tail=-1"
+check_eq "all logs: merged by timestamp like the others" \
+  "[pod/rellm-a/rellm] first from a"$'\n'"[pod/rellm-b/rellm] second from b"$'\n'"[pod/rellm-a/rellm] third from a" "$OUT"
+reset_stub_log
+logs all -n my-ns --lines 5
+check_contains "all logs: honors --lines" "$(stub_calls)" "--all-containers --prefix --timestamps --tail=5"
+reset_stub_log
+logs server -n my-ns
+check_not_contains "the single-source targets don't ask for all containers" "$(stub_calls)" "--all-containers"
+
 # --- Errors ---
 logs server
 check_nonzero "no namespace is an error" "$STATUS"
@@ -49,6 +62,14 @@ wait "$pid" 2>/dev/null
 follow_calls="$(grep -c "logs -n my-ns -l app=rellm-jobs --prefix --follow" "$STUB_LOG")"
 if [ "$follow_calls" -ge 2 ]; then pass "follow: reconnects after the streams end ($follow_calls connections)"; else fail "follow: should reconnect" "$(stub_calls)"; fi
 check_contains "follow: first connection shows the last 50 lines" "$(stub_calls)" "--follow --tail=50"
+
+reset_stub_log
+RELLM_LOGS_RECONNECT_DELAY=0.1 bash "$SANDBOX/deploys/kubernetes_logs.sh" all -n my-ns --tail > /dev/null 2>&1 < /dev/null &
+pid=$!
+sleep 1
+kill "$pid" 2>/dev/null
+wait "$pid" 2>/dev/null
+check_contains "all logs --tail: follows every pod, all containers, and reconnects" "$(stub_calls)" "logs -n my-ns -l !rellm-no-such-label --all-containers --prefix --follow --tail=50 --max-log-requests=50"
 check_contains "follow: reconnections don't replay history" "$(stub_calls)" "--follow --tail=0"
 
 # --- tmux ---

@@ -172,11 +172,14 @@ get_backend_all:
 test:
 	@bash tests/run.sh
 
-# Logs -- see kubernetes_logs.sh. view_server_logs merges the server's replicas into one stream.
+# Logs -- see kubernetes_logs.sh. view_logs merges every pod in the namespace (server, jobs, preview generator
+# and anything else running there) into one stream; view_server_logs merges just the server's replicas.
 # LOG_TAIL=1 follows the logs (like `tail -f`) instead of printing them and returning; LOG_LINES=<n>
 # limits it to the last <n> lines per pod. `rellm deploy` turns `-n <ns>`, `--tail` and `--lines <n>`
 # into NAMESPACE=, LOG_TAIL=1 and LOG_LINES= for you. view_tmux_logs always follows.
 KUBERNETES_LOGS_FLAGS = $(if $(LOG_TAIL),--tail) $(if $(LOG_LINES),--lines $(LOG_LINES))
+view_logs:
+	@bash ./kubernetes_logs.sh all --namespace $(NAMESPACE) $(KUBERNETES_LOGS_FLAGS)
 view_server_logs:
 	@bash ./kubernetes_logs.sh server --namespace $(NAMESPACE) $(KUBERNETES_LOGS_FLAGS)
 view_job_logs:

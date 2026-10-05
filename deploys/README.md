@@ -183,15 +183,17 @@ rellm.Rellm.AccessToken
 That's it! You're up and running, although again, *it's an unsecured instance* where ***passwords and auth tokens will be sent in plain text***. Get that thing secured before you go telling people to use it!
 
 #### Viewing Logs
-Four targets (all built on plain `kubectl`; no `kail` needed) show a namespace's logs. All take `-n <ns>`/`--namespace <ns>`:
+Five targets (all built on plain `kubectl`; no `kail` needed) show a namespace's logs. All take `-n <ns>`/`--namespace <ns>`:
 
 ```bash
+rellm deploy view_logs -n jonline --tail            # Follow *every* pod in the namespace, merged
 rellm deploy view_server_logs -n jonline            # Print the server's logs and return
 rellm deploy view_job_logs -n jonline --tail        # Tail (follow) the background jobs' logs
 rellm deploy view_preview_generator_logs -n jonline # The preview generator's logs
 rellm deploy view_tmux_logs -n jonline              # tmux session: Server | Jobs | Preview Generator
 ```
 
+* `view_logs` reads every pod in the namespace (the server, jobs and preview generator, plus anything else you run there, whatever its labels), all containers, as one stream with each line prefixed `[pod/<pod name>/<container>]`. It takes `--tail` and `--lines` like the others. (`kubectl logs` has no whole-namespace mode, so this selects pods with `-l '!rellm-no-such-label'`, i.e. every pod without a label nothing has.)
 * `view_server_logs` reads the `rellm` Deployment, which runs several replicas, and merges them into one stream; each line is prefixed `[pod/<pod name>/rellm]` so you can tell the replicas apart. Printed (not following), the replicas' lines are merged by timestamp. `view_job_logs` reads `rellm-jobs` (the one pod running [`background_jobs.sh`](../backend/background_jobs.sh); every line is labeled with its job), and `view_preview_generator_logs` reads `rellm-preview-generator`.
 * **`--tail`** follows the logs, like `tail -f`, until you press Ctrl-C. Without it, the logs are printed and the command returns. When following, it reconnects if the pods are replaced (a rollout, say). **`--lines <n>`** limits each pod to its last `<n>` lines; the default is everything Kubernetes still has, or the last 50 lines per pod when following.
 * **`view_tmux_logs`** opens a [tmux](https://github.com/tmux/tmux) session named `rellm-logs-<namespace>` with Server on the left, Jobs in the middle and Preview Generator on the right, each following its logs (with the mouse enabled: click a pane to focus it, drag a border to resize). It skips the Preview Generator pane when no preview generator pod is running. It tails implicitly, so it ignores `--tail` (without failing over it) and says so at startup. Run inside tmux, it switches your client to that session instead of nesting one. Needs `tmux` installed.
@@ -408,7 +410,7 @@ Settings other than the namespace are `VAR=value` arguments to `rellm deploy` (e
 | `K8S_PROVIDER` | Postgres/object storage/StorageClass targets | `digitalocean` | Picks which `k8s/*-<provider>.yaml` manifests to use |
 | `DOMAIN` | `add_ingress_domain`, `remove_ingress_domain`, `add_email_domain`, `remove_email_domain` | none (required) | The site's public hostname; what `--domain <domain>` sets |
 | `EXTRA_DOMAINS` | `add_ingress_domain` | empty | Space-separated extra hostnames fronting the same backend (e.g. a CDN proxy) |
-| `CONFIRM` | `delete_backend_data_pvcs`, `delete_backend_central_data` | none (required) | Must equal the namespace -- confirms a destructive, permanent delete; what `--confirm <namespace>` sets |
+| `CONFIRM` | `delete_backend_data_pvcs`, `delete_backend_central_data`, `remove_ingress` (`deploy_ingress_controller_delete`), `remove_email`, `delete_central_storage` | none (required) | Must equal the namespace the target deletes from -- the site's `NAMESPACE`, or for the cluster-wide ones `traefik-ingress` (`INGRESS_NAMESPACE`), `rellm-email` and `rellm-storage` (`STORAGE_NAMESPACE`) -- confirms a destructive, permanent delete; what `--confirm <namespace>` sets |
 | `REPO_IMAGES` | `update_internal_central_data_backend` | unset | Set to `1` to deploy the manifests' image tags instead of keeping the images currently running |
 | `BACKEND_REPLICAS` | `start_backend` | `2` | Replicas restored after a `stop_backend` maintenance window |
 | `SIZE` | `resize_*_pvc` targets | none (required) | New PVC size, e.g. `20Gi` (grow-only) |
@@ -506,7 +508,7 @@ Everything routine is a `make` target; the shell scripts under `deploys/` are fo
   * `transition_jonline_namespace_to_central_storage.sh` (`make transition_backend_to_central_data`): moves a namespace onto [central storage](./central_storage/README.md), with downtime, verifying the copy and leaving the old storage untouched.
   * `.github/workflows/scripts/set_backend_images.sh`: what CI runs to deploy -- bumps the image tags of a namespace's `rellm`/`rellm-jobs`/`rellm-preview-generator` Deployments (`kubectl set image`) and nothing else.
   * `copy_server_configuration.sh` (`make copy_server_configuration`): copies one `server_configurations` column between two namespaces' databases (per-namespace or central). Convenience wrappers: `make copy_server_cluster_configuration` (`cluster_resources`, rewriting its `namespace_id` to the target) and `make copy_server_vapid_configuration` (`web_push_config`). All take `SOURCE=` and `TARGET=`.
-  * `kubernetes_logs.sh` (`make view_server_logs`, `view_job_logs`, `view_preview_generator_logs`, `view_tmux_logs`): see [Viewing Logs](#viewing-logs).
+  * `kubernetes_logs.sh` (`make view_logs`, `view_server_logs`, `view_job_logs`, `view_preview_generator_logs`, `view_tmux_logs`): see [Viewing Logs](#viewing-logs).
   * `distributables.sh`: sourced by the Homebrew/Linux `rellm` launchers; not run directly. It also turns `rellm deploy`'s `-n`/`--namespace`, `--domain`, `--confirm`, `--tail` and `--lines` flags into `NAMESPACE=`, `DOMAIN=`, `CONFIRM=`, `LOG_TAIL=1` and `LOG_LINES=`.
 * **`central_storage/provision_namespace.sh`** (`make create_backend_central_data`): creates a namespace's database/role, bucket/user and credentials Secret in central storage.
 * **`central_storage/deprovision_namespace.sh`** (`make delete_backend_central_data`): the reverse -- permanently removes a namespace's central-storage data and credentials (smoke-test cleanup, retiring a site).

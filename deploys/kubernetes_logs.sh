@@ -12,12 +12,13 @@
 #   * `tmux` opens Server | Jobs | Preview Generator side by side.
 #
 # Run via the deploys/Makefile targets, which is also how `rellm deploy` reaches it:
+#   rellm deploy view_logs                   -n my-namespace
 #   rellm deploy view_server_logs            -n my-namespace
 #   rellm deploy view_job_logs               -n my-namespace --tail
 #   rellm deploy view_preview_generator_logs -n my-namespace
 #   rellm deploy view_tmux_logs              -n my-namespace
 # or directly:
-#   deploys/kubernetes_logs.sh <server|jobs|preview_generator|tmux> -n <namespace> [--tail] [--lines <n>]
+#   deploys/kubernetes_logs.sh <all|server|jobs|preview_generator|tmux> -n <namespace> [--tail] [--lines <n>]
 #
 # Written for bash 3.2 (stock macOS), as it ships in the Homebrew package.
 set -euo pipefail
@@ -26,7 +27,10 @@ SCRIPT_PATH="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 
 usage() {
   cat >&2 <<'EOF'
-Usage: kubernetes_logs.sh <server|jobs|preview_generator|tmux> [options]
+Usage: kubernetes_logs.sh <all|server|jobs|preview_generator|tmux> [options]
+
+  all                    Every pod in the namespace (server, jobs, preview generator, and anything else
+                         running there), all containers.
 
   -n, --namespace <ns>   Kubernetes namespace (or set NAMESPACE). Required.
       --tail             Follow the logs (like `tail -f`) instead of printing them and returning.
@@ -77,8 +81,12 @@ case "$lines" in
 esac
 
 # Every Deployment in k8s/*.yaml labels its pods app=<deployment name>.
+# `all` is every pod in the namespace, whatever it's labelled: kubectl logs has no "whole namespace" mode, but
+# `-l` takes a set-based selector, and "!<key>" matches every pod without that label -- so, with a label
+# nothing has, all of them.
 selector_for() {
   case "$1" in
+    all) echo "!rellm-no-such-label" ;;
     server) echo "app=rellm" ;;
     jobs) echo "app=rellm-jobs" ;;
     preview_generator) echo "app=rellm-preview-generator" ;;
@@ -88,6 +96,7 @@ selector_for() {
 
 label_for() {
   case "$1" in
+    all) echo "Namespace" ;;
     server) echo "Server" ;;
     jobs) echo "Jobs" ;;
     preview_generator) echo "Preview Generator" ;;
@@ -106,6 +115,12 @@ pods_for() {
 view() {
   local source="$1" selector pods
   selector="$(selector_for "$source")"
+  # In `all`, include sidecars/init containers of whatever else runs in the namespace (our own pods have just
+  # the one container, so it's the same for them).
+  local container_args=()
+  if [ "$source" = all ]; then
+    container_args=(--all-containers)
+  fi
   pods="$(pods_for "$selector")" || exit 1
   if [ -z "$pods" ]; then
     die "No $(label_for "$source") pods (-l $selector) found in namespace '$namespace'."
@@ -114,7 +129,7 @@ view() {
   if [ -z "$follow" ]; then
     # kubectl's default for a selector is only the last 10 lines, so always pass --tail.
     # --timestamps is only here to merge by; it's stripped again below.
-    kubectl logs -n "$namespace" -l "$selector" --prefix --timestamps --tail="${lines:--1}" \
+    kubectl logs -n "$namespace" -l "$selector" ${container_args[@]+"${container_args[@]}"} --prefix --timestamps --tail="${lines:--1}" \
       | LC_ALL=C sort -s -k2,2 \
       | sed -E 's/^(\[[^]]*\]) [0-9T:.Z-]+ /\1 /'
     return
@@ -126,7 +141,7 @@ view() {
   # namespace deleted) still exit; Ctrl-C always does.
   local tail_arg="${lines:-50}"
   while true; do
-    kubectl logs -n "$namespace" -l "$selector" --prefix --follow --tail="$tail_arg" --max-log-requests=50
+    kubectl logs -n "$namespace" -l "$selector" ${container_args[@]+"${container_args[@]}"} --prefix --follow --tail="$tail_arg" --max-log-requests=50
     tail_arg=0
     sleep "${RELLM_LOGS_RECONNECT_DELAY:-2}"
   done
@@ -188,7 +203,7 @@ tmux_view() {
 }
 
 case "$what" in
-  server|jobs|preview_generator) view "$what" ;;
+  all|server|jobs|preview_generator) view "$what" ;;
   tmux) tmux_view ;;
   *) usage; die "Unknown log source: $what" ;;
 esac

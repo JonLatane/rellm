@@ -239,6 +239,8 @@ Commands:
 
                              Viewing logs (see "Viewing Logs" in deploys/README.md); they all take
                              -n <ns>, and --lines <n> to limit each pod's history:
+                               rellm deploy view_logs -n my_namespace --tail
+                                                              Follow every pod in the namespace
                                rellm deploy view_server_logs -n my_namespace     Print the server's logs
                                                               (all replicas, merged) and return
                                rellm deploy view_job_logs -n my_namespace --tail
