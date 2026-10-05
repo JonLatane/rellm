@@ -898,6 +898,19 @@
           panel.style.setProperty('--buffered-' + quality, entry[quality] || 0);
         });
       }
+      // Tells Elm (`rellmactivefullyloaded`) once the *active* slot's whole file has downloaded -- the cue to
+      // start the higher-quality upgrade download and the neighbors' preloads, which would otherwise compete
+      // with the playing track's own download from the first byte (it stalls playback, worst on iOS).
+      function maybeActiveFullyLoaded() {
+        var a = activeAudio();
+        if (!a || !a.currentSrc || !isFinite(a.duration) || a.duration <= 0) { return; }
+        if (a.dataset.fullSent === a.currentSrc) { return; }
+        if (a.buffered.length === 1 && a.buffered.start(0) <= 0.25 && a.buffered.end(0) >= a.duration - 0.25) {
+          a.dataset.fullSent = a.currentSrc;
+          a.dispatchEvent(new CustomEvent('rellmactivefullyloaded'));
+        }
+      }
+
       var lastReseek = 0;
       function checkCandidate() {
         var a = activeAudio();
@@ -928,15 +941,37 @@
         document.addEventListener(type, function (e) {
           var el = e.target;
           if (!el.classList || !el.classList.contains('audio-player-audio')) { return; }
-          if (type === 'loadstart') { delete el.dataset.readySent; }
+          if (type === 'loadstart') { delete el.dataset.readySent; delete el.dataset.fullSent; }
           publishBuffered();
           if (type === 'loadedmetadata' && el.classList.contains('audio-player-audio-candidate') && el.dataset.requireFull !== 'true') {
             var a = activeAudio();
             if (a && isFinite(el.duration)) { el.currentTime = Math.min(a.currentTime + 2, Math.max(0, el.duration - 0.5)); }
           }
           checkCandidate();
+          maybeActiveFullyLoaded();
         }, true);
       });
+      window.rellmCheckActiveLoaded = maybeActiveFullyLoaded;
+
+      // iOS Safari only lets `play()` run from code (our upgrade handoff, autostart on `canplay`) on a media
+      // element that has already been played from a user gesture. So on the first tap/click anywhere, play a
+      // silent clip on both slots (if a slot has meanwhile been given its real `src`, that's left alone).
+      var SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
+      function unlockAudioSlots() {
+        document.removeEventListener('pointerdown', unlockAudioSlots, true);
+        document.removeEventListener('touchend', unlockAudioSlots, true);
+        document.querySelectorAll('.audio-player-audio').forEach(function (el) {
+          if (el.getAttribute('src')) { return; }
+          el.setAttribute('src', SILENT_WAV);
+          var release = function () {
+            if (el.getAttribute('src') === SILENT_WAV) { el.pause(); el.removeAttribute('src'); el.load(); }
+          };
+          var played = el.play();
+          if (played && played.then) { played.then(release, release); } else { release(); }
+        });
+      }
+      document.addEventListener('pointerdown', unlockAudioSlots, true);
+      document.addEventListener('touchend', unlockAudioSlots, true);
     })();
 
     // See Ports.elm's controlAudioPlayer doc comment.
@@ -958,6 +993,9 @@
         el.pause();
         el.removeAttribute('src');
         el.load();
+        // The (formerly candidate) slot is the active one once Elm re-renders -- re-check whether it's
+        // already fully downloaded, so the neighbors' preloads can start.
+        setTimeout(function () { if (window.rellmCheckActiveLoaded) { window.rellmCheckActiveLoaded(); } }, 150);
         return;
       }
       if (!el) { return; }

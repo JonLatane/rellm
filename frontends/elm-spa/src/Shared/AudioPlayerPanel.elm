@@ -89,6 +89,12 @@ type alias Model =
 
     -- A freshly loaded track should start playing once its active slot can (`CanPlay`).
     , autoStart : Bool
+
+    -- The higher-quality copy to upgrade to, held back until the active slot has *finished* downloading
+    -- (`ActiveFullyLoaded`) -- starting it earlier makes two big downloads fight over the connection from
+    -- the first byte, which stalls playback (badly on iOS Safari). Same gate for the neighbors' preloads.
+    , pendingUpgrade : Maybe Source
+    , activeLoaded : Bool
     }
 
 
@@ -106,6 +112,8 @@ type Msg
     | PlayStateChanged Slot Bool
     | Ended Slot
     | CanPlay Slot
+      -- The active slot's whole file has downloaded (reported by index.html).
+    | ActiveFullyLoaded Slot
     | CandidateReady Slot
     | QualityChanged String
     | EditClicked
@@ -116,7 +124,7 @@ type Msg
 
 init : Model
 init =
-    { queue = [], currentId = Nothing, targetHost = "", expanded = False, playing = False, positionMs = 0, durationMs = 0, quality = High, activeSlot = SlotA, slotA = Nothing, slotB = Nothing, autoStart = False }
+    { queue = [], currentId = Nothing, targetHost = "", expanded = False, playing = False, positionMs = 0, durationMs = 0, quality = High, activeSlot = SlotA, slotA = Nothing, slotB = Nothing, autoStart = False, pendingUpgrade = Nothing, activeLoaded = False }
 
 
 {-| The track being played, if any.
@@ -276,13 +284,37 @@ beginTrack media model =
         sameAsLoaded =
             slotSource model.activeSlot model == Just startSource
 
+        upgrade : Maybe Source
+        upgrade =
+            if wanted /= start then
+                Just { mediaId = media.id, quality = wanted, requireFull = True }
+
+            else
+                Nothing
+
         withTrack : Model
         withTrack =
-            { model | currentId = Just media.id, positionMs = 0, durationMs = 0, playing = True, autoStart = not sameAsLoaded }
+            { model
+                | currentId = Just media.id
+                , positionMs = 0
+                , durationMs = 0
+                , playing = True
+                , autoStart = not sameAsLoaded
+
+                -- The upgrade (and neighbor preloads) wait for the active download to finish -- see
+                -- `Model.pendingUpgrade`. An already-loaded identical track has finished, so no wait.
+                , pendingUpgrade =
+                    if sameAsLoaded then
+                        Nothing
+
+                    else
+                        upgrade
+                , activeLoaded = sameAsLoaded
+            }
                 |> setSlot model.activeSlot (Just startSource)
                 |> setSlot (otherSlot model.activeSlot)
-                    (if wanted /= start then
-                        Just { mediaId = media.id, quality = wanted, requireFull = True }
+                    (if sameAsLoaded then
+                        upgrade
 
                      else
                         Nothing
@@ -391,7 +423,7 @@ update msg model =
             ( { model | expanded = not model.expanded }, Cmd.none )
 
         Close ->
-            ( { model | queue = [], currentId = Nothing, expanded = False, playing = False, positionMs = 0, durationMs = 0, slotA = Nothing, slotB = Nothing, autoStart = False }
+            ( { model | queue = [], currentId = Nothing, expanded = False, playing = False, positionMs = 0, durationMs = 0, slotA = Nothing, slotB = Nothing, autoStart = False, pendingUpgrade = Nothing, activeLoaded = False }
             , Cmd.batch [ releaseSlot SlotA, releaseSlot SlotB ]
             )
 
@@ -431,10 +463,28 @@ update msg model =
             else
                 ( model, Cmd.none )
 
+        ActiveFullyLoaded slot ->
+            if slot /= model.activeSlot then
+                ( model, Cmd.none )
+
+            else
+                -- Now it's safe to start the upgrade download (if any); the preloads render once `activeLoaded`.
+                ( { model | activeLoaded = True, pendingUpgrade = Nothing }
+                    |> (\loaded ->
+                            case model.pendingUpgrade of
+                                Just upgrade ->
+                                    setSlot (otherSlot model.activeSlot) (Just upgrade) loaded
+
+                                Nothing ->
+                                    loaded
+                       )
+                , Cmd.none
+                )
+
         CandidateReady slot ->
             -- The background slot has enough buffered at the playback point: hand playback over to it.
             if slot /= model.activeSlot && slotSource slot model /= Nothing then
-                ( { model | activeSlot = slot } |> setSlot (otherSlot slot) Nothing
+                ( { model | activeSlot = slot, activeLoaded = False } |> setSlot (otherSlot slot) Nothing
                 , command "handoff" Nothing
                 )
 
@@ -464,7 +514,7 @@ update msg model =
 
                         updated : Model
                         updated =
-                            { model | quality = quality } |> setSlot (otherSlot model.activeSlot) candidate
+                            { model | quality = quality, pendingUpgrade = Nothing } |> setSlot (otherSlot model.activeSlot) candidate
                     in
                     ( updated, releaseIfEmptied (otherSlot model.activeSlot) model updated )
 
@@ -791,7 +841,13 @@ view accountsPanelModel model =
         -- track that's actually playing.
         preloads : List (Html Msg)
         preloads =
-            [ ( adjacent -1 model, "metadata" ), ( adjacent 1 model, "auto" ) ]
+            (if model.activeLoaded then
+                [ ( adjacent -1 model, "metadata" ), ( adjacent 1 model, "auto" ) ]
+
+             else
+                -- Not until the playing track has fully downloaded -- see `Model.pendingUpgrade`.
+                []
+            )
                 |> List.filterMap (\( maybeMedia_, preload ) -> maybeMedia_ |> Maybe.map (\media -> ( media, preload )))
                 |> List.map
                     (\( media, preload ) ->
@@ -832,6 +888,7 @@ view accountsPanelModel model =
                  , on "pause" (Decode.succeed (PlayStateChanged slot False))
                  , on "ended" (Decode.succeed (Ended slot))
                  , on "canplay" (Decode.succeed (CanPlay slot))
+                 , on "rellmactivefullyloaded" (Decode.succeed (ActiveFullyLoaded slot))
                  , on "rellmcandidateready" (Decode.succeed (CandidateReady slot))
                  ]
                     ++ (slotSource slot model |> Maybe.map (\source -> [ src (sourceUrl source) ]) |> Maybe.withDefault [])
