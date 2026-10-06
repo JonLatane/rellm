@@ -119,6 +119,7 @@
     - [ClusterResourceLimit](#rellm-ClusterResourceLimit)
     - [ClusterResourceLock](#rellm-ClusterResourceLock)
     - [ClusterResources](#rellm-ClusterResources)
+    - [CustomCSSConfiguration](#rellm-CustomCSSConfiguration)
     - [CustomHomePage](#rellm-CustomHomePage)
     - [CustomNavigationTab](#rellm-CustomNavigationTab)
     - [CustomNavigationTabSet](#rellm-CustomNavigationTabSet)
@@ -1252,6 +1253,8 @@ discarded and a fresh keypair generated, so it&#39;s single-use per completed/fa
 | FederateProfile | [FederatedAccount](#rellm-FederatedAccount) | [FederatedAccount](#rellm-FederatedAccount) | Federate the current user&#39;s profile with another user profile. *Authenticated*. |
 | DefederateProfile | [FederatedAccount](#rellm-FederatedAccount) | [.google.protobuf.Empty](#google-protobuf-Empty) | Authenticated*. |
 | ConfigureServer | [ServerConfiguration](#rellm-ServerConfiguration) | [ServerConfiguration](#rellm-ServerConfiguration) | Configure the server (i.e. the response to [`GetServerConfiguration`](#grpc-api-GetServerConfiguration)). *Authenticated.* Requires `ADMIN` permissions. Editing `cluster_resources` additionally requires `EDIT_CLUSTER_SETTINGS` - see that field&#39;s own doc. Editing [`supported_contact_protocols`](#rellm-ServerConfiguration) is validated, not just stored -- see [`ContactProtocol`](#rellm-ContactProtocol)&#39;s own doc. |
+| GetCustomCSS | [.google.protobuf.Empty](#google-protobuf-Empty) | [CustomCSSConfiguration](#rellm-CustomCSSConfiguration) | Gets the server&#39;s [`CustomCSSConfiguration`](#rellm-CustomCSSConfiguration), including the (potentially large) `custom_css` text -- the only RPC that returns it: [`GetServerConfiguration`](#grpc-api-GetServerConfiguration) carries the rest of the message (media, forced theme) but never loads the stylesheet. An unset configuration returns an empty one. *Publicly accessible.* |
+| ConfigureCustomCSS | [CustomCSSConfiguration](#rellm-CustomCSSConfiguration) | [CustomCSSConfiguration](#rellm-CustomCSSConfiguration) | Sets the server&#39;s [`CustomCSSConfiguration`](#rellm-CustomCSSConfiguration), creating a new server configuration version (everything else is copied from the current one). Validated: at most 32 `media_ids`, each an existing `GLOBAL_PUBLIC` Media, at most 64 KiB of `custom_css`, and not both `force_light_theme` and `force_dark_theme`. An unset `custom_css` keeps the stored stylesheet. *Authenticated.* Requires `ADMIN` permissions. |
 | DeleteLinkPreviewImages | [.google.protobuf.Empty](#google-protobuf-Empty) | [.google.protobuf.Empty](#google-protobuf-Empty) | Unlinks all generated link preview images (see [`MediaSettings.disable_link_preview_images`](#rellm-MediaSettings)) from their posts and makes every post with a link eligible for preview generation again -- including posts that had given up after repeated failures. The old preview media is orphaned, not deleted: it&#39;s removed from storage by the next [`DeleteUnownedMedia`](#grpc-api-DeleteUnownedMedia) run (the periodic `delete_unowned_media` job, or call it directly). *Authenticated.* Requires `ADMIN` permissions. |
 | DeleteUnownedMedia | [.google.protobuf.Empty](#google-protobuf-Empty) | [.google.protobuf.Empty](#google-protobuf-Empty) | Deletes all Media with no owner (e.g. orphaned by [`DeleteLinkPreviewImages`](#grpc-api-DeleteLinkPreviewImages) or by deleted users) from object storage and the database, and removes it from any posts still referencing it. *Authenticated.* Requires `ADMIN` permissions. |
 | LockClusterResources | [LockClusterResourcesRequest](#rellm-LockClusterResourcesRequest) | [LockClusterResourcesResponse](#rellm-LockClusterResourcesResponse) | Attempts to acquire one or more `ClusterResource` locks on behalf of `namespace_id`. *Not part of the authenticated-user auth system* - this is server-to-server, cluster-internal coordination, authorized *entirely* by the `cluster-shared-secret` gRPC metadata header matching this server&#39;s own stored [`ClusterResources.cluster_shared_secret`](#rellm-ClusterResources) - knowing the secret is what makes a caller entitled to treat this server as the conductor, regardless of what this server&#39;s own `ClusterResources.namespace_id`/`conductor_host` happen to say. Fails with `FAILED_PRECONDITION` if this server has no `cluster_resources` configured at all (nothing to check the secret against), and with `UNAUTHENTICATED` if the header is missing or doesn&#39;t match. See [`LockClusterResourcesResponse`](#rellm-LockClusterResourcesResponse) for the polling contract this expects of callers. |
@@ -3392,6 +3395,38 @@ Note: callers should resolve this the same way any other cross-server Rellm call
 
 
 
+<a name="rellm-CustomCSSConfiguration"></a>
+
+### CustomCSSConfiguration
+Custom CSS for a Rellm server&#39;s Elm SPA, plus the appearance settings that go with it. Stored alongside the
+[`ServerConfiguration`](#rellm-ServerConfiguration) (so it is versioned the same way, with each
+[`ConfigureServer`](#grpc-api-ConfigureServer) or [`ConfigureCustomCSS`](#grpc-api-ConfigureCustomCSS) creating a
+new configuration version) and served to browsers as a stylesheet at `/custom_css.css` (`/elm/custom_css.css` when
+the Elm SPA is served under `/elm`).
+
+The stylesheet always starts with a `:root` block defining CSS variables for custom CSS to use: `--primary-color`
+and `--nav-color` (the server&#39;s configured `ServerColors.primary` and `ServerColors.navigation`, as `#rrggbb`),
+and `--custom-media-1`, `--custom-media-2`, ... (see `media_ids`).
+
+The potentially large `custom_css` text is only ever returned by [`GetCustomCSS`](#grpc-api-GetCustomCSS) and
+[`ConfigureCustomCSS`](#grpc-api-ConfigureCustomCSS): [`GetServerConfiguration`](#grpc-api-GetServerConfiguration)
+includes this message as `ServerConfiguration.custom_css_configuration` but with `custom_css` unset, and never
+reads it from the database. [`ConfigureServer`](#grpc-api-ConfigureServer) ignores any
+`custom_css_configuration` it is sent, always leaving the stored one unchanged.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| media_ids | [string](#string) | repeated | These media IDs will be converted to the CSS vars `--custom-media-1`, `--custom-media-2`, etc., in the order they are listed (each a `url(&#34;...&#34;)`, so `background: var(--custom-media-1)` works as is). The vars `--primary-color` and `--nav-color` are always available too -- see above. Each must be `GLOBAL_PUBLIC` Media, so anonymous visitors can load it. At most 32. |
+| custom_css | [string](#string) | optional | Custom CSS applied to the Elm SPA client. This is appended to the default CSS, so it can override any default styles. At most 64 KiB. Unset in `GetServerConfiguration`&#39;s copy of this message; in a `ConfigureCustomCSS` request, unset means &#34;leave the stored CSS as it is&#34; (so the other fields can be changed without sending it), while an empty string clears it. |
+| force_light_theme | [bool](#bool) |  | Force the Elm SPA into its light theme for everyone, whatever their own Auto/Light/Dark setting or system preference -- the theme toggles are disabled. For stylesheets (such as a &#34;paper&#34; or &#34;polaroid&#34; look) that only work on a light background. At most one of `force_light_theme` and `force_dark_theme` may be set. |
+| force_dark_theme | [bool](#bool) |  | Same as `force_light_theme`, for the dark theme. |
+
+
+
+
+
+
 <a name="rellm-CustomHomePage"></a>
 
 ### CustomHomePage
@@ -3692,6 +3727,7 @@ Configuration for a Rellm server instance.
 | stalwart_config | [StalwartConfig](#rellm-StalwartConfig) | optional | Unlike the other configs, at least at the moment, the integration with Stalwart is designed to be *in-cluster*, not over the web. It relies on unsecured /email endpoint on port 27705 to receive mail from a Stalwart deployed within the same Kubernetes cluster.
 
 This could be extended in the future to allow sending mail with Stalwart, but that&#39;s TBD. |
+| custom_css_configuration | [CustomCSSConfiguration](#rellm-CustomCSSConfiguration) | optional | The server&#39;s [`CustomCSSConfiguration`](#rellm-CustomCSSConfiguration): which media its custom stylesheet uses and whether it forces the light or dark theme. Publicly readable. `custom_css` itself is always unset here -- fetch it with [`GetCustomCSS`](#grpc-api-GetCustomCSS), which is the only way to read the (potentially large) stylesheet text. Ignored by [`ConfigureServer`](#grpc-api-ConfigureServer); write it with [`ConfigureCustomCSS`](#grpc-api-ConfigureCustomCSS). |
 
 
 

@@ -2284,6 +2284,10 @@ class ServerLogo extends $pb.GeneratedMessage {
 ///  new configuration version) and served to browsers as a stylesheet at `/custom_css.css` (`/elm/custom_css.css` when
 ///  the Elm SPA is served under `/elm`).
 ///
+///  The stylesheet always starts with a `:root` block defining CSS variables for custom CSS to use: `--primary-color`
+///  and `--nav-color` (the server's configured `ServerColors.primary` and `ServerColors.navigation`, as `#rrggbb`),
+///  and `--custom-media-1`, `--custom-media-2`, ... (see `media_ids`).
+///
 ///  The potentially large `custom_css` text is only ever returned by [`GetCustomCSS`](#grpc-api-GetCustomCSS) and
 ///  [`ConfigureCustomCSS`](#grpc-api-ConfigureCustomCSS): [`GetServerConfiguration`](#grpc-api-GetServerConfiguration)
 ///  includes this message as `ServerConfiguration.custom_css_configuration` but with `custom_css` unset, and never
@@ -2344,8 +2348,9 @@ class CustomCSSConfiguration extends $pb.GeneratedMessage {
   static CustomCSSConfiguration getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<CustomCSSConfiguration>(create);
   static CustomCSSConfiguration? _defaultInstance;
 
-  /// These media IDs will be converted to the CSS vars `--custom-media-1`, `--custom-media-2`, etc.
-  /// in the order they are listed. Each must be `GLOBAL_PUBLIC` Media, so anonymous visitors can load it. At most 32.
+  /// These media IDs will be converted to the CSS vars `--custom-media-1`, `--custom-media-2`, etc.,
+  /// in the order they are listed (each a `url("...")`, so `background: var(--custom-media-1)` works as is).
+  /// The vars `--primary-color` and `--nav-color` are always available too -- see above. Each must be `GLOBAL_PUBLIC` Media, so anonymous visitors can load it. At most 32.
   @$pb.TagNumber(1)
   $core.List<$core.String> get mediaIds => $_getList(0);
 
