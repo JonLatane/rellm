@@ -110,8 +110,23 @@ pub fn css_hex_color(argb: Option<u32>, default: u32) -> String {
     format!("#{:06x}", argb.unwrap_or(default) & 0xFFFFFF)
 }
 
+/// The theme `config` forces, as the value of the `--forced-theme` variable: `light` or `dark`, `None` if it
+/// forces neither. Light wins if both are somehow set -- the same tie-break the Elm client uses
+/// (`Shared.forcedDarkMode`).
+pub fn forced_theme(config: &CustomCssConfiguration) -> Option<&'static str> {
+    if config.force_light_theme {
+        Some("light")
+    } else if config.force_dark_theme {
+        Some("dark")
+    } else {
+        None
+    }
+}
+
 /// The stylesheet served at `/custom_css.css`: a `:root` block defining `--primary-color` and `--nav-color`
-/// (the server's configured colors, from `colors`) and `--custom-media-N` (1-based, in `media_ids` order) as
+/// (the server's configured colors, from `colors`), `--forced-theme` (`light`/`dark`, only when the config
+/// forces one -- `index.html` reads it right after the stylesheet loads, to set `<html data-theme>` before
+/// the first paint instead of waiting for the Elm app to boot) and `--custom-media-N` (1-based, in `media_ids` order) as
 /// `url("/media/<id>")`, followed by the admin's CSS verbatim, so it can override anything before it. The color
 /// variables are always present, even with no custom CSS at all, so the stylesheet is never empty. Media URLs
 /// are relative -- the stylesheet is always served from the same origin as the media. (The Elm dev server,
@@ -126,6 +141,9 @@ pub fn custom_css_stylesheet(config: &CustomCssConfiguration, colors: Option<&Se
         "  --nav-color: {};\n",
         css_hex_color(colors.and_then(|c| c.navigation), DEFAULT_NAV_COLOR)
     ));
+    if let Some(theme) = forced_theme(config) {
+        css.push_str(&format!("  --forced-theme: {};\n", theme));
+    }
     // Ids were validated as decodable on write, but this is also what runs on whatever is in the
     // database, so only ever emit ones that are plain base58 (no quote/paren/backslash to break `url()`).
     config

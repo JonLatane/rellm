@@ -354,6 +354,31 @@ fn stylesheet_defines_primary_and_nav_color_from_the_servers_colors() {
 }
 
 #[test]
+fn stylesheet_marks_a_forced_theme_for_index_html_to_apply_before_first_paint() {
+    let forced = |light, dark| {
+        custom_css_stylesheet(
+            &CustomCssConfiguration {
+                force_light_theme: light,
+                force_dark_theme: dark,
+                ..css(vec![], "a{}")
+            },
+            None,
+        )
+    };
+    // Between the color variables and the media ones, inside the `:root` block.
+    assert_eq!(
+        forced(false, true),
+        format!(":root {{\n{DEFAULT_COLOR_VARS}  --forced-theme: dark;\n}}\na{{}}")
+    );
+    assert!(forced(true, false).contains("  --forced-theme: light;\n"));
+    // Neither forced: no marker at all, so the user's own preference applies.
+    assert!(!forced(false, false).contains("--forced-theme"));
+    // Both (the server rejects this, but a stored row is read as-is): light wins, as in the Elm client.
+    let both = forced(true, true);
+    assert!(both.contains("--forced-theme: light;") && !both.contains("--forced-theme: dark;"));
+}
+
+#[test]
 fn stylesheet_never_emits_ids_that_could_break_out_of_url() {
     let sheet = custom_css_stylesheet(
         &css(

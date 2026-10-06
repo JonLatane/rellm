@@ -46,6 +46,24 @@ suite =
             \_ ->
                 stylesheet colors (\_ -> Nothing) defaultCustomCSSConfiguration
                     |> Expect.equal (":root {\n" ++ colorVars ++ "}\n")
+        , test "marks a forced theme between the color variables and the media ones; light wins over dark" <|
+            \_ ->
+                let
+                    forced : Bool -> Bool -> String
+                    forced light dark =
+                        stylesheet colors (\id -> Just ("/media/" ++ id)) { mediaIds = [ "m" ], customCss = Nothing, forceLightTheme = light, forceDarkTheme = dark }
+                in
+                Expect.equal
+                    [ forced False True
+                    , forced True False
+                    , forced True True
+                    , forced False False
+                    ]
+                    [ ":root {\n" ++ colorVars ++ "  --forced-theme: dark;\n  --custom-media-1: url(\"/media/m\");\n}\n"
+                    , ":root {\n" ++ colorVars ++ "  --forced-theme: light;\n  --custom-media-1: url(\"/media/m\");\n}\n"
+                    , ":root {\n" ++ colorVars ++ "  --forced-theme: light;\n  --custom-media-1: url(\"/media/m\");\n}\n"
+                    , ":root {\n" ++ colorVars ++ "  --custom-media-1: url(\"/media/m\");\n}\n"
+                    ]
         , test "a media id with no URL is skipped but keeps its number" <|
             \_ ->
                 stylesheet colors

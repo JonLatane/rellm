@@ -110,6 +110,22 @@
       '">'
     );
   </script>
+  <script>
+    // A theme the server forces (`CustomCSSConfiguration.force_light_theme`/`force_dark_theme`) is announced by
+    // `/custom_css.css` as `--forced-theme: light|dark` on `:root`. This is its own `<script>` (not part of the
+    // one above) so the parser holds it until that stylesheet -- written into the head above -- has loaded: it
+    // then sets `<html data-theme>` before the first paint, instead of the page painting in the visitor's own
+    // theme until the Elm app boots and reaches the server's configuration (`Shared.appliedTheme`, which
+    // agrees with this and takes over from there). Nothing happens on the Elm dev server, which has no such
+    // stylesheet, nor when no theme is forced.
+    try {
+      var forcedTheme = getComputedStyle(document.documentElement).getPropertyValue("--forced-theme").trim();
+      if (forcedTheme === "light" || forcedTheme === "dark") {
+        document.documentElement.setAttribute("data-theme", forcedTheme);
+        if (window.rellmUpdateCodeTheme) window.rellmUpdateCodeTheme(forcedTheme === "dark");
+      }
+    } catch (e) {}
+  </script>
   <style>
     #splash {
       position: fixed;

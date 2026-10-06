@@ -69,7 +69,8 @@ view shared =
 
 
 {-| Mirrors the backend's `custom_css_stylesheet`: one `:root` block defining `--primary-color` and `--nav-color`
-(given as `#rrggbb`) and `--custom-media-N` (1-based, in `media_ids` order) as `url("...")`, then the CSS
+(given as `#rrggbb`), `--forced-theme` (`light`/`dark`, only if the config forces one; light wins if both -- see
+`Shared.forcedDarkMode`) and `--custom-media-N` (1-based, in `media_ids` order) as `url("...")`, then the CSS
 verbatim. A media id with no resolvable URL (server disconnected) is skipped but still occupies its number,
 like the backend skips an unsafe id.
 -}
@@ -85,12 +86,24 @@ stylesheet colors mediaUrl config =
                             |> Maybe.map (\url -> "  --custom-media-" ++ String.fromInt (index + 1) ++ ": url(\"" ++ url ++ "\");\n")
                     )
                 |> List.filterMap identity
+
+        forcedThemeVar : String
+        forcedThemeVar =
+            if config.forceLightTheme then
+                "  --forced-theme: light;\n"
+
+            else if config.forceDarkTheme then
+                "  --forced-theme: dark;\n"
+
+            else
+                ""
     in
     ":root {\n  --primary-color: "
         ++ colors.primaryColor
         ++ ";\n  --nav-color: "
         ++ colors.navColor
         ++ ";\n"
+        ++ forcedThemeVar
         ++ String.concat mediaVars
         ++ "}\n"
         ++ Maybe.withDefault "" config.customCss
