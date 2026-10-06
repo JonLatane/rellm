@@ -294,7 +294,50 @@ update shared targetHost isSecure maybeServer msg model =
         ( updatedModel, effect ) =
             updateMsg shared targetHost isSecure maybeServer msg fetchLogosModel
     in
-    ( updatedModel, Effect.batch [ fetchLogosEffect, effect ] )
+    ( updatedModel, Effect.batch [ fetchLogosEffect, ensureFederatedServerPreviews shared maybeServer updatedModel, effect ] )
+
+
+{-| Asks the Accounts Panel (`AccountsPanel.EnsureServerPreviews`) to load preview branding -- name,
+colors, logo -- for every federated host visible in this tab, saved (`maybeServer`'s own `federationInfo`)
+or still mid-edit (`model.federationEdit.pending`, run after the update so a host that was just added is
+covered immediately). These are mostly servers the user hasn't added, so nothing else would ever fetch them;
+the same fetch backs the Accounts Panel's recommended-servers strip, and `federatedServerFor` reads its
+cache. Hosts that are already one of the user's own servers, or already requested, are filtered out here
+(and again by the panel, which makes repeats harmless), so this only emits when something is actually new
+-- it's cheap to run on every `update`, like `ensureMastodonServerLogosFetching`.
+-}
+ensureFederatedServerPreviews : Shared.Model -> Maybe RellmServer -> Model -> Effect Msg
+ensureFederatedServerPreviews shared maybeServer model =
+    let
+        savedHosts : List String
+        savedHosts =
+            maybeServer
+                |> Maybe.map (RellmServers.configurationOf >> .federationInfo >> Maybe.map .servers >> Maybe.withDefault [])
+                |> Maybe.withDefault []
+                |> List.map .host
+
+        pendingHosts : List String
+        pendingHosts =
+            model.federationEdit
+                |> Maybe.map (.pending >> List.map .host)
+                |> Maybe.withDefault []
+
+        newHosts : List String
+        newHosts =
+            (savedHosts ++ pendingHosts)
+                |> List.filter
+                    (\host ->
+                        not (Dict.member host shared.accounts.recommendedServerConnections)
+                            && (RellmServers.rellmServerForHost shared.accounts.servers host == Nothing)
+                    )
+                |> Set.fromList
+                |> Set.toList
+    in
+    if List.isEmpty newHosts then
+        Effect.none
+
+    else
+        Effect.fromShared (Shared.AccountsPanelMsg (AccountsPanel.EnsureServerPreviews newHosts))
 
 
 {-| Kicks off `MastodonServers.fetchMastodonInstanceInfoTask` for every `MastodonServer.domain`
@@ -1376,14 +1419,19 @@ mastodonServerChipDomId domain =
 
 {-| The `RellmServer` to show a federated host's name/logo off of -- the real,
 already-known one if `host` happens to also be a known `Server` (e.g. also added to Accounts &
-Servers), otherwise a synthetic unconnected record whose `RellmServers.brandingOf` falls back to
-the bare host string (no logo, no separate name) -- same "synthesize an unconnected `Server`"
-fallback `UI.recommendedServerChip` uses for a host it hasn't background-connected to yet.
+Servers); otherwise its preview from `AccountsPanel.recommendedServerConnections` (what
+`ensureFederatedServerPreviews` requests, the same cache `UI.recommendedServerChip` reads), which is a
+loaded one once its fetch resolves; otherwise a synthetic unconnected record whose
+`RellmServers.brandingOf` falls back to the bare host string (no logo, no separate name) -- for the moment
+before the preview request goes out, or if the host can't be reached.
 -}
 federatedServerFor : Shared.Model -> String -> RellmServer
 federatedServerFor shared host =
     RellmServers.rellmServerForHost shared.accounts.servers host
-        |> Maybe.withDefault { frontendHost = host, enabled = False, connected = Nothing, sortOrder = 0 }
+        |> Maybe.withDefault
+            (Dict.get host shared.accounts.recommendedServerConnections
+                |> Maybe.withDefault { frontendHost = host, enabled = False, connected = Nothing, sortOrder = 0 }
+            )
 
 
 

@@ -448,6 +448,7 @@ type Msg
     | AddServerClicked
     | GotNewServerResult (Result Grpc.Error ( Connection, ServerConfiguration ))
     | ToggleRecommendedServersExpanded
+    | EnsureServerPreviews (List String)
     | GotRecommendedServerConfig String (Result Grpc.Error ( Connection, ServerConfiguration ))
     | RecommendedServerClicked String
     | GotRecommendedServerAddResult String (Result Grpc.Error ( Connection, ServerConfiguration ))
@@ -1622,6 +1623,45 @@ subscriptions model =
         , Ports.pushSubscriptionChangeReceived PushSubscriptionChangeReceived
         , Ports.facebookLoginResult GotMastodonLoginResult
         ]
+
+
+{-| Starts loading preview branding (name, colors, logo -- a `GetServerConfiguration`, via
+`RellmServers.negotiateRellmServerConfig`) for each of `hosts` that isn't already in
+`recommendedServerConnections`, whether or not the user has added that server: each is seeded there as a
+disconnected placeholder immediately (so there's something to render while loading), then filled in by
+`GotRecommendedServerConfig`. Hosts already cached -- loading or loaded -- are left alone, so calling this
+again and again with the same hosts is safe and cheap; this is what both the recommended-servers strip
+(`ToggleRecommendedServersExpanded`) and any page listing servers it doesn't own (`EnsureServerPreviews`) use.
+-}
+fetchServerPreviews : Request -> List String -> Model -> ( Model, Cmd Msg )
+fetchServerPreviews req hosts model =
+    let
+        hostsToFetch : List String
+        hostsToFetch =
+            hosts
+                |> List.filter (\host -> not (Dict.member host model.recommendedServerConnections))
+                |> Set.fromList
+                |> Set.toList
+    in
+    -- Seeded disconnected immediately (same idea as `init`'s own
+    -- `RellmServers.disconnectedRellmServer` seeding), so each chip has something to
+    -- render -- a "loading" look, via the same `server-chip-disconnected` styling -- the
+    -- instant it's asked for, rather than staying blank until its fetch resolves.
+    ( { model
+        | recommendedServerConnections =
+            List.foldl
+                (\host -> Dict.insert host (RellmServers.disconnectedRellmServer { frontendHost = host, enabled = False, sortOrder = 0, lastConnection = Nothing }))
+                model.recommendedServerConnections
+                hostsToFetch
+      }
+    , hostsToFetch
+        |> List.map
+            (\host ->
+                RellmServers.negotiateRellmServerConfig (RellmServers.isSecure req) host
+                    |> Task.attempt (GotRecommendedServerConfig host)
+            )
+        |> Cmd.batch
+    )
 
 
 {-| The Elm dev server (`RellmServers.elmPrefix` == `""`, i.e. port 1234) has no Rust server behind
@@ -2857,42 +2897,31 @@ sendUpdate req msg model =
                 -- `recommendedServerConnections`'s own doc) -- reopening the
                 -- strip after having already expanded it once this session
                 -- shouldn't re-fetch everything from scratch.
-                hostsToFetch : List String
-                hostsToFetch =
+                hosts : List String
+                hosts =
                     if newlyExpanded then
                         recommendedFederatedServers model
                             |> List.map .host
-                            |> List.filter (\host -> not (Dict.member host model.recommendedServerConnections))
 
                     else
                         []
 
-                newModel : Model
-                newModel =
-                    { model
-                        | recommendedServersExpanded = newlyExpanded
-
-                        -- Seeded disconnected immediately (same idea as `init`'s own
-                        -- `RellmServers.disconnectedRellmServer` seeding), so each chip has something to
-                        -- render -- a "loading" look, via the same
-                        -- `server-chip-disconnected` styling -- the instant the strip
-                        -- expands, rather than staying blank until its fetch resolves.
-                        , recommendedServerConnections =
-                            List.foldl
-                                (\host -> Dict.insert host (RellmServers.disconnectedRellmServer { frontendHost = host, enabled = False, sortOrder = 0, lastConnection = Nothing }))
-                                model.recommendedServerConnections
-                                hostsToFetch
-                    }
+                ( newModel, fetchCmd ) =
+                    fetchServerPreviews req hosts { model | recommendedServersExpanded = newlyExpanded }
             in
-            ( newModel
-            , hostsToFetch
-                |> List.map
-                    (\host ->
-                        RellmServers.negotiateRellmServerConfig (RellmServers.isSecure req) host
-                            |> Task.attempt (GotRecommendedServerConfig host)
-                    )
-                |> Cmd.batch
-            )
+            ( newModel, fetchCmd )
+
+        -- Same preview fetch as the recommended strip's, for any other page that shows servers
+        -- the user hasn't added (e.g. the Federation tab's list) -- see `fetchServerPreviews`.
+        -- A host that's already one of the user's own servers has its own branding, so it's skipped.
+        EnsureServerPreviews hosts ->
+            let
+                ( newModel, fetchCmd ) =
+                    fetchServerPreviews req
+                        (List.filter (\host -> RellmServers.rellmServerForHost model.servers host == Nothing) hosts)
+                        model
+            in
+            ( newModel, fetchCmd )
 
         GotRecommendedServerConfig host result ->
             case result of
