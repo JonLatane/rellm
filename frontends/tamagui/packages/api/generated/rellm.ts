@@ -1960,10 +1960,10 @@ export const RellmDefinition = {
       options: {},
     },
     /**
-     * Gets the server's [`CustomCSSConfiguration`](#rellm-CustomCSSConfiguration) -- not part of
-     * [`ServerConfiguration`](#rellm-ServerConfiguration), so
-     * [`GetServerConfiguration`](#grpc-api-GetServerConfiguration) never loads the stylesheet. An unset
-     * configuration returns an empty one. *Publicly accessible.*
+     * Gets the server's [`CustomCSSConfiguration`](#rellm-CustomCSSConfiguration), including the (potentially large)
+     * `custom_css` text -- the only RPC that returns it:
+     * [`GetServerConfiguration`](#grpc-api-GetServerConfiguration) carries the rest of the message (media, forced
+     * theme) but never loads the stylesheet. An unset configuration returns an empty one. *Publicly accessible.*
      */
     getCustomCSS: {
       name: "GetCustomCSS",
@@ -1976,7 +1976,8 @@ export const RellmDefinition = {
     /**
      * Sets the server's [`CustomCSSConfiguration`](#rellm-CustomCSSConfiguration), creating a new server
      * configuration version (everything else is copied from the current one). Validated: at most 32
-     * `media_ids`, each an existing `GLOBAL_PUBLIC` Media, and at most 64 KiB of `custom_css`.
+     * `media_ids`, each an existing `GLOBAL_PUBLIC` Media, at most 64 KiB of `custom_css`, and not both
+     * `force_light_theme` and `force_dark_theme`. An unset `custom_css` keeps the stored stylesheet.
      * *Authenticated.* Requires `ADMIN` permissions.
      */
     configureCustomCSS: {
@@ -2528,16 +2529,17 @@ export interface RellmServiceImplementation<CallContextExt = {}> {
     context: CallContext & CallContextExt,
   ): Promise<DeepPartial<ServerConfiguration>>;
   /**
-   * Gets the server's [`CustomCSSConfiguration`](#rellm-CustomCSSConfiguration) -- not part of
-   * [`ServerConfiguration`](#rellm-ServerConfiguration), so
-   * [`GetServerConfiguration`](#grpc-api-GetServerConfiguration) never loads the stylesheet. An unset
-   * configuration returns an empty one. *Publicly accessible.*
+   * Gets the server's [`CustomCSSConfiguration`](#rellm-CustomCSSConfiguration), including the (potentially large)
+   * `custom_css` text -- the only RPC that returns it:
+   * [`GetServerConfiguration`](#grpc-api-GetServerConfiguration) carries the rest of the message (media, forced
+   * theme) but never loads the stylesheet. An unset configuration returns an empty one. *Publicly accessible.*
    */
   getCustomCSS(request: Empty, context: CallContext & CallContextExt): Promise<DeepPartial<CustomCSSConfiguration>>;
   /**
    * Sets the server's [`CustomCSSConfiguration`](#rellm-CustomCSSConfiguration), creating a new server
    * configuration version (everything else is copied from the current one). Validated: at most 32
-   * `media_ids`, each an existing `GLOBAL_PUBLIC` Media, and at most 64 KiB of `custom_css`.
+   * `media_ids`, each an existing `GLOBAL_PUBLIC` Media, at most 64 KiB of `custom_css`, and not both
+   * `force_light_theme` and `force_dark_theme`. An unset `custom_css` keeps the stored stylesheet.
    * *Authenticated.* Requires `ADMIN` permissions.
    */
   configureCustomCSS(
@@ -3048,16 +3050,17 @@ export interface RellmClient<CallOptionsExt = {}> {
     options?: CallOptions & CallOptionsExt,
   ): Promise<ServerConfiguration>;
   /**
-   * Gets the server's [`CustomCSSConfiguration`](#rellm-CustomCSSConfiguration) -- not part of
-   * [`ServerConfiguration`](#rellm-ServerConfiguration), so
-   * [`GetServerConfiguration`](#grpc-api-GetServerConfiguration) never loads the stylesheet. An unset
-   * configuration returns an empty one. *Publicly accessible.*
+   * Gets the server's [`CustomCSSConfiguration`](#rellm-CustomCSSConfiguration), including the (potentially large)
+   * `custom_css` text -- the only RPC that returns it:
+   * [`GetServerConfiguration`](#grpc-api-GetServerConfiguration) carries the rest of the message (media, forced
+   * theme) but never loads the stylesheet. An unset configuration returns an empty one. *Publicly accessible.*
    */
   getCustomCSS(request: DeepPartial<Empty>, options?: CallOptions & CallOptionsExt): Promise<CustomCSSConfiguration>;
   /**
    * Sets the server's [`CustomCSSConfiguration`](#rellm-CustomCSSConfiguration), creating a new server
    * configuration version (everything else is copied from the current one). Validated: at most 32
-   * `media_ids`, each an existing `GLOBAL_PUBLIC` Media, and at most 64 KiB of `custom_css`.
+   * `media_ids`, each an existing `GLOBAL_PUBLIC` Media, at most 64 KiB of `custom_css`, and not both
+   * `force_light_theme` and `force_dark_theme`. An unset `custom_css` keeps the stored stylesheet.
    * *Authenticated.* Requires `ADMIN` permissions.
    */
   configureCustomCSS(

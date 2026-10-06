@@ -147,6 +147,13 @@ message ServerConfiguration {
   //
   // This could be extended in the future to allow sending mail with Stalwart, but that's TBD.
   optional StalwartConfig stalwart_config = 126;
+
+  // The server's [`CustomCSSConfiguration`](#rellm-CustomCSSConfiguration): which media its custom stylesheet uses and
+  // whether it forces the light or dark theme. Publicly readable. `custom_css` itself is always unset here -- fetch
+  // it with [`GetCustomCSS`](#grpc-api-GetCustomCSS), which is the only way to read the (potentially large) stylesheet
+  // text. Ignored by [`ConfigureServer`](#grpc-api-ConfigureServer); write it with
+  // [`ConfigureCustomCSS`](#grpc-api-ConfigureCustomCSS).
+  optional CustomCSSConfiguration custom_css_configuration = 127;
 }
 
 // Coordinates a small piece of shared, cluster-wide state across multiple independent Rellm
@@ -610,20 +617,32 @@ enum WebUserInterface {
   ELM_SPA = 3;
 }
 
-// Custom CSS for a Rellm server's Elm SPA, managed separately from [`ServerConfiguration`](#rellm-ServerConfiguration) --
-// it is stored alongside it (so it is versioned the same way, with each
+// Custom CSS for a Rellm server's Elm SPA, plus the appearance settings that go with it. Stored alongside the
+// [`ServerConfiguration`](#rellm-ServerConfiguration) (so it is versioned the same way, with each
 // [`ConfigureServer`](#grpc-api-ConfigureServer) or [`ConfigureCustomCSS`](#grpc-api-ConfigureCustomCSS) creating a
-// new configuration version), but is never included in `ServerConfiguration` itself. It is read with
-// [`GetCustomCSS`](#grpc-api-GetCustomCSS), written with [`ConfigureCustomCSS`](#grpc-api-ConfigureCustomCSS), and
-// served to browsers as a stylesheet at `/custom_css.css` (`/elm/custom_css.css` when the Elm SPA is served under `/elm`).
-// `ConfigureServer` always leaves it unchanged.
+// new configuration version) and served to browsers as a stylesheet at `/custom_css.css` (`/elm/custom_css.css` when
+// the Elm SPA is served under `/elm`).
+//
+// The potentially large `custom_css` text is only ever returned by [`GetCustomCSS`](#grpc-api-GetCustomCSS) and
+// [`ConfigureCustomCSS`](#grpc-api-ConfigureCustomCSS): [`GetServerConfiguration`](#grpc-api-GetServerConfiguration)
+// includes this message as `ServerConfiguration.custom_css_configuration` but with `custom_css` unset, and never
+// reads it from the database. [`ConfigureServer`](#grpc-api-ConfigureServer) ignores any
+// `custom_css_configuration` it is sent, always leaving the stored one unchanged.
 message CustomCSSConfiguration {
   // These media IDs will be converted to the CSS vars `--custom-media-1`, `--custom-media-2`, etc. 
   // in the order they are listed. Each must be `GLOBAL_PUBLIC` Media, so anonymous visitors can load it. At most 32.
   repeated string media_ids = 1;
   // Custom CSS applied to the Elm SPA client. This is appended to the default CSS, so it can override any default styles.
-  // At most 64 KiB.
-  string custom_css = 2;
+  // At most 64 KiB. Unset in `GetServerConfiguration`'s copy of this message; in a `ConfigureCustomCSS` request, unset
+  // means "leave the stored CSS as it is" (so the other fields can be changed without sending it), while an empty
+  // string clears it.
+  optional string custom_css = 2;
+  // Force the Elm SPA into its light theme for everyone, whatever their own Auto/Light/Dark setting or system
+  // preference -- the theme toggles are disabled. For stylesheets (such as a "paper" or "polaroid" look) that only
+  // work on a light background. At most one of `force_light_theme` and `force_dark_theme` may be set.
+  bool force_light_theme = 3;
+  // Same as `force_light_theme`, for the dark theme.
+  bool force_dark_theme = 4;
 }
 
 // If set, overrides the default tab set for the Elm navigation on a Rellm instance.

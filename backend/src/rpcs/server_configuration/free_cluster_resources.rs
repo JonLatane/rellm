@@ -27,6 +27,7 @@ pub fn free_cluster_resources(
 
     let config = scd::server_configurations
         .filter(scd::active.eq(true))
+        .select(models::SERVER_CONFIGURATION_COLUMNS)
         .first::<models::ServerConfiguration>(conn)
         .map_err(|_| Status::new(Code::Internal, "data_error"))?;
     authorize(&config, user, shared_secret)?;
@@ -34,6 +35,7 @@ pub fn free_cluster_resources(
     let result = conn.transaction::<(), diesel::result::Error, _>(|conn| {
         let config = scd::server_configurations
             .filter(scd::active.eq(true))
+            .select(models::SERVER_CONFIGURATION_COLUMNS)
             .for_update()
             .first::<models::ServerConfiguration>(conn)?;
         let mut resources: protos::ClusterResources =

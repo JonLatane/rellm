@@ -40,7 +40,7 @@ import Effect exposing (Effect)
 import Grpc
 import Components.Pages.ServerInformationPage.ThemeTab.CustomCssTemplates as CustomCssTemplates
 import Html exposing (Html, button, div, h3, img, option, p, span, text, textarea)
-import Html.Attributes exposing (class, disabled, placeholder, rows, selected, spellcheck, src, title, value)
+import Html.Attributes exposing (attribute, class, disabled, placeholder, rows, selected, spellcheck, src, title, value)
 import Html.Events exposing (onClick, onInput)
 import Html.Keyed
 import Proto.Rellm exposing (CustomCSSConfiguration, defaultMediaReference)
@@ -78,6 +78,11 @@ type SavedStatus
 type alias Edit =
     { mediaIds : List String
     , css : String
+
+    -- "Force light/dark theme" -- at most one is ever on (turning one on turns the other off; the server
+    -- rejects both too).
+    , forceLight : Bool
+    , forceDark : Bool
     , pickingMedia : Bool
     , status : AccountsPanel.FormStatus
 
@@ -88,8 +93,17 @@ type alias Edit =
     -- on the chosen option instead of going back to "Apply Template").
     , templateSeq : Int
 
-    -- The CSS from before the last template was applied, for "Undo template".
-    , previousCss : Maybe String
+    -- The CSS and forced theme from before the last template was applied, for "Undo template".
+    , previous : Maybe Snapshot
+    }
+
+
+{-| What "Undo template" puts back: a template replaces the CSS *and* sets the forced theme to its own.
+-}
+type alias Snapshot =
+    { css : String
+    , forceLight : Bool
+    , forceDark : Bool
     }
 
 
@@ -102,6 +116,8 @@ type Msg
     | CssChanged String
     | ChooseMediaClicked
     | RemoveMediaClicked String
+    | ForceLightToggled
+    | ForceDarkToggled
     | TemplateSelected String
     | UndoTemplateClicked
     | PreviewClicked
@@ -148,7 +164,20 @@ updateInner shared targetHost msg model =
         EditClicked ->
             case model.saved of
                 Loaded config ->
-                    ( { model | edit = Just { mediaIds = config.mediaIds, css = config.customCss, pickingMedia = False, status = AccountsPanel.Idle, previewing = False, templateSeq = 0, previousCss = Nothing } }
+                    ( { model
+                        | edit =
+                            Just
+                                { mediaIds = config.mediaIds
+                                , css = Maybe.withDefault "" config.customCss
+                                , forceLight = config.forceLightTheme
+                                , forceDark = config.forceDarkTheme
+                                , pickingMedia = False
+                                , status = AccountsPanel.Idle
+                                , previewing = False
+                                , templateSeq = 0
+                                , previous = Nothing
+                                }
+                      }
                     , Effect.none
                     )
 
@@ -182,7 +211,7 @@ updateInner shared targetHost msg model =
                     let
                         request : CustomCSSConfiguration
                         request =
-                            { mediaIds = edit.mediaIds, customCss = edit.css }
+                            draftConfig edit
                     in
                     ( mapEdit (\e -> { e | status = AccountsPanel.Submitting }) model
                     , AccountsPanel.performWithAccountServer shared.accounts
@@ -204,11 +233,10 @@ updateInner shared targetHost msg model =
             ( { model | saved = Loaded config, edit = Nothing }
             , Effect.batch
                 [ Common.accountsPanelEffect maybeAccountsPanelMsg
-                , if targetHost == shared.accounts.mainFrontendHost then
-                    Effect.fromShared (Shared.AccountsPanelMsg (AccountsPanel.CustomCssSaved config))
 
-                  else
-                    Effect.none
+                -- Updates this server's cached configuration (so a forced theme takes effect now) and, if it's
+                -- the page's own server, reloads its stylesheet and ends any preview.
+                , Effect.fromShared (Shared.AccountsPanelMsg (AccountsPanel.CustomCssSaved targetHost config))
                 ]
             )
 
@@ -236,6 +264,12 @@ updateInner shared targetHost msg model =
                 Nothing ->
                     ( model, Effect.none )
 
+        ForceLightToggled ->
+            ( mapEdit (\e -> { e | forceLight = not e.forceLight, forceDark = e.forceDark && e.forceLight }) model, Effect.none )
+
+        ForceDarkToggled ->
+            ( mapEdit (\e -> { e | forceDark = not e.forceDark, forceLight = e.forceLight && e.forceDark }) model, Effect.none )
+
         TemplateSelected name ->
             ( mapEdit
                 (\e ->
@@ -243,13 +277,15 @@ updateInner shared targetHost msg model =
                         Just chosen ->
                             { e
                                 | css = chosen.css
+                                , forceLight = chosen.forceLightTheme
+                                , forceDark = chosen.forceDarkTheme
                                 , templateSeq = e.templateSeq + 1
-                                , previousCss =
-                                    if e.css == chosen.css then
-                                        e.previousCss
+                                , previous =
+                                    if e.css == chosen.css && e.forceLight == chosen.forceLightTheme && e.forceDark == chosen.forceDarkTheme then
+                                        e.previous
 
                                     else
-                                        Just e.css
+                                        Just { css = e.css, forceLight = e.forceLight, forceDark = e.forceDark }
                             }
 
                         Nothing ->
@@ -262,9 +298,9 @@ updateInner shared targetHost msg model =
         UndoTemplateClicked ->
             ( mapEdit
                 (\e ->
-                    case e.previousCss of
+                    case e.previous of
                         Just previous ->
-                            { e | css = previous, previousCss = Nothing }
+                            { e | css = previous.css, forceLight = previous.forceLight, forceDark = previous.forceDark, previous = Nothing }
 
                         Nothing ->
                             e
@@ -281,7 +317,7 @@ updateInner shared targetHost msg model =
 
                     else
                         ( mapEdit (\e -> { e | previewing = True }) model
-                        , setPreview (Just { mediaIds = edit.mediaIds, customCss = edit.css })
+                        , setPreview (Just (draftConfig edit))
                         )
 
                 Nothing ->
@@ -296,7 +332,18 @@ setPreview maybeConfig =
     Effect.fromShared (Shared.AccountsPanelMsg (AccountsPanel.SetCustomCssPreview maybeConfig))
 
 
-{-| While "Preview" is on, re-applies the draft whenever its media or CSS differ between `before` and
+{-| The editor's draft as the `CustomCSSConfiguration` that Save sends and Preview applies.
+-}
+draftConfig : Edit -> CustomCSSConfiguration
+draftConfig edit =
+    { mediaIds = edit.mediaIds
+    , customCss = Just edit.css
+    , forceLightTheme = edit.forceLight
+    , forceDarkTheme = edit.forceDark
+    }
+
+
+{-| While "Preview" is on, re-applies the draft whenever its media, CSS or forced theme differ between `before` and
 `after`. Run after every `update`, and by `ServerInformationPage` after a forwarded `Shared.Msg`
 (`applySharedMsg` is pure, so a picked-media change can't emit it itself).
 -}
@@ -304,8 +351,8 @@ draftPreviewEffect : Model -> Model -> Effect msg
 draftPreviewEffect before after =
     case ( before.edit, after.edit ) of
         ( Just b, Just a ) ->
-            if a.previewing && b.previewing && (b.mediaIds /= a.mediaIds || b.css /= a.css) then
-                setPreview (Just { mediaIds = a.mediaIds, customCss = a.css })
+            if a.previewing && b.previewing && draftConfig b /= draftConfig a then
+                setPreview (Just (draftConfig a))
 
             else
                 Effect.none
@@ -382,17 +429,35 @@ view canPreview server maybeAdminAccount model =
 
 displayView : RellmServer -> CustomCSSConfiguration -> Html Msg
 displayView server config =
-    if List.isEmpty config.mediaIds && String.isEmpty config.customCss then
+    if List.isEmpty config.mediaIds && String.isEmpty (Maybe.withDefault "" config.customCss) && not config.forceLightTheme && not config.forceDarkTheme then
         p [ class "server-details-feature-settings-note" ] [ text "No custom CSS." ]
 
     else
+        let
+            css : String
+            css =
+                Maybe.withDefault "" config.customCss
+        in
         div [ class "custom-css-section" ]
-            [ mediaListView server Nothing config.mediaIds
-            , if String.isEmpty config.customCss then
+            [ if config.forceLightTheme || config.forceDarkTheme then
+                p [ class "server-details-feature-settings-note" ]
+                    [ text
+                        (if config.forceLightTheme then
+                            "Forces the light theme for everyone."
+
+                         else
+                            "Forces the dark theme for everyone."
+                        )
+                    ]
+
+              else
+                text ""
+            , mediaListView server Nothing config.mediaIds
+            , if String.isEmpty css then
                 text ""
 
               else
-                div [ class "custom-css-scroll" ] [ Markdown.view [ class "custom-css-highlighted" ] (cssFence config.customCss) ]
+                div [ class "custom-css-scroll" ] [ Markdown.view [ class "custom-css-highlighted" ] (cssFence css) ]
             ]
 
 
@@ -401,6 +466,7 @@ editorView canPreview server edit =
     div [ class "custom-css-section" ]
         [ templateRow canPreview edit
         , templateImageNote edit
+        , forceThemeRows edit
         , mediaListView server (Just RemoveMediaClicked) edit.mediaIds
         , button [ class "server-details-rename-button", onClick ChooseMediaClicked ]
             [ text
@@ -420,11 +486,11 @@ editorView canPreview server edit =
             , onInput CssChanged
             ]
             []
-        , div [ class "server-details-rename-actions" ]
+        , div [ class "server-details-permissions-actions" ]
             [ Common.editSaveButton SaveClicked edit.status
             , Common.editCancelButton CancelClicked edit.status
-            , Common.editErrorView edit.status
             ]
+        , Common.editErrorView edit.status
         ]
 
 
@@ -440,7 +506,11 @@ templateRow canPreview edit =
             [ ( "template-select-" ++ String.fromInt edit.templateSeq
               , Html.select [ class "custom-css-template-select", onInput TemplateSelected ]
                     (option [ value "", selected True, disabled True ] [ text CustomCssTemplates.placeholder ]
-                        :: List.map (\t -> option [ value t.name ] [ text t.name ]) CustomCssTemplates.all
+                        :: List.map
+                            (\( group, templates ) ->
+                                Html.optgroup [ attribute "label" group ] (List.map (\t -> option [ value t.name ] [ text t.name ]) templates)
+                            )
+                            CustomCssTemplates.grouped
                     )
               )
             ]
@@ -461,12 +531,23 @@ templateRow canPreview edit =
 
           else
             text ""
-        , case edit.previousCss of
+        , case edit.previous of
             Just _ ->
                 button [ class "server-details-rename-cancel", onClick UndoTemplateClicked ] [ text "Undo template" ]
 
             Nothing ->
                 text ""
+        ]
+
+
+{-| "Force light theme" / "Force dark theme" switches -- at most one on (see `Edit.forceLight`).
+-}
+forceThemeRows : Edit -> Html Msg
+forceThemeRows edit =
+    div [ class "custom-css-force-theme" ]
+        [ Common.settingsRow "Force light theme" (Common.flagSwitch edit.forceLight ForceLightToggled)
+        , Common.settingsRow "Force dark theme" (Common.flagSwitch edit.forceDark ForceDarkToggled)
+        , Common.settingsNote "Locks everyone's appearance to that theme and disables the theme toggles. For stylesheets that only work on a light (or dark) background -- the colors derived from the server's brand are chosen to contrast with it. Only one can be on."
         ]
 
 

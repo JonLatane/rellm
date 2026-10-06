@@ -59,6 +59,11 @@ fn main() {
         // `home` type doesn't match either, resetting the admin's whole `custom_tabs` -- tabs and
         // all -- back to unset.
         .field_attribute("CustomNavigationTabSet.tab_style", "#[serde(default)]")
+        // `CustomCSSConfiguration` is stored as JSON (`server_configurations.custom_css_configuration`), so
+        // rows written before a field existed must still deserialize.
+        .field_attribute("CustomCSSConfiguration.media_ids", "#[serde(default)]")
+        .field_attribute("CustomCSSConfiguration.force_light_theme", "#[serde(default)]")
+        .field_attribute("CustomCSSConfiguration.force_dark_theme", "#[serde(default)]")
         // Same idea, for `RellmHostingSubscriptionDetails.fulfillment_status`/`fulfillment_notes`
         // (added for `/market/fulfillment` -- see `UpdateMarketSubscription`'s own doc) -- lets a
         // `market_subscriptions`/`market_products` row's `details` JSON, stored before these two

@@ -27,6 +27,7 @@ pub fn lock_cluster_resources(
     // misconfigured/unauthorized caller) before taking the `FOR UPDATE` lock below.
     let config = scd::server_configurations
         .filter(scd::active.eq(true))
+        .select(models::SERVER_CONFIGURATION_COLUMNS)
         .first::<models::ServerConfiguration>(conn)
         .map_err(|_| Status::new(Code::Internal, "data_error"))?;
     validate_conductor(&config, shared_secret)?;
@@ -35,6 +36,7 @@ pub fn lock_cluster_resources(
         |conn| {
             let config = scd::server_configurations
                 .filter(scd::active.eq(true))
+                .select(models::SERVER_CONFIGURATION_COLUMNS)
                 .for_update()
                 .first::<models::ServerConfiguration>(conn)?;
             let mut resources: protos::ClusterResources =

@@ -1,0 +1,71 @@
+---
+name: create-custom-css-template
+description: Add a new Custom CSS template (a style such as "Art Deco" or "Blueprint", in 0/1/2-image versions) to the Elm SPA's Theme tab "Apply Template" dropdown. Use when asked to create, extend, or fix a Custom CSS style template in frontends/elm-spa.
+---
+
+Custom CSS templates are starter stylesheets an admin applies from the Theme tab's Custom CSS editor ("Apply Template" dropdown). They are **pure data**, all in one module: `frontends/elm-spa/src/Components/Pages/ServerInformationPage/ThemeTab/CustomCssTemplates.elm`. The dropdown (`CustomCssConfiguration.templateRow`) and its `<optgroup>`s are built from `CustomCssTemplates.grouped`, so adding a style needs no UI change.
+
+## 1. Add the style
+
+A style is a function `Int -> String` (image count 0/1/2 -> CSS), registered in `all` with `style "<Name>" "<image noun>" <ForcedTheme> <fn>`, which yields `Name`, `Name (1 image)`, `Name (2 images)` (the noun is "image" except Standard Style's "background image"). Copy a nearby style (`artDeco`, `terminal`, `polaroid`) and keep its shape:
+
+```elm
+myStyle images =
+    String.join "\n"
+        [ """/* base CSS: fonts, headings, .navbar, .container, cards, buttons */"""
+        , eventSurfaces                       -- only if the style forces its own colors (see below)
+        , if images == 0 then """/* plain page background */ html { ... } body { background: transparent; }"""
+          else pageImage { filter = "...", overlay = "...", note = "Image 1 (--custom-media-1): ..." }
+        , if images >= 2 then masthead { note = "...", height = "12rem", filter = "...", overlay = "...", extra = "..." } else ""
+        ]
+```
+
+- **Images** arrive as `--custom-media-1` / `--custom-media-2` (each a full `url("...")`). **Always** write `var(--custom-media-N, none)` -- the helpers do; a hand-written use must include the `none` fallback (a test enforces it). Image 1 = page background (`pageImage`: fixed `body::before` layer with a scroll-driven drift, `body::after` overlay, `html` keeps `var(--bg)`); image 2 = a band at the top of the column (`masthead`: `main::before`, `background-attachment: fixed` parallax window). `overlay` is any `background` value (layers allowed, last may be a plain color); a masthead `overlay` must be an `<image>`. Each template must use exactly as many `--custom-media-N` as its image count (tested).
+- **Helpers**: `forcedRoot` (set `--bg/--fg/--muted/--border/--panel-bg/--chip-bg` in every theme state), `themedRoot light dark` (separate light/dark palettes following the setting), `eventSurfaces`, `noMotion`/`noDrift`, `waveBand`/`pines`/`treeline`/`landscapeLayer`.
+- No external anything: no `@import`, no URLs, no data-URI SVG, system font stacks only. No backslashes or `"""` inside the Elm triple-quoted strings (use the literal character, e.g. `█`, not `\2588`).
+- Respect `prefers-reduced-motion` for anything that animates.
+
+## 2. Decide the forced theme (important)
+
+`CustomCSSConfiguration.force_light_theme` / `force_dark_theme` lock the whole app (Elm's `Shared.effectiveDarkMode`) to one theme and disable both theme toggles (`UI.themeToggle`). The app derives colors that must **contrast with the page background** (`primaryAnchorColor`, `navAnchorColor`, ...) from that mode, so:
+
+- Background **always dark** (forced dark palette, night looks) -> `ForcesDark`. Currently Terminal, Synthwave, Blueprint, Disco, Cinematic.
+- Background **always light** (cream paper, glossy aqua, gray window) -> `ForcesLight`. Currently Polaroid, Y2K Aero, Retro Desktop, Zine.
+- Background built from the page's own `--bg` (`color-mix(in srgb, var(--bg) ..., ...)`, or `themedRoot`) so it follows light/dark -> `FollowsTheme`.
+
+Applying a template sets the editor's flags to the template's (and "Undo template" restores them). At most one flag, ever (server validates; Elm toggles are mutually exclusive). A style that forces colors in CSS but is not marked forced will get wrong-contrast brand colors -- check this every time.
+
+## 3. Rules learned the hard way
+
+- **Brand utility classes win**: cards carry per-server classes that set `border-color` and `background-color` (specificity beats `.post-card`), so use `border-color: ... !important` / `background: ... !important` when the style must own them; set a *shorthand* border first, then the `-color` override. A `background` shorthand's image layers still show over a brand `background-color`.
+- **Forced palettes break the calendar**: `UI.EmittedStylesheet` gives `.events-list`/`.events-strip`/`.events-calendar` a translucent background from the *app's* light/dark mode -- include `eventSurfaces` in any style that forces its own `--bg`.
+- `--calendar-accent` is the server's accent color (set by the app) -- use it for "brand" decoration (Town Square).
+- **`filter` on a pseudo-element also filters its box-shadow/overlays** (a yellow shadow turned gray). For grayscale/duotone use `background-color` + `background-blend-mode: normal, luminosity` instead. Never put `filter` on `.navbar` (it becomes the containing block for the fixed panels inside it).
+- Cards sit in `.flip-animated-item` wrappers, one card per wrapper -- alternate styling with `.flip-animated-item:nth-child(even) .post-card`, not `.post-card:nth-child`.
+- Layering: `html::before` < `body::before/::after` (pageImage) < `html::after`, all `z-index: -1` (tree order); `html::after` with a high z-index is a click-through overlay (Terminal's scanlines). `.container::before` is the strip right under the nav.
+- `max-width`/layout: `.container` is the 800px column; `main` has the padding; `.navbar` is sticky and *outside* `.container`; the events grid/calendar deliberately break out wider than the column.
+- A section label `.section-title` and the "Recent Posts" pill are different elements; headings (`h2`) are often brand-colored pills -- don't assume text sits on `--bg`.
+
+## 4. Tests
+
+In `frontends/elm-spa/tests/CustomCssTemplatesTests.elm`: add the style to the expected names list, bump the style-count test, and add it to the forced-dark / forced-light expectation if it forces a theme. The suite also checks every template for balanced braces/parens, `--custom-media-N` count and `none` fallbacks, no external URLs, size < 64 KiB, and that a style forces the same theme in all three versions. Then:
+
+```
+cd frontends/elm-spa && make test    # elm-review + elm-test-rs
+make build                            # tests don't compile the page modules
+```
+
+## 5. Look at it in a browser (do not skip -- CSS passes tests and still looks wrong)
+
+Needs the backend running (`run-backend` skill) and `.claude/skills/run-elm`'s driver. Test against the Rust-served pages (`http://localhost/posts`, `/events`), since `/custom_css.css` only exists there (the Elm dev server on :1234 instead renders it via `GetCustomCSS`).
+
+1. Dump the template strings with a throwaway Elm worker (delete it afterwards): a `Platform.worker` in `src/` that sends `List.map (\t -> { name, css }) Templates.all` through a port; `elm make` it to JS in the scratchpad and `node -e` it to JSON.
+2. Put one on the dev site without an admin session by updating the active row: `UPDATE server_configurations SET custom_css_configuration = '{"media_ids":["<id1>","<id2>"],"force_dark_theme":false}'::jsonb, custom_css = $css$...$css$ WHERE active;` (use two `GLOBAL_PUBLIC` image media ids from `grpcurl -plaintext -d '{}' localhost:27707 rellm.Rellm/GetMedia`).
+3. Screenshot with the driver (`nav`, `sleep 3500`, `screenshot`) and **read the PNGs**: the 2-image version on `/posts` (cards + masthead + page image), the plain version on `/events` (calendar must be readable), and light + dark (`eval document.documentElement.setAttribute('data-theme','dark')`) for `FollowsTheme` styles.
+4. **Reset the DB when done**: `UPDATE server_configurations SET custom_css_configuration = NULL, custom_css = NULL WHERE active;`.
+
+zsh gotcha when scripting the loop: don't name a shell variable `path` (it is tied to `$PATH`).
+
+## 6. Wrap-up
+
+Commit nothing unless asked. Mention which templates you actually viewed, that animation (parallax, drifting waves, beams) was only seen as static frames, and anything that needs an admin account to confirm (the dropdown/Preview/toggles in the editor itself).

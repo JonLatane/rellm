@@ -23,23 +23,66 @@ count needle haystack =
 suite : Test
 suite =
     describe "CustomCssTemplates"
-        [ test "has the twelve templates, in the dropdown's order" <|
+        [ test "has seventy-two templates -- twenty-four styles in 0/1/2 image versions -- in the dropdown's order" <|
             \_ ->
                 List.map .name Templates.all
                     |> Expect.equal
-                        [ "Art Deco"
-                        , "Art Deco (1 image)"
-                        , "Art Deco (2 images)"
-                        , "Bauhaus"
-                        , "Bauhaus (1 image)"
-                        , "Bauhaus (2 images)"
-                        , "Serif Fonts"
-                        , "Serif Fonts (1 image)"
-                        , "Serif Fonts (2 images)"
-                        , "Standard Style"
-                        , "Standard Style (1 background image)"
-                        , "Standard Style (2 background images)"
-                        ]
+                        (List.concatMap
+                            (\( style, noun ) -> [ style, style ++ " (1 " ++ noun ++ ")", style ++ " (2 " ++ noun ++ "s)" ])
+                            [ ( "Art Deco", "image" )
+                            , ( "Bauhaus", "image" )
+                            , ( "Serif Fonts", "image" )
+                            , ( "Standard Style", "background image" )
+                            , ( "High Contrast", "image" )
+                            , ( "Terminal", "image" )
+                            , ( "Newspaper", "image" )
+                            , ( "Synthwave", "image" )
+                            , ( "Midcentury Modern", "image" )
+                            , ( "Polaroid", "image" )
+                            , ( "Concert Poster", "image" )
+                            , ( "Calm", "image" )
+                            , ( "Town Square", "image" )
+                            , ( "Blueprint", "image" )
+                            , ( "Disco", "image" )
+                            , ( "Cinematic", "image" )
+                            , ( "Dyslexia-Friendly", "image" )
+                            , ( "Field Guide", "image" )
+                            , ( "Y2K Aero", "image" )
+                            , ( "Retro Desktop", "image" )
+                            , ( "Zine", "image" )
+                            , ( "Wabi-sabi", "image" )
+                            , ( "Ocean", "image" )
+                            , ( "Forest", "image" )
+                            ]
+                        )
+        , test "styles with an always-dark backdrop force the dark theme, always-light ones force light, the rest force nothing" <|
+            \_ ->
+                let
+                    forcing : (Templates.Template -> Bool) -> List String
+                    forcing flag =
+                        Templates.grouped |> List.filter (\( _, ts ) -> List.all flag ts) |> List.map Tuple.first
+                in
+                Expect.equal
+                    ( forcing .forceDarkTheme, forcing .forceLightTheme )
+                    ( [ "Terminal", "Synthwave", "Blueprint", "Disco", "Cinematic" ]
+                    , [ "Polaroid", "Y2K Aero", "Retro Desktop", "Zine" ]
+                    )
+        , test "a template never forces both themes, and a style forces the same theme in all three of its versions" <|
+            \_ ->
+                Templates.grouped
+                    |> List.filter
+                        (\( _, ts ) ->
+                            List.any (\t -> t.forceLightTheme && t.forceDarkTheme) ts
+                                || notIn [ 0, 3 ] (List.length (List.filter .forceLightTheme ts))
+                                || notIn [ 0, 3 ] (List.length (List.filter .forceDarkTheme ts))
+                        )
+                    |> List.map Tuple.first
+                    |> Expect.equal []
+        , test "grouped has one group per style, three templates each, covering every template" <|
+            \_ ->
+                Expect.equal
+                    ( List.length Templates.grouped, List.all (\( _, ts ) -> List.length ts == 3) Templates.grouped, List.concatMap Tuple.second Templates.grouped )
+                    ( 24, True, Templates.all )
         , test "each template uses exactly as many --custom-media-N as it declares" <|
             \_ ->
                 Templates.all
@@ -81,3 +124,8 @@ suite =
                     Nothing ->
                         Expect.fail "expected at least five templates"
         ]
+
+
+notIn : List Int -> Int -> Bool
+notIn allowed n =
+    not (List.member n allowed)

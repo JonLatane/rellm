@@ -8,6 +8,7 @@ module Shared exposing
     , ThemePreference(..)
     , basePathFromPath
     , effectiveDarkMode
+    , forcedDarkMode
     , init
     , normalizeUrl
     , subscriptions
@@ -601,7 +602,7 @@ init basePath req flags =
         [ Cmd.map StarredPanelMsg serverStarsCmd
         , Cmd.map AccountsPanelMsg accountsPanelCmd
         , Cmd.map FederatedAuthMsg federatedAuthCmd
-        , Ports.setTheme (themePreferenceToString themePreference)
+        , Ports.setTheme (appliedTheme model)
 
         -- `mainFrontendHost`'s branding isn't fetched yet at this point, so
         -- this is only ever the neutral placeholder (see
@@ -694,7 +695,7 @@ update req msg model =
             ( hashedModel, Cmd.batch [ cmd, redirect ] )
 
         Nothing ->
-            ( hashedModel, Cmd.batch [ cmd, followCmd, linkCmd, hashCmd, navBarColorCmd model newModel, splashHiddenCmd model newModel ] )
+            ( hashedModel, Cmd.batch [ cmd, followCmd, linkCmd, hashCmd, navBarColorCmd model newModel, themeCmd model newModel, splashHiddenCmd model newModel ] )
 
 
 {-| `scheme://host[:port]` of `url` -- what a shared link to a track starts with.
@@ -2287,7 +2288,7 @@ sharedUpdate req msg model =
             in
             ( { model | theme = { theme | preference = newPreference } }
             , Cmd.batch
-                [ Ports.setTheme (themePreferenceToString newPreference)
+                [ Ports.setTheme (appliedTheme { model | theme = { theme | preference = newPreference } })
                 , Ports.persistThemePreference (themePreferenceToString newPreference)
                 ]
             )
@@ -2937,20 +2938,93 @@ basePathFromPath path =
         ""
 
 
-{-| Whether the app should currently render in dark mode, resolving `Auto`
-against the last-known system preference.
+{-| Whether the app should currently render in dark mode: the theme the page's own server forces (see
+`forcedDarkMode`), if any, otherwise the user's own preference, resolving `Auto` against the last-known
+system preference.
 -}
 effectiveDarkMode : Model -> Bool
 effectiveDarkMode model =
-    case model.theme.preference of
-        ThemeAuto ->
-            model.theme.systemPrefersDark
+    case forcedDarkMode model of
+        Just dark ->
+            dark
 
-        ThemeLight ->
-            False
+        Nothing ->
+            case model.theme.preference of
+                ThemeAuto ->
+                    model.theme.systemPrefersDark
 
-        ThemeDark ->
-            True
+                ThemeLight ->
+                    False
+
+                ThemeDark ->
+                    True
+
+
+{-| The theme the page's server (`mainFrontendHost`) forces via its `CustomCSSConfiguration`'s
+`force_light_theme`/`force_dark_theme`: `Just True` for dark, `Just False` for light, `Nothing` if it forces
+neither. It overrides the user's Auto/Light/Dark setting (whose toggles are then disabled -- see
+`UI.themeToggle`), because a custom stylesheet may only work on one kind of background, and the colors derived
+from a server's brand (`primaryAnchorColor`, `navAnchorColor`, ...) are chosen to contrast with it. An
+in-progress Custom CSS "Preview" (`AccountsPanel.Model.customCssPreview`) counts, so previewing a stylesheet
+previews its forced theme too. If both flags are somehow set (the server rejects that), light wins.
+-}
+forcedDarkMode : Model -> Maybe Bool
+forcedDarkMode model =
+    let
+        config : Maybe Proto.Rellm.CustomCSSConfiguration
+        config =
+            case model.accounts.customCssPreview of
+                Just preview ->
+                    Just preview
+
+                Nothing ->
+                    model.accounts.servers
+                        |> List.filter (\server -> server.frontendHost == model.accounts.mainFrontendHost)
+                        |> List.head
+                        |> Maybe.andThen (\server -> (RellmServers.configurationOf server).customCssConfiguration)
+    in
+    case config of
+        Just c ->
+            if c.forceLightTheme then
+                Just False
+
+            else if c.forceDarkTheme then
+                Just True
+
+            else
+                Nothing
+
+        Nothing ->
+            Nothing
+
+
+{-| What `Ports.setTheme` should currently put on `<html data-theme>`: the forced theme, if there is one,
+otherwise the user's own preference (`"auto"` leaves it to `prefers-color-scheme`). The persisted preference
+(`Ports.persistThemePreference`) is always the user's own, never the forced value.
+-}
+appliedTheme : Model -> String
+appliedTheme model =
+    case forcedDarkMode model of
+        Just True ->
+            "dark"
+
+        Just False ->
+            "light"
+
+        Nothing ->
+            themePreferenceToString model.theme.preference
+
+
+{-| Re-applies `appliedTheme` whenever it changes -- i.e. when the server's forced theme changes: its
+configuration loads or is saved, or a Custom CSS preview starts or stops.
+-}
+themeCmd : Model -> Model -> Cmd Msg
+themeCmd before after =
+    if appliedTheme before /= appliedTheme after then
+        Ports.setTheme (appliedTheme after)
+
+    else
+        Cmd.none
 
 
 themePreferenceFromString : String -> ThemePreference

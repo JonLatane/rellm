@@ -75,4 +75,4 @@ stylesheet mediaUrl config =
      else
         ":root {\n" ++ String.concat vars ++ "}\n"
     )
-        ++ config.customCss
+        ++ Maybe.withDefault "" config.customCss

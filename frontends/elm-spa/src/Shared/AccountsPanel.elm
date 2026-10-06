@@ -486,7 +486,7 @@ type Msg
     | GotChangeServerShortNameResult (Result Grpc.Error ( RellmAccount, ServerConfiguration ))
     | GotServerConfigSaveResult String ServerConfiguration
     | SetCustomCssPreview (Maybe CustomCSSConfiguration)
-    | CustomCssSaved CustomCSSConfiguration
+    | CustomCssSaved String CustomCSSConfiguration
     | GotDevCustomCss (Result Grpc.Error CustomCSSConfiguration)
     | FocusInput String
     | ClearFieldClicked String Msg
@@ -3572,12 +3572,44 @@ sendUpdate req msg model =
                 Cmd.none
             )
 
-        -- The editor's own save: the page's `<link>` still holds the pre-save CSS, so reload it, and cover
-        -- the gap (and the dev server, which has no `<link>`) with `customCssOverride`.
-        CustomCssSaved config ->
-            ( { model | customCssOverride = Just config, customCssPreview = Nothing }
-            , Ports.setCustomCssStylesheet { enabled = True, reload = True }
-            )
+        -- The editor's own save, for the server `host`. That server's cached `ServerConfiguration` gets the new
+        -- media/forced theme (without the stylesheet text, same as `GetServerConfiguration` serves it), so the
+        -- forced theme (see `Shared.forcedDarkMode`) takes effect straight away. If `host` is the page's own
+        -- server, its `<link>` still holds the pre-save CSS, so also reload it, and cover the gap (and the dev
+        -- server, which has no `<link>`) with `customCssOverride`.
+        CustomCssSaved host config ->
+            let
+                servers : List RellmServer
+                servers =
+                    List.map
+                        (\s ->
+                            if s.frontendHost == host then
+                                RellmServers.updateRellmServerConfiguration
+                                    (let
+                                        configuration : ServerConfiguration
+                                        configuration =
+                                            RellmServers.configurationOf s
+                                     in
+                                     { configuration | customCssConfiguration = Just { config | customCss = Nothing } }
+                                    )
+                                    s
+
+                            else
+                                s
+                        )
+                        model.servers
+
+                newModel : Model
+                newModel =
+                    { model | servers = servers }
+            in
+            if host == model.mainFrontendHost then
+                ( { newModel | customCssOverride = Just config, customCssPreview = Nothing }
+                , Cmd.batch [ Ports.setCustomCssStylesheet { enabled = True, reload = True }, persist newModel ]
+                )
+
+            else
+                ( newModel, persist newModel )
 
         GotDevCustomCss (Ok config) ->
             -- Don't clobber a draft/saved override the Theme tab's editor set while this was in flight.

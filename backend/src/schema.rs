@@ -436,6 +436,7 @@ diesel::table! {
         supported_contact_protocols -> Nullable<Jsonb>,
         stalwart_config -> Nullable<Jsonb>,
         custom_css_configuration -> Nullable<Jsonb>,
+        custom_css -> Nullable<Text>,
     }
 }
 

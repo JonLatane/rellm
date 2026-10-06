@@ -193,6 +193,7 @@ const ServerConfiguration$json = {
     {'1': 'stripe_config', '3': 124, '4': 1, '5': 11, '6': '.rellm.StripeConfig', '9': 8, '10': 'stripeConfig', '17': true},
     {'1': 'telnyx_config', '3': 125, '4': 1, '5': 11, '6': '.rellm.TelnyxConfig', '9': 9, '10': 'telnyxConfig', '17': true},
     {'1': 'stalwart_config', '3': 126, '4': 1, '5': 11, '6': '.rellm.StalwartConfig', '9': 10, '10': 'stalwartConfig', '17': true},
+    {'1': 'custom_css_configuration', '3': 127, '4': 1, '5': 11, '6': '.rellm.CustomCSSConfiguration', '9': 11, '10': 'customCssConfiguration', '17': true},
   ],
   '8': [
     {'1': '_server_info'},
@@ -206,6 +207,7 @@ const ServerConfiguration$json = {
     {'1': '_stripe_config'},
     {'1': '_telnyx_config'},
     {'1': '_stalwart_config'},
+    {'1': '_custom_css_configuration'},
   ],
 };
 
@@ -243,11 +245,13 @@ final $typed_data.Uint8List serverConfigurationDescriptor = $convert.base64Decod
     'N0cmlwZV9jb25maWcYfCABKAsyEy5yZWxsbS5TdHJpcGVDb25maWdICFIMc3RyaXBlQ29uZmln'
     'iAEBEj0KDXRlbG55eF9jb25maWcYfSABKAsyEy5yZWxsbS5UZWxueXhDb25maWdICVIMdGVsbn'
     'l4Q29uZmlniAEBEkMKD3N0YWx3YXJ0X2NvbmZpZxh+IAEoCzIVLnJlbGxtLlN0YWx3YXJ0Q29u'
-    'ZmlnSApSDnN0YWx3YXJ0Q29uZmlniAEBQg4KDF9zZXJ2ZXJfaW5mb0ISChBfZmVkZXJhdGlvbl'
-    '9pbmZvQg4KDF9jdXN0b21fdGFic0IWChRfZXh0ZXJuYWxfY2RuX2NvbmZpZ0IUChJfY2x1c3Rl'
-    'cl9yZXNvdXJjZXNCEgoQX3dlYl9wdXNoX2NvbmZpZ0IQCg5fdHdpbGlvX2NvbmZpZ0IOCgxfYm'
-    'lyZF9jb25maWdCEAoOX3N0cmlwZV9jb25maWdCEAoOX3RlbG55eF9jb25maWdCEgoQX3N0YWx3'
-    'YXJ0X2NvbmZpZw==');
+    'ZmlnSApSDnN0YWx3YXJ0Q29uZmlniAEBElwKGGN1c3RvbV9jc3NfY29uZmlndXJhdGlvbhh/IA'
+    'EoCzIdLnJlbGxtLkN1c3RvbUNTU0NvbmZpZ3VyYXRpb25IC1IWY3VzdG9tQ3NzQ29uZmlndXJh'
+    'dGlvbogBAUIOCgxfc2VydmVyX2luZm9CEgoQX2ZlZGVyYXRpb25faW5mb0IOCgxfY3VzdG9tX3'
+    'RhYnNCFgoUX2V4dGVybmFsX2Nkbl9jb25maWdCFAoSX2NsdXN0ZXJfcmVzb3VyY2VzQhIKEF93'
+    'ZWJfcHVzaF9jb25maWdCEAoOX3R3aWxpb19jb25maWdCDgoMX2JpcmRfY29uZmlnQhAKDl9zdH'
+    'JpcGVfY29uZmlnQhAKDl90ZWxueXhfY29uZmlnQhIKEF9zdGFsd2FydF9jb25maWdCGwoZX2N1'
+    'c3RvbV9jc3NfY29uZmlndXJhdGlvbg==');
 
 @$core.Deprecated('Use clusterResourcesDescriptor instead')
 const ClusterResources$json = {
@@ -611,14 +615,21 @@ const CustomCSSConfiguration$json = {
   '1': 'CustomCSSConfiguration',
   '2': [
     {'1': 'media_ids', '3': 1, '4': 3, '5': 9, '10': 'mediaIds'},
-    {'1': 'custom_css', '3': 2, '4': 1, '5': 9, '10': 'customCss'},
+    {'1': 'custom_css', '3': 2, '4': 1, '5': 9, '9': 0, '10': 'customCss', '17': true},
+    {'1': 'force_light_theme', '3': 3, '4': 1, '5': 8, '10': 'forceLightTheme'},
+    {'1': 'force_dark_theme', '3': 4, '4': 1, '5': 8, '10': 'forceDarkTheme'},
+  ],
+  '8': [
+    {'1': '_custom_css'},
   ],
 };
 
 /// Descriptor for `CustomCSSConfiguration`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List customCSSConfigurationDescriptor = $convert.base64Decode(
-    'ChZDdXN0b21DU1NDb25maWd1cmF0aW9uEhsKCW1lZGlhX2lkcxgBIAMoCVIIbWVkaWFJZHMSHQ'
-    'oKY3VzdG9tX2NzcxgCIAEoCVIJY3VzdG9tQ3Nz');
+    'ChZDdXN0b21DU1NDb25maWd1cmF0aW9uEhsKCW1lZGlhX2lkcxgBIAMoCVIIbWVkaWFJZHMSIg'
+    'oKY3VzdG9tX2NzcxgCIAEoCUgAUgljdXN0b21Dc3OIAQESKgoRZm9yY2VfbGlnaHRfdGhlbWUY'
+    'AyABKAhSD2ZvcmNlTGlnaHRUaGVtZRIoChBmb3JjZV9kYXJrX3RoZW1lGAQgASgIUg5mb3JjZU'
+    'RhcmtUaGVtZUINCgtfY3VzdG9tX2Nzcw==');
 
 @$core.Deprecated('Use customNavigationTabSetDescriptor instead')
 const CustomNavigationTabSet$json = {

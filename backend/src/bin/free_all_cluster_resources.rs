@@ -23,6 +23,7 @@ pub fn main() {
 
     let config = server_configurations
         .filter(active.eq(true))
+        .select(models::SERVER_CONFIGURATION_COLUMNS)
         .first::<models::ServerConfiguration>(&mut conn)
         .expect("Failed to load server configuration");
 

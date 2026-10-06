@@ -9,36 +9,76 @@ use crate::marshaling::*;
 use crate::models;
 use crate::protos::*;
 use crate::rpcs::get_server_configuration_model;
-use crate::schema::media;
+use crate::schema::{media, server_configurations};
 
 pub const MAX_CUSTOM_CSS_BYTES: usize = 64 * 1024;
 pub const MAX_CUSTOM_CSS_MEDIA_IDS: usize = 32;
 
-/// The active server configuration's `CustomCssConfiguration` (empty if never set, or if the stored
-/// JSON somehow doesn't parse -- same "treat as unset" fallback `Media::sizes` uses).
-pub fn get_custom_css_configuration(
+/// The active configuration's custom stylesheet text -- the one place (with `save_custom_css_configuration`'s
+/// carry-forward) that reads the `custom_css` column, which `models::ServerConfiguration` deliberately
+/// doesn't load (see `models::SERVER_CONFIGURATION_COLUMNS`). `None` if it was never set.
+pub fn get_custom_css_text(conn: &mut PgPooledConnection) -> Result<Option<String>, Status> {
+    // Make sure a configuration row exists at all (creating the default one on first use).
+    get_server_configuration_model(conn)?;
+    server_configurations::table
+        .filter(server_configurations::active.eq(true))
+        .select(server_configurations::custom_css)
+        .first::<Option<String>>(conn)
+        .map_err(|e| {
+            log::error!("get_custom_css_text error: {:?}", e);
+            Status::new(Code::Internal, "data_error")
+        })
+}
+
+/// The media IDs and forced theme of the active configuration -- everything `ServerConfiguration.custom_css_configuration`
+/// carries (`custom_css` always unset), without touching the stylesheet text. Empty if never set (or if the
+/// stored JSON somehow doesn't parse -- same "treat as unset" fallback `Media::sizes` uses).
+pub fn get_custom_css_settings(
     conn: &mut PgPooledConnection,
 ) -> Result<CustomCssConfiguration, Status> {
     Ok(get_server_configuration_model(conn)?
         .custom_css_configuration
         .and_then(|v| serde_json::from_value::<CustomCssConfiguration>(v).ok())
+        .map(|c| CustomCssConfiguration {
+            custom_css: None,
+            ..c
+        })
         .unwrap_or_default())
 }
 
-/// Checks `ConfigureCustomCSS`' size limits, and that every `media_id` is an existing
-/// `GLOBAL_PUBLIC` Media -- anything less restrictive would 404 (or leak, for `PRIVATE`) for
-/// anonymous visitors loading the stylesheet.
+/// The full `CustomCSSConfiguration` -- settings plus the stylesheet text (always `Some`, empty if never
+/// set). What `GetCustomCSS` returns and `/custom_css.css` renders.
+pub fn get_custom_css_configuration(
+    conn: &mut PgPooledConnection,
+) -> Result<CustomCssConfiguration, Status> {
+    let settings = get_custom_css_settings(conn)?;
+    let text = get_custom_css_text(conn)?.unwrap_or_default();
+    Ok(CustomCssConfiguration {
+        custom_css: Some(text),
+        ..settings
+    })
+}
+
+/// Checks `ConfigureCustomCSS`' limits: the size of the CSS and number of media IDs, that every `media_id` is
+/// an existing `GLOBAL_PUBLIC` Media (anything less restrictive would 404 -- or leak, for `PRIVATE` --
+/// for anonymous visitors loading the stylesheet), and that the two forced themes aren't both on.
 pub fn validate_custom_css_configuration(
     config: &CustomCssConfiguration,
     conn: &mut PgPooledConnection,
 ) -> Result<(), Status> {
-    if config.custom_css.len() > MAX_CUSTOM_CSS_BYTES {
+    if config.custom_css.as_deref().map_or(0, str::len) > MAX_CUSTOM_CSS_BYTES {
         return Err(Status::new(Code::InvalidArgument, "custom_css_too_large"));
     }
     if config.media_ids.len() > MAX_CUSTOM_CSS_MEDIA_IDS {
         return Err(Status::new(
             Code::InvalidArgument,
             "too_many_custom_css_media_ids",
+        ));
+    }
+    if config.force_light_theme && config.force_dark_theme {
+        return Err(Status::new(
+            Code::InvalidArgument,
+            "cannot_force_both_light_and_dark_theme",
         ));
     }
     for media_id in &config.media_ids {
@@ -78,7 +118,7 @@ pub fn custom_css_stylesheet(config: &CustomCssConfiguration) -> String {
         vars.iter().for_each(|v| css.push_str(v));
         css.push_str("}\n");
     }
-    css.push_str(&config.custom_css);
+    css.push_str(config.custom_css.as_deref().unwrap_or(""));
     css
 }
 
@@ -91,17 +131,32 @@ pub fn custom_css_etag(stylesheet: &str) -> String {
 }
 
 /// Writes `config` as a new server configuration version -- same deactivate-then-insert flow as
-/// `configure_server`, with everything else copied from the active row.
+/// `configure_server`, with everything else copied from the active row. The stylesheet text is
+/// `config.custom_css` if set, otherwise carried forward unchanged from the active row.
 pub fn save_custom_css_configuration(
     config: &CustomCssConfiguration,
     conn: &mut PgPooledConnection,
 ) -> Result<(), Status> {
     use crate::schema::server_configurations::dsl::*;
     let current = get_server_configuration_model(conn)?;
+    let existing_css = get_custom_css_text(conn)?;
     let mut new_config = models::NewServerConfiguration::from(current);
-    new_config.custom_css_configuration = Some(serde_json::to_value(config).unwrap());
+    new_config.custom_css = match config.custom_css.as_ref() {
+        Some(text) => Some(text.clone()),
+        None => existing_css,
+    };
+    // The text lives in its own column; the JSON carries just the settings.
+    new_config.custom_css_configuration = Some(
+        serde_json::to_value(CustomCssConfiguration {
+            custom_css: None,
+            ..config.clone()
+        })
+        .unwrap(),
+    );
     conn.transaction::<_, diesel::result::Error, _>(|conn| {
-        update(server_configurations).set(active.eq(false)).execute(conn)?;
+        update(server_configurations)
+            .set(active.eq(false))
+            .execute(conn)?;
         insert_into(server_configurations)
             .values(&new_config)
             .execute(conn)?;

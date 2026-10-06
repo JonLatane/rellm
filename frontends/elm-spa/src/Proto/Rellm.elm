@@ -1053,7 +1053,7 @@ type alias CustomNavigationTabSet =
 {-| The field numbers for the fields of `CustomCSSConfiguration`. This is mostly useful for internals, like documentation generation.
 
 -}
-fieldNumbersCustomCSSConfiguration : { mediaIds : Int, customCss : Int }
+fieldNumbersCustomCSSConfiguration : { mediaIds : Int, customCss : Int, forceLightTheme : Int, forceDarkTheme : Int }
 fieldNumbersCustomCSSConfiguration =
     Proto.Rellm.Internals_.fieldNumbersProto__Rellm__CustomCSSConfiguration
 
@@ -1082,13 +1082,17 @@ encodeCustomCSSConfiguration =
     Proto.Rellm.Internals_.encodeProto__Rellm__CustomCSSConfiguration
 
 
-{-|  Custom CSS for a Rellm server's Elm SPA, managed separately from [`ServerConfiguration`](#rellm-ServerConfiguration) --
- it is stored alongside it (so it is versioned the same way, with each
+{-|  Custom CSS for a Rellm server's Elm SPA, plus the appearance settings that go with it. Stored alongside the
+ [`ServerConfiguration`](#rellm-ServerConfiguration) (so it is versioned the same way, with each
  [`ConfigureServer`](#grpc-api-ConfigureServer) or [`ConfigureCustomCSS`](#grpc-api-ConfigureCustomCSS) creating a
- new configuration version), but is never included in `ServerConfiguration` itself. It is read with
- [`GetCustomCSS`](#grpc-api-GetCustomCSS), written with [`ConfigureCustomCSS`](#grpc-api-ConfigureCustomCSS), and
- served to browsers as a stylesheet at `/custom_css.css` (`/elm/custom_css.css` when the Elm SPA is served under `/elm`).
- `ConfigureServer` always leaves it unchanged.
+ new configuration version) and served to browsers as a stylesheet at `/custom_css.css` (`/elm/custom_css.css` when
+ the Elm SPA is served under `/elm`).
+
+ The potentially large `custom_css` text is only ever returned by [`GetCustomCSS`](#grpc-api-GetCustomCSS) and
+ [`ConfigureCustomCSS`](#grpc-api-ConfigureCustomCSS): [`GetServerConfiguration`](#grpc-api-GetServerConfiguration)
+ includes this message as `ServerConfiguration.custom_css_configuration` but with `custom_css` unset, and never
+ reads it from the database. [`ConfigureServer`](#grpc-api-ConfigureServer) ignores any
+ `custom_css_configuration` it is sent, always leaving the stored one unchanged.
 
 
 ## Fields
@@ -1099,10 +1103,16 @@ encodeCustomCSSConfiguration =
  in the order they are listed. Each must be `GLOBAL_PUBLIC` Media, so anonymous visitors can load it. At most 32.
 
 
-### customCss
+### forceLightTheme
 
- Custom CSS applied to the Elm SPA client. This is appended to the default CSS, so it can override any default styles.
- At most 64 KiB.
+ Force the Elm SPA into its light theme for everyone, whatever their own Auto/Light/Dark setting or system
+ preference -- the theme toggles are disabled. For stylesheets (such as a "paper" or "polaroid" look) that only
+ work on a light background. At most one of `force_light_theme` and `force_dark_theme` may be set.
+
+
+### forceDarkTheme
+
+ Same as `force_light_theme`, for the dark theme.
 
 
 -}
@@ -2195,6 +2205,7 @@ fieldNumbersServerConfiguration :
     , stripeConfig : Int
     , telnyxConfig : Int
     , stalwartConfig : Int
+    , customCssConfiguration : Int
     }
 fieldNumbersServerConfiguration =
     Proto.Rellm.Internals_.fieldNumbersProto__Rellm__ServerConfiguration

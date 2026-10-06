@@ -2130,9 +2130,10 @@ type alias Proto__Rellm__CustomNavigationTabSet =
 {-| The field numbers for the fields of `Proto__Rellm__CustomCSSConfiguration`. This is mostly useful for internals, like documentation generation.
 
 -}
-fieldNumbersProto__Rellm__CustomCSSConfiguration : { mediaIds : Int, customCss : Int }
+fieldNumbersProto__Rellm__CustomCSSConfiguration :
+    { mediaIds : Int, customCss : Int, forceLightTheme : Int, forceDarkTheme : Int }
 fieldNumbersProto__Rellm__CustomCSSConfiguration =
-    { mediaIds = 1, customCss = 2 }
+    { mediaIds = 1, customCss = 2, forceLightTheme = 3, forceDarkTheme = 4 }
 
 
 {-| Default for Proto__Rellm__CustomCSSConfiguration. Should only be used for 'required' decoders as an initial value.
@@ -2140,7 +2141,7 @@ fieldNumbersProto__Rellm__CustomCSSConfiguration =
 -}
 defaultProto__Rellm__CustomCSSConfiguration : Proto__Rellm__CustomCSSConfiguration
 defaultProto__Rellm__CustomCSSConfiguration =
-    { mediaIds = [], customCss = "" }
+    { mediaIds = [], customCss = Nothing, forceLightTheme = False, forceDarkTheme = False }
 
 
 {-| Declares how to decode a `Proto__Rellm__CustomCSSConfiguration` from Bytes. To actually perform the conversion from Bytes, you need to use Protobuf.Decode.decode from eriktim/elm-protocol-buffers.
@@ -2151,7 +2152,9 @@ decodeProto__Rellm__CustomCSSConfiguration =
     Protobuf.Decode.message
         defaultProto__Rellm__CustomCSSConfiguration
         [ Protobuf.Decode.repeated 1 Protobuf.Decode.string .mediaIds (\a r -> { r | mediaIds = a })
-        , Protobuf.Decode.optional 2 Protobuf.Decode.string (\a r -> { r | customCss = a })
+        , Protobuf.Decode.optional 2 (Protobuf.Decode.map Just Protobuf.Decode.string) (\a r -> { r | customCss = a })
+        , Protobuf.Decode.optional 3 Protobuf.Decode.bool (\a r -> { r | forceLightTheme = a })
+        , Protobuf.Decode.optional 4 Protobuf.Decode.bool (\a r -> { r | forceDarkTheme = a })
         ]
 
 
@@ -2162,7 +2165,9 @@ encodeProto__Rellm__CustomCSSConfiguration : Proto__Rellm__CustomCSSConfiguratio
 encodeProto__Rellm__CustomCSSConfiguration value =
     Protobuf.Encode.message
         [ ( 1, (Protobuf.Encode.list Protobuf.Encode.string) value.mediaIds )
-        , ( 2, Protobuf.Encode.string value.customCss )
+        , ( 2, (Maybe.map Protobuf.Encode.string >> Maybe.withDefault Protobuf.Encode.none) value.customCss )
+        , ( 3, Protobuf.Encode.bool value.forceLightTheme )
+        , ( 4, Protobuf.Encode.bool value.forceDarkTheme )
         ]
 
 
@@ -2170,7 +2175,7 @@ encodeProto__Rellm__CustomCSSConfiguration value =
 
 -}
 type alias Proto__Rellm__CustomCSSConfiguration =
-    { mediaIds : List String, customCss : String }
+    { mediaIds : List String, customCss : Maybe String, forceLightTheme : Bool, forceDarkTheme : Bool }
 
 
 {-| The field numbers for the fields of `Proto__Rellm__ServerLogo`. This is mostly useful for internals, like documentation generation.
@@ -3256,6 +3261,7 @@ fieldNumbersProto__Rellm__ServerConfiguration :
     , stripeConfig : Int
     , telnyxConfig : Int
     , stalwartConfig : Int
+    , customCssConfiguration : Int
     }
 fieldNumbersProto__Rellm__ServerConfiguration =
     { serverInfo = 1
@@ -3283,6 +3289,7 @@ fieldNumbersProto__Rellm__ServerConfiguration =
     , stripeConfig = 124
     , telnyxConfig = 125
     , stalwartConfig = 126
+    , customCssConfiguration = 127
     }
 
 
@@ -3316,6 +3323,7 @@ defaultProto__Rellm__ServerConfiguration =
     , stripeConfig = Nothing
     , telnyxConfig = Nothing
     , stalwartConfig = Nothing
+    , customCssConfiguration = Nothing
     }
 
 
@@ -3433,6 +3441,10 @@ decodeProto__Rellm__ServerConfiguration =
             126
             (Protobuf.Decode.map Just decodeProto__Rellm__StalwartConfig)
             (\a r -> { r | stalwartConfig = a })
+        , Protobuf.Decode.optional
+            127
+            (Protobuf.Decode.map Just decodeProto__Rellm__CustomCSSConfiguration)
+            (\a r -> { r | customCssConfiguration = a })
         ]
 
 
@@ -3516,6 +3528,10 @@ encodeProto__Rellm__ServerConfiguration value =
           , (Maybe.map encodeProto__Rellm__StalwartConfig >> Maybe.withDefault Protobuf.Encode.none)
                 value.stalwartConfig
           )
+        , ( 127
+          , (Maybe.map encodeProto__Rellm__CustomCSSConfiguration >> Maybe.withDefault Protobuf.Encode.none)
+                value.customCssConfiguration
+          )
         ]
 
 
@@ -3548,6 +3564,7 @@ type alias Proto__Rellm__ServerConfiguration =
     , stripeConfig : Maybe Proto__Rellm__StripeConfig
     , telnyxConfig : Maybe Proto__Rellm__TelnyxConfig
     , stalwartConfig : Maybe Proto__Rellm__StalwartConfig
+    , customCssConfiguration : Maybe Proto__Rellm__CustomCSSConfiguration
     }
 
 

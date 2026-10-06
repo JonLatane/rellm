@@ -61,6 +61,7 @@ where
     conn.transaction::<(), diesel::result::Error, _>(|conn| {
         let config = scd::server_configurations
             .filter(scd::active.eq(true))
+            .select(crate::models::SERVER_CONFIGURATION_COLUMNS)
             .for_update()
             .first::<crate::models::ServerConfiguration>(conn)?;
         // Normalized the same way `to_proto()` reads it (see `normalized_media_settings`'s own

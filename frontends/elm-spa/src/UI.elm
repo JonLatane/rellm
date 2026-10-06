@@ -734,29 +734,58 @@ serverInfoButton shared server =
 
 
 {-| Cycles Auto -> Light -> Dark -> Auto. "Auto" follows the OS preference
-(and reacts live if it changes); "Light"/"Dark" force it.
+(and reacts live if it changes); "Light"/"Dark" force it. Disabled -- showing the forced theme -- while the
+server's custom CSS forces one (`Shared.forcedDarkMode`); both places this toggle appears (the Accounts Panel
+and the Server Information page's Theme tab) go through here.
 -}
 themeToggle : Shared.Model -> Html Shared.Msg
 themeToggle shared =
-    let
-        icon : String
-        icon =
-            case shared.theme.preference of
-                Shared.ThemeAuto ->
-                    "🌓"
+    case Shared.forcedDarkMode shared of
+        -- The server's custom CSS forces one theme (see `Shared.forcedDarkMode`): show it, but it can't be changed.
+        Just dark ->
+            button
+                [ classes [ "panel-icon-button", "theme-toggle" ]
+                , disabled True
+                , title
+                    ("Appearance: "
+                        ++ (if dark then
+                                "Dark"
 
-                Shared.ThemeLight ->
-                    "☀️"
+                            else
+                                "Light"
+                           )
+                        ++ " (set by this server)"
+                    )
+                ]
+                [ text
+                    (if dark then
+                        "🌙"
 
-                Shared.ThemeDark ->
-                    "🌙"
-    in
-    button
-        [ classes [ "panel-icon-button", "theme-toggle" ]
-        , onClick Shared.ThemePreferenceClicked
-        , title ("Appearance: " ++ Shared.themePreferenceLabel shared.theme.preference ++ " (click to change)")
-        ]
-        [ text icon ]
+                     else
+                        "☀️"
+                    )
+                ]
+
+        Nothing ->
+            let
+                icon : String
+                icon =
+                    case shared.theme.preference of
+                        Shared.ThemeAuto ->
+                            "🌓"
+
+                        Shared.ThemeLight ->
+                            "☀️"
+
+                        Shared.ThemeDark ->
+                            "🌙"
+            in
+            button
+                [ classes [ "panel-icon-button", "theme-toggle" ]
+                , onClick Shared.ThemePreferenceClicked
+                , title ("Appearance: " ++ Shared.themePreferenceLabel shared.theme.preference ++ " (click to change)")
+                ]
+                [ text icon ]
 
 
 

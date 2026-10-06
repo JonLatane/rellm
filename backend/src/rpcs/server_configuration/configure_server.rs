@@ -370,12 +370,14 @@ pub fn configure_server(
         existing_cluster_resources.map(|c| serde_json::to_value(c).unwrap())
     };
 
-    // `custom_css_configuration` isn't part of the `ServerConfiguration` proto at all (it's managed
-    // by `ConfigureCustomCSS`), so a `ConfigureServer` save always carries the active row's value
-    // forward rather than blanking it.
+    // The custom CSS (`custom_css_configuration`'s media/forced theme, and the separate `custom_css` text
+    // column) is managed only by `ConfigureCustomCSS`: whatever `request.custom_css_configuration` carries
+    // is ignored, and a `ConfigureServer` save always carries the active row's values forward rather than
+    // blanking or replacing them.
     new_config.custom_css_configuration = get_server_configuration_model(conn)
         .ok()
         .and_then(|c| c.custom_css_configuration);
+    new_config.custom_css = crate::logic::get_custom_css_text(conn)?;
 
     let result =
         conn.transaction::<models::ServerConfiguration, diesel::result::Error, _>(|conn| {
@@ -384,6 +386,7 @@ pub fn configure_server(
                 .execute(conn)?;
             let configuration = insert_into(server_configurations)
                 .values(&new_config)
+                .returning(models::SERVER_CONFIGURATION_COLUMNS)
                 .get_result::<models::ServerConfiguration>(conn)?;
             Ok(configuration)
         });
