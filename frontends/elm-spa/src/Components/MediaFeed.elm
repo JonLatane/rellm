@@ -54,6 +54,7 @@ import Shared.MediaViewerPanel as MediaViewerPanel
 import Shared.Time as SharedTime
 import Task
 import Time
+import UI.Glyph as Glyph
 import Url
 import UI.Classes exposing (classes, hostnameToCSSClass)
 
@@ -685,7 +686,7 @@ videoCard shared showHost host maybeServer media =
 
                 Nothing ->
                     span [ class "media-card-thumb-placeholder" ] [ text "🎬" ]
-            , span [ class "media-card-play" ] [ text "▶" ]
+            , span [ class "media-card-play" ] [ text Glyph.play ]
             , licensedBadge media
             ]
         , div [ class "media-card-meta" ]
@@ -766,7 +767,7 @@ audioRow shared queueGeneration showHost host maybeServer media =
                         [ span [] [], span [] [], span [] [], span [] [] ]
 
                 Nothing ->
-                    span [ class "media-card-play" ] [ text "▶" ]
+                    span [ class "media-card-play" ] [ text Glyph.play ]
             ]
         , div [ class "media-card-meta" ]
             [ button [ class "media-card-title", onClick (MediaClicked host media.id) ] [ text (mediaTitle media) ]

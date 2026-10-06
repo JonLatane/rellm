@@ -49,6 +49,7 @@ import UI.CustomNav as CustomNav
 import UI.Drag
 import UI.EmittedStylesheet as EmittedStylesheet
 import UI.Flip
+import UI.Glyph as Glyph
 import UI.HtmlEvents exposing (stopPropagationAndPreventDefaultOnClick)
 import UI.Modal
 import Url
@@ -1506,7 +1507,7 @@ serverChip shared count index server =
                     , target "_blank"
                     , title ("Open " ++ server.frontendHost ++ " in a new tab")
                     ]
-                    [ text "↗" ]
+                    [ text Glyph.externalLink ]
 
               else
                 text ""
@@ -1890,7 +1891,7 @@ mastodonServerFeedChip shared count index instance =
                 , target "_blank"
                 , title ("Open " ++ instance.host ++ " in a new tab")
                 ]
-                [ text "↗" ]
+                [ text Glyph.externalLink ]
             , button
                 [ class "remove-btn"
                 , onClick (Shared.AccountsPanelMsg (AccountsPanel.RemoveBrowsedMastodonInstanceClicked instance.host))
@@ -2015,7 +2016,7 @@ blueskyConnectFormView form =
                 , style "text-decoration" "underline"
                 , style "flex" "1 1 0"
                 ]
-                [ text "Create an App Password on bsky.app ↗" ]
+                [ text ("Create an App Password on bsky.app " ++ Glyph.externalLink) ]
             , button
                 [ class "background-color-primary"
                 , style "flex" "0 1 auto"

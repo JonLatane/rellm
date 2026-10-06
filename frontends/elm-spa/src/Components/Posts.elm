@@ -78,6 +78,7 @@ import Shared.Time as SharedTime
 import Task exposing (Task)
 import Time
 import UI.Classes exposing (classes, hostnameToCSSClass)
+import UI.Glyph as Glyph
 import UI.HtmlEvents exposing (stopPropagationAndPreventDefaultOnClick)
 import Url
 
@@ -952,7 +953,7 @@ replyStatusButton loaded loading collapsed onLoadRepliesClicked onToggleCollapse
                         [ text
                             -- ▲/▼ ◀/▶
                             ((if collapsed then
-                                "▶ "
+                                (Glyph.right ++ " ")
 
                               else
                                 "▼ "

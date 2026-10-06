@@ -56,5 +56,6 @@ Root `Makefile` delegates to per-project Makefiles (`make run_backend|run_elm|ru
 
 - Naming: the RSVP entity is `Rsvp`/`rsvps` (not `RSVP`/`event_attendances`). Mind proto import cycles (e.g. `users.proto` ↔ `sync.proto`); shared messages like `Author` are placed in a file both can import (currently `media.proto`).
 - "MB"/"GB" in UI/code are binary (1024-based) everywhere.
+- Glyphs, not emoji: iOS draws symbols like `↗` `◀` `▶` (anything with an emoji form) as color emoji unless followed by U+FE0E. Use `UI.Glyph` (`externalLink`, `left`, `right`, `play`, `textPresentation`) in Elm rather than typing them bare; `← → ↑ ↓ ▲ ▼ ✕ ✓` need nothing, and emoji-by-default symbols (`⏸` `➡`) can't be fixed this way -- draw those with CSS shapes (see `AudioPlayerPanel`).
 - Local dev DB/MinIO is not production; permission-gated features require granting permissions to a test account before smoke-testing.
 - Deploys: CI (`.github/workflows/server_ci_cd.yml`) builds Tamagui + Flutter web + Rust, builds a Docker image, and deploys; K8s targets are in `deploys/Makefile` and exposed via root Makefile (`create_external_backend`, `update_external_backend`, …).
