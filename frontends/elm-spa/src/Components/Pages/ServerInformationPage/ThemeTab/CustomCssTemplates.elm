@@ -1,9 +1,11 @@
 module Components.Pages.ServerInformationPage.ThemeTab.CustomCssTemplates exposing (Template, adjacent, all, grouped, matching, placeholder)
 
 {-| Starter stylesheets for the Theme tab's Custom CSS editor (see `CustomCssConfiguration`'s "Apply
-Template" dropdown) -- twenty-four looks (Art Deco, Bauhaus, Serif Fonts, Standard Style, High Contrast, Terminal,
-Newspaper, Synthwave, Midcentury Modern, Polaroid, Concert Poster, Calm, Town Square, Blueprint, Disco,
-Cinematic, Dyslexia-Friendly, Field Guide, Y2K Aero, Retro Desktop, Zine, Wabi-sabi, Ocean, Forest), each in
+Template" dropdown) -- thirty-five looks (Art Deco, Bauhaus, Serif Fonts, Standard Style, Standard Side Navigation, High Contrast,
+Terminal, Newspaper, Synthwave, Midcentury Modern, Polaroid, Concert Poster, Calm, Town Square, Blueprint, Disco,
+Psychedelic Poster, Cinematic, Haunted Mansion, Dyslexia-Friendly, Field Guide, Pirate Map, Y2K Aero, Mac Classic,
+OS X (Original), Material Design, Liquid Glass, Candy Shop, Retro Desktop, Zine, Comic Book, Wabi-sabi, Ocean,
+Forest, Deep Space), each in
 a version with no images, one image, and two images. Pure data: no `Msg`, no `Shared`, just `Template`s.
 
 Every template is plain CSS appended after the app's own, written against the app's real structure (`html`,
@@ -21,7 +23,7 @@ has a `none` fallback, so a template applied before its images are picked still 
 **Brand colors**: `--primary-color` and `--nav-color` are the server's configured primary and navigation colors
 (`#rrggbb`; defined by `/custom_css.css` and by `UI.CustomCssStylesheet`, always present). A few styles use them
 for decoration that should look like *this* server -- Bauhaus (its red and blue), Serif Fonts (drop cap),
-Standard Style (page wash), Concert Poster (the hot color), Town Square (bunting, tabs, card tops, masthead edge),
+Standard Style and Standard Side Navigation (page wash), Material Design (accent bars), Comic Book (its two inks), Concert Poster (the hot color), Town Square (bunting, tabs, card tops, masthead edge),
 Retro Desktop (title bar, a dark shade of the primary color), Zine (its two riso inks) and Wabi-sabi (the seal). Every use has a fallback
 (`var(--primary-color, #e03a2f)`) and is purely decorative: never body text, where a pale brand color could fail
 to contrast. Styles whose identity *is* a fixed palette (Art Deco's gold, Terminal's green, Synthwave's neon, ...)
@@ -87,6 +89,7 @@ all =
         , style "Bauhaus" "image" FollowsTheme bauhaus
         , style "Serif Fonts" "image" FollowsTheme serifFonts
         , style "Standard Style" "background image" FollowsTheme standardStyle
+        , style "Standard Side Navigation" "background image" FollowsTheme standardSideNav
         , style "High Contrast" "image" FollowsTheme highContrast
         , style "Terminal" "image" ForcesDark terminal
         , style "Newspaper" "image" FollowsTheme newspaper
@@ -98,15 +101,25 @@ all =
         , style "Town Square" "image" FollowsTheme townSquare
         , style "Blueprint" "image" ForcesDark blueprint
         , style "Disco" "image" ForcesDark disco
+        , style "Psychedelic Poster" "image" ForcesDark psychedelic
         , style "Cinematic" "image" ForcesDark cinematic
+        , style "Haunted Mansion" "image" ForcesDark hauntedMansion
         , style "Dyslexia-Friendly" "image" FollowsTheme dyslexiaFriendly
         , style "Field Guide" "image" FollowsTheme fieldGuide
+        , style "Pirate Map" "image" ForcesLight pirateMap
         , style "Y2K Aero" "image" ForcesLight y2kAero
+        , style "Mac Classic" "image" ForcesLight macClassic
+        , style "OS X (Original)" "image" ForcesLight osxAqua
+        , style "Material Design" "image" FollowsTheme materialDesign
+        , style "Liquid Glass" "image" FollowsTheme liquidGlass
+        , style "Candy Shop" "image" ForcesLight candyShop
         , style "Retro Desktop" "image" ForcesLight retroDesktop
         , style "Zine" "image" ForcesLight zine
+        , style "Comic Book" "image" ForcesLight comicBook
         , style "Wabi-sabi" "image" FollowsTheme wabiSabi
         , style "Ocean" "image" FollowsTheme ocean
         , style "Forest" "image" FollowsTheme forest
+        , style "Deep Space" "image" ForcesDark deepSpace
         ]
 
 
@@ -642,6 +655,115 @@ body::after {
   body::before { animation: none; }
 }
 """
+
+
+
+-- STANDARD SIDE NAVIGATION
+
+
+{-| `Standard Style` (same cards, page wash, frosted column and background images) with the top navigation turned
+into a side navigation on wide screens (1140px and up -- below that it is exactly Standard Style, and the usual top
+bar). Pure CSS over the app's own markup: the `.nav-links` row becomes a grid whose first row is the Home link and
+the Starred / Messaging / Create toggles, and whose first column then continues downward with the tabs, still
+honoring the admin's tab style (icon only / text right / text under / text only). The Accounts button stays at the
+top right. The bar itself turns into a frosted band, and Home and the tabs wear the server's primary color as
+floating pills.
+-}
+standardSideNav : Int -> String
+standardSideNav images =
+    String.join "\n"
+        [ standardStyle images
+        , """
+/* Side Navigation -- wide screens only. Below 1140px this is plain Standard Style with the usual top bar. */
+@media (min-width: 1140px) {
+  /* The bar becomes a frosted band; Home and the tabs float on it as primary-colored pills. */
+  .navbar {
+    background: color-mix(in srgb, var(--bg) 90%, transparent) !important;
+    border-bottom: 1px solid color-mix(in srgb, var(--primary-color, var(--border)) 35%, var(--border));
+  }
+
+  /* Home on the far left, Accounts on the far right. */
+  .navbar-inner {
+    max-width: none;
+    margin: 0;
+    padding: 0 12px;
+  }
+
+  /* One grid: row 1 is Home + the three toggles; the tabs stack down column 1 below Home. The fixed 68px
+     height keeps the bar as thin as before -- the tab pills overflow it downward into the empty margin beside
+     the content column (and stick with the bar as the page scrolls). */
+  .nav-links {
+    display: grid;
+    grid-template-columns: 156px repeat(3, max-content);
+    grid-template-rows: 68px;
+    align-items: center;
+    justify-content: start;
+    column-gap: 0.1rem;
+    width: auto;
+    height: 68px;
+    position: relative;
+    z-index: 1;
+  }
+  .nav-links-scroll { display: contents; }
+
+  .nav-link-home {
+    grid-column: 1;
+    grid-row: 1;
+    max-width: none;
+    background-color: var(--primary-color, #4a90d9);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12), 0 4px 12px rgba(0, 0, 0, 0.1);
+  }
+
+  /* The tabs: a column of pills under Home. */
+  .navbar .nav-links .nav-links-scroll > .nav-link:not(.nav-link-home) {
+    grid-column: 1;
+    justify-self: stretch;
+    justify-content: flex-start;
+    width: auto;
+    height: 44px;
+    margin: 6px 0 0;
+    padding: 0 0.85rem;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12), 0 4px 12px rgba(0, 0, 0, 0.1);
+  }
+  .navbar .nav-links .nav-links-scroll > .nav-link:not(.nav-link-home):not(.background-color-nav) {
+    background-color: var(--primary-color, #4a90d9);
+  }
+
+  /* Tab styles, vertically. Icon only: a round-ish square under Home's logo. */
+  .navbar .nav-links.tab-style-icon-only .nav-links-scroll > .nav-link:not(.nav-link-home) {
+    justify-self: start;
+    justify-content: center;
+    width: 44px;
+    margin-left: 10px;
+    padding: 0;
+  }
+  /* Text under the icon: stacked, a little taller. */
+  .navbar .nav-links.tab-style-icon-and-text-below .nav-links-scroll > .nav-link:not(.nav-link-home) {
+    justify-content: center;
+    height: auto;
+    min-height: 52px;
+    padding: 0.35rem 0.5rem;
+  }
+  /* Icon and text right, or text only: left-aligned rows. */
+  .navbar .nav-links.tab-style-icon-and-text-right .nav-links-scroll > .nav-link:not(.nav-link-home),
+  .navbar .nav-links.tab-style-text-only .nav-links-scroll > .nav-link:not(.nav-link-home) {
+    justify-content: flex-start;
+  }
+
+  /* The Starred and Messaging panels normally hang from the centered 800px nav; with Home at the left edge,
+     they hang from the left edge too. */
+  .starred-panel, .nav-panel.starred-panel,
+  .messaging-panel, .nav-panel.messaging-panel {
+    left: 12px;
+  }
+
+  /* The breadcrumbs row (post pages) keeps the server's color, like the old bar did. */
+  .breadcrumbs-bar-container {
+    background-color: var(--primary-color, #4a90d9);
+  }
+}
+"""
+        ]
 
 
 
@@ -1901,6 +2023,108 @@ html::before {
 
 
 
+-- PSYCHEDELIC POSTER
+
+
+{-| A 1967 concert-poster trip (always dark, deep violet): slowly hue-cycling concentric rings fixed behind a
+dark, readable column, melty heavy serif headings with stacked pink / violet shadows, and cards with leaf-shaped
+corners and a stack of hard offset shadows. The nav is a pink-yellow-teal-violet stripe. The rings stop cycling for
+`prefers-reduced-motion`.
+-}
+psychedelic : Int -> String
+psychedelic images =
+    String.join "\n"
+        [ "/* Psychedelic Poster -- hue-cycling rings, stacked shadows, melty serifs. Always dark. */\n"
+            ++ forcedRoot
+                """  --bg: #1b0a2e;
+  --fg: #fff3c4;
+  --muted: #ffc8e8;
+  --border: #ff5fa2;
+  --panel-bg: #2a0f45;
+  --chip-bg: #3b1560;
+  color-scheme: dark;
+"""
+            ++ """
+body {
+  font-family: "Cooper Black", "Bookman Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+}
+
+h1, h2, h3, .section-title {
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  text-shadow: 2px 2px 0 #ff5fa2, 4px 4px 0 #7a5cff;
+}
+
+.navbar {
+  background: linear-gradient(90deg, #ff5fa2, #ffb000, #00c2a8, #7a5cff) !important;
+  color: #1b0a2e !important;
+  border-bottom: 4px solid #fff3c4;
+}
+
+.container {
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  border-left: 4px solid #ffb000;
+  border-right: 4px solid #00c2a8;
+}
+
+/* Leaf-shaped cards with a stack of hard shadows (the right margin leaves room for them inside the clip). */
+.post-card, .event-card, .user-card {
+  border: 3px solid #ff5fa2 !important;
+  border-radius: 30px 8px 30px 8px;
+  margin: 0 12px 6px 0;
+  box-shadow: 5px 5px 0 #7a5cff, 10px 10px 0 #00c2a8;
+}
+
+main button:not(.remove-btn) {
+  border: 3px solid #ffb000;
+  border-radius: 999px;
+  font-weight: 900;
+}
+"""
+        , eventSurfaces
+        , if images == 0 then
+            """
+/* Page background: rings of pink, gold, teal and violet, turning through the spectrum. */
+html { background: var(--bg); }
+body { background: transparent; }
+html::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: repeating-radial-gradient(circle at 28% 22%, #ff5fa2 0 3vmin, #ffb000 3vmin 6vmin, #00c2a8 6vmin 9vmin, #7a5cff 9vmin 12vmin);
+  animation: custom-css-trip 40s linear infinite;
+}
+@keyframes custom-css-trip {
+  to { filter: hue-rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  html::before { animation: none; }
+}
+"""
+
+          else
+            pageImage
+                { filter = "saturate(2) contrast(1.1)"
+                , overlay = "repeating-radial-gradient(circle at 50% 30%, rgba(255, 95, 162, 0.28) 0 3vmin, rgba(122, 92, 255, 0.28) 3vmin 6vmin), color-mix(in srgb, var(--bg) 45%, transparent)"
+                , note = "Image 1 (--custom-media-1): the page background, oversaturated under pink and violet rings."
+                }
+        , if images >= 2 then
+            masthead
+                { note = "Image 2 (--custom-media-2): a saturated masthead with rippling rings, a gold frame and a violet shadow."
+                , height = "13rem"
+                , filter = "saturate(1.6)"
+                , overlay = "repeating-radial-gradient(circle at 80% 50%, rgba(255, 95, 162, 0.35) 0 14px, rgba(0, 194, 168, 0.25) 14px 28px)"
+                , extra = "border: 4px solid #ffb000; border-radius: 40px 8px; box-shadow: 8px 8px 0 #7a5cff; margin: 4px 10px 1.6rem 4px;"
+                }
+
+          else
+            ""
+        ]
+
+
+
 -- CINEMATIC
 
 
@@ -1998,6 +2222,119 @@ body { background: transparent; }
                 , filter = "saturate(0.85) contrast(1.1)"
                 , overlay = "linear-gradient(180deg, rgba(0, 90, 110, 0.22), rgba(255, 140, 40, 0.16))"
                 , extra = "aspect-ratio: 2.39 / 1; border-top: 14px solid #000; border-bottom: 14px solid #000; margin: 4px 0 1.6rem; background-attachment: scroll;"
+                }
+
+          else
+            ""
+        ]
+
+
+
+-- HAUNTED MANSION
+
+
+{-| After midnight in an old house (always dark, black-violet): bone-colored small-caps serif with a sickly green
+glow, cards with arched tops and a cobweb in the corner, a candle-warm flicker in the corner of the screen
+(still under `prefers-reduced-motion`), and a heavy vignette on photos, which are drained and darkened. The
+masthead is a gothic arch window.
+-}
+hauntedMansion : Int -> String
+hauntedMansion images =
+    String.join "\n"
+        [ "/* Haunted Mansion -- candlelight, cobwebs, arched windows. Always dark. */\n"
+            ++ forcedRoot
+                """  --bg: #0d0a10;
+  --fg: #e6dccb;
+  --muted: #a89a86;
+  --border: #3c2c3f;
+  --panel-bg: #16101a;
+  --chip-bg: #1e1522;
+  color-scheme: dark;
+"""
+            ++ """
+body {
+  font-family: "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+}
+
+h1, h2, h3, .section-title {
+  font-variant: small-caps;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: #d9c7a3;
+  text-shadow: 0 0 12px rgba(168, 255, 140, 0.35);
+}
+
+.navbar {
+  background: #120c16 !important;
+  color: var(--fg) !important;
+  border-bottom: 2px solid #5b3f5e;
+  box-shadow: 0 6px 24px rgba(168, 255, 140, 0.12);
+}
+
+.container {
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
+}
+
+/* Arched tops, a purple-black glow, and a cobweb (radial rungs over spokes) in the top-left corner. */
+.post-card, .event-card, .user-card {
+  border: 2px solid #5b3f5e !important;
+  border-radius: 40px 40px 6px 6px / 28px 28px 6px 6px;
+  background:
+    repeating-radial-gradient(circle at 0 0, transparent 0 12px, rgba(230, 220, 203, 0.16) 12px 13px) 0 0 / 96px 96px no-repeat,
+    repeating-conic-gradient(from 90deg at 0 0, rgba(230, 220, 203, 0.16) 0 0.8deg, transparent 0.8deg 15deg) 0 0 / 96px 96px no-repeat,
+    color-mix(in srgb, var(--panel-bg) 92%, transparent) !important;
+  box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.6), 0 0 18px rgba(120, 60, 140, 0.25);
+}
+
+main button:not(.remove-btn) {
+  border-color: #5b3f5e;
+  border-radius: 8px;
+}
+"""
+        , eventSurfaces
+        , """
+/* A guttering candle glow in the bottom-left corner. */
+html::after {
+  content: "";
+  position: fixed;
+  left: -10vmin;
+  bottom: -10vmin;
+  width: 55vmin;
+  height: 55vmin;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(circle, rgba(255, 170, 70, 0.28), transparent 65%);
+  animation: custom-css-flicker 5s ease-in-out infinite;
+}
+@keyframes custom-css-flicker {
+  0%, 100% { opacity: 0.9; }
+  20% { opacity: 0.65; }
+  45% { opacity: 1; }
+  70% { opacity: 0.75; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html::after { animation: none; }
+}
+"""
+        , if images == 0 then
+            """
+html { background: radial-gradient(ellipse at 50% 120%, #2a1530, transparent 60%), radial-gradient(ellipse at 15% 0%, rgba(110, 60, 150, 0.25), transparent 50%), var(--bg) fixed; }
+body { background: transparent; }
+"""
+
+          else
+            pageImage
+                { filter = "grayscale(0.7) contrast(1.1) brightness(0.7)"
+                , overlay = "radial-gradient(ellipse at center, transparent 30%, rgba(5, 2, 8, 0.85)), color-mix(in srgb, var(--bg) 55%, transparent)"
+                , note = "Image 1 (--custom-media-1): the page background, drained, darkened and vignetted."
+                }
+        , if images >= 2 then
+            masthead
+                { note = "Image 2 (--custom-media-2): a gothic arch window onto a darkened photo."
+                , height = "14rem"
+                , filter = "grayscale(0.6) contrast(1.1) brightness(0.8)"
+                , overlay = "radial-gradient(ellipse at center, transparent 40%, rgba(5, 2, 8, 0.7))"
+                , extra = "border: 3px solid #5b3f5e; border-radius: 50% 50% 0 0 / 40% 40% 0 0; box-shadow: 0 0 24px rgba(168, 255, 140, 0.15);"
                 }
 
           else
@@ -2237,6 +2574,126 @@ body { background: transparent; }
 
 
 
+-- PIRATE MAP
+
+
+{-| A treasure map (always light, parchment): stained, burnt-edged parchment with a faded compass rose in the
+corner, dark-wood nav with a brass rule, cards as torn map sheets with dashed trail borders, italic small-caps
+headings with an "X" before every section, and a serif face. Photos are sepia-toned; the masthead is a framed
+chart.
+-}
+pirateMap : Int -> String
+pirateMap images =
+    String.join "\n"
+        [ "/* Pirate Map -- parchment, dashed trails, a compass rose. Always light. */\n"
+            ++ forcedRoot
+                """  --bg: #f1e0b5;
+  --fg: #3a2410;
+  --muted: #6b4a2b;
+  --border: #8a5a2b;
+  --panel-bg: #f7e9c6;
+  --chip-bg: #e8d29a;
+  color-scheme: light;
+"""
+            ++ """
+body {
+  font-family: "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+}
+
+h1, h2, h3, .section-title {
+  font-style: italic;
+  font-variant: small-caps;
+  letter-spacing: 0.06em;
+}
+.section-title::before {
+  content: "✕  ";
+  color: #b3261e;
+  font-style: normal;
+}
+
+/* Dark wood with a brass rule. */
+.navbar {
+  background: #4a2f16 !important;
+  color: #f6e7c4 !important;
+  border-bottom: 4px double #c8963e;
+}
+
+.container {
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+}
+
+/* Map sheets: a dashed trail border, uneven corners, burnt inner edges. */
+.post-card, .event-card, .user-card {
+  border: 2px dashed #8a5a2b !important;
+  border-radius: 4px 14px 6px 12px;
+  background: color-mix(in srgb, var(--panel-bg) 85%, transparent) !important;
+  box-shadow: inset 0 0 28px rgba(120, 70, 20, 0.35), 2px 3px 8px rgba(60, 30, 10, 0.3);
+}
+
+main button:not(.remove-btn) {
+  border: 2px solid #5a3a1c;
+  border-radius: 4px;
+  background: linear-gradient(#d9ae5f, #b88a3e);
+  color: #2b1a0a;
+  font-weight: 700;
+  font-variant: small-caps;
+  letter-spacing: 0.05em;
+}
+
+/* A faded compass rose in the corner: eight petals inside a ring. */
+html::before {
+  content: "";
+  position: fixed;
+  right: 2vmin;
+  bottom: 2vmin;
+  width: 18vmin;
+  height: 18vmin;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.28;
+  border: 3px solid #3a2410;
+  border-radius: 50%;
+  background: repeating-conic-gradient(from -11.25deg, #3a2410 0 22.5deg, transparent 22.5deg 45deg);
+  -webkit-mask-image: radial-gradient(circle, #000 0 62%, transparent 63%);
+  mask-image: radial-gradient(circle, #000 0 62%, transparent 63%);
+}
+"""
+        , eventSurfaces
+        , if images == 0 then
+            """
+/* Parchment: stains, then burnt edges. */
+html {
+  background:
+    radial-gradient(ellipse at 20% 15%, rgba(160, 100, 40, 0.22), transparent 40%),
+    radial-gradient(ellipse at 85% 70%, rgba(130, 80, 30, 0.2), transparent 45%),
+    radial-gradient(ellipse at center, transparent 55%, rgba(110, 60, 20, 0.35)),
+    var(--bg);
+  background-attachment: fixed;
+}
+body { background: transparent; }
+"""
+
+          else
+            pageImage
+                { filter = "sepia(0.85) saturate(0.9) contrast(0.95)"
+                , overlay = "radial-gradient(ellipse at center, transparent 55%, rgba(110, 60, 20, 0.35)), color-mix(in srgb, var(--bg) 62%, transparent)"
+                , note = "Image 1 (--custom-media-1): the page background, sepia-toned under a parchment wash and burnt edges."
+                }
+        , if images >= 2 then
+            masthead
+                { note = "Image 2 (--custom-media-2): a sepia chart in a double-ruled wooden frame."
+                , height = "12rem"
+                , filter = "sepia(0.85) contrast(0.95)"
+                , overlay = "radial-gradient(ellipse at center, transparent 55%, rgba(110, 60, 20, 0.4))"
+                , extra = "border: 6px double #5a3a1c; box-shadow: 3px 4px 10px rgba(60, 30, 10, 0.4); margin: 4px 6px 1.6rem;"
+                }
+
+          else
+            ""
+        ]
+
+
+
 -- Y2K AERO
 
 
@@ -2324,6 +2781,530 @@ body { background: transparent; }
                 , filter = "saturate(1.15)"
                 , overlay = "linear-gradient(180deg, rgba(255, 255, 255, 0.55) 0, rgba(255, 255, 255, 0.1) 50%, transparent 50%)"
                 , extra = "border: 2px solid rgba(255, 255, 255, 0.9); border-radius: 24px; box-shadow: 0 8px 24px rgba(0, 100, 160, 0.35); margin: 6px 6px 1.6rem;"
+                }
+
+          else
+            ""
+        ]
+
+
+
+-- MAC CLASSIC
+
+
+{-| System 7 / Platinum (always light): a 1-bit dithered gray desktop, the column as a white window with a hard
+black outline and drop shadow, cards as windows with a pinstriped title bar, a white menu-bar nav with a heavy
+black rule, square bold controls that invert when pressed, Chicago / Geneva type with font smoothing off. Photos
+are turned into high-contrast black-and-white under a dither.
+-}
+macClassic : Int -> String
+macClassic images =
+    String.join "\n"
+        [ "/* Mac Classic -- System 7: dithered desktop, pinstriped windows, black outlines. Always light. */\n"
+            ++ forcedRoot
+                """  --bg: #ffffff;
+  --fg: #000000;
+  --muted: #444444;
+  --border: #000000;
+  --panel-bg: #ffffff;
+  --chip-bg: #e8e8e8;
+  color-scheme: light;
+"""
+            ++ """
+body {
+  font-family: "Geneva", "Lucida Grande", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: none;
+}
+
+h1, h2, h3, .section-title, .post-card-title {
+  font-family: "Chicago", "Charcoal", "Geneva", "Lucida Grande", Helvetica, Arial, sans-serif;
+  font-weight: 700;
+}
+
+/* The menu bar. */
+.navbar {
+  background: #fff !important;
+  color: #000 !important;
+  border-bottom: 2px solid #000;
+  font-weight: 700;
+}
+
+/* The column is a window on the desktop. */
+.container {
+  background: #fff;
+  border: 2px solid #000;
+  box-shadow: 3px 3px 0 #000;
+}
+
+/* Cards: windows with a pinstriped title bar across the top. */
+.post-card, .event-card, .user-card {
+  border: 2px solid #000 !important;
+  border-radius: 0;
+  box-shadow: 2px 2px 0 #000;
+  background: repeating-linear-gradient(to bottom, #000 0 1px, #fff 1px 3px) 0 0 / 100% 9px no-repeat, #fff !important;
+  padding-top: 14px;
+}
+
+main button:not(.remove-btn) {
+  border: 2px solid #000;
+  border-radius: 6px;
+  background: #fff;
+  color: #000;
+  font-weight: 700;
+  box-shadow: 1px 1px 0 #000;
+}
+main button:not(.remove-btn):active {
+  background: #000;
+  color: #fff;
+}
+
+a { text-decoration: underline; }
+"""
+        , eventSurfaces
+        , if images == 0 then
+            """
+/* The desktop: a 50% dither. */
+html { background: repeating-conic-gradient(#9c9c9c 0 25%, #f2f2f2 0 50%) 0 0 / 2px 2px; }
+body { background: transparent; }
+"""
+
+          else
+            pageImage
+                { filter = "grayscale(1) contrast(2.4) brightness(1.1)"
+                , overlay = "repeating-conic-gradient(rgba(0, 0, 0, 0.3) 0 25%, transparent 0 50%) 0 0 / 2px 2px, rgba(255, 255, 255, 0.25)"
+                , note = "Image 1 (--custom-media-1): the desktop picture, in high-contrast black-and-white under a 1-bit dither."
+                }
+        , if images >= 2 then
+            masthead
+                { note = "Image 2 (--custom-media-2): a black-and-white picture in a hard-outlined window."
+                , height = "12rem"
+                , filter = "grayscale(1) contrast(2)"
+                , overlay = "repeating-conic-gradient(rgba(0, 0, 0, 0.25) 0 25%, transparent 0 50%) 0 0 / 2px 2px"
+                , extra = "border: 2px solid #000; box-shadow: 3px 3px 0 #000;"
+                }
+
+          else
+            ""
+        ]
+
+
+
+-- OS X (ORIGINAL)
+
+
+{-| Mac OS X 10.0 "Aqua" (always light): pinstriped gray desktop, a brushed-silver menu bar, cards as windows with a
+silver title bar and the three red / yellow / green traffic lights, glossy blue gel pill buttons, and soft deep
+window shadows. Photos stay natural under a pinstripe veil; the masthead is a window with a glass gloss.
+-}
+osxAqua : Int -> String
+osxAqua images =
+    String.join "\n"
+        [ "/* OS X (original) -- Aqua: pinstripes, gel buttons, traffic lights. Always light. */\n"
+            ++ forcedRoot
+                """  --bg: #ececec;
+  --fg: #1f1f1f;
+  --muted: #5a5a5a;
+  --border: #a8a8a8;
+  --panel-bg: #ffffff;
+  --chip-bg: #e2e2e2;
+  color-scheme: light;
+"""
+            ++ """
+body {
+  font-family: "Lucida Grande", "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
+h1, h2, h3, .section-title {
+  font-weight: 400;
+  text-shadow: 0 1px 0 #fff;
+}
+
+/* The menu bar: brushed silver. */
+.navbar {
+  background: linear-gradient(#f9f9f9, #d6d6d6) !important;
+  color: #1f1f1f !important;
+  border-bottom: 1px solid #7e7e7e;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+}
+
+.container {
+  background: color-mix(in srgb, var(--bg) 60%, transparent);
+}
+
+/* Cards: windows -- silver title bar, hairline, deep shadow. Post cards also get the traffic lights. */
+.post-card, .event-card, .user-card {
+  position: relative;
+  border: 1px solid #8c8c8c !important;
+  border-radius: 8px;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.3), 0 0 0 0.5px rgba(0, 0, 0, 0.2);
+  background:
+    linear-gradient(#a3a3a3, #a3a3a3) 0 22px / 100% 1px no-repeat,
+    linear-gradient(#f4f4f4, #d4d4d4) 0 0 / 100% 22px no-repeat,
+    #fff !important;
+  padding-top: 30px;
+}
+.post-card::before {
+  content: "";
+  position: absolute;
+  top: 5px;
+  left: 8px;
+  width: 54px;
+  height: 12px;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 6px 6px, #ff5f57 5px, transparent 5.6px),
+    radial-gradient(circle at 26px 6px, #febc2e 5px, transparent 5.6px),
+    radial-gradient(circle at 46px 6px, #28c840 5px, transparent 5.6px);
+}
+
+/* Aqua gel buttons: a bright-to-deep blue gloss. */
+main button:not(.remove-btn) {
+  border: 1px solid #2a64a8;
+  border-radius: 999px;
+  color: #fff;
+  text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.35);
+  background: linear-gradient(#a5d1ff 0%, #5aa8f0 49%, #2b82e0 51%, #6fb7ff 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+main button:not(.remove-btn):active {
+  background: linear-gradient(#6fb7ff 0%, #2b82e0 49%, #1b6bc9 51%, #4a9bea 100%);
+}
+"""
+        , eventSurfaces
+        , if images == 0 then
+            """
+/* The desktop: fine gray pinstripes. */
+html { background: repeating-linear-gradient(to bottom, #ececec 0 2px, #e2e2e2 2px 4px); }
+body { background: transparent; }
+"""
+
+          else
+            pageImage
+                { filter = "saturate(1.15)"
+                , overlay = "repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.34) 0 2px, rgba(255, 255, 255, 0.16) 2px 4px), color-mix(in srgb, var(--bg) 35%, transparent)"
+                , note = "Image 1 (--custom-media-1): the desktop picture, under a pinstripe veil."
+                }
+        , if images >= 2 then
+            masthead
+                { note = "Image 2 (--custom-media-2): a picture in an Aqua window, with a glassy gloss across its top half."
+                , height = "12rem"
+                , filter = "none"
+                , overlay = "linear-gradient(rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0) 50%)"
+                , extra = "border: 1px solid #8c8c8c; border-radius: 8px; box-shadow: 0 8px 22px rgba(0, 0, 0, 0.3);"
+                }
+
+          else
+            ""
+        ]
+
+
+
+-- MATERIAL DESIGN
+
+
+{-| Material Design (follows light/dark): a flat surface (`#fafafa` / `#121212`), cards that are paper at a low
+elevation and rise on hover, a colored app bar (the server's primary color, with the standard three-layer
+elevation), contained uppercase buttons with a small radius, a primary-colored accent bar on section titles, and
+Roboto where the system has it. Photos are plain under a light surface tint; the masthead is an elevated card
+with a scrim.
+-}
+materialDesign : Int -> String
+materialDesign images =
+    String.join "\n"
+        [ "/* Material Design -- surfaces, elevation, a colored app bar. */\n"
+            ++ themedRoot
+                """  --bg: #fafafa;
+  --fg: #212121;
+  --muted: #5f6368;
+  --border: #e0e0e0;
+  --panel-bg: #ffffff;
+  --chip-bg: #eeeeee;
+  --md-z1: 0 1px 3px rgba(0, 0, 0, 0.2), 0 1px 1px rgba(0, 0, 0, 0.14), 0 2px 1px -1px rgba(0, 0, 0, 0.12);
+  --md-z4: 0 2px 4px -1px rgba(0, 0, 0, 0.2), 0 4px 5px rgba(0, 0, 0, 0.14), 0 1px 10px rgba(0, 0, 0, 0.12);
+  --md-z8: 0 5px 5px -3px rgba(0, 0, 0, 0.2), 0 8px 10px 1px rgba(0, 0, 0, 0.14), 0 3px 14px 2px rgba(0, 0, 0, 0.12);
+"""
+                """  --bg: #121212;
+  --fg: #e6e6e6;
+  --muted: #a0a0a0;
+  --border: #2c2c2c;
+  --panel-bg: #1e1e1e;
+  --chip-bg: #2a2a2a;
+  --md-z1: 0 1px 3px rgba(0, 0, 0, 0.6), 0 1px 1px rgba(0, 0, 0, 0.45), 0 2px 1px -1px rgba(0, 0, 0, 0.4);
+  --md-z4: 0 2px 4px -1px rgba(0, 0, 0, 0.6), 0 4px 5px rgba(0, 0, 0, 0.45), 0 1px 10px rgba(0, 0, 0, 0.4);
+  --md-z8: 0 5px 5px -3px rgba(0, 0, 0, 0.6), 0 8px 10px 1px rgba(0, 0, 0, 0.45), 0 3px 14px 2px rgba(0, 0, 0, 0.4);
+"""
+            ++ """
+body {
+  font-family: Roboto, "Helvetica Neue", "Segoe UI", Arial, sans-serif;
+}
+
+h1, h2, h3, .section-title {
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+/* Section titles get a short accent bar in the server's primary color (decorative -- the text stays --fg). */
+.section-title {
+  border-left: 4px solid var(--primary-color, #6200ee);
+  padding-left: 0.6rem;
+}
+
+/* The app bar keeps the server's primary color, raised. */
+.navbar {
+  border-bottom: 0;
+  box-shadow: var(--md-z4);
+}
+
+.container {
+  background: var(--bg);
+}
+
+.post-card, .event-card, .user-card {
+  border: 0 !important;
+  border-radius: 4px;
+  background: var(--panel-bg) !important;
+  box-shadow: var(--md-z1);
+  transition: box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.post-card:hover, .event-card:hover, .user-card:hover {
+  box-shadow: var(--md-z8);
+}
+
+/* Contained buttons: uppercase, 4px radius, elevated. */
+main button:not(.remove-btn) {
+  border: 0;
+  border-radius: 4px;
+  text-transform: uppercase;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  box-shadow: var(--md-z1);
+  transition: box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+main button:not(.remove-btn):hover { box-shadow: var(--md-z4); }
+"""
+        , if images == 0 then
+            """
+html { background: var(--bg); }
+body { background: transparent; }
+"""
+
+          else
+            pageImage
+                { filter = "none"
+                , overlay = "color-mix(in srgb, var(--bg) 72%, transparent)"
+                , note = "Image 1 (--custom-media-1): the page background, under a surface-colored scrim."
+                }
+        , if images >= 2 then
+            masthead
+                { note = "Image 2 (--custom-media-2): an elevated hero image with a bottom scrim."
+                , height = "12rem"
+                , filter = "none"
+                , overlay = "linear-gradient(transparent 40%, rgba(0, 0, 0, 0.4))"
+                , extra = "border-radius: 4px; box-shadow: var(--md-z4); margin: 4px 4px 1.6rem;"
+                }
+
+          else
+            ""
+        ]
+
+
+
+-- LIQUID GLASS
+
+
+{-| Frosted, refractive glass (follows light/dark): a soft sky / lilac / butter gradient mesh behind everything
+so the glass has something to refract, translucent blurred cards with big radii, a bright specular edge on top
+and a faint one below, capsule-shaped glassy buttons, and a clear glass app bar (without a blur -- a blur on the
+nav would trap its fixed panels). With images the photo itself shows through the glass.
+-}
+liquidGlass : Int -> String
+liquidGlass images =
+    String.join "\n"
+        [ """/* Liquid Glass -- translucent, blurred, specular edges, big radii. */
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+}
+
+h1, h2, h3, .section-title {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* Clear glass for the app bar, text in the page's own color. */
+.navbar {
+  background: color-mix(in srgb, var(--bg) 55%, transparent) !important;
+  color: var(--fg) !important;
+  border-bottom: 1px solid color-mix(in srgb, #fff 45%, transparent);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.35) inset, 0 6px 20px rgba(0, 0, 0, 0.08);
+}
+
+/* No filter on the column -- nested blurs would only see it, not the page behind. */
+.container {
+  background: transparent;
+  border: 0;
+}
+
+.post-card, .event-card, .user-card {
+  border: 1px solid color-mix(in srgb, #fff 55%, transparent) !important;
+  border-radius: 28px;
+  background: color-mix(in srgb, var(--bg) 38%, transparent) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(1.8);
+  backdrop-filter: blur(22px) saturate(1.8);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.15),
+    0 10px 30px rgba(0, 0, 0, 0.12);
+}
+
+/* Capsule glass buttons. */
+main button:not(.remove-btn) {
+  border: 1px solid color-mix(in srgb, #fff 55%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg) 35%, transparent);
+  -webkit-backdrop-filter: blur(12px) saturate(1.6);
+  backdrop-filter: blur(12px) saturate(1.6);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), 0 4px 14px rgba(0, 0, 0, 0.1);
+}
+"""
+        , if images == 0 then
+            """
+/* Something colorful behind the glass: three soft blooms. */
+html {
+  background:
+    radial-gradient(ellipse at 12% 8%, rgba(125, 211, 252, 0.55), transparent 45%),
+    radial-gradient(ellipse at 88% 18%, rgba(240, 171, 252, 0.5), transparent 45%),
+    radial-gradient(ellipse at 50% 95%, rgba(253, 230, 138, 0.5), transparent 50%),
+    var(--bg);
+  background-attachment: fixed;
+}
+body { background: transparent; }
+"""
+
+          else
+            pageImage
+                { filter = "saturate(1.4)"
+                , overlay = "color-mix(in srgb, var(--bg) 15%, transparent)"
+                , note = "Image 1 (--custom-media-1): the page background, nearly untinted so it shows through the glass."
+                }
+        , if images >= 2 then
+            masthead
+                { note = "Image 2 (--custom-media-2): a hero image behind a pane of glass with a specular sheen."
+                , height = "12rem"
+                , filter = "saturate(1.3)"
+                , overlay = "linear-gradient(160deg, rgba(255, 255, 255, 0.45), rgba(255, 255, 255, 0) 40%)"
+                , extra = "border: 1px solid rgba(255, 255, 255, 0.6); border-radius: 28px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 10px 30px rgba(0, 0, 0, 0.14); margin: 4px 4px 1.6rem;"
+                }
+
+          else
+            ""
+        ]
+
+
+
+-- CANDY SHOP
+
+
+{-| A sweet shop (always light, bubblegum pink): candy-stripe and polka-dot wallpaper, a rainbow gumdrop nav,
+plump rounded cards with a thick candy ledge underneath, glossy pink pill buttons, and plum text with raspberry
+headings. Cards give a one-time jelly squish on hover (not under `prefers-reduced-motion`).
+-}
+candyShop : Int -> String
+candyShop images =
+    String.join "\n"
+        [ "/* Candy Shop -- stripes, polka dots, gumdrop cards. Always light. */\n"
+            ++ forcedRoot
+                """  --bg: #fff0f7;
+  --fg: #4a1d3d;
+  --muted: #8a4f78;
+  --border: #f7a8d0;
+  --panel-bg: #ffffff;
+  --chip-bg: #ffe0f0;
+  color-scheme: light;
+"""
+            ++ """
+body {
+  font-family: "Nunito", "Varela Round", "Avenir Next Rounded", "Trebuchet MS", "Segoe UI", sans-serif;
+}
+
+h1, h2, h3, .section-title {
+  color: #c2185b;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+/* A rainbow of gumdrops along the top. */
+.navbar {
+  background: linear-gradient(90deg, #ff8fc7, #ffb86b, #ffe56b, #8fe3b0, #7fd1ff, #c9a0ff) !important;
+  color: #4a1d3d !important;
+  border-bottom: 4px solid #fff;
+}
+
+.container {
+  background: color-mix(in srgb, var(--bg) 65%, transparent);
+  border-radius: 28px;
+}
+
+/* Gumdrop cards: plump, with a thick candy ledge below. */
+.post-card, .event-card, .user-card {
+  border: 3px solid #fff !important;
+  border-radius: 28px;
+  background: linear-gradient(#ffffff, #ffe9f5) !important;
+  box-shadow: 0 0 0 3px #ff8fc7, 0 7px 0 3px #f48fbf, 0 12px 20px rgba(200, 60, 130, 0.25);
+  margin: 4px 6px 4px;
+}
+.post-card:hover, .event-card:hover, .user-card:hover {
+  animation: custom-css-jelly 0.5s ease-out;
+}
+@keyframes custom-css-jelly {
+  0% { transform: scale(1, 1); }
+  35% { transform: scale(1.02, 0.97); }
+  65% { transform: scale(0.99, 1.01); }
+  100% { transform: scale(1, 1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .post-card:hover, .event-card:hover, .user-card:hover { animation: none; }
+}
+
+/* Glossy pink pill buttons. */
+main button:not(.remove-btn) {
+  border: 0;
+  border-radius: 999px;
+  color: #fff;
+  font-weight: 800;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.2);
+  background: linear-gradient(#ffa9d9, #ff6fb5);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.6), 0 4px 0 #d94d98;
+}
+main button:not(.remove-btn):active {
+  transform: translateY(3px);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.4), 0 1px 0 #d94d98;
+}
+"""
+        , eventSurfaces
+        , if images == 0 then
+            """
+/* Wallpaper: candy stripes with a scatter of white polka dots. */
+html {
+  background:
+    radial-gradient(circle, rgba(255, 255, 255, 0.85) 0 4px, transparent 4.6px) 0 0 / 46px 46px,
+    repeating-linear-gradient(45deg, #fff0f7 0 24px, #ffe0f0 24px 48px);
+  background-attachment: fixed;
+}
+body { background: transparent; }
+"""
+
+          else
+            pageImage
+                { filter = "saturate(1.25) brightness(1.08)"
+                , overlay = "radial-gradient(circle, rgba(255, 255, 255, 0.7) 0 4px, transparent 4.6px) 0 0 / 46px 46px, color-mix(in srgb, var(--bg) 60%, transparent)"
+                , note = "Image 1 (--custom-media-1): the page background, brightened under a pink veil and polka dots."
+                }
+        , if images >= 2 then
+            masthead
+                { note = "Image 2 (--custom-media-2): a bright, dotted picture in a plump white frame with a pink ledge."
+                , height = "12rem"
+                , filter = "saturate(1.25) brightness(1.05)"
+                , overlay = "radial-gradient(circle, rgba(255, 255, 255, 0.55) 0 3px, transparent 3.6px) 0 0 / 22px 22px"
+                , extra = "border: 4px solid #fff; border-radius: 28px; box-shadow: 0 0 0 3px #ff8fc7, 0 7px 0 3px #f48fbf; margin: 6px 8px 1.8rem;"
                 }
 
           else
@@ -2535,6 +3516,123 @@ body { background: transparent; }
                 , filter = "none"
                 , overlay = "radial-gradient(circle, color-mix(in srgb, var(--riso-blue) 60%, transparent) 0 1.2px, transparent 1.8px) 0 0 / 6px 6px"
                 , extra = "background-color: var(--riso-pink); background-blend-mode: normal, luminosity; border: 2px dashed #151515; box-shadow: 6px 6px 0 var(--riso-blue); transform: rotate(0.6deg); margin: 8px 8px 1.8rem 4px; background-attachment: scroll;"
+                }
+
+          else
+            ""
+        ]
+
+
+
+-- COMIC BOOK
+
+
+{-| A newsstand comic (always light, newsprint cream): a Ben-Day halftone dot field in the server's primary and
+nav colors, thick black ink outlines with hard offset shadows, Impact-style capitals with a pop shadow, section
+titles as tilted yellow caption boxes, and press-in "POW" buttons. Photos get punched-up contrast under a halftone
+screen; the masthead is an inked panel.
+-}
+comicBook : Int -> String
+comicBook images =
+    String.join "\n"
+        [ "/* Comic Book -- halftone dots, heavy ink, caption boxes. Always light. */\n"
+            ++ forcedRoot
+                """  --bg: #fffbe6;
+  --fg: #141414;
+  --muted: #4a4a4a;
+  --border: #141414;
+  --panel-bg: #ffffff;
+  --chip-bg: #ffe27a;
+  --comic-red: var(--primary-color, #e23b3b);
+  --comic-blue: var(--nav-color, #2b6cff);
+  --comic-yellow: #ffd93b;
+  color-scheme: light;
+"""
+            ++ """
+body {
+  font-family: "Comic Sans MS", "Chalkboard SE", "Marker Felt", "Trebuchet MS", sans-serif;
+}
+
+h1, h2, h3, .post-card-title {
+  font-family: Impact, "Arial Black", "Haettenschweiler", "Helvetica Neue", sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  text-shadow: 2px 2px 0 var(--comic-yellow);
+}
+
+/* Section labels: a tilted yellow caption box. */
+.section-title {
+  display: inline-block;
+  padding: 0.1rem 0.6rem;
+  background: var(--comic-yellow);
+  border: 3px solid var(--fg);
+  box-shadow: 3px 3px 0 var(--fg);
+  transform: rotate(-1.5deg);
+  font-family: Impact, "Arial Black", "Haettenschweiler", sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.navbar {
+  border-bottom: 4px solid var(--fg);
+  box-shadow: 0 4px 0 var(--comic-yellow);
+}
+
+.container {
+  background: color-mix(in srgb, var(--bg) 80%, transparent);
+}
+
+/* Panels: white, inked, with halftone corners and a hard shadow (right margin keeps it inside the clip). */
+.post-card, .event-card, .user-card {
+  border: 3px solid var(--fg) !important;
+  border-radius: 6px;
+  margin: 0 6px 2px 0;
+  box-shadow: 5px 5px 0 var(--fg);
+  background:
+    radial-gradient(circle, color-mix(in srgb, var(--comic-red) 32%, transparent) 1.2px, transparent 1.7px) 0 0 / 8px 8px,
+    #fff !important;
+}
+
+main button:not(.remove-btn) {
+  border: 3px solid var(--fg);
+  border-radius: 6px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  box-shadow: 3px 3px 0 var(--fg);
+}
+main button:not(.remove-btn):active {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 var(--fg);
+}
+"""
+        , eventSurfaces
+        , if images == 0 then
+            """
+/* Page background: Ben-Day dots in two inks, offset against each other. */
+html {
+  background:
+    radial-gradient(circle, color-mix(in srgb, var(--comic-red) 30%, transparent) 2.2px, transparent 2.8px) 0 0 / 14px 14px,
+    radial-gradient(circle, color-mix(in srgb, var(--comic-blue) 24%, transparent) 2.2px, transparent 2.8px) 7px 7px / 14px 14px,
+    var(--bg);
+  background-attachment: fixed;
+}
+body { background: transparent; }
+"""
+
+          else
+            pageImage
+                { filter = "contrast(1.3) saturate(1.4)"
+                , overlay = "radial-gradient(circle, rgba(0, 0, 0, 0.22) 1.2px, transparent 1.7px) 0 0 / 6px 6px, color-mix(in srgb, var(--bg) 45%, transparent)"
+                , note = "Image 1 (--custom-media-1): the page background, punched up under a halftone screen."
+                }
+        , if images >= 2 then
+            masthead
+                { note = "Image 2 (--custom-media-2): an inked comic panel with a halftone screen and a hard shadow."
+                , height = "12rem"
+                , filter = "contrast(1.25) saturate(1.4)"
+                , overlay = "radial-gradient(circle, rgba(0, 0, 0, 0.25) 1.4px, transparent 1.9px) 0 0 / 6px 6px"
+                , extra = "border: 4px solid var(--fg); box-shadow: 6px 6px 0 var(--fg); margin: 4px 10px 1.6rem 4px;"
                 }
 
           else
@@ -2930,6 +4028,123 @@ themedRoot light dark =
         ++ "}\n:root[data-theme=\"dark\"] {\n"
         ++ dark
         ++ "}\n"
+
+
+
+-- DEEP SPACE
+
+
+{-| The view from a station window (always dark, near-black indigo): a twinkling starfield with violet and teal
+nebulae at the edges, thin all-caps light-weight headings with a cold glow, cards as glass viewports with a faint
+blue rim, and a dark-glass nav. Photos are dimmed and given a violet halo; the masthead is a porthole-shaped
+viewport. Twinkling stops under `prefers-reduced-motion`.
+-}
+deepSpace : Int -> String
+deepSpace images =
+    String.join "\n"
+        [ "/* Deep Space -- starfield, nebulae, viewport cards. Always dark. */\n"
+            ++ forcedRoot
+                """  --bg: #04030f;
+  --fg: #e8ecff;
+  --muted: #9aa6d6;
+  --border: #2b2f66;
+  --panel-bg: #0b0d26;
+  --chip-bg: #12153a;
+  color-scheme: dark;
+"""
+            ++ """
+body {
+  font-family: "Eurostile", "Avenir Next", "Segoe UI", "Helvetica Neue", sans-serif;
+}
+
+h1, h2, h3, .section-title {
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-weight: 300;
+  color: #cfd6ff;
+  text-shadow: 0 0 14px rgba(120, 140, 255, 0.55);
+}
+
+.navbar {
+  background: rgba(8, 10, 34, 0.92) !important;
+  color: var(--fg) !important;
+  border-bottom: 1px solid #3a4090;
+}
+
+.container {
+  background: color-mix(in srgb, var(--bg) 52%, transparent);
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+}
+
+/* Viewports: smoked glass with a thin blue rim and a halo. */
+.post-card, .event-card, .user-card {
+  border: 1px solid #3a4090 !important;
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--panel-bg) 70%, transparent) !important;
+  box-shadow: inset 0 0 0 1px rgba(120, 140, 255, 0.15), 0 0 24px rgba(90, 110, 255, 0.18);
+}
+
+main button:not(.remove-btn) {
+  border: 1px solid #5a68e0;
+  border-radius: 999px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* A second, twinkling star layer. */
+html::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(circle, rgba(255, 255, 255, 0.9) 0 1px, transparent 1.5px) 13px 29px / 97px 89px,
+    radial-gradient(circle, rgba(190, 210, 255, 0.8) 0 1.2px, transparent 1.8px) 41px 7px / 149px 131px;
+  animation: custom-css-twinkle 6s ease-in-out infinite alternate;
+}
+@keyframes custom-css-twinkle {
+  from { opacity: 0.35; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html::after { animation: none; opacity: 0.8; }
+}
+"""
+        , eventSurfaces
+        , if images == 0 then
+            """
+/* Stars, with violet and teal nebulae in the corners. */
+html {
+  background:
+    radial-gradient(circle, rgba(255, 255, 255, 0.7) 0 1px, transparent 1.5px) 0 0 / 61px 53px,
+    radial-gradient(ellipse at 10% 5%, rgba(124, 77, 255, 0.28), transparent 45%),
+    radial-gradient(ellipse at 92% 85%, rgba(0, 188, 212, 0.2), transparent 45%),
+    var(--bg);
+  background-attachment: fixed;
+}
+body { background: transparent; }
+"""
+
+          else
+            pageImage
+                { filter = "saturate(1.2) brightness(0.8)"
+                , overlay = "radial-gradient(ellipse at 50% 0%, rgba(120, 90, 255, 0.25), transparent 60%), color-mix(in srgb, var(--bg) 55%, transparent)"
+                , note = "Image 1 (--custom-media-1): the page background, dimmed under a violet halo."
+                }
+        , if images >= 2 then
+            masthead
+                { note = "Image 2 (--custom-media-2): a porthole viewport with a blue rim and glow."
+                , height = "13rem"
+                , filter = "saturate(1.2) brightness(0.9)"
+                , overlay = "radial-gradient(ellipse at center, transparent 50%, rgba(4, 3, 15, 0.7))"
+                , extra = "border: 2px solid #5a68e0; border-radius: 80px; box-shadow: 0 0 30px rgba(90, 110, 255, 0.4), inset 0 0 30px rgba(0, 0, 0, 0.6); margin: 4px 6px 1.6rem;"
+                }
+
+          else
+            ""
+        ]
 
 
 

@@ -23,7 +23,7 @@ count needle haystack =
 suite : Test
 suite =
     describe "CustomCssTemplates"
-        [ test "has seventy-two templates -- twenty-four styles in 0/1/2 image versions -- in the dropdown's order" <|
+        [ test "has a hundred and five templates -- thirty-five styles in 0/1/2 image versions -- in the dropdown's order" <|
             \_ ->
                 List.map .name Templates.all
                     |> Expect.equal
@@ -33,6 +33,7 @@ suite =
                             , ( "Bauhaus", "image" )
                             , ( "Serif Fonts", "image" )
                             , ( "Standard Style", "background image" )
+                            , ( "Standard Side Navigation", "background image" )
                             , ( "High Contrast", "image" )
                             , ( "Terminal", "image" )
                             , ( "Newspaper", "image" )
@@ -44,15 +45,25 @@ suite =
                             , ( "Town Square", "image" )
                             , ( "Blueprint", "image" )
                             , ( "Disco", "image" )
+                            , ( "Psychedelic Poster", "image" )
                             , ( "Cinematic", "image" )
+                            , ( "Haunted Mansion", "image" )
                             , ( "Dyslexia-Friendly", "image" )
                             , ( "Field Guide", "image" )
+                            , ( "Pirate Map", "image" )
                             , ( "Y2K Aero", "image" )
+                            , ( "Mac Classic", "image" )
+                            , ( "OS X (Original)", "image" )
+                            , ( "Material Design", "image" )
+                            , ( "Liquid Glass", "image" )
+                            , ( "Candy Shop", "image" )
                             , ( "Retro Desktop", "image" )
                             , ( "Zine", "image" )
+                            , ( "Comic Book", "image" )
                             , ( "Wabi-sabi", "image" )
                             , ( "Ocean", "image" )
                             , ( "Forest", "image" )
+                            , ( "Deep Space", "image" )
                             ]
                         )
         , test "styles with an always-dark backdrop force the dark theme, always-light ones force light, the rest force nothing" <|
@@ -64,8 +75,8 @@ suite =
                 in
                 Expect.equal
                     ( forcing .forceDarkTheme, forcing .forceLightTheme )
-                    ( [ "Terminal", "Synthwave", "Blueprint", "Disco", "Cinematic" ]
-                    , [ "Polaroid", "Y2K Aero", "Retro Desktop", "Zine" ]
+                    ( [ "Terminal", "Synthwave", "Blueprint", "Disco", "Psychedelic Poster", "Cinematic", "Haunted Mansion", "Deep Space" ]
+                    , [ "Polaroid", "Pirate Map", "Y2K Aero", "Mac Classic", "OS X (Original)", "Candy Shop", "Retro Desktop", "Zine", "Comic Book" ]
                     )
         , test "a template never forces both themes, and a style forces the same theme in all three of its versions" <|
             \_ ->
@@ -93,7 +104,7 @@ suite =
                 Templates.grouped
                     |> List.filter (\( _, ts ) -> List.all (\t -> String.contains "var(--primary-color" t.css) ts)
                     |> List.map Tuple.first
-                    |> Expect.equal [ "Bauhaus", "Serif Fonts", "Standard Style", "Concert Poster", "Town Square", "Retro Desktop", "Zine", "Wabi-sabi" ]
+                    |> Expect.equal [ "Bauhaus", "Serif Fonts", "Standard Style", "Standard Side Navigation", "Concert Poster", "Town Square", "Material Design", "Retro Desktop", "Zine", "Comic Book", "Wabi-sabi" ]
         , test "adjacent steps to the neighbouring style at the same image count, wrapping around" <|
             \_ ->
                 let
@@ -110,13 +121,13 @@ suite =
                     , step -1 "Bauhaus (1 image)"
                     , step 1 "Art Deco (2 images)"
                     , step -1 "Art Deco (2 images)"
-                    , step 1 "Forest"
+                    , step 1 "Deep Space"
                     , step -1 "Standard Style (1 background image)"
                     ]
                     [ Just "Serif Fonts (1 image)"
                     , Just "Art Deco (1 image)"
                     , Just "Bauhaus (2 images)"
-                    , Just "Forest (2 images)"
+                    , Just "Deep Space (2 images)"
                     , Just "Art Deco"
                     , Just "Serif Fonts (1 image)"
                     ]
@@ -127,7 +138,7 @@ suite =
                     , Templates.adjacent -1 2 Nothing |> Maybe.map .name
                     , Templates.adjacent 1 0 Nothing |> Maybe.map .name
                     ]
-                    [ Just "Art Deco (1 image)", Just "Forest (2 images)", Just "Art Deco" ]
+                    [ Just "Art Deco (1 image)", Just "Deep Space (2 images)", Just "Art Deco" ]
         , test "every template gives dropdowns an inset chevron instead of the browser's cramped arrow" <|
             \_ ->
                 Templates.all
@@ -138,7 +149,7 @@ suite =
             \_ ->
                 Expect.equal
                     ( List.length Templates.grouped, List.all (\( _, ts ) -> List.length ts == 3) Templates.grouped, List.concatMap Tuple.second Templates.grouped )
-                    ( 24, True, Templates.all )
+                    ( 35, True, Templates.all )
         , test "each template uses exactly as many --custom-media-N as it declares" <|
             \_ ->
                 Templates.all
