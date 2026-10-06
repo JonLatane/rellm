@@ -423,6 +423,15 @@
   white-space: nowrap;
 }
 
+/* Touch devices have no hover tooltip, so the timestamp opt-in above buys
+   nothing there -- let taps on it fall through to the card instead of being
+   a dead zone. */
+@media (hover: none) {
+  .post-card-meta .post-timestamps {
+    pointer-events: none;
+  }
+}
+
 .post-author-link {
   display: inline-flex;
   align-items: center;

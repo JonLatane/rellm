@@ -1183,7 +1183,11 @@ accountsAndServersTab shared currentRoute =
                 )
             ]
             []
-        , formView shared currentRoute
+        , if shared.accounts.accountsPanelOpened then
+            formView shared currentRoute
+
+          else
+            text ""
         ]
 
 

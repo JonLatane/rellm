@@ -92,6 +92,11 @@ type alias Model =
     , addServerForm : AddServerForm
     , showAccountsPanel : Bool
 
+    -- Whether the panel has ever been opened this session. `UI.formView` (the username/password
+    -- inputs) is only mounted once it has, so password managers (1Password etc.) don't offer to
+    -- sign in the moment any page loads, before the user has asked for the Accounts Panel.
+    , accountsPanelOpened : Bool
+
     -- Whether the "X Recommended Servers..." button (see `UI.recommendedServersStrip`)
     -- has been expanded into its horizontally-scrollable strip of chips.
     -- Purely session-transient UI state, not persisted -- reset to `False`
@@ -1531,6 +1536,7 @@ init req flags blueskyAccountsFlags mastodonAccountsAndServersFlags =
       , accountForm = { emptyForm | server = browsingHost }
       , addServerForm = emptyAddServerForm
       , showAccountsPanel = False
+      , accountsPanelOpened = False
       , recommendedServersExpanded = False
       , recommendedServerConnections = Dict.empty
       , focusedAccount = Nothing
@@ -3008,7 +3014,7 @@ sendUpdate req msg model =
 
                 newModel : Model
                 newModel =
-                    { model | showAccountsPanel = newlyShown }
+                    { model | showAccountsPanel = newlyShown, accountsPanelOpened = model.accountsPanelOpened || newlyShown }
             in
             ( if newlyShown then
                 repopulateBlankServerField newModel
