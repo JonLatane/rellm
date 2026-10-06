@@ -62,7 +62,7 @@ import Json.Decode as Decode exposing (Decoder)
 import Json.Encode as Encode
 import Ports
 import Process
-import Proto.Rellm exposing (AccessTokenResponse, ContactMethod, FederatedServer, GetPushSubscriptionStatusResponse, MastodonServer, PushSubscription, RefreshTokenResponse, ServerConfiguration, ServerInfo, User)
+import Proto.Rellm exposing (AccessTokenResponse, ContactMethod, CustomCSSConfiguration, FederatedServer, GetPushSubscriptionStatusResponse, MastodonServer, PushSubscription, RefreshTokenResponse, ServerConfiguration, ServerInfo, User)
 import Proto.Rellm.Rellm as Rellm
 import Proto.Rellm.Visibility exposing (Visibility(..))
 import Proto.Rellm.WebUserInterface exposing (WebUserInterface)
@@ -206,6 +206,14 @@ type alias Model =
     -- server's config has loaded, but not before this one's, since that's
     -- what supplies the page's own theming.
     , browsingHostConfigResolved : Bool
+
+    -- A custom stylesheet rendered by Elm itself (`UI.CustomCssStylesheet`), on top of whatever the
+    -- page's `<link>` to `/custom_css.css` already loaded: the Elm dev server (port 1234) has no
+    -- Rust server behind that `<link>`, so `GotDevCustomCss` fills this from `GetCustomCSS`
+    -- instead; and the Theme tab's Custom CSS editor (`SetCustomCssOverride`) uses it to preview
+    -- an unsaved draft, then to show a just-saved one without a reload. Only ever about
+    -- `mainFrontendHost`'s own CSS -- it's the page's server.
+    , customCssOverride : Maybe CustomCSSConfiguration
 
     -- The server that host resolves to, once known: usually `browsingHost`
     -- itself, but corrected to a CDN's public `frontendHost` if `browsingHost`
@@ -471,6 +479,8 @@ type Msg
     | ChangeServerShortNameClicked String String
     | GotChangeServerShortNameResult (Result Grpc.Error ( RellmAccount, ServerConfiguration ))
     | GotServerConfigSaveResult String ServerConfiguration
+    | SetCustomCssOverride (Maybe CustomCSSConfiguration)
+    | GotDevCustomCss (Result Grpc.Error CustomCSSConfiguration)
     | FocusInput String
     | ClearFieldClicked String Msg
     | ServerConnected RellmServer
@@ -1532,6 +1542,7 @@ init req flags blueskyAccountsFlags mastodonAccountsAndServersFlags =
       , browsingHost = browsingHost
       , browsingPort = req.url.port_
       , browsingHostConfigResolved = False
+      , customCssOverride = Nothing
       , mainFrontendHost = browsingHost
       , moveAnimations = Dict.empty
       , serverMoveAnimations = Dict.empty
@@ -1603,6 +1614,23 @@ subscriptions model =
         , Ports.pushSubscriptionChangeReceived PushSubscriptionChangeReceived
         , Ports.facebookLoginResult GotMastodonLoginResult
         ]
+
+
+{-| The Elm dev server (`RellmServers.elmPrefix` == `""`, i.e. port 1234) has no Rust server behind
+`index.html`'s `<link>` to `/custom_css.css` (it just answers with `index.html`), so there the page's
+own server's Custom CSS is fetched with `GetCustomCSS` and rendered by `UI.CustomCssStylesheet`
+instead -- see `Model.customCssOverride`. A no-op everywhere else.
+-}
+devCustomCssCmd : Model -> RellmServer -> Cmd Msg
+devCustomCssCmd model server =
+    if RellmServers.elmPrefix (RellmServers.returnHost model.browsingHost model.browsingPort) == "" && server.frontendHost == model.mainFrontendHost then
+        Grpc.new Rellm.getCustomCSS {}
+            |> Grpc.setHost (RellmServers.rellmServerUrl server)
+            |> Grpc.toTask
+            |> Task.attempt GotDevCustomCss
+
+    else
+        Cmd.none
 
 
 {-| `sendUpdate`'s actual per-`Msg` logic, plus `syncItemAnimations`,
@@ -2306,6 +2334,7 @@ sendUpdate req msg model =
                     ( newModel
                     , Cmd.batch
                         (refreshPermissionsForServer server newModel.accounts
+                            :: devCustomCssCmd newModel server
                             :: Ports.persistMastodonAccountsAndServers (encodeMastodonAccountsAndServers newModel)
                             :: federatedServerCmds
                             ++ mastodonInstanceLogoCmds
@@ -3524,6 +3553,26 @@ sendUpdate req msg model =
                     -- the caller (see `AboutTab`) via this same `Result` passing
                     -- through `Main.notifyPageOfSharedMsg`, same as `GotRenameServerResult`.
                     ( model, Cmd.none )
+
+        SetCustomCssOverride maybeConfig ->
+            ( { model | customCssOverride = maybeConfig }, Cmd.none )
+
+        GotDevCustomCss (Ok config) ->
+            -- Don't clobber a draft/saved override the Theme tab's editor set while this was in flight.
+            ( { model
+                | customCssOverride =
+                    case model.customCssOverride of
+                        Just existing ->
+                            Just existing
+
+                        Nothing ->
+                            Just config
+              }
+            , Cmd.none
+            )
+
+        GotDevCustomCss (Err _) ->
+            ( model, Cmd.none )
 
         GotServerConfigSaveResult host newConfig ->
             let

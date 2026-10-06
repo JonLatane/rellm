@@ -435,6 +435,7 @@ diesel::table! {
         telnyx_config -> Nullable<Jsonb>,
         supported_contact_protocols -> Nullable<Jsonb>,
         stalwart_config -> Nullable<Jsonb>,
+        custom_css_configuration -> Nullable<Jsonb>,
     }
 }
 

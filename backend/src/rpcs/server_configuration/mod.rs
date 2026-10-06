@@ -11,6 +11,12 @@ pub use get_server_configuration::create_default_server_configuration;
 mod configure_server;
 pub use configure_server::configure_server;
 
+mod get_custom_css;
+pub use get_custom_css::get_custom_css;
+
+mod configure_custom_css;
+pub use configure_custom_css::configure_custom_css;
+
 mod lock_cluster_resources;
 pub use lock_cluster_resources::lock_cluster_resources;
 

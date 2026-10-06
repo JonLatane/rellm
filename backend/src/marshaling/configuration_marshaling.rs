@@ -43,6 +43,9 @@ impl ToDbServerConfiguration for ServerConfiguration {
                 .stalwart_config
                 .as_ref()
                 .map(|c| serde_json::to_value(c).unwrap()),
+            // Not part of `ServerConfiguration` -- `configure_server` carries the active row's
+            // `custom_css_configuration` forward instead.
+            custom_css_configuration: None,
             media_settings: self
                 .media_settings
                 .as_ref()

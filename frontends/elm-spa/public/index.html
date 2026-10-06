@@ -76,6 +76,10 @@
     document.write('<link rel="stylesheet" href="' + rellmBasePath + '/style/shared/media_viewer_panel.css">');
     document.write('<link rel="stylesheet" href="' + rellmBasePath + '/style/shared/audio_player_panel.css">');
     document.write('<link rel="stylesheet" href="' + rellmBasePath + '/style/shared/messaging_panel.css">');
+    // The server's admin-configured Custom CSS (`CustomCSSConfiguration`) -- served by the Rust server,
+    // last so it overrides everything above. The Elm dev server has no such route (it answers with
+    // index.html, which the browser ignores as a stylesheet); `UI.CustomCssStylesheet` covers that case.
+    document.write('<link rel="stylesheet" href="' + rellmBasePath + '/custom_css.css">');
 
     // Markdown rendering (see `public/markdown.js`) -- vendored rather than
     // CDN-loaded, so the app keeps working offline/behind a firewall.

@@ -606,6 +606,20 @@ final $typed_data.Uint8List serverLogoDescriptor = $convert.base64Decode(
     'ABKAlIA1IPd2lkZU1lZGlhSWREYXJriAEBQhAKDl9zcXVhcmVNZWRpYUlkQhQKEl9zcXVhcmVN'
     'ZWRpYUlkRGFya0IOCgxfd2lkZU1lZGlhSWRCEgoQX3dpZGVNZWRpYUlkRGFyaw==');
 
+@$core.Deprecated('Use customCSSConfigurationDescriptor instead')
+const CustomCSSConfiguration$json = {
+  '1': 'CustomCSSConfiguration',
+  '2': [
+    {'1': 'media_ids', '3': 1, '4': 3, '5': 9, '10': 'mediaIds'},
+    {'1': 'custom_css', '3': 2, '4': 1, '5': 9, '10': 'customCss'},
+  ],
+};
+
+/// Descriptor for `CustomCSSConfiguration`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List customCSSConfigurationDescriptor = $convert.base64Decode(
+    'ChZDdXN0b21DU1NDb25maWd1cmF0aW9uEhsKCW1lZGlhX2lkcxgBIAMoCVIIbWVkaWFJZHMSHQ'
+    'oKY3VzdG9tX2NzcxgCIAEoCVIJY3VzdG9tQ3Nz');
+
 @$core.Deprecated('Use customNavigationTabSetDescriptor instead')
 const CustomNavigationTabSet$json = {
   '1': 'CustomNavigationTabSet',

@@ -4,6 +4,7 @@ mod backfill_audio_metadata_tests;
 mod bluesky_sync_tests;
 mod configure_server_cluster_resources_tests;
 mod configure_server_media_allocation_tests;
+mod custom_css_tests;
 mod configure_server_tests;
 mod contact_method_verification_tests;
 mod contact_method_visibility_tests;

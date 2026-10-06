@@ -278,7 +278,7 @@ init shared pageIsSecure targetHost navKey path query =
                             activateMarketTab shared newModel
                     in
                     ( { newModel | clusterTab = clusterTabModel, contactIntegrationsTab = contactIntegrationsTabModel, marketTab = marketTabModel }
-                    , Effect.batch [ fetchAdmins server, fetchVersion server, clusterTabEffect, contactIntegrationsTabEffect, marketTabEffect ]
+                    , Effect.batch [ fetchAdmins server, fetchVersion server, Effect.map ThemeTabMsg (ThemeTab.fetchCustomCss server), clusterTabEffect, contactIntegrationsTabEffect, marketTabEffect ]
                     )
 
                 Nothing ->
@@ -405,7 +405,7 @@ updateInner shared msg model =
                     activateMarketTab shared newModel
             in
             ( { newModel | clusterTab = clusterTabModel, contactIntegrationsTab = contactIntegrationsTabModel, marketTab = marketTabModel }
-            , Effect.batch [ fetchAdmins server, fetchVersion server, clusterTabEffect, contactIntegrationsTabEffect, marketTabEffect ]
+            , Effect.batch [ fetchAdmins server, fetchVersion server, Effect.map ThemeTabMsg (ThemeTab.fetchCustomCss server), clusterTabEffect, contactIntegrationsTabEffect, marketTabEffect ]
             )
 
         GotOwnServerResult (Err err) ->
@@ -488,7 +488,7 @@ updateInner shared msg model =
                     activateMarketTab shared newModel
             in
             ( { newModel | clusterTab = clusterTabModel, contactIntegrationsTab = contactIntegrationsTabModel, marketTab = marketTabModel }
-            , Effect.batch [ Effect.fromShared subMsg, clusterTabEffect, contactIntegrationsTabEffect, marketTabEffect ]
+            , Effect.batch [ Effect.fromShared subMsg, ThemeTab.customCssPreviewEffect shared model.targetHost model.themeTab newModel.themeTab, clusterTabEffect, contactIntegrationsTabEffect, marketTabEffect ]
             )
 
 

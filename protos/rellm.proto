@@ -1242,6 +1242,17 @@ service Rellm {
   // stored -- see [`ContactProtocol`](#rellm-ContactProtocol)'s own doc.
   rpc ConfigureServer(ServerConfiguration) returns (ServerConfiguration) {}
 
+  // Gets the server's [`CustomCSSConfiguration`](#rellm-CustomCSSConfiguration) -- not part of
+  // [`ServerConfiguration`](#rellm-ServerConfiguration), so
+  // [`GetServerConfiguration`](#grpc-api-GetServerConfiguration) never loads the stylesheet. An unset
+  // configuration returns an empty one. *Publicly accessible.*
+  rpc GetCustomCSS(google.protobuf.Empty) returns (CustomCSSConfiguration) {}
+  // Sets the server's [`CustomCSSConfiguration`](#rellm-CustomCSSConfiguration), creating a new server
+  // configuration version (everything else is copied from the current one). Validated: at most 32
+  // `media_ids`, each an existing `GLOBAL_PUBLIC` Media, and at most 64 KiB of `custom_css`.
+  // *Authenticated.* Requires `ADMIN` permissions.
+  rpc ConfigureCustomCSS(CustomCSSConfiguration) returns (CustomCSSConfiguration) {}
+
   // Unlinks all generated link preview images (see
   // [`MediaSettings.disable_link_preview_images`](#rellm-MediaSettings)) from their posts and
   // makes every post with a link eligible for preview generation again -- including posts that

@@ -1206,6 +1206,28 @@ export interface ServerLogo {
   wideMediaIdDark?: string | undefined;
 }
 
+/**
+ * Custom CSS for a Rellm server's Elm SPA, managed separately from [`ServerConfiguration`](#rellm-ServerConfiguration) --
+ * it is stored alongside it (so it is versioned the same way, with each
+ * [`ConfigureServer`](#grpc-api-ConfigureServer) or [`ConfigureCustomCSS`](#grpc-api-ConfigureCustomCSS) creating a
+ * new configuration version), but is never included in `ServerConfiguration` itself. It is read with
+ * [`GetCustomCSS`](#grpc-api-GetCustomCSS), written with [`ConfigureCustomCSS`](#grpc-api-ConfigureCustomCSS), and
+ * served to browsers as a stylesheet at `/custom_css.css` (`/elm/custom_css.css` when the Elm SPA is served under `/elm`).
+ * `ConfigureServer` always leaves it unchanged.
+ */
+export interface CustomCSSConfiguration {
+  /**
+   * These media IDs will be converted to the CSS vars `--custom-media-1`, `--custom-media-2`, etc.
+   * in the order they are listed. Each must be `GLOBAL_PUBLIC` Media, so anonymous visitors can load it. At most 32.
+   */
+  mediaIds: string[];
+  /**
+   * Custom CSS applied to the Elm SPA client. This is appended to the default CSS, so it can override any default styles.
+   * At most 64 KiB.
+   */
+  customCss: string;
+}
+
 /** If set, overrides the default tab set for the Elm navigation on a Rellm instance. */
 export interface CustomNavigationTabSet {
   /** Overrides the default `/` page. If unset, the default combined Events+Posts feed is used. */
@@ -4078,6 +4100,82 @@ export const ServerLogo: MessageFns<ServerLogo> = {
     message.squareMediaIdDark = object.squareMediaIdDark ?? undefined;
     message.wideMediaId = object.wideMediaId ?? undefined;
     message.wideMediaIdDark = object.wideMediaIdDark ?? undefined;
+    return message;
+  },
+};
+
+function createBaseCustomCSSConfiguration(): CustomCSSConfiguration {
+  return { mediaIds: [], customCss: "" };
+}
+
+export const CustomCSSConfiguration: MessageFns<CustomCSSConfiguration> = {
+  encode(message: CustomCSSConfiguration, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    for (const v of message.mediaIds) {
+      writer.uint32(10).string(v!);
+    }
+    if (message.customCss !== "") {
+      writer.uint32(18).string(message.customCss);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): CustomCSSConfiguration {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseCustomCSSConfiguration();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.mediaIds.push(reader.string());
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.customCss = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): CustomCSSConfiguration {
+    return {
+      mediaIds: globalThis.Array.isArray(object?.mediaIds) ? object.mediaIds.map((e: any) => globalThis.String(e)) : [],
+      customCss: isSet(object.customCss) ? globalThis.String(object.customCss) : "",
+    };
+  },
+
+  toJSON(message: CustomCSSConfiguration): unknown {
+    const obj: any = {};
+    if (message.mediaIds?.length) {
+      obj.mediaIds = message.mediaIds;
+    }
+    if (message.customCss !== "") {
+      obj.customCss = message.customCss;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<CustomCSSConfiguration>, I>>(base?: I): CustomCSSConfiguration {
+    return CustomCSSConfiguration.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<CustomCSSConfiguration>, I>>(object: I): CustomCSSConfiguration {
+    const message = createBaseCustomCSSConfiguration();
+    message.mediaIds = object.mediaIds?.map((e) => e) || [];
+    message.customCss = object.customCss ?? "";
     return message;
   },
 };

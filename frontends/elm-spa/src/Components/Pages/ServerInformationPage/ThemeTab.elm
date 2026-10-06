@@ -1,4 +1,4 @@
-module Components.Pages.ServerInformationPage.ThemeTab exposing (Model, Msg, applySharedMsg, init, subscriptions, update, view)
+module Components.Pages.ServerInformationPage.ThemeTab exposing (Model, Msg, applySharedMsg, customCssPreviewEffect, fetchCustomCss, init, subscriptions, update, view)
 
 {-| The Theme tab of `Components.Pages.ServerInformationPage` -- the server's square logo and its
 Primary/Navigation colors (editable by an admin, via `AccountsPanel.updateServerConfig`'s own
@@ -6,7 +6,8 @@ Primary/Navigation colors (editable by an admin, via `AccountsPanel.updateServer
 `UI.webUiToggleRow` -- the same control shown per-admin-account in the Accounts Panel's own
 `UI.adminAccountPanel` -- rather than duplicating it, plus (at the bottom) the "Navigation Tabs"
 section, wired in as a sub-component -- see `Components.Pages.ServerInformationPage.ThemeTab.CustomTabsConfiguration`'s
-own module doc for why that one's split out.
+own module doc for why that one's split out -- and, below that, the "Custom CSS" section
+(`Components.Pages.ServerInformationPage.ThemeTab.CustomCssConfiguration`, likewise a sub-component).
 
 `author`/`admin`/`moderator` (the other three `ServerColors` fields) aren't shown at all -- this
 page has no UI for them yet, same as before this tab supported any editing.
@@ -14,6 +15,7 @@ page has no UI for them yet, same as before this tab supported any editing.
 -}
 
 import Components.Pages.ServerInformationPage.Common as Common
+import Components.Pages.ServerInformationPage.ThemeTab.CustomCssConfiguration as CustomCssConfiguration
 import Components.Pages.ServerInformationPage.ThemeTab.CustomTabsConfiguration as CustomTabsConfiguration
 import Effect exposing (Effect)
 import Grpc
@@ -44,6 +46,7 @@ type alias Model =
     , swapStatus : AccountsPanel.FormStatus
     , colorMetaExpanded : Bool
     , customTabsConfig : CustomTabsConfiguration.Model
+    , customCssConfig : CustomCssConfiguration.Model
     }
 
 
@@ -63,6 +66,7 @@ type Msg
     | ColorMetaExpandedToggled
     | SharedMsg Shared.Msg
     | CustomTabsConfigurationMsg CustomTabsConfiguration.Msg
+    | CustomCssConfigurationMsg CustomCssConfiguration.Msg
 
 
 {-| What `LogoSaveClicked` should do to `serverInfo.logo.squareMediaId` -- mirrors
@@ -114,7 +118,24 @@ init =
     , swapStatus = AccountsPanel.Idle
     , colorMetaExpanded = False
     , customTabsConfig = CustomTabsConfiguration.init
+    , customCssConfig = CustomCssConfiguration.init
     }
+
+
+{-| `GetCustomCSS` for the Custom CSS section -- fired by `ServerInformationPage` alongside its other
+on-load fetches, since (unlike the rest of this tab) it isn't part of `ServerConfiguration`.
+-}
+fetchCustomCss : RellmServer -> Effect Msg
+fetchCustomCss server =
+    CustomCssConfiguration.fetch server |> Effect.map CustomCssConfigurationMsg
+
+
+{-| `CustomCssConfiguration.draftPreviewEffect` over two `Model`s -- for `ServerInformationPage`'s
+`SharedMsg` branch, where `applySharedMsg` (a picked-media change) can't emit effects itself.
+-}
+customCssPreviewEffect : Shared.Model -> String -> Model -> Model -> Effect msg
+customCssPreviewEffect shared targetHost before after =
+    CustomCssConfiguration.draftPreviewEffect shared targetHost before.customCssConfig after.customCssConfig
 
 
 subscriptions : Model -> Sub Msg
@@ -277,6 +298,11 @@ update shared targetHost maybeServer msg model =
                 |> Tuple.mapFirst (\customTabsConfig -> { model | customTabsConfig = customTabsConfig })
                 |> Tuple.mapSecond (Effect.map CustomTabsConfigurationMsg)
 
+        CustomCssConfigurationMsg subMsg ->
+            CustomCssConfiguration.update shared targetHost subMsg model.customCssConfig
+                |> Tuple.mapFirst (\customCssConfig -> { model | customCssConfig = customCssConfig })
+                |> Tuple.mapSecond (Effect.map CustomCssConfigurationMsg)
+
 
 {-| Reacts to a `Shared.Msg` forwarded through by the parent's own `SharedMsg` branch -- the shared
 `Shared.MyMediaPanel` chooser reporting a tap matters both here (opened by `LogoEditClicked`; see
@@ -299,6 +325,7 @@ applySharedMsg subMsg model =
                 _ ->
                     model.logoEdit
         , customTabsConfig = CustomTabsConfiguration.applySharedMsg subMsg model.customTabsConfig
+        , customCssConfig = CustomCssConfiguration.applySharedMsg subMsg model.customCssConfig
     }
 
 
@@ -451,6 +478,7 @@ view shared server maybeAdminAccount model =
                     p [] [ text (webUserInterfaceText webUi) ]
             ]
         , Html.map CustomTabsConfigurationMsg (CustomTabsConfiguration.view server maybeAdminAccount model.customTabsConfig)
+        , Html.map CustomCssConfigurationMsg (CustomCssConfiguration.view server maybeAdminAccount model.customCssConfig)
         ]
 
 

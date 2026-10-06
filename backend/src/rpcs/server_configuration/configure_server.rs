@@ -370,6 +370,13 @@ pub fn configure_server(
         existing_cluster_resources.map(|c| serde_json::to_value(c).unwrap())
     };
 
+    // `custom_css_configuration` isn't part of the `ServerConfiguration` proto at all (it's managed
+    // by `ConfigureCustomCSS`), so a `ConfigureServer` save always carries the active row's value
+    // forward rather than blanking it.
+    new_config.custom_css_configuration = get_server_configuration_model(conn)
+        .ok()
+        .and_then(|c| c.custom_css_configuration);
+
     let result =
         conn.transaction::<models::ServerConfiguration, diesel::result::Error, _>(|conn| {
             update(server_configurations)

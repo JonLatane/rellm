@@ -72,6 +72,7 @@ import {
   SyncPostRequest,
 } from "./posts";
 import {
+  CustomCSSConfiguration,
   FreeClusterResourcesRequest,
   LockClusterResourcesRequest,
   LockClusterResourcesResponse,
@@ -1959,6 +1960,34 @@ export const RellmDefinition = {
       options: {},
     },
     /**
+     * Gets the server's [`CustomCSSConfiguration`](#rellm-CustomCSSConfiguration) -- not part of
+     * [`ServerConfiguration`](#rellm-ServerConfiguration), so
+     * [`GetServerConfiguration`](#grpc-api-GetServerConfiguration) never loads the stylesheet. An unset
+     * configuration returns an empty one. *Publicly accessible.*
+     */
+    getCustomCSS: {
+      name: "GetCustomCSS",
+      requestType: Empty,
+      requestStream: false,
+      responseType: CustomCSSConfiguration,
+      responseStream: false,
+      options: {},
+    },
+    /**
+     * Sets the server's [`CustomCSSConfiguration`](#rellm-CustomCSSConfiguration), creating a new server
+     * configuration version (everything else is copied from the current one). Validated: at most 32
+     * `media_ids`, each an existing `GLOBAL_PUBLIC` Media, and at most 64 KiB of `custom_css`.
+     * *Authenticated.* Requires `ADMIN` permissions.
+     */
+    configureCustomCSS: {
+      name: "ConfigureCustomCSS",
+      requestType: CustomCSSConfiguration,
+      requestStream: false,
+      responseType: CustomCSSConfiguration,
+      responseStream: false,
+      options: {},
+    },
+    /**
      * Unlinks all generated link preview images (see
      * [`MediaSettings.disable_link_preview_images`](#rellm-MediaSettings)) from their posts and
      * makes every post with a link eligible for preview generation again -- including posts that
@@ -2499,6 +2528,23 @@ export interface RellmServiceImplementation<CallContextExt = {}> {
     context: CallContext & CallContextExt,
   ): Promise<DeepPartial<ServerConfiguration>>;
   /**
+   * Gets the server's [`CustomCSSConfiguration`](#rellm-CustomCSSConfiguration) -- not part of
+   * [`ServerConfiguration`](#rellm-ServerConfiguration), so
+   * [`GetServerConfiguration`](#grpc-api-GetServerConfiguration) never loads the stylesheet. An unset
+   * configuration returns an empty one. *Publicly accessible.*
+   */
+  getCustomCSS(request: Empty, context: CallContext & CallContextExt): Promise<DeepPartial<CustomCSSConfiguration>>;
+  /**
+   * Sets the server's [`CustomCSSConfiguration`](#rellm-CustomCSSConfiguration), creating a new server
+   * configuration version (everything else is copied from the current one). Validated: at most 32
+   * `media_ids`, each an existing `GLOBAL_PUBLIC` Media, and at most 64 KiB of `custom_css`.
+   * *Authenticated.* Requires `ADMIN` permissions.
+   */
+  configureCustomCSS(
+    request: CustomCSSConfiguration,
+    context: CallContext & CallContextExt,
+  ): Promise<DeepPartial<CustomCSSConfiguration>>;
+  /**
    * Unlinks all generated link preview images (see
    * [`MediaSettings.disable_link_preview_images`](#rellm-MediaSettings)) from their posts and
    * makes every post with a link eligible for preview generation again -- including posts that
@@ -3001,6 +3047,23 @@ export interface RellmClient<CallOptionsExt = {}> {
     request: DeepPartial<ServerConfiguration>,
     options?: CallOptions & CallOptionsExt,
   ): Promise<ServerConfiguration>;
+  /**
+   * Gets the server's [`CustomCSSConfiguration`](#rellm-CustomCSSConfiguration) -- not part of
+   * [`ServerConfiguration`](#rellm-ServerConfiguration), so
+   * [`GetServerConfiguration`](#grpc-api-GetServerConfiguration) never loads the stylesheet. An unset
+   * configuration returns an empty one. *Publicly accessible.*
+   */
+  getCustomCSS(request: DeepPartial<Empty>, options?: CallOptions & CallOptionsExt): Promise<CustomCSSConfiguration>;
+  /**
+   * Sets the server's [`CustomCSSConfiguration`](#rellm-CustomCSSConfiguration), creating a new server
+   * configuration version (everything else is copied from the current one). Validated: at most 32
+   * `media_ids`, each an existing `GLOBAL_PUBLIC` Media, and at most 64 KiB of `custom_css`.
+   * *Authenticated.* Requires `ADMIN` permissions.
+   */
+  configureCustomCSS(
+    request: DeepPartial<CustomCSSConfiguration>,
+    options?: CallOptions & CallOptionsExt,
+  ): Promise<CustomCSSConfiguration>;
   /**
    * Unlinks all generated link preview images (see
    * [`MediaSettings.disable_link_preview_images`](#rellm-MediaSettings)) from their posts and

@@ -54,6 +54,10 @@ pub struct ServerConfiguration {
     pub supported_contact_protocols: Option<serde_json::Value>,
 
     pub stalwart_config: Option<serde_json::Value>,
+
+    /// A `CustomCSSConfiguration`. Deliberately *not* part of the `ServerConfiguration` proto (see
+    /// `to_proto`/`to_db`) -- only `GetCustomCSS`/`ConfigureCustomCSS` and `/custom_css.css` touch it.
+    pub custom_css_configuration: Option<serde_json::Value>,
 }
 #[derive(Debug, Insertable)]
 #[diesel(table_name = server_configurations)]
@@ -82,6 +86,44 @@ pub struct NewServerConfiguration {
     pub telnyx_config: Option<serde_json::Value>,
     pub supported_contact_protocols: Option<serde_json::Value>,
     pub stalwart_config: Option<serde_json::Value>,
+    /// Always `None` out of `to_db` -- `ConfigureServer` carries the active row's value forward
+    /// (see `configure_server`).
+    pub custom_css_configuration: Option<serde_json::Value>,
+}
+
+/// A new version of an existing configuration: every setting copied, `id`/`active`/timestamps left
+/// for the database to assign. Used by writers (e.g. `ConfigureCustomCSS`) that change only part of
+/// the row outside the `ServerConfiguration` proto round trip.
+impl From<ServerConfiguration> for NewServerConfiguration {
+    fn from(c: ServerConfiguration) -> Self {
+        NewServerConfiguration {
+            server_info: c.server_info,
+            anonymous_user_permissions: c.anonymous_user_permissions,
+            default_user_permissions: c.default_user_permissions,
+            basic_user_permissions: c.basic_user_permissions,
+            people_settings: c.people_settings,
+            group_settings: c.group_settings,
+            post_settings: c.post_settings,
+            event_settings: c.event_settings,
+            external_cdn_config: c.external_cdn_config,
+            private_user_strategy: c.private_user_strategy,
+            authentication_features: c.authentication_features,
+            federation_info: c.federation_info,
+            web_push_config: c.web_push_config,
+            custom_tabs: c.custom_tabs,
+            cluster_resources: c.cluster_resources,
+            twilio_config: c.twilio_config,
+            bird_config: c.bird_config,
+            preferred_verification_apis: c.preferred_verification_apis,
+            media_settings: c.media_settings,
+            stripe_config: c.stripe_config,
+            market_settings: c.market_settings,
+            telnyx_config: c.telnyx_config,
+            supported_contact_protocols: c.supported_contact_protocols,
+            stalwart_config: c.stalwart_config,
+            custom_css_configuration: c.custom_css_configuration,
+        }
+    }
 }
 
 pub fn default_server_configuration() -> NewServerConfiguration {
@@ -213,6 +255,7 @@ Your media policy should describe who has ownership of uploaded media, anything 
         telnyx_config: None,
         supported_contact_protocols: None,
         stalwart_config: None,
+        custom_css_configuration: None,
         private_user_strategy: PrivateUserStrategy::AccountIsFrozen
             .as_str_name()
             .to_string(),

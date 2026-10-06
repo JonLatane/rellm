@@ -365,6 +365,14 @@ class RellmClient extends $grpc.Client {
       '/rellm.Rellm/ConfigureServer',
       ($2.ServerConfiguration value) => value.writeToBuffer(),
       ($core.List<$core.int> value) => $2.ServerConfiguration.fromBuffer(value));
+  static final _$getCustomCSS = $grpc.ClientMethod<$0.Empty, $2.CustomCSSConfiguration>(
+      '/rellm.Rellm/GetCustomCSS',
+      ($0.Empty value) => value.writeToBuffer(),
+      ($core.List<$core.int> value) => $2.CustomCSSConfiguration.fromBuffer(value));
+  static final _$configureCustomCSS = $grpc.ClientMethod<$2.CustomCSSConfiguration, $2.CustomCSSConfiguration>(
+      '/rellm.Rellm/ConfigureCustomCSS',
+      ($2.CustomCSSConfiguration value) => value.writeToBuffer(),
+      ($core.List<$core.int> value) => $2.CustomCSSConfiguration.fromBuffer(value));
   static final _$deleteLinkPreviewImages = $grpc.ClientMethod<$0.Empty, $0.Empty>(
       '/rellm.Rellm/DeleteLinkPreviewImages',
       ($0.Empty value) => value.writeToBuffer(),
@@ -726,6 +734,14 @@ class RellmClient extends $grpc.Client {
 
   $grpc.ResponseFuture<$2.ServerConfiguration> configureServer($2.ServerConfiguration request, {$grpc.CallOptions? options}) {
     return $createUnaryCall(_$configureServer, request, options: options);
+  }
+
+  $grpc.ResponseFuture<$2.CustomCSSConfiguration> getCustomCSS($0.Empty request, {$grpc.CallOptions? options}) {
+    return $createUnaryCall(_$getCustomCSS, request, options: options);
+  }
+
+  $grpc.ResponseFuture<$2.CustomCSSConfiguration> configureCustomCSS($2.CustomCSSConfiguration request, {$grpc.CallOptions? options}) {
+    return $createUnaryCall(_$configureCustomCSS, request, options: options);
   }
 
   $grpc.ResponseFuture<$0.Empty> deleteLinkPreviewImages($0.Empty request, {$grpc.CallOptions? options}) {
@@ -1339,6 +1355,20 @@ abstract class RellmServiceBase extends $grpc.Service {
         false,
         ($core.List<$core.int> value) => $2.ServerConfiguration.fromBuffer(value),
         ($2.ServerConfiguration value) => value.writeToBuffer()));
+    $addMethod($grpc.ServiceMethod<$0.Empty, $2.CustomCSSConfiguration>(
+        'GetCustomCSS',
+        getCustomCSS_Pre,
+        false,
+        false,
+        ($core.List<$core.int> value) => $0.Empty.fromBuffer(value),
+        ($2.CustomCSSConfiguration value) => value.writeToBuffer()));
+    $addMethod($grpc.ServiceMethod<$2.CustomCSSConfiguration, $2.CustomCSSConfiguration>(
+        'ConfigureCustomCSS',
+        configureCustomCSS_Pre,
+        false,
+        false,
+        ($core.List<$core.int> value) => $2.CustomCSSConfiguration.fromBuffer(value),
+        ($2.CustomCSSConfiguration value) => value.writeToBuffer()));
     $addMethod($grpc.ServiceMethod<$0.Empty, $0.Empty>(
         'DeleteLinkPreviewImages',
         deleteLinkPreviewImages_Pre,
@@ -1715,6 +1745,14 @@ abstract class RellmServiceBase extends $grpc.Service {
     return configureServer(call, await request);
   }
 
+  $async.Future<$2.CustomCSSConfiguration> getCustomCSS_Pre($grpc.ServiceCall call, $async.Future<$0.Empty> request) async {
+    return getCustomCSS(call, await request);
+  }
+
+  $async.Future<$2.CustomCSSConfiguration> configureCustomCSS_Pre($grpc.ServiceCall call, $async.Future<$2.CustomCSSConfiguration> request) async {
+    return configureCustomCSS(call, await request);
+  }
+
   $async.Future<$0.Empty> deleteLinkPreviewImages_Pre($grpc.ServiceCall call, $async.Future<$0.Empty> request) async {
     return deleteLinkPreviewImages(call, await request);
   }
@@ -1822,6 +1860,8 @@ abstract class RellmServiceBase extends $grpc.Service {
   $async.Future<$1.FederatedAccount> federateProfile($grpc.ServiceCall call, $1.FederatedAccount request);
   $async.Future<$0.Empty> defederateProfile($grpc.ServiceCall call, $1.FederatedAccount request);
   $async.Future<$2.ServerConfiguration> configureServer($grpc.ServiceCall call, $2.ServerConfiguration request);
+  $async.Future<$2.CustomCSSConfiguration> getCustomCSS($grpc.ServiceCall call, $0.Empty request);
+  $async.Future<$2.CustomCSSConfiguration> configureCustomCSS($grpc.ServiceCall call, $2.CustomCSSConfiguration request);
   $async.Future<$0.Empty> deleteLinkPreviewImages($grpc.ServiceCall call, $0.Empty request);
   $async.Future<$0.Empty> deleteUnownedMedia($grpc.ServiceCall call, $0.Empty request);
   $async.Future<$2.LockClusterResourcesResponse> lockClusterResources($grpc.ServiceCall call, $2.LockClusterResourcesRequest request);

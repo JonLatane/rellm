@@ -44,6 +44,7 @@ import Shared.MyMediaPanel as MyMediaPanel
 import Shared.StarredPanel as StarredPanel
 import Shared.Time as SharedTime
 import UI.Classes exposing (classes, hostnameToCSSClass, openClosedClass)
+import UI.CustomCssStylesheet as CustomCssStylesheet
 import UI.CustomNav as CustomNav
 import UI.Drag
 import UI.EmittedStylesheet as EmittedStylesheet
@@ -68,6 +69,7 @@ too, mapping its `Shared.Msg` clicks into their own `Msg` type. See
 layout : Shared.Model -> Route -> (Shared.Msg -> msg) -> List (Html msg) -> List (Html msg)
 layout shared currentRoute toMsg children =
     [ Html.map toMsg (EmittedStylesheet.view shared)
+    , Html.map toMsg (CustomCssStylesheet.view shared)
     , Html.map toMsg (sharedBackdrop shared)
     , Html.map toMsg (headerNav shared currentRoute)
     , Html.map toMsg (createAccountConfirmationBackdrop shared)

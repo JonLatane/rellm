@@ -2257,6 +2257,75 @@ class ServerLogo extends $pb.GeneratedMessage {
   void clearWideMediaIdDark() => clearField(4);
 }
 
+/// Custom CSS for a Rellm server's Elm SPA, managed separately from [`ServerConfiguration`](#rellm-ServerConfiguration) --
+/// it is stored alongside it (so it is versioned the same way, with each
+/// [`ConfigureServer`](#grpc-api-ConfigureServer) or [`ConfigureCustomCSS`](#grpc-api-ConfigureCustomCSS) creating a
+/// new configuration version), but is never included in `ServerConfiguration` itself. It is read with
+/// [`GetCustomCSS`](#grpc-api-GetCustomCSS), written with [`ConfigureCustomCSS`](#grpc-api-ConfigureCustomCSS), and
+/// served to browsers as a stylesheet at `/custom_css.css` (`/elm/custom_css.css` when the Elm SPA is served under `/elm`).
+/// `ConfigureServer` always leaves it unchanged.
+class CustomCSSConfiguration extends $pb.GeneratedMessage {
+  factory CustomCSSConfiguration({
+    $core.Iterable<$core.String>? mediaIds,
+    $core.String? customCss,
+  }) {
+    final $result = create();
+    if (mediaIds != null) {
+      $result.mediaIds.addAll(mediaIds);
+    }
+    if (customCss != null) {
+      $result.customCss = customCss;
+    }
+    return $result;
+  }
+  CustomCSSConfiguration._() : super();
+  factory CustomCSSConfiguration.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromBuffer(i, r);
+  factory CustomCSSConfiguration.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'CustomCSSConfiguration', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
+    ..pPS(1, _omitFieldNames ? '' : 'mediaIds')
+    ..aOS(2, _omitFieldNames ? '' : 'customCss')
+    ..hasRequiredFields = false
+  ;
+
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.deepCopy] instead. '
+  'Will be removed in next major version')
+  CustomCSSConfiguration clone() => CustomCSSConfiguration()..mergeFromMessage(this);
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.rebuild] instead. '
+  'Will be removed in next major version')
+  CustomCSSConfiguration copyWith(void Function(CustomCSSConfiguration) updates) => super.copyWith((message) => updates(message as CustomCSSConfiguration)) as CustomCSSConfiguration;
+
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static CustomCSSConfiguration create() => CustomCSSConfiguration._();
+  CustomCSSConfiguration createEmptyInstance() => create();
+  static $pb.PbList<CustomCSSConfiguration> createRepeated() => $pb.PbList<CustomCSSConfiguration>();
+  @$core.pragma('dart2js:noInline')
+  static CustomCSSConfiguration getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<CustomCSSConfiguration>(create);
+  static CustomCSSConfiguration? _defaultInstance;
+
+  /// These media IDs will be converted to the CSS vars `--custom-media-1`, `--custom-media-2`, etc.
+  /// in the order they are listed. Each must be `GLOBAL_PUBLIC` Media, so anonymous visitors can load it. At most 32.
+  @$pb.TagNumber(1)
+  $core.List<$core.String> get mediaIds => $_getList(0);
+
+  /// Custom CSS applied to the Elm SPA client. This is appended to the default CSS, so it can override any default styles.
+  /// At most 64 KiB.
+  @$pb.TagNumber(2)
+  $core.String get customCss => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set customCss($core.String v) { $_setString(1, v); }
+  @$pb.TagNumber(2)
+  $core.bool hasCustomCss() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearCustomCss() => clearField(2);
+}
+
 /// If set, overrides the default tab set for the Elm navigation on a Rellm instance.
 class CustomNavigationTabSet extends $pb.GeneratedMessage {
   factory CustomNavigationTabSet({

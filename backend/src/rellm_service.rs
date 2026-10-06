@@ -194,6 +194,20 @@ impl Rellm for RellmService {
         authenticated_rpc!(self, rpcs::configure_server, request)
     }
 
+    async fn get_custom_css(
+        &self,
+        request: Request<()>,
+    ) -> Result<Response<CustomCssConfiguration>, Status> {
+        unauthenticated_rpc!(self, rpcs::get_custom_css, request)
+    }
+
+    async fn configure_custom_css(
+        &self,
+        request: Request<CustomCssConfiguration>,
+    ) -> Result<Response<CustomCssConfiguration>, Status> {
+        authenticated_rpc!(self, rpcs::configure_custom_css, request)
+    }
+
     async fn delete_link_preview_images(&self, request: Request<()>) -> Result<Response<()>, Status> {
         authenticated_rpc!(self, rpcs::delete_link_preview_images, request)
     }
