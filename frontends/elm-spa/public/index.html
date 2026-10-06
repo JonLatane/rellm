@@ -78,8 +78,40 @@
     document.write('<link rel="stylesheet" href="' + rellmBasePath + '/style/shared/messaging_panel.css">');
     // The server's admin-configured Custom CSS (`CustomCSSConfiguration`) -- served by the Rust server,
     // last so it overrides everything above. The Elm dev server has no such route (it answers with
-    // index.html, which the browser ignores as a stylesheet); `UI.CustomCssStylesheet` covers that case.
-    document.write('<link id="custom-css-link" rel="stylesheet" href="' + rellmBasePath + '/custom_css.css">');
+    // index.html, which isn't CSS); `UI.CustomCssStylesheet` covers that case.
+    //
+    // Fetched by hand rather than with a `<link>`: a CDN's "Browser Cache TTL" setting (Cloudflare's, e.g.)
+    // can overwrite the server's `Cache-Control: no-cache` with a multi-hour `max-age`, after which browsers
+    // keep using a stale stylesheet without asking -- so a saved theme wouldn't show up for hours. A request
+    // that itself says `Cache-Control: no-cache` always revalidates (a cheap 304 when unchanged). It's
+    // synchronous on purpose, like the blocking `<link>` it replaces: the script below reads `--forced-theme`
+    // out of this stylesheet before first paint. The result is a `<style id="custom-css-link">`; if the
+    // request can't be made, it falls back to a plain `<link>` with the same id.
+    window.rellmFetchCustomCss = function () {
+      try {
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', rellmBasePath + '/custom_css.css', false);
+        xhr.setRequestHeader('Cache-Control', 'no-cache');
+        xhr.send();
+        if (xhr.status === 200 && /text\/css/i.test(xhr.getResponseHeader('Content-Type') || '')) {
+          return xhr.responseText;
+        }
+        return ''; // answered, but not with a stylesheet (the Elm dev server) -- nothing to apply
+      } catch (e) {
+        return null; // couldn't ask at all
+      }
+    };
+    (function () {
+      var css = window.rellmFetchCustomCss();
+      if (css === null) {
+        document.write('<link id="custom-css-link" rel="stylesheet" href="' + rellmBasePath + '/custom_css.css">');
+      } else if (css !== '') {
+        var style = document.createElement('style');
+        style.id = 'custom-css-link';
+        style.textContent = css;
+        document.head.appendChild(style);
+      }
+    })();
 
     // Markdown rendering (see `public/markdown.js`) -- vendored rather than
     // CDN-loaded, so the app keeps working offline/behind a firewall.
@@ -294,12 +326,18 @@
     });
 
     // `Ports.setCustomCssStylesheet` -- see its own doc. `link.disabled` is what actually switches a
-    // stylesheet off; `reload` swaps in a cache-busting query so the browser re-fetches it.
+    // stylesheet off; `reload` re-fetches it (a `<style>`, see `rellmFetchCustomCss`; or, in the `<link>`
+    // fallback, swaps in a cache-busting query).
     app.ports.setCustomCssStylesheet.subscribe(function (options) {
       var link = document.getElementById("custom-css-link");
       if (!link) return;
       if (options.reload) {
-        link.href = link.href.split("?")[0] + "?v=" + Date.now();
+        if (link.tagName === "STYLE") {
+          var css = window.rellmFetchCustomCss();
+          if (css) link.textContent = css;
+        } else {
+          link.href = link.href.split("?")[0] + "?v=" + Date.now();
+        }
       }
       link.disabled = !options.enabled;
     });

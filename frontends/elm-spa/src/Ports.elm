@@ -142,7 +142,8 @@ localStorage key -- kept independent of `persist` so `Shared` and
 port persistThemePreference : String -> Cmd msg
 
 
-{-| Controls `index.html`'s `<link id="custom-css-link">` to the server's `/custom_css.css`: `enabled`
+{-| Controls `index.html`'s `<style id="custom-css-link">` (or, if its request couldn't be made, a `<link>` with that id)
+holding the server's `/custom_css.css`: `enabled`
 turns that stylesheet on/off (off while the Custom CSS editor previews a draft, so the draft replaces the
 saved CSS instead of piling onto it -- see `Shared.AccountsPanel.Model.customCssPreview`), and `reload`
 re-fetches it (after a save, so the new CSS shows without a page reload; the browser would otherwise keep
