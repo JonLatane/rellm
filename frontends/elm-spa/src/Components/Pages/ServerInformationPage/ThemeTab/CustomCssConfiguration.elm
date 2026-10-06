@@ -32,6 +32,14 @@ toggle, not automatic -- a half-typed rule can make the page unusable. Stop Prev
 navigating away all end it; a reload does too, since nothing persists it. A successful Save hands the saved
 config to `AccountsPanel.CustomCssSaved`, which reloads the stylesheet so the change shows immediately.
 
+Anyone who isn't an admin of the server gets "Demo Other Themes" in place of "Edit Custom CSS" (`DemoClicked`):
+the same editor -- templates, forced theme, media, CSS, Preview -- but with no Save and "End Demo" for Cancel
+(`Edit.demo`), so a visitor can try the server's template library on this very page. Nothing is sent to the
+server or persisted; like a Preview, it ends when they End Demo, leave the page, or reload. A demo starts with
+its Preview already on (`Edit.previewing`), since a demo that shows nothing until a second button is pressed
+isn't much of one. Only offered for the page's own server (`canPreview`) -- there's nothing to demo on another
+server's page.
+
 -}
 
 import Components.Markdown as Markdown
@@ -72,8 +80,8 @@ type SavedStatus
     | LoadFailed String
 
 
-{-| Live only while an admin is editing -- independent of `saved` until `SaveClicked` succeeds.
-`pickingMedia` is true from `ChooseMediaClicked` until `Shared.MyMediaPanel` reports back.
+{-| Live only while someone is editing (an admin) or demoing (anyone else) -- independent of `saved` until
+`SaveClicked` succeeds. `pickingMedia` is true from `ChooseMediaClicked` until `Shared.MyMediaPanel` reports back.
 -}
 type alias Edit =
     { mediaIds : List String
@@ -85,6 +93,9 @@ type alias Edit =
     , forceDark : Bool
     , pickingMedia : Bool
     , status : AccountsPanel.FormStatus
+
+    -- A "Demo Other Themes" session (a non-admin's): can't be saved, and starts with Preview on.
+    , demo : Bool
 
     -- Whether "Preview" is on -- see this module's doc.
     , previewing : Bool
@@ -106,6 +117,7 @@ type alias Snapshot =
 type Msg
     = GotCustomCss (Result Grpc.Error CustomCSSConfiguration)
     | EditClicked
+    | DemoClicked
     | CancelClicked
     | SaveClicked
     | GotSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, CustomCSSConfiguration ))
@@ -160,21 +172,21 @@ updateInner shared targetHost msg model =
         EditClicked ->
             case model.saved of
                 Loaded config ->
-                    ( { model
-                        | edit =
-                            Just
-                                { mediaIds = config.mediaIds
-                                , css = Maybe.withDefault "" config.customCss
-                                , forceLight = config.forceLightTheme
-                                , forceDark = config.forceDarkTheme
-                                , pickingMedia = False
-                                , status = AccountsPanel.Idle
-                                , previewing = False
-                                , previous = Nothing
-                                }
-                      }
-                    , Effect.none
-                    )
+                    ( { model | edit = Just (newEdit False config) }, Effect.none )
+
+                _ ->
+                    ( model, Effect.none )
+
+        -- Only the page's own server has anything to demo: a Preview restyles *this* page.
+        DemoClicked ->
+            case ( model.saved, targetHost == shared.accounts.mainFrontendHost ) of
+                ( Loaded config, True ) ->
+                    let
+                        edit : Edit
+                        edit =
+                            newEdit True config
+                    in
+                    ( { model | edit = Just edit }, setPreview (Just (draftConfig edit)) )
 
                 _ ->
                     ( model, Effect.none )
@@ -201,7 +213,8 @@ updateInner shared targetHost msg model =
             )
 
         SaveClicked ->
-            case ( model.edit, Common.adminAccountFor shared targetHost ) of
+            -- A demo can never be saved (it has no Save button; this just makes sure).
+            case ( model.edit |> Maybe.andThen (\e -> if e.demo then Nothing else Just e), Common.adminAccountFor shared targetHost ) of
                 ( Just edit, Just account ) ->
                     let
                         request : CustomCSSConfiguration
@@ -321,6 +334,23 @@ updateInner shared targetHost msg model =
             ( mapEdit (\e -> { e | mediaIds = List.filter (\id -> id /= mediaId) e.mediaIds }) model, Effect.none )
 
 
+{-| A fresh `Edit` of `config` (the saved configuration): an admin's (`demo = False`), or a visitor's "Demo Other
+Themes", which starts with Preview already on (the caller sends the matching `setPreview`).
+-}
+newEdit : Bool -> CustomCSSConfiguration -> Edit
+newEdit demo config =
+    { mediaIds = config.mediaIds
+    , css = Maybe.withDefault "" config.customCss
+    , forceLight = config.forceLightTheme
+    , forceDark = config.forceDarkTheme
+    , pickingMedia = False
+    , status = AccountsPanel.Idle
+    , demo = demo
+    , previewing = demo
+    , previous = Nothing
+    }
+
+
 setPreview : Maybe CustomCSSConfiguration -> Effect msg
 setPreview maybeConfig =
     Effect.fromShared (Shared.AccountsPanelMsg (AccountsPanel.SetCustomCssPreview maybeConfig))
@@ -410,8 +440,19 @@ view canPreview server maybeAdminAccount model =
                         Just _ ->
                             button [ class "server-details-rename-button", onClick EditClicked ] [ text "Edit Custom CSS" ]
 
+                        -- Everyone else can try the other themes on this page (only the page's own server's
+                        -- page: a demo restyles the page it's on) -- the same editor, minus Save.
                         Nothing ->
-                            text ""
+                            if canPreview then
+                                button
+                                    [ class "server-details-rename-button"
+                                    , onClick DemoClicked
+                                    , title "Try other themes on this page -- nothing is saved, and only you see it"
+                                    ]
+                                    [ text "Demo Other Themes" ]
+
+                            else
+                                text ""
                     ]
 
             ( Nothing, NotLoaded ) ->
@@ -496,7 +537,13 @@ displayView server config =
 editorView : Bool -> RellmServer -> Edit -> Html Msg
 editorView canPreview server edit =
     div [ class "custom-css-section" ]
-        [ templateRow canPreview edit
+        [ if edit.demo then
+            p [ class "server-details-feature-settings-note" ]
+                [ text "Demo: try out other themes on this page -- pick a template, edit the CSS, change the forced theme. Nothing is saved and only you see it; it ends when you click End Demo, leave this page or reload." ]
+
+          else
+            text ""
+        , templateRow canPreview edit
         , templateImageNote edit
         , forceThemeRows edit
         , mediaListView server (Just RemoveMediaClicked) edit.mediaIds
@@ -519,9 +566,15 @@ editorView canPreview server edit =
             ]
             []
         , div [ class "server-details-permissions-actions" ]
-            [ Common.editSaveButton SaveClicked edit.status
-            , Common.editCancelButton CancelClicked edit.status
-            ]
+            (if edit.demo then
+                -- No Save in a demo; Cancel is "End Demo".
+                [ button [ class "server-details-rename-cancel", onClick CancelClicked ] [ text "End Demo" ] ]
+
+             else
+                [ Common.editSaveButton SaveClicked edit.status
+                , Common.editCancelButton CancelClicked edit.status
+                ]
+            )
         , Common.editErrorView edit.status
         ]
 
