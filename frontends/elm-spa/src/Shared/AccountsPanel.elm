@@ -682,13 +682,6 @@ type alias Flags =
     Decode.Value
 
 
-type alias PersistedRellmServer =
-    { frontendHost : String
-    , enabled : Bool
-    , sortOrder : Int
-    }
-
-
 type alias PersistedState =
     { accounts : List RellmAccount
     , servers : List PersistedRellmServer
@@ -1458,7 +1451,7 @@ init req flags blueskyAccountsFlags mastodonAccountsAndServersFlags =
         reconnectCmds =
             List.map
                 (\ps ->
-                    RellmServers.negotiateRellmServerConfig pageIsSecure ps.frontendHost
+                    RellmServers.negotiateRellmServerConfigWith ps.lastConnection pageIsSecure ps.frontendHost
                         |> Task.attempt (GotReconnectResult ps.frontendHost ps.enabled False)
                 )
                 persisted.servers
@@ -1531,6 +1524,7 @@ init req flags blueskyAccountsFlags mastodonAccountsAndServersFlags =
                                     { frontendHost = host
                                     , enabled = List.any (\a -> a.server == host && a.enabled) persisted.accounts
                                     , sortOrder = nextMissingServerSortOrder + idx
+                                    , lastConnection = Nothing
                                     }
                             )
                    )
@@ -2237,7 +2231,7 @@ sendUpdate req msg model =
                                 model
 
                              else
-                                { model | servers = insert (RellmServers.disconnectedRellmServer { frontendHost = frontendHost, enabled = enabled, sortOrder = 0 }) model.servers }
+                                { model | servers = insert (RellmServers.disconnectedRellmServer { frontendHost = frontendHost, enabled = enabled, sortOrder = 0, lastConnection = Nothing }) model.servers }
                             )
                                 |> (\m -> { m | browsingHostConfigResolved = m.browsingHostConfigResolved || frontendHost == m.browsingHost })
                     in
@@ -2403,7 +2397,7 @@ sendUpdate req msg model =
                                 |> List.filter (\ps -> not (List.member ps.frontendHost connectedHosts))
                                 |> List.map
                                     (\ps ->
-                                        RellmServers.negotiateRellmServerConfig (RellmServers.isSecure req) ps.frontendHost
+                                        RellmServers.negotiateRellmServerConfigWith ps.lastConnection (RellmServers.isSecure req) ps.frontendHost
                                             |> Task.attempt (GotReconnectResult ps.frontendHost ps.enabled False)
                                     )
 
@@ -2879,7 +2873,7 @@ sendUpdate req msg model =
                         -- expands, rather than staying blank until its fetch resolves.
                         , recommendedServerConnections =
                             List.foldl
-                                (\host -> Dict.insert host (RellmServers.disconnectedRellmServer { frontendHost = host, enabled = False, sortOrder = 0 }))
+                                (\host -> Dict.insert host (RellmServers.disconnectedRellmServer { frontendHost = host, enabled = False, sortOrder = 0, lastConnection = Nothing }))
                                 model.recommendedServerConnections
                                 hostsToFetch
                     }
@@ -2987,7 +2981,7 @@ sendUpdate req msg model =
                         { removedModel
                             | recommendedServerConnections =
                                 Dict.insert frontendHost
-                                    (RellmServers.disconnectedRellmServer { frontendHost = frontendHost, enabled = False, sortOrder = 0 })
+                                    (RellmServers.disconnectedRellmServer { frontendHost = frontendHost, enabled = False, sortOrder = 0, lastConnection = Nothing })
                                     removedModel.recommendedServerConnections
                         }
 

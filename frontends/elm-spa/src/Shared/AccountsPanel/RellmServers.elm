@@ -2,6 +2,7 @@ module Shared.AccountsPanel.RellmServers exposing
     ( Branding
     , ConnectedServer
     , Connection
+    , LastConnection
     , PersistedRellmServer
     , RellmServer
     , ServerLogoSize(..)
@@ -15,6 +16,8 @@ module Shared.AccountsPanel.RellmServers exposing
     , enableRellmServerFor
     , encodePersistedRellmServer
     , initialLetter
+    , candidatePorts
+    , isLocalNetworkHost
     , isLocalhost
     , elmPrefix
     , returnHost
@@ -24,6 +27,7 @@ module Shared.AccountsPanel.RellmServers exposing
     , mediaBaseUrl
     , mediaUrl
     , negotiateRellmServerConfig
+    , negotiateRellmServerConfigWith
     , persistedRellmServerDecoder
     , rellmServerForHost
     , rellmServerFrom
@@ -141,6 +145,20 @@ type alias PersistedRellmServer =
     { frontendHost : String
     , enabled : Bool
     , sortOrder : Int
+
+    -- How this server was last successfully reached, so the next visit can try that first instead of
+    -- re-running port detection from scratch -- see `negotiateRellmServerConfigWith`.
+    , lastConnection : Maybe LastConnection
+    }
+
+
+{-| The part of a `Connection` worth remembering between visits: where the gRPC API actually was (its
+`backendHost`, `port_` and `tls`) the last time `negotiateRellmServerConfig` found it.
+-}
+type alias LastConnection =
+    { backendHost : String
+    , port_ : Int
+    , tls : Bool
     }
 
 
@@ -929,29 +947,61 @@ resolvedFrontendHost connectedHost config =
 -- CONNECTING
 
 
-{-| Candidate (port, tls) combinations to try, in order, against a server's
-backend host, once we know it: TLS on the standard gRPC port, then TLS on the
-standard HTTPS port; and, only when this page itself isn't loaded over TLS (a
-secure page can't make plaintext requests), fall back to plaintext on the
-gRPC port, then 80, then 8000, for local/dev servers.
+{-| Whether `host` (a `frontendHost`, optionally with a `:port`) is a development / local-network machine rather
+than a public server: `localhost`, a single-label name (`armothy`), an mDNS / home-network name (`*.local`,
+`*.lan`, `*.home.arpa`), a private or loopback IPv4 address (10/8, 172.16/12, 192.168/16, 127/8, 169.254/16),
+or an IPv6 literal. Port detection treats these differently: they're never behind a CDN, plaintext is the norm,
+and a wrong guess should fail fast (see `candidatePorts` and `negotiateRellmServerConfigWith`).
 -}
-candidatePorts : Bool -> List ( Int, Bool )
-candidatePorts pageIsSecure =
+isLocalNetworkHost : String -> Bool
+isLocalNetworkHost host =
     let
-        secure : List ( Int, Bool )
-        secure =
-            [ ( 27707, True ), ( 443, True ) ]
+        bare : String
+        bare =
+            if String.startsWith "[" host then
+                host
+
+            else
+                host |> String.split ":" |> List.head |> Maybe.withDefault "" |> String.toLower
+
+        octets : List Int
+        octets =
+            bare |> String.split "." |> List.filterMap String.toInt
+
+        isPrivateIpv4 : Bool
+        isPrivateIpv4 =
+            case ( List.length (String.split "." bare) == 4, octets ) of
+                ( True, [ a, b, _, _ ] ) ->
+                    a == 10 || a == 127 || (a == 192 && b == 168) || (a == 172 && b >= 16 && b <= 31) || (a == 169 && b == 254)
+
+                _ ->
+                    False
     in
+    String.startsWith "[" bare
+        || bare == "localhost"
+        || not (String.contains "." bare)
+        || List.any (\suffix -> String.endsWith suffix bare) [ ".local", ".lan", ".home.arpa" ]
+        || isPrivateIpv4
+
+
+{-| Candidate (port, tls) combinations to try, in order, against a server's backend host, once we know it. A
+page loaded over TLS can only use TLS ones (a secure page can't make plaintext requests): the standard gRPC
+port, then the standard HTTPS port. An insecure page also tries plaintext on the gRPC port, then 80, then 8000
+-- and *which comes first* depends on the host: for a public server a plaintext connection is the unlikely
+case, so TLS goes first; for a local / LAN development machine (`isLocalNetworkHost`) it's the other way
+around -- plaintext gRPC (27707) is what a dev backend serves, so it's tried first and a dev server connects
+on the first guess, instead of only after two TLS ones that, on some networks and devices, don't fail fast.
+-}
+candidatePorts : Bool -> String -> List ( Int, Bool )
+candidatePorts pageIsSecure host =
     if pageIsSecure then
-        secure
+        [ ( 27707, True ), ( 443, True ) ]
+
+    else if isLocalNetworkHost host then
+        [ ( 27707, False ), ( 80, False ), ( 8000, False ), ( 27707, True ), ( 443, True ) ]
 
     else
-        let
-            insecure : List ( Int, Bool )
-            insecure =
-                [ ( 27707, False ), ( 80, False ), ( 8000, False ) ]
-        in
-        secure ++ insecure
+        [ ( 27707, True ), ( 443, True ), ( 27707, False ), ( 80, False ), ( 8000, False ) ]
 
 
 {-| Reuses an already-connected server's known-good connection and cached
@@ -969,55 +1019,82 @@ resolveHost pageIsSecure servers frontendHost =
             negotiateRellmServerConfig pageIsSecure frontendHost
 
 
-{-| Connects to a server given only its public (`frontendHost`) identity:
-first discovers its real backend host (in case it's served from behind a CDN,
-see `discoverBackendHost`), then tries each candidate port/TLS combination
-against that backend host in turn, stopping at the first one that
-successfully returns server configuration -- which doubles as the
-connectivity check ("can we talk to a server here at all?") and a useful
-result (its configuration) at the same time.
-
-Each candidate gets `Grpc.setTimeout` (matching `discoverBackendHost`'s own
-5000ms) -- a wrong `(port_, tls)` combination doesn't always fail fast (a
-`GoodStatus_`-or-`ERR_CONNECTION_REFUSED` port refusal is quick, but e.g. TLS
-against a plaintext-only port can leave the browser's own connect/handshake
-timeout to eventually give up, which is far longer, tens of seconds).
-Without an explicit timeout here, `candidatePorts`' later entries only get
-tried once every earlier wrong one has separately run out that clock --
-multiplied by however many are wrong, this made connecting to a server whose
-correct candidate isn't first in the list (any federated server not
-listening on 27707, e.g. `bullcity.social`) visibly slow to the point of
-looking hung, on every page that needs to resolve it (any
-`Components.ServerDependentView` caller, plus every persisted server `init`
-reconnects to at startup) -- not particular to any one page.
-
+{-| Connects to a server given only its public (`frontendHost`) identity -- `negotiateRellmServerConfigWith`
+without a remembered connection.
 -}
 negotiateRellmServerConfig : Bool -> String -> Task Grpc.Error ( Connection, ServerConfiguration )
-negotiateRellmServerConfig pageIsSecure frontendHost =
-    discoverBackendHost pageIsSecure frontendHost
-        |> Task.andThen
-            (\backendHost ->
-                let
-                    tryPort : ( Int, Bool ) -> Task Grpc.Error ( Connection, ServerConfiguration )
-                    tryPort ( port_, tls ) =
-                        Grpc.new Rellm.getServerConfiguration {}
-                            |> Grpc.setHost (connectionUrl { frontendHost = frontendHost, backendHost = backendHost, port_ = port_, tls = tls })
-                            |> Grpc.setTimeout 5000
-                            |> Grpc.toTask
-                            |> Task.map (\config -> ( { frontendHost = frontendHost, backendHost = backendHost, port_ = port_, tls = tls }, config ))
+negotiateRellmServerConfig =
+    negotiateRellmServerConfigWith Nothing
 
-                    tryPorts : List ( Int, Bool ) -> Task Grpc.Error ( Connection, ServerConfiguration )
-                    tryPorts candidates =
-                        case candidates of
-                            [] ->
-                                Task.fail Grpc.NetworkError
 
-                            candidate :: rest ->
-                                tryPort candidate
-                                    |> Task.onError (\_ -> tryPorts rest)
-                in
-                tryPorts (candidatePorts pageIsSecure)
-            )
+{-| Connects to a server given only its public (`frontendHost`) identity, as cheaply as it can.
+
+If we remember how this server was last reached (`hint`, persisted per server -- see
+`PersistedRellmServer.lastConnection`), that exact connection is tried first, alone: the common case (the
+server hasn't moved) is then a single request, and no port guessing at all. (A plaintext hint is ignored on a
+secure page, which couldn't use it.) Only if that fails -- or there's no hint -- does the full detection run:
+first discover the server's real backend host in case it's behind a CDN (`discoverBackendHost` -- skipped for
+local / LAN hosts, which never are), then try each `candidatePorts` combination in turn, stopping at the
+first that successfully returns server configuration, which doubles as the connectivity check ("can we talk
+to a server here at all?") and a useful result (its configuration) at the same time.
+
+Every request gets `Grpc.setTimeout` (`attemptTimeoutMillis`), because a wrong `(port_, tls)` doesn't always
+fail fast -- a refused port is quick, but e.g. TLS against a plaintext-only port can leave the browser's own
+connect/handshake timeout to eventually give up, which is far longer (tens of seconds) -- and the candidates
+are tried one after another, so without a cap those waits add up. On a local / LAN host the cap is short,
+since a wrong guess there is a mistake, not a slow link.
+
+-}
+negotiateRellmServerConfigWith : Maybe LastConnection -> Bool -> String -> Task Grpc.Error ( Connection, ServerConfiguration )
+negotiateRellmServerConfigWith hint pageIsSecure frontendHost =
+    let
+        probe : Connection -> Task Grpc.Error ( Connection, ServerConfiguration )
+        probe connection =
+            Grpc.new Rellm.getServerConfiguration {}
+                |> Grpc.setHost (connectionUrl connection)
+                |> Grpc.setTimeout (attemptTimeoutMillis frontendHost)
+                |> Grpc.toTask
+                |> Task.map (\config -> ( connection, config ))
+
+        tryPorts : String -> List ( Int, Bool ) -> Task Grpc.Error ( Connection, ServerConfiguration )
+        tryPorts backendHost candidates =
+            case candidates of
+                [] ->
+                    Task.fail Grpc.NetworkError
+
+                ( port_, tls ) :: rest ->
+                    probe { frontendHost = frontendHost, backendHost = backendHost, port_ = port_, tls = tls }
+                        |> Task.onError (\_ -> tryPorts backendHost rest)
+
+        detect : Task Grpc.Error ( Connection, ServerConfiguration )
+        detect =
+            discoverBackendHost pageIsSecure frontendHost
+                |> Task.andThen (\backendHost -> tryPorts backendHost (candidatePorts pageIsSecure frontendHost))
+    in
+    case hint of
+        Just last ->
+            if pageIsSecure && not last.tls then
+                detect
+
+            else
+                probe { frontendHost = frontendHost, backendHost = last.backendHost, port_ = last.port_, tls = last.tls }
+                    |> Task.onError (\_ -> detect)
+
+        Nothing ->
+            detect
+
+
+{-| How long each port-detection request may take before it counts as failed: 5 seconds for a public server
+(slow links and CDNs happen), but only 1.5 for a local / LAN host (`isLocalNetworkHost`), whose round trip is
+milliseconds -- so if its answer hasn't come by then, that guess was wrong.
+-}
+attemptTimeoutMillis : String -> Float
+attemptTimeoutMillis frontendHost =
+    if isLocalNetworkHost frontendHost then
+        1500
+
+    else
+        5000
 
 
 {-| A server's public "frontend" host may just be serving a web app that
@@ -1029,6 +1106,17 @@ page itself isn't secure) HTTP/80. Falls back to `frontendHost` itself
 -}
 discoverBackendHost : Bool -> String -> Task x String
 discoverBackendHost pageIsSecure frontendHost =
+    if isLocalNetworkHost frontendHost then
+        -- A local / LAN development server is never fronted by a CDN: nothing to discover, and not a request
+        -- (or, on a flaky network, two) spent finding that out.
+        Task.succeed frontendHost
+
+    else
+        discoverBackendHostFor pageIsSecure frontendHost
+
+
+discoverBackendHostFor : Bool -> String -> Task x String
+discoverBackendHostFor pageIsSecure frontendHost =
     let
         tryTls : List Bool -> Task x String
         tryTls tlsFlags =
@@ -1060,7 +1148,7 @@ discoverBackendHost pageIsSecure frontendHost =
                                         _ ->
                                             Err ()
                                 )
-                        , timeout = Just 5000
+                        , timeout = Just (attemptTimeoutMillis frontendHost)
                         }
                         |> Task.map
                             (\body ->
@@ -1089,15 +1177,43 @@ encodePersistedRellmServer server =
         [ ( "frontendHost", Encode.string server.frontendHost )
         , ( "enabled", Encode.bool server.enabled )
         , ( "sortOrder", Encode.int server.sortOrder )
+
+        -- Only a connected server knows where it was reached; a disconnected placeholder just omits it (so
+        -- the next visit does a full detection, like any server it has no hint for).
+        , ( "lastConnection"
+          , case server.connected of
+                Just connected ->
+                    Encode.object
+                        [ ( "backendHost", Encode.string connected.backendHost )
+                        , ( "port", Encode.int connected.port_ )
+                        , ( "tls", Encode.bool connected.tls )
+                        ]
+
+                Nothing ->
+                    Encode.null
+          )
         ]
 
 
 persistedRellmServerDecoder : Decoder PersistedRellmServer
 persistedRellmServerDecoder =
-    Decode.map3 PersistedRellmServer
+    Decode.map4 PersistedRellmServer
         (Decode.field "frontendHost" Decode.string)
         (Decode.field "enabled" Decode.bool)
         sortOrderDecoder
+        -- Absent in anything persisted before this existed, and `null` for a server that wasn't connected.
+        (Decode.oneOf
+            [ Decode.field "lastConnection"
+                (Decode.nullable
+                    (Decode.map3 LastConnection
+                        (Decode.field "backendHost" Decode.string)
+                        (Decode.field "port" Decode.int)
+                        (Decode.field "tls" Decode.bool)
+                    )
+                )
+            , Decode.succeed Nothing
+            ]
+        )
 
 
 withAccessToken : Maybe String -> Grpc.RpcRequest req res -> Grpc.RpcRequest req res
