@@ -21,7 +21,7 @@ reports back through a forwarded `Shared.Msg` (`applySharedMsg`), gated on `pick
 unrelated Save from some other use of the panel can't be mistaken for this one's pick.
 
 The "Apply Template" dropdown (see `Components.Pages.ServerInformationPage.ThemeTab.CustomCssTemplates`) has a
-◀ and a ▶ button either side that step to the previous / next style at the same image count (wrapping around;
+← and a → button either side that step to the previous / next style at the same image count (wrapping around;
 `CustomCssTemplates.adjacent`). Applying a template
 replaces the CSS text with a starter stylesheet and reminds
 the admin to choose as many images as the template uses.
@@ -278,7 +278,7 @@ updateInner shared targetHost msg model =
             , Effect.none
             )
 
-        -- The ◀ / ▶ buttons beside the dropdown: the neighbouring style at the same image count as the template
+        -- The ← / → buttons beside the dropdown: the neighbouring style at the same image count as the template
         -- applied now (or, with none applied, as many images as are chosen).
         StepTemplateClicked direction ->
             ( case model.edit of
@@ -568,7 +568,7 @@ editorView canPreview server edit =
         ]
 
 
-{-| "Apply Template" (a dropdown of `CustomCssTemplates.all`, with ◀ / ▶ buttons either side) and "Preview" just to
+{-| "Apply Template" (a dropdown of `CustomCssTemplates.all`, with ← / → buttons either side) and "Preview" just to
 the dropdown's right (only when `canPreview`).
 -}
 templateRow : Bool -> Edit -> Html Msg
@@ -582,27 +582,31 @@ templateRow canPreview edit =
             CustomCssTemplates.matching edit.css |> Maybe.map .name
     in
     div [ class "custom-css-template-row" ]
-        [ stepButton -1 "◀" "Previous style (same number of images)"
-        , -- Keyed by the applied template, so the `<select>` is remounted -- showing the right option -- whenever
-          -- that changes, rather than relying on Elm to patch `selected` onto the right `<option>`.
-          Html.Keyed.node "span"
-            []
-            [ ( "template-select-" ++ Maybe.withDefault "" applied
-              , Html.select [ class "custom-css-template-select", onInput TemplateSelected ]
-                    (option [ value "", selected (applied == Nothing), disabled True ] [ text CustomCssTemplates.placeholder ]
-                        :: List.map
-                            (\( group, templates ) ->
-                                Html.optgroup [ attribute "label" group ]
-                                    (List.map (\t -> option [ value t.name, selected (applied == Just t.name) ] [ text t.name ]) templates)
-                            )
-                            CustomCssTemplates.grouped
-                    )
-              )
+        [ -- The step buttons and the dropdown are one unwrappable row (`.custom-css-template-picker`); only the
+          -- Preview button may drop below it, and it stays right-aligned either way.
+          div [ class "custom-css-template-picker" ]
+            [ stepButton -1 "←" "Previous style (same number of images)"
+            , -- Keyed by the applied template, so the `<select>` is remounted -- showing the right option --
+              -- whenever that changes, rather than relying on Elm to patch `selected` onto the right `<option>`.
+              Html.Keyed.node "span"
+                [ class "custom-css-template-select-wrap" ]
+                [ ( "template-select-" ++ Maybe.withDefault "" applied
+                  , Html.select [ class "custom-css-template-select", onInput TemplateSelected ]
+                        (option [ value "", selected (applied == Nothing), disabled True ] [ text CustomCssTemplates.placeholder ]
+                            :: List.map
+                                (\( group, templates ) ->
+                                    Html.optgroup [ attribute "label" group ]
+                                        (List.map (\t -> option [ value t.name, selected (applied == Just t.name) ] [ text t.name ]) templates)
+                                )
+                                CustomCssTemplates.grouped
+                        )
+                  )
+                ]
+            , stepButton 1 "→" "Next style (same number of images)"
             ]
-        , stepButton 1 "▶" "Next style (same number of images)"
         , if canPreview then
             button
-                [ class "server-details-rename-button"
+                [ class "server-details-rename-button custom-css-template-preview"
                 , onClick PreviewClicked
                 , title "Show the CSS below on this page (instead of the saved stylesheet) without saving it"
                 ]
@@ -620,7 +624,9 @@ templateRow canPreview edit =
         ]
 
 
-{-| A ◀ / ▶ glyph button either side of the template dropdown: `direction` is `-1` / `1` (see `StepTemplateClicked`).
+{-| A ← / → button either side of the template dropdown: `direction` is `-1` / `1` (see `StepTemplateClicked`).
+Plain text arrows, like the ones the Accounts and Starred panels use -- ◀ / ▶ (U+25C0 / U+25B6) are rendered as
+color emoji by iOS.
 -}
 stepButton : Int -> String -> String -> Html Msg
 stepButton direction glyph tooltip =

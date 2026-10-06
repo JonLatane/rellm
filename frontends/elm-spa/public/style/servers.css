@@ -741,7 +741,9 @@
   right: -0.35rem;
 }
 
-/* Custom CSS editor: "Apply Template" dropdown, with Preview / Undo template beside it. */
+/* Custom CSS editor: the template picker row. The ← / → buttons and the dropdown are one row that never wraps
+   (`.custom-css-template-picker`, the dropdown shrinking to fit); the Preview button may drop below it on a
+   narrow screen, and is right-aligned either way (`margin-left: auto`). */
 .custom-css-template-row {
   display: flex;
   flex-wrap: wrap;
@@ -749,7 +751,25 @@
   gap: 0.5rem;
 }
 
+.custom-css-template-picker {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+.custom-css-template-select-wrap {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .custom-css-template-select {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
   max-width: 100%;
   font: inherit;
   padding: 0.4rem 0.5rem;
@@ -757,6 +777,11 @@
   border-radius: 6px;
   background: var(--bg);
   color: var(--fg);
+}
+
+.custom-css-template-preview {
+  flex: 0 0 auto;
+  margin-left: auto;
 }
 
 /* Custom CSS section: the variables note's color swatches. */
@@ -769,9 +794,10 @@
   border-radius: 3px;
 }
 
-/* Custom CSS editor: the ◀ / ▶ buttons either side of the template dropdown. */
+/* Custom CSS editor: the ← / → buttons either side of the template dropdown (fixed size, never shrunk). */
 .custom-css-template-step {
-  padding: 0.25rem 0.5rem;
+  flex: 0 0 auto;
+  padding: 0.25rem 0.55rem;
   line-height: 1;
-  font-size: 0.8rem;
+  font-size: 1rem;
 }
