@@ -1141,3 +1141,25 @@ input.ai-model-provider-grant-models {
   border-top: 1px solid currentColor;
   opacity: 0.25;
 }
+
+/* The Mastodon/Bluesky post pages (`Components.Mastodon.MastodonPostPage`/`BlueskyPostPage`): the date + star sit
+   at the card's bottom right, like a post card's... */
+.federated-post-footer {
+  margin: 0.7rem 0 0;
+}
+
+/* ...and the link back to the original post is small, quiet text under the card (above the replies) that wraps
+   -- a Mastodon permalink is one long unbreakable string. */
+.federated-original-link {
+  display: block;
+  margin: 0 0.3rem 0.9rem;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--muted);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.federated-original-link:hover {
+  text-decoration: underline;
+}

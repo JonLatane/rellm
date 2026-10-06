@@ -32,6 +32,7 @@ import Shared.Federation.Mastodon as Mastodon
 import Shared.MediaViewerPanel as MediaViewerPanel
 import Shared.StarredPanel as StarredPanel
 import Task
+import UI.Classes exposing (classes)
 
 
 type alias Model =
@@ -219,24 +220,35 @@ federatedPostView shared instanceHost sensitiveMediaRevealed sensitive post =
         onStarClicked =
             StarredPanel.toggleStarMsg shared.accounts host post |> Maybe.map StarredPanelMsg
     in
-    div [ class "post-detail" ]
-        [ div [ class "federated-service-label" ] [ text "⇄ Mastodon" ]
-        , Authors.link "" "" host Nothing Nothing post.author
-        , div [ class "post-detail-meta" ] [ span [ class "post-meta-right" ] [ Posts.starButton host starred onStarClicked post ] ]
-        , Markdown.view [ class "post-detail-content" ] (Maybe.withDefault "" post.content)
-        , if sensitive && not sensitiveMediaRevealed && not (List.isEmpty post.media) then
-            button
-                [ class "post-detail-sensitive-media-notice"
-                , onClick RevealSensitiveMediaClicked
-                ]
-                [ text "This post contains sensitive media. Click to view." ]
+    div []
+        [ div [ class "post-detail" ]
+            [ div [ class "federated-service-label" ] [ text "⇄ Mastodon" ]
+            , Authors.link "" "" host Nothing Nothing post.author
+            , Markdown.view [ class "post-detail-content" ] (Maybe.withDefault "" post.content)
+            , if sensitive && not sensitiveMediaRevealed && not (List.isEmpty post.media) then
+                button
+                    [ class "post-detail-sensitive-media-notice"
+                    , onClick RevealSensitiveMediaClicked
+                    ]
+                    [ text "This post contains sensitive media. Click to view." ]
 
-          else
-            MultiMediaRenderer.view post.postMediaLayout noServer Nothing shared.mediaRenderer MediaPlayClicked MediaImageClicked post.media
+              else
+                MultiMediaRenderer.view post.postMediaLayout noServer Nothing shared.mediaRenderer MediaPlayClicked MediaImageClicked post.media
+
+            -- Date and star at the bottom right, like a post card.
+            , div [ classes [ "post-detail-meta", "federated-post-footer" ] ]
+                [ span [ class "post-meta-right" ]
+                    [ Posts.timestampsText shared.time post
+                    , Posts.starButton host starred onStarClicked post
+                    ]
+                ]
+            ]
+
+        -- Outside the card, above the replies.
         , case post.link of
             Just link ->
                 a
-                    [ class "post-link"
+                    [ class "federated-original-link"
                     , href link
                     , target "_blank"
                     , rel "noopener noreferrer"

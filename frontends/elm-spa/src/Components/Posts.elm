@@ -35,6 +35,7 @@ module Components.Posts exposing
     , starButton
     , stripLinkScheme
     , syncPost
+    , timestampsText
     , updatePost
     , visibilityFromText
     , visibilityText
