@@ -18,6 +18,15 @@ Image 1 is always the page background; image 2 is a "masthead" band across the t
 (or, in `Standard Style (2 background images)`, a second background that fades in as you scroll). Every use
 has a `none` fallback, so a template applied before its images are picked still renders (just without them).
 
+**Brand colors**: `--primary-color` and `--nav-color` are the server's configured primary and navigation colors
+(`#rrggbb`; defined by `/custom_css.css` and by `UI.CustomCssStylesheet`, always present). A few styles use them
+for decoration that should look like *this* server -- Bauhaus (its red and blue), Serif Fonts (drop cap),
+Standard Style (page wash), Concert Poster (the hot color), Town Square (bunting, tabs, card tops, masthead edge),
+Retro Desktop (title bar, a dark shade of the primary color), Zine (its two riso inks) and Wabi-sabi (the seal). Every use has a fallback
+(`var(--primary-color, #e03a2f)`) and is purely decorative: never body text, where a pale brand color could fail
+to contrast. Styles whose identity *is* a fixed palette (Art Deco's gold, Terminal's green, Synthwave's neon, ...)
+and the accessibility ones (High Contrast, Dyslexia-Friendly, Calm) leave them alone.
+
 Two effects are shared by the image templates, both progressive enhancement:
 
   - **Drift parallax** (`pageImage`): the background image sits in a fixed layer a little taller than the
@@ -245,18 +254,19 @@ body { background: transparent; }
 -- BAUHAUS
 
 
-{-| Primary colors and hard geometry: a red circle, blue square and yellow triangle fixed in the page corners,
-thick black rules, zero-radius cards with offset hard shadows, lowercase heavy headings (Bayer's "universal
-alphabet" was all lowercase), and a red/yellow/blue stripe under the nav.
+{-| The server's two colors and hard geometry (its primary color where Bauhaus would use red, its navigation color
+where it would use blue; yellow stays): a circle, square and triangle fixed in the page corners, thick black
+rules, zero-radius cards with offset hard shadows, lowercase heavy headings (Bayer's "universal alphabet" was all
+lowercase), and a primary / yellow / navigation stripe under the nav.
 -}
 bauhaus : Int -> String
 bauhaus images =
     String.join "\n"
         [ """/* Bauhaus -- primary colors, hard edges, lowercase sans. */
 :root {
-  --bauhaus-red: #e03a2f;
+  --bauhaus-red: var(--primary-color, #e03a2f);
   --bauhaus-yellow: #f4c20d;
-  --bauhaus-blue: #1d4ed8;
+  --bauhaus-blue: var(--nav-color, #1d4ed8);
 }
 
 body {
@@ -401,12 +411,13 @@ main a {
   padding: 1rem 0.25rem;
 }
 
-/* A drop cap on the first paragraph of a post. */
+/* A drop cap on the first paragraph of a post, tinted toward the server's primary color. */
 .post-detail-content p:first-of-type::first-letter {
   float: left;
   font-size: 3.2em;
   line-height: 0.85;
   padding: 0.08em 0.1em 0 0;
+  color: color-mix(in srgb, var(--primary-color, var(--fg)) 75%, var(--fg));
 }
 
 main button:not(.remove-btn) {
@@ -476,9 +487,9 @@ main button:not(.remove-btn) {
         , case images of
             0 ->
                 """
-/* Page background: a soft wash from the chip color into the page color. */
+/* Page background: a soft wash from the server's primary color into the page color. */
 html {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--chip-bg) 70%, var(--bg)), var(--bg) 45vh) fixed, var(--bg);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--primary-color, var(--chip-bg)) 14%, var(--bg)), var(--bg) 45vh) fixed, var(--bg);
 }
 body { background: transparent; }
 """
@@ -499,11 +510,12 @@ body { background: transparent; }
 standardFrostedColumn : String
 standardFrostedColumn =
     """
-/* The content column becomes frosted glass over the background. */
+/* The content column becomes frosted glass over the background, with a hairline edge tinted by the server's primary color. */
 .container {
   margin-top: 12px;
   margin-bottom: 12px;
   border-radius: 18px;
+  border: 1px solid color-mix(in srgb, var(--primary-color, var(--border)) 35%, var(--border));
   background: color-mix(in srgb, var(--bg) 72%, transparent);
   -webkit-backdrop-filter: blur(14px) saturate(1.2);
   backdrop-filter: blur(14px) saturate(1.2);
@@ -1291,7 +1303,7 @@ concertPoster images =
     String.join "\n"
         [ """/* Concert Poster -- loud, condensed, halftone, hard color blocks. */
 :root {
-  --poster-hot: #ff3b5c;
+  --poster-hot: var(--primary-color, #ff3b5c);
   --poster-yellow: #ffd400;
 }
 
@@ -1523,7 +1535,12 @@ landmark photo for the masthead.
 townSquare : Int -> String
 townSquare images =
     String.join "\n"
-        [ """/* Town Square -- civic and friendly, in the server's own brand color. */
+        [ """/* Town Square -- civic and friendly, in the server's own brand colors. */
+:root {
+  --civic-main: var(--primary-color, var(--calendar-accent));
+  --civic-accent: var(--nav-color, var(--calendar-accent));
+}
+
 body {
   font-family: "Franklin Gothic Medium", "Gill Sans", "Trebuchet MS", "Segoe UI", sans-serif;
 }
@@ -1538,7 +1555,7 @@ h1, h2, h3, .post-card-title {
   color: var(--fg);
   font-size: 0.8rem;
   letter-spacing: 0.14em;
-  border-left: 6px solid var(--calendar-accent);
+  border-left: 6px solid var(--civic-main);
   padding-left: 0.55rem;
 }
 
@@ -1546,12 +1563,12 @@ h1, h2, h3, .post-card-title {
   border-bottom: 4px solid rgba(255, 255, 255, 0.55);
 }
 
-/* Bunting strung under the nav, in the brand color. */
+/* Bunting strung under the nav, in the server's navigation color. */
 .container::before {
   content: "";
   display: block;
   height: 14px;
-  background: linear-gradient(135deg, var(--calendar-accent) 50%, transparent 50%) 0 0 / 22px 14px repeat-x;
+  background: linear-gradient(135deg, var(--civic-accent) 50%, transparent 50%) 0 0 / 22px 14px repeat-x;
   opacity: 0.9;
 }
 
@@ -1562,8 +1579,8 @@ h1, h2, h3, .post-card-title {
 
 .post-card, .event-card, .user-card {
   border: 1px solid var(--border);
-  border-top: 5px solid var(--calendar-accent);
-  border-top-color: var(--calendar-accent) !important;
+  border-top: 5px solid var(--civic-main);
+  border-top-color: var(--civic-main) !important;
   border-radius: 6px;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
 }
@@ -1576,7 +1593,7 @@ main button:not(.remove-btn) {
             """
 /* Page background: a gentle wash of the brand color from the top. */
 html {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--calendar-accent) 14%, var(--bg)), var(--bg) 50vh) fixed, var(--bg);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--civic-main) 14%, var(--bg)), var(--bg) 50vh) fixed, var(--bg);
 }
 body { background: transparent; }
 """
@@ -1592,8 +1609,8 @@ body { background: transparent; }
                 { note = "Image 2 (--custom-media-2): a wide landmark banner with a brand-colored scrim and bottom edge."
                 , height = "12rem"
                 , filter = "none"
-                , overlay = "linear-gradient(transparent 55%, color-mix(in srgb, var(--calendar-accent) 55%, transparent))"
-                , extra = "border-bottom: 6px solid var(--calendar-accent); border-radius: 6px 6px 0 0;"
+                , overlay = "linear-gradient(transparent 55%, color-mix(in srgb, var(--civic-main) 55%, transparent))"
+                , extra = "border-bottom: 6px solid var(--civic-main); border-radius: 6px 6px 0 0;"
                 }
 
           else
@@ -2297,7 +2314,7 @@ h1, h2, h3, .section-title, .post-card-title {
   content: "▣  Rellm";
   display: block;
   padding: 3px 6px;
-  background: linear-gradient(90deg, #000080, #1084d0);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--primary-color, #000080) 45%, #000), color-mix(in srgb, var(--primary-color, #1084d0) 80%, #000));
   color: #fff;
   font-weight: 700;
   font-size: 0.85rem;
@@ -2347,7 +2364,7 @@ body { background: transparent; }
                 , height = "13rem"
                 , filter = "none"
                 , overlay = "linear-gradient(transparent, transparent)"
-                , extra = "border: 2px solid; border-color: #fff #404040 #404040 #fff; border-top: 22px solid #000080; margin: 6px 6px 1.4rem;"
+                , extra = "border: 2px solid; border-color: #fff #404040 #404040 #fff; border-top: 22px solid color-mix(in srgb, var(--primary-color, #000080) 45%, #000); margin: 6px 6px 1.4rem;"
                 }
 
           else
@@ -2369,8 +2386,8 @@ zine images =
     String.join "\n"
         [ "/* Zine -- photocopy and riso: halftone, out-of-register color, dashed cut lines. Always light. */\n"
             ++ forcedRoot
-                """  --riso-pink: #ff48b0;
-  --riso-blue: #0078bf;
+                """  --riso-pink: var(--primary-color, #ff48b0);
+  --riso-blue: var(--nav-color, #0078bf);
   --riso-yellow: #ffe800;
   --bg: #f4efe2;
   --fg: #151515;
@@ -2430,8 +2447,8 @@ main button:not(.remove-btn) {
 /* Page background: two offset halftone screens, pink and blue, on newsprint. */
 html {
   background:
-    radial-gradient(circle, rgba(255, 72, 176, 0.35) 1.5px, transparent 2px) 0 0 / 9px 9px,
-    radial-gradient(circle, rgba(0, 120, 191, 0.28) 1.5px, transparent 2px) 4px 4px / 9px 9px,
+    radial-gradient(circle, color-mix(in srgb, var(--riso-pink) 35%, transparent) 1.5px, transparent 2px) 0 0 / 9px 9px,
+    radial-gradient(circle, color-mix(in srgb, var(--riso-blue) 28%, transparent) 1.5px, transparent 2px) 4px 4px / 9px 9px,
     var(--bg);
   background-attachment: fixed;
 }
@@ -2441,7 +2458,7 @@ body { background: transparent; }
           else
             pageImage
                 { filter = "grayscale(1) contrast(1.4)"
-                , overlay = "radial-gradient(circle, rgba(0, 120, 191, 0.45) 1.2px, transparent 1.8px) 0 0 / 6px 6px, rgba(244, 239, 226, 0.72)"
+                , overlay = "radial-gradient(circle, color-mix(in srgb, var(--riso-blue) 45%, transparent) 1.2px, transparent 1.8px) 0 0 / 6px 6px, rgba(244, 239, 226, 0.72)"
                 , note = "Image 1 (--custom-media-1): the page background, photocopied -- high-contrast gray under a blue halftone."
                 }
         , if images >= 2 then
@@ -2449,7 +2466,7 @@ body { background: transparent; }
                 { note = "Image 2 (--custom-media-2): a pink duotone under a blue halftone, pasted on at a slight angle with a dashed edge."
                 , height = "13rem"
                 , filter = "none"
-                , overlay = "radial-gradient(circle, rgba(0, 120, 191, 0.6) 0 1.2px, transparent 1.8px) 0 0 / 6px 6px"
+                , overlay = "radial-gradient(circle, color-mix(in srgb, var(--riso-blue) 60%, transparent) 0 1.2px, transparent 1.8px) 0 0 / 6px 6px"
                 , extra = "background-color: var(--riso-pink); background-blend-mode: normal, luminosity; border: 2px dashed #151515; box-shadow: 6px 6px 0 var(--riso-blue); transform: rotate(0.6deg); margin: 8px 8px 1.8rem 4px; background-attachment: scroll;"
                 }
 
@@ -2464,7 +2481,7 @@ body { background: transparent; }
 
 {-| Quiet imperfection: a warm paper (or warm charcoal in dark mode), thin light-weight type with wide
 tracking, lots of empty space, hairline-ruled entries instead of cards, a small vermilion seal beside each
-section label, and a single faint ink ring ("ensō") near the corner of the plain page. Photos are ink-wash:
+section label, and a single faint ink ring ("ensō") near the corner of the plain page. The seal is the server's primary color. Photos are ink-wash:
 grayscale, softened, and -- for the masthead -- faded out at the sides.
 -}
 wabiSabi : Int -> String
@@ -2512,7 +2529,7 @@ h1, h2, h3, .post-card-title {
   width: 0.55em;
   height: 0.55em;
   margin-right: 0.8em;
-  background: #b5382b;
+  background: var(--primary-color, #b5382b);
   border-radius: 1px;
 }
 

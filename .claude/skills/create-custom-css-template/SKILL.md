@@ -21,6 +21,7 @@ myStyle images =
 ```
 
 - **Images** arrive as `--custom-media-1` / `--custom-media-2` (each a full `url("...")`). **Always** write `var(--custom-media-N, none)` -- the helpers do; a hand-written use must include the `none` fallback (a test enforces it). Image 1 = page background (`pageImage`: fixed `body::before` layer with a scroll-driven drift, `body::after` overlay, `html` keeps `var(--bg)`); image 2 = a band at the top of the column (`masthead`: `main::before`, `background-attachment: fixed` parallax window). `overlay` is any `background` value (layers allowed, last may be a plain color); a masthead `overlay` must be an `<image>`. Each template must use exactly as many `--custom-media-N` as its image count (tested).
+- **Brand colors**: `--primary-color` and `--nav-color` (`#rrggbb`) are always defined -- they're the server's configured primary and navigation colors (the app bar and the nav highlight), defined by `/custom_css.css` (`backend/src/logic/custom_css.rs`) and `UI.CustomCssStylesheet`. Use them for **decorative** accents that should look like *this* server (shadows, stripes, bunting, halftone, title bars, seals): always with a fallback, `var(--primary-color, #e03a2f)` (a test enforces it), and **never for body text** -- a pale brand color can fail to contrast. Styles whose identity is a fixed palette (Art Deco gold, Terminal green, Synthwave neon) and the accessibility ones (High Contrast, Dyslexia-Friendly, Calm) deliberately don't use them. If a style should wear them, add it to the "styles meant to wear the server's colors" test.
 - **Helpers**: `forcedRoot` (set `--bg/--fg/--muted/--border/--panel-bg/--chip-bg` in every theme state), `themedRoot light dark` (separate light/dark palettes following the setting), `eventSurfaces`, `noMotion`/`noDrift`, `waveBand`/`pines`/`treeline`/`landscapeLayer`.
 - No external anything: no `@import`, no URLs, no data-URI SVG, system font stacks only. No backslashes or `"""` inside the Elm triple-quoted strings (use the literal character, e.g. `█`, not `\2588`).
 - Respect `prefers-reduced-motion` for anything that animates.
@@ -33,7 +34,7 @@ myStyle images =
 - Background **always light** (cream paper, glossy aqua, gray window) -> `ForcesLight`. Currently Polaroid, Y2K Aero, Retro Desktop, Zine.
 - Background built from the page's own `--bg` (`color-mix(in srgb, var(--bg) ..., ...)`, or `themedRoot`) so it follows light/dark -> `FollowsTheme`.
 
-Applying a template sets the editor's flags to the template's (and "Undo template" restores them). At most one flag, ever (server validates; Elm toggles are mutually exclusive). A style that forces colors in CSS but is not marked forced will get wrong-contrast brand colors -- check this every time.
+Applying a template sets the editor's flags to the template's (and "Undo template" restores them). The dropdown shows a template as selected exactly while the CSS box still equals that template's CSS (`CustomCssTemplates.matching`), and goes back to "Apply Template" as soon as the text is edited. At most one flag, ever (server validates; Elm toggles are mutually exclusive). A style that forces colors in CSS but is not marked forced will get wrong-contrast brand colors -- check this every time.
 
 ## 3. Rules learned the hard way
 
@@ -63,6 +64,8 @@ Needs the backend running (`run-backend` skill) and `.claude/skills/run-elm`'s d
 2. Put one on the dev site without an admin session by updating the active row: `UPDATE server_configurations SET custom_css_configuration = '{"media_ids":["<id1>","<id2>"],"force_dark_theme":false}'::jsonb, custom_css = $css$...$css$ WHERE active;` (use two `GLOBAL_PUBLIC` image media ids from `grpcurl -plaintext -d '{}' localhost:27707 rellm.Rellm/GetMedia`).
 3. Screenshot with the driver (`nav`, `sleep 3500`, `screenshot`) and **read the PNGs**: the 2-image version on `/posts` (cards + masthead + page image), the plain version on `/events` (calendar must be readable), and light + dark (`eval document.documentElement.setAttribute('data-theme','dark')`) for `FollowsTheme` styles.
 4. **Reset the DB when done**: `UPDATE server_configurations SET custom_css_configuration = NULL, custom_css = NULL WHERE active;`.
+
+**Test a returning visit, not just a first one**: a browser that has visited before has the server persisted, so startup takes a different path (`GotReconnectResult`, not `GotMainServerResult`) -- the dev-server CSS fallback once only worked on the first path. Load the page twice in one driver run (`nav`, `sleep`, `nav`, `sleep`, then `eval`) and check the Elm-rendered `#custom-css-stylesheet` is longer than the bare variable block, on both `http://localhost:1234` (Elm dev server) and `http://localhost` (Rust-served).
 
 zsh gotcha when scripting the loop: don't name a shell variable `path` (it is tied to `$PATH`).
 

@@ -98,26 +98,43 @@ pub fn validate_custom_css_configuration(
     Ok(())
 }
 
-/// The stylesheet served at `/custom_css.css`: a `:root` block defining `--custom-media-N` (1-based,
-/// in `media_ids` order) as `url("/media/<id>")`, followed by the admin's CSS verbatim, so it can
-/// override anything before it. Media URLs are relative -- the stylesheet is always served from the
-/// same origin as the media. (The Elm dev server, which isn't, builds its own absolute URLs.)
-pub fn custom_css_stylesheet(config: &CustomCssConfiguration) -> String {
-    let mut css = String::new();
+/// What `--primary-color` is when the server has no `ServerColors.primary` configured -- the same neutral gray
+/// the Elm client falls back to (`Shared.AccountsPanel.RellmServers.brandingOf`).
+pub const DEFAULT_PRIMARY_COLOR: u32 = 0x424242;
+/// What `--nav-color` is when the server has no `ServerColors.navigation` configured (the Elm client's fallback).
+pub const DEFAULT_NAV_COLOR: u32 = 0xFFFFFF;
+
+/// A `ServerColors`-style ARGB `uint32` as a CSS `#rrggbb` (only the low 24 bits count -- this codebase never
+/// stores a translucent server color), or `default` if it's unset.
+pub fn css_hex_color(argb: Option<u32>, default: u32) -> String {
+    format!("#{:06x}", argb.unwrap_or(default) & 0xFFFFFF)
+}
+
+/// The stylesheet served at `/custom_css.css`: a `:root` block defining `--primary-color` and `--nav-color`
+/// (the server's configured colors, from `colors`) and `--custom-media-N` (1-based, in `media_ids` order) as
+/// `url("/media/<id>")`, followed by the admin's CSS verbatim, so it can override anything before it. The color
+/// variables are always present, even with no custom CSS at all, so the stylesheet is never empty. Media URLs
+/// are relative -- the stylesheet is always served from the same origin as the media. (The Elm dev server,
+/// which isn't, builds its own absolute URLs.)
+pub fn custom_css_stylesheet(config: &CustomCssConfiguration, colors: Option<&ServerColors>) -> String {
+    let mut css = String::from(":root {\n");
+    css.push_str(&format!(
+        "  --primary-color: {};\n",
+        css_hex_color(colors.and_then(|c| c.primary), DEFAULT_PRIMARY_COLOR)
+    ));
+    css.push_str(&format!(
+        "  --nav-color: {};\n",
+        css_hex_color(colors.and_then(|c| c.navigation), DEFAULT_NAV_COLOR)
+    ));
     // Ids were validated as decodable on write, but this is also what runs on whatever is in the
     // database, so only ever emit ones that are plain base58 (no quote/paren/backslash to break `url()`).
-    let vars: Vec<String> = config
+    config
         .media_ids
         .iter()
         .enumerate()
         .filter(|(_, id)| !id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric()))
-        .map(|(i, id)| format!("  --custom-media-{}: url(\"/media/{}\");\n", i + 1, id))
-        .collect();
-    if !vars.is_empty() {
-        css.push_str(":root {\n");
-        vars.iter().for_each(|v| css.push_str(v));
-        css.push_str("}\n");
-    }
+        .for_each(|(i, id)| css.push_str(&format!("  --custom-media-{}: url(\"/media/{}\");\n", i + 1, id)));
+    css.push_str("}\n");
     css.push_str(config.custom_css.as_deref().unwrap_or(""));
     css
 }

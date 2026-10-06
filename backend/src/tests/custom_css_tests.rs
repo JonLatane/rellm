@@ -299,30 +299,67 @@ fn configure_custom_css_requires_existing_global_public_media() {
     });
 }
 
+/// The color variables every stylesheet starts with, for a server with no configured colors.
+const DEFAULT_COLOR_VARS: &str = "  --primary-color: #424242;\n  --nav-color: #ffffff;\n";
+
 #[test]
 fn stylesheet_defines_one_based_custom_media_vars_before_the_css() {
-    let sheet = custom_css_stylesheet(&css(
-        vec!["abc".to_string(), "def".to_string()],
-        "body { color: red; }",
-    ));
+    let sheet = custom_css_stylesheet(
+        &css(
+            vec!["abc".to_string(), "def".to_string()],
+            "body { color: red; }",
+        ),
+        None,
+    );
     assert_eq!(
         sheet,
-        ":root {\n  --custom-media-1: url(\"/media/abc\");\n  --custom-media-2: url(\"/media/def\");\n}\nbody { color: red; }"
+        format!(
+            ":root {{\n{DEFAULT_COLOR_VARS}  --custom-media-1: url(\"/media/abc\");\n  --custom-media-2: url(\"/media/def\");\n}}\nbody {{ color: red; }}"
+        )
     );
 }
 
 #[test]
-fn stylesheet_without_media_is_just_the_css() {
-    assert_eq!(custom_css_stylesheet(&css(vec![], "a{}")), "a{}");
-    assert_eq!(custom_css_stylesheet(&CustomCssConfiguration::default()), "");
+fn stylesheet_without_media_is_the_color_vars_then_the_css() {
+    assert_eq!(
+        custom_css_stylesheet(&css(vec![], "a{}"), None),
+        format!(":root {{\n{DEFAULT_COLOR_VARS}}}\na{{}}")
+    );
+    // Never empty: even with no custom CSS at all, the variables are there.
+    assert_eq!(
+        custom_css_stylesheet(&CustomCssConfiguration::default(), None),
+        format!(":root {{\n{DEFAULT_COLOR_VARS}}}\n")
+    );
+}
+
+#[test]
+fn stylesheet_defines_primary_and_nav_color_from_the_servers_colors() {
+    let colors = ServerColors {
+        // ARGB: only the low 24 bits (RGB) count.
+        primary: Some(0xFF2E86AB),
+        navigation: Some(0x00A23B72),
+        ..Default::default()
+    };
+    let sheet = custom_css_stylesheet(&css(vec![], ""), Some(&colors));
+    assert!(sheet.contains("  --primary-color: #2e86ab;\n"), "{sheet}");
+    assert!(sheet.contains("  --nav-color: #a23b72;\n"), "{sheet}");
+
+    // A color left unset falls back to the same default the Elm client uses.
+    let only_primary = ServerColors { primary: Some(0xFF010203), ..Default::default() };
+    let sheet = custom_css_stylesheet(&css(vec![], ""), Some(&only_primary));
+    assert!(sheet.contains("--primary-color: #010203;"));
+    assert!(sheet.contains("--nav-color: #ffffff;"));
 }
 
 #[test]
 fn stylesheet_never_emits_ids_that_could_break_out_of_url() {
-    let sheet = custom_css_stylesheet(&css(
-        vec!["a\");}body{display:none".to_string(), "ok".to_string()],
-        "",
-    ));
+    let sheet = custom_css_stylesheet(
+        &css(
+            vec!["a\");}body{display:none".to_string(), "ok".to_string()],
+            "",
+        ),
+        None,
+    );
     assert!(!sheet.contains("display:none"));
     // The skipped id still occupies its slot, so later vars keep their documented numbers.
     assert!(sheet.contains("--custom-media-2: url(\"/media/ok\")"));

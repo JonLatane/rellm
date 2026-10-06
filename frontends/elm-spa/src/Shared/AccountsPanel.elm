@@ -1627,7 +1627,9 @@ subscriptions model =
 {-| The Elm dev server (`RellmServers.elmPrefix` == `""`, i.e. port 1234) has no Rust server behind
 `index.html`'s `<link>` to `/custom_css.css` (it just answers with `index.html`), so there the page's
 own server's Custom CSS is fetched with `GetCustomCSS` and rendered by `UI.CustomCssStylesheet`
-instead -- see `Model.customCssOverride`. A no-op everywhere else.
+instead -- see `Model.customCssOverride`. A no-op everywhere else. Fired from both ways the page's own server
+gets connected at startup: `GotMainServerResult` (first time this browser has seen it) and `GotReconnectResult`
+(every later visit, once it's persisted).
 -}
 devCustomCssCmd : Model -> RellmServer -> Cmd Msg
 devCustomCssCmd model server =
@@ -2207,7 +2209,15 @@ sendUpdate req msg model =
                     -- itself persists (this server's own addition included) once that
                     -- settles -- see its own doc.
                     ( newModel
-                    , refreshPermissionsForServer server newModel.accounts
+                    , Cmd.batch
+                        [ refreshPermissionsForServer server newModel.accounts
+
+                        -- A returning browser already knows its own server (it's persisted), so on the Elm dev
+                        -- server this -- not `GotMainServerResult`, which only fires for a server seen for the
+                        -- first time -- is the startup path that has to fetch its custom CSS. (A no-op unless
+                        -- this is the page's own server on the dev server -- see `devCustomCssCmd`.)
+                        , devCustomCssCmd newModel server
+                        ]
                     )
 
                 Err _ ->

@@ -39,8 +39,8 @@ import Components.Pages.ServerInformationPage.Common as Common
 import Effect exposing (Effect)
 import Grpc
 import Components.Pages.ServerInformationPage.ThemeTab.CustomCssTemplates as CustomCssTemplates
-import Html exposing (Html, button, div, h3, img, option, p, span, text, textarea)
-import Html.Attributes exposing (attribute, class, disabled, placeholder, rows, selected, spellcheck, src, title, value)
+import Html exposing (Html, button, code, div, h3, img, option, p, span, text, textarea)
+import Html.Attributes exposing (attribute, class, disabled, placeholder, rows, selected, spellcheck, src, style, title, value)
 import Html.Events exposing (onClick, onInput)
 import Html.Keyed
 import Proto.Rellm exposing (CustomCSSConfiguration, defaultMediaReference)
@@ -88,10 +88,6 @@ type alias Edit =
 
     -- Whether "Preview" is on -- see this module's doc.
     , previewing : Bool
-
-    -- Bumped each time a template is applied, to remount the dropdown (its `<select>` would otherwise stay
-    -- on the chosen option instead of going back to "Apply Template").
-    , templateSeq : Int
 
     -- The CSS and forced theme from before the last template was applied, for "Undo template".
     , previous : Maybe Snapshot
@@ -174,7 +170,6 @@ updateInner shared targetHost msg model =
                                 , pickingMedia = False
                                 , status = AccountsPanel.Idle
                                 , previewing = False
-                                , templateSeq = 0
                                 , previous = Nothing
                                 }
                       }
@@ -279,7 +274,6 @@ updateInner shared targetHost msg model =
                                 | css = chosen.css
                                 , forceLight = chosen.forceLightTheme
                                 , forceDark = chosen.forceDarkTheme
-                                , templateSeq = e.templateSeq + 1
                                 , previous =
                                     if e.css == chosen.css && e.forceLight == chosen.forceLightTheme && e.forceDark == chosen.forceDarkTheme then
                                         e.previous
@@ -289,7 +283,7 @@ updateInner shared targetHost msg model =
                             }
 
                         Nothing ->
-                            { e | templateSeq = e.templateSeq + 1 }
+                            e
                 )
                 model
             , Effect.none
@@ -404,6 +398,7 @@ view : Bool -> RellmServer -> Maybe RellmAccount -> Model -> Html Msg
 view canPreview server maybeAdminAccount model =
     div [ class "server-details-custom-css" ]
         [ h3 [ class "section-title" ] [ text "Custom CSS" ]
+        , variablesNote server
         , case ( model.edit, model.saved ) of
             ( Just edit, _ ) ->
                 editorView canPreview server edit
@@ -424,6 +419,43 @@ view canPreview server maybeAdminAccount model =
 
             ( Nothing, LoadFailed err ) ->
                 p [ class "server-details-rename-error" ] [ text err ]
+        ]
+
+
+{-| The CSS variables custom CSS can use, shown in both modes: `--primary-color` and `--nav-color` (this server's
+configured colors -- current values shown, with a swatch) and the `--custom-media-N` ones for the media chosen
+below. Mirrors what the stylesheet itself defines (`backend/src/logic/custom_css.rs`, `UI.CustomCssStylesheet`).
+-}
+variablesNote : RellmServer -> Html Msg
+variablesNote server =
+    let
+        branding : RellmServers.Branding
+        branding =
+            RellmServers.brandingOf server
+
+        colorVar : String -> String -> Html Msg
+        colorVar name color =
+            span []
+                [ code [] [ text name ]
+                , text " "
+                , span [ class "custom-css-color-swatch", style "background-color" color, title color ] []
+                , text (" " ++ color)
+                ]
+    in
+    p [ class "server-details-feature-settings-note custom-css-variables" ]
+        [ text "CSS variables available to your custom CSS: "
+        , colorVar "--primary-color" branding.primary.color
+        , text " and "
+        , colorVar "--nav-color" branding.nav.color
+        , text " (this server's primary and navigation colors), plus "
+        , code [] [ text "--custom-media-1" ]
+        , text ", "
+        , code [] [ text "--custom-media-2" ]
+        , text ", … for the media chosen below, in order -- each a full "
+        , code [] [ text "url(…)" ]
+        , text ", so e.g. "
+        , code [] [ text "background: var(--custom-media-1) center / cover;" ]
+        , text " works."
         ]
 
 
@@ -481,7 +513,7 @@ editorView canPreview server edit =
             [ class "custom-css-textarea"
             , rows 16
             , spellcheck False
-            , placeholder "/* Appended to the default CSS. Use var(--custom-media-1) etc. for the media above. */"
+            , placeholder "/* Appended to the default CSS. Variables: var(--primary-color), var(--nav-color), and var(--custom-media-1) etc. for the media above. */"
             , value edit.css
             , onInput CssChanged
             ]
@@ -494,21 +526,31 @@ editorView canPreview server edit =
         ]
 
 
-{-| "Apply Template" (a dropdown of `CustomCssTemplates.all`, remounted via `templateSeq` after each pick so it
-returns to its placeholder), "Undo template" once one's been applied, and "Preview" just to the dropdown's
+{-| "Apply Template" (a dropdown of `CustomCssTemplates.all`), "Undo template" once one's been applied, and "Preview" just to the dropdown's
 right (only when `canPreview`).
 -}
 templateRow : Bool -> Edit -> Html Msg
 templateRow canPreview edit =
+    let
+        -- The template currently "applied": the one whose CSS is exactly what's in the box. Derived from the
+        -- text itself, so it can never get out of step with it -- editing the CSS un-applies the template (the
+        -- dropdown goes back to "Apply Template"), and so does Undo.
+        applied : Maybe String
+        applied =
+            CustomCssTemplates.matching edit.css |> Maybe.map .name
+    in
     div [ class "custom-css-template-row" ]
-        [ Html.Keyed.node "span"
+        [ -- Keyed by the applied template, so the `<select>` is remounted -- showing the right option -- whenever
+          -- that changes, rather than relying on Elm to patch `selected` onto the right `<option>`.
+          Html.Keyed.node "span"
             []
-            [ ( "template-select-" ++ String.fromInt edit.templateSeq
+            [ ( "template-select-" ++ Maybe.withDefault "" applied
               , Html.select [ class "custom-css-template-select", onInput TemplateSelected ]
-                    (option [ value "", selected True, disabled True ] [ text CustomCssTemplates.placeholder ]
+                    (option [ value "", selected (applied == Nothing), disabled True ] [ text CustomCssTemplates.placeholder ]
                         :: List.map
                             (\( group, templates ) ->
-                                Html.optgroup [ attribute "label" group ] (List.map (\t -> option [ value t.name ] [ text t.name ]) templates)
+                                Html.optgroup [ attribute "label" group ]
+                                    (List.map (\t -> option [ value t.name, selected (applied == Just t.name) ] [ text t.name ]) templates)
                             )
                             CustomCssTemplates.grouped
                     )

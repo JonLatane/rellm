@@ -78,6 +78,22 @@ suite =
                         )
                     |> List.map Tuple.first
                     |> Expect.equal []
+        , test "every use of --primary-color / --nav-color has a fallback, so a template still renders without them" <|
+            \_ ->
+                Templates.all
+                    |> List.filter
+                        (\t ->
+                            count "var(--primary-color" t.css /= count "var(--primary-color," t.css
+                                || count "var(--nav-color" t.css /= count "var(--nav-color," t.css
+                        )
+                    |> List.map .name
+                    |> Expect.equal []
+        , test "the styles meant to wear the server's colors do, in every version" <|
+            \_ ->
+                Templates.grouped
+                    |> List.filter (\( _, ts ) -> List.all (\t -> String.contains "var(--primary-color" t.css) ts)
+                    |> List.map Tuple.first
+                    |> Expect.equal [ "Bauhaus", "Serif Fonts", "Standard Style", "Concert Poster", "Town Square", "Retro Desktop", "Zine", "Wabi-sabi" ]
         , test "grouped has one group per style, three templates each, covering every template" <|
             \_ ->
                 Expect.equal

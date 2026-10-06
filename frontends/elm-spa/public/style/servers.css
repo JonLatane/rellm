@@ -758,3 +758,13 @@
   background: var(--bg);
   color: var(--fg);
 }
+
+/* Custom CSS section: the variables note's color swatches. */
+.custom-css-color-swatch {
+  display: inline-block;
+  width: 0.9em;
+  height: 0.9em;
+  vertical-align: -0.1em;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}

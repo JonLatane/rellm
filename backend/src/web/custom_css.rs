@@ -7,6 +7,7 @@ use rocket::{
 use std::io::Cursor;
 
 use crate::logic::{custom_css_etag, custom_css_stylesheet, get_custom_css_configuration};
+use crate::rpcs::get_server_configuration_proto;
 use crate::web::RocketState;
 
 lazy_static! {
@@ -60,7 +61,12 @@ fn serve_custom_css(
     let mut conn = state.pool.get().map_err(|_| Status::InternalServerError)?;
     let config =
         get_custom_css_configuration(&mut conn).map_err(|_| Status::InternalServerError)?;
-    let body = custom_css_stylesheet(&config);
+    // The server's configured primary/nav colors become the `--primary-color`/`--nav-color` variables.
+    let colors = get_server_configuration_proto(&mut conn)
+        .ok()
+        .and_then(|c| c.server_info)
+        .and_then(|info| info.colors);
+    let body = custom_css_stylesheet(&config, colors.as_ref());
     let etag = custom_css_etag(&body);
     let status = if if_none_match.0.as_deref() == Some(etag.as_str()) {
         Status::NotModified
