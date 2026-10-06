@@ -685,7 +685,17 @@ export interface ServerConfiguration {
    *
    * This could be extended in the future to allow sending mail with Stalwart, but that's TBD.
    */
-  stalwartConfig?: StalwartConfig | undefined;
+  stalwartConfig?:
+    | StalwartConfig
+    | undefined;
+  /**
+   * The server's [`CustomCSSConfiguration`](#rellm-CustomCSSConfiguration): which media its custom stylesheet uses and
+   * whether it forces the light or dark theme. Publicly readable. `custom_css` itself is always unset here -- fetch
+   * it with [`GetCustomCSS`](#grpc-api-GetCustomCSS), which is the only way to read the (potentially large) stylesheet
+   * text. Ignored by [`ConfigureServer`](#grpc-api-ConfigureServer); write it with
+   * [`ConfigureCustomCSS`](#grpc-api-ConfigureCustomCSS).
+   */
+  customCssConfiguration?: CustomCSSConfiguration | undefined;
 }
 
 /**
@@ -1206,6 +1216,49 @@ export interface ServerLogo {
   wideMediaIdDark?: string | undefined;
 }
 
+/**
+ * Custom CSS for a Rellm server's Elm SPA, plus the appearance settings that go with it. Stored alongside the
+ * [`ServerConfiguration`](#rellm-ServerConfiguration) (so it is versioned the same way, with each
+ * [`ConfigureServer`](#grpc-api-ConfigureServer) or [`ConfigureCustomCSS`](#grpc-api-ConfigureCustomCSS) creating a
+ * new configuration version) and served to browsers as a stylesheet at `/custom_css.css` (`/elm/custom_css.css` when
+ * the Elm SPA is served under `/elm`).
+ *
+ * The stylesheet always starts with a `:root` block defining CSS variables for custom CSS to use: `--primary-color`
+ * and `--nav-color` (the server's configured `ServerColors.primary` and `ServerColors.navigation`, as `#rrggbb`),
+ * and `--custom-media-1`, `--custom-media-2`, ... (see `media_ids`).
+ *
+ * The potentially large `custom_css` text is only ever returned by [`GetCustomCSS`](#grpc-api-GetCustomCSS) and
+ * [`ConfigureCustomCSS`](#grpc-api-ConfigureCustomCSS): [`GetServerConfiguration`](#grpc-api-GetServerConfiguration)
+ * includes this message as `ServerConfiguration.custom_css_configuration` but with `custom_css` unset, and never
+ * reads it from the database. [`ConfigureServer`](#grpc-api-ConfigureServer) ignores any
+ * `custom_css_configuration` it is sent, always leaving the stored one unchanged.
+ */
+export interface CustomCSSConfiguration {
+  /**
+   * These media IDs will be converted to the CSS vars `--custom-media-1`, `--custom-media-2`, etc.,
+   * in the order they are listed (each a `url("...")`, so `background: var(--custom-media-1)` works as is).
+   * The vars `--primary-color` and `--nav-color` are always available too -- see above. Each must be `GLOBAL_PUBLIC` Media, so anonymous visitors can load it. At most 32.
+   */
+  mediaIds: string[];
+  /**
+   * Custom CSS applied to the Elm SPA client. This is appended to the default CSS, so it can override any default styles.
+   * At most 64 KiB. Unset in `GetServerConfiguration`'s copy of this message; in a `ConfigureCustomCSS` request, unset
+   * means "leave the stored CSS as it is" (so the other fields can be changed without sending it), while an empty
+   * string clears it.
+   */
+  customCss?:
+    | string
+    | undefined;
+  /**
+   * Force the Elm SPA into its light theme for everyone, whatever their own Auto/Light/Dark setting or system
+   * preference -- the theme toggles are disabled. For stylesheets (such as a "paper" or "polaroid" look) that only
+   * work on a light background. At most one of `force_light_theme` and `force_dark_theme` may be set.
+   */
+  forceLightTheme: boolean;
+  /** Same as `force_light_theme`, for the dark theme. */
+  forceDarkTheme: boolean;
+}
+
 /** If set, overrides the default tab set for the Elm navigation on a Rellm instance. */
 export interface CustomNavigationTabSet {
   /** Overrides the default `/` page. If unset, the default combined Events+Posts feed is used. */
@@ -1549,6 +1602,7 @@ function createBaseServerConfiguration(): ServerConfiguration {
     stripeConfig: undefined,
     telnyxConfig: undefined,
     stalwartConfig: undefined,
+    customCssConfiguration: undefined,
   };
 }
 
@@ -1642,6 +1696,9 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
     }
     if (message.stalwartConfig !== undefined) {
       StalwartConfig.encode(message.stalwartConfig, writer.uint32(1010).fork()).join();
+    }
+    if (message.customCssConfiguration !== undefined) {
+      CustomCSSConfiguration.encode(message.customCssConfiguration, writer.uint32(1018).fork()).join();
     }
     return writer;
   },
@@ -1923,6 +1980,14 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
           message.stalwartConfig = StalwartConfig.decode(reader, reader.uint32());
           continue;
         }
+        case 127: {
+          if (tag !== 1018) {
+            break;
+          }
+
+          message.customCssConfiguration = CustomCSSConfiguration.decode(reader, reader.uint32());
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1977,6 +2042,9 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
       stripeConfig: isSet(object.stripeConfig) ? StripeConfig.fromJSON(object.stripeConfig) : undefined,
       telnyxConfig: isSet(object.telnyxConfig) ? TelnyxConfig.fromJSON(object.telnyxConfig) : undefined,
       stalwartConfig: isSet(object.stalwartConfig) ? StalwartConfig.fromJSON(object.stalwartConfig) : undefined,
+      customCssConfiguration: isSet(object.customCssConfiguration)
+        ? CustomCSSConfiguration.fromJSON(object.customCssConfiguration)
+        : undefined,
     };
   },
 
@@ -2057,6 +2125,9 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
     if (message.stalwartConfig !== undefined) {
       obj.stalwartConfig = StalwartConfig.toJSON(message.stalwartConfig);
     }
+    if (message.customCssConfiguration !== undefined) {
+      obj.customCssConfiguration = CustomCSSConfiguration.toJSON(message.customCssConfiguration);
+    }
     return obj;
   },
 
@@ -2124,6 +2195,10 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
     message.stalwartConfig = (object.stalwartConfig !== undefined && object.stalwartConfig !== null)
       ? StalwartConfig.fromPartial(object.stalwartConfig)
       : undefined;
+    message.customCssConfiguration =
+      (object.customCssConfiguration !== undefined && object.customCssConfiguration !== null)
+        ? CustomCSSConfiguration.fromPartial(object.customCssConfiguration)
+        : undefined;
     return message;
   },
 };
@@ -4078,6 +4153,114 @@ export const ServerLogo: MessageFns<ServerLogo> = {
     message.squareMediaIdDark = object.squareMediaIdDark ?? undefined;
     message.wideMediaId = object.wideMediaId ?? undefined;
     message.wideMediaIdDark = object.wideMediaIdDark ?? undefined;
+    return message;
+  },
+};
+
+function createBaseCustomCSSConfiguration(): CustomCSSConfiguration {
+  return { mediaIds: [], customCss: undefined, forceLightTheme: false, forceDarkTheme: false };
+}
+
+export const CustomCSSConfiguration: MessageFns<CustomCSSConfiguration> = {
+  encode(message: CustomCSSConfiguration, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    for (const v of message.mediaIds) {
+      writer.uint32(10).string(v!);
+    }
+    if (message.customCss !== undefined) {
+      writer.uint32(18).string(message.customCss);
+    }
+    if (message.forceLightTheme !== false) {
+      writer.uint32(24).bool(message.forceLightTheme);
+    }
+    if (message.forceDarkTheme !== false) {
+      writer.uint32(32).bool(message.forceDarkTheme);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): CustomCSSConfiguration {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseCustomCSSConfiguration();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.mediaIds.push(reader.string());
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.customCss = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 24) {
+            break;
+          }
+
+          message.forceLightTheme = reader.bool();
+          continue;
+        }
+        case 4: {
+          if (tag !== 32) {
+            break;
+          }
+
+          message.forceDarkTheme = reader.bool();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): CustomCSSConfiguration {
+    return {
+      mediaIds: globalThis.Array.isArray(object?.mediaIds) ? object.mediaIds.map((e: any) => globalThis.String(e)) : [],
+      customCss: isSet(object.customCss) ? globalThis.String(object.customCss) : undefined,
+      forceLightTheme: isSet(object.forceLightTheme) ? globalThis.Boolean(object.forceLightTheme) : false,
+      forceDarkTheme: isSet(object.forceDarkTheme) ? globalThis.Boolean(object.forceDarkTheme) : false,
+    };
+  },
+
+  toJSON(message: CustomCSSConfiguration): unknown {
+    const obj: any = {};
+    if (message.mediaIds?.length) {
+      obj.mediaIds = message.mediaIds;
+    }
+    if (message.customCss !== undefined) {
+      obj.customCss = message.customCss;
+    }
+    if (message.forceLightTheme !== false) {
+      obj.forceLightTheme = message.forceLightTheme;
+    }
+    if (message.forceDarkTheme !== false) {
+      obj.forceDarkTheme = message.forceDarkTheme;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<CustomCSSConfiguration>, I>>(base?: I): CustomCSSConfiguration {
+    return CustomCSSConfiguration.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<CustomCSSConfiguration>, I>>(object: I): CustomCSSConfiguration {
+    const message = createBaseCustomCSSConfiguration();
+    message.mediaIds = object.mediaIds?.map((e) => e) || [];
+    message.customCss = object.customCss ?? undefined;
+    message.forceLightTheme = object.forceLightTheme ?? false;
+    message.forceDarkTheme = object.forceDarkTheme ?? false;
     return message;
   },
 };

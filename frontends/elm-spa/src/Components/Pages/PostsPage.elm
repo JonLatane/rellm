@@ -4,6 +4,7 @@ module Components.Pages.PostsPage exposing
     , Msg
     , exportButtonView
     , federatedAuthorsChanged
+    , filterFeedPosts
     , fromShared
     , init
     , searchTextChanged
@@ -633,13 +634,23 @@ updateInner shared msg model =
                 -- this is naturally a no-op filter for those. Skipped entirely when
                 -- `Shared.debugShowCustomNavPosts` is set, so DebugTab's "Show Posts linked to
                 -- Custom Tabs" toggle can surface them for inspection.
+                --
+                -- Likewise, unless DebugTab's "Show Mastodon/Bluesky posts with sensitive media" is
+                -- on, a federated post whose media `Shared.Federation.Mastodon.toPost`/
+                -- `Bluesky.toPost` stripped as sensitive (see `Posts.hasHiddenSensitiveMedia`) is
+                -- dropped here too -- shown, it carries its click-through content notice.
                 posts : List Post
                 posts =
-                    if shared.accounts.debugTab.showCustomNavPosts then
-                        rawPosts
+                    filterFeedPosts
+                        { hiddenPostIds =
+                            if shared.accounts.debugTab.showCustomNavPosts then
+                                Set.empty
 
-                    else
-                        rawPosts |> List.filter (\post -> not (Set.member post.id (customNavPostIds shared (feedHost model host))))
+                            else
+                                customNavPostIds shared (feedHost model host)
+                        , hideSensitiveMedia = not shared.accounts.debugTab.showSensitiveMediaPosts
+                        }
+                        rawPosts
             in
             ( { model
                 | postsByServer =
@@ -699,6 +710,12 @@ updateInner shared msg model =
                         -- override) is needed instead to actually re-run `GotFeedPosts`'
                         -- `customNavPostIds` filter with the new toggle state.
                         Shared.AccountsPanelMsg (AccountsPanel.DebugTabMsg DebugTab.ToggleShowCustomNavPosts) ->
+                            refetchFeeds shared model (List.map RellmServer (relevantServers shared model) ++ federatedAuthorSources shared model)
+
+                        -- Same reasoning for the sensitive-media filter: it's applied as posts
+                        -- arrive, so flipping it has to refetch to re-run `filterFeedPosts` (hiding
+                        -- or bringing back the posts it drops, animated by `syncAnimations`).
+                        Shared.AccountsPanelMsg (AccountsPanel.DebugTabMsg DebugTab.ToggleShowSensitiveMediaPosts) ->
                             refetchFeeds shared model (List.map RellmServer (relevantServers shared model) ++ federatedAuthorSources shared model)
 
                         Shared.AccountsPanelMsg _ ->
@@ -984,6 +1001,25 @@ relevantServers shared model =
 
         Nothing ->
             AccountsPanel.enabledServers shared.accounts
+
+
+{-| What `GotFeedPosts` leaves out of a freshly fetched feed: any Post whose id is in `hiddenPostIds` (the
+posts a server's custom nav already features -- see `customNavPostIds`), and, when `hideSensitiveMedia` is on
+(the default; DebugTab's "Show Mastodon/Bluesky posts with sensitive media" turns it off), any post whose
+media was stripped as sensitive (`Posts.hasHiddenSensitiveMedia` -- only ever true for Mastodon/Bluesky posts).
+With it off, such a post is kept and shows its "This post contains sensitive media. Click to view." notice,
+which links through to the one page that actually shows its media.
+-}
+filterFeedPosts :
+    { hiddenPostIds : Set String, hideSensitiveMedia : Bool }
+    -> List Post
+    -> List Post
+filterFeedPosts { hiddenPostIds, hideSensitiveMedia } =
+    List.filter
+        (\post ->
+            not (Set.member post.id hiddenPostIds)
+                && not (hideSensitiveMedia && Posts.hasHiddenSensitiveMedia post)
+        )
 
 
 {-| Every Post id `frontendHost`'s own `ServerConfiguration.customTabs` points a `TargetPost` tab

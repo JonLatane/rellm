@@ -2713,7 +2713,16 @@ starredPostView time basePath accountsPanelModel currentPostKey currentOccasionI
                 (text "That post's server isn't reachable right now."
                     :: (case maybeDisabledServer of
                             Just server ->
-                                [ button [ onClick (EnableServerClicked server.frontendHost) ] [ text ("Enable " ++ server.frontendHost) ] ]
+                                [ button
+                                    [ class "server-action-button"
+                                    , onClick (EnableServerClicked server.frontendHost)
+                                    , title ("Enable " ++ server.frontendHost)
+                                    ]
+                                    [ text "Enable "
+                                    , ServerDependentView.hostLabel
+                                        (RellmServers.previewOf accountsPanelModel.servers accountsPanelModel.recommendedServerConnections server.frontendHost)
+                                    ]
+                                ]
 
                             Nothing ->
                                 []

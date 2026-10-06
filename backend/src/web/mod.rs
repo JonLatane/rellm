@@ -18,6 +18,9 @@ pub use flutter_web::*;
 pub mod elm_web;
 pub use elm_web::*;
 
+pub mod custom_css;
+pub use custom_css::*;
+
 pub mod spa_web_path;
 pub use spa_web_path::*;
 pub mod spa_pages;

@@ -1,0 +1,1 @@
+ALTER TABLE server_configurations DROP COLUMN custom_css_configuration;

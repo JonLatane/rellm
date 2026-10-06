@@ -556,6 +556,9 @@ init shared pageIsSecure query rawPostId navKey =
     , Effect.batch
         [ fetchEffect
         , Effect.fromShared (Shared.BreadcrumbsMsg Breadcrumbs.Clear)
+        -- The Add/Enable prompt (`ServerDependentView`) shows this host's logo and name -- have the
+        -- Accounts Panel load its preview (a no-op if it's one of our connected servers already).
+        , Effect.fromShared (Shared.AccountsPanelMsg (AccountsPanel.EnsureServerPreviews [ targetHost ]))
         ]
     )
 
@@ -2162,6 +2165,7 @@ view shared model =
         , servers = shared.accounts.servers
         , accounts = shared.accounts.accounts
         , connectStatus = model.connectStatus
+        , previews = shared.accounts.recommendedServerConnections
         , onConnectClicked = ConnectClicked
         , onEnableClicked = EnableClicked
         }

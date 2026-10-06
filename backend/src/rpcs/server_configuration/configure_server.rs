@@ -370,13 +370,29 @@ pub fn configure_server(
         existing_cluster_resources.map(|c| serde_json::to_value(c).unwrap())
     };
 
+    // The custom CSS (`custom_css_configuration`'s media/forced theme, and the separate `custom_css` text
+    // column) is managed only by `ConfigureCustomCSS`: whatever `request.custom_css_configuration` carries
+    // is ignored, and a `ConfigureServer` save always carries the active row's values forward rather than
+    // blanking or replacing them. They're read inside the transaction, from the active row locked
+    // `FOR UPDATE`, so a `ConfigureCustomCSS` racing this save is either fully before it (and carried
+    // forward) or waits for it -- never lost.
     let result =
         conn.transaction::<models::ServerConfiguration, diesel::result::Error, _>(|conn| {
+            let (carried_css_configuration, carried_css) = server_configurations
+                .filter(active.eq(true))
+                .select((custom_css_configuration, custom_css))
+                .for_update()
+                .first::<(Option<serde_json::Value>, Option<String>)>(conn)
+                .optional()?
+                .unwrap_or_default();
+            new_config.custom_css_configuration = carried_css_configuration;
+            new_config.custom_css = carried_css;
             update(server_configurations)
                 .set(active.eq(false))
                 .execute(conn)?;
             let configuration = insert_into(server_configurations)
                 .values(&new_config)
+                .returning(models::SERVER_CONFIGURATION_COLUMNS)
                 .get_result::<models::ServerConfiguration>(conn)?;
             Ok(configuration)
         });

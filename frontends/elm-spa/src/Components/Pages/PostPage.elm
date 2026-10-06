@@ -259,7 +259,13 @@ init shared pageIsSecure rawPostId navKey =
       -- viewed before this one -- `GotPost` below repopulates it once this
       -- Post's own data (and, if it's a reply, its ancestor chain) is back,
       -- so there's no stale trail shown in the meantime.
-    , Effect.batch [ fetchEffect, Effect.fromShared (Shared.BreadcrumbsMsg Breadcrumbs.Clear) ]
+    , Effect.batch
+        [ fetchEffect
+        , Effect.fromShared (Shared.BreadcrumbsMsg Breadcrumbs.Clear)
+        -- The Add/Enable prompt (`ServerDependentView`) shows this host's logo and name -- have the
+        -- Accounts Panel load its preview (a no-op if it's one of our connected servers already).
+        , Effect.fromShared (Shared.AccountsPanelMsg (AccountsPanel.EnsureServerPreviews [ targetHost ]))
+        ]
     )
 
 
@@ -834,6 +840,7 @@ view shared model =
         , servers = shared.accounts.servers
         , accounts = shared.accounts.accounts
         , connectStatus = model.connectStatus
+        , previews = shared.accounts.recommendedServerConnections
         , onConnectClicked = ConnectClicked
         , onEnableClicked = EnableClicked
         }

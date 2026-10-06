@@ -12,9 +12,12 @@ never enables `signInFromButton`'s cross-server SSO hand-off for `browsingHost`/
 module's `modeButtonsView` for the default, flag-off visibility rules it overrides), and
 `showCustomNavPosts` (which stops `Components.Pages.PostsPage` from hiding posts that are
 already featured via some server's own custom nav tab -- see that module's
-`customNavPostIds`).
+`customNavPostIds`), and `showSensitiveMediaPosts` (which stops `PostsPage` from hiding Mastodon
+and Bluesky posts whose media was flagged sensitive -- they're left out of feeds by default, and
+with this on they show up carrying their "This post contains sensitive media" notice instead --
+see `PostsPage.filterFeedPosts`).
 
-All four are session-only, like the rest of the Accounts Panel's Debug/Admin state --
+All five are session-only, like the rest of the Accounts Panel's Debug/Admin state --
 none of them are persisted, so they're back off after a page refresh (the Debug tab doc
 in `UI.elm` notes this too).
 
@@ -26,6 +29,7 @@ type alias Model =
     , allowUsernamePasswordForOtherHosts : Bool
     , showAllEventLayouts : Bool
     , showCustomNavPosts : Bool
+    , showSensitiveMediaPosts : Bool
     }
 
 
@@ -34,6 +38,7 @@ type Msg
     | ToggleAllowUsernamePasswordForOtherHosts
     | ToggleShowAllEventLayouts
     | ToggleShowCustomNavPosts
+    | ToggleShowSensitiveMediaPosts
 
 
 init : Model
@@ -42,6 +47,7 @@ init =
     , allowUsernamePasswordForOtherHosts = False
     , showAllEventLayouts = False
     , showCustomNavPosts = False
+    , showSensitiveMediaPosts = False
     }
 
 
@@ -59,3 +65,6 @@ update msg model =
 
         ToggleShowCustomNavPosts ->
             { model | showCustomNavPosts = not model.showCustomNavPosts }
+
+        ToggleShowSensitiveMediaPosts ->
+            { model | showSensitiveMediaPosts = not model.showSensitiveMediaPosts }

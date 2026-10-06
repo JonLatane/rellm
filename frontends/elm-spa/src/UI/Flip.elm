@@ -63,6 +63,7 @@ import Json.Decode as Decode
 import Json.Encode as Encode
 import Ports
 import Task
+import UI.Glyph as Glyph
 
 
 {-| Which way a list lays its items out -- `Vertical` for a column (top to
@@ -913,7 +914,7 @@ reorderButtonPair axis { moveBackward, moveForward, canMoveBackward, canMoveForw
                     ( ( "▲", "Move up" ), ( "▼", "Move down" ) )
 
                 Horizontal ->
-                    ( ( "◀", "Move left" ), ( "▶", "Move right" ) )
+                    ( ( Glyph.left, "Move left" ), ( Glyph.right, "Move right" ) )
     in
     { backward =
         button ([ class "reorder-btn", moveBackward, disabled (not canMoveBackward), title backwardTitle ] ++ dragAttrs) [ text backwardGlyph ]

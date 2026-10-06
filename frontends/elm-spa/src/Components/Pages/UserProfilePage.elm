@@ -1134,6 +1134,9 @@ init shared pageIsSecure targetHost lookup navKey path query fragment =
         [ Effect.map ResolverMsg resolverEffect
         , Effect.fromShared Shared.CloseAllPanels
         , setBreadcrumbsHost shared model
+        -- The Add/Enable prompt (`ServerDependentView`) shows this host's logo and name -- have the
+        -- Accounts Panel load its preview (a no-op if it's one of our connected servers already).
+        , Effect.fromShared (Shared.AccountsPanelMsg (AccountsPanel.EnsureServerPreviews [ targetHost ]))
         ]
     )
 
@@ -4869,6 +4872,7 @@ view shared model =
         , servers = shared.accounts.servers
         , accounts = shared.accounts.accounts
         , connectStatus = model.connectStatus
+        , previews = shared.accounts.recommendedServerConnections
         , onConnectClicked = ConnectClicked
         , onEnableClicked = EnableClicked
         }

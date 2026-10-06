@@ -47,6 +47,7 @@ import Task
 import UI.Classes exposing (classes, hostnameToCSSClass, openClosedClass)
 import UI.Drag
 import UI.Flip
+import UI.Glyph as Glyph
 
 
 {-| Which stored copy of a track to stream -- the audio `small`/`medium`/`large` AAC tiers the conversion job
@@ -994,7 +995,7 @@ view viewerOpen accountsPanelModel model =
                         pauseIcon
 
                       else
-                        text "▶"
+                        text Glyph.play
                     ]
                 , button
                     [ class "audio-player-button"
@@ -1471,7 +1472,7 @@ view viewerOpen accountsPanelModel model =
                                 [ span [] [], span [] [], span [] [], span [] [] ]
 
                         Nothing ->
-                            span [ class "media-card-play" ] [ text "▶" ]
+                            span [ class "media-card-play" ] [ text Glyph.play ]
                     ]
                 , div [ class "media-card-meta" ]
                     [ button [ class "media-card-title", onClick (PlayQueued key) ] [ text (title media) ]
@@ -1597,8 +1598,8 @@ view viewerOpen accountsPanelModel model =
 
 
 {-| Transport glyphs drawn with CSS shapes (see `audio_player_panel.css`): iOS renders the Unicode ⏮ ⏸ ⏭ as
-color emoji, which no text-variation selector reliably fixes. (▶ is left as text -- it renders as a plain glyph
-everywhere.) They size with the button's font size and take its text color.
+color emoji, which no text-variation selector reliably fixes (they're emoji by default -- see `UI.Glyph`). (▶ is a
+text-by-default character, so `UI.Glyph.play`'s variation selector does fix it.) They size with the button's font size and take its text color.
 -}
 prevIcon : Html msg
 prevIcon =

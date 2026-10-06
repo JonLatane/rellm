@@ -419,3 +419,23 @@ pre {
   from { opacity: 0; transform: translateX(-40%); }
   to { opacity: 1; transform: none; }
 }
+
+/* The "Enable <server>" / "Add <server>" buttons (`ServerDependentView`, `Shared.StarredPanel`): the verb, then
+   the server's logo with its name beside it (`ServerDependentView.hostLabel`) -- like the nav's Home button. */
+.server-action-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: 100%;
+}
+
+.server-action-preview {
+  display: inline-flex;
+  min-width: 0;
+  text-align: left;
+}
+
+.server-action-preview .server-name-and-logo.horizontal .server-name-breakdown {
+  align-items: flex-start;
+  min-width: 0;
+}

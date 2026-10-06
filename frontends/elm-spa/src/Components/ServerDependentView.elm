@@ -1,4 +1,4 @@
-module Components.ServerDependentView exposing (ConnectStatus(..), availableServer, view)
+module Components.ServerDependentView exposing (ConnectStatus(..), availableServer, hostLabel, view)
 
 {-| A view for content that belongs to a specific server (by hostname) which
 the app might not actually know about yet -- e.g. a post linked from another
@@ -21,8 +21,9 @@ just `AccountsPanel.ToggleServerEnabled` -- so `onEnableClicked` is a plain
 
 -}
 
-import Html exposing (Html, button, div, p, text)
-import Html.Attributes exposing (class, disabled)
+import Dict exposing (Dict)
+import Html exposing (Html, button, div, p, span, text)
+import Html.Attributes exposing (attribute, class, disabled, title)
 import Html.Events exposing (onClick)
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer)
@@ -44,6 +45,11 @@ view :
     , servers : List RellmServer
     , accounts : List RellmAccount
     , connectStatus : ConnectStatus
+
+    -- `AccountsPanel.recommendedServerConnections`: previews of servers the user hasn't added, for the
+    -- Add button (see `hostLabel`). The caller asks for the preview itself, with
+    -- `AccountsPanel.EnsureServerPreviews [ hostname ]` when it opens.
+    , previews : Dict String RellmServer
     , onConnectClicked : msg
     , onEnableClicked : msg
     }
@@ -58,7 +64,12 @@ view config render =
             else
                 div [ class "server-dependent-prompt" ]
                     [ p [] [ text (config.hostname ++ " is disabled. Re-enable it in your Servers to see it.") ]
-                    , button [ onClick config.onEnableClicked ] [ text ("Enable " ++ config.hostname) ]
+                    , button
+                        [ class "server-action-button"
+                        , onClick config.onEnableClicked
+                        , title ("Enable " ++ config.hostname)
+                        ]
+                        [ text "Enable ", hostLabel server ]
                     ]
 
         Nothing ->
@@ -69,15 +80,18 @@ view config render =
             in
             div [ class "server-dependent-prompt" ]
                 [ p [] [ text ("This is on " ++ config.hostname ++ ", which isn't one of your servers yet.") ]
-                , button [ onClick config.onConnectClicked, disabled connecting ]
-                    [ text
-                        (if connecting then
-                            "Connecting…"
-
-                         else
-                            "Add " ++ config.hostname
-                        )
+                , button
+                    [ class "server-action-button"
+                    , onClick config.onConnectClicked
+                    , disabled connecting
+                    , title ("Add " ++ config.hostname)
                     ]
+                    (if connecting then
+                        [ text "Connecting…" ]
+
+                     else
+                        [ text "Add ", hostLabel (RellmServers.previewOf config.servers config.previews config.hostname) ]
+                    )
                 , case config.connectStatus of
                     ConnectFailed err ->
                         p [ class "server-dependent-error" ] [ text err ]
@@ -85,6 +99,17 @@ view config render =
                     _ ->
                         text ""
                 ]
+
+
+{-| A server's logo with its name split over one or two rows beside it, like the nav's Home button -- what
+the "Enable <server>" / "Add <server>" buttons (here, and `Shared.StarredPanel`'s) show in place of the bare
+hostname. Pass `RellmServers.previewOf`'s result: it's the user's own server's branding if it has any, else the
+preview loaded for it, else just the host.
+-}
+hostLabel : RellmServer -> Html msg
+hostLabel server =
+    span [ class "server-action-preview", attribute "aria-label" server.frontendHost ]
+        [ RellmServers.rellmServerNameAndLogo server RellmServers.HorizontalServerLogo ]
 
 
 {-| `hostname` resolved to its `Server`, but only if it's both known and

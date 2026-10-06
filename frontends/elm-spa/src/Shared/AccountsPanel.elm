@@ -62,7 +62,7 @@ import Json.Decode as Decode exposing (Decoder)
 import Json.Encode as Encode
 import Ports
 import Process
-import Proto.Rellm exposing (AccessTokenResponse, ContactMethod, FederatedServer, GetPushSubscriptionStatusResponse, MastodonServer, PushSubscription, RefreshTokenResponse, ServerConfiguration, ServerInfo, User)
+import Proto.Rellm exposing (AccessTokenResponse, ContactMethod, CustomCSSConfiguration, FederatedServer, GetPushSubscriptionStatusResponse, MastodonServer, PushSubscription, RefreshTokenResponse, ServerConfiguration, ServerInfo, User)
 import Proto.Rellm.Rellm as Rellm
 import Proto.Rellm.Visibility exposing (Visibility(..))
 import Proto.Rellm.WebUserInterface exposing (WebUserInterface)
@@ -91,6 +91,11 @@ type alias Model =
     , accountForm : AccountForm
     , addServerForm : AddServerForm
     , showAccountsPanel : Bool
+
+    -- Whether the panel has ever been opened this session. `UI.formView` (the username/password
+    -- inputs) is only mounted once it has, so password managers (1Password etc.) don't offer to
+    -- sign in the moment any page loads, before the user has asked for the Accounts Panel.
+    , accountsPanelOpened : Bool
 
     -- Whether the "X Recommended Servers..." button (see `UI.recommendedServersStrip`)
     -- has been expanded into its horizontally-scrollable strip of chips.
@@ -206,6 +211,20 @@ type alias Model =
     -- server's config has loaded, but not before this one's, since that's
     -- what supplies the page's own theming.
     , browsingHostConfigResolved : Bool
+
+    -- A custom stylesheet rendered by Elm itself (`UI.CustomCssStylesheet`), on top of whatever the
+    -- page's `<link>` to `/custom_css.css` already loaded: the Elm dev server (port 1234) has no
+    -- Rust server behind that `<link>`, so `GotDevCustomCss` fills this from `GetCustomCSS`
+    -- instead; and `CustomCssSaved` sets it to a just-saved config. Only ever about
+    -- `mainFrontendHost`'s own CSS -- it's the page's server.
+    , customCssOverride : Maybe CustomCSSConfiguration
+
+    -- The Theme tab's Custom CSS editor's "Preview" of an unsaved draft. While `Just`, it is the *only*
+    -- custom stylesheet applied -- `SetCustomCssPreview` switches the `<link>` off (see
+    -- `Ports.setCustomCssStylesheet`) and `UI.CustomCssStylesheet` renders this instead of
+    -- `customCssOverride` -- so the draft replaces the saved CSS rather than layering onto it.
+    -- Session-only: nothing persists it, and navigating away clears it (`Main`'s `ChangedUrl`).
+    , customCssPreview : Maybe CustomCSSConfiguration
 
     -- The server that host resolves to, once known: usually `browsingHost`
     -- itself, but corrected to a CDN's public `frontendHost` if `browsingHost`
@@ -429,6 +448,7 @@ type Msg
     | AddServerClicked
     | GotNewServerResult (Result Grpc.Error ( Connection, ServerConfiguration ))
     | ToggleRecommendedServersExpanded
+    | EnsureServerPreviews (List String)
     | GotRecommendedServerConfig String (Result Grpc.Error ( Connection, ServerConfiguration ))
     | RecommendedServerClicked String
     | GotRecommendedServerAddResult String (Result Grpc.Error ( Connection, ServerConfiguration ))
@@ -471,6 +491,9 @@ type Msg
     | ChangeServerShortNameClicked String String
     | GotChangeServerShortNameResult (Result Grpc.Error ( RellmAccount, ServerConfiguration ))
     | GotServerConfigSaveResult String ServerConfiguration
+    | SetCustomCssPreview (Maybe CustomCSSConfiguration)
+    | CustomCssSaved String CustomCSSConfiguration
+    | GotDevCustomCss (Result Grpc.Error CustomCSSConfiguration)
     | FocusInput String
     | ClearFieldClicked String Msg
     | ServerConnected RellmServer
@@ -663,13 +686,6 @@ type alias AddServerForm =
 
 type alias Flags =
     Decode.Value
-
-
-type alias PersistedRellmServer =
-    { frontendHost : String
-    , enabled : Bool
-    , sortOrder : Int
-    }
 
 
 type alias PersistedState =
@@ -1441,7 +1457,7 @@ init req flags blueskyAccountsFlags mastodonAccountsAndServersFlags =
         reconnectCmds =
             List.map
                 (\ps ->
-                    RellmServers.negotiateRellmServerConfig pageIsSecure ps.frontendHost
+                    RellmServers.negotiateRellmServerConfigWith ps.lastConnection pageIsSecure ps.frontendHost
                         |> Task.attempt (GotReconnectResult ps.frontendHost ps.enabled False)
                 )
                 persisted.servers
@@ -1514,12 +1530,14 @@ init req flags blueskyAccountsFlags mastodonAccountsAndServersFlags =
                                     { frontendHost = host
                                     , enabled = List.any (\a -> a.server == host && a.enabled) persisted.accounts
                                     , sortOrder = nextMissingServerSortOrder + idx
+                                    , lastConnection = Nothing
                                     }
                             )
                    )
       , accountForm = { emptyForm | server = browsingHost }
       , addServerForm = emptyAddServerForm
       , showAccountsPanel = False
+      , accountsPanelOpened = False
       , recommendedServersExpanded = False
       , recommendedServerConnections = Dict.empty
       , focusedAccount = Nothing
@@ -1532,6 +1550,8 @@ init req flags blueskyAccountsFlags mastodonAccountsAndServersFlags =
       , browsingHost = browsingHost
       , browsingPort = req.url.port_
       , browsingHostConfigResolved = False
+      , customCssOverride = Nothing
+      , customCssPreview = Nothing
       , mainFrontendHost = browsingHost
       , moveAnimations = Dict.empty
       , serverMoveAnimations = Dict.empty
@@ -1603,6 +1623,64 @@ subscriptions model =
         , Ports.pushSubscriptionChangeReceived PushSubscriptionChangeReceived
         , Ports.facebookLoginResult GotMastodonLoginResult
         ]
+
+
+{-| Starts loading preview branding (name, colors, logo -- a `GetServerConfiguration`, via
+`RellmServers.negotiateRellmServerConfig`) for each of `hosts` that isn't already in
+`recommendedServerConnections`, whether or not the user has added that server: each is seeded there as a
+disconnected placeholder immediately (so there's something to render while loading), then filled in by
+`GotRecommendedServerConfig`. Hosts already cached -- loading or loaded -- are left alone, so calling this
+again and again with the same hosts is safe and cheap; this is what both the recommended-servers strip
+(`ToggleRecommendedServersExpanded`) and any page listing servers it doesn't own (`EnsureServerPreviews`) use.
+-}
+fetchServerPreviews : Request -> List String -> Model -> ( Model, Cmd Msg )
+fetchServerPreviews req hosts model =
+    let
+        hostsToFetch : List String
+        hostsToFetch =
+            hosts
+                |> List.filter (\host -> not (Dict.member host model.recommendedServerConnections))
+                |> Set.fromList
+                |> Set.toList
+    in
+    -- Seeded disconnected immediately (same idea as `init`'s own
+    -- `RellmServers.disconnectedRellmServer` seeding), so each chip has something to
+    -- render -- a "loading" look, via the same `server-chip-disconnected` styling -- the
+    -- instant it's asked for, rather than staying blank until its fetch resolves.
+    ( { model
+        | recommendedServerConnections =
+            List.foldl
+                (\host -> Dict.insert host (RellmServers.disconnectedRellmServer { frontendHost = host, enabled = False, sortOrder = 0, lastConnection = Nothing }))
+                model.recommendedServerConnections
+                hostsToFetch
+      }
+    , hostsToFetch
+        |> List.map
+            (\host ->
+                RellmServers.negotiateRellmServerConfig (RellmServers.isSecure req) host
+                    |> Task.attempt (GotRecommendedServerConfig host)
+            )
+        |> Cmd.batch
+    )
+
+
+{-| The Elm dev server (`RellmServers.elmPrefix` == `""`, i.e. port 1234) has no Rust server behind
+`index.html`'s `<link>` to `/custom_css.css` (it just answers with `index.html`), so there the page's
+own server's Custom CSS is fetched with `GetCustomCSS` and rendered by `UI.CustomCssStylesheet`
+instead -- see `Model.customCssOverride`. A no-op everywhere else. Fired from both ways the page's own server
+gets connected at startup: `GotMainServerResult` (first time this browser has seen it) and `GotReconnectResult`
+(every later visit, once it's persisted).
+-}
+devCustomCssCmd : Model -> RellmServer -> Cmd Msg
+devCustomCssCmd model server =
+    if RellmServers.elmPrefix (RellmServers.returnHost model.browsingHost model.browsingPort) == "" && server.frontendHost == model.mainFrontendHost then
+        Grpc.new Rellm.getCustomCSS {}
+            |> Grpc.setHost (RellmServers.rellmServerUrl server)
+            |> Grpc.toTask
+            |> Task.attempt GotDevCustomCss
+
+    else
+        Cmd.none
 
 
 {-| `sendUpdate`'s actual per-`Msg` logic, plus `syncItemAnimations`,
@@ -2171,7 +2249,15 @@ sendUpdate req msg model =
                     -- itself persists (this server's own addition included) once that
                     -- settles -- see its own doc.
                     ( newModel
-                    , refreshPermissionsForServer server newModel.accounts
+                    , Cmd.batch
+                        [ refreshPermissionsForServer server newModel.accounts
+
+                        -- A returning browser already knows its own server (it's persisted), so on the Elm dev
+                        -- server this -- not `GotMainServerResult`, which only fires for a server seen for the
+                        -- first time -- is the startup path that has to fetch its custom CSS. (A no-op unless
+                        -- this is the page's own server on the dev server -- see `devCustomCssCmd`.)
+                        , devCustomCssCmd newModel server
+                        ]
                     )
 
                 Err _ ->
@@ -2191,7 +2277,7 @@ sendUpdate req msg model =
                                 model
 
                              else
-                                { model | servers = insert (RellmServers.disconnectedRellmServer { frontendHost = frontendHost, enabled = enabled, sortOrder = 0 }) model.servers }
+                                { model | servers = insert (RellmServers.disconnectedRellmServer { frontendHost = frontendHost, enabled = enabled, sortOrder = 0, lastConnection = Nothing }) model.servers }
                             )
                                 |> (\m -> { m | browsingHostConfigResolved = m.browsingHostConfigResolved || frontendHost == m.browsingHost })
                     in
@@ -2306,6 +2392,7 @@ sendUpdate req msg model =
                     ( newModel
                     , Cmd.batch
                         (refreshPermissionsForServer server newModel.accounts
+                            :: devCustomCssCmd newModel server
                             :: Ports.persistMastodonAccountsAndServers (encodeMastodonAccountsAndServers newModel)
                             :: federatedServerCmds
                             ++ mastodonInstanceLogoCmds
@@ -2356,7 +2443,7 @@ sendUpdate req msg model =
                                 |> List.filter (\ps -> not (List.member ps.frontendHost connectedHosts))
                                 |> List.map
                                     (\ps ->
-                                        RellmServers.negotiateRellmServerConfig (RellmServers.isSecure req) ps.frontendHost
+                                        RellmServers.negotiateRellmServerConfigWith ps.lastConnection (RellmServers.isSecure req) ps.frontendHost
                                             |> Task.attempt (GotReconnectResult ps.frontendHost ps.enabled False)
                                     )
 
@@ -2810,42 +2897,35 @@ sendUpdate req msg model =
                 -- `recommendedServerConnections`'s own doc) -- reopening the
                 -- strip after having already expanded it once this session
                 -- shouldn't re-fetch everything from scratch.
-                hostsToFetch : List String
-                hostsToFetch =
+                hosts : List String
+                hosts =
                     if newlyExpanded then
                         recommendedFederatedServers model
                             |> List.map .host
-                            |> List.filter (\host -> not (Dict.member host model.recommendedServerConnections))
 
                     else
                         []
 
-                newModel : Model
-                newModel =
-                    { model
-                        | recommendedServersExpanded = newlyExpanded
-
-                        -- Seeded disconnected immediately (same idea as `init`'s own
-                        -- `RellmServers.disconnectedRellmServer` seeding), so each chip has something to
-                        -- render -- a "loading" look, via the same
-                        -- `server-chip-disconnected` styling -- the instant the strip
-                        -- expands, rather than staying blank until its fetch resolves.
-                        , recommendedServerConnections =
-                            List.foldl
-                                (\host -> Dict.insert host (RellmServers.disconnectedRellmServer { frontendHost = host, enabled = False, sortOrder = 0 }))
-                                model.recommendedServerConnections
-                                hostsToFetch
-                    }
+                ( newModel, fetchCmd ) =
+                    fetchServerPreviews req hosts { model | recommendedServersExpanded = newlyExpanded }
             in
-            ( newModel
-            , hostsToFetch
-                |> List.map
-                    (\host ->
-                        RellmServers.negotiateRellmServerConfig (RellmServers.isSecure req) host
-                            |> Task.attempt (GotRecommendedServerConfig host)
-                    )
-                |> Cmd.batch
-            )
+            ( newModel, fetchCmd )
+
+        -- Same preview fetch as the recommended strip's, for any other page that shows servers
+        -- the user hasn't added (e.g. the Federation tab's list) -- see `fetchServerPreviews`.
+        -- A host that's already one of the user's own connected servers has its own branding (see
+        -- `RellmServers.previewOf`), so it's skipped.
+        EnsureServerPreviews hosts ->
+            let
+                ( newModel, fetchCmd ) =
+                    fetchServerPreviews req
+                        (List.filter
+                            (\host -> (RellmServers.rellmServerForHost model.servers host |> Maybe.andThen .connected) == Nothing)
+                            hosts
+                        )
+                        model
+            in
+            ( newModel, fetchCmd )
 
         GotRecommendedServerConfig host result ->
             case result of
@@ -2940,7 +3020,7 @@ sendUpdate req msg model =
                         { removedModel
                             | recommendedServerConnections =
                                 Dict.insert frontendHost
-                                    (RellmServers.disconnectedRellmServer { frontendHost = frontendHost, enabled = False, sortOrder = 0 })
+                                    (RellmServers.disconnectedRellmServer { frontendHost = frontendHost, enabled = False, sortOrder = 0, lastConnection = Nothing })
                                     removedModel.recommendedServerConnections
                         }
 
@@ -2967,7 +3047,7 @@ sendUpdate req msg model =
 
                 newModel : Model
                 newModel =
-                    { model | showAccountsPanel = newlyShown }
+                    { model | showAccountsPanel = newlyShown, accountsPanelOpened = model.accountsPanelOpened || newlyShown }
             in
             ( if newlyShown then
                 repopulateBlankServerField newModel
@@ -3524,6 +3604,72 @@ sendUpdate req msg model =
                     -- the caller (see `AboutTab`) via this same `Result` passing
                     -- through `Main.notifyPageOfSharedMsg`, same as `GotRenameServerResult`.
                     ( model, Cmd.none )
+
+        SetCustomCssPreview maybeConfig ->
+            ( { model | customCssPreview = maybeConfig }
+            , if (maybeConfig == Nothing) /= (model.customCssPreview == Nothing) then
+                -- Only on entering/leaving a preview, not every draft change while in one.
+                Ports.setCustomCssStylesheet { enabled = maybeConfig == Nothing, reload = False }
+
+              else
+                Cmd.none
+            )
+
+        -- The editor's own save, for the server `host`. That server's cached `ServerConfiguration` gets the new
+        -- media/forced theme (without the stylesheet text, same as `GetServerConfiguration` serves it), so the
+        -- forced theme (see `Shared.forcedDarkMode`) takes effect straight away. If `host` is the page's own
+        -- server, its `<link>` still holds the pre-save CSS, so also reload it, and cover the gap (and the dev
+        -- server, which has no `<link>`) with `customCssOverride`.
+        CustomCssSaved host config ->
+            let
+                servers : List RellmServer
+                servers =
+                    List.map
+                        (\s ->
+                            if s.frontendHost == host then
+                                RellmServers.updateRellmServerConfiguration
+                                    (let
+                                        configuration : ServerConfiguration
+                                        configuration =
+                                            RellmServers.configurationOf s
+                                     in
+                                     { configuration | customCssConfiguration = Just { config | customCss = Nothing } }
+                                    )
+                                    s
+
+                            else
+                                s
+                        )
+                        model.servers
+
+                newModel : Model
+                newModel =
+                    { model | servers = servers }
+            in
+            if host == model.mainFrontendHost then
+                ( { newModel | customCssOverride = Just config, customCssPreview = Nothing }
+                , Cmd.batch [ Ports.setCustomCssStylesheet { enabled = True, reload = True }, persist newModel ]
+                )
+
+            else
+                ( newModel, persist newModel )
+
+        GotDevCustomCss (Ok config) ->
+            -- Don't clobber a draft/saved override the Theme tab's editor set while this was in flight.
+            ( { model
+                | customCssOverride =
+                    case model.customCssOverride of
+                        Just existing ->
+                            Just existing
+
+                        Nothing ->
+                            Just config
+              }
+            , Cmd.none
+            )
+
+        GotDevCustomCss (Err _) ->
+            ( model, Cmd.none )
 
         GotServerConfigSaveResult host newConfig ->
             let

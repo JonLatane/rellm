@@ -381,3 +381,29 @@
   position: relative;
   margin: 0.4rem 0;
 }
+
+/* The single-item wrapper spans the whole card width, so the blank space to the
+   left/right of its (centered, narrower) thumbnail would otherwise be a dead
+   zone that swallows clicks meant for the card. Make the wrapper click-through
+   (the .post-card-link-overlay under it gets the click and navigates to the
+   post) and opt only the actual media back in, so tapping a thumbnail still
+   opens MediaViewerPanel and video/audio controls still work.
+
+   The horizontal strip must NOT be `pointer-events: none`: it's a scroll
+   container, and iOS WebKit won't touch-scroll one that is. Instead it hugs
+   its items (`fit-content`, capped at the card width), so there's no blank
+   area of it left to be a dead zone -- once the items overflow it fills the
+   card and scrolls. */
+.multi-media-single.multi-media-preview {
+  pointer-events: none;
+}
+
+.multi-media-strip.multi-media-preview {
+  width: fit-content;
+  max-width: 100%;
+}
+
+.multi-media-preview .multi-media-single-item,
+.multi-media-preview .multi-media-item {
+  pointer-events: auto;
+}

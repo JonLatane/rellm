@@ -396,6 +396,9 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
             <p><a href="#rellm-ClusterResources">ClusterResources</a></p>
           </li>
           <li>
+            <p><a href="#rellm-CustomCSSConfiguration">CustomCSSConfiguration</a></p>
+          </li>
+          <li>
             <p><a href="#rellm-CustomHomePage">CustomHomePage</a></p>
           </li>
           <li>
@@ -2262,6 +2265,18 @@ directory</a> is (<code>{name}</code> denotes a
           <td><a href="#rellm-ServerConfiguration">ServerConfiguration</a></td>
           <td><a href="#rellm-ServerConfiguration">ServerConfiguration</a></td>
           <td>Configure the server (i.e. the response to <a href="#grpc-api-GetServerConfiguration"><code>GetServerConfiguration</code></a>). <em>Authenticated.</em> Requires <code>ADMIN</code> permissions. Editing <code>cluster_resources</code> additionally requires <code>EDIT_CLUSTER_SETTINGS</code> - see that field's own doc. Editing <a href="#rellm-ServerConfiguration"><code>supported_contact_protocols</code></a> is validated, not just stored -- see <a href="#rellm-ContactProtocol"><code>ContactProtocol</code></a>'s own doc.</td>
+        </tr>
+        <tr>
+          <td>GetCustomCSS</td>
+          <td><a href="#google-protobuf-Empty">.google.protobuf.Empty</a></td>
+          <td><a href="#rellm-CustomCSSConfiguration">CustomCSSConfiguration</a></td>
+          <td>Gets the server's <a href="#rellm-CustomCSSConfiguration"><code>CustomCSSConfiguration</code></a>, including the (potentially large) <code>custom_css</code> text -- the only RPC that returns it: <a href="#grpc-api-GetServerConfiguration"><code>GetServerConfiguration</code></a> carries the rest of the message (media, forced theme) but never loads the stylesheet. An unset configuration returns an empty one. <em>Publicly accessible.</em></td>
+        </tr>
+        <tr>
+          <td>ConfigureCustomCSS</td>
+          <td><a href="#rellm-CustomCSSConfiguration">CustomCSSConfiguration</a></td>
+          <td><a href="#rellm-CustomCSSConfiguration">CustomCSSConfiguration</a></td>
+          <td>Sets the server's <a href="#rellm-CustomCSSConfiguration"><code>CustomCSSConfiguration</code></a>, creating a new server configuration version (everything else is copied from the current one). Validated: at most 32 <code>media_ids</code>, each an existing <code>GLOBAL_PUBLIC</code> Media, at most 64 KiB of <code>custom_css</code>, and not both <code>force_light_theme</code> and <code>force_dark_theme</code>. An unset <code>custom_css</code> keeps the stored stylesheet. <em>Authenticated.</em> Requires <code>ADMIN</code> permissions.</td>
         </tr>
         <tr>
           <td>DeleteLinkPreviewImages</td>
@@ -6964,6 +6979,63 @@ directory</a> is (<code>{name}</code> denotes a
       | cluster_shared_secret | <a href="#string">string</a> | | Shared secret proving a <code>LockClusterResources</code>/<code>FreeClusterResources</code> caller is a legitimate member of this cluster, passed as the <code>cluster-shared-secret</code> gRPC metadata header (not a request field - there's no per-user auth involved in these calls at all, just this secret). The receiving server checks it against its own stored <code>cluster_shared_secret</code> - that's the <em>entire</em> authorization check: knowing the secret is what makes a caller entitled to treat that server as the conductor, regardless of what that server's own <code>namespace_id</code>/<code>conductor_host</code> happen to say (see <code>namespace_id</code>'s own doc on that being a display-only convention). Write-only, like <a href="#rellm-FacebookAuthConfig"><code>FacebookAuthConfig.app_secret</code></a>/ <a href="#rellm-WebPushConfig"><code>WebPushConfig.private_vapid_key</code></a> - <code>GetServerConfiguration</code> never sends the real value back to <em>any</em> client (not even an admin), and an empty incoming value on <code>ConfigureServer</code> means "leave the stored secret alone," not "clear it." Should never be transmitted over a non-TLS connection. |
       | conductor_state | <a href="#rellm-ClusterConductorState">ClusterConductorState</a> | optional | The conductor's live view of who currently holds each <code>ClusterResource</code>'s lock. Only ever populated on whichever instance actually receives (and grants) <code>LockClusterResources</code> calls -- in a correctly configured cluster, that's the one instance every participant points <code>conductor_host</code> at (see that field's own doc), but nothing server-side enforces that; every other instance simply never gets asked to hold this state. Reflects the database directly, updated in place by <code>LockClusterResources</code>/<code>FreeClusterResources</code> - unlike the rest of <code>ServerConfiguration</code>, <a href="#grpc-api-ConfigureServer"><code>ConfigureServer</code></a> never lets a caller change this, and it isn't versioned the way other <code>ConfigureServer</code> changes are. |
     </p>
+    <p><a name="rellm-CustomCSSConfiguration"></a></p>
+    <h3 id="customcssconfiguration"><a class="anchor" aria-hidden="true" tabindex="-1" href="#customcssconfiguration"><span class="octicon octicon-link"></span></a>CustomCSSConfiguration</h3>
+    <p>
+      Custom CSS for a Rellm server's Elm SPA, plus the appearance settings that go with it. Stored alongside the
+      <a href="#rellm-ServerConfiguration"><code>ServerConfiguration</code></a> (so it is versioned the same way, with each
+      <a href="#grpc-api-ConfigureServer"><code>ConfigureServer</code></a> or <a href="#grpc-api-ConfigureCustomCSS"><code>ConfigureCustomCSS</code></a> creating a
+      new configuration version) and served to browsers as a stylesheet at <code>/custom_css.css</code> (<code>/elm/custom_css.css</code> when
+      the Elm SPA is served under <code>/elm</code>).
+    </p>
+    <p>
+      The stylesheet always starts with a <code>:root</code> block defining CSS variables for custom CSS to use: <code>--primary-color</code>
+      and <code>--nav-color</code> (the server's configured <code>ServerColors.primary</code> and <code>ServerColors.navigation</code>, as <code>#rrggbb</code>),
+      and <code>--custom-media-1</code>, <code>--custom-media-2</code>, ... (see <code>media_ids</code>).
+    </p>
+    <p>
+      The potentially large <code>custom_css</code> text is only ever returned by <a href="#grpc-api-GetCustomCSS"><code>GetCustomCSS</code></a> and
+      <a href="#grpc-api-ConfigureCustomCSS"><code>ConfigureCustomCSS</code></a>: <a href="#grpc-api-GetServerConfiguration"><code>GetServerConfiguration</code></a>
+      includes this message as <code>ServerConfiguration.custom_css_configuration</code> but with <code>custom_css</code> unset, and never
+      reads it from the database. <a href="#grpc-api-ConfigureServer"><code>ConfigureServer</code></a> ignores any
+      <code>custom_css_configuration</code> it is sent, always leaving the stored one unchanged.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>media_ids</td>
+          <td><a href="#string">string</a></td>
+          <td>repeated</td>
+          <td>These media IDs will be converted to the CSS vars <code>--custom-media-1</code>, <code>--custom-media-2</code>, etc., in the order they are listed (each a <code>url(&#x26;#34;...&#x26;#34;)</code>, so <code>background: var(--custom-media-1)</code> works as is). The vars <code>--primary-color</code> and <code>--nav-color</code> are always available too -- see above. Each must be <code>GLOBAL_PUBLIC</code> Media, so anonymous visitors can load it. At most 32.</td>
+        </tr>
+        <tr>
+          <td>custom_css</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td>Custom CSS applied to the Elm SPA client. This is appended to the default CSS, so it can override any default styles. At most 64 KiB. Unset in <code>GetServerConfiguration</code>'s copy of this message; in a <code>ConfigureCustomCSS</code> request, unset means "leave the stored CSS as it is" (so the other fields can be changed without sending it), while an empty string clears it.</td>
+        </tr>
+        <tr>
+          <td>force_light_theme</td>
+          <td><a href="#bool">bool</a></td>
+          <td></td>
+          <td>Force the Elm SPA into its light theme for everyone, whatever their own Auto/Light/Dark setting or system preference -- the theme toggles are disabled. For stylesheets (such as a "paper" or "polaroid" look) that only work on a light background. At most one of <code>force_light_theme</code> and <code>force_dark_theme</code> may be set.</td>
+        </tr>
+        <tr>
+          <td>force_dark_theme</td>
+          <td><a href="#bool">bool</a></td>
+          <td></td>
+          <td>Same as <code>force_light_theme</code>, for the dark theme.</td>
+        </tr>
+      </tbody>
+    </table>
     <p><a name="rellm-CustomHomePage"></a></p>
     <h3 id="customhomepage"><a class="anchor" aria-hidden="true" tabindex="-1" href="#customhomepage"><span class="octicon octicon-link"></span></a>CustomHomePage</h3>
     <p>
@@ -7756,7 +7828,10 @@ directory</a> is (<code>{name}</code> denotes a
         </tr>
       </tbody>
     </table>
-    <p>This could be extended in the future to allow sending mail with Stalwart, but that's TBD. |</p>
+    <p>
+      This could be extended in the future to allow sending mail with Stalwart, but that's TBD. |
+      | custom_css_configuration | <a href="#rellm-CustomCSSConfiguration">CustomCSSConfiguration</a> | optional | The server's <a href="#rellm-CustomCSSConfiguration"><code>CustomCSSConfiguration</code></a>: which media its custom stylesheet uses and whether it forces the light or dark theme. Publicly readable. <code>custom_css</code> itself is always unset here -- fetch it with <a href="#grpc-api-GetCustomCSS"><code>GetCustomCSS</code></a>, which is the only way to read the (potentially large) stylesheet text. Ignored by <a href="#grpc-api-ConfigureServer"><code>ConfigureServer</code></a>; write it with <a href="#grpc-api-ConfigureCustomCSS"><code>ConfigureCustomCSS</code></a>. |
+    </p>
     <p><a name="rellm-ServerInfo"></a></p>
     <h3 id="serverinfo"><a class="anchor" aria-hidden="true" tabindex="-1" href="#serverinfo"><span class="octicon octicon-link"></span></a>ServerInfo</h3>
     <p>User-facing information about the server displayed on the "about" page.</p>

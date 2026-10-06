@@ -75,6 +75,7 @@ import Set exposing (Set)
 import Shared.AccountsPanel.RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer)
 import Shared.Conversions exposing (int64ToInt)
+import UI.Glyph as Glyph
 
 
 {-| Which media ids have been clicked to play -- see the module doc's "Click-to-play video
@@ -297,7 +298,7 @@ viewHelper forceAutoplay tierOverride mediaSize sizeConstraint server maybeAccou
                         , onClick (onPlayClicked media.id)
                         , attribute "aria-label" "Play video"
                         ]
-                        [ text "▶" ]
+                        [ text Glyph.play ]
                     ]
 
         "audio" ->
@@ -382,7 +383,7 @@ viewHelper forceAutoplay tierOverride mediaSize sizeConstraint server maybeAccou
                             , onClick (onPlayClicked media.id)
                             , attribute "aria-label" "Play audio"
                             ]
-                            [ text "▶" ]
+                            [ text Glyph.play ]
                         ]
 
                 player : List (Html msg)

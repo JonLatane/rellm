@@ -50,6 +50,7 @@ class ServerConfiguration extends $pb.GeneratedMessage {
     StripeConfig? stripeConfig,
     TelnyxConfig? telnyxConfig,
     StalwartConfig? stalwartConfig,
+    CustomCSSConfiguration? customCssConfiguration,
   }) {
     final $result = create();
     if (serverInfo != null) {
@@ -127,6 +128,9 @@ class ServerConfiguration extends $pb.GeneratedMessage {
     if (stalwartConfig != null) {
       $result.stalwartConfig = stalwartConfig;
     }
+    if (customCssConfiguration != null) {
+      $result.customCssConfiguration = customCssConfiguration;
+    }
     return $result;
   }
   ServerConfiguration._() : super();
@@ -159,6 +163,7 @@ class ServerConfiguration extends $pb.GeneratedMessage {
     ..aOM<StripeConfig>(124, _omitFieldNames ? '' : 'stripeConfig', subBuilder: StripeConfig.create)
     ..aOM<TelnyxConfig>(125, _omitFieldNames ? '' : 'telnyxConfig', subBuilder: TelnyxConfig.create)
     ..aOM<StalwartConfig>(126, _omitFieldNames ? '' : 'stalwartConfig', subBuilder: StalwartConfig.create)
+    ..aOM<CustomCSSConfiguration>(127, _omitFieldNames ? '' : 'customCssConfiguration', subBuilder: CustomCSSConfiguration.create)
     ..hasRequiredFields = false
   ;
 
@@ -492,6 +497,22 @@ class ServerConfiguration extends $pb.GeneratedMessage {
   void clearStalwartConfig() => clearField(126);
   @$pb.TagNumber(126)
   StalwartConfig ensureStalwartConfig() => $_ensure(24);
+
+  /// The server's [`CustomCSSConfiguration`](#rellm-CustomCSSConfiguration): which media its custom stylesheet uses and
+  /// whether it forces the light or dark theme. Publicly readable. `custom_css` itself is always unset here -- fetch
+  /// it with [`GetCustomCSS`](#grpc-api-GetCustomCSS), which is the only way to read the (potentially large) stylesheet
+  /// text. Ignored by [`ConfigureServer`](#grpc-api-ConfigureServer); write it with
+  /// [`ConfigureCustomCSS`](#grpc-api-ConfigureCustomCSS).
+  @$pb.TagNumber(127)
+  CustomCSSConfiguration get customCssConfiguration => $_getN(25);
+  @$pb.TagNumber(127)
+  set customCssConfiguration(CustomCSSConfiguration v) { setField(127, v); }
+  @$pb.TagNumber(127)
+  $core.bool hasCustomCssConfiguration() => $_has(25);
+  @$pb.TagNumber(127)
+  void clearCustomCssConfiguration() => clearField(127);
+  @$pb.TagNumber(127)
+  CustomCSSConfiguration ensureCustomCssConfiguration() => $_ensure(25);
 }
 
 ///  Coordinates a small piece of shared, cluster-wide state across multiple independent Rellm
@@ -2255,6 +2276,118 @@ class ServerLogo extends $pb.GeneratedMessage {
   $core.bool hasWideMediaIdDark() => $_has(3);
   @$pb.TagNumber(4)
   void clearWideMediaIdDark() => clearField(4);
+}
+
+///  Custom CSS for a Rellm server's Elm SPA, plus the appearance settings that go with it. Stored alongside the
+///  [`ServerConfiguration`](#rellm-ServerConfiguration) (so it is versioned the same way, with each
+///  [`ConfigureServer`](#grpc-api-ConfigureServer) or [`ConfigureCustomCSS`](#grpc-api-ConfigureCustomCSS) creating a
+///  new configuration version) and served to browsers as a stylesheet at `/custom_css.css` (`/elm/custom_css.css` when
+///  the Elm SPA is served under `/elm`).
+///
+///  The stylesheet always starts with a `:root` block defining CSS variables for custom CSS to use: `--primary-color`
+///  and `--nav-color` (the server's configured `ServerColors.primary` and `ServerColors.navigation`, as `#rrggbb`),
+///  and `--custom-media-1`, `--custom-media-2`, ... (see `media_ids`).
+///
+///  The potentially large `custom_css` text is only ever returned by [`GetCustomCSS`](#grpc-api-GetCustomCSS) and
+///  [`ConfigureCustomCSS`](#grpc-api-ConfigureCustomCSS): [`GetServerConfiguration`](#grpc-api-GetServerConfiguration)
+///  includes this message as `ServerConfiguration.custom_css_configuration` but with `custom_css` unset, and never
+///  reads it from the database. [`ConfigureServer`](#grpc-api-ConfigureServer) ignores any
+///  `custom_css_configuration` it is sent, always leaving the stored one unchanged.
+class CustomCSSConfiguration extends $pb.GeneratedMessage {
+  factory CustomCSSConfiguration({
+    $core.Iterable<$core.String>? mediaIds,
+    $core.String? customCss,
+    $core.bool? forceLightTheme,
+    $core.bool? forceDarkTheme,
+  }) {
+    final $result = create();
+    if (mediaIds != null) {
+      $result.mediaIds.addAll(mediaIds);
+    }
+    if (customCss != null) {
+      $result.customCss = customCss;
+    }
+    if (forceLightTheme != null) {
+      $result.forceLightTheme = forceLightTheme;
+    }
+    if (forceDarkTheme != null) {
+      $result.forceDarkTheme = forceDarkTheme;
+    }
+    return $result;
+  }
+  CustomCSSConfiguration._() : super();
+  factory CustomCSSConfiguration.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromBuffer(i, r);
+  factory CustomCSSConfiguration.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'CustomCSSConfiguration', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
+    ..pPS(1, _omitFieldNames ? '' : 'mediaIds')
+    ..aOS(2, _omitFieldNames ? '' : 'customCss')
+    ..aOB(3, _omitFieldNames ? '' : 'forceLightTheme')
+    ..aOB(4, _omitFieldNames ? '' : 'forceDarkTheme')
+    ..hasRequiredFields = false
+  ;
+
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.deepCopy] instead. '
+  'Will be removed in next major version')
+  CustomCSSConfiguration clone() => CustomCSSConfiguration()..mergeFromMessage(this);
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.rebuild] instead. '
+  'Will be removed in next major version')
+  CustomCSSConfiguration copyWith(void Function(CustomCSSConfiguration) updates) => super.copyWith((message) => updates(message as CustomCSSConfiguration)) as CustomCSSConfiguration;
+
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static CustomCSSConfiguration create() => CustomCSSConfiguration._();
+  CustomCSSConfiguration createEmptyInstance() => create();
+  static $pb.PbList<CustomCSSConfiguration> createRepeated() => $pb.PbList<CustomCSSConfiguration>();
+  @$core.pragma('dart2js:noInline')
+  static CustomCSSConfiguration getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<CustomCSSConfiguration>(create);
+  static CustomCSSConfiguration? _defaultInstance;
+
+  /// These media IDs will be converted to the CSS vars `--custom-media-1`, `--custom-media-2`, etc.,
+  /// in the order they are listed (each a `url("...")`, so `background: var(--custom-media-1)` works as is).
+  /// The vars `--primary-color` and `--nav-color` are always available too -- see above. Each must be `GLOBAL_PUBLIC` Media, so anonymous visitors can load it. At most 32.
+  @$pb.TagNumber(1)
+  $core.List<$core.String> get mediaIds => $_getList(0);
+
+  /// Custom CSS applied to the Elm SPA client. This is appended to the default CSS, so it can override any default styles.
+  /// At most 64 KiB. Unset in `GetServerConfiguration`'s copy of this message; in a `ConfigureCustomCSS` request, unset
+  /// means "leave the stored CSS as it is" (so the other fields can be changed without sending it), while an empty
+  /// string clears it.
+  @$pb.TagNumber(2)
+  $core.String get customCss => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set customCss($core.String v) { $_setString(1, v); }
+  @$pb.TagNumber(2)
+  $core.bool hasCustomCss() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearCustomCss() => clearField(2);
+
+  /// Force the Elm SPA into its light theme for everyone, whatever their own Auto/Light/Dark setting or system
+  /// preference -- the theme toggles are disabled. For stylesheets (such as a "paper" or "polaroid" look) that only
+  /// work on a light background. At most one of `force_light_theme` and `force_dark_theme` may be set.
+  @$pb.TagNumber(3)
+  $core.bool get forceLightTheme => $_getBF(2);
+  @$pb.TagNumber(3)
+  set forceLightTheme($core.bool v) { $_setBool(2, v); }
+  @$pb.TagNumber(3)
+  $core.bool hasForceLightTheme() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearForceLightTheme() => clearField(3);
+
+  /// Same as `force_light_theme`, for the dark theme.
+  @$pb.TagNumber(4)
+  $core.bool get forceDarkTheme => $_getBF(3);
+  @$pb.TagNumber(4)
+  set forceDarkTheme($core.bool v) { $_setBool(3, v); }
+  @$pb.TagNumber(4)
+  $core.bool hasForceDarkTheme() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearForceDarkTheme() => clearField(4);
 }
 
 /// If set, overrides the default tab set for the Elm navigation on a Rellm instance.

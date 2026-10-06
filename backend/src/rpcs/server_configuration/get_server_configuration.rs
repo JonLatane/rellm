@@ -55,6 +55,7 @@ pub fn get_server_configuration_model(
 ) -> Result<models::ServerConfiguration, Status> {
     let server_configuration = server_configurations
         .filter(active.eq(true))
+        .select(models::SERVER_CONFIGURATION_COLUMNS)
         .first::<models::ServerConfiguration>(conn);
     // log::info!(
     //     "GetServerConfiguration called, found {:?}",
@@ -82,6 +83,7 @@ pub fn create_default_server_configuration(
 ) -> Result<models::ServerConfiguration, Status> {
     let result = match insert_into(server_configurations)
         .values(default_server_configuration())
+        .returning(models::SERVER_CONFIGURATION_COLUMNS)
         .get_result::<models::ServerConfiguration>(conn)
     {
         Ok(server_configuration) => server_configuration,

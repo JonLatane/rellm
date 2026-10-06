@@ -76,6 +76,10 @@
     document.write('<link rel="stylesheet" href="' + rellmBasePath + '/style/shared/media_viewer_panel.css">');
     document.write('<link rel="stylesheet" href="' + rellmBasePath + '/style/shared/audio_player_panel.css">');
     document.write('<link rel="stylesheet" href="' + rellmBasePath + '/style/shared/messaging_panel.css">');
+    // The server's admin-configured Custom CSS (`CustomCSSConfiguration`) -- served by the Rust server,
+    // last so it overrides everything above. The Elm dev server has no such route (it answers with
+    // index.html, which the browser ignores as a stylesheet); `UI.CustomCssStylesheet` covers that case.
+    document.write('<link id="custom-css-link" rel="stylesheet" href="' + rellmBasePath + '/custom_css.css">');
 
     // Markdown rendering (see `public/markdown.js`) -- vendored rather than
     // CDN-loaded, so the app keeps working offline/behind a firewall.
@@ -105,6 +109,22 @@
         ? "highlight-dark.css" : "highlight-light.css") +
       '">'
     );
+  </script>
+  <script>
+    // A theme the server forces (`CustomCSSConfiguration.force_light_theme`/`force_dark_theme`) is announced by
+    // `/custom_css.css` as `--forced-theme: light|dark` on `:root`. This is its own `<script>` (not part of the
+    // one above) so the parser holds it until that stylesheet -- written into the head above -- has loaded: it
+    // then sets `<html data-theme>` before the first paint, instead of the page painting in the visitor's own
+    // theme until the Elm app boots and reaches the server's configuration (`Shared.appliedTheme`, which
+    // agrees with this and takes over from there). Nothing happens on the Elm dev server, which has no such
+    // stylesheet, nor when no theme is forced.
+    try {
+      var forcedTheme = getComputedStyle(document.documentElement).getPropertyValue("--forced-theme").trim();
+      if (forcedTheme === "light" || forcedTheme === "dark") {
+        document.documentElement.setAttribute("data-theme", forcedTheme);
+        if (window.rellmUpdateCodeTheme) window.rellmUpdateCodeTheme(forcedTheme === "dark");
+      }
+    } catch (e) {}
   </script>
   <style>
     #splash {
@@ -271,6 +291,17 @@
       if (accountsAndServersChannel) {
         accountsAndServersChannel.postMessage(state);
       }
+    });
+
+    // `Ports.setCustomCssStylesheet` -- see its own doc. `link.disabled` is what actually switches a
+    // stylesheet off; `reload` swaps in a cache-busting query so the browser re-fetches it.
+    app.ports.setCustomCssStylesheet.subscribe(function (options) {
+      var link = document.getElementById("custom-css-link");
+      if (!link) return;
+      if (options.reload) {
+        link.href = link.href.split("?")[0] + "?v=" + Date.now();
+      }
+      link.disabled = !options.enabled;
     });
 
     app.ports.persistThemePreference.subscribe(function (preference) {

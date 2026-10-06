@@ -44,10 +44,12 @@ import Shared.MyMediaPanel as MyMediaPanel
 import Shared.StarredPanel as StarredPanel
 import Shared.Time as SharedTime
 import UI.Classes exposing (classes, hostnameToCSSClass, openClosedClass)
+import UI.CustomCssStylesheet as CustomCssStylesheet
 import UI.CustomNav as CustomNav
 import UI.Drag
 import UI.EmittedStylesheet as EmittedStylesheet
 import UI.Flip
+import UI.Glyph as Glyph
 import UI.HtmlEvents exposing (stopPropagationAndPreventDefaultOnClick)
 import UI.Modal
 import Url
@@ -68,6 +70,7 @@ too, mapping its `Shared.Msg` clicks into their own `Msg` type. See
 layout : Shared.Model -> Route -> (Shared.Msg -> msg) -> List (Html msg) -> List (Html msg)
 layout shared currentRoute toMsg children =
     [ Html.map toMsg (EmittedStylesheet.view shared)
+    , Html.map toMsg (CustomCssStylesheet.view shared)
     , Html.map toMsg (sharedBackdrop shared)
     , Html.map toMsg (headerNav shared currentRoute)
     , Html.map toMsg (createAccountConfirmationBackdrop shared)
@@ -732,29 +735,58 @@ serverInfoButton shared server =
 
 
 {-| Cycles Auto -> Light -> Dark -> Auto. "Auto" follows the OS preference
-(and reacts live if it changes); "Light"/"Dark" force it.
+(and reacts live if it changes); "Light"/"Dark" force it. Disabled -- showing the forced theme -- while the
+server's custom CSS forces one (`Shared.forcedDarkMode`); both places this toggle appears (the Accounts Panel
+and the Server Information page's Theme tab) go through here.
 -}
 themeToggle : Shared.Model -> Html Shared.Msg
 themeToggle shared =
-    let
-        icon : String
-        icon =
-            case shared.theme.preference of
-                Shared.ThemeAuto ->
-                    "🌓"
+    case Shared.forcedDarkMode shared of
+        -- The server's custom CSS forces one theme (see `Shared.forcedDarkMode`): show it, but it can't be changed.
+        Just dark ->
+            button
+                [ classes [ "panel-icon-button", "theme-toggle" ]
+                , disabled True
+                , title
+                    ("Appearance: "
+                        ++ (if dark then
+                                "Dark"
 
-                Shared.ThemeLight ->
-                    "☀️"
+                            else
+                                "Light"
+                           )
+                        ++ " (set by this server)"
+                    )
+                ]
+                [ text
+                    (if dark then
+                        "🌙"
 
-                Shared.ThemeDark ->
-                    "🌙"
-    in
-    button
-        [ classes [ "panel-icon-button", "theme-toggle" ]
-        , onClick Shared.ThemePreferenceClicked
-        , title ("Appearance: " ++ Shared.themePreferenceLabel shared.theme.preference ++ " (click to change)")
-        ]
-        [ text icon ]
+                     else
+                        "☀️"
+                    )
+                ]
+
+        Nothing ->
+            let
+                icon : String
+                icon =
+                    case shared.theme.preference of
+                        Shared.ThemeAuto ->
+                            "🌓"
+
+                        Shared.ThemeLight ->
+                            "☀️"
+
+                        Shared.ThemeDark ->
+                            "🌙"
+            in
+            button
+                [ classes [ "panel-icon-button", "theme-toggle" ]
+                , onClick Shared.ThemePreferenceClicked
+                , title ("Appearance: " ++ Shared.themePreferenceLabel shared.theme.preference ++ " (click to change)")
+                ]
+                [ text icon ]
 
 
 
@@ -1151,7 +1183,11 @@ accountsAndServersTab shared currentRoute =
                 )
             ]
             []
-        , formView shared currentRoute
+        , if shared.accounts.accountsPanelOpened then
+            formView shared currentRoute
+
+          else
+            text ""
         ]
 
 
@@ -1183,6 +1219,12 @@ debugTab shared =
             [ switchInput shared.accounts.debugTab.showCustomNavPosts False (Shared.AccountsPanelMsg (AccountsPanel.DebugTabMsg DebugTab.ToggleShowCustomNavPosts))
             , span [] [ text "Show Posts linked to Custom Tabs" ]
             ]
+        , label [ class "admin-switch-row" ]
+            [ switchInput shared.accounts.debugTab.showSensitiveMediaPosts False (Shared.AccountsPanelMsg (AccountsPanel.DebugTabMsg DebugTab.ToggleShowSensitiveMediaPosts))
+            , span [] [ text "Show Mastodon/Bluesky posts with sensitive media" ]
+            ]
+        , div [ class "debug-tab-note" ]
+            [ text "Posts Mastodon flags \"sensitive\", or Bluesky puts any content label on (porn, sexual, nudity, graphic-media, ...), are hidden from feeds by default. Shown, they carry a notice and a click to view the media." ]
         ]
 
 
@@ -1475,7 +1517,7 @@ serverChip shared count index server =
                     , target "_blank"
                     , title ("Open " ++ server.frontendHost ++ " in a new tab")
                     ]
-                    [ text "↗" ]
+                    [ text Glyph.externalLink ]
 
               else
                 text ""
@@ -1859,7 +1901,7 @@ mastodonServerFeedChip shared count index instance =
                 , target "_blank"
                 , title ("Open " ++ instance.host ++ " in a new tab")
                 ]
-                [ text "↗" ]
+                [ text Glyph.externalLink ]
             , button
                 [ class "remove-btn"
                 , onClick (Shared.AccountsPanelMsg (AccountsPanel.RemoveBrowsedMastodonInstanceClicked instance.host))
@@ -1984,7 +2026,7 @@ blueskyConnectFormView form =
                 , style "text-decoration" "underline"
                 , style "flex" "1 1 0"
                 ]
-                [ text "Create an App Password on bsky.app ↗" ]
+                [ text ("Create an App Password on bsky.app " ++ Glyph.externalLink) ]
             , button
                 [ class "background-color-primary"
                 , style "flex" "0 1 auto"

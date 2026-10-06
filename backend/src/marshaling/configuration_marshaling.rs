@@ -43,6 +43,11 @@ impl ToDbServerConfiguration for ServerConfiguration {
                 .stalwart_config
                 .as_ref()
                 .map(|c| serde_json::to_value(c).unwrap()),
+            // `ConfigureServer` ignores whatever custom CSS configuration the request carries --
+            // `configure_server` carries the active row's `custom_css_configuration` and `custom_css`
+            // forward instead (only `ConfigureCustomCSS` changes them).
+            custom_css_configuration: None,
+            custom_css: None,
             media_settings: self
                 .media_settings
                 .as_ref()
@@ -214,6 +219,17 @@ impl ToProtoServerConfiguration for models::ServerConfiguration {
                 ..c
             });
         // No secret to blank -- `StalwartConfig` is just the one on/off flag.
+        // Media + forced theme only -- the stylesheet text is a separate column this model never loads, and is
+        // only ever served by `GetCustomCSS` (see `logic::custom_css`). Always `custom_css: None` here, even if
+        // some older row's JSON still happened to carry the text (before the `custom_css` column existed).
+        let custom_css_configuration: Option<CustomCssConfiguration> = self
+            .custom_css_configuration
+            .as_ref()
+            .and_then(|v| serde_json::from_value::<CustomCssConfiguration>(v.clone()).ok())
+            .map(|c| CustomCssConfiguration {
+                custom_css: None,
+                ..c
+            });
         let stalwart_config: Option<StalwartConfig> = self
             .stalwart_config
             .to_owned()
@@ -348,6 +364,7 @@ impl ToProtoServerConfiguration for models::ServerConfiguration {
             bird_config: bird_config,
             telnyx_config: telnyx_config,
             stalwart_config: stalwart_config,
+            custom_css_configuration: custom_css_configuration,
             stripe_config: stripe_config,
             preferred_verification_apis: preferred_verification_apis,
             available_verification_apis: available_verification_apis,
