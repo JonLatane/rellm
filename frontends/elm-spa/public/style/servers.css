@@ -740,3 +740,21 @@
   top: -0.35rem;
   right: -0.35rem;
 }
+
+/* Custom CSS editor: "Apply Template" dropdown, with Preview / Undo template beside it. */
+.custom-css-template-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.custom-css-template-select {
+  max-width: 100%;
+  font: inherit;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+}

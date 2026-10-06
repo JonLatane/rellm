@@ -101,6 +101,7 @@ import Pages.UsernameOrCustomTab_.Friends
 import Pages.UsernameOrCustomTab_.Posts
 import Request
 import Shared
+import Shared.AccountsPanel as AccountsPanel
 import UI.CustomNav as CustomNav
 import Task
 import Url exposing (Url)
@@ -286,6 +287,15 @@ innerUpdate msg model =
                         , Cmd.batch
                             [ Effect.toCmd ( Shared, Page ) effect
                             , Cmd.map Shared sharedCmd
+
+                            -- A Custom CSS "Preview" (see `Shared.AccountsPanel.Model.customCssPreview`)
+                            -- belongs to the editor on the page being left -- end it, so the draft
+                            -- doesn't keep styling other pages.
+                            , if shared.accounts.customCssPreview /= Nothing then
+                                Task.perform (\_ -> Shared (Shared.AccountsPanelMsg (AccountsPanel.SetCustomCssPreview Nothing))) (Task.succeed ())
+
+                              else
+                                Cmd.none
                             ]
                         )
 

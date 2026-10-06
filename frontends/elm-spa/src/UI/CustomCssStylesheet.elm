@@ -7,8 +7,10 @@ page through `index.html`'s `<link>` to `/custom_css.css` (see `backend/src/web/
 this renders nothing; it exists for the cases that `<link>` can't cover:
 
   - the Elm dev server, which has no Rust server behind that `<link>` (see `AccountsPanel.devCustomCssCmd`);
-  - the Theme tab's Custom CSS editor, previewing an unsaved draft live, and showing a just-saved one
-    without a page reload (see `ThemeTab.CustomCssConfiguration`).
+  - the Theme tab's Custom CSS editor: "Preview" renders an unsaved draft here *instead of* the saved
+    stylesheet (`customCssPreview` -- the `<link>` is switched off meanwhile, see `Ports.setCustomCssStylesheet`),
+    and a just-saved config covers the gap until the `<link>` reloads (`customCssOverride`, see
+    `ThemeTab.CustomCssConfiguration`).
 
 It's rendered right after `UI.EmittedStylesheet` -- later in the document than `index.html`'s `<link>`s --
 so, at equal specificity, it overrides them, the same "appended to the default CSS" order the real
@@ -26,19 +28,28 @@ import Shared.AccountsPanel.RellmServers as RellmServers
 
 view : Shared.Model -> Html msg
 view shared =
-    case shared.accounts.customCssOverride of
-        Just config ->
-            let
-                maybeServer : Maybe RellmServers.RellmServer
-                maybeServer =
-                    shared.accounts.servers
-                        |> List.filter (\server -> server.frontendHost == shared.accounts.mainFrontendHost)
-                        |> List.head
-            in
-            node "style" [ id "custom-css-stylesheet" ] [ text (stylesheet (\mediaId -> maybeServer |> Maybe.andThen (\server -> RellmServers.mediaUrl server mediaId)) config) ]
+    -- A preview, when there is one, is the only custom stylesheet.
+    case ( shared.accounts.customCssPreview, shared.accounts.customCssOverride ) of
+        ( Just config, _ ) ->
+            styleNode shared config
 
-        Nothing ->
+        ( Nothing, Just config ) ->
+            styleNode shared config
+
+        ( Nothing, Nothing ) ->
             text ""
+
+
+styleNode : Shared.Model -> CustomCSSConfiguration -> Html msg
+styleNode shared config =
+    let
+        maybeServer : Maybe RellmServers.RellmServer
+        maybeServer =
+            shared.accounts.servers
+                |> List.filter (\server -> server.frontendHost == shared.accounts.mainFrontendHost)
+                |> List.head
+    in
+    node "style" [ id "custom-css-stylesheet" ] [ text (stylesheet (\mediaId -> maybeServer |> Maybe.andThen (\server -> RellmServers.mediaUrl server mediaId)) config) ]
 
 
 {-| Mirrors the backend's `custom_css_stylesheet`: a `:root` block with `--custom-media-N` (1-based, in

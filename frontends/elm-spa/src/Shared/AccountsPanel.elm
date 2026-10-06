@@ -210,10 +210,16 @@ type alias Model =
     -- A custom stylesheet rendered by Elm itself (`UI.CustomCssStylesheet`), on top of whatever the
     -- page's `<link>` to `/custom_css.css` already loaded: the Elm dev server (port 1234) has no
     -- Rust server behind that `<link>`, so `GotDevCustomCss` fills this from `GetCustomCSS`
-    -- instead; and the Theme tab's Custom CSS editor (`SetCustomCssOverride`) uses it to preview
-    -- an unsaved draft, then to show a just-saved one without a reload. Only ever about
+    -- instead; and `CustomCssSaved` sets it to a just-saved config. Only ever about
     -- `mainFrontendHost`'s own CSS -- it's the page's server.
     , customCssOverride : Maybe CustomCSSConfiguration
+
+    -- The Theme tab's Custom CSS editor's "Preview" of an unsaved draft. While `Just`, it is the *only*
+    -- custom stylesheet applied -- `SetCustomCssPreview` switches the `<link>` off (see
+    -- `Ports.setCustomCssStylesheet`) and `UI.CustomCssStylesheet` renders this instead of
+    -- `customCssOverride` -- so the draft replaces the saved CSS rather than layering onto it.
+    -- Session-only: nothing persists it, and navigating away clears it (`Main`'s `ChangedUrl`).
+    , customCssPreview : Maybe CustomCSSConfiguration
 
     -- The server that host resolves to, once known: usually `browsingHost`
     -- itself, but corrected to a CDN's public `frontendHost` if `browsingHost`
@@ -479,7 +485,8 @@ type Msg
     | ChangeServerShortNameClicked String String
     | GotChangeServerShortNameResult (Result Grpc.Error ( RellmAccount, ServerConfiguration ))
     | GotServerConfigSaveResult String ServerConfiguration
-    | SetCustomCssOverride (Maybe CustomCSSConfiguration)
+    | SetCustomCssPreview (Maybe CustomCSSConfiguration)
+    | CustomCssSaved CustomCSSConfiguration
     | GotDevCustomCss (Result Grpc.Error CustomCSSConfiguration)
     | FocusInput String
     | ClearFieldClicked String Msg
@@ -1543,6 +1550,7 @@ init req flags blueskyAccountsFlags mastodonAccountsAndServersFlags =
       , browsingPort = req.url.port_
       , browsingHostConfigResolved = False
       , customCssOverride = Nothing
+      , customCssPreview = Nothing
       , mainFrontendHost = browsingHost
       , moveAnimations = Dict.empty
       , serverMoveAnimations = Dict.empty
@@ -3554,8 +3562,22 @@ sendUpdate req msg model =
                     -- through `Main.notifyPageOfSharedMsg`, same as `GotRenameServerResult`.
                     ( model, Cmd.none )
 
-        SetCustomCssOverride maybeConfig ->
-            ( { model | customCssOverride = maybeConfig }, Cmd.none )
+        SetCustomCssPreview maybeConfig ->
+            ( { model | customCssPreview = maybeConfig }
+            , if (maybeConfig == Nothing) /= (model.customCssPreview == Nothing) then
+                -- Only on entering/leaving a preview, not every draft change while in one.
+                Ports.setCustomCssStylesheet { enabled = maybeConfig == Nothing, reload = False }
+
+              else
+                Cmd.none
+            )
+
+        -- The editor's own save: the page's `<link>` still holds the pre-save CSS, so reload it, and cover
+        -- the gap (and the dev server, which has no `<link>`) with `customCssOverride`.
+        CustomCssSaved config ->
+            ( { model | customCssOverride = Just config, customCssPreview = Nothing }
+            , Ports.setCustomCssStylesheet { enabled = True, reload = True }
+            )
 
         GotDevCustomCss (Ok config) ->
             -- Don't clobber a draft/saved override the Theme tab's editor set while this was in flight.

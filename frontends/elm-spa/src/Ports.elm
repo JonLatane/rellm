@@ -37,6 +37,7 @@ port module Ports exposing
     , renderCalendar
     , scrollElementLeft
     , scrubMedia
+    , setCustomCssStylesheet
     , setNavBarColor
     , setTheme
     , starredPostsUpdated
@@ -139,6 +140,15 @@ localStorage key -- kept independent of `persist` so `Shared` and
 `Shared.AccountsPanel` don't need to know about each other's persisted shape.
 -}
 port persistThemePreference : String -> Cmd msg
+
+
+{-| Controls `index.html`'s `<link id="custom-css-link">` to the server's `/custom_css.css`: `enabled`
+turns that stylesheet on/off (off while the Custom CSS editor previews a draft, so the draft replaces the
+saved CSS instead of piling onto it -- see `Shared.AccountsPanel.Model.customCssPreview`), and `reload`
+re-fetches it (after a save, so the new CSS shows without a page reload; the browser would otherwise keep
+using what it loaded at startup). A no-op on the Elm dev server, which has no such stylesheet.
+-}
+port setCustomCssStylesheet : { enabled : Bool, reload : Bool } -> Cmd msg
 
 
 {-| Applies the effective dark/light mode to the page: "dark" or "light" sets

@@ -488,7 +488,7 @@ updateInner shared msg model =
                     activateMarketTab shared newModel
             in
             ( { newModel | clusterTab = clusterTabModel, contactIntegrationsTab = contactIntegrationsTabModel, marketTab = marketTabModel }
-            , Effect.batch [ Effect.fromShared subMsg, ThemeTab.customCssPreviewEffect shared model.targetHost model.themeTab newModel.themeTab, clusterTabEffect, contactIntegrationsTabEffect, marketTabEffect ]
+            , Effect.batch [ Effect.fromShared subMsg, ThemeTab.customCssPreviewEffect model.themeTab newModel.themeTab, clusterTabEffect, contactIntegrationsTabEffect, marketTabEffect ]
             )
 
 

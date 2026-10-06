@@ -20,10 +20,17 @@ Media is picked with `Shared.MyMediaPanel`'s `MultiSelect` (same picker Posts us
 reports back through a forwarded `Shared.Msg` (`applySharedMsg`), gated on `pickingMedia` so an
 unrelated Save from some other use of the panel can't be mistaken for this one's pick.
 
-While editing the page's own server's CSS (`targetHost == mainFrontendHost`), the draft is applied live
-as a preview via `AccountsPanel.customCssOverride` (see `UI.CustomCssStylesheet`): every draft change
-sets it (`draftPreviewEffect`), Cancel puts back whatever it was before the edit (`Edit.restoreTo`), and
-a successful Save installs the saved config, so the change shows without a reload.
+The "Apply Template" dropdown (see `Components.Pages.ServerInformationPage.ThemeTab.CustomCssTemplates`)
+replaces the CSS text with a starter stylesheet -- "Undo template" puts back what was there -- and reminds
+the admin to choose as many images as the template uses.
+
+"Preview" (only offered while editing the page's own server's CSS, `canPreview`) applies the draft to this
+very page through `AccountsPanel.customCssPreview`: the saved stylesheet is switched off for the duration
+(see `Ports.setCustomCssStylesheet`) so the draft *replaces* it rather than layering on top, and while it's
+on, every further edit to the CSS or media (`draftPreviewEffect`) re-applies. It's deliberately an explicit
+toggle, not automatic -- a half-typed rule can make the page unusable. Stop Preview, Cancel, Save, or
+navigating away all end it; a reload does too, since nothing persists it. A successful Save hands the saved
+config to `AccountsPanel.CustomCssSaved`, which reloads the stylesheet so the change shows immediately.
 
 -}
 
@@ -31,9 +38,11 @@ import Components.Markdown as Markdown
 import Components.Pages.ServerInformationPage.Common as Common
 import Effect exposing (Effect)
 import Grpc
-import Html exposing (Html, button, div, h3, img, p, span, text, textarea)
-import Html.Attributes exposing (class, placeholder, rows, spellcheck, src, title, value)
+import Components.Pages.ServerInformationPage.ThemeTab.CustomCssTemplates as CustomCssTemplates
+import Html exposing (Html, button, div, h3, img, option, p, span, text, textarea)
+import Html.Attributes exposing (class, disabled, placeholder, rows, selected, spellcheck, src, title, value)
 import Html.Events exposing (onClick, onInput)
+import Html.Keyed
 import Proto.Rellm exposing (CustomCSSConfiguration, defaultMediaReference)
 import Proto.Rellm.Rellm as Rellm
 import Shared
@@ -72,8 +81,15 @@ type alias Edit =
     , pickingMedia : Bool
     , status : AccountsPanel.FormStatus
 
-    -- `AccountsPanel.customCssOverride` as of `EditClicked`, restored on Cancel.
-    , restoreTo : Maybe CustomCSSConfiguration
+    -- Whether "Preview" is on -- see this module's doc.
+    , previewing : Bool
+
+    -- Bumped each time a template is applied, to remount the dropdown (its `<select>` would otherwise stay
+    -- on the chosen option instead of going back to "Apply Template").
+    , templateSeq : Int
+
+    -- The CSS from before the last template was applied, for "Undo template".
+    , previousCss : Maybe String
     }
 
 
@@ -86,6 +102,9 @@ type Msg
     | CssChanged String
     | ChooseMediaClicked
     | RemoveMediaClicked String
+    | TemplateSelected String
+    | UndoTemplateClicked
+    | PreviewClicked
 
 
 init : Model
@@ -114,7 +133,7 @@ update shared targetHost msg model =
         ( newModel, effect ) =
             updateInner shared targetHost msg model
     in
-    ( newModel, Effect.batch [ effect, draftPreviewEffect shared targetHost model newModel ] )
+    ( newModel, Effect.batch [ effect, draftPreviewEffect model newModel ] )
 
 
 updateInner : Shared.Model -> String -> Msg -> Model -> ( Model, Effect Msg )
@@ -129,7 +148,7 @@ updateInner shared targetHost msg model =
         EditClicked ->
             case model.saved of
                 Loaded config ->
-                    ( { model | edit = Just { mediaIds = config.mediaIds, css = config.customCss, pickingMedia = False, status = AccountsPanel.Idle, restoreTo = shared.accounts.customCssOverride } }
+                    ( { model | edit = Just { mediaIds = config.mediaIds, css = config.customCss, pickingMedia = False, status = AccountsPanel.Idle, previewing = False, templateSeq = 0, previousCss = Nothing } }
                     , Effect.none
                     )
 
@@ -146,7 +165,11 @@ updateInner shared targetHost msg model =
 
                           else
                             Effect.none
-                        , setOverride shared targetHost edit.restoreTo
+                        , if edit.previewing then
+                            setPreview Nothing
+
+                          else
+                            Effect.none
                         ]
 
                 Nothing ->
@@ -179,7 +202,14 @@ updateInner shared targetHost msg model =
 
         GotSaveResult (Ok ( maybeAccountsPanelMsg, config )) ->
             ( { model | saved = Loaded config, edit = Nothing }
-            , Effect.batch [ Common.accountsPanelEffect maybeAccountsPanelMsg, setOverride shared targetHost (Just config) ]
+            , Effect.batch
+                [ Common.accountsPanelEffect maybeAccountsPanelMsg
+                , if targetHost == shared.accounts.mainFrontendHost then
+                    Effect.fromShared (Shared.AccountsPanelMsg (AccountsPanel.CustomCssSaved config))
+
+                  else
+                    Effect.none
+                ]
             )
 
         GotSaveResult (Err err) ->
@@ -206,32 +236,76 @@ updateInner shared targetHost msg model =
                 Nothing ->
                     ( model, Effect.none )
 
+        TemplateSelected name ->
+            ( mapEdit
+                (\e ->
+                    case CustomCssTemplates.all |> List.filter (\t -> t.name == name) |> List.head of
+                        Just chosen ->
+                            { e
+                                | css = chosen.css
+                                , templateSeq = e.templateSeq + 1
+                                , previousCss =
+                                    if e.css == chosen.css then
+                                        e.previousCss
+
+                                    else
+                                        Just e.css
+                            }
+
+                        Nothing ->
+                            { e | templateSeq = e.templateSeq + 1 }
+                )
+                model
+            , Effect.none
+            )
+
+        UndoTemplateClicked ->
+            ( mapEdit
+                (\e ->
+                    case e.previousCss of
+                        Just previous ->
+                            { e | css = previous, previousCss = Nothing }
+
+                        Nothing ->
+                            e
+                )
+                model
+            , Effect.none
+            )
+
+        PreviewClicked ->
+            case model.edit of
+                Just edit ->
+                    if edit.previewing then
+                        ( mapEdit (\e -> { e | previewing = False }) model, setPreview Nothing )
+
+                    else
+                        ( mapEdit (\e -> { e | previewing = True }) model
+                        , setPreview (Just { mediaIds = edit.mediaIds, customCss = edit.css })
+                        )
+
+                Nothing ->
+                    ( model, Effect.none )
+
         RemoveMediaClicked mediaId ->
             ( mapEdit (\e -> { e | mediaIds = List.filter (\id -> id /= mediaId) e.mediaIds }) model, Effect.none )
 
 
-{-| Sets `AccountsPanel.customCssOverride`, but only when `targetHost` is the page's own server -- another
-server's Custom CSS has no business styling this page.
+setPreview : Maybe CustomCSSConfiguration -> Effect msg
+setPreview maybeConfig =
+    Effect.fromShared (Shared.AccountsPanelMsg (AccountsPanel.SetCustomCssPreview maybeConfig))
+
+
+{-| While "Preview" is on, re-applies the draft whenever its media or CSS differ between `before` and
+`after`. Run after every `update`, and by `ServerInformationPage` after a forwarded `Shared.Msg`
+(`applySharedMsg` is pure, so a picked-media change can't emit it itself).
 -}
-setOverride : Shared.Model -> String -> Maybe CustomCSSConfiguration -> Effect msg
-setOverride shared targetHost maybeConfig =
-    if targetHost == shared.accounts.mainFrontendHost then
-        Effect.fromShared (Shared.AccountsPanelMsg (AccountsPanel.SetCustomCssOverride maybeConfig))
-
-    else
-        Effect.none
-
-
-{-| The live preview: whenever the draft's media or CSS differ between `before` and `after`, applies
-the draft as `customCssOverride`. Run after every `update`, and by `ServerInformationPage` after a
-forwarded `Shared.Msg` (`applySharedMsg` is pure, so a picked-media change can't emit it itself).
--}
-draftPreviewEffect : Shared.Model -> String -> Model -> Model -> Effect msg
-draftPreviewEffect shared targetHost before after =
+draftPreviewEffect : Model -> Model -> Effect msg
+draftPreviewEffect before after =
     case ( before.edit, after.edit ) of
         ( Just b, Just a ) ->
-            if b.mediaIds /= a.mediaIds || b.css /= a.css then
-                setOverride shared targetHost (Just { mediaIds = a.mediaIds, customCss = a.css })
+            if a.previewing && b.previewing && (b.mediaIds /= a.mediaIds || b.css /= a.css) then
+                setPreview (Just { mediaIds = a.mediaIds, customCss = a.css })
 
             else
                 Effect.none
@@ -279,13 +353,13 @@ mapPicking f model =
 -- VIEW
 
 
-view : RellmServer -> Maybe RellmAccount -> Model -> Html Msg
-view server maybeAdminAccount model =
+view : Bool -> RellmServer -> Maybe RellmAccount -> Model -> Html Msg
+view canPreview server maybeAdminAccount model =
     div [ class "server-details-custom-css" ]
         [ h3 [ class "section-title" ] [ text "Custom CSS" ]
         , case ( model.edit, model.saved ) of
             ( Just edit, _ ) ->
-                editorView server edit
+                editorView canPreview server edit
 
             ( Nothing, Loaded config ) ->
                 div []
@@ -322,10 +396,12 @@ displayView server config =
             ]
 
 
-editorView : RellmServer -> Edit -> Html Msg
-editorView server edit =
+editorView : Bool -> RellmServer -> Edit -> Html Msg
+editorView canPreview server edit =
     div [ class "custom-css-section" ]
-        [ mediaListView server (Just RemoveMediaClicked) edit.mediaIds
+        [ templateRow canPreview edit
+        , templateImageNote edit
+        , mediaListView server (Just RemoveMediaClicked) edit.mediaIds
         , button [ class "server-details-rename-button", onClick ChooseMediaClicked ]
             [ text
                 (if List.isEmpty edit.mediaIds then
@@ -350,6 +426,79 @@ editorView server edit =
             , Common.editErrorView edit.status
             ]
         ]
+
+
+{-| "Apply Template" (a dropdown of `CustomCssTemplates.all`, remounted via `templateSeq` after each pick so it
+returns to its placeholder), "Undo template" once one's been applied, and "Preview" just to the dropdown's
+right (only when `canPreview`).
+-}
+templateRow : Bool -> Edit -> Html Msg
+templateRow canPreview edit =
+    div [ class "custom-css-template-row" ]
+        [ Html.Keyed.node "span"
+            []
+            [ ( "template-select-" ++ String.fromInt edit.templateSeq
+              , Html.select [ class "custom-css-template-select", onInput TemplateSelected ]
+                    (option [ value "", selected True, disabled True ] [ text CustomCssTemplates.placeholder ]
+                        :: List.map (\t -> option [ value t.name ] [ text t.name ]) CustomCssTemplates.all
+                    )
+              )
+            ]
+        , if canPreview then
+            button
+                [ class "server-details-rename-button"
+                , onClick PreviewClicked
+                , title "Show the CSS below on this page (instead of the saved stylesheet) without saving it"
+                ]
+                [ text
+                    (if edit.previewing then
+                        "Stop Preview"
+
+                     else
+                        "Preview"
+                    )
+                ]
+
+          else
+            text ""
+        , case edit.previousCss of
+            Just _ ->
+                button [ class "server-details-rename-cancel", onClick UndoTemplateClicked ] [ text "Undo template" ]
+
+            Nothing ->
+                text ""
+        ]
+
+
+{-| Right after a template is applied (its CSS still unedited) that uses more images than are chosen, says
+which `--custom-media-N` slots are still empty.
+-}
+templateImageNote : Edit -> Html Msg
+templateImageNote edit =
+    case CustomCssTemplates.matching edit.css of
+        Just applied ->
+            if applied.imageCount > List.length edit.mediaIds then
+                p [ class "server-details-feature-settings-note" ]
+                    [ text
+                        ("\""
+                            ++ applied.name
+                            ++ "\" uses "
+                            ++ String.fromInt applied.imageCount
+                            ++ (if applied.imageCount == 1 then
+                                    " image"
+
+                                else
+                                    " images"
+                               )
+                            ++ " -- choose media below, in order (--custom-media-1 first). It still renders without them."
+                        )
+                    ]
+
+            else
+                text ""
+
+        Nothing ->
+            text ""
 
 
 {-| One thumbnail per media id, labelled with the CSS var it becomes (`--custom-media-N`, 1-based, in

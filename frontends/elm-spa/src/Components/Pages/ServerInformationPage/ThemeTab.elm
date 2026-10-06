@@ -133,9 +133,9 @@ fetchCustomCss server =
 {-| `CustomCssConfiguration.draftPreviewEffect` over two `Model`s -- for `ServerInformationPage`'s
 `SharedMsg` branch, where `applySharedMsg` (a picked-media change) can't emit effects itself.
 -}
-customCssPreviewEffect : Shared.Model -> String -> Model -> Model -> Effect msg
-customCssPreviewEffect shared targetHost before after =
-    CustomCssConfiguration.draftPreviewEffect shared targetHost before.customCssConfig after.customCssConfig
+customCssPreviewEffect : Model -> Model -> Effect msg
+customCssPreviewEffect before after =
+    CustomCssConfiguration.draftPreviewEffect before.customCssConfig after.customCssConfig
 
 
 subscriptions : Model -> Sub Msg
@@ -478,7 +478,7 @@ view shared server maybeAdminAccount model =
                     p [] [ text (webUserInterfaceText webUi) ]
             ]
         , Html.map CustomTabsConfigurationMsg (CustomTabsConfiguration.view server maybeAdminAccount model.customTabsConfig)
-        , Html.map CustomCssConfigurationMsg (CustomCssConfiguration.view server maybeAdminAccount model.customCssConfig)
+        , Html.map CustomCssConfigurationMsg (CustomCssConfiguration.view (server.frontendHost == shared.accounts.mainFrontendHost) server maybeAdminAccount model.customCssConfig)
         ]
 
 
