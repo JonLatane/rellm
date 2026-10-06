@@ -2913,12 +2913,16 @@ sendUpdate req msg model =
 
         -- Same preview fetch as the recommended strip's, for any other page that shows servers
         -- the user hasn't added (e.g. the Federation tab's list) -- see `fetchServerPreviews`.
-        -- A host that's already one of the user's own servers has its own branding, so it's skipped.
+        -- A host that's already one of the user's own connected servers has its own branding (see
+        -- `RellmServers.previewOf`), so it's skipped.
         EnsureServerPreviews hosts ->
             let
                 ( newModel, fetchCmd ) =
                     fetchServerPreviews req
-                        (List.filter (\host -> RellmServers.rellmServerForHost model.servers host == Nothing) hosts)
+                        (List.filter
+                            (\host -> (RellmServers.rellmServerForHost model.servers host |> Maybe.andThen .connected) == Nothing)
+                            hosts
+                        )
                         model
             in
             ( newModel, fetchCmd )

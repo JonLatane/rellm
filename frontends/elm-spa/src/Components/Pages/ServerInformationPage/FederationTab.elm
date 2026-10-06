@@ -328,7 +328,7 @@ ensureFederatedServerPreviews shared maybeServer model =
                 |> List.filter
                     (\host ->
                         not (Dict.member host shared.accounts.recommendedServerConnections)
-                            && (RellmServers.rellmServerForHost shared.accounts.servers host == Nothing)
+                            && ((RellmServers.rellmServerForHost shared.accounts.servers host |> Maybe.andThen .connected) == Nothing)
                     )
                 |> Set.fromList
                 |> Set.toList
@@ -1427,11 +1427,7 @@ before the preview request goes out, or if the host can't be reached.
 -}
 federatedServerFor : Shared.Model -> String -> RellmServer
 federatedServerFor shared host =
-    RellmServers.rellmServerForHost shared.accounts.servers host
-        |> Maybe.withDefault
-            (Dict.get host shared.accounts.recommendedServerConnections
-                |> Maybe.withDefault { frontendHost = host, enabled = False, connected = Nothing, sortOrder = 0 }
-            )
+    RellmServers.previewOf shared.accounts.servers shared.accounts.recommendedServerConnections host
 
 
 

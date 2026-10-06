@@ -29,6 +29,7 @@ module Shared.AccountsPanel.RellmServers exposing
     , negotiateRellmServerConfig
     , negotiateRellmServerConfigWith
     , persistedRellmServerDecoder
+    , previewOf
     , rellmServerForHost
     , rellmServerFrom
     , rellmServerInfoOf
@@ -62,6 +63,7 @@ lives in (`servers`), and every `Msg`/`Cmd Msg`-constructing operation (`setWebU
 
 -}
 
+import Dict exposing (Dict)
 import Grpc
 import Html exposing (Html, div, img, text)
 import Html.Attributes exposing (alt, class, src, title)
@@ -632,6 +634,29 @@ account's `server` field.
 rellmServerForHost : List RellmServer -> String -> Maybe RellmServer
 rellmServerForHost servers frontendHost =
     servers |> List.filter (\s -> s.frontendHost == frontendHost) |> List.head
+
+
+{-| The `RellmServer` to show `host`'s name/colors/logo off of, wherever the UI mentions a server by
+host (a button offering to add or enable it, a federated-server chip, ...): the user's own server for
+`host`, if it's known and connected; otherwise its preview in `previews` (`AccountsPanel.recommendedServerConnections`,
+loaded by `AccountsPanel.EnsureServerPreviews` -- the same loader behind the recommended-servers strip); otherwise
+whatever bare placeholder is left (the known-but-unreachable server, or a synthetic one), whose
+`brandingOf` falls back to the host string alone -- so it's always safe to render, and gets better as
+the preview resolves.
+-}
+previewOf : List RellmServer -> Dict String RellmServer -> String -> RellmServer
+previewOf servers previews host =
+    case rellmServerForHost servers host of
+        Just known ->
+            if known.connected == Nothing then
+                Dict.get host previews |> Maybe.withDefault known
+
+            else
+                known
+
+        Nothing ->
+            Dict.get host previews
+                |> Maybe.withDefault (disconnectedRellmServer { frontendHost = host, enabled = False, sortOrder = 0, lastConnection = Nothing })
 
 
 {-| The VAPID public key `frontendHost`'s server would want a `RegisterPushSubscription` call
