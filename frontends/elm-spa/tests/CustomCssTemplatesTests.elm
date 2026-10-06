@@ -94,6 +94,46 @@ suite =
                     |> List.filter (\( _, ts ) -> List.all (\t -> String.contains "var(--primary-color" t.css) ts)
                     |> List.map Tuple.first
                     |> Expect.equal [ "Bauhaus", "Serif Fonts", "Standard Style", "Concert Poster", "Town Square", "Retro Desktop", "Zine", "Wabi-sabi" ]
+        , test "adjacent steps to the neighbouring style at the same image count, wrapping around" <|
+            \_ ->
+                let
+                    named : String -> Maybe Templates.Template
+                    named name =
+                        Templates.all |> List.filter (\x -> x.name == name) |> List.head
+
+                    step : Int -> String -> Maybe String
+                    step direction from =
+                        Templates.adjacent direction 0 (named from) |> Maybe.map .name
+                in
+                Expect.equal
+                    [ step 1 "Bauhaus (1 image)"
+                    , step -1 "Bauhaus (1 image)"
+                    , step 1 "Art Deco (2 images)"
+                    , step -1 "Art Deco (2 images)"
+                    , step 1 "Forest"
+                    , step -1 "Standard Style (1 background image)"
+                    ]
+                    [ Just "Serif Fonts (1 image)"
+                    , Just "Art Deco (1 image)"
+                    , Just "Bauhaus (2 images)"
+                    , Just "Forest (2 images)"
+                    , Just "Art Deco"
+                    , Just "Serif Fonts (1 image)"
+                    ]
+        , test "adjacent with nothing applied starts from the first style (next) or the last (previous), at the given image count" <|
+            \_ ->
+                Expect.equal
+                    [ Templates.adjacent 1 1 Nothing |> Maybe.map .name
+                    , Templates.adjacent -1 2 Nothing |> Maybe.map .name
+                    , Templates.adjacent 1 0 Nothing |> Maybe.map .name
+                    ]
+                    [ Just "Art Deco (1 image)", Just "Forest (2 images)", Just "Art Deco" ]
+        , test "every template gives dropdowns an inset chevron instead of the browser's cramped arrow" <|
+            \_ ->
+                Templates.all
+                    |> List.filter (\t -> not (String.contains "appearance: none" t.css && String.contains "select.custom-css-template-select" t.css))
+                    |> List.map .name
+                    |> Expect.equal []
         , test "grouped has one group per style, three templates each, covering every template" <|
             \_ ->
                 Expect.equal

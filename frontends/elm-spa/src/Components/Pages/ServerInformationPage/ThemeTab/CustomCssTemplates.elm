@@ -1,4 +1,4 @@
-module Components.Pages.ServerInformationPage.ThemeTab.CustomCssTemplates exposing (Template, all, grouped, matching, placeholder)
+module Components.Pages.ServerInformationPage.ThemeTab.CustomCssTemplates exposing (Template, adjacent, all, grouped, matching, placeholder)
 
 {-| Starter stylesheets for the Theme tab's Custom CSS editor (see `CustomCssConfiguration`'s "Apply
 Template" dropdown) -- twenty-four looks (Art Deco, Bauhaus, Serif Fonts, Standard Style, High Contrast, Terminal,
@@ -128,6 +128,73 @@ grouped =
         |> List.map (\group -> ( group, List.filter (\t -> t.group == group) all ))
 
 
+{-| The template one style away from `current` -- `direction` is `1` for the next style, `-1` for the previous --
+with the same number of images, wrapping around at either end: from `Bauhaus (1 image)`, next is
+`Serif Fonts (1 image)` and previous is `Art Deco (1 image)`; previous from `Art Deco (2 images)` is the last
+style's two-image version. With no `current` template (nothing applied yet) it starts from just before the first
+style (next) or just after the last (previous), using `imagesIfNone` as the image count.
+-}
+adjacent : Int -> Int -> Maybe Template -> Maybe Template
+adjacent direction imagesIfNone current =
+    case List.length grouped of
+        0 ->
+            Nothing
+
+        count ->
+            let
+                ( fromIndex, images ) =
+                    case current of
+                        Just template ->
+                            ( grouped
+                                |> List.indexedMap Tuple.pair
+                                |> List.filter (\( _, ( group, _ ) ) -> group == template.group)
+                                |> List.head
+                                |> Maybe.map Tuple.first
+                                |> Maybe.withDefault 0
+                            , template.imageCount
+                            )
+
+                        Nothing ->
+                            ( if direction > 0 then
+                                -1
+
+                              else
+                                count
+                            , imagesIfNone
+                            )
+            in
+            grouped
+                |> List.drop (modBy count (fromIndex + direction))
+                |> List.head
+                |> Maybe.andThen (\( _, templates ) -> templates |> List.filter (\t -> t.imageCount == images) |> List.head)
+
+
+{-| Appended to every template: a dropdown (`<select>`) arrow with a comfortable inset from the right edge. The
+browser's own arrow sits only a few pixels from the border -- cramped against rounded corners, and thicker themed
+borders -- and can't be moved from CSS (`padding-right` just widens the box), so this switches the native one off
+(`appearance: none`) and draws a chevron instead: two diagonal strokes (the two `linear-gradient`s, one `\` and one
+`/`, meeting at the bottom) in the select's own text color (`currentColor`), so it follows each theme. The
+`select.custom-css-template-select` selector is for the editor's own template picker, whose app rule would
+otherwise win on specificity; every other `select` just gets the plain one. No external image, no data URI.
+-}
+selectChevron : String
+selectChevron =
+    """
+/* Dropdown arrows: an inset chevron in the text color instead of the browser's, which hugs the right edge. */
+select, select.custom-css-template-select {
+  -webkit-appearance: none;
+  appearance: none;
+  padding-right: 2.2rem;
+  background-image:
+    linear-gradient(45deg, transparent calc(50% - 1px), currentColor calc(50% - 1px), currentColor calc(50% + 1px), transparent calc(50% + 1px)),
+    linear-gradient(135deg, transparent calc(50% - 1px), currentColor calc(50% - 1px), currentColor calc(50% + 1px), transparent calc(50% + 1px));
+  background-position: calc(100% - 1.2rem) 50%, calc(100% - 0.8rem) 50%;
+  background-size: 0.4rem 0.4rem, 0.4rem 0.4rem;
+  background-repeat: no-repeat;
+}
+"""
+
+
 {-| A style's three templates -- no images, one, two -- named `Style`, `Style (1 image)`, `Style (2 images)`
 (`imageNoun` is what the dropdown calls them).
 -}
@@ -139,7 +206,7 @@ style group imageNoun forced css =
             { name = name
             , group = group
             , imageCount = imageCount
-            , css = css imageCount
+            , css = css imageCount ++ "\n" ++ selectChevron
             , forceLightTheme = forced == ForcesLight
             , forceDarkTheme = forced == ForcesDark
             }

@@ -20,8 +20,10 @@ Media is picked with `Shared.MyMediaPanel`'s `MultiSelect` (same picker Posts us
 reports back through a forwarded `Shared.Msg` (`applySharedMsg`), gated on `pickingMedia` so an
 unrelated Save from some other use of the panel can't be mistaken for this one's pick.
 
-The "Apply Template" dropdown (see `Components.Pages.ServerInformationPage.ThemeTab.CustomCssTemplates`)
-replaces the CSS text with a starter stylesheet -- "Undo template" puts back what was there -- and reminds
+The "Apply Template" dropdown (see `Components.Pages.ServerInformationPage.ThemeTab.CustomCssTemplates`) has a
+◀ and a ▶ button either side that step to the previous / next style at the same image count (wrapping around;
+`CustomCssTemplates.adjacent`). Applying a template
+replaces the CSS text with a starter stylesheet and reminds
 the admin to choose as many images as the template uses.
 
 "Preview" (only offered while editing the page's own server's CSS, `canPreview`) applies the draft to this
@@ -99,18 +101,6 @@ type alias Edit =
 
     -- Whether "Preview" is on -- see this module's doc.
     , previewing : Bool
-
-    -- The CSS and forced theme from before the last template was applied, for "Undo template".
-    , previous : Maybe Snapshot
-    }
-
-
-{-| What "Undo template" puts back: a template replaces the CSS *and* sets the forced theme to its own.
--}
-type alias Snapshot =
-    { css : String
-    , forceLight : Bool
-    , forceDark : Bool
     }
 
 
@@ -127,7 +117,7 @@ type Msg
     | ForceLightToggled
     | ForceDarkToggled
     | TemplateSelected String
-    | UndoTemplateClicked
+    | StepTemplateClicked Int
     | PreviewClicked
 
 
@@ -279,40 +269,29 @@ updateInner shared targetHost msg model =
             ( mapEdit (\e -> { e | forceDark = not e.forceDark, forceLight = e.forceLight && e.forceDark }) model, Effect.none )
 
         TemplateSelected name ->
-            ( mapEdit
-                (\e ->
-                    case CustomCssTemplates.all |> List.filter (\t -> t.name == name) |> List.head of
-                        Just chosen ->
-                            { e
-                                | css = chosen.css
-                                , forceLight = chosen.forceLightTheme
-                                , forceDark = chosen.forceDarkTheme
-                                , previous =
-                                    if e.css == chosen.css && e.forceLight == chosen.forceLightTheme && e.forceDark == chosen.forceDarkTheme then
-                                        e.previous
+            ( case CustomCssTemplates.all |> List.filter (\t -> t.name == name) |> List.head of
+                Just chosen ->
+                    mapEdit (applyTemplate chosen) model
 
-                                    else
-                                        Just { css = e.css, forceLight = e.forceLight, forceDark = e.forceDark }
-                            }
-
-                        Nothing ->
-                            e
-                )
-                model
+                Nothing ->
+                    model
             , Effect.none
             )
 
-        UndoTemplateClicked ->
-            ( mapEdit
-                (\e ->
-                    case e.previous of
-                        Just previous ->
-                            { e | css = previous.css, forceLight = previous.forceLight, forceDark = previous.forceDark, previous = Nothing }
+        -- The ◀ / ▶ buttons beside the dropdown: the neighbouring style at the same image count as the template
+        -- applied now (or, with none applied, as many images as are chosen).
+        StepTemplateClicked direction ->
+            ( case model.edit of
+                Just edit ->
+                    case CustomCssTemplates.adjacent direction (min 2 (List.length edit.mediaIds)) (CustomCssTemplates.matching edit.css) of
+                        Just chosen ->
+                            mapEdit (applyTemplate chosen) model
 
                         Nothing ->
-                            e
-                )
-                model
+                            model
+
+                Nothing ->
+                    model
             , Effect.none
             )
 
@@ -347,7 +326,6 @@ newEdit demo config =
     , status = AccountsPanel.Idle
     , demo = demo
     , previewing = demo
-    , previous = Nothing
     }
 
 
@@ -383,6 +361,17 @@ draftPreviewEffect before after =
 
         _ ->
             Effect.none
+
+
+{-| Applying `chosen` to a draft: its CSS and forced theme replace the draft's.
+-}
+applyTemplate : CustomCssTemplates.Template -> Edit -> Edit
+applyTemplate chosen e =
+    { e
+        | css = chosen.css
+        , forceLight = chosen.forceLightTheme
+        , forceDark = chosen.forceDarkTheme
+    }
 
 
 mapEdit : (Edit -> Edit) -> Model -> Model
@@ -579,21 +568,22 @@ editorView canPreview server edit =
         ]
 
 
-{-| "Apply Template" (a dropdown of `CustomCssTemplates.all`), "Undo template" once one's been applied, and "Preview" just to the dropdown's
-right (only when `canPreview`).
+{-| "Apply Template" (a dropdown of `CustomCssTemplates.all`, with ◀ / ▶ buttons either side) and "Preview" just to
+the dropdown's right (only when `canPreview`).
 -}
 templateRow : Bool -> Edit -> Html Msg
 templateRow canPreview edit =
     let
         -- The template currently "applied": the one whose CSS is exactly what's in the box. Derived from the
         -- text itself, so it can never get out of step with it -- editing the CSS un-applies the template (the
-        -- dropdown goes back to "Apply Template"), and so does Undo.
+        -- dropdown goes back to "Apply Template").
         applied : Maybe String
         applied =
             CustomCssTemplates.matching edit.css |> Maybe.map .name
     in
     div [ class "custom-css-template-row" ]
-        [ -- Keyed by the applied template, so the `<select>` is remounted -- showing the right option -- whenever
+        [ stepButton -1 "◀" "Previous style (same number of images)"
+        , -- Keyed by the applied template, so the `<select>` is remounted -- showing the right option -- whenever
           -- that changes, rather than relying on Elm to patch `selected` onto the right `<option>`.
           Html.Keyed.node "span"
             []
@@ -609,6 +599,7 @@ templateRow canPreview edit =
                     )
               )
             ]
+        , stepButton 1 "▶" "Next style (same number of images)"
         , if canPreview then
             button
                 [ class "server-details-rename-button"
@@ -626,13 +617,20 @@ templateRow canPreview edit =
 
           else
             text ""
-        , case edit.previous of
-            Just _ ->
-                button [ class "server-details-rename-cancel", onClick UndoTemplateClicked ] [ text "Undo template" ]
-
-            Nothing ->
-                text ""
         ]
+
+
+{-| A ◀ / ▶ glyph button either side of the template dropdown: `direction` is `-1` / `1` (see `StepTemplateClicked`).
+-}
+stepButton : Int -> String -> String -> Html Msg
+stepButton direction glyph tooltip =
+    button
+        [ class "custom-css-template-step"
+        , onClick (StepTemplateClicked direction)
+        , title tooltip
+        , attribute "aria-label" tooltip
+        ]
+        [ text glyph ]
 
 
 {-| "Force light theme" / "Force dark theme" switches -- at most one on (see `Edit.forceLight`).
