@@ -977,6 +977,68 @@
       document.addEventListener('touchend', unlockAudioSlots, true);
     })();
 
+    // Lock screen / Control Center / media-key "now playing" card (the Media Session API): the panel's
+    // `data-session-*` attributes (set by `AudioPlayerPanel.view`) say what's playing -- mirrored into
+    // `navigator.mediaSession.metadata` whenever they change -- and the card's buttons drive the player.
+    (function () {
+      if (!('mediaSession' in navigator) || typeof MediaMetadata === 'undefined') { return; }
+      var session = navigator.mediaSession;
+      function activeAudio() { return document.querySelector('.audio-player-audio-active'); }
+      function panel() { return document.querySelector('.audio-player-panel'); }
+      function pressTransport(label) {
+        var button = document.querySelector('.audio-player-transport button[aria-label="' + label + '"]');
+        if (button) { button.click(); }
+      }
+      function publishMetadata() {
+        var p = panel();
+        var title = p && p.getAttribute('data-session-title');
+        if (!title) { session.metadata = null; return; }
+        var artwork = p.getAttribute('data-session-artwork');
+        session.metadata = new MediaMetadata({
+          title: title,
+          artist: p.getAttribute('data-session-artist') || '',
+          album: p.getAttribute('data-session-album') || '',
+          artwork: artwork ? [{ src: artwork, sizes: '512x512' }] : []
+        });
+      }
+      function publishPosition() {
+        var el = activeAudio();
+        if (!el || !isFinite(el.duration) || el.duration <= 0 || !session.setPositionState) { return; }
+        try {
+          session.setPositionState({ duration: el.duration, position: Math.min(el.currentTime, el.duration), playbackRate: el.playbackRate || 1 });
+        } catch (e) {}
+      }
+      function handler(name, fn) { try { session.setActionHandler(name, fn); } catch (e) {} }
+      handler('play', function () { var el = activeAudio(); if (el) { el.play().catch(function () {}); } });
+      handler('pause', function () { var el = activeAudio(); if (el) { el.pause(); } });
+      handler('previoustrack', function () { pressTransport('Previous track'); });
+      handler('nexttrack', function () { pressTransport('Next track'); });
+      handler('seekto', function (d) { var el = activeAudio(); if (el && d.seekTime != null) { el.currentTime = d.seekTime; publishPosition(); } });
+      handler('seekbackward', function (d) { var el = activeAudio(); if (el) { el.currentTime = Math.max(0, el.currentTime - (d.seekOffset || 10)); publishPosition(); } });
+      handler('seekforward', function (d) { var el = activeAudio(); if (el) { el.currentTime = el.currentTime + (d.seekOffset || 10); publishPosition(); } });
+
+      var observed = null;
+      function watchPanel() {
+        var p = panel();
+        if (!p || p === observed) { return; }
+        observed = p;
+        new MutationObserver(publishMetadata).observe(p, { attributes: true, attributeFilter: ['data-session-title', 'data-session-artist', 'data-session-album', 'data-session-artwork'] });
+        publishMetadata();
+      }
+      // Media events don't bubble, but they can be captured at the document.
+      function fromActive(e) { return e.target && e.target.classList && e.target.classList.contains('audio-player-audio-active'); }
+      var lastPosition = 0;
+      document.addEventListener('play', function (e) { if (fromActive(e)) { session.playbackState = 'playing'; publishPosition(); } }, true);
+      document.addEventListener('pause', function (e) { if (fromActive(e)) { session.playbackState = 'paused'; publishPosition(); } }, true);
+      document.addEventListener('durationchange', function (e) { if (fromActive(e)) { publishPosition(); } }, true);
+      document.addEventListener('timeupdate', function (e) {
+        if (fromActive(e) && Date.now() - lastPosition > 1000) { lastPosition = Date.now(); publishPosition(); }
+      }, true);
+      // The panel is rendered by Elm shortly after load (and never unmounted once there).
+      var attempts = 0;
+      (function find() { watchPanel(); if (!observed && attempts++ < 50) { setTimeout(find, 200); } })();
+    })();
+
     // See Ports.elm's controlAudioPlayer doc comment.
     app.ports.controlAudioPlayer.subscribe(function (payload) {
       var el = document.querySelector('.audio-player-audio-active');

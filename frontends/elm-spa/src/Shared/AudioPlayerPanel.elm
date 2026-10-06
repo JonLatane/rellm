@@ -1006,17 +1006,41 @@ view viewerOpen accountsPanelModel model =
 
         -- The cover art picked for the track (`MediaMetadata.cover_art_media_id`) wins over the art embedded in
         -- the file, then the placeholder.
-        coverArt : MediaReference -> Html Msg
-        coverArt media =
+        coverArtSrc : MediaReference -> Maybe String
+        coverArtSrc media =
             case ( maybeServer, media.metadata |> Maybe.andThen .coverArtMediaId, has AUDIOCOVERARTMEDIUM media ) of
                 ( Just server, Just coverArtId, _ ) ->
-                    img [ class "audio-player-cover", src (MediaRenderer.coverArtUrl server maybeAccount coverArtId), alt "" ] []
+                    Just (MediaRenderer.coverArtUrl server maybeAccount coverArtId)
 
                 ( Just server, Nothing, True ) ->
-                    img [ class "audio-player-cover", src (MediaRenderer.authorizedUrl [ "size=audio_cover_art_medium" ] server maybeAccount media), alt "" ] []
+                    Just (MediaRenderer.authorizedUrl [ "size=audio_cover_art_medium" ] server maybeAccount media)
 
                 _ ->
+                    Nothing
+
+        coverArt : MediaReference -> Html Msg
+        coverArt media =
+            case coverArtSrc media of
+                Just url ->
+                    img [ class "audio-player-cover", src url, alt "" ] []
+
+                Nothing ->
                     div [ classes [ "audio-player-cover", "placeholder" ] ] [ text "🎵" ]
+
+        -- What `public/index.html` publishes to the browser's Media Session (the lock screen / Control Center
+        -- "now playing" card): read off the panel's data attributes whenever they change.
+        mediaSessionAttributes : List (Html.Attribute Msg)
+        mediaSessionAttributes =
+            case maybeMedia of
+                Just media ->
+                    [ attribute "data-session-title" (title media)
+                    , attribute "data-session-artist" (artist media)
+                    , attribute "data-session-album" ((Maybe.withDefault defaultMediaMetadata media.metadata).album |> Maybe.withDefault "")
+                    , attribute "data-session-artwork" (coverArtSrc media |> Maybe.withDefault "")
+                    ]
+
+                Nothing ->
+                    []
 
         -- The qualities this track actually has stored (always the original). The selection shown is the
         -- chosen one if available, else the original -- which is what the server falls back to.
@@ -1535,8 +1559,9 @@ view viewerOpen accountsPanelModel model =
                 []
     in
     div
-        [ classes
-            [ "audio-player-panel"
+        (mediaSessionAttributes
+            ++ [ classes
+                [ "audio-player-panel"
             , openClosedClass isOpen
             , if viewerOpen then
                 -- Sits above the fullscreen viewer then (see audio_player_panel.css).
@@ -1555,8 +1580,9 @@ view viewerOpen accountsPanelModel model =
               else
                 "is-collapsed"
             ]
-        , stopPropagationOn "click" (Decode.succeed ( NoOp, True ))
-        ]
+            , stopPropagationOn "click" (Decode.succeed ( NoOp, True ))
+            ]
+        )
         (slotAudio SlotA
             :: slotAudio SlotB
             :: preloads
