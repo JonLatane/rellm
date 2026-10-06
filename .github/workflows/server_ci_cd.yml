@@ -809,21 +809,6 @@ jobs:
           kubectl rollout restart deployment traefik -n traefik-ingress
           kubectl rollout status deployment traefik -n traefik-ingress --timeout 5m
 
-      - uses: actions/cache/restore@v6
-        with:
-          path: frontends/flutter/build/web
-          key: flutter-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
-      - uses: actions/cache/restore@v6
-        with:
-          path: |
-            frontends/tamagui/apps/next/out
-            frontends/tamagui/apps/next/out-tamagui
-          key: web-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
-      - uses: actions/cache/restore@v6
-        with:
-          path: frontends/elm-spa/public
-          key: elm-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
-
       - name: Purge Cloudflare cache
         env:
           CLOUDFLARE_ZONE: ${{ secrets.CLOUDFLARE_ZONE_JONLINEIO }}
@@ -1339,21 +1324,6 @@ jobs:
       - name: Deploy Preview Generator (image tag only)
         run: .github/workflows/scripts/set_backend_images.sh preview bullcitysocial "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
 
-      - uses: actions/cache/restore@v6
-        with:
-          path: frontends/flutter/build/web
-          key: flutter-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
-      - uses: actions/cache/restore@v6
-        with:
-          path: |
-            frontends/tamagui/apps/next/out
-            frontends/tamagui/apps/next/out-tamagui
-          key: web-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
-      - uses: actions/cache/restore@v6
-        with:
-          path: frontends/elm-spa/public
-          key: elm-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
-
       - name: Purge Cloudflare cache
         env:
           CLOUDFLARE_ZONE: ${{ secrets.CLOUDFLARE_ZONE_BULLCITY_SOCIAL }}
@@ -1393,21 +1363,6 @@ jobs:
 
       - name: Deploy Preview Generator (image tag only)
         run: .github/workflows/scripts/set_backend_images.sh preview oakcitysocial "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
-
-      - uses: actions/cache/restore@v6
-        with:
-          path: frontends/flutter/build/web
-          key: flutter-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
-      - uses: actions/cache/restore@v6
-        with:
-          path: |
-            frontends/tamagui/apps/next/out
-            frontends/tamagui/apps/next/out-tamagui
-          key: web-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
-      - uses: actions/cache/restore@v6
-        with:
-          path: frontends/elm-spa/public
-          key: elm-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
 
       - name: Purge Cloudflare cache
         env:
@@ -1449,21 +1404,6 @@ jobs:
       - name: Deploy Preview Generator (image tag only)
         run: .github/workflows/scripts/set_backend_images.sh preview ato-band "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
 
-      - uses: actions/cache/restore@v6
-        with:
-          path: frontends/flutter/build/web
-          key: flutter-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
-      - uses: actions/cache/restore@v6
-        with:
-          path: |
-            frontends/tamagui/apps/next/out
-            frontends/tamagui/apps/next/out-tamagui
-          key: web-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
-      - uses: actions/cache/restore@v6
-        with:
-          path: frontends/elm-spa/public
-          key: elm-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
-
       - name: Purge Cloudflare cache
         env:
           CLOUDFLARE_ZONE: ${{ secrets.CLOUDFLARE_ZONE_ATO_BAND }}
@@ -1503,21 +1443,6 @@ jobs:
 
       - name: Deploy Preview Generator (image tag only)
         run: .github/workflows/scripts/set_backend_images.sh preview rellm-org "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
-
-      - uses: actions/cache/restore@v6
-        with:
-          path: frontends/flutter/build/web
-          key: flutter-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
-      - uses: actions/cache/restore@v6
-        with:
-          path: |
-            frontends/tamagui/apps/next/out
-            frontends/tamagui/apps/next/out-tamagui
-          key: web-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
-      - uses: actions/cache/restore@v6
-        with:
-          path: frontends/elm-spa/public
-          key: elm-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
 
       - name: Purge Cloudflare cache
         env:
