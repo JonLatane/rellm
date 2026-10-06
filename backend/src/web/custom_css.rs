@@ -6,7 +6,9 @@ use rocket::{
 };
 use std::io::Cursor;
 
-use crate::logic::{custom_css_etag, custom_css_stylesheet, get_custom_css_configuration};
+use crate::logic::{
+    custom_css_etag, custom_css_stylesheet, get_custom_css_configuration, if_none_match_matches,
+};
 use crate::rpcs::get_server_configuration_proto;
 use crate::web::RocketState;
 
@@ -68,7 +70,11 @@ fn serve_custom_css(
         .and_then(|info| info.colors);
     let body = custom_css_stylesheet(&config, colors.as_ref());
     let etag = custom_css_etag(&body);
-    let status = if if_none_match.0.as_deref() == Some(etag.as_str()) {
+    let status = if if_none_match
+        .0
+        .as_deref()
+        .is_some_and(|header| if_none_match_matches(header, &etag))
+    {
         Status::NotModified
     } else {
         Status::Ok

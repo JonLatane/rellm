@@ -197,7 +197,7 @@ impl From<ServerConfiguration> for NewServerConfiguration {
             supported_contact_protocols: c.supported_contact_protocols,
             stalwart_config: c.stalwart_config,
             custom_css_configuration: c.custom_css_configuration,
-        custom_css: None,
+            custom_css: None,
         }
     }
 }

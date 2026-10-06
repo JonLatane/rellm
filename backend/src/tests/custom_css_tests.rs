@@ -7,7 +7,9 @@
 
 use diesel::*;
 
-use crate::logic::{custom_css_etag, custom_css_stylesheet, get_custom_css_text};
+use crate::logic::{
+    custom_css_etag, custom_css_stylesheet, get_custom_css_text, if_none_match_matches,
+};
 use crate::marshaling::*;
 use crate::protos::*;
 use crate::rpcs::{
@@ -366,7 +368,187 @@ fn stylesheet_never_emits_ids_that_could_break_out_of_url() {
 }
 
 #[test]
+fn if_none_match_accepts_weak_lists_and_wildcard() {
+    let etag = custom_css_etag("a{}");
+    assert!(if_none_match_matches(&etag, &etag));
+    // A CDN that compresses the body turns the strong tag into a weak one; the browser echoes that back.
+    assert!(if_none_match_matches(&format!("W/{etag}"), &etag));
+    assert!(if_none_match_matches(&format!("\"other\", W/{etag} , \"more\""), &etag));
+    assert!(if_none_match_matches("*", &etag));
+    assert!(!if_none_match_matches(&custom_css_etag("b{}"), &etag));
+    assert!(!if_none_match_matches("", &etag));
+    assert!(!if_none_match_matches(",", &etag));
+}
+
+#[test]
 fn etag_tracks_content_only() {
     assert_eq!(custom_css_etag("a{}"), custom_css_etag("a{}"));
     assert_ne!(custom_css_etag("a{}"), custom_css_etag("b{}"));
+}
+
+// ---- Configuration lifecycle: versioning, interleaved writers, and whatever is already stored ----
+
+/// Overwrites the active row's `custom_css_configuration` JSON directly -- how rows written by older
+/// builds (or corrupted ones) look to the code that reads them.
+fn set_stored_settings_json(
+    conn: &mut crate::db_connection::PgPooledConnection,
+    json: Option<serde_json::Value>,
+) {
+    update(server_configurations::table.filter(server_configurations::active.eq(true)))
+        .set(server_configurations::custom_css_configuration.eq(json))
+        .execute(conn)
+        .unwrap();
+}
+
+fn config_row_count(conn: &mut crate::db_connection::PgPooledConnection) -> i64 {
+    server_configurations::table.count().get_result(conn).unwrap()
+}
+
+#[test]
+fn configure_server_never_invents_custom_css() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let admin = admin(conn);
+        // Nothing was ever configured: a ConfigureServer save must leave it that way (no `Some("")`, no `{}`).
+        configure_server(get_server_configuration_proto(conn)?, &admin, conn)?;
+        assert_eq!(get_custom_css_text(conn)?, None);
+        assert_eq!(get_server_configuration((), &None, conn)?.custom_css_configuration, None);
+        assert_eq!(get_custom_css((), &None, conn)?, css(vec![], ""));
+        Ok(())
+    });
+}
+
+#[test]
+fn a_rejected_save_creates_no_new_version_and_changes_nothing() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let admin = admin(conn);
+        let stored = css(vec![], "p { color: green; }");
+        configure_custom_css(stored.clone(), &admin, conn)?;
+        let rows = config_row_count(conn);
+
+        let non_admin = create_user(conn, "custom_css_rejected_non_admin");
+        assert!(configure_custom_css(css(vec![], "evil{}"), &non_admin, conn).is_err());
+        assert!(configure_custom_css(css(vec![], &"a".repeat(64 * 1024 + 1)), &admin, conn).is_err());
+        let both = CustomCssConfiguration {
+            force_light_theme: true,
+            force_dark_theme: true,
+            ..css(vec![], "also-evil{}")
+        };
+        assert!(configure_custom_css(both, &admin, conn).is_err());
+
+        assert_eq!(config_row_count(conn), rows, "a rejected save must not insert a version");
+        assert_eq!(get_custom_css((), &None, conn)?, stored);
+        Ok(())
+    });
+}
+
+#[test]
+fn every_save_is_a_version_and_older_versions_keep_their_css() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let admin = admin(conn);
+        configure_custom_css(css(vec![], "first{}"), &admin, conn)?;
+        configure_custom_css(css(vec![], "second{}"), &admin, conn)?;
+        // A ConfigureServer save in between is a version too, and carries the CSS onto it.
+        configure_server(get_server_configuration_proto(conn)?, &admin, conn)?;
+        configure_custom_css(css(vec![], "third{}"), &admin, conn)?;
+
+        let stored: Vec<(bool, Option<String>)> = server_configurations::table
+            .filter(server_configurations::custom_css.is_not_null())
+            .order(server_configurations::id.asc())
+            .select((server_configurations::active, server_configurations::custom_css))
+            .load(conn)
+            .unwrap();
+        let texts: Vec<&str> = stored.iter().map(|(_, t)| t.as_deref().unwrap()).collect();
+        assert_eq!(texts, vec!["first{}", "second{}", "second{}", "third{}"]);
+        assert_eq!(
+            stored.iter().map(|(active, _)| *active).collect::<Vec<_>>(),
+            vec![false, false, false, true],
+            "only the newest version is active"
+        );
+        Ok(())
+    });
+}
+
+#[test]
+fn server_settings_and_custom_css_survive_each_others_saves() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let admin = admin(conn);
+        let saved = CustomCssConfiguration {
+            force_dark_theme: true,
+            ..css(vec![], "h1 { color: teal; }")
+        };
+
+        // ConfigureServer (renaming the server) -> ConfigureCustomCSS -> ConfigureServer, with the other
+        // writer's setting checked after each step.
+        let mut config = get_server_configuration_proto(conn)?;
+        config.server_info.as_mut().unwrap().name = Some("Renamed Server".to_string());
+        configure_server(config, &admin, conn)?;
+
+        configure_custom_css(saved.clone(), &admin, conn)?;
+        assert_eq!(
+            get_server_configuration_proto(conn)?.server_info.unwrap().name.as_deref(),
+            Some("Renamed Server"),
+            "ConfigureCustomCSS must carry the rest of the configuration forward"
+        );
+
+        let mut config = get_server_configuration_proto(conn)?;
+        config.server_info.as_mut().unwrap().name = Some("Renamed Again".to_string());
+        configure_server(config, &admin, conn)?;
+        assert_eq!(get_custom_css((), &None, conn)?, saved, "ConfigureServer must carry the CSS forward");
+        assert_eq!(
+            get_server_configuration_proto(conn)?.server_info.unwrap().name.as_deref(),
+            Some("Renamed Again")
+        );
+        Ok(())
+    });
+}
+
+#[test]
+fn stored_settings_from_older_builds_still_load_and_never_leak_the_text() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let admin = admin(conn);
+        configure_custom_css(css(vec![], "real{}"), &admin, conn)?;
+
+        // Before the `custom_css` column existed the text rode in this JSON, and a row may predate any of
+        // the other fields: it must still parse, with the text stripped and absent fields defaulted.
+        set_stored_settings_json(conn, Some(serde_json::json!({ "custom_css": "legacy-leak{}" })));
+        let served = get_server_configuration((), &None, conn)?
+            .custom_css_configuration
+            .expect("a parseable object is served");
+        assert_eq!(served, CustomCssConfiguration::default(), "no text, no media, no forced theme");
+
+        // GetCustomCSS reads the text from its own column only.
+        assert_eq!(get_custom_css((), &None, conn)?.custom_css.as_deref(), Some("real{}"));
+        Ok(())
+    });
+}
+
+#[test]
+fn unparseable_stored_settings_are_treated_as_unset_not_an_error() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let admin = admin(conn);
+        configure_custom_css(css(vec![], "kept{}"), &admin, conn)?;
+        set_stored_settings_json(conn, Some(serde_json::json!("not an object")));
+
+        // The server keeps serving its configuration and a (settings-less) stylesheet...
+        assert_eq!(get_server_configuration((), &None, conn)?.custom_css_configuration, None);
+        let served = get_custom_css((), &None, conn)?;
+        assert!(served.media_ids.is_empty() && !served.force_light_theme && !served.force_dark_theme);
+        assert_eq!(served.custom_css.as_deref(), Some("kept{}"));
+
+        // ...and an admin can repair it with a normal save, which keeps the stored text.
+        let repaired = configure_custom_css(
+            CustomCssConfiguration { force_light_theme: true, ..Default::default() },
+            &admin,
+            conn,
+        )?;
+        assert!(repaired.force_light_theme);
+        assert_eq!(repaired.custom_css.as_deref(), Some("kept{}"));
+        Ok(())
+    });
 }

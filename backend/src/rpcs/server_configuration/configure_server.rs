@@ -373,14 +373,20 @@ pub fn configure_server(
     // The custom CSS (`custom_css_configuration`'s media/forced theme, and the separate `custom_css` text
     // column) is managed only by `ConfigureCustomCSS`: whatever `request.custom_css_configuration` carries
     // is ignored, and a `ConfigureServer` save always carries the active row's values forward rather than
-    // blanking or replacing them.
-    new_config.custom_css_configuration = get_server_configuration_model(conn)
-        .ok()
-        .and_then(|c| c.custom_css_configuration);
-    new_config.custom_css = crate::logic::get_custom_css_text(conn)?;
-
+    // blanking or replacing them. They're read inside the transaction, from the active row locked
+    // `FOR UPDATE`, so a `ConfigureCustomCSS` racing this save is either fully before it (and carried
+    // forward) or waits for it -- never lost.
     let result =
         conn.transaction::<models::ServerConfiguration, diesel::result::Error, _>(|conn| {
+            let (carried_css_configuration, carried_css) = server_configurations
+                .filter(active.eq(true))
+                .select((custom_css_configuration, custom_css))
+                .for_update()
+                .first::<(Option<serde_json::Value>, Option<String>)>(conn)
+                .optional()?
+                .unwrap_or_default();
+            new_config.custom_css_configuration = carried_css_configuration;
+            new_config.custom_css = carried_css;
             update(server_configurations)
                 .set(active.eq(false))
                 .execute(conn)?;

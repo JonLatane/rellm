@@ -147,30 +147,56 @@ pub fn custom_css_etag(stylesheet: &str) -> String {
     format!("\"{:016x}-{:x}\"", hasher.finish(), stylesheet.len())
 }
 
+/// Whether an `If-None-Match` request header (`*`, or a comma-separated list of entity tags, any of which may
+/// carry a `W/` weak prefix) matches `etag`. Uses the weak comparison RFC 9110 requires for `If-None-Match`:
+/// a CDN that compresses the response commonly rewrites our strong `ETag` to `W/"..."`, and a browser then
+/// echoes that back -- an exact string compare would never see a match, so it would never get a `304`.
+pub fn if_none_match_matches(header: &str, etag: &str) -> bool {
+    let opaque = |tag: &str| tag.trim().trim_start_matches("W/").to_string();
+    let ours = opaque(etag);
+    header
+        .split(',')
+        .map(str::trim)
+        .any(|candidate| candidate == "*" || (!candidate.is_empty() && opaque(candidate) == ours))
+}
+
 /// Writes `config` as a new server configuration version -- same deactivate-then-insert flow as
 /// `configure_server`, with everything else copied from the active row. The stylesheet text is
 /// `config.custom_css` if set, otherwise carried forward unchanged from the active row.
+///
+/// The active row is read inside the transaction, locked `FOR UPDATE`, so a concurrent
+/// `ConfigureServer` (or another `ConfigureCustomCSS`) can't slip a version in between this read and the
+/// insert and then be silently reverted by it.
 pub fn save_custom_css_configuration(
     config: &CustomCssConfiguration,
     conn: &mut PgPooledConnection,
 ) -> Result<(), Status> {
     use crate::schema::server_configurations::dsl::*;
-    let current = get_server_configuration_model(conn)?;
-    let existing_css = get_custom_css_text(conn)?;
-    let mut new_config = models::NewServerConfiguration::from(current);
-    new_config.custom_css = match config.custom_css.as_ref() {
-        Some(text) => Some(text.clone()),
-        None => existing_css,
-    };
-    // The text lives in its own column; the JSON carries just the settings.
-    new_config.custom_css_configuration = Some(
-        serde_json::to_value(CustomCssConfiguration {
-            custom_css: None,
-            ..config.clone()
-        })
-        .unwrap(),
-    );
+    // Make sure a configuration row exists at all (creating the default one on first use).
+    get_server_configuration_model(conn)?;
     conn.transaction::<_, diesel::result::Error, _>(|conn| {
+        let current = server_configurations
+            .filter(active.eq(true))
+            .select(models::SERVER_CONFIGURATION_COLUMNS)
+            .for_update()
+            .first::<models::ServerConfiguration>(conn)?;
+        let existing_css = server_configurations
+            .filter(id.eq(current.id))
+            .select(custom_css)
+            .first::<Option<String>>(conn)?;
+        let mut new_config = models::NewServerConfiguration::from(current);
+        new_config.custom_css = match config.custom_css.as_ref() {
+            Some(text) => Some(text.clone()),
+            None => existing_css,
+        };
+        // The text lives in its own column; the JSON carries just the settings.
+        new_config.custom_css_configuration = Some(
+            serde_json::to_value(CustomCssConfiguration {
+                custom_css: None,
+                ..config.clone()
+            })
+            .unwrap(),
+        );
         update(server_configurations)
             .set(active.eq(false))
             .execute(conn)?;
