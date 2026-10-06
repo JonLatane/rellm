@@ -662,7 +662,7 @@ body::after {
 
 
 {-| `Standard Style` (same cards, page wash, frosted column and background images) with the top navigation turned
-into a side navigation on wide screens (1140px and up -- below that it is exactly Standard Style, and the usual top
+into a side navigation on wide screens (1000px and up -- below that it is exactly Standard Style, and the usual top
 bar). Pure CSS over the app's own markup: the `.nav-links` row becomes a grid whose first row is the Home link and
 the Starred / Messaging / Create toggles, and whose first column then continues downward with the tabs, still
 honoring the admin's tab style (icon only / text right / text under / text only). The Accounts button stays at the
@@ -674,8 +674,8 @@ standardSideNav images =
     String.join "\n"
         [ standardStyle images
         , """
-/* Side Navigation -- wide screens only. Below 1140px this is plain Standard Style with the usual top bar. */
-@media (min-width: 1140px) {
+/* Side Navigation -- wide screens only. Below 1000px this is plain Standard Style with the usual top bar. */
+@media (min-width: 1000px) {
   /* The bar becomes a frosted band; Home and the tabs float on it as primary-colored pills. */
   .navbar {
     background: color-mix(in srgb, var(--bg) 90%, transparent) !important;
@@ -755,6 +755,25 @@ standardSideNav images =
   .starred-panel, .nav-panel.starred-panel,
   .messaging-panel, .nav-panel.messaging-panel {
     left: 12px;
+  }
+
+  /* The whole page area moves right of the side column: the 800px content column is centered when there is
+     room, and otherwise sits just past the column (--side-left is its left edge). Pages that deliberately
+     break out wider than the column (the events grid / strip / calendar, the messages page, a post's media
+     gallery) have their breakout margins re-derived from that edge, so they span from 1vw (but never left
+     of 180px, the column plus a gutter) to 99vw instead of running underneath the nav. */
+  :root { --side-left: max(192px, 50vw - 400px); }
+  .container {
+    margin-left: var(--side-left);
+    margin-right: auto;
+  }
+  .events-grid, .events-strip, .events-calendar, .messages-page {
+    margin-left: calc(min(0px, max(1vw, 180px) - var(--side-left)));
+    margin-right: calc(min(0px, var(--side-left) + 800px - 99vw));
+  }
+  .multi-media-gallery {
+    margin-left: calc(min(0px, max(1vw, 180px) - var(--side-left) + 1.8rem + 1px));
+    margin-right: calc(min(0px, var(--side-left) + 800px - 99vw + 1.8rem + 1px));
   }
 
   /* The breadcrumbs row (post pages) keeps the server's color, like the old bar did. */
