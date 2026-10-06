@@ -776,6 +776,24 @@ standardSideNav images =
     margin-right: calc(min(0px, var(--side-left) + 800px - 99vw + 1.8rem + 1px));
   }
 
+  /* Page transitions: with the tabs stacked vertically, a tab lower in the column brings its page in from
+     below and one higher up brings it in from above (the app slides pages in from the right / left, to match a
+     horizontal tab row). Overrides `main.css`'s two page-slide animations; same duration and fill-mode. */
+  .page-slide-from-right {
+    animation: 0.25s ease backwards custom-css-page-from-below;
+  }
+  .page-slide-from-left {
+    animation: 0.25s ease backwards custom-css-page-from-above;
+  }
+  @keyframes custom-css-page-from-below {
+    from { opacity: 0; transform: translateY(4rem); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes custom-css-page-from-above {
+    from { opacity: 0; transform: translateY(-4rem); }
+    to { opacity: 1; transform: none; }
+  }
+
   /* The breadcrumbs row (post pages) keeps the server's color, like the old bar did. */
   .breadcrumbs-bar-container {
     background-color: var(--primary-color, #4a90d9);
