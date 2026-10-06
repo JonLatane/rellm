@@ -1215,6 +1215,12 @@ debugTab shared =
             [ switchInput shared.accounts.debugTab.showCustomNavPosts False (Shared.AccountsPanelMsg (AccountsPanel.DebugTabMsg DebugTab.ToggleShowCustomNavPosts))
             , span [] [ text "Show Posts linked to Custom Tabs" ]
             ]
+        , label [ class "admin-switch-row" ]
+            [ switchInput shared.accounts.debugTab.showSensitiveMediaPosts False (Shared.AccountsPanelMsg (AccountsPanel.DebugTabMsg DebugTab.ToggleShowSensitiveMediaPosts))
+            , span [] [ text "Show Mastodon/Bluesky posts with sensitive media" ]
+            ]
+        , div [ class "debug-tab-note" ]
+            [ text "Posts Mastodon flags \"sensitive\", or Bluesky puts any content label on (porn, sexual, nudity, graphic-media, ...), are hidden from feeds by default. Shown, they carry a notice and a click to view the media." ]
         ]
 
 

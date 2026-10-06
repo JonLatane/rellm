@@ -12,6 +12,7 @@ module Components.Posts exposing
     , fetchPosts
     , fetchReplies
     , generateMediaButton
+    , hasHiddenSensitiveMedia
     , isAuthor
     , isFederatedHost
     , mediaEditButton
