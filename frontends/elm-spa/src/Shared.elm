@@ -859,6 +859,10 @@ rootRedirectCmd req msg model =
     case msg of
         AccountsPanelMsg (AccountsPanel.GotMainServerResult (Ok ( _, config ))) ->
             let
+                -- `req.url` is already normalized (`basePath` stripped -- see `normalizeUrl`), so this is the
+                -- page's path as it'd be served from the root: exactly where to redirect to. (It used to
+                -- strip four more characters off it, as if it still began with "/elm" -- turning
+                -- `/elm/about` into `/ut`, and the `/elm/auth/` exemption below could never match.)
                 path : String
                 path =
                     req.url.path
@@ -869,7 +873,7 @@ rootRedirectCmd req msg model =
 
                 exempt : Bool
                 exempt =
-                    String.startsWith "/elm/auth/" path || path == "/elm/oauth-callback.html"
+                    String.startsWith "/auth/" path || path == "/oauth-callback.html"
             in
             if
                 model.basePath
@@ -881,15 +885,7 @@ rootRedirectCmd req msg model =
             then
                 Just
                     (Ports.replaceLocation
-                        ((String.dropLeft 4 path
-                            |> (\p ->
-                                    if p == "" then
-                                        "/"
-
-                                    else
-                                        p
-                               )
-                         )
+                        (path
                             ++ (req.url.query |> Maybe.map ((++) "?") |> Maybe.withDefault "")
                             ++ (req.url.fragment |> Maybe.map ((++) "#") |> Maybe.withDefault "")
                         )
