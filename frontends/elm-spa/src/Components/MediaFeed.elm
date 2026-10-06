@@ -39,7 +39,6 @@ import Html exposing (Html, a, button, div, img, input, span, text)
 import Html.Attributes exposing (attribute, class, disabled, href, placeholder, src, type_, value)
 import Html.Events exposing (onClick, onInput)
 import Html.Keyed
-import Json.Encode as Encode
 import Process
 import Proto.Rellm exposing (GetMediaRequest, GetMediaResponse, Media, MediaMetadata, defaultGetMediaRequest, defaultMediaMetadata)
 import Proto.Rellm.MediaConversion exposing (MediaConversion(..))
@@ -790,8 +789,8 @@ audioRow shared queueGeneration showHost host maybeServer media =
 
 
 {-| The row's add-to-queue button: the queue glyph over a transparent native `<select>` that fills it, so
-tapping opens the platform's own picker with just the two choices. The select has no selection (`selectedIndex`
--1) so either choice fires `change` -- and is re-created (`generation`) after each pick to go blank again.
+tapping opens the platform's own picker with the two choices (under a disabled "Queue" heading, which is what's
+selected, so either choice fires `change`) -- re-created (`generation`) after each pick to reset to the heading.
 (Only the Audio page's rows have this; the player's own queue rows don't.)
 -}
 queueButton : Int -> String -> Media -> Html Msg
@@ -804,10 +803,12 @@ queueButton generation host media =
                 , Html.select
                     [ class "audio-row-queue-select"
                     , attribute "aria-label" ("Add " ++ mediaTitle media ++ " to queue")
-                    , Html.Attributes.property "selectedIndex" (Encode.int -1)
                     , onInput (QueuePicked host media.id)
                     ]
-                    [ Html.option [ value "next" ] [ text "Add Next In Queue" ]
+                    [ -- A disabled, pre-selected heading: iOS's picker puts a checkmark on the selected option,
+                      -- which would otherwise be the first real choice.
+                      Html.option [ value "", Html.Attributes.disabled True, Html.Attributes.selected True ] [ text "Queue" ]
+                    , Html.option [ value "next" ] [ text "Add Next In Queue" ]
                     , Html.option [ value "last" ] [ text "Add To Queue" ]
                     ]
                 ]
