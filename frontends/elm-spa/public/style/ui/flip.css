@@ -52,6 +52,13 @@
 .flip-animated-item>* {
   overflow: hidden;
   padding-bottom: 0.6rem;
+  /* Headroom for a card that lifts on hover (`transform: translateY(-1px)` in several Custom CSS
+     templates) or casts an upward shadow: the clip above would otherwise shear off its top
+     border/shadow, since the card starts flush with this box's top edge. The equal negative margin
+     cancels the padding's effect on layout, so nothing shifts. (The previous sibling's
+     `padding-bottom` is larger, so the overlap never touches a visible card.) */
+  padding-top: 6px;
+  margin-top: -6px;
 }
 
 /* While the item nested inside this clip layer is mid reorder-slide (see
