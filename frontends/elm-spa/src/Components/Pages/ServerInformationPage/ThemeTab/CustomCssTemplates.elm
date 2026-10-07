@@ -986,8 +986,11 @@ h2::after {
   h2::after { animation: none; }
 }
 
+/* A solid bar -- opaque panel color under its own scanlines. */
 .navbar {
-  background: var(--panel-bg) !important;
+  background:
+    repeating-linear-gradient(to bottom, transparent 0 2px, rgba(0, 0, 0, 0.22) 2px 3px),
+    var(--panel-bg) !important;
   color: var(--fg) !important;
   border-bottom: 1px solid var(--fg);
 }
@@ -1011,11 +1014,17 @@ main button:not(.remove-btn) {
   border: 1px solid var(--fg);
 }
 
-/* CRT: scanlines plus a darkened vignette over everything, never intercepting clicks. */
+/* CRT: scanlines plus a darkened vignette over the page (never intercepting clicks). The overlay starts
+   *below* the nav, which keeps its own scanlines (above): a fixed layer covering the very top edge of the
+   screen makes iOS Safari treat it, not the nav, as the top bar -- the nav stops reading as solid and the
+   page shows through above it. 69px is the nav's height. */
 html::after {
   content: "";
   position: fixed;
-  inset: 0;
+  top: calc(env(safe-area-inset-top, 0px) + 69px);
+  left: 0;
+  right: 0;
+  bottom: 0;
   z-index: 9999;
   pointer-events: none;
   background:
@@ -2373,11 +2382,15 @@ main button:not(.remove-btn) {
   border-color: var(--cine-gold);
 }
 
-/* A gentle vignette over everything, never intercepting clicks. */
+/* A gentle vignette over the page, never intercepting clicks. It starts below the nav (69px tall) -- a fixed
+   layer over the very top edge of the screen makes iOS Safari treat it, not the nav, as the top bar. */
 html::after {
   content: "";
   position: fixed;
-  inset: 0;
+  top: calc(env(safe-area-inset-top, 0px) + 69px);
+  left: 0;
+  right: 0;
+  bottom: 0;
   z-index: 9999;
   pointer-events: none;
   background: radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, 0.5));
