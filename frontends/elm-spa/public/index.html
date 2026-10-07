@@ -419,13 +419,44 @@
     // only while actually overscrolled there (iOS reports a negative scrollY during the bounce), so
     // the bottom overscroll and every resting state keep `body`'s own background, since a
     // permanent `html` background would stop `body`'s propagating to the canvas.
+    //
+    // Skipped when the page's own background lives on `html` (a Custom CSS theme with
+    // `html { background: ... }` and a transparent `body`): setting `html`'s `background-color` then
+    // doesn't just fill the gap above the page, it replaces the color layer under the theme's whole
+    // background, tinting all of it with the nav color for the length of the bounce. The theme's own
+    // background already extends over the gap, so there is nothing to fill. Decided once per bounce
+    // (`topOverscrollChecked`), against `html`'s background *without* our inline color.
     var currentNavBarColor = null;
+    var topOverscrollTinted = false;
+    var topOverscrollChecked = false;
+    function htmlHasOwnBackground() {
+      var root = document.documentElement;
+      var inline = root.style.backgroundColor;
+      if (inline) { root.style.backgroundColor = ""; }
+      var computed = getComputedStyle(root);
+      var own = computed.backgroundImage !== "none" ||
+        !/^(rgba\(0, 0, 0, 0\)|transparent)$/.test(computed.backgroundColor);
+      if (inline) { root.style.backgroundColor = inline; }
+      return own;
+    }
     function updateTopOverscrollCanvas() {
       var root = document.documentElement;
       if (currentNavBarColor && window.scrollY < 0) {
-        root.style.backgroundColor = currentNavBarColor;
-      } else if (root.style.backgroundColor) {
-        root.style.backgroundColor = "";
+        if (!topOverscrollChecked) {
+          topOverscrollChecked = true;
+          if (!htmlHasOwnBackground()) {
+            root.style.backgroundColor = currentNavBarColor;
+            topOverscrollTinted = true;
+          }
+        } else if (topOverscrollTinted) {
+          root.style.backgroundColor = currentNavBarColor;
+        }
+      } else {
+        topOverscrollChecked = false;
+        if (topOverscrollTinted) {
+          root.style.backgroundColor = "";
+          topOverscrollTinted = false;
+        }
       }
     }
     window.addEventListener("scroll", updateTopOverscrollCanvas, { passive: true });
