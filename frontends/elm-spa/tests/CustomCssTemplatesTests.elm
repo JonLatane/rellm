@@ -23,7 +23,7 @@ count needle haystack =
 suite : Test
 suite =
     describe "CustomCssTemplates"
-        [ test "has a hundred and five templates -- thirty-five styles in 0/1/2 image versions -- in the dropdown's order" <|
+        [ test "has a hundred and eleven templates -- thirty-seven styles in 0/1/2 image versions -- in the dropdown's order" <|
             \_ ->
                 List.map .name Templates.all
                     |> Expect.equal
@@ -41,6 +41,7 @@ suite =
                             , ( "Midcentury Modern", "image" )
                             , ( "Polaroid", "image" )
                             , ( "Concert Poster", "image" )
+                            , ( "Fiesta", "image" )
                             , ( "Calm", "image" )
                             , ( "Town Square", "image" )
                             , ( "Blueprint", "image" )
@@ -55,6 +56,7 @@ suite =
                             , ( "Mac Classic", "image" )
                             , ( "OS X (Original)", "image" )
                             , ( "Material Design", "image" )
+                            , ( "Neuro Zoogle", "image" )
                             , ( "Liquid Glass", "image" )
                             , ( "Candy Shop", "image" )
                             , ( "Retro Desktop", "image" )
@@ -75,8 +77,8 @@ suite =
                 in
                 Expect.equal
                     ( forcing .forceDarkTheme, forcing .forceLightTheme )
-                    ( [ "Terminal", "Synthwave", "Blueprint", "Disco", "Psychedelic Poster", "Cinematic", "Haunted Mansion", "Deep Space" ]
-                    , [ "Polaroid", "Pirate Map", "Y2K Aero", "Mac Classic", "OS X (Original)", "Candy Shop", "Retro Desktop", "Zine", "Comic Book" ]
+                    ( [ "Terminal", "Synthwave", "Blueprint", "Disco", "Psychedelic Poster", "Cinematic", "Haunted Mansion", "Neuro Zoogle", "Deep Space" ]
+                    , [ "Polaroid", "Fiesta", "Pirate Map", "Y2K Aero", "Mac Classic", "OS X (Original)", "Candy Shop", "Retro Desktop", "Zine", "Comic Book" ]
                     )
         , test "a template never forces both themes, and a style forces the same theme in all three of its versions" <|
             \_ ->
@@ -149,7 +151,7 @@ suite =
             \_ ->
                 Expect.equal
                     ( List.length Templates.grouped, List.all (\( _, ts ) -> List.length ts == 3) Templates.grouped, List.concatMap Tuple.second Templates.grouped )
-                    ( 35, True, Templates.all )
+                    ( 37, True, Templates.all )
         , test "each template uses exactly as many --custom-media-N as it declares" <|
             \_ ->
                 Templates.all

@@ -1,10 +1,10 @@
 module Components.Pages.ServerInformationPage.ThemeTab.CustomCssTemplates exposing (Template, adjacent, all, grouped, matching, placeholder)
 
 {-| Starter stylesheets for the Theme tab's Custom CSS editor (see `CustomCssConfiguration`'s "Apply
-Template" dropdown) -- thirty-five looks (Art Deco, Bauhaus, Serif Fonts, Standard Style, Standard Side Navigation, High Contrast,
-Terminal, Newspaper, Synthwave, Midcentury Modern, Polaroid, Concert Poster, Calm, Town Square, Blueprint, Disco,
+Template" dropdown) -- thirty-seven looks (Art Deco, Bauhaus, Serif Fonts, Standard Style, Standard Side Navigation, High Contrast,
+Terminal, Newspaper, Synthwave, Midcentury Modern, Polaroid, Concert Poster, Fiesta, Calm, Town Square, Blueprint, Disco,
 Psychedelic Poster, Cinematic, Haunted Mansion, Dyslexia-Friendly, Field Guide, Pirate Map, Y2K Aero, Mac Classic,
-OS X (Original), Material Design, Liquid Glass, Candy Shop, Retro Desktop, Zine, Comic Book, Wabi-sabi, Ocean,
+OS X (Original), Material Design, Neuro Zoogle, Liquid Glass, Candy Shop, Retro Desktop, Zine, Comic Book, Wabi-sabi, Ocean,
 Forest, Deep Space), each in
 a version with no images, one image, and two images. Pure data: no `Msg`, no `Shared`, just `Template`s.
 
@@ -97,6 +97,7 @@ all =
         , style "Midcentury Modern" "image" FollowsTheme midcenturyModern
         , style "Polaroid" "image" ForcesLight polaroid
         , style "Concert Poster" "image" FollowsTheme concertPoster
+        , style "Fiesta" "image" ForcesLight fiesta
         , style "Calm" "image" FollowsTheme calm
         , style "Town Square" "image" FollowsTheme townSquare
         , style "Blueprint" "image" ForcesDark blueprint
@@ -111,6 +112,7 @@ all =
         , style "Mac Classic" "image" ForcesLight macClassic
         , style "OS X (Original)" "image" ForcesLight osxAqua
         , style "Material Design" "image" FollowsTheme materialDesign
+        , style "Neuro Zoogle" "image" ForcesDark neuroZoogle
         , style "Liquid Glass" "image" FollowsTheme liquidGlass
         , style "Candy Shop" "image" ForcesLight candyShop
         , style "Retro Desktop" "image" ForcesLight retroDesktop
@@ -1613,6 +1615,148 @@ body { background: transparent; }
                 , filter = "grayscale(1) contrast(1.5)"
                 , overlay = "radial-gradient(circle, color-mix(in srgb, var(--poster-hot) 70%, transparent) 0 1.2px, transparent 1.8px) 0 0 / 6px 6px"
                 , extra = "border: 4px solid var(--fg); box-shadow: 10px 10px 0 var(--poster-yellow); transform: skewY(-2deg); margin: 14px 12px 2.2rem 4px; background-attachment: scroll;"
+                }
+
+          else
+            ""
+        ]
+
+
+
+-- FIESTA
+
+
+{-| A Southwestern / Mexican fiesta in the colors of the Neurospicy Steve chili-pepper logo (always light, sun-baked
+cream): a chili-red nav with a woven serape stripe under it and a string of papel-picado flags hanging from it,
+Talavera-tile diamonds and a serape band behind the page, chunky slab-serif capitals, adobe-cream cards with a red
+border and an orange "embroidery" line inside, lime-green pill section labels (like the logo's "STEVE"), and orange
+chili buttons. Fixed palette -- red, orange, lime, turquoise -- rather than the server's own colors.
+-}
+fiesta : Int -> String
+fiesta images =
+    String.join "\n"
+        [ "/* Fiesta -- chili red, serape stripes, papel picado, Talavera tiles. Always light. */\n"
+            ++ forcedRoot
+                """  --bg: #fff3dc;
+  --fg: #3a1a0a;
+  --muted: #7a4a2a;
+  --border: #c4551b;
+  --panel-bg: #fffaf0;
+  --chip-bg: #ffe3b3;
+  --fiesta-red: #d71a0a;
+  --fiesta-dark-red: #9b0000;
+  --fiesta-orange: #f28c1c;
+  --fiesta-yellow: #ffc21a;
+  --fiesta-green: #5aa100;
+  --fiesta-turquoise: #1aa7a0;
+  --fiesta-cream: #fff7e6;
+  --fiesta-serape: repeating-linear-gradient(90deg, var(--fiesta-orange) 0 26px, var(--fiesta-yellow) 26px 38px, var(--fiesta-green) 38px 64px, var(--fiesta-turquoise) 64px 76px, var(--fiesta-cream) 76px 82px, var(--fiesta-red) 82px 108px, var(--fiesta-cream) 108px 114px);
+  color-scheme: light;
+"""
+            ++ """
+body {
+  font-family: "Trebuchet MS", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+}
+
+h1, h2, h3, .post-card-title {
+  font-family: "Rockwell Extra Bold", Rockwell, "Cooper Black", "Bree Serif", Georgia, serif;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+h1, h2, h3 {
+  color: var(--fiesta-dark-red);
+}
+
+/* Section labels: lime-green pills with wide-set capitals, like the logo's "STEVE". */
+.section-title {
+  background: var(--fiesta-green) !important;
+  color: #fff !important;
+  border-radius: 999px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  font-size: 0.85rem;
+  padding: 0.15rem 1rem;
+}
+
+/* The nav: chili red, a serape stripe along its bottom edge, and papel-picado flags strung beneath it. */
+.navbar {
+  background: var(--fiesta-red) !important;
+  color: var(--fiesta-cream) !important;
+  border-bottom: 10px solid;
+  border-image: var(--fiesta-serape) 1;
+}
+.navbar::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 24px;
+  margin-top: 0;
+  pointer-events: none;
+  background:
+    conic-gradient(from 150deg at 20px 0, var(--fiesta-orange) 0 60deg, transparent 60deg) 0 0 / 200px 24px repeat-x,
+    conic-gradient(from 150deg at 60px 0, var(--fiesta-turquoise) 0 60deg, transparent 60deg) 0 0 / 200px 24px repeat-x,
+    conic-gradient(from 150deg at 100px 0, var(--fiesta-yellow) 0 60deg, transparent 60deg) 0 0 / 200px 24px repeat-x,
+    conic-gradient(from 150deg at 140px 0, var(--fiesta-green) 0 60deg, transparent 60deg) 0 0 / 200px 24px repeat-x,
+    conic-gradient(from 150deg at 180px 0, var(--fiesta-dark-red) 0 60deg, transparent 60deg) 0 0 / 200px 24px repeat-x,
+    linear-gradient(var(--fiesta-dark-red), var(--fiesta-dark-red)) 0 0 / 100% 2px no-repeat;
+}
+
+.container {
+  padding-top: 20px;
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+}
+
+/* Cards: adobe cream, a chili-red border, and an orange stitched line just inside it. */
+.post-card, .event-card, .user-card {
+  border: 3px solid var(--fiesta-red) !important;
+  border-radius: 10px;
+  background: var(--fiesta-cream) !important;
+  box-shadow:
+    inset 0 0 0 3px var(--fiesta-cream),
+    inset 0 0 0 5px var(--fiesta-orange),
+    3px 4px 0 rgba(155, 0, 0, 0.35);
+}
+
+/* Chili-orange buttons with a red edge. */
+main button:not(.remove-btn) {
+  border: 2px solid var(--fiesta-dark-red);
+  border-radius: 999px;
+  background: linear-gradient(var(--fiesta-yellow), var(--fiesta-orange));
+  color: #3a1a0a;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+"""
+        , eventSurfaces
+        , if images == 0 then
+            """
+/* Page background: sun-washed cream, a faint Talavera diamond tile, and a serape band along the bottom. */
+html {
+  background:
+    var(--fiesta-serape) 0 100% / 100% 14px no-repeat,
+    radial-gradient(circle at 50% -20%, rgba(255, 194, 26, 0.45), transparent 55%),
+    conic-gradient(from 45deg, rgba(26, 167, 160, 0.1) 0 25%, transparent 0 50%, rgba(242, 140, 28, 0.1) 0 75%, transparent 0) 0 0 / 48px 48px,
+    var(--bg);
+  background-attachment: fixed;
+}
+body { background: transparent; }
+"""
+
+          else
+            pageImage
+                { filter = "saturate(1.25) contrast(1.05)"
+                , overlay = "var(--fiesta-serape) 0 100% / 100% 14px no-repeat, color-mix(in srgb, var(--bg) 60%, transparent)"
+                , note = "Image 1 (--custom-media-1): the page background, saturated under a sun-washed cream veil with a serape band along the bottom."
+                }
+        , if images >= 2 then
+            masthead
+                { note = "Image 2 (--custom-media-2): a picture in a chili-red frame with an orange stitched line, warmed toward the bottom."
+                , height = "12rem"
+                , filter = "saturate(1.2)"
+                , overlay = "linear-gradient(transparent 65%, rgba(155, 0, 0, 0.5))"
+                , extra = "border: 5px solid var(--fiesta-red); border-radius: 10px; box-shadow: inset 0 0 0 4px var(--fiesta-cream), inset 0 0 0 7px var(--fiesta-orange), 3px 4px 0 rgba(155, 0, 0, 0.35); margin: 4px 6px 1.6rem 4px;"
                 }
 
           else
@@ -3137,6 +3281,128 @@ body { background: transparent; }
                 , filter = "none"
                 , overlay = "linear-gradient(transparent 40%, rgba(0, 0, 0, 0.4))"
                 , extra = "border-radius: 4px; box-shadow: var(--md-z4); margin: 4px 4px 1.6rem;"
+                }
+
+          else
+            ""
+        ]
+
+
+
+-- NEURO ZOOGLE
+
+
+{-| The look of neurospicysteve.com's Bandzoogle site (always dark, so white text sits on its saturated colors): a
+flat forest-green page, cards as full-bleed rectangles of that site's deep blue and red-orange, alternating down the
+page, with big white uppercase slab-serif headings (Bree Serif where the system has it) over plain sans text, no
+rounded corners or shadows anywhere, and small uppercase pill buttons in the site's button blue. With a background
+image, it appears dimmed under a dark veil, like the site's hero; a second image becomes a dark, flat hero band.
+-}
+neuroZoogle : Int -> String
+neuroZoogle images =
+    String.join "\n"
+        [ "/* Neuro Zoogle -- flat color blocks, white uppercase slab headings. Always dark. */\n"
+            ++ forcedRoot
+                """  --bg: #0b6f55;
+  --fg: #ffffff;
+  --muted: #d6efe7;
+  --border: #7fc4b0;
+  --panel-bg: #0a5c47;
+  --chip-bg: #0a5c47;
+  --zoogle-blue: #0069ae;
+  --zoogle-red: #d9472b;
+  --zoogle-green: #0b6f55;
+  --zoogle-button: #0a7ec2;
+  color-scheme: dark;
+"""
+            ++ """
+body {
+  font-family: Roboto, "Helvetica Neue", "Segoe UI", Arial, sans-serif;
+}
+
+h1, h2, h3, .section-title, .post-card-title {
+  font-family: "Bree Serif", "Rockwell", "Roboto Slab", Georgia, serif;
+  text-transform: uppercase;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+}
+/* Section labels: plain big capitals, not pills. */
+.section-title {
+  background: transparent !important;
+  color: #fff !important;
+  padding: 0;
+  font-size: 1.6rem;
+}
+
+/* Links (including #hashtags and @mentions, which the app colors itself) are white on the color blocks. */
+main a:not([class]) {
+  color: #fff;
+  text-decoration: underline;
+}
+.post-card a,
+.post-detail a,
+.event-card a {
+  color: #fff;
+}
+
+/* A slightly darker flat green bar for the nav. */
+.navbar {
+  background: #0a5c47 !important;
+  color: #fff !important;
+  border-bottom: 0;
+}
+
+.container {
+  background: transparent;
+}
+
+/* Cards: flat blue and red-orange rectangles, alternating, white text, no radius, no shadow. */
+.post-card, .event-card, .user-card {
+  border: 0 !important;
+  border-radius: 0;
+  box-shadow: none;
+  color: #fff;
+  background: var(--zoogle-blue) !important;
+}
+.flip-animated-item:nth-child(even) .post-card,
+.flip-animated-item:nth-child(even) .event-card,
+.flip-animated-item:nth-child(even) .user-card {
+  background: var(--zoogle-red) !important;
+}
+.post-card-title { font-weight: 400; }
+
+/* The site's buttons: small, uppercase, widely tracked pills in button blue. */
+main button:not(.remove-btn) {
+  background: var(--zoogle-button);
+  color: rgba(255, 255, 255, 0.85);
+  border: 1px solid transparent;
+  border-radius: 40px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-size: 0.85rem;
+  box-shadow: none;
+}
+"""
+        , eventSurfaces
+        , if images == 0 then
+            """
+html { background: var(--bg); }
+body { background: transparent; }
+"""
+
+          else
+            pageImage
+                { filter = "none"
+                , overlay = "rgba(0, 0, 0, 0.62)"
+                , note = "Image 1 (--custom-media-1): the page background, dimmed under a dark veil like the site's hero."
+                }
+        , if images >= 2 then
+            masthead
+                { note = "Image 2 (--custom-media-2): a dark, flat hero band across the top of the column."
+                , height = "12rem"
+                , filter = "none"
+                , overlay = "linear-gradient(rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0.55))"
+                , extra = "border-radius: 0; margin: 0 0 1.6rem;"
                 }
 
           else

@@ -32,8 +32,8 @@ myStyle images =
 
 `CustomCSSConfiguration.force_light_theme` / `force_dark_theme` lock the whole app (Elm's `Shared.effectiveDarkMode`) to one theme and disable both theme toggles (`UI.themeToggle`). The app derives colors that must **contrast with the page background** (`primaryAnchorColor`, `navAnchorColor`, ...) from that mode, so:
 
-- Background **always dark** (forced dark palette, night looks) -> `ForcesDark`. Currently Terminal, Synthwave, Blueprint, Disco, Psychedelic Poster, Cinematic, Haunted Mansion, Deep Space.
-- Background **always light** (cream paper, glossy aqua, gray window) -> `ForcesLight`. Currently Polaroid, Pirate Map, Y2K Aero, Mac Classic, OS X (Original), Candy Shop, Retro Desktop, Zine, Comic Book.
+- Background **always dark** (forced dark palette, night looks) -> `ForcesDark`. Currently Terminal, Synthwave, Blueprint, Disco, Psychedelic Poster, Cinematic, Haunted Mansion, Neuro Zoogle, Deep Space.
+- Background **always light** (cream paper, glossy aqua, gray window) -> `ForcesLight`. Currently Polaroid, Fiesta, Pirate Map, Y2K Aero, Mac Classic, OS X (Original), Candy Shop, Retro Desktop, Zine, Comic Book.
 - Background built from the page's own `--bg` (`color-mix(in srgb, var(--bg) ..., ...)`, or `themedRoot`) so it follows light/dark -> `FollowsTheme`.
 
 Applying a template sets the editor's flags to the template's (cancelling the edit throws the draft away). The dropdown shows a template as selected exactly while the CSS box still equals that template's CSS (`CustomCssTemplates.matching`), and goes back to "Apply Template" as soon as the text is edited. At most one flag, ever (server validates; Elm toggles are mutually exclusive). A style that forces colors in CSS but is not marked forced will get wrong-contrast brand colors -- check this every time.
