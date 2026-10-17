@@ -2642,6 +2642,8 @@ and Occasions.
 | unauthenticated_star_count | [int64](#int64) |  | The number of unauthenticated stars on the post. |
 | sync_destinations | [SyncDestinationStatus](#rellm-SyncDestinationStatus) | repeated | SyncDestinations this post has been synced (cross-posted) to, and their status. |
 | sync_source | [SyncSource](#rellm-SyncSource) | optional | If the Post was created/is kept in sync from a [`SyncSource`](#rellm-SyncSource) (an ICS Event/Occasion, or an RSS/Atom feed item), this is the source it was synced from. Only its media should be considered editable for such a Post. |
+| quoted_post | [Post](#rellm-Post) | optional | The post this post quotes (embeds). Output only, never read from requests (see `quoted_post_id`). Rellm servers populate it one level deep (the quoted post&#39;s own `quoted_post` is not filled in) when the viewer can see the quoted post; the Elm frontend&#39;s Bluesky/Mastodon translators also set it, resolving as many levels as they choose. |
+| quoted_post_id | [string](#string) | optional | The ID of a post this post quotes. Set it on `CreatePost`/`UpdatePost` to quote a post (any post visible to the author); the server validates it, and then returns it on every read of the quoting post, along with `quoted_post` populated (if the *viewer* can see the quoted post). Only valid for a post whose `context` is `POST` -- a reply, `EVENT`, or `OCCASION` with a `quoted_post_id` is an error. If the quoted post is later deleted, this is cleared. |
 
 
 

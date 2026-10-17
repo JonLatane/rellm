@@ -6393,6 +6393,8 @@ fieldNumbersProto__Rellm__Post :
     , unauthenticatedStarCount : Int
     , syncDestinations : Int
     , syncSource : Int
+    , quotedPost : Int
+    , quotedPostId : Int
     }
 fieldNumbersProto__Rellm__Post =
     { id = 1
@@ -6421,6 +6423,8 @@ fieldNumbersProto__Rellm__Post =
     , unauthenticatedStarCount = 24
     , syncDestinations = 25
     , syncSource = 26
+    , quotedPost = 27
+    , quotedPostId = 28
     }
 
 
@@ -6455,6 +6459,8 @@ defaultProto__Rellm__Post =
     , unauthenticatedStarCount = Protobuf.Types.Int64.fromInts 0 0
     , syncDestinations = []
     , syncSource = Nothing
+    , quotedPost = Nothing
+    , quotedPostId = Nothing
     }
 
 
@@ -6523,6 +6529,17 @@ decodeProto__Rellm__Post =
             26
             (Protobuf.Decode.map Just decodeProto__Rellm__SyncSource)
             (\a r -> { r | syncSource = a })
+        , Protobuf.Decode.optional
+            27
+            (Protobuf.Decode.map
+                Just
+                (Protobuf.Decode.map Proto__Rellm__Post_ <| Protobuf.Decode.lazy <| \_ -> decodeProto__Rellm__Post)
+            )
+            (\a r -> { r | quotedPost = a })
+        , Protobuf.Decode.optional
+            28
+            (Protobuf.Decode.map Just Protobuf.Decode.string)
+            (\a r -> { r | quotedPostId = a })
         ]
 
 
@@ -6580,6 +6597,11 @@ encodeProto__Rellm__Post value =
         , ( 24, Protobuf.Encode.int64 value.unauthenticatedStarCount )
         , ( 25, (Protobuf.Encode.list encodeProto__Rellm__SyncDestinationStatus) value.syncDestinations )
         , ( 26, (Maybe.map encodeProto__Rellm__SyncSource >> Maybe.withDefault Protobuf.Encode.none) value.syncSource )
+        , ( 27
+          , (Maybe.map (unwrapProto__Rellm__Post >> encodeProto__Rellm__Post) >> Maybe.withDefault Protobuf.Encode.none)
+                value.quotedPost
+          )
+        , ( 28, (Maybe.map Protobuf.Encode.string >> Maybe.withDefault Protobuf.Encode.none) value.quotedPostId )
         ]
 
 
@@ -6613,6 +6635,8 @@ type alias Proto__Rellm__Post =
     , unauthenticatedStarCount : Protobuf.Types.Int64.Int64
     , syncDestinations : List Proto__Rellm__SyncDestinationStatus
     , syncSource : Maybe Proto__Rellm__SyncSource
+    , quotedPost : Maybe Proto__Rellm__Post_
+    , quotedPostId : Maybe String
     }
 
 

@@ -149,6 +149,8 @@ const Post$json = {
     {'1': 'unauthenticated_star_count', '3': 24, '4': 1, '5': 3, '10': 'unauthenticatedStarCount'},
     {'1': 'sync_destinations', '3': 25, '4': 3, '5': 11, '6': '.rellm.SyncDestinationStatus', '10': 'syncDestinations'},
     {'1': 'sync_source', '3': 26, '4': 1, '5': 11, '6': '.rellm.SyncSource', '9': 8, '10': 'syncSource', '17': true},
+    {'1': 'quoted_post', '3': 27, '4': 1, '5': 11, '6': '.rellm.Post', '9': 9, '10': 'quotedPost', '17': true},
+    {'1': 'quoted_post_id', '3': 28, '4': 1, '5': 9, '9': 10, '10': 'quotedPostId', '17': true},
   ],
   '8': [
     {'1': '_author'},
@@ -160,6 +162,8 @@ const Post$json = {
     {'1': '_updated_at'},
     {'1': '_published_at'},
     {'1': '_sync_source'},
+    {'1': '_quoted_post'},
+    {'1': '_quoted_post_id'},
   ],
 };
 
@@ -187,9 +191,11 @@ final $typed_data.Uint8List postDescriptor = $convert.base64Decode(
     'FyX2NvdW50GBggASgDUhh1bmF1dGhlbnRpY2F0ZWRTdGFyQ291bnQSSQoRc3luY19kZXN0aW5h'
     'dGlvbnMYGSADKAsyHC5yZWxsbS5TeW5jRGVzdGluYXRpb25TdGF0dXNSEHN5bmNEZXN0aW5hdG'
     'lvbnMSNwoLc3luY19zb3VyY2UYGiABKAsyES5yZWxsbS5TeW5jU291cmNlSAhSCnN5bmNTb3Vy'
-    'Y2WIAQFCCQoHX2F1dGhvckITChFfcmVwbHlfdG9fcG9zdF9pZEIICgZfdGl0bGVCBwoFX2xpbm'
-    'tCCgoIX2NvbnRlbnRCFQoTX2N1cnJlbnRfZ3JvdXBfcG9zdEINCgtfdXBkYXRlZF9hdEIPCg1f'
-    'cHVibGlzaGVkX2F0Qg4KDF9zeW5jX3NvdXJjZQ==');
+    'Y2WIAQESMQoLcXVvdGVkX3Bvc3QYGyABKAsyCy5yZWxsbS5Qb3N0SAlSCnF1b3RlZFBvc3SIAQ'
+    'ESKQoOcXVvdGVkX3Bvc3RfaWQYHCABKAlIClIMcXVvdGVkUG9zdElkiAEBQgkKB19hdXRob3JC'
+    'EwoRX3JlcGx5X3RvX3Bvc3RfaWRCCAoGX3RpdGxlQgcKBV9saW5rQgoKCF9jb250ZW50QhUKE1'
+    '9jdXJyZW50X2dyb3VwX3Bvc3RCDQoLX3VwZGF0ZWRfYXRCDwoNX3B1Ymxpc2hlZF9hdEIOCgxf'
+    'c3luY19zb3VyY2VCDgoMX3F1b3RlZF9wb3N0QhEKD19xdW90ZWRfcG9zdF9pZA==');
 
 @$core.Deprecated('Use syncPostRequestDescriptor instead')
 const SyncPostRequest$json = {

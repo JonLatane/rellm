@@ -9,6 +9,8 @@ use crate::schema::posts;
 
 use crate::rpcs::validations::*;
 
+use super::{attach_quoted_posts, post_is_visible_to};
+
 pub fn create_post(
     request: Post,
     user: &models::User,
@@ -82,6 +84,27 @@ pub fn create_post(
         None => None,
     };
 
+    // Only a top-level `POST` can quote another post (never a reply -- events/occasions aren't
+    // created through here at all), and only one the author can actually see.
+    let quoted_post_db_id: Option<i64> = match request.quoted_post_id.to_owned() {
+        None => None,
+        Some(proto_id) => {
+            if parent_post_db_id.is_some() {
+                return Err(Status::new(
+                    Code::InvalidArgument,
+                    "quoted_post_only_allowed_on_posts",
+                ));
+            }
+            let db_id = proto_id
+                .to_db_id()
+                .map_err(|_| Status::new(Code::InvalidArgument, "quoted_post_id_invalid"))?;
+            if !post_is_visible_to(&Some(user), db_id, conn) {
+                return Err(Status::new(Code::NotFound, "quoted_post_not_found"));
+            }
+            Some(db_id)
+        }
+    };
+
     let visibility = match request.visibility() {
         Visibility::Unknown => Visibility::GlobalPublic,
         v => v,
@@ -134,6 +157,16 @@ pub fn create_post(
             .returning(models::POST_COLUMNS)
             .get_result::<models::Post>(conn)?;
 
+        // (`NewPost` is built literally in many places -- event/feed sync, tests -- none of which
+        // quote anything, so this one column is set separately rather than threaded through it.)
+        let inserted_post = match quoted_post_db_id {
+            Some(quoted_id) => update(posts::table.find(inserted_post.id))
+                .set(posts::quoted_post_id.eq(quoted_id))
+                .returning(models::POST_COLUMNS)
+                .get_result::<models::Post>(conn)?,
+            None => inserted_post,
+        };
+
         // `published_at` is set once, the first time a post becomes SERVER_PUBLIC/GLOBAL_PUBLIC,
         // and is immutable thereafter (see UpdatePost). Matching `inserted_post.created_at`
         // exactly, rather than a separately-captured `SystemTime::now()`, avoids any clock skew
@@ -172,8 +205,10 @@ pub fn create_post(
         Ok(post) => {
             log::info!("Post created! PostID:{:?}", post.id);
             let author = models::get_author(user.id, conn)?;
-            Ok(MarshalablePost(post, Some(author), None, None, vec![])
-                .to_proto(Some(&media_lookup), None, None))
+            let mut created = vec![MarshalablePost(post, Some(author), None, None, vec![])
+                .to_proto(Some(&media_lookup), None, None)];
+            attach_quoted_posts(&mut created, &Some(user), conn);
+            Ok(created.remove(0))
         }
         Err(e) => {
             log::error!("Error creating post! {:?}", e);

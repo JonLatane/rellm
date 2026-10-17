@@ -24,7 +24,7 @@ import Html exposing (Html, a, button, div, p, span, text)
 import Html.Attributes exposing (class, href, rel, target)
 import Html.Events exposing (onClick)
 import Http
-import Proto.Rellm exposing (Post)
+import Proto.Rellm exposing (Post, unwrapPost)
 import Shared
 import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.BlueskyAccounts as BlueskyAccounts exposing (BlueskyAccount)
@@ -105,7 +105,7 @@ init shared uri =
                     -- ended up with, strictly after it rather than alongside -- AT Proto refresh
                     -- tokens are single-use (see `BlueskyAccount`'s own doc), so two concurrent
                     -- `performWithBlueskyAccount` calls could race to rotate the same one.
-                    BlueskyAccounts.performWithBlueskyAccount account (\accessToken -> Bluesky.fetchPost accessToken uri)
+                    BlueskyAccounts.performWithBlueskyAccount account (\accessToken -> Bluesky.fetchPostWithQuotes accessToken uri)
                         |> Task.andThen
                             (\( refreshedAccount, ( post, sensitive ) ) ->
                                 Bluesky.fetchThread refreshedAccount.accessToken uri
@@ -126,7 +126,7 @@ init shared uri =
                 -- No connected account -- read anonymously from the public AppView (an empty
                 -- token, see `Bluesky.fetchPost`), nothing to refresh/persist.
                 [] ->
-                    Bluesky.fetchPost "" uri
+                    Bluesky.fetchPostWithQuotes "" uri
                         |> Task.andThen
                             (\( post, sensitive ) ->
                                 Bluesky.fetchThread "" uri
@@ -288,6 +288,13 @@ federatedPostView shared sensitiveMediaRevealed sensitive post =
 
               else
                 MultiMediaRenderer.view post.postMediaLayout noServer Nothing shared.mediaRenderer MediaPlayClicked MediaImageClicked post.media
+
+            , case post.quotedPost of
+                Just quoted ->
+                    Posts.quotedPostCard shared.time shared.basePath shared.accounts.mainFrontendHost starHost shared.mediaRenderer MediaPlayClicked (Just ThreadMediaClicked) (unwrapPost quoted)
+
+                Nothing ->
+                    text ""
 
             -- Date and star at the bottom right, like a post card.
             , div [ classes [ "post-detail-meta", "federated-post-footer" ] ]

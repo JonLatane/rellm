@@ -15,6 +15,8 @@ use crate::schema::posts;
 
 use crate::rpcs::validations::*;
 
+use super::post_is_visible_to;
+
 pub fn update_post(
     request: Post,
     user: &models::User,
@@ -98,6 +100,33 @@ pub fn update_post(
         };
     }
 
+    // `quoted_post_id` is replaced wholesale like the rest of the editable fields, but only a
+    // `POST` can quote anything. An unchanged quote isn't re-validated (it may have become
+    // invisible to the author since it was set -- that shouldn't block editing the post).
+    let quoted_post_db_id: Option<i64> = match request.quoted_post_id.to_owned() {
+        Some(proto_id) if admin || self_update => {
+            if existing_post.context != PostContext::Post.to_string_post_context() {
+                return Err(Status::new(
+                    Code::InvalidArgument,
+                    "quoted_post_only_allowed_on_posts",
+                ));
+            }
+            let db_id = proto_id
+                .to_db_id()
+                .map_err(|_| Status::new(Code::InvalidArgument, "quoted_post_id_invalid"))?;
+            if db_id == existing_post.id {
+                return Err(Status::new(Code::InvalidArgument, "cannot_quote_self"));
+            }
+            if existing_post.quoted_post_id != Some(db_id)
+                && !post_is_visible_to(&Some(user), db_id, conn)
+            {
+                return Err(Status::new(Code::NotFound, "quoted_post_not_found"));
+            }
+            Some(db_id)
+        }
+        _ => None,
+    };
+
     let transaction_result: Result<models::Post, diesel::result::Error> = conn
         .transaction::<models::Post, diesel::result::Error, _>(|conn| {
             let now = SystemTime::now();
@@ -128,6 +157,10 @@ pub fn update_post(
                     .map(|m| m.id.to_db_id_or_err("media.id").map(|r| Some(r)))
                     .collect::<Result<Vec<Option<i64>>, Status>>()
                     .map_err(|_| diesel::result::Error::RollbackTransaction)?;
+
+                if existing_post.context == PostContext::Post.to_string_post_context() {
+                    existing_post.quoted_post_id = quoted_post_db_id;
+                }
 
                 existing_post.embed_link = request.embed_link;
                 existing_post.shareable = request.shareable;

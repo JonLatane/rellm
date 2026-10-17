@@ -9,6 +9,7 @@ module Shared.Federation.Mastodon exposing
     , fetchPosts
     , fetchFavourites
     , fetchStatus
+    , fetchStatusWithQuotes
     , fetchThread
     , lookupAccount
     , resolveStatusId
@@ -97,7 +98,28 @@ type alias Status =
     , sensitive : Bool
     , favouritesCount : Int
     , repliesCount : Int
+    , quote : Maybe Quote
     }
+
+
+{-| The status `Status.quote`s (Mastodon 4.5+'s quote posts, see
+<https://docs.joinmastodon.org/entities/Quote/>) -- `id` is always known, `status` only if the server
+inlined it (an `accepted` `Quote`'s `quoted_status`, itself only a shallow `ShallowQuote` of its own
+quote -- just a `quoted_status_id`). `fetchStatusWithQuotes` fills in the rest by fetching each missing
+`id` itself. A custom type rather than a plain record field since `Status` and its own quote are
+mutually recursive.
+-}
+type Quote
+    = Quote { id : String, status : Maybe Status }
+
+
+{-| How many levels of quotes a single status' own page (`fetchStatusWithQuotes`) resolves -- a status
+quoting a status quoting a status ... up to this many deep. A feed/card context (`toPost`) only ever shows
+the first, see `toPostWith`.
+-}
+maxPageQuoteDepth : Int
+maxPageQuoteDepth =
+    5
 
 
 {-| `Decode.map8` is already at `elm/json`'s own arity ceiling, so `mediaAttachments`/`sensitive`/
@@ -108,7 +130,7 @@ decoder : Decoder Status
 decoder =
     Decode.map8
         (\id url content createdAt inReplyToId authorUsername authorDisplayName authorAvatarUrl ->
-            \mediaAttachments sensitive favouritesCount repliesCount ->
+            \mediaAttachments sensitive favouritesCount repliesCount quote ->
                 { id = id
                 , url = url
                 , content = content
@@ -121,6 +143,7 @@ decoder =
                 , sensitive = sensitive
                 , favouritesCount = favouritesCount
                 , repliesCount = repliesCount
+                , quote = quote
                 }
         )
         (Decode.field "id" Decode.string)
@@ -135,6 +158,22 @@ decoder =
         |> Decode.andThen (\f -> Decode.map f (Decode.oneOf [ Decode.field "sensitive" Decode.bool, Decode.succeed False ]))
         |> Decode.andThen (\f -> Decode.map f (Decode.oneOf [ Decode.field "favourites_count" Decode.int, Decode.succeed 0 ]))
         |> Decode.andThen (\f -> Decode.map f (Decode.oneOf [ Decode.field "replies_count" Decode.int, Decode.succeed 0 ]))
+        |> Decode.andThen (\f -> Decode.map f quoteDecoder)
+
+
+{-| `quote.quoted_status` (a full `Status`) if the server inlined it, else just `quote.quoted_status_id`
+(a `ShallowQuote`, or an `accepted` quote whose status wasn't hydrated); no `quote` at all, `null`, or a
+`pending`/`rejected`/`revoked` one (neither field set) is `Nothing`.
+-}
+quoteDecoder : Decoder (Maybe Quote)
+quoteDecoder =
+    Decode.oneOf
+        [ Decode.at [ "quote", "quoted_status" ] (Decode.lazy (\_ -> decoder))
+            |> Decode.map (\status -> Just (Quote { id = status.id, status = Just status }))
+        , Decode.at [ "quote", "quoted_status_id" ] Decode.string
+            |> Decode.map (\id -> Just (Quote { id = id, status = Nothing }))
+        , Decode.succeed Nothing
+        ]
 
 
 mediaAttachmentDecoder : Decoder MediaAttachment
@@ -168,7 +207,7 @@ will be Rellm-hosted media. `media` uses the same `.url` approach, via `toMediaR
 -}
 toPost : String -> Status -> Post
 toPost =
-    toPostWith { includeSensitiveMedia = False }
+    toPostWith { includeSensitiveMedia = False, quoteDepth = 1 }
 
 
 {-| `fetchStatus`'s own translation, unlike `toPost` -- see that function's own doc on why a single
@@ -176,7 +215,7 @@ post's own page, unlike a feed/card, is allowed to actually show media Mastodon 
 -}
 toPostIncludingSensitiveMedia : String -> Status -> Post
 toPostIncludingSensitiveMedia =
-    toPostWith { includeSensitiveMedia = True }
+    toPostWith { includeSensitiveMedia = True, quoteDepth = 1 }
 
 
 {-| `toPost`'s real implementation -- `media` is left `[]` for a `status.sensitive` status unless
@@ -192,9 +231,14 @@ stripped this way, `media` becomes `[ sensitiveMediaHiddenPlaceholder ]` rather 
 all" and show its own "This post contains sensitive media" notice, itself linking through to
 `MastodonPostPage` (the one place this post's media does render) -- see `sensitiveMediaHiddenId`'s
 own doc. A non-`sensitive` status' media is unaffected either way.
+
+`quoteDepth` is how many levels of `status.quote` to carry into `Post.quotedPost` (a card is 1, a
+status' own page `maxPageQuoteDepth`, see `fetchStatusWithQuotes`) -- each quoted post is itself
+translated as `includeSensitiveMedia = False`, since it's only ever shown as an embedded card whose own
+link leads to a page where that media can actually be revealed.
 -}
-toPostWith : { includeSensitiveMedia : Bool } -> String -> Status -> Post
-toPostWith { includeSensitiveMedia } instanceHost status =
+toPostWith : { includeSensitiveMedia : Bool, quoteDepth : Int } -> String -> Status -> Post
+toPostWith { includeSensitiveMedia, quoteDepth } instanceHost status =
     { defaultPost
         | id = status.id
         , author = Just (toAuthor instanceHost status)
@@ -227,6 +271,17 @@ toPostWith { includeSensitiveMedia } instanceHost status =
         -- show it as a single number rather than a misleading "x/x".
         , replyCount = status.repliesCount
         , responseCount = status.repliesCount
+        , quotedPost =
+            case status.quote of
+                Just (Quote quote) ->
+                    if quoteDepth > 0 then
+                        Maybe.map (toPostWith { includeSensitiveMedia = False, quoteDepth = quoteDepth - 1 } instanceHost >> wrapPost) quote.status
+
+                    else
+                        Nothing
+
+                Nothing ->
+                    Nothing
     }
 
 
@@ -311,6 +366,62 @@ at all" -- see that module's own `sensitiveMediaRevealed`.
 -}
 fetchStatus : String -> String -> Task Http.Error ( Post, Bool )
 fetchStatus instanceHost statusId =
+    fetchRawStatus instanceHost statusId
+        |> Task.map (\status -> ( toPostIncludingSensitiveMedia instanceHost status, status.sensitive ))
+
+
+{-| `fetchStatus`, but also resolving the status' chain of quotes up to `maxPageQuoteDepth` deep into
+`Post.quotedPost`, for a status' own page. The server only inlines the first quoted status (any
+further one is a bare `quoted_status_id`), so each further level is a separate `GET /api/v1/statuses/:id`
+-- sequential, since each needs the previous one's quote id. A quote that can't be fetched just ends the
+chain there rather than failing the whole status.
+-}
+fetchStatusWithQuotes : String -> String -> Task Http.Error ( Post, Bool )
+fetchStatusWithQuotes instanceHost statusId =
+    fetchRawStatus instanceHost statusId
+        |> Task.andThen (expandQuotes instanceHost maxPageQuoteDepth)
+        |> Task.map
+            (\status ->
+                ( toPostWith { includeSensitiveMedia = True, quoteDepth = maxPageQuoteDepth } instanceHost status
+                , status.sensitive
+                )
+            )
+
+
+expandQuotes : String -> Int -> Status -> Task Http.Error Status
+expandQuotes instanceHost depth status =
+    case status.quote of
+        Just (Quote quote) ->
+            if depth <= 0 then
+                Task.succeed status
+
+            else
+                (case quote.status of
+                    Just hydrated ->
+                        Task.succeed (Just hydrated)
+
+                    Nothing ->
+                        fetchRawStatus instanceHost quote.id
+                            |> Task.map Just
+                            |> Task.onError (\_ -> Task.succeed Nothing)
+                )
+                    |> Task.andThen
+                        (\maybeQuoted ->
+                            case maybeQuoted of
+                                Just quoted ->
+                                    expandQuotes instanceHost (depth - 1) quoted
+                                        |> Task.map (\expanded -> { status | quote = Just (Quote { quote | status = Just expanded }) })
+
+                                Nothing ->
+                                    Task.succeed status
+                        )
+
+        Nothing ->
+            Task.succeed status
+
+
+fetchRawStatus : String -> String -> Task Http.Error Status
+fetchRawStatus instanceHost statusId =
     Http.task
         { method = "GET"
         , headers = []
@@ -319,7 +430,6 @@ fetchStatus instanceHost statusId =
         , resolver = jsonResolver decoder (\metadata _ -> Http.BadStatus metadata.statusCode)
         , timeout = Just 10000
         }
-        |> Task.map (\status -> ( toPostIncludingSensitiveMedia instanceHost status, status.sensitive ))
 
 
 {-| `GET /api/v1/statuses/:id/context` -- the status' whole conversation, unauthenticated for a public

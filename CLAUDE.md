@@ -10,7 +10,7 @@ Rellm (formerly Jonline; the checkout directory and some old docs/memory still s
 - `backend/` — Rust (edition 2024) server: tonic, Rocket, Diesel + Postgres, S3-compatible object storage (MinIO locally).
 - `frontends/elm-spa/` — Elm SPA (elm-spa 6). The actively developed frontend; served by the backend at `/elm`.
 - `frontends/tamagui/` — React/Next.js (Tamagui) frontend, yarn workspaces (`apps/next`, `apps/expo`, `packages/{api,app,ui}`). Served at `/tamagui`.
-- `frontends/flutter/` — Flutter app.
+- `frontends/flutter/` — Flutter app (frozen). Its SDK is pinned in `.fvmrc` and managed with **FVM** — always `fvm flutter …`/`fvm dart …`, never a bare `flutter`/`dart`; first-time setup is `make -C frontends/flutter fvm_install` (see its README).
 - `deploys/` — Kubernetes/Docker/release scripts (own Makefile); `docs/` — protocol docs generated from protos; `.github/workflows/` — CI/CD.
 
 Repo-local skills in `.claude/skills/` (run-backend, run-elm, run-tamagui, rebuild-protos, elm-call-rpc, elm-add-panel, elm-add-drag-reorder, add-background-job) cover the detailed procedures below — use them.
@@ -19,7 +19,7 @@ Repo-local skills in `.claude/skills/` (run-backend, run-elm, run-tamagui, rebui
 
 Root `Makefile` delegates to per-project Makefiles (`make run_backend|run_elm|run_tamagui`, `build_*`, `test_*`, `stop_dev_servers`, `run_tmux` for backend + Elm side by side).
 
-**Protos** (after any edit under `protos/`): run `make` at repo root (= `protos docs graphs`). It regenerates Flutter, Tamagui (`yarn protos`), and Elm (`make -C frontends/elm-spa protos`, needs `protoc-gen-elm`) bindings. Rust bindings regenerate in `cargo build` via `build.rs`; if stale, `cd backend && make rebuild_protos`. Generated files (`frontends/elm-spa/src/Proto/**`, `backend/src/protos/`, Tamagui `packages/api/generated`) are committed.
+**Protos** (after any edit under `protos/`): run `make` at repo root (= `protos docs graphs`). It regenerates Flutter (via FVM — `fvm` must be installed and `make -C frontends/flutter fvm_install` run once, plus `protoc` on PATH), Tamagui (`yarn protos`), and Elm (`make -C frontends/elm-spa protos`, needs `protoc-gen-elm`) bindings. Rust bindings regenerate in `cargo build` via `build.rs`; if stale, `cd backend && make rebuild_protos`. Generated files (`frontends/elm-spa/src/Proto/**`, `frontends/flutter/lib/generated/`, `backend/src/protos/`, Tamagui `packages/api/generated`) are committed.
 
 **Backend** (`cd backend`; needs `backend/.env`, see `.env-example`: `DATABASE_URL`, `TEST_DATABASE_URL`, `MINIO_*`):
 - `make local_object_storage_start run` — start MinIO docker container + `cargo run`. Listens on ports 80 and 8000 (gRPC) locally. `make local_instances_stop` kills it.

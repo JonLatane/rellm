@@ -94,6 +94,13 @@ pub fn delete_post(
                     .execute(conn)?;
             }
 
+            // The row survives a soft-delete (so the FK's `ON DELETE SET NULL` never fires) -- un-quote
+            // it explicitly rather than leaving other posts embedding an empty shell.
+            update(posts::table)
+                .filter(posts::quoted_post_id.eq(existing_post.id))
+                .set(posts::quoted_post_id.eq(None::<i64>))
+                .execute(conn)?;
+
             log::info!("Soft deleting post: {:?}", existing_post);
             let update_result = diesel::update(posts::table)
                 .filter(posts::id.eq(&existing_post.id))

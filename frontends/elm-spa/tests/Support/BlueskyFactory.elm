@@ -64,6 +64,7 @@ feedPost overrides =
     , sensitive = overrides.sensitive
     , likeCount = overrides.likeCount
     , replyCount = overrides.replyCount
+    , quote = Nothing
     }
 
 

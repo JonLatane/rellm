@@ -311,6 +311,8 @@ class Post extends $pb.GeneratedMessage {
     $fixnum.Int64? unauthenticatedStarCount,
     $core.Iterable<$10.SyncDestinationStatus>? syncDestinations,
     $10.SyncSource? syncSource,
+    Post? quotedPost,
+    $core.String? quotedPostId,
   }) {
     final $result = create();
     if (id != null) {
@@ -391,6 +393,12 @@ class Post extends $pb.GeneratedMessage {
     if (syncSource != null) {
       $result.syncSource = syncSource;
     }
+    if (quotedPost != null) {
+      $result.quotedPost = quotedPost;
+    }
+    if (quotedPostId != null) {
+      $result.quotedPostId = quotedPostId;
+    }
     return $result;
   }
   Post._() : super();
@@ -424,6 +432,8 @@ class Post extends $pb.GeneratedMessage {
     ..aInt64(24, _omitFieldNames ? '' : 'unauthenticatedStarCount')
     ..pc<$10.SyncDestinationStatus>(25, _omitFieldNames ? '' : 'syncDestinations', $pb.PbFieldType.PM, subBuilder: $10.SyncDestinationStatus.create)
     ..aOM<$10.SyncSource>(26, _omitFieldNames ? '' : 'syncSource', subBuilder: $10.SyncSource.create)
+    ..aOM<Post>(27, _omitFieldNames ? '' : 'quotedPost', subBuilder: Post.create)
+    ..aOS(28, _omitFieldNames ? '' : 'quotedPostId')
     ..hasRequiredFields = false
   ;
 
@@ -711,6 +721,35 @@ class Post extends $pb.GeneratedMessage {
   void clearSyncSource() => clearField(26);
   @$pb.TagNumber(26)
   $10.SyncSource ensureSyncSource() => $_ensure(25);
+
+  /// The post this post quotes (embeds). Output only, never read from requests (see
+  /// `quoted_post_id`). Rellm servers populate it one level deep (the quoted post's own
+  /// `quoted_post` is not filled in) when the viewer can see the quoted post; the Elm frontend's
+  /// Bluesky/Mastodon translators also set it, resolving as many levels as they choose.
+  @$pb.TagNumber(27)
+  Post get quotedPost => $_getN(26);
+  @$pb.TagNumber(27)
+  set quotedPost(Post v) { setField(27, v); }
+  @$pb.TagNumber(27)
+  $core.bool hasQuotedPost() => $_has(26);
+  @$pb.TagNumber(27)
+  void clearQuotedPost() => clearField(27);
+  @$pb.TagNumber(27)
+  Post ensureQuotedPost() => $_ensure(26);
+
+  /// The ID of a post this post quotes. Set it on `CreatePost`/`UpdatePost` to quote a post (any
+  /// post visible to the author); the server validates it, and then returns it on every read of
+  /// the quoting post, along with `quoted_post` populated (if the *viewer* can see the quoted
+  /// post). Only valid for a post whose `context` is `POST` -- a reply, `EVENT`, or `OCCASION`
+  /// with a `quoted_post_id` is an error. If the quoted post is later deleted, this is cleared.
+  @$pb.TagNumber(28)
+  $core.String get quotedPostId => $_getSZ(27);
+  @$pb.TagNumber(28)
+  set quotedPostId($core.String v) { $_setString(27, v); }
+  @$pb.TagNumber(28)
+  $core.bool hasQuotedPostId() => $_has(27);
+  @$pb.TagNumber(28)
+  void clearQuotedPostId() => clearField(28);
 }
 
 /// Syncs (cross-posts) a single Post to one SyncDestination.

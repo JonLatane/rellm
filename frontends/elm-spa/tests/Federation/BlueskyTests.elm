@@ -2,7 +2,8 @@ module Federation.BlueskyTests exposing (suite)
 
 import Expect
 import Json.Decode as Decode
-import Proto.Rellm exposing (unwrapMediaReference)
+import Components.Posts as Posts
+import Proto.Rellm exposing (defaultPost, unwrapMediaReference, unwrapPost)
 import Proto.Rellm.PostContext exposing (PostContext(..))
 import Proto.Rellm.Visibility exposing (Visibility(..))
 import Shared.Conversions exposing (int64ToInt)
@@ -198,4 +199,61 @@ suite =
                         |> (\post -> ( post.replyCount, post.responseCount ))
                         |> Expect.equal ( 7, 7 )
             ]
+        , describe "route ids"
+            [ test "a post's route id is just did~rkey, and its href carries the bare bluesky: host" <|
+                \_ ->
+                    Posts.postHref "" "rellm.org" "bluesky:jon-latane.bsky.social" { defaultPost | id = "at://did:plc:5q6ck4otnnwuwwxswrzrqnp5/app.bsky.feed.post/3mxywcvomys23" }
+                        |> Expect.equal "/post/did:plc:5q6ck4otnnwuwwxswrzrqnp5~3mxywcvomys23@bluesky:"
+            , test "the short route id parses back to the full at:// uri" <|
+                \_ ->
+                    Posts.parsePostRouteId "rellm.org" "did:plc:5q6ck4otnnwuwwxswrzrqnp5~3mxywcvomys23@bluesky:"
+                        |> Expect.equal ( "at://did:plc:5q6ck4otnnwuwwxswrzrqnp5/app.bsky.feed.post/3mxywcvomys23", "bluesky:" )
+            , test "the older long (percent-encoded uri, handle in the host) route form still parses" <|
+                \_ ->
+                    Posts.parsePostRouteId "rellm.org" "at%3A%2F%2Fdid%3Aplc%3Aabc%2Fapp.bsky.feed.post%2Fxyz@bluesky:jon-latane.bsky.social"
+                        |> Expect.equal ( "at://did:plc:abc/app.bsky.feed.post/xyz", "bluesky:jon-latane.bsky.social" )
+            , test "an rkey containing ~ round-trips (only the first ~ separates)" <|
+                \_ ->
+                    "at://did:plc:abc/app.bsky.feed.post/a~b"
+                        |> Bluesky.routeId
+                        |> Bluesky.fromRouteId
+                        |> Expect.equal "at://did:plc:abc/app.bsky.feed.post/a~b"
+            , test "a uri that isn't a post record falls back to the encoded uri, and still round-trips" <|
+                \_ ->
+                    Posts.parsePostRouteId "rellm.org" (Bluesky.routeId "at://did:plc:abc/app.bsky.feed.generator/xyz" ++ "@bluesky:")
+                        |> Expect.equal ( "at://did:plc:abc/app.bsky.feed.generator/xyz", "bluesky:" )
+            , test "a Mastodon or Rellm post's href is unchanged" <|
+                \_ ->
+                    Posts.postHref "" "rellm.org" "mastodon:mastodon.social" { defaultPost | id = "110224857075517327" }
+                        |> Expect.equal "/post/110224857075517327@mastodon:mastodon.social"
+            ]
+        , describe "quoted posts"
+            [ test "an app.bsky.embed.record#view embed becomes Post.quotedPost, itself translated like any other post" <|
+                \_ ->
+                    quotingPostJson
+                        |> Decode.decodeString Bluesky.decoder
+                        |> Result.map (Bluesky.toPost >> .quotedPost >> Maybe.map (unwrapPost >> (\quoted -> ( quoted.content, quoted.id ))))
+                        |> Expect.equal (Ok (Just ( Just "quoted text", "at://did:plc:quoted/app.bsky.feed.post/1" )))
+            , test "a card (toPost) only goes one quote deep, even though the next level was hydrated too" <|
+                \_ ->
+                    quotingPostJson
+                        |> Decode.decodeString Bluesky.decoder
+                        |> Result.map (Bluesky.toPost >> .quotedPost >> Maybe.andThen (unwrapPost >> .quotedPost))
+                        |> Expect.equal (Ok Nothing)
+            , test "a quoted post that was deleted/blocked (no hydrated record) leaves no quotedPost" <|
+                \_ ->
+                    """{"post":{"uri":"at://did:plc:a/app.bsky.feed.post/2","author":{"handle":"a.bsky.social"},"record":{"text":"hi","createdAt":"2023-04-05T12:00:00.000Z","embed":{"record":{"uri":"at://did:plc:gone/app.bsky.feed.post/9"}}},"embed":{"$type":"app.bsky.embed.record#view","record":{"$type":"app.bsky.embed.record#viewNotFound","uri":"at://did:plc:gone/app.bsky.feed.post/9","notFound":true}}}}"""
+                        |> Decode.decodeString Bluesky.decoder
+                        |> Result.map (Bluesky.toPost >> .quotedPost)
+                        |> Expect.equal (Ok Nothing)
+            ]
         ]
+
+
+{-| A post quoting a post (`quoted text`) that itself quotes a third (`deeper text`), shaped like
+`app.bsky.feed.getTimeline`'s `feedViewPost` -- the inner quote is only hydrated one level deep in
+`embeds`, same as AT Proto's own AppView.
+-}
+quotingPostJson : String
+quotingPostJson =
+    """{"post":{"uri":"at://did:plc:a/app.bsky.feed.post/1","author":{"handle":"a.bsky.social"},"record":{"text":"look at this","createdAt":"2023-04-05T12:00:00.000Z","embed":{"$type":"app.bsky.embed.record","record":{"uri":"at://did:plc:quoted/app.bsky.feed.post/1","cid":"c"}}},"embed":{"$type":"app.bsky.embed.record#view","record":{"$type":"app.bsky.embed.record#viewRecord","uri":"at://did:plc:quoted/app.bsky.feed.post/1","author":{"handle":"quoted.bsky.social","displayName":"Quoted"},"value":{"text":"quoted text","createdAt":"2023-04-05T12:00:00.000Z","embed":{"$type":"app.bsky.embed.record","record":{"uri":"at://did:plc:deeper/app.bsky.feed.post/1","cid":"d"}}},"embeds":[{"$type":"app.bsky.embed.record#view","record":{"$type":"app.bsky.embed.record#viewRecord","uri":"at://did:plc:deeper/app.bsky.feed.post/1","author":{"handle":"deeper.bsky.social"},"value":{"text":"deeper text","createdAt":"2023-04-05T12:00:00.000Z"}}}]}}}}"""

@@ -964,3 +964,53 @@
   margin: 1rem 0 0.5rem;
   font-size: 1rem;
 }
+
+/* `Components.Posts.quotedPostCard` -- a federated post's quoted post, embedded in the quoting post's
+   own card/page. `position: relative` both anchors its own `.post-card-link-overlay` (a link to the
+   quoted post's own page) and, being positioned and later in the DOM, paints above the quoting card's
+   overlay so clicking the quote opens the quoted post rather than the quoting one. */
+.post-card-quote {
+  position: relative;
+  margin: 0.5rem 0;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid;
+  border-radius: 8px;
+  font-size: 0.95em;
+}
+
+/* `position: relative` for the same reason `.post-card-meta` has it: paints the author link above the
+   quote's own overlay so it stays independently clickable. */
+.post-card-quote-meta {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.post-card-quote-media-note {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin: 0.2rem 0;
+  pointer-events: none;
+}
+
+/* `Components.Posts.quoteButton` -- an icon-only button in `postDetail`'s meta row, sized and spaced
+   like the `.post-star` beside it. */
+.post-quote-button {
+  display: inline-block;
+  margin: 0 0.25rem;
+  padding: 0 0.3rem;
+  border: none;
+  background: none;
+  color: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.post-quote-button:hover {
+  opacity: 1;
+}

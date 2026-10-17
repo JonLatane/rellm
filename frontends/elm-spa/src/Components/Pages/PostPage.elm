@@ -49,6 +49,7 @@ import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer)
 import Shared.Breadcrumbs as Breadcrumbs
+import Shared.CreateNewPanel as CreateNewPanel
 import Shared.MarkdownPanel as MarkdownPanel
 import Shared.MediaGeneratorPanel as MediaGeneratorPanel
 import Shared.MediaViewerPanel as MediaViewerPanel
@@ -134,6 +135,7 @@ type Msg
     | MediaClicked Post String
     | MediaEditClicked Post
     | GenerateMediaClicked Post
+    | QuoteClicked Post
     | GotMediaUpdateResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, Post ))
       -- `Components.Posts.mediaLayoutSelector`'s `onMediaLayoutChanged` --
       -- unlike `MediaEditClicked`, this saves straight away (no picker panel,
@@ -445,6 +447,11 @@ update shared msg model =
                         model.targetHost
                     )
                 )
+            )
+
+        QuoteClicked post ->
+            ( model
+            , Effect.fromShared (Shared.CreateNewPanelMsg (CreateNewPanel.OpenQuoting model.targetHost post))
             )
 
         GenerateMediaClicked post ->
@@ -896,6 +903,21 @@ postDetailView shared model post =
         -- `Nothing` when the viewer has no image-capable `AIModel` at all -- see
         -- `Posts.generateMediaButton`'s own doc on why this decision lives at the call site rather
         -- than inside `Components.Posts`.
+        -- Only offered to a viewer with an account on this post's own server that could actually
+        -- create a post there -- a quote is just a new post (`CreateNewPanel`) carrying this one's id.
+        onQuoteClicked : Maybe Msg
+        onQuoteClicked =
+            case maybeAccount of
+                Just account ->
+                    if RellmAccounts.isAdmin account || List.member CREATEPOSTS account.permissions then
+                        Just (QuoteClicked displayPost)
+
+                    else
+                        Nothing
+
+                Nothing ->
+                    Nothing
+
         onGenerateMediaClicked : Maybe Msg
         onGenerateMediaClicked =
             case maybeAccount of
@@ -925,6 +947,7 @@ postDetailView shared model post =
         starred
         onStarClicked
         (EditClicked post)
+        onQuoteClicked
         (visibilityView maybeAccount model.visibilityEdit displayPost)
         (moderationView maybeAccount model.moderationEdit displayPost)
         model.availableSyncDestinations

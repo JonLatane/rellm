@@ -2,7 +2,7 @@ module Federation.MastodonTests exposing (suite)
 
 import Expect
 import Json.Decode as Decode
-import Proto.Rellm exposing (unwrapMediaReference)
+import Proto.Rellm exposing (unwrapMediaReference, unwrapPost)
 import Proto.Rellm.PostContext exposing (PostContext(..))
 import Proto.Rellm.Visibility exposing (Visibility(..))
 import Shared.Conversions exposing (int64ToInt)
@@ -244,4 +244,34 @@ suite =
                         |> (\post -> ( post.replyCount, post.responseCount ))
                         |> Expect.equal ( 13, 13 )
             ]
+        , describe "quoted posts"
+            [ test "an accepted quote's quoted_status becomes Post.quotedPost, itself translated like any other status" <|
+                \_ ->
+                    quotingStatusJson ("""{"state":"accepted","quoted_status":""" ++ statusJsonWithId "2" "quoted text" ++ "}")
+                        |> Decode.decodeString Mastodon.decoder
+                        |> Result.map (Mastodon.toPost "mastodon.social" >> .quotedPost >> Maybe.map (unwrapPost >> (\quoted -> ( quoted.content, quoted.id ))))
+                        |> Expect.equal (Ok (Just ( Just "quoted text", "2" )))
+            , test "a quote that isn't accepted (no quoted_status) leaves no quotedPost" <|
+                \_ ->
+                    quotingStatusJson """{"state":"pending","quoted_status":null}"""
+                        |> Decode.decodeString Mastodon.decoder
+                        |> Result.map (Mastodon.toPost "mastodon.social" >> .quotedPost)
+                        |> Expect.equal (Ok Nothing)
+            , test "a shallow quote (just quoted_status_id) isn't inlined into a card's quotedPost -- only fetchStatusWithQuotes resolves it" <|
+                \_ ->
+                    quotingStatusJson """{"state":"accepted","quoted_status_id":"7"}"""
+                        |> Decode.decodeString Mastodon.decoder
+                        |> Result.map (Mastodon.toPost "mastodon.social" >> .quotedPost)
+                        |> Expect.equal (Ok Nothing)
+            ]
         ]
+
+
+statusJsonWithId : String -> String -> String
+statusJsonWithId id content =
+    "{\"id\":\"" ++ id ++ "\",\"content\":\"" ++ content ++ "\",\"created_at\":\"2023-04-05T12:00:00.000Z\",\"account\":{\"username\":\"alice\",\"display_name\":\"Alice\",\"avatar\":\"\"}}"
+
+
+quotingStatusJson : String -> String
+quotingStatusJson quoteJson =
+    """{"id":"1","content":"look at this","created_at":"2023-04-05T12:00:00.000Z","account":{"username":"bob","display_name":"Bob","avatar":""},"quote":""" ++ quoteJson ++ "}"

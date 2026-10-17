@@ -1733,6 +1733,9 @@ sharedUpdate req msg model =
                         CreateNewPanel.ToggleOpen ->
                             subModel.open
 
+                        CreateNewPanel.OpenQuoting _ _ ->
+                            True
+
                         _ ->
                             False
 
@@ -1755,6 +1758,9 @@ sharedUpdate req msg model =
                         CreateNewPanel.ToggleOpen ->
                             subModel.open
 
+                        CreateNewPanel.OpenQuoting _ _ ->
+                            True
+
                         _ ->
                             False
 
@@ -1773,6 +1779,9 @@ sharedUpdate req msg model =
                     case subMsg of
                         CreateNewPanel.ToggleOpen ->
                             subModel.open
+
+                        CreateNewPanel.OpenQuoting _ _ ->
+                            True
 
                         _ ->
                             False

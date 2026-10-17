@@ -383,7 +383,26 @@ export interface Post {
    * Event/Occasion, or an RSS/Atom feed item), this is the source it was synced from.
    * Only its media should be considered editable for such a Post.
    */
-  syncSource?: SyncSource | undefined;
+  syncSource?:
+    | SyncSource
+    | undefined;
+  /**
+   * The post this post quotes (embeds). Output only, never read from requests (see
+   * `quoted_post_id`). Rellm servers populate it one level deep (the quoted post's own
+   * `quoted_post` is not filled in) when the viewer can see the quoted post; the Elm frontend's
+   * Bluesky/Mastodon translators also set it, resolving as many levels as they choose.
+   */
+  quotedPost?:
+    | Post
+    | undefined;
+  /**
+   * The ID of a post this post quotes. Set it on `CreatePost`/`UpdatePost` to quote a post (any
+   * post visible to the author); the server validates it, and then returns it on every read of
+   * the quoting post, along with `quoted_post` populated (if the *viewer* can see the quoted
+   * post). Only valid for a post whose `context` is `POST` -- a reply, `EVENT`, or `OCCASION`
+   * with a `quoted_post_id` is an error. If the quoted post is later deleted, this is cleared.
+   */
+  quotedPostId?: string | undefined;
 }
 
 /** Syncs (cross-posts) a single Post to one SyncDestination. */
@@ -761,6 +780,8 @@ function createBasePost(): Post {
     unauthenticatedStarCount: 0,
     syncDestinations: [],
     syncSource: undefined,
+    quotedPost: undefined,
+    quotedPostId: undefined,
   };
 }
 
@@ -843,6 +864,12 @@ export const Post: MessageFns<Post> = {
     }
     if (message.syncSource !== undefined) {
       SyncSource.encode(message.syncSource, writer.uint32(210).fork()).join();
+    }
+    if (message.quotedPost !== undefined) {
+      Post.encode(message.quotedPost, writer.uint32(218).fork()).join();
+    }
+    if (message.quotedPostId !== undefined) {
+      writer.uint32(226).string(message.quotedPostId);
     }
     return writer;
   },
@@ -1062,6 +1089,22 @@ export const Post: MessageFns<Post> = {
           message.syncSource = SyncSource.decode(reader, reader.uint32());
           continue;
         }
+        case 27: {
+          if (tag !== 218) {
+            break;
+          }
+
+          message.quotedPost = Post.decode(reader, reader.uint32());
+          continue;
+        }
+        case 28: {
+          if (tag !== 226) {
+            break;
+          }
+
+          message.quotedPostId = reader.string();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1103,6 +1146,8 @@ export const Post: MessageFns<Post> = {
         ? object.syncDestinations.map((e: any) => SyncDestinationStatus.fromJSON(e))
         : [],
       syncSource: isSet(object.syncSource) ? SyncSource.fromJSON(object.syncSource) : undefined,
+      quotedPost: isSet(object.quotedPost) ? Post.fromJSON(object.quotedPost) : undefined,
+      quotedPostId: isSet(object.quotedPostId) ? globalThis.String(object.quotedPostId) : undefined,
     };
   },
 
@@ -1186,6 +1231,12 @@ export const Post: MessageFns<Post> = {
     if (message.syncSource !== undefined) {
       obj.syncSource = SyncSource.toJSON(message.syncSource);
     }
+    if (message.quotedPost !== undefined) {
+      obj.quotedPost = Post.toJSON(message.quotedPost);
+    }
+    if (message.quotedPostId !== undefined) {
+      obj.quotedPostId = message.quotedPostId;
+    }
     return obj;
   },
 
@@ -1226,6 +1277,10 @@ export const Post: MessageFns<Post> = {
     message.syncSource = (object.syncSource !== undefined && object.syncSource !== null)
       ? SyncSource.fromPartial(object.syncSource)
       : undefined;
+    message.quotedPost = (object.quotedPost !== undefined && object.quotedPost !== null)
+      ? Post.fromPartial(object.quotedPost)
+      : undefined;
+    message.quotedPostId = object.quotedPostId ?? undefined;
     return message;
   },
 };

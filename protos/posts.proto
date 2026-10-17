@@ -189,6 +189,19 @@ message Post {
   // Event/Occasion, or an RSS/Atom feed item), this is the source it was synced from.
   // Only its media should be considered editable for such a Post.
   optional SyncSource sync_source = 26;
+
+  // The post this post quotes (embeds). Output only, never read from requests (see
+  // `quoted_post_id`). Rellm servers populate it one level deep (the quoted post's own
+  // `quoted_post` is not filled in) when the viewer can see the quoted post; the Elm frontend's
+  // Bluesky/Mastodon translators also set it, resolving as many levels as they choose.
+  optional Post quoted_post = 27;
+
+  // The ID of a post this post quotes. Set it on `CreatePost`/`UpdatePost` to quote a post (any
+  // post visible to the author); the server validates it, and then returns it on every read of
+  // the quoting post, along with `quoted_post` populated (if the *viewer* can see the quoted
+  // post). Only valid for a post whose `context` is `POST` -- a reply, `EVENT`, or `OCCASION`
+  // with a `quoted_post_id` is an error. If the quoted post is later deleted, this is cleared.
+  optional string quoted_post_id = 28;
 }
 
 // Syncs (cross-posts) a single Post to one SyncDestination.

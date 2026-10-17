@@ -14,7 +14,7 @@ mod unstar_post;
 pub use unstar_post::unstar_post;
 
 mod get_posts;
-pub use get_posts::get_posts;
+pub use get_posts::{attach_quoted_posts, get_posts, post_is_visible_to};
 
 mod create_group_post;
 pub use create_group_post::create_group_post;

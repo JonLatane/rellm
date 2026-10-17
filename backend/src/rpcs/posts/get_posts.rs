@@ -94,9 +94,9 @@ pub fn get_posts(
         (_, None, _) => get_public_and_following_posts(&request, &user, conn),
     };
 
-    Ok(GetPostsResponse {
-        posts: convert_posts(&result, conn),
-    })
+    let mut posts = convert_posts(&result, conn);
+    attach_quoted_posts(&mut posts, user, conn);
+    Ok(GetPostsResponse { posts })
 }
 
 macro_rules! query_visible_posts {
@@ -133,6 +133,59 @@ macro_rules! query_visible_posts {
             .distinct()
             .limit(PAGE_SIZE)
     }};
+}
+
+/// Fills in `Post.quoted_post` (one level deep -- the quoted post's own quote is left unresolved)
+/// for every post in `posts` whose `quoted_post_id` the `user` can actually see. A quoted post
+/// the viewer can't see (private, deleted-then-cleared, etc.) just stays `quoted_post: None`,
+/// with `quoted_post_id` still set.
+pub fn attach_quoted_posts(
+    posts: &mut Vec<Post>,
+    user: &Option<&models::User>,
+    conn: &mut PgPooledConnection,
+) {
+    let quoted_ids: Vec<i64> = posts
+        .iter()
+        .filter_map(|p| p.quoted_post_id.as_ref())
+        .filter_map(|id| id.to_owned().to_db_id().ok())
+        .collect();
+    if quoted_ids.is_empty() {
+        return;
+    }
+    let quoted: Vec<MarshalablePost> = query_visible_posts!(user)
+        .filter(posts::id.eq_any(quoted_ids))
+        .select((models::POST_COLUMNS, models::AUTHOR_COLUMNS.nullable()))
+        .load::<(models::Post, Option<models::Author>)>(conn)
+        .unwrap_or_default()
+        .iter()
+        .map(|(post, author)| MarshalablePost(post.clone(), author.clone(), None, None, vec![]))
+        .collect();
+    let quoted_by_id: HashMap<String, Post> = convert_posts(&quoted, conn)
+        .into_iter()
+        .map(|p| (p.id.clone(), p))
+        .collect();
+    for post in posts.iter_mut() {
+        if let Some(quoted_post) = post
+            .quoted_post_id
+            .as_ref()
+            .and_then(|id| quoted_by_id.get(id))
+        {
+            post.quoted_post = Some(Box::new(quoted_post.clone()));
+        }
+    }
+}
+
+/// Whether `post_db_id` exists and is visible to `user` -- what a post must be to be quoted.
+pub fn post_is_visible_to(
+    user: &Option<&models::User>,
+    post_db_id: i64,
+    conn: &mut PgPooledConnection,
+) -> bool {
+    query_visible_posts!(user)
+        .filter(posts::id.eq(post_db_id))
+        .select(posts::id)
+        .first::<i64>(conn)
+        .is_ok()
 }
 
 fn get_by_post_id(

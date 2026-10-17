@@ -9,9 +9,12 @@ module Shared.Federation.Bluesky exposing
     , fetchFollows
     , fetchLikes
     , fetchPost
+    , fetchPostWithQuotes
     , fetchPosts
     , fetchThread
+    , fromRouteId
     , searchActors
+    , routeId
     , searchPosts
     , setLike
     , toPost
@@ -100,7 +103,27 @@ type alias FeedPost =
     , sensitive : Bool
     , likeCount : Int
     , replyCount : Int
+    , quote : Maybe Quote
     }
+
+
+{-| The post `FeedPost.quote`s (an `app.bsky.embed.record`/`recordWithMedia` embed) -- `uri` is always
+known, `post` only if AT Proto's own hydration already inlined it (one level of quote-of-quote at
+most, see `viewRecordDecoder`; Bluesky's own UI doesn't surface even that). `fetchPostWithQuotes` fills
+in the rest by fetching each missing `uri` itself. A custom type rather than a plain record field since
+`FeedPost` and its own quote are mutually recursive.
+-}
+type Quote
+    = Quote { uri : String, post : Maybe FeedPost }
+
+
+{-| How many levels of quotes a single post's own page (`fetchPostWithQuotes`) resolves -- a post
+quoting a post quoting a post ... up to this many deep. A feed/card context (`toPost`) only ever shows
+the first, see `toPostWith`.
+-}
+maxPageQuoteDepth : Int
+maxPageQuoteDepth =
+    5
 
 
 {-| `Decode.map8` is already at `elm/json`'s own arity ceiling, so `sensitive`/`likeCount`/
@@ -111,7 +134,7 @@ decoder : Decoder FeedPost
 decoder =
     Decode.map8
         (\uri text createdAt isReply authorHandle authorDisplayName authorAvatarUrl images ->
-            \sensitive likeCount replyCount ->
+            \sensitive likeCount replyCount quote ->
                 { uri = uri
                 , text = text
                 , createdAt = createdAt
@@ -123,6 +146,7 @@ decoder =
                 , sensitive = sensitive
                 , likeCount = likeCount
                 , replyCount = replyCount
+                , quote = quote
                 }
         )
         (Decode.at [ "post", "uri" ] Decode.string)
@@ -136,6 +160,7 @@ decoder =
         |> Decode.andThen (\f -> Decode.map f (sensitiveDecoder [ "post", "labels" ]))
         |> Decode.andThen (\f -> Decode.map f (countDecoder [ "post", "likeCount" ]))
         |> Decode.andThen (\f -> Decode.map f (countDecoder [ "post", "replyCount" ]))
+        |> Decode.andThen (\f -> Decode.map f (quoteDecoder [ "post", "record" ] (Decode.maybe (Decode.at [ "post", "embed" ] embedViewQuoteDecoder))))
 
 
 {-| `embedPath ++ [ "images" ]` (e.g. `[ "post", "embed", "images" ]` for `decoder`'s nested
@@ -152,6 +177,10 @@ imagesDecoder : List String -> Decoder (List BlueskyImage)
 imagesDecoder embedPath =
     Decode.oneOf
         [ Decode.at embedPath (Decode.list blueskyImageDecoder)
+
+        -- An `app.bsky.embed.recordWithMedia#view` (a quote post with its own images attached)
+        -- nests the images view under `media` instead.
+        , Decode.at (List.take (List.length embedPath - 1) embedPath ++ [ "media", "images" ]) (Decode.list blueskyImageDecoder)
         , Decode.succeed []
         ]
 
@@ -188,6 +217,96 @@ countDecoder countPath =
     Decode.oneOf [ Decode.at countPath Decode.int, Decode.succeed 0 ]
 
 
+{-| A post's `quote`, from two sources. `recordPath` is the post's own raw record (`[ "record" ]` for a
+`postView`, `[ "value" ]` for a `viewRecord`), whose `embed` always names what's quoted by `uri` even
+when the AppView didn't hydrate it; `inline` is that hydrated `viewRecord`, if present. No quote at all
+(or a deleted/blocked/detached one, which has a `uri` but no hydrated `viewRecord` and so reads as a
+dangling `uri` that `fetchPostWithQuotes` then fails to resolve) is `Nothing` only when neither exists.
+-}
+quoteDecoder : List String -> Decoder (Maybe FeedPost) -> Decoder (Maybe Quote)
+quoteDecoder recordPath inline =
+    Decode.map2
+        (\rawUri hydrated ->
+            case hydrated of
+                Just post ->
+                    Just (Quote { uri = post.uri, post = Just post })
+
+                Nothing ->
+                    Maybe.map (\uri -> Quote { uri = uri, post = Nothing }) rawUri
+        )
+        (Decode.maybe
+            (Decode.oneOf
+                [ Decode.at (recordPath ++ [ "embed", "record", "uri" ]) Decode.string
+                , Decode.at (recordPath ++ [ "embed", "record", "record", "uri" ]) Decode.string
+                ]
+            )
+        )
+        inline
+
+
+{-| An `app.bsky.embed.record#view` (`record` is the `viewRecord`) or `recordWithMedia#view` (`record`
+is a wrapper whose own `record` is) -- decodes the hydrated quoted post, failing for
+`viewNotFound`/`viewBlocked`/`viewDetached` (no `value`).
+-}
+embedViewQuoteDecoder : Decoder FeedPost
+embedViewQuoteDecoder =
+    Decode.oneOf
+        [ Decode.field "record" (Decode.lazy (\_ -> viewRecordDecoder))
+        , Decode.at [ "record", "record" ] (Decode.lazy (\_ -> viewRecordDecoder))
+        ]
+
+
+{-| `app.bsky.embed.record#viewRecord` -- a quoted post, a subtly different shape from `postView`:
+the raw record is `value` (not `record`), and embeds are an `embeds` array (not a single `embed`).
+-}
+viewRecordDecoder : Decoder FeedPost
+viewRecordDecoder =
+    Decode.map8
+        (\uri text createdAt isReply authorHandle authorDisplayName authorAvatarUrl images ->
+            \sensitive likeCount replyCount quote ->
+                { uri = uri
+                , text = text
+                , createdAt = createdAt
+                , isReply = isReply
+                , authorHandle = authorHandle
+                , authorDisplayName = authorDisplayName
+                , authorAvatarUrl = authorAvatarUrl
+                , images = images
+                , sensitive = sensitive
+                , likeCount = likeCount
+                , replyCount = replyCount
+                , quote = quote
+                }
+        )
+        (Decode.field "uri" Decode.string)
+        (Decode.at [ "value", "text" ] Decode.string)
+        (Decode.at [ "value", "createdAt" ] Iso8601.decoder)
+        (Decode.maybe (Decode.at [ "value", "reply" ] Decode.value) |> Decode.map ((/=) Nothing))
+        (Decode.at [ "author", "handle" ] Decode.string)
+        (Decode.maybe (Decode.at [ "author", "displayName" ] Decode.string) |> Decode.map (Maybe.andThen nonEmpty))
+        (Decode.maybe (Decode.at [ "author", "avatar" ] Decode.string))
+        (Decode.oneOf
+            [ Decode.field "embeds" (Decode.list (imagesDecoder [ "images" ])) |> Decode.map List.concat
+            , Decode.succeed []
+            ]
+        )
+        |> Decode.andThen (\f -> Decode.map f (sensitiveDecoder [ "labels" ]))
+        |> Decode.andThen (\f -> Decode.map f (countDecoder [ "likeCount" ]))
+        |> Decode.andThen (\f -> Decode.map f (countDecoder [ "replyCount" ]))
+        |> Decode.andThen
+            (\f ->
+                Decode.map f
+                    (quoteDecoder [ "value" ]
+                        (Decode.oneOf
+                            [ Decode.field "embeds" (Decode.list (Decode.maybe embedViewQuoteDecoder))
+                                |> Decode.map (List.filterMap identity >> List.head)
+                            , Decode.succeed Nothing
+                            ]
+                        )
+                    )
+            )
+
+
 {-| A `FeedPost`'s translation into a Rellm `Post` -- `id` is just the bare `feedPost.uri` (an
 `at://` URI, already globally unique on its own -- it embeds the author's DID), _not_ further
 prefixed with `"bluesky:"` the way it briefly was, mirroring `Shared.Federation.Mastodon.toPost`'s
@@ -202,7 +321,7 @@ regardless of `feedPost.images`.
 -}
 toPost : FeedPost -> Post
 toPost =
-    toPostWith { includeSensitiveMedia = False }
+    toPostWith { includeSensitiveMedia = False, quoteDepth = 1 }
 
 
 {-| `fetchPost`'s own translation, unlike `toPost` -- see that function's own doc on why a single
@@ -210,7 +329,7 @@ post's own page, unlike a feed/card, is allowed to actually show media AT Proto 
 -}
 toPostIncludingSensitiveMedia : FeedPost -> Post
 toPostIncludingSensitiveMedia =
-    toPostWith { includeSensitiveMedia = True }
+    toPostWith { includeSensitiveMedia = True, quoteDepth = 1 }
 
 
 {-| `toPost`'s real implementation -- mirrors `Shared.Federation.Mastodon.toPostWith`'s own doc
@@ -224,9 +343,14 @@ explicitly opened this exact post (`includeSensitiveMedia`, `Components.Bluesky.
 `[ sensitiveMediaHiddenPlaceholder ]` rather than plain `[]`, so `Components.Posts.hasHiddenSensitiveMedia`
 can tell "hidden sensitive media" apart from "no media at all" -- see `sensitiveMediaHiddenId`'s own
 doc.
+
+`quoteDepth` is how many levels of `feedPost.quote` to carry into `Post.quotedPost` (a card is 1, a post's
+own page `maxPageQuoteDepth`, see `fetchPostWithQuotes`) -- each quoted post is itself translated as
+`includeSensitiveMedia = False`, since it's only ever shown as an embedded card whose own link leads to
+a page where that media can actually be revealed.
 -}
-toPostWith : { includeSensitiveMedia : Bool } -> FeedPost -> Post
-toPostWith { includeSensitiveMedia } feedPost =
+toPostWith : { includeSensitiveMedia : Bool, quoteDepth : Int } -> FeedPost -> Post
+toPostWith { includeSensitiveMedia, quoteDepth } feedPost =
     { defaultPost
         | id = feedPost.uri
         , author = Just (toAuthor feedPost)
@@ -259,6 +383,17 @@ toPostWith { includeSensitiveMedia } feedPost =
         -- show it as a single number rather than a misleading "x/x".
         , replyCount = feedPost.replyCount
         , responseCount = feedPost.replyCount
+        , quotedPost =
+            case feedPost.quote of
+                Just (Quote quote) ->
+                    if quoteDepth > 0 then
+                        Maybe.map (toPostWith { includeSensitiveMedia = False, quoteDepth = quoteDepth - 1 } >> wrapPost) quote.post
+
+                    else
+                        Nothing
+
+                Nothing ->
+                    Nothing
     }
 
 
@@ -343,7 +478,7 @@ searchDecoder : Decoder FeedPost
 searchDecoder =
     Decode.map8
         (\uri text createdAt isReply authorHandle authorDisplayName authorAvatarUrl images ->
-            \sensitive likeCount replyCount ->
+            \sensitive likeCount replyCount quote ->
                 { uri = uri
                 , text = text
                 , createdAt = createdAt
@@ -355,6 +490,7 @@ searchDecoder =
                 , sensitive = sensitive
                 , likeCount = likeCount
                 , replyCount = replyCount
+                , quote = quote
                 }
         )
         (Decode.field "uri" Decode.string)
@@ -368,6 +504,7 @@ searchDecoder =
         |> Decode.andThen (\f -> Decode.map f (sensitiveDecoder [ "labels" ]))
         |> Decode.andThen (\f -> Decode.map f (countDecoder [ "likeCount" ]))
         |> Decode.andThen (\f -> Decode.map f (countDecoder [ "replyCount" ]))
+        |> Decode.andThen (\f -> Decode.map f (quoteDecoder [ "record" ] (Decode.maybe (Decode.field "embed" embedViewQuoteDecoder))))
 
 
 {-| For `fetchPost`/`fetchThread` only (public, read-only data): an empty `accessToken` means "no
@@ -408,6 +545,63 @@ still needed even though `toPostIncludingSensitiveMedia` already includes the me
 -}
 fetchPost : String -> String -> Task Http.Error ( Post, Bool )
 fetchPost accessToken uri =
+    fetchFeedPost accessToken uri
+        |> Task.map (\feedPost -> ( toPostIncludingSensitiveMedia feedPost, feedPost.sensitive ))
+
+
+{-| `fetchPost`, but also resolving the post's chain of quotes (a post quoting a post quoting a post
+...) up to `maxPageQuoteDepth` deep into `Post.quotedPost`, for a post's own page. AT Proto's own
+hydration inlines only the first quoted post (and not even its own quote, see `viewRecordDecoder`), so
+each further level is a separate `getPosts` -- sequential, since each needs the previous one's quote
+`uri`. A quote that can't be fetched (deleted, blocked, a network error) just ends the chain there
+rather than failing the whole post.
+-}
+fetchPostWithQuotes : String -> String -> Task Http.Error ( Post, Bool )
+fetchPostWithQuotes accessToken uri =
+    fetchFeedPost accessToken uri
+        |> Task.andThen (expandQuotes accessToken maxPageQuoteDepth)
+        |> Task.map
+            (\feedPost ->
+                ( toPostWith { includeSensitiveMedia = True, quoteDepth = maxPageQuoteDepth } feedPost
+                , feedPost.sensitive
+                )
+            )
+
+
+expandQuotes : String -> Int -> FeedPost -> Task Http.Error FeedPost
+expandQuotes accessToken depth feedPost =
+    case feedPost.quote of
+        Just (Quote quote) ->
+            if depth <= 0 then
+                Task.succeed feedPost
+
+            else
+                (case quote.post of
+                    Just hydrated ->
+                        Task.succeed (Just hydrated)
+
+                    Nothing ->
+                        fetchFeedPost accessToken quote.uri
+                            |> Task.map Just
+                            |> Task.onError (\_ -> Task.succeed Nothing)
+                )
+                    |> Task.andThen
+                        (\maybeQuoted ->
+                            case maybeQuoted of
+                                Just quoted ->
+                                    expandQuotes accessToken (depth - 1) quoted
+                                        |> Task.map (\expanded -> { feedPost | quote = Just (Quote { quote | post = Just expanded }) })
+
+                                Nothing ->
+                                    Task.succeed feedPost
+                        )
+
+        Nothing ->
+            Task.succeed feedPost
+
+
+fetchFeedPost : String -> String -> Task Http.Error FeedPost
+fetchFeedPost accessToken uri =
     Http.task
         { method = "GET"
         , headers = readHeaders accessToken
@@ -429,7 +623,6 @@ fetchPost accessToken uri =
                 (\metadata _ -> Http.BadStatus metadata.statusCode)
         , timeout = Just 10000
         }
-        |> Task.map (\feedPost -> ( toPostIncludingSensitiveMedia feedPost, feedPost.sensitive ))
 
 
 {-| One node of `app.bsky.feed.getPostThread`'s nested `thread` -- a post and its (recursively
@@ -635,6 +828,49 @@ repoWrite accessToken method body =
         , resolver = jsonResolver (Decode.succeed ()) (\metadata _ -> Http.BadStatus metadata.statusCode)
         , timeout = Just 10000
         }
+
+
+{-| A Bluesky post's `at://{did}/app.bsky.feed.post/{rkey}` URI as the short form `Components.Posts.postHref`
+puts in a `/post/:postId` route -- `{did}~{rkey}`. The `at://` scheme and the collection are the same for
+every post, and `~` is a safe separator: a DID never contains one. (An rkey _may_, which is why
+`fromRouteId` splits on the first.) Anything that isn't exactly that shape (another collection, a DID
+with a `%`, which the route's percent-decoding would mangle) falls back to the whole URI,
+percent-encoded, which `fromRouteId` also accepts.
+-}
+routeId : String -> String
+routeId uri =
+    case String.split "/" uri of
+        [ "at:", "", did, "app.bsky.feed.post", rkey ] ->
+            if String.startsWith "did:" did && not (String.contains "%" did) && not (String.contains "%" rkey) && not (String.isEmpty rkey) then
+                did ++ "~" ++ rkey
+
+            else
+                Url.percentEncode uri
+
+        _ ->
+            Url.percentEncode uri
+
+
+{-| `routeId`'s inverse, applied to the already percent-decoded id -- a full `at://` URI (the older, long
+route form) passes through unchanged.
+-}
+fromRouteId : String -> String
+fromRouteId id =
+    case String.indexes "~" id |> List.head of
+        Just separator ->
+            let
+                did : String
+                did =
+                    String.left separator id
+            in
+            if String.startsWith "did:" did then
+                "at://" ++ did ++ "/app.bsky.feed.post/" ++ String.dropLeft (separator + 1) id
+
+            else
+                id
+
+        Nothing ->
+            id
 
 
 {-| `at://{did}/app.bsky.feed.post/{rkey}` -> `https://bsky.app/profile/{handle}/post/{rkey}` --

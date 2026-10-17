@@ -73,6 +73,7 @@ status overrides =
     , sensitive = overrides.sensitive
     , favouritesCount = overrides.favouritesCount
     , repliesCount = overrides.repliesCount
+    , quote = Nothing
     }
 
 

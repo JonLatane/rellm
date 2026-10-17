@@ -1,6 +1,7 @@
 module Shared.AccountsPanel.MastodonAccounts exposing
     ( MastodonAccount
     , MastodonLoginResult
+    , MastodonProfile
     , encodeMastodonAccount
     , isReauthError
     , mastodonAccountDecoder
@@ -29,7 +30,7 @@ import Http
 import Json.Decode as Decode exposing (Decoder)
 import Json.Encode as Encode
 import Shared.AccountsPanel.SortOrder exposing (sortOrderDecoder)
-import Shared.Federation.Common exposing (jsonResolver)
+import Shared.Federation.Common exposing (jsonResolver, nonEmpty)
 import Task exposing (Task)
 import Url
 
@@ -67,6 +68,18 @@ type alias MastodonAccount =
     , username : String
     , sortOrder : Int
     , needsReauth : Bool
+
+    -- From `verify_credentials` at connect time (and refreshed by the health check). `Nothing` for an
+    -- account connected before this was captured, or if the instance sent none.
+    , avatarUrl : Maybe String
+    }
+
+
+{-| What `verifyMastodonCredentialsTask` reads off `verify_credentials` -- see `MastodonAccount`.
+-}
+type alias MastodonProfile =
+    { username : String
+    , avatarUrl : Maybe String
     }
 
 
@@ -80,12 +93,13 @@ encodeMastodonAccount account =
         , ( "username", Encode.string account.username )
         , ( "sortOrder", Encode.int account.sortOrder )
         , ( "needsReauth", Encode.bool account.needsReauth )
+        , ( "avatarUrl", account.avatarUrl |> Maybe.map Encode.string |> Maybe.withDefault Encode.null )
         ]
 
 
 mastodonAccountDecoder : Decoder MastodonAccount
 mastodonAccountDecoder =
-    Decode.map7 MastodonAccount
+    Decode.map8 MastodonAccount
         (Decode.field "instanceHost" Decode.string)
         (Decode.field "accessToken" Decode.string)
         (Decode.maybe (Decode.field "refreshToken" Decode.string))
@@ -93,6 +107,7 @@ mastodonAccountDecoder =
         (Decode.field "username" Decode.string)
         sortOrderDecoder
         (Decode.oneOf [ Decode.field "needsReauth" Decode.bool, Decode.succeed False ])
+        (Decode.oneOf [ Decode.field "avatarUrl" (Decode.nullable Decode.string), Decode.succeed Nothing ])
 
 
 {-| `GotMastodonLoginResult`'s decoded payload -- `accessToken` alone is enough to call
@@ -148,17 +163,23 @@ mastodonLoginResultDecoder rawValue =
 {-| `GET /api/v1/accounts/verify_credentials` against `instanceHost`, authenticated with the
 freshly-minted `accessToken` -- the one Mastodon call `GotMastodonLoginResult` needs before it can
 actually add a `MastodonAccount`, since the OAuth result alone is just a bare token with no
-identity attached yet. Decodes just `username`, all a `MastodonAccount` needs to display the
-connection.
+identity attached yet. Decodes just `username` and `avatar`, all a `MastodonAccount` needs to display
+the connection.
 -}
-verifyMastodonCredentialsTask : String -> String -> Task Http.Error String
+verifyMastodonCredentialsTask : String -> String -> Task Http.Error MastodonProfile
 verifyMastodonCredentialsTask instanceHost accessToken =
     Http.task
         { method = "GET"
         , headers = [ Http.header "Authorization" ("Bearer " ++ accessToken) ]
         , url = "https://" ++ instanceHost ++ "/api/v1/accounts/verify_credentials"
         , body = Http.emptyBody
-        , resolver = jsonResolver (Decode.field "username" Decode.string) (\metadata _ -> Http.BadStatus metadata.statusCode)
+        , resolver =
+            jsonResolver
+                (Decode.map2 MastodonProfile
+                    (Decode.field "username" Decode.string)
+                    (Decode.oneOf [ Decode.field "avatar" (Decode.nullable Decode.string) |> Decode.map (Maybe.andThen nonEmpty), Decode.succeed Nothing ])
+                )
+                (\metadata _ -> Http.BadStatus metadata.statusCode)
         , timeout = Just 10000
         }
 

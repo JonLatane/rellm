@@ -24,7 +24,7 @@ import Html exposing (Html, a, button, div, p, span, text)
 import Html.Attributes exposing (class, href, rel, target)
 import Html.Events exposing (onClick)
 import Http
-import Proto.Rellm exposing (Post)
+import Proto.Rellm exposing (Post, unwrapPost)
 import Shared
 import Shared.AccountsPanel.RellmServers exposing (RellmServer)
 import Shared.Federation.Common as Common exposing (Thread)
@@ -84,7 +84,7 @@ type Msg
 init : String -> String -> ( Model, Effect Msg )
 init instanceHost statusId =
     ( { instanceHost = instanceHost, statusId = statusId, postStatus = LoadingPost, sensitiveMediaRevealed = False, thread = Common.emptyThread, replies = PostReplies.initStatic ("mastodon:" ++ instanceHost) [] }
-    , Mastodon.fetchStatus instanceHost statusId
+    , Mastodon.fetchStatusWithQuotes instanceHost statusId
         |> Task.andThen
             (\( post, sensitive ) ->
                 Mastodon.fetchThread instanceHost statusId
@@ -234,6 +234,13 @@ federatedPostView shared instanceHost sensitiveMediaRevealed sensitive post =
 
               else
                 MultiMediaRenderer.view post.postMediaLayout noServer Nothing shared.mediaRenderer MediaPlayClicked MediaImageClicked post.media
+
+            , case post.quotedPost of
+                Just quoted ->
+                    Posts.quotedPostCard shared.time shared.basePath shared.accounts.mainFrontendHost host shared.mediaRenderer MediaPlayClicked (Just ThreadMediaClicked) (unwrapPost quoted)
+
+                Nothing ->
+                    text ""
 
             -- Date and star at the bottom right, like a post card.
             , div [ classes [ "post-detail-meta", "federated-post-footer" ] ]

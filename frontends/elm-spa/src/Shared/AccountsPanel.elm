@@ -523,7 +523,7 @@ type Msg
     | DismissFederatedSignInNotice
     | MastodonConnectClicked String
     | GotMastodonLoginResult Decode.Value
-    | GotMastodonVerifyCredentialsResult String MastodonAccounts.MastodonLoginResult (Result Http.Error String)
+    | GotMastodonVerifyCredentialsResult String MastodonAccounts.MastodonLoginResult (Result Http.Error MastodonAccounts.MastodonProfile)
     | MastodonAccountRefreshed MastodonAccounts.MastodonAccount
     | MarkMastodonAccountNeedsReauth String String
     | AddAccountServerFormTypeSelected AccountOrServerFormType
@@ -1599,9 +1599,27 @@ init req flags blueskyAccountsFlags mastodonAccountsAndServersFlags =
     , Cmd.batch
         (Ports.checkPushSubscription Encode.null
             :: mainServerCmd
-            :: (List.map healthCheckMastodonAccountCmd persistedMastodon.accounts ++ reconnectCmds ++ missingServerCmds)
+            :: (List.map healthCheckMastodonAccountCmd persistedMastodon.accounts
+                    ++ List.map missingBlueskyAvatarCmd persistedBlueskyAccounts
+                    ++ reconnectCmds
+                    ++ missingServerCmds
+               )
         )
     )
+
+
+{-| Best-effort profile (avatar/display name) fetch at startup for a Bluesky account that has none yet
+-- it's what the Accounts Panel toggle button shows instead of "Login". A no-op for an account that
+already has one, and a failure (e.g. an expired token) is silently ignored, same as at connect time (see
+`GotBlueskyProfileResult`).
+-}
+missingBlueskyAvatarCmd : BlueskyAccount -> Cmd Msg
+missingBlueskyAvatarCmd account =
+    if account.avatarUrl == Nothing && not account.needsReauth then
+        Task.attempt (GotBlueskyProfileResult account.handle) (BlueskyAccounts.fetchProfileTask account.handle account.accessToken)
+
+    else
+        Cmd.none
 
 
 {-| Just the accounts' reorder-slide animations (see `moveAnimations`) --
@@ -3963,7 +3981,7 @@ sendUpdate req msg model =
                         Err _ ->
                             ( { model | mastodonConnectPopupOpen = Nothing }, Cmd.none )
 
-        GotMastodonVerifyCredentialsResult instanceHost loginResult (Ok username) ->
+        GotMastodonVerifyCredentialsResult instanceHost loginResult (Ok { username, avatarUrl }) ->
             let
                 -- A reconnect (`ReconnectMastodonAccountClicked`'s own use of this same
                 -- `MastodonConnectClicked` popup, see `UI.mastodonAccountRow`'s reauth button) lands
@@ -3978,6 +3996,7 @@ sendUpdate req msg model =
                     , username = username
                     , sortOrder = nextFrontAccountSortOrder model
                     , needsReauth = False
+                    , avatarUrl = avatarUrl
                     }
 
                 newModel : Model
@@ -4627,7 +4646,7 @@ account doesn't just sit there silently until some future feature tries to use i
 healthCheckMastodonAccountCmd : MastodonAccounts.MastodonAccount -> Cmd Msg
 healthCheckMastodonAccountCmd account =
     MastodonAccounts.performWithMastodonAccount account (MastodonAccounts.verifyMastodonCredentialsTask account.instanceHost)
-        |> Task.map (\( refreshedAccount, username ) -> MastodonAccountRefreshed { refreshedAccount | username = username })
+        |> Task.map (\( refreshedAccount, profile ) -> MastodonAccountRefreshed { refreshedAccount | username = profile.username, avatarUrl = profile.avatarUrl })
         |> Task.onError
             (\err ->
                 if MastodonAccounts.isReauthError err then

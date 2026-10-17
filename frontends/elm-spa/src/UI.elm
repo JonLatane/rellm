@@ -800,6 +800,26 @@ accountsMenu shared currentRoute =
         enabledAccounts =
             AccountsPanel.enabledAccounts shared.accounts
 
+        -- Every signed-in account contributing to what's shown, of any kind: an enabled Rellm
+        -- account, an enabled Bluesky account, or a connected Mastodon account (which has no
+        -- enable switch -- connecting it is what makes it contribute). In the same order as the
+        -- Accounts Panel's own list. What the toggle button shows avatars for, rather than "Login".
+        menuAccounts : List AccountsPanel.CombinedAccountItem
+        menuAccounts =
+            AccountsPanel.combinedAccountItems shared.accounts
+                |> List.filter
+                    (\item ->
+                        case item of
+                            AccountsPanel.CombinedRellmAccount account ->
+                                account.enabled
+
+                            AccountsPanel.CombinedBlueskyAccount account ->
+                                account.enabled
+
+                            AccountsPanel.CombinedMastodonAccount _ ->
+                                True
+                    )
+
         -- Signed into exactly one account on exactly one enabled server --
         -- since only one account per server can be enabled at a time (see
         -- `AccountsPanel.ToggleAccountEnabled`), this is the "single user"
@@ -808,8 +828,8 @@ accountsMenu shared currentRoute =
         -- of the usual pill (see `.accounts-menu-toggle.single-avatar`).
         singleAccountSingleServer : Bool
         singleAccountSingleServer =
-            case ( AccountsPanel.enabledServers shared.accounts, enabledAccounts ) of
-                ( [ _ ], [ _ ] ) ->
+            case ( AccountsPanel.enabledServers shared.accounts, enabledAccounts, List.length menuAccounts ) of
+                ( [ _ ], [ _ ], 1 ) ->
                     True
 
                 _ ->
@@ -819,7 +839,7 @@ accountsMenu shared currentRoute =
         toggleClasses =
             "accounts-menu-toggle"
                 :: openClosedClass shared.accounts.showAccountsPanel
-                :: (if List.isEmpty enabledAccounts then
+                :: (if List.isEmpty menuAccounts then
                         []
 
                     else
@@ -846,10 +866,10 @@ accountsMenu shared currentRoute =
                 , onClick (Shared.AccountsPanelMsg AccountsPanel.ToggleAccountsPanel)
                 ]
                 (if singleAccountSingleServer then
-                    [ accountsMenuButtonContent shared enabledAccounts ]
+                    [ accountsMenuButtonContent shared menuAccounts ]
 
                  else
-                    [ accountsMenuButtonContent shared enabledAccounts
+                    [ accountsMenuButtonContent shared menuAccounts
                     , accountsMenuServerSummary shared.accounts
                     ]
                 )
@@ -860,17 +880,40 @@ accountsMenu shared currentRoute =
 
 
 {-| The accounts-menu toggle button's content: "Login" with nobody signed in,
-otherwise a small avatar/placeholder per signed-in account (see
-`accountsMenuAvatar`) in place of any username/count text.
+otherwise a small avatar/placeholder per signed-in account -- Rellm, Bluesky or Mastodon alike (see
+`accountsMenuAvatar`/`federatedAccountsMenuAvatar`) -- in place of any username/count text.
 -}
-accountsMenuButtonContent : Shared.Model -> List RellmAccount -> Html Shared.Msg
-accountsMenuButtonContent shared enabledAccounts =
-    case enabledAccounts of
+accountsMenuButtonContent : Shared.Model -> List AccountsPanel.CombinedAccountItem -> Html Shared.Msg
+accountsMenuButtonContent shared menuAccounts =
+    case menuAccounts of
         [] ->
             text "Login"
 
         accounts ->
-            div [ class "accounts-menu-avatars" ] (List.map (accountsMenuAvatar shared) accounts)
+            div [ class "accounts-menu-avatars" ]
+                (List.map
+                    (\item ->
+                        case item of
+                            AccountsPanel.CombinedRellmAccount account ->
+                                accountsMenuAvatar shared account
+
+                            AccountsPanel.CombinedBlueskyAccount account ->
+                                federatedAccountsMenuAvatar account.handle account.avatarUrl
+
+                            AccountsPanel.CombinedMastodonAccount account ->
+                                federatedAccountsMenuAvatar account.username account.avatarUrl
+                    )
+                    accounts
+                )
+
+
+{-| `accountsMenuAvatar`'s counterpart for a connected Bluesky/Mastodon account -- no server-colored
+border (neither has a Rellm server's branding), and the initial of `name` when there's no avatar yet
+(Mastodon accounts connected before `MastodonAccount.avatarUrl` existed get one at the next health check).
+-}
+federatedAccountsMenuAvatar : String -> Maybe String -> Html Shared.Msg
+federatedAccountsMenuAvatar name maybeAvatarUrl =
+    imageOrInitial [ "accounts-menu-avatar" ] name maybeAvatarUrl
 
 
 {-| A small-font subtitle under the accounts-menu toggle button's "Login" text/
@@ -4538,7 +4581,7 @@ it (see `create_new_panel.css`'s own z-index comment).
 -}
 createNewPanel : Shared.Model -> Html Shared.Msg
 createNewPanel shared =
-    Html.map Shared.CreateNewPanelMsg (CreateNewPanel.view shared.time.browserTimeZone shared.accounts shared.panels.createNewPanel)
+    Html.map Shared.CreateNewPanelMsg (CreateNewPanel.view shared.time shared.basePath shared.accounts shared.panels.createNewPanel)
 
 
 {-| The app-wide Markdown editor (see `Shared.MarkdownPanel`) -- unlike the
