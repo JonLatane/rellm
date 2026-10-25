@@ -155,7 +155,7 @@ decoder =
                 }
         )
         (Decode.at [ "post", "uri" ] Decode.string)
-        (Decode.at [ "post", "record", "text" ] Decode.string)
+        (textDecoder [ "post", "record" ])
         (Decode.at [ "post", "record", "createdAt" ] Iso8601.decoder)
         (Decode.maybe (Decode.field "reply" Decode.value) |> Decode.map ((/=) Nothing))
         (Decode.at [ "post", "author", "handle" ] Decode.string)
@@ -166,6 +166,152 @@ decoder =
         |> Decode.andThen (\f -> Decode.map f (countDecoder [ "post", "likeCount" ]))
         |> Decode.andThen (\f -> Decode.map f (countDecoder [ "post", "replyCount" ]))
         |> Decode.andThen (\f -> Decode.map f (quoteDecoder [ "post", "record" ] (Decode.maybe (Decode.at [ "post", "embed" ] embedViewQuoteDecoder))))
+
+
+{-| A post record's `text` with its `facets` (`recordPath` is the record, as for `quoteDecoder`) turned
+into Markdown, which is how `Post.content` is rendered. AT Proto keeps rich text out of the string itself:
+a facet marks a UTF-8 byte range of `text` as a `#link` (the full `uri` -- the visible text is
+often a truncated `youtube.com/watch?v=abc...`), a `#tag` or a `#mention`. Without this, hashtags are
+plain text and a shortened link points nowhere (or at a prefix of the real URL). Tags link to
+`bsky.app/hashtag/...` (the AppView's own hashtag page) and mentions to `bsky.app/profile/{did}`.
+Facets that are out of range, overlap an earlier one or have no known feature are skipped; a record
+with no `facets` is just its `text`.
+-}
+textDecoder : List String -> Decoder String
+textDecoder recordPath =
+    Decode.map2 applyFacets
+        (Decode.at (recordPath ++ [ "text" ]) Decode.string)
+        (Decode.oneOf
+            [ Decode.at (recordPath ++ [ "facets" ]) (Decode.list (Decode.maybe facetDecoder))
+                |> Decode.map (List.filterMap identity)
+            , Decode.succeed []
+            ]
+        )
+
+
+type alias Facet =
+    { byteStart : Int
+    , byteEnd : Int
+    , href : String
+    }
+
+
+facetDecoder : Decoder Facet
+facetDecoder =
+    Decode.map3 Facet
+        (Decode.at [ "index", "byteStart" ] Decode.int)
+        (Decode.at [ "index", "byteEnd" ] Decode.int)
+        (Decode.field "features" (Decode.list (Decode.maybe featureHrefDecoder))
+            |> Decode.andThen
+                (\features ->
+                    case List.filterMap identity features of
+                        href :: _ ->
+                            Decode.succeed href
+
+                        [] ->
+                            Decode.fail "no supported facet feature"
+                )
+        )
+
+
+featureHrefDecoder : Decoder String
+featureHrefDecoder =
+    Decode.field "$type" Decode.string
+        |> Decode.andThen
+            (\kind ->
+                case kind of
+                    "app.bsky.richtext.facet#link" ->
+                        Decode.field "uri" Decode.string
+
+                    "app.bsky.richtext.facet#tag" ->
+                        Decode.field "tag" Decode.string
+                            |> Decode.map (\tag -> "https://bsky.app/hashtag/" ++ Url.percentEncode tag)
+
+                    "app.bsky.richtext.facet#mention" ->
+                        Decode.field "did" Decode.string
+                            |> Decode.map (\did -> "https://bsky.app/profile/" ++ Url.percentEncode did)
+
+                    _ ->
+                        Decode.fail "unsupported facet feature"
+            )
+
+
+{-| `text` with each facet's byte range replaced by `[range](href)`. Walks code points (Elm's
+`String.toList`), counting each one's UTF-8 length to stay aligned with the facets' byte offsets.
+-}
+applyFacets : String -> List Facet -> String
+applyFacets text facets =
+    if List.isEmpty facets then
+        text
+
+    else
+        applyFacetsHelp (List.sortBy .byteStart facets) 0 (String.toList text) [] ""
+
+
+applyFacetsHelp : List Facet -> Int -> List Char -> List Char -> String -> String
+applyFacetsHelp facets offset chars labelChars out =
+    case chars of
+        [] ->
+            -- A facet that ran past the end of `text` is dropped; flush what it had collected as plain text.
+            out ++ String.fromList (List.reverse labelChars)
+
+        char :: rest ->
+            case facets of
+                facet :: laterFacets ->
+                    if offset >= facet.byteStart && offset < facet.byteEnd then
+                        let
+                            nextOffset : Int
+                            nextOffset =
+                                offset + utf8Length char
+
+                            collected : List Char
+                            collected =
+                                char :: labelChars
+                        in
+                        if nextOffset >= facet.byteEnd then
+                            applyFacetsHelp laterFacets nextOffset rest [] (out ++ markdownLink (String.fromList (List.reverse collected)) facet.href)
+
+                        else
+                            applyFacetsHelp facets nextOffset rest collected out
+
+                    else if offset >= facet.byteEnd || facet.byteEnd <= facet.byteStart then
+                        -- Overlaps the previous facet or is empty: skip it.
+                        applyFacetsHelp laterFacets offset chars labelChars out
+
+                    else
+                        applyFacetsHelp facets (offset + utf8Length char) rest labelChars (out ++ String.fromChar char)
+
+                [] ->
+                    applyFacetsHelp [] (offset + utf8Length char) rest labelChars (out ++ String.fromChar char)
+
+
+utf8Length : Char -> Int
+utf8Length char =
+    let
+        code : Int
+        code =
+            Char.toCode char
+    in
+    if code < 0x80 then
+        1
+
+    else if code < 0x0800 then
+        2
+
+    else if code < 0x00010000 then
+        3
+
+    else
+        4
+
+
+markdownLink : String -> String -> String
+markdownLink label href =
+    "["
+        ++ (label |> String.replace "[" "\\[" |> String.replace "]" "\\]")
+        ++ "]("
+        ++ (href |> String.replace " " "%20" |> String.replace "(" "%28" |> String.replace ")" "%29")
+        ++ ")"
 
 
 {-| `embedPath ++ [ "images" ]` (e.g. `[ "post", "embed", "images" ]` for `decoder`'s nested
@@ -284,7 +430,7 @@ viewRecordDecoder =
                 }
         )
         (Decode.field "uri" Decode.string)
-        (Decode.at [ "value", "text" ] Decode.string)
+        (textDecoder [ "value" ])
         (Decode.at [ "value", "createdAt" ] Iso8601.decoder)
         (Decode.maybe (Decode.at [ "value", "reply" ] Decode.value) |> Decode.map ((/=) Nothing))
         (Decode.at [ "author", "handle" ] Decode.string)
@@ -589,7 +735,7 @@ searchDecoder =
                 }
         )
         (Decode.field "uri" Decode.string)
-        (Decode.at [ "record", "text" ] Decode.string)
+        (textDecoder [ "record" ])
         (Decode.at [ "record", "createdAt" ] Iso8601.decoder)
         (Decode.maybe (Decode.at [ "record", "reply" ] Decode.value) |> Decode.map ((/=) Nothing))
         (Decode.at [ "author", "handle" ] Decode.string)

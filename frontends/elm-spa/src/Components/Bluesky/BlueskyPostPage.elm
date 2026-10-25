@@ -33,6 +33,8 @@ import Shared.Federation.Bluesky as Bluesky
 import Shared.Federation.Common as Common exposing (Thread)
 import Shared.MediaViewerPanel as MediaViewerPanel
 import Shared.StarredPanel as StarredPanel
+import Shared.UserPreferences as UserPreferences
+import SocialMediaEmbed
 import Task
 import UI.Classes exposing (classes)
 
@@ -289,6 +291,7 @@ federatedPostView shared sensitiveMediaRevealed sensitive post =
               else
                 MultiMediaRenderer.view post.postMediaLayout noServer Nothing shared.mediaRenderer MediaPlayClicked MediaImageClicked post.media
 
+            , socialEmbedView shared.userPreferences post
             , case post.quotedPost of
                 Just quoted ->
                     Posts.quotedPostCard shared.time shared.basePath shared.accounts.mainFrontendHost starHost Nothing Nothing shared.mediaRenderer MediaPlayClicked (Just ThreadMediaClicked) (unwrapPost quoted)
@@ -319,6 +322,25 @@ federatedPostView shared sensitiveMediaRevealed sensitive post =
             Nothing ->
                 text ""
         ]
+
+
+{-| The first link in `post`'s content that's a post on a network `SocialMediaEmbed` supports (YouTube, X, ...),
+embedded like a Rellm post's own `link` is (`Components.QuotedLink.socialEmbedView`), unless the viewer turned
+that network's embeds off. `Post.link` here is the post itself on bsky.app, so the link comes from the content
+instead: `Bluesky.toPost` has already turned the post's link facets into Markdown links to their full URLs, so
+this also finds a link whose visible text was truncated.
+-}
+socialEmbedView : UserPreferences.Model -> Post -> Html Msg
+socialEmbedView userPreferences post =
+    post.content
+        |> Maybe.withDefault ""
+        |> String.split "]("
+        |> List.drop 1
+        |> List.filterMap (String.split ")" >> List.head >> Maybe.andThen SocialMediaEmbed.fromLink)
+        |> List.filter (\embed -> not (UserPreferences.embedDisabled (SocialMediaEmbed.network embed) userPreferences))
+        |> List.head
+        |> Maybe.map SocialMediaEmbed.view
+        |> Maybe.withDefault (text "")
 
 
 {-| A placeholder `RellmServer` for `federatedPostView`'s `MultiMediaRenderer.view` call -- never

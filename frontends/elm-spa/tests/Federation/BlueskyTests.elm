@@ -16,7 +16,25 @@ suite : Test
 suite =
     describe "Shared.Federation.Bluesky"
         [ describe "decoder"
-            [ test "decodes a real-shaped feedViewPost into the same value `toPost` would get directly" <|
+            [ test "turns link and tag facets into Markdown links, counting UTF-8 bytes (not characters)" <|
+                \_ ->
+                    let
+                        -- Each "é" is 2 bytes, so "#music" is bytes 9-15 and "youtu.be/ab…" (its "…" is 3) 16-30.
+                        json : String
+                        json =
+                            """{"post":{"uri":"at://did:plc:abc/app.bsky.feed.post/x","author":{"handle":"a.bsky.social"},"record":{"text":"café é #music youtu.be/ab…","createdAt":"2023-04-05T12:00:00.000Z","facets":[{"index":{"byteStart":9,"byteEnd":15},"features":[{"$type":"app.bsky.richtext.facet#tag","tag":"music"}]},{"index":{"byteStart":16,"byteEnd":30},"features":[{"$type":"app.bsky.richtext.facet#link","uri":"https://youtu.be/abcdefg"}]}]}}}"""
+                    in
+                    json
+                        |> Decode.decodeString Bluesky.decoder
+                        |> Result.map .text
+                        |> Expect.equal (Ok "café é [#music](https://bsky.app/hashtag/music) [youtu.be/ab…](https://youtu.be/abcdefg)")
+            , test "a facet outside the text is ignored" <|
+                \_ ->
+                    """{"post":{"uri":"at://did:plc:abc/app.bsky.feed.post/x","author":{"handle":"a.bsky.social"},"record":{"text":"hi","createdAt":"2023-04-05T12:00:00.000Z","facets":[{"index":{"byteStart":5,"byteEnd":9},"features":[{"$type":"app.bsky.richtext.facet#tag","tag":"x"}]}]}}}"""
+                        |> Decode.decodeString Bluesky.decoder
+                        |> Result.map .text
+                        |> Expect.equal (Ok "hi")
+            , test "decodes a real-shaped feedViewPost into the same value `toPost` would get directly" <|
                 \_ ->
                     Factory.feedViewPostJson defaultOverrides
                         |> Decode.decodeString Bluesky.decoder
