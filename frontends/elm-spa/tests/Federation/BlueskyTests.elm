@@ -28,6 +28,18 @@ suite =
                         |> Decode.decodeString Bluesky.decoder
                         |> Result.map .text
                         |> Expect.equal (Ok "café é [#music](https://bsky.app/hashtag/music) [youtu.be/ab…](https://youtu.be/abcdefg)")
+            , test "a facet that partly overlaps an earlier one is skipped" <|
+                \_ ->
+                    """{"post":{"uri":"at://did:plc:abc/app.bsky.feed.post/x","author":{"handle":"a.bsky.social"},"record":{"text":"abcdef","createdAt":"2023-04-05T12:00:00.000Z","facets":[{"index":{"byteStart":0,"byteEnd":4},"features":[{"$type":"app.bsky.richtext.facet#link","uri":"https://a.example"}]},{"index":{"byteStart":2,"byteEnd":6},"features":[{"$type":"app.bsky.richtext.facet#link","uri":"https://b.example"}]}]}}}"""
+                        |> Decode.decodeString Bluesky.decoder
+                        |> Result.map .text
+                        |> Expect.equal (Ok "[abcd](https://a.example)ef")
+            , test "a link facet right after a ! doesn't become a Markdown image" <|
+                \_ ->
+                    """{"post":{"uri":"at://did:plc:abc/app.bsky.feed.post/x","author":{"handle":"a.bsky.social"},"record":{"text":"!x.co/a","createdAt":"2023-04-05T12:00:00.000Z","facets":[{"index":{"byteStart":1,"byteEnd":7},"features":[{"$type":"app.bsky.richtext.facet#link","uri":"https://x.co/a"}]}]}}}"""
+                        |> Decode.decodeString Bluesky.decoder
+                        |> Result.map .text
+                        |> Expect.equal (Ok "\\![x.co/a](https://x.co/a)")
             , test "a facet outside the text is ignored" <|
                 \_ ->
                     """{"post":{"uri":"at://did:plc:abc/app.bsky.feed.post/x","author":{"handle":"a.bsky.social"},"record":{"text":"hi","createdAt":"2023-04-05T12:00:00.000Z","facets":[{"index":{"byteStart":5,"byteEnd":9},"features":[{"$type":"app.bsky.richtext.facet#tag","tag":"x"}]}]}}}"""

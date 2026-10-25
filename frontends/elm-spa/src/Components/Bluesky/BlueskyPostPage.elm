@@ -291,7 +291,11 @@ federatedPostView shared sensitiveMediaRevealed sensitive post =
               else
                 MultiMediaRenderer.view post.postMediaLayout noServer Nothing shared.mediaRenderer MediaPlayClicked MediaImageClicked post.media
 
-            , socialEmbedView shared.userPreferences post
+            , if sensitive && not sensitiveMediaRevealed then
+                text ""
+
+              else
+                socialEmbedView shared.userPreferences post
             , case post.quotedPost of
                 Just quoted ->
                     Posts.quotedPostCard shared.time shared.basePath shared.accounts.mainFrontendHost starHost Nothing Nothing shared.mediaRenderer MediaPlayClicked (Just ThreadMediaClicked) (unwrapPost quoted)

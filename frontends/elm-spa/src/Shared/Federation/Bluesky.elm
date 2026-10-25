@@ -269,7 +269,13 @@ applyFacetsHelp facets offset chars labelChars out =
                                 char :: labelChars
                         in
                         if nextOffset >= facet.byteEnd then
-                            applyFacetsHelp laterFacets nextOffset rest [] (out ++ markdownLink (String.fromList (List.reverse collected)) facet.href)
+                            -- Drop facets that start inside this one, so a partial overlap can't attach its URL to other text.
+                            applyFacetsHelp
+                                (List.filter (\later -> later.byteStart >= nextOffset) laterFacets)
+                                nextOffset
+                                rest
+                                []
+                                (withLinkAfter out (markdownLink (String.fromList (List.reverse collected)) facet.href))
 
                         else
                             applyFacetsHelp facets nextOffset rest collected out
@@ -283,6 +289,16 @@ applyFacetsHelp facets offset chars labelChars out =
 
                 [] ->
                     applyFacetsHelp [] (offset + utf8Length char) rest labelChars (out ++ String.fromChar char)
+
+
+{-| `out ++ link`, escaping a trailing `!` of `out` so Markdown doesn't read `![label](href)` as an image. -}
+withLinkAfter : String -> String -> String
+withLinkAfter out link =
+    if String.endsWith "!" out then
+        String.dropRight 1 out ++ "\\!" ++ link
+
+    else
+        out ++ link
 
 
 utf8Length : Char -> Int
