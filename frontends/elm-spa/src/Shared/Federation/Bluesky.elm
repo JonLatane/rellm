@@ -176,11 +176,11 @@ plain text and a shortened link points nowhere (or at a prefix of the real URL).
 `bsky.app/hashtag/...` (the AppView's own hashtag page). `#mention` facets are deliberately ignored: `@handle` text
 is linked to Rellm's own profile page by `markdown.js`.
 Facets that are out of range, overlap an earlier one or have no known feature are skipped; a record
-with no `facets` is just its `text`.
+with no `facets` is just its `text`. A link card (`appendCard`) whose URL the text doesn't link is appended.
 -}
 textDecoder : List String -> Decoder String
 textDecoder recordPath =
-    Decode.map2 applyFacets
+    Decode.map3 (\text facets card -> applyFacets text facets |> appendCard card)
         (Decode.at (recordPath ++ [ "text" ]) Decode.string)
         (Decode.oneOf
             [ Decode.at (recordPath ++ [ "facets" ]) (Decode.list (Decode.maybe facetDecoder))
@@ -188,6 +188,67 @@ textDecoder recordPath =
             , Decode.succeed []
             ]
         )
+        (Decode.maybe
+            (Decode.oneOf
+                [ Decode.at (recordPath ++ [ "embed", "external" ]) cardDecoder
+
+                -- `app.bsky.embed.recordWithMedia`: the card is the `media`.
+                , Decode.at (recordPath ++ [ "embed", "media", "external" ]) cardDecoder
+                ]
+            )
+        )
+
+
+{-| An `app.bsky.embed.external`'s link card: `uri`, and `title` (may be empty). -}
+type alias Card =
+    { uri : String
+    , title : String
+    }
+
+
+cardDecoder : Decoder Card
+cardDecoder =
+    Decode.map2 Card
+        (Decode.field "uri" Decode.string)
+        (Decode.oneOf [ Decode.field "title" Decode.string, Decode.succeed "" ])
+
+
+{-| The post's link card as a Markdown link on its own line after `text`, unless `text` already links
+that URL (Bluesky's composer adds a link facet for it, so that's the usual case). Some clients and
+crossposters attach a card without putting the link in the text; this keeps those posts' link visible,
+and findable by `Components.Bluesky.BlueskyPostPage.socialEmbedView`.
+-}
+appendCard : Maybe Card -> String -> String
+appendCard maybeCard text =
+    case maybeCard of
+        Just card ->
+            if
+                (String.startsWith "https://" card.uri || String.startsWith "http://" card.uri)
+                    && not (String.contains ("](" ++ escapeHref card.uri ++ ")") text)
+            then
+                let
+                    link : String
+                    link =
+                        markdownLink
+                            (if String.isEmpty (String.trim card.title) then
+                                card.uri
+
+                             else
+                                card.title
+                            )
+                            card.uri
+                in
+                if String.isEmpty (String.trim text) then
+                    link
+
+                else
+                    String.trimRight text ++ "\n\n" ++ link
+
+            else
+                text
+
+        Nothing ->
+            text
 
 
 type alias Facet =
@@ -326,8 +387,13 @@ markdownLink label href =
     "["
         ++ (label |> String.replace "[" "\\[" |> String.replace "]" "\\]")
         ++ "]("
-        ++ (href |> String.replace " " "%20" |> String.replace "(" "%28" |> String.replace ")" "%29")
+        ++ escapeHref href
         ++ ")"
+
+
+escapeHref : String -> String
+escapeHref href =
+    href |> String.replace " " "%20" |> String.replace "(" "%28" |> String.replace ")" "%29"
 
 
 {-| `embedPath ++ [ "images" ]` (e.g. `[ "post", "embed", "images" ]` for `decoder`'s nested

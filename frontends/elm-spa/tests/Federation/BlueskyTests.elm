@@ -46,6 +46,18 @@ suite =
                         |> Decode.decodeString Bluesky.decoder
                         |> Result.map .text
                         |> Expect.equal (Ok "hi @bob.example")
+            , test "a link card whose URL the text doesn't link is appended as a Markdown link" <|
+                \_ ->
+                    """{"post":{"uri":"at://did:plc:abc/app.bsky.feed.post/x","author":{"handle":"a.bsky.social"},"record":{"text":"watch this","createdAt":"2023-04-05T12:00:00.000Z","embed":{"$type":"app.bsky.embed.external","external":{"uri":"https://youtu.be/abc","title":"A [video]"}}}}}"""
+                        |> Decode.decodeString Bluesky.decoder
+                        |> Result.map .text
+                        |> Expect.equal (Ok "watch this\n\n[A \\[video\\]](https://youtu.be/abc)")
+            , test "a link card whose URL a facet already links isn't appended again" <|
+                \_ ->
+                    """{"post":{"uri":"at://did:plc:abc/app.bsky.feed.post/x","author":{"handle":"a.bsky.social"},"record":{"text":"youtu.be/ab...","createdAt":"2023-04-05T12:00:00.000Z","facets":[{"index":{"byteStart":0,"byteEnd":14},"features":[{"$type":"app.bsky.richtext.facet#link","uri":"https://youtu.be/abc"}]}],"embed":{"$type":"app.bsky.embed.external","external":{"uri":"https://youtu.be/abc","title":"A video"}}}}}"""
+                        |> Decode.decodeString Bluesky.decoder
+                        |> Result.map .text
+                        |> Expect.equal (Ok "[youtu.be/ab...](https://youtu.be/abc)")
             , test "a facet outside the text is ignored" <|
                 \_ ->
                     """{"post":{"uri":"at://did:plc:abc/app.bsky.feed.post/x","author":{"handle":"a.bsky.social"},"record":{"text":"hi","createdAt":"2023-04-05T12:00:00.000Z","facets":[{"index":{"byteStart":5,"byteEnd":9},"features":[{"$type":"app.bsky.richtext.facet#tag","tag":"x"}]}]}}}"""
