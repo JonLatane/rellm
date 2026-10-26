@@ -376,9 +376,15 @@ replyAnimationView :
 replyAnimationView config model ( depth, animPost, flip ) =
     let
         -- Reflects this session's own star/unstar clicks immediately -- see `StarredPanel.freshestPost`.
+        -- Its cached copy can predate this reply's children being loaded, so keep the tree's own `replies`.
         post : Post
         post =
-            StarredPanel.freshestPost config.postServerHost animPost config.starredPanel
+            let
+                fresh : Post
+                fresh =
+                    StarredPanel.freshestPost config.postServerHost animPost config.starredPanel
+            in
+            { fresh | replies = animPost.replies }
 
         loaded : Bool
         loaded =
