@@ -1259,7 +1259,8 @@ repliesView shared model =
     case model.repliesModel of
         Just repliesModel ->
             PostReplies.view
-                { basePath = shared.basePath
+                { time = shared.time
+                , basePath = shared.basePath
                 , viewingServerHost = shared.accounts.mainFrontendHost
                 , postServerHost = model.targetHost
                 , maybeServer = RellmServers.rellmServerForHost shared.accounts.servers model.targetHost
@@ -1269,6 +1270,9 @@ repliesView shared model =
                 , onMediaPlayClicked = \mediaId -> SharedMsg (Shared.MediaRendererMsg (MediaRenderer.PlayClicked mediaId))
                 , onReplyClicked = Just ReplyClicked
                 , toMsg = PostRepliesMsg
+                , accounts = shared.accounts
+                , starredPanel = shared.panels.starredPanel
+                , onStarredPanelMsg = Shared.StarredPanelMsg >> SharedMsg
                 }
                 repliesModel
 

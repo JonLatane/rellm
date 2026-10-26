@@ -741,7 +741,7 @@ postCard time basePath viewingServerHost postServerHost maybeServer maybeAccount
     -- `replyCard` has no card-wide link overlay, which a Starred/feed card needs; only a real thread
     -- (`Components.FederatedThread`) calls `replyCard` directly for federated replies.
     if post.context == REPLY && not (isFederatedHost postServerHost) then
-        replyCard basePath viewingServerHost postServerHost maybeServer maybeAccount onMediaClicked mediaPlayState onMediaPlayClicked 0 True False False Nothing Nothing Nothing post
+        replyCard time basePath viewingServerHost postServerHost maybeServer maybeAccount onMediaClicked mediaPlayState onMediaPlayClicked 0 True False False Nothing Nothing Nothing starred onStarClicked post
 
     else
         postCardView time basePath viewingServerHost postServerHost maybeServer maybeAccount onMediaClicked mediaPlayState onMediaPlayClicked extraSmallMedia current starred onStarClicked showSyncDestinations availableSyncDestinations isPushing pushError onPush onDelete quoteView post
@@ -982,9 +982,10 @@ quotedHref basePath viewingServerHost postServerHost quoted =
         postHref basePath viewingServerHost postServerHost quoted
 
 
-{-| A single reply's card -- author, content, a Reply button, and (bottom
-right of the actions row) a merged load-more/collapse-expand button carrying
-`post`'s own reply/response counts (see `replyStatusButton`). `depth` (1 for a
+{-| A single reply's card -- author, timestamps (`timestampsText`), content, a Reply button, and (bottom
+right of the actions row) a star button (`starButton`, pinned right) followed by a merged
+load-more/collapse-expand button carrying `post`'s own reply/response counts (see
+`replyStatusButton`). `depth` (1 for a
 direct reply, 2 for a reply to a reply, etc.) drives its left-indentation, so
 `Components.PostReplies.view`'s flattened list still reads as a nested thread.
 
@@ -997,7 +998,8 @@ that can never actually fire.
 
 -}
 replyCard :
-    String
+    SharedTime.Model
+    -> String
     -> String
     -> String
     -> Maybe RellmServer
@@ -1012,9 +1014,11 @@ replyCard :
     -> Maybe msg
     -> Maybe msg
     -> Maybe msg
+    -> Bool
+    -> Maybe msg
     -> Post
     -> Html msg
-replyCard basePath viewingServerHost postServerHost maybeServer maybeAccount onMediaClicked mediaPlayState onMediaPlayClicked depth loaded loading collapsed onReplyClicked onLoadRepliesClicked onToggleCollapsedClicked post =
+replyCard time basePath viewingServerHost postServerHost maybeServer maybeAccount onMediaClicked mediaPlayState onMediaPlayClicked depth loaded loading collapsed onReplyClicked onLoadRepliesClicked onToggleCollapsedClicked starred onStarClicked post =
     div
         [ class "post-reply-item"
         , style "margin-left" (String.fromInt (min depth 8 * 20) ++ "px")
@@ -1030,7 +1034,8 @@ replyCard basePath viewingServerHost postServerHost maybeServer maybeAccount onM
                        )
                 )
             , span [ class "post-meta-right" ]
-                [ a
+                [ timestampsText time post
+                , a
                     [ href (postHref basePath viewingServerHost postServerHost post)
                     , class "post-reply-permalink"
                     , attribute "aria-label" "Permalink"
@@ -1069,14 +1074,15 @@ replyCard basePath viewingServerHost postServerHost maybeServer maybeAccount onM
 
                 _ ->
                     text ""
+            , starButton postServerHost starred onStarClicked post
             , replyStatusButton loaded loading collapsed onLoadRepliesClicked onToggleCollapsedClicked post
             ]
         ]
 
 
 {-| The merged "load more"/"collapse"/"expand" button in a reply card's
-bottom-right corner (`.post-reply-status-button`, pinned right via
-`margin-left: auto` same as `.post-meta-right`), carrying `post`'s own
+bottom-right corner (`.post-reply-status-button`, just right of the star button, which is
+what's pinned right via `margin-left: auto` same as `.post-meta-right`), carrying `post`'s own
 reply/response counts (`repliesCountText`, matching `commentCountText`'s own
 formatting) in each of its three states:
 

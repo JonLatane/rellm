@@ -179,12 +179,16 @@ view shared model =
 
 threadConfig : Shared.Model -> String -> FederatedThread.Config Msg
 threadConfig shared instanceHost =
-    { basePath = shared.basePath
+    { time = shared.time
+    , basePath = shared.basePath
     , viewingServerHost = shared.accounts.mainFrontendHost
     , postServerHost = starHost instanceHost
     , mediaPlayState = shared.mediaRenderer
     , onMediaPlayClicked = MediaPlayClicked
     , onMediaClicked = ThreadMediaClicked
+    , accounts = shared.accounts
+    , starredPanel = shared.panels.starredPanel
+    , onStarredPanelMsg = StarredPanelMsg
     }
 
 
@@ -223,7 +227,7 @@ federatedPostView shared instanceHost sensitiveMediaRevealed sensitive post =
     div []
         [ div [ class "post-detail" ]
             [ div [ class "federated-service-label" ] [ text "⇄ Mastodon" ]
-            , Authors.link "" "" host Nothing Nothing post.author
+            , div [ class "post-reply-meta" ] [ Authors.link "" "" host Nothing Nothing post.author ]
             , Markdown.view [ class "post-detail-content" ] (Maybe.withDefault "" post.content)
             , if sensitive && not sensitiveMediaRevealed && not (List.isEmpty post.media) then
                 button

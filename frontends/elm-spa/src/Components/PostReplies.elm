@@ -39,6 +39,8 @@ import Shared
 import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers exposing (RellmServer)
+import Shared.StarredPanel as StarredPanel
+import Shared.Time as SharedTime
 import Task
 import UI.Flip as Flip
 
@@ -299,7 +301,8 @@ likewise takes the reply itself so a click can be attributed to the right
 Post. `toMsg` wraps this module's own `Msg` into the caller's.
 -}
 view :
-    { basePath : String
+    { time : SharedTime.Model
+    , basePath : String
     , viewingServerHost : String
     , postServerHost : String
     , maybeServer : Maybe RellmServer
@@ -309,6 +312,11 @@ view :
     , onMediaPlayClicked : String -> msg
     , onReplyClicked : Maybe (Post -> msg)
     , toMsg : Msg -> msg
+
+    -- For each reply's star button (same toggling as a top-level post's, see `Shared.StarredPanel`).
+    , accounts : AccountsPanel.Model
+    , starredPanel : StarredPanel.Model
+    , onStarredPanelMsg : StarredPanel.Msg -> msg
     }
     -> Model
     -> Html msg
@@ -347,7 +355,8 @@ view config model =
 
 replyAnimationView :
     { r
-        | basePath : String
+        | time : SharedTime.Model
+        , basePath : String
         , viewingServerHost : String
         , postServerHost : String
         , maybeServer : Maybe RellmServer
@@ -357,12 +366,26 @@ replyAnimationView :
         , onMediaPlayClicked : String -> msg
         , onReplyClicked : Maybe (Post -> msg)
         , toMsg : Msg -> msg
+        , accounts : AccountsPanel.Model
+        , starredPanel : StarredPanel.Model
+        , onStarredPanelMsg : StarredPanel.Msg -> msg
     }
     -> Model
     -> ( Int, Post, Flip.State Msg )
     -> ( String, Html msg )
-replyAnimationView config model ( depth, post, flip ) =
+replyAnimationView config model ( depth, animPost, flip ) =
     let
+        -- Reflects this session's own star/unstar clicks immediately -- see `StarredPanel.freshestPost`.
+        -- Its cached copy can predate this reply's children being loaded, so keep the tree's own `replies`.
+        post : Post
+        post =
+            let
+                fresh : Post
+                fresh =
+                    StarredPanel.freshestPost config.postServerHost animPost config.starredPanel
+            in
+            { fresh | replies = animPost.replies }
+
         loaded : Bool
         loaded =
             model.static || Dict.get post.id model.statuses == Just ReplyLoaded
@@ -387,6 +410,7 @@ replyAnimationView config model ( depth, post, flip ) =
     , div (Flip.itemAttributes Flip.Vertical flip False)
         [ div pointerEventsAttr
             [ Posts.replyCard
+                config.time
                 config.basePath
                 config.viewingServerHost
                 config.postServerHost
@@ -402,6 +426,10 @@ replyAnimationView config model ( depth, post, flip ) =
                 (Maybe.map (\onReply -> onReply post) config.onReplyClicked)
                 (Just (config.toMsg (LoadRepliesClicked post.id)))
                 (Just (config.toMsg (ToggleCollapsed post.id)))
+                (StarredPanel.isStarred config.postServerHost post config.starredPanel)
+                (StarredPanel.toggleStarMsg config.accounts config.postServerHost post
+                    |> Maybe.map config.onStarredPanelMsg
+                )
                 post
             ]
         ]
