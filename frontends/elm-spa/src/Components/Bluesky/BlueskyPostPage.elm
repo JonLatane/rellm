@@ -267,6 +267,13 @@ exactly like any other post's media.
 federatedPostView : Shared.Model -> Bool -> Bool -> Post -> Html Msg
 federatedPostView shared sensitiveMediaRevealed sensitive post =
     let
+        -- A sensitive post's images, and an embed it has even when it has no images, wait for the reveal click.
+        gated : Bool
+        gated =
+            sensitive
+                && not sensitiveMediaRevealed
+                && (not (List.isEmpty post.media) || QuotedLink.contentEmbed shared.userPreferences post |> Maybe.map (\_ -> True) |> Maybe.withDefault False)
+
         starred : Bool
         starred =
             StarredPanel.isStarred starHost post shared.panels.starredPanel
@@ -280,7 +287,7 @@ federatedPostView shared sensitiveMediaRevealed sensitive post =
             [ div [ class "federated-service-label" ] [ text "⇄ Bluesky" ]
             , Authors.link "" "" starHost Nothing Nothing post.author
             , Markdown.view [ class "post-detail-content" ] (Maybe.withDefault "" post.content)
-            , if sensitive && not sensitiveMediaRevealed && not (List.isEmpty post.media) then
+            , if gated then
                 button
                     [ class "post-detail-sensitive-media-notice"
                     , onClick RevealSensitiveMediaClicked
@@ -290,7 +297,7 @@ federatedPostView shared sensitiveMediaRevealed sensitive post =
               else
                 MultiMediaRenderer.view post.postMediaLayout noServer Nothing shared.mediaRenderer MediaPlayClicked MediaImageClicked post.media
 
-            , if sensitive && not sensitiveMediaRevealed then
+            , if gated then
                 text ""
 
               else

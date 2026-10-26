@@ -59,6 +59,7 @@ import Proto.Rellm.PostContext exposing (PostContext(..))
 import Proto.Rellm.Visibility exposing (Visibility(..))
 import Shared.Conversions exposing (int64FromInt, posixToTimestamp)
 import Shared.Federation.Common exposing (BlueskyAuth, Thread, anonymousBlueskyAuth, jsonResolver, nonEmpty, sensitiveMediaHiddenId)
+import SocialMediaEmbed
 import Task exposing (Task)
 import Time
 import Url
@@ -598,7 +599,8 @@ toPostWith { includeSensitiveMedia, quoteDepth } feedPost =
         , visibility = GLOBALPUBLIC
         , media =
             if feedPost.sensitive && not includeSensitiveMedia then
-                if List.isEmpty feedPost.images then
+                -- A sensitive post that only has a social embed (a video link) is hidden just like one with images.
+                if List.isEmpty feedPost.images && List.isEmpty (SocialMediaEmbed.fromMarkdown feedPost.text) then
                     []
 
                 else

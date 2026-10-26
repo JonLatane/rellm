@@ -1,4 +1,4 @@
-module SocialMediaEmbed exposing (Embed, fromLink, network, view)
+module SocialMediaEmbed exposing (Embed, fromLink, fromMarkdown, network, view)
 
 {-| Embeds a link to a post on Facebook, Instagram, LinkedIn, Pinterest, TikTok, X (Twitter) or YouTube -- an Elm
 take on [`react-social-media-embed`](https://github.com/justinmahar/react-social-media-embed), which the Tamagui
@@ -53,6 +53,15 @@ fromLink rawLink =
                     , \_ -> LinkedIn.fromLink link |> Maybe.map LinkedIn
                     ]
             )
+
+
+{-| The embeds for the Markdown links (`[label](href)`) in `markdown`, in order. -}
+fromMarkdown : String -> List Embed
+fromMarkdown markdown =
+    markdown
+        |> String.split "]("
+        |> List.drop 1
+        |> List.filterMap (String.split ")" >> List.head >> Maybe.andThen fromLink)
 
 
 firstJust : List (() -> Maybe a) -> Maybe a

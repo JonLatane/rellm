@@ -1,4 +1,4 @@
-module Components.QuotedLink exposing (AccountsInfo, Config, accountsInfo, embedFromContent, targetOf, view, viewLink)
+module Components.QuotedLink exposing (AccountsInfo, Config, accountsInfo, contentEmbed, embedFromContent, targetOf, view, viewLink)
 
 {-| The quoted post a Rellm `POST` embeds, when its `link` points at a post/event on a Rellm server
 (`Shared.Federation.RellmLinks`) -- what `Components.Posts.postCard`/`postDetail`'s `quoteView` slot is
@@ -160,15 +160,21 @@ Markdown links to their full URLs, so this also finds a link whose visible text 
 -}
 embedFromContent : UserPreferences.Model -> Post -> Html msg
 embedFromContent userPreferences post =
-    post.content
-        |> Maybe.withDefault ""
-        |> String.split "]("
-        |> List.drop 1
-        |> List.filterMap (String.split ")" >> List.head >> Maybe.andThen SocialMediaEmbed.fromLink)
-        |> List.filter (\embed -> not (UserPreferences.embedDisabled (SocialMediaEmbed.network embed) userPreferences))
-        |> List.head
+    contentEmbed userPreferences post
         |> Maybe.map SocialMediaEmbed.view
         |> Maybe.withDefault (text "")
+
+
+{-| What `embedFromContent` would show, if anything: lets a caller tell whether a post has an embed to hide
+(a sensitive post with an embed but no images has no other media to put behind its reveal gate).
+-}
+contentEmbed : UserPreferences.Model -> Post -> Maybe SocialMediaEmbed.Embed
+contentEmbed userPreferences post =
+    post.content
+        |> Maybe.withDefault ""
+        |> SocialMediaEmbed.fromMarkdown
+        |> List.filter (\embed -> not (UserPreferences.embedDisabled (SocialMediaEmbed.network embed) userPreferences))
+        |> List.head
 
 
 {-| The embed for a bare `link` (what `Shared.CreateNewPanel` previews) -- `postServerHost` is what a relative

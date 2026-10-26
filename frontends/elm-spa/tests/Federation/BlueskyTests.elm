@@ -216,6 +216,17 @@ suite =
                         |> .media
                         |> List.map .url
                         |> Expect.equal [ Nothing ]
+            , test "toPost hides a sensitive post that has only a social embed link, but not a sensitive text-only post" <|
+                \_ ->
+                    let
+                        hidden : String -> Bool
+                        hidden text =
+                            Factory.feedPost { defaultOverrides | sensitive = True, text = text }
+                                |> Bluesky.toPost
+                                |> Posts.hasHiddenSensitiveMedia
+                    in
+                    Expect.equal ( True, False )
+                        ( hidden "[youtu.be/ab...](https://youtu.be/dQw4w9WgXcQ)", hidden "just words" )
             , test "toPostIncludingSensitiveMedia (BlueskyPostPage's own fetch) keeps a labeled post's real media" <|
                 \_ ->
                     Factory.feedPost
