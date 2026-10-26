@@ -42,13 +42,13 @@ pub async fn get_and_test_bucket() -> Result<Box<Bucket>, S3Error> {
             match Bucket::create_with_path_style(
                 bucket.name.as_str(),
                 bucket.region.clone(),
-                Credentials {
-                    access_key: Some(object_storage_access_key.to_owned()),
-                    secret_key: Some(object_storage_secret_key.to_owned()),
-                    security_token: None,
-                    expiration: None,
-                    session_token: None,
-                },
+                Credentials::new(
+            Some(&object_storage_access_key),
+            Some(&object_storage_secret_key),
+            None,
+            None,
+            None,
+        )?,
                 BucketConfiguration::public(),
             )
             .await
@@ -124,13 +124,13 @@ fn get_bucket() -> Result<Box<Bucket>, S3Error> {
             region: object_storage_region.to_owned(),
             endpoint: object_storage_endpoint.to_owned(),
         },
-        Credentials {
-            access_key: Some(object_storage_access_key.to_owned()),
-            secret_key: Some(object_storage_secret_key.to_owned()),
-            security_token: None,
-            expiration: None,
-            session_token: None,
-        },
+        Credentials::new(
+            Some(&object_storage_access_key),
+            Some(&object_storage_secret_key),
+            None,
+            None,
+            None,
+        )?,
     )?
     .with_path_style())
 }

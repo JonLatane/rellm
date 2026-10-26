@@ -38,7 +38,7 @@ tonic-prost = "0.14.6"
 tower-http = { version = "0.7.0", features = [
   "cors",
 ] } # used to configure CORS for Tonic Web
-rocket = { version = "0.5.1", features = ["tls"] }
+rocket = { version = "0.5.2", features = ["tls"] }
 rocket_async_compression = "0.6.1"
 async-compression = "0.4.12"
 rocket-cache-response = "0.7.0"
@@ -72,8 +72,8 @@ log = "0.4.17"
 uuid = { version = "1.24.1", features = ["v4", "fast-rng"] }
 lazy_static = "1.5.0"
 env_logger = "0.11.5"
-rust-s3 = { version = "0.37.2" }
-aws-creds = "0.39.1"
+rust-s3 = { version = "0.38.0" }
+aws-creds = "0.40"
 # aws-region = "0.26.0"
 bytes = "1.7.1"
 tempfile = "3.12.0"
