@@ -268,11 +268,15 @@ federatedPostView : Shared.Model -> Bool -> Bool -> Post -> Html Msg
 federatedPostView shared sensitiveMediaRevealed sensitive post =
     let
         -- A sensitive post's images, and an embed it has even when it has no images, wait for the reveal click.
+        hasEmbed : Bool
+        hasEmbed =
+            QuotedLink.contentEmbed shared.userPreferences post
+                |> Maybe.map (\_ -> True)
+                |> Maybe.withDefault False
+
         gated : Bool
         gated =
-            sensitive
-                && not sensitiveMediaRevealed
-                && (not (List.isEmpty post.media) || QuotedLink.contentEmbed shared.userPreferences post |> Maybe.map (\_ -> True) |> Maybe.withDefault False)
+            sensitive && not sensitiveMediaRevealed && (not (List.isEmpty post.media) || hasEmbed)
 
         starred : Bool
         starred =
