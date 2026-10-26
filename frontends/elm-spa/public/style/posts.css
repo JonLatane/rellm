@@ -936,14 +936,12 @@
   font-size: 0.8rem;
 }
 
-/* Pins the merged load-more/collapse/expand button (which also carries the
-   reply/response count, moved here from `.post-reply-meta`'s old
-   `.post-meta-right`) to the bottom-right corner of `.post-reply-actions`,
-   same `margin-left: auto` trick as `.post-meta-right` in a post card's own
-   meta line. Applied to the "Loading replies…" placeholder too, so it lines
-   up in the same spot regardless of which of the three states is showing. */
-.post-reply-actions .post-reply-status-button,
-.post-reply-actions .post-reply-loading {
+/* Pins the star button to the bottom-right of `.post-reply-actions`, same
+   `margin-left: auto` trick as `.post-meta-right` in a post card's own meta
+   line; the merged load-more/collapse/expand button (which also carries the
+   reply/response count) and the "Loading replies…" placeholder then sit just
+   to its right, in the corner. */
+.post-reply-actions .post-star {
   margin-left: auto;
 }
 

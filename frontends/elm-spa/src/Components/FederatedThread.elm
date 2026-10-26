@@ -13,6 +13,8 @@ import Components.PostReplies as PostReplies
 import Html exposing (Html, div, text)
 import Html.Attributes exposing (class)
 import Proto.Rellm exposing (Post)
+import Shared.AccountsPanel as AccountsPanel
+import Shared.StarredPanel as StarredPanel
 import Shared.Federation.Common exposing (Thread)
 
 
@@ -26,6 +28,9 @@ type alias Config msg =
     , mediaPlayState : MediaRenderer.Model
     , onMediaPlayClicked : String -> msg
     , onMediaClicked : Post -> String -> msg
+    , accounts : AccountsPanel.Model
+    , starredPanel : StarredPanel.Model
+    , onStarredPanelMsg : StarredPanel.Msg -> msg
     }
 
 
@@ -58,6 +63,9 @@ repliesView config toMsg model =
         , onMediaPlayClicked = config.onMediaPlayClicked
         , onReplyClicked = Nothing
         , toMsg = toMsg
+        , accounts = config.accounts
+        , starredPanel = config.starredPanel
+        , onStarredPanelMsg = config.onStarredPanelMsg
         }
         model
 
@@ -79,5 +87,7 @@ card config depth post =
         False
         Nothing
         Nothing
+        Nothing
+        False
         Nothing
         post

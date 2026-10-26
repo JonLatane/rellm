@@ -244,6 +244,9 @@ threadConfig shared =
     , mediaPlayState = shared.mediaRenderer
     , onMediaPlayClicked = MediaPlayClicked
     , onMediaClicked = ThreadMediaClicked
+    , accounts = shared.accounts
+    , starredPanel = shared.panels.starredPanel
+    , onStarredPanelMsg = StarredPanelMsg
     }
 
 

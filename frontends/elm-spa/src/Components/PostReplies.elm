@@ -39,6 +39,7 @@ import Shared
 import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers exposing (RellmServer)
+import Shared.StarredPanel as StarredPanel
 import Task
 import UI.Flip as Flip
 
@@ -309,6 +310,11 @@ view :
     , onMediaPlayClicked : String -> msg
     , onReplyClicked : Maybe (Post -> msg)
     , toMsg : Msg -> msg
+
+    -- For each reply's star button (same toggling as a top-level post's, see `Shared.StarredPanel`).
+    , accounts : AccountsPanel.Model
+    , starredPanel : StarredPanel.Model
+    , onStarredPanelMsg : StarredPanel.Msg -> msg
     }
     -> Model
     -> Html msg
@@ -357,12 +363,20 @@ replyAnimationView :
         , onMediaPlayClicked : String -> msg
         , onReplyClicked : Maybe (Post -> msg)
         , toMsg : Msg -> msg
+        , accounts : AccountsPanel.Model
+        , starredPanel : StarredPanel.Model
+        , onStarredPanelMsg : StarredPanel.Msg -> msg
     }
     -> Model
     -> ( Int, Post, Flip.State Msg )
     -> ( String, Html msg )
-replyAnimationView config model ( depth, post, flip ) =
+replyAnimationView config model ( depth, animPost, flip ) =
     let
+        -- Reflects this session's own star/unstar clicks immediately -- see `StarredPanel.freshestPost`.
+        post : Post
+        post =
+            StarredPanel.freshestPost config.postServerHost animPost config.starredPanel
+
         loaded : Bool
         loaded =
             model.static || Dict.get post.id model.statuses == Just ReplyLoaded
@@ -402,6 +416,10 @@ replyAnimationView config model ( depth, post, flip ) =
                 (Maybe.map (\onReply -> onReply post) config.onReplyClicked)
                 (Just (config.toMsg (LoadRepliesClicked post.id)))
                 (Just (config.toMsg (ToggleCollapsed post.id)))
+                (StarredPanel.isStarred config.postServerHost post config.starredPanel)
+                (StarredPanel.toggleStarMsg config.accounts config.postServerHost post
+                    |> Maybe.map config.onStarredPanelMsg
+                )
                 post
             ]
         ]

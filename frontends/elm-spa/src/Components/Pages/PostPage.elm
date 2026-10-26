@@ -1269,6 +1269,9 @@ repliesView shared model =
                 , onMediaPlayClicked = \mediaId -> SharedMsg (Shared.MediaRendererMsg (MediaRenderer.PlayClicked mediaId))
                 , onReplyClicked = Just ReplyClicked
                 , toMsg = PostRepliesMsg
+                , accounts = shared.accounts
+                , starredPanel = shared.panels.starredPanel
+                , onStarredPanelMsg = Shared.StarredPanelMsg >> SharedMsg
                 }
                 repliesModel
 
