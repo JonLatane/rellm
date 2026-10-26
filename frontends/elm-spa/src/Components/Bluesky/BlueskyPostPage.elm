@@ -19,6 +19,7 @@ import Components.MediaRenderer as MediaRenderer
 import Components.MultiMediaRenderer as MultiMediaRenderer
 import Components.PostReplies as PostReplies
 import Components.Posts as Posts
+import Components.QuotedLink as QuotedLink
 import Effect exposing (Effect)
 import Html exposing (Html, a, button, div, p, span, text)
 import Html.Attributes exposing (class, href, rel, target)
@@ -266,6 +267,17 @@ exactly like any other post's media.
 federatedPostView : Shared.Model -> Bool -> Bool -> Post -> Html Msg
 federatedPostView shared sensitiveMediaRevealed sensitive post =
     let
+        -- A sensitive post's images, and an embed it has even when it has no images, wait for the reveal click.
+        hasEmbed : Bool
+        hasEmbed =
+            QuotedLink.contentEmbed shared.userPreferences post
+                |> Maybe.map (\_ -> True)
+                |> Maybe.withDefault False
+
+        gated : Bool
+        gated =
+            sensitive && not sensitiveMediaRevealed && (not (List.isEmpty post.media) || hasEmbed)
+
         starred : Bool
         starred =
             StarredPanel.isStarred starHost post shared.panels.starredPanel
@@ -279,7 +291,7 @@ federatedPostView shared sensitiveMediaRevealed sensitive post =
             [ div [ class "federated-service-label" ] [ text "⇄ Bluesky" ]
             , Authors.link "" "" starHost Nothing Nothing post.author
             , Markdown.view [ class "post-detail-content" ] (Maybe.withDefault "" post.content)
-            , if sensitive && not sensitiveMediaRevealed && not (List.isEmpty post.media) then
+            , if gated then
                 button
                     [ class "post-detail-sensitive-media-notice"
                     , onClick RevealSensitiveMediaClicked
@@ -289,6 +301,11 @@ federatedPostView shared sensitiveMediaRevealed sensitive post =
               else
                 MultiMediaRenderer.view post.postMediaLayout noServer Nothing shared.mediaRenderer MediaPlayClicked MediaImageClicked post.media
 
+            , if gated then
+                text ""
+
+              else
+                QuotedLink.embedFromContent shared.userPreferences post
             , case post.quotedPost of
                 Just quoted ->
                     Posts.quotedPostCard shared.time shared.basePath shared.accounts.mainFrontendHost starHost Nothing Nothing shared.mediaRenderer MediaPlayClicked (Just ThreadMediaClicked) (unwrapPost quoted)

@@ -16,7 +16,55 @@ suite : Test
 suite =
     describe "Shared.Federation.Bluesky"
         [ describe "decoder"
-            [ test "decodes a real-shaped feedViewPost into the same value `toPost` would get directly" <|
+            [ test "turns link and tag facets into Markdown links, counting UTF-8 bytes (not characters)" <|
+                \_ ->
+                    let
+                        -- Each "é" is 2 bytes, so "#music" is bytes 9-15 and "youtu.be/ab…" (its "…" is 3) 16-30.
+                        json : String
+                        json =
+                            """{"post":{"uri":"at://did:plc:abc/app.bsky.feed.post/x","author":{"handle":"a.bsky.social"},"record":{"text":"café é #music youtu.be/ab…","createdAt":"2023-04-05T12:00:00.000Z","facets":[{"index":{"byteStart":9,"byteEnd":15},"features":[{"$type":"app.bsky.richtext.facet#tag","tag":"music"}]},{"index":{"byteStart":16,"byteEnd":30},"features":[{"$type":"app.bsky.richtext.facet#link","uri":"https://youtu.be/abcdefg"}]}]}}}"""
+                    in
+                    json
+                        |> Decode.decodeString Bluesky.decoder
+                        |> Result.map .text
+                        |> Expect.equal (Ok "café é [#music](https://bsky.app/hashtag/music) [youtu.be/ab…](https://youtu.be/abcdefg)")
+            , test "a facet that partly overlaps an earlier one is skipped" <|
+                \_ ->
+                    """{"post":{"uri":"at://did:plc:abc/app.bsky.feed.post/x","author":{"handle":"a.bsky.social"},"record":{"text":"abcdef","createdAt":"2023-04-05T12:00:00.000Z","facets":[{"index":{"byteStart":0,"byteEnd":4},"features":[{"$type":"app.bsky.richtext.facet#link","uri":"https://a.example"}]},{"index":{"byteStart":2,"byteEnd":6},"features":[{"$type":"app.bsky.richtext.facet#link","uri":"https://b.example"}]}]}}}"""
+                        |> Decode.decodeString Bluesky.decoder
+                        |> Result.map .text
+                        |> Expect.equal (Ok "[abcd](https://a.example)ef")
+            , test "a link facet right after a ! doesn't become a Markdown image" <|
+                \_ ->
+                    """{"post":{"uri":"at://did:plc:abc/app.bsky.feed.post/x","author":{"handle":"a.bsky.social"},"record":{"text":"!x.co/a","createdAt":"2023-04-05T12:00:00.000Z","facets":[{"index":{"byteStart":1,"byteEnd":7},"features":[{"$type":"app.bsky.richtext.facet#link","uri":"https://x.co/a"}]}]}}}"""
+                        |> Decode.decodeString Bluesky.decoder
+                        |> Result.map .text
+                        |> Expect.equal (Ok "\\![x.co/a](https://x.co/a)")
+            , test "a mention facet is left as plain @handle text (markdown.js links it to the Rellm profile)" <|
+                \_ ->
+                    """{"post":{"uri":"at://did:plc:abc/app.bsky.feed.post/x","author":{"handle":"a.bsky.social"},"record":{"text":"hi @bob.example","createdAt":"2023-04-05T12:00:00.000Z","facets":[{"index":{"byteStart":3,"byteEnd":15},"features":[{"$type":"app.bsky.richtext.facet#mention","did":"did:plc:bob"}]}]}}}"""
+                        |> Decode.decodeString Bluesky.decoder
+                        |> Result.map .text
+                        |> Expect.equal (Ok "hi @bob.example")
+            , test "a link card whose URL the text doesn't link is appended as a Markdown link" <|
+                \_ ->
+                    """{"post":{"uri":"at://did:plc:abc/app.bsky.feed.post/x","author":{"handle":"a.bsky.social"},"record":{"text":"watch this","createdAt":"2023-04-05T12:00:00.000Z","embed":{"$type":"app.bsky.embed.external","external":{"uri":"https://youtu.be/abc","title":"A [video]"}}}}}"""
+                        |> Decode.decodeString Bluesky.decoder
+                        |> Result.map .text
+                        |> Expect.equal (Ok "watch this\n\n[A \\[video\\]](https://youtu.be/abc)")
+            , test "a link card whose URL a facet already links isn't appended again" <|
+                \_ ->
+                    """{"post":{"uri":"at://did:plc:abc/app.bsky.feed.post/x","author":{"handle":"a.bsky.social"},"record":{"text":"youtu.be/ab...","createdAt":"2023-04-05T12:00:00.000Z","facets":[{"index":{"byteStart":0,"byteEnd":14},"features":[{"$type":"app.bsky.richtext.facet#link","uri":"https://youtu.be/abc"}]}],"embed":{"$type":"app.bsky.embed.external","external":{"uri":"https://youtu.be/abc","title":"A video"}}}}}"""
+                        |> Decode.decodeString Bluesky.decoder
+                        |> Result.map .text
+                        |> Expect.equal (Ok "[youtu.be/ab...](https://youtu.be/abc)")
+            , test "a facet outside the text is ignored" <|
+                \_ ->
+                    """{"post":{"uri":"at://did:plc:abc/app.bsky.feed.post/x","author":{"handle":"a.bsky.social"},"record":{"text":"hi","createdAt":"2023-04-05T12:00:00.000Z","facets":[{"index":{"byteStart":5,"byteEnd":9},"features":[{"$type":"app.bsky.richtext.facet#tag","tag":"x"}]}]}}}"""
+                        |> Decode.decodeString Bluesky.decoder
+                        |> Result.map .text
+                        |> Expect.equal (Ok "hi")
+            , test "decodes a real-shaped feedViewPost into the same value `toPost` would get directly" <|
                 \_ ->
                     Factory.feedViewPostJson defaultOverrides
                         |> Decode.decodeString Bluesky.decoder
@@ -168,6 +216,17 @@ suite =
                         |> .media
                         |> List.map .url
                         |> Expect.equal [ Nothing ]
+            , test "toPost hides a sensitive post that has only a social embed link, but not a sensitive text-only post" <|
+                \_ ->
+                    let
+                        hidden : String -> Bool
+                        hidden text =
+                            Factory.feedPost { defaultOverrides | sensitive = True, text = text }
+                                |> Bluesky.toPost
+                                |> Posts.hasHiddenSensitiveMedia
+                    in
+                    Expect.equal ( True, False )
+                        ( hidden "[youtu.be/ab...](https://youtu.be/dQw4w9WgXcQ)", hidden "just words" )
             , test "toPostIncludingSensitiveMedia (BlueskyPostPage's own fetch) keeps a labeled post's real media" <|
                 \_ ->
                     Factory.feedPost

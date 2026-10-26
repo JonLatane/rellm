@@ -1,4 +1,4 @@
-module Components.QuotedLink exposing (AccountsInfo, Config, accountsInfo, targetOf, view, viewLink)
+module Components.QuotedLink exposing (AccountsInfo, Config, accountsInfo, contentEmbed, embedFromContent, targetOf, view, viewLink)
 
 {-| The quoted post a Rellm `POST` embeds, when its `link` points at a post/event on a Rellm server
 (`Shared.Federation.RellmLinks`) -- what `Components.Posts.postCard`/`postDetail`'s `quoteView` slot is
@@ -119,11 +119,23 @@ view config postServerHost post =
 {-| A `POST` whose `link` isn't a post on Rellm/Bluesky/Mastodon but one on Facebook, Instagram, LinkedIn, Pinterest,
 TikTok, X or YouTube gets that post embedded (`SocialMediaEmbed`) -- wherever a post card or page shows
 the quote slot, unless the viewer turned that network's embeds off (`UserPreferences.embedDisabled`). Same gate as
-`targetOf`: only a top-level `POST` on a Rellm server.
+`targetOf`: only a top-level `POST` on a Rellm server. A top-level Bluesky `POST` is the exception: its `link` is
+the post itself on bsky.app, so its embed comes from the links in its content (`embedFromContent`), unless its
+sensitive media is still hidden.
 -}
 socialEmbedView : UserPreferences.Model -> String -> Post -> Html msg
 socialEmbedView userPreferences postServerHost post =
-    if post.context == POST && not (Posts.isFederatedHost postServerHost) && post.quotedPost == Nothing then
+    if post.context /= POST || post.quotedPost /= Nothing then
+        text ""
+
+    else if String.startsWith "bluesky:" postServerHost then
+        if Posts.hasHiddenSensitiveMedia post then
+            text ""
+
+        else
+            embedFromContent userPreferences post
+
+    else if not (Posts.isFederatedHost postServerHost) then
         post.link
             |> Maybe.andThen SocialMediaEmbed.fromLink
             |> Maybe.andThen
@@ -139,6 +151,30 @@ socialEmbedView userPreferences postServerHost post =
 
     else
         text ""
+
+
+{-| The first link in `post`'s content that's a post on a network `SocialMediaEmbed` supports (YouTube, X, ...),
+embedded unless the viewer turned that network's embeds off. For a Bluesky post, whose `Post.link` is the post
+itself on bsky.app: `Shared.Federation.Bluesky.toPost` has already turned its link facets (and link card) into
+Markdown links to their full URLs, so this also finds a link whose visible text was truncated.
+-}
+embedFromContent : UserPreferences.Model -> Post -> Html msg
+embedFromContent userPreferences post =
+    contentEmbed userPreferences post
+        |> Maybe.map SocialMediaEmbed.view
+        |> Maybe.withDefault (text "")
+
+
+{-| What `embedFromContent` would show, if anything: lets a caller tell whether a post has an embed to hide
+(a sensitive post with an embed but no images has no other media to put behind its reveal gate).
+-}
+contentEmbed : UserPreferences.Model -> Post -> Maybe SocialMediaEmbed.Embed
+contentEmbed userPreferences post =
+    post.content
+        |> Maybe.withDefault ""
+        |> SocialMediaEmbed.fromMarkdown
+        |> List.filter (\embed -> not (UserPreferences.embedDisabled (SocialMediaEmbed.network embed) userPreferences))
+        |> List.head
 
 
 {-| The embed for a bare `link` (what `Shared.CreateNewPanel` previews) -- `postServerHost` is what a relative

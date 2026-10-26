@@ -59,6 +59,7 @@ import Proto.Rellm.PostContext exposing (PostContext(..))
 import Proto.Rellm.Visibility exposing (Visibility(..))
 import Shared.Conversions exposing (int64FromInt, posixToTimestamp)
 import Shared.Federation.Common exposing (BlueskyAuth, Thread, anonymousBlueskyAuth, jsonResolver, nonEmpty, sensitiveMediaHiddenId)
+import SocialMediaEmbed
 import Task exposing (Task)
 import Time
 import Url
@@ -155,7 +156,7 @@ decoder =
                 }
         )
         (Decode.at [ "post", "uri" ] Decode.string)
-        (Decode.at [ "post", "record", "text" ] Decode.string)
+        (textDecoder [ "post", "record" ])
         (Decode.at [ "post", "record", "createdAt" ] Iso8601.decoder)
         (Decode.maybe (Decode.field "reply" Decode.value) |> Decode.map ((/=) Nothing))
         (Decode.at [ "post", "author", "handle" ] Decode.string)
@@ -166,6 +167,234 @@ decoder =
         |> Decode.andThen (\f -> Decode.map f (countDecoder [ "post", "likeCount" ]))
         |> Decode.andThen (\f -> Decode.map f (countDecoder [ "post", "replyCount" ]))
         |> Decode.andThen (\f -> Decode.map f (quoteDecoder [ "post", "record" ] (Decode.maybe (Decode.at [ "post", "embed" ] embedViewQuoteDecoder))))
+
+
+{-| A post record's `text` with its `facets` (`recordPath` is the record, as for `quoteDecoder`) turned
+into Markdown, which is how `Post.content` is rendered. AT Proto keeps rich text out of the string itself:
+a facet marks a UTF-8 byte range of `text` as a `#link` (the full `uri` -- the visible text is
+often a truncated `youtube.com/watch?v=abc...`), or a `#tag`. Without this, hashtags are
+plain text and a shortened link points nowhere (or at a prefix of the real URL). Tags link to
+`bsky.app/hashtag/...` (the AppView's own hashtag page). `#mention` facets are deliberately ignored: `@handle` text
+is linked to Rellm's own profile page by `markdown.js`.
+Facets that are out of range, overlap an earlier one or have no known feature are skipped; a record
+with no `facets` is just its `text`. A link card (`appendCard`) whose URL the text doesn't link is appended.
+-}
+textDecoder : List String -> Decoder String
+textDecoder recordPath =
+    Decode.map3 (\text facets card -> applyFacets text facets |> appendCard card)
+        (Decode.at (recordPath ++ [ "text" ]) Decode.string)
+        (Decode.oneOf
+            [ Decode.at (recordPath ++ [ "facets" ]) (Decode.list (Decode.maybe facetDecoder))
+                |> Decode.map (List.filterMap identity)
+            , Decode.succeed []
+            ]
+        )
+        (Decode.maybe
+            (Decode.oneOf
+                [ Decode.at (recordPath ++ [ "embed", "external" ]) cardDecoder
+
+                -- `app.bsky.embed.recordWithMedia`: the card is the `media`.
+                , Decode.at (recordPath ++ [ "embed", "media", "external" ]) cardDecoder
+                ]
+            )
+        )
+
+
+{-| An `app.bsky.embed.external`'s link card: `uri`, and `title` (may be empty). -}
+type alias Card =
+    { uri : String
+    , title : String
+    }
+
+
+cardDecoder : Decoder Card
+cardDecoder =
+    Decode.map2 Card
+        (Decode.field "uri" Decode.string)
+        (Decode.oneOf [ Decode.field "title" Decode.string, Decode.succeed "" ])
+
+
+{-| The post's link card as a Markdown link on its own line after `text`, unless `text` already links
+that URL (Bluesky's composer adds a link facet for it, so that's the usual case). Some clients and
+crossposters attach a card without putting the link in the text; this keeps those posts' link visible,
+and findable by `Components.Bluesky.BlueskyPostPage.socialEmbedView`.
+-}
+appendCard : Maybe Card -> String -> String
+appendCard maybeCard text =
+    case maybeCard of
+        Just card ->
+            if
+                (String.startsWith "https://" card.uri || String.startsWith "http://" card.uri)
+                    && not (String.contains ("](" ++ escapeHref card.uri ++ ")") text)
+            then
+                let
+                    link : String
+                    link =
+                        markdownLink
+                            (if String.isEmpty (String.trim card.title) then
+                                card.uri
+
+                             else
+                                card.title
+                            )
+                            card.uri
+                in
+                if String.isEmpty (String.trim text) then
+                    link
+
+                else
+                    String.trimRight text ++ "\n\n" ++ link
+
+            else
+                text
+
+        Nothing ->
+            text
+
+
+type alias Facet =
+    { byteStart : Int
+    , byteEnd : Int
+    , href : String
+    }
+
+
+facetDecoder : Decoder Facet
+facetDecoder =
+    Decode.map3 Facet
+        (Decode.at [ "index", "byteStart" ] Decode.int)
+        (Decode.at [ "index", "byteEnd" ] Decode.int)
+        (Decode.field "features" (Decode.list (Decode.maybe featureHrefDecoder))
+            |> Decode.andThen
+                (\features ->
+                    case List.filterMap identity features of
+                        href :: _ ->
+                            Decode.succeed href
+
+                        [] ->
+                            Decode.fail "no supported facet feature"
+                )
+        )
+
+
+featureHrefDecoder : Decoder String
+featureHrefDecoder =
+    Decode.field "$type" Decode.string
+        |> Decode.andThen
+            (\kind ->
+                case kind of
+                    "app.bsky.richtext.facet#link" ->
+                        Decode.field "uri" Decode.string
+
+                    "app.bsky.richtext.facet#tag" ->
+                        Decode.field "tag" Decode.string
+                            |> Decode.map (\tag -> "https://bsky.app/hashtag/" ++ Url.percentEncode tag)
+
+                    -- No `#mention` case on purpose: its text is the plain `@handle`, which `markdown.js`
+                    -- turns into a link to Rellm's own profile page (`/handle@bluesky`); a facet link
+                    -- would send it to bsky.app instead.
+                    _ ->
+                        Decode.fail "unsupported facet feature"
+            )
+
+
+{-| `text` with each facet's byte range replaced by `[range](href)`. Walks code points (Elm's
+`String.toList`), counting each one's UTF-8 length to stay aligned with the facets' byte offsets.
+-}
+applyFacets : String -> List Facet -> String
+applyFacets text facets =
+    if List.isEmpty facets then
+        text
+
+    else
+        applyFacetsHelp (List.sortBy .byteStart facets) 0 (String.toList text) [] ""
+
+
+applyFacetsHelp : List Facet -> Int -> List Char -> List Char -> String -> String
+applyFacetsHelp facets offset chars labelChars out =
+    case chars of
+        [] ->
+            -- A facet that ran past the end of `text` is dropped; flush what it had collected as plain text.
+            out ++ String.fromList (List.reverse labelChars)
+
+        char :: rest ->
+            case facets of
+                facet :: laterFacets ->
+                    if offset >= facet.byteStart && offset < facet.byteEnd then
+                        let
+                            nextOffset : Int
+                            nextOffset =
+                                offset + utf8Length char
+
+                            collected : List Char
+                            collected =
+                                char :: labelChars
+                        in
+                        if nextOffset >= facet.byteEnd then
+                            -- Drop facets that start inside this one, so a partial overlap can't attach its URL to other text.
+                            applyFacetsHelp
+                                (List.filter (\later -> later.byteStart >= nextOffset) laterFacets)
+                                nextOffset
+                                rest
+                                []
+                                (withLinkAfter out (markdownLink (String.fromList (List.reverse collected)) facet.href))
+
+                        else
+                            applyFacetsHelp facets nextOffset rest collected out
+
+                    else if offset >= facet.byteEnd || facet.byteEnd <= facet.byteStart then
+                        -- Overlaps the previous facet or is empty: skip it.
+                        applyFacetsHelp laterFacets offset chars labelChars out
+
+                    else
+                        applyFacetsHelp facets (offset + utf8Length char) rest labelChars (out ++ String.fromChar char)
+
+                [] ->
+                    applyFacetsHelp [] (offset + utf8Length char) rest labelChars (out ++ String.fromChar char)
+
+
+{-| `out ++ link`, escaping a trailing `!` of `out` so Markdown doesn't read `![label](href)` as an image. -}
+withLinkAfter : String -> String -> String
+withLinkAfter out link =
+    if String.endsWith "!" out then
+        String.dropRight 1 out ++ "\\!" ++ link
+
+    else
+        out ++ link
+
+
+utf8Length : Char -> Int
+utf8Length char =
+    let
+        code : Int
+        code =
+            Char.toCode char
+    in
+    if code < 0x80 then
+        1
+
+    else if code < 0x0800 then
+        2
+
+    else if code < 0x00010000 then
+        3
+
+    else
+        4
+
+
+markdownLink : String -> String -> String
+markdownLink label href =
+    "["
+        ++ (label |> String.replace "[" "\\[" |> String.replace "]" "\\]")
+        ++ "]("
+        ++ escapeHref href
+        ++ ")"
+
+
+escapeHref : String -> String
+escapeHref href =
+    href |> String.replace " " "%20" |> String.replace "(" "%28" |> String.replace ")" "%29"
 
 
 {-| `embedPath ++ [ "images" ]` (e.g. `[ "post", "embed", "images" ]` for `decoder`'s nested
@@ -284,7 +513,7 @@ viewRecordDecoder =
                 }
         )
         (Decode.field "uri" Decode.string)
-        (Decode.at [ "value", "text" ] Decode.string)
+        (textDecoder [ "value" ])
         (Decode.at [ "value", "createdAt" ] Iso8601.decoder)
         (Decode.maybe (Decode.at [ "value", "reply" ] Decode.value) |> Decode.map ((/=) Nothing))
         (Decode.at [ "author", "handle" ] Decode.string)
@@ -370,7 +599,8 @@ toPostWith { includeSensitiveMedia, quoteDepth } feedPost =
         , visibility = GLOBALPUBLIC
         , media =
             if feedPost.sensitive && not includeSensitiveMedia then
-                if List.isEmpty feedPost.images then
+                -- A sensitive post that only has a social embed (a video link) is hidden just like one with images.
+                if List.isEmpty feedPost.images && List.isEmpty (SocialMediaEmbed.fromMarkdown feedPost.text) then
                     []
 
                 else
@@ -589,7 +819,7 @@ searchDecoder =
                 }
         )
         (Decode.field "uri" Decode.string)
-        (Decode.at [ "record", "text" ] Decode.string)
+        (textDecoder [ "record" ])
         (Decode.at [ "record", "createdAt" ] Iso8601.decoder)
         (Decode.maybe (Decode.at [ "record", "reply" ] Decode.value) |> Decode.map ((/=) Nothing))
         (Decode.at [ "author", "handle" ] Decode.string)
