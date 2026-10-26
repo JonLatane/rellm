@@ -2,7 +2,7 @@ module Components.FederatedThread exposing (Config, ancestorsView, repliesView)
 
 {-| Renders a Mastodon/Bluesky post's surrounding conversation (see `Shared.Federation.Common.Thread`)
 with the same `Components.Posts.replyCard` Rellm's own replies use -- read-only (no Reply/load-more
-affordances, since a federated thread arrives fully fetched and Rellm can't post into it). `ancestorsView`
+affordances; ancestors and replies alike are starrable, since a federated thread arrives fully fetched and Rellm can't post into it). `ancestorsView`
 goes above the post itself, `repliesView` below it; the latter is a static `Components.PostReplies`
 (see `PostReplies.initStatic`), so it gets the same FLIP-animated expand/collapse as a Rellm thread.
 -}
@@ -15,11 +15,13 @@ import Html.Attributes exposing (class)
 import Proto.Rellm exposing (Post)
 import Shared.AccountsPanel as AccountsPanel
 import Shared.StarredPanel as StarredPanel
+import Shared.Time as SharedTime
 import Shared.Federation.Common exposing (Thread)
 
 
 type alias Config msg =
-    { basePath : String
+    { time : SharedTime.Model
+    , basePath : String
     , viewingServerHost : String
 
     -- The `"mastodon:" ++ instanceHost` / `"bluesky:"` tag every post in the thread is rendered
@@ -53,7 +55,8 @@ just `Components.PostReplies.view` over a model made by `PostReplies.initStatic`
 repliesView : Config msg -> (PostReplies.Msg -> msg) -> PostReplies.Model -> Html msg
 repliesView config toMsg model =
     PostReplies.view
-        { basePath = config.basePath
+        { time = config.time
+        , basePath = config.basePath
         , viewingServerHost = config.viewingServerHost
         , postServerHost = config.postServerHost
         , maybeServer = Nothing
@@ -72,7 +75,14 @@ repliesView config toMsg model =
 
 card : Config msg -> Int -> Post -> Html msg
 card config depth post =
+    let
+        -- Reflects this session's own star/unstar clicks immediately -- see `StarredPanel.freshestPost`.
+        displayPost : Post
+        displayPost =
+            StarredPanel.freshestPost config.postServerHost post config.starredPanel
+    in
     Posts.replyCard
+        config.time
         config.basePath
         config.viewingServerHost
         config.postServerHost
@@ -88,6 +98,8 @@ card config depth post =
         Nothing
         Nothing
         Nothing
-        False
-        Nothing
-        post
+        (StarredPanel.isStarred config.postServerHost displayPost config.starredPanel)
+        (StarredPanel.toggleStarMsg config.accounts config.postServerHost displayPost
+            |> Maybe.map config.onStarredPanelMsg
+        )
+        displayPost

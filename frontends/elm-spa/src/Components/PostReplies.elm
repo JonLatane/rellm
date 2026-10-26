@@ -40,6 +40,7 @@ import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers exposing (RellmServer)
 import Shared.StarredPanel as StarredPanel
+import Shared.Time as SharedTime
 import Task
 import UI.Flip as Flip
 
@@ -300,7 +301,8 @@ likewise takes the reply itself so a click can be attributed to the right
 Post. `toMsg` wraps this module's own `Msg` into the caller's.
 -}
 view :
-    { basePath : String
+    { time : SharedTime.Model
+    , basePath : String
     , viewingServerHost : String
     , postServerHost : String
     , maybeServer : Maybe RellmServer
@@ -353,7 +355,8 @@ view config model =
 
 replyAnimationView :
     { r
-        | basePath : String
+        | time : SharedTime.Model
+        , basePath : String
         , viewingServerHost : String
         , postServerHost : String
         , maybeServer : Maybe RellmServer
@@ -401,6 +404,7 @@ replyAnimationView config model ( depth, animPost, flip ) =
     , div (Flip.itemAttributes Flip.Vertical flip False)
         [ div pointerEventsAttr
             [ Posts.replyCard
+                config.time
                 config.basePath
                 config.viewingServerHost
                 config.postServerHost

@@ -238,7 +238,8 @@ view shared model =
 
 threadConfig : Shared.Model -> FederatedThread.Config Msg
 threadConfig shared =
-    { basePath = shared.basePath
+    { time = shared.time
+    , basePath = shared.basePath
     , viewingServerHost = shared.accounts.mainFrontendHost
     , postServerHost = starHost
     , mediaPlayState = shared.mediaRenderer
