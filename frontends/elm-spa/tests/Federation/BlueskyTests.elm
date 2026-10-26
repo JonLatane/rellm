@@ -40,6 +40,12 @@ suite =
                         |> Decode.decodeString Bluesky.decoder
                         |> Result.map .text
                         |> Expect.equal (Ok "\\![x.co/a](https://x.co/a)")
+            , test "a mention facet is left as plain @handle text (markdown.js links it to the Rellm profile)" <|
+                \_ ->
+                    """{"post":{"uri":"at://did:plc:abc/app.bsky.feed.post/x","author":{"handle":"a.bsky.social"},"record":{"text":"hi @bob.example","createdAt":"2023-04-05T12:00:00.000Z","facets":[{"index":{"byteStart":3,"byteEnd":15},"features":[{"$type":"app.bsky.richtext.facet#mention","did":"did:plc:bob"}]}]}}}"""
+                        |> Decode.decodeString Bluesky.decoder
+                        |> Result.map .text
+                        |> Expect.equal (Ok "hi @bob.example")
             , test "a facet outside the text is ignored" <|
                 \_ ->
                     """{"post":{"uri":"at://did:plc:abc/app.bsky.feed.post/x","author":{"handle":"a.bsky.social"},"record":{"text":"hi","createdAt":"2023-04-05T12:00:00.000Z","facets":[{"index":{"byteStart":5,"byteEnd":9},"features":[{"$type":"app.bsky.richtext.facet#tag","tag":"x"}]}]}}}"""

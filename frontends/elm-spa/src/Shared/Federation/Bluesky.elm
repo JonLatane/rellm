@@ -171,9 +171,10 @@ decoder =
 {-| A post record's `text` with its `facets` (`recordPath` is the record, as for `quoteDecoder`) turned
 into Markdown, which is how `Post.content` is rendered. AT Proto keeps rich text out of the string itself:
 a facet marks a UTF-8 byte range of `text` as a `#link` (the full `uri` -- the visible text is
-often a truncated `youtube.com/watch?v=abc...`), a `#tag` or a `#mention`. Without this, hashtags are
+often a truncated `youtube.com/watch?v=abc...`), or a `#tag`. Without this, hashtags are
 plain text and a shortened link points nowhere (or at a prefix of the real URL). Tags link to
-`bsky.app/hashtag/...` (the AppView's own hashtag page) and mentions to `bsky.app/profile/{did}`.
+`bsky.app/hashtag/...` (the AppView's own hashtag page). `#mention` facets are deliberately ignored: `@handle` text
+is linked to Rellm's own profile page by `markdown.js`.
 Facets that are out of range, overlap an earlier one or have no known feature are skipped; a record
 with no `facets` is just its `text`.
 -}
@@ -227,10 +228,9 @@ featureHrefDecoder =
                         Decode.field "tag" Decode.string
                             |> Decode.map (\tag -> "https://bsky.app/hashtag/" ++ Url.percentEncode tag)
 
-                    "app.bsky.richtext.facet#mention" ->
-                        Decode.field "did" Decode.string
-                            |> Decode.map (\did -> "https://bsky.app/profile/" ++ Url.percentEncode did)
-
+                    -- No `#mention` case on purpose: its text is the plain `@handle`, which `markdown.js`
+                    -- turns into a link to Rellm's own profile page (`/handle@bluesky`); a facet link
+                    -- would send it to bsky.app instead.
                     _ ->
                         Decode.fail "unsupported facet feature"
             )
