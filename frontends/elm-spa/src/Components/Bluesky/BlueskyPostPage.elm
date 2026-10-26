@@ -293,7 +293,7 @@ federatedPostView shared sensitiveMediaRevealed sensitive post =
     div []
         [ div [ class "post-detail" ]
             [ div [ class "federated-service-label" ] [ text "⇄ Bluesky" ]
-            , Authors.link "" "" starHost Nothing Nothing post.author
+            , div [ class "post-reply-meta" ] [ Authors.link "" "" starHost Nothing Nothing post.author ]
             , Markdown.view [ class "post-detail-content" ] (Maybe.withDefault "" post.content)
             , if gated then
                 button
