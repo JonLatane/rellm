@@ -67,6 +67,7 @@ status overrides =
     , createdAt = Time.millisToPosix overrides.createdAtMillis
     , inReplyToId = overrides.inReplyToId
     , authorUsername = overrides.username
+    , authorAcct = overrides.username
     , authorDisplayName = nonEmpty overrides.displayName
     , authorAvatarUrl = nonEmpty overrides.avatar
     , mediaAttachments = overrides.mediaAttachments

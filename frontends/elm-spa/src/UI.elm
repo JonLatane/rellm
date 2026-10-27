@@ -4282,6 +4282,12 @@ deleteConfirmationModal shared =
                             , "Delete"
                             )
 
+                        Shared.ConfirmFederatedPostDelete post _ ->
+                            ( "Delete Post?"
+                            , "Delete \"" ++ Posts.postTitleText post ++ "\"? This deletes it from the service it was posted on, and can't be undone."
+                            , "Delete"
+                            )
+
                         Shared.ConfirmEventDelete event _ ->
                             let
                                 occasionCount : Int

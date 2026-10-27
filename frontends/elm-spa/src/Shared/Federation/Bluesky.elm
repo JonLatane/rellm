@@ -2,7 +2,11 @@ module Shared.Federation.Bluesky exposing
     ( ActorProfile
     , BlueskyImage
     , FeedPost
+    , createReply
     , decoder
+    , deletePost
+    , editPost
+    , richText
     , fetchActorProfile
     , fetchAuthorFeed
     , fetchFollowers
@@ -49,6 +53,7 @@ account's own.
 
 -}
 
+import Dict
 import Http
 import Iso8601
 import Json.Decode as Decode exposing (Decoder)
@@ -1353,3 +1358,265 @@ searchActors auth query =
         , resolver = jsonResolver (Decode.field "actors" (Decode.list actorProfileDecoder)) (\metadata _ -> Http.BadStatus metadata.statusCode)
         , timeout = Just 10000
         }
+
+
+{-| A post's text and `app.bsky.richtext.facet`s, from the Markdown Rellm's editor works in (and
+`Post.content` is rendered from -- see `applyFacets`, which this inverts). AT Proto has no Markdown: a link is
+a facet over a UTF-8 byte range of plain text. So `[label](https://...)` becomes `label` plus a link facet,
+`[#tag](https://bsky.app/hashtag/tag)` a tag facet, and a bare `http(s)://` URL gets a link facet over itself
+(Bluesky's own apps detect those client-side, the network doesn't). Anything else is left as typed --
+including `@handle`, which stays plain text rather than a (notifying) mention facet.
+-}
+richText : String -> { text : String, facets : List Encode.Value }
+richText markdown =
+    richTextHelp markdown "" []
+
+
+richTextHelp : String -> String -> List Encode.Value -> { text : String, facets : List Encode.Value }
+richTextHelp remaining text facets =
+    case String.uncons remaining of
+        Nothing ->
+            { text = text, facets = List.reverse facets }
+
+        Just ( first, rest ) ->
+            case markdownLinkAt remaining of
+                Just ( label, url, afterLink ) ->
+                    richTextHelp afterLink (text ++ label) (facetFor text label (linkFeature label url) :: facets)
+
+                _ ->
+                    if String.startsWith "http://" remaining || String.startsWith "https://" remaining then
+                        let
+                            raw : String
+                            raw =
+                                remaining |> String.split " " |> List.head |> Maybe.withDefault "" |> String.split "\n" |> List.head |> Maybe.withDefault ""
+
+                            url : String
+                            url =
+                                dropTrailingPunctuation raw
+                        in
+                        richTextHelp (String.dropLeft (String.length url) remaining) (text ++ url) (facetFor text url (linkFeature url url) :: facets)
+
+                    else
+                        richTextHelp rest (text ++ String.fromChar first) facets
+
+
+{-| `[label](url)` at the very start of `s` -- the label and the url (which must be `http(s)`) and what's left after.
+-}
+markdownLinkAt : String -> Maybe ( String, String, String )
+markdownLinkAt s =
+    case ( String.startsWith "[" s, String.indexes "](" s |> List.head ) of
+        ( False, _ ) ->
+            Nothing
+
+        ( True, Nothing ) ->
+            Nothing
+
+        ( True, Just closeLabel ) ->
+            let
+                afterParen : String
+                afterParen =
+                    String.dropLeft (closeLabel + 2) s
+            in
+            case String.indexes ")" afterParen |> List.head of
+                Just closeUrl ->
+                    let
+                        label : String
+                        label =
+                            String.slice 1 closeLabel s
+
+                        url : String
+                        url =
+                            String.left closeUrl afterParen
+                    in
+                    if label /= "" && not (String.contains "[" label) && not (String.contains "\n" label) && (String.startsWith "http://" url || String.startsWith "https://" url) && not (String.contains " " url) then
+                        Just ( label, url, String.dropLeft (closeUrl + 1) afterParen )
+
+                    else
+                        Nothing
+
+                Nothing ->
+                    Nothing
+
+
+dropTrailingPunctuation : String -> String
+dropTrailingPunctuation url =
+    if String.endsWith "." url || String.endsWith "," url || String.endsWith ";" url || String.endsWith ":" url || String.endsWith "!" url || String.endsWith "?" url || String.endsWith ")" url then
+        dropTrailingPunctuation (String.dropRight 1 url)
+
+    else
+        url
+
+
+linkFeature : String -> String -> Encode.Value
+linkFeature label url =
+    case ( String.startsWith "#" label, String.startsWith "https://bsky.app/hashtag/" url ) of
+        ( True, True ) ->
+            Encode.object [ ( "$type", Encode.string "app.bsky.richtext.facet#tag" ), ( "tag", Encode.string (String.dropLeft 1 label) ) ]
+
+        _ ->
+            Encode.object [ ( "$type", Encode.string "app.bsky.richtext.facet#link" ), ( "uri", Encode.string url ) ]
+
+
+facetFor : String -> String -> Encode.Value -> Encode.Value
+facetFor before covered feature =
+    let
+        start : Int
+        start =
+            utf8StringLength before
+    in
+    Encode.object
+        [ ( "index", Encode.object [ ( "byteStart", Encode.int start ), ( "byteEnd", Encode.int (start + utf8StringLength covered) ) ] )
+        , ( "features", Encode.list identity [ feature ] )
+        ]
+
+
+utf8StringLength : String -> Int
+utf8StringLength =
+    String.foldl (\char total -> total + utf8Length char) 0
+
+
+type alias StrongRef =
+    { uri : String, cid : String }
+
+
+encodeStrongRef : StrongRef -> Encode.Value
+encodeStrongRef ref =
+    Encode.object [ ( "uri", Encode.string ref.uri ), ( "cid", Encode.string ref.cid ) ]
+
+
+{-| The parent's own ref and the thread root's (the parent itself, unless it's a reply too) -- what a reply
+record's `reply` field needs.
+-}
+fetchReplyRefs : BlueskyAuth -> String -> Task Http.Error ( StrongRef, StrongRef )
+fetchReplyRefs auth parentUri =
+    Http.task
+        { method = "GET"
+        , headers = readHeaders auth
+        , url = readHost auth ++ "/xrpc/app.bsky.feed.getPosts?uris=" ++ Url.percentEncode parentUri
+        , body = Http.emptyBody
+        , resolver =
+            jsonResolver
+                (Decode.field "posts"
+                    (Decode.index 0
+                        (Decode.map2
+                            (\parentCid maybeRoot ->
+                                let
+                                    parent : StrongRef
+                                    parent =
+                                        { uri = parentUri, cid = parentCid }
+                                in
+                                ( parent, Maybe.withDefault parent maybeRoot )
+                            )
+                            (Decode.field "cid" Decode.string)
+                            (Decode.maybe
+                                (Decode.at [ "record", "reply", "root" ]
+                                    (Decode.map2 StrongRef (Decode.field "uri" Decode.string) (Decode.field "cid" Decode.string))
+                                )
+                            )
+                        )
+                    )
+                )
+                (\metadata _ -> Http.BadStatus metadata.statusCode)
+        , timeout = Just 10000
+        }
+
+
+{-| Replies to the post at `parentUri` as `repo` (the connected account's handle), `markdown` being turned
+into text + facets by `richText`.
+-}
+createReply : String -> BlueskyAuth -> String -> String -> Task Http.Error ()
+createReply repo auth parentUri markdown =
+    Task.map2 Tuple.pair (fetchReplyRefs auth parentUri) Time.now
+        |> Task.andThen
+            (\( ( parent, root ), now ) ->
+                let
+                    rich : { text : String, facets : List Encode.Value }
+                    rich =
+                        richText markdown
+                in
+                repoWrite auth
+                    "createRecord"
+                    (Encode.object
+                        [ ( "repo", Encode.string repo )
+                        , ( "collection", Encode.string "app.bsky.feed.post" )
+                        , ( "record"
+                          , Encode.object
+                                [ ( "$type", Encode.string "app.bsky.feed.post" )
+                                , ( "text", Encode.string rich.text )
+                                , ( "facets", Encode.list identity rich.facets )
+                                , ( "reply", Encode.object [ ( "root", encodeStrongRef root ), ( "parent", encodeStrongRef parent ) ] )
+                                , ( "createdAt", Encode.string (Iso8601.fromTime now) )
+                                ]
+                          )
+                        ]
+                    )
+            )
+
+
+recordKey : String -> String
+recordKey uri =
+    uri |> String.split "/" |> List.reverse |> List.head |> Maybe.withDefault ""
+
+
+{-| Rewrites the text (and facets) of the post record at `uri`, keeping every other field of the record
+(reply refs, embeds, languages, `createdAt`) as it is: `getRecord`, then `putRecord` guarded by the record's
+`cid` so a concurrent edit isn't clobbered. Bluesky's own app can't edit posts, but the protocol allows it.
+-}
+editPost : String -> BlueskyAuth -> String -> String -> Task Http.Error ()
+editPost repo auth uri markdown =
+    Http.task
+        { method = "GET"
+        , headers = readHeaders auth
+        , url =
+            readHost auth
+                ++ "/xrpc/com.atproto.repo.getRecord?repo="
+                ++ Url.percentEncode repo
+                ++ "&collection=app.bsky.feed.post&rkey="
+                ++ Url.percentEncode (recordKey uri)
+        , body = Http.emptyBody
+        , resolver =
+            jsonResolver
+                (Decode.map2 Tuple.pair (Decode.field "cid" Decode.string) (Decode.field "value" (Decode.dict Decode.value)))
+                (\metadata _ -> Http.BadStatus metadata.statusCode)
+        , timeout = Just 10000
+        }
+        |> Task.andThen
+            (\( cid, record ) ->
+                let
+                    rich : { text : String, facets : List Encode.Value }
+                    rich =
+                        richText markdown
+
+                    updated : Encode.Value
+                    updated =
+                        record
+                            |> Dict.insert "text" (Encode.string rich.text)
+                            |> Dict.insert "facets" (Encode.list identity rich.facets)
+                            |> Dict.toList
+                            |> Encode.object
+                in
+                repoWrite auth
+                    "putRecord"
+                    (Encode.object
+                        [ ( "repo", Encode.string repo )
+                        , ( "collection", Encode.string "app.bsky.feed.post" )
+                        , ( "rkey", Encode.string (recordKey uri) )
+                        , ( "record", updated )
+                        , ( "swapRecord", Encode.string cid )
+                        ]
+                    )
+            )
+
+
+{-| Deletes the post record at `uri` -- only works for `repo`'s own.
+-}
+deletePost : String -> BlueskyAuth -> String -> Task Http.Error ()
+deletePost repo auth uri =
+    repoWrite auth
+        "deleteRecord"
+        (Encode.object
+            [ ( "repo", Encode.string repo )
+            , ( "collection", Encode.string "app.bsky.feed.post" )
+            , ( "rkey", Encode.string (recordKey uri) )
+            ]
+        )

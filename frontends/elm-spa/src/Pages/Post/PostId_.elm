@@ -49,8 +49,8 @@ type Msg
     | MastodonPostMsg MastodonPostPage.Msg
     | BlueskyPostMsg BlueskyPostPage.Msg
       -- Forwarded from `Main` (see `fromShared`) -- routed by `update` to whichever of the three
-      -- underlying pages' own `Shared.Msg` handling (currently just `PostPage`'s -- the Mastodon/
-      -- Bluesky pages have nothing of their own to react to here) matches the *current* `Model`,
+      -- underlying pages' own `Shared.Msg` handling (all three refetch on a saved reply/edit or a delete)
+      -- matches the *current* `Model`,
       -- since a bare `Shared.Msg` carries no notion of which one that is on its own. Regardless of
       -- which page is active, `subMsg` itself always still needs forwarding on to `Shared.update`
       -- (via `Effect.fromShared`) -- it's not just a page-local concern: this is how top-level
@@ -72,7 +72,7 @@ init shared req =
     in
     case Posts.parseFederatedPostId postId targetHost of
         Just (Posts.MastodonPostId { instanceHost, statusId }) ->
-            MastodonPostPage.init instanceHost statusId
+            MastodonPostPage.init shared instanceHost statusId
                 |> Tuple.mapFirst MastodonPost
                 |> Tuple.mapSecond (Effect.map MastodonPostMsg)
 
@@ -97,12 +97,12 @@ update shared msg model =
                 |> Tuple.mapSecond (Effect.map RellmPostMsg)
 
         ( MastodonPostMsg subMsg, MastodonPost subModel ) ->
-            MastodonPostPage.update subMsg subModel
+            MastodonPostPage.update shared subMsg subModel
                 |> Tuple.mapFirst MastodonPost
                 |> Tuple.mapSecond (Effect.map MastodonPostMsg)
 
         ( BlueskyPostMsg subMsg, BlueskyPost subModel ) ->
-            BlueskyPostPage.update subMsg subModel
+            BlueskyPostPage.update shared subMsg subModel
                 |> Tuple.mapFirst BlueskyPost
                 |> Tuple.mapSecond (Effect.map BlueskyPostMsg)
 
@@ -112,10 +112,15 @@ update shared msg model =
                 |> Tuple.mapFirst RellmPost
                 |> Tuple.mapSecond (Effect.map RellmPostMsg)
 
-        ( SharedMsgReceived subMsg, _ ) ->
-            -- Neither Mastodon/Bluesky page has any `Shared.Msg` of its own to react to, but
-            -- `subMsg` still needs to reach `Shared.update` -- see `Msg`'s own doc.
-            ( model, Effect.fromShared subMsg )
+        ( SharedMsgReceived subMsg, MastodonPost subModel ) ->
+            MastodonPostPage.update shared (MastodonPostPage.fromShared subMsg) subModel
+                |> Tuple.mapFirst MastodonPost
+                |> Tuple.mapSecond (Effect.map MastodonPostMsg)
+
+        ( SharedMsgReceived subMsg, BlueskyPost subModel ) ->
+            BlueskyPostPage.update shared (BlueskyPostPage.fromShared subMsg) subModel
+                |> Tuple.mapFirst BlueskyPost
+                |> Tuple.mapSecond (Effect.map BlueskyPostMsg)
 
         _ ->
             ( model, Effect.none )

@@ -1,7 +1,9 @@
-module Components.Bluesky.BlueskyPostPage exposing (Model, Msg, init, subscriptions, title, update, view)
+module Components.Bluesky.BlueskyPostPage exposing (Model, Msg, fromShared, init, subscriptions, title, update, view)
 
-{-| A single Bluesky post, read-only -- no reply/edit/delete/visibility/moderation/sync-destination
-affordances (none of that makes sense for a post Rellm doesn't own). Just its author, content, a link
+{-| A single Bluesky post. No visibility/moderation/sync-destination affordances (none of that makes sense for
+a post Rellm doesn't own), but with a connected Bluesky account the viewer can reply to it and to any post in
+its thread, and edit/delete their own -- see `Components.FederatedThread.Actions`, `Shared.Federation.Actions`
+and `Shared.MarkdownPanel`'s `NewFederatedReply`/`FederatedPostContent`. Shows its author, content, a link
 back to the original, and its conversation (the posts it replies to above it, its own reply tree
 below -- see `Shared.Federation.Bluesky.fetchThread` and `Components.FederatedThread`).
 
@@ -32,6 +34,9 @@ import Shared.AccountsPanel.BlueskyAccounts as BlueskyAccounts exposing (Bluesky
 import Shared.AccountsPanel.RellmServers exposing (RellmServer)
 import Shared.Federation.Bluesky as Bluesky
 import Shared.Federation.Common as Common exposing (Thread)
+import Process
+import Shared.Federation.Actions as FederationActions
+import Shared.MarkdownPanel as MarkdownPanel
 import Shared.MediaViewerPanel as MediaViewerPanel
 import Shared.StarredPanel as StarredPanel
 import Task
@@ -53,6 +58,10 @@ type alias Model =
 
     -- `thread.replies` as a static, collapsible `Components.PostReplies` tree.
     , replies : PostReplies.Model
+
+    -- Why the last Delete failed (see `Shared.Federation.Actions.writeErrorText`) -- the confirmation dialog
+    -- has closed by then, so without this a failure would be silent. Cleared by the next Delete.
+    , deleteError : Maybe String
     }
 
 
@@ -77,6 +86,14 @@ type Msg
     | RevealSensitiveMediaClicked
     | StarredPanelMsg StarredPanel.Msg
     | RepliesMsg PostReplies.Msg
+    | ReplyClicked Post
+    | EditClicked Post
+    | DeleteClicked Post
+      -- Re-runs the fetch (after a short wait for AppView to index a write) -- see `SharedMsg`.
+    | Refetch
+      -- Forwarded from `Pages.Post.PostId_` (see `fromShared`): a saved reply/edit or a confirmed delete
+      -- means the thread on screen is stale.
+    | SharedMsg Shared.Msg
 
 
 {-| `uri` comes straight from `Components.Posts.parseFederatedPostId`'s `BlueskyPostId` -- see that
@@ -89,6 +106,15 @@ of the rotated/reauth-needed account this can come back with.
 -}
 init : Shared.Model -> String -> ( Model, Effect Msg )
 init shared uri =
+    ( { uri = uri, postStatus = LoadingPost, sensitiveMediaRevealed = False, thread = Common.emptyThread, replies = PostReplies.initStatic "bluesky:" [], deleteError = Nothing }
+    , fetchEffect shared uri
+    )
+
+
+{-| The fetch `init` and `Refetch` both run -- see `init`'s doc.
+-}
+fetchEffect : Shared.Model -> String -> Effect Msg
+fetchEffect shared uri =
     let
         -- The handle and the refresh token this fetch starts with -- see
         -- `AccountsPanel.MarkBlueskyAccountNeedsReauth` on why the token is needed.
@@ -135,9 +161,7 @@ init shared uri =
                                     |> Task.map (\thread -> ( Nothing, ( post, sensitive ), thread ))
                             )
     in
-    ( { uri = uri, postStatus = LoadingPost, sensitiveMediaRevealed = False, thread = Common.emptyThread, replies = PostReplies.initStatic "bluesky:" [] }
-    , fetchTask |> Task.attempt (GotPost actingAccount) |> Effect.fromCmd
-    )
+    fetchTask |> Task.attempt (GotPost actingAccount) |> Effect.fromCmd
 
 
 {-| A successful fetch persists a rotated access/refresh token pair, if `performWithBlueskyAccount`
@@ -153,8 +177,8 @@ subscriptions model =
     Sub.map RepliesMsg (PostReplies.subscriptions model.replies)
 
 
-update : Msg -> Model -> ( Model, Effect Msg )
-update msg model =
+update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
+update shared msg model =
     case msg of
         GotPost _ (Ok ( maybeRefreshedAccount, ( post, sensitive ), thread )) ->
             ( { model | postStatus = PostLoaded post sensitive, thread = thread, replies = PostReplies.initStatic "bluesky:" thread.replies }
@@ -202,6 +226,47 @@ update msg model =
         StarredPanelMsg subMsg ->
             ( model, Effect.fromShared (Shared.StarredPanelMsg subMsg) )
 
+        ReplyClicked post ->
+            ( model, Effect.fromShared (Shared.MarkdownPanelMsg (MarkdownPanel.Open (MarkdownPanel.NewFederatedReply post) starHost)) )
+
+        EditClicked post ->
+            ( model, Effect.fromShared (Shared.MarkdownPanelMsg (MarkdownPanel.Open (MarkdownPanel.FederatedPostContent post) starHost)) )
+
+        DeleteClicked post ->
+            ( { model | deleteError = Nothing }, Effect.fromShared (Shared.RequestDelete (Shared.ConfirmFederatedPostDelete post starHost)) )
+
+        Refetch ->
+            ( model, fetchEffect shared model.uri )
+
+        SharedMsg subMsg ->
+            case subMsg of
+                Shared.MarkdownPanelMsg (MarkdownPanel.GotFederatedSaveResult (Ok _)) ->
+                    ( model, Effect.batch [ Effect.fromShared subMsg, refetchSoon ] )
+
+                Shared.GotFederatedPostDeleteResult (Ok _) ->
+                    ( { model | deleteError = Nothing }, Effect.batch [ Effect.fromShared subMsg, refetchSoon ] )
+
+                Shared.GotFederatedPostDeleteResult (Err err) ->
+                    ( { model | deleteError = Just (FederationActions.writeErrorText err) }, Effect.fromShared subMsg )
+
+                _ ->
+                    ( model, Effect.fromShared subMsg )
+
+
+{-| `Refetch` after a moment -- AT Proto's AppView indexes a write a beat after the PDS accepts it.
+-}
+refetchSoon : Effect Msg
+refetchSoon =
+    Process.sleep 1500 |> Task.perform (\_ -> Refetch) |> Effect.fromCmd
+
+
+{-| Lets `Pages.Post.PostId_` forward a `Shared.Msg` that didn't originate from this page into `update`'s
+`SharedMsg` branch.
+-}
+fromShared : Shared.Msg -> Msg
+fromShared =
+    SharedMsg
+
 
 {-| `host` for `StarredPanel`'s keying/lookups -- the same `"bluesky:"` tag
 `federatedPostView`'s own `Authors.link` call and every Bluesky post card
@@ -232,6 +297,13 @@ view shared model =
             div []
                 [ FederatedThread.ancestorsView (threadConfig shared) model.thread
                 , federatedPostView shared model.sensitiveMediaRevealed sensitive displayPost
+                , case model.deleteError of
+                    Just err ->
+                        p [ class "post-error" ] [ text ("Couldn't delete: " ++ err) ]
+
+                    Nothing ->
+                        text ""
+                , FederatedThread.postActionsView (threadConfig shared) displayPost
                 , FederatedThread.repliesView (threadConfig shared) RepliesMsg model.replies
                 ]
 
@@ -248,6 +320,7 @@ threadConfig shared =
     , accounts = shared.accounts
     , starredPanel = shared.panels.starredPanel
     , onStarredPanelMsg = StarredPanelMsg
+    , actions = { onReply = ReplyClicked, onEdit = EditClicked, onDelete = DeleteClicked }
     }
 
 

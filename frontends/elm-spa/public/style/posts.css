@@ -704,6 +704,27 @@
   color: var(--muted);
 }
 
+/* A deleted post (Components/Pages/PostPage.elm's `deletedPostView`) or reply
+   (Components/Posts.elm's `replyCard`) -- DeletePost soft-deletes, keeping the
+   row (and so its replies) but clearing author/content. */
+.post-deleted,
+.post-reply-deleted {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.post-deleted {
+  padding: 1rem 0;
+}
+
+.post-deleted-title {
+  margin: 0;
+}
+
+.post-reply-deleted {
+  margin-top: 0.4rem;
+}
+
 /* Reply button -- see Pages/Post/PostId_.elm's `postActionsView`, which opens
    the shared Markdown editor panel (Shared/MarkdownPanel.elm). */
 .post-actions {
