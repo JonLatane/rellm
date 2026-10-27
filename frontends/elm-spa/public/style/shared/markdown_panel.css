@@ -76,6 +76,25 @@
   flex: 0 0 auto;
 }
 
+/* Visibility picker, then the "Editing/Posting as" account row, grouped at the header's right. */
+.markdown-panel-identity {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.markdown-panel-visibility-select {
+  max-width: 140px;
+  font-size: 0.8rem;
+  background: var(--chip-bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.2rem 0.4rem;
+}
+
 .markdown-panel-account {
   display: flex;
   align-items: center;

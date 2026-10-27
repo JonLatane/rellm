@@ -24,6 +24,7 @@ import Components.Posts as Posts
 import Components.UserPicker as UserPicker
 import Components.Users as Users
 import Grpc
+import Http
 import Html exposing (Html, button, div, img, label, option, select, span, text, textarea)
 import Html.Attributes exposing (alt, attribute, class, disabled, id, placeholder, selected, spellcheck, src, title, type_, value)
 import Html.Events exposing (onClick, onInput, preventDefaultOn)
@@ -31,10 +32,13 @@ import Json.Decode as Decode
 import Proto.Rellm exposing (Author, Message, Post, ServerInfo, User, defaultGetPostsRequest, defaultPost, defaultSendMessageRequest, defaultServerInfo)
 import Proto.Rellm.Permission exposing (Permission(..))
 import Proto.Rellm.PostContext exposing (PostContext(..))
+import Proto.Rellm.Visibility exposing (Visibility(..))
 import Proto.Rellm.Rellm as Rellm
 import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer, withAccessToken)
+import Shared.Federation.Actions as FederationActions exposing (ServerAccount(..))
+import Shared.Federation.Mastodon as Mastodon exposing (MastodonVisibility(..))
 import Task exposing (Task)
 import UI.Classes exposing (classes, hostnameToCSSClass, openClosedClass)
 
@@ -71,6 +75,13 @@ type alias Model =
     -- messages don't need one; `SubjectToggleClicked` flips it,
     -- `messageSubject` itself is untouched either way.
     , messageSubjectExpanded : Bool
+
+    -- The visibility picker at the top right of the panel (see `visibilityPicker`). `visibility` is a Rellm
+    -- `Visibility`, seeded from the post being replied to/edited by `Open`; `mastodonVisibility` is the
+    -- Mastodon-native one for `NewFederatedReply` on Mastodon. Bluesky has no per-post visibility, and
+    -- Mastodon can't change an existing status', so those show no picker.
+    , visibility : Visibility
+    , mastodonVisibility : MastodonVisibility
     }
 
 
@@ -108,6 +119,15 @@ type Msg
       -- no extra `Model` field needed just to shuttle it there.
     | GotSendMessageResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, String, Message ))
     | PostingAsChanged String
+    | VisibilityChanged String
+    | MastodonVisibilityChanged String
+      -- `NewFederatedReply`/`FederatedPostContent`'s own save result -- these write straight to Mastodon/
+      -- Bluesky over HTTP, not Rellm's gRPC, so the error type differs from `GotSaveResult`'s. Handled the
+      -- same way (and likewise forwarded to the mounted page, which refetches its thread).
+    | GotFederatedSaveResult (Result Http.Error (Maybe AccountsPanel.Msg))
+      -- A Mastodon status' plain-text source arriving for `FederatedPostContent` (the id is the post's) --
+      -- replaces the editor's content unless the user has already started typing.
+    | GotEditSource String (Result Http.Error String)
     | MessageSubjectChanged String
     | SubjectToggleClicked
     | UserPickerMsg UserPicker.Msg
@@ -161,6 +181,10 @@ type TargetType
     | ServerPrivacyPolicy RellmServer
     | ServerMediaPolicy RellmServer
     | SendNewMessage (List Author)
+      -- A reply to / an edit of a Mastodon or Bluesky post (`targetHost` is `"mastodon:" ++ instance` or
+      -- `"bluesky:"`), written as a connected account of that service -- see `Shared.Federation.Actions`.
+    | NewFederatedReply Post
+    | FederatedPostContent Post
 
 
 type SubmitStatus
@@ -196,6 +220,8 @@ init =
     , messageSubject = ""
     , messageRecipients = UserPicker.empty ""
     , messageSubjectExpanded = False
+    , visibility = GLOBALPUBLIC
+    , mastodonVisibility = MastodonPublic
     }
 
 
@@ -246,13 +272,15 @@ update accountsPanelModel msg model =
             ( { model
                 | target = Just target
                 , targetHost = host
-                , content = initialContent target
+                , content = initialContent target host
                 , status = Idle
                 , messageSubject = ""
                 , messageRecipients = messageRecipients
                 , messageSubjectExpanded = False
+                , visibility = initialVisibility target
+                , mastodonVisibility = MastodonPublic
               }
-            , Cmd.batch [ Cmd.map UserPickerMsg recipientsCmd, focusCmdFor target ]
+            , Cmd.batch [ Cmd.map UserPickerMsg recipientsCmd, focusCmdFor target, editSourceCmd accountsPanelModel target host ]
             , ( Nothing, False, False )
             )
 
@@ -268,7 +296,7 @@ update accountsPanelModel msg model =
                 hasUnsavedChanges =
                     case model.target of
                         Just target ->
-                            model.content /= initialContent target
+                            model.content /= initialContent target model.targetHost
 
                         Nothing ->
                             False
@@ -307,6 +335,43 @@ update accountsPanelModel msg model =
 
                 Nothing ->
                     ( model, Cmd.none, ( Nothing, False, False ) )
+
+        VisibilityChanged text ->
+            ( { model | visibility = Posts.visibilityFromText text |> Maybe.withDefault model.visibility }, Cmd.none, ( Nothing, False, False ) )
+
+        MastodonVisibilityChanged text ->
+            ( { model
+                | mastodonVisibility =
+                    Mastodon.allVisibilities
+                        |> List.filter (\v -> Mastodon.visibilityLabel v == text)
+                        |> List.head
+                        |> Maybe.withDefault model.mastodonVisibility
+              }
+            , Cmd.none
+            , ( Nothing, False, False )
+            )
+
+        GotFederatedSaveResult (Ok maybeAccountsPanelMsg) ->
+            ( { init | viewMode = model.viewMode }, Cmd.none, ( maybeAccountsPanelMsg, True, False ) )
+
+        GotFederatedSaveResult (Err err) ->
+            ( { model | status = SubmitFailed (FederationActions.writeErrorText err) }, Cmd.none, ( Nothing, False, False ) )
+
+        GotEditSource postId (Ok source) ->
+            case model.target of
+                Just (FederatedPostContent post) ->
+                    if post.id == postId && model.content == initialContent (FederatedPostContent post) model.targetHost then
+                        ( { model | content = source }, Cmd.none, ( Nothing, False, False ) )
+
+                    else
+                        ( model, Cmd.none, ( Nothing, False, False ) )
+
+                _ ->
+                    ( model, Cmd.none, ( Nothing, False, False ) )
+
+        -- Best-effort: the displayed content is a fine starting point.
+        GotEditSource _ (Err _) ->
+            ( model, Cmd.none, ( Nothing, False, False ) )
 
         MessageSubjectChanged subject ->
             ( { model | messageSubject = subject }, Cmd.none, ( Nothing, False, False ) )
@@ -374,16 +439,29 @@ update accountsPanelModel msg model =
                                     )
 
                 Just target ->
-                    case resolve accountsPanelModel target model.targetHost of
-                        Ok resolved ->
-                            ( { model | status = Submitting }
-                            , saveTask accountsPanelModel ( Just resolved.account.userId, resolved.server.frontendHost ) target model.content
-                                |> Task.attempt GotSaveResult
-                            , ( Nothing, False, False )
-                            )
+                    if isFederatedTarget target then
+                        case resolveFederated accountsPanelModel target model.targetHost of
+                            Ok account ->
+                                ( { model | status = Submitting }
+                                , federatedSaveTask account target model.targetHost model.mastodonVisibility model.content
+                                    |> Task.attempt GotFederatedSaveResult
+                                , ( Nothing, False, False )
+                                )
 
-                        Err err ->
-                            ( { model | status = SubmitFailed err }, Cmd.none, ( Nothing, False, False ) )
+                            Err err ->
+                                ( { model | status = SubmitFailed err }, Cmd.none, ( Nothing, False, False ) )
+
+                    else
+                        case resolve accountsPanelModel target model.targetHost of
+                            Ok resolved ->
+                                ( { model | status = Submitting }
+                                , saveTask accountsPanelModel ( Just resolved.account.userId, resolved.server.frontendHost ) target model.visibility model.content
+                                    |> Task.attempt GotSaveResult
+                                , ( Nothing, False, False )
+                                )
+
+                            Err err ->
+                                ( { model | status = SubmitFailed err }, Cmd.none, ( Nothing, False, False ) )
 
                 Nothing ->
                     ( model, Cmd.none, ( Nothing, False, False ) )
@@ -441,9 +519,17 @@ problem with that (`resolve`) inline, before the user even taps Save.
 view : AccountsPanel.Model -> Model -> Html Msg
 view accountsPanelModel model =
     let
-        resolution : Maybe (Result String Resolved)
+        resolution : Maybe (Result String ())
         resolution =
-            model.target |> Maybe.map (\target -> resolve accountsPanelModel target model.targetHost)
+            model.target
+                |> Maybe.map
+                    (\target ->
+                        if isFederatedTarget target then
+                            resolveFederated accountsPanelModel target model.targetHost |> Result.map (\_ -> ())
+
+                        else
+                            resolve accountsPanelModel target model.targetHost |> Result.map (\_ -> ())
+                    )
 
         -- `SendNewMessage`-only extra validation (recipients/content) that
         -- doesn't fit `resolve`'s per-target host/account signature -- see
@@ -486,7 +572,10 @@ view accountsPanelModel model =
         )
         [ div [ class "markdown-panel-header" ]
             [ modeSlider model.targetHost model.viewMode
-            , accountRowFor accountsPanelModel model
+            , div [ class "markdown-panel-identity" ]
+                [ visibilityPicker accountsPanelModel model
+                , accountRowFor accountsPanelModel model
+                ]
             ]
         , extraFieldsView accountsPanelModel model
         , div [ classes [ "markdown-panel-split", viewModeClass model.viewMode ] ]
@@ -656,7 +745,14 @@ accountRowFor accountsPanelModel model =
         Just (SendNewMessage _) ->
             sendMessagePostingAsRow accountsPanelModel model
 
-        _ ->
+        Just target ->
+            if isFederatedTarget target then
+                federatedAccountRow accountsPanelModel model target
+
+            else
+                accountRow accountsPanelModel model
+
+        Nothing ->
             accountRow accountsPanelModel model
 
 
@@ -678,6 +774,82 @@ accountRow accountsPanelModel model =
 
         Nothing ->
             text ""
+
+
+{-| `accountRow` for a Mastodon/Bluesky target: whichever connected account `resolveFederated` picked.
+-}
+federatedAccountRow : AccountsPanel.Model -> Model -> TargetType -> Html Msg
+federatedAccountRow accountsPanelModel model target =
+    case resolveFederated accountsPanelModel target model.targetHost of
+        Ok account ->
+            div [ class "markdown-panel-account" ]
+                [ text (verbFor model.target)
+                , case FederationActions.avatarUrlOf account of
+                    Just url ->
+                        img [ class "markdown-panel-account-avatar", src url, alt (FederationActions.usernameOf account), attribute "loading" "lazy" ] []
+
+                    Nothing ->
+                        div [ classes [ "markdown-panel-account-avatar", "placeholder" ] ] [ text (RellmServers.initialLetter (FederationActions.usernameOf account)) ]
+                , span [ class "markdown-panel-account-name" ] [ text (FederationActions.usernameOf account) ]
+                ]
+
+        Err _ ->
+            text ""
+
+
+{-| The visibility `<select>` just left of the "Editing/Posting as" account row. For a Rellm reply or edit: the
+`Visibility`s the signed-in account may pick (`Posts.allowedVisibilities`, always including the post's current
+one). For a Mastodon reply: Mastodon's own four. Nothing for anything else -- Bluesky has no per-post
+visibility, a Mastodon status' can't be changed after posting, and the other targets have none.
+-}
+visibilityPicker : AccountsPanel.Model -> Model -> Html Msg
+visibilityPicker accountsPanelModel model =
+    case model.target of
+        Just (NewReply post) ->
+            rellmVisibilityPicker accountsPanelModel model post REPLY
+
+        Just (PostContent post) ->
+            rellmVisibilityPicker accountsPanelModel model post post.context
+
+        Just (NewFederatedReply _) ->
+            if String.startsWith "mastodon:" model.targetHost then
+                visibilitySelect
+                    Mastodon.visibilityLabel
+                    MastodonVisibilityChanged
+                    model.mastodonVisibility
+                    Mastodon.allVisibilities
+
+            else
+                text ""
+
+        _ ->
+            text ""
+
+
+rellmVisibilityPicker : AccountsPanel.Model -> Model -> Post -> PostContext -> Html Msg
+rellmVisibilityPicker accountsPanelModel model post context =
+    case RellmAccounts.enabledRellmAccountForServer accountsPanelModel.accounts model.targetHost of
+        Just account ->
+            visibilitySelect Posts.visibilityText VisibilityChanged model.visibility (Posts.allowedVisibilities account.permissions context post.visibility)
+
+        Nothing ->
+            text ""
+
+
+visibilitySelect : (a -> String) -> (String -> Msg) -> a -> List a -> Html Msg
+visibilitySelect label toMsg current options =
+    select
+        [ class "markdown-panel-visibility-select"
+        , attribute "aria-label" "Visibility"
+        , title "Visibility"
+        , onInput toMsg
+        ]
+        (List.map
+            (\option_ ->
+                option [ value (label option_), selected (option_ == current) ] [ text (label option_) ]
+            )
+            options
+        )
 
 
 {-| `accountRowFor`'s `SendNewMessage` case -- "Sending as <avatar> username"
@@ -811,8 +983,8 @@ subjectToggleButton expanded =
         [ text "…" ]
 
 
-initialContent : TargetType -> String
-initialContent target =
+initialContent : TargetType -> String -> String
+initialContent target host =
     case target of
         PostContent post ->
             Maybe.withDefault "" post.content
@@ -838,6 +1010,34 @@ initialContent target =
         SendNewMessage _ ->
             ""
 
+        -- Mastodon only threads a reply to the people mentioned in it, so start with the parent's author.
+        NewFederatedReply post ->
+            case ( String.startsWith "mastodon:" host, post.author |> Maybe.andThen .username ) of
+                ( True, Just username ) ->
+                    "@" ++ username ++ " "
+
+                _ ->
+                    ""
+
+        FederatedPostContent post ->
+            Maybe.withDefault "" post.content
+
+
+{-| What `Open` seeds the visibility picker with: the post's own (what a reply has always inherited, and what
+an edit starts from). Unused by targets with no picker.
+-}
+initialVisibility : TargetType -> Visibility
+initialVisibility target =
+    case target of
+        PostContent post ->
+            post.visibility
+
+        NewReply post ->
+            post.visibility
+
+        _ ->
+            GLOBALPUBLIC
+
 
 viewModeClass : ViewMode -> String
 viewModeClass mode =
@@ -856,6 +1056,9 @@ verbFor : Maybe TargetType -> String
 verbFor target =
     case target of
         Just (NewReply _) ->
+            "Posting as "
+
+        Just (NewFederatedReply _) ->
             "Posting as "
 
         Just (NewPostContent _) ->
@@ -975,6 +1178,76 @@ resolve accountsPanelModel target host =
                             SendNewMessage _ ->
                                 Ok { server = server, account = account }
 
+                            -- Never reached: a federated `host` isn't a `RellmServer` (see `resolveFederated`).
+                            NewFederatedReply _ ->
+                                Err "That server isn't connected."
+
+                            FederatedPostContent _ ->
+                                Err "That server isn't connected."
+
+
+isFederatedTarget : TargetType -> Bool
+isFederatedTarget target =
+    case target of
+        NewFederatedReply _ ->
+            True
+
+        FederatedPostContent _ ->
+            True
+
+        _ ->
+            False
+
+
+{-| `resolve`'s counterpart for a Mastodon/Bluesky target -- the connected account that replies (`NewFederatedReply`:
+the one on that very instance if there is one, else any usable one; the enabled Bluesky account) or that wrote
+the post being edited (`FederatedPostContent`).
+-}
+resolveFederated : AccountsPanel.Model -> TargetType -> String -> Result String ServerAccount
+resolveFederated accountsPanelModel target host =
+    case target of
+        NewFederatedReply _ ->
+            FederationActions.serverAccountFor accountsPanelModel host
+                |> Result.fromMaybe "Connect a Mastodon or Bluesky account in the Accounts Panel to reply."
+
+        FederatedPostContent post ->
+            FederationActions.ownAccountFor accountsPanelModel host post
+                |> Result.fromMaybe "You can only edit your own posts."
+
+        _ ->
+            Err "Not a Mastodon or Bluesky post."
+
+
+{-| The Mastodon status source `FederatedPostContent` should start from, fetched as soon as the panel opens.
+-}
+editSourceCmd : AccountsPanel.Model -> TargetType -> String -> Cmd Msg
+editSourceCmd accountsPanelModel target host =
+    case target of
+        FederatedPostContent post ->
+            case FederationActions.ownAccountFor accountsPanelModel host post of
+                Just (MastodonServerAccount a) ->
+                    Mastodon.fetchStatusSource a.instanceHost a.accessToken post.id
+                        |> Task.attempt (GotEditSource post.id)
+
+                _ ->
+                    Cmd.none
+
+        _ ->
+            Cmd.none
+
+
+federatedSaveTask : ServerAccount -> TargetType -> String -> MastodonVisibility -> String -> Task Http.Error (Maybe AccountsPanel.Msg)
+federatedSaveTask account target host mastodonVisibility content =
+    case target of
+        NewFederatedReply post ->
+            FederationActions.reply account host post mastodonVisibility content
+
+        FederatedPostContent post ->
+            FederationActions.editPost account post content
+
+        _ ->
+            Task.fail Http.NetworkError
+
 
 {-| `SendNewMessage`-only validation `resolve` can't do itself -- it only
 sees `TargetType`/`host`, not the rest of `Model` (`messageRecipients`'
@@ -1010,8 +1283,8 @@ returned -- none of these three cases' updated entities are used by any
 caller (see `Pages.Post.PostId_`/`Components.UserProfilePage`'s
 `GotSaveResult` handling, which just refetches their own copy on success).
 -}
-saveTask : AccountsPanel.Model -> AccountsPanel.MaybeAccountServer -> TargetType -> String -> Task Grpc.Error (Maybe AccountsPanel.Msg)
-saveTask accountsPanelModel maybeAccountServer target content =
+saveTask : AccountsPanel.Model -> AccountsPanel.MaybeAccountServer -> TargetType -> Visibility -> String -> Task Grpc.Error (Maybe AccountsPanel.Msg)
+saveTask accountsPanelModel maybeAccountServer target visibility content =
     case target of
         PostContent post ->
             AccountsPanel.performWithAccountServer
@@ -1026,7 +1299,19 @@ saveTask accountsPanelModel maybeAccountServer target content =
                             (\response ->
                                 case List.head response.posts of
                                     Just freshPost ->
-                                        Grpc.new Rellm.updatePost { freshPost | content = Just content }
+                                        Grpc.new Rellm.updatePost
+                                            { freshPost
+                                                | content = Just content
+
+                                                -- Only if the picker was changed -- otherwise whatever it is
+                                                -- server-side now stays.
+                                                , visibility =
+                                                    if visibility /= post.visibility then
+                                                        visibility
+
+                                                    else
+                                                        freshPost.visibility
+                                            }
                                             |> Grpc.setHost (RellmServers.rellmServerUrl server)
                                             |> withAccessToken (Just token)
                                             |> Grpc.toTask
@@ -1047,7 +1332,7 @@ saveTask accountsPanelModel maybeAccountServer target content =
                             | replyToPostId = Just post.id
                             , content = Just content
                             , context = REPLY
-                            , visibility = post.visibility
+                            , visibility = visibility
                         }
                         |> Grpc.setHost (RellmServers.rellmServerUrl server)
                         |> withAccessToken (Just token)
@@ -1080,6 +1365,13 @@ saveTask accountsPanelModel maybeAccountServer target content =
         -- dispatch. Still needs a branch here for exhaustiveness, same as
         -- `NewPostContent` above.
         SendNewMessage _ ->
+            Task.fail Grpc.NetworkError
+
+        -- Unreachable in practice -- `SaveClicked` routes these to `federatedSaveTask`.
+        NewFederatedReply _ ->
+            Task.fail Grpc.NetworkError
+
+        FederatedPostContent _ ->
             Task.fail Grpc.NetworkError
 
 

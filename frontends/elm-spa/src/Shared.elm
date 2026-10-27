@@ -36,6 +36,7 @@ import Components.Posts as Posts
 import Components.SyncSources as SyncSources
 import Components.Users as Users
 import Grpc
+import Http
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Ports
@@ -51,6 +52,7 @@ import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccoun
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer, withAccessToken)
 import Shared.AudioPlayerPanel as AudioPlayerPanel
 import Shared.Breadcrumbs as Breadcrumbs
+import Shared.Federation.Actions as FederationActions
 import Shared.BrowserInfo as BrowserInfo
 import Shared.Countabilibar as Countabilibar
 import Shared.CreateNewPanel as CreateNewPanel
@@ -232,6 +234,9 @@ type Msg
       -- `SettingsTab.applySharedMsg` shows it next to its Media Settings buttons.
     | GotLinkPreviewImagesDeleteResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, () ))
     | GotPostDeleteResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, Post ))
+      -- `ConfirmFederatedPostDelete`'s result: a Mastodon/Bluesky post deleted over that service's own HTTP
+      -- API (hence `Http.Error`), carrying the `AccountsPanel.Msg` for a refreshed token, if any.
+    | GotFederatedPostDeleteResult (Result Http.Error (Maybe AccountsPanel.Msg))
     | GotEventDeleteResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, Event ))
       -- `ConfirmOccasionDelete`'s own result -- unlike `GotEventDeleteResult`
       -- (after which nothing about the deleted `Event` is left to look at, so
@@ -377,6 +382,11 @@ type DeleteConfirmation
       -- reach this dialog.
     | ConfirmSyncSourceDelete SyncSource Bool String
     | ConfirmPostDelete Post String
+      -- `ConfirmPostDelete`'s counterpart for a Mastodon/Bluesky post, deleted as the connected account that wrote
+      -- it (`Shared.Federation.Actions.deletePost`) -- the trailing `String` is its `"mastodon:" ++ instance` /
+      -- `"bluesky:"` host. Fired from a reply card's Delete button on `Components.Mastodon.MastodonPostPage`/
+      -- `BlueskyPostPage`.
+    | ConfirmFederatedPostDelete Post String
     | ConfirmEventDelete Event String
       -- Deletes just `occasion` from `event` (every other `Occasion` is
       -- kept) rather than the whole `Event` -- `ConfirmDelete` fires
@@ -2591,6 +2601,18 @@ sharedUpdate req msg model =
                         |> Task.attempt GotPostDeleteResult
                     )
 
+                Just (ConfirmFederatedPostDelete post host) ->
+                    ( { model | panels = { panels | confirmingDeleteFor = Nothing } }
+                    , case FederationActions.ownAccountFor model.accounts host post of
+                        Just account ->
+                            FederationActions.deletePost account post
+                                |> Task.attempt GotFederatedPostDeleteResult
+
+                        Nothing ->
+                            Task.fail (Http.BadStatus 403)
+                                |> Task.attempt GotFederatedPostDeleteResult
+                    )
+
                 Just (ConfirmEventDelete event host) ->
                     ( { model | panels = { panels | confirmingDeleteFor = Nothing } }
                     , Events.deleteEvent
@@ -2755,6 +2777,21 @@ sharedUpdate req msg model =
             ( { model | accounts = accountsPanelModel }, Cmd.map AccountsPanelMsg accountsPanelCmd )
 
         GotPostDeleteResult (Err _) ->
+            ( model, Cmd.none )
+
+        GotFederatedPostDeleteResult (Ok maybeAccountsPanelMsg) ->
+            let
+                ( accountsPanelModel, accountsPanelCmd ) =
+                    case maybeAccountsPanelMsg of
+                        Just accountsPanelMsg ->
+                            AccountsPanel.update req accountsPanelMsg model.accounts
+
+                        Nothing ->
+                            ( model.accounts, Cmd.none )
+            in
+            ( { model | accounts = accountsPanelModel }, Cmd.map AccountsPanelMsg accountsPanelCmd )
+
+        GotFederatedPostDeleteResult (Err _) ->
             ( model, Cmd.none )
 
         GotEventDeleteResult (Ok ( maybeAccountsPanelMsg, _ )) ->

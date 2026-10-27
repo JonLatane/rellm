@@ -295,8 +295,8 @@ syncAnimations model =
 
 {-| Renders `model`'s whole (flattened) reply tree as one FLIP-animated list
 (see `syncAnimations`) -- `text ""` if there are none. `onReplyClicked`/
-`onEditClicked` build this page's own reply-composing/editing messages for a
-given reply Post (same as `postDetail`'s own `onEditClicked`); `onMediaClicked`
+`onEditClicked`/`onDeleteClicked` build this page's own reply-composing/editing/deleting messages for a
+given reply Post (`Nothing` hides the button -- whether the viewer may is the caller's call); `onMediaClicked`
 likewise takes the reply itself so a click can be attributed to the right
 Post. `toMsg` wraps this module's own `Msg` into the caller's.
 -}
@@ -310,7 +310,9 @@ view :
     , onMediaClicked : Post -> String -> msg
     , mediaPlayState : MediaRenderer.Model
     , onMediaPlayClicked : String -> msg
-    , onReplyClicked : Maybe (Post -> msg)
+    , onReplyClicked : Post -> Maybe msg
+    , onEditClicked : Post -> Maybe msg
+    , onDeleteClicked : Post -> Maybe msg
     , toMsg : Msg -> msg
 
     -- For each reply's star button (same toggling as a top-level post's, see `Shared.StarredPanel`).
@@ -364,7 +366,9 @@ replyAnimationView :
         , onMediaClicked : Post -> String -> msg
         , mediaPlayState : MediaRenderer.Model
         , onMediaPlayClicked : String -> msg
-        , onReplyClicked : Maybe (Post -> msg)
+        , onReplyClicked : Post -> Maybe msg
+        , onEditClicked : Post -> Maybe msg
+        , onDeleteClicked : Post -> Maybe msg
         , toMsg : Msg -> msg
         , accounts : AccountsPanel.Model
         , starredPanel : StarredPanel.Model
@@ -423,7 +427,9 @@ replyAnimationView config model ( depth, animPost, flip ) =
                 loaded
                 loading
                 collapsed
-                (Maybe.map (\onReply -> onReply post) config.onReplyClicked)
+                (config.onReplyClicked post)
+                (config.onEditClicked post)
+                (config.onDeleteClicked post)
                 (Just (config.toMsg (LoadRepliesClicked post.id)))
                 (Just (config.toMsg (ToggleCollapsed post.id)))
                 (StarredPanel.isStarred config.postServerHost post config.starredPanel)

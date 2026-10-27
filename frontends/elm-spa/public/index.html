@@ -616,7 +616,7 @@
       var body = new URLSearchParams();
       body.set("client_name", "Rellm");
       body.set("redirect_uris", redirectUri);
-      body.set("scopes", "read write:favourites");
+      body.set("scopes", "read write:favourites write:statuses");
       body.set("website", window.location.origin);
       return fetch("https://" + instanceHost + "/api/v1/apps", { method: "POST", body: body })
         .then(function (resp) {
@@ -782,7 +782,7 @@
                 "?client_id=" + encodeURIComponent(clientId) +
                 "&redirect_uri=" + encodeURIComponent(redirectUri) +
                 "&response_type=code" +
-                "&scope=" + encodeURIComponent("read write:favourites") +
+                "&scope=" + encodeURIComponent("read write:favourites write:statuses") +
                 "&code_challenge=" + encodeURIComponent(pkce.codeChallenge) +
                 "&code_challenge_method=S256";
             });

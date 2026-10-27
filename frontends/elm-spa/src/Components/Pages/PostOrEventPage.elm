@@ -223,7 +223,7 @@ update shared msg model =
                 |> Tuple.mapSecond (Effect.map EventMsg)
 
         ( BlueskyMsg subMsg, BlueskyPost subModel ) ->
-            BlueskyPostPage.update subMsg subModel
+            BlueskyPostPage.update shared subMsg subModel
                 |> Tuple.mapFirst BlueskyPost
                 |> Tuple.mapSecond (Effect.map BlueskyMsg)
 
@@ -232,13 +232,15 @@ update shared msg model =
                 |> Tuple.mapFirst MastodonPost
                 |> Tuple.mapSecond (Effect.map MastodonMsg)
 
-        ( SharedMsg subMsg, BlueskyPost _ ) ->
-            -- Neither federated page has a `Shared.Msg` of its own to react to, but it still has to reach
-            -- `Shared.update` (see `Pages.Post.PostId_.Msg`'s `SharedMsgReceived`).
-            ( model, Effect.fromShared subMsg )
+        ( SharedMsg subMsg, BlueskyPost subModel ) ->
+            BlueskyPostPage.update shared (BlueskyPostPage.fromShared subMsg) subModel
+                |> Tuple.mapFirst BlueskyPost
+                |> Tuple.mapSecond (Effect.map BlueskyMsg)
 
-        ( SharedMsg subMsg, MastodonPost _ ) ->
-            ( model, Effect.fromShared subMsg )
+        ( SharedMsg subMsg, MastodonPost subModel ) ->
+            MastodonPostPage.update (MastodonPostPage.fromShared subMsg) subModel
+                |> Tuple.mapFirst MastodonPost
+                |> Tuple.mapSecond (Effect.map MastodonMsg)
 
         ( SharedMsg _, Resolving resolving ) ->
             fetchIfReady shared resolving

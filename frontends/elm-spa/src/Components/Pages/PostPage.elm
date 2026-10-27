@@ -36,7 +36,6 @@ import Components.SyncDestinations as SyncDestinations
 import Components.Users as Users
 import Dict exposing (Dict)
 import Effect exposing (Effect)
-import Gen.Route
 import Grpc
 import Html exposing (Html, button, div, option, p, select, span, text)
 import Html.Attributes exposing (class, disabled, selected, value)
@@ -802,12 +801,12 @@ updateInner shared msg model =
                         Shared.MediaGeneratorPanelMsg MediaGeneratorPanel.CancelClicked ->
                             ( { model | mediaGeneratorActive = False }, Effect.none )
 
-                        -- This page's own `DeleteClicked` (via
-                        -- `Shared.RequestDelete`/`Shared.ConfirmDelete`)
-                        -- resolving successfully -- navigate away, since
-                        -- there's nothing left here to show.
+                        -- A Delete (this post's own, or a reply card's -- via
+                        -- `Shared.RequestDelete`/`Shared.ConfirmDelete`) resolving
+                        -- successfully -- refetch, so a deleted post shows as deleted (see
+                        -- `deletedPostView`) and a deleted reply shows as such in its thread.
                         Shared.GotPostDeleteResult (Ok _) ->
-                            ( model, Browser.Navigation.pushUrl model.navKey (Gen.Route.toHref Gen.Route.Home_) |> Effect.fromCmd )
+                            refetch shared model
 
                         -- The "synced to" listing's own Delete button (see
                         -- `Model.syncDestinationPushStatuses`'s own doc) resolving
@@ -942,12 +941,29 @@ view shared model =
                     p [ class "post-error" ] [ text ("Couldn't load Post " ++ model.postId ++ "@" ++ model.targetHost ++ ". Maybe it doesn't exist, or maybe you need to be logged in?") ]
 
                 PostLoaded post ->
-                    div []
-                        [ postDetailView shared model post
-                        , postActionsView shared model post
-                        , repliesView shared model
-                        ]
+                    if Posts.isDeleted post then
+                        div []
+                            [ deletedPostView
+                            , repliesView shared model
+                            ]
+
+                    else
+                        div []
+                            [ postDetailView shared model post
+                            , postActionsView shared model post
+                            , repliesView shared model
+                            ]
         )
+
+
+{-| What a deleted post (see `Posts.isDeleted`) shows in place of its detail -- its replies, if it had any,
+still follow it.
+-}
+deletedPostView : Html Msg
+deletedPostView =
+    div [ class "post-deleted" ]
+        [ p [ class "post-deleted-title" ] [ text "This post has been deleted." ]
+        ]
 
 
 postDetailView : Shared.Model -> Model -> Post -> Html Msg
@@ -1268,7 +1284,20 @@ repliesView shared model =
                 , onMediaClicked = MediaClicked
                 , mediaPlayState = shared.mediaRenderer
                 , onMediaPlayClicked = \mediaId -> SharedMsg (Shared.MediaRendererMsg (MediaRenderer.PlayClicked mediaId))
-                , onReplyClicked = Just ReplyClicked
+                , onReplyClicked =
+                    \reply ->
+                        case RellmAccounts.enabledRellmAccountForServer shared.accounts.accounts model.targetHost of
+                            Just account ->
+                                if List.member REPLYTOPOSTS account.permissions && not (Posts.isDeleted reply) then
+                                    Just (ReplyClicked reply)
+
+                                else
+                                    Nothing
+
+                            Nothing ->
+                                Nothing
+                , onEditClicked = \reply -> ownReplyMsg shared model reply (EditClicked reply)
+                , onDeleteClicked = \reply -> ownReplyMsg shared model reply (DeleteClicked reply)
                 , toMsg = PostRepliesMsg
                 , accounts = shared.accounts
                 , starredPanel = shared.panels.starredPanel
@@ -1278,6 +1307,22 @@ repliesView shared model =
 
         Nothing ->
             text ""
+
+
+{-| `msg` if the signed-in account on this post's server wrote `reply` -- gates a reply card's Edit/Delete.
+-}
+ownReplyMsg : Shared.Model -> Model -> Post -> Msg -> Maybe Msg
+ownReplyMsg shared model reply msg =
+    case RellmAccounts.enabledRellmAccountForServer shared.accounts.accounts model.targetHost of
+        Just account ->
+            if Posts.isAuthor account reply then
+                Just msg
+
+            else
+                Nothing
+
+        Nothing ->
+            Nothing
 
 
 {-| Just the subtitle -- the loaded Post's own title, or "Post &lt;id&gt;" before it's loaded --

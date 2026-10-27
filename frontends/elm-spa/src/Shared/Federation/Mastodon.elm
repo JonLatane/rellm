@@ -1,5 +1,12 @@
 module Shared.Federation.Mastodon exposing
     ( Account
+    , MastodonVisibility(..)
+    , allVisibilities
+    , deleteStatus
+    , editStatus
+    , fetchStatusSource
+    , postStatus
+    , visibilityLabel
     , MediaAttachment
     , Status
     , decoder
@@ -44,6 +51,7 @@ import Dict exposing (Dict)
 import Http
 import Iso8601
 import Json.Decode as Decode exposing (Decoder)
+import Json.Encode as Encode
 import Proto.Rellm exposing (Author, MediaReference, Post, defaultAuthor, defaultMediaReference, defaultMediaSize, defaultPost, wrapMediaReference, wrapPost)
 import Proto.Rellm.MediaConversion exposing (MediaConversion(..))
 import Proto.Rellm.PostContext exposing (PostContext(..))
@@ -769,5 +777,153 @@ searchAccounts instanceHost query =
         , url = "https://" ++ instanceHost ++ "/api/v2/search?type=accounts&limit=20&q=" ++ Url.percentEncode query
         , body = Http.emptyBody
         , resolver = jsonResolver (Decode.field "accounts" (Decode.list accountDecoder)) (\metadata _ -> Http.BadStatus metadata.statusCode)
+        , timeout = Just 10000
+        }
+
+
+{-| Mastodon's own `visibility` values for a new status -- unlike Rellm's `Visibility` there is no one-to-one
+mapping, so `Shared.MarkdownPanel` offers these natively when replying on Mastodon. A status' visibility
+can't be changed after the fact (`PUT /api/v1/statuses/:id` ignores it), so it's only ever picked for a new one.
+-}
+type MastodonVisibility
+    = MastodonPublic
+    | MastodonUnlisted
+    | MastodonFollowersOnly
+    | MastodonMentionedOnly
+
+
+allVisibilities : List MastodonVisibility
+allVisibilities =
+    [ MastodonPublic, MastodonUnlisted, MastodonFollowersOnly, MastodonMentionedOnly ]
+
+
+visibilityLabel : MastodonVisibility -> String
+visibilityLabel visibility =
+    case visibility of
+        MastodonPublic ->
+            "Public"
+
+        MastodonUnlisted ->
+            "Unlisted"
+
+        MastodonFollowersOnly ->
+            "Followers only"
+
+        MastodonMentionedOnly ->
+            "Mentioned only"
+
+
+visibilityValue : MastodonVisibility -> String
+visibilityValue visibility =
+    case visibility of
+        MastodonPublic ->
+            "public"
+
+        MastodonUnlisted ->
+            "unlisted"
+
+        MastodonFollowersOnly ->
+            "private"
+
+        MastodonMentionedOnly ->
+            "direct"
+
+
+authHeaders : String -> List Http.Header
+authHeaders accessToken =
+    [ Http.header "Authorization" ("Bearer " ++ accessToken) ]
+
+
+{-| `POST /api/v1/statuses` as the account holding `accessToken` -- needs the `write:statuses` OAuth scope
+(see `public/index.html`'s `mastodonRegisterApp`/authorize URL); a token connected before that scope was
+requested gets a 403. `inReplyToId` is the parent's id _on `instanceHost`_ (see `resolveStatusId` for a
+status viewed through another instance). `text` is sent verbatim -- Mastodon doesn't render Markdown.
+-}
+postStatus : String -> String -> { text : String, inReplyToId : Maybe String, visibility : MastodonVisibility } -> Task Http.Error ()
+postStatus instanceHost accessToken { text, inReplyToId, visibility } =
+    Http.task
+        { method = "POST"
+        , headers = authHeaders accessToken
+        , url = "https://" ++ instanceHost ++ "/api/v1/statuses"
+        , body =
+            Http.jsonBody
+                (Encode.object
+                    (( "status", Encode.string text )
+                        :: ( "visibility", Encode.string (visibilityValue visibility) )
+                        :: (inReplyToId |> Maybe.map (\id -> [ ( "in_reply_to_id", Encode.string id ) ]) |> Maybe.withDefault [])
+                    )
+                )
+        , resolver = jsonResolver (Decode.succeed ()) (\metadata _ -> Http.BadStatus metadata.statusCode)
+        , timeout = Just 10000
+        }
+
+
+{-| `GET /api/v1/statuses/:id/source` -- the plain text a status was written as (what an edit should start
+from; the displayed `content` is HTML-derived and lossy, e.g. for mentions).
+-}
+fetchStatusSource : String -> String -> String -> Task Http.Error String
+fetchStatusSource instanceHost accessToken statusId =
+    Http.task
+        { method = "GET"
+        , headers = authHeaders accessToken
+        , url = "https://" ++ instanceHost ++ "/api/v1/statuses/" ++ statusId ++ "/source"
+        , body = Http.emptyBody
+        , resolver = jsonResolver (Decode.field "text" Decode.string) (\metadata _ -> Http.BadStatus metadata.statusCode)
+        , timeout = Just 10000
+        }
+
+
+{-| `PUT /api/v1/statuses/:id` with new `text`. The endpoint replaces the status' attachments and content
+warning with whatever it's sent, so the current ones are read first (`GET /api/v1/statuses/:id`) and sent
+back unchanged -- editing the text mustn't silently drop media.
+-}
+editStatus : String -> String -> String -> String -> Task Http.Error ()
+editStatus instanceHost accessToken statusId text =
+    Http.task
+        { method = "GET"
+        , headers = authHeaders accessToken
+        , url = "https://" ++ instanceHost ++ "/api/v1/statuses/" ++ statusId
+        , body = Http.emptyBody
+        , resolver =
+            jsonResolver
+                (Decode.map3 (\mediaIds sensitive spoiler -> ( mediaIds, sensitive, spoiler ))
+                    (Decode.oneOf [ Decode.field "media_attachments" (Decode.list (Decode.field "id" Decode.string)), Decode.succeed [] ])
+                    (Decode.oneOf [ Decode.field "sensitive" Decode.bool, Decode.succeed False ])
+                    (Decode.oneOf [ Decode.field "spoiler_text" Decode.string, Decode.succeed "" ])
+                )
+                (\metadata _ -> Http.BadStatus metadata.statusCode)
+        , timeout = Just 10000
+        }
+        |> Task.andThen
+            (\( mediaIds, sensitive, spoiler ) ->
+                Http.task
+                    { method = "PUT"
+                    , headers = authHeaders accessToken
+                    , url = "https://" ++ instanceHost ++ "/api/v1/statuses/" ++ statusId
+                    , body =
+                        Http.jsonBody
+                            (Encode.object
+                                [ ( "status", Encode.string text )
+                                , ( "media_ids", Encode.list Encode.string mediaIds )
+                                , ( "sensitive", Encode.bool sensitive )
+                                , ( "spoiler_text", Encode.string spoiler )
+                                ]
+                            )
+                    , resolver = jsonResolver (Decode.succeed ()) (\metadata _ -> Http.BadStatus metadata.statusCode)
+                    , timeout = Just 10000
+                    }
+            )
+
+
+{-| `DELETE /api/v1/statuses/:id` -- only works on the account's own status (`statusId` on `instanceHost`).
+-}
+deleteStatus : String -> String -> String -> Task Http.Error ()
+deleteStatus instanceHost accessToken statusId =
+    Http.task
+        { method = "DELETE"
+        , headers = authHeaders accessToken
+        , url = "https://" ++ instanceHost ++ "/api/v1/statuses/" ++ statusId
+        , body = Http.emptyBody
+        , resolver = jsonResolver (Decode.succeed ()) (\metadata _ -> Http.BadStatus metadata.statusCode)
         , timeout = Just 10000
         }

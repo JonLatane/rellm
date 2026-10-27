@@ -1,7 +1,9 @@
-module Components.Mastodon.MastodonPostPage exposing (Model, Msg, init, subscriptions, title, update, view)
+module Components.Mastodon.MastodonPostPage exposing (Model, Msg, fromShared, init, subscriptions, title, update, view)
 
-{-| A single Mastodon post (status), read-only -- no reply/edit/delete/visibility/moderation/
-sync-destination affordances (none of that makes sense for a post Rellm doesn't own). Just its author,
+{-| A single Mastodon post (status). No visibility/moderation/sync-destination affordances (none of that makes
+sense for a post Rellm doesn't own), but with a connected Mastodon account the viewer can reply to it and to
+any status in its thread, and edit/delete their own -- see `Components.FederatedThread.Actions`,
+`Shared.Federation.Actions` and `Shared.MarkdownPanel`'s `NewFederatedReply`/`FederatedPostContent`. Shows its author,
 content, a link back to the original, and its conversation (the posts it replies to above it, its own
 reply tree below -- see `Shared.Federation.Mastodon.fetchThread` and `Components.FederatedThread`).
 
@@ -29,6 +31,8 @@ import Shared
 import Shared.AccountsPanel.RellmServers exposing (RellmServer)
 import Shared.Federation.Common as Common exposing (Thread)
 import Shared.Federation.Mastodon as Mastodon
+import Process
+import Shared.MarkdownPanel as MarkdownPanel
 import Shared.MediaViewerPanel as MediaViewerPanel
 import Shared.StarredPanel as StarredPanel
 import Task
@@ -76,6 +80,14 @@ type Msg
     | RevealSensitiveMediaClicked
     | StarredPanelMsg StarredPanel.Msg
     | RepliesMsg PostReplies.Msg
+    | ReplyClicked Post
+    | EditClicked Post
+    | DeleteClicked Post
+      -- Re-runs the fetch -- see `SharedMsg`.
+    | Refetch
+      -- Forwarded from `Pages.Post.PostId_` (see `fromShared`): a saved reply/edit or a confirmed delete
+      -- means the thread on screen is stale.
+    | SharedMsg Shared.Msg
 
 
 {-| `instanceHost`/`statusId` come straight from `Components.Posts.parseFederatedPostId`'s
@@ -84,7 +96,15 @@ type Msg
 init : String -> String -> ( Model, Effect Msg )
 init instanceHost statusId =
     ( { instanceHost = instanceHost, statusId = statusId, postStatus = LoadingPost, sensitiveMediaRevealed = False, thread = Common.emptyThread, replies = PostReplies.initStatic ("mastodon:" ++ instanceHost) [] }
-    , Mastodon.fetchStatusWithQuotes instanceHost statusId
+    , fetchEffect instanceHost statusId
+    )
+
+
+{-| The fetch `init` and `Refetch` both run.
+-}
+fetchEffect : String -> String -> Effect Msg
+fetchEffect instanceHost statusId =
+    Mastodon.fetchStatusWithQuotes instanceHost statusId
         |> Task.andThen
             (\( post, sensitive ) ->
                 Mastodon.fetchThread instanceHost statusId
@@ -93,12 +113,26 @@ init instanceHost statusId =
             )
         |> Task.attempt GotPost
         |> Effect.fromCmd
-    )
 
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
     Sub.map RepliesMsg (PostReplies.subscriptions model.replies)
+
+
+{-| `Refetch` after a moment, so the instance has finished with the write.
+-}
+refetchSoon : Effect Msg
+refetchSoon =
+    Process.sleep 1000 |> Task.perform (\_ -> Refetch) |> Effect.fromCmd
+
+
+{-| Lets `Pages.Post.PostId_` forward a `Shared.Msg` that didn't originate from this page into `update`'s
+`SharedMsg` branch.
+-}
+fromShared : Shared.Msg -> Msg
+fromShared =
+    SharedMsg
 
 
 update : Msg -> Model -> ( Model, Effect Msg )
@@ -134,6 +168,29 @@ update msg model =
 
         RevealSensitiveMediaClicked ->
             ( { model | sensitiveMediaRevealed = True }, Effect.none )
+
+        ReplyClicked post ->
+            ( model, Effect.fromShared (Shared.MarkdownPanelMsg (MarkdownPanel.Open (MarkdownPanel.NewFederatedReply post) (starHost model.instanceHost))) )
+
+        EditClicked post ->
+            ( model, Effect.fromShared (Shared.MarkdownPanelMsg (MarkdownPanel.Open (MarkdownPanel.FederatedPostContent post) (starHost model.instanceHost))) )
+
+        DeleteClicked post ->
+            ( model, Effect.fromShared (Shared.RequestDelete (Shared.ConfirmFederatedPostDelete post (starHost model.instanceHost))) )
+
+        Refetch ->
+            ( model, fetchEffect model.instanceHost model.statusId )
+
+        SharedMsg subMsg ->
+            case subMsg of
+                Shared.MarkdownPanelMsg (MarkdownPanel.GotFederatedSaveResult (Ok _)) ->
+                    ( model, Effect.batch [ Effect.fromShared subMsg, refetchSoon ] )
+
+                Shared.GotFederatedPostDeleteResult (Ok _) ->
+                    ( model, Effect.batch [ Effect.fromShared subMsg, refetchSoon ] )
+
+                _ ->
+                    ( model, Effect.fromShared subMsg )
 
         RepliesMsg subMsg ->
             PostReplies.updateStatic subMsg model.replies
@@ -173,6 +230,7 @@ view shared model =
             div []
                 [ FederatedThread.ancestorsView (threadConfig shared model.instanceHost) model.thread
                 , federatedPostView shared model.instanceHost model.sensitiveMediaRevealed sensitive displayPost
+                , FederatedThread.postActionsView (threadConfig shared model.instanceHost) displayPost
                 , FederatedThread.repliesView (threadConfig shared model.instanceHost) RepliesMsg model.replies
                 ]
 
@@ -189,6 +247,7 @@ threadConfig shared instanceHost =
     , accounts = shared.accounts
     , starredPanel = shared.panels.starredPanel
     , onStarredPanelMsg = StarredPanelMsg
+    , actions = { onReply = ReplyClicked, onEdit = EditClicked, onDelete = DeleteClicked }
     }
 
 

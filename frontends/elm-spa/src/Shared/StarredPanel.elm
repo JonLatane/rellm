@@ -62,6 +62,7 @@ import Shared.AccountsPanel.BlueskyAccounts as BlueskyAccounts exposing (Bluesky
 import Shared.AccountsPanel.MastodonAccounts as MastodonAccounts exposing (MastodonAccount)
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer)
+import Shared.Federation.Actions exposing (ServerAccount(..), rotatedBluesky, rotatedMastodon, serverAccountFor)
 import Shared.Federation.Bluesky as Bluesky
 import Shared.Federation.Mastodon as Mastodon
 import Shared.MediaViewerPanel as MediaViewerPanel
@@ -1641,51 +1642,6 @@ fetchEventGroup accountsPanelModel ( host, postIds ) ( events, cmds ) =
 -- SERVER-SIDE STARS (Mastodon favourites / Bluesky likes)
 
 
-type ServerAccount
-    = MastodonServerAccount MastodonAccount
-    | BlueskyServerAccount BlueskyAccount
-
-
-{-| The connected account (if any) `host`'s server-side stars live under: a Mastodon `host` prefers an
-account on that very instance (a status id is only meaningful to the instance it came from) but
-otherwise falls back to the first usable one -- `pushServerStar` then resolves the post onto that
-account's own instance; a Bluesky one needs the enabled account. Accounts flagged `needsReauth` don't
-count.
--}
-serverAccountFor : AccountsPanel.Model -> String -> Maybe ServerAccount
-serverAccountFor accountsPanelModel host =
-    if String.startsWith "mastodon:" host then
-        let
-            usable : List MastodonAccount
-            usable =
-                List.filter (not << .needsReauth) accountsPanelModel.mastodonAccounts
-        in
-        usable
-            |> List.filter (\account -> account.instanceHost == String.dropLeft 9 host)
-            |> List.head
-            |> orElseMaybe (List.head usable)
-            |> Maybe.map MastodonServerAccount
-
-    else if String.startsWith "bluesky:" host then
-        accountsPanelModel.blueskyAccounts
-            |> List.filter (\account -> account.enabled && not account.needsReauth)
-            |> List.head
-            |> Maybe.map BlueskyServerAccount
-
-    else
-        Nothing
-
-
-orElseMaybe : Maybe a -> Maybe a -> Maybe a
-orElseMaybe fallback maybe =
-    case maybe of
-        Just _ ->
-            maybe
-
-        Nothing ->
-            fallback
-
-
 {-| The host a `ServerAccount`'s own server-side stars are filed under in `serverStars`.
 -}
 serverHostOf : ServerAccount -> String
@@ -1827,24 +1783,6 @@ pushServerStar host account starring post =
                 |> Task.map (\( refreshed, () ) -> rotatedBluesky a refreshed)
                 |> Task.onError (\_ -> Task.succeed Nothing)
                 |> Task.perform GotServerStarPushed
-
-
-rotatedMastodon : MastodonAccount -> MastodonAccount -> Maybe AccountsPanel.Msg
-rotatedMastodon before after =
-    if after.accessToken == before.accessToken then
-        Nothing
-
-    else
-        Just (AccountsPanel.MastodonAccountRefreshed after)
-
-
-rotatedBluesky : BlueskyAccount -> BlueskyAccount -> Maybe AccountsPanel.Msg
-rotatedBluesky before after =
-    if after.accessToken == before.accessToken then
-        Nothing
-
-    else
-        Just (AccountsPanel.BlueskyAccountRefreshed after)
 
 
 {-| Whether any connected account's server-side star list has `post` -- by its id on `host`, or by its

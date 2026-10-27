@@ -33,6 +33,7 @@ module Components.Posts exposing
     , postVisibilityText
     , quotedPostCard
     , replyCard
+    , isDeleted
     , showPostVisibility
     , starButton
     , stripLinkScheme
@@ -741,7 +742,7 @@ postCard time basePath viewingServerHost postServerHost maybeServer maybeAccount
     -- `replyCard` has no card-wide link overlay, which a Starred/feed card needs; only a real thread
     -- (`Components.FederatedThread`) calls `replyCard` directly for federated replies.
     if post.context == REPLY && not (isFederatedHost postServerHost) then
-        replyCard time basePath viewingServerHost postServerHost maybeServer maybeAccount onMediaClicked mediaPlayState onMediaPlayClicked 0 True False False Nothing Nothing Nothing starred onStarClicked post
+        replyCard time basePath viewingServerHost postServerHost maybeServer maybeAccount onMediaClicked mediaPlayState onMediaPlayClicked 0 True False False Nothing Nothing Nothing Nothing Nothing starred onStarClicked post
 
     else
         postCardView time basePath viewingServerHost postServerHost maybeServer maybeAccount onMediaClicked mediaPlayState onMediaPlayClicked extraSmallMedia current starred onStarClicked showSyncDestinations availableSyncDestinations isPushing pushError onPush onDelete quoteView post
@@ -982,14 +983,17 @@ quotedHref basePath viewingServerHost postServerHost quoted =
         postHref basePath viewingServerHost postServerHost quoted
 
 
-{-| A single reply's card -- author, timestamps (`timestampsText`), content, a Reply button, and (bottom
+{-| A single reply's card -- author, timestamps (`timestampsText`), content (or, for a deleted reply -- see
+`isDeleted` -- a placeholder), Reply/Edit/Delete buttons, and (bottom
 right of the actions row) a star button (`starButton`, pinned right) followed by a merged
 load-more/collapse-expand button carrying `post`'s own reply/response counts (see
 `replyStatusButton`). `depth` (1 for a
 direct reply, 2 for a reply to a reply, etc.) drives its left-indentation, so
 `Components.PostReplies.view`'s flattened list still reads as a nested thread.
 
-`onReplyClicked`/`onLoadRepliesClicked`/`onToggleCollapsedClicked` are each
+`onReplyClicked`/`onEditClicked`/`onDeleteClicked` (small buttons in the actions row, whether the viewer may
+reply to/edit/delete this reply is the caller's call -- Rellm permissions, or a connected Mastodon/Bluesky
+account's own post -- hence no gating in here) and `onLoadRepliesClicked`/`onToggleCollapsedClicked` are each
 `Maybe msg` rather than plain `msg` so a caller with no real handler for one
 (`postCard`'s own `REPLY`-context fallback above, which has no reply-thread
 state to drive these at all) can pass `Nothing` and get that action's
@@ -1014,11 +1018,13 @@ replyCard :
     -> Maybe msg
     -> Maybe msg
     -> Maybe msg
+    -> Maybe msg
+    -> Maybe msg
     -> Bool
     -> Maybe msg
     -> Post
     -> Html msg
-replyCard time basePath viewingServerHost postServerHost maybeServer maybeAccount onMediaClicked mediaPlayState onMediaPlayClicked depth loaded loading collapsed onReplyClicked onLoadRepliesClicked onToggleCollapsedClicked starred onStarClicked post =
+replyCard time basePath viewingServerHost postServerHost maybeServer maybeAccount onMediaClicked mediaPlayState onMediaPlayClicked depth loaded loading collapsed onReplyClicked onEditClicked onDeleteClicked onLoadRepliesClicked onToggleCollapsedClicked starred onStarClicked post =
     div
         [ class "post-reply-item"
         , style "margin-left" (String.fromInt (min depth 8 * 20) ++ "px")
@@ -1043,7 +1049,42 @@ replyCard time basePath viewingServerHost postServerHost maybeServer maybeAccoun
                     [ text "🔗" ]
                 ]
             ]
-        , if hasHiddenSensitiveMedia post then
+        , if isDeleted post then
+            div [ class "post-reply-deleted" ] [ text "This reply has been deleted." ]
+
+          else
+            replyBody basePath viewingServerHost postServerHost maybeServer maybeAccount onMediaClicked mediaPlayState onMediaPlayClicked post
+        , div [ class "post-reply-actions" ]
+            [ case onReplyClicked of
+                Just msg ->
+                    button [ class "post-reply-button", Html.Events.onClick msg ] [ text "Reply" ]
+
+                Nothing ->
+                    text ""
+            , case onEditClicked of
+                Just msg ->
+                    button [ class "post-reply-button post-reply-edit-button", Html.Events.onClick msg ] [ text "Edit" ]
+
+                Nothing ->
+                    text ""
+            , case onDeleteClicked of
+                Just msg ->
+                    button [ class "post-reply-button post-reply-delete-button", Html.Events.onClick msg ] [ text "Delete" ]
+
+                Nothing ->
+                    text ""
+            , starButton postServerHost starred onStarClicked post
+            , replyStatusButton loaded loading collapsed onLoadRepliesClicked onToggleCollapsedClicked post
+            ]
+        ]
+
+
+{-| A reply card's media and content (what `isDeleted` replaces with a placeholder).
+-}
+replyBody : String -> String -> String -> Maybe RellmServer -> Maybe RellmAccount -> (String -> msg) -> MediaRenderer.Model -> (String -> msg) -> Post -> Html msg
+replyBody basePath viewingServerHost postServerHost maybeServer maybeAccount onMediaClicked mediaPlayState onMediaPlayClicked post =
+    div []
+        [ if hasHiddenSensitiveMedia post then
             a
                 [ href (postHref basePath viewingServerHost postServerHost post)
                 , class "post-reply-sensitive-media-notice"
@@ -1063,21 +1104,24 @@ replyCard time basePath viewingServerHost postServerHost maybeServer maybeAccoun
 
             Nothing ->
                 text ""
-        , div [ class "post-reply-actions" ]
-            [ case ( maybeAccount, onReplyClicked ) of
-                ( Just account, Just msg ) ->
-                    if List.member REPLYTOPOSTS account.permissions then
-                        button [ class "post-reply-button", Html.Events.onClick msg ] [ text "Reply" ]
-
-                    else
-                        text ""
-
-                _ ->
-                    text ""
-            , starButton postServerHost starred onStarClicked post
-            , replyStatusButton loaded loading collapsed onLoadRepliesClicked onToggleCollapsedClicked post
-            ]
         ]
+
+
+{-| Whether `post` is a Rellm post its author (or an Admin) deleted -- `DeletePost` soft-deletes, clearing the
+author, title, content, link and media but keeping the row so its replies stay reachable. Never true for a
+Mastodon/Bluesky post, which always has an author.
+-}
+isDeleted : Post -> Bool
+isDeleted post =
+    post.author
+        == Nothing
+        && post.content
+        == Nothing
+        && post.title
+        == Nothing
+        && post.link
+        == Nothing
+        && List.isEmpty post.media
 
 
 {-| The merged "load more"/"collapse"/"expand" button in a reply card's
