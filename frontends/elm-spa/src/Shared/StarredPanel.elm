@@ -58,8 +58,8 @@ import Proto.Rellm.PostContext exposing (PostContext(..))
 import Proto.Rellm.Rellm as Rellm
 import Set exposing (Set)
 import Shared.AccountsPanel as AccountsPanel
-import Shared.AccountsPanel.BlueskyAccounts as BlueskyAccounts exposing (BlueskyAccount)
-import Shared.AccountsPanel.MastodonAccounts as MastodonAccounts exposing (MastodonAccount)
+import Shared.AccountsPanel.BlueskyAccounts as BlueskyAccounts
+import Shared.AccountsPanel.MastodonAccounts as MastodonAccounts
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer)
 import Shared.Federation.Actions exposing (ServerAccount(..), rotatedBluesky, rotatedMastodon, serverAccountFor)

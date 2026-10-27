@@ -1413,10 +1413,6 @@ markdownLinkAt s =
 
         ( True, Just closeLabel ) ->
             let
-                label : String
-                label =
-                    String.slice 1 closeLabel s
-
                 afterParen : String
                 afterParen =
                     String.dropLeft (closeLabel + 2) s
@@ -1424,6 +1420,10 @@ markdownLinkAt s =
             case String.indexes ")" afterParen |> List.head of
                 Just closeUrl ->
                     let
+                        label : String
+                        label =
+                            String.slice 1 closeLabel s
+
                         url : String
                         url =
                             String.left closeUrl afterParen
