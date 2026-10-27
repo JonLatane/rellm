@@ -965,7 +965,7 @@ updateInner shared msg model =
             let
                 updatedModel : Model
                 updatedModel =
-                    applyUpdatedOccasionPost model updatedPost
+                    applyUpdatedOccasionPost shared.time.now model updatedPost
             in
             ( { updatedModel | occasionTitleEdit = Nothing }
             , accountsPanelEffect maybeAccountsPanelMsg
@@ -2072,10 +2072,11 @@ applyUpdatedEventPost model updatedPost =
 {-| Applies a just-saved `updatedPost` to whichever of the loaded `Event`'s
 `Occasion`s it belongs to (matched by `Post` id), including the
 currently-viewed one -- the `occasion.post` counterpart of
-`applyUpdatedEventPost`.
+`applyUpdatedEventPost`. Re-syncs `occasionAnimations` so the chip strip
+shows the new title.
 -}
-applyUpdatedOccasionPost : Model -> Post -> Model
-applyUpdatedOccasionPost model updatedPost =
+applyUpdatedOccasionPost : Time.Posix -> Model -> Post -> Model
+applyUpdatedOccasionPost now model updatedPost =
     case model.eventStatus of
         EventLoaded event occasion ->
             let
@@ -2088,6 +2089,9 @@ applyUpdatedOccasionPost model updatedPost =
                         o
             in
             { model | eventStatus = EventLoaded { event | occasions = List.map patch event.occasions } (patch occasion) }
+                -- The date chips render from `occasionAnimations`' own copies
+                -- of each `Occasion`, so they need the patched one too.
+                |> syncOccasionAnimations now
 
         _ ->
             model
