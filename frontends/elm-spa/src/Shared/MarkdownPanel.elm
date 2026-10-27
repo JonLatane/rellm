@@ -26,7 +26,7 @@ import Components.Users as Users
 import Grpc
 import Http
 import Html exposing (Html, button, div, img, label, option, select, span, text, textarea)
-import Html.Attributes exposing (alt, attribute, class, disabled, id, placeholder, selected, spellcheck, src, title, type_, value)
+import Html.Attributes exposing (alt, attribute, class, disabled, id, placeholder, readonly, selected, spellcheck, src, title, type_, value)
 import Html.Events exposing (onClick, onInput, preventDefaultOn)
 import Json.Decode as Decode
 import Proto.Rellm exposing (Author, Message, Post, ServerInfo, User, defaultGetPostsRequest, defaultPost, defaultSendMessageRequest, defaultServerInfo)
@@ -82,7 +82,18 @@ type alias Model =
     -- Mastodon can't change an existing status', so those show no picker.
     , visibility : Visibility
     , mastodonVisibility : MastodonVisibility
+
+    -- Whether `content` is the real thing yet: editing a Mastodon status starts from its plain-text source (the
+    -- displayed content is rendered HTML), fetched on `Open`. Until it arrives the editor is read-only and Save
+    -- disabled, so rendered markup can never be saved back as the status' text; if it fails, so does editing.
+    , editSource : EditSource
     }
+
+
+type EditSource
+    = SourceReady
+    | SourceLoading
+    | SourceFailed
 
 
 type Msg
@@ -222,6 +233,7 @@ init =
     , messageSubjectExpanded = False
     , visibility = GLOBALPUBLIC
     , mastodonVisibility = MastodonPublic
+    , editSource = SourceReady
     }
 
 
@@ -257,6 +269,10 @@ update accountsPanelModel msg model =
                 -- only ever non-empty for "Reply" (`MessagesPage.ReplyClicked`),
                 -- pre-populating the picker rather than making the user
                 -- re-pick everyone already in the thread.
+                maybeSourceCmd : Maybe (Cmd Msg)
+                maybeSourceCmd =
+                    editSourceCmd accountsPanelModel target host
+
                 ( messageRecipients, recipientsCmd ) =
                     case target of
                         SendNewMessage initialRecipients ->
@@ -279,8 +295,9 @@ update accountsPanelModel msg model =
                 , messageSubjectExpanded = False
                 , visibility = initialVisibility target
                 , mastodonVisibility = MastodonPublic
+                , editSource = Maybe.map (\_ -> SourceLoading) maybeSourceCmd |> Maybe.withDefault SourceReady
               }
-            , Cmd.batch [ Cmd.map UserPickerMsg recipientsCmd, focusCmdFor target, editSourceCmd accountsPanelModel target host ]
+            , Cmd.batch [ Cmd.map UserPickerMsg recipientsCmd, focusCmdFor target, Maybe.withDefault Cmd.none maybeSourceCmd ]
             , ( Nothing, False, False )
             )
 
@@ -360,8 +377,8 @@ update accountsPanelModel msg model =
         GotEditSource postId (Ok source) ->
             case model.target of
                 Just (FederatedPostContent post) ->
-                    if post.id == postId && model.content == initialContent (FederatedPostContent post) model.targetHost then
-                        ( { model | content = source }, Cmd.none, ( Nothing, False, False ) )
+                    if post.id == postId then
+                        ( { model | content = source, editSource = SourceReady }, Cmd.none, ( Nothing, False, False ) )
 
                     else
                         ( model, Cmd.none, ( Nothing, False, False ) )
@@ -369,9 +386,17 @@ update accountsPanelModel msg model =
                 _ ->
                     ( model, Cmd.none, ( Nothing, False, False ) )
 
-        -- Best-effort: the displayed content is a fine starting point.
-        GotEditSource _ (Err _) ->
-            ( model, Cmd.none, ( Nothing, False, False ) )
+        GotEditSource postId (Err _) ->
+            case model.target of
+                Just (FederatedPostContent post) ->
+                    if post.id == postId then
+                        ( { model | editSource = SourceFailed }, Cmd.none, ( Nothing, False, False ) )
+
+                    else
+                        ( model, Cmd.none, ( Nothing, False, False ) )
+
+                _ ->
+                    ( model, Cmd.none, ( Nothing, False, False ) )
 
         MessageSubjectChanged subject ->
             ( { model | messageSubject = subject }, Cmd.none, ( Nothing, False, False ) )
@@ -402,69 +427,13 @@ update accountsPanelModel msg model =
             , ( maybeAccountsPanelMsg, False, False )
             )
 
+        -- Ignored until `editSource` is ready -- see `Model.editSource`.
         SaveClicked ->
-            case model.target of
-                -- No RPC to make -- there's no Post yet (see `TargetType`'s
-                -- own doc on `NewPostContent`). `Shared.update`'s own
-                -- `MarkdownPanelMsg` branch is what actually hands
-                -- `model.content` back to `Shared.NewPostPanel`, reading it
-                -- off this exact `SaveClicked` before `update` (here) resets
-                -- it back to `init` below.
-                Just (NewPostContent _) ->
-                    ( { init | viewMode = model.viewMode }, Cmd.none, ( Nothing, False, False ) )
+            if model.editSource /= SourceReady then
+                ( model, Cmd.none, ( Nothing, False, False ) )
 
-                -- Routed through `sendMessageTask` directly, not
-                -- `resolve`/`saveTask`'s shared dispatch -- see
-                -- `TargetType`'s own doc on why.
-                Just ((SendNewMessage _) as sendTarget) ->
-                    case resolve accountsPanelModel sendTarget model.targetHost of
-                        Err err ->
-                            ( { model | status = SubmitFailed err }, Cmd.none, ( Nothing, False, False ) )
-
-                        Ok resolved ->
-                            case sendNewMessageProblem model of
-                                Just err ->
-                                    ( { model | status = SubmitFailed err }, Cmd.none, ( Nothing, False, False ) )
-
-                                Nothing ->
-                                    ( { model | status = Submitting }
-                                    , sendMessageTask
-                                        accountsPanelModel
-                                        ( Just resolved.account.userId, resolved.server.frontendHost )
-                                        (UserPicker.selectedUsers model.messageRecipients |> List.map .id)
-                                        model.messageSubject
-                                        model.content
-                                        |> Task.attempt GotSendMessageResult
-                                    , ( Nothing, False, False )
-                                    )
-
-                Just target ->
-                    if isFederatedTarget target then
-                        case resolveFederated accountsPanelModel target model.targetHost of
-                            Ok account ->
-                                ( { model | status = Submitting }
-                                , federatedSaveTask account target model.targetHost model.mastodonVisibility model.content
-                                    |> Task.attempt GotFederatedSaveResult
-                                , ( Nothing, False, False )
-                                )
-
-                            Err err ->
-                                ( { model | status = SubmitFailed err }, Cmd.none, ( Nothing, False, False ) )
-
-                    else
-                        case resolve accountsPanelModel target model.targetHost of
-                            Ok resolved ->
-                                ( { model | status = Submitting }
-                                , saveTask accountsPanelModel ( Just resolved.account.userId, resolved.server.frontendHost ) target model.visibility model.content
-                                    |> Task.attempt GotSaveResult
-                                , ( Nothing, False, False )
-                                )
-
-                            Err err ->
-                                ( { model | status = SubmitFailed err }, Cmd.none, ( Nothing, False, False ) )
-
-                Nothing ->
-                    ( model, Cmd.none, ( Nothing, False, False ) )
+            else
+                saveClicked accountsPanelModel model
 
         GotSaveResult (Ok maybeAccountsPanelMsg) ->
             ( { init | viewMode = model.viewMode }, Cmd.none, ( maybeAccountsPanelMsg, True, False ) )
@@ -488,6 +457,75 @@ update accountsPanelModel msg model =
 
         NoOp ->
             ( model, Cmd.none, ( Nothing, False, False ) )
+
+
+{-| `SaveClicked`'s real work, once `Model.editSource` allows it.
+-}
+saveClicked : AccountsPanel.Model -> Model -> ( Model, Cmd Msg, ( Maybe AccountsPanel.Msg, Bool, Bool ) )
+saveClicked accountsPanelModel model =
+    case model.target of
+        -- No RPC to make -- there's no Post yet (see `TargetType`'s
+        -- own doc on `NewPostContent`). `Shared.update`'s own
+        -- `MarkdownPanelMsg` branch is what actually hands
+        -- `model.content` back to `Shared.NewPostPanel`, reading it
+        -- off this exact `SaveClicked` before `update` (here) resets
+        -- it back to `init` below.
+        Just (NewPostContent _) ->
+            ( { init | viewMode = model.viewMode }, Cmd.none, ( Nothing, False, False ) )
+
+        -- Routed through `sendMessageTask` directly, not
+        -- `resolve`/`saveTask`'s shared dispatch -- see
+        -- `TargetType`'s own doc on why.
+        Just ((SendNewMessage _) as sendTarget) ->
+            case resolve accountsPanelModel sendTarget model.targetHost of
+                Err err ->
+                    ( { model | status = SubmitFailed err }, Cmd.none, ( Nothing, False, False ) )
+
+                Ok resolved ->
+                    case sendNewMessageProblem model of
+                        Just err ->
+                            ( { model | status = SubmitFailed err }, Cmd.none, ( Nothing, False, False ) )
+
+                        Nothing ->
+                            ( { model | status = Submitting }
+                            , sendMessageTask
+                                accountsPanelModel
+                                ( Just resolved.account.userId, resolved.server.frontendHost )
+                                (UserPicker.selectedUsers model.messageRecipients |> List.map .id)
+                                model.messageSubject
+                                model.content
+                                |> Task.attempt GotSendMessageResult
+                            , ( Nothing, False, False )
+                            )
+
+        Just target ->
+            if isFederatedTarget target then
+                case resolveFederated accountsPanelModel target model.targetHost of
+                    Ok account ->
+                        ( { model | status = Submitting }
+                        , federatedSaveTask account target model.targetHost model.mastodonVisibility model.content
+                            |> Task.attempt GotFederatedSaveResult
+                        , ( Nothing, False, False )
+                        )
+
+                    Err err ->
+                        ( { model | status = SubmitFailed err }, Cmd.none, ( Nothing, False, False ) )
+
+            else
+                case resolve accountsPanelModel target model.targetHost of
+                    Ok resolved ->
+                        ( { model | status = Submitting }
+                        , saveTask accountsPanelModel ( Just resolved.account.userId, resolved.server.frontendHost ) target model.visibility model.content
+                            |> Task.attempt GotSaveResult
+                        , ( Nothing, False, False )
+                        )
+
+                    Err err ->
+                        ( { model | status = SubmitFailed err }, Cmd.none, ( Nothing, False, False ) )
+
+        Nothing ->
+            ( model, Cmd.none, ( Nothing, False, False ) )
+
 
 
 {-| Only `SendNewMessage`'s embedded `UserPicker` has anything to subscribe
@@ -547,7 +585,7 @@ view accountsPanelModel model =
         canSave =
             case ( resolution, sendMessageProblem ) of
                 ( Just (Ok _), Nothing ) ->
-                    True
+                    model.editSource == SourceReady
 
                 _ ->
                     False
@@ -564,7 +602,11 @@ view accountsPanelModel model =
                             Just err
 
                         _ ->
-                            sendMessageProblem
+                            if model.editSource == SourceFailed then
+                                Just "Couldn't load this post's text from Mastodon, so it can't be edited right now. Cancel and try again."
+
+                            else
+                                sendMessageProblem
     in
     div
         (classes [ "markdown-panel", "nav-panel", openClosedClass (model.target /= Nothing), hostnameToCSSClass model.targetHost ]
@@ -687,6 +729,7 @@ editorView model =
         , value model.content
         , onInput ContentChanged
         , spellcheck False
+        , readonly (model.editSource /= SourceReady)
         , placeholder "Write some Markdown…"
         ]
         []
@@ -1218,9 +1261,10 @@ resolveFederated accountsPanelModel target host =
             Err "Not a Mastodon or Bluesky post."
 
 
-{-| The Mastodon status source `FederatedPostContent` should start from, fetched as soon as the panel opens.
+{-| The Mastodon status source `FederatedPostContent` should start from, fetched as soon as the panel opens (`Nothing`
+when there's nothing to fetch -- see `Model.editSource`).
 -}
-editSourceCmd : AccountsPanel.Model -> TargetType -> String -> Cmd Msg
+editSourceCmd : AccountsPanel.Model -> TargetType -> String -> Maybe (Cmd Msg)
 editSourceCmd accountsPanelModel target host =
     case target of
         FederatedPostContent post ->
@@ -1228,12 +1272,13 @@ editSourceCmd accountsPanelModel target host =
                 Just (MastodonServerAccount a) ->
                     Mastodon.fetchStatusSource a.instanceHost a.accessToken post.id
                         |> Task.attempt (GotEditSource post.id)
+                        |> Just
 
                 _ ->
-                    Cmd.none
+                    Nothing
 
         _ ->
-            Cmd.none
+            Nothing
 
 
 federatedSaveTask : ServerAccount -> TargetType -> String -> MastodonVisibility -> String -> Task Http.Error (Maybe AccountsPanel.Msg)

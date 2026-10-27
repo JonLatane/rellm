@@ -35,6 +35,7 @@ import Shared.AccountsPanel.RellmServers exposing (RellmServer)
 import Shared.Federation.Bluesky as Bluesky
 import Shared.Federation.Common as Common exposing (Thread)
 import Process
+import Shared.Federation.Actions as FederationActions
 import Shared.MarkdownPanel as MarkdownPanel
 import Shared.MediaViewerPanel as MediaViewerPanel
 import Shared.StarredPanel as StarredPanel
@@ -57,6 +58,10 @@ type alias Model =
 
     -- `thread.replies` as a static, collapsible `Components.PostReplies` tree.
     , replies : PostReplies.Model
+
+    -- Why the last Delete failed (see `Shared.Federation.Actions.writeErrorText`) -- the confirmation dialog
+    -- has closed by then, so without this a failure would be silent. Cleared by the next Delete.
+    , deleteError : Maybe String
     }
 
 
@@ -101,7 +106,7 @@ of the rotated/reauth-needed account this can come back with.
 -}
 init : Shared.Model -> String -> ( Model, Effect Msg )
 init shared uri =
-    ( { uri = uri, postStatus = LoadingPost, sensitiveMediaRevealed = False, thread = Common.emptyThread, replies = PostReplies.initStatic "bluesky:" [] }
+    ( { uri = uri, postStatus = LoadingPost, sensitiveMediaRevealed = False, thread = Common.emptyThread, replies = PostReplies.initStatic "bluesky:" [], deleteError = Nothing }
     , fetchEffect shared uri
     )
 
@@ -228,7 +233,7 @@ update shared msg model =
             ( model, Effect.fromShared (Shared.MarkdownPanelMsg (MarkdownPanel.Open (MarkdownPanel.FederatedPostContent post) starHost)) )
 
         DeleteClicked post ->
-            ( model, Effect.fromShared (Shared.RequestDelete (Shared.ConfirmFederatedPostDelete post starHost)) )
+            ( { model | deleteError = Nothing }, Effect.fromShared (Shared.RequestDelete (Shared.ConfirmFederatedPostDelete post starHost)) )
 
         Refetch ->
             ( model, fetchEffect shared model.uri )
@@ -239,7 +244,10 @@ update shared msg model =
                     ( model, Effect.batch [ Effect.fromShared subMsg, refetchSoon ] )
 
                 Shared.GotFederatedPostDeleteResult (Ok _) ->
-                    ( model, Effect.batch [ Effect.fromShared subMsg, refetchSoon ] )
+                    ( { model | deleteError = Nothing }, Effect.batch [ Effect.fromShared subMsg, refetchSoon ] )
+
+                Shared.GotFederatedPostDeleteResult (Err err) ->
+                    ( { model | deleteError = Just (FederationActions.writeErrorText err) }, Effect.fromShared subMsg )
 
                 _ ->
                     ( model, Effect.fromShared subMsg )
@@ -289,6 +297,12 @@ view shared model =
             div []
                 [ FederatedThread.ancestorsView (threadConfig shared) model.thread
                 , federatedPostView shared model.sensitiveMediaRevealed sensitive displayPost
+                , case model.deleteError of
+                    Just err ->
+                        p [ class "post-error" ] [ text ("Couldn't delete: " ++ err) ]
+
+                    Nothing ->
+                        text ""
                 , FederatedThread.postActionsView (threadConfig shared) displayPost
                 , FederatedThread.repliesView (threadConfig shared) RepliesMsg model.replies
                 ]

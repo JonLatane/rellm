@@ -6,7 +6,9 @@ import Json.Encode as Encode
 import Proto.Rellm exposing (defaultAuthor, defaultMediaReference, defaultPost)
 import Shared.AccountsPanel.MastodonAccounts exposing (MastodonAccount)
 import Shared.Federation.Actions as Actions exposing (ServerAccount(..))
+import Json.Decode as Decode
 import Shared.Federation.Bluesky as Bluesky
+import Shared.Federation.Mastodon as Mastodon
 import Test exposing (Test, describe, test)
 
 
@@ -26,6 +28,12 @@ mastodonAccount =
 postBy : String -> Proto.Rellm.Post
 postBy username =
     { defaultPost | author = Just { defaultAuthor | username = Just username } }
+
+
+authorOf : String -> String -> Result Decode.Error (Maybe String)
+authorOf instanceHost json =
+    Decode.decodeString Mastodon.decoder json
+        |> Result.map (\status -> (Mastodon.toPost instanceHost status).author |> Maybe.andThen .username)
 
 
 facetsJson : String -> String
@@ -49,6 +57,16 @@ suite =
                 \_ ->
                     Actions.isOwnPost (MastodonServerAccount mastodonAccount) "mastodon:mastodon.social" (postBy "bob@mastodon.social")
                         |> Expect.equal False
+            ]
+        , describe "Mastodon author address"
+            [ test "a remote author keeps their own address, not the viewing instance's" <|
+                \_ ->
+                    authorOf "a.example" """{"id":"1","content":"x","created_at":"2023-04-05T12:00:00.000Z","account":{"username":"bob","display_name":"","avatar":"","acct":"bob@b.example"}}"""
+                        |> Expect.equal (Ok (Just "bob@b.example"))
+            , test "a local author gets the viewing instance appended" <|
+                \_ ->
+                    authorOf "a.example" """{"id":"1","content":"x","created_at":"2023-04-05T12:00:00.000Z","account":{"username":"bob","display_name":"","avatar":"","acct":"bob"}}"""
+                        |> Expect.equal (Ok (Just "bob@a.example"))
             ]
         , describe "Posts.isDeleted"
             [ test "a post with no author, content, title, link or media is deleted" <|

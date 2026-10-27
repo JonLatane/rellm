@@ -103,6 +103,11 @@ type alias Status =
     , createdAt : Time.Posix
     , inReplyToId : Maybe String
     , authorUsername : String
+
+    -- `account.acct`: the author's real address -- bare for an account on the instance the status was fetched
+    -- from, `user@their.instance` for a remote one (where `authorUsername` alone would name whoever has that
+    -- username on _this_ instance).
+    , authorAcct : String
     , authorDisplayName : Maybe String
     , authorAvatarUrl : Maybe String
     , mediaAttachments : List MediaAttachment
@@ -141,13 +146,14 @@ decoder : Decoder Status
 decoder =
     Decode.map8
         (\id url content createdAt inReplyToId authorUsername authorDisplayName authorAvatarUrl ->
-            \mediaAttachments sensitive favouritesCount repliesCount quote ->
+            \mediaAttachments sensitive favouritesCount repliesCount quote authorAcct ->
                 { id = id
                 , url = url
                 , content = content
                 , createdAt = createdAt
                 , inReplyToId = inReplyToId
                 , authorUsername = authorUsername
+                , authorAcct = authorAcct
                 , authorDisplayName = authorDisplayName
                 , authorAvatarUrl = authorAvatarUrl
                 , mediaAttachments = mediaAttachments
@@ -170,6 +176,7 @@ decoder =
         |> Decode.andThen (\f -> Decode.map f (Decode.oneOf [ Decode.field "favourites_count" Decode.int, Decode.succeed 0 ]))
         |> Decode.andThen (\f -> Decode.map f (Decode.oneOf [ Decode.field "replies_count" Decode.int, Decode.succeed 0 ]))
         |> Decode.andThen (\f -> Decode.map f quoteDecoder)
+        |> Decode.andThen (\f -> Decode.map f (Decode.oneOf [ Decode.at [ "account", "acct" ] Decode.string, Decode.at [ "account", "username" ] Decode.string ]))
 
 
 {-| `quote.quoted_status` (a full `Status`) if the server inlined it, else just `quote.quoted_status_id`
@@ -627,7 +634,14 @@ toAuthor : String -> Status -> Author
 toAuthor instanceHost status =
     { defaultAuthor
         | userId = "mastodon:" ++ instanceHost ++ ":" ++ status.authorUsername
-        , username = Just (status.authorUsername ++ "@" ++ instanceHost)
+        , username =
+            Just
+                (if String.contains "@" status.authorAcct then
+                    status.authorAcct
+
+                 else
+                    status.authorAcct ++ "@" ++ instanceHost
+                )
         , realName = status.authorDisplayName
         , avatar = status.authorAvatarUrl |> Maybe.map (\url -> wrapMediaReference { defaultMediaReference | url = Just url })
     }
