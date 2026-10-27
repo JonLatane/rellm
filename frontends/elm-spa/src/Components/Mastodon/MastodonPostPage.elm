@@ -98,21 +98,32 @@ type Msg
 {-| `instanceHost`/`statusId` come straight from `Components.Posts.parseFederatedPostId`'s
 `MastodonPostId` -- see that type's own doc on how they're picked back apart from the route.
 -}
-init : String -> String -> ( Model, Effect Msg )
-init instanceHost statusId =
+init : Shared.Model -> String -> String -> ( Model, Effect Msg )
+init shared instanceHost statusId =
     ( { instanceHost = instanceHost, statusId = statusId, postStatus = LoadingPost, sensitiveMediaRevealed = False, thread = Common.emptyThread, replies = PostReplies.initStatic ("mastodon:" ++ instanceHost) [], deleteError = Nothing }
-    , fetchEffect instanceHost statusId
+    , fetchEffect shared instanceHost statusId
     )
 
 
 {-| The fetch `init` and `Refetch` both run.
 -}
-fetchEffect : String -> String -> Effect Msg
-fetchEffect instanceHost statusId =
+fetchEffect : Shared.Model -> String -> String -> Effect Msg
+fetchEffect shared instanceHost statusId =
+    let
+        -- A connected account on this very instance sees what the public can't (its own followers-only/direct
+        -- replies); falls back to the anonymous thread if its token is rejected.
+        accessToken : Maybe String
+        accessToken =
+            shared.accounts.mastodonAccounts
+                |> List.filter (\a -> a.instanceHost == instanceHost && not a.needsReauth)
+                |> List.head
+                |> Maybe.map .accessToken
+    in
     Mastodon.fetchStatusWithQuotes instanceHost statusId
         |> Task.andThen
             (\( post, sensitive ) ->
-                Mastodon.fetchThread instanceHost statusId
+                Mastodon.fetchThreadAs accessToken instanceHost statusId
+                    |> Task.onError (\_ -> Mastodon.fetchThread instanceHost statusId)
                     |> Task.onError (\_ -> Task.succeed Common.emptyThread)
                     |> Task.map (\thread -> ( post, sensitive, thread ))
             )
@@ -140,8 +151,8 @@ fromShared =
     SharedMsg
 
 
-update : Msg -> Model -> ( Model, Effect Msg )
-update msg model =
+update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
+update shared msg model =
     case msg of
         GotPost (Ok ( post, sensitive, thread )) ->
             ( { model | postStatus = PostLoaded post sensitive, thread = thread, replies = PostReplies.initStatic ("mastodon:" ++ model.instanceHost) thread.replies }, Effect.none )
@@ -184,7 +195,7 @@ update msg model =
             ( { model | deleteError = Nothing }, Effect.fromShared (Shared.RequestDelete (Shared.ConfirmFederatedPostDelete post (starHost model.instanceHost))) )
 
         Refetch ->
-            ( model, fetchEffect model.instanceHost model.statusId )
+            ( model, fetchEffect shared model.instanceHost model.statusId )
 
         SharedMsg subMsg ->
             case subMsg of

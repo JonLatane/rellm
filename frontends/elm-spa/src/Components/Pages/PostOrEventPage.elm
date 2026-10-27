@@ -98,7 +98,7 @@ init shared pageIsSecure query rawSegment navKey =
                 |> Tuple.mapSecond (Effect.map BlueskyMsg)
 
         Just (Posts.MastodonPostId { instanceHost, statusId }) ->
-            MastodonPostPage.init instanceHost statusId
+            MastodonPostPage.init shared instanceHost statusId
                 |> Tuple.mapFirst MastodonPost
                 |> Tuple.mapSecond (Effect.map MastodonMsg)
 
@@ -228,7 +228,7 @@ update shared msg model =
                 |> Tuple.mapSecond (Effect.map BlueskyMsg)
 
         ( MastodonMsg subMsg, MastodonPost subModel ) ->
-            MastodonPostPage.update subMsg subModel
+            MastodonPostPage.update shared subMsg subModel
                 |> Tuple.mapFirst MastodonPost
                 |> Tuple.mapSecond (Effect.map MastodonMsg)
 
@@ -238,7 +238,7 @@ update shared msg model =
                 |> Tuple.mapSecond (Effect.map BlueskyMsg)
 
         ( SharedMsg subMsg, MastodonPost subModel ) ->
-            MastodonPostPage.update (MastodonPostPage.fromShared subMsg) subModel
+            MastodonPostPage.update shared (MastodonPostPage.fromShared subMsg) subModel
                 |> Tuple.mapFirst MastodonPost
                 |> Tuple.mapSecond (Effect.map MastodonMsg)
 

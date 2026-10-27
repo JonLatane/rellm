@@ -35,6 +35,7 @@ import Proto.Rellm.PostContext exposing (PostContext(..))
 import Proto.Rellm.Visibility exposing (Visibility(..))
 import Proto.Rellm.Rellm as Rellm
 import Shared.AccountsPanel as AccountsPanel
+import Shared.AccountsPanel.MastodonAccounts as MastodonAccounts
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer, withAccessToken)
 import Shared.Federation.Actions as FederationActions exposing (ServerAccount(..))
@@ -87,6 +88,10 @@ type alias Model =
     -- displayed content is rendered HTML), fetched on `Open`. Until it arrives the editor is read-only and Save
     -- disabled, so rendered markup can never be saved back as the status' text; if it fails, so does editing.
     , editSource : EditSource
+
+    -- Bumped by every `Open`, and kept across closing (see `closed`) -- so a `GotEditSource` still in flight
+    -- from an earlier opening of the editor can tell it's stale, and never overwrites a newer draft.
+    , openCount : Int
     }
 
 
@@ -136,9 +141,9 @@ type Msg
       -- Bluesky over HTTP, not Rellm's gRPC, so the error type differs from `GotSaveResult`'s. Handled the
       -- same way (and likewise forwarded to the mounted page, which refetches its thread).
     | GotFederatedSaveResult (Result Http.Error (Maybe AccountsPanel.Msg))
-      -- A Mastodon status' plain-text source arriving for `FederatedPostContent` (the id is the post's) --
-      -- replaces the editor's content unless the user has already started typing.
-    | GotEditSource String (Result Http.Error String)
+      -- A Mastodon status' plain-text source arriving for `FederatedPostContent` (tagged with the `openCount` of the
+      -- opening that asked for it, plus a token refresh to persist, if any) -- replaces the editor's content.
+    | GotEditSource Int (Result Http.Error ( Maybe AccountsPanel.Msg, String ))
     | MessageSubjectChanged String
     | SubjectToggleClicked
     | UserPickerMsg UserPicker.Msg
@@ -234,7 +239,16 @@ init =
     , visibility = GLOBALPUBLIC
     , mastodonVisibility = MastodonPublic
     , editSource = SourceReady
+    , openCount = 0
     }
+
+
+{-| The panel after it's closed or saved: back to `init`, keeping what's meant to outlast an edit (`viewMode`,
+`openCount`).
+-}
+closed : Model -> Model
+closed model =
+    { init | viewMode = model.viewMode, openCount = model.openCount }
 
 
 {-| Needs `AccountsPanel.Model` (to resolve `targetHost` to a connected
@@ -271,7 +285,7 @@ update accountsPanelModel msg model =
                 -- re-pick everyone already in the thread.
                 maybeSourceCmd : Maybe (Cmd Msg)
                 maybeSourceCmd =
-                    editSourceCmd accountsPanelModel target host
+                    editSourceCmd accountsPanelModel (model.openCount + 1) target host
 
                 ( messageRecipients, recipientsCmd ) =
                     case target of
@@ -295,6 +309,7 @@ update accountsPanelModel msg model =
                 , messageSubjectExpanded = False
                 , visibility = initialVisibility target
                 , mastodonVisibility = MastodonPublic
+                , openCount = model.openCount + 1
                 , editSource = Maybe.map (\_ -> SourceLoading) maybeSourceCmd |> Maybe.withDefault SourceReady
               }
             , Cmd.batch [ Cmd.map UserPickerMsg recipientsCmd, focusCmdFor target, Maybe.withDefault Cmd.none maybeSourceCmd ]
@@ -322,10 +337,10 @@ update accountsPanelModel msg model =
                 ( model, Cmd.none, ( Nothing, False, True ) )
 
             else
-                ( { init | viewMode = model.viewMode }, Cmd.none, ( Nothing, False, False ) )
+                ( closed model, Cmd.none, ( Nothing, False, False ) )
 
         CancelConfirmed ->
-            ( { init | viewMode = model.viewMode }, Cmd.none, ( Nothing, False, False ) )
+            ( closed model, Cmd.none, ( Nothing, False, False ) )
 
         -- `SendNewMessage`-only -- switches which signed-in account (i.e.
         -- which server, since `AccountsPanel.enabledAccounts` never has more
@@ -369,34 +384,25 @@ update accountsPanelModel msg model =
             )
 
         GotFederatedSaveResult (Ok maybeAccountsPanelMsg) ->
-            ( { init | viewMode = model.viewMode }, Cmd.none, ( maybeAccountsPanelMsg, True, False ) )
+            ( closed model, Cmd.none, ( maybeAccountsPanelMsg, True, False ) )
 
         GotFederatedSaveResult (Err err) ->
             ( { model | status = SubmitFailed (FederationActions.writeErrorText err) }, Cmd.none, ( Nothing, False, False ) )
 
-        GotEditSource postId (Ok source) ->
-            case model.target of
-                Just (FederatedPostContent post) ->
-                    if post.id == postId then
-                        ( { model | content = source, editSource = SourceReady }, Cmd.none, ( Nothing, False, False ) )
+        -- Only the response to this opening's own request, and only while it's still awaited.
+        GotEditSource openCount (Ok ( maybeAccountsPanelMsg, source )) ->
+            if openCount == model.openCount && model.editSource == SourceLoading then
+                ( { model | content = source, editSource = SourceReady }, Cmd.none, ( maybeAccountsPanelMsg, False, False ) )
 
-                    else
-                        ( model, Cmd.none, ( Nothing, False, False ) )
+            else
+                ( model, Cmd.none, ( maybeAccountsPanelMsg, False, False ) )
 
-                _ ->
-                    ( model, Cmd.none, ( Nothing, False, False ) )
+        GotEditSource openCount (Err _) ->
+            if openCount == model.openCount && model.editSource == SourceLoading then
+                ( { model | editSource = SourceFailed }, Cmd.none, ( Nothing, False, False ) )
 
-        GotEditSource postId (Err _) ->
-            case model.target of
-                Just (FederatedPostContent post) ->
-                    if post.id == postId then
-                        ( { model | editSource = SourceFailed }, Cmd.none, ( Nothing, False, False ) )
-
-                    else
-                        ( model, Cmd.none, ( Nothing, False, False ) )
-
-                _ ->
-                    ( model, Cmd.none, ( Nothing, False, False ) )
+            else
+                ( model, Cmd.none, ( Nothing, False, False ) )
 
         MessageSubjectChanged subject ->
             ( { model | messageSubject = subject }, Cmd.none, ( Nothing, False, False ) )
@@ -436,7 +442,7 @@ update accountsPanelModel msg model =
                 saveClicked accountsPanelModel model
 
         GotSaveResult (Ok maybeAccountsPanelMsg) ->
-            ( { init | viewMode = model.viewMode }, Cmd.none, ( maybeAccountsPanelMsg, True, False ) )
+            ( closed model, Cmd.none, ( maybeAccountsPanelMsg, True, False ) )
 
         GotSaveResult (Err err) ->
             ( { model | status = SubmitFailed (AccountsPanel.grpcErrorToString err) }, Cmd.none, ( Nothing, False, False ) )
@@ -450,7 +456,7 @@ update accountsPanelModel msg model =
         -- spacer would just be a spurious flash of empty space underneath
         -- that, not a jump it's actually preventing.
         GotSendMessageResult (Ok ( maybeAccountsPanelMsg, _, _ )) ->
-            ( { init | viewMode = model.viewMode }, Cmd.none, ( maybeAccountsPanelMsg, False, False ) )
+            ( closed model, Cmd.none, ( maybeAccountsPanelMsg, False, False ) )
 
         GotSendMessageResult (Err err) ->
             ( { model | status = SubmitFailed (AccountsPanel.grpcErrorToString err) }, Cmd.none, ( Nothing, False, False ) )
@@ -471,7 +477,7 @@ saveClicked accountsPanelModel model =
         -- off this exact `SaveClicked` before `update` (here) resets
         -- it back to `init` below.
         Just (NewPostContent _) ->
-            ( { init | viewMode = model.viewMode }, Cmd.none, ( Nothing, False, False ) )
+            ( closed model, Cmd.none, ( Nothing, False, False ) )
 
         -- Routed through `sendMessageTask` directly, not
         -- `resolve`/`saveTask`'s shared dispatch -- see
@@ -1264,14 +1270,15 @@ resolveFederated accountsPanelModel target host =
 {-| The Mastodon status source `FederatedPostContent` should start from, fetched as soon as the panel opens (`Nothing`
 when there's nothing to fetch -- see `Model.editSource`).
 -}
-editSourceCmd : AccountsPanel.Model -> TargetType -> String -> Maybe (Cmd Msg)
-editSourceCmd accountsPanelModel target host =
+editSourceCmd : AccountsPanel.Model -> Int -> TargetType -> String -> Maybe (Cmd Msg)
+editSourceCmd accountsPanelModel openCount target host =
     case target of
         FederatedPostContent post ->
             case FederationActions.ownAccountFor accountsPanelModel host post of
                 Just (MastodonServerAccount a) ->
-                    Mastodon.fetchStatusSource a.instanceHost a.accessToken post.id
-                        |> Task.attempt (GotEditSource post.id)
+                    MastodonAccounts.performWithMastodonAccount a (\token -> Mastodon.fetchStatusSource a.instanceHost token post.id)
+                        |> Task.map (\( refreshed, source ) -> ( FederationActions.rotatedMastodon a refreshed, source ))
+                        |> Task.attempt (GotEditSource openCount)
                         |> Just
 
                 _ ->

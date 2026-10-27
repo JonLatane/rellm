@@ -21,6 +21,7 @@ module Shared.Federation.Mastodon exposing
     , fetchStatus
     , fetchStatusWithQuotes
     , fetchThread
+    , fetchThreadAs
     , lookupAccount
     , resolveStatusId
     , searchAccounts
@@ -505,10 +506,19 @@ a reply's media is a feed/card-style context (`Components.Posts.replyCard`'s own
 gate links through to the reply's own page for revealing it).
 -}
 fetchThread : String -> String -> Task Http.Error Thread
-fetchThread instanceHost statusId =
+fetchThread =
+    fetchThreadAs Nothing
+
+
+{-| `fetchThread` as the account holding `accessToken` (an account on `instanceHost` itself -- a token means
+nothing to any other instance), so replies only that account may see -- its own followers-only/direct ones --
+are in the thread too.
+-}
+fetchThreadAs : Maybe String -> String -> String -> Task Http.Error Thread
+fetchThreadAs accessToken instanceHost statusId =
     Http.task
         { method = "GET"
-        , headers = []
+        , headers = accessToken |> Maybe.map authHeaders |> Maybe.withDefault []
         , url = "https://" ++ instanceHost ++ "/api/v1/statuses/" ++ statusId ++ "/context"
         , body = Http.emptyBody
         , resolver =

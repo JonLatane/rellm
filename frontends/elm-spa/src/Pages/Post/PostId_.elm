@@ -72,7 +72,7 @@ init shared req =
     in
     case Posts.parseFederatedPostId postId targetHost of
         Just (Posts.MastodonPostId { instanceHost, statusId }) ->
-            MastodonPostPage.init instanceHost statusId
+            MastodonPostPage.init shared instanceHost statusId
                 |> Tuple.mapFirst MastodonPost
                 |> Tuple.mapSecond (Effect.map MastodonPostMsg)
 
@@ -97,7 +97,7 @@ update shared msg model =
                 |> Tuple.mapSecond (Effect.map RellmPostMsg)
 
         ( MastodonPostMsg subMsg, MastodonPost subModel ) ->
-            MastodonPostPage.update subMsg subModel
+            MastodonPostPage.update shared subMsg subModel
                 |> Tuple.mapFirst MastodonPost
                 |> Tuple.mapSecond (Effect.map MastodonPostMsg)
 
@@ -113,7 +113,7 @@ update shared msg model =
                 |> Tuple.mapSecond (Effect.map RellmPostMsg)
 
         ( SharedMsgReceived subMsg, MastodonPost subModel ) ->
-            MastodonPostPage.update (MastodonPostPage.fromShared subMsg) subModel
+            MastodonPostPage.update shared (MastodonPostPage.fromShared subMsg) subModel
                 |> Tuple.mapFirst MastodonPost
                 |> Tuple.mapSecond (Effect.map MastodonPostMsg)
 
