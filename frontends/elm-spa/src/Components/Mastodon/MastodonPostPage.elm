@@ -109,26 +109,27 @@ init shared instanceHost statusId =
 -}
 fetchEffect : Shared.Model -> String -> String -> Effect Msg
 fetchEffect shared instanceHost statusId =
-    let
-        -- A connected account on this very instance sees what the public can't (its own followers-only/direct
-        -- replies); falls back to the anonymous thread if its token is rejected.
-        accessToken : Maybe String
-        accessToken =
-            shared.accounts.mastodonAccounts
-                |> List.filter (\a -> a.instanceHost == instanceHost && not a.needsReauth)
-                |> List.head
-                |> Maybe.map .accessToken
-    in
     Mastodon.fetchStatusWithQuotes instanceHost statusId
         |> Task.andThen
             (\( post, sensitive ) ->
-                Mastodon.fetchThreadAs accessToken instanceHost statusId
+                Mastodon.fetchThreadAs (connectedAccessToken shared instanceHost) instanceHost statusId
                     |> Task.onError (\_ -> Mastodon.fetchThread instanceHost statusId)
                     |> Task.onError (\_ -> Task.succeed Common.emptyThread)
                     |> Task.map (\thread -> ( post, sensitive, thread ))
             )
         |> Task.attempt GotPost
         |> Effect.fromCmd
+
+
+{-| The token of a connected account on `instanceHost` itself, if any -- it sees what the public can't (its own
+followers-only/direct replies), so the thread is fetched with it, falling back to anonymous if it's rejected.
+-}
+connectedAccessToken : Shared.Model -> String -> Maybe String
+connectedAccessToken shared instanceHost =
+    shared.accounts.mastodonAccounts
+        |> List.filter (\a -> a.instanceHost == instanceHost && not a.needsReauth)
+        |> List.head
+        |> Maybe.map .accessToken
 
 
 subscriptions : Model -> Sub Msg
