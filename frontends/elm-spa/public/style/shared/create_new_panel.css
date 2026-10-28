@@ -253,3 +253,15 @@
   line-height: 1;
   cursor: pointer;
 }
+
+/* A federated (Mastodon/Bluesky) post: the note standing in for the media field, and the "Posted to … View post"
+   line a successful one leaves (`Shared.CreateNewPanel`'s `federatedMediaNote`/`postedNoticeView`). */
+.create-new-panel-hint {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.create-new-panel-notice {
+  flex: 0 0 auto;
+  font-size: 0.9rem;
+}

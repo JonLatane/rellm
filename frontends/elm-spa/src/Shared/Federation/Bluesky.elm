@@ -2,12 +2,14 @@ module Shared.Federation.Bluesky exposing
     ( ActorProfile
     , BlueskyImage
     , FeedPost
+    , createPost
     , createReply
     , decoder
     , deletePost
     , editPost
     , richText
     , fetchActorProfile
+    , graphemeCount
     , fetchAuthorFeed
     , fetchFollowers
     , fetchFollows
@@ -1526,30 +1528,64 @@ into text + facets by `richText`.
 -}
 createReply : String -> BlueskyAuth -> String -> String -> Task Http.Error ()
 createReply repo auth parentUri markdown =
-    Task.map2 Tuple.pair (fetchReplyRefs auth parentUri) Time.now
+    fetchReplyRefs auth parentUri
+        |> Task.andThen (\( parent, root ) -> createPostRecord repo auth (Just ( parent, root )) markdown)
+        |> Task.map (\_ -> ())
+
+
+{-| A new top-level post as `repo` -- `markdown` becomes text + facets via `richText`. Resolves to the new
+record's `at://` URI.
+-}
+createPost : String -> BlueskyAuth -> String -> Task Http.Error String
+createPost repo auth markdown =
+    createPostRecord repo auth Nothing markdown
+
+
+{-| `com.atproto.repo.createRecord` for an `app.bsky.feed.post`, a reply when `replyRefs` (parent, root) is given.
+-}
+createPostRecord : String -> BlueskyAuth -> Maybe ( StrongRef, StrongRef ) -> String -> Task Http.Error String
+createPostRecord repo auth replyRefs markdown =
+    Time.now
         |> Task.andThen
-            (\( ( parent, root ), now ) ->
+            (\now ->
                 let
                     rich : { text : String, facets : List Encode.Value }
                     rich =
                         richText markdown
+
+                    replyField : List ( String, Encode.Value )
+                    replyField =
+                        case replyRefs of
+                            Just ( parent, root ) ->
+                                [ ( "reply", Encode.object [ ( "root", encodeStrongRef root ), ( "parent", encodeStrongRef parent ) ] ) ]
+
+                            Nothing ->
+                                []
                 in
-                repoWrite auth
-                    "createRecord"
-                    (Encode.object
-                        [ ( "repo", Encode.string repo )
-                        , ( "collection", Encode.string "app.bsky.feed.post" )
-                        , ( "record"
-                          , Encode.object
-                                [ ( "$type", Encode.string "app.bsky.feed.post" )
-                                , ( "text", Encode.string rich.text )
-                                , ( "facets", Encode.list identity rich.facets )
-                                , ( "reply", Encode.object [ ( "root", encodeStrongRef root ), ( "parent", encodeStrongRef parent ) ] )
-                                , ( "createdAt", Encode.string (Iso8601.fromTime now) )
+                Http.task
+                    { method = "POST"
+                    , headers = readHeaders auth
+                    , url = readHost auth ++ "/xrpc/com.atproto.repo.createRecord"
+                    , body =
+                        Http.jsonBody
+                            (Encode.object
+                                [ ( "repo", Encode.string repo )
+                                , ( "collection", Encode.string "app.bsky.feed.post" )
+                                , ( "record"
+                                  , Encode.object
+                                        ([ ( "$type", Encode.string "app.bsky.feed.post" )
+                                         , ( "text", Encode.string rich.text )
+                                         , ( "facets", Encode.list identity rich.facets )
+                                         , ( "createdAt", Encode.string (Iso8601.fromTime now) )
+                                         ]
+                                            ++ replyField
+                                        )
+                                  )
                                 ]
-                          )
-                        ]
-                    )
+                            )
+                    , resolver = jsonResolver (Decode.field "uri" Decode.string) (\metadata _ -> Http.BadStatus metadata.statusCode)
+                    , timeout = Just 10000
+                    }
             )
 
 
@@ -1620,3 +1656,63 @@ deletePost repo auth uri =
             , ( "rkey", Encode.string (recordKey uri) )
             ]
         )
+
+
+{-| About how many user-perceived characters (grapheme clusters) `text` has -- what Bluesky's 300-character limit
+counts (`String.length` counts UTF-16 units, so two per emoji). Elm has no segmenter, so this folds the common
+multi-code-point cases into one: combining marks, variation selectors, skin-tone modifiers and tag characters add
+nothing, a zero-width joiner glues the next character to the previous one (a family emoji is one), and a pair of
+regional indicators (a flag) is one. Errs towards undercounting -- the server has the final say. (One directly self-recursive helper, so Elm compiles
+it to a loop: a long pasted document can't overflow the stack.)
+-}
+graphemeCount : String -> Int
+graphemeCount text =
+    graphemeCountHelp (String.toList text) False 0
+
+
+graphemeCountHelp : List Char -> Bool -> Int -> Int
+graphemeCountHelp chars afterJoiner count =
+    case chars of
+        [] ->
+            count
+
+        char :: rest ->
+            if afterJoiner then
+                -- Glued onto whatever the joiner followed.
+                graphemeCountHelp rest False count
+
+            else if Char.toCode char == 0x200D then
+                graphemeCountHelp rest True count
+
+            else if isCombining (Char.toCode char) then
+                graphemeCountHelp rest False count
+
+            else if isRegionalIndicator char then
+                -- A flag is a pair of regional indicators.
+                case rest of
+                    second :: afterPair ->
+                        if isRegionalIndicator second then
+                            graphemeCountHelp afterPair False (count + 1)
+
+                        else
+                            graphemeCountHelp rest False (count + 1)
+
+                    [] ->
+                        count + 1
+
+            else
+                graphemeCountHelp rest False (count + 1)
+
+
+isRegionalIndicator : Char -> Bool
+isRegionalIndicator char =
+    Char.toCode char >= 0x0001F1E6 && Char.toCode char <= 0x0001F1FF
+
+
+isCombining : Int -> Bool
+isCombining code =
+    (code >= 0x0300 && code <= 0x036F)
+        || (code >= 0x20D0 && code <= 0x20FF)
+        || (code >= 0xFE00 && code <= 0xFE0F)
+        || (code >= 0x0001F3FB && code <= 0x0001F3FF)
+        || (code >= 0x000E0020 && code <= 0x000E007F)
