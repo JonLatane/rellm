@@ -1676,36 +1676,42 @@ graphemeCountHelp chars afterJoiner count =
             count
 
         char :: rest ->
-            let
-                code : Int
-                code =
-                    Char.toCode char
-            in
             if afterJoiner then
                 -- Glued onto whatever the joiner followed.
                 graphemeCountHelp rest False count
 
-            else if code == 0x200D then
-                graphemeCountHelp rest True count
-
-            else if isCombining code then
-                graphemeCountHelp rest False count
-
-            else if code >= 0x0001F1E6 && code <= 0x0001F1FF then
-                -- A flag is a pair of regional indicators.
-                case rest of
-                    second :: afterPair ->
-                        if Char.toCode second >= 0x0001F1E6 && Char.toCode second <= 0x0001F1FF then
-                            graphemeCountHelp afterPair False (count + 1)
-
-                        else
-                            graphemeCountHelp rest False (count + 1)
-
-                    [] ->
-                        count + 1
-
             else
-                graphemeCountHelp rest False (count + 1)
+                graphemeStep char rest count
+
+
+graphemeStep : Char -> List Char -> Int -> Int
+graphemeStep char rest count =
+    let
+        code : Int
+        code =
+            Char.toCode char
+    in
+    if code == 0x200D then
+        graphemeCountHelp rest True count
+
+    else if isCombining code then
+        graphemeCountHelp rest False count
+
+    else if code >= 0x0001F1E6 && code <= 0x0001F1FF then
+        -- A flag is a pair of regional indicators.
+        case rest of
+            second :: afterPair ->
+                if Char.toCode second >= 0x0001F1E6 && Char.toCode second <= 0x0001F1FF then
+                    graphemeCountHelp afterPair False (count + 1)
+
+                else
+                    graphemeCountHelp rest False (count + 1)
+
+            [] ->
+                count + 1
+
+    else
+        graphemeCountHelp rest False (count + 1)
 
 
 isCombining : Int -> Bool
