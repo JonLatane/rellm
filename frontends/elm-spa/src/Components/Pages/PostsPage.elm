@@ -56,7 +56,7 @@ import Shared
 import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.BlueskyAccounts as BlueskyAccounts exposing (BlueskyAccount)
 import Shared.AccountsPanel.DebugTab as DebugTab
-import Shared.AccountsPanel.MastodonAccounts exposing (MastodonAccount)
+import Shared.AccountsPanel.MastodonAccounts as MastodonAccounts exposing (MastodonAccount)
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer)
 import Shared.Breadcrumbs as Breadcrumbs
@@ -455,6 +455,32 @@ fromBlueskyResult account result =
             FeedFailed
                 (if BlueskyAccounts.isReauthError err then
                     Just (AccountsPanel.MarkBlueskyAccountNeedsReauth account.handle account.refreshToken)
+
+                 else
+                    Nothing
+                )
+
+
+{-| `fromBlueskyResult` for a Mastodon account's authenticated fetch -- forwards a rotated token pair
+(`MastodonAccountRefreshed`) or an exhausted refresh (`MarkMastodonAccountNeedsReauth`) to
+`Shared.AccountsPanel`, which owns the persisted accounts.
+-}
+fromMastodonResult : MastodonAccount -> Result Http.Error ( MastodonAccount, List Post ) -> FeedResult
+fromMastodonResult account result =
+    case result of
+        Ok ( refreshedAccount, posts ) ->
+            FeedLoaded posts
+                (if refreshedAccount.accessToken == account.accessToken then
+                    Nothing
+
+                 else
+                    Just (AccountsPanel.MastodonAccountRefreshed refreshedAccount)
+                )
+
+        Err err ->
+            FeedFailed
+                (if MastodonAccounts.isReauthError err then
+                    Just (AccountsPanel.MarkMastodonAccountNeedsReauth account.instanceHost account.accessToken)
 
                  else
                     Nothing
@@ -1315,6 +1341,9 @@ relevantServers shared model =
         Nothing ->
             AccountsPanel.enabledServers shared.accounts
                 |> List.filter (\server -> not (Countabilibar.isHostHidden model.hidden server.frontendHost))
+                -- Every caller (context/date refetches included), not just `relevantFeedSources`:
+                -- a signed-out server would answer "Following" with `UNAUTHENTICATED`.
+                |> List.filter (followingServerAllowed shared model)
 
 
 {-| What `GotFeedPosts` leaves out of a freshly fetched feed: any Post whose id is in `hiddenPostIds` (the
@@ -1416,7 +1445,7 @@ relevantFeedSources shared model =
             [ source ]
 
         Nothing ->
-            List.map RellmServer (relevantServers shared model |> List.filter (followingServerAllowed shared model))
+            List.map RellmServer (relevantServers shared model)
                 ++ federatedAuthorSources shared model
                 ++ (if model.author /= Nothing then
                         []
@@ -1578,19 +1607,24 @@ fetchFeedSource shared model requestId source =
             fetchRellmPosts shared model requestId source server (Just userId)
 
         MastodonInstance host ->
-            (case ( isFollowingListing shared model, mastodonAccountForHost shared host ) of
+            case ( isFollowingListing shared model, mastodonAccountForHost shared host ) of
                 ( True, Just account ) ->
-                    Mastodon.fetchHomeTimeline host account.accessToken (beforeCutoff model)
+                    -- Through `performWithMastodonAccount` so a revoked/expired token is refreshed (or the
+                    -- account flagged for reconnect) rather than failing the feed until a reload.
+                    MastodonAccounts.performWithMastodonAccount account
+                        (\token -> Mastodon.fetchHomeTimeline host token (beforeCutoff model))
+                        |> Task.attempt (fromMastodonResult account >> GotFeedPosts (feedSourceKey source) requestId)
+                        |> Effect.fromCmd
 
                 _ ->
-                    if isPopularListing model then
+                    (if isPopularListing model then
                         Mastodon.fetchTrendingPosts host
 
-                    else
+                     else
                         Mastodon.fetchPosts host (beforeCutoff model)
-            )
-                |> Task.attempt (fromFederatedResult >> GotFeedPosts (feedSourceKey source) requestId)
-                |> Effect.fromCmd
+                    )
+                        |> Task.attempt (fromFederatedResult >> GotFeedPosts (feedSourceKey source) requestId)
+                        |> Effect.fromCmd
 
         BlueskyFeed account ->
             let
