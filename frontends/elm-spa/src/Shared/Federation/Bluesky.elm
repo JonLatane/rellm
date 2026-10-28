@@ -9,6 +9,7 @@ module Shared.Federation.Bluesky exposing
     , editPost
     , richText
     , fetchActorProfile
+    , graphemeCount
     , fetchAuthorFeed
     , fetchFollowers
     , fetchFollows
@@ -1655,3 +1656,62 @@ deletePost repo auth uri =
             , ( "rkey", Encode.string (recordKey uri) )
             ]
         )
+
+
+{-| About how many user-perceived characters (grapheme clusters) `text` has -- what Bluesky's 300-character limit
+counts (`String.length` counts UTF-16 units, so two per emoji). Elm has no segmenter, so this folds the common
+multi-code-point cases into one: combining marks, variation selectors, skin-tone modifiers and tag characters add
+nothing, a zero-width joiner glues the next character to the previous one (a family emoji is one), and a pair of
+regional indicators (a flag) is one. Errs towards undercounting -- the server has the final say.
+-}
+graphemeCount : String -> Int
+graphemeCount text =
+    graphemeCountHelp (String.toList text) False 0
+
+
+graphemeCountHelp : List Char -> Bool -> Int -> Int
+graphemeCountHelp chars afterJoiner count =
+    case chars of
+        [] ->
+            count
+
+        char :: rest ->
+            let
+                code : Int
+                code =
+                    Char.toCode char
+            in
+            if afterJoiner then
+                -- Glued onto whatever the joiner followed.
+                graphemeCountHelp rest False count
+
+            else if code == 0x200D then
+                graphemeCountHelp rest True count
+
+            else if isCombining code then
+                graphemeCountHelp rest False count
+
+            else if code >= 0x0001F1E6 && code <= 0x0001F1FF then
+                -- A flag is a pair of regional indicators.
+                case rest of
+                    second :: afterPair ->
+                        if Char.toCode second >= 0x0001F1E6 && Char.toCode second <= 0x0001F1FF then
+                            graphemeCountHelp afterPair False (count + 1)
+
+                        else
+                            graphemeCountHelp rest False (count + 1)
+
+                    [] ->
+                        count + 1
+
+            else
+                graphemeCountHelp rest False (count + 1)
+
+
+isCombining : Int -> Bool
+isCombining code =
+    (code >= 0x0300 && code <= 0x036F)
+        || (code >= 0x20D0 && code <= 0x20FF)
+        || (code >= 0xFE00 && code <= 0xFE0F)
+        || (code >= 0x0001F3FB && code <= 0x0001F3FF)
+        || (code >= 0x000E0020 && code <= 0x000E007F)

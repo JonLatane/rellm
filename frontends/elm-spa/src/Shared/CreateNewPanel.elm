@@ -176,7 +176,7 @@ type Msg
     | SaveClicked
     | GotSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, CreatedItem ))
       -- A save to a Mastodon/Bluesky account (HTTP, hence `Http.Error`) -- the new post's web URL, if known.
-    | GotFederatedSaveResult (Result Http.Error ( Maybe AccountsPanel.Msg, Maybe String ))
+    | GotFederatedSaveResult String (Result Http.Error ( Maybe AccountsPanel.Msg, Maybe String ))
 
 
 type SubmitStatus
@@ -410,7 +410,7 @@ update browserTimeZone now accountsPanelModel msg model =
         EditContentClicked ->
             ( model
             , Cmd.none
-            , ( Nothing, Just (MarkdownPanel.Open (MarkdownPanel.NewPostContent model.content) (postingAsHost accountsPanelModel model)), Nothing )
+            , ( Nothing, Just (MarkdownPanel.Open (MarkdownPanel.NewPostContent { content = model.content, accountId = Maybe.map posterId (resolvedPoster accountsPanelModel model) }) (postingAsHost accountsPanelModel model)), Nothing )
             )
 
         EditMediaClicked ->
@@ -438,7 +438,8 @@ update browserTimeZone now accountsPanelModel msg model =
 
                 Ok (FederatedTarget account) ->
                     ( { model | status = Submitting }
-                    , FederationActions.createPost account model.mastodonVisibility (federatedText model) |> Task.attempt GotFederatedSaveResult
+                    , FederationActions.createPost account model.mastodonVisibility (federatedText model)
+                        |> Task.attempt (GotFederatedSaveResult (posterServiceLabel (Just (FederatedPoster account))))
                     , noForward
                     )
 
@@ -451,22 +452,22 @@ update browserTimeZone now accountsPanelModel msg model =
         GotSaveResult (Err err) ->
             ( { model | status = SubmitFailed (AccountsPanel.grpcErrorToString err) }, Cmd.none, noForward )
 
-        -- Stays open (unlike a Rellm save, which shows up in the feed it was posted to) so the "Posted" notice
-        -- is seen; the draft itself is cleared, but who it was posted as and its visibility are kept.
-        GotFederatedSaveResult (Ok ( maybeAccountsPanelMsg, maybeUrl )) ->
+        -- Stays as open as it was (unlike a Rellm save, which closes and shows up in the feed it was posted to) so the
+        -- "Posted" notice is seen -- but never reopens a composer closed while this was in flight; the draft itself is cleared, but who it was posted as and its visibility are kept.
+        GotFederatedSaveResult service (Ok ( maybeAccountsPanelMsg, maybeUrl )) ->
             ( { init
                 | createdItems = model.createdItems
-                , open = True
+                , open = model.open
                 , mode = model.mode
                 , postingAs = model.postingAs
                 , mastodonVisibility = model.mastodonVisibility
-                , postedNotice = Just { service = posterServiceLabel (resolvedPoster accountsPanelModel model), url = maybeUrl }
+                , postedNotice = Just { service = service, url = maybeUrl }
               }
             , Cmd.none
             , ( maybeAccountsPanelMsg, Nothing, Nothing )
             )
 
-        GotFederatedSaveResult (Err err) ->
+        GotFederatedSaveResult _ (Err err) ->
             ( { model | status = SubmitFailed (FederationActions.writeErrorText err) }, Cmd.none, noForward )
 
 
@@ -674,7 +675,7 @@ resolveFederated account model =
                 let
                     length : Int
                     length =
-                        String.length (Bluesky.richText text).text
+                        Bluesky.graphemeCount (Bluesky.richText text).text
                 in
                 if length > blueskyMaxLength then
                     Err ("Bluesky posts are limited to " ++ String.fromInt blueskyMaxLength ++ " characters (this one is " ++ String.fromInt length ++ ").")

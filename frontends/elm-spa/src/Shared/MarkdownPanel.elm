@@ -191,7 +191,7 @@ freely changed from the picker afterward like any other.
 type TargetType
     = PostContent Post
     | NewReply Post
-    | NewPostContent String
+    | NewPostContent { content : String, accountId : Maybe String }
     | UserBio User
     | ServerDescription RellmServer
     | ServerPrivacyPolicy RellmServer
@@ -1041,7 +1041,7 @@ initialContent target host =
         NewReply _ ->
             ""
 
-        NewPostContent content ->
+        NewPostContent { content } ->
             content
 
         UserBio user ->
@@ -1235,6 +1235,16 @@ resolve accountsPanelModel target host =
                                 Err "That server isn't connected."
 
 
+orElseMaybe : Maybe a -> Maybe a -> Maybe a
+orElseMaybe fallback maybe =
+    case maybe of
+        Just _ ->
+            maybe
+
+        Nothing ->
+            fallback
+
+
 isFederatedTarget : TargetType -> Bool
 isFederatedTarget target =
     case target of
@@ -1277,8 +1287,18 @@ resolveFederated accountsPanelModel target host =
             FederationActions.ownAccountFor accountsPanelModel host post
                 |> Result.fromMaybe "You can only edit your own posts."
 
-        NewPostContent _ ->
-            FederationActions.serverAccountFor accountsPanelModel host
+        -- The account picked in the New Post panel, if it's still connected (see `Shared.CreateNewPanel.EditContentClicked`),
+        -- else whichever account `host` falls back to -- so this shows who will actually post.
+        NewPostContent { accountId } ->
+            (accountId
+                |> Maybe.andThen
+                    (\id ->
+                        FederationActions.usableAccounts accountsPanelModel
+                            |> List.filter (\account -> FederationActions.accountId account == id)
+                            |> List.head
+                    )
+                |> orElseMaybe (FederationActions.serverAccountFor accountsPanelModel host)
+            )
                 |> Result.fromMaybe "That account isn't connected."
 
         _ ->

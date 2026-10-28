@@ -7,6 +7,7 @@ Markdown content and the link/quote folded into the one text those services have
 import Expect
 import Shared.CreateNewPanel as CreateNewPanel
 import Shared.Federation.Actions as Actions
+import Shared.Federation.Bluesky as Bluesky
 import Support.PostFactory as PostFactory
 import Test exposing (Test, describe, test)
 
@@ -51,5 +52,19 @@ suite =
                 \_ ->
                     Actions.postWebUrl "alice.bsky.social" "at://did:plc:abc/app.bsky.feed.post/3kxyz"
                         |> Expect.equal "https://bsky.app/profile/alice.bsky.social/post/3kxyz"
+            ]
+        , describe "Bluesky.graphemeCount"
+            [ test "plain text counts its characters" <|
+                \_ -> Bluesky.graphemeCount "hello" |> Expect.equal 5
+            , test "an emoji outside the BMP is one, not two UTF-16 units" <|
+                \_ -> Bluesky.graphemeCount (String.repeat 200 "😀") |> Expect.equal 200
+            , test "a ZWJ sequence (a family) is one" <|
+                \_ -> Bluesky.graphemeCount "👨\u{200D}👩\u{200D}👧" |> Expect.equal 1
+            , test "a skin-tone modifier and a variation selector add nothing" <|
+                \_ -> Bluesky.graphemeCount "👍\u{1F3FD}❤\u{FE0F}" |> Expect.equal 2
+            , test "a combining accent joins its letter" <|
+                \_ -> Bluesky.graphemeCount "e\u{0301}" |> Expect.equal 1
+            , test "a flag (two regional indicators) is one" <|
+                \_ -> Bluesky.graphemeCount "\u{1F1FA}\u{1F1F8}!" |> Expect.equal 2
             ]
         ]
