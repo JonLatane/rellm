@@ -1154,6 +1154,76 @@ mod following_posts {
     }
 
     #[test]
+    fn ignores_pending_follows_replies_and_own_posts() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, Status, _>(|conn| {
+            let follower = create_user(conn, "following_pending_follower");
+            let approved = create_user(conn, "following_pending_approved");
+            let pending = create_user(conn, "following_pending_pending");
+            create_follow(conn, &follower, &approved);
+            create_follow_with_moderation(conn, &follower, &pending, Moderation::Pending);
+
+            let kept = create_post(
+                conn,
+                Some(&approved),
+                PostOpts {
+                    visibility: Visibility::ServerPublic,
+                    ..Default::default()
+                },
+            );
+            create_post(
+                conn,
+                Some(&pending),
+                PostOpts {
+                    visibility: Visibility::ServerPublic,
+                    ..Default::default()
+                },
+            );
+            create_post(
+                conn,
+                Some(&follower),
+                PostOpts {
+                    visibility: Visibility::ServerPublic,
+                    ..Default::default()
+                },
+            );
+            let reply = create_post(
+                conn,
+                Some(&approved),
+                PostOpts {
+                    visibility: Visibility::ServerPublic,
+                    context: PostContext::Reply,
+                    parent_post_id: Some(kept.id),
+                    ..Default::default()
+                },
+            );
+
+            let response = get_posts(
+                GetPostsRequest {
+                    listing_type: PostListingType::FollowingPosts as i32,
+                    ..Default::default()
+                },
+                &Some(&follower),
+                conn,
+            )?;
+
+            assert_eq!(ids(&response), vec![kept.id.to_proto_id()]);
+
+            let replies = get_posts(
+                GetPostsRequest {
+                    listing_type: PostListingType::FollowingPosts as i32,
+                    context: Some(PostContext::Reply as i32),
+                    ..Default::default()
+                },
+                &Some(&follower),
+                conn,
+            )?;
+            assert_eq!(ids(&replies), vec![reply.id.to_proto_id()]);
+            Ok(())
+        });
+    }
+
+    #[test]
     fn orders_by_effective_publish_date() {
         let mut conn = test_conn();
         conn.test_transaction::<_, Status, _>(|conn| {

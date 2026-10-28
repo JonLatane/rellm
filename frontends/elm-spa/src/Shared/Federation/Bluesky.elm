@@ -675,7 +675,7 @@ toMediaReference image =
 {-| `GET /xrpc/app.bsky.feed.getTimeline` against the account's own PDS (see `BlueskyAuth`), authenticated
 with its token, already translated via `toPost` -- the
 connected account's own home timeline (reverse-chronological, following), the AT Protocol equivalent of
-`ALL_ACCESSIBLE_POSTS`. `before`, if given, keeps only posts older than it (`Components.Pages.PostsPage`'s
+`FOLLOWING_POSTS` (`Components.Pages.PostsPage`'s "Following" sort). `before`, if given, keeps only posts older than it (`Components.Pages.PostsPage`'s
 "Posts Before" tab) -- see the filtering note below.
 -}
 fetchPosts : Maybe Time.Posix -> BlueskyAuth -> Task Http.Error (List Post)
@@ -713,12 +713,13 @@ fetchPosts before auth =
             )
 
 
-{-| The newest posts on the whole network, anonymously -- what a browsed AppView (`BlueskyAppViewFeed`)
-shows when there's no search text, so it reads newest-first like a Mastodon instance's public timeline
-and a connected account's home timeline (`fetchPosts`). AT Protocol has no anonymous global timeline, but
+{-| The newest posts on the whole network -- what a browsed AppView (`BlueskyAppViewFeed`) or a connected
+account (`BlueskyFeed`) shows for "Recent Posts" when there's no search text, so it reads newest-first
+like a Mastodon instance's public timeline and a real server's `ALL_ACCESSIBLE_POSTS`, with a connected
+account's home timeline (`fetchPosts`) left to "Following". AT Protocol has no anonymous global timeline, but
 `searchPosts` with `sort=latest` and the match-everything query `*` is one: its results trail the live
 firehose by seconds. With a `before` cutoff (the "Posts Before" tab) it searches the common word `a`
-instead, with `until`, since `*` can't be combined with that. (The curated "What's Hot" feed generator this replaced was hours behind.) Callers
+instead, with `until`, since `*` can't be combined with that. (The curated "What's Hot" feed generator this replaced was hours behind.) Anonymous callers
 should send it to `Shared.Federation.Common.anonymousSearchHost`, since the public AppView's other host
 403s search.
 -}
