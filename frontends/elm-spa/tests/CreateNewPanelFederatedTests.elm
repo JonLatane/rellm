@@ -64,6 +64,8 @@ suite =
                 \_ -> Bluesky.graphemeCount "👍\u{1F3FD}❤\u{FE0F}" |> Expect.equal 2
             , test "a combining accent joins its letter" <|
                 \_ -> Bluesky.graphemeCount "e\u{0301}" |> Expect.equal 1
+            , test "a very long draft counts without overflowing the stack" <|
+                \_ -> Bluesky.graphemeCount (String.repeat 300000 "ab") |> Expect.equal 600000
             , test "a flag (two regional indicators) is one" <|
                 \_ -> Bluesky.graphemeCount "\u{1F1FA}\u{1F1F8}!" |> Expect.equal 2
             ]

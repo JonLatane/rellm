@@ -1662,7 +1662,8 @@ deletePost repo auth uri =
 counts (`String.length` counts UTF-16 units, so two per emoji). Elm has no segmenter, so this folds the common
 multi-code-point cases into one: combining marks, variation selectors, skin-tone modifiers and tag characters add
 nothing, a zero-width joiner glues the next character to the previous one (a family emoji is one), and a pair of
-regional indicators (a flag) is one. Errs towards undercounting -- the server has the final say.
+regional indicators (a flag) is one. Errs towards undercounting -- the server has the final say. (One directly self-recursive helper, so Elm compiles
+it to a loop: a long pasted document can't overflow the stack.)
 -}
 graphemeCount : String -> Int
 graphemeCount text =
@@ -1680,38 +1681,32 @@ graphemeCountHelp chars afterJoiner count =
                 -- Glued onto whatever the joiner followed.
                 graphemeCountHelp rest False count
 
+            else if Char.toCode char == 0x200D then
+                graphemeCountHelp rest True count
+
+            else if isCombining (Char.toCode char) then
+                graphemeCountHelp rest False count
+
+            else if isRegionalIndicator char then
+                -- A flag is a pair of regional indicators.
+                case rest of
+                    second :: afterPair ->
+                        if isRegionalIndicator second then
+                            graphemeCountHelp afterPair False (count + 1)
+
+                        else
+                            graphemeCountHelp rest False (count + 1)
+
+                    [] ->
+                        count + 1
+
             else
-                graphemeStep char rest count
+                graphemeCountHelp rest False (count + 1)
 
 
-graphemeStep : Char -> List Char -> Int -> Int
-graphemeStep char rest count =
-    let
-        code : Int
-        code =
-            Char.toCode char
-    in
-    if code == 0x200D then
-        graphemeCountHelp rest True count
-
-    else if isCombining code then
-        graphemeCountHelp rest False count
-
-    else if code >= 0x0001F1E6 && code <= 0x0001F1FF then
-        -- A flag is a pair of regional indicators.
-        case rest of
-            second :: afterPair ->
-                if Char.toCode second >= 0x0001F1E6 && Char.toCode second <= 0x0001F1FF then
-                    graphemeCountHelp afterPair False (count + 1)
-
-                else
-                    graphemeCountHelp rest False (count + 1)
-
-            [] ->
-                count + 1
-
-    else
-        graphemeCountHelp rest False (count + 1)
+isRegionalIndicator : Char -> Bool
+isRegionalIndicator char =
+    Char.toCode char >= 0x0001F1E6 && Char.toCode char <= 0x0001F1FF
 
 
 isCombining : Int -> Bool
