@@ -719,7 +719,7 @@ like a Mastodon instance's public timeline and a real server's `ALL_ACCESSIBLE_P
 account's home timeline (`fetchPosts`) left to "Following". AT Protocol has no anonymous global timeline, but
 `searchPosts` with `sort=latest` and the match-everything query `*` is one: its results trail the live
 firehose by seconds. With a `before` cutoff (the "Posts Before" tab) it searches the common word `a`
-instead, with `until`, since `*` can't be combined with that. (The curated "What's Hot" feed generator this replaced was hours behind.) Callers
+instead, with `until`, since `*` can't be combined with that. (The curated "What's Hot" feed generator this replaced was hours behind.) Anonymous callers
 should send it to `Shared.Federation.Common.anonymousSearchHost`, since the public AppView's other host
 403s search.
 -}
