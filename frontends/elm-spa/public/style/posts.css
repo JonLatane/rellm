@@ -1002,10 +1002,18 @@
 .post-card-quote-meta {
   position: relative;
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: baseline;
-  gap: 0.5rem;
+  column-gap: 0.5rem;
   font-size: 0.85rem;
+}
+
+/* A long username wraps the timestamp onto its own line (still right-aligned via
+   `.post-meta-right`'s `margin-left: auto`) instead of the two overlapping; the
+   username itself breaks anywhere if it's wider than the card. */
+.post-card-quote-meta .post-meta-left {
+  overflow-wrap: anywhere;
 }
 
 .post-card-quote-media-note {
