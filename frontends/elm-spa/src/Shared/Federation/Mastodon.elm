@@ -13,6 +13,7 @@ module Shared.Federation.Mastodon exposing
     , fetchAccountStatuses
     , fetchFollowers
     , fetchFollowing
+    , fetchHomeTimeline
     , fetchPosts
     , fetchTrendingPosts
     , maxIdBefore
@@ -390,6 +391,29 @@ don't); on one of those the cutoff just won't narrow the timeline.
 maxIdBefore : Time.Posix -> String
 maxIdBefore cutoff =
     String.fromInt (Time.posixToMillis cutoff * 65536)
+
+
+{-| `GET /api/v1/timelines/home?limit=20` as the account holding `accessToken` -- its home timeline, i.e.
+the statuses of the accounts it follows (and its own), newest first; already translated via `toPost`.
+Needs the `read:statuses` scope, covered by the `read` scope Rellm has always requested. `before` works
+like `fetchPosts'` (see `maxIdBefore`). `Components.Pages.PostsPage`'s "Following" sort uses it in place
+of `fetchPosts`.
+-}
+fetchHomeTimeline : String -> String -> Maybe Time.Posix -> Task Http.Error (List Post)
+fetchHomeTimeline instanceHost accessToken before =
+    Http.task
+        { method = "GET"
+        , headers = authHeaders accessToken
+        , url =
+            "https://"
+                ++ instanceHost
+                ++ "/api/v1/timelines/home?limit=20"
+                ++ (before |> Maybe.map (\cutoff -> "&max_id=" ++ maxIdBefore cutoff) |> Maybe.withDefault "")
+        , body = Http.emptyBody
+        , resolver = jsonResolver (Decode.list decoder) (\metadata _ -> Http.BadStatus metadata.statusCode)
+        , timeout = Just 10000
+        }
+        |> Task.map (List.map (toPost instanceHost))
 
 
 {-| `GET /api/v1/trends/statuses?limit=20` -- the instance's trending statuses (Mastodon's own "what's

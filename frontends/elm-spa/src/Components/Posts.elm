@@ -1,6 +1,7 @@
 module Components.Posts exposing
     ( ContentCollapse
     , FederatedPostId(..)
+    , FeedOrder(..)
     , allModerations
     , allowedVisibilities
     , commentCountText
@@ -111,6 +112,15 @@ fetchPost accountsPanelModel maybeAccountServer postId =
         )
 
 
+{-| How `fetchPosts` orders (and scopes) a search-less listing -- `Components.Pages.PostsPage`'s sort
+selector, minus the search/author cases it handles itself.
+-}
+type FeedOrder
+    = NewestFirst
+    | MostPopular
+    | FromFollowing
+
+
 {-| Fetches posts from `maybeAccountServer`'s server, authenticated as its
 account if any (so e.g. followed-user/group posts are included too) --
 otherwise identical to `fetchPost`. `authorUserId`, if given, restricts the
@@ -128,10 +138,12 @@ read it -- see `backend/src/rpcs/posts/get_posts.rs`), so
 `Components.Pages.PostsPage`'s POST/REPLY chooser works whether or not
 there's search text entered.
 
-`popular` switches the (search-less) request to `RECENTLY_POPULAR_POSTS` -- the server ranks the last
-two weeks' posts by stars/responses decayed by age (see that listing type's doc comment) instead of
-returning them strictly newest-first. Search text takes priority over it (`TEXT_SEARCH` is
-relevance-ranked), as `Components.Pages.PostsPage` documents for its own sort selector.
+`order` switches the (search-less) request to `RECENTLY_POPULAR_POSTS` (`MostPopular` -- the server ranks
+the last two weeks' posts by stars/responses decayed by age, see that listing type's doc comment, instead
+of returning them strictly newest-first) or `FOLLOWING_POSTS` (`FromFollowing` -- newest first, but only
+from users the signed-in account follows; the server answers `UNAUTHENTICATED` without an account).
+Search text takes priority over both (`TEXT_SEARCH` is relevance-ranked), as `Components.Pages.PostsPage`
+documents for its own sort selector.
 
 `publishedOrCreatedBefore`, if given, is sent as `GetPostsRequest`'s own
 field of the same name -- `Components.Pages.PostsPage`'s "Posts Before
@@ -148,10 +160,10 @@ fetchPosts :
     -> List String
     -> String
     -> PostContext
-    -> Bool
+    -> FeedOrder
     -> Maybe Time.Posix
     -> Task Grpc.Error ( Maybe AccountsPanel.Msg, GetPostsResponse )
-fetchPosts accountsPanelModel maybeAccountServer authorUserId excludedAuthorUserIds searchText context popular publishedOrCreatedBefore =
+fetchPosts accountsPanelModel maybeAccountServer authorUserId excludedAuthorUserIds searchText context order publishedOrCreatedBefore =
     let
         trimmedSearchText : String
         trimmedSearchText =
@@ -165,11 +177,15 @@ fetchPosts accountsPanelModel maybeAccountServer authorUserId excludedAuthorUser
                     , excludedAuthorUserIds = excludedAuthorUserIds
                     , context = Just context
                     , listingType =
-                        if popular then
-                            RECENTLYPOPULARPOSTS
+                        case order of
+                            MostPopular ->
+                                RECENTLYPOPULARPOSTS
 
-                        else
-                            ALLACCESSIBLEPOSTS
+                            FromFollowing ->
+                                FOLLOWINGPOSTS
+
+                            NewestFirst ->
+                                ALLACCESSIBLEPOSTS
                 }
 
             else

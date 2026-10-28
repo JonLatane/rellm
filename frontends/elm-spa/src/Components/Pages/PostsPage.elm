@@ -56,6 +56,7 @@ import Shared
 import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.BlueskyAccounts as BlueskyAccounts exposing (BlueskyAccount)
 import Shared.AccountsPanel.DebugTab as DebugTab
+import Shared.AccountsPanel.MastodonAccounts exposing (MastodonAccount)
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer)
 import Shared.Breadcrumbs as Breadcrumbs
@@ -510,8 +511,14 @@ and on `Pages.Home_`/`Components.Pages.UserProfilePage`'s embedded copies):
   - `SortPopular` -- "what's popular lately": a real server's `RECENTLY_POPULAR_POSTS` (stars and
     responses, decayed by age -- see that listing type's doc comment), Mastodon's `trends/statuses`,
     Bluesky's "What's Hot" feed.
+  - `SortFollowing` -- only what the signed-in accounts follow, newest first: a real server's
+    `FOLLOWING_POSTS` (needs a Rellm account on that server), a connected Mastodon account's home timeline,
+    a connected Bluesky account's home timeline. Anonymous sources (browsed Mastodon instances, Bluesky
+    AppViews, servers with no account) contribute nothing. The option is only offered while signed in
+    somewhere (`followingAvailable`), and only on the unscoped feed (`model.author == Nothing`); it also
+    honors the "Posts Before" cutoff and falls back to everyone's posts while searching (`isFollowingListing`).
 
-It only applies on the `RecentPosts` tab and while there's no search text, on every platform:
+`SortPopular` only applies on the `RecentPosts` tab and while there's no search text, on every platform:
 
   - "Posts Before <date>" with no search text is newest-first before the date.
   - With search text (either tab) it's the most relevant matches -- on "Posts Before", only those posted
@@ -525,6 +532,7 @@ filtering a larger page (it has no "before" parameter, so a cutoff far in the pa
 type PostsSort
     = SortRecent
     | SortPopular
+    | SortFollowing
 
 
 {-| `author`, if given, restricts the feed to that user's own posts (see
@@ -1408,10 +1416,22 @@ relevantFeedSources shared model =
             [ source ]
 
         Nothing ->
-            List.map RellmServer (relevantServers shared model)
+            List.map RellmServer (relevantServers shared model |> List.filter (followingServerAllowed shared model))
                 ++ federatedAuthorSources shared model
                 ++ (if model.author /= Nothing then
                         []
+
+                    else if isFollowingListing shared model then
+                        -- Only signed-in accounts have anyone they follow: a connected Mastodon account's
+                        -- home timeline (fetched through its `MastodonInstance`, see `fetchFeedSource`) and
+                        -- a connected Bluesky account's home timeline. Never an anonymous AppView or browsed
+                        -- instance.
+                        ([ List.map MastodonInstance (followingMastodonHosts shared)
+                         , List.map BlueskyFeed (List.filter .enabled shared.accounts.blueskyAccounts)
+                         ]
+                            |> List.concat
+                            |> List.filter (\source -> not (Countabilibar.isHostHidden model.hidden (feedSourceKey source)))
+                        )
 
                     else
                         -- A Mastodon instance's public timeline can't be searched anonymously, so while
@@ -1532,7 +1552,7 @@ fetchRellmPosts shared model requestId source server authorId =
         (feedSourceExcludedAuthorIds model source)
         model.searchText
         model.context
-        (isPopularListing model)
+        (feedOrder shared model)
         cutoff
         |> Task.attempt (fromServerResult >> GotFeedPosts (feedSourceKey source) requestId)
         |> Effect.fromCmd
@@ -1558,11 +1578,16 @@ fetchFeedSource shared model requestId source =
             fetchRellmPosts shared model requestId source server (Just userId)
 
         MastodonInstance host ->
-            (if isPopularListing model then
-                Mastodon.fetchTrendingPosts host
+            (case ( isFollowingListing shared model, mastodonAccountForHost shared host ) of
+                ( True, Just account ) ->
+                    Mastodon.fetchHomeTimeline host account.accessToken (beforeCutoff model)
 
-             else
-                Mastodon.fetchPosts host (beforeCutoff model)
+                _ ->
+                    if isPopularListing model then
+                        Mastodon.fetchTrendingPosts host
+
+                    else
+                        Mastodon.fetchPosts host (beforeCutoff model)
             )
                 |> Task.attempt (fromFederatedResult >> GotFeedPosts (feedSourceKey source) requestId)
                 |> Effect.fromCmd
@@ -1919,8 +1944,8 @@ pushUrl model =
 
         sortParam : List Url.Builder.QueryParameter
         sortParam =
-            if model.sort == SortPopular then
-                [ Url.Builder.string "sort" (postsSortParam SortPopular) ]
+            if model.sort /= SortRecent then
+                [ Url.Builder.string "sort" (postsSortParam model.sort) ]
 
             else
                 []
@@ -1950,6 +1975,9 @@ postsSortParam sort =
         SortPopular ->
             "popular"
 
+        SortFollowing ->
+            "following"
+
 
 postsSortFromParam : String -> Maybe PostsSort
 postsSortFromParam param =
@@ -1959,6 +1987,9 @@ postsSortFromParam param =
 
         "popular" ->
             Just SortPopular
+
+        "following" ->
+            Just SortFollowing
 
         _ ->
             Nothing
@@ -2165,7 +2196,7 @@ recentPostsTabsView shared model =
                     )
                 , onClick (TabChanged RecentPosts)
                 ]
-                [ sortSelectView model ]
+                [ sortSelectView shared model ]
             , div
                 [ classes
                     ("filter-tab"
@@ -2200,17 +2231,32 @@ tab on the standalone page (`recentPostsTabsView`), and `Pages.Home_`/`Component
 put it in their embedded heading's place. Styled (`.posts-sort-select`) to read as the heading/tab
 label it replaces rather than as a form control.
 -}
-sortSelectView : Model -> Html Msg
-sortSelectView model =
+sortSelectView : Shared.Model -> Model -> Html Msg
+sortSelectView shared model =
+    let
+        displayed : PostsSort
+        displayed =
+            displayedSort shared model
+
+        sortOption : PostsSort -> Html Msg
+        sortOption sort =
+            option [ value (postsSortParam sort), selected (displayed == sort) ] [ text (sortLabel model.context sort) ]
+    in
     select
         [ class "posts-sort-select"
-        , value (postsSortParam model.sort)
+        , value (postsSortParam displayed)
         , onInput (postsSortFromParam >> Maybe.withDefault SortRecent >> SortChanged)
         , title "Choose how posts are ordered"
         ]
-        [ option [ value (postsSortParam SortRecent), selected (model.sort == SortRecent) ] [ text (sortLabel model.context SortRecent) ]
-        , option [ value (postsSortParam SortPopular), selected (model.sort == SortPopular) ] [ text (sortLabel model.context SortPopular) ]
-        ]
+        (sortOption SortRecent
+            :: sortOption SortPopular
+            :: (if followingOptionAvailable shared model then
+                    [ sortOption SortFollowing ]
+
+                else
+                    []
+               )
+        )
 
 
 {-| `sortSelectView`'s option labels: "Recent Posts"/"Recently Popular Posts", or "Replies" for the
@@ -2225,11 +2271,17 @@ sortLabel context sort =
         ( REPLY, SortPopular ) ->
             "Recently Popular Replies"
 
+        ( REPLY, SortFollowing ) ->
+            "Following Replies"
+
         ( _, SortRecent ) ->
             "Recent Posts"
 
         ( _, SortPopular ) ->
             "Recently Popular Posts"
+
+        ( _, SortFollowing ) ->
+            "Following Posts"
 
 
 {-| "Posts Before"/"Replies Before", matching `context` -- `recentPostsTabsView`'s
@@ -2535,6 +2587,89 @@ federatedSimpleSources shared model =
                     _ ->
                         False
             )
+
+
+{-| Whether "Following" has anyone to show -- signed in somewhere: an enabled Rellm account, a connected
+Mastodon account, or an enabled Bluesky account. The sort option is hidden otherwise
+(`followingOptionAvailable`), since every anonymous source would come back empty.
+-}
+followingAvailable : Shared.Model -> Bool
+followingAvailable shared =
+    List.any .enabled shared.accounts.accounts
+        || not (List.isEmpty (followingMastodonHosts shared))
+        || List.any .enabled shared.accounts.blueskyAccounts
+
+
+{-| Whether `sortSelectView` offers "Following": signed in somewhere (`followingAvailable`) and looking at
+the unscoped feed -- a user's profile (`model.author`/`profileFeedSource`) is already one account's posts.
+-}
+followingOptionAvailable : Shared.Model -> Model -> Bool
+followingOptionAvailable shared model =
+    model.author == Nothing && model.profileFeedSource == Nothing && followingAvailable shared
+
+
+{-| Whether the feed is currently showing "Following" (see `PostsSort`): chosen, still available (signing
+out of everything falls back to Recent Posts), and no search text (a search is network-wide, like every
+other sort).
+-}
+isFollowingListing : Shared.Model -> Model -> Bool
+isFollowingListing shared model =
+    model.sort
+        == SortFollowing
+        && followingOptionAvailable shared model
+        && String.isEmpty (String.trim model.searchText)
+
+
+{-| `model.sort` as `sortSelectView` shows it -- `SortFollowing` reads as `SortRecent` while it's unavailable.
+-}
+displayedSort : Shared.Model -> Model -> PostsSort
+displayedSort shared model =
+    if model.sort == SortFollowing && not (followingOptionAvailable shared model) then
+        SortRecent
+
+    else
+        model.sort
+
+
+{-| What `Posts.fetchPosts` should order a real server's listing by.
+-}
+feedOrder : Shared.Model -> Model -> Posts.FeedOrder
+feedOrder shared model =
+    if isFollowingListing shared model then
+        Posts.FromFollowing
+
+    else if isPopularListing model then
+        Posts.MostPopular
+
+    else
+        Posts.NewestFirst
+
+
+{-| While showing "Following", a Rellm server only contributes if the viewer is signed in to it.
+-}
+followingServerAllowed : Shared.Model -> Model -> RellmServer -> Bool
+followingServerAllowed shared model server =
+    not (isFollowingListing shared model)
+        || (RellmAccounts.enabledRellmAccountForServer shared.accounts.accounts server.frontendHost /= Nothing)
+
+
+{-| The Mastodon instances with a connected account that can still make requests (not `needsReauth`),
+once each -- what "Following" reads the home timeline of.
+-}
+followingMastodonHosts : Shared.Model -> List String
+followingMastodonHosts shared =
+    shared.accounts.mastodonAccounts
+        |> List.filter (\account -> not account.needsReauth)
+        |> List.map .instanceHost
+        |> Set.fromList
+        |> Set.toList
+
+
+mastodonAccountForHost : Shared.Model -> String -> Maybe MastodonAccount
+mastodonAccountForHost shared host =
+    shared.accounts.mastodonAccounts
+        |> List.filter (\account -> account.instanceHost == host && not account.needsReauth)
+        |> List.head
 
 
 {-| Whether the feed is currently showing "Recently Popular Posts" (see `PostsSort`) -- the sort is

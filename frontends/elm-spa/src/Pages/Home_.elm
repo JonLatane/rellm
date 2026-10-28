@@ -637,7 +637,7 @@ contentView shared content =
         Feed feed ->
             [ Html.map EventsMsg (EventsPage.view shared True feed.events)
             , div [ class "posts-embedded-heading-row" ]
-                [ h3 [] [ Html.map PostsMsg (PostsPage.sortSelectView feed.posts) ]
+                [ h3 [] [ Html.map PostsMsg (PostsPage.sortSelectView shared feed.posts) ]
                 , Html.map PostsMsg (PostsPage.exportButtonView shared feed.posts)
                 ]
             , Html.map PostsMsg (PostsPage.view shared False True feed.posts)

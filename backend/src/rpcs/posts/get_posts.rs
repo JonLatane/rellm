@@ -91,6 +91,7 @@ pub fn get_posts(
         )?,
         (PostListingType::FollowingPosts, _, _) => get_following_posts(
             user.ok_or(Status::new(Code::Unauthenticated, "must_be_logged_in"))?,
+            request.context(),
             cutoff,
             &excluded,
             conn,
@@ -561,13 +562,20 @@ fn get_user_posts(
 
 fn get_following_posts(
     user: &models::User,
+    context: PostContext,
     cutoff: Option<std::time::SystemTime>,
     excluded: &[i64],
     conn: &mut PgPooledConnection,
 ) -> Result<Vec<MarshalablePost>, Status> {
+    // Scoped to what `idx_posts_following_feed` covers (top-level `POST`s by a real author, ordered
+    // by `sort_published_at`): `query_visible_posts!`'s `follows` join is already keyed on
+    // `follows(user_id, target_user_id)` (`idx_follows`), so this reads each followed author's newest
+    // posts straight off that index. Only *approved* follows count -- a pending follow request to a
+    // user who approves followers hasn't earned their posts yet.
     let mut query = query_visible_posts!(&Some(user))
-        .filter(posts::context.eq(PostContext::Post.as_str_name()))
+        .filter(posts::context.eq(context.as_str_name()))
         .filter(follows::user_id.eq(user.id))
+        .filter(follows::target_user_moderation.eq_any(PASSING_MODERATIONS))
         .filter(exclude_authors!(excluded))
         .select((
             models::POST_COLUMNS,
@@ -576,6 +584,13 @@ fn get_following_posts(
         ))
         .order(posts::sort_published_at.desc())
         .into_boxed();
+
+    // Like `get_public_and_following_posts`: the default `POST` context is a feed of top-level posts
+    // (what `idx_posts_following_feed` covers); a `REPLY` is always a child, so filtering it would
+    // return nothing.
+    if context == PostContext::Post {
+        query = query.filter(posts::parent_post_id.is_null());
+    }
 
     if let Some(cutoff) = cutoff {
         query = query.filter(posts::sort_published_at.lt(cutoff));
