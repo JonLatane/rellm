@@ -532,8 +532,8 @@ type PostsTab
 `<select>` that stands in for the old static "Recent Posts" heading, on the standalone page's first tab
 and on `Pages.Home_`/`Components.Pages.UserProfilePage`'s embedded copies):
 
-  - `SortRecent` (the default) -- newest first: a real server's `ALL_ACCESSIBLE_POSTS`, Mastodon's local
-    public timeline, a Bluesky account's home timeline / the network's latest posts.
+  - `SortRecent` (the default) -- newest first, from everyone: a real server's `ALL_ACCESSIBLE_POSTS`,
+    Mastodon's local public timeline, the Bluesky network's latest posts (connected account or not).
   - `SortPopular` -- "what's popular lately": a real server's `RECENTLY_POPULAR_POSTS` (stars and
     responses, decayed by age -- see that listing type's doc comment), Mastodon's `trends/statuses`,
     Bluesky's "What's Hot" feed.
@@ -1640,8 +1640,13 @@ fetchFeedSource shared model requestId source =
                     else if isPopularListing model then
                         Bluesky.fetchWhatsHot auth
 
-                    else
+                    else if isFollowingListing shared model then
                         Bluesky.fetchPosts (beforeCutoff model) auth
+
+                    else
+                        -- Like a real server's `ALL_ACCESSIBLE_POSTS`: everyone's newest posts, not just
+                        -- the account's follows (that's "Following", above).
+                        Bluesky.fetchLatestPosts (beforeCutoff model) auth
             in
             BlueskyAccounts.performWithBlueskyAccount account request
                 |> Task.attempt (fromBlueskyResult account >> GotFeedPosts (feedSourceKey source) requestId)
