@@ -1,4 +1,4 @@
-module Shared.CreateNewPanel exposing (CreatedItem(..), Mode(..), Model, Msg(..), allTimezoneNames, hasEligibleAccount, init, isOpen, linkToSave, openQuoting, shownQuote, update, view)
+module Shared.CreateNewPanel exposing (CreatedItem(..), Mode(..), Model, Msg(..), allTimezoneNames, federatedText, hasEligibleAccount, init, isOpen, linkToSave, openQuoting, shownQuote, update, view)
 
 {-| A single, app-wide "New Post"/"New Event" composer -- title (the only
 field required in both modes), an optional link, optional media (picked via
@@ -22,6 +22,13 @@ the Post itself (`PostMode`) or as the `Event`'s own underlying Post
 its `visibility` is inherited from the `Event`'s own Post by the backend
 (`create_event.rs`) leaving `Occasion.post` unset, so there's nothing
 else for this panel to set on it.
+
+A `PostMode` draft can also be posted to a connected Mastodon or Bluesky account, picked in the same "Posting as"
+selector (`Poster`): neither service has a title or Rellm-hosted media, so there the title is optional and is just
+the first line of the text (`federatedText`: title, content and link, separated by blank lines), the media field
+is hidden, and Mastodon gets its own visibility picker (Bluesky has none). A federated post isn't a Rellm
+`Post`, so it never lands in `createdItems`; on success the panel stays open with a "Posted -- View post" notice
+(`postedNotice`) instead. `EventMode` is Rellm-only.
 
 Cancel/the shared backdrop/`CloseAllPanels` all just close this panel
 (`CloseClicked`) without touching any of the draft fields -- the draft is
@@ -51,8 +58,9 @@ import Components.Posts as Posts
 import Components.QuotedLink as QuotedLink
 import Dict
 import Grpc
-import Html exposing (Html, button, div, img, input, label, option, select, span, text)
-import Html.Attributes exposing (alt, attribute, class, disabled, placeholder, selected, src, title, type_, value)
+import Http
+import Html exposing (Html, a, button, div, img, input, label, option, select, span, text)
+import Html.Attributes exposing (alt, attribute, class, disabled, href, placeholder, rel, selected, src, target, title, type_, value)
 import Html.Events exposing (onClick, onInput)
 import Proto.Rellm exposing (MediaReference, defaultEvent, defaultEventInfo, defaultOccasion, defaultPost)
 import Proto.Rellm.Permission exposing (Permission(..))
@@ -63,6 +71,9 @@ import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer, withAccessToken)
 import Shared.Conversions exposing (posixToTimestamp)
+import Shared.Federation.Actions as FederationActions exposing (ServerAccount(..))
+import Shared.Federation.Bluesky as Bluesky
+import Shared.Federation.Mastodon as Mastodon exposing (MastodonVisibility(..))
 import Shared.MarkdownPanel as MarkdownPanel
 import Shared.MyMediaPanel as MyMediaPanel
 import Shared.QuoteLinks as QuoteLinks
@@ -122,6 +133,13 @@ type alias Model =
     -- straight into an already-fetched feed instead of needing a full
     -- refetch to see your own new post/event appear.
     , createdItems : List CreatedItem
+
+    -- A Mastodon post's visibility (see `Poster`) -- only consulted when posting as a Mastodon account.
+    , mastodonVisibility : MastodonVisibility
+
+    -- Set by a successful federated post (`GotFederatedSaveResult`) -- what it was posted to, and where to see
+    -- it, if the service said. Cleared by the next edit to the draft.
+    , postedNotice : Maybe { service : String, url : Maybe String }
     }
 
 
@@ -147,6 +165,7 @@ type Msg
     | TimezoneChanged String
     | PostingAsSelected String
     | VisibilityChanged String
+    | MastodonVisibilityChanged String
     | EditContentClicked
     | EditMediaClicked
       -- Fed back in by `Shared.update` once `Shared.MarkdownPanel`/
@@ -156,6 +175,8 @@ type Msg
     | MediaSaved (List MediaReference)
     | SaveClicked
     | GotSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, CreatedItem ))
+      -- A save to a Mastodon/Bluesky account (HTTP, hence `Http.Error`) -- the new post's web URL, if known.
+    | GotFederatedSaveResult (Result Http.Error ( Maybe AccountsPanel.Msg, Maybe String ))
 
 
 type SubmitStatus
@@ -188,6 +209,21 @@ type alias Resolved =
     }
 
 
+{-| Who a draft is posted as: one of the viewer's Rellm accounts (a `Post` or `Event`), or -- in `PostMode` only --
+a connected Mastodon/Bluesky account. See module doc.
+-}
+type Poster
+    = RellmPoster RellmAccount
+    | FederatedPoster ServerAccount
+
+
+{-| What `resolve` found submittable.
+-}
+type Target
+    = RellmTarget Resolved
+    | FederatedTarget ServerAccount
+
+
 init : Model
 init =
     { open = False
@@ -204,6 +240,8 @@ init =
     , timezone = Nothing
     , status = Idle
     , createdItems = []
+    , mastodonVisibility = MastodonPublic
+    , postedNotice = Nothing
     }
 
 
@@ -267,7 +305,7 @@ update browserTimeZone now accountsPanelModel msg model =
                     else
                         model
             in
-            ( { withDefaultTimes | open = opening }, Cmd.none, noForward )
+            ( { withDefaultTimes | open = opening, postedNotice = Nothing }, Cmd.none, noForward )
 
         OpenQuoting host post ->
             ( openQuoting host post model, Cmd.none, noForward )
@@ -285,19 +323,19 @@ update browserTimeZone now accountsPanelModel msg model =
             ( model, Cmd.none, noForward )
 
         CloseClicked ->
-            ( { model | open = False }, Cmd.none, noForward )
+            ( { model | open = False, postedNotice = Nothing }, Cmd.none, noForward )
 
         CancelClicked ->
-            ( { model | open = False }, Cmd.none, noForward )
+            ( { model | open = False, postedNotice = Nothing }, Cmd.none, noForward )
 
         ModeChanged mode ->
-            ( { model | mode = mode }, Cmd.none, noForward )
+            ( { model | mode = mode, postedNotice = Nothing }, Cmd.none, noForward )
 
         TitleChanged title ->
-            ( { model | title = title }, Cmd.none, noForward )
+            ( { model | title = title, postedNotice = Nothing }, Cmd.none, noForward )
 
         LinkChanged link ->
-            ( { model | link = link }, Cmd.none, noForward )
+            ( { model | link = link, postedNotice = Nothing }, Cmd.none, noForward )
 
         StartsAtChanged raw ->
             let
@@ -352,10 +390,22 @@ update browserTimeZone now accountsPanelModel msg model =
             ( { model | timezone = Just tz }, Cmd.none, noForward )
 
         PostingAsSelected accountId ->
-            ( { model | postingAs = Just accountId }, Cmd.none, noForward )
+            ( { model | postingAs = Just accountId, postedNotice = Nothing }, Cmd.none, noForward )
 
         VisibilityChanged text ->
             ( { model | visibility = Posts.visibilityFromText text }, Cmd.none, noForward )
+
+        MastodonVisibilityChanged text ->
+            ( { model
+                | mastodonVisibility =
+                    Mastodon.allVisibilities
+                        |> List.filter (\v -> Mastodon.visibilityLabel v == text)
+                        |> List.head
+                        |> Maybe.withDefault model.mastodonVisibility
+              }
+            , Cmd.none
+            , noForward
+            )
 
         EditContentClicked ->
             ( model
@@ -373,16 +423,22 @@ update browserTimeZone now accountsPanelModel msg model =
             )
 
         ContentSaved content ->
-            ( { model | content = content }, Cmd.none, noForward )
+            ( { model | content = content, postedNotice = Nothing }, Cmd.none, noForward )
 
         MediaSaved media ->
             ( { model | media = media }, Cmd.none, noForward )
 
         SaveClicked ->
             case resolve accountsPanelModel model of
-                Ok resolved ->
+                Ok (RellmTarget resolved) ->
                     ( { model | status = Submitting }
                     , saveTask browserTimeZone accountsPanelModel resolved model |> Task.attempt GotSaveResult
+                    , noForward
+                    )
+
+                Ok (FederatedTarget account) ->
+                    ( { model | status = Submitting }
+                    , FederationActions.createPost account model.mastodonVisibility (federatedText model) |> Task.attempt GotFederatedSaveResult
                     , noForward
                     )
 
@@ -394,6 +450,24 @@ update browserTimeZone now accountsPanelModel msg model =
 
         GotSaveResult (Err err) ->
             ( { model | status = SubmitFailed (AccountsPanel.grpcErrorToString err) }, Cmd.none, noForward )
+
+        -- Stays open (unlike a Rellm save, which shows up in the feed it was posted to) so the "Posted" notice
+        -- is seen; the draft itself is cleared, but who it was posted as and its visibility are kept.
+        GotFederatedSaveResult (Ok ( maybeAccountsPanelMsg, maybeUrl )) ->
+            ( { init
+                | createdItems = model.createdItems
+                , open = True
+                , mode = model.mode
+                , postingAs = model.postingAs
+                , mastodonVisibility = model.mastodonVisibility
+                , postedNotice = Just { service = posterServiceLabel (resolvedPoster accountsPanelModel model), url = maybeUrl }
+              }
+            , Cmd.none
+            , ( maybeAccountsPanelMsg, Nothing, Nothing )
+            )
+
+        GotFederatedSaveResult (Err err) ->
+            ( { model | status = SubmitFailed (FederationActions.writeErrorText err) }, Cmd.none, noForward )
 
 
 {-| `OpenQuoting`'s state change: open in `PostMode`, quoting `post` (on `host`) by its absolute link.
@@ -467,34 +541,83 @@ hasEligibleAccount : AccountsPanel.Model -> Bool
 hasEligibleAccount accountsPanelModel =
     not (List.isEmpty (eligibleAccounts PostMode accountsPanelModel))
         || not (List.isEmpty (eligibleAccounts EventMode accountsPanelModel))
+        || not (List.isEmpty (FederationActions.usableAccounts accountsPanelModel))
 
 
-{-| `model.postingAs`, resolved against `model.mode`'s current
-`eligibleAccounts` -- falls back to the first eligible account whenever
-`postingAs` is unset, or no longer resolves to one (e.g. that account was
-signed out since it was picked, or the user just switched `mode` to one that
-account isn't eligible for), so this panel always has _some_ sensible account
-to show/post as whenever at least one exists for the current mode, without
-`update` needing to eagerly keep `postingAs` in sync with every account list
-(or `mode`) change itself -- this is the only coordination `ModeChanged`
-needs with the account selector.
+{-| Everyone `model.mode` can be posted as: the eligible Rellm accounts (see `eligibleAccounts`) and -- in
+`PostMode` only -- every usable Mastodon/Bluesky account (`FederationActions.usableAccounts`).
 -}
-resolvedAccount : AccountsPanel.Model -> Model -> Maybe RellmAccount
-resolvedAccount accountsPanelModel model =
+eligiblePosters : Mode -> AccountsPanel.Model -> List Poster
+eligiblePosters mode accountsPanelModel =
+    List.map RellmPoster (eligibleAccounts mode accountsPanelModel)
+        ++ (case mode of
+                PostMode ->
+                    List.map FederatedPoster (FederationActions.usableAccounts accountsPanelModel)
+
+                EventMode ->
+                    []
+           )
+
+
+posterId : Poster -> String
+posterId poster =
+    case poster of
+        RellmPoster account ->
+            RellmAccounts.rellmAccountId account
+
+        FederatedPoster account ->
+            FederationActions.accountId account
+
+
+{-| `model.postingAs`, resolved against `model.mode`'s current `eligiblePosters` -- falls back to the first one
+whenever `postingAs` is unset, or no longer resolves to one (e.g. that account was signed out since it was
+picked, or the user just switched `mode` to one that account isn't eligible for), so this panel always has
+_some_ sensible account to show/post as whenever at least one exists for the current mode, without `update`
+needing to eagerly keep `postingAs` in sync with every account list (or `mode`) change itself -- this is the
+only coordination `ModeChanged` needs with the account selector.
+-}
+resolvedPoster : AccountsPanel.Model -> Model -> Maybe Poster
+resolvedPoster accountsPanelModel model =
     let
-        eligible : List RellmAccount
+        eligible : List Poster
         eligible =
-            eligibleAccounts model.mode accountsPanelModel
+            eligiblePosters model.mode accountsPanelModel
     in
-    case model.postingAs |> Maybe.andThen (\id -> List.filter (\account -> RellmAccounts.rellmAccountId account == id) eligible |> List.head) of
-        Just account ->
-            Just account
+    case model.postingAs |> Maybe.andThen (\id -> List.filter (\poster -> posterId poster == id) eligible |> List.head) of
+        Just poster ->
+            Just poster
 
         Nothing ->
             List.head eligible
 
 
-{-| The `frontendHost` of `resolvedAccount`'s server -- what tints this panel
+{-| `resolvedPoster`, if it's a Rellm account -- what the Rellm-only parts of the form (visibility, the
+`Post`/`Event` itself) are built from.
+-}
+resolvedAccount : AccountsPanel.Model -> Model -> Maybe RellmAccount
+resolvedAccount accountsPanelModel model =
+    case resolvedPoster accountsPanelModel model of
+        Just (RellmPoster account) ->
+            Just account
+
+        _ ->
+            Nothing
+
+
+posterServiceLabel : Maybe Poster -> String
+posterServiceLabel maybePoster =
+    case maybePoster of
+        Just (FederatedPoster (MastodonServerAccount _)) ->
+            "Mastodon"
+
+        Just (FederatedPoster (BlueskyServerAccount _)) ->
+            "Bluesky"
+
+        _ ->
+            "Rellm"
+
+
+{-| The `frontendHost` of `resolvedPoster`'s server (`"mastodon:" ++ instance`/`"bluesky:"` for a federated one) -- what tints this panel
 (`hostnameToCSSClass`, see `view`) and what `EditContentClicked`/
 `EditMediaClicked` open `MarkdownPanel`/`MyMediaPanel` against, same
 `targetHost` convention those panels use for themselves. `""` (no known
@@ -503,7 +626,15 @@ convention) if there's no eligible account at all.
 -}
 postingAsHost : AccountsPanel.Model -> Model -> String
 postingAsHost accountsPanelModel model =
-    resolvedAccount accountsPanelModel model |> Maybe.map .server |> Maybe.withDefault ""
+    case resolvedPoster accountsPanelModel model of
+        Just (RellmPoster account) ->
+            account.server
+
+        Just (FederatedPoster account) ->
+            FederationActions.hostOf account
+
+        Nothing ->
+            ""
 
 
 {-| Verifies a `SaveClicked` is actually submittable right now: `title` isn't
@@ -514,15 +645,74 @@ enabled. Used both by `SaveClicked` (to gate the RPC) and by `view` (to show
 the same problem inline, and disable Save, before the user even tries) --
 mirrors `MarkdownPanel.resolve`/`MyMediaPanel.resolve`'s own dual use.
 -}
-resolve : AccountsPanel.Model -> Model -> Result String Resolved
+resolve : AccountsPanel.Model -> Model -> Result String Target
 resolve accountsPanelModel model =
+    case ( model.mode, resolvedPoster accountsPanelModel model ) of
+        ( PostMode, Just (FederatedPoster account) ) ->
+            resolveFederated account model
+
+        _ ->
+            resolveRellm accountsPanelModel model
+
+
+{-| A federated post has no title of its own (see module doc), so unlike a Rellm one it only needs _something_ to
+say -- and Bluesky's 300-character limit respected, since it would otherwise be rejected after the fact.
+-}
+resolveFederated : ServerAccount -> Model -> Result String Target
+resolveFederated account model =
+    let
+        text : String
+        text =
+            federatedText model
+    in
+    if String.isEmpty text then
+        Err "Write something to post."
+
+    else
+        case account of
+            BlueskyServerAccount _ ->
+                let
+                    length : Int
+                    length =
+                        String.length (Bluesky.richText text).text
+                in
+                if length > blueskyMaxLength then
+                    Err ("Bluesky posts are limited to " ++ String.fromInt blueskyMaxLength ++ " characters (this one is " ++ String.fromInt length ++ ").")
+
+                else
+                    Ok (FederatedTarget account)
+
+            MastodonServerAccount _ ->
+                Ok (FederatedTarget account)
+
+
+blueskyMaxLength : Int
+blueskyMaxLength =
+    300
+
+
+{-| What a federated post says: the title (optional here), the Markdown content and the link/quote, each on its
+own paragraph -- the only way a title, body and link all fit in one Mastodon/Bluesky post.
+-}
+federatedText : Model -> String
+federatedText model =
+    [ nonEmptyTrimmed model.title
+    , nonEmptyTrimmed model.content
+    , linkToSave PostMode model
+    ]
+        |> List.filterMap identity
+        |> String.join "\n\n"
+
+
+resolveRellm : AccountsPanel.Model -> Model -> Result String Target
+resolveRellm accountsPanelModel model =
     if String.isEmpty (String.trim model.title) then
         Err "A title is required."
 
     else
         case model.mode of
             PostMode ->
-                resolveAccount accountsPanelModel model
+                resolveAccount accountsPanelModel model |> Result.map RellmTarget
 
             EventMode ->
                 case ( model.startsAt, model.endsAt ) of
@@ -537,7 +727,7 @@ resolve accountsPanelModel model =
                             Err "The end date/time must be at least a minute after the start date/time."
 
                         else
-                            resolveAccount accountsPanelModel model
+                            resolveAccount accountsPanelModel model |> Result.map RellmTarget
 
 
 resolveAccount : AccountsPanel.Model -> Model -> Result String Resolved
@@ -737,7 +927,17 @@ view time basePath accountsPanelModel quotes userPreferences model =
         host =
             postingAsHost accountsPanelModel model
 
-        resolution : Result String Resolved
+        -- Posting to Mastodon/Bluesky -- see module doc.
+        federated : Bool
+        federated =
+            case ( model.mode, resolvedPoster accountsPanelModel model ) of
+                ( PostMode, Just (FederatedPoster _) ) ->
+                    True
+
+                _ ->
+                    False
+
+        resolution : Result String Target
         resolution =
             resolve accountsPanelModel model
 
@@ -774,7 +974,7 @@ view time basePath accountsPanelModel quotes userPreferences model =
             ]
         , div [ class "create-new-panel-body" ]
             (List.concat
-                [ [ titleField model ]
+                [ [ titleField federated model ]
                 , case model.mode of
                     PostMode ->
                         []
@@ -793,7 +993,11 @@ view time basePath accountsPanelModel quotes userPreferences model =
 
                     Nothing ->
                         [ linkField model ]
-                , [ mediaField accountsPanelModel model host
+                , [ if federated then
+                        federatedMediaNote
+
+                    else
+                        mediaField accountsPanelModel model host
                   , contentField model
                   ]
                 ]
@@ -804,6 +1008,7 @@ view time basePath accountsPanelModel quotes userPreferences model =
 
             Nothing ->
                 text ""
+        , postedNoticeView model
         , div [ class "create-new-panel-actions" ]
             [ button
                 [ class "create-new-panel-cancel"
@@ -868,10 +1073,18 @@ modeTabView model mode label_ =
         [ text label_ ]
 
 
-titleField : Model -> Html Msg
-titleField model =
+titleField : Bool -> Model -> Html Msg
+titleField federated model =
     div [ class "create-new-panel-field" ]
-        [ label [ class "create-new-panel-label" ] [ text "Title" ]
+        [ label [ class "create-new-panel-label" ]
+            [ text
+                (if federated then
+                    "Title (optional -- the first line of the post)"
+
+                 else
+                    "Title"
+                )
+            ]
         , input
             [ type_ "text"
             , class "create-new-panel-title-input"
@@ -883,7 +1096,11 @@ titleField model =
                         "What's the name of your event?"
 
                     _ ->
-                        "What's this about?"
+                        if federated then
+                            "Optional"
+
+                        else
+                            "What's this about?"
                 )
             ]
             []
@@ -1005,6 +1222,38 @@ linkField model =
         ]
 
 
+{-| Stands in for `mediaField` when posting to Mastodon/Bluesky: Rellm media can't be attached to those (it's
+hosted here, and uploading to them isn't supported), so say so rather than just leaving it out.
+-}
+federatedMediaNote : Html Msg
+federatedMediaNote =
+    div [ class "create-new-panel-field create-new-panel-hint" ]
+        [ text "Media can't be attached to Mastodon or Bluesky posts from here yet." ]
+
+
+{-| The "Posted to <service>. View post" line a successful federated post leaves (see `Model.postedNotice`).
+-}
+postedNoticeView : Model -> Html Msg
+postedNoticeView model =
+    case model.postedNotice of
+        Just notice ->
+            div [ class "create-new-panel-notice" ]
+                (text ("Posted to " ++ notice.service ++ ".")
+                    :: (case notice.url of
+                            Just url ->
+                                [ text " "
+                                , a [ href url, target "_blank", rel "noopener noreferrer" ] [ text "View post" ]
+                                ]
+
+                            Nothing ->
+                                []
+                       )
+                )
+
+        Nothing ->
+            text ""
+
+
 {-| A small preview strip of `model.media` (if any) plus an Edit/+ Add button
 that opens `Shared.MyMediaPanel` in `MultiSelect` mode -- see
 `EditMediaClicked`. Needs a resolved `Server` (from `postingAsHost`) purely to
@@ -1078,46 +1327,86 @@ covers that case).
 -}
 postingAsSelector : AccountsPanel.Model -> Model -> Html Msg
 postingAsSelector accountsPanelModel model =
-    case eligibleAccounts model.mode accountsPanelModel of
+    case eligiblePosters model.mode accountsPanelModel of
         [] ->
             text ""
 
-        [ onlyAccount ] ->
+        [ onlyPoster ] ->
             div [ class "create-new-panel-account" ]
                 [ text "Posting as "
-                , accountAvatar accountsPanelModel.servers onlyAccount
-                , span [ class "create-new-panel-account-name" ] [ text (RellmAccounts.rellmAccountDisplayName onlyAccount) ]
+                , posterAvatar accountsPanelModel.servers onlyPoster
+                , span [ class "create-new-panel-account-name" ] [ text (posterName onlyPoster) ]
                 ]
 
         eligible ->
             let
-                selectedAccount : Maybe RellmAccount
-                selectedAccount =
-                    resolvedAccount accountsPanelModel model
+                selectedPoster : Maybe Poster
+                selectedPoster =
+                    resolvedPoster accountsPanelModel model
 
                 selectedId : String
                 selectedId =
-                    selectedAccount |> Maybe.map RellmAccounts.rellmAccountId |> Maybe.withDefault ""
+                    selectedPoster |> Maybe.map posterId |> Maybe.withDefault ""
             in
             div [ class "create-new-panel-account" ]
-                [ case selectedAccount of
-                    Just account ->
-                        accountAvatar accountsPanelModel.servers account
+                [ case selectedPoster of
+                    Just poster ->
+                        posterAvatar accountsPanelModel.servers poster
 
                     Nothing ->
                         text ""
                 , select [ class "create-new-panel-account-select", onInput PostingAsSelected ]
                     (List.map
-                        (\account ->
+                        (\poster ->
                             option
-                                [ value (RellmAccounts.rellmAccountId account)
-                                , selected (RellmAccounts.rellmAccountId account == selectedId)
+                                [ value (posterId poster)
+                                , selected (posterId poster == selectedId)
                                 ]
-                                [ text (RellmAccounts.rellmAccountDisplayName account ++ " on " ++ account.server) ]
+                                [ text (posterLabel poster) ]
                         )
                         eligible
                     )
                 ]
+
+
+posterName : Poster -> String
+posterName poster =
+    case poster of
+        RellmPoster account ->
+            RellmAccounts.rellmAccountDisplayName account
+
+        FederatedPoster account ->
+            FederationActions.usernameOf account
+
+
+{-| The `<select>` option text: "name on host" -- for a Mastodon/Bluesky account, the service in place of a host.
+-}
+posterLabel : Poster -> String
+posterLabel poster =
+    case poster of
+        RellmPoster account ->
+            RellmAccounts.rellmAccountDisplayName account ++ " on " ++ account.server
+
+        FederatedPoster (MastodonServerAccount a) ->
+            a.username ++ " on Mastodon (" ++ a.instanceHost ++ ")"
+
+        FederatedPoster (BlueskyServerAccount a) ->
+            a.handle ++ " on Bluesky"
+
+
+posterAvatar : List RellmServer -> Poster -> Html msg
+posterAvatar servers poster =
+    case poster of
+        RellmPoster account ->
+            accountAvatar servers account
+
+        FederatedPoster account ->
+            case FederationActions.avatarUrlOf account of
+                Just url ->
+                    img [ class "create-new-panel-account-avatar", src url, alt (FederationActions.usernameOf account), attribute "loading" "lazy" ] []
+
+                Nothing ->
+                    div [ classes [ "create-new-panel-account-avatar", "placeholder" ] ] [ text (RellmServers.initialLetter (FederationActions.usernameOf account)) ]
 
 
 {-| A `<select>` of `allowedVisibilitiesFor` (`resolvedAccount`/`model.mode`),
@@ -1130,11 +1419,31 @@ already covered elsewhere).
 -}
 visibilityField : AccountsPanel.Model -> Model -> Html Msg
 visibilityField accountsPanelModel model =
-    case resolvedAccount accountsPanelModel model of
-        Nothing ->
+    case ( model.mode, resolvedPoster accountsPanelModel model ) of
+        ( _, Nothing ) ->
             text ""
 
-        Just account ->
+        -- Bluesky has no per-post visibility at all.
+        ( _, Just (FederatedPoster (BlueskyServerAccount _)) ) ->
+            text ""
+
+        ( _, Just (FederatedPoster (MastodonServerAccount _)) ) ->
+            div [ class "create-new-panel-visibility" ]
+                [ text "Visible to "
+                , select [ class "create-new-panel-visibility-select", onInput MastodonVisibilityChanged ]
+                    (List.map
+                        (\visibility ->
+                            option
+                                [ value (Mastodon.visibilityLabel visibility)
+                                , selected (visibility == model.mastodonVisibility)
+                                ]
+                                [ text (Mastodon.visibilityLabel visibility) ]
+                        )
+                        Mastodon.allVisibilities
+                    )
+                ]
+
+        ( _, Just (RellmPoster account) ) ->
             let
                 selectedVisibility : Visibility
                 selectedVisibility =

@@ -2,6 +2,7 @@ module Shared.Federation.Bluesky exposing
     ( ActorProfile
     , BlueskyImage
     , FeedPost
+    , createPost
     , createReply
     , decoder
     , deletePost
@@ -1526,30 +1527,64 @@ into text + facets by `richText`.
 -}
 createReply : String -> BlueskyAuth -> String -> String -> Task Http.Error ()
 createReply repo auth parentUri markdown =
-    Task.map2 Tuple.pair (fetchReplyRefs auth parentUri) Time.now
+    fetchReplyRefs auth parentUri
+        |> Task.andThen (\( parent, root ) -> createPostRecord repo auth (Just ( parent, root )) markdown)
+        |> Task.map (\_ -> ())
+
+
+{-| A new top-level post as `repo` -- `markdown` becomes text + facets via `richText`. Resolves to the new
+record's `at://` URI.
+-}
+createPost : String -> BlueskyAuth -> String -> Task Http.Error String
+createPost repo auth markdown =
+    createPostRecord repo auth Nothing markdown
+
+
+{-| `com.atproto.repo.createRecord` for an `app.bsky.feed.post`, a reply when `replyRefs` (parent, root) is given.
+-}
+createPostRecord : String -> BlueskyAuth -> Maybe ( StrongRef, StrongRef ) -> String -> Task Http.Error String
+createPostRecord repo auth replyRefs markdown =
+    Time.now
         |> Task.andThen
-            (\( ( parent, root ), now ) ->
+            (\now ->
                 let
                     rich : { text : String, facets : List Encode.Value }
                     rich =
                         richText markdown
+
+                    replyField : List ( String, Encode.Value )
+                    replyField =
+                        case replyRefs of
+                            Just ( parent, root ) ->
+                                [ ( "reply", Encode.object [ ( "root", encodeStrongRef root ), ( "parent", encodeStrongRef parent ) ] ) ]
+
+                            Nothing ->
+                                []
                 in
-                repoWrite auth
-                    "createRecord"
-                    (Encode.object
-                        [ ( "repo", Encode.string repo )
-                        , ( "collection", Encode.string "app.bsky.feed.post" )
-                        , ( "record"
-                          , Encode.object
-                                [ ( "$type", Encode.string "app.bsky.feed.post" )
-                                , ( "text", Encode.string rich.text )
-                                , ( "facets", Encode.list identity rich.facets )
-                                , ( "reply", Encode.object [ ( "root", encodeStrongRef root ), ( "parent", encodeStrongRef parent ) ] )
-                                , ( "createdAt", Encode.string (Iso8601.fromTime now) )
+                Http.task
+                    { method = "POST"
+                    , headers = readHeaders auth
+                    , url = readHost auth ++ "/xrpc/com.atproto.repo.createRecord"
+                    , body =
+                        Http.jsonBody
+                            (Encode.object
+                                [ ( "repo", Encode.string repo )
+                                , ( "collection", Encode.string "app.bsky.feed.post" )
+                                , ( "record"
+                                  , Encode.object
+                                        ([ ( "$type", Encode.string "app.bsky.feed.post" )
+                                         , ( "text", Encode.string rich.text )
+                                         , ( "facets", Encode.list identity rich.facets )
+                                         , ( "createdAt", Encode.string (Iso8601.fromTime now) )
+                                         ]
+                                            ++ replyField
+                                        )
+                                  )
                                 ]
-                          )
-                        ]
-                    )
+                            )
+                    , resolver = jsonResolver (Decode.field "uri" Decode.string) (\metadata _ -> Http.BadStatus metadata.statusCode)
+                    , timeout = Just 10000
+                    }
             )
 
 

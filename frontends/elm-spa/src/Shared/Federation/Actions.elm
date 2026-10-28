@@ -1,6 +1,11 @@
 module Shared.Federation.Actions exposing
     ( ServerAccount(..)
+    , accountId
     , avatarUrlOf
+    , createPost
+    , hostOf
+    , postWebUrl
+    , usableAccounts
     , deletePost
     , editPost
     , isOwnPost
@@ -170,6 +175,7 @@ reply account host post visibility text =
                         |> Task.andThen
                             (\parentId ->
                                 Mastodon.postStatus a.instanceHost token { text = text, inReplyToId = Just parentId, visibility = visibility }
+                                    |> Task.map (\_ -> ())
                             )
                 )
                 |> Task.map (\( refreshed, () ) -> rotatedMastodon a refreshed)
@@ -235,3 +241,60 @@ writeErrorText err =
 
             else
                 "Unexpected response from the server."
+
+
+{-| Every connected account that can post right now: Mastodon accounts not flagged `needsReauth`, and the enabled
+Bluesky ones.
+-}
+usableAccounts : AccountsPanel.Model -> List ServerAccount
+usableAccounts accountsPanelModel =
+    (accountsPanelModel.mastodonAccounts |> List.filter (not << .needsReauth) |> List.map MastodonServerAccount)
+        ++ (accountsPanelModel.blueskyAccounts |> List.filter (\a -> a.enabled && not a.needsReauth) |> List.map BlueskyServerAccount)
+
+
+{-| A stable id for picking an account in a `<select>` -- distinct from every `RellmAccounts.rellmAccountId`.
+-}
+accountId : ServerAccount -> String
+accountId account =
+    case account of
+        MastodonServerAccount a ->
+            "mastodon:" ++ a.instanceHost ++ "/" ++ a.username
+
+        BlueskyServerAccount a ->
+            "bluesky:" ++ a.handle
+
+
+{-| The `"mastodon:" ++ instance` / `"bluesky:"` host tag the account's posts live under -- see
+`Components.Posts.isFederatedHost`.
+-}
+hostOf : ServerAccount -> String
+hostOf account =
+    case account of
+        MastodonServerAccount a ->
+            "mastodon:" ++ a.instanceHost
+
+        BlueskyServerAccount _ ->
+            "bluesky:"
+
+
+{-| A new top-level post (not a reply) as `account`, resolving to the `AccountsPanel.Msg` to forward for a token
+refresh and the new post's public web URL, if known. `visibility` only matters for Mastodon.
+-}
+createPost : ServerAccount -> MastodonVisibility -> String -> Task Http.Error ( Maybe AccountsPanel.Msg, Maybe String )
+createPost account visibility text =
+    case account of
+        MastodonServerAccount a ->
+            MastodonAccounts.performWithMastodonAccount a
+                (\token -> Mastodon.postStatus a.instanceHost token { text = text, inReplyToId = Nothing, visibility = visibility })
+                |> Task.map (\( refreshed, url ) -> ( rotatedMastodon a refreshed, url ))
+
+        BlueskyServerAccount a ->
+            BlueskyAccounts.performWithBlueskyAccount a (\auth -> Bluesky.createPost a.handle auth text)
+                |> Task.map (\( refreshed, uri ) -> ( rotatedBluesky a refreshed, Just (postWebUrl a.handle uri) ))
+
+
+{-| `https://bsky.app/profile/{handle}/post/{rkey}` for the post record at `uri`.
+-}
+postWebUrl : String -> String -> String
+postWebUrl handle uri =
+    "https://bsky.app/profile/" ++ handle ++ "/post/" ++ (uri |> String.split "/" |> List.reverse |> List.head |> Maybe.withDefault "")

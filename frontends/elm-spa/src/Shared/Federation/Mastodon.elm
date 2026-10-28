@@ -861,9 +861,10 @@ authHeaders accessToken =
 {-| `POST /api/v1/statuses` as the account holding `accessToken` -- needs the `write:statuses` OAuth scope
 (see `public/index.html`'s `mastodonRegisterApp`/authorize URL); a token connected before that scope was
 requested gets a 403. `inReplyToId` is the parent's id _on `instanceHost`_ (see `resolveStatusId` for a
-status viewed through another instance). `text` is sent verbatim -- Mastodon doesn't render Markdown.
+status viewed through another instance); without one it's a top-level status. `text` is sent verbatim --
+Mastodon doesn't render Markdown. Resolves to the new status' public `url`, when it has one.
 -}
-postStatus : String -> String -> { text : String, inReplyToId : Maybe String, visibility : MastodonVisibility } -> Task Http.Error ()
+postStatus : String -> String -> { text : String, inReplyToId : Maybe String, visibility : MastodonVisibility } -> Task Http.Error (Maybe String)
 postStatus instanceHost accessToken { text, inReplyToId, visibility } =
     Http.task
         { method = "POST"
@@ -877,7 +878,7 @@ postStatus instanceHost accessToken { text, inReplyToId, visibility } =
                         :: (inReplyToId |> Maybe.map (\id -> [ ( "in_reply_to_id", Encode.string id ) ]) |> Maybe.withDefault [])
                     )
                 )
-        , resolver = jsonResolver (Decode.succeed ()) (\metadata _ -> Http.BadStatus metadata.statusCode)
+        , resolver = jsonResolver (Decode.maybe (Decode.field "url" Decode.string)) (\metadata _ -> Http.BadStatus metadata.statusCode)
         , timeout = Just 10000
         }
 

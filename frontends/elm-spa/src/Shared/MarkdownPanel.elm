@@ -568,7 +568,7 @@ view accountsPanelModel model =
             model.target
                 |> Maybe.map
                     (\target ->
-                        if isFederatedTarget target then
+                        if usesFederatedAccount target model.targetHost then
                             resolveFederated accountsPanelModel target model.targetHost |> Result.map (\_ -> ())
 
                         else
@@ -795,7 +795,7 @@ accountRowFor accountsPanelModel model =
             sendMessagePostingAsRow accountsPanelModel model
 
         Just target ->
-            if isFederatedTarget target then
+            if usesFederatedAccount target model.targetHost then
                 federatedAccountRow accountsPanelModel model target
 
             else
@@ -1248,6 +1248,20 @@ isFederatedTarget target =
             False
 
 
+{-| Whether `target` is written as a Mastodon/Bluesky account: the two federated targets always are, and a new
+post's content (`NewPostContent`, from `Shared.CreateNewPanel`) is when it's being composed for one -- its
+`targetHost` is then a `"mastodon:"`/`"bluesky:"` tag rather than a Rellm server.
+-}
+usesFederatedAccount : TargetType -> String -> Bool
+usesFederatedAccount target host =
+    case target of
+        NewPostContent _ ->
+            Posts.isFederatedHost host
+
+        _ ->
+            isFederatedTarget target
+
+
 {-| `resolve`'s counterpart for a Mastodon/Bluesky target -- the connected account that replies (`NewFederatedReply`:
 the one on that very instance if there is one, else any usable one; the enabled Bluesky account) or that wrote
 the post being edited (`FederatedPostContent`).
@@ -1262,6 +1276,10 @@ resolveFederated accountsPanelModel target host =
         FederatedPostContent post ->
             FederationActions.ownAccountFor accountsPanelModel host post
                 |> Result.fromMaybe "You can only edit your own posts."
+
+        NewPostContent _ ->
+            FederationActions.serverAccountFor accountsPanelModel host
+                |> Result.fromMaybe "That account isn't connected."
 
         _ ->
             Err "Not a Mastodon or Bluesky post."
