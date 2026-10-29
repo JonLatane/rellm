@@ -147,6 +147,7 @@
     - [ClusterResource](#rellm-ClusterResource)
     - [ContactProtocol](#rellm-ContactProtocol)
     - [ContactVerificationAPI](#rellm-ContactVerificationAPI)
+    - [DefaultPostsSort](#rellm-DefaultPostsSort)
     - [NavigationTab](#rellm-NavigationTab)
     - [NavigationTabStyle](#rellm-NavigationTabStyle)
     - [PrivateUserStrategy](#rellm-PrivateUserStrategy)
@@ -3682,6 +3683,7 @@ Specific settings for Posts.
 | alias_singular | [string](#string) | optional | Can be used to rename, e.g., &#34;Post&#34; &#34;Highlight&#34; or &#34;Squirt&#34; |
 | alias_plural | [string](#string) | optional | Can be used to rename, e.g. &#34;Posts&#34; to &#34;Splurts&#34; or &#34;Memories&#34; |
 | enable_replies | [bool](#bool) | optional | Controls whether replies are shown in the UI. Note that users&#39; ability to reply is controlled by the `REPLY_TO_POSTS` permission. |
+| default_sort | [DefaultPostsSort](#rellm-DefaultPostsSort) |  | Which feed the Posts page (and the embedded copies on the home page and user profiles) shows when a visitor hasn&#39;t chosen one with its Recent/Popular/Following dropdown (or the `sort` URL query parameter). Defaults to `DEFAULT_POSTS_SORT_RECENT`. |
 
 
 
@@ -3967,6 +3969,19 @@ preference-then-fallback logic these values drive.
 | CONTACT_VERIFICATION_API_TWILIO | 0 |  |
 | CONTACT_VERIFICATION_API_BIRD | 1 |  |
 | CONTACT_VERIFICATION_API_TELNYX | 2 |  |
+
+
+
+<a name="rellm-DefaultPostsSort"></a>
+
+### DefaultPostsSort
+The feed the Posts page shows by default. See `PostSettings.default_sort`.
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| DEFAULT_POSTS_SORT_RECENT | 0 | &#34;Recent Posts&#34; -- newest first. |
+| DEFAULT_POSTS_SORT_POPULAR | 1 | &#34;Recently Popular Posts&#34; -- stars and responses, decayed by age. |
+| DEFAULT_POSTS_SORT_FOLLOWING | 2 | &#34;Following Posts&#34; -- only what the signed-in accounts follow. Visitors who aren&#39;t signed in anywhere (and so aren&#39;t offered that option) get `RECENT` instead. |
 
 
 

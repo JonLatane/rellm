@@ -111,6 +111,52 @@ export function authenticationFeatureToJSON(object: AuthenticationFeature): stri
   }
 }
 
+/** The feed the Posts page shows by default. See `PostSettings.default_sort`. */
+export enum DefaultPostsSort {
+  /** DEFAULT_POSTS_SORT_RECENT - "Recent Posts" -- newest first. */
+  DEFAULT_POSTS_SORT_RECENT = 0,
+  /** DEFAULT_POSTS_SORT_POPULAR - "Recently Popular Posts" -- stars and responses, decayed by age. */
+  DEFAULT_POSTS_SORT_POPULAR = 1,
+  /**
+   * DEFAULT_POSTS_SORT_FOLLOWING - "Following Posts" -- only what the signed-in accounts follow. Visitors who aren't
+   * signed in anywhere (and so aren't offered that option) get `RECENT` instead.
+   */
+  DEFAULT_POSTS_SORT_FOLLOWING = 2,
+  UNRECOGNIZED = -1,
+}
+
+export function defaultPostsSortFromJSON(object: any): DefaultPostsSort {
+  switch (object) {
+    case 0:
+    case "DEFAULT_POSTS_SORT_RECENT":
+      return DefaultPostsSort.DEFAULT_POSTS_SORT_RECENT;
+    case 1:
+    case "DEFAULT_POSTS_SORT_POPULAR":
+      return DefaultPostsSort.DEFAULT_POSTS_SORT_POPULAR;
+    case 2:
+    case "DEFAULT_POSTS_SORT_FOLLOWING":
+      return DefaultPostsSort.DEFAULT_POSTS_SORT_FOLLOWING;
+    case -1:
+    case "UNRECOGNIZED":
+    default:
+      return DefaultPostsSort.UNRECOGNIZED;
+  }
+}
+
+export function defaultPostsSortToJSON(object: DefaultPostsSort): string {
+  switch (object) {
+    case DefaultPostsSort.DEFAULT_POSTS_SORT_RECENT:
+      return "DEFAULT_POSTS_SORT_RECENT";
+    case DefaultPostsSort.DEFAULT_POSTS_SORT_POPULAR:
+      return "DEFAULT_POSTS_SORT_POPULAR";
+    case DefaultPostsSort.DEFAULT_POSTS_SORT_FOLLOWING:
+      return "DEFAULT_POSTS_SORT_FOLLOWING";
+    case DefaultPostsSort.UNRECOGNIZED:
+    default:
+      return "UNRECOGNIZED";
+  }
+}
+
 /** The Events Calendar's default UI granularity. */
 export enum CalendarDisplayMode {
   /** CALENDAR_DISPLAY_WEEK - Shows a 7-day week at a time. Good default for most servers. */
@@ -1092,7 +1138,15 @@ export interface PostSettings {
    * Controls whether replies are shown in the UI. Note that users' ability to reply
    * is controlled by the `REPLY_TO_POSTS` permission.
    */
-  enableReplies?: boolean | undefined;
+  enableReplies?:
+    | boolean
+    | undefined;
+  /**
+   * Which feed the Posts page (and the embedded copies on the home page and user profiles)
+   * shows when a visitor hasn't chosen one with its Recent/Popular/Following dropdown (or the
+   * `sort` URL query parameter). Defaults to `DEFAULT_POSTS_SORT_RECENT`.
+   */
+  defaultSort: DefaultPostsSort;
 }
 
 /** Specific settings for Events. */
@@ -3503,6 +3557,7 @@ function createBasePostSettings(): PostSettings {
     aliasSingular: undefined,
     aliasPlural: undefined,
     enableReplies: undefined,
+    defaultSort: 0,
   };
 }
 
@@ -3525,6 +3580,9 @@ export const PostSettings: MessageFns<PostSettings> = {
     }
     if (message.enableReplies !== undefined) {
       writer.uint32(48).bool(message.enableReplies);
+    }
+    if (message.defaultSort !== 0) {
+      writer.uint32(56).int32(message.defaultSort);
     }
     return writer;
   },
@@ -3584,6 +3642,14 @@ export const PostSettings: MessageFns<PostSettings> = {
           message.enableReplies = reader.bool();
           continue;
         }
+        case 7: {
+          if (tag !== 56) {
+            break;
+          }
+
+          message.defaultSort = reader.int32() as any;
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -3601,6 +3667,7 @@ export const PostSettings: MessageFns<PostSettings> = {
       aliasSingular: isSet(object.aliasSingular) ? globalThis.String(object.aliasSingular) : undefined,
       aliasPlural: isSet(object.aliasPlural) ? globalThis.String(object.aliasPlural) : undefined,
       enableReplies: isSet(object.enableReplies) ? globalThis.Boolean(object.enableReplies) : undefined,
+      defaultSort: isSet(object.defaultSort) ? defaultPostsSortFromJSON(object.defaultSort) : 0,
     };
   },
 
@@ -3624,6 +3691,9 @@ export const PostSettings: MessageFns<PostSettings> = {
     if (message.enableReplies !== undefined) {
       obj.enableReplies = message.enableReplies;
     }
+    if (message.defaultSort !== 0) {
+      obj.defaultSort = defaultPostsSortToJSON(message.defaultSort);
+    }
     return obj;
   },
 
@@ -3638,6 +3708,7 @@ export const PostSettings: MessageFns<PostSettings> = {
     message.aliasSingular = object.aliasSingular ?? undefined;
     message.aliasPlural = object.aliasPlural ?? undefined;
     message.enableReplies = object.enableReplies ?? undefined;
+    message.defaultSort = object.defaultSort ?? 0;
     return message;
   },
 };

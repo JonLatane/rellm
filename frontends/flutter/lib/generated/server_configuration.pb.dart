@@ -1693,6 +1693,7 @@ class PostSettings extends $pb.GeneratedMessage {
     $core.String? aliasSingular,
     $core.String? aliasPlural,
     $core.bool? enableReplies,
+    DefaultPostsSort? defaultSort,
   }) {
     final $result = create();
     if (visible != null) {
@@ -1713,6 +1714,9 @@ class PostSettings extends $pb.GeneratedMessage {
     if (enableReplies != null) {
       $result.enableReplies = enableReplies;
     }
+    if (defaultSort != null) {
+      $result.defaultSort = defaultSort;
+    }
     return $result;
   }
   PostSettings._() : super();
@@ -1726,6 +1730,7 @@ class PostSettings extends $pb.GeneratedMessage {
     ..aOS(4, _omitFieldNames ? '' : 'aliasSingular')
     ..aOS(5, _omitFieldNames ? '' : 'aliasPlural')
     ..aOB(6, _omitFieldNames ? '' : 'enableReplies')
+    ..e<DefaultPostsSort>(7, _omitFieldNames ? '' : 'defaultSort', $pb.PbFieldType.OE, defaultOrMaker: DefaultPostsSort.DEFAULT_POSTS_SORT_RECENT, valueOf: DefaultPostsSort.valueOf, enumValues: DefaultPostsSort.values)
     ..hasRequiredFields = false
   ;
 
@@ -1817,6 +1822,18 @@ class PostSettings extends $pb.GeneratedMessage {
   $core.bool hasEnableReplies() => $_has(5);
   @$pb.TagNumber(6)
   void clearEnableReplies() => clearField(6);
+
+  /// Which feed the Posts page (and the embedded copies on the home page and user profiles)
+  /// shows when a visitor hasn't chosen one with its Recent/Popular/Following dropdown (or the
+  /// `sort` URL query parameter). Defaults to `DEFAULT_POSTS_SORT_RECENT`.
+  @$pb.TagNumber(7)
+  DefaultPostsSort get defaultSort => $_getN(6);
+  @$pb.TagNumber(7)
+  set defaultSort(DefaultPostsSort v) { setField(7, v); }
+  @$pb.TagNumber(7)
+  $core.bool hasDefaultSort() => $_has(6);
+  @$pb.TagNumber(7)
+  void clearDefaultSort() => clearField(7);
 }
 
 /// Specific settings for Events.

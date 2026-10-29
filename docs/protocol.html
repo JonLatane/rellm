@@ -477,6 +477,9 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
             <p><a href="#rellm-ContactVerificationAPI">ContactVerificationAPI</a></p>
           </li>
           <li>
+            <p><a href="#rellm-DefaultPostsSort">DefaultPostsSort</a></p>
+          </li>
+          <li>
             <p><a href="#rellm-NavigationTab">NavigationTab</a></p>
           </li>
           <li>
@@ -7672,6 +7675,12 @@ directory</a> is (<code>{name}</code> denotes a
           <td>optional</td>
           <td>Controls whether replies are shown in the UI. Note that users' ability to reply is controlled by the <code>REPLY_TO_POSTS</code> permission.</td>
         </tr>
+        <tr>
+          <td>default_sort</td>
+          <td><a href="#rellm-DefaultPostsSort">DefaultPostsSort</a></td>
+          <td></td>
+          <td>Which feed the Posts page (and the embedded copies on the home page and user profiles) shows when a visitor hasn't chosen one with its Recent/Popular/Following dropdown (or the <code>sort</code> URL query parameter). Defaults to <code>DEFAULT_POSTS_SORT_RECENT</code>.</td>
+        </tr>
       </tbody>
     </table>
     <p><a name="rellm-ServerColors"></a></p>
@@ -8366,6 +8375,35 @@ directory</a> is (<code>{name}</code> denotes a
           <td>CONTACT_VERIFICATION_API_TELNYX</td>
           <td>2</td>
           <td></td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-DefaultPostsSort"></a></p>
+    <h3 id="defaultpostssort"><a class="anchor" aria-hidden="true" tabindex="-1" href="#defaultpostssort"><span class="octicon octicon-link"></span></a>DefaultPostsSort</h3>
+    <p>The feed the Posts page shows by default. See <code>PostSettings.default_sort</code>.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Number</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>DEFAULT_POSTS_SORT_RECENT</td>
+          <td>0</td>
+          <td>"Recent Posts" -- newest first.</td>
+        </tr>
+        <tr>
+          <td>DEFAULT_POSTS_SORT_POPULAR</td>
+          <td>1</td>
+          <td>"Recently Popular Posts" -- stars and responses, decayed by age.</td>
+        </tr>
+        <tr>
+          <td>DEFAULT_POSTS_SORT_FOLLOWING</td>
+          <td>2</td>
+          <td>"Following Posts" -- only what the signed-in accounts follow. Visitors who aren't signed in anywhere (and so aren't offered that option) get <code>RECENT</code> instead.</td>
         </tr>
       </tbody>
     </table>
