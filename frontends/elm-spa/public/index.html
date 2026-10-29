@@ -259,10 +259,23 @@
         var entry = instances.get(video);
         if (entry && entry.src === src) { return; }
         detach(video);
-        var hls = new Hls();
+        // Only the manifest is fetched up front; media segments wait until the user presses play (or
+        // seeks), or right away for an `autoplay` video, so unwatched videos in a feed cost no bandwidth.
+        var hls = new Hls({ autoStartLoad: false });
+        var start = function () {
+          video.removeEventListener('play', start);
+          video.removeEventListener('seeking', start);
+          hls.startLoad(-1);
+        };
         instances.set(video, { hls: hls, src: src });
         hls.loadSource(src);
         hls.attachMedia(video);
+        if (video.autoplay) {
+          start();
+        } else {
+          video.addEventListener('play', start);
+          video.addEventListener('seeking', start);
+        }
       }
 
       function eachVideo(node, fn) {

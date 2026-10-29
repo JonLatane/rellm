@@ -510,15 +510,23 @@ previewTimeFragment media =
 
 {-| The poster frame of a Bluesky video, if `videoUrl` is one of its HLS playlists
 (`.../{did}/{cid}/playlist.m3u8`) -- Bluesky's video CDN serves the thumbnail alongside it at
-`.../thumbnail.jpg`. Such a video has no `VIDEO_PREVIEW_THUMBNAIL_*` conversions to show instead
-(see `viewHelper`), so a live `<video>` renders right away with this as its `poster`. (Playback
-itself is hls.js's job on browsers with no native HLS, see `public/index.html`.)
+`.../thumbnail.jpg`, which is also what `app.bsky.embed.video#view.thumbnail` says. `MediaReference`
+has no field to carry that decoded thumbnail, so it's re-derived from the playlist's path (any
+host, any query string) rather than adding one to the proto. Such a video has no
+`VIDEO_PREVIEW_THUMBNAIL_*` conversions to show instead (see `viewHelper`), so a live `<video>`
+renders right away with this as its `poster`. (Playback itself is hls.js's job, see
+`public/index.html`.)
 -}
 hlsPosterUrl : String -> Maybe String
 hlsPosterUrl videoUrl =
-    if String.startsWith "https://video.bsky.app/" videoUrl && String.endsWith "/playlist.m3u8" videoUrl then
+    let
+        path : String
+        path =
+            videoUrl |> String.split "?" |> List.head |> Maybe.withDefault videoUrl
+    in
+    if String.endsWith "/playlist.m3u8" path then
         -- 13 = length of "playlist.m3u8"
-        Just (String.dropRight 13 videoUrl ++ "thumbnail.jpg")
+        Just (String.dropRight 13 path ++ "thumbnail.jpg")
 
     else
         Nothing
