@@ -2064,7 +2064,8 @@ usesServerDefaultSort author embeddedPage profileFeedSource =
     author == Nothing && not embeddedPage && profileFeedSource == Nothing
 
 
-{-| `fetchNewFeeds`, after `adoptServerDefaultSort` -- a refetch of every source instead when that moved `sort`.
+{-| `fetchNewFeeds`, after `adoptServerDefaultSort` -- a refetch of every source instead when that moved `sort`,
+and a rewrite of the URL's `sort` whenever the default itself moved.
 -}
 adoptDefaultSortAndFetch : Shared.Model -> Model -> ( Model, Effect Msg )
 adoptDefaultSortAndFetch shared model =
@@ -2073,8 +2074,18 @@ adoptDefaultSortAndFetch shared model =
         adoptedModel =
             adoptServerDefaultSort shared model
     in
-    if adoptedModel.sort /= model.sort then
-        refetchFeeds shared adoptedModel (relevantFeedSources shared adoptedModel)
+    if adoptedModel.sort /= model.sort || adoptedModel.serverDefaultSort /= model.serverDefaultSort then
+        -- `pushUrl` leaves `sort` out exactly when it matches the default, so a changed default
+        -- re-derives the URL (keeping a chosen sort explicit if it now differs).
+        let
+            ( refetchedModel, refetchEffect ) =
+                if adoptedModel.sort /= model.sort then
+                    refetchFeeds shared adoptedModel (relevantFeedSources shared adoptedModel)
+
+                else
+                    fetchNewFeeds shared adoptedModel
+        in
+        ( refetchedModel, Effect.batch [ refetchEffect, pushUrl refetchedModel ] )
 
     else
         fetchNewFeeds shared adoptedModel

@@ -1823,9 +1823,10 @@ class PostSettings extends $pb.GeneratedMessage {
   @$pb.TagNumber(6)
   void clearEnableReplies() => clearField(6);
 
-  /// Which feed the Posts page (and the embedded copies on the home page and user profiles)
-  /// shows when a visitor hasn't chosen one with its Recent/Popular/Following dropdown (or the
-  /// `sort` URL query parameter). Defaults to `DEFAULT_POSTS_SORT_RECENT`.
+  /// Which feed the standalone Posts page (the one with the Recent/Popular/Following dropdown)
+  /// shows when a visitor hasn't chosen one with it (or the `sort` URL query parameter). The
+  /// embedded copies on the home page and user profiles stay on Recent. Users can override this
+  /// in their own preferences. Defaults to `DEFAULT_POSTS_SORT_RECENT`.
   @$pb.TagNumber(7)
   DefaultPostsSort get defaultSort => $_getN(6);
   @$pb.TagNumber(7)
