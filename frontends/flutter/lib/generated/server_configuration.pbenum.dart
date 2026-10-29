@@ -51,6 +51,24 @@ class AuthenticationFeature extends $pb.ProtobufEnum {
   const AuthenticationFeature._($core.int v, $core.String n) : super(v, n);
 }
 
+/// The feed the Posts page shows by default. See `PostSettings.default_sort`.
+class DefaultPostsSort extends $pb.ProtobufEnum {
+  static const DefaultPostsSort DEFAULT_POSTS_SORT_RECENT = DefaultPostsSort._(0, _omitEnumNames ? '' : 'DEFAULT_POSTS_SORT_RECENT');
+  static const DefaultPostsSort DEFAULT_POSTS_SORT_POPULAR = DefaultPostsSort._(1, _omitEnumNames ? '' : 'DEFAULT_POSTS_SORT_POPULAR');
+  static const DefaultPostsSort DEFAULT_POSTS_SORT_FOLLOWING = DefaultPostsSort._(2, _omitEnumNames ? '' : 'DEFAULT_POSTS_SORT_FOLLOWING');
+
+  static const $core.List<DefaultPostsSort> values = <DefaultPostsSort> [
+    DEFAULT_POSTS_SORT_RECENT,
+    DEFAULT_POSTS_SORT_POPULAR,
+    DEFAULT_POSTS_SORT_FOLLOWING,
+  ];
+
+  static final $core.Map<$core.int, DefaultPostsSort> _byValue = $pb.ProtobufEnum.initByValue(values);
+  static DefaultPostsSort? valueOf($core.int value) => _byValue[value];
+
+  const DefaultPostsSort._($core.int v, $core.String n) : super(v, n);
+}
+
 /// The Events Calendar's default UI granularity.
 class CalendarDisplayMode extends $pb.ProtobufEnum {
   static const CalendarDisplayMode CALENDAR_DISPLAY_WEEK = CalendarDisplayMode._(0, _omitEnumNames ? '' : 'CALENDAR_DISPLAY_WEEK');

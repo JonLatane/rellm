@@ -225,6 +225,16 @@
   margin: 7px 0;
 }
 
+.user-preferences-posts-sort-row {
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.user-preferences-posts-sort-select {
+  font-size: 0.85rem;
+  max-width: 60%;
+}
+
 .debug-tab-note {
   color: var(--muted);
   font-size: 0.7rem;

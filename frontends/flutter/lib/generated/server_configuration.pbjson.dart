@@ -43,6 +43,22 @@ final $typed_data.Uint8List authenticationFeatureDescriptor = $convert.base64Dec
     'ChVBdXRoZW50aWNhdGlvbkZlYXR1cmUSIgoeQVVUSEVOVElDQVRJT05fRkVBVFVSRV9VTktOT1'
     'dOEAASEgoOQ1JFQVRFX0FDQ09VTlQQARIJCgVMT0dJThAC');
 
+@$core.Deprecated('Use defaultPostsSortDescriptor instead')
+const DefaultPostsSort$json = {
+  '1': 'DefaultPostsSort',
+  '2': [
+    {'1': 'DEFAULT_POSTS_SORT_RECENT', '2': 0},
+    {'1': 'DEFAULT_POSTS_SORT_POPULAR', '2': 1},
+    {'1': 'DEFAULT_POSTS_SORT_FOLLOWING', '2': 2},
+  ],
+};
+
+/// Descriptor for `DefaultPostsSort`. Decode as a `google.protobuf.EnumDescriptorProto`.
+final $typed_data.Uint8List defaultPostsSortDescriptor = $convert.base64Decode(
+    'ChBEZWZhdWx0UG9zdHNTb3J0Eh0KGURFRkFVTFRfUE9TVFNfU09SVF9SRUNFTlQQABIeChpERU'
+    'ZBVUxUX1BPU1RTX1NPUlRfUE9QVUxBUhABEiAKHERFRkFVTFRfUE9TVFNfU09SVF9GT0xMT1dJ'
+    'TkcQAg==');
+
 @$core.Deprecated('Use calendarDisplayModeDescriptor instead')
 const CalendarDisplayMode$json = {
   '1': 'CalendarDisplayMode',
@@ -484,6 +500,7 @@ const PostSettings$json = {
     {'1': 'alias_singular', '3': 4, '4': 1, '5': 9, '9': 0, '10': 'aliasSingular', '17': true},
     {'1': 'alias_plural', '3': 5, '4': 1, '5': 9, '9': 1, '10': 'aliasPlural', '17': true},
     {'1': 'enable_replies', '3': 6, '4': 1, '5': 8, '9': 2, '10': 'enableReplies', '17': true},
+    {'1': 'default_sort', '3': 7, '4': 1, '5': 14, '6': '.rellm.DefaultPostsSort', '10': 'defaultSort'},
   ],
   '8': [
     {'1': '_alias_singular'},
@@ -499,8 +516,9 @@ final $typed_data.Uint8List postSettingsDescriptor = $convert.base64Decode(
     'ZWZhdWx0X3Zpc2liaWxpdHkYAyABKA4yES5yZWxsbS5WaXNpYmlsaXR5UhFkZWZhdWx0VmlzaW'
     'JpbGl0eRIqCg5hbGlhc19zaW5ndWxhchgEIAEoCUgAUg1hbGlhc1Npbmd1bGFyiAEBEiYKDGFs'
     'aWFzX3BsdXJhbBgFIAEoCUgBUgthbGlhc1BsdXJhbIgBARIqCg5lbmFibGVfcmVwbGllcxgGIA'
-    'EoCEgCUg1lbmFibGVSZXBsaWVziAEBQhEKD19hbGlhc19zaW5ndWxhckIPCg1fYWxpYXNfcGx1'
-    'cmFsQhEKD19lbmFibGVfcmVwbGllcw==');
+    'EoCEgCUg1lbmFibGVSZXBsaWVziAEBEjoKDGRlZmF1bHRfc29ydBgHIAEoDjIXLnJlbGxtLkRl'
+    'ZmF1bHRQb3N0c1NvcnRSC2RlZmF1bHRTb3J0QhEKD19hbGlhc19zaW5ndWxhckIPCg1fYWxpYX'
+    'NfcGx1cmFsQhEKD19lbmFibGVfcmVwbGllcw==');
 
 @$core.Deprecated('Use eventSettingsDescriptor instead')
 const EventSettings$json = {

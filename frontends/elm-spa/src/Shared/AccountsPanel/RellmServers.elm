@@ -40,6 +40,7 @@ module Shared.AccountsPanel.RellmServers exposing
     , resolveHost
     , resolvedFrontendHost
     , sharesPushKeyWithAnchor
+    , serverDefaultPostsSort
     , updateRellmServerConfiguration
     , upsertRellmServer
     , upsertRellmServerAppend
@@ -71,6 +72,7 @@ import Http
 import Json.Decode as Decode exposing (Decoder)
 import Json.Encode as Encode
 import Proto.Rellm exposing (ServerConfiguration, ServerInfo)
+import Proto.Rellm.DefaultPostsSort exposing (DefaultPostsSort(..))
 import Proto.Rellm.Rellm as Rellm
 import Request
 import Shared.AccountsPanel.SortOrder exposing (sortOrderDecoder)
@@ -222,6 +224,20 @@ configurationOf server =
     server.connected
         |> Maybe.map .configuration
         |> Maybe.withDefault Proto.Rellm.defaultServerConfiguration
+
+
+{-| `post_settings.default_sort` of `frontendHost`'s server -- the Posts feed it says to show by default (and so
+the default of the Accounts Panel's own per-user "Default Posts Feed" preference, see
+`Shared.UserPreferences.postsSort`). `DEFAULTPOSTSSORTRECENT` while that server or its configuration isn't
+known yet.
+-}
+serverDefaultPostsSort : List RellmServer -> String -> DefaultPostsSort
+serverDefaultPostsSort servers frontendHost =
+    rellmServerForHost servers frontendHost
+        |> Maybe.map configurationOf
+        |> Maybe.andThen .postSettings
+        |> Maybe.map .defaultSort
+        |> Maybe.withDefault DEFAULTPOSTSSORTRECENT
 
 
 brandingFromConfig : Connection -> ServerConfiguration -> Branding

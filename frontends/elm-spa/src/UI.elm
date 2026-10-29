@@ -15,6 +15,7 @@ import Html.Keyed
 import Json.Decode as Decode
 import Proto.Rellm exposing (BlueskyServer, ContactConsentChange, ContactMethod, FederatedServer, MastodonServer)
 import Proto.Rellm.ContactConsentState exposing (ContactConsentState(..))
+import Proto.Rellm.DefaultPostsSort exposing (DefaultPostsSort(..))
 import Proto.Rellm.NavigationTabStyle exposing (NavigationTabStyle)
 import Proto.Rellm.SyncSource.Configuration as Configuration
 import Proto.Rellm.Visibility exposing (Visibility)
@@ -1255,14 +1256,45 @@ accountsAndServersTab shared currentRoute =
         ]
 
 
-{-| The Accounts Panel's "Preferences" tab -- shown to everyone, signed in or not. One "Embed ... Links" switch
+{-| The Accounts Panel's "Preferences" tab -- shown to everyone, signed in or not. At the top, the "Default Posts
+Feed" `<select>` (`Shared.UserPreferences.postsSort`, defaulting to the main server's `post_settings.default_sort`),
+then one "Embed ... Links" switch
 per `SocialMediaEmbed` network, backed by `Shared.UserPreferences`'s `disable<Network>Embeds` (so persisted, and
 the switch reads inverted: on = embeds shown). See `Components.QuotedLink.socialEmbedView`.
 -}
 userPreferencesTab : Shared.Model -> Html Shared.Msg
 userPreferencesTab shared =
+    let
+        serverDefault : DefaultPostsSort
+        serverDefault =
+            RellmServers.serverDefaultPostsSort shared.accounts.servers shared.accounts.mainFrontendHost
+
+        effectiveSort : DefaultPostsSort
+        effectiveSort =
+            Maybe.withDefault serverDefault shared.userPreferences.postsSort
+
+        sortOption : DefaultPostsSort -> String -> Html Shared.Msg
+        sortOption sort label_ =
+            option [ value label_, selected (effectiveSort == sort) ] [ text label_ ]
+
+        sortFromLabel : String -> Maybe DefaultPostsSort
+        sortFromLabel label_ =
+            [ DEFAULTPOSTSSORTRECENT, DEFAULTPOSTSSORTPOPULAR, DEFAULTPOSTSSORTFOLLOWING ]
+                |> List.filter (\sort -> postsSortLabel sort == label_)
+                |> List.head
+    in
     div [ class "accounts-panel-tab-content" ]
-        [ embedSwitchRow shared.userPreferences.disableFacebookEmbeds "Embed Facebook Links" UserPreferences.SetDisableFacebookEmbeds
+        [ label [ class "admin-switch-row user-preferences-posts-sort-row" ]
+            [ span [] [ text "Default Posts Feed" ]
+            , select
+                [ class "user-preferences-posts-sort-select"
+                , onInput (\text -> Shared.UserPreferencesMsg (UserPreferences.SetPostsSort (sortFromLabel text)))
+                ]
+                (List.map (\sort -> sortOption sort (postsSortLabel sort))
+                    [ DEFAULTPOSTSSORTRECENT, DEFAULTPOSTSSORTPOPULAR, DEFAULTPOSTSSORTFOLLOWING ]
+                )
+            ]
+        , embedSwitchRow shared.userPreferences.disableFacebookEmbeds "Embed Facebook Links" UserPreferences.SetDisableFacebookEmbeds
         , embedSwitchRow shared.userPreferences.disableInstagramEmbeds "Embed Instagram Links" UserPreferences.SetDisableInstagramEmbeds
         , embedSwitchRow shared.userPreferences.disableLinkedInEmbeds "Embed LinkedIn Links" UserPreferences.SetDisableLinkedInEmbeds
         , embedSwitchRow shared.userPreferences.disablePinterestEmbeds "Embed Pinterest Links" UserPreferences.SetDisablePinterestEmbeds
@@ -1270,6 +1302,19 @@ userPreferencesTab shared =
         , embedSwitchRow shared.userPreferences.disableXEmbeds "Embed X (Twitter) Links" UserPreferences.SetDisableXEmbeds
         , embedSwitchRow shared.userPreferences.disableYouTubeEmbeds "Embed YouTube Links" UserPreferences.SetDisableYouTubeEmbeds
         ]
+
+
+postsSortLabel : DefaultPostsSort -> String
+postsSortLabel sort =
+    case sort of
+        DEFAULTPOSTSSORTPOPULAR ->
+            "Recently Popular Posts"
+
+        DEFAULTPOSTSSORTFOLLOWING ->
+            "Following Posts"
+
+        _ ->
+            "Recent Posts"
 
 
 embedSwitchRow : Bool -> String -> (Bool -> UserPreferences.Msg) -> Html Shared.Msg

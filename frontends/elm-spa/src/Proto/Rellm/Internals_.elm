@@ -669,6 +669,7 @@ import Proto.Rellm.ContactVerificationAPI
 import Proto.Rellm.CustomHomePage.Target
 import Proto.Rellm.CustomNavigationTab.Icon
 import Proto.Rellm.CustomNavigationTab.Target
+import Proto.Rellm.DefaultPostsSort
 import Proto.Rellm.EventListingType
 import Proto.Rellm.FulfillmentStatus
 import Proto.Rellm.GenerateMediaRequest.Target
@@ -2484,9 +2485,17 @@ fieldNumbersProto__Rellm__PostSettings :
     , aliasSingular : Int
     , aliasPlural : Int
     , enableReplies : Int
+    , defaultSort : Int
     }
 fieldNumbersProto__Rellm__PostSettings =
-    { visible = 1, defaultModeration = 2, defaultVisibility = 3, aliasSingular = 4, aliasPlural = 5, enableReplies = 6 }
+    { visible = 1
+    , defaultModeration = 2
+    , defaultVisibility = 3
+    , aliasSingular = 4
+    , aliasPlural = 5
+    , enableReplies = 6
+    , defaultSort = 7
+    }
 
 
 {-| Default for Proto__Rellm__PostSettings. Should only be used for 'required' decoders as an initial value.
@@ -2500,6 +2509,7 @@ defaultProto__Rellm__PostSettings =
     , aliasSingular = Nothing
     , aliasPlural = Nothing
     , enableReplies = Nothing
+    , defaultSort = Proto.Rellm.DefaultPostsSort.defaultDefaultPostsSort
     }
 
 
@@ -2519,6 +2529,10 @@ decodeProto__Rellm__PostSettings =
             (\a r -> { r | aliasSingular = a })
         , Protobuf.Decode.optional 5 (Protobuf.Decode.map Just Protobuf.Decode.string) (\a r -> { r | aliasPlural = a })
         , Protobuf.Decode.optional 6 (Protobuf.Decode.map Just Protobuf.Decode.bool) (\a r -> { r | enableReplies = a })
+        , Protobuf.Decode.optional
+            7
+            Proto.Rellm.DefaultPostsSort.decodeDefaultPostsSort
+            (\a r -> { r | defaultSort = a })
         ]
 
 
@@ -2534,6 +2548,7 @@ encodeProto__Rellm__PostSettings value =
         , ( 4, (Maybe.map Protobuf.Encode.string >> Maybe.withDefault Protobuf.Encode.none) value.aliasSingular )
         , ( 5, (Maybe.map Protobuf.Encode.string >> Maybe.withDefault Protobuf.Encode.none) value.aliasPlural )
         , ( 6, (Maybe.map Protobuf.Encode.bool >> Maybe.withDefault Protobuf.Encode.none) value.enableReplies )
+        , ( 7, Proto.Rellm.DefaultPostsSort.encodeDefaultPostsSort value.defaultSort )
         ]
 
 
@@ -2547,6 +2562,7 @@ type alias Proto__Rellm__PostSettings =
     , aliasSingular : Maybe String
     , aliasPlural : Maybe String
     , enableReplies : Maybe Bool
+    , defaultSort : Proto.Rellm.DefaultPostsSort.DefaultPostsSort
     }
 
 
