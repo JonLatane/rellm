@@ -43,6 +43,10 @@ on:
         description: "GitHub PAT with contents:write on JonLatane/homebrew-rellm, used to push Formula updates"
         required: true
 
+# Least privilege for GITHUB_TOKEN; the release jobs below opt in to `contents: write`.
+permissions:
+  contents: read
+
 jobs:
   test_consistency:
     name: Test Proto/Docs Consistency
@@ -849,7 +853,8 @@ jobs:
 
   create_github_release:
     name: "GitHub: Release"
-    # permissions: write-all
+    permissions:
+      contents: write # pushes the version tag and creates the release
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     needs:
@@ -967,6 +972,8 @@ jobs:
 
   create_homebrew_release:
     name: "Homebrew: Release"
+    permissions:
+      contents: write # `gh release upload` onto the release created above
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     needs:
@@ -1159,6 +1166,8 @@ jobs:
 
   create_linux_release:
     name: "Linux: Release"
+    permissions:
+      contents: write # `gh release upload` onto the release created above
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     needs:
