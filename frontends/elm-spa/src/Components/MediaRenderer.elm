@@ -517,7 +517,8 @@ itself is hls.js's job on browsers with no native HLS, see `public/index.html`.)
 hlsPosterUrl : String -> Maybe String
 hlsPosterUrl videoUrl =
     if String.startsWith "https://video.bsky.app/" videoUrl && String.endsWith "/playlist.m3u8" videoUrl then
-        Just (String.dropRight (String.length "playlist.m3u8") videoUrl ++ "thumbnail.jpg")
+        -- 13 = length of "playlist.m3u8"
+        Just (String.dropRight 13 videoUrl ++ "thumbnail.jpg")
 
     else
         Nothing
