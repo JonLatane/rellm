@@ -128,6 +128,10 @@
     // stylesheet is needed here.
     document.write('<script src="' + rellmBasePath + '/vendor/fullcalendar.min.js"><\/script>');
 
+    // HLS playback (hls.js, vendored like the above) for Bluesky videos, which are `.m3u8` playlists.
+    // See the `<video>` observer script below.
+    document.write('<script src="' + rellmBasePath + '/vendor/hls.min.js"><\/script>');
+
     // Same "auto" resolution `Shared.effectiveDarkMode` does in Elm -- kept in
     // sync with it via the `setTheme` port subscription below, which fires
     // once at startup (`Shared.init`) and again on every change. This has to
@@ -230,6 +234,67 @@
         }
       }
     });
+  </script>
+  <script>
+    // Plays HLS (`.m3u8`) `<video src>`s Elm renders (Bluesky videos, see `Shared.Federation.Bluesky`)
+    // by attaching an hls.js instance to the element wherever Media Source Extensions exist (browsers
+    // without them fall back to the element's native HLS, i.e. old iOS Safari). hls.js is preferred even
+    // when `canPlayType` claims native HLS: recent Chromium reports "maybe" yet fails with
+    // MEDIA_ERR_SRC_NOT_SUPPORTED. Elm owns the element and its `src`; hls.js then rewrites `src` to a `blob:` URL, which this ignores (Elm doesn't
+    // patch an attribute whose vnode value didn't change). A changed playlist `src` re-attaches, and a
+    // removed `<video>` has its instance destroyed.
+    (function () {
+      if (!window.Hls || !Hls.isSupported()) { return; }
+      var HLS_RE = /\.m3u8(\?|#|$)/;
+      var instances = new WeakMap();
+
+      function detach(video) {
+        var entry = instances.get(video);
+        if (entry) { entry.hls.destroy(); instances.delete(video); }
+      }
+
+      function attach(video) {
+        var src = video.getAttribute('src');
+        if (!src || !HLS_RE.test(src)) { return; }
+        var entry = instances.get(video);
+        if (entry && entry.src === src) { return; }
+        detach(video);
+        // Only the manifest is fetched up front; media segments wait until the user presses play (or
+        // seeks), or right away for an `autoplay` video, so unwatched videos in a feed cost no bandwidth.
+        var hls = new Hls({ autoStartLoad: false });
+        var start = function () {
+          video.removeEventListener('play', start);
+          video.removeEventListener('seeking', start);
+          hls.startLoad(-1);
+        };
+        instances.set(video, { hls: hls, src: src });
+        hls.loadSource(src);
+        hls.attachMedia(video);
+        if (video.autoplay) {
+          start();
+        } else {
+          video.addEventListener('play', start);
+          video.addEventListener('seeking', start);
+        }
+      }
+
+      function eachVideo(node, fn) {
+        if (node.nodeType !== 1) { return; }
+        if (node.tagName === 'VIDEO') { fn(node); }
+        var nested = node.getElementsByTagName('video');
+        for (var i = 0; i < nested.length; i++) { fn(nested[i]); }
+      }
+
+      new MutationObserver(function (records) {
+        records.forEach(function (record) {
+          if (record.type === 'attributes') { attach(record.target); return; }
+          record.addedNodes.forEach(function (node) { eachVideo(node, attach); });
+          record.removedNodes.forEach(function (node) {
+            eachVideo(node, function (video) { if (!video.isConnected) { detach(video); } });
+          });
+        });
+      }).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['src'] });
+    })();
   </script>
   <script>
     document.write('<script src="' + rellmBasePath + '/dist/elm.js"><\/script>');

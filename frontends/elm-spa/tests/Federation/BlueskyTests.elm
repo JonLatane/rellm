@@ -105,6 +105,56 @@ suite =
                     Factory.feedViewPostJson overrides
                         |> Decode.decodeString Bluesky.decoder
                         |> Expect.equal (Ok (Factory.feedPost overrides))
+            , test "decodes an app.bsky.embed.video#view embed into a BlueskyVideo, and toPost into a video/* MediaReference with the HLS playlist as its url" <|
+                \_ ->
+                    let
+                        json : String
+                        json =
+                            """{"post":{"uri":"at://did:plc:abc/app.bsky.feed.post/x","author":{"handle":"a.bsky.social"},"record":{"text":"clip","createdAt":"2023-04-05T12:00:00.000Z"},"embed":{"$type":"app.bsky.embed.video#view","cid":"bafk","playlist":"https://video.bsky.app/watch/did%3Aplc%3Aabc/bafk/playlist.m3u8","thumbnail":"https://video.bsky.app/watch/did%3Aplc%3Aabc/bafk/thumbnail.jpg","alt":"A cat","aspectRatio":{"width":9,"height":16}}}}"""
+
+                        decoded : Result Decode.Error Bluesky.FeedPost
+                        decoded =
+                            Decode.decodeString Bluesky.decoder json
+                    in
+                    Expect.all
+                        [ Result.map (.video >> Maybe.map .playlist) >> Expect.equal (Ok (Just "https://video.bsky.app/watch/did%3Aplc%3Aabc/bafk/playlist.m3u8"))
+                        , Result.map (.images >> List.length) >> Expect.equal (Ok 0)
+                        , Result.map (Bluesky.toPost >> .media >> List.map (\m -> ( m.url, m.name, List.map .contentType m.sizes )))
+                            >> Expect.equal (Ok [ ( Just "https://video.bsky.app/watch/did%3Aplc%3Aabc/bafk/playlist.m3u8", Just "A cat", [ "video/*" ] ) ])
+                        ]
+                        decoded
+            , test "decodes a recordWithMedia#view's video, and a quoted viewRecord's video embed" <|
+                \_ ->
+                    let
+                        withMedia : String
+                        withMedia =
+                            """{"post":{"uri":"at://did:plc:a/app.bsky.feed.post/1","author":{"handle":"a.bsky.social"},"record":{"text":"q","createdAt":"2023-04-05T12:00:00.000Z"},"embed":{"$type":"app.bsky.embed.recordWithMedia#view","media":{"$type":"app.bsky.embed.video#view","playlist":"https://video.bsky.app/watch/d/c/playlist.m3u8"}}}}"""
+
+                        quoted : String
+                        quoted =
+                            """{"post":{"uri":"at://did:plc:a/app.bsky.feed.post/1","author":{"handle":"a.bsky.social"},"record":{"text":"q","createdAt":"2023-04-05T12:00:00.000Z","embed":{"record":{"uri":"at://did:plc:b/app.bsky.feed.post/2"}}},"embed":{"$type":"app.bsky.embed.record#view","record":{"$type":"app.bsky.embed.record#viewRecord","uri":"at://did:plc:b/app.bsky.feed.post/2","author":{"handle":"b.bsky.social"},"value":{"text":"v","createdAt":"2023-04-05T12:00:00.000Z"},"embeds":[{"$type":"app.bsky.embed.video#view","playlist":"https://video.bsky.app/watch/d/c/playlist.m3u8"}]}}}}"""
+                    in
+                    Expect.all
+                        [ \_ -> Decode.decodeString Bluesky.decoder withMedia |> Result.map (.video >> Maybe.map .playlist) |> Expect.equal (Ok (Just "https://video.bsky.app/watch/d/c/playlist.m3u8"))
+                        , \_ ->
+                            Decode.decodeString Bluesky.decoder quoted
+                                |> Result.map (Bluesky.toPost >> .quotedPost >> Maybe.map (unwrapPost >> .media >> List.length))
+                                |> Expect.equal (Ok (Just 1))
+                        ]
+                        ()
+            , test "a sensitive post's video is hidden behind the placeholder unless the post's own page reveals it" <|
+                \_ ->
+                    let
+                        post : Bluesky.FeedPost
+                        post =
+                            Factory.feedPost { defaultOverrides | sensitive = True }
+
+                        withVideo : Bluesky.FeedPost
+                        withVideo =
+                            { post | video = Just { playlist = "https://video.bsky.app/watch/d/c/playlist.m3u8", thumbnail = Nothing, alt = Nothing, width = Nothing, height = Nothing } }
+                    in
+                    ( List.length (Bluesky.toPost withVideo).media, (Bluesky.toPost withVideo).media |> List.map .url, (Bluesky.toPostIncludingSensitiveMedia withVideo).media |> List.map .url )
+                        |> Expect.equal ( 1, [ Nothing ], [ Just "https://video.bsky.app/watch/d/c/playlist.m3u8" ] )
             , test "a post with no embed at all decodes to an empty images list" <|
                 \_ ->
                     Factory.feedViewPostJson defaultOverrides

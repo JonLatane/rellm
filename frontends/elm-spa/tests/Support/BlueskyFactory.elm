@@ -61,6 +61,7 @@ feedPost overrides =
     , authorDisplayName = overrides.displayName
     , authorAvatarUrl = overrides.avatar
     , images = overrides.images
+    , video = Nothing
     , sensitive = overrides.sensitive
     , likeCount = overrides.likeCount
     , replyCount = overrides.replyCount

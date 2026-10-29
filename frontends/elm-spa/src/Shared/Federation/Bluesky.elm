@@ -1,6 +1,7 @@
 module Shared.Federation.Bluesky exposing
     ( ActorProfile
     , BlueskyImage
+    , BlueskyVideo
     , FeedPost
     , createPost
     , createReply
@@ -72,14 +73,28 @@ import Time
 import Url
 
 
-{-| One element of an `app.bsky.embed.images#view`'s `images` array (the only `embed` shape
-`toPost` translates -- see `imagesDecoder`'s own doc for `app.bsky.embed.video#view`/
-`app.bsky.embed.external#view`, the two it doesn't). `fullsize` (not `thumb`, a low-res placeholder)
+{-| One element of an `app.bsky.embed.images#view`'s `images` array (with
+`BlueskyVideo`, one of the two `embed` shapes `toPost` translates -- see `imagesDecoder`'s own doc for
+`app.bsky.embed.external#view`, the one it doesn't). `fullsize` (not `thumb`, a low-res placeholder)
 is this image's real URL -- same "skip the two-tier fetch" reasoning as
 `Shared.Federation.Mastodon.MediaAttachment.url`'s own doc.
 -}
 type alias BlueskyImage =
     { url : String
+    , alt : Maybe String
+    , width : Maybe Int
+    , height : Maybe Int
+    }
+
+
+{-| An `app.bsky.embed.video#view` -- a single video, which AT Proto serves as an HLS stream rather
+than a file: `playlist` is its `.m3u8` manifest (`https://video.bsky.app/watch/{did}/{cid}/playlist.m3u8`),
+which `toMediaReference` hands to `Components.MediaRenderer` like any other video URL (it
+attaches hls.js on browsers with no native HLS, see `public/index.html`). `thumbnail` is the poster frame.
+-}
+type alias BlueskyVideo =
+    { playlist : String
+    , thumbnail : Maybe String
     , alt : Maybe String
     , width : Maybe Int
     , height : Maybe Int
@@ -113,6 +128,7 @@ type alias FeedPost =
     , authorDisplayName : Maybe String
     , authorAvatarUrl : Maybe String
     , images : List BlueskyImage
+    , video : Maybe BlueskyVideo
     , sensitive : Bool
     , likeCount : Int
     , replyCount : Int
@@ -147,7 +163,7 @@ decoder : Decoder FeedPost
 decoder =
     Decode.map8
         (\uri text createdAt isReply authorHandle authorDisplayName authorAvatarUrl images ->
-            \sensitive likeCount replyCount quote ->
+            \video sensitive likeCount replyCount quote ->
                 { uri = uri
                 , text = text
                 , createdAt = createdAt
@@ -156,6 +172,7 @@ decoder =
                 , authorDisplayName = authorDisplayName
                 , authorAvatarUrl = authorAvatarUrl
                 , images = images
+                , video = video
                 , sensitive = sensitive
                 , likeCount = likeCount
                 , replyCount = replyCount
@@ -170,6 +187,7 @@ decoder =
         (Decode.maybe (Decode.at [ "post", "author", "displayName" ] Decode.string) |> Decode.map (Maybe.andThen nonEmpty))
         (Decode.maybe (Decode.at [ "post", "author", "avatar" ] Decode.string))
         (imagesDecoder [ "post", "embed", "images" ])
+        |> Decode.andThen (\f -> Decode.map f (videoDecoder [ "post", "embed" ]))
         |> Decode.andThen (\f -> Decode.map f (sensitiveDecoder [ "post", "labels" ]))
         |> Decode.andThen (\f -> Decode.map f (countDecoder [ "post", "likeCount" ]))
         |> Decode.andThen (\f -> Decode.map f (countDecoder [ "post", "replyCount" ]))
@@ -408,10 +426,10 @@ escapeHref href =
 `feedViewPost` shape, `[ "embed", "images" ]` for `searchDecoder`'s flatter one) if that path exists
 and is actually an `app.bsky.embed.images#view` (i.e. carries an `images` array at all) --
 `Decode.oneOf`'s fallback to `[]` covers every other case in one go: no `embed` at all (a plain text
-post), or an `embed` that's really an `app.bsky.embed.video#view` (a single video, keyed `video`, not
-`images`) or `app.bsky.embed.external#view` (a link-card thumbnail, keyed `thumb`, not real post
-media -- rendering a target site's own preview image as if the author had attached it would be
-misleading) -- neither translated here, an accepted gap mirroring
+post), or an `embed` that's really an `app.bsky.embed.video#view` (a single video, not `images` --
+see `videoDecoder`) or `app.bsky.embed.external#view` (a link-card thumbnail, keyed `thumb`, not real
+post media -- rendering a target site's own preview image as if the author had attached it would be
+misleading) -- not translated here, the latter an accepted gap mirroring
 `Shared.Federation.Mastodon.MediaAttachment` only handling attachments with a real `url`.
 -}
 imagesDecoder : List String -> Decoder (List BlueskyImage)
@@ -424,6 +442,30 @@ imagesDecoder embedPath =
         , Decode.at (List.take (List.length embedPath - 1) embedPath ++ [ "media", "images" ]) (Decode.list blueskyImageDecoder)
         , Decode.succeed []
         ]
+
+
+{-| The `app.bsky.embed.video#view` at `embedPath` (`[ "post", "embed" ]`, `[ "embed" ]`; `[]` for an
+element of a `viewRecord`'s `embeds` array), or nested under `media` for a `recordWithMedia#view` (a
+quote post with its own video). `Nothing` for every other embed shape (including images), since the
+`playlist` field only exists on a video view.
+-}
+videoDecoder : List String -> Decoder (Maybe BlueskyVideo)
+videoDecoder embedPath =
+    Decode.oneOf
+        [ Decode.at embedPath blueskyVideoDecoder |> Decode.map Just
+        , Decode.at (embedPath ++ [ "media" ]) blueskyVideoDecoder |> Decode.map Just
+        , Decode.succeed Nothing
+        ]
+
+
+blueskyVideoDecoder : Decoder BlueskyVideo
+blueskyVideoDecoder =
+    Decode.map5 BlueskyVideo
+        (Decode.field "playlist" Decode.string)
+        (Decode.maybe (Decode.field "thumbnail" Decode.string))
+        (Decode.maybe (Decode.field "alt" Decode.string) |> Decode.map (Maybe.andThen nonEmpty))
+        (Decode.maybe (Decode.at [ "aspectRatio", "width" ] Decode.int))
+        (Decode.maybe (Decode.at [ "aspectRatio", "height" ] Decode.int))
 
 
 blueskyImageDecoder : Decoder BlueskyImage
@@ -504,7 +546,7 @@ viewRecordDecoder : Decoder FeedPost
 viewRecordDecoder =
     Decode.map8
         (\uri text createdAt isReply authorHandle authorDisplayName authorAvatarUrl images ->
-            \sensitive likeCount replyCount quote ->
+            \video sensitive likeCount replyCount quote ->
                 { uri = uri
                 , text = text
                 , createdAt = createdAt
@@ -513,6 +555,7 @@ viewRecordDecoder =
                 , authorDisplayName = authorDisplayName
                 , authorAvatarUrl = authorAvatarUrl
                 , images = images
+                , video = video
                 , sensitive = sensitive
                 , likeCount = likeCount
                 , replyCount = replyCount
@@ -531,6 +574,16 @@ viewRecordDecoder =
             , Decode.succeed []
             ]
         )
+        |> Decode.andThen
+            (\f ->
+                Decode.map f
+                    (Decode.oneOf
+                        [ Decode.field "embeds" (Decode.list (videoDecoder []))
+                            |> Decode.map (List.filterMap identity >> List.head)
+                        , Decode.succeed Nothing
+                        ]
+                    )
+            )
         |> Decode.andThen (\f -> Decode.map f (sensitiveDecoder [ "labels" ]))
         |> Decode.andThen (\f -> Decode.map f (countDecoder [ "likeCount" ]))
         |> Decode.andThen (\f -> Decode.map f (countDecoder [ "replyCount" ]))
@@ -607,7 +660,7 @@ toPostWith { includeSensitiveMedia, quoteDepth } feedPost =
         , media =
             if feedPost.sensitive && not includeSensitiveMedia then
                 -- A sensitive post that only has a social embed (a video link) is hidden just like one with images.
-                if List.isEmpty feedPost.images && List.isEmpty (SocialMediaEmbed.fromMarkdown feedPost.text) then
+                if List.isEmpty feedPost.images && feedPost.video == Nothing && List.isEmpty (SocialMediaEmbed.fromMarkdown feedPost.text) then
                     []
 
                 else
@@ -615,6 +668,7 @@ toPostWith { includeSensitiveMedia, quoteDepth } feedPost =
 
             else
                 List.map toMediaReference feedPost.images
+                    ++ (feedPost.video |> Maybe.map (toVideoMediaReference >> List.singleton) |> Maybe.withDefault [])
         , createdAt = Just (posixToTimestamp feedPost.createdAt)
         , lastActivityAt = Just (posixToTimestamp feedPost.createdAt)
         , unauthenticatedStarCount = int64FromInt feedPost.likeCount
@@ -667,6 +721,26 @@ toMediaReference image =
                 | conversion = MEDIACONVERSIONORIGINAL
                 , contentType = "image/*"
                 , aspectRatio = Maybe.map2 (\w h -> toFloat w / toFloat h) image.width image.height
+              }
+            ]
+    }
+
+
+{-| A `BlueskyVideo`'s translation into a `MediaReference`, mirroring `toMediaReference`: `url` is the
+HLS playlist, which `Components.MediaRenderer` plays in a plain `<video>` (see `BlueskyVideo`). The
+`video/*` content type is what routes it down `MediaRenderer`'s video branch.
+-}
+toVideoMediaReference : BlueskyVideo -> MediaReference
+toVideoMediaReference video =
+    { defaultMediaReference
+        | id = video.playlist
+        , url = Just video.playlist
+        , name = video.alt
+        , sizes =
+            [ { defaultMediaSize
+                | conversion = MEDIACONVERSIONORIGINAL
+                , contentType = "video/*"
+                , aspectRatio = Maybe.map2 (\w h -> toFloat w / toFloat h) video.width video.height
               }
             ]
     }
@@ -811,7 +885,7 @@ searchDecoder : Decoder FeedPost
 searchDecoder =
     Decode.map8
         (\uri text createdAt isReply authorHandle authorDisplayName authorAvatarUrl images ->
-            \sensitive likeCount replyCount quote ->
+            \video sensitive likeCount replyCount quote ->
                 { uri = uri
                 , text = text
                 , createdAt = createdAt
@@ -820,6 +894,7 @@ searchDecoder =
                 , authorDisplayName = authorDisplayName
                 , authorAvatarUrl = authorAvatarUrl
                 , images = images
+                , video = video
                 , sensitive = sensitive
                 , likeCount = likeCount
                 , replyCount = replyCount
@@ -834,6 +909,7 @@ searchDecoder =
         (Decode.maybe (Decode.at [ "author", "displayName" ] Decode.string) |> Decode.map (Maybe.andThen nonEmpty))
         (Decode.maybe (Decode.at [ "author", "avatar" ] Decode.string))
         (imagesDecoder [ "embed", "images" ])
+        |> Decode.andThen (\f -> Decode.map f (videoDecoder [ "embed" ]))
         |> Decode.andThen (\f -> Decode.map f (sensitiveDecoder [ "labels" ]))
         |> Decode.andThen (\f -> Decode.map f (countDecoder [ "likeCount" ]))
         |> Decode.andThen (\f -> Decode.map f (countDecoder [ "replyCount" ]))
