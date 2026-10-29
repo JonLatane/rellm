@@ -23,6 +23,9 @@ fn main() {
             "EventSettings.show_started_or_long_events_by_default",
             "#[serde(default)]",
         )
+        // Same again, for `PostSettings.default_sort` -- `post_settings` JSON stored before this
+        // field existed deserializes to `DEFAULT_POSTS_SORT_RECENT` (proto enum value 0).
+        .field_attribute("PostSettings.default_sort", "#[serde(default)]")
         // Same idea, for `FederationInfo.mastodon_servers` (added alongside `MastodonServer`) --
         // lets `federation_info` JSON stored before this field existed deserialize instead of
         // erroring, defaulting to an empty list. Unlike the two above, this one's a `repeated`

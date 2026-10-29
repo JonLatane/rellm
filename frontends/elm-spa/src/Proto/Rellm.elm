@@ -1316,6 +1316,7 @@ fieldNumbersPostSettings :
     , aliasSingular : Int
     , aliasPlural : Int
     , enableReplies : Int
+    , defaultSort : Int
     }
 fieldNumbersPostSettings =
     Proto.Rellm.Internals_.fieldNumbersProto__Rellm__PostSettings
@@ -1370,6 +1371,13 @@ encodePostSettings =
  Only `SERVER_PUBLIC` and `GLOBAL_PUBLIC` are valid. `GLOBAL_PUBLIC` is only valid
  if default_user_permissions contains `GLOBALLY_PUBLISH_[USERS|GROUPS|POSTS|EVENTS]` 
  as appropriate.
+
+
+### defaultSort
+
+ Which feed the Posts page (and the embedded copies on the home page and user profiles)
+ shows when a visitor hasn't chosen one with its Recent/Popular/Following dropdown (or the
+ `sort` URL query parameter). Defaults to `DEFAULT_POSTS_SORT_RECENT`.
 
 
 -}

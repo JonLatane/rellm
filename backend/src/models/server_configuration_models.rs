@@ -305,6 +305,7 @@ Your media policy should describe who has ownership of uploaded media, anything 
             alias_singular: None,
             alias_plural: None,
             enable_replies: Some(true),
+            default_sort: DefaultPostsSort::Recent as i32,
         })
         .unwrap(),
         event_settings: serde_json::to_value(EventSettings {

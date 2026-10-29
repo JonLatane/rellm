@@ -51,6 +51,7 @@ import Process
 import Proto.Rellm.NavigationTab exposing (NavigationTab(..))
 import Proto.Rellm exposing (Post, SyncDestination, User)
 import Proto.Rellm.PostContext exposing (PostContext(..))
+import Proto.Rellm.DefaultPostsSort exposing (DefaultPostsSort(..))
 import Set exposing (Set)
 import Shared
 import Shared.AccountsPanel as AccountsPanel
@@ -126,6 +127,17 @@ type alias Model =
     -- Whether the feed is "Recent Posts" (newest first, the default) or "Recently Popular Posts" --
     -- see `PostsSort`'s own doc. Persisted in the URL (`sort=popular`) like `tab`/`searchText`.
     , sort : PostsSort
+
+    -- The sort the main server's `post_settings.default_sort` says to show absent a choice (see
+    -- `configuredDefaultSort`), or `SortRecent` on copies with no `sortSelectView`. `pushUrl` leaves
+    -- `sort` out of the URL exactly when `sort == serverDefaultSort`, so a link carries `sort=recent`
+    -- only where the server's default is something else. Refreshed by `adoptServerDefaultSort`, since
+    -- the server's configuration may only arrive after `init` (reconnecting persisted servers).
+    , serverDefaultSort : PostsSort
+
+    -- Whether `sort` came from a `?sort=` query param or `SortChanged` rather than
+    -- `serverDefaultSort`; only an unchosen `sort` follows `serverDefaultSort` when that changes.
+    , sortChosen : Bool
 
     -- The cutoff actually sent as `Components.Posts.fetchPosts`' own
     -- `publishedOrCreatedBefore` whenever `tab == PostsBeforeDate` (ignored
@@ -532,7 +544,8 @@ type PostsTab
 `<select>` that stands in for the old static "Recent Posts" heading, on the standalone page's first tab
 and on `Pages.Home_`/`Components.Pages.UserProfilePage`'s embedded copies):
 
-  - `SortRecent` (the default) -- newest first, from everyone: a real server's `ALL_ACCESSIBLE_POSTS`,
+  - `SortRecent` (the default unless the server's `post_settings.default_sort` says otherwise, see
+    `configuredDefaultSort`) -- newest first, from everyone: a real server's `ALL_ACCESSIBLE_POSTS`,
     Mastodon's local public timeline, the Bluesky network's latest posts (connected account or not).
   - `SortPopular` -- "what's popular lately": a real server's `RECENTLY_POPULAR_POSTS` (stars and
     responses, decayed by age -- see that listing type's doc comment), Mastodon's `trends/statuses`,
@@ -598,6 +611,18 @@ doc for why this couldn't just reuse `author` instead.
 init : Shared.Model -> Maybe ( String, User ) -> Browser.Navigation.Key -> String -> Dict String String -> Bool -> Maybe (List SyncDestination) -> Maybe FeedSource -> ( Model, Effect Msg )
 init shared author navKey path query embeddedPage availableSyncDestinations profileFeedSource =
     let
+        explicitSort : Maybe PostsSort
+        explicitSort =
+            Dict.get "sort" query |> Maybe.andThen postsSortFromParam
+
+        initialDefaultSort : PostsSort
+        initialDefaultSort =
+            if usesServerDefaultSort author embeddedPage profileFeedSource then
+                configuredDefaultSort shared
+
+            else
+                SortRecent
+
         ( tab, publishedBefore ) =
             case Dict.get "published_before" query |> Maybe.andThen Conversions.posixFromIsoUtcString of
                 Just cutoff ->
@@ -621,7 +646,9 @@ init shared author navKey path query embeddedPage availableSyncDestinations prof
                 , context = Dict.get "context" query |> Maybe.andThen postContextFromParam |> Maybe.withDefault POST
                 , searchGeneration = 0
                 , tab = tab
-                , sort = Dict.get "sort" query |> Maybe.andThen postsSortFromParam |> Maybe.withDefault SortRecent
+                , sort = Maybe.withDefault initialDefaultSort explicitSort
+                , serverDefaultSort = initialDefaultSort
+                , sortChosen = explicitSort /= Nothing
                 , publishedBefore = publishedBefore
                 , publishedBeforeInputGeneration = 0
                 , showSyncDestinations = False
@@ -1041,7 +1068,18 @@ updateInner shared msg model =
                             refetchFeeds shared model (List.map RellmServer (relevantServers shared model) ++ federatedAuthorSources shared model)
 
                         Shared.AccountsPanelMsg _ ->
-                            fetchNewFeeds shared model
+                            -- A server's configuration (and so its `default_sort`) can arrive here, after
+                            -- `init` -- if that moves an unchosen `sort`, every source needs refetching.
+                            let
+                                adoptedModel : Model
+                                adoptedModel =
+                                    adoptServerDefaultSort shared model
+                            in
+                            if adoptedModel.sort /= model.sort then
+                                refetchFeeds shared adoptedModel (relevantFeedSources shared adoptedModel)
+
+                            else
+                                fetchNewFeeds shared adoptedModel
 
                         -- The Delete button on a card's sync destination row
                         -- (`Shared.RequestDelete`/`Shared.ConfirmPostSyncDestinationDelete`, see
@@ -1125,7 +1163,7 @@ updateInner shared msg model =
                 let
                     newModel : Model
                     newModel =
-                        { model | sort = sort, tab = RecentPosts }
+                        { model | sort = sort, sortChosen = True, tab = RecentPosts }
 
                     ( refetchedModel, refetchEffect ) =
                         refetchFeeds shared newModel (relevantFeedSources shared newModel)
@@ -1983,7 +2021,7 @@ pushUrl model =
 
         sortParam : List Url.Builder.QueryParameter
         sortParam =
-            if model.sort /= SortRecent then
+            if model.sort /= model.serverDefaultSort then
                 [ Url.Builder.string "sort" (postsSortParam model.sort) ]
 
             else
@@ -2000,6 +2038,63 @@ pushUrl model =
     in
     Browser.Navigation.replaceUrl model.navKey (model.path ++ Url.Builder.toQuery (searchTextParam ++ contextParam ++ sortParam ++ publishedBeforeParam))
         |> Effect.fromCmd
+
+
+{-| The main server's `post_settings.default_sort` as a `PostsSort` (mirroring
+`Components.Pages.EventsPage.calendarLookbackDays`' read of its `event_settings`), `SortRecent` while
+that server or its configuration isn't known yet.
+-}
+configuredDefaultSort : Shared.Model -> PostsSort
+configuredDefaultSort shared =
+    RellmServers.rellmServerForHost shared.accounts.servers shared.accounts.mainFrontendHost
+        |> Maybe.map RellmServers.configurationOf
+        |> Maybe.andThen .postSettings
+        |> Maybe.map
+            (\settings ->
+                case settings.defaultSort of
+                    DEFAULTPOSTSSORTPOPULAR ->
+                        SortPopular
+
+                    DEFAULTPOSTSSORTFOLLOWING ->
+                        SortFollowing
+
+                    _ ->
+                        SortRecent
+            )
+        |> Maybe.withDefault SortRecent
+
+
+{-| Only the standalone, unscoped feed -- the one with a `sortSelectView` -- follows the server's
+`default_sort`; the embedded copies (home page, profiles) and author-scoped ones stay on `SortRecent`
+unless the URL says otherwise.
+-}
+usesServerDefaultSort : Maybe ( String, User ) -> Bool -> Maybe FeedSource -> Bool
+usesServerDefaultSort author embeddedPage profileFeedSource =
+    author == Nothing && not embeddedPage && profileFeedSource == Nothing
+
+
+{-| Re-reads `configuredDefaultSort` into `serverDefaultSort`, carrying an unchosen `sort` along with it.
+-}
+adoptServerDefaultSort : Shared.Model -> Model -> Model
+adoptServerDefaultSort shared model =
+    if usesServerDefaultSort model.author model.embeddedPage model.profileFeedSource then
+        let
+            defaultSort : PostsSort
+            defaultSort =
+                configuredDefaultSort shared
+        in
+        { model
+            | serverDefaultSort = defaultSort
+            , sort =
+                if model.sortChosen then
+                    model.sort
+
+                else
+                    defaultSort
+        }
+
+    else
+        model
 
 
 {-| `recent`/`popular` as sent via `sort`'s URL query param and `sortSelectView`'s `<select>`

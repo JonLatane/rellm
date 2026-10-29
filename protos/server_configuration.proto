@@ -501,6 +501,22 @@ message PostSettings {
   // Controls whether replies are shown in the UI. Note that users' ability to reply
   // is controlled by the `REPLY_TO_POSTS` permission.
   optional bool enable_replies = 6;
+
+  // Which feed the Posts page (and the embedded copies on the home page and user profiles)
+  // shows when a visitor hasn't chosen one with its Recent/Popular/Following dropdown (or the
+  // `sort` URL query parameter). Defaults to `DEFAULT_POSTS_SORT_RECENT`.
+  DefaultPostsSort default_sort = 7;
+}
+
+// The feed the Posts page shows by default. See `PostSettings.default_sort`.
+enum DefaultPostsSort {
+  // "Recent Posts" -- newest first.
+  DEFAULT_POSTS_SORT_RECENT = 0;
+  // "Recently Popular Posts" -- stars and responses, decayed by age.
+  DEFAULT_POSTS_SORT_POPULAR = 1;
+  // "Following Posts" -- only what the signed-in accounts follow. Visitors who aren't
+  // signed in anywhere (and so aren't offered that option) get `RECENT` instead.
+  DEFAULT_POSTS_SORT_FOLLOWING = 2;
 }
 
 // Specific settings for Events.

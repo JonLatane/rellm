@@ -20,6 +20,7 @@ import Html.Attributes exposing (disabled, selected, value)
 import Html.Events exposing (onClick, onInput)
 import Proto.Rellm exposing (ServerConfiguration, defaultEventSettings, defaultFeatureSettings, defaultMediaSettings, defaultPostSettings)
 import Proto.Rellm.CalendarDisplayMode exposing (CalendarDisplayMode(..))
+import Proto.Rellm.DefaultPostsSort exposing (DefaultPostsSort(..))
 import Proto.Rellm.Moderation exposing (Moderation(..))
 import Proto.Rellm.Permission exposing (Permission(..))
 import Proto.Rellm.Visibility exposing (Visibility(..))
@@ -81,6 +82,7 @@ type Msg
     | FeatureSettingsAliasSingularChanged FeatureSettingsSet String
     | FeatureSettingsAliasPluralChanged FeatureSettingsSet String
     | FeatureSettingsEnableRepliesToggled FeatureSettingsSet
+    | FeatureSettingsDefaultSortChanged FeatureSettingsSet String
     | FeatureSettingsCalendarLookbackDaysChanged FeatureSettingsSet String
     | FeatureSettingsCalendarDisplayModeChanged FeatureSettingsSet String
     | FeatureSettingsShowStartedOrLongEventsToggled FeatureSettingsSet
@@ -166,6 +168,9 @@ type alias FeatureSettingsEdit =
     , calendarLookbackDays : String
     , calendarDisplayMode : CalendarDisplayMode
     , showStartedOrLongEventsByDefault : Bool
+
+    -- `PostFeatureSettings`-only (`DEFAULTPOSTSSORTRECENT` elsewhere) -- `PostSettings.default_sort`.
+    , defaultSort : DefaultPostsSort
 
     -- `MediaFeatureSettings`-only booleans (`False` elsewhere) -- see `MediaSettings` in
     -- `server_configuration.proto`.
@@ -352,6 +357,7 @@ update shared targetHost maybeServer msg model =
                             , calendarLookbackDays = current.calendarLookbackDays |> Maybe.map String.fromInt |> Maybe.withDefault ""
                             , calendarDisplayMode = Maybe.withDefault CALENDARDISPLAYWEEK current.calendarDisplayMode
                             , showStartedOrLongEventsByDefault = Maybe.withDefault False current.showStartedOrLongEventsByDefault
+                            , defaultSort = Maybe.withDefault DEFAULTPOSTSSORTRECENT current.defaultSort
                             , licensedMediaVisibleGlobally = Maybe.withDefault False current.licensedMediaVisibleGlobally
                             , blockCorsAnonymousMediaAccess = Maybe.withDefault False current.blockCorsAnonymousMediaAccess
                             , generateLinkPreviewImages = Maybe.withDefault True current.generateLinkPreviewImages
@@ -411,6 +417,15 @@ update shared targetHost maybeServer msg model =
         FeatureSettingsEnableRepliesToggled set ->
             ( setFeatureSettingsEditFor set
                 (featureSettingsEditFor set model |> Maybe.map (\edit -> { edit | enableReplies = not edit.enableReplies }))
+                model
+            , Effect.none
+            )
+
+        FeatureSettingsDefaultSortChanged set text ->
+            ( setFeatureSettingsEditFor set
+                (featureSettingsEditFor set model
+                    |> Maybe.map (\edit -> { edit | defaultSort = defaultPostsSortFromText text |> Maybe.withDefault edit.defaultSort })
+                )
                 model
             , Effect.none
             )
@@ -750,6 +765,35 @@ calendarDisplayModeText mode =
             "Week"
 
 
+allDefaultPostsSorts : List DefaultPostsSort
+allDefaultPostsSorts =
+    [ DEFAULTPOSTSSORTRECENT, DEFAULTPOSTSSORTPOPULAR, DEFAULTPOSTSSORTFOLLOWING ]
+
+
+{-| `PostSettings.default_sort`'s labels -- the same ones `Components.Pages.PostsPage.sortSelectView`
+offers visitors.
+-}
+defaultPostsSortText : DefaultPostsSort -> String
+defaultPostsSortText sort =
+    case sort of
+        DEFAULTPOSTSSORTRECENT ->
+            "Recent Posts"
+
+        DEFAULTPOSTSSORTPOPULAR ->
+            "Recently Popular Posts"
+
+        DEFAULTPOSTSSORTFOLLOWING ->
+            "Following Posts"
+
+        DefaultPostsSortUnrecognized_ _ ->
+            "Recent Posts"
+
+
+defaultPostsSortFromText : String -> Maybe DefaultPostsSort
+defaultPostsSortFromText text =
+    allDefaultPostsSorts |> List.filter (\sort -> defaultPostsSortText sort == text) |> List.head
+
+
 calendarDisplayModeFromText : String -> Maybe CalendarDisplayMode
 calendarDisplayModeFromText text =
     allCalendarDisplayModes |> List.filter (\mode -> calendarDisplayModeText mode == text) |> List.head
@@ -762,23 +806,23 @@ which rows `featureSettingsDisplayView`/`featureSettingsEditView` show, and whic
 have `mediaAllocation`, unique to it); `FeatureSettings` (People/Groups) has only alias;
 `PostSettings` adds replies; `EventSettings` alone has all four calendar/replies/alias fields.
 -}
-featureSettingsFieldsFor : FeatureSettingsSet -> { alias : Bool, replies : Bool, calendarLookback : Bool, calendarDisplayMode : Bool, showStartedOrLongEventsByDefault : Bool, mediaAllocation : Bool, serverMediaUsage : Bool }
+featureSettingsFieldsFor : FeatureSettingsSet -> { alias : Bool, replies : Bool, calendarLookback : Bool, calendarDisplayMode : Bool, showStartedOrLongEventsByDefault : Bool, defaultSort : Bool, mediaAllocation : Bool, serverMediaUsage : Bool }
 featureSettingsFieldsFor set =
     case set of
         PeopleFeatureSettings ->
-            { alias = True, replies = False, calendarLookback = False, calendarDisplayMode = False, showStartedOrLongEventsByDefault = False, mediaAllocation = False, serverMediaUsage = False }
+            { alias = True, replies = False, calendarLookback = False, calendarDisplayMode = False, showStartedOrLongEventsByDefault = False, defaultSort = False, mediaAllocation = False, serverMediaUsage = False }
 
         GroupFeatureSettings ->
-            { alias = True, replies = False, calendarLookback = False, calendarDisplayMode = False, showStartedOrLongEventsByDefault = False, mediaAllocation = False, serverMediaUsage = False }
+            { alias = True, replies = False, calendarLookback = False, calendarDisplayMode = False, showStartedOrLongEventsByDefault = False, defaultSort = False, mediaAllocation = False, serverMediaUsage = False }
 
         PostFeatureSettings ->
-            { alias = True, replies = True, calendarLookback = False, calendarDisplayMode = False, showStartedOrLongEventsByDefault = False, mediaAllocation = False, serverMediaUsage = False }
+            { alias = True, replies = True, calendarLookback = False, calendarDisplayMode = False, showStartedOrLongEventsByDefault = False, defaultSort = True, mediaAllocation = False, serverMediaUsage = False }
 
         EventFeatureSettings ->
-            { alias = True, replies = True, calendarLookback = True, calendarDisplayMode = True, showStartedOrLongEventsByDefault = True, mediaAllocation = False, serverMediaUsage = False }
+            { alias = True, replies = True, calendarLookback = True, calendarDisplayMode = True, showStartedOrLongEventsByDefault = True, defaultSort = False, mediaAllocation = False, serverMediaUsage = False }
 
         MediaFeatureSettings ->
-            { alias = False, replies = False, calendarLookback = False, calendarDisplayMode = False, showStartedOrLongEventsByDefault = False, mediaAllocation = True, serverMediaUsage = True }
+            { alias = False, replies = False, calendarLookback = False, calendarDisplayMode = False, showStartedOrLongEventsByDefault = False, defaultSort = False, mediaAllocation = True, serverMediaUsage = True }
 
 
 {-| `currentFeatureSettingsFor`'s return shape -- every field every `FeatureSettingsSet` might show,
@@ -794,6 +838,7 @@ type alias FeatureSettingsSummary =
     , calendarLookbackDays : Maybe Int
     , calendarDisplayMode : Maybe CalendarDisplayMode
     , showStartedOrLongEventsByDefault : Maybe Bool
+    , defaultSort : Maybe DefaultPostsSort
     , licensedMediaVisibleGlobally : Maybe Bool
     , blockCorsAnonymousMediaAccess : Maybe Bool
 
@@ -834,7 +879,7 @@ currentFeatureSettingsFor set config =
                 s =
                     Maybe.withDefault defaultFeatureSettings config.peopleSettings
             in
-            { visible = s.visible, moderation = s.defaultModeration, visibility = s.defaultVisibility, aliasSingular = s.aliasSingular, aliasPlural = s.aliasPlural, enableReplies = Nothing, calendarLookbackDays = Nothing, calendarDisplayMode = Nothing, showStartedOrLongEventsByDefault = Nothing, licensedMediaVisibleGlobally = Nothing, blockCorsAnonymousMediaAccess = Nothing, generateLinkPreviewImages = Nothing, preferMetadataForLinkPreviewImages = Nothing, mediaAllocationBytes = Nothing, serverMediaAllocationBytes = Nothing, serverMediaUsageBytes = Nothing, serverMediaUsageCalculatedAt = Nothing, serverObjectStorageUsageBytes = Nothing, serverObjectStorageUsageCalculatedAt = Nothing }
+            { visible = s.visible, moderation = s.defaultModeration, visibility = s.defaultVisibility, aliasSingular = s.aliasSingular, aliasPlural = s.aliasPlural, enableReplies = Nothing, calendarLookbackDays = Nothing, calendarDisplayMode = Nothing, showStartedOrLongEventsByDefault = Nothing, defaultSort = Nothing, licensedMediaVisibleGlobally = Nothing, blockCorsAnonymousMediaAccess = Nothing, generateLinkPreviewImages = Nothing, preferMetadataForLinkPreviewImages = Nothing, mediaAllocationBytes = Nothing, serverMediaAllocationBytes = Nothing, serverMediaUsageBytes = Nothing, serverMediaUsageCalculatedAt = Nothing, serverObjectStorageUsageBytes = Nothing, serverObjectStorageUsageCalculatedAt = Nothing }
 
         GroupFeatureSettings ->
             let
@@ -842,7 +887,7 @@ currentFeatureSettingsFor set config =
                 s =
                     Maybe.withDefault defaultFeatureSettings config.groupSettings
             in
-            { visible = s.visible, moderation = s.defaultModeration, visibility = s.defaultVisibility, aliasSingular = s.aliasSingular, aliasPlural = s.aliasPlural, enableReplies = Nothing, calendarLookbackDays = Nothing, calendarDisplayMode = Nothing, showStartedOrLongEventsByDefault = Nothing, licensedMediaVisibleGlobally = Nothing, blockCorsAnonymousMediaAccess = Nothing, generateLinkPreviewImages = Nothing, preferMetadataForLinkPreviewImages = Nothing, mediaAllocationBytes = Nothing, serverMediaAllocationBytes = Nothing, serverMediaUsageBytes = Nothing, serverMediaUsageCalculatedAt = Nothing, serverObjectStorageUsageBytes = Nothing, serverObjectStorageUsageCalculatedAt = Nothing }
+            { visible = s.visible, moderation = s.defaultModeration, visibility = s.defaultVisibility, aliasSingular = s.aliasSingular, aliasPlural = s.aliasPlural, enableReplies = Nothing, calendarLookbackDays = Nothing, calendarDisplayMode = Nothing, showStartedOrLongEventsByDefault = Nothing, defaultSort = Nothing, licensedMediaVisibleGlobally = Nothing, blockCorsAnonymousMediaAccess = Nothing, generateLinkPreviewImages = Nothing, preferMetadataForLinkPreviewImages = Nothing, mediaAllocationBytes = Nothing, serverMediaAllocationBytes = Nothing, serverMediaUsageBytes = Nothing, serverMediaUsageCalculatedAt = Nothing, serverObjectStorageUsageBytes = Nothing, serverObjectStorageUsageCalculatedAt = Nothing }
 
         PostFeatureSettings ->
             let
@@ -850,7 +895,7 @@ currentFeatureSettingsFor set config =
                 s =
                     Maybe.withDefault defaultPostSettings config.postSettings
             in
-            { visible = s.visible, moderation = s.defaultModeration, visibility = s.defaultVisibility, aliasSingular = s.aliasSingular, aliasPlural = s.aliasPlural, enableReplies = s.enableReplies, calendarLookbackDays = Nothing, calendarDisplayMode = Nothing, showStartedOrLongEventsByDefault = Nothing, licensedMediaVisibleGlobally = Nothing, blockCorsAnonymousMediaAccess = Nothing, generateLinkPreviewImages = Nothing, preferMetadataForLinkPreviewImages = Nothing, mediaAllocationBytes = Nothing, serverMediaAllocationBytes = Nothing, serverMediaUsageBytes = Nothing, serverMediaUsageCalculatedAt = Nothing, serverObjectStorageUsageBytes = Nothing, serverObjectStorageUsageCalculatedAt = Nothing }
+            { visible = s.visible, moderation = s.defaultModeration, visibility = s.defaultVisibility, aliasSingular = s.aliasSingular, aliasPlural = s.aliasPlural, enableReplies = s.enableReplies, calendarLookbackDays = Nothing, calendarDisplayMode = Nothing, showStartedOrLongEventsByDefault = Nothing, defaultSort = Just s.defaultSort, licensedMediaVisibleGlobally = Nothing, blockCorsAnonymousMediaAccess = Nothing, generateLinkPreviewImages = Nothing, preferMetadataForLinkPreviewImages = Nothing, mediaAllocationBytes = Nothing, serverMediaAllocationBytes = Nothing, serverMediaUsageBytes = Nothing, serverMediaUsageCalculatedAt = Nothing, serverObjectStorageUsageBytes = Nothing, serverObjectStorageUsageCalculatedAt = Nothing }
 
         EventFeatureSettings ->
             let
@@ -858,7 +903,7 @@ currentFeatureSettingsFor set config =
                 s =
                     Maybe.withDefault defaultEventSettings config.eventSettings
             in
-            { visible = s.visible, moderation = s.defaultModeration, visibility = s.defaultVisibility, aliasSingular = s.aliasSingular, aliasPlural = s.aliasPlural, enableReplies = s.enableReplies, calendarLookbackDays = s.calendarLookbackDays, calendarDisplayMode = Just s.defaultCalendarDisplayMode, showStartedOrLongEventsByDefault = Just s.showStartedOrLongEventsByDefault, licensedMediaVisibleGlobally = Nothing, blockCorsAnonymousMediaAccess = Nothing, generateLinkPreviewImages = Nothing, preferMetadataForLinkPreviewImages = Nothing, mediaAllocationBytes = Nothing, serverMediaAllocationBytes = Nothing, serverMediaUsageBytes = Nothing, serverMediaUsageCalculatedAt = Nothing, serverObjectStorageUsageBytes = Nothing, serverObjectStorageUsageCalculatedAt = Nothing }
+            { visible = s.visible, moderation = s.defaultModeration, visibility = s.defaultVisibility, aliasSingular = s.aliasSingular, aliasPlural = s.aliasPlural, enableReplies = s.enableReplies, calendarLookbackDays = s.calendarLookbackDays, calendarDisplayMode = Just s.defaultCalendarDisplayMode, showStartedOrLongEventsByDefault = Just s.showStartedOrLongEventsByDefault, defaultSort = Nothing, licensedMediaVisibleGlobally = Nothing, blockCorsAnonymousMediaAccess = Nothing, generateLinkPreviewImages = Nothing, preferMetadataForLinkPreviewImages = Nothing, mediaAllocationBytes = Nothing, serverMediaAllocationBytes = Nothing, serverMediaUsageBytes = Nothing, serverMediaUsageCalculatedAt = Nothing, serverObjectStorageUsageBytes = Nothing, serverObjectStorageUsageCalculatedAt = Nothing }
 
         MediaFeatureSettings ->
             let
@@ -875,6 +920,7 @@ currentFeatureSettingsFor set config =
             , calendarLookbackDays = Nothing
             , calendarDisplayMode = Nothing
             , showStartedOrLongEventsByDefault = Nothing
+            , defaultSort = Nothing
             , licensedMediaVisibleGlobally = Just s.licensedMediaVisibleGlobally
             , blockCorsAnonymousMediaAccess = Just s.blockCorsAnonymousMediaAccess
             , generateLinkPreviewImages = Just (not s.disableLinkPreviewImages)
@@ -975,6 +1021,7 @@ applyFeatureSettingsFor set edit config =
                             | aliasSingular = optionalString edit.aliasSingular
                             , aliasPlural = optionalString edit.aliasPlural
                             , enableReplies = Just edit.enableReplies
+                            , defaultSort = edit.defaultSort
                         }
             }
 
@@ -1302,7 +1349,7 @@ as `permissionsSection`.
 featureSettingsDisplayView : SharedTime.Model -> FeatureSettingsSet -> Maybe RellmAccount -> FeatureSettingsSummary -> Html Msg
 featureSettingsDisplayView time set maybeAdminAccount current =
     let
-        fields : { alias : Bool, replies : Bool, calendarLookback : Bool, calendarDisplayMode : Bool, showStartedOrLongEventsByDefault : Bool, mediaAllocation : Bool, serverMediaUsage : Bool }
+        fields : { alias : Bool, replies : Bool, calendarLookback : Bool, calendarDisplayMode : Bool, showStartedOrLongEventsByDefault : Bool, defaultSort : Bool, mediaAllocation : Bool, serverMediaUsage : Bool }
         fields =
             featureSettingsFieldsFor set
 
@@ -1325,6 +1372,11 @@ featureSettingsDisplayView time set maybeAdminAccount current =
                 []
             , if fields.replies then
                 [ Common.settingsRow "Enable Replies" (Common.switchDisplay (Maybe.withDefault False current.enableReplies)) ]
+
+              else
+                []
+            , if fields.defaultSort then
+                [ Common.settingsRow "Default Feed" (textValue (current.defaultSort |> Maybe.map defaultPostsSortText |> Maybe.withDefault "—")) ]
 
               else
                 []
@@ -1390,7 +1442,7 @@ editing case. `moderation`/`visibility` are narrowed to `allowedDefaultModeratio
 featureSettingsEditView : SharedTime.Model -> FeatureSettingsSet -> FeatureSettingsEdit -> Html Msg
 featureSettingsEditView time set edit =
     let
-        fields : { alias : Bool, replies : Bool, calendarLookback : Bool, calendarDisplayMode : Bool, showStartedOrLongEventsByDefault : Bool, mediaAllocation : Bool, serverMediaUsage : Bool }
+        fields : { alias : Bool, replies : Bool, calendarLookback : Bool, calendarDisplayMode : Bool, showStartedOrLongEventsByDefault : Bool, defaultSort : Bool, mediaAllocation : Bool, serverMediaUsage : Bool }
         fields =
             featureSettingsFieldsFor set
 
@@ -1443,6 +1495,22 @@ featureSettingsEditView time set edit =
                 []
             , if fields.replies then
                 [ Common.settingsRow "Enable Replies" (Common.flagSwitch edit.enableReplies (FeatureSettingsEnableRepliesToggled set)) ]
+
+              else
+                []
+            , if fields.defaultSort then
+                [ Common.settingsRow "Default Feed"
+                    (select [ onInput (FeatureSettingsDefaultSortChanged set), disabled (edit.status == AccountsPanel.Submitting) ]
+                        (allDefaultPostsSorts
+                            |> List.map
+                                (\sort ->
+                                    option
+                                        [ value (defaultPostsSortText sort), selected (edit.defaultSort == sort) ]
+                                        [ text (defaultPostsSortText sort) ]
+                                )
+                        )
+                    )
+                ]
 
               else
                 []
