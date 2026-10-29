@@ -12,6 +12,10 @@ import { isImageMedia } from "app/utils";
 import { MediaRenderer } from "../media/media_renderer";
 import { postBackgroundSize } from "./post_card";
 
+/** True for `domain` itself or any subdomain of it -- unlike a bare `endsWith`, not `evilx.com` for `x.com`. */
+const isHostOrSubdomain = (hostname: string, domain: string) =>
+  hostname === domain || hostname.endsWith(`.${domain}`);
+
 export interface PostMediaRendererProps {
   post: Post;
   isPreview?: boolean;
@@ -76,19 +80,19 @@ export const PostMediaRenderer: React.FC<PostMediaRendererProps> = ({
         return undefined; // Not a parseable URL, so nothing to embed.
       }
       const hostname = url.hostname.split(':')[0]!;
-      if (hostname.endsWith('twitter.com') || hostname.endsWith('t.co') || hostname.endsWith('x.com')) {
+      if (isHostOrSubdomain(hostname, 'twitter.com') || isHostOrSubdomain(hostname, 't.co') || isHostOrSubdomain(hostname, 'x.com')) {
         embed = <XEmbed url={post.link!} />;
-      } else if (hostname.endsWith('instagram.com')) {
+      } else if (isHostOrSubdomain(hostname, 'instagram.com')) {
         embed = <InstagramEmbed width='100%' url={post.link!} />;
-      } else if (hostname.endsWith('facebook.com')) {
+      } else if (isHostOrSubdomain(hostname, 'facebook.com')) {
         embed = <FacebookEmbed width='100%' url={post.link!} />;
-      } else if (hostname.endsWith('youtube.com')) {
+      } else if (isHostOrSubdomain(hostname, 'youtube.com')) {
         embed = <YouTubeEmbed width='100%' url={post.link!} />;
-      } else if (hostname.endsWith('tiktok.com')) {
+      } else if (isHostOrSubdomain(hostname, 'tiktok.com')) {
         embed = <TikTokEmbed width='100%' url={post.link!} />;
-      } else if (hostname.endsWith('pinterest.com')) {
+      } else if (isHostOrSubdomain(hostname, 'pinterest.com')) {
         embed = <PinterestEmbed width='100%' url={post.link!} />;
-      } else if (hostname.endsWith('linkedin.com')) {
+      } else if (isHostOrSubdomain(hostname, 'linkedin.com')) {
         embed = <LinkedInEmbed width='100%' url={post.link!} />;
       }
     }
