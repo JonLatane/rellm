@@ -269,6 +269,7 @@ viewHelper forceAutoplay tierOverride mediaSize sizeConstraint server maybeAccou
                                 )
                             )
                         , Just (src (mediaUrl ++ previewTimeFragment media))
+                        , Maybe.map (attribute "poster") (hlsPosterUrl mediaUrl)
                         , aspectRatioStyle media
                         ]
                         ++ (if autoplay then
@@ -505,6 +506,21 @@ previewTimeFragment media =
         |> Maybe.andThen .videoPreviewTimeMs
         |> Maybe.map (\ms -> "#t=" ++ String.fromFloat (toFloat (int64ToInt ms) / 1000))
         |> Maybe.withDefault ""
+
+
+{-| The poster frame of a Bluesky video, if `videoUrl` is one of its HLS playlists
+(`.../{did}/{cid}/playlist.m3u8`) -- Bluesky's video CDN serves the thumbnail alongside it at
+`.../thumbnail.jpg`. Such a video has no `VIDEO_PREVIEW_THUMBNAIL_*` conversions to show instead
+(see `viewHelper`), so a live `<video>` renders right away with this as its `poster`. (Playback
+itself is hls.js's job on browsers with no native HLS, see `public/index.html`.)
+-}
+hlsPosterUrl : String -> Maybe String
+hlsPosterUrl videoUrl =
+    if String.startsWith "https://video.bsky.app/" videoUrl && String.endsWith "/playlist.m3u8" videoUrl then
+        Just (String.dropRight (String.length "playlist.m3u8") videoUrl ++ "thumbnail.jpg")
+
+    else
+        Nothing
 
 
 {-| Authorized URL for `media`, mirroring `Components.Users.mediaReferenceUrl`
