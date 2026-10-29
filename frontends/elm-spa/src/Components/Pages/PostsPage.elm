@@ -1067,19 +1067,14 @@ updateInner shared msg model =
                         Shared.AccountsPanelMsg (AccountsPanel.DebugTabMsg DebugTab.ToggleShowSensitiveMediaPosts) ->
                             refetchFeeds shared model (List.map RellmServer (relevantServers shared model) ++ federatedAuthorSources shared model)
 
-                        Shared.AccountsPanelMsg _ ->
-                            -- A server's configuration (and so its `default_sort`) can arrive here, after
-                            -- `init` -- if that moves an unchosen `sort`, every source needs refetching.
-                            let
-                                adoptedModel : Model
-                                adoptedModel =
-                                    adoptServerDefaultSort shared model
-                            in
-                            if adoptedModel.sort /= model.sort then
-                                refetchFeeds shared adoptedModel (relevantFeedSources shared adoptedModel)
+                        -- A server's configuration (and so its `default_sort`) can arrive here, after
+                        -- `init`, and the user can change their own "Default Posts Feed" preference --
+                        -- if either moves an unchosen `sort`, every source needs refetching.
+                        Shared.UserPreferencesMsg (UserPreferences.SetPostsSort _) ->
+                            adoptDefaultSortAndFetch shared model
 
-                            else
-                                fetchNewFeeds shared adoptedModel
+                        Shared.AccountsPanelMsg _ ->
+                            adoptDefaultSortAndFetch shared model
 
                         -- The Delete button on a card's sync destination row
                         -- (`Shared.RequestDelete`/`Shared.ConfirmPostSyncDestinationDelete`, see
@@ -2040,28 +2035,24 @@ pushUrl model =
         |> Effect.fromCmd
 
 
-{-| The main server's `post_settings.default_sort` as a `PostsSort` (mirroring
-`Components.Pages.EventsPage.calendarLookbackDays`' read of its `event_settings`), `SortRecent` while
-that server or its configuration isn't known yet.
+{-| The sort the Posts page starts on absent a choice: the user's own "Default Posts Feed" preference
+(`Shared.UserPreferences.postsSort`), else the main server's `post_settings.default_sort`
+(`RellmServers.serverDefaultPostsSort`), `SortRecent` while that server or its configuration isn't known yet.
 -}
 configuredDefaultSort : Shared.Model -> PostsSort
 configuredDefaultSort shared =
-    RellmServers.rellmServerForHost shared.accounts.servers shared.accounts.mainFrontendHost
-        |> Maybe.map RellmServers.configurationOf
-        |> Maybe.andThen .postSettings
-        |> Maybe.map
-            (\settings ->
-                case settings.defaultSort of
-                    DEFAULTPOSTSSORTPOPULAR ->
-                        SortPopular
+    case
+        shared.userPreferences.postsSort
+            |> Maybe.withDefault (RellmServers.serverDefaultPostsSort shared.accounts.servers shared.accounts.mainFrontendHost)
+    of
+        DEFAULTPOSTSSORTPOPULAR ->
+            SortPopular
 
-                    DEFAULTPOSTSSORTFOLLOWING ->
-                        SortFollowing
+        DEFAULTPOSTSSORTFOLLOWING ->
+            SortFollowing
 
-                    _ ->
-                        SortRecent
-            )
-        |> Maybe.withDefault SortRecent
+        _ ->
+            SortRecent
 
 
 {-| Only the standalone, unscoped feed -- the one with a `sortSelectView` -- follows the server's
@@ -2071,6 +2062,22 @@ unless the URL says otherwise.
 usesServerDefaultSort : Maybe ( String, User ) -> Bool -> Maybe FeedSource -> Bool
 usesServerDefaultSort author embeddedPage profileFeedSource =
     author == Nothing && not embeddedPage && profileFeedSource == Nothing
+
+
+{-| `fetchNewFeeds`, after `adoptServerDefaultSort` -- a refetch of every source instead when that moved `sort`.
+-}
+adoptDefaultSortAndFetch : Shared.Model -> Model -> ( Model, Effect Msg )
+adoptDefaultSortAndFetch shared model =
+    let
+        adoptedModel : Model
+        adoptedModel =
+            adoptServerDefaultSort shared model
+    in
+    if adoptedModel.sort /= model.sort then
+        refetchFeeds shared adoptedModel (relevantFeedSources shared adoptedModel)
+
+    else
+        fetchNewFeeds shared adoptedModel
 
 
 {-| Re-reads `configuredDefaultSort` into `serverDefaultSort`, carrying an unchosen `sort` along with it.

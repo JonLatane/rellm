@@ -14,6 +14,7 @@ load, not pushed into ones already open.
 
 import Json.Decode as Decode
 import Json.Encode as Encode
+import Proto.Rellm.DefaultPostsSort exposing (DefaultPostsSort(..))
 import Ports
 import Time
 
@@ -70,6 +71,12 @@ type alias Model =
     , disableTikTokEmbeds : Bool
     , disableXEmbeds : Bool
     , disableYouTubeEmbeds : Bool
+
+    -- The user's own choice of which feed `Components.Pages.PostsPage` starts on (its Recent/Popular/
+    -- Following dropdown), set from the Accounts Panel's "Preferences" tab. `Nothing` (never chosen)
+    -- follows the main server's `post_settings.default_sort`, which is also what that tab shows
+    -- selected until a choice is made -- see `RellmServers.serverDefaultPostsSort`.
+    , postsSort : Maybe DefaultPostsSort
     }
 
 
@@ -85,6 +92,7 @@ type Msg
     | SetDisableTikTokEmbeds Bool
     | SetDisableXEmbeds Bool
     | SetDisableYouTubeEmbeds Bool
+    | SetPostsSort (Maybe DefaultPostsSort)
 
 
 {-| `flags` is the raw, persisted JSON object (see `Ports.persistUserPreferences`)
@@ -108,7 +116,43 @@ init flags =
     , disableTikTokEmbeds = decodeBoolField "disableTikTokEmbeds" flags
     , disableXEmbeds = decodeBoolField "disableXEmbeds" flags
     , disableYouTubeEmbeds = decodeBoolField "disableYouTubeEmbeds" flags
+    , postsSort =
+        Decode.decodeValue (Decode.field "postsSort" Decode.int) flags
+            |> Result.toMaybe
+            |> Maybe.andThen postsSortFromInt
     }
+
+
+postsSortFromInt : Int -> Maybe DefaultPostsSort
+postsSortFromInt n =
+    case n of
+        0 ->
+            Just DEFAULTPOSTSSORTRECENT
+
+        1 ->
+            Just DEFAULTPOSTSSORTPOPULAR
+
+        2 ->
+            Just DEFAULTPOSTSSORTFOLLOWING
+
+        _ ->
+            Nothing
+
+
+postsSortToInt : DefaultPostsSort -> Int
+postsSortToInt sort =
+    case sort of
+        DEFAULTPOSTSSORTRECENT ->
+            0
+
+        DEFAULTPOSTSSORTPOPULAR ->
+            1
+
+        DEFAULTPOSTSSORTFOLLOWING ->
+            2
+
+        DefaultPostsSortUnrecognized_ _ ->
+            0
 
 
 decodeBoolField : String -> Decode.Value -> Bool
@@ -215,6 +259,14 @@ update msg model =
             in
             ( newModel, persistCmd newModel )
 
+        SetPostsSort postsSort ->
+            let
+                newModel : Model
+                newModel =
+                    { model | postsSort = postsSort }
+            in
+            ( newModel, persistCmd newModel )
+
 
 {-| Whether the user turned off embeds for `network` (a `SocialMediaEmbed.network` name). -}
 embedDisabled : String -> Model -> Bool
@@ -264,6 +316,7 @@ encode model =
         , ( "disableTikTokEmbeds", Encode.bool model.disableTikTokEmbeds )
         , ( "disableXEmbeds", Encode.bool model.disableXEmbeds )
         , ( "disableYouTubeEmbeds", Encode.bool model.disableYouTubeEmbeds )
+        , ( "postsSort", model.postsSort |> Maybe.map (postsSortToInt >> Encode.int) |> Maybe.withDefault Encode.null )
         ]
 
 
