@@ -3683,7 +3683,7 @@ Specific settings for Posts.
 | alias_singular | [string](#string) | optional | Can be used to rename, e.g., &#34;Post&#34; &#34;Highlight&#34; or &#34;Squirt&#34; |
 | alias_plural | [string](#string) | optional | Can be used to rename, e.g. &#34;Posts&#34; to &#34;Splurts&#34; or &#34;Memories&#34; |
 | enable_replies | [bool](#bool) | optional | Controls whether replies are shown in the UI. Note that users&#39; ability to reply is controlled by the `REPLY_TO_POSTS` permission. |
-| default_sort | [DefaultPostsSort](#rellm-DefaultPostsSort) |  | Which feed the standalone Posts page (the one with the Recent/Popular/Following dropdown) shows when a visitor hasn&#39;t chosen one with it (or the `sort` URL query parameter). The embedded copies on the home page and user profiles stay on Recent. Users can override this in their own preferences. Defaults to `DEFAULT_POSTS_SORT_RECENT`. |
+| default_sort | [DefaultPostsSort](#rellm-DefaultPostsSort) |  | Which feed the unscoped Posts feed -- the standalone Posts page and the one on the home page, both with a Recent/Popular/Following dropdown -- shows when a visitor hasn&#39;t chosen one with it (or the `sort` URL query parameter). Feeds scoped to a user&#39;s profile stay on Recent. Users can override this in their own preferences. Defaults to `DEFAULT_POSTS_SORT_RECENT`. |
 
 
 
