@@ -391,13 +391,18 @@
         ['pointerup', 'pointercancel', 'blur'].forEach(function (name) {
           self._els.seek.addEventListener(name, function () { self._dragging = false; });
         });
-        // Tapping the picture plays/pauses, except the tap that merely brings back hidden controls.
+        // Tapping the picture plays/pauses, except the tap that merely brings back hidden controls: whether they
+        // were hidden is noted when the tap starts, since `pointerdown` itself wakes them before `click` fires.
+        this.addEventListener('pointerdown', function () {
+          self._revealTap = self.classList.contains('idle');
+          self._wake();
+        });
         this.addEventListener('click', function (event) {
           if (event.composedPath()[0] !== self._video) { return; }
-          if (self.classList.contains('idle')) { self._wake(); return; }
+          if (self._revealTap) { self._revealTap = false; return; }
           self._togglePlay();
         });
-        ['pointermove', 'pointerdown', 'focusin', 'keydown'].forEach(function (name) {
+        ['pointermove', 'focusin', 'keydown'].forEach(function (name) {
           self.addEventListener(name, function () { self._wake(); });
         });
         this.addEventListener('pointerleave', function () { self._scheduleIdle(); });

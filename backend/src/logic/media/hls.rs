@@ -43,6 +43,17 @@ pub fn is_segment_name(segment: &str) -> bool {
         .is_some_and(|n| !n.is_empty() && n.len() <= 9 && n.bytes().all(|b| b.is_ascii_digit()))
 }
 
+/// The version of the rendition stored at `object_storage_path`: the `.<unix ms>` suffix every generated
+/// copy's path gets (see `media_conversion::versioned_object_path`), or `0` for an unversioned one. It's in
+/// every playlist and segment URL (`?v=`), so a player holding a playlist from before the rendition was
+/// regenerated gets a `404` for its segments rather than the new rendition's, which are cut differently.
+pub fn version_of(object_storage_path: &str) -> String {
+    match object_storage_path.rsplit_once('.') {
+        Some((_, tail)) if super::is_version_suffix(tail) => tail.to_owned(),
+        _ => "0".to_owned(),
+    }
+}
+
 /// What `ffprobe` says about a rendition's first video stream -- enough for a master playlist entry.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StreamInfo {
@@ -74,6 +85,24 @@ pub fn parse_stream_info(json: &str) -> Result<StreamInfo> {
         duration_seconds: format_number("duration").unwrap_or(0.0),
         bit_rate: format_number("bit_rate").unwrap_or(0.0) as u64,
     })
+}
+
+/// A stand-in for `probe` of a rendition that hasn't been downloaded: its size on screen follows from the
+/// `aspect_ratio` recorded when it was converted and the `max_dimension` that conversion fits within, and
+/// its bit rate from its stored `size_bytes` over the video's `duration_seconds` (the same for every
+/// full-length rendition). Renditions are never upscaled, so for a small source the resolution is an
+/// upper bound -- all a master playlist's `RESOLUTION` has to be. Our converter always makes H.264.
+pub fn estimate_stream_info(aspect_ratio: f32, max_dimension: u32, size_bytes: i64, duration_seconds: f64) -> StreamInfo {
+    let even = |pixels: f32| ((pixels / 2.0).round() as u32).max(1) * 2;
+    let max = max_dimension as f32;
+    let (width, height) = if aspect_ratio >= 1.0 { (max, max / aspect_ratio) } else { (max * aspect_ratio, max) };
+    StreamInfo {
+        codec: "h264".to_owned(),
+        width: even(width),
+        height: even(height),
+        duration_seconds,
+        bit_rate: if duration_seconds > 0.0 { (size_bytes.max(0) as f64 * 8.0 / duration_seconds) as u64 } else { 0 },
+    }
 }
 
 /// Runs `ffprobe` on `input`.
@@ -112,12 +141,11 @@ pub fn segment_video(input: &Path, out_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-/// The master playlist for `variants` (name and probe result, ascending quality). Each entry's URI is
-/// relative -- `<name>/playlist.m3u8` -- followed by `uri_suffix` (e.g. `?authorization=...`, or empty),
-/// which the playlist's own segment URIs get too (`with_uri_suffix`).
-pub fn master_playlist(variants: &[(&str, StreamInfo)], uri_suffix: &str) -> String {
+/// The master playlist for `variants` (name, probe result and the query string to put on its URI -- see
+/// `version_of` -- in ascending quality). Each entry's URI is relative: `<name>/playlist.m3u8<query>`.
+pub fn master_playlist(variants: &[(&str, StreamInfo, String)]) -> String {
     let mut playlist = String::from("#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-INDEPENDENT-SEGMENTS\n");
-    for (name, info) in variants {
+    for (name, info, query) in variants {
         // Playlists carry no codec string (that would mean also probing the audio stream): players
         // take it from the stream itself, which is all hls.js/Safari need.
         playlist.push_str(&format!(
@@ -126,14 +154,14 @@ pub fn master_playlist(variants: &[(&str, StreamInfo)], uri_suffix: &str) -> Str
             info.width,
             info.height,
             name,
-            uri_suffix
+            query
         ));
     }
     playlist
 }
 
-/// `playlist` (ffmpeg's media playlist) with `uri_suffix` appended to each segment URI, so a viewer
-/// authorized by `?authorization=` keeps that on every request a player makes from it.
+/// `playlist` (ffmpeg's media playlist) with `uri_suffix` (the query string: the rendition's version, and the
+/// viewer's `?authorization=` if they used one) appended to each segment URI.
 pub fn with_uri_suffix(playlist: &str, uri_suffix: &str) -> String {
     if uri_suffix.is_empty() {
         return playlist.to_owned();
@@ -187,14 +215,16 @@ mod tests {
 
     #[test]
     fn master_playlist_lists_each_variant_with_relative_uris() {
-        let playlist = master_playlist(&[("small", info(320, 180, 300_000)), ("medium", info(800, 450, 0))], "");
+        let playlist = master_playlist(&[
+            ("small", info(320, 180, 300_000), "?v=1790000000000".to_owned()),
+            ("medium", info(800, 450, 0), "?v=1790000000001&authorization=t".to_owned()),
+        ]);
         assert_eq!(
             playlist,
             "#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-INDEPENDENT-SEGMENTS\n\
-             #EXT-X-STREAM-INF:BANDWIDTH=300000,RESOLUTION=320x180\nsmall/playlist.m3u8\n\
-             #EXT-X-STREAM-INF:BANDWIDTH=1,RESOLUTION=800x450\nmedium/playlist.m3u8\n"
+             #EXT-X-STREAM-INF:BANDWIDTH=300000,RESOLUTION=320x180\nsmall/playlist.m3u8?v=1790000000000\n\
+             #EXT-X-STREAM-INF:BANDWIDTH=1,RESOLUTION=800x450\nmedium/playlist.m3u8?v=1790000000001&authorization=t\n"
         );
-        assert!(master_playlist(&[("small", info(320, 180, 1))], "?authorization=t").contains("small/playlist.m3u8?authorization=t\n"));
     }
 
     #[test]
@@ -205,6 +235,28 @@ mod tests {
             with_uri_suffix(playlist, "?authorization=a%2Fb"),
             "#EXTM3U\n#EXTINF:4.8,\n0.ts?authorization=a%2Fb\n#EXTINF:2.4,\n1.ts?authorization=a%2Fb\n#EXT-X-ENDLIST\n"
         );
+    }
+
+    #[test]
+    fn a_rendition_version_is_its_object_paths_timestamp_suffix() {
+        assert_eq!(version_of("user/1@h-a/uuid-clip.mp4.medium.1790000000123"), "1790000000123");
+        assert_eq!(version_of("user/1@h-a/uuid-clip.mp4.medium"), "0");
+        assert_eq!(version_of("user/1@h-a/uuid-clip.mp4"), "0");
+        assert_eq!(version_of("no-dots"), "0");
+    }
+
+    #[test]
+    fn estimates_a_rendition_without_downloading_it() {
+        // 16:9 fits the width, 9:16 the height; never odd (H.264 needs even dimensions).
+        let landscape = estimate_stream_info(16.0 / 9.0, 800, 3_000_000, 24.0);
+        assert_eq!((landscape.width, landscape.height), (800, 450));
+        assert_eq!(landscape.bit_rate, 1_000_000);
+        assert!(landscape.is_streamable());
+        let portrait = estimate_stream_info(9.0 / 16.0, 320, 1_000_000, 0.0);
+        assert_eq!((portrait.width, portrait.height), (180, 320));
+        assert_eq!(portrait.bit_rate, 0);
+        let odd = estimate_stream_info(0.7, 801, 1, 1.0);
+        assert!(odd.width % 2 == 0 && odd.height % 2 == 0);
     }
 
     #[test]

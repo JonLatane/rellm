@@ -21,7 +21,9 @@ use rocket_cache_response::CacheResponse;
 use uuid::Uuid;
 
 use crate::logic::hls::{self, StreamInfo, HLS_VARIANTS};
+use crate::models::MediaConversionExt;
 use crate::logic::{is_video_content_type, object_path_version_base};
+use crate::protos::MediaConversion;
 use crate::rpcs::get_server_configuration_proto;
 use crate::web::headers::AuthHeader;
 use crate::web::media::{
@@ -48,22 +50,33 @@ pub async fn hls_options(id: &str, rest: PathBuf) -> &'static str {
     ""
 }
 
-/// `?authorization=<token>` if the viewer authorized with one (a `<video>`/hls.js request can't set
-/// headers the way a gRPC call does), to pass on to every URI in the playlists.
-fn uri_suffix(authorization: &Option<String>) -> String {
+/// The query string every URI in a variant's playlists carries: the rendition's `version` (see
+/// `hls::version_of`) and, if the viewer authorized with one, their `authorization=<token>` (a
+/// `<video>`/hls.js request can't set headers the way a gRPC call does).
+fn uri_suffix(version: &str, authorization: &Option<String>) -> String {
     match authorization {
         Some(token) if !token.is_empty() => {
-            format!("?authorization={}", rocket::http::RawStr::new(token).percent_encode())
+            format!("?v={}&authorization={}", version, rocket::http::RawStr::new(token).percent_encode())
         }
-        _ => String::new(),
+        _ => format!("?v={version}"),
     }
 }
 
-/// The variants (name, stored object path) `access` may stream: the `HLS_VARIANTS` whose rendition is
-/// an MP4 -- what `convert_media_sizes` makes for a video that isn't a `.webm`. Empty for anything
-/// that isn't a video, and for a video not (yet) converted, whose viewers keep using `/media/{id}`.
-/// A viewer without full access to `LICENSED` media gets only the cropped preview.
-fn streamable_variants(access: &MediaAccess) -> Vec<(&'static str, String)> {
+/// One stored rendition a viewer may stream.
+struct Variant {
+    name: &'static str,
+    conversion: MediaConversion,
+    object_storage_path: String,
+    size_bytes: i64,
+    /// Width / height, recorded when the rendition was converted.
+    aspect_ratio: Option<f32>,
+}
+
+/// The variants `access` may stream: the `HLS_VARIANTS` whose rendition is an MP4 -- what
+/// `convert_media_sizes` makes for a video that isn't a `.webm`. Empty for anything that isn't a video,
+/// and for a video not (yet) converted, whose viewers keep using `/media/{id}`. A viewer without full
+/// access to `LICENSED` media gets only the cropped preview.
+fn streamable_variants(access: &MediaAccess) -> Vec<Variant> {
     let media = &access.media;
     if !media.original().is_some_and(|o| is_video_content_type(&o.content_type)) {
         return vec![];
@@ -76,7 +89,13 @@ fn streamable_variants(access: &MediaAccess) -> Vec<(&'static str, String)> {
             sizes
                 .iter()
                 .find(|s| s.conversion == *conversion as i32 && s.content_type == "video/mp4")
-                .map(|s| (*name, s.object_storage_path.clone()))
+                .map(|s| Variant {
+                    name,
+                    conversion: *conversion,
+                    object_storage_path: s.object_storage_path.clone(),
+                    size_bytes: s.size_bytes,
+                    aspect_ratio: s.aspect_ratio,
+                })
         })
         .collect()
 }
@@ -119,8 +138,7 @@ fn internal_error<E: std::fmt::Display>(error: E) -> Status {
 /// `404` if the rendition isn't something every player can stream (not H.264).
 async fn ensure_segments(object_storage_path: &str, state: &State<RocketState>) -> Result<PathBuf, Status> {
     let dir = PathBuf::from(format!("{}/{}.hls", state.tempdir.path().display(), object_storage_path));
-    let ready = |dir: &PathBuf| dir.join("playlist.m3u8").exists();
-    if ready(&dir) {
+    if dir.join("playlist.m3u8").exists() {
         return Ok(dir);
     }
 
@@ -130,8 +148,32 @@ async fn ensure_segments(object_storage_path: &str, state: &State<RocketState>) 
         .entry(object_storage_path.to_owned())
         .or_default()
         .clone();
+    let result = segment_exclusively(&lock, dir, object_storage_path, state).await;
+    release_segmenting_lock(object_storage_path, lock);
+    result
+}
+
+/// Forgets `object_storage_path`'s segmenting lock, unless another request holds (or is waiting on) it:
+/// handles are only ever cloned under `SEGMENTING`'s own mutex, so a count of 2 (the map's and ours)
+/// means nobody else can be using it, and a request arriving later makes a fresh one. Dropping it any
+/// earlier could let a waiter and a newcomer segment the same rendition at once.
+fn release_segmenting_lock(object_storage_path: &str, lock: Arc<rocket::tokio::sync::Mutex<()>>) {
+    let mut locks = SEGMENTING.lock().unwrap();
+    if Arc::strong_count(&lock) <= 2 {
+        locks.remove(object_storage_path);
+    }
+}
+
+/// `ensure_segments`' work, once `lock` is this request's alone: whoever waited on it finds the
+/// directory ready and does nothing.
+async fn segment_exclusively(
+    lock: &rocket::tokio::sync::Mutex<()>,
+    dir: PathBuf,
+    object_storage_path: &str,
+    state: &State<RocketState>,
+) -> Result<PathBuf, Status> {
     let _guard = lock.lock().await;
-    if ready(&dir) {
+    if dir.join("playlist.m3u8").exists() {
         return Ok(dir);
     }
 
@@ -149,7 +191,6 @@ async fn ensure_segments(object_storage_path: &str, state: &State<RocketState>) 
         Ok(())
     })
     .await;
-    SEGMENTING.lock().unwrap().remove(object_storage_path);
     match result {
         Ok(Ok(())) => {
             evict_superseded_hls_dirs(&dir, object_storage_path);
@@ -202,8 +243,10 @@ fn playlist_response(access: &MediaAccess, body: String, token_in_body: bool, st
     }
 }
 
-/// The master playlist: one variant per stored MP4 rendition, with the resolution and bit rate that
-/// `ffprobe` reports for it, for the player to choose between.
+/// The master playlist: one variant per stored MP4 rendition, for the player to choose between. Only
+/// the smallest rendition is downloaded and `ffprobe`d (once -- see `probe_cached`), for the video's
+/// duration; the others' resolution and bit rate follow from their stored size and aspect ratio, so a
+/// cold request never waits on the large renditions that a viewer who stays on `small` never needs.
 #[rocket::get("/media/hls/<id>/master.m3u8?<authorization>")]
 pub async fn hls_master_playlist(
     id: &str,
@@ -212,50 +255,69 @@ pub async fn hls_master_playlist(
     state: &State<RocketState>,
     auth_header: Option<AuthHeader<'_>>,
 ) -> Result<PlaylistResponse, Status> {
-    let suffix = uri_suffix(&authorization);
+    let token = authorization.clone();
     let access = authorize_media_view(id, authorization, auth_header, cookies, state)?;
     if !hls_enabled(state) {
         return Err(Status::NotFound);
     }
-    let mut variants = vec![];
-    for (name, object_storage_path) in streamable_variants(&access) {
-        let info = probe_cached(&object_storage_path, state).await?;
-        if info.is_streamable() {
-            variants.push((name, info));
-        }
-    }
-    if variants.is_empty() {
+    let candidates = streamable_variants(&access);
+    let Some(first) = candidates.first() else {
+        return Err(Status::NotFound);
+    };
+    let first_info = probe_cached(&first.object_storage_path, state).await?;
+    if !first_info.is_streamable() {
         return Err(Status::NotFound);
     }
-    let body = hls::master_playlist(&variants, &suffix);
-    Ok(playlist_response(&access, body, !suffix.is_empty(), state))
+    let mut variants = vec![];
+    for variant in &candidates {
+        let info = match variant.aspect_ratio {
+            _ if std::ptr::eq(variant, first) => first_info.clone(),
+            Some(aspect_ratio) => hls::estimate_stream_info(
+                aspect_ratio,
+                variant.conversion.max_dimension(),
+                variant.size_bytes,
+                first_info.duration_seconds,
+            ),
+            // Converted before aspect ratios were recorded: no choice but to look.
+            None => probe_cached(&variant.object_storage_path, state).await?,
+        };
+        if info.is_streamable() {
+            let query = uri_suffix(&hls::version_of(&variant.object_storage_path), &token);
+            variants.push((variant.name, info, query));
+        }
+    }
+    let body = hls::master_playlist(&variants);
+    Ok(playlist_response(&access, body, token.as_deref().is_some_and(|t| !t.is_empty()), state))
 }
 
 /// One variant's media playlist (segment list), straight from `ffmpeg` apart from the
 /// `?authorization=` each segment URI carries on.
 // Explicit ranks: without them Rocket sees `playlist.m3u8` as colliding with `<segment>`.
-#[rocket::get("/media/hls/<id>/<variant>/playlist.m3u8?<authorization>", rank = 1)]
+#[rocket::get("/media/hls/<id>/<variant>/playlist.m3u8?<authorization>&<v>", rank = 1)]
 pub async fn hls_media_playlist(
     id: &str,
     variant: &str,
     authorization: Option<String>,
+    v: Option<String>,
     cookies: &CookieJar<'_>,
     state: &State<RocketState>,
     auth_header: Option<AuthHeader<'_>>,
 ) -> Result<PlaylistResponse, Status> {
-    let suffix = uri_suffix(&authorization);
-    let (access, dir) = authorized_segments(id, variant, authorization, cookies, state, auth_header).await?;
+    let token = authorization.clone();
+    let (access, dir, version) = authorized_segments(id, variant, authorization, v, cookies, state, auth_header).await?;
     let playlist = std::fs::read_to_string(dir.join("playlist.m3u8")).map_err(internal_error)?;
-    Ok(playlist_response(&access, hls::with_uri_suffix(&playlist, &suffix), !suffix.is_empty(), state))
+    let suffix = uri_suffix(&version, &token);
+    Ok(playlist_response(&access, hls::with_uri_suffix(&playlist, &suffix), token.as_deref().is_some_and(|t| !t.is_empty()), state))
 }
 
 /// One `.ts` segment of a variant.
-#[rocket::get("/media/hls/<id>/<variant>/<segment>?<authorization>", rank = 2)]
+#[rocket::get("/media/hls/<id>/<variant>/<segment>?<authorization>&<v>", rank = 2)]
 pub async fn hls_segment(
     id: &str,
     variant: &str,
     segment: &str,
     authorization: Option<String>,
+    v: Option<String>,
     cookies: &CookieJar<'_>,
     state: &State<RocketState>,
     auth_header: Option<AuthHeader<'_>>,
@@ -263,7 +325,7 @@ pub async fn hls_segment(
     if !hls::is_segment_name(segment) {
         return Err(Status::NotFound);
     }
-    let (access, dir) = authorized_segments(id, variant, authorization, cookies, state, auth_header).await?;
+    let (access, dir, _) = authorized_segments(id, variant, authorization, v, cookies, state, auth_header).await?;
     let file = NamedFile::open(dir.join(segment)).await.map_err(|_| Status::NotFound)?;
     let block_cors = blocks_cors(access.user.as_ref(), state);
     Ok(MediaResponse {
@@ -274,25 +336,31 @@ pub async fn hls_segment(
     })
 }
 
-/// Checks the viewer may stream `variant` of media `id` and returns its (made if need be) segment directory.
+/// Checks the viewer may stream `variant` of media `id` and returns its (made if need be) segment directory
+/// and version. `v`, if the URL had one, must be that version: a playlist from before the rendition was
+/// regenerated is a `404` from then on, rather than quietly receiving the new rendition's segments.
 async fn authorized_segments(
     id: &str,
     variant: &str,
     authorization: Option<String>,
+    v: Option<String>,
     cookies: &CookieJar<'_>,
     state: &State<RocketState>,
     auth_header: Option<AuthHeader<'_>>,
-) -> Result<(MediaAccess, PathBuf), Status> {
+) -> Result<(MediaAccess, PathBuf, String), Status> {
     let access = authorize_media_view(id, authorization, auth_header, cookies, state)?;
     if !hls_enabled(state) {
         return Err(Status::NotFound);
     }
     let object_storage_path = streamable_variants(&access)
         .into_iter()
-        .find(|(name, _)| *name == variant)
-        .map(|(_, path)| path)
+        .find(|candidate| candidate.name == variant)
+        .map(|candidate| candidate.object_storage_path)
         .ok_or(Status::NotFound)?;
+    let version = hls::version_of(&object_storage_path);
+    if v.is_some_and(|v| v != version) {
+        return Err(Status::NotFound);
+    }
     let dir = ensure_segments(&object_storage_path, state).await?;
-    Ok((access, dir))
+    Ok((access, dir, version))
 }
-
