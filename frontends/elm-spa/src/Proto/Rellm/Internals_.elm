@@ -2686,6 +2686,7 @@ fieldNumbersProto__Rellm__MediaSettings :
     , defaultUserMediaAllocationBytes : Int
     , blockCorsAnonymousMediaAccess : Int
     , licensedMediaVisibleGlobally : Int
+    , hlsStreamingEnabled : Int
     , serverMediaAllocationBytes : Int
     , serverMediaUsageBytes : Int
     , serverMediaUsageCalculatedAt : Int
@@ -2701,6 +2702,7 @@ fieldNumbersProto__Rellm__MediaSettings =
     , defaultUserMediaAllocationBytes = 4
     , blockCorsAnonymousMediaAccess = 20
     , licensedMediaVisibleGlobally = 21
+    , hlsStreamingEnabled = 22
     , serverMediaAllocationBytes = 5
     , serverMediaUsageBytes = 6
     , serverMediaUsageCalculatedAt = 7
@@ -2722,6 +2724,7 @@ defaultProto__Rellm__MediaSettings =
     , defaultUserMediaAllocationBytes = Protobuf.Types.Int64.fromInts 0 0
     , blockCorsAnonymousMediaAccess = False
     , licensedMediaVisibleGlobally = False
+    , hlsStreamingEnabled = False
     , serverMediaAllocationBytes = Protobuf.Types.Int64.fromInts 0 0
     , serverMediaUsageBytes = Protobuf.Types.Int64.fromInts 0 0
     , serverMediaUsageCalculatedAt = Nothing
@@ -2745,6 +2748,7 @@ decodeProto__Rellm__MediaSettings =
         , Protobuf.Decode.optional 4 Protobuf.Decode.uint64 (\a r -> { r | defaultUserMediaAllocationBytes = a })
         , Protobuf.Decode.optional 20 Protobuf.Decode.bool (\a r -> { r | blockCorsAnonymousMediaAccess = a })
         , Protobuf.Decode.optional 21 Protobuf.Decode.bool (\a r -> { r | licensedMediaVisibleGlobally = a })
+        , Protobuf.Decode.optional 22 Protobuf.Decode.bool (\a r -> { r | hlsStreamingEnabled = a })
         , Protobuf.Decode.optional 5 Protobuf.Decode.uint64 (\a r -> { r | serverMediaAllocationBytes = a })
         , Protobuf.Decode.optional 6 Protobuf.Decode.uint64 (\a r -> { r | serverMediaUsageBytes = a })
         , Protobuf.Decode.optional
@@ -2773,6 +2777,7 @@ encodeProto__Rellm__MediaSettings value =
         , ( 4, Protobuf.Encode.uint64 value.defaultUserMediaAllocationBytes )
         , ( 20, Protobuf.Encode.bool value.blockCorsAnonymousMediaAccess )
         , ( 21, Protobuf.Encode.bool value.licensedMediaVisibleGlobally )
+        , ( 22, Protobuf.Encode.bool value.hlsStreamingEnabled )
         , ( 5, Protobuf.Encode.uint64 value.serverMediaAllocationBytes )
         , ( 6, Protobuf.Encode.uint64 value.serverMediaUsageBytes )
         , ( 7
@@ -2803,6 +2808,7 @@ type alias Proto__Rellm__MediaSettings =
     , defaultUserMediaAllocationBytes : Protobuf.Types.Int64.Int64
     , blockCorsAnonymousMediaAccess : Bool
     , licensedMediaVisibleGlobally : Bool
+    , hlsStreamingEnabled : Bool
     , serverMediaAllocationBytes : Protobuf.Types.Int64.Int64
     , serverMediaUsageBytes : Protobuf.Types.Int64.Int64
     , serverMediaUsageCalculatedAt : Maybe Proto.Google.Protobuf.Internals_.Proto__Google__Protobuf__Timestamp

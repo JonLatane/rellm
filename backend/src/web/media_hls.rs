@@ -2,6 +2,9 @@
 //! and `/media/hls/{id}/{variant}/{n}.ts`. See `logic::media::hls` for how the streams are made and
 //! why; this is just the (access-checked) HTTP side.
 //!
+//! Off unless an admin turns on `MediaSettings.hls_streaming_enabled` -- every URL here is a `404` until
+//! then (see `hls_enabled`), since streaming costs more than the stored size conversions do.
+//!
 //! These live under `/media/` on purpose: the same visibility/licensing rules, CORS handling and
 //! CDN caching rule that already cover `/media/{id}` cover them, and all of their URIs are relative
 //! (plus the viewer's `?authorization=`, if they used one) so a player needs nothing but the master
@@ -17,8 +20,9 @@ use rocket::{http::CookieJar, routes, Route, State};
 use rocket_cache_response::CacheResponse;
 use uuid::Uuid;
 
-use crate::logic::hls::{self, HLS_VARIANTS};
+use crate::logic::hls::{self, StreamInfo, HLS_VARIANTS};
 use crate::logic::{is_video_content_type, object_path_version_base};
+use crate::rpcs::get_server_configuration_proto;
 use crate::web::headers::AuthHeader;
 use crate::web::media::{
     authorize_media_view, blocks_cors, load_media_file, media_cache_control, MediaAccess, MediaResponse,
@@ -28,6 +32,10 @@ use crate::web::RocketState;
 lazy_static! {
     pub static ref MEDIA_HLS_ENDPOINTS: Vec<Route> =
         routes![hls_options, hls_master_playlist, hls_media_playlist, hls_segment];
+
+    /// What `ffprobe` said about each rendition (keyed by its versioned object path, so a regenerated one is
+    /// probed afresh), so a master playlist doesn't re-fetch and re-probe every rendition on every request.
+    static ref PROBES: Mutex<HashMap<String, StreamInfo>> = Mutex::new(HashMap::new());
 
     /// One lock per rendition being segmented, so concurrent first requests share a single `ffmpeg` pass.
     static ref SEGMENTING: Mutex<HashMap<String, Arc<rocket::tokio::sync::Mutex<()>>>> = Mutex::new(HashMap::new());
@@ -73,6 +81,34 @@ fn streamable_variants(access: &MediaAccess) -> Vec<(&'static str, String)> {
         .collect()
 }
 
+/// Whether the admin has turned HLS streaming on (`MediaSettings.hls_streaming_enabled`, off by default).
+fn hls_enabled(state: &State<RocketState>) -> bool {
+    let mut conn = state.pool.get().unwrap();
+    get_server_configuration_proto(&mut conn)
+        .ok()
+        .and_then(|c| c.media_settings)
+        .is_some_and(|m| m.hls_streaming_enabled)
+}
+
+/// `ffprobe` for the rendition at `object_storage_path`, remembered after the first time.
+async fn probe_cached(object_storage_path: &str, state: &State<RocketState>) -> Result<StreamInfo, Status> {
+    if let Some(info) = PROBES.lock().unwrap().get(object_storage_path) {
+        return Ok(info.clone());
+    }
+    let (_, file) = load_media_file(object_storage_path.to_owned(), "video/mp4".to_owned(), state).await?;
+    let input = file.path().to_owned();
+    let info = rocket::tokio::task::spawn_blocking(move || hls::probe(&input))
+        .await
+        .map_err(internal_error)?
+        .map_err(internal_error)?;
+    let mut probes = PROBES.lock().unwrap();
+    if probes.len() >= 1024 {
+        probes.clear(); // bounded: a cleared entry is just probed again
+    }
+    probes.insert(object_storage_path.to_owned(), info.clone());
+    Ok(info)
+}
+
 fn internal_error<E: std::fmt::Display>(error: E) -> Status {
     log::error!("HLS: {error}");
     Status::InternalServerError
@@ -99,27 +135,26 @@ async fn ensure_segments(object_storage_path: &str, state: &State<RocketState>) 
         return Ok(dir);
     }
 
+    if !probe_cached(object_storage_path, state).await?.is_streamable() {
+        return Err(Status::NotFound);
+    }
     let (_, file) = load_media_file(object_storage_path.to_owned(), "video/mp4".to_owned(), state).await?;
     let input = file.path().to_owned();
     let out = dir.clone();
     let tmp = PathBuf::from(format!("{}.tmp-{}", dir.display(), Uuid::new_v4()));
     let tmp_for_task = tmp.clone();
-    let result = rocket::tokio::task::spawn_blocking(move || -> anyhow::Result<bool> {
-        if !hls::probe(&input)?.is_streamable() {
-            return Ok(false);
-        }
+    let result = rocket::tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
         hls::segment_video(&input, &tmp_for_task)?;
         std::fs::rename(&tmp_for_task, &out)?;
-        Ok(true)
+        Ok(())
     })
     .await;
     SEGMENTING.lock().unwrap().remove(object_storage_path);
     match result {
-        Ok(Ok(true)) => {
+        Ok(Ok(())) => {
             evict_superseded_hls_dirs(&dir, object_storage_path);
             Ok(dir)
         }
-        Ok(Ok(false)) => Err(Status::NotFound),
         Ok(Err(e)) => {
             let _ = std::fs::remove_dir_all(&tmp);
             Err(internal_error(e))
@@ -179,17 +214,14 @@ pub async fn hls_master_playlist(
 ) -> Result<PlaylistResponse, Status> {
     let suffix = uri_suffix(&authorization);
     let access = authorize_media_view(id, authorization, auth_header, cookies, state)?;
+    if !hls_enabled(state) {
+        return Err(Status::NotFound);
+    }
     let mut variants = vec![];
     for (name, object_storage_path) in streamable_variants(&access) {
-        let (_, file) = load_media_file(object_storage_path, "video/mp4".to_owned(), state).await?;
-        let input = file.path().to_owned();
-        let info = rocket::tokio::task::spawn_blocking(move || hls::probe(&input))
-            .await
-            .map_err(internal_error)?;
-        match info {
-            Ok(info) if info.is_streamable() => variants.push((name, info)),
-            Ok(_) => {}
-            Err(e) => return Err(internal_error(e)),
+        let info = probe_cached(&object_storage_path, state).await?;
+        if info.is_streamable() {
+            variants.push((name, info));
         }
     }
     if variants.is_empty() {
@@ -252,6 +284,9 @@ async fn authorized_segments(
     auth_header: Option<AuthHeader<'_>>,
 ) -> Result<(MediaAccess, PathBuf), Status> {
     let access = authorize_media_view(id, authorization, auth_header, cookies, state)?;
+    if !hls_enabled(state) {
+        return Err(Status::NotFound);
+    }
     let object_storage_path = streamable_variants(&access)
         .into_iter()
         .find(|(name, _)| *name == variant)

@@ -25,6 +25,7 @@ mod delete_user_tests;
 mod occasion_rpc_tests;
 mod rsvp_attendee_limit_tests;
 mod media_hls_routes_tests;
+mod media_hls_setting_tests;
 mod spa_path_tests;
 mod spa_web_path_tests;
 mod stellarwp_sync_tests;
