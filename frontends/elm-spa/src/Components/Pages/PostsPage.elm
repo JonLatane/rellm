@@ -129,7 +129,7 @@ type alias Model =
     , sort : PostsSort
 
     -- The sort the main server's `post_settings.default_sort` says to show absent a choice (see
-    -- `configuredDefaultSort`), or `SortRecent` on copies with no `sortSelectView`. `pushUrl` leaves
+    -- `configuredDefaultSort`), or `SortRecent` on profile-scoped copies. `pushUrl` leaves
     -- `sort` out of the URL exactly when `sort == serverDefaultSort`, so a link carries `sort=recent`
     -- only where the server's default is something else. Refreshed by `adoptServerDefaultSort`, since
     -- the server's configuration may only arrive after `init` (reconnecting persisted servers).
@@ -617,7 +617,7 @@ init shared author navKey path query embeddedPage availableSyncDestinations prof
 
         initialDefaultSort : PostsSort
         initialDefaultSort =
-            if usesServerDefaultSort author embeddedPage profileFeedSource then
+            if usesServerDefaultSort author profileFeedSource then
                 configuredDefaultSort shared
 
             else
@@ -2055,13 +2055,14 @@ configuredDefaultSort shared =
             SortRecent
 
 
-{-| Only the standalone, unscoped feed -- the one with a `sortSelectView` -- follows the server's
-`default_sort`; the embedded copies (home page, profiles) and author-scoped ones stay on `SortRecent`
+{-| Only an unscoped feed -- the standalone Posts page and the home page's embedded copy, both with a
+`sortSelectView` -- follows the server's `default_sort`; the profile pages' copies (`Components.Pages.UserProfilePage`
+and the Mastodon/Bluesky profiles, which always have an `author` or `profileFeedSource`) stay on `SortRecent`
 unless the URL says otherwise.
 -}
-usesServerDefaultSort : Maybe ( String, User ) -> Bool -> Maybe FeedSource -> Bool
-usesServerDefaultSort author embeddedPage profileFeedSource =
-    author == Nothing && not embeddedPage && profileFeedSource == Nothing
+usesServerDefaultSort : Maybe ( String, User ) -> Maybe FeedSource -> Bool
+usesServerDefaultSort author profileFeedSource =
+    author == Nothing && profileFeedSource == Nothing
 
 
 {-| `fetchNewFeeds`, after `adoptServerDefaultSort` -- a refetch of every source instead when that moved `sort`,
@@ -2095,7 +2096,7 @@ adoptDefaultSortAndFetch shared model =
 -}
 adoptServerDefaultSort : Shared.Model -> Model -> Model
 adoptServerDefaultSort shared model =
-    if usesServerDefaultSort model.author model.embeddedPage model.profileFeedSource then
+    if usesServerDefaultSort model.author model.profileFeedSource then
         let
             defaultSort : PostsSort
             defaultSort =
