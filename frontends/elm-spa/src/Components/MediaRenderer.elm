@@ -24,14 +24,16 @@ Mirrors the Tamagui app's `media_renderer.tsx`, minus its social embed
 providers (Twitter/Instagram/etc. -- those key off `Post.link`, not
 `MediaReference`, and are handled one level up by the Tamagui
 `PostMediaRenderer`; not ported here) and its `ReactPlayer` dependency for
-video -- a plain HTML5 `<video controls>` covers the same MIME types Rellm
-actually serves media as.
+video -- a plain HTML5 `<video>` covers the same MIME types Rellm
+actually serves media as (plus Bluesky's HLS playlists, which `public/index.html`
+hands to hls.js). Playback controls come from `<rellm-video>`, the custom element
+every video is wrapped in (see `public/index.html`): the same bottom bar -- play/pause,
+seek, time, mute, fullscreen -- for Rellm, Bluesky and Mastodon videos, instead of each
+browser's native `controls`.
 
-`onImageClicked` fires (with `media.id`) only for images -- videos keep their
-existing native-`controls` click behavior untouched (see `Shared.MediaViewerPanel`,
-the only caller today: tapping an image opens it fullscreen there; tapping a
-video just plays/pauses/scrubs it in place, same as before that panel
-existed).
+`onImageClicked` fires (with `media.id`) only for images -- tapping a video just
+plays/pauses/scrubs it in place through those controls (see `Shared.MediaViewerPanel`,
+the only caller today: tapping an image opens it fullscreen there).
 
 `viewAutoplay` is the same rendering, just with a video's `autoplay`/`muted`/
 `playsinline` set -- see its own doc.
@@ -65,7 +67,7 @@ rendered.
 
 -}
 
-import Html exposing (Html, a, audio, button, div, img, input, object, text, video)
+import Html exposing (Html, a, audio, button, div, img, input, node, object, text, video)
 import Html.Attributes exposing (alt, attribute, class, controls, href, property, src, style, target, type_)
 import Html.Events exposing (onClick)
 import Json.Encode as Encode
@@ -249,37 +251,42 @@ viewHelper forceAutoplay tierOverride mediaSize sizeConstraint server maybeAccou
                     -- A just-clicked-to-play video always autoplays (muted, same trick
                     -- `viewAutoplay` already relies on -- see its own doc), even under plain
                     -- `view`, so tapping the play button actually starts playback rather than
-                    -- swapping in a paused `<video>` the user has to tap `controls` on again.
+                    -- swapping in a paused `<video>` the user has to press play on again.
                     -- `viewAutoplay`'s own `forceAutoplay` behaves as before regardless.
                     autoplay : Bool
                     autoplay =
                         forceAutoplay || (not preloadVideo && clickedToPlay)
                 in
-                video
-                    (List.filterMap identity
-                        [ Just (class ("media-renderer-video " ++ sizeClass))
-                        , Just (controls True)
-                        , Just
-                            (attribute "preload"
-                                (if autoplay then
-                                    "auto"
+                -- `<rellm-video>` (`public/index.html`) draws the playback controls over the bottom of the
+                -- `<video>` it wraps -- the same for a Rellm, Bluesky or Mastodon video, instead of each
+                -- browser's own `controls`. Its chrome lives in a shadow root, out of Elm's way.
+                node "rellm-video"
+                    [ class "media-renderer-video-frame" ]
+                    [ video
+                        (List.filterMap identity
+                            [ Just (class ("media-renderer-video " ++ sizeClass))
+                            , Just
+                                (attribute "preload"
+                                    (if autoplay then
+                                        "auto"
 
-                                 else
-                                    "metadata"
+                                     else
+                                        "metadata"
+                                    )
                                 )
-                            )
-                        , Just (src (mediaUrl ++ previewTimeFragment media))
-                        , Maybe.map (attribute "poster") (hlsPosterUrl mediaUrl)
-                        , aspectRatioStyle media
-                        ]
-                        ++ (if autoplay then
-                                autoplayAttributes
+                            , Just (src (mediaUrl ++ previewTimeFragment media))
+                            , Maybe.map (attribute "poster") (hlsPosterUrl mediaUrl)
+                            , aspectRatioStyle media
+                            ]
+                            ++ (if autoplay then
+                                    autoplayAttributes
 
-                            else
-                                []
-                           )
-                    )
-                    [ text "Your browser doesn't support embedded video." ]
+                                else
+                                    []
+                               )
+                        )
+                        [ text "Your browser doesn't support embedded video." ]
+                    ]
 
             else
                 div [ class "media-renderer-video-preview" ]

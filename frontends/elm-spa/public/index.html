@@ -297,6 +297,243 @@
     })();
   </script>
   <script>
+    // `<rellm-video>`: the playback controls `Components.MediaRenderer` puts over the bottom of every
+    // video (Rellm, Bluesky and Mastodon alike) instead of the browser's own `controls`. Elm renders
+    // `<rellm-video><video ...></video></rellm-video>`; this wraps it with a control bar drawn in a
+    // shadow root (so Elm's virtual DOM never sees it, and the page's CSS can't break it).
+    (function () {
+      var ICONS = {
+        play: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>',
+        pause: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>',
+        volume: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9v6h4l5 5V4L7 9zM16.5 12A4.5 4.5 0 0 0 14 8v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z"/></svg>',
+        muted: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9v6h4l5 5V4L7 9zM16 9.4 17.4 8 19.5 10.1 21.6 8 23 9.4 20.9 11.5 23 13.6 21.6 15 19.5 12.9 17.4 15 16 13.6 18.1 11.5z"/></svg>',
+        fullscreen: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h5v2H7v3H5zM14 5h5v5h-2V7h-3zM5 14h2v3h3v2H5zM17 14h2v5h-5v-2h3z"/></svg>',
+        exitFullscreen: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5h2v5H5V8h3zM14 5h2v3h3v2h-5zM5 14h5v5H8v-3H5zM14 14h5v2h-3v3h-2z"/></svg>'
+      };
+
+      var STYLE =
+        ':host{display:inline-block;position:relative;vertical-align:top;max-width:100%;line-height:0;background:#000}' +
+        ':host(:fullscreen){display:block;width:100%;height:100%}' +
+        '.bar{position:absolute;left:0;right:0;bottom:0;display:flex;align-items:center;gap:.5rem;padding:1.4rem .6rem .4rem;' +
+        'box-sizing:border-box;color:#fff;font:12px/1 system-ui,-apple-system,sans-serif;font-variant-numeric:tabular-nums;' +
+        'background:linear-gradient(to top,rgba(0,0,0,.75),rgba(0,0,0,0));transition:opacity .2s;user-select:none;-webkit-user-select:none}' +
+        ':host(.idle) .bar{opacity:0;pointer-events:none}' +
+        'button{flex:none;display:flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0;margin:0;border:0;' +
+        'border-radius:50%;background:transparent;color:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent}' +
+        'button:hover{background:rgba(255,255,255,.2)}' +
+        'button:focus-visible,input:focus-visible{outline:2px solid #fff;outline-offset:1px}' +
+        'svg{width:20px;height:20px;fill:currentColor}' +
+        '.time{flex:none;min-width:2.6em;text-align:center;line-height:1}' +
+        'input{flex:1 1 auto;min-width:40px;height:20px;margin:0;background:transparent;cursor:pointer;-webkit-appearance:none;appearance:none}' +
+        'input::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:linear-gradient(to right,#fff var(--progress,0%),rgba(255,255,255,.35) var(--progress,0%))}' +
+        'input::-moz-range-track{height:4px;border-radius:2px;background:rgba(255,255,255,.35)}' +
+        'input::-moz-range-progress{height:4px;border-radius:2px;background:#fff}' +
+        'input::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;margin-top:-4px;border:0;border-radius:50%;background:#fff}' +
+        'input::-moz-range-thumb{width:12px;height:12px;border:0;border-radius:50%;background:#fff}' +
+        // Narrow or short videos (thumbnails, strips) keep just play and the seek bar.
+        ':host(.compact) .time,:host(.compact) .mute,:host(.compact) .fs{display:none}' +
+        ':host(.compact) .bar{gap:.25rem;padding:.9rem .35rem .25rem}' +
+        ':host(.no-duration) .seek,:host(.no-duration) .time{display:none}' +
+        ':host(.no-duration) .bar{justify-content:flex-start}' +
+        ':host(.no-fullscreen) .fs{display:none}';
+
+      function formatTime(seconds) {
+        if (!isFinite(seconds) || seconds < 0) { seconds = 0; }
+        var s = Math.floor(seconds % 60);
+        var m = Math.floor(seconds / 60) % 60;
+        var h = Math.floor(seconds / 3600);
+        var pad = s < 10 ? '0' + s : '' + s;
+        return h > 0 ? h + ':' + (m < 10 ? '0' + m : m) + ':' + pad : m + ':' + pad;
+      }
+
+      var IDLE_MS = 2500;
+
+      function RellmVideo() { return Reflect.construct(HTMLElement, [], RellmVideo); }
+      RellmVideo.prototype = Object.create(HTMLElement.prototype);
+      RellmVideo.prototype.constructor = RellmVideo;
+      Object.setPrototypeOf(RellmVideo, HTMLElement);
+
+      RellmVideo.prototype.connectedCallback = function () {
+        if (this._built) { this._bind(); return; }
+        this._built = true;
+        var root = this.attachShadow({ mode: 'open' });
+        root.innerHTML =
+          '<style>' + STYLE + '</style><slot></slot>' +
+          '<div class="bar">' +
+          '<button type="button" class="play" aria-label="Play"></button>' +
+          '<span class="time cur">0:00</span>' +
+          '<input class="seek" type="range" min="0" max="1000" step="1" value="0" aria-label="Seek">' +
+          '<span class="time dur">0:00</span>' +
+          '<button type="button" class="mute" aria-label="Mute"></button>' +
+          '<button type="button" class="fs" aria-label="Fullscreen"></button>' +
+          '</div>';
+        var self = this;
+        this._els = {
+          bar: root.querySelector('.bar'), play: root.querySelector('.play'), cur: root.querySelector('.cur'),
+          seek: root.querySelector('.seek'), dur: root.querySelector('.dur'), mute: root.querySelector('.mute'),
+          fs: root.querySelector('.fs')
+        };
+        this._dragging = false;
+        this._idleTimer = null;
+        this._onVideoEvent = function () { self._sync(); };
+        this._onFullscreenChange = function () { self._sync(); };
+
+        root.querySelector('slot').addEventListener('slotchange', function () { self._bind(); });
+        this._els.play.addEventListener('click', function () { self._togglePlay(); });
+        this._els.mute.addEventListener('click', function () { if (self._video) { self._video.muted = !self._video.muted; } });
+        this._els.fs.addEventListener('click', function () { self._toggleFullscreen(); });
+        this._els.seek.addEventListener('input', function () {
+          var v = self._video;
+          if (v && isFinite(v.duration)) { v.currentTime = (self._els.seek.value / 1000) * v.duration; }
+          self._sync();
+        });
+        this._els.seek.addEventListener('pointerdown', function () { self._dragging = true; });
+        ['pointerup', 'pointercancel', 'blur'].forEach(function (name) {
+          self._els.seek.addEventListener(name, function () { self._dragging = false; });
+        });
+        // Tapping the picture plays/pauses, except the tap that merely brings back hidden controls.
+        this.addEventListener('click', function (event) {
+          if (event.composedPath()[0] !== self._video) { return; }
+          if (self.classList.contains('idle')) { self._wake(); return; }
+          self._togglePlay();
+        });
+        ['pointermove', 'pointerdown', 'focusin', 'keydown'].forEach(function (name) {
+          self.addEventListener(name, function () { self._wake(); });
+        });
+        this.addEventListener('pointerleave', function () { self._scheduleIdle(); });
+        this._resizeObserver = typeof ResizeObserver === 'function'
+          ? new ResizeObserver(function () { self._layout(); }) : null;
+        this._bind();
+      };
+
+      RellmVideo.prototype.disconnectedCallback = function () {
+        this._unbind();
+        clearTimeout(this._idleTimer);
+        if (this._resizeObserver) { this._resizeObserver.disconnect(); }
+        document.removeEventListener('fullscreenchange', this._onFullscreenChange);
+        // `connectedCallback` runs again if Elm re-inserts this exact node.
+        this._bound = false;
+      };
+
+      var VIDEO_EVENTS = ['play', 'pause', 'ended', 'timeupdate', 'durationchange', 'loadedmetadata', 'volumechange', 'seeking', 'seeked', 'emptied'];
+
+      RellmVideo.prototype._unbind = function () {
+        var v = this._video;
+        if (!v) { return; }
+        for (var i = 0; i < VIDEO_EVENTS.length; i++) { v.removeEventListener(VIDEO_EVENTS[i], this._onVideoEvent); }
+        this._video = null;
+      };
+
+      RellmVideo.prototype._bind = function () {
+        var video = this.querySelector('video');
+        if (video !== this._video) {
+          this._unbind();
+          this._video = video;
+          if (video) {
+            video.controls = false;
+            for (var i = 0; i < VIDEO_EVENTS.length; i++) { video.addEventListener(VIDEO_EVENTS[i], this._onVideoEvent); }
+          }
+        }
+        if (!this._bound) {
+          this._bound = true;
+          document.addEventListener('fullscreenchange', this._onFullscreenChange);
+          if (this._resizeObserver) { this._resizeObserver.observe(this); }
+        }
+        this._layout();
+        this._sync();
+      };
+
+      RellmVideo.prototype._togglePlay = function () {
+        var v = this._video;
+        if (!v) { return; }
+        if (v.paused || v.ended) {
+          var played = v.play();
+          if (played && played.catch) { played.catch(function () {}); }
+        } else {
+          v.pause();
+        }
+      };
+
+      RellmVideo.prototype._fullscreenElement = function () {
+        return document.fullscreenElement || document.webkitFullscreenElement || null;
+      };
+
+      RellmVideo.prototype._toggleFullscreen = function () {
+        var v = this._video;
+        if (this._fullscreenElement() === this) {
+          (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+        } else if (this.requestFullscreen) {
+          this.requestFullscreen().catch(function () {});
+        } else if (this.webkitRequestFullscreen) {
+          this.webkitRequestFullscreen();
+        } else if (v && v.webkitEnterFullscreen) {
+          v.webkitEnterFullscreen(); // iPhone Safari can only fullscreen the <video> itself
+        }
+      };
+
+      // Controls fade out a moment after playback starts and the pointer rests; they stay up while paused.
+      RellmVideo.prototype._wake = function () {
+        this.classList.remove('idle');
+        this._scheduleIdle();
+      };
+
+      RellmVideo.prototype._scheduleIdle = function () {
+        var self = this;
+        clearTimeout(this._idleTimer);
+        this._idleTimer = setTimeout(function () {
+          self._idleTimer = null;
+          var v = self._video;
+          if (v && !v.paused && !v.ended && !self._dragging && !self.matches(':focus-within')) { self.classList.add('idle'); }
+        }, IDLE_MS);
+      };
+
+      // Narrow/short frames (thumbnails, the strip) get only play + seek.
+      RellmVideo.prototype._layout = function () {
+        var rect = this.getBoundingClientRect();
+        this.classList.toggle('compact', rect.width > 0 && (rect.width < 300 || rect.height < 140));
+        var canFullscreen = !!(this.requestFullscreen || this.webkitRequestFullscreen || (this._video && this._video.webkitEnterFullscreen));
+        this.classList.toggle('no-fullscreen', !canFullscreen);
+      };
+
+      RellmVideo.prototype._sync = function () {
+        var v = this._video, e = this._els;
+        if (!v || !e) { return; }
+        var playing = !v.paused && !v.ended;
+        var duration = v.duration;
+        var hasDuration = isFinite(duration) && duration > 0;
+        e.play.innerHTML = playing ? ICONS.pause : ICONS.play;
+        e.play.setAttribute('aria-label', playing ? 'Pause' : 'Play');
+        var silent = v.muted || v.volume === 0;
+        e.mute.innerHTML = silent ? ICONS.muted : ICONS.volume;
+        e.mute.setAttribute('aria-label', silent ? 'Unmute' : 'Mute');
+        var isFullscreen = this._fullscreenElement() === this;
+        e.fs.innerHTML = isFullscreen ? ICONS.exitFullscreen : ICONS.fullscreen;
+        e.fs.setAttribute('aria-label', isFullscreen ? 'Exit fullscreen' : 'Fullscreen');
+        this.classList.toggle('no-duration', !hasDuration);
+        e.cur.textContent = formatTime(v.currentTime);
+        e.dur.textContent = hasDuration ? formatTime(duration) : '0:00';
+        if (!this._dragging) {
+          var fraction = hasDuration ? Math.min(1, v.currentTime / duration) : 0;
+          e.seek.value = Math.round(fraction * 1000);
+        }
+        e.seek.style.setProperty('--progress', (e.seek.value / 10) + '%');
+        e.seek.setAttribute('aria-valuetext', formatTime(v.currentTime) + ' of ' + (hasDuration ? formatTime(duration) : 'unknown length'));
+        // Start the fade-out countdown once, when playback starts (`timeupdate` syncs must not keep restarting it).
+        if (playing) {
+          if (!this._idleTimer && !this.classList.contains('idle')) { this._scheduleIdle(); }
+        } else {
+          clearTimeout(this._idleTimer);
+          this._idleTimer = null;
+          this.classList.remove('idle');
+        }
+      };
+
+      if (window.customElements && !customElements.get('rellm-video')) {
+        customElements.define('rellm-video', RellmVideo);
+      }
+    })();
+  </script>
+  <script>
     document.write('<script src="' + rellmBasePath + '/dist/elm.js"><\/script>');
   </script>
   <script>

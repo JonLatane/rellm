@@ -14,6 +14,19 @@
   object-fit: contain;
 }
 
+/* `<rellm-video>` (see `public/index.html`) wraps every `.media-renderer-video` and draws the
+   playback controls over its bottom edge. Its own shadow styles already make it an inline-block
+   that hugs the video, so the video's sizing classes below keep working unchanged inside it; the
+   rules here only cover places that need it to behave differently. Fullscreen fills the screen
+   with the video letterboxed (the sizing caps don't apply there). */
+rellm-video:fullscreen > .media-renderer-video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+}
+
 /* `Components.MediaRenderer`'s click-to-play poster -- a `.media-renderer-video-preview-image`
    (same sizing classes, and so same footprint, as the `<video>` it stands in for) with a play
    button centered over it. `position: relative`/`inline-block` so the button's own
