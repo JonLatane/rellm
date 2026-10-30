@@ -37,7 +37,7 @@
     "ajv@npm:8.11.0": "8.18.0",
     "ajv@npm:8.6.3": "8.18.0",
     "body-parser@npm:1.20.3": "1.20.9",
-    "decode-uri-component@npm:^0.2.2": "0.5.0",
+    "decode-uri-component@npm:^0.2.2": "0.5.1",
     "glob@npm:10.3.10": "10.5.0",
     "http-cache-semantics@npm:^4.1.1": "4.3.0",
     "image-size@npm:^1.0.2": "2.0.3",
