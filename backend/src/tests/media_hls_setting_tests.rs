@@ -66,3 +66,27 @@ fn saving_other_media_settings_doesnt_turn_it_on() {
         Ok(())
     });
 }
+
+/// What a server that last saved its media settings before `hls_streaming_enabled` existed has stored: the
+/// current settings' JSON with that key missing. It must still load as itself (with the new field off) --
+/// failing to deserialize makes `normalized_media_settings` quietly replace the whole blob with defaults.
+#[test]
+fn media_settings_saved_before_the_field_existed_still_load() {
+    let saved = MediaSettings {
+        visible: false,
+        default_moderation: Moderation::Pending as i32,
+        default_visibility: Visibility::ServerPublic as i32,
+        default_user_media_allocation_bytes: 123_456_789,
+        server_media_allocation_bytes: 42_000_000_000,
+        block_cors_anonymous_media_access: true,
+        licensed_media_visible_globally: true,
+        ..Default::default()
+    };
+    let mut legacy = serde_json::to_value(&saved).unwrap();
+    assert!(legacy.as_object_mut().unwrap().remove("hls_streaming_enabled").is_some());
+
+    let loaded = crate::marshaling::normalized_media_settings(Some(legacy));
+
+    assert_eq!(loaded, saved);
+    assert!(!loaded.hls_streaming_enabled);
+}
