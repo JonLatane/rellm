@@ -330,9 +330,24 @@
         'input::-moz-range-progress{height:4px;border-radius:2px;background:#fff}' +
         'input::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;margin-top:-4px;border:0;border-radius:50%;background:#fff}' +
         'input::-moz-range-thumb{width:12px;height:12px;border:0;border-radius:50%;background:#fff}' +
-        // Narrow or short videos (thumbnails, strips) keep just play and the seek bar.
-        ':host(.compact) .time,:host(.compact) .mute,:host(.compact) .fs{display:none}' +
+        // Narrow or short videos (thumbnails, strips) keep just play and the seek bar along the bottom; fullscreen
+        // and mute move to round buttons in the top corners instead (the `.corner` copies, hidden otherwise).
+        ':host(.compact) .time,:host(.compact) .bar .mute,:host(.compact) .bar .fs{display:none}' +
         ':host(.compact) .bar{gap:.25rem;padding:.9rem .35rem .25rem}' +
+        '.corner{display:none;position:absolute;top:.35rem;width:26px;height:26px;background:rgba(0,0,0,.5);color:#fff;transition:opacity .2s}' +
+        '.corner svg{width:18px;height:18px}' +
+        '.corner.fs{left:.35rem}' +
+        '.corner.mute{right:.35rem}' +
+        ':host(.compact) .corner{display:flex}' +
+        // Very narrow frames (a portrait video at thumbnail height is ~50px wide): smaller corner buttons, and no
+        // room for a seek bar, so just play along the bottom.
+        ':host(.tiny) .corner{top:3px;width:20px;height:20px}' +
+        ':host(.tiny) .corner svg{width:14px;height:14px}' +
+        ':host(.tiny) .corner.fs{left:3px}' +
+        ':host(.tiny) .corner.mute{right:3px}' +
+        ':host(.tiny) .seek{display:none}' +
+        ':host(.tiny) .bar{padding:.9rem .1rem .1rem}' +
+        ':host(.idle) .corner{opacity:0;pointer-events:none}' +
         ':host(.no-duration) .seek,:host(.no-duration) .time{display:none}' +
         ':host(.no-duration) .bar{justify-content:flex-start}' +
         ':host(.no-fullscreen) .fs{display:none}';
@@ -366,12 +381,15 @@
           '<span class="time dur">0:00</span>' +
           '<button type="button" class="mute" aria-label="Mute"></button>' +
           '<button type="button" class="fs" aria-label="Fullscreen"></button>' +
-          '</div>';
+          '</div>' +
+          '<button type="button" class="corner fs" aria-label="Fullscreen"></button>' +
+          '<button type="button" class="corner mute" aria-label="Mute"></button>';
         var self = this;
         this._els = {
           bar: root.querySelector('.bar'), play: root.querySelector('.play'), cur: root.querySelector('.cur'),
-          seek: root.querySelector('.seek'), dur: root.querySelector('.dur'), mute: root.querySelector('.mute'),
-          fs: root.querySelector('.fs')
+          seek: root.querySelector('.seek'), dur: root.querySelector('.dur'),
+          // Each of these is both the bar's button and its top-corner copy (see `.corner`).
+          mute: root.querySelectorAll('.mute'), fs: root.querySelectorAll('.fs')
         };
         this._dragging = false;
         this._idleTimer = null;
@@ -380,8 +398,12 @@
 
         root.querySelector('slot').addEventListener('slotchange', function () { self._bind(); });
         this._els.play.addEventListener('click', function () { self._togglePlay(); });
-        this._els.mute.addEventListener('click', function () { if (self._video) { self._video.muted = !self._video.muted; } });
-        this._els.fs.addEventListener('click', function () { self._toggleFullscreen(); });
+        this._els.mute.forEach(function (button) {
+          button.addEventListener('click', function () { if (self._video) { self._video.muted = !self._video.muted; } });
+        });
+        this._els.fs.forEach(function (button) {
+          button.addEventListener('click', function () { self._toggleFullscreen(); });
+        });
         this._els.seek.addEventListener('input', function () {
           var v = self._video;
           if (v && isFinite(v.duration)) { v.currentTime = (self._els.seek.value / 1000) * v.duration; }
@@ -496,6 +518,7 @@
       RellmVideo.prototype._layout = function () {
         var rect = this.getBoundingClientRect();
         this.classList.toggle('compact', rect.width > 0 && (rect.width < 300 || rect.height < 140));
+        this.classList.toggle('tiny', rect.width > 0 && rect.width < 120);
         var canFullscreen = !!(this.requestFullscreen || this.webkitRequestFullscreen || (this._video && this._video.webkitEnterFullscreen));
         this.classList.toggle('no-fullscreen', !canFullscreen);
       };
@@ -509,11 +532,15 @@
         e.play.innerHTML = playing ? ICONS.pause : ICONS.play;
         e.play.setAttribute('aria-label', playing ? 'Pause' : 'Play');
         var silent = v.muted || v.volume === 0;
-        e.mute.innerHTML = silent ? ICONS.muted : ICONS.volume;
-        e.mute.setAttribute('aria-label', silent ? 'Unmute' : 'Mute');
+        e.mute.forEach(function (button) {
+          button.innerHTML = silent ? ICONS.muted : ICONS.volume;
+          button.setAttribute('aria-label', silent ? 'Unmute' : 'Mute');
+        });
         var isFullscreen = this._fullscreenElement() === this;
-        e.fs.innerHTML = isFullscreen ? ICONS.exitFullscreen : ICONS.fullscreen;
-        e.fs.setAttribute('aria-label', isFullscreen ? 'Exit fullscreen' : 'Fullscreen');
+        e.fs.forEach(function (button) {
+          button.innerHTML = isFullscreen ? ICONS.exitFullscreen : ICONS.fullscreen;
+          button.setAttribute('aria-label', isFullscreen ? 'Exit fullscreen' : 'Fullscreen');
+        });
         this.classList.toggle('no-duration', !hasDuration);
         e.cur.textContent = formatTime(v.currentTime);
         e.dur.textContent = hasDuration ? formatTime(duration) : '0:00';
