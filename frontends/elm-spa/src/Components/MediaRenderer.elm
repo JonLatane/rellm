@@ -403,6 +403,16 @@ viewHelper forceAutoplay tierOverride mediaSize sizeConstraint server maybeAccou
                             autoplay : Bool
                             autoplay =
                                 forceAutoplay || (not preloadVideo && clickedToPlay)
+
+                            -- What `public/rellm-media.js` needs to hand this track to `Shared.AudioPlayerPanel` (which fetches it by id):
+                            -- its id and the server it lives on. Not for a federated attachment (an external `url`, no server of ours).
+                            handoffAttributes : List (Html.Attribute msg)
+                            handoffAttributes =
+                                if media.url == Nothing && server.frontendHost /= "" then
+                                    [ attribute "data-media-id" media.id, attribute "data-host" server.frontendHost ]
+
+                                else
+                                    []
                         in
                         [ -- Only shown inside the media viewer (see `media.css`); `public/index.html` keeps
                           -- it in sync with, and seeks, the `<audio>` below.
@@ -419,6 +429,7 @@ viewHelper forceAutoplay tierOverride mediaSize sizeConstraint server maybeAccou
                                 )
                              , src mediaUrl
                              ]
+                                ++ handoffAttributes
                                 ++ (if autoplay then
                                         [ Html.Attributes.autoplay True ]
 
@@ -427,6 +438,16 @@ viewHelper forceAutoplay tierOverride mediaSize sizeConstraint server maybeAccou
                                    )
                             )
                             [ text "Your browser doesn't support embedded audio." ]
+
+                        -- Shown while it plays (`public/rellm-media.js` marks the card `is-playing`): moves the track to the
+                        -- audio bar, as navigating away from the page does -- just as a video moves to the miniplayer.
+                        , button
+                            [ class "media-renderer-audio-handoff"
+                            , attribute "data-rellm-handoff" ""
+                            , attribute "aria-label" "Play in the audio player"
+                            , attribute "title" "Play in the audio player"
+                            ]
+                            [ text "\u{2193}" ]
                         ]
 
                     else

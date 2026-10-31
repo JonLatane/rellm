@@ -22,6 +22,7 @@ lazy_static! {
         elm_root_dist,
         elm_root_vendor,
         elm_root_markdown_js,
+        elm_root_rellm_media_js,
         elm_root_rellm_video_js,
         elm_root_oauth_callback,
         elm_root_service_worker,
@@ -88,7 +89,7 @@ pub async fn elm_index(
 /// A server can serve the Elm SPA at its *root* too (`main_index.rs`'s
 /// `WebUserInterface::ElmSpa` branch) -- but `index.html` there references its
 /// assets at plain `/style/*`, `/dist/elm.js`, `/vendor/*`, and
-/// `/markdown.js`, `/rellm-video.js` (see `index.html`'s base-path bootstrap script), which would
+/// `/markdown.js`, `/rellm-media.js`, `/rellm-video.js` (see `index.html`'s base-path bootstrap script), which would
 /// otherwise only ever reach `tamagui_file_or_username`'s `/<file..>`
 /// catch-all (there is no other root route for them). These routes claim
 /// those paths first -- literal/mostly-literal routes outrank a bare
@@ -127,6 +128,13 @@ async fn elm_root_vendor(
 #[rocket::get("/markdown.js")]
 async fn elm_root_markdown_js(_gate: ElmSpaAtRoot) -> CacheResponse<Result<NamedFile, Status>> {
     let result = elm_asset(Path::new("markdown.js")).await;
+    CacheResponse::public(result, 60)
+}
+
+/// The players' shared rules (`public/rellm-media.js`), for the same reason as `elm_root_markdown_js`.
+#[rocket::get("/rellm-media.js")]
+async fn elm_root_rellm_media_js(_gate: ElmSpaAtRoot) -> CacheResponse<Result<NamedFile, Status>> {
+    let result = elm_asset(Path::new("rellm-media.js")).await;
     CacheResponse::public(result, 60)
 }
 

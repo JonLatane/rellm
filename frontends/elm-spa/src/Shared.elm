@@ -51,6 +51,7 @@ import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer, withAccessToken)
 import Shared.AudioPlayerPanel as AudioPlayerPanel
+import Shared.VideoPlayerPanel as VideoPlayerPanel
 import Shared.Breadcrumbs as Breadcrumbs
 import Shared.Federation.Actions as FederationActions
 import Shared.BrowserInfo as BrowserInfo
@@ -166,11 +167,15 @@ type Msg
     | MediaGeneratorPanelMsg MediaGeneratorPanel.Msg
     | MediaViewerPanelMsg MediaViewerPanel.Msg
     | AudioPlayerPanelMsg AudioPlayerPanel.Msg
+    | VideoPlayerPanelMsg VideoPlayerPanel.Msg
       -- The URL fragment changed (`Main`'s `ChangedUrl`): a `#track-<id>` one opens that track in the audio
       -- player -- see `AudioPlayerPanel.trackLinkFromFragment`.
     | TrackLinkChanged (Maybe String)
     | -- The server the link named (the main one when it named none), and what it returned.
       GotLinkedTrack String (Result Grpc.Error ( Maybe AccountsPanel.Msg, GetMediaResponse ))
+      -- A post card's audio moving to the audio bar (`Ports.audioHandoffRequested`); `Nothing` is a malformed one.
+    | AudioHandoffRequested (Maybe AudioPlayerPanel.Handoff)
+    | GotHandoffTrack AudioPlayerPanel.Handoff (Result Grpc.Error ( Maybe AccountsPanel.Msg, GetMediaResponse ))
     | MediaRendererMsg MediaRenderer.Msg
     | MyMediaPanelMsg MyMediaPanel.Msg
     | MyMediaPanelOpenForAccount RellmAccount
@@ -462,6 +467,7 @@ type alias Panels =
     , mediaGeneratorPanel : MediaGeneratorPanel.Model
     , mediaViewerPanel : MediaViewerPanel.Model
     , audioPlayerPanel : AudioPlayerPanel.Model
+    , videoPlayerPanel : VideoPlayerPanel.Model
     , myMediaPanel : MyMediaPanel.Model
     , createNewPanel : CreateNewPanel.Model
     , messagingPanel : MessagingPanel.Model
@@ -584,6 +590,7 @@ init basePath req flags =
                         | pendingTrackLink = AudioPlayerPanel.trackLinkFromFragment req.url.fragment
                         , origin = originOf req.url
                     }
+                , videoPlayerPanel = VideoPlayerPanel.init
                 , myMediaPanel = MyMediaPanel.init
                 , createNewPanel = CreateNewPanel.init
                 , messagingPanel = MessagingPanel.init
@@ -681,6 +688,8 @@ subscriptions model =
 
           else
             Sub.none
+        , Sub.map VideoPlayerPanelMsg VideoPlayerPanel.subscriptions
+        , AudioPlayerPanel.handoffSubscription AudioHandoffRequested
         , Sub.map MyMediaPanelMsg (MyMediaPanel.subscriptions model.panels.myMediaPanel)
         , Sub.map MessagingPanelMsg (MessagingPanel.subscriptions model.panels.messagingPanel)
         , Sub.map MarkdownPanelMsg (MarkdownPanel.subscriptions model.panels.markdownPanel)
@@ -754,6 +763,67 @@ originOf url =
     Url.toString { url | path = "", query = Nothing, fragment = Nothing }
 
 
+setVideoPanel : (VideoPlayerPanel.Model -> VideoPlayerPanel.Model) -> Model -> Model
+setVideoPanel change model =
+    let
+        panels : Panels
+        panels =
+            model.panels
+    in
+    { model | panels = { panels | videoPlayerPanel = change panels.videoPlayerPanel } }
+
+
+{-| Keeps the miniplayer showing the queue's current entry: when that's a video (newly, or begun again -- `generation`) it's
+shown, starting where the queue says; when it isn't, the miniplayer is hidden. Its previous/next buttons follow the queue.
+-}
+syncVideoPanel : AudioPlayerPanel.Model -> AudioPlayerPanel.Model -> VideoPlayerPanel.Model -> VideoPlayerPanel.Model
+syncVideoPanel before after panel =
+    let
+        navigation : { hasPrevious : Bool, hasNext : Bool }
+        navigation =
+            { hasPrevious = AudioPlayerPanel.hasPrevious after, hasNext = AudioPlayerPanel.hasNext after }
+    in
+    (case AudioPlayerPanel.currentVideo after of
+        Nothing ->
+            VideoPlayerPanel.update VideoPlayerPanel.Hide panel
+
+        Just current ->
+            if Maybe.map .generation (AudioPlayerPanel.currentVideo before) == Just current.generation then
+                panel
+
+            else
+                VideoPlayerPanel.update
+                    (VideoPlayerPanel.Show
+                        { src = current.video.src
+                        , poster = current.video.poster
+                        , title = Just current.title
+                        , startAt = current.startAt
+                        , resume = current.resume
+                        , aspectRatio = current.video.aspectRatio
+                        , returnUrl = current.video.returnUrl
+                        }
+                    )
+                    panel
+    )
+        |> VideoPlayerPanel.setNavigation navigation
+
+
+{-| `GetMedia` for track `id` on `host` (an enabled account there is used, if there is one), whose result goes to `toMsg`.
+-}
+fetchTrack : Model -> String -> String -> (Result Grpc.Error ( Maybe AccountsPanel.Msg, GetMediaResponse ) -> Msg) -> Cmd Msg
+fetchTrack model host id toMsg =
+    AccountsPanel.performWithOptionalAccountServer
+        model.accounts
+        ( RellmAccounts.enabledRellmAccountForServer model.accounts.accounts host |> Maybe.map .userId, host )
+        (\server maybeToken ->
+            Grpc.new Rellm.getMedia { defaultGetMediaRequest | mediaId = Just id }
+                |> Grpc.setHost (RellmServers.rellmServerUrl server)
+                |> withAccessToken maybeToken
+                |> Grpc.toTask
+        )
+        |> Task.attempt toMsg
+
+
 {-| Starts fetching the track a `#track-<id>` link (`AudioPlayerPanel.Model.pendingTrackLink`) points at, as soon as
 the main server is connected -- tried after every `Shared` message, like the media pages' own `retryFetch`, since
 at startup the server is usually still connecting. The result arrives as `GotLinkedTrack`.
@@ -780,16 +850,7 @@ trackLinkFetch model =
                         panels.audioPlayerPanel
                 in
                 ( { model | panels = { panels | audioPlayerPanel = { player | pendingTrackLink = Nothing } } }
-                , AccountsPanel.performWithOptionalAccountServer
-                    model.accounts
-                    ( RellmAccounts.enabledRellmAccountForServer model.accounts.accounts host |> Maybe.map .userId, host )
-                    (\server maybeToken ->
-                        Grpc.new Rellm.getMedia { defaultGetMediaRequest | mediaId = Just link.id }
-                            |> Grpc.setHost (RellmServers.rellmServerUrl server)
-                            |> withAccessToken maybeToken
-                            |> Grpc.toTask
-                    )
-                    |> Task.attempt (GotLinkedTrack host)
+                , fetchTrack model host link.id (GotLinkedTrack host)
                 )
 
             else
@@ -820,13 +881,14 @@ trackHashSync req before after =
         player =
             panels.audioPlayerPanel
 
+        -- A video entry has no `#track-` link (it isn't on a server of ours), so it never counts.
         wasOn : Bool
         wasOn =
-            old.expanded && old.currentId /= Nothing
+            old.expanded && old.currentId /= Nothing && AudioPlayerPanel.currentVideo old == Nothing
 
         isOn : Bool
         isOn =
-            player.expanded && player.currentId /= Nothing
+            player.expanded && player.currentId /= Nothing && AudioPlayerPanel.currentVideo player == Nothing
 
         replaceFragment : Maybe String -> Cmd Msg
         replaceFragment fragment =
@@ -1407,6 +1469,59 @@ sharedUpdate req msg model =
                 Err _ ->
                     ( model, Cmd.none )
 
+        -- A post card's audio moving to the bar: its server must be one we're connected to (a federated attachment
+        -- isn't ours to open), and the card only knows the track's id, so it's fetched first.
+        AudioHandoffRequested (Just handoff) ->
+            if RellmServers.knownConnectedRellmServer model.accounts.servers handoff.host /= Nothing then
+                ( model, fetchTrack model handoff.host handoff.id (GotHandoffTrack handoff) )
+
+            else
+                ( model, Cmd.none )
+
+        AudioHandoffRequested Nothing ->
+            ( model, Cmd.none )
+
+        GotHandoffTrack handoff result ->
+            case result of
+                Ok ( maybeAccountsPanelMsg, response ) ->
+                    let
+                        ( accountsPanelModel, accountsPanelCmd ) =
+                            case maybeAccountsPanelMsg of
+                                Just accountsPanelMsg ->
+                                    AccountsPanel.update req accountsPanelMsg model.accounts
+
+                                Nothing ->
+                                    ( model.accounts, Cmd.none )
+
+                        withAccounts : Model
+                        withAccounts =
+                            { model | accounts = accountsPanelModel }
+                    in
+                    case List.head response.media of
+                        Just media ->
+                            let
+                                ( opened, openCmd ) =
+                                    sharedUpdate req
+                                        (AudioPlayerPanelMsg
+                                            (AudioPlayerPanel.OpenAt
+                                                [ MediaViewerPanel.mediaToReference media ]
+                                                media.id
+                                                handoff.host
+                                                handoff.positionMs
+                                                handoff.playing
+                                            )
+                                        )
+                                        withAccounts
+                            in
+                            ( opened, Cmd.batch [ Cmd.map AccountsPanelMsg accountsPanelCmd, openCmd ] )
+
+                        Nothing ->
+                            ( withAccounts, Cmd.map AccountsPanelMsg accountsPanelCmd )
+
+                -- Missing, private or unreachable: the card's audio just stays where it is.
+                Err _ ->
+                    ( model, Cmd.none )
+
         AudioPlayerPanelMsg subMsg ->
             let
                 panels : Panels
@@ -1438,9 +1553,82 @@ sharedUpdate req msg model =
                         _ ->
                             ( panels.mediaViewerPanel, Cmd.none )
             in
-            ( { model | panels = { panels | audioPlayerPanel = subModel, mediaViewerPanel = viewerModel } }
+            ( { model
+                | panels =
+                    { panels
+                        | audioPlayerPanel = subModel
+                        , mediaViewerPanel = viewerModel
+                        , videoPlayerPanel = syncVideoPanel panels.audioPlayerPanel subModel panels.videoPlayerPanel
+                    }
+              }
             , Cmd.batch [ Cmd.map AudioPlayerPanelMsg subCmd, viewerCmd ]
             )
+
+        -- The miniplayer is the view of the queue's current video entry (`AudioPlayerPanel`'s queue is the app's one queue,
+        -- for audio and video): what happens in it goes to the queue, and the queue decides what it shows (`syncVideoPanel`).
+        VideoPlayerPanelMsg subMsg ->
+            let
+                toQueue : AudioPlayerPanel.Msg -> ( Model, Cmd Msg )
+                toQueue queueMsg =
+                    sharedUpdate req (AudioPlayerPanelMsg queueMsg) model
+            in
+            case subMsg of
+                VideoPlayerPanel.Requested video ->
+                    toQueue
+                        (AudioPlayerPanel.OpenVideo
+                            { src = video.src, poster = video.poster, aspectRatio = video.aspectRatio, returnUrl = video.returnUrl }
+                            video.title
+                            video.startAt
+                            video.resume
+                        )
+
+                VideoPlayerPanel.Reported report ->
+                    toQueue
+                        (if report.ended then
+                            AudioPlayerPanel.VideoEnded
+
+                         else
+                            AudioPlayerPanel.VideoState report.playing report.positionMs report.durationMs
+                        )
+
+                VideoPlayerPanel.PrevClicked ->
+                    toQueue AudioPlayerPanel.Prev
+
+                VideoPlayerPanel.NextClicked ->
+                    toQueue AudioPlayerPanel.Next
+
+                VideoPlayerPanel.QueueClicked ->
+                    toQueue AudioPlayerPanel.ShowQueue
+
+                VideoPlayerPanel.Close ->
+                    toQueue AudioPlayerPanel.Close
+
+                -- Back to the page the video was on (closing the player on the way).
+                VideoPlayerPanel.ExpandClicked ->
+                    let
+                        ( closed, closeCmd ) =
+                            toQueue AudioPlayerPanel.Close
+                    in
+                    ( closed
+                    , Cmd.batch
+                        [ closeCmd
+                        , case model.panels.videoPlayerPanel.video of
+                            Just video ->
+                                Nav.pushUrl req.key video.returnUrl
+
+                            Nothing ->
+                                Cmd.none
+                        ]
+                    )
+
+                VideoPlayerPanel.Show _ ->
+                    ( setVideoPanel (VideoPlayerPanel.update subMsg) model, Cmd.none )
+
+                VideoPlayerPanel.Hide ->
+                    ( setVideoPanel (VideoPlayerPanel.update subMsg) model, Cmd.none )
+
+                VideoPlayerPanel.NoOp ->
+                    ( model, Cmd.none )
 
         MediaRendererMsg subMsg ->
             ( { model | mediaRenderer = MediaRenderer.update subMsg model.mediaRenderer }, Cmd.none )

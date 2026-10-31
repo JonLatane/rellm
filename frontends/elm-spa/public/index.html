@@ -76,6 +76,7 @@
     document.write('<link rel="stylesheet" href="' + rellmBasePath + '/style/shared/create_new_panel.css">');
     document.write('<link rel="stylesheet" href="' + rellmBasePath + '/style/shared/media_viewer_panel.css">');
     document.write('<link rel="stylesheet" href="' + rellmBasePath + '/style/shared/audio_player_panel.css">');
+    document.write('<link rel="stylesheet" href="' + rellmBasePath + '/style/shared/video_player_panel.css">');
     document.write('<link rel="stylesheet" href="' + rellmBasePath + '/style/shared/messaging_panel.css">');
     // The server's admin-configured Custom CSS (`CustomCSSConfiguration`) -- served by the Rust server,
     // last so it overrides everything above. The Elm dev server has no such route (it answers with
@@ -132,7 +133,9 @@
     // See the `<video>` observer script below.
     document.write('<script src="' + rellmBasePath + '/vendor/hls.min.js"><\/script>');
 
+    // Rules every player shares (one thing plays at a time, handoff to the audio bar/miniplayer on navigation), then
     // `<rellm-video>`, the player controls `Components.MediaRenderer` wraps every video in.
+    document.write('<script src="' + rellmBasePath + '/rellm-media.js"><\/script>');
     document.write('<script src="' + rellmBasePath + '/rellm-video.js"><\/script>');
 
     // Same "auto" resolution `Shared.effectiveDarkMode` does in Elm -- kept in
@@ -250,6 +253,8 @@
       var instances = new WeakMap();
       // `<rellm-video>`'s quality menu asks for a video's hls.js instance (or `null` if it isn't one).
       window.rellmHlsFor = function (video) { var entry = instances.get(video); return entry ? entry.hls : null; };
+      // The playlist URL a video was given (its `src` attribute is a `blob:` once hls.js has taken it over), for the miniplayer.
+      window.rellmOriginalSrc = function (video) { var entry = instances.get(video); return entry ? entry.src : video.getAttribute('src'); };
       if (!window.Hls || !Hls.isSupported()) { return; }
       var HLS_RE = /\.m3u8(\?|#|$)/;
 
@@ -280,6 +285,9 @@
           else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) { hls.recoverMediaError(); }
           else { video.dispatchEvent(new Event('rellm-hls-error')); detach(video); }
         });
+        // The media isn't really attached (its `src` set, the MediaSource open) until hls.js says so: a `play()` before then is
+        // discarded by the reload. `<rellm-video>` waits for this to resume a video handed over from another page.
+        hls.on(Hls.Events.MEDIA_ATTACHED, function () { video.dispatchEvent(new Event('rellm-hls-attached')); });
         hls.loadSource(src);
         hls.attachMedia(video);
         if (video.autoplay) {
@@ -506,6 +514,23 @@
       if (starredPostsChannel) {
         starredPostsChannel.postMessage(starredPosts);
       }
+    });
+
+    // `<rellm-video>`'s miniplayer button, or a playing video's page being navigated away from (see
+    // `public/rellm-video.js`): `Shared.VideoPlayerPanel` takes the video over in its floating player.
+    window.addEventListener('rellm-miniplayer', function (event) {
+      app.ports.miniVideoRequested.send(event.detail);
+    });
+
+    // The miniplayer's video reporting its position/state/end, which the queue (`Shared.AudioPlayerPanel`) follows.
+    window.addEventListener('rellm-miniplayer-state', function (event) {
+      app.ports.miniVideoState.send(event.detail);
+    });
+
+    // A post card's audio moving to the audio bar (see `public/rellm-media.js`): `Shared` fetches the track and opens it
+    // in `Shared.AudioPlayerPanel` at the same moment.
+    window.addEventListener('rellm-audio-handoff', function (event) {
+      app.ports.audioHandoffRequested.send(event.detail);
     });
 
     var currentThemePreference = storedThemePreference;
@@ -1269,6 +1294,9 @@
         setTimeout(function () { if (window.rellmCheckActiveLoaded) { window.rellmCheckActiveLoaded(); } }, 150);
         return;
       }
+      // While the queue's current entry is a video, the miniplayer's `<video>` is what the bar's transport controls drive.
+      var miniplayerVideo = document.querySelector('.video-player-panel video');
+      if (miniplayerVideo) { el = miniplayerVideo; }
       if (!el) { return; }
       if (payload.action === 'toggle') {
         if (el.paused) { el.play().catch(function () {}); } else { el.pause(); }

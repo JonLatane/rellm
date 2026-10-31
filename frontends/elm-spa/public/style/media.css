@@ -90,6 +90,41 @@ rellm-video.enlarged > .media-renderer-video {
   vertical-align: top;
 }
 
+/* While a post card's audio plays, a small button in its corner moves it to the audio bar (`public/rellm-media.js` puts
+   `is-playing` on the card). It's only for cards: the media viewer has its own player. */
+.media-renderer-audio-handoff {
+  display: none;
+  position: absolute;
+  top: 0.35rem;
+  right: 0.35rem;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font: inherit;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.media-renderer-audio-preview.is-playing .media-renderer-audio-handoff {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.media-renderer-audio-handoff:hover,
+.media-renderer-audio-handoff:focus-visible {
+  background: rgba(0, 0, 0, 0.8);
+}
+
+.media-viewer-panel .media-renderer-audio-handoff {
+  display: none !important;
+}
+
 .media-renderer-audio-preview-image {
   display: block;
   object-fit: fill;

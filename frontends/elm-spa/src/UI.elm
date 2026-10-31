@@ -32,6 +32,7 @@ import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccoun
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (Branding, RellmServer)
 import Shared.Federation.Common exposing (publicBlueskyAppViewHost)
 import Shared.AudioPlayerPanel as AudioPlayerPanel
+import Shared.VideoPlayerPanel as VideoPlayerPanel
 import Shared.Breadcrumbs as Breadcrumbs
 import Shared.Countabilibar as Countabilibar
 import Shared.BrowserInfo as BrowserInfo
@@ -87,6 +88,7 @@ layout shared currentRoute toMsg children =
     , Html.map toMsg (myMediaPanel shared)
     , Html.map toMsg (mediaViewerPanel shared)
     , Html.map toMsg (audioPlayerPanel shared)
+    , Html.map toMsg (videoPlayerPanel shared)
     , Html.map toMsg (federatedSignInNoticeView shared)
     , div [ classes [ "container", hostnameToCSSClass shared.accounts.mainFrontendHost ] ]
         [ main_ []
@@ -4862,6 +4864,11 @@ playing audio from `Components.MediaFeed`), so mounted directly in `layout` like
 below `.navbar` (see `audio_player_panel.css`) so even expanded it never covers the nav, and below the
 fullscreen viewer.
 -}
+videoPlayerPanel : Shared.Model -> Html Shared.Msg
+videoPlayerPanel shared =
+    Html.map Shared.VideoPlayerPanelMsg (VideoPlayerPanel.view shared.panels.videoPlayerPanel)
+
+
 audioPlayerPanel : Shared.Model -> Html Shared.Msg
 audioPlayerPanel shared =
     Html.map Shared.AudioPlayerPanelMsg (AudioPlayerPanel.view (mediaViewerOpen shared) shared.accounts shared.panels.audioPlayerPanel)

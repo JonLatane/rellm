@@ -18,10 +18,16 @@
 //   * fullscreen, picture-in-picture, and enlarge/restore: a thumbnail (`data-media-size` small or
 //     extra-small) can grow to the "natural" size `Components.MediaRenderer.Natural` gives a video, and
 //     a restore button at the top-left puts it back
-//   * keyboard shortcuts while it has focus (space/k, arrows, j/l, m, f, 0-9, </>, ...), double-click or
+//   * keyboard shortcuts while it has focus (space/k, arrows, j/l, m, f, i, p, 0-9, </>, ...), double-click or
 //     double-tap to seek +/-10s (sides) or go fullscreen (middle), a buffering spinner, a big play/replay
 //     button, an error message, and controls that fade out while playing
 //   * volume, mute and speed are remembered (localStorage, where it's available)
+//   * a miniplayer button (and the `i` key): the video carries on in `Shared.VideoPlayerPanel`'s floating
+//     player while you browse, and so does one that's playing when you navigate away from its page. The
+//     player raises a `rellm-miniplayer` window event (`index.html` hands it to Elm over a port) with where
+//     the video was; the panel's own `<rellm-video>` gets `data-miniplayer-panel`, `data-start-at` and
+//     `data-resume` to pick it up
+//   * only one thing plays at a time (see `rellm-media.js`, which also owns the navigation tracking used here)
 //
 // Narrow or short frames (thumbnails) get a trimmed layout: `compact` keeps play and seek along the
 // bottom with fullscreen/enlarge top-left, volume top-right; `tiny` (< 120px wide) also drops the seek bar.
@@ -42,6 +48,7 @@
     enlarge: svg("M14 4h6v6h-2V7.4l-4.3 4.3-1.4-1.4L16.6 6H14zM10 20H4v-6h2v2.6l4.3-4.3 1.4 1.4L7.4 18H10z"),
     restore: svg("M20 5.4 15.4 10H18v2h-6V6h2v2.6L18.6 4zM4 18.6 8.6 14H6v-2h6v6h-2v-2.6L5.4 20z"),
     pip: svg("M19 7H5v10h5v2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4h-2zM12 13h9v6h-9z"),
+    mini: svg("M19 11h-8v6h8zm4 8V4.98C23 3.88 22.1 3 21 3H3c-1.1 0-2 .88-2 1.98V19c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2zm-2 .02H3V4.97h18z"),
     gear: svg("M19.4 13a7.5 7.5 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.4 7.4 0 0 0-1.7-1L15 3.3h-4l-.4 2.6a7.4 7.4 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.5 7.5 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1a7.4 7.4 0 0 0 1.7 1l.4 2.6h4l.4-2.6a7.4 7.4 0 0 0 1.7-1l2.5 1 2-3.5zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z")
   };
 
@@ -123,7 +130,7 @@
     // Zero-height anchor on the bar's top edge, so the menu opens upward from there.
     ".menubox{position:absolute;top:0;right:0;left:0;height:0}",
     // Responsive trims, set by `_layout`.
-    ":host(.compact) .time,:host(.compact) .bar .vol,:host(.compact) .bar .fs,:host(.compact) .pip{display:none}",
+    ":host(.compact) .time,:host(.compact) .bar .vol,:host(.compact) .bar .fs,:host(.compact) .pip,:host(.compact) .mini{display:none}",
     ":host(.compact) .bar{gap:.25rem;padding:.9rem .35rem .25rem}",
     ":host(.compact) .tl .fs-corner,:host(.compact) .tr{display:flex}",
     ":host(.compact) .big{width:44px;height:44px;margin:-22px 0 0 -22px}",
@@ -141,6 +148,8 @@
     ":host(.no-duration) .bar{justify-content:flex-start}",
     ":host(.no-fullscreen) .fs{display:none!important}",
     ":host(.no-pip) .pip{display:none!important}",
+    // The miniplayer panel's own player can't be sent to a miniplayer (or enlarged).
+    ":host(.in-panel) .mini,:host(.in-panel) .enlarge{display:none!important}",
     // Enlarge: only thumbnails (`.enlargeable`) not already enlarged; restore only when enlarged.
     ":host(:not(.enlargeable)) .enlarge,:host(.enlarged) .enlarge{display:none!important}",
     ".restore{display:none}",
@@ -175,6 +184,7 @@
     "</div>" +
     '<span class="menubox"><span class="menu" role="menu" hidden></span></span>' +
     '<button type="button" class="speed" aria-label="Playback speed and settings" aria-haspopup="menu" aria-expanded="false">1\u00d7</button>' +
+    '<button type="button" class="mini" aria-label="Miniplayer (i)"></button>' +
     '<button type="button" class="pip" aria-label="Picture in picture"></button>' +
     '<button type="button" class="fs" aria-label="Fullscreen"></button>' +
     "</div>";
@@ -217,6 +227,17 @@
   // (e.g. when its tab is hidden, where supported). The app's audio panel may set its own handlers; whoever plays last wins.
   var sessionOwner = null;
 
+  // What the queue calls a video handed over from a page: the page's title, without the app's own " | host" suffix.
+  function pageTitle() {
+    var title = (document.title || "").trim();
+    var suffix = " | " + window.location.hostname;
+    if (title.length > suffix.length && title.slice(-suffix.length) === suffix) { title = title.slice(0, -suffix.length); }
+    return title || null;
+  }
+
+  // Navigation tracking and "one thing plays at a time" are `public/rellm-media.js`'s (shared with the audio players).
+  var media = window.rellmMedia || { lastNavigation: function () { return { time: 0, from: window.location.href }; } };
+
   var VIDEO_EVENTS = [
     "play", "pause", "ended", "timeupdate", "durationchange", "loadedmetadata", "volumechange", "ratechange",
     "seeking", "seeked", "emptied", "progress", "waiting", "stalled", "playing", "canplay", "error", "rellm-hls-error"
@@ -229,6 +250,7 @@
     }
 
     disconnectedCallback() {
+      this._miniplayerIfNavigatedAway();
       this._unbind();
       clearTimeout(this._idleTimer);
       clearTimeout(this._volTimer);
@@ -255,7 +277,7 @@
       var all = function (selector) { return Array.prototype.slice.call(root.querySelectorAll(selector)); };
       this._els = {
         bar: q(".bar"), play: q(".play"), big: q(".big"), cur: q(".cur"), dur: q(".dur"), seek: q(".seek"), tip: q(".tip"),
-        seekwrap: q(".seekwrap"), speed: q(".speed"), menu: q(".menu"), pip: q(".pip"), toast: q(".toast"),
+        seekwrap: q(".seekwrap"), speed: q(".speed"), menu: q(".menu"), pip: q(".pip"), mini: q(".mini"), toast: q(".toast"),
         message: q(".message"), spinner: q(".spinner"), restore: q(".restore"), enlarge: q(".enlarge"),
         mute: all(".mute"), fs: all(".fs"), vols: all(".vol"), volSliders: all(".vol-slider")
       };
@@ -270,6 +292,7 @@
       this._menuOpen = false;
       this._revealTap = false;
       this._lastClick = null;
+      this._userPlay = false;
       this._onVideoEvent = function (event) { self._onVideo(event); };
       this._onDocumentChange = function () { self._sync(); };
       this._onOutsidePointer = function (event) { self._closePopupsFor(event); };
@@ -284,6 +307,7 @@
       });
       e.fs.forEach(function (button) { button.addEventListener("click", function () { self._toggleFullscreen(); }); });
       e.pip.addEventListener("click", function () { self._togglePip(); });
+      e.mini.addEventListener("click", function () { self._miniplayer(); });
       e.enlarge.addEventListener("click", function () { self._setEnlarged(true); });
       e.restore.addEventListener("click", function () { self._setEnlarged(false); });
       e.speed.addEventListener("click", function () { self._toggleMenu(); });
@@ -341,6 +365,7 @@
         if (video) {
           video.controls = false;
           this._applyPrefs(video);
+          this._applyHandoff(video);
           for (var i = 0; i < VIDEO_EVENTS.length; i++) { video.addEventListener(VIDEO_EVENTS[i], this._onVideoEvent); }
         }
       }
@@ -354,6 +379,7 @@
       var canPip = !!(document.pictureInPictureEnabled && video && video.requestPictureInPicture && !video.disablePictureInPicture);
       this.classList.toggle("no-pip", !canPip);
       this.classList.toggle("enlargeable", /^(small|extra-small)$/.test(this.getAttribute("data-media-size") || ""));
+      this.classList.toggle("in-panel", this.hasAttribute("data-miniplayer-panel"));
       e.tip.hidden = true;
       this._layout();
       this._sync();
@@ -364,6 +390,83 @@
       if (!v) { return; }
       for (var i = 0; i < VIDEO_EVENTS.length; i++) { v.removeEventListener(VIDEO_EVENTS[i], this._onVideoEvent); }
       this._video = null;
+    }
+
+    // A video the miniplayer panel hands over from a page starts where that one was (`data-start-at`, seconds) and,
+    // if it was playing, carries on (`data-resume`). Setting the position before metadata is known is remembered
+    // by the browser; it's set again on `loadedmetadata` for streams (hls.js) that can ignore the early one.
+    _applyHandoff(video) {
+      var startAt = parseFloat(this.getAttribute("data-start-at"));
+      if (isFinite(startAt) && startAt > 0) {
+        try { video.currentTime = startAt; } catch (e) { /* set again below */ }
+        video.addEventListener("loadedmetadata", function seek() {
+          video.removeEventListener("loadedmetadata", seek);
+          if (Math.abs(video.currentTime - startAt) > 1) { video.currentTime = startAt; }
+        });
+      }
+      if (this.hasAttribute("data-resume")) {
+        this._userPlay = true;
+        var resume = function () {
+          var played = video.play();
+          if (played && played.catch) { played.catch(function () { /* autoplay blocked: waits for a click */ }); }
+        };
+        // A stream (HLS) is handed to hls.js a moment after it's inserted, which reloads the element and would drop a
+        // `play()` made before then: wait for `index.html`'s attach (or, if that never comes, a few seconds) first.
+        var isStream = /\.m3u8(\?|#|$)/.test(video.getAttribute("src") || "");
+        if (!isStream || (typeof window.rellmHlsFor === "function" && window.rellmHlsFor(video))) {
+          resume();
+        } else {
+          var done = false;
+          var once = function () { if (!done) { done = true; video.removeEventListener("rellm-hls-attached", once); resume(); } };
+          video.addEventListener("rellm-hls-attached", once);
+          setTimeout(once, 4000);
+        }
+      }
+    }
+
+    // ---- miniplayer ------------------------------------------------------------------------------------
+
+    // Asks the app to carry this video on in the floating miniplayer (`Shared.VideoPlayerPanel`), where `from` is the
+    // page it was on. `index.html` forwards the event to Elm over a port.
+    _requestMiniplayer(from) {
+      var v = this._video;
+      if (!v) { return false; }
+      var original = typeof window.rellmOriginalSrc === "function" ? window.rellmOriginalSrc(v) : v.getAttribute("src");
+      var src = (original || "").split("#")[0];
+      if (!src) { return false; }
+      window.dispatchEvent(new CustomEvent("rellm-miniplayer", {
+        detail: {
+          src: src,
+          poster: v.getAttribute("poster") || null,
+          time: v.currentTime || 0,
+          playing: !v.paused && !v.ended,
+          aspectRatio: v.videoWidth > 0 && v.videoHeight > 0 ? v.videoWidth / v.videoHeight : 16 / 9,
+          title: pageTitle(),
+          returnUrl: from
+        }
+      }));
+      return true;
+    }
+
+    // The miniplayer button / `i`: the video moves to the floating player and this one stops.
+    _miniplayer() {
+      if (this.hasAttribute("data-miniplayer-panel")) { return; }
+      if (this._requestMiniplayer(window.location.href)) {
+        var v = this._video;
+        if (v) { v.pause(); }
+        this._toast("Miniplayer");
+      }
+    }
+
+    // A video the viewer started that is still playing when its page is replaced by a navigation (Elm removes the
+    // element, within a moment of the history change) goes to the miniplayer instead of stopping. Silent autoplay
+    // previews never count: only a video someone chose to play.
+    _miniplayerIfNavigatedAway() {
+      var v = this._video;
+      if (!v || this.hasAttribute("data-miniplayer-panel") || !this._userPlay) { return; }
+      var navigation = media.lastNavigation();
+      if (v.paused || v.ended || Date.now() - navigation.time > 1500) { return; }
+      this._requestMiniplayer(navigation.from);
     }
 
     // Remembered volume, mute and speed. A muted-autoplay video (a feed preview) is left muted, and a saved
@@ -384,6 +487,7 @@
       var v = this._video;
       var e = this._els;
       if (!v) { return; }
+      this._reportToQueue(event.type);
       switch (event.type) {
         case "play":
           this._claimMediaSession();
@@ -451,12 +555,29 @@
       try { session.metadata = null; } catch (e) { /* not supported here */ }
     }
 
+    // The miniplayer's video tells the queue (`Shared.AudioPlayerPanel`, via `index.html`'s port) where it is, whether it's
+    // playing, and when it ends -- the bar shows the position, and the end means "next".
+    _reportToQueue(type) {
+      var v = this._video;
+      if (!v || !this.hasAttribute("data-miniplayer-panel")) { return; }
+      if (["play", "pause", "timeupdate", "durationchange", "loadedmetadata", "seeked", "ended"].indexOf(type) < 0) { return; }
+      window.dispatchEvent(new CustomEvent("rellm-miniplayer-state", {
+        detail: {
+          playing: !v.paused && !v.ended,
+          positionMs: Math.round((v.currentTime || 0) * 1000),
+          durationMs: isFinite(v.duration) ? Math.round(v.duration * 1000) : 0,
+          ended: type === "ended"
+        }
+      }));
+    }
+
     // ---- actions ------------------------------------------------------------------------------------
 
     _togglePlay() {
       var v = this._video;
       if (!v) { return; }
       if (v.paused || v.ended) {
+        this._userPlay = true;
         var played = v.play();
         if (played && played.catch) { played.catch(function () {}); }
       } else {
@@ -598,7 +719,8 @@
         case "ArrowDown": if (onInput) { handled = false; } else { this._setVolume((v.muted ? 0 : v.volume) - 0.05); } break;
         case "m": case "M": this._toggleMute(); this._toast(v.muted ? "Muted" : "Volume " + Math.round(v.volume * 100) + "%"); break;
         case "f": case "F": this._toggleFullscreen(); break;
-        case "i": case "I": if (!this.classList.contains("no-pip")) { this._togglePip(); } else { handled = false; } break;
+        case "i": case "I": if (!this.classList.contains("in-panel")) { this._miniplayer(); } else { handled = false; } break;
+        case "p": case "P": if (!this.classList.contains("no-pip")) { this._togglePip(); } else { handled = false; } break;
         case "<": this._stepRate(-1); break;
         case ">": this._stepRate(1); break;
         case "Home": if (onInput) { handled = false; } else { this._seekToFraction(0); } break;
@@ -796,6 +918,7 @@
         button.setAttribute("aria-label", isFullscreen ? "Exit fullscreen" : "Fullscreen");
       });
       e.pip.innerHTML = ICONS.pip;
+      e.mini.innerHTML = ICONS.mini;
       e.enlarge.innerHTML = ICONS.enlarge;
       e.restore.innerHTML = ICONS.restore;
       e.speed.textContent = formatRate(v.playbackRate || 1);

@@ -578,6 +578,16 @@ Nothing extra is stored: the first request for a rendition runs one `ffmpeg -c c
 
 For Cloudflare (or any CDN), the endpoints sit under `/media/` on purpose: a cache rule that already covers `/media/*` covers them with nothing new to configure (note Cloudflare doesn't cache extension-less or `.m3u8`/`.ts` URLs by default, so such a rule has to be a "Cache Everything"-style one, as `/media/{id}` already needs). Segments are small, whole `200` responses, which caches handle far better than the `Range` requests progressive MP4 needs; `Cache-Control` is the same `public, max-age=43200` as other media (`private` for `LICENSED` media, and for a playlist carrying an `?authorization=` token). (As for any video behind Cloudflare, check its current terms for serving video on your plan.)
 
+#### Players and the shared queue
+
+The Elm frontend plays media with three cooperating pieces, which behave as one:
+
+- **Inline players.** Video on a post card (or anywhere else) plays in `<rellm-video>`, a full player (seek with buffered range and hover time, volume slider, speed, loop, quality for HLS, fullscreen, picture-in-picture, enlarge/restore for thumbnails, keyboard shortcuts, double-tap seek). Audio on a post card plays inline too.
+- **The audio bar** (`Shared.AudioPlayerPanel`), docked at the bottom, and **the miniplayer** (`Shared.VideoPlayerPanel`), a floating video player. They are two views of **one queue**: an entry is a track (played by the bar) or a video (played by the miniplayer). Starting anything - a track on the Audio page, a post card's audio or video - makes it the current entry and puts the existing queue after it (from a list, the rest of that list follows first). Next, Previous and the end of an entry move through the queue, and playback hands over between the bar and the miniplayer as the kinds change. The miniplayer has the same previous/next buttons and opens the queue pane.
+- **Handoff.** A video or post-card audio that is playing when you navigate away from its page carries on in the miniplayer / bar at the same moment, as does pressing the miniplayer button (`i`) or a card's "play in the audio player" button. Only one thing plays at a time: starting something audible pauses the rest (silent autoplay previews are left alone). The cross-player rules live in `frontends/elm-spa/public/rellm-media.js`.
+
+The browser's own Picture-in-Picture (the player's PiP button) floats a video above other apps and tabs; the miniplayer keeps it on screen while you browse inside the app.
+
 ### AI Providers
 
 Rellm's AI model, put concisely, is designed to let users *share* AI models providers' API keys, *without* ever actually showing/serializing keys after they're stored, and *with* token limits set by the "owner" of any API key upon their "grant" to anyone else. This means, as a server admin, you can choose to pay for your users to have AI to whatever level you want to, well, literally grant them. As a user, you can also bring your own API keys, and they're as safe as the person with *physical* access to the machine your community is running on (and, of course, you can limit/revoke keys on the provider end).
