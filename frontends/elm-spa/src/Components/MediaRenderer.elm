@@ -261,9 +261,19 @@ viewHelper forceAutoplay tierOverride mediaSize sizeConstraint server maybeAccou
                 -- `<video>` it wraps -- the same for a Rellm, Bluesky or Mastodon video, instead of each
                 -- browser's own `controls`. Its chrome lives in a shadow root, out of Elm's way.
                 node "rellm-video"
-                    [ class "media-renderer-video-frame"
-                    , attribute "data-media-size" (mediaSizeName mediaSize)
-                    ]
+                    (List.filterMap identity
+                        [ Just (class "media-renderer-video-frame")
+                        , Just (attribute "data-media-size" (mediaSizeName mediaSize))
+
+                        -- A video someone pressed play on (it then autoplays, muted) is theirs to keep watching -- it follows
+                        -- them to the miniplayer when they leave the page -- unlike a silent autoplay preview.
+                        , if clickedToPlay then
+                            Just (attribute "data-user-started" "")
+
+                          else
+                            Nothing
+                        ]
+                    )
                     [ video
                         (List.filterMap identity
                             [ Just (class ("media-renderer-video " ++ sizeClass))

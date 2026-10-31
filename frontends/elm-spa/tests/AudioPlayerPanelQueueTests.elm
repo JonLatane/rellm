@@ -182,6 +182,31 @@ suite =
                         |> (\m -> ( m.expanded, m.queueOpen ))
                         |> Expect.equal ( True, True )
             ]
+        , describe "a handoff waiting on a fetch"
+            [ test "its pending seek doesn't carry over to a different track that begins first" <|
+                \_ ->
+                    withTracks
+                        |> play (AudioPlayerPanel.OpenAt [ track "h" ] "h" "rellm.org" 61500 True)
+                        |> Expect.all
+                            [ .pendingSeekMs >> Expect.equal (Just 61500)
+                            , play (AudioPlayerPanel.Open [ track "x" ] "x" "rellm.org") >> .pendingSeekMs >> Expect.equal Nothing
+                            ]
+            , test "something else becoming current, or the player closing, changes the selection generation" <|
+                \_ ->
+                    let
+                        generation : AudioPlayerPanel.Model -> Int
+                        generation =
+                            .selectionGeneration
+                    in
+                    Expect.all
+                        [ \m -> play (AudioPlayerPanel.Open [ track "x" ] "x" "rellm.org") m |> generation |> Expect.notEqual (generation m)
+                        , \m -> play (AudioPlayerPanel.OpenVideo (clip "https://v/1") Nothing 0 True) m |> generation |> Expect.notEqual (generation m)
+                        , \m -> play AudioPlayerPanel.Close m |> generation |> Expect.notEqual (generation m)
+                        , \m -> play AudioPlayerPanel.TogglePlay m |> generation |> Expect.equal (generation m)
+                        , \m -> play (AudioPlayerPanel.VideoState True 1 2) m |> generation |> Expect.equal (generation m)
+                        ]
+                        withTracks
+            ]
         , describe "handoffDecoder (a post card's audio moving to the bar)"
             [ test "reads the track, its server and where it had got to" <|
                 \_ ->

@@ -97,6 +97,33 @@ suite =
                         , \_ -> sizeOf MediaRenderer.ExtraSmall |> Query.has [ Selector.attribute (Html.Attributes.attribute "data-media-size" "extra-small") ]
                         ]
                         ()
+            , test "a video someone pressed play on is marked as theirs (it autoplays muted), a preview isn't" <|
+                \_ ->
+                    let
+                        viewWith : MediaRenderer.Model -> Query.Single ()
+                        viewWith playState =
+                            Html.div []
+                                [ MediaRenderer.view MediaRenderer.Small
+                                    MediaRenderer.ToWidthAndHeight
+                                    (RellmServerFactory.connected "rellm.org")
+                                    Nothing
+                                    False
+                                    playState
+                                    (\_ -> ())
+                                    (\_ -> ())
+                                    (media "video/mp4" "https://rellm.org/media/m1")
+                                ]
+                                |> Query.fromHtml
+                    in
+                    -- Without a preview thumbnail the video renders live either way, so what tells them apart is the click.
+                    Expect.all
+                        [ \_ -> viewWith MediaRenderer.init |> Query.find [ Selector.tag "rellm-video" ] |> Query.hasNot [ Selector.attribute (Html.Attributes.attribute "data-user-started" "") ]
+                        , \_ ->
+                            viewWith (MediaRenderer.update (MediaRenderer.PlayClicked "m1") MediaRenderer.init)
+                                |> Query.find [ Selector.tag "rellm-video" ]
+                                |> Query.has [ Selector.attribute (Html.Attributes.attribute "data-user-started" "") ]
+                        ]
+                        ()
             , test "an ordinary video has no poster of its own" <|
                 \_ ->
                     render (media "video/mp4" "https://rellm.org/media/m1")

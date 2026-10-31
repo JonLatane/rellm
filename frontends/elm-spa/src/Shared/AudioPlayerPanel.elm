@@ -149,6 +149,10 @@ type alias Model =
     -- A freshly loaded track should start playing once its active slot can (`CanPlay`).
     , autoStart : Bool
 
+    -- Changes whenever something else becomes the current entry, or the player is closed -- so a reply that was
+    -- waiting on a fetch (a post card's audio being handed over) can tell the user has since moved on.
+    , selectionGeneration : Int
+
     -- How the miniplayer is to start the current video entry (see `CurrentVideo`).
     , videoStartAt : Float
     , videoResume : Bool
@@ -243,7 +247,7 @@ type Msg
 
 init : Model
 init =
-    { queue = [], currentId = Nothing, targetHost = "", expanded = False, playing = False, positionMs = 0, durationMs = 0, quality = High, activeSlot = SlotA, slotA = Nothing, slotB = Nothing, autoStart = False, videoStartAt = 0, videoResume = True, videoGeneration = 0, pendingSeekMs = Nothing, pendingUpgrade = Nothing, activeLoaded = False, pendingTrackLink = Nothing, origin = "", sharePopoverOpen = False, linkCopied = False, copyGeneration = 0, savedFragment = Nothing, queueOpen = False, moveAnimations = Dict.empty, drag = UI.Drag.init }
+    { queue = [], currentId = Nothing, targetHost = "", expanded = False, playing = False, positionMs = 0, durationMs = 0, quality = High, activeSlot = SlotA, slotA = Nothing, slotB = Nothing, autoStart = False, selectionGeneration = 0, videoStartAt = 0, videoResume = True, videoGeneration = 0, pendingSeekMs = Nothing, pendingUpgrade = Nothing, activeLoaded = False, pendingTrackLink = Nothing, origin = "", sharePopoverOpen = False, linkCopied = False, copyGeneration = 0, savedFragment = Nothing, queueOpen = False, moveAnimations = Dict.empty, drag = UI.Drag.init }
 
 
 {-| Whether the panel is actually shown expanded: the user's choice (`Model.expanded`), unless the fullscreen
@@ -343,6 +347,7 @@ beginVideo item startAtSeconds resume model =
         , activeLoaded = False
         , slotA = Nothing
         , slotB = Nothing
+        , selectionGeneration = model.selectionGeneration + 1
         , videoStartAt = startAtSeconds
         , videoResume = resume
         , videoGeneration = model.videoGeneration + 1
@@ -636,6 +641,10 @@ beginTrack item model =
                 , durationMs = 0
                 , playing = True
                 , autoStart = not sameAsLoaded
+
+                -- A seek meant for the track that was loading doesn't carry over to this one (`OpenAt` sets it after this).
+                , pendingSeekMs = Nothing
+                , selectionGeneration = model.selectionGeneration + 1
 
                 -- The upgrade (and neighbor preloads) wait for the active download to finish -- see
                 -- `Model.pendingUpgrade`. An already-loaded identical track has finished, so no wait.
@@ -1020,7 +1029,7 @@ update msg model =
                 ( model, Cmd.none )
 
         Close ->
-            ( { model | queue = [], currentId = Nothing, expanded = False, queueOpen = False, moveAnimations = Dict.empty, drag = UI.Drag.init, sharePopoverOpen = False, playing = False, positionMs = 0, durationMs = 0, slotA = Nothing, slotB = Nothing, autoStart = False, pendingSeekMs = Nothing, pendingUpgrade = Nothing, activeLoaded = False }
+            ( { model | queue = [], currentId = Nothing, expanded = False, queueOpen = False, moveAnimations = Dict.empty, drag = UI.Drag.init, sharePopoverOpen = False, playing = False, positionMs = 0, durationMs = 0, slotA = Nothing, slotB = Nothing, autoStart = False, pendingSeekMs = Nothing, pendingUpgrade = Nothing, activeLoaded = False, selectionGeneration = model.selectionGeneration + 1 }
             , Cmd.batch [ releaseSlot SlotA, releaseSlot SlotB ]
             )
 

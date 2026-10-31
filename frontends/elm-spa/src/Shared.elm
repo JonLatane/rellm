@@ -175,7 +175,9 @@ type Msg
       GotLinkedTrack String (Result Grpc.Error ( Maybe AccountsPanel.Msg, GetMediaResponse ))
       -- A post card's audio moving to the audio bar (`Ports.audioHandoffRequested`); `Nothing` is a malformed one.
     | AudioHandoffRequested (Maybe AudioPlayerPanel.Handoff)
-    | GotHandoffTrack AudioPlayerPanel.Handoff (Result Grpc.Error ( Maybe AccountsPanel.Msg, GetMediaResponse ))
+      -- The `selectionGeneration` the request was made at: a reply is dropped if the user has started something else (or closed
+      -- the player) since.
+    | GotHandoffTrack AudioPlayerPanel.Handoff Int (Result Grpc.Error ( Maybe AccountsPanel.Msg, GetMediaResponse ))
     | MediaRendererMsg MediaRenderer.Msg
     | MyMediaPanelMsg MyMediaPanel.Msg
     | MyMediaPanelOpenForAccount RellmAccount
@@ -1473,7 +1475,7 @@ sharedUpdate req msg model =
         -- isn't ours to open), and the card only knows the track's id, so it's fetched first.
         AudioHandoffRequested (Just handoff) ->
             if RellmServers.knownConnectedRellmServer model.accounts.servers handoff.host /= Nothing then
-                ( model, fetchTrack model handoff.host handoff.id (GotHandoffTrack handoff) )
+                ( model, fetchTrack model handoff.host handoff.id (GotHandoffTrack handoff model.panels.audioPlayerPanel.selectionGeneration) )
 
             else
                 ( model, Cmd.none )
@@ -1481,7 +1483,7 @@ sharedUpdate req msg model =
         AudioHandoffRequested Nothing ->
             ( model, Cmd.none )
 
-        GotHandoffTrack handoff result ->
+        GotHandoffTrack handoff generation result ->
             case result of
                 Ok ( maybeAccountsPanelMsg, response ) ->
                     let
@@ -1497,8 +1499,8 @@ sharedUpdate req msg model =
                         withAccounts =
                             { model | accounts = accountsPanelModel }
                     in
-                    case List.head response.media of
-                        Just media ->
+                    case ( model.panels.audioPlayerPanel.selectionGeneration == generation, List.head response.media ) of
+                        ( True, Just media ) ->
                             let
                                 ( opened, openCmd ) =
                                     sharedUpdate req
@@ -1515,7 +1517,8 @@ sharedUpdate req msg model =
                             in
                             ( opened, Cmd.batch [ Cmd.map AccountsPanelMsg accountsPanelCmd, openCmd ] )
 
-                        Nothing ->
+                        -- The player was closed or moved on while this was being fetched: it's no longer wanted.
+                        _ ->
                             ( withAccounts, Cmd.map AccountsPanelMsg accountsPanelCmd )
 
                 -- Missing, private or unreachable: the card's audio just stays where it is.

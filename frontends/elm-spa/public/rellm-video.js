@@ -380,6 +380,8 @@
       this.classList.toggle("no-pip", !canPip);
       this.classList.toggle("enlargeable", /^(small|extra-small)$/.test(this.getAttribute("data-media-size") || ""));
       this.classList.toggle("in-panel", this.hasAttribute("data-miniplayer-panel"));
+      // A video the viewer pressed play on (it autoplays muted) is theirs, unlike a silent preview.
+      if (this.hasAttribute("data-user-started")) { this._userPlay = true; }
       e.tip.hidden = true;
       this._layout();
       this._sync();
@@ -491,6 +493,10 @@
       switch (event.type) {
         case "play":
           this._claimMediaSession();
+          break;
+        case "volumechange":
+          // Unmuting a playing video is choosing to watch it, too.
+          if (!v.paused && !v.muted && v.volume > 0) { this._userPlay = true; }
           break;
         case "waiting":
         case "stalled":

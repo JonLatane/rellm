@@ -47,17 +47,24 @@
 
   var inAudioBar = function (el) { return !!(el.closest && el.closest(".audio-player-panel")); };
 
-  // Media events don't bubble, but they do capture. The audio bar has two `<audio>` slots that hand playback to each other
-  // while changing quality, so a slot starting never pauses the other audio (only videos); everything else pauses everything.
-  document.addEventListener("play", function (event) {
-    var started = event.target;
-    if (!started || (started.tagName !== "AUDIO" && started.tagName !== "VIDEO") || started.muted) { return; }
+  // `started` is audible and playing: pause everything else that is. The audio bar has two `<audio>` slots that hand playback to
+  // each other while changing quality, so a bar slot never pauses the *bar's* other slot (it does pause anything else).
+  var isAudible = function (el) {
+    return !!el && (el.tagName === "AUDIO" || el.tagName === "VIDEO") && !el.paused && !el.muted && el.volume > 0;
+  };
+
+  var pauseOthers = function (started) {
     Array.prototype.forEach.call(document.querySelectorAll("audio, video"), function (other) {
-      if (other === started || other.paused || other.muted) { return; }
-      if (inAudioBar(started) && other.tagName === "AUDIO") { return; }
+      if (other === started || !isAudible(other)) { return; }
+      if (inAudioBar(started) && inAudioBar(other)) { return; }
       other.pause();
     });
-  }, true);
+  };
+
+  // Media events don't bubble, but they do capture. Starting something audible pauses the rest -- and so does a playing video
+  // becoming audible (unmuted, or its volume raised from zero) without another `play`.
+  document.addEventListener("play", function (event) { if (isAudible(event.target)) { pauseOthers(event.target); } }, true);
+  document.addEventListener("volumechange", function (event) { if (isAudible(event.target)) { pauseOthers(event.target); } }, true);
 
   // ---- audio handoff ------------------------------------------------------------------------------------
 
