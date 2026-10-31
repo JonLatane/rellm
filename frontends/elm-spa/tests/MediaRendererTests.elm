@@ -72,6 +72,31 @@ suite =
                             , Query.find [ Selector.tag "video" ]
                                 >> Query.has [ Selector.attribute (Html.Attributes.attribute "poster" "https://video.bsky.app/watch/did%3Aplc%3Aabc/bafk/thumbnail.jpg") ]
                             ]
+            , test "tells <rellm-video> its MediaSize, so only thumbnails get the enlarge button" <|
+                \_ ->
+                    let
+                        sizeOf : MediaRenderer.MediaSize -> Query.Single ()
+                        sizeOf mediaSize =
+                            Html.div []
+                                [ MediaRenderer.view mediaSize
+                                    MediaRenderer.ToWidthAndHeight
+                                    (RellmServerFactory.connected "rellm.org")
+                                    Nothing
+                                    True
+                                    MediaRenderer.init
+                                    (\_ -> ())
+                                    (\_ -> ())
+                                    (media "video/mp4" "https://rellm.org/media/m1")
+                                ]
+                                |> Query.fromHtml
+                                |> Query.find [ Selector.tag "rellm-video" ]
+                    in
+                    Expect.all
+                        [ \_ -> sizeOf MediaRenderer.Natural |> Query.has [ Selector.attribute (Html.Attributes.attribute "data-media-size" "natural") ]
+                        , \_ -> sizeOf MediaRenderer.Small |> Query.has [ Selector.attribute (Html.Attributes.attribute "data-media-size" "small") ]
+                        , \_ -> sizeOf MediaRenderer.ExtraSmall |> Query.has [ Selector.attribute (Html.Attributes.attribute "data-media-size" "extra-small") ]
+                        ]
+                        ()
             , test "an ordinary video has no poster of its own" <|
                 \_ ->
                     render (media "video/mp4" "https://rellm.org/media/m1")

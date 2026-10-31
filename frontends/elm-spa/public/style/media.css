@@ -27,6 +27,44 @@ rellm-video:fullscreen > .media-renderer-video {
   max-height: none;
 }
 
+/* An enlarged thumbnail (`rellm-video.enlarged`, set by its enlarge button -- see `public/rellm-video.js`):
+   the same bounds `.media-renderer-natural` gives a `ToWidthAndHeight` video above (the container's
+   width, 70vh tall), centered on the player's black background. `!important` because these have to win
+   over every context's own thumbnail sizing (`.media-renderer-small`, `-to-height`, the My Media tiles,
+   ...), which is the point of the button; removing the class (the restore button) brings them all back.
+   The strip/single item the player sits in grows to the container's full width to make room. */
+rellm-video.enlarged {
+  display: block;
+  width: 100%;
+}
+
+rellm-video.enlarged > .media-renderer-video {
+  --media-renderer-width: 100%;
+  --media-renderer-height: 70vh;
+  display: block !important;
+  width: auto !important;
+  height: auto !important;
+  max-width: var(--media-renderer-width) !important;
+  max-height: var(--media-renderer-height) !important;
+  margin: 0 auto;
+}
+
+.multi-media-item:has(> rellm-video.enlarged) {
+  flex: 1 0 100%;
+}
+
+.multi-media-single-item:has(> rellm-video.enlarged) {
+  width: 100%;
+}
+
+/* Panels whose layouts are a fixed grid/row of thumbnails have no room for an enlarged one, so their
+   videos don't get the enlarge button (`--rellm-video-enlarge-display` is read by its shadow styles). */
+.my-media-panel-item-preview rellm-video,
+.starred-post-entry rellm-video,
+.media-generator-panel-media-strip rellm-video {
+  --rellm-video-enlarge-display: none;
+}
+
 /* `Components.MediaRenderer`'s click-to-play poster -- a `.media-renderer-video-preview-image`
    (same sizing classes, and so same footprint, as the `<video>` it stands in for) with a play
    button centered over it. `position: relative`/`inline-block` so the button's own

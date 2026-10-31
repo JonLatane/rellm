@@ -27,7 +27,7 @@ providers (Twitter/Instagram/etc. -- those key off `Post.link`, not
 video -- a plain HTML5 `<video>` covers the same MIME types Rellm
 actually serves media as (plus Bluesky's HLS playlists, which `public/index.html`
 hands to hls.js). Playback controls come from `<rellm-video>`, the custom element
-every video is wrapped in (see `public/index.html`): the same bottom bar -- play/pause,
+every video is wrapped in (see `public/rellm-video.js`): the same bottom bar -- play/pause,
 seek, time, mute, fullscreen -- for Rellm, Bluesky and Mastodon videos, instead of each
 browser's native `controls`.
 
@@ -257,11 +257,13 @@ viewHelper forceAutoplay tierOverride mediaSize sizeConstraint server maybeAccou
                     autoplay =
                         forceAutoplay || (not preloadVideo && clickedToPlay)
                 in
-                -- `<rellm-video>` (`public/index.html`) draws the playback controls over the bottom of the
+                -- `<rellm-video>` (`public/rellm-video.js`) draws the playback controls over the bottom of the
                 -- `<video>` it wraps -- the same for a Rellm, Bluesky or Mastodon video, instead of each
                 -- browser's own `controls`. Its chrome lives in a shadow root, out of Elm's way.
                 node "rellm-video"
-                    [ class "media-renderer-video-frame" ]
+                    [ class "media-renderer-video-frame"
+                    , attribute "data-media-size" (mediaSizeName mediaSize)
+                    ]
                     [ video
                         (List.filterMap identity
                             [ Just (class ("media-renderer-video " ++ sizeClass))
@@ -461,6 +463,22 @@ autoplayAttributes =
     , property "muted" (Encode.bool True)
     , attribute "playsinline" "true"
     ]
+
+
+{-| `MediaSize` as `<rellm-video>`'s `data-media-size`: only `small`/`extra-small` (thumbnails) get its
+enlarge button, which grows them to the `Natural` size.
+-}
+mediaSizeName : MediaSize -> String
+mediaSizeName mediaSize =
+    case mediaSize of
+        Natural ->
+            "natural"
+
+        Small ->
+            "small"
+
+        ExtraSmall ->
+            "extra-small"
 
 
 mediaSizeClass : MediaSize -> String
