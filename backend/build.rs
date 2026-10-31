@@ -48,6 +48,13 @@ fn main() {
             "MediaSettings.prefer_metadata_for_link_preview_images",
             "#[serde(default)]",
         )
+        // Same idea, for `MediaSettings.hls_streaming_enabled`, defaulting to `false` (HLS stays off
+        // until an admin turns it on) -- without it, every server's already-saved `media_settings`
+        // would fail to deserialize and be reset wholesale by `normalized_media_settings`.
+        .field_attribute(
+            "MediaSettings.hls_streaming_enabled",
+            "#[serde(default)]",
+        )
         // Same idea, for `ClusterConductorState.limits` (added alongside `ClusterResourceLimit`,
         // after `cluster_resources.conductor_state` had already accumulated real stored data, e.g.
         // `locks`) -- lets that pre-existing JSON deserialize instead of erroring on the newly

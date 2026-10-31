@@ -24,14 +24,16 @@ Mirrors the Tamagui app's `media_renderer.tsx`, minus its social embed
 providers (Twitter/Instagram/etc. -- those key off `Post.link`, not
 `MediaReference`, and are handled one level up by the Tamagui
 `PostMediaRenderer`; not ported here) and its `ReactPlayer` dependency for
-video -- a plain HTML5 `<video controls>` covers the same MIME types Rellm
-actually serves media as.
+video -- a plain HTML5 `<video>` covers the same MIME types Rellm
+actually serves media as (plus Bluesky's HLS playlists, which `public/index.html`
+hands to hls.js). Playback controls come from `<rellm-video>`, the custom element
+every video is wrapped in (see `public/rellm-video.js`): the same bottom bar -- play/pause,
+seek, time, mute, fullscreen -- for Rellm, Bluesky and Mastodon videos, instead of each
+browser's native `controls`.
 
-`onImageClicked` fires (with `media.id`) only for images -- videos keep their
-existing native-`controls` click behavior untouched (see `Shared.MediaViewerPanel`,
-the only caller today: tapping an image opens it fullscreen there; tapping a
-video just plays/pauses/scrubs it in place, same as before that panel
-existed).
+`onImageClicked` fires (with `media.id`) only for images -- tapping a video just
+plays/pauses/scrubs it in place through those controls (see `Shared.MediaViewerPanel`,
+the only caller today: tapping an image opens it fullscreen there).
 
 `viewAutoplay` is the same rendering, just with a video's `autoplay`/`muted`/
 `playsinline` set -- see its own doc.
@@ -65,7 +67,7 @@ rendered.
 
 -}
 
-import Html exposing (Html, a, audio, button, div, img, input, object, text, video)
+import Html exposing (Html, a, audio, button, div, img, input, node, object, text, video)
 import Html.Attributes exposing (alt, attribute, class, controls, href, property, src, style, target, type_)
 import Html.Events exposing (onClick)
 import Json.Encode as Encode
@@ -249,37 +251,54 @@ viewHelper forceAutoplay tierOverride mediaSize sizeConstraint server maybeAccou
                     -- A just-clicked-to-play video always autoplays (muted, same trick
                     -- `viewAutoplay` already relies on -- see its own doc), even under plain
                     -- `view`, so tapping the play button actually starts playback rather than
-                    -- swapping in a paused `<video>` the user has to tap `controls` on again.
+                    -- swapping in a paused `<video>` the user has to press play on again.
                     -- `viewAutoplay`'s own `forceAutoplay` behaves as before regardless.
                     autoplay : Bool
                     autoplay =
                         forceAutoplay || (not preloadVideo && clickedToPlay)
                 in
-                video
+                -- `<rellm-video>` (`public/rellm-video.js`) draws the playback controls over the bottom of the
+                -- `<video>` it wraps -- the same for a Rellm, Bluesky or Mastodon video, instead of each
+                -- browser's own `controls`. Its chrome lives in a shadow root, out of Elm's way.
+                node "rellm-video"
                     (List.filterMap identity
-                        [ Just (class ("media-renderer-video " ++ sizeClass))
-                        , Just (controls True)
-                        , Just
-                            (attribute "preload"
-                                (if autoplay then
-                                    "auto"
+                        [ Just (class "media-renderer-video-frame")
+                        , Just (attribute "data-media-size" (mediaSizeName mediaSize))
 
-                                 else
-                                    "metadata"
-                                )
-                            )
-                        , Just (src (mediaUrl ++ previewTimeFragment media))
-                        , Maybe.map (attribute "poster") (hlsPosterUrl mediaUrl)
-                        , aspectRatioStyle media
+                        -- A video someone pressed play on (it then autoplays, muted) is theirs to keep watching -- it follows
+                        -- them to the miniplayer when they leave the page -- unlike a silent autoplay preview.
+                        , if clickedToPlay then
+                            Just (attribute "data-user-started" "")
+
+                          else
+                            Nothing
                         ]
-                        ++ (if autoplay then
-                                autoplayAttributes
-
-                            else
-                                []
-                           )
                     )
-                    [ text "Your browser doesn't support embedded video." ]
+                    [ video
+                        (List.filterMap identity
+                            [ Just (class ("media-renderer-video " ++ sizeClass))
+                            , Just
+                                (attribute "preload"
+                                    (if autoplay then
+                                        "auto"
+
+                                     else
+                                        "metadata"
+                                    )
+                                )
+                            , Just (src (mediaUrl ++ previewTimeFragment media))
+                            , Maybe.map (attribute "poster") (hlsPosterUrl mediaUrl)
+                            , aspectRatioStyle media
+                            ]
+                            ++ (if autoplay then
+                                    autoplayAttributes
+
+                                else
+                                    []
+                               )
+                        )
+                        [ text "Your browser doesn't support embedded video." ]
+                    ]
 
             else
                 div [ class "media-renderer-video-preview" ]
@@ -394,6 +413,16 @@ viewHelper forceAutoplay tierOverride mediaSize sizeConstraint server maybeAccou
                             autoplay : Bool
                             autoplay =
                                 forceAutoplay || (not preloadVideo && clickedToPlay)
+
+                            -- What `public/rellm-media.js` needs to hand this track to `Shared.AudioPlayerPanel` (which fetches it by id):
+                            -- its id and the server it lives on. Not for a federated attachment (an external `url`, no server of ours).
+                            handoffAttributes : List (Html.Attribute msg)
+                            handoffAttributes =
+                                if media.url == Nothing && server.frontendHost /= "" then
+                                    [ attribute "data-media-id" media.id, attribute "data-host" server.frontendHost ]
+
+                                else
+                                    []
                         in
                         [ -- Only shown inside the media viewer (see `media.css`); `public/index.html` keeps
                           -- it in sync with, and seeks, the `<audio>` below.
@@ -410,6 +439,7 @@ viewHelper forceAutoplay tierOverride mediaSize sizeConstraint server maybeAccou
                                 )
                              , src mediaUrl
                              ]
+                                ++ handoffAttributes
                                 ++ (if autoplay then
                                         [ Html.Attributes.autoplay True ]
 
@@ -418,6 +448,16 @@ viewHelper forceAutoplay tierOverride mediaSize sizeConstraint server maybeAccou
                                    )
                             )
                             [ text "Your browser doesn't support embedded audio." ]
+
+                        -- Shown while it plays (`public/rellm-media.js` marks the card `is-playing`): moves the track to the
+                        -- audio bar, as navigating away from the page does -- just as a video moves to the miniplayer.
+                        , button
+                            [ class "media-renderer-audio-handoff"
+                            , attribute "data-rellm-handoff" ""
+                            , attribute "aria-label" "Play in the audio player"
+                            , attribute "title" "Play in the audio player"
+                            ]
+                            [ text "\u{2193}" ]
                         ]
 
                     else
@@ -454,6 +494,22 @@ autoplayAttributes =
     , property "muted" (Encode.bool True)
     , attribute "playsinline" "true"
     ]
+
+
+{-| `MediaSize` as `<rellm-video>`'s `data-media-size`: only `small`/`extra-small` (thumbnails) get its
+enlarge button, which grows them to the `Natural` size.
+-}
+mediaSizeName : MediaSize -> String
+mediaSizeName mediaSize =
+    case mediaSize of
+        Natural ->
+            "natural"
+
+        Small ->
+            "small"
+
+        ExtraSmall ->
+            "extra-small"
 
 
 mediaSizeClass : MediaSize -> String

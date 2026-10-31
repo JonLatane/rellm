@@ -177,6 +177,26 @@
   pointer-events: auto;
 }
 
+/* A video's `<rellm-video>` frame (the controls' wrapper, see media.css) is the flex item here, so it
+   takes over the caps above; the video fills what the frame's box leaves it (letterboxed, on its black
+   background) rather than resolving `max-height: 100%` against a frame whose height is its content's. */
+.media-viewer-panel-content rellm-video {
+  display: flex;
+  flex-direction: column;
+  max-width: 100%;
+  max-height: 100%;
+  pointer-events: auto;
+}
+
+.media-viewer-panel-content rellm-video > .media-renderer-natural.media-renderer-video {
+  min-height: 0;
+  max-height: none;
+}
+
+.media-viewer-panel-preload rellm-video {
+  pointer-events: none;
+}
+
 /* Audio: the waveform, seek slider and native `<audio controls>` are all real, tappable content
    too -- without this they inherit `none` from `.media-viewer-panel-content`, so a tap on them falls
    through to the root and closes the panel. */

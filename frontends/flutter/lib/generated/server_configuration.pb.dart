@@ -1226,6 +1226,7 @@ class MediaSettings extends $pb.GeneratedMessage {
     $core.bool? preferMetadataForLinkPreviewImages,
     $core.bool? blockCorsAnonymousMediaAccess,
     $core.bool? licensedMediaVisibleGlobally,
+    $core.bool? hlsStreamingEnabled,
   }) {
     final $result = create();
     if (visible != null) {
@@ -1267,6 +1268,9 @@ class MediaSettings extends $pb.GeneratedMessage {
     if (licensedMediaVisibleGlobally != null) {
       $result.licensedMediaVisibleGlobally = licensedMediaVisibleGlobally;
     }
+    if (hlsStreamingEnabled != null) {
+      $result.hlsStreamingEnabled = hlsStreamingEnabled;
+    }
     return $result;
   }
   MediaSettings._() : super();
@@ -1287,6 +1291,7 @@ class MediaSettings extends $pb.GeneratedMessage {
     ..aOB(11, _omitFieldNames ? '' : 'preferMetadataForLinkPreviewImages')
     ..aOB(20, _omitFieldNames ? '' : 'blockCorsAnonymousMediaAccess')
     ..aOB(21, _omitFieldNames ? '' : 'licensedMediaVisibleGlobally')
+    ..aOB(22, _omitFieldNames ? '' : 'hlsStreamingEnabled')
     ..hasRequiredFields = false
   ;
 
@@ -1485,6 +1490,22 @@ class MediaSettings extends $pb.GeneratedMessage {
   $core.bool hasLicensedMediaVisibleGlobally() => $_has(12);
   @$pb.TagNumber(21)
   void clearLicensedMediaVisibleGlobally() => clearField(21);
+
+  /// "HLS Streaming". When set, converted videos can also be streamed as HLS from
+  /// `/media/hls/{id}/master.m3u8` (see the README's "HLS video streaming"). Off by default, since
+  /// it costs more than the stored size conversions do: the first request for a rendition runs an
+  /// `ffmpeg` stream-copy pass over the whole file inside the server process (rather than once, in
+  /// the `convert_media_sizes` background job), and the segments are then cached on the server's
+  /// local disk -- per replica, on top of the cached copy of the MP4 itself. When unset, every
+  /// `/media/hls/...` URL is a `404` and videos are served from `/media/{id}` only.
+  @$pb.TagNumber(22)
+  $core.bool get hlsStreamingEnabled => $_getBF(13);
+  @$pb.TagNumber(22)
+  set hlsStreamingEnabled($core.bool v) { $_setBool(13, v); }
+  @$pb.TagNumber(22)
+  $core.bool hasHlsStreamingEnabled() => $_has(13);
+  @$pb.TagNumber(22)
+  void clearHlsStreamingEnabled() => clearField(22);
 }
 
 /// Whether this server's `/market` is open -- an explicit, admin-set toggle independent of

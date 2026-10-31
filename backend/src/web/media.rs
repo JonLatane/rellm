@@ -187,12 +187,12 @@ pub const BLOCK_CORS_HEADER: &str = "X-Rellm-Block-CORS";
 /// that decide whether it's tagged (so a shared cache never serves one viewer's CORS-less anonymous
 /// copy to an authenticated one, or vice versa).
 pub struct MediaResponse<R> {
-    inner: R,
-    block_cors: bool,
-    vary_on_auth: bool,
+    pub(super) inner: R,
+    pub(super) block_cors: bool,
+    pub(super) vary_on_auth: bool,
     /// `Content-Disposition` to attach (`?download=true`), so the browser saves the file under a proper name even
     /// cross-origin, where the `<a download>` attribute is ignored.
-    content_disposition: Option<String>,
+    pub(super) content_disposition: Option<String>,
 }
 
 impl<'r, 'o: 'r, R: rocket::response::Responder<'r, 'o>> rocket::response::Responder<'r, 'o>
@@ -356,23 +356,8 @@ pub async fn media_file<'a>(
     auth_header: Option<AuthHeader<'_>>,
 ) -> Result<MediaResponse<CacheResponse<(ContentType, RangedFile)>>, Status> {
     log::info!("media_file: {:?}, size: {:?}", id, size);
-    let user = get_media_user(authorization, auth_header, cookies, state).ok();
-
-    let media = load_media_by_id(id, state)?;
-    {
-        let mut conn = state.pool.get().unwrap();
-        let follows_owner = media.visibility == Visibility::Limited.to_string_visibility()
-            && match (user.as_ref(), media.user_id) {
-                (Some(viewer), Some(owner_id)) => viewer_follows(viewer.id, owner_id, &mut conn),
-                _ => false,
-            };
-        let licensed_globally = crate::rpcs::licensed_media_visible_globally(&mut conn);
-        if !media_visible_to_viewer(&media, user.as_ref(), follows_owner, licensed_globally) {
-            return Err(Status::NotFound);
-        }
-    }
-    let licensed = media.visibility == Visibility::Licensed.to_string_visibility();
-    let has_full_access = !licensed || viewer_has_full_access(&media, user.as_ref(), state);
+    let MediaAccess { media, user, licensed, has_full_access } =
+        authorize_media_view(id, authorization, auth_header, cookies, state)?;
     let (object_storage_path, content_type) =
         resolve_media_size_for_viewer(&media, size.as_deref(), has_full_access)?;
     // Which copy this actually is (not necessarily the one `size` asked for), for the download's filename.
@@ -391,18 +376,73 @@ pub async fn media_file<'a>(
         ))
     });
 
-    // Anonymous requests to servers with `block_cors_anonymous_media_access` get no CORS headers,
-    // even for `GLOBAL_PUBLIC` media. (Authenticated requests are unaffected.)
-    let block_cors = user.is_none() && {
+    let block_cors = blocks_cors(user.as_ref(), state);
+
+    let cache_control = media_cache_control(licensed);
+    Ok(MediaResponse {
+        inner: CacheResponse::new((data.0, RangedFile(data.1)), cache_control),
+        block_cors,
+        vary_on_auth: licensed || block_cors,
+        content_disposition,
+    })
+}
+
+/// Who is asking for a piece of media, and what they may see of it -- see `authorize_media_view`.
+pub(super) struct MediaAccess {
+    pub media: models::Media,
+    pub user: Option<models::User>,
+    /// `media` is `LICENSED`.
+    pub licensed: bool,
+    /// The viewer may fetch everything of `media` (always true unless it's `LICENSED`; otherwise
+    /// the owner, admins and license holders), not just the unlicensed preview.
+    pub has_full_access: bool,
+}
+
+/// Loads media `id` and checks the viewer (identified by `authorization`, else the auth header, else
+/// cookies -- anonymous if none is valid) may see it at all; `404` if not.
+pub(super) fn authorize_media_view(
+    id: &str,
+    authorization: Option<String>,
+    auth_header: Option<AuthHeader<'_>>,
+    cookies: &CookieJar<'_>,
+    state: &State<RocketState>,
+) -> Result<MediaAccess, Status> {
+    let user = get_media_user(authorization, auth_header, cookies, state).ok();
+
+    let media = load_media_by_id(id, state)?;
+    {
+        let mut conn = state.pool.get().unwrap();
+        let follows_owner = media.visibility == Visibility::Limited.to_string_visibility()
+            && match (user.as_ref(), media.user_id) {
+                (Some(viewer), Some(owner_id)) => viewer_follows(viewer.id, owner_id, &mut conn),
+                _ => false,
+            };
+        let licensed_globally = crate::rpcs::licensed_media_visible_globally(&mut conn);
+        if !media_visible_to_viewer(&media, user.as_ref(), follows_owner, licensed_globally) {
+            return Err(Status::NotFound);
+        }
+    }
+    let licensed = media.visibility == Visibility::Licensed.to_string_visibility();
+    let has_full_access = !licensed || viewer_has_full_access(&media, user.as_ref(), state);
+    Ok(MediaAccess { media, user, licensed, has_full_access })
+}
+
+/// Anonymous requests to servers with `block_cors_anonymous_media_access` get no CORS headers,
+/// even for `GLOBAL_PUBLIC` media. (Authenticated requests are unaffected.)
+pub(super) fn blocks_cors(user: Option<&models::User>, state: &State<RocketState>) -> bool {
+    user.is_none() && {
         let mut conn = state.pool.get().unwrap();
         get_server_configuration_proto(&mut conn)
             .ok()
             .and_then(|c| c.media_settings)
             .is_some_and(|m| m.block_cors_anonymous_media_access)
-    };
+    }
+}
 
-    // A `LICENSED` item's bytes depend on who's asking, so they must never sit in a shared cache.
-    let cache_control = if licensed {
+/// The `Cache-Control` for media bytes: a `LICENSED` item's depend on who's asking, so they must
+/// never sit in a shared cache.
+pub(super) fn media_cache_control(licensed: bool) -> CacheControl {
+    if licensed {
         CacheControl {
             must_revalidate: true,
             ..CacheControl::private(0)
@@ -412,13 +452,7 @@ pub async fn media_file<'a>(
             must_revalidate: true,
             ..CacheControl::public(3600 * 12)
         }
-    };
-    Ok(MediaResponse {
-        inner: CacheResponse::new((data.0, RangedFile(data.1)), cache_control),
-        block_cors,
-        vary_on_auth: licensed || block_cors,
-        content_disposition,
-    })
+    }
 }
 
 /// Whether `viewer` (`None` if anonymous) may see `media` at all -- the same rules `GetMedia` applies
@@ -665,7 +699,7 @@ fn is_superseded_version_of(file_name: &str, base_name: &str) -> bool {
     rest.is_empty() || rest.strip_prefix('.').is_some_and(is_version_suffix)
 }
 
-async fn load_media_file(
+pub(super) async fn load_media_file(
     object_storage_path: String,
     content_type: String,
     state: &State<RocketState>,

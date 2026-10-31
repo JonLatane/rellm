@@ -1,0 +1,100 @@
+/* `Shared.VideoPlayerPanel`: the floating miniplayer -- a video that keeps playing in a corner while you browse.
+
+   z-index 26: over the page and the starred panel (25) -- it's the one thing you're still watching -- but under the
+   audio bar (27) and the nav (28), the fullscreen media viewer (33) and the modals. Bottom-right, lifted above the audio
+   player bar when that's up. Its `<rellm-video>` (public/rellm-video.js) draws the controls; the two buttons are the
+   panel's own: back to the page, and close. */
+.video-player-panel {
+  position: fixed;
+  right: 1rem;
+  bottom: calc(1rem + env(safe-area-inset-bottom));
+  z-index: 26;
+  /* Wide videos are 360px across; a tall one narrows to keep the panel under 45% of the viewport's height
+     (`--video-ratio` is the video's width over height). */
+  width: min(360px, calc(100vw - 2rem), calc(45vh * var(--video-ratio, 1.78)));
+}
+
+body:has(.audio-player-spacer.is-active) .video-player-panel {
+  bottom: calc(5.5rem + env(safe-area-inset-bottom));
+}
+
+.video-player-panel-body {
+  position: relative;
+  overflow: hidden;
+  border-radius: 10px;
+  background: #000;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+}
+
+/* The player fills the panel's box, whatever shape the video is (the box takes the video's own aspect ratio). */
+.video-player-panel-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.video-player-panel-video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  object-fit: contain;
+  background: #000;
+}
+
+.video-player-panel-button {
+  position: absolute;
+  top: 0.4rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1;
+  text-decoration: none;
+  cursor: pointer;
+  opacity: 0.85;
+  transition: opacity 0.15s;
+}
+
+.video-player-panel-button:hover,
+.video-player-panel-button:focus-visible {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.8);
+}
+
+.video-player-panel-expand {
+  left: 0.4rem;
+  font-size: 16px;
+}
+
+.video-player-panel-close {
+  right: 0.4rem;
+}
+
+/* The queue's previous / next / show-queue buttons, centered along the top (the back arrow and close are the corners). */
+.video-player-panel-queue-controls {
+  position: absolute;
+  top: 0.4rem;
+  left: 50%;
+  display: flex;
+  gap: 0.3rem;
+  transform: translateX(-50%);
+}
+
+.video-player-panel-queue-controls .video-player-panel-button {
+  position: static;
+}
+
+.video-player-panel-button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}

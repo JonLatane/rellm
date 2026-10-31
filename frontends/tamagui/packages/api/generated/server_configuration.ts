@@ -996,6 +996,16 @@ export interface MediaSettings {
    */
   licensedMediaVisibleGlobally: boolean;
   /**
+   * "HLS Streaming". When set, converted videos can also be streamed as HLS from
+   * `/media/hls/{id}/master.m3u8` (see the README's "HLS video streaming"). Off by default, since
+   * it costs more than the stored size conversions do: the first request for a rendition runs an
+   * `ffmpeg` stream-copy pass over the whole file inside the server process (rather than once, in
+   * the `convert_media_sizes` background job), and the segments are then cached on the server's
+   * local disk -- per replica, on top of the cached copy of the MP4 itself. When unset, every
+   * `/media/hls/...` URL is a `404` and videos are served from `/media/{id}` only.
+   */
+  hlsStreamingEnabled: boolean;
+  /**
    * Default is 5GB (applied whenever this is `0`, same read-time-fallback convention as
    * `default_user_media_allocation_bytes` above). API/server-enforced limit for total of all
    * Media usage (`server_media_usage_bytes` below) -- `CreateMedia` rejects an upload that would
@@ -3068,6 +3078,7 @@ function createBaseMediaSettings(): MediaSettings {
     defaultUserMediaAllocationBytes: 0,
     blockCorsAnonymousMediaAccess: false,
     licensedMediaVisibleGlobally: false,
+    hlsStreamingEnabled: false,
     serverMediaAllocationBytes: 0,
     serverMediaUsageBytes: 0,
     serverMediaUsageCalculatedAt: undefined,
@@ -3097,6 +3108,9 @@ export const MediaSettings: MessageFns<MediaSettings> = {
     }
     if (message.licensedMediaVisibleGlobally !== false) {
       writer.uint32(168).bool(message.licensedMediaVisibleGlobally);
+    }
+    if (message.hlsStreamingEnabled !== false) {
+      writer.uint32(176).bool(message.hlsStreamingEnabled);
     }
     if (message.serverMediaAllocationBytes !== 0) {
       writer.uint32(40).uint64(message.serverMediaAllocationBytes);
@@ -3175,6 +3189,14 @@ export const MediaSettings: MessageFns<MediaSettings> = {
           }
 
           message.licensedMediaVisibleGlobally = reader.bool();
+          continue;
+        }
+        case 22: {
+          if (tag !== 176) {
+            break;
+          }
+
+          message.hlsStreamingEnabled = reader.bool();
           continue;
         }
         case 5: {
@@ -3256,6 +3278,7 @@ export const MediaSettings: MessageFns<MediaSettings> = {
       licensedMediaVisibleGlobally: isSet(object.licensedMediaVisibleGlobally)
         ? globalThis.Boolean(object.licensedMediaVisibleGlobally)
         : false,
+      hlsStreamingEnabled: isSet(object.hlsStreamingEnabled) ? globalThis.Boolean(object.hlsStreamingEnabled) : false,
       serverMediaAllocationBytes: isSet(object.serverMediaAllocationBytes)
         ? globalThis.Number(object.serverMediaAllocationBytes)
         : 0,
@@ -3298,6 +3321,9 @@ export const MediaSettings: MessageFns<MediaSettings> = {
     if (message.licensedMediaVisibleGlobally !== false) {
       obj.licensedMediaVisibleGlobally = message.licensedMediaVisibleGlobally;
     }
+    if (message.hlsStreamingEnabled !== false) {
+      obj.hlsStreamingEnabled = message.hlsStreamingEnabled;
+    }
     if (message.serverMediaAllocationBytes !== 0) {
       obj.serverMediaAllocationBytes = Math.round(message.serverMediaAllocationBytes);
     }
@@ -3333,6 +3359,7 @@ export const MediaSettings: MessageFns<MediaSettings> = {
     message.defaultUserMediaAllocationBytes = object.defaultUserMediaAllocationBytes ?? 0;
     message.blockCorsAnonymousMediaAccess = object.blockCorsAnonymousMediaAccess ?? false;
     message.licensedMediaVisibleGlobally = object.licensedMediaVisibleGlobally ?? false;
+    message.hlsStreamingEnabled = object.hlsStreamingEnabled ?? false;
     message.serverMediaAllocationBytes = object.serverMediaAllocationBytes ?? 0;
     message.serverMediaUsageBytes = object.serverMediaUsageBytes ?? 0;
     message.serverMediaUsageCalculatedAt = object.serverMediaUsageCalculatedAt ?? undefined;

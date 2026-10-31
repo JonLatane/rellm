@@ -4,6 +4,8 @@ pub use audio_analysis::*;
 mod media_conversion;
 pub use media_conversion::*;
 
+pub mod hls;
+
 mod media_size_backfill;
 pub use media_size_backfill::*;
 
