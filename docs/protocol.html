@@ -7583,6 +7583,12 @@ directory</a> is (<code>{name}</code> denotes a
           <td>Whether <code>LICENSED</code> media (see <code>Visibility.LICENSED</code>) is discoverable by <em>unauthenticated</em> users: listed by <code>GetMedia</code> and its preview/thumbnails served by <code>GET /media/{id}</code>. When unset (the default), <code>LICENSED</code> media is only visible to logged-in users -- like <code>SERVER_PUBLIC</code> -- plus its owner and admins. Either way, its full-quality bytes still require an active License.</td>
         </tr>
         <tr>
+          <td>hls_streaming_enabled</td>
+          <td><a href="#bool">bool</a></td>
+          <td></td>
+          <td>"HLS Streaming". When set, converted videos can also be streamed as HLS from <code>/media/hls/{id}/master.m3u8</code> (see the README's "HLS video streaming"). Off by default, since it costs more than the stored size conversions do: the first request for a rendition runs an <code>ffmpeg</code> stream-copy pass over the whole file inside the server process (rather than once, in the <code>convert_media_sizes</code> background job), and the segments are then cached on the server's local disk -- per replica, on top of the cached copy of the MP4 itself. When unset, every <code>/media/hls/...</code> URL is a <code>404</code> and videos are served from <code>/media/{id}</code> only.</td>
+        </tr>
+        <tr>
           <td>server_media_allocation_bytes</td>
           <td><a href="#uint64">uint64</a></td>
           <td></td>

@@ -21,7 +21,10 @@ port module Ports exposing
     , replaceLocation
     , mastodonAccountsAndServersUpdated
     , measureElements
+    , audioHandoffRequested
     , mediaDurationReported
+    , miniVideoRequested
+    , miniVideoState
     , persistAccountsAndServers
     , persistBlueskyAccounts
     , persistFederatedAuthKeyPair
@@ -258,6 +261,27 @@ FullCalendar's own `eventClick` callback. See
 subscriber, which opens/scrolls its own preview strip to that event's card.
 -}
 port calendarEventClicked : (String -> msg) -> Sub msg
+
+
+{-| A post card's audio asked to carry on in the audio bar -- playing when its page was navigated away from, or its "play in
+the audio player" button pressed (`public/rellm-media.js` raises a `rellm-audio-handoff` window event, `public/index.html`
+forwards its `detail` here). Decoded by `Shared.AudioPlayerPanel.handoffDecoder`.
+-}
+port audioHandoffRequested : (Encode.Value -> msg) -> Sub msg
+
+
+{-| What the miniplayer's video reports as it plays (`public/rellm-video.js` raises `rellm-miniplayer-state`, `public/index.html`
+forwards its `detail` here): `{ playing, positionMs, durationMs, ended }`, decoded by `Shared.VideoPlayerPanel.reportDecoder`.
+`Shared.update` hands it to the queue (the bar's position, "next" at the end).
+-}
+port miniVideoState : (Encode.Value -> msg) -> Sub msg
+
+
+{-| A video asked to carry on in the floating miniplayer -- its miniplayer button, or a video someone was playing when its page
+was navigated away from (`public/rellm-video.js` raises a `rellm-miniplayer` window event, `public/index.html` forwards its
+`detail` here). Decoded by `Shared.VideoPlayerPanel.decoder`.
+-}
+port miniVideoRequested : (Encode.Value -> msg) -> Sub msg
 
 
 {-| Sets every `<meta name="theme-color">` tag's `content` to `mainFrontendHost`'s

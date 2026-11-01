@@ -386,6 +386,15 @@ message MediaSettings {
   // plus its owner and admins. Either way, its full-quality bytes still require an active License.
   bool licensed_media_visible_globally = 21;
 
+  // "HLS Streaming". When set, converted videos can also be streamed as HLS from
+  // `/media/hls/{id}/master.m3u8` (see the README's "HLS video streaming"). Off by default, since
+  // it costs more than the stored size conversions do: the first request for a rendition runs an
+  // `ffmpeg` stream-copy pass over the whole file inside the server process (rather than once, in
+  // the `convert_media_sizes` background job), and the segments are then cached on the server's
+  // local disk -- per replica, on top of the cached copy of the MP4 itself. When unset, every
+  // `/media/hls/...` URL is a `404` and videos are served from `/media/{id}` only.
+  bool hls_streaming_enabled = 22;
+
 
   // Default is 5GB (applied whenever this is `0`, same read-time-fallback convention as
   // `default_user_media_allocation_bytes` above). API/server-enforced limit for total of all

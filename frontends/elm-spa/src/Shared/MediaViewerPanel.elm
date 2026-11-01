@@ -1,4 +1,4 @@
-module Shared.MediaViewerPanel exposing (CreditField, MediaEdit, Model, Msg(..), canEditMedia, fieldErrors, formatMs, freshEdit, init, isValidKey, mediaToReference, metadataWithEdits, parseBpm, subscriptions, update, view)
+module Shared.MediaViewerPanel exposing (CreditField, MediaEdit, Model, Msg(..), ViewerVideo, canEditMedia, currentVideo, standInHost, standInMedia, videoSource, fieldErrors, formatMs, freshEdit, init, isValidKey, mediaToReference, metadataWithEdits, parseBpm, subscriptions, update, view)
 
 {-| A single, app-wide fullscreen image/video viewer -- an alternate,
 "big"/fullscreen rendering of a `Post`'s `media` (compare
@@ -31,7 +31,7 @@ import Json.Decode as Decode
 import Json.Encode as Encode
 import Ports
 import Process
-import Proto.Rellm exposing (Media, MediaMetadata, MediaReference, MediaSize, Post, defaultMedia, defaultMediaMetadata, defaultMediaSize, unwrapAuthor, wrapAuthor)
+import Proto.Rellm exposing (Media, MediaMetadata, MediaReference, MediaSize, Post, defaultMedia, defaultMediaMetadata, defaultMediaReference, defaultMediaSize, unwrapAuthor, wrapAuthor)
 import Proto.Rellm.MediaConversion exposing (MediaConversion(..))
 import Proto.Rellm.Rellm as Rellm
 import Proto.Rellm.Visibility exposing (Visibility(..))
@@ -1339,6 +1339,91 @@ applySwipe ( startX, startY ) ( endX, endY ) model =
         ( model, Cmd.none )
 
 
+{-| The `targetHost` for media that is only a URL (see `standInMedia`): any host `Components.Posts.isFederatedHost` accepts makes
+`Posts.mediaServer` supply a placeholder server, which `MediaRenderer.authorizedUrl` never dereferences for a URL-only media.
+-}
+standInHost : String
+standInHost =
+    "bluesky:"
+
+
+{-| A video known only by its URL (the miniplayer's), as a media the viewer can show: what it plays is that URL as it is.
+-}
+standInMedia : { id : String, url : String, title : Maybe String } -> MediaReference
+standInMedia details =
+    { defaultMediaReference
+        | id = details.id
+        , url = Just details.url
+        , name = details.title
+        , sizes = [ { defaultMediaSize | conversion = MEDIACONVERSIONORIGINAL, contentType = "video/*" } ]
+    }
+
+
+{-| The video the viewer is showing, if its current item is one (and it isn't open just to edit an audio file): what to play
+in `Shared.VideoPlayerPanel`, whose player takes the viewer's place for videos -- the viewer only keeps a stage for it
+(see `view`). `autoplay` is whether it should start on its own.
+-}
+type alias ViewerVideo =
+    { mediaId : String
+    , src : String
+    , poster : Maybe String
+    , aspectRatio : Float
+    , title : String
+    , autoplay : Bool
+    , host : String
+    , downloads : List String
+    }
+
+
+currentVideo : AccountsPanel.Model -> Model -> Maybe ViewerVideo
+currentVideo accountsPanelModel model =
+    model.currentMediaReference
+        |> Maybe.andThen (\id -> List.filter (\m -> m.id == id) model.media |> List.head)
+        |> Maybe.andThen (videoSource accountsPanelModel model.targetHost)
+        |> Maybe.map (\video -> { video | autoplay = model.autoplay })
+
+
+{-| `media` (if it is a video) on `host`, as something to play in `Shared.VideoPlayerPanel`: its URL, poster, shape, and -- for
+one on one of our servers -- the `host` and the sizes it can be downloaded in. (`autoplay` is the viewer's own setting;
+callers other than the viewer have no say in it.) Also how a `#video-<id>` link's media becomes a video entry.
+-}
+videoSource : AccountsPanel.Model -> String -> MediaReference -> Maybe ViewerVideo
+videoSource accountsPanelModel host media =
+    if not (isVideo media) then
+        Nothing
+
+    else
+        Posts.mediaServer (RellmServers.rellmServerForHost accountsPanelModel.servers host) host
+            |> Maybe.map
+                (\server ->
+                    let
+                        natural : { src : String, poster : Maybe String, aspectRatio : Float }
+                        natural =
+                            MediaRenderer.naturalVideo server (RellmAccounts.enabledRellmAccountForServer accountsPanelModel.accounts host) media
+                    in
+                    { mediaId = media.id
+                    , src = natural.src
+                    , poster = natural.poster
+                    , aspectRatio = natural.aspectRatio
+                    , title = Maybe.withDefault "Video" media.name
+                    , autoplay = True
+                    , host =
+                        -- Only media of ours has a link and downloads; a URL-only one (Bluesky, Mastodon, the miniplayer's) is just the URL.
+                        if media.url == Nothing && not (Posts.isFederatedHost host) then
+                            host
+
+                        else
+                            ""
+                    , downloads =
+                        if media.url == Nothing && not (Posts.isFederatedHost host) then
+                            MediaRenderer.videoDownloadSizes media
+
+                        else
+                            []
+                    }
+                )
+
+
 view : Bool -> AccountsPanel.Model -> Model -> Html Msg
 view audioPlayerActive accountsPanelModel model =
     let
@@ -1814,21 +1899,32 @@ view audioPlayerActive accountsPanelModel model =
                                 , preventDefaultOn "touchmove" (Decode.succeed ( TouchMove, model.touchStart /= Nothing ))
                                 , on "touchend" (touchPoint "changedTouches" TouchEnd)
                                 ]
-                                [ (if model.autoplay then
-                                    MediaRenderer.viewAutoplay
+                                [ if isVideo media then
+                                    -- Videos play in `Shared.VideoPlayerPanel`'s player (the same controls as everywhere
+                                    -- else, and the queue's), which `public/rellm-video.js` glides over this placeholder.
+                                    div
+                                        [ class "video-stage media-viewer-panel-video-stage"
+                                        , attribute "data-video-stage" ""
+                                        , style "--video-ratio" (String.fromFloat (MediaRenderer.naturalVideo server maybeAccount media).aspectRatio)
+                                        ]
+                                        []
 
-                                   else
-                                    MediaRenderer.view
-                                  )
-                                    MediaRenderer.Natural
-                                    MediaRenderer.ToWidthAndHeight
-                                    server
-                                    maybeAccount
-                                    True
-                                    MediaRenderer.init
-                                    SetCurrent
-                                    SetCurrent
-                                    media
+                                  else
+                                    (if model.autoplay then
+                                        MediaRenderer.viewAutoplay
+
+                                     else
+                                        MediaRenderer.view
+                                    )
+                                        MediaRenderer.Natural
+                                        MediaRenderer.ToWidthAndHeight
+                                        server
+                                        maybeAccount
+                                        True
+                                        MediaRenderer.init
+                                        SetCurrent
+                                        SetCurrent
+                                        media
                                 ]
                           )
                         ]

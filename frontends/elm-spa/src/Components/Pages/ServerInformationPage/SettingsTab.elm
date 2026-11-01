@@ -88,6 +88,7 @@ type Msg
     | FeatureSettingsShowStartedOrLongEventsToggled FeatureSettingsSet
     | FeatureSettingsLicensedMediaGloballyToggled FeatureSettingsSet
     | FeatureSettingsBlockCorsToggled FeatureSettingsSet
+    | FeatureSettingsHlsStreamingToggled FeatureSettingsSet
     | FeatureSettingsGenerateLinkPreviewImagesToggled FeatureSettingsSet
     | FeatureSettingsPreferMetadataForLinkPreviewImagesToggled FeatureSettingsSet
     | DeleteLinkPreviewImagesClicked
@@ -176,6 +177,7 @@ type alias FeatureSettingsEdit =
     -- `server_configuration.proto`.
     , licensedMediaVisibleGlobally : Bool
     , blockCorsAnonymousMediaAccess : Bool
+    , hlsStreamingEnabled : Bool
     , generateLinkPreviewImages : Bool
     , preferMetadataForLinkPreviewImages : Bool
     , mediaAllocationText : String
@@ -360,6 +362,7 @@ update shared targetHost maybeServer msg model =
                             , defaultSort = Maybe.withDefault DEFAULTPOSTSSORTRECENT current.defaultSort
                             , licensedMediaVisibleGlobally = Maybe.withDefault False current.licensedMediaVisibleGlobally
                             , blockCorsAnonymousMediaAccess = Maybe.withDefault False current.blockCorsAnonymousMediaAccess
+                            , hlsStreamingEnabled = Maybe.withDefault False current.hlsStreamingEnabled
                             , generateLinkPreviewImages = Maybe.withDefault True current.generateLinkPreviewImages
                             , preferMetadataForLinkPreviewImages = Maybe.withDefault False current.preferMetadataForLinkPreviewImages
                             , mediaAllocationText = String.fromFloat (toFloat mediaAllocationBytes / toFloat (ByteFormat.byteUnitBytes mediaAllocationUnit))
@@ -456,6 +459,13 @@ update shared targetHost maybeServer msg model =
         FeatureSettingsBlockCorsToggled set ->
             ( setFeatureSettingsEditFor set
                 (featureSettingsEditFor set model |> Maybe.map (\edit -> { edit | blockCorsAnonymousMediaAccess = not edit.blockCorsAnonymousMediaAccess }))
+                model
+            , Effect.none
+            )
+
+        FeatureSettingsHlsStreamingToggled set ->
+            ( setFeatureSettingsEditFor set
+                (featureSettingsEditFor set model |> Maybe.map (\edit -> { edit | hlsStreamingEnabled = not edit.hlsStreamingEnabled }))
                 model
             , Effect.none
             )
@@ -841,6 +851,7 @@ type alias FeatureSettingsSummary =
     , defaultSort : Maybe DefaultPostsSort
     , licensedMediaVisibleGlobally : Maybe Bool
     , blockCorsAnonymousMediaAccess : Maybe Bool
+    , hlsStreamingEnabled : Maybe Bool
 
     -- The positive form of `MediaSettings.disable_link_preview_images`.
     , generateLinkPreviewImages : Maybe Bool
@@ -879,7 +890,7 @@ currentFeatureSettingsFor set config =
                 s =
                     Maybe.withDefault defaultFeatureSettings config.peopleSettings
             in
-            { visible = s.visible, moderation = s.defaultModeration, visibility = s.defaultVisibility, aliasSingular = s.aliasSingular, aliasPlural = s.aliasPlural, enableReplies = Nothing, calendarLookbackDays = Nothing, calendarDisplayMode = Nothing, showStartedOrLongEventsByDefault = Nothing, defaultSort = Nothing, licensedMediaVisibleGlobally = Nothing, blockCorsAnonymousMediaAccess = Nothing, generateLinkPreviewImages = Nothing, preferMetadataForLinkPreviewImages = Nothing, mediaAllocationBytes = Nothing, serverMediaAllocationBytes = Nothing, serverMediaUsageBytes = Nothing, serverMediaUsageCalculatedAt = Nothing, serverObjectStorageUsageBytes = Nothing, serverObjectStorageUsageCalculatedAt = Nothing }
+            { visible = s.visible, moderation = s.defaultModeration, visibility = s.defaultVisibility, aliasSingular = s.aliasSingular, aliasPlural = s.aliasPlural, enableReplies = Nothing, calendarLookbackDays = Nothing, calendarDisplayMode = Nothing, showStartedOrLongEventsByDefault = Nothing, defaultSort = Nothing, licensedMediaVisibleGlobally = Nothing, blockCorsAnonymousMediaAccess = Nothing, hlsStreamingEnabled = Nothing, generateLinkPreviewImages = Nothing, preferMetadataForLinkPreviewImages = Nothing, mediaAllocationBytes = Nothing, serverMediaAllocationBytes = Nothing, serverMediaUsageBytes = Nothing, serverMediaUsageCalculatedAt = Nothing, serverObjectStorageUsageBytes = Nothing, serverObjectStorageUsageCalculatedAt = Nothing }
 
         GroupFeatureSettings ->
             let
@@ -887,7 +898,7 @@ currentFeatureSettingsFor set config =
                 s =
                     Maybe.withDefault defaultFeatureSettings config.groupSettings
             in
-            { visible = s.visible, moderation = s.defaultModeration, visibility = s.defaultVisibility, aliasSingular = s.aliasSingular, aliasPlural = s.aliasPlural, enableReplies = Nothing, calendarLookbackDays = Nothing, calendarDisplayMode = Nothing, showStartedOrLongEventsByDefault = Nothing, defaultSort = Nothing, licensedMediaVisibleGlobally = Nothing, blockCorsAnonymousMediaAccess = Nothing, generateLinkPreviewImages = Nothing, preferMetadataForLinkPreviewImages = Nothing, mediaAllocationBytes = Nothing, serverMediaAllocationBytes = Nothing, serverMediaUsageBytes = Nothing, serverMediaUsageCalculatedAt = Nothing, serverObjectStorageUsageBytes = Nothing, serverObjectStorageUsageCalculatedAt = Nothing }
+            { visible = s.visible, moderation = s.defaultModeration, visibility = s.defaultVisibility, aliasSingular = s.aliasSingular, aliasPlural = s.aliasPlural, enableReplies = Nothing, calendarLookbackDays = Nothing, calendarDisplayMode = Nothing, showStartedOrLongEventsByDefault = Nothing, defaultSort = Nothing, licensedMediaVisibleGlobally = Nothing, blockCorsAnonymousMediaAccess = Nothing, hlsStreamingEnabled = Nothing, generateLinkPreviewImages = Nothing, preferMetadataForLinkPreviewImages = Nothing, mediaAllocationBytes = Nothing, serverMediaAllocationBytes = Nothing, serverMediaUsageBytes = Nothing, serverMediaUsageCalculatedAt = Nothing, serverObjectStorageUsageBytes = Nothing, serverObjectStorageUsageCalculatedAt = Nothing }
 
         PostFeatureSettings ->
             let
@@ -895,7 +906,7 @@ currentFeatureSettingsFor set config =
                 s =
                     Maybe.withDefault defaultPostSettings config.postSettings
             in
-            { visible = s.visible, moderation = s.defaultModeration, visibility = s.defaultVisibility, aliasSingular = s.aliasSingular, aliasPlural = s.aliasPlural, enableReplies = s.enableReplies, calendarLookbackDays = Nothing, calendarDisplayMode = Nothing, showStartedOrLongEventsByDefault = Nothing, defaultSort = Just s.defaultSort, licensedMediaVisibleGlobally = Nothing, blockCorsAnonymousMediaAccess = Nothing, generateLinkPreviewImages = Nothing, preferMetadataForLinkPreviewImages = Nothing, mediaAllocationBytes = Nothing, serverMediaAllocationBytes = Nothing, serverMediaUsageBytes = Nothing, serverMediaUsageCalculatedAt = Nothing, serverObjectStorageUsageBytes = Nothing, serverObjectStorageUsageCalculatedAt = Nothing }
+            { visible = s.visible, moderation = s.defaultModeration, visibility = s.defaultVisibility, aliasSingular = s.aliasSingular, aliasPlural = s.aliasPlural, enableReplies = s.enableReplies, calendarLookbackDays = Nothing, calendarDisplayMode = Nothing, showStartedOrLongEventsByDefault = Nothing, defaultSort = Just s.defaultSort, licensedMediaVisibleGlobally = Nothing, blockCorsAnonymousMediaAccess = Nothing, hlsStreamingEnabled = Nothing, generateLinkPreviewImages = Nothing, preferMetadataForLinkPreviewImages = Nothing, mediaAllocationBytes = Nothing, serverMediaAllocationBytes = Nothing, serverMediaUsageBytes = Nothing, serverMediaUsageCalculatedAt = Nothing, serverObjectStorageUsageBytes = Nothing, serverObjectStorageUsageCalculatedAt = Nothing }
 
         EventFeatureSettings ->
             let
@@ -903,7 +914,7 @@ currentFeatureSettingsFor set config =
                 s =
                     Maybe.withDefault defaultEventSettings config.eventSettings
             in
-            { visible = s.visible, moderation = s.defaultModeration, visibility = s.defaultVisibility, aliasSingular = s.aliasSingular, aliasPlural = s.aliasPlural, enableReplies = s.enableReplies, calendarLookbackDays = s.calendarLookbackDays, calendarDisplayMode = Just s.defaultCalendarDisplayMode, showStartedOrLongEventsByDefault = Just s.showStartedOrLongEventsByDefault, defaultSort = Nothing, licensedMediaVisibleGlobally = Nothing, blockCorsAnonymousMediaAccess = Nothing, generateLinkPreviewImages = Nothing, preferMetadataForLinkPreviewImages = Nothing, mediaAllocationBytes = Nothing, serverMediaAllocationBytes = Nothing, serverMediaUsageBytes = Nothing, serverMediaUsageCalculatedAt = Nothing, serverObjectStorageUsageBytes = Nothing, serverObjectStorageUsageCalculatedAt = Nothing }
+            { visible = s.visible, moderation = s.defaultModeration, visibility = s.defaultVisibility, aliasSingular = s.aliasSingular, aliasPlural = s.aliasPlural, enableReplies = s.enableReplies, calendarLookbackDays = s.calendarLookbackDays, calendarDisplayMode = Just s.defaultCalendarDisplayMode, showStartedOrLongEventsByDefault = Just s.showStartedOrLongEventsByDefault, defaultSort = Nothing, licensedMediaVisibleGlobally = Nothing, blockCorsAnonymousMediaAccess = Nothing, hlsStreamingEnabled = Nothing, generateLinkPreviewImages = Nothing, preferMetadataForLinkPreviewImages = Nothing, mediaAllocationBytes = Nothing, serverMediaAllocationBytes = Nothing, serverMediaUsageBytes = Nothing, serverMediaUsageCalculatedAt = Nothing, serverObjectStorageUsageBytes = Nothing, serverObjectStorageUsageCalculatedAt = Nothing }
 
         MediaFeatureSettings ->
             let
@@ -923,6 +934,7 @@ currentFeatureSettingsFor set config =
             , defaultSort = Nothing
             , licensedMediaVisibleGlobally = Just s.licensedMediaVisibleGlobally
             , blockCorsAnonymousMediaAccess = Just s.blockCorsAnonymousMediaAccess
+            , hlsStreamingEnabled = Just s.hlsStreamingEnabled
             , generateLinkPreviewImages = Just (not s.disableLinkPreviewImages)
             , preferMetadataForLinkPreviewImages = Just s.preferMetadataForLinkPreviewImages
             , mediaAllocationBytes = Just (Conversions.int64ToInt s.defaultUserMediaAllocationBytes)
@@ -1079,6 +1091,7 @@ applyFeatureSettingsFor set edit config =
                             , serverMediaAllocationBytes = serverMediaAllocationBytes
                             , licensedMediaVisibleGlobally = edit.licensedMediaVisibleGlobally
                             , blockCorsAnonymousMediaAccess = edit.blockCorsAnonymousMediaAccess
+                            , hlsStreamingEnabled = edit.hlsStreamingEnabled
                             , disableLinkPreviewImages = not edit.generateLinkPreviewImages
                             , preferMetadataForLinkPreviewImages = edit.preferMetadataForLinkPreviewImages
                         }
@@ -1398,6 +1411,7 @@ featureSettingsDisplayView time set maybeAdminAccount current =
             , if fields.mediaAllocation then
                 [ Common.settingsRow "Licensed Media Visible Globally" (Common.switchDisplay (Maybe.withDefault False current.licensedMediaVisibleGlobally))
                 , Common.settingsRow "Block CORS Anonymous Media Access" (Common.switchDisplay (Maybe.withDefault False current.blockCorsAnonymousMediaAccess))
+                , Common.settingsRow "HLS Video Streaming" (Common.switchDisplay (Maybe.withDefault False current.hlsStreamingEnabled))
                 , Common.settingsRow "Generate Link Preview Images" (Common.switchDisplay (Maybe.withDefault True current.generateLinkPreviewImages))
                 , Common.settingsRow "Prefer Metadata for Link Preview Images" (Common.switchDisplay (Maybe.withDefault False current.preferMetadataForLinkPreviewImages))
                 ]
@@ -1554,6 +1568,7 @@ featureSettingsEditView time set edit =
             , if fields.mediaAllocation then
                 [ Common.settingsRow "Licensed Media Visible Globally" (Common.flagSwitch edit.licensedMediaVisibleGlobally (FeatureSettingsLicensedMediaGloballyToggled set))
                 , Common.settingsRow "Block CORS Anonymous Media Access" (Common.flagSwitch edit.blockCorsAnonymousMediaAccess (FeatureSettingsBlockCorsToggled set))
+                , Common.settingsRow "HLS Video Streaming" (Common.flagSwitch edit.hlsStreamingEnabled (FeatureSettingsHlsStreamingToggled set))
                 , Common.settingsRow "Generate Link Preview Images" (Common.flagSwitch edit.generateLinkPreviewImages (FeatureSettingsGenerateLinkPreviewImagesToggled set))
                 , Common.settingsRow "Prefer Metadata for Link Preview Images" (Common.flagSwitch edit.preferMetadataForLinkPreviewImages (FeatureSettingsPreferMetadataForLinkPreviewImagesToggled set))
                 ]

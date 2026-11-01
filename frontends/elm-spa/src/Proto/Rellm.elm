@@ -1520,6 +1520,7 @@ fieldNumbersMediaSettings :
     , defaultUserMediaAllocationBytes : Int
     , blockCorsAnonymousMediaAccess : Int
     , licensedMediaVisibleGlobally : Int
+    , hlsStreamingEnabled : Int
     , serverMediaAllocationBytes : Int
     , serverMediaUsageBytes : Int
     , serverMediaUsageCalculatedAt : Int
@@ -1602,6 +1603,17 @@ encodeMediaSettings =
  users: listed by `GetMedia` and its preview/thumbnails served by `GET /media/{id}`. When unset
  (the default), `LICENSED` media is only visible to logged-in users -- like `SERVER_PUBLIC` --
  plus its owner and admins. Either way, its full-quality bytes still require an active License.
+
+
+### hlsStreamingEnabled
+
+ "HLS Streaming". When set, converted videos can also be streamed as HLS from
+ `/media/hls/{id}/master.m3u8` (see the README's "HLS video streaming"). Off by default, since
+ it costs more than the stored size conversions do: the first request for a rendition runs an
+ `ffmpeg` stream-copy pass over the whole file inside the server process (rather than once, in
+ the `convert_media_sizes` background job), and the segments are then cached on the server's
+ local disk -- per replica, on top of the cached copy of the MP4 itself. When unset, every
+ `/media/hls/...` URL is a `404` and videos are served from `/media/{id}` only.
 
 
 ### serverMediaAllocationBytes

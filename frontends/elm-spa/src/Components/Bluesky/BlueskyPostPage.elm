@@ -376,7 +376,7 @@ federatedPostView shared sensitiveMediaRevealed sensitive post =
                     [ text "This post contains sensitive media. Click to view." ]
 
               else
-                MultiMediaRenderer.view post.postMediaLayout noServer Nothing shared.mediaRenderer MediaPlayClicked MediaImageClicked post.media
+                MultiMediaRenderer.viewNatural noServer Nothing shared.mediaRenderer MediaPlayClicked MediaImageClicked post.media
 
             , if gated then
                 text ""

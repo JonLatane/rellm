@@ -1,4 +1,4 @@
-module Components.MultiMediaRenderer exposing (preview, previewExtraSmall, view)
+module Components.MultiMediaRenderer exposing (preview, previewExtraSmall, view, viewNatural)
 
 {-| Renders a `Post`'s `media`. A single item (the common case) is the
 "focus" of the post, so it's rendered big -- at its own inherent aspect
@@ -46,6 +46,16 @@ import Proto.Rellm.PostMediaLayout exposing (PostMediaLayout(..))
 import Shared.AccountsPanel.RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers exposing (RellmServer)
 import UI.Classes exposing (classes)
+
+
+{-| Every item at the `Natural` size (stacked, as the vertical-scroll gallery lays them out), whatever the post's
+`PostMediaLayout` -- for a post's own page (`Components.Posts.postDetail`, `Components.Bluesky.BlueskyPostPage`), where the
+media is the content and a thumbnail strip would only be a smaller version of what a card already shows. (The layout choice
+still shapes the post's cards and `view`'s other callers.)
+-}
+viewNatural : RellmServer -> Maybe RellmAccount -> MediaRenderer.Model -> (String -> msg) -> (String -> msg) -> List MediaReference -> Html msg
+viewNatural server maybeAccount playState onPlayClicked onImageClicked media =
+    render MEDIALAYOUTDYNAMICVERTICALSCROLL Nothing server maybeAccount playState onPlayClicked onImageClicked media
 
 
 view : PostMediaLayout -> RellmServer -> Maybe RellmAccount -> MediaRenderer.Model -> (String -> msg) -> (String -> msg) -> List MediaReference -> Html msg

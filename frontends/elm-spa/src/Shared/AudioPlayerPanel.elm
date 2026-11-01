@@ -1,4 +1,4 @@
-module Shared.AudioPlayerPanel exposing (Model, Msg(..), Placement(..), TrackLink, currentMedia, init, isExpanded, queueIcon, subscriptions, trackFragment, trackLinkFromFragment, update, view)
+module Shared.AudioPlayerPanel exposing (CurrentVideo, Handoff, Model, Msg(..), Placement(..), TrackLink, VideoItem, currentMedia, currentVideo, handoffDecoder, handoffSubscription, hasNext, hasPrevious, inheritLinkData, init, pendingLink, isExpanded, isLinkFragment, linkFragment, nextIcon, prevIcon, queueIcon, subscriptions, trackLinkFromFragment, videoFragment, videoLinkFromFragment, update, view)
 
 {-| A persistent, app-wide audio player -- the companion to `Shared.MediaViewerPanel`. Where the viewer is a
 fullscreen, view-blocking carousel (with editing), this is a "now playing" bar docked to the bottom of the
@@ -7,7 +7,11 @@ page that keeps playing across route changes: prev / play-pause / next on the le
 to 60% of the viewport height and shows the cover art (or a placeholder), title and artist -- plus an Edit button for the
 item's owner/an Admin, which hands off to `Shared.MediaViewerPanel`'s own editor (see `Shared.update`).
 
-Audio only for now (see `Components.MediaFeed`'s `MediaClicked`, the only opener). The one real `<audio>`
+The queue is the app's one queue, for audio *and* video: an entry is either a track (played here) or a video (`VideoItem`,
+played by `Shared.VideoPlayerPanel`'s miniplayer, which `Shared.update` keeps showing whichever video is current). Starting
+anything -- a track from the Audio page, a post card's audio or video handed over (`OpenAt`, `OpenVideo`) -- makes it the
+current entry and puts the existing queue after it; Next/Prev and the end of an entry move through the queue, switching
+between the bar and the miniplayer as the kinds change. The one real `<audio>`
 element lives in `view` and is never unmounted, so playback survives navigation and autoplay permission
 granted by the first tap carries over to every later track; its events feed `TimeUpdated`/
 `PlayStateChanged`/`Ended`, and imperative commands (toggle, seek) go out through `Ports.controlAudioPlayer`.
@@ -83,7 +87,37 @@ type alias Source =
 {-| A track in the queue, with the server it lives on -- a queue can mix servers' tracks (see `Enqueue`).
 -}
 type alias QueueItem =
-    { media : MediaReference, host : String }
+    { media : MediaReference, host : String, video : Maybe VideoItem }
+
+
+{-| What a video queue entry plays in the miniplayer. Its `MediaReference` is a stand-in (`id` = the video's `src`, `name`
+= its title) so the queue treats it like any entry; `host` is `""`, as it isn't on a server of ours. `returnUrl` is the
+page it came from (the miniplayer's back arrow). `mediaId` is the id of the Rellm media it is, if it is one -- how an
+inline thumbnail hands over to the media viewer's player (`public/rellm-media.js`'s `setEnlarge`). A video on one of our servers
+(`host` isn't `""`) also has its `mediaId`-based link (`#video-<id>`) and the sizes it can be downloaded in (`downloads`, `size=`
+values: `small`/`medium`/`large`/`original`), which are what the expanded player's Download/Share popover offers.
+-}
+type alias VideoItem =
+    { src : String
+    , poster : Maybe String
+    , aspectRatio : Float
+    , returnUrl : String
+    , mediaId : Maybe String
+    , host : String
+    , downloads : List String
+    }
+
+
+{-| The current queue entry, if it's a video, and how the miniplayer should start it: where (seconds), whether to play,
+and a counter that changes each time a video is begun (so beginning the same one again restarts the miniplayer).
+-}
+type alias CurrentVideo =
+    { video : VideoItem
+    , title : String
+    , startAt : Float
+    , resume : Bool
+    , generation : Int
+    }
 
 
 {-| Where `Enqueue` puts a track: right after the one playing, or at the very end.
@@ -121,6 +155,19 @@ type alias Model =
     -- A freshly loaded track should start playing once its active slot can (`CanPlay`).
     , autoStart : Bool
 
+    -- Changes whenever something else becomes the current entry, or the player is closed -- so a reply that was
+    -- waiting on a fetch (a post card's audio being handed over) can tell the user has since moved on.
+    , selectionGeneration : Int
+
+    -- How the miniplayer is to start the current video entry (see `CurrentVideo`).
+    , videoStartAt : Float
+    , videoResume : Bool
+    , videoGeneration : Int
+
+    -- Where to seek to once the freshly loaded track can (`CanPlay`): the position a post card's audio was at when it
+    -- was handed over (`OpenAt`).
+    , pendingSeekMs : Maybe Float
+
     -- The higher-quality copy to upgrade to, held back until the active slot has *finished* downloading
     -- (`ActiveFullyLoaded`) -- starting it earlier makes two big downloads fight over the connection from
     -- the first byte, which stalls playback (badly on iOS Safari). Same gate for the neighbors' preloads.
@@ -130,6 +177,9 @@ type alias Model =
     -- A `#track-<id>[@host]` link (see `trackLinkFromFragment`) waiting for its server to connect so the track
     -- can be fetched; `Shared.update` clears it when it starts that fetch.
     , pendingTrackLink : Maybe TrackLink
+
+    -- Same for a `#video-<id>[@host]` link (see `videoLinkFromFragment`).
+    , pendingVideoLink : Maybe TrackLink
 
     -- `scheme://host[:port]` this app is served from -- what a shared link to a track starts with.
     , origin : String
@@ -155,9 +205,22 @@ type alias Model =
 type Msg
     = -- queue, id to start playing, host
       Open (List MediaReference) String String
+      -- A post card's audio moving to the bar: queue, id, host, position (ms) to carry on from, and whether it was playing.
+    | OpenAt (List MediaReference) String String Float Bool
+      -- A video moving to the miniplayer (its title, where it had got to in seconds, whether it was playing).
+    | OpenVideo VideoItem (Maybe String) Float Bool
+      -- What the miniplayer's video reports as it plays (`Shared.update` forwards it): playing?, position and duration (ms).
+    | VideoState Bool Float Float
+    | VideoEnded
+      -- The miniplayer's queue button: the bar expands to show the queue.
+    | ShowQueue
       -- Like `Open`, but doesn't start playback and leaves the player expanded: a `#track-<id>` link (browsers
       -- block autoplay from links anyway). Playback -- and the higher-quality upgrade -- wait for the first Play.
     | Load (List MediaReference) String String
+      -- The same for a video: a `#video-<id>` link (or a share link to one) loads it, paused, in the expanded player.
+    | LoadVideo VideoItem (Maybe String)
+      -- The "this link is on a server you haven't added" prompt (`UI`) was dismissed: forget the link.
+    | LinkPromptDismissed
       -- Adds a track (and the host it's on) to the queue -- starting it if nothing's loaded yet.
     | Enqueue Placement MediaReference String
     | ToggleQueue
@@ -197,7 +260,7 @@ type Msg
 
 init : Model
 init =
-    { queue = [], currentId = Nothing, targetHost = "", expanded = False, playing = False, positionMs = 0, durationMs = 0, quality = High, activeSlot = SlotA, slotA = Nothing, slotB = Nothing, autoStart = False, pendingUpgrade = Nothing, activeLoaded = False, pendingTrackLink = Nothing, origin = "", sharePopoverOpen = False, linkCopied = False, copyGeneration = 0, savedFragment = Nothing, queueOpen = False, moveAnimations = Dict.empty, drag = UI.Drag.init }
+    { queue = [], currentId = Nothing, targetHost = "", expanded = False, playing = False, positionMs = 0, durationMs = 0, quality = High, activeSlot = SlotA, slotA = Nothing, slotB = Nothing, autoStart = False, selectionGeneration = 0, videoStartAt = 0, videoResume = True, videoGeneration = 0, pendingSeekMs = Nothing, pendingUpgrade = Nothing, activeLoaded = False, pendingTrackLink = Nothing, pendingVideoLink = Nothing, origin = "", sharePopoverOpen = False, linkCopied = False, copyGeneration = 0, savedFragment = Nothing, queueOpen = False, moveAnimations = Dict.empty, drag = UI.Drag.init }
 
 
 {-| Whether the panel is actually shown expanded: the user's choice (`Model.expanded`), unless the fullscreen
@@ -219,6 +282,93 @@ currentMedia model =
 currentItem : Model -> Maybe QueueItem
 currentItem model =
     model.queue |> List.filter (isCurrent model) |> List.head
+
+
+{-| The current entry, if it's a video -- what `Shared.update` keeps the miniplayer showing.
+-}
+currentVideo : Model -> Maybe CurrentVideo
+currentVideo model =
+    currentItem model
+        |> Maybe.andThen
+            (\item ->
+                item.video
+                    |> Maybe.map
+                        (\video ->
+                            { video = video
+                            , title = item.media.name |> Maybe.withDefault "Video"
+                            , startAt = model.videoStartAt
+                            , resume = model.videoResume
+                            , generation = model.videoGeneration
+                            }
+                        )
+            )
+
+
+hasPrevious : Model -> Bool
+hasPrevious model =
+    adjacent -1 model /= Nothing
+
+
+hasNext : Model -> Bool
+hasNext model =
+    adjacent 1 model /= Nothing
+
+
+{-| `item` starts; whatever follows it (the rest of the list it was chosen from) and then the existing queue come after, each
+entry once. The previous current entry is just one of the existing ones, so it ends up after the new one.
+-}
+playNowQueue : QueueItem -> List QueueItem -> List QueueItem -> List QueueItem
+playNowQueue item following existing =
+    List.foldl
+        (\queued kept ->
+            if List.any (\other -> itemKey other == itemKey queued) kept then
+                kept
+
+            else
+                kept ++ [ queued ]
+        )
+        []
+        (item :: following ++ existing)
+
+
+{-| Starts whichever kind of entry `item` is: a track on the bar's own `<audio>` slots, a video in the miniplayer.
+-}
+beginItem : QueueItem -> Model -> ( Model, Cmd Msg )
+beginItem item model =
+    case item.video of
+        Just _ ->
+            beginVideo item 0 True model
+
+        Nothing ->
+            beginTrack item model
+
+
+{-| Makes a video entry current. The audio slots are let go (nothing here plays); `Shared.update` shows the miniplayer, which
+reports back with `VideoState`/`VideoEnded`.
+-}
+beginVideo : QueueItem -> Float -> Bool -> Model -> ( Model, Cmd Msg )
+beginVideo item startAtSeconds resume model =
+    ( { model
+        | currentId = Just item.media.id
+        , targetHost = item.host
+        , positionMs = startAtSeconds * 1000
+        , durationMs = 0
+        , playing = resume
+        , autoStart = False
+        , pendingSeekMs = Nothing
+        , pendingUpgrade = Nothing
+        , activeLoaded = False
+        , slotA = Nothing
+        , slotB = Nothing
+        , selectionGeneration = model.selectionGeneration + 1
+        , pendingTrackLink = Nothing
+        , pendingVideoLink = Nothing
+        , videoStartAt = startAtSeconds
+        , videoResume = resume
+        , videoGeneration = model.videoGeneration + 1
+      }
+    , Cmd.batch [ releaseIfEmptied SlotA model { model | slotA = Nothing }, releaseIfEmptied SlotB model { model | slotB = Nothing } ]
+    )
 
 
 isCurrent : Model -> QueueItem -> Bool
@@ -415,6 +565,102 @@ trackFragment mainHost trackHost id =
            )
 
 
+{-| The `#track-` / `#video-` link waiting for its server to connect, with which kind it is (`"track"` / `"video"`).
+-}
+pendingLink : Model -> Maybe ( String, TrackLink )
+pendingLink model =
+    case ( model.pendingTrackLink, model.pendingVideoLink ) of
+        ( Just link, _ ) ->
+            Just ( "track", link )
+
+        ( Nothing, Just link ) ->
+            Just ( "video", link )
+
+        ( Nothing, Nothing ) ->
+            Nothing
+
+
+{-| A video being (re)opened as a bare URL -- the miniplayer's enlarge button hands the media viewer just its URL -- keeps the server
+and download sizes the queue's current entry already has for that same video, so Download/Share and its `#video-` link survive.
+-}
+inheritLinkData : Model -> VideoItem -> VideoItem
+inheritLinkData model video =
+    case currentVideo model of
+        Just current ->
+            if current.video.src == video.src && video.host == "" then
+                { video | host = current.video.host, downloads = current.video.downloads }
+
+            else
+                video
+
+        Nothing ->
+            video
+
+
+{-| `video-<id>` or `video-<id>@<host>` in a URL fragment -> the link, like `trackLinkFromFragment` (for a video on one of
+our servers, as opposed to a track).
+-}
+videoLinkFromFragment : Maybe String -> Maybe TrackLink
+videoLinkFromFragment fragment =
+    fragment
+        |> Maybe.andThen
+            (\f ->
+                if String.startsWith "video-" f then
+                    case String.split "@" (String.dropLeft 6 f) of
+                        [ id ] ->
+                            nonEmpty id |> Maybe.map (\i -> { id = i, host = Nothing })
+
+                        [ id, host ] ->
+                            nonEmpty id |> Maybe.map (\i -> { id = i, host = nonEmpty host })
+
+                        _ ->
+                            Nothing
+
+                else
+                    Nothing
+            )
+
+
+{-| `track-` / `video-` links both -- whether a fragment is one of the player's.
+-}
+isLinkFragment : Maybe String -> Bool
+isLinkFragment fragment =
+    trackLinkFromFragment fragment /= Nothing || videoLinkFromFragment fragment /= Nothing
+
+
+{-| The fragment that links to video `id` on `videoHost`, as seen from `mainHost`: `video-<id>`, plus `@<videoHost>` for
+another server's.
+-}
+videoFragment : String -> String -> String -> String
+videoFragment mainHost videoHost id =
+    "video-"
+        ++ id
+        ++ (if videoHost == mainHost || videoHost == "" then
+                ""
+
+            else
+                "@" ++ videoHost
+           )
+
+
+{-| The fragment (without `#`) that links to the current entry -- a track, or a video on one of our servers -- seen from
+`mainHost`; `Nothing` when nothing is loaded or the entry has no link (a video that is just a URL).
+-}
+linkFragment : String -> Model -> Maybe String
+linkFragment mainHost model =
+    case ( currentItem model, model.currentId ) of
+        ( Just item, Just id ) ->
+            case item.video of
+                Just video ->
+                    Maybe.map (videoFragment mainHost video.host) video.mediaId |> Maybe.andThen (\f -> if video.host == "" then Nothing else Just f)
+
+                Nothing ->
+                    Just (trackFragment mainHost model.targetHost id)
+
+        _ ->
+            Nothing
+
+
 {-| The shareable link to `media`'s track: this app's own origin plus its (federated) track fragment.
 -}
 shareLink : String -> Model -> MediaReference -> String
@@ -507,6 +753,12 @@ beginTrack item model =
                 , playing = True
                 , autoStart = not sameAsLoaded
 
+                -- A seek meant for the track that was loading doesn't carry over to this one (`OpenAt` sets it after this).
+                , pendingSeekMs = Nothing
+                , selectionGeneration = model.selectionGeneration + 1
+                , pendingTrackLink = Nothing
+                , pendingVideoLink = Nothing
+
                 -- The upgrade (and neighbor preloads) wait for the active download to finish -- see
                 -- `Model.pendingUpgrade`. An already-loaded identical track has finished, so no wait.
                 , pendingUpgrade =
@@ -553,6 +805,51 @@ releaseIfEmptied slot before after =
 releaseSlot : Slot -> Cmd msg
 releaseSlot slot =
     Ports.controlAudioPlayer (Encode.object [ ( "action", Encode.string "release" ), ( "slot", Encode.string (slotName slot) ) ])
+
+
+{-| What a post card's `<audio>` hands over when it moves to the bar (`public/rellm-media.js`'s `rellm-audio-handoff`
+event, over `Ports.audioHandoffRequested`): the track, the server it's on, where it had got to, and whether it was playing.
+`Shared.update` fetches the track by id (a card only knows its id) and opens it with `OpenAt`.
+-}
+type alias Handoff =
+    { id : String
+    , host : String
+    , positionMs : Float
+    , playing : Bool
+    }
+
+
+handoffDecoder : Decode.Decoder Handoff
+handoffDecoder =
+    Decode.map4 Handoff
+        (Decode.field "id" Decode.string |> Decode.andThen nonBlank)
+        (Decode.field "host" Decode.string |> Decode.andThen nonBlank)
+        (Decode.field "positionMs" Decode.float |> Decode.map (max 0))
+        (Decode.field "playing" Decode.bool)
+
+
+nonBlank : String -> Decode.Decoder String
+nonBlank value =
+    if String.isEmpty (String.trim value) then
+        Decode.fail "empty"
+
+    else
+        Decode.succeed value
+
+
+{-| `Ports.audioHandoffRequested`, decoded; anything malformed is dropped.
+-}
+handoffSubscription : (Maybe Handoff -> msg) -> Sub msg
+handoffSubscription toMsg =
+    Ports.audioHandoffRequested
+        (\value ->
+            case Decode.decodeValue handoffDecoder value of
+                Ok handoff ->
+                    toMsg (Just handoff)
+
+                Err _ ->
+                    toMsg Nothing
+        )
 
 
 {-| While expanded: Esc collapses it, Space plays/pauses, Left/Right go to the previous/next track. Not while typing in (or
@@ -615,20 +912,92 @@ update msg model =
             let
                 items : List QueueItem
                 items =
-                    List.map (\media -> { media = media, host = host }) queue
+                    List.map (\media -> { media = media, host = host, video = Nothing }) queue
             in
             case items |> List.filter (\item -> item.media.id == id) |> List.head of
                 Just item ->
-                    beginTrack item { model | queue = items }
+                    let
+                        -- The list it was chosen from carries on after it (`Audio` page: "play from here"), then the existing queue.
+                        following : List QueueItem
+                        following =
+                            items
+                                |> List.foldl
+                                    (\other ( seen, rest ) ->
+                                        if seen then
+                                            ( True, rest ++ [ other ] )
+
+                                        else
+                                            ( other.media.id == id, rest )
+                                    )
+                                    ( False, [] )
+                                |> Tuple.second
+                    in
+                    beginItem item { model | queue = playNowQueue item following model.queue }
 
                 Nothing ->
                     ( model, Cmd.none )
+
+        OpenVideo video title startAtSeconds resume ->
+            let
+                item : QueueItem
+                item =
+                    { media = { defaultMediaReference | id = video.src, name = Just (Maybe.withDefault "Video" title) }
+                    , host = ""
+                    , video = Just video
+                    }
+            in
+            beginVideo item startAtSeconds resume { model | queue = playNowQueue item [] model.queue }
+
+        VideoState playing positionMs durationMs ->
+            if currentVideo model /= Nothing then
+                ( { model | playing = playing, positionMs = positionMs, durationMs = durationMs }, Cmd.none )
+
+            else
+                ( model, Cmd.none )
+
+        VideoEnded ->
+            if currentVideo model == Nothing then
+                ( model, Cmd.none )
+
+            else
+                case adjacent 1 model of
+                    Just next ->
+                        beginItem next model
+
+                    Nothing ->
+                        ( { model | playing = False }, Cmd.none )
+
+        ShowQueue ->
+            ( { model | expanded = True, queueOpen = True }, Cmd.none )
+
+        OpenAt queue id host positionMs playing ->
+            let
+                ( opened, openCmd ) =
+                    update (Open queue id host) model
+
+                -- A track that's already loaded and ready won't report `CanPlay` again: seek it now.
+                ( withSeek, seekCmd ) =
+                    if positionMs <= 0 then
+                        ( opened, Cmd.none )
+
+                    else if opened.autoStart then
+                        ( { opened | pendingSeekMs = Just positionMs }, Cmd.none )
+
+                    else
+                        ( opened, command "seek" (Just positionMs) )
+            in
+            if playing then
+                ( withSeek, Cmd.batch [ openCmd, seekCmd ] )
+
+            else
+                -- It was paused: the bar just has it ready, not playing.
+                ( { withSeek | playing = False, autoStart = False }, Cmd.batch [ openCmd, seekCmd, command "pause" Nothing ] )
 
         Load queue id host ->
             let
                 items : List QueueItem
                 items =
-                    List.map (\media -> { media = media, host = host }) queue
+                    List.map (\media -> { media = media, host = host, video = Nothing }) queue
             in
             case items |> List.filter (\item -> item.media.id == id) |> List.head of
                 Just item ->
@@ -643,15 +1012,34 @@ update msg model =
                 Nothing ->
                     ( model, Cmd.none )
 
+        LinkPromptDismissed ->
+            ( { model | pendingTrackLink = Nothing, pendingVideoLink = Nothing }, Cmd.none )
+
+        LoadVideo video title ->
+            if model.currentId == Just video.src then
+                -- Already the loaded video: just show it.
+                ( { model | expanded = True }, Cmd.none )
+
+            else
+                let
+                    item : QueueItem
+                    item =
+                        { media = { defaultMediaReference | id = video.src, name = Just (Maybe.withDefault "Video" title) }
+                        , host = ""
+                        , video = Just video
+                        }
+                in
+                beginVideo item 0 False { model | queue = playNowQueue item [] model.queue, expanded = True }
+
         Enqueue placement media host ->
             let
                 item : QueueItem
                 item =
-                    { media = media, host = host }
+                    { media = media, host = host, video = Nothing }
             in
             if model.currentId == Nothing then
                 -- Nothing loaded: the queued track just starts.
-                beginTrack item { model | queue = [ item ] }
+                beginItem item { model | queue = [ item ] }
 
             else if isCurrent model item then
                 ( model, Cmd.none )
@@ -669,7 +1057,7 @@ update msg model =
                         ( model, command "toggle" Nothing )
 
                     else
-                        beginTrack item model
+                        beginItem item model
 
                 Nothing ->
                     ( model, Cmd.none )
@@ -731,7 +1119,7 @@ update msg model =
         Next ->
             case adjacent 1 model of
                 Just media ->
-                    beginTrack media model
+                    beginItem media model
 
                 Nothing ->
                     ( model, Cmd.none )
@@ -740,7 +1128,7 @@ update msg model =
             -- Like most players: past the first few seconds, "previous" restarts the track.
             case ( model.positionMs > 3000, adjacent -1 model ) of
                 ( False, Just media ) ->
-                    beginTrack media model
+                    beginItem media model
 
                 _ ->
                     ( model, command "seek" (Just 0) )
@@ -773,7 +1161,7 @@ update msg model =
                 ( model, Cmd.none )
 
         Close ->
-            ( { model | queue = [], currentId = Nothing, expanded = False, queueOpen = False, moveAnimations = Dict.empty, drag = UI.Drag.init, sharePopoverOpen = False, playing = False, positionMs = 0, durationMs = 0, slotA = Nothing, slotB = Nothing, autoStart = False, pendingUpgrade = Nothing, activeLoaded = False }
+            ( { model | queue = [], currentId = Nothing, expanded = False, queueOpen = False, moveAnimations = Dict.empty, drag = UI.Drag.init, sharePopoverOpen = False, playing = False, positionMs = 0, durationMs = 0, slotA = Nothing, slotB = Nothing, autoStart = False, pendingSeekMs = Nothing, pendingUpgrade = Nothing, activeLoaded = False, selectionGeneration = model.selectionGeneration + 1, pendingTrackLink = Nothing, pendingVideoLink = Nothing }
             , Cmd.batch [ releaseSlot SlotA, releaseSlot SlotB ]
             )
 
@@ -801,14 +1189,28 @@ update msg model =
             else
                 case adjacent 1 model of
                     Just next ->
-                        beginTrack next model
+                        beginItem next model
 
                     Nothing ->
                         ( { model | playing = False }, Cmd.none )
 
         CanPlay slot ->
-            if slot == model.activeSlot && model.autoStart then
-                ( { model | autoStart = False }, command "play" Nothing )
+            if slot == model.activeSlot && (model.autoStart || model.pendingSeekMs /= Nothing) then
+                ( { model | autoStart = False, pendingSeekMs = Nothing }
+                , Cmd.batch
+                    [ case model.pendingSeekMs of
+                        Just ms ->
+                            command "seek" (Just ms)
+
+                        Nothing ->
+                            Cmd.none
+                    , if model.autoStart then
+                        command "play" Nothing
+
+                      else
+                        Cmd.none
+                    ]
+                )
 
             else
                 ( model, Cmd.none )
@@ -948,6 +1350,11 @@ view viewerOpen accountsPanelModel model =
         isOpen =
             maybeMedia /= Nothing
 
+        -- The current entry is a video (playing in the miniplayer): no cover art, quality choice or track link for it.
+        currentVideoItem : Maybe VideoItem
+        currentVideoItem =
+            currentItem model |> Maybe.andThen .video
+
         fraction : Float
         fraction =
             if model.durationMs > 0 then
@@ -1021,11 +1428,19 @@ view viewerOpen accountsPanelModel model =
 
         coverArt : MediaReference -> Html Msg
         coverArt media =
-            case coverArtSrc media of
-                Just url ->
+            case ( currentVideoItem, coverArtSrc media ) of
+                ( Just video, _ ) ->
+                    case video.poster of
+                        Just url ->
+                            img [ class "audio-player-cover", src url, alt "" ] []
+
+                        Nothing ->
+                            div [ classes [ "audio-player-cover", "placeholder" ] ] [ text "🎬" ]
+
+                ( Nothing, Just url ) ->
                     img [ class "audio-player-cover", src url, alt "" ] []
 
-                Nothing ->
+                ( Nothing, Nothing ) ->
                     div [ classes [ "audio-player-cover", "placeholder" ] ] [ text "🎵" ]
 
         -- What `public/index.html` publishes to the browser's Media Session (the lock screen / Control Center
@@ -1156,6 +1571,52 @@ view viewerOpen accountsPanelModel model =
                         |> Maybe.map (\server -> MediaRenderer.authorizedUrl [ "size=" ++ sizeParam, "download=true" ] server maybeAccount media)
                         |> Maybe.withDefault ""
             in
+            sharePopoverWith link (List.map (\( sizeParam, label ) -> ( downloadUrl sizeParam, label )) downloads)
+
+        -- The same popover for a video on one of our servers: its `#video-<id>` link, and a download for each size it has.
+        videoSharePopover : VideoItem -> Html Msg
+        videoSharePopover video =
+            case ( video.mediaId, serverFor video.host ) of
+                ( Just id, Just server ) ->
+                    let
+                        standIn : MediaReference
+                        standIn =
+                            { defaultMediaReference | id = id }
+
+                        label : String -> String
+                        label sizeParam =
+                            case sizeParam of
+                                "small" ->
+                                    "Small"
+
+                                "medium" ->
+                                    "Medium"
+
+                                "large" ->
+                                    "Large"
+
+                                _ ->
+                                    "Original"
+                    in
+                    sharePopoverWith
+                        (model.origin ++ "#" ++ videoFragment accountsPanelModel.mainFrontendHost video.host id)
+                        (video.downloads
+                            |> List.map
+                                (\sizeParam ->
+                                    ( MediaRenderer.authorizedUrl [ "size=" ++ sizeParam, "download=true" ] server (accountFor video.host) standIn
+                                    , label sizeParam
+                                    )
+                                )
+                        )
+
+                _ ->
+                    text ""
+
+        -- "Download/Share" (top-left of the expanded panel), modelled on the Posts page's Export popover (see
+        -- `ui/popover.css`) but opening down-right, since this button is on the left: a link, a copy button, and a download
+        -- link for each (url, label) given.
+        sharePopoverWith : String -> List ( String, String ) -> Html Msg
+        sharePopoverWith link downloads =
             div [ classes [ "audio-player-share", "popover-anchor" ] ]
                 [ button
                     [ classes [ "audio-player-button", "audio-player-corner-button", "popover-toggle", openClosedClass model.sharePopoverOpen ]
@@ -1163,7 +1624,7 @@ view viewerOpen accountsPanelModel model =
                     , attribute "title" "Download or share"
                     , onClick ToggleShare
                     ]
-                    [ text "⤓" ]
+                    [ text "\u{2913}" ]
                 , div [ classes [ "popover-backdrop", openClosedClass model.sharePopoverOpen ], onClick ShareClosed ] []
                 , div [ classes [ "audio-player-share-popover", "popover", openClosedClass model.sharePopoverOpen ] ]
                     [ h3 [ class "audio-player-share-heading" ] [ text "Share" ]
@@ -1172,7 +1633,7 @@ view viewerOpen accountsPanelModel model =
                         [ classes [ "audio-player-share-copy", hostnameToCSSClass accountsPanelModel.mainFrontendHost, "background-color-primary" ]
                         , onClick (CopyLinkClicked link)
                         ]
-                        [ span [ class "audio-player-share-copy-icon" ] [ text "⎘" ]
+                        [ span [ class "audio-player-share-copy-icon" ] [ text "\u{2398}" ]
                         , span []
                             [ text
                                 (if model.linkCopied then
@@ -1187,9 +1648,9 @@ view viewerOpen accountsPanelModel model =
                     , div [ class "audio-player-share-downloads" ]
                         (downloads
                             |> List.map
-                                (\( sizeParam, label ) ->
+                                (\( url, label ) ->
                                     a
-                                        [ href (downloadUrl sizeParam)
+                                        [ href url
                                         , attribute "download" ""
                                         , target "_blank"
                                         , class "audio-player-share-link"
@@ -1275,21 +1736,43 @@ view viewerOpen accountsPanelModel model =
 
         nowPlayingPane : MediaReference -> Html Msg
         nowPlayingPane media =
-            div [ class "audio-player-expanded" ]
-                [ coverArt media
-                , div [ class "audio-player-title" ] [ text (title media) ]
-                , if artist media == "" then
-                    text ""
+            case currentVideoItem of
+                -- A video plays in `Shared.VideoPlayerPanel`'s player, which glides over the stage placeholder
+                -- (`public/rellm-video.js`) -- with its own controls, so no cover art, scrubber or times here. When the queue
+                -- pane is open beside it, the stage is narrower, and the player follows it.
+                Just video ->
+                    div [ class "audio-player-expanded audio-player-expanded-video" ]
+                        [ div
+                            (class "video-stage"
+                                :: style "--video-ratio" (String.fromFloat video.aspectRatio)
+                                -- Only once the panel is open: collapsed, the video is in the corner.
+                                :: (if expanded then
+                                        [ attribute "data-video-stage" "" ]
 
-                  else
-                    div [ class "audio-player-artist" ] [ text (artist media) ]
-                , seekTrack "audio-player-seek-large" media
-                , qualitySelect media
-                , div [ class "audio-player-times" ]
-                    [ span [] [ text (formatTime model.positionMs) ]
-                    , span [] [ text (formatTime model.durationMs) ]
-                    ]
-                ]
+                                    else
+                                        []
+                                   )
+                            )
+                            []
+                        , div [ class "audio-player-title" ] [ text (title media) ]
+                        ]
+
+                Nothing ->
+                    div [ class "audio-player-expanded" ]
+                        [ coverArt media
+                        , div [ class "audio-player-title" ] [ text (title media) ]
+                        , if artist media == "" then
+                            text ""
+
+                          else
+                            div [ class "audio-player-artist" ] [ text (artist media) ]
+                        , seekTrack "audio-player-seek-large" media
+                        , qualitySelect media
+                        , div [ class "audio-player-times" ]
+                            [ span [] [ text (formatTime model.positionMs) ]
+                            , span [] [ text (formatTime model.durationMs) ]
+                            ]
+                        ]
 
         cornerButtons : MediaReference -> Html Msg
         cornerButtons media =
@@ -1297,7 +1780,12 @@ view viewerOpen accountsPanelModel model =
                 [ -- Circular glyph buttons in the panel's top corners: edit (left, for whoever can edit the
                   -- track) and close player (right, red).
                   div [ class "audio-player-corner-left-group" ]
-                    [ sharePopover media
+                    [ case currentVideoItem of
+                        Nothing ->
+                            sharePopover media
+
+                        Just video ->
+                            videoSharePopover video
                     , button
                         [ classes [ "audio-player-button", "audio-player-corner-button", "audio-player-queue-toggle" ]
                         , attribute "aria-label" "Queue"
@@ -1379,11 +1867,14 @@ view viewerOpen accountsPanelModel model =
 
                 thumbUrl : Maybe String
                 thumbUrl =
-                    case ( server, media.metadata |> Maybe.andThen .coverArtMediaId ) of
-                        ( Just srv, Just coverArtId ) ->
+                    case ( item.video, server, media.metadata |> Maybe.andThen .coverArtMediaId ) of
+                        ( Just video, _, _ ) ->
+                            video.poster
+
+                        ( Nothing, Just srv, Just coverArtId ) ->
                             Just (MediaRenderer.authorizedUrl [ "size=small" ] srv account { defaultMediaReference | id = coverArtId })
 
-                        ( Just srv, Nothing ) ->
+                        ( Nothing, Just srv, Nothing ) ->
                             if has AUDIOCOVERARTSMALL media then
                                 Just (MediaRenderer.authorizedUrl [ "size=audio_cover_art_small" ] srv account media)
 
@@ -1465,7 +1956,15 @@ view viewerOpen accountsPanelModel model =
                             img [ src url, alt "", attribute "loading" "lazy" ] []
 
                         Nothing ->
-                            span [ class "media-card-thumb-placeholder" ] [ text "🎵" ]
+                            span [ class "media-card-thumb-placeholder" ]
+                                [ text
+                                    (if item.video /= Nothing then
+                                        "🎬"
+
+                                     else
+                                        "🎵"
+                                    )
+                                ]
                     , case nowPlayingState of
                         Just _ ->
                             span [ class "media-card-now-playing", attribute "role" "img", attribute "aria-label" "Now playing" ]
@@ -1489,7 +1988,7 @@ view viewerOpen accountsPanelModel model =
 
                             Nothing ->
                                 text ""
-                        , if item.host /= accountsPanelModel.mainFrontendHost then
+                        , if item.host /= accountsPanelModel.mainFrontendHost && item.host /= "" then
                             span [ classes [ "media-card-host", hostnameToCSSClass item.host, "background-color-primary" ] ] [ text item.host ]
 
                           else
@@ -1512,7 +2011,8 @@ view viewerOpen accountsPanelModel model =
                 -- Not until the playing track has fully downloaded -- see `Model.pendingUpgrade`.
                 []
             )
-                |> List.filterMap (\( maybeItem, preload ) -> maybeItem |> Maybe.map (\item -> ( item, preload )))
+                -- (A video neighbor is the miniplayer's to load.)
+                |> List.filterMap (\( maybeItem, preload ) -> maybeItem |> Maybe.andThen (\item -> if item.video == Nothing then Just ( item, preload ) else Nothing))
                 |> List.map
                     (\( item, preload ) ->
                         audio

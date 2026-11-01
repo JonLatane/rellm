@@ -281,7 +281,8 @@
   transition: height 0.12s ease-out;
 }
 
-.my-media-panel-item-preview .media-renderer-video-preview {
+.my-media-panel-item-preview .media-renderer-video-preview,
+.my-media-panel-item-preview rellm-video {
   display: block;
   width: 100%;
 }

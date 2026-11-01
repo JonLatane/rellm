@@ -3,6 +3,7 @@ module UI exposing (imageOrInitial, layout, pageTitle, themeToggle, webUiToggleR
 import Components.Events as Events
 import Components.Markdown as Markdown
 import Components.Posts as Posts
+import Components.ServerDependentView as ServerDependentView
 import Components.SyncSources as SyncSources
 import Components.Users as Users
 import Components.Users.Username as Username
@@ -31,7 +32,9 @@ import Shared.AccountsPanel.MastodonServers exposing (BrowsedMastodonInstance)
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (Branding, RellmServer)
 import Shared.Federation.Common exposing (publicBlueskyAppViewHost)
+import Shared.Federation.RellmLinks as RellmLinks
 import Shared.AudioPlayerPanel as AudioPlayerPanel
+import Shared.VideoPlayerPanel as VideoPlayerPanel
 import Shared.Breadcrumbs as Breadcrumbs
 import Shared.Countabilibar as Countabilibar
 import Shared.BrowserInfo as BrowserInfo
@@ -87,6 +90,8 @@ layout shared currentRoute toMsg children =
     , Html.map toMsg (myMediaPanel shared)
     , Html.map toMsg (mediaViewerPanel shared)
     , Html.map toMsg (audioPlayerPanel shared)
+    , Html.map toMsg (videoPlayerPanel shared)
+    , Html.map toMsg (linkServerPrompt shared)
     , Html.map toMsg (federatedSignInNoticeView shared)
     , div [ classes [ "container", hostnameToCSSClass shared.accounts.mainFrontendHost ] ]
         [ main_ []
@@ -4862,6 +4867,60 @@ playing audio from `Components.MediaFeed`), so mounted directly in `layout` like
 below `.navbar` (see `audio_player_panel.css`) so even expanded it never covers the nav, and below the
 fullscreen viewer.
 -}
+videoPlayerPanel : Shared.Model -> Html Shared.Msg
+videoPlayerPanel shared =
+    Html.map Shared.VideoPlayerPanelMsg (VideoPlayerPanel.view shared.panels.videoPlayerPanel)
+
+
+{-| A shared `#track-<id>@<host>` / `#video-<id>@<host>` link is waiting for a server the user hasn't added (or has disabled):
+the same Add / Enable button the quoted-link and post pages offer (`Components.ServerDependentView`), with the server's logo and
+name from the preview `Shared.linkServerPreview` asked for. Nothing connects until it's pressed; once the server is up, the link
+opens by itself. Not shown for a host that doesn't look like a public domain name, or turned out not to be a Rellm server -- there
+is nothing sensible to offer for those -- and it can be dismissed, which forgets the link.
+-}
+linkServerPrompt : Shared.Model -> Html Shared.Msg
+linkServerPrompt shared =
+    case AudioPlayerPanel.pendingLink shared.panels.audioPlayerPanel |> Maybe.andThen (\( kind, link ) -> Maybe.map (Tuple.pair kind) link.host) of
+        Just ( kind, host ) ->
+            let
+                offer : Bool
+                offer =
+                    case RellmServers.rellmServerForHost shared.accounts.servers host of
+                        Just server ->
+                            not server.enabled
+
+                        Nothing ->
+                            RellmLinks.isProbeableHost host && not (Set.member host shared.accounts.nonRellmHosts)
+            in
+            if offer then
+                div [ class "link-server-prompt" ]
+                    [ p [] [ text ("A shared " ++ kind ++ " link") ]
+                    , ServerDependentView.view
+                        { hostname = host
+                        , servers = shared.accounts.servers
+                        , accounts = shared.accounts.accounts
+                        , connectStatus = ServerDependentView.NotConnected
+                        , previews = shared.accounts.recommendedServerConnections
+                        , onConnectClicked = Shared.AccountsPanelMsg (AccountsPanel.RecommendedServerClicked host)
+                        , onEnableClicked = Shared.AccountsPanelMsg (AccountsPanel.ToggleServerEnabled host)
+                        }
+                        (\_ _ -> text "")
+                    , button
+                        [ class "link-server-prompt-dismiss"
+                        , onClick (Shared.AudioPlayerPanelMsg AudioPlayerPanel.LinkPromptDismissed)
+                        , attribute "aria-label" "Dismiss"
+                        , title "Dismiss"
+                        ]
+                        [ text "\u{2715}" ]
+                    ]
+
+            else
+                text ""
+
+        Nothing ->
+            text ""
+
+
 audioPlayerPanel : Shared.Model -> Html Shared.Msg
 audioPlayerPanel shared =
     Html.map Shared.AudioPlayerPanelMsg (AudioPlayerPanel.view (mediaViewerOpen shared) shared.accounts shared.panels.audioPlayerPanel)
