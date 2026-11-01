@@ -30,6 +30,8 @@ video =
     , aspectRatio = 16 / 9
     , returnUrl = "https://rellm.org/post/p1"
     , mediaId = Nothing
+    , host = ""
+    , downloads = []
     }
 
 
@@ -55,6 +57,8 @@ suite =
                                 , aspectRatio = 1.7778
                                 , returnUrl = "https://rellm.org/post/p1"
                                 , mediaId = Nothing
+                                , host = ""
+                                , downloads = []
                                 }
                             )
             , test "a null, blank or missing poster or title is none" <|
@@ -92,8 +96,13 @@ suite =
             [ test "is optional" <|
                 \_ ->
                     Decode.decodeString VideoPlayerPanel.decoder """{"src":"s","time":0,"playing":false,"aspectRatio":1,"returnUrl":"u","mediaId":"m7"}"""
-                        |> Result.map .mediaId
-                        |> Expect.equal (Ok (Just "m7"))
+                        |> Result.map (\v -> ( v.mediaId, v.host, v.downloads ))
+                        |> Expect.equal (Ok ( Just "m7", "", [] ))
+            , test "a video on one of our servers names it and its download sizes" <|
+                \_ ->
+                    Decode.decodeString VideoPlayerPanel.decoder """{"src":"s","time":0,"playing":false,"aspectRatio":1,"returnUrl":"u","mediaId":"m7","host":"rellm.org","downloads":"small,large,original"}"""
+                        |> Result.map (\v -> ( v.host, v.downloads ))
+                        |> Expect.equal (Ok ( "rellm.org", [ "small", "large", "original" ] ))
             ]
         , describe "reportDecoder"
             [ test "reads the player's state" <|

@@ -160,6 +160,52 @@ suite =
                         , 16 / 9
                         )
                         ( natural.src, natural.poster, natural.aspectRatio )
+            , test "videoDownloadSizes lists the conversions it has, smallest first, and always the original" <|
+                \_ ->
+                    let
+                        sized : List MediaConversion -> MediaReference
+                        sized conversions =
+                            { defaultMediaReference | sizes = List.map (\conversion -> { defaultMediaSize | conversion = conversion }) conversions }
+                    in
+                    Expect.all
+                        [ \_ -> MediaRenderer.videoDownloadSizes (sized [ MEDIACONVERSIONORIGINAL ]) |> Expect.equal [ "original" ]
+                        , \_ -> MediaRenderer.videoDownloadSizes (sized [ MEDIACONVERSIONLARGE, MEDIACONVERSIONORIGINAL, MEDIACONVERSIONSMALL ]) |> Expect.equal [ "small", "large", "original" ]
+                        ]
+                        ()
+            , test "a video on one of our servers says which, and what it can be downloaded as; a URL-only one doesn't" <|
+                \_ ->
+                    let
+                        ours : MediaReference
+                        ours =
+                            media "video/mp4" ""
+                                |> (\m -> { m | url = Nothing })
+
+                        viewOf : MediaReference -> Query.Single ()
+                        viewOf mediaReference =
+                            Html.div []
+                                [ MediaRenderer.view MediaRenderer.Small
+                                    MediaRenderer.ToWidthAndHeight
+                                    (RellmServerFactory.connected "rellm.org")
+                                    Nothing
+                                    True
+                                    MediaRenderer.init
+                                    (\_ -> ())
+                                    (\_ -> ())
+                                    mediaReference
+                                ]
+                                |> Query.fromHtml
+                                |> Query.find [ Selector.tag "rellm-video" ]
+                    in
+                    Expect.all
+                        [ \_ ->
+                            viewOf ours
+                                |> Expect.all
+                                    [ Query.has [ Selector.attribute (Html.Attributes.attribute "data-host" "rellm.org") ]
+                                    , Query.has [ Selector.attribute (Html.Attributes.attribute "data-downloads" "original") ]
+                                    ]
+                        , \_ -> viewOf (media "video/mp4" "https://mastodon.social/v.mp4") |> Query.hasNot [ Selector.attribute (Html.Attributes.attribute "data-host" "rellm.org") ]
+                        ]
+                        ()
             , test "an ordinary video has no poster of its own" <|
                 \_ ->
                     render (media "video/mp4" "https://rellm.org/media/m1")

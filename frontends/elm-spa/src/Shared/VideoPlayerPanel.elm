@@ -60,6 +60,8 @@ type alias MiniVideo =
     , aspectRatio : Float
     , returnUrl : String
     , mediaId : Maybe String
+    , host : String
+    , downloads : List String
     }
 
 
@@ -161,6 +163,11 @@ decoder =
         (Decode.oneOf [ Decode.field "aspectRatio" Decode.float, Decode.succeed (16 / 9) ] |> Decode.map (clamp 0.4 3))
         (Decode.field "returnUrl" Decode.string)
         (optional "mediaId")
+        |> Decode.map2 (|>) (optional "host" |> Decode.map (Maybe.withDefault ""))
+        |> Decode.map2 (|>)
+            (optional "downloads"
+                |> Decode.map (Maybe.map (String.split "," >> List.filter ((/=) "")) >> Maybe.withDefault [])
+            )
 
 
 {-| A string field that may be null or missing, and means nothing when blank.

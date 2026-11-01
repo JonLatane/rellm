@@ -19,7 +19,7 @@ track id =
 
 clip : String -> VideoItem
 clip src =
-    { src = src, poster = Nothing, aspectRatio = 16 / 9, returnUrl = "https://rellm.org/post/p1", mediaId = Nothing }
+    { src = src, poster = Nothing, aspectRatio = 16 / 9, returnUrl = "https://rellm.org/post/p1", mediaId = Nothing, host = "", downloads = [] }
 
 
 {-| What's queued, in order, as media ids (a video's id is its `src`).
@@ -206,6 +206,55 @@ suite =
                         , \m -> play (AudioPlayerPanel.VideoState True 1 2) m |> generation |> Expect.equal (generation m)
                         ]
                         withTracks
+            ]
+        , describe "#video- links (a video on one of our servers, like #track- for a track)"
+            [ test "parse like track links, and are not track links" <|
+                \_ ->
+                    Expect.all
+                        [ \_ -> AudioPlayerPanel.videoLinkFromFragment (Just "video-abc") |> Expect.equal (Just { id = "abc", host = Nothing })
+                        , \_ -> AudioPlayerPanel.videoLinkFromFragment (Just "video-abc@other.example") |> Expect.equal (Just { id = "abc", host = Just "other.example" })
+                        , \_ -> AudioPlayerPanel.videoLinkFromFragment (Just "video-") |> Expect.equal Nothing
+                        , \_ -> AudioPlayerPanel.videoLinkFromFragment (Just "track-abc") |> Expect.equal Nothing
+                        , \_ -> AudioPlayerPanel.trackLinkFromFragment (Just "video-abc") |> Expect.equal Nothing
+                        , \_ -> AudioPlayerPanel.videoLinkFromFragment Nothing |> Expect.equal Nothing
+                        , \_ -> AudioPlayerPanel.isLinkFragment (Just "video-abc") |> Expect.equal True
+                        , \_ -> AudioPlayerPanel.isLinkFragment (Just "track-abc") |> Expect.equal True
+                        , \_ -> AudioPlayerPanel.isLinkFragment (Just "comments") |> Expect.equal False
+                        ]
+                        ()
+            , test "videoFragment names the server only when it isn't the one the app was opened on" <|
+                \_ ->
+                    ( AudioPlayerPanel.videoFragment "rellm.org" "rellm.org" "abc", AudioPlayerPanel.videoFragment "rellm.org" "other.example" "abc" )
+                        |> Expect.equal ( "video-abc", "video-abc@other.example" )
+            , test "linkFragment: a video on one of our servers links to itself, a URL-only video has no link, a track keeps #track-" <|
+                \_ ->
+                    let
+                        ours : VideoItem
+                        ours =
+                            { src = "https://other.example/media/v1?authorization=x", poster = Nothing, aspectRatio = 1, returnUrl = "", mediaId = Just "v1", host = "other.example", downloads = [ "original" ] }
+                    in
+                    Expect.all
+                        [ \_ -> play (AudioPlayerPanel.OpenVideo ours Nothing 0 True) AudioPlayerPanel.init |> AudioPlayerPanel.linkFragment "rellm.org" |> Expect.equal (Just "video-v1@other.example")
+                        , \_ -> play (AudioPlayerPanel.OpenVideo (clip "https://v/1") Nothing 0 True) AudioPlayerPanel.init |> AudioPlayerPanel.linkFragment "rellm.org" |> Expect.equal Nothing
+                        , \_ -> AudioPlayerPanel.linkFragment "rellm.org" AudioPlayerPanel.init |> Expect.equal Nothing
+                        , \_ -> play (AudioPlayerPanel.Open [ track "a" ] "a" "rellm.org") AudioPlayerPanel.init |> AudioPlayerPanel.linkFragment "rellm.org" |> Expect.equal (Just "track-a")
+                        ]
+                        ()
+            , test "LoadVideo makes it the current video, paused, with the player expanded" <|
+                \_ ->
+                    let
+                        loaded : AudioPlayerPanel.Model
+                        loaded =
+                            play (AudioPlayerPanel.LoadVideo (clip "https://v/1") (Just "A clip")) withTracks
+                    in
+                    Expect.all
+                        [ .currentId >> Expect.equal (Just "https://v/1")
+                        , .expanded >> Expect.equal True
+                        , .playing >> Expect.equal False
+                        , \m -> AudioPlayerPanel.currentVideo m |> Maybe.map (\c -> c.resume) |> Expect.equal (Just False)
+                        , queued >> List.head >> Expect.equal (Just "https://v/1")
+                        ]
+                        loaded
             ]
         , describe "handoffDecoder (a post card's audio moving to the bar)"
             [ test "reads the track, its server and where it had got to" <|

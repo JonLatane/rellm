@@ -476,6 +476,8 @@
           aspectRatio: v.videoWidth > 0 && v.videoHeight > 0 ? v.videoWidth / v.videoHeight : 16 / 9,
           title: pageTitle(),
           mediaId: this.getAttribute("data-media-id") || null,
+          host: this.getAttribute("data-host") || null,
+          downloads: this.getAttribute("data-downloads") || null,
           returnUrl: from
         }
       }));
@@ -1031,6 +1033,19 @@
     panel.style.height = box.h + "px";
   }
 
+  // The expanded player's Download/Share popover is part of the audio panel, which is below this one (a stage has to be over its
+  // panel), so a video on the stage would cover it. While it's open, the panel is cut around it instead.
+  function cutAroundPopover(panel, box, onStage) {
+    var popover = onStage ? document.querySelector(".audio-player-share-popover.is-open") : null;
+    if (!popover) {
+      if (panel.style.clipPath) { panel.style.clipPath = ""; }
+      return;
+    }
+    var r = popover.getBoundingClientRect();
+    var x = r.left - box.x, y = r.top - box.y;
+    panel.style.clipPath = "path(evenodd, 'M0 0H" + box.w + "V" + box.h + "H0Z M" + x + " " + y + "h" + r.width + "v" + r.height + "h" + (-r.width) + "Z')";
+  }
+
   function panelFrame(now) {
     var panel = document.querySelector(PANEL);
     if (!panel) { panelRunning = false; panelBox = null; return; }
@@ -1052,6 +1067,7 @@
       });
     }
     applyBox(panel, panelBox);
+    cutAroundPopover(panel, panelBox, !!target.stage);
     window.requestAnimationFrame(panelFrame);
   }
 

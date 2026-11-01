@@ -169,10 +169,12 @@ type Msg
     | AudioPlayerPanelMsg AudioPlayerPanel.Msg
     | VideoPlayerPanelMsg VideoPlayerPanel.Msg
       -- The URL fragment changed (`Main`'s `ChangedUrl`): a `#track-<id>` one opens that track in the audio
-      -- player -- see `AudioPlayerPanel.trackLinkFromFragment`.
+      -- player -- see `AudioPlayerPanel.trackLinkFromFragment` -- and a `#video-<id>` one that video (`videoLinkFromFragment`).
     | TrackLinkChanged (Maybe String)
     | -- The server the link named (the main one when it named none), and what it returned.
       GotLinkedTrack String (Result Grpc.Error ( Maybe AccountsPanel.Msg, GetMediaResponse ))
+      -- The same for a `#video-<id>` link.
+    | GotLinkedVideo String (Result Grpc.Error ( Maybe AccountsPanel.Msg, GetMediaResponse ))
       -- A post card's audio moving to the audio bar (`Ports.audioHandoffRequested`); `Nothing` is a malformed one.
     | AudioHandoffRequested (Maybe AudioPlayerPanel.Handoff)
       -- The `selectionGeneration` the request was made at: a reply is dropped if the user has started something else (or closed
@@ -590,6 +592,7 @@ init basePath req flags =
                     -- A `#track-<id>` link: fetched once the server connects (see `trackLinkFetch`).
                     { player
                         | pendingTrackLink = AudioPlayerPanel.trackLinkFromFragment req.url.fragment
+                        , pendingVideoLink = AudioPlayerPanel.videoLinkFromFragment req.url.fragment
                         , origin = originOf req.url
                     }
                 , videoPlayerPanel = VideoPlayerPanel.init
@@ -778,6 +781,8 @@ viewerVideoSync req before after =
                             , aspectRatio = video.aspectRatio
                             , returnUrl = Url.toString req.url
                             , mediaId = Just video.mediaId
+                            , host = video.host
+                            , downloads = video.downloads
                             }
                             (Just video.title)
                             0
@@ -847,6 +852,8 @@ syncVideoPanel before after panel =
                         , aspectRatio = current.video.aspectRatio
                         , returnUrl = current.video.returnUrl
                         , mediaId = current.video.mediaId
+                        , host = current.video.host
+                        , downloads = current.video.downloads
                         }
                     )
                     panel
@@ -870,9 +877,10 @@ fetchTrack model host id toMsg =
         |> Task.attempt toMsg
 
 
-{-| Starts fetching the track a `#track-<id>` link (`AudioPlayerPanel.Model.pendingTrackLink`) points at, as soon as
-the main server is connected -- tried after every `Shared` message, like the media pages' own `retryFetch`, since
-at startup the server is usually still connecting. The result arrives as `GotLinkedTrack`.
+{-| Starts fetching the track (or video) a `#track-<id>` / `#video-<id>` link (`AudioPlayerPanel.Model.pendingTrackLink` /
+`pendingVideoLink`) points at, as soon as its server is connected -- tried after every `Shared` message, like the media
+pages' own `retryFetch`, since at startup the server is usually still connecting. The result arrives as `GotLinkedTrack` /
+`GotLinkedVideo`.
 -}
 trackLinkFetch : Model -> ( Model, Cmd Msg )
 trackLinkFetch model =
@@ -880,29 +888,40 @@ trackLinkFetch model =
         panels : Panels
         panels =
             model.panels
+
+        player : AudioPlayerPanel.Model
+        player =
+            panels.audioPlayerPanel
+
+        -- A federated link (`#track-<id>@<host>`) names the server the media lives on.
+        hostOf : AudioPlayerPanel.TrackLink -> String
+        hostOf link =
+            Maybe.withDefault model.accounts.mainFrontendHost link.host
+
+        ready : AudioPlayerPanel.TrackLink -> Bool
+        ready link =
+            RellmServers.knownConnectedRellmServer model.accounts.servers (hostOf link) /= Nothing
     in
-    case panels.audioPlayerPanel.pendingTrackLink of
-        Just link ->
-            let
-                -- A federated link (`#track-<id>@<host>`) names the server the track lives on.
-                host : String
-                host =
-                    Maybe.withDefault model.accounts.mainFrontendHost link.host
-            in
-            if RellmServers.knownConnectedRellmServer model.accounts.servers host /= Nothing then
-                let
-                    player : AudioPlayerPanel.Model
-                    player =
-                        panels.audioPlayerPanel
-                in
+    case ( player.pendingTrackLink, player.pendingVideoLink ) of
+        ( Just link, _ ) ->
+            if ready link then
                 ( { model | panels = { panels | audioPlayerPanel = { player | pendingTrackLink = Nothing } } }
-                , fetchTrack model host link.id (GotLinkedTrack host)
+                , fetchTrack model (hostOf link) link.id (GotLinkedTrack (hostOf link))
                 )
 
             else
                 ( model, Cmd.none )
 
-        Nothing ->
+        ( Nothing, Just link ) ->
+            if ready link then
+                ( { model | panels = { panels | audioPlayerPanel = { player | pendingVideoLink = Nothing } } }
+                , fetchTrack model (hostOf link) link.id (GotLinkedVideo (hostOf link))
+                )
+
+            else
+                ( model, Cmd.none )
+
+        ( Nothing, Nothing ) ->
             ( model, Cmd.none )
 
 
@@ -927,14 +946,23 @@ trackHashSync req before after =
         player =
             panels.audioPlayerPanel
 
-        -- A video entry has no `#track-` link (it isn't on a server of ours), so it never counts.
+        -- The fragment linking to the current entry: `track-<id>` for a track, `video-<id>` for a video on one of our
+        -- servers; a video that is just a URL has none, so it never counts.
+        fragmentOf : AudioPlayerPanel.Model -> Maybe String
+        fragmentOf model =
+            if model.expanded then
+                AudioPlayerPanel.linkFragment after.accounts.mainFrontendHost model
+
+            else
+                Nothing
+
         wasOn : Bool
         wasOn =
-            old.expanded && old.currentId /= Nothing && AudioPlayerPanel.currentVideo old == Nothing
+            fragmentOf old /= Nothing
 
         isOn : Bool
         isOn =
-            player.expanded && player.currentId /= Nothing && AudioPlayerPanel.currentVideo player == Nothing
+            fragmentOf player /= Nothing
 
         replaceFragment : Maybe String -> Cmd Msg
         replaceFragment fragment =
@@ -961,39 +989,34 @@ trackHashSync req before after =
                 in
                 Nav.replaceUrl req.key (Url.toString { url | path = fullPath, fragment = fragment })
 
-        -- `track-<id>`, plus `@<host>` when the track lives on a server other than the one this app was opened on.
-        trackFragmentOf : String -> String
-        trackFragmentOf id =
-            AudioPlayerPanel.trackFragment after.accounts.mainFrontendHost player.targetHost id
-
         withSaved : Maybe (Maybe String) -> Model
         withSaved saved =
             { after | panels = { panels | audioPlayerPanel = { player | savedFragment = saved } } }
     in
-    case ( wasOn, isOn, player.currentId ) of
-        ( False, True, Just id ) ->
-            -- Remember what was there (unless it's already a track link, e.g. we got here from one).
+    case ( wasOn, isOn, fragmentOf player ) of
+        ( False, True, Just fragment ) ->
+            -- Remember what was there (unless it's already one of our links, e.g. we got here from one).
             ( withSaved
                 (Just
-                    (if AudioPlayerPanel.trackLinkFromFragment req.url.fragment /= Nothing then
+                    (if AudioPlayerPanel.isLinkFragment req.url.fragment then
                         Nothing
 
                      else
                         req.url.fragment
                     )
                 )
-            , replaceFragment (Just (trackFragmentOf id))
+            , replaceFragment (Just fragment)
             )
 
-        ( True, True, Just id ) ->
-            if old.currentId /= player.currentId then
-                ( after, replaceFragment (Just (trackFragmentOf id)) )
+        ( True, True, Just fragment ) ->
+            if fragmentOf old /= Just fragment then
+                ( after, replaceFragment (Just fragment) )
 
             else
                 ( after, Cmd.none )
 
         ( True, False, _ ) ->
-            if AudioPlayerPanel.trackLinkFromFragment req.url.fragment /= Nothing then
+            if AudioPlayerPanel.isLinkFragment req.url.fragment then
                 ( withSaved Nothing, replaceFragment (old.savedFragment |> Maybe.withDefault Nothing) )
 
             else
@@ -1455,25 +1478,82 @@ sharedUpdate req msg model =
             )
 
         TrackLinkChanged fragment ->
-            case AudioPlayerPanel.trackLinkFromFragment fragment of
-                -- Our own `replaceUrl` after expanding/changing track echoes back here: nothing to do.
-                Just link ->
-                    let
-                        panels : Panels
-                        panels =
-                            model.panels
+            let
+                panels : Panels
+                panels =
+                    model.panels
 
-                        player : AudioPlayerPanel.Model
-                        player =
-                            panels.audioPlayerPanel
-                    in
+                player : AudioPlayerPanel.Model
+                player =
+                    panels.audioPlayerPanel
+            in
+            case ( AudioPlayerPanel.trackLinkFromFragment fragment, AudioPlayerPanel.videoLinkFromFragment fragment ) of
+                -- Our own `replaceUrl` after expanding/changing track echoes back here: nothing to do.
+                ( Just link, _ ) ->
                     if player.currentId == Just link.id && player.targetHost == Maybe.withDefault model.accounts.mainFrontendHost link.host then
                         ( model, Cmd.none )
 
                     else
                         ( { model | panels = { panels | audioPlayerPanel = { player | pendingTrackLink = Just link } } }, Cmd.none )
 
-                Nothing ->
+                ( Nothing, Just link ) ->
+                    if AudioPlayerPanel.linkFragment model.accounts.mainFrontendHost player == fragment then
+                        ( model, Cmd.none )
+
+                    else
+                        ( { model | panels = { panels | audioPlayerPanel = { player | pendingVideoLink = Just link } } }, Cmd.none )
+
+                ( Nothing, Nothing ) ->
+                    ( model, Cmd.none )
+
+        -- A `#video-<id>` link's media arrived: it becomes the (paused) current video in the expanded player.
+        GotLinkedVideo host result ->
+            case result of
+                Ok ( maybeAccountsPanelMsg, response ) ->
+                    let
+                        ( accountsPanelModel, accountsPanelCmd ) =
+                            case maybeAccountsPanelMsg of
+                                Just accountsPanelMsg ->
+                                    AccountsPanel.update req accountsPanelMsg model.accounts
+
+                                Nothing ->
+                                    ( model.accounts, Cmd.none )
+
+                        withAccounts : Model
+                        withAccounts =
+                            { model | accounts = accountsPanelModel }
+                    in
+                    case
+                        response.media
+                            |> List.head
+                            |> Maybe.andThen (\media -> MediaViewerPanel.videoSource accountsPanelModel host (MediaViewerPanel.mediaToReference media))
+                    of
+                        Just video ->
+                            let
+                                ( loaded, loadCmd ) =
+                                    sharedUpdate req
+                                        (AudioPlayerPanelMsg
+                                            (AudioPlayerPanel.LoadVideo
+                                                { src = video.src
+                                                , poster = video.poster
+                                                , aspectRatio = video.aspectRatio
+                                                , returnUrl = Url.toString req.url
+                                                , mediaId = Just video.mediaId
+                                                , host = video.host
+                                                , downloads = video.downloads
+                                                }
+                                                (Just video.title)
+                                            )
+                                        )
+                                        withAccounts
+                            in
+                            ( loaded, Cmd.batch [ Cmd.map AccountsPanelMsg accountsPanelCmd, loadCmd ] )
+
+                        -- Not a video (or not ours to open), missing, private or unreachable: the link just doesn't open anything.
+                        Nothing ->
+                            ( withAccounts, Cmd.map AccountsPanelMsg accountsPanelCmd )
+
+                Err _ ->
                     ( model, Cmd.none )
 
         GotLinkedTrack host result ->
@@ -1623,7 +1703,7 @@ sharedUpdate req msg model =
                 VideoPlayerPanel.Requested video ->
                     toQueue
                         (AudioPlayerPanel.OpenVideo
-                            { src = video.src, poster = video.poster, aspectRatio = video.aspectRatio, returnUrl = video.returnUrl, mediaId = video.mediaId }
+                            { src = video.src, poster = video.poster, aspectRatio = video.aspectRatio, returnUrl = video.returnUrl, mediaId = video.mediaId, host = video.host, downloads = video.downloads }
                             video.title
                             video.startAt
                             video.resume

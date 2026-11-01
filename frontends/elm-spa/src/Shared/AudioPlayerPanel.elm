@@ -1,4 +1,4 @@
-module Shared.AudioPlayerPanel exposing (CurrentVideo, Handoff, Model, Msg(..), Placement(..), TrackLink, VideoItem, currentMedia, currentVideo, handoffDecoder, handoffSubscription, hasNext, hasPrevious, init, isExpanded, nextIcon, prevIcon, queueIcon, subscriptions, trackFragment, trackLinkFromFragment, update, view)
+module Shared.AudioPlayerPanel exposing (CurrentVideo, Handoff, Model, Msg(..), Placement(..), TrackLink, VideoItem, currentMedia, currentVideo, handoffDecoder, handoffSubscription, hasNext, hasPrevious, init, isExpanded, isLinkFragment, linkFragment, nextIcon, prevIcon, queueIcon, subscriptions, trackLinkFromFragment, videoFragment, videoLinkFromFragment, update, view)
 
 {-| A persistent, app-wide audio player -- the companion to `Shared.MediaViewerPanel`. Where the viewer is a
 fullscreen, view-blocking carousel (with editing), this is a "now playing" bar docked to the bottom of the
@@ -93,7 +93,9 @@ type alias QueueItem =
 {-| What a video queue entry plays in the miniplayer. Its `MediaReference` is a stand-in (`id` = the video's `src`, `name`
 = its title) so the queue treats it like any entry; `host` is `""`, as it isn't on a server of ours. `returnUrl` is the
 page it came from (the miniplayer's back arrow). `mediaId` is the id of the Rellm media it is, if it is one -- how an
-inline thumbnail hands over to the media viewer's player (`public/rellm-media.js`'s `setEnlarge`).
+inline thumbnail hands over to the media viewer's player (`public/rellm-media.js`'s `setEnlarge`). A video on one of our servers
+(`host` isn't `""`) also has its `mediaId`-based link (`#video-<id>`) and the sizes it can be downloaded in (`downloads`, `size=`
+values: `small`/`medium`/`large`/`original`), which are what the expanded player's Download/Share popover offers.
 -}
 type alias VideoItem =
     { src : String
@@ -101,6 +103,8 @@ type alias VideoItem =
     , aspectRatio : Float
     , returnUrl : String
     , mediaId : Maybe String
+    , host : String
+    , downloads : List String
     }
 
 
@@ -174,6 +178,9 @@ type alias Model =
     -- can be fetched; `Shared.update` clears it when it starts that fetch.
     , pendingTrackLink : Maybe TrackLink
 
+    -- Same for a `#video-<id>[@host]` link (see `videoLinkFromFragment`).
+    , pendingVideoLink : Maybe TrackLink
+
     -- `scheme://host[:port]` this app is served from -- what a shared link to a track starts with.
     , origin : String
 
@@ -210,6 +217,8 @@ type Msg
       -- Like `Open`, but doesn't start playback and leaves the player expanded: a `#track-<id>` link (browsers
       -- block autoplay from links anyway). Playback -- and the higher-quality upgrade -- wait for the first Play.
     | Load (List MediaReference) String String
+      -- The same for a video: a `#video-<id>` link (or a share link to one) loads it, paused, in the expanded player.
+    | LoadVideo VideoItem (Maybe String)
       -- Adds a track (and the host it's on) to the queue -- starting it if nothing's loaded yet.
     | Enqueue Placement MediaReference String
     | ToggleQueue
@@ -249,7 +258,7 @@ type Msg
 
 init : Model
 init =
-    { queue = [], currentId = Nothing, targetHost = "", expanded = False, playing = False, positionMs = 0, durationMs = 0, quality = High, activeSlot = SlotA, slotA = Nothing, slotB = Nothing, autoStart = False, selectionGeneration = 0, videoStartAt = 0, videoResume = True, videoGeneration = 0, pendingSeekMs = Nothing, pendingUpgrade = Nothing, activeLoaded = False, pendingTrackLink = Nothing, origin = "", sharePopoverOpen = False, linkCopied = False, copyGeneration = 0, savedFragment = Nothing, queueOpen = False, moveAnimations = Dict.empty, drag = UI.Drag.init }
+    { queue = [], currentId = Nothing, targetHost = "", expanded = False, playing = False, positionMs = 0, durationMs = 0, quality = High, activeSlot = SlotA, slotA = Nothing, slotB = Nothing, autoStart = False, selectionGeneration = 0, videoStartAt = 0, videoResume = True, videoGeneration = 0, pendingSeekMs = Nothing, pendingUpgrade = Nothing, activeLoaded = False, pendingTrackLink = Nothing, pendingVideoLink = Nothing, origin = "", sharePopoverOpen = False, linkCopied = False, copyGeneration = 0, savedFragment = Nothing, queueOpen = False, moveAnimations = Dict.empty, drag = UI.Drag.init }
 
 
 {-| Whether the panel is actually shown expanded: the user's choice (`Model.expanded`), unless the fullscreen
@@ -550,6 +559,70 @@ trackFragment mainHost trackHost id =
             else
                 "@" ++ trackHost
            )
+
+
+{-| `video-<id>` or `video-<id>@<host>` in a URL fragment -> the link, like `trackLinkFromFragment` (for a video on one of
+our servers, as opposed to a track).
+-}
+videoLinkFromFragment : Maybe String -> Maybe TrackLink
+videoLinkFromFragment fragment =
+    fragment
+        |> Maybe.andThen
+            (\f ->
+                if String.startsWith "video-" f then
+                    case String.split "@" (String.dropLeft 6 f) of
+                        [ id ] ->
+                            nonEmpty id |> Maybe.map (\i -> { id = i, host = Nothing })
+
+                        [ id, host ] ->
+                            nonEmpty id |> Maybe.map (\i -> { id = i, host = nonEmpty host })
+
+                        _ ->
+                            Nothing
+
+                else
+                    Nothing
+            )
+
+
+{-| `track-` / `video-` links both -- whether a fragment is one of the player's.
+-}
+isLinkFragment : Maybe String -> Bool
+isLinkFragment fragment =
+    trackLinkFromFragment fragment /= Nothing || videoLinkFromFragment fragment /= Nothing
+
+
+{-| The fragment that links to video `id` on `videoHost`, as seen from `mainHost`: `video-<id>`, plus `@<videoHost>` for
+another server's.
+-}
+videoFragment : String -> String -> String -> String
+videoFragment mainHost videoHost id =
+    "video-"
+        ++ id
+        ++ (if videoHost == mainHost || videoHost == "" then
+                ""
+
+            else
+                "@" ++ videoHost
+           )
+
+
+{-| The fragment (without `#`) that links to the current entry -- a track, or a video on one of our servers -- seen from
+`mainHost`; `Nothing` when nothing is loaded or the entry has no link (a video that is just a URL).
+-}
+linkFragment : String -> Model -> Maybe String
+linkFragment mainHost model =
+    case ( currentItem model, model.currentId ) of
+        ( Just item, Just id ) ->
+            case item.video of
+                Just video ->
+                    Maybe.map (videoFragment mainHost video.host) video.mediaId |> Maybe.andThen (\f -> if video.host == "" then Nothing else Just f)
+
+                Nothing ->
+                    Just (trackFragment mainHost model.targetHost id)
+
+        _ ->
+            Nothing
 
 
 {-| The shareable link to `media`'s track: this app's own origin plus its (federated) track fragment.
@@ -900,6 +973,22 @@ update msg model =
 
                 Nothing ->
                     ( model, Cmd.none )
+
+        LoadVideo video title ->
+            if model.currentId == Just video.src then
+                -- Already the loaded video: just show it.
+                ( { model | expanded = True }, Cmd.none )
+
+            else
+                let
+                    item : QueueItem
+                    item =
+                        { media = { defaultMediaReference | id = video.src, name = Just (Maybe.withDefault "Video" title) }
+                        , host = ""
+                        , video = Just video
+                        }
+                in
+                beginVideo item 0 False { model | queue = playNowQueue item [] model.queue, expanded = True }
 
         Enqueue placement media host ->
             let
@@ -1441,6 +1530,52 @@ view viewerOpen accountsPanelModel model =
                         |> Maybe.map (\server -> MediaRenderer.authorizedUrl [ "size=" ++ sizeParam, "download=true" ] server maybeAccount media)
                         |> Maybe.withDefault ""
             in
+            sharePopoverWith link (List.map (\( sizeParam, label ) -> ( downloadUrl sizeParam, label )) downloads)
+
+        -- The same popover for a video on one of our servers: its `#video-<id>` link, and a download for each size it has.
+        videoSharePopover : VideoItem -> Html Msg
+        videoSharePopover video =
+            case ( video.mediaId, serverFor video.host ) of
+                ( Just id, Just server ) ->
+                    let
+                        standIn : MediaReference
+                        standIn =
+                            { defaultMediaReference | id = id }
+
+                        label : String -> String
+                        label sizeParam =
+                            case sizeParam of
+                                "small" ->
+                                    "Small"
+
+                                "medium" ->
+                                    "Medium"
+
+                                "large" ->
+                                    "Large"
+
+                                _ ->
+                                    "Original"
+                    in
+                    sharePopoverWith
+                        (model.origin ++ "#" ++ videoFragment accountsPanelModel.mainFrontendHost video.host id)
+                        (video.downloads
+                            |> List.map
+                                (\sizeParam ->
+                                    ( MediaRenderer.authorizedUrl [ "size=" ++ sizeParam, "download=true" ] server (accountFor video.host) standIn
+                                    , label sizeParam
+                                    )
+                                )
+                        )
+
+                _ ->
+                    text ""
+
+        -- "Download/Share" (top-left of the expanded panel), modelled on the Posts page's Export popover (see
+        -- `ui/popover.css`) but opening down-right, since this button is on the left: a link, a copy button, and a download
+        -- link for each (url, label) given.
+        sharePopoverWith : String -> List ( String, String ) -> Html Msg
+        sharePopoverWith link downloads =
             div [ classes [ "audio-player-share", "popover-anchor" ] ]
                 [ button
                     [ classes [ "audio-player-button", "audio-player-corner-button", "popover-toggle", openClosedClass model.sharePopoverOpen ]
@@ -1448,7 +1583,7 @@ view viewerOpen accountsPanelModel model =
                     , attribute "title" "Download or share"
                     , onClick ToggleShare
                     ]
-                    [ text "⤓" ]
+                    [ text "\u{2913}" ]
                 , div [ classes [ "popover-backdrop", openClosedClass model.sharePopoverOpen ], onClick ShareClosed ] []
                 , div [ classes [ "audio-player-share-popover", "popover", openClosedClass model.sharePopoverOpen ] ]
                     [ h3 [ class "audio-player-share-heading" ] [ text "Share" ]
@@ -1457,7 +1592,7 @@ view viewerOpen accountsPanelModel model =
                         [ classes [ "audio-player-share-copy", hostnameToCSSClass accountsPanelModel.mainFrontendHost, "background-color-primary" ]
                         , onClick (CopyLinkClicked link)
                         ]
-                        [ span [ class "audio-player-share-copy-icon" ] [ text "⎘" ]
+                        [ span [ class "audio-player-share-copy-icon" ] [ text "\u{2398}" ]
                         , span []
                             [ text
                                 (if model.linkCopied then
@@ -1472,9 +1607,9 @@ view viewerOpen accountsPanelModel model =
                     , div [ class "audio-player-share-downloads" ]
                         (downloads
                             |> List.map
-                                (\( sizeParam, label ) ->
+                                (\( url, label ) ->
                                     a
-                                        [ href (downloadUrl sizeParam)
+                                        [ href url
                                         , attribute "download" ""
                                         , target "_blank"
                                         , class "audio-player-share-link"
@@ -1604,11 +1739,12 @@ view viewerOpen accountsPanelModel model =
                 [ -- Circular glyph buttons in the panel's top corners: edit (left, for whoever can edit the
                   -- track) and close player (right, red).
                   div [ class "audio-player-corner-left-group" ]
-                    [ if currentVideoItem == Nothing then
-                        sharePopover media
+                    [ case currentVideoItem of
+                        Nothing ->
+                            sharePopover media
 
-                      else
-                        text ""
+                        Just video ->
+                            videoSharePopover video
                     , button
                         [ classes [ "audio-player-button", "audio-player-corner-button", "audio-player-queue-toggle" ]
                         , attribute "aria-label" "Queue"

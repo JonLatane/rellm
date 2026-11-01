@@ -1,4 +1,4 @@
-module Components.MediaRenderer exposing (MediaSize(..), Model, Msg(..), ResolutionTier(..), SizeConstraint(..), contentTypeOf, init, naturalVideo, update, view, viewAutoplay, viewWithResolution, authorizedUrl, coverArtUrl, thumbnailUrl, url)
+module Components.MediaRenderer exposing (MediaSize(..), Model, Msg(..), ResolutionTier(..), SizeConstraint(..), contentTypeOf, init, naturalVideo, videoDownloadSizes, update, view, viewAutoplay, viewWithResolution, authorizedUrl, coverArtUrl, thumbnailUrl, url)
 
 {-| Renders a single `Proto.Rellm.MediaReference` -- an image, a video, or
 (for anything else, e.g. a PDF) a browser-native `<object>` embed with a
@@ -266,6 +266,19 @@ viewHelper forceAutoplay tierOverride mediaSize sizeConstraint server maybeAccou
                         [ Just (class "media-renderer-video-frame")
                         , Just (attribute "data-media-size" (mediaSizeName mediaSize))
                         , Just (attribute "data-media-id" media.id)
+
+                        -- A video on one of our servers says which one, and what it can be downloaded as: what the miniplayer's
+                        -- Download/Share popover needs (`public/rellm-video.js` passes them on with the miniplayer request).
+                        , if media.url == Nothing && server.frontendHost /= "" then
+                            Just (attribute "data-host" server.frontendHost)
+
+                          else
+                            Nothing
+                        , if media.url == Nothing && server.frontendHost /= "" then
+                            Just (attribute "data-downloads" (String.join "," (videoDownloadSizes media)))
+
+                          else
+                            Nothing
 
                         -- The enlarge button (`public/rellm-video.js`) opens the media viewer, as tapping an image does.
                         , Just (on "rellm-video-enlarge" (Decode.succeed (onImageClicked media.id)))
@@ -567,6 +580,17 @@ previewTimeFragment media =
         |> Maybe.andThen .videoPreviewTimeMs
         |> Maybe.map (\ms -> "#t=" ++ String.fromFloat (toFloat (int64ToInt ms) / 1000))
         |> Maybe.withDefault ""
+
+
+{-| The `size=` values `media` (a video) can be downloaded in, smallest first: each stored conversion, then the original (always
+there). What the Download/Share popover lists (`Shared.AudioPlayerPanel`).
+-}
+videoDownloadSizes : MediaReference -> List String
+videoDownloadSizes media =
+    [ ( MEDIACONVERSIONSMALL, "small" ), ( MEDIACONVERSIONMEDIUM, "medium" ), ( MEDIACONVERSIONLARGE, "large" ) ]
+        |> List.filter (\( conversion, _ ) -> List.any (\size -> size.conversion == conversion) media.sizes)
+        |> List.map Tuple.second
+        |> (\stored -> stored ++ [ "original" ])
 
 
 {-| What the media viewer plays a video from (`Shared.VideoPlayerPanel`'s player): its URL at the `Natural` size, the poster

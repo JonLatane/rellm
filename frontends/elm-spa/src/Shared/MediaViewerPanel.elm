@@ -1,4 +1,4 @@
-module Shared.MediaViewerPanel exposing (CreditField, MediaEdit, Model, Msg(..), ViewerVideo, canEditMedia, currentVideo, standInHost, standInMedia, fieldErrors, formatMs, freshEdit, init, isValidKey, mediaToReference, metadataWithEdits, parseBpm, subscriptions, update, view)
+module Shared.MediaViewerPanel exposing (CreditField, MediaEdit, Model, Msg(..), ViewerVideo, canEditMedia, currentVideo, standInHost, standInMedia, videoSource, fieldErrors, formatMs, freshEdit, init, isValidKey, mediaToReference, metadataWithEdits, parseBpm, subscriptions, update, view)
 
 {-| A single, app-wide fullscreen image/video viewer -- an alternate,
 "big"/fullscreen rendering of a `Post`'s `media` (compare
@@ -1370,38 +1370,58 @@ type alias ViewerVideo =
     , aspectRatio : Float
     , title : String
     , autoplay : Bool
+    , host : String
+    , downloads : List String
     }
 
 
 currentVideo : AccountsPanel.Model -> Model -> Maybe ViewerVideo
 currentVideo accountsPanelModel model =
-    let
-        maybeServer : Maybe RellmServer
-        maybeServer =
-            Posts.mediaServer (RellmServers.rellmServerForHost accountsPanelModel.servers model.targetHost) model.targetHost
-    in
-    Maybe.map2
-        (\media server ->
-            let
-                natural : { src : String, poster : Maybe String, aspectRatio : Float }
-                natural =
-                    MediaRenderer.naturalVideo server
-                        (RellmAccounts.enabledRellmAccountForServer accountsPanelModel.accounts model.targetHost)
-                        media
-            in
-            { mediaId = media.id
-            , src = natural.src
-            , poster = natural.poster
-            , aspectRatio = natural.aspectRatio
-            , title = Maybe.withDefault "Video" media.name
-            , autoplay = model.autoplay
-            }
-        )
-        (model.currentMediaReference
-            |> Maybe.andThen (\id -> List.filter (\m -> m.id == id) model.media |> List.head)
-            |> Maybe.andThen (\m -> if isVideo m then Just m else Nothing)
-        )
-        maybeServer
+    model.currentMediaReference
+        |> Maybe.andThen (\id -> List.filter (\m -> m.id == id) model.media |> List.head)
+        |> Maybe.andThen (videoSource accountsPanelModel model.targetHost)
+        |> Maybe.map (\video -> { video | autoplay = model.autoplay })
+
+
+{-| `media` (if it is a video) on `host`, as something to play in `Shared.VideoPlayerPanel`: its URL, poster, shape, and -- for
+one on one of our servers -- the `host` and the sizes it can be downloaded in. (`autoplay` is the viewer's own setting;
+callers other than the viewer have no say in it.) Also how a `#video-<id>` link's media becomes a video entry.
+-}
+videoSource : AccountsPanel.Model -> String -> MediaReference -> Maybe ViewerVideo
+videoSource accountsPanelModel host media =
+    if not (isVideo media) then
+        Nothing
+
+    else
+        Posts.mediaServer (RellmServers.rellmServerForHost accountsPanelModel.servers host) host
+            |> Maybe.map
+                (\server ->
+                    let
+                        natural : { src : String, poster : Maybe String, aspectRatio : Float }
+                        natural =
+                            MediaRenderer.naturalVideo server (RellmAccounts.enabledRellmAccountForServer accountsPanelModel.accounts host) media
+                    in
+                    { mediaId = media.id
+                    , src = natural.src
+                    , poster = natural.poster
+                    , aspectRatio = natural.aspectRatio
+                    , title = Maybe.withDefault "Video" media.name
+                    , autoplay = True
+                    , host =
+                        -- Only media of ours has a link and downloads; a URL-only one (Bluesky, Mastodon, the miniplayer's) is just the URL.
+                        if media.url == Nothing && not (Posts.isFederatedHost host) then
+                            host
+
+                        else
+                            ""
+                    , downloads =
+                        if media.url == Nothing && not (Posts.isFederatedHost host) then
+                            MediaRenderer.videoDownloadSizes media
+
+                        else
+                            []
+                    }
+                )
 
 
 view : Bool -> AccountsPanel.Model -> Model -> Html Msg
