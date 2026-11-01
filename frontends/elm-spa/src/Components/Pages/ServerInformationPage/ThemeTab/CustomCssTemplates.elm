@@ -824,6 +824,19 @@ standardSideNav images =
   }
   .nav-tabs::-webkit-scrollbar { display: none; }
 
+  /* The column hangs from the bar (z-index 28, above the audio/video player's 27), so it would run over the player when that
+     is up. It stops where the player starts instead -- the bar's height collapsed, 60% of the screen expanded -- and
+     scrolls, as it does when there are many tabs. */
+  .nav-tabs { transition: max-height 0.35s cubic-bezier(0.32, 0.72, 0, 1); }
+  body:has(.audio-player-panel.is-open) .nav-tabs {
+    max-height: max(0px, calc(100vh - 68px - 4.5rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)));
+    max-height: max(0px, calc(100dvh - 68px - 4.5rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)));
+  }
+  body:has(.audio-player-panel.is-open.is-expanded) .nav-tabs {
+    max-height: max(0px, calc(40vh - 68px - env(safe-area-inset-top, 0px)));
+    max-height: max(0px, calc(40dvh - 68px - env(safe-area-inset-top, 0px)));
+  }
+
   .nav-link-home {
     grid-column: 1;
     grid-row: 1;
