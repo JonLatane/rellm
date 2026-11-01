@@ -240,6 +240,51 @@ suite =
                         , \_ -> play (AudioPlayerPanel.Open [ track "a" ] "a" "rellm.org") AudioPlayerPanel.init |> AudioPlayerPanel.linkFragment "rellm.org" |> Expect.equal (Just "track-a")
                         ]
                         ()
+            , test "enlarging a Rellm video (the viewer is handed just its URL) keeps its server and download sizes from the queue's entry" <|
+                \_ ->
+                    let
+                        ours : VideoItem
+                        ours =
+                            { src = "https://other.example/media/v1?authorization=x", poster = Nothing, aspectRatio = 1, returnUrl = "", mediaId = Just "v1", host = "other.example", downloads = [ "small", "original" ] }
+
+                        playing : AudioPlayerPanel.Model
+                        playing =
+                            play (AudioPlayerPanel.OpenVideo ours Nothing 0 True) AudioPlayerPanel.init
+
+                        bare : VideoItem
+                        bare =
+                            { ours | host = "", downloads = [] }
+                    in
+                    Expect.all
+                        [ \_ -> AudioPlayerPanel.inheritLinkData playing bare |> Expect.equal ours
+                        , \_ -> AudioPlayerPanel.inheritLinkData playing { bare | src = "https://elsewhere/v2" } |> Expect.equal { bare | src = "https://elsewhere/v2" }
+                        , \_ -> AudioPlayerPanel.inheritLinkData AudioPlayerPanel.init bare |> Expect.equal bare
+                        , \_ -> AudioPlayerPanel.inheritLinkData playing { ours | host = "mine.example" } |> Expect.equal { ours | host = "mine.example" }
+                        ]
+                        ()
+            , test "a link still waiting for its server is dropped when the user starts something else or closes the player" <|
+                \_ ->
+                    let
+                        waiting : AudioPlayerPanel.Model
+                        waiting =
+                            let
+                                base : AudioPlayerPanel.Model
+                                base =
+                                    AudioPlayerPanel.init
+                            in
+                            { base | pendingTrackLink = Just { id = "t", host = Nothing }, pendingVideoLink = Just { id = "v", host = Nothing } }
+
+                        pending : AudioPlayerPanel.Model -> ( Bool, Bool )
+                        pending m =
+                            ( m.pendingTrackLink /= Nothing, m.pendingVideoLink /= Nothing )
+                    in
+                    Expect.all
+                        [ \_ -> pending waiting |> Expect.equal ( True, True )
+                        , \_ -> play (AudioPlayerPanel.Open [ track "x" ] "x" "rellm.org") waiting |> pending |> Expect.equal ( False, False )
+                        , \_ -> play (AudioPlayerPanel.OpenVideo (clip "https://v/1") Nothing 0 True) waiting |> pending |> Expect.equal ( False, False )
+                        , \_ -> play AudioPlayerPanel.Close waiting |> pending |> Expect.equal ( False, False )
+                        ]
+                        ()
             , test "LoadVideo makes it the current video, paused, with the player expanded" <|
                 \_ ->
                     let

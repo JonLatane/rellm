@@ -172,9 +172,11 @@ type Msg
       -- player -- see `AudioPlayerPanel.trackLinkFromFragment` -- and a `#video-<id>` one that video (`videoLinkFromFragment`).
     | TrackLinkChanged (Maybe String)
     | -- The server the link named (the main one when it named none), and what it returned.
-      GotLinkedTrack String (Result Grpc.Error ( Maybe AccountsPanel.Msg, GetMediaResponse ))
+      -- (The `Int` is the player's `selectionGeneration` when the request was made: a reply is dropped if the user has
+      -- started something else, or closed the player, since.)
+      GotLinkedTrack String Int (Result Grpc.Error ( Maybe AccountsPanel.Msg, GetMediaResponse ))
       -- The same for a `#video-<id>` link.
-    | GotLinkedVideo String (Result Grpc.Error ( Maybe AccountsPanel.Msg, GetMediaResponse ))
+    | GotLinkedVideo String Int (Result Grpc.Error ( Maybe AccountsPanel.Msg, GetMediaResponse ))
       -- A post card's audio moving to the audio bar (`Ports.audioHandoffRequested`); `Nothing` is a malformed one.
     | AudioHandoffRequested (Maybe AudioPlayerPanel.Handoff)
       -- The `selectionGeneration` the request was made at: a reply is dropped if the user has started something else (or closed
@@ -776,14 +778,17 @@ viewerVideoSync req before after =
                 sharedUpdate req
                     (AudioPlayerPanelMsg
                         (AudioPlayerPanel.OpenVideo
-                            { src = video.src
-                            , poster = video.poster
-                            , aspectRatio = video.aspectRatio
-                            , returnUrl = Url.toString req.url
-                            , mediaId = Just video.mediaId
-                            , host = video.host
-                            , downloads = video.downloads
-                            }
+                            -- (The miniplayer's enlarge button hands the viewer just a URL: the queue's entry for the same video keeps its link and downloads.)
+                            (AudioPlayerPanel.inheritLinkData after.panels.audioPlayerPanel
+                                { src = video.src
+                                , poster = video.poster
+                                , aspectRatio = video.aspectRatio
+                                , returnUrl = Url.toString req.url
+                                , mediaId = Just video.mediaId
+                                , host = video.host
+                                , downloads = video.downloads
+                                }
+                            )
                             (Just video.title)
                             0
                             video.autoplay
@@ -906,7 +911,7 @@ trackLinkFetch model =
         ( Just link, _ ) ->
             if ready link then
                 ( { model | panels = { panels | audioPlayerPanel = { player | pendingTrackLink = Nothing } } }
-                , fetchTrack model (hostOf link) link.id (GotLinkedTrack (hostOf link))
+                , fetchTrack model (hostOf link) link.id (GotLinkedTrack (hostOf link) player.selectionGeneration)
                 )
 
             else
@@ -915,7 +920,7 @@ trackLinkFetch model =
         ( Nothing, Just link ) ->
             if ready link then
                 ( { model | panels = { panels | audioPlayerPanel = { player | pendingVideoLink = Nothing } } }
-                , fetchTrack model (hostOf link) link.id (GotLinkedVideo (hostOf link))
+                , fetchTrack model (hostOf link) link.id (GotLinkedVideo (hostOf link) player.selectionGeneration)
                 )
 
             else
@@ -1507,7 +1512,7 @@ sharedUpdate req msg model =
                     ( model, Cmd.none )
 
         -- A `#video-<id>` link's media arrived: it becomes the (paused) current video in the expanded player.
-        GotLinkedVideo host result ->
+        GotLinkedVideo host generation result ->
             case result of
                 Ok ( maybeAccountsPanelMsg, response ) ->
                     let
@@ -1527,6 +1532,8 @@ sharedUpdate req msg model =
                         response.media
                             |> List.head
                             |> Maybe.andThen (\media -> MediaViewerPanel.videoSource accountsPanelModel host (MediaViewerPanel.mediaToReference media))
+                            -- (Likewise a stale reply opens nothing.)
+                            |> Maybe.andThen (\video -> if generation == model.panels.audioPlayerPanel.selectionGeneration then Just video else Nothing)
                     of
                         Just video ->
                             let
@@ -1556,7 +1563,7 @@ sharedUpdate req msg model =
                 Err _ ->
                     ( model, Cmd.none )
 
-        GotLinkedTrack host result ->
+        GotLinkedTrack host generation result ->
             case result of
                 Ok ( maybeAccountsPanelMsg, response ) ->
                     let
@@ -1572,7 +1579,12 @@ sharedUpdate req msg model =
                         withAccounts =
                             { model | accounts = accountsPanelModel }
                     in
-                    case List.head response.media of
+                    case
+                        response.media
+                            |> List.head
+                            -- (A reply for a link the user has since moved on from -- another track chosen, the player closed -- opens nothing.)
+                            |> Maybe.andThen (\media -> if generation == model.panels.audioPlayerPanel.selectionGeneration then Just media else Nothing)
+                    of
                         Just media ->
                             let
                                 ( loaded, loadCmd ) =

@@ -1,4 +1,4 @@
-module Shared.AudioPlayerPanel exposing (CurrentVideo, Handoff, Model, Msg(..), Placement(..), TrackLink, VideoItem, currentMedia, currentVideo, handoffDecoder, handoffSubscription, hasNext, hasPrevious, init, isExpanded, isLinkFragment, linkFragment, nextIcon, prevIcon, queueIcon, subscriptions, trackLinkFromFragment, videoFragment, videoLinkFromFragment, update, view)
+module Shared.AudioPlayerPanel exposing (CurrentVideo, Handoff, Model, Msg(..), Placement(..), TrackLink, VideoItem, currentMedia, currentVideo, handoffDecoder, handoffSubscription, hasNext, hasPrevious, inheritLinkData, init, isExpanded, isLinkFragment, linkFragment, nextIcon, prevIcon, queueIcon, subscriptions, trackLinkFromFragment, videoFragment, videoLinkFromFragment, update, view)
 
 {-| A persistent, app-wide audio player -- the companion to `Shared.MediaViewerPanel`. Where the viewer is a
 fullscreen, view-blocking carousel (with editing), this is a "now playing" bar docked to the bottom of the
@@ -359,6 +359,8 @@ beginVideo item startAtSeconds resume model =
         , slotA = Nothing
         , slotB = Nothing
         , selectionGeneration = model.selectionGeneration + 1
+        , pendingTrackLink = Nothing
+        , pendingVideoLink = Nothing
         , videoStartAt = startAtSeconds
         , videoResume = resume
         , videoGeneration = model.videoGeneration + 1
@@ -561,6 +563,23 @@ trackFragment mainHost trackHost id =
            )
 
 
+{-| A video being (re)opened as a bare URL -- the miniplayer's enlarge button hands the media viewer just its URL -- keeps the server
+and download sizes the queue's current entry already has for that same video, so Download/Share and its `#video-` link survive.
+-}
+inheritLinkData : Model -> VideoItem -> VideoItem
+inheritLinkData model video =
+    case currentVideo model of
+        Just current ->
+            if current.video.src == video.src && video.host == "" then
+                { video | host = current.video.host, downloads = current.video.downloads }
+
+            else
+                video
+
+        Nothing ->
+            video
+
+
 {-| `video-<id>` or `video-<id>@<host>` in a URL fragment -> the link, like `trackLinkFromFragment` (for a video on one of
 our servers, as opposed to a track).
 -}
@@ -720,6 +739,8 @@ beginTrack item model =
                 -- A seek meant for the track that was loading doesn't carry over to this one (`OpenAt` sets it after this).
                 , pendingSeekMs = Nothing
                 , selectionGeneration = model.selectionGeneration + 1
+                , pendingTrackLink = Nothing
+                , pendingVideoLink = Nothing
 
                 -- The upgrade (and neighbor preloads) wait for the active download to finish -- see
                 -- `Model.pendingUpgrade`. An already-loaded identical track has finished, so no wait.
@@ -1120,7 +1141,7 @@ update msg model =
                 ( model, Cmd.none )
 
         Close ->
-            ( { model | queue = [], currentId = Nothing, expanded = False, queueOpen = False, moveAnimations = Dict.empty, drag = UI.Drag.init, sharePopoverOpen = False, playing = False, positionMs = 0, durationMs = 0, slotA = Nothing, slotB = Nothing, autoStart = False, pendingSeekMs = Nothing, pendingUpgrade = Nothing, activeLoaded = False, selectionGeneration = model.selectionGeneration + 1 }
+            ( { model | queue = [], currentId = Nothing, expanded = False, queueOpen = False, moveAnimations = Dict.empty, drag = UI.Drag.init, sharePopoverOpen = False, playing = False, positionMs = 0, durationMs = 0, slotA = Nothing, slotB = Nothing, autoStart = False, pendingSeekMs = Nothing, pendingUpgrade = Nothing, activeLoaded = False, selectionGeneration = model.selectionGeneration + 1, pendingTrackLink = Nothing, pendingVideoLink = Nothing }
             , Cmd.batch [ releaseSlot SlotA, releaseSlot SlotB ]
             )
 
