@@ -2,9 +2,11 @@ module Components.MediaFeed exposing
     ( Kind(..)
     , Model
     , Msg
+    , applyEdit
     , creditsLine
     , init
     , mergeByRecency
+    , replaceMedia
     , requestFor
     , retryFetch
     , update
@@ -129,6 +131,31 @@ init shared kind searchText =
 emptyHostFeed : HostFeed
 emptyHostFeed =
     { media = [], status = Loading, hasNextPage = False, nextPage = 0, loadingMore = False, fetchStarted = False, fetchedAs = Nothing }
+
+
+{-| A media item saved from the viewer (`Shared.MediaViewerPanel`'s edit form) while this feed is showing it: the feed for
+`host` (the server the viewer was on) swaps in the saved copy, so the title, credits and description on screen are the new ones
+without refetching (which would also lose the user's scroll and loaded pages).
+-}
+applyEdit : String -> Media -> Model -> Model
+applyEdit host updated model =
+    { model
+        | feeds = Dict.update host (Maybe.map (\feed -> { feed | media = replaceMedia updated feed.media })) model.feeds
+    }
+
+
+{-| `updated` in place of the item with its id, if the list has one (same order, same length).
+-}
+replaceMedia : Media -> List Media -> List Media
+replaceMedia updated =
+    List.map
+        (\media ->
+            if media.id == updated.id then
+                updated
+
+            else
+                media
+        )
 
 
 {-| `GetMedia` with no `user_id` -- the server-wide listing -- for `kind`'s content type, narrowed by

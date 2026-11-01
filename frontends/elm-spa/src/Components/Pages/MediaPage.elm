@@ -37,6 +37,7 @@ import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers as RellmServers
 import Shared.Breadcrumbs as Breadcrumbs
+import Shared.MediaViewerPanel as MediaViewerPanel
 import Shared.MyMediaPanel as MyMediaPanel
 import UI
 import UI.Classes exposing (classes, hostnameToCSSClass)
@@ -371,8 +372,27 @@ update shared msg model =
         -- signing in is also the cue to start whichever fetch/panel-open couldn't yet.
         SharedMsgReceived subMsg ->
             let
+                -- A metadata edit saved in the media viewer: the feeds showing that item show the saved copy.
+                edited : Model
+                edited =
+                    case subMsg of
+                        Shared.MediaViewerPanelMsg (MediaViewerPanel.GotEditSaveResult (Ok ( _, updated ))) ->
+                            let
+                                host : String
+                                host =
+                                    shared.panels.mediaViewerPanel.targetHost
+                            in
+                            { model
+                                | video = Maybe.map (MediaFeed.applyEdit host updated) model.video
+                                , audio = Maybe.map (MediaFeed.applyEdit host updated) model.audio
+                                , images = Maybe.map (MediaFeed.applyEdit host updated) model.images
+                            }
+
+                        _ ->
+                            model
+
                 ( videoModel, videoEffect ) =
-                    case model.video of
+                    case edited.video of
                         Just feed ->
                             MediaFeed.retryFetch shared feed |> Tuple.mapFirst Just |> Tuple.mapSecond (Effect.map VideoMsg)
 
@@ -380,7 +400,7 @@ update shared msg model =
                             ( Nothing, Effect.none )
 
                 ( audioModel, audioEffect ) =
-                    case model.audio of
+                    case edited.audio of
                         Just feed ->
                             MediaFeed.retryFetch shared feed |> Tuple.mapFirst Just |> Tuple.mapSecond (Effect.map AudioMsg)
 
@@ -388,7 +408,7 @@ update shared msg model =
                             ( Nothing, Effect.none )
 
                 ( imagesModel, imagesEffect ) =
-                    case model.images of
+                    case edited.images of
                         Just feed ->
                             MediaFeed.retryFetch shared feed |> Tuple.mapFirst Just |> Tuple.mapSecond (Effect.map ImagesMsg)
 
@@ -396,7 +416,7 @@ update shared msg model =
                             ( Nothing, Effect.none )
 
                 ( enteredModel, enterEffect ) =
-                    enterTab shared { model | video = videoModel, audio = audioModel, images = imagesModel }
+                    enterTab shared { edited | video = videoModel, audio = audioModel, images = imagesModel }
             in
             ( enteredModel, Effect.batch [ Effect.fromShared subMsg, videoEffect, audioEffect, imagesEffect, enterEffect ] )
 
