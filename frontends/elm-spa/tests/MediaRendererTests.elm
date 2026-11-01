@@ -206,6 +206,11 @@ suite =
                         , \_ -> viewOf (media "video/mp4" "https://mastodon.social/v.mp4") |> Query.hasNot [ Selector.attribute (Html.Attributes.attribute "data-host" "rellm.org") ]
                         ]
                         ()
+            , test "always plays inline (iOS Safari otherwise goes fullscreen when it is played), preloaded or not" <|
+                \_ ->
+                    render (media "video/mp4" "https://rellm.org/media/m1")
+                        |> Query.find [ Selector.tag "video" ]
+                        |> Query.has [ Selector.attribute (Html.Attributes.attribute "playsinline" "true") ]
             , test "an ordinary video has no poster of its own" <|
                 \_ ->
                     render (media "video/mp4" "https://rellm.org/media/m1")

@@ -38,7 +38,8 @@
   box-shadow: none;
 }
 
-.video-player-panel.on-stage .video-player-panel-queue-controls {
+.video-player-panel.on-stage .video-player-panel-queue-controls,
+.video-player-panel.on-stage .video-player-panel-close {
   display: none;
 }
 
@@ -59,8 +60,8 @@
   background: #000;
 }
 
-/* The queue's previous / next / show-queue buttons, centered along the top (the player's own corner buttons -- fullscreen, viewer, volume -- flank them): the
-   audio bar's own buttons (`.audio-player-button`, its transport glyphs), on a dark pill so they read over any picture. */
+/* The queue button, centered along the top (the player's own corner buttons -- fullscreen and viewer on the left, close and volume on
+   the right -- flank it): the audio bar's own button (`.audio-player-button`, its queue glyph), on a dark pill so it reads over any picture. */
 .video-player-panel-queue-controls {
   position: absolute;
   top: 0.4rem;
@@ -79,6 +80,67 @@
 .video-player-panel-queue-controls:hover,
 .video-player-panel-queue-controls:focus-within {
   opacity: 1;
+}
+
+/* The close button, top-right, the size of the player's own corner buttons (`<rellm-video>` draws those; it puts its volume button just
+   under this one). */
+.video-player-panel-close {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.35rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.85;
+  transition: opacity 0.15s;
+}
+
+.video-player-panel-close:hover,
+.video-player-panel-close:focus-visible {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.8);
+}
+
+/* The corner buttons wrap in a narrow player. The first row is fullscreen and "open in the viewer" at the left, the queue button
+   centered, and close at the right; with less than ~170px there is no room for the queue button between them, so it drops to a
+   second row, left-aligned, under fullscreen. (The player's volume button is always on the second row, right-aligned under close:
+   `<rellm-video>` puts it there while it is the miniplayer.) */
+.video-player-panel {
+  container-type: inline-size;
+}
+
+@container (max-width: 169px) {
+  .video-player-panel-queue-controls {
+    top: calc(0.35rem + 30px);
+    left: 0.35rem;
+    transform: none;
+  }
+}
+
+/* A tiny player has smaller corner buttons (20px, 3px in), so the second row is that much higher. */
+@container (max-width: 119px) {
+  .video-player-panel-queue-controls {
+    top: calc(3px + 24px);
+    left: 3px;
+  }
+
+  .video-player-panel-close {
+    top: 3px;
+    right: 3px;
+    width: 20px;
+    height: 20px;
+    font-size: 12px;
+  }
 }
 
 .video-player-panel-transport {

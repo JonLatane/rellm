@@ -305,6 +305,10 @@ viewHelper forceAutoplay tierOverride mediaSize sizeConstraint server maybeAccou
                                     )
                                 )
                             , Just (src (mediaUrl ++ previewTimeFragment media))
+
+                            -- Always inline: without it iOS Safari takes any video that is played (rather than autoplayed) to
+                            -- fullscreen, though `<rellm-video>` has its own fullscreen button.
+                            , Just (attribute "playsinline" "true")
                             , Maybe.map (attribute "poster") (hlsPosterUrl mediaUrl)
                             , aspectRatioStyle media
                             ]

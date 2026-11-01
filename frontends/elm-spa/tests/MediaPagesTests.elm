@@ -40,6 +40,23 @@ suite =
                 \_ ->
                     (MediaFeed.requestFor MediaFeed.Audio "   " 0).searchText |> Expect.equal Nothing
             ]
+        , describe "MediaFeed.replaceMedia (a metadata edit saved in the viewer)"
+            [ test "swaps in the saved copy of the edited item and leaves the rest, in order" <|
+                \_ ->
+                    let
+                        item : String -> Maybe String -> Media
+                        item id name =
+                            { defaultMedia | id = id, name = name }
+                    in
+                    MediaFeed.replaceMedia (item "b" (Just "New title")) [ item "a" (Just "A"), item "b" (Just "Old title"), item "c" Nothing ]
+                        |> List.map (\m -> ( m.id, m.name ))
+                        |> Expect.equal [ ( "a", Just "A" ), ( "b", Just "New title" ), ( "c", Nothing ) ]
+            , test "an item the feed isn't showing changes nothing" <|
+                \_ ->
+                    MediaFeed.replaceMedia { defaultMedia | id = "z", name = Just "Z" } [ { defaultMedia | id = "a" } ]
+                        |> List.map .id
+                        |> Expect.equal [ "a" ]
+            ]
         , describe "MediaFeed.mergeByRecency"
             [ test "merges servers newest-first, keeping each item's host" <|
                 \_ ->

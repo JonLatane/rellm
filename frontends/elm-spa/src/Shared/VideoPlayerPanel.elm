@@ -6,7 +6,6 @@ module Shared.VideoPlayerPanel exposing
     , decoder
     , init
     , reportDecoder
-    , setNavigation
     , subscriptions
     , update
     , view
@@ -29,17 +28,17 @@ The panel renders its own `<rellm-video>` playing if the page's was: the player 
 moves: in a corner of the window, or -- when a view puts a `[data-video-stage]` placeholder on screen -- exactly over that
 placeholder, gliding between the two. The stages are the expanded player (`Shared.AudioPlayerPanel`, with the queue pane
 beside it when that is open) and the media viewer, whose videos play here too (`Shared.viewerVideoSync`), so every video not
-playing inline on a page or in My Media is controlled from this one player. In the corner it has the queue's
-previous / next / show-queue buttons, which are the audio bar's own (the show-queue button expands the player, which has the
-close), and its own "open in the viewer" button beside fullscreen, which opens `Shared.MediaViewerPanel` on this video. On a
-stage, CSS hides the queue buttons and the viewer button; the stage's view has its own.
+playing inline on a page or in My Media is controlled from this one player. In the corner it has a queue button, which is the audio bar's own (it expands the player, which has the queue; previous and
+next are in the bar), a close button (top-right), and its own "open in the viewer" button beside fullscreen, which opens
+`Shared.MediaViewerPanel` on this video. On a stage, CSS hides the queue and close buttons and the viewer button; the stage's
+view has its own.
 
 Streams (HLS, `.m3u8`) work the same way: `public/index.html` attaches hls.js to any `<video>` with such a `src`.
 
 -}
 
 import Html exposing (Html, button, div, text)
-import Html.Attributes exposing (attribute, class, disabled, style)
+import Html.Attributes exposing (attribute, class, style)
 import Html.Events exposing (on, onClick)
 import Html.Keyed
 import Json.Decode as Decode exposing (Decoder)
@@ -65,12 +64,10 @@ type alias MiniVideo =
     }
 
 
-{-| `hasPrevious`/`hasNext` mirror the queue (see `setNavigation`), for the buttons.
+{-| What the panel is showing.
 -}
 type alias Model =
     { video : Maybe MiniVideo
-    , hasPrevious : Bool
-    , hasNext : Bool
     }
 
 
@@ -91,9 +88,9 @@ type Msg
     | Show MiniVideo
     | Hide
     | Reported Report
-    | PrevClicked
-    | NextClicked
     | QueueClicked
+      -- The corner player's close button: closes the queue's player (and so this).
+    | CloseClicked
       -- The player's "open in the viewer" button: `Shared.update` opens `Shared.MediaViewerPanel` on this video.
     | EnlargeClicked
       -- The same player's "shrink to the miniplayer" button, which it has while it is in the media viewer: `Shared.update` closes the viewer.
@@ -103,7 +100,7 @@ type Msg
 
 init : Model
 init =
-    { video = Nothing, hasPrevious = False, hasNext = False }
+    { video = Nothing }
 
 
 update : Msg -> Model -> Model
@@ -118,13 +115,6 @@ update msg model =
         -- Everything else is the queue's business (`Shared.update`).
         _ ->
             model
-
-
-{-| Whether the queue has an entry before/after the current one.
--}
-setNavigation : { hasPrevious : Bool, hasNext : Bool } -> Model -> Model
-setNavigation navigation model =
-    { model | hasPrevious = navigation.hasPrevious, hasNext = navigation.hasNext }
 
 
 subscriptions : Sub Msg
@@ -213,11 +203,11 @@ view model =
                 [ class "video-player-panel"
                 , style "--video-ratio" (String.fromFloat video.aspectRatio)
                 ]
-                [ ( video.src ++ "@" ++ String.fromFloat video.startAt, playerView model video ) ]
+                [ ( video.src ++ "@" ++ String.fromFloat video.startAt, playerView video ) ]
 
 
-playerView : Model -> MiniVideo -> Html Msg
-playerView model video =
+playerView : MiniVideo -> Html Msg
+playerView video =
     div [ class "video-player-panel-body" ]
         [ Html.node "rellm-video"
             (List.filterMap identity
@@ -247,28 +237,12 @@ playerView model video =
                 []
             ]
 
-        -- The queue's controls are the audio bar's own transport and queue buttons (top, centered); `public/rellm-video.js` draws the
-        -- rest (fullscreen and "open in the viewer" top-left, volume top-right). There is no back or close button: the
-        -- expanded player (the queue button) has the close. On a stage (the expanded player, the media viewer) CSS hides the
-        -- queue controls, since the stage's view has its own.
+        -- The queue button (top, centered: it expands the player, which has the queue and the rest of the controls -- previous/next are
+        -- the bar's) and the close button (top-right); `public/rellm-video.js` draws the rest (fullscreen and "open in the viewer"
+        -- top-left, volume under the close button). On a stage (the expanded player, the media viewer) CSS hides these two, since
+        -- the stage's view has its own.
         , div [ class "video-player-panel-queue-controls" ]
             [ button
-                [ class "audio-player-button video-player-panel-transport"
-                , onClick PrevClicked
-                , disabled (not model.hasPrevious)
-                , attribute "aria-label" "Previous in the queue"
-                , attribute "title" "Previous"
-                ]
-                [ AudioPlayerPanel.prevIcon ]
-            , button
-                [ class "audio-player-button video-player-panel-transport"
-                , onClick NextClicked
-                , disabled (not model.hasNext)
-                , attribute "aria-label" "Next in the queue"
-                , attribute "title" "Next"
-                ]
-                [ AudioPlayerPanel.nextIcon ]
-            , button
                 [ class "audio-player-button video-player-panel-transport"
                 , onClick QueueClicked
                 , attribute "aria-label" "Show the queue"
@@ -276,4 +250,11 @@ playerView model video =
                 ]
                 [ AudioPlayerPanel.queueIcon ]
             ]
+        , button
+            [ class "video-player-panel-close"
+            , onClick CloseClicked
+            , attribute "aria-label" "Close the player"
+            , attribute "title" "Close"
+            ]
+            [ text "\u{2715}" ]
         ]
