@@ -149,7 +149,12 @@
   var peekEnlarge = function (mediaId) {
     var found = enlargement;
     if (!found || !mediaId || found.mediaId !== mediaId || Date.now() - found.at > ENLARGE_WINDOW_MS) { return null; }
-    return { time: found.time, playing: found.playing };
+    return { time: found.time, playing: found.playing, at: found.at };
+  };
+  // Drops the handoff made at `at` (a newer one is left alone) -- for a player that peeked and kept going, once the update that
+  // might replace it has had its chance, so the handoff can't leak into a later, unrelated open of the same video.
+  var clearEnlarge = function (at) {
+    if (enlargement && enlargement.at === at) { enlargement = null; }
   };
   var takeEnlarge = function (mediaId) {
     var found = peekEnlarge(mediaId);
@@ -162,6 +167,7 @@
     justNavigated: justNavigated,
     setEnlarge: setEnlarge,
     peekEnlarge: peekEnlarge,
+    clearEnlarge: clearEnlarge,
     takeEnlarge: takeEnlarge
   };
 })();

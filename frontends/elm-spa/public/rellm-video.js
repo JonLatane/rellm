@@ -232,6 +232,7 @@
     lastNavigation: function () { return { time: 0, from: window.location.href }; },
     setEnlarge: function () {},
     peekEnlarge: function () { return null; },
+    clearEnlarge: function () {},
     takeEnlarge: function () { return null; }
   };
 
@@ -391,6 +392,8 @@
       // Only a look: if the viewer opening replaces this player, the new one starts from the same handoff.
       var enlarged = media.peekEnlarge(mediaId);
       if (!enlarged) { return; }
+      // A replacement is built within a frame or two of the viewer opening; after that, nobody else should find the handoff.
+      setTimeout(function () { media.clearEnlarge(enlarged.at); }, 600);
       try { v.currentTime = enlarged.time; } catch (e) { /* not seekable yet */ }
       if (enlarged.playing) {
         this._userPlay = true;
