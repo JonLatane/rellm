@@ -144,18 +144,24 @@
     // takes it when it's built.
     window.dispatchEvent(new CustomEvent("rellm-enlarge", { detail: { mediaId: details.mediaId } }));
   };
-  var takeEnlarge = function (mediaId) {
+  // `peek` leaves it for whoever builds the player next: the viewer opening can replace a player that already applied it
+  // (Elm keys the panel's player by where it started), and the replacement has to start from the same moment.
+  var peekEnlarge = function (mediaId) {
     var found = enlargement;
-    if (!found || !mediaId || found.mediaId !== mediaId) { return null; }
-    enlargement = null;
-    if (Date.now() - found.at > ENLARGE_WINDOW_MS) { return null; }
+    if (!found || !mediaId || found.mediaId !== mediaId || Date.now() - found.at > ENLARGE_WINDOW_MS) { return null; }
     return { time: found.time, playing: found.playing };
+  };
+  var takeEnlarge = function (mediaId) {
+    var found = peekEnlarge(mediaId);
+    if (found) { enlargement = null; }
+    return found;
   };
 
   window.rellmMedia = {
     lastNavigation: function () { return lastNavigation; },
     justNavigated: justNavigated,
     setEnlarge: setEnlarge,
+    peekEnlarge: peekEnlarge,
     takeEnlarge: takeEnlarge
   };
 })();

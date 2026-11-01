@@ -231,6 +231,7 @@
   var media = window.rellmMedia || {
     lastNavigation: function () { return { time: 0, from: window.location.href }; },
     setEnlarge: function () {},
+    peekEnlarge: function () { return null; },
     takeEnlarge: function () { return null; }
   };
 
@@ -387,7 +388,8 @@
     _takeEnlargement(mediaId) {
       var v = this._video;
       if (!v || !this.hasAttribute("data-miniplayer-panel") || !mediaId || this.getAttribute("data-media-id") !== mediaId) { return; }
-      var enlarged = media.takeEnlarge(mediaId);
+      // Only a look: if the viewer opening replaces this player, the new one starts from the same handoff.
+      var enlarged = media.peekEnlarge(mediaId);
       if (!enlarged) { return; }
       try { v.currentTime = enlarged.time; } catch (e) { /* not seekable yet */ }
       if (enlarged.playing) {
