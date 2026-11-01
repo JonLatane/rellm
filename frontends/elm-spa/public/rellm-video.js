@@ -1023,8 +1023,10 @@
     // On a phone-width screen it is smaller: it shares the screen with the page and the player bar, and must not reach up to
     // the expanded player's close button.
     var narrow = window.innerWidth < 640;
-    var width = Math.max(120, Math.min(narrow ? 220 : 360, window.innerWidth - 2 * gutter, window.innerHeight * (narrow ? 0.3 : 0.45) * ratio));
+    // The height limit is the last word (no minimum width over it): a tall video on a short screen gets narrow rather than tall.
+    var width = Math.min(narrow ? 220 : 360, window.innerWidth - 2 * gutter, window.innerHeight * (narrow ? 0.3 : 0.45) * ratio);
     var height = width / ratio;
+    var hidden = false;
     var lifted = document.querySelector(".audio-player-spacer.is-active") ? 5.5 * rem : gutter;
     // With the expanded player open (its queue pane fills a phone's screen, so the video stays down here), never reach up over its
     // close button, however short the screen: shrink to fit under it.
@@ -1032,19 +1034,39 @@
     if (close) {
       var room = window.innerHeight - lifted - (close.getBoundingClientRect().bottom + 0.5 * rem);
       if (height > room) {
-        height = Math.max(60, room);
+        height = Math.max(0, room);
         width = height * ratio;
       }
+      // Too little room left to be a video at all: it is out of the way (still playing) rather than over the button.
+      hidden = height < 48;
     }
-    return { x: window.innerWidth - gutter - width, y: window.innerHeight - lifted - height, w: width, h: height };
+    return { x: window.innerWidth - gutter - width, y: window.innerHeight - lifted - height, w: width, h: height, hidden: hidden };
+  }
+
+  // The part of `element` that is actually on screen: its rectangle cut down by every ancestor that clips (`overflow` other than
+  // visible) -- the expanded player's body clips the video stage on a short screen, and the player must not stick out of it.
+  function visibleRect(element) {
+    var r = element.getBoundingClientRect();
+    var left = r.left, top = r.top, right = r.right, bottom = r.bottom;
+    for (var el = element.parentElement; el && el !== document.body && el !== document.documentElement; el = el.parentElement) {
+      var cs = window.getComputedStyle(el);
+      if (cs.overflowX !== "visible" || cs.overflowY !== "visible") {
+        var c = el.getBoundingClientRect();
+        left = Math.max(left, c.left);
+        top = Math.max(top, c.top);
+        right = Math.min(right, c.right);
+        bottom = Math.min(bottom, c.bottom);
+      }
+    }
+    return { left: left, top: top, width: Math.max(0, right - left), height: Math.max(0, bottom - top) };
   }
 
   function targetBox(panel) {
     var stage = document.querySelector(STAGE);
     if (stage) {
-      var r = stage.getBoundingClientRect();
-      // (A stage inside something hidden -- a collapsing panel, a closed pane -- doesn't count.)
-      if (r.width > 0 && r.height > 0 && window.getComputedStyle(stage).visibility !== "hidden") {
+      var r = visibleRect(stage);
+      // (A stage inside something hidden -- a collapsing panel, a closed pane -- or with next to no room left doesn't count.)
+      if (r.width >= 48 && r.height >= 48 && window.getComputedStyle(stage).visibility !== "hidden") {
         // The stage is the room there is; the player is the video's shape, as big as fits, centered in it.
         var ratio = videoRatio(panel);
         var w = Math.min(r.width, r.height * ratio);
@@ -1100,6 +1122,7 @@
       });
     }
     applyBox(panel, panelBox);
+    panel.style.visibility = target.box.hidden ? "hidden" : "";
     cutAroundPopover(panel, panelBox, !!target.stage);
     window.requestAnimationFrame(panelFrame);
   }

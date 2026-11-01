@@ -267,10 +267,15 @@
   padding-top: 3.5rem;
 }
 
+.audio-player-expanded-video .audio-player-title {
+  flex: none;
+}
+
 .video-stage {
   flex: 1 1 0;
   width: 100%;
-  min-height: 8rem;
+  /* It gives way on a short screen (the player then fits what is left), rather than pushing the title out. */
+  min-height: 0;
   /* And never taller than half the screen: on a phone a full-height video is too much. */
   max-height: 50vh;
   max-height: 50dvh;
