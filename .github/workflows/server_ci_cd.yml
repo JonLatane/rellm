@@ -330,7 +330,7 @@ jobs:
 
   build_rust_binaries_macos:
     name: Build Rust Binaries (macOS arm64)
-    runs-on: macos-14
+    runs-on: macos-26
     env:
       CARGO_INCREMENTAL: "0"
 
