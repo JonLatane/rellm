@@ -35,6 +35,7 @@ import Components.Pages.MessagesPage as MessagesPage
 import Components.Posts as Posts
 import Components.SyncSources as SyncSources
 import Components.Users as Users
+import Dict
 import Grpc
 import Http
 import Json.Decode as Decode
@@ -54,6 +55,7 @@ import Shared.AudioPlayerPanel as AudioPlayerPanel
 import Shared.VideoPlayerPanel as VideoPlayerPanel
 import Shared.Breadcrumbs as Breadcrumbs
 import Shared.Federation.Actions as FederationActions
+import Shared.Federation.RellmLinks as RellmLinks
 import Shared.BrowserInfo as BrowserInfo
 import Shared.Countabilibar as Countabilibar
 import Shared.CreateNewPanel as CreateNewPanel
@@ -734,8 +736,12 @@ update req msg model =
         ( linkedModel, linkCmd ) =
             trackLinkFetch followedModel
 
+        -- A link naming a server the user hasn't added gets a preview of it, for the prompt offering to add it (`UI`).
+        ( previewedModel, previewCmd ) =
+            linkServerPreview req linkedModel
+
         ( hashedModel, hashCmd ) =
-            trackHashSync req model linkedModel
+            trackHashSync req model previewedModel
 
         -- Quotes waiting on a server (its preview connection landing, a server being added/enabled) get
         -- another look after every message -- see `QuoteLinks.advance`.
@@ -753,7 +759,7 @@ update req msg model =
             ( viewedModel, Cmd.batch [ cmd, redirect ] )
 
         Nothing ->
-            ( viewedModel, Cmd.batch [ cmd, viewedCmd, followCmd, linkCmd, hashCmd, quoteCmd, navBarColorCmd model newModel, themeCmd model newModel, splashHiddenCmd model newModel ] )
+            ( viewedModel, Cmd.batch [ cmd, viewedCmd, followCmd, linkCmd, previewCmd, hashCmd, quoteCmd, navBarColorCmd model newModel, themeCmd model newModel, splashHiddenCmd model newModel ] )
 
 
 {-| The media viewer doesn't play videos itself: when it opens on one, or pages to one, that video becomes the queue's
@@ -927,6 +933,29 @@ trackLinkFetch model =
                 ( model, Cmd.none )
 
         ( Nothing, Nothing ) ->
+            ( model, Cmd.none )
+
+
+{-| A `#track-<id>@<host>` / `#video-<id>@<host>` link to a server the user hasn't added: asks `AccountsPanel` for the anonymous
+preview connection it makes for any server it shows but the user doesn't have (its name and logo, for the "Add" button in `UI`'s
+link prompt) -- only for hosts that look like a public domain name (`RellmLinks.isProbeableHost`), as for quoted links, and once
+per host (the preview is seeded the moment it's asked for). Nothing is added or connected without the user pressing that button.
+-}
+linkServerPreview : Request -> Model -> ( Model, Cmd Msg )
+linkServerPreview req model =
+    case AudioPlayerPanel.pendingLink model.panels.audioPlayerPanel |> Maybe.andThen (Tuple.second >> .host) of
+        Just host ->
+            if
+                (RellmServers.rellmServerForHost model.accounts.servers host == Nothing)
+                    && RellmLinks.isProbeableHost host
+                    && not (Dict.member host model.accounts.recommendedServerConnections)
+            then
+                sharedUpdate req (AccountsPanelMsg (AccountsPanel.EnsureServerPreviews [ host ])) model
+
+            else
+                ( model, Cmd.none )
+
+        Nothing ->
             ( model, Cmd.none )
 
 

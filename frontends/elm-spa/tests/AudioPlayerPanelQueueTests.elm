@@ -285,6 +285,24 @@ suite =
                         , \_ -> play AudioPlayerPanel.Close waiting |> pending |> Expect.equal ( False, False )
                         ]
                         ()
+            , test "pendingLink says which kind of link is waiting, and the prompt's dismiss forgets it" <|
+                \_ ->
+                    let
+                        base : AudioPlayerPanel.Model
+                        base =
+                            AudioPlayerPanel.init
+
+                        link : { id : String, host : Maybe String }
+                        link =
+                            { id = "x", host = Just "other.example" }
+                    in
+                    Expect.all
+                        [ \_ -> AudioPlayerPanel.pendingLink base |> Expect.equal Nothing
+                        , \_ -> AudioPlayerPanel.pendingLink { base | pendingTrackLink = Just link } |> Expect.equal (Just ( "track", link ))
+                        , \_ -> AudioPlayerPanel.pendingLink { base | pendingVideoLink = Just link } |> Expect.equal (Just ( "video", link ))
+                        , \_ -> play AudioPlayerPanel.LinkPromptDismissed { base | pendingVideoLink = Just link } |> AudioPlayerPanel.pendingLink |> Expect.equal Nothing
+                        ]
+                        ()
             , test "LoadVideo makes it the current video, paused, with the player expanded" <|
                 \_ ->
                     let

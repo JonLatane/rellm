@@ -1,4 +1,4 @@
-module Shared.AudioPlayerPanel exposing (CurrentVideo, Handoff, Model, Msg(..), Placement(..), TrackLink, VideoItem, currentMedia, currentVideo, handoffDecoder, handoffSubscription, hasNext, hasPrevious, inheritLinkData, init, isExpanded, isLinkFragment, linkFragment, nextIcon, prevIcon, queueIcon, subscriptions, trackLinkFromFragment, videoFragment, videoLinkFromFragment, update, view)
+module Shared.AudioPlayerPanel exposing (CurrentVideo, Handoff, Model, Msg(..), Placement(..), TrackLink, VideoItem, currentMedia, currentVideo, handoffDecoder, handoffSubscription, hasNext, hasPrevious, inheritLinkData, init, pendingLink, isExpanded, isLinkFragment, linkFragment, nextIcon, prevIcon, queueIcon, subscriptions, trackLinkFromFragment, videoFragment, videoLinkFromFragment, update, view)
 
 {-| A persistent, app-wide audio player -- the companion to `Shared.MediaViewerPanel`. Where the viewer is a
 fullscreen, view-blocking carousel (with editing), this is a "now playing" bar docked to the bottom of the
@@ -219,6 +219,8 @@ type Msg
     | Load (List MediaReference) String String
       -- The same for a video: a `#video-<id>` link (or a share link to one) loads it, paused, in the expanded player.
     | LoadVideo VideoItem (Maybe String)
+      -- The "this link is on a server you haven't added" prompt (`UI`) was dismissed: forget the link.
+    | LinkPromptDismissed
       -- Adds a track (and the host it's on) to the queue -- starting it if nothing's loaded yet.
     | Enqueue Placement MediaReference String
     | ToggleQueue
@@ -561,6 +563,21 @@ trackFragment mainHost trackHost id =
             else
                 "@" ++ trackHost
            )
+
+
+{-| The `#track-` / `#video-` link waiting for its server to connect, with which kind it is (`"track"` / `"video"`).
+-}
+pendingLink : Model -> Maybe ( String, TrackLink )
+pendingLink model =
+    case ( model.pendingTrackLink, model.pendingVideoLink ) of
+        ( Just link, _ ) ->
+            Just ( "track", link )
+
+        ( Nothing, Just link ) ->
+            Just ( "video", link )
+
+        ( Nothing, Nothing ) ->
+            Nothing
 
 
 {-| A video being (re)opened as a bare URL -- the miniplayer's enlarge button hands the media viewer just its URL -- keeps the server
@@ -994,6 +1011,9 @@ update msg model =
 
                 Nothing ->
                     ( model, Cmd.none )
+
+        LinkPromptDismissed ->
+            ( { model | pendingTrackLink = Nothing, pendingVideoLink = Nothing }, Cmd.none )
 
         LoadVideo video title ->
             if model.currentId == Just video.src then
