@@ -674,7 +674,8 @@ type
       -- From `Ports.mediaDurationReported` -- the playing `<video>`/`<audio>`'s length in ms.
     | MediaDurationReported Float
     | EditSaveClicked
-    | GotEditSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, Media ))
+    | -- The server the edit was saved on (`targetHost` when it was sent: the viewer can already be closed or reset by the time this arrives).
+      GotEditSaveResult String (Result Grpc.Error ( Maybe AccountsPanel.Msg, Media ))
     | DeleteSizeClicked MediaConversion
     | GotDeleteSizeResult MediaConversion (Result Grpc.Error ( Maybe AccountsPanel.Msg, Media ))
 
@@ -867,14 +868,14 @@ update accountsPanelModel msg model =
                             edit.description
                             edit.visibility
                             (metadataWithEdits (isAudio media || isVideo media) (isVideo media) edit (Maybe.withDefault defaultMediaMetadata media.metadata))
-                            |> Task.attempt GotEditSaveResult
+                            |> Task.attempt (GotEditSaveResult model.targetHost)
                         , Nothing
                         )
 
                 _ ->
                     ( model, Cmd.none, Nothing )
 
-        GotEditSaveResult (Ok ( maybeAccountsPanelMsg, updatedMedia )) ->
+        GotEditSaveResult _ (Ok ( maybeAccountsPanelMsg, updatedMedia )) ->
             ( { model
                 | media =
                     model.media
@@ -901,7 +902,7 @@ update accountsPanelModel msg model =
             , maybeAccountsPanelMsg
             )
 
-        GotEditSaveResult (Err err) ->
+        GotEditSaveResult _ (Err err) ->
             ( { model | edit = model.edit |> Maybe.map (\edit -> { edit | status = SubmitFailed (AccountsPanel.grpcErrorToString err) }) }
             , Cmd.none
             , Nothing

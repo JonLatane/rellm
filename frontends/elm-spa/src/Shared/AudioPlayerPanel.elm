@@ -1,4 +1,4 @@
-module Shared.AudioPlayerPanel exposing (CurrentVideo, Handoff, Model, Msg(..), Placement(..), TrackLink, VideoItem, currentMedia, currentVideo, handoffDecoder, handoffSubscription, hasNext, hasPrevious, inheritLinkData, init, pendingLink, isExpanded, isLinkFragment, linkFragment, nextIcon, prevIcon, queueIcon, subscriptions, trackLinkFromFragment, videoFragment, videoLinkFromFragment, update, view)
+module Shared.AudioPlayerPanel exposing (CurrentVideo, Handoff, Model, Msg(..), Placement(..), TrackLink, VideoItem, currentMedia, currentVideo, handoffDecoder, handoffSubscription, hasNext, hasPrevious, inheritLinkData, init, pendingLink, isExpanded, isLinkFragment, linkFragment, queueIcon, subscriptions, trackLinkFromFragment, videoFragment, videoLinkFromFragment, update, view)
 
 {-| A persistent, app-wide audio player -- the companion to `Shared.MediaViewerPanel`. Where the viewer is a
 fullscreen, view-blocking carousel (with editing), this is a "now playing" bar docked to the bottom of the

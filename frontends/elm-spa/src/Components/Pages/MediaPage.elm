@@ -376,12 +376,9 @@ update shared msg model =
                 edited : Model
                 edited =
                     case subMsg of
-                        Shared.MediaViewerPanelMsg (MediaViewerPanel.GotEditSaveResult (Ok ( _, updated ))) ->
-                            let
-                                host : String
-                                host =
-                                    shared.panels.mediaViewerPanel.targetHost
-                            in
+                        -- (The server comes with the result: the viewer itself may have reset by now -- an edit saved from the audio player's
+                        -- Edit button closes it -- so its own `targetHost` can't be trusted here.)
+                        Shared.MediaViewerPanelMsg (MediaViewerPanel.GotEditSaveResult host (Ok ( _, updated ))) ->
                             { model
                                 | video = Maybe.map (MediaFeed.applyEdit host updated) model.video
                                 , audio = Maybe.map (MediaFeed.applyEdit host updated) model.audio

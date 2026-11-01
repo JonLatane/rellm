@@ -142,6 +142,10 @@
     ":host(.tiny) .tl,:host(.tiny) .tr{top:3px;gap:2px}",
     ":host(.tiny) .tl{left:3px}",
     ":host(.tiny) .tr{right:3px}",
+    // The miniplayer has a close button (Elm's, top-right), so its corner volume sits just under it -- until the player is on a stage,
+    // where that button is gone and the volume goes back to the corner.
+    ":host(.in-panel:not(.staged)) .tr{top:calc(.35rem + 30px)}",
+    ":host(.tiny.in-panel:not(.staged)) .tr{top:calc(3px + 24px)}",
     ":host(.no-duration) .seekwrap,:host(.no-duration) .time{display:none}",
     ":host(.no-duration) .bar{justify-content:flex-start}",
     ":host(.no-fullscreen) .fs{display:none!important}",

@@ -835,16 +835,11 @@ setVideoPanel change model =
 
 
 {-| Keeps the miniplayer showing the queue's current entry: when that's a video (newly, or begun again -- `generation`) it's
-shown, starting where the queue says; when it isn't, the miniplayer is hidden. Its previous/next buttons follow the queue.
+shown, starting where the queue says; when it isn't, the miniplayer is hidden.
 -}
 syncVideoPanel : AudioPlayerPanel.Model -> AudioPlayerPanel.Model -> VideoPlayerPanel.Model -> VideoPlayerPanel.Model
 syncVideoPanel before after panel =
-    let
-        navigation : { hasPrevious : Bool, hasNext : Bool }
-        navigation =
-            { hasPrevious = AudioPlayerPanel.hasPrevious after, hasNext = AudioPlayerPanel.hasNext after }
-    in
-    (case AudioPlayerPanel.currentVideo after of
+    case AudioPlayerPanel.currentVideo after of
         Nothing ->
             VideoPlayerPanel.update VideoPlayerPanel.Hide panel
 
@@ -868,8 +863,6 @@ syncVideoPanel before after panel =
                         }
                     )
                     panel
-    )
-        |> VideoPlayerPanel.setNavigation navigation
 
 
 {-| `GetMedia` for track `id` on `host` (an enabled account there is used, if there is one), whose result goes to `toMsg`.
@@ -1130,7 +1123,7 @@ coverArtFollowUp req msg oldModel newModel =
     in
     case msg of
         -- An edit saved in the viewer: the audio player keeps its own copy of the queue -- refresh it.
-        MediaViewerPanelMsg (MediaViewerPanel.GotEditSaveResult (Ok ( _, updated ))) ->
+        MediaViewerPanelMsg (MediaViewerPanel.GotEditSaveResult _ (Ok ( _, updated ))) ->
             chain (AudioPlayerPanelMsg (AudioPlayerPanel.MediaUpdated (MediaViewerPanel.mediaToReference updated)))
 
         MediaViewerPanelMsg MediaViewerPanel.ChooseCoverArtClicked ->
@@ -1759,11 +1752,8 @@ sharedUpdate req msg model =
                             AudioPlayerPanel.VideoState report.playing report.positionMs report.durationMs
                         )
 
-                VideoPlayerPanel.PrevClicked ->
-                    toQueue AudioPlayerPanel.Prev
-
-                VideoPlayerPanel.NextClicked ->
-                    toQueue AudioPlayerPanel.Next
+                VideoPlayerPanel.CloseClicked ->
+                    toQueue AudioPlayerPanel.Close
 
                 VideoPlayerPanel.QueueClicked ->
                     toQueue AudioPlayerPanel.ShowQueue

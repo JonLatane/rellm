@@ -127,9 +127,8 @@ suite =
                 \_ ->
                     [ VideoPlayerPanel.Requested video
                     , VideoPlayerPanel.Reported { playing = True, positionMs = 1, durationMs = 2, ended = False }
-                    , VideoPlayerPanel.PrevClicked
-                    , VideoPlayerPanel.NextClicked
                     , VideoPlayerPanel.QueueClicked
+                    , VideoPlayerPanel.CloseClicked
                     , VideoPlayerPanel.EnlargeClicked
                     , VideoPlayerPanel.ShrinkClicked
                     , VideoPlayerPanel.NoOp
@@ -137,11 +136,6 @@ suite =
                         |> List.map (\msg -> VideoPlayerPanel.update msg showing)
                         |> List.all ((==) showing)
                         |> Expect.equal True
-            , test "setNavigation follows the queue" <|
-                \_ ->
-                    VideoPlayerPanel.setNavigation { hasPrevious = True, hasNext = False } showing
-                        |> (\model -> ( model.hasPrevious, model.hasNext ))
-                        |> Expect.equal ( True, False )
             ]
         , describe "view"
             [ test "renders nothing without a video" <|
@@ -172,52 +166,37 @@ suite =
                         |> Query.fromHtml
                         |> Query.find [ Selector.tag "rellm-video" ]
                         |> Query.has [ Selector.attribute (Html.Attributes.attribute "data-media-id" "m1") ]
-            , test "the queue buttons are the audio bar's own transport and queue glyphs" <|
+            , test "the corner queue button is the audio bar's own, and there are no previous/next buttons (the bar has them)" <|
                 \_ ->
                     VideoPlayerPanel.view showing
                         |> Query.fromHtml
                         |> Query.find [ Selector.class "video-player-panel-queue-controls" ]
                         |> Expect.all
-                            [ Query.has [ Selector.class "audio-player-icon-prev" ]
-                            , Query.has [ Selector.class "audio-player-icon-next" ]
-                            , Query.has [ Selector.class "audio-player-icon-queue" ]
-                            , Query.findAll [ Selector.tag "button" ] >> Query.each (Query.has [ Selector.class "audio-player-button" ])
+                            [ Query.has [ Selector.class "audio-player-icon-queue" ]
+                            , Query.hasNot [ Selector.class "audio-player-icon-prev" ]
+                            , Query.hasNot [ Selector.class "audio-player-icon-next" ]
+                            , Query.findAll [ Selector.tag "button" ] >> Query.count (Expect.equal 1)
+                            , Query.find [ Selector.tag "button" ] >> Event.simulate Event.click >> Event.expect VideoPlayerPanel.QueueClicked
                             ]
-            , test "has no back or close button (the expanded player has the close), and the player's viewer button opens the viewer" <|
+            , test "has a close button, top-right, that closes the player (and no back button)" <|
                 \_ ->
                     VideoPlayerPanel.view showing
                         |> Query.fromHtml
                         |> Expect.all
                             [ Query.hasNot [ Selector.class "video-player-panel-expand" ]
-                            , Query.hasNot [ Selector.class "video-player-panel-close" ]
-                            , Query.find [ Selector.tag "rellm-video" ]
+                            , Query.find [ Selector.class "video-player-panel-close" ] >> Event.simulate Event.click >> Event.expect VideoPlayerPanel.CloseClicked
+                            ]
+            , test "the player's viewer button opens the viewer, and its shrink button asks to close it" <|
+                \_ ->
+                    VideoPlayerPanel.view showing
+                        |> Query.fromHtml
+                        |> Expect.all
+                            [ Query.find [ Selector.tag "rellm-video" ]
                                 >> Event.simulate (Event.custom "rellm-video-enlarge" (Json.Encode.object []))
                                 >> Event.expect VideoPlayerPanel.EnlargeClicked
                             , Query.find [ Selector.tag "rellm-video" ]
                                 >> Event.simulate (Event.custom "rellm-video-shrink" (Json.Encode.object []))
                                 >> Event.expect VideoPlayerPanel.ShrinkClicked
                             ]
-            , test "previous / next buttons drive the queue, and are disabled where the queue has nothing" <|
-                \_ ->
-                    let
-                        buttons : VideoPlayerPanel.Model -> Query.Multiple VideoPlayerPanel.Msg
-                        buttons model =
-                            VideoPlayerPanel.view model
-                                |> Query.fromHtml
-                                |> Query.find [ Selector.class "video-player-panel-queue-controls" ]
-                                |> Query.findAll [ Selector.tag "button" ]
-                    in
-                    Expect.all
-                        [ \_ -> buttons showing |> Query.index 0 |> Query.has [ Selector.disabled True ]
-                        , \_ -> buttons showing |> Query.index 1 |> Query.has [ Selector.disabled True ]
-                        , \_ ->
-                            buttons (VideoPlayerPanel.setNavigation { hasPrevious = True, hasNext = True } showing)
-                                |> Expect.all
-                                    [ Query.index 0 >> Event.simulate Event.click >> Event.expect VideoPlayerPanel.PrevClicked
-                                    , Query.index 1 >> Event.simulate Event.click >> Event.expect VideoPlayerPanel.NextClicked
-                                    , Query.index 2 >> Event.simulate Event.click >> Event.expect VideoPlayerPanel.QueueClicked
-                                    ]
-                        ]
-                        ()
             ]
         ]
