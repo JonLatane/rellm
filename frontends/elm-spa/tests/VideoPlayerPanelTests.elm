@@ -131,6 +131,7 @@ suite =
                     , VideoPlayerPanel.NextClicked
                     , VideoPlayerPanel.QueueClicked
                     , VideoPlayerPanel.EnlargeClicked
+                    , VideoPlayerPanel.ShrinkClicked
                     , VideoPlayerPanel.NoOp
                     ]
                         |> List.map (\msg -> VideoPlayerPanel.update msg showing)
@@ -192,6 +193,9 @@ suite =
                             , Query.find [ Selector.tag "rellm-video" ]
                                 >> Event.simulate (Event.custom "rellm-video-enlarge" (Json.Encode.object []))
                                 >> Event.expect VideoPlayerPanel.EnlargeClicked
+                            , Query.find [ Selector.tag "rellm-video" ]
+                                >> Event.simulate (Event.custom "rellm-video-shrink" (Json.Encode.object []))
+                                >> Event.expect VideoPlayerPanel.ShrinkClicked
                             ]
             , test "previous / next buttons drive the queue, and are disabled where the queue has nothing" <|
                 \_ ->

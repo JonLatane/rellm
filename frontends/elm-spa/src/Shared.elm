@@ -1747,6 +1747,26 @@ sharedUpdate req msg model =
                         Nothing ->
                             ( model, Cmd.none )
 
+                -- "Shrink to the miniplayer": closing the viewer takes its stage away, and the player glides to the corner, still playing.
+                -- (The expanded player springs back when the viewer closes, so it is collapsed too, or the video would just land there.)
+                VideoPlayerPanel.ShrinkClicked ->
+                    let
+                        ( closed, closeCmd, _ ) =
+                            MediaViewerPanel.update model.accounts MediaViewerPanel.CloseClicked model.panels.mediaViewerPanel
+
+                        withViewerClosed : Model
+                        withViewerClosed =
+                            { model | panels = (\panels -> { panels | mediaViewerPanel = closed }) model.panels }
+
+                        ( collapsed, collapseCmd ) =
+                            if withViewerClosed.panels.audioPlayerPanel.expanded then
+                                sharedUpdate req (AudioPlayerPanelMsg AudioPlayerPanel.ToggleExpanded) withViewerClosed
+
+                            else
+                                ( withViewerClosed, Cmd.none )
+                    in
+                    ( collapsed, Cmd.batch [ Cmd.map MediaViewerPanelMsg closeCmd, collapseCmd ] )
+
                 VideoPlayerPanel.Show _ ->
                     ( setVideoPanel (VideoPlayerPanel.update subMsg) model, Cmd.none )
 

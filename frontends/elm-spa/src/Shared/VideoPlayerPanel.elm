@@ -96,6 +96,8 @@ type Msg
     | QueueClicked
       -- The player's "open in the viewer" button: `Shared.update` opens `Shared.MediaViewerPanel` on this video.
     | EnlargeClicked
+      -- The same player's "shrink to the miniplayer" button, which it has while it is in the media viewer: `Shared.update` closes the viewer.
+    | ShrinkClicked
     | NoOp
 
 
@@ -225,6 +227,7 @@ playerView model video =
                 , Just (attribute "data-start-at" (String.fromFloat video.startAt))
                 , Maybe.map (attribute "data-media-id") video.mediaId
                 , Just (on "rellm-video-enlarge" (Decode.succeed EnlargeClicked))
+                , Just (on "rellm-video-shrink" (Decode.succeed ShrinkClicked))
                 , if video.resume then
                     Just (attribute "data-resume" "")
 

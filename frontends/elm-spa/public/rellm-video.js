@@ -15,8 +15,9 @@
 //   * a volume button that opens a slider (just below it in the top-right corner, above it in the bar)
 //   * playback speed, loop, and -- for HLS (hls.js, see `public/index.html`) -- quality, in a menu opened
 //     from the speed button at the bottom-right
-//   * fullscreen, and an enlarge button on thumbnails (`data-media-size` small or extra-small): it opens the video
-//     in the media viewer, where `Shared.VideoPlayerPanel`'s player carries on from the same moment
+//   * fullscreen, and an enlarge button (just right of it) on thumbnails (`data-media-size` small or extra-small) and on the
+//     miniplayer's player: it opens the video in the media viewer, where `Shared.VideoPlayerPanel`'s player carries on from the same
+//     moment; there the miniplayer button (just left of fullscreen) shrinks it back to the miniplayer
 //   * keyboard shortcuts while it has focus (space/k, arrows, j/l, m, f, i, 0-9, </>, ...), double-click or
 //     double-tap to seek +/-10s (sides) or go fullscreen (middle), a buffering spinner, a big play/replay
 //     button, an error message, and controls that fade out while playing
@@ -144,11 +145,14 @@
     ":host(.no-duration) .seekwrap,:host(.no-duration) .time{display:none}",
     ":host(.no-duration) .bar{justify-content:flex-start}",
     ":host(.no-fullscreen) .fs{display:none!important}",
-    // The miniplayer panel's own player can't be sent to a miniplayer (or enlarged).
-    ":host(.in-panel) .mini{display:none!important}",
+    // The miniplayer panel's own player has no miniplayer button -- except in the media viewer (`.in-viewer`), where the same button
+    // shrinks the video back to the miniplayer (closing the viewer).
+    ":host(.in-panel:not(.in-viewer)) .mini{display:none!important}",
     // Enlarge (open in the media viewer): only thumbnails and the miniplayer (`.enlargeable`) have it -- and not once the player
-    // is on a stage (`.staged`: the expanded player, the viewer), where it already is as big as it gets.
-    ":host(:not(.enlargeable)) .enlarge,:host(.staged) .enlarge{display:none!important}",
+    // is in the viewer already. It sits right of fullscreen: in the corner next to the corner fullscreen button when the frame is
+    // compact, at the end of the bar (after its fullscreen button) otherwise.
+    ":host(:not(.enlargeable)) .enlarge,:host(.in-viewer) .enlarge{display:none!important}",
+    ":host(.compact) .bar .enlarge,:host(:not(.compact)) .tl .enlarge{display:none!important}",
     ".big.hidden{display:none}"
   ].join("\n");
 
@@ -180,6 +184,7 @@
     '<button type="button" class="speed" aria-label="Playback speed and settings" aria-haspopup="menu" aria-expanded="false">1\u00d7</button>' +
     '<button type="button" class="mini" aria-label="Miniplayer (i)"></button>' +
     '<button type="button" class="fs" aria-label="Fullscreen"></button>' +
+    '<button type="button" class="enlarge enlarge-bar" aria-label="Open in the viewer"></button>' +
     "</div>";
 
   function formatTime(seconds) {
@@ -278,7 +283,7 @@
       this._els = {
         bar: q(".bar"), play: q(".play"), big: q(".big"), cur: q(".cur"), dur: q(".dur"), seek: q(".seek"), tip: q(".tip"),
         seekwrap: q(".seekwrap"), speed: q(".speed"), menu: q(".menu"), mini: q(".mini"), toast: q(".toast"),
-        message: q(".message"), spinner: q(".spinner"), enlarge: q(".enlarge"),
+        message: q(".message"), spinner: q(".spinner"), enlarge: all(".enlarge"),
         mute: all(".mute"), fs: all(".fs"), vols: all(".vol"), volSliders: all(".vol-slider")
       };
       if (!this.hasAttribute("tabindex")) { this.tabIndex = 0; }
@@ -308,7 +313,7 @@
       });
       e.fs.forEach(function (button) { button.addEventListener("click", function () { self._toggleFullscreen(); }); });
       e.mini.addEventListener("click", function () { self._miniplayer(); });
-      e.enlarge.addEventListener("click", function () { self._enlarge(); });
+      e.enlarge.forEach(function (button) { button.addEventListener("click", function () { self._enlarge(); }); });
       e.speed.addEventListener("click", function () { self._toggleMenu(); });
 
       e.vols.forEach(function (vol) {
@@ -486,6 +491,11 @@
 
     // The miniplayer button / `i`: the video moves to the floating player and this one stops.
     _miniplayer() {
+      // In the media viewer this is "shrink": the viewer closes and the same player glides down to the corner, still playing.
+      if (this.classList.contains("in-viewer")) {
+        this.dispatchEvent(new CustomEvent("rellm-video-shrink", { bubbles: true, composed: true }));
+        return;
+      }
       if (this.hasAttribute("data-miniplayer-panel")) { return; }
       if (this._requestMiniplayer(window.location.href)) {
         var v = this._video;
@@ -748,7 +758,7 @@
         case "ArrowDown": if (onInput) { handled = false; } else { this._setVolume((v.muted ? 0 : v.volume) - 0.05); } break;
         case "m": case "M": this._toggleMute(); this._toast(v.muted ? "Muted" : "Volume " + Math.round(v.volume * 100) + "%"); break;
         case "f": case "F": this._toggleFullscreen(); break;
-        case "i": case "I": if (!this.classList.contains("in-panel")) { this._miniplayer(); } else { handled = false; } break;
+        case "i": case "I": if (!this.classList.contains("in-panel") || this.classList.contains("in-viewer")) { this._miniplayer(); } else { handled = false; } break;
         case "<": this._stepRate(-1); break;
         case ">": this._stepRate(1); break;
         case "Home": if (onInput) { handled = false; } else { this._seekToFraction(0); } break;
@@ -946,7 +956,8 @@
         button.setAttribute("aria-label", isFullscreen ? "Exit fullscreen" : "Fullscreen");
       });
       e.mini.innerHTML = ICONS.mini;
-      e.enlarge.innerHTML = ICONS.enlarge;
+      e.enlarge.forEach(function (button) { button.innerHTML = ICONS.enlarge; });
+      e.mini.setAttribute("aria-label", this.classList.contains("in-viewer") ? "Shrink to miniplayer (i)" : "Miniplayer (i)");
       e.speed.textContent = formatRate(v.playbackRate || 1);
 
       this.classList.toggle("no-duration", !hasDuration);
@@ -1052,8 +1063,12 @@
     var target = targetBox(panel);
     panel.classList.toggle("on-stage", !!target.stage);
     var player = panel.querySelector("rellm-video");
-    if (player) { player.classList.toggle("staged", !!target.stage); }
-    panel.classList.toggle("over-viewer", !!(target.stage && target.stage.closest(".media-viewer-panel")));
+    var inViewer = !!(target.stage && target.stage.closest(".media-viewer-panel"));
+    if (player) {
+      player.classList.toggle("staged", !!target.stage);
+      player.classList.toggle("in-viewer", inViewer);
+    }
+    panel.classList.toggle("over-viewer", inViewer);
     var dt = Math.min(64, now - panelLast || 16);
     panelLast = now;
     if (!panelBox || panel !== panelBox.panel) {
