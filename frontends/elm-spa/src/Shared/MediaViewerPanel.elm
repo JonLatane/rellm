@@ -1,4 +1,4 @@
-module Shared.MediaViewerPanel exposing (CreditField, MediaEdit, Model, Msg(..), canEditMedia, fieldErrors, formatMs, freshEdit, init, isValidKey, mediaToReference, metadataWithEdits, parseBpm, subscriptions, update, view)
+module Shared.MediaViewerPanel exposing (CreditField, MediaEdit, Model, Msg(..), ViewerVideo, canEditMedia, currentVideo, fieldErrors, formatMs, freshEdit, init, isValidKey, mediaToReference, metadataWithEdits, parseBpm, subscriptions, update, view)
 
 {-| A single, app-wide fullscreen image/video viewer -- an alternate,
 "big"/fullscreen rendering of a `Post`'s `media` (compare
@@ -1339,6 +1339,51 @@ applySwipe ( startX, startY ) ( endX, endY ) model =
         ( model, Cmd.none )
 
 
+{-| The video the viewer is showing, if its current item is one (and it isn't open just to edit an audio file): what to play
+in `Shared.VideoPlayerPanel`, whose player takes the viewer's place for videos -- the viewer only keeps a stage for it
+(see `view`). `autoplay` is whether it should start on its own.
+-}
+type alias ViewerVideo =
+    { mediaId : String
+    , src : String
+    , poster : Maybe String
+    , aspectRatio : Float
+    , title : String
+    , autoplay : Bool
+    }
+
+
+currentVideo : AccountsPanel.Model -> Model -> Maybe ViewerVideo
+currentVideo accountsPanelModel model =
+    let
+        maybeServer : Maybe RellmServer
+        maybeServer =
+            Posts.mediaServer (RellmServers.rellmServerForHost accountsPanelModel.servers model.targetHost) model.targetHost
+    in
+    Maybe.map2
+        (\media server ->
+            let
+                natural : { src : String, poster : Maybe String, aspectRatio : Float }
+                natural =
+                    MediaRenderer.naturalVideo server
+                        (RellmAccounts.enabledRellmAccountForServer accountsPanelModel.accounts model.targetHost)
+                        media
+            in
+            { mediaId = media.id
+            , src = natural.src
+            , poster = natural.poster
+            , aspectRatio = natural.aspectRatio
+            , title = Maybe.withDefault "Video" media.name
+            , autoplay = model.autoplay
+            }
+        )
+        (model.currentMediaReference
+            |> Maybe.andThen (\id -> List.filter (\m -> m.id == id) model.media |> List.head)
+            |> Maybe.andThen (\m -> if isVideo m then Just m else Nothing)
+        )
+        maybeServer
+
+
 view : Bool -> AccountsPanel.Model -> Model -> Html Msg
 view audioPlayerActive accountsPanelModel model =
     let
@@ -1814,21 +1859,32 @@ view audioPlayerActive accountsPanelModel model =
                                 , preventDefaultOn "touchmove" (Decode.succeed ( TouchMove, model.touchStart /= Nothing ))
                                 , on "touchend" (touchPoint "changedTouches" TouchEnd)
                                 ]
-                                [ (if model.autoplay then
-                                    MediaRenderer.viewAutoplay
+                                [ if isVideo media then
+                                    -- Videos play in `Shared.VideoPlayerPanel`'s player (the same controls as everywhere
+                                    -- else, and the queue's), which `public/rellm-video.js` glides over this placeholder.
+                                    div
+                                        [ class "video-stage media-viewer-panel-video-stage"
+                                        , attribute "data-video-stage" ""
+                                        , style "--video-ratio" (String.fromFloat (MediaRenderer.naturalVideo server maybeAccount media).aspectRatio)
+                                        ]
+                                        []
 
-                                   else
-                                    MediaRenderer.view
-                                  )
-                                    MediaRenderer.Natural
-                                    MediaRenderer.ToWidthAndHeight
-                                    server
-                                    maybeAccount
-                                    True
-                                    MediaRenderer.init
-                                    SetCurrent
-                                    SetCurrent
-                                    media
+                                  else
+                                    (if model.autoplay then
+                                        MediaRenderer.viewAutoplay
+
+                                     else
+                                        MediaRenderer.view
+                                    )
+                                        MediaRenderer.Natural
+                                        MediaRenderer.ToWidthAndHeight
+                                        server
+                                        maybeAccount
+                                        True
+                                        MediaRenderer.init
+                                        SetCurrent
+                                        SetCurrent
+                                        media
                                 ]
                           )
                         ]

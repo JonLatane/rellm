@@ -49,8 +49,11 @@
 
   // `started` is audible and playing: pause everything else that is. The audio bar has two `<audio>` slots that hand playback to
   // each other while changing quality, so a bar slot never pauses the *bar's* other slot (it does pause anything else).
+  // (The audio bar's slots briefly play a silent clip on the first tap -- `index.html`'s `unlockAudioSlots`, which iOS needs
+  // before it lets code start them -- and that is not something to pause a video for.)
+  var isUnlockClip = function (el) { return /^data:audio\/wav/.test(el.getAttribute("src") || ""); };
   var isAudible = function (el) {
-    return !!el && (el.tagName === "AUDIO" || el.tagName === "VIDEO") && !el.paused && !el.muted && el.volume > 0;
+    return !!el && (el.tagName === "AUDIO" || el.tagName === "VIDEO") && !el.paused && !el.muted && el.volume > 0 && !isUnlockClip(el);
   };
 
   var pauseOthers = function (started) {
@@ -128,8 +131,28 @@
     }
   });
 
+  // ---- opening a video in the media viewer -----------------------------------------------------------------
+  //
+  // A thumbnail's enlarge button opens the viewer, whose video is `Shared.VideoPlayerPanel`'s player -- a different
+  // element. The thumbnail leaves where it was (and whether it was playing) here, keyed by the media's id, for the panel's
+  // player to take up the moment it's built. It's good for a few seconds only: a stale one must not hijack a later open.
+  var ENLARGE_WINDOW_MS = 5000;
+  var enlargement = null;
+  var setEnlarge = function (details) {
+    enlargement = { mediaId: details.mediaId, time: details.time, playing: details.playing, at: Date.now() };
+  };
+  var takeEnlarge = function (mediaId) {
+    var found = enlargement;
+    if (!found || !mediaId || found.mediaId !== mediaId) { return null; }
+    enlargement = null;
+    if (Date.now() - found.at > ENLARGE_WINDOW_MS) { return null; }
+    return { time: found.time, playing: found.playing };
+  };
+
   window.rellmMedia = {
     lastNavigation: function () { return lastNavigation; },
-    justNavigated: justNavigated
+    justNavigated: justNavigated,
+    setEnlarge: setEnlarge,
+    takeEnlarge: takeEnlarge
   };
 })();

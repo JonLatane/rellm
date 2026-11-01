@@ -1317,7 +1317,7 @@ postDetail time basePath viewingServerHost postServerHost maybeServer maybeAccou
         , case maybeServer of
             Just server ->
                 div []
-                    [ MultiMediaRenderer.view post.postMediaLayout server maybeAccount mediaPlayState onMediaPlayClicked onMediaClicked post.media
+                    [ MultiMediaRenderer.viewNatural server maybeAccount mediaPlayState onMediaPlayClicked onMediaClicked post.media
                     , if readOnly then
                         text ""
 

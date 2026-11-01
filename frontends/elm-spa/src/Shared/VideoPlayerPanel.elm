@@ -24,10 +24,15 @@ page was navigated away from -- as a `Requested` (a `rellm-miniplayer` window ev
 the current entry and the existing queue follows it. Likewise the player's own events (`Ports.miniVideoState`, see
 `reportDecoder`) go back to the queue -- its position for the bar, its end for "next".
 
-The panel renders its own `<rellm-video>` at the same position, playing if the page's was: the player takes over with
-`data-miniplayer-panel` (no miniplayer/enlarge buttons of its own), `data-start-at` and `data-resume`. Over it: close,
-a back arrow (returns to the page the video was on and closes the miniplayer -- a real `<a href>` wouldn't do: Elm routes
-its click to the app's URL handling, never to an `onClick`), and the queue's previous / next / show-queue buttons.
+The panel renders its own `<rellm-video>` playing if the page's was: the player takes over with `data-miniplayer-panel`
+(no miniplayer/enlarge buttons of its own), `data-start-at` and `data-resume`. It is one element that `public/rellm-video.js`
+moves: in a corner of the window, or -- when a view puts a `[data-video-stage]` placeholder on screen -- exactly over that
+placeholder, gliding between the two. The stages are the expanded player (`Shared.AudioPlayerPanel`, with the queue pane
+beside it when that is open) and the media viewer, whose videos play here too (`Shared.viewerVideoSync`), so every video not
+playing inline on a page or in My Media is controlled from this one player. In the corner it has the chrome of a
+miniplayer: close, a back arrow (returns to the page the video was on and closes the miniplayer -- a real `<a href>` wouldn't
+do: Elm routes its click to the app's URL handling, never to an `onClick`), and the queue's previous / next / show-queue
+buttons, which are the audio bar's own. On a stage, CSS hides those; the stage's view has its own.
 
 Streams (HLS, `.m3u8`) work the same way: `public/index.html` attaches hls.js to any `<video>` with such a `src`.
 
@@ -39,6 +44,7 @@ import Html.Events exposing (onClick)
 import Html.Keyed
 import Json.Decode as Decode exposing (Decoder)
 import Ports
+import Shared.AudioPlayerPanel as AudioPlayerPanel
 
 
 {-| What the page's player hands over. `startAt` is in seconds; `resume` is whether it was playing; `returnUrl` is the
@@ -53,6 +59,7 @@ type alias MiniVideo =
     , resume : Bool
     , aspectRatio : Float
     , returnUrl : String
+    , mediaId : Maybe String
     }
 
 
@@ -153,7 +160,7 @@ kept within what a corner of the screen can sensibly show (a stream that hasn't 
 -}
 decoder : Decoder MiniVideo
 decoder =
-    Decode.map7 MiniVideo
+    Decode.map8 MiniVideo
         (Decode.field "src" Decode.string |> Decode.andThen nonEmptySrc)
         (optional "poster")
         (optional "title")
@@ -161,6 +168,7 @@ decoder =
         (Decode.field "playing" Decode.bool)
         (Decode.oneOf [ Decode.field "aspectRatio" Decode.float, Decode.succeed (16 / 9) ] |> Decode.map (clamp 0.4 3))
         (Decode.field "returnUrl" Decode.string)
+        (optional "mediaId")
 
 
 {-| A string field that may be null or missing, and means nothing when blank.
@@ -209,16 +217,14 @@ view model =
 
 playerView : Model -> MiniVideo -> Html Msg
 playerView model video =
-    div
-        [ class "video-player-panel-body"
-        , style "aspect-ratio" (String.fromFloat video.aspectRatio)
-        ]
+    div [ class "video-player-panel-body" ]
         [ Html.node "rellm-video"
             (List.filterMap identity
                 [ Just (class "media-renderer-video-frame video-player-panel-frame")
                 , Just (attribute "data-media-size" "natural")
                 , Just (attribute "data-miniplayer-panel" "")
                 , Just (attribute "data-start-at" (String.fromFloat video.startAt))
+                , Maybe.map (attribute "data-media-id") video.mediaId
                 , if video.resume then
                     Just (attribute "data-resume" "")
 
@@ -237,6 +243,10 @@ playerView model video =
                 )
                 []
             ]
+
+        -- The corner chrome below is for the miniplayer only: where the video covers a stage (the expanded player, the
+        -- media viewer -- `public/rellm-video.js` moves the panel there) those views have their own close, queue and
+        -- navigation, so CSS hides these (`.on-stage`).
         , button
             [ class "video-player-panel-button video-player-panel-expand"
             , onClick ExpandClicked
@@ -251,29 +261,31 @@ playerView model video =
             , attribute "title" "Close miniplayer"
             ]
             [ text "\u{2715}" ]
+
+        -- The queue's controls are the audio bar's own (`Shared.AudioPlayerPanel`'s transport and queue buttons).
         , div [ class "video-player-panel-queue-controls" ]
             [ button
-                [ class "video-player-panel-button"
+                [ class "audio-player-button video-player-panel-transport"
                 , onClick PrevClicked
                 , disabled (not model.hasPrevious)
                 , attribute "aria-label" "Previous in the queue"
                 , attribute "title" "Previous"
                 ]
-                [ text "\u{00AB}" ]
+                [ AudioPlayerPanel.prevIcon ]
             , button
-                [ class "video-player-panel-button"
+                [ class "audio-player-button video-player-panel-transport"
                 , onClick NextClicked
                 , disabled (not model.hasNext)
                 , attribute "aria-label" "Next in the queue"
                 , attribute "title" "Next"
                 ]
-                [ text "\u{00BB}" ]
+                [ AudioPlayerPanel.nextIcon ]
             , button
-                [ class "video-player-panel-button"
+                [ class "audio-player-button video-player-panel-transport"
                 , onClick QueueClicked
                 , attribute "aria-label" "Show the queue"
                 , attribute "title" "Queue"
                 ]
-                [ text "\u{2630}" ]
+                [ AudioPlayerPanel.queueIcon ]
             ]
         ]

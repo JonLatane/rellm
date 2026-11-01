@@ -19,7 +19,7 @@ track id =
 
 clip : String -> VideoItem
 clip src =
-    { src = src, poster = Nothing, aspectRatio = 16 / 9, returnUrl = "https://rellm.org/post/p1" }
+    { src = src, poster = Nothing, aspectRatio = 16 / 9, returnUrl = "https://rellm.org/post/p1", mediaId = Nothing }
 
 
 {-| What's queued, in order, as media ids (a video's id is its `src`).

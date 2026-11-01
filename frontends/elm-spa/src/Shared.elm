@@ -736,15 +736,58 @@ update req msg model =
         -- another look after every message -- see `QuoteLinks.advance`.
         ( quotedModel, quoteCmd ) =
             quoteLinksAdvance hashedModel
+
+        -- A video the media viewer lands on plays in the video player panel (see `viewerVideoSync`).
+        ( viewedModel, viewedCmd ) =
+            viewerVideoSync req model quotedModel
     in
     case rootRedirectCmd req msg model of
         Just redirect ->
             -- Leaving the page anyway: skip the rest (notably hiding the splash, which would flash
             -- this soon-to-be-replaced page).
-            ( quotedModel, Cmd.batch [ cmd, redirect ] )
+            ( viewedModel, Cmd.batch [ cmd, redirect ] )
 
         Nothing ->
-            ( quotedModel, Cmd.batch [ cmd, followCmd, linkCmd, hashCmd, quoteCmd, navBarColorCmd model newModel, themeCmd model newModel, splashHiddenCmd model newModel ] )
+            ( viewedModel, Cmd.batch [ cmd, viewedCmd, followCmd, linkCmd, hashCmd, quoteCmd, navBarColorCmd model newModel, themeCmd model newModel, splashHiddenCmd model newModel ] )
+
+
+{-| The media viewer doesn't play videos itself: when it opens on one, or pages to one, that video becomes the queue's
+current entry (`OpenVideo` -- the existing queue follows it, like anything played from somewhere), and
+`Shared.VideoPlayerPanel`'s player glides over the viewer's stage (`public/rellm-video.js`) with its controls. A video the
+viewer is *still* showing isn't started again, whatever else the queue has since moved on to. A thumbnail's enlarge button
+leaves its position for the panel's player to continue from (`public/rellm-media.js`), so playback carries on.
+-}
+viewerVideoSync : Request -> Model -> Model -> ( Model, Cmd Msg )
+viewerVideoSync req before after =
+    let
+        viewing : Model -> Maybe MediaViewerPanel.ViewerVideo
+        viewing model =
+            MediaViewerPanel.currentVideo model.accounts model.panels.mediaViewerPanel
+    in
+    case viewing after of
+        Just video ->
+            if Maybe.map .mediaId (viewing before) == Just video.mediaId then
+                ( after, Cmd.none )
+
+            else
+                sharedUpdate req
+                    (AudioPlayerPanelMsg
+                        (AudioPlayerPanel.OpenVideo
+                            { src = video.src
+                            , poster = video.poster
+                            , aspectRatio = video.aspectRatio
+                            , returnUrl = Url.toString req.url
+                            , mediaId = Just video.mediaId
+                            }
+                            (Just video.title)
+                            0
+                            video.autoplay
+                        )
+                    )
+                    after
+
+        Nothing ->
+            ( after, Cmd.none )
 
 
 {-| `QuoteLinks.advance` against the current accounts -- see its own doc.
@@ -803,6 +846,7 @@ syncVideoPanel before after panel =
                         , resume = current.resume
                         , aspectRatio = current.video.aspectRatio
                         , returnUrl = current.video.returnUrl
+                        , mediaId = current.video.mediaId
                         }
                     )
                     panel
@@ -1579,7 +1623,7 @@ sharedUpdate req msg model =
                 VideoPlayerPanel.Requested video ->
                     toQueue
                         (AudioPlayerPanel.OpenVideo
-                            { src = video.src, poster = video.poster, aspectRatio = video.aspectRatio, returnUrl = video.returnUrl }
+                            { src = video.src, poster = video.poster, aspectRatio = video.aspectRatio, returnUrl = video.returnUrl, mediaId = video.mediaId }
                             video.title
                             video.startAt
                             video.resume

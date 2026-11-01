@@ -8,10 +8,12 @@ import Components.MediaRenderer as MediaRenderer
 import Expect
 import Html
 import Html.Attributes
+import Json.Encode as Encode
 import Proto.Rellm exposing (MediaReference, defaultMediaReference, defaultMediaSize)
 import Proto.Rellm.MediaConversion exposing (MediaConversion(..))
 import Support.RellmServerFactory as RellmServerFactory
 import Test exposing (Test, describe, test)
+import Test.Html.Event as Event
 import Test.Html.Query as Query
 import Test.Html.Selector as Selector
 
@@ -124,6 +126,40 @@ suite =
                                 |> Query.has [ Selector.attribute (Html.Attributes.attribute "data-user-started" "") ]
                         ]
                         ()
+            , test "carries its media's id, and its enlarge button opens the media viewer like tapping an image does" <|
+                \_ ->
+                    Html.div []
+                        [ MediaRenderer.view MediaRenderer.Small
+                            MediaRenderer.ToWidthAndHeight
+                            (RellmServerFactory.connected "rellm.org")
+                            Nothing
+                            True
+                            MediaRenderer.init
+                            (\_ -> "play")
+                            (\id -> "open " ++ id)
+                            (media "video/mp4" "https://rellm.org/media/m1")
+                        ]
+                        |> Query.fromHtml
+                        |> Query.find [ Selector.tag "rellm-video" ]
+                        |> Expect.all
+                            [ Query.has [ Selector.attribute (Html.Attributes.attribute "data-media-id" "m1") ]
+                            , Event.simulate (Event.custom "rellm-video-enlarge" (Encode.object [])) >> Event.expect "open m1"
+                            ]
+            , test "naturalVideo is what the viewer plays: the Natural-size URL, an HLS poster, and a 16:9 guess without a size" <|
+                \_ ->
+                    let
+                        natural : { src : String, poster : Maybe String, aspectRatio : Float }
+                        natural =
+                            MediaRenderer.naturalVideo (RellmServerFactory.connected "rellm.org")
+                                Nothing
+                                (media "video/*" "https://video.bsky.app/watch/did%3Aplc%3Aabc/bafk/playlist.m3u8")
+                    in
+                    Expect.equal
+                        ( "https://video.bsky.app/watch/did%3Aplc%3Aabc/bafk/playlist.m3u8"
+                        , Just "https://video.bsky.app/watch/did%3Aplc%3Aabc/bafk/thumbnail.jpg"
+                        , 16 / 9
+                        )
+                        ( natural.src, natural.poster, natural.aspectRatio )
             , test "an ordinary video has no poster of its own" <|
                 \_ ->
                     render (media "video/mp4" "https://rellm.org/media/m1")

@@ -1,29 +1,48 @@
-/* `Shared.VideoPlayerPanel`: the floating miniplayer -- a video that keeps playing in a corner while you browse.
+/* `Shared.VideoPlayerPanel`: the floating miniplayer -- a video that keeps playing in a corner while you browse (and,
+   when a view asks for it, the video in the expanded player or the media viewer). Its `<rellm-video>`
+   (public/rellm-video.js) draws the controls; the buttons here are the panel's own: back to the page, close, and the
+   queue. */
+/* `Shared.VideoPlayerPanel`'s box is positioned by `public/rellm-video.js` (left/top/width/height, eased every frame): in
+   the corner of the window, or exactly over a `[data-video-stage]` placeholder when a view has one on screen -- the
+   expanded player and the media viewer. So it's the same element, gliding between them.
 
-   z-index 26: over the page and the starred panel (25) -- it's the one thing you're still watching -- but under the
-   audio bar (27) and the nav (28), the fullscreen media viewer (33) and the modals. Bottom-right, lifted above the audio
-   player bar when that's up. Its `<rellm-video>` (public/rellm-video.js) draws the controls; the two buttons are the
-   panel's own: back to the page, and close. */
+   z-index 29: over the page, the starred panel (25), the audio player (27) and the nav (28 -- the Side Navigation theme's
+   column would otherwise cover it), under the fullscreen media viewer's (33) -- unless it's covering the viewer's stage
+   (`.over-viewer`), when it has to be above it -- and the modals. */
 .video-player-panel {
   position: fixed;
-  right: 1rem;
-  bottom: calc(1rem + env(safe-area-inset-bottom));
-  z-index: 26;
-  /* Wide videos are 360px across; a tall one narrows to keep the panel under 45% of the viewport's height
-     (`--video-ratio` is the video's width over height). */
-  width: min(360px, calc(100vw - 2rem), calc(45vh * var(--video-ratio, 1.78)));
+  left: 0;
+  top: 0;
+  /* Until the script has placed it. */
+  width: min(360px, calc(100vw - 2rem));
+  aspect-ratio: var(--video-ratio, 1.78);
+  z-index: 29;
 }
 
-body:has(.audio-player-spacer.is-active) .video-player-panel {
-  bottom: calc(5.5rem + env(safe-area-inset-bottom));
+.video-player-panel.over-viewer {
+  z-index: 34;
 }
 
 .video-player-panel-body {
   position: relative;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
   border-radius: 10px;
   background: #000;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+}
+
+/* On a stage the video is the page's content, not a floating thing: no shadow, and none of the corner chrome (the stage's
+   view has its own close, queue and navigation). */
+.video-player-panel.on-stage .video-player-panel-body {
+  box-shadow: none;
+}
+
+.video-player-panel.on-stage .video-player-panel-expand,
+.video-player-panel.on-stage .video-player-panel-close,
+.video-player-panel.on-stage .video-player-panel-queue-controls {
+  display: none;
 }
 
 /* The player fills the panel's box, whatever shape the video is (the box takes the video's own aspect ratio). */
@@ -80,21 +99,33 @@ body:has(.audio-player-spacer.is-active) .video-player-panel {
   right: 0.4rem;
 }
 
-/* The queue's previous / next / show-queue buttons, centered along the top (the back arrow and close are the corners). */
+/* The queue's previous / next / show-queue buttons, centered along the top (the back arrow and close are the corners): the
+   audio bar's own buttons (`.audio-player-button`, its transport glyphs), on a dark pill so they read over any picture. */
 .video-player-panel-queue-controls {
   position: absolute;
   top: 0.4rem;
   left: 50%;
   display: flex;
-  gap: 0.3rem;
+  gap: 0.1rem;
+  padding: 0 0.15rem;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
   transform: translateX(-50%);
+  opacity: 0.85;
+  transition: opacity 0.15s;
 }
 
-.video-player-panel-queue-controls .video-player-panel-button {
-  position: static;
+.video-player-panel-queue-controls:hover,
+.video-player-panel-queue-controls:focus-within {
+  opacity: 1;
 }
 
-.video-player-panel-button:disabled {
+.video-player-panel-transport {
+  width: 1.9rem;
+  height: 1.9rem;
+}
+
+.video-player-panel-transport:disabled {
   opacity: 0.35;
-  cursor: default;
 }

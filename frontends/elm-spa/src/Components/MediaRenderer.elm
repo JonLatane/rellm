@@ -1,4 +1,4 @@
-module Components.MediaRenderer exposing (MediaSize(..), Model, Msg(..), ResolutionTier(..), SizeConstraint(..), contentTypeOf, init, update, view, viewAutoplay, viewWithResolution, authorizedUrl, coverArtUrl, thumbnailUrl, url)
+module Components.MediaRenderer exposing (MediaSize(..), Model, Msg(..), ResolutionTier(..), SizeConstraint(..), contentTypeOf, init, naturalVideo, update, view, viewAutoplay, viewWithResolution, authorizedUrl, coverArtUrl, thumbnailUrl, url)
 
 {-| Renders a single `Proto.Rellm.MediaReference` -- an image, a video, or
 (for anything else, e.g. a PDF) a browser-native `<object>` embed with a
@@ -69,7 +69,8 @@ rendered.
 
 import Html exposing (Html, a, audio, button, div, img, input, node, object, text, video)
 import Html.Attributes exposing (alt, attribute, class, controls, href, property, src, style, target, type_)
-import Html.Events exposing (onClick)
+import Html.Events exposing (on, onClick)
+import Json.Decode as Decode
 import Json.Encode as Encode
 import Proto.Rellm as Rellm exposing (MediaReference, defaultMediaReference)
 import Proto.Rellm.MediaConversion exposing (MediaConversion(..))
@@ -264,6 +265,10 @@ viewHelper forceAutoplay tierOverride mediaSize sizeConstraint server maybeAccou
                     (List.filterMap identity
                         [ Just (class "media-renderer-video-frame")
                         , Just (attribute "data-media-size" (mediaSizeName mediaSize))
+                        , Just (attribute "data-media-id" media.id)
+
+                        -- The enlarge button (`public/rellm-video.js`) opens the media viewer, as tapping an image does.
+                        , Just (on "rellm-video-enlarge" (Decode.succeed (onImageClicked media.id)))
 
                         -- A video someone pressed play on (it then autoplays, muted) is theirs to keep watching -- it follows
                         -- them to the miniplayer when they leave the page -- unlike a silent autoplay preview.
@@ -497,7 +502,7 @@ autoplayAttributes =
 
 
 {-| `MediaSize` as `<rellm-video>`'s `data-media-size`: only `small`/`extra-small` (thumbnails) get its
-enlarge button, which grows them to the `Natural` size.
+enlarge button, which opens the media viewer on the video.
 -}
 mediaSizeName : MediaSize -> String
 mediaSizeName mediaSize =
@@ -562,6 +567,22 @@ previewTimeFragment media =
         |> Maybe.andThen .videoPreviewTimeMs
         |> Maybe.map (\ms -> "#t=" ++ String.fromFloat (toFloat (int64ToInt ms) / 1000))
         |> Maybe.withDefault ""
+
+
+{-| What the media viewer plays a video from (`Shared.VideoPlayerPanel`'s player): its URL at the `Natural` size, the poster
+(an HLS rendition has one), and its shape.
+-}
+naturalVideo : RellmServer -> Maybe RellmAccount -> MediaReference -> { src : String, poster : Maybe String, aspectRatio : Float }
+naturalVideo server maybeAccount media =
+    let
+        src : String
+        src =
+            url (imageTier Nothing Natural) server maybeAccount media
+    in
+    { src = src
+    , poster = hlsPosterUrl src
+    , aspectRatio = Maybe.withDefault (16 / 9) (aspectRatioOf media)
+    }
 
 
 {-| The poster frame of a Bluesky video, if `videoUrl` is one of its HLS playlists

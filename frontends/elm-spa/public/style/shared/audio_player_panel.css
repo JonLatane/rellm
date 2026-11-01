@@ -257,6 +257,19 @@
   transition: flex-basis 0.35s cubic-bezier(0.32, 0.72, 0, 1), padding 0.35s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.25s ease;
 }
 
+/* A video entry's now-playing column: the stage the video player glides over (`.video-stage`) -- all the room the column
+   has above the title; the player fits its video's shape into it, so it narrows when the queue pane opens beside it -- and
+   the title. */
+.audio-player-expanded-video {
+  overflow: hidden;
+}
+
+.video-stage {
+  flex: 1 1 0;
+  width: 100%;
+  min-height: 8rem;
+}
+
 /* The expanded area: the queue pane (left, when open) beside the now-playing column (`.audio-player-expanded`).
    Collapsing the panel hides this whole row. */
 .audio-player-body {

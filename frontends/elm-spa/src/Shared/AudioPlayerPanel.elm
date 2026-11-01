@@ -1,4 +1,4 @@
-module Shared.AudioPlayerPanel exposing (CurrentVideo, Handoff, Model, Msg(..), Placement(..), TrackLink, VideoItem, currentMedia, currentVideo, handoffDecoder, handoffSubscription, hasNext, hasPrevious, init, isExpanded, queueIcon, subscriptions, trackFragment, trackLinkFromFragment, update, view)
+module Shared.AudioPlayerPanel exposing (CurrentVideo, Handoff, Model, Msg(..), Placement(..), TrackLink, VideoItem, currentMedia, currentVideo, handoffDecoder, handoffSubscription, hasNext, hasPrevious, init, isExpanded, nextIcon, prevIcon, queueIcon, subscriptions, trackFragment, trackLinkFromFragment, update, view)
 
 {-| A persistent, app-wide audio player -- the companion to `Shared.MediaViewerPanel`. Where the viewer is a
 fullscreen, view-blocking carousel (with editing), this is a "now playing" bar docked to the bottom of the
@@ -92,13 +92,15 @@ type alias QueueItem =
 
 {-| What a video queue entry plays in the miniplayer. Its `MediaReference` is a stand-in (`id` = the video's `src`, `name`
 = its title) so the queue treats it like any entry; `host` is `""`, as it isn't on a server of ours. `returnUrl` is the
-page it came from (the miniplayer's back arrow).
+page it came from (the miniplayer's back arrow). `mediaId` is the id of the Rellm media it is, if it is one -- how an
+inline thumbnail hands over to the media viewer's player (`public/rellm-media.js`'s `setEnlarge`).
 -}
 type alias VideoItem =
     { src : String
     , poster : Maybe String
     , aspectRatio : Float
     , returnUrl : String
+    , mediaId : Maybe String
     }
 
 
@@ -1558,25 +1560,43 @@ view viewerOpen accountsPanelModel model =
 
         nowPlayingPane : MediaReference -> Html Msg
         nowPlayingPane media =
-            div [ class "audio-player-expanded" ]
-                [ coverArt media
-                , div [ class "audio-player-title" ] [ text (title media) ]
-                , if artist media == "" then
-                    text ""
+            case currentVideoItem of
+                -- A video plays in `Shared.VideoPlayerPanel`'s player, which glides over the stage placeholder
+                -- (`public/rellm-video.js`) -- with its own controls, so no cover art, scrubber or times here. When the queue
+                -- pane is open beside it, the stage is narrower, and the player follows it.
+                Just video ->
+                    div [ class "audio-player-expanded audio-player-expanded-video" ]
+                        [ div
+                            (class "video-stage"
+                                :: style "--video-ratio" (String.fromFloat video.aspectRatio)
+                                -- Only once the panel is open: collapsed, the video is in the corner.
+                                :: (if expanded then
+                                        [ attribute "data-video-stage" "" ]
 
-                  else
-                    div [ class "audio-player-artist" ] [ text (artist media) ]
-                , seekTrack "audio-player-seek-large" media
-                , if currentVideoItem == Nothing then
-                    qualitySelect media
+                                    else
+                                        []
+                                   )
+                            )
+                            []
+                        , div [ class "audio-player-title" ] [ text (title media) ]
+                        ]
 
-                  else
-                    text ""
-                , div [ class "audio-player-times" ]
-                    [ span [] [ text (formatTime model.positionMs) ]
-                    , span [] [ text (formatTime model.durationMs) ]
-                    ]
-                ]
+                Nothing ->
+                    div [ class "audio-player-expanded" ]
+                        [ coverArt media
+                        , div [ class "audio-player-title" ] [ text (title media) ]
+                        , if artist media == "" then
+                            text ""
+
+                          else
+                            div [ class "audio-player-artist" ] [ text (artist media) ]
+                        , seekTrack "audio-player-seek-large" media
+                        , qualitySelect media
+                        , div [ class "audio-player-times" ]
+                            [ span [] [ text (formatTime model.positionMs) ]
+                            , span [] [ text (formatTime model.durationMs) ]
+                            ]
+                        ]
 
         cornerButtons : MediaReference -> Html Msg
         cornerButtons media =

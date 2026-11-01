@@ -28,6 +28,7 @@ video =
     , resume = True
     , aspectRatio = 16 / 9
     , returnUrl = "https://rellm.org/post/p1"
+    , mediaId = Nothing
     }
 
 
@@ -52,6 +53,7 @@ suite =
                                 , resume = True
                                 , aspectRatio = 1.7778
                                 , returnUrl = "https://rellm.org/post/p1"
+                                , mediaId = Nothing
                                 }
                             )
             , test "a null, blank or missing poster or title is none" <|
@@ -84,6 +86,13 @@ suite =
                     ]
                         |> List.map (Decode.decodeString VideoPlayerPanel.decoder >> Result.toMaybe)
                         |> Expect.equal [ Nothing, Nothing ]
+            ]
+        , describe "decoder's media id"
+            [ test "is optional" <|
+                \_ ->
+                    Decode.decodeString VideoPlayerPanel.decoder """{"src":"s","time":0,"playing":false,"aspectRatio":1,"returnUrl":"u","mediaId":"m7"}"""
+                        |> Result.map .mediaId
+                        |> Expect.equal (Ok (Just "m7"))
             ]
         , describe "reportDecoder"
             [ test "reads the player's state" <|
@@ -147,6 +156,23 @@ suite =
                         |> Query.fromHtml
                         |> Query.find [ Selector.tag "rellm-video" ]
                         |> Query.hasNot [ Selector.attribute (Html.Attributes.attribute "data-resume" "") ]
+            , test "a video that is Rellm media says which, so a thumbnail's position can carry over to it" <|
+                \_ ->
+                    VideoPlayerPanel.view (VideoPlayerPanel.update (VideoPlayerPanel.Show { video | mediaId = Just "m1" }) VideoPlayerPanel.init)
+                        |> Query.fromHtml
+                        |> Query.find [ Selector.tag "rellm-video" ]
+                        |> Query.has [ Selector.attribute (Html.Attributes.attribute "data-media-id" "m1") ]
+            , test "the queue buttons are the audio bar's own transport and queue glyphs" <|
+                \_ ->
+                    VideoPlayerPanel.view showing
+                        |> Query.fromHtml
+                        |> Query.find [ Selector.class "video-player-panel-queue-controls" ]
+                        |> Expect.all
+                            [ Query.has [ Selector.class "audio-player-icon-prev" ]
+                            , Query.has [ Selector.class "audio-player-icon-next" ]
+                            , Query.has [ Selector.class "audio-player-icon-queue" ]
+                            , Query.findAll [ Selector.tag "button" ] >> Query.each (Query.has [ Selector.class "audio-player-button" ])
+                            ]
             , test "has a back-to-the-page button that expands it, and a close button" <|
                 \_ ->
                     VideoPlayerPanel.view showing
