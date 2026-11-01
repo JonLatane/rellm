@@ -368,6 +368,11 @@
         this._video = video;
         if (video) {
           video.controls = false;
+          // Play where it is on the page (iOS Safari otherwise goes fullscreen on play): fullscreen is the button's job. Whoever
+          // rendered the `<video>` -- Rellm, Bluesky, Mastodon -- gets this, whether or not it asked.
+          video.playsInline = true;
+          video.setAttribute("playsinline", "");
+          video.setAttribute("webkit-playsinline", "");
           this._applyPrefs(video);
           this._applyHandoff(video);
           for (var i = 0; i < VIDEO_EVENTS.length; i++) { video.addEventListener(VIDEO_EVENTS[i], this._onVideoEvent); }
@@ -1015,9 +1020,22 @@
     var rem = parseFloat(window.getComputedStyle(document.documentElement).fontSize) || 16;
     var ratio = videoRatio(panel);
     var gutter = rem;
-    var width = Math.max(120, Math.min(360, window.innerWidth - 2 * gutter, window.innerHeight * 0.45 * ratio));
+    // On a phone-width screen it is smaller: it shares the screen with the page and the player bar, and must not reach up to
+    // the expanded player's close button.
+    var narrow = window.innerWidth < 640;
+    var width = Math.max(120, Math.min(narrow ? 220 : 360, window.innerWidth - 2 * gutter, window.innerHeight * (narrow ? 0.3 : 0.45) * ratio));
     var height = width / ratio;
     var lifted = document.querySelector(".audio-player-spacer.is-active") ? 5.5 * rem : gutter;
+    // With the expanded player open (its queue pane fills a phone's screen, so the video stays down here), never reach up over its
+    // close button, however short the screen: shrink to fit under it.
+    var close = document.querySelector(".audio-player-panel.is-expanded .audio-player-close");
+    if (close) {
+      var room = window.innerHeight - lifted - (close.getBoundingClientRect().bottom + 0.5 * rem);
+      if (height > room) {
+        height = Math.max(60, room);
+        width = height * ratio;
+      }
+    }
     return { x: window.innerWidth - gutter - width, y: window.innerHeight - lifted - height, w: width, h: height };
   }
 
