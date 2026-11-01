@@ -140,6 +140,9 @@
   var enlargement = null;
   var setEnlarge = function (details) {
     enlargement = { mediaId: details.mediaId, time: details.time, playing: details.playing, at: Date.now() };
+    // A player already showing this video (the panel's, still on it from an earlier open) takes it up straight away; a new one
+    // takes it when it's built.
+    window.dispatchEvent(new CustomEvent("rellm-enlarge", { detail: { mediaId: details.mediaId } }));
   };
   var takeEnlarge = function (mediaId) {
     var found = enlargement;

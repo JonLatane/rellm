@@ -919,7 +919,9 @@
     function rellmScrubElement() {
       // The viewer's own `<video>`/`<audio>`, or -- when it was opened just to edit an audio file from the
       // persistent player (no element of its own) -- the player's, so the preview sliders still work.
-      return document.querySelector('.media-viewer-panel-media video, .media-viewer-panel-media audio') ||
+      // A video the viewer shows plays in the video player panel, which sits over the viewer's stage.
+      return document.querySelector('.video-player-panel.over-viewer video') ||
+        document.querySelector('.media-viewer-panel-media video, .media-viewer-panel-media audio') ||
         document.querySelector('.audio-player-audio-active');
     }
     app.ports.flipChildren.subscribe(function (payload) {

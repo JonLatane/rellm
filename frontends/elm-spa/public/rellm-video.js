@@ -256,6 +256,7 @@
       document.removeEventListener("fullscreenchange", this._onDocumentChange);
       document.removeEventListener("webkitfullscreenchange", this._onDocumentChange);
       document.removeEventListener("pointerdown", this._onOutsidePointer, true);
+      window.removeEventListener("rellm-enlarge", this._onEnlarge);
       this._releaseMediaSession();
       // `connectedCallback` runs again if Elm re-inserts this exact node.
       this._docBound = false;
@@ -292,6 +293,7 @@
       this._onVideoEvent = function (event) { self._onVideo(event); };
       this._onDocumentChange = function () { self._sync(); };
       this._onOutsidePointer = function (event) { self._closePopupsFor(event); };
+      this._onEnlarge = function (event) { self._takeEnlargement(event.detail && event.detail.mediaId); };
 
       var e = this._els;
       root.querySelector("slot").addEventListener("slotchange", function () { self._bind(); });
@@ -368,6 +370,7 @@
         document.addEventListener("fullscreenchange", this._onDocumentChange);
         document.addEventListener("webkitfullscreenchange", this._onDocumentChange);
         document.addEventListener("pointerdown", this._onOutsidePointer, true);
+        window.addEventListener("rellm-enlarge", this._onEnlarge);
         if (this._resizeObserver) { this._resizeObserver.observe(this); }
       }
       this.classList.toggle("enlargeable", /^(small|extra-small)$/.test(this.getAttribute("data-media-size") || ""));
@@ -377,6 +380,23 @@
       e.tip.hidden = true;
       this._layout();
       this._sync();
+    }
+
+    // A thumbnail was enlarged to the viewer while this (the panel's) player already has that video: carry on from
+    // the thumbnail's moment without waiting for a new element (see `_applyHandoff` for the one that's built fresh).
+    _takeEnlargement(mediaId) {
+      var v = this._video;
+      if (!v || !this.hasAttribute("data-miniplayer-panel") || !mediaId || this.getAttribute("data-media-id") !== mediaId) { return; }
+      var enlarged = media.takeEnlarge(mediaId);
+      if (!enlarged) { return; }
+      try { v.currentTime = enlarged.time; } catch (e) { /* not seekable yet */ }
+      if (enlarged.playing) {
+        this._userPlay = true;
+        var played = v.play();
+        if (played && played.catch) { played.catch(function () {}); }
+      } else {
+        v.pause();
+      }
     }
 
     _unbind() {
@@ -1021,6 +1041,33 @@
     panelLast = 0;
     window.requestAnimationFrame(panelFrame);
   }
+
+  // The media viewer's swipes (sideways: next / previous item; up or down: close) are handled on its own picture, which a
+  // video's player now covers -- so a swipe that starts on the player over the viewer's stage presses the viewer's buttons.
+  // (Not from the controls: dragging the seek or volume slider isn't a swipe.)
+  var swipeStart = null;
+  document.addEventListener("touchstart", function (event) {
+    var touch = event.touches[0];
+    var onPlayer = touch && event.touches.length === 1 && event.target.closest && event.target.closest(PANEL + ".over-viewer");
+    var onControl = event.composedPath().some(function (node) {
+      return node.tagName === "INPUT" || node.tagName === "BUTTON" || (node.classList && (node.classList.contains("bar") || node.classList.contains("menu")));
+    });
+    swipeStart = onPlayer && !onControl ? { x: touch.clientX, y: touch.clientY } : null;
+  }, { passive: true });
+  document.addEventListener("touchend", function (event) {
+    var start = swipeStart;
+    swipeStart = null;
+    var touch = event.changedTouches[0];
+    if (!start || !touch) { return; }
+    var dx = touch.clientX - start.x;
+    var dy = touch.clientY - start.y;
+    var press = function (selector) { var button = document.querySelector(selector); if (button) { button.click(); } };
+    if (Math.abs(dx) >= Math.abs(dy)) {
+      if (dx <= -50) { press(".media-viewer-panel-next"); } else if (dx >= 50) { press(".media-viewer-panel-prev"); }
+    } else if (Math.abs(dy) >= 50) {
+      press(".media-viewer-panel-close");
+    }
+  }, { passive: true });
 
   new MutationObserver(startPanelLoop).observe(document.documentElement, { childList: true, subtree: true });
   startPanelLoop();
