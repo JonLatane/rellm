@@ -1,7 +1,6 @@
 /* `Shared.VideoPlayerPanel`: the floating miniplayer -- a video that keeps playing in a corner while you browse (and,
    when a view asks for it, the video in the expanded player or the media viewer). Its `<rellm-video>`
-   (public/rellm-video.js) draws the controls; the buttons here are the panel's own: back to the page, close, and the
-   queue. */
+   (public/rellm-video.js) draws the controls; the buttons here are the panel's own: the queue's previous / next / show-queue. */
 /* `Shared.VideoPlayerPanel`'s box is positioned by `public/rellm-video.js` (left/top/width/height, eased every frame): in
    the corner of the window, or exactly over a `[data-video-stage]` placeholder when a view has one on screen -- the
    expanded player and the media viewer. So it's the same element, gliding between them.
@@ -39,8 +38,6 @@
   box-shadow: none;
 }
 
-.video-player-panel.on-stage .video-player-panel-expand,
-.video-player-panel.on-stage .video-player-panel-close,
 .video-player-panel.on-stage .video-player-panel-queue-controls {
   display: none;
 }
@@ -62,52 +59,15 @@
   background: #000;
 }
 
-.video-player-panel-button {
-  position: absolute;
-  top: 0.4rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  background: rgba(0, 0, 0, 0.55);
-  color: #fff;
-  font: inherit;
-  font-size: 14px;
-  line-height: 1;
-  text-decoration: none;
-  cursor: pointer;
-  opacity: 0.85;
-  transition: opacity 0.15s;
-}
-
-.video-player-panel-button:hover,
-.video-player-panel-button:focus-visible {
-  opacity: 1;
-  background: rgba(0, 0, 0, 0.8);
-}
-
-.video-player-panel-expand {
-  left: 0.4rem;
-  font-size: 16px;
-}
-
-.video-player-panel-close {
-  right: 0.4rem;
-}
-
-/* The queue's previous / next / show-queue buttons, centered along the top (the back arrow and close are the corners): the
+/* The queue's previous / next / show-queue buttons, centered along the top (the player's own corner buttons -- fullscreen, viewer, volume -- flank them): the
    audio bar's own buttons (`.audio-player-button`, its transport glyphs), on a dark pill so they read over any picture. */
 .video-player-panel-queue-controls {
   position: absolute;
   top: 0.4rem;
   left: 50%;
   display: flex;
-  gap: 0.1rem;
-  padding: 0 0.15rem;
+  gap: 0;
+  padding: 0 0.1rem;
   border-radius: 999px;
   background: rgba(0, 0, 0, 0.55);
   color: #fff;
@@ -122,8 +82,9 @@
 }
 
 .video-player-panel-transport {
-  width: 1.9rem;
-  height: 1.9rem;
+  width: 1.6rem;
+  height: 1.6rem;
+  font-size: 0.95rem;
 }
 
 .video-player-panel-transport:disabled {

@@ -42,7 +42,7 @@ import Json.Encode as Encode
 import Ports
 import Process
 import Proto.Google.Protobuf
-import Proto.Rellm exposing (ContactMethod, Event, GetMediaResponse, Media, Occasion, Post, SyncSource, User, defaultGetMediaRequest)
+import Proto.Rellm exposing (ContactMethod, Event, GetMediaResponse, Media, MediaReference, Occasion, Post, SyncSource, User, defaultGetMediaRequest)
 import Proto.Rellm.ContactConsentState exposing (ContactConsentState(..))
 import Proto.Rellm.Rellm as Rellm
 import Proto.Rellm.WebUserInterface exposing (WebUserInterface(..))
@@ -1647,26 +1647,25 @@ sharedUpdate req msg model =
                 VideoPlayerPanel.QueueClicked ->
                     toQueue AudioPlayerPanel.ShowQueue
 
-                VideoPlayerPanel.Close ->
-                    toQueue AudioPlayerPanel.Close
+                -- "Open in the viewer": the viewer shows the video as a stand-in media (just its URL) and takes over from where it is
+                -- (`viewerVideoSync` plays it in this very player, which glides over the viewer's stage).
+                VideoPlayerPanel.EnlargeClicked ->
+                    case model.panels.videoPlayerPanel.video of
+                        Just video ->
+                            let
+                                standIn : MediaReference
+                                standIn =
+                                    MediaViewerPanel.standInMedia { id = Maybe.withDefault video.src video.mediaId, url = video.src, title = video.title }
 
-                -- Back to the page the video was on (closing the player on the way).
-                VideoPlayerPanel.ExpandClicked ->
-                    let
-                        ( closed, closeCmd ) =
-                            toQueue AudioPlayerPanel.Close
-                    in
-                    ( closed
-                    , Cmd.batch
-                        [ closeCmd
-                        , case model.panels.videoPlayerPanel.video of
-                            Just video ->
-                                Nav.pushUrl req.key video.returnUrl
+                                ( opened, openCmd, _ ) =
+                                    MediaViewerPanel.update model.accounts
+                                        (MediaViewerPanel.Open [ standIn ] Nothing standIn.id MediaViewerPanel.standInHost)
+                                        model.panels.mediaViewerPanel
+                            in
+                            ( { model | panels = (\panels -> { panels | mediaViewerPanel = opened }) model.panels }, Cmd.map MediaViewerPanelMsg openCmd )
 
-                            Nothing ->
-                                Cmd.none
-                        ]
-                    )
+                        Nothing ->
+                            ( model, Cmd.none )
 
                 VideoPlayerPanel.Show _ ->
                     ( setVideoPanel (VideoPlayerPanel.update subMsg) model, Cmd.none )

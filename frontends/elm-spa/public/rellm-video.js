@@ -145,9 +145,10 @@
     ":host(.no-duration) .bar{justify-content:flex-start}",
     ":host(.no-fullscreen) .fs{display:none!important}",
     // The miniplayer panel's own player can't be sent to a miniplayer (or enlarged).
-    ":host(.in-panel) .mini,:host(.in-panel) .enlarge{display:none!important}",
-    // Enlarge (open in the media viewer): only thumbnails (`.enlargeable`) have it.
-    ":host(:not(.enlargeable)) .enlarge{display:none!important}",
+    ":host(.in-panel) .mini{display:none!important}",
+    // Enlarge (open in the media viewer): only thumbnails and the miniplayer (`.enlargeable`) have it -- and not once the player
+    // is on a stage (`.staged`: the expanded player, the viewer), where it already is as big as it gets.
+    ":host(:not(.enlargeable)) .enlarge,:host(.staged) .enlarge{display:none!important}",
     ".big.hidden{display:none}"
   ].join("\n");
 
@@ -375,7 +376,7 @@
         window.addEventListener("rellm-enlarge", this._onEnlarge);
         if (this._resizeObserver) { this._resizeObserver.observe(this); }
       }
-      this.classList.toggle("enlargeable", /^(small|extra-small)$/.test(this.getAttribute("data-media-size") || ""));
+      this.classList.toggle("enlargeable", /^(small|extra-small)$/.test(this.getAttribute("data-media-size") || "") || this.hasAttribute("data-miniplayer-panel"));
       this.classList.toggle("in-panel", this.hasAttribute("data-miniplayer-panel"));
       // A video the viewer pressed play on (it autoplays muted) is theirs, unlike a silent preview.
       if (this.hasAttribute("data-user-started")) { this._userPlay = true; }
@@ -384,11 +385,22 @@
       this._sync();
     }
 
+    // What names this video across players: its media id, or -- for a video that is only a URL (Bluesky, Mastodon, the
+    // miniplayer's) -- that URL, which is also what the viewer uses for it (`MediaViewerPanel.standInMedia`).
+    _mediaKey() {
+      var id = this.getAttribute("data-media-id");
+      if (id) { return id; }
+      var v = this._video;
+      if (!v) { return ""; }
+      var original = typeof window.rellmOriginalSrc === "function" ? window.rellmOriginalSrc(v) : v.getAttribute("src");
+      return (original || "").split("#")[0];
+    }
+
     // A thumbnail was enlarged to the viewer while this (the panel's) player already has that video: carry on from
     // the thumbnail's moment without waiting for a new element (see `_applyHandoff` for the one that's built fresh).
     _takeEnlargement(mediaId) {
       var v = this._video;
-      if (!v || !this.hasAttribute("data-miniplayer-panel") || !mediaId || this.getAttribute("data-media-id") !== mediaId) { return; }
+      if (!v || !this.hasAttribute("data-miniplayer-panel") || !mediaId || this._mediaKey() !== mediaId) { return; }
       // Only a look: if the viewer opening replaces this player, the new one starts from the same handoff.
       var enlarged = media.peekEnlarge(mediaId);
       if (!enlarged) { return; }
@@ -416,7 +428,7 @@
     // by the browser; it's set again on `loadedmetadata` for streams (hls.js) that can ignore the early one.
     _applyHandoff(video) {
       // A video opened in the viewer from a post's thumbnail (`_enlarge`) carries on from where the thumbnail was.
-      var enlarged = this.hasAttribute("data-miniplayer-panel") ? media.takeEnlarge(this.getAttribute("data-media-id")) : null;
+      var enlarged = this.hasAttribute("data-miniplayer-panel") ? media.takeEnlarge(this._mediaKey()) : null;
       var startAt = enlarged ? enlarged.time : parseFloat(this.getAttribute("data-start-at"));
       if (isFinite(startAt) && startAt > 0) {
         try { video.currentTime = startAt; } catch (e) { /* set again below */ }
@@ -681,11 +693,12 @@
       var v = this._video;
       if (!v) { return; }
       media.setEnlarge({
-        mediaId: this.getAttribute("data-media-id") || "",
+        mediaId: this._mediaKey(),
         time: v.currentTime || 0,
         playing: !v.paused && !v.ended
       });
-      v.pause();
+      // A thumbnail hands over to the viewer's player and stops; the miniplayer's player *is* the viewer's (it just glides there).
+      if (!this.hasAttribute("data-miniplayer-panel")) { v.pause(); }
       this.dispatchEvent(new CustomEvent("rellm-video-enlarge", { bubbles: true, composed: true }));
     }
 
@@ -1023,6 +1036,8 @@
     if (!panel) { panelRunning = false; panelBox = null; return; }
     var target = targetBox(panel);
     panel.classList.toggle("on-stage", !!target.stage);
+    var player = panel.querySelector("rellm-video");
+    if (player) { player.classList.toggle("staged", !!target.stage); }
     panel.classList.toggle("over-viewer", !!(target.stage && target.stage.closest(".media-viewer-panel")));
     var dt = Math.min(64, now - panelLast || 16);
     panelLast = now;

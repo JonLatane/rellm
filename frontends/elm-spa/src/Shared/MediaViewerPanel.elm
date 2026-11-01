@@ -1,4 +1,4 @@
-module Shared.MediaViewerPanel exposing (CreditField, MediaEdit, Model, Msg(..), ViewerVideo, canEditMedia, currentVideo, fieldErrors, formatMs, freshEdit, init, isValidKey, mediaToReference, metadataWithEdits, parseBpm, subscriptions, update, view)
+module Shared.MediaViewerPanel exposing (CreditField, MediaEdit, Model, Msg(..), ViewerVideo, canEditMedia, currentVideo, standInHost, standInMedia, fieldErrors, formatMs, freshEdit, init, isValidKey, mediaToReference, metadataWithEdits, parseBpm, subscriptions, update, view)
 
 {-| A single, app-wide fullscreen image/video viewer -- an alternate,
 "big"/fullscreen rendering of a `Post`'s `media` (compare
@@ -31,7 +31,7 @@ import Json.Decode as Decode
 import Json.Encode as Encode
 import Ports
 import Process
-import Proto.Rellm exposing (Media, MediaMetadata, MediaReference, MediaSize, Post, defaultMedia, defaultMediaMetadata, defaultMediaSize, unwrapAuthor, wrapAuthor)
+import Proto.Rellm exposing (Media, MediaMetadata, MediaReference, MediaSize, Post, defaultMedia, defaultMediaMetadata, defaultMediaReference, defaultMediaSize, unwrapAuthor, wrapAuthor)
 import Proto.Rellm.MediaConversion exposing (MediaConversion(..))
 import Proto.Rellm.Rellm as Rellm
 import Proto.Rellm.Visibility exposing (Visibility(..))
@@ -1337,6 +1337,26 @@ applySwipe ( startX, startY ) ( endX, endY ) model =
 
     else
         ( model, Cmd.none )
+
+
+{-| The `targetHost` for media that is only a URL (see `standInMedia`): any host `Components.Posts.isFederatedHost` accepts makes
+`Posts.mediaServer` supply a placeholder server, which `MediaRenderer.authorizedUrl` never dereferences for a URL-only media.
+-}
+standInHost : String
+standInHost =
+    "bluesky:"
+
+
+{-| A video known only by its URL (the miniplayer's), as a media the viewer can show: what it plays is that URL as it is.
+-}
+standInMedia : { id : String, url : String, title : Maybe String } -> MediaReference
+standInMedia details =
+    { defaultMediaReference
+        | id = details.id
+        , url = Just details.url
+        , name = details.title
+        , sizes = [ { defaultMediaSize | conversion = MEDIACONVERSIONORIGINAL, contentType = "video/*" } ]
+    }
 
 
 {-| The video the viewer is showing, if its current item is one (and it isn't open just to edit an audio file): what to play

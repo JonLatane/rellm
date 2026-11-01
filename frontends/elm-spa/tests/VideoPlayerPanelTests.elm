@@ -7,6 +7,7 @@ floating player it renders for the queue's current video.
 import Expect
 import Html.Attributes
 import Json.Decode as Decode
+import Json.Encode
 import Shared.VideoPlayerPanel as VideoPlayerPanel exposing (MiniVideo)
 import Test exposing (Test, describe, test)
 import Test.Html.Event as Event
@@ -106,14 +107,12 @@ suite =
                         |> Expect.equal (Ok ( 0, True ))
             ]
         , describe "update"
-            [ test "Show displays the queue's current video, Hide / Close / the back arrow clear it" <|
+            [ test "Show displays the queue's current video, Hide clears it" <|
                 \_ ->
                     showing
                         |> Expect.all
                             [ .video >> Expect.equal (Just video)
                             , VideoPlayerPanel.update VideoPlayerPanel.Hide >> .video >> Expect.equal Nothing
-                            , VideoPlayerPanel.update VideoPlayerPanel.Close >> .video >> Expect.equal Nothing
-                            , VideoPlayerPanel.update VideoPlayerPanel.ExpandClicked >> .video >> Expect.equal Nothing
                             ]
             , test "what the queue decides (a request, a report, prev/next) leaves the panel alone" <|
                 \_ ->
@@ -122,6 +121,7 @@ suite =
                     , VideoPlayerPanel.PrevClicked
                     , VideoPlayerPanel.NextClicked
                     , VideoPlayerPanel.QueueClicked
+                    , VideoPlayerPanel.EnlargeClicked
                     , VideoPlayerPanel.NoOp
                     ]
                         |> List.map (\msg -> VideoPlayerPanel.update msg showing)
@@ -173,13 +173,16 @@ suite =
                             , Query.has [ Selector.class "audio-player-icon-queue" ]
                             , Query.findAll [ Selector.tag "button" ] >> Query.each (Query.has [ Selector.class "audio-player-button" ])
                             ]
-            , test "has a back-to-the-page button that expands it, and a close button" <|
+            , test "has no back or close button (the expanded player has the close), and the player's viewer button opens the viewer" <|
                 \_ ->
                     VideoPlayerPanel.view showing
                         |> Query.fromHtml
                         |> Expect.all
-                            [ Query.find [ Selector.class "video-player-panel-expand" ] >> Event.simulate Event.click >> Event.expect VideoPlayerPanel.ExpandClicked
-                            , Query.find [ Selector.class "video-player-panel-close" ] >> Event.simulate Event.click >> Event.expect VideoPlayerPanel.Close
+                            [ Query.hasNot [ Selector.class "video-player-panel-expand" ]
+                            , Query.hasNot [ Selector.class "video-player-panel-close" ]
+                            , Query.find [ Selector.tag "rellm-video" ]
+                                >> Event.simulate (Event.custom "rellm-video-enlarge" (Json.Encode.object []))
+                                >> Event.expect VideoPlayerPanel.EnlargeClicked
                             ]
             , test "previous / next buttons drive the queue, and are disabled where the queue has nothing" <|
                 \_ ->

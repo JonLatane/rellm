@@ -25,14 +25,14 @@ the current entry and the existing queue follows it. Likewise the player's own e
 `reportDecoder`) go back to the queue -- its position for the bar, its end for "next".
 
 The panel renders its own `<rellm-video>` playing if the page's was: the player takes over with `data-miniplayer-panel`
-(no miniplayer/enlarge buttons of its own), `data-start-at` and `data-resume`. It is one element that `public/rellm-video.js`
+(no miniplayer button of its own), `data-start-at` and `data-resume`. It is one element that `public/rellm-video.js`
 moves: in a corner of the window, or -- when a view puts a `[data-video-stage]` placeholder on screen -- exactly over that
 placeholder, gliding between the two. The stages are the expanded player (`Shared.AudioPlayerPanel`, with the queue pane
 beside it when that is open) and the media viewer, whose videos play here too (`Shared.viewerVideoSync`), so every video not
-playing inline on a page or in My Media is controlled from this one player. In the corner it has the chrome of a
-miniplayer: close, a back arrow (returns to the page the video was on and closes the miniplayer -- a real `<a href>` wouldn't
-do: Elm routes its click to the app's URL handling, never to an `onClick`), and the queue's previous / next / show-queue
-buttons, which are the audio bar's own. On a stage, CSS hides those; the stage's view has its own.
+playing inline on a page or in My Media is controlled from this one player. In the corner it has the queue's
+previous / next / show-queue buttons, which are the audio bar's own (the show-queue button expands the player, which has the
+close), and its own "open in the viewer" button beside fullscreen, which opens `Shared.MediaViewerPanel` on this video. On a
+stage, CSS hides the queue buttons and the viewer button; the stage's view has its own.
 
 Streams (HLS, `.m3u8`) work the same way: `public/index.html` attaches hls.js to any `<video>` with such a `src`.
 
@@ -40,7 +40,7 @@ Streams (HLS, `.m3u8`) work the same way: `public/index.html` attaches hls.js to
 
 import Html exposing (Html, button, div, text)
 import Html.Attributes exposing (attribute, class, disabled, style)
-import Html.Events exposing (onClick)
+import Html.Events exposing (on, onClick)
 import Html.Keyed
 import Json.Decode as Decode exposing (Decoder)
 import Ports
@@ -92,10 +92,8 @@ type Msg
     | PrevClicked
     | NextClicked
     | QueueClicked
-      -- Close the miniplayer (and the queue's player with it), or go back to the page the video was on (`Shared.update`
-      -- also navigates there, as it holds the navigation key).
-    | Close
-    | ExpandClicked
+      -- The player's "open in the viewer" button: `Shared.update` opens `Shared.MediaViewerPanel` on this video.
+    | EnlargeClicked
     | NoOp
 
 
@@ -111,12 +109,6 @@ update msg model =
             { model | video = Just video }
 
         Hide ->
-            { model | video = Nothing }
-
-        Close ->
-            { model | video = Nothing }
-
-        ExpandClicked ->
             { model | video = Nothing }
 
         -- Everything else is the queue's business (`Shared.update`).
@@ -225,6 +217,7 @@ playerView model video =
                 , Just (attribute "data-miniplayer-panel" "")
                 , Just (attribute "data-start-at" (String.fromFloat video.startAt))
                 , Maybe.map (attribute "data-media-id") video.mediaId
+                , Just (on "rellm-video-enlarge" (Decode.succeed EnlargeClicked))
                 , if video.resume then
                     Just (attribute "data-resume" "")
 
@@ -244,25 +237,10 @@ playerView model video =
                 []
             ]
 
-        -- The corner chrome below is for the miniplayer only: where the video covers a stage (the expanded player, the
-        -- media viewer -- `public/rellm-video.js` moves the panel there) those views have their own close, queue and
-        -- navigation, so CSS hides these (`.on-stage`).
-        , button
-            [ class "video-player-panel-button video-player-panel-expand"
-            , onClick ExpandClicked
-            , attribute "aria-label" "Back to the page"
-            , attribute "title" "Back to the page"
-            ]
-            [ text "\u{2190}" ]
-        , button
-            [ class "video-player-panel-button video-player-panel-close"
-            , onClick Close
-            , attribute "aria-label" "Close miniplayer"
-            , attribute "title" "Close miniplayer"
-            ]
-            [ text "\u{2715}" ]
-
-        -- The queue's controls are the audio bar's own (`Shared.AudioPlayerPanel`'s transport and queue buttons).
+        -- The queue's controls are the audio bar's own transport and queue buttons (top, centered); `public/rellm-video.js` draws the
+        -- rest (fullscreen and "open in the viewer" top-left, volume top-right). There is no back or close button: the
+        -- expanded player (the queue button) has the close. On a stage (the expanded player, the media viewer) CSS hides the
+        -- queue controls, since the stage's view has its own.
         , div [ class "video-player-panel-queue-controls" ]
             [ button
                 [ class "audio-player-button video-player-panel-transport"
