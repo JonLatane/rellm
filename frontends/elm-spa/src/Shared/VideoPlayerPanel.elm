@@ -237,7 +237,7 @@ playerView video =
                 []
             ]
 
-        -- The queue button (top, centered: it expands the player, which has the queue and the rest of the controls -- previous/next are
+        -- The queue button (second row, left, under fullscreen: it expands the player, which has the queue and the rest of the controls -- previous/next are
         -- the bar's) and the close button (top-right); `public/rellm-video.js` draws the rest (fullscreen and "open in the viewer"
         -- top-left, volume under the close button). On a stage (the expanded player, the media viewer) CSS hides these two, since
         -- the stage's view has its own.
