@@ -74,7 +74,6 @@
   color: #fff;
   transform: translateX(-50%);
   opacity: 0.85;
-  transition: opacity 0.15s;
 }
 
 .video-player-panel-queue-controls:hover,
@@ -117,7 +116,6 @@ rellm-video.idle ~ .video-player-panel-close:not(:focus-visible) {
   line-height: 1;
   cursor: pointer;
   opacity: 0.85;
-  transition: opacity 0.15s;
 }
 
 .video-player-panel-close:hover,
