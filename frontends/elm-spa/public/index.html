@@ -972,6 +972,51 @@
       setTimeout(function () { done = true; observer.disconnect(); }, 1000);
     });
 
+    // See Ports.elm's restoreListAnchor doc comment. As a link in an infinitely scrolling list is clicked
+    // (`[data-cache-key]`, with cards marked `[data-post-key]`), note which card and where its top is, so a
+    // back-navigation can put it back; a click on any other navigating link forgets it, so a stale card is
+    // never scrolled to. Capture phase, before Elm's own handlers run navigation.
+    var rellmListAnchors = {};
+    document.addEventListener("click", function (e) {
+      var link = e.target && e.target.closest ? e.target.closest("a[href]") : null;
+      if (!link || e.defaultPrevented && !link.closest("[data-post-key]")) { return; }
+      if (link.target === "_blank" || e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) { return; }
+      var card = link.closest("[data-post-key]");
+      var list = card && card.closest("[data-cache-key]");
+      if (list) {
+        rellmListAnchors[list.getAttribute("data-cache-key")] = { key: card.getAttribute("data-post-key"), top: card.getBoundingClientRect().top };
+      } else {
+        rellmListAnchors = {};
+      }
+    }, true);
+    app.ports.restoreListAnchor.subscribe(function (cacheKey) {
+      var saved = rellmListAnchors[cacheKey];
+      if (!saved) { return; }
+      var until = Date.now() + 2500;
+      var touched = false;
+      var stop = function () { touched = true; };
+      ["wheel", "touchstart", "keydown", "mousedown"].forEach(function (name) {
+        window.addEventListener(name, stop, { once: true, passive: true });
+      });
+      var place = function () {
+        if (touched) { return; }
+        var lists = document.querySelectorAll("[data-cache-key]");
+        var card = null;
+        for (var i = 0; i < lists.length && !card; i++) {
+          if (lists[i].getAttribute("data-cache-key") !== cacheKey) { continue; }
+          for (var j = 0; j < lists[i].children.length; j++) {
+            if (lists[i].children[j].getAttribute("data-post-key") === saved.key) { card = lists[i].children[j]; break; }
+          }
+        }
+        if (card) {
+          var shift = card.getBoundingClientRect().top - saved.top;
+          if (Math.abs(shift) > 1) { window.scrollBy({ top: shift, left: 0, behavior: "instant" }); }
+        }
+        if (Date.now() < until) { requestAnimationFrame(place); }
+      };
+      requestAnimationFrame(place);
+    });
+
     // See Ports.elm's scrubMedia doc comment. The first scrub of a "session" (i.e. none in the last
     // 5s) records whether the element was playing and where, then pauses it; every scrub seeks; 5s
     // after the last one, a session that began while playing resumes from the recorded position.

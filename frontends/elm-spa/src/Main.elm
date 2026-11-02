@@ -102,6 +102,7 @@ import Pages.UsernameOrCustomTab_.Posts
 import Request
 import Shared
 import Shared.Countabilibar as Countabilibar
+import Shared.PostsCache as PostsCache
 import Shared.AccountsPanel as AccountsPanel
 import UI.CustomNav as CustomNav
 import Task
@@ -265,14 +266,21 @@ innerUpdate msg model =
                                     shared0Base =
                                         model.shared
                                 in
-                                { shared0Base | countabilibar = Countabilibar.reset shared0Base.countabilibar }
+                                { shared0Base
+                                    | countabilibar = Countabilibar.reset shared0Base.countabilibar
 
-                            ( page, effect ) =
-                                Pages.init (Route.fromUrl url) sharedBeforeInit url model.key
+                                    -- Only a back-navigation may restore a posts feed from `Shared.PostsCache` (a
+                                    -- link click, redirect or typed URL always starts fresh) -- set before
+                                    -- `Pages.init`, which is what looks.
+                                    , postsCache = PostsCache.setRestoring isBackNav shared0Base.postsCache
+                                }
 
                             isBackNav : Bool
                             isBackNav =
                                 List.head model.backStack == Just url
+
+                            ( page, effect ) =
+                                Pages.init (Route.fromUrl url) sharedBeforeInit url model.key
 
                             backStack : List Url
                             backStack =

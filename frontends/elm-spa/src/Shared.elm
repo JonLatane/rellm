@@ -65,6 +65,7 @@ import Shared.MediaGeneratorPanel as MediaGeneratorPanel
 import Shared.MediaViewerPanel as MediaViewerPanel
 import Shared.MessagingPanel as MessagingPanel
 import Shared.MyMediaPanel as MyMediaPanel
+import Shared.PostsCache as PostsCache
 import Shared.PushNotificationLink as PushNotificationLink
 import Shared.QuoteLinks as QuoteLinks
 import Shared.StarredPanel as StarredPanel
@@ -96,6 +97,9 @@ type alias Model =
     -- `Shared.QuoteLinks`) -- app-wide so a post quoted by many cards is fetched once, and so the card
     -- on a feed and the preview in `CreateNewPanel` share it.
     , quoteLinks : QuoteLinks.Model
+
+    -- Posts feeds kept in memory so going back to one shows it as it was -- see `Shared.PostsCache`.
+    , postsCache : PostsCache.Model
 
     -- See `Theme` for `preference`/`systemPrefersDark` themselves.
     , theme : Theme
@@ -217,6 +221,8 @@ type Msg
     | GotContactMethodVerifyPhoneCodeTaskResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, ContactMethod ))
     | CreateNewPanelMsg CreateNewPanel.Msg
     | QuoteLinksMsg QuoteLinks.Msg
+      -- What `PostsPage` sends to save (or forget) its feed -- never forwarded back into a page (see `notifiesPages`).
+    | PostsCacheMsg PostsCache.Msg
     | MessagingPanelMsg MessagingPanel.Msg
     | CloseAllPanels
     | BreadcrumbsMsg Breadcrumbs.Msg
@@ -608,6 +614,7 @@ init basePath req flags =
             , breadcrumbs = Breadcrumbs.init
             , countabilibar = Countabilibar.init
             , quoteLinks = QuoteLinks.init
+            , postsCache = PostsCache.empty
             , theme = { preference = themePreference, systemPrefersDark = systemPrefersDark }
             , userPreferences = UserPreferences.init userPreferencesFlags
             , basePath = basePath
@@ -750,7 +757,7 @@ update req msg model =
 
         -- A video the media viewer lands on plays in the video player panel (see `viewerVideoSync`).
         ( viewedModel, viewedCmd ) =
-            viewerVideoSync req model quotedModel
+            viewerVideoSync req model (postsCacheSync msg model quotedModel)
     in
     case rootRedirectCmd req msg model of
         Just redirect ->
@@ -760,6 +767,69 @@ update req msg model =
 
         Nothing ->
             ( viewedModel, Cmd.batch [ cmd, viewedCmd, followCmd, linkCmd, previewCmd, hashCmd, quoteCmd, navBarColorCmd model newModel, themeCmd model newModel, splashHiddenCmd model newModel ] )
+
+
+{-| Keeps `Shared.PostsCache` honest after every message (see its module doc): feeds fetched as an account
+that is no longer the acting one on their server are dropped -- so signing out of (or switching, or disabling)
+a server forgets its cached posts right then -- along with "Following" snapshots whenever the signed-in
+accounts changed at all; a post being deleted drops the snapshots showing it (at the moment the deletion is
+confirmed), and creating one on a server those with posts from it.
+-}
+postsCacheSync : Msg -> Model -> Model -> Model
+postsCacheSync msg before after =
+    let
+        evicted : PostsCache.Model
+        evicted =
+            case ( msg, before.panels.confirmingDeleteFor ) of
+                ( ConfirmDelete, Just (ConfirmPostDelete post host) ) ->
+                    PostsCache.evictPost host post.id after.postsCache
+
+                ( ConfirmDelete, Just (ConfirmFederatedPostDelete post host) ) ->
+                    PostsCache.evictPost host post.id after.postsCache
+
+                ( CreateNewPanelMsg (CreateNewPanel.GotSaveResult (Ok ( _, CreateNewPanel.CreatedPost host _ ))), _ ) ->
+                    PostsCache.evictHost host after.postsCache
+
+                _ ->
+                    after.postsCache
+    in
+    { after
+        | postsCache =
+            PostsCache.reconcile
+                (\host -> RellmAccounts.enabledRellmAccountForServer after.accounts.accounts host |> Maybe.map RellmAccounts.rellmAccountId)
+                (accountSignature before /= accountSignature after)
+                evicted
+    }
+
+
+{-| Which accounts are signed in where, as comparable text -- changes exactly when the acting accounts do.
+-}
+accountSignature : Model -> List String
+accountSignature model =
+    List.map
+        (\account ->
+            RellmAccounts.rellmAccountId account
+                ++ (if account.enabled then
+                        "+"
+
+                    else
+                        "-"
+                   )
+        )
+        model.accounts.accounts
+        ++ List.map (\account -> "mastodon:" ++ account.instanceHost ++ ":" ++ account.username) model.accounts.mastodonAccounts
+        ++ List.map
+            (\account ->
+                "bluesky:"
+                    ++ account.handle
+                    ++ (if account.enabled then
+                            "+"
+
+                        else
+                            "-"
+                       )
+            )
+            model.accounts.blueskyAccounts
 
 
 {-| The media viewer doesn't play videos itself: when it opens on one, or pages to one, that video becomes the queue's
@@ -1178,6 +1248,9 @@ notifiesPages : Msg -> Bool
 notifiesPages msg =
     case msg of
         CountabilibarSync _ ->
+            False
+
+        PostsCacheMsg _ ->
             False
 
         CountabilibarMsg countabilibarMsg ->
@@ -2169,6 +2242,9 @@ sharedUpdate req msg model =
                 , Cmd.map MediaViewerPanelMsg mediaViewerPanelCmd
                 ]
             )
+
+        PostsCacheMsg subMsg ->
+            ( { model | postsCache = PostsCache.update subMsg model.postsCache }, Cmd.none )
 
         QuoteLinksMsg subMsg ->
             let

@@ -242,6 +242,14 @@
   animation: posts-end-in 0.4s ease;
 }
 
+/* "These cached posts are 7 minutes old." (`PostsPage.cacheNote`): above the list, small and faint. */
+.posts-cache-note {
+  margin: 0.25rem 0;
+  font-size: 0.75rem;
+  text-align: center;
+  opacity: 0.5;
+}
+
 /* "Return to top" above a list whose first posts were dropped (`PostsPage.postsListView`): slides/fades in
    when the first post is dropped, like the posts themselves. */
 .posts-return-top {

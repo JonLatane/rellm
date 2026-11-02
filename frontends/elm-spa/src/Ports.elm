@@ -39,6 +39,7 @@ port module Ports exposing
     , pushSubscriptionChangeReceived
     , pushSubscriptionChecked
     , renderCalendar
+    , restoreListAnchor
     , scrollElementLeft
     , scrubMedia
     , setCustomCssStylesheet
@@ -187,6 +188,15 @@ smooth`) by however far that child moved. The browser's own scroll anchoring wou
 turns it off for the whole page. Fire-and-forget; gives up if nothing changes within a second.
 -}
 port anchorScroll : String -> Cmd msg
+
+
+{-| Scrolls back to the post the reader clicked to leave the list with the given `data-cache-key` (its
+`PostsPage.Model.path`): JS notes which `data-post-key` card was clicked, and where it was on screen, as the click
+happens, and -- after a back-navigation restored the list from `Shared.PostsCache` -- puts that card back there,
+then keeps it there for a couple of seconds (or until the reader touches the page) while content above it, like
+Home's events, finishes loading. Fire-and-forget; does nothing if no card was clicked.
+-}
+port restoreListAnchor : String -> Cmd msg
 
 
 {-| `{ id : String }` -- FLIP-animates the direct children of the element with

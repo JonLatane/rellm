@@ -75,6 +75,7 @@ import Shared.Federation.Bluesky as Bluesky
 import Shared.Federation.Common exposing (BlueskyAuth, anonymousSearchHost, blueskyAuthFor)
 import Shared.Federation.Mastodon as Mastodon
 import Shared.MediaViewerPanel as MediaViewerPanel
+import Shared.PostsCache as PostsCache
 import Shared.QuoteLinks as QuoteLinks
 import Shared.StarredPanel as StarredPanel
 import Shared.Time as SharedTime
@@ -225,6 +226,11 @@ type alias Model =
     , revealing : Bool
     , revealGeneration : Int
 
+    -- The current time as this page last learned it (`GotNow` at `init`, then every `Tick`) -- unlike
+    -- `Shared.time.now`, which is only read once at startup. What cache ages (`cacheNote`) and expiry
+    -- (`expireCached`) are measured against; `Nothing` until the first answer.
+    , now : Maybe Time.Posix
+
     -- What `syncAnimations` last found at either end of the rendered posts, for `postsListView` (which
     -- shouldn't re-derive the whole ordered list on every animation frame) -- see `Edges`.
     , edges : Edges
@@ -262,7 +268,7 @@ type SubmitStatus
 
 type Msg
     = GotFeedPosts String Int FeedResult
-    | Poll
+    | Tick Time.Posix
     | Animate Animation.Msg
     | RemovePost String
     | SharedMsg Shared.Msg
@@ -377,6 +383,12 @@ type alias ServerFeed =
     -- fraction of. Fixed when the first page arrives, so ranks of posts already on screen don't shift
     -- when later pages are appended.
     , rankBase : Int
+
+    -- When this source's first page arrived (what a cached feed's age is counted from, see
+    -- `Shared.PostsCache`), and whether the posts are still the ones restored from that cache -- a refetch
+    -- landing replaces them with fresh ones (`cacheNote`).
+    , fetchedAt : Maybe Time.Posix
+    , fromCache : Bool
     }
 
 
@@ -711,8 +723,8 @@ init shared author navKey path query embeddedPage availableSyncDestinations prof
                 Nothing ->
                     ( RecentPosts, shared.userPreferences.postsBefore )
 
-        ( fetchedModel, fetchEffect ) =
-            fetchNewFeeds shared
+        unfetched : Model
+        unfetched =
                 { postsByServer = Dict.empty
                 , nextRequestId = 0
                 , postAnimations = Dict.empty
@@ -746,8 +758,19 @@ init shared author navKey path query embeddedPage availableSyncDestinations prof
                 , window = Paging.initialWindow
                 , revealing = False
                 , revealGeneration = 0
+                , now = Nothing
                 , edges = { above = False, below = False, total = 0 }
                 }
+
+        -- Going back to this feed (see `Shared.PostsCache`): its posts and window come back as they were, without
+        -- being fetched or animated in -- a source that is not up to date (another account is acting on its server
+        -- now, say) is fetched again by `fetchNewFeeds` below like any other.
+        restored : Maybe PostsCache.Snapshot
+        restored =
+            PostsCache.restorable path (settingsOf unfetched) shared.postsCache
+
+        ( fetchedModel, fetchEffect ) =
+            fetchNewFeeds shared (restored |> Maybe.map (\snapshot -> seedFromSnapshot snapshot unfetched) |> Maybe.withDefault unfetched)
     in
     -- Closes any open panel (Accounts, Starred, etc.) unconditionally on
     -- load -- `setBreadcrumbsRoot` below only does this as a side effect of
@@ -774,6 +797,21 @@ init shared author navKey path query embeddedPage availableSyncDestinations prof
         , Effect.fromShared Shared.CloseAllPanels
         , setBreadcrumbsRoot shared fetchedModel
         , Task.perform GotNow Time.now |> Effect.fromCmd
+
+        -- Whoever initialises first takes the chance to restore; a later `init` (a profile re-initialising its
+        -- embedded feed) starts fresh.
+        , if shared.postsCache.restoring then
+            Effect.fromShared (Shared.PostsCacheMsg PostsCache.ConsumeRestore)
+
+          else
+            Effect.none
+
+        -- The card that was clicked goes back to where it was on screen.
+        , if restored /= Nothing then
+            Ports.restoreListAnchor path |> Effect.fromCmd
+
+          else
+            Effect.none
         ]
     )
 
@@ -781,7 +819,7 @@ init shared author navKey path query embeddedPage availableSyncDestinations prof
 subscriptions : Model -> Sub Msg
 subscriptions model =
     Sub.batch
-        [ Time.every 30000 (\_ -> Poll)
+        [ Time.every 30000 Tick
         , UI.Flip.subscription Animate (List.map .flip (Dict.values model.postAnimations))
         ]
 
@@ -840,8 +878,11 @@ update shared msg model =
         ( hiddenModel, hiddenEffect ) =
             applyHidden shared model
 
+        ( clockedModel, clockEffect ) =
+            applyClock shared msg hiddenModel
+
         ( innerModel, effect ) =
-            updateInner shared msg hiddenModel
+            updateInner shared msg clockedModel
 
         ( newModel, revealEffect ) =
             trackReveal msg innerModel
@@ -849,14 +890,173 @@ update shared msg model =
     ( newModel
     , Effect.batch
         [ hiddenEffect
+        , clockEffect
         , effect
         , revealEffect
+        , storeEffect msg newModel
         , holdScrollEffect msg model newModel
         , setBreadcrumbsRoot shared newModel
         , quoteRequestEffect shared newModel
         , countabilibarEffect shared msg newModel
         ]
     )
+
+
+{-| Takes the time from the messages that carry it into `model.now`, and -- on the first, right after `init` --
+gives up any restored feed older than `PostsCache.expiryMs` (the page only learns the time after it starts, so
+that is the earliest it can tell): such posts are dropped, the window starts over and the sources are fetched
+again, and the snapshot is forgotten.
+-}
+applyClock : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
+applyClock shared msg model =
+    case msg of
+        Tick now ->
+            ( { model | now = Just now }, Effect.none )
+
+        GotNow now ->
+            let
+                stale : Dict String ServerFeed
+                stale =
+                    model.postsByServer
+                        |> Dict.filter (\_ feed -> feed.fromCache && PostsCache.expired now feed.fetchedAt)
+
+                clocked : Model
+                clocked =
+                    { model | now = Just now }
+            in
+            if Dict.isEmpty stale then
+                ( clocked, Effect.none )
+
+            else
+                let
+                    ( refetchedModel, refetchEffect ) =
+                        fetchNewFeeds shared
+                            ({ clocked | postsByServer = Dict.diff clocked.postsByServer stale }
+                                |> resetWindow
+                                |> syncAnimations
+                            )
+                in
+                ( refetchedModel
+                , Effect.batch [ refetchEffect, Effect.fromShared (Shared.PostsCacheMsg (PostsCache.Evict model.path)) ]
+                )
+
+        _ ->
+            ( model, Effect.none )
+
+
+{-| What `PostsCache` needs to know to tell whether a snapshot fits this feed as it starts.
+-}
+settingsOf : Model -> PostsCache.Settings
+settingsOf model =
+    { searchText = model.searchText
+    , context = model.context
+    , sort = postsSortParam model.sort
+    , publishedBefore =
+        if model.tab == PostsBeforeDate then
+            Maybe.map Time.posixToMillis model.publishedBefore
+
+        else
+            Nothing
+    }
+
+
+{-| The feed as `Shared.PostsCache` keeps it: every source with posts loaded, and the window -- `Nothing` while there
+are none.
+-}
+snapshotOf : Model -> Maybe PostsCache.Snapshot
+snapshotOf model =
+    let
+        feeds : Dict String PostsCache.CachedFeed
+        feeds =
+            model.postsByServer
+                |> Dict.toList
+                |> List.filterMap
+                    (\( key, feed ) ->
+                        case feed.status of
+                            Loaded posts ->
+                                Just
+                                    ( key
+                                    , { posts = posts
+                                      , accountId = feed.accountId
+                                      , host = feed.host
+                                      , excludedAuthorIds = feed.excludedAuthorIds
+                                      , next = feed.next
+                                      , rankBase = feed.rankBase
+                                      , fetchedAt = feed.fetchedAt
+                                      }
+                                    )
+
+                            _ ->
+                                Nothing
+                    )
+                |> Dict.fromList
+    in
+    if Dict.isEmpty feeds then
+        Nothing
+
+    else
+        Just { feeds = feeds, window = model.window, settings = settingsOf model }
+
+
+{-| The inverse of `snapshotOf`: `model` showing what the snapshot did, with every post already at rest -- coming
+back to a feed doesn't animate it in again.
+-}
+seedFromSnapshot : PostsCache.Snapshot -> Model -> Model
+seedFromSnapshot snapshot model =
+    let
+        seeded : Model
+        seeded =
+            { model
+                | postsByServer =
+                    Dict.map
+                        (\_ cached ->
+                            { status = Loaded cached.posts
+                            , accountId = cached.accountId
+                            , host = cached.host
+                            , requestId = -1
+                            , excludedAuthorIds = cached.excludedAuthorIds
+                            , refreshing = False
+                            , next = cached.next
+                            , loadingMore = False
+                            , rankBase = cached.rankBase
+                            , fetchedAt = cached.fetchedAt
+                            , fromCache = True
+                            }
+                        )
+                        snapshot.feeds
+                , window = snapshot.window
+            }
+    in
+    syncAnimationsWith (orderedEntries seeded |> List.map .key |> Set.fromList) seeded
+
+
+{-| Saves the feed to `Shared.PostsCache` whenever what it shows (or how far it has loaded) has changed -- a
+page arriving, or the reader reaching either end of the list -- not on every animation frame.
+-}
+storeEffect : Msg -> Model -> Effect Msg
+storeEffect msg model =
+    case msg of
+        GotFeedPosts _ _ _ ->
+            storeSnapshot model
+
+        BottomReached ->
+            storeSnapshot model
+
+        TopReached ->
+            storeSnapshot model
+
+        ReturnToTopClicked ->
+            storeSnapshot model
+
+        _ ->
+            Effect.none
+
+
+storeSnapshot : Model -> Effect Msg
+storeSnapshot model =
+    snapshotOf model
+        |> Maybe.map (\snapshot -> Effect.fromShared (Shared.PostsCacheMsg (PostsCache.Store model.path snapshot)))
+        |> Maybe.withDefault Effect.none
 
 
 {-| Keeps what the reader is looking at where it is when the rendered posts change _above_ it: dropping the
@@ -1218,6 +1418,13 @@ updateInner shared msg model =
 
                                         else
                                             max 1 (List.length (List.filter (\post -> post.context == model.context) posts))
+                                    , fetchedAt =
+                                        if appending then
+                                            feed.fetchedAt
+
+                                        else
+                                            Just (Maybe.withDefault shared.time.now model.now)
+                                    , fromCache = appending && feed.fromCache
                                 }
 
                             landedModel : Model
@@ -1349,7 +1556,8 @@ updateInner shared msg model =
             else
                 ( model, Effect.none )
 
-        Poll ->
+        Tick _ ->
+            -- (The time itself was taken in by `applyClock`.)
             fetchNewFeeds shared model
 
         Animate animMsg ->
@@ -2140,6 +2348,8 @@ refetchFeeds shared model sourcesToFetch =
                     , next = feedIfSameAccount |> Maybe.andThen .next
                     , loadingMore = False
                     , rankBase = feedIfSameAccount |> Maybe.map .rankBase |> Maybe.withDefault 1
+                    , fetchedAt = feedIfSameAccount |> Maybe.andThen .fetchedAt
+                    , fromCache = feedIfSameAccount |> Maybe.map .fromCache |> Maybe.withDefault False
                     }
                     dict
                 , started ++ [ ( requestId, source ) ]
@@ -3446,7 +3656,8 @@ postsListView shared model =
 
         else
             div []
-                [ if model.edges.above then
+                [ cacheNote shared model
+                , if model.edges.above then
                     div [ class "posts-return-top" ]
                         [ scrollSentinel (scrollToken model) TopReached
                         , button [ class "posts-return-top-button", onClick ReturnToTopClicked ] [ text "↑ Return to top" ]
@@ -3455,10 +3666,31 @@ postsListView shared model =
                   else
                     text ""
                 , Html.Keyed.node "div"
-                    [ id postsListId, class "posts-list flip-animated-column" ]
+                    [ id postsListId, class "posts-list flip-animated-column", attribute "data-cache-key" model.path ]
                     (List.map (postAnimationView shared model.federatedAuthors model.showSyncDestinations model.availableSyncDestinations model.pushStatuses) sortedAnimations)
                 , postsListFooter model postsWord
                 ]
+
+
+{-| "These cached posts are 7 minutes old." -- small and faint, above the list (and its "Return to top"), while
+the posts shown were restored from `Shared.PostsCache` and are more than five minutes old; nothing otherwise. The
+age is that of the oldest cached source still showing.
+-}
+cacheNote : Shared.Model -> Model -> Html Msg
+cacheNote shared model =
+    let
+        oldestFetch : Maybe Int
+        oldestFetch =
+            model.postsByServer
+                |> Dict.values
+                |> List.filter .fromCache
+                |> List.filterMap (.fetchedAt >> Maybe.map Time.posixToMillis)
+                |> List.minimum
+    in
+    oldestFetch
+        |> Maybe.andThen (\fetched -> PostsCache.ageLabel (Time.posixToMillis (Maybe.withDefault shared.time.now model.now) - fetched))
+        |> Maybe.map (\label -> p [ class "posts-cache-note" ] [ text ("These cached posts are " ++ label ++ " old.") ])
+        |> Maybe.withDefault (text "")
 
 
 {-| What follows the last rendered post: while there's more to come, the sentinel that asks for it
@@ -3535,7 +3767,7 @@ postAnimationView shared federatedAuthors showSyncDestinations availableSyncDest
                 []
     in
     ( key
-    , div (UI.Flip.itemAttributes UI.Flip.Vertical anim.flip False)
+    , div (attribute "data-post-key" key :: UI.Flip.itemAttributes UI.Flip.Vertical anim.flip False)
         [ div pointerEventsAttr
             [ postCardView shared showSyncDestinations availableSyncDestinations pushStatuses ( anim.host, anim.post )
                 |> FederatedAuthors.withWarningOverlay
