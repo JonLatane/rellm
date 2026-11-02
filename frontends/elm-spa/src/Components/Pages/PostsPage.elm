@@ -3,13 +3,13 @@ module Components.Pages.PostsPage exposing
     , Model
     , Msg
     , exportButtonView
+    , sortHeadingView
     , federatedAuthorsChanged
     , filterFeedPosts
     , fromShared
     , init
     , searchTextChanged
     , showSyncDestinationsChanged
-    , sortSelectView
     , subscriptions
     , update
     , view
@@ -75,6 +75,7 @@ import Shared.Federation.Bluesky as Bluesky
 import Shared.Federation.Common exposing (BlueskyAuth, anonymousSearchHost, blueskyAuthFor)
 import Shared.Federation.Mastodon as Mastodon
 import Shared.MediaViewerPanel as MediaViewerPanel
+import Shared.PostsCache as PostsCache
 import Shared.QuoteLinks as QuoteLinks
 import Shared.StarredPanel as StarredPanel
 import Shared.Time as SharedTime
@@ -84,6 +85,7 @@ import Time
 import UI.Classes exposing (classes, hostnameToCSSClass, openClosedClass)
 import UI.CustomNav as CustomNav
 import UI.Flip
+import UI.Glyph as Glyph
 import Url.Builder
 
 
@@ -197,6 +199,9 @@ type alias Model =
     -- instead of one ICS link.
     , exportPopoverOpen : Bool
 
+    -- Whether `cacheAlertView`'s popover is open.
+    , cachePopoverOpen : Bool
+
     -- The servers/users `Shared.Countabilibar` had unchecked as of this page's last `update` (see
     -- `applyHidden`) -- always `Countabilibar.noneHidden` for a feed scoped to one profile, which hiding
     -- would only blank. `syncAnimations` (which has no `Shared.Model`) filters by it, and
@@ -224,6 +229,11 @@ type alias Model =
     -- needs yet more posts. `revealGeneration` is `copyLinkGeneration`'s stale-timer guard, again.
     , revealing : Bool
     , revealGeneration : Int
+
+    -- The current time as this page last learned it (`GotNow` at `init`, then every `Tick`) -- unlike
+    -- `Shared.time.now`, which is only read once at startup. What cache ages (`staleCacheSince`) and expiry
+    -- (`expireCached`) are measured against; `Nothing` until the first answer.
+    , now : Maybe Time.Posix
 
     -- What `syncAnimations` last found at either end of the rendered posts, for `postsListView` (which
     -- shouldn't re-derive the whole ordered list on every animation frame) -- see `Edges`.
@@ -262,7 +272,7 @@ type SubmitStatus
 
 type Msg
     = GotFeedPosts String Int FeedResult
-    | Poll
+    | Tick Time.Posix
     | Animate Animation.Msg
     | RemovePost String
     | SharedMsg Shared.Msg
@@ -312,6 +322,9 @@ type Msg
       -- `ExportPopoverClosed` exactly.
     | ExportClicked
     | ExportPopoverClosed
+      -- Opens/closes `cacheAlertView`'s popover.
+    | CacheAlertClicked
+    | CacheAlertClosed
       -- Copies `feedUrl kind`'s link to the clipboard via `Ports.copyToClipboard` and shows
       -- "Link Copied!" on that one button for 5s -- mirrors
       -- `Components.Pages.EventsPage.CopyLinkClicked`/`CopyLinkCopyTimeoutElapsed` exactly, just
@@ -377,6 +390,12 @@ type alias ServerFeed =
     -- fraction of. Fixed when the first page arrives, so ranks of posts already on screen don't shift
     -- when later pages are appended.
     , rankBase : Int
+
+    -- When this source's first page arrived (what a cached feed's age is counted from, see
+    -- `Shared.PostsCache`), and whether the posts are still the ones restored from that cache -- a refetch
+    -- landing replaces them with fresh ones (`cacheAlertView`).
+    , fetchedAt : Maybe Time.Posix
+    , fromCache : Bool
     }
 
 
@@ -711,8 +730,8 @@ init shared author navKey path query embeddedPage availableSyncDestinations prof
                 Nothing ->
                     ( RecentPosts, shared.userPreferences.postsBefore )
 
-        ( fetchedModel, fetchEffect ) =
-            fetchNewFeeds shared
+        unfetched : Model
+        unfetched =
                 { postsByServer = Dict.empty
                 , nextRequestId = 0
                 , postAnimations = Dict.empty
@@ -735,6 +754,7 @@ init shared author navKey path query embeddedPage availableSyncDestinations prof
                 , availableSyncDestinations = availableSyncDestinations
                 , pushStatuses = Dict.empty
                 , exportPopoverOpen = False
+                , cachePopoverOpen = False
                 , hidden =
                     if author /= Nothing || profileFeedSource /= Nothing then
                         Countabilibar.noneHidden
@@ -746,8 +766,19 @@ init shared author navKey path query embeddedPage availableSyncDestinations prof
                 , window = Paging.initialWindow
                 , revealing = False
                 , revealGeneration = 0
+                , now = Nothing
                 , edges = { above = False, below = False, total = 0 }
                 }
+
+        -- Going back to this feed (see `Shared.PostsCache`): its posts and window come back as they were, without
+        -- being fetched or animated in -- a source that is not up to date (another account is acting on its server
+        -- now, say) is fetched again by `fetchNewFeeds` below like any other.
+        restored : Maybe PostsCache.Snapshot
+        restored =
+            PostsCache.restorable path (settingsOf unfetched) shared.postsCache
+
+        ( fetchedModel, fetchEffect ) =
+            fetchNewFeeds shared (restored |> Maybe.map (\snapshot -> seedFromSnapshot snapshot unfetched) |> Maybe.withDefault unfetched)
     in
     -- Closes any open panel (Accounts, Starred, etc.) unconditionally on
     -- load -- `setBreadcrumbsRoot` below only does this as a side effect of
@@ -774,6 +805,21 @@ init shared author navKey path query embeddedPage availableSyncDestinations prof
         , Effect.fromShared Shared.CloseAllPanels
         , setBreadcrumbsRoot shared fetchedModel
         , Task.perform GotNow Time.now |> Effect.fromCmd
+
+        -- Whoever initialises first takes the chance to restore; a later `init` (a profile re-initialising its
+        -- embedded feed) starts fresh.
+        , if shared.postsCache.restoring then
+            Effect.fromShared (Shared.PostsCacheMsg PostsCache.ConsumeRestore)
+
+          else
+            Effect.none
+
+        -- The card that was clicked goes back to where it was on screen.
+        , if restored /= Nothing then
+            Ports.restoreListAnchor path |> Effect.fromCmd
+
+          else
+            Effect.none
         ]
     )
 
@@ -781,7 +827,7 @@ init shared author navKey path query embeddedPage availableSyncDestinations prof
 subscriptions : Model -> Sub Msg
 subscriptions model =
     Sub.batch
-        [ Time.every 30000 (\_ -> Poll)
+        [ Time.every 30000 Tick
         , UI.Flip.subscription Animate (List.map .flip (Dict.values model.postAnimations))
         ]
 
@@ -840,8 +886,11 @@ update shared msg model =
         ( hiddenModel, hiddenEffect ) =
             applyHidden shared model
 
+        ( clockedModel, clockEffect ) =
+            applyClock shared msg hiddenModel
+
         ( innerModel, effect ) =
-            updateInner shared msg hiddenModel
+            updateInner shared msg clockedModel
 
         ( newModel, revealEffect ) =
             trackReveal msg innerModel
@@ -849,14 +898,188 @@ update shared msg model =
     ( newModel
     , Effect.batch
         [ hiddenEffect
+        , clockEffect
         , effect
         , revealEffect
+        , storeEffect msg newModel
         , holdScrollEffect msg model newModel
         , setBreadcrumbsRoot shared newModel
         , quoteRequestEffect shared newModel
         , countabilibarEffect shared msg newModel
         ]
     )
+
+
+{-| Takes the time from the messages that carry it into `model.now`, and -- on the first, right after `init` --
+gives up any restored feed older than `PostsCache.expiryMs` (the page only learns the time after it starts, so
+that is the earliest it can tell): such posts are dropped, the window starts over and the sources are fetched
+again, and the snapshot is forgotten.
+-}
+applyClock : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
+applyClock shared msg model =
+    case msg of
+        Tick now ->
+            ( { model | now = Just now }, Effect.none )
+
+        GotNow now ->
+            let
+                stale : Dict String ServerFeed
+                stale =
+                    model.postsByServer
+                        |> Dict.filter (\_ feed -> feed.fromCache && PostsCache.expired now feed.fetchedAt)
+
+                clocked : Model
+                clocked =
+                    { model | now = Just now }
+            in
+            if Dict.isEmpty stale then
+                ( clocked, Effect.none )
+
+            else
+                let
+                    ( refetchedModel, refetchEffect ) =
+                        fetchNewFeeds shared
+                            ({ clocked | postsByServer = Dict.diff clocked.postsByServer stale }
+                                |> resetWindow
+                                |> syncAnimations
+                            )
+                in
+                ( refetchedModel
+                , Effect.batch [ refetchEffect, Effect.fromShared (Shared.PostsCacheMsg (PostsCache.Evict model.path)) ]
+                )
+
+        _ ->
+            ( model, Effect.none )
+
+
+{-| What `PostsCache` needs to know to tell whether a snapshot fits this feed as it starts.
+-}
+settingsOf : Model -> PostsCache.Settings
+settingsOf model =
+    { searchText = model.searchText
+    , context = model.context
+    , sort = postsSortParam model.sort
+    , publishedBefore =
+        if model.tab == PostsBeforeDate then
+            Maybe.map Time.posixToMillis model.publishedBefore
+
+        else
+            Nothing
+    }
+
+
+{-| The feed as `Shared.PostsCache` keeps it: every source with posts loaded, and the window -- `Nothing` while there
+are none.
+-}
+snapshotOf : Model -> Maybe PostsCache.Snapshot
+snapshotOf model =
+    let
+        -- Only what is safe to bring back as finished -- see `PostsCache.isCacheable`.
+        cacheable : Dict String ServerFeed
+        cacheable =
+            Dict.filter PostsCache.isCacheable model.postsByServer
+
+        feeds : Dict String PostsCache.CachedFeed
+        feeds =
+            cacheable
+                |> Dict.toList
+                |> List.filterMap
+                    (\( key, feed ) ->
+                        case feed.status of
+                            Loaded posts ->
+                                Just
+                                    ( key
+                                    , { posts = posts
+                                      , accountId = feed.accountId
+                                      , host = feed.host
+                                      , excludedAuthorIds = feed.excludedAuthorIds
+                                      , next = feed.next
+                                      , rankBase = feed.rankBase
+                                      , fetchedAt = feed.fetchedAt
+                                      }
+                                    )
+
+                            _ ->
+                                Nothing
+                    )
+                |> Dict.fromList
+    in
+    if Dict.isEmpty feeds then
+        Nothing
+
+    else
+        Just
+            { feeds = feeds
+
+            -- A window that starts at a post of a feed left out starts at the next one that stays.
+            , window =
+                PostsCache.keepWindowOn
+                    (orderedEntries model |> List.map .key)
+                    (orderedEntries { model | postsByServer = cacheable } |> List.map .key |> Set.fromList)
+                    model.window
+            , settings = settingsOf model
+            }
+
+
+{-| The inverse of `snapshotOf`: `model` showing what the snapshot did, with every post already at rest -- coming
+back to a feed doesn't animate it in again.
+-}
+seedFromSnapshot : PostsCache.Snapshot -> Model -> Model
+seedFromSnapshot snapshot model =
+    let
+        seeded : Model
+        seeded =
+            { model
+                | postsByServer =
+                    Dict.map
+                        (\_ cached ->
+                            { status = Loaded cached.posts
+                            , accountId = cached.accountId
+                            , host = cached.host
+                            , requestId = -1
+                            , excludedAuthorIds = cached.excludedAuthorIds
+                            , refreshing = False
+                            , next = cached.next
+                            , loadingMore = False
+                            , rankBase = cached.rankBase
+                            , fetchedAt = cached.fetchedAt
+                            , fromCache = True
+                            }
+                        )
+                        snapshot.feeds
+                , window = snapshot.window
+            }
+    in
+    syncAnimationsWith (orderedEntries seeded |> List.map .key |> Set.fromList) seeded
+
+
+{-| Saves the feed to `Shared.PostsCache` whenever what it shows (or how far it has loaded) has changed -- a
+page arriving, or the reader reaching either end of the list -- not on every animation frame.
+-}
+storeEffect : Msg -> Model -> Effect Msg
+storeEffect msg model =
+    case msg of
+        GotFeedPosts _ _ _ ->
+            storeSnapshot model
+
+        BottomReached ->
+            storeSnapshot model
+
+        TopReached ->
+            storeSnapshot model
+
+        ReturnToTopClicked ->
+            storeSnapshot model
+
+        _ ->
+            Effect.none
+
+
+storeSnapshot : Model -> Effect Msg
+storeSnapshot model =
+    snapshotOf model
+        |> Maybe.map (\snapshot -> Effect.fromShared (Shared.PostsCacheMsg (PostsCache.Store model.path snapshot)))
+        |> Maybe.withDefault Effect.none
 
 
 {-| Keeps what the reader is looking at where it is when the rendered posts change _above_ it: dropping the
@@ -1218,6 +1441,13 @@ updateInner shared msg model =
 
                                         else
                                             max 1 (List.length (List.filter (\post -> post.context == model.context) posts))
+                                    , fetchedAt =
+                                        if appending then
+                                            feed.fetchedAt
+
+                                        else
+                                            Just (Maybe.withDefault shared.time.now model.now)
+                                    , fromCache = appending && feed.fromCache
                                 }
 
                             landedModel : Model
@@ -1349,7 +1579,8 @@ updateInner shared msg model =
             else
                 ( model, Effect.none )
 
-        Poll ->
+        Tick _ ->
+            -- (The time itself was taken in by `applyClock`.)
             fetchNewFeeds shared model
 
         Animate animMsg ->
@@ -1634,6 +1865,12 @@ updateInner shared msg model =
 
         ExportPopoverClosed ->
             ( { model | exportPopoverOpen = False }, Effect.none )
+
+        CacheAlertClicked ->
+            ( { model | cachePopoverOpen = not model.cachePopoverOpen }, Effect.none )
+
+        CacheAlertClosed ->
+            ( { model | cachePopoverOpen = False }, Effect.none )
 
         CopyLinkClicked kind ->
             let
@@ -2140,6 +2377,8 @@ refetchFeeds shared model sourcesToFetch =
                     , next = feedIfSameAccount |> Maybe.andThen .next
                     , loadingMore = False
                     , rankBase = feedIfSameAccount |> Maybe.map .rankBase |> Maybe.withDefault 1
+                    , fetchedAt = feedIfSameAccount |> Maybe.andThen .fetchedAt
+                    , fromCache = feedIfSameAccount |> Maybe.map .fromCache |> Maybe.withDefault False
                     }
                     dict
                 , started ++ [ ( requestId, source ) ]
@@ -2865,7 +3104,7 @@ view shared showSearchRow showAuthorHeading model =
     div []
         [ recentPostsTabsView shared model
         , if showAuthorHeading then
-            authorHeadingView shared model.author model.context
+            authorHeadingView shared model
 
           else
             text ""
@@ -2901,47 +3140,52 @@ recentPostsTabsView shared model =
         text ""
 
     else
-        div [ class "filter-tabs-bar" ]
-            [ -- A `div`, not a `button`, for the same reason as the date tab below: it nests a real
-              -- interactive control (the sort `<select>`).
-              div
-                [ classes
-                    ("filter-tab"
-                        :: "filter-tab-primary"
-                        :: (if model.tab == RecentPosts then
-                                [ "background-color-primary" ]
+        -- `cacheAlertView` sits beside the scrolling tab strip rather than in it: that strip clips anything
+        -- hanging out of it (`overflow-x: auto`), which would cut off the alert's popover.
+        div [ class "posts-tabs-row" ]
+            [ cacheAlertView shared model
+            , div [ class "filter-tabs-bar" ]
+                [ -- A `div`, not a `button`, for the same reason as the date tab below: it nests a real
+                  -- interactive control (the sort `<select>`).
+                  div
+                    [ classes
+                        ("filter-tab"
+                            :: "filter-tab-primary"
+                            :: (if model.tab == RecentPosts then
+                                    [ "background-color-primary" ]
 
-                            else
-                                []
-                           )
-                    )
-                , onClick (TabChanged RecentPosts)
-                ]
-                [ sortSelectView shared model ]
-            , div
-                [ classes
-                    ("filter-tab"
-                        :: (if model.tab == PostsBeforeDate then
-                                [ "background-color-primary" ]
-
-                            else
-                                []
-                           )
-                    )
-                , onClick (TabChanged PostsBeforeDate)
-                ]
-                [ text (postsBeforeLabel model.context ++ " ")
-                , input
-                    [ type_ "datetime-local"
-                    , class "filter-tab-date-input"
-                    , value
-                        (SharedTime.formatDateTimeLocalInput
-                            shared.time.browserTimeZone.zone
-                            (Maybe.withDefault (Time.millisToPosix 0) model.publishedBefore)
+                                else
+                                    []
+                               )
                         )
-                    , onInput PublishedBeforeInputChanged
+                    , onClick (TabChanged RecentPosts)
                     ]
-                    []
+                    [ sortSelectView shared model ]
+                , div
+                    [ classes
+                        ("filter-tab"
+                            :: (if model.tab == PostsBeforeDate then
+                                    [ "background-color-primary" ]
+
+                                else
+                                    []
+                               )
+                        )
+                    , onClick (TabChanged PostsBeforeDate)
+                    ]
+                    [ text (postsBeforeLabel model.context ++ " ")
+                    , input
+                        [ type_ "datetime-local"
+                        , class "filter-tab-date-input"
+                        , value
+                            (SharedTime.formatDateTimeLocalInput
+                                shared.time.browserTimeZone.zone
+                                (Maybe.withDefault (Time.millisToPosix 0) model.publishedBefore)
+                            )
+                        , onInput PublishedBeforeInputChanged
+                        ]
+                        []
+                    ]
                 ]
             ]
 
@@ -3243,9 +3487,9 @@ avatar-less, if not) -- absent entirely for `Pages.Home_`'s unfiltered feed
 (`author == Nothing`), which supplies its own "Recent Posts"/"Recent Replies"
 heading instead (see `Pages.Home_.heading`).
 -}
-authorHeadingView : Shared.Model -> Maybe ( String, User ) -> PostContext -> Html Msg
-authorHeadingView shared maybeAuthor context =
-    case maybeAuthor of
+authorHeadingView : Shared.Model -> Model -> Html Msg
+authorHeadingView shared model =
+    case model.author of
         Nothing ->
             text ""
 
@@ -3257,7 +3501,7 @@ authorHeadingView shared maybeAuthor context =
 
                 headingText : String
                 headingText =
-                    case context of
+                    case model.context of
                         REPLY ->
                             "Replies"
 
@@ -3265,7 +3509,9 @@ authorHeadingView shared maybeAuthor context =
                             "Posts"
             in
             div [ class "posts-page-heading" ]
-                [ h2 [] [ text headingText ]
+                [ -- Pages scoped to one author have no tabs or sort selector to hold it, so it leads this row.
+                  cacheAlertView shared model
+                , h2 [] [ text headingText ]
                 , a [ href profileUrl, class <| hostnameToCSSClass host ]
                     [ case RellmServers.rellmServerForHost shared.accounts.servers host of
                         Just server ->
@@ -3455,10 +3701,72 @@ postsListView shared model =
                   else
                     text ""
                 , Html.Keyed.node "div"
-                    [ id postsListId, class "posts-list flip-animated-column" ]
+                    [ id postsListId, class "posts-list flip-animated-column", attribute "data-cache-key" model.path ]
                     (List.map (postAnimationView shared model.federatedAuthors model.showSyncDestinations model.availableSyncDestinations model.pushStatuses) sortedAnimations)
                 , postsListFooter model postsWord
                 ]
+
+
+{-| When the posts shown were fetched, if they were restored from `Shared.PostsCache` and are now more than five
+minutes old -- the oldest cached source still showing; `Nothing` otherwise, when there is nothing to warn about.
+-}
+staleCacheSince : Shared.Model -> Model -> Maybe Time.Posix
+staleCacheSince shared model =
+    model.postsByServer
+        |> Dict.values
+        |> List.filter .fromCache
+        |> List.filterMap (.fetchedAt >> Maybe.map Time.posixToMillis)
+        |> List.minimum
+        |> Maybe.andThen
+            (\fetched ->
+                PostsCache.ageLabel (Time.posixToMillis (Maybe.withDefault shared.time.now model.now) - fetched)
+                    |> Maybe.map (\_ -> Time.millisToPosix fetched)
+            )
+
+
+{-| A "⚠" icon button, sized like the export button and in the same row as the sort selector/tabs (to the left of
+them), that opens a popover (down and to the right) saying the posts shown are cached and when they were loaded
+-- only while they are, and more than five minutes old (`staleCacheSince`); nothing otherwise. It lives in the
+heading row, not above the list, so it appearing never pushes the posts down.
+-}
+cacheAlertView : Shared.Model -> Model -> Html Msg
+cacheAlertView shared model =
+    case staleCacheSince shared model of
+        Just fetchedAt ->
+            div [ classes [ "posts-cache-alert", "popover-anchor" ] ]
+                [ button
+                    [ classes [ "filter-icon-button", "popover-toggle", "background-color-nav", openClosedClass model.cachePopoverOpen ]
+                    , onClick CacheAlertClicked
+                    , title "These posts are cached and may be old"
+                    , type_ "button"
+                    ]
+                    [ text (Glyph.textPresentation "⚠") ]
+                , div [ classes [ "popover-backdrop", openClosedClass model.cachePopoverOpen ], onClick CacheAlertClosed ] []
+                , div [ classes [ "posts-cache-alert-popover", "popover", openClosedClass model.cachePopoverOpen ] ]
+                    [ p []
+                        [ text
+                            ("These posts are cached and may be old. They were loaded at "
+                                ++ SharedTime.formatDateTime shared.time.browserTimeZone fetchedAt
+                                ++ "."
+                            )
+                        ]
+                    ]
+                ]
+
+        Nothing ->
+            text ""
+
+
+{-| The sort selector as a heading -- with `cacheAlertView` to its left -- for `Pages.Home_`/
+`Components.Pages.UserProfilePage`'s embedded heading row (the standalone page's tabs bar places the alert itself,
+see `recentPostsTabsView`).
+-}
+sortHeadingView : Shared.Model -> Model -> Html Msg
+sortHeadingView shared model =
+    div [ class "posts-heading-with-alert" ]
+        [ cacheAlertView shared model
+        , h3 [] [ sortSelectView shared model ]
+        ]
 
 
 {-| What follows the last rendered post: while there's more to come, the sentinel that asks for it
@@ -3535,7 +3843,7 @@ postAnimationView shared federatedAuthors showSyncDestinations availableSyncDest
                 []
     in
     ( key
-    , div (UI.Flip.itemAttributes UI.Flip.Vertical anim.flip False)
+    , div (attribute "data-post-key" key :: UI.Flip.itemAttributes UI.Flip.Vertical anim.flip False)
         [ div pointerEventsAttr
             [ postCardView shared showSyncDestinations availableSyncDestinations pushStatuses ( anim.host, anim.post )
                 |> FederatedAuthors.withWarningOverlay
