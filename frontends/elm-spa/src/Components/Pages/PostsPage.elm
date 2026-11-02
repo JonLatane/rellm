@@ -3104,7 +3104,7 @@ view shared showSearchRow showAuthorHeading model =
     div []
         [ recentPostsTabsView shared model
         , if showAuthorHeading then
-            authorHeadingView shared model.author model.context
+            authorHeadingView shared model
 
           else
             text ""
@@ -3487,9 +3487,9 @@ avatar-less, if not) -- absent entirely for `Pages.Home_`'s unfiltered feed
 (`author == Nothing`), which supplies its own "Recent Posts"/"Recent Replies"
 heading instead (see `Pages.Home_.heading`).
 -}
-authorHeadingView : Shared.Model -> Maybe ( String, User ) -> PostContext -> Html Msg
-authorHeadingView shared maybeAuthor context =
-    case maybeAuthor of
+authorHeadingView : Shared.Model -> Model -> Html Msg
+authorHeadingView shared model =
+    case model.author of
         Nothing ->
             text ""
 
@@ -3501,7 +3501,7 @@ authorHeadingView shared maybeAuthor context =
 
                 headingText : String
                 headingText =
-                    case context of
+                    case model.context of
                         REPLY ->
                             "Replies"
 
@@ -3509,7 +3509,9 @@ authorHeadingView shared maybeAuthor context =
                             "Posts"
             in
             div [ class "posts-page-heading" ]
-                [ h2 [] [ text headingText ]
+                [ -- Pages scoped to one author have no tabs or sort selector to hold it, so it leads this row.
+                  cacheAlertView shared model
+                , h2 [] [ text headingText ]
                 , a [ href profileUrl, class <| hostnameToCSSClass host ]
                     [ case RellmServers.rellmServerForHost shared.accounts.servers host of
                         Just server ->
