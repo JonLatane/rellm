@@ -1165,6 +1165,14 @@
     }
   }, { passive: true });
 
+  // The panel's own queue and close buttons sit beside <rellm-video>, not inside it, so pointer activity over them never reaches the
+  // player's own idle tracking: forward it, so they don't fade (and stop taking clicks) while the pointer is moving over them.
+  document.addEventListener("pointermove", function (event) {
+    var panel = event.target.closest && event.target.closest(PANEL);
+    var player = panel && panel.querySelector("rellm-video");
+    if (player && typeof player._wake === "function") { player._wake(); }
+  }, { capture: true, passive: true });
+
   new MutationObserver(startPanelLoop).observe(document.documentElement, { childList: true, subtree: true });
   startPanelLoop();
 })();
