@@ -242,6 +242,31 @@
   animation: posts-end-in 0.4s ease;
 }
 
+/* "Return to top" above a list whose first posts were dropped (`PostsPage.postsListView`): slides/fades in
+   when the first post is dropped, like the posts themselves. */
+.posts-return-top {
+  display: flex;
+  justify-content: center;
+  margin: 0.5rem 0;
+  animation: posts-return-top-in 0.35s ease;
+}
+
+.posts-return-top-button {
+  padding: 0.35rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel-bg, transparent);
+  color: inherit;
+  cursor: pointer;
+}
+
+@keyframes posts-return-top-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+
 @keyframes posts-end-in {
   from {
     opacity: 0;
@@ -250,7 +275,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .posts-end {
+  .posts-end,
+  .posts-return-top {
     animation: none;
   }
 }

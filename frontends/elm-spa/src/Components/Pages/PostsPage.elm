@@ -35,6 +35,7 @@ list asks for more -- see `postsListView`, `BottomReached`/`TopReached` and `syn
 -}
 
 import Animation
+import Browser.Dom
 import Browser.Navigation
 import Components.FederatedAuthors as FederatedAuthors exposing (FederatedAuthor)
 import Components.MediaRenderer as MediaRenderer
@@ -323,6 +324,9 @@ type Msg
       -- The sentinel before the first rendered post did, while posts above it were dropped -- bring
       -- them back.
     | TopReached
+      -- The "Return to top" button, shown while posts are dropped from the top: brings them all back
+      -- (trimming the same amount from the bottom) and scrolls to the top.
+    | ReturnToTopClicked
     | RevealSettled Int
 
 
@@ -847,7 +851,7 @@ update shared msg model =
         [ hiddenEffect
         , effect
         , revealEffect
-        , holdScrollEffect model newModel
+        , holdScrollEffect msg model newModel
         , setBreadcrumbsRoot shared newModel
         , quoteRequestEffect shared newModel
         , countabilibarEffect shared msg newModel
@@ -862,9 +866,10 @@ by the height of everything added or removed. `Ports.anchorScroll` notes where a
 puts it back there once Elm has re-rendered; the posts that leave or arrive above are outside the viewport,
 so they're swapped without an animation (`syncAnimationsWith`), and all the animating happens below.
 -}
-holdScrollEffect : Model -> Model -> Effect Msg
-holdScrollEffect before after =
-    if before.window.start /= after.window.start then
+holdScrollEffect : Msg -> Model -> Model -> Effect Msg
+holdScrollEffect msg before after =
+    -- Not for "Return to top", which scrolls to the top itself (and animates the posts arriving there).
+    if before.window.start /= after.window.start && msg /= ReturnToTopClicked then
         Ports.anchorScroll postsListId |> Effect.fromCmd
 
     else
@@ -1322,6 +1327,18 @@ updateInner shared msg model =
                             |> Set.fromList
                 in
                 ( syncAnimationsWith arriving { model | window = revealedWindow }, Effect.none )
+
+        ReturnToTopClicked ->
+            let
+                keys : List String
+                keys =
+                    List.map .key (orderedEntries model)
+            in
+            -- The posts brought back enter with the usual animation (the reader is at the top, watching);
+            -- the ones trimmed from the bottom are off screen and leave at once.
+            ( syncAnimations { model | window = Paging.returnToTop keys model.window }
+            , Task.perform (\_ -> SharedMsg Shared.NoOp) (Browser.Dom.setViewport 0 0) |> Effect.fromCmd
+            )
 
         RevealSettled generation ->
             if generation == model.revealGeneration then
@@ -3428,7 +3445,10 @@ postsListView shared model =
         else
             div []
                 [ if model.edges.above then
-                    scrollSentinel (scrollToken model) TopReached
+                    div [ class "posts-return-top" ]
+                        [ scrollSentinel (scrollToken model) TopReached
+                        , button [ class "posts-return-top-button", onClick ReturnToTopClicked ] [ text "↑ Return to top" ]
+                        ]
 
                   else
                     text ""

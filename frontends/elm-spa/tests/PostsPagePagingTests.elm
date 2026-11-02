@@ -198,6 +198,23 @@ windowing =
             \_ ->
                 Paging.revealAbove (keysOf 300) (window (Just "p10") 60)
                     |> Expect.equal (window Nothing 70)
+        , test "returning to the top restores everything dropped and trims the same amount from the bottom" <|
+            \_ ->
+                let
+                    keys : List String
+                    keys =
+                        keysOf 300
+
+                    back : Window
+                    back =
+                        Paging.returnToTop keys (window (Just "p75") 100)
+                in
+                ( back, Paging.visible identity back keys |> List.map (String.dropLeft 1 >> String.toInt >> Maybe.withDefault -1) |> List.maximum )
+                    |> Expect.equal ( window Nothing 100, Just 99 )
+        , test "returning to the top shows what was shown when less than the cap was" <|
+            \_ ->
+                Paging.returnToTop (keysOf 300) (window (Just "p25") 50)
+                    |> Expect.equal (window Nothing 75)
         , test "whether anything is above" <|
             \_ ->
                 ( Paging.hasHiddenAbove (keysOf 100) Paging.initialWindow

@@ -11,6 +11,7 @@ module Components.Pages.PostsPage.Paging exposing
     , maxRendered
     , normalize
     , remainingBelow
+    , returnToTop
     , revealAbove
     , revealBelow
     , revealStep
@@ -244,6 +245,17 @@ revealAbove keys window =
         else
             keys |> List.drop newStart |> List.head
     , shown = min maxRendered (window.shown + (start - newStart))
+    }
+
+
+{-| Brings back every post dropped from the top at once (the "Return to top" button) -- the window starts at the
+first post again and shows as many as it did before, capped at `maxRendered`, so the surplus leaves from the
+bottom.
+-}
+returnToTop : List String -> Window -> Window
+returnToTop keys window =
+    { start = Nothing
+    , shown = min maxRendered (window.shown + startIndex keys window)
     }
 
 
