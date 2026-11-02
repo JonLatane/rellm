@@ -878,7 +878,7 @@ viewerVideoSync req before after =
             case ( viewing before, after.panels.mediaViewerPanel.currentMediaReference ) of
                 ( Just left, Just _ ) ->
                     if after.panels.audioPlayerPanel.playing && Maybe.andThen (\current -> current.video.mediaId) (AudioPlayerPanel.currentVideo after.panels.audioPlayerPanel) == Just left.mediaId then
-                        sharedUpdate req (AudioPlayerPanelMsg AudioPlayerPanel.TogglePlay) after
+                        sharedUpdate req (AudioPlayerPanelMsg AudioPlayerPanel.Pause) after
 
                     else
                         ( after, Cmd.none )
