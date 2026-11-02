@@ -152,6 +152,9 @@ results to posts published (or, absent that, created) before it. `Nothing`
 for the default "Recent Posts" tab, same as every other unset-filter
 convention here.
 
+`page` (0 for the first) is `GetPostsRequest.page`: each page is the next block of the same listing, which
+is how `Components.Pages.PostsPage` keeps loading as the reader scrolls.
+
 -}
 fetchPosts :
     AccountsPanel.Model
@@ -162,8 +165,9 @@ fetchPosts :
     -> PostContext
     -> FeedOrder
     -> Maybe Time.Posix
+    -> Int
     -> Task Grpc.Error ( Maybe AccountsPanel.Msg, GetPostsResponse )
-fetchPosts accountsPanelModel maybeAccountServer authorUserId excludedAuthorUserIds searchText context order publishedOrCreatedBefore =
+fetchPosts accountsPanelModel maybeAccountServer authorUserId excludedAuthorUserIds searchText context order publishedOrCreatedBefore page =
     let
         trimmedSearchText : String
         trimmedSearchText =
@@ -201,6 +205,7 @@ fetchPosts accountsPanelModel maybeAccountServer authorUserId excludedAuthorUser
         request =
             { baseRequest
                 | publishedOrCreatedBefore = Maybe.map posixToTimestamp publishedOrCreatedBefore
+                , page = page
             }
     in
     performWithOptionalAccountServer

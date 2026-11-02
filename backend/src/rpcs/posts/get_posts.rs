@@ -22,6 +22,8 @@ use crate::schema::{follows, group_posts, memberships, posts, users};
 
 use crate::rpcs::validations::PASSING_MODERATIONS;
 
+// The Elm client (`rellmPageSize` in `Components.Pages.PostsPage`) reads a response shorter than this as the
+// last page, so changing it means changing that too.
 pub const PAGE_SIZE: i64 = 200;
 
 // The most search matches `get_search_posts` ranks per request (and so the deepest `page` a search can

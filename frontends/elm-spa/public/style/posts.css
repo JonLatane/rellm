@@ -229,6 +229,32 @@
   color: var(--muted);
 }
 
+/* The end of an infinitely scrolling posts list (`PostsPage.postsListFooter`): "Loading more posts…"
+   while a page is on its way, "No more posts." once every source has run out. */
+.posts-loading-more,
+.posts-end {
+  margin: 1rem 0;
+  text-align: center;
+  color: var(--muted);
+}
+
+.posts-end {
+  animation: posts-end-in 0.4s ease;
+}
+
+@keyframes posts-end-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .posts-end {
+    animation: none;
+  }
+}
+
 .post-card {
   position: relative;
   display: block;

@@ -15,7 +15,28 @@ import Test exposing (Test, describe, test)
 suite : Test
 suite =
     describe "Shared.Federation.Bluesky"
-        [ describe "decoder"
+        [ describe "paging"
+            [ test "a feed response's cursor comes back with its posts" <|
+                \_ ->
+                    """{"feed":[1,2,3],"cursor":"abc123"}"""
+                        |> Decode.decodeString (Bluesky.feedPageDecoder Decode.int)
+                        |> Expect.equal (Ok ( [ 1, 2, 3 ], Just "abc123" ))
+            , test "a response without a cursor is the last page" <|
+                \_ ->
+                    """{"feed":[1]}"""
+                        |> Decode.decodeString (Bluesky.feedPageDecoder Decode.int)
+                        |> Expect.equal (Ok ( [ 1 ], Nothing ))
+            , test "an empty cursor is no cursor" <|
+                \_ ->
+                    """{"feed":[1],"cursor":""}"""
+                        |> Decode.decodeString (Bluesky.feedPageDecoder Decode.int)
+                        |> Expect.equal (Ok ( [ 1 ], Nothing ))
+            , test "a cursor is passed on percent-encoded, none adds nothing" <|
+                \_ ->
+                    ( Bluesky.cursorParam (Just "2024-01-01T00:00:00.000Z::abc/def"), Bluesky.cursorParam Nothing )
+                        |> Expect.equal ( "&cursor=2024-01-01T00%3A00%3A00.000Z%3A%3Aabc%2Fdef", "" )
+            ]
+        , describe "decoder"
             [ test "turns link and tag facets into Markdown links, counting UTF-8 bytes (not characters)" <|
                 \_ ->
                     let

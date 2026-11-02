@@ -27,12 +27,18 @@ posts and adding this module's own "Posts | <name>" heading, via
 `Components.Pages.UserProfilePage.nameHeader`), mirroring how
 `Components.Pages.UserProfilePage` is reused by `Pages.UsernameOrCustomTab_` and
 `Pages.User.UserId_` themselves.
+
+The feed pages as the reader scrolls: each source keeps the cursor for its next page
+(`ServerFeed.next`), `Components.Pages.PostsPage.Paging` picks which loaded posts are fit to show and which
+window of them is rendered, and the `<scroll-sentinel>` after (and, once posts were dropped, before) the
+list asks for more -- see `postsListView`, `BottomReached`/`TopReached` and `syncAnimationsWith`.
 -}
 
 import Animation
 import Browser.Navigation
 import Components.FederatedAuthors as FederatedAuthors exposing (FederatedAuthor)
 import Components.MediaRenderer as MediaRenderer
+import Components.Pages.PostsPage.Paging as Paging
 import Components.Posts as Posts
 import Components.QuotedLink as QuotedLink
 import Components.Users exposing (usernameHref)
@@ -41,8 +47,8 @@ import Dict exposing (Dict)
 import Effect exposing (Effect)
 import Grpc
 import Html exposing (Html, a, button, div, h2, h3, input, option, p, select, span, text)
-import Html.Attributes exposing (class, href, placeholder, selected, style, target, title, type_, value)
-import Html.Events exposing (onClick, onInput, preventDefaultOn)
+import Html.Attributes exposing (attribute, class, href, id, placeholder, selected, style, target, title, type_, value)
+import Html.Events exposing (on, onClick, onInput, preventDefaultOn)
 import Html.Keyed
 import Http
 import Json.Decode as Decode
@@ -204,6 +210,35 @@ type alias Model =
     -- same debounce convention exactly -- see its own doc.
     , copyLinkCopied : Maybe ExportFeedKind
     , copyLinkGeneration : Int
+
+    -- Which slice of the loaded posts is rendered -- see `Paging.Window`. Grows as the reader reaches
+    -- the bottom (`BottomReached`), drops posts from the top once there are `Paging.maxRendered` and
+    -- brings them back when the reader reaches the top again (`TopReached`). Reset to the first
+    -- `Paging.revealStep` whenever the feed is replaced by a different one (`resetWindow`).
+    , window : Paging.Window
+
+    -- `True` from the moment posts are added until their enter animation has had time to finish
+    -- (`RevealSettled`): the end-of-list sentinels ignore the reader still "being at the bottom" meanwhile,
+    -- since the entering posts start collapsed and would otherwise read as an almost empty list that
+    -- needs yet more posts. `revealGeneration` is `copyLinkGeneration`'s stale-timer guard, again.
+    , revealing : Bool
+    , revealGeneration : Int
+
+    -- What `syncAnimations` last found at either end of the rendered posts, for `postsListView` (which
+    -- shouldn't re-derive the whole ordered list on every animation frame) -- see `Edges`.
+    , edges : Edges
+    }
+
+
+{-| Whether there is more of the feed beyond the rendered posts -- `above`: posts dropped from the top that
+scrolling up brings back; `below`: loaded posts not yet rendered, or a source with pages (or a first
+response) still to come. `total` is how many posts are loaded and fit to show -- along with the other two,
+what `scrollTokens` changes with.
+-}
+type alias Edges =
+    { above : Bool
+    , below : Bool
+    , total : Int
     }
 
 
@@ -282,6 +317,13 @@ type Msg
       -- carrying which of the two links (`ExportFeedKind`) was copied.
     | CopyLinkClicked ExportFeedKind
     | CopyLinkCopyTimeoutElapsed Int
+      -- The sentinel after the last rendered post scrolled into (or near) view -- show more, loading
+      -- the next page of whichever sources have run dry. See `postsListView`.
+    | BottomReached
+      -- The sentinel before the first rendered post did, while posts above it were dropped -- bring
+      -- them back.
+    | TopReached
+    | RevealSettled Int
 
 
 type ServerPosts
@@ -317,6 +359,20 @@ type alias ServerFeed =
     -- stays as it was meanwhile (see `refetchFeeds`). `Countabilibar` counts leave such a feed's host
     -- alone until it settles -- see `pendingHosts`.
     , refreshing : Bool
+
+    -- The cursor that asks this source for the page after the posts in `status`: a Rellm server's
+    -- next `page` number, a Mastodon `max_id`/`offset`, a Bluesky `cursor` -- each one's own business,
+    -- see `fetchFeedSource`. `Nothing` once the source has nothing left (or while it has not answered).
+    , next : Maybe String
+
+    -- Whether the fetch in flight (`requestId`) is a later page to append to `status`'s posts
+    -- (`loadMoreFeeds`) rather than a first page to replace them with (`refetchFeeds`).
+    , loadingMore : Bool
+
+    -- How many posts the source's first page held in this `context` -- what `PostAnimation.rank` is a
+    -- fraction of. Fixed when the first page arrives, so ranks of posts already on screen don't shift
+    -- when later pages are appended.
+    , rankBase : Int
     }
 
 
@@ -418,25 +474,43 @@ type's actual content is used anywhere once a fetch fails (see `GotFeedPosts`'s 
 branch), so there's nothing lost by discarding the distinction.
 -}
 type FeedResult
-    = FeedLoaded (List Post) (Maybe AccountsPanel.Msg)
+    = FeedLoaded (List Post) (Maybe String) (Maybe AccountsPanel.Msg)
     | FeedFailed (Maybe AccountsPanel.Msg)
 
 
-fromServerResult : Result Grpc.Error ( Maybe AccountsPanel.Msg, Proto.Rellm.GetPostsResponse ) -> FeedResult
-fromServerResult result =
+{-| How many posts a real server answers one `GetPosts` page with (`PAGE_SIZE` in
+`backend/src/rpcs/posts/get_posts.rs`): a shorter page is the last one.
+-}
+rellmPageSize : Int
+rellmPageSize =
+    200
+
+
+{-| `page` is the page this response answers (see `Posts.fetchPosts`); the cursor for the next one is the
+following page number, unless this page came back short (the end).
+-}
+fromServerResult : Int -> Result Grpc.Error ( Maybe AccountsPanel.Msg, Proto.Rellm.GetPostsResponse ) -> FeedResult
+fromServerResult page result =
     case result of
         Ok ( maybeAccountsPanelMsg, response ) ->
-            FeedLoaded response.posts maybeAccountsPanelMsg
+            FeedLoaded response.posts
+                (if List.length response.posts >= rellmPageSize then
+                    Just (String.fromInt (page + 1))
+
+                 else
+                    Nothing
+                )
+                maybeAccountsPanelMsg
 
         Err _ ->
             FeedFailed Nothing
 
 
-fromFederatedResult : Result Http.Error (List Post) -> FeedResult
+fromFederatedResult : Result Http.Error ( List Post, Maybe String ) -> FeedResult
 fromFederatedResult result =
     case result of
-        Ok posts ->
-            FeedLoaded posts Nothing
+        Ok ( posts, next ) ->
+            FeedLoaded posts next Nothing
 
         Err _ ->
             FeedFailed Nothing
@@ -451,11 +525,12 @@ failure, see `BlueskyAccounts.isReauthError`) -- either way something needs to r
 to. Piggybacks on the same `Maybe AccountsPanel.Msg` channel `fromServerResult` already uses for a
 Rellm server's own token refresh, so `GotFeedPosts`'s handling doesn't need a federated-specific case.
 -}
-fromBlueskyResult : BlueskyAccount -> Result Http.Error ( BlueskyAccount, List Post ) -> FeedResult
+fromBlueskyResult : BlueskyAccount -> Result Http.Error ( BlueskyAccount, ( List Post, Maybe String ) ) -> FeedResult
 fromBlueskyResult account result =
     case result of
-        Ok ( refreshedAccount, posts ) ->
+        Ok ( refreshedAccount, ( posts, next ) ) ->
             FeedLoaded posts
+                next
                 (if refreshedAccount.accessToken == account.accessToken then
                     Nothing
 
@@ -477,11 +552,12 @@ fromBlueskyResult account result =
 (`MastodonAccountRefreshed`) or an exhausted refresh (`MarkMastodonAccountNeedsReauth`) to
 `Shared.AccountsPanel`, which owns the persisted accounts.
 -}
-fromMastodonResult : MastodonAccount -> Result Http.Error ( MastodonAccount, List Post ) -> FeedResult
+fromMastodonResult : MastodonAccount -> Result Http.Error ( MastodonAccount, ( List Post, Maybe String ) ) -> FeedResult
 fromMastodonResult account result =
     case result of
-        Ok ( refreshedAccount, posts ) ->
+        Ok ( refreshedAccount, ( posts, next ) ) ->
             FeedLoaded posts
+                next
                 (if refreshedAccount.accessToken == account.accessToken then
                     Nothing
 
@@ -663,6 +739,10 @@ init shared author navKey path query embeddedPage availableSyncDestinations prof
                         Countabilibar.hidden shared.countabilibar
                 , copyLinkCopied = Nothing
                 , copyLinkGeneration = 0
+                , window = Paging.initialWindow
+                , revealing = False
+                , revealGeneration = 0
+                , edges = { above = False, below = False, total = 0 }
                 }
     in
     -- Closes any open panel (Accounts, Starred, etc.) unconditionally on
@@ -756,18 +836,83 @@ update shared msg model =
         ( hiddenModel, hiddenEffect ) =
             applyHidden shared model
 
-        ( newModel, effect ) =
+        ( innerModel, effect ) =
             updateInner shared msg hiddenModel
+
+        ( newModel, revealEffect ) =
+            trackReveal msg innerModel
     in
     ( newModel
     , Effect.batch
         [ hiddenEffect
         , effect
+        , revealEffect
+        , holdScrollEffect model newModel
         , setBreadcrumbsRoot shared newModel
         , quoteRequestEffect shared newModel
         , countabilibarEffect shared msg newModel
         ]
     )
+
+
+{-| Keeps what the reader is looking at where it is when the rendered posts change _above_ it: dropping the
+oldest ones from the top (reaching the bottom of a long feed) or bringing them back (reaching the top). The
+browser doesn't compensate -- `main.css` turns its scroll anchoring off on purpose -- so the page would jump
+by the height of everything added or removed. `Ports.anchorScroll` notes where a post on screen is now and
+puts it back there once Elm has re-rendered; the posts that leave or arrive above are outside the viewport,
+so they're swapped without an animation (`syncAnimationsWith`), and all the animating happens below.
+-}
+holdScrollEffect : Model -> Model -> Effect Msg
+holdScrollEffect before after =
+    if before.window.start /= after.window.start then
+        Ports.anchorScroll postsListId |> Effect.fromCmd
+
+    else
+        Effect.none
+
+
+{-| The DOM id of the posts list -- what `Ports.anchorScroll` looks up.
+-}
+postsListId : String
+postsListId =
+    "posts-list"
+
+
+{-| Starts (or restarts) the `revealing` timer whenever posts have just been added to the page, i.e. some
+are about to animate in -- see `Model.revealing`. Not on `Animate` ticks (where nothing new arrives, but the
+`entering` flag it just cleared is the very thing being looked for) or the timer itself.
+-}
+trackReveal : Msg -> Model -> ( Model, Effect Msg )
+trackReveal msg model =
+    case msg of
+        Animate _ ->
+            ( model, Effect.none )
+
+        RevealSettled _ ->
+            ( model, Effect.none )
+
+        _ ->
+            if model.postAnimations |> Dict.values |> List.any (\anim -> anim.flip.entering) then
+                let
+                    generation : Int
+                    generation =
+                        model.revealGeneration + 1
+                in
+                ( { model | revealing = True, revealGeneration = generation }
+                , Process.sleep revealSettleMs
+                    |> Task.perform (\_ -> RevealSettled generation)
+                    |> Effect.fromCmd
+                )
+
+            else
+                ( model, Effect.none )
+
+
+{-| How long a post takes to animate in (`UI.Flip.flipDurationMs`), plus a margin -- when `revealing` ends.
+-}
+revealSettleMs : Float
+revealSettleMs =
+    UI.Flip.flipDurationMs + 100
 
 
 {-| Whether this feed is of one particular profile (`UserProfilePage`'s embedded copy and its
@@ -963,53 +1108,131 @@ ifCurrent requestId f feed =
 updateInner : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
 updateInner shared msg model =
     case msg of
-        GotFeedPosts host requestId (FeedLoaded rawPosts maybeAccountsPanelMsg) ->
+        GotFeedPosts host requestId (FeedLoaded rawPosts next maybeAccountsPanelMsg) ->
             let
                 accountEffect : Effect Msg
                 accountEffect =
                     maybeAccountsPanelMsg
                         |> Maybe.map (Shared.AccountsPanelMsg >> Effect.fromShared)
                         |> Maybe.withDefault Effect.none
-
-                -- Posts already featured via a server's own custom nav tab (see
-                -- `customNavPostIds`) are dropped from that server's generic feed -- they've
-                -- already got their own dedicated tab/url (`UI.CustomNav`/
-                -- `Pages.UsernameOrCustomTab_`), so showing them here too would just be clutter.
-                -- `customNavPostIds host` only ever looks at `host`'s own `customTabs` -- a
-                -- `CustomNavigationTab.post_id` is always assumed to name a Post on that server (see
-                -- `UI.CustomNav.CustomTabTarget`'s own doc), so it'd be a coincidence, not a real
-                -- match, for some other federated server's (or Mastodon/Bluesky's) own post to share
-                -- that id; a synthetic Mastodon/Bluesky `host` simply has no `customTabs` at all, so
-                -- this is naturally a no-op filter for those. Skipped entirely when
-                -- `Shared.debugShowCustomNavPosts` is set, so DebugTab's "Show Posts linked to
-                -- Custom Tabs" toggle can surface them for inspection.
-                --
-                -- Likewise, unless DebugTab's "Show Mastodon/Bluesky posts with sensitive media" is
-                -- on, a federated post whose media `Shared.Federation.Mastodon.toPost`/
-                -- `Bluesky.toPost` stripped as sensitive (see `Posts.hasHiddenSensitiveMedia`) is
-                -- dropped here too -- shown, it carries its click-through content notice.
-                posts : List Post
-                posts =
-                    filterFeedPosts
-                        { hiddenPostIds =
-                            if shared.accounts.debugTab.showCustomNavPosts then
-                                Set.empty
-
-                            else
-                                customNavPostIds shared (feedHost model host)
-                        , hideSensitiveMedia = not shared.accounts.debugTab.showSensitiveMediaPosts
-                        }
-                        rawPosts
             in
-            ( { model
-                | postsByServer =
-                    Dict.update host
-                        (Maybe.map (ifCurrent requestId (\feed -> { feed | status = Loaded posts, refreshing = False })))
-                        model.postsByServer
-              }
-                |> syncAnimations
-            , accountEffect
-            )
+            case Dict.get host model.postsByServer of
+                Just feed ->
+                    if feed.requestId /= requestId then
+                        -- A response from a superseded fetch changes nothing (but a rotated token is
+                        -- still worth keeping).
+                        ( model, accountEffect )
+
+                    else
+                        let
+                            -- A later page is appended to the posts already loaded (minus any it repeats --
+                            -- the listing can shift between pages); a first page replaces them.
+                            appending : Bool
+                            appending =
+                                feed.loadingMore
+
+                            existing : List Post
+                            existing =
+                                case feed.status of
+                                    Loaded loaded ->
+                                        loaded
+
+                                    _ ->
+                                        []
+
+                            knownIds : Set String
+                            knownIds =
+                                if appending then
+                                    Set.fromList (List.map .id existing)
+
+                                else
+                                    Set.empty
+
+                            newRawPosts : List Post
+                            newRawPosts =
+                                List.filter (\post -> not (Set.member post.id knownIds)) rawPosts
+
+                            -- Posts already featured via a server's own custom nav tab (see
+                            -- `customNavPostIds`) are dropped from that server's generic feed -- they've
+                            -- already got their own dedicated tab/url (`UI.CustomNav`/
+                            -- `Pages.UsernameOrCustomTab_`), so showing them here too would just be clutter.
+                            -- `customNavPostIds host` only ever looks at `host`'s own `customTabs` -- a
+                            -- `CustomNavigationTab.post_id` is always assumed to name a Post on that server (see
+                            -- `UI.CustomNav.CustomTabTarget`'s own doc), so it'd be a coincidence, not a real
+                            -- match, for some other federated server's (or Mastodon/Bluesky's) own post to share
+                            -- that id; a synthetic Mastodon/Bluesky `host` simply has no `customTabs` at all, so
+                            -- this is naturally a no-op filter for those. Skipped entirely when
+                            -- `Shared.debugShowCustomNavPosts` is set, so DebugTab's "Show Posts linked to
+                            -- Custom Tabs" toggle can surface them for inspection.
+                            --
+                            -- Likewise, unless DebugTab's "Show Mastodon/Bluesky posts with sensitive media" is
+                            -- on, a federated post whose media `Shared.Federation.Mastodon.toPost`/
+                            -- `Bluesky.toPost` stripped as sensitive (see `Posts.hasHiddenSensitiveMedia`) is
+                            -- dropped here too -- shown, it carries its click-through content notice.
+                            posts : List Post
+                            posts =
+                                filterFeedPosts
+                                    { hiddenPostIds =
+                                        if shared.accounts.debugTab.showCustomNavPosts then
+                                            Set.empty
+
+                                        else
+                                            customNavPostIds shared (feedHost model host)
+                                    , hideSensitiveMedia = not shared.accounts.debugTab.showSensitiveMediaPosts
+                                    }
+                                    newRawPosts
+
+                            -- A page that held nothing new is the end of the source, however its cursor reads:
+                            -- that is how a server that predates paging (it answers every page with the
+                            -- first) stops being asked.
+                            nextCursor : Maybe String
+                            nextCursor =
+                                if List.isEmpty newRawPosts then
+                                    Nothing
+
+                                else
+                                    next
+
+                            updatedFeed : ServerFeed
+                            updatedFeed =
+                                { feed
+                                    | status =
+                                        Loaded
+                                            (if appending then
+                                                existing ++ posts
+
+                                             else
+                                                posts
+                                            )
+                                    , refreshing = False
+                                    , loadingMore = False
+                                    , next = nextCursor
+                                    , rankBase =
+                                        if appending then
+                                            feed.rankBase
+
+                                        else
+                                            max 1 (List.length (List.filter (\post -> post.context == model.context) posts))
+                                }
+
+                            landedModel : Model
+                            landedModel =
+                                { model | postsByServer = Dict.insert host updatedFeed model.postsByServer }
+                                    |> syncAnimations
+
+                            -- Everything the page held was filtered out: nothing new on screen will make the
+                            -- reader ask for the next one, so ask for it now.
+                            ( finalModel, moreEffect ) =
+                                if List.isEmpty posts && nextCursor /= Nothing then
+                                    loadMoreFeeds shared landedModel [ host ]
+
+                                else
+                                    ( landedModel, Effect.none )
+                        in
+                        ( finalModel, Effect.batch [ accountEffect, moreEffect ] )
+
+                Nothing ->
+                    ( model, accountEffect )
 
         GotFeedPosts host requestId (FeedFailed maybeAccountsPanelMsg) ->
             let
@@ -1021,11 +1244,91 @@ updateInner shared msg model =
             in
             ( { model
                 | postsByServer =
-                    Dict.update host (Maybe.map (ifCurrent requestId (\feed -> { feed | status = Failed, refreshing = False }))) model.postsByServer
+                    Dict.update host
+                        (Maybe.map
+                            (ifCurrent requestId
+                                (\feed ->
+                                    if feed.loadingMore then
+                                        -- A later page failing leaves what's loaded alone and stops asking
+                                        -- this source for more (rather than asking again each time the
+                                        -- reader is at the bottom).
+                                        { feed | refreshing = False, loadingMore = False, next = Nothing }
+
+                                    else
+                                        { feed | status = Failed, refreshing = False }
+                                )
+                            )
+                        )
+                        model.postsByServer
               }
                 |> syncAnimations
             , accountEffect
             )
+
+        BottomReached ->
+            if isBusy model then
+                ( model, Effect.none )
+
+            else
+                let
+                    remaining : Int
+                    remaining =
+                        Paging.remainingBelow (List.map .key (orderedEntries model)) model.window
+
+                    -- Sources that are the reason the safe list ends where it does are asked for their
+                    -- next page ahead of time, once fewer than a step's worth of posts will be left to show.
+                    ( loadedModel, loadEffect ) =
+                        if remaining - Paging.revealStep < Paging.revealStep then
+                            loadMoreFeeds shared model (bindingFeedKeys model)
+
+                        else
+                            ( model, Effect.none )
+                in
+                -- Showing more is only worth it if there is more to show, or a page that will have some is on
+                -- its way (`shown` then runs ahead of what's loaded until it lands). Otherwise (everything
+                -- is shown and the sources are all busy or done) the next change -- a page landing -- moves the
+                -- sentinels' token and asks again; growing `shown` now would just pile up unused wishes.
+                if remaining > 0 || anyLoadingMore loadedModel then
+                    ( syncAnimations { loadedModel | window = Paging.revealBelow loadedModel.window }, loadEffect )
+
+                else
+                    ( model, Effect.none )
+
+        TopReached ->
+            let
+                keys : List String
+                keys =
+                    List.map .key (orderedEntries model)
+            in
+            if isBusy model || not (Paging.hasHiddenAbove keys model.window) then
+                ( model, Effect.none )
+
+            else
+                let
+                    revealedWindow : Paging.Window
+                    revealedWindow =
+                        Paging.revealAbove keys model.window
+
+                    shownBefore : Set String
+                    shownBefore =
+                        Paging.visible identity model.window keys |> Set.fromList
+
+                    -- The posts brought back above are off screen: they arrive in place, no animation, so
+                    -- the page doesn't shift while they grow (see `holdScrollEffect`).
+                    arriving : Set String
+                    arriving =
+                        Paging.visible identity revealedWindow keys
+                            |> List.filter (\key -> not (Set.member key shownBefore))
+                            |> Set.fromList
+                in
+                ( syncAnimationsWith arriving { model | window = revealedWindow }, Effect.none )
+
+        RevealSettled generation ->
+            if generation == model.revealGeneration then
+                ( { model | revealing = False }, Effect.none )
+
+            else
+                ( model, Effect.none )
 
         Poll ->
             fetchNewFeeds shared model
@@ -1144,7 +1447,7 @@ updateInner shared msg model =
             else
                 let
                     ( refetchedModel, refetchEffect ) =
-                        refetchFeeds shared { model | tab = RecentPosts } (tabSensitiveSources shared { model | tab = RecentPosts })
+                        refetchFeeds shared (resetWindow { model | tab = RecentPosts }) (tabSensitiveSources shared { model | tab = RecentPosts })
                 in
                 ( refetchedModel, Effect.batch [ refetchEffect, pushUrl refetchedModel ] )
 
@@ -1158,7 +1461,7 @@ updateInner shared msg model =
                 let
                     newModel : Model
                     newModel =
-                        { model | sort = sort, sortChosen = True, tab = RecentPosts }
+                        resetWindow { model | sort = sort, sortChosen = True, tab = RecentPosts }
 
                     ( refetchedModel, refetchEffect ) =
                         refetchFeeds shared newModel (relevantFeedSources shared newModel)
@@ -1174,7 +1477,7 @@ updateInner shared msg model =
                     Just _ ->
                         let
                             ( refetchedModel, refetchEffect ) =
-                                refetchFeeds shared { model | tab = PostsBeforeDate } (tabSensitiveSources shared { model | tab = PostsBeforeDate })
+                                refetchFeeds shared (resetWindow { model | tab = PostsBeforeDate }) (tabSensitiveSources shared { model | tab = PostsBeforeDate })
                         in
                         ( refetchedModel, Effect.batch [ refetchEffect, pushUrl refetchedModel ] )
 
@@ -1197,7 +1500,7 @@ updateInner shared msg model =
                     if newModel.tab == PostsBeforeDate then
                         let
                             ( refetchedModel, refetchEffect ) =
-                                refetchFeeds shared newModel (tabSensitiveSources shared newModel)
+                                refetchFeeds shared (resetWindow newModel) (tabSensitiveSources shared newModel)
                         in
                         ( refetchedModel, Effect.batch [ refetchEffect, pushUrl refetchedModel ] )
 
@@ -1229,7 +1532,7 @@ updateInner shared msg model =
             if generation == model.publishedBeforeInputGeneration then
                 let
                     ( refetchedModel, refetchEffect ) =
-                        refetchFeeds shared model (tabSensitiveSources shared model)
+                        refetchFeeds shared (resetWindow model) (tabSensitiveSources shared model)
                 in
                 ( refetchedModel
                 , Effect.batch
@@ -1597,13 +1900,17 @@ feedSourceExcludedAuthorIds model source =
             []
 
 
-{-| One real `GetPosts` fetch of `server`, scoped to `authorId` (the page's own `author`, or one `RellmFederatedAuthor`'s profile) and settling as `source`'s own `GotFeedPosts`. -}
-fetchRellmPosts : Shared.Model -> Model -> Int -> FeedSource -> RellmServer -> Maybe String -> Effect Msg
-fetchRellmPosts shared model requestId source server authorId =
+{-| One real `GetPosts` fetch of `server`, scoped to `authorId` (the page's own `author`, or one `RellmFederatedAuthor`'s profile) and settling as `source`'s own `GotFeedPosts`. `cursor` is the page number to ask for (`fromServerResult` hands out the next one), `Nothing` for the first. -}
+fetchRellmPosts : Shared.Model -> Model -> Int -> Maybe String -> FeedSource -> RellmServer -> Maybe String -> Effect Msg
+fetchRellmPosts shared model requestId cursor source server authorId =
     let
         cutoff : Maybe Time.Posix
         cutoff =
             beforeCutoff model
+
+        page : Int
+        page =
+            cursor |> Maybe.andThen String.toInt |> Maybe.withDefault 0
     in
     Posts.fetchPosts
         shared.accounts
@@ -1616,7 +1923,8 @@ fetchRellmPosts shared model requestId source server authorId =
         model.context
         (feedOrder shared model)
         cutoff
-        |> Task.attempt (fromServerResult >> GotFeedPosts (feedSourceKey source) requestId)
+        page
+        |> Task.attempt (fromServerResult page >> GotFeedPosts (feedSourceKey source) requestId)
         |> Effect.fromCmd
 
 
@@ -1629,15 +1937,19 @@ one partial exception: a non-blank `model.searchText` switches it to `Bluesky.se
 real `GetPosts` request's own `TEXTSEARCH` mode. `MastodonInstance` has no search equivalent wired up
 at all, so its fetch ignores `model.searchText` entirely. Every case funnels its result through the
 same `GotFeedPosts` `Msg` regardless -- see `fromServerResult`/`fromFederatedResult`.
+
+`cursor` is `Nothing` for a source's first page, or what the previous page's `FeedLoaded` handed out
+(`ServerFeed.next`) for a later one -- what each source's cursor means is its own: see `fromServerResult`,
+`Mastodon.fetchPosts` and `Bluesky.feedPageDecoder`.
 -}
-fetchFeedSource : Shared.Model -> Model -> Int -> FeedSource -> Effect Msg
-fetchFeedSource shared model requestId source =
+fetchFeedSource : Shared.Model -> Model -> Int -> Maybe String -> FeedSource -> Effect Msg
+fetchFeedSource shared model requestId cursor source =
     case source of
         RellmServer server ->
-            fetchRellmPosts shared model requestId source server (model.author |> Maybe.map (Tuple.second >> .id))
+            fetchRellmPosts shared model requestId cursor source server (model.author |> Maybe.map (Tuple.second >> .id))
 
         RellmFederatedAuthor server userId ->
-            fetchRellmPosts shared model requestId source server (Just userId)
+            fetchRellmPosts shared model requestId cursor source server (Just userId)
 
         MastodonInstance host ->
             case ( isFollowingListing shared model, mastodonAccountForHost shared host ) of
@@ -1645,16 +1957,16 @@ fetchFeedSource shared model requestId source =
                     -- Through `performWithMastodonAccount` so a revoked/expired token is refreshed (or the
                     -- account flagged for reconnect) rather than failing the feed until a reload.
                     MastodonAccounts.performWithMastodonAccount account
-                        (\token -> Mastodon.fetchHomeTimeline host token (beforeCutoff model))
+                        (\token -> Mastodon.fetchHomeTimeline host token (beforeCutoff model) cursor)
                         |> Task.attempt (fromMastodonResult account >> GotFeedPosts (feedSourceKey source) requestId)
                         |> Effect.fromCmd
 
                 _ ->
                     (if isPopularListing model then
-                        Mastodon.fetchTrendingPosts host
+                        Mastodon.fetchTrendingPosts host cursor
 
                      else
-                        Mastodon.fetchPosts host (beforeCutoff model)
+                        Mastodon.fetchPosts host (beforeCutoff model) cursor
                     )
                         |> Task.attempt (fromFederatedResult >> GotFeedPosts (feedSourceKey source) requestId)
                         |> Effect.fromCmd
@@ -1665,21 +1977,21 @@ fetchFeedSource shared model requestId source =
                 trimmedSearch =
                     String.trim model.searchText
 
-                request : BlueskyAuth -> Task.Task Http.Error (List Post)
+                request : BlueskyAuth -> Task.Task Http.Error ( List Post, Maybe String )
                 request auth =
                     if not (String.isEmpty trimmedSearch) then
-                        Bluesky.searchPosts Bluesky.SearchTop (beforeCutoff model) auth trimmedSearch
+                        Bluesky.searchPosts Bluesky.SearchTop (beforeCutoff model) auth trimmedSearch cursor
 
                     else if isPopularListing model then
-                        Bluesky.fetchWhatsHot auth
+                        Bluesky.fetchWhatsHot auth cursor
 
                     else if isFollowingListing shared model then
-                        Bluesky.fetchPosts (beforeCutoff model) auth
+                        Bluesky.fetchPosts (beforeCutoff model) auth cursor
 
                     else
                         -- Like a real server's `ALL_ACCESSIBLE_POSTS`: everyone's newest posts, not just
                         -- the account's follows (that's "Following", above).
-                        Bluesky.fetchLatestPosts (beforeCutoff model) auth
+                        Bluesky.fetchLatestPosts (beforeCutoff model) auth cursor
             in
             BlueskyAccounts.performWithBlueskyAccount account request
                 |> Task.attempt (fromBlueskyResult account >> GotFeedPosts (feedSourceKey source) requestId)
@@ -1691,26 +2003,26 @@ fetchFeedSource shared model requestId source =
             -- otherwise it's a network-wide post search. Either way it's `searchPosts`, which the
             -- public AppView only answers on its `api.bsky.app` front door (see `anonymousSearchHost`).
             (if not (String.isEmpty (String.trim model.searchText)) then
-                Bluesky.searchPosts Bluesky.SearchTop (beforeCutoff model) (blueskyAuthFor (anonymousSearchHost host)) (String.trim model.searchText)
+                Bluesky.searchPosts Bluesky.SearchTop (beforeCutoff model) (blueskyAuthFor (anonymousSearchHost host)) (String.trim model.searchText) cursor
 
              else if isPopularListing model then
-                Bluesky.fetchWhatsHot (blueskyAuthFor host)
+                Bluesky.fetchWhatsHot (blueskyAuthFor host) cursor
 
              else
-                Bluesky.fetchLatestPosts (beforeCutoff model) (blueskyAuthFor (anonymousSearchHost host))
+                Bluesky.fetchLatestPosts (beforeCutoff model) (blueskyAuthFor (anonymousSearchHost host)) cursor
             )
                 |> Task.attempt (fromFederatedResult >> GotFeedPosts (feedSourceKey source) requestId)
                 |> Effect.fromCmd
 
         MastodonAccountFeed ref ->
-            Mastodon.fetchAccountStatuses ref.instanceHost ref.accountId
+            Mastodon.fetchAccountStatuses ref.instanceHost ref.accountId cursor
                 |> Task.attempt (fromFederatedResult >> GotFeedPosts (feedSourceKey source) requestId)
                 |> Effect.fromCmd
 
         BlueskyAuthorFeed ref ->
             case AccountsPanel.activeBlueskyAccount shared.accounts of
                 Just viewerAccount ->
-                    BlueskyAccounts.performWithBlueskyAccount viewerAccount (\accessToken -> Bluesky.fetchAuthorFeed accessToken ref.handle)
+                    BlueskyAccounts.performWithBlueskyAccount viewerAccount (\accessToken -> Bluesky.fetchAuthorFeed accessToken ref.handle cursor)
                         |> Task.attempt (fromBlueskyResult viewerAccount >> GotFeedPosts (feedSourceKey source) requestId)
                         |> Effect.fromCmd
 
@@ -1718,7 +2030,7 @@ fetchFeedSource shared model requestId source =
                     -- No connected Bluesky account: an author's public posts read fine anonymously
                     -- (from whichever AppView is browsed, else Bluesky's public one) -- nothing to
                     -- refresh/persist.
-                    Bluesky.fetchAuthorFeed (AccountsPanel.browsedBlueskyAuth shared.accounts) ref.handle
+                    Bluesky.fetchAuthorFeed (AccountsPanel.browsedBlueskyAuth shared.accounts) ref.handle cursor
                         |> Task.attempt (fromFederatedResult >> GotFeedPosts (feedSourceKey source) requestId)
                         |> Effect.fromCmd
 
@@ -1781,13 +2093,13 @@ refetchFeeds shared model sourcesToFetch =
                     accountId =
                         feedSourceAccountId shared source
 
-                    statusIfSameAccount : Maybe ServerPosts
-                    statusIfSameAccount =
+                    feedIfSameAccount : Maybe ServerFeed
+                    feedIfSameAccount =
                         Dict.get key dict
                             |> Maybe.andThen
                                 (\feed ->
                                     if feed.accountId == accountId then
-                                        Just feed.status
+                                        Just feed
 
                                     else
                                         Nothing
@@ -1797,13 +2109,18 @@ refetchFeeds shared model sourcesToFetch =
                     requestId =
                         model.nextRequestId + List.length started
                 in
+                -- A kept feed keeps its cursor too (it only matters once the refetch's own first page has
+                -- replaced the posts, which sets it afresh), and the new fetch is always a first page.
                 ( Dict.insert key
-                    { status = Maybe.withDefault Loading statusIfSameAccount
+                    { status = feedIfSameAccount |> Maybe.map .status |> Maybe.withDefault Loading
                     , accountId = accountId
                     , host = feedSourceHost source
                     , requestId = requestId
                     , excludedAuthorIds = feedSourceExcludedAuthorIds model source
                     , refreshing = True
+                    , next = feedIfSameAccount |> Maybe.andThen .next
+                    , loadingMore = False
+                    , rankBase = feedIfSameAccount |> Maybe.map .rankBase |> Maybe.withDefault 1
                     }
                     dict
                 , started ++ [ ( requestId, source ) ]
@@ -1816,9 +2133,58 @@ refetchFeeds shared model sourcesToFetch =
             | postsByServer = markedPostsByServer
             , nextRequestId = model.nextRequestId + List.length startedFetches
           }
-        , Effect.batch (List.map (\( requestId, source ) -> fetchFeedSource shared model requestId source) startedFetches)
+        , Effect.batch (List.map (\( requestId, source ) -> fetchFeedSource shared model requestId Nothing source) startedFetches)
         )
             |> Tuple.mapFirst syncAnimations
+
+
+{-| Asks the sources named by `keys` (`postsByServer` keys) for the page after what they have loaded, to be
+appended to it when it lands (`GotFeedPosts`). A source that is out of pages, or already has a fetch in
+flight, is skipped.
+-}
+loadMoreFeeds : Shared.Model -> Model -> List String -> ( Model, Effect Msg )
+loadMoreFeeds shared model keys =
+    let
+        sources : List FeedSource
+        sources =
+            relevantFeedSources shared model
+                |> List.filter (\source -> List.member (feedSourceKey source) keys)
+
+        start : FeedSource -> ( Model, List (Effect Msg) ) -> ( Model, List (Effect Msg) )
+        start source ( current, effects ) =
+            case Dict.get (feedSourceKey source) current.postsByServer of
+                Just feed ->
+                    case feed.next of
+                        Just cursor ->
+                            if feed.loadingMore || feed.refreshing then
+                                ( current, effects )
+
+                            else
+                                let
+                                    requestId : Int
+                                    requestId =
+                                        current.nextRequestId
+                                in
+                                ( { current
+                                    | nextRequestId = requestId + 1
+                                    , postsByServer =
+                                        Dict.insert (feedSourceKey source)
+                                            { feed | requestId = requestId, loadingMore = True, refreshing = True }
+                                            current.postsByServer
+                                  }
+                                , fetchFeedSource shared current requestId (Just cursor) source :: effects
+                                )
+
+                        Nothing ->
+                            ( current, effects )
+
+                Nothing ->
+                    ( current, effects )
+
+        ( newModel, fetches ) =
+            List.foldl start ( model, [] ) sources
+    in
+    ( newModel, Effect.batch fetches )
 
 
 {-| Drops posts for sources that are no longer relevant (so disabling a server, or removing a
@@ -1881,7 +2247,7 @@ applySearchChange shared model =
                 ++ federatedSimpleSources shared model
 
         ( refetchedModel, refetchEffect ) =
-            refetchFeeds shared model sourcesToRefetch
+            refetchFeeds shared (resetWindow model) sourcesToRefetch
     in
     ( refetchedModel, Effect.batch [ refetchEffect, pushUrl refetchedModel ] )
 
@@ -2081,7 +2447,7 @@ adoptDefaultSortAndFetch shared model =
         let
             ( refetchedModel, refetchEffect ) =
                 if adoptedModel.sort /= model.sort then
-                    refetchFeeds shared adoptedModel (relevantFeedSources shared adoptedModel)
+                    refetchFeeds shared (resetWindow adoptedModel) (relevantFeedSources shared adoptedModel)
 
                 else
                     fetchNewFeeds shared adoptedModel
@@ -2225,45 +2591,228 @@ filter it by hand.
 
 -}
 syncAnimations : Model -> Model
-syncAnimations model =
+syncAnimations =
+    syncAnimationsWith Set.empty
+
+
+{-| `syncAnimations`, with the posts in `atRest` (keys, see `postAnimationKey`) added without an enter
+animation -- the ones brought back above the viewport by `TopReached`. Also what keeps `model.window` and
+`model.edges` current: it renders the slice of `orderedEntries` that `model.window` covers, after
+`Paging.normalize` has dropped any surplus from the top.
+
+A post that is still loaded but no longer rendered -- scrolled out of the window, or not yet safe to show --
+leaves at once rather than fading out like one that is really gone (a disabled server, a hidden user):
+it's off screen anyway, and a collapse animation up there would move everything below it.
+-}
+syncAnimationsWith : Set String -> Model -> Model
+syncAnimationsWith atRest model =
     let
-        currentPosts : Dict String ( String, Post, Float )
+        ordered : List FeedEntry
+        ordered =
+            orderedEntries model
+
+        keys : List String
+        keys =
+            List.map .key ordered
+
+        window : Paging.Window
+        window =
+            Paging.normalize keys model.window
+
+        shown : List FeedEntry
+        shown =
+            Paging.visible .key window ordered
+
+        currentPosts : Dict String { host : String, post : Post, rank : Float, atRest : Bool }
         currentPosts =
-            model.postsByServer
-                |> Dict.toList
-                |> List.concatMap
-                    (\( _, feed ) ->
-                        case feed.status of
-                            Loaded posts ->
-                                let
-                                    inContext : List Post
-                                    inContext =
-                                        List.filter (\post -> post.context == model.context && not (isHiddenAuthor model feed.host post)) posts
-
-                                    total : Float
-                                    total =
-                                        toFloat (List.length inContext)
-                                in
-                                inContext
-                                    |> List.indexedMap
-                                        (\index post ->
-                                            ( postAnimationKey feed.host post, ( feed.host, post, toFloat index / total ) )
-                                        )
-
-                            _ ->
-                                []
-                    )
+            shown
+                |> List.map (\entry -> ( entry.key, { host = entry.host, post = entry.post, rank = entry.rank, atRest = Set.member entry.key atRest } ))
                 |> Dict.fromList
+
+        loaded : Set String
+        loaded =
+            loadedEntryKeys model
     in
     { model
-        | postAnimations =
+        | window = window
+        , edges =
+            { above = Paging.hasHiddenAbove keys window
+            , below = Paging.hasMoreBelow keys window || sourcesHaveMore model
+            , total = List.length keys
+            }
+        , postAnimations =
             UI.Flip.syncAnimations
                 RemovePost
-                (\( host, post, rank ) -> { host = host, post = post, flip = UI.Flip.enter, rank = rank })
-                (\( host, post, rank ) anim -> { anim | host = host, post = post, rank = rank })
+                (\data ->
+                    { host = data.host
+                    , post = data.post
+                    , flip =
+                        if data.atRest then
+                            UI.Flip.restingState
+
+                        else
+                            UI.Flip.enter
+                    , rank = data.rank
+                    }
+                )
+                (\data anim -> { anim | host = data.host, post = data.post, rank = data.rank })
                 currentPosts
-                model.postAnimations
+                (Dict.filter
+                    (\key anim -> anim.flip.removing || not (Set.member key loaded) || Dict.member key currentPosts)
+                    model.postAnimations
+                )
     }
+
+
+{-| A post on its way to the screen: `Paging.Entry`'s ordering fields, plus the post and the host it came
+from.
+-}
+type alias FeedEntry =
+    Paging.Entry { host : String, post : Post }
+
+
+{-| How `orderedEntries` orders the feed: by `rank` when the response order is the point (the popular sort and
+text searches), else newest first -- exactly `postsListView`'s sort.
+-}
+pagingOrder : Model -> Paging.Order
+pagingOrder model =
+    if not (String.isEmpty (String.trim model.searchText)) || isPopularListing model then
+        Paging.ByRank
+
+    else
+        Paging.ByRecency
+
+
+{-| One source's loaded posts in this `context`, not by anyone hidden -- what it contributes to the list --
+with the `rank` of each: its place in the source's first page as a fraction (see `ServerFeed.rankBase`).
+-}
+feedEntries : Model -> ServerFeed -> List FeedEntry
+feedEntries model feed =
+    case feed.status of
+        Loaded posts ->
+            posts
+                |> List.filter (\post -> post.context == model.context && not (isHiddenAuthor model feed.host post))
+                |> List.indexedMap
+                    (\index post ->
+                        { key = postAnimationKey feed.host post
+                        , host = feed.host
+                        , post = post
+                        , rank = toFloat index / toFloat (max 1 feed.rankBase)
+                        , millis = Time.posixToMillis (Posts.postTimestamp post)
+                        }
+                    )
+
+        _ ->
+            []
+
+
+{-| Every loaded post, in display order, that is fit to show: those no source with pages still to load could
+yet owe a post ahead of (`Paging.safeEntries`). `model.window` renders a slice of this.
+-}
+orderedEntries : Model -> List FeedEntry
+orderedEntries model =
+    let
+        order : Paging.Order
+        order =
+            pagingOrder model
+
+        perFeed : List ( ServerFeed, List FeedEntry )
+        perFeed =
+            model.postsByServer |> Dict.values |> List.map (\feed -> ( feed, feedEntries model feed ))
+    in
+    perFeed
+        |> List.concatMap Tuple.second
+        |> List.map (\entry -> ( entry.key, entry ))
+        |> Dict.fromList
+        |> Dict.values
+        |> Paging.sortEntries order
+        |> Paging.safeEntries order (unfinishedFrontiers model |> List.map Tuple.second)
+
+
+{-| The frontier (see `Paging.Frontier`) of every source that has more pages to give, by its
+`postsByServer` key.
+-}
+unfinishedFrontiers : Model -> List ( String, Paging.Frontier )
+unfinishedFrontiers model =
+    model.postsByServer
+        |> Dict.toList
+        |> List.filterMap
+            (\( key, feed ) ->
+                if feed.next == Nothing then
+                    Nothing
+
+                else
+                    Paging.frontierOf (feedEntries model feed) |> Maybe.map (Tuple.pair key)
+            )
+
+
+{-| The sources whose next page is what's needed to show more: those holding the list back
+(`Paging.isBinding`). A source with more pages but further along than that isn't worth asking yet.
+-}
+bindingFeedKeys : Model -> List String
+bindingFeedKeys model =
+    let
+        frontiers : List ( String, Paging.Frontier )
+        frontiers =
+            unfinishedFrontiers model
+    in
+    frontiers
+        |> List.filter (\( _, frontier ) -> Paging.isBinding (pagingOrder model) (List.map Tuple.second frontiers) frontier)
+        |> List.map Tuple.first
+
+
+{-| Every post loaded and in this `context` (hidden or not yet safe to show or not) -- the ones `syncAnimationsWith`
+removes at once, when they stop being rendered, rather than fading them out.
+-}
+loadedEntryKeys : Model -> Set String
+loadedEntryKeys model =
+    model.postsByServer
+        |> Dict.values
+        |> List.concatMap (feedEntries model)
+        |> List.map .key
+        |> Set.fromList
+
+
+{-| Whether any source still has something to deliver: more pages, or a response that hasn't arrived yet.
+-}
+sourcesHaveMore : Model -> Bool
+sourcesHaveMore model =
+    model.postsByServer
+        |> Dict.values
+        |> List.any
+            (\feed ->
+                feed.next
+                    /= Nothing
+                    || feed.refreshing
+                    || (case feed.status of
+                            Loading ->
+                                True
+
+                            _ ->
+                                False
+                       )
+            )
+
+
+anyLoadingMore : Model -> Bool
+anyLoadingMore model =
+    model.postsByServer |> Dict.values |> List.any .loadingMore
+
+
+{-| Whether reaching either end of the list should do nothing yet: posts are still animating in (see
+`Model.revealing`) or a next page is on its way.
+-}
+isBusy : Model -> Bool
+isBusy model =
+    model.revealing || anyLoadingMore model
+
+
+{-| The window back at the first posts -- for when the feed is being replaced by a different one (a new
+search, sort or date).
+-}
+resetWindow : Model -> Model
+resetWindow model =
+    { model | window = Paging.initialWindow }
 
 
 
@@ -2877,9 +3426,66 @@ postsListView shared model =
             p [ class "posts-empty" ] [ text <| "No " ++ postsWord ++ " yet." ]
 
         else
-            Html.Keyed.node "div"
-                [ class "posts-list flip-animated-column" ]
-                (List.map (postAnimationView shared model.federatedAuthors model.showSyncDestinations model.availableSyncDestinations model.pushStatuses) sortedAnimations)
+            div []
+                [ if model.edges.above then
+                    scrollSentinel (scrollToken model) TopReached
+
+                  else
+                    text ""
+                , Html.Keyed.node "div"
+                    [ id postsListId, class "posts-list flip-animated-column" ]
+                    (List.map (postAnimationView shared model.federatedAuthors model.showSyncDestinations model.availableSyncDestinations model.pushStatuses) sortedAnimations)
+                , postsListFooter model postsWord
+                ]
+
+
+{-| What follows the last rendered post: while there's more to come, the sentinel that asks for it
+(`BottomReached`) and a note while a page is loading; at the very end, "No more posts."
+-}
+postsListFooter : Model -> String -> Html Msg
+postsListFooter model postsWord =
+    if model.edges.below then
+        div [ class "posts-list-footer" ]
+            [ scrollSentinel (scrollToken model) BottomReached
+            , if anyLoadingMore model then
+                p [ class "posts-loading-more" ] [ text <| "Loading more " ++ postsWord ++ "…" ]
+
+              else
+                text ""
+            ]
+
+    else
+        p [ class "posts-end" ] [ text <| "No more " ++ postsWord ++ "." ]
+
+
+{-| An empty element (the `scroll-sentinel` custom element, see `public/index.html`) that fires
+`sentinelvisible` whenever it is within view of the viewport -- once it appears, and again whenever its
+`data-token` changes while it still is (the observer is restarted), which is how the reader sitting at the end
+of a list too short to scroll still gets more of it.
+-}
+scrollSentinel : String -> Msg -> Html Msg
+scrollSentinel token msg =
+    Html.node "scroll-sentinel"
+        [ attribute "data-token" token
+        , on "sentinelvisible" (Decode.succeed msg)
+        ]
+        []
+
+
+{-| Changes when something the sentinels should react to again does: posts were added or removed, a page is
+loading, or the posts that just arrived have finished animating in (`Model.revealing`).
+-}
+scrollToken : Model -> String
+scrollToken model =
+    String.join "-"
+        [ String.fromInt model.window.shown
+        , String.fromInt model.edges.total
+        , if isBusy model then
+            "busy"
+
+          else
+            "idle"
+        ]
 
 
 {-| Wraps `Posts.postCard` in a fading/scaling/collapsing animated `<div>`
