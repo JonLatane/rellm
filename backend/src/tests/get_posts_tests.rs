@@ -2349,6 +2349,44 @@ mod pagination {
     }
 
     #[test]
+    fn posts_sharing_a_timestamp_still_page_without_gaps() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, Status, _>(|conn| {
+            let author = create_user(conn, "paging_ties_author");
+            let same_moment = ago(300);
+            let mut all: Vec<String> = (0..GET_POSTS_PAGE_SIZE as usize + EXTRA)
+                .map(|_| {
+                    create_post(
+                        conn,
+                        Some(&author),
+                        PostOpts {
+                            visibility: Visibility::GlobalPublic,
+                            created_at: Some(same_moment),
+                            ..Default::default()
+                        },
+                    )
+                    .id
+                    .to_proto_id()
+                })
+                .collect();
+
+            let page = |conn: &mut crate::db_connection::PgPooledConnection, page: u32| {
+                ids(&get_posts(
+                    GetPostsRequest { page, ..Default::default() },
+                    &None,
+                    conn,
+                )
+                .unwrap())
+            };
+            let mut seen = [page(conn, 0), page(conn, 1)].concat();
+            seen.sort();
+            all.sort();
+            assert_eq!(seen, all);
+            Ok(())
+        });
+    }
+
+    #[test]
     fn a_users_posts_page_through_in_order() {
         let mut conn = test_conn();
         conn.test_transaction::<_, Status, _>(|conn| {

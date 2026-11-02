@@ -32,6 +32,10 @@ pub const PAGE_SIZE: i64 = 200;
 // while still reaching well past the first page.
 const SEARCH_CANDIDATE_LIMIT: i64 = 5000;
 
+// Every paged listing ends its ORDER BY with `posts::id`: posts created together (a feed import, one
+// transaction) share a `sort_published_at`, and without a total order Postgres may sort those ties
+// differently for each `OFFSET`, so a page could repeat posts or skip them.
+//
 // How many rows to skip for `GetPostsRequest.page` (0-based; `PAGE_SIZE` rows each) -- applied by every
 // feed-style listing so a client can keep scrolling past the first `PAGE_SIZE` posts.
 fn page_offset(request: &GetPostsRequest) -> i64 {
@@ -244,7 +248,7 @@ fn get_public_and_following_posts(
         .filter(posts::context.eq(context.as_str_name()))
         .filter(posts::user_id.is_not_null())
         .filter(exclude_authors!(excluded))
-        .order(posts::sort_published_at.desc())
+        .order((posts::sort_published_at.desc(), posts::id.desc()))
         .limit(PAGE_SIZE)
         .offset(page_offset(request))
         .into_boxed();
@@ -336,6 +340,7 @@ fn get_recently_popular_posts(
         .order((
             sql::<Double>(&score).desc(),
             posts::sort_published_at.desc(),
+            posts::id.desc(),
         ))
         .limit(PAGE_SIZE)
         .offset(page_offset(request))
@@ -437,6 +442,7 @@ fn get_search_posts(
         // through to unspecified/DB-natural order.
         .order(ts_rank_cd(posts::search_text, rank_query).desc())
         .then_order_by(posts::sort_published_at.desc())
+        .then_order_by(posts::id.desc())
         .limit(PAGE_SIZE)
         .offset(page_offset(request))
         .load::<(models::Post, Option<models::Author>)>(conn)
@@ -465,7 +471,7 @@ fn get_my_group_posts(
         .filter(memberships::user_id.eq(user.id))
         .filter(group_posts::group_moderation.eq_any(PASSING_MODERATIONS))
         .filter(exclude_authors!(excluded))
-        .order(posts::sort_published_at.desc())
+        .order((posts::sort_published_at.desc(), posts::id.desc()))
         .select((
             models::POST_COLUMNS,
             models::AUTHOR_COLUMNS.nullable(),
@@ -513,7 +519,7 @@ fn get_group_posts(
                 .filter(group_posts::group_id.eq(group_id))
                 .filter(group_posts::group_moderation.eq_any(moderations.to_string_moderations()))
                 .filter(exclude_authors!(excluded))
-                .order(posts::sort_published_at.desc())
+                .order((posts::sort_published_at.desc(), posts::id.desc()))
                 .select((
                     models::POST_COLUMNS,
                     models::AUTHOR_COLUMNS.nullable(),
@@ -578,7 +584,7 @@ fn get_user_posts(
             models::AUTHOR_COLUMNS.nullable(),
             posts::sort_published_at,
         ))
-        .order(posts::sort_published_at.desc())
+        .order((posts::sort_published_at.desc(), posts::id.desc()))
         .offset(page_offset(&request))
         .into_boxed();
 
@@ -619,7 +625,7 @@ fn get_following_posts(
             models::AUTHOR_COLUMNS.nullable(),
             posts::sort_published_at,
         ))
-        .order(posts::sort_published_at.desc())
+        .order((posts::sort_published_at.desc(), posts::id.desc()))
         .offset(offset)
         .into_boxed();
 

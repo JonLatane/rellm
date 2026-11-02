@@ -1225,10 +1225,12 @@ updateInner shared msg model =
                                 { model | postsByServer = Dict.insert host updatedFeed model.postsByServer }
                                     |> syncAnimations
 
-                            -- Everything the page held was filtered out: nothing new on screen will make the
-                            -- reader ask for the next one, so ask for it now.
+                            -- Nothing the page held can be shown (all filtered out, or all in the other `context`
+                            -- -- a Mastodon/Bluesky page of only replies, say): such a source has no posts to hold
+                            -- the list back at (`unfinishedFrontiers`) and nothing new on screen will make the
+                            -- reader ask for its next page, so ask for it now.
                             ( finalModel, moreEffect ) =
-                                if List.isEmpty posts && nextCursor /= Nothing then
+                                if List.all (\post -> post.context /= model.context) posts && nextCursor /= Nothing then
                                     loadMoreFeeds shared landedModel [ host ]
 
                                 else
