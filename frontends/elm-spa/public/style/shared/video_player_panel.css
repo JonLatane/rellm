@@ -164,6 +164,14 @@ rellm-video.idle ~ .video-player-panel-queue-controls:not(:focus-within) {
   }
 }
 
+/* A tiny player that is also short has no room for the queue button anywhere: the top row (fullscreen, viewer, queue, close) needs
+   about 100px, and a second row would cover the play button. The queue is a click away in the audio bar, so it goes. */
+@container (max-width: 98px) {
+  rellm-video.short ~ .video-player-panel-queue-controls {
+    display: none;
+  }
+}
+
 .video-player-panel-transport {
   width: 1.6rem;
   height: 1.6rem;
