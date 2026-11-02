@@ -242,12 +242,48 @@
   animation: posts-end-in 0.4s ease;
 }
 
-/* "These cached posts are 7 minutes old." (`PostsPage.cacheNote`): above the list, small and faint. */
-.posts-cache-note {
-  margin: 0.25rem 0;
-  font-size: 0.75rem;
-  text-align: center;
-  opacity: 0.5;
+/* `PostsPage.cacheAlertView`: the "⚠" button (a `.filter-icon-button`, like the export button) opening a
+   popover down and to the *right* of it -- `ui/popover.css`'s `.popover` is right-anchored (down-left), so this
+   anchors to the left edge instead, squaring the corner that meets the button (see that file's note). */
+.posts-cache-alert {
+  flex-shrink: 0;
+}
+
+/* `PostsPage.recentPostsTabsView`'s row: the alert (when shown) beside the scrolling `.filter-tabs-bar`, which
+   takes whatever width is left (`min-width: 0` so it can still shrink and scroll) and leaves the row its
+   bottom margin. */
+.posts-tabs-row {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.posts-tabs-row > .filter-tabs-bar {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.posts-cache-alert-popover {
+  left: 0;
+  right: auto;
+  border-top-right-radius: 0.6rem;
+  border-top-left-radius: 0;
+  width: max-content;
+  max-width: min(18rem, 80vw);
+}
+
+.posts-cache-alert-popover p {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+/* The sort heading with `cacheAlertView` beside it, in `.posts-embedded-heading-row`. */
+.posts-heading-with-alert {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
 }
 
 /* "Return to top" above a list whose first posts were dropped (`PostsPage.postsListView`): slides/fades in

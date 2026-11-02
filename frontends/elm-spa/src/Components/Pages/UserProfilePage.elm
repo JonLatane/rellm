@@ -5124,7 +5124,7 @@ profileDetail shared model server maybeAccount user =
         , case model.posts of
             Just postsModel ->
                 div [ class "posts-embedded-heading-row" ]
-                    [ h3 [] [ Html.map PostsMsg (PostsPage.sortSelectView shared postsModel) ]
+                    [ Html.map PostsMsg (PostsPage.sortHeadingView shared postsModel)
                     , Html.map PostsMsg (PostsPage.exportButtonView shared postsModel)
                     ]
 

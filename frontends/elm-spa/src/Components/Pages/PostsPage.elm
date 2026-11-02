@@ -3,13 +3,13 @@ module Components.Pages.PostsPage exposing
     , Model
     , Msg
     , exportButtonView
+    , sortHeadingView
     , federatedAuthorsChanged
     , filterFeedPosts
     , fromShared
     , init
     , searchTextChanged
     , showSyncDestinationsChanged
-    , sortSelectView
     , subscriptions
     , update
     , view
@@ -85,6 +85,7 @@ import Time
 import UI.Classes exposing (classes, hostnameToCSSClass, openClosedClass)
 import UI.CustomNav as CustomNav
 import UI.Flip
+import UI.Glyph as Glyph
 import Url.Builder
 
 
@@ -198,6 +199,9 @@ type alias Model =
     -- instead of one ICS link.
     , exportPopoverOpen : Bool
 
+    -- Whether `cacheAlertView`'s popover is open.
+    , cachePopoverOpen : Bool
+
     -- The servers/users `Shared.Countabilibar` had unchecked as of this page's last `update` (see
     -- `applyHidden`) -- always `Countabilibar.noneHidden` for a feed scoped to one profile, which hiding
     -- would only blank. `syncAnimations` (which has no `Shared.Model`) filters by it, and
@@ -227,7 +231,7 @@ type alias Model =
     , revealGeneration : Int
 
     -- The current time as this page last learned it (`GotNow` at `init`, then every `Tick`) -- unlike
-    -- `Shared.time.now`, which is only read once at startup. What cache ages (`cacheNote`) and expiry
+    -- `Shared.time.now`, which is only read once at startup. What cache ages (`staleCacheSince`) and expiry
     -- (`expireCached`) are measured against; `Nothing` until the first answer.
     , now : Maybe Time.Posix
 
@@ -318,6 +322,9 @@ type Msg
       -- `ExportPopoverClosed` exactly.
     | ExportClicked
     | ExportPopoverClosed
+      -- Opens/closes `cacheAlertView`'s popover.
+    | CacheAlertClicked
+    | CacheAlertClosed
       -- Copies `feedUrl kind`'s link to the clipboard via `Ports.copyToClipboard` and shows
       -- "Link Copied!" on that one button for 5s -- mirrors
       -- `Components.Pages.EventsPage.CopyLinkClicked`/`CopyLinkCopyTimeoutElapsed` exactly, just
@@ -386,7 +393,7 @@ type alias ServerFeed =
 
     -- When this source's first page arrived (what a cached feed's age is counted from, see
     -- `Shared.PostsCache`), and whether the posts are still the ones restored from that cache -- a refetch
-    -- landing replaces them with fresh ones (`cacheNote`).
+    -- landing replaces them with fresh ones (`cacheAlertView`).
     , fetchedAt : Maybe Time.Posix
     , fromCache : Bool
     }
@@ -747,6 +754,7 @@ init shared author navKey path query embeddedPage availableSyncDestinations prof
                 , availableSyncDestinations = availableSyncDestinations
                 , pushStatuses = Dict.empty
                 , exportPopoverOpen = False
+                , cachePopoverOpen = False
                 , hidden =
                     if author /= Nothing || profileFeedSource /= Nothing then
                         Countabilibar.noneHidden
@@ -1842,6 +1850,12 @@ updateInner shared msg model =
 
         ExportPopoverClosed ->
             ( { model | exportPopoverOpen = False }, Effect.none )
+
+        CacheAlertClicked ->
+            ( { model | cachePopoverOpen = not model.cachePopoverOpen }, Effect.none )
+
+        CacheAlertClosed ->
+            ( { model | cachePopoverOpen = False }, Effect.none )
 
         CopyLinkClicked kind ->
             let
@@ -3111,47 +3125,52 @@ recentPostsTabsView shared model =
         text ""
 
     else
-        div [ class "filter-tabs-bar" ]
-            [ -- A `div`, not a `button`, for the same reason as the date tab below: it nests a real
-              -- interactive control (the sort `<select>`).
-              div
-                [ classes
-                    ("filter-tab"
-                        :: "filter-tab-primary"
-                        :: (if model.tab == RecentPosts then
-                                [ "background-color-primary" ]
+        -- `cacheAlertView` sits beside the scrolling tab strip rather than in it: that strip clips anything
+        -- hanging out of it (`overflow-x: auto`), which would cut off the alert's popover.
+        div [ class "posts-tabs-row" ]
+            [ cacheAlertView shared model
+            , div [ class "filter-tabs-bar" ]
+                [ -- A `div`, not a `button`, for the same reason as the date tab below: it nests a real
+                  -- interactive control (the sort `<select>`).
+                  div
+                    [ classes
+                        ("filter-tab"
+                            :: "filter-tab-primary"
+                            :: (if model.tab == RecentPosts then
+                                    [ "background-color-primary" ]
 
-                            else
-                                []
-                           )
-                    )
-                , onClick (TabChanged RecentPosts)
-                ]
-                [ sortSelectView shared model ]
-            , div
-                [ classes
-                    ("filter-tab"
-                        :: (if model.tab == PostsBeforeDate then
-                                [ "background-color-primary" ]
-
-                            else
-                                []
-                           )
-                    )
-                , onClick (TabChanged PostsBeforeDate)
-                ]
-                [ text (postsBeforeLabel model.context ++ " ")
-                , input
-                    [ type_ "datetime-local"
-                    , class "filter-tab-date-input"
-                    , value
-                        (SharedTime.formatDateTimeLocalInput
-                            shared.time.browserTimeZone.zone
-                            (Maybe.withDefault (Time.millisToPosix 0) model.publishedBefore)
+                                else
+                                    []
+                               )
                         )
-                    , onInput PublishedBeforeInputChanged
+                    , onClick (TabChanged RecentPosts)
                     ]
-                    []
+                    [ sortSelectView shared model ]
+                , div
+                    [ classes
+                        ("filter-tab"
+                            :: (if model.tab == PostsBeforeDate then
+                                    [ "background-color-primary" ]
+
+                                else
+                                    []
+                               )
+                        )
+                    , onClick (TabChanged PostsBeforeDate)
+                    ]
+                    [ text (postsBeforeLabel model.context ++ " ")
+                    , input
+                        [ type_ "datetime-local"
+                        , class "filter-tab-date-input"
+                        , value
+                            (SharedTime.formatDateTimeLocalInput
+                                shared.time.browserTimeZone.zone
+                                (Maybe.withDefault (Time.millisToPosix 0) model.publishedBefore)
+                            )
+                        , onInput PublishedBeforeInputChanged
+                        ]
+                        []
+                    ]
                 ]
             ]
 
@@ -3656,8 +3675,7 @@ postsListView shared model =
 
         else
             div []
-                [ cacheNote shared model
-                , if model.edges.above then
+                [ if model.edges.above then
                     div [ class "posts-return-top" ]
                         [ scrollSentinel (scrollToken model) TopReached
                         , button [ class "posts-return-top-button", onClick ReturnToTopClicked ] [ text "↑ Return to top" ]
@@ -3672,25 +3690,66 @@ postsListView shared model =
                 ]
 
 
-{-| "These cached posts are 7 minutes old." -- small and faint, above the list (and its "Return to top"), while
-the posts shown were restored from `Shared.PostsCache` and are more than five minutes old; nothing otherwise. The
-age is that of the oldest cached source still showing.
+{-| When the posts shown were fetched, if they were restored from `Shared.PostsCache` and are now more than five
+minutes old -- the oldest cached source still showing; `Nothing` otherwise, when there is nothing to warn about.
 -}
-cacheNote : Shared.Model -> Model -> Html Msg
-cacheNote shared model =
-    let
-        oldestFetch : Maybe Int
-        oldestFetch =
-            model.postsByServer
-                |> Dict.values
-                |> List.filter .fromCache
-                |> List.filterMap (.fetchedAt >> Maybe.map Time.posixToMillis)
-                |> List.minimum
-    in
-    oldestFetch
-        |> Maybe.andThen (\fetched -> PostsCache.ageLabel (Time.posixToMillis (Maybe.withDefault shared.time.now model.now) - fetched))
-        |> Maybe.map (\label -> p [ class "posts-cache-note" ] [ text ("These cached posts are " ++ label ++ " old.") ])
-        |> Maybe.withDefault (text "")
+staleCacheSince : Shared.Model -> Model -> Maybe Time.Posix
+staleCacheSince shared model =
+    model.postsByServer
+        |> Dict.values
+        |> List.filter .fromCache
+        |> List.filterMap (.fetchedAt >> Maybe.map Time.posixToMillis)
+        |> List.minimum
+        |> Maybe.andThen
+            (\fetched ->
+                PostsCache.ageLabel (Time.posixToMillis (Maybe.withDefault shared.time.now model.now) - fetched)
+                    |> Maybe.map (\_ -> Time.millisToPosix fetched)
+            )
+
+
+{-| A "⚠" icon button, sized like the export button and in the same row as the sort selector/tabs (to the left of
+them), that opens a popover (down and to the right) saying the posts shown are cached and when they were loaded
+-- only while they are, and more than five minutes old (`staleCacheSince`); nothing otherwise. It lives in the
+heading row, not above the list, so it appearing never pushes the posts down.
+-}
+cacheAlertView : Shared.Model -> Model -> Html Msg
+cacheAlertView shared model =
+    case staleCacheSince shared model of
+        Just fetchedAt ->
+            div [ classes [ "posts-cache-alert", "popover-anchor" ] ]
+                [ button
+                    [ classes [ "filter-icon-button", "popover-toggle", "background-color-nav", openClosedClass model.cachePopoverOpen ]
+                    , onClick CacheAlertClicked
+                    , title "These posts are cached and may be old"
+                    , type_ "button"
+                    ]
+                    [ text (Glyph.textPresentation "⚠") ]
+                , div [ classes [ "popover-backdrop", openClosedClass model.cachePopoverOpen ], onClick CacheAlertClosed ] []
+                , div [ classes [ "posts-cache-alert-popover", "popover", openClosedClass model.cachePopoverOpen ] ]
+                    [ p []
+                        [ text
+                            ("These posts are cached and may be old. They were loaded at "
+                                ++ SharedTime.formatDateTime shared.time.browserTimeZone fetchedAt
+                                ++ "."
+                            )
+                        ]
+                    ]
+                ]
+
+        Nothing ->
+            text ""
+
+
+{-| The sort selector as a heading -- with `cacheAlertView` to its left -- for `Pages.Home_`/
+`Components.Pages.UserProfilePage`'s embedded heading row (the standalone page's tabs bar places the alert itself,
+see `recentPostsTabsView`).
+-}
+sortHeadingView : Shared.Model -> Model -> Html Msg
+sortHeadingView shared model =
+    div [ class "posts-heading-with-alert" ]
+        [ cacheAlertView shared model
+        , h3 [] [ sortSelectView shared model ]
+        ]
 
 
 {-| What follows the last rendered post: while there's more to come, the sentinel that asks for it

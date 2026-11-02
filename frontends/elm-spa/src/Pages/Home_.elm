@@ -84,7 +84,7 @@ import Components.PinnedPosts as PinnedPosts
 import Dict exposing (Dict)
 import Effect exposing (Effect)
 import Gen.Params.Home_ exposing (Params)
-import Html exposing (Html, div, h3)
+import Html exposing (Html, div)
 import Html.Attributes exposing (class)
 import Page
 import Proto.Rellm.CalendarDisplayMode exposing (CalendarDisplayMode)
@@ -637,7 +637,7 @@ contentView shared content =
         Feed feed ->
             [ Html.map EventsMsg (EventsPage.view shared True feed.events)
             , div [ class "posts-embedded-heading-row" ]
-                [ h3 [] [ Html.map PostsMsg (PostsPage.sortSelectView shared feed.posts) ]
+                [ Html.map PostsMsg (PostsPage.sortHeadingView shared feed.posts)
                 , Html.map PostsMsg (PostsPage.exportButtonView shared feed.posts)
                 ]
             , Html.map PostsMsg (PostsPage.view shared False True feed.posts)
