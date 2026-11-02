@@ -81,17 +81,16 @@
   opacity: 1;
 }
 
-/* These two buttons are the panel's, not `<rellm-video>`'s, so they fade out with the player's own controls: while it is playing and
-   nobody has touched it for a moment, `<rellm-video>` has the `idle` class, and these follow it (they come after it in the DOM). Idle,
-   they ignore the pointer, so moving over them -- or a first tap -- reaches the player underneath and brings everything back. A
-   button with keyboard focus stays. Same duration as the player's own fade. */
-.video-player-panel-queue-controls,
-.video-player-panel-close {
+/* The queue button is the panel's, not `<rellm-video>`'s, so it fades out with the player's own controls: while the player is playing and
+   nobody has touched it for a moment, `<rellm-video>` has the `idle` class, and the button follows it (it comes after the player in the
+   DOM). Idle, it ignores the pointer, so moving over it -- or a first tap -- reaches the player underneath and brings everything back. It
+   stays while it has keyboard focus. Same duration as the player's own fade. The close button below never fades: it is the one way out of
+   the player, so it is always on screen and always clickable (the player still wakes when the pointer moves over it). */
+.video-player-panel-queue-controls {
   transition: opacity 0.2s;
 }
 
-rellm-video.idle ~ .video-player-panel-queue-controls:not(:focus-within),
-rellm-video.idle ~ .video-player-panel-close:not(:focus-visible) {
+rellm-video.idle ~ .video-player-panel-queue-controls:not(:focus-within) {
   opacity: 0;
   pointer-events: none;
 }
@@ -116,6 +115,7 @@ rellm-video.idle ~ .video-player-panel-close:not(:focus-visible) {
   line-height: 1;
   cursor: pointer;
   opacity: 0.85;
+  transition: opacity 0.2s;
 }
 
 .video-player-panel-close:hover,
