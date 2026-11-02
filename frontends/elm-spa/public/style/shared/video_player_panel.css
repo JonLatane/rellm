@@ -90,6 +90,13 @@
   transition: opacity 0.2s;
 }
 
+/* A player big enough for the full layout (not `compact`) keeps fullscreen and "open in the viewer" in the bottom bar, so the top-left
+   corner is free: the queue button goes there, and every top button is in the top-left or top-right corner. */
+rellm-video:not(.compact) ~ .video-player-panel-queue-controls {
+  top: 0.35rem;
+  left: 0.35rem;
+}
+
 /* A player too short for a second row (`<rellm-video>` has `short`: a wide video at the miniplayer's width) would have the queue button
    covering the bottom bar's play button, so there it goes up into the top row instead, right after fullscreen and "open in the viewer". */
 rellm-video.short ~ .video-player-panel-queue-controls {
