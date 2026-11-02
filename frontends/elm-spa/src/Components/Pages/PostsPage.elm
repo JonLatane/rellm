@@ -974,9 +974,14 @@ are none.
 snapshotOf : Model -> Maybe PostsCache.Snapshot
 snapshotOf model =
     let
+        -- Only what is safe to bring back as finished -- see `PostsCache.isCacheable`.
+        cacheable : Dict String ServerFeed
+        cacheable =
+            Dict.filter PostsCache.isCacheable model.postsByServer
+
         feeds : Dict String PostsCache.CachedFeed
         feeds =
-            model.postsByServer
+            cacheable
                 |> Dict.toList
                 |> List.filterMap
                     (\( key, feed ) ->
@@ -1003,7 +1008,17 @@ snapshotOf model =
         Nothing
 
     else
-        Just { feeds = feeds, window = model.window, settings = settingsOf model }
+        Just
+            { feeds = feeds
+
+            -- A window that starts at a post of a feed left out starts at the next one that stays.
+            , window =
+                PostsCache.keepWindowOn
+                    (orderedEntries model |> List.map .key)
+                    (orderedEntries { model | postsByServer = cacheable } |> List.map .key |> Set.fromList)
+                    model.window
+            , settings = settingsOf model
+            }
 
 
 {-| The inverse of `snapshotOf`: `model` showing what the snapshot did, with every post already at rest -- coming

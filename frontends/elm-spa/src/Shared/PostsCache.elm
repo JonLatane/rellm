@@ -10,6 +10,8 @@ module Shared.PostsCache exposing
     , evictPost
     , expired
     , expiryMs
+    , isCacheable
+    , keepWindowOn
     , reconcile
     , restorable
     , setRestoring
@@ -47,6 +49,7 @@ import Components.Pages.PostsPage.Paging as Paging
 import Dict exposing (Dict)
 import Proto.Rellm exposing (Post)
 import Proto.Rellm.PostContext exposing (PostContext)
+import Set exposing (Set)
 import Time
 
 
@@ -170,6 +173,57 @@ expired now fetchedAt =
 
         Nothing ->
             True
+
+
+{-| Whether a source's feed (`key` is its `postsByServer` key) belongs in a snapshot. Not one that is awaiting a
+replacement first page -- after a search or sort change its old posts stay up until the new ones land, and saving
+them as finished would bring them back under the new settings, never to be fetched again. Not a linked profile's
+(`RellmFederatedAuthor`: its key differs from its host), which only the profile page that lists it can say still
+belongs -- it is fetched afresh as that page resolves its linked authors, as on any visit. A later page being
+fetched (`loadingMore`) doesn't matter: what is loaded is current.
+-}
+isCacheable : String -> { a | host : String, refreshing : Bool, loadingMore : Bool } -> Bool
+isCacheable key feed =
+    key == feed.host && not (feed.refreshing && not feed.loadingMore)
+
+
+{-| `window`, made to start at a post the snapshot still has: if the post it starts at belongs to a feed left out
+(`keptKeys` are the kept feeds' posts), it starts at the next kept post after it in `orderedKeys` (every loaded
+post, in display order) instead -- or from the top if there is none.
+-}
+keepWindowOn : List String -> Set String -> Paging.Window -> Paging.Window
+keepWindowOn orderedKeys keptKeys window =
+    case window.start of
+        Just startKey ->
+            if Set.member startKey keptKeys then
+                window
+
+            else
+                { window
+                    | start =
+                        keysAfter startKey orderedKeys
+                            |> List.filter (\key -> Set.member key keptKeys)
+                            |> List.head
+                }
+
+        Nothing ->
+            window
+
+
+{-| The keys after `startKey` in `keys` (none if it isn't there).
+-}
+keysAfter : String -> List String -> List String
+keysAfter startKey keys =
+    case keys of
+        [] ->
+            []
+
+        key :: rest ->
+            if key == startKey then
+                rest
+
+            else
+                keysAfter startKey rest
 
 
 {-| Brings the cache in line with the accounts now signed in. `accountIdFor` is the acting account's id on a

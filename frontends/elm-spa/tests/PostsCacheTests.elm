@@ -9,6 +9,7 @@ import Dict
 import Expect
 import Proto.Rellm exposing (defaultPost)
 import Proto.Rellm.PostContext exposing (PostContext(..))
+import Set
 import Shared.PostsCache as PostsCache exposing (CachedFeed, Settings, Snapshot)
 import Test exposing (Test, describe, test)
 import Time
@@ -57,6 +58,7 @@ suite =
         , reconciling
         , evicting
         , labels
+        , snapshotting
         ]
 
 
@@ -249,4 +251,38 @@ labels =
                         , Just "1 hour"
                         , Just "3 hours"
                         ]
+        ]
+
+
+snapshotting : Test
+snapshotting =
+    describe "what goes into a snapshot"
+        [ test "a source's finished feed does" <|
+            \_ ->
+                PostsCache.isCacheable "a.example" { host = "a.example", refreshing = False, loadingMore = False }
+                    |> Expect.equal True
+        , test "not one still waiting on a replacement first page (its old posts are from other settings)" <|
+            \_ ->
+                PostsCache.isCacheable "a.example" { host = "a.example", refreshing = True, loadingMore = False }
+                    |> Expect.equal False
+        , test "but one only fetching a later page is current" <|
+            \_ ->
+                PostsCache.isCacheable "a.example" { host = "a.example", refreshing = True, loadingMore = True }
+                    |> Expect.equal True
+        , test "not a linked profile's feed (its key is its host plus the user)" <|
+            \_ ->
+                PostsCache.isCacheable "a.example/user/7" { host = "a.example", refreshing = False, loadingMore = False }
+                    |> Expect.equal False
+        , test "a window starting at a kept post is left alone" <|
+            \_ ->
+                PostsCache.keepWindowOn [ "p1", "p2", "p3" ] (Set.fromList [ "p1", "p3" ]) { start = Just "p3", shown = 25 }
+                    |> Expect.equal { start = Just "p3", shown = 25 }
+        , test "a window starting at a post left out moves to the next one kept" <|
+            \_ ->
+                PostsCache.keepWindowOn [ "p1", "p2", "p3", "p4" ] (Set.fromList [ "p1", "p4" ]) { start = Just "p2", shown = 25 }
+                    |> Expect.equal { start = Just "p4", shown = 25 }
+        , test "or the top when nothing after it is kept" <|
+            \_ ->
+                PostsCache.keepWindowOn [ "p1", "p2", "p3" ] (Set.singleton "p1") { start = Just "p2", shown = 25 }
+                    |> Expect.equal { start = Nothing, shown = 25 }
         ]
