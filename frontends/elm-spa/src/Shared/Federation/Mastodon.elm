@@ -17,6 +17,8 @@ module Shared.Federation.Mastodon exposing
     , fetchPosts
     , fetchTrendingPosts
     , maxIdBefore
+    , maxIdParam
+    , pageOf
     , fetchFavourites
     , fetchEmbeddedStatus
     , fetchStatus
@@ -358,13 +360,14 @@ toMediaReference attachment =
 {-| `GET /api/v1/timelines/public?local=true&limit=20` -- the local (this-instance-only) public
 timeline, unauthenticated, already translated via `toPost`. `before`, if given, restricts it to statuses
 posted before that time (`Components.Pages.PostsPage`'s "Posts Before" tab) -- see `maxIdBefore`.
+`cursor` is the previous page's returned cursor (`Nothing` for the first page) -- see `pageOf`.
 `local=true` rather than the federated
 (whole-known-network) timeline, since connecting one instance shouldn't implicitly pull in every
 server it happens to federate with too -- mirrors Rellm's own `ALL_ACCESSIBLE_POSTS` being scoped
 to _this_ server's own posts, not every server it's federated with either.
 -}
-fetchPosts : String -> Maybe Time.Posix -> Task Http.Error (List Post)
-fetchPosts instanceHost before =
+fetchPosts : String -> Maybe Time.Posix -> Maybe String -> Task Http.Error ( List Post, Maybe String )
+fetchPosts instanceHost before cursor =
     Http.task
         { method = "GET"
         , headers = []
@@ -372,12 +375,36 @@ fetchPosts instanceHost before =
             "https://"
                 ++ instanceHost
                 ++ "/api/v1/timelines/public?local=true&limit=20"
-                ++ (before |> Maybe.map (\cutoff -> "&max_id=" ++ maxIdBefore cutoff) |> Maybe.withDefault "")
+                ++ maxIdParam before cursor
         , body = Http.emptyBody
         , resolver = jsonResolver (Decode.list decoder) (\metadata _ -> Http.BadStatus metadata.statusCode)
         , timeout = Just 10000
         }
-        |> Task.map (List.map (toPost instanceHost))
+        |> Task.map (pageOf instanceHost)
+
+
+{-| A timeline page as `Components.Pages.PostsPage` pages through it: the posts, and the cursor that asks
+for the page after them -- `max_id` is the id of the page's last (oldest) status, which Mastodon answers with
+the statuses older than it -- or `Nothing` once a page comes back empty, the end of the timeline.
+-}
+pageOf : String -> List Status -> ( List Post, Maybe String )
+pageOf instanceHost statuses =
+    ( List.map (toPost instanceHost) statuses
+    , statuses |> List.reverse |> List.head |> Maybe.map .id
+    )
+
+
+{-| The `&max_id=` query fragment of a timeline request: the `cursor` (the last status of the previous page)
+if there is one, else `before`'s `maxIdBefore`, else nothing.
+-}
+maxIdParam : Maybe Time.Posix -> Maybe String -> String
+maxIdParam before cursor =
+    case cursor of
+        Just maxId ->
+            "&max_id=" ++ maxId
+
+        Nothing ->
+            before |> Maybe.map (\cutoff -> "&max_id=" ++ maxIdBefore cutoff) |> Maybe.withDefault ""
 
 
 {-| The `max_id` that makes a Mastodon timeline start just before `cutoff`. Mastodon status ids are
@@ -395,12 +422,12 @@ maxIdBefore cutoff =
 
 {-| `GET /api/v1/timelines/home?limit=20` as the account holding `accessToken` -- its home timeline, i.e.
 the statuses of the accounts it follows (and its own), newest first; already translated via `toPost`.
-Needs the `read:statuses` scope, covered by the `read` scope Rellm has always requested. `before` works
-like `fetchPosts'` (see `maxIdBefore`). `Components.Pages.PostsPage`'s "Following" sort uses it in place
+Needs the `read:statuses` scope, covered by the `read` scope Rellm has always requested. `before` and
+`cursor` work like `fetchPosts'` (see `maxIdBefore`, `pageOf`). `Components.Pages.PostsPage`'s "Following" sort uses it in place
 of `fetchPosts`.
 -}
-fetchHomeTimeline : String -> String -> Maybe Time.Posix -> Task Http.Error (List Post)
-fetchHomeTimeline instanceHost accessToken before =
+fetchHomeTimeline : String -> String -> Maybe Time.Posix -> Maybe String -> Task Http.Error ( List Post, Maybe String )
+fetchHomeTimeline instanceHost accessToken before cursor =
     Http.task
         { method = "GET"
         , headers = authHeaders accessToken
@@ -408,30 +435,47 @@ fetchHomeTimeline instanceHost accessToken before =
             "https://"
                 ++ instanceHost
                 ++ "/api/v1/timelines/home?limit=20"
-                ++ (before |> Maybe.map (\cutoff -> "&max_id=" ++ maxIdBefore cutoff) |> Maybe.withDefault "")
+                ++ maxIdParam before cursor
         , body = Http.emptyBody
         , resolver = jsonResolver (Decode.list decoder) (\metadata _ -> Http.BadStatus metadata.statusCode)
         , timeout = Just 10000
         }
-        |> Task.map (List.map (toPost instanceHost))
+        |> Task.map (pageOf instanceHost)
 
 
 {-| `GET /api/v1/trends/statuses?limit=20` -- the instance's trending statuses (Mastodon's own "what's
 popular lately" ranking, hours-to-days of engagement), unauthenticated like `fetchPosts` and already
 translated via `toPost`. Instances can switch trends off, in which case this is just an empty list.
-`Components.Pages.PostsPage`'s "Recently Popular Posts" sort uses it in place of `fetchPosts`.
+`Components.Pages.PostsPage`'s "Recently Popular Posts" sort uses it in place of `fetchPosts`. Trends are a
+ranking, not a timeline, so there is no `max_id` to page by: its `cursor` is how many statuses came before
+(the `offset` query parameter), and the next one is that plus this page's length -- `Nothing` once a page
+comes back empty (instances only trend a few dozen statuses, so that is usually the second page).
 -}
-fetchTrendingPosts : String -> Task Http.Error (List Post)
-fetchTrendingPosts instanceHost =
+fetchTrendingPosts : String -> Maybe String -> Task Http.Error ( List Post, Maybe String )
+fetchTrendingPosts instanceHost cursor =
+    let
+        offset : Int
+        offset =
+            cursor |> Maybe.andThen String.toInt |> Maybe.withDefault 0
+    in
     Http.task
         { method = "GET"
         , headers = []
-        , url = "https://" ++ instanceHost ++ "/api/v1/trends/statuses?limit=20"
+        , url = "https://" ++ instanceHost ++ "/api/v1/trends/statuses?limit=20&offset=" ++ String.fromInt offset
         , body = Http.emptyBody
         , resolver = jsonResolver (Decode.list decoder) (\metadata _ -> Http.BadStatus metadata.statusCode)
         , timeout = Just 10000
         }
-        |> Task.map (List.map (toPost instanceHost))
+        |> Task.map
+            (\statuses ->
+                ( List.map (toPost instanceHost) statuses
+                , if List.isEmpty statuses then
+                    Nothing
+
+                  else
+                    Just (String.fromInt (offset + List.length statuses))
+                )
+            )
 
 
 {-| `GET /api/v1/statuses/:id` -- a single status, by id, unauthenticated (same public-endpoint
@@ -761,17 +805,17 @@ specific account's posts regardless of which instance the _viewer_ is on -- exac
 `MastodonUserProfilePage`'s embedded `Components.Pages.PostsPage` needs (see that module's own
 `MastodonAccountFeed` `FeedSource`).
 -}
-fetchAccountStatuses : String -> String -> Task Http.Error (List Post)
-fetchAccountStatuses instanceHost accountId =
+fetchAccountStatuses : String -> String -> Maybe String -> Task Http.Error ( List Post, Maybe String )
+fetchAccountStatuses instanceHost accountId cursor =
     Http.task
         { method = "GET"
         , headers = []
-        , url = "https://" ++ instanceHost ++ "/api/v1/accounts/" ++ accountId ++ "/statuses?exclude_replies=true&exclude_reblogs=true&limit=20"
+        , url = "https://" ++ instanceHost ++ "/api/v1/accounts/" ++ accountId ++ "/statuses?exclude_replies=true&exclude_reblogs=true&limit=20" ++ maxIdParam Nothing cursor
         , body = Http.emptyBody
         , resolver = jsonResolver (Decode.list decoder) (\metadata _ -> Http.BadStatus metadata.statusCode)
         , timeout = Just 10000
         }
-        |> Task.map (List.map (toPost instanceHost))
+        |> Task.map (pageOf instanceHost)
 
 
 {-| `GET /api/v1/accounts/:id/followers` -- up to 40 of `accountId`'s followers, unauthenticated (an

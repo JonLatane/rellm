@@ -12,7 +12,7 @@ use tonic::{Code, Status};
 
 use crate::marshaling::*;
 use crate::protos::*;
-use crate::rpcs::get_posts;
+use crate::rpcs::{get_posts, GET_POSTS_PAGE_SIZE};
 use crate::tests::factories::*;
 
 fn ids(response: &GetPostsResponse) -> Vec<String> {
@@ -2274,6 +2274,218 @@ mod excluded_author_user_ids {
                 conn,
             );
             assert_eq!(result.unwrap_err().code(), Code::InvalidArgument);
+            Ok(())
+        });
+    }
+}
+
+/// `GetPostsRequest.page`: every feed-style listing skips `page * PAGE_SIZE` rows, so a client can keep
+/// scrolling past the first page -- no post repeated, none skipped, same order as one long page.
+mod pagination {
+    use super::*;
+
+    /// A full page and a short one (`EXTRA` posts), so both "there's more" and "this is the end" show up.
+    const EXTRA: usize = 3;
+
+    /// `PAGE_SIZE + EXTRA` public posts by `author`, oldest first (so index `i` is the `i`th oldest), with
+    /// `title` in each.
+    fn create_many(
+        conn: &mut crate::db_connection::PgPooledConnection,
+        author: &crate::models::User,
+        title: &str,
+        visibility: Visibility,
+    ) -> Vec<String> {
+        let total = GET_POSTS_PAGE_SIZE as usize + EXTRA;
+        (0..total)
+            .map(|i| {
+                create_post(
+                    conn,
+                    Some(author),
+                    PostOpts {
+                        visibility,
+                        title: Some(title.to_string()),
+                        created_at: Some(ago((total - i) as u64 * 60)),
+                        ..Default::default()
+                    },
+                )
+                .id
+                .to_proto_id()
+            })
+            .collect()
+    }
+
+    /// Pages 0, 1 and 2 of `request` (a full page, the short last page, nothing), checking they're exactly
+    /// `newest_first` back to back.
+    fn assert_pages_cover(
+        conn: &mut crate::db_connection::PgPooledConnection,
+        request: GetPostsRequest,
+        user: &Option<&crate::models::User>,
+        newest_first: Vec<String>,
+    ) {
+        let page = |conn: &mut crate::db_connection::PgPooledConnection, page: u32| {
+            ids(&get_posts(GetPostsRequest { page, ..request.clone() }, user, conn).unwrap())
+        };
+        let first = page(conn, 0);
+        let second = page(conn, 1);
+        let third = page(conn, 2);
+
+        assert_eq!(first.len(), GET_POSTS_PAGE_SIZE as usize);
+        assert_eq!(second.len(), EXTRA);
+        assert!(third.is_empty());
+        assert_eq!([first, second].concat(), newest_first);
+    }
+
+    #[test]
+    fn all_accessible_posts_page_through_in_order() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, Status, _>(|conn| {
+            let author = create_user(conn, "paging_all_author");
+            let mut newest_first = create_many(conn, &author, "Paged", Visibility::GlobalPublic);
+            newest_first.reverse();
+
+            assert_pages_cover(conn, GetPostsRequest::default(), &None, newest_first);
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn posts_sharing_a_timestamp_still_page_without_gaps() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, Status, _>(|conn| {
+            let author = create_user(conn, "paging_ties_author");
+            let same_moment = ago(300);
+            let mut all: Vec<String> = (0..GET_POSTS_PAGE_SIZE as usize + EXTRA)
+                .map(|_| {
+                    create_post(
+                        conn,
+                        Some(&author),
+                        PostOpts {
+                            visibility: Visibility::GlobalPublic,
+                            created_at: Some(same_moment),
+                            ..Default::default()
+                        },
+                    )
+                    .id
+                    .to_proto_id()
+                })
+                .collect();
+
+            let page = |conn: &mut crate::db_connection::PgPooledConnection, page: u32| {
+                ids(&get_posts(
+                    GetPostsRequest { page, ..Default::default() },
+                    &None,
+                    conn,
+                )
+                .unwrap())
+            };
+            let mut seen = [page(conn, 0), page(conn, 1)].concat();
+            seen.sort();
+            all.sort();
+            assert_eq!(seen, all);
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn a_users_posts_page_through_in_order() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, Status, _>(|conn| {
+            let author = create_user(conn, "paging_user_author");
+            let mut newest_first = create_many(conn, &author, "Paged", Visibility::GlobalPublic);
+            newest_first.reverse();
+
+            assert_pages_cover(
+                conn,
+                GetPostsRequest {
+                    author_user_id: Some(author.id.to_proto_id()),
+                    ..Default::default()
+                },
+                &None,
+                newest_first,
+            );
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn following_posts_page_through_in_order() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, Status, _>(|conn| {
+            let follower = create_user(conn, "paging_following_follower");
+            let followed = create_user(conn, "paging_following_followed");
+            create_follow(conn, &follower, &followed);
+            let mut newest_first = create_many(conn, &followed, "Paged", Visibility::ServerPublic);
+            newest_first.reverse();
+
+            assert_pages_cover(
+                conn,
+                GetPostsRequest {
+                    listing_type: PostListingType::FollowingPosts as i32,
+                    ..Default::default()
+                },
+                &Some(&follower),
+                newest_first,
+            );
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn search_results_page_through_without_repeats() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, Status, _>(|conn| {
+            let author = create_user(conn, "paging_search_author");
+            let mut newest_first = create_many(conn, &author, "zebracrossing", Visibility::GlobalPublic);
+            newest_first.reverse();
+
+            // Every post matches equally well, so relevance ties and recency decides -- the same order
+            // as the plain listing.
+            assert_pages_cover(
+                conn,
+                GetPostsRequest {
+                    listing_type: PostListingType::TextSearch as i32,
+                    search_text: Some("zebracrossing".to_string()),
+                    ..Default::default()
+                },
+                &None,
+                newest_first,
+            );
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn recently_popular_posts_page_through_without_repeats() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, Status, _>(|conn| {
+            let author = create_user(conn, "paging_popular_author");
+            let all = create_many(conn, &author, "Paged", Visibility::GlobalPublic);
+
+            let page = |conn: &mut crate::db_connection::PgPooledConnection, page: u32| {
+                ids(&get_posts(
+                    GetPostsRequest {
+                        listing_type: PostListingType::RecentlyPopularPosts as i32,
+                        page,
+                        ..Default::default()
+                    },
+                    &None,
+                    conn,
+                )
+                .unwrap())
+            };
+            let first = page(conn, 0);
+            let second = page(conn, 1);
+
+            assert_eq!(first.len(), GET_POSTS_PAGE_SIZE as usize);
+            assert_eq!(second.len(), EXTRA);
+            assert!(page(conn, 2).is_empty());
+
+            // No repeats, and together they're exactly the posts created.
+            let mut seen: Vec<String> = [first, second].concat();
+            seen.sort();
+            let mut expected = all;
+            expected.sort();
+            assert_eq!(seen, expected);
             Ok(())
         });
     }

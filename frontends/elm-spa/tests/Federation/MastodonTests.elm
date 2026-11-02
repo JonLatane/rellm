@@ -30,6 +30,34 @@ suite =
                     asInt 1760000000000
                         |> Expect.lessThan (asInt 1760000001000)
             ]
+        , describe "paging"
+            [ test "a page's cursor is the id of its last (oldest) status" <|
+                \_ ->
+                    let
+                        statuses : List Mastodon.Status
+                        statuses =
+                            [ Factory.status { defaultOverrides | id = "300" }
+                            , Factory.status { defaultOverrides | id = "200" }
+                            ]
+                    in
+                    Mastodon.pageOf "mastodon.social" statuses
+                        |> Tuple.mapFirst (List.map .id)
+                        |> Expect.equal ( [ "300", "200" ], Just "200" )
+            , test "an empty page ends the timeline" <|
+                \_ ->
+                    Mastodon.pageOf "mastodon.social" []
+                        |> Expect.equal ( [], Nothing )
+            , test "the first page has no max_id unless it is cut off at a time" <|
+                \_ ->
+                    ( Mastodon.maxIdParam Nothing Nothing
+                    , Mastodon.maxIdParam (Just (Time.millisToPosix 1000)) Nothing
+                    )
+                        |> Expect.equal ( "", "&max_id=65536000" )
+            , test "a later page continues from its cursor, whatever the cutoff" <|
+                \_ ->
+                    Mastodon.maxIdParam (Just (Time.millisToPosix 1000)) (Just "12345")
+                        |> Expect.equal "&max_id=12345"
+            ]
         , describe "decoder"
             [ test "decodes a real-shaped Status into the same value `toPost` would get directly" <|
                 \_ ->

@@ -5,7 +5,9 @@ module Shared.Federation.Bluesky exposing
     , FeedPost
     , createPost
     , createReply
+    , cursorParam
     , decoder
+    , feedPageDecoder
     , deletePost
     , editPost
     , richText
@@ -750,10 +752,11 @@ toVideoMediaReference video =
 with its token, already translated via `toPost` -- the
 connected account's own home timeline (reverse-chronological, following), the AT Protocol equivalent of
 `FOLLOWING_POSTS` (`Components.Pages.PostsPage`'s "Following" sort). `before`, if given, keeps only posts older than it (`Components.Pages.PostsPage`'s
-"Posts Before" tab) -- see the filtering note below.
+"Posts Before" tab) -- see the filtering note below. `cursor` is the previous page's returned one
+(`Nothing` for the first) -- see `feedPageDecoder`.
 -}
-fetchPosts : Maybe Time.Posix -> BlueskyAuth -> Task Http.Error (List Post)
-fetchPosts before auth =
+fetchPosts : Maybe Time.Posix -> BlueskyAuth -> Maybe String -> Task Http.Error ( List Post, Maybe String )
+fetchPosts before auth cursor =
     Http.task
         { method = "GET"
         , headers = readHeaders auth
@@ -766,25 +769,48 @@ fetchPosts before auth =
                     else
                         "100"
                    )
+                ++ cursorParam cursor
         , body = Http.emptyBody
-        , resolver = jsonResolver (Decode.field "feed" (Decode.list decoder)) (\metadata _ -> Http.BadStatus metadata.statusCode)
+        , resolver = jsonResolver (feedPageDecoder decoder) (\metadata _ -> Http.BadStatus metadata.statusCode)
         , timeout = Just 10000
         }
         |> Task.map
-            (\feed ->
+            (\( feed, next ) ->
                 case before of
                     Nothing ->
-                        List.map toPost feed
+                        ( List.map toPost feed, next )
 
                     Just cutoff ->
                         -- `getTimeline` has no "before" parameter, so ask for a bigger page and drop everything
-                        -- posted after `cutoff`: a cutoff much further back than the page reaches (the last
-                        -- 100 posts of the account's following) shows little or nothing.
-                        feed
-                            |> List.filter (\feedPost -> Time.posixToMillis feedPost.createdAt < Time.posixToMillis cutoff)
-                            |> List.take 20
-                            |> List.map toPost
+                        -- posted after `cutoff`: a cutoff much further back than the pages reach shows little or
+                        -- nothing. A page with nothing left after the drop ends the listing (no cursor) rather
+                        -- than paging on through the whole recent timeline looking for older posts.
+                        case List.filter (\feedPost -> Time.posixToMillis feedPost.createdAt < Time.posixToMillis cutoff) feed of
+                            [] ->
+                                ( [], Nothing )
+
+                            older ->
+                                ( List.map toPost older, next )
             )
+
+
+{-| A `{ feed : [ ... ], cursor? : string }` response (`getTimeline`, `getFeed`, `getAuthorFeed`): the feed,
+and the cursor that asks for the page after it, if the response has one. AT Protocol's cursors are opaque
+strings handed back with each page and passed as `cursor` on the next request -- they are what
+`Components.Pages.PostsPage` pages through a Bluesky source by.
+-}
+feedPageDecoder : Decoder a -> Decoder ( List a, Maybe String )
+feedPageDecoder itemDecoder =
+    Decode.map2 Tuple.pair
+        (Decode.field "feed" (Decode.list itemDecoder))
+        (Decode.maybe (Decode.field "cursor" Decode.string) |> Decode.map (Maybe.andThen nonEmpty))
+
+
+{-| The `&cursor=` query fragment for a request's page cursor, or nothing for the first page.
+-}
+cursorParam : Maybe String -> String
+cursorParam cursor =
+    cursor |> Maybe.map (\c -> "&cursor=" ++ Url.percentEncode c) |> Maybe.withDefault ""
 
 
 {-| The newest posts on the whole network -- what a browsed AppView (`BlueskyAppViewFeed`) or a connected
@@ -797,18 +823,18 @@ instead, with `until`, since `*` can't be combined with that. (The curated "What
 should send it to `Shared.Federation.Common.anonymousSearchHost`, since the public AppView's other host
 403s search.
 -}
-fetchLatestPosts : Maybe Time.Posix -> BlueskyAuth -> Task Http.Error (List Post)
-fetchLatestPosts before auth =
+fetchLatestPosts : Maybe Time.Posix -> BlueskyAuth -> Maybe String -> Task Http.Error ( List Post, Maybe String )
+fetchLatestPosts before auth cursor =
     case before of
         Nothing ->
-            searchPosts SearchLatest Nothing auth "*"
+            searchPosts SearchLatest Nothing auth "*" cursor
 
         Just cutoff ->
             -- Bluesky rejects `q=*` together with `until` (HTTP 400), so a "before" listing needs a real
             -- term. `a` is a common word in several of the network's biggest languages (a sample of its
             -- results was about half English, with Spanish, French and Portuguese) -- an approximation
             -- of "every post", and the best anonymous one there is.
-            searchPosts SearchLatest (Just cutoff) auth "a"
+            searchPosts SearchLatest (Just cutoff) auth "a" cursor
 
 
 {-| `GET /xrpc/app.bsky.feed.getFeed` for Bluesky's "What's Hot" feed generator -- its own "what's popular
@@ -817,17 +843,17 @@ AppView or as a connected account (via its PDS); `Components.Pages.PostsPage`'s 
 sort uses it in place of `fetchLatestPosts`/`fetchPosts`. Same `{ feed : [ { post, reply? } ] }` shape
 as `getTimeline`, so it shares `decoder`.
 -}
-fetchWhatsHot : BlueskyAuth -> Task Http.Error (List Post)
-fetchWhatsHot auth =
+fetchWhatsHot : BlueskyAuth -> Maybe String -> Task Http.Error ( List Post, Maybe String )
+fetchWhatsHot auth cursor =
     Http.task
         { method = "GET"
         , headers = readHeaders auth
-        , url = readHost auth ++ "/xrpc/app.bsky.feed.getFeed?limit=20&feed=" ++ Url.percentEncode whatsHotFeedUri
+        , url = readHost auth ++ "/xrpc/app.bsky.feed.getFeed?limit=20&feed=" ++ Url.percentEncode whatsHotFeedUri ++ cursorParam cursor
         , body = Http.emptyBody
-        , resolver = jsonResolver (Decode.field "feed" (Decode.list decoder)) (\metadata _ -> Http.BadStatus metadata.statusCode)
+        , resolver = jsonResolver (feedPageDecoder decoder) (\metadata _ -> Http.BadStatus metadata.statusCode)
         , timeout = Just 10000
         }
-        |> Task.map (List.map toPost)
+        |> Task.map (Tuple.mapFirst (List.map toPost))
 
 
 {-| The AT URI of Bluesky's "What's Hot" feed generator.
@@ -852,14 +878,15 @@ proxies it) or anonymously -- but not against `public.api.bsky.app`, which 403s 
 use `Shared.Federation.Common.anonymousSearchHost`. See `Components.Pages.PostsPage.fetchFeedSource`'s
 `BlueskyFeed`/`BlueskyAppViewFeed` cases, which switch to this instead of `fetchPosts`/`fetchLatestPosts`
 whenever `model.searchText` isn't blank, mirroring how a real `GetPosts` request switches to
-`TEXTSEARCH`. `until`, if given, keeps only posts before it (the "Posts Before" tab's cutoff). Unlike `getTimeline`'s `feed` array (each entry wrapping a `post` alongside separate
+`TEXTSEARCH`. `until`, if given, keeps only posts before it (the "Posts Before" tab's cutoff). `cursor` pages: it is the
+previous page's returned one (`Nothing` for the first), see `feedPageDecoder`. Unlike `getTimeline`'s `feed` array (each entry wrapping a `post` alongside separate
 `reply` context), each entry here is a bare `app.bsky.feed.defs#postView` directly, so `searchDecoder`
 reads its fields one level shallower than `decoder` does, and detects a reply via the post's own
 `record.reply` field being present (the same information `getTimeline`'s sibling `reply` field
 carries, just nested differently here) rather than a sibling key.
 -}
-searchPosts : SearchSort -> Maybe Time.Posix -> BlueskyAuth -> String -> Task Http.Error (List Post)
-searchPosts sort until auth query =
+searchPosts : SearchSort -> Maybe Time.Posix -> BlueskyAuth -> String -> Maybe String -> Task Http.Error ( List Post, Maybe String )
+searchPosts sort until auth query cursor =
     Http.task
         { method = "GET"
         , headers = readHeaders auth
@@ -874,11 +901,18 @@ searchPosts sort until auth query =
                    )
                 ++ (until |> Maybe.map (\cutoff -> "&until=" ++ Url.percentEncode (Iso8601.fromTime cutoff)) |> Maybe.withDefault "")
                 ++ "&limit=20"
+                ++ cursorParam cursor
         , body = Http.emptyBody
-        , resolver = jsonResolver (Decode.field "posts" (Decode.list searchDecoder)) (\metadata _ -> Http.BadStatus metadata.statusCode)
+        , resolver =
+            jsonResolver
+                (Decode.map2 Tuple.pair
+                    (Decode.field "posts" (Decode.list searchDecoder))
+                    (Decode.maybe (Decode.field "cursor" Decode.string) |> Decode.map (Maybe.andThen nonEmpty))
+                )
+                (\metadata _ -> Http.BadStatus metadata.statusCode)
         , timeout = Just 10000
         }
-        |> Task.map (List.map toPost)
+        |> Task.map (Tuple.mapFirst (List.map toPost))
 
 
 searchDecoder : Decoder FeedPost
@@ -1378,17 +1412,17 @@ fetchActorProfile auth handle =
 regardless of who's authenticating the request -- exactly what `BlueskyUserProfilePage`'s embedded
 `Components.Pages.PostsPage` needs (see that module's own `BlueskyAuthorFeed` `FeedSource`).
 -}
-fetchAuthorFeed : BlueskyAuth -> String -> Task Http.Error (List Post)
-fetchAuthorFeed auth handle =
+fetchAuthorFeed : BlueskyAuth -> String -> Maybe String -> Task Http.Error ( List Post, Maybe String )
+fetchAuthorFeed auth handle cursor =
     Http.task
         { method = "GET"
         , headers = readHeaders auth
-        , url = readHost auth ++ "/xrpc/app.bsky.feed.getAuthorFeed?actor=" ++ Url.percentEncode handle ++ "&limit=20"
+        , url = readHost auth ++ "/xrpc/app.bsky.feed.getAuthorFeed?actor=" ++ Url.percentEncode handle ++ "&limit=20" ++ cursorParam cursor
         , body = Http.emptyBody
-        , resolver = jsonResolver (Decode.field "feed" (Decode.list decoder)) (\metadata _ -> Http.BadStatus metadata.statusCode)
+        , resolver = jsonResolver (feedPageDecoder decoder) (\metadata _ -> Http.BadStatus metadata.statusCode)
         , timeout = Just 10000
         }
-        |> Task.map (List.map toPost)
+        |> Task.map (Tuple.mapFirst (List.map toPost))
 
 
 {-| `GET /xrpc/app.bsky.graph.getFollowers` -- up to 40 of `handle`'s followers. No pagination beyond

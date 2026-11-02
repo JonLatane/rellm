@@ -22,7 +22,25 @@ use crate::schema::{follows, group_posts, memberships, posts, users};
 
 use crate::rpcs::validations::PASSING_MODERATIONS;
 
-const PAGE_SIZE: i64 = 200;
+// The Elm client (`rellmPageSize` in `Components.Pages.PostsPage`) reads a response shorter than this as the
+// last page, so changing it means changing that too.
+pub const PAGE_SIZE: i64 = 200;
+
+// The most search matches `get_search_posts` ranks per request (and so the deepest `page` a search can
+// page through: `SEARCH_CANDIDATE_LIMIT / PAGE_SIZE` pages). The candidate ids are resolved by an
+// unordered subquery before ranking (see there), so this bounds the cost of a very broad prefix term
+// while still reaching well past the first page.
+const SEARCH_CANDIDATE_LIMIT: i64 = 5000;
+
+// Every paged listing ends its ORDER BY with `posts::id`: posts created together (a feed import, one
+// transaction) share a `sort_published_at`, and without a total order Postgres may sort those ties
+// differently for each `OFFSET`, so a page could repeat posts or skip them.
+//
+// How many rows to skip for `GetPostsRequest.page` (0-based; `PAGE_SIZE` rows each) -- applied by every
+// feed-style listing so a client can keep scrolling past the first `PAGE_SIZE` posts.
+fn page_offset(request: &GetPostsRequest) -> i64 {
+    i64::from(request.page) * PAGE_SIZE
+}
 
 // The cutoff every listing branch (other than a single `post_id`/its replies) filters
 // `posts::sort_published_at` against, per `GetPostsRequest.published_or_created_before`'s own
@@ -69,6 +87,7 @@ pub fn get_posts(
 ) -> Result<GetPostsResponse, Status> {
     let cutoff = published_or_created_before(&request);
     let excluded = excluded_author_db_ids(&request)?;
+    let offset = page_offset(&request);
     let result = match (
         request.listing_type(),
         request.to_owned().post_id,
@@ -87,6 +106,7 @@ pub fn get_posts(
             user.ok_or(Status::new(Code::Unauthenticated, "must_be_logged_in"))?,
             cutoff,
             &excluded,
+            offset,
             conn,
         )?,
         (PostListingType::FollowingPosts, _, _) => get_following_posts(
@@ -94,6 +114,7 @@ pub fn get_posts(
             request.context(),
             cutoff,
             &excluded,
+            offset,
             conn,
         )?,
         (PostListingType::GroupPosts, _, _) => get_group_posts(
@@ -106,6 +127,7 @@ pub fn get_posts(
             vec![Moderation::Unmoderated, Moderation::Approved],
             cutoff,
             &excluded,
+            offset,
             conn,
         )?,
         (PostListingType::GroupPostsPendingModeration, _, _) => {
@@ -123,6 +145,7 @@ pub fn get_posts(
                 vec![Moderation::Pending],
                 cutoff,
                 &excluded,
+                offset,
                 conn,
             )?
         }
@@ -135,6 +158,12 @@ pub fn get_posts(
 }
 
 macro_rules! query_visible_posts {
+    ($user: expr) => {{
+        query_visible_posts_unlimited!($user).limit(PAGE_SIZE)
+    }};
+}
+
+macro_rules! query_visible_posts_unlimited {
     ($user: expr) => {{
         posts::table
             .left_join(users::table.on(posts::user_id.eq(users::id.nullable())))
@@ -166,7 +195,6 @@ macro_rules! query_visible_posts {
                     .or(posts::user_id.eq($user.as_ref().map(|u| u.id).unwrap_or(0))),
             )
             .distinct()
-            .limit(PAGE_SIZE)
     }};
 }
 
@@ -220,8 +248,9 @@ fn get_public_and_following_posts(
         .filter(posts::context.eq(context.as_str_name()))
         .filter(posts::user_id.is_not_null())
         .filter(exclude_authors!(excluded))
-        .order(posts::sort_published_at.desc())
+        .order((posts::sort_published_at.desc(), posts::id.desc()))
         .limit(PAGE_SIZE)
+        .offset(page_offset(request))
         .into_boxed();
 
     if context == PostContext::Post {
@@ -311,8 +340,10 @@ fn get_recently_popular_posts(
         .order((
             sql::<Double>(&score).desc(),
             posts::sort_published_at.desc(),
+            posts::id.desc(),
         ))
         .limit(PAGE_SIZE)
+        .offset(page_offset(request))
         .into_boxed();
 
     if context == PostContext::Post {
@@ -382,7 +413,11 @@ fn get_search_posts(
     // Postgres treats as structurally different expressions and rejects just the same. So this
     // resolves the post ids DISTINCT-ly first (a plain `posts::id` has no such problem), then
     // ranks and orders the (already-unique) matches in a second, DISTINCT-free query.
-    let mut matching_post_ids = query_visible_posts!(user)
+    //
+    // That unordered candidate set is capped at `SEARCH_CANDIDATE_LIMIT` rather than `PAGE_SIZE`, so a
+    // later `page` still has matches to rank (it would otherwise be a fixed, arbitrary 200).
+    let mut matching_post_ids = query_visible_posts_unlimited!(user)
+        .limit(SEARCH_CANDIDATE_LIMIT)
         .filter(posts::context.eq(request.context().as_str_name()))
         .filter(posts::search_text.matches(search_query))
         .filter(exclude_authors!(excluded))
@@ -407,7 +442,9 @@ fn get_search_posts(
         // through to unspecified/DB-natural order.
         .order(ts_rank_cd(posts::search_text, rank_query).desc())
         .then_order_by(posts::sort_published_at.desc())
+        .then_order_by(posts::id.desc())
         .limit(PAGE_SIZE)
+        .offset(page_offset(request))
         .load::<(models::Post, Option<models::Author>)>(conn)
         .map_err(|_| Status::new(Code::Internal, "error_loading_posts"))?
         .iter()
@@ -421,6 +458,7 @@ fn get_my_group_posts(
     user: &models::User,
     cutoff: Option<std::time::SystemTime>,
     excluded: &[i64],
+    offset: i64,
     conn: &mut PgPooledConnection,
 ) -> Result<Vec<MarshalablePost>, Status> {
     // let is_admin = user
@@ -433,12 +471,13 @@ fn get_my_group_posts(
         .filter(memberships::user_id.eq(user.id))
         .filter(group_posts::group_moderation.eq_any(PASSING_MODERATIONS))
         .filter(exclude_authors!(excluded))
-        .order(posts::sort_published_at.desc())
+        .order((posts::sort_published_at.desc(), posts::id.desc()))
         .select((
             models::POST_COLUMNS,
             models::AUTHOR_COLUMNS.nullable(),
             posts::sort_published_at,
         ))
+        .offset(offset)
         .into_boxed();
 
     if let Some(cutoff) = cutoff {
@@ -461,6 +500,7 @@ fn get_group_posts(
     moderations: Vec<Moderation>,
     cutoff: Option<std::time::SystemTime>,
     excluded: &[i64],
+    offset: i64,
     conn: &mut PgPooledConnection,
 ) -> Result<Vec<MarshalablePost>, Status> {
     let group = get_group(group_id, conn);
@@ -479,7 +519,7 @@ fn get_group_posts(
                 .filter(group_posts::group_id.eq(group_id))
                 .filter(group_posts::group_moderation.eq_any(moderations.to_string_moderations()))
                 .filter(exclude_authors!(excluded))
-                .order(posts::sort_published_at.desc())
+                .order((posts::sort_published_at.desc(), posts::id.desc()))
                 .select((
                     models::POST_COLUMNS,
                     models::AUTHOR_COLUMNS.nullable(),
@@ -487,6 +527,7 @@ fn get_group_posts(
                     group_post_users.fields(models::AUTHOR_COLUMNS.nullable()),
                     posts::sort_published_at,
                 ))
+                .offset(offset)
                 .into_boxed();
 
             if let Some(cutoff) = cutoff {
@@ -543,7 +584,8 @@ fn get_user_posts(
             models::AUTHOR_COLUMNS.nullable(),
             posts::sort_published_at,
         ))
-        .order(posts::sort_published_at.desc())
+        .order((posts::sort_published_at.desc(), posts::id.desc()))
+        .offset(page_offset(&request))
         .into_boxed();
 
     if let Some(cutoff) = published_or_created_before(&request) {
@@ -565,6 +607,7 @@ fn get_following_posts(
     context: PostContext,
     cutoff: Option<std::time::SystemTime>,
     excluded: &[i64],
+    offset: i64,
     conn: &mut PgPooledConnection,
 ) -> Result<Vec<MarshalablePost>, Status> {
     // Scoped to what `idx_posts_following_feed` covers (top-level `POST`s by a real author, ordered
@@ -582,7 +625,8 @@ fn get_following_posts(
             models::AUTHOR_COLUMNS.nullable(),
             posts::sort_published_at,
         ))
-        .order(posts::sort_published_at.desc())
+        .order((posts::sort_published_at.desc(), posts::id.desc()))
+        .offset(offset)
         .into_boxed();
 
     // Like `get_public_and_following_posts`: the default `POST` context is a feed of top-level posts

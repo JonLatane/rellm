@@ -403,6 +403,38 @@
       console.error("Failed to read stored Mastodon accounts/servers", e);
     }
 
+    // `<scroll-sentinel>` (see `Components.Pages.PostsPage.scrollSentinel`): an invisible marker at the end
+    // of an infinitely scrolling list that fires `sentinelvisible` when it comes within 600px of the
+    // viewport, so Elm can load/reveal more before the reader actually hits the end. An
+    // IntersectionObserver only reports _changes_, so a reader parked at the end of a list too short to
+    // scroll would never be told again: changing `data-token` (Elm does, whenever the list changes) restarts
+    // the observer, which reports the current state straight away.
+    if (window.customElements && window.IntersectionObserver && !customElements.get("scroll-sentinel")) {
+      customElements.define("scroll-sentinel", class extends HTMLElement {
+        static get observedAttributes() { return ["data-token"]; }
+        connectedCallback() {
+          this.style.display = "block";
+          this.style.height = "1px";
+          this.rellmObserve();
+        }
+        disconnectedCallback() { this.rellmStop(); }
+        attributeChangedCallback() { if (this.isConnected) { this.rellmObserve(); } }
+        rellmStop() {
+          if (this.rellmObserver) { this.rellmObserver.disconnect(); this.rellmObserver = null; }
+        }
+        rellmObserve() {
+          this.rellmStop();
+          var self = this;
+          this.rellmObserver = new IntersectionObserver(function (entries) {
+            for (var i = 0; i < entries.length; i++) {
+              if (entries[i].isIntersecting) { self.dispatchEvent(new CustomEvent("sentinelvisible")); return; }
+            }
+          }, { rootMargin: "600px 0px" });
+          this.rellmObserver.observe(this);
+        }
+      });
+    }
+
     var app = Elm.Main.init({
       flags: {
         state: storedState,
@@ -910,6 +942,34 @@
     app.ports.scrollElementLeft.subscribe(function (payload) {
       var el = document.getElementById(payload.id);
       if (el) { el.scrollLeft = payload.left; }
+    });
+
+    // See Ports.elm's anchorScroll doc comment. Notes the first child of the element that is (at least
+    // partly) on screen and where its top is, then -- as soon as that element's children change, which
+    // happens in Elm's next render, before the browser paints it -- scrolls by however far that child moved,
+    // so dropping posts from above the viewport (or bringing them back) doesn't move what's being read.
+    // `behavior: "instant"` because the page's `scroll-behavior: smooth` would otherwise animate the fix.
+    app.ports.anchorScroll.subscribe(function (id) {
+      var list = document.getElementById(id);
+      if (!list) { return; }
+      var anchor = null;
+      var anchorTop = 0;
+      for (var i = 0; i < list.children.length; i++) {
+        var rect = list.children[i].getBoundingClientRect();
+        if (rect.bottom > 0) { anchor = list.children[i]; anchorTop = rect.top; break; }
+      }
+      if (!anchor) { return; }
+      var done = false;
+      var observer = new MutationObserver(function () {
+        if (done) { return; }
+        done = true;
+        observer.disconnect();
+        if (!anchor.isConnected) { return; }
+        var shift = anchor.getBoundingClientRect().top - anchorTop;
+        if (shift !== 0) { window.scrollBy({ top: shift, left: 0, behavior: "instant" }); }
+      });
+      observer.observe(list, { childList: true });
+      setTimeout(function () { done = true; observer.disconnect(); }, 1000);
     });
 
     // See Ports.elm's scrubMedia doc comment. The first scrub of a "session" (i.e. none in the last

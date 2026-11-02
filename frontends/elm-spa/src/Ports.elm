@@ -1,5 +1,6 @@
 port module Ports exposing
     ( accountsAndServersUpdated
+    , anchorScroll
     , blueskyAccountsUpdated
     , broadcastPushSubscriptionChange
     , calendarEventClicked
@@ -176,6 +177,16 @@ port-triggered assignment runs as a normal JS callback, not wrapped in
 `Pages.Event.PostId_.scrollToOccasion`, the only current caller.
 -}
 port scrollElementLeft : Encode.Value -> Cmd msg
+
+
+{-| Holds the page still across the next change to the children of the element with the given DOM id: JS
+notes the first child that is on screen (and where), and once the re-render that follows this command has
+changed that element's children -- posts dropped from or restored above the viewport, see
+`Components.Pages.PostsPage.holdScrollEffect` -- scrolls (instantly, past the page's `scroll-behavior:
+smooth`) by however far that child moved. The browser's own scroll anchoring would do this, but `main.css`
+turns it off for the whole page. Fire-and-forget; gives up if nothing changes within a second.
+-}
+port anchorScroll : String -> Cmd msg
 
 
 {-| `{ id : String }` -- FLIP-animates the direct children of the element with
