@@ -49,8 +49,9 @@ export enum PostListingType {
    * (`published_at`, falling back to `created_at`), like Hacker News' ranking. The `+ 1` means a post
    * with no engagement still scores, just lower, and ties fall to recency - so on a quiet server this
    * degrades gracefully to roughly ALL_ACCESSIBLE_POSTS. Like every listing, returns at most one
-   * page of results; there is no further paging (the ranking drifts as time passes, so offsets
-   * aren't stable) - narrow by `published_or_created_before` instead.
+   * page of results; `page` continues down the same ranking, which drifts a little as time passes (every
+   * score depends on the current age of its post), so a client paging through should skip posts it has
+   * already seen - or pin `published_or_created_before` to keep the ranking still while it does.
    */
   RECENTLY_POPULAR_POSTS = 6,
   /** GROUP_POSTS - Returns posts from a specific group. Requires group_id parameter. */
