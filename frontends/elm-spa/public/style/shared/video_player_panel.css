@@ -60,19 +60,19 @@
   background: #000;
 }
 
-/* The queue button, centered along the top (the player's own corner buttons -- fullscreen and viewer on the left, close and volume on
-   the right -- flank it): the audio bar's own button (`.audio-player-button`, its queue glyph), on a dark pill so it reads over any picture. */
+/* The queue button, on the second row at the left, under the player's own fullscreen / "open in the viewer" buttons (`<rellm-video>`
+   draws those at the top-left; close is at the top-right with the player's volume button under it, so the two rows line up). It is the
+   audio bar's own button (`.audio-player-button`, its queue glyph), on a dark pill so it reads over any picture. */
 .video-player-panel-queue-controls {
   position: absolute;
-  top: 0.4rem;
-  left: 50%;
+  top: calc(0.35rem + 30px);
+  left: 0.35rem;
   display: flex;
   gap: 0;
   padding: 0 0.1rem;
   border-radius: 999px;
   background: rgba(0, 0, 0, 0.55);
   color: #fff;
-  transform: translateX(-50%);
   opacity: 0.85;
 }
 
@@ -88,6 +88,20 @@
    the player, so it is always on screen and always clickable (the player still wakes when the pointer moves over it). */
 .video-player-panel-queue-controls {
   transition: opacity 0.2s;
+}
+
+/* A player big enough for the full layout (not `compact`) keeps fullscreen and "open in the viewer" in the bottom bar, so the top-left
+   corner is free: the queue button goes there, and every top button is in the top-left or top-right corner. */
+rellm-video:not(.compact) ~ .video-player-panel-queue-controls {
+  top: 0.35rem;
+  left: 0.35rem;
+}
+
+/* A player too short for a second row (`<rellm-video>` has `short`: a wide video at the miniplayer's width) would have the queue button
+   covering the bottom bar's play button, so there it goes up into the top row instead, right after fullscreen and "open in the viewer". */
+rellm-video.short ~ .video-player-panel-queue-controls {
+  top: 0.35rem;
+  left: calc(0.35rem + 60px);
 }
 
 rellm-video.idle ~ .video-player-panel-queue-controls:not(:focus-within) {
@@ -124,20 +138,9 @@ rellm-video.idle ~ .video-player-panel-queue-controls:not(:focus-within) {
   background: rgba(0, 0, 0, 0.8);
 }
 
-/* The corner buttons wrap in a narrow player. The first row is fullscreen and "open in the viewer" at the left, the queue button
-   centered, and close at the right; with less than ~170px there is no room for the queue button between them, so it drops to a
-   second row, left-aligned, under fullscreen. (The player's volume button is always on the second row, right-aligned under close:
-   `<rellm-video>` puts it there while it is the miniplayer.) */
+/* The panel's width is what the tiny-size rule below keys off. */
 .video-player-panel {
   container-type: inline-size;
-}
-
-@container (max-width: 169px) {
-  .video-player-panel-queue-controls {
-    top: calc(0.35rem + 30px);
-    left: 0.35rem;
-    transform: none;
-  }
 }
 
 /* A tiny player has smaller corner buttons (20px, 3px in), so the second row is that much higher. */
@@ -147,12 +150,25 @@ rellm-video.idle ~ .video-player-panel-queue-controls:not(:focus-within) {
     left: 3px;
   }
 
+  rellm-video.short ~ .video-player-panel-queue-controls {
+    top: 3px;
+    left: calc(3px + 44px);
+  }
+
   .video-player-panel-close {
     top: 3px;
     right: 3px;
     width: 20px;
     height: 20px;
     font-size: 12px;
+  }
+}
+
+/* A tiny player that is also short has no room for the queue button anywhere: the top row (fullscreen, viewer, queue, close) needs
+   about 100px, and a second row would cover the play button. The queue is a click away in the audio bar, so it goes. */
+@container (max-width: 98px) {
+  rellm-video.short ~ .video-player-panel-queue-controls {
+    display: none;
   }
 }
 

@@ -1410,6 +1410,9 @@
       } else if (payload.action === 'play') {
         el.play().catch(function () {});
       } else if (payload.action === 'pause') {
+        // (Also drops a resume still waiting for an HLS stream to attach, which would start it afterwards.)
+        var host = el.closest && el.closest('rellm-video');
+        if (host && host.cancelResume) { host.cancelResume(); }
         el.pause();
       } else if (payload.action === 'seek') {
         el.currentTime = payload.timeMs / 1000;

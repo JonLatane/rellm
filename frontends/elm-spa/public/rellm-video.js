@@ -453,7 +453,12 @@
       }
       if (enlarged ? enlarged.playing : this.hasAttribute("data-resume")) {
         this._userPlay = true;
+        var self = this;
+        this._pendingResume = true;
         var resume = function () {
+          // `cancelResume` (the app pausing this video while it was still waiting for its stream) drops it.
+          if (!self._pendingResume) { return; }
+          self._pendingResume = false;
           var played = video.play();
           if (played && played.catch) { played.catch(function () { /* autoplay blocked: waits for a click */ }); }
         };
@@ -470,6 +475,9 @@
         }
       }
     }
+
+    // Drops a `data-resume` play that is still waiting for its stream to attach.
+    cancelResume() { this._pendingResume = false; }
 
     // ---- miniplayer ------------------------------------------------------------------------------------
 
@@ -923,6 +931,9 @@
       var rect = this.getBoundingClientRect();
       this.classList.toggle("compact", rect.width > 0 && (rect.width < 300 || rect.height < 140));
       this.classList.toggle("tiny", rect.width > 0 && rect.width < 120);
+      // Too short for the panel's queue button to sit under the corner buttons without covering the bottom bar's play button
+      // (a wide video in the miniplayer): `video_player_panel.css` moves it to the top, centered, instead.
+      this.classList.toggle("short", rect.width > 0 && rect.height < (rect.width < 120 ? 84 : 96));
       var video = this._video;
       var canFullscreen = !!(this.requestFullscreen || this.webkitRequestFullscreen || (video && video.webkitEnterFullscreen));
       this.classList.toggle("no-fullscreen", !canFullscreen);

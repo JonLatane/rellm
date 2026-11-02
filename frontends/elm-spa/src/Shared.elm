@@ -873,7 +873,18 @@ viewerVideoSync req before after =
                     after
 
         Nothing ->
-            ( after, Cmd.none )
+            -- Paged from a playing video to something else (an image) with the viewer still open: the video stops, it doesn't
+            -- carry on in the corner. (Closing the viewer on it, or its shrink button, are what hand it to the miniplayer.)
+            case ( viewing before, after.panels.mediaViewerPanel.currentMediaReference ) of
+                ( Just left, Just _ ) ->
+                    if after.panels.audioPlayerPanel.playing && Maybe.andThen (\current -> current.video.mediaId) (AudioPlayerPanel.currentVideo after.panels.audioPlayerPanel) == Just left.mediaId then
+                        sharedUpdate req (AudioPlayerPanelMsg AudioPlayerPanel.Pause) after
+
+                    else
+                        ( after, Cmd.none )
+
+                _ ->
+                    ( after, Cmd.none )
 
 
 {-| `QuoteLinks.advance` against the current accounts -- see its own doc.

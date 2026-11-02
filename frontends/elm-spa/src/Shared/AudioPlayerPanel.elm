@@ -235,6 +235,8 @@ type Msg
     | Next
     | Prev
     | TogglePlay
+      -- Pauses (never starts) the current entry.
+    | Pause
     | ToggleExpanded
     | Close
     | ToggleShare
@@ -1135,6 +1137,9 @@ update msg model =
 
         TogglePlay ->
             ( model, command "toggle" Nothing )
+
+        Pause ->
+            ( { model | playing = False, videoResume = False }, command "pause" Nothing )
 
         ToggleExpanded ->
             ( { model | expanded = not model.expanded, sharePopoverOpen = False }, Cmd.none )
