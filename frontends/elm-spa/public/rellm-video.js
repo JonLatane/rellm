@@ -147,8 +147,8 @@
     ":host(.in-panel:not(.staged)) .tr{top:calc(.35rem + 30px)}",
     ":host(.tiny.in-panel:not(.staged)) .tr{top:calc(3px + 24px)}",
     ":host(.no-duration) .seekwrap,:host(.no-duration) .time{display:none}",
-    // (No seek bar to fill the middle yet: play stays left and the rest of the bar -- the miniplayer button included -- sits at the right, where it will be once there is a duration.)
-    ":host(.no-duration) .bar .play{margin-right:auto}",
+    // (Not for `tiny` frames, which never have a seek bar, so the bar looks the same before and after the duration loads. No seek bar to fill the middle yet: play stays left and the rest of the bar -- the miniplayer button included -- sits at the right, where it will be once there is a duration.)
+    ":host(.no-duration:not(.tiny)) .bar .play{margin-right:auto}",
     ":host(.no-fullscreen) .fs{display:none!important}",
     // The miniplayer panel's own player has no miniplayer button -- except in the media viewer (`.in-viewer`), where the same button
     // shrinks the video back to the miniplayer (closing the viewer).
