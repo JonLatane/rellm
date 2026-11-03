@@ -309,7 +309,7 @@ viewHelper forceAutoplay tierOverride mediaSize sizeConstraint server maybeAccou
                             -- Always inline: without it iOS Safari takes any video that is played (rather than autoplayed) to
                             -- fullscreen, though `<rellm-video>` has its own fullscreen button.
                             , Just (attribute "playsinline" "true")
-                            , Maybe.map (attribute "poster") (hlsPosterUrl mediaUrl)
+                            , Maybe.map (attribute "poster") (posterUrl mediaUrl)
                             , aspectRatioStyle media
                             ]
                             ++ (if autoplay then
@@ -608,9 +608,65 @@ naturalVideo server maybeAccount media =
             url (imageTier Nothing Natural) server maybeAccount media
     in
     { src = src
-    , poster = hlsPosterUrl src
+    , poster = posterUrl src
     , aspectRatio = Maybe.withDefault (16 / 9) (aspectRatioOf media)
     }
+
+
+{-| The poster frame a video shows before it is played, if its URL tells where one is: a Bluesky video's (`hlsPosterUrl`) or a
+Mastodon video's (`mastodonPosterUrl`).
+-}
+posterUrl : String -> Maybe String
+posterUrl videoUrl =
+    case hlsPosterUrl videoUrl of
+        Just poster ->
+            Just poster
+
+        Nothing ->
+            mastodonPosterUrl videoUrl
+
+
+{-| The poster frame of a Mastodon video (or gifv), if `videoUrl` is where Mastodon keeps the file. Mastodon stores a video as
+`.../media_attachments/files/<id>/original/<name>.mp4` and its thumbnail -- the `preview_url` its API gives -- next to it as
+`.../small/<name>.png`, on the same host and with the same query string, whichever server cached it. `MediaReference` has no field
+to carry that `preview_url`, so (like `hlsPosterUrl`) it is re-derived from the path. A server that lays its files out some other
+way just gets no poster, which is how every Mastodon video looked before.
+-}
+mastodonPosterUrl : String -> Maybe String
+mastodonPosterUrl videoUrl =
+    let
+        ( path, query ) =
+            case String.split "?" videoUrl of
+                head :: rest ->
+                    ( head, rest |> String.join "?" |> (\q -> if q == "" then "" else "?" ++ q) )
+
+                [] ->
+                    ( videoUrl, "" )
+
+        videoExtensions : List String
+        videoExtensions =
+            [ ".mp4", ".webm", ".mov", ".m4v", ".mkv", ".ogv" ]
+
+        extensionOf : String -> Maybe String
+        extensionOf name =
+            videoExtensions |> List.filter (\extension -> String.endsWith extension (String.toLower name)) |> List.head
+    in
+    if String.contains "/media_attachments/files/" path && String.contains "/original/" path then
+        case ( String.split "/original/" path |> List.reverse, extensionOf path ) of
+            ( name :: before :: more, Just extension ) ->
+                Just
+                    (String.join "/original/" (List.reverse (before :: more))
+                        ++ "/small/"
+                        ++ String.dropRight (String.length extension) name
+                        ++ ".png"
+                        ++ query
+                    )
+
+            _ ->
+                Nothing
+
+    else
+        Nothing
 
 
 {-| The poster frame of a Bluesky video, if `videoUrl` is one of its HLS playlists
