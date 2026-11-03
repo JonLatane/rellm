@@ -853,7 +853,7 @@ viewerVideoSync req before after =
             else
                 sharedUpdate req
                     (AudioPlayerPanelMsg
-                        (AudioPlayerPanel.OpenVideo
+                        (AudioPlayerPanel.OpenViewerVideo
                             -- (The miniplayer's enlarge button hands the viewer just a URL: the queue's entry for the same video keeps its link and downloads.)
                             (AudioPlayerPanel.inheritLinkData after.panels.audioPlayerPanel
                                 { src = video.src
@@ -868,17 +868,19 @@ viewerVideoSync req before after =
                             (Just video.title)
                             0
                             video.autoplay
+                            (viewing before == Nothing)
                         )
                     )
                     after
 
         Nothing ->
-            -- Paged from a playing video to something else (an image) with the viewer still open: the video stops, it doesn't
-            -- carry on in the corner. (Closing the viewer on it, or its shrink button, are what hand it to the miniplayer.)
+            -- Paged from a video to something else (an image) with the viewer still open: the miniplayer closes -- the video doesn't
+            -- carry on in the corner -- and a video that was current before the viewer took over comes back, paused. (Closing the
+            -- viewer on the video, or its shrink button, are what hand it to the miniplayer.)
             case ( viewing before, after.panels.mediaViewerPanel.currentMediaReference ) of
                 ( Just left, Just _ ) ->
-                    if after.panels.audioPlayerPanel.playing && Maybe.andThen (\current -> current.video.mediaId) (AudioPlayerPanel.currentVideo after.panels.audioPlayerPanel) == Just left.mediaId then
-                        sharedUpdate req (AudioPlayerPanelMsg AudioPlayerPanel.Pause) after
+                    if Maybe.andThen (\current -> current.video.mediaId) (AudioPlayerPanel.currentVideo after.panels.audioPlayerPanel) == Just left.mediaId then
+                        sharedUpdate req (AudioPlayerPanelMsg AudioPlayerPanel.LeaveViewerVideo) after
 
                     else
                         ( after, Cmd.none )

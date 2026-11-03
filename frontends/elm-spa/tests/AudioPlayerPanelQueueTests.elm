@@ -122,6 +122,56 @@ suite =
                         ]
                         ()
             ]
+        , describe "the media viewer's videos (OpenViewerVideo / LeaveViewerVideo)"
+            [ test "paging off a viewer video closes the miniplayer when nothing video was current before" <|
+                \_ ->
+                    withTracks
+                        |> play (AudioPlayerPanel.OpenViewerVideo (clip "https://v/1") Nothing 0 True True)
+                        |> play AudioPlayerPanel.LeaveViewerVideo
+                        |> Expect.all
+                            [ AudioPlayerPanel.currentVideo >> Expect.equal Nothing
+                            , .playing >> Expect.equal False
+                            , .currentId >> Expect.equal Nothing
+                            ]
+            , test "a video that was current before the viewer took over comes back, paused, where it was" <|
+                \_ ->
+                    let
+                        withPlayingVideo : AudioPlayerPanel.Model
+                        withPlayingVideo =
+                            play (AudioPlayerPanel.OpenVideo (clip "https://v/old") Nothing 0 True) withTracks
+                                |> play (AudioPlayerPanel.VideoState True 42000 90000)
+                    in
+                    withPlayingVideo
+                        |> play (AudioPlayerPanel.OpenViewerVideo (clip "https://v/1") Nothing 0 True True)
+                        |> play AudioPlayerPanel.LeaveViewerVideo
+                        |> AudioPlayerPanel.currentVideo
+                        |> Maybe.map (\v -> ( v.video.src, v.startAt, v.resume ))
+                        |> Expect.equal (Just ( "https://v/old", 42, False ))
+            , test "paging from one viewer video to the next keeps the video from before the viewer" <|
+                \_ ->
+                    play (AudioPlayerPanel.OpenVideo (clip "https://v/old") Nothing 0 True) withTracks
+                        |> play (AudioPlayerPanel.OpenViewerVideo (clip "https://v/1") Nothing 0 True True)
+                        |> play (AudioPlayerPanel.OpenViewerVideo (clip "https://v/2") Nothing 0 True False)
+                        |> play AudioPlayerPanel.LeaveViewerVideo
+                        |> AudioPlayerPanel.currentVideo
+                        |> Maybe.map (.video >> .src)
+                        |> Expect.equal (Just "https://v/old")
+            , test "queueing a track after the viewer's video closed keeps what was already queued" <|
+                \_ ->
+                    withTracks
+                        |> play (AudioPlayerPanel.OpenViewerVideo (clip "https://v/1") Nothing 0 True True)
+                        |> play AudioPlayerPanel.LeaveViewerVideo
+                        |> play (AudioPlayerPanel.Enqueue AudioPlayerPanel.PlayLast (track "q") "rellm.org")
+                        |> queued
+                        |> Expect.equal [ "q", "https://v/1", "a", "b", "c" ]
+            , test "the same video the viewer opens on (enlarged from the miniplayer) is not 'a different video'" <|
+                \_ ->
+                    play (AudioPlayerPanel.OpenVideo (clip "https://v/1") Nothing 0 True) withTracks
+                        |> play (AudioPlayerPanel.OpenViewerVideo (clip "https://v/1") Nothing 0 True True)
+                        |> play AudioPlayerPanel.LeaveViewerVideo
+                        |> AudioPlayerPanel.currentVideo
+                        |> Expect.equal Nothing
+            ]
         , describe "moving through the queue switches between the bar and the miniplayer"
             [ test "Next from a track to a video hands over to the miniplayer, starting it from the top" <|
                 \_ ->
