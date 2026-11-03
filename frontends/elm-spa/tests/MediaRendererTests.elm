@@ -74,6 +74,20 @@ suite =
                             , Query.find [ Selector.tag "video" ]
                                 >> Query.has [ Selector.attribute (Html.Attributes.attribute "poster" "https://video.bsky.app/watch/did%3Aplc%3Aabc/bafk/thumbnail.jpg") ]
                             ]
+            , test "a Mastodon video gets its thumbnail (the small/ copy, as a png) as the poster" <|
+                \_ ->
+                    render (media "video/*" "https://s3.example.com/mastodonworld/cache/media_attachments/files/117/554/560/original/1eb5c8d5.mp4?X=1")
+                        |> Query.find [ Selector.tag "video" ]
+                        |> Query.has [ Selector.attribute (Html.Attributes.attribute "poster" "https://s3.example.com/mastodonworld/cache/media_attachments/files/117/554/560/small/1eb5c8d5.png?X=1") ]
+            , test "a video that is not laid out the Mastodon way gets no poster at all" <|
+                \_ ->
+                    -- (`naturalVideo` takes the same poster the `<video poster>` attribute does, and says plainly when there is none.)
+                    [ "https://example.com/uploads/original/clip.mp4"
+                    , "https://example.com/media_attachments/files/1/clip.mp4"
+                    , "https://example.com/media_attachments/files/1/original/clip.txt"
+                    ]
+                        |> List.map (\videoUrl -> (MediaRenderer.naturalVideo (RellmServerFactory.connected "rellm.org") Nothing (media "video/*" videoUrl)).poster)
+                        |> Expect.equal [ Nothing, Nothing, Nothing ]
             , test "tells <rellm-video> its MediaSize, so only thumbnails get the enlarge button" <|
                 \_ ->
                     let
