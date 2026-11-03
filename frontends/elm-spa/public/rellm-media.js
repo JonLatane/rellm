@@ -162,7 +162,77 @@
     return found;
   };
 
+  // ---- keeping one <video> across players ---------------------------------------------------------------
+  //
+  // Moving a video between players (a post's inline player -> the miniplayer or the viewer) by building a new `<video>` in the
+  // new place reloads the stream and leaves a gap. So the player giving a video up parks the live element here (`stashVideo`,
+  // keyed like `enlargement`: by the media's key), still playing, and the new player takes it over the moment it is built
+  // (`takeVideo`), swapping it in for the `<video>` Elm just made. A stash nobody takes within a few seconds is let go.
+  //
+  // Elm still holds the elements it made, so both the parked one and the one it was swapped for are noted (`noteMoved`) and
+  // `removeChild`/`insertBefore`/`replaceChild` tolerate them no longer being where Elm left them, rather than throwing.
+  var HANDOFF_WINDOW_MS = 4000;
+  var holder = null;
+  var stash = null;
+  var moved = new WeakSet();
+
+  var noteMoved = function (element) { moved.add(element); };
+  var nativeRemoveChild = Node.prototype.removeChild;
+  Node.prototype.removeChild = function (child) {
+    if (child && moved.has(child) && child.parentNode !== this) { return child; }
+    return nativeRemoveChild.call(this, child);
+  };
+  var nativeInsertBefore = Node.prototype.insertBefore;
+  Node.prototype.insertBefore = function (node, reference) {
+    if (reference && moved.has(reference) && reference.parentNode !== this) { reference = null; }
+    return nativeInsertBefore.call(this, node, reference);
+  };
+  var nativeReplaceChild = Node.prototype.replaceChild;
+  Node.prototype.replaceChild = function (node, old) {
+    if (old && moved.has(old) && old.parentNode !== this) { return old; }
+    return nativeReplaceChild.call(this, node, old);
+  };
+
+  var dropStash = function () {
+    if (!stash) { return; }
+    clearTimeout(stash.timer);
+    var video = stash.video;
+    stash = null;
+    try { video.pause(); } catch (e) { /* nothing to pause */ }
+    if (video.parentNode) { video.parentNode.removeChild(video); }
+  };
+
+  // Parked outside <body> (Elm owns that), kept rendered so the browser doesn't treat the video as gone.
+  var parkingSpot = function () {
+    if (!holder || !holder.isConnected) {
+      holder = document.createElement("div");
+      holder.setAttribute("aria-hidden", "true");
+      holder.style.cssText = "position:fixed;left:0;top:0;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none";
+      document.documentElement.appendChild(holder);
+    }
+    return holder;
+  };
+
+  var stashVideo = function (key, video) {
+    dropStash();
+    noteMoved(video);
+    // (Moved synchronously: the browser pauses a video that is out of the document only if it is still out after the task.)
+    parkingSpot().appendChild(video);
+    stash = { key: key, video: video, timer: setTimeout(dropStash, HANDOFF_WINDOW_MS) };
+  };
+
+  var takeVideo = function (key) {
+    if (!stash || !key || stash.key !== key) { return null; }
+    clearTimeout(stash.timer);
+    var video = stash.video;
+    stash = null;
+    return video;
+  };
+
   window.rellmMedia = {
+    stashVideo: stashVideo,
+    takeVideo: takeVideo,
+    noteMoved: noteMoved,
     lastNavigation: function () { return lastNavigation; },
     justNavigated: justNavigated,
     setEnlarge: setEnlarge,

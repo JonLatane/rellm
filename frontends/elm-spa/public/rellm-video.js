@@ -27,6 +27,9 @@
 //     player raises a `rellm-miniplayer` window event (`index.html` hands it to Elm over a port) with where
 //     the video was (an inline video that someone is playing and scrolls out of the window goes there too); the panel's own `<rellm-video>` gets `data-miniplayer-panel`, `data-start-at` and
 //     `data-resume` to pick it up
+//   * the very same `<video>` carries on from a post to the miniplayer or the viewer, and between those two, so there's no reload
+//     or gap: the player giving the video up parks the live element (`rellmMedia.stashVideo`, leaving a stand-in with the poster),
+//     and the panel's player swaps it in for the one Elm made (`_takeOver`)
 //   * only one thing plays at a time (see `rellm-media.js`, which also owns the navigation tracking used here)
 //
 // Narrow or short frames (thumbnails) get a trimmed layout: `compact` keeps play and seek along the
@@ -380,9 +383,51 @@
       this._miniplayer();
     }
 
+    // The miniplayer's / viewer's player takes over the live `<video>` the player a video came from parked (`rellmMedia.stashVideo`)
+    // instead of the one Elm made: same stream, same buffer, same moment, no reload. Returns the `<video>` to use.
+    _takeOver(fresh) {
+      if (!fresh || this._tookOver || !this.hasAttribute("data-miniplayer-panel")) { return fresh; }
+      this._tookOver = true;
+      var carried = media.takeVideo(this._mediaKey(fresh));
+      if (!carried) { return fresh; }
+      carried.className = fresh.className;
+      media.noteMoved(fresh);
+      fresh.replaceWith(carried);
+      // Elm's own copy never plays: let go of whatever it started loading.
+      fresh.removeAttribute("src");
+      try { fresh.load(); } catch (e) { /* nothing loading */ }
+      this._carried = true;
+      return carried;
+    }
+
+    // Gives this player's live `<video>` up to the one that is about to take the video over (the miniplayer's, the viewer's), and
+    // leaves a stand-in (poster, same source, not loading) in its place. False if there is nothing to give, or the player taking
+    // over already has the video (then it only needs telling where to go).
+    _giveUpVideo() {
+      var v = this._video;
+      if (!v || this.hasAttribute("data-miniplayer-panel")) { return false; }
+      var key = this._mediaKey();
+      if (!key) { return false; }
+      var existing = document.querySelector(PANEL + " rellm-video");
+      if (existing && existing._video && existing._mediaKey() === key) { return false; }
+      if (this.isConnected && v.parentNode) {
+        var standIn = document.createElement("video");
+        standIn.className = v.className;
+        standIn.setAttribute("preload", "none");
+        standIn.setAttribute("playsinline", "true");
+        ["poster", "style"].forEach(function (name) { if (v.hasAttribute(name)) { standIn.setAttribute(name, v.getAttribute(name)); } });
+        var original = typeof window.rellmOriginalSrc === "function" ? window.rellmOriginalSrc(v) : v.getAttribute("src");
+        if (original) { standIn.setAttribute("src", original); }
+        v.parentNode.insertBefore(standIn, v);
+      }
+      this._unbind();
+      media.stashVideo(key, v);
+      return true;
+    }
+
     _bind() {
       var e = this._els;
-      var video = this.querySelector("video");
+      var video = this._takeOver(this.querySelector("video"));
       if (video !== this._video) {
         this._unbind();
         this._video = video;
@@ -418,10 +463,10 @@
 
     // What names this video across players: its media id, or -- for a video that is only a URL (Bluesky, Mastodon, the
     // miniplayer's) -- that URL, which is also what the viewer uses for it (`MediaViewerPanel.standInMedia`).
-    _mediaKey() {
+    _mediaKey(element) {
       var id = this.getAttribute("data-media-id");
       if (id) { return id; }
-      var v = this._video;
+      var v = element || this._video;
       if (!v) { return ""; }
       var original = typeof window.rellmOriginalSrc === "function" ? window.rellmOriginalSrc(v) : v.getAttribute("src");
       return (original || "").split("#")[0];
@@ -437,7 +482,9 @@
       if (!enlarged) { return; }
       // A replacement is built within a frame or two of the viewer opening; after that, nobody else should find the handoff.
       setTimeout(function () { media.clearEnlarge(enlarged.at); }, 600);
-      try { v.currentTime = enlarged.time; } catch (e) { /* not seekable yet */ }
+      if (Math.abs((v.currentTime || 0) - enlarged.time) > 1) {
+        try { v.currentTime = enlarged.time; } catch (e) { /* not seekable yet */ }
+      }
       if (enlarged.playing) {
         this._userPlay = true;
         var played = v.play();
@@ -460,6 +507,11 @@
     _applyHandoff(video) {
       // A video opened in the viewer from a post's thumbnail (`_enlarge`) carries on from where the thumbnail was.
       var enlarged = this.hasAttribute("data-miniplayer-panel") ? media.takeEnlarge(this._mediaKey()) : null;
+      // The very `<video>` the player before this one had (`_takeOver`) is already where it was, playing or not.
+      if (this._carried) {
+        if (!video.paused) { this._userPlay = true; }
+        return;
+      }
       var startAt = enlarged ? enlarged.time : parseFloat(this.getAttribute("data-start-at"));
       if (isFinite(startAt) && startAt > 0) {
         try { video.currentTime = startAt; } catch (e) { /* set again below */ }
@@ -501,20 +553,21 @@
       var original = typeof window.rellmOriginalSrc === "function" ? window.rellmOriginalSrc(v) : v.getAttribute("src");
       var src = (original || "").split("#")[0];
       if (!src) { return false; }
-      window.dispatchEvent(new CustomEvent("rellm-miniplayer", {
-        detail: {
-          src: src,
-          poster: v.getAttribute("poster") || null,
-          time: v.currentTime || 0,
-          playing: !v.paused && !v.ended,
-          aspectRatio: v.videoWidth > 0 && v.videoHeight > 0 ? v.videoWidth / v.videoHeight : 16 / 9,
-          title: pageTitle(),
-          mediaId: this.getAttribute("data-media-id") || null,
-          host: this.getAttribute("data-host") || null,
-          downloads: this.getAttribute("data-downloads") || null,
-          returnUrl: from
-        }
-      }));
+      var detail = {
+        src: src,
+        poster: v.getAttribute("poster") || null,
+        time: v.currentTime || 0,
+        playing: !v.paused && !v.ended,
+        aspectRatio: v.videoWidth > 0 && v.videoHeight > 0 ? v.videoWidth / v.videoHeight : 16 / 9,
+        title: pageTitle(),
+        mediaId: this.getAttribute("data-media-id") || null,
+        host: this.getAttribute("data-host") || null,
+        downloads: this.getAttribute("data-downloads") || null,
+        returnUrl: from
+      };
+      // The miniplayer's player takes this very `<video>` over (see `_takeOver`) so it carries on without a reload.
+      this._giveUpVideo();
+      window.dispatchEvent(new CustomEvent("rellm-miniplayer", { detail: detail }));
       return true;
     }
 
@@ -739,7 +792,8 @@
         playing: !v.paused && !v.ended
       });
       // A thumbnail hands over to the viewer's player and stops; the miniplayer's player *is* the viewer's (it just glides there).
-      if (!this.hasAttribute("data-miniplayer-panel")) { v.pause(); }
+      // (Or the viewer's player takes this very `<video>` over, see `_takeOver`: it is only paused if that can't happen.)
+      if (!this.hasAttribute("data-miniplayer-panel") && !this._giveUpVideo()) { v.pause(); }
       this.dispatchEvent(new CustomEvent("rellm-video-enlarge", { bubbles: true, composed: true }));
     }
 

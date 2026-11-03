@@ -33,6 +33,10 @@ next are in the bar), a close button (top-right), and its own "open in the viewe
 `Shared.MediaViewerPanel` on this video. On a stage, CSS hides the queue and close buttons and the viewer button; the stage's
 view has its own.
 
+The player doesn't reload when a video moves between places: the `<video>` of the inline player a video came from is the one
+this panel's player takes over (`public/rellm-media.js`'s `stashVideo`/`takeVideo`), and the queue (`Shared.AudioPlayerPanel`)
+keeps the panel's player when it is asked for the video it already has (the viewer opening on it), rather than building a new one.
+
 Streams (HLS, `.m3u8`) work the same way: `public/index.html` attaches hls.js to any `<video>` with such a `src`.
 
 -}
