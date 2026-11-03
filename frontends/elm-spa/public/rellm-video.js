@@ -421,6 +421,7 @@
         v.parentNode.insertBefore(standIn, v);
       }
       this._unbind();
+      this._releaseMediaSession();
       media.stashVideo(key, v);
       return true;
     }
@@ -509,7 +510,11 @@
       var enlarged = this.hasAttribute("data-miniplayer-panel") ? media.takeEnlarge(this._mediaKey()) : null;
       // The very `<video>` the player before this one had (`_takeOver`) is already where it was, playing or not.
       if (this._carried) {
-        if (!video.paused) { this._userPlay = true; }
+        if (!video.paused) {
+          this._userPlay = true;
+          // No new `play` event is coming, so the OS media controls (lock screen, headset) are claimed for this player here.
+          this._claimMediaSession();
+        }
         return;
       }
       var startAt = enlarged ? enlarged.time : parseFloat(this.getAttribute("data-start-at"));
