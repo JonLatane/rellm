@@ -1083,8 +1083,9 @@ update msg model =
                     { media = media, host = host, video = Nothing }
             in
             if model.currentId == Nothing then
-                -- Nothing loaded: the queued track just starts.
-                beginItem item { model | queue = [ item ] }
+                -- Nothing loaded: the queued track just starts. (The queue can still hold entries -- the viewer closing its video
+                -- leaves them -- and they follow it, like anything else started.)
+                beginItem item { model | queue = playNowQueue item [] model.queue }
 
             else if isCurrent model item then
                 ( model, Cmd.none )

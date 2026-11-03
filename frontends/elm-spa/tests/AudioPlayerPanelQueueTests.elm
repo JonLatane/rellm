@@ -156,6 +156,14 @@ suite =
                         |> AudioPlayerPanel.currentVideo
                         |> Maybe.map (.video >> .src)
                         |> Expect.equal (Just "https://v/old")
+            , test "queueing a track after the viewer's video closed keeps what was already queued" <|
+                \_ ->
+                    withTracks
+                        |> play (AudioPlayerPanel.OpenViewerVideo (clip "https://v/1") Nothing 0 True True)
+                        |> play AudioPlayerPanel.LeaveViewerVideo
+                        |> play (AudioPlayerPanel.Enqueue AudioPlayerPanel.PlayLast (track "q") "rellm.org")
+                        |> queued
+                        |> Expect.equal [ "q", "https://v/1", "a", "b", "c" ]
             , test "the same video the viewer opens on (enlarged from the miniplayer) is not 'a different video'" <|
                 \_ ->
                     play (AudioPlayerPanel.OpenVideo (clip "https://v/1") Nothing 0 True) withTracks
