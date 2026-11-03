@@ -164,6 +164,10 @@ type alias Model =
     , videoResume : Bool
     , videoGeneration : Int
 
+    -- The video that was current (and where it had got to, in ms) when the media viewer took over with one of its own
+    -- (`OpenViewerVideo`): what comes back, paused, when the viewer pages away from its video to something else (`LeaveViewerVideo`).
+    , videoPrior : Maybe { item : QueueItem, positionMs : Float }
+
     -- Where to seek to once the freshly loaded track can (`CanPlay`): the position a post card's audio was at when it
     -- was handed over (`OpenAt`).
     , pendingSeekMs : Maybe Float
@@ -209,6 +213,12 @@ type Msg
     | OpenAt (List MediaReference) String String Float Bool
       -- A video moving to the miniplayer (its title, where it had got to in seconds, whether it was playing).
     | OpenVideo VideoItem (Maybe String) Float Bool
+      -- The same, for the media viewer showing a video: the last Bool is whether this starts a stay in the viewer on videos (not a
+      -- page from one video to the next), which remembers the video that was current, to bring back with `LeaveViewerVideo`.
+    | OpenViewerVideo VideoItem (Maybe String) Float Bool Bool
+      -- The viewer paged from its video to something else (an image): the miniplayer closes, bringing back the video that was
+      -- current before the viewer took over, paused, if there was one.
+    | LeaveViewerVideo
       -- What the miniplayer's video reports as it plays (`Shared.update` forwards it): playing?, position and duration (ms).
     | VideoState Bool Float Float
     | VideoEnded
@@ -235,8 +245,6 @@ type Msg
     | Next
     | Prev
     | TogglePlay
-      -- Pauses (never starts) the current entry.
-    | Pause
     | ToggleExpanded
     | Close
     | ToggleShare
@@ -262,7 +270,7 @@ type Msg
 
 init : Model
 init =
-    { queue = [], currentId = Nothing, targetHost = "", expanded = False, playing = False, positionMs = 0, durationMs = 0, quality = High, activeSlot = SlotA, slotA = Nothing, slotB = Nothing, autoStart = False, selectionGeneration = 0, videoStartAt = 0, videoResume = True, videoGeneration = 0, pendingSeekMs = Nothing, pendingUpgrade = Nothing, activeLoaded = False, pendingTrackLink = Nothing, pendingVideoLink = Nothing, origin = "", sharePopoverOpen = False, linkCopied = False, copyGeneration = 0, savedFragment = Nothing, queueOpen = False, moveAnimations = Dict.empty, drag = UI.Drag.init }
+    { queue = [], currentId = Nothing, targetHost = "", expanded = False, playing = False, positionMs = 0, durationMs = 0, quality = High, activeSlot = SlotA, slotA = Nothing, slotB = Nothing, autoStart = False, selectionGeneration = 0, videoStartAt = 0, videoResume = True, videoGeneration = 0, videoPrior = Nothing, pendingSeekMs = Nothing, pendingUpgrade = Nothing, activeLoaded = False, pendingTrackLink = Nothing, pendingVideoLink = Nothing, origin = "", sharePopoverOpen = False, linkCopied = False, copyGeneration = 0, savedFragment = Nothing, queueOpen = False, moveAnimations = Dict.empty, drag = UI.Drag.init }
 
 
 {-| Whether the panel is actually shown expanded: the user's choice (`Model.expanded`), unless the fullscreen
@@ -950,6 +958,41 @@ update msg model =
             in
             beginVideo item startAtSeconds resume { model | queue = playNowQueue item [] model.queue }
 
+        OpenViewerVideo video title startAtSeconds resume startsStay ->
+            let
+                prior : Maybe { item : QueueItem, positionMs : Float }
+                prior =
+                    if startsStay then
+                        currentItem model
+                            |> Maybe.andThen
+                                (\item ->
+                                    case item.video of
+                                        Just current ->
+                                            if current.src == video.src then
+                                                Nothing
+
+                                            else
+                                                Just { item = item, positionMs = model.positionMs }
+
+                                        Nothing ->
+                                            Nothing
+                                )
+
+                    else
+                        model.videoPrior
+            in
+            update (OpenVideo video title startAtSeconds resume) { model | videoPrior = prior }
+
+        LeaveViewerVideo ->
+            case model.videoPrior of
+                Just prior ->
+                    beginVideo prior.item (prior.positionMs / 1000) False { model | videoPrior = Nothing }
+
+                Nothing ->
+                    ( { model | currentId = Nothing, playing = False, positionMs = 0, durationMs = 0, expanded = False, selectionGeneration = model.selectionGeneration + 1 }
+                    , Cmd.none
+                    )
+
         VideoState playing positionMs durationMs ->
             if currentVideo model /= Nothing then
                 ( { model | playing = playing, positionMs = positionMs, durationMs = durationMs }, Cmd.none )
@@ -1137,9 +1180,6 @@ update msg model =
 
         TogglePlay ->
             ( model, command "toggle" Nothing )
-
-        Pause ->
-            ( { model | playing = False, videoResume = False }, command "pause" Nothing )
 
         ToggleExpanded ->
             ( { model | expanded = not model.expanded, sharePopoverOpen = False }, Cmd.none )

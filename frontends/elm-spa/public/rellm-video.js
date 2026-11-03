@@ -25,7 +25,7 @@
 //   * a miniplayer button (and the `i` key): the video carries on in `Shared.VideoPlayerPanel`'s floating
 //     player while you browse, and so does one that's playing when you navigate away from its page. The
 //     player raises a `rellm-miniplayer` window event (`index.html` hands it to Elm over a port) with where
-//     the video was; the panel's own `<rellm-video>` gets `data-miniplayer-panel`, `data-start-at` and
+//     the video was (an inline video that someone is playing and scrolls out of the window goes there too); the panel's own `<rellm-video>` gets `data-miniplayer-panel`, `data-start-at` and
 //     `data-resume` to pick it up
 //   * only one thing plays at a time (see `rellm-media.js`, which also owns the navigation tracking used here)
 //
@@ -266,6 +266,7 @@
       clearTimeout(this._toastTimer);
       this._idleTimer = this._volTimer = null;
       if (this._resizeObserver) { this._resizeObserver.disconnect(); }
+      if (this._visibilityObserver) { this._visibilityObserver.disconnect(); }
       document.removeEventListener("fullscreenchange", this._onDocumentChange);
       document.removeEventListener("webkitfullscreenchange", this._onDocumentChange);
       document.removeEventListener("pointerdown", this._onOutsidePointer, true);
@@ -363,6 +364,20 @@
 
       this._resizeObserver = typeof ResizeObserver === "function"
         ? new ResizeObserver(function () { self._layout(); }) : null;
+      this._visibilityObserver = typeof IntersectionObserver === "function"
+        ? new IntersectionObserver(function (entries) { self._onVisibility(entries[entries.length - 1]); }) : null;
+    }
+
+    // A video someone is playing inline that is scrolled completely out of the window carries on in the miniplayer, like it
+    // does when the page is navigated away from. Not when it's merely hidden (a panel opened over it, display: none: it has no
+    // size), not in fullscreen, not the miniplayer's own player, and not a silent autoplay preview (`_userPlay`).
+    _onVisibility(entry) {
+      var v = this._video;
+      if (!entry || entry.isIntersecting || !v || v.paused || v.ended || !this._userPlay) { return; }
+      if (this.hasAttribute("data-miniplayer-panel") || document.fullscreenElement || document.webkitFullscreenElement) { return; }
+      var r = entry.boundingClientRect;
+      if (!r || (r.width === 0 && r.height === 0)) { return; }
+      this._miniplayer();
     }
 
     _bind() {
@@ -390,6 +405,7 @@
         document.addEventListener("pointerdown", this._onOutsidePointer, true);
         window.addEventListener("rellm-enlarge", this._onEnlarge);
         if (this._resizeObserver) { this._resizeObserver.observe(this); }
+        if (this._visibilityObserver) { this._visibilityObserver.observe(this); }
       }
       this.classList.toggle("enlargeable", /^(small|extra-small)$/.test(this.getAttribute("data-media-size") || "") || this.hasAttribute("data-miniplayer-panel"));
       this.classList.toggle("in-panel", this.hasAttribute("data-miniplayer-panel"));
@@ -455,11 +471,9 @@
       if (enlarged ? enlarged.playing : this.hasAttribute("data-resume")) {
         this._userPlay = true;
         var self = this;
-        this._pendingResume = true;
         var resume = function () {
-          // `cancelResume` (the app pausing this video while it was still waiting for its stream) drops it.
-          if (!self._pendingResume) { return; }
-          self._pendingResume = false;
+          // The player was closed while it waited for its stream (a detached <video> would play on, unseen).
+          if (!self.isConnected) { return; }
           var played = video.play();
           if (played && played.catch) { played.catch(function () { /* autoplay blocked: waits for a click */ }); }
         };
@@ -476,9 +490,6 @@
         }
       }
     }
-
-    // Drops a `data-resume` play that is still waiting for its stream to attach.
-    cancelResume() { this._pendingResume = false; }
 
     // ---- miniplayer ------------------------------------------------------------------------------------
 
