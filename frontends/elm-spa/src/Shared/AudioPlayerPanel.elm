@@ -294,6 +294,18 @@ currentItem model =
     model.queue |> List.filter (isCurrent model) |> List.head
 
 
+{-| Whether the current entry is the video at `src`.
+-}
+isCurrentVideoSrc : String -> Model -> Bool
+isCurrentVideoSrc src model =
+    case currentVideo model of
+        Just current ->
+            current.video.src == src
+
+        Nothing ->
+            False
+
+
 {-| The current entry, if it's a video -- what `Shared.update` keeps the miniplayer showing.
 -}
 currentVideo : Model -> Maybe CurrentVideo
@@ -956,7 +968,15 @@ update msg model =
                     , video = Just video
                     }
             in
-            beginVideo item startAtSeconds resume { model | queue = playNowQueue item [] model.queue }
+            if isCurrentVideoSrc video.src model then
+                -- Already the miniplayer's video: its player stays (a new one would reload the stream and leave a gap), and is
+                -- moved to where this says instead.
+                ( { model | queue = playNowQueue item [] model.queue, positionMs = startAtSeconds * 1000, playing = resume }
+                , Cmd.batch [ command "seek" (Just (startAtSeconds * 1000)), command (if resume then "play" else "pause") Nothing ]
+                )
+
+            else
+                beginVideo item startAtSeconds resume { model | queue = playNowQueue item [] model.queue }
 
         OpenViewerVideo video title startAtSeconds resume startsStay ->
             let
@@ -981,7 +1001,21 @@ update msg model =
                     else
                         model.videoPrior
             in
-            update (OpenVideo video title startAtSeconds resume) { model | videoPrior = prior }
+            if isCurrentVideoSrc video.src model then
+                -- The viewer opening on the video the miniplayer already has (its enlarge button): the same player carries on,
+                -- gliding to the viewer's stage, from wherever it is.
+                let
+                    item : QueueItem
+                    item =
+                        { media = { defaultMediaReference | id = video.src, name = Just (Maybe.withDefault "Video" title) }
+                        , host = ""
+                        , video = Just video
+                        }
+                in
+                ( { model | queue = playNowQueue item [] model.queue, videoPrior = prior }, Cmd.none )
+
+            else
+                update (OpenVideo video title startAtSeconds resume) { model | videoPrior = prior }
 
         LeaveViewerVideo ->
             case model.videoPrior of

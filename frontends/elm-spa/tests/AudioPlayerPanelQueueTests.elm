@@ -83,20 +83,6 @@ suite =
             , test "a track isn't a video" <|
                 \_ ->
                     AudioPlayerPanel.currentVideo withTracks |> Expect.equal Nothing
-            , test "beginning a video again changes its generation (so the miniplayer restarts)" <|
-                \_ ->
-                    let
-                        generationAfter : AudioPlayerPanel.Model -> Maybe Int
-                        generationAfter =
-                            AudioPlayerPanel.currentVideo >> Maybe.map .generation
-
-                        first : AudioPlayerPanel.Model
-                        first =
-                            play (AudioPlayerPanel.OpenVideo (clip "https://v/1") Nothing 0 True) withTracks
-                    in
-                    play (AudioPlayerPanel.OpenVideo (clip "https://v/1") Nothing 30 True) first
-                        |> generationAfter
-                        |> Expect.notEqual (generationAfter first)
             , test "an untitled video is called Video" <|
                 \_ ->
                     play (AudioPlayerPanel.OpenVideo (clip "https://v/1") Nothing 0 True) AudioPlayerPanel.init
@@ -121,6 +107,50 @@ suite =
                                 |> Expect.equal withTracks.positionMs
                         ]
                         ()
+            ]
+        , describe "the video that is already the miniplayer's keeps its player"
+            [ test "opening it again does not start a new player (the generation is what rebuilds it)" <|
+                \_ ->
+                    let
+                        first : AudioPlayerPanel.Model
+                        first =
+                            play (AudioPlayerPanel.OpenVideo (clip "https://v/1") Nothing 0 True) withTracks
+
+                        generationAfter : AudioPlayerPanel.Model -> Maybe Int
+                        generationAfter =
+                            AudioPlayerPanel.currentVideo >> Maybe.map .generation
+                    in
+                    play (AudioPlayerPanel.OpenVideo (clip "https://v/1") Nothing 30 True) first
+                        |> generationAfter
+                        |> Expect.equal (generationAfter first)
+            , test "the viewer opening on it (the enlarge button) does not either" <|
+                \_ ->
+                    let
+                        first : AudioPlayerPanel.Model
+                        first =
+                            play (AudioPlayerPanel.OpenVideo (clip "https://v/1") Nothing 12 True) withTracks
+
+                        generationAfter : AudioPlayerPanel.Model -> Maybe Int
+                        generationAfter =
+                            AudioPlayerPanel.currentVideo >> Maybe.map .generation
+                    in
+                    play (AudioPlayerPanel.OpenViewerVideo (clip "https://v/1") Nothing 0 True True) first
+                        |> generationAfter
+                        |> Expect.equal (generationAfter first)
+            , test "a different video still does" <|
+                \_ ->
+                    let
+                        first : AudioPlayerPanel.Model
+                        first =
+                            play (AudioPlayerPanel.OpenVideo (clip "https://v/1") Nothing 0 True) withTracks
+
+                        generationAfter : AudioPlayerPanel.Model -> Maybe Int
+                        generationAfter =
+                            AudioPlayerPanel.currentVideo >> Maybe.map .generation
+                    in
+                    play (AudioPlayerPanel.OpenVideo (clip "https://v/2") Nothing 0 True) first
+                        |> generationAfter
+                        |> Expect.notEqual (generationAfter first)
             ]
         , describe "the media viewer's videos (OpenViewerVideo / LeaveViewerVideo)"
             [ test "paging off a viewer video closes the miniplayer when nothing video was current before" <|
