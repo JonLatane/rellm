@@ -625,6 +625,8 @@
         case "play":
           // A silent autoplay preview (a muted video in a feed) must not claim the OS media session: on iOS that
           // takes "Now Playing" away from whatever music the user already has going.
+          // An audible play is never a preview (the player bar starts the miniplayer's video via `play()` directly).
+          if (!v.muted && v.volume > 0) { this._userPlay = true; }
           if (this._userPlay) { this._claimMediaSession(); }
           break;
         case "volumechange":
