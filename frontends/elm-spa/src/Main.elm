@@ -529,40 +529,29 @@ sharedMsgForPage sharedMsg page =
             Nothing
 
 
-{-| Whether a `Shared.Countabilibar` host key still names something countable: a Rellm server the app knows, or a
-Mastodon/Bluesky source (keyed `mastodon:...`/`bluesky:...`, see `PostsPage.feedSourceKey`). What
-`Countabilibar.restore` keeps when the reader goes back to a page -- an entry for a server removed in the meantime
-isn't brought back.
+{-| Whether a `Shared.Countabilibar` host key still names a source the app has: a Rellm server it knows, a
+Mastodon instance (connected account or browsed, keyed `mastodon:<instance>`), or a Bluesky account or
+AppView (keyed `bluesky:<handle or host>`) -- the keys `PostsPage.feedSourceKey` counts under. What
+`Countabilibar.restore` keeps when the reader goes back to a page: an entry for a source removed in the
+meantime isn't brought back, since checking it again could never bring any posts back.
 -}
 knownCountedHost : Shared.Model -> String -> Bool
 knownCountedHost shared host =
-    RellmServers.rellmServerForHost shared.accounts.servers host
+    let
+        accounts : AccountsPanel.Model
+        accounts =
+            shared.accounts
+    in
+    RellmServers.rellmServerForHost accounts.servers host
         /= Nothing
-        || String.startsWith "mastodon:" host
-        || String.startsWith "bluesky:" host
+        || List.member host
+            (List.map (\account -> "mastodon:" ++ account.instanceHost) accounts.mastodonAccounts
+                ++ List.map (\instance -> "mastodon:" ++ instance.host) accounts.browsedMastodonInstances
+                ++ List.map (\account -> "bluesky:" ++ account.handle) accounts.blueskyAccounts
+                ++ List.map (\appView -> "bluesky:" ++ appView.host) accounts.blueskyAppViews
+            )
 
 
-{-| Forwards a `Shared.Msg` that originated outside any page's `update` --
-e.g. `GotReconnectResult`, fired from a `Cmd` kicked off in `Shared.init` when
-reconnecting persisted servers at startup -- into the currently active page,
-so pages that react to it via their own `SharedMsg` case (see `Pages.Home_`,
-`Pages.Post.PostId_`) notice immediately instead of relying on a poll to
-eventually catch up.
-
-Any `Shared.Msg`s the page's own `update` forwards back out in response (via
-`Effect.fromShared`) are dropped rather than reapplied to `Shared.update` --
-a page's `SharedMsg` handler only ever echoes back the very message it was
-just given here, and `sharedMsg` has already been applied by the caller, so
-reapplying it would double up a state change that's already been made. The one
-exception is `Shared.CountabilibarSync` (see `Shared.isCountabilibarSync`): that's never an
-echo, but a page reporting what it's now showing to `Shared.Countabilibar` -- e.g. nothing from a
-server that was just disabled -- and nothing else may ever report it (see
-`Components.Pages.EventsPage.countabilibarEffect`). It's delivered as a fresh message
-rather than applied here, since this function has no way to hand back a changed `Shared.Model`.
-Pages are never notified of those, or of anything else `Shared.notifiesPages` rules out, so there
-is no echo of one to tell apart from the real thing.
-
--}
 notifyPageOfSharedMsg : Shared.Msg -> Shared.Model -> Gen.Model.Model -> Url -> Key -> ( Gen.Model.Model, Cmd Msg )
 notifyPageOfSharedMsg sharedMsg shared page url key =
     case ( Shared.notifiesPages sharedMsg, sharedMsgForPage sharedMsg page ) of
