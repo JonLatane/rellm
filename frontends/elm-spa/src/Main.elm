@@ -104,6 +104,7 @@ import Shared
 import Shared.Countabilibar as Countabilibar
 import Shared.PostsCache as PostsCache
 import Shared.AccountsPanel as AccountsPanel
+import Shared.AccountsPanel.RellmServers as RellmServers
 import UI.CustomNav as CustomNav
 import Task
 import Url exposing (Url)
@@ -267,7 +268,18 @@ innerUpdate msg model =
                                         model.shared
                                 in
                                 { shared0Base
-                                    | countabilibar = Countabilibar.reset shared0Base.countabilibar
+                                    | countabilibar =
+                                        shared0Base.countabilibar
+                                            -- What the page being left had unchecked is noted under its path...
+                                            |> Countabilibar.remember model.url.path
+                                            |> Countabilibar.reset
+                                            -- ...and unchecked again if the reader is going back to it.
+                                            |> (if isBackNav then
+                                                    Countabilibar.restore (knownCountedHost shared0Base) url.path
+
+                                                else
+                                                    identity
+                                               )
 
                                     -- Only a back-navigation may restore a posts feed from `Shared.PostsCache` (a
                                     -- link click, redirect or typed URL always starts fresh) -- set before
@@ -515,6 +527,19 @@ sharedMsgForPage sharedMsg page =
 
         _ ->
             Nothing
+
+
+{-| Whether a `Shared.Countabilibar` host key still names something countable: a Rellm server the app knows, or a
+Mastodon/Bluesky source (keyed `mastodon:...`/`bluesky:...`, see `PostsPage.feedSourceKey`). What
+`Countabilibar.restore` keeps when the reader goes back to a page -- an entry for a server removed in the meantime
+isn't brought back.
+-}
+knownCountedHost : Shared.Model -> String -> Bool
+knownCountedHost shared host =
+    RellmServers.rellmServerForHost shared.accounts.servers host
+        /= Nothing
+        || String.startsWith "mastodon:" host
+        || String.startsWith "bluesky:" host
 
 
 {-| Forwards a `Shared.Msg` that originated outside any page's `update` --
