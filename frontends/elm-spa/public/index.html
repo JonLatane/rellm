@@ -1303,9 +1303,13 @@
         document.removeEventListener('touchend', unlockAudioSlots, true);
         document.querySelectorAll('.audio-player-audio').forEach(function (el) {
           if (el.getAttribute('src')) { return; }
+          // Muted, so that on iOS the unlock doesn't take the audio session from music playing in another app.
+          var wasMuted = el.muted;
+          el.muted = true;
           el.setAttribute('src', SILENT_WAV);
           var release = function () {
             if (el.getAttribute('src') === SILENT_WAV) { el.pause(); el.removeAttribute('src'); el.load(); }
+            el.muted = wasMuted;
           };
           var played = el.play();
           if (played && played.then) { played.then(release, release); } else { release(); }
