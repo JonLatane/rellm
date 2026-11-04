@@ -17,7 +17,9 @@ module Shared.Countabilibar exposing
     , noneHidden
     , panel
     , popoverUsers
+    , remember
     , reset
+    , restore
     , subscriptions
     , syncMsg
     , update
@@ -108,6 +110,10 @@ type alias Model =
     , entries : Dict String Entry
     , phase : MeasurePhase
 
+    -- What was unchecked on pages the reader has since left, by page path -- so going _back_ to one brings it
+    -- back (`restore`), unlike any other way of arriving. Survives `reset`; in memory only.
+    , remembered : Dict String Remembered
+
     -- The order the entries keep being rendered in while their old positions are being measured --
     -- see `MeasurePhase`.
     , frozenOrder : Maybe (List String)
@@ -182,8 +188,49 @@ init =
     , openHost = Nothing
     , entries = Dict.empty
     , phase = Idle
+    , remembered = Dict.empty
     , frozenOrder = Nothing
     }
+
+
+{-| The servers and users that were unchecked on a page, each with the counts cached when they were hidden --
+exactly the `hiddenHosts`/`hiddenAuthors` fields.
+-}
+type alias Remembered =
+    { hosts : List ServerCounts
+    , authors : List ( String, AuthorCounts )
+    }
+
+
+{-| Notes what is unchecked right now as what the page at `path` had unchecked (forgetting any earlier note
+for it when nothing is) -- `Main` calls this as the reader leaves a page, just before `reset` clears it.
+-}
+remember : String -> Model -> Model
+remember path model =
+    if List.isEmpty model.hiddenHosts && List.isEmpty model.hiddenAuthors then
+        { model | remembered = Dict.remove path model.remembered }
+
+    else
+        { model | remembered = Dict.insert path { hosts = model.hiddenHosts, authors = model.hiddenAuthors } model.remembered }
+
+
+{-| Unchecks again what the page at `path` had unchecked when it was left (see `remember`) -- `Main` calls this
+right after `reset`, when the reader went _back_ to it, and before the page's `init`, which reads what's hidden.
+`known` says which servers still exist (an unchecked entry for one that was removed in the meantime would just
+sit in the bar). Their cached counts come back with them, so the bar reads as it did until the page counts again.
+-}
+restore : (String -> Bool) -> String -> Model -> Model
+restore known path model =
+    case Dict.get path model.remembered of
+        Just saved ->
+            { model
+                | hiddenHosts = List.filter (\server -> known server.host) saved.hosts
+                , hiddenAuthors = List.filter (\( host, _ ) -> known host) saved.authors
+            }
+                |> syncEntries
+
+        Nothing ->
+            model
 
 
 {-| Forgets every count and every hidden server/user (their entries animate out) -- called by `Main` on

@@ -219,6 +219,66 @@ suite =
                         |> (\model -> Countabilibar.hiddenAuthorIds (Countabilibar.hidden model) "a.example")
                         |> Expect.equal [ "alice", "bob" ]
             ]
+        , describe "going back to a page"
+            [ test "what a page had unchecked comes back when the reader returns to it" <|
+                \_ ->
+                    counted [ CountPosts "a.example" [ ( alice, "p1" ), ( bob, "p2" ) ], CountEvent "b.example" alice "e1", HideAuthor "a.example" bob, HideHost "b.example" ]
+                        |> Countabilibar.remember "/posts"
+                        |> Countabilibar.reset
+                        |> Countabilibar.restore (\_ -> True) "/posts"
+                        |> (\model ->
+                                ( Countabilibar.hidden model
+                                , List.map (\server -> ( server.host, server.eventCount )) model.hiddenHosts
+                                , List.map (\( host, counts ) -> ( host, counts.author.userId, counts.postCount )) model.hiddenAuthors
+                                )
+                           )
+                        |> Expect.equal
+                            ( { hosts = Set.singleton "b.example", authors = Dict.singleton "a.example" (Set.singleton "bob") }
+                            , [ ( "b.example", 1 ) ]
+                            , [ ( "a.example", "bob", 1 ) ]
+                            )
+            , test "arriving any other way (no restore) starts with nothing unchecked" <|
+                \_ ->
+                    counted [ CountPost "a.example" alice "p1", HideHost "a.example" ]
+                        |> Countabilibar.remember "/posts"
+                        |> Countabilibar.reset
+                        |> Countabilibar.hidden
+                        |> Expect.equal Countabilibar.noneHidden
+            , test "only the page that was left gets it back" <|
+                \_ ->
+                    counted [ CountPost "a.example" alice "p1", HideHost "a.example" ]
+                        |> Countabilibar.remember "/posts"
+                        |> Countabilibar.reset
+                        |> Countabilibar.restore (\_ -> True) "/"
+                        |> Countabilibar.hidden
+                        |> Expect.equal Countabilibar.noneHidden
+            , test "a page left with nothing unchecked forgets what it had before" <|
+                \_ ->
+                    let
+                        left : Model
+                        left =
+                            counted [ CountPost "a.example" alice "p1", HideHost "a.example" ]
+                                |> Countabilibar.remember "/posts"
+                                |> Countabilibar.reset
+                                -- Back on it, the reader checks everything again, then leaves once more.
+                                |> Countabilibar.restore (\_ -> True) "/posts"
+                                |> apply [ ShowHost "a.example" ]
+                                |> Countabilibar.remember "/posts"
+                    in
+                    left
+                        |> Countabilibar.reset
+                        |> Countabilibar.restore (\_ -> True) "/posts"
+                        |> Countabilibar.hidden
+                        |> Expect.equal Countabilibar.noneHidden
+            , test "a server that no longer exists is not brought back" <|
+                \_ ->
+                    counted [ CountPosts "a.example" [ ( alice, "p1" ) ], CountPost "gone.example" bob "p2", HideHost "gone.example", HideAuthor "a.example" alice ]
+                        |> Countabilibar.remember "/posts"
+                        |> Countabilibar.reset
+                        |> Countabilibar.restore (\host -> host /= "gone.example") "/posts"
+                        |> Countabilibar.hidden
+                        |> Expect.equal { hosts = Set.empty, authors = Dict.singleton "a.example" (Set.singleton "alice") }
+            ]
         , describe "what pages are told about"
             [ test "only changes to what's hidden concern pages" <|
                 \_ ->
