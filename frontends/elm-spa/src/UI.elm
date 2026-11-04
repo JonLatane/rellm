@@ -197,7 +197,7 @@ headerNav : Shared.Model -> Route -> Html Shared.Msg
 headerNav shared currentRoute =
     header
         [ classes [ "navbar", hostnameToCSSClass shared.accounts.mainFrontendHost, "background-color-primary" ]
-        , onClick Shared.ScrollToTop
+        , on "click" scrollToTopUnlessInCountabilibar
         ]
         [ div [ class "navbar-inner" ]
             [ nav [ classes [ "nav-links", CustomNav.navigationTabStyleClass (currentTabStyle shared) ] ]
@@ -4959,3 +4959,40 @@ webUiButton label_ isDisabled isSelected serverHost msg =
         , onClick (Shared.AccountsPanelMsg msg)
         ]
         [ text label_ ]
+
+
+{-| The navbar's tap-anywhere "scroll to top" -- except for taps inside the Countabilibar (its bar or its
+popover: checking a box, expanding a server's users), which are not taps on the nav itself. Decided from the
+event's target rather than with `stopPropagationOn` on the bar: that makes Elm redraw synchronously, which
+resets a just-clicked checkbox before its `change` event fires.
+-}
+scrollToTopUnlessInCountabilibar : Decode.Decoder Shared.Msg
+scrollToTopUnlessInCountabilibar =
+    Decode.field "target" insideCountabilibar
+        |> Decode.andThen
+            (\inside ->
+                if inside then
+                    Decode.fail "tap inside the Countabilibar"
+
+                else
+                    Decode.succeed Shared.ScrollToTop
+            )
+
+
+{-| Whether the DOM node is, or is inside, a `.countabilibar` or `.countabilibar-panel` element.
+-}
+insideCountabilibar : Decode.Decoder Bool
+insideCountabilibar =
+    Decode.oneOf
+        [ Decode.field "className" Decode.string
+            |> Decode.andThen
+                (\classNames ->
+                    if List.any (\c -> c == "countabilibar" || c == "countabilibar-panel") (String.words classNames) then
+                        Decode.succeed True
+
+                    else
+                        Decode.fail "not it"
+                )
+        , Decode.field "parentElement" (Decode.lazy (\_ -> insideCountabilibar))
+        , Decode.succeed False
+        ]
