@@ -616,6 +616,126 @@ fn occasion_missing_past_grace_period_is_deleted_and_emptied_event_is_removed() 
                 .is_none(),
             "an event whose only occasion stayed missing past the grace period should be deleted"
         );
+        assert_eq!(
+            synced_post_count(conn, source.id),
+            0,
+            "pruning must delete the Event's and Occasion's Posts too, not leave them holding the UID"
+        );
+
+        Ok(())
+    });
+}
+
+fn synced_post_count(conn: &mut crate::db_connection::PgPooledConnection, source_id: i64) -> i64 {
+    posts::table
+        .filter(posts::sync_source_id.eq(source_id))
+        .count()
+        .get_result(conn)
+        .unwrap()
+}
+
+fn single_event_ics(uid: &str, summary: &str) -> String {
+    let start = Utc::now() + Duration::days(1);
+    let end = start + Duration::hours(1);
+    format!(
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//test//\r\nBEGIN:VEVENT\r\nUID:{}\r\nDTSTART:{}\r\nDTEND:{}\r\nSUMMARY:{}\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
+        uid,
+        start.format(ICS_FORMAT),
+        end.format(ICS_FORMAT),
+        summary
+    )
+}
+
+/// An event that dropped out of the feed long enough to be pruned and later came back must sync
+/// again. Pruning used to delete only the `events` row, leaving the Event's Post behind still
+/// holding `(source, uid)`, so re-creating it violated the unique index and failed every sync
+/// (production incident, ATO band, 2026-11).
+#[test]
+fn event_pruned_after_grace_period_can_be_synced_again_when_it_returns() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let user = create_user(conn, "est_return_owner");
+        let source = create_sync_source_row(conn, &user, "http://example.invalid/cal.ics");
+
+        let ics = single_event_ics("returns-1", "Comes back");
+        let ics_empty = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//test//\r\nEND:VCALENDAR\r\n";
+        sync_source_text(&source, &ics, conn).expect("initial sync should succeed");
+        let event = synced_event(conn, source.id, "returns-1").expect("event should exist");
+        sync_source_text(&source, ics_empty, conn).expect("sync without the event should succeed");
+        let long_ago: std::time::SystemTime = (Utc::now() - Duration::days(4)).into();
+        diesel::update(occasions::table.filter(occasions::event_id.eq(event.post_id)))
+            .set(occasions::sync_missing_since.eq(long_ago))
+            .execute(conn)
+            .unwrap();
+        sync_source_text(&source, ics_empty, conn).expect("sync should prune the event");
+        assert_eq!(synced_post_count(conn, source.id), 0);
+
+        sync_source_text(&source, &ics, conn).expect("sync should succeed once the event returns");
+
+        let returned = synced_event(conn, source.id, "returns-1").expect("event should exist again");
+        assert_eq!(occasions_for(conn, returned.post_id).len(), 1);
+        assert_eq!(synced_post_count(conn, source.id), 2, "one Event Post + one Occasion Post");
+
+        Ok(())
+    });
+}
+
+/// Data already damaged by that old behavior -- an Event's Post (and its Occasion's Post) with no
+/// `events`/`occasions` row left -- heals on the next sync instead of failing it forever.
+#[test]
+fn sync_recovers_from_synced_posts_orphaned_by_a_deleted_event_row() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let user = create_user(conn, "est_orphan_owner");
+        let source = create_sync_source_row(conn, &user, "http://example.invalid/cal.ics");
+
+        let ics = single_event_ics("orphaned-1", "Orphaned");
+        sync_source_text(&source, &ics, conn).expect("initial sync should succeed");
+        let event = synced_event(conn, source.id, "orphaned-1").expect("event should exist");
+
+        // What the old stale-event cleanup (and `delete_event`) did: delete the `events` row
+        // (cascading to `occasions`), leaving both Posts behind.
+        diesel::delete(events::table.filter(events::post_id.eq(event.post_id)))
+            .execute(conn)
+            .unwrap();
+        assert_eq!(synced_post_count(conn, source.id), 2);
+
+        sync_source_text(&source, &ics, conn).expect("sync should recover from the orphaned Posts");
+
+        let recreated = synced_event(conn, source.id, "orphaned-1").expect("event should be re-created");
+        assert_eq!(occasions_for(conn, recreated.post_id).len(), 1);
+        assert_eq!(synced_post_count(conn, source.id), 2, "orphans replaced, not duplicated");
+
+        Ok(())
+    });
+}
+
+/// An Event that has lost all its Occasions (e.g. someone deleted the occasion Posts) is still
+/// found by UID and reused, rather than re-created and colliding on the unique index.
+#[test]
+fn event_with_no_occasions_left_is_reused_when_the_feed_still_lists_it() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let user = create_user(conn, "est_no_occasions_owner");
+        let source = create_sync_source_row(conn, &user, "http://example.invalid/cal.ics");
+
+        let ics = single_event_ics("hollow-1", "Hollow");
+        sync_source_text(&source, &ics, conn).expect("initial sync should succeed");
+        let event = synced_event(conn, source.id, "hollow-1").expect("event should exist");
+        let occasion_post_ids: Vec<i64> = occasions_for(conn, event.post_id)
+            .iter()
+            .map(|o| o.post_id)
+            .collect();
+        diesel::delete(posts::table.filter(posts::id.eq_any(occasion_post_ids)))
+            .execute(conn)
+            .unwrap();
+        assert_eq!(occasions_for(conn, event.post_id).len(), 0);
+
+        sync_source_text(&source, &ics, conn).expect("sync should reuse the occasion-less Event");
+
+        let occasions = occasions_for(conn, event.post_id);
+        assert_eq!(occasions.len(), 1, "the Event should have its occasion back, under the same Event");
+        assert_eq!(synced_post_count(conn, source.id), 2);
 
         Ok(())
     });
