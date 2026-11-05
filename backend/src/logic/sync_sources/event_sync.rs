@@ -44,7 +44,9 @@ use crate::db_connection::PgPooledConnection;
 use crate::marshaling::*;
 use crate::models;
 use crate::protos::*;
-use crate::schema::{occasions, events, posts, sync_sources};
+use crate::schema::{
+    events, occasion_sync_destinations, occasions, post_sync_destinations, posts, sync_sources,
+};
 
 const SYNC_PAST_WINDOW_DAYS: i64 = 365;
 const SYNC_FUTURE_WINDOW_DAYS: i64 = 365;
@@ -206,14 +208,22 @@ pub fn sync_source_calendar(
             return Err(diesel::result::Error::RollbackTransaction);
         }
 
-        // Every currently-existing synced occasion's series UID -> parent Event id, via real,
-        // indexed columns (see the module doc comment) instead of an app-level JSON key. Multiple
-        // occasions of a recurring series share the same `event_id`, so a plain overwrite while
-        // building this map is correct.
-        let existing_event_ids_by_uid: HashMap<String, i64> = occasions::table
-            .inner_join(posts::table.on(posts::id.eq(occasions::post_id)))
-            .select((posts::sync_source_uid, occasions::event_id))
+        // A previous version of this code (and a user deleting a synced event) could delete just
+        // the `events`/`occasions` row and leave its `posts` row behind, still holding this
+        // source's UID -- the unique indexes on `posts` then reject re-creating that UID forever,
+        // failing every sync. Clear any such leftovers before looking anything up.
+        delete_orphaned_synced_posts(conn, source.id)?;
+
+        // Every currently-existing synced Event's series UID -> its Event id (which is its Post
+        // id), via the Event's own `posts` row (real, indexed columns -- see the module doc
+        // comment -- instead of an app-level JSON key). Looked up through the Event itself, not
+        // through its occasions: an Event that has lost all of its occasions must still be found,
+        // or it would be re-created and collide with the unique index on `(source, uid)`.
+        let existing_event_ids_by_uid: HashMap<String, i64> = events::table
+            .inner_join(posts::table.on(posts::id.eq(events::post_id)))
+            .select((posts::sync_source_uid, events::post_id))
             .filter(posts::sync_source_id.eq(source.id))
+            .filter(posts::sync_source_recurrence_anchor.is_null())
             .load::<(Option<String>, i64)>(conn)?
             .into_iter()
             .filter_map(|(uid, event_id)| uid.map(|uid| (uid, event_id)))
@@ -251,7 +261,9 @@ pub fn sync_source_calendar(
         // Events whose UID no longer appears in the feed at all: prune their in-window
         // occasions the same way `reconcile_occasions` does for a group with zero occurrences
         // (subject to the same missing-grace-period before an occasion is actually deleted),
-        // then delete the event itself (cascades its occasions/rsvps) once nothing's left.
+        // then delete the event's Post (cascading to its `events` row and rsvps) once nothing's
+        // left. It has to be the Post, not just the `events` row: a leftover Post would keep this
+        // UID and block it from ever being synced again.
         let stale_event_ids: HashSet<i64> = existing_event_ids_by_uid
             .iter()
             .filter(|(uid, _)| !seen_uids.contains(*uid))
@@ -282,7 +294,7 @@ pub fn sync_source_calendar(
                 .count()
                 .get_result(conn)?;
             if remaining == 0 {
-                diesel::delete(events::table.filter(events::post_id.eq(event_id))).execute(conn)?;
+                delete_synced_posts(conn, &[event_id])?;
             }
         }
 
@@ -323,6 +335,53 @@ pub fn sync_source_calendar(
             Status::new(Code::Internal, "failed_to_sync_source")
         }
     })
+}
+
+/// Deletes synced `Post`s (an Event's or an Occasion's own), cascading to their `events`/`occasions`
+/// rows. `post_sync_destinations` and `occasion_sync_destinations` rows -- records of the Post
+/// having been shared to an external destination via `SyncPost` -- restrict deleting the Post
+/// they point at, so they're cleared first: otherwise one shared event would fail every sync from
+/// then on. The copy already published at the destination is untouched.
+fn delete_synced_posts(
+    conn: &mut PgPooledConnection,
+    post_ids: &[i64],
+) -> Result<(), diesel::result::Error> {
+    if post_ids.is_empty() {
+        return Ok(());
+    }
+    diesel::delete(post_sync_destinations::table.filter(post_sync_destinations::post_id.eq_any(post_ids)))
+        .execute(conn)?;
+    diesel::delete(
+        occasion_sync_destinations::table.filter(occasion_sync_destinations::occasion_id.eq_any(post_ids)),
+    )
+    .execute(conn)?;
+    diesel::delete(posts::table.filter(posts::id.eq_any(post_ids))).execute(conn)?;
+    Ok(())
+}
+
+/// Deletes `source_id`'s synced Event/Occasion `Post`s whose `events`/`occasions` row no longer
+/// exists. Such a Post is invisible as an event, but still holds its `(source, uid[, anchor])`
+/// and so blocks that event from ever being synced again (see the unique indexes on `posts`).
+fn delete_orphaned_synced_posts(
+    conn: &mut PgPooledConnection,
+    source_id: i64,
+) -> Result<(), diesel::result::Error> {
+    use diesel::dsl::{exists, not};
+
+    let orphaned_event_post_ids: Vec<i64> = posts::table
+        .select(posts::id)
+        .filter(posts::sync_source_id.eq(source_id))
+        .filter(posts::context.eq(PostContext::Event.to_string_post_context()))
+        .filter(not(exists(events::table.filter(events::post_id.eq(posts::id)))))
+        .load(conn)?;
+    let orphaned_occasion_post_ids: Vec<i64> = posts::table
+        .select(posts::id)
+        .filter(posts::sync_source_id.eq(source_id))
+        .filter(posts::context.eq(PostContext::Occasion.to_string_post_context()))
+        .filter(not(exists(occasions::table.filter(occasions::post_id.eq(posts::id)))))
+        .load(conn)?;
+    delete_synced_posts(conn, &orphaned_event_post_ids)?;
+    delete_synced_posts(conn, &orphaned_occasion_post_ids)
 }
 
 fn default_event_moderation(conn: &mut PgPooledConnection) -> String {
@@ -560,8 +619,10 @@ fn reconcile_occasions(
         .execute(conn)?;
     }
     if !expired_ids.is_empty() {
-        diesel::delete(occasions::table.filter(occasions::post_id.eq_any(expired_ids)))
-            .execute(conn)?;
+        // The occasion's Post, which cascades to its `occasions` row -- deleting only the row
+        // would leave a Post behind still holding its `(source, uid, anchor)`, blocking that
+        // occurrence from ever being created again.
+        delete_synced_posts(conn, &expired_ids)?;
     }
 
     Ok(())
