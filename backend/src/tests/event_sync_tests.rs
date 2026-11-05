@@ -680,6 +680,66 @@ fn event_pruned_after_grace_period_can_be_synced_again_when_it_returns() {
     });
 }
 
+/// An event that was shared to an external destination (`SyncPost`/`SyncOccasion`) has
+/// `post_sync_destinations`/`occasion_sync_destinations` rows that restrict deleting its Posts --
+/// pruning it (or healing it as an orphan) must clear those rather than fail every sync.
+#[test]
+fn pruning_a_shared_synced_event_clears_its_destination_records() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let user = create_user(conn, "est_shared_owner");
+        let source = create_sync_source_row(conn, &user, "http://example.invalid/cal.ics");
+        let destination = create_sync_destination_row(conn, &user, "page-1");
+
+        let ics = single_event_ics("shared-1", "Shared");
+        let ics_empty = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//test//\r\nEND:VCALENDAR\r\n";
+        sync_source_text(&source, &ics, conn).expect("initial sync should succeed");
+        let event = synced_event(conn, source.id, "shared-1").expect("event should exist");
+        let occasion = occasions_for(conn, event.post_id).remove(0);
+        let event_post = post_of(conn, event.post_id);
+        create_post_sync_destination_row(conn, &event_post, &destination);
+        create_occasion_sync_destination_row(conn, &occasion, &destination);
+
+        sync_source_text(&source, ics_empty, conn).expect("sync without the event should succeed");
+        let long_ago: std::time::SystemTime = (Utc::now() - Duration::days(4)).into();
+        diesel::update(occasions::table.filter(occasions::event_id.eq(event.post_id)))
+            .set(occasions::sync_missing_since.eq(long_ago))
+            .execute(conn)
+            .unwrap();
+        sync_source_text(&source, ics_empty, conn)
+            .expect("pruning a shared event must not be blocked by its destination records");
+        assert_eq!(synced_post_count(conn, source.id), 0);
+
+        Ok(())
+    });
+}
+
+/// Same as above, for a shared event whose rows were already orphaned (the heal path).
+#[test]
+fn healing_orphaned_posts_of_a_shared_event_clears_their_destination_records() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let user = create_user(conn, "est_shared_orphan_owner");
+        let source = create_sync_source_row(conn, &user, "http://example.invalid/cal.ics");
+        let destination = create_sync_destination_row(conn, &user, "page-2");
+
+        let ics = single_event_ics("shared-orphan-1", "Shared orphan");
+        sync_source_text(&source, &ics, conn).expect("initial sync should succeed");
+        let event = synced_event(conn, source.id, "shared-orphan-1").expect("event should exist");
+        let event_post = post_of(conn, event.post_id);
+        create_post_sync_destination_row(conn, &event_post, &destination);
+        diesel::delete(events::table.filter(events::post_id.eq(event.post_id)))
+            .execute(conn)
+            .unwrap();
+
+        sync_source_text(&source, &ics, conn).expect("sync should heal the shared, orphaned Posts");
+        assert!(synced_event(conn, source.id, "shared-orphan-1").is_some());
+        assert_eq!(synced_post_count(conn, source.id), 2);
+
+        Ok(())
+    });
+}
+
 /// Data already damaged by that old behavior -- an Event's Post (and its Occasion's Post) with no
 /// `events`/`occasions` row left -- heals on the next sync instead of failing it forever.
 #[test]
