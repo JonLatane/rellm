@@ -339,6 +339,11 @@ type alias Model =
 
     -- Whether `cacheAlertView`'s popover is open.
     , cachePopoverOpen : Bool
+
+    -- Hosts whose events were RSVP'd to on a card since they were last fetched: the cards show the RSVP over
+    -- the loaded events (`rsvpModels`), so those events are out of date and stay out of `Shared.EventsCache`
+    -- snapshots until a fetch lands for them (`snapshotOf`).
+    , rsvpdHosts : Set String
     }
 
 
@@ -776,6 +781,7 @@ init shared author navKey path query fragment embeddedPage syncsCalendarPreferen
                     Countabilibar.hidden shared.countabilibar
             , now = Nothing
             , cachePopoverOpen = False
+            , rsvpdHosts = Set.empty
             }
 
         -- Going back to this feed (see `Shared.EventsCache`): its events come back as they were, without being
@@ -1200,7 +1206,7 @@ updateInner shared msg model =
                                             model.anonymousAuthTokens
                             }
                     in
-                    ( updatedModel
+                    ( { updatedModel | rsvpdHosts = Set.insert host updatedModel.rsvpdHosts }
                     , Effect.batch
                         [ Cmd.map (RsvpsMsg host occasionId) rsvpCmd |> Effect.fromCmd
 
@@ -1243,7 +1249,15 @@ updateInner shared msg model =
 
         GotServerEvents frontendHost _ _ (Ok ( maybeAccountsPanelMsg, response )) ->
             ( { model
-                | eventsByServer =
+                | rsvpdHosts =
+                    -- Fresh events include the RSVP.
+                    case Dict.get frontendHost model.eventsByServer of
+                        Just feed ->
+                            Set.remove feed.host model.rsvpdHosts
+
+                        Nothing ->
+                            model.rsvpdHosts
+                , eventsByServer =
                     Dict.update frontendHost
                         (Maybe.map
                             (\feed ->
@@ -2386,7 +2400,7 @@ snapshotOf model =
         feeds : Dict String EventsCache.CachedFeed
         feeds =
             model.eventsByServer
-                |> Dict.filter EventsCache.isCacheable
+                |> Dict.filter (\key feed -> EventsCache.isCacheable key feed && not (Set.member feed.host model.rsvpdHosts))
                 |> Dict.toList
                 |> List.filterMap
                     (\( key, feed ) ->
