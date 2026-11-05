@@ -609,8 +609,12 @@
 /* A video's stage: `Shared.VideoPlayerPanel`'s player (a separate, fixed element -- `public/rellm-video.js`) glides over
    this box, so it takes the video's own shape within what the content area leaves. (Not `pointer-events: auto`: the player
    itself takes the taps; the empty space around it closes the viewer like any other.) */
-.media-viewer-panel-video-stage {
+.video-stage.media-viewer-panel-video-stage {
   flex: none;
   width: 100%;
   height: 100%;
+  /* It is also a `.video-stage` (the expanded audio player's, `audio_player_panel.css`), which never lets the stage be taller than
+     half the screen -- right for that column, but here it left a tall video in half the room the viewer has. */
+  max-height: none;
+  min-height: 0;
 }
