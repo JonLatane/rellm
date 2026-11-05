@@ -56,7 +56,7 @@ import Dict exposing (Dict)
 import Effect exposing (Effect)
 import Grpc
 import Html exposing (Html, a, button, div, h2, h3, input, p, span, text)
-import Html.Attributes exposing (class, disabled, href, id, placeholder, style, target, title, type_, value)
+import Html.Attributes exposing (attribute, class, disabled, href, id, placeholder, style, target, title, type_, value)
 import Html.Events exposing (onClick, onInput, onMouseDown, preventDefaultOn)
 import Html.Keyed
 import Json.Decode as Decode
@@ -75,7 +75,9 @@ import Shared.Breadcrumbs as Breadcrumbs
 import Shared.Conversions as Conversions
 import Shared.Countabilibar as Countabilibar
 import Shared.CreateNewPanel as CreateNewPanel
+import Shared.EventsCache as EventsCache
 import Shared.MediaViewerPanel as MediaViewerPanel
+import Shared.PostsCache as PostsCache
 import Shared.StarredPanel as StarredPanel
 import Shared.Time as SharedTime
 import Shared.UserPreferences as UserPreferences
@@ -85,6 +87,7 @@ import Proto.Rellm.NavigationTab exposing (NavigationTab(..))
 import UI.Classes exposing (classes, hostnameToCSSClass, openClosedClass)
 import UI.CustomNav as CustomNav
 import UI.Flip
+import UI.Glyph as Glyph
 import UI.Modal
 import Url.Builder
 
@@ -329,6 +332,13 @@ type alias Model =
     -- `applyHidden`) -- always `Countabilibar.noneHidden` for a feed scoped to one profile, which hiding
     -- would only blank. Mirrors `Components.Pages.PostsPage.Model.hidden`.
     , hidden : Countabilibar.Hidden
+
+    -- The time as of the page's start and then every `Poll`/`GotNow` -- what `ServerFeed.fetchedAt` is stamped with
+    -- and the age of cached events is measured against (`Shared.time.now` is startup-only).
+    , now : Maybe Time.Posix
+
+    -- Whether `cacheAlertView`'s popover is open.
+    , cachePopoverOpen : Bool
     }
 
 
@@ -338,7 +348,14 @@ type Msg
     | ExportOccasionClosed
     | GotServerEvents String (Maybe String) Int (Result Grpc.Error ( Maybe AccountsPanel.Msg, Proto.Rellm.GetEventsResponse ))
     | GotNow Time.Posix
-    | Poll
+
+      -- The first `GotNow`, right after `init`: it only fetches what is not already there (events restored from
+      -- `Shared.EventsCache` are not fetched again), where every later one -- a `Poll`, a tab switch -- refetches.
+    | GotStartNow Time.Posix
+    | Poll Time.Posix
+      -- Opens/closes `cacheAlertView`'s popover.
+    | CacheAlertClicked
+    | CacheAlertClosed
     | Animate Animation.Msg
     | AnimateMove Animation.Msg
     | RemoveEvent String
@@ -549,6 +566,11 @@ type alias ServerFeed =
     -- The id of the newest fetch of this feed (see `Model.nextRequestId`); a reply carrying any other is
     -- stale -- see `staleReplyEffect`. Mirrors `Components.Pages.PostsPage.ServerFeed.requestId`.
     , requestId : Int
+
+    -- When `status`'s events were fetched (`Nothing` while none are loaded), and whether they are still the ones
+    -- restored from `Shared.EventsCache` -- a fetch landing replaces them with fresh ones (`cacheAlertView`).
+    , fetchedAt : Maybe Time.Posix
+    , fromCache : Bool
     }
 
 
@@ -710,49 +732,70 @@ init shared author navKey path query fragment embeddedPage syncsCalendarPreferen
             calendarPreview
                 |> Maybe.map (\key -> Maybe.withDefault key (calendarPreviewKeyFromFragment fragment))
 
-        ( fetchedModel, fetchEffect ) =
-            fetchNewServers shared
-                { eventsByServer = Dict.empty
-                , eventAnimations = Dict.empty
-                , calendarAnimations = Dict.empty
-                , calendarPreview = calendarPreview
-                , calendarPreviewViewed = calendarPreviewKeyFromFragment fragment
-                , pendingCalendarPreviewScroll = pendingCalendarPreviewScroll
-                , mode = Dict.get "display" query |> Maybe.andThen displayModeFromParam |> Maybe.withDefault computedDefaultDisplayMode
-                , defaultDisplayMode = computedDefaultDisplayMode
-                , embeddedPage = embeddedPage
-                , syncsCalendarPreference = syncsCalendarPreference
-                , measurementPhase = NotMeasuring
-                , author = author
-                , federatedAuthors = []
-                , navKey = navKey
-                , path = path
-                , tab = tab
-                , searchText = Dict.get "search_text" query |> Maybe.withDefault ""
-                , searchGeneration = 0
-                , endsAfter = endsAfter
-                , endsAfterInputGeneration = 0
-                , exportPopoverOpen = False
-                , copyLinkCopied = False
-                , copyLinkGeneration = 0
-                , hideStartedOrLongEvents = not (showStartedOrLongEventsByDefault shared)
-                , showSyncSources = False
-                , showSyncDestinations = False
-                , availableSyncDestinations = availableSyncDestinations
-                , embeddingPageSearchesPosts = embeddingPageSearchesPosts
-                , calendarDisplayModeOverride = calendarDisplayModeOverride
-                , pushStatuses = Dict.empty
-                , rsvpModels = Dict.empty
-                , anonymousAuthTokens = Dict.get "anonymousAuthToken" query
-                , exportOpenFor = Nothing
-                , nextRequestId = 0
-                , hidden =
-                    if author /= Nothing then
-                        Countabilibar.noneHidden
+        unfetched : Model
+        unfetched =
+            { eventsByServer = Dict.empty
+            , eventAnimations = Dict.empty
+            , calendarAnimations = Dict.empty
+            , calendarPreview = calendarPreview
+            , calendarPreviewViewed = calendarPreviewKeyFromFragment fragment
+            , pendingCalendarPreviewScroll = pendingCalendarPreviewScroll
+            , mode = Dict.get "display" query |> Maybe.andThen displayModeFromParam |> Maybe.withDefault computedDefaultDisplayMode
+            , defaultDisplayMode = computedDefaultDisplayMode
+            , embeddedPage = embeddedPage
+            , syncsCalendarPreference = syncsCalendarPreference
+            , measurementPhase = NotMeasuring
+            , author = author
+            , federatedAuthors = []
+            , navKey = navKey
+            , path = path
+            , tab = tab
+            , searchText = Dict.get "search_text" query |> Maybe.withDefault ""
+            , searchGeneration = 0
+            , endsAfter = endsAfter
+            , endsAfterInputGeneration = 0
+            , exportPopoverOpen = False
+            , copyLinkCopied = False
+            , copyLinkGeneration = 0
+            , hideStartedOrLongEvents = not (showStartedOrLongEventsByDefault shared)
+            , showSyncSources = False
+            , showSyncDestinations = False
+            , availableSyncDestinations = availableSyncDestinations
+            , embeddingPageSearchesPosts = embeddingPageSearchesPosts
+            , calendarDisplayModeOverride = calendarDisplayModeOverride
+            , pushStatuses = Dict.empty
+            , rsvpModels = Dict.empty
+            , anonymousAuthTokens = Dict.get "anonymousAuthToken" query
+            , exportOpenFor = Nothing
+            , nextRequestId = 0
+            , hidden =
+                if author /= Nothing then
+                    Countabilibar.noneHidden
 
-                    else
-                        Countabilibar.hidden shared.countabilibar
-                }
+                else
+                    Countabilibar.hidden shared.countabilibar
+            , now = Nothing
+            , cachePopoverOpen = False
+            }
+
+        -- Going back to this feed (see `Shared.EventsCache`): its events come back as they were, without being
+        -- fetched or animated in -- a source that is not up to date (another account is acting on its server now,
+        -- say) is fetched again by `fetchNewServers` below like any other.
+        restored : Maybe EventsCache.Snapshot
+        restored =
+            EventsCache.restorable path (settingsOf unfetched) shared.eventsCache
+
+        ( fetchedModel, fetchEffect ) =
+            (case restored |> Maybe.map (\snapshot -> seedFromSnapshot snapshot unfetched) of
+                Just seeded ->
+                    -- On the "Upcoming" tab the cutoff is still unknown (`Nothing`) until `GotStartNow`, which keeps
+                    -- this from fetching; the one the events were fetched with only filters what is shown.
+                    fetchNewServers shared { seeded | endsAfter = unfetched.endsAfter }
+                        |> Tuple.mapFirst (\fetched -> { fetched | endsAfter = seeded.endsAfter })
+
+                Nothing ->
+                    fetchNewServers shared unfetched
+            )
                 |> Tuple.mapFirst syncCalendarAnimations
     in
     ( fetchedModel
@@ -764,7 +807,28 @@ init shared author navKey path query fragment embeddedPage syncsCalendarPreferen
         [ fetchEffect
         , Effect.fromShared Shared.CloseAllPanels
         , setBreadcrumbsRoot shared fetchedModel
-        , Task.perform GotNow Time.now |> Effect.fromCmd
+        , Task.perform GotStartNow Time.now |> Effect.fromCmd
+
+        -- Whoever initialises first takes the chance to restore; a later `init` starts fresh.
+        , if shared.eventsCache.restoring then
+            Effect.fromShared (Shared.EventsCacheMsg EventsCache.ConsumeRestore)
+
+          else
+            Effect.none
+
+        -- The card that was clicked goes back to where it was on screen.
+        , if restored /= Nothing then
+            Ports.restoreListAnchor path |> Effect.fromCmd
+
+          else
+            Effect.none
+
+        -- `Calendar` draws from the loaded events as they change, and these are there from the start.
+        , if restored /= Nothing then
+            calendarRenderEffect shared { fetchedModel | eventsByServer = Dict.empty } fetchedModel
+
+          else
+            Effect.none
         ]
     )
 
@@ -784,7 +848,7 @@ even this from flickering the list.
 subscriptions : Model -> Sub Msg
 subscriptions model =
     Sub.batch
-        [ Time.every 60000 (\_ -> Poll)
+        [ Time.every 60000 Poll
         , Ports.elementsMeasured GotMeasuredRects
         , UI.Flip.subscription Animate (List.map .flip (Dict.values model.eventAnimations) ++ List.map .flip (Dict.values model.calendarAnimations))
         , UI.Flip.moveSubscription AnimateMove (List.map .move (Dict.values model.eventAnimations))
@@ -958,6 +1022,7 @@ update shared msg model =
             , Effect.batch
                 [ hiddenEffect
                 , effect
+                , storeEffect msg newModel
                 , setBreadcrumbsRoot shared newModel
                 , calendarRenderEffect shared model newModel
                 , pendingCalendarPreviewScrollEffect model newModel
@@ -1138,6 +1203,9 @@ updateInner shared msg model =
                     ( updatedModel
                     , Effect.batch
                         [ Cmd.map (RsvpsMsg host occasionId) rsvpCmd |> Effect.fromCmd
+
+                        -- RSVPs are overlaid on the events by the cards, not part of what is cached.
+                        , Effect.fromShared (Shared.EventsCacheMsg EventsCache.EvictAll)
                         , accountsPanelEffect outcome.accountsPanelMsg
                         , if tokensChanged then
                             pushUrl updatedModel
@@ -1177,7 +1245,16 @@ updateInner shared msg model =
             ( { model
                 | eventsByServer =
                     Dict.update frontendHost
-                        (Maybe.map (\feed -> { feed | status = Loaded (Events.occasionPairs response), refreshing = False }))
+                        (Maybe.map
+                            (\feed ->
+                                { feed
+                                    | status = Loaded (Events.occasionPairs response)
+                                    , refreshing = False
+                                    , fetchedAt = Just (Maybe.withDefault shared.time.now model.now)
+                                    , fromCache = False
+                                }
+                            )
+                        )
                         model.eventsByServer
               }
                 |> syncAnimations
@@ -1187,7 +1264,7 @@ updateInner shared msg model =
         GotServerEvents frontendHost _ _ (Err _) ->
             ( { model
                 | eventsByServer =
-                    Dict.update frontendHost (Maybe.map (\feed -> { feed | status = Failed, refreshing = False })) model.eventsByServer
+                    Dict.update frontendHost (Maybe.map (\feed -> { feed | status = Failed, refreshing = False, fromCache = False })) model.eventsByServer
               }
                 |> syncAnimations
             , Effect.none
@@ -1199,22 +1276,62 @@ updateInner shared msg model =
             -- user switched to `EventsAfterDate` (or a fixed `?ends_after=`
             -- on load) must not clobber their fixed cutoff.
             if model.tab == UpcomingEvents then
-                refetchServers shared { model | endsAfter = Just now } (relevantSources shared model)
+                refetchServers shared { model | now = Just now, endsAfter = Just now } (relevantSources shared model)
 
             else
-                ( model, Effect.none )
+                ( { model | now = Just now }, Effect.none )
 
-        Poll ->
+        GotStartNow now ->
+            -- Events restored from `Shared.EventsCache` are shown as they were, so only what is missing is fetched
+            -- -- unless they have outlived `PostsCache.expiryMs`, when they are dropped and fetched like the rest.
+            let
+                stale : Dict String ServerFeed
+                stale =
+                    model.eventsByServer
+                        |> Dict.filter (\_ feed -> feed.fromCache && PostsCache.expired now feed.fetchedAt)
+
+                clocked : Model
+                clocked =
+                    { model | now = Just now, eventsByServer = Dict.diff model.eventsByServer stale }
+                        |> syncAnimations
+
+                ( fetchedModel, fetchEffect ) =
+                    fetchNewServers shared
+                        (if model.tab == UpcomingEvents then
+                            { clocked | endsAfter = Just now }
+
+                         else
+                            clocked
+                        )
+            in
+            ( fetchedModel
+            , Effect.batch
+                [ fetchEffect
+                , if Dict.isEmpty stale then
+                    Effect.none
+
+                  else
+                    Effect.fromShared (Shared.EventsCacheMsg (EventsCache.Evict model.path))
+                ]
+            )
+
+        CacheAlertClicked ->
+            ( { model | cachePopoverOpen = not model.cachePopoverOpen }, Effect.none )
+
+        CacheAlertClosed ->
+            ( { model | cachePopoverOpen = False }, Effect.none )
+
+        Poll now ->
             if model.tab == UpcomingEvents then
                 -- Refreshes the live cutoff first (via `GotNow`, which
                 -- itself refetches) rather than just re-fetching with
                 -- whatever `endsAfter` was captured last -- otherwise
                 -- "upcoming" would silently stop advancing after the
                 -- initial load.
-                ( model, Task.perform GotNow Time.now |> Effect.fromCmd )
+                ( { model | now = Just now }, Task.perform GotNow Time.now |> Effect.fromCmd )
 
             else
-                fetchNewServers shared model
+                fetchNewServers shared { model | now = Just now }
 
         Animate animMsg ->
             let
@@ -2132,6 +2249,10 @@ refetchServers shared model serversToFetch =
                         , excludedAuthorIds = sourceExcludedAuthorIds model source
                         , refreshing = True
                         , requestId = requestId
+
+                        -- A kept feed keeps its age too -- it only changes once the new events land.
+                        , fetchedAt = Dict.get source.key dict |> Maybe.andThen (\feed -> if feed.accountId == accountId then feed.fetchedAt else Nothing)
+                        , fromCache = Dict.get source.key dict |> Maybe.map (\feed -> feed.accountId == accountId && feed.fromCache) |> Maybe.withDefault False
                         }
                         dict
 
@@ -2240,6 +2361,101 @@ fetchNewServers shared model =
                     )
     in
     refetchServers shared model serversToFetch
+
+
+{-| What `Shared.EventsCache` needs to know to tell whether a snapshot fits this feed as it starts.
+-}
+settingsOf : Model -> EventsCache.Settings
+settingsOf model =
+    { searchText = model.searchText
+    , upcoming = model.tab == UpcomingEvents
+    , endsAfter =
+        if model.tab == EventsAfterDate then
+            Maybe.map Time.posixToMillis model.endsAfter
+
+        else
+            Nothing
+    }
+
+
+{-| The feed as `Shared.EventsCache` keeps it: every source with events loaded -- `Nothing` while there are none.
+-}
+snapshotOf : Model -> Maybe EventsCache.Snapshot
+snapshotOf model =
+    let
+        feeds : Dict String EventsCache.CachedFeed
+        feeds =
+            model.eventsByServer
+                |> Dict.filter EventsCache.isCacheable
+                |> Dict.toList
+                |> List.filterMap
+                    (\( key, feed ) ->
+                        case feed.status of
+                            Loaded events ->
+                                Just
+                                    ( key
+                                    , { events = events
+                                      , accountId = feed.accountId
+                                      , host = feed.host
+                                      , excludedAuthorIds = feed.excludedAuthorIds
+                                      , fetchedAt = feed.fetchedAt
+                                      }
+                                    )
+
+                            _ ->
+                                Nothing
+                    )
+                |> Dict.fromList
+    in
+    if Dict.isEmpty feeds then
+        Nothing
+
+    else
+        Just { feeds = feeds, settings = settingsOf model, endsAfter = model.endsAfter }
+
+
+{-| The inverse of `snapshotOf`: `model` showing what the snapshot did, with every card already at rest -- coming
+back to a feed doesn't animate it in again.
+-}
+seedFromSnapshot : EventsCache.Snapshot -> Model -> Model
+seedFromSnapshot snapshot model =
+    syncAnimationsWith True
+        { model
+            | eventsByServer =
+                Dict.map
+                    (\_ cached ->
+                        { status = Loaded cached.events
+                        , accountId = cached.accountId
+                        , host = cached.host
+                        , requestId = -1
+                        , excludedAuthorIds = cached.excludedAuthorIds
+                        , refreshing = False
+                        , fetchedAt = cached.fetchedAt
+                        , fromCache = True
+                        }
+                    )
+                    snapshot.feeds
+            , endsAfter =
+                if model.tab == UpcomingEvents then
+                    snapshot.endsAfter
+
+                else
+                    model.endsAfter
+        }
+
+
+{-| Saves the feed to `Shared.EventsCache` whenever a fetch has landed -- not on every animation frame.
+-}
+storeEffect : Msg -> Model -> Effect Msg
+storeEffect msg model =
+    case msg of
+        GotServerEvents _ _ _ (Ok _) ->
+            snapshotOf model
+                |> Maybe.map (\snapshot -> Effect.fromShared (Shared.EventsCacheMsg (EventsCache.Store model.path snapshot)))
+                |> Maybe.withDefault Effect.none
+
+        _ ->
+            Effect.none
 
 
 {-| Mirrors `Components.Pages.PostsPage.setBreadcrumbsRoot` exactly, keyed
@@ -2437,7 +2653,15 @@ active (`currentEvents` becoming non-empty again is itself already a
 fade-out finished).
 -}
 syncAnimations : Model -> Model
-syncAnimations model =
+syncAnimations =
+    syncAnimationsWith False
+
+
+{-| `syncAnimations`, with `atRest` meaning every card it adds is simply there, without an enter animation -- the
+events restored from `Shared.EventsCache` (`seedFromSnapshot`) are not new to the reader.
+-}
+syncAnimationsWith : Bool -> Model -> Model
+syncAnimationsWith atRest model =
     let
         currentEvents : Dict String ( String, Event, Occasion )
         currentEvents =
@@ -2467,7 +2691,19 @@ syncAnimations model =
         | eventAnimations =
             UI.Flip.syncAnimations
                 RemoveEvent
-                (\( host, event, occasion ) -> { host = host, event = event, occasion = occasion, flip = UI.Flip.enter, move = UI.Flip.atRestScaled })
+                (\( host, event, occasion ) ->
+                    { host = host
+                    , event = event
+                    , occasion = occasion
+                    , flip =
+                        if atRest then
+                            UI.Flip.restingState
+
+                        else
+                            UI.Flip.enter
+                    , move = UI.Flip.atRestScaled
+                    }
+                )
                 (\( host, event, occasion ) anim -> { anim | host = host, event = event, occasion = occasion })
                 currentEvents
                 model.eventAnimations
@@ -3444,53 +3680,114 @@ tabsView : Shared.Model -> Model -> Html Msg
 tabsView shared model =
     if model.embeddedPage then
         span [ class "upcoming-events-tab-controls" ]
-            [ hideStartedOrLongButtonView model
+            [ cacheAlertView shared model
+            , hideStartedOrLongButtonView model
             , h3 [] [ text "Upcoming Events" ]
             ]
 
     else
-        div [ class "filter-tabs-bar" ]
-            [ hideStartedOrLongButtonView model
-            , button
-                [ classes
-                    ("filter-tab"
-                        :: "filter-tab-primary"
-                        :: (if model.tab == UpcomingEvents then
-                                [ "background-color-primary" ]
-
-                            else
-                                []
-                           )
-                    )
-                , onClick (TabChanged UpcomingEvents)
-                ]
-                [ text "Upcoming Events" ]
-            , div
-                [ classes
-                    ("filter-tab"
-                        :: (if model.tab == EventsAfterDate then
-                                [ "background-color-primary" ]
-
-                            else
-                                []
-                           )
-                    )
-                , onClick (TabChanged EventsAfterDate)
-                ]
-                [ text "Events After "
-                , input
-                    [ type_ "datetime-local"
-                    , class "filter-tab-date-input"
-                    , value
-                        (SharedTime.formatDateTimeLocalInput
-                            shared.time.browserTimeZone.zone
-                            (Maybe.withDefault (Time.millisToPosix 0) (displayedEndsAfter shared model))
-                        )
-                    , onInput EndsAfterInputChanged
-                    ]
-                    []
-                ]
+        -- `cacheAlertView` sits beside the tab strip rather than in it, which would clip its popover -- see
+        -- `Components.Pages.PostsPage.recentPostsTabsView`, whose row this is (`posts.css`).
+        div [ class "posts-tabs-row" ]
+            [ cacheAlertView shared model
+            , tabsBarView shared model
             ]
+
+
+tabsBarView : Shared.Model -> Model -> Html Msg
+tabsBarView shared model =
+    div [ class "filter-tabs-bar" ]
+        [ hideStartedOrLongButtonView model
+        , button
+            [ classes
+                ("filter-tab"
+                    :: "filter-tab-primary"
+                    :: (if model.tab == UpcomingEvents then
+                            [ "background-color-primary" ]
+
+                        else
+                            []
+                       )
+                )
+            , onClick (TabChanged UpcomingEvents)
+            ]
+            [ text "Upcoming Events" ]
+        , div
+            [ classes
+                ("filter-tab"
+                    :: (if model.tab == EventsAfterDate then
+                            [ "background-color-primary" ]
+
+                        else
+                            []
+                       )
+                )
+            , onClick (TabChanged EventsAfterDate)
+            ]
+            [ text "Events After "
+            , input
+                [ type_ "datetime-local"
+                , class "filter-tab-date-input"
+                , value
+                    (SharedTime.formatDateTimeLocalInput
+                        shared.time.browserTimeZone.zone
+                        (Maybe.withDefault (Time.millisToPosix 0) (displayedEndsAfter shared model))
+                    )
+                , onInput EndsAfterInputChanged
+                ]
+                []
+            ]
+        ]
+
+
+{-| When the events shown were fetched, if they were restored from `Shared.EventsCache` and are now more than five
+minutes old -- the oldest cached source still showing; `Nothing` otherwise, when there is nothing to warn about.
+-}
+staleCacheSince : Shared.Model -> Model -> Maybe Time.Posix
+staleCacheSince shared model =
+    model.eventsByServer
+        |> Dict.values
+        |> List.filter .fromCache
+        |> List.filterMap (.fetchedAt >> Maybe.map Time.posixToMillis)
+        |> List.minimum
+        |> Maybe.andThen
+            (\fetched ->
+                PostsCache.ageLabel (Time.posixToMillis (Maybe.withDefault shared.time.now model.now) - fetched)
+                    |> Maybe.map (\_ -> Time.millisToPosix fetched)
+            )
+
+
+{-| A "⚠" icon button, in the same row as the tabs (to the left of them), that opens a popover (down and to the
+right) saying the events shown are cached and when they were loaded -- only while they are, and more than five
+minutes old (`staleCacheSince`); nothing otherwise. It lives in the tabs row, not above the list, so it appearing
+never pushes the events down. `Components.Pages.PostsPage.cacheAlertView`'s twin.
+-}
+cacheAlertView : Shared.Model -> Model -> Html Msg
+cacheAlertView shared model =
+    case staleCacheSince shared model of
+        Just fetchedAt ->
+            div [ classes [ "posts-cache-alert", "popover-anchor" ] ]
+                [ button
+                    [ classes [ "filter-icon-button", "popover-toggle", "background-color-nav", openClosedClass model.cachePopoverOpen ]
+                    , onClick CacheAlertClicked
+                    , title "These events are cached and may be old"
+                    , type_ "button"
+                    ]
+                    [ text (Glyph.textPresentation "⚠") ]
+                , div [ classes [ "popover-backdrop", openClosedClass model.cachePopoverOpen ], onClick CacheAlertClosed ] []
+                , div [ classes [ "posts-cache-alert-popover", "popover", openClosedClass model.cachePopoverOpen ] ]
+                    [ p []
+                        [ text
+                            ("These events are cached and may be old. They were loaded at "
+                                ++ SharedTime.formatDateTime shared.time.browserTimeZone fetchedAt
+                                ++ "."
+                            )
+                        ]
+                    ]
+                ]
+
+        Nothing ->
+            text ""
 
 
 {-| Search box (debounced, see `SearchTextChanged`/`SearchDebounceElapsed`) --
@@ -3808,7 +4105,7 @@ eventsListView shared model =
                         modeClass
             in
             Html.Keyed.node "div"
-                [ class containerClass ]
+                [ class containerClass, attribute "data-cache-key" model.path ]
                 (List.map
                     (eventAnimationView shared model.embeddedPage model.showSyncSources model.showSyncDestinations model.availableSyncDestinations model.pushStatuses model axis)
                     animations
@@ -3880,7 +4177,7 @@ eventAnimationView shared embeddedPage showSyncSources showSyncDestinations avai
                 []
     in
     ( key
-    , div (id (eventCardDomId key) :: UI.Flip.itemAttributes axis anim.flip anim.move.moving)
+    , div (id (eventCardDomId key) :: attribute "data-post-key" key :: UI.Flip.itemAttributes axis anim.flip anim.move.moving)
         [ div (class "event-card-move" :: pointerEventsAttr ++ UI.Flip.moveAttributes anim.move)
             [ eventCardView shared embeddedPage False showSyncSources showSyncDestinations availableSyncDestinations pushStatuses model ( anim.host, anim.event, anim.occasion )
                 |> FederatedAuthors.withWarningOverlay (isUnverifiedEvent model anim.host anim.event)

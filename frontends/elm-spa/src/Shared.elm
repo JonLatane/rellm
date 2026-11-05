@@ -64,6 +64,7 @@ import Shared.MarkdownPanel as MarkdownPanel
 import Shared.MediaGeneratorPanel as MediaGeneratorPanel
 import Shared.MediaViewerPanel as MediaViewerPanel
 import Shared.MessagingPanel as MessagingPanel
+import Shared.EventsCache as EventsCache
 import Shared.MyMediaPanel as MyMediaPanel
 import Shared.PostsCache as PostsCache
 import Shared.PushNotificationLink as PushNotificationLink
@@ -100,6 +101,9 @@ type alias Model =
 
     -- Posts feeds kept in memory so going back to one shows it as it was -- see `Shared.PostsCache`.
     , postsCache : PostsCache.Model
+
+    -- The same for events feeds -- see `Shared.EventsCache`.
+    , eventsCache : EventsCache.Model
 
     -- See `Theme` for `preference`/`systemPrefersDark` themselves.
     , theme : Theme
@@ -223,6 +227,8 @@ type Msg
     | QuoteLinksMsg QuoteLinks.Msg
       -- What `PostsPage` sends to save (or forget) its feed -- never forwarded back into a page (see `notifiesPages`).
     | PostsCacheMsg PostsCache.Msg
+      -- `EventsPage`'s equivalent (and what an event's own page sends to forget feeds it has made stale).
+    | EventsCacheMsg EventsCache.Msg
     | MessagingPanelMsg MessagingPanel.Msg
     | CloseAllPanels
     | BreadcrumbsMsg Breadcrumbs.Msg
@@ -615,6 +621,7 @@ init basePath req flags =
             , countabilibar = Countabilibar.init
             , quoteLinks = QuoteLinks.init
             , postsCache = PostsCache.empty
+            , eventsCache = EventsCache.empty
             , theme = { preference = themePreference, systemPrefersDark = systemPrefersDark }
             , userPreferences = UserPreferences.init userPreferencesFlags
             , basePath = basePath
@@ -757,7 +764,7 @@ update req msg model =
 
         -- A video the media viewer lands on plays in the video player panel (see `viewerVideoSync`).
         ( viewedModel, viewedCmd ) =
-            viewerVideoSync req model (postsCacheSync msg model quotedModel)
+            viewerVideoSync req model (eventsCacheSync msg model (postsCacheSync msg model quotedModel))
     in
     case rootRedirectCmd req msg model of
         Just redirect ->
@@ -798,6 +805,36 @@ postsCacheSync msg before after =
             PostsCache.reconcile
                 (\host -> RellmAccounts.enabledRellmAccountForServer after.accounts.accounts host |> Maybe.map RellmAccounts.rellmAccountId)
                 (accountSignature before /= accountSignature after)
+                evicted
+    }
+
+
+{-| `postsCacheSync`'s counterpart for `Shared.EventsCache`: feeds fetched as an account that is no longer the
+acting one on their server are dropped; deleting an event (or one of its occasions) drops the snapshots showing
+it once the deletion is confirmed, and creating one on a server those with events from it.
+-}
+eventsCacheSync : Msg -> Model -> Model -> Model
+eventsCacheSync msg before after =
+    let
+        evicted : EventsCache.Model
+        evicted =
+            case ( msg, before.panels.confirmingDeleteFor ) of
+                ( ConfirmDelete, Just (ConfirmEventDelete event host) ) ->
+                    EventsCache.evictEvent host (event.post |> Maybe.map .id |> Maybe.withDefault "") after.eventsCache
+
+                ( ConfirmDelete, Just (ConfirmOccasionDelete _ _ host) ) ->
+                    EventsCache.evictHost host after.eventsCache
+
+                ( CreateNewPanelMsg (CreateNewPanel.GotSaveResult (Ok ( _, CreateNewPanel.CreatedEvent host _ ))), _ ) ->
+                    EventsCache.evictHost host after.eventsCache
+
+                _ ->
+                    after.eventsCache
+    in
+    { after
+        | eventsCache =
+            EventsCache.reconcile
+                (\host -> RellmAccounts.enabledRellmAccountForServer after.accounts.accounts host |> Maybe.map RellmAccounts.rellmAccountId)
                 evicted
     }
 
@@ -1264,6 +1301,9 @@ notifiesPages msg =
             False
 
         PostsCacheMsg _ ->
+            False
+
+        EventsCacheMsg _ ->
             False
 
         CountabilibarMsg countabilibarMsg ->
@@ -2258,6 +2298,9 @@ sharedUpdate req msg model =
 
         PostsCacheMsg subMsg ->
             ( { model | postsCache = PostsCache.update subMsg model.postsCache }, Cmd.none )
+
+        EventsCacheMsg subMsg ->
+            ( { model | eventsCache = EventsCache.update subMsg model.eventsCache }, Cmd.none )
 
         QuoteLinksMsg subMsg ->
             let

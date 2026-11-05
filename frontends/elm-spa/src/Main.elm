@@ -102,6 +102,7 @@ import Pages.UsernameOrCustomTab_.Posts
 import Request
 import Shared
 import Shared.Countabilibar as Countabilibar
+import Shared.EventsCache as EventsCache
 import Shared.PostsCache as PostsCache
 import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.RellmServers as RellmServers
@@ -285,6 +286,7 @@ innerUpdate msg model =
                                     -- link click, redirect or typed URL always starts fresh) -- set before
                                     -- `Pages.init`, which is what looks.
                                     , postsCache = PostsCache.setRestoring isBackNav shared0Base.postsCache
+                                    , eventsCache = EventsCache.setRestoring isBackNav shared0Base.eventsCache
                                 }
 
                             isBackNav : Bool

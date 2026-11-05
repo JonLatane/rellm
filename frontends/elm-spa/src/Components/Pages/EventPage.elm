@@ -83,6 +83,7 @@ import Shared
 import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer)
+import Shared.EventsCache as EventsCache
 import Shared.Breadcrumbs as Breadcrumbs
 import Shared.Conversions as Conversions
 import Shared.CreateNewPanel as CreateNewPanel
@@ -653,7 +654,43 @@ update shared msg model =
             ( model, effect )
 
         Nothing ->
-            updateInner shared msg model
+            let
+                ( newModel, effect ) =
+                    updateInner shared msg model
+            in
+            ( newModel, Effect.batch [ effect, eventsCacheEffect msg model newModel ] )
+
+
+{-| What the events listings kept in `Shared.EventsCache` show of this event is stale once it has changed (a save
+landing as a new `EventLoaded`) or been RSVP'd to here -- they are dropped, and fetched again when the reader
+goes back to them.
+-}
+eventsCacheEffect : Msg -> Model -> Model -> Effect Msg
+eventsCacheEffect msg oldModel newModel =
+    let
+        changed : Bool
+        changed =
+            case ( oldModel.eventStatus, newModel.eventStatus ) of
+                ( EventLoaded oldEvent _, EventLoaded newEvent _ ) ->
+                    oldEvent /= newEvent
+
+                _ ->
+                    False
+
+        rsvpd : Bool
+        rsvpd =
+            case msg of
+                RsvpsMsg _ _ ->
+                    True
+
+                _ ->
+                    False
+    in
+    if changed || rsvpd then
+        Effect.fromShared (Shared.EventsCacheMsg EventsCache.EvictAll)
+
+    else
+        Effect.none
 
 
 updateInner : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
