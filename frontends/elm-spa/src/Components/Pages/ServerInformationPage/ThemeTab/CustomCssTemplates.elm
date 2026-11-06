@@ -858,6 +858,12 @@ standardSideNav images =
   .navbar .nav-links .nav-tabs > .nav-link:not(.nav-link-home):not(.background-color-nav) {
     background-color: var(--primary-color, #4a90d9);
   }
+  /* The hover tint every other nav style gets (`.nav-link:hover`, EmittedStylesheet) -- the pill's own
+     background above is more specific than that rule, so it is restated here. The current tab keeps its
+     nav color. */
+  .navbar .nav-links .nav-tabs > .nav-link:not(.nav-link-home):not(.background-color-nav):hover {
+    background-color: color-mix(in srgb, var(--nav-color, #4a90d9) 53%, var(--primary-color, #4a90d9));
+  }
 
   /* Tab styles, vertically. Icon only: a round-ish square under Home's logo. */
   .navbar .nav-links.tab-style-icon-only .nav-tabs > .nav-link:not(.nav-link-home) {
