@@ -38,7 +38,11 @@
     "ajv@npm:8.6.3": "8.18.0",
     "body-parser@npm:1.20.3": "1.20.9",
     "decode-uri-component@npm:^0.2.2": "0.5.1",
-    "glob@npm:10.3.10": "10.5.0",
+    "glob@npm:^10.2.2": "14.0.4",
+    "glob@npm:^10.3.10": "14.0.4",
+    "glob@npm:^10.4.2": "14.0.4",
+    "glob@npm:^10.4.5": "14.0.4",
+    "glob@npm:^9.3.3": "14.0.4",
     "http-cache-semantics@npm:^4.1.1": "4.3.0",
     "image-size@npm:^1.0.2": "2.0.3",
     "ip-address@npm:^9.0.5": "10.7.5",
@@ -54,7 +58,9 @@
     "undici@npm:5.28.4": "6.29.1",
     "undici@npm:^5.28.4": "6.29.1",
     "undici@npm:6.28.1": "6.29.1",
-    "uuid@npm:^7.0.3": "11.1.1"
+    "uuid@npm:^7.0.3": "11.1.1",
+    "deepmerge@npm:^4.3.1": "patch:deepmerge@npm%3A4.3.1#~/.yarn/patches/deepmerge-npm-4.3.1-4f751a0844.patch",
+    "deepmerge@npm:^4.0.0": "patch:deepmerge@npm%3A4.3.1#~/.yarn/patches/deepmerge-npm-4.3.1-4f751a0844.patch"
   },
   "dependencies": {
     "@babel/runtime": "^7.26.0",
