@@ -898,6 +898,16 @@ standardSideNav images =
   .messaging-panel, .nav-panel.messaging-panel {
     left: 12px;
   }
+  /* So does the New Post / New Event composer, which is otherwise centered in the window -- that only
+     makes sense under a centered nav. (It is fixed-position, so no transform is needed to place it;
+     closed, it keeps just its small upward shift.) */
+  .create-new-panel.nav-panel {
+    left: 12px;
+    transform: none;
+  }
+  .create-new-panel.nav-panel.is-closed {
+    transform: translateY(-8px);
+  }
 
   /* The whole page area moves right of the side column: the 800px content column is centered when there is
      room, and otherwise sits just past the column (--side-left is its left edge). Pages that deliberately
