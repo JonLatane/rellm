@@ -60,9 +60,7 @@
     "undici@npm:5.28.4": "6.29.1",
     "undici@npm:^5.28.4": "6.29.1",
     "undici@npm:6.28.1": "6.29.1",
-    "uuid@npm:^7.0.3": "11.1.1",
-    "deepmerge@npm:^4.3.1": "patch:deepmerge@npm%3A4.3.1#~/.yarn/patches/deepmerge-npm-4.3.1-4f751a0844.patch",
-    "deepmerge@npm:^4.0.0": "patch:deepmerge@npm%3A4.3.1#~/.yarn/patches/deepmerge-npm-4.3.1-4f751a0844.patch"
+    "uuid@npm:^7.0.3": "11.1.1"
   },
   "dependencies": {
     "@babel/runtime": "^7.26.0",

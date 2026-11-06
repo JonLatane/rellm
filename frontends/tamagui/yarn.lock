@@ -9084,17 +9084,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"deepmerge@npm:4.3.1":
+"deepmerge@npm:^4.0.0, deepmerge@npm:^4.3.1":
   version: 4.3.1
   resolution: "deepmerge@npm:4.3.1"
   checksum: 10/058d9e1b0ff1a154468bf3837aea436abcfea1ba1d165ddaaf48ca93765fdd01a30d33c36173da8fbbed951dd0a267602bc782fe288b0fc4b7e1e7091afc4529
-  languageName: node
-  linkType: hard
-
-"deepmerge@patch:deepmerge@npm%3A4.3.1#~/.yarn/patches/deepmerge-npm-4.3.1-4f751a0844.patch":
-  version: 4.3.1
-  resolution: "deepmerge@patch:deepmerge@npm%3A4.3.1#~/.yarn/patches/deepmerge-npm-4.3.1-4f751a0844.patch::version=4.3.1&hash=1203d9"
-  checksum: 10/ef4d4b220a556acb19262fe22a7e2c5b9d4e94d26af2755fbb711ccf9a0a762ea6c09c736ead778fa87060d88ad78219817b9d8109e9a6736783a4ed814ecad4
   languageName: node
   linkType: hard
 
