@@ -879,6 +879,12 @@ standardSideNav images =
   .navbar .nav-links.tab-style-text-only .nav-tabs > .nav-link:not(.nav-link-home) {
     justify-content: flex-start;
   }
+  /* Every icon gets the same fixed-width, centered box, so the labels line up -- the About tab's plain
+     italic "i" is much narrower than the emoji beside it and would otherwise sit left of their column. */
+  .navbar .nav-links.tab-style-icon-and-text-right .nav-tabs > .nav-link:not(.nav-link-home) .nav-link-icon {
+    flex: none;
+    width: 1.75rem;
+  }
 
   /* The Starred and Messaging panels normally hang from the centered 800px nav; with Home at the left edge,
      they hang from the left edge too. */
