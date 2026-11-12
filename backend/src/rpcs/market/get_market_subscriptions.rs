@@ -9,7 +9,8 @@ use crate::rpcs::validate_permission;
 /// *Authenticated* -- see `GetMarketSubscriptionsRequest`'s own doc.
 /// `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE` (the default) is self-scoped only;
 /// `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN` requires Admin and returns every
-/// `PURCHASE_TYPE_RELLM_HOSTING` subscription across every buyer.
+/// `PURCHASE_TYPE_RELLM_HOSTING` subscription across every buyer;
+/// `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN` (also Admin) returns every subscription of every type.
 pub fn get_market_subscriptions(
     request: GetMarketSubscriptionsRequest,
     current_user: &models::User,
@@ -25,6 +26,10 @@ pub fn get_market_subscriptions(
         GetMarketSubscriptionsRequestType::GetMarketSubscriptionsRequestForFulfillmentAdmin => {
             validate_permission(&Some(current_user), Permission::Admin)?;
             build_fulfillment_subscriptions(conn)?
+        }
+        GetMarketSubscriptionsRequestType::GetMarketSubscriptionsRequestForAllAdmin => {
+            validate_permission(&Some(current_user), Permission::Admin)?;
+            build_all_subscriptions(conn)?
         }
     };
     Ok(GetMarketSubscriptionsResponse {

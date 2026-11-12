@@ -213,6 +213,14 @@ export enum GetMarketSubscriptionsRequestType {
    * automated (see RellmHostingSubscriptionDetails.fulfillment_status's own doc).
    */
   GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN = 1,
+  /**
+   * GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN - Admin-only view backing the Messages page's Fulfillment tab -- *every* MarketSubscription of *every*
+   * PurchaseType across every buyer, oldest first, so an admin can find any customer's subscription
+   * (storage, AI grants, permissions, hosting) to open its fulfillment chat (`fulfillment_notes`,
+   * which all types have). Only Rellm hosting has a work queue (`fulfillment_status`), but the chat is
+   * for all of them.
+   */
+  GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN = 2,
   UNRECOGNIZED = -1,
 }
 
@@ -224,6 +232,9 @@ export function getMarketSubscriptionsRequestTypeFromJSON(object: any): GetMarke
     case 1:
     case "GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN":
       return GetMarketSubscriptionsRequestType.GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN;
+    case 2:
+    case "GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN":
+      return GetMarketSubscriptionsRequestType.GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN;
     case -1:
     case "UNRECOGNIZED":
     default:
@@ -237,6 +248,8 @@ export function getMarketSubscriptionsRequestTypeToJSON(object: GetMarketSubscri
       return "GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE";
     case GetMarketSubscriptionsRequestType.GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN:
       return "GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN";
+    case GetMarketSubscriptionsRequestType.GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN:
+      return "GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN";
     case GetMarketSubscriptionsRequestType.UNRECOGNIZED:
     default:
       return "UNRECOGNIZED";
@@ -417,7 +430,8 @@ export interface GetMarketSubscriptionsResponse {
   /**
    * For `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE`: the caller's own subscriptions, newest
    * first. For `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN`: every
-   * `PURCHASE_TYPE_RELLM_HOSTING` subscription across every buyer, oldest first (so the oldest
+   * `PURCHASE_TYPE_RELLM_HOSTING` subscription across every buyer (and for
+   * `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN`, every subscription of every type), oldest first (so the oldest
    * unfulfilled order surfaces at the top of `/market/fulfillment`).
    */
   marketSubscriptions: MarketSubscription[];

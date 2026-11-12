@@ -454,7 +454,7 @@ fetchAll accountsPanelModel model =
     ( { model | feeds = syncFeeds entries model.feeds, adminFeeds = syncFeeds adminEntries model.adminFeeds }
     , Cmd.batch
         (List.map (fetchCmd GETMARKETSUBSCRIPTIONSREQUESTFORPURCHASE GotSubscriptions) entries
-            ++ List.map (fetchCmd GETMARKETSUBSCRIPTIONSREQUESTFORFULFILLMENTADMIN GotAdminSubscriptions) adminEntries
+            ++ List.map (fetchCmd GETMARKETSUBSCRIPTIONSREQUESTFORALLADMIN GotAdminSubscriptions) adminEntries
         )
     )
 

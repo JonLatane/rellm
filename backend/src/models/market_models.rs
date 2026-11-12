@@ -310,6 +310,15 @@ pub fn get_market_subscriptions_by_product_type(
         })
 }
 
+/// Every `MarketSubscription`, of every type and every buyer -- backs
+/// `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN` (see `marshaling::market_marshaling::build_all_subscriptions`).
+pub fn get_all_market_subscriptions(conn: &mut PgPooledConnection) -> Result<Vec<MarketSubscription>, Status> {
+    market_subscriptions::table.load::<MarketSubscription>(conn).map_err(|e| {
+        log::error!("Failed to load all market subscriptions: {:?}", e);
+        Status::new(Code::Internal, "failed_to_load_subscriptions")
+    })
+}
+
 /// Every `MarketSubscription` of `product_type` that's due to renew (`canceled_at IS NULL AND
 /// renews_at <= NOW()`) -- used by `logic::market::market_renewal::renew_subscriptions_of_type`.
 pub fn get_due_market_subscriptions(

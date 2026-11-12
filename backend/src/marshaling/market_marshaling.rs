@@ -215,6 +215,21 @@ pub fn build_fulfillment_subscriptions(conn: &mut PgPooledConnection) -> Result<
         &PurchaseType::RellmHosting.to_string_purchase_type(),
         conn,
     )?;
+    build_subscriptions_oldest_first(subscriptions, conn)
+}
+
+/// Every `MarketSubscription` of *every* type across every buyer, oldest first -- backs
+/// `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN` (an admin finding any customer's subscription to open
+/// its fulfillment chat).
+pub fn build_all_subscriptions(conn: &mut PgPooledConnection) -> Result<Vec<MarketSubscription>, Status> {
+    let subscriptions = models::get_all_market_subscriptions(conn)?;
+    build_subscriptions_oldest_first(subscriptions, conn)
+}
+
+fn build_subscriptions_oldest_first(
+    subscriptions: Vec<models::MarketSubscription>,
+    conn: &mut PgPooledConnection,
+) -> Result<Vec<MarketSubscription>, Status> {
     let mut result: Vec<(i64, MarketSubscription)> = build_subscriptions(subscriptions, conn)?;
     result.sort_by(|(_, a), (_, b)| {
         a.created_at

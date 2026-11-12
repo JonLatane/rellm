@@ -32,6 +32,9 @@ fieldNumbersGetMarketSubscriptionsRequestType n_ =
         GETMARKETSUBSCRIPTIONSREQUESTFORFULFILLMENTADMIN ->
             1
 
+        GETMARKETSUBSCRIPTIONSREQUESTFORALLADMIN ->
+            2
+
         GetMarketSubscriptionsRequestTypeUnrecognized_ m_ ->
             m_
 
@@ -57,6 +60,9 @@ encodeGetMarketSubscriptionsRequestType value =
             GETMARKETSUBSCRIPTIONSREQUESTFORFULFILLMENTADMIN ->
                 1
 
+            GETMARKETSUBSCRIPTIONSREQUESTFORALLADMIN ->
+                2
+
             GetMarketSubscriptionsRequestTypeUnrecognized_ i ->
                 i
 
@@ -76,6 +82,9 @@ decodeGetMarketSubscriptionsRequestType =
                     1 ->
                         GETMARKETSUBSCRIPTIONSREQUESTFORFULFILLMENTADMIN
 
+                    2 ->
+                        GETMARKETSUBSCRIPTIONSREQUESTFORALLADMIN
+
                     _ ->
                         GetMarketSubscriptionsRequestTypeUnrecognized_ i
             )
@@ -87,4 +96,5 @@ decodeGetMarketSubscriptionsRequestType =
 type GetMarketSubscriptionsRequestType
     = GETMARKETSUBSCRIPTIONSREQUESTFORPURCHASE
     | GETMARKETSUBSCRIPTIONSREQUESTFORFULFILLMENTADMIN
+    | GETMARKETSUBSCRIPTIONSREQUESTFORALLADMIN
     | GetMarketSubscriptionsRequestTypeUnrecognized_ Int

@@ -738,3 +738,42 @@ fn a_non_hosting_chat_is_append_only_and_author_checked_like_any_other() {
         Ok(())
     });
 }
+
+#[test]
+fn the_all_admin_listing_returns_every_type_while_the_fulfillment_listing_stays_hosting_only() {
+    use crate::rpcs::get_market_subscriptions;
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let admin = admin(conn, "mkt_listing_admin");
+        let buyer = create_user(conn, "mkt_listing_buyer");
+        let media = media_storage_subscription(conn, &buyer, &admin);
+        let hosting_product = hosting_product(conn, &admin);
+        let hosting = hosting_subscription(conn, &buyer, &hosting_product);
+
+        let mut ids = |request_type: GetMarketSubscriptionsRequestType| -> Vec<String> {
+            get_market_subscriptions(GetMarketSubscriptionsRequest { request_type: request_type as i32 }, &admin, conn)
+                .expect("admin listing should succeed")
+                .market_subscriptions
+                .into_iter()
+                .map(|s| s.id)
+                .collect()
+        };
+        let all = ids(GetMarketSubscriptionsRequestType::GetMarketSubscriptionsRequestForAllAdmin);
+        assert!(all.contains(&media.id.to_proto_id()) && all.contains(&hosting.id.to_proto_id()));
+        let hosting_only = ids(GetMarketSubscriptionsRequestType::GetMarketSubscriptionsRequestForFulfillmentAdmin);
+        assert!(hosting_only.contains(&hosting.id.to_proto_id()));
+        assert!(!hosting_only.contains(&media.id.to_proto_id()), "the /market/fulfillment listing is unchanged");
+
+        // Admin-only, like the other admin view.
+        let err = get_market_subscriptions(
+            GetMarketSubscriptionsRequest {
+                request_type: GetMarketSubscriptionsRequestType::GetMarketSubscriptionsRequestForAllAdmin as i32,
+            },
+            &buyer,
+            conn,
+        )
+        .unwrap_err();
+        assert!(err.message().contains("permission"), "{:?}", err);
+        Ok(())
+    });
+}
