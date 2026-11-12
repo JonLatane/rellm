@@ -456,6 +456,43 @@ import "market.proto";
 // Stripe credentials for all of this live in `ServerConfiguration.stripe_config` (a
 // [`StripeConfig`](#rellm-StripeConfig)), Admin-only like `twilio_config`/`bird_config`.
 //
+// ##### Subscription states
+// [`MarketSubscription.state`](#rellm-MarketSubscription) ([`MarketSubscriptionState`](#rellm-MarketSubscriptionState))
+// is derived on every read, never stored: `SUBSCRIPTION_ACTIVE` (not canceled), `SUBSCRIPTION_ACTIVE_BUT_CANCELED`
+// (canceled, but the paid-for period - the later of `canceled_at`/`renews_at` - hasn't ended, so the entitlement
+// still applies) and `SUBSCRIPTION_CANCELED` (terminated, or the paid-for period is over). Only the middle state can be
+// resumed: [`MakeMarketPurchase`](#grpc-api-MakeMarketPurchase) for the same product returns `resumed_subscription`
+// instead of a checkout. Clients should branch on `state`, not on `canceled_at`.
+//
+// ##### Fulfillment chats, read tracking, and the admin perspective
+// A `PURCHASE_TYPE_RELLM_HOSTING` subscription is set up by hand, and the conversation about that lives in its
+// `fulfillment_notes` (an append-only chat, see [`UpdateMarketSubscription`](#grpc-api-UpdateMarketSubscription)). The
+// same notes are seen from two sides:
+//
+// - **The buyer** reads them on their own subscription (`GetMarketSubscriptions`, or `User.market_subscriptions`). Their
+//   read marker is `RellmHostingSubscriptionDetails.notes_last_read`, moved only by
+//   [`MarkFulfillmentNotesRead`](#grpc-api-MarkFulfillmentNotesRead) (buyer-only, server-stamped; `UpdateMarketSubscription`
+//   always preserves it). A note is *unread* if someone other than the buyer wrote it and it is newer than the marker (or
+//   the marker is unset). A buyer's unread count is the sum over their subscriptions.
+// - **A server Admin** works every order from the "setting up customers' sites" side:
+//   `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN` lists them all, and `UpdateMarketSubscription` (Admin-only) appends
+//   notes and moves `fulfillment_status`. There is deliberately **no per-admin read marker** - `notes_last_read` is the
+//   buyer's, and several admins share the same orders - so an admin has no "unread" count. What needs an admin's attention
+//   is the number of orders whose `fulfillment_status` is still `FULFILLMENT_STATUS_AWAITING_HOST_ADMIN`; that is the
+//   admin's count. An admin opening an awaiting order moves it to `FULFILLMENT_STATUS_IN_PROGRESS` (a bare status note), which
+//   is what takes it out of that count, and "Add and Mark as Fulfilled" finishes it.
+//
+// So three independent counts exist side by side, and clients can show them together: unread messages,
+// the buyer's unread fulfillment notes, and (Admins only) orders awaiting a host admin. The Elm client shows them in
+// that order in the corners of its Messages button (top-right, bottom-right, bottom-left), and as the Messages,
+// Subscriptions and Fulfillment tabs.
+//
+// Notifications follow the same two sides. A device opts in per subscription with
+// [`RegisterMarketSubscriptionPush`](#grpc-api-RegisterMarketSubscriptionPush) (linking an already-registered Web Push
+// subscription, see [`RegisterPushSubscription`](#grpc-api-RegisterPushSubscription)). A new note then pushes to every opted-in
+// device except its author's - the buyer hears about an admin's note, and other admins about it too - and access (buyer or
+// Admin) is re-checked at send time, so losing access ends the notifications.
+//
 // #### Media
 // [`Media`](#rellm-Media) represents an uploaded (or server-generated) photo or video. Unlike other types, Media
 // content itself is *not* served over gRPC - it's uploaded/downloaded via plain HTTP (`POST`/`GET /media`) - while
