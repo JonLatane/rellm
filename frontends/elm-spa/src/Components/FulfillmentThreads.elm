@@ -13,6 +13,7 @@ module Components.FulfillmentThreads exposing
     , subscriptionLinks
     , threadByKey
     , threadKey
+    , threadQuery
     , threadUrl
     , totalUnread
     , unreadCount
@@ -101,10 +102,10 @@ type alias Model =
 type Msg
     = GotSubscriptions String (Result Grpc.Error ( Maybe AccountsPanel.Msg, List MarketSubscription ))
     | GotAdminSubscriptions String (Result Grpc.Error ( Maybe AccountsPanel.Msg, List MarketSubscription ))
-    | GotMarkedRead (Result Grpc.Error ( Maybe AccountsPanel.Msg, MarketSubscription ))
+    | GotMarkedRead String (Result Grpc.Error ( Maybe AccountsPanel.Msg, MarketSubscription ))
     | GotPushStatus String (Result Grpc.Error ( Maybe AccountsPanel.Msg, Bool ))
     | PushToggleClicked Thread Bool
-    | GotPushToggled String Bool (Result Grpc.Error ( Maybe AccountsPanel.Msg, () ))
+    | GotPushToggled String String Bool (Result Grpc.Error ( Maybe AccountsPanel.Msg, () ))
     | DraftChanged String String
     | SaveNoteClicked Thread FulfillmentStatus
     | GotNoteSaved String (Result Grpc.Error ( Maybe AccountsPanel.Msg, MarketSubscription ))
@@ -144,15 +145,11 @@ counterpart of `?messaging_group=`. `mainFrontendHost`'s own ids carry no `@host
 `Components.Messages.groupRouteId`. `noteIndex` (0-based) adds `#subscription-message-<n>` to scroll
 to one note.
 -}
-threadUrl : String -> String -> String -> Maybe Int -> String
-threadUrl mainFrontendHost host subscriptionId noteIndex =
-    "/messages?subscription_messages="
-        ++ (if host == mainFrontendHost then
-                subscriptionId
-
-            else
-                subscriptionId ++ "@" ++ host
-           )
+threadUrl : String -> String -> String -> String -> Maybe Int -> String
+threadUrl basePath mainFrontendHost host subscriptionId noteIndex =
+    basePath
+        ++ "/messages?"
+        ++ threadQuery mainFrontendHost host subscriptionId
         ++ (case noteIndex of
                 Just index ->
                     "#subscription-message-" ++ String.fromInt index
@@ -164,6 +161,20 @@ threadUrl mainFrontendHost host subscriptionId noteIndex =
 
 
 -- DATA
+
+
+{-| `subscription_messages=<id>[@host]` -- the query param naming one thread (no leading `?`).
+-}
+threadQuery : String -> String -> String -> String
+threadQuery mainFrontendHost host subscriptionId =
+    "subscription_messages="
+        ++ (if host == mainFrontendHost then
+                subscriptionId
+
+            else
+                subscriptionId ++ "@" ++ host
+           )
+
 
 
 notesOf : MarketSubscription -> List FulfillmentNote
@@ -397,7 +408,7 @@ markReadCmd accountsPanelModel thread =
                     |> withAccessToken (Just token)
                     |> Grpc.toTask
             )
-            |> Task.attempt GotMarkedRead
+            |> Task.attempt (GotMarkedRead thread.key)
 
 
 {-| One row per Rellm hosting subscription that has notes, among `subscriptions` (already-fetched,
@@ -405,8 +416,8 @@ e.g. `RellmAccount.marketSubscriptions`/`User.marketSubscriptions`, all on `host
 count and a link to its thread on the Messages page. What the Accounts panel and the profile page's
 Subscriptions lists show.
 -}
-subscriptionLinks : String -> String -> List MarketSubscription -> List { subscription : MarketSubscription, title : String, unread : Int, url : String }
-subscriptionLinks mainFrontendHost host subscriptions =
+subscriptionLinks : String -> String -> String -> List MarketSubscription -> List { subscription : MarketSubscription, title : String, unread : Int, url : String }
+subscriptionLinks basePath mainFrontendHost host subscriptions =
     subscriptions
         |> List.filter (\s -> s.type_ == PURCHASETYPERELLMHOSTING && not (List.isEmpty (notesOf s)))
         |> List.map
@@ -414,7 +425,7 @@ subscriptionLinks mainFrontendHost host subscriptions =
                 { subscription = s
                 , title = threadTitle { key = "", host = host, accountId = "", subscription = s, admin = False }
                 , unread = unreadCount s
-                , url = threadUrl mainFrontendHost host s.id Nothing
+                , url = threadUrl basePath mainFrontendHost host s.id Nothing
                 }
             )
 
@@ -431,7 +442,7 @@ openCmd : AccountsPanel.Model -> Model -> Thread -> Cmd Msg
 openCmd accountsPanelModel model thread =
     Cmd.batch
         [ markReadCmd accountsPanelModel thread
-        , if Dict.member thread.key model.pushOptIn then
+        , if Dict.member (optInKey accountsPanelModel thread) model.pushOptIn then
             Cmd.none
 
           else
@@ -451,7 +462,7 @@ openAdminCmd accountsPanelModel model thread =
 
           else
             Cmd.none
-        , if Dict.member thread.key model.pushOptIn then
+        , if Dict.member (optInKey accountsPanelModel thread) model.pushOptIn then
             Cmd.none
 
           else
@@ -490,6 +501,16 @@ appendNoteCmd accountsPanelModel thread noteText newStatus =
             Cmd.none
 
 
+{-| The `pushOptIn` cache key: the thread *and* the browser push endpoint it was checked against. The
+opt-in belongs to a particular push subscription -- turning the account's notifications off deletes it
+(and its thread links) server-side, and turning them back on makes a new one -- so a cached answer for a
+different (or missing) endpoint must never be reused.
+-}
+optInKey : AccountsPanel.Model -> Thread -> String
+optInKey accountsPanelModel thread =
+    thread.key ++ "|" ++ (pushRequest accountsPanelModel thread |> Maybe.withDefault "")
+
+
 pushRequest : AccountsPanel.Model -> Thread -> Maybe String
 pushRequest accountsPanelModel thread =
     Dict.get thread.accountId accountsPanelModel.pushSubscriptions
@@ -511,7 +532,7 @@ pushStatusCmd accountsPanelModel thread =
                         |> Grpc.toTask
                 )
                 |> Task.map (\( m, response ) -> ( m, response.registered ))
-                |> Task.attempt (GotPushStatus thread.key)
+                |> Task.attempt (GotPushStatus (optInKey accountsPanelModel thread))
 
 
 
@@ -577,7 +598,7 @@ update accountsPanelModel selected msg model =
 
         GotNoteSaved key (Ok ( maybeMsg, updatedSubscription )) ->
             ( { model
-                | adminFeeds = Dict.map (\_ feed -> replaceSubscription updatedSubscription feed) model.adminFeeds
+                | adminFeeds = Dict.map (\_ feed -> replaceSubscription "admin/" key updatedSubscription feed) model.adminFeeds
                 , saving = Dict.remove key model.saving
                 , drafts = Dict.remove key model.drafts
               }
@@ -591,13 +612,13 @@ update accountsPanelModel selected msg model =
         GotSubscriptions id (Err _) ->
             ( { model | feeds = Dict.update id (Maybe.map (\f -> { f | status = Failed })) model.feeds }, Cmd.none, Nothing )
 
-        GotMarkedRead (Ok ( maybeMsg, updatedSubscription )) ->
-            ( { model | feeds = Dict.map (\_ feed -> replaceSubscription updatedSubscription feed) model.feeds }
+        GotMarkedRead key (Ok ( maybeMsg, updatedSubscription )) ->
+            ( { model | feeds = Dict.map (\_ feed -> replaceSubscription "" key updatedSubscription feed) model.feeds }
             , Cmd.none
             , maybeMsg
             )
 
-        GotMarkedRead (Err _) ->
+        GotMarkedRead _ (Err _) ->
             ( model, Cmd.none, Nothing )
 
         GotPushStatus key (Ok ( maybeMsg, registered )) ->
@@ -632,22 +653,39 @@ update accountsPanelModel selected msg model =
                                 |> Grpc.toTask
                         )
                         |> Task.map (\( m, _ ) -> ( m, () ))
-                        |> Task.attempt (GotPushToggled thread.key wanted)
+                        |> Task.attempt (GotPushToggled thread.key (optInKey accountsPanelModel thread) wanted)
                     , Nothing
                     )
 
-        GotPushToggled key wanted (Ok ( maybeMsg, () )) ->
-            ( { model | pushBusy = Dict.remove key model.pushBusy, pushOptIn = Dict.insert key wanted model.pushOptIn }, Cmd.none, maybeMsg )
+        GotPushToggled key optKey wanted (Ok ( maybeMsg, () )) ->
+            ( { model | pushBusy = Dict.remove key model.pushBusy, pushOptIn = Dict.insert optKey wanted model.pushOptIn }, Cmd.none, maybeMsg )
 
-        GotPushToggled key _ (Err _) ->
+        GotPushToggled key _ _ (Err _) ->
             ( { model | pushBusy = Dict.remove key model.pushBusy }, Cmd.none, Nothing )
 
 
-replaceSubscription : MarketSubscription -> Feed -> Feed
-replaceSubscription updated feed =
+{-| Swaps `updated` in for the subscription of the *one* thread `key` names (`keyPrefix` is the key
+namespace the feed belongs to -- `"admin/"` for the Fulfillment tab). Subscription ids are only unique
+per server, so matching on the bare id would let a reply from server A overwrite a same-id thread on B.
+-}
+replaceSubscription : String -> String -> MarketSubscription -> Feed -> Feed
+replaceSubscription keyPrefix key updated feed =
     case feed.status of
         Loaded subscriptions ->
-            { feed | status = Loaded (List.map (\s -> if s.id == updated.id then updated else s) subscriptions) }
+            { feed
+                | status =
+                    Loaded
+                        (List.map
+                            (\s ->
+                                if keyPrefix ++ threadKey feed.host s.id == key then
+                                    updated
+
+                                else
+                                    s
+                            )
+                            subscriptions
+                        )
+            }
 
         _ ->
             feed
@@ -666,6 +704,10 @@ type alias ViewConfig msg =
     -- How a row asks to open: the page selects in place; the embedded panel passes `Nothing` and rows
     -- become plain links to the real page instead.
     , onSelect : Maybe (String -> msg)
+
+    -- Embedded panel only: told which thread's link was clicked (the click still navigates -- this just lets
+    -- a page already on `/messages` follow along, since a same-path URL change doesn't re-init it).
+    , onLinkClick : Maybe (String -> msg)
     , toMsg : Msg -> msg
     }
 
@@ -730,7 +772,7 @@ threadView config thread =
                 "/market/fulfillment"
 
             else
-                threadUrl config.accountsPanelModel.mainFrontendHost thread.host subscription.id Nothing
+                threadUrl "" config.accountsPanelModel.mainFrontendHost thread.host subscription.id Nothing
 
         headerAttrs : List (Html.Attribute msg)
         headerAttrs =
@@ -742,7 +784,15 @@ threadView config thread =
                     ]
 
                 Nothing ->
-                    [ class "fulfillment-thread-header", href url ]
+                    class "fulfillment-thread-header"
+                        :: href url
+                        :: (case config.onLinkClick of
+                                Just linkClicked ->
+                                    [ onClick (linkClicked thread.key) ]
+
+                                Nothing ->
+                                    []
+                           )
 
         headerContent : List (Html msg)
         headerContent =
@@ -751,7 +801,7 @@ threadView config thread =
                 span [ class "fulfillment-thread-state" ] [ text (statusLabel (fulfillmentStatusOf subscription)) ]
 
               else
-                stateBadge subscription.state
+                stateBadge (Market.effectiveState subscription)
             , if unread > 0 then
                 span [ class "unread-count-badge", Html.Attributes.title "Unread notes" ] [ text (String.fromInt unread) ]
 
@@ -805,7 +855,7 @@ timeLine config subscription =
         Just renewsAt ->
             span [ class "fulfillment-thread-state" ]
                 [ text
-                    ((if subscription.state == SUBSCRIPTIONACTIVE then
+                    ((if Market.effectiveState subscription == SUBSCRIPTIONACTIVE then
                         "Renews "
 
                       else
@@ -1022,7 +1072,7 @@ pushToggleView config thread =
             let
                 optedIn : Bool
                 optedIn =
-                    Dict.get thread.key config.model.pushOptIn |> Maybe.withDefault False
+                    Dict.get (optInKey config.accountsPanelModel thread) config.model.pushOptIn |> Maybe.withDefault False
 
                 busy : Bool
                 busy =

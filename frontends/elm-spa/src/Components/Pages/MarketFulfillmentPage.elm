@@ -627,7 +627,7 @@ cancellationDetailsView browserTimeZone subscription =
             [ h4 [ class "market-fulfillment-section-title" ] [ text "Subscription Cancellation" ]
             , span [ class "profile-subscription-row-status" ]
                 [ text
-                    (case subscription.state of
+                    (case Market.effectiveState subscription of
                         Proto.Rellm.MarketSubscriptionState.SUBSCRIPTIONACTIVEBUTCANCELED ->
                             "Canceled, but service continues until the paid period ends"
 

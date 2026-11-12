@@ -2684,13 +2684,13 @@ accountAvatarMenuView shared account =
                         )
                     )
                 , div [ class "account-avatar-menu-subscription-links" ]
-                    (Fulfillment.subscriptionLinks "" account.server account.marketSubscriptions
+                    (Fulfillment.subscriptionLinks shared.basePath "" account.server account.marketSubscriptions
                         |> List.map
                             (\link ->
                                 a
                                     [ class "account-avatar-menu-item account-avatar-menu-subscription-link"
                                     , href link.url
-                                    , stopPropagationAndPreventDefaultOnClick (Shared.AccountsPanelMsg AccountsPanel.CloseAccountsPanel)
+                                    , onClick (Shared.AccountsPanelMsg AccountsPanel.CloseAccountsPanel)
                                     ]
                                     [ span [ class "account-avatar-menu-item-label" ] [ text link.title ]
                                     , if link.unread > 0 then

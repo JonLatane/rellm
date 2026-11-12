@@ -618,3 +618,69 @@ fn a_failed_renewal_cancels_the_subscription_and_frees_its_slot() {
         Ok(())
     });
 }
+
+// ----- the atomic resume/cancel primitives (what concurrent requests race on) -----------------
+
+#[test]
+fn a_second_resume_of_the_same_subscription_reports_already_active_and_claims_no_second_slot() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let product = make_product(conn, "mkt_atomic_twice_admin", 5);
+        let buyer = create_user(conn, "mkt_atomic_twice_buyer");
+        let subscription = subscribe(conn, &buyer, &product, Some(from_now(3600)), Some(ago(10)), None);
+        let product_id = product.id.to_db_id().unwrap();
+
+        let first = models::resume_market_subscription_and_claim_slot(subscription.id, product_id, conn)?;
+        let second = models::resume_market_subscription_and_claim_slot(subscription.id, product_id, conn)?;
+
+        assert_eq!(first, models::ResumeOutcome::Resumed);
+        assert_eq!(second, models::ResumeOutcome::AlreadyActive);
+        assert_eq!(sold_count(conn, &product), 1, "only the call that actually resumed claims a slot");
+        Ok(())
+    });
+}
+
+#[test]
+fn resume_primitive_reports_sold_out_and_not_resumable() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let product = make_product(conn, "mkt_atomic_outcomes_admin", 1);
+        let product_id = product.id.to_db_id().unwrap();
+        let buyer = create_user(conn, "mkt_atomic_outcomes_buyer");
+        let paid_up = subscribe(conn, &buyer, &product, Some(from_now(3600)), Some(ago(10)), None);
+        models::increment_market_product_sold_count(product_id, conn); // someone else took the slot
+        assert_eq!(
+            models::resume_market_subscription_and_claim_slot(paid_up.id, product_id, conn)?,
+            models::ResumeOutcome::SoldOut
+        );
+        assert!(models::get_market_subscription(paid_up.id, conn)?.canceled_at.is_some());
+
+        let lapsed = subscribe(conn, &buyer, &product, Some(ago(5)), Some(ago(10)), None);
+        diesel::update(crate::schema::market_products::table.find(product_id))
+            .set(crate::schema::market_products::sold_count.eq(0))
+            .execute(conn)
+            .unwrap();
+        assert_eq!(
+            models::resume_market_subscription_and_claim_slot(lapsed.id, product_id, conn)?,
+            models::ResumeOutcome::NotResumable
+        );
+        assert_eq!(sold_count(conn, &product), 0, "a failed resume claims nothing");
+        Ok(())
+    });
+}
+
+#[test]
+fn cancel_primitive_releases_exactly_one_slot_however_often_it_is_called() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let product = make_product(conn, "mkt_atomic_cancel_admin", 5);
+        let product_id = product.id.to_db_id().unwrap();
+        let buyer = create_user(conn, "mkt_atomic_cancel_buyer");
+        let subscription = subscribe(conn, &buyer, &product, Some(from_now(3600)), None, None);
+
+        assert!(models::cancel_market_subscription_and_release_slot(subscription.id, product_id, conn)?);
+        assert!(!models::cancel_market_subscription_and_release_slot(subscription.id, product_id, conn)?);
+        assert_eq!(sold_count(conn, &product), 0);
+        Ok(())
+    });
+}

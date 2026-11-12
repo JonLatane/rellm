@@ -1,5 +1,6 @@
 use std::time::SystemTime;
 
+use diesel::sql_types::Jsonb;
 use diesel::*;
 use tonic::{Code, Status};
 
@@ -30,18 +31,24 @@ pub fn mark_fulfillment_notes_read(
     if purchase_type != PurchaseType::RellmHosting {
         return Err(Status::new(Code::FailedPrecondition, "not_a_rellm_hosting_subscription"));
     }
-    let mut details: RellmHostingSubscriptionDetails =
-        serde_json::from_value(existing.details.clone()).map_err(|e| {
-            log::error!("Failed to parse RellmHostingSubscriptionDetails for {}: {:?}", existing.id, e);
-            Status::new(Code::Internal, "invalid_stored_details")
-        })?;
-    details.notes_last_read = Some(SystemTime::now().to_proto());
-    let new_details = serde_json::to_value(&details).map_err(|e| {
-        log::error!("Failed to serialize RellmHostingSubscriptionDetails: {:?}", e);
+    // Validate the stored details parse (so a malformed row is a clear error, not a silent write)...
+    serde_json::from_value::<RellmHostingSubscriptionDetails>(existing.details.clone()).map_err(|e| {
+        log::error!("Failed to parse RellmHostingSubscriptionDetails for {}: {:?}", existing.id, e);
+        Status::new(Code::Internal, "invalid_stored_details")
+    })?;
+    // ...but write *only* the marker, in one statement (`jsonb_set`), never read-modify-write the whole
+    // `details`: a concurrent `UpdateMarketSubscription` appending a note would otherwise be overwritten
+    // by this request's stale copy.
+    let marker = serde_json::to_value(SystemTime::now().to_proto()).map_err(|e| {
+        log::error!("Failed to serialize notes_last_read: {:?}", e);
         Status::new(Code::Internal, "failed_to_serialize_details")
     })?;
     diesel::update(market_subscriptions::table.filter(market_subscriptions::id.eq(existing.id)))
-        .set(market_subscriptions::details.eq(new_details))
+        .set(
+            market_subscriptions::details.eq(diesel::dsl::sql::<Jsonb>("jsonb_set(details, '{notes_last_read}', ")
+                .bind::<Jsonb, _>(marker)
+                .sql(", true)")),
+        )
         .execute(conn)
         .map_err(|e| {
             log::error!("Failed to mark fulfillment notes read: {:?}", e);

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::SystemTime;
 
+use diesel::sql_types::Jsonb;
 use diesel::*;
 use tonic::{Code, Status};
 
@@ -117,7 +118,7 @@ fn apply_fulfillment_notes(
     validate_permission(&Some(current_user), Permission::Admin)?;
 
     let subscription_id = request.id.to_db_id_or_err("id")?;
-    let mut existing = models::get_market_subscription(subscription_id, conn)?;
+    let existing = models::get_market_subscription(subscription_id, conn)?;
     let purchase_type = existing
         .product_type
         .to_owned()
@@ -172,13 +173,20 @@ fn apply_fulfillment_notes(
     }
     current_details.fulfillment_status = running_status;
 
-    existing.details = serde_json::to_value(&current_details).map_err(|e| {
+    let new_details = serde_json::to_value(&current_details).map_err(|e| {
         log::error!("Failed to serialize RellmHostingSubscriptionDetails: {:?}", e);
         Status::new(Code::Internal, "failed_to_serialize_details")
     })?;
 
+    // Writes only `details`, and keeps whatever `notes_last_read` the row has *at write time*: the buyer's
+    // `MarkFulfillmentNotesRead` may have moved it since `current_details` was read above, and this
+    // admin-side write must never put the stale marker (or an unset one) back.
     let updated = diesel::update(market_subscriptions::table.filter(market_subscriptions::id.eq(existing.id)))
-        .set(&existing)
+        .set(
+            market_subscriptions::details.eq(diesel::dsl::sql::<Jsonb>("jsonb_set(")
+                .bind::<Jsonb, _>(new_details)
+                .sql(", '{notes_last_read}', COALESCE(market_subscriptions.details->'notes_last_read', 'null'::jsonb), true)")),
+        )
         .get_result::<models::MarketSubscription>(conn)
         .map_err(|e| {
             log::error!("Failed to update market subscription: {:?}", e);

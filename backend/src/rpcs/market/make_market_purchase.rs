@@ -168,11 +168,12 @@ pub fn make_market_purchase(
     Ok(MakeMarketPurchaseResponse { checkout_url, resumed_subscription: None })
 }
 
-/// See the call site. `Ok(None)` means "nothing to resume, carry on to checkout" -- including when
-/// a candidate existed but its paid-for period ran out between the lookup and the conditional
-/// update (`models::resume_market_subscription_row` re-checks), in which case a fresh subscription
-/// is exactly what the buyer needs. `product_sold_out` if resuming would exceed
-/// `MarketProduct.available_count`.
+/// See the call site. `Ok(None)` means "nothing to resume, carry on to checkout" -- including when a
+/// candidate existed but its paid-for period ran out between the lookup and the resume
+/// (`ResumeOutcome::NotResumable`), in which case a fresh subscription is exactly what the buyer needs.
+/// `product_sold_out` if resuming would exceed `MarketProduct.available_count`. A concurrent request
+/// having resumed the same subscription first (`ResumeOutcome::AlreadyActive`) is reported as resumed too
+/// -- the buyer must not be sent to a checkout for a subscription that is already active again.
 fn try_resume_subscription(
     product: &models::MarketProduct,
     current_user: &models::User,
@@ -181,14 +182,11 @@ fn try_resume_subscription(
     let Some(candidate) = models::get_resumable_market_subscription(current_user.id, product.id, conn)? else {
         return Ok(None);
     };
-    if product.available_count > 0 && product.sold_count >= product.available_count {
-        return Err(Status::new(Code::FailedPrecondition, "product_sold_out"));
+    match models::resume_market_subscription_and_claim_slot(candidate.id, product.id, conn)? {
+        models::ResumeOutcome::Resumed | models::ResumeOutcome::AlreadyActive => {
+            build_subscription(candidate.id, conn).map(Some)
+        }
+        models::ResumeOutcome::NotResumable => Ok(None),
+        models::ResumeOutcome::SoldOut => Err(Status::new(Code::FailedPrecondition, "product_sold_out")),
     }
-    // Only the call that actually flips `canceled_at` back claims the slot -- the mirror image of
-    // `cancel_market_subscription`'s release, with the same race-freedom argument.
-    if !models::resume_market_subscription_row(candidate.id, conn)? {
-        return Ok(None);
-    }
-    models::increment_market_product_sold_count(product.id, conn);
-    build_subscription(candidate.id, conn).map(Some)
 }

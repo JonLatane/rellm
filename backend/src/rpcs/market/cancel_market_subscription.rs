@@ -37,14 +37,11 @@ pub fn cancel_market_subscription(
         validate_permission(&Some(current_user), Permission::Admin)?;
     }
 
-    // Only the call that actually flips `canceled_at` frees the slot -- see
-    // `cancel_market_subscription_row`'s own doc. Everything else (already canceled, whether
-    // still `SUBSCRIPTION_ACTIVE_BUT_CANCELED` or fully `SUBSCRIPTION_CANCELED`) is the idempotent
-    // no-op success described above.
-    if models::cancel_market_subscription_row(existing.id, conn)? {
-        // Frees the slot this subscription held -- see `MarketProduct.sold_count`'s own doc.
-        models::decrement_market_product_sold_count(existing.product_id, conn);
-    }
+    // Only the call that actually flips `canceled_at` frees the slot, atomically with it under the
+    // product's row lock -- see `cancel_market_subscription_and_release_slot`. Everything else (already
+    // canceled, whether still `SUBSCRIPTION_ACTIVE_BUT_CANCELED` or fully `SUBSCRIPTION_CANCELED`) is the
+    // idempotent no-op success described above.
+    models::cancel_market_subscription_and_release_slot(existing.id, existing.product_id, conn)?;
 
     let mut by_buyer = build_subscriptions_for_buyers(&[existing.buyer_id], conn)?;
     by_buyer

@@ -160,10 +160,10 @@ pub fn advance_by_period(from: SystemTime, period: &str) -> SystemTime {
 /// being renewed *from* has already ended (`renews_at <= now` is what made it due), so this lands
 /// straight in `SUBSCRIPTION_CANCELED`, never `SUBSCRIPTION_ACTIVE_BUT_CANCELED`.
 fn end_subscription(subscription: &models::MarketSubscription, conn: &mut PgPooledConnection) {
-    match models::cancel_market_subscription_row(subscription.id, conn) {
-        Ok(true) => models::decrement_market_product_sold_count(subscription.product_id, conn),
-        Ok(false) => {}
-        Err(e) => log::error!("Failed to end market subscription {}: {:?}", subscription.id, e),
+    if let Err(e) =
+        models::cancel_market_subscription_and_release_slot(subscription.id, subscription.product_id, conn)
+    {
+        log::error!("Failed to end market subscription {}: {:?}", subscription.id, e);
     }
 }
 

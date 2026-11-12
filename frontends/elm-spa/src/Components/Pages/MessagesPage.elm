@@ -506,6 +506,11 @@ type Msg
       -- `Fulfillment.openCmd`/`openAdminCmd`). The embedded panel's rows are plain links to
       -- `/messages?subscription_messages=` instead.
     | ThreadSelected String
+      -- A thread link clicked in the embedded panel (the click still navigates, to
+      -- `/messages?subscription_messages=`): `Pages.Messages` turns it into `SyncSelectedThread` when the
+      -- real page is already open, since a same-path URL change never reaches the page itself.
+    | EmbeddedThreadLinkClicked String
+    | SyncSelectedThread String
     | PushRefreshDebounceElapsed String Int
 
 
@@ -1177,12 +1182,71 @@ update accountsPanelModel msg model =
             )
 
         TabClicked tab ->
-            ( { model | tab = tab }, Cmd.none, Nothing )
+            -- Returning to Subscriptions with a thread still open marks it read now (it wasn't while hidden).
+            ( { model | tab = tab }
+            , case ( tab, model.selectedThread |> Maybe.andThen (Fulfillment.threadByKey model.fulfillment) ) of
+                ( SubscriptionsTab, Just thread ) ->
+                    if thread.admin then
+                        Cmd.none
+
+                    else
+                        Cmd.map FulfillmentMsg (Fulfillment.openCmd accountsPanelModel model.fulfillment thread)
+
+                _ ->
+                    Cmd.none
+            , Nothing
+            )
+
+        EmbeddedThreadLinkClicked _ ->
+            ( model, Cmd.none, Nothing )
+
+        SyncSelectedThread key ->
+            let
+                syncedThread : Maybe Fulfillment.Thread
+                syncedThread =
+                    Fulfillment.threadByKey model.fulfillment key
+            in
+            ( { model
+                | selectedThread = Just key
+                , tab =
+                    case syncedThread of
+                        Just thread ->
+                            if thread.admin then
+                                FulfillmentTab
+
+                            else
+                                SubscriptionsTab
+
+                        Nothing ->
+                            SubscriptionsTab
+              }
+            , case syncedThread of
+                Just thread ->
+                    if thread.admin then
+                        Cmd.none
+
+                    else
+                        Cmd.map FulfillmentMsg (Fulfillment.openCmd accountsPanelModel model.fulfillment thread)
+
+                Nothing ->
+                    Cmd.none
+            , Nothing
+            )
 
         FulfillmentMsg subMsg ->
             let
+                -- Only an *open, visible* subscription thread counts as selected: while another tab is
+                -- showing, new admin notes must stay unread rather than be marked read unseen.
+                visibleSelection : Maybe String
+                visibleSelection =
+                    if model.tab == SubscriptionsTab then
+                        model.selectedThread
+
+                    else
+                        Nothing
+
                 ( fulfillment, cmd, maybeAccountsPanelMsg ) =
-                    Fulfillment.update accountsPanelModel model.selectedThread subMsg model.fulfillment
+                    Fulfillment.update accountsPanelModel visibleSelection subMsg model.fulfillment
             in
             ( { model | fulfillment = fulfillment }, Cmd.map FulfillmentMsg cmd, maybeAccountsPanelMsg )
 
@@ -1225,7 +1289,7 @@ update accountsPanelModel msg model =
 
                             else
                                 Browser.Navigation.replaceUrl ctx.navKey
-                                    (Fulfillment.threadUrl accountsPanelModel.mainFrontendHost thread.host thread.subscription.id Nothing)
+                                    (ctx.path ++ "?" ++ Fulfillment.threadQuery accountsPanelModel.mainFrontendHost thread.host thread.subscription.id)
 
                         ( Just ctx, Nothing ) ->
                             Browser.Navigation.replaceUrl ctx.navKey ctx.path
@@ -2430,6 +2494,7 @@ fulfillmentViewConfig :
         , model : Fulfillment.Model
         , selected : Maybe String
         , onSelect : Maybe (String -> Msg)
+        , onLinkClick : Maybe (String -> Msg)
         , toMsg : Fulfillment.Msg -> Msg
         }
 fulfillmentViewConfig time accountsPanelModel model =
@@ -2443,6 +2508,12 @@ fulfillmentViewConfig time accountsPanelModel model =
 
         else
             Just ThreadSelected
+    , onLinkClick =
+        if model.embeddedPanel then
+            Just EmbeddedThreadLinkClicked
+
+        else
+            Nothing
     , toMsg = FulfillmentMsg
     }
 

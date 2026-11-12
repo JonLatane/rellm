@@ -5189,7 +5189,7 @@ profileDetail shared model server maybeAccount user =
         , aiProvidersSection model canEdit (isOwnProfile maybeAccount user) user
         , aiProviderGrantedSection model canEdit user
         , storageQuotaSection isAdmin (isOwnProfile maybeAccount user) model.storageQuotaExpanded model.storageQuotaEdit user
-        , subscriptionsSection shared.time.browserTimeZone shared.accounts.mainFrontendHost (maybeAccount |> Maybe.map .server) isAdmin (isOwnProfile maybeAccount user) model.subscriptionsExpanded model.cancelingSubscriptions user
+        , subscriptionsSection shared.time.browserTimeZone shared.basePath shared.accounts.mainFrontendHost (maybeAccount |> Maybe.map .server) isAdmin (isOwnProfile maybeAccount user) model.subscriptionsExpanded model.cancelingSubscriptions user
         , permissionsSection isAdmin model.permissionsExpanded model.permissionsEdit user
         , accountActionsSection canEdit model.passwordResetEdit user
         ]
@@ -6236,8 +6236,8 @@ gating (and same "hide if nothing to show" convention) as `storageQuotaSection` 
 `User.marketSubscriptions` itself is only ever populated for those two viewers (see that field's
 own proto doc). Collapsed by default, alongside `storageQuotaSection`/`permissionsSection`.
 -}
-subscriptionsSection : SharedTime.BrowserTimeZone -> String -> Maybe String -> Bool -> Bool -> Bool -> Dict String SubmitStatus -> User -> Html Msg
-subscriptionsSection browserTimeZone mainFrontendHost maybeHost isAdmin isOwn expanded cancelingSubscriptions user =
+subscriptionsSection : SharedTime.BrowserTimeZone -> String -> String -> Maybe String -> Bool -> Bool -> Bool -> Dict String SubmitStatus -> User -> Html Msg
+subscriptionsSection browserTimeZone basePath mainFrontendHost maybeHost isAdmin isOwn expanded cancelingSubscriptions user =
     if not (isAdmin || isOwn) then
         text ""
 
@@ -6252,7 +6252,7 @@ subscriptionsSection browserTimeZone mainFrontendHost maybeHost isAdmin isOwn ex
                 [ span [ class "profile-subscriptions-empty" ] [ text "No subscriptions." ] ]
 
              else
-                List.map (subscriptionRowView browserTimeZone mainFrontendHost (if isOwn then maybeHost else Nothing) (isAdmin || isOwn) cancelingSubscriptions) user.marketSubscriptions
+                List.map (subscriptionRowView browserTimeZone basePath mainFrontendHost (if isOwn then maybeHost else Nothing) (isAdmin || isOwn) cancelingSubscriptions) user.marketSubscriptions
             )
 
 
@@ -6274,9 +6274,13 @@ timestampLineView label browserTimeZone maybeTimestamp =
             text ""
 
 
-subscriptionRowView : SharedTime.BrowserTimeZone -> String -> Maybe String -> Bool -> Dict String SubmitStatus -> MarketSubscription -> Html Msg
-subscriptionRowView browserTimeZone mainFrontendHost maybeThreadHost canCancel cancelingSubscriptions subscription =
+subscriptionRowView : SharedTime.BrowserTimeZone -> String -> String -> Maybe String -> Bool -> Dict String SubmitStatus -> MarketSubscription -> Html Msg
+subscriptionRowView browserTimeZone basePath mainFrontendHost maybeThreadHost canCancel cancelingSubscriptions subscription =
     let
+        state : MarketSubscriptionState
+        state =
+            Market.effectiveState subscription
+
         actionStatus : SubmitStatus
         actionStatus =
             Dict.get subscription.id cancelingSubscriptions |> Maybe.withDefault Idle
@@ -6286,7 +6290,7 @@ subscriptionRowView browserTimeZone mainFrontendHost maybeThreadHost canCancel c
         threadLink =
             case maybeThreadHost of
                 Just host ->
-                    case Fulfillment.subscriptionLinks mainFrontendHost host [ subscription ] of
+                    case Fulfillment.subscriptionLinks basePath mainFrontendHost host [ subscription ] of
                         link :: _ ->
                             a [ class "profile-subscription-thread-link", href link.url ]
                                 [ text "Fulfillment messages"
@@ -6313,12 +6317,12 @@ subscriptionRowView browserTimeZone mainFrontendHost maybeThreadHost canCancel c
                     ++ Market.formatAmount subscription.amount subscription.currency
                 )
             ]
-        , subscriptionStateLine browserTimeZone subscription
-        , timestampLineView "Renews" browserTimeZone (if subscription.state == SUBSCRIPTIONACTIVE then subscription.renewsAt else Nothing)
+        , subscriptionStateLine browserTimeZone state subscription
+        , timestampLineView "Renews" browserTimeZone (if state == SUBSCRIPTIONACTIVE then subscription.renewsAt else Nothing)
         , timestampLineView "Canceled" browserTimeZone subscription.canceledAt
         , timestampLineView "Service ended" browserTimeZone subscription.serviceTerminatedAt
         , threadLink
-        , if canCancel && subscription.state == SUBSCRIPTIONACTIVE then
+        , if canCancel && state == SUBSCRIPTIONACTIVE then
             div [ class "profile-subscription-cancel" ]
                 [ button
                     [ class "profile-edit-button"
@@ -6336,7 +6340,9 @@ subscriptionRowView browserTimeZone mainFrontendHost maybeThreadHost canCancel c
                 , editErrorView actionStatus
                 ]
 
-          else if canCancel && subscription.state == SUBSCRIPTIONACTIVEBUTCANCELED then
+          -- Resume = buying the product again *as the signed-in account*, so it can only ever resume that
+          -- account's own subscription: never offered on someone else's profile (an admin's view).
+          else if maybeThreadHost /= Nothing && state == SUBSCRIPTIONACTIVEBUTCANCELED then
             div [ class "profile-subscription-cancel" ]
                 [ button
                     [ class "profile-edit-button"
@@ -6363,9 +6369,9 @@ subscriptionRowView browserTimeZone mainFrontendHost maybeThreadHost canCancel c
 {-| The subscription's `state` (`MarketSubscriptionState`) in words. A canceled-but-paid-up
 subscription says exactly when its service ends, since that's what the buyer actually wants to know.
 -}
-subscriptionStateLine : SharedTime.BrowserTimeZone -> MarketSubscription -> Html Msg
-subscriptionStateLine browserTimeZone subscription =
-    case subscription.state of
+subscriptionStateLine : SharedTime.BrowserTimeZone -> MarketSubscriptionState -> MarketSubscription -> Html Msg
+subscriptionStateLine browserTimeZone state subscription =
+    case state of
         SUBSCRIPTIONACTIVE ->
             span [ class "profile-subscription-row-status" ] [ text "Active" ]
 

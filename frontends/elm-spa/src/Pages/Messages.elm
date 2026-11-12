@@ -188,7 +188,7 @@ update shared msg model =
 
         -- Same idea for the Fulfillment tab: marking a thread's notes read here also refreshes the
         -- embedded panel's own, separate copy (and so its nav-button unread total).
-        PageMsg ((MessagesPage.FulfillmentMsg (Fulfillment.GotMarkedRead (Ok _))) as subMsg) ->
+        PageMsg ((MessagesPage.FulfillmentMsg (Fulfillment.GotMarkedRead _ (Ok _))) as subMsg) ->
             let
                 ( updatedModel, pageEffect ) =
                     applyPageMsg shared subMsg model
@@ -233,8 +233,14 @@ update shared msg model =
                         Shared.MessagingPanelMsg (MessagingPanel.PageMsg (MessagesPage.GotMarkReadResult (Ok _))) ->
                             applyPageMsg shared MessagesPage.ForceRefresh model
 
+                        -- A subscription thread link clicked in the embedded panel while already on this page:
+                        -- same reasoning as `EmbeddedGroupLinkClicked` above (a same-path, query-only URL
+                        -- change never reaches this page's `init`/`update`).
+                        Shared.MessagingPanelMsg (MessagingPanel.PageMsg (MessagesPage.EmbeddedThreadLinkClicked key)) ->
+                            applyPageMsg shared (MessagesPage.SyncSelectedThread key) model
+
                         -- ...and the reverse, for the Fulfillment tab inside the embedded panel.
-                        Shared.MessagingPanelMsg (MessagingPanel.PageMsg (MessagesPage.FulfillmentMsg (Fulfillment.GotMarkedRead (Ok _)))) ->
+                        Shared.MessagingPanelMsg (MessagingPanel.PageMsg (MessagesPage.FulfillmentMsg (Fulfillment.GotMarkedRead _ (Ok _)))) ->
                             applyPageMsg shared MessagesPage.ForceRefresh model
 
                         -- A `ComposeClicked`/`ReplyClicked` send actually

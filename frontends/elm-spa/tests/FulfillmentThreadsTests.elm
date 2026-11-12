@@ -76,27 +76,27 @@ suite =
         , describe "subscriptionLinks"
             [ test "only Rellm hosting subscriptions that have notes get a link" <|
                 \_ ->
-                    Fulfillment.subscriptionLinks "main.example" "main.example" [ hosting Nothing [], { defaultMarketSubscription | id = "media", type_ = PURCHASETYPEMEDIASTORAGE } ]
+                    Fulfillment.subscriptionLinks "" "main.example" "main.example" [ hosting Nothing [], { defaultMarketSubscription | id = "media", type_ = PURCHASETYPEMEDIASTORAGE } ]
                         |> List.length
                         |> Expect.equal 0
             , test "a hosting subscription with notes links to its thread, carrying its unread count" <|
                 \_ ->
-                    Fulfillment.subscriptionLinks "main.example" "main.example" [ hosting (Just 15) [ note "admin" 10, note "admin" 20 ] ]
+                    Fulfillment.subscriptionLinks "" "main.example" "main.example" [ hosting (Just 15) [ note "admin" 10, note "admin" 20 ] ]
                         |> List.map (\link -> ( link.url, link.unread ))
                         |> Expect.equal [ ( "/messages?subscription_messages=sub1", 1 ) ]
             ]
         , describe "threadUrl"
             [ test "an id on the main frontend host has no @host suffix" <|
                 \_ ->
-                    Fulfillment.threadUrl "main.example" "main.example" "sub1" Nothing
+                    Fulfillment.threadUrl "" "main.example" "main.example" "sub1" Nothing
                         |> Expect.equal "/messages?subscription_messages=sub1"
             , test "an id on any other host carries it, like ?messaging_group=" <|
                 \_ ->
-                    Fulfillment.threadUrl "main.example" "other.example" "sub1" Nothing
+                    Fulfillment.threadUrl "" "main.example" "other.example" "sub1" Nothing
                         |> Expect.equal "/messages?subscription_messages=sub1@other.example"
             , test "a note index becomes a #subscription-message-<n> fragment" <|
                 \_ ->
-                    Fulfillment.threadUrl "main.example" "main.example" "sub1" (Just 3)
+                    Fulfillment.threadUrl "" "main.example" "main.example" "sub1" (Just 3)
                         |> Expect.equal "/messages?subscription_messages=sub1#subscription-message-3"
             , test "threadKey is unique across hosts" <|
                 \_ ->
