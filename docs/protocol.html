@@ -10464,7 +10464,7 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>market_subscriptions</td>
           <td><a href="#rellm-MarketSubscription">MarketSubscription</a></td>
           <td>repeated</td>
-          <td>For <code>GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE</code>: the caller's own subscriptions, newest first. For <code>GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN</code>: every <code>PURCHASE_TYPE_RELLM_HOSTING</code> subscription across every buyer, oldest first (so the oldest unfulfilled order surfaces at the top of <code>/market/fulfillment</code>).</td>
+          <td>For <code>GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE</code>: the caller's own subscriptions, newest first. For <code>GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN</code>: every <code>PURCHASE_TYPE_RELLM_HOSTING</code> subscription across every buyer (and for <code>GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN</code>, every subscription of every type), oldest first (so the oldest unfulfilled order surfaces at the top of <code>/market/fulfillment</code>).</td>
         </tr>
       </tbody>
     </table>
@@ -11453,6 +11453,11 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN</td>
           <td>1</td>
           <td>Admin-only view backing /market/fulfillment -- every PURCHASE_TYPE_RELLM_HOSTING MarketSubscription across every buyer, since Rellm hosting needs manual setup that isn't automated (see RellmHostingSubscriptionDetails.fulfillment_status's own doc).</td>
+        </tr>
+        <tr>
+          <td>GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN</td>
+          <td>2</td>
+          <td>Admin-only view backing the Messages page's Fulfillment tab -- <em>every</em> MarketSubscription of <em>every</em> PurchaseType across every buyer, oldest first, so an admin can find any customer's subscription (storage, AI grants, permissions, hosting) to open its fulfillment chat (<code>fulfillment_notes</code>, which all types have). Only Rellm hosting has a work queue (<code>fulfillment_status</code>), but the chat is for all of them.</td>
         </tr>
       </tbody>
     </table>

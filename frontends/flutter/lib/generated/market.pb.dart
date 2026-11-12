@@ -487,7 +487,8 @@ class GetMarketSubscriptionsResponse extends $pb.GeneratedMessage {
 
   /// For `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE`: the caller's own subscriptions, newest
   /// first. For `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN`: every
-  /// `PURCHASE_TYPE_RELLM_HOSTING` subscription across every buyer, oldest first (so the oldest
+  /// `PURCHASE_TYPE_RELLM_HOSTING` subscription across every buyer (and for
+  /// `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN`, every subscription of every type), oldest first (so the oldest
   /// unfulfilled order surfaces at the top of `/market/fulfillment`).
   @$pb.TagNumber(1)
   $core.List<MarketSubscription> get marketSubscriptions => $_getList(0);

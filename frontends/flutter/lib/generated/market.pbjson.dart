@@ -67,6 +67,7 @@ const GetMarketSubscriptionsRequestType$json = {
   '2': [
     {'1': 'GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE', '2': 0},
     {'1': 'GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN', '2': 1},
+    {'1': 'GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN', '2': 2},
   ],
 };
 
@@ -74,7 +75,8 @@ const GetMarketSubscriptionsRequestType$json = {
 final $typed_data.Uint8List getMarketSubscriptionsRequestTypeDescriptor = $convert.base64Decode(
     'CiFHZXRNYXJrZXRTdWJzY3JpcHRpb25zUmVxdWVzdFR5cGUSMQotR0VUX01BUktFVF9TVUJTQ1'
     'JJUFRJT05TX1JFUVVFU1RfRk9SX1BVUkNIQVNFEAASOgo2R0VUX01BUktFVF9TVUJTQ1JJUFRJ'
-    'T05TX1JFUVVFU1RfRk9SX0ZVTEZJTExNRU5UX0FETUlOEAE=');
+    'T05TX1JFUVVFU1RfRk9SX0ZVTEZJTExNRU5UX0FETUlOEAESMgouR0VUX01BUktFVF9TVUJTQ1'
+    'JJUFRJT05TX1JFUVVFU1RfRk9SX0FMTF9BRE1JThAC');
 
 @$core.Deprecated('Use marketSubscriptionStateDescriptor instead')
 const MarketSubscriptionState$json = {

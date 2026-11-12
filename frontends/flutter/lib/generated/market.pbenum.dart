@@ -81,10 +81,12 @@ class FulfillmentStatus extends $pb.ProtobufEnum {
 class GetMarketSubscriptionsRequestType extends $pb.ProtobufEnum {
   static const GetMarketSubscriptionsRequestType GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE = GetMarketSubscriptionsRequestType._(0, _omitEnumNames ? '' : 'GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE');
   static const GetMarketSubscriptionsRequestType GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN = GetMarketSubscriptionsRequestType._(1, _omitEnumNames ? '' : 'GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN');
+  static const GetMarketSubscriptionsRequestType GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN = GetMarketSubscriptionsRequestType._(2, _omitEnumNames ? '' : 'GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN');
 
   static const $core.List<GetMarketSubscriptionsRequestType> values = <GetMarketSubscriptionsRequestType> [
     GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE,
     GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN,
+    GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN,
   ];
 
   static final $core.Map<$core.int, GetMarketSubscriptionsRequestType> _byValue = $pb.ProtobufEnum.initByValue(values);

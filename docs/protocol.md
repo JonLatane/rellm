@@ -5107,7 +5107,7 @@ subscription across every buyer, for the `/market/fulfillment` admin page.
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| market_subscriptions | [MarketSubscription](#rellm-MarketSubscription) | repeated | For `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE`: the caller&#39;s own subscriptions, newest first. For `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN`: every `PURCHASE_TYPE_RELLM_HOSTING` subscription across every buyer, oldest first (so the oldest unfulfilled order surfaces at the top of `/market/fulfillment`). |
+| market_subscriptions | [MarketSubscription](#rellm-MarketSubscription) | repeated | For `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE`: the caller&#39;s own subscriptions, newest first. For `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN`: every `PURCHASE_TYPE_RELLM_HOSTING` subscription across every buyer (and for `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN`, every subscription of every type), oldest first (so the oldest unfulfilled order surfaces at the top of `/market/fulfillment`). |
 
 
 
@@ -5543,6 +5543,7 @@ timestamped note (a &#34;fulfillment state history&#34;), not just tracked as a 
 | ---- | ------ | ----------- |
 | GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE | 0 | The &#34;user facing&#34; view backing /market -- the caller&#39;s own MarketSubscriptions only. |
 | GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN | 1 | Admin-only view backing /market/fulfillment -- every PURCHASE_TYPE_RELLM_HOSTING MarketSubscription across every buyer, since Rellm hosting needs manual setup that isn&#39;t automated (see RellmHostingSubscriptionDetails.fulfillment_status&#39;s own doc). |
+| GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN | 2 | Admin-only view backing the Messages page&#39;s Fulfillment tab -- *every* MarketSubscription of *every* PurchaseType across every buyer, oldest first, so an admin can find any customer&#39;s subscription (storage, AI grants, permissions, hosting) to open its fulfillment chat (`fulfillment_notes`, which all types have). Only Rellm hosting has a work queue (`fulfillment_status`), but the chat is for all of them. |
 
 
 
