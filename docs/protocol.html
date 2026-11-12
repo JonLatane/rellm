@@ -616,6 +616,9 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
             <p><a href="#rellm-GetMarketProductsResponse">GetMarketProductsResponse</a></p>
           </li>
           <li>
+            <p><a href="#rellm-GetMarketSubscriptionPushStatusResponse">GetMarketSubscriptionPushStatusResponse</a></p>
+          </li>
+          <li>
             <p><a href="#rellm-GetMarketSubscriptionsRequest">GetMarketSubscriptionsRequest</a></p>
           </li>
           <li>
@@ -626,6 +629,9 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
           </li>
           <li>
             <p><a href="#rellm-MakeMarketPurchaseResponse">MakeMarketPurchaseResponse</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-MarkFulfillmentNotesReadRequest">MarkFulfillmentNotesReadRequest</a></p>
           </li>
           <li>
             <p><a href="#rellm-MarketPayment">MarketPayment</a></p>
@@ -647,6 +653,9 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
           </li>
           <li>
             <p><a href="#rellm-MarketSubscription">MarketSubscription</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-MarketSubscriptionPushRequest">MarketSubscriptionPushRequest</a></p>
           </li>
           <li>
             <p><a href="#rellm-MediaStoragePurchaseDetails">MediaStoragePurchaseDetails</a></p>
@@ -671,6 +680,9 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
           </li>
           <li>
             <p><a href="#rellm-GetMarketSubscriptionsRequestType">GetMarketSubscriptionsRequestType</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-MarketSubscriptionState">MarketSubscriptionState</a></p>
           </li>
           <li>
             <p><a href="#rellm-PurchasePeriod">PurchasePeriod</a></p>
@@ -1187,7 +1199,10 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
       entitlement itself stays in effect until whichever is later of <code>renews_at</code>/<code>canceled_at</code> - once both have
       passed, the <code>renew_market_subscriptions</code> background job revokes it (reverts <code>media_storage_limit_bytes</code> to
       <code>ServerConfiguration.media_settings.default_user_media_allocation_bytes</code>, or removes the granted <code>Permission</code>s,
-      depending on <code>type</code>) and sets <code>service_terminated_at</code>. A user's own MarketSubscriptions (never anyone
+      depending on <code>type</code>) and sets <code>service_terminated_at</code>. Until then the subscription is
+      <code>SUBSCRIPTION_ACTIVE_BUT_CANCELED</code> (see <a href="#rellm-MarketSubscriptionState"><code>MarketSubscriptionState</code></a>): the buyer has
+      paid for that time, so buying the same product again just <em>resumes</em> it (no new charge) rather than starting a
+      second subscription. A user's own MarketSubscriptions (never anyone
       else's) are listed via <a href="#grpc-api-GetMarketSubscriptions"><code>GetMarketSubscriptions</code></a>, and also travel along
       on <a href="#rellm-User"><code>User</code></a> itself (<code>User.market_subscriptions</code>) the same way <code>ai_models</code>/<code>sync_sources</code> do.
       Stripe credentials for all of this live in <code>ServerConfiguration.stripe_config</code> (a
@@ -2251,7 +2266,7 @@ directory</a> is (<code>{name}</code> denotes a
           <td>MakeMarketPurchase</td>
           <td><a href="#rellm-MakeMarketPurchaseRequest">MakeMarketPurchaseRequest</a></td>
           <td><a href="#rellm-MakeMarketPurchaseResponse">MakeMarketPurchaseResponse</a></td>
-          <td>Starts (or resumes) buying a MarketProduct for the current user, returning a Stripe Checkout URL to redirect to. <em>Authenticated</em>. See <code>MakeMarketPurchaseRequest</code>'s own doc -- no MarketPurchase/ MarketSubscription is created by this call itself, only once Stripe confirms payment via webhook.</td>
+          <td>Starts (or resumes) buying a MarketProduct for the current user, returning a Stripe Checkout URL to redirect to. <em>Authenticated</em>. See <code>MakeMarketPurchaseRequest</code>'s own doc -- no MarketPurchase/ MarketSubscription is created by this call itself, only once Stripe confirms payment via webhook. If the buyer already has a <code>SUBSCRIPTION_ACTIVE_BUT_CANCELED</code> subscription to the product, it is resumed on the spot instead (no checkout, no charge) -- see <code>MakeMarketPurchaseResponse.resumed_subscription</code>.</td>
         </tr>
         <tr>
           <td>CancelMarketSubscription</td>
@@ -2264,6 +2279,30 @@ directory</a> is (<code>{name}</code> denotes a
           <td><a href="#rellm-MarketSubscription">MarketSubscription</a></td>
           <td><a href="#rellm-MarketSubscription">MarketSubscription</a></td>
           <td>Appends to a <code>PURCHASE_TYPE_RELLM_HOSTING</code> MarketSubscription's own <code>fulfillment_notes</code> (nothing else -- every other field, including <code>additional_information</code>, is immutable after purchase and silently ignored if changed) -- backs <code>/market/fulfillment</code>. A new entry must be appended (not inserted/reordered/removed) after whatever's already stored, and its <code>user_id</code> must match the caller's own -- the server stamps <code>created_at</code> itself, ignoring whatever the client sent. Its <code>note</code> text is required unless the entry also changes <code>fulfillment_status</code> from the previous entry's own value (see <code>FulfillmentNote.note</code>'s own doc). <code>fulfillment_status</code> on the returned <code>RellmHostingSubscriptionDetails</code> is always the last appended entry's own value -- there's no way to set it independently of a note. <em>Authenticated</em>, requires Admin (for now -- see that field's own doc on why this may loosen to "buyer, or Admin" later).</td>
+        </tr>
+        <tr>
+          <td>MarkFulfillmentNotesRead</td>
+          <td><a href="#rellm-MarkFulfillmentNotesReadRequest">MarkFulfillmentNotesReadRequest</a></td>
+          <td><a href="#rellm-MarketSubscription">MarketSubscription</a></td>
+          <td>Marks all of a <code>PURCHASE_TYPE_RELLM_HOSTING</code> MarketSubscription's current <code>fulfillment_notes</code> read by stamping <code>RellmHostingSubscriptionDetails.notes_last_read</code> with now. <em>Authenticated</em>, and only the subscription's own buyer (<code>PermissionDenied</code> otherwise -- even an Admin, since the marker is the buyer's). Idempotent. Returns the updated subscription.</td>
+        </tr>
+        <tr>
+          <td>RegisterMarketSubscriptionPush</td>
+          <td><a href="#rellm-MarketSubscriptionPushRequest">MarketSubscriptionPushRequest</a></td>
+          <td><a href="#google-protobuf-Empty">.google.protobuf.Empty</a></td>
+          <td>Opts one of the current user's already-registered Web Push subscriptions (see <code>RegisterPushSubscription</code>) in to notifications for a <code>PURCHASE_TYPE_RELLM_HOSTING</code> MarketSubscription's fulfillment chat: every <code>FulfillmentNote</code> someone <em>else</em> appends to it (<code>UpdateMarketSubscription</code>) pushes a notification to the device, via the same VAPID setup Messages use. <em>Authenticated</em> -- the subscription's own buyer, or an Admin; re-registering is a no-op. Fails with <code>push_subscription_not_registered</code> if <code>endpoint</code> isn't one of the caller's own registered Web Push subscriptions, and <code>not_a_rellm_hosting_subscription</code> for any other type. Notifications are also re-checked at send time: a recipient who is no longer the buyer or an Admin is skipped, so losing access to the chat also stops its notifications.</td>
+        </tr>
+        <tr>
+          <td>UnregisterMarketSubscriptionPush</td>
+          <td><a href="#rellm-MarketSubscriptionPushRequest">MarketSubscriptionPushRequest</a></td>
+          <td><a href="#google-protobuf-Empty">.google.protobuf.Empty</a></td>
+          <td>Reverses <code>RegisterMarketSubscriptionPush</code> for this device. <em>Authenticated</em>; not an error if it wasn't registered. The user's underlying Web Push subscription (and its Messages notifications) is untouched.</td>
+        </tr>
+        <tr>
+          <td>GetMarketSubscriptionPushStatus</td>
+          <td><a href="#rellm-MarketSubscriptionPushRequest">MarketSubscriptionPushRequest</a></td>
+          <td><a href="#rellm-GetMarketSubscriptionPushStatusResponse">GetMarketSubscriptionPushStatusResponse</a></td>
+          <td>Whether <code>endpoint</code> is currently linked to a MarketSubscription's fulfillment-chat notifications (see <code>RegisterMarketSubscriptionPush</code>). <em>Authenticated</em>, same access rule as registering.</td>
         </tr>
         <tr>
           <td>GenerateMedia</td>
@@ -10189,6 +10228,26 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
         </tr>
       </tbody>
     </table>
+    <p><a name="rellm-GetMarketSubscriptionPushStatusResponse"></a></p>
+    <h3 id="getmarketsubscriptionpushstatusresponse"><a class="anchor" aria-hidden="true" tabindex="-1" href="#getmarketsubscriptionpushstatusresponse"><span class="octicon octicon-link"></span></a>GetMarketSubscriptionPushStatusResponse</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>registered</td>
+          <td><a href="#bool">bool</a></td>
+          <td></td>
+          <td>Whether the current user's push subscription for <code>endpoint</code> is linked to this subscription's fulfillment chat -- i.e. whether a new <code>FulfillmentNote</code> would notify that device.</td>
+        </tr>
+      </tbody>
+    </table>
     <p><a name="rellm-GetMarketSubscriptionsRequest"></a></p>
     <h3 id="getmarketsubscriptionsrequest"><a class="anchor" aria-hidden="true" tabindex="-1" href="#getmarketsubscriptionsrequest"><span class="octicon octicon-link"></span></a>GetMarketSubscriptionsRequest</h3>
     <p>
@@ -10290,6 +10349,36 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td><a href="#string">string</a></td>
           <td></td>
           <td>Redirect the buyer's browser here (a Stripe-hosted Checkout page) to complete payment. Expires after Stripe's own Checkout Session timeout if never completed -- since no <code>MarketPurchase</code> row is created until the webhook fires (see this message's own request's doc), an abandoned/expired checkout leaves no trace at all.</td>
+        </tr>
+        <tr>
+          <td>resumed_subscription</td>
+          <td><a href="#rellm-MarketSubscription">MarketSubscription</a></td>
+          <td>optional</td>
+          <td>Set <em>instead of</em> a checkout (and <code>checkout_url</code> is then empty) when the buyer already has a <code>SUBSCRIPTION_ACTIVE_BUT_CANCELED</code> subscription to this same product: they've already paid for the rest of the period, so buying again just resumes it -- <code>canceled_at</code> is cleared, the slot it freed is claimed again (<code>MarketProduct.sold_count</code>), and nothing is charged. The returned subscription is the resumed one, now <code>SUBSCRIPTION_ACTIVE</code>. Clients must check this before redirecting to <code>checkout_url</code>.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-MarkFulfillmentNotesReadRequest"></a></p>
+    <h3 id="markfulfillmentnotesreadrequest"><a class="anchor" aria-hidden="true" tabindex="-1" href="#markfulfillmentnotesreadrequest"><span class="octicon octicon-link"></span></a>MarkFulfillmentNotesReadRequest</h3>
+    <p>
+      Request to mark a Rellm hosting subscription's fulfillment notes read -- see
+      <code>RellmHostingSubscriptionDetails.notes_last_read</code>.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>market_subscription_id</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>The <code>MarketSubscription.id</code>. Only its buyer may mark it read.</td>
         </tr>
       </tbody>
     </table>
@@ -10744,6 +10833,12 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>Every <code>MarketPurchase</code> billed against this subscription so far -- the original purchase plus every successful renewal charge, newest first. Each entry's own <code>market_subscription</code> field is left unset here (see <code>MarketPurchase.market_subscription</code>'s own doc) to avoid recursing back into this same subscription.</td>
         </tr>
         <tr>
+          <td>state</td>
+          <td><a href="#rellm-MarketSubscriptionState">MarketSubscriptionState</a></td>
+          <td></td>
+          <td>Where this subscription stands right now -- see <code>MarketSubscriptionState</code>'s own doc. Server- derived at marshal time from <code>canceled_at</code>/<code>renews_at</code>/<code>service_terminated_at</code>; ignored on any request (a client can't set it -- cancel via <code>CancelMarketSubscription</code>, resume by buying the product again via <code>MakeMarketPurchase</code>).</td>
+        </tr>
+        <tr>
           <td>media_storage_subscription_details</td>
           <td><a href="#rellm-MediaStorageSubscriptionDetails">MediaStorageSubscriptionDetails</a></td>
           <td></td>
@@ -10783,13 +10878,47 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>canceled_at</td>
           <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
           <td>optional</td>
-          <td>Set once the subscription will no longer renew -- either the buyer/admin explicitly canceled it (CancelMarketSubscription) or a renewal charge failed. The subscription's entitlement (media storage quota, granted permissions, etc.) stays active until whichever is later of renews_at/canceled_at, at which point renew_market_subscriptions.rs revokes it and sets service_terminated_at. Also the moment <code>MarketProduct.sold_count</code> is decremented, freeing this subscription's slot for a new buyer (see that field's own doc).</td>
+          <td>Set once the subscription will no longer renew -- either the buyer/admin explicitly canceled it (CancelMarketSubscription) or a renewal charge failed. The subscription's entitlement (media storage quota, granted permissions, etc.) stays active until whichever is later of renews_at/canceled_at, at which point renew_market_subscriptions.rs revokes it and sets service_terminated_at. Also the moment <code>MarketProduct.sold_count</code> is decremented, freeing this subscription's slot for a new buyer (see that field's own doc). Cleared again (and the slot re-claimed) if the buyer resumes the subscription before it lapses -- see <code>MarketSubscriptionState.SUBSCRIPTION_ACTIVE_BUT_CANCELED</code> and <code>state</code> above, which is what clients should branch on rather than inspecting this field.</td>
         </tr>
         <tr>
           <td>service_terminated_at</td>
           <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
           <td>optional</td>
           <td>The time permissions were removed, media storage quotas reset, etc. -- i.e. when <code>logic::market::market_fulfillment::terminate_entitlement</code> actually ran for this subscription. Always unset while <code>canceled_at</code> is unset; may remain unset for a while <em>after</em> <code>canceled_at</code> is set, since the entitlement intentionally stays active until the later of <code>renews_at</code>/<code>canceled_at</code> (see <code>canceled_at</code>'s own doc) -- a buyer who cancels mid-period keeps what they already paid for through the end of that period.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-MarketSubscriptionPushRequest"></a></p>
+    <h3 id="marketsubscriptionpushrequest"><a class="anchor" aria-hidden="true" tabindex="-1" href="#marketsubscriptionpushrequest"><span class="octicon octicon-link"></span></a>MarketSubscriptionPushRequest</h3>
+    <p>
+      Identifies one of the current user's registered Web Push subscriptions (see
+      <code>PushSubscription</code>/<code>RegisterPushSubscription</code> in <code>messages.proto</code> -- it must already be
+      registered, this only <em>links</em> it) and the <code>PURCHASE_TYPE_RELLM_HOSTING</code> <code>MarketSubscription</code>
+      whose fulfillment chat (<code>RellmHostingSubscriptionDetails.fulfillment_notes</code>) it should be
+      notified about. Used by <code>RegisterMarketSubscriptionPush</code>, <code>UnregisterMarketSubscriptionPush</code>
+      and <code>GetMarketSubscriptionPushStatus</code>.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>market_subscription_id</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>The <code>MarketSubscription.id</code> to (un)subscribe to/check. The caller must be its buyer, or an Admin.</td>
+        </tr>
+        <tr>
+          <td>endpoint</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>The Web Push subscription endpoint URL, as previously passed to <code>RegisterPushSubscription</code> by the same user.</td>
         </tr>
       </tbody>
     </table>
@@ -11053,6 +11182,12 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>repeated</td>
           <td>The admin/buyer conversation about fulfilling this order -- oldest to newest, append-only (see <code>UpdateMarketSubscription</code>'s own doc: a new entry can only ever be appended after whatever's already here, never inserted/reordered/removed, and its <code>user_id</code> must match whoever's actually making the request -- the server stamps <code>created_at</code> itself).</td>
         </tr>
+        <tr>
+          <td>notes_last_read</td>
+          <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
+          <td>optional</td>
+          <td>When the <em>buyer</em> last read this order's <code>fulfillment_notes</code> -- set by <code>MarkFulfillmentNotesRead</code> (server-stamped, never client-settable via <code>UpdateMarketSubscription</code>, which preserves it). Unset until first read. A note is <em>unread</em> if it was written by someone other than the buyer (i.e. an admin) and its <code>created_at</code> is later than this (or this is unset). Drives the unread counts on the Messages UI's Fulfillment tab and on subscription listings. Deliberately one marker for the buyer's side only: admins work orders from <code>/market/fulfillment</code>.</td>
+        </tr>
       </tbody>
     </table>
     <p><a name="rellm-FulfillmentStatus"></a></p>
@@ -11109,6 +11244,43 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN</td>
           <td>1</td>
           <td>Admin-only view backing /market/fulfillment -- every PURCHASE_TYPE_RELLM_HOSTING MarketSubscription across every buyer, since Rellm hosting needs manual setup that isn't automated (see RellmHostingSubscriptionDetails.fulfillment_status's own doc).</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-MarketSubscriptionState"></a></p>
+    <h3 id="marketsubscriptionstate"><a class="anchor" aria-hidden="true" tabindex="-1" href="#marketsubscriptionstate"><span class="octicon octicon-link"></span></a>MarketSubscriptionState</h3>
+    <p>
+      Where a <code>MarketSubscription</code> stands from the <em>buyer's</em> point of view -- always derived on the fly
+      (never stored as a column) from <code>canceled_at</code>/<code>renews_at</code>/<code>service_terminated_at</code> as of the moment
+      the subscription is marshaled, see <code>logic::market::market_subscription_state</code>. The point of the
+      middle value: a buyer who cancels has still paid for the rest of their current billing period, so
+      cancellation is not an instant "off switch" -- they keep their entitlement until it runs out, and
+      can resume (see <code>MakeMarketPurchaseResponse.resumed_subscription</code>) any time before then without
+      paying again.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Number</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>SUBSCRIPTION_ACTIVE</td>
+          <td>0</td>
+          <td>Not canceled -- will renew (or, for a <code>PURCHASE_PERIOD_INDEFINITE</code> one, simply stays in force) and the entitlement is in effect. The default (proto3's implicit <code>0</code>).</td>
+        </tr>
+        <tr>
+          <td>SUBSCRIPTION_ACTIVE_BUT_CANCELED</td>
+          <td>1</td>
+          <td><code>canceled_at</code> is set, but the period already paid for hasn't run out yet (i.e. now is still before the later of <code>canceled_at</code>/<code>renews_at</code>, and <code>service_terminated_at</code> is unset): the entitlement is still in effect, it just won't renew. Buying the same product again <em>resumes</em> this subscription (clears <code>canceled_at</code>, no new charge) rather than starting a second one.</td>
+        </tr>
+        <tr>
+          <td>SUBSCRIPTION_CANCELED</td>
+          <td>2</td>
+          <td>Canceled and the paid-for period is over (<code>service_terminated_at</code> set, or the later of <code>canceled_at</code>/<code>renews_at</code> has passed and the <code>renew_market_subscriptions</code> job simply hasn't gotten to revoking the entitlement yet). Terminal: buying the product again starts a brand new subscription.</td>
         </tr>
       </tbody>
     </table>

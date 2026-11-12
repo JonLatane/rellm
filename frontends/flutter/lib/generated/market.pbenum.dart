@@ -93,5 +93,29 @@ class GetMarketSubscriptionsRequestType extends $pb.ProtobufEnum {
   const GetMarketSubscriptionsRequestType._($core.int v, $core.String n) : super(v, n);
 }
 
+/// Where a `MarketSubscription` stands from the *buyer's* point of view -- always derived on the fly
+/// (never stored as a column) from `canceled_at`/`renews_at`/`service_terminated_at` as of the moment
+/// the subscription is marshaled, see `logic::market::market_subscription_state`. The point of the
+/// middle value: a buyer who cancels has still paid for the rest of their current billing period, so
+/// cancellation is not an instant "off switch" -- they keep their entitlement until it runs out, and
+/// can resume (see `MakeMarketPurchaseResponse.resumed_subscription`) any time before then without
+/// paying again.
+class MarketSubscriptionState extends $pb.ProtobufEnum {
+  static const MarketSubscriptionState SUBSCRIPTION_ACTIVE = MarketSubscriptionState._(0, _omitEnumNames ? '' : 'SUBSCRIPTION_ACTIVE');
+  static const MarketSubscriptionState SUBSCRIPTION_ACTIVE_BUT_CANCELED = MarketSubscriptionState._(1, _omitEnumNames ? '' : 'SUBSCRIPTION_ACTIVE_BUT_CANCELED');
+  static const MarketSubscriptionState SUBSCRIPTION_CANCELED = MarketSubscriptionState._(2, _omitEnumNames ? '' : 'SUBSCRIPTION_CANCELED');
+
+  static const $core.List<MarketSubscriptionState> values = <MarketSubscriptionState> [
+    SUBSCRIPTION_ACTIVE,
+    SUBSCRIPTION_ACTIVE_BUT_CANCELED,
+    SUBSCRIPTION_CANCELED,
+  ];
+
+  static final $core.Map<$core.int, MarketSubscriptionState> _byValue = $pb.ProtobufEnum.initByValue(values);
+  static MarketSubscriptionState? valueOf($core.int value) => _byValue[value];
+
+  const MarketSubscriptionState._($core.int v, $core.String n) : super(v, n);
+}
+
 
 const _omitEnumNames = $core.bool.fromEnvironment('protobuf.omit_enum_names');

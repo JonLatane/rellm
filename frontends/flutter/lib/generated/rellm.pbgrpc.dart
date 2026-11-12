@@ -337,6 +337,22 @@ class RellmClient extends $grpc.Client {
       '/rellm.Rellm/UpdateMarketSubscription',
       ($12.MarketSubscription value) => value.writeToBuffer(),
       ($core.List<$core.int> value) => $12.MarketSubscription.fromBuffer(value));
+  static final _$markFulfillmentNotesRead = $grpc.ClientMethod<$12.MarkFulfillmentNotesReadRequest, $12.MarketSubscription>(
+      '/rellm.Rellm/MarkFulfillmentNotesRead',
+      ($12.MarkFulfillmentNotesReadRequest value) => value.writeToBuffer(),
+      ($core.List<$core.int> value) => $12.MarketSubscription.fromBuffer(value));
+  static final _$registerMarketSubscriptionPush = $grpc.ClientMethod<$12.MarketSubscriptionPushRequest, $0.Empty>(
+      '/rellm.Rellm/RegisterMarketSubscriptionPush',
+      ($12.MarketSubscriptionPushRequest value) => value.writeToBuffer(),
+      ($core.List<$core.int> value) => $0.Empty.fromBuffer(value));
+  static final _$unregisterMarketSubscriptionPush = $grpc.ClientMethod<$12.MarketSubscriptionPushRequest, $0.Empty>(
+      '/rellm.Rellm/UnregisterMarketSubscriptionPush',
+      ($12.MarketSubscriptionPushRequest value) => value.writeToBuffer(),
+      ($core.List<$core.int> value) => $0.Empty.fromBuffer(value));
+  static final _$getMarketSubscriptionPushStatus = $grpc.ClientMethod<$12.MarketSubscriptionPushRequest, $12.GetMarketSubscriptionPushStatusResponse>(
+      '/rellm.Rellm/GetMarketSubscriptionPushStatus',
+      ($12.MarketSubscriptionPushRequest value) => value.writeToBuffer(),
+      ($core.List<$core.int> value) => $12.GetMarketSubscriptionPushStatusResponse.fromBuffer(value));
   static final _$generateMedia = $grpc.ClientMethod<$11.GenerateMediaRequest, $5.Media>(
       '/rellm.Rellm/GenerateMedia',
       ($11.GenerateMediaRequest value) => value.writeToBuffer(),
@@ -706,6 +722,22 @@ class RellmClient extends $grpc.Client {
 
   $grpc.ResponseFuture<$12.MarketSubscription> updateMarketSubscription($12.MarketSubscription request, {$grpc.CallOptions? options}) {
     return $createUnaryCall(_$updateMarketSubscription, request, options: options);
+  }
+
+  $grpc.ResponseFuture<$12.MarketSubscription> markFulfillmentNotesRead($12.MarkFulfillmentNotesReadRequest request, {$grpc.CallOptions? options}) {
+    return $createUnaryCall(_$markFulfillmentNotesRead, request, options: options);
+  }
+
+  $grpc.ResponseFuture<$0.Empty> registerMarketSubscriptionPush($12.MarketSubscriptionPushRequest request, {$grpc.CallOptions? options}) {
+    return $createUnaryCall(_$registerMarketSubscriptionPush, request, options: options);
+  }
+
+  $grpc.ResponseFuture<$0.Empty> unregisterMarketSubscriptionPush($12.MarketSubscriptionPushRequest request, {$grpc.CallOptions? options}) {
+    return $createUnaryCall(_$unregisterMarketSubscriptionPush, request, options: options);
+  }
+
+  $grpc.ResponseFuture<$12.GetMarketSubscriptionPushStatusResponse> getMarketSubscriptionPushStatus($12.MarketSubscriptionPushRequest request, {$grpc.CallOptions? options}) {
+    return $createUnaryCall(_$getMarketSubscriptionPushStatus, request, options: options);
   }
 
   $grpc.ResponseFuture<$5.Media> generateMedia($11.GenerateMediaRequest request, {$grpc.CallOptions? options}) {
@@ -1306,6 +1338,34 @@ abstract class RellmServiceBase extends $grpc.Service {
         false,
         ($core.List<$core.int> value) => $12.MarketSubscription.fromBuffer(value),
         ($12.MarketSubscription value) => value.writeToBuffer()));
+    $addMethod($grpc.ServiceMethod<$12.MarkFulfillmentNotesReadRequest, $12.MarketSubscription>(
+        'MarkFulfillmentNotesRead',
+        markFulfillmentNotesRead_Pre,
+        false,
+        false,
+        ($core.List<$core.int> value) => $12.MarkFulfillmentNotesReadRequest.fromBuffer(value),
+        ($12.MarketSubscription value) => value.writeToBuffer()));
+    $addMethod($grpc.ServiceMethod<$12.MarketSubscriptionPushRequest, $0.Empty>(
+        'RegisterMarketSubscriptionPush',
+        registerMarketSubscriptionPush_Pre,
+        false,
+        false,
+        ($core.List<$core.int> value) => $12.MarketSubscriptionPushRequest.fromBuffer(value),
+        ($0.Empty value) => value.writeToBuffer()));
+    $addMethod($grpc.ServiceMethod<$12.MarketSubscriptionPushRequest, $0.Empty>(
+        'UnregisterMarketSubscriptionPush',
+        unregisterMarketSubscriptionPush_Pre,
+        false,
+        false,
+        ($core.List<$core.int> value) => $12.MarketSubscriptionPushRequest.fromBuffer(value),
+        ($0.Empty value) => value.writeToBuffer()));
+    $addMethod($grpc.ServiceMethod<$12.MarketSubscriptionPushRequest, $12.GetMarketSubscriptionPushStatusResponse>(
+        'GetMarketSubscriptionPushStatus',
+        getMarketSubscriptionPushStatus_Pre,
+        false,
+        false,
+        ($core.List<$core.int> value) => $12.MarketSubscriptionPushRequest.fromBuffer(value),
+        ($12.GetMarketSubscriptionPushStatusResponse value) => value.writeToBuffer()));
     $addMethod($grpc.ServiceMethod<$11.GenerateMediaRequest, $5.Media>(
         'GenerateMedia',
         generateMedia_Pre,
@@ -1717,6 +1777,22 @@ abstract class RellmServiceBase extends $grpc.Service {
     return updateMarketSubscription(call, await request);
   }
 
+  $async.Future<$12.MarketSubscription> markFulfillmentNotesRead_Pre($grpc.ServiceCall call, $async.Future<$12.MarkFulfillmentNotesReadRequest> request) async {
+    return markFulfillmentNotesRead(call, await request);
+  }
+
+  $async.Future<$0.Empty> registerMarketSubscriptionPush_Pre($grpc.ServiceCall call, $async.Future<$12.MarketSubscriptionPushRequest> request) async {
+    return registerMarketSubscriptionPush(call, await request);
+  }
+
+  $async.Future<$0.Empty> unregisterMarketSubscriptionPush_Pre($grpc.ServiceCall call, $async.Future<$12.MarketSubscriptionPushRequest> request) async {
+    return unregisterMarketSubscriptionPush(call, await request);
+  }
+
+  $async.Future<$12.GetMarketSubscriptionPushStatusResponse> getMarketSubscriptionPushStatus_Pre($grpc.ServiceCall call, $async.Future<$12.MarketSubscriptionPushRequest> request) async {
+    return getMarketSubscriptionPushStatus(call, await request);
+  }
+
   $async.Future<$5.Media> generateMedia_Pre($grpc.ServiceCall call, $async.Future<$11.GenerateMediaRequest> request) async {
     return generateMedia(call, await request);
   }
@@ -1853,6 +1929,10 @@ abstract class RellmServiceBase extends $grpc.Service {
   $async.Future<$12.MakeMarketPurchaseResponse> makeMarketPurchase($grpc.ServiceCall call, $12.MakeMarketPurchaseRequest request);
   $async.Future<$12.MarketSubscription> cancelMarketSubscription($grpc.ServiceCall call, $12.MarketSubscription request);
   $async.Future<$12.MarketSubscription> updateMarketSubscription($grpc.ServiceCall call, $12.MarketSubscription request);
+  $async.Future<$12.MarketSubscription> markFulfillmentNotesRead($grpc.ServiceCall call, $12.MarkFulfillmentNotesReadRequest request);
+  $async.Future<$0.Empty> registerMarketSubscriptionPush($grpc.ServiceCall call, $12.MarketSubscriptionPushRequest request);
+  $async.Future<$0.Empty> unregisterMarketSubscriptionPush($grpc.ServiceCall call, $12.MarketSubscriptionPushRequest request);
+  $async.Future<$12.GetMarketSubscriptionPushStatusResponse> getMarketSubscriptionPushStatus($grpc.ServiceCall call, $12.MarketSubscriptionPushRequest request);
   $async.Future<$5.Media> generateMedia($grpc.ServiceCall call, $11.GenerateMediaRequest request);
   $async.Future<$9.Rsvps> getRsvps($grpc.ServiceCall call, $9.GetRsvpsRequest request);
   $async.Future<$9.Rsvp> upsertRsvp($grpc.ServiceCall call, $9.Rsvp request);
