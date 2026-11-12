@@ -449,6 +449,108 @@ To run it, add a dependency via `elm install` on [`elm-protocol-buffers`](https:
  Stripe credentials for all of this live in `ServerConfiguration.stripe_config` (a
  [`StripeConfig`](#rellm-StripeConfig)), Admin-only like `twilio_config`/`bird_config`.
 
+ ##### Subscription states
+ [`MarketSubscription.state`](#rellm-MarketSubscription) ([`MarketSubscriptionState`](#rellm-MarketSubscriptionState))
+ is derived on every read, never stored: `SUBSCRIPTION_ACTIVE` (not canceled), `SUBSCRIPTION_ACTIVE_BUT_CANCELED`
+ (canceled, but the paid-for period - the later of `canceled_at`/`renews_at` - hasn't ended, so the entitlement
+ still applies) and `SUBSCRIPTION_CANCELED` (terminated, or the paid-for period is over). Only the middle state can be
+ resumed: [`MakeMarketPurchase`](#grpc-api-MakeMarketPurchase) for the same product returns `resumed_subscription`
+ instead of a checkout. Clients should branch on `state`, not on `canceled_at`.
+
+ ##### Fulfillment chats, read tracking, and the admin perspective
+ A `PURCHASE_TYPE_RELLM_HOSTING` subscription is set up by hand, and the conversation about that lives in its
+ `fulfillment_notes` (an append-only chat, see [`UpdateMarketSubscription`](#grpc-api-UpdateMarketSubscription)). The
+ same notes are seen from two sides:
+
+ - **The buyer** reads them on their own subscription (`GetMarketSubscriptions`, or `User.market_subscriptions`). Their
+   read marker is `RellmHostingSubscriptionDetails.notes_last_read`, moved only by
+   [`MarkFulfillmentNotesRead`](#grpc-api-MarkFulfillmentNotesRead) (buyer-only, server-stamped; `UpdateMarketSubscription`
+   always preserves it). A note is *unread* if someone other than the buyer wrote it and it is newer than the marker (or
+   the marker is unset). A buyer's unread count is the sum over their subscriptions.
+ - **A Rellm hosting admin** (a server `Admin`) works every order from the "setting up customers' sites" side -
+   see [Fulfilling a Rellm hosting order](#fulfilling-a-rellm-hosting-order) below for the actual runbook.
+   `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN` lists them all, and `UpdateMarketSubscription` (Admin-only) appends
+   notes and moves `fulfillment_status`. There is deliberately **no per-admin read marker** - `notes_last_read` is the
+   buyer's, and several admins share the same orders - so an admin has no "unread" count. What needs an admin's attention
+   is the number of orders whose `fulfillment_status` is still `FULFILLMENT_STATUS_AWAITING_HOST_ADMIN`; that is the
+   admin's count. An admin opening an awaiting order moves it to `FULFILLMENT_STATUS_IN_PROGRESS` (a bare status note), which
+   is what takes it out of that count, and "Add and Mark as Fulfilled" finishes it.
+
+ So three independent counts exist side by side, and clients can show them together: unread messages,
+ the buyer's unread fulfillment notes, and (Admins only) orders awaiting a host admin. The Elm client shows them in
+ that order in the corners of its Messages button (top-right, bottom-right, bottom-left), and as the Messages,
+ Subscriptions and Fulfillment tabs.
+
+ ##### Fulfilling a Rellm hosting order
+ Fulfillment is deliberately manual: nothing in the API provisions a site. A Rellm hosting admin does it with the
+ deploy system in `deploys/` (the `rellm deploy ...` command that ships with the Homebrew/Linux packages; its own
+ reference is `rellm help deploys`, i.e. `deploys/README.md` - this section mirrors the "Maximally-Efficient
+ Configuration" part of it, which is how Rellm's own cluster runs). Every command below takes `-n <namespace>` for the
+ per-site steps, and none of it needs anything beyond `kubectl` pointed at the right cluster
+ (`kubectl config current-context`) plus the tools `rellm deploy` itself lists.
+
+ **What an order gives you** (`RellmHostingSubscriptionDetails`, on the order from
+ `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN`):
+
+ | Order field | Use it as |
+ |---|---|
+ | `domain` | The site's domain, e.g. `my-site.example.com` - the `--domain` of the commands below and what its DNS points at. |
+ | `contact_email` | Who to reach about DNS records/questions; carry that conversation in `fulfillment_notes`, not by email. |
+ | `additional_information` | The buyer's own notes (immutable); read before starting. |
+ | `db_size_bytes` / `object_storage_size_bytes` | Intended database/bucket sizes. **Currently always `0` on an order** - read the sizes off the order's `market_product` instead. |
+ | `fulfillment_status` / `fulfillment_notes` | Where it stands, and the buyer-visible log of how it got there (see "Admin counts" above). |
+
+ The namespace is yours to choose (it becomes the site's database, bucket and credentials' name): lowercase letters,
+ digits and `-`, at least 3 characters - the domain's first label (`my-site`) is a good default. Below: namespace
+ `my-site`, domain `my-site.example.com`.
+
+ **Once per cluster** (skip if the cluster already hosts sites): `rellm deploy create_central_storage` then
+ `rellm deploy wait_central_postgres_ready wait_central_object_storage_ready`; `rellm deploy create_ingress` (one shared
+ LoadBalancer - `rellm deploy get_ingress_external_ip` is the one IP every domain points at); `rellm deploy deploy_certmanager`;
+ and, for sites with email, Stalwart (`rellm deploy create_email_admin_secret ADMIN_PASSWORD='...'` *before*
+ `rellm deploy create_email`, then finish its setup wizard via `rellm deploy deploy_email_admin_port_forward`).
+
+ **Per order**, in this order:
+
+ 1. *Open the order.* Opening it on `/market/fulfillment` (or the Messages page's Fulfillment tab) moves it to
+    `FULFILLMENT_STATUS_IN_PROGRESS`, which tells the buyer you've started. Ask for anything missing as a note.
+ 2. *DNS first.* An `A` record for `my-site.example.com` at the ingress IP. Certificates use DNS-01 through
+    DigitalOcean (apex and `*.my-site.example.com`), so the domain must be a DigitalOcean DNS zone: if the buyer
+    owns the domain elsewhere, post the `NS` records they must delegate to as a note. Don't continue until it resolves.
+ 3. *Provision the site's slice of central storage* - its own database + role, bucket + user and a
+    `rellm-central-data` Secret of fresh random credentials, restricted to just this site (also creates the namespace):
+    `rellm deploy create_backend_central_data -n my-site`
+ 4. *Deploy the backend:* `rellm deploy create_internal_central_data_backend -n my-site`
+ 5. *TLS:* `rellm deploy deploy_certmanager_credential -n my-site` (prompts for the provider, DigitalOcean API token, the
+    domain and an admin email), wait for `kubectl get certificate -n my-site -w` to show `READY=True`, then
+    `rellm deploy restart_backend -n my-site` (the pods read the certificate at startup).
+ 6. *Route the domain:* `rellm deploy add_ingress_domain -n my-site --domain my-site.example.com`. Verify with
+    `curl -I https://my-site.example.com` and `grpcurl my-site.example.com:27707 list`. If it 404s or hangs, bounce Traefik
+    (`rellm deploy deploy_ingress_restart`) - that briefly interrupts every domain, so only if needed.
+ 7. *Email (optional):* `rellm deploy add_email_domain -n my-site --domain my-site.example.com`, then
+    `rellm deploy list_email_domains`; post the `MX` (`@` -> `my-site.example.com.`, priority 10), `TXT @`
+    (`v=spf1 mx ~all`) and `TXT _dmarc` (`v=DMARC1; p=none; rua=mailto:...`) records as a note for the buyer to add.
+ 8. *Save the credentials:* `rellm deploy get_all_storage_credentials` (those Secrets are the only copy), and add the
+    namespace to the deploy jobs in `.github/workflows/server_ci_cd.yml` so CI keeps its image current.
+ 9. *Hand over.* Add a note with the site's URL and how to sign in/create the first account, using "Add and Mark as
+    Fulfilled" (`FULFILLMENT_STATUS_FULFILLED`). The buyer is notified through the chat if they opted in to push.
+
+ Capacity is shared across sites: `rellm deploy get_central_postgres_pvc_size get_central_object_storage_pvc_size`, and
+ grow with `rellm deploy resize_central_postgres_pvc SIZE=...` / `resize_central_object_storage_pvc SIZE=...` (grow-only).
+
+ **Cancellation.** Nothing in the API tears a site down. While a subscription is `SUBSCRIPTION_ACTIVE_BUT_CANCELED` the
+ buyer has paid for the time - leave the site running (and don't remove it if they resume). Once it is
+ `SUBSCRIPTION_CANCELED`, retire it: `rellm deploy remove_ingress_domain -n my-site --domain my-site.example.com`,
+ `rellm deploy remove_email_domain -n my-site --domain my-site.example.com`, delete the namespace, then
+ `rellm deploy delete_backend_central_data -n my-site --confirm my-site` (permanently removes its database, bucket and
+ credentials - export what the buyer needs first), and leave a note recording that it was done.
+
+ Notifications follow the same two sides. A device opts in per subscription with
+ [`RegisterMarketSubscriptionPush`](#grpc-api-RegisterMarketSubscriptionPush) (linking an already-registered Web Push
+ subscription, see [`RegisterPushSubscription`](#grpc-api-RegisterPushSubscription)). A new note then pushes to every opted-in
+ device except its author's - the buyer hears about an admin's note, and other admins about it too - and access (buyer or
+ Admin) is re-checked at send time, so losing access ends the notifications.
+
  #### Media
  [`Media`](#rellm-Media) represents an uploaded (or server-generated) photo or video. Unlike other types, Media
  content itself is *not* served over gRPC - it's uploaded/downloaded via plain HTTP (`POST`/`GET /media`) - while

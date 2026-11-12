@@ -1208,6 +1208,161 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
       Stripe credentials for all of this live in <code>ServerConfiguration.stripe_config</code> (a
       <a href="#rellm-StripeConfig"><code>StripeConfig</code></a>), Admin-only like <code>twilio_config</code>/<code>bird_config</code>.
     </p>
+    <h5 id="subscription-states"><a class="anchor" aria-hidden="true" tabindex="-1" href="#subscription-states"><span class="octicon octicon-link"></span></a>Subscription states</h5>
+    <p>
+      <a href="#rellm-MarketSubscription"><code>MarketSubscription.state</code></a> (<a href="#rellm-MarketSubscriptionState"><code>MarketSubscriptionState</code></a>)
+      is derived on every read, never stored: <code>SUBSCRIPTION_ACTIVE</code> (not canceled), <code>SUBSCRIPTION_ACTIVE_BUT_CANCELED</code>
+      (canceled, but the paid-for period - the later of <code>canceled_at</code>/<code>renews_at</code> - hasn't ended, so the entitlement
+      still applies) and <code>SUBSCRIPTION_CANCELED</code> (terminated, or the paid-for period is over). Only the middle state can be
+      resumed: <a href="#grpc-api-MakeMarketPurchase"><code>MakeMarketPurchase</code></a> for the same product returns <code>resumed_subscription</code>
+      instead of a checkout. Clients should branch on <code>state</code>, not on <code>canceled_at</code>.
+    </p>
+    <h5 id="fulfillment-chats-read-tracking-and-the-admin-perspective"><a class="anchor" aria-hidden="true" tabindex="-1" href="#fulfillment-chats-read-tracking-and-the-admin-perspective"><span class="octicon octicon-link"></span></a>Fulfillment chats, read tracking, and the admin perspective</h5>
+    <p>
+      A <code>PURCHASE_TYPE_RELLM_HOSTING</code> subscription is set up by hand, and the conversation about that lives in its
+      <code>fulfillment_notes</code> (an append-only chat, see <a href="#grpc-api-UpdateMarketSubscription"><code>UpdateMarketSubscription</code></a>). The
+      same notes are seen from two sides:
+    </p>
+    <ul>
+      <li>
+        <strong>The buyer</strong> reads them on their own subscription (<code>GetMarketSubscriptions</code>, or <code>User.market_subscriptions</code>). Their
+        read marker is <code>RellmHostingSubscriptionDetails.notes_last_read</code>, moved only by
+        <a href="#grpc-api-MarkFulfillmentNotesRead"><code>MarkFulfillmentNotesRead</code></a> (buyer-only, server-stamped; <code>UpdateMarketSubscription</code>
+        always preserves it). A note is <em>unread</em> if someone other than the buyer wrote it and it is newer than the marker (or
+        the marker is unset). A buyer's unread count is the sum over their subscriptions.
+      </li>
+      <li>
+        <strong>A Rellm hosting admin</strong> (a server <code>Admin</code>) works every order from the "setting up customers' sites" side -
+        see <a href="#fulfilling-a-rellm-hosting-order">Fulfilling a Rellm hosting order</a> below for the actual runbook.
+        <code>GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN</code> lists them all, and <code>UpdateMarketSubscription</code> (Admin-only) appends
+        notes and moves <code>fulfillment_status</code>. There is deliberately <strong>no per-admin read marker</strong> - <code>notes_last_read</code> is the
+        buyer's, and several admins share the same orders - so an admin has no "unread" count. What needs an admin's attention
+        is the number of orders whose <code>fulfillment_status</code> is still <code>FULFILLMENT_STATUS_AWAITING_HOST_ADMIN</code>; that is the
+        admin's count. An admin opening an awaiting order moves it to <code>FULFILLMENT_STATUS_IN_PROGRESS</code> (a bare status note), which
+        is what takes it out of that count, and "Add and Mark as Fulfilled" finishes it.
+      </li>
+    </ul>
+    <p>
+      So three independent counts exist side by side, and clients can show them together: unread messages,
+      the buyer's unread fulfillment notes, and (Admins only) orders awaiting a host admin. The Elm client shows them in
+      that order in the corners of its Messages button (top-right, bottom-right, bottom-left), and as the Messages,
+      Subscriptions and Fulfillment tabs.
+    </p>
+    <h5 id="fulfilling-a-rellm-hosting-order"><a class="anchor" aria-hidden="true" tabindex="-1" href="#fulfilling-a-rellm-hosting-order"><span class="octicon octicon-link"></span></a>Fulfilling a Rellm hosting order</h5>
+    <p>
+      Fulfillment is deliberately manual: nothing in the API provisions a site. A Rellm hosting admin does it with the
+      deploy system in <code>deploys/</code> (the <code>rellm deploy ...</code> command that ships with the Homebrew/Linux packages; its own
+      reference is <code>rellm help deploys</code>, i.e. <code>deploys/README.md</code> - this section mirrors the "Maximally-Efficient
+      Configuration" part of it, which is how Rellm's own cluster runs). Every command below takes <code>-n &#x26;lt;namespace&#x26;gt;</code> for the
+      per-site steps, and none of it needs anything beyond <code>kubectl</code> pointed at the right cluster
+      (<code>kubectl config current-context</code>) plus the tools <code>rellm deploy</code> itself lists.
+    </p>
+    <p>
+      <strong>What an order gives you</strong> (<code>RellmHostingSubscriptionDetails</code>, on the order from
+      <code>GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN</code>):
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Order field</th>
+          <th>Use it as</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>domain</code></td>
+          <td>The site's domain, e.g. <code>my-site.example.com</code> - the <code>--domain</code> of the commands below and what its DNS points at.</td>
+        </tr>
+        <tr>
+          <td><code>contact_email</code></td>
+          <td>Who to reach about DNS records/questions; carry that conversation in <code>fulfillment_notes</code>, not by email.</td>
+        </tr>
+        <tr>
+          <td><code>additional_information</code></td>
+          <td>The buyer's own notes (immutable); read before starting.</td>
+        </tr>
+        <tr>
+          <td><code>db_size_bytes</code> / <code>object_storage_size_bytes</code></td>
+          <td>Intended database/bucket sizes. <strong>Currently always <code>0</code> on an order</strong> - read the sizes off the order's <code>market_product</code> instead.</td>
+        </tr>
+        <tr>
+          <td><code>fulfillment_status</code> / <code>fulfillment_notes</code></td>
+          <td>Where it stands, and the buyer-visible log of how it got there (see "Admin counts" above).</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>
+      The namespace is yours to choose (it becomes the site's database, bucket and credentials' name): lowercase letters,
+      digits and <code>-</code>, at least 3 characters - the domain's first label (<code>my-site</code>) is a good default. Below: namespace
+      <code>my-site</code>, domain <code>my-site.example.com</code>.
+    </p>
+    <p>
+      <strong>Once per cluster</strong> (skip if the cluster already hosts sites): <code>rellm deploy create_central_storage</code> then
+      <code>rellm deploy wait_central_postgres_ready wait_central_object_storage_ready</code>; <code>rellm deploy create_ingress</code> (one shared
+      LoadBalancer - <code>rellm deploy get_ingress_external_ip</code> is the one IP every domain points at); <code>rellm deploy deploy_certmanager</code>;
+      and, for sites with email, Stalwart (<code>rellm deploy create_email_admin_secret ADMIN_PASSWORD=&#x26;#39;...&#x26;#39;</code> <em>before</em>
+      <code>rellm deploy create_email</code>, then finish its setup wizard via <code>rellm deploy deploy_email_admin_port_forward</code>).
+    </p>
+    <p><strong>Per order</strong>, in this order:</p>
+    <ol>
+      <li>
+        <em>Open the order.</em> Opening it on <code>/market/fulfillment</code> (or the Messages page's Fulfillment tab) moves it to
+        <code>FULFILLMENT_STATUS_IN_PROGRESS</code>, which tells the buyer you've started. Ask for anything missing as a note.
+      </li>
+      <li>
+        <em>DNS first.</em> An <code>A</code> record for <code>my-site.example.com</code> at the ingress IP. Certificates use DNS-01 through
+        DigitalOcean (apex and <code>*.my-site.example.com</code>), so the domain must be a DigitalOcean DNS zone: if the buyer
+        owns the domain elsewhere, post the <code>NS</code> records they must delegate to as a note. Don't continue until it resolves.
+      </li>
+      <li>
+        <em>Provision the site's slice of central storage</em> - its own database + role, bucket + user and a
+        <code>rellm-central-data</code> Secret of fresh random credentials, restricted to just this site (also creates the namespace):
+        <code>rellm deploy create_backend_central_data -n my-site</code>
+      </li>
+      <li><em>Deploy the backend:</em> <code>rellm deploy create_internal_central_data_backend -n my-site</code></li>
+      <li>
+        <em>TLS:</em> <code>rellm deploy deploy_certmanager_credential -n my-site</code> (prompts for the provider, DigitalOcean API token, the
+        domain and an admin email), wait for <code>kubectl get certificate -n my-site -w</code> to show <code>READY=True</code>, then
+        <code>rellm deploy restart_backend -n my-site</code> (the pods read the certificate at startup).
+      </li>
+      <li>
+        <em>Route the domain:</em> <code>rellm deploy add_ingress_domain -n my-site --domain my-site.example.com</code>. Verify with
+        <code>curl -I https://my-site.example.com</code> and <code>grpcurl my-site.example.com:27707 list</code>. If it 404s or hangs, bounce Traefik
+        (<code>rellm deploy deploy_ingress_restart</code>) - that briefly interrupts every domain, so only if needed.
+      </li>
+      <li>
+        <em>Email (optional):</em> <code>rellm deploy add_email_domain -n my-site --domain my-site.example.com</code>, then
+        <code>rellm deploy list_email_domains</code>; post the <code>MX</code> (<code>@</code> -> <code>my-site.example.com.</code>, priority 10), <code>TXT @</code>
+        (<code>v=spf1 mx ~all</code>) and <code>TXT _dmarc</code> (<code>v=DMARC1; p=none; rua=mailto:...</code>) records as a note for the buyer to add.
+      </li>
+      <li>
+        <em>Save the credentials:</em> <code>rellm deploy get_all_storage_credentials</code> (those Secrets are the only copy), and add the
+        namespace to the deploy jobs in <code>.github/workflows/server_ci_cd.yml</code> so CI keeps its image current.
+      </li>
+      <li>
+        <em>Hand over.</em> Add a note with the site's URL and how to sign in/create the first account, using "Add and Mark as
+        Fulfilled" (<code>FULFILLMENT_STATUS_FULFILLED</code>). The buyer is notified through the chat if they opted in to push.
+      </li>
+    </ol>
+    <p>
+      Capacity is shared across sites: <code>rellm deploy get_central_postgres_pvc_size get_central_object_storage_pvc_size</code>, and
+      grow with <code>rellm deploy resize_central_postgres_pvc SIZE=...</code> / <code>resize_central_object_storage_pvc SIZE=...</code> (grow-only).
+    </p>
+    <p>
+      <strong>Cancellation.</strong> Nothing in the API tears a site down. While a subscription is <code>SUBSCRIPTION_ACTIVE_BUT_CANCELED</code> the
+      buyer has paid for the time - leave the site running (and don't remove it if they resume). Once it is
+      <code>SUBSCRIPTION_CANCELED</code>, retire it: <code>rellm deploy remove_ingress_domain -n my-site --domain my-site.example.com</code>,
+      <code>rellm deploy remove_email_domain -n my-site --domain my-site.example.com</code>, delete the namespace, then
+      <code>rellm deploy delete_backend_central_data -n my-site --confirm my-site</code> (permanently removes its database, bucket and
+      credentials - export what the buyer needs first), and leave a note recording that it was done.
+    </p>
+    <p>
+      Notifications follow the same two sides. A device opts in per subscription with
+      <a href="#grpc-api-RegisterMarketSubscriptionPush"><code>RegisterMarketSubscriptionPush</code></a> (linking an already-registered Web Push
+      subscription, see <a href="#grpc-api-RegisterPushSubscription"><code>RegisterPushSubscription</code></a>). A new note then pushes to every opted-in
+      device except its author's - the buyer hears about an admin's note, and other admins about it too - and access (buyer or
+      Admin) is re-checked at send time, so losing access ends the notifications.
+    </p>
     <h4 id="media"><a class="anchor" aria-hidden="true" tabindex="-1" href="#media"><span class="octicon octicon-link"></span></a>Media</h4>
     <p>
       <a href="#rellm-Media"><code>Media</code></a> represents an uploaded (or server-generated) photo or video. Unlike other types, Media
