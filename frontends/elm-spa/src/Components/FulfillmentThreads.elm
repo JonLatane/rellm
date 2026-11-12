@@ -766,34 +766,6 @@ threadView config thread =
         isSelected =
             isChat && config.selected == Just thread.key
 
-        url : String
-        url =
-            if thread.admin then
-                "/market/fulfillment"
-
-            else
-                threadUrl "" config.accountsPanelModel.mainFrontendHost thread.host subscription.id Nothing
-
-        headerAttrs : List (Html.Attribute msg)
-        headerAttrs =
-            case config.onSelect of
-                Just select ->
-                    [ class "fulfillment-thread-header"
-                    , href url
-                    , preventDefaultOn "click" (Decode.succeed ( select thread.key, True ))
-                    ]
-
-                Nothing ->
-                    class "fulfillment-thread-header"
-                        :: href url
-                        :: (case config.onLinkClick of
-                                Just linkClicked ->
-                                    [ onClick (linkClicked thread.key) ]
-
-                                Nothing ->
-                                    []
-                           )
-
         headerContent : List (Html msg)
         headerContent =
             [ span [ class "fulfillment-thread-title" ] [ text (threadTitle thread) ]
@@ -814,6 +786,35 @@ threadView config thread =
         , Html.Attributes.id ("subscription-thread-" ++ subscription.id)
         ]
         [ if isChat then
+            let
+                url : String
+                url =
+                    if thread.admin then
+                        "/market/fulfillment"
+
+                    else
+                        threadUrl "" config.accountsPanelModel.mainFrontendHost thread.host subscription.id Nothing
+
+                headerAttrs : List (Html.Attribute msg)
+                headerAttrs =
+                    case config.onSelect of
+                        Just select ->
+                            [ class "fulfillment-thread-header"
+                            , href url
+                            , preventDefaultOn "click" (Decode.succeed ( select thread.key, True ))
+                            ]
+
+                        Nothing ->
+                            class "fulfillment-thread-header"
+                                :: href url
+                                :: (case config.onLinkClick of
+                                        Just linkClicked ->
+                                            [ onClick (linkClicked thread.key) ]
+
+                                        Nothing ->
+                                            []
+                                   )
+            in
             a headerAttrs headerContent
 
           else
