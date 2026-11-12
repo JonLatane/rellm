@@ -48,6 +48,7 @@ import Proto.Rellm
         , unwrapMarketPurchase
         )
 import Proto.Rellm.FulfillmentStatus exposing (FulfillmentStatus(..))
+import Proto.Rellm.MarketSubscriptionState
 import Proto.Rellm.MarketSubscription.Details as SubscriptionDetails
 import Set exposing (Set)
 import Shared
@@ -624,6 +625,19 @@ cancellationDetailsView browserTimeZone subscription =
     else
         div [ class "market-fulfillment-section" ]
             [ h4 [ class "market-fulfillment-section-title" ] [ text "Subscription Cancellation" ]
+            , span [ class "profile-subscription-row-status" ]
+                [ text
+                    (case subscription.state of
+                        Proto.Rellm.MarketSubscriptionState.SUBSCRIPTIONACTIVEBUTCANCELED ->
+                            "Canceled, but service continues until the paid period ends"
+
+                        Proto.Rellm.MarketSubscriptionState.SUBSCRIPTIONCANCELED ->
+                            "Canceled"
+
+                        Proto.Rellm.MarketSubscriptionState.SUBSCRIPTIONACTIVE ->
+                            "Active"
+                    )
+                ]
             , timestampLineView "Canceled" browserTimeZone subscription.canceledAt
             , timestampLineView "Service ended" browserTimeZone subscription.serviceTerminatedAt
             ]

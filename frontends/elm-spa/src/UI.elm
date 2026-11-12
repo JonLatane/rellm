@@ -1,6 +1,7 @@
 module UI exposing (imageOrInitial, layout, pageTitle, themeToggle, webUiToggleRow)
 
 import Components.Events as Events
+import Components.FulfillmentThreads as Fulfillment
 import Components.Markdown as Markdown
 import Components.Posts as Posts
 import Components.ServerDependentView as ServerDependentView
@@ -2671,7 +2672,35 @@ accountAvatarMenuView shared account =
                     text ""
                 , a
                     [ class "account-avatar-menu-item", href (profileHref ++ "#subscriptions"), sectionLinkClicked "subscriptions" ]
-                    (itemContent "Subscriptions" (configuredCountOrEmpty "No subscriptions." account.marketSubscriptions))
+                    (itemContent "Subscriptions"
+                        (configuredCountOrEmpty "No subscriptions." account.marketSubscriptions
+                            ++ (case List.sum (List.map Fulfillment.unreadCount account.marketSubscriptions) of
+                                    0 ->
+                                        ""
+
+                                    unread ->
+                                        " · " ++ String.fromInt unread ++ " unread"
+                               )
+                        )
+                    )
+                , div [ class "account-avatar-menu-subscription-links" ]
+                    (Fulfillment.subscriptionLinks "" account.server account.marketSubscriptions
+                        |> List.map
+                            (\link ->
+                                a
+                                    [ class "account-avatar-menu-item account-avatar-menu-subscription-link"
+                                    , href link.url
+                                    , stopPropagationAndPreventDefaultOnClick (Shared.AccountsPanelMsg AccountsPanel.CloseAccountsPanel)
+                                    ]
+                                    [ span [ class "account-avatar-menu-item-label" ] [ text link.title ]
+                                    , if link.unread > 0 then
+                                        span [ class "unread-count-badge" ] [ text (String.fromInt link.unread) ]
+
+                                      else
+                                        text ""
+                                    ]
+                            )
+                    )
                 ]
             ]
 

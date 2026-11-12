@@ -32,6 +32,7 @@ import Browser.Dom as Dom
 import Browser.Navigation
 import Components.AIProviders as AIProviders
 import Components.FederatedAuthors exposing (FederatedAuthor)
+import Components.FulfillmentThreads as Fulfillment
 import Components.Markdown as Markdown
 import Components.Market as Market
 import Components.Pages.EventsPage as EventsPage
@@ -60,6 +61,7 @@ import Proto.Google.Protobuf
 import Proto.Rellm exposing (AIProvider, AIProviderGrant, ContactConsentChange, ContactMethod, FederatedAccount, MarketPurchase, MarketPurchase_, MarketSubscription, SyncDestination, SyncSource, User, defaultAIProvider, defaultDigitalOceanCredentials, defaultGeminiCredentials, defaultMediaReference, defaultOpenAICredentials, defaultSyncDestination, defaultSyncSource, unwrapMarketPurchase)
 import Proto.Rellm.AIProvider.Provider as AIProviderProvider
 import Proto.Rellm.ContactConsentState exposing (ContactConsentState(..))
+import Proto.Rellm.MarketSubscriptionState exposing (MarketSubscriptionState(..))
 import Proto.Rellm.Moderation exposing (Moderation(..))
 import Proto.Rellm.Permission exposing (Permission(..))
 import Proto.Rellm.SyncDestination.Configuration as DestinationConfiguration
@@ -235,6 +237,8 @@ type Msg
     | SubscriptionsExpandedToggled
     | CancelSubscriptionClicked MarketSubscription
     | GotCancelSubscriptionResult String (Result Grpc.Error ( Maybe AccountsPanel.Msg, MarketSubscription ))
+    | ResumeSubscriptionClicked MarketSubscription
+    | GotResumeSubscriptionResult String (Result Grpc.Error ( Maybe AccountsPanel.Msg, Proto.Rellm.MakeMarketPurchaseResponse ))
     | PermissionsExpandedToggled
     | PermissionsEditClicked
     | PermissionRemoveClicked Permission
@@ -2647,6 +2651,51 @@ updateInner shared msg model =
             )
 
         GotCancelSubscriptionResult subscriptionId (Err err) ->
+            ( { model
+                | cancelingSubscriptions =
+                    Dict.insert subscriptionId (SubmitFailed (AccountsPanel.grpcErrorToString err)) model.cancelingSubscriptions
+              }
+            , Effect.none
+            )
+
+        -- "Resume" on a `SUBSCRIPTION_ACTIVE_BUT_CANCELED` subscription: buying the same product again
+        -- is how the server resumes it (no checkout, nothing charged -- see
+        -- `MakeMarketPurchaseResponse.resumedSubscription`).
+        ResumeSubscriptionClicked subscription ->
+            case ( serverAndAccount shared model, subscription.marketProduct ) of
+                ( Just ( server, account ), Just product ) ->
+                    ( { model | cancelingSubscriptions = Dict.insert subscription.id Submitting model.cancelingSubscriptions }
+                    , Market.makeMarketPurchase shared.accounts
+                        ( Just account.userId, server.frontendHost )
+                        { marketProductId = product.id, rellmHostingDetails = Nothing }
+                        |> attemptInActingEpoch model (GotResumeSubscriptionResult subscription.id)
+                        |> Effect.fromCmd
+                    )
+
+                _ ->
+                    ( model, Effect.none )
+
+        GotResumeSubscriptionResult subscriptionId (Ok ( maybeAccountsPanelMsg, response )) ->
+            case response.resumedSubscription of
+                Just resumed ->
+                    ( { model
+                        | cancelingSubscriptions = Dict.remove subscriptionId model.cancelingSubscriptions
+                        , resolver = withResolvedSubscription resumed model.resolver
+                      }
+                    , accountsPanelEffect maybeAccountsPanelMsg
+                    )
+
+                Nothing ->
+                    -- Not resumable any more (its paid-for period ran out meanwhile): buying it again
+                    -- now means a real checkout, which lives on the Market page.
+                    ( { model
+                        | cancelingSubscriptions =
+                            Dict.insert subscriptionId (SubmitFailed "This subscription has already ended -- buy it again from the Market.") model.cancelingSubscriptions
+                      }
+                    , accountsPanelEffect maybeAccountsPanelMsg
+                    )
+
+        GotResumeSubscriptionResult subscriptionId (Err err) ->
             ( { model
                 | cancelingSubscriptions =
                     Dict.insert subscriptionId (SubmitFailed (AccountsPanel.grpcErrorToString err)) model.cancelingSubscriptions
@@ -5140,7 +5189,7 @@ profileDetail shared model server maybeAccount user =
         , aiProvidersSection model canEdit (isOwnProfile maybeAccount user) user
         , aiProviderGrantedSection model canEdit user
         , storageQuotaSection isAdmin (isOwnProfile maybeAccount user) model.storageQuotaExpanded model.storageQuotaEdit user
-        , subscriptionsSection shared.time.browserTimeZone isAdmin (isOwnProfile maybeAccount user) model.subscriptionsExpanded model.cancelingSubscriptions user
+        , subscriptionsSection shared.time.browserTimeZone shared.accounts.mainFrontendHost (maybeAccount |> Maybe.map .server) isAdmin (isOwnProfile maybeAccount user) model.subscriptionsExpanded model.cancelingSubscriptions user
         , permissionsSection isAdmin model.permissionsExpanded model.permissionsEdit user
         , accountActionsSection canEdit model.passwordResetEdit user
         ]
@@ -6187,8 +6236,8 @@ gating (and same "hide if nothing to show" convention) as `storageQuotaSection` 
 `User.marketSubscriptions` itself is only ever populated for those two viewers (see that field's
 own proto doc). Collapsed by default, alongside `storageQuotaSection`/`permissionsSection`.
 -}
-subscriptionsSection : SharedTime.BrowserTimeZone -> Bool -> Bool -> Bool -> Dict String SubmitStatus -> User -> Html Msg
-subscriptionsSection browserTimeZone isAdmin isOwn expanded cancelingSubscriptions user =
+subscriptionsSection : SharedTime.BrowserTimeZone -> String -> Maybe String -> Bool -> Bool -> Bool -> Dict String SubmitStatus -> User -> Html Msg
+subscriptionsSection browserTimeZone mainFrontendHost maybeHost isAdmin isOwn expanded cancelingSubscriptions user =
     if not (isAdmin || isOwn) then
         text ""
 
@@ -6203,7 +6252,7 @@ subscriptionsSection browserTimeZone isAdmin isOwn expanded cancelingSubscriptio
                 [ span [ class "profile-subscriptions-empty" ] [ text "No subscriptions." ] ]
 
              else
-                List.map (subscriptionRowView browserTimeZone (isAdmin || isOwn) cancelingSubscriptions) user.marketSubscriptions
+                List.map (subscriptionRowView browserTimeZone mainFrontendHost (if isOwn then maybeHost else Nothing) (isAdmin || isOwn) cancelingSubscriptions) user.marketSubscriptions
             )
 
 
@@ -6225,8 +6274,35 @@ timestampLineView label browserTimeZone maybeTimestamp =
             text ""
 
 
-subscriptionRowView : SharedTime.BrowserTimeZone -> Bool -> Dict String SubmitStatus -> MarketSubscription -> Html Msg
-subscriptionRowView browserTimeZone canCancel cancelingSubscriptions subscription =
+subscriptionRowView : SharedTime.BrowserTimeZone -> String -> Maybe String -> Bool -> Dict String SubmitStatus -> MarketSubscription -> Html Msg
+subscriptionRowView browserTimeZone mainFrontendHost maybeThreadHost canCancel cancelingSubscriptions subscription =
+    let
+        actionStatus : SubmitStatus
+        actionStatus =
+            Dict.get subscription.id cancelingSubscriptions |> Maybe.withDefault Idle
+
+        -- Only the buyer's own profile can link to its fulfillment thread (that's the buyer's chat).
+        threadLink : Html Msg
+        threadLink =
+            case maybeThreadHost of
+                Just host ->
+                    case Fulfillment.subscriptionLinks mainFrontendHost host [ subscription ] of
+                        link :: _ ->
+                            a [ class "profile-subscription-thread-link", href link.url ]
+                                [ text "Fulfillment messages"
+                                , if link.unread > 0 then
+                                    span [ class "unread-count-badge" ] [ text (String.fromInt link.unread) ]
+
+                                  else
+                                    text ""
+                                ]
+
+                        [] ->
+                            text ""
+
+                Nothing ->
+                    text ""
+    in
     div [ class "profile-subscription-row" ]
         [ span [ class "profile-subscription-row-title" ]
             [ text
@@ -6237,36 +6313,76 @@ subscriptionRowView browserTimeZone canCancel cancelingSubscriptions subscriptio
                     ++ Market.formatAmount subscription.amount subscription.currency
                 )
             ]
-        , timestampLineView "Renews" browserTimeZone subscription.renewsAt
+        , subscriptionStateLine browserTimeZone subscription
+        , timestampLineView "Renews" browserTimeZone (if subscription.state == SUBSCRIPTIONACTIVE then subscription.renewsAt else Nothing)
         , timestampLineView "Canceled" browserTimeZone subscription.canceledAt
         , timestampLineView "Service ended" browserTimeZone subscription.serviceTerminatedAt
-        , if canCancel && subscription.canceledAt == Nothing then
-            let
-                cancelStatus : SubmitStatus
-                cancelStatus =
-                    Dict.get subscription.id cancelingSubscriptions |> Maybe.withDefault Idle
-            in
+        , threadLink
+        , if canCancel && subscription.state == SUBSCRIPTIONACTIVE then
             div [ class "profile-subscription-cancel" ]
                 [ button
                     [ class "profile-edit-button"
                     , onClick (CancelSubscriptionClicked subscription)
-                    , disabled (cancelStatus == Submitting)
+                    , disabled (actionStatus == Submitting)
                     ]
                     [ text
-                        (if cancelStatus == Submitting then
+                        (if actionStatus == Submitting then
                             "Canceling…"
 
                          else
                             "Cancel Subscription"
                         )
                     ]
-                , editErrorView cancelStatus
+                , editErrorView actionStatus
+                ]
+
+          else if canCancel && subscription.state == SUBSCRIPTIONACTIVEBUTCANCELED then
+            div [ class "profile-subscription-cancel" ]
+                [ button
+                    [ class "profile-edit-button"
+                    , onClick (ResumeSubscriptionClicked subscription)
+                    , disabled (actionStatus == Submitting)
+                    ]
+                    [ text
+                        (if actionStatus == Submitting then
+                            "Resuming…"
+
+                         else
+                            "Resume Subscription"
+                        )
+                    ]
+                , editErrorView actionStatus
                 ]
 
           else
             text ""
         , billingHistoryView browserTimeZone subscription.billingHistory
         ]
+
+
+{-| The subscription's `state` (`MarketSubscriptionState`) in words. A canceled-but-paid-up
+subscription says exactly when its service ends, since that's what the buyer actually wants to know.
+-}
+subscriptionStateLine : SharedTime.BrowserTimeZone -> MarketSubscription -> Html Msg
+subscriptionStateLine browserTimeZone subscription =
+    case subscription.state of
+        SUBSCRIPTIONACTIVE ->
+            span [ class "profile-subscription-row-status" ] [ text "Active" ]
+
+        SUBSCRIPTIONACTIVEBUTCANCELED ->
+            span [ class "profile-subscription-row-status" ]
+                [ text
+                    ("Canceled -- service continues until "
+                        ++ (subscription.renewsAt
+                                |> Maybe.map (timestampToPosix >> SharedTime.formatDate browserTimeZone.zone)
+                                |> Maybe.withDefault "the end of this period"
+                           )
+                        ++ ". Resume any time before then at no charge."
+                    )
+                ]
+
+        SUBSCRIPTIONCANCELED ->
+            span [ class "profile-subscription-row-status" ] [ text "Canceled" ]
 
 
 {-| One row per `MarketPurchase` in a subscription's `billingHistory` -- amount, date, and (when

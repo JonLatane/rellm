@@ -12,6 +12,7 @@ suffix. Thin `Effect`/`Shared`/URL-owning wrapper around
 `Shared.MessagingPanel` embeds it too -- see that module's own doc.
 -}
 
+import Components.FulfillmentThreads as Fulfillment
 import Components.Messages as Messages
 import Components.Pages.MessagesPage as MessagesPage
 import Dict
@@ -103,8 +104,32 @@ init shared req =
         searchText =
             Dict.get "search_text" req.query |> Maybe.withDefault ""
 
-        ( model, cmd ) =
+        -- `?subscription_messages=<id>[@host]` -- one Fulfillment thread (a Rellm hosting
+        -- subscription's notes), the subscription counterpart of `?messaging_group=`. Same `id@host`
+        -- encoding; `#subscription-message-<n>` (a note's position) is the matching fragment.
+        selectedSubscriptionThread : Maybe String
+        selectedSubscriptionThread =
+            Dict.get "subscription_messages" req.query
+                |> Maybe.map
+                    (\raw ->
+                        let
+                            ( subscriptionId, host ) =
+                                Messages.parseGroupRouteId shared.accounts.mainFrontendHost raw
+                        in
+                        Fulfillment.threadKey host subscriptionId
+                    )
+
+        ( initialModel, cmd ) =
             MessagesPage.init shared.accounts (Just { navKey = req.key, path = req.url.path }) selectedGroup pendingScrollMessageId searchText
+
+        model : Model
+        model =
+            case selectedSubscriptionThread of
+                Just key ->
+                    MessagesPage.selectSubscriptionThread key initialModel
+
+                Nothing ->
+                    initialModel
     in
     ( model, Effect.batch [ Effect.fromCmd (Cmd.map PageMsg cmd), Effect.fromShared Shared.CloseAllPanels ] )
 
@@ -161,6 +186,17 @@ update shared msg model =
             , Effect.batch [ pageEffect, Effect.fromShared (Shared.MessagingPanelMsg (MessagingPanel.PageMsg MessagesPage.ForceRefresh)) ]
             )
 
+        -- Same idea for the Fulfillment tab: marking a thread's notes read here also refreshes the
+        -- embedded panel's own, separate copy (and so its nav-button unread total).
+        PageMsg ((MessagesPage.FulfillmentMsg (Fulfillment.GotMarkedRead _ (Ok _))) as subMsg) ->
+            let
+                ( updatedModel, pageEffect ) =
+                    applyPageMsg shared subMsg model
+            in
+            ( updatedModel
+            , Effect.batch [ pageEffect, Effect.fromShared (Shared.MessagingPanelMsg (MessagingPanel.PageMsg MessagesPage.ForceRefresh)) ]
+            )
+
         PageMsg subMsg ->
             applyPageMsg shared subMsg model
 
@@ -195,6 +231,10 @@ update shared msg model =
                         -- which surface the read/unread change was actually
                         -- made from.
                         Shared.MessagingPanelMsg (MessagingPanel.PageMsg (MessagesPage.GotMarkReadResult (Ok _))) ->
+                            applyPageMsg shared MessagesPage.ForceRefresh model
+
+                        -- ...and the reverse, for the Fulfillment tab inside the embedded panel.
+                        Shared.MessagingPanelMsg (MessagingPanel.PageMsg (MessagesPage.FulfillmentMsg (Fulfillment.GotMarkedRead _ (Ok _)))) ->
                             applyPageMsg shared MessagesPage.ForceRefresh model
 
                         -- A `ComposeClicked`/`ReplyClicked` send actually

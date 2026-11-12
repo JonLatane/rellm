@@ -142,6 +142,9 @@ type PurchaseState
     = PurchaseIdle
     | PurchaseSubmitting
     | PurchaseErrored String
+      -- `MakeMarketPurchaseResponse.resumedSubscription` came back: the buyer had a canceled-but-paid-up
+      -- subscription to this product, which was resumed instead of starting a checkout -- nothing charged.
+    | PurchaseResumed
 
 
 {-| The buyer-supplied fields a `RELLM_HOSTING` product's "Buy" button collects before submitting

@@ -810,3 +810,135 @@ body:has(> [style*="2147483647"]) .messages-reply-button {
     pointer-events: none;
   }
 }
+/* ---- Messaging / Fulfillment tabs and the Fulfillment threads
+   (`MessagesPage.tabsView`, `Components.FulfillmentThreads`) ---- */
+
+/* Shared unread count pill: tab labels, thread headers, the Accounts panel's and the profile page's
+   subscription rows. Same geometry as `.messages-count-badge`, always the host-neutral red so it
+   reads as "needs attention" anywhere it appears. */
+.unread-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  margin-left: 6px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  background: #c62828;
+  color: #ffffff;
+}
+
+.messages-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--muted);
+}
+
+.messages-tab {
+  appearance: none;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 8px 14px;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.messages-tab-active {
+  border-bottom-color: currentColor;
+  font-weight: 700;
+  opacity: 1;
+}
+
+.fulfillment-thread-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fulfillment-thread {
+  border: 1px solid var(--muted);
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+
+.fulfillment-thread-selected {
+  border-width: 2px;
+}
+
+.fulfillment-thread-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.fulfillment-thread-title {
+  font-weight: 700;
+}
+
+.fulfillment-thread-state,
+.fulfillment-thread-preview,
+.fulfillment-note-meta {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.fulfillment-thread-preview {
+  margin: 4px 0 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fulfillment-note {
+  margin: 8px 0;
+  padding: 6px 10px;
+  border-left: 3px solid var(--muted);
+}
+
+.fulfillment-note-mine {
+  border-left-color: currentColor;
+}
+
+.fulfillment-note-unread {
+  font-weight: 600;
+}
+
+.fulfillment-note-meta {
+  display: flex;
+  gap: 8px;
+}
+
+.fulfillment-note-author {
+  font-weight: 700;
+}
+
+.fulfillment-note-text {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+}
+
+.fulfillment-push-toggle {
+  margin-top: 8px;
+}
+
+.account-avatar-menu-subscription-links {
+  display: flex;
+  flex-direction: column;
+}
+
+.profile-subscription-thread-link {
+  display: inline-flex;
+  align-items: center;
+}

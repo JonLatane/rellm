@@ -4,6 +4,7 @@ module Components.Pages.MessagesPage exposing
     , PageContext
     , empty
     , init
+    , selectSubscriptionThread
     , pushSubscription
     , subscriptions
     , timerAndAnimationSubscriptions
@@ -35,6 +36,7 @@ import Animation
 import Browser.Dom as Dom
 import Browser.Navigation
 import Components.Authors as Authors
+import Components.FulfillmentThreads as Fulfillment
 import Components.Messages as Messages
 import Dict exposing (Dict)
 import Grpc
@@ -168,7 +170,21 @@ type alias Model =
     -- during the debounce window). Per-host, not one global counter, so a burst of pushes for
     -- host A doesn't delay an already-in-flight refresh for host B.
     , pushRefreshGenerations : Dict String Int
+
+    -- The two tabs (`tabsView`), "Messaging" and "Fulfillment" -- the latter is the user's Rellm
+    -- hosting orders' fulfillment-note threads (`Components.FulfillmentThreads`). The tab bar only
+    -- exists while `Fulfillment.hasNotes`; with no notes this is ignored and Messaging shows.
+    , tab : Tab
+    , fulfillment : Fulfillment.Model
+
+    -- The open Fulfillment thread's `Fulfillment.threadKey`, if any.
+    , selectedThread : Maybe String
     }
+
+
+type Tab
+    = MessagingTab
+    | FulfillmentTab
 
 
 {-| Where a group/message row navigates/pushes state to (`Just` -- the real
@@ -480,6 +496,13 @@ type Msg
       -- burst of several pushes for the same host in quick succession triggers one refetch, not
       -- one per push.
     | PushNotificationReceived (Maybe String)
+      -- The Messaging/Fulfillment tab bar (only present once there are fulfillment notes).
+    | TabClicked Tab
+    | FulfillmentMsg Fulfillment.Msg
+      -- A Fulfillment thread row clicked on the real page (toggles it open; opening marks its
+      -- notes read -- see `Fulfillment.openCmd`). The embedded panel's rows are plain links to
+      -- `/messages?subscription_messages=` instead.
+    | FulfillmentThreadSelected String
     | PushRefreshDebounceElapsed String Int
 
 
@@ -506,6 +529,9 @@ empty =
     , mobileSidebarOpen = False
     , detailThreadAnimations = Dict.empty
     , pushRefreshGenerations = Dict.empty
+    , tab = MessagingTab
+    , fulfillment = Fulfillment.empty
+    , selectedThread = Nothing
     }
 
 
@@ -539,8 +565,28 @@ init accountsPanelModel pageContext selectedGroup pendingScrollMessageIdFragment
 
                 Nothing ->
                     ( fetchedModel, Cmd.none )
+
+        ( fulfillmentModel, fulfillmentCmd ) =
+            fetchFulfillment accountsPanelModel expandedModel
     in
-    ( expandedModel, Cmd.batch [ fetchCmd, expandCmd ] )
+    ( fulfillmentModel, Cmd.batch [ fetchCmd, expandCmd, fulfillmentCmd ] )
+
+
+{-| Pre-selects a Fulfillment thread (`Pages.Messages`' `?subscription_messages=` deep link) -- its
+notes are marked read as soon as they load (`Fulfillment.update`).
+-}
+selectSubscriptionThread : String -> Model -> Model
+selectSubscriptionThread key model =
+    { model | tab = FulfillmentTab, selectedThread = Just key }
+
+
+fetchFulfillment : AccountsPanel.Model -> Model -> ( Model, Cmd Msg )
+fetchFulfillment accountsPanelModel model =
+    let
+        ( fulfillment, cmd ) =
+            Fulfillment.fetchAll accountsPanelModel model.fulfillment
+    in
+    ( { model | fulfillment = fulfillment }, Cmd.map FulfillmentMsg cmd )
 
 
 {-| Everything a _mounted-but-not-necessarily-visible_ instance still needs live: right now, just
@@ -610,15 +656,21 @@ update accountsPanelModel msg model =
 
                 ( retriedModel, retryCmd ) =
                     retryPendingExpansions accountsPanelModel refreshedModel
+
+                ( fulfillmentModel, fulfillmentCmd ) =
+                    fetchFulfillment accountsPanelModel retriedModel
             in
-            ( retriedModel, Cmd.batch [ cmd, refreshCmd, retryCmd ], Nothing )
+            ( fulfillmentModel, Cmd.batch [ cmd, refreshCmd, retryCmd, fulfillmentCmd ], Nothing )
 
         ForceRefresh ->
             let
                 ( refetchedModel, cmd ) =
                     refetchServers accountsPanelModel model (eligibleEntries accountsPanelModel)
+
+                ( fulfillmentModel, fulfillmentCmd ) =
+                    fetchFulfillment accountsPanelModel refetchedModel
             in
-            ( refetchedModel, cmd, Nothing )
+            ( fulfillmentModel, Cmd.batch [ cmd, fulfillmentCmd ], Nothing )
 
         Animate animMsg ->
             let
@@ -1121,6 +1173,48 @@ update accountsPanelModel msg model =
             , Nothing
             )
 
+        TabClicked tab ->
+            ( { model | tab = tab }, Cmd.none, Nothing )
+
+        FulfillmentMsg subMsg ->
+            let
+                ( fulfillment, cmd, maybeAccountsPanelMsg ) =
+                    Fulfillment.update accountsPanelModel model.selectedThread subMsg model.fulfillment
+            in
+            ( { model | fulfillment = fulfillment }, Cmd.map FulfillmentMsg cmd, maybeAccountsPanelMsg )
+
+        FulfillmentThreadSelected key ->
+            let
+                newSelection : Maybe String
+                newSelection =
+                    if model.selectedThread == Just key then
+                        Nothing
+
+                    else
+                        Just key
+
+                openCmd : Cmd Msg
+                openCmd =
+                    newSelection
+                        |> Maybe.andThen (Fulfillment.threadByKey model.fulfillment)
+                        |> Maybe.map (Fulfillment.openCmd accountsPanelModel model.fulfillment >> Cmd.map FulfillmentMsg)
+                        |> Maybe.withDefault Cmd.none
+
+                urlCmd : Cmd Msg
+                urlCmd =
+                    case ( model.pageContext, newSelection |> Maybe.andThen (Fulfillment.threadByKey model.fulfillment) ) of
+                        ( Just ctx, Just thread ) ->
+                            Browser.Navigation.replaceUrl ctx.navKey
+                                (Fulfillment.threadUrl accountsPanelModel.mainFrontendHost thread.host thread.subscription.id Nothing)
+
+                        ( Just ctx, Nothing ) ->
+                            Browser.Navigation.replaceUrl ctx.navKey ctx.path
+
+                        _ ->
+                            Cmd.none
+            in
+            ( { model | selectedThread = newSelection }, Cmd.batch [ openCmd, urlCmd ], Nothing )
+
         PushRefreshDebounceElapsed host generation ->
             if Dict.get host model.pushRefreshGenerations == Just generation then
                 let
@@ -1128,8 +1222,13 @@ update accountsPanelModel msg model =
                         refetchServers accountsPanelModel
                             model
                             (eligibleEntries accountsPanelModel |> List.filter (\entry -> entry.server.frontendHost == host))
+
+                    -- A fulfillment-note push (`web_push::notify_fulfillment_note`) names its host
+                    -- too, so it refreshes the Fulfillment threads (and the unread badge) the same way.
+                    ( fulfillmentModel, fulfillmentCmd ) =
+                        fetchFulfillment accountsPanelModel refreshedModel
                 in
-                ( refreshedModel, cmd, Nothing )
+                ( fulfillmentModel, Cmd.batch [ cmd, fulfillmentCmd ], Nothing )
 
             else
                 ( model, Cmd.none, Nothing )
@@ -1691,6 +1790,13 @@ avoids that.
 -}
 totalUnreadCount : Model -> Int
 totalUnreadCount model =
+    messagesUnreadCount model + Fulfillment.totalUnread model.fulfillment
+
+
+{-| Just the Messaging tab's share of `totalUnreadCount` -- unread `Message`s, not fulfillment notes.
+-}
+messagesUnreadCount : Model -> Int
+messagesUnreadCount model =
     model.messagesByServer
         |> Dict.values
         |> List.concatMap
@@ -2230,17 +2336,84 @@ conversation still peeking out beside it dismiss the drawer too, the same
 -}
 view : SharedTime.Model -> AccountsPanel.Model -> Model -> Html Msg
 view time accountsPanelModel model =
-    div [ class "messages-page" ]
-        [ searchRowView accountsPanelModel model
-        , case model.selectedGroup of
-            Nothing ->
-                groupsListView time accountsPanelModel model
+    let
+        showTabs : Bool
+        showTabs =
+            Fulfillment.hasNotes model.fulfillment
 
-            Just selected ->
-                div [ class "messages-two-pane" ]
-                    [ div [ classes [ "messages-sidebar", openClosedClass model.mobileSidebarOpen ] ] [ groupsListView time accountsPanelModel model ]
-                    , div [ class "messages-detail", onClick CloseMobileSidebar ] [ selectedGroupView time accountsPanelModel model selected ]
-                    ]
+        -- With no fulfillment notes there are no tabs at all, so Messaging is the only thing to show
+        -- whatever `model.tab` last was.
+        activeTab : Tab
+        activeTab =
+            if showTabs then
+                model.tab
+
+            else
+                MessagingTab
+    in
+    div [ class "messages-page" ]
+        ((if showTabs then
+            [ tabsView model activeTab ]
+
+          else
+            []
+         )
+            ++ (case activeTab of
+                    FulfillmentTab ->
+                        [ Fulfillment.view
+                            { time = time
+                            , accountsPanelModel = accountsPanelModel
+                            , model = model.fulfillment
+                            , selected = model.selectedThread
+                            , onSelect =
+                                if model.embeddedPanel then
+                                    Nothing
+
+                                else
+                                    Just FulfillmentThreadSelected
+                            , toMsg = FulfillmentMsg
+                            }
+                        ]
+
+                    MessagingTab ->
+                        [ searchRowView accountsPanelModel model
+                        , case model.selectedGroup of
+                            Nothing ->
+                                groupsListView time accountsPanelModel model
+
+                            Just selected ->
+                                div [ class "messages-two-pane" ]
+                                    [ div [ classes [ "messages-sidebar", openClosedClass model.mobileSidebarOpen ] ] [ groupsListView time accountsPanelModel model ]
+                                    , div [ class "messages-detail", onClick CloseMobileSidebar ] [ selectedGroupView time accountsPanelModel model selected ]
+                                    ]
+                        ]
+               )
+        )
+
+
+{-| The "Messaging" / "Fulfillment" tab bar, each with its own unread count (hidden at zero).
+-}
+tabsView : Model -> Tab -> Html Msg
+tabsView model activeTab =
+    let
+        tabButton : Tab -> String -> Int -> Html Msg
+        tabButton tab label unread =
+            button
+                [ Html.Attributes.type_ "button"
+                , classes [ "messages-tab", if tab == activeTab then "messages-tab-active" else "" ]
+                , onClick (TabClicked tab)
+                ]
+                [ text label
+                , if unread > 0 then
+                    span [ class "unread-count-badge" ] [ text (String.fromInt unread) ]
+
+                  else
+                    text ""
+                ]
+    in
+    div [ class "messages-tabs" ]
+        [ tabButton MessagingTab "Messaging" (messagesUnreadCount model)
+        , tabButton FulfillmentTab "Fulfillment" (Fulfillment.totalUnread model.fulfillment)
         ]
 
 
