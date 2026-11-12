@@ -80,7 +80,7 @@ type alias Model =
 
 type Msg
     = GotSubscriptions String (Result Grpc.Error ( Maybe AccountsPanel.Msg, List MarketSubscription ))
-    | GotMarkedRead String (Result Grpc.Error ( Maybe AccountsPanel.Msg, MarketSubscription ))
+    | GotMarkedRead (Result Grpc.Error ( Maybe AccountsPanel.Msg, MarketSubscription ))
     | GotPushStatus String (Result Grpc.Error ( Maybe AccountsPanel.Msg, Bool ))
     | PushToggleClicked Thread Bool
     | GotPushToggled String Bool (Result Grpc.Error ( Maybe AccountsPanel.Msg, () ))
@@ -309,7 +309,7 @@ markReadCmd accountsPanelModel thread =
                     |> withAccessToken (Just token)
                     |> Grpc.toTask
             )
-            |> Task.attempt (GotMarkedRead thread.key)
+            |> Task.attempt GotMarkedRead
 
 
 {-| One row per Rellm hosting subscription that has notes, among `subscriptions` (already-fetched,
@@ -403,13 +403,13 @@ update accountsPanelModel selected msg model =
         GotSubscriptions id (Err _) ->
             ( { model | feeds = Dict.update id (Maybe.map (\f -> { f | status = Failed })) model.feeds }, Cmd.none, Nothing )
 
-        GotMarkedRead _ (Ok ( maybeMsg, updatedSubscription )) ->
+        GotMarkedRead (Ok ( maybeMsg, updatedSubscription )) ->
             ( { model | feeds = Dict.map (\_ feed -> replaceSubscription updatedSubscription feed) model.feeds }
             , Cmd.none
             , maybeMsg
             )
 
-        GotMarkedRead _ (Err _) ->
+        GotMarkedRead (Err _) ->
             ( model, Cmd.none, Nothing )
 
         GotPushStatus key (Ok ( maybeMsg, registered )) ->
