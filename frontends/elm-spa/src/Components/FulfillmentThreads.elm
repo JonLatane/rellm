@@ -607,10 +607,37 @@ update accountsPanelModel selected msg model =
             )
 
         GotAdminSubscriptions id (Ok ( maybeMsg, subscriptions )) ->
-            ( { model | adminFeeds = Dict.update id (Maybe.map (\f -> { f | status = Loaded subscriptions })) model.adminFeeds }
-            , Cmd.none
-            , maybeMsg
-            )
+            let
+                updated : Model
+                updated =
+                    { model | adminFeeds = Dict.update id (Maybe.map (\f -> { f | status = Loaded subscriptions })) model.adminFeeds }
+
+                -- An order that is selected (by a deep link, or synced from the embedded panel) is opened
+                -- as soon as it loads -- once: an order moves out of awaiting on its first open, and
+                -- `saving` holds off a second one while that write is in flight.
+                openThread : Maybe Thread
+                openThread =
+                    selected
+                        |> Maybe.andThen (threadByKey updated)
+                        |> Maybe.andThen
+                            (\thread ->
+                                if thread.admin && not (Dict.member thread.key updated.saving) then
+                                    Just thread
+
+                                else
+                                    Nothing
+                            )
+            in
+            case openThread of
+                Just thread ->
+                    let
+                        ( opened, openCmd ) =
+                            openAdmin accountsPanelModel updated thread
+                    in
+                    ( opened, openCmd, maybeMsg )
+
+                Nothing ->
+                    ( updated, Cmd.none, maybeMsg )
 
         GotAdminSubscriptions id (Err _) ->
             ( { model | adminFeeds = Dict.update id (Maybe.map (\f -> { f | status = Failed })) model.adminFeeds }, Cmd.none, Nothing )

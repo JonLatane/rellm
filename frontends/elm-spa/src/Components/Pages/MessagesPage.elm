@@ -596,6 +596,25 @@ selectSubscriptionThread key model =
     }
 
 
+{-| Runs a thread's opening steps (`Fulfillment.openCmd` for the user's own subscription threads,
+`Fulfillment.openAdmin` for admin orders) if `maybeKey` names a thread that is already loaded. If it isn't
+loaded yet, `Fulfillment.update` runs them when its feed arrives.
+-}
+openSelectedThread : AccountsPanel.Model -> Fulfillment.Model -> Maybe String -> ( Fulfillment.Model, Cmd Msg )
+openSelectedThread accountsPanelModel fulfillment maybeKey =
+    case maybeKey |> Maybe.andThen (Fulfillment.threadByKey fulfillment) of
+        Just thread ->
+            if thread.admin then
+                Fulfillment.openAdmin accountsPanelModel fulfillment thread
+                    |> Tuple.mapSecond (Cmd.map FulfillmentMsg)
+
+            else
+                ( fulfillment, Cmd.map FulfillmentMsg (Fulfillment.openCmd accountsPanelModel fulfillment thread) )
+
+        Nothing ->
+            ( fulfillment, Cmd.none )
+
+
 fetchFulfillment : AccountsPanel.Model -> Model -> ( Model, Cmd Msg )
 fetchFulfillment accountsPanelModel model =
     let
@@ -1190,54 +1209,56 @@ update accountsPanelModel msg model =
             )
 
         TabClicked tab ->
-            -- Returning to Subscriptions with a thread still open marks it read now (it wasn't while hidden).
-            ( { model | tab = tab }
-            , case ( tab, model.selectedThread |> Maybe.andThen (Fulfillment.threadByKey model.fulfillment) ) of
-                ( SubscriptionsTab, Just thread ) ->
-                    if thread.admin then
-                        Cmd.none
+            -- Returning to a tab with its thread still open runs the opening steps now (they didn't run
+            -- while it was hidden): marks a subscription thread's notes read, moves an awaiting order to
+            -- In Progress.
+            let
+                ( openedFulfillment, openCmd ) =
+                    case ( tab, model.selectedThread ) of
+                        ( SubscriptionsTab, Just key ) ->
+                            if String.startsWith "admin/" key then
+                                ( model.fulfillment, Cmd.none )
 
-                    else
-                        Cmd.map FulfillmentMsg (Fulfillment.openCmd accountsPanelModel model.fulfillment thread)
+                            else
+                                openSelectedThread accountsPanelModel model.fulfillment (Just key)
 
-                _ ->
-                    Cmd.none
-            , Nothing
-            )
+                        ( FulfillmentTab, Just key ) ->
+                            if String.startsWith "admin/" key then
+                                openSelectedThread accountsPanelModel model.fulfillment (Just key)
+
+                            else
+                                ( model.fulfillment, Cmd.none )
+
+                        _ ->
+                            ( model.fulfillment, Cmd.none )
+            in
+            ( { model | tab = tab, fulfillment = openedFulfillment }, openCmd, Nothing )
 
         EmbeddedThreadLinkClicked _ ->
             ( model, Cmd.none, Nothing )
 
         SyncSelectedThread key ->
             let
-                syncedThread : Maybe Fulfillment.Thread
-                syncedThread =
-                    Fulfillment.threadByKey model.fulfillment key
+                -- The tab follows the key (an admin order's is `admin/`-prefixed), so it's right even
+                -- before the feeds have loaded; whichever feed loads next then opens the thread.
+                isAdminKey : Bool
+                isAdminKey =
+                    String.startsWith "admin/" key
+
+                ( openedFulfillment, openCmd ) =
+                    openSelectedThread accountsPanelModel model.fulfillment (Just key)
             in
             ( { model
                 | selectedThread = Just key
+                , fulfillment = openedFulfillment
                 , tab =
-                    case syncedThread of
-                        Just thread ->
-                            if thread.admin then
-                                FulfillmentTab
-
-                            else
-                                SubscriptionsTab
-
-                        Nothing ->
-                            SubscriptionsTab
-              }
-            , case syncedThread of
-                Just thread ->
-                    if thread.admin then
-                        Cmd.none
+                    if isAdminKey then
+                        FulfillmentTab
 
                     else
-                        Cmd.map FulfillmentMsg (Fulfillment.openCmd accountsPanelModel model.fulfillment thread)
-
-                Nothing ->
-                    Cmd.none
+                        SubscriptionsTab
+              }
+            , openCmd
             , Nothing
             )
 
@@ -1247,11 +1268,18 @@ update accountsPanelModel msg model =
                 -- showing, new admin notes must stay unread rather than be marked read unseen.
                 visibleSelection : Maybe String
                 visibleSelection =
-                    if model.tab == SubscriptionsTab then
-                        model.selectedThread
+                    model.selectedThread
+                        |> Maybe.andThen
+                            (\key ->
+                                if String.startsWith "admin/" key && model.tab == FulfillmentTab then
+                                    Just key
 
-                    else
-                        Nothing
+                                else if not (String.startsWith "admin/" key) && model.tab == SubscriptionsTab then
+                                    Just key
+
+                                else
+                                    Nothing
+                            )
 
                 ( fulfillment, cmd, maybeAccountsPanelMsg ) =
                     Fulfillment.update accountsPanelModel visibleSelection subMsg model.fulfillment
