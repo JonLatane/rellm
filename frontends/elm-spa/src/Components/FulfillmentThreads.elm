@@ -437,8 +437,8 @@ fetchAll accountsPanelModel model =
                 wanted
                 |> Dict.filter (\id _ -> List.member id (List.map Tuple.second wanted))
 
-        fetchCmd : GetMarketSubscriptionsRequestType -> (String -> Result Grpc.Error ( Maybe AccountsPanel.Msg, List MarketSubscription ) -> Msg) -> ( RellmAccounts.RellmAccount, String ) -> Cmd Msg
-        fetchCmd requestType toMsg ( account, id ) =
+        listingTask : ( RellmAccounts.RellmAccount, String ) -> GetMarketSubscriptionsRequestType -> Task Grpc.Error ( Maybe AccountsPanel.Msg, List MarketSubscription )
+        listingTask ( account, _ ) requestType =
             AccountsPanel.performWithAccountServer
                 accountsPanelModel
                 ( Just account.userId, account.server )
@@ -449,12 +449,25 @@ fetchAll accountsPanelModel model =
                         |> Grpc.toTask
                 )
                 |> Task.map (\( m, response ) -> ( m, response.marketSubscriptions ))
+
+        fetchCmd : GetMarketSubscriptionsRequestType -> (String -> Result Grpc.Error ( Maybe AccountsPanel.Msg, List MarketSubscription ) -> Msg) -> ( RellmAccounts.RellmAccount, String ) -> Cmd Msg
+        fetchCmd requestType toMsg ( account, id ) =
+            listingTask ( account, id ) requestType
                 |> Task.attempt (toMsg id)
+
+        -- A server that hasn't been upgraded yet rejects the all-types listing (`invalid_request_type`): fall
+        -- back to the Rellm-hosting-only one it does have, so its existing orders still show (without chats
+        -- on the other types, which it can't hold anyway).
+        adminFetchCmd : ( RellmAccounts.RellmAccount, String ) -> Cmd Msg
+        adminFetchCmd ( account, id ) =
+            listingTask ( account, id ) GETMARKETSUBSCRIPTIONSREQUESTFORALLADMIN
+                |> Task.onError (\_ -> listingTask ( account, id ) GETMARKETSUBSCRIPTIONSREQUESTFORFULFILLMENTADMIN)
+                |> Task.attempt (GotAdminSubscriptions id)
     in
     ( { model | feeds = syncFeeds entries model.feeds, adminFeeds = syncFeeds adminEntries model.adminFeeds }
     , Cmd.batch
         (List.map (fetchCmd GETMARKETSUBSCRIPTIONSREQUESTFORPURCHASE GotSubscriptions) entries
-            ++ List.map (fetchCmd GETMARKETSUBSCRIPTIONSREQUESTFORALLADMIN GotAdminSubscriptions) adminEntries
+            ++ List.map adminFetchCmd adminEntries
         )
     )
 
