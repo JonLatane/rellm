@@ -36,7 +36,8 @@ fn media_storage_product(admin: &models::User, conn: &mut crate::db_connection::
             sold_count: 0,
             details: Some(market_product::Details::MediaStorageSubscriptionDetails(
                 MediaStorageSubscriptionDetails {
-                    allocation_bytes: 1_073_741_824, // 1GB
+                    allocation_bytes: 1_073_741_824, // 1GB,
+                    ..Default::default()
                 },
             )),
         },
@@ -62,6 +63,7 @@ fn ai_grants_product(admin: &models::User, conn: &mut crate::db_connection::PgPo
                 ai_provider_id: "some-provider".to_string(),
                 model_names: vec!["gemini-2.5-flash-image".to_string()],
                 tokens: 100_000,
+                ..Default::default()
             })),
         },
         admin,
@@ -91,6 +93,7 @@ fn permissions_access_product(
                     permissions: permissions.into_iter().map(|p| p as i32).collect(),
                     name: "Facebook Sync Access".to_string(),
                     description: "Sync your posts and events to Facebook.".to_string(),
+                    ..Default::default()
                 },
             )),
         },
@@ -174,6 +177,7 @@ fn terminates_media_storage_subscription_once_canceled_and_renews_at_have_both_p
             PurchaseType::MediaStorage,
             serde_json::to_value(MediaStorageSubscriptionDetails {
                 allocation_bytes: 1_073_741_824,
+                ..Default::default()
             })
             .unwrap(),
             Some(an_hour_ago()),
@@ -220,6 +224,7 @@ fn terminates_permissions_access_subscription_removing_only_its_own_granted_perm
                 permissions: granted_permissions.iter().map(|p| *p as i32).collect(),
                 name: "Facebook Sync Access".to_string(),
                 description: "Sync your posts and events to Facebook.".to_string(),
+                ..Default::default()
             })
             .unwrap(),
             Some(an_hour_ago()),
@@ -266,6 +271,7 @@ fn terminates_ai_grants_subscription_as_a_no_op_that_still_marks_service_termina
                 ai_provider_id: "some-provider".to_string(),
                 model_names: vec!["gemini-2.5-flash-image".to_string()],
                 tokens: 100_000,
+                ..Default::default()
             })
             .unwrap(),
             Some(an_hour_ago()),
@@ -304,6 +310,7 @@ fn an_indefinite_subscription_is_never_picked_up_for_renewal() {
             PurchaseType::MediaStorage,
             serde_json::to_value(MediaStorageSubscriptionDetails {
                 allocation_bytes: 1_073_741_824,
+                ..Default::default()
             })
             .unwrap(),
             None,
@@ -344,6 +351,7 @@ fn does_not_terminate_a_canceled_subscription_whose_renews_at_is_still_in_the_fu
             PurchaseType::MediaStorage,
             serde_json::to_value(MediaStorageSubscriptionDetails {
                 allocation_bytes: 1_073_741_824,
+                ..Default::default()
             })
             .unwrap(),
             Some(an_hour_ago()),
@@ -387,6 +395,7 @@ fn skips_a_subscription_that_is_already_service_terminated() {
             PurchaseType::MediaStorage,
             serde_json::to_value(MediaStorageSubscriptionDetails {
                 allocation_bytes: 1_073_741_824,
+                ..Default::default()
             })
             .unwrap(),
             Some(an_hour_ago()),

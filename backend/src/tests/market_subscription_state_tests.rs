@@ -126,7 +126,7 @@ fn media_storage_product_request(available_count: u32) -> MarketProduct {
         available_count,
         sold_count: 0,
         details: Some(market_product::Details::MediaStorageSubscriptionDetails(
-            MediaStorageSubscriptionDetails { allocation_bytes: 1_073_741_824 },
+            MediaStorageSubscriptionDetails { allocation_bytes: 1_073_741_824, ..Default::default() },
         )),
     }
 }
@@ -162,7 +162,7 @@ fn subscribe(
             period: PurchasePeriod::Monthly.to_string_purchase_period(),
             amount: 500,
             currency: 840,
-            details: serde_json::to_value(MediaStorageSubscriptionDetails { allocation_bytes: 1_073_741_824 })
+            details: serde_json::to_value(MediaStorageSubscriptionDetails { allocation_bytes: 1_073_741_824, ..Default::default() })
                 .unwrap(),
             renews_at,
             stripe_customer_id: None,

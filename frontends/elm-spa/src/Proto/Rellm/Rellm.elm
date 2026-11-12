@@ -458,8 +458,8 @@ To run it, add a dependency via `elm install` on [`elm-protocol-buffers`](https:
  instead of a checkout. Clients should branch on `state`, not on `canceled_at`.
 
  ##### Fulfillment chats, read tracking, and the admin perspective
- A `PURCHASE_TYPE_RELLM_HOSTING` subscription is set up by hand, and the conversation about that lives in its
- `fulfillment_notes` (an append-only chat, see [`UpdateMarketSubscription`](#grpc-api-UpdateMarketSubscription)). The
+ *Every* subscription, whatever its `PurchaseType`, has a chat: its `fulfillment_notes` (an append-only conversation
+ between the buyer and the host admins, see [`UpdateMarketSubscription`](#grpc-api-UpdateMarketSubscription)). The
  same notes are seen from two sides:
 
  - **The buyer** reads them on their own subscription (`GetMarketSubscriptions`, or `User.market_subscriptions`). Their
@@ -1417,12 +1417,12 @@ unregisterMarketSubscriptionPush =
 {-| A template for a gRPC call to the method 'RegisterMarketSubscriptionPush' sending a `MarketSubscriptionPushRequest` to get back a `Empty`.
 
  Opts one of the current user's already-registered Web Push subscriptions (see
- `RegisterPushSubscription`) in to notifications for a `PURCHASE_TYPE_RELLM_HOSTING`
- MarketSubscription's fulfillment chat: every `FulfillmentNote` someone *else* appends to it
+ `RegisterPushSubscription`) in to notifications for a MarketSubscription's (any
+ `PurchaseType`) fulfillment chat: every `FulfillmentNote` someone *else* appends to it
  (`UpdateMarketSubscription`) pushes a notification to the device, via the same VAPID setup
  Messages use. *Authenticated* -- the subscription's own buyer, or an Admin; re-registering is a
  no-op. Fails with `push_subscription_not_registered` if `endpoint` isn't one of the caller's own
- registered Web Push subscriptions, and `not_a_rellm_hosting_subscription` for any other type.
+ registered Web Push subscriptions,.
  Notifications are also re-checked at send time: a recipient who is no longer the buyer or an
  Admin is skipped, so losing access to the chat also stops its notifications.
 
@@ -1441,8 +1441,8 @@ registerMarketSubscriptionPush =
 
 {-| A template for a gRPC call to the method 'MarkFulfillmentNotesRead' sending a `MarkFulfillmentNotesReadRequest` to get back a `MarketSubscription`.
 
- Marks all of a `PURCHASE_TYPE_RELLM_HOSTING` MarketSubscription's current `fulfillment_notes` read
- by stamping `RellmHostingSubscriptionDetails.notes_last_read` with now. *Authenticated*, and only
+ Marks all of a MarketSubscription's current `fulfillment_notes` read (any `PurchaseType`)
+ by stamping its details' `notes_last_read` with now. *Authenticated*, and only
  the subscription's own buyer (`PermissionDenied` otherwise -- even an Admin, since the marker is
  the buyer's). Idempotent. Returns the updated subscription.
 
@@ -1461,7 +1461,9 @@ markFulfillmentNotesRead =
 
 {-| A template for a gRPC call to the method 'UpdateMarketSubscription' sending a `MarketSubscription` to get back a `MarketSubscription`.
 
- Appends to a `PURCHASE_TYPE_RELLM_HOSTING` MarketSubscription's own `fulfillment_notes` (nothing
+ Appends to a MarketSubscription's own `fulfillment_notes` (any `PurchaseType` -- see
+ `MediaStorageSubscriptionDetails.fulfillment_notes`; the request's `details` must be the variant matching the
+ subscription's type; nothing
  else -- every other field, including `additional_information`, is immutable after purchase and
  silently ignored if changed) -- backs `/market/fulfillment`. A new entry must be appended (not
  inserted/reordered/removed) after whatever's already stored, and its `user_id` must match the

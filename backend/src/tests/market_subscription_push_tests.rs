@@ -215,7 +215,7 @@ fn an_admin_can_opt_in_but_an_unrelated_user_cannot_do_anything() {
 }
 
 #[test]
-fn only_rellm_hosting_subscriptions_have_a_chat_to_be_notified_about() {
+fn any_subscription_type_can_opt_in_to_its_chat_notifications() {
     let mut conn = test_conn();
     conn.test_transaction::<_, tonic::Status, _>(|conn| {
         let admin = admin(conn, "mkt_push_type_admin");
@@ -231,7 +231,7 @@ fn only_rellm_hosting_subscriptions_have_a_chat_to_be_notified_about() {
                 available_count: 0,
                 sold_count: 0,
                 details: Some(market_product::Details::MediaStorageSubscriptionDetails(
-                    MediaStorageSubscriptionDetails { allocation_bytes: 1 },
+                    MediaStorageSubscriptionDetails { allocation_bytes: 1, ..Default::default() },
                 )),
             },
             &admin,
@@ -246,7 +246,7 @@ fn only_rellm_hosting_subscriptions_have_a_chat_to_be_notified_about() {
                 period: PurchasePeriod::Monthly.to_string_purchase_period(),
                 amount: 500,
                 currency: 840,
-                details: serde_json::to_value(MediaStorageSubscriptionDetails { allocation_bytes: 1 }).unwrap(),
+                details: serde_json::to_value(MediaStorageSubscriptionDetails { allocation_bytes: 1, ..Default::default() }).unwrap(),
                 renews_at: None,
                 stripe_customer_id: None,
                 stripe_payment_method_id: None,
@@ -255,9 +255,9 @@ fn only_rellm_hosting_subscriptions_have_a_chat_to_be_notified_about() {
         )?;
         register_device(conn, &buyer, ENDPOINT);
 
-        let err = register_market_subscription_push(push_request(&subscription, ENDPOINT), &buyer, conn)
-            .unwrap_err();
-        assert_eq!(err.message(), "not_a_rellm_hosting_subscription");
+        // Every `PurchaseType` has a fulfillment chat, not just Rellm hosting.
+        register_market_subscription_push(push_request(&subscription, ENDPOINT), &buyer, conn)?;
+        assert!(status(conn, &buyer, &subscription));
         Ok(())
     });
 }
@@ -522,7 +522,7 @@ fn only_the_buyer_may_mark_read_not_even_an_admin() {
 }
 
 #[test]
-fn marking_read_is_rejected_for_non_hosting_subscriptions_and_unknown_ids() {
+fn marking_read_works_for_any_subscription_type_and_rejects_unknown_ids() {
     let mut conn = test_conn();
     conn.test_transaction::<_, tonic::Status, _>(|conn| {
         let admin = admin(conn, "mkt_read_type_admin");
@@ -538,7 +538,7 @@ fn marking_read_is_rejected_for_non_hosting_subscriptions_and_unknown_ids() {
                 available_count: 0,
                 sold_count: 0,
                 details: Some(market_product::Details::MediaStorageSubscriptionDetails(
-                    MediaStorageSubscriptionDetails { allocation_bytes: 1 },
+                    MediaStorageSubscriptionDetails { allocation_bytes: 1, ..Default::default() },
                 )),
             },
             &admin,
@@ -553,16 +553,18 @@ fn marking_read_is_rejected_for_non_hosting_subscriptions_and_unknown_ids() {
                 period: PurchasePeriod::Monthly.to_string_purchase_period(),
                 amount: 500,
                 currency: 840,
-                details: serde_json::to_value(MediaStorageSubscriptionDetails { allocation_bytes: 1 }).unwrap(),
+                details: serde_json::to_value(MediaStorageSubscriptionDetails { allocation_bytes: 1, ..Default::default() }).unwrap(),
                 renews_at: None,
                 stripe_customer_id: None,
                 stripe_payment_method_id: None,
             },
             conn,
         )?;
-        let err = crate::rpcs::mark_fulfillment_notes_read(mark_read_request(&subscription), &buyer, conn)
-            .unwrap_err();
-        assert_eq!(err.message(), "not_a_rellm_hosting_subscription");
+        let marked = crate::rpcs::mark_fulfillment_notes_read(mark_read_request(&subscription), &buyer, conn)?;
+        let Some(market_subscription::Details::MediaStorageSubscriptionDetails(details)) = marked.details else {
+            panic!("expected media storage details");
+        };
+        assert!(details.notes_last_read.is_some(), "the marker is stamped on any type's details");
 
         let err = crate::rpcs::mark_fulfillment_notes_read(
             MarkFulfillmentNotesReadRequest { market_subscription_id: 999_999_999_i64.to_proto_id() },
@@ -601,6 +603,138 @@ fn a_client_cannot_set_notes_last_read_through_update_market_subscription() {
         }
         let updated = update_market_subscription(request, &admin, conn)?;
         assert!(notes_last_read_of(&updated).is_none());
+        Ok(())
+    });
+}
+
+
+// ----- every PurchaseType has a chat ---------------------------------------------------------
+
+fn media_storage_subscription(conn: &mut Conn, buyer: &models::User, admin: &models::User) -> models::MarketSubscription {
+    let product = create_market_product(
+        MarketProduct {
+            id: String::new(),
+            r#type: PurchaseType::MediaStorage as i32,
+            period: PurchasePeriod::Monthly as i32,
+            amount: 500,
+            currency: 840,
+            created_at: None,
+            delisted_at: None,
+            available_count: 0,
+            sold_count: 0,
+            details: Some(market_product::Details::MediaStorageSubscriptionDetails(MediaStorageSubscriptionDetails {
+                allocation_bytes: 1,
+                ..Default::default()
+            })),
+        },
+        admin,
+        conn,
+    )
+    .expect("create should succeed");
+    models::insert_market_subscription(
+        &models::NewMarketSubscription {
+            buyer_id: buyer.id,
+            product_id: product.id.to_db_id().unwrap(),
+            product_type: PurchaseType::MediaStorage.to_string_purchase_type(),
+            period: PurchasePeriod::Monthly.to_string_purchase_period(),
+            amount: 500,
+            currency: 840,
+            // Stored the way it was before the chat fields existed: no chat keys at all.
+            details: serde_json::json!({ "allocation_bytes": 1 }),
+            renews_at: None,
+            stripe_customer_id: None,
+            stripe_payment_method_id: None,
+        },
+        conn,
+    )
+    .expect("failed to insert test media storage subscription")
+}
+
+fn media_note_request(subscription: &models::MarketSubscription, author: &models::User, text: &str) -> MarketSubscription {
+    MarketSubscription {
+        id: subscription.id.to_proto_id(),
+        details: Some(market_subscription::Details::MediaStorageSubscriptionDetails(MediaStorageSubscriptionDetails {
+            allocation_bytes: 1,
+            fulfillment_notes: vec![FulfillmentNote {
+                user_id: author.id.to_proto_id(),
+                note: text.to_string(),
+                fulfillment_status: FulfillmentStatus::AwaitingHostAdmin as i32,
+                created_at: None,
+            }],
+            ..Default::default()
+        })),
+        ..Default::default()
+    }
+}
+
+#[test]
+fn an_admin_can_chat_on_a_media_storage_subscription_including_one_stored_before_chats_existed() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let admin = admin(conn, "mkt_anytype_admin");
+        let buyer = create_user(conn, "mkt_anytype_buyer");
+        let subscription = media_storage_subscription(conn, &buyer, &admin);
+
+        let updated =
+            update_market_subscription(media_note_request(&subscription, &admin, "Quota bumped."), &admin, conn)?;
+        let Some(market_subscription::Details::MediaStorageSubscriptionDetails(details)) = updated.details else {
+            panic!("expected media storage details");
+        };
+        assert_eq!(details.allocation_bytes, 1, "the rest of the details is untouched");
+        assert_eq!(details.fulfillment_notes.len(), 1);
+        assert_eq!(details.fulfillment_notes[0].note, "Quota bumped.");
+        assert!(details.fulfillment_notes[0].created_at.is_some(), "server-stamped");
+
+        // The buyer reads it, and the marker lands on the same details.
+        let marked = crate::rpcs::mark_fulfillment_notes_read(mark_read_request(&subscription), &buyer, conn)?;
+        let Some(market_subscription::Details::MediaStorageSubscriptionDetails(details)) = marked.details else {
+            panic!("expected media storage details");
+        };
+        assert!(details.notes_last_read.is_some());
+        assert_eq!(details.fulfillment_notes.len(), 1, "marking read leaves the chat alone");
+        Ok(())
+    });
+}
+
+#[test]
+fn a_non_hosting_chat_is_append_only_and_author_checked_like_any_other() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let admin = admin(conn, "mkt_anytype_rules_admin");
+        let buyer = create_user(conn, "mkt_anytype_rules_buyer");
+        let subscription = media_storage_subscription(conn, &buyer, &admin);
+
+        // Someone else's id on the note.
+        let err = update_market_subscription(media_note_request(&subscription, &buyer, "spoof"), &admin, conn)
+            .unwrap_err();
+        assert_eq!(err.message(), "fulfillment_note_user_id_mismatch");
+        // Blank text with no status change.
+        let err = update_market_subscription(media_note_request(&subscription, &admin, "  "), &admin, conn)
+            .unwrap_err();
+        assert_eq!(err.message(), "fulfillment_note_text_required");
+        // No details at all.
+        let err = update_market_subscription(
+            MarketSubscription { id: subscription.id.to_proto_id(), ..Default::default() },
+            &admin,
+            conn,
+        )
+        .unwrap_err();
+        assert_eq!(err.message(), "subscription_details_required");
+        // Dropping an existing note.
+        update_market_subscription(media_note_request(&subscription, &admin, "First."), &admin, conn)?;
+        let err = update_market_subscription(
+            MarketSubscription {
+                id: subscription.id.to_proto_id(),
+                details: Some(market_subscription::Details::MediaStorageSubscriptionDetails(
+                    MediaStorageSubscriptionDetails { allocation_bytes: 1, ..Default::default() },
+                )),
+                ..Default::default()
+            },
+            &admin,
+            conn,
+        )
+        .unwrap_err();
+        assert_eq!(err.message(), "fulfillment_notes_must_only_be_appended");
         Ok(())
     });
 }

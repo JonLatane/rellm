@@ -10,7 +10,7 @@ import Components.FulfillmentThreads as Fulfillment
 import Expect
 import Protobuf.Types.Int64 as Int64
 import Proto.Google.Protobuf
-import Proto.Rellm exposing (FulfillmentNote, MarketSubscription, defaultAuthor, defaultFulfillmentNote, defaultMarketSubscription, defaultRellmHostingSubscriptionDetails)
+import Proto.Rellm exposing (FulfillmentNote, MarketSubscription, defaultAuthor, defaultFulfillmentNote, defaultMarketSubscription, defaultMediaStorageSubscriptionDetails, defaultRellmHostingSubscriptionDetails)
 import Proto.Rellm.MarketSubscription.Details as SubscriptionDetails
 import Proto.Rellm.PurchaseType exposing (PurchaseType(..))
 import Test exposing (Test, describe, test)
@@ -36,6 +36,25 @@ hosting readAt notes =
             Just
                 (SubscriptionDetails.RellmHostingSubscriptionDetails
                     { defaultRellmHostingSubscriptionDetails
+                        | fulfillmentNotes = notes
+                        , notesLastRead = readAt |> Maybe.andThen at
+                    }
+                )
+    }
+
+
+{-| Every purchase type has a chat, not just Rellm hosting.
+-}
+mediaStorage : Maybe Int -> List FulfillmentNote -> MarketSubscription
+mediaStorage readAt notes =
+    { defaultMarketSubscription
+        | id = "media1"
+        , type_ = PURCHASETYPEMEDIASTORAGE
+        , buyer = Just { defaultAuthor | userId = "buyer" }
+        , details =
+            Just
+                (SubscriptionDetails.MediaStorageSubscriptionDetails
+                    { defaultMediaStorageSubscriptionDetails
                         | fulfillmentNotes = notes
                         , notesLastRead = readAt |> Maybe.andThen at
                     }
@@ -73,8 +92,21 @@ suite =
                         |> Fulfillment.unreadCount
                         |> Expect.equal 0
             ]
+        , describe "other purchase types"
+            [ test "a media storage subscription's admin notes are unread until the buyer reads them" <|
+                \_ ->
+                    ( mediaStorage Nothing [ note "admin" 10, note "buyer" 12 ] |> Fulfillment.unreadCount
+                    , mediaStorage (Just 11) [ note "admin" 10, note "admin" 20 ] |> Fulfillment.unreadCount
+                    )
+                        |> Expect.equal ( 1, 1 )
+            , test "and it gets a thread link once it has notes, like Rellm hosting" <|
+                \_ ->
+                    Fulfillment.subscriptionLinks "" "main.example" "main.example" [ mediaStorage Nothing [ note "admin" 10 ], mediaStorage Nothing [] ]
+                        |> List.map .unread
+                        |> Expect.equal [ 1 ]
+            ]
         , describe "subscriptionLinks"
-            [ test "only Rellm hosting subscriptions that have notes get a link" <|
+            [ test "a subscription with no notes gets no thread link" <|
                 \_ ->
                     Fulfillment.subscriptionLinks "" "main.example" "main.example" [ hosting Nothing [], { defaultMarketSubscription | id = "media", type_ = PURCHASETYPEMEDIASTORAGE } ]
                         |> List.length

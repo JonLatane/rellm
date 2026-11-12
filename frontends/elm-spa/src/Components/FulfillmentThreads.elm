@@ -107,6 +107,7 @@ type Msg
     | GotMarkedRead String (Result Grpc.Error ( Maybe AccountsPanel.Msg, MarketSubscription ))
     | GotPushStatus String (Result Grpc.Error ( Maybe AccountsPanel.Msg, Bool ))
     | PushToggleClicked Thread Bool
+    | EnablePushClicked Thread
     | GotPushToggled String String Bool (Result Grpc.Error ( Maybe AccountsPanel.Msg, () ))
     | DraftChanged String String
     | SaveNoteClicked Thread FulfillmentStatus
@@ -203,24 +204,69 @@ threadQuery mainFrontendHost host subscriptionId =
 
 
 
+{-| Every `PurchaseType`'s subscription details carry the fulfillment chat (`fulfillmentStatus`/`fulfillmentNotes`/
+`notesLastRead`, same fields on all four), so these three read whichever variant the subscription has.
+-}
 notesOf : MarketSubscription -> List FulfillmentNote
 notesOf subscription =
     case subscription.details of
+        Just (SubscriptionDetails.MediaStorageSubscriptionDetails details) ->
+            details.fulfillmentNotes
+
+        Just (SubscriptionDetails.AiGrantSubscriptionDetails details) ->
+            details.fulfillmentNotes
+
         Just (SubscriptionDetails.RellmHostingSubscriptionDetails details) ->
             details.fulfillmentNotes
 
-        _ ->
+        Just (SubscriptionDetails.PermissionsAccessSubscriptionDetails details) ->
+            details.fulfillmentNotes
+
+        Nothing ->
             []
 
 
 notesLastRead : MarketSubscription -> Maybe Proto.Google.Protobuf.Timestamp
 notesLastRead subscription =
     case subscription.details of
+        Just (SubscriptionDetails.MediaStorageSubscriptionDetails details) ->
+            details.notesLastRead
+
+        Just (SubscriptionDetails.AiGrantSubscriptionDetails details) ->
+            details.notesLastRead
+
         Just (SubscriptionDetails.RellmHostingSubscriptionDetails details) ->
             details.notesLastRead
 
-        _ ->
+        Just (SubscriptionDetails.PermissionsAccessSubscriptionDetails details) ->
+            details.notesLastRead
+
+        Nothing ->
             Nothing
+
+
+{-| The same subscription with `notes`/`status` as its chat -- what `UpdateMarketSubscription` is sent.
+-}
+withNotes : List FulfillmentNote -> FulfillmentStatus -> MarketSubscription -> MarketSubscription
+withNotes notes status subscription =
+    { subscription
+        | details =
+            case subscription.details of
+                Just (SubscriptionDetails.MediaStorageSubscriptionDetails details) ->
+                    Just (SubscriptionDetails.MediaStorageSubscriptionDetails { details | fulfillmentNotes = notes, fulfillmentStatus = status })
+
+                Just (SubscriptionDetails.AiGrantSubscriptionDetails details) ->
+                    Just (SubscriptionDetails.AiGrantSubscriptionDetails { details | fulfillmentNotes = notes, fulfillmentStatus = status })
+
+                Just (SubscriptionDetails.RellmHostingSubscriptionDetails details) ->
+                    Just (SubscriptionDetails.RellmHostingSubscriptionDetails { details | fulfillmentNotes = notes, fulfillmentStatus = status })
+
+                Just (SubscriptionDetails.PermissionsAccessSubscriptionDetails details) ->
+                    Just (SubscriptionDetails.PermissionsAccessSubscriptionDetails { details | fulfillmentNotes = notes, fulfillmentStatus = status })
+
+                Nothing ->
+                    Nothing
+    }
 
 
 buyerId : MarketSubscription -> String
@@ -285,13 +331,12 @@ userThreads model =
         |> List.sortBy (.subscription >> createdAtMillis)
 
 
-{-| Every Rellm hosting order on the server (admin accounts only), oldest first -- the Fulfillment
+{-| Every subscription on the server, of every type (admin accounts only), oldest first -- the Fulfillment
 tab's rows, with an `admin/` key prefix so an admin who is also a buyer doesn't get one key for two rows.
 -}
 adminThreads : Model -> List Thread
 adminThreads model =
     loadedSubscriptions model.adminFeeds
-        |> List.filter (\( _, s ) -> s.type_ == PURCHASETYPERELLMHOSTING)
         |> List.map (\( feed, s ) -> { key = "admin/" ++ threadKey feed.host s.id, host = feed.host, accountId = feed.accountId, subscription = s, admin = True })
         |> List.sortBy (.subscription >> createdAtMillis)
 
@@ -320,11 +365,29 @@ totalUnread model =
 fulfillmentStatusOf : MarketSubscription -> FulfillmentStatus
 fulfillmentStatusOf subscription =
     case subscription.details of
+        Just (SubscriptionDetails.MediaStorageSubscriptionDetails details) ->
+            details.fulfillmentStatus
+
+        Just (SubscriptionDetails.AiGrantSubscriptionDetails details) ->
+            details.fulfillmentStatus
+
         Just (SubscriptionDetails.RellmHostingSubscriptionDetails details) ->
             details.fulfillmentStatus
 
-        _ ->
+        Just (SubscriptionDetails.PermissionsAccessSubscriptionDetails details) ->
+            details.fulfillmentStatus
+
+        Nothing ->
             FULFILLMENTSTATUSAWAITINGHOSTADMIN
+
+
+{-| Only Rellm hosting is set up by hand, so only it has a work queue (`fulfillmentStatus` means nothing for the
+other types, whose entitlement is automatic): the admin Fulfillment tab's "awaiting" count and
+auto-In-Progress are Rellm hosting only.
+-}
+isHosting : MarketSubscription -> Bool
+isHosting subscription =
+    subscription.type_ == PURCHASETYPERELLMHOSTING
 
 
 {-| Orders still awaiting a host admin -- the Fulfillment tab's badge.
@@ -332,7 +395,7 @@ fulfillmentStatusOf subscription =
 awaitingCount : Model -> Int
 awaitingCount model =
     adminThreads model
-        |> List.filter (\t -> fulfillmentStatusOf t.subscription == FULFILLMENTSTATUSAWAITINGHOSTADMIN)
+        |> List.filter (\t -> isHosting t.subscription && fulfillmentStatusOf t.subscription == FULFILLMENTSTATUSAWAITINGHOSTADMIN)
         |> List.length
 
 
@@ -445,7 +508,7 @@ Subscriptions lists show.
 subscriptionLinks : String -> String -> String -> List MarketSubscription -> List { subscription : MarketSubscription, title : String, unread : Int, url : String }
 subscriptionLinks basePath mainFrontendHost host subscriptions =
     subscriptions
-        |> List.filter (\s -> s.type_ == PURCHASETYPERELLMHOSTING && not (List.isEmpty (notesOf s)))
+        |> List.filter (\s -> not (List.isEmpty (notesOf s)))
         |> List.map
             (\s ->
                 { subscription = s
@@ -485,7 +548,7 @@ openAdmin accountsPanelModel model thread =
     let
         autoProgress : Bool
         autoProgress =
-            fulfillmentStatusOf thread.subscription == FULFILLMENTSTATUSAWAITINGHOSTADMIN
+            isHosting thread.subscription && fulfillmentStatusOf thread.subscription == FULFILLMENTSTATUSAWAITINGHOSTADMIN
     in
     ( -- `saving` blocks the composer until the updated notes arrive: a manual save in the meantime would
       -- send the *old* note history back and be rejected by the append-only check.
@@ -509,34 +572,25 @@ openAdmin accountsPanelModel model thread =
     )
 
 
-withDetails : MarketSubscription -> Proto.Rellm.RellmHostingSubscriptionDetails -> MarketSubscription
-withDetails subscription details =
-    { subscription | details = Just (SubscriptionDetails.RellmHostingSubscriptionDetails details) }
-
-
-{-| Appends one note (attributed to the acting admin account, with `newStatus`) to the order's notes and
+{-| Appends one note (attributed to the acting admin account, with `newStatus`) to the subscription's chat and
 sends the whole subscription through `UpdateMarketSubscription` -- its append-only contract wants the
 last-fetched notes back verbatim plus the new one, exactly as `MarketFulfillmentPage` does.
 -}
 appendNoteCmd : AccountsPanel.Model -> Thread -> String -> FulfillmentStatus -> (String -> Result Grpc.Error ( Maybe AccountsPanel.Msg, MarketSubscription ) -> Msg) -> Cmd Msg
 appendNoteCmd accountsPanelModel thread noteText newStatus toMsg =
-    case ( accountUserId thread.accountId, thread.subscription.details ) of
-        ( Just userId, Just (SubscriptionDetails.RellmHostingSubscriptionDetails details) ) ->
+    case accountUserId thread.accountId of
+        Just userId ->
             let
-                updatedDetails : Proto.Rellm.RellmHostingSubscriptionDetails
-                updatedDetails =
-                    { details
-                        | fulfillmentNotes =
-                            details.fulfillmentNotes
-                                ++ [ { defaultFulfillmentNote | userId = userId, note = noteText, fulfillmentStatus = newStatus } ]
-                    }
+                notes : List FulfillmentNote
+                notes =
+                    notesOf thread.subscription ++ [ { defaultFulfillmentNote | userId = userId, note = noteText, fulfillmentStatus = newStatus } ]
             in
             Market.updateMarketSubscription accountsPanelModel
                 ( Just userId, thread.host )
-                (withDetails thread.subscription updatedDetails)
+                (withNotes notes newStatus thread.subscription)
                 |> Task.attempt (toMsg thread.key)
 
-        _ ->
+        Nothing ->
             Cmd.none
 
 
@@ -548,6 +602,13 @@ different (or missing) endpoint must never be reused.
 optInKey : AccountsPanel.Model -> Thread -> String
 optInKey accountsPanelModel thread =
     thread.key ++ "|" ++ (pushRequest accountsPanelModel thread |> Maybe.withDefault "")
+
+
+accountFor : AccountsPanel.Model -> Thread -> Maybe RellmAccounts.RellmAccount
+accountFor accountsPanelModel thread =
+    AccountsPanel.enabledAccounts accountsPanelModel
+        |> List.filter (\account -> RellmAccounts.rellmAccountId account == thread.accountId)
+        |> List.head
 
 
 pushRequest : AccountsPanel.Model -> Thread -> Maybe String
@@ -707,6 +768,15 @@ update accountsPanelModel selected msg model =
         GotPushStatus _ (Err _) ->
             ( model, Cmd.none, Nothing )
 
+        -- The account has no push subscription in this browser yet: do what the Accounts panel's own
+        -- "Push Notifications" switch does (`EnableNotificationsClicked` -- permission prompt, subscribe,
+        -- register), including its iOS "add to Home Screen first" error.
+        EnablePushClicked thread ->
+            ( model
+            , Cmd.none
+            , accountFor accountsPanelModel thread |> Maybe.map AccountsPanel.EnableNotificationsClicked
+            )
+
         PushToggleClicked thread wanted ->
             case pushRequest accountsPanelModel thread of
                 Nothing ->
@@ -835,7 +905,7 @@ threadView config thread =
 
         isChat : Bool
         isChat =
-            thread.admin || (subscription.type_ == PURCHASETYPERELLMHOSTING && not (List.isEmpty notes))
+            thread.admin || not (List.isEmpty notes)
 
         unread : Int
         unread =
@@ -852,7 +922,7 @@ threadView config thread =
         headerContent : List (Html msg)
         headerContent =
             [ span [ class "fulfillment-thread-title" ] [ text (threadTitle thread) ]
-            , if thread.admin then
+            , if thread.admin && isHosting subscription then
                 span [ class "fulfillment-thread-state" ] [ text (statusLabel (fulfillmentStatusOf subscription)) ]
 
               else
@@ -967,7 +1037,11 @@ threadTitle thread =
                 _ ->
                     ""
     in
-    Market.purchaseTypeLabel subscription.type_
+    -- What was actually bought ("5 GB Media Storage", a permissions bundle's name, ...), not just its type.
+    (subscription.marketProduct
+        |> Maybe.map Market.productName
+        |> Maybe.withDefault (Market.purchaseTypeLabel subscription.type_)
+    )
         ++ (if String.isEmpty domain then
                 ""
 
@@ -1134,12 +1208,16 @@ composerView config thread =
                         "Add Note"
                     )
                 ]
-            , button
-                [ Html.Attributes.type_ "button"
-                , onClick (config.toMsg (SaveNoteClicked thread FULFILLMENTSTATUSFULFILLED))
-                , disabled (saving || (status == FULFILLMENTSTATUSFULFILLED && blank))
-                ]
-                [ text "Add and Mark as Fulfilled" ]
+            , if isHosting thread.subscription then
+                button
+                    [ Html.Attributes.type_ "button"
+                    , onClick (config.toMsg (SaveNoteClicked thread FULFILLMENTSTATUSFULFILLED))
+                    , disabled (saving || (status == FULFILLMENTSTATUSFULFILLED && blank))
+                    ]
+                    [ text "Add and Mark as Fulfilled" ]
+
+              else
+                text ""
             ]
         ]
 
@@ -1148,7 +1226,30 @@ pushToggleView : ViewConfig msg -> Thread -> Html msg
 pushToggleView config thread =
     case pushRequest config.accountsPanelModel thread of
         Nothing ->
-            p [ class "market-form-hint" ] [ text "Enable notifications for this account in the Accounts panel to be notified of new updates here." ]
+            case accountFor config.accountsPanelModel thread of
+                Just account ->
+                    if AccountsPanel.canUsePushNotifications config.accountsPanelModel account then
+                        div [ class "fulfillment-push-toggle" ]
+                            [ button
+                                [ Html.Attributes.type_ "button"
+                                , onClick (config.toMsg (EnablePushClicked thread))
+                                ]
+                                [ text "Enable push notifications for updates here" ]
+                            , p [ class "market-form-hint" ]
+                                [ text "On iPhone/iPad, first add this site to your Home Screen (Share → Add to Home Screen) and enable notifications from there." ]
+                            , case Dict.get thread.accountId config.accountsPanelModel.notificationErrors of
+                                Just reason ->
+                                    div [ class "account-notification-error" ] [ text reason ]
+
+                                Nothing ->
+                                    text ""
+                            ]
+
+                    else
+                        p [ class "market-form-hint" ] [ text "This server doesn't offer push notifications." ]
+
+                Nothing ->
+                    text ""
 
         Just _ ->
             let

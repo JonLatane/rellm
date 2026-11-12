@@ -8630,9 +8630,16 @@ type alias Proto__Rellm__RellmHostingSubscriptionDetails =
 {-| The field numbers for the fields of `Proto__Rellm__AIGrantSubscriptionDetails`. This is mostly useful for internals, like documentation generation.
 
 -}
-fieldNumbersProto__Rellm__AIGrantSubscriptionDetails : { aiProviderId : Int, modelNames : Int, tokens : Int }
+fieldNumbersProto__Rellm__AIGrantSubscriptionDetails :
+    { aiProviderId : Int
+    , modelNames : Int
+    , tokens : Int
+    , fulfillmentStatus : Int
+    , fulfillmentNotes : Int
+    , notesLastRead : Int
+    }
 fieldNumbersProto__Rellm__AIGrantSubscriptionDetails =
-    { aiProviderId = 1, modelNames = 2, tokens = 3 }
+    { aiProviderId = 1, modelNames = 2, tokens = 3, fulfillmentStatus = 7, fulfillmentNotes = 8, notesLastRead = 9 }
 
 
 {-| Default for Proto__Rellm__AIGrantSubscriptionDetails. Should only be used for 'required' decoders as an initial value.
@@ -8640,7 +8647,13 @@ fieldNumbersProto__Rellm__AIGrantSubscriptionDetails =
 -}
 defaultProto__Rellm__AIGrantSubscriptionDetails : Proto__Rellm__AIGrantSubscriptionDetails
 defaultProto__Rellm__AIGrantSubscriptionDetails =
-    { aiProviderId = "", modelNames = [], tokens = Protobuf.Types.Int64.fromInts 0 0 }
+    { aiProviderId = ""
+    , modelNames = []
+    , tokens = Protobuf.Types.Int64.fromInts 0 0
+    , fulfillmentStatus = Proto.Rellm.FulfillmentStatus.defaultFulfillmentStatus
+    , fulfillmentNotes = []
+    , notesLastRead = Nothing
+    }
 
 
 {-| Declares how to decode a `Proto__Rellm__AIGrantSubscriptionDetails` from Bytes. To actually perform the conversion from Bytes, you need to use Protobuf.Decode.decode from eriktim/elm-protocol-buffers.
@@ -8653,6 +8666,19 @@ decodeProto__Rellm__AIGrantSubscriptionDetails =
         [ Protobuf.Decode.optional 1 Protobuf.Decode.string (\a r -> { r | aiProviderId = a })
         , Protobuf.Decode.repeated 2 Protobuf.Decode.string .modelNames (\a r -> { r | modelNames = a })
         , Protobuf.Decode.optional 3 Protobuf.Decode.uint64 (\a r -> { r | tokens = a })
+        , Protobuf.Decode.optional
+            7
+            Proto.Rellm.FulfillmentStatus.decodeFulfillmentStatus
+            (\a r -> { r | fulfillmentStatus = a })
+        , Protobuf.Decode.repeated
+            8
+            decodeProto__Rellm__FulfillmentNote
+            .fulfillmentNotes
+            (\a r -> { r | fulfillmentNotes = a })
+        , Protobuf.Decode.optional
+            9
+            (Protobuf.Decode.map Just Proto.Google.Protobuf.Internals_.decodeProto__Google__Protobuf__Timestamp)
+            (\a r -> { r | notesLastRead = a })
         ]
 
 
@@ -8665,6 +8691,14 @@ encodeProto__Rellm__AIGrantSubscriptionDetails value =
         [ ( 1, Protobuf.Encode.string value.aiProviderId )
         , ( 2, (Protobuf.Encode.list Protobuf.Encode.string) value.modelNames )
         , ( 3, Protobuf.Encode.uint64 value.tokens )
+        , ( 7, Proto.Rellm.FulfillmentStatus.encodeFulfillmentStatus value.fulfillmentStatus )
+        , ( 8, (Protobuf.Encode.list encodeProto__Rellm__FulfillmentNote) value.fulfillmentNotes )
+        , ( 9
+          , (Maybe.map Proto.Google.Protobuf.Internals_.encodeProto__Google__Protobuf__Timestamp
+                >> Maybe.withDefault Protobuf.Encode.none
+            )
+                value.notesLastRead
+          )
         ]
 
 
@@ -8672,15 +8706,28 @@ encodeProto__Rellm__AIGrantSubscriptionDetails value =
 
 -}
 type alias Proto__Rellm__AIGrantSubscriptionDetails =
-    { aiProviderId : String, modelNames : List String, tokens : Protobuf.Types.Int64.Int64 }
+    { aiProviderId : String
+    , modelNames : List String
+    , tokens : Protobuf.Types.Int64.Int64
+    , fulfillmentStatus : Proto.Rellm.FulfillmentStatus.FulfillmentStatus
+    , fulfillmentNotes : List Proto__Rellm__FulfillmentNote
+    , notesLastRead : Maybe Proto.Google.Protobuf.Internals_.Proto__Google__Protobuf__Timestamp
+    }
 
 
 {-| The field numbers for the fields of `Proto__Rellm__PermissionsAccessSubscriptionDetails`. This is mostly useful for internals, like documentation generation.
 
 -}
-fieldNumbersProto__Rellm__PermissionsAccessSubscriptionDetails : { permissions : Int, name : Int, description : Int }
+fieldNumbersProto__Rellm__PermissionsAccessSubscriptionDetails :
+    { permissions : Int
+    , name : Int
+    , description : Int
+    , fulfillmentStatus : Int
+    , fulfillmentNotes : Int
+    , notesLastRead : Int
+    }
 fieldNumbersProto__Rellm__PermissionsAccessSubscriptionDetails =
-    { permissions = 1, name = 2, description = 3 }
+    { permissions = 1, name = 2, description = 3, fulfillmentStatus = 7, fulfillmentNotes = 8, notesLastRead = 9 }
 
 
 {-| Default for Proto__Rellm__PermissionsAccessSubscriptionDetails. Should only be used for 'required' decoders as an initial value.
@@ -8688,7 +8735,13 @@ fieldNumbersProto__Rellm__PermissionsAccessSubscriptionDetails =
 -}
 defaultProto__Rellm__PermissionsAccessSubscriptionDetails : Proto__Rellm__PermissionsAccessSubscriptionDetails
 defaultProto__Rellm__PermissionsAccessSubscriptionDetails =
-    { permissions = [], name = "", description = "" }
+    { permissions = []
+    , name = ""
+    , description = ""
+    , fulfillmentStatus = Proto.Rellm.FulfillmentStatus.defaultFulfillmentStatus
+    , fulfillmentNotes = []
+    , notesLastRead = Nothing
+    }
 
 
 {-| Declares how to decode a `Proto__Rellm__PermissionsAccessSubscriptionDetails` from Bytes. To actually perform the conversion from Bytes, you need to use Protobuf.Decode.decode from eriktim/elm-protocol-buffers.
@@ -8706,6 +8759,19 @@ decodeProto__Rellm__PermissionsAccessSubscriptionDetails =
             (\a r -> { r | permissions = a })
         , Protobuf.Decode.optional 2 Protobuf.Decode.string (\a r -> { r | name = a })
         , Protobuf.Decode.optional 3 Protobuf.Decode.string (\a r -> { r | description = a })
+        , Protobuf.Decode.optional
+            7
+            Proto.Rellm.FulfillmentStatus.decodeFulfillmentStatus
+            (\a r -> { r | fulfillmentStatus = a })
+        , Protobuf.Decode.repeated
+            8
+            decodeProto__Rellm__FulfillmentNote
+            .fulfillmentNotes
+            (\a r -> { r | fulfillmentNotes = a })
+        , Protobuf.Decode.optional
+            9
+            (Protobuf.Decode.map Just Proto.Google.Protobuf.Internals_.decodeProto__Google__Protobuf__Timestamp)
+            (\a r -> { r | notesLastRead = a })
         ]
 
 
@@ -8719,6 +8785,14 @@ encodeProto__Rellm__PermissionsAccessSubscriptionDetails value =
         [ ( 1, (Protobuf.Encode.list Proto.Rellm.Permission.encodePermission) value.permissions )
         , ( 2, Protobuf.Encode.string value.name )
         , ( 3, Protobuf.Encode.string value.description )
+        , ( 7, Proto.Rellm.FulfillmentStatus.encodeFulfillmentStatus value.fulfillmentStatus )
+        , ( 8, (Protobuf.Encode.list encodeProto__Rellm__FulfillmentNote) value.fulfillmentNotes )
+        , ( 9
+          , (Maybe.map Proto.Google.Protobuf.Internals_.encodeProto__Google__Protobuf__Timestamp
+                >> Maybe.withDefault Protobuf.Encode.none
+            )
+                value.notesLastRead
+          )
         ]
 
 
@@ -8726,15 +8800,22 @@ encodeProto__Rellm__PermissionsAccessSubscriptionDetails value =
 
 -}
 type alias Proto__Rellm__PermissionsAccessSubscriptionDetails =
-    { permissions : List Proto.Rellm.Permission.Permission, name : String, description : String }
+    { permissions : List Proto.Rellm.Permission.Permission
+    , name : String
+    , description : String
+    , fulfillmentStatus : Proto.Rellm.FulfillmentStatus.FulfillmentStatus
+    , fulfillmentNotes : List Proto__Rellm__FulfillmentNote
+    , notesLastRead : Maybe Proto.Google.Protobuf.Internals_.Proto__Google__Protobuf__Timestamp
+    }
 
 
 {-| The field numbers for the fields of `Proto__Rellm__MediaStorageSubscriptionDetails`. This is mostly useful for internals, like documentation generation.
 
 -}
-fieldNumbersProto__Rellm__MediaStorageSubscriptionDetails : { allocationBytes : Int }
+fieldNumbersProto__Rellm__MediaStorageSubscriptionDetails :
+    { allocationBytes : Int, fulfillmentStatus : Int, fulfillmentNotes : Int, notesLastRead : Int }
 fieldNumbersProto__Rellm__MediaStorageSubscriptionDetails =
-    { allocationBytes = 1 }
+    { allocationBytes = 1, fulfillmentStatus = 7, fulfillmentNotes = 8, notesLastRead = 9 }
 
 
 {-| Default for Proto__Rellm__MediaStorageSubscriptionDetails. Should only be used for 'required' decoders as an initial value.
@@ -8742,7 +8823,11 @@ fieldNumbersProto__Rellm__MediaStorageSubscriptionDetails =
 -}
 defaultProto__Rellm__MediaStorageSubscriptionDetails : Proto__Rellm__MediaStorageSubscriptionDetails
 defaultProto__Rellm__MediaStorageSubscriptionDetails =
-    { allocationBytes = Protobuf.Types.Int64.fromInts 0 0 }
+    { allocationBytes = Protobuf.Types.Int64.fromInts 0 0
+    , fulfillmentStatus = Proto.Rellm.FulfillmentStatus.defaultFulfillmentStatus
+    , fulfillmentNotes = []
+    , notesLastRead = Nothing
+    }
 
 
 {-| Declares how to decode a `Proto__Rellm__MediaStorageSubscriptionDetails` from Bytes. To actually perform the conversion from Bytes, you need to use Protobuf.Decode.decode from eriktim/elm-protocol-buffers.
@@ -8753,7 +8838,21 @@ decodeProto__Rellm__MediaStorageSubscriptionDetails :
 decodeProto__Rellm__MediaStorageSubscriptionDetails =
     Protobuf.Decode.message
         defaultProto__Rellm__MediaStorageSubscriptionDetails
-        [ Protobuf.Decode.optional 1 Protobuf.Decode.uint64 (\a r -> { r | allocationBytes = a }) ]
+        [ Protobuf.Decode.optional 1 Protobuf.Decode.uint64 (\a r -> { r | allocationBytes = a })
+        , Protobuf.Decode.optional
+            7
+            Proto.Rellm.FulfillmentStatus.decodeFulfillmentStatus
+            (\a r -> { r | fulfillmentStatus = a })
+        , Protobuf.Decode.repeated
+            8
+            decodeProto__Rellm__FulfillmentNote
+            .fulfillmentNotes
+            (\a r -> { r | fulfillmentNotes = a })
+        , Protobuf.Decode.optional
+            9
+            (Protobuf.Decode.map Just Proto.Google.Protobuf.Internals_.decodeProto__Google__Protobuf__Timestamp)
+            (\a r -> { r | notesLastRead = a })
+        ]
 
 
 {-| Declares how to encode a `Proto__Rellm__MediaStorageSubscriptionDetails` to Bytes. To actually perform the conversion to Bytes, you need to use Protobuf.Encode.encode from eriktim/elm-protocol-buffers.
@@ -8762,14 +8861,28 @@ decodeProto__Rellm__MediaStorageSubscriptionDetails =
 encodeProto__Rellm__MediaStorageSubscriptionDetails :
     Proto__Rellm__MediaStorageSubscriptionDetails -> Protobuf.Encode.Encoder
 encodeProto__Rellm__MediaStorageSubscriptionDetails value =
-    Protobuf.Encode.message [ ( 1, Protobuf.Encode.uint64 value.allocationBytes ) ]
+    Protobuf.Encode.message
+        [ ( 1, Protobuf.Encode.uint64 value.allocationBytes )
+        , ( 7, Proto.Rellm.FulfillmentStatus.encodeFulfillmentStatus value.fulfillmentStatus )
+        , ( 8, (Protobuf.Encode.list encodeProto__Rellm__FulfillmentNote) value.fulfillmentNotes )
+        , ( 9
+          , (Maybe.map Proto.Google.Protobuf.Internals_.encodeProto__Google__Protobuf__Timestamp
+                >> Maybe.withDefault Protobuf.Encode.none
+            )
+                value.notesLastRead
+          )
+        ]
 
 
 {-| `Proto__Rellm__MediaStorageSubscriptionDetails` message
 
 -}
 type alias Proto__Rellm__MediaStorageSubscriptionDetails =
-    { allocationBytes : Protobuf.Types.Int64.Int64 }
+    { allocationBytes : Protobuf.Types.Int64.Int64
+    , fulfillmentStatus : Proto.Rellm.FulfillmentStatus.FulfillmentStatus
+    , fulfillmentNotes : List Proto__Rellm__FulfillmentNote
+    , notesLastRead : Maybe Proto.Google.Protobuf.Internals_.Proto__Google__Protobuf__Timestamp
+    }
 
 
 {-| Unwrap a `MarketPurchase` from its wrapper `MarketPurchase_.`

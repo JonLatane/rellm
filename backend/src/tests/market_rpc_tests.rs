@@ -31,7 +31,8 @@ fn media_storage_product(amount: u32, period: PurchasePeriod) -> MarketProduct {
         sold_count: 0,
         details: Some(market_product::Details::MediaStorageSubscriptionDetails(
             MediaStorageSubscriptionDetails {
-                allocation_bytes: 1_073_741_824, // 1GB
+                allocation_bytes: 1_073_741_824, // 1GB,
+                ..Default::default()
             },
         )),
     }
@@ -116,6 +117,7 @@ fn create_market_product_rejects_a_blank_permissions_access_name() {
                 permissions: vec![Permission::SyncEventsToFacebook as i32],
                 name: "  ".to_string(),
                 description: "Sync your posts and events to Facebook.".to_string(),
+                ..Default::default()
             },
         ));
         let err = create_market_product(product, &admin, conn).unwrap_err();
@@ -468,6 +470,7 @@ fn create_subscription(
             currency: 840,
             details: serde_json::to_value(MediaStorageSubscriptionDetails {
                 allocation_bytes: 1_073_741_824,
+                ..Default::default()
             })
             .unwrap(),
             renews_at: None,
@@ -848,7 +851,7 @@ fn update_market_subscription_requires_admin_even_for_the_buyer_themselves() {
 }
 
 #[test]
-fn update_market_subscription_rejects_non_rellm_hosting_subscriptions() {
+fn update_market_subscription_rejects_details_of_a_different_type_than_the_subscription() {
     let mut conn = test_conn();
     conn.test_transaction::<_, tonic::Status, _>(|conn| {
         let admin = create_user(conn, "mkt_update_sub_wrong_type_admin");
@@ -875,7 +878,7 @@ fn update_market_subscription_rejects_non_rellm_hosting_subscriptions() {
             conn,
         )
         .unwrap_err();
-        assert_eq!(err.message(), "not_a_rellm_hosting_subscription");
+        assert_eq!(err.message(), "subscription_details_type_mismatch");
 
         Ok(())
     });
@@ -1241,6 +1244,7 @@ fn permissions_access_product(permissions: Vec<Permission>) -> MarketProduct {
                 permissions: permissions.into_iter().map(|p| p as i32).collect(),
                 name: "Facebook Sync Access".to_string(),
                 description: "Sync your posts and events to Facebook.".to_string(),
+                ..Default::default()
             },
         )),
     }
@@ -1316,6 +1320,7 @@ fn update_market_product_rejects_a_non_purchasable_permission() {
                 permissions: vec![Permission::ViewPrivateContactMethods as i32],
                 name: "Facebook Sync Access".to_string(),
                 description: "Sync your posts and events to Facebook.".to_string(),
+                ..Default::default()
             },
         ));
         let err = update_market_product(update_request, &admin, conn).unwrap_err();
@@ -1349,6 +1354,7 @@ fn make_market_purchase_rejects_a_permission_no_longer_purchasable() {
             permissions: vec![Permission::Admin as i32],
             name: "Facebook Sync Access".to_string(),
             description: "Sync your posts and events to Facebook.".to_string(),
+            ..Default::default()
         })
         .expect("serialize stale details");
         diesel::update(market_products::table.filter(market_products::id.eq(product_id)))

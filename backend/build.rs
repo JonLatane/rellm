@@ -8,6 +8,12 @@ fn main() {
     tonic_prost_build::configure()
         .build_server(true)
         .type_attribute(".", "#[derive(serde::Serialize, serde::Deserialize)]")
+        // `market_subscriptions.details` rows of these types were stored before they carried the
+        // fulfillment chat fields (`fulfillment_status`/`fulfillment_notes`/`notes_last_read`), so a missing
+        // key must deserialize to its default rather than fail.
+        .type_attribute("MediaStorageSubscriptionDetails", "#[serde(default)]")
+        .type_attribute("AIGrantSubscriptionDetails", "#[serde(default)]")
+        .type_attribute("PermissionsAccessSubscriptionDetails", "#[serde(default)]")
         // Used for updating servers from 0.5.551 -> 0.5.553+. Can be removed
         // in the distant future.
         // Lets `event_settings` JSON stored before this field existed deserialize

@@ -13,7 +13,7 @@ use crate::rpcs::validate_permission;
 use crate::schema::market_subscriptions;
 
 /// *Authenticated*, requires Admin (for now -- see this RPC's own proto doc). Only ever touches a
-/// `PURCHASE_TYPE_RELLM_HOSTING` subscription's own `fulfillment_notes` (`fulfillment_status` is
+/// subscription's own `fulfillment_notes` -- of any `PurchaseType`, they all have a chat -- (`fulfillment_status` is
 /// never set directly -- see below) -- every other field (`amount`/`currency`/`domain`/
 /// `contact_email`/`additional_information`/etc.) is immutable after purchase, same "only the
 /// fields this RPC is actually for" treatment `update_market_product.rs` gives `type`/`period`.
@@ -88,14 +88,12 @@ fn notify_new_notes(
 /// transition, see `FulfillmentNote.note`'s own doc) -- the notification body falls back to it when
 /// the note has no text of its own.
 fn note_status_change_label(updated: &MarketSubscription, note: &FulfillmentNote) -> Option<String> {
-    let Some(market_subscription::Details::RellmHostingSubscriptionDetails(details)) = &updated.details else {
-        return None;
-    };
-    let index = details.fulfillment_notes.iter().position(|n| n == note)?;
+    let notes = details_fulfillment_notes(&updated.details);
+    let index = notes.iter().position(|n| n == note)?;
     let previous_status = if index == 0 {
         FulfillmentStatus::AwaitingHostAdmin as i32
     } else {
-        details.fulfillment_notes[index - 1].fulfillment_status
+        notes[index - 1].fulfillment_status
     };
     (note.fulfillment_status != previous_status).then(|| {
         match FulfillmentStatus::try_from(note.fulfillment_status) {
@@ -105,6 +103,31 @@ fn note_status_change_label(updated: &MarketSubscription, note: &FulfillmentNote
         }
         .to_string()
     })
+}
+
+/// The `fulfillment_notes` of whichever `details` variant a subscription carries -- every type has them
+/// (see `MediaStorageSubscriptionDetails.fulfillment_notes`).
+fn details_fulfillment_notes(details: &Option<market_subscription::Details>) -> Vec<FulfillmentNote> {
+    match details {
+        Some(market_subscription::Details::MediaStorageSubscriptionDetails(d)) => d.fulfillment_notes.clone(),
+        Some(market_subscription::Details::AiGrantSubscriptionDetails(d)) => d.fulfillment_notes.clone(),
+        Some(market_subscription::Details::RellmHostingSubscriptionDetails(d)) => d.fulfillment_notes.clone(),
+        Some(market_subscription::Details::PermissionsAccessSubscriptionDetails(d)) => d.fulfillment_notes.clone(),
+        None => vec![],
+    }
+}
+
+/// The `PurchaseType` a `details` variant belongs to.
+fn details_purchase_type(details: &Option<market_subscription::Details>) -> Option<PurchaseType> {
+    match details {
+        Some(market_subscription::Details::MediaStorageSubscriptionDetails(_)) => Some(PurchaseType::MediaStorage),
+        Some(market_subscription::Details::AiGrantSubscriptionDetails(_)) => Some(PurchaseType::AiGrants),
+        Some(market_subscription::Details::RellmHostingSubscriptionDetails(_)) => Some(PurchaseType::RellmHosting),
+        Some(market_subscription::Details::PermissionsAccessSubscriptionDetails(_)) => {
+            Some(PurchaseType::PermissionsAccess)
+        }
+        None => None,
+    }
 }
 
 /// The real work behind `update_market_subscription` -- also returns the newly-appended
@@ -124,36 +147,44 @@ fn apply_fulfillment_notes(
         .to_owned()
         .to_proto_purchase_type()
         .unwrap_or(PurchaseType::MediaStorage);
-    if purchase_type != PurchaseType::RellmHosting {
-        return Err(Status::new(Code::FailedPrecondition, "not_a_rellm_hosting_subscription"));
-    }
 
-    let Some(market_subscription::Details::RellmHostingSubscriptionDetails(incoming)) = request.details else {
-        return Err(Status::new(Code::InvalidArgument, "rellm_hosting_subscription_details_required"));
+    // The request carries the subscription's own `details` variant, whose `fulfillment_notes` is the
+    // client's view of the whole chat (existing notes verbatim, plus any new ones at the end).
+    let Some(incoming_type) = details_purchase_type(&request.details) else {
+        return Err(Status::new(Code::InvalidArgument, "subscription_details_required"));
     };
-    let mut current_details: RellmHostingSubscriptionDetails = serde_json::from_value(existing.details.clone())
-        .map_err(|e| {
-            log::error!(
-                "Failed to parse existing RellmHostingSubscriptionDetails for subscription {}: {:?}",
-                existing.id,
-                e
-            );
-            Status::new(Code::Internal, "invalid_stored_details")
-        })?;
+    if incoming_type != purchase_type {
+        return Err(Status::new(Code::InvalidArgument, "subscription_details_type_mismatch"));
+    }
+    let incoming_notes = details_fulfillment_notes(&request.details);
 
-    let already_stored = current_details.fulfillment_notes.len();
-    if incoming.fulfillment_notes.len() < already_stored
-        || incoming.fulfillment_notes[..already_stored] != current_details.fulfillment_notes[..]
-    {
+    // Operates on the stored JSON directly, whatever the type: the chat lives at the same
+    // `fulfillment_notes`/`fulfillment_status` keys in every `*SubscriptionDetails`.
+    let mut stored_notes: Vec<FulfillmentNote> = match existing.details.get("fulfillment_notes") {
+        Some(value) if !value.is_null() => serde_json::from_value(value.clone()).map_err(|e| {
+            log::error!("Failed to parse fulfillment_notes of subscription {}: {:?}", existing.id, e);
+            Status::new(Code::Internal, "invalid_stored_details")
+        })?,
+        _ => vec![],
+    };
+    let stored_status = existing
+        .details
+        .get("fulfillment_status")
+        .and_then(|v| v.as_i64())
+        .map(|v| v as i32)
+        .unwrap_or(FulfillmentStatus::AwaitingHostAdmin as i32);
+
+    let already_stored = stored_notes.len();
+    if incoming_notes.len() < already_stored || incoming_notes[..already_stored] != stored_notes[..] {
         return Err(Status::new(Code::InvalidArgument, "fulfillment_notes_must_only_be_appended"));
     }
     // Tracks what `fulfillment_status` was as of the last note processed so far (old or newly
     // appended) -- starts at whatever it's currently set to (itself always in sync with the last
     // *already-stored* note, or the `AWAITING_HOST_ADMIN` default if there are none yet -- see this
     // field's own proto doc), then advances with each newly appended entry below.
-    let mut running_status = current_details.fulfillment_status;
+    let mut running_status = stored_status;
     let mut appended_notes: Vec<FulfillmentNote> = vec![];
-    for note in &incoming.fulfillment_notes[already_stored..] {
+    for note in &incoming_notes[already_stored..] {
         if note.user_id != current_user.id.to_proto_id() {
             return Err(Status::new(Code::PermissionDenied, "fulfillment_note_user_id_mismatch"));
         }
@@ -169,23 +200,27 @@ fn apply_fulfillment_notes(
             created_at: Some(SystemTime::now().to_proto()),
         };
         appended_notes.push(stored_note.clone());
-        current_details.fulfillment_notes.push(stored_note);
+        stored_notes.push(stored_note);
     }
-    current_details.fulfillment_status = running_status;
 
-    let new_details = serde_json::to_value(&current_details).map_err(|e| {
-        log::error!("Failed to serialize RellmHostingSubscriptionDetails: {:?}", e);
+    let notes_json = serde_json::to_value(&stored_notes).map_err(|e| {
+        log::error!("Failed to serialize fulfillment_notes: {:?}", e);
         Status::new(Code::Internal, "failed_to_serialize_details")
     })?;
 
-    // Writes only `details`, and keeps whatever `notes_last_read` the row has *at write time*: the buyer's
-    // `MarkFulfillmentNotesRead` may have moved it since `current_details` was read above, and this
-    // admin-side write must never put the stale marker (or an unset one) back.
+    // Writes only the two chat keys, in one statement (`jsonb_set`): everything else in `details` --
+    // including the buyer's `notes_last_read`, which `MarkFulfillmentNotesRead` may have moved since the
+    // row was read above -- is left exactly as it is at write time, so neither writer can put a stale
+    // copy back over the other's change.
     let updated = diesel::update(market_subscriptions::table.filter(market_subscriptions::id.eq(existing.id)))
         .set(
-            market_subscriptions::details.eq(diesel::dsl::sql::<Jsonb>("jsonb_set(")
-                .bind::<Jsonb, _>(new_details)
-                .sql(", '{notes_last_read}', COALESCE(market_subscriptions.details->'notes_last_read', 'null'::jsonb), true)")),
+            market_subscriptions::details.eq(diesel::dsl::sql::<Jsonb>(
+                "jsonb_set(jsonb_set(market_subscriptions.details, '{fulfillment_notes}', ",
+            )
+            .bind::<Jsonb, _>(notes_json)
+            .sql(", true), '{fulfillment_status}', ")
+            .bind::<Jsonb, _>(serde_json::json!(running_status))
+            .sql(", true)")),
         )
         .get_result::<models::MarketSubscription>(conn)
         .map_err(|e| {

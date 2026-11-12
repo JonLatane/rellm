@@ -6344,7 +6344,7 @@ encodeMarkFulfillmentNotesReadRequest =
     Proto.Rellm.Internals_.encodeProto__Rellm__MarkFulfillmentNotesReadRequest
 
 
-{-|  Request to mark a Rellm hosting subscription's fulfillment notes read -- see
+{-|  Request to mark a subscription's fulfillment notes read -- see
  `RellmHostingSubscriptionDetails.notes_last_read`.
 
 
@@ -6439,7 +6439,7 @@ encodeMarketSubscriptionPushRequest =
 
 {-|  Identifies one of the current user's registered Web Push subscriptions (see
  `PushSubscription`/`RegisterPushSubscription` in `messages.proto` -- it must already be
- registered, this only *links* it) and the `PURCHASE_TYPE_RELLM_HOSTING` `MarketSubscription`
+ registered, this only *links* it) and the `MarketSubscription` (any `PurchaseType`)
  whose fulfillment chat (`RellmHostingSubscriptionDetails.fulfillment_notes`) it should be
  notified about. Used by `RegisterMarketSubscriptionPush`, `UnregisterMarketSubscriptionPush`
  and `GetMarketSubscriptionPushStatus`.
@@ -6662,7 +6662,14 @@ type alias RellmHostingSubscriptionDetails =
 {-| The field numbers for the fields of `AIGrantSubscriptionDetails`. This is mostly useful for internals, like documentation generation.
 
 -}
-fieldNumbersAIGrantSubscriptionDetails : { aiProviderId : Int, modelNames : Int, tokens : Int }
+fieldNumbersAIGrantSubscriptionDetails :
+    { aiProviderId : Int
+    , modelNames : Int
+    , tokens : Int
+    , fulfillmentStatus : Int
+    , fulfillmentNotes : Int
+    , notesLastRead : Int
+    }
 fieldNumbersAIGrantSubscriptionDetails =
     Proto.Rellm.Internals_.fieldNumbersProto__Rellm__AIGrantSubscriptionDetails
 
@@ -6715,6 +6722,18 @@ encodeAIGrantSubscriptionDetails =
  `logic::market::market_fulfillment::fulfill_purchase`'s `AiGrants` arm.
 
 
+### fulfillmentStatus
+
+ The fulfillment chat for this subscription -- *every* `PurchaseType` has one, not just
+ `PURCHASE_TYPE_RELLM_HOSTING` (see `RellmHostingSubscriptionDetails.fulfillment_status`/`fulfillment_notes`/
+ `notes_last_read`, whose semantics these three fields share exactly: append-only notes via
+ `UpdateMarketSubscription`, the buyer's read marker via `MarkFulfillmentNotesRead`, `fulfillment_status`
+ always the last note's status). Only meaningful on a `MarketSubscription`'s own `details`: on a
+ `MarketProduct.details` they're always empty/unset. Unlike Rellm hosting, nothing about these types
+ *needs* an admin, so `fulfillment_status` isn't a work queue for them (it stays at its default) --
+ the chat is just a way for a host admin and the buyer to talk about the subscription.
+
+
 -}
 type alias AIGrantSubscriptionDetails =
     Proto.Rellm.Internals_.Proto__Rellm__AIGrantSubscriptionDetails
@@ -6723,7 +6742,14 @@ type alias AIGrantSubscriptionDetails =
 {-| The field numbers for the fields of `PermissionsAccessSubscriptionDetails`. This is mostly useful for internals, like documentation generation.
 
 -}
-fieldNumbersPermissionsAccessSubscriptionDetails : { permissions : Int, name : Int, description : Int }
+fieldNumbersPermissionsAccessSubscriptionDetails :
+    { permissions : Int
+    , name : Int
+    , description : Int
+    , fulfillmentStatus : Int
+    , fulfillmentNotes : Int
+    , notesLastRead : Int
+    }
 fieldNumbersPermissionsAccessSubscriptionDetails =
     Proto.Rellm.Internals_.fieldNumbersProto__Rellm__PermissionsAccessSubscriptionDetails
 
@@ -6799,6 +6825,18 @@ encodePermissionsAccessSubscriptionDetails =
  copied the same way `name` is.
 
 
+### fulfillmentStatus
+
+ The fulfillment chat for this subscription -- *every* `PurchaseType` has one, not just
+ `PURCHASE_TYPE_RELLM_HOSTING` (see `RellmHostingSubscriptionDetails.fulfillment_status`/`fulfillment_notes`/
+ `notes_last_read`, whose semantics these three fields share exactly: append-only notes via
+ `UpdateMarketSubscription`, the buyer's read marker via `MarkFulfillmentNotesRead`, `fulfillment_status`
+ always the last note's status). Only meaningful on a `MarketSubscription`'s own `details`: on a
+ `MarketProduct.details` they're always empty/unset. Unlike Rellm hosting, nothing about these types
+ *needs* an admin, so `fulfillment_status` isn't a work queue for them (it stays at its default) --
+ the chat is just a way for a host admin and the buyer to talk about the subscription.
+
+
 -}
 type alias PermissionsAccessSubscriptionDetails =
     Proto.Rellm.Internals_.Proto__Rellm__PermissionsAccessSubscriptionDetails
@@ -6807,7 +6845,8 @@ type alias PermissionsAccessSubscriptionDetails =
 {-| The field numbers for the fields of `MediaStorageSubscriptionDetails`. This is mostly useful for internals, like documentation generation.
 
 -}
-fieldNumbersMediaStorageSubscriptionDetails : { allocationBytes : Int }
+fieldNumbersMediaStorageSubscriptionDetails :
+    { allocationBytes : Int, fulfillmentStatus : Int, fulfillmentNotes : Int, notesLastRead : Int }
 fieldNumbersMediaStorageSubscriptionDetails =
     Proto.Rellm.Internals_.fieldNumbersProto__Rellm__MediaStorageSubscriptionDetails
 
@@ -6848,6 +6887,18 @@ encodeMediaStorageSubscriptionDetails =
  How much media storage this product/subscription grants the buyer, replacing (not adding to)
  whatever quota they already had -- see `logic::market::market_fulfillment::fulfill_purchase`'s
  `MediaStorage` arm.
+
+
+### fulfillmentStatus
+
+ The fulfillment chat for this subscription -- *every* `PurchaseType` has one, not just
+ `PURCHASE_TYPE_RELLM_HOSTING` (see `RellmHostingSubscriptionDetails.fulfillment_status`/`fulfillment_notes`/
+ `notes_last_read`, whose semantics these three fields share exactly: append-only notes via
+ `UpdateMarketSubscription`, the buyer's read marker via `MarkFulfillmentNotesRead`, `fulfillment_status`
+ always the last note's status). Only meaningful on a `MarketSubscription`'s own `details`: on a
+ `MarketProduct.details` they're always empty/unset. Unlike Rellm hosting, nothing about these types
+ *needs* an admin, so `fulfillment_status` isn't a work queue for them (it stays at its default) --
+ the chat is just a way for a host admin and the buyer to talk about the subscription.
 
 
 -}

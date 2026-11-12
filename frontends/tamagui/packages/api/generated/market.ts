@@ -846,6 +846,19 @@ export interface MediaStorageSubscriptionDetails {
    * `MediaStorage` arm.
    */
   allocationBytes: number;
+  /**
+   * The fulfillment chat for this subscription -- *every* `PurchaseType` has one, not just
+   * `PURCHASE_TYPE_RELLM_HOSTING` (see `RellmHostingSubscriptionDetails.fulfillment_status`/`fulfillment_notes`/
+   * `notes_last_read`, whose semantics these three fields share exactly: append-only notes via
+   * `UpdateMarketSubscription`, the buyer's read marker via `MarkFulfillmentNotesRead`, `fulfillment_status`
+   * always the last note's status). Only meaningful on a `MarketSubscription`'s own `details`: on a
+   * `MarketProduct.details` they're always empty/unset. Unlike Rellm hosting, nothing about these types
+   * *needs* an admin, so `fulfillment_status` isn't a work queue for them (it stays at its default) --
+   * the chat is just a way for a host admin and the buyer to talk about the subscription.
+   */
+  fulfillmentStatus: FulfillmentStatus;
+  fulfillmentNotes: FulfillmentNote[];
+  notesLastRead?: string | undefined;
 }
 
 /**
@@ -891,6 +904,19 @@ export interface PermissionsAccessSubscriptionDetails {
    * copied the same way `name` is.
    */
   description: string;
+  /**
+   * The fulfillment chat for this subscription -- *every* `PurchaseType` has one, not just
+   * `PURCHASE_TYPE_RELLM_HOSTING` (see `RellmHostingSubscriptionDetails.fulfillment_status`/`fulfillment_notes`/
+   * `notes_last_read`, whose semantics these three fields share exactly: append-only notes via
+   * `UpdateMarketSubscription`, the buyer's read marker via `MarkFulfillmentNotesRead`, `fulfillment_status`
+   * always the last note's status). Only meaningful on a `MarketSubscription`'s own `details`: on a
+   * `MarketProduct.details` they're always empty/unset. Unlike Rellm hosting, nothing about these types
+   * *needs* an admin, so `fulfillment_status` isn't a work queue for them (it stays at its default) --
+   * the chat is just a way for a host admin and the buyer to talk about the subscription.
+   */
+  fulfillmentStatus: FulfillmentStatus;
+  fulfillmentNotes: FulfillmentNote[];
+  notesLastRead?: string | undefined;
 }
 
 /**
@@ -909,6 +935,19 @@ export interface AIGrantSubscriptionDetails {
    * `logic::market::market_fulfillment::fulfill_purchase`'s `AiGrants` arm.
    */
   tokens: number;
+  /**
+   * The fulfillment chat for this subscription -- *every* `PurchaseType` has one, not just
+   * `PURCHASE_TYPE_RELLM_HOSTING` (see `RellmHostingSubscriptionDetails.fulfillment_status`/`fulfillment_notes`/
+   * `notes_last_read`, whose semantics these three fields share exactly: append-only notes via
+   * `UpdateMarketSubscription`, the buyer's read marker via `MarkFulfillmentNotesRead`, `fulfillment_status`
+   * always the last note's status). Only meaningful on a `MarketSubscription`'s own `details`: on a
+   * `MarketProduct.details` they're always empty/unset. Unlike Rellm hosting, nothing about these types
+   * *needs* an admin, so `fulfillment_status` isn't a work queue for them (it stays at its default) --
+   * the chat is just a way for a host admin and the buyer to talk about the subscription.
+   */
+  fulfillmentStatus: FulfillmentStatus;
+  fulfillmentNotes: FulfillmentNote[];
+  notesLastRead?: string | undefined;
 }
 
 /**
@@ -1025,7 +1064,7 @@ export interface FulfillmentNote {
 /**
  * Identifies one of the current user's registered Web Push subscriptions (see
  * `PushSubscription`/`RegisterPushSubscription` in `messages.proto` -- it must already be
- * registered, this only *links* it) and the `PURCHASE_TYPE_RELLM_HOSTING` `MarketSubscription`
+ * registered, this only *links* it) and the `MarketSubscription` (any `PurchaseType`)
  * whose fulfillment chat (`RellmHostingSubscriptionDetails.fulfillment_notes`) it should be
  * notified about. Used by `RegisterMarketSubscriptionPush`, `UnregisterMarketSubscriptionPush`
  * and `GetMarketSubscriptionPushStatus`.
@@ -1049,7 +1088,7 @@ export interface GetMarketSubscriptionPushStatusResponse {
 }
 
 /**
- * Request to mark a Rellm hosting subscription's fulfillment notes read -- see
+ * Request to mark a subscription's fulfillment notes read -- see
  * `RellmHostingSubscriptionDetails.notes_last_read`.
  */
 export interface MarkFulfillmentNotesReadRequest {
@@ -3286,13 +3325,22 @@ export const MarketSubscription: MessageFns<MarketSubscription> = {
 };
 
 function createBaseMediaStorageSubscriptionDetails(): MediaStorageSubscriptionDetails {
-  return { allocationBytes: 0 };
+  return { allocationBytes: 0, fulfillmentStatus: 0, fulfillmentNotes: [], notesLastRead: undefined };
 }
 
 export const MediaStorageSubscriptionDetails: MessageFns<MediaStorageSubscriptionDetails> = {
   encode(message: MediaStorageSubscriptionDetails, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.allocationBytes !== 0) {
       writer.uint32(8).uint64(message.allocationBytes);
+    }
+    if (message.fulfillmentStatus !== 0) {
+      writer.uint32(56).int32(message.fulfillmentStatus);
+    }
+    for (const v of message.fulfillmentNotes) {
+      FulfillmentNote.encode(v!, writer.uint32(66).fork()).join();
+    }
+    if (message.notesLastRead !== undefined) {
+      Timestamp.encode(toTimestamp(message.notesLastRead), writer.uint32(74).fork()).join();
     }
     return writer;
   },
@@ -3312,6 +3360,30 @@ export const MediaStorageSubscriptionDetails: MessageFns<MediaStorageSubscriptio
           message.allocationBytes = longToNumber(reader.uint64());
           continue;
         }
+        case 7: {
+          if (tag !== 56) {
+            break;
+          }
+
+          message.fulfillmentStatus = reader.int32() as any;
+          continue;
+        }
+        case 8: {
+          if (tag !== 66) {
+            break;
+          }
+
+          message.fulfillmentNotes.push(FulfillmentNote.decode(reader, reader.uint32()));
+          continue;
+        }
+        case 9: {
+          if (tag !== 74) {
+            break;
+          }
+
+          message.notesLastRead = fromTimestamp(Timestamp.decode(reader, reader.uint32()));
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -3322,13 +3394,29 @@ export const MediaStorageSubscriptionDetails: MessageFns<MediaStorageSubscriptio
   },
 
   fromJSON(object: any): MediaStorageSubscriptionDetails {
-    return { allocationBytes: isSet(object.allocationBytes) ? globalThis.Number(object.allocationBytes) : 0 };
+    return {
+      allocationBytes: isSet(object.allocationBytes) ? globalThis.Number(object.allocationBytes) : 0,
+      fulfillmentStatus: isSet(object.fulfillmentStatus) ? fulfillmentStatusFromJSON(object.fulfillmentStatus) : 0,
+      fulfillmentNotes: globalThis.Array.isArray(object?.fulfillmentNotes)
+        ? object.fulfillmentNotes.map((e: any) => FulfillmentNote.fromJSON(e))
+        : [],
+      notesLastRead: isSet(object.notesLastRead) ? globalThis.String(object.notesLastRead) : undefined,
+    };
   },
 
   toJSON(message: MediaStorageSubscriptionDetails): unknown {
     const obj: any = {};
     if (message.allocationBytes !== 0) {
       obj.allocationBytes = Math.round(message.allocationBytes);
+    }
+    if (message.fulfillmentStatus !== 0) {
+      obj.fulfillmentStatus = fulfillmentStatusToJSON(message.fulfillmentStatus);
+    }
+    if (message.fulfillmentNotes?.length) {
+      obj.fulfillmentNotes = message.fulfillmentNotes.map((e) => FulfillmentNote.toJSON(e));
+    }
+    if (message.notesLastRead !== undefined) {
+      obj.notesLastRead = message.notesLastRead;
     }
     return obj;
   },
@@ -3341,12 +3429,22 @@ export const MediaStorageSubscriptionDetails: MessageFns<MediaStorageSubscriptio
   ): MediaStorageSubscriptionDetails {
     const message = createBaseMediaStorageSubscriptionDetails();
     message.allocationBytes = object.allocationBytes ?? 0;
+    message.fulfillmentStatus = object.fulfillmentStatus ?? 0;
+    message.fulfillmentNotes = object.fulfillmentNotes?.map((e) => FulfillmentNote.fromPartial(e)) || [];
+    message.notesLastRead = object.notesLastRead ?? undefined;
     return message;
   },
 };
 
 function createBasePermissionsAccessSubscriptionDetails(): PermissionsAccessSubscriptionDetails {
-  return { permissions: [], name: "", description: "" };
+  return {
+    permissions: [],
+    name: "",
+    description: "",
+    fulfillmentStatus: 0,
+    fulfillmentNotes: [],
+    notesLastRead: undefined,
+  };
 }
 
 export const PermissionsAccessSubscriptionDetails: MessageFns<PermissionsAccessSubscriptionDetails> = {
@@ -3361,6 +3459,15 @@ export const PermissionsAccessSubscriptionDetails: MessageFns<PermissionsAccessS
     }
     if (message.description !== "") {
       writer.uint32(26).string(message.description);
+    }
+    if (message.fulfillmentStatus !== 0) {
+      writer.uint32(56).int32(message.fulfillmentStatus);
+    }
+    for (const v of message.fulfillmentNotes) {
+      FulfillmentNote.encode(v!, writer.uint32(66).fork()).join();
+    }
+    if (message.notesLastRead !== undefined) {
+      Timestamp.encode(toTimestamp(message.notesLastRead), writer.uint32(74).fork()).join();
     }
     return writer;
   },
@@ -3406,6 +3513,30 @@ export const PermissionsAccessSubscriptionDetails: MessageFns<PermissionsAccessS
           message.description = reader.string();
           continue;
         }
+        case 7: {
+          if (tag !== 56) {
+            break;
+          }
+
+          message.fulfillmentStatus = reader.int32() as any;
+          continue;
+        }
+        case 8: {
+          if (tag !== 66) {
+            break;
+          }
+
+          message.fulfillmentNotes.push(FulfillmentNote.decode(reader, reader.uint32()));
+          continue;
+        }
+        case 9: {
+          if (tag !== 74) {
+            break;
+          }
+
+          message.notesLastRead = fromTimestamp(Timestamp.decode(reader, reader.uint32()));
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -3422,6 +3553,11 @@ export const PermissionsAccessSubscriptionDetails: MessageFns<PermissionsAccessS
         : [],
       name: isSet(object.name) ? globalThis.String(object.name) : "",
       description: isSet(object.description) ? globalThis.String(object.description) : "",
+      fulfillmentStatus: isSet(object.fulfillmentStatus) ? fulfillmentStatusFromJSON(object.fulfillmentStatus) : 0,
+      fulfillmentNotes: globalThis.Array.isArray(object?.fulfillmentNotes)
+        ? object.fulfillmentNotes.map((e: any) => FulfillmentNote.fromJSON(e))
+        : [],
+      notesLastRead: isSet(object.notesLastRead) ? globalThis.String(object.notesLastRead) : undefined,
     };
   },
 
@@ -3435,6 +3571,15 @@ export const PermissionsAccessSubscriptionDetails: MessageFns<PermissionsAccessS
     }
     if (message.description !== "") {
       obj.description = message.description;
+    }
+    if (message.fulfillmentStatus !== 0) {
+      obj.fulfillmentStatus = fulfillmentStatusToJSON(message.fulfillmentStatus);
+    }
+    if (message.fulfillmentNotes?.length) {
+      obj.fulfillmentNotes = message.fulfillmentNotes.map((e) => FulfillmentNote.toJSON(e));
+    }
+    if (message.notesLastRead !== undefined) {
+      obj.notesLastRead = message.notesLastRead;
     }
     return obj;
   },
@@ -3451,12 +3596,22 @@ export const PermissionsAccessSubscriptionDetails: MessageFns<PermissionsAccessS
     message.permissions = object.permissions?.map((e) => e) || [];
     message.name = object.name ?? "";
     message.description = object.description ?? "";
+    message.fulfillmentStatus = object.fulfillmentStatus ?? 0;
+    message.fulfillmentNotes = object.fulfillmentNotes?.map((e) => FulfillmentNote.fromPartial(e)) || [];
+    message.notesLastRead = object.notesLastRead ?? undefined;
     return message;
   },
 };
 
 function createBaseAIGrantSubscriptionDetails(): AIGrantSubscriptionDetails {
-  return { aiProviderId: "", modelNames: [], tokens: 0 };
+  return {
+    aiProviderId: "",
+    modelNames: [],
+    tokens: 0,
+    fulfillmentStatus: 0,
+    fulfillmentNotes: [],
+    notesLastRead: undefined,
+  };
 }
 
 export const AIGrantSubscriptionDetails: MessageFns<AIGrantSubscriptionDetails> = {
@@ -3469,6 +3624,15 @@ export const AIGrantSubscriptionDetails: MessageFns<AIGrantSubscriptionDetails> 
     }
     if (message.tokens !== 0) {
       writer.uint32(24).uint64(message.tokens);
+    }
+    if (message.fulfillmentStatus !== 0) {
+      writer.uint32(56).int32(message.fulfillmentStatus);
+    }
+    for (const v of message.fulfillmentNotes) {
+      FulfillmentNote.encode(v!, writer.uint32(66).fork()).join();
+    }
+    if (message.notesLastRead !== undefined) {
+      Timestamp.encode(toTimestamp(message.notesLastRead), writer.uint32(74).fork()).join();
     }
     return writer;
   },
@@ -3504,6 +3668,30 @@ export const AIGrantSubscriptionDetails: MessageFns<AIGrantSubscriptionDetails> 
           message.tokens = longToNumber(reader.uint64());
           continue;
         }
+        case 7: {
+          if (tag !== 56) {
+            break;
+          }
+
+          message.fulfillmentStatus = reader.int32() as any;
+          continue;
+        }
+        case 8: {
+          if (tag !== 66) {
+            break;
+          }
+
+          message.fulfillmentNotes.push(FulfillmentNote.decode(reader, reader.uint32()));
+          continue;
+        }
+        case 9: {
+          if (tag !== 74) {
+            break;
+          }
+
+          message.notesLastRead = fromTimestamp(Timestamp.decode(reader, reader.uint32()));
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -3520,6 +3708,11 @@ export const AIGrantSubscriptionDetails: MessageFns<AIGrantSubscriptionDetails> 
         ? object.modelNames.map((e: any) => globalThis.String(e))
         : [],
       tokens: isSet(object.tokens) ? globalThis.Number(object.tokens) : 0,
+      fulfillmentStatus: isSet(object.fulfillmentStatus) ? fulfillmentStatusFromJSON(object.fulfillmentStatus) : 0,
+      fulfillmentNotes: globalThis.Array.isArray(object?.fulfillmentNotes)
+        ? object.fulfillmentNotes.map((e: any) => FulfillmentNote.fromJSON(e))
+        : [],
+      notesLastRead: isSet(object.notesLastRead) ? globalThis.String(object.notesLastRead) : undefined,
     };
   },
 
@@ -3534,6 +3727,15 @@ export const AIGrantSubscriptionDetails: MessageFns<AIGrantSubscriptionDetails> 
     if (message.tokens !== 0) {
       obj.tokens = Math.round(message.tokens);
     }
+    if (message.fulfillmentStatus !== 0) {
+      obj.fulfillmentStatus = fulfillmentStatusToJSON(message.fulfillmentStatus);
+    }
+    if (message.fulfillmentNotes?.length) {
+      obj.fulfillmentNotes = message.fulfillmentNotes.map((e) => FulfillmentNote.toJSON(e));
+    }
+    if (message.notesLastRead !== undefined) {
+      obj.notesLastRead = message.notesLastRead;
+    }
     return obj;
   },
 
@@ -3545,6 +3747,9 @@ export const AIGrantSubscriptionDetails: MessageFns<AIGrantSubscriptionDetails> 
     message.aiProviderId = object.aiProviderId ?? "";
     message.modelNames = object.modelNames?.map((e) => e) || [];
     message.tokens = object.tokens ?? 0;
+    message.fulfillmentStatus = object.fulfillmentStatus ?? 0;
+    message.fulfillmentNotes = object.fulfillmentNotes?.map((e) => FulfillmentNote.fromPartial(e)) || [];
+    message.notesLastRead = object.notesLastRead ?? undefined;
     return message;
   },
 };

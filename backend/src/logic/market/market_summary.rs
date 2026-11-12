@@ -317,7 +317,8 @@ mod tests {
             100,
             840,
             market_product::Details::MediaStorageSubscriptionDetails(MediaStorageSubscriptionDetails {
-                allocation_bytes: 1024 * 1024 * 1024 + 512 * 1024 * 1024, // 1.5GB
+                allocation_bytes: 1024 * 1024 * 1024 + 512 * 1024 * 1024, // 1.5GB,
+                ..Default::default()
             }),
         );
         assert_eq!(market_product_summary(&p), "1.5GB storage for $1/mo");
@@ -331,7 +332,8 @@ mod tests {
             1_000_000,
             840,
             market_product::Details::MediaStorageSubscriptionDetails(MediaStorageSubscriptionDetails {
-                allocation_bytes: 1024 * 1024 * 1024, // 1GB
+                allocation_bytes: 1024 * 1024 * 1024, // 1GB,
+                ..Default::default()
             }),
         );
         assert_eq!(market_product_summary(&p), "1GB lifetime storage for $10,000");
@@ -348,6 +350,7 @@ mod tests {
                 ai_provider_id: "prov1".to_string(),
                 model_names: vec!["gemini-3-pro-image".to_string()],
                 tokens: 100_000,
+                ..Default::default()
             }),
         );
         assert_eq!(
@@ -397,6 +400,7 @@ mod tests {
                 ],
                 name: "Facebook Sync Access".to_string(),
                 description: "Sync your posts and events to Facebook.".to_string(),
+                ..Default::default()
             }),
         );
         assert_eq!(
@@ -415,6 +419,7 @@ mod tests {
             978, // EUR
             market_product::Details::MediaStorageSubscriptionDetails(MediaStorageSubscriptionDetails {
                 allocation_bytes: 1024 * 1024 * 1024,
+                ..Default::default()
             }),
         );
         assert_eq!(market_product_summary(&p), "1GB storage for 10 EUR/mo");
@@ -429,6 +434,7 @@ mod tests {
             392, // JPY -- zero-decimal, so 500 means 500 yen, not 5 yen
             market_product::Details::MediaStorageSubscriptionDetails(MediaStorageSubscriptionDetails {
                 allocation_bytes: 1024 * 1024 * 1024,
+                ..Default::default()
             }),
         );
         assert_eq!(market_product_summary(&p), "1GB storage for 500 JPY/mo");
@@ -443,6 +449,7 @@ mod tests {
             840,
             market_product::Details::MediaStorageSubscriptionDetails(MediaStorageSubscriptionDetails {
                 allocation_bytes: 5 * 1024 * 1024 * 1024,
+                ..Default::default()
             }),
         );
         assert_eq!(stripe_product_name(&p, "Rellm.org"), "5GB Media Storage on Rellm.org");
@@ -459,6 +466,7 @@ mod tests {
                 permissions: vec![Permission::SyncEventsToFacebook as i32],
                 name: "Meta Sync".to_string(),
                 description: "Sync your posts and events to Meta platforms.".to_string(),
+                ..Default::default()
             }),
         );
         assert_eq!(stripe_product_name(&p, "Rellm.org"), "Meta Sync Access on Rellm.org");
@@ -500,6 +508,7 @@ mod tests {
                 ai_provider_id: "prov1".to_string(),
                 model_names: vec!["gemini-3-pro-image".to_string()],
                 tokens: 100_000,
+                ..Default::default()
             }),
         );
         assert_eq!(stripe_product_name(&p, "Rellm.org"), "100k tokens/mo with Nano Banana Pro on Rellm.org");
@@ -520,6 +529,7 @@ mod tests {
                     "gemini-2.5-flash-image".to_string(),
                 ],
                 tokens: 100_000,
+                ..Default::default()
             }),
         );
         assert_eq!(
