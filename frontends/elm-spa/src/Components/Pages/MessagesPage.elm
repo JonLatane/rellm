@@ -503,7 +503,7 @@ type Msg
     | FulfillmentMsg Fulfillment.Msg
       -- A thread row clicked on the real page (toggles it open; opening a subscription chat marks
       -- its notes read, opening an awaiting order moves it to In Progress -- see
-      -- `Fulfillment.openCmd`/`openAdminCmd`). The embedded panel's rows are plain links to
+      -- `Fulfillment.openCmd`/`openAdmin`). The embedded panel's rows are plain links to
       -- `/messages?subscription_messages=` instead.
     | ThreadSelected String
       -- A thread link clicked in the embedded panel (the click still navigates, to

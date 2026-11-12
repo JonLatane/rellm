@@ -631,10 +631,10 @@ update accountsPanelModel selected msg model =
             case openThread of
                 Just thread ->
                     let
-                        ( opened, openCmd ) =
+                        ( opened, adminOpenCmd ) =
                             openAdmin accountsPanelModel updated thread
                     in
-                    ( opened, openCmd, maybeMsg )
+                    ( opened, adminOpenCmd, maybeMsg )
 
                 Nothing ->
                     ( updated, Cmd.none, maybeMsg )
