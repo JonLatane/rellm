@@ -8,11 +8,13 @@ module Components.FulfillmentThreads exposing
     , fetchAll
     , hasAdminOrders
     , hasSubscriptions
-    , openAdminCmd
+    , openAdmin
     , openCmd
     , subscriptionLinks
     , threadByKey
     , threadKey
+    , orderQuery
+    , orderUrl
     , threadQuery
     , threadUrl
     , totalUnread
@@ -109,6 +111,7 @@ type Msg
     | DraftChanged String String
     | SaveNoteClicked Thread FulfillmentStatus
     | GotNoteSaved String (Result Grpc.Error ( Maybe AccountsPanel.Msg, MarketSubscription ))
+    | GotAutoProgressSaved String (Result Grpc.Error ( Maybe AccountsPanel.Msg, MarketSubscription ))
 
 
 empty : Model
@@ -161,6 +164,29 @@ threadUrl basePath mainFrontendHost host subscriptionId noteIndex =
 
 
 -- DATA
+
+
+{-| `fulfillment_order=<id>[@host]` -- the query param naming one admin Fulfillment order (no leading `?`),
+the Fulfillment tab's counterpart of `threadQuery`. Carries the server, so an order from a remote
+server opens on *that* server's thread rather than on whichever server the page is browsing.
+-}
+orderQuery : String -> String -> String -> String
+orderQuery mainFrontendHost host subscriptionId =
+    "fulfillment_order="
+        ++ (if host == mainFrontendHost then
+                subscriptionId
+
+            else
+                subscriptionId ++ "@" ++ host
+           )
+
+
+{-| Link to one order on the Messages page's Fulfillment tab.
+-}
+orderUrl : String -> String -> String -> String -> String
+orderUrl basePath mainFrontendHost host subscriptionId =
+    basePath ++ "/messages?" ++ orderQuery mainFrontendHost host subscriptionId
+
 
 
 {-| `subscription_messages=<id>[@host]` -- the query param naming one thread (no leading `?`).
@@ -454,11 +480,23 @@ openCmd accountsPanelModel model thread =
 `/market/fulfillment`: an order still awaiting a host admin moves to In Progress (a bare status-change
 note, no text needed -- see `FulfillmentNote.note`'s proto doc).
 -}
-openAdminCmd : AccountsPanel.Model -> Model -> Thread -> Cmd Msg
-openAdminCmd accountsPanelModel model thread =
-    Cmd.batch
-        [ if fulfillmentStatusOf thread.subscription == FULFILLMENTSTATUSAWAITINGHOSTADMIN then
-            appendNoteCmd accountsPanelModel thread "" FULFILLMENTSTATUSINPROGRESS
+openAdmin : AccountsPanel.Model -> Model -> Thread -> ( Model, Cmd Msg )
+openAdmin accountsPanelModel model thread =
+    let
+        autoProgress : Bool
+        autoProgress =
+            fulfillmentStatusOf thread.subscription == FULFILLMENTSTATUSAWAITINGHOSTADMIN
+    in
+    ( -- `saving` blocks the composer until the updated notes arrive: a manual save in the meantime would
+      -- send the *old* note history back and be rejected by the append-only check.
+      if autoProgress then
+        { model | saving = Dict.insert thread.key () model.saving }
+
+      else
+        model
+    , Cmd.batch
+        [ if autoProgress then
+            appendNoteCmd accountsPanelModel thread "" FULFILLMENTSTATUSINPROGRESS GotAutoProgressSaved
 
           else
             Cmd.none
@@ -468,6 +506,7 @@ openAdminCmd accountsPanelModel model thread =
           else
             pushStatusCmd accountsPanelModel thread
         ]
+    )
 
 
 withDetails : MarketSubscription -> Proto.Rellm.RellmHostingSubscriptionDetails -> MarketSubscription
@@ -479,8 +518,8 @@ withDetails subscription details =
 sends the whole subscription through `UpdateMarketSubscription` -- its append-only contract wants the
 last-fetched notes back verbatim plus the new one, exactly as `MarketFulfillmentPage` does.
 -}
-appendNoteCmd : AccountsPanel.Model -> Thread -> String -> FulfillmentStatus -> Cmd Msg
-appendNoteCmd accountsPanelModel thread noteText newStatus =
+appendNoteCmd : AccountsPanel.Model -> Thread -> String -> FulfillmentStatus -> (String -> Result Grpc.Error ( Maybe AccountsPanel.Msg, MarketSubscription ) -> Msg) -> Cmd Msg
+appendNoteCmd accountsPanelModel thread noteText newStatus toMsg =
     case ( accountUserId thread.accountId, thread.subscription.details ) of
         ( Just userId, Just (SubscriptionDetails.RellmHostingSubscriptionDetails details) ) ->
             let
@@ -495,7 +534,7 @@ appendNoteCmd accountsPanelModel thread noteText newStatus =
             Market.updateMarketSubscription accountsPanelModel
                 ( Just userId, thread.host )
                 (withDetails thread.subscription updatedDetails)
-                |> Task.attempt (GotNoteSaved thread.key)
+                |> Task.attempt (toMsg thread.key)
 
         _ ->
             Cmd.none
@@ -587,12 +626,12 @@ update accountsPanelModel selected msg model =
             in
             -- A note with no text is only allowed alongside a real status change (see
             -- `FulfillmentNote.note`'s proto doc) -- anything else would just be rejected.
-            if String.isEmpty (String.trim draft) && newStatus == fulfillmentStatusOf thread.subscription then
+            if Dict.member thread.key model.saving || (String.isEmpty (String.trim draft) && newStatus == fulfillmentStatusOf thread.subscription) then
                 ( model, Cmd.none, Nothing )
 
             else
                 ( { model | saving = Dict.insert thread.key () model.saving }
-                , appendNoteCmd accountsPanelModel thread draft newStatus
+                , appendNoteCmd accountsPanelModel thread draft newStatus GotNoteSaved
                 , Nothing
                 )
 
@@ -605,6 +644,20 @@ update accountsPanelModel selected msg model =
             , Cmd.none
             , maybeMsg
             )
+
+        -- The automatic In Progress transition from opening an order: swap in the updated order but,
+        -- unlike a manual save, leave whatever the admin has already typed in the draft.
+        GotAutoProgressSaved key (Ok ( maybeMsg, updatedSubscription )) ->
+            ( { model
+                | adminFeeds = Dict.map (\_ feed -> replaceSubscription "admin/" key updatedSubscription feed) model.adminFeeds
+                , saving = Dict.remove key model.saving
+              }
+            , Cmd.none
+            , maybeMsg
+            )
+
+        GotAutoProgressSaved key (Err _) ->
+            ( { model | saving = Dict.remove key model.saving }, Cmd.none, Nothing )
 
         GotNoteSaved key (Err _) ->
             ( { model | saving = Dict.remove key model.saving }, Cmd.none, Nothing )
@@ -697,6 +750,9 @@ replaceSubscription keyPrefix key updated feed =
 
 type alias ViewConfig msg =
     { time : SharedTime.Model
+
+    -- The app's mount prefix (`""` or `/elm`), for links.
+    , basePath : String
     , accountsPanelModel : AccountsPanel.Model
     , model : Model
     , selected : Maybe String
@@ -790,10 +846,10 @@ threadView config thread =
                 url : String
                 url =
                     if thread.admin then
-                        "/market/fulfillment"
+                        orderUrl config.basePath config.accountsPanelModel.mainFrontendHost thread.host subscription.id
 
                     else
-                        threadUrl "" config.accountsPanelModel.mainFrontendHost thread.host subscription.id Nothing
+                        threadUrl config.basePath config.accountsPanelModel.mainFrontendHost thread.host subscription.id Nothing
 
                 headerAttrs : List (Html.Attribute msg)
                 headerAttrs =
@@ -828,9 +884,7 @@ threadView config thread =
                     List.indexedMap (noteView config.time thread) notes
                  )
                     ++ (if thread.admin then
-                            [ composerView config thread
-                            , a [ class "fulfillment-open-order-link", href "/market/fulfillment" ] [ text "Open in Fulfillment page" ]
-                            ]
+                            [ composerView config thread ]
 
                         else
                             []

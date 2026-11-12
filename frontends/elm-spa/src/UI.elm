@@ -4783,7 +4783,7 @@ cycle-avoidance reasoning as `Shared.StarredPanel`) into `Shared.Msg`.
 -}
 messagingPanel : Shared.Model -> Html Shared.Msg
 messagingPanel shared =
-    Html.map Shared.MessagingPanelMsg (MessagingPanel.view shared.time shared.accounts shared.panels.messagingPanel)
+    Html.map Shared.MessagingPanelMsg (MessagingPanel.view shared.time shared.basePath shared.accounts shared.panels.messagingPanel)
 
 
 {-| The "New Post" composer (see `Shared.CreateNewPanel`) -- toggled from its

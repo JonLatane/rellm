@@ -98,6 +98,19 @@ suite =
                 \_ ->
                     Fulfillment.threadUrl "" "main.example" "main.example" "sub1" (Just 3)
                         |> Expect.equal "/messages?subscription_messages=sub1#subscription-message-3"
+            , test "an admin order link carries the server and the mount prefix, so a remote order opens on its own server" <|
+                \_ ->
+                    ( Fulfillment.orderUrl "/elm" "main.example" "other.example" "sub1"
+                    , Fulfillment.orderUrl "" "main.example" "main.example" "sub1"
+                    )
+                        |> Expect.equal
+                            ( "/elm/messages?fulfillment_order=sub1@other.example"
+                            , "/messages?fulfillment_order=sub1"
+                            )
+            , test "the mount prefix is carried by subscription thread links too" <|
+                \_ ->
+                    Fulfillment.threadUrl "/elm" "main.example" "main.example" "sub1" Nothing
+                        |> Expect.equal "/elm/messages?subscription_messages=sub1"
             , test "threadKey is unique across hosts" <|
                 \_ ->
                     Fulfillment.threadKey "a.example" "1"

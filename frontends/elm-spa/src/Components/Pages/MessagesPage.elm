@@ -585,7 +585,15 @@ notes are marked read as soon as they load (`Fulfillment.update`).
 -}
 selectSubscriptionThread : String -> Model -> Model
 selectSubscriptionThread key model =
-    { model | tab = SubscriptionsTab, selectedThread = Just key }
+    { model
+        | tab =
+            if String.startsWith "admin/" key then
+                FulfillmentTab
+
+            else
+                SubscriptionsTab
+        , selectedThread = Just key
+    }
 
 
 fetchFulfillment : AccountsPanel.Model -> Model -> ( Model, Cmd Msg )
@@ -1264,32 +1272,37 @@ update accountsPanelModel msg model =
                 openedThread =
                     newSelection |> Maybe.andThen (Fulfillment.threadByKey model.fulfillment)
 
-                openCmd : Cmd Msg
-                openCmd =
+                ( openedFulfillment, openCmd ) =
                     case openedThread of
                         Just thread ->
-                            (if thread.admin then
-                                Fulfillment.openAdminCmd accountsPanelModel model.fulfillment thread
+                            if thread.admin then
+                                Fulfillment.openAdmin accountsPanelModel model.fulfillment thread
+                                    |> Tuple.mapSecond (Cmd.map FulfillmentMsg)
 
-                             else
-                                Fulfillment.openCmd accountsPanelModel model.fulfillment thread
-                            )
-                                |> Cmd.map FulfillmentMsg
+                            else
+                                ( model.fulfillment
+                                , Cmd.map FulfillmentMsg (Fulfillment.openCmd accountsPanelModel model.fulfillment thread)
+                                )
 
                         Nothing ->
-                            Cmd.none
+                            ( model.fulfillment, Cmd.none )
 
-                -- Only the user's own subscription threads have a deep link (`?subscription_messages=`).
+                -- Both kinds of thread have a deep link: `?subscription_messages=` (the user's own) and
+                -- `?fulfillment_order=` (admin Fulfillment tab).
                 urlCmd : Cmd Msg
                 urlCmd =
                     case ( model.pageContext, openedThread ) of
                         ( Just ctx, Just thread ) ->
-                            if thread.admin then
-                                Cmd.none
+                            Browser.Navigation.replaceUrl ctx.navKey
+                                (ctx.path
+                                    ++ "?"
+                                    ++ (if thread.admin then
+                                            Fulfillment.orderQuery accountsPanelModel.mainFrontendHost thread.host thread.subscription.id
 
-                            else
-                                Browser.Navigation.replaceUrl ctx.navKey
-                                    (ctx.path ++ "?" ++ Fulfillment.threadQuery accountsPanelModel.mainFrontendHost thread.host thread.subscription.id)
+                                        else
+                                            Fulfillment.threadQuery accountsPanelModel.mainFrontendHost thread.host thread.subscription.id
+                                       )
+                                )
 
                         ( Just ctx, Nothing ) ->
                             Browser.Navigation.replaceUrl ctx.navKey ctx.path
@@ -1297,7 +1310,7 @@ update accountsPanelModel msg model =
                         _ ->
                             Cmd.none
             in
-            ( { model | selectedThread = newSelection }, Cmd.batch [ openCmd, urlCmd ], Nothing )
+            ( { model | selectedThread = newSelection, fulfillment = openedFulfillment }, Cmd.batch [ openCmd, urlCmd ], Nothing )
 
         PushRefreshDebounceElapsed host generation ->
             if Dict.get host model.pushRefreshGenerations == Just generation then
@@ -2423,8 +2436,8 @@ conversation still peeking out beside it dismiss the drawer too, the same
 "tap outside to close" gesture the hamburger's own toggle offers explicitly.
 
 -}
-view : SharedTime.Model -> AccountsPanel.Model -> Model -> Html Msg
-view time accountsPanelModel model =
+view : SharedTime.Model -> String -> AccountsPanel.Model -> Model -> Html Msg
+view time basePath accountsPanelModel model =
     let
         -- Subscriptions/Fulfillment only exist for someone with subscriptions / an admin account;
         -- Messages always does. With only Messages there's no tab bar at all.
@@ -2463,10 +2476,10 @@ view time accountsPanelModel model =
          )
             ++ (case activeTab of
                     SubscriptionsTab ->
-                        [ Fulfillment.view (fulfillmentViewConfig time accountsPanelModel model) ]
+                        [ Fulfillment.view (fulfillmentViewConfig time basePath accountsPanelModel model) ]
 
                     FulfillmentTab ->
-                        [ Fulfillment.adminView (fulfillmentViewConfig time accountsPanelModel model) ]
+                        [ Fulfillment.adminView (fulfillmentViewConfig time basePath accountsPanelModel model) ]
 
                     MessagesTab ->
                         [ searchRowView accountsPanelModel model
@@ -2486,10 +2499,12 @@ view time accountsPanelModel model =
 
 fulfillmentViewConfig :
     SharedTime.Model
+    -> String
     -> AccountsPanel.Model
     -> Model
     ->
         { time : SharedTime.Model
+        , basePath : String
         , accountsPanelModel : AccountsPanel.Model
         , model : Fulfillment.Model
         , selected : Maybe String
@@ -2497,8 +2512,9 @@ fulfillmentViewConfig :
         , onLinkClick : Maybe (String -> Msg)
         , toMsg : Fulfillment.Msg -> Msg
         }
-fulfillmentViewConfig time accountsPanelModel model =
+fulfillmentViewConfig time basePath accountsPanelModel model =
     { time = time
+    , basePath = basePath
     , accountsPanelModel = accountsPanelModel
     , model = model.fulfillment
     , selected = model.selectedThread

@@ -23,13 +23,18 @@ pub use update_market_subscription::{update_market_subscription, update_market_s
 mod make_market_purchase;
 pub use make_market_purchase::make_market_purchase;
 
-// The three RPCs backing opt-in push notifications for a Rellm hosting subscription's fulfillment
-// chat share one `authorize` helper, so (unlike the one-file-per-RPC rule above) they live together.
-mod market_subscription_push;
-pub use market_subscription_push::{
-    get_market_subscription_push_status, register_market_subscription_push,
-    unregister_market_subscription_push,
-};
+// Opt-in push notifications for a Rellm hosting subscription's fulfillment chat: one file per RPC, sharing
+// the access check in `market_subscription_push_access`.
+mod market_subscription_push_access;
+
+mod register_market_subscription_push;
+pub use register_market_subscription_push::register_market_subscription_push;
+
+mod unregister_market_subscription_push;
+pub use unregister_market_subscription_push::unregister_market_subscription_push;
+
+mod get_market_subscription_push_status;
+pub use get_market_subscription_push_status::get_market_subscription_push_status;
 
 mod mark_fulfillment_notes_read;
 pub use mark_fulfillment_notes_read::mark_fulfillment_notes_read;

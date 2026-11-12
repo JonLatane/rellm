@@ -119,12 +119,34 @@ init shared req =
                         Fulfillment.threadKey host subscriptionId
                     )
 
+        -- `?fulfillment_order=<id>[@host]` -- one admin Fulfillment-tab order, same encoding.
+        selectedOrder : Maybe String
+        selectedOrder =
+            Dict.get "fulfillment_order" req.query
+                |> Maybe.map
+                    (\raw ->
+                        let
+                            ( orderId, host ) =
+                                Messages.parseGroupRouteId shared.accounts.mainFrontendHost raw
+                        in
+                        "admin/" ++ Fulfillment.threadKey host orderId
+                    )
+
         ( initialModel, cmd ) =
             MessagesPage.init shared.accounts (Just { navKey = req.key, path = req.url.path }) selectedGroup pendingScrollMessageId searchText
 
+        -- An admin order deep link wins; otherwise the user's own subscription thread, if either is given.
+        selectedThreadKey : Maybe String
+        selectedThreadKey =
+            if selectedOrder /= Nothing then
+                selectedOrder
+
+            else
+                selectedSubscriptionThread
+
         model : Model
         model =
-            case selectedSubscriptionThread of
+            case selectedThreadKey of
                 Just key ->
                     MessagesPage.selectSubscriptionThread key initialModel
 
@@ -309,7 +331,7 @@ view shared req model =
         UI.layout shared
             req.route
             SharedMsg
-            [ Html.map PageMsg (MessagesPage.view shared.time shared.accounts model) ]
+            [ Html.map PageMsg (MessagesPage.view shared.time shared.basePath shared.accounts model) ]
     }
 
 
