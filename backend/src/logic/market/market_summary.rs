@@ -371,6 +371,7 @@ mod tests {
                 contact_email: String::new(),
                 fulfillment_status: FulfillmentStatus::AwaitingHostAdmin as i32,
                 fulfillment_notes: vec![],
+                notes_last_read: None,
                 additional_information: String::new(),
             }),
         );
@@ -478,6 +479,7 @@ mod tests {
                 contact_email: String::new(),
                 fulfillment_status: FulfillmentStatus::AwaitingHostAdmin as i32,
                 fulfillment_notes: vec![],
+                notes_last_read: None,
                 additional_information: String::new(),
             }),
         );

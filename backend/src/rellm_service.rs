@@ -652,7 +652,39 @@ impl Rellm for RellmService {
         &self,
         request: Request<MarketSubscription>,
     ) -> Result<Response<MarketSubscription>, Status> {
-        authenticated_rpc!(self, rpcs::update_market_subscription, request)
+        // Not `authenticated_rpc!` -- needs `self.pool` too, to spawn the fulfillment-chat push
+        // notifications with their own connection (see `update_market_subscription_and_notify`).
+        let mut conn = get_connection(&self.pool)?;
+        let user = auth::get_auth_user(&request, &mut conn)?.ok_or(Status::new(
+            Code::Unauthenticated,
+            "authentication_required",
+        ))?;
+        rpcs::update_market_subscription_and_notify(request.into_inner(), &user, &mut conn, self.pool.clone())
+            .map(Response::new)
+    }
+    async fn mark_fulfillment_notes_read(
+        &self,
+        request: Request<MarkFulfillmentNotesReadRequest>,
+    ) -> Result<Response<MarketSubscription>, Status> {
+        authenticated_rpc!(self, rpcs::mark_fulfillment_notes_read, request)
+    }
+    async fn register_market_subscription_push(
+        &self,
+        request: Request<MarketSubscriptionPushRequest>,
+    ) -> Result<Response<()>, Status> {
+        authenticated_rpc!(self, rpcs::register_market_subscription_push, request)
+    }
+    async fn unregister_market_subscription_push(
+        &self,
+        request: Request<MarketSubscriptionPushRequest>,
+    ) -> Result<Response<()>, Status> {
+        authenticated_rpc!(self, rpcs::unregister_market_subscription_push, request)
+    }
+    async fn get_market_subscription_push_status(
+        &self,
+        request: Request<MarketSubscriptionPushRequest>,
+    ) -> Result<Response<GetMarketSubscriptionPushStatusResponse>, Status> {
+        authenticated_rpc!(self, rpcs::get_market_subscription_push_status, request)
     }
     async fn make_market_purchase(
         &self,

@@ -1,9 +1,10 @@
+use std::sync::Arc;
 use std::time::SystemTime;
 
 use diesel::*;
 use tonic::{Code, Status};
 
-use crate::db_connection::PgPooledConnection;
+use crate::db_connection::{PgPool, PgPooledConnection};
 use crate::marshaling::*;
 use crate::models;
 use crate::protos::*;
@@ -32,6 +33,87 @@ pub fn update_market_subscription(
     current_user: &models::User,
     conn: &mut PgPooledConnection,
 ) -> Result<MarketSubscription, Status> {
+    apply_fulfillment_notes(request, current_user, conn).map(|(updated, _new_notes)| updated)
+}
+
+/// What the gRPC service actually calls: `update_market_subscription`, then -- only once the notes
+/// are safely stored -- pushes a notification per newly-appended note to every device that opted in
+/// to this subscription's chat (`web_push::notify_fulfillment_note`; spawned in the background with
+/// its own connection from `pool`, never delays or fails the update itself). Kept separate from
+/// `update_market_subscription` so the many specs of its validation rules don't all need a pool.
+pub fn update_market_subscription_and_notify(
+    request: MarketSubscription,
+    current_user: &models::User,
+    conn: &mut PgPooledConnection,
+    pool: Arc<PgPool>,
+) -> Result<MarketSubscription, Status> {
+    let (updated, new_notes) = apply_fulfillment_notes(request, current_user, conn)?;
+    if !new_notes.is_empty() {
+        notify_new_notes(&updated, &new_notes, current_user, &pool);
+    }
+    Ok(updated)
+}
+
+fn notify_new_notes(
+    updated: &MarketSubscription,
+    new_notes: &[FulfillmentNote],
+    author: &models::User,
+    pool: &Arc<PgPool>,
+) {
+    let Some(buyer) = updated.buyer.as_ref() else {
+        return;
+    };
+    let (Ok(market_subscription_id), Ok(buyer_id)) =
+        (updated.id.to_db_id_or_err("id"), buyer.user_id.to_db_id_or_err("buyer.user_id"))
+    else {
+        return;
+    };
+    for note in new_notes {
+        crate::web_push::notify_fulfillment_note(
+            pool.clone(),
+            crate::web_push::FulfillmentNoteNotificationContent {
+                market_subscription_id,
+                author_user_id: author.id,
+                buyer_id,
+                buyer_username: buyer.username.clone().unwrap_or_default(),
+                note_text: note.note.clone(),
+                new_status_label: note_status_change_label(updated, note),
+            },
+        );
+    }
+}
+
+/// `Some("<Status>")` only for a note whose status differs from the note before it (a real
+/// transition, see `FulfillmentNote.note`'s own doc) -- the notification body falls back to it when
+/// the note has no text of its own.
+fn note_status_change_label(updated: &MarketSubscription, note: &FulfillmentNote) -> Option<String> {
+    let Some(market_subscription::Details::RellmHostingSubscriptionDetails(details)) = &updated.details else {
+        return None;
+    };
+    let index = details.fulfillment_notes.iter().position(|n| n == note)?;
+    let previous_status = if index == 0 {
+        FulfillmentStatus::AwaitingHostAdmin as i32
+    } else {
+        details.fulfillment_notes[index - 1].fulfillment_status
+    };
+    (note.fulfillment_status != previous_status).then(|| {
+        match FulfillmentStatus::try_from(note.fulfillment_status) {
+            Ok(FulfillmentStatus::Fulfilled) => "Fulfilled",
+            Ok(FulfillmentStatus::InProgress) => "In Progress",
+            _ => "Awaiting Host Admin",
+        }
+        .to_string()
+    })
+}
+
+/// The real work behind `update_market_subscription` -- also returns the newly-appended
+/// `FulfillmentNote`s exactly as stored (server-stamped `created_at` included), for the
+/// notification path.
+fn apply_fulfillment_notes(
+    request: MarketSubscription,
+    current_user: &models::User,
+    conn: &mut PgPooledConnection,
+) -> Result<(MarketSubscription, Vec<FulfillmentNote>), Status> {
     validate_permission(&Some(current_user), Permission::Admin)?;
 
     let subscription_id = request.id.to_db_id_or_err("id")?;
@@ -69,6 +151,7 @@ pub fn update_market_subscription(
     // *already-stored* note, or the `AWAITING_HOST_ADMIN` default if there are none yet -- see this
     // field's own proto doc), then advances with each newly appended entry below.
     let mut running_status = current_details.fulfillment_status;
+    let mut appended_notes: Vec<FulfillmentNote> = vec![];
     for note in &incoming.fulfillment_notes[already_stored..] {
         if note.user_id != current_user.id.to_proto_id() {
             return Err(Status::new(Code::PermissionDenied, "fulfillment_note_user_id_mismatch"));
@@ -78,12 +161,14 @@ pub fn update_market_subscription(
             return Err(Status::new(Code::InvalidArgument, "fulfillment_note_text_required"));
         }
         running_status = note.fulfillment_status;
-        current_details.fulfillment_notes.push(FulfillmentNote {
+        let stored_note = FulfillmentNote {
             user_id: note.user_id.clone(),
             note: note.note.clone(),
             fulfillment_status: note.fulfillment_status,
             created_at: Some(SystemTime::now().to_proto()),
-        });
+        };
+        appended_notes.push(stored_note.clone());
+        current_details.fulfillment_notes.push(stored_note);
     }
     current_details.fulfillment_status = running_status;
 
@@ -101,10 +186,11 @@ pub fn update_market_subscription(
         })?;
 
     let mut by_buyer = build_subscriptions_for_buyers(&[updated.buyer_id], conn)?;
-    by_buyer
+    let marshaled = by_buyer
         .remove(&updated.buyer_id)
         .unwrap_or_default()
         .into_iter()
         .find(|s| s.id == request.id)
-        .ok_or_else(|| Status::new(Code::Internal, "failed_to_load_updated_subscription"))
+        .ok_or_else(|| Status::new(Code::Internal, "failed_to_load_updated_subscription"))?;
+    Ok((marshaled, appended_notes))
 }

@@ -35,6 +35,20 @@ pub fn make_market_purchase(
 
     let product_id = request.market_product_id.to_db_id_or_err("market_product_id")?;
     let product = models::get_market_product(product_id, conn)?;
+
+    // Re-buying a product whose subscription the buyer already canceled -- but whose paid-for period
+    // hasn't run out yet (`SUBSCRIPTION_ACTIVE_BUT_CANCELED`) -- resumes that subscription instead of
+    // charging them for a second one. Ahead of every checkout-only precondition below (delisted,
+    // Stripe/frontend host configured, ...): nothing is being bought, so none of those apply -- only
+    // `market_enabled` (above) and, since resuming claims back the slot cancellation freed, whether
+    // one is still available.
+    if let Some(resumed_subscription) = try_resume_subscription(&product, current_user, conn)? {
+        return Ok(MakeMarketPurchaseResponse {
+            checkout_url: String::new(),
+            resumed_subscription: Some(resumed_subscription),
+        });
+    }
+
     if product.delisted_at.is_some() {
         return Err(Status::new(Code::FailedPrecondition, "product_delisted"));
     }
@@ -151,5 +165,30 @@ pub fn make_market_purchase(
         },
     )?;
 
-    Ok(MakeMarketPurchaseResponse { checkout_url })
+    Ok(MakeMarketPurchaseResponse { checkout_url, resumed_subscription: None })
+}
+
+/// See the call site. `Ok(None)` means "nothing to resume, carry on to checkout" -- including when
+/// a candidate existed but its paid-for period ran out between the lookup and the conditional
+/// update (`models::resume_market_subscription_row` re-checks), in which case a fresh subscription
+/// is exactly what the buyer needs. `product_sold_out` if resuming would exceed
+/// `MarketProduct.available_count`.
+fn try_resume_subscription(
+    product: &models::MarketProduct,
+    current_user: &models::User,
+    conn: &mut PgPooledConnection,
+) -> Result<Option<MarketSubscription>, Status> {
+    let Some(candidate) = models::get_resumable_market_subscription(current_user.id, product.id, conn)? else {
+        return Ok(None);
+    };
+    if product.available_count > 0 && product.sold_count >= product.available_count {
+        return Err(Status::new(Code::FailedPrecondition, "product_sold_out"));
+    }
+    // Only the call that actually flips `canceled_at` back claims the slot -- the mirror image of
+    // `cancel_market_subscription`'s release, with the same race-freedom argument.
+    if !models::resume_market_subscription_row(candidate.id, conn)? {
+        return Ok(None);
+    }
+    models::increment_market_product_sold_count(product.id, conn);
+    build_subscription(candidate.id, conn).map(Some)
 }

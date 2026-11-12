@@ -699,6 +699,7 @@ fn rellm_hosting_details(
         additional_information: "Please set this up by Friday.".to_string(),
         fulfillment_status: fulfillment_status as i32,
         fulfillment_notes,
+        notes_last_read: None,
     }
 }
 

@@ -447,7 +447,10 @@ import "market.proto";
 // entitlement itself stays in effect until whichever is later of `renews_at`/`canceled_at` - once both have
 // passed, the `renew_market_subscriptions` background job revokes it (reverts `media_storage_limit_bytes` to
 // `ServerConfiguration.media_settings.default_user_media_allocation_bytes`, or removes the granted `Permission`s,
-// depending on `type`) and sets `service_terminated_at`. A user's own MarketSubscriptions (never anyone
+// depending on `type`) and sets `service_terminated_at`. Until then the subscription is
+// `SUBSCRIPTION_ACTIVE_BUT_CANCELED` (see [`MarketSubscriptionState`](#rellm-MarketSubscriptionState)): the buyer has
+// paid for that time, so buying the same product again just *resumes* it (no new charge) rather than starting a
+// second subscription. A user's own MarketSubscriptions (never anyone
 // else's) are listed via [`GetMarketSubscriptions`](#grpc-api-GetMarketSubscriptions), and also travel along
 // on [`User`](#rellm-User) itself (`User.market_subscriptions`) the same way `ai_models`/`sync_sources` do.
 // Stripe credentials for all of this live in `ServerConfiguration.stripe_config` (a
@@ -1197,6 +1200,8 @@ service Rellm {
   // Starts (or resumes) buying a MarketProduct for the current user, returning a Stripe Checkout URL to
   // redirect to. *Authenticated*. See `MakeMarketPurchaseRequest`'s own doc -- no MarketPurchase/
   // MarketSubscription is created by this call itself, only once Stripe confirms payment via webhook.
+  // If the buyer already has a `SUBSCRIPTION_ACTIVE_BUT_CANCELED` subscription to the product, it is
+  // resumed on the spot instead (no checkout, no charge) -- see `MakeMarketPurchaseResponse.resumed_subscription`.
   rpc MakeMarketPurchase(MakeMarketPurchaseRequest) returns (MakeMarketPurchaseResponse) {}
   // Cancels a MarketSubscription by setting `canceled_at` to now -- entitlement (media storage quota,
   // granted permissions, etc.) stays active until whichever is later of `renews_at`/`canceled_at`; the
@@ -1215,6 +1220,28 @@ service Rellm {
   // to set it independently of a note. *Authenticated*, requires Admin (for now -- see that field's
   // own doc on why this may loosen to "buyer, or Admin" later).
   rpc UpdateMarketSubscription(MarketSubscription) returns (MarketSubscription) {}
+  // Marks all of a `PURCHASE_TYPE_RELLM_HOSTING` MarketSubscription's current `fulfillment_notes` read
+  // by stamping `RellmHostingSubscriptionDetails.notes_last_read` with now. *Authenticated*, and only
+  // the subscription's own buyer (`PermissionDenied` otherwise -- even an Admin, since the marker is
+  // the buyer's). Idempotent. Returns the updated subscription.
+  rpc MarkFulfillmentNotesRead(MarkFulfillmentNotesReadRequest) returns (MarketSubscription) {}
+  // Opts one of the current user's already-registered Web Push subscriptions (see
+  // `RegisterPushSubscription`) in to notifications for a `PURCHASE_TYPE_RELLM_HOSTING`
+  // MarketSubscription's fulfillment chat: every `FulfillmentNote` someone *else* appends to it
+  // (`UpdateMarketSubscription`) pushes a notification to the device, via the same VAPID setup
+  // Messages use. *Authenticated* -- the subscription's own buyer, or an Admin; re-registering is a
+  // no-op. Fails with `push_subscription_not_registered` if `endpoint` isn't one of the caller's own
+  // registered Web Push subscriptions, and `not_a_rellm_hosting_subscription` for any other type.
+  // Notifications are also re-checked at send time: a recipient who is no longer the buyer or an
+  // Admin is skipped, so losing access to the chat also stops its notifications.
+  rpc RegisterMarketSubscriptionPush(MarketSubscriptionPushRequest) returns (google.protobuf.Empty) {}
+  // Reverses `RegisterMarketSubscriptionPush` for this device. *Authenticated*; not an error if it
+  // wasn't registered. The user's underlying Web Push subscription (and its Messages notifications)
+  // is untouched.
+  rpc UnregisterMarketSubscriptionPush(MarketSubscriptionPushRequest) returns (google.protobuf.Empty) {}
+  // Whether `endpoint` is currently linked to a MarketSubscription's fulfillment-chat notifications
+  // (see `RegisterMarketSubscriptionPush`). *Authenticated*, same access rule as registering.
+  rpc GetMarketSubscriptionPushStatus(MarketSubscriptionPushRequest) returns (GetMarketSubscriptionPushStatusResponse) {}
   // Generates (or edits, given reference `media_ids`) an image via one of the current user's AIModels,
   // storing it as a new Media and, if `target` is set, attaching it to that Post/Event. *Authenticated* - caller
   // must own or have been granted access to the chosen AIProvider, and (if `target` is set) have edit access

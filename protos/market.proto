@@ -204,6 +204,14 @@ message MakeMarketPurchaseResponse {
   // is created until the webhook fires (see this message's own request's doc), an abandoned/expired
   // checkout leaves no trace at all.
   string checkout_url = 1;
+
+  // Set *instead of* a checkout (and `checkout_url` is then empty) when the buyer already has a
+  // `SUBSCRIPTION_ACTIVE_BUT_CANCELED` subscription to this same product: they've already paid for
+  // the rest of the period, so buying again just resumes it -- `canceled_at` is cleared, the slot
+  // it freed is claimed again (`MarketProduct.sold_count`), and nothing is charged. The returned
+  // subscription is the resumed one, now `SUBSCRIPTION_ACTIVE`. Clients must check this before
+  // redirecting to `checkout_url`.
+  optional MarketSubscription resumed_subscription = 2;
 }
 
 // One completed billing event -- the initial purchase or a later recurring renewal charge -- for a
@@ -407,6 +415,29 @@ message PermissionsAccessPurchaseDetails {
   string description = 3;
 }
 
+// Where a `MarketSubscription` stands from the *buyer's* point of view -- always derived on the fly
+// (never stored as a column) from `canceled_at`/`renews_at`/`service_terminated_at` as of the moment
+// the subscription is marshaled, see `logic::market::market_subscription_state`. The point of the
+// middle value: a buyer who cancels has still paid for the rest of their current billing period, so
+// cancellation is not an instant "off switch" -- they keep their entitlement until it runs out, and
+// can resume (see `MakeMarketPurchaseResponse.resumed_subscription`) any time before then without
+// paying again.
+enum MarketSubscriptionState {
+  // Not canceled -- will renew (or, for a `PURCHASE_PERIOD_INDEFINITE` one, simply stays in force)
+  // and the entitlement is in effect. The default (proto3's implicit `0`).
+  SUBSCRIPTION_ACTIVE = 0;
+  // `canceled_at` is set, but the period already paid for hasn't run out yet (i.e. now is still before
+  // the later of `canceled_at`/`renews_at`, and `service_terminated_at` is unset): the entitlement
+  // is still in effect, it just won't renew. Buying the same product again *resumes* this
+  // subscription (clears `canceled_at`, no new charge) rather than starting a second one.
+  SUBSCRIPTION_ACTIVE_BUT_CANCELED = 1;
+  // Canceled and the paid-for period is over (`service_terminated_at` set, or the later of
+  // `canceled_at`/`renews_at` has passed and the `renew_market_subscriptions` job simply hasn't
+  // gotten to revoking the entitlement yet). Terminal: buying the product again starts a brand new
+  // subscription.
+  SUBSCRIPTION_CANCELED = 2;
+}
+
 // Created for *every* `MarketPurchase`, regardless of `MarketProduct.period` -- a recurring
 // (`PURCHASE_PERIOD_ANNUAL`/`PURCHASE_PERIOD_MONTHLY`) one gets re-billed and re-fulfilled
 // automatically every period by `renew_market_subscriptions.rs` until canceled; a
@@ -446,6 +477,12 @@ message MarketSubscription {
   // into this same subscription.
   repeated MarketPurchase billing_history = 8;
 
+  // Where this subscription stands right now -- see `MarketSubscriptionState`'s own doc. Server-
+  // derived at marshal time from `canceled_at`/`renews_at`/`service_terminated_at`; ignored on any
+  // request (a client can't set it -- cancel via `CancelMarketSubscription`, resume by buying the
+  // product again via `MakeMarketPurchase`).
+  MarketSubscriptionState state = 9;
+
   // Type-specific details for this subscription, matching `type` above -- copied from the
   // originating `MarketProduct.details` at creation time (or, for `PURCHASE_TYPE_RELLM_HOSTING`,
   // built from the buyer's own checkout-time input -- see `RellmHostingPurchaseDetails`'s own doc
@@ -475,7 +512,10 @@ message MarketSubscription {
   // storage quota, granted permissions, etc.) stays active until whichever is later of
   // renews_at/canceled_at, at which point renew_market_subscriptions.rs revokes it and sets
   // service_terminated_at. Also the moment `MarketProduct.sold_count` is decremented, freeing this
-  // subscription's slot for a new buyer (see that field's own doc).
+  // subscription's slot for a new buyer (see that field's own doc). Cleared again (and the slot
+  // re-claimed) if the buyer resumes the subscription before it lapses -- see
+  // `MarketSubscriptionState.SUBSCRIPTION_ACTIVE_BUT_CANCELED` and `state` above, which is what
+  // clients should branch on rather than inspecting this field.
   optional google.protobuf.Timestamp canceled_at = 22;
 
   // The time permissions were removed, media storage quotas reset, etc. -- i.e. when
@@ -601,6 +641,14 @@ message RellmHostingSubscriptionDetails {
   // already here, never inserted/reordered/removed, and its `user_id` must match whoever's actually
   // making the request -- the server stamps `created_at` itself).
   repeated FulfillmentNote fulfillment_notes = 8;
+
+  // When the *buyer* last read this order's `fulfillment_notes` -- set by `MarkFulfillmentNotesRead`
+  // (server-stamped, never client-settable via `UpdateMarketSubscription`, which preserves it).
+  // Unset until first read. A note is *unread* if it was written by someone other than the buyer
+  // (i.e. an admin) and its `created_at` is later than this (or this is unset). Drives the unread
+  // counts on the Messages UI's Fulfillment tab and on subscription listings. Deliberately one
+  // marker for the buyer's side only: admins work orders from `/market/fulfillment`.
+  optional google.protobuf.Timestamp notes_last_read = 9;
 }
 
 // One entry in a MarketSubscription's `fulfillment_notes` -- see that field's own doc. Immutable
@@ -628,4 +676,31 @@ message FulfillmentNote {
   // When this note was added. Server-stamped -- `UpdateMarketSubscription` always ignores whatever
   // timestamp the client sends for a newly-appended entry.
   google.protobuf.Timestamp created_at = 4;
+}
+
+// Identifies one of the current user's registered Web Push subscriptions (see
+// `PushSubscription`/`RegisterPushSubscription` in `messages.proto` -- it must already be
+// registered, this only *links* it) and the `PURCHASE_TYPE_RELLM_HOSTING` `MarketSubscription`
+// whose fulfillment chat (`RellmHostingSubscriptionDetails.fulfillment_notes`) it should be
+// notified about. Used by `RegisterMarketSubscriptionPush`, `UnregisterMarketSubscriptionPush`
+// and `GetMarketSubscriptionPushStatus`.
+message MarketSubscriptionPushRequest {
+  // The `MarketSubscription.id` to (un)subscribe to/check. The caller must be its buyer, or an Admin.
+  string market_subscription_id = 1;
+  // The Web Push subscription endpoint URL, as previously passed to `RegisterPushSubscription` by
+  // the same user.
+  string endpoint = 2;
+}
+
+message GetMarketSubscriptionPushStatusResponse {
+  // Whether the current user's push subscription for `endpoint` is linked to this subscription's
+  // fulfillment chat -- i.e. whether a new `FulfillmentNote` would notify that device.
+  bool registered = 1;
+}
+
+// Request to mark a Rellm hosting subscription's fulfillment notes read -- see
+// `RellmHostingSubscriptionDetails.notes_last_read`.
+message MarkFulfillmentNotesReadRequest {
+  // The `MarketSubscription.id`. Only its buyer may mark it read.
+  string market_subscription_id = 1;
 }

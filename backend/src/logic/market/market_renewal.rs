@@ -42,7 +42,7 @@ pub fn renew_subscriptions_of_type(
             due.len()
         );
         for subscription in due {
-            end_subscription(subscription.id, conn);
+            end_subscription(&subscription, conn);
         }
         return Ok(());
     };
@@ -55,7 +55,7 @@ pub fn renew_subscriptions_of_type(
                 subscription.buyer_id,
                 e
             );
-            end_subscription(subscription.id, conn);
+            end_subscription(&subscription, conn);
         }
     }
     Ok(())
@@ -154,12 +154,16 @@ pub fn advance_by_period(from: SystemTime, period: &str) -> SystemTime {
         .unwrap_or_else(|| from.into())
 }
 
-fn end_subscription(subscription_id: i64, conn: &mut PgPooledConnection) {
-    if let Err(e) = diesel::update(market_subscriptions::table.filter(market_subscriptions::id.eq(subscription_id)))
-        .set(market_subscriptions::canceled_at.eq(SystemTime::now()))
-        .execute(conn)
-    {
-        log::error!("Failed to end market subscription {}: {:?}", subscription_id, e);
+/// Cancels `subscription` (a failed/impossible renewal) -- the same transition as
+/// `CancelMarketSubscription`, so it frees the product's slot too (`MarketProduct.sold_count`), and
+/// like it only the call that actually flips `canceled_at` does so. The paid-for period it was
+/// being renewed *from* has already ended (`renews_at <= now` is what made it due), so this lands
+/// straight in `SUBSCRIPTION_CANCELED`, never `SUBSCRIPTION_ACTIVE_BUT_CANCELED`.
+fn end_subscription(subscription: &models::MarketSubscription, conn: &mut PgPooledConnection) {
+    match models::cancel_market_subscription_row(subscription.id, conn) {
+        Ok(true) => models::decrement_market_product_sold_count(subscription.product_id, conn),
+        Ok(false) => {}
+        Err(e) => log::error!("Failed to end market subscription {}: {:?}", subscription.id, e),
     }
 }
 

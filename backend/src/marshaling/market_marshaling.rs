@@ -8,6 +8,7 @@
 //! `ai_providers.configuration`, which has no separate "provider kind" column to fall back on).
 
 use std::collections::HashMap;
+use std::time::SystemTime;
 
 use tonic::Status;
 
@@ -152,6 +153,12 @@ impl ToProtoMarshalableMarketSubscription for MarshalableMarketSubscription {
             currency: subscription.currency as u32,
             market_product: Some(MarshalableMarketProduct(product.clone()).to_proto()),
             billing_history: billing_history.clone(),
+            state: crate::logic::subscription_state(
+                subscription.canceled_at,
+                subscription.renews_at,
+                subscription.service_terminated_at,
+                SystemTime::now(),
+            ) as i32,
             details: subscription_details_to_proto(purchase_type, &subscription.details),
             created_at: Some(subscription.created_at.to_proto()),
             renews_at: subscription.renews_at.map(|t| t.to_proto()),
@@ -182,6 +189,20 @@ pub fn build_subscriptions_for_buyers(
         result.entry(buyer_id).or_default().push(subscription);
     }
     Ok(result)
+}
+
+/// One `MarketSubscription` (with `billing_history` populated) by id -- for RPCs that just changed
+/// a single row and need to hand its fresh proto back (`MakeMarketPurchase`'s resume path).
+pub fn build_subscription(
+    subscription_id: i64,
+    conn: &mut PgPooledConnection,
+) -> Result<MarketSubscription, Status> {
+    let subscription = models::get_market_subscription(subscription_id, conn)?;
+    build_subscriptions(vec![subscription], conn)?
+        .into_iter()
+        .next()
+        .map(|(_, proto)| proto)
+        .ok_or_else(|| Status::new(tonic::Code::Internal, "failed_to_load_updated_subscription"))
 }
 
 /// Every `PURCHASE_TYPE_RELLM_HOSTING` `MarketSubscription` across *every* buyer, oldest first --

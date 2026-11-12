@@ -3,8 +3,8 @@ use std::sync::Arc;
 use base64::{Engine, prelude::BASE64_URL_SAFE_NO_PAD};
 use serde::Serialize;
 use web_push::{
-    ContentEncoding, IsahcWebPushClient, SubscriptionInfo, VapidSignatureBuilder, WebPushClient,
-    WebPushError, WebPushMessageBuilder,
+    ContentEncoding, IsahcWebPushClient, PartialVapidSignatureBuilder, SubscriptionInfo,
+    VapidSignatureBuilder, WebPushClient, WebPushError, WebPushMessageBuilder,
 };
 
 use crate::db_connection::PgPool;
@@ -131,7 +131,7 @@ async fn send_message_notifications(
         return Ok(());
     }
 
-    validate_private_vapid_key(&web_push_config.private_vapid_key)?;
+    let sender = PushSender::new(&web_push_config)?;
 
     let frontend_host = stored_frontend_host(&mut conn)?;
     let url = notification_url(frontend_host.as_deref(), messaging_group_id, message_id);
@@ -139,14 +139,47 @@ async fn send_message_notifications(
     let body = build_body(content.subject.as_deref(), &content.body_text);
     let icon = build_icon_url(frontend_host.as_deref(), content.sender_avatar_media_id);
 
-    let partial_signature_builder =
-        VapidSignatureBuilder::from_base64_no_sub(&web_push_config.private_vapid_key)
-            .map_err(|e| format!("{:?}", e))?;
-    let client = IsahcWebPushClient::new().map_err(|e| format!("{:?}", e))?;
     let payload = serde_json::to_vec(&PushPayload { title, body, url, icon, host: frontend_host })
         .map_err(|e| e.to_string())?;
 
     for subscription in subscriptions {
+        sender.send(&subscription, &payload, &mut conn).await;
+    }
+
+    Ok(())
+}
+
+/// Signs and delivers payloads to Web Push subscriptions with this server's VAPID key -- the part
+/// of sending a push that doesn't depend on *what* is being announced, shared by new-Message
+/// notifications (`send_message_notifications`) and fulfillment-chat ones
+/// (`send_fulfillment_note_notifications`).
+struct PushSender {
+    partial_signature_builder: PartialVapidSignatureBuilder,
+    client: IsahcWebPushClient,
+}
+
+impl PushSender {
+    /// Errs (rather than panicking inside `jwt_simple`) on a malformed/half-configured private key --
+    /// see `validate_private_vapid_key`.
+    fn new(web_push_config: &protos::WebPushConfig) -> Result<Self, String> {
+        validate_private_vapid_key(&web_push_config.private_vapid_key)?;
+        Ok(Self {
+            partial_signature_builder: VapidSignatureBuilder::from_base64_no_sub(&web_push_config.private_vapid_key)
+                .map_err(|e| format!("{:?}", e))?,
+            client: IsahcWebPushClient::new().map_err(|e| format!("{:?}", e))?,
+        })
+    }
+
+    /// Sends `payload` to one subscription, pruning it (`delete_push_subscription_by_id`, which
+    /// cascades to any `market_subscription_push_subscriptions` links) if the push service says it's
+    /// permanently dead; any other failure is just logged. Never errs -- one bad subscription must
+    /// not stop the rest of a fan-out.
+    async fn send(
+        &self,
+        subscription: &models::PushSubscription,
+        payload: &[u8],
+        conn: &mut crate::db_connection::PgPooledConnection,
+    ) {
         let subscription_info = SubscriptionInfo::new(
             subscription.endpoint.clone(),
             subscription.p256dh_key.clone(),
@@ -154,18 +187,19 @@ async fn send_message_notifications(
         );
 
         let send_result = (|| -> Result<_, WebPushError> {
-            let signature = partial_signature_builder
+            let signature = self
+                .partial_signature_builder
                 .clone()
                 .add_sub_info(&subscription_info)
                 .build()?;
             let mut builder = WebPushMessageBuilder::new(&subscription_info);
-            builder.set_payload(ContentEncoding::Aes128Gcm, &payload);
+            builder.set_payload(ContentEncoding::Aes128Gcm, payload);
             builder.set_vapid_signature(signature);
             builder.build()
         })();
 
         let send_result = match send_result {
-            Ok(message) => client.send(message).await,
+            Ok(message) => self.client.send(message).await,
             Err(error) => Err(error),
         };
 
@@ -184,12 +218,8 @@ async fn send_message_notifications(
             Err(WebPushError::EndpointNotValid(_))
             | Err(WebPushError::EndpointNotFound(_))
             | Err(WebPushError::BadRequest(_)) => {
-                if let Err(e) = models::delete_push_subscription_by_id(subscription.id, &mut conn) {
-                    log::warn!(
-                        "Failed to prune dead push subscription {}: {:?}",
-                        subscription.id,
-                        e
-                    );
+                if let Err(e) = models::delete_push_subscription_by_id(subscription.id, conn) {
+                    log::warn!("Failed to prune dead push subscription {}: {:?}", subscription.id, e);
                 }
             }
             Err(error) => {
@@ -201,8 +231,144 @@ async fn send_message_notifications(
             }
         }
     }
+}
 
+/// What a new `FulfillmentNote` announces -- see `notify_fulfillment_note`.
+pub struct FulfillmentNoteNotificationContent {
+    /// The `MarketSubscription`'s DB id -- the candidate recipients are whoever linked a push
+    /// subscription to it (`RegisterMarketSubscriptionPush`).
+    pub market_subscription_id: i64,
+    /// The note's author: never notified of their own note, even if they opted in on this device.
+    pub author_user_id: i64,
+    /// The subscription's buyer, and their username (for the deep link to their profile's
+    /// subscriptions section, which is where a buyer reads the chat).
+    pub buyer_id: i64,
+    pub buyer_username: String,
+    /// The note's own text, possibly blank for a bare status transition.
+    pub note_text: String,
+    /// Human-readable new status (e.g. "Fulfilled") when the note changed it -- shown as the body
+    /// when there's no text, and otherwise ignored.
+    pub new_status_label: Option<String>,
+}
+
+/// Pushes a notification about a new `FulfillmentNote` to every device that opted in to its
+/// subscription's chat -- except the author's, and except anyone who can't read the chat any more
+/// (a recipient must still be the subscription's buyer or an Admin *as of now*; opting in once
+/// doesn't outlive losing access). Same spawn-and-forget contract as `notify_message_recipients`:
+/// runs in a background task with its own connection, never fails the note being added, and no-ops
+/// outside a Tokio runtime (the plain synchronous `#[test]`s).
+pub fn notify_fulfillment_note(pool: Arc<PgPool>, content: FulfillmentNoteNotificationContent) {
+    let Ok(handle) = tokio::runtime::Handle::try_current() else {
+        log::warn!("notify_fulfillment_note: no Tokio runtime available, skipping");
+        return;
+    };
+    handle.spawn(async move {
+        if let Err(error) = send_fulfillment_note_notifications(pool, content).await {
+            log::warn!("notify_fulfillment_note failed: {:?}", error);
+        }
+    });
+}
+
+async fn send_fulfillment_note_notifications(
+    pool: Arc<PgPool>,
+    content: FulfillmentNoteNotificationContent,
+) -> Result<(), String> {
+    let mut conn = pool.get().map_err(|e| e.to_string())?;
+    let Some(web_push_config) = stored_web_push_config(&mut conn)? else {
+        return Ok(());
+    };
+    let frontend_host = stored_frontend_host(&mut conn)?;
+    let recipients = fulfillment_note_recipients(&content, &mut conn).map_err(|e| e.to_string())?;
+    if recipients.is_empty() {
+        return Ok(());
+    }
+    let sender = PushSender::new(&web_push_config)?;
+
+    let body = fulfillment_note_body(&content.note_text, content.new_status_label.as_deref());
+    let title = fulfillment_note_title(frontend_host.as_deref());
+
+    for subscription in recipients {
+        let url = fulfillment_note_url(
+            frontend_host.as_deref(),
+            subscription.user_id == content.buyer_id,
+            &content.buyer_username,
+        );
+        let payload = serde_json::to_vec(&PushPayload {
+            title: title.clone(),
+            body: body.clone(),
+            url,
+            icon: None,
+            // `host` makes an open tab refresh that server's Messages *and* Fulfillment threads
+            // (`MessagesPage.PushNotificationReceived`), so the unread badge updates live.
+            host: frontend_host.clone(),
+        })
+        .map_err(|e| e.to_string())?;
+        sender.send(&subscription, &payload, &mut conn).await;
+    }
     Ok(())
+}
+
+/// The linked push subscriptions that should actually get `content`'s notification -- see
+/// `notify_fulfillment_note`'s own doc for the two exclusions.
+pub(crate) fn fulfillment_note_recipients(
+    content: &FulfillmentNoteNotificationContent,
+    conn: &mut crate::db_connection::PgPooledConnection,
+) -> Result<Vec<models::PushSubscription>, tonic::Status> {
+    let linked = models::get_push_subscriptions_for_market_subscription(content.market_subscription_id, conn)?;
+    let mut allowed_by_user: std::collections::HashMap<i64, bool> = std::collections::HashMap::new();
+    let mut recipients = vec![];
+    for subscription in linked {
+        if subscription.user_id == content.author_user_id {
+            continue;
+        }
+        let allowed = match allowed_by_user.get(&subscription.user_id) {
+            Some(allowed) => *allowed,
+            None => {
+                let allowed = subscription.user_id == content.buyer_id
+                    || models::get_user(subscription.user_id, conn)
+                        .map(|user| {
+                            crate::rpcs::validate_permission(&Some(&user), protos::Permission::Admin).is_ok()
+                        })
+                        .unwrap_or(false);
+                allowed_by_user.insert(subscription.user_id, allowed);
+                allowed
+            }
+        };
+        if allowed {
+            recipients.push(subscription);
+        }
+    }
+    Ok(recipients)
+}
+
+fn fulfillment_note_title(frontend_host: Option<&str>) -> String {
+    match frontend_host {
+        Some(host) => format!("Rellm hosting order update on {}", host),
+        None => "Rellm hosting order update".to_string(),
+    }
+}
+
+/// The note's first two non-blank lines (same truncation as a Message body -- see `build_body`),
+/// or, for a bare status transition with no text, "Status: <label>".
+fn fulfillment_note_body(note_text: &str, new_status_label: Option<&str>) -> String {
+    let body = build_body(None, note_text);
+    match (body.is_empty(), new_status_label) {
+        (true, Some(label)) => format!("Status: {}", label),
+        _ => body,
+    }
+}
+
+/// Where tapping the notification goes: a buyer reads the chat on their own profile's
+/// subscriptions section, an admin on the fulfillment page. `None` without a configured
+/// `frontend_host` (nothing to build an absolute URL against -- same as `notification_url`).
+fn fulfillment_note_url(frontend_host: Option<&str>, recipient_is_buyer: bool, buyer_username: &str) -> Option<String> {
+    frontend_host.map(|host| {
+        if recipient_is_buyer {
+            format!("https://{}/{}#subscriptions", host, buyer_username)
+        } else {
+            format!("https://{}/market/fulfillment", host)
+        }
+    })
 }
 
 /// Fetches this server's configured `WebPushConfig`, if any, with `private_vapid_key` intact.
@@ -478,6 +644,43 @@ mod tests {
     #[test]
     fn icon_url_is_none_without_an_avatar() {
         assert_eq!(build_icon_url(Some("ato.band"), None), None);
+    }
+
+    #[test]
+    fn fulfillment_note_body_is_the_note_text_truncated_like_a_message() {
+        assert_eq!(
+            fulfillment_note_body("Domain is live.\n\nDNS next.\nThird.", Some("Fulfilled")),
+            "Domain is live.\nDNS next."
+        );
+    }
+
+    #[test]
+    fn bare_status_transition_notification_names_the_new_status() {
+        assert_eq!(fulfillment_note_body("  \n", Some("In Progress")), "Status: In Progress");
+    }
+
+    #[test]
+    fn fulfillment_note_body_is_empty_for_a_blank_note_with_no_status_change() {
+        assert_eq!(fulfillment_note_body("", None), "");
+    }
+
+    #[test]
+    fn fulfillment_note_title_names_the_host_when_known() {
+        assert_eq!(fulfillment_note_title(Some("ato.band")), "Rellm hosting order update on ato.band");
+        assert_eq!(fulfillment_note_title(None), "Rellm hosting order update");
+    }
+
+    #[test]
+    fn fulfillment_note_url_sends_buyers_to_their_profile_and_admins_to_fulfillment() {
+        assert_eq!(
+            fulfillment_note_url(Some("ato.band"), true, "jon").as_deref(),
+            Some("https://ato.band/jon#subscriptions")
+        );
+        assert_eq!(
+            fulfillment_note_url(Some("ato.band"), false, "jon").as_deref(),
+            Some("https://ato.band/market/fulfillment")
+        );
+        assert_eq!(fulfillment_note_url(None, true, "jon"), None);
     }
 
     #[test]

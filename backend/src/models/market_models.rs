@@ -367,6 +367,88 @@ pub fn get_terminable_market_subscriptions(
         })
 }
 
+/// The buyer's `SUBSCRIPTION_ACTIVE_BUT_CANCELED` subscription to `product_id`, if any -- i.e. canceled
+/// (`canceled_at IS NOT NULL`), not yet revoked (`service_terminated_at IS NULL`), and with the
+/// paid-for period still running (`renews_at > now`; a `NULL renews_at` never matches, since a
+/// canceled non-recurring subscription ends immediately -- see
+/// `logic::market::market_subscription_state::service_ends_at`). Mirrors
+/// `logic::subscription_state`'s `ActiveButCanceled` arm exactly, as a SQL filter. What
+/// `MakeMarketPurchase` resumes instead of starting a second subscription; if (unusually) several
+/// match, the one that runs longest wins.
+pub fn get_resumable_market_subscription(
+    buyer_id: i64,
+    product_id: i64,
+    conn: &mut PgPooledConnection,
+) -> Result<Option<MarketSubscription>, Status> {
+    market_subscriptions::table
+        .filter(market_subscriptions::buyer_id.eq(buyer_id))
+        .filter(market_subscriptions::product_id.eq(product_id))
+        .filter(market_subscriptions::canceled_at.is_not_null())
+        .filter(market_subscriptions::service_terminated_at.is_null())
+        .filter(market_subscriptions::renews_at.gt(SystemTime::now()))
+        .order(market_subscriptions::renews_at.desc())
+        .first::<MarketSubscription>(conn)
+        .optional()
+        .map_err(|e| {
+            log::error!(
+                "Failed to look up resumable market subscription for buyer {} product {}: {:?}",
+                buyer_id,
+                product_id,
+                e
+            );
+            Status::new(Code::Internal, "failed_to_load_subscriptions")
+        })
+}
+
+/// Marks `subscription_id` canceled as of now, *only if* it isn't already -- returns whether this
+/// call is the one that did it. The conditional `WHERE canceled_at IS NULL` is what makes the
+/// cancel->`sold_count` decrement pair race-free: two concurrent cancels (or a cancel racing the
+/// renewal job's own `end_subscription`) can't both see "not yet canceled" and both free the slot.
+pub fn cancel_market_subscription_row(
+    subscription_id: i64,
+    conn: &mut PgPooledConnection,
+) -> Result<bool, Status> {
+    diesel::update(
+        market_subscriptions::table
+            .filter(market_subscriptions::id.eq(subscription_id))
+            .filter(market_subscriptions::canceled_at.is_null()),
+    )
+    .set(market_subscriptions::canceled_at.eq(SystemTime::now()))
+    .execute(conn)
+    .map(|rows| rows > 0)
+    .map_err(|e| {
+        log::error!("Failed to cancel market subscription {}: {:?}", subscription_id, e);
+        Status::new(Code::Internal, "failed_to_cancel_subscription")
+    })
+}
+
+/// Un-cancels `subscription_id` (`canceled_at = NULL`), *only if* it's still resumable -- same
+/// condition as `get_resumable_market_subscription` -- returning whether this call did it. The
+/// same race-freedom argument as `cancel_market_subscription_row` applies to the matching
+/// `sold_count` increment, and the `renews_at`/`service_terminated_at` guards close the window
+/// where the paid-for period ends (or the termination job runs) between the caller's lookup and
+/// this write: resuming a subscription whose entitlement is already gone would just resurrect a
+/// zombie.
+pub fn resume_market_subscription_row(
+    subscription_id: i64,
+    conn: &mut PgPooledConnection,
+) -> Result<bool, Status> {
+    diesel::update(
+        market_subscriptions::table
+            .filter(market_subscriptions::id.eq(subscription_id))
+            .filter(market_subscriptions::canceled_at.is_not_null())
+            .filter(market_subscriptions::service_terminated_at.is_null())
+            .filter(market_subscriptions::renews_at.gt(SystemTime::now())),
+    )
+    .set(market_subscriptions::canceled_at.eq(None::<SystemTime>))
+    .execute(conn)
+    .map(|rows| rows > 0)
+    .map_err(|e| {
+        log::error!("Failed to resume market subscription {}: {:?}", subscription_id, e);
+        Status::new(Code::Internal, "failed_to_resume_subscription")
+    })
+}
+
 /// Every `MarketPurchase` for `subscription_id`, most recent first -- backs
 /// `Subscription.billing_history`.
 pub fn get_market_purchases_for_subscription(

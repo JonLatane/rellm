@@ -40,12 +40,15 @@ import { GetGroupsRequest, GetGroupsResponse, GetMembersRequest, GetMembersRespo
 import {
   GetMarketProductsRequest,
   GetMarketProductsResponse,
+  GetMarketSubscriptionPushStatusResponse,
   GetMarketSubscriptionsRequest,
   GetMarketSubscriptionsResponse,
   MakeMarketPurchaseRequest,
   MakeMarketPurchaseResponse,
   MarketProduct,
   MarketSubscription,
+  MarketSubscriptionPushRequest,
+  MarkFulfillmentNotesReadRequest,
 } from "./market";
 import { GetMediaRequest, GetMediaResponse, Media } from "./media";
 import {
@@ -529,7 +532,10 @@ export const protobufPackage = "rellm";
  * entitlement itself stays in effect until whichever is later of `renews_at`/`canceled_at` - once both have
  * passed, the `renew_market_subscriptions` background job revokes it (reverts `media_storage_limit_bytes` to
  * `ServerConfiguration.media_settings.default_user_media_allocation_bytes`, or removes the granted `Permission`s,
- * depending on `type`) and sets `service_terminated_at`. A user's own MarketSubscriptions (never anyone
+ * depending on `type`) and sets `service_terminated_at`. Until then the subscription is
+ * `SUBSCRIPTION_ACTIVE_BUT_CANCELED` (see [`MarketSubscriptionState`](#rellm-MarketSubscriptionState)): the buyer has
+ * paid for that time, so buying the same product again just *resumes* it (no new charge) rather than starting a
+ * second subscription. A user's own MarketSubscriptions (never anyone
  * else's) are listed via [`GetMarketSubscriptions`](#grpc-api-GetMarketSubscriptions), and also travel along
  * on [`User`](#rellm-User) itself (`User.market_subscriptions`) the same way `ai_models`/`sync_sources` do.
  * Stripe credentials for all of this live in `ServerConfiguration.stripe_config` (a
@@ -1838,6 +1844,8 @@ export const RellmDefinition = {
      * Starts (or resumes) buying a MarketProduct for the current user, returning a Stripe Checkout URL to
      * redirect to. *Authenticated*. See `MakeMarketPurchaseRequest`'s own doc -- no MarketPurchase/
      * MarketSubscription is created by this call itself, only once Stripe confirms payment via webhook.
+     * If the buyer already has a `SUBSCRIPTION_ACTIVE_BUT_CANCELED` subscription to the product, it is
+     * resumed on the spot instead (no checkout, no charge) -- see `MakeMarketPurchaseResponse.resumed_subscription`.
      */
     makeMarketPurchase: {
       name: "MakeMarketPurchase",
@@ -1879,6 +1887,64 @@ export const RellmDefinition = {
       requestType: MarketSubscription,
       requestStream: false,
       responseType: MarketSubscription,
+      responseStream: false,
+      options: {},
+    },
+    /**
+     * Marks all of a `PURCHASE_TYPE_RELLM_HOSTING` MarketSubscription's current `fulfillment_notes` read
+     * by stamping `RellmHostingSubscriptionDetails.notes_last_read` with now. *Authenticated*, and only
+     * the subscription's own buyer (`PermissionDenied` otherwise -- even an Admin, since the marker is
+     * the buyer's). Idempotent. Returns the updated subscription.
+     */
+    markFulfillmentNotesRead: {
+      name: "MarkFulfillmentNotesRead",
+      requestType: MarkFulfillmentNotesReadRequest,
+      requestStream: false,
+      responseType: MarketSubscription,
+      responseStream: false,
+      options: {},
+    },
+    /**
+     * Opts one of the current user's already-registered Web Push subscriptions (see
+     * `RegisterPushSubscription`) in to notifications for a `PURCHASE_TYPE_RELLM_HOSTING`
+     * MarketSubscription's fulfillment chat: every `FulfillmentNote` someone *else* appends to it
+     * (`UpdateMarketSubscription`) pushes a notification to the device, via the same VAPID setup
+     * Messages use. *Authenticated* -- the subscription's own buyer, or an Admin; re-registering is a
+     * no-op. Fails with `push_subscription_not_registered` if `endpoint` isn't one of the caller's own
+     * registered Web Push subscriptions, and `not_a_rellm_hosting_subscription` for any other type.
+     * Notifications are also re-checked at send time: a recipient who is no longer the buyer or an
+     * Admin is skipped, so losing access to the chat also stops its notifications.
+     */
+    registerMarketSubscriptionPush: {
+      name: "RegisterMarketSubscriptionPush",
+      requestType: MarketSubscriptionPushRequest,
+      requestStream: false,
+      responseType: Empty,
+      responseStream: false,
+      options: {},
+    },
+    /**
+     * Reverses `RegisterMarketSubscriptionPush` for this device. *Authenticated*; not an error if it
+     * wasn't registered. The user's underlying Web Push subscription (and its Messages notifications)
+     * is untouched.
+     */
+    unregisterMarketSubscriptionPush: {
+      name: "UnregisterMarketSubscriptionPush",
+      requestType: MarketSubscriptionPushRequest,
+      requestStream: false,
+      responseType: Empty,
+      responseStream: false,
+      options: {},
+    },
+    /**
+     * Whether `endpoint` is currently linked to a MarketSubscription's fulfillment-chat notifications
+     * (see `RegisterMarketSubscriptionPush`). *Authenticated*, same access rule as registering.
+     */
+    getMarketSubscriptionPushStatus: {
+      name: "GetMarketSubscriptionPushStatus",
+      requestType: MarketSubscriptionPushRequest,
+      requestStream: false,
+      responseType: GetMarketSubscriptionPushStatusResponse,
       responseStream: false,
       options: {},
     },
@@ -2462,6 +2528,8 @@ export interface RellmServiceImplementation<CallContextExt = {}> {
    * Starts (or resumes) buying a MarketProduct for the current user, returning a Stripe Checkout URL to
    * redirect to. *Authenticated*. See `MakeMarketPurchaseRequest`'s own doc -- no MarketPurchase/
    * MarketSubscription is created by this call itself, only once Stripe confirms payment via webhook.
+   * If the buyer already has a `SUBSCRIPTION_ACTIVE_BUT_CANCELED` subscription to the product, it is
+   * resumed on the spot instead (no checkout, no charge) -- see `MakeMarketPurchaseResponse.resumed_subscription`.
    */
   makeMarketPurchase(
     request: MakeMarketPurchaseRequest,
@@ -2494,6 +2562,48 @@ export interface RellmServiceImplementation<CallContextExt = {}> {
     request: MarketSubscription,
     context: CallContext & CallContextExt,
   ): Promise<DeepPartial<MarketSubscription>>;
+  /**
+   * Marks all of a `PURCHASE_TYPE_RELLM_HOSTING` MarketSubscription's current `fulfillment_notes` read
+   * by stamping `RellmHostingSubscriptionDetails.notes_last_read` with now. *Authenticated*, and only
+   * the subscription's own buyer (`PermissionDenied` otherwise -- even an Admin, since the marker is
+   * the buyer's). Idempotent. Returns the updated subscription.
+   */
+  markFulfillmentNotesRead(
+    request: MarkFulfillmentNotesReadRequest,
+    context: CallContext & CallContextExt,
+  ): Promise<DeepPartial<MarketSubscription>>;
+  /**
+   * Opts one of the current user's already-registered Web Push subscriptions (see
+   * `RegisterPushSubscription`) in to notifications for a `PURCHASE_TYPE_RELLM_HOSTING`
+   * MarketSubscription's fulfillment chat: every `FulfillmentNote` someone *else* appends to it
+   * (`UpdateMarketSubscription`) pushes a notification to the device, via the same VAPID setup
+   * Messages use. *Authenticated* -- the subscription's own buyer, or an Admin; re-registering is a
+   * no-op. Fails with `push_subscription_not_registered` if `endpoint` isn't one of the caller's own
+   * registered Web Push subscriptions, and `not_a_rellm_hosting_subscription` for any other type.
+   * Notifications are also re-checked at send time: a recipient who is no longer the buyer or an
+   * Admin is skipped, so losing access to the chat also stops its notifications.
+   */
+  registerMarketSubscriptionPush(
+    request: MarketSubscriptionPushRequest,
+    context: CallContext & CallContextExt,
+  ): Promise<DeepPartial<Empty>>;
+  /**
+   * Reverses `RegisterMarketSubscriptionPush` for this device. *Authenticated*; not an error if it
+   * wasn't registered. The user's underlying Web Push subscription (and its Messages notifications)
+   * is untouched.
+   */
+  unregisterMarketSubscriptionPush(
+    request: MarketSubscriptionPushRequest,
+    context: CallContext & CallContextExt,
+  ): Promise<DeepPartial<Empty>>;
+  /**
+   * Whether `endpoint` is currently linked to a MarketSubscription's fulfillment-chat notifications
+   * (see `RegisterMarketSubscriptionPush`). *Authenticated*, same access rule as registering.
+   */
+  getMarketSubscriptionPushStatus(
+    request: MarketSubscriptionPushRequest,
+    context: CallContext & CallContextExt,
+  ): Promise<DeepPartial<GetMarketSubscriptionPushStatusResponse>>;
   /**
    * Generates (or edits, given reference `media_ids`) an image via one of the current user's AIModels,
    * storing it as a new Media and, if `target` is set, attaching it to that Post/Event. *Authenticated* - caller
@@ -2983,6 +3093,8 @@ export interface RellmClient<CallOptionsExt = {}> {
    * Starts (or resumes) buying a MarketProduct for the current user, returning a Stripe Checkout URL to
    * redirect to. *Authenticated*. See `MakeMarketPurchaseRequest`'s own doc -- no MarketPurchase/
    * MarketSubscription is created by this call itself, only once Stripe confirms payment via webhook.
+   * If the buyer already has a `SUBSCRIPTION_ACTIVE_BUT_CANCELED` subscription to the product, it is
+   * resumed on the spot instead (no checkout, no charge) -- see `MakeMarketPurchaseResponse.resumed_subscription`.
    */
   makeMarketPurchase(
     request: DeepPartial<MakeMarketPurchaseRequest>,
@@ -3015,6 +3127,48 @@ export interface RellmClient<CallOptionsExt = {}> {
     request: DeepPartial<MarketSubscription>,
     options?: CallOptions & CallOptionsExt,
   ): Promise<MarketSubscription>;
+  /**
+   * Marks all of a `PURCHASE_TYPE_RELLM_HOSTING` MarketSubscription's current `fulfillment_notes` read
+   * by stamping `RellmHostingSubscriptionDetails.notes_last_read` with now. *Authenticated*, and only
+   * the subscription's own buyer (`PermissionDenied` otherwise -- even an Admin, since the marker is
+   * the buyer's). Idempotent. Returns the updated subscription.
+   */
+  markFulfillmentNotesRead(
+    request: DeepPartial<MarkFulfillmentNotesReadRequest>,
+    options?: CallOptions & CallOptionsExt,
+  ): Promise<MarketSubscription>;
+  /**
+   * Opts one of the current user's already-registered Web Push subscriptions (see
+   * `RegisterPushSubscription`) in to notifications for a `PURCHASE_TYPE_RELLM_HOSTING`
+   * MarketSubscription's fulfillment chat: every `FulfillmentNote` someone *else* appends to it
+   * (`UpdateMarketSubscription`) pushes a notification to the device, via the same VAPID setup
+   * Messages use. *Authenticated* -- the subscription's own buyer, or an Admin; re-registering is a
+   * no-op. Fails with `push_subscription_not_registered` if `endpoint` isn't one of the caller's own
+   * registered Web Push subscriptions, and `not_a_rellm_hosting_subscription` for any other type.
+   * Notifications are also re-checked at send time: a recipient who is no longer the buyer or an
+   * Admin is skipped, so losing access to the chat also stops its notifications.
+   */
+  registerMarketSubscriptionPush(
+    request: DeepPartial<MarketSubscriptionPushRequest>,
+    options?: CallOptions & CallOptionsExt,
+  ): Promise<Empty>;
+  /**
+   * Reverses `RegisterMarketSubscriptionPush` for this device. *Authenticated*; not an error if it
+   * wasn't registered. The user's underlying Web Push subscription (and its Messages notifications)
+   * is untouched.
+   */
+  unregisterMarketSubscriptionPush(
+    request: DeepPartial<MarketSubscriptionPushRequest>,
+    options?: CallOptions & CallOptionsExt,
+  ): Promise<Empty>;
+  /**
+   * Whether `endpoint` is currently linked to a MarketSubscription's fulfillment-chat notifications
+   * (see `RegisterMarketSubscriptionPush`). *Authenticated*, same access rule as registering.
+   */
+  getMarketSubscriptionPushStatus(
+    request: DeepPartial<MarketSubscriptionPushRequest>,
+    options?: CallOptions & CallOptionsExt,
+  ): Promise<GetMarketSubscriptionPushStatusResponse>;
   /**
    * Generates (or edits, given reference `media_ids`) an image via one of the current user's AIModels,
    * storing it as a new Media and, if `target` is set, attaching it to that Post/Event. *Authenticated* - caller
