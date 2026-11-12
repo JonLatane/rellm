@@ -2078,10 +2078,22 @@ class MarketSubscription extends $pb.GeneratedMessage {
 class MediaStorageSubscriptionDetails extends $pb.GeneratedMessage {
   factory MediaStorageSubscriptionDetails({
     $fixnum.Int64? allocationBytes,
+    FulfillmentStatus? fulfillmentStatus,
+    $core.Iterable<FulfillmentNote>? fulfillmentNotes,
+    $13.Timestamp? notesLastRead,
   }) {
     final $result = create();
     if (allocationBytes != null) {
       $result.allocationBytes = allocationBytes;
+    }
+    if (fulfillmentStatus != null) {
+      $result.fulfillmentStatus = fulfillmentStatus;
+    }
+    if (fulfillmentNotes != null) {
+      $result.fulfillmentNotes.addAll(fulfillmentNotes);
+    }
+    if (notesLastRead != null) {
+      $result.notesLastRead = notesLastRead;
     }
     return $result;
   }
@@ -2091,6 +2103,9 @@ class MediaStorageSubscriptionDetails extends $pb.GeneratedMessage {
 
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'MediaStorageSubscriptionDetails', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
     ..a<$fixnum.Int64>(1, _omitFieldNames ? '' : 'allocationBytes', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
+    ..e<FulfillmentStatus>(7, _omitFieldNames ? '' : 'fulfillmentStatus', $pb.PbFieldType.OE, defaultOrMaker: FulfillmentStatus.FULFILLMENT_STATUS_AWAITING_HOST_ADMIN, valueOf: FulfillmentStatus.valueOf, enumValues: FulfillmentStatus.values)
+    ..pc<FulfillmentNote>(8, _omitFieldNames ? '' : 'fulfillmentNotes', $pb.PbFieldType.PM, subBuilder: FulfillmentNote.create)
+    ..aOM<$13.Timestamp>(9, _omitFieldNames ? '' : 'notesLastRead', subBuilder: $13.Timestamp.create)
     ..hasRequiredFields = false
   ;
 
@@ -2126,6 +2141,37 @@ class MediaStorageSubscriptionDetails extends $pb.GeneratedMessage {
   $core.bool hasAllocationBytes() => $_has(0);
   @$pb.TagNumber(1)
   void clearAllocationBytes() => clearField(1);
+
+  /// The fulfillment chat for this subscription -- *every* `PurchaseType` has one, not just
+  /// `PURCHASE_TYPE_RELLM_HOSTING` (see `RellmHostingSubscriptionDetails.fulfillment_status`/`fulfillment_notes`/
+  /// `notes_last_read`, whose semantics these three fields share exactly: append-only notes via
+  /// `UpdateMarketSubscription`, the buyer's read marker via `MarkFulfillmentNotesRead`, `fulfillment_status`
+  /// always the last note's status). Only meaningful on a `MarketSubscription`'s own `details`: on a
+  /// `MarketProduct.details` they're always empty/unset. Unlike Rellm hosting, nothing about these types
+  /// *needs* an admin, so `fulfillment_status` isn't a work queue for them (it stays at its default) --
+  /// the chat is just a way for a host admin and the buyer to talk about the subscription.
+  @$pb.TagNumber(7)
+  FulfillmentStatus get fulfillmentStatus => $_getN(1);
+  @$pb.TagNumber(7)
+  set fulfillmentStatus(FulfillmentStatus v) { setField(7, v); }
+  @$pb.TagNumber(7)
+  $core.bool hasFulfillmentStatus() => $_has(1);
+  @$pb.TagNumber(7)
+  void clearFulfillmentStatus() => clearField(7);
+
+  @$pb.TagNumber(8)
+  $core.List<FulfillmentNote> get fulfillmentNotes => $_getList(2);
+
+  @$pb.TagNumber(9)
+  $13.Timestamp get notesLastRead => $_getN(3);
+  @$pb.TagNumber(9)
+  set notesLastRead($13.Timestamp v) { setField(9, v); }
+  @$pb.TagNumber(9)
+  $core.bool hasNotesLastRead() => $_has(3);
+  @$pb.TagNumber(9)
+  void clearNotesLastRead() => clearField(9);
+  @$pb.TagNumber(9)
+  $13.Timestamp ensureNotesLastRead() => $_ensure(3);
 }
 
 /// `MarketProduct.details`/`MarketSubscription.details`' `PURCHASE_TYPE_PERMISSIONS_ACCESS`
@@ -2138,6 +2184,9 @@ class PermissionsAccessSubscriptionDetails extends $pb.GeneratedMessage {
     $core.Iterable<$15.Permission>? permissions,
     $core.String? name,
     $core.String? description,
+    FulfillmentStatus? fulfillmentStatus,
+    $core.Iterable<FulfillmentNote>? fulfillmentNotes,
+    $13.Timestamp? notesLastRead,
   }) {
     final $result = create();
     if (permissions != null) {
@@ -2149,6 +2198,15 @@ class PermissionsAccessSubscriptionDetails extends $pb.GeneratedMessage {
     if (description != null) {
       $result.description = description;
     }
+    if (fulfillmentStatus != null) {
+      $result.fulfillmentStatus = fulfillmentStatus;
+    }
+    if (fulfillmentNotes != null) {
+      $result.fulfillmentNotes.addAll(fulfillmentNotes);
+    }
+    if (notesLastRead != null) {
+      $result.notesLastRead = notesLastRead;
+    }
     return $result;
   }
   PermissionsAccessSubscriptionDetails._() : super();
@@ -2159,6 +2217,9 @@ class PermissionsAccessSubscriptionDetails extends $pb.GeneratedMessage {
     ..pc<$15.Permission>(1, _omitFieldNames ? '' : 'permissions', $pb.PbFieldType.KE, valueOf: $15.Permission.valueOf, enumValues: $15.Permission.values, defaultEnumValue: $15.Permission.PERMISSION_UNKNOWN)
     ..aOS(2, _omitFieldNames ? '' : 'name')
     ..aOS(3, _omitFieldNames ? '' : 'description')
+    ..e<FulfillmentStatus>(7, _omitFieldNames ? '' : 'fulfillmentStatus', $pb.PbFieldType.OE, defaultOrMaker: FulfillmentStatus.FULFILLMENT_STATUS_AWAITING_HOST_ADMIN, valueOf: FulfillmentStatus.valueOf, enumValues: FulfillmentStatus.values)
+    ..pc<FulfillmentNote>(8, _omitFieldNames ? '' : 'fulfillmentNotes', $pb.PbFieldType.PM, subBuilder: FulfillmentNote.create)
+    ..aOM<$13.Timestamp>(9, _omitFieldNames ? '' : 'notesLastRead', subBuilder: $13.Timestamp.create)
     ..hasRequiredFields = false
   ;
 
@@ -2229,6 +2290,37 @@ class PermissionsAccessSubscriptionDetails extends $pb.GeneratedMessage {
   $core.bool hasDescription() => $_has(2);
   @$pb.TagNumber(3)
   void clearDescription() => clearField(3);
+
+  /// The fulfillment chat for this subscription -- *every* `PurchaseType` has one, not just
+  /// `PURCHASE_TYPE_RELLM_HOSTING` (see `RellmHostingSubscriptionDetails.fulfillment_status`/`fulfillment_notes`/
+  /// `notes_last_read`, whose semantics these three fields share exactly: append-only notes via
+  /// `UpdateMarketSubscription`, the buyer's read marker via `MarkFulfillmentNotesRead`, `fulfillment_status`
+  /// always the last note's status). Only meaningful on a `MarketSubscription`'s own `details`: on a
+  /// `MarketProduct.details` they're always empty/unset. Unlike Rellm hosting, nothing about these types
+  /// *needs* an admin, so `fulfillment_status` isn't a work queue for them (it stays at its default) --
+  /// the chat is just a way for a host admin and the buyer to talk about the subscription.
+  @$pb.TagNumber(7)
+  FulfillmentStatus get fulfillmentStatus => $_getN(3);
+  @$pb.TagNumber(7)
+  set fulfillmentStatus(FulfillmentStatus v) { setField(7, v); }
+  @$pb.TagNumber(7)
+  $core.bool hasFulfillmentStatus() => $_has(3);
+  @$pb.TagNumber(7)
+  void clearFulfillmentStatus() => clearField(7);
+
+  @$pb.TagNumber(8)
+  $core.List<FulfillmentNote> get fulfillmentNotes => $_getList(4);
+
+  @$pb.TagNumber(9)
+  $13.Timestamp get notesLastRead => $_getN(5);
+  @$pb.TagNumber(9)
+  set notesLastRead($13.Timestamp v) { setField(9, v); }
+  @$pb.TagNumber(9)
+  $core.bool hasNotesLastRead() => $_has(5);
+  @$pb.TagNumber(9)
+  void clearNotesLastRead() => clearField(9);
+  @$pb.TagNumber(9)
+  $13.Timestamp ensureNotesLastRead() => $_ensure(5);
 }
 
 /// `MarketProduct.details`/`MarketSubscription.details`' `PURCHASE_TYPE_AI_GRANTS` variant -- what
@@ -2239,6 +2331,9 @@ class AIGrantSubscriptionDetails extends $pb.GeneratedMessage {
     $core.String? aiProviderId,
     $core.Iterable<$core.String>? modelNames,
     $fixnum.Int64? tokens,
+    FulfillmentStatus? fulfillmentStatus,
+    $core.Iterable<FulfillmentNote>? fulfillmentNotes,
+    $13.Timestamp? notesLastRead,
   }) {
     final $result = create();
     if (aiProviderId != null) {
@@ -2250,6 +2345,15 @@ class AIGrantSubscriptionDetails extends $pb.GeneratedMessage {
     if (tokens != null) {
       $result.tokens = tokens;
     }
+    if (fulfillmentStatus != null) {
+      $result.fulfillmentStatus = fulfillmentStatus;
+    }
+    if (fulfillmentNotes != null) {
+      $result.fulfillmentNotes.addAll(fulfillmentNotes);
+    }
+    if (notesLastRead != null) {
+      $result.notesLastRead = notesLastRead;
+    }
     return $result;
   }
   AIGrantSubscriptionDetails._() : super();
@@ -2260,6 +2364,9 @@ class AIGrantSubscriptionDetails extends $pb.GeneratedMessage {
     ..aOS(1, _omitFieldNames ? '' : 'aiProviderId')
     ..pPS(2, _omitFieldNames ? '' : 'modelNames')
     ..a<$fixnum.Int64>(3, _omitFieldNames ? '' : 'tokens', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
+    ..e<FulfillmentStatus>(7, _omitFieldNames ? '' : 'fulfillmentStatus', $pb.PbFieldType.OE, defaultOrMaker: FulfillmentStatus.FULFILLMENT_STATUS_AWAITING_HOST_ADMIN, valueOf: FulfillmentStatus.valueOf, enumValues: FulfillmentStatus.values)
+    ..pc<FulfillmentNote>(8, _omitFieldNames ? '' : 'fulfillmentNotes', $pb.PbFieldType.PM, subBuilder: FulfillmentNote.create)
+    ..aOM<$13.Timestamp>(9, _omitFieldNames ? '' : 'notesLastRead', subBuilder: $13.Timestamp.create)
     ..hasRequiredFields = false
   ;
 
@@ -2309,6 +2416,37 @@ class AIGrantSubscriptionDetails extends $pb.GeneratedMessage {
   $core.bool hasTokens() => $_has(2);
   @$pb.TagNumber(3)
   void clearTokens() => clearField(3);
+
+  /// The fulfillment chat for this subscription -- *every* `PurchaseType` has one, not just
+  /// `PURCHASE_TYPE_RELLM_HOSTING` (see `RellmHostingSubscriptionDetails.fulfillment_status`/`fulfillment_notes`/
+  /// `notes_last_read`, whose semantics these three fields share exactly: append-only notes via
+  /// `UpdateMarketSubscription`, the buyer's read marker via `MarkFulfillmentNotesRead`, `fulfillment_status`
+  /// always the last note's status). Only meaningful on a `MarketSubscription`'s own `details`: on a
+  /// `MarketProduct.details` they're always empty/unset. Unlike Rellm hosting, nothing about these types
+  /// *needs* an admin, so `fulfillment_status` isn't a work queue for them (it stays at its default) --
+  /// the chat is just a way for a host admin and the buyer to talk about the subscription.
+  @$pb.TagNumber(7)
+  FulfillmentStatus get fulfillmentStatus => $_getN(3);
+  @$pb.TagNumber(7)
+  set fulfillmentStatus(FulfillmentStatus v) { setField(7, v); }
+  @$pb.TagNumber(7)
+  $core.bool hasFulfillmentStatus() => $_has(3);
+  @$pb.TagNumber(7)
+  void clearFulfillmentStatus() => clearField(7);
+
+  @$pb.TagNumber(8)
+  $core.List<FulfillmentNote> get fulfillmentNotes => $_getList(4);
+
+  @$pb.TagNumber(9)
+  $13.Timestamp get notesLastRead => $_getN(5);
+  @$pb.TagNumber(9)
+  set notesLastRead($13.Timestamp v) { setField(9, v); }
+  @$pb.TagNumber(9)
+  $core.bool hasNotesLastRead() => $_has(5);
+  @$pb.TagNumber(9)
+  void clearNotesLastRead() => clearField(9);
+  @$pb.TagNumber(9)
+  $13.Timestamp ensureNotesLastRead() => $_ensure(5);
 }
 
 /// `MarketProduct.details`/`MarketSubscription.details`' `PURCHASE_TYPE_RELLM_HOSTING` variant --
@@ -2627,7 +2765,7 @@ class FulfillmentNote extends $pb.GeneratedMessage {
 
 /// Identifies one of the current user's registered Web Push subscriptions (see
 /// `PushSubscription`/`RegisterPushSubscription` in `messages.proto` -- it must already be
-/// registered, this only *links* it) and the `PURCHASE_TYPE_RELLM_HOSTING` `MarketSubscription`
+/// registered, this only *links* it) and the `MarketSubscription` (any `PurchaseType`)
 /// whose fulfillment chat (`RellmHostingSubscriptionDetails.fulfillment_notes`) it should be
 /// notified about. Used by `RegisterMarketSubscriptionPush`, `UnregisterMarketSubscriptionPush`
 /// and `GetMarketSubscriptionPushStatus`.
@@ -2750,7 +2888,7 @@ class GetMarketSubscriptionPushStatusResponse extends $pb.GeneratedMessage {
   void clearRegistered() => clearField(1);
 }
 
-/// Request to mark a Rellm hosting subscription's fulfillment notes read -- see
+/// Request to mark a subscription's fulfillment notes read -- see
 /// `RellmHostingSubscriptionDetails.notes_last_read`.
 class MarkFulfillmentNotesReadRequest extends $pb.GeneratedMessage {
   factory MarkFulfillmentNotesReadRequest({

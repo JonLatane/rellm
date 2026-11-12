@@ -471,13 +471,23 @@ const MediaStorageSubscriptionDetails$json = {
   '1': 'MediaStorageSubscriptionDetails',
   '2': [
     {'1': 'allocation_bytes', '3': 1, '4': 1, '5': 4, '10': 'allocationBytes'},
+    {'1': 'fulfillment_status', '3': 7, '4': 1, '5': 14, '6': '.rellm.FulfillmentStatus', '10': 'fulfillmentStatus'},
+    {'1': 'fulfillment_notes', '3': 8, '4': 3, '5': 11, '6': '.rellm.FulfillmentNote', '10': 'fulfillmentNotes'},
+    {'1': 'notes_last_read', '3': 9, '4': 1, '5': 11, '6': '.google.protobuf.Timestamp', '9': 0, '10': 'notesLastRead', '17': true},
+  ],
+  '8': [
+    {'1': '_notes_last_read'},
   ],
 };
 
 /// Descriptor for `MediaStorageSubscriptionDetails`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List mediaStorageSubscriptionDetailsDescriptor = $convert.base64Decode(
     'Ch9NZWRpYVN0b3JhZ2VTdWJzY3JpcHRpb25EZXRhaWxzEikKEGFsbG9jYXRpb25fYnl0ZXMYAS'
-    'ABKARSD2FsbG9jYXRpb25CeXRlcw==');
+    'ABKARSD2FsbG9jYXRpb25CeXRlcxJHChJmdWxmaWxsbWVudF9zdGF0dXMYByABKA4yGC5yZWxs'
+    'bS5GdWxmaWxsbWVudFN0YXR1c1IRZnVsZmlsbG1lbnRTdGF0dXMSQwoRZnVsZmlsbG1lbnRfbm'
+    '90ZXMYCCADKAsyFi5yZWxsbS5GdWxmaWxsbWVudE5vdGVSEGZ1bGZpbGxtZW50Tm90ZXMSRwoP'
+    'bm90ZXNfbGFzdF9yZWFkGAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcEgAUg1ub3'
+    'Rlc0xhc3RSZWFkiAEBQhIKEF9ub3Rlc19sYXN0X3JlYWQ=');
 
 @$core.Deprecated('Use permissionsAccessSubscriptionDetailsDescriptor instead')
 const PermissionsAccessSubscriptionDetails$json = {
@@ -486,6 +496,12 @@ const PermissionsAccessSubscriptionDetails$json = {
     {'1': 'permissions', '3': 1, '4': 3, '5': 14, '6': '.rellm.Permission', '10': 'permissions'},
     {'1': 'name', '3': 2, '4': 1, '5': 9, '10': 'name'},
     {'1': 'description', '3': 3, '4': 1, '5': 9, '10': 'description'},
+    {'1': 'fulfillment_status', '3': 7, '4': 1, '5': 14, '6': '.rellm.FulfillmentStatus', '10': 'fulfillmentStatus'},
+    {'1': 'fulfillment_notes', '3': 8, '4': 3, '5': 11, '6': '.rellm.FulfillmentNote', '10': 'fulfillmentNotes'},
+    {'1': 'notes_last_read', '3': 9, '4': 1, '5': 11, '6': '.google.protobuf.Timestamp', '9': 0, '10': 'notesLastRead', '17': true},
+  ],
+  '8': [
+    {'1': '_notes_last_read'},
   ],
 };
 
@@ -493,7 +509,11 @@ const PermissionsAccessSubscriptionDetails$json = {
 final $typed_data.Uint8List permissionsAccessSubscriptionDetailsDescriptor = $convert.base64Decode(
     'CiRQZXJtaXNzaW9uc0FjY2Vzc1N1YnNjcmlwdGlvbkRldGFpbHMSMwoLcGVybWlzc2lvbnMYAS'
     'ADKA4yES5yZWxsbS5QZXJtaXNzaW9uUgtwZXJtaXNzaW9ucxISCgRuYW1lGAIgASgJUgRuYW1l'
-    'EiAKC2Rlc2NyaXB0aW9uGAMgASgJUgtkZXNjcmlwdGlvbg==');
+    'EiAKC2Rlc2NyaXB0aW9uGAMgASgJUgtkZXNjcmlwdGlvbhJHChJmdWxmaWxsbWVudF9zdGF0dX'
+    'MYByABKA4yGC5yZWxsbS5GdWxmaWxsbWVudFN0YXR1c1IRZnVsZmlsbG1lbnRTdGF0dXMSQwoR'
+    'ZnVsZmlsbG1lbnRfbm90ZXMYCCADKAsyFi5yZWxsbS5GdWxmaWxsbWVudE5vdGVSEGZ1bGZpbG'
+    'xtZW50Tm90ZXMSRwoPbm90ZXNfbGFzdF9yZWFkGAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRp'
+    'bWVzdGFtcEgAUg1ub3Rlc0xhc3RSZWFkiAEBQhIKEF9ub3Rlc19sYXN0X3JlYWQ=');
 
 @$core.Deprecated('Use aIGrantSubscriptionDetailsDescriptor instead')
 const AIGrantSubscriptionDetails$json = {
@@ -502,6 +522,12 @@ const AIGrantSubscriptionDetails$json = {
     {'1': 'ai_provider_id', '3': 1, '4': 1, '5': 9, '10': 'aiProviderId'},
     {'1': 'model_names', '3': 2, '4': 3, '5': 9, '10': 'modelNames'},
     {'1': 'tokens', '3': 3, '4': 1, '5': 4, '10': 'tokens'},
+    {'1': 'fulfillment_status', '3': 7, '4': 1, '5': 14, '6': '.rellm.FulfillmentStatus', '10': 'fulfillmentStatus'},
+    {'1': 'fulfillment_notes', '3': 8, '4': 3, '5': 11, '6': '.rellm.FulfillmentNote', '10': 'fulfillmentNotes'},
+    {'1': 'notes_last_read', '3': 9, '4': 1, '5': 11, '6': '.google.protobuf.Timestamp', '9': 0, '10': 'notesLastRead', '17': true},
+  ],
+  '8': [
+    {'1': '_notes_last_read'},
   ],
 };
 
@@ -509,7 +535,11 @@ const AIGrantSubscriptionDetails$json = {
 final $typed_data.Uint8List aIGrantSubscriptionDetailsDescriptor = $convert.base64Decode(
     'ChpBSUdyYW50U3Vic2NyaXB0aW9uRGV0YWlscxIkCg5haV9wcm92aWRlcl9pZBgBIAEoCVIMYW'
     'lQcm92aWRlcklkEh8KC21vZGVsX25hbWVzGAIgAygJUgptb2RlbE5hbWVzEhYKBnRva2VucxgD'
-    'IAEoBFIGdG9rZW5z');
+    'IAEoBFIGdG9rZW5zEkcKEmZ1bGZpbGxtZW50X3N0YXR1cxgHIAEoDjIYLnJlbGxtLkZ1bGZpbG'
+    'xtZW50U3RhdHVzUhFmdWxmaWxsbWVudFN0YXR1cxJDChFmdWxmaWxsbWVudF9ub3RlcxgIIAMo'
+    'CzIWLnJlbGxtLkZ1bGZpbGxtZW50Tm90ZVIQZnVsZmlsbG1lbnROb3RlcxJHCg9ub3Rlc19sYX'
+    'N0X3JlYWQYCSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wSABSDW5vdGVzTGFzdFJl'
+    'YWSIAQFCEgoQX25vdGVzX2xhc3RfcmVhZA==');
 
 @$core.Deprecated('Use rellmHostingSubscriptionDetailsDescriptor instead')
 const RellmHostingSubscriptionDetails$json = {

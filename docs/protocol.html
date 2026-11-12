@@ -1219,8 +1219,8 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
     </p>
     <h5 id="fulfillment-chats-read-tracking-and-the-admin-perspective"><a class="anchor" aria-hidden="true" tabindex="-1" href="#fulfillment-chats-read-tracking-and-the-admin-perspective"><span class="octicon octicon-link"></span></a>Fulfillment chats, read tracking, and the admin perspective</h5>
     <p>
-      A <code>PURCHASE_TYPE_RELLM_HOSTING</code> subscription is set up by hand, and the conversation about that lives in its
-      <code>fulfillment_notes</code> (an append-only chat, see <a href="#grpc-api-UpdateMarketSubscription"><code>UpdateMarketSubscription</code></a>). The
+      <em>Every</em> subscription, whatever its <code>PurchaseType</code>, has a chat: its <code>fulfillment_notes</code> (an append-only conversation
+      between the buyer and the host admins, see <a href="#grpc-api-UpdateMarketSubscription"><code>UpdateMarketSubscription</code></a>). The
       same notes are seen from two sides:
     </p>
     <ul>
@@ -2433,19 +2433,19 @@ directory</a> is (<code>{name}</code> denotes a
           <td>UpdateMarketSubscription</td>
           <td><a href="#rellm-MarketSubscription">MarketSubscription</a></td>
           <td><a href="#rellm-MarketSubscription">MarketSubscription</a></td>
-          <td>Appends to a <code>PURCHASE_TYPE_RELLM_HOSTING</code> MarketSubscription's own <code>fulfillment_notes</code> (nothing else -- every other field, including <code>additional_information</code>, is immutable after purchase and silently ignored if changed) -- backs <code>/market/fulfillment</code>. A new entry must be appended (not inserted/reordered/removed) after whatever's already stored, and its <code>user_id</code> must match the caller's own -- the server stamps <code>created_at</code> itself, ignoring whatever the client sent. Its <code>note</code> text is required unless the entry also changes <code>fulfillment_status</code> from the previous entry's own value (see <code>FulfillmentNote.note</code>'s own doc). <code>fulfillment_status</code> on the returned <code>RellmHostingSubscriptionDetails</code> is always the last appended entry's own value -- there's no way to set it independently of a note. <em>Authenticated</em>, requires Admin (for now -- see that field's own doc on why this may loosen to "buyer, or Admin" later).</td>
+          <td>Appends to a MarketSubscription's own <code>fulfillment_notes</code> (any <code>PurchaseType</code> -- see <code>MediaStorageSubscriptionDetails.fulfillment_notes</code>; the request's <code>details</code> must be the variant matching the subscription's type; nothing else -- every other field, including <code>additional_information</code>, is immutable after purchase and silently ignored if changed) -- backs <code>/market/fulfillment</code>. A new entry must be appended (not inserted/reordered/removed) after whatever's already stored, and its <code>user_id</code> must match the caller's own -- the server stamps <code>created_at</code> itself, ignoring whatever the client sent. Its <code>note</code> text is required unless the entry also changes <code>fulfillment_status</code> from the previous entry's own value (see <code>FulfillmentNote.note</code>'s own doc). <code>fulfillment_status</code> on the returned <code>RellmHostingSubscriptionDetails</code> is always the last appended entry's own value -- there's no way to set it independently of a note. <em>Authenticated</em>, requires Admin (for now -- see that field's own doc on why this may loosen to "buyer, or Admin" later).</td>
         </tr>
         <tr>
           <td>MarkFulfillmentNotesRead</td>
           <td><a href="#rellm-MarkFulfillmentNotesReadRequest">MarkFulfillmentNotesReadRequest</a></td>
           <td><a href="#rellm-MarketSubscription">MarketSubscription</a></td>
-          <td>Marks all of a <code>PURCHASE_TYPE_RELLM_HOSTING</code> MarketSubscription's current <code>fulfillment_notes</code> read by stamping <code>RellmHostingSubscriptionDetails.notes_last_read</code> with now. <em>Authenticated</em>, and only the subscription's own buyer (<code>PermissionDenied</code> otherwise -- even an Admin, since the marker is the buyer's). Idempotent. Returns the updated subscription.</td>
+          <td>Marks all of a MarketSubscription's current <code>fulfillment_notes</code> read (any <code>PurchaseType</code>) by stamping its details' <code>notes_last_read</code> with now. <em>Authenticated</em>, and only the subscription's own buyer (<code>PermissionDenied</code> otherwise -- even an Admin, since the marker is the buyer's). Idempotent. Returns the updated subscription.</td>
         </tr>
         <tr>
           <td>RegisterMarketSubscriptionPush</td>
           <td><a href="#rellm-MarketSubscriptionPushRequest">MarketSubscriptionPushRequest</a></td>
           <td><a href="#google-protobuf-Empty">.google.protobuf.Empty</a></td>
-          <td>Opts one of the current user's already-registered Web Push subscriptions (see <code>RegisterPushSubscription</code>) in to notifications for a <code>PURCHASE_TYPE_RELLM_HOSTING</code> MarketSubscription's fulfillment chat: every <code>FulfillmentNote</code> someone <em>else</em> appends to it (<code>UpdateMarketSubscription</code>) pushes a notification to the device, via the same VAPID setup Messages use. <em>Authenticated</em> -- the subscription's own buyer, or an Admin; re-registering is a no-op. Fails with <code>push_subscription_not_registered</code> if <code>endpoint</code> isn't one of the caller's own registered Web Push subscriptions, and <code>not_a_rellm_hosting_subscription</code> for any other type. Notifications are also re-checked at send time: a recipient who is no longer the buyer or an Admin is skipped, so losing access to the chat also stops its notifications.</td>
+          <td>Opts one of the current user's already-registered Web Push subscriptions (see <code>RegisterPushSubscription</code>) in to notifications for a MarketSubscription's (any <code>PurchaseType</code>) fulfillment chat: every <code>FulfillmentNote</code> someone <em>else</em> appends to it (<code>UpdateMarketSubscription</code>) pushes a notification to the device, via the same VAPID setup Messages use. <em>Authenticated</em> -- the subscription's own buyer, or an Admin; re-registering is a no-op. Fails with <code>push_subscription_not_registered</code> if <code>endpoint</code> isn't one of the caller's own registered Web Push subscriptions,. Notifications are also re-checked at send time: a recipient who is no longer the buyer or an Admin is skipped, so losing access to the chat also stops its notifications.</td>
         </tr>
         <tr>
           <td>UnregisterMarketSubscriptionPush</td>
@@ -10309,6 +10309,24 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td></td>
           <td>How many tokens this product/subscription grants the buyer each time it's (re-)fulfilled, replacing (not adding to) whatever balance remained -- see <code>logic::market::market_fulfillment::fulfill_purchase</code>'s <code>AiGrants</code> arm.</td>
         </tr>
+        <tr>
+          <td>fulfillment_status</td>
+          <td><a href="#rellm-FulfillmentStatus">FulfillmentStatus</a></td>
+          <td></td>
+          <td>The fulfillment chat for this subscription -- <em>every</em> <code>PurchaseType</code> has one, not just <code>PURCHASE_TYPE_RELLM_HOSTING</code> (see <code>RellmHostingSubscriptionDetails.fulfillment_status</code>/<code>fulfillment_notes</code>/ <code>notes_last_read</code>, whose semantics these three fields share exactly: append-only notes via <code>UpdateMarketSubscription</code>, the buyer's read marker via <code>MarkFulfillmentNotesRead</code>, <code>fulfillment_status</code> always the last note's status). Only meaningful on a <code>MarketSubscription</code>'s own <code>details</code>: on a <code>MarketProduct.details</code> they're always empty/unset. Unlike Rellm hosting, nothing about these types <em>needs</em> an admin, so <code>fulfillment_status</code> isn't a work queue for them (it stays at its default) -- the chat is just a way for a host admin and the buyer to talk about the subscription.</td>
+        </tr>
+        <tr>
+          <td>fulfillment_notes</td>
+          <td><a href="#rellm-FulfillmentNote">FulfillmentNote</a></td>
+          <td>repeated</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>notes_last_read</td>
+          <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
+          <td>optional</td>
+          <td></td>
+        </tr>
       </tbody>
     </table>
     <p><a name="rellm-FulfillmentNote"></a></p>
@@ -10516,7 +10534,7 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
     <p><a name="rellm-MarkFulfillmentNotesReadRequest"></a></p>
     <h3 id="markfulfillmentnotesreadrequest"><a class="anchor" aria-hidden="true" tabindex="-1" href="#markfulfillmentnotesreadrequest"><span class="octicon octicon-link"></span></a>MarkFulfillmentNotesReadRequest</h3>
     <p>
-      Request to mark a Rellm hosting subscription's fulfillment notes read -- see
+      Request to mark a subscription's fulfillment notes read -- see
       <code>RellmHostingSubscriptionDetails.notes_last_read</code>.
     </p>
     <table>
@@ -11048,7 +11066,7 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
     <p>
       Identifies one of the current user's registered Web Push subscriptions (see
       <code>PushSubscription</code>/<code>RegisterPushSubscription</code> in <code>messages.proto</code> -- it must already be
-      registered, this only <em>links</em> it) and the <code>PURCHASE_TYPE_RELLM_HOSTING</code> <code>MarketSubscription</code>
+      registered, this only <em>links</em> it) and the <code>MarketSubscription</code> (any <code>PurchaseType</code>)
       whose fulfillment chat (<code>RellmHostingSubscriptionDetails.fulfillment_notes</code>) it should be
       notified about. Used by <code>RegisterMarketSubscriptionPush</code>, <code>UnregisterMarketSubscriptionPush</code>
       and <code>GetMarketSubscriptionPushStatus</code>.
@@ -11129,6 +11147,24 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td></td>
           <td>How much media storage this product/subscription grants the buyer, replacing (not adding to) whatever quota they already had -- see <code>logic::market::market_fulfillment::fulfill_purchase</code>'s <code>MediaStorage</code> arm.</td>
         </tr>
+        <tr>
+          <td>fulfillment_status</td>
+          <td><a href="#rellm-FulfillmentStatus">FulfillmentStatus</a></td>
+          <td></td>
+          <td>The fulfillment chat for this subscription -- <em>every</em> <code>PurchaseType</code> has one, not just <code>PURCHASE_TYPE_RELLM_HOSTING</code> (see <code>RellmHostingSubscriptionDetails.fulfillment_status</code>/<code>fulfillment_notes</code>/ <code>notes_last_read</code>, whose semantics these three fields share exactly: append-only notes via <code>UpdateMarketSubscription</code>, the buyer's read marker via <code>MarkFulfillmentNotesRead</code>, <code>fulfillment_status</code> always the last note's status). Only meaningful on a <code>MarketSubscription</code>'s own <code>details</code>: on a <code>MarketProduct.details</code> they're always empty/unset. Unlike Rellm hosting, nothing about these types <em>needs</em> an admin, so <code>fulfillment_status</code> isn't a work queue for them (it stays at its default) -- the chat is just a way for a host admin and the buyer to talk about the subscription.</td>
+        </tr>
+        <tr>
+          <td>fulfillment_notes</td>
+          <td><a href="#rellm-FulfillmentNote">FulfillmentNote</a></td>
+          <td>repeated</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>notes_last_read</td>
+          <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
+          <td>optional</td>
+          <td></td>
+        </tr>
       </tbody>
     </table>
     <p><a name="rellm-PermissionsAccessPurchaseDetails"></a></p>
@@ -11207,6 +11243,24 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td><a href="#string">string</a></td>
           <td></td>
           <td>Admin-authored, Markdown-formatted product description shown on the product's own page -- same "no generic implicit description" reasoning as <code>name</code> above. On a <code>MarketSubscription</code>: copied the same way <code>name</code> is.</td>
+        </tr>
+        <tr>
+          <td>fulfillment_status</td>
+          <td><a href="#rellm-FulfillmentStatus">FulfillmentStatus</a></td>
+          <td></td>
+          <td>The fulfillment chat for this subscription -- <em>every</em> <code>PurchaseType</code> has one, not just <code>PURCHASE_TYPE_RELLM_HOSTING</code> (see <code>RellmHostingSubscriptionDetails.fulfillment_status</code>/<code>fulfillment_notes</code>/ <code>notes_last_read</code>, whose semantics these three fields share exactly: append-only notes via <code>UpdateMarketSubscription</code>, the buyer's read marker via <code>MarkFulfillmentNotesRead</code>, <code>fulfillment_status</code> always the last note's status). Only meaningful on a <code>MarketSubscription</code>'s own <code>details</code>: on a <code>MarketProduct.details</code> they're always empty/unset. Unlike Rellm hosting, nothing about these types <em>needs</em> an admin, so <code>fulfillment_status</code> isn't a work queue for them (it stays at its default) -- the chat is just a way for a host admin and the buyer to talk about the subscription.</td>
+        </tr>
+        <tr>
+          <td>fulfillment_notes</td>
+          <td><a href="#rellm-FulfillmentNote">FulfillmentNote</a></td>
+          <td>repeated</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>notes_last_read</td>
+          <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
+          <td>optional</td>
+          <td></td>
         </tr>
       </tbody>
     </table>
