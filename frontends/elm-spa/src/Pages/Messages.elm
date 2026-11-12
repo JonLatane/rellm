@@ -104,21 +104,6 @@ init shared req =
         searchText =
             Dict.get "search_text" req.query |> Maybe.withDefault ""
 
-        -- `?subscription_messages=<id>[@host]` -- one Fulfillment thread (a Rellm hosting
-        -- subscription's notes), the subscription counterpart of `?messaging_group=`. Same `id@host`
-        -- encoding; `#subscription-message-<n>` (a note's position) is the matching fragment.
-        selectedSubscriptionThread : Maybe String
-        selectedSubscriptionThread =
-            Dict.get "subscription_messages" req.query
-                |> Maybe.map
-                    (\raw ->
-                        let
-                            ( subscriptionId, host ) =
-                                Messages.parseGroupRouteId shared.accounts.mainFrontendHost raw
-                        in
-                        Fulfillment.threadKey host subscriptionId
-                    )
-
         -- `?fulfillment_order=<id>[@host]` -- one admin Fulfillment-tab order, same encoding.
         selectedOrder : Maybe String
         selectedOrder =
@@ -135,14 +120,24 @@ init shared req =
         ( initialModel, cmd ) =
             MessagesPage.init shared.accounts (Just { navKey = req.key, path = req.url.path }) selectedGroup pendingScrollMessageId searchText
 
-        -- An admin order deep link wins; otherwise the user's own subscription thread, if either is given.
+        -- An admin order deep link wins; otherwise `?subscription_messages=<id>[@host]` -- one of the user's own
+        -- subscription threads (the subscription counterpart of `?messaging_group=`, same `id@host` encoding;
+        -- `#subscription-message-<n>` is the matching fragment).
         selectedThreadKey : Maybe String
         selectedThreadKey =
             if selectedOrder /= Nothing then
                 selectedOrder
 
             else
-                selectedSubscriptionThread
+                Dict.get "subscription_messages" req.query
+                    |> Maybe.map
+                        (\raw ->
+                            let
+                                ( subscriptionId, host ) =
+                                    Messages.parseGroupRouteId shared.accounts.mainFrontendHost raw
+                            in
+                            Fulfillment.threadKey host subscriptionId
+                        )
 
         model : Model
         model =
