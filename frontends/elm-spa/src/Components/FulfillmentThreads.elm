@@ -590,7 +590,7 @@ stateBadge state =
         SUBSCRIPTIONACTIVEBUTCANCELED ->
             span [ class "fulfillment-thread-state" ] [ text "Canceled · active until period ends" ]
 
-        SUBSCRIPTIONCANCELED ->
+        _ ->
             span [ class "fulfillment-thread-state" ] [ text "Canceled" ]
 
 
@@ -603,7 +603,7 @@ statusLabel status =
         FULFILLMENTSTATUSINPROGRESS ->
             "In Progress"
 
-        FULFILLMENTSTATUSAWAITINGHOSTADMIN ->
+        _ ->
             "Awaiting Host Admin"
 
 

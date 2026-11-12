@@ -6381,7 +6381,7 @@ subscriptionStateLine browserTimeZone subscription =
                     )
                 ]
 
-        SUBSCRIPTIONCANCELED ->
+        _ ->
             span [ class "profile-subscription-row-status" ] [ text "Canceled" ]
 
 

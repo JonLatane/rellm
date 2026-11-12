@@ -631,11 +631,11 @@ cancellationDetailsView browserTimeZone subscription =
                         Proto.Rellm.MarketSubscriptionState.SUBSCRIPTIONACTIVEBUTCANCELED ->
                             "Canceled, but service continues until the paid period ends"
 
-                        Proto.Rellm.MarketSubscriptionState.SUBSCRIPTIONCANCELED ->
-                            "Canceled"
-
                         Proto.Rellm.MarketSubscriptionState.SUBSCRIPTIONACTIVE ->
                             "Active"
+
+                        _ ->
+                            "Canceled"
                     )
                 ]
             , timestampLineView "Canceled" browserTimeZone subscription.canceledAt

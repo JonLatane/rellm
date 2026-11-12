@@ -124,6 +124,7 @@ suite =
                             , additionalInformation = ""
                             , fulfillmentStatus = FULFILLMENTSTATUSAWAITINGHOSTADMIN
                             , fulfillmentNotes = []
+                            , notesLastRead = Nothing
                             }
                         )
                         |> Market.productName
@@ -186,6 +187,7 @@ suite =
                             , additionalInformation = ""
                             , fulfillmentStatus = FULFILLMENTSTATUSAWAITINGHOSTADMIN
                             , fulfillmentNotes = []
+                            , notesLastRead = Nothing
                             }
                         )
                         |> Market.productDescription
@@ -210,6 +212,7 @@ suite =
                             , additionalInformation = ""
                             , fulfillmentStatus = FULFILLMENTSTATUSAWAITINGHOSTADMIN
                             , fulfillmentNotes = []
+                            , notesLastRead = Nothing
                             }
                         )
                         |> Market.productDescription
