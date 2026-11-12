@@ -104,13 +104,17 @@ suite =
                         |> Expect.notEqual (Fulfillment.threadKey "b.example" "1")
             ]
         , describe "empty model"
-            [ test "has no notes, so the Fulfillment tab is hidden" <|
+            [ test "has no subscriptions, so the Subscriptions tab is hidden" <|
                 \_ ->
-                    Fulfillment.hasNotes Fulfillment.empty
+                    Fulfillment.hasSubscriptions Fulfillment.empty
                         |> Expect.equal False
-            , test "and no unread" <|
+            , test "has no admin orders, so the Fulfillment tab is hidden" <|
                 \_ ->
-                    Fulfillment.totalUnread Fulfillment.empty
-                        |> Expect.equal 0
+                    Fulfillment.hasAdminOrders Fulfillment.empty
+                        |> Expect.equal False
+            , test "and no unread or awaiting counts" <|
+                \_ ->
+                    ( Fulfillment.totalUnread Fulfillment.empty, Fulfillment.awaitingCount Fulfillment.empty )
+                        |> Expect.equal ( 0, 0 )
             ]
         ]

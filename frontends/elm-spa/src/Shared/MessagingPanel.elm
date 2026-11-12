@@ -1,4 +1,4 @@
-module Shared.MessagingPanel exposing (Model, Msg(..), hasEligibleAccount, init, isOpen, subscriptions, totalUnreadCount, update, view)
+module Shared.MessagingPanel exposing (Model, Msg(..), hasEligibleAccount, init, isOpen, subscriptions, unreadCounts, update, view)
 
 {-| The Messages nav panel -- toggled open/closed from a nav icon (mirrors
 `Shared.StarredPanel`'s own toggle shape), embedding
@@ -49,12 +49,13 @@ hasEligibleAccount =
     Messages.hasEligibleAccount
 
 
-{-| See `MessagesPage.totalUnreadCount`'s own doc -- this just unwraps
-`model.page` to get at it.
+{-| See `MessagesPage.unreadCounts`'s own doc -- this just unwraps `model.page` to get at it. The nav
+button shows the three counts in its corners: Messages top-right, Subscriptions bottom-right,
+Fulfillment bottom-left (`UI.cornerBadges`).
 -}
-totalUnreadCount : Model -> Int
-totalUnreadCount model =
-    MessagesPage.totalUnreadCount model.page
+unreadCounts : Model -> { messages : Int, subscriptions : Int, fulfillment : Int }
+unreadCounts model =
+    MessagesPage.unreadCounts model.page
 
 
 {-| See `Shared.StarredPanel.update`'s own doc for why this returns a

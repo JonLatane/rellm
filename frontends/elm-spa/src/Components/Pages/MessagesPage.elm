@@ -5,10 +5,10 @@ module Components.Pages.MessagesPage exposing
     , empty
     , init
     , selectSubscriptionThread
+    , unreadCounts
     , pushSubscription
     , subscriptions
     , timerAndAnimationSubscriptions
-    , totalUnreadCount
     , update
     , view
     )
@@ -171,9 +171,10 @@ type alias Model =
     -- host A doesn't delay an already-in-flight refresh for host B.
     , pushRefreshGenerations : Dict String Int
 
-    -- The two tabs (`tabsView`), "Messaging" and "Fulfillment" -- the latter is the user's Rellm
-    -- hosting orders' fulfillment-note threads (`Components.FulfillmentThreads`). The tab bar only
-    -- exists while `Fulfillment.hasNotes`; with no notes this is ignored and Messaging shows.
+    -- The three tabs (`tabsView`): Messages (everything this page always was), Subscriptions (the
+    -- user's own `MarketSubscription`s, incl. Rellm hosting fulfillment chats) and Fulfillment
+    -- (server admins: every Rellm hosting order, to set up -- see `Components.FulfillmentThreads`).
+    -- Only the tabs that have something show; with just Messages there's no tab bar at all.
     , tab : Tab
     , fulfillment : Fulfillment.Model
 
@@ -183,7 +184,8 @@ type alias Model =
 
 
 type Tab
-    = MessagingTab
+    = MessagesTab
+    | SubscriptionsTab
     | FulfillmentTab
 
 
@@ -499,10 +501,11 @@ type Msg
       -- The Messaging/Fulfillment tab bar (only present once there are fulfillment notes).
     | TabClicked Tab
     | FulfillmentMsg Fulfillment.Msg
-      -- A Fulfillment thread row clicked on the real page (toggles it open; opening marks its
-      -- notes read -- see `Fulfillment.openCmd`). The embedded panel's rows are plain links to
+      -- A thread row clicked on the real page (toggles it open; opening a subscription chat marks
+      -- its notes read, opening an awaiting order moves it to In Progress -- see
+      -- `Fulfillment.openCmd`/`openAdminCmd`). The embedded panel's rows are plain links to
       -- `/messages?subscription_messages=` instead.
-    | FulfillmentThreadSelected String
+    | ThreadSelected String
     | PushRefreshDebounceElapsed String Int
 
 
@@ -529,7 +532,7 @@ empty =
     , mobileSidebarOpen = False
     , detailThreadAnimations = Dict.empty
     , pushRefreshGenerations = Dict.empty
-    , tab = MessagingTab
+    , tab = MessagesTab
     , fulfillment = Fulfillment.empty
     , selectedThread = Nothing
     }
@@ -577,7 +580,7 @@ notes are marked read as soon as they load (`Fulfillment.update`).
 -}
 selectSubscriptionThread : String -> Model -> Model
 selectSubscriptionThread key model =
-    { model | tab = FulfillmentTab, selectedThread = Just key }
+    { model | tab = SubscriptionsTab, selectedThread = Just key }
 
 
 fetchFulfillment : AccountsPanel.Model -> Model -> ( Model, Cmd Msg )
@@ -1183,7 +1186,7 @@ update accountsPanelModel msg model =
             in
             ( { model | fulfillment = fulfillment }, Cmd.map FulfillmentMsg cmd, maybeAccountsPanelMsg )
 
-        FulfillmentThreadSelected key ->
+        ThreadSelected key ->
             let
                 newSelection : Maybe String
                 newSelection =
@@ -1193,19 +1196,36 @@ update accountsPanelModel msg model =
                     else
                         Just key
 
+                openedThread : Maybe Fulfillment.Thread
+                openedThread =
+                    newSelection |> Maybe.andThen (Fulfillment.threadByKey model.fulfillment)
+
                 openCmd : Cmd Msg
                 openCmd =
-                    newSelection
-                        |> Maybe.andThen (Fulfillment.threadByKey model.fulfillment)
-                        |> Maybe.map (Fulfillment.openCmd accountsPanelModel model.fulfillment >> Cmd.map FulfillmentMsg)
-                        |> Maybe.withDefault Cmd.none
+                    case openedThread of
+                        Just thread ->
+                            (if thread.admin then
+                                Fulfillment.openAdminCmd accountsPanelModel model.fulfillment thread
 
+                             else
+                                Fulfillment.openCmd accountsPanelModel model.fulfillment thread
+                            )
+                                |> Cmd.map FulfillmentMsg
+
+                        Nothing ->
+                            Cmd.none
+
+                -- Only the user's own subscription threads have a deep link (`?subscription_messages=`).
                 urlCmd : Cmd Msg
                 urlCmd =
-                    case ( model.pageContext, newSelection |> Maybe.andThen (Fulfillment.threadByKey model.fulfillment) ) of
+                    case ( model.pageContext, openedThread ) of
                         ( Just ctx, Just thread ) ->
-                            Browser.Navigation.replaceUrl ctx.navKey
-                                (Fulfillment.threadUrl accountsPanelModel.mainFrontendHost thread.host thread.subscription.id Nothing)
+                            if thread.admin then
+                                Cmd.none
+
+                            else
+                                Browser.Navigation.replaceUrl ctx.navKey
+                                    (Fulfillment.threadUrl accountsPanelModel.mainFrontendHost thread.host thread.subscription.id Nothing)
 
                         ( Just ctx, Nothing ) ->
                             Browser.Navigation.replaceUrl ctx.navKey ctx.path
@@ -1788,12 +1808,17 @@ single unread item to the user. Counting straight off each host's flat
 avoids that.
 
 -}
-totalUnreadCount : Model -> Int
-totalUnreadCount model =
-    messagesUnreadCount model + Fulfillment.totalUnread model.fulfillment
+unreadCounts : Model -> { messages : Int, subscriptions : Int, fulfillment : Int }
+unreadCounts model =
+    { messages = messagesUnreadCount model
+    , subscriptions = Fulfillment.totalUnread model.fulfillment
+    , fulfillment = Fulfillment.awaitingCount model.fulfillment
+    }
 
 
-{-| Just the Messaging tab's share of `totalUnreadCount` -- unread `Message`s, not fulfillment notes.
+{-| Unread `Message`s -- the Messages tab's count (see `unreadCounts`, which splits the panel button's
+three counts: this one, unread Rellm hosting notes on the user's own subscriptions, and -- for server
+admins -- Rellm hosting orders still awaiting a host admin).
 -}
 messagesUnreadCount : Model -> Int
 messagesUnreadCount model =
@@ -1972,7 +1997,7 @@ replaceQueryUrl accountsPanelModel model =
 
 {-| Every currently-fetched group's own summary, freshly derived from
 `messagesByServer` -- the single source of truth `flattenSidebar`/
-`totalUnreadCount`/`mostRecentMessageIdFor`/`expand` all read, replacing the
+`unreadCounts`/`mostRecentMessageIdFor`/`expand` all read, replacing the
 old standalone `groupAnimations` cache now that its own `flip` state lives in
 `sidebarAnimations` instead (see that field's own doc).
 -}
@@ -2337,45 +2362,49 @@ conversation still peeking out beside it dismiss the drawer too, the same
 view : SharedTime.Model -> AccountsPanel.Model -> Model -> Html Msg
 view time accountsPanelModel model =
     let
-        showTabs : Bool
-        showTabs =
-            Fulfillment.hasNotes model.fulfillment
+        -- Subscriptions/Fulfillment only exist for someone with subscriptions / an admin account;
+        -- Messages always does. With only Messages there's no tab bar at all.
+        availableTabs : List Tab
+        availableTabs =
+            MessagesTab
+                :: (if Fulfillment.hasSubscriptions model.fulfillment then
+                        [ SubscriptionsTab ]
 
-        -- With no fulfillment notes there are no tabs at all, so Messaging is the only thing to show
-        -- whatever `model.tab` last was.
+                    else
+                        []
+                   )
+                ++ (if Fulfillment.hasAdminOrders model.fulfillment then
+                        [ FulfillmentTab ]
+
+                    else
+                        []
+                   )
+
+        -- A remembered tab that no longer exists (signed out of the admin account, say) falls back to
+        -- Messages rather than showing an empty page behind a missing tab.
         activeTab : Tab
         activeTab =
-            if showTabs then
+            if List.member model.tab availableTabs then
                 model.tab
 
             else
-                MessagingTab
+                MessagesTab
     in
     div [ class "messages-page" ]
-        ((if showTabs then
-            [ tabsView model activeTab ]
+        ((if List.length availableTabs > 1 then
+            [ tabsView model availableTabs activeTab ]
 
           else
             []
          )
             ++ (case activeTab of
+                    SubscriptionsTab ->
+                        [ Fulfillment.view (fulfillmentViewConfig time accountsPanelModel model) ]
+
                     FulfillmentTab ->
-                        [ Fulfillment.view
-                            { time = time
-                            , accountsPanelModel = accountsPanelModel
-                            , model = model.fulfillment
-                            , selected = model.selectedThread
-                            , onSelect =
-                                if model.embeddedPanel then
-                                    Nothing
+                        [ Fulfillment.adminView (fulfillmentViewConfig time accountsPanelModel model) ]
 
-                                else
-                                    Just FulfillmentThreadSelected
-                            , toMsg = FulfillmentMsg
-                            }
-                        ]
-
-                    MessagingTab ->
+                    MessagesTab ->
                         [ searchRowView accountsPanelModel model
                         , case model.selectedGroup of
                             Nothing ->
@@ -2391,30 +2420,71 @@ view time accountsPanelModel model =
         )
 
 
-{-| The "Messaging" / "Fulfillment" tab bar, each with its own unread count (hidden at zero).
+fulfillmentViewConfig :
+    SharedTime.Model
+    -> AccountsPanel.Model
+    -> Model
+    ->
+        { time : SharedTime.Model
+        , accountsPanelModel : AccountsPanel.Model
+        , model : Fulfillment.Model
+        , selected : Maybe String
+        , onSelect : Maybe (String -> Msg)
+        , toMsg : Fulfillment.Msg -> Msg
+        }
+fulfillmentViewConfig time accountsPanelModel model =
+    { time = time
+    , accountsPanelModel = accountsPanelModel
+    , model = model.fulfillment
+    , selected = model.selectedThread
+    , onSelect =
+        if model.embeddedPanel then
+            Nothing
+
+        else
+            Just ThreadSelected
+    , toMsg = FulfillmentMsg
+    }
+
+
+{-| The Messages / Subscriptions / Fulfillment tab bar. Each tab carries its own count (hidden at zero):
+unread messages, unread notes on the user's own subscriptions, and orders awaiting a host admin.
 -}
-tabsView : Model -> Tab -> Html Msg
-tabsView model activeTab =
+tabsView : Model -> List Tab -> Tab -> Html Msg
+tabsView model tabs activeTab =
     let
-        tabButton : Tab -> String -> Int -> Html Msg
-        tabButton tab label unread =
+        counts : { messages : Int, subscriptions : Int, fulfillment : Int }
+        counts =
+            unreadCounts model
+
+        tabButton : Tab -> Html Msg
+        tabButton tab =
+            let
+                ( label, count ) =
+                    case tab of
+                        MessagesTab ->
+                            ( "Messages", counts.messages )
+
+                        SubscriptionsTab ->
+                            ( "Subscriptions", counts.subscriptions )
+
+                        FulfillmentTab ->
+                            ( "Fulfillment", counts.fulfillment )
+            in
             button
                 [ Html.Attributes.type_ "button"
                 , classes [ "messages-tab", if tab == activeTab then "messages-tab-active" else "" ]
                 , onClick (TabClicked tab)
                 ]
                 [ text label
-                , if unread > 0 then
-                    span [ class "unread-count-badge" ] [ text (String.fromInt unread) ]
+                , if count > 0 then
+                    span [ class "unread-count-badge" ] [ text (String.fromInt count) ]
 
                   else
                     text ""
                 ]
     in
-    div [ class "messages-tabs" ]
-        [ tabButton MessagingTab "Messaging" (messagesUnreadCount model)
-        , tabButton FulfillmentTab "Fulfillment" (Fulfillment.totalUnread model.fulfillment)
-        ]
+    div [ class "messages-tabs" ] (List.map tabButton tabs)
 
 
 {-| The header row -- hamburger (two-pane, narrow screens only), search

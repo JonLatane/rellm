@@ -1,4 +1,4 @@
-module Shared.StarredPanel exposing (Model, Msg(..), freshestPost, hasAnyStars, hasPendingFetches, init, isStarred, rawKey, refreshHosts, refreshServerStars, subscriptions, toggleStarMsg, totalStarCount, update, view)
+module Shared.StarredPanel exposing (Model, Msg(..), browserStarCount, freshestPost, hasAnyStars, hasPendingFetches, init, isStarred, rawKey, refreshHosts, refreshServerStars, serverStarCount, subscriptions, toggleStarMsg, update, view)
 
 {-| Tracks which Posts the user has starred, in this browser. `StarPost`/
 `UnstarPost` (see `protos/rellm.proto`) are auth-less, "friendly" counters
@@ -1857,15 +1857,21 @@ hasAnyStars model =
     not (Set.isEmpty model.starredPostIds) || not (List.isEmpty (serverStarredPosts model))
 
 
-{-| Browser stars plus server-side stars not also starred here -- the nav badge's count.
+{-| Posts starred in this browser (`starredPostIds`) -- the nav button's top-right count.
 -}
-totalStarCount : Model -> Int
-totalStarCount model =
+browserStarCount : Model -> Int
+browserStarCount model =
     Set.size model.starredPostIds
-        + (serverStarredPosts model
-            |> List.filter (\( host, post ) -> not (Set.member (starKey host post) model.starredPostIds))
-            |> List.length
-          )
+
+
+{-| Server-side stars (Mastodon favourites / Bluesky likes) not also starred in this browser -- the nav
+button's bottom-right count, hidden when zero. Together with `browserStarCount` it's the old total.
+-}
+serverStarCount : Model -> Int
+serverStarCount model =
+    serverStarredPosts model
+        |> List.filter (\( host, post ) -> not (Set.member (starKey host post) model.starredPostIds))
+        |> List.length
 
 
 

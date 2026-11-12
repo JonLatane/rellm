@@ -330,3 +330,29 @@
 .starred-post-row-grouped .drag-handle {
   pointer-events: none;
 }
+
+/* Corner placement for `UI.cornerBadges` -- our "summed count" style: top-right, bottom-right,
+   bottom-left, then top-left. `.starred-count-badge` itself is the top-right default; these only move it. */
+.starred-count-badge.corner-badge-top-right {
+  top: -4px;
+  right: -4px;
+}
+
+.starred-count-badge.corner-badge-bottom-right {
+  top: auto;
+  bottom: -4px;
+  right: -4px;
+}
+
+.starred-count-badge.corner-badge-bottom-left {
+  top: auto;
+  bottom: -4px;
+  right: auto;
+  left: -4px;
+}
+
+.starred-count-badge.corner-badge-top-left {
+  top: -4px;
+  right: auto;
+  left: -4px;
+}

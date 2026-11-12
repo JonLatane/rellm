@@ -4595,18 +4595,62 @@ starredPostsToggle shared =
             , stopPropagationOn "click" (Decode.succeed ( Shared.StarredPanelMsg StarredPanel.ToggleStarredPanel, True ))
             , title "Starred"
             ]
-            [ text "⭐"
-            , span
-                [ classes
-                    [ "starred-count-badge"
-                    , hostnameToCSSClass shared.accounts.mainFrontendHost
-                    , "background-color-nav"
-                    , "border-color-primary-text"
+            (text "⭐"
+                :: cornerBadges shared.accounts.mainFrontendHost
+                    [ Just (StarredPanel.browserStarCount shared.panels.starredPanel)
+                    , nonZero (StarredPanel.serverStarCount shared.panels.starredPanel)
                     ]
-                ]
-                [ text (String.fromInt (StarredPanel.totalStarCount shared.panels.starredPanel)) ]
-            ]
+            )
         ]
+
+
+{-| `Just n` only when `n` is above zero -- for corner badges that stay hidden at zero (see `cornerBadges`).
+-}
+nonZero : Int -> Maybe Int
+nonZero n =
+    if n > 0 then
+        Just n
+
+    else
+        Nothing
+
+
+{-| The count badges in a nav toggle's corners -- our "summed count" style, used by both the Starred and
+Messages buttons. Counts fill the corners in a fixed order: top-right, bottom-right, bottom-left, then
+(for a fourth) top-left. A `Nothing` leaves its corner empty (a count that's hidden at zero) but still
+holds its place, so a given kind of count always lands in the same corner.
+
+  - Starred: top-right is the stars in this browser, bottom-right the server-side stars (when any).
+  - Messages: top-right is unread Messages, bottom-right unread Subscriptions notes, bottom-left
+    Fulfillment orders awaiting a host admin (server admins).
+
+-}
+cornerBadges : String -> List (Maybe Int) -> List (Html msg)
+cornerBadges mainFrontendHost counts =
+    let
+        corners : List String
+        corners =
+            [ "corner-badge-top-right", "corner-badge-bottom-right", "corner-badge-bottom-left", "corner-badge-top-left" ]
+
+        badge : String -> Maybe Int -> Html msg
+        badge corner maybeCount =
+            case maybeCount of
+                Just count ->
+                    span
+                        [ classes
+                            [ "starred-count-badge"
+                            , corner
+                            , hostnameToCSSClass mainFrontendHost
+                            , "background-color-nav"
+                            , "border-color-primary-text"
+                            ]
+                        ]
+                        [ text (String.fromInt count) ]
+
+                Nothing ->
+                    text ""
+    in
+    List.map2 badge corners counts
 
 
 {-| The Starred panel's content -- see `starredPostsToggle` for why this
@@ -4676,8 +4720,8 @@ account with `READ_PERSONAL_MESSAGES`/`READ_ALL_SYSTEM_MESSAGES`/`ADMIN`) --
 mirrors `starredPostsToggle`'s own "only show once there's something behind
 it" gating and `.starred-menu`/separately-mounted-panel structure (see
 `messagingPanel`, mounted as a `.navbar` direct child in `headerNav`, same
-reasoning as `starredPanel`). The unread badge (`MessagingPanel.totalUnreadCount`,
-styled exactly like `starredPostsToggle`'s own `.starred-count-badge`) is
+reasoning as `starredPanel`). The unread badges (`MessagingPanel.unreadCounts`, one per corner --
+see `cornerBadges` -- styled like `starredPostsToggle`'s own `.starred-count-badge`) are
 hidden at `0` rather than shown as a literal "0" -- unlike Starred's count,
 which is always known from boot (`starredPostIds` persists locally), this one
 only reflects whatever's actually been fetched so far (see that function's
@@ -4688,9 +4732,9 @@ misleadingly confident zero.
 messagingToggle : Shared.Model -> Route -> Html Shared.Msg
 messagingToggle shared currentRoute =
     let
-        unreadCount : Int
-        unreadCount =
-            MessagingPanel.totalUnreadCount shared.panels.messagingPanel
+        unreadCounts : { messages : Int, subscriptions : Int, fulfillment : Int }
+        unreadCounts =
+            MessagingPanel.unreadCounts shared.panels.messagingPanel
 
         -- Highlighted the same way `postsLink`/`eventsLink`/etc. highlight
         -- themselves for their own `currentRoute` -- just `background-color-nav`
@@ -4721,21 +4765,13 @@ messagingToggle shared currentRoute =
             , stopPropagationOn "click" (Decode.succeed ( Shared.MessagingPanelMsg MessagingPanel.ToggleOpen, True ))
             , title "Messages"
             ]
-            [ text "✉️"
-            , if unreadCount <= 0 then
-                text ""
-
-              else
-                span
-                    [ classes
-                        [ "starred-count-badge"
-                        , hostnameToCSSClass shared.accounts.mainFrontendHost
-                        , "background-color-nav"
-                        , "border-color-primary-text"
-                        ]
+            (text "✉️"
+                :: cornerBadges shared.accounts.mainFrontendHost
+                    [ nonZero unreadCounts.messages
+                    , nonZero unreadCounts.subscriptions
+                    , nonZero unreadCounts.fulfillment
                     ]
-                    [ text (String.fromInt unreadCount) ]
-            ]
+            )
         ]
 
 
