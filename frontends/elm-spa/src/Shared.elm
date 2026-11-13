@@ -1803,6 +1803,10 @@ sharedUpdate req msg model =
                                         withAccounts
                             in
                             ( opened, Cmd.batch [ Cmd.map AccountsPanelMsg accountsPanelCmd, openCmd ] )
+                                |> (\( m, c ) ->
+                                        sharedUpdate req (AudioPlayerPanelMsg (AudioPlayerPanel.AttachPostUrl media.id handoff.host handoff.postUrl)) m
+                                            |> Tuple.mapSecond (\c2 -> Cmd.batch [ c, c2 ])
+                                   )
 
                         -- The player was closed or moved on while this was being fetched: it's no longer wanted.
                         _ ->

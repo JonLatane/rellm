@@ -400,10 +400,15 @@ suite =
                         loaded
             ]
         , describe "handoffDecoder (a post card's audio moving to the bar)"
-            [ test "reads the track, its server and where it had got to" <|
+            [ test "reads the post it came from, if any" <|
+                \_ ->
+                    Decode.decodeString AudioPlayerPanel.handoffDecoder """{"id":"t1","host":"rellm.org","positionMs":0,"playing":true,"postUrl":"/elm/post/p1"}"""
+                        |> Result.map .postUrl
+                        |> Expect.equal (Ok (Just "/elm/post/p1"))
+            , test "reads the track, its server and where it had got to" <|
                 \_ ->
                     Decode.decodeString AudioPlayerPanel.handoffDecoder """{"id":"t1","host":"rellm.org","positionMs":61500,"playing":true}"""
-                        |> Expect.equal (Ok { id = "t1", host = "rellm.org", positionMs = 61500, playing = True })
+                        |> Expect.equal (Ok { id = "t1", host = "rellm.org", positionMs = 61500, playing = True, postUrl = Nothing })
             , test "a blank id or host is nothing to open, and a negative position starts at the top" <|
                 \_ ->
                     [ """{"id":" ","host":"rellm.org","positionMs":0,"playing":true}"""

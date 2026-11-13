@@ -87,7 +87,7 @@ type alias Source =
 {-| A track in the queue, with the server it lives on -- a queue can mix servers' tracks (see `Enqueue`).
 -}
 type alias QueueItem =
-    { media : MediaReference, host : String, video : Maybe VideoItem }
+    { media : MediaReference, host : String, video : Maybe VideoItem, postUrl : Maybe String }
 
 
 {-| What a video queue entry plays in the miniplayer. Its `MediaReference` is a stand-in (`id` = the video's `src`, `name`
@@ -111,11 +111,11 @@ type alias VideoItem =
     }
 
 
-{-| "Opened from post": a link to the post page a video came from, if it's known. Used in the queue and the expanded player.
+{-| "Opened from post": a link to the post page a track or video came from, if it's known. Used in the queue and the expanded player.
 -}
-openedFromPost : String -> VideoItem -> Html msg
-openedFromPost cssClass video =
-    case video.postUrl of
+openedFromPost : String -> Maybe String -> Html msg
+openedFromPost cssClass postUrl =
+    case postUrl of
         Just url ->
             a [ class cssClass, href url, attribute "title" "Open the post this video is from" ]
                 [ text "Opened from post" ]
@@ -249,6 +249,8 @@ type Msg
     | LinkPromptDismissed
       -- Adds a track (and the host it's on) to the queue -- starting it if nothing's loaded yet.
     | Enqueue Placement MediaReference String
+      -- Notes the post a queued track was opened from (a post card's audio handed over): `id` on `host`, and its post link.
+    | AttachPostUrl String String (Maybe String)
     | ToggleQueue
       -- A queue row was tapped: play it (queue item key).
     | PlayQueued String
@@ -854,16 +856,20 @@ type alias Handoff =
     , host : String
     , positionMs : Float
     , playing : Bool
+    , postUrl : Maybe String
     }
 
 
 handoffDecoder : Decode.Decoder Handoff
 handoffDecoder =
-    Decode.map4 Handoff
+    Decode.map5 Handoff
         (Decode.field "id" Decode.string |> Decode.andThen nonBlank)
         (Decode.field "host" Decode.string |> Decode.andThen nonBlank)
         (Decode.field "positionMs" Decode.float |> Decode.map (max 0))
         (Decode.field "playing" Decode.bool)
+        (Decode.oneOf [ Decode.field "postUrl" (Decode.nullable Decode.string), Decode.succeed Nothing ]
+            |> Decode.map (Maybe.andThen nonEmpty)
+        )
 
 
 nonBlank : String -> Decode.Decoder String
@@ -950,7 +956,7 @@ update msg model =
             let
                 items : List QueueItem
                 items =
-                    List.map (\media -> { media = media, host = host, video = Nothing }) queue
+                    List.map (\media -> { media = media, host = host, video = Nothing, postUrl = Nothing }) queue
             in
             case items |> List.filter (\item -> item.media.id == id) |> List.head of
                 Just item ->
@@ -982,6 +988,7 @@ update msg model =
                     { media = { defaultMediaReference | id = video.src, name = Just (Maybe.withDefault "Video" title) }
                     , host = ""
                     , video = Just video
+                    , postUrl = video.postUrl
                     }
             in
             if isCurrentVideoSrc video.src model then
@@ -1026,6 +1033,8 @@ update msg model =
                         { media = { defaultMediaReference | id = video.src, name = Just (Maybe.withDefault "Video" title) }
                         , host = ""
                         , video = Just video
+                        , postUrl = video.postUrl
+                    , postUrl = video.postUrl
                         }
                 in
                 ( { model | queue = playNowQueue item [] model.queue, videoPrior = prior }, Cmd.none )
@@ -1092,7 +1101,7 @@ update msg model =
             let
                 items : List QueueItem
                 items =
-                    List.map (\media -> { media = media, host = host, video = Nothing }) queue
+                    List.map (\media -> { media = media, host = host, video = Nothing, postUrl = Nothing }) queue
             in
             case items |> List.filter (\item -> item.media.id == id) |> List.head of
                 Just item ->
@@ -1122,15 +1131,26 @@ update msg model =
                         { media = { defaultMediaReference | id = video.src, name = Just (Maybe.withDefault "Video" title) }
                         , host = ""
                         , video = Just video
+                        , postUrl = video.postUrl
+                    , postUrl = video.postUrl
                         }
                 in
                 beginVideo item 0 False { model | queue = playNowQueue item [] model.queue, expanded = True }
+
+        AttachPostUrl id host postUrl ->
+            ( { model
+                | queue =
+                    model.queue
+                        |> List.map (\item -> if item.media.id == id && item.host == host && item.video == Nothing then { item | postUrl = postUrl } else item)
+              }
+            , Cmd.none
+            )
 
         Enqueue placement media host ->
             let
                 item : QueueItem
                 item =
-                    { media = media, host = host, video = Nothing }
+                    { media = media, host = host, video = Nothing, postUrl = Nothing }
             in
             if model.currentId == Nothing then
                 -- Nothing loaded: the queued track just starts. (The queue can still hold entries -- the viewer closing its video
@@ -1851,13 +1871,14 @@ view viewerOpen accountsPanelModel model =
                             )
                             []
                         , div [ class "audio-player-title" ] [ text (title media) ]
-                        , openedFromPost "audio-player-opened-from" video
+                        , openedFromPost "audio-player-opened-from" video.postUrl
                         ]
 
                 Nothing ->
                     div [ class "audio-player-expanded" ]
                         [ coverArt media
                         , div [ class "audio-player-title" ] [ text (title media) ]
+                        , openedFromPost "audio-player-opened-from" (currentItem model |> Maybe.andThen .postUrl)
                         , if artist media == "" then
                             text ""
 
@@ -2072,12 +2093,7 @@ view viewerOpen accountsPanelModel model =
                     ]
                 , div [ class "media-card-meta" ]
                     [ button [ class "media-card-title", onClick (PlayQueued key) ] [ text (title media) ]
-                    , case item.video of
-                        Just video ->
-                            openedFromPost "media-card-opened-from" video
-
-                        Nothing ->
-                            text ""
+                    , openedFromPost "media-card-opened-from" item.postUrl
                     , if credits == "" then
                         text ""
 
