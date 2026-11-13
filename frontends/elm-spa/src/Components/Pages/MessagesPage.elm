@@ -2512,9 +2512,15 @@ view time basePath accountsPanelModel model =
 
             else
                 MessagesTab
+
+        -- `.has-tabs` is what tells messages.css the tab bar is on screen, so every offset that
+        -- stacks the page's chrome (sticky header row, drawer, bounded panes) can add its height.
+        hasTabs : Bool
+        hasTabs =
+            List.length availableTabs > 1
     in
-    div [ class "messages-page" ]
-        ((if List.length availableTabs > 1 then
+    div [ classes ("messages-page" :: (if hasTabs then [ "has-tabs" ] else [])) ]
+        ((if hasTabs then
             [ tabsView model availableTabs activeTab ]
 
           else
@@ -2692,7 +2698,7 @@ tabsView model tabs activeTab =
                     text ""
                 ]
     in
-    div [ class "server-details-tab-bar" ] (List.map tabButton tabs)
+    div [ classes [ "server-details-tab-bar", "messages-tab-bar" ] ] (List.map tabButton tabs)
 
 
 {-| The header row -- hamburger (two-pane, narrow screens only), search

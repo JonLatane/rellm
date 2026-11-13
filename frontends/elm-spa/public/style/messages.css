@@ -12,6 +12,18 @@
    this exact `calc()`. Relies on `.container` no longer clipping
    descendants that intentionally render wider than it (see main.css's own
    `overflow-x: hidden` note on `body`). */
+/* `--messages-tabs-h` is the height of the tab bar (`.messages-tab-bar`, below) -- 0 when there's
+   no bar (`.has-tabs` unset: someone with only Messages). Every offset below that stacks this page's
+   chrome under the navbar (the sticky header row, the narrow-screen drawer, the bounded thread
+   panes) adds it, so the bar and those stay in step by changing this one value. */
+.messages-page {
+  --messages-tabs-h: 0px;
+}
+
+.messages-page.has-tabs {
+  --messages-tabs-h: 48px;
+}
+
 .messages-page {
   margin-left: calc(min(0px, -49vw + 400px));
   margin-right: calc(min(0px, -49vw + 400px));
@@ -61,7 +73,7 @@
    this header and the two-pane below it on a narrow phone. */
 .messages-header-row {
   position: sticky;
-  top: calc(env(safe-area-inset-top) + 69px);
+  top: calc(env(safe-area-inset-top) + 69px + var(--messages-tabs-h));
   z-index: 2;
   flex-wrap: nowrap;
   min-height: 44px;
@@ -69,7 +81,7 @@
 }
 
 .messaging-panel .messages-header-row {
-  top: 0;
+  top: var(--messages-tabs-h);
   background: var(--panel-bg);
 }
 
@@ -556,7 +568,7 @@
    list itself is long, already stays visually fixed for free. */
 @media (min-width: 640px) {
   .messages-sidebar {
-    height: calc(100vh - (env(safe-area-inset-top) + 69px + 44px));
+    height: calc(100vh - (env(safe-area-inset-top) + 69px + 44px + var(--messages-tabs-h)));
     overflow-y: auto;
   }
 }
@@ -583,7 +595,7 @@
 .messages-thread {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - (env(safe-area-inset-top) + 69px + 44px));
+  height: calc(100vh - (env(safe-area-inset-top) + 69px + 44px + var(--messages-tabs-h)));
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 0.8rem;
@@ -773,7 +785,7 @@ body:has(> [style*="2147483647"]) .messages-reply-button {
     /* `.messages-header-row`'s own `top` (69px navbar) plus its own
        `min-height` (44px) -- see that rule's own doc; kept in sync with it
        by hand, there being no cross-rule `calc()` reference in plain CSS. */
-    top: calc(env(safe-area-inset-top) + 69px + 44px);
+    top: calc(env(safe-area-inset-top) + 69px + 44px + var(--messages-tabs-h));
     left: 0;
     right: 0;
     bottom: 0;
@@ -830,6 +842,28 @@ body:has(> [style*="2147483647"]) .messages-reply-button {
   font-weight: 700;
   background: #c62828;
   color: #ffffff;
+}
+
+/* The tab bar is the Server Information pill bar (`.server-details-tab-bar`, servers.css) made a fixed
+   `--messages-tabs-h` tall and sticky, directly under the navbar (or at the top of the embedded panel's own
+   scroll container), so the sticky header row below it and the narrow-screen drawer's `position: fixed`
+   bounds can both bake that height in as a constant, same as they already do for the header row's own 44px.
+   Opaque so rows scrolling beneath it don't show through; no bottom margin (the height above is all of it). */
+.messages-tab-bar {
+  position: sticky;
+  top: calc(env(safe-area-inset-top) + 69px);
+  z-index: 3;
+  box-sizing: border-box;
+  height: var(--messages-tabs-h);
+  margin: 0;
+  padding: 0.4rem 0.5rem;
+  align-items: center;
+  background: var(--bg);
+}
+
+.messaging-panel .messages-tab-bar {
+  top: 0;
+  background: var(--panel-bg);
 }
 
 .fulfillment-thread-list {
@@ -936,7 +970,7 @@ body:has(> [style*="2147483647"]) .messages-reply-button {
 }
 
 .fulfillment-detail {
-  height: calc(100vh - (env(safe-area-inset-top) + 69px + 44px));
+  height: calc(100vh - (env(safe-area-inset-top) + 69px + 44px + var(--messages-tabs-h)));
   overflow-y: auto;
   box-sizing: border-box;
   border: 1px solid var(--border);
