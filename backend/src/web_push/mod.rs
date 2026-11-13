@@ -235,10 +235,7 @@ impl PushSender {
 
 /// What a new `FulfillmentNote` announces -- see `notify_fulfillment_note`.
 pub struct FulfillmentNoteNotificationContent {
-    /// The `MarketSubscription`'s DB id -- the candidate recipients are whoever linked a push
-    /// subscription to it (`RegisterMarketSubscriptionPush`).
-    pub market_subscription_id: i64,
-    /// The note's author: never notified of their own note, even if they opted in on this device.
+    /// The note's author: never notified of their own note, on any of their devices.
     pub author_user_id: i64,
     /// The subscription's buyer, and their username (for the deep link to their profile's
     /// subscriptions section, which is where a buyer reads the chat).
@@ -251,12 +248,13 @@ pub struct FulfillmentNoteNotificationContent {
     pub new_status_label: Option<String>,
 }
 
-/// Pushes a notification about a new `FulfillmentNote` to every device that opted in to its
-/// subscription's chat -- except the author's, and except anyone who can't read the chat any more
-/// (a recipient must still be the subscription's buyer or an Admin *as of now*; opting in once
-/// doesn't outlive losing access). Same spawn-and-forget contract as `notify_message_recipients`:
-/// runs in a background task with its own connection, never fails the note being added, and no-ops
-/// outside a Tokio runtime (the plain synchronous `#[test]`s).
+/// Pushes a notification about a new `FulfillmentNote` to the Web Push subscriptions people already
+/// registered (`RegisterPushSubscription`) -- there is no per-subscription opt-in. The recipients are
+/// the subscription's buyer ("individual users get notifications for their own subscriptions") and
+/// every Admin ("everyone who can handle fulfillment hears about every order's chat"), minus the
+/// note's author; see `fulfillment_note_recipients`. Same spawn-and-forget contract as
+/// `notify_message_recipients`: runs in a background task with its own connection, never fails the
+/// note being added, and no-ops outside a Tokio runtime (the plain synchronous `#[test]`s).
 pub fn notify_fulfillment_note(pool: Arc<PgPool>, content: FulfillmentNoteNotificationContent) {
     let Ok(handle) = tokio::runtime::Handle::try_current() else {
         log::warn!("notify_fulfillment_note: no Tokio runtime available, skipping");
@@ -308,37 +306,20 @@ async fn send_fulfillment_note_notifications(
     Ok(())
 }
 
-/// The linked push subscriptions that should actually get `content`'s notification -- see
-/// `notify_fulfillment_note`'s own doc for the two exclusions.
+/// Every Web Push subscription that should get `content`'s notification: all of the buyer's and all
+/// of every Admin's, except the author's own. A user who is both the buyer and an Admin counts once
+/// (and gets the buyer deep link -- see `fulfillment_note_url`). Worked out at send time, so
+/// someone who stopped being an Admin stops receiving the admin side.
 pub(crate) fn fulfillment_note_recipients(
     content: &FulfillmentNoteNotificationContent,
     conn: &mut crate::db_connection::PgPooledConnection,
 ) -> Result<Vec<models::PushSubscription>, tonic::Status> {
-    let linked = models::get_push_subscriptions_for_market_subscription(content.market_subscription_id, conn)?;
-    let mut allowed_by_user: std::collections::HashMap<i64, bool> = std::collections::HashMap::new();
-    let mut recipients = vec![];
-    for subscription in linked {
-        if subscription.user_id == content.author_user_id {
-            continue;
-        }
-        let allowed = match allowed_by_user.get(&subscription.user_id) {
-            Some(allowed) => *allowed,
-            None => {
-                let allowed = subscription.user_id == content.buyer_id
-                    || models::get_user(subscription.user_id, conn)
-                        .map(|user| {
-                            crate::rpcs::validate_permission(&Some(&user), protos::Permission::Admin).is_ok()
-                        })
-                        .unwrap_or(false);
-                allowed_by_user.insert(subscription.user_id, allowed);
-                allowed
-            }
-        };
-        if allowed {
-            recipients.push(subscription);
-        }
-    }
-    Ok(recipients)
+    let mut user_ids = models::get_admin_user_ids(conn)?;
+    user_ids.push(content.buyer_id);
+    user_ids.retain(|id| *id != content.author_user_id);
+    user_ids.sort_unstable();
+    user_ids.dedup();
+    models::get_push_subscriptions_for_users(&user_ids, conn)
 }
 
 fn fulfillment_note_title(frontend_host: Option<&str>) -> String {

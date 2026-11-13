@@ -668,24 +668,6 @@ impl Rellm for RellmService {
     ) -> Result<Response<MarketSubscription>, Status> {
         authenticated_rpc!(self, rpcs::mark_fulfillment_notes_read, request)
     }
-    async fn register_market_subscription_push(
-        &self,
-        request: Request<MarketSubscriptionPushRequest>,
-    ) -> Result<Response<()>, Status> {
-        authenticated_rpc!(self, rpcs::register_market_subscription_push, request)
-    }
-    async fn unregister_market_subscription_push(
-        &self,
-        request: Request<MarketSubscriptionPushRequest>,
-    ) -> Result<Response<()>, Status> {
-        authenticated_rpc!(self, rpcs::unregister_market_subscription_push, request)
-    }
-    async fn get_market_subscription_push_status(
-        &self,
-        request: Request<MarketSubscriptionPushRequest>,
-    ) -> Result<Response<GetMarketSubscriptionPushStatusResponse>, Status> {
-        authenticated_rpc!(self, rpcs::get_market_subscription_push_status, request)
-    }
     async fn make_market_purchase(
         &self,
         request: Request<MakeMarketPurchaseRequest>,

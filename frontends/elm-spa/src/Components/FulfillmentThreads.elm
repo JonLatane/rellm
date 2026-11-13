@@ -2,12 +2,16 @@ module Components.FulfillmentThreads exposing
     ( Model
     , Msg(..)
     , Thread
+    , ViewConfig
     , adminView
     , awaitingCount
+    , detailView
     , empty
     , fetchAll
     , hasAdminOrders
     , hasSubscriptions
+    , heading
+    , isChat
     , openAdmin
     , openCmd
     , subscriptionLinks
@@ -51,7 +55,7 @@ import Html.Attributes exposing (class, disabled, href, placeholder, value)
 import Html.Events exposing (onClick, onInput, preventDefaultOn)
 import Json.Decode as Decode
 import Proto.Google.Protobuf
-import Proto.Rellm exposing (FulfillmentNote, MarketSubscription, defaultFulfillmentNote, defaultMarkFulfillmentNotesReadRequest, defaultMarketSubscriptionPushRequest)
+import Proto.Rellm exposing (FulfillmentNote, MarketSubscription, defaultFulfillmentNote, defaultMarkFulfillmentNotesReadRequest)
 import Proto.Rellm.FulfillmentStatus exposing (FulfillmentStatus(..))
 import Proto.Rellm.GetMarketSubscriptionsRequestType exposing (GetMarketSubscriptionsRequestType(..))
 import Proto.Rellm.MarketSubscription.Details as SubscriptionDetails
@@ -90,11 +94,6 @@ type alias Model =
     -- Admin accounts' view of every Rellm hosting order (the Fulfillment tab) -- same `Feed` shape.
     , adminFeeds : Dict String Feed
 
-    -- Per `Thread.key`: whether *this browser's* push subscription is opted in to that thread's
-    -- notifications (`GetMarketSubscriptionPushStatus`); absent until checked.
-    , pushOptIn : Dict String Bool
-    , pushBusy : Dict String ()
-
     -- Admin note composer: draft text and in-flight saves, per `Thread.key`.
     , drafts : Dict String String
     , saving : Dict String ()
@@ -105,10 +104,6 @@ type Msg
     = GotSubscriptions String (Result Grpc.Error ( Maybe AccountsPanel.Msg, List MarketSubscription ))
     | GotAdminSubscriptions String (Result Grpc.Error ( Maybe AccountsPanel.Msg, List MarketSubscription ))
     | GotMarkedRead String (Result Grpc.Error ( Maybe AccountsPanel.Msg, MarketSubscription ))
-    | GotPushStatus String (Result Grpc.Error ( Maybe AccountsPanel.Msg, Bool ))
-    | PushToggleClicked Thread Bool
-    | EnablePushClicked Thread
-    | GotPushToggled String String Bool (Result Grpc.Error ( Maybe AccountsPanel.Msg, () ))
     | DraftChanged String String
     | SaveNoteClicked Thread FulfillmentStatus
     | GotNoteSaved String (Result Grpc.Error ( Maybe AccountsPanel.Msg, MarketSubscription ))
@@ -119,8 +114,6 @@ empty : Model
 empty =
     { feeds = Dict.empty
     , adminFeeds = Dict.empty
-    , pushOptIn = Dict.empty
-    , pushBusy = Dict.empty
     , drafts = Dict.empty
     , saving = Dict.empty
     }
@@ -537,19 +530,11 @@ threadByKey model key =
     (userThreads model ++ adminThreads model) |> List.filter (\t -> t.key == key) |> List.head
 
 
-{-| What opening a thread does: mark its unread notes read, and (once) look up whether this browser
-is opted in to its push notifications.
+{-| What opening a thread does: mark its unread notes read.
 -}
-openCmd : AccountsPanel.Model -> Model -> Thread -> Cmd Msg
-openCmd accountsPanelModel model thread =
-    Cmd.batch
-        [ markReadCmd accountsPanelModel thread
-        , if Dict.member (optInKey accountsPanelModel thread) model.pushOptIn then
-            Cmd.none
-
-          else
-            pushStatusCmd accountsPanelModel thread
-        ]
+openCmd : AccountsPanel.Model -> Thread -> Cmd Msg
+openCmd =
+    markReadCmd
 
 
 {-| What opening an order on the Fulfillment tab does, same as expanding its row on
@@ -570,18 +555,11 @@ openAdmin accountsPanelModel model thread =
 
       else
         model
-    , Cmd.batch
-        [ if autoProgress then
-            appendNoteCmd accountsPanelModel thread "" FULFILLMENTSTATUSINPROGRESS GotAutoProgressSaved
+    , if autoProgress then
+        appendNoteCmd accountsPanelModel thread "" FULFILLMENTSTATUSINPROGRESS GotAutoProgressSaved
 
-          else
-            Cmd.none
-        , if Dict.member (optInKey accountsPanelModel thread) model.pushOptIn then
-            Cmd.none
-
-          else
-            pushStatusCmd accountsPanelModel thread
-        ]
+      else
+        Cmd.none
     )
 
 
@@ -607,54 +585,12 @@ appendNoteCmd accountsPanelModel thread noteText newStatus toMsg =
             Cmd.none
 
 
-{-| The `pushOptIn` cache key: the thread *and* the browser push endpoint it was checked against. The
-opt-in belongs to a particular push subscription -- turning the account's notifications off deletes it
-(and its thread links) server-side, and turning them back on makes a new one -- so a cached answer for a
-different (or missing) endpoint must never be reused.
--}
-optInKey : AccountsPanel.Model -> Thread -> String
-optInKey accountsPanelModel thread =
-    thread.key ++ "|" ++ (pushRequest accountsPanelModel thread |> Maybe.withDefault "")
-
-
-accountFor : AccountsPanel.Model -> Thread -> Maybe RellmAccounts.RellmAccount
-accountFor accountsPanelModel thread =
-    AccountsPanel.enabledAccounts accountsPanelModel
-        |> List.filter (\account -> RellmAccounts.rellmAccountId account == thread.accountId)
-        |> List.head
-
-
-pushRequest : AccountsPanel.Model -> Thread -> Maybe String
-pushRequest accountsPanelModel thread =
-    Dict.get thread.accountId accountsPanelModel.pushSubscriptions
-
-
-pushStatusCmd : AccountsPanel.Model -> Thread -> Cmd Msg
-pushStatusCmd accountsPanelModel thread =
-    case pushRequest accountsPanelModel thread of
-        Nothing ->
-            Cmd.none
-
-        Just endpoint ->
-            rpcFor accountsPanelModel
-                thread
-                (\server token ->
-                    Grpc.new Rellm.getMarketSubscriptionPushStatus { defaultMarketSubscriptionPushRequest | marketSubscriptionId = thread.subscription.id, endpoint = endpoint }
-                        |> Grpc.setHost (RellmServers.rellmServerUrl server)
-                        |> withAccessToken (Just token)
-                        |> Grpc.toTask
-                )
-                |> Task.map (\( m, response ) -> ( m, response.registered ))
-                |> Task.attempt (GotPushStatus (optInKey accountsPanelModel thread))
-
-
-
 -- UPDATE
 
 
 {-| `selected` is the currently open thread's `threadKey`, if any: once its notes load/refresh, a
 still-unread open thread is marked read straight away (so a deep link, or a note arriving while it's
-open, doesn't leave a stale badge), and its push opt-in status is looked up.
+open, doesn't leave a stale badge).
 -}
 update : AccountsPanel.Model -> Maybe String -> Msg -> Model -> ( Model, Cmd Msg, Maybe AccountsPanel.Msg )
 update accountsPanelModel selected msg model =
@@ -674,7 +610,7 @@ update accountsPanelModel selected msg model =
                             Nothing
 
                         else
-                            Just (openCmd accountsPanelModel updated thread)
+                            Just (openCmd accountsPanelModel thread)
                     )
                 |> Maybe.withDefault Cmd.none
             , maybeMsg
@@ -775,57 +711,6 @@ update accountsPanelModel selected msg model =
         GotMarkedRead _ (Err _) ->
             ( model, Cmd.none, Nothing )
 
-        GotPushStatus key (Ok ( maybeMsg, registered )) ->
-            ( { model | pushOptIn = Dict.insert key registered model.pushOptIn }, Cmd.none, maybeMsg )
-
-        GotPushStatus _ (Err _) ->
-            ( model, Cmd.none, Nothing )
-
-        -- The account has no push subscription in this browser yet: do what the Accounts panel's own
-        -- "Push Notifications" switch does (`EnableNotificationsClicked` -- permission prompt, subscribe,
-        -- register), including its iOS "add to Home Screen first" error.
-        EnablePushClicked thread ->
-            ( model
-            , Cmd.none
-            , accountFor accountsPanelModel thread |> Maybe.map AccountsPanel.EnableNotificationsClicked
-            )
-
-        PushToggleClicked thread wanted ->
-            case pushRequest accountsPanelModel thread of
-                Nothing ->
-                    ( model, Cmd.none, Nothing )
-
-                Just endpoint ->
-                    ( { model | pushBusy = Dict.insert thread.key () model.pushBusy }
-                    , rpcFor accountsPanelModel
-                        thread
-                        (\server token ->
-                            let
-                                request : Proto.Rellm.MarketSubscriptionPushRequest
-                                request =
-                                    { defaultMarketSubscriptionPushRequest | marketSubscriptionId = thread.subscription.id, endpoint = endpoint }
-                            in
-                            (if wanted then
-                                Grpc.new Rellm.registerMarketSubscriptionPush request
-
-                             else
-                                Grpc.new Rellm.unregisterMarketSubscriptionPush request
-                            )
-                                |> Grpc.setHost (RellmServers.rellmServerUrl server)
-                                |> withAccessToken (Just token)
-                                |> Grpc.toTask
-                        )
-                        |> Task.map (\( m, _ ) -> ( m, () ))
-                        |> Task.attempt (GotPushToggled thread.key (optInKey accountsPanelModel thread) wanted)
-                    , Nothing
-                    )
-
-        GotPushToggled key optKey wanted (Ok ( maybeMsg, () )) ->
-            ( { model | pushBusy = Dict.remove key model.pushBusy, pushOptIn = Dict.insert optKey wanted model.pushOptIn }, Cmd.none, maybeMsg )
-
-        GotPushToggled key _ _ (Err _) ->
-            ( { model | pushBusy = Dict.remove key model.pushBusy }, Cmd.none, Nothing )
-
 
 {-| Swaps `updated` in for the subscription of the *one* thread `key` names (`keyPrefix` is the key
 namespace the feed belongs to -- `"admin/"` for the Fulfillment tab). Subscription ids are only unique
@@ -902,8 +787,8 @@ adminView config =
             div [ class "fulfillment-thread-list" ] (List.map (threadView config) all)
 
 
-{-| One row. A user's own Rellm hosting subscription with notes (or any admin-side order) opens into a
-chat; any other subscription is just a title and state line.
+{-| One row of the list pane: title, state, unread count and the last note's preview. A subscription with a chat
+(`isChat`) selects into the detail pane (`detailView`) when clicked; any other is just a title and state line.
 -}
 threadView : ViewConfig msg -> Thread -> Html msg
 threadView config thread =
@@ -916,10 +801,6 @@ threadView config thread =
         notes =
             notesOf subscription
 
-        isChat : Bool
-        isChat =
-            thread.admin || not (List.isEmpty notes)
-
         unread : Int
         unread =
             if thread.admin then
@@ -930,16 +811,12 @@ threadView config thread =
 
         isSelected : Bool
         isSelected =
-            isChat && config.selected == Just thread.key
+            isChat thread && config.selected == Just thread.key
 
         headerContent : List (Html msg)
         headerContent =
             [ span [ class "fulfillment-thread-title" ] [ text (threadTitle thread) ]
-            , if thread.admin && isHosting subscription then
-                span [ class "fulfillment-thread-state" ] [ text (statusLabel (fulfillmentStatusOf subscription)) ]
-
-              else
-                stateBadge (Market.effectiveState subscription)
+            , stateView thread
             , if unread > 0 then
                 span [ class "unread-count-badge", Html.Attributes.title "Unread notes" ] [ text (String.fromInt unread) ]
 
@@ -951,7 +828,7 @@ threadView config thread =
         [ classes [ "fulfillment-thread", if isSelected then "fulfillment-thread-selected" else "" ]
         , Html.Attributes.id ("subscription-thread-" ++ subscription.id)
         ]
-        [ if isChat then
+        [ if isChat thread then
             let
                 url : String
                 url =
@@ -985,31 +862,68 @@ threadView config thread =
 
           else
             div [ class "fulfillment-thread-header" ] (headerContent ++ [ timeLine config subscription ])
-        , if isSelected then
-            div [ class "fulfillment-thread-body" ]
-                ((if List.isEmpty notes then
-                    [ p [ class "market-form-hint" ] [ text "No notes yet." ] ]
+        , case List.reverse notes |> List.head of
+            Just last ->
+                p [ class "fulfillment-thread-preview" ] [ text (notePreview last) ]
 
-                  else
-                    List.indexedMap (noteView config.time thread) notes
-                 )
-                    ++ (if thread.admin then
-                            [ composerView config thread ]
+            Nothing ->
+                text ""
+        ]
 
-                        else
-                            []
-                       )
-                    ++ [ pushToggleView config thread ]
-                )
+
+{-| Whether a thread opens into a chat: every admin-side order does; a user's own subscription once it has notes.
+-}
+isChat : Thread -> Bool
+isChat thread =
+    thread.admin || not (List.isEmpty (notesOf thread.subscription))
+
+
+{-| A Rellm hosting order shows its fulfillment status (Awaiting Host Admin / In Progress / Fulfilled);
+every other subscription shows its state (Active / Canceled ...).
+-}
+stateView : Thread -> Html msg
+stateView thread =
+    if thread.admin && isHosting thread.subscription then
+        span [ class "fulfillment-thread-state" ] [ text (statusLabel (fulfillmentStatusOf thread.subscription)) ]
+
+    else
+        stateBadge (Market.effectiveState thread.subscription)
+
+
+{-| The detail pane's heading: what the thread is about, and its state. The page puts it (with the pane
+toggle) in the row above the two panes.
+-}
+heading : Thread -> Html msg
+heading thread =
+    span [ class "fulfillment-detail-heading" ]
+        [ span [ class "fulfillment-thread-title" ] [ text (threadTitle thread) ]
+        , stateView thread
+        ]
+
+
+{-| The detail pane of the selected thread: its notes, and (admin side) the note composer.
+-}
+detailView : ViewConfig msg -> Thread -> Html msg
+detailView config thread =
+    let
+        notes : List FulfillmentNote
+        notes =
+            notesOf thread.subscription
+    in
+    div [ class "fulfillment-thread-body" ]
+        ((if List.isEmpty notes then
+            [ p [ class "market-form-hint" ] [ text "No notes yet." ] ]
 
           else
-            case List.reverse notes |> List.head of
-                Just last ->
-                    p [ class "fulfillment-thread-preview" ] [ text (notePreview last) ]
+            List.indexedMap (noteView config.time thread) notes
+         )
+            ++ (if thread.admin then
+                    [ composerView config thread ]
 
-                Nothing ->
-                    text ""
-        ]
+                else
+                    []
+               )
+        )
 
 
 {-| "Renews <date>"-style line for a plain (non-chat) subscription row.
@@ -1161,7 +1075,13 @@ noteView time thread index note =
         ]
         [ div [ class "fulfillment-note-meta" ]
             [ span [ class "fulfillment-note-author" ] [ text (noteAuthorLabel thread note) ]
-            , span [ class "fulfillment-note-status" ] [ text (statusLabel note.fulfillmentStatus) ]
+            , if isHosting subscription then
+                -- Only Rellm hosting orders have a fulfillment workflow; on any other type a status would
+                -- just read "Awaiting Host Admin" under every note.
+                span [ class "fulfillment-note-status" ] [ text (statusLabel note.fulfillmentStatus) ]
+
+              else
+                text ""
             , span [ class "fulfillment-note-time" ]
                 [ text
                     (note.createdAt
@@ -1233,59 +1153,3 @@ composerView config thread =
                 text ""
             ]
         ]
-
-
-pushToggleView : ViewConfig msg -> Thread -> Html msg
-pushToggleView config thread =
-    case pushRequest config.accountsPanelModel thread of
-        Nothing ->
-            case accountFor config.accountsPanelModel thread of
-                Just account ->
-                    if AccountsPanel.canUsePushNotifications config.accountsPanelModel account then
-                        div [ class "fulfillment-push-toggle" ]
-                            [ button
-                                [ Html.Attributes.type_ "button"
-                                , onClick (config.toMsg (EnablePushClicked thread))
-                                ]
-                                [ text "Enable push notifications for updates here" ]
-                            , p [ class "market-form-hint" ]
-                                [ text "On iPhone/iPad, first add this site to your Home Screen (Share → Add to Home Screen) and enable notifications from there." ]
-                            , case Dict.get thread.accountId config.accountsPanelModel.notificationErrors of
-                                Just reason ->
-                                    div [ class "account-notification-error" ] [ text reason ]
-
-                                Nothing ->
-                                    text ""
-                            ]
-
-                    else
-                        p [ class "market-form-hint" ] [ text "This server doesn't offer push notifications." ]
-
-                Nothing ->
-                    text ""
-
-        Just _ ->
-            let
-                optedIn : Bool
-                optedIn =
-                    Dict.get (optInKey config.accountsPanelModel thread) config.model.pushOptIn |> Maybe.withDefault False
-
-                busy : Bool
-                busy =
-                    Dict.member thread.key config.model.pushBusy
-            in
-            div [ class "fulfillment-push-toggle" ]
-                [ button
-                    [ Html.Attributes.type_ "button"
-                    , onClick (config.toMsg (PushToggleClicked thread (not optedIn)))
-                    , disabled busy
-                    ]
-                    [ text
-                        (if optedIn then
-                            "Turn off notifications for this order"
-
-                         else
-                            "Notify me of updates to this order"
-                        )
-                    ]
-                ]

@@ -247,10 +247,8 @@
  diesel::joinable!(events -> posts (post_id));
  diesel::joinable!(federated_accounts -> federated_servers (federated_server_id));
  diesel::joinable!(federated_accounts -> users (user_id));
-@@ -544,10 +561,8 @@
+@@ -544,8 +561,6 @@
  diesel::joinable!(market_purchases -> users (buyer_id));
- diesel::joinable!(market_subscription_push_subscriptions -> market_subscriptions (market_subscription_id));
- diesel::joinable!(market_subscription_push_subscriptions -> push_subscriptions (push_subscription_id));
  diesel::joinable!(market_subscriptions -> market_products (product_id));
  diesel::joinable!(market_subscriptions -> users (buyer_id));
 -diesel::joinable!(media_licenses -> media (media_id));
@@ -285,9 +283,8 @@
      events,
      federated_accounts,
      federated_profiles,
-@@ -589,19 +602,17 @@
+@@ -589,18 +602,16 @@
      market_purchases,
-     market_subscription_push_subscriptions,
      market_subscriptions,
      media,
 +    media_filter,

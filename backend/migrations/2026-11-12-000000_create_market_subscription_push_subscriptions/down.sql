@@ -1,1 +1,0 @@
-DROP TABLE market_subscription_push_subscriptions;

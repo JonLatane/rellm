@@ -222,15 +222,6 @@ diesel::table! {
 }
 
 diesel::table! {
-    market_subscription_push_subscriptions (id) {
-        id -> Int8,
-        market_subscription_id -> Int8,
-        push_subscription_id -> Int8,
-        created_at -> Timestamp,
-    }
-}
-
-diesel::table! {
     market_subscriptions (id) {
         id -> Int8,
         buyer_id -> Int8,
@@ -569,8 +560,6 @@ diesel::joinable!(market_payments -> market_purchases (purchase_id));
 diesel::joinable!(market_purchases -> market_products (product_id));
 diesel::joinable!(market_purchases -> market_subscriptions (subscription_id));
 diesel::joinable!(market_purchases -> users (buyer_id));
-diesel::joinable!(market_subscription_push_subscriptions -> market_subscriptions (market_subscription_id));
-diesel::joinable!(market_subscription_push_subscriptions -> push_subscriptions (push_subscription_id));
 diesel::joinable!(market_subscriptions -> market_products (product_id));
 diesel::joinable!(market_subscriptions -> users (buyer_id));
 diesel::joinable!(memberships -> groups (group_id));
@@ -612,7 +601,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     market_payments,
     market_products,
     market_purchases,
-    market_subscription_push_subscriptions,
     market_subscriptions,
     media,
     media_filter,

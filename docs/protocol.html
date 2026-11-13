@@ -616,9 +616,6 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
             <p><a href="#rellm-GetMarketProductsResponse">GetMarketProductsResponse</a></p>
           </li>
           <li>
-            <p><a href="#rellm-GetMarketSubscriptionPushStatusResponse">GetMarketSubscriptionPushStatusResponse</a></p>
-          </li>
-          <li>
             <p><a href="#rellm-GetMarketSubscriptionsRequest">GetMarketSubscriptionsRequest</a></p>
           </li>
           <li>
@@ -653,9 +650,6 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
           </li>
           <li>
             <p><a href="#rellm-MarketSubscription">MarketSubscription</a></p>
-          </li>
-          <li>
-            <p><a href="#rellm-MarketSubscriptionPushRequest">MarketSubscriptionPushRequest</a></p>
           </li>
           <li>
             <p><a href="#rellm-MediaStoragePurchaseDetails">MediaStoragePurchaseDetails</a></p>
@@ -1341,7 +1335,7 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
       </li>
       <li>
         <em>Hand over.</em> Add a note with the site's URL and how to sign in/create the first account, using "Add and Mark as
-        Fulfilled" (<code>FULFILLMENT_STATUS_FULFILLED</code>). The buyer is notified through the chat if they opted in to push.
+        Fulfilled" (<code>FULFILLMENT_STATUS_FULFILLED</code>). The buyer is sent a push notification (see below).
       </li>
     </ol>
     <p>
@@ -1357,11 +1351,13 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
       credentials - export what the buyer needs first), and leave a note recording that it was done.
     </p>
     <p>
-      Notifications follow the same two sides. A device opts in per subscription with
-      <a href="#grpc-api-RegisterMarketSubscriptionPush"><code>RegisterMarketSubscriptionPush</code></a> (linking an already-registered Web Push
-      subscription, see <a href="#grpc-api-RegisterPushSubscription"><code>RegisterPushSubscription</code></a>). A new note then pushes to every opted-in
-      device except its author's - the buyer hears about an admin's note, and other admins about it too - and access (buyer or
-      Admin) is re-checked at send time, so losing access ends the notifications.
+      Notifications follow the same two sides and use the push subscriptions people already have - the ones
+      <a href="#grpc-api-RegisterPushSubscription"><code>RegisterPushSubscription</code></a> creates when someone enables push notifications (in the
+      web app's Accounts panel) - so there is nothing to opt in to per subscription. When a note is added to a
+      subscription, every Web Push subscription of its buyer is notified, and so is every one of every user who can handle
+      fulfillment (an Admin, see above) - except those of the note's own author. Tapping the notification opens the chat
+      (the buyer's profile for the buyer, the Fulfillment tab for an admin). Recipients are worked out at send time, so
+      someone who stops being an admin stops getting the admin notifications.
     </p>
     <h4 id="media"><a class="anchor" aria-hidden="true" tabindex="-1" href="#media"><span class="octicon octicon-link"></span></a>Media</h4>
     <p>
@@ -2440,24 +2436,6 @@ directory</a> is (<code>{name}</code> denotes a
           <td><a href="#rellm-MarkFulfillmentNotesReadRequest">MarkFulfillmentNotesReadRequest</a></td>
           <td><a href="#rellm-MarketSubscription">MarketSubscription</a></td>
           <td>Marks all of a MarketSubscription's current <code>fulfillment_notes</code> read (any <code>PurchaseType</code>) by stamping its details' <code>notes_last_read</code> with now. <em>Authenticated</em>, and only the subscription's own buyer (<code>PermissionDenied</code> otherwise -- even an Admin, since the marker is the buyer's). Idempotent. Returns the updated subscription.</td>
-        </tr>
-        <tr>
-          <td>RegisterMarketSubscriptionPush</td>
-          <td><a href="#rellm-MarketSubscriptionPushRequest">MarketSubscriptionPushRequest</a></td>
-          <td><a href="#google-protobuf-Empty">.google.protobuf.Empty</a></td>
-          <td>Opts one of the current user's already-registered Web Push subscriptions (see <code>RegisterPushSubscription</code>) in to notifications for a MarketSubscription's (any <code>PurchaseType</code>) fulfillment chat: every <code>FulfillmentNote</code> someone <em>else</em> appends to it (<code>UpdateMarketSubscription</code>) pushes a notification to the device, via the same VAPID setup Messages use. <em>Authenticated</em> -- the subscription's own buyer, or an Admin; re-registering is a no-op. Fails with <code>push_subscription_not_registered</code> if <code>endpoint</code> isn't one of the caller's own registered Web Push subscriptions,. Notifications are also re-checked at send time: a recipient who is no longer the buyer or an Admin is skipped, so losing access to the chat also stops its notifications.</td>
-        </tr>
-        <tr>
-          <td>UnregisterMarketSubscriptionPush</td>
-          <td><a href="#rellm-MarketSubscriptionPushRequest">MarketSubscriptionPushRequest</a></td>
-          <td><a href="#google-protobuf-Empty">.google.protobuf.Empty</a></td>
-          <td>Reverses <code>RegisterMarketSubscriptionPush</code> for this device. <em>Authenticated</em>; not an error if it wasn't registered. The user's underlying Web Push subscription (and its Messages notifications) is untouched.</td>
-        </tr>
-        <tr>
-          <td>GetMarketSubscriptionPushStatus</td>
-          <td><a href="#rellm-MarketSubscriptionPushRequest">MarketSubscriptionPushRequest</a></td>
-          <td><a href="#rellm-GetMarketSubscriptionPushStatusResponse">GetMarketSubscriptionPushStatusResponse</a></td>
-          <td>Whether <code>endpoint</code> is currently linked to a MarketSubscription's fulfillment-chat notifications (see <code>RegisterMarketSubscriptionPush</code>). <em>Authenticated</em>, same access rule as registering.</td>
         </tr>
         <tr>
           <td>GenerateMedia</td>
@@ -10401,26 +10379,6 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
         </tr>
       </tbody>
     </table>
-    <p><a name="rellm-GetMarketSubscriptionPushStatusResponse"></a></p>
-    <h3 id="getmarketsubscriptionpushstatusresponse"><a class="anchor" aria-hidden="true" tabindex="-1" href="#getmarketsubscriptionpushstatusresponse"><span class="octicon octicon-link"></span></a>GetMarketSubscriptionPushStatusResponse</h3>
-    <table>
-      <thead>
-        <tr>
-          <th>Field</th>
-          <th>Type</th>
-          <th>Label</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>registered</td>
-          <td><a href="#bool">bool</a></td>
-          <td></td>
-          <td>Whether the current user's push subscription for <code>endpoint</code> is linked to this subscription's fulfillment chat -- i.e. whether a new <code>FulfillmentNote</code> would notify that device.</td>
-        </tr>
-      </tbody>
-    </table>
     <p><a name="rellm-GetMarketSubscriptionsRequest"></a></p>
     <h3 id="getmarketsubscriptionsrequest"><a class="anchor" aria-hidden="true" tabindex="-1" href="#getmarketsubscriptionsrequest"><span class="octicon octicon-link"></span></a>GetMarketSubscriptionsRequest</h3>
     <p>
@@ -11058,40 +11016,6 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
           <td>optional</td>
           <td>The time permissions were removed, media storage quotas reset, etc. -- i.e. when <code>logic::market::market_fulfillment::terminate_entitlement</code> actually ran for this subscription. Always unset while <code>canceled_at</code> is unset; may remain unset for a while <em>after</em> <code>canceled_at</code> is set, since the entitlement intentionally stays active until the later of <code>renews_at</code>/<code>canceled_at</code> (see <code>canceled_at</code>'s own doc) -- a buyer who cancels mid-period keeps what they already paid for through the end of that period.</td>
-        </tr>
-      </tbody>
-    </table>
-    <p><a name="rellm-MarketSubscriptionPushRequest"></a></p>
-    <h3 id="marketsubscriptionpushrequest"><a class="anchor" aria-hidden="true" tabindex="-1" href="#marketsubscriptionpushrequest"><span class="octicon octicon-link"></span></a>MarketSubscriptionPushRequest</h3>
-    <p>
-      Identifies one of the current user's registered Web Push subscriptions (see
-      <code>PushSubscription</code>/<code>RegisterPushSubscription</code> in <code>messages.proto</code> -- it must already be
-      registered, this only <em>links</em> it) and the <code>MarketSubscription</code> (any <code>PurchaseType</code>)
-      whose fulfillment chat (<code>RellmHostingSubscriptionDetails.fulfillment_notes</code>) it should be
-      notified about. Used by <code>RegisterMarketSubscriptionPush</code>, <code>UnregisterMarketSubscriptionPush</code>
-      and <code>GetMarketSubscriptionPushStatus</code>.
-    </p>
-    <table>
-      <thead>
-        <tr>
-          <th>Field</th>
-          <th>Type</th>
-          <th>Label</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>market_subscription_id</td>
-          <td><a href="#string">string</a></td>
-          <td></td>
-          <td>The <code>MarketSubscription.id</code> to (un)subscribe to/check. The caller must be its buyer, or an Admin.</td>
-        </tr>
-        <tr>
-          <td>endpoint</td>
-          <td><a href="#string">string</a></td>
-          <td></td>
-          <td>The Web Push subscription endpoint URL, as previously passed to <code>RegisterPushSubscription</code> by the same user.</td>
         </tr>
       </tbody>
     </table>

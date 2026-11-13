@@ -202,7 +202,6 @@
     - [FulfillmentNote](#rellm-FulfillmentNote)
     - [GetMarketProductsRequest](#rellm-GetMarketProductsRequest)
     - [GetMarketProductsResponse](#rellm-GetMarketProductsResponse)
-    - [GetMarketSubscriptionPushStatusResponse](#rellm-GetMarketSubscriptionPushStatusResponse)
     - [GetMarketSubscriptionsRequest](#rellm-GetMarketSubscriptionsRequest)
     - [GetMarketSubscriptionsResponse](#rellm-GetMarketSubscriptionsResponse)
     - [MakeMarketPurchaseRequest](#rellm-MakeMarketPurchaseRequest)
@@ -215,7 +214,6 @@
     - [MarketRefund](#rellm-MarketRefund)
     - [MarketRefundMethod](#rellm-MarketRefundMethod)
     - [MarketSubscription](#rellm-MarketSubscription)
-    - [MarketSubscriptionPushRequest](#rellm-MarketSubscriptionPushRequest)
     - [MediaStoragePurchaseDetails](#rellm-MediaStoragePurchaseDetails)
     - [MediaStorageSubscriptionDetails](#rellm-MediaStorageSubscriptionDetails)
     - [PermissionsAccessPurchaseDetails](#rellm-PermissionsAccessPurchaseDetails)
@@ -772,7 +770,7 @@ and, for sites with email, Stalwart (`rellm deploy create_email_admin_secret ADM
 8. *Save the credentials:* `rellm deploy get_all_storage_credentials` (those Secrets are the only copy), and add the
    namespace to the deploy jobs in `.github/workflows/server_ci_cd.yml` so CI keeps its image current.
 9. *Hand over.* Add a note with the site&#39;s URL and how to sign in/create the first account, using &#34;Add and Mark as
-   Fulfilled&#34; (`FULFILLMENT_STATUS_FULFILLED`). The buyer is notified through the chat if they opted in to push.
+   Fulfilled&#34; (`FULFILLMENT_STATUS_FULFILLED`). The buyer is sent a push notification (see below).
 
 Capacity is shared across sites: `rellm deploy get_central_postgres_pvc_size get_central_object_storage_pvc_size`, and
 grow with `rellm deploy resize_central_postgres_pvc SIZE=...` / `resize_central_object_storage_pvc SIZE=...` (grow-only).
@@ -784,11 +782,13 @@ buyer has paid for the time - leave the site running (and don&#39;t remove it if
 `rellm deploy delete_backend_central_data -n my-site --confirm my-site` (permanently removes its database, bucket and
 credentials - export what the buyer needs first), and leave a note recording that it was done.
 
-Notifications follow the same two sides. A device opts in per subscription with
-[`RegisterMarketSubscriptionPush`](#grpc-api-RegisterMarketSubscriptionPush) (linking an already-registered Web Push
-subscription, see [`RegisterPushSubscription`](#grpc-api-RegisterPushSubscription)). A new note then pushes to every opted-in
-device except its author&#39;s - the buyer hears about an admin&#39;s note, and other admins about it too - and access (buyer or
-Admin) is re-checked at send time, so losing access ends the notifications.
+Notifications follow the same two sides and use the push subscriptions people already have - the ones
+[`RegisterPushSubscription`](#grpc-api-RegisterPushSubscription) creates when someone enables push notifications (in the
+web app&#39;s Accounts panel) - so there is nothing to opt in to per subscription. When a note is added to a
+subscription, every Web Push subscription of its buyer is notified, and so is every one of every user who can handle
+fulfillment (an Admin, see above) - except those of the note&#39;s own author. Tapping the notification opens the chat
+(the buyer&#39;s profile for the buyer, the Fulfillment tab for an admin). Recipients are worked out at send time, so
+someone who stops being an admin stops getting the admin notifications.
 
 #### Media
 [`Media`](#rellm-Media) represents an uploaded (or server-generated) photo or video. Unlike other types, Media
@@ -1367,9 +1367,6 @@ discarded and a fresh keypair generated, so it&#39;s single-use per completed/fa
 | CancelMarketSubscription | [MarketSubscription](#rellm-MarketSubscription) | [MarketSubscription](#rellm-MarketSubscription) | Cancels a MarketSubscription by setting `canceled_at` to now -- entitlement (media storage quota, granted permissions, etc.) stays active until whichever is later of `renews_at`/`canceled_at`; the `renew_market_subscriptions` background job is what actually revokes it and sets `service_terminated_at`, once both have passed. *Authenticated* -- the subscription&#39;s own buyer, or an Admin. |
 | UpdateMarketSubscription | [MarketSubscription](#rellm-MarketSubscription) | [MarketSubscription](#rellm-MarketSubscription) | Appends to a MarketSubscription&#39;s own `fulfillment_notes` (any `PurchaseType` -- see `MediaStorageSubscriptionDetails.fulfillment_notes`; the request&#39;s `details` must be the variant matching the subscription&#39;s type; nothing else -- every other field, including `additional_information`, is immutable after purchase and silently ignored if changed) -- backs `/market/fulfillment`. A new entry must be appended (not inserted/reordered/removed) after whatever&#39;s already stored, and its `user_id` must match the caller&#39;s own -- the server stamps `created_at` itself, ignoring whatever the client sent. Its `note` text is required unless the entry also changes `fulfillment_status` from the previous entry&#39;s own value (see `FulfillmentNote.note`&#39;s own doc). `fulfillment_status` on the returned `RellmHostingSubscriptionDetails` is always the last appended entry&#39;s own value -- there&#39;s no way to set it independently of a note. *Authenticated*, requires Admin (for now -- see that field&#39;s own doc on why this may loosen to &#34;buyer, or Admin&#34; later). |
 | MarkFulfillmentNotesRead | [MarkFulfillmentNotesReadRequest](#rellm-MarkFulfillmentNotesReadRequest) | [MarketSubscription](#rellm-MarketSubscription) | Marks all of a MarketSubscription&#39;s current `fulfillment_notes` read (any `PurchaseType`) by stamping its details&#39; `notes_last_read` with now. *Authenticated*, and only the subscription&#39;s own buyer (`PermissionDenied` otherwise -- even an Admin, since the marker is the buyer&#39;s). Idempotent. Returns the updated subscription. |
-| RegisterMarketSubscriptionPush | [MarketSubscriptionPushRequest](#rellm-MarketSubscriptionPushRequest) | [.google.protobuf.Empty](#google-protobuf-Empty) | Opts one of the current user&#39;s already-registered Web Push subscriptions (see `RegisterPushSubscription`) in to notifications for a MarketSubscription&#39;s (any `PurchaseType`) fulfillment chat: every `FulfillmentNote` someone *else* appends to it (`UpdateMarketSubscription`) pushes a notification to the device, via the same VAPID setup Messages use. *Authenticated* -- the subscription&#39;s own buyer, or an Admin; re-registering is a no-op. Fails with `push_subscription_not_registered` if `endpoint` isn&#39;t one of the caller&#39;s own registered Web Push subscriptions,. Notifications are also re-checked at send time: a recipient who is no longer the buyer or an Admin is skipped, so losing access to the chat also stops its notifications. |
-| UnregisterMarketSubscriptionPush | [MarketSubscriptionPushRequest](#rellm-MarketSubscriptionPushRequest) | [.google.protobuf.Empty](#google-protobuf-Empty) | Reverses `RegisterMarketSubscriptionPush` for this device. *Authenticated*; not an error if it wasn&#39;t registered. The user&#39;s underlying Web Push subscription (and its Messages notifications) is untouched. |
-| GetMarketSubscriptionPushStatus | [MarketSubscriptionPushRequest](#rellm-MarketSubscriptionPushRequest) | [GetMarketSubscriptionPushStatusResponse](#rellm-GetMarketSubscriptionPushStatusResponse) | Whether `endpoint` is currently linked to a MarketSubscription&#39;s fulfillment-chat notifications (see `RegisterMarketSubscriptionPush`). *Authenticated*, same access rule as registering. |
 | GenerateMedia | [GenerateMediaRequest](#rellm-GenerateMediaRequest) | [Media](#rellm-Media) | Generates (or edits, given reference `media_ids`) an image via one of the current user&#39;s AIModels, storing it as a new Media and, if `target` is set, attaching it to that Post/Event. *Authenticated* - caller must own or have been granted access to the chosen AIProvider, and (if `target` is set) have edit access to that Post/Event. A grantee (never the provider&#39;s own owner) spends real AIProviderGrant.tokens_remaining on every call - the provider&#39;s own reported token usage once generation succeeds, or (rejected before any request is even sent to the provider) a rough pre-flight estimate of the request&#39;s input cost alone, whichever catches an insufficient balance first. |
 | GetRsvps | [GetRsvpsRequest](#rellm-GetRsvpsRequest) | [Rsvps](#rellm-Rsvps) | Gets Rsvps for an Occasion. *Publicly accessible **or** Authenticated.* |
 | UpsertRsvp | [Rsvp](#rellm-Rsvp) | [Rsvp](#rellm-Rsvp) | Upsert an Rsvp. *Publicly accessible **or** Authenticated, with anonymous RSVP support.* See [Rsvp](#rellm-Rsvp) and [AnonymousAttendee](#rellm-AnonymousAttendee) for details. tl;dr: Anonymous RSVPs may updated/deleted with the `AnonymousAttendee.auth_token` returned by this RPC (the client should save this for the user, and ideally, offer a link with the token). |
@@ -5065,21 +5062,6 @@ this has no filtering/paging parameters.
 
 
 
-<a name="rellm-GetMarketSubscriptionPushStatusResponse"></a>
-
-### GetMarketSubscriptionPushStatusResponse
-
-
-
-| Field | Type | Label | Description |
-| ----- | ---- | ----- | ----------- |
-| registered | [bool](#bool) |  | Whether the current user&#39;s push subscription for `endpoint` is linked to this subscription&#39;s fulfillment chat -- i.e. whether a new `FulfillmentNote` would notify that device. |
-
-
-
-
-
-
 <a name="rellm-GetMarketSubscriptionsRequest"></a>
 
 ### GetMarketSubscriptionsRequest
@@ -5348,27 +5330,6 @@ other purchase type gets, even though it never actually bills again.
 | renews_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional | When the next renewal charge is due. Always unset for a `PURCHASE_PERIOD_INDEFINITE` subscription (see this message&#39;s own doc) -- there is no next charge. Otherwise, advanced by one `period` on every successful renewal (`renew_market_subscriptions.rs`); left untouched once `canceled_at` is set, since a canceled subscription never renews again regardless of what this still says. |
 | canceled_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional | Set once the subscription will no longer renew -- either the buyer/admin explicitly canceled it (CancelMarketSubscription) or a renewal charge failed. The subscription&#39;s entitlement (media storage quota, granted permissions, etc.) stays active until whichever is later of renews_at/canceled_at, at which point renew_market_subscriptions.rs revokes it and sets service_terminated_at. Also the moment `MarketProduct.sold_count` is decremented, freeing this subscription&#39;s slot for a new buyer (see that field&#39;s own doc). Cleared again (and the slot re-claimed) if the buyer resumes the subscription before it lapses -- see `MarketSubscriptionState.SUBSCRIPTION_ACTIVE_BUT_CANCELED` and `state` above, which is what clients should branch on rather than inspecting this field. |
 | service_terminated_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional | The time permissions were removed, media storage quotas reset, etc. -- i.e. when `logic::market::market_fulfillment::terminate_entitlement` actually ran for this subscription. Always unset while `canceled_at` is unset; may remain unset for a while *after* `canceled_at` is set, since the entitlement intentionally stays active until the later of `renews_at`/`canceled_at` (see `canceled_at`&#39;s own doc) -- a buyer who cancels mid-period keeps what they already paid for through the end of that period. |
-
-
-
-
-
-
-<a name="rellm-MarketSubscriptionPushRequest"></a>
-
-### MarketSubscriptionPushRequest
-Identifies one of the current user&#39;s registered Web Push subscriptions (see
-`PushSubscription`/`RegisterPushSubscription` in `messages.proto` -- it must already be
-registered, this only *links* it) and the `MarketSubscription` (any `PurchaseType`)
-whose fulfillment chat (`RellmHostingSubscriptionDetails.fulfillment_notes`) it should be
-notified about. Used by `RegisterMarketSubscriptionPush`, `UnregisterMarketSubscriptionPush`
-and `GetMarketSubscriptionPushStatus`.
-
-
-| Field | Type | Label | Description |
-| ----- | ---- | ----- | ----------- |
-| market_subscription_id | [string](#string) |  | The `MarketSubscription.id` to (un)subscribe to/check. The caller must be its buyer, or an Admin. |
-| endpoint | [string](#string) |  | The Web Push subscription endpoint URL, as previously passed to `RegisterPushSubscription` by the same user. |
 
 
 

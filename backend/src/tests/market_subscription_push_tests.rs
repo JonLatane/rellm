@@ -1,9 +1,9 @@
-//! Specs for opt-in push notifications about a Rellm hosting subscription's fulfillment chat
-//! (`RegisterMarketSubscriptionPush`/`UnregisterMarketSubscriptionPush`/
-//! `GetMarketSubscriptionPushStatus`, and who `web_push::notify_fulfillment_note` actually
-//! notifies). Actually delivering a Web Push needs a push service and a VAPID key, so -- like
-//! `web_push_tests` -- the delivery step itself isn't exercised; everything that decides *whether
-//! and to whom* is.
+//! Specs for who `web_push::notify_fulfillment_note` notifies about a new fulfillment note (the
+//! subscription's buyer, and every Admin, minus the author -- over the push subscriptions people
+//! already registered), plus the buyer's read marker (`MarkFulfillmentNotesRead`), chats on every
+//! subscription type, and the all-types admin listing. Actually delivering a Web Push needs a push
+//! service and a VAPID key, so -- like `web_push_tests` -- the delivery step itself isn't exercised;
+//! everything that decides *whether and to whom* is.
 
 use diesel::Connection;
 
@@ -11,9 +11,8 @@ use crate::marshaling::{ToDbId, ToProtoId, ToProtoTime, ToStringPurchasePeriod, 
 use crate::models;
 use crate::protos::*;
 use crate::rpcs::{
-    create_market_product, get_market_subscription_push_status, register_market_subscription_push,
-    register_push_subscription, unregister_market_subscription_push, unregister_push_subscription,
-    update_market_subscription, update_market_subscription_and_notify,
+    create_market_product, register_push_subscription, update_market_subscription,
+    update_market_subscription_and_notify,
 };
 use crate::tests::factories::*;
 use crate::web_push::{fulfillment_note_recipients, FulfillmentNoteNotificationContent};
@@ -33,13 +32,6 @@ fn register_device(conn: &mut Conn, user: &models::User, endpoint: &str) {
         conn,
     )
     .expect("registering the device should succeed");
-}
-
-fn push_request(subscription: &models::MarketSubscription, endpoint: &str) -> MarketSubscriptionPushRequest {
-    MarketSubscriptionPushRequest {
-        market_subscription_id: subscription.id.to_proto_id(),
-        endpoint: endpoint.to_string(),
-    }
 }
 
 fn admin(conn: &mut Conn, name: &str) -> models::User {
@@ -95,12 +87,6 @@ fn hosting_subscription(
     .expect("failed to insert test rellm hosting subscription")
 }
 
-fn status(conn: &mut Conn, user: &models::User, subscription: &models::MarketSubscription) -> bool {
-    get_market_subscription_push_status(push_request(subscription, ENDPOINT), user, conn)
-        .expect("status should succeed")
-        .registered
-}
-
 /// A buyer + admin + hosting subscription, the shape almost every spec here starts from.
 fn setup(conn: &mut Conn, prefix: &str) -> (models::User, models::User, models::MarketSubscription) {
     let admin = admin(conn, &format!("{prefix}_admin"));
@@ -110,201 +96,13 @@ fn setup(conn: &mut Conn, prefix: &str) -> (models::User, models::User, models::
     (buyer, admin, subscription)
 }
 
-#[test]
-fn registering_requires_the_device_to_already_be_a_registered_push_subscription() {
-    let mut conn = test_conn();
-    conn.test_transaction::<_, tonic::Status, _>(|conn| {
-        let (buyer, _admin, subscription) = setup(conn, "mkt_push_unreg");
-
-        let err = register_market_subscription_push(push_request(&subscription, ENDPOINT), &buyer, conn)
-            .unwrap_err();
-        assert_eq!(err.code(), tonic::Code::FailedPrecondition);
-        assert_eq!(err.message(), "push_subscription_not_registered");
-        assert!(!status(conn, &buyer, &subscription));
-        Ok(())
-    });
-}
-
-#[test]
-fn a_buyer_can_opt_a_device_in_and_out() {
-    let mut conn = test_conn();
-    conn.test_transaction::<_, tonic::Status, _>(|conn| {
-        let (buyer, _admin, subscription) = setup(conn, "mkt_push_toggle");
-        register_device(conn, &buyer, ENDPOINT);
-        assert!(!status(conn, &buyer, &subscription), "registering a device alone opts into nothing");
-
-        register_market_subscription_push(push_request(&subscription, ENDPOINT), &buyer, conn)?;
-        assert!(status(conn, &buyer, &subscription));
-
-        unregister_market_subscription_push(push_request(&subscription, ENDPOINT), &buyer, conn)?;
-        assert!(!status(conn, &buyer, &subscription));
-        // The device's own (Messages) subscription is untouched.
-        assert!(models::push_subscription_exists(buyer.id, ENDPOINT, conn)?);
-        Ok(())
-    });
-}
-
-#[test]
-fn registering_twice_is_a_no_op_and_unregistering_when_not_registered_is_fine() {
-    let mut conn = test_conn();
-    conn.test_transaction::<_, tonic::Status, _>(|conn| {
-        let (buyer, _admin, subscription) = setup(conn, "mkt_push_idem");
-        register_device(conn, &buyer, ENDPOINT);
-
-        unregister_market_subscription_push(push_request(&subscription, ENDPOINT), &buyer, conn)?;
-
-        register_market_subscription_push(push_request(&subscription, ENDPOINT), &buyer, conn)?;
-        register_market_subscription_push(push_request(&subscription, ENDPOINT), &buyer, conn)?;
-        let linked = models::get_push_subscriptions_for_market_subscription(subscription.id, conn)?;
-        assert_eq!(linked.len(), 1, "the unique pair must not produce a second row");
-        Ok(())
-    });
-}
-
-#[test]
-fn opting_in_is_per_device_and_per_account() {
-    let mut conn = test_conn();
-    conn.test_transaction::<_, tonic::Status, _>(|conn| {
-        let (buyer, admin, subscription) = setup(conn, "mkt_push_scope");
-        // Same physical browser (same endpoint) signed into two accounts -> one row per account.
-        register_device(conn, &buyer, ENDPOINT);
-        register_device(conn, &admin, ENDPOINT);
-        register_device(conn, &buyer, "https://example.com/second-device");
-
-        register_market_subscription_push(push_request(&subscription, ENDPOINT), &buyer, conn)?;
-
-        assert!(status(conn, &buyer, &subscription));
-        assert!(!status(conn, &admin, &subscription), "the admin's row for that endpoint isn't linked");
-        assert!(
-            !get_market_subscription_push_status(
-                push_request(&subscription, "https://example.com/second-device"),
-                &buyer,
-                conn
-            )?
-            .registered,
-            "nor is the buyer's other device"
-        );
-        Ok(())
-    });
-}
-
-#[test]
-fn an_admin_can_opt_in_but_an_unrelated_user_cannot_do_anything() {
-    let mut conn = test_conn();
-    conn.test_transaction::<_, tonic::Status, _>(|conn| {
-        let (_buyer, admin, subscription) = setup(conn, "mkt_push_authz");
-        let stranger = create_user(conn, "mkt_push_authz_stranger");
-        register_device(conn, &admin, ENDPOINT);
-        register_device(conn, &stranger, ENDPOINT);
-
-        register_market_subscription_push(push_request(&subscription, ENDPOINT), &admin, conn)?;
-        assert!(status(conn, &admin, &subscription));
-
-        let register_err = register_market_subscription_push(push_request(&subscription, ENDPOINT), &stranger, conn)
-            .unwrap_err();
-        assert!(register_err.message().contains("permission"), "{:?}", register_err);
-        let unregister_err =
-            unregister_market_subscription_push(push_request(&subscription, ENDPOINT), &stranger, conn)
-                .unwrap_err();
-        assert!(unregister_err.message().contains("permission"), "{:?}", unregister_err);
-        let status_err = get_market_subscription_push_status(push_request(&subscription, ENDPOINT), &stranger, conn)
-            .unwrap_err();
-        assert!(status_err.message().contains("permission"), "{:?}", status_err);
-        Ok(())
-    });
-}
-
-#[test]
-fn any_subscription_type_can_opt_in_to_its_chat_notifications() {
-    let mut conn = test_conn();
-    conn.test_transaction::<_, tonic::Status, _>(|conn| {
-        let admin = admin(conn, "mkt_push_type_admin");
-        let product = create_market_product(
-            MarketProduct {
-                id: String::new(),
-                r#type: PurchaseType::MediaStorage as i32,
-                period: PurchasePeriod::Monthly as i32,
-                amount: 500,
-                currency: 840,
-                created_at: None,
-                delisted_at: None,
-                available_count: 0,
-                sold_count: 0,
-                details: Some(market_product::Details::MediaStorageSubscriptionDetails(
-                    MediaStorageSubscriptionDetails { allocation_bytes: 1, ..Default::default() },
-                )),
-            },
-            &admin,
-            conn,
-        )?;
-        let buyer = create_user(conn, "mkt_push_type_buyer");
-        let subscription = models::insert_market_subscription(
-            &models::NewMarketSubscription {
-                buyer_id: buyer.id,
-                product_id: product.id.to_db_id().unwrap(),
-                product_type: PurchaseType::MediaStorage.to_string_purchase_type(),
-                period: PurchasePeriod::Monthly.to_string_purchase_period(),
-                amount: 500,
-                currency: 840,
-                details: serde_json::to_value(MediaStorageSubscriptionDetails { allocation_bytes: 1, ..Default::default() }).unwrap(),
-                renews_at: None,
-                stripe_customer_id: None,
-                stripe_payment_method_id: None,
-            },
-            conn,
-        )?;
-        register_device(conn, &buyer, ENDPOINT);
-
-        // Every `PurchaseType` has a fulfillment chat, not just Rellm hosting.
-        register_market_subscription_push(push_request(&subscription, ENDPOINT), &buyer, conn)?;
-        assert!(status(conn, &buyer, &subscription));
-        Ok(())
-    });
-}
-
-#[test]
-fn an_unknown_subscription_is_not_found() {
-    let mut conn = test_conn();
-    conn.test_transaction::<_, tonic::Status, _>(|conn| {
-        let user = create_user(conn, "mkt_push_missing");
-        let err = register_market_subscription_push(
-            MarketSubscriptionPushRequest {
-                market_subscription_id: 999_999_999_i64.to_proto_id(),
-                endpoint: ENDPOINT.to_string(),
-            },
-            &user,
-            conn,
-        )
-        .unwrap_err();
-        assert_eq!(err.code(), tonic::Code::NotFound);
-        Ok(())
-    });
-}
-
-#[test]
-fn unregistering_the_device_itself_drops_its_chat_opt_ins() {
-    let mut conn = test_conn();
-    conn.test_transaction::<_, tonic::Status, _>(|conn| {
-        let (buyer, _admin, subscription) = setup(conn, "mkt_push_cascade");
-        register_device(conn, &buyer, ENDPOINT);
-        register_market_subscription_push(push_request(&subscription, ENDPOINT), &buyer, conn)?;
-
-        unregister_push_subscription(UnregisterPushSubscriptionRequest { endpoint: ENDPOINT.to_string() }, &buyer, conn)?;
-
-        assert!(models::get_push_subscriptions_for_market_subscription(subscription.id, conn)?.is_empty());
-        Ok(())
-    });
-}
-
 // ----- who gets notified ---------------------------------------------------------------------
 
 fn content_for(
-    subscription: &models::MarketSubscription,
     author: &models::User,
     buyer: &models::User,
 ) -> FulfillmentNoteNotificationContent {
     FulfillmentNoteNotificationContent {
-        market_subscription_id: subscription.id,
         author_user_id: author.id,
         buyer_id: buyer.id,
         buyer_username: buyer.username.clone(),
@@ -327,55 +125,59 @@ fn recipient_user_ids(
 }
 
 #[test]
-fn a_note_notifies_the_other_side_but_never_its_own_author() {
+fn a_note_notifies_the_buyer_and_every_admin_but_never_its_own_author() {
     let mut conn = test_conn();
     conn.test_transaction::<_, tonic::Status, _>(|conn| {
-        let (buyer, admin, subscription) = setup(conn, "mkt_push_who");
-        for user in [&buyer, &admin] {
-            register_device(conn, user, ENDPOINT);
-            register_market_subscription_push(push_request(&subscription, ENDPOINT), user, conn)?;
-        }
-
-        // The admin writes -> only the buyer is pushed to, even though the admin opted in too.
-        assert_eq!(recipient_user_ids(conn, &content_for(&subscription, &admin, &buyer)), vec![buyer.id]);
-        // The buyer writes -> only the admin.
-        assert_eq!(recipient_user_ids(conn, &content_for(&subscription, &buyer, &buyer)), vec![admin.id]);
-        Ok(())
-    });
-}
-
-#[test]
-fn only_devices_that_opted_in_to_this_subscription_are_notified() {
-    let mut conn = test_conn();
-    conn.test_transaction::<_, tonic::Status, _>(|conn| {
-        let (buyer, admin, subscription) = setup(conn, "mkt_push_optin");
-        let other_product = hosting_product(conn, &admin);
-        let other_subscription = hosting_subscription(conn, &buyer, &other_product);
-        register_device(conn, &buyer, ENDPOINT);
-        // Opted in to the *other* subscription only.
-        register_market_subscription_push(push_request(&other_subscription, ENDPOINT), &buyer, conn)?;
-        // A registered-for-Messages device that never opted in to anything.
-        register_device(conn, &admin, ENDPOINT);
-
-        assert!(recipient_user_ids(conn, &content_for(&subscription, &admin, &buyer)).is_empty());
-        Ok(())
-    });
-}
-
-#[test]
-fn losing_admin_stops_an_opted_in_admins_notifications_but_the_buyer_never_needs_it() {
-    let mut conn = test_conn();
-    conn.test_transaction::<_, tonic::Status, _>(|conn| {
-        let (buyer, admin, subscription) = setup(conn, "mkt_push_revoked");
-        let second_admin = self::admin(conn, "mkt_push_revoked_admin2");
+        let (buyer, admin, _subscription) = setup(conn, "mkt_push_who");
+        let second_admin = self::admin(conn, "mkt_push_who_admin2");
         for user in [&buyer, &admin, &second_admin] {
             register_device(conn, user, ENDPOINT);
-            register_market_subscription_push(push_request(&subscription, ENDPOINT), user, conn)?;
         }
-        grant_permissions(conn, &admin, vec![Permission::ViewPosts]); // no longer an Admin
 
-        let ids = recipient_user_ids(conn, &content_for(&subscription, &second_admin, &buyer));
-        assert_eq!(ids, vec![buyer.id], "the ex-admin must not keep receiving the buyer's chat");
+        // An admin writes -> the buyer and the *other* admin hear about it, not the author.
+        let mut expected = vec![buyer.id, second_admin.id];
+        expected.sort_unstable();
+        assert_eq!(recipient_user_ids(conn, &content_for(&admin, &buyer)), expected);
+        // The buyer writes -> both admins.
+        let mut expected = vec![admin.id, second_admin.id];
+        expected.sort_unstable();
+        assert_eq!(recipient_user_ids(conn, &content_for(&buyer, &buyer)), expected);
+        Ok(())
+    });
+}
+
+#[test]
+fn every_registered_device_of_a_recipient_is_notified_and_nobody_without_one_is() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let (buyer, admin, _subscription) = setup(conn, "mkt_push_devices");
+        let second_admin = self::admin(conn, "mkt_push_devices_admin2");
+        // The buyer has two devices, the second admin none: no per-subscription opt-in exists, so
+        // the buyer's existing push subscriptions are all that's needed.
+        register_device(conn, &buyer, ENDPOINT);
+        register_device(conn, &buyer, "https://fcm.googleapis.com/fcm/send/market-endpoint-2");
+
+        let ids = recipient_user_ids(conn, &content_for(&admin, &buyer));
+        assert_eq!(ids, vec![buyer.id, buyer.id]);
+        assert!(!ids.contains(&second_admin.id));
+        Ok(())
+    });
+}
+
+#[test]
+fn a_buyer_who_is_also_an_admin_is_notified_once_per_device_and_an_ex_admin_stops_hearing_other_orders() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let (buyer, admin, _subscription) = setup(conn, "mkt_push_dual");
+        let ex_admin = self::admin(conn, "mkt_push_dual_ex");
+        let buyer_admin = grant_permissions(conn, &buyer, vec![Permission::Admin]);
+        for user in [&buyer_admin, &ex_admin] {
+            register_device(conn, user, ENDPOINT);
+        }
+        grant_permissions(conn, &ex_admin, vec![Permission::ViewPosts]); // no longer an Admin
+
+        let ids = recipient_user_ids(conn, &content_for(&admin, &buyer_admin));
+        assert_eq!(ids, vec![buyer_admin.id], "one device, listed once, and the ex-admin is gone");
         Ok(())
     });
 }

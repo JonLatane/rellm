@@ -593,34 +593,6 @@ final $typed_data.Uint8List fulfillmentNoteDescriptor = $convert.base64Decode(
     'dGF0dXNSEWZ1bGZpbGxtZW50U3RhdHVzEjkKCmNyZWF0ZWRfYXQYBCABKAsyGi5nb29nbGUucH'
     'JvdG9idWYuVGltZXN0YW1wUgljcmVhdGVkQXQ=');
 
-@$core.Deprecated('Use marketSubscriptionPushRequestDescriptor instead')
-const MarketSubscriptionPushRequest$json = {
-  '1': 'MarketSubscriptionPushRequest',
-  '2': [
-    {'1': 'market_subscription_id', '3': 1, '4': 1, '5': 9, '10': 'marketSubscriptionId'},
-    {'1': 'endpoint', '3': 2, '4': 1, '5': 9, '10': 'endpoint'},
-  ],
-};
-
-/// Descriptor for `MarketSubscriptionPushRequest`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List marketSubscriptionPushRequestDescriptor = $convert.base64Decode(
-    'Ch1NYXJrZXRTdWJzY3JpcHRpb25QdXNoUmVxdWVzdBI0ChZtYXJrZXRfc3Vic2NyaXB0aW9uX2'
-    'lkGAEgASgJUhRtYXJrZXRTdWJzY3JpcHRpb25JZBIaCghlbmRwb2ludBgCIAEoCVIIZW5kcG9p'
-    'bnQ=');
-
-@$core.Deprecated('Use getMarketSubscriptionPushStatusResponseDescriptor instead')
-const GetMarketSubscriptionPushStatusResponse$json = {
-  '1': 'GetMarketSubscriptionPushStatusResponse',
-  '2': [
-    {'1': 'registered', '3': 1, '4': 1, '5': 8, '10': 'registered'},
-  ],
-};
-
-/// Descriptor for `GetMarketSubscriptionPushStatusResponse`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List getMarketSubscriptionPushStatusResponseDescriptor = $convert.base64Decode(
-    'CidHZXRNYXJrZXRTdWJzY3JpcHRpb25QdXNoU3RhdHVzUmVzcG9uc2USHgoKcmVnaXN0ZXJlZB'
-    'gBIAEoCFIKcmVnaXN0ZXJlZA==');
-
 @$core.Deprecated('Use markFulfillmentNotesReadRequestDescriptor instead')
 const MarkFulfillmentNotesReadRequest$json = {
   '1': 'MarkFulfillmentNotesReadRequest',

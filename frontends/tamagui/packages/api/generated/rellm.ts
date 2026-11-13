@@ -40,14 +40,12 @@ import { GetGroupsRequest, GetGroupsResponse, GetMembersRequest, GetMembersRespo
 import {
   GetMarketProductsRequest,
   GetMarketProductsResponse,
-  GetMarketSubscriptionPushStatusResponse,
   GetMarketSubscriptionsRequest,
   GetMarketSubscriptionsResponse,
   MakeMarketPurchaseRequest,
   MakeMarketPurchaseResponse,
   MarketProduct,
   MarketSubscription,
-  MarketSubscriptionPushRequest,
   MarkFulfillmentNotesReadRequest,
 } from "./market";
 import { GetMediaRequest, GetMediaResponse, Media } from "./media";
@@ -625,7 +623,7 @@ export const protobufPackage = "rellm";
  * 8. *Save the credentials:* `rellm deploy get_all_storage_credentials` (those Secrets are the only copy), and add the
  *    namespace to the deploy jobs in `.github/workflows/server_ci_cd.yml` so CI keeps its image current.
  * 9. *Hand over.* Add a note with the site's URL and how to sign in/create the first account, using "Add and Mark as
- *    Fulfilled" (`FULFILLMENT_STATUS_FULFILLED`). The buyer is notified through the chat if they opted in to push.
+ *    Fulfilled" (`FULFILLMENT_STATUS_FULFILLED`). The buyer is sent a push notification (see below).
  *
  * Capacity is shared across sites: `rellm deploy get_central_postgres_pvc_size get_central_object_storage_pvc_size`, and
  * grow with `rellm deploy resize_central_postgres_pvc SIZE=...` / `resize_central_object_storage_pvc SIZE=...` (grow-only).
@@ -637,11 +635,13 @@ export const protobufPackage = "rellm";
  * `rellm deploy delete_backend_central_data -n my-site --confirm my-site` (permanently removes its database, bucket and
  * credentials - export what the buyer needs first), and leave a note recording that it was done.
  *
- * Notifications follow the same two sides. A device opts in per subscription with
- * [`RegisterMarketSubscriptionPush`](#grpc-api-RegisterMarketSubscriptionPush) (linking an already-registered Web Push
- * subscription, see [`RegisterPushSubscription`](#grpc-api-RegisterPushSubscription)). A new note then pushes to every opted-in
- * device except its author's - the buyer hears about an admin's note, and other admins about it too - and access (buyer or
- * Admin) is re-checked at send time, so losing access ends the notifications.
+ * Notifications follow the same two sides and use the push subscriptions people already have - the ones
+ * [`RegisterPushSubscription`](#grpc-api-RegisterPushSubscription) creates when someone enables push notifications (in the
+ * web app's Accounts panel) - so there is nothing to opt in to per subscription. When a note is added to a
+ * subscription, every Web Push subscription of its buyer is notified, and so is every one of every user who can handle
+ * fulfillment (an Admin, see above) - except those of the note's own author. Tapping the notification opens the chat
+ * (the buyer's profile for the buyer, the Fulfillment tab for an admin). Recipients are worked out at send time, so
+ * someone who stops being an admin stops getting the admin notifications.
  *
  * #### Media
  * [`Media`](#rellm-Media) represents an uploaded (or server-generated) photo or video. Unlike other types, Media
@@ -2009,50 +2009,6 @@ export const RellmDefinition = {
       options: {},
     },
     /**
-     * Opts one of the current user's already-registered Web Push subscriptions (see
-     * `RegisterPushSubscription`) in to notifications for a MarketSubscription's (any
-     * `PurchaseType`) fulfillment chat: every `FulfillmentNote` someone *else* appends to it
-     * (`UpdateMarketSubscription`) pushes a notification to the device, via the same VAPID setup
-     * Messages use. *Authenticated* -- the subscription's own buyer, or an Admin; re-registering is a
-     * no-op. Fails with `push_subscription_not_registered` if `endpoint` isn't one of the caller's own
-     * registered Web Push subscriptions,.
-     * Notifications are also re-checked at send time: a recipient who is no longer the buyer or an
-     * Admin is skipped, so losing access to the chat also stops its notifications.
-     */
-    registerMarketSubscriptionPush: {
-      name: "RegisterMarketSubscriptionPush",
-      requestType: MarketSubscriptionPushRequest,
-      requestStream: false,
-      responseType: Empty,
-      responseStream: false,
-      options: {},
-    },
-    /**
-     * Reverses `RegisterMarketSubscriptionPush` for this device. *Authenticated*; not an error if it
-     * wasn't registered. The user's underlying Web Push subscription (and its Messages notifications)
-     * is untouched.
-     */
-    unregisterMarketSubscriptionPush: {
-      name: "UnregisterMarketSubscriptionPush",
-      requestType: MarketSubscriptionPushRequest,
-      requestStream: false,
-      responseType: Empty,
-      responseStream: false,
-      options: {},
-    },
-    /**
-     * Whether `endpoint` is currently linked to a MarketSubscription's fulfillment-chat notifications
-     * (see `RegisterMarketSubscriptionPush`). *Authenticated*, same access rule as registering.
-     */
-    getMarketSubscriptionPushStatus: {
-      name: "GetMarketSubscriptionPushStatus",
-      requestType: MarketSubscriptionPushRequest,
-      requestStream: false,
-      responseType: GetMarketSubscriptionPushStatusResponse,
-      responseStream: false,
-      options: {},
-    },
-    /**
      * Generates (or edits, given reference `media_ids`) an image via one of the current user's AIModels,
      * storing it as a new Media and, if `target` is set, attaching it to that Post/Event. *Authenticated* - caller
      * must own or have been granted access to the chosen AIProvider, and (if `target` is set) have edit access
@@ -2679,38 +2635,6 @@ export interface RellmServiceImplementation<CallContextExt = {}> {
     context: CallContext & CallContextExt,
   ): Promise<DeepPartial<MarketSubscription>>;
   /**
-   * Opts one of the current user's already-registered Web Push subscriptions (see
-   * `RegisterPushSubscription`) in to notifications for a MarketSubscription's (any
-   * `PurchaseType`) fulfillment chat: every `FulfillmentNote` someone *else* appends to it
-   * (`UpdateMarketSubscription`) pushes a notification to the device, via the same VAPID setup
-   * Messages use. *Authenticated* -- the subscription's own buyer, or an Admin; re-registering is a
-   * no-op. Fails with `push_subscription_not_registered` if `endpoint` isn't one of the caller's own
-   * registered Web Push subscriptions,.
-   * Notifications are also re-checked at send time: a recipient who is no longer the buyer or an
-   * Admin is skipped, so losing access to the chat also stops its notifications.
-   */
-  registerMarketSubscriptionPush(
-    request: MarketSubscriptionPushRequest,
-    context: CallContext & CallContextExt,
-  ): Promise<DeepPartial<Empty>>;
-  /**
-   * Reverses `RegisterMarketSubscriptionPush` for this device. *Authenticated*; not an error if it
-   * wasn't registered. The user's underlying Web Push subscription (and its Messages notifications)
-   * is untouched.
-   */
-  unregisterMarketSubscriptionPush(
-    request: MarketSubscriptionPushRequest,
-    context: CallContext & CallContextExt,
-  ): Promise<DeepPartial<Empty>>;
-  /**
-   * Whether `endpoint` is currently linked to a MarketSubscription's fulfillment-chat notifications
-   * (see `RegisterMarketSubscriptionPush`). *Authenticated*, same access rule as registering.
-   */
-  getMarketSubscriptionPushStatus(
-    request: MarketSubscriptionPushRequest,
-    context: CallContext & CallContextExt,
-  ): Promise<DeepPartial<GetMarketSubscriptionPushStatusResponse>>;
-  /**
    * Generates (or edits, given reference `media_ids`) an image via one of the current user's AIModels,
    * storing it as a new Media and, if `target` is set, attaching it to that Post/Event. *Authenticated* - caller
    * must own or have been granted access to the chosen AIProvider, and (if `target` is set) have edit access
@@ -3245,38 +3169,6 @@ export interface RellmClient<CallOptionsExt = {}> {
     request: DeepPartial<MarkFulfillmentNotesReadRequest>,
     options?: CallOptions & CallOptionsExt,
   ): Promise<MarketSubscription>;
-  /**
-   * Opts one of the current user's already-registered Web Push subscriptions (see
-   * `RegisterPushSubscription`) in to notifications for a MarketSubscription's (any
-   * `PurchaseType`) fulfillment chat: every `FulfillmentNote` someone *else* appends to it
-   * (`UpdateMarketSubscription`) pushes a notification to the device, via the same VAPID setup
-   * Messages use. *Authenticated* -- the subscription's own buyer, or an Admin; re-registering is a
-   * no-op. Fails with `push_subscription_not_registered` if `endpoint` isn't one of the caller's own
-   * registered Web Push subscriptions,.
-   * Notifications are also re-checked at send time: a recipient who is no longer the buyer or an
-   * Admin is skipped, so losing access to the chat also stops its notifications.
-   */
-  registerMarketSubscriptionPush(
-    request: DeepPartial<MarketSubscriptionPushRequest>,
-    options?: CallOptions & CallOptionsExt,
-  ): Promise<Empty>;
-  /**
-   * Reverses `RegisterMarketSubscriptionPush` for this device. *Authenticated*; not an error if it
-   * wasn't registered. The user's underlying Web Push subscription (and its Messages notifications)
-   * is untouched.
-   */
-  unregisterMarketSubscriptionPush(
-    request: DeepPartial<MarketSubscriptionPushRequest>,
-    options?: CallOptions & CallOptionsExt,
-  ): Promise<Empty>;
-  /**
-   * Whether `endpoint` is currently linked to a MarketSubscription's fulfillment-chat notifications
-   * (see `RegisterMarketSubscriptionPush`). *Authenticated*, same access rule as registering.
-   */
-  getMarketSubscriptionPushStatus(
-    request: DeepPartial<MarketSubscriptionPushRequest>,
-    options?: CallOptions & CallOptionsExt,
-  ): Promise<GetMarketSubscriptionPushStatusResponse>;
   /**
    * Generates (or edits, given reference `media_ids`) an image via one of the current user's AIModels,
    * storing it as a new Media and, if `target` is set, attaching it to that Post/Event. *Authenticated* - caller

@@ -609,7 +609,7 @@ openSelectedThread accountsPanelModel fulfillment maybeKey =
                     |> Tuple.mapSecond (Cmd.map FulfillmentMsg)
 
             else
-                ( fulfillment, Cmd.map FulfillmentMsg (Fulfillment.openCmd accountsPanelModel fulfillment thread) )
+                ( fulfillment, Cmd.map FulfillmentMsg (Fulfillment.openCmd accountsPanelModel thread) )
 
         Nothing ->
             ( fulfillment, Cmd.none )
@@ -1288,13 +1288,11 @@ update accountsPanelModel msg model =
 
         ThreadSelected key ->
             let
+                -- Always selects, never toggles: the list stays beside the detail now (like the Messages
+                -- tab's conversations), so clicking the open thread's row again has nothing to collapse.
                 newSelection : Maybe String
                 newSelection =
-                    if model.selectedThread == Just key then
-                        Nothing
-
-                    else
-                        Just key
+                    Just key
 
                 openedThread : Maybe Fulfillment.Thread
                 openedThread =
@@ -1309,7 +1307,7 @@ update accountsPanelModel msg model =
 
                             else
                                 ( model.fulfillment
-                                , Cmd.map FulfillmentMsg (Fulfillment.openCmd accountsPanelModel model.fulfillment thread)
+                                , Cmd.map FulfillmentMsg (Fulfillment.openCmd accountsPanelModel thread)
                                 )
 
                         Nothing ->
@@ -1338,7 +1336,7 @@ update accountsPanelModel msg model =
                         _ ->
                             Cmd.none
             in
-            ( { model | selectedThread = newSelection, fulfillment = openedFulfillment }, Cmd.batch [ openCmd, urlCmd ], Nothing )
+            ( { model | selectedThread = newSelection, fulfillment = openedFulfillment, mobileSidebarOpen = False }, Cmd.batch [ openCmd, urlCmd ], Nothing )
 
         PushRefreshDebounceElapsed host generation ->
             if Dict.get host model.pushRefreshGenerations == Just generation then
@@ -2504,10 +2502,10 @@ view time basePath accountsPanelModel model =
          )
             ++ (case activeTab of
                     SubscriptionsTab ->
-                        [ Fulfillment.view (fulfillmentViewConfig time basePath accountsPanelModel model) ]
+                        threadsTabView time basePath accountsPanelModel model SubscriptionsTab
 
                     FulfillmentTab ->
-                        [ Fulfillment.adminView (fulfillmentViewConfig time basePath accountsPanelModel model) ]
+                        threadsTabView time basePath accountsPanelModel model FulfillmentTab
 
                     MessagesTab ->
                         [ searchRowView accountsPanelModel model
@@ -2523,6 +2521,78 @@ view time basePath accountsPanelModel model =
                         ]
                )
         )
+
+
+{-| The Subscriptions / Fulfillment tab body, laid out like the Messages tab: with nothing selected, the list
+fills the page; with a thread selected it's the left pane (`.messages-sidebar` -- a drawer behind the ☰ button
+on narrow screens, see `view`) beside that thread's notes (`.messages-detail`). The row above the panes carries
+the ☰ toggle and the thread's heading. The embedded panel never goes two-pane (its rows are links
+out to the real page), same as its Messages tab.
+-}
+threadsTabView : SharedTime.Model -> String -> AccountsPanel.Model -> Model -> Tab -> List (Html Msg)
+threadsTabView time basePath accountsPanelModel model tab =
+    let
+        config : Fulfillment.ViewConfig Msg
+        config =
+            fulfillmentViewConfig time basePath accountsPanelModel model
+
+        isAdminTab : Bool
+        isAdminTab =
+            tab == FulfillmentTab
+
+        listView : Html Msg
+        listView =
+            if isAdminTab then
+                Fulfillment.adminView config
+
+            else
+                Fulfillment.view config
+
+        -- Only a chat of *this* tab's kind: a remembered selection from the other tab shows nothing here.
+        selected : Maybe Fulfillment.Thread
+        selected =
+            if model.embeddedPanel then
+                Nothing
+
+            else
+                model.selectedThread
+                    |> Maybe.andThen (Fulfillment.threadByKey model.fulfillment)
+                    |> Maybe.andThen
+                        (\thread ->
+                            if thread.admin == isAdminTab && Fulfillment.isChat thread then
+                                Just thread
+
+                            else
+                                Nothing
+                        )
+    in
+    case selected of
+        Nothing ->
+            [ listView ]
+
+        Just thread ->
+            [ div [ classes [ "filter-controls-row", "messages-header-row" ] ]
+                [ button
+                    [ Html.Attributes.type_ "button"
+                    , class "messages-mobile-sidebar-toggle"
+                    , onClick ToggleMobileSidebar
+                    , title
+                        (if model.mobileSidebarOpen then
+                            "Hide the list"
+
+                         else
+                            "Show the list"
+                        )
+                    ]
+                    [ text "☰" ]
+                , div [ class "messages-thread-heading" ] [ Fulfillment.heading thread ]
+                ]
+            , div [ class "messages-two-pane" ]
+                [ div [ classes [ "messages-sidebar", openClosedClass model.mobileSidebarOpen ] ] [ listView ]
+                , div [ class "messages-detail", onClick CloseMobileSidebar ]
+                    [ div [ class "fulfillment-detail" ] [ Fulfillment.detailView config thread ] ]
+                ]
+            ]
 
 
 fulfillmentViewConfig :

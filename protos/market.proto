@@ -721,26 +721,6 @@ message FulfillmentNote {
   google.protobuf.Timestamp created_at = 4;
 }
 
-// Identifies one of the current user's registered Web Push subscriptions (see
-// `PushSubscription`/`RegisterPushSubscription` in `messages.proto` -- it must already be
-// registered, this only *links* it) and the `MarketSubscription` (any `PurchaseType`)
-// whose fulfillment chat (`RellmHostingSubscriptionDetails.fulfillment_notes`) it should be
-// notified about. Used by `RegisterMarketSubscriptionPush`, `UnregisterMarketSubscriptionPush`
-// and `GetMarketSubscriptionPushStatus`.
-message MarketSubscriptionPushRequest {
-  // The `MarketSubscription.id` to (un)subscribe to/check. The caller must be its buyer, or an Admin.
-  string market_subscription_id = 1;
-  // The Web Push subscription endpoint URL, as previously passed to `RegisterPushSubscription` by
-  // the same user.
-  string endpoint = 2;
-}
-
-message GetMarketSubscriptionPushStatusResponse {
-  // Whether the current user's push subscription for `endpoint` is linked to this subscription's
-  // fulfillment chat -- i.e. whether a new `FulfillmentNote` would notify that device.
-  bool registered = 1;
-}
-
 // Request to mark a subscription's fulfillment notes read -- see
 // `RellmHostingSubscriptionDetails.notes_last_read`.
 message MarkFulfillmentNotesReadRequest {

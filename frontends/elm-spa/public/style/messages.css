@@ -929,8 +929,33 @@ body:has(> [style*="2147483647"]) .messages-reply-button {
   white-space: pre-wrap;
 }
 
-.fulfillment-push-toggle {
-  margin-top: 8px;
+/* The Subscriptions/Fulfillment tabs' two-pane layout (`MessagesPage.threadsTabView`) reuses `.messages-two-pane`/
+   `.messages-sidebar`/`.messages-detail` and `.messages-header-row` above, so the sticky header row, the narrow-screen
+   drawer behind `.messages-mobile-sidebar-toggle` and the 69px/44px offsets all behave exactly as on the Messages tab.
+   These two are what's specific to a thread: its heading in that header row, and the detail pane, bounded to the rest of
+   the viewport (same height as `.messages-thread`) so it scrolls on its own beside the list. */
+.messages-thread-heading {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fulfillment-detail {
+  height: calc(100vh - (env(safe-area-inset-top) + 69px + 44px));
+  overflow-y: auto;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.8rem;
+}
+
+.fulfillment-detail-heading {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 4px 8px;
 }
 
 .account-avatar-menu-subscription-links {

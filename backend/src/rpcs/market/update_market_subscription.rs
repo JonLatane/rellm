@@ -64,16 +64,13 @@ fn notify_new_notes(
     let Some(buyer) = updated.buyer.as_ref() else {
         return;
     };
-    let (Ok(market_subscription_id), Ok(buyer_id)) =
-        (updated.id.to_db_id_or_err("id"), buyer.user_id.to_db_id_or_err("buyer.user_id"))
-    else {
+    let Ok(buyer_id) = buyer.user_id.to_db_id_or_err("buyer.user_id") else {
         return;
     };
     for note in new_notes {
         crate::web_push::notify_fulfillment_note(
             pool.clone(),
             crate::web_push::FulfillmentNoteNotificationContent {
-                market_subscription_id,
                 author_user_id: author.id,
                 buyer_id,
                 buyer_username: buyer.username.clone().unwrap_or_default(),
