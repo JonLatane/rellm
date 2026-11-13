@@ -900,6 +900,7 @@ viewerVideoSync req before after =
                                 , mediaId = Just video.mediaId
                                 , host = video.host
                                 , downloads = video.downloads
+                                , postUrl = Nothing
                                 }
                             )
                             (Just video.title)
@@ -980,6 +981,7 @@ syncVideoPanel before after panel =
                         , mediaId = current.video.mediaId
                         , host = current.video.host
                         , downloads = current.video.downloads
+                        , postUrl = current.video.postUrl
                         }
                     )
                     panel
@@ -1696,6 +1698,7 @@ sharedUpdate req msg model =
                                                 , mediaId = Just video.mediaId
                                                 , host = video.host
                                                 , downloads = video.downloads
+                                                , postUrl = Nothing
                                                 }
                                                 (Just video.title)
                                             )
@@ -1863,7 +1866,7 @@ sharedUpdate req msg model =
                 VideoPlayerPanel.Requested video ->
                     toQueue
                         (AudioPlayerPanel.OpenVideo
-                            { src = video.src, poster = video.poster, aspectRatio = video.aspectRatio, returnUrl = video.returnUrl, mediaId = video.mediaId, host = video.host, downloads = video.downloads }
+                            { src = video.src, poster = video.poster, aspectRatio = video.aspectRatio, returnUrl = video.returnUrl, mediaId = video.mediaId, host = video.host, downloads = video.downloads, postUrl = video.postUrl }
                             video.title
                             video.startAt
                             video.resume

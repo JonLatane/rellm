@@ -466,3 +466,17 @@
   cursor: pointer;
   font-size: 16px;
 }
+
+/* "Opened from post": the link from a queued/playing video back to the post it came from. */
+.media-card-opened-from,
+.audio-player-opened-from {
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-decoration: underline;
+}
+
+.audio-player-opened-from {
+  display: block;
+  text-align: center;
+  margin-top: 0.25rem;
+}

@@ -105,7 +105,23 @@ type alias VideoItem =
     , mediaId : Maybe String
     , host : String
     , downloads : List String
+
+    -- The post (or event) page this video was opened from, as a link within the app: shown in the queue and the expanded player.
+    , postUrl : Maybe String
     }
+
+
+{-| "Opened from post": a link to the post page a video came from, if it's known. Used in the queue and the expanded player.
+-}
+openedFromPost : String -> VideoItem -> Html msg
+openedFromPost cssClass video =
+    case video.postUrl of
+        Just url ->
+            a [ class cssClass, href url, attribute "title" "Open the post this video is from" ]
+                [ text "Opened from post" ]
+
+        Nothing ->
+            text ""
 
 
 {-| The current queue entry, if it's a video, and how the miniplayer should start it: where (seconds), whether to play,
@@ -610,7 +626,7 @@ inheritLinkData model video =
     case currentVideo model of
         Just current ->
             if current.video.src == video.src && video.host == "" then
-                { video | host = current.video.host, downloads = current.video.downloads }
+                { video | host = current.video.host, downloads = current.video.downloads, postUrl = current.video.postUrl }
 
             else
                 video
@@ -1835,6 +1851,7 @@ view viewerOpen accountsPanelModel model =
                             )
                             []
                         , div [ class "audio-player-title" ] [ text (title media) ]
+                        , openedFromPost "audio-player-opened-from" video
                         ]
 
                 Nothing ->
@@ -2055,6 +2072,12 @@ view viewerOpen accountsPanelModel model =
                     ]
                 , div [ class "media-card-meta" ]
                     [ button [ class "media-card-title", onClick (PlayQueued key) ] [ text (title media) ]
+                    , case item.video of
+                        Just video ->
+                            openedFromPost "media-card-opened-from" video
+
+                        Nothing ->
+                            text ""
                     , if credits == "" then
                         text ""
 

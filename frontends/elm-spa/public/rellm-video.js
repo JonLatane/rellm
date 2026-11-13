@@ -241,6 +241,20 @@
     return title || null;
   }
 
+  // The post (or event) page a video belongs to, as a link within the app: the card it is on (its `.post-card-link-overlay`
+  // href), else -- on a post's own page -- that page. `from` is the page the request is made from.
+  function postLinkFor(el, from) {
+    var card = el.closest ? el.closest(".post-card") : null;
+    var overlay = card ? card.querySelector(".post-card-link-overlay") : null;
+    var href = overlay ? overlay.getAttribute("href") : null;
+    if (href) { return href; }
+    try {
+      var url = new URL(from, window.location.href);
+      if (/\/(post|event)\/|\/~/.test(url.pathname)) { return url.pathname + url.search + url.hash; }
+    } catch (e) { /* not a URL */ }
+    return null;
+  }
+
   // Navigation tracking and "one thing plays at a time" are `public/rellm-media.js`'s (shared with the audio players).
   var media = window.rellmMedia || {
     lastNavigation: function () { return { time: 0, from: window.location.href }; },
@@ -568,7 +582,8 @@
         mediaId: this.getAttribute("data-media-id") || null,
         host: this.getAttribute("data-host") || null,
         downloads: this.getAttribute("data-downloads") || null,
-        returnUrl: from
+        returnUrl: from,
+        postUrl: postLinkFor(this, from)
       };
       // The miniplayer's player takes this very `<video>` over (see `_takeOver`) so it carries on without a reload.
       this._giveUpVideo();

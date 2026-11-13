@@ -19,7 +19,7 @@ track id =
 
 clip : String -> VideoItem
 clip src =
-    { src = src, poster = Nothing, aspectRatio = 16 / 9, returnUrl = "https://rellm.org/post/p1", mediaId = Nothing, host = "", downloads = [] }
+    { src = src, poster = Nothing, aspectRatio = 16 / 9, returnUrl = "https://rellm.org/post/p1", mediaId = Nothing, host = "", downloads = [], postUrl = Nothing }
 
 
 {-| What's queued, in order, as media ids (a video's id is its `src`).
@@ -311,7 +311,7 @@ suite =
                     let
                         ours : VideoItem
                         ours =
-                            { src = "https://other.example/media/v1?authorization=x", poster = Nothing, aspectRatio = 1, returnUrl = "", mediaId = Just "v1", host = "other.example", downloads = [ "original" ] }
+                            { src = "https://other.example/media/v1?authorization=x", poster = Nothing, aspectRatio = 1, returnUrl = "", mediaId = Just "v1", host = "other.example", downloads = [ "original" ], postUrl = Nothing }
                     in
                     Expect.all
                         [ \_ -> play (AudioPlayerPanel.OpenVideo ours Nothing 0 True) AudioPlayerPanel.init |> AudioPlayerPanel.linkFragment "rellm.org" |> Expect.equal (Just "video-v1@other.example")
@@ -325,7 +325,7 @@ suite =
                     let
                         ours : VideoItem
                         ours =
-                            { src = "https://other.example/media/v1?authorization=x", poster = Nothing, aspectRatio = 1, returnUrl = "", mediaId = Just "v1", host = "other.example", downloads = [ "small", "original" ] }
+                            { src = "https://other.example/media/v1?authorization=x", poster = Nothing, aspectRatio = 1, returnUrl = "", mediaId = Just "v1", host = "other.example", downloads = [ "small", "original" ], postUrl = Nothing }
 
                         playing : AudioPlayerPanel.Model
                         playing =
@@ -333,7 +333,7 @@ suite =
 
                         bare : VideoItem
                         bare =
-                            { ours | host = "", downloads = [] }
+                            { ours | host = "", downloads = [], postUrl = Nothing }
                     in
                     Expect.all
                         [ \_ -> AudioPlayerPanel.inheritLinkData playing bare |> Expect.equal ours
