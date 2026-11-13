@@ -2585,7 +2585,7 @@ threadsTabView time basePath accountsPanelModel model tab =
                     |> Maybe.andThen (Fulfillment.threadByKey model.fulfillment)
                     |> Maybe.andThen
                         (\thread ->
-                            if thread.admin == isAdminTab && Fulfillment.isChat thread then
+                            if thread.admin == isAdminTab then
                                 Just thread
 
                             else

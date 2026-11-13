@@ -884,19 +884,75 @@ body:has(> [style*="2147483647"]) .messages-reply-button {
 
 .fulfillment-thread-header {
   display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px 8px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
   color: inherit;
   text-decoration: none;
   cursor: pointer;
+}
+
+/* Title and unread count on one line; the buyer (Fulfillment tab) above it, the badges and dates below. */
+.fulfillment-thread-main,
+.fulfillment-thread-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+
+.fulfillment-thread-dates {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+/* Colored pills: the subscription's state (active / canceled but still paid up / canceled) and, for a Rellm hosting
+   order, its fulfillment status. White text on mid-dark fills reads in both light and dark themes. */
+.fulfillment-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1.5;
+  white-space: nowrap;
+  color: #ffffff;
+}
+
+.fulfillment-badge-active,
+.fulfillment-badge-fulfilled {
+  background: #2e7d32;
+}
+
+.fulfillment-badge-active-canceled,
+.fulfillment-badge-awaiting {
+  background: #b26a00;
+}
+
+.fulfillment-badge-canceled {
+  background: #616161;
+}
+
+.fulfillment-badge-in-progress {
+  background: #1565c0;
+}
+
+/* The top of an open chat: buyer (Fulfillment tab), badges and dates, set off from the notes like a conversation's
+   participants header. */
+.fulfillment-detail-header {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding-bottom: 0.6rem;
+  margin-bottom: 0.6rem;
+  border-bottom: 1px solid var(--border);
 }
 
 .fulfillment-thread-title {
   font-weight: 700;
 }
 
-.fulfillment-thread-state,
 .fulfillment-thread-preview,
 .fulfillment-note-meta {
   font-size: 0.8rem;
