@@ -92,7 +92,8 @@
     return null;
   }
 
-  var handoffAudio = function (audio, playing) {
+  // `from` is the page the audio was on: the one being navigated away from for a navigation handoff, else this one.
+  var handoffAudio = function (audio, playing, from) {
     if (!handoffTarget(audio)) { return false; }
     window.dispatchEvent(new CustomEvent("rellm-audio-handoff", {
       detail: {
@@ -100,7 +101,7 @@
         host: audio.getAttribute("data-host"),
         positionMs: Math.round((audio.currentTime || 0) * 1000),
         playing: playing,
-        postUrl: postLinkFor(audio, window.location.href)
+        postUrl: postLinkFor(audio, from || window.location.href)
       }
     }));
     return true;
@@ -128,7 +129,7 @@
     audios.forEach(function (audio) {
       if (playingAudio.has(audio) && justNavigated()) {
         playingAudio.delete(audio);
-        handoffAudio(audio, true);
+        handoffAudio(audio, true, lastNavigation.from);
       }
     });
   };
