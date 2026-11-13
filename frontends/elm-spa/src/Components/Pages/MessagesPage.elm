@@ -340,9 +340,10 @@ type Msg
       -- messages in it. Re-derives the still-unread set from `expandedGroups`
       -- fresh (not whatever was unread back when the timer was scheduled --
       -- `MarkUnreadClicked` or a poll could've changed it since), and is a
-      -- no-op unless `Model.selectedGroup` is still this same thread: leaving
-      -- before the delay elapses means it never gets marked read at all,
-      -- which is the whole point of the delay.
+      -- no-op unless `Model.selectedGroup` is still this same thread *and* the
+      -- Messages tab is showing: leaving before the delay elapses means it never
+      -- gets marked read at all, which is the whole point of the delay
+      -- (`TabClicked` back to Messages starts the delay over).
     | DelayedMarkGroupRead String
     | SearchTextChanged String
     | SearchDebounceElapsed Int
@@ -866,9 +867,11 @@ update accountsPanelModel msg model =
 
         DelayedMarkGroupRead key ->
             let
+                -- Open *and visible*: `selectedGroup` stays set while another tab is showing, but nothing
+                -- of the thread is on screen then, so it must not be marked read behind the user's back.
                 stillOpen : Bool
                 stillOpen =
-                    (model.selectedGroup |> Maybe.map Messages.conversationKey) == Just key
+                    model.tab == MessagesTab && (model.selectedGroup |> Maybe.map Messages.conversationKey) == Just key
 
                 unreadIds : Set String
                 unreadIds =
@@ -1231,8 +1234,29 @@ update accountsPanelModel msg model =
 
                         _ ->
                             ( model.fulfillment, Cmd.none )
+
+                -- Back on Messages with a conversation still open: its read delay didn't run (or was
+                -- discarded, see `DelayedMarkGroupRead`) while the tab was hidden, so start it again.
+                -- Harmless if it's already read -- the delayed handler finds nothing unread and does nothing.
+                restartReadDelayCmd : Cmd Msg
+                restartReadDelayCmd =
+                    case ( tab, model.selectedGroup ) of
+                        ( MessagesTab, Just conversation ) ->
+                            if model.embeddedPanel then
+                                Cmd.none
+
+                            else
+                                let
+                                    key : String
+                                    key =
+                                        Messages.conversationKey conversation
+                                in
+                                Process.sleep markReadDelayMillis |> Task.perform (\_ -> DelayedMarkGroupRead key)
+
+                        _ ->
+                            Cmd.none
             in
-            ( { model | tab = tab, fulfillment = openedFulfillment }, openCmd, Nothing )
+            ( { model | tab = tab, fulfillment = openedFulfillment }, Cmd.batch [ openCmd, restartReadDelayCmd ], Nothing )
 
         EmbeddedThreadLinkClicked _ ->
             ( model, Cmd.none, Nothing )
