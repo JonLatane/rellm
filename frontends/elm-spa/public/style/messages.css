@@ -569,6 +569,7 @@
 @media (min-width: 640px) {
   .messages-sidebar {
     height: calc(100vh - (env(safe-area-inset-top) + 69px + 44px + var(--messages-tabs-h)));
+  height: calc(100dvh - (env(safe-area-inset-top) + 69px + 44px + var(--messages-tabs-h)));
     overflow-y: auto;
   }
 }
@@ -596,6 +597,7 @@
   display: flex;
   flex-direction: column;
   height: calc(100vh - (env(safe-area-inset-top) + 69px + 44px + var(--messages-tabs-h)));
+  height: calc(100dvh - (env(safe-area-inset-top) + 69px + 44px + var(--messages-tabs-h)));
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 0.8rem;
@@ -1027,6 +1029,7 @@ body:has(> [style*="2147483647"]) .messages-reply-button {
 
 .fulfillment-detail {
   height: calc(100vh - (env(safe-area-inset-top) + 69px + 44px + var(--messages-tabs-h)));
+  height: calc(100dvh - (env(safe-area-inset-top) + 69px + 44px + var(--messages-tabs-h)));
   overflow-y: auto;
   box-sizing: border-box;
   border: 1px solid var(--border);
@@ -1061,6 +1064,17 @@ body:has(> [style*="2147483647"]) .messages-reply-button {
 .fulfillment-detail {
   display: flex;
   flex-direction: column-reverse;
+}
+
+/* Phone widths: `.messages-two-pane` is `position: fixed` to exactly the visible area under the header row, and
+   `.messages-detail` fills it (`height: 100%`). The `100vh` heights above measure the *large* viewport (mobile Safari's
+   toolbar retracted), which is taller than that area, so the bottom of the chat -- the newest notes and the composer --
+   was cut off by the container's `overflow: hidden`. Filling the container instead is always exactly right. */
+@media (max-width: 639px) {
+  .fulfillment-detail,
+  .messages-thread {
+    height: 100%;
+  }
 }
 
 .fulfillment-thread-body {
