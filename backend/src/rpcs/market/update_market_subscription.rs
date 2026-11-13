@@ -76,6 +76,7 @@ fn notify_new_notes(
                 author_user_id: author.id,
                 buyer_id,
                 buyer_username: buyer.username.clone().unwrap_or_default(),
+                subscription_id: updated.id.clone(),
                 note_text: note.note.clone(),
                 new_status_label: note_status_change_label(updated, note),
             },

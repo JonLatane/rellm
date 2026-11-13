@@ -241,6 +241,10 @@ pub struct FulfillmentNoteNotificationContent {
     /// subscriptions section, which is where a buyer reads the chat).
     pub buyer_id: i64,
     pub buyer_username: String,
+    /// The subscription's id as clients see it (`MarketSubscription.id`): an admin's notification
+    /// opens that exact order's chat -- of any subscription type -- in the Messages page's
+    /// Fulfillment tab (`?fulfillment_order=`), since `/market/fulfillment` lists hosting orders only.
+    pub subscription_id: String,
     /// The note's own text, possibly blank for a bare status transition.
     pub note_text: String,
     /// Human-readable new status (e.g. "Fulfilled") when the note changed it -- shown as the body
@@ -290,6 +294,7 @@ async fn send_fulfillment_note_notifications(
             frontend_host.as_deref(),
             subscription.user_id == content.buyer_id,
             &content.buyer_username,
+            &content.subscription_id,
         );
         let payload = serde_json::to_vec(&PushPayload {
             title: title.clone(),
@@ -340,14 +345,20 @@ fn fulfillment_note_body(note_text: &str, new_status_label: Option<&str>) -> Str
 }
 
 /// Where tapping the notification goes: a buyer reads the chat on their own profile's
-/// subscriptions section, an admin on the fulfillment page. `None` without a configured
+/// subscriptions section, an admin on that order's thread in the Messages page's Fulfillment tab
+/// (`Pages.Messages`' `?fulfillment_order=<id>`; a bare id means this server). `None` without a configured
 /// `frontend_host` (nothing to build an absolute URL against -- same as `notification_url`).
-fn fulfillment_note_url(frontend_host: Option<&str>, recipient_is_buyer: bool, buyer_username: &str) -> Option<String> {
+fn fulfillment_note_url(
+    frontend_host: Option<&str>,
+    recipient_is_buyer: bool,
+    buyer_username: &str,
+    subscription_id: &str,
+) -> Option<String> {
     frontend_host.map(|host| {
         if recipient_is_buyer {
             format!("https://{}/{}#subscriptions", host, buyer_username)
         } else {
-            format!("https://{}/market/fulfillment", host)
+            format!("https://{}/messages?fulfillment_order={}", host, subscription_id)
         }
     })
 }
@@ -652,16 +663,16 @@ mod tests {
     }
 
     #[test]
-    fn fulfillment_note_url_sends_buyers_to_their_profile_and_admins_to_fulfillment() {
+    fn fulfillment_note_url_sends_buyers_to_their_profile_and_admins_to_the_order_thread() {
         assert_eq!(
-            fulfillment_note_url(Some("ato.band"), true, "jon").as_deref(),
+            fulfillment_note_url(Some("ato.band"), true, "jon", "abc123").as_deref(),
             Some("https://ato.band/jon#subscriptions")
         );
         assert_eq!(
-            fulfillment_note_url(Some("ato.band"), false, "jon").as_deref(),
-            Some("https://ato.band/market/fulfillment")
+            fulfillment_note_url(Some("ato.band"), false, "jon", "abc123").as_deref(),
+            Some("https://ato.band/messages?fulfillment_order=abc123")
         );
-        assert_eq!(fulfillment_note_url(None, true, "jon"), None);
+        assert_eq!(fulfillment_note_url(None, true, "jon", "abc123"), None);
     }
 
     #[test]

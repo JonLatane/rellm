@@ -106,6 +106,7 @@ fn content_for(
         author_user_id: author.id,
         buyer_id: buyer.id,
         buyer_username: buyer.username.clone(),
+        subscription_id: "1".to_string(),
         note_text: "Your server is up!".to_string(),
         new_status_label: None,
     }
