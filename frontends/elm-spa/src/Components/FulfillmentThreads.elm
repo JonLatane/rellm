@@ -10,8 +10,8 @@ module Components.FulfillmentThreads exposing
     , fetchAll
     , hasAdminOrders
     , hasSubscriptions
+    , datesText
     , heading
-    , isChat
     , openAdmin
     , openCmd
     , subscriptionLinks
@@ -33,8 +33,8 @@ its own fetches, unread math and views. Like `MessagesPage` it can't import `Sha
 it).
 
 **Subscriptions** (`view`): the signed-in user's own `MarketSubscription`s (`GetMarketSubscriptions`, the
-caller's own). One of any type with `fulfillmentNotes` is a chat thread with the
-host admin. *Unread* is the buyer's own marker (`notesLastRead` on the details): a note
+caller's own). Every one, of any type, state and whether or not it has notes yet, opens as a chat thread with the
+host admin (a canceled or empty one is read-only in practice: only admins write). *Unread* is the buyer's own marker (`notesLastRead` on the details): a note
 counts if somebody other than the buyer wrote it and it's newer than that marker (or the marker is
 unset). Opening a thread with unread notes calls `MarkFulfillmentNotesRead` (`openCmd`).
 
@@ -48,6 +48,7 @@ awaiting a host admin (`awaitingCount`) -- there's no per-admin read marker to c
 -}
 
 import Dict exposing (Dict)
+import Components.Authors as Authors
 import Components.Market as Market
 import Grpc
 import Html exposing (Html, a, button, div, p, span, text, textarea)
@@ -55,7 +56,7 @@ import Html.Attributes exposing (class, disabled, href, placeholder, value)
 import Html.Events exposing (onClick, onInput, preventDefaultOn)
 import Json.Decode as Decode
 import Proto.Google.Protobuf
-import Proto.Rellm exposing (FulfillmentNote, MarketSubscription, defaultFulfillmentNote, defaultMarkFulfillmentNotesReadRequest)
+import Proto.Rellm exposing (Author, FulfillmentNote, MarketSubscription, defaultFulfillmentNote, defaultMarkFulfillmentNotesReadRequest)
 import Proto.Rellm.FulfillmentStatus exposing (FulfillmentStatus(..))
 import Proto.Rellm.GetMarketSubscriptionsRequestType exposing (GetMarketSubscriptionsRequestType(..))
 import Proto.Rellm.MarketSubscription.Details as SubscriptionDetails
@@ -788,8 +789,9 @@ adminView config =
             div [ class "fulfillment-thread-list" ] (List.map (threadView config) all)
 
 
-{-| One row of the list pane: title, state, unread count and the last note's preview. A subscription with a chat
-(`isChat`) selects into the detail pane (`detailView`) when clicked; any other is just a title and state line.
+{-| One row of the list pane: (Fulfillment tab) who bought it, then title, unread count, the state badge, the
+fulfillment-status badge of a Rellm hosting order, its dates and the last note's preview. Every row -- whatever
+its type, state or notes -- selects into the detail pane (`detailView`) when clicked.
 -}
 threadView : ViewConfig msg -> Thread -> Html msg
 threadView config thread =
@@ -812,57 +814,58 @@ threadView config thread =
 
         isSelected : Bool
         isSelected =
-            isChat thread && config.selected == Just thread.key
+            config.selected == Just thread.key
 
-        headerContent : List (Html msg)
-        headerContent =
-            [ span [ class "fulfillment-thread-title" ] [ text (threadTitle thread) ]
-            , stateView thread
-            , if unread > 0 then
-                span [ class "unread-count-badge", Html.Attributes.title "Unread notes" ] [ text (String.fromInt unread) ]
+        url : String
+        url =
+            if thread.admin then
+                orderUrl config.basePath config.accountsPanelModel.mainFrontendHost thread.host subscription.id
 
-              else
-                text ""
-            ]
+            else
+                threadUrl config.basePath config.accountsPanelModel.mainFrontendHost thread.host subscription.id Nothing
+
+        headerAttrs : List (Html.Attribute msg)
+        headerAttrs =
+            case config.onSelect of
+                Just select ->
+                    [ class "fulfillment-thread-header"
+                    , href url
+                    , preventDefaultOn "click" (Decode.succeed ( select thread.key, True ))
+                    ]
+
+                Nothing ->
+                    class "fulfillment-thread-header"
+                        :: href url
+                        :: (case config.onLinkClick of
+                                Just linkClicked ->
+                                    [ onClick (linkClicked thread.key) ]
+
+                                Nothing ->
+                                    []
+                           )
     in
     div
         [ classes [ "fulfillment-thread", if isSelected then "fulfillment-thread-selected" else "" ]
         , Html.Attributes.id ("subscription-thread-" ++ subscription.id)
         ]
-        [ if isChat thread then
-            let
-                url : String
-                url =
-                    if thread.admin then
-                        orderUrl config.basePath config.accountsPanelModel.mainFrontendHost thread.host subscription.id
+        [ -- The row is itself one link, so the buyer here is just the avatar and name (the clickable
+          -- profile link is in the opened chat's header, `detailHeaderView`).
+          a headerAttrs
+            [ if thread.admin then
+                buyerChip config thread
 
-                    else
-                        threadUrl config.basePath config.accountsPanelModel.mainFrontendHost thread.host subscription.id Nothing
+              else
+                text ""
+            , div [ class "fulfillment-thread-main" ]
+                [ span [ class "fulfillment-thread-title" ] [ text (threadTitle thread) ]
+                , if unread > 0 then
+                    span [ class "unread-count-badge", Html.Attributes.title "Unread notes" ] [ text (String.fromInt unread) ]
 
-                headerAttrs : List (Html.Attribute msg)
-                headerAttrs =
-                    case config.onSelect of
-                        Just select ->
-                            [ class "fulfillment-thread-header"
-                            , href url
-                            , preventDefaultOn "click" (Decode.succeed ( select thread.key, True ))
-                            ]
-
-                        Nothing ->
-                            class "fulfillment-thread-header"
-                                :: href url
-                                :: (case config.onLinkClick of
-                                        Just linkClicked ->
-                                            [ onClick (linkClicked thread.key) ]
-
-                                        Nothing ->
-                                            []
-                                   )
-            in
-            a headerAttrs headerContent
-
-          else
-            div [ class "fulfillment-thread-header" ] (headerContent ++ [ timeLine config subscription ])
+                  else
+                    text ""
+                ]
+            , metaView config.time.browserTimeZone.zone subscription
+            ]
         , case List.reverse notes |> List.head of
             Just last ->
                 p [ class "fulfillment-thread-preview" ] [ text (notePreview last) ]
@@ -872,37 +875,123 @@ threadView config thread =
         ]
 
 
-{-| Whether a thread opens into a chat: every admin-side order does; a user's own subscription once it has notes.
+{-| The buyer's avatar and username, as on a Rellm post's author line, but not a link (for use inside another
+link).
 -}
-isChat : Thread -> Bool
-isChat thread =
-    thread.admin || not (List.isEmpty (notesOf thread.subscription))
+buyerChip : ViewConfig msg -> Thread -> Html msg
+buyerChip config thread =
+    let
+        author : Maybe Author
+        author =
+            thread.subscription.buyer
+    in
+    span [ class "post-author-link fulfillment-buyer" ]
+        [ Authors.avatar (Authors.name author) (Authors.avatarUrl (buyerServer config thread) (buyerAccount config thread) author)
+        , text (Authors.name author)
+        ]
 
 
-{-| A Rellm hosting order, on the admin's Fulfillment tab, shows its fulfillment status (Awaiting Host Admin /
-In Progress / Fulfilled); everything else shows its state (Active / Canceled ...).
+buyerServer : ViewConfig msg -> Thread -> Maybe RellmServers.RellmServer
+buyerServer config thread =
+    RellmServers.rellmServerForHost config.accountsPanelModel.servers thread.host
+
+
+buyerAccount : ViewConfig msg -> Thread -> Maybe RellmAccounts.RellmAccount
+buyerAccount config thread =
+    RellmAccounts.enabledRellmAccountForServer config.accountsPanelModel.accounts thread.host
+
+
+{-| The state badge (Active / Canceled, still active / Canceled), the fulfillment-status badge of a Rellm hosting
+subscription, and the subscription's dates: one line, wrapping on narrow screens.
 -}
-stateView : Thread -> Html msg
-stateView thread =
-    if thread.admin && isHosting thread.subscription then
-        span [ class "fulfillment-thread-state" ] [ text (statusLabel (fulfillmentStatusOf thread.subscription)) ]
+metaView : Time.Zone -> MarketSubscription -> Html msg
+metaView zone subscription =
+    div [ class "fulfillment-thread-meta" ]
+        [ stateBadge (Market.effectiveState subscription)
+        , if isHosting subscription then
+            fulfillmentBadge (fulfillmentStatusOf subscription)
 
-    else
-        stateBadge (Market.effectiveState thread.subscription)
+          else
+            text ""
+        , span [ class "fulfillment-thread-dates" ] [ text (datesText zone subscription) ]
+        ]
 
 
-{-| The detail pane's heading: what the thread is about, and its state. The page puts it (with the pane
-toggle) in the row above the two panes.
+{-| "Started 2026-11-03 · Renews 2027-11-03" -- when the subscription began and what happens next: the next
+renewal while it's active (nothing if it never renews), the date service stops once it's canceled but still paid
+up, or the date it ended.
+-}
+datesText : Time.Zone -> MarketSubscription -> String
+datesText zone subscription =
+    let
+        date : Proto.Google.Protobuf.Timestamp -> String
+        date timestamp =
+            SharedTime.formatDate zone (Conversions.timestampToPosix timestamp)
+
+        latest : List (Maybe Proto.Google.Protobuf.Timestamp) -> Maybe Proto.Google.Protobuf.Timestamp
+        latest times =
+            times |> List.filterMap identity |> List.sortBy millis |> List.reverse |> List.head
+
+        ending : Maybe String
+        ending =
+            case Market.effectiveState subscription of
+                SUBSCRIPTIONACTIVE ->
+                    case subscription.renewsAt of
+                        Just renewsAt ->
+                            Just ("Renews " ++ date renewsAt)
+
+                        Nothing ->
+                            Just "Doesn't renew"
+
+                SUBSCRIPTIONACTIVEBUTCANCELED ->
+                    latest [ subscription.canceledAt, subscription.renewsAt ] |> Maybe.map (\t -> "Ends " ++ date t)
+
+                _ ->
+                    (case subscription.serviceTerminatedAt of
+                        Just terminated ->
+                            Just terminated
+
+                        Nothing ->
+                            latest [ subscription.canceledAt, subscription.renewsAt ]
+                    )
+                        |> Maybe.map (\t -> "Ended " ++ date t)
+    in
+    [ subscription.createdAt |> Maybe.map (\t -> "Started " ++ date t), ending ]
+        |> List.filterMap identity
+        |> String.join " · "
+
+
+{-| The detail pane's heading, in the row above the panes (with the pane toggle): what the thread is about. The
+who/state/dates are in the header at the top of the pane itself (`detailHeaderView`).
 -}
 heading : Thread -> Html msg
 heading thread =
     span [ class "fulfillment-detail-heading" ]
-        [ span [ class "fulfillment-thread-title" ] [ text (threadTitle thread) ]
-        , stateView thread
+        [ span [ class "fulfillment-thread-title" ] [ text (threadTitle thread) ] ]
+
+
+{-| The top of the detail pane, like a conversation's participants header: (Fulfillment tab) the buyer's avatar and
+username linking to their profile, then the state and fulfillment-status badges and the dates.
+-}
+detailHeaderView : ViewConfig msg -> Thread -> Html msg
+detailHeaderView config thread =
+    div [ class "fulfillment-detail-header" ]
+        [ if thread.admin then
+            Authors.link
+                config.basePath
+                config.accountsPanelModel.mainFrontendHost
+                thread.host
+                (buyerServer config thread)
+                (buyerAccount config thread)
+                thread.subscription.buyer
+
+          else
+            text ""
+        , metaView config.time.browserTimeZone.zone thread.subscription
         ]
 
 
-{-| The detail pane of the selected thread: its notes, and (admin side) the note composer.
+{-| The detail pane of the selected thread: its header, its notes, and (admin side) the note composer.
 -}
 detailView : ViewConfig msg -> Thread -> Html msg
 detailView config thread =
@@ -912,13 +1001,14 @@ detailView config thread =
             notesOf thread.subscription
     in
     div [ class "fulfillment-thread-body" ]
-        (p [ class "market-form-hint fulfillment-process-hint" ] [ text (processHint thread) ]
+        (detailHeaderView config thread
+            :: p [ class "market-form-hint fulfillment-process-hint" ] [ text (processHint thread) ]
             :: (if List.isEmpty notes then
-            [ p [ class "market-form-hint" ] [ text "No notes yet." ] ]
+                    [ p [ class "market-form-hint" ] [ text "No notes yet." ] ]
 
-          else
-            List.indexedMap (noteView config.time thread) notes
-         )
+                else
+                    List.indexedMap (noteView config.time thread) notes
+               )
             ++ (if thread.admin then
                     [ composerView config thread ]
 
@@ -945,28 +1035,6 @@ processHint thread =
 
         ( False, True ) ->
             "This subscription is fulfilled automatically when it's bought or renewed, so it's never in the Fulfillment count and its status can't be changed. Notes here are just a conversation with the buyer."
-
-
-{-| "Renews <date>"-style line for a plain (non-chat) subscription row.
--}
-timeLine : ViewConfig msg -> MarketSubscription -> Html msg
-timeLine config subscription =
-    case subscription.renewsAt of
-        Just renewsAt ->
-            span [ class "fulfillment-thread-state" ]
-                [ text
-                    ((if Market.effectiveState subscription == SUBSCRIPTIONACTIVE then
-                        "Renews "
-
-                      else
-                        "Service until "
-                     )
-                        ++ SharedTime.formatDate config.time.browserTimeZone.zone (Conversions.timestampToPosix renewsAt)
-                    )
-                ]
-
-        Nothing ->
-            text ""
 
 
 threadTitle : Thread -> String
@@ -996,25 +1064,41 @@ threadTitle thread =
             else
                 " · " ++ domain
            )
-        ++ (if thread.admin then
-                subscription.buyer |> Maybe.andThen .username |> Maybe.map (\name -> " · " ++ name) |> Maybe.withDefault ""
-
-            else
-                ""
-           )
 
 
 stateBadge : MarketSubscriptionState -> Html msg
 stateBadge state =
     case state of
         SUBSCRIPTIONACTIVE ->
-            text ""
+            span [ class "fulfillment-badge fulfillment-badge-active" ] [ text "Active" ]
 
         SUBSCRIPTIONACTIVEBUTCANCELED ->
-            span [ class "fulfillment-thread-state" ] [ text "Canceled · active until period ends" ]
+            span [ class "fulfillment-badge fulfillment-badge-active-canceled" ] [ text "Active, canceled" ]
 
         _ ->
-            span [ class "fulfillment-thread-state" ] [ text "Canceled" ]
+            span [ class "fulfillment-badge fulfillment-badge-canceled" ] [ text "Canceled" ]
+
+
+{-| The fulfillment status of a Rellm hosting subscription -- a badge of its own beside the state badge.
+-}
+fulfillmentBadge : FulfillmentStatus -> Html msg
+fulfillmentBadge status =
+    span
+        [ class
+            ("fulfillment-badge "
+                ++ (case status of
+                        FULFILLMENTSTATUSFULFILLED ->
+                            "fulfillment-badge-fulfilled"
+
+                        FULFILLMENTSTATUSINPROGRESS ->
+                            "fulfillment-badge-in-progress"
+
+                        _ ->
+                            "fulfillment-badge-awaiting"
+                   )
+            )
+        ]
+        [ text (statusLabel status) ]
 
 
 statusLabel : FulfillmentStatus -> String

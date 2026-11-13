@@ -12,8 +12,10 @@ import Protobuf.Types.Int64 as Int64
 import Proto.Google.Protobuf
 import Proto.Rellm exposing (FulfillmentNote, MarketSubscription, defaultAuthor, defaultFulfillmentNote, defaultMarketSubscription, defaultMediaStorageSubscriptionDetails, defaultRellmHostingSubscriptionDetails)
 import Proto.Rellm.MarketSubscription.Details as SubscriptionDetails
+import Proto.Rellm.MarketSubscriptionState exposing (MarketSubscriptionState(..))
 import Proto.Rellm.PurchaseType exposing (PurchaseType(..))
 import Test exposing (Test, describe, test)
+import Time
 
 
 at : Int -> Maybe Proto.Google.Protobuf.Timestamp
@@ -147,6 +149,34 @@ suite =
                 \_ ->
                     Fulfillment.threadKey "a.example" "1"
                         |> Expect.notEqual (Fulfillment.threadKey "b.example" "1")
+            ]
+        , describe "datesText"
+            [ test "an active subscription shows when it started and when it renews" <|
+                \_ ->
+                    Fulfillment.datesText Time.utc { defaultMarketSubscription | createdAt = at 1767614400, renewsAt = at 1799150400 }
+                        |> Expect.equal "Started 2026-01-05 · Renews 2027-01-05"
+            , test "an active subscription that never renews says so" <|
+                \_ ->
+                    Fulfillment.datesText Time.utc { defaultMarketSubscription | createdAt = at 1767614400 }
+                        |> Expect.equal "Started 2026-01-05 · Doesn't renew"
+            , test "a canceled subscription that's still paid up shows when service ends: the later of canceled and renewal" <|
+                \_ ->
+                    Fulfillment.datesText Time.utc
+                        { defaultMarketSubscription | createdAt = at 1767614400, canceledAt = at 1773144000, renewsAt = at 1780660800 }
+                        |> Expect.equal "Started 2026-01-05 · Ends 2026-06-05"
+            , test "a terminated subscription shows the date service ended" <|
+                \_ ->
+                    Fulfillment.datesText Time.utc
+                        { defaultMarketSubscription | createdAt = at 1767614400, canceledAt = at 1773144000, renewsAt = at 1780660800, serviceTerminatedAt = at 1780660800 }
+                        |> Expect.equal "Started 2026-01-05 · Ended 2026-06-05"
+            , test "a canceled subscription that never renewed ended when it was canceled" <|
+                \_ ->
+                    Fulfillment.datesText Time.utc { defaultMarketSubscription | createdAt = at 1767614400, canceledAt = at 1773144000 }
+                        |> Expect.equal "Started 2026-01-05 · Ended 2026-03-10"
+            , test "a subscription with no dates at all shows nothing" <|
+                \_ ->
+                    Fulfillment.datesText Time.utc { defaultMarketSubscription | state = SUBSCRIPTIONCANCELED }
+                        |> Expect.equal ""
             ]
         , describe "empty model"
             [ test "has no subscriptions, so the Subscriptions tab is hidden" <|

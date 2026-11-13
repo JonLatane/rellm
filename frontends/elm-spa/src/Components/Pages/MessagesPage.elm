@@ -2512,9 +2512,15 @@ view time basePath accountsPanelModel model =
 
             else
                 MessagesTab
+
+        -- `.has-tabs` is what tells messages.css the tab bar is on screen, so every offset that
+        -- stacks the page's chrome (sticky header row, drawer, bounded panes) can add its height.
+        hasTabs : Bool
+        hasTabs =
+            List.length availableTabs > 1
     in
-    div [ class "messages-page" ]
-        ((if List.length availableTabs > 1 then
+    div [ classes ("messages-page" :: (if hasTabs then [ "has-tabs" ] else [])) ]
+        ((if hasTabs then
             [ tabsView model availableTabs activeTab ]
 
           else
@@ -2579,7 +2585,7 @@ threadsTabView time basePath accountsPanelModel model tab =
                     |> Maybe.andThen (Fulfillment.threadByKey model.fulfillment)
                     |> Maybe.andThen
                         (\thread ->
-                            if thread.admin == isAdminTab && Fulfillment.isChat thread then
+                            if thread.admin == isAdminTab then
                                 Just thread
 
                             else
@@ -2652,8 +2658,11 @@ fulfillmentViewConfig time basePath accountsPanelModel model =
     }
 
 
-{-| The Messages / Subscriptions / Fulfillment tab bar. Each tab carries its own count (hidden at zero):
-unread messages, unread notes on the user's own subscriptions, and orders awaiting a host admin.
+{-| The Messages / Subscriptions / Fulfillment tab bar, styled exactly like the Server Information
+page's (`ServerInformationPage.tabBar`: the `.server-details-tab-bar`/`.server-details-tab` pills in
+`servers.css`), in both the real page and the embedded panel. Each tab carries its own count (hidden
+at zero): unread messages, unread notes on the user's own subscriptions, and orders awaiting a host
+admin.
 -}
 tabsView : Model -> List Tab -> Tab -> Html Msg
 tabsView model tabs activeTab =
@@ -2678,7 +2687,7 @@ tabsView model tabs activeTab =
             in
             button
                 [ Html.Attributes.type_ "button"
-                , classes [ "messages-tab", if tab == activeTab then "messages-tab-active" else "" ]
+                , classes ("server-details-tab" :: (if tab == activeTab then [ "selected" ] else []))
                 , onClick (TabClicked tab)
                 ]
                 [ text label
@@ -2689,7 +2698,7 @@ tabsView model tabs activeTab =
                     text ""
                 ]
     in
-    div [ class "messages-tabs" ] (List.map tabButton tabs)
+    div [ classes [ "server-details-tab-bar", "messages-tab-bar" ] ] (List.map tabButton tabs)
 
 
 {-| The header row -- hamburger (two-pane, narrow screens only), search

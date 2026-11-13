@@ -12,6 +12,18 @@
    this exact `calc()`. Relies on `.container` no longer clipping
    descendants that intentionally render wider than it (see main.css's own
    `overflow-x: hidden` note on `body`). */
+/* `--messages-tabs-h` is the height of the tab bar (`.messages-tab-bar`, below) -- 0 when there's
+   no bar (`.has-tabs` unset: someone with only Messages). Every offset below that stacks this page's
+   chrome under the navbar (the sticky header row, the narrow-screen drawer, the bounded thread
+   panes) adds it, so the bar and those stay in step by changing this one value. */
+.messages-page {
+  --messages-tabs-h: 0px;
+}
+
+.messages-page.has-tabs {
+  --messages-tabs-h: 48px;
+}
+
 .messages-page {
   margin-left: calc(min(0px, -49vw + 400px));
   margin-right: calc(min(0px, -49vw + 400px));
@@ -61,7 +73,7 @@
    this header and the two-pane below it on a narrow phone. */
 .messages-header-row {
   position: sticky;
-  top: calc(env(safe-area-inset-top) + 69px);
+  top: calc(env(safe-area-inset-top) + 69px + var(--messages-tabs-h));
   z-index: 2;
   flex-wrap: nowrap;
   min-height: 44px;
@@ -69,7 +81,7 @@
 }
 
 .messaging-panel .messages-header-row {
-  top: 0;
+  top: var(--messages-tabs-h);
   background: var(--panel-bg);
 }
 
@@ -556,7 +568,8 @@
    list itself is long, already stays visually fixed for free. */
 @media (min-width: 640px) {
   .messages-sidebar {
-    height: calc(100vh - (env(safe-area-inset-top) + 69px + 44px));
+    height: calc(100vh - (env(safe-area-inset-top) + 69px + 44px + var(--messages-tabs-h)));
+  height: calc(100dvh - (env(safe-area-inset-top) + 69px + 44px + var(--messages-tabs-h)));
     overflow-y: auto;
   }
 }
@@ -583,7 +596,8 @@
 .messages-thread {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - (env(safe-area-inset-top) + 69px + 44px));
+  height: calc(100vh - (env(safe-area-inset-top) + 69px + 44px + var(--messages-tabs-h)));
+  height: calc(100dvh - (env(safe-area-inset-top) + 69px + 44px + var(--messages-tabs-h)));
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 0.8rem;
@@ -773,7 +787,7 @@ body:has(> [style*="2147483647"]) .messages-reply-button {
     /* `.messages-header-row`'s own `top` (69px navbar) plus its own
        `min-height` (44px) -- see that rule's own doc; kept in sync with it
        by hand, there being no cross-rule `calc()` reference in plain CSS. */
-    top: calc(env(safe-area-inset-top) + 69px + 44px);
+    top: calc(env(safe-area-inset-top) + 69px + 44px + var(--messages-tabs-h));
     left: 0;
     right: 0;
     bottom: 0;
@@ -832,29 +846,32 @@ body:has(> [style*="2147483647"]) .messages-reply-button {
   color: #ffffff;
 }
 
-.messages-tabs {
-  display: flex;
-  gap: 4px;
-  margin-bottom: 12px;
-  border-bottom: 1px solid var(--muted);
+/* The tab bar is the Server Information pill bar (`.server-details-tab-bar`, servers.css) made a fixed
+   `--messages-tabs-h` tall and sticky, directly under the navbar (or at the top of the embedded panel's own
+   scroll container), so the sticky header row below it and the narrow-screen drawer's `position: fixed`
+   bounds can both bake that height in as a constant, same as they already do for the header row's own 44px.
+   Opaque so rows scrolling beneath it don't show through; no bottom margin (the height above is all of it). */
+.messages-tab-bar {
+  position: sticky;
+  top: calc(env(safe-area-inset-top) + 69px);
+  z-index: 3;
+  box-sizing: border-box;
+  height: var(--messages-tabs-h);
+  margin: 0;
+  padding: 0.4rem 0.5rem;
+  align-items: center;
+  background: var(--bg);
 }
 
-.messages-tab {
-  appearance: none;
-  background: none;
-  border: none;
-  border-bottom: 2px solid transparent;
-  padding: 8px 14px;
-  font: inherit;
-  color: inherit;
-  cursor: pointer;
-  opacity: 0.7;
+/* Centers the count badge on the label's line. */
+.messages-tab-bar .server-details-tab {
+  display: inline-flex;
+  align-items: center;
 }
 
-.messages-tab-active {
-  border-bottom-color: currentColor;
-  font-weight: 700;
-  opacity: 1;
+.messaging-panel .messages-tab-bar {
+  top: 0;
+  background: var(--panel-bg);
 }
 
 .fulfillment-thread-list {
@@ -875,19 +892,75 @@ body:has(> [style*="2147483647"]) .messages-reply-button {
 
 .fulfillment-thread-header {
   display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px 8px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
   color: inherit;
   text-decoration: none;
   cursor: pointer;
+}
+
+/* Title and unread count on one line; the buyer (Fulfillment tab) above it, the badges and dates below. */
+.fulfillment-thread-main,
+.fulfillment-thread-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+
+.fulfillment-thread-dates {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+/* Colored pills: the subscription's state (active / canceled but still paid up / canceled) and, for a Rellm hosting
+   order, its fulfillment status. White text on mid-dark fills reads in both light and dark themes. */
+.fulfillment-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1.5;
+  white-space: nowrap;
+  color: #ffffff;
+}
+
+.fulfillment-badge-active,
+.fulfillment-badge-fulfilled {
+  background: #2e7d32;
+}
+
+.fulfillment-badge-active-canceled,
+.fulfillment-badge-awaiting {
+  background: #b26a00;
+}
+
+.fulfillment-badge-canceled {
+  background: #616161;
+}
+
+.fulfillment-badge-in-progress {
+  background: #1565c0;
+}
+
+/* The top of an open chat: buyer (Fulfillment tab), badges and dates, set off from the notes like a conversation's
+   participants header. */
+.fulfillment-detail-header {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding-bottom: 0.6rem;
+  margin-bottom: 0.6rem;
+  border-bottom: 1px solid var(--border);
 }
 
 .fulfillment-thread-title {
   font-weight: 700;
 }
 
-.fulfillment-thread-state,
 .fulfillment-thread-preview,
 .fulfillment-note-meta {
   font-size: 0.8rem;
@@ -961,7 +1034,8 @@ body:has(> [style*="2147483647"]) .messages-reply-button {
 }
 
 .fulfillment-detail {
-  height: calc(100vh - (env(safe-area-inset-top) + 69px + 44px));
+  height: calc(100vh - (env(safe-area-inset-top) + 69px + 44px + var(--messages-tabs-h)));
+  height: calc(100dvh - (env(safe-area-inset-top) + 69px + 44px + var(--messages-tabs-h)));
   overflow-y: auto;
   box-sizing: border-box;
   border: 1px solid var(--border);
@@ -996,6 +1070,17 @@ body:has(> [style*="2147483647"]) .messages-reply-button {
 .fulfillment-detail {
   display: flex;
   flex-direction: column-reverse;
+}
+
+/* Phone widths: `.messages-two-pane` is `position: fixed` to exactly the visible area under the header row, and
+   `.messages-detail` fills it (`height: 100%`). The `100vh` heights above measure the *large* viewport (mobile Safari's
+   toolbar retracted), which is taller than that area, so the bottom of the chat -- the newest notes and the composer --
+   was cut off by the container's `overflow: hidden`. Filling the container instead is always exactly right. */
+@media (max-width: 639px) {
+  .fulfillment-detail,
+  .messages-thread {
+    height: 100%;
+  }
 }
 
 .fulfillment-thread-body {
