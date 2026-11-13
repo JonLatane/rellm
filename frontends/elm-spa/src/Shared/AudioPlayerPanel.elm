@@ -1034,7 +1034,6 @@ update msg model =
                         , host = ""
                         , video = Just video
                         , postUrl = video.postUrl
-                    , postUrl = video.postUrl
                         }
                 in
                 ( { model | queue = playNowQueue item [] model.queue, videoPrior = prior }, Cmd.none )
@@ -1132,7 +1131,6 @@ update msg model =
                         , host = ""
                         , video = Just video
                         , postUrl = video.postUrl
-                    , postUrl = video.postUrl
                         }
                 in
                 beginVideo item 0 False { model | queue = playNowQueue item [] model.queue, expanded = True }
