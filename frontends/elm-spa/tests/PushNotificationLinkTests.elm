@@ -36,6 +36,14 @@ suite =
             \_ ->
                 toInAppPath "a.example" "https://b.example/messages?message=M1"
                     |> Expect.equal (Just "/messages?message=M1@b.example")
+        , test "an admin's ?fulfillment_order= order id is host-qualified too" <|
+            \_ ->
+                toInAppPath "a.example" "https://b.example/messages?fulfillment_order=42"
+                    |> Expect.equal (Just "/messages?fulfillment_order=42@b.example")
+        , test "a fulfillment_order from the main host keeps its bare id" <|
+            \_ ->
+                toInAppPath "a.example" "https://a.example/messages?fulfillment_order=42"
+                    |> Expect.equal (Just "/messages?fulfillment_order=42")
         , test "a value that already names its host is left alone" <|
             \_ ->
                 toInAppPath "a.example" "https://b.example/messages?messaging_group=G1@c.example"
