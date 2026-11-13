@@ -357,6 +357,13 @@ suite =
                         [ \_ -> AudioPlayerPanel.inheritLinkData noted bare |> .postUrl |> Expect.equal (Just "/elm/post/p1")
                         , \_ -> AudioPlayerPanel.inheritLinkData noted { bare | mediaId = Just "v2" } |> .postUrl |> Expect.equal Nothing
                         , \_ ->
+                            -- Spent once a video has been begun: opening it again later doesn't bring the link back.
+                            noted
+                                |> play (AudioPlayerPanel.OpenViewerVideo bare Nothing 0 False False)
+                                |> (\m -> AudioPlayerPanel.inheritLinkData (play AudioPlayerPanel.Close m) bare)
+                                |> .postUrl
+                                |> Expect.equal Nothing
+                        , \_ ->
                             AudioPlayerPanel.init
                                 |> play (AudioPlayerPanel.OpenVideo bare Nothing 0 False)
                                 |> play (AudioPlayerPanel.NotePostLink "v1" "/elm/post/p1")

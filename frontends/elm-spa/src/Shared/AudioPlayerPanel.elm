@@ -977,6 +977,31 @@ keyDecoder =
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
+    let
+        ( updated, cmd ) =
+            updateHelp msg model
+    in
+    case msg of
+        -- A post link noted for an enlargement is for that one opening (and whatever is queued then): once a video has been begun
+        -- or the player closed it is spent, so opening the same video later from somewhere else (My Media) doesn't bring it back.
+        OpenVideo _ _ _ _ ->
+            ( { updated | postLinks = Dict.empty }, cmd )
+
+        OpenViewerVideo _ _ _ _ _ ->
+            ( { updated | postLinks = Dict.empty }, cmd )
+
+        LoadVideo _ _ ->
+            ( { updated | postLinks = Dict.empty }, cmd )
+
+        Close ->
+            ( { updated | postLinks = Dict.empty }, cmd )
+
+        _ ->
+            ( updated, cmd )
+
+
+updateHelp : Msg -> Model -> ( Model, Cmd Msg )
+updateHelp msg model =
     case msg of
         Open queue id host ->
             let
