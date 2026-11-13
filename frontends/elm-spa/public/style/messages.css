@@ -863,6 +863,12 @@ body:has(> [style*="2147483647"]) .messages-reply-button {
   background: var(--bg);
 }
 
+/* Centers the count badge on the label's line. */
+.messages-tab-bar .server-details-tab {
+  display: inline-flex;
+  align-items: center;
+}
+
 .messaging-panel .messages-tab-bar {
   top: 0;
   background: var(--panel-bg);

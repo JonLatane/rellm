@@ -356,3 +356,10 @@
   right: auto;
   left: -4px;
 }
+
+/* A toggle with a badge in a left corner (`UI.cornerBadges`) sticks out 4px to its left -- keep that
+   clear of whatever sits beside the button. */
+.nav-menu-toggle:has(> .corner-badge-bottom-left),
+.nav-menu-toggle:has(> .corner-badge-top-left) {
+  margin-left: 8px;
+}
