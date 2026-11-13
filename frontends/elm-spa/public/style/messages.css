@@ -869,6 +869,13 @@ body:has(> [style*="2147483647"]) .messages-reply-button {
   align-items: center;
 }
 
+/* The embedded panel's bar is the Starred panel's tab strip (`.starred-panel-tabs`); `.messages-tab-bar` only
+   adds the fixed, sticky box that the offsets below account for. */
+.messaging-panel .starred-panel-tabs.messages-tab-bar {
+  flex: 0 0 auto;
+  gap: 0.25rem;
+}
+
 .messaging-panel .messages-tab-bar {
   top: 0;
   background: var(--panel-bg);
