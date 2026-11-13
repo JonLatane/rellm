@@ -2658,9 +2658,10 @@ fulfillmentViewConfig time basePath accountsPanelModel model =
     }
 
 
-{-| The Messages / Subscriptions / Fulfillment tab bar, styled exactly like the Server Information
+{-| The Messages / Subscriptions / Fulfillment tab bar. The real page's is styled like the Server Information
 page's (`ServerInformationPage.tabBar`: the `.server-details-tab-bar`/`.server-details-tab` pills in
-`servers.css`), in both the real page and the embedded panel. Each tab carries its own count (hidden
+`servers.css`); the embedded panel's like the Starred panel's Browser/Server tabs (`.starred-panel-tabs`/
+`.starred-panel-tab`, `Shared.StarredPanel`). Each tab carries its own count (hidden
 at zero): unread messages, unread notes on the user's own subscriptions, and orders awaiting a host
 admin.
 -}
@@ -2687,7 +2688,11 @@ tabsView model tabs activeTab =
             in
             button
                 [ Html.Attributes.type_ "button"
-                , classes ("server-details-tab" :: (if tab == activeTab then [ "selected" ] else []))
+                , if model.embeddedPanel then
+                    classes ("starred-panel-tab" :: (if tab == activeTab then [ "active" ] else []))
+
+                  else
+                    classes ("server-details-tab" :: (if tab == activeTab then [ "selected" ] else []))
                 , onClick (TabClicked tab)
                 ]
                 [ text label
@@ -2698,7 +2703,16 @@ tabsView model tabs activeTab =
                     text ""
                 ]
     in
-    div [ classes [ "server-details-tab-bar", "messages-tab-bar" ] ] (List.map tabButton tabs)
+    div
+        [ classes
+            (if model.embeddedPanel then
+                [ "starred-panel-tabs", "messages-tab-bar" ]
+
+             else
+                [ "server-details-tab-bar", "messages-tab-bar" ]
+            )
+        ]
+        (List.map tabButton tabs)
 
 
 {-| The header row -- hamburger (two-pane, narrow screens only), search

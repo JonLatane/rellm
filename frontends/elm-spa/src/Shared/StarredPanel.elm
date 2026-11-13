@@ -1906,6 +1906,13 @@ postItemKey item =
             Nothing
 
 
+{-| How many posts the Server tab lists: every account section's.
+-}
+serverTabCount : Model -> Int
+serverTabCount model =
+    serverGroups model |> List.map (Tuple.second >> List.length) |> List.sum
+
+
 {-| Every connected account's loaded, non-empty server-side stars, in host order.
 -}
 serverGroups : Model -> List ( String, List Post )
@@ -2281,8 +2288,8 @@ view time basePath browserName accountsPanelModel currentPostKey currentOccasion
             (text "Starred"
                 :: (if hasBrowser && hasServer then
                         [ div [ class "starred-panel-tabs" ]
-                            [ starredTabButton tab BrowserTab browserName
-                            , starredTabButton tab ServerTab "Server"
+                            [ starredTabButton tab BrowserTab browserName (browserStarCount model)
+                            , starredTabButton tab ServerTab "Server" (serverTabCount model)
                             ]
                         ]
 
@@ -2341,8 +2348,11 @@ view time basePath browserName accountsPanelModel currentPostKey currentOccasion
         )
 
 
-starredTabButton : StarredTab -> StarredTab -> String -> Html Msg
-starredTabButton activeTab tab label =
+{-| A tab's label and how many posts it lists -- the Server tab's count is every post under its account
+sections (including one also starred in this browser, which `serverStarCount` leaves out of the nav button).
+-}
+starredTabButton : StarredTab -> StarredTab -> String -> Int -> Html Msg
+starredTabButton activeTab tab label count =
     button
         [ classes
             ("starred-panel-tab"
@@ -2355,7 +2365,7 @@ starredTabButton activeTab tab label =
             )
         , onClick (SetStarredTab tab)
         ]
-        [ text label ]
+        [ text label, span [ class "tab-count-badge" ] [ text (String.fromInt count) ] ]
 
 
 {-| The tab whose row styling `item` renders with: an item still collapsing out during a `TabTransition`

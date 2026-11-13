@@ -259,6 +259,24 @@
   font-weight: 700;
 }
 
+/* The post count in a tab (Starred panel) -- a quiet pill, not the red "needs attention" one. */
+.tab-count-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: var(--chip-bg);
+  border: 1px solid var(--border);
+}
+
+.starred-panel-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 /* Server tab: an account's heading chip (a row of the one unified FLIP list, see
    `Shared.StarredPanel.serverChipView`) -- full width, chevron pushed to the far right; clicking it
    collapses/expands that account's posts. The chevron itself is `profiles.css`'s
