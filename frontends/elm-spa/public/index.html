@@ -565,6 +565,11 @@
       app.ports.audioHandoffRequested.send(event.detail);
     });
 
+    // A post card's video being enlarged says which post it is on (see `public/rellm-video.js`), for the queue's "Opened from post".
+    window.addEventListener('rellm-post-link', function (event) {
+      app.ports.postLinkNoted.send(event.detail);
+    });
+
     var currentThemePreference = storedThemePreference;
 
     app.ports.setTheme.subscribe(function (theme) {

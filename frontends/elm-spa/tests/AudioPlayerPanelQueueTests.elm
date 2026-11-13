@@ -19,7 +19,7 @@ track id =
 
 clip : String -> VideoItem
 clip src =
-    { src = src, poster = Nothing, aspectRatio = 16 / 9, returnUrl = "https://rellm.org/post/p1", mediaId = Nothing, host = "", downloads = [] }
+    { src = src, poster = Nothing, aspectRatio = 16 / 9, returnUrl = "https://rellm.org/post/p1", mediaId = Nothing, host = "", downloads = [], postUrl = Nothing }
 
 
 {-| What's queued, in order, as media ids (a video's id is its `src`).
@@ -311,7 +311,7 @@ suite =
                     let
                         ours : VideoItem
                         ours =
-                            { src = "https://other.example/media/v1?authorization=x", poster = Nothing, aspectRatio = 1, returnUrl = "", mediaId = Just "v1", host = "other.example", downloads = [ "original" ] }
+                            { src = "https://other.example/media/v1?authorization=x", poster = Nothing, aspectRatio = 1, returnUrl = "", mediaId = Just "v1", host = "other.example", downloads = [ "original" ], postUrl = Nothing }
                     in
                     Expect.all
                         [ \_ -> play (AudioPlayerPanel.OpenVideo ours Nothing 0 True) AudioPlayerPanel.init |> AudioPlayerPanel.linkFragment "rellm.org" |> Expect.equal (Just "video-v1@other.example")
@@ -325,7 +325,7 @@ suite =
                     let
                         ours : VideoItem
                         ours =
-                            { src = "https://other.example/media/v1?authorization=x", poster = Nothing, aspectRatio = 1, returnUrl = "", mediaId = Just "v1", host = "other.example", downloads = [ "small", "original" ] }
+                            { src = "https://other.example/media/v1?authorization=x", poster = Nothing, aspectRatio = 1, returnUrl = "", mediaId = Just "v1", host = "other.example", downloads = [ "small", "original" ], postUrl = Nothing }
 
                         playing : AudioPlayerPanel.Model
                         playing =
@@ -333,13 +333,43 @@ suite =
 
                         bare : VideoItem
                         bare =
-                            { ours | host = "", downloads = [] }
+                            { ours | host = "", downloads = [], postUrl = Nothing }
                     in
                     Expect.all
                         [ \_ -> AudioPlayerPanel.inheritLinkData playing bare |> Expect.equal ours
                         , \_ -> AudioPlayerPanel.inheritLinkData playing { bare | src = "https://elsewhere/v2" } |> Expect.equal { bare | src = "https://elsewhere/v2" }
                         , \_ -> AudioPlayerPanel.inheritLinkData AudioPlayerPanel.init bare |> Expect.equal bare
                         , \_ -> AudioPlayerPanel.inheritLinkData playing { ours | host = "mine.example" } |> Expect.equal { ours | host = "mine.example" }
+                        ]
+                        ()
+            , test "a post link noted when a card's video was enlarged goes to the viewer's entry for it, and to one already queued" <|
+                \_ ->
+                    let
+                        bare : VideoItem
+                        bare =
+                            { src = "https://x/v1", poster = Nothing, aspectRatio = 1, returnUrl = "", mediaId = Just "v1", host = "", downloads = [], postUrl = Nothing }
+
+                        noted : AudioPlayerPanel.Model
+                        noted =
+                            AudioPlayerPanel.init |> play (AudioPlayerPanel.NotePostLink "v1" "/elm/post/p1")
+                    in
+                    Expect.all
+                        [ \_ -> AudioPlayerPanel.inheritLinkData noted bare |> .postUrl |> Expect.equal (Just "/elm/post/p1")
+                        , \_ -> AudioPlayerPanel.inheritLinkData noted { bare | mediaId = Just "v2" } |> .postUrl |> Expect.equal Nothing
+                        , \_ ->
+                            -- Spent once a video has been begun: opening it again later doesn't bring the link back.
+                            noted
+                                |> play (AudioPlayerPanel.OpenViewerVideo bare Nothing 0 False False)
+                                |> (\m -> AudioPlayerPanel.inheritLinkData (play AudioPlayerPanel.Close m) bare)
+                                |> .postUrl
+                                |> Expect.equal Nothing
+                        , \_ ->
+                            AudioPlayerPanel.init
+                                |> play (AudioPlayerPanel.OpenVideo bare Nothing 0 False)
+                                |> play (AudioPlayerPanel.NotePostLink "v1" "/elm/post/p1")
+                                |> .queue
+                                |> List.map .postUrl
+                                |> Expect.equal [ Just "/elm/post/p1" ]
                         ]
                         ()
             , test "a link still waiting for its server is dropped when the user starts something else or closes the player" <|
@@ -400,10 +430,15 @@ suite =
                         loaded
             ]
         , describe "handoffDecoder (a post card's audio moving to the bar)"
-            [ test "reads the track, its server and where it had got to" <|
+            [ test "reads the post it came from, if any" <|
+                \_ ->
+                    Decode.decodeString AudioPlayerPanel.handoffDecoder """{"id":"t1","host":"rellm.org","positionMs":0,"playing":true,"postUrl":"/elm/post/p1"}"""
+                        |> Result.map .postUrl
+                        |> Expect.equal (Ok (Just "/elm/post/p1"))
+            , test "reads the track, its server and where it had got to" <|
                 \_ ->
                     Decode.decodeString AudioPlayerPanel.handoffDecoder """{"id":"t1","host":"rellm.org","positionMs":61500,"playing":true}"""
-                        |> Expect.equal (Ok { id = "t1", host = "rellm.org", positionMs = 61500, playing = True })
+                        |> Expect.equal (Ok { id = "t1", host = "rellm.org", positionMs = 61500, playing = True, postUrl = Nothing })
             , test "a blank id or host is nothing to open, and a negative position starts at the top" <|
                 \_ ->
                     [ """{"id":" ","host":"rellm.org","positionMs":0,"playing":true}"""

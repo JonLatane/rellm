@@ -23,6 +23,7 @@ port module Ports exposing
     , mastodonAccountsAndServersUpdated
     , measureElements
     , audioHandoffRequested
+    , postLinkNoted
     , mediaDurationReported
     , miniVideoRequested
     , miniVideoState
@@ -289,6 +290,12 @@ the audio player" button pressed (`public/rellm-media.js` raises a `rellm-audio-
 forwards its `detail` here). Decoded by `Shared.AudioPlayerPanel.handoffDecoder`.
 -}
 port audioHandoffRequested : (Encode.Value -> msg) -> Sub msg
+
+
+{-| A post card's video was enlarged: which media it is and the post it is on (`public/rellm-video.js` raises
+`rellm-post-link`). Decoded by `Shared.AudioPlayerPanel`'s subscription, which remembers it for "Opened from post".
+-}
+port postLinkNoted : (Encode.Value -> msg) -> Sub msg
 
 
 {-| What the miniplayer's video reports as it plays (`public/rellm-video.js` raises `rellm-miniplayer-state`, `public/index.html`
