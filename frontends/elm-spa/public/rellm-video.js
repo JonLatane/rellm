@@ -800,6 +800,12 @@
     _enlarge() {
       var v = this._video;
       if (!v) { return; }
+      // Tell the app which post this thumbnail is on, so the viewer's (and then the queue's) entry for the video can link back to
+      // it (`Shared.AudioPlayerPanel`'s `NotePostLink`). Not from the miniplayer's own player: that isn't on a post.
+      var postUrl = this.hasAttribute("data-miniplayer-panel") ? null : media.postLinkFor(this, window.location.href);
+      if (postUrl && this._mediaKey()) {
+        window.dispatchEvent(new CustomEvent("rellm-post-link", { detail: { mediaId: this._mediaKey(), postUrl: postUrl } }));
+      }
       media.setEnlarge({
         mediaId: this._mediaKey(),
         time: v.currentTime || 0,

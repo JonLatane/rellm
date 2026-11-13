@@ -219,6 +219,9 @@ type alias Model =
     , queueOpen : Bool
     , moveAnimations : Dict String (UI.Flip.MoveState Msg)
     , drag : UI.Drag.State
+
+    -- Post links noted when a post card's video was enlarged (`NotePostLink`), by media id.
+    , postLinks : Dict String String
     }
 
 
@@ -283,12 +286,14 @@ type Msg
     | EditClicked
       -- The viewer saved an edit to a track: refresh this panel's copy of it (see `Shared.update`).
     | MediaUpdated MediaReference
+      -- A post card's video (media id) is on this post (link): remembered for when its queue entry is made.
+    | NotePostLink String String
     | NoOp
 
 
 init : Model
 init =
-    { queue = [], currentId = Nothing, targetHost = "", expanded = False, playing = False, positionMs = 0, durationMs = 0, quality = High, activeSlot = SlotA, slotA = Nothing, slotB = Nothing, autoStart = False, selectionGeneration = 0, videoStartAt = 0, videoResume = True, videoGeneration = 0, videoPrior = Nothing, pendingSeekMs = Nothing, pendingUpgrade = Nothing, activeLoaded = False, pendingTrackLink = Nothing, pendingVideoLink = Nothing, origin = "", sharePopoverOpen = False, linkCopied = False, copyGeneration = 0, savedFragment = Nothing, queueOpen = False, moveAnimations = Dict.empty, drag = UI.Drag.init }
+    { queue = [], currentId = Nothing, targetHost = "", expanded = False, playing = False, positionMs = 0, durationMs = 0, quality = High, activeSlot = SlotA, slotA = Nothing, slotB = Nothing, autoStart = False, selectionGeneration = 0, videoStartAt = 0, videoResume = True, videoGeneration = 0, videoPrior = Nothing, pendingSeekMs = Nothing, pendingUpgrade = Nothing, activeLoaded = False, pendingTrackLink = Nothing, pendingVideoLink = Nothing, origin = "", sharePopoverOpen = False, linkCopied = False, copyGeneration = 0, savedFragment = Nothing, queueOpen = False, moveAnimations = Dict.empty, drag = UI.Drag.init, postLinks = Dict.empty }
 
 
 {-| Whether the panel is actually shown expanded: the user's choice (`Model.expanded`), unless the fullscreen
@@ -628,12 +633,24 @@ inheritLinkData model video =
     case currentVideo model of
         Just current ->
             if current.video.src == video.src && video.host == "" then
-                { video | host = current.video.host, downloads = current.video.downloads, postUrl = current.video.postUrl }
+                withNotedPostUrl model { video | host = current.video.host, downloads = current.video.downloads, postUrl = current.video.postUrl }
 
             else
-                video
+                withNotedPostUrl model video
 
         Nothing ->
+            withNotedPostUrl model video
+
+
+{-| A video with no post link of its own gets the one noted when its card was enlarged (`NotePostLink`), if any.
+-}
+withNotedPostUrl : Model -> VideoItem -> VideoItem
+withNotedPostUrl model video =
+    case ( video.postUrl, video.mediaId |> Maybe.andThen (\id -> Dict.get id model.postLinks) ) of
+        ( Nothing, Just url ) ->
+            { video | postUrl = Just url }
+
+        _ ->
             video
 
 
@@ -908,6 +925,15 @@ subscriptions model =
 
           else
             Sub.none
+        , Ports.postLinkNoted
+            (\value ->
+                case Decode.decodeValue (Decode.map2 NotePostLink (Decode.field "mediaId" Decode.string) (Decode.field "postUrl" Decode.string)) value of
+                    Ok msg ->
+                        msg
+
+                    Err _ ->
+                        NoOp
+            )
         , if model.queueOpen then
             Sub.batch
                 [ UI.Flip.moveSubscription AnimateMove (Dict.values model.moveAnimations)
@@ -1134,6 +1160,28 @@ update msg model =
                         }
                 in
                 beginVideo item 0 False { model | queue = playNowQueue item [] model.queue, expanded = True }
+
+        NotePostLink mediaId postUrl ->
+            ( { model
+                | postLinks = Dict.insert mediaId postUrl model.postLinks
+                , queue =
+                    model.queue
+                        |> List.map
+                            (\item ->
+                                case item.video of
+                                    Just video ->
+                                        if video.mediaId == Just mediaId && item.postUrl == Nothing then
+                                            { item | postUrl = Just postUrl, video = Just { video | postUrl = Just postUrl } }
+
+                                        else
+                                            item
+
+                                    Nothing ->
+                                        item
+                            )
+              }
+            , Cmd.none
+            )
 
         AttachPostUrl id host postUrl ->
             ( { model

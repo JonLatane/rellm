@@ -342,6 +342,29 @@ suite =
                         , \_ -> AudioPlayerPanel.inheritLinkData playing { ours | host = "mine.example" } |> Expect.equal { ours | host = "mine.example" }
                         ]
                         ()
+            , test "a post link noted when a card's video was enlarged goes to the viewer's entry for it, and to one already queued" <|
+                \_ ->
+                    let
+                        bare : VideoItem
+                        bare =
+                            { src = "https://x/v1", poster = Nothing, aspectRatio = 1, returnUrl = "", mediaId = Just "v1", host = "", downloads = [], postUrl = Nothing }
+
+                        noted : AudioPlayerPanel.Model
+                        noted =
+                            AudioPlayerPanel.init |> play (AudioPlayerPanel.NotePostLink "v1" "/elm/post/p1")
+                    in
+                    Expect.all
+                        [ \_ -> AudioPlayerPanel.inheritLinkData noted bare |> .postUrl |> Expect.equal (Just "/elm/post/p1")
+                        , \_ -> AudioPlayerPanel.inheritLinkData noted { bare | mediaId = Just "v2" } |> .postUrl |> Expect.equal Nothing
+                        , \_ ->
+                            AudioPlayerPanel.init
+                                |> play (AudioPlayerPanel.OpenVideo bare Nothing 0 False)
+                                |> play (AudioPlayerPanel.NotePostLink "v1" "/elm/post/p1")
+                                |> .queue
+                                |> List.map .postUrl
+                                |> Expect.equal [ Just "/elm/post/p1" ]
+                        ]
+                        ()
             , test "a link still waiting for its server is dropped when the user starts something else or closes the player" <|
                 \_ ->
                     let
