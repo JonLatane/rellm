@@ -22,7 +22,7 @@ import Url
 it -- see `Messages.parseGroupRouteId`). Returns the in-app path + query + fragment (no origin, no
 base path), or `Nothing` if `rawUrl` isn't an absolute http(s) URL.
 
-Only the `messaging_group`/`message` query values are rewritten, and only when the notification's
+Only the `messaging_group`/`message`/`fulfillment_order` query values are rewritten, and only when the notification's
 own host differs from `mainFrontendHost` and the value doesn't already carry an `@host` suffix.
 Everything else (path, other params, fragment) passes through untouched.
 -}
@@ -45,7 +45,7 @@ toInAppPath mainFrontendHost rawUrl =
                     rewriteParam pair =
                         case String.split "=" pair of
                             [ key, value ] ->
-                                if (key == "messaging_group" || key == "message") && not (String.contains "@" value) then
+                                if (key == "messaging_group" || key == "message" || key == "fulfillment_order") && not (String.contains "@" value) then
                                     key ++ "=" ++ Messages.groupRouteId mainFrontendHost notificationHost value
 
                                 else

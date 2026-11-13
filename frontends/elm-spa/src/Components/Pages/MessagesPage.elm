@@ -4,10 +4,11 @@ module Components.Pages.MessagesPage exposing
     , PageContext
     , empty
     , init
+    , selectSubscriptionThread
+    , unreadCounts
     , pushSubscription
     , subscriptions
     , timerAndAnimationSubscriptions
-    , totalUnreadCount
     , update
     , view
     )
@@ -35,6 +36,7 @@ import Animation
 import Browser.Dom as Dom
 import Browser.Navigation
 import Components.Authors as Authors
+import Components.FulfillmentThreads as Fulfillment
 import Components.Messages as Messages
 import Dict exposing (Dict)
 import Grpc
@@ -168,7 +170,23 @@ type alias Model =
     -- during the debounce window). Per-host, not one global counter, so a burst of pushes for
     -- host A doesn't delay an already-in-flight refresh for host B.
     , pushRefreshGenerations : Dict String Int
+
+    -- The three tabs (`tabsView`): Messages (everything this page always was), Subscriptions (the
+    -- user's own `MarketSubscription`s, of any type, with their fulfillment chats) and Fulfillment
+    -- (server admins: every subscription of every type -- see `Components.FulfillmentThreads`).
+    -- Only the tabs that have something show; with just Messages there's no tab bar at all.
+    , tab : Tab
+    , fulfillment : Fulfillment.Model
+
+    -- The open Fulfillment thread's `Fulfillment.threadKey`, if any.
+    , selectedThread : Maybe String
     }
+
+
+type Tab
+    = MessagesTab
+    | SubscriptionsTab
+    | FulfillmentTab
 
 
 {-| Where a group/message row navigates/pushes state to (`Just` -- the real
@@ -322,9 +340,10 @@ type Msg
       -- messages in it. Re-derives the still-unread set from `expandedGroups`
       -- fresh (not whatever was unread back when the timer was scheduled --
       -- `MarkUnreadClicked` or a poll could've changed it since), and is a
-      -- no-op unless `Model.selectedGroup` is still this same thread: leaving
-      -- before the delay elapses means it never gets marked read at all,
-      -- which is the whole point of the delay.
+      -- no-op unless `Model.selectedGroup` is still this same thread *and* the
+      -- Messages tab is showing: leaving before the delay elapses means it never
+      -- gets marked read at all, which is the whole point of the delay
+      -- (`TabClicked` back to Messages starts the delay over).
     | DelayedMarkGroupRead String
     | SearchTextChanged String
     | SearchDebounceElapsed Int
@@ -480,6 +499,19 @@ type Msg
       -- burst of several pushes for the same host in quick succession triggers one refetch, not
       -- one per push.
     | PushNotificationReceived (Maybe String)
+      -- The Messaging/Fulfillment tab bar (only present once there are fulfillment notes).
+    | TabClicked Tab
+    | FulfillmentMsg Fulfillment.Msg
+      -- A thread row clicked on the real page (toggles it open; opening a subscription chat marks
+      -- its notes read, opening an awaiting order moves it to In Progress -- see
+      -- `Fulfillment.openCmd`/`openAdmin`). The embedded panel's rows are plain links to
+      -- `/messages?subscription_messages=` instead.
+    | ThreadSelected String
+      -- A thread link clicked in the embedded panel (the click still navigates, to
+      -- `/messages?subscription_messages=`): `Pages.Messages` turns it into `SyncSelectedThread` when the
+      -- real page is already open, since a same-path URL change never reaches the page itself.
+    | EmbeddedThreadLinkClicked String
+    | SyncSelectedThread String
     | PushRefreshDebounceElapsed String Int
 
 
@@ -506,6 +538,9 @@ empty =
     , mobileSidebarOpen = False
     , detailThreadAnimations = Dict.empty
     , pushRefreshGenerations = Dict.empty
+    , tab = MessagesTab
+    , fulfillment = Fulfillment.empty
+    , selectedThread = Nothing
     }
 
 
@@ -539,8 +574,55 @@ init accountsPanelModel pageContext selectedGroup pendingScrollMessageIdFragment
 
                 Nothing ->
                     ( fetchedModel, Cmd.none )
+
+        ( fulfillmentModel, fulfillmentCmd ) =
+            fetchFulfillment accountsPanelModel expandedModel
     in
-    ( expandedModel, Cmd.batch [ fetchCmd, expandCmd ] )
+    ( fulfillmentModel, Cmd.batch [ fetchCmd, expandCmd, fulfillmentCmd ] )
+
+
+{-| Pre-selects a Fulfillment thread (`Pages.Messages`' `?subscription_messages=` deep link) -- its
+notes are marked read as soon as they load (`Fulfillment.update`).
+-}
+selectSubscriptionThread : String -> Model -> Model
+selectSubscriptionThread key model =
+    { model
+        | tab =
+            if String.startsWith "admin/" key then
+                FulfillmentTab
+
+            else
+                SubscriptionsTab
+        , selectedThread = Just key
+    }
+
+
+{-| Runs a thread's opening steps (`Fulfillment.openCmd` for the user's own subscription threads,
+`Fulfillment.openAdmin` for admin orders) if `maybeKey` names a thread that is already loaded. If it isn't
+loaded yet, `Fulfillment.update` runs them when its feed arrives.
+-}
+openSelectedThread : AccountsPanel.Model -> Fulfillment.Model -> Maybe String -> ( Fulfillment.Model, Cmd Msg )
+openSelectedThread accountsPanelModel fulfillment maybeKey =
+    case maybeKey |> Maybe.andThen (Fulfillment.threadByKey fulfillment) of
+        Just thread ->
+            if thread.admin then
+                Fulfillment.openAdmin accountsPanelModel fulfillment thread
+                    |> Tuple.mapSecond (Cmd.map FulfillmentMsg)
+
+            else
+                ( fulfillment, Cmd.map FulfillmentMsg (Fulfillment.openCmd accountsPanelModel thread) )
+
+        Nothing ->
+            ( fulfillment, Cmd.none )
+
+
+fetchFulfillment : AccountsPanel.Model -> Model -> ( Model, Cmd Msg )
+fetchFulfillment accountsPanelModel model =
+    let
+        ( fulfillment, cmd ) =
+            Fulfillment.fetchAll accountsPanelModel model.fulfillment
+    in
+    ( { model | fulfillment = fulfillment }, Cmd.map FulfillmentMsg cmd )
 
 
 {-| Everything a _mounted-but-not-necessarily-visible_ instance still needs live: right now, just
@@ -610,15 +692,21 @@ update accountsPanelModel msg model =
 
                 ( retriedModel, retryCmd ) =
                     retryPendingExpansions accountsPanelModel refreshedModel
+
+                ( fulfillmentModel, fulfillmentCmd ) =
+                    fetchFulfillment accountsPanelModel retriedModel
             in
-            ( retriedModel, Cmd.batch [ cmd, refreshCmd, retryCmd ], Nothing )
+            ( fulfillmentModel, Cmd.batch [ cmd, refreshCmd, retryCmd, fulfillmentCmd ], Nothing )
 
         ForceRefresh ->
             let
                 ( refetchedModel, cmd ) =
                     refetchServers accountsPanelModel model (eligibleEntries accountsPanelModel)
+
+                ( fulfillmentModel, fulfillmentCmd ) =
+                    fetchFulfillment accountsPanelModel refetchedModel
             in
-            ( refetchedModel, cmd, Nothing )
+            ( fulfillmentModel, Cmd.batch [ cmd, fulfillmentCmd ], Nothing )
 
         Animate animMsg ->
             let
@@ -779,9 +867,11 @@ update accountsPanelModel msg model =
 
         DelayedMarkGroupRead key ->
             let
+                -- Open *and visible*: `selectedGroup` stays set while another tab is showing, but nothing
+                -- of the thread is on screen then, so it must not be marked read behind the user's back.
                 stillOpen : Bool
                 stillOpen =
-                    (model.selectedGroup |> Maybe.map Messages.conversationKey) == Just key
+                    model.tab == MessagesTab && (model.selectedGroup |> Maybe.map Messages.conversationKey) == Just key
 
                 unreadIds : Set String
                 unreadIds =
@@ -1121,6 +1211,153 @@ update accountsPanelModel msg model =
             , Nothing
             )
 
+        TabClicked tab ->
+            -- Returning to a tab with its thread still open runs the opening steps now (they didn't run
+            -- while it was hidden): marks a subscription thread's notes read, moves an awaiting order to
+            -- In Progress.
+            let
+                ( openedFulfillment, openCmd ) =
+                    case ( tab, model.selectedThread ) of
+                        ( SubscriptionsTab, Just key ) ->
+                            if String.startsWith "admin/" key then
+                                ( model.fulfillment, Cmd.none )
+
+                            else
+                                openSelectedThread accountsPanelModel model.fulfillment (Just key)
+
+                        ( FulfillmentTab, Just key ) ->
+                            if String.startsWith "admin/" key then
+                                openSelectedThread accountsPanelModel model.fulfillment (Just key)
+
+                            else
+                                ( model.fulfillment, Cmd.none )
+
+                        _ ->
+                            ( model.fulfillment, Cmd.none )
+
+                -- Back on Messages with a conversation still open: its read delay didn't run (or was
+                -- discarded, see `DelayedMarkGroupRead`) while the tab was hidden, so start it again.
+                -- Harmless if it's already read -- the delayed handler finds nothing unread and does nothing.
+                restartReadDelayCmd : Cmd Msg
+                restartReadDelayCmd =
+                    case ( tab, model.selectedGroup ) of
+                        ( MessagesTab, Just conversation ) ->
+                            if model.embeddedPanel then
+                                Cmd.none
+
+                            else
+                                Process.sleep markReadDelayMillis
+                                    |> Task.perform (\_ -> DelayedMarkGroupRead (Messages.conversationKey conversation))
+
+                        _ ->
+                            Cmd.none
+            in
+            ( { model | tab = tab, fulfillment = openedFulfillment }, Cmd.batch [ openCmd, restartReadDelayCmd ], Nothing )
+
+        EmbeddedThreadLinkClicked _ ->
+            ( model, Cmd.none, Nothing )
+
+        SyncSelectedThread key ->
+            let
+                -- The tab follows the key (an admin order's is `admin/`-prefixed), so it's right even
+                -- before the feeds have loaded; whichever feed loads next then opens the thread.
+                isAdminKey : Bool
+                isAdminKey =
+                    String.startsWith "admin/" key
+
+                ( openedFulfillment, openCmd ) =
+                    openSelectedThread accountsPanelModel model.fulfillment (Just key)
+            in
+            ( { model
+                | selectedThread = Just key
+                , fulfillment = openedFulfillment
+                , tab =
+                    if isAdminKey then
+                        FulfillmentTab
+
+                    else
+                        SubscriptionsTab
+              }
+            , openCmd
+            , Nothing
+            )
+
+        FulfillmentMsg subMsg ->
+            let
+                -- Only an *open, visible* subscription thread counts as selected: while another tab is
+                -- showing, new admin notes must stay unread rather than be marked read unseen.
+                visibleSelection : Maybe String
+                visibleSelection =
+                    model.selectedThread
+                        |> Maybe.andThen
+                            (\key ->
+                                if String.startsWith "admin/" key && model.tab == FulfillmentTab then
+                                    Just key
+
+                                else if not (String.startsWith "admin/" key) && model.tab == SubscriptionsTab then
+                                    Just key
+
+                                else
+                                    Nothing
+                            )
+
+                ( fulfillment, cmd, maybeAccountsPanelMsg ) =
+                    Fulfillment.update accountsPanelModel visibleSelection subMsg model.fulfillment
+            in
+            ( { model | fulfillment = fulfillment }, Cmd.map FulfillmentMsg cmd, maybeAccountsPanelMsg )
+
+        ThreadSelected key ->
+            let
+                -- Always selects, never toggles: the list stays beside the detail now (like the Messages
+                -- tab's conversations), so clicking the open thread's row again has nothing to collapse.
+                newSelection : Maybe String
+                newSelection =
+                    Just key
+
+                openedThread : Maybe Fulfillment.Thread
+                openedThread =
+                    newSelection |> Maybe.andThen (Fulfillment.threadByKey model.fulfillment)
+
+                ( openedFulfillment, openCmd ) =
+                    case openedThread of
+                        Just thread ->
+                            if thread.admin then
+                                Fulfillment.openAdmin accountsPanelModel model.fulfillment thread
+                                    |> Tuple.mapSecond (Cmd.map FulfillmentMsg)
+
+                            else
+                                ( model.fulfillment
+                                , Cmd.map FulfillmentMsg (Fulfillment.openCmd accountsPanelModel thread)
+                                )
+
+                        Nothing ->
+                            ( model.fulfillment, Cmd.none )
+
+                -- Both kinds of thread have a deep link: `?subscription_messages=` (the user's own) and
+                -- `?fulfillment_order=` (admin Fulfillment tab).
+                urlCmd : Cmd Msg
+                urlCmd =
+                    case ( model.pageContext, openedThread ) of
+                        ( Just ctx, Just thread ) ->
+                            Browser.Navigation.replaceUrl ctx.navKey
+                                (ctx.path
+                                    ++ "?"
+                                    ++ (if thread.admin then
+                                            Fulfillment.orderQuery accountsPanelModel.mainFrontendHost thread.host thread.subscription.id
+
+                                        else
+                                            Fulfillment.threadQuery accountsPanelModel.mainFrontendHost thread.host thread.subscription.id
+                                       )
+                                )
+
+                        ( Just ctx, Nothing ) ->
+                            Browser.Navigation.replaceUrl ctx.navKey ctx.path
+
+                        _ ->
+                            Cmd.none
+            in
+            ( { model | selectedThread = newSelection, fulfillment = openedFulfillment, mobileSidebarOpen = False }, Cmd.batch [ openCmd, urlCmd ], Nothing )
+
         PushRefreshDebounceElapsed host generation ->
             if Dict.get host model.pushRefreshGenerations == Just generation then
                 let
@@ -1128,8 +1365,13 @@ update accountsPanelModel msg model =
                         refetchServers accountsPanelModel
                             model
                             (eligibleEntries accountsPanelModel |> List.filter (\entry -> entry.server.frontendHost == host))
+
+                    -- A fulfillment-note push (`web_push::notify_fulfillment_note`) names its host
+                    -- too, so it refreshes the Fulfillment threads (and the unread badge) the same way.
+                    ( fulfillmentModel, fulfillmentCmd ) =
+                        fetchFulfillment accountsPanelModel refreshedModel
                 in
-                ( refreshedModel, cmd, Nothing )
+                ( fulfillmentModel, Cmd.batch [ cmd, fulfillmentCmd ], Nothing )
 
             else
                 ( model, Cmd.none, Nothing )
@@ -1689,8 +1931,20 @@ single unread item to the user. Counting straight off each host's flat
 avoids that.
 
 -}
-totalUnreadCount : Model -> Int
-totalUnreadCount model =
+unreadCounts : Model -> { messages : Int, subscriptions : Int, fulfillment : Int }
+unreadCounts model =
+    { messages = messagesUnreadCount model
+    , subscriptions = Fulfillment.totalUnread model.fulfillment
+    , fulfillment = Fulfillment.awaitingCount model.fulfillment
+    }
+
+
+{-| Unread `Message`s -- the Messages tab's count (see `unreadCounts`, which splits the panel button's
+three counts: this one, unread notes on the user's own subscriptions, and -- for server
+admins -- subscriptions (of any type) still awaiting a host admin).
+-}
+messagesUnreadCount : Model -> Int
+messagesUnreadCount model =
     model.messagesByServer
         |> Dict.values
         |> List.concatMap
@@ -1866,7 +2120,7 @@ replaceQueryUrl accountsPanelModel model =
 
 {-| Every currently-fetched group's own summary, freshly derived from
 `messagesByServer` -- the single source of truth `flattenSidebar`/
-`totalUnreadCount`/`mostRecentMessageIdFor`/`expand` all read, replacing the
+`unreadCounts`/`mostRecentMessageIdFor`/`expand` all read, replacing the
 old standalone `groupAnimations` cache now that its own `flip` state lives in
 `sidebarAnimations` instead (see that field's own doc).
 -}
@@ -2228,20 +2482,214 @@ conversation still peeking out beside it dismiss the drawer too, the same
 "tap outside to close" gesture the hamburger's own toggle offers explicitly.
 
 -}
-view : SharedTime.Model -> AccountsPanel.Model -> Model -> Html Msg
-view time accountsPanelModel model =
-    div [ class "messages-page" ]
-        [ searchRowView accountsPanelModel model
-        , case model.selectedGroup of
-            Nothing ->
-                groupsListView time accountsPanelModel model
+view : SharedTime.Model -> String -> AccountsPanel.Model -> Model -> Html Msg
+view time basePath accountsPanelModel model =
+    let
+        -- Subscriptions/Fulfillment only exist for someone with subscriptions / an admin account;
+        -- Messages always does. With only Messages there's no tab bar at all.
+        availableTabs : List Tab
+        availableTabs =
+            MessagesTab
+                :: (if Fulfillment.hasSubscriptions model.fulfillment then
+                        [ SubscriptionsTab ]
 
-            Just selected ->
-                div [ class "messages-two-pane" ]
-                    [ div [ classes [ "messages-sidebar", openClosedClass model.mobileSidebarOpen ] ] [ groupsListView time accountsPanelModel model ]
-                    , div [ class "messages-detail", onClick CloseMobileSidebar ] [ selectedGroupView time accountsPanelModel model selected ]
+                    else
+                        []
+                   )
+                ++ (if Fulfillment.hasAdminOrders model.fulfillment then
+                        [ FulfillmentTab ]
+
+                    else
+                        []
+                   )
+
+        -- A remembered tab that no longer exists (signed out of the admin account, say) falls back to
+        -- Messages rather than showing an empty page behind a missing tab.
+        activeTab : Tab
+        activeTab =
+            if List.member model.tab availableTabs then
+                model.tab
+
+            else
+                MessagesTab
+    in
+    div [ class "messages-page" ]
+        ((if List.length availableTabs > 1 then
+            [ tabsView model availableTabs activeTab ]
+
+          else
+            []
+         )
+            ++ (case activeTab of
+                    SubscriptionsTab ->
+                        threadsTabView time basePath accountsPanelModel model SubscriptionsTab
+
+                    FulfillmentTab ->
+                        threadsTabView time basePath accountsPanelModel model FulfillmentTab
+
+                    MessagesTab ->
+                        [ searchRowView accountsPanelModel model
+                        , case model.selectedGroup of
+                            Nothing ->
+                                groupsListView time accountsPanelModel model
+
+                            Just selected ->
+                                div [ class "messages-two-pane" ]
+                                    [ div [ classes [ "messages-sidebar", openClosedClass model.mobileSidebarOpen ] ] [ groupsListView time accountsPanelModel model ]
+                                    , div [ class "messages-detail", onClick CloseMobileSidebar ] [ selectedGroupView time accountsPanelModel model selected ]
+                                    ]
+                        ]
+               )
+        )
+
+
+{-| The Subscriptions / Fulfillment tab body, laid out like the Messages tab: with nothing selected, the list
+fills the page; with a thread selected it's the left pane (`.messages-sidebar` -- a drawer behind the ☰ button
+on narrow screens, see `view`) beside that thread's notes (`.messages-detail`). The row above the panes carries
+the ☰ toggle and the thread's heading. The embedded panel never goes two-pane (its rows are links
+out to the real page), same as its Messages tab.
+-}
+threadsTabView : SharedTime.Model -> String -> AccountsPanel.Model -> Model -> Tab -> List (Html Msg)
+threadsTabView time basePath accountsPanelModel model tab =
+    let
+        config : Fulfillment.ViewConfig Msg
+        config =
+            fulfillmentViewConfig time basePath accountsPanelModel model
+
+        isAdminTab : Bool
+        isAdminTab =
+            tab == FulfillmentTab
+
+        listView : Html Msg
+        listView =
+            if isAdminTab then
+                Fulfillment.adminView config
+
+            else
+                Fulfillment.view config
+
+        -- Only a chat of *this* tab's kind: a remembered selection from the other tab shows nothing here.
+        selected : Maybe Fulfillment.Thread
+        selected =
+            if model.embeddedPanel then
+                Nothing
+
+            else
+                model.selectedThread
+                    |> Maybe.andThen (Fulfillment.threadByKey model.fulfillment)
+                    |> Maybe.andThen
+                        (\thread ->
+                            if thread.admin == isAdminTab && Fulfillment.isChat thread then
+                                Just thread
+
+                            else
+                                Nothing
+                        )
+    in
+    case selected of
+        Nothing ->
+            [ listView ]
+
+        Just thread ->
+            [ div [ classes [ "filter-controls-row", "messages-header-row" ] ]
+                [ button
+                    [ Html.Attributes.type_ "button"
+                    , class "messages-mobile-sidebar-toggle"
+                    , onClick ToggleMobileSidebar
+                    , title
+                        (if model.mobileSidebarOpen then
+                            "Hide the list"
+
+                         else
+                            "Show the list"
+                        )
                     ]
-        ]
+                    [ text "☰" ]
+                , div [ class "messages-thread-heading" ] [ Fulfillment.heading thread ]
+                ]
+            , div [ class "messages-two-pane" ]
+                [ div [ classes [ "messages-sidebar", openClosedClass model.mobileSidebarOpen ] ] [ listView ]
+                , div [ class "messages-detail", onClick CloseMobileSidebar ]
+                    [ div [ class "fulfillment-detail" ] [ Fulfillment.detailView config thread ] ]
+                ]
+            ]
+
+
+fulfillmentViewConfig :
+    SharedTime.Model
+    -> String
+    -> AccountsPanel.Model
+    -> Model
+    ->
+        { time : SharedTime.Model
+        , basePath : String
+        , accountsPanelModel : AccountsPanel.Model
+        , model : Fulfillment.Model
+        , selected : Maybe String
+        , onSelect : Maybe (String -> Msg)
+        , onLinkClick : Maybe (String -> Msg)
+        , toMsg : Fulfillment.Msg -> Msg
+        }
+fulfillmentViewConfig time basePath accountsPanelModel model =
+    { time = time
+    , basePath = basePath
+    , accountsPanelModel = accountsPanelModel
+    , model = model.fulfillment
+    , selected = model.selectedThread
+    , onSelect =
+        if model.embeddedPanel then
+            Nothing
+
+        else
+            Just ThreadSelected
+    , onLinkClick =
+        if model.embeddedPanel then
+            Just EmbeddedThreadLinkClicked
+
+        else
+            Nothing
+    , toMsg = FulfillmentMsg
+    }
+
+
+{-| The Messages / Subscriptions / Fulfillment tab bar. Each tab carries its own count (hidden at zero):
+unread messages, unread notes on the user's own subscriptions, and orders awaiting a host admin.
+-}
+tabsView : Model -> List Tab -> Tab -> Html Msg
+tabsView model tabs activeTab =
+    let
+        counts : { messages : Int, subscriptions : Int, fulfillment : Int }
+        counts =
+            unreadCounts model
+
+        tabButton : Tab -> Html Msg
+        tabButton tab =
+            let
+                ( label, count ) =
+                    case tab of
+                        MessagesTab ->
+                            ( "Messages", counts.messages )
+
+                        SubscriptionsTab ->
+                            ( "Subscriptions", counts.subscriptions )
+
+                        FulfillmentTab ->
+                            ( "Fulfillment", counts.fulfillment )
+            in
+            button
+                [ Html.Attributes.type_ "button"
+                , classes [ "messages-tab", if tab == activeTab then "messages-tab-active" else "" ]
+                , onClick (TabClicked tab)
+                ]
+                [ text label
+                , if count > 0 then
+                    span [ class "unread-count-badge" ] [ text (String.fromInt count) ]
+
+                  else
+                    text ""
+                ]
+    in
+    div [ class "messages-tabs" ] (List.map tabButton tabs)
 
 
 {-| The header row -- hamburger (two-pane, narrow screens only), search

@@ -10,7 +10,7 @@ price/name/Markdown-description trio shown on `MarketPage`'s tier cards (price +
 
 import Components.Market as Market
 import Expect
-import Proto.Rellm exposing (MarketProduct, defaultMarketProduct)
+import Proto.Rellm exposing (MarketProduct, defaultAIGrantSubscriptionDetails, defaultMarketProduct, defaultMediaStorageSubscriptionDetails, defaultPermissionsAccessSubscriptionDetails)
 import Proto.Rellm.FulfillmentStatus exposing (FulfillmentStatus(..))
 import Proto.Rellm.MarketProduct exposing (Details)
 import Proto.Rellm.MarketProduct.Details as ProductDetails
@@ -43,7 +43,7 @@ suite =
                         100
                         Market.usdCurrencyCode
                         (ProductDetails.MediaStorageSubscriptionDetails
-                            { allocationBytes = Conversions.int64FromInt (1024 * 1024 * 1024) }
+                            { defaultMediaStorageSubscriptionDetails | allocationBytes = Conversions.int64FromInt (1024 * 1024 * 1024) }
                         )
                         |> Market.priceLabel
                         |> Expect.equal "$1/mo"
@@ -54,7 +54,7 @@ suite =
                         1000000
                         Market.usdCurrencyCode
                         (ProductDetails.MediaStorageSubscriptionDetails
-                            { allocationBytes = Conversions.int64FromInt (1024 * 1024 * 1024) }
+                            { defaultMediaStorageSubscriptionDetails | allocationBytes = Conversions.int64FromInt (1024 * 1024 * 1024) }
                         )
                         |> Market.priceLabel
                         |> Expect.equal "$10,000"
@@ -66,7 +66,7 @@ suite =
                         978
                         -- EUR
                         (ProductDetails.MediaStorageSubscriptionDetails
-                            { allocationBytes = Conversions.int64FromInt (1024 * 1024 * 1024) }
+                            { defaultMediaStorageSubscriptionDetails | allocationBytes = Conversions.int64FromInt (1024 * 1024 * 1024) }
                         )
                         |> Market.priceLabel
                         |> Expect.equal "10 EUR/mo"
@@ -78,7 +78,7 @@ suite =
                         392
                         -- JPY -- zero-decimal, so 500 means 500 yen, not 5 yen
                         (ProductDetails.MediaStorageSubscriptionDetails
-                            { allocationBytes = Conversions.int64FromInt (1024 * 1024 * 1024) }
+                            { defaultMediaStorageSubscriptionDetails | allocationBytes = Conversions.int64FromInt (1024 * 1024 * 1024) }
                         )
                         |> Market.priceLabel
                         |> Expect.equal "500 JPY/mo"
@@ -91,7 +91,7 @@ suite =
                         100
                         Market.usdCurrencyCode
                         (ProductDetails.MediaStorageSubscriptionDetails
-                            { allocationBytes = Conversions.int64FromInt (5 * 1024 * 1024 * 1024) }
+                            { defaultMediaStorageSubscriptionDetails | allocationBytes = Conversions.int64FromInt (5 * 1024 * 1024 * 1024) }
                         )
                         |> Market.productName
                         |> Expect.equal "5GB Media Storage"
@@ -102,7 +102,8 @@ suite =
                         200
                         Market.usdCurrencyCode
                         (ProductDetails.AiGrantSubscriptionDetails
-                            { aiProviderId = "prov1"
+                            { defaultAIGrantSubscriptionDetails
+                                | aiProviderId = "prov1"
                             , modelNames = [ "gemini-3-pro-image", "gemini-3.1-flash-image", "gemini-2.5-flash-image" ]
                             , tokens = Conversions.int64FromInt 100000
                             }
@@ -124,6 +125,7 @@ suite =
                             , additionalInformation = ""
                             , fulfillmentStatus = FULFILLMENTSTATUSAWAITINGHOSTADMIN
                             , fulfillmentNotes = []
+                            , notesLastRead = Nothing
                             }
                         )
                         |> Market.productName
@@ -135,7 +137,8 @@ suite =
                         500
                         Market.usdCurrencyCode
                         (ProductDetails.PermissionsAccessSubscriptionDetails
-                            { permissions = [ SYNCEVENTSTOFACEBOOK, SYNCPOSTSTOFACEBOOK ]
+                            { defaultPermissionsAccessSubscriptionDetails
+                                | permissions = [ SYNCEVENTSTOFACEBOOK, SYNCPOSTSTOFACEBOOK ]
                             , name = "Facebook Sync Access"
                             , description = "Sync your posts and events to Facebook."
                             }
@@ -151,7 +154,7 @@ suite =
                         100
                         Market.usdCurrencyCode
                         (ProductDetails.MediaStorageSubscriptionDetails
-                            { allocationBytes = Conversions.int64FromInt (5 * 1024 * 1024 * 1024) }
+                            { defaultMediaStorageSubscriptionDetails | allocationBytes = Conversions.int64FromInt (5 * 1024 * 1024 * 1024) }
                         )
                         |> Market.productDescription
                         |> Expect.equal
@@ -163,7 +166,8 @@ suite =
                         200
                         Market.usdCurrencyCode
                         (ProductDetails.AiGrantSubscriptionDetails
-                            { aiProviderId = "prov1"
+                            { defaultAIGrantSubscriptionDetails
+                                | aiProviderId = "prov1"
                             , modelNames = [ "gemini-3-pro-image" ]
                             , tokens = Conversions.int64FromInt 100000
                             }
@@ -186,6 +190,7 @@ suite =
                             , additionalInformation = ""
                             , fulfillmentStatus = FULFILLMENTSTATUSAWAITINGHOSTADMIN
                             , fulfillmentNotes = []
+                            , notesLastRead = Nothing
                             }
                         )
                         |> Market.productDescription
@@ -210,6 +215,7 @@ suite =
                             , additionalInformation = ""
                             , fulfillmentStatus = FULFILLMENTSTATUSAWAITINGHOSTADMIN
                             , fulfillmentNotes = []
+                            , notesLastRead = Nothing
                             }
                         )
                         |> Market.productDescription
@@ -225,7 +231,8 @@ suite =
                         500
                         Market.usdCurrencyCode
                         (ProductDetails.PermissionsAccessSubscriptionDetails
-                            { permissions = [ SYNCEVENTSTOFACEBOOK, SYNCPOSTSTOFACEBOOK ]
+                            { defaultPermissionsAccessSubscriptionDetails
+                                | permissions = [ SYNCEVENTSTOFACEBOOK, SYNCPOSTSTOFACEBOOK ]
                             , name = "Facebook Sync Access"
                             , description = "Sync your posts and events to Facebook."
                             }

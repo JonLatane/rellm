@@ -8,6 +8,7 @@ module Components.Market exposing
     , cancelMarketSubscription
     , createMarketProduct
     , currencyLabel
+    , effectiveState
     , defaultHostingForm
     , formatAmount
     , getMarketProducts
@@ -62,6 +63,7 @@ import Proto.Rellm
         )
 import Proto.Rellm.GetMarketSubscriptionsRequestType exposing (GetMarketSubscriptionsRequestType(..))
 import Proto.Rellm.MarketProduct.Details as ProductDetails
+import Proto.Rellm.MarketSubscriptionState exposing (MarketSubscriptionState(..))
 import Proto.Rellm.Permission exposing (Permission)
 import Proto.Rellm.PurchasePeriod exposing (PurchasePeriod(..))
 import Proto.Rellm.PurchaseType exposing (PurchaseType(..))
@@ -142,6 +144,9 @@ type PurchaseState
     = PurchaseIdle
     | PurchaseSubmitting
     | PurchaseErrored String
+      -- `MakeMarketPurchaseResponse.resumedSubscription` came back: the buyer had a canceled-but-paid-up
+      -- subscription to this product, which was resumed instead of starting a checkout -- nothing charged.
+    | PurchaseResumed
 
 
 {-| The buyer-supplied fields a `RELLM_HOSTING` product's "Buy" button collects before submitting
@@ -299,6 +304,27 @@ updateMarketSubscription accountsPanelModel maybeAccountServer subscription =
                 |> withAccessToken (Just token)
                 |> Grpc.toTask
         )
+
+
+{-| `subscription.state`, or -- for a server too old to send `state` at all (the decoder then defaults it to
+`SUBSCRIPTION_ACTIVE`) -- what its `canceledAt`/`serviceTerminatedAt`/`renewsAt` say. Never contradicts a
+server that does send it: a canceled subscription can't also be `SUBSCRIPTION_ACTIVE` there.
+-}
+effectiveState : MarketSubscription -> MarketSubscriptionState
+effectiveState subscription =
+    case ( subscription.state, subscription.canceledAt, subscription.serviceTerminatedAt ) of
+        ( SUBSCRIPTIONACTIVE, Just _, Just _ ) ->
+            SUBSCRIPTIONCANCELED
+
+        ( SUBSCRIPTIONACTIVE, Just _, Nothing ) ->
+            if subscription.renewsAt == Nothing then
+                SUBSCRIPTIONCANCELED
+
+            else
+                SUBSCRIPTIONACTIVEBUTCANCELED
+
+        ( state, _, _ ) ->
+            state
 
 
 {-| Starts (or continues) a Stripe Checkout flow for `request.marketProductId` -- the caller

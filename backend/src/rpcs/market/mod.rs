@@ -18,7 +18,10 @@ mod cancel_market_subscription;
 pub use cancel_market_subscription::cancel_market_subscription;
 
 mod update_market_subscription;
-pub use update_market_subscription::update_market_subscription;
+pub use update_market_subscription::{update_market_subscription, update_market_subscription_and_notify};
 
 mod make_market_purchase;
 pub use make_market_purchase::make_market_purchase;
+
+mod mark_fulfillment_notes_read;
+pub use mark_fulfillment_notes_read::mark_fulfillment_notes_read;

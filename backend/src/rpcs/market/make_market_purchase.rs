@@ -35,6 +35,20 @@ pub fn make_market_purchase(
 
     let product_id = request.market_product_id.to_db_id_or_err("market_product_id")?;
     let product = models::get_market_product(product_id, conn)?;
+
+    // Re-buying a product whose subscription the buyer already canceled -- but whose paid-for period
+    // hasn't run out yet (`SUBSCRIPTION_ACTIVE_BUT_CANCELED`) -- resumes that subscription instead of
+    // charging them for a second one. Ahead of every checkout-only precondition below (delisted,
+    // Stripe/frontend host configured, ...): nothing is being bought, so none of those apply -- only
+    // `market_enabled` (above) and, since resuming claims back the slot cancellation freed, whether
+    // one is still available.
+    if let Some(resumed_subscription) = try_resume_subscription(&product, current_user, conn)? {
+        return Ok(MakeMarketPurchaseResponse {
+            checkout_url: String::new(),
+            resumed_subscription: Some(resumed_subscription),
+        });
+    }
+
     if product.delisted_at.is_some() {
         return Err(Status::new(Code::FailedPrecondition, "product_delisted"));
     }
@@ -151,5 +165,28 @@ pub fn make_market_purchase(
         },
     )?;
 
-    Ok(MakeMarketPurchaseResponse { checkout_url })
+    Ok(MakeMarketPurchaseResponse { checkout_url, resumed_subscription: None })
+}
+
+/// See the call site. `Ok(None)` means "nothing to resume, carry on to checkout" -- including when a
+/// candidate existed but its paid-for period ran out between the lookup and the resume
+/// (`ResumeOutcome::NotResumable`), in which case a fresh subscription is exactly what the buyer needs.
+/// `product_sold_out` if resuming would exceed `MarketProduct.available_count`. A concurrent request
+/// having resumed the same subscription first (`ResumeOutcome::AlreadyActive`) is reported as resumed too
+/// -- the buyer must not be sent to a checkout for a subscription that is already active again.
+fn try_resume_subscription(
+    product: &models::MarketProduct,
+    current_user: &models::User,
+    conn: &mut PgPooledConnection,
+) -> Result<Option<MarketSubscription>, Status> {
+    let Some(candidate) = models::get_resumable_market_subscription(current_user.id, product.id, conn)? else {
+        return Ok(None);
+    };
+    match models::resume_market_subscription_and_claim_slot(candidate.id, product.id, conn)? {
+        models::ResumeOutcome::Resumed | models::ResumeOutcome::AlreadyActive => {
+            build_subscription(candidate.id, conn).map(Some)
+        }
+        models::ResumeOutcome::NotResumable => Ok(None),
+        models::ResumeOutcome::SoldOut => Err(Status::new(Code::FailedPrecondition, "product_sold_out")),
+    }
 }

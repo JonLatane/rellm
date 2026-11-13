@@ -57,7 +57,11 @@ class PurchasePeriod extends $pb.ProtobufEnum {
   const PurchasePeriod._($core.int v, $core.String n) : super(v, n);
 }
 
-/// The state of a `PURCHASE_TYPE_RELLM_HOSTING` order's manual fulfillment -- see
+/// Where a subscription stands in the host admins' work queue. Only `PURCHASE_TYPE_RELLM_HOSTING` is fulfilled by
+/// hand, so only it ever moves through these values (via admin-written notes). Every other type is fulfilled
+/// automatically (storage, AI grants and permissions are applied by the system when the purchase is fulfilled):
+/// its `fulfillment_status` is always `FULFILLMENT_STATUS_FULFILLED` -- whatever an older row stored -- and
+/// `UpdateMarketSubscription` rejects a note that tries to change it. See
 /// `RellmHostingSubscriptionDetails.fulfillment_status`'s own doc for how the "current" value is
 /// derived, and `FulfillmentNote.fulfillment_status` for how every transition is recorded as its own
 /// timestamped note (a "fulfillment state history"), not just tracked as a bare current value.
@@ -81,16 +85,42 @@ class FulfillmentStatus extends $pb.ProtobufEnum {
 class GetMarketSubscriptionsRequestType extends $pb.ProtobufEnum {
   static const GetMarketSubscriptionsRequestType GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE = GetMarketSubscriptionsRequestType._(0, _omitEnumNames ? '' : 'GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE');
   static const GetMarketSubscriptionsRequestType GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN = GetMarketSubscriptionsRequestType._(1, _omitEnumNames ? '' : 'GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN');
+  static const GetMarketSubscriptionsRequestType GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN = GetMarketSubscriptionsRequestType._(2, _omitEnumNames ? '' : 'GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN');
 
   static const $core.List<GetMarketSubscriptionsRequestType> values = <GetMarketSubscriptionsRequestType> [
     GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE,
     GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN,
+    GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN,
   ];
 
   static final $core.Map<$core.int, GetMarketSubscriptionsRequestType> _byValue = $pb.ProtobufEnum.initByValue(values);
   static GetMarketSubscriptionsRequestType? valueOf($core.int value) => _byValue[value];
 
   const GetMarketSubscriptionsRequestType._($core.int v, $core.String n) : super(v, n);
+}
+
+/// Where a `MarketSubscription` stands from the *buyer's* point of view -- always derived on the fly
+/// (never stored as a column) from `canceled_at`/`renews_at`/`service_terminated_at` as of the moment
+/// the subscription is marshaled, see `logic::market::market_subscription_state`. The point of the
+/// middle value: a buyer who cancels has still paid for the rest of their current billing period, so
+/// cancellation is not an instant "off switch" -- they keep their entitlement until it runs out, and
+/// can resume (see `MakeMarketPurchaseResponse.resumed_subscription`) any time before then without
+/// paying again.
+class MarketSubscriptionState extends $pb.ProtobufEnum {
+  static const MarketSubscriptionState SUBSCRIPTION_ACTIVE = MarketSubscriptionState._(0, _omitEnumNames ? '' : 'SUBSCRIPTION_ACTIVE');
+  static const MarketSubscriptionState SUBSCRIPTION_ACTIVE_BUT_CANCELED = MarketSubscriptionState._(1, _omitEnumNames ? '' : 'SUBSCRIPTION_ACTIVE_BUT_CANCELED');
+  static const MarketSubscriptionState SUBSCRIPTION_CANCELED = MarketSubscriptionState._(2, _omitEnumNames ? '' : 'SUBSCRIPTION_CANCELED');
+
+  static const $core.List<MarketSubscriptionState> values = <MarketSubscriptionState> [
+    SUBSCRIPTION_ACTIVE,
+    SUBSCRIPTION_ACTIVE_BUT_CANCELED,
+    SUBSCRIPTION_CANCELED,
+  ];
+
+  static final $core.Map<$core.int, MarketSubscriptionState> _byValue = $pb.ProtobufEnum.initByValue(values);
+  static MarketSubscriptionState? valueOf($core.int value) => _byValue[value];
+
+  const MarketSubscriptionState._($core.int v, $core.String n) : super(v, n);
 }
 
 

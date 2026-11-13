@@ -156,7 +156,7 @@ pub fn get_market_product(id: i64, conn: &mut PgPooledConnection) -> Result<Mark
 /// `+1` (not a Rust-side read-then-write) so two near-simultaneous webhook deliveries can't lose an
 /// increment to a race -- matches this feature's established "no heavier concurrency handling than
 /// it needs" MVP philosophy elsewhere (see e.g. `logic::market::market_renewal`'s own doc).
-pub fn increment_market_product_sold_count(product_id: i64, conn: &mut PgPooledConnection) {
+pub fn increment_market_product_sold_count(product_id: i64, conn: &mut PgConnection) {
     if let Err(e) = diesel::update(market_products::table.filter(market_products::id.eq(product_id)))
         .set(market_products::sold_count.eq(market_products::sold_count + 1))
         .execute(conn)
@@ -168,7 +168,7 @@ pub fn increment_market_product_sold_count(product_id: i64, conn: &mut PgPooledC
 /// Called once a subscription is canceled (`rpcs::market::cancel_market_subscription`) -- frees the
 /// slot it held (see `MarketProduct.sold_count`'s own doc). Clamped at `0` (`GREATEST`, SQL-side)
 /// since `sold_count` is a `NOT NULL` `i32`, not a signed count that's meaningful going negative.
-pub fn decrement_market_product_sold_count(product_id: i64, conn: &mut PgPooledConnection) {
+pub fn decrement_market_product_sold_count(product_id: i64, conn: &mut PgConnection) {
     if let Err(e) = diesel::update(market_products::table.filter(market_products::id.eq(product_id)))
         .set(
             market_products::sold_count
@@ -310,6 +310,15 @@ pub fn get_market_subscriptions_by_product_type(
         })
 }
 
+/// Every `MarketSubscription`, of every type and every buyer -- backs
+/// `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN` (see `marshaling::market_marshaling::build_all_subscriptions`).
+pub fn get_all_market_subscriptions(conn: &mut PgPooledConnection) -> Result<Vec<MarketSubscription>, Status> {
+    market_subscriptions::table.load::<MarketSubscription>(conn).map_err(|e| {
+        log::error!("Failed to load all market subscriptions: {:?}", e);
+        Status::new(Code::Internal, "failed_to_load_subscriptions")
+    })
+}
+
 /// Every `MarketSubscription` of `product_type` that's due to renew (`canceled_at IS NULL AND
 /// renews_at <= NOW()`) -- used by `logic::market::market_renewal::renew_subscriptions_of_type`.
 pub fn get_due_market_subscriptions(
@@ -365,6 +374,183 @@ pub fn get_terminable_market_subscriptions(
             );
             Status::new(Code::Internal, "failed_to_load_subscriptions")
         })
+}
+
+/// The buyer's `SUBSCRIPTION_ACTIVE_BUT_CANCELED` subscription to `product_id`, if any -- i.e. canceled
+/// (`canceled_at IS NOT NULL`), not yet revoked (`service_terminated_at IS NULL`), and with the
+/// paid-for period still running (`renews_at > now`; a `NULL renews_at` never matches, since a
+/// canceled non-recurring subscription ends immediately -- see
+/// `logic::market::market_subscription_state::service_ends_at`). Mirrors
+/// `logic::subscription_state`'s `ActiveButCanceled` arm exactly, as a SQL filter. What
+/// `MakeMarketPurchase` resumes instead of starting a second subscription; if (unusually) several
+/// match, the one that runs longest wins.
+pub fn get_resumable_market_subscription(
+    buyer_id: i64,
+    product_id: i64,
+    conn: &mut PgPooledConnection,
+) -> Result<Option<MarketSubscription>, Status> {
+    market_subscriptions::table
+        .filter(market_subscriptions::buyer_id.eq(buyer_id))
+        .filter(market_subscriptions::product_id.eq(product_id))
+        .filter(market_subscriptions::canceled_at.is_not_null())
+        .filter(market_subscriptions::service_terminated_at.is_null())
+        .filter(market_subscriptions::renews_at.gt(SystemTime::now()))
+        .order(market_subscriptions::renews_at.desc())
+        .first::<MarketSubscription>(conn)
+        .optional()
+        .map_err(|e| {
+            log::error!(
+                "Failed to look up resumable market subscription for buyer {} product {}: {:?}",
+                buyer_id,
+                product_id,
+                e
+            );
+            Status::new(Code::Internal, "failed_to_load_subscriptions")
+        })
+}
+
+/// Marks `subscription_id` canceled as of now, *only if* it isn't already -- returns whether this
+/// call is the one that did it. The conditional `WHERE canceled_at IS NULL` is what makes the
+/// cancel->`sold_count` decrement pair race-free: two concurrent cancels (or a cancel racing the
+/// renewal job's own `end_subscription`) can't both see "not yet canceled" and both free the slot.
+pub fn cancel_market_subscription_row(
+    subscription_id: i64,
+    conn: &mut PgConnection,
+) -> Result<bool, Status> {
+    diesel::update(
+        market_subscriptions::table
+            .filter(market_subscriptions::id.eq(subscription_id))
+            .filter(market_subscriptions::canceled_at.is_null()),
+    )
+    .set(market_subscriptions::canceled_at.eq(SystemTime::now()))
+    .execute(conn)
+    .map(|rows| rows > 0)
+    .map_err(|e| {
+        log::error!("Failed to cancel market subscription {}: {:?}", subscription_id, e);
+        Status::new(Code::Internal, "failed_to_cancel_subscription")
+    })
+}
+
+/// Un-cancels `subscription_id` (`canceled_at = NULL`), *only if* it's still resumable -- same
+/// condition as `get_resumable_market_subscription` -- returning whether this call did it. The
+/// same race-freedom argument as `cancel_market_subscription_row` applies to the matching
+/// `sold_count` increment, and the `renews_at`/`service_terminated_at` guards close the window
+/// where the paid-for period ends (or the termination job runs) between the caller's lookup and
+/// this write: resuming a subscription whose entitlement is already gone would just resurrect a
+/// zombie.
+pub fn resume_market_subscription_row(
+    subscription_id: i64,
+    conn: &mut PgConnection,
+) -> Result<bool, Status> {
+    diesel::update(
+        market_subscriptions::table
+            .filter(market_subscriptions::id.eq(subscription_id))
+            .filter(market_subscriptions::canceled_at.is_not_null())
+            .filter(market_subscriptions::service_terminated_at.is_null())
+            .filter(market_subscriptions::renews_at.gt(SystemTime::now())),
+    )
+    .set(market_subscriptions::canceled_at.eq(None::<SystemTime>))
+    .execute(conn)
+    .map(|rows| rows > 0)
+    .map_err(|e| {
+        log::error!("Failed to resume market subscription {}: {:?}", subscription_id, e);
+        Status::new(Code::Internal, "failed_to_resume_subscription")
+    })
+}
+
+/// Error type for this file's `conn.transaction` closures: diesel's own errors (the row lock) plus the
+/// `Status` the helpers inside already return.
+enum TxError {
+    Db(diesel::result::Error),
+    Status(Status),
+}
+
+impl From<diesel::result::Error> for TxError {
+    fn from(e: diesel::result::Error) -> Self {
+        TxError::Db(e)
+    }
+}
+
+impl TxError {
+    fn into_status(self, what: &str) -> Status {
+        match self {
+            TxError::Status(status) => status,
+            TxError::Db(e) => {
+                log::error!("Transaction failed ({}): {:?}", what, e);
+                Status::new(Code::Internal, "transaction_failed")
+            }
+        }
+    }
+}
+
+/// Cancels `subscription_id` and releases its `sold_count` slot as one unit -- returns whether this call
+/// was the one that canceled it. Locks the product row first (`SELECT ... FOR UPDATE`), always
+/// *before* the subscription row: `resume_market_subscription_and_claim_slot` takes the same order,
+/// so a cancel racing a resume (or another cancel) serializes instead of both reading the same
+/// `sold_count`.
+pub fn cancel_market_subscription_and_release_slot(
+    subscription_id: i64,
+    product_id: i64,
+    conn: &mut PgPooledConnection,
+) -> Result<bool, Status> {
+    conn.transaction::<bool, TxError, _>(|conn| {
+        market_products::table
+            .filter(market_products::id.eq(product_id))
+            .for_update()
+            .first::<MarketProduct>(conn)?;
+        let canceled = cancel_market_subscription_row(subscription_id, conn).map_err(TxError::Status)?;
+        if canceled {
+            decrement_market_product_sold_count(product_id, conn);
+        }
+        Ok(canceled)
+    })
+    .map_err(|e| e.into_status("cancel subscription"))
+}
+
+/// What `resume_market_subscription_and_claim_slot` found.
+#[derive(Debug, PartialEq, Eq)]
+pub enum ResumeOutcome {
+    /// This call cleared `canceled_at` and claimed the slot.
+    Resumed,
+    /// Someone else (a concurrent request) already resumed it -- nothing to charge or claim.
+    AlreadyActive,
+    /// The paid-for period ran out (or it was terminated) -- a fresh purchase is needed.
+    NotResumable,
+    /// Resuming would exceed `MarketProduct.available_count`.
+    SoldOut,
+}
+
+/// Resumes a canceled-but-paid-up subscription and claims its slot as one unit: under the product row's
+/// lock (same order as `cancel_market_subscription_and_release_slot`), re-checks capacity against the
+/// *locked* `sold_count`, then conditionally clears `canceled_at` (see
+/// `resume_market_subscription_row`) and increments `sold_count` only if that update took effect.
+pub fn resume_market_subscription_and_claim_slot(
+    subscription_id: i64,
+    product_id: i64,
+    conn: &mut PgPooledConnection,
+) -> Result<ResumeOutcome, Status> {
+    conn.transaction::<ResumeOutcome, TxError, _>(|conn| {
+        let product = market_products::table
+            .filter(market_products::id.eq(product_id))
+            .for_update()
+            .first::<MarketProduct>(conn)?;
+        let subscription = market_subscriptions::table
+            .filter(market_subscriptions::id.eq(subscription_id))
+            .first::<MarketSubscription>(conn)?;
+        if subscription.canceled_at.is_none() && subscription.service_terminated_at.is_none() {
+            return Ok(ResumeOutcome::AlreadyActive);
+        }
+        if product.available_count > 0 && product.sold_count >= product.available_count {
+            return Ok(ResumeOutcome::SoldOut);
+        }
+        if resume_market_subscription_row(subscription_id, conn).map_err(TxError::Status)? {
+            increment_market_product_sold_count(product_id, conn);
+            Ok(ResumeOutcome::Resumed)
+        } else {
+            Ok(ResumeOutcome::NotResumable)
+        }
+    })
+    .map_err(|e| e.into_status("resume subscription"))
 }
 
 /// Every `MarketPurchase` for `subscription_id`, most recent first -- backs

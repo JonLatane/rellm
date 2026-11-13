@@ -447,11 +447,127 @@ import "market.proto";
 // entitlement itself stays in effect until whichever is later of `renews_at`/`canceled_at` - once both have
 // passed, the `renew_market_subscriptions` background job revokes it (reverts `media_storage_limit_bytes` to
 // `ServerConfiguration.media_settings.default_user_media_allocation_bytes`, or removes the granted `Permission`s,
-// depending on `type`) and sets `service_terminated_at`. A user's own MarketSubscriptions (never anyone
+// depending on `type`) and sets `service_terminated_at`. Until then the subscription is
+// `SUBSCRIPTION_ACTIVE_BUT_CANCELED` (see [`MarketSubscriptionState`](#rellm-MarketSubscriptionState)): the buyer has
+// paid for that time, so buying the same product again just *resumes* it (no new charge) rather than starting a
+// second subscription. A user's own MarketSubscriptions (never anyone
 // else's) are listed via [`GetMarketSubscriptions`](#grpc-api-GetMarketSubscriptions), and also travel along
 // on [`User`](#rellm-User) itself (`User.market_subscriptions`) the same way `ai_models`/`sync_sources` do.
 // Stripe credentials for all of this live in `ServerConfiguration.stripe_config` (a
 // [`StripeConfig`](#rellm-StripeConfig)), Admin-only like `twilio_config`/`bird_config`.
+//
+// ##### Subscription states
+// [`MarketSubscription.state`](#rellm-MarketSubscription) ([`MarketSubscriptionState`](#rellm-MarketSubscriptionState))
+// is derived on every read, never stored: `SUBSCRIPTION_ACTIVE` (not canceled), `SUBSCRIPTION_ACTIVE_BUT_CANCELED`
+// (canceled, but the paid-for period - the later of `canceled_at`/`renews_at` - hasn't ended, so the entitlement
+// still applies) and `SUBSCRIPTION_CANCELED` (terminated, or the paid-for period is over). Only the middle state can be
+// resumed: [`MakeMarketPurchase`](#grpc-api-MakeMarketPurchase) for the same product returns `resumed_subscription`
+// instead of a checkout. Clients should branch on `state`, not on `canceled_at`.
+//
+// ##### Fulfillment chats, read tracking, and the admin perspective
+// *Every* subscription, whatever its `PurchaseType`, has a chat: its `fulfillment_notes` (an append-only conversation
+// between the buyer and the host admins, see [`UpdateMarketSubscription`](#grpc-api-UpdateMarketSubscription)). The
+// same notes are seen from two sides:
+//
+// - **The buyer** reads them on their own subscription (`GetMarketSubscriptions`, or `User.market_subscriptions`). Their
+//   read marker is `RellmHostingSubscriptionDetails.notes_last_read`, moved only by
+//   [`MarkFulfillmentNotesRead`](#grpc-api-MarkFulfillmentNotesRead) (buyer-only, server-stamped; `UpdateMarketSubscription`
+//   always preserves it). A note is *unread* if someone other than the buyer wrote it and it is newer than the marker (or
+//   the marker is unset). A buyer's unread count is the sum over their subscriptions.
+// - **A host admin** (a server `Admin`) sees every subscription, of every type
+//   (`GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN`) and `UpdateMarketSubscription` (Admin-only) appends notes to
+//   any of their chats. What an admin can *change* depends on the type:
+//   - **Rellm hosting** is set up by hand (see [Fulfilling a Rellm hosting order](#fulfilling-a-rellm-hosting-order)
+//     below for the runbook), so its `fulfillment_status` is a real work queue that admin-written notes move:
+//     `FULFILLMENT_STATUS_AWAITING_HOST_ADMIN` -> `IN_PROGRESS` (opening an awaiting order appends a bare status note) ->
+//     `FULFILLED` ("Add and Mark as Fulfilled").
+//   - **Every other type** (media storage, AI grants, permissions access) is fulfilled *automatically* - the system
+//     applies the storage, grants or permissions itself when the purchase is fulfilled and on every renewal. Its
+//     `fulfillment_status` is therefore always `FULFILLMENT_STATUS_FULFILLED` (derived on read, whatever an older row
+//     stored), and `UpdateMarketSubscription` rejects a note that tries to change it
+//     (`fulfillment_status_is_automatic_for_this_type`). Its chat is text only.
+//
+//   There is deliberately **no per-admin read marker** - `notes_last_read` is the buyer's, and several admins share the
+//   same subscriptions - so an admin has no "unread" count. What needs an admin's attention is the number of
+//   subscriptions whose `fulfillment_status` is still `FULFILLMENT_STATUS_AWAITING_HOST_ADMIN`; that is the admin's
+//   count. Because the other types are always fulfilled, only hosting orders are ever in it.
+//
+// So three independent counts exist side by side, and clients can show them together: unread messages,
+// the buyer's unread fulfillment notes, and (Admins only) subscriptions awaiting a host admin. The Elm client shows them in
+// that order in the corners of its Messages button (top-right, bottom-right, bottom-left), and as the Messages,
+// Subscriptions and Fulfillment tabs.
+//
+// ##### Fulfilling a Rellm hosting order
+// Fulfillment is deliberately manual: nothing in the API provisions a site. A Rellm hosting admin does it with the
+// deploy system in `deploys/` (the `rellm deploy ...` command that ships with the Homebrew/Linux packages; its own
+// reference is `rellm help deploys`, i.e. `deploys/README.md` - this section mirrors the "Maximally-Efficient
+// Configuration" part of it, which is how Rellm's own cluster runs). Every command below takes `-n <namespace>` for the
+// per-site steps, and none of it needs anything beyond `kubectl` pointed at the right cluster
+// (`kubectl config current-context`) plus the tools `rellm deploy` itself lists.
+//
+// **What an order gives you** (`RellmHostingSubscriptionDetails`, on the order from
+// `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN`):
+//
+// | Order field | Use it as |
+// |---|---|
+// | `domain` | The site's domain, e.g. `my-site.example.com` - the `--domain` of the commands below and what its DNS points at. |
+// | `contact_email` | Who to reach about DNS records/questions; carry that conversation in `fulfillment_notes`, not by email. |
+// | `additional_information` | The buyer's own notes (immutable); read before starting. |
+// | `db_size_bytes` / `object_storage_size_bytes` | Intended database/bucket sizes. **Currently always `0` on an order** - read the sizes off the order's `market_product` instead. |
+// | `fulfillment_status` / `fulfillment_notes` | Where it stands, and the buyer-visible log of how it got there (see "Admin counts" above). |
+//
+// The namespace is yours to choose (it becomes the site's database, bucket and credentials' name): lowercase letters,
+// digits and `-`, at least 3 characters - the domain's first label (`my-site`) is a good default. Below: namespace
+// `my-site`, domain `my-site.example.com`.
+//
+// **Once per cluster** (skip if the cluster already hosts sites): `rellm deploy create_central_storage` then
+// `rellm deploy wait_central_postgres_ready wait_central_object_storage_ready`; `rellm deploy create_ingress` (one shared
+// LoadBalancer - `rellm deploy get_ingress_external_ip` is the one IP every domain points at); `rellm deploy deploy_certmanager`;
+// and, for sites with email, Stalwart (`rellm deploy create_email_admin_secret ADMIN_PASSWORD='...'` *before*
+// `rellm deploy create_email`, then finish its setup wizard via `rellm deploy deploy_email_admin_port_forward`).
+//
+// **Per order**, in this order:
+//
+// 1. *Open the order.* Opening it on `/market/fulfillment` (or the Messages page's Fulfillment tab) moves it to
+//    `FULFILLMENT_STATUS_IN_PROGRESS`, which tells the buyer you've started. Ask for anything missing as a note.
+// 2. *DNS first.* An `A` record for `my-site.example.com` at the ingress IP. Certificates use DNS-01 through
+//    DigitalOcean (apex and `*.my-site.example.com`), so the domain must be a DigitalOcean DNS zone: if the buyer
+//    owns the domain elsewhere, post the `NS` records they must delegate to as a note. Don't continue until it resolves.
+// 3. *Provision the site's slice of central storage* - its own database + role, bucket + user and a
+//    `rellm-central-data` Secret of fresh random credentials, restricted to just this site (also creates the namespace):
+//    `rellm deploy create_backend_central_data -n my-site`
+// 4. *Deploy the backend:* `rellm deploy create_internal_central_data_backend -n my-site`
+// 5. *TLS:* `rellm deploy deploy_certmanager_credential -n my-site` (prompts for the provider, DigitalOcean API token, the
+//    domain and an admin email), wait for `kubectl get certificate -n my-site -w` to show `READY=True`, then
+//    `rellm deploy restart_backend -n my-site` (the pods read the certificate at startup).
+// 6. *Route the domain:* `rellm deploy add_ingress_domain -n my-site --domain my-site.example.com`. Verify with
+//    `curl -I https://my-site.example.com` and `grpcurl my-site.example.com:27707 list`. If it 404s or hangs, bounce Traefik
+//    (`rellm deploy deploy_ingress_restart`) - that briefly interrupts every domain, so only if needed.
+// 7. *Email (optional):* `rellm deploy add_email_domain -n my-site --domain my-site.example.com`, then
+//    `rellm deploy list_email_domains`; post the `MX` (`@` -> `my-site.example.com.`, priority 10), `TXT @`
+//    (`v=spf1 mx ~all`) and `TXT _dmarc` (`v=DMARC1; p=none; rua=mailto:...`) records as a note for the buyer to add.
+// 8. *Save the credentials:* `rellm deploy get_all_storage_credentials` (those Secrets are the only copy), and add the
+//    namespace to the deploy jobs in `.github/workflows/server_ci_cd.yml` so CI keeps its image current.
+// 9. *Hand over.* Add a note with the site's URL and how to sign in/create the first account, using "Add and Mark as
+//    Fulfilled" (`FULFILLMENT_STATUS_FULFILLED`). The buyer is sent a push notification (see below).
+//
+// Capacity is shared across sites: `rellm deploy get_central_postgres_pvc_size get_central_object_storage_pvc_size`, and
+// grow with `rellm deploy resize_central_postgres_pvc SIZE=...` / `resize_central_object_storage_pvc SIZE=...` (grow-only).
+//
+// **Cancellation.** Nothing in the API tears a site down. While a subscription is `SUBSCRIPTION_ACTIVE_BUT_CANCELED` the
+// buyer has paid for the time - leave the site running (and don't remove it if they resume). Once it is
+// `SUBSCRIPTION_CANCELED`, retire it: `rellm deploy remove_ingress_domain -n my-site --domain my-site.example.com`,
+// `rellm deploy remove_email_domain -n my-site --domain my-site.example.com`, delete the namespace, then
+// `rellm deploy delete_backend_central_data -n my-site --confirm my-site` (permanently removes its database, bucket and
+// credentials - export what the buyer needs first), and leave a note recording that it was done.
+//
+// Notifications follow the same two sides and use the push subscriptions people already have - the ones
+// [`RegisterPushSubscription`](#grpc-api-RegisterPushSubscription) creates when someone enables push notifications (in the
+// web app's Accounts panel) - so there is nothing to opt in to per subscription. When a note is added to a
+// subscription, every Web Push subscription of its buyer is notified, and so is every one of every user who can handle
+// fulfillment (an Admin, see above) - except those of the note's own author. Tapping the notification opens the chat
+// (the buyer's profile for the buyer, the Fulfillment tab for an admin). Recipients are worked out at send time, so
+// someone who stops being an admin stops getting the admin notifications.
 //
 // #### Media
 // [`Media`](#rellm-Media) represents an uploaded (or server-generated) photo or video. Unlike other types, Media
@@ -1197,6 +1313,8 @@ service Rellm {
   // Starts (or resumes) buying a MarketProduct for the current user, returning a Stripe Checkout URL to
   // redirect to. *Authenticated*. See `MakeMarketPurchaseRequest`'s own doc -- no MarketPurchase/
   // MarketSubscription is created by this call itself, only once Stripe confirms payment via webhook.
+  // If the buyer already has a `SUBSCRIPTION_ACTIVE_BUT_CANCELED` subscription to the product, it is
+  // resumed on the spot instead (no checkout, no charge) -- see `MakeMarketPurchaseResponse.resumed_subscription`.
   rpc MakeMarketPurchase(MakeMarketPurchaseRequest) returns (MakeMarketPurchaseResponse) {}
   // Cancels a MarketSubscription by setting `canceled_at` to now -- entitlement (media storage quota,
   // granted permissions, etc.) stays active until whichever is later of `renews_at`/`canceled_at`; the
@@ -1204,7 +1322,9 @@ service Rellm {
   // `service_terminated_at`, once both have passed. *Authenticated* -- the subscription's own buyer,
   // or an Admin.
   rpc CancelMarketSubscription(MarketSubscription) returns (MarketSubscription) {}
-  // Appends to a `PURCHASE_TYPE_RELLM_HOSTING` MarketSubscription's own `fulfillment_notes` (nothing
+  // Appends to a MarketSubscription's own `fulfillment_notes` (any `PurchaseType` -- see
+  // `MediaStorageSubscriptionDetails.fulfillment_notes`; the request's `details` must be the variant matching the
+  // subscription's type; nothing
   // else -- every other field, including `additional_information`, is immutable after purchase and
   // silently ignored if changed) -- backs `/market/fulfillment`. A new entry must be appended (not
   // inserted/reordered/removed) after whatever's already stored, and its `user_id` must match the
@@ -1215,6 +1335,11 @@ service Rellm {
   // to set it independently of a note. *Authenticated*, requires Admin (for now -- see that field's
   // own doc on why this may loosen to "buyer, or Admin" later).
   rpc UpdateMarketSubscription(MarketSubscription) returns (MarketSubscription) {}
+  // Marks all of a MarketSubscription's current `fulfillment_notes` read (any `PurchaseType`)
+  // by stamping its details' `notes_last_read` with now. *Authenticated*, and only
+  // the subscription's own buyer (`PermissionDenied` otherwise -- even an Admin, since the marker is
+  // the buyer's). Idempotent. Returns the updated subscription.
+  rpc MarkFulfillmentNotesRead(MarkFulfillmentNotesReadRequest) returns (MarketSubscription) {}
   // Generates (or edits, given reference `media_ids`) an image via one of the current user's AIModels,
   // storing it as a new Media and, if `target` is set, attaching it to that Post/Event. *Authenticated* - caller
   // must own or have been granted access to the chosen AIProvider, and (if `target` is set) have edit access

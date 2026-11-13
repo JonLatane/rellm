@@ -150,21 +150,25 @@ export function purchasePeriodToJSON(object: PurchasePeriod): string {
 }
 
 /**
- * The state of a `PURCHASE_TYPE_RELLM_HOSTING` order's manual fulfillment -- see
+ * Where a subscription stands in the host admins' work queue. Only `PURCHASE_TYPE_RELLM_HOSTING` is fulfilled by
+ * hand, so only it ever moves through these values (via admin-written notes). Every other type is fulfilled
+ * automatically (storage, AI grants and permissions are applied by the system when the purchase is fulfilled):
+ * its `fulfillment_status` is always `FULFILLMENT_STATUS_FULFILLED` -- whatever an older row stored -- and
+ * `UpdateMarketSubscription` rejects a note that tries to change it. See
  * `RellmHostingSubscriptionDetails.fulfillment_status`'s own doc for how the "current" value is
  * derived, and `FulfillmentNote.fulfillment_status` for how every transition is recorded as its own
  * timestamped note (a "fulfillment state history"), not just tracked as a bare current value.
  */
 export enum FulfillmentStatus {
-  /** FULFILLMENT_STATUS_AWAITING_HOST_ADMIN - The starting state for every new order -- no admin has looked at it yet. */
+  /** FULFILLMENT_STATUS_AWAITING_HOST_ADMIN - The starting state for every new subscription -- no admin has looked at it yet. */
   FULFILLMENT_STATUS_AWAITING_HOST_ADMIN = 0,
   /**
-   * FULFILLMENT_STATUS_FULFILLED - The order is fully stood up -- set via "Add and Mark as Fulfilled" on `/market/fulfillment`
+   * FULFILLMENT_STATUS_FULFILLED - The subscription is fully stood up / dealt with -- set via "Add and Mark as Fulfilled" on `/market/fulfillment`
    * (`UpdateMarketSubscription`).
    */
   FULFILLMENT_STATUS_FULFILLED = 1,
   /**
-   * FULFILLMENT_STATUS_IN_PROGRESS - An admin has started working the order but it isn't done yet -- set automatically the first
+   * FULFILLMENT_STATUS_IN_PROGRESS - An admin has started working the subscription but it isn't done yet -- set automatically the first
    * time an admin expands this order's row on `/market/fulfillment` (if it was still
    * `FULFILLMENT_STATUS_AWAITING_HOST_ADMIN`), or explicitly via a note.
    */
@@ -213,6 +217,14 @@ export enum GetMarketSubscriptionsRequestType {
    * automated (see RellmHostingSubscriptionDetails.fulfillment_status's own doc).
    */
   GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN = 1,
+  /**
+   * GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN - Admin-only view backing the Messages page's Fulfillment tab -- *every* MarketSubscription of *every*
+   * PurchaseType across every buyer, oldest first, so an admin can find any customer's subscription
+   * (storage, AI grants, permissions, hosting) to open its fulfillment chat (`fulfillment_notes`,
+   * which all types have). Only Rellm hosting has a work queue (`fulfillment_status` moves); the other
+   * types are always `FULFILLMENT_STATUS_FULFILLED`, so their chats are text only.
+   */
+  GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN = 2,
   UNRECOGNIZED = -1,
 }
 
@@ -224,6 +236,9 @@ export function getMarketSubscriptionsRequestTypeFromJSON(object: any): GetMarke
     case 1:
     case "GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN":
       return GetMarketSubscriptionsRequestType.GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN;
+    case 2:
+    case "GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN":
+      return GetMarketSubscriptionsRequestType.GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN;
     case -1:
     case "UNRECOGNIZED":
     default:
@@ -237,7 +252,73 @@ export function getMarketSubscriptionsRequestTypeToJSON(object: GetMarketSubscri
       return "GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE";
     case GetMarketSubscriptionsRequestType.GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN:
       return "GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN";
+    case GetMarketSubscriptionsRequestType.GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN:
+      return "GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN";
     case GetMarketSubscriptionsRequestType.UNRECOGNIZED:
+    default:
+      return "UNRECOGNIZED";
+  }
+}
+
+/**
+ * Where a `MarketSubscription` stands from the *buyer's* point of view -- always derived on the fly
+ * (never stored as a column) from `canceled_at`/`renews_at`/`service_terminated_at` as of the moment
+ * the subscription is marshaled, see `logic::market::market_subscription_state`. The point of the
+ * middle value: a buyer who cancels has still paid for the rest of their current billing period, so
+ * cancellation is not an instant "off switch" -- they keep their entitlement until it runs out, and
+ * can resume (see `MakeMarketPurchaseResponse.resumed_subscription`) any time before then without
+ * paying again.
+ */
+export enum MarketSubscriptionState {
+  /**
+   * SUBSCRIPTION_ACTIVE - Not canceled -- will renew (or, for a `PURCHASE_PERIOD_INDEFINITE` one, simply stays in force)
+   * and the entitlement is in effect. The default (proto3's implicit `0`).
+   */
+  SUBSCRIPTION_ACTIVE = 0,
+  /**
+   * SUBSCRIPTION_ACTIVE_BUT_CANCELED - `canceled_at` is set, but the period already paid for hasn't run out yet (i.e. now is still before
+   * the later of `canceled_at`/`renews_at`, and `service_terminated_at` is unset): the entitlement
+   * is still in effect, it just won't renew. Buying the same product again *resumes* this
+   * subscription (clears `canceled_at`, no new charge) rather than starting a second one.
+   */
+  SUBSCRIPTION_ACTIVE_BUT_CANCELED = 1,
+  /**
+   * SUBSCRIPTION_CANCELED - Canceled and the paid-for period is over (`service_terminated_at` set, or the later of
+   * `canceled_at`/`renews_at` has passed and the `renew_market_subscriptions` job simply hasn't
+   * gotten to revoking the entitlement yet). Terminal: buying the product again starts a brand new
+   * subscription.
+   */
+  SUBSCRIPTION_CANCELED = 2,
+  UNRECOGNIZED = -1,
+}
+
+export function marketSubscriptionStateFromJSON(object: any): MarketSubscriptionState {
+  switch (object) {
+    case 0:
+    case "SUBSCRIPTION_ACTIVE":
+      return MarketSubscriptionState.SUBSCRIPTION_ACTIVE;
+    case 1:
+    case "SUBSCRIPTION_ACTIVE_BUT_CANCELED":
+      return MarketSubscriptionState.SUBSCRIPTION_ACTIVE_BUT_CANCELED;
+    case 2:
+    case "SUBSCRIPTION_CANCELED":
+      return MarketSubscriptionState.SUBSCRIPTION_CANCELED;
+    case -1:
+    case "UNRECOGNIZED":
+    default:
+      return MarketSubscriptionState.UNRECOGNIZED;
+  }
+}
+
+export function marketSubscriptionStateToJSON(object: MarketSubscriptionState): string {
+  switch (object) {
+    case MarketSubscriptionState.SUBSCRIPTION_ACTIVE:
+      return "SUBSCRIPTION_ACTIVE";
+    case MarketSubscriptionState.SUBSCRIPTION_ACTIVE_BUT_CANCELED:
+      return "SUBSCRIPTION_ACTIVE_BUT_CANCELED";
+    case MarketSubscriptionState.SUBSCRIPTION_CANCELED:
+      return "SUBSCRIPTION_CANCELED";
+    case MarketSubscriptionState.UNRECOGNIZED:
     default:
       return "UNRECOGNIZED";
   }
@@ -353,7 +434,8 @@ export interface GetMarketSubscriptionsResponse {
   /**
    * For `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE`: the caller's own subscriptions, newest
    * first. For `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN`: every
-   * `PURCHASE_TYPE_RELLM_HOSTING` subscription across every buyer, oldest first (so the oldest
+   * `PURCHASE_TYPE_RELLM_HOSTING` subscription across every buyer (and for
+   * `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN`, every subscription of every type), oldest first (so the oldest
    * unfulfilled order surfaces at the top of `/market/fulfillment`).
    */
   marketSubscriptions: MarketSubscription[];
@@ -388,6 +470,15 @@ export interface MakeMarketPurchaseResponse {
    * checkout leaves no trace at all.
    */
   checkoutUrl: string;
+  /**
+   * Set *instead of* a checkout (and `checkout_url` is then empty) when the buyer already has a
+   * `SUBSCRIPTION_ACTIVE_BUT_CANCELED` subscription to this same product: they've already paid for
+   * the rest of the period, so buying again just resumes it -- `canceled_at` is cleared, the slot
+   * it freed is claimed again (`MarketProduct.sold_count`), and nothing is charged. The returned
+   * subscription is the resumed one, now `SUBSCRIPTION_ACTIVE`. Clients must check this before
+   * redirecting to `checkout_url`.
+   */
+  resumedSubscription?: MarketSubscription | undefined;
 }
 
 /**
@@ -706,6 +797,13 @@ export interface MarketSubscription {
    * into this same subscription.
    */
   billingHistory: MarketPurchase[];
+  /**
+   * Where this subscription stands right now -- see `MarketSubscriptionState`'s own doc. Server-
+   * derived at marshal time from `canceled_at`/`renews_at`/`service_terminated_at`; ignored on any
+   * request (a client can't set it -- cancel via `CancelMarketSubscription`, resume by buying the
+   * product again via `MakeMarketPurchase`).
+   */
+  state: MarketSubscriptionState;
   mediaStorageSubscriptionDetails?: MediaStorageSubscriptionDetails | undefined;
   aiGrantSubscriptionDetails?: AIGrantSubscriptionDetails | undefined;
   rellmHostingSubscriptionDetails?: RellmHostingSubscriptionDetails | undefined;
@@ -735,7 +833,10 @@ export interface MarketSubscription {
    * storage quota, granted permissions, etc.) stays active until whichever is later of
    * renews_at/canceled_at, at which point renew_market_subscriptions.rs revokes it and sets
    * service_terminated_at. Also the moment `MarketProduct.sold_count` is decremented, freeing this
-   * subscription's slot for a new buyer (see that field's own doc).
+   * subscription's slot for a new buyer (see that field's own doc). Cleared again (and the slot
+   * re-claimed) if the buyer resumes the subscription before it lapses -- see
+   * `MarketSubscriptionState.SUBSCRIPTION_ACTIVE_BUT_CANCELED` and `state` above, which is what
+   * clients should branch on rather than inspecting this field.
    */
   canceledAt?:
     | string
@@ -763,6 +864,20 @@ export interface MediaStorageSubscriptionDetails {
    * `MediaStorage` arm.
    */
   allocationBytes: number;
+  /**
+   * The fulfillment chat for this subscription -- *every* `PurchaseType` has one, not just
+   * `PURCHASE_TYPE_RELLM_HOSTING` (see `RellmHostingSubscriptionDetails.fulfillment_status`/`fulfillment_notes`/
+   * `notes_last_read`, whose semantics these three fields share exactly: append-only notes via
+   * `UpdateMarketSubscription`, the buyer's read marker via `MarkFulfillmentNotesRead`, `fulfillment_status`
+   * always the last note's status). Only meaningful on a `MarketSubscription`'s own `details`: on a
+   * `MarketProduct.details` they're always empty/unset. Unlike Rellm hosting, nothing about these types
+   * *needs* an admin: the system fulfills them automatically, so `fulfillment_status` is always
+   * `FULFILLMENT_STATUS_FULFILLED` (derived on read, and `UpdateMarketSubscription` rejects a note that changes
+   * it) -- the chat is just a way for a host admin and the buyer to talk about the subscription.
+   */
+  fulfillmentStatus: FulfillmentStatus;
+  fulfillmentNotes: FulfillmentNote[];
+  notesLastRead?: string | undefined;
 }
 
 /**
@@ -808,6 +923,20 @@ export interface PermissionsAccessSubscriptionDetails {
    * copied the same way `name` is.
    */
   description: string;
+  /**
+   * The fulfillment chat for this subscription -- *every* `PurchaseType` has one, not just
+   * `PURCHASE_TYPE_RELLM_HOSTING` (see `RellmHostingSubscriptionDetails.fulfillment_status`/`fulfillment_notes`/
+   * `notes_last_read`, whose semantics these three fields share exactly: append-only notes via
+   * `UpdateMarketSubscription`, the buyer's read marker via `MarkFulfillmentNotesRead`, `fulfillment_status`
+   * always the last note's status). Only meaningful on a `MarketSubscription`'s own `details`: on a
+   * `MarketProduct.details` they're always empty/unset. Unlike Rellm hosting, nothing about these types
+   * *needs* an admin: the system fulfills them automatically, so `fulfillment_status` is always
+   * `FULFILLMENT_STATUS_FULFILLED` (derived on read, and `UpdateMarketSubscription` rejects a note that changes
+   * it) -- the chat is just a way for a host admin and the buyer to talk about the subscription.
+   */
+  fulfillmentStatus: FulfillmentStatus;
+  fulfillmentNotes: FulfillmentNote[];
+  notesLastRead?: string | undefined;
 }
 
 /**
@@ -826,6 +955,20 @@ export interface AIGrantSubscriptionDetails {
    * `logic::market::market_fulfillment::fulfill_purchase`'s `AiGrants` arm.
    */
   tokens: number;
+  /**
+   * The fulfillment chat for this subscription -- *every* `PurchaseType` has one, not just
+   * `PURCHASE_TYPE_RELLM_HOSTING` (see `RellmHostingSubscriptionDetails.fulfillment_status`/`fulfillment_notes`/
+   * `notes_last_read`, whose semantics these three fields share exactly: append-only notes via
+   * `UpdateMarketSubscription`, the buyer's read marker via `MarkFulfillmentNotesRead`, `fulfillment_status`
+   * always the last note's status). Only meaningful on a `MarketSubscription`'s own `details`: on a
+   * `MarketProduct.details` they're always empty/unset. Unlike Rellm hosting, nothing about these types
+   * *needs* an admin: the system fulfills them automatically, so `fulfillment_status` is always
+   * `FULFILLMENT_STATUS_FULFILLED` (derived on read, and `UpdateMarketSubscription` rejects a note that changes
+   * it) -- the chat is just a way for a host admin and the buyer to talk about the subscription.
+   */
+  fulfillmentStatus: FulfillmentStatus;
+  fulfillmentNotes: FulfillmentNote[];
+  notesLastRead?: string | undefined;
 }
 
 /**
@@ -891,6 +1034,15 @@ export interface RellmHostingSubscriptionDetails {
    * making the request -- the server stamps `created_at` itself).
    */
   fulfillmentNotes: FulfillmentNote[];
+  /**
+   * When the *buyer* last read this order's `fulfillment_notes` -- set by `MarkFulfillmentNotesRead`
+   * (server-stamped, never client-settable via `UpdateMarketSubscription`, which preserves it).
+   * Unset until first read. A note is *unread* if it was written by someone other than the buyer
+   * (i.e. an admin) and its `created_at` is later than this (or this is unset). Drives the unread
+   * counts on the Messages UI's Fulfillment tab and on subscription listings. Deliberately one
+   * marker for the buyer's side only: admins work orders from `/market/fulfillment`.
+   */
+  notesLastRead?: string | undefined;
 }
 
 /**
@@ -928,6 +1080,15 @@ export interface FulfillmentNote {
    * timestamp the client sends for a newly-appended entry.
    */
   createdAt: string | undefined;
+}
+
+/**
+ * Request to mark a subscription's fulfillment notes read -- see
+ * `RellmHostingSubscriptionDetails.notes_last_read`.
+ */
+export interface MarkFulfillmentNotesReadRequest {
+  /** The `MarketSubscription.id`. Only its buyer may mark it read. */
+  marketSubscriptionId: string;
 }
 
 function createBaseMarketProduct(): MarketProduct {
@@ -1541,13 +1702,16 @@ export const MakeMarketPurchaseRequest: MessageFns<MakeMarketPurchaseRequest> = 
 };
 
 function createBaseMakeMarketPurchaseResponse(): MakeMarketPurchaseResponse {
-  return { checkoutUrl: "" };
+  return { checkoutUrl: "", resumedSubscription: undefined };
 }
 
 export const MakeMarketPurchaseResponse: MessageFns<MakeMarketPurchaseResponse> = {
   encode(message: MakeMarketPurchaseResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.checkoutUrl !== "") {
       writer.uint32(10).string(message.checkoutUrl);
+    }
+    if (message.resumedSubscription !== undefined) {
+      MarketSubscription.encode(message.resumedSubscription, writer.uint32(18).fork()).join();
     }
     return writer;
   },
@@ -1567,6 +1731,14 @@ export const MakeMarketPurchaseResponse: MessageFns<MakeMarketPurchaseResponse> 
           message.checkoutUrl = reader.string();
           continue;
         }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.resumedSubscription = MarketSubscription.decode(reader, reader.uint32());
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1577,13 +1749,21 @@ export const MakeMarketPurchaseResponse: MessageFns<MakeMarketPurchaseResponse> 
   },
 
   fromJSON(object: any): MakeMarketPurchaseResponse {
-    return { checkoutUrl: isSet(object.checkoutUrl) ? globalThis.String(object.checkoutUrl) : "" };
+    return {
+      checkoutUrl: isSet(object.checkoutUrl) ? globalThis.String(object.checkoutUrl) : "",
+      resumedSubscription: isSet(object.resumedSubscription)
+        ? MarketSubscription.fromJSON(object.resumedSubscription)
+        : undefined,
+    };
   },
 
   toJSON(message: MakeMarketPurchaseResponse): unknown {
     const obj: any = {};
     if (message.checkoutUrl !== "") {
       obj.checkoutUrl = message.checkoutUrl;
+    }
+    if (message.resumedSubscription !== undefined) {
+      obj.resumedSubscription = MarketSubscription.toJSON(message.resumedSubscription);
     }
     return obj;
   },
@@ -1594,6 +1774,9 @@ export const MakeMarketPurchaseResponse: MessageFns<MakeMarketPurchaseResponse> 
   fromPartial<I extends Exact<DeepPartial<MakeMarketPurchaseResponse>, I>>(object: I): MakeMarketPurchaseResponse {
     const message = createBaseMakeMarketPurchaseResponse();
     message.checkoutUrl = object.checkoutUrl ?? "";
+    message.resumedSubscription = (object.resumedSubscription !== undefined && object.resumedSubscription !== null)
+      ? MarketSubscription.fromPartial(object.resumedSubscription)
+      : undefined;
     return message;
   },
 };
@@ -2771,6 +2954,7 @@ function createBaseMarketSubscription(): MarketSubscription {
     currency: 0,
     marketProduct: undefined,
     billingHistory: [],
+    state: 0,
     mediaStorageSubscriptionDetails: undefined,
     aiGrantSubscriptionDetails: undefined,
     rellmHostingSubscriptionDetails: undefined,
@@ -2807,6 +2991,9 @@ export const MarketSubscription: MessageFns<MarketSubscription> = {
     }
     for (const v of message.billingHistory) {
       MarketPurchase.encode(v!, writer.uint32(66).fork()).join();
+    }
+    if (message.state !== 0) {
+      writer.uint32(72).int32(message.state);
     }
     if (message.mediaStorageSubscriptionDetails !== undefined) {
       MediaStorageSubscriptionDetails.encode(message.mediaStorageSubscriptionDetails, writer.uint32(82).fork()).join();
@@ -2909,6 +3096,14 @@ export const MarketSubscription: MessageFns<MarketSubscription> = {
           message.billingHistory.push(MarketPurchase.decode(reader, reader.uint32()));
           continue;
         }
+        case 9: {
+          if (tag !== 72) {
+            break;
+          }
+
+          message.state = reader.int32() as any;
+          continue;
+        }
         case 10: {
           if (tag !== 82) {
             break;
@@ -2997,6 +3192,7 @@ export const MarketSubscription: MessageFns<MarketSubscription> = {
       billingHistory: globalThis.Array.isArray(object?.billingHistory)
         ? object.billingHistory.map((e: any) => MarketPurchase.fromJSON(e))
         : [],
+      state: isSet(object.state) ? marketSubscriptionStateFromJSON(object.state) : 0,
       mediaStorageSubscriptionDetails: isSet(object.mediaStorageSubscriptionDetails)
         ? MediaStorageSubscriptionDetails.fromJSON(object.mediaStorageSubscriptionDetails)
         : undefined,
@@ -3043,6 +3239,9 @@ export const MarketSubscription: MessageFns<MarketSubscription> = {
     }
     if (message.billingHistory?.length) {
       obj.billingHistory = message.billingHistory.map((e) => MarketPurchase.toJSON(e));
+    }
+    if (message.state !== 0) {
+      obj.state = marketSubscriptionStateToJSON(message.state);
     }
     if (message.mediaStorageSubscriptionDetails !== undefined) {
       obj.mediaStorageSubscriptionDetails = MediaStorageSubscriptionDetails.toJSON(
@@ -3094,6 +3293,7 @@ export const MarketSubscription: MessageFns<MarketSubscription> = {
       ? MarketProduct.fromPartial(object.marketProduct)
       : undefined;
     message.billingHistory = object.billingHistory?.map((e) => MarketPurchase.fromPartial(e)) || [];
+    message.state = object.state ?? 0;
     message.mediaStorageSubscriptionDetails =
       (object.mediaStorageSubscriptionDetails !== undefined && object.mediaStorageSubscriptionDetails !== null)
         ? MediaStorageSubscriptionDetails.fromPartial(object.mediaStorageSubscriptionDetails)
@@ -3120,13 +3320,22 @@ export const MarketSubscription: MessageFns<MarketSubscription> = {
 };
 
 function createBaseMediaStorageSubscriptionDetails(): MediaStorageSubscriptionDetails {
-  return { allocationBytes: 0 };
+  return { allocationBytes: 0, fulfillmentStatus: 0, fulfillmentNotes: [], notesLastRead: undefined };
 }
 
 export const MediaStorageSubscriptionDetails: MessageFns<MediaStorageSubscriptionDetails> = {
   encode(message: MediaStorageSubscriptionDetails, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.allocationBytes !== 0) {
       writer.uint32(8).uint64(message.allocationBytes);
+    }
+    if (message.fulfillmentStatus !== 0) {
+      writer.uint32(56).int32(message.fulfillmentStatus);
+    }
+    for (const v of message.fulfillmentNotes) {
+      FulfillmentNote.encode(v!, writer.uint32(66).fork()).join();
+    }
+    if (message.notesLastRead !== undefined) {
+      Timestamp.encode(toTimestamp(message.notesLastRead), writer.uint32(74).fork()).join();
     }
     return writer;
   },
@@ -3146,6 +3355,30 @@ export const MediaStorageSubscriptionDetails: MessageFns<MediaStorageSubscriptio
           message.allocationBytes = longToNumber(reader.uint64());
           continue;
         }
+        case 7: {
+          if (tag !== 56) {
+            break;
+          }
+
+          message.fulfillmentStatus = reader.int32() as any;
+          continue;
+        }
+        case 8: {
+          if (tag !== 66) {
+            break;
+          }
+
+          message.fulfillmentNotes.push(FulfillmentNote.decode(reader, reader.uint32()));
+          continue;
+        }
+        case 9: {
+          if (tag !== 74) {
+            break;
+          }
+
+          message.notesLastRead = fromTimestamp(Timestamp.decode(reader, reader.uint32()));
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -3156,13 +3389,29 @@ export const MediaStorageSubscriptionDetails: MessageFns<MediaStorageSubscriptio
   },
 
   fromJSON(object: any): MediaStorageSubscriptionDetails {
-    return { allocationBytes: isSet(object.allocationBytes) ? globalThis.Number(object.allocationBytes) : 0 };
+    return {
+      allocationBytes: isSet(object.allocationBytes) ? globalThis.Number(object.allocationBytes) : 0,
+      fulfillmentStatus: isSet(object.fulfillmentStatus) ? fulfillmentStatusFromJSON(object.fulfillmentStatus) : 0,
+      fulfillmentNotes: globalThis.Array.isArray(object?.fulfillmentNotes)
+        ? object.fulfillmentNotes.map((e: any) => FulfillmentNote.fromJSON(e))
+        : [],
+      notesLastRead: isSet(object.notesLastRead) ? globalThis.String(object.notesLastRead) : undefined,
+    };
   },
 
   toJSON(message: MediaStorageSubscriptionDetails): unknown {
     const obj: any = {};
     if (message.allocationBytes !== 0) {
       obj.allocationBytes = Math.round(message.allocationBytes);
+    }
+    if (message.fulfillmentStatus !== 0) {
+      obj.fulfillmentStatus = fulfillmentStatusToJSON(message.fulfillmentStatus);
+    }
+    if (message.fulfillmentNotes?.length) {
+      obj.fulfillmentNotes = message.fulfillmentNotes.map((e) => FulfillmentNote.toJSON(e));
+    }
+    if (message.notesLastRead !== undefined) {
+      obj.notesLastRead = message.notesLastRead;
     }
     return obj;
   },
@@ -3175,12 +3424,22 @@ export const MediaStorageSubscriptionDetails: MessageFns<MediaStorageSubscriptio
   ): MediaStorageSubscriptionDetails {
     const message = createBaseMediaStorageSubscriptionDetails();
     message.allocationBytes = object.allocationBytes ?? 0;
+    message.fulfillmentStatus = object.fulfillmentStatus ?? 0;
+    message.fulfillmentNotes = object.fulfillmentNotes?.map((e) => FulfillmentNote.fromPartial(e)) || [];
+    message.notesLastRead = object.notesLastRead ?? undefined;
     return message;
   },
 };
 
 function createBasePermissionsAccessSubscriptionDetails(): PermissionsAccessSubscriptionDetails {
-  return { permissions: [], name: "", description: "" };
+  return {
+    permissions: [],
+    name: "",
+    description: "",
+    fulfillmentStatus: 0,
+    fulfillmentNotes: [],
+    notesLastRead: undefined,
+  };
 }
 
 export const PermissionsAccessSubscriptionDetails: MessageFns<PermissionsAccessSubscriptionDetails> = {
@@ -3195,6 +3454,15 @@ export const PermissionsAccessSubscriptionDetails: MessageFns<PermissionsAccessS
     }
     if (message.description !== "") {
       writer.uint32(26).string(message.description);
+    }
+    if (message.fulfillmentStatus !== 0) {
+      writer.uint32(56).int32(message.fulfillmentStatus);
+    }
+    for (const v of message.fulfillmentNotes) {
+      FulfillmentNote.encode(v!, writer.uint32(66).fork()).join();
+    }
+    if (message.notesLastRead !== undefined) {
+      Timestamp.encode(toTimestamp(message.notesLastRead), writer.uint32(74).fork()).join();
     }
     return writer;
   },
@@ -3240,6 +3508,30 @@ export const PermissionsAccessSubscriptionDetails: MessageFns<PermissionsAccessS
           message.description = reader.string();
           continue;
         }
+        case 7: {
+          if (tag !== 56) {
+            break;
+          }
+
+          message.fulfillmentStatus = reader.int32() as any;
+          continue;
+        }
+        case 8: {
+          if (tag !== 66) {
+            break;
+          }
+
+          message.fulfillmentNotes.push(FulfillmentNote.decode(reader, reader.uint32()));
+          continue;
+        }
+        case 9: {
+          if (tag !== 74) {
+            break;
+          }
+
+          message.notesLastRead = fromTimestamp(Timestamp.decode(reader, reader.uint32()));
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -3256,6 +3548,11 @@ export const PermissionsAccessSubscriptionDetails: MessageFns<PermissionsAccessS
         : [],
       name: isSet(object.name) ? globalThis.String(object.name) : "",
       description: isSet(object.description) ? globalThis.String(object.description) : "",
+      fulfillmentStatus: isSet(object.fulfillmentStatus) ? fulfillmentStatusFromJSON(object.fulfillmentStatus) : 0,
+      fulfillmentNotes: globalThis.Array.isArray(object?.fulfillmentNotes)
+        ? object.fulfillmentNotes.map((e: any) => FulfillmentNote.fromJSON(e))
+        : [],
+      notesLastRead: isSet(object.notesLastRead) ? globalThis.String(object.notesLastRead) : undefined,
     };
   },
 
@@ -3269,6 +3566,15 @@ export const PermissionsAccessSubscriptionDetails: MessageFns<PermissionsAccessS
     }
     if (message.description !== "") {
       obj.description = message.description;
+    }
+    if (message.fulfillmentStatus !== 0) {
+      obj.fulfillmentStatus = fulfillmentStatusToJSON(message.fulfillmentStatus);
+    }
+    if (message.fulfillmentNotes?.length) {
+      obj.fulfillmentNotes = message.fulfillmentNotes.map((e) => FulfillmentNote.toJSON(e));
+    }
+    if (message.notesLastRead !== undefined) {
+      obj.notesLastRead = message.notesLastRead;
     }
     return obj;
   },
@@ -3285,12 +3591,22 @@ export const PermissionsAccessSubscriptionDetails: MessageFns<PermissionsAccessS
     message.permissions = object.permissions?.map((e) => e) || [];
     message.name = object.name ?? "";
     message.description = object.description ?? "";
+    message.fulfillmentStatus = object.fulfillmentStatus ?? 0;
+    message.fulfillmentNotes = object.fulfillmentNotes?.map((e) => FulfillmentNote.fromPartial(e)) || [];
+    message.notesLastRead = object.notesLastRead ?? undefined;
     return message;
   },
 };
 
 function createBaseAIGrantSubscriptionDetails(): AIGrantSubscriptionDetails {
-  return { aiProviderId: "", modelNames: [], tokens: 0 };
+  return {
+    aiProviderId: "",
+    modelNames: [],
+    tokens: 0,
+    fulfillmentStatus: 0,
+    fulfillmentNotes: [],
+    notesLastRead: undefined,
+  };
 }
 
 export const AIGrantSubscriptionDetails: MessageFns<AIGrantSubscriptionDetails> = {
@@ -3303,6 +3619,15 @@ export const AIGrantSubscriptionDetails: MessageFns<AIGrantSubscriptionDetails> 
     }
     if (message.tokens !== 0) {
       writer.uint32(24).uint64(message.tokens);
+    }
+    if (message.fulfillmentStatus !== 0) {
+      writer.uint32(56).int32(message.fulfillmentStatus);
+    }
+    for (const v of message.fulfillmentNotes) {
+      FulfillmentNote.encode(v!, writer.uint32(66).fork()).join();
+    }
+    if (message.notesLastRead !== undefined) {
+      Timestamp.encode(toTimestamp(message.notesLastRead), writer.uint32(74).fork()).join();
     }
     return writer;
   },
@@ -3338,6 +3663,30 @@ export const AIGrantSubscriptionDetails: MessageFns<AIGrantSubscriptionDetails> 
           message.tokens = longToNumber(reader.uint64());
           continue;
         }
+        case 7: {
+          if (tag !== 56) {
+            break;
+          }
+
+          message.fulfillmentStatus = reader.int32() as any;
+          continue;
+        }
+        case 8: {
+          if (tag !== 66) {
+            break;
+          }
+
+          message.fulfillmentNotes.push(FulfillmentNote.decode(reader, reader.uint32()));
+          continue;
+        }
+        case 9: {
+          if (tag !== 74) {
+            break;
+          }
+
+          message.notesLastRead = fromTimestamp(Timestamp.decode(reader, reader.uint32()));
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -3354,6 +3703,11 @@ export const AIGrantSubscriptionDetails: MessageFns<AIGrantSubscriptionDetails> 
         ? object.modelNames.map((e: any) => globalThis.String(e))
         : [],
       tokens: isSet(object.tokens) ? globalThis.Number(object.tokens) : 0,
+      fulfillmentStatus: isSet(object.fulfillmentStatus) ? fulfillmentStatusFromJSON(object.fulfillmentStatus) : 0,
+      fulfillmentNotes: globalThis.Array.isArray(object?.fulfillmentNotes)
+        ? object.fulfillmentNotes.map((e: any) => FulfillmentNote.fromJSON(e))
+        : [],
+      notesLastRead: isSet(object.notesLastRead) ? globalThis.String(object.notesLastRead) : undefined,
     };
   },
 
@@ -3368,6 +3722,15 @@ export const AIGrantSubscriptionDetails: MessageFns<AIGrantSubscriptionDetails> 
     if (message.tokens !== 0) {
       obj.tokens = Math.round(message.tokens);
     }
+    if (message.fulfillmentStatus !== 0) {
+      obj.fulfillmentStatus = fulfillmentStatusToJSON(message.fulfillmentStatus);
+    }
+    if (message.fulfillmentNotes?.length) {
+      obj.fulfillmentNotes = message.fulfillmentNotes.map((e) => FulfillmentNote.toJSON(e));
+    }
+    if (message.notesLastRead !== undefined) {
+      obj.notesLastRead = message.notesLastRead;
+    }
     return obj;
   },
 
@@ -3379,6 +3742,9 @@ export const AIGrantSubscriptionDetails: MessageFns<AIGrantSubscriptionDetails> 
     message.aiProviderId = object.aiProviderId ?? "";
     message.modelNames = object.modelNames?.map((e) => e) || [];
     message.tokens = object.tokens ?? 0;
+    message.fulfillmentStatus = object.fulfillmentStatus ?? 0;
+    message.fulfillmentNotes = object.fulfillmentNotes?.map((e) => FulfillmentNote.fromPartial(e)) || [];
+    message.notesLastRead = object.notesLastRead ?? undefined;
     return message;
   },
 };
@@ -3393,6 +3759,7 @@ function createBaseRellmHostingSubscriptionDetails(): RellmHostingSubscriptionDe
     additionalInformation: "",
     fulfillmentStatus: 0,
     fulfillmentNotes: [],
+    notesLastRead: undefined,
   };
 }
 
@@ -3421,6 +3788,9 @@ export const RellmHostingSubscriptionDetails: MessageFns<RellmHostingSubscriptio
     }
     for (const v of message.fulfillmentNotes) {
       FulfillmentNote.encode(v!, writer.uint32(66).fork()).join();
+    }
+    if (message.notesLastRead !== undefined) {
+      Timestamp.encode(toTimestamp(message.notesLastRead), writer.uint32(74).fork()).join();
     }
     return writer;
   },
@@ -3496,6 +3866,14 @@ export const RellmHostingSubscriptionDetails: MessageFns<RellmHostingSubscriptio
           message.fulfillmentNotes.push(FulfillmentNote.decode(reader, reader.uint32()));
           continue;
         }
+        case 9: {
+          if (tag !== 74) {
+            break;
+          }
+
+          message.notesLastRead = fromTimestamp(Timestamp.decode(reader, reader.uint32()));
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -3519,6 +3897,7 @@ export const RellmHostingSubscriptionDetails: MessageFns<RellmHostingSubscriptio
       fulfillmentNotes: globalThis.Array.isArray(object?.fulfillmentNotes)
         ? object.fulfillmentNotes.map((e: any) => FulfillmentNote.fromJSON(e))
         : [],
+      notesLastRead: isSet(object.notesLastRead) ? globalThis.String(object.notesLastRead) : undefined,
     };
   },
 
@@ -3548,6 +3927,9 @@ export const RellmHostingSubscriptionDetails: MessageFns<RellmHostingSubscriptio
     if (message.fulfillmentNotes?.length) {
       obj.fulfillmentNotes = message.fulfillmentNotes.map((e) => FulfillmentNote.toJSON(e));
     }
+    if (message.notesLastRead !== undefined) {
+      obj.notesLastRead = message.notesLastRead;
+    }
     return obj;
   },
 
@@ -3566,6 +3948,7 @@ export const RellmHostingSubscriptionDetails: MessageFns<RellmHostingSubscriptio
     message.additionalInformation = object.additionalInformation ?? "";
     message.fulfillmentStatus = object.fulfillmentStatus ?? 0;
     message.fulfillmentNotes = object.fulfillmentNotes?.map((e) => FulfillmentNote.fromPartial(e)) || [];
+    message.notesLastRead = object.notesLastRead ?? undefined;
     return message;
   },
 };
@@ -3674,6 +4057,68 @@ export const FulfillmentNote: MessageFns<FulfillmentNote> = {
     message.note = object.note ?? "";
     message.fulfillmentStatus = object.fulfillmentStatus ?? 0;
     message.createdAt = object.createdAt ?? undefined;
+    return message;
+  },
+};
+
+function createBaseMarkFulfillmentNotesReadRequest(): MarkFulfillmentNotesReadRequest {
+  return { marketSubscriptionId: "" };
+}
+
+export const MarkFulfillmentNotesReadRequest: MessageFns<MarkFulfillmentNotesReadRequest> = {
+  encode(message: MarkFulfillmentNotesReadRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.marketSubscriptionId !== "") {
+      writer.uint32(10).string(message.marketSubscriptionId);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): MarkFulfillmentNotesReadRequest {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseMarkFulfillmentNotesReadRequest();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.marketSubscriptionId = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): MarkFulfillmentNotesReadRequest {
+    return {
+      marketSubscriptionId: isSet(object.marketSubscriptionId) ? globalThis.String(object.marketSubscriptionId) : "",
+    };
+  },
+
+  toJSON(message: MarkFulfillmentNotesReadRequest): unknown {
+    const obj: any = {};
+    if (message.marketSubscriptionId !== "") {
+      obj.marketSubscriptionId = message.marketSubscriptionId;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<MarkFulfillmentNotesReadRequest>, I>>(base?: I): MarkFulfillmentNotesReadRequest {
+    return MarkFulfillmentNotesReadRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<MarkFulfillmentNotesReadRequest>, I>>(
+    object: I,
+  ): MarkFulfillmentNotesReadRequest {
+    const message = createBaseMarkFulfillmentNotesReadRequest();
+    message.marketSubscriptionId = object.marketSubscriptionId ?? "";
     return message;
   },
 };

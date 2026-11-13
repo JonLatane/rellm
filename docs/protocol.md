@@ -206,6 +206,7 @@
     - [GetMarketSubscriptionsResponse](#rellm-GetMarketSubscriptionsResponse)
     - [MakeMarketPurchaseRequest](#rellm-MakeMarketPurchaseRequest)
     - [MakeMarketPurchaseResponse](#rellm-MakeMarketPurchaseResponse)
+    - [MarkFulfillmentNotesReadRequest](#rellm-MarkFulfillmentNotesReadRequest)
     - [MarketPayment](#rellm-MarketPayment)
     - [MarketPaymentMethod](#rellm-MarketPaymentMethod)
     - [MarketProduct](#rellm-MarketProduct)
@@ -222,6 +223,7 @@
   
     - [FulfillmentStatus](#rellm-FulfillmentStatus)
     - [GetMarketSubscriptionsRequestType](#rellm-GetMarketSubscriptionsRequestType)
+    - [MarketSubscriptionState](#rellm-MarketSubscriptionState)
     - [PurchasePeriod](#rellm-PurchasePeriod)
     - [PurchaseType](#rellm-PurchaseType)
   
@@ -675,11 +677,127 @@ buyer - until either a renewal charge fails or the buyer/admin calls
 entitlement itself stays in effect until whichever is later of `renews_at`/`canceled_at` - once both have
 passed, the `renew_market_subscriptions` background job revokes it (reverts `media_storage_limit_bytes` to
 `ServerConfiguration.media_settings.default_user_media_allocation_bytes`, or removes the granted `Permission`s,
-depending on `type`) and sets `service_terminated_at`. A user&#39;s own MarketSubscriptions (never anyone
+depending on `type`) and sets `service_terminated_at`. Until then the subscription is
+`SUBSCRIPTION_ACTIVE_BUT_CANCELED` (see [`MarketSubscriptionState`](#rellm-MarketSubscriptionState)): the buyer has
+paid for that time, so buying the same product again just *resumes* it (no new charge) rather than starting a
+second subscription. A user&#39;s own MarketSubscriptions (never anyone
 else&#39;s) are listed via [`GetMarketSubscriptions`](#grpc-api-GetMarketSubscriptions), and also travel along
 on [`User`](#rellm-User) itself (`User.market_subscriptions`) the same way `ai_models`/`sync_sources` do.
 Stripe credentials for all of this live in `ServerConfiguration.stripe_config` (a
 [`StripeConfig`](#rellm-StripeConfig)), Admin-only like `twilio_config`/`bird_config`.
+
+##### Subscription states
+[`MarketSubscription.state`](#rellm-MarketSubscription) ([`MarketSubscriptionState`](#rellm-MarketSubscriptionState))
+is derived on every read, never stored: `SUBSCRIPTION_ACTIVE` (not canceled), `SUBSCRIPTION_ACTIVE_BUT_CANCELED`
+(canceled, but the paid-for period - the later of `canceled_at`/`renews_at` - hasn&#39;t ended, so the entitlement
+still applies) and `SUBSCRIPTION_CANCELED` (terminated, or the paid-for period is over). Only the middle state can be
+resumed: [`MakeMarketPurchase`](#grpc-api-MakeMarketPurchase) for the same product returns `resumed_subscription`
+instead of a checkout. Clients should branch on `state`, not on `canceled_at`.
+
+##### Fulfillment chats, read tracking, and the admin perspective
+*Every* subscription, whatever its `PurchaseType`, has a chat: its `fulfillment_notes` (an append-only conversation
+between the buyer and the host admins, see [`UpdateMarketSubscription`](#grpc-api-UpdateMarketSubscription)). The
+same notes are seen from two sides:
+
+- **The buyer** reads them on their own subscription (`GetMarketSubscriptions`, or `User.market_subscriptions`). Their
+  read marker is `RellmHostingSubscriptionDetails.notes_last_read`, moved only by
+  [`MarkFulfillmentNotesRead`](#grpc-api-MarkFulfillmentNotesRead) (buyer-only, server-stamped; `UpdateMarketSubscription`
+  always preserves it). A note is *unread* if someone other than the buyer wrote it and it is newer than the marker (or
+  the marker is unset). A buyer&#39;s unread count is the sum over their subscriptions.
+- **A host admin** (a server `Admin`) sees every subscription, of every type
+  (`GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN`) and `UpdateMarketSubscription` (Admin-only) appends notes to
+  any of their chats. What an admin can *change* depends on the type:
+  - **Rellm hosting** is set up by hand (see [Fulfilling a Rellm hosting order](#fulfilling-a-rellm-hosting-order)
+    below for the runbook), so its `fulfillment_status` is a real work queue that admin-written notes move:
+    `FULFILLMENT_STATUS_AWAITING_HOST_ADMIN` -&gt; `IN_PROGRESS` (opening an awaiting order appends a bare status note) -&gt;
+    `FULFILLED` (&#34;Add and Mark as Fulfilled&#34;).
+  - **Every other type** (media storage, AI grants, permissions access) is fulfilled *automatically* - the system
+    applies the storage, grants or permissions itself when the purchase is fulfilled and on every renewal. Its
+    `fulfillment_status` is therefore always `FULFILLMENT_STATUS_FULFILLED` (derived on read, whatever an older row
+    stored), and `UpdateMarketSubscription` rejects a note that tries to change it
+    (`fulfillment_status_is_automatic_for_this_type`). Its chat is text only.
+
+  There is deliberately **no per-admin read marker** - `notes_last_read` is the buyer&#39;s, and several admins share the
+  same subscriptions - so an admin has no &#34;unread&#34; count. What needs an admin&#39;s attention is the number of
+  subscriptions whose `fulfillment_status` is still `FULFILLMENT_STATUS_AWAITING_HOST_ADMIN`; that is the admin&#39;s
+  count. Because the other types are always fulfilled, only hosting orders are ever in it.
+
+So three independent counts exist side by side, and clients can show them together: unread messages,
+the buyer&#39;s unread fulfillment notes, and (Admins only) subscriptions awaiting a host admin. The Elm client shows them in
+that order in the corners of its Messages button (top-right, bottom-right, bottom-left), and as the Messages,
+Subscriptions and Fulfillment tabs.
+
+##### Fulfilling a Rellm hosting order
+Fulfillment is deliberately manual: nothing in the API provisions a site. A Rellm hosting admin does it with the
+deploy system in `deploys/` (the `rellm deploy ...` command that ships with the Homebrew/Linux packages; its own
+reference is `rellm help deploys`, i.e. `deploys/README.md` - this section mirrors the &#34;Maximally-Efficient
+Configuration&#34; part of it, which is how Rellm&#39;s own cluster runs). Every command below takes `-n &lt;namespace&gt;` for the
+per-site steps, and none of it needs anything beyond `kubectl` pointed at the right cluster
+(`kubectl config current-context`) plus the tools `rellm deploy` itself lists.
+
+**What an order gives you** (`RellmHostingSubscriptionDetails`, on the order from
+`GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN`):
+
+| Order field | Use it as |
+|---|---|
+| `domain` | The site&#39;s domain, e.g. `my-site.example.com` - the `--domain` of the commands below and what its DNS points at. |
+| `contact_email` | Who to reach about DNS records/questions; carry that conversation in `fulfillment_notes`, not by email. |
+| `additional_information` | The buyer&#39;s own notes (immutable); read before starting. |
+| `db_size_bytes` / `object_storage_size_bytes` | Intended database/bucket sizes. **Currently always `0` on an order** - read the sizes off the order&#39;s `market_product` instead. |
+| `fulfillment_status` / `fulfillment_notes` | Where it stands, and the buyer-visible log of how it got there (see &#34;Admin counts&#34; above). |
+
+The namespace is yours to choose (it becomes the site&#39;s database, bucket and credentials&#39; name): lowercase letters,
+digits and `-`, at least 3 characters - the domain&#39;s first label (`my-site`) is a good default. Below: namespace
+`my-site`, domain `my-site.example.com`.
+
+**Once per cluster** (skip if the cluster already hosts sites): `rellm deploy create_central_storage` then
+`rellm deploy wait_central_postgres_ready wait_central_object_storage_ready`; `rellm deploy create_ingress` (one shared
+LoadBalancer - `rellm deploy get_ingress_external_ip` is the one IP every domain points at); `rellm deploy deploy_certmanager`;
+and, for sites with email, Stalwart (`rellm deploy create_email_admin_secret ADMIN_PASSWORD=&#39;...&#39;` *before*
+`rellm deploy create_email`, then finish its setup wizard via `rellm deploy deploy_email_admin_port_forward`).
+
+**Per order**, in this order:
+
+1. *Open the order.* Opening it on `/market/fulfillment` (or the Messages page&#39;s Fulfillment tab) moves it to
+   `FULFILLMENT_STATUS_IN_PROGRESS`, which tells the buyer you&#39;ve started. Ask for anything missing as a note.
+2. *DNS first.* An `A` record for `my-site.example.com` at the ingress IP. Certificates use DNS-01 through
+   DigitalOcean (apex and `*.my-site.example.com`), so the domain must be a DigitalOcean DNS zone: if the buyer
+   owns the domain elsewhere, post the `NS` records they must delegate to as a note. Don&#39;t continue until it resolves.
+3. *Provision the site&#39;s slice of central storage* - its own database &#43; role, bucket &#43; user and a
+   `rellm-central-data` Secret of fresh random credentials, restricted to just this site (also creates the namespace):
+   `rellm deploy create_backend_central_data -n my-site`
+4. *Deploy the backend:* `rellm deploy create_internal_central_data_backend -n my-site`
+5. *TLS:* `rellm deploy deploy_certmanager_credential -n my-site` (prompts for the provider, DigitalOcean API token, the
+   domain and an admin email), wait for `kubectl get certificate -n my-site -w` to show `READY=True`, then
+   `rellm deploy restart_backend -n my-site` (the pods read the certificate at startup).
+6. *Route the domain:* `rellm deploy add_ingress_domain -n my-site --domain my-site.example.com`. Verify with
+   `curl -I https://my-site.example.com` and `grpcurl my-site.example.com:27707 list`. If it 404s or hangs, bounce Traefik
+   (`rellm deploy deploy_ingress_restart`) - that briefly interrupts every domain, so only if needed.
+7. *Email (optional):* `rellm deploy add_email_domain -n my-site --domain my-site.example.com`, then
+   `rellm deploy list_email_domains`; post the `MX` (`@` -&gt; `my-site.example.com.`, priority 10), `TXT @`
+   (`v=spf1 mx ~all`) and `TXT _dmarc` (`v=DMARC1; p=none; rua=mailto:...`) records as a note for the buyer to add.
+8. *Save the credentials:* `rellm deploy get_all_storage_credentials` (those Secrets are the only copy), and add the
+   namespace to the deploy jobs in `.github/workflows/server_ci_cd.yml` so CI keeps its image current.
+9. *Hand over.* Add a note with the site&#39;s URL and how to sign in/create the first account, using &#34;Add and Mark as
+   Fulfilled&#34; (`FULFILLMENT_STATUS_FULFILLED`). The buyer is sent a push notification (see below).
+
+Capacity is shared across sites: `rellm deploy get_central_postgres_pvc_size get_central_object_storage_pvc_size`, and
+grow with `rellm deploy resize_central_postgres_pvc SIZE=...` / `resize_central_object_storage_pvc SIZE=...` (grow-only).
+
+**Cancellation.** Nothing in the API tears a site down. While a subscription is `SUBSCRIPTION_ACTIVE_BUT_CANCELED` the
+buyer has paid for the time - leave the site running (and don&#39;t remove it if they resume). Once it is
+`SUBSCRIPTION_CANCELED`, retire it: `rellm deploy remove_ingress_domain -n my-site --domain my-site.example.com`,
+`rellm deploy remove_email_domain -n my-site --domain my-site.example.com`, delete the namespace, then
+`rellm deploy delete_backend_central_data -n my-site --confirm my-site` (permanently removes its database, bucket and
+credentials - export what the buyer needs first), and leave a note recording that it was done.
+
+Notifications follow the same two sides and use the push subscriptions people already have - the ones
+[`RegisterPushSubscription`](#grpc-api-RegisterPushSubscription) creates when someone enables push notifications (in the
+web app&#39;s Accounts panel) - so there is nothing to opt in to per subscription. When a note is added to a
+subscription, every Web Push subscription of its buyer is notified, and so is every one of every user who can handle
+fulfillment (an Admin, see above) - except those of the note&#39;s own author. Tapping the notification opens the chat
+(the buyer&#39;s profile for the buyer, the Fulfillment tab for an admin). Recipients are worked out at send time, so
+someone who stops being an admin stops getting the admin notifications.
 
 #### Media
 [`Media`](#rellm-Media) represents an uploaded (or server-generated) photo or video. Unlike other types, Media
@@ -1254,9 +1372,10 @@ discarded and a fresh keypair generated, so it&#39;s single-use per completed/fa
 | CreateMarketProduct | [MarketProduct](#rellm-MarketProduct) | [MarketProduct](#rellm-MarketProduct) | Creates a MarketProduct. *Authenticated*, requires Admin. |
 | UpdateMarketProduct | [MarketProduct](#rellm-MarketProduct) | [MarketProduct](#rellm-MarketProduct) | Updates a MarketProduct&#39;s amount/currency/details/delisted_at. *Authenticated*, requires Admin. `type`/`period` are immutable after creation and are ignored if changed. |
 | GetMarketSubscriptions | [GetMarketSubscriptionsRequest](#rellm-GetMarketSubscriptionsRequest) | [GetMarketSubscriptionsResponse](#rellm-GetMarketSubscriptionsResponse) | Gets MarketSubscriptions -- self-scoped (&#34;MY subscriptions&#34;, `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE`, the default) for any authenticated caller, or every `PURCHASE_TYPE_RELLM_HOSTING` subscription across every buyer (`GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN`, backing `/market/fulfillment` -- see `RellmHostingSubscriptionDetails.fulfillment_status`&#39;s own doc) for an Admin. *Authenticated*. |
-| MakeMarketPurchase | [MakeMarketPurchaseRequest](#rellm-MakeMarketPurchaseRequest) | [MakeMarketPurchaseResponse](#rellm-MakeMarketPurchaseResponse) | Starts (or resumes) buying a MarketProduct for the current user, returning a Stripe Checkout URL to redirect to. *Authenticated*. See `MakeMarketPurchaseRequest`&#39;s own doc -- no MarketPurchase/ MarketSubscription is created by this call itself, only once Stripe confirms payment via webhook. |
+| MakeMarketPurchase | [MakeMarketPurchaseRequest](#rellm-MakeMarketPurchaseRequest) | [MakeMarketPurchaseResponse](#rellm-MakeMarketPurchaseResponse) | Starts (or resumes) buying a MarketProduct for the current user, returning a Stripe Checkout URL to redirect to. *Authenticated*. See `MakeMarketPurchaseRequest`&#39;s own doc -- no MarketPurchase/ MarketSubscription is created by this call itself, only once Stripe confirms payment via webhook. If the buyer already has a `SUBSCRIPTION_ACTIVE_BUT_CANCELED` subscription to the product, it is resumed on the spot instead (no checkout, no charge) -- see `MakeMarketPurchaseResponse.resumed_subscription`. |
 | CancelMarketSubscription | [MarketSubscription](#rellm-MarketSubscription) | [MarketSubscription](#rellm-MarketSubscription) | Cancels a MarketSubscription by setting `canceled_at` to now -- entitlement (media storage quota, granted permissions, etc.) stays active until whichever is later of `renews_at`/`canceled_at`; the `renew_market_subscriptions` background job is what actually revokes it and sets `service_terminated_at`, once both have passed. *Authenticated* -- the subscription&#39;s own buyer, or an Admin. |
-| UpdateMarketSubscription | [MarketSubscription](#rellm-MarketSubscription) | [MarketSubscription](#rellm-MarketSubscription) | Appends to a `PURCHASE_TYPE_RELLM_HOSTING` MarketSubscription&#39;s own `fulfillment_notes` (nothing else -- every other field, including `additional_information`, is immutable after purchase and silently ignored if changed) -- backs `/market/fulfillment`. A new entry must be appended (not inserted/reordered/removed) after whatever&#39;s already stored, and its `user_id` must match the caller&#39;s own -- the server stamps `created_at` itself, ignoring whatever the client sent. Its `note` text is required unless the entry also changes `fulfillment_status` from the previous entry&#39;s own value (see `FulfillmentNote.note`&#39;s own doc). `fulfillment_status` on the returned `RellmHostingSubscriptionDetails` is always the last appended entry&#39;s own value -- there&#39;s no way to set it independently of a note. *Authenticated*, requires Admin (for now -- see that field&#39;s own doc on why this may loosen to &#34;buyer, or Admin&#34; later). |
+| UpdateMarketSubscription | [MarketSubscription](#rellm-MarketSubscription) | [MarketSubscription](#rellm-MarketSubscription) | Appends to a MarketSubscription&#39;s own `fulfillment_notes` (any `PurchaseType` -- see `MediaStorageSubscriptionDetails.fulfillment_notes`; the request&#39;s `details` must be the variant matching the subscription&#39;s type; nothing else -- every other field, including `additional_information`, is immutable after purchase and silently ignored if changed) -- backs `/market/fulfillment`. A new entry must be appended (not inserted/reordered/removed) after whatever&#39;s already stored, and its `user_id` must match the caller&#39;s own -- the server stamps `created_at` itself, ignoring whatever the client sent. Its `note` text is required unless the entry also changes `fulfillment_status` from the previous entry&#39;s own value (see `FulfillmentNote.note`&#39;s own doc). `fulfillment_status` on the returned `RellmHostingSubscriptionDetails` is always the last appended entry&#39;s own value -- there&#39;s no way to set it independently of a note. *Authenticated*, requires Admin (for now -- see that field&#39;s own doc on why this may loosen to &#34;buyer, or Admin&#34; later). |
+| MarkFulfillmentNotesRead | [MarkFulfillmentNotesReadRequest](#rellm-MarkFulfillmentNotesReadRequest) | [MarketSubscription](#rellm-MarketSubscription) | Marks all of a MarketSubscription&#39;s current `fulfillment_notes` read (any `PurchaseType`) by stamping its details&#39; `notes_last_read` with now. *Authenticated*, and only the subscription&#39;s own buyer (`PermissionDenied` otherwise -- even an Admin, since the marker is the buyer&#39;s). Idempotent. Returns the updated subscription. |
 | GenerateMedia | [GenerateMediaRequest](#rellm-GenerateMediaRequest) | [Media](#rellm-Media) | Generates (or edits, given reference `media_ids`) an image via one of the current user&#39;s AIModels, storing it as a new Media and, if `target` is set, attaching it to that Post/Event. *Authenticated* - caller must own or have been granted access to the chosen AIProvider, and (if `target` is set) have edit access to that Post/Event. A grantee (never the provider&#39;s own owner) spends real AIProviderGrant.tokens_remaining on every call - the provider&#39;s own reported token usage once generation succeeds, or (rejected before any request is even sent to the provider) a rough pre-flight estimate of the request&#39;s input cost alone, whichever catches an insufficient balance first. |
 | GetRsvps | [GetRsvpsRequest](#rellm-GetRsvpsRequest) | [Rsvps](#rellm-Rsvps) | Gets Rsvps for an Occasion. *Publicly accessible **or** Authenticated.* |
 | UpsertRsvp | [Rsvp](#rellm-Rsvp) | [Rsvp](#rellm-Rsvp) | Upsert an Rsvp. *Publicly accessible **or** Authenticated, with anonymous RSVP support.* See [Rsvp](#rellm-Rsvp) and [AnonymousAttendee](#rellm-AnonymousAttendee) for details. tl;dr: Anonymous RSVPs may updated/deleted with the `AnonymousAttendee.auth_token` returned by this RPC (the client should save this for the user, and ideally, offer a link with the token). |
@@ -4894,6 +5013,9 @@ see that message&#39;s own doc for why it&#39;s still a distinct type.
 | ai_provider_id | [string](#string) |  | Which `AIProvider` this grant is against. |
 | model_names | [string](#string) | repeated | Which of that provider&#39;s models the grant covers. |
 | tokens | [uint64](#uint64) |  | How many tokens this product/subscription grants the buyer each time it&#39;s (re-)fulfilled, replacing (not adding to) whatever balance remained -- see `logic::market::market_fulfillment::fulfill_purchase`&#39;s `AiGrants` arm. |
+| fulfillment_status | [FulfillmentStatus](#rellm-FulfillmentStatus) |  | The fulfillment chat for this subscription -- *every* `PurchaseType` has one, not just `PURCHASE_TYPE_RELLM_HOSTING` (see `RellmHostingSubscriptionDetails.fulfillment_status`/`fulfillment_notes`/ `notes_last_read`, whose semantics these three fields share exactly: append-only notes via `UpdateMarketSubscription`, the buyer&#39;s read marker via `MarkFulfillmentNotesRead`, `fulfillment_status` always the last note&#39;s status). Only meaningful on a `MarketSubscription`&#39;s own `details`: on a `MarketProduct.details` they&#39;re always empty/unset. Unlike Rellm hosting, nothing about these types *needs* an admin: the system fulfills them automatically, so `fulfillment_status` is always `FULFILLMENT_STATUS_FULFILLED` (derived on read, and `UpdateMarketSubscription` rejects a note that changes it) -- the chat is just a way for a host admin and the buyer to talk about the subscription. |
+| fulfillment_notes | [FulfillmentNote](#rellm-FulfillmentNote) | repeated |  |
+| notes_last_read | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional |  |
 
 
 
@@ -4976,7 +5098,7 @@ subscription across every buyer, for the `/market/fulfillment` admin page.
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| market_subscriptions | [MarketSubscription](#rellm-MarketSubscription) | repeated | For `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE`: the caller&#39;s own subscriptions, newest first. For `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN`: every `PURCHASE_TYPE_RELLM_HOSTING` subscription across every buyer, oldest first (so the oldest unfulfilled order surfaces at the top of `/market/fulfillment`). |
+| market_subscriptions | [MarketSubscription](#rellm-MarketSubscription) | repeated | For `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE`: the caller&#39;s own subscriptions, newest first. For `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN`: every `PURCHASE_TYPE_RELLM_HOSTING` subscription across every buyer (and for `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN`, every subscription of every type), oldest first (so the oldest unfulfilled order surfaces at the top of `/market/fulfillment`). |
 
 
 
@@ -5015,6 +5137,23 @@ A pending Stripe Checkout Session, ready to redirect the buyer&#39;s browser to.
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | checkout_url | [string](#string) |  | Redirect the buyer&#39;s browser here (a Stripe-hosted Checkout page) to complete payment. Expires after Stripe&#39;s own Checkout Session timeout if never completed -- since no `MarketPurchase` row is created until the webhook fires (see this message&#39;s own request&#39;s doc), an abandoned/expired checkout leaves no trace at all. |
+| resumed_subscription | [MarketSubscription](#rellm-MarketSubscription) | optional | Set *instead of* a checkout (and `checkout_url` is then empty) when the buyer already has a `SUBSCRIPTION_ACTIVE_BUT_CANCELED` subscription to this same product: they&#39;ve already paid for the rest of the period, so buying again just resumes it -- `canceled_at` is cleared, the slot it freed is claimed again (`MarketProduct.sold_count`), and nothing is charged. The returned subscription is the resumed one, now `SUBSCRIPTION_ACTIVE`. Clients must check this before redirecting to `checkout_url`. |
+
+
+
+
+
+
+<a name="rellm-MarkFulfillmentNotesReadRequest"></a>
+
+### MarkFulfillmentNotesReadRequest
+Request to mark a subscription&#39;s fulfillment notes read -- see
+`RellmHostingSubscriptionDetails.notes_last_read`.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| market_subscription_id | [string](#string) |  | The `MarketSubscription.id`. Only its buyer may mark it read. |
 
 
 
@@ -5191,13 +5330,14 @@ other purchase type gets, even though it never actually bills again.
 | currency | [uint32](#uint32) |  | The ISO 4217 numeric currency code `amount` is denominated in -- copied from `market_product.currency` at the time this subscription was created. |
 | market_product | [MarketProduct](#rellm-MarketProduct) |  | The `MarketProduct` this subscription was made against, as it existed at the time it was fetched -- may since have changed price/details/been delisted (delisting an already-subscribed product doesn&#39;t cancel existing subscriptions, only blocks new purchases). Note: marshaling should handle the circular relationship here gracefully. |
 | billing_history | [MarketPurchase](#rellm-MarketPurchase) | repeated | Every `MarketPurchase` billed against this subscription so far -- the original purchase plus every successful renewal charge, newest first. Each entry&#39;s own `market_subscription` field is left unset here (see `MarketPurchase.market_subscription`&#39;s own doc) to avoid recursing back into this same subscription. |
+| state | [MarketSubscriptionState](#rellm-MarketSubscriptionState) |  | Where this subscription stands right now -- see `MarketSubscriptionState`&#39;s own doc. Server- derived at marshal time from `canceled_at`/`renews_at`/`service_terminated_at`; ignored on any request (a client can&#39;t set it -- cancel via `CancelMarketSubscription`, resume by buying the product again via `MakeMarketPurchase`). |
 | media_storage_subscription_details | [MediaStorageSubscriptionDetails](#rellm-MediaStorageSubscriptionDetails) |  |  |
 | ai_grant_subscription_details | [AIGrantSubscriptionDetails](#rellm-AIGrantSubscriptionDetails) |  |  |
 | rellm_hosting_subscription_details | [RellmHostingSubscriptionDetails](#rellm-RellmHostingSubscriptionDetails) |  |  |
 | permissions_access_subscription_details | [PermissionsAccessSubscriptionDetails](#rellm-PermissionsAccessSubscriptionDetails) |  |  |
 | created_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  | When this subscription was first created (i.e. when the initial `MarketPurchase` was fulfilled). |
 | renews_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional | When the next renewal charge is due. Always unset for a `PURCHASE_PERIOD_INDEFINITE` subscription (see this message&#39;s own doc) -- there is no next charge. Otherwise, advanced by one `period` on every successful renewal (`renew_market_subscriptions.rs`); left untouched once `canceled_at` is set, since a canceled subscription never renews again regardless of what this still says. |
-| canceled_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional | Set once the subscription will no longer renew -- either the buyer/admin explicitly canceled it (CancelMarketSubscription) or a renewal charge failed. The subscription&#39;s entitlement (media storage quota, granted permissions, etc.) stays active until whichever is later of renews_at/canceled_at, at which point renew_market_subscriptions.rs revokes it and sets service_terminated_at. Also the moment `MarketProduct.sold_count` is decremented, freeing this subscription&#39;s slot for a new buyer (see that field&#39;s own doc). |
+| canceled_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional | Set once the subscription will no longer renew -- either the buyer/admin explicitly canceled it (CancelMarketSubscription) or a renewal charge failed. The subscription&#39;s entitlement (media storage quota, granted permissions, etc.) stays active until whichever is later of renews_at/canceled_at, at which point renew_market_subscriptions.rs revokes it and sets service_terminated_at. Also the moment `MarketProduct.sold_count` is decremented, freeing this subscription&#39;s slot for a new buyer (see that field&#39;s own doc). Cleared again (and the slot re-claimed) if the buyer resumes the subscription before it lapses -- see `MarketSubscriptionState.SUBSCRIPTION_ACTIVE_BUT_CANCELED` and `state` above, which is what clients should branch on rather than inspecting this field. |
 | service_terminated_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional | The time permissions were removed, media storage quotas reset, etc. -- i.e. when `logic::market::market_fulfillment::terminate_entitlement` actually ran for this subscription. Always unset while `canceled_at` is unset; may remain unset for a while *after* `canceled_at` is set, since the entitlement intentionally stays active until the later of `renews_at`/`canceled_at` (see `canceled_at`&#39;s own doc) -- a buyer who cancels mid-period keeps what they already paid for through the end of that period. |
 
 
@@ -5237,6 +5377,9 @@ what a media storage product actually grants. Field-for-field identical to
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | allocation_bytes | [uint64](#uint64) |  | How much media storage this product/subscription grants the buyer, replacing (not adding to) whatever quota they already had -- see `logic::market::market_fulfillment::fulfill_purchase`&#39;s `MediaStorage` arm. |
+| fulfillment_status | [FulfillmentStatus](#rellm-FulfillmentStatus) |  | The fulfillment chat for this subscription -- *every* `PurchaseType` has one, not just `PURCHASE_TYPE_RELLM_HOSTING` (see `RellmHostingSubscriptionDetails.fulfillment_status`/`fulfillment_notes`/ `notes_last_read`, whose semantics these three fields share exactly: append-only notes via `UpdateMarketSubscription`, the buyer&#39;s read marker via `MarkFulfillmentNotesRead`, `fulfillment_status` always the last note&#39;s status). Only meaningful on a `MarketSubscription`&#39;s own `details`: on a `MarketProduct.details` they&#39;re always empty/unset. Unlike Rellm hosting, nothing about these types *needs* an admin: the system fulfills them automatically, so `fulfillment_status` is always `FULFILLMENT_STATUS_FULFILLED` (derived on read, and `UpdateMarketSubscription` rejects a note that changes it) -- the chat is just a way for a host admin and the buyer to talk about the subscription. |
+| fulfillment_notes | [FulfillmentNote](#rellm-FulfillmentNote) | repeated |  |
+| notes_last_read | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional |  |
 
 
 
@@ -5280,6 +5423,9 @@ tell &#34;what to claw back&#34; apart from &#34;what was originally billed&#34;
 | permissions | [Permission](#rellm-Permission) | repeated | Which `Permission`s this product/subscription grants the buyer -- see `logic::market::market_fulfillment::fulfill_purchase`&#39;s `PermissionsAccess` arm (union-added to the buyer&#39;s own `User.permissions`, never replacing what they already had) and `terminate_entitlement`&#39;s own arm (the exact claw-back set on cancellation/expiry). Intentionally excludes permissions dangerous or nonsensical to sell this way -- e.g. &#34;Grant Basic Permissions,&#34; any &#34;Moderate&#34;/&#34;Read All System Messages&#34; permission, &#34;Admin,&#34; &#34;View Private Contact Methods,&#34; and &#34;Edit Cluster Settings&#34; must never appear in a Market product&#39;s own `permissions` list. Enforced server-side on `CreateMarketProduct`/ `UpdateMarketProduct` (rejected with `permission_not_purchasable`) and again on `MakeMarketPurchase` (defense in depth, in case a permission is later removed from the purchasable set after a product granting it already exists) -- see `rpcs::market::create_market_product::PURCHASABLE_PERMISSIONS`. NOTE: that Rust list is an explicit include-list, not an exclude-list -- described here as an exclusion for readability, but implemented as &#34;only these permissions are purchasable&#34; so a newly-added `Permission` is never purchasable by default; it has to be deliberately added to that list. |
 | name | [string](#string) |  | Admin-authored product name -- unlike `MediaStorageSubscriptionDetails`/`AIGrantSubscriptionDetails`/ `RellmHostingSubscriptionDetails` (which get an implicit, Elm-computed display name from their own fields, since they each describe one fixed kind of thing), a permissions-access product&#39;s `permissions` list can be any admin-chosen bundle, so there&#39;s no generic way to name it automatically. Required for a purchasable product (`CreateMarketProduct`/`UpdateMarketProduct` reject a `PermissionsAccessSubscriptionDetails` with a blank `name`). On a `MarketSubscription`: copied from the originating `MarketProduct.details.name` at the time the subscription was created, same as every other field on this message. |
 | description | [string](#string) |  | Admin-authored, Markdown-formatted product description shown on the product&#39;s own page -- same &#34;no generic implicit description&#34; reasoning as `name` above. On a `MarketSubscription`: copied the same way `name` is. |
+| fulfillment_status | [FulfillmentStatus](#rellm-FulfillmentStatus) |  | The fulfillment chat for this subscription -- *every* `PurchaseType` has one, not just `PURCHASE_TYPE_RELLM_HOSTING` (see `RellmHostingSubscriptionDetails.fulfillment_status`/`fulfillment_notes`/ `notes_last_read`, whose semantics these three fields share exactly: append-only notes via `UpdateMarketSubscription`, the buyer&#39;s read marker via `MarkFulfillmentNotesRead`, `fulfillment_status` always the last note&#39;s status). Only meaningful on a `MarketSubscription`&#39;s own `details`: on a `MarketProduct.details` they&#39;re always empty/unset. Unlike Rellm hosting, nothing about these types *needs* an admin: the system fulfills them automatically, so `fulfillment_status` is always `FULFILLMENT_STATUS_FULFILLED` (derived on read, and `UpdateMarketSubscription` rejects a note that changes it) -- the chat is just a way for a host admin and the buyer to talk about the subscription. |
+| fulfillment_notes | [FulfillmentNote](#rellm-FulfillmentNote) | repeated |  |
+| notes_last_read | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional |  |
 
 
 
@@ -5333,6 +5479,7 @@ no `*PurchaseDetails` counterpart, since they&#39;re only ever meaningful on the
 | additional_information | [string](#string) |  | Immutable after purchase -- the buyer&#39;s own notes to the admin fulfilling this order. Never editable via UpdateMarketSubscription (see that RPC&#39;s own doc); `fulfillment_notes` below is the admin/buyer conversation about fulfilling it. |
 | fulfillment_status | [FulfillmentStatus](#rellm-FulfillmentStatus) |  | Where this Rellm hosting order currently stands -- Rellm hosting is deliberately not automated (see `market.proto`&#39;s own top-of-file notes and `logic::market::market_fulfillment::fulfill_purchase`&#39;s `RellmHosting` no-op arm), so this is the one manual &#34;how far along is this order&#34; signal, shown on `/market/fulfillment` (`GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN`). Never independently settable by a client -- always server-derived as whatever `fulfillment_notes`&#39; own last entry&#39;s `fulfillment_status` says (or `FULFILLMENT_STATUS_AWAITING_HOST_ADMIN` if `fulfillment_notes` is empty), so this field can never drift out of sync with the history that explains *why* it&#39;s in that state. |
 | fulfillment_notes | [FulfillmentNote](#rellm-FulfillmentNote) | repeated | The admin/buyer conversation about fulfilling this order -- oldest to newest, append-only (see `UpdateMarketSubscription`&#39;s own doc: a new entry can only ever be appended after whatever&#39;s already here, never inserted/reordered/removed, and its `user_id` must match whoever&#39;s actually making the request -- the server stamps `created_at` itself). |
+| notes_last_read | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional | When the *buyer* last read this order&#39;s `fulfillment_notes` -- set by `MarkFulfillmentNotesRead` (server-stamped, never client-settable via `UpdateMarketSubscription`, which preserves it). Unset until first read. A note is *unread* if it was written by someone other than the buyer (i.e. an admin) and its `created_at` is later than this (or this is unset). Drives the unread counts on the Messages UI&#39;s Fulfillment tab and on subscription listings. Deliberately one marker for the buyer&#39;s side only: admins work orders from `/market/fulfillment`. |
 
 
 
@@ -5344,16 +5491,20 @@ no `*PurchaseDetails` counterpart, since they&#39;re only ever meaningful on the
 <a name="rellm-FulfillmentStatus"></a>
 
 ### FulfillmentStatus
-The state of a `PURCHASE_TYPE_RELLM_HOSTING` order&#39;s manual fulfillment -- see
+Where a subscription stands in the host admins&#39; work queue. Only `PURCHASE_TYPE_RELLM_HOSTING` is fulfilled by
+hand, so only it ever moves through these values (via admin-written notes). Every other type is fulfilled
+automatically (storage, AI grants and permissions are applied by the system when the purchase is fulfilled):
+its `fulfillment_status` is always `FULFILLMENT_STATUS_FULFILLED` -- whatever an older row stored -- and
+`UpdateMarketSubscription` rejects a note that tries to change it. See
 `RellmHostingSubscriptionDetails.fulfillment_status`&#39;s own doc for how the &#34;current&#34; value is
 derived, and `FulfillmentNote.fulfillment_status` for how every transition is recorded as its own
 timestamped note (a &#34;fulfillment state history&#34;), not just tracked as a bare current value.
 
 | Name | Number | Description |
 | ---- | ------ | ----------- |
-| FULFILLMENT_STATUS_AWAITING_HOST_ADMIN | 0 | The starting state for every new order -- no admin has looked at it yet. |
-| FULFILLMENT_STATUS_FULFILLED | 1 | The order is fully stood up -- set via &#34;Add and Mark as Fulfilled&#34; on `/market/fulfillment` (`UpdateMarketSubscription`). |
-| FULFILLMENT_STATUS_IN_PROGRESS | 2 | An admin has started working the order but it isn&#39;t done yet -- set automatically the first time an admin expands this order&#39;s row on `/market/fulfillment` (if it was still `FULFILLMENT_STATUS_AWAITING_HOST_ADMIN`), or explicitly via a note. |
+| FULFILLMENT_STATUS_AWAITING_HOST_ADMIN | 0 | The starting state for every new subscription -- no admin has looked at it yet. |
+| FULFILLMENT_STATUS_FULFILLED | 1 | The subscription is fully stood up / dealt with -- set via &#34;Add and Mark as Fulfilled&#34; on `/market/fulfillment` (`UpdateMarketSubscription`). |
+| FULFILLMENT_STATUS_IN_PROGRESS | 2 | An admin has started working the subscription but it isn&#39;t done yet -- set automatically the first time an admin expands this order&#39;s row on `/market/fulfillment` (if it was still `FULFILLMENT_STATUS_AWAITING_HOST_ADMIN`), or explicitly via a note. |
 
 
 
@@ -5366,6 +5517,26 @@ timestamped note (a &#34;fulfillment state history&#34;), not just tracked as a 
 | ---- | ------ | ----------- |
 | GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE | 0 | The &#34;user facing&#34; view backing /market -- the caller&#39;s own MarketSubscriptions only. |
 | GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN | 1 | Admin-only view backing /market/fulfillment -- every PURCHASE_TYPE_RELLM_HOSTING MarketSubscription across every buyer, since Rellm hosting needs manual setup that isn&#39;t automated (see RellmHostingSubscriptionDetails.fulfillment_status&#39;s own doc). |
+| GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN | 2 | Admin-only view backing the Messages page&#39;s Fulfillment tab -- *every* MarketSubscription of *every* PurchaseType across every buyer, oldest first, so an admin can find any customer&#39;s subscription (storage, AI grants, permissions, hosting) to open its fulfillment chat (`fulfillment_notes`, which all types have). Only Rellm hosting has a work queue (`fulfillment_status` moves); the other types are always `FULFILLMENT_STATUS_FULFILLED`, so their chats are text only. |
+
+
+
+<a name="rellm-MarketSubscriptionState"></a>
+
+### MarketSubscriptionState
+Where a `MarketSubscription` stands from the *buyer&#39;s* point of view -- always derived on the fly
+(never stored as a column) from `canceled_at`/`renews_at`/`service_terminated_at` as of the moment
+the subscription is marshaled, see `logic::market::market_subscription_state`. The point of the
+middle value: a buyer who cancels has still paid for the rest of their current billing period, so
+cancellation is not an instant &#34;off switch&#34; -- they keep their entitlement until it runs out, and
+can resume (see `MakeMarketPurchaseResponse.resumed_subscription`) any time before then without
+paying again.
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| SUBSCRIPTION_ACTIVE | 0 | Not canceled -- will renew (or, for a `PURCHASE_PERIOD_INDEFINITE` one, simply stays in force) and the entitlement is in effect. The default (proto3&#39;s implicit `0`). |
+| SUBSCRIPTION_ACTIVE_BUT_CANCELED | 1 | `canceled_at` is set, but the period already paid for hasn&#39;t run out yet (i.e. now is still before the later of `canceled_at`/`renews_at`, and `service_terminated_at` is unset): the entitlement is still in effect, it just won&#39;t renew. Buying the same product again *resumes* this subscription (clears `canceled_at`, no new charge) rather than starting a second one. |
+| SUBSCRIPTION_CANCELED | 2 | Canceled and the paid-for period is over (`service_terminated_at` set, or the later of `canceled_at`/`renews_at` has passed and the `renew_market_subscriptions` job simply hasn&#39;t gotten to revoking the entitlement yet). Terminal: buying the product again starts a brand new subscription. |
 
 
 

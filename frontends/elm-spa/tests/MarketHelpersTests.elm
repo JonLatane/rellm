@@ -9,7 +9,7 @@ lookup.
 
 import Components.Market as Market
 import Expect
-import Proto.Rellm exposing (MarketProduct, defaultMarketProduct)
+import Proto.Rellm exposing (MarketProduct, defaultMarketProduct, defaultPermissionsAccessSubscriptionDetails)
 import Proto.Rellm.MarketProduct exposing (Details)
 import Proto.Rellm.MarketProduct.Details as ProductDetails
 import Proto.Rellm.Permission exposing (Permission(..))
@@ -196,7 +196,8 @@ permissionsForProductSuite =
                     0
                     (Just
                         (ProductDetails.PermissionsAccessSubscriptionDetails
-                            { permissions = [ SYNCEVENTSTOFACEBOOK, SYNCPOSTSTOFACEBOOK ]
+                            { defaultPermissionsAccessSubscriptionDetails
+                                | permissions = [ SYNCEVENTSTOFACEBOOK, SYNCPOSTSTOFACEBOOK ]
                             , name = "Facebook Sync Access"
                             , description = "Sync your posts and events to Facebook."
                             }

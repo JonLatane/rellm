@@ -57,17 +57,21 @@ enum PurchasePeriod {
   PURCHASE_PERIOD_MONTHLY = 2;
 }
 
-// The state of a `PURCHASE_TYPE_RELLM_HOSTING` order's manual fulfillment -- see
+// Where a subscription stands in the host admins' work queue. Only `PURCHASE_TYPE_RELLM_HOSTING` is fulfilled by
+// hand, so only it ever moves through these values (via admin-written notes). Every other type is fulfilled
+// automatically (storage, AI grants and permissions are applied by the system when the purchase is fulfilled):
+// its `fulfillment_status` is always `FULFILLMENT_STATUS_FULFILLED` -- whatever an older row stored -- and
+// `UpdateMarketSubscription` rejects a note that tries to change it. See
 // `RellmHostingSubscriptionDetails.fulfillment_status`'s own doc for how the "current" value is
 // derived, and `FulfillmentNote.fulfillment_status` for how every transition is recorded as its own
 // timestamped note (a "fulfillment state history"), not just tracked as a bare current value.
 enum FulfillmentStatus {
-  // The starting state for every new order -- no admin has looked at it yet.
+  // The starting state for every new subscription -- no admin has looked at it yet.
   FULFILLMENT_STATUS_AWAITING_HOST_ADMIN = 0;
-  // The order is fully stood up -- set via "Add and Mark as Fulfilled" on `/market/fulfillment`
+  // The subscription is fully stood up / dealt with -- set via "Add and Mark as Fulfilled" on `/market/fulfillment`
   // (`UpdateMarketSubscription`).
   FULFILLMENT_STATUS_FULFILLED = 1;
-  // An admin has started working the order but it isn't done yet -- set automatically the first
+  // An admin has started working the subscription but it isn't done yet -- set automatically the first
   // time an admin expands this order's row on `/market/fulfillment` (if it was still
   // `FULFILLMENT_STATUS_AWAITING_HOST_ADMIN`), or explicitly via a note.
   FULFILLMENT_STATUS_IN_PROGRESS = 2;
@@ -170,12 +174,19 @@ enum GetMarketSubscriptionsRequestType {
   // MarketSubscription across every buyer, since Rellm hosting needs manual setup that isn't
   // automated (see RellmHostingSubscriptionDetails.fulfillment_status's own doc).
   GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN = 1;
+  // Admin-only view backing the Messages page's Fulfillment tab -- *every* MarketSubscription of *every*
+  // PurchaseType across every buyer, oldest first, so an admin can find any customer's subscription
+  // (storage, AI grants, permissions, hosting) to open its fulfillment chat (`fulfillment_notes`,
+  // which all types have). Only Rellm hosting has a work queue (`fulfillment_status` moves); the other
+  // types are always `FULFILLMENT_STATUS_FULFILLED`, so their chats are text only.
+  GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN = 2;
 }
 
 message GetMarketSubscriptionsResponse {
   // For `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE`: the caller's own subscriptions, newest
   // first. For `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN`: every
-  // `PURCHASE_TYPE_RELLM_HOSTING` subscription across every buyer, oldest first (so the oldest
+  // `PURCHASE_TYPE_RELLM_HOSTING` subscription across every buyer (and for
+  // `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN`, every subscription of every type), oldest first (so the oldest
   // unfulfilled order surfaces at the top of `/market/fulfillment`).
   repeated MarketSubscription market_subscriptions = 1;
 }
@@ -204,6 +215,14 @@ message MakeMarketPurchaseResponse {
   // is created until the webhook fires (see this message's own request's doc), an abandoned/expired
   // checkout leaves no trace at all.
   string checkout_url = 1;
+
+  // Set *instead of* a checkout (and `checkout_url` is then empty) when the buyer already has a
+  // `SUBSCRIPTION_ACTIVE_BUT_CANCELED` subscription to this same product: they've already paid for
+  // the rest of the period, so buying again just resumes it -- `canceled_at` is cleared, the slot
+  // it freed is claimed again (`MarketProduct.sold_count`), and nothing is charged. The returned
+  // subscription is the resumed one, now `SUBSCRIPTION_ACTIVE`. Clients must check this before
+  // redirecting to `checkout_url`.
+  optional MarketSubscription resumed_subscription = 2;
 }
 
 // One completed billing event -- the initial purchase or a later recurring renewal charge -- for a
@@ -407,6 +426,29 @@ message PermissionsAccessPurchaseDetails {
   string description = 3;
 }
 
+// Where a `MarketSubscription` stands from the *buyer's* point of view -- always derived on the fly
+// (never stored as a column) from `canceled_at`/`renews_at`/`service_terminated_at` as of the moment
+// the subscription is marshaled, see `logic::market::market_subscription_state`. The point of the
+// middle value: a buyer who cancels has still paid for the rest of their current billing period, so
+// cancellation is not an instant "off switch" -- they keep their entitlement until it runs out, and
+// can resume (see `MakeMarketPurchaseResponse.resumed_subscription`) any time before then without
+// paying again.
+enum MarketSubscriptionState {
+  // Not canceled -- will renew (or, for a `PURCHASE_PERIOD_INDEFINITE` one, simply stays in force)
+  // and the entitlement is in effect. The default (proto3's implicit `0`).
+  SUBSCRIPTION_ACTIVE = 0;
+  // `canceled_at` is set, but the period already paid for hasn't run out yet (i.e. now is still before
+  // the later of `canceled_at`/`renews_at`, and `service_terminated_at` is unset): the entitlement
+  // is still in effect, it just won't renew. Buying the same product again *resumes* this
+  // subscription (clears `canceled_at`, no new charge) rather than starting a second one.
+  SUBSCRIPTION_ACTIVE_BUT_CANCELED = 1;
+  // Canceled and the paid-for period is over (`service_terminated_at` set, or the later of
+  // `canceled_at`/`renews_at` has passed and the `renew_market_subscriptions` job simply hasn't
+  // gotten to revoking the entitlement yet). Terminal: buying the product again starts a brand new
+  // subscription.
+  SUBSCRIPTION_CANCELED = 2;
+}
+
 // Created for *every* `MarketPurchase`, regardless of `MarketProduct.period` -- a recurring
 // (`PURCHASE_PERIOD_ANNUAL`/`PURCHASE_PERIOD_MONTHLY`) one gets re-billed and re-fulfilled
 // automatically every period by `renew_market_subscriptions.rs` until canceled; a
@@ -446,6 +488,12 @@ message MarketSubscription {
   // into this same subscription.
   repeated MarketPurchase billing_history = 8;
 
+  // Where this subscription stands right now -- see `MarketSubscriptionState`'s own doc. Server-
+  // derived at marshal time from `canceled_at`/`renews_at`/`service_terminated_at`; ignored on any
+  // request (a client can't set it -- cancel via `CancelMarketSubscription`, resume by buying the
+  // product again via `MakeMarketPurchase`).
+  MarketSubscriptionState state = 9;
+
   // Type-specific details for this subscription, matching `type` above -- copied from the
   // originating `MarketProduct.details` at creation time (or, for `PURCHASE_TYPE_RELLM_HOSTING`,
   // built from the buyer's own checkout-time input -- see `RellmHostingPurchaseDetails`'s own doc
@@ -475,7 +523,10 @@ message MarketSubscription {
   // storage quota, granted permissions, etc.) stays active until whichever is later of
   // renews_at/canceled_at, at which point renew_market_subscriptions.rs revokes it and sets
   // service_terminated_at. Also the moment `MarketProduct.sold_count` is decremented, freeing this
-  // subscription's slot for a new buyer (see that field's own doc).
+  // subscription's slot for a new buyer (see that field's own doc). Cleared again (and the slot
+  // re-claimed) if the buyer resumes the subscription before it lapses -- see
+  // `MarketSubscriptionState.SUBSCRIPTION_ACTIVE_BUT_CANCELED` and `state` above, which is what
+  // clients should branch on rather than inspecting this field.
   optional google.protobuf.Timestamp canceled_at = 22;
 
   // The time permissions were removed, media storage quotas reset, etc. -- i.e. when
@@ -496,6 +547,19 @@ message MediaStorageSubscriptionDetails {
   // whatever quota they already had -- see `logic::market::market_fulfillment::fulfill_purchase`'s
   // `MediaStorage` arm.
   uint64 allocation_bytes = 1;
+
+  // The fulfillment chat for this subscription -- *every* `PurchaseType` has one, not just
+  // `PURCHASE_TYPE_RELLM_HOSTING` (see `RellmHostingSubscriptionDetails.fulfillment_status`/`fulfillment_notes`/
+  // `notes_last_read`, whose semantics these three fields share exactly: append-only notes via
+  // `UpdateMarketSubscription`, the buyer's read marker via `MarkFulfillmentNotesRead`, `fulfillment_status`
+  // always the last note's status). Only meaningful on a `MarketSubscription`'s own `details`: on a
+  // `MarketProduct.details` they're always empty/unset. Unlike Rellm hosting, nothing about these types
+  // *needs* an admin: the system fulfills them automatically, so `fulfillment_status` is always
+  // `FULFILLMENT_STATUS_FULFILLED` (derived on read, and `UpdateMarketSubscription` rejects a note that changes
+  // it) -- the chat is just a way for a host admin and the buyer to talk about the subscription.
+  FulfillmentStatus fulfillment_status = 7;
+  repeated FulfillmentNote fulfillment_notes = 8;
+  optional google.protobuf.Timestamp notes_last_read = 9;
 }
 
 
@@ -535,6 +599,19 @@ message PermissionsAccessSubscriptionDetails {
   // same "no generic implicit description" reasoning as `name` above. On a `MarketSubscription`:
   // copied the same way `name` is.
   string description = 3;
+
+  // The fulfillment chat for this subscription -- *every* `PurchaseType` has one, not just
+  // `PURCHASE_TYPE_RELLM_HOSTING` (see `RellmHostingSubscriptionDetails.fulfillment_status`/`fulfillment_notes`/
+  // `notes_last_read`, whose semantics these three fields share exactly: append-only notes via
+  // `UpdateMarketSubscription`, the buyer's read marker via `MarkFulfillmentNotesRead`, `fulfillment_status`
+  // always the last note's status). Only meaningful on a `MarketSubscription`'s own `details`: on a
+  // `MarketProduct.details` they're always empty/unset. Unlike Rellm hosting, nothing about these types
+  // *needs* an admin: the system fulfills them automatically, so `fulfillment_status` is always
+  // `FULFILLMENT_STATUS_FULFILLED` (derived on read, and `UpdateMarketSubscription` rejects a note that changes
+  // it) -- the chat is just a way for a host admin and the buyer to talk about the subscription.
+  FulfillmentStatus fulfillment_status = 7;
+  repeated FulfillmentNote fulfillment_notes = 8;
+  optional google.protobuf.Timestamp notes_last_read = 9;
 }
 
 
@@ -550,6 +627,19 @@ message AIGrantSubscriptionDetails {
   // replacing (not adding to) whatever balance remained -- see
   // `logic::market::market_fulfillment::fulfill_purchase`'s `AiGrants` arm.
   uint64 tokens = 3;
+
+  // The fulfillment chat for this subscription -- *every* `PurchaseType` has one, not just
+  // `PURCHASE_TYPE_RELLM_HOSTING` (see `RellmHostingSubscriptionDetails.fulfillment_status`/`fulfillment_notes`/
+  // `notes_last_read`, whose semantics these three fields share exactly: append-only notes via
+  // `UpdateMarketSubscription`, the buyer's read marker via `MarkFulfillmentNotesRead`, `fulfillment_status`
+  // always the last note's status). Only meaningful on a `MarketSubscription`'s own `details`: on a
+  // `MarketProduct.details` they're always empty/unset. Unlike Rellm hosting, nothing about these types
+  // *needs* an admin: the system fulfills them automatically, so `fulfillment_status` is always
+  // `FULFILLMENT_STATUS_FULFILLED` (derived on read, and `UpdateMarketSubscription` rejects a note that changes
+  // it) -- the chat is just a way for a host admin and the buyer to talk about the subscription.
+  FulfillmentStatus fulfillment_status = 7;
+  repeated FulfillmentNote fulfillment_notes = 8;
+  optional google.protobuf.Timestamp notes_last_read = 9;
 }
 
 // `MarketProduct.details`/`MarketSubscription.details`' `PURCHASE_TYPE_RELLM_HOSTING` variant --
@@ -601,6 +691,14 @@ message RellmHostingSubscriptionDetails {
   // already here, never inserted/reordered/removed, and its `user_id` must match whoever's actually
   // making the request -- the server stamps `created_at` itself).
   repeated FulfillmentNote fulfillment_notes = 8;
+
+  // When the *buyer* last read this order's `fulfillment_notes` -- set by `MarkFulfillmentNotesRead`
+  // (server-stamped, never client-settable via `UpdateMarketSubscription`, which preserves it).
+  // Unset until first read. A note is *unread* if it was written by someone other than the buyer
+  // (i.e. an admin) and its `created_at` is later than this (or this is unset). Drives the unread
+  // counts on the Messages UI's Fulfillment tab and on subscription listings. Deliberately one
+  // marker for the buyer's side only: admins work orders from `/market/fulfillment`.
+  optional google.protobuf.Timestamp notes_last_read = 9;
 }
 
 // One entry in a MarketSubscription's `fulfillment_notes` -- see that field's own doc. Immutable
@@ -628,4 +726,11 @@ message FulfillmentNote {
   // When this note was added. Server-stamped -- `UpdateMarketSubscription` always ignores whatever
   // timestamp the client sends for a newly-appended entry.
   google.protobuf.Timestamp created_at = 4;
+}
+
+// Request to mark a subscription's fulfillment notes read -- see
+// `RellmHostingSubscriptionDetails.notes_last_read`.
+message MarkFulfillmentNotesReadRequest {
+  // The `MarketSubscription.id`. Only its buyer may mark it read.
+  string market_subscription_id = 1;
 }

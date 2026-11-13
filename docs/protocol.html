@@ -628,6 +628,9 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
             <p><a href="#rellm-MakeMarketPurchaseResponse">MakeMarketPurchaseResponse</a></p>
           </li>
           <li>
+            <p><a href="#rellm-MarkFulfillmentNotesReadRequest">MarkFulfillmentNotesReadRequest</a></p>
+          </li>
+          <li>
             <p><a href="#rellm-MarketPayment">MarketPayment</a></p>
           </li>
           <li>
@@ -671,6 +674,9 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
           </li>
           <li>
             <p><a href="#rellm-GetMarketSubscriptionsRequestType">GetMarketSubscriptionsRequestType</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-MarketSubscriptionState">MarketSubscriptionState</a></p>
           </li>
           <li>
             <p><a href="#rellm-PurchasePeriod">PurchasePeriod</a></p>
@@ -1187,11 +1193,191 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
       entitlement itself stays in effect until whichever is later of <code>renews_at</code>/<code>canceled_at</code> - once both have
       passed, the <code>renew_market_subscriptions</code> background job revokes it (reverts <code>media_storage_limit_bytes</code> to
       <code>ServerConfiguration.media_settings.default_user_media_allocation_bytes</code>, or removes the granted <code>Permission</code>s,
-      depending on <code>type</code>) and sets <code>service_terminated_at</code>. A user's own MarketSubscriptions (never anyone
+      depending on <code>type</code>) and sets <code>service_terminated_at</code>. Until then the subscription is
+      <code>SUBSCRIPTION_ACTIVE_BUT_CANCELED</code> (see <a href="#rellm-MarketSubscriptionState"><code>MarketSubscriptionState</code></a>): the buyer has
+      paid for that time, so buying the same product again just <em>resumes</em> it (no new charge) rather than starting a
+      second subscription. A user's own MarketSubscriptions (never anyone
       else's) are listed via <a href="#grpc-api-GetMarketSubscriptions"><code>GetMarketSubscriptions</code></a>, and also travel along
       on <a href="#rellm-User"><code>User</code></a> itself (<code>User.market_subscriptions</code>) the same way <code>ai_models</code>/<code>sync_sources</code> do.
       Stripe credentials for all of this live in <code>ServerConfiguration.stripe_config</code> (a
       <a href="#rellm-StripeConfig"><code>StripeConfig</code></a>), Admin-only like <code>twilio_config</code>/<code>bird_config</code>.
+    </p>
+    <h5 id="subscription-states"><a class="anchor" aria-hidden="true" tabindex="-1" href="#subscription-states"><span class="octicon octicon-link"></span></a>Subscription states</h5>
+    <p>
+      <a href="#rellm-MarketSubscription"><code>MarketSubscription.state</code></a> (<a href="#rellm-MarketSubscriptionState"><code>MarketSubscriptionState</code></a>)
+      is derived on every read, never stored: <code>SUBSCRIPTION_ACTIVE</code> (not canceled), <code>SUBSCRIPTION_ACTIVE_BUT_CANCELED</code>
+      (canceled, but the paid-for period - the later of <code>canceled_at</code>/<code>renews_at</code> - hasn't ended, so the entitlement
+      still applies) and <code>SUBSCRIPTION_CANCELED</code> (terminated, or the paid-for period is over). Only the middle state can be
+      resumed: <a href="#grpc-api-MakeMarketPurchase"><code>MakeMarketPurchase</code></a> for the same product returns <code>resumed_subscription</code>
+      instead of a checkout. Clients should branch on <code>state</code>, not on <code>canceled_at</code>.
+    </p>
+    <h5 id="fulfillment-chats-read-tracking-and-the-admin-perspective"><a class="anchor" aria-hidden="true" tabindex="-1" href="#fulfillment-chats-read-tracking-and-the-admin-perspective"><span class="octicon octicon-link"></span></a>Fulfillment chats, read tracking, and the admin perspective</h5>
+    <p>
+      <em>Every</em> subscription, whatever its <code>PurchaseType</code>, has a chat: its <code>fulfillment_notes</code> (an append-only conversation
+      between the buyer and the host admins, see <a href="#grpc-api-UpdateMarketSubscription"><code>UpdateMarketSubscription</code></a>). The
+      same notes are seen from two sides:
+    </p>
+    <ul>
+      <li>
+        <p>
+          <strong>The buyer</strong> reads them on their own subscription (<code>GetMarketSubscriptions</code>, or <code>User.market_subscriptions</code>). Their
+          read marker is <code>RellmHostingSubscriptionDetails.notes_last_read</code>, moved only by
+          <a href="#grpc-api-MarkFulfillmentNotesRead"><code>MarkFulfillmentNotesRead</code></a> (buyer-only, server-stamped; <code>UpdateMarketSubscription</code>
+          always preserves it). A note is <em>unread</em> if someone other than the buyer wrote it and it is newer than the marker (or
+          the marker is unset). A buyer's unread count is the sum over their subscriptions.
+        </p>
+      </li>
+      <li>
+        <p>
+          <strong>A host admin</strong> (a server <code>Admin</code>) sees every subscription, of every type
+          (<code>GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN</code>) and <code>UpdateMarketSubscription</code> (Admin-only) appends notes to
+          any of their chats. What an admin can <em>change</em> depends on the type:
+        </p>
+        <ul>
+          <li>
+            <strong>Rellm hosting</strong> is set up by hand (see <a href="#fulfilling-a-rellm-hosting-order">Fulfilling a Rellm hosting order</a>
+            below for the runbook), so its <code>fulfillment_status</code> is a real work queue that admin-written notes move:
+            <code>FULFILLMENT_STATUS_AWAITING_HOST_ADMIN</code> -> <code>IN_PROGRESS</code> (opening an awaiting order appends a bare status note) ->
+            <code>FULFILLED</code> ("Add and Mark as Fulfilled").
+          </li>
+          <li>
+            <strong>Every other type</strong> (media storage, AI grants, permissions access) is fulfilled <em>automatically</em> - the system
+            applies the storage, grants or permissions itself when the purchase is fulfilled and on every renewal. Its
+            <code>fulfillment_status</code> is therefore always <code>FULFILLMENT_STATUS_FULFILLED</code> (derived on read, whatever an older row
+            stored), and <code>UpdateMarketSubscription</code> rejects a note that tries to change it
+            (<code>fulfillment_status_is_automatic_for_this_type</code>). Its chat is text only.
+          </li>
+        </ul>
+        <p>
+          There is deliberately <strong>no per-admin read marker</strong> - <code>notes_last_read</code> is the buyer's, and several admins share the
+          same subscriptions - so an admin has no "unread" count. What needs an admin's attention is the number of
+          subscriptions whose <code>fulfillment_status</code> is still <code>FULFILLMENT_STATUS_AWAITING_HOST_ADMIN</code>; that is the admin's
+          count. Because the other types are always fulfilled, only hosting orders are ever in it.
+        </p>
+      </li>
+    </ul>
+    <p>
+      So three independent counts exist side by side, and clients can show them together: unread messages,
+      the buyer's unread fulfillment notes, and (Admins only) subscriptions awaiting a host admin. The Elm client shows them in
+      that order in the corners of its Messages button (top-right, bottom-right, bottom-left), and as the Messages,
+      Subscriptions and Fulfillment tabs.
+    </p>
+    <h5 id="fulfilling-a-rellm-hosting-order"><a class="anchor" aria-hidden="true" tabindex="-1" href="#fulfilling-a-rellm-hosting-order"><span class="octicon octicon-link"></span></a>Fulfilling a Rellm hosting order</h5>
+    <p>
+      Fulfillment is deliberately manual: nothing in the API provisions a site. A Rellm hosting admin does it with the
+      deploy system in <code>deploys/</code> (the <code>rellm deploy ...</code> command that ships with the Homebrew/Linux packages; its own
+      reference is <code>rellm help deploys</code>, i.e. <code>deploys/README.md</code> - this section mirrors the "Maximally-Efficient
+      Configuration" part of it, which is how Rellm's own cluster runs). Every command below takes <code>-n &#x26;lt;namespace&#x26;gt;</code> for the
+      per-site steps, and none of it needs anything beyond <code>kubectl</code> pointed at the right cluster
+      (<code>kubectl config current-context</code>) plus the tools <code>rellm deploy</code> itself lists.
+    </p>
+    <p>
+      <strong>What an order gives you</strong> (<code>RellmHostingSubscriptionDetails</code>, on the order from
+      <code>GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN</code>):
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Order field</th>
+          <th>Use it as</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>domain</code></td>
+          <td>The site's domain, e.g. <code>my-site.example.com</code> - the <code>--domain</code> of the commands below and what its DNS points at.</td>
+        </tr>
+        <tr>
+          <td><code>contact_email</code></td>
+          <td>Who to reach about DNS records/questions; carry that conversation in <code>fulfillment_notes</code>, not by email.</td>
+        </tr>
+        <tr>
+          <td><code>additional_information</code></td>
+          <td>The buyer's own notes (immutable); read before starting.</td>
+        </tr>
+        <tr>
+          <td><code>db_size_bytes</code> / <code>object_storage_size_bytes</code></td>
+          <td>Intended database/bucket sizes. <strong>Currently always <code>0</code> on an order</strong> - read the sizes off the order's <code>market_product</code> instead.</td>
+        </tr>
+        <tr>
+          <td><code>fulfillment_status</code> / <code>fulfillment_notes</code></td>
+          <td>Where it stands, and the buyer-visible log of how it got there (see "Admin counts" above).</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>
+      The namespace is yours to choose (it becomes the site's database, bucket and credentials' name): lowercase letters,
+      digits and <code>-</code>, at least 3 characters - the domain's first label (<code>my-site</code>) is a good default. Below: namespace
+      <code>my-site</code>, domain <code>my-site.example.com</code>.
+    </p>
+    <p>
+      <strong>Once per cluster</strong> (skip if the cluster already hosts sites): <code>rellm deploy create_central_storage</code> then
+      <code>rellm deploy wait_central_postgres_ready wait_central_object_storage_ready</code>; <code>rellm deploy create_ingress</code> (one shared
+      LoadBalancer - <code>rellm deploy get_ingress_external_ip</code> is the one IP every domain points at); <code>rellm deploy deploy_certmanager</code>;
+      and, for sites with email, Stalwart (<code>rellm deploy create_email_admin_secret ADMIN_PASSWORD=&#x26;#39;...&#x26;#39;</code> <em>before</em>
+      <code>rellm deploy create_email</code>, then finish its setup wizard via <code>rellm deploy deploy_email_admin_port_forward</code>).
+    </p>
+    <p><strong>Per order</strong>, in this order:</p>
+    <ol>
+      <li>
+        <em>Open the order.</em> Opening it on <code>/market/fulfillment</code> (or the Messages page's Fulfillment tab) moves it to
+        <code>FULFILLMENT_STATUS_IN_PROGRESS</code>, which tells the buyer you've started. Ask for anything missing as a note.
+      </li>
+      <li>
+        <em>DNS first.</em> An <code>A</code> record for <code>my-site.example.com</code> at the ingress IP. Certificates use DNS-01 through
+        DigitalOcean (apex and <code>*.my-site.example.com</code>), so the domain must be a DigitalOcean DNS zone: if the buyer
+        owns the domain elsewhere, post the <code>NS</code> records they must delegate to as a note. Don't continue until it resolves.
+      </li>
+      <li>
+        <em>Provision the site's slice of central storage</em> - its own database + role, bucket + user and a
+        <code>rellm-central-data</code> Secret of fresh random credentials, restricted to just this site (also creates the namespace):
+        <code>rellm deploy create_backend_central_data -n my-site</code>
+      </li>
+      <li><em>Deploy the backend:</em> <code>rellm deploy create_internal_central_data_backend -n my-site</code></li>
+      <li>
+        <em>TLS:</em> <code>rellm deploy deploy_certmanager_credential -n my-site</code> (prompts for the provider, DigitalOcean API token, the
+        domain and an admin email), wait for <code>kubectl get certificate -n my-site -w</code> to show <code>READY=True</code>, then
+        <code>rellm deploy restart_backend -n my-site</code> (the pods read the certificate at startup).
+      </li>
+      <li>
+        <em>Route the domain:</em> <code>rellm deploy add_ingress_domain -n my-site --domain my-site.example.com</code>. Verify with
+        <code>curl -I https://my-site.example.com</code> and <code>grpcurl my-site.example.com:27707 list</code>. If it 404s or hangs, bounce Traefik
+        (<code>rellm deploy deploy_ingress_restart</code>) - that briefly interrupts every domain, so only if needed.
+      </li>
+      <li>
+        <em>Email (optional):</em> <code>rellm deploy add_email_domain -n my-site --domain my-site.example.com</code>, then
+        <code>rellm deploy list_email_domains</code>; post the <code>MX</code> (<code>@</code> -> <code>my-site.example.com.</code>, priority 10), <code>TXT @</code>
+        (<code>v=spf1 mx ~all</code>) and <code>TXT _dmarc</code> (<code>v=DMARC1; p=none; rua=mailto:...</code>) records as a note for the buyer to add.
+      </li>
+      <li>
+        <em>Save the credentials:</em> <code>rellm deploy get_all_storage_credentials</code> (those Secrets are the only copy), and add the
+        namespace to the deploy jobs in <code>.github/workflows/server_ci_cd.yml</code> so CI keeps its image current.
+      </li>
+      <li>
+        <em>Hand over.</em> Add a note with the site's URL and how to sign in/create the first account, using "Add and Mark as
+        Fulfilled" (<code>FULFILLMENT_STATUS_FULFILLED</code>). The buyer is sent a push notification (see below).
+      </li>
+    </ol>
+    <p>
+      Capacity is shared across sites: <code>rellm deploy get_central_postgres_pvc_size get_central_object_storage_pvc_size</code>, and
+      grow with <code>rellm deploy resize_central_postgres_pvc SIZE=...</code> / <code>resize_central_object_storage_pvc SIZE=...</code> (grow-only).
+    </p>
+    <p>
+      <strong>Cancellation.</strong> Nothing in the API tears a site down. While a subscription is <code>SUBSCRIPTION_ACTIVE_BUT_CANCELED</code> the
+      buyer has paid for the time - leave the site running (and don't remove it if they resume). Once it is
+      <code>SUBSCRIPTION_CANCELED</code>, retire it: <code>rellm deploy remove_ingress_domain -n my-site --domain my-site.example.com</code>,
+      <code>rellm deploy remove_email_domain -n my-site --domain my-site.example.com</code>, delete the namespace, then
+      <code>rellm deploy delete_backend_central_data -n my-site --confirm my-site</code> (permanently removes its database, bucket and
+      credentials - export what the buyer needs first), and leave a note recording that it was done.
+    </p>
+    <p>
+      Notifications follow the same two sides and use the push subscriptions people already have - the ones
+      <a href="#grpc-api-RegisterPushSubscription"><code>RegisterPushSubscription</code></a> creates when someone enables push notifications (in the
+      web app's Accounts panel) - so there is nothing to opt in to per subscription. When a note is added to a
+      subscription, every Web Push subscription of its buyer is notified, and so is every one of every user who can handle
+      fulfillment (an Admin, see above) - except those of the note's own author. Tapping the notification opens the chat
+      (the buyer's profile for the buyer, the Fulfillment tab for an admin). Recipients are worked out at send time, so
+      someone who stops being an admin stops getting the admin notifications.
     </p>
     <h4 id="media"><a class="anchor" aria-hidden="true" tabindex="-1" href="#media"><span class="octicon octicon-link"></span></a>Media</h4>
     <p>
@@ -2251,7 +2437,7 @@ directory</a> is (<code>{name}</code> denotes a
           <td>MakeMarketPurchase</td>
           <td><a href="#rellm-MakeMarketPurchaseRequest">MakeMarketPurchaseRequest</a></td>
           <td><a href="#rellm-MakeMarketPurchaseResponse">MakeMarketPurchaseResponse</a></td>
-          <td>Starts (or resumes) buying a MarketProduct for the current user, returning a Stripe Checkout URL to redirect to. <em>Authenticated</em>. See <code>MakeMarketPurchaseRequest</code>'s own doc -- no MarketPurchase/ MarketSubscription is created by this call itself, only once Stripe confirms payment via webhook.</td>
+          <td>Starts (or resumes) buying a MarketProduct for the current user, returning a Stripe Checkout URL to redirect to. <em>Authenticated</em>. See <code>MakeMarketPurchaseRequest</code>'s own doc -- no MarketPurchase/ MarketSubscription is created by this call itself, only once Stripe confirms payment via webhook. If the buyer already has a <code>SUBSCRIPTION_ACTIVE_BUT_CANCELED</code> subscription to the product, it is resumed on the spot instead (no checkout, no charge) -- see <code>MakeMarketPurchaseResponse.resumed_subscription</code>.</td>
         </tr>
         <tr>
           <td>CancelMarketSubscription</td>
@@ -2263,7 +2449,13 @@ directory</a> is (<code>{name}</code> denotes a
           <td>UpdateMarketSubscription</td>
           <td><a href="#rellm-MarketSubscription">MarketSubscription</a></td>
           <td><a href="#rellm-MarketSubscription">MarketSubscription</a></td>
-          <td>Appends to a <code>PURCHASE_TYPE_RELLM_HOSTING</code> MarketSubscription's own <code>fulfillment_notes</code> (nothing else -- every other field, including <code>additional_information</code>, is immutable after purchase and silently ignored if changed) -- backs <code>/market/fulfillment</code>. A new entry must be appended (not inserted/reordered/removed) after whatever's already stored, and its <code>user_id</code> must match the caller's own -- the server stamps <code>created_at</code> itself, ignoring whatever the client sent. Its <code>note</code> text is required unless the entry also changes <code>fulfillment_status</code> from the previous entry's own value (see <code>FulfillmentNote.note</code>'s own doc). <code>fulfillment_status</code> on the returned <code>RellmHostingSubscriptionDetails</code> is always the last appended entry's own value -- there's no way to set it independently of a note. <em>Authenticated</em>, requires Admin (for now -- see that field's own doc on why this may loosen to "buyer, or Admin" later).</td>
+          <td>Appends to a MarketSubscription's own <code>fulfillment_notes</code> (any <code>PurchaseType</code> -- see <code>MediaStorageSubscriptionDetails.fulfillment_notes</code>; the request's <code>details</code> must be the variant matching the subscription's type; nothing else -- every other field, including <code>additional_information</code>, is immutable after purchase and silently ignored if changed) -- backs <code>/market/fulfillment</code>. A new entry must be appended (not inserted/reordered/removed) after whatever's already stored, and its <code>user_id</code> must match the caller's own -- the server stamps <code>created_at</code> itself, ignoring whatever the client sent. Its <code>note</code> text is required unless the entry also changes <code>fulfillment_status</code> from the previous entry's own value (see <code>FulfillmentNote.note</code>'s own doc). <code>fulfillment_status</code> on the returned <code>RellmHostingSubscriptionDetails</code> is always the last appended entry's own value -- there's no way to set it independently of a note. <em>Authenticated</em>, requires Admin (for now -- see that field's own doc on why this may loosen to "buyer, or Admin" later).</td>
+        </tr>
+        <tr>
+          <td>MarkFulfillmentNotesRead</td>
+          <td><a href="#rellm-MarkFulfillmentNotesReadRequest">MarkFulfillmentNotesReadRequest</a></td>
+          <td><a href="#rellm-MarketSubscription">MarketSubscription</a></td>
+          <td>Marks all of a MarketSubscription's current <code>fulfillment_notes</code> read (any <code>PurchaseType</code>) by stamping its details' <code>notes_last_read</code> with now. <em>Authenticated</em>, and only the subscription's own buyer (<code>PermissionDenied</code> otherwise -- even an Admin, since the marker is the buyer's). Idempotent. Returns the updated subscription.</td>
         </tr>
         <tr>
           <td>GenerateMedia</td>
@@ -10115,6 +10307,24 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td></td>
           <td>How many tokens this product/subscription grants the buyer each time it's (re-)fulfilled, replacing (not adding to) whatever balance remained -- see <code>logic::market::market_fulfillment::fulfill_purchase</code>'s <code>AiGrants</code> arm.</td>
         </tr>
+        <tr>
+          <td>fulfillment_status</td>
+          <td><a href="#rellm-FulfillmentStatus">FulfillmentStatus</a></td>
+          <td></td>
+          <td>The fulfillment chat for this subscription -- <em>every</em> <code>PurchaseType</code> has one, not just <code>PURCHASE_TYPE_RELLM_HOSTING</code> (see <code>RellmHostingSubscriptionDetails.fulfillment_status</code>/<code>fulfillment_notes</code>/ <code>notes_last_read</code>, whose semantics these three fields share exactly: append-only notes via <code>UpdateMarketSubscription</code>, the buyer's read marker via <code>MarkFulfillmentNotesRead</code>, <code>fulfillment_status</code> always the last note's status). Only meaningful on a <code>MarketSubscription</code>'s own <code>details</code>: on a <code>MarketProduct.details</code> they're always empty/unset. Unlike Rellm hosting, nothing about these types <em>needs</em> an admin: the system fulfills them automatically, so <code>fulfillment_status</code> is always <code>FULFILLMENT_STATUS_FULFILLED</code> (derived on read, and <code>UpdateMarketSubscription</code> rejects a note that changes it) -- the chat is just a way for a host admin and the buyer to talk about the subscription.</td>
+        </tr>
+        <tr>
+          <td>fulfillment_notes</td>
+          <td><a href="#rellm-FulfillmentNote">FulfillmentNote</a></td>
+          <td>repeated</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>notes_last_read</td>
+          <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
+          <td>optional</td>
+          <td></td>
+        </tr>
       </tbody>
     </table>
     <p><a name="rellm-FulfillmentNote"></a></p>
@@ -10232,7 +10442,7 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>market_subscriptions</td>
           <td><a href="#rellm-MarketSubscription">MarketSubscription</a></td>
           <td>repeated</td>
-          <td>For <code>GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE</code>: the caller's own subscriptions, newest first. For <code>GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN</code>: every <code>PURCHASE_TYPE_RELLM_HOSTING</code> subscription across every buyer, oldest first (so the oldest unfulfilled order surfaces at the top of <code>/market/fulfillment</code>).</td>
+          <td>For <code>GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE</code>: the caller's own subscriptions, newest first. For <code>GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN</code>: every <code>PURCHASE_TYPE_RELLM_HOSTING</code> subscription across every buyer (and for <code>GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN</code>, every subscription of every type), oldest first (so the oldest unfulfilled order surfaces at the top of <code>/market/fulfillment</code>).</td>
         </tr>
       </tbody>
     </table>
@@ -10290,6 +10500,36 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td><a href="#string">string</a></td>
           <td></td>
           <td>Redirect the buyer's browser here (a Stripe-hosted Checkout page) to complete payment. Expires after Stripe's own Checkout Session timeout if never completed -- since no <code>MarketPurchase</code> row is created until the webhook fires (see this message's own request's doc), an abandoned/expired checkout leaves no trace at all.</td>
+        </tr>
+        <tr>
+          <td>resumed_subscription</td>
+          <td><a href="#rellm-MarketSubscription">MarketSubscription</a></td>
+          <td>optional</td>
+          <td>Set <em>instead of</em> a checkout (and <code>checkout_url</code> is then empty) when the buyer already has a <code>SUBSCRIPTION_ACTIVE_BUT_CANCELED</code> subscription to this same product: they've already paid for the rest of the period, so buying again just resumes it -- <code>canceled_at</code> is cleared, the slot it freed is claimed again (<code>MarketProduct.sold_count</code>), and nothing is charged. The returned subscription is the resumed one, now <code>SUBSCRIPTION_ACTIVE</code>. Clients must check this before redirecting to <code>checkout_url</code>.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-MarkFulfillmentNotesReadRequest"></a></p>
+    <h3 id="markfulfillmentnotesreadrequest"><a class="anchor" aria-hidden="true" tabindex="-1" href="#markfulfillmentnotesreadrequest"><span class="octicon octicon-link"></span></a>MarkFulfillmentNotesReadRequest</h3>
+    <p>
+      Request to mark a subscription's fulfillment notes read -- see
+      <code>RellmHostingSubscriptionDetails.notes_last_read</code>.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>market_subscription_id</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>The <code>MarketSubscription.id</code>. Only its buyer may mark it read.</td>
         </tr>
       </tbody>
     </table>
@@ -10744,6 +10984,12 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>Every <code>MarketPurchase</code> billed against this subscription so far -- the original purchase plus every successful renewal charge, newest first. Each entry's own <code>market_subscription</code> field is left unset here (see <code>MarketPurchase.market_subscription</code>'s own doc) to avoid recursing back into this same subscription.</td>
         </tr>
         <tr>
+          <td>state</td>
+          <td><a href="#rellm-MarketSubscriptionState">MarketSubscriptionState</a></td>
+          <td></td>
+          <td>Where this subscription stands right now -- see <code>MarketSubscriptionState</code>'s own doc. Server- derived at marshal time from <code>canceled_at</code>/<code>renews_at</code>/<code>service_terminated_at</code>; ignored on any request (a client can't set it -- cancel via <code>CancelMarketSubscription</code>, resume by buying the product again via <code>MakeMarketPurchase</code>).</td>
+        </tr>
+        <tr>
           <td>media_storage_subscription_details</td>
           <td><a href="#rellm-MediaStorageSubscriptionDetails">MediaStorageSubscriptionDetails</a></td>
           <td></td>
@@ -10783,7 +11029,7 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>canceled_at</td>
           <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
           <td>optional</td>
-          <td>Set once the subscription will no longer renew -- either the buyer/admin explicitly canceled it (CancelMarketSubscription) or a renewal charge failed. The subscription's entitlement (media storage quota, granted permissions, etc.) stays active until whichever is later of renews_at/canceled_at, at which point renew_market_subscriptions.rs revokes it and sets service_terminated_at. Also the moment <code>MarketProduct.sold_count</code> is decremented, freeing this subscription's slot for a new buyer (see that field's own doc).</td>
+          <td>Set once the subscription will no longer renew -- either the buyer/admin explicitly canceled it (CancelMarketSubscription) or a renewal charge failed. The subscription's entitlement (media storage quota, granted permissions, etc.) stays active until whichever is later of renews_at/canceled_at, at which point renew_market_subscriptions.rs revokes it and sets service_terminated_at. Also the moment <code>MarketProduct.sold_count</code> is decremented, freeing this subscription's slot for a new buyer (see that field's own doc). Cleared again (and the slot re-claimed) if the buyer resumes the subscription before it lapses -- see <code>MarketSubscriptionState.SUBSCRIPTION_ACTIVE_BUT_CANCELED</code> and <code>state</code> above, which is what clients should branch on rather than inspecting this field.</td>
         </tr>
         <tr>
           <td>service_terminated_at</td>
@@ -10844,6 +11090,24 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td><a href="#uint64">uint64</a></td>
           <td></td>
           <td>How much media storage this product/subscription grants the buyer, replacing (not adding to) whatever quota they already had -- see <code>logic::market::market_fulfillment::fulfill_purchase</code>'s <code>MediaStorage</code> arm.</td>
+        </tr>
+        <tr>
+          <td>fulfillment_status</td>
+          <td><a href="#rellm-FulfillmentStatus">FulfillmentStatus</a></td>
+          <td></td>
+          <td>The fulfillment chat for this subscription -- <em>every</em> <code>PurchaseType</code> has one, not just <code>PURCHASE_TYPE_RELLM_HOSTING</code> (see <code>RellmHostingSubscriptionDetails.fulfillment_status</code>/<code>fulfillment_notes</code>/ <code>notes_last_read</code>, whose semantics these three fields share exactly: append-only notes via <code>UpdateMarketSubscription</code>, the buyer's read marker via <code>MarkFulfillmentNotesRead</code>, <code>fulfillment_status</code> always the last note's status). Only meaningful on a <code>MarketSubscription</code>'s own <code>details</code>: on a <code>MarketProduct.details</code> they're always empty/unset. Unlike Rellm hosting, nothing about these types <em>needs</em> an admin: the system fulfills them automatically, so <code>fulfillment_status</code> is always <code>FULFILLMENT_STATUS_FULFILLED</code> (derived on read, and <code>UpdateMarketSubscription</code> rejects a note that changes it) -- the chat is just a way for a host admin and the buyer to talk about the subscription.</td>
+        </tr>
+        <tr>
+          <td>fulfillment_notes</td>
+          <td><a href="#rellm-FulfillmentNote">FulfillmentNote</a></td>
+          <td>repeated</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>notes_last_read</td>
+          <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
+          <td>optional</td>
+          <td></td>
         </tr>
       </tbody>
     </table>
@@ -10923,6 +11187,24 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td><a href="#string">string</a></td>
           <td></td>
           <td>Admin-authored, Markdown-formatted product description shown on the product's own page -- same "no generic implicit description" reasoning as <code>name</code> above. On a <code>MarketSubscription</code>: copied the same way <code>name</code> is.</td>
+        </tr>
+        <tr>
+          <td>fulfillment_status</td>
+          <td><a href="#rellm-FulfillmentStatus">FulfillmentStatus</a></td>
+          <td></td>
+          <td>The fulfillment chat for this subscription -- <em>every</em> <code>PurchaseType</code> has one, not just <code>PURCHASE_TYPE_RELLM_HOSTING</code> (see <code>RellmHostingSubscriptionDetails.fulfillment_status</code>/<code>fulfillment_notes</code>/ <code>notes_last_read</code>, whose semantics these three fields share exactly: append-only notes via <code>UpdateMarketSubscription</code>, the buyer's read marker via <code>MarkFulfillmentNotesRead</code>, <code>fulfillment_status</code> always the last note's status). Only meaningful on a <code>MarketSubscription</code>'s own <code>details</code>: on a <code>MarketProduct.details</code> they're always empty/unset. Unlike Rellm hosting, nothing about these types <em>needs</em> an admin: the system fulfills them automatically, so <code>fulfillment_status</code> is always <code>FULFILLMENT_STATUS_FULFILLED</code> (derived on read, and <code>UpdateMarketSubscription</code> rejects a note that changes it) -- the chat is just a way for a host admin and the buyer to talk about the subscription.</td>
+        </tr>
+        <tr>
+          <td>fulfillment_notes</td>
+          <td><a href="#rellm-FulfillmentNote">FulfillmentNote</a></td>
+          <td>repeated</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>notes_last_read</td>
+          <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
+          <td>optional</td>
+          <td></td>
         </tr>
       </tbody>
     </table>
@@ -11053,12 +11335,22 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>repeated</td>
           <td>The admin/buyer conversation about fulfilling this order -- oldest to newest, append-only (see <code>UpdateMarketSubscription</code>'s own doc: a new entry can only ever be appended after whatever's already here, never inserted/reordered/removed, and its <code>user_id</code> must match whoever's actually making the request -- the server stamps <code>created_at</code> itself).</td>
         </tr>
+        <tr>
+          <td>notes_last_read</td>
+          <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
+          <td>optional</td>
+          <td>When the <em>buyer</em> last read this order's <code>fulfillment_notes</code> -- set by <code>MarkFulfillmentNotesRead</code> (server-stamped, never client-settable via <code>UpdateMarketSubscription</code>, which preserves it). Unset until first read. A note is <em>unread</em> if it was written by someone other than the buyer (i.e. an admin) and its <code>created_at</code> is later than this (or this is unset). Drives the unread counts on the Messages UI's Fulfillment tab and on subscription listings. Deliberately one marker for the buyer's side only: admins work orders from <code>/market/fulfillment</code>.</td>
+        </tr>
       </tbody>
     </table>
     <p><a name="rellm-FulfillmentStatus"></a></p>
     <h3 id="fulfillmentstatus"><a class="anchor" aria-hidden="true" tabindex="-1" href="#fulfillmentstatus"><span class="octicon octicon-link"></span></a>FulfillmentStatus</h3>
     <p>
-      The state of a <code>PURCHASE_TYPE_RELLM_HOSTING</code> order's manual fulfillment -- see
+      Where a subscription stands in the host admins' work queue. Only <code>PURCHASE_TYPE_RELLM_HOSTING</code> is fulfilled by
+      hand, so only it ever moves through these values (via admin-written notes). Every other type is fulfilled
+      automatically (storage, AI grants and permissions are applied by the system when the purchase is fulfilled):
+      its <code>fulfillment_status</code> is always <code>FULFILLMENT_STATUS_FULFILLED</code> -- whatever an older row stored -- and
+      <code>UpdateMarketSubscription</code> rejects a note that tries to change it. See
       <code>RellmHostingSubscriptionDetails.fulfillment_status</code>'s own doc for how the "current" value is
       derived, and <code>FulfillmentNote.fulfillment_status</code> for how every transition is recorded as its own
       timestamped note (a "fulfillment state history"), not just tracked as a bare current value.
@@ -11075,17 +11367,17 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
         <tr>
           <td>FULFILLMENT_STATUS_AWAITING_HOST_ADMIN</td>
           <td>0</td>
-          <td>The starting state for every new order -- no admin has looked at it yet.</td>
+          <td>The starting state for every new subscription -- no admin has looked at it yet.</td>
         </tr>
         <tr>
           <td>FULFILLMENT_STATUS_FULFILLED</td>
           <td>1</td>
-          <td>The order is fully stood up -- set via "Add and Mark as Fulfilled" on <code>/market/fulfillment</code> (<code>UpdateMarketSubscription</code>).</td>
+          <td>The subscription is fully stood up / dealt with -- set via "Add and Mark as Fulfilled" on <code>/market/fulfillment</code> (<code>UpdateMarketSubscription</code>).</td>
         </tr>
         <tr>
           <td>FULFILLMENT_STATUS_IN_PROGRESS</td>
           <td>2</td>
-          <td>An admin has started working the order but it isn't done yet -- set automatically the first time an admin expands this order's row on <code>/market/fulfillment</code> (if it was still <code>FULFILLMENT_STATUS_AWAITING_HOST_ADMIN</code>), or explicitly via a note.</td>
+          <td>An admin has started working the subscription but it isn't done yet -- set automatically the first time an admin expands this order's row on <code>/market/fulfillment</code> (if it was still <code>FULFILLMENT_STATUS_AWAITING_HOST_ADMIN</code>), or explicitly via a note.</td>
         </tr>
       </tbody>
     </table>
@@ -11109,6 +11401,48 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN</td>
           <td>1</td>
           <td>Admin-only view backing /market/fulfillment -- every PURCHASE_TYPE_RELLM_HOSTING MarketSubscription across every buyer, since Rellm hosting needs manual setup that isn't automated (see RellmHostingSubscriptionDetails.fulfillment_status's own doc).</td>
+        </tr>
+        <tr>
+          <td>GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN</td>
+          <td>2</td>
+          <td>Admin-only view backing the Messages page's Fulfillment tab -- <em>every</em> MarketSubscription of <em>every</em> PurchaseType across every buyer, oldest first, so an admin can find any customer's subscription (storage, AI grants, permissions, hosting) to open its fulfillment chat (<code>fulfillment_notes</code>, which all types have). Only Rellm hosting has a work queue (<code>fulfillment_status</code> moves); the other types are always <code>FULFILLMENT_STATUS_FULFILLED</code>, so their chats are text only.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-MarketSubscriptionState"></a></p>
+    <h3 id="marketsubscriptionstate"><a class="anchor" aria-hidden="true" tabindex="-1" href="#marketsubscriptionstate"><span class="octicon octicon-link"></span></a>MarketSubscriptionState</h3>
+    <p>
+      Where a <code>MarketSubscription</code> stands from the <em>buyer's</em> point of view -- always derived on the fly
+      (never stored as a column) from <code>canceled_at</code>/<code>renews_at</code>/<code>service_terminated_at</code> as of the moment
+      the subscription is marshaled, see <code>logic::market::market_subscription_state</code>. The point of the
+      middle value: a buyer who cancels has still paid for the rest of their current billing period, so
+      cancellation is not an instant "off switch" -- they keep their entitlement until it runs out, and
+      can resume (see <code>MakeMarketPurchaseResponse.resumed_subscription</code>) any time before then without
+      paying again.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Number</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>SUBSCRIPTION_ACTIVE</td>
+          <td>0</td>
+          <td>Not canceled -- will renew (or, for a <code>PURCHASE_PERIOD_INDEFINITE</code> one, simply stays in force) and the entitlement is in effect. The default (proto3's implicit <code>0</code>).</td>
+        </tr>
+        <tr>
+          <td>SUBSCRIPTION_ACTIVE_BUT_CANCELED</td>
+          <td>1</td>
+          <td><code>canceled_at</code> is set, but the period already paid for hasn't run out yet (i.e. now is still before the later of <code>canceled_at</code>/<code>renews_at</code>, and <code>service_terminated_at</code> is unset): the entitlement is still in effect, it just won't renew. Buying the same product again <em>resumes</em> this subscription (clears <code>canceled_at</code>, no new charge) rather than starting a second one.</td>
+        </tr>
+        <tr>
+          <td>SUBSCRIPTION_CANCELED</td>
+          <td>2</td>
+          <td>Canceled and the paid-for period is over (<code>service_terminated_at</code> set, or the later of <code>canceled_at</code>/<code>renews_at</code> has passed and the <code>renew_market_subscriptions</code> job simply hasn't gotten to revoking the entitlement yet). Terminal: buying the product again starts a brand new subscription.</td>
         </tr>
       </tbody>
     </table>

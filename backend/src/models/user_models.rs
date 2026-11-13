@@ -6,6 +6,17 @@ use tonic::{Code, Status};
 use crate::db_connection::PgPooledConnection;
 use crate::schema::{follows, users};
 
+/// The ids of every user holding the `ADMIN` permission -- the people who can handle fulfillment of
+/// Market orders (`UpdateMarketSubscription` and the Fulfillment tab require it), so who a new
+/// `FulfillmentNote` is announced to (see `web_push::fulfillment_note_recipients`).
+pub fn get_admin_user_ids(conn: &mut PgPooledConnection) -> Result<Vec<i64>, Status> {
+    users::table
+        .filter(users::permissions.contains(serde_json::json!([crate::protos::Permission::Admin.as_str_name()])))
+        .select(users::id)
+        .load::<i64>(conn)
+        .map_err(|_| Status::new(Code::Internal, "error_loading_admin_users"))
+}
+
 pub fn get_user(user_id: i64, conn: &mut PgPooledConnection) -> Result<User, Status> {
     users::table
         .select(USER_COLUMNS)

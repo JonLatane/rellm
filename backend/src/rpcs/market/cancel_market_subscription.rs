@@ -1,6 +1,3 @@
-use std::time::SystemTime;
-
-use diesel::*;
 use tonic::{Code, Status};
 
 use crate::db_connection::PgPooledConnection;
@@ -8,7 +5,6 @@ use crate::marshaling::*;
 use crate::models;
 use crate::protos::*;
 use crate::rpcs::validate_permission;
-use crate::schema::market_subscriptions;
 
 /// *Authenticated*, self-or-`Permission::Admin` -- the subscription's own buyer can cancel it
 /// themselves, or an admin can cancel it on their behalf, mirroring `rpcs::users::update_user`'s
@@ -19,7 +15,9 @@ use crate::schema::market_subscriptions;
 ///
 /// Immediately decrements the product's `sold_count` (see that field's own doc), freeing a slot for
 /// someone else to buy -- unlike the entitlement itself, which stays in effect until the subscription
-/// is actually terminated (see below). This only sets `canceled_at`; it does NOT immediately revoke
+/// is actually terminated (see below). The subscription becomes `SUBSCRIPTION_ACTIVE_BUT_CANCELED`
+/// (it can be resumed by buying the product again -- see `make_market_purchase`) until the paid-for
+/// period runs out. This only sets `canceled_at`; it does NOT immediately revoke
 /// the subscription's entitlement
 /// (media storage quota, granted permissions) -- that stays in effect until whichever is later of
 /// `renews_at`/`canceled_at` has passed, at which point `logic::market::market_renewal`'s
@@ -39,19 +37,11 @@ pub fn cancel_market_subscription(
         validate_permission(&Some(current_user), Permission::Admin)?;
     }
 
-    if existing.canceled_at.is_none() {
-        diesel::update(market_subscriptions::table.filter(market_subscriptions::id.eq(existing.id)))
-            .set(market_subscriptions::canceled_at.eq(SystemTime::now()))
-            .execute(conn)
-            .map_err(|e| {
-                log::error!("Failed to cancel market subscription {}: {:?}", existing.id, e);
-                Status::new(Code::Internal, "failed_to_cancel_subscription")
-            })?;
-        // Frees the slot this subscription held -- see `MarketProduct.sold_count`'s own doc. Only
-        // on the actual transition into "canceled" (this whole block is skipped on an idempotent
-        // re-cancel), so a double-cancel can't double-decrement.
-        models::decrement_market_product_sold_count(existing.product_id, conn);
-    }
+    // Only the call that actually flips `canceled_at` frees the slot, atomically with it under the
+    // product's row lock -- see `cancel_market_subscription_and_release_slot`. Everything else (already
+    // canceled, whether still `SUBSCRIPTION_ACTIVE_BUT_CANCELED` or fully `SUBSCRIPTION_CANCELED`) is the
+    // idempotent no-op success described above.
+    models::cancel_market_subscription_and_release_slot(existing.id, existing.product_id, conn)?;
 
     let mut by_buyer = build_subscriptions_for_buyers(&[existing.buyer_id], conn)?;
     by_buyer

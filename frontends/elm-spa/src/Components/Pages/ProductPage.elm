@@ -241,9 +241,15 @@ updateInner shared msg model =
             )
 
         GotPurchaseResult _ (Ok ( maybeAccountsPanelMsg, response )) ->
-            ( { model | purchase = Market.PurchaseIdle }
-            , Effect.batch [ accountsPanelEffect maybeAccountsPanelMsg, Effect.fromCmd (Browser.Navigation.load response.checkoutUrl) ]
-            )
+            case response.resumedSubscription of
+                -- A canceled-but-paid-up subscription was resumed server-side: no checkout to go to.
+                Just _ ->
+                    ( { model | purchase = Market.PurchaseResumed }, accountsPanelEffect maybeAccountsPanelMsg )
+
+                Nothing ->
+                    ( { model | purchase = Market.PurchaseIdle }
+                    , Effect.batch [ accountsPanelEffect maybeAccountsPanelMsg, Effect.fromCmd (Browser.Navigation.load response.checkoutUrl) ]
+                    )
 
         GotPurchaseResult _ (Err err) ->
             ( { model | purchase = Market.PurchaseErrored (AccountsPanel.grpcErrorToString err) }, Effect.none )
@@ -369,6 +375,9 @@ buyView shared model product =
                    , case model.purchase of
                         Market.PurchaseErrored err ->
                             span [ class "product-purchase-error" ] [ text err ]
+
+                        Market.PurchaseResumed ->
+                            span [ class "product-purchase-resumed" ] [ text "Subscription resumed -- you'd already paid for this period, so nothing was charged." ]
 
                         _ ->
                             text ""

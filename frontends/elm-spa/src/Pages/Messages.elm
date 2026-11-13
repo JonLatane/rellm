@@ -12,6 +12,7 @@ suffix. Thin `Effect`/`Shared`/URL-owning wrapper around
 `Shared.MessagingPanel` embeds it too -- see that module's own doc.
 -}
 
+import Components.FulfillmentThreads as Fulfillment
 import Components.Messages as Messages
 import Components.Pages.MessagesPage as MessagesPage
 import Dict
@@ -103,8 +104,49 @@ init shared req =
         searchText =
             Dict.get "search_text" req.query |> Maybe.withDefault ""
 
-        ( model, cmd ) =
+        -- `?fulfillment_order=<id>[@host]` -- one admin Fulfillment-tab order, same encoding.
+        selectedOrder : Maybe String
+        selectedOrder =
+            Dict.get "fulfillment_order" req.query
+                |> Maybe.map
+                    (\raw ->
+                        let
+                            ( orderId, host ) =
+                                Messages.parseGroupRouteId shared.accounts.mainFrontendHost raw
+                        in
+                        "admin/" ++ Fulfillment.threadKey host orderId
+                    )
+
+        ( initialModel, cmd ) =
             MessagesPage.init shared.accounts (Just { navKey = req.key, path = req.url.path }) selectedGroup pendingScrollMessageId searchText
+
+        -- An admin order deep link wins; otherwise `?subscription_messages=<id>[@host]` -- one of the user's own
+        -- subscription threads (the subscription counterpart of `?messaging_group=`, same `id@host` encoding;
+        -- `#subscription-message-<n>` is the matching fragment).
+        selectedThreadKey : Maybe String
+        selectedThreadKey =
+            if selectedOrder /= Nothing then
+                selectedOrder
+
+            else
+                Dict.get "subscription_messages" req.query
+                    |> Maybe.map
+                        (\raw ->
+                            let
+                                ( subscriptionId, host ) =
+                                    Messages.parseGroupRouteId shared.accounts.mainFrontendHost raw
+                            in
+                            Fulfillment.threadKey host subscriptionId
+                        )
+
+        model : Model
+        model =
+            case selectedThreadKey of
+                Just key ->
+                    MessagesPage.selectSubscriptionThread key initialModel
+
+                Nothing ->
+                    initialModel
     in
     ( model, Effect.batch [ Effect.fromCmd (Cmd.map PageMsg cmd), Effect.fromShared Shared.CloseAllPanels ] )
 
@@ -161,6 +203,17 @@ update shared msg model =
             , Effect.batch [ pageEffect, Effect.fromShared (Shared.MessagingPanelMsg (MessagingPanel.PageMsg MessagesPage.ForceRefresh)) ]
             )
 
+        -- Same idea for the Fulfillment tab: marking a thread's notes read here also refreshes the
+        -- embedded panel's own, separate copy (and so its nav-button unread total).
+        PageMsg ((MessagesPage.FulfillmentMsg (Fulfillment.GotMarkedRead _ (Ok _))) as subMsg) ->
+            let
+                ( updatedModel, pageEffect ) =
+                    applyPageMsg shared subMsg model
+            in
+            ( updatedModel
+            , Effect.batch [ pageEffect, Effect.fromShared (Shared.MessagingPanelMsg (MessagingPanel.PageMsg MessagesPage.ForceRefresh)) ]
+            )
+
         PageMsg subMsg ->
             applyPageMsg shared subMsg model
 
@@ -195,6 +248,16 @@ update shared msg model =
                         -- which surface the read/unread change was actually
                         -- made from.
                         Shared.MessagingPanelMsg (MessagingPanel.PageMsg (MessagesPage.GotMarkReadResult (Ok _))) ->
+                            applyPageMsg shared MessagesPage.ForceRefresh model
+
+                        -- A subscription thread link clicked in the embedded panel while already on this page:
+                        -- same reasoning as `EmbeddedGroupLinkClicked` above (a same-path, query-only URL
+                        -- change never reaches this page's `init`/`update`).
+                        Shared.MessagingPanelMsg (MessagingPanel.PageMsg (MessagesPage.EmbeddedThreadLinkClicked key)) ->
+                            applyPageMsg shared (MessagesPage.SyncSelectedThread key) model
+
+                        -- ...and the reverse, for the Fulfillment tab inside the embedded panel.
+                        Shared.MessagingPanelMsg (MessagingPanel.PageMsg (MessagesPage.FulfillmentMsg (Fulfillment.GotMarkedRead _ (Ok _)))) ->
                             applyPageMsg shared MessagesPage.ForceRefresh model
 
                         -- A `ComposeClicked`/`ReplyClicked` send actually
@@ -263,7 +326,7 @@ view shared req model =
         UI.layout shared
             req.route
             SharedMsg
-            [ Html.map PageMsg (MessagesPage.view shared.time shared.accounts model) ]
+            [ Html.map PageMsg (MessagesPage.view shared.time shared.basePath shared.accounts model) ]
     }
 
 

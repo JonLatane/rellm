@@ -1355,7 +1355,7 @@ sharedUpdate req msg model =
                 -- ever (re)fetches an entry that's newly eligible or changed
                 -- account/listingType, so this is a no-op RPC-wise whenever
                 -- nothing relevant actually changed. Without this, the nav
-                -- badge (`UI.elm`'s `MessagingPanel.totalUnreadCount`) stayed
+                -- badge (`UI.elm`'s `MessagingPanel.unreadCounts`) stayed
                 -- at 0 until the user opened the Messages panel at least once
                 -- this session -- `Shared.MessagingPanel.init`'s own `empty`
                 -- deliberately fetches nothing up front, see its doc -- even

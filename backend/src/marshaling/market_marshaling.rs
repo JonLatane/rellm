@@ -8,6 +8,7 @@
 //! `ai_providers.configuration`, which has no separate "provider kind" column to fall back on).
 
 use std::collections::HashMap;
+use std::time::SystemTime;
 
 use tonic::Status;
 
@@ -152,6 +153,12 @@ impl ToProtoMarshalableMarketSubscription for MarshalableMarketSubscription {
             currency: subscription.currency as u32,
             market_product: Some(MarshalableMarketProduct(product.clone()).to_proto()),
             billing_history: billing_history.clone(),
+            state: crate::logic::subscription_state(
+                subscription.canceled_at,
+                subscription.renews_at,
+                subscription.service_terminated_at,
+                SystemTime::now(),
+            ) as i32,
             details: subscription_details_to_proto(purchase_type, &subscription.details),
             created_at: Some(subscription.created_at.to_proto()),
             renews_at: subscription.renews_at.map(|t| t.to_proto()),
@@ -184,6 +191,20 @@ pub fn build_subscriptions_for_buyers(
     Ok(result)
 }
 
+/// One `MarketSubscription` (with `billing_history` populated) by id -- for RPCs that just changed
+/// a single row and need to hand its fresh proto back (`MakeMarketPurchase`'s resume path).
+pub fn build_subscription(
+    subscription_id: i64,
+    conn: &mut PgPooledConnection,
+) -> Result<MarketSubscription, Status> {
+    let subscription = models::get_market_subscription(subscription_id, conn)?;
+    build_subscriptions(vec![subscription], conn)?
+        .into_iter()
+        .next()
+        .map(|(_, proto)| proto)
+        .ok_or_else(|| Status::new(tonic::Code::Internal, "failed_to_load_updated_subscription"))
+}
+
 /// Every `PURCHASE_TYPE_RELLM_HOSTING` `MarketSubscription` across *every* buyer, oldest first --
 /// backs `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN` (`/market/fulfillment`). Unlike
 /// `build_subscriptions_for_buyers`, this isn't scoped to any particular buyer -- Rellm hosting
@@ -194,6 +215,21 @@ pub fn build_fulfillment_subscriptions(conn: &mut PgPooledConnection) -> Result<
         &PurchaseType::RellmHosting.to_string_purchase_type(),
         conn,
     )?;
+    build_subscriptions_oldest_first(subscriptions, conn)
+}
+
+/// Every `MarketSubscription` of *every* type across every buyer, oldest first -- backs
+/// `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN` (an admin finding any customer's subscription to open
+/// its fulfillment chat).
+pub fn build_all_subscriptions(conn: &mut PgPooledConnection) -> Result<Vec<MarketSubscription>, Status> {
+    let subscriptions = models::get_all_market_subscriptions(conn)?;
+    build_subscriptions_oldest_first(subscriptions, conn)
+}
+
+fn build_subscriptions_oldest_first(
+    subscriptions: Vec<models::MarketSubscription>,
+    conn: &mut PgPooledConnection,
+) -> Result<Vec<MarketSubscription>, Status> {
     let mut result: Vec<(i64, MarketSubscription)> = build_subscriptions(subscriptions, conn)?;
     result.sort_by(|(_, a), (_, b)| {
         a.created_at
@@ -348,7 +384,7 @@ pub fn subscription_details_to_proto(
     purchase_type: PurchaseType,
     details: &serde_json::Value,
 ) -> Option<market_subscription::Details> {
-    match purchase_type {
+    let mut proto = match purchase_type {
         PurchaseType::MediaStorage => serde_json::from_value::<MediaStorageSubscriptionDetails>(details.clone())
             .ok()
             .map(market_subscription::Details::MediaStorageSubscriptionDetails),
@@ -362,6 +398,36 @@ pub fn subscription_details_to_proto(
             serde_json::from_value::<PermissionsAccessSubscriptionDetails>(details.clone())
                 .ok()
                 .map(market_subscription::Details::PermissionsAccessSubscriptionDetails)
+        }
+    };
+    // Whatever the row stored (rows from before this rule hold the `AWAITING_HOST_ADMIN` default), a
+    // subscription whose entitlement the system grants automatically is `FULFILLED` -- see
+    // `automatic_fulfillment_status`.
+    if let Some(status) = automatic_fulfillment_status(purchase_type) {
+        let status = status as i32;
+        match &mut proto {
+            Some(market_subscription::Details::MediaStorageSubscriptionDetails(d)) => d.fulfillment_status = status,
+            Some(market_subscription::Details::AiGrantSubscriptionDetails(d)) => d.fulfillment_status = status,
+            Some(market_subscription::Details::PermissionsAccessSubscriptionDetails(d)) => {
+                d.fulfillment_status = status
+            }
+            Some(market_subscription::Details::RellmHostingSubscriptionDetails(_)) | None => {}
+        }
+    }
+    proto
+}
+
+/// `Some(FULFILLED)` for every `PurchaseType` whose entitlement the system applies itself the moment the
+/// purchase is fulfilled (`logic::market::market_fulfillment::fulfill_purchase`: storage allocation, AI
+/// grants, permissions) -- there is nothing for a host admin to do, so such a subscription is never in the
+/// admins' work queue and its `fulfillment_status` can't be anything else (`UpdateMarketSubscription`
+/// rejects a note that tries to change it). `None` for Rellm hosting, which is set up by hand and walks
+/// `AWAITING_HOST_ADMIN` -> `IN_PROGRESS` -> `FULFILLED` through admin-written notes.
+pub fn automatic_fulfillment_status(purchase_type: PurchaseType) -> Option<FulfillmentStatus> {
+    match purchase_type {
+        PurchaseType::RellmHosting => None,
+        PurchaseType::MediaStorage | PurchaseType::AiGrants | PurchaseType::PermissionsAccess => {
+            Some(FulfillmentStatus::Fulfilled)
         }
     }
 }
