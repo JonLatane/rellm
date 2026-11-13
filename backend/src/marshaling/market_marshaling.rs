@@ -384,7 +384,7 @@ pub fn subscription_details_to_proto(
     purchase_type: PurchaseType,
     details: &serde_json::Value,
 ) -> Option<market_subscription::Details> {
-    match purchase_type {
+    let mut proto = match purchase_type {
         PurchaseType::MediaStorage => serde_json::from_value::<MediaStorageSubscriptionDetails>(details.clone())
             .ok()
             .map(market_subscription::Details::MediaStorageSubscriptionDetails),
@@ -398,6 +398,36 @@ pub fn subscription_details_to_proto(
             serde_json::from_value::<PermissionsAccessSubscriptionDetails>(details.clone())
                 .ok()
                 .map(market_subscription::Details::PermissionsAccessSubscriptionDetails)
+        }
+    };
+    // Whatever the row stored (rows from before this rule hold the `AWAITING_HOST_ADMIN` default), a
+    // subscription whose entitlement the system grants automatically is `FULFILLED` -- see
+    // `automatic_fulfillment_status`.
+    if let Some(status) = automatic_fulfillment_status(purchase_type) {
+        let status = status as i32;
+        match &mut proto {
+            Some(market_subscription::Details::MediaStorageSubscriptionDetails(d)) => d.fulfillment_status = status,
+            Some(market_subscription::Details::AiGrantSubscriptionDetails(d)) => d.fulfillment_status = status,
+            Some(market_subscription::Details::PermissionsAccessSubscriptionDetails(d)) => {
+                d.fulfillment_status = status
+            }
+            Some(market_subscription::Details::RellmHostingSubscriptionDetails(_)) | None => {}
+        }
+    }
+    proto
+}
+
+/// `Some(FULFILLED)` for every `PurchaseType` whose entitlement the system applies itself the moment the
+/// purchase is fulfilled (`logic::market::market_fulfillment::fulfill_purchase`: storage allocation, AI
+/// grants, permissions) -- there is nothing for a host admin to do, so such a subscription is never in the
+/// admins' work queue and its `fulfillment_status` can't be anything else (`UpdateMarketSubscription`
+/// rejects a note that tries to change it). `None` for Rellm hosting, which is set up by hand and walks
+/// `AWAITING_HOST_ADMIN` -> `IN_PROGRESS` -> `FULFILLED` through admin-written notes.
+pub fn automatic_fulfillment_status(purchase_type: PurchaseType) -> Option<FulfillmentStatus> {
+    match purchase_type {
+        PurchaseType::RellmHosting => None,
+        PurchaseType::MediaStorage | PurchaseType::AiGrants | PurchaseType::PermissionsAccess => {
+            Some(FulfillmentStatus::Fulfilled)
         }
     }
 }

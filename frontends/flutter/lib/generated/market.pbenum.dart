@@ -57,7 +57,11 @@ class PurchasePeriod extends $pb.ProtobufEnum {
   const PurchasePeriod._($core.int v, $core.String n) : super(v, n);
 }
 
-/// The state of a `PURCHASE_TYPE_RELLM_HOSTING` order's manual fulfillment -- see
+/// Where a subscription stands in the host admins' work queue. Only `PURCHASE_TYPE_RELLM_HOSTING` is fulfilled by
+/// hand, so only it ever moves through these values (via admin-written notes). Every other type is fulfilled
+/// automatically (storage, AI grants and permissions are applied by the system when the purchase is fulfilled):
+/// its `fulfillment_status` is always `FULFILLMENT_STATUS_FULFILLED` -- whatever an older row stored -- and
+/// `UpdateMarketSubscription` rejects a note that tries to change it. See
 /// `RellmHostingSubscriptionDetails.fulfillment_status`'s own doc for how the "current" value is
 /// derived, and `FulfillmentNote.fulfillment_status` for how every transition is recorded as its own
 /// timestamped note (a "fulfillment state history"), not just tracked as a bare current value.

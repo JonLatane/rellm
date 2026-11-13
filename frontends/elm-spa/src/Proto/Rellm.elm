@@ -6617,8 +6617,9 @@ encodeAIGrantSubscriptionDetails =
  `UpdateMarketSubscription`, the buyer's read marker via `MarkFulfillmentNotesRead`, `fulfillment_status`
  always the last note's status). Only meaningful on a `MarketSubscription`'s own `details`: on a
  `MarketProduct.details` they're always empty/unset. Unlike Rellm hosting, nothing about these types
- *needs* an admin, so `fulfillment_status` isn't a work queue for them (it stays at its default) --
- the chat is just a way for a host admin and the buyer to talk about the subscription.
+ *needs* an admin: the system fulfills them automatically, so `fulfillment_status` is always
+ `FULFILLMENT_STATUS_FULFILLED` (derived on read, and `UpdateMarketSubscription` rejects a note that changes
+ it) -- the chat is just a way for a host admin and the buyer to talk about the subscription.
 
 
 -}
@@ -6720,8 +6721,9 @@ encodePermissionsAccessSubscriptionDetails =
  `UpdateMarketSubscription`, the buyer's read marker via `MarkFulfillmentNotesRead`, `fulfillment_status`
  always the last note's status). Only meaningful on a `MarketSubscription`'s own `details`: on a
  `MarketProduct.details` they're always empty/unset. Unlike Rellm hosting, nothing about these types
- *needs* an admin, so `fulfillment_status` isn't a work queue for them (it stays at its default) --
- the chat is just a way for a host admin and the buyer to talk about the subscription.
+ *needs* an admin: the system fulfills them automatically, so `fulfillment_status` is always
+ `FULFILLMENT_STATUS_FULFILLED` (derived on read, and `UpdateMarketSubscription` rejects a note that changes
+ it) -- the chat is just a way for a host admin and the buyer to talk about the subscription.
 
 
 -}
@@ -6784,8 +6786,9 @@ encodeMediaStorageSubscriptionDetails =
  `UpdateMarketSubscription`, the buyer's read marker via `MarkFulfillmentNotesRead`, `fulfillment_status`
  always the last note's status). Only meaningful on a `MarketSubscription`'s own `details`: on a
  `MarketProduct.details` they're always empty/unset. Unlike Rellm hosting, nothing about these types
- *needs* an admin, so `fulfillment_status` isn't a work queue for them (it stays at its default) --
- the chat is just a way for a host admin and the buyer to talk about the subscription.
+ *needs* an admin: the system fulfills them automatically, so `fulfillment_status` is always
+ `FULFILLMENT_STATUS_FULFILLED` (derived on read, and `UpdateMarketSubscription` rejects a note that changes
+ it) -- the chat is just a way for a host admin and the buyer to talk about the subscription.
 
 
 -}

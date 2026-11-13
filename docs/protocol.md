@@ -704,17 +704,26 @@ same notes are seen from two sides:
   [`MarkFulfillmentNotesRead`](#grpc-api-MarkFulfillmentNotesRead) (buyer-only, server-stamped; `UpdateMarketSubscription`
   always preserves it). A note is *unread* if someone other than the buyer wrote it and it is newer than the marker (or
   the marker is unset). A buyer&#39;s unread count is the sum over their subscriptions.
-- **A Rellm hosting admin** (a server `Admin`) works every order from the &#34;setting up customers&#39; sites&#34; side -
-  see [Fulfilling a Rellm hosting order](#fulfilling-a-rellm-hosting-order) below for the actual runbook.
-  `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN` lists them all, and `UpdateMarketSubscription` (Admin-only) appends
-  notes and moves `fulfillment_status`. There is deliberately **no per-admin read marker** - `notes_last_read` is the
-  buyer&#39;s, and several admins share the same orders - so an admin has no &#34;unread&#34; count. What needs an admin&#39;s attention
-  is the number of orders whose `fulfillment_status` is still `FULFILLMENT_STATUS_AWAITING_HOST_ADMIN`; that is the
-  admin&#39;s count. An admin opening an awaiting order moves it to `FULFILLMENT_STATUS_IN_PROGRESS` (a bare status note), which
-  is what takes it out of that count, and &#34;Add and Mark as Fulfilled&#34; finishes it.
+- **A host admin** (a server `Admin`) sees every subscription, of every type
+  (`GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN`) and `UpdateMarketSubscription` (Admin-only) appends notes to
+  any of their chats. What an admin can *change* depends on the type:
+  - **Rellm hosting** is set up by hand (see [Fulfilling a Rellm hosting order](#fulfilling-a-rellm-hosting-order)
+    below for the runbook), so its `fulfillment_status` is a real work queue that admin-written notes move:
+    `FULFILLMENT_STATUS_AWAITING_HOST_ADMIN` -&gt; `IN_PROGRESS` (opening an awaiting order appends a bare status note) -&gt;
+    `FULFILLED` (&#34;Add and Mark as Fulfilled&#34;).
+  - **Every other type** (media storage, AI grants, permissions access) is fulfilled *automatically* - the system
+    applies the storage, grants or permissions itself when the purchase is fulfilled and on every renewal. Its
+    `fulfillment_status` is therefore always `FULFILLMENT_STATUS_FULFILLED` (derived on read, whatever an older row
+    stored), and `UpdateMarketSubscription` rejects a note that tries to change it
+    (`fulfillment_status_is_automatic_for_this_type`). Its chat is text only.
+
+  There is deliberately **no per-admin read marker** - `notes_last_read` is the buyer&#39;s, and several admins share the
+  same subscriptions - so an admin has no &#34;unread&#34; count. What needs an admin&#39;s attention is the number of
+  subscriptions whose `fulfillment_status` is still `FULFILLMENT_STATUS_AWAITING_HOST_ADMIN`; that is the admin&#39;s
+  count. Because the other types are always fulfilled, only hosting orders are ever in it.
 
 So three independent counts exist side by side, and clients can show them together: unread messages,
-the buyer&#39;s unread fulfillment notes, and (Admins only) orders awaiting a host admin. The Elm client shows them in
+the buyer&#39;s unread fulfillment notes, and (Admins only) subscriptions awaiting a host admin. The Elm client shows them in
 that order in the corners of its Messages button (top-right, bottom-right, bottom-left), and as the Messages,
 Subscriptions and Fulfillment tabs.
 
@@ -5004,7 +5013,7 @@ see that message&#39;s own doc for why it&#39;s still a distinct type.
 | ai_provider_id | [string](#string) |  | Which `AIProvider` this grant is against. |
 | model_names | [string](#string) | repeated | Which of that provider&#39;s models the grant covers. |
 | tokens | [uint64](#uint64) |  | How many tokens this product/subscription grants the buyer each time it&#39;s (re-)fulfilled, replacing (not adding to) whatever balance remained -- see `logic::market::market_fulfillment::fulfill_purchase`&#39;s `AiGrants` arm. |
-| fulfillment_status | [FulfillmentStatus](#rellm-FulfillmentStatus) |  | The fulfillment chat for this subscription -- *every* `PurchaseType` has one, not just `PURCHASE_TYPE_RELLM_HOSTING` (see `RellmHostingSubscriptionDetails.fulfillment_status`/`fulfillment_notes`/ `notes_last_read`, whose semantics these three fields share exactly: append-only notes via `UpdateMarketSubscription`, the buyer&#39;s read marker via `MarkFulfillmentNotesRead`, `fulfillment_status` always the last note&#39;s status). Only meaningful on a `MarketSubscription`&#39;s own `details`: on a `MarketProduct.details` they&#39;re always empty/unset. Unlike Rellm hosting, nothing about these types *needs* an admin, so `fulfillment_status` isn&#39;t a work queue for them (it stays at its default) -- the chat is just a way for a host admin and the buyer to talk about the subscription. |
+| fulfillment_status | [FulfillmentStatus](#rellm-FulfillmentStatus) |  | The fulfillment chat for this subscription -- *every* `PurchaseType` has one, not just `PURCHASE_TYPE_RELLM_HOSTING` (see `RellmHostingSubscriptionDetails.fulfillment_status`/`fulfillment_notes`/ `notes_last_read`, whose semantics these three fields share exactly: append-only notes via `UpdateMarketSubscription`, the buyer&#39;s read marker via `MarkFulfillmentNotesRead`, `fulfillment_status` always the last note&#39;s status). Only meaningful on a `MarketSubscription`&#39;s own `details`: on a `MarketProduct.details` they&#39;re always empty/unset. Unlike Rellm hosting, nothing about these types *needs* an admin: the system fulfills them automatically, so `fulfillment_status` is always `FULFILLMENT_STATUS_FULFILLED` (derived on read, and `UpdateMarketSubscription` rejects a note that changes it) -- the chat is just a way for a host admin and the buyer to talk about the subscription. |
 | fulfillment_notes | [FulfillmentNote](#rellm-FulfillmentNote) | repeated |  |
 | notes_last_read | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional |  |
 
@@ -5368,7 +5377,7 @@ what a media storage product actually grants. Field-for-field identical to
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | allocation_bytes | [uint64](#uint64) |  | How much media storage this product/subscription grants the buyer, replacing (not adding to) whatever quota they already had -- see `logic::market::market_fulfillment::fulfill_purchase`&#39;s `MediaStorage` arm. |
-| fulfillment_status | [FulfillmentStatus](#rellm-FulfillmentStatus) |  | The fulfillment chat for this subscription -- *every* `PurchaseType` has one, not just `PURCHASE_TYPE_RELLM_HOSTING` (see `RellmHostingSubscriptionDetails.fulfillment_status`/`fulfillment_notes`/ `notes_last_read`, whose semantics these three fields share exactly: append-only notes via `UpdateMarketSubscription`, the buyer&#39;s read marker via `MarkFulfillmentNotesRead`, `fulfillment_status` always the last note&#39;s status). Only meaningful on a `MarketSubscription`&#39;s own `details`: on a `MarketProduct.details` they&#39;re always empty/unset. Unlike Rellm hosting, nothing about these types *needs* an admin, so `fulfillment_status` isn&#39;t a work queue for them (it stays at its default) -- the chat is just a way for a host admin and the buyer to talk about the subscription. |
+| fulfillment_status | [FulfillmentStatus](#rellm-FulfillmentStatus) |  | The fulfillment chat for this subscription -- *every* `PurchaseType` has one, not just `PURCHASE_TYPE_RELLM_HOSTING` (see `RellmHostingSubscriptionDetails.fulfillment_status`/`fulfillment_notes`/ `notes_last_read`, whose semantics these three fields share exactly: append-only notes via `UpdateMarketSubscription`, the buyer&#39;s read marker via `MarkFulfillmentNotesRead`, `fulfillment_status` always the last note&#39;s status). Only meaningful on a `MarketSubscription`&#39;s own `details`: on a `MarketProduct.details` they&#39;re always empty/unset. Unlike Rellm hosting, nothing about these types *needs* an admin: the system fulfills them automatically, so `fulfillment_status` is always `FULFILLMENT_STATUS_FULFILLED` (derived on read, and `UpdateMarketSubscription` rejects a note that changes it) -- the chat is just a way for a host admin and the buyer to talk about the subscription. |
 | fulfillment_notes | [FulfillmentNote](#rellm-FulfillmentNote) | repeated |  |
 | notes_last_read | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional |  |
 
@@ -5414,7 +5423,7 @@ tell &#34;what to claw back&#34; apart from &#34;what was originally billed&#34;
 | permissions | [Permission](#rellm-Permission) | repeated | Which `Permission`s this product/subscription grants the buyer -- see `logic::market::market_fulfillment::fulfill_purchase`&#39;s `PermissionsAccess` arm (union-added to the buyer&#39;s own `User.permissions`, never replacing what they already had) and `terminate_entitlement`&#39;s own arm (the exact claw-back set on cancellation/expiry). Intentionally excludes permissions dangerous or nonsensical to sell this way -- e.g. &#34;Grant Basic Permissions,&#34; any &#34;Moderate&#34;/&#34;Read All System Messages&#34; permission, &#34;Admin,&#34; &#34;View Private Contact Methods,&#34; and &#34;Edit Cluster Settings&#34; must never appear in a Market product&#39;s own `permissions` list. Enforced server-side on `CreateMarketProduct`/ `UpdateMarketProduct` (rejected with `permission_not_purchasable`) and again on `MakeMarketPurchase` (defense in depth, in case a permission is later removed from the purchasable set after a product granting it already exists) -- see `rpcs::market::create_market_product::PURCHASABLE_PERMISSIONS`. NOTE: that Rust list is an explicit include-list, not an exclude-list -- described here as an exclusion for readability, but implemented as &#34;only these permissions are purchasable&#34; so a newly-added `Permission` is never purchasable by default; it has to be deliberately added to that list. |
 | name | [string](#string) |  | Admin-authored product name -- unlike `MediaStorageSubscriptionDetails`/`AIGrantSubscriptionDetails`/ `RellmHostingSubscriptionDetails` (which get an implicit, Elm-computed display name from their own fields, since they each describe one fixed kind of thing), a permissions-access product&#39;s `permissions` list can be any admin-chosen bundle, so there&#39;s no generic way to name it automatically. Required for a purchasable product (`CreateMarketProduct`/`UpdateMarketProduct` reject a `PermissionsAccessSubscriptionDetails` with a blank `name`). On a `MarketSubscription`: copied from the originating `MarketProduct.details.name` at the time the subscription was created, same as every other field on this message. |
 | description | [string](#string) |  | Admin-authored, Markdown-formatted product description shown on the product&#39;s own page -- same &#34;no generic implicit description&#34; reasoning as `name` above. On a `MarketSubscription`: copied the same way `name` is. |
-| fulfillment_status | [FulfillmentStatus](#rellm-FulfillmentStatus) |  | The fulfillment chat for this subscription -- *every* `PurchaseType` has one, not just `PURCHASE_TYPE_RELLM_HOSTING` (see `RellmHostingSubscriptionDetails.fulfillment_status`/`fulfillment_notes`/ `notes_last_read`, whose semantics these three fields share exactly: append-only notes via `UpdateMarketSubscription`, the buyer&#39;s read marker via `MarkFulfillmentNotesRead`, `fulfillment_status` always the last note&#39;s status). Only meaningful on a `MarketSubscription`&#39;s own `details`: on a `MarketProduct.details` they&#39;re always empty/unset. Unlike Rellm hosting, nothing about these types *needs* an admin, so `fulfillment_status` isn&#39;t a work queue for them (it stays at its default) -- the chat is just a way for a host admin and the buyer to talk about the subscription. |
+| fulfillment_status | [FulfillmentStatus](#rellm-FulfillmentStatus) |  | The fulfillment chat for this subscription -- *every* `PurchaseType` has one, not just `PURCHASE_TYPE_RELLM_HOSTING` (see `RellmHostingSubscriptionDetails.fulfillment_status`/`fulfillment_notes`/ `notes_last_read`, whose semantics these three fields share exactly: append-only notes via `UpdateMarketSubscription`, the buyer&#39;s read marker via `MarkFulfillmentNotesRead`, `fulfillment_status` always the last note&#39;s status). Only meaningful on a `MarketSubscription`&#39;s own `details`: on a `MarketProduct.details` they&#39;re always empty/unset. Unlike Rellm hosting, nothing about these types *needs* an admin: the system fulfills them automatically, so `fulfillment_status` is always `FULFILLMENT_STATUS_FULFILLED` (derived on read, and `UpdateMarketSubscription` rejects a note that changes it) -- the chat is just a way for a host admin and the buyer to talk about the subscription. |
 | fulfillment_notes | [FulfillmentNote](#rellm-FulfillmentNote) | repeated |  |
 | notes_last_read | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional |  |
 
@@ -5482,16 +5491,20 @@ no `*PurchaseDetails` counterpart, since they&#39;re only ever meaningful on the
 <a name="rellm-FulfillmentStatus"></a>
 
 ### FulfillmentStatus
-The state of a `PURCHASE_TYPE_RELLM_HOSTING` order&#39;s manual fulfillment -- see
+Where a subscription stands in the host admins&#39; work queue. Only `PURCHASE_TYPE_RELLM_HOSTING` is fulfilled by
+hand, so only it ever moves through these values (via admin-written notes). Every other type is fulfilled
+automatically (storage, AI grants and permissions are applied by the system when the purchase is fulfilled):
+its `fulfillment_status` is always `FULFILLMENT_STATUS_FULFILLED` -- whatever an older row stored -- and
+`UpdateMarketSubscription` rejects a note that tries to change it. See
 `RellmHostingSubscriptionDetails.fulfillment_status`&#39;s own doc for how the &#34;current&#34; value is
 derived, and `FulfillmentNote.fulfillment_status` for how every transition is recorded as its own
 timestamped note (a &#34;fulfillment state history&#34;), not just tracked as a bare current value.
 
 | Name | Number | Description |
 | ---- | ------ | ----------- |
-| FULFILLMENT_STATUS_AWAITING_HOST_ADMIN | 0 | The starting state for every new order -- no admin has looked at it yet. |
-| FULFILLMENT_STATUS_FULFILLED | 1 | The order is fully stood up -- set via &#34;Add and Mark as Fulfilled&#34; on `/market/fulfillment` (`UpdateMarketSubscription`). |
-| FULFILLMENT_STATUS_IN_PROGRESS | 2 | An admin has started working the order but it isn&#39;t done yet -- set automatically the first time an admin expands this order&#39;s row on `/market/fulfillment` (if it was still `FULFILLMENT_STATUS_AWAITING_HOST_ADMIN`), or explicitly via a note. |
+| FULFILLMENT_STATUS_AWAITING_HOST_ADMIN | 0 | The starting state for every new subscription -- no admin has looked at it yet. |
+| FULFILLMENT_STATUS_FULFILLED | 1 | The subscription is fully stood up / dealt with -- set via &#34;Add and Mark as Fulfilled&#34; on `/market/fulfillment` (`UpdateMarketSubscription`). |
+| FULFILLMENT_STATUS_IN_PROGRESS | 2 | An admin has started working the subscription but it isn&#39;t done yet -- set automatically the first time an admin expands this order&#39;s row on `/market/fulfillment` (if it was still `FULFILLMENT_STATUS_AWAITING_HOST_ADMIN`), or explicitly via a note. |
 
 
 
@@ -5504,7 +5517,7 @@ timestamped note (a &#34;fulfillment state history&#34;), not just tracked as a 
 | ---- | ------ | ----------- |
 | GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_PURCHASE | 0 | The &#34;user facing&#34; view backing /market -- the caller&#39;s own MarketSubscriptions only. |
 | GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN | 1 | Admin-only view backing /market/fulfillment -- every PURCHASE_TYPE_RELLM_HOSTING MarketSubscription across every buyer, since Rellm hosting needs manual setup that isn&#39;t automated (see RellmHostingSubscriptionDetails.fulfillment_status&#39;s own doc). |
-| GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN | 2 | Admin-only view backing the Messages page&#39;s Fulfillment tab -- *every* MarketSubscription of *every* PurchaseType across every buyer, oldest first, so an admin can find any customer&#39;s subscription (storage, AI grants, permissions, hosting) to open its fulfillment chat (`fulfillment_notes`, which all types have). Only Rellm hosting has a work queue (`fulfillment_status`), but the chat is for all of them. |
+| GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN | 2 | Admin-only view backing the Messages page&#39;s Fulfillment tab -- *every* MarketSubscription of *every* PurchaseType across every buyer, oldest first, so an admin can find any customer&#39;s subscription (storage, AI grants, permissions, hosting) to open its fulfillment chat (`fulfillment_notes`, which all types have). Only Rellm hosting has a work queue (`fulfillment_status` moves); the other types are always `FULFILLMENT_STATUS_FULFILLED`, so their chats are text only. |
 
 
 

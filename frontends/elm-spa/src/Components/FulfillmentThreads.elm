@@ -33,16 +33,16 @@ its own fetches, unread math and views. Like `MessagesPage` it can't import `Sha
 it).
 
 **Subscriptions** (`view`): the signed-in user's own `MarketSubscription`s (`GetMarketSubscriptions`, the
-caller's own). A `PURCHASE_TYPE_RELLM_HOSTING` one with `fulfillmentNotes` is a chat thread with the
-host admin. *Unread* is the buyer's own marker, `RellmHostingSubscriptionDetails.notesLastRead`: a note
+caller's own). One of any type with `fulfillmentNotes` is a chat thread with the
+host admin. *Unread* is the buyer's own marker (`notesLastRead` on the details): a note
 counts if somebody other than the buyer wrote it and it's newer than that marker (or the marker is
 unset). Opening a thread with unread notes calls `MarkFulfillmentNotesRead` (`openCmd`).
 
-**Fulfillment** (`adminView`, server admins only): every Rellm hosting order on the server
-(`GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN`), seen from the "setting up customers' sites"
-side -- behaves like `/market/fulfillment` (`Components.Pages.MarketFulfillmentPage`): opening an
-awaiting order moves it to In Progress, and an admin can add a note or "Add and Mark as Fulfilled",
-through the same append-only `UpdateMarketSubscription` contract. Its badge counts orders still
+**Fulfillment** (`adminView`, server admins only): every subscription of every type on the server
+(`GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN`), seen from the host admin's side -- behaves like
+`/market/fulfillment` (`Components.Pages.MarketFulfillmentPage`) for *every* type: opening an
+awaiting subscription moves it to In Progress, and an admin can add a note or "Add and Mark as Fulfilled",
+through the same append-only `UpdateMarketSubscription` contract. Its badge counts subscriptions still
 awaiting a host admin (`awaitingCount`) -- there's no per-admin read marker to count "unread" against.
 
 -}
@@ -69,7 +69,7 @@ import Shared.Conversions as Conversions
 import Shared.Time as SharedTime
 import Task exposing (Task)
 import Time
-import UI.Classes exposing (classes)
+import UI.Classes exposing (classes, hostnameToCSSClass)
 
 
 type Status
@@ -91,7 +91,7 @@ type alias Feed =
 type alias Model =
     { feeds : Dict String Feed
 
-    -- Admin accounts' view of every Rellm hosting order (the Fulfillment tab) -- same `Feed` shape.
+    -- Admin accounts' view of every subscription of every type (the Fulfillment tab) -- same `Feed` shape.
     , adminFeeds : Dict String Feed
 
     -- Admin note composer: draft text and in-flight saves, per `Thread.key`.
@@ -374,21 +374,22 @@ fulfillmentStatusOf subscription =
             FULFILLMENTSTATUSAWAITINGHOSTADMIN
 
 
-{-| Only Rellm hosting is set up by hand, so only it has a work queue (`fulfillmentStatus` means nothing for the
-other types, whose entitlement is automatic): the admin Fulfillment tab's "awaiting" count and
-auto-In-Progress are Rellm hosting only.
+{-| Only Rellm hosting is set up by hand, so only it has a status an admin moves (Awaiting Host Admin -> In
+Progress -> Fulfilled). Every other type is fulfilled automatically by the server the moment it's bought: it
+is always `Fulfilled`, and the backend rejects a note that tries to change that. Its chat is text only.
 -}
 isHosting : MarketSubscription -> Bool
 isHosting subscription =
     subscription.type_ == PURCHASETYPERELLMHOSTING
 
 
-{-| Orders still awaiting a host admin -- the Fulfillment tab's badge.
+{-| Subscriptions (of any type) still awaiting a host admin -- the Fulfillment tab's badge. Only hosting ever
+is (see `isHosting`), so in practice this is the hosting work queue.
 -}
 awaitingCount : Model -> Int
 awaitingCount model =
     adminThreads model
-        |> List.filter (\t -> isHosting t.subscription && fulfillmentStatusOf t.subscription == FULFILLMENTSTATUSAWAITINGHOSTADMIN)
+        |> List.filter (\t -> fulfillmentStatusOf t.subscription == FULFILLMENTSTATUSAWAITINGHOSTADMIN)
         |> List.length
 
 
@@ -397,7 +398,7 @@ awaitingCount model =
 
 
 {-| Refetches the caller's own subscriptions from every signed-in account's (connected) server, plus --
-for admin accounts -- every Rellm hosting order (the Fulfillment tab). Cheap (one small RPC per account
+for admin accounts -- every subscription of every type (the Fulfillment tab). Cheap (one small RPC per account
 per kind), so callers just call it on every poll.
 -}
 fetchAll : AccountsPanel.Model -> Model -> ( Model, Cmd Msg )
@@ -449,7 +450,7 @@ fetchAll accountsPanelModel model =
                 |> Task.attempt (toMsg id)
 
         -- A server that hasn't been upgraded yet rejects the all-types listing (`invalid_request_type`): fall
-        -- back to the Rellm-hosting-only one it does have, so its existing orders still show (without chats
+        -- back to the Rellm-hosting-only one it does have, so its existing hosting orders still show (without chats
         -- on the other types, which it can't hold anyway).
         adminFetchCmd : ( RellmAccounts.RellmAccount, String ) -> Cmd Msg
         adminFetchCmd ( account, id ) =
@@ -506,7 +507,7 @@ markReadCmd accountsPanelModel thread =
             |> Task.attempt (GotMarkedRead thread.key)
 
 
-{-| One row per Rellm hosting subscription that has notes, among `subscriptions` (already-fetched,
+{-| One row per subscription (of any type) that has notes, among `subscriptions` (already-fetched,
 e.g. `RellmAccount.marketSubscriptions`/`User.marketSubscriptions`, all on `host`): a title, its unread
 count and a link to its thread on the Messages page. What the Accounts panel and the profile page's
 Subscriptions lists show.
@@ -775,13 +776,13 @@ view config =
             div [ class "fulfillment-thread-list" ] (List.map (threadView config) all)
 
 
-{-| The Fulfillment tab's body (server admins): every Rellm hosting order. See `threadView`.
+{-| The Fulfillment tab's body (server admins): every subscription. See `threadView`.
 -}
 adminView : ViewConfig msg -> Html msg
 adminView config =
     case adminThreads config.model of
         [] ->
-            p [ class "posts-empty" ] [ text "No Rellm hosting orders yet." ]
+            p [ class "posts-empty" ] [ text "No subscriptions yet." ]
 
         all ->
             div [ class "fulfillment-thread-list" ] (List.map (threadView config) all)
@@ -878,8 +879,8 @@ isChat thread =
     thread.admin || not (List.isEmpty (notesOf thread.subscription))
 
 
-{-| A Rellm hosting order shows its fulfillment status (Awaiting Host Admin / In Progress / Fulfilled);
-every other subscription shows its state (Active / Canceled ...).
+{-| A Rellm hosting order, on the admin's Fulfillment tab, shows its fulfillment status (Awaiting Host Admin /
+In Progress / Fulfilled); everything else shows its state (Active / Canceled ...).
 -}
 stateView : Thread -> Html msg
 stateView thread =
@@ -911,7 +912,8 @@ detailView config thread =
             notesOf thread.subscription
     in
     div [ class "fulfillment-thread-body" ]
-        ((if List.isEmpty notes then
+        (p [ class "market-form-hint fulfillment-process-hint" ] [ text (processHint thread) ]
+            :: (if List.isEmpty notes then
             [ p [ class "market-form-hint" ] [ text "No notes yet." ] ]
 
           else
@@ -924,6 +926,25 @@ detailView config thread =
                     []
                )
         )
+
+
+{-| One line at the top of a chat saying what happens with this kind of subscription, so it's clear to both
+sides what the status means (or that there is none to wait for).
+-}
+processHint : Thread -> String
+processHint thread =
+    case ( isHosting thread.subscription, thread.admin ) of
+        ( True, False ) ->
+            "Rellm hosting is set up by hand by a host admin. Its status here moves from Awaiting Host Admin to In Progress when they start, and to Fulfilled when your site is ready -- you'll get a note each time."
+
+        ( True, True ) ->
+            "Rellm hosting is set up by hand. Opening an order that's awaiting a host admin marks it In Progress; \"Send and mark as Fulfilled\" finishes it. The buyer is notified of each note."
+
+        ( False, False ) ->
+            "This subscription takes effect automatically when it's bought or renewed -- there's nothing to wait for. This chat is just for talking with the host admin about it."
+
+        ( False, True ) ->
+            "This subscription is fulfilled automatically when it's bought or renewed, so it's never in the Fulfillment count and its status can't be changed. Notes here are just a conversation with the buyer."
 
 
 {-| "Renews <date>"-style line for a plain (non-chat) subscription row.
@@ -1070,14 +1091,17 @@ noteView time thread index note =
 
               else
                 ""
+            , if String.isEmpty note.note then
+                "fulfillment-note-status-only"
+
+              else
+                ""
             ]
         , Html.Attributes.id ("subscription-message-" ++ String.fromInt index)
         ]
         [ div [ class "fulfillment-note-meta" ]
             [ span [ class "fulfillment-note-author" ] [ text (noteAuthorLabel thread note) ]
             , if isHosting subscription then
-                -- Only Rellm hosting orders have a fulfillment workflow; on any other type a status would
-                -- just read "Awaiting Host Admin" under every note.
                 span [ class "fulfillment-note-status" ] [ text (statusLabel note.fulfillmentStatus) ]
 
               else
@@ -1098,8 +1122,8 @@ noteView time thread index note =
         ]
 
 
-{-| The admin note composer -- "Add Note" keeps the order's status, "Add and Mark as Fulfilled" sets it,
-the same two buttons `/market/fulfillment` has.
+{-| The admin's message box, pinned to the bottom of the chat: send keeps the order's status; on a Rellm hosting order
+"Send and mark as Fulfilled" also sets it (the same two actions `/market/fulfillment` has).
 -}
 composerView : ViewConfig msg -> Thread -> Html msg
 composerView config thread =
@@ -1121,35 +1145,63 @@ composerView config thread =
             fulfillmentStatusOf thread.subscription
     in
     div [ class "fulfillment-composer" ]
-        [ textarea
-            [ placeholder "Add a note…"
-            , value draft
-            , onInput (\newText -> config.toMsg (DraftChanged thread.key newText))
-            ]
-            []
-        , div [ class "fulfillment-composer-actions" ]
-            [ button
+        [ div [ class "fulfillment-composer-row" ]
+            [ textarea
+                [ class "fulfillment-composer-input"
+                , placeholder "Write a note…"
+                , Html.Attributes.rows 1
+                , value draft
+                , onInput (\newText -> config.toMsg (DraftChanged thread.key newText))
+                , onEnterToSend (config.toMsg (SaveNoteClicked thread status))
+                ]
+                []
+            , button
                 [ Html.Attributes.type_ "button"
+                , classes [ "fulfillment-composer-send", hostnameToCSSClass thread.host, "background-color-primary" ]
+                , Html.Attributes.title "Send (Enter)"
+                , Html.Attributes.attribute "aria-label" "Send note"
                 , onClick (config.toMsg (SaveNoteClicked thread status))
                 , disabled (saving || blank)
                 ]
                 [ text
                     (if saving then
-                        "Saving…"
+                        "…"
 
                      else
-                        "Add Note"
+                        "↑"
                     )
                 ]
-            , if isHosting thread.subscription then
-                button
-                    [ Html.Attributes.type_ "button"
-                    , onClick (config.toMsg (SaveNoteClicked thread FULFILLMENTSTATUSFULFILLED))
-                    , disabled (saving || (status == FULFILLMENTSTATUSFULFILLED && blank))
-                    ]
-                    [ text "Add and Mark as Fulfilled" ]
-
-              else
-                text ""
             ]
+        , if isHosting thread.subscription then
+            button
+                [ Html.Attributes.type_ "button"
+                , class "fulfillment-composer-fulfill"
+                , onClick (config.toMsg (SaveNoteClicked thread FULFILLMENTSTATUSFULFILLED))
+                , disabled (saving || (status == FULFILLMENTSTATUSFULFILLED && blank))
+                ]
+                [ text "Send and mark as Fulfilled" ]
+
+          else
+            text ""
         ]
+
+
+{-| Enter sends the note (Shift+Enter is a newline), like the message box of any chat app. Ignored while an IME
+composition is in progress, so confirming a candidate doesn't send.
+-}
+onEnterToSend : msg -> Html.Attribute msg
+onEnterToSend msg =
+    preventDefaultOn "keydown"
+        (Decode.map3 (\key shift composing -> ( key, shift, composing ))
+            (Decode.field "key" Decode.string)
+            (Decode.field "shiftKey" Decode.bool)
+            (Decode.oneOf [ Decode.field "isComposing" Decode.bool, Decode.succeed False ])
+            |> Decode.andThen
+                (\( key, shift, composing ) ->
+                    if key == "Enter" && not shift && not composing then
+                        Decode.succeed ( msg, True )
+
+                    else
+                        Decode.fail "Not a plain Enter"
+                )
+        )

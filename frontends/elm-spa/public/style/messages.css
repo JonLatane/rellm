@@ -901,14 +901,32 @@ body:has(> [style*="2147483647"]) .messages-reply-button {
   white-space: nowrap;
 }
 
+/* A chat: notes are bubbles -- yours on the right, everyone else's on the left. A note that is only a status
+   change (no text) is a small centered line instead. */
 .fulfillment-note {
-  margin: 8px 0;
-  padding: 6px 10px;
-  border-left: 3px solid var(--muted);
+  max-width: 85%;
+  width: fit-content;
+  margin: 8px auto 8px 0;
+  padding: 6px 12px 8px;
+  border: 1px solid var(--border);
+  border-radius: 14px 14px 14px 4px;
 }
 
 .fulfillment-note-mine {
-  border-left-color: currentColor;
+  margin: 8px 0 8px auto;
+  border-radius: 14px 14px 4px 14px;
+  background: var(--chip-bg);
+  border-color: var(--fg);
+}
+
+.fulfillment-note-status-only {
+  max-width: 100%;
+  margin: 8px auto;
+  padding: 2px 10px;
+  border-style: dashed;
+  border-radius: 999px;
+  background: none;
+  text-align: center;
 }
 
 .fulfillment-note-unread {
@@ -966,4 +984,90 @@ body:has(> [style*="2147483647"]) .messages-reply-button {
 .profile-subscription-thread-link {
   display: inline-flex;
   align-items: center;
+}
+
+/* The line at the top of a subscription chat saying what happens for this kind of subscription. */
+.fulfillment-thread-body .fulfillment-process-hint {
+    margin: 0 0 0.75rem;
+}
+
+/* The detail pane is a chat: it starts scrolled to the newest note (`column-reverse` anchors the content to the bottom of
+   the pane and keeps it there), and the message box sticks to the bottom edge while the notes scroll beneath it. */
+.fulfillment-detail {
+  display: flex;
+  flex-direction: column-reverse;
+}
+
+.fulfillment-thread-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.fulfillment-composer {
+  position: sticky;
+  bottom: -0.8rem;
+  z-index: 1;
+  margin: 0.75rem -0.8rem -0.8rem;
+  padding: 0.6rem 0.8rem 0.8rem;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.fulfillment-composer-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.fulfillment-composer-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  box-sizing: border-box;
+  min-height: 2.2rem;
+  max-height: 8rem;
+  padding: 0.5rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 1.1rem;
+  background: var(--bg);
+  color: inherit;
+  font: inherit;
+  line-height: 1.3;
+  resize: none;
+  field-sizing: content;
+}
+
+/* Color comes from the `background-color-primary` utility class, as on `.messages-send-button`. */
+.fulfillment-composer-send {
+  flex: 0 0 auto;
+  width: 2.2rem;
+  height: 2.2rem;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.fulfillment-composer-send:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.fulfillment-composer-fulfill {
+  margin: 0.4rem 0 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.8rem;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.fulfillment-composer-fulfill:disabled {
+  opacity: 0.4;
+  cursor: default;
+  text-decoration: none;
 }

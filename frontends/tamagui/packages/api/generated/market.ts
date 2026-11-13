@@ -150,21 +150,25 @@ export function purchasePeriodToJSON(object: PurchasePeriod): string {
 }
 
 /**
- * The state of a `PURCHASE_TYPE_RELLM_HOSTING` order's manual fulfillment -- see
+ * Where a subscription stands in the host admins' work queue. Only `PURCHASE_TYPE_RELLM_HOSTING` is fulfilled by
+ * hand, so only it ever moves through these values (via admin-written notes). Every other type is fulfilled
+ * automatically (storage, AI grants and permissions are applied by the system when the purchase is fulfilled):
+ * its `fulfillment_status` is always `FULFILLMENT_STATUS_FULFILLED` -- whatever an older row stored -- and
+ * `UpdateMarketSubscription` rejects a note that tries to change it. See
  * `RellmHostingSubscriptionDetails.fulfillment_status`'s own doc for how the "current" value is
  * derived, and `FulfillmentNote.fulfillment_status` for how every transition is recorded as its own
  * timestamped note (a "fulfillment state history"), not just tracked as a bare current value.
  */
 export enum FulfillmentStatus {
-  /** FULFILLMENT_STATUS_AWAITING_HOST_ADMIN - The starting state for every new order -- no admin has looked at it yet. */
+  /** FULFILLMENT_STATUS_AWAITING_HOST_ADMIN - The starting state for every new subscription -- no admin has looked at it yet. */
   FULFILLMENT_STATUS_AWAITING_HOST_ADMIN = 0,
   /**
-   * FULFILLMENT_STATUS_FULFILLED - The order is fully stood up -- set via "Add and Mark as Fulfilled" on `/market/fulfillment`
+   * FULFILLMENT_STATUS_FULFILLED - The subscription is fully stood up / dealt with -- set via "Add and Mark as Fulfilled" on `/market/fulfillment`
    * (`UpdateMarketSubscription`).
    */
   FULFILLMENT_STATUS_FULFILLED = 1,
   /**
-   * FULFILLMENT_STATUS_IN_PROGRESS - An admin has started working the order but it isn't done yet -- set automatically the first
+   * FULFILLMENT_STATUS_IN_PROGRESS - An admin has started working the subscription but it isn't done yet -- set automatically the first
    * time an admin expands this order's row on `/market/fulfillment` (if it was still
    * `FULFILLMENT_STATUS_AWAITING_HOST_ADMIN`), or explicitly via a note.
    */
@@ -217,8 +221,8 @@ export enum GetMarketSubscriptionsRequestType {
    * GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN - Admin-only view backing the Messages page's Fulfillment tab -- *every* MarketSubscription of *every*
    * PurchaseType across every buyer, oldest first, so an admin can find any customer's subscription
    * (storage, AI grants, permissions, hosting) to open its fulfillment chat (`fulfillment_notes`,
-   * which all types have). Only Rellm hosting has a work queue (`fulfillment_status`), but the chat is
-   * for all of them.
+   * which all types have). Only Rellm hosting has a work queue (`fulfillment_status` moves); the other
+   * types are always `FULFILLMENT_STATUS_FULFILLED`, so their chats are text only.
    */
   GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN = 2,
   UNRECOGNIZED = -1,
@@ -867,8 +871,9 @@ export interface MediaStorageSubscriptionDetails {
    * `UpdateMarketSubscription`, the buyer's read marker via `MarkFulfillmentNotesRead`, `fulfillment_status`
    * always the last note's status). Only meaningful on a `MarketSubscription`'s own `details`: on a
    * `MarketProduct.details` they're always empty/unset. Unlike Rellm hosting, nothing about these types
-   * *needs* an admin, so `fulfillment_status` isn't a work queue for them (it stays at its default) --
-   * the chat is just a way for a host admin and the buyer to talk about the subscription.
+   * *needs* an admin: the system fulfills them automatically, so `fulfillment_status` is always
+   * `FULFILLMENT_STATUS_FULFILLED` (derived on read, and `UpdateMarketSubscription` rejects a note that changes
+   * it) -- the chat is just a way for a host admin and the buyer to talk about the subscription.
    */
   fulfillmentStatus: FulfillmentStatus;
   fulfillmentNotes: FulfillmentNote[];
@@ -925,8 +930,9 @@ export interface PermissionsAccessSubscriptionDetails {
    * `UpdateMarketSubscription`, the buyer's read marker via `MarkFulfillmentNotesRead`, `fulfillment_status`
    * always the last note's status). Only meaningful on a `MarketSubscription`'s own `details`: on a
    * `MarketProduct.details` they're always empty/unset. Unlike Rellm hosting, nothing about these types
-   * *needs* an admin, so `fulfillment_status` isn't a work queue for them (it stays at its default) --
-   * the chat is just a way for a host admin and the buyer to talk about the subscription.
+   * *needs* an admin: the system fulfills them automatically, so `fulfillment_status` is always
+   * `FULFILLMENT_STATUS_FULFILLED` (derived on read, and `UpdateMarketSubscription` rejects a note that changes
+   * it) -- the chat is just a way for a host admin and the buyer to talk about the subscription.
    */
   fulfillmentStatus: FulfillmentStatus;
   fulfillmentNotes: FulfillmentNote[];
@@ -956,8 +962,9 @@ export interface AIGrantSubscriptionDetails {
    * `UpdateMarketSubscription`, the buyer's read marker via `MarkFulfillmentNotesRead`, `fulfillment_status`
    * always the last note's status). Only meaningful on a `MarketSubscription`'s own `details`: on a
    * `MarketProduct.details` they're always empty/unset. Unlike Rellm hosting, nothing about these types
-   * *needs* an admin, so `fulfillment_status` isn't a work queue for them (it stays at its default) --
-   * the chat is just a way for a host admin and the buyer to talk about the subscription.
+   * *needs* an admin: the system fulfills them automatically, so `fulfillment_status` is always
+   * `FULFILLMENT_STATUS_FULFILLED` (derived on read, and `UpdateMarketSubscription` rejects a note that changes
+   * it) -- the chat is just a way for a host admin and the buyer to talk about the subscription.
    */
   fulfillmentStatus: FulfillmentStatus;
   fulfillmentNotes: FulfillmentNote[];

@@ -467,17 +467,26 @@ To run it, add a dependency via `elm install` on [`elm-protocol-buffers`](https:
    [`MarkFulfillmentNotesRead`](#grpc-api-MarkFulfillmentNotesRead) (buyer-only, server-stamped; `UpdateMarketSubscription`
    always preserves it). A note is *unread* if someone other than the buyer wrote it and it is newer than the marker (or
    the marker is unset). A buyer's unread count is the sum over their subscriptions.
- - **A Rellm hosting admin** (a server `Admin`) works every order from the "setting up customers' sites" side -
-   see [Fulfilling a Rellm hosting order](#fulfilling-a-rellm-hosting-order) below for the actual runbook.
-   `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN` lists them all, and `UpdateMarketSubscription` (Admin-only) appends
-   notes and moves `fulfillment_status`. There is deliberately **no per-admin read marker** - `notes_last_read` is the
-   buyer's, and several admins share the same orders - so an admin has no "unread" count. What needs an admin's attention
-   is the number of orders whose `fulfillment_status` is still `FULFILLMENT_STATUS_AWAITING_HOST_ADMIN`; that is the
-   admin's count. An admin opening an awaiting order moves it to `FULFILLMENT_STATUS_IN_PROGRESS` (a bare status note), which
-   is what takes it out of that count, and "Add and Mark as Fulfilled" finishes it.
+ - **A host admin** (a server `Admin`) sees every subscription, of every type
+   (`GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN`) and `UpdateMarketSubscription` (Admin-only) appends notes to
+   any of their chats. What an admin can *change* depends on the type:
+   - **Rellm hosting** is set up by hand (see [Fulfilling a Rellm hosting order](#fulfilling-a-rellm-hosting-order)
+     below for the runbook), so its `fulfillment_status` is a real work queue that admin-written notes move:
+     `FULFILLMENT_STATUS_AWAITING_HOST_ADMIN` -> `IN_PROGRESS` (opening an awaiting order appends a bare status note) ->
+     `FULFILLED` ("Add and Mark as Fulfilled").
+   - **Every other type** (media storage, AI grants, permissions access) is fulfilled *automatically* - the system
+     applies the storage, grants or permissions itself when the purchase is fulfilled and on every renewal. Its
+     `fulfillment_status` is therefore always `FULFILLMENT_STATUS_FULFILLED` (derived on read, whatever an older row
+     stored), and `UpdateMarketSubscription` rejects a note that tries to change it
+     (`fulfillment_status_is_automatic_for_this_type`). Its chat is text only.
+
+   There is deliberately **no per-admin read marker** - `notes_last_read` is the buyer's, and several admins share the
+   same subscriptions - so an admin has no "unread" count. What needs an admin's attention is the number of
+   subscriptions whose `fulfillment_status` is still `FULFILLMENT_STATUS_AWAITING_HOST_ADMIN`; that is the admin's
+   count. Because the other types are always fulfilled, only hosting orders are ever in it.
 
  So three independent counts exist side by side, and clients can show them together: unread messages,
- the buyer's unread fulfillment notes, and (Admins only) orders awaiting a host admin. The Elm client shows them in
+ the buyer's unread fulfillment notes, and (Admins only) subscriptions awaiting a host admin. The Elm client shows them in
  that order in the corners of its Messages button (top-right, bottom-right, bottom-left), and as the Messages,
  Subscriptions and Fulfillment tabs.
 

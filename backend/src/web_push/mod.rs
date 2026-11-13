@@ -324,8 +324,8 @@ pub(crate) fn fulfillment_note_recipients(
 
 fn fulfillment_note_title(frontend_host: Option<&str>) -> String {
     match frontend_host {
-        Some(host) => format!("Rellm hosting order update on {}", host),
-        None => "Rellm hosting order update".to_string(),
+        Some(host) => format!("Subscription update on {}", host),
+        None => "Subscription update".to_string(),
     }
 }
 
@@ -647,8 +647,8 @@ mod tests {
 
     #[test]
     fn fulfillment_note_title_names_the_host_when_known() {
-        assert_eq!(fulfillment_note_title(Some("ato.band")), "Rellm hosting order update on ato.band");
-        assert_eq!(fulfillment_note_title(None), "Rellm hosting order update");
+        assert_eq!(fulfillment_note_title(Some("ato.band")), "Subscription update on ato.band");
+        assert_eq!(fulfillment_note_title(None), "Subscription update");
     }
 
     #[test]

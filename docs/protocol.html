@@ -1219,26 +1219,46 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
     </p>
     <ul>
       <li>
-        <strong>The buyer</strong> reads them on their own subscription (<code>GetMarketSubscriptions</code>, or <code>User.market_subscriptions</code>). Their
-        read marker is <code>RellmHostingSubscriptionDetails.notes_last_read</code>, moved only by
-        <a href="#grpc-api-MarkFulfillmentNotesRead"><code>MarkFulfillmentNotesRead</code></a> (buyer-only, server-stamped; <code>UpdateMarketSubscription</code>
-        always preserves it). A note is <em>unread</em> if someone other than the buyer wrote it and it is newer than the marker (or
-        the marker is unset). A buyer's unread count is the sum over their subscriptions.
+        <p>
+          <strong>The buyer</strong> reads them on their own subscription (<code>GetMarketSubscriptions</code>, or <code>User.market_subscriptions</code>). Their
+          read marker is <code>RellmHostingSubscriptionDetails.notes_last_read</code>, moved only by
+          <a href="#grpc-api-MarkFulfillmentNotesRead"><code>MarkFulfillmentNotesRead</code></a> (buyer-only, server-stamped; <code>UpdateMarketSubscription</code>
+          always preserves it). A note is <em>unread</em> if someone other than the buyer wrote it and it is newer than the marker (or
+          the marker is unset). A buyer's unread count is the sum over their subscriptions.
+        </p>
       </li>
       <li>
-        <strong>A Rellm hosting admin</strong> (a server <code>Admin</code>) works every order from the "setting up customers' sites" side -
-        see <a href="#fulfilling-a-rellm-hosting-order">Fulfilling a Rellm hosting order</a> below for the actual runbook.
-        <code>GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_FULFILLMENT_ADMIN</code> lists them all, and <code>UpdateMarketSubscription</code> (Admin-only) appends
-        notes and moves <code>fulfillment_status</code>. There is deliberately <strong>no per-admin read marker</strong> - <code>notes_last_read</code> is the
-        buyer's, and several admins share the same orders - so an admin has no "unread" count. What needs an admin's attention
-        is the number of orders whose <code>fulfillment_status</code> is still <code>FULFILLMENT_STATUS_AWAITING_HOST_ADMIN</code>; that is the
-        admin's count. An admin opening an awaiting order moves it to <code>FULFILLMENT_STATUS_IN_PROGRESS</code> (a bare status note), which
-        is what takes it out of that count, and "Add and Mark as Fulfilled" finishes it.
+        <p>
+          <strong>A host admin</strong> (a server <code>Admin</code>) sees every subscription, of every type
+          (<code>GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN</code>) and <code>UpdateMarketSubscription</code> (Admin-only) appends notes to
+          any of their chats. What an admin can <em>change</em> depends on the type:
+        </p>
+        <ul>
+          <li>
+            <strong>Rellm hosting</strong> is set up by hand (see <a href="#fulfilling-a-rellm-hosting-order">Fulfilling a Rellm hosting order</a>
+            below for the runbook), so its <code>fulfillment_status</code> is a real work queue that admin-written notes move:
+            <code>FULFILLMENT_STATUS_AWAITING_HOST_ADMIN</code> -> <code>IN_PROGRESS</code> (opening an awaiting order appends a bare status note) ->
+            <code>FULFILLED</code> ("Add and Mark as Fulfilled").
+          </li>
+          <li>
+            <strong>Every other type</strong> (media storage, AI grants, permissions access) is fulfilled <em>automatically</em> - the system
+            applies the storage, grants or permissions itself when the purchase is fulfilled and on every renewal. Its
+            <code>fulfillment_status</code> is therefore always <code>FULFILLMENT_STATUS_FULFILLED</code> (derived on read, whatever an older row
+            stored), and <code>UpdateMarketSubscription</code> rejects a note that tries to change it
+            (<code>fulfillment_status_is_automatic_for_this_type</code>). Its chat is text only.
+          </li>
+        </ul>
+        <p>
+          There is deliberately <strong>no per-admin read marker</strong> - <code>notes_last_read</code> is the buyer's, and several admins share the
+          same subscriptions - so an admin has no "unread" count. What needs an admin's attention is the number of
+          subscriptions whose <code>fulfillment_status</code> is still <code>FULFILLMENT_STATUS_AWAITING_HOST_ADMIN</code>; that is the admin's
+          count. Because the other types are always fulfilled, only hosting orders are ever in it.
+        </p>
       </li>
     </ul>
     <p>
       So three independent counts exist side by side, and clients can show them together: unread messages,
-      the buyer's unread fulfillment notes, and (Admins only) orders awaiting a host admin. The Elm client shows them in
+      the buyer's unread fulfillment notes, and (Admins only) subscriptions awaiting a host admin. The Elm client shows them in
       that order in the corners of its Messages button (top-right, bottom-right, bottom-left), and as the Messages,
       Subscriptions and Fulfillment tabs.
     </p>
@@ -10291,7 +10311,7 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>fulfillment_status</td>
           <td><a href="#rellm-FulfillmentStatus">FulfillmentStatus</a></td>
           <td></td>
-          <td>The fulfillment chat for this subscription -- <em>every</em> <code>PurchaseType</code> has one, not just <code>PURCHASE_TYPE_RELLM_HOSTING</code> (see <code>RellmHostingSubscriptionDetails.fulfillment_status</code>/<code>fulfillment_notes</code>/ <code>notes_last_read</code>, whose semantics these three fields share exactly: append-only notes via <code>UpdateMarketSubscription</code>, the buyer's read marker via <code>MarkFulfillmentNotesRead</code>, <code>fulfillment_status</code> always the last note's status). Only meaningful on a <code>MarketSubscription</code>'s own <code>details</code>: on a <code>MarketProduct.details</code> they're always empty/unset. Unlike Rellm hosting, nothing about these types <em>needs</em> an admin, so <code>fulfillment_status</code> isn't a work queue for them (it stays at its default) -- the chat is just a way for a host admin and the buyer to talk about the subscription.</td>
+          <td>The fulfillment chat for this subscription -- <em>every</em> <code>PurchaseType</code> has one, not just <code>PURCHASE_TYPE_RELLM_HOSTING</code> (see <code>RellmHostingSubscriptionDetails.fulfillment_status</code>/<code>fulfillment_notes</code>/ <code>notes_last_read</code>, whose semantics these three fields share exactly: append-only notes via <code>UpdateMarketSubscription</code>, the buyer's read marker via <code>MarkFulfillmentNotesRead</code>, <code>fulfillment_status</code> always the last note's status). Only meaningful on a <code>MarketSubscription</code>'s own <code>details</code>: on a <code>MarketProduct.details</code> they're always empty/unset. Unlike Rellm hosting, nothing about these types <em>needs</em> an admin: the system fulfills them automatically, so <code>fulfillment_status</code> is always <code>FULFILLMENT_STATUS_FULFILLED</code> (derived on read, and <code>UpdateMarketSubscription</code> rejects a note that changes it) -- the chat is just a way for a host admin and the buyer to talk about the subscription.</td>
         </tr>
         <tr>
           <td>fulfillment_notes</td>
@@ -11075,7 +11095,7 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>fulfillment_status</td>
           <td><a href="#rellm-FulfillmentStatus">FulfillmentStatus</a></td>
           <td></td>
-          <td>The fulfillment chat for this subscription -- <em>every</em> <code>PurchaseType</code> has one, not just <code>PURCHASE_TYPE_RELLM_HOSTING</code> (see <code>RellmHostingSubscriptionDetails.fulfillment_status</code>/<code>fulfillment_notes</code>/ <code>notes_last_read</code>, whose semantics these three fields share exactly: append-only notes via <code>UpdateMarketSubscription</code>, the buyer's read marker via <code>MarkFulfillmentNotesRead</code>, <code>fulfillment_status</code> always the last note's status). Only meaningful on a <code>MarketSubscription</code>'s own <code>details</code>: on a <code>MarketProduct.details</code> they're always empty/unset. Unlike Rellm hosting, nothing about these types <em>needs</em> an admin, so <code>fulfillment_status</code> isn't a work queue for them (it stays at its default) -- the chat is just a way for a host admin and the buyer to talk about the subscription.</td>
+          <td>The fulfillment chat for this subscription -- <em>every</em> <code>PurchaseType</code> has one, not just <code>PURCHASE_TYPE_RELLM_HOSTING</code> (see <code>RellmHostingSubscriptionDetails.fulfillment_status</code>/<code>fulfillment_notes</code>/ <code>notes_last_read</code>, whose semantics these three fields share exactly: append-only notes via <code>UpdateMarketSubscription</code>, the buyer's read marker via <code>MarkFulfillmentNotesRead</code>, <code>fulfillment_status</code> always the last note's status). Only meaningful on a <code>MarketSubscription</code>'s own <code>details</code>: on a <code>MarketProduct.details</code> they're always empty/unset. Unlike Rellm hosting, nothing about these types <em>needs</em> an admin: the system fulfills them automatically, so <code>fulfillment_status</code> is always <code>FULFILLMENT_STATUS_FULFILLED</code> (derived on read, and <code>UpdateMarketSubscription</code> rejects a note that changes it) -- the chat is just a way for a host admin and the buyer to talk about the subscription.</td>
         </tr>
         <tr>
           <td>fulfillment_notes</td>
@@ -11172,7 +11192,7 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>fulfillment_status</td>
           <td><a href="#rellm-FulfillmentStatus">FulfillmentStatus</a></td>
           <td></td>
-          <td>The fulfillment chat for this subscription -- <em>every</em> <code>PurchaseType</code> has one, not just <code>PURCHASE_TYPE_RELLM_HOSTING</code> (see <code>RellmHostingSubscriptionDetails.fulfillment_status</code>/<code>fulfillment_notes</code>/ <code>notes_last_read</code>, whose semantics these three fields share exactly: append-only notes via <code>UpdateMarketSubscription</code>, the buyer's read marker via <code>MarkFulfillmentNotesRead</code>, <code>fulfillment_status</code> always the last note's status). Only meaningful on a <code>MarketSubscription</code>'s own <code>details</code>: on a <code>MarketProduct.details</code> they're always empty/unset. Unlike Rellm hosting, nothing about these types <em>needs</em> an admin, so <code>fulfillment_status</code> isn't a work queue for them (it stays at its default) -- the chat is just a way for a host admin and the buyer to talk about the subscription.</td>
+          <td>The fulfillment chat for this subscription -- <em>every</em> <code>PurchaseType</code> has one, not just <code>PURCHASE_TYPE_RELLM_HOSTING</code> (see <code>RellmHostingSubscriptionDetails.fulfillment_status</code>/<code>fulfillment_notes</code>/ <code>notes_last_read</code>, whose semantics these three fields share exactly: append-only notes via <code>UpdateMarketSubscription</code>, the buyer's read marker via <code>MarkFulfillmentNotesRead</code>, <code>fulfillment_status</code> always the last note's status). Only meaningful on a <code>MarketSubscription</code>'s own <code>details</code>: on a <code>MarketProduct.details</code> they're always empty/unset. Unlike Rellm hosting, nothing about these types <em>needs</em> an admin: the system fulfills them automatically, so <code>fulfillment_status</code> is always <code>FULFILLMENT_STATUS_FULFILLED</code> (derived on read, and <code>UpdateMarketSubscription</code> rejects a note that changes it) -- the chat is just a way for a host admin and the buyer to talk about the subscription.</td>
         </tr>
         <tr>
           <td>fulfillment_notes</td>
@@ -11326,7 +11346,11 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
     <p><a name="rellm-FulfillmentStatus"></a></p>
     <h3 id="fulfillmentstatus"><a class="anchor" aria-hidden="true" tabindex="-1" href="#fulfillmentstatus"><span class="octicon octicon-link"></span></a>FulfillmentStatus</h3>
     <p>
-      The state of a <code>PURCHASE_TYPE_RELLM_HOSTING</code> order's manual fulfillment -- see
+      Where a subscription stands in the host admins' work queue. Only <code>PURCHASE_TYPE_RELLM_HOSTING</code> is fulfilled by
+      hand, so only it ever moves through these values (via admin-written notes). Every other type is fulfilled
+      automatically (storage, AI grants and permissions are applied by the system when the purchase is fulfilled):
+      its <code>fulfillment_status</code> is always <code>FULFILLMENT_STATUS_FULFILLED</code> -- whatever an older row stored -- and
+      <code>UpdateMarketSubscription</code> rejects a note that tries to change it. See
       <code>RellmHostingSubscriptionDetails.fulfillment_status</code>'s own doc for how the "current" value is
       derived, and <code>FulfillmentNote.fulfillment_status</code> for how every transition is recorded as its own
       timestamped note (a "fulfillment state history"), not just tracked as a bare current value.
@@ -11343,17 +11367,17 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
         <tr>
           <td>FULFILLMENT_STATUS_AWAITING_HOST_ADMIN</td>
           <td>0</td>
-          <td>The starting state for every new order -- no admin has looked at it yet.</td>
+          <td>The starting state for every new subscription -- no admin has looked at it yet.</td>
         </tr>
         <tr>
           <td>FULFILLMENT_STATUS_FULFILLED</td>
           <td>1</td>
-          <td>The order is fully stood up -- set via "Add and Mark as Fulfilled" on <code>/market/fulfillment</code> (<code>UpdateMarketSubscription</code>).</td>
+          <td>The subscription is fully stood up / dealt with -- set via "Add and Mark as Fulfilled" on <code>/market/fulfillment</code> (<code>UpdateMarketSubscription</code>).</td>
         </tr>
         <tr>
           <td>FULFILLMENT_STATUS_IN_PROGRESS</td>
           <td>2</td>
-          <td>An admin has started working the order but it isn't done yet -- set automatically the first time an admin expands this order's row on <code>/market/fulfillment</code> (if it was still <code>FULFILLMENT_STATUS_AWAITING_HOST_ADMIN</code>), or explicitly via a note.</td>
+          <td>An admin has started working the subscription but it isn't done yet -- set automatically the first time an admin expands this order's row on <code>/market/fulfillment</code> (if it was still <code>FULFILLMENT_STATUS_AWAITING_HOST_ADMIN</code>), or explicitly via a note.</td>
         </tr>
       </tbody>
     </table>
@@ -11381,7 +11405,7 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
         <tr>
           <td>GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN</td>
           <td>2</td>
-          <td>Admin-only view backing the Messages page's Fulfillment tab -- <em>every</em> MarketSubscription of <em>every</em> PurchaseType across every buyer, oldest first, so an admin can find any customer's subscription (storage, AI grants, permissions, hosting) to open its fulfillment chat (<code>fulfillment_notes</code>, which all types have). Only Rellm hosting has a work queue (<code>fulfillment_status</code>), but the chat is for all of them.</td>
+          <td>Admin-only view backing the Messages page's Fulfillment tab -- <em>every</em> MarketSubscription of <em>every</em> PurchaseType across every buyer, oldest first, so an admin can find any customer's subscription (storage, AI grants, permissions, hosting) to open its fulfillment chat (<code>fulfillment_notes</code>, which all types have). Only Rellm hosting has a work queue (<code>fulfillment_status</code> moves); the other types are always <code>FULFILLMENT_STATUS_FULFILLED</code>, so their chats are text only.</td>
         </tr>
       </tbody>
     </table>

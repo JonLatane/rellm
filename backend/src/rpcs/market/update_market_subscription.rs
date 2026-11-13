@@ -28,7 +28,9 @@ use crate::schema::market_subscriptions;
 /// transition can stand on its own with no text (e.g. the "admin opened this order" transition to
 /// `IN_PROGRESS`). The returned subscription's own `RellmHostingSubscriptionDetails.
 /// fulfillment_status` is always set to whatever the *last* note (old or newly appended) says --
-/// there's no way to change it except by appending a note that says something different.
+/// there's no way to change it except by appending a note that says something different -- and only for
+/// `PURCHASE_TYPE_RELLM_HOSTING`: every other type is fulfilled automatically (always `FULFILLED`), so a note
+/// that changes its status is rejected (`fulfillment_status_is_automatic_for_this_type`); its chat is text only.
 pub fn update_market_subscription(
     request: MarketSubscription,
     current_user: &models::User,
@@ -164,12 +166,17 @@ fn apply_fulfillment_notes(
         })?,
         _ => vec![],
     };
-    let stored_status = existing
-        .details
-        .get("fulfillment_status")
-        .and_then(|v| v.as_i64())
-        .map(|v| v as i32)
-        .unwrap_or(FulfillmentStatus::AwaitingHostAdmin as i32);
+    // Types the system fulfills itself are `FULFILLED` from the start, whatever the row stored (see
+    // `automatic_fulfillment_status`); only Rellm hosting carries a status an admin moves.
+    let automatic_status = automatic_fulfillment_status(purchase_type).map(|s| s as i32);
+    let stored_status = automatic_status.unwrap_or_else(|| {
+        existing
+            .details
+            .get("fulfillment_status")
+            .and_then(|v| v.as_i64())
+            .map(|v| v as i32)
+            .unwrap_or(FulfillmentStatus::AwaitingHostAdmin as i32)
+    });
 
     let already_stored = stored_notes.len();
     if incoming_notes.len() < already_stored || incoming_notes[..already_stored] != stored_notes[..] {
@@ -186,6 +193,9 @@ fn apply_fulfillment_notes(
             return Err(Status::new(Code::PermissionDenied, "fulfillment_note_user_id_mismatch"));
         }
         let is_status_change = note.fulfillment_status != running_status;
+        if is_status_change && automatic_status.is_some() {
+            return Err(Status::new(Code::InvalidArgument, "fulfillment_status_is_automatic_for_this_type"));
+        }
         if !is_status_change && note.note.trim().is_empty() {
             return Err(Status::new(Code::InvalidArgument, "fulfillment_note_text_required"));
         }

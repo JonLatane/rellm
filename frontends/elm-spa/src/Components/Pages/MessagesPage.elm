@@ -172,8 +172,8 @@ type alias Model =
     , pushRefreshGenerations : Dict String Int
 
     -- The three tabs (`tabsView`): Messages (everything this page always was), Subscriptions (the
-    -- user's own `MarketSubscription`s, incl. Rellm hosting fulfillment chats) and Fulfillment
-    -- (server admins: every Rellm hosting order, to set up -- see `Components.FulfillmentThreads`).
+    -- user's own `MarketSubscription`s, of any type, with their fulfillment chats) and Fulfillment
+    -- (server admins: every subscription of every type -- see `Components.FulfillmentThreads`).
     -- Only the tabs that have something show; with just Messages there's no tab bar at all.
     , tab : Tab
     , fulfillment : Fulfillment.Model
@@ -1920,8 +1920,8 @@ unreadCounts model =
 
 
 {-| Unread `Message`s -- the Messages tab's count (see `unreadCounts`, which splits the panel button's
-three counts: this one, unread Rellm hosting notes on the user's own subscriptions, and -- for server
-admins -- Rellm hosting orders still awaiting a host admin).
+three counts: this one, unread notes on the user's own subscriptions, and -- for server
+admins -- subscriptions (of any type) still awaiting a host admin).
 -}
 messagesUnreadCount : Model -> Int
 messagesUnreadCount model =

@@ -460,7 +460,7 @@ fn media_note_request(subscription: &models::MarketSubscription, author: &models
             fulfillment_notes: vec![FulfillmentNote {
                 user_id: author.id.to_proto_id(),
                 note: text.to_string(),
-                fulfillment_status: FulfillmentStatus::AwaitingHostAdmin as i32,
+                fulfillment_status: FulfillmentStatus::Fulfilled as i32,
                 created_at: None,
             }],
             ..Default::default()
@@ -494,6 +494,49 @@ fn an_admin_can_chat_on_a_media_storage_subscription_including_one_stored_before
         };
         assert!(details.notes_last_read.is_some());
         assert_eq!(details.fulfillment_notes.len(), 1, "marking read leaves the chat alone");
+        Ok(())
+    });
+}
+
+/// Only Rellm hosting is fulfilled by hand. Every other type is fulfilled by the system (it applies the storage /
+/// grants / permissions itself), so it is `FULFILLED` from the start -- even a row stored with the old
+/// `AWAITING_HOST_ADMIN` default -- and an admin's note can't move it.
+#[test]
+fn a_non_hosting_subscription_is_always_fulfilled_and_a_note_cannot_change_that() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let admin = admin(conn, "mkt_auto_status_admin");
+        let buyer = create_user(conn, "mkt_auto_status_buyer");
+        let subscription = media_storage_subscription(conn, &buyer, &admin);
+
+        // Listed as FULFILLED though the stored row never said so.
+        let listed = crate::build_all_subscriptions(conn)?;
+        let Some(market_subscription::Details::MediaStorageSubscriptionDetails(details)) =
+            listed.iter().find(|s| s.id == subscription.id.to_proto_id()).and_then(|s| s.details.clone())
+        else {
+            panic!("expected media storage details");
+        };
+        assert_eq!(details.fulfillment_status, FulfillmentStatus::Fulfilled as i32);
+
+        // A note that tries to reopen or progress it is rejected, whatever the direction.
+        for status in [FulfillmentStatus::AwaitingHostAdmin, FulfillmentStatus::InProgress] {
+            let mut request = media_note_request(&subscription, &admin, "Reopening.");
+            let Some(market_subscription::Details::MediaStorageSubscriptionDetails(d)) = request.details.as_mut()
+            else {
+                unreachable!()
+            };
+            d.fulfillment_notes[0].fulfillment_status = status as i32;
+            let err = update_market_subscription(request, &admin, conn).unwrap_err();
+            assert_eq!(err.message(), "fulfillment_status_is_automatic_for_this_type");
+        }
+
+        // A plain note is fine, and the status stays FULFILLED.
+        let updated =
+            update_market_subscription(media_note_request(&subscription, &admin, "All set."), &admin, conn)?;
+        let Some(market_subscription::Details::MediaStorageSubscriptionDetails(details)) = updated.details else {
+            panic!("expected media storage details");
+        };
+        assert_eq!(details.fulfillment_status, FulfillmentStatus::Fulfilled as i32);
         Ok(())
     });
 }
