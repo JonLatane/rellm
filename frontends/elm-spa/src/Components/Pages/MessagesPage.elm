@@ -1246,12 +1246,8 @@ update accountsPanelModel msg model =
                                 Cmd.none
 
                             else
-                                let
-                                    key : String
-                                    key =
-                                        Messages.conversationKey conversation
-                                in
-                                Process.sleep markReadDelayMillis |> Task.perform (\_ -> DelayedMarkGroupRead key)
+                                Process.sleep markReadDelayMillis
+                                    |> Task.perform (\_ -> DelayedMarkGroupRead (Messages.conversationKey conversation))
 
                         _ ->
                             Cmd.none
