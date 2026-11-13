@@ -900,6 +900,7 @@ viewerVideoSync req before after =
                                 , mediaId = Just video.mediaId
                                 , host = video.host
                                 , downloads = video.downloads
+                                , postUrl = Nothing
                                 }
                             )
                             (Just video.title)
@@ -980,6 +981,7 @@ syncVideoPanel before after panel =
                         , mediaId = current.video.mediaId
                         , host = current.video.host
                         , downloads = current.video.downloads
+                        , postUrl = current.video.postUrl
                         }
                     )
                     panel
@@ -1696,6 +1698,7 @@ sharedUpdate req msg model =
                                                 , mediaId = Just video.mediaId
                                                 , host = video.host
                                                 , downloads = video.downloads
+                                                , postUrl = Nothing
                                                 }
                                                 (Just video.title)
                                             )
@@ -1800,6 +1803,10 @@ sharedUpdate req msg model =
                                         withAccounts
                             in
                             ( opened, Cmd.batch [ Cmd.map AccountsPanelMsg accountsPanelCmd, openCmd ] )
+                                |> (\( m, c ) ->
+                                        sharedUpdate req (AudioPlayerPanelMsg (AudioPlayerPanel.AttachPostUrl media.id handoff.host handoff.postUrl)) m
+                                            |> Tuple.mapSecond (\c2 -> Cmd.batch [ c, c2 ])
+                                   )
 
                         -- The player was closed or moved on while this was being fetched: it's no longer wanted.
                         _ ->
@@ -1863,7 +1870,7 @@ sharedUpdate req msg model =
                 VideoPlayerPanel.Requested video ->
                     toQueue
                         (AudioPlayerPanel.OpenVideo
-                            { src = video.src, poster = video.poster, aspectRatio = video.aspectRatio, returnUrl = video.returnUrl, mediaId = video.mediaId, host = video.host, downloads = video.downloads }
+                            { src = video.src, poster = video.poster, aspectRatio = video.aspectRatio, returnUrl = video.returnUrl, mediaId = video.mediaId, host = video.host, downloads = video.downloads, postUrl = video.postUrl }
                             video.title
                             video.startAt
                             video.resume

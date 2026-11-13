@@ -32,6 +32,7 @@ video =
     , mediaId = Nothing
     , host = ""
     , downloads = []
+    , postUrl = Nothing
     }
 
 
@@ -59,6 +60,7 @@ suite =
                                 , mediaId = Nothing
                                 , host = ""
                                 , downloads = []
+                                , postUrl = Nothing
                                 }
                             )
             , test "a null, blank or missing poster or title is none" <|

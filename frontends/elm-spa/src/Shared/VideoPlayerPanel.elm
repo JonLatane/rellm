@@ -51,7 +51,7 @@ import Shared.AudioPlayerPanel as AudioPlayerPanel
 
 
 {-| What the page's player hands over. `startAt` is in seconds; `resume` is whether it was playing; `returnUrl` is the
-page it was on (the full URL); `aspectRatio` is width over height, so the panel is the video's own shape; `title` is
+page it was on (the full URL); `postUrl` is the post it belongs to, if known (a link within the app); `aspectRatio` is width over height, so the panel is the video's own shape; `title` is
 what the queue calls it.
 -}
 type alias MiniVideo =
@@ -65,6 +65,7 @@ type alias MiniVideo =
     , mediaId : Maybe String
     , host : String
     , downloads : List String
+    , postUrl : Maybe String
     }
 
 
@@ -164,6 +165,7 @@ decoder =
             (optional "downloads"
                 |> Decode.map (Maybe.map (String.split "," >> List.filter ((/=) "")) >> Maybe.withDefault [])
             )
+        |> Decode.map2 (|>) (optional "postUrl")
 
 
 {-| A string field that may be null or missing, and means nothing when blank.

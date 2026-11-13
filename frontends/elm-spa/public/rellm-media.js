@@ -8,7 +8,7 @@
 //     either panel -- so you never hear two. Silent autoplay previews neither pause anything nor get paused.
 //   * Audio handoff: a post card's `<audio>` that's playing when its page is navigated away from (or whose "play in the
 //     audio player" button is pressed) moves to the audio bar, at the same moment, like a video moves to the miniplayer.
-//     The `rellm-audio-handoff` window event carries `{ id, host, positionMs, playing }`; `index.html` forwards it to
+//     The `rellm-audio-handoff` window event carries `{ id, host, positionMs, playing, postUrl }`; `index.html` forwards it to
 //     Elm over a port, and `Shared` fetches the track and opens it in `Shared.AudioPlayerPanel`.
 //
 // Elm navigates with `history.pushState` (the back/forward buttons fire `popstate`); `replaceState` only tweaks the
@@ -78,14 +78,30 @@
       !(audio.closest && audio.closest(".media-viewer-panel"));
   };
 
-  var handoffAudio = function (audio, playing) {
+  // The post (or event) page a video or audio belongs to, as a link within the app: the card it is on (its `.post-card-link-overlay`
+  // href), else -- on a post's own page -- that page. `from` is the page the request is made from.
+  function postLinkFor(el, from) {
+    var card = el.closest ? el.closest(".post-card") : null;
+    var overlay = card ? card.querySelector(".post-card-link-overlay") : null;
+    var href = overlay ? overlay.getAttribute("href") : null;
+    if (href) { return href; }
+    try {
+      var url = new URL(from, window.location.href);
+      if (/\/(post|event)\/|\/~/.test(url.pathname)) { return url.pathname + url.search + url.hash; }
+    } catch (e) { /* not a URL */ }
+    return null;
+  }
+
+  // `from` is the page the audio was on: the one being navigated away from for a navigation handoff, else this one.
+  var handoffAudio = function (audio, playing, from) {
     if (!handoffTarget(audio)) { return false; }
     window.dispatchEvent(new CustomEvent("rellm-audio-handoff", {
       detail: {
         id: audio.getAttribute("data-media-id"),
         host: audio.getAttribute("data-host"),
         positionMs: Math.round((audio.currentTime || 0) * 1000),
-        playing: playing
+        playing: playing,
+        postUrl: postLinkFor(audio, from || window.location.href)
       }
     }));
     return true;
@@ -113,7 +129,7 @@
     audios.forEach(function (audio) {
       if (playingAudio.has(audio) && justNavigated()) {
         playingAudio.delete(audio);
-        handoffAudio(audio, true);
+        handoffAudio(audio, true, lastNavigation.from);
       }
     });
   };
@@ -234,6 +250,7 @@
     takeVideo: takeVideo,
     noteMoved: noteMoved,
     lastNavigation: function () { return lastNavigation; },
+    postLinkFor: postLinkFor,
     justNavigated: justNavigated,
     setEnlarge: setEnlarge,
     peekEnlarge: peekEnlarge,

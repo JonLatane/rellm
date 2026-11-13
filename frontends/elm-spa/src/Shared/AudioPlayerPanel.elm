@@ -87,7 +87,7 @@ type alias Source =
 {-| A track in the queue, with the server it lives on -- a queue can mix servers' tracks (see `Enqueue`).
 -}
 type alias QueueItem =
-    { media : MediaReference, host : String, video : Maybe VideoItem }
+    { media : MediaReference, host : String, video : Maybe VideoItem, postUrl : Maybe String }
 
 
 {-| What a video queue entry plays in the miniplayer. Its `MediaReference` is a stand-in (`id` = the video's `src`, `name`
@@ -105,7 +105,23 @@ type alias VideoItem =
     , mediaId : Maybe String
     , host : String
     , downloads : List String
+
+    -- The post (or event) page this video was opened from, as a link within the app: shown in the queue and the expanded player.
+    , postUrl : Maybe String
     }
+
+
+{-| "Opened from post": a link to the post page a track or video came from, if it's known. Used in the queue and the expanded player.
+-}
+openedFromPost : String -> Maybe String -> Html msg
+openedFromPost cssClass postUrl =
+    case postUrl of
+        Just url ->
+            a [ class cssClass, href url, attribute "title" "Open the post this video is from" ]
+                [ text "Opened from post" ]
+
+        Nothing ->
+            text ""
 
 
 {-| The current queue entry, if it's a video, and how the miniplayer should start it: where (seconds), whether to play,
@@ -203,6 +219,9 @@ type alias Model =
     , queueOpen : Bool
     , moveAnimations : Dict String (UI.Flip.MoveState Msg)
     , drag : UI.Drag.State
+
+    -- Post links noted when a post card's video was enlarged (`NotePostLink`), by media id.
+    , postLinks : Dict String String
     }
 
 
@@ -233,6 +252,8 @@ type Msg
     | LinkPromptDismissed
       -- Adds a track (and the host it's on) to the queue -- starting it if nothing's loaded yet.
     | Enqueue Placement MediaReference String
+      -- Notes the post a queued track was opened from (a post card's audio handed over): `id` on `host`, and its post link.
+    | AttachPostUrl String String (Maybe String)
     | ToggleQueue
       -- A queue row was tapped: play it (queue item key).
     | PlayQueued String
@@ -265,12 +286,14 @@ type Msg
     | EditClicked
       -- The viewer saved an edit to a track: refresh this panel's copy of it (see `Shared.update`).
     | MediaUpdated MediaReference
+      -- A post card's video (media id) is on this post (link): remembered for when its queue entry is made.
+    | NotePostLink String String
     | NoOp
 
 
 init : Model
 init =
-    { queue = [], currentId = Nothing, targetHost = "", expanded = False, playing = False, positionMs = 0, durationMs = 0, quality = High, activeSlot = SlotA, slotA = Nothing, slotB = Nothing, autoStart = False, selectionGeneration = 0, videoStartAt = 0, videoResume = True, videoGeneration = 0, videoPrior = Nothing, pendingSeekMs = Nothing, pendingUpgrade = Nothing, activeLoaded = False, pendingTrackLink = Nothing, pendingVideoLink = Nothing, origin = "", sharePopoverOpen = False, linkCopied = False, copyGeneration = 0, savedFragment = Nothing, queueOpen = False, moveAnimations = Dict.empty, drag = UI.Drag.init }
+    { queue = [], currentId = Nothing, targetHost = "", expanded = False, playing = False, positionMs = 0, durationMs = 0, quality = High, activeSlot = SlotA, slotA = Nothing, slotB = Nothing, autoStart = False, selectionGeneration = 0, videoStartAt = 0, videoResume = True, videoGeneration = 0, videoPrior = Nothing, pendingSeekMs = Nothing, pendingUpgrade = Nothing, activeLoaded = False, pendingTrackLink = Nothing, pendingVideoLink = Nothing, origin = "", sharePopoverOpen = False, linkCopied = False, copyGeneration = 0, savedFragment = Nothing, queueOpen = False, moveAnimations = Dict.empty, drag = UI.Drag.init, postLinks = Dict.empty }
 
 
 {-| Whether the panel is actually shown expanded: the user's choice (`Model.expanded`), unless the fullscreen
@@ -610,12 +633,24 @@ inheritLinkData model video =
     case currentVideo model of
         Just current ->
             if current.video.src == video.src && video.host == "" then
-                { video | host = current.video.host, downloads = current.video.downloads }
+                withNotedPostUrl model { video | host = current.video.host, downloads = current.video.downloads, postUrl = current.video.postUrl }
 
             else
-                video
+                withNotedPostUrl model video
 
         Nothing ->
+            withNotedPostUrl model video
+
+
+{-| A video with no post link of its own gets the one noted when its card was enlarged (`NotePostLink`), if any.
+-}
+withNotedPostUrl : Model -> VideoItem -> VideoItem
+withNotedPostUrl model video =
+    case ( video.postUrl, video.mediaId |> Maybe.andThen (\id -> Dict.get id model.postLinks) ) of
+        ( Nothing, Just url ) ->
+            { video | postUrl = Just url }
+
+        _ ->
             video
 
 
@@ -838,16 +873,20 @@ type alias Handoff =
     , host : String
     , positionMs : Float
     , playing : Bool
+    , postUrl : Maybe String
     }
 
 
 handoffDecoder : Decode.Decoder Handoff
 handoffDecoder =
-    Decode.map4 Handoff
+    Decode.map5 Handoff
         (Decode.field "id" Decode.string |> Decode.andThen nonBlank)
         (Decode.field "host" Decode.string |> Decode.andThen nonBlank)
         (Decode.field "positionMs" Decode.float |> Decode.map (max 0))
         (Decode.field "playing" Decode.bool)
+        (Decode.oneOf [ Decode.field "postUrl" (Decode.nullable Decode.string), Decode.succeed Nothing ]
+            |> Decode.map (Maybe.andThen nonEmpty)
+        )
 
 
 nonBlank : String -> Decode.Decoder String
@@ -886,6 +925,15 @@ subscriptions model =
 
           else
             Sub.none
+        , Ports.postLinkNoted
+            (\value ->
+                case Decode.decodeValue (Decode.map2 NotePostLink (Decode.field "mediaId" Decode.string) (Decode.field "postUrl" Decode.string)) value of
+                    Ok msg ->
+                        msg
+
+                    Err _ ->
+                        NoOp
+            )
         , if model.queueOpen then
             Sub.batch
                 [ UI.Flip.moveSubscription AnimateMove (Dict.values model.moveAnimations)
@@ -929,12 +977,37 @@ keyDecoder =
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
+    let
+        ( updated, cmd ) =
+            updateHelp msg model
+    in
+    case msg of
+        -- A post link noted for an enlargement is for that one opening (and whatever is queued then): once a video has been begun
+        -- or the player closed it is spent, so opening the same video later from somewhere else (My Media) doesn't bring it back.
+        OpenVideo _ _ _ _ ->
+            ( { updated | postLinks = Dict.empty }, cmd )
+
+        OpenViewerVideo _ _ _ _ _ ->
+            ( { updated | postLinks = Dict.empty }, cmd )
+
+        LoadVideo _ _ ->
+            ( { updated | postLinks = Dict.empty }, cmd )
+
+        Close ->
+            ( { updated | postLinks = Dict.empty }, cmd )
+
+        _ ->
+            ( updated, cmd )
+
+
+updateHelp : Msg -> Model -> ( Model, Cmd Msg )
+updateHelp msg model =
     case msg of
         Open queue id host ->
             let
                 items : List QueueItem
                 items =
-                    List.map (\media -> { media = media, host = host, video = Nothing }) queue
+                    List.map (\media -> { media = media, host = host, video = Nothing, postUrl = Nothing }) queue
             in
             case items |> List.filter (\item -> item.media.id == id) |> List.head of
                 Just item ->
@@ -966,6 +1039,7 @@ update msg model =
                     { media = { defaultMediaReference | id = video.src, name = Just (Maybe.withDefault "Video" title) }
                     , host = ""
                     , video = Just video
+                    , postUrl = video.postUrl
                     }
             in
             if isCurrentVideoSrc video.src model then
@@ -1010,6 +1084,7 @@ update msg model =
                         { media = { defaultMediaReference | id = video.src, name = Just (Maybe.withDefault "Video" title) }
                         , host = ""
                         , video = Just video
+                        , postUrl = video.postUrl
                         }
                 in
                 ( { model | queue = playNowQueue item [] model.queue, videoPrior = prior }, Cmd.none )
@@ -1076,7 +1151,7 @@ update msg model =
             let
                 items : List QueueItem
                 items =
-                    List.map (\media -> { media = media, host = host, video = Nothing }) queue
+                    List.map (\media -> { media = media, host = host, video = Nothing, postUrl = Nothing }) queue
             in
             case items |> List.filter (\item -> item.media.id == id) |> List.head of
                 Just item ->
@@ -1106,15 +1181,47 @@ update msg model =
                         { media = { defaultMediaReference | id = video.src, name = Just (Maybe.withDefault "Video" title) }
                         , host = ""
                         , video = Just video
+                        , postUrl = video.postUrl
                         }
                 in
                 beginVideo item 0 False { model | queue = playNowQueue item [] model.queue, expanded = True }
+
+        NotePostLink mediaId postUrl ->
+            ( { model
+                | postLinks = Dict.insert mediaId postUrl model.postLinks
+                , queue =
+                    model.queue
+                        |> List.map
+                            (\item ->
+                                case item.video of
+                                    Just video ->
+                                        if video.mediaId == Just mediaId && item.postUrl == Nothing then
+                                            { item | postUrl = Just postUrl, video = Just { video | postUrl = Just postUrl } }
+
+                                        else
+                                            item
+
+                                    Nothing ->
+                                        item
+                            )
+              }
+            , Cmd.none
+            )
+
+        AttachPostUrl id host postUrl ->
+            ( { model
+                | queue =
+                    model.queue
+                        |> List.map (\item -> if item.media.id == id && item.host == host && item.video == Nothing then { item | postUrl = postUrl } else item)
+              }
+            , Cmd.none
+            )
 
         Enqueue placement media host ->
             let
                 item : QueueItem
                 item =
-                    { media = media, host = host, video = Nothing }
+                    { media = media, host = host, video = Nothing, postUrl = Nothing }
             in
             if model.currentId == Nothing then
                 -- Nothing loaded: the queued track just starts. (The queue can still hold entries -- the viewer closing its video
@@ -1835,12 +1942,14 @@ view viewerOpen accountsPanelModel model =
                             )
                             []
                         , div [ class "audio-player-title" ] [ text (title media) ]
+                        , openedFromPost "audio-player-opened-from" video.postUrl
                         ]
 
                 Nothing ->
                     div [ class "audio-player-expanded" ]
                         [ coverArt media
                         , div [ class "audio-player-title" ] [ text (title media) ]
+                        , openedFromPost "audio-player-opened-from" (currentItem model |> Maybe.andThen .postUrl)
                         , if artist media == "" then
                             text ""
 
@@ -2055,6 +2164,7 @@ view viewerOpen accountsPanelModel model =
                     ]
                 , div [ class "media-card-meta" ]
                     [ button [ class "media-card-title", onClick (PlayQueued key) ] [ text (title media) ]
+                    , openedFromPost "media-card-opened-from" item.postUrl
                     , if credits == "" then
                         text ""
 
