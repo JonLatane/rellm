@@ -874,6 +874,13 @@ body:has(> [style*="2147483647"]) .messages-reply-button {
 .messaging-panel .starred-panel-tabs.messages-tab-bar {
   flex: 0 0 auto;
   gap: 0.25rem;
+  /* Three tabs with badges can be wider than a narrow panel: scroll the strip itself, never the panel. */
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.messaging-panel .messages-tab-bar .starred-panel-tab {
+  flex: 1 0 auto;
 }
 
 .messaging-panel .messages-tab-bar {
