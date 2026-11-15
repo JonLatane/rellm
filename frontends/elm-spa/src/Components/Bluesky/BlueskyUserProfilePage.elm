@@ -161,7 +161,14 @@ syncFollow shared ( model, effect ) =
                 acting : Maybe BlueskyAccount
                 acting =
                     AccountsPanel.activeBlueskyAccount shared.accounts
-                        |> Maybe.filter (\account -> not (Actions.isOwnBlueskyProfile account profile.handle))
+                        |> Maybe.andThen
+                            (\account ->
+                                if Actions.isOwnBlueskyProfile account profile.handle then
+                                    Nothing
+
+                                else
+                                    Just account
+                            )
 
                 wanted : Maybe String
                 wanted =

@@ -147,7 +147,14 @@ syncRelationship shared ( model, effect ) =
                 acting : Maybe MastodonAccount
                 acting =
                     actingAccount shared model
-                        |> Maybe.filter (\a -> not (Actions.isOwnMastodonProfile a (targetOf model account)))
+                        |> Maybe.andThen
+                            (\a ->
+                                if Actions.isOwnMastodonProfile a (targetOf model account) then
+                                    Nothing
+
+                                else
+                                    Just a
+                            )
 
                 wanted : Maybe String
                 wanted =
