@@ -1,3 +1,5 @@
+DROP INDEX idx_users_created_at;
+
 ALTER TABLE server_configurations DROP COLUMN search_settings;
 
 DROP TABLE user_profile_embeddings;

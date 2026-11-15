@@ -113,10 +113,12 @@ $$ LANGUAGE sql STABLE;
 -- Occasions are (soonest first, at most 10) and each Occasion's own title.
 --
 -- One embedding is shared by everyone who can see the Event, but each Occasion has its own Post with
--- its own visibility/moderation -- so only Occasions anyone who can see the Event could also see
--- are included: moderation passing (UNMODERATED/APPROVED) and visibility at least as public as the
--- Event's own Post. A private or pending Occasion's title/address never influences who a search
--- returns. An Event that hides its location until RSVP approval
+-- its own visibility/moderation (and possibly its own author, so LIMITED/PRIVATE audiences can differ
+-- from the Event's) -- so only Occasions *everyone* who can see the Event could also see are
+-- included: moderation passing (UNMODERATED/APPROVED), SERVER_PUBLIC or GLOBAL_PUBLIC, and at least
+-- as public as the Event's own Post (a server-public Occasion can't shape results for an anonymous
+-- viewer of a globally public Event). A limited, private or pending Occasion's title/address never
+-- influences who a search returns. An Event that hides its location until RSVP approval
 -- (EventInfo.hide_location_until_rsvp_approved) doesn't leak it here either.
 CREATE FUNCTION visibility_openness(p_visibility VARCHAR) RETURNS INT AS $$
   SELECT CASE p_visibility
@@ -142,6 +144,7 @@ CREATE FUNCTION event_search_document(p_event_id BIGINT) RETURNS TEXT AS $$
        JOIN posts op ON op.id = o.post_id
        WHERE o.event_id = p_event_id
          AND op.moderation IN ('UNMODERATED', 'APPROVED')
+         AND visibility_openness(op.visibility) >= 2
          AND visibility_openness(op.visibility) >= visibility_openness(ep.visibility)
        ORDER BY o.starts_at
        LIMIT 10
@@ -206,3 +209,9 @@ CREATE INDEX idx_user_profile_embeddings_checked_at ON user_profile_embeddings (
 -- 4. The server setting (ServerConfiguration.search_settings). NULL (every row that predates this
 -- column) reads as "semantic search enabled" -- on by default.
 ALTER TABLE server_configurations ADD COLUMN search_settings JSONB;
+
+-- The all-users search scores the newest visible profiles semantically (`ORDER BY created_at DESC
+-- LIMIT`), and the plain all-users listing already orders this way: without an index that is a
+-- sort of the whole table on every request. (posts and media already have created/published-date
+-- indexes.)
+CREATE INDEX idx_users_created_at ON users (created_at DESC);

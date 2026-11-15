@@ -148,12 +148,40 @@ fn an_event_document_leaves_out_occasions_the_event_s_viewers_could_not_see() {
         occasion(conn, "Public toast", "10 Open Road", Visibility::ServerPublic, Moderation::Unmoderated);
         occasion(conn, "Secret meeting", "99 Hidden Lane", Visibility::Private, Moderation::Unmoderated);
         occasion(conn, "Awaiting review", "5 Pending Place", Visibility::ServerPublic, Moderation::Pending);
+        occasion(conn, "Followers only", "7 Limited Lane", Visibility::Limited, Moderation::Unmoderated);
 
         let doc = document(conn, "event_search_document", post.id);
         assert!(doc.contains("Public toast") && doc.contains("10 Open Road"), "{:?}", doc);
-        for leaked in ["Secret meeting", "99 Hidden Lane", "Awaiting review", "5 Pending Place"] {
+        for leaked in ["Secret meeting", "99 Hidden Lane", "Awaiting review", "5 Pending Place", "Followers only", "7 Limited Lane"] {
             assert!(!doc.contains(leaked), "{:?} leaked into {:?}", leaked, doc);
         }
+
+        // LIMITED event + LIMITED occasion: equally "open" but the audiences can differ (different
+        // authors' followers), so the occasion's text stays out of the shared embedding.
+        let (limited_event, limited_post) = create_event(
+            conn,
+            &organizer,
+            EventOpts {
+                title: Some("Followers brunch".to_string()),
+                visibility: Visibility::Limited,
+                default_occasion: None,
+                ..Default::default()
+            },
+        );
+        create_occasion(
+            conn,
+            &limited_event,
+            Some(&organizer),
+            OccasionOpts {
+                title: Some("Brunch table".to_string()),
+                visibility: Visibility::Limited,
+                location: Some(serde_json::json!({"uniformly_formatted_address": "3 Brunch Boulevard"})),
+                ..Default::default()
+            },
+        );
+        let limited_doc = document(conn, "event_search_document", limited_post.id);
+        assert!(limited_doc.contains("Followers brunch"));
+        assert!(!limited_doc.contains("3 Brunch Boulevard"), "limited occasion leaked");
         Ok(())
     });
 }
