@@ -23,8 +23,15 @@ async fn frontend_host(state: &State<RocketState>, host: &Host<'_>) -> CacheResp
 
 pub fn configured_backend_domain(state: &State<RocketState>, host: &Host<'_>) -> String {
     match external_cdn_config(state) {
-        Some(cdn_config) => match (cdn_config.backend_host, cdn_config.cdn_grpc) {
-            (backend_host, false) if backend_host != "" => backend_host,
+        Some(cdn_config) => match (cdn_config.backend_host.clone(), cdn_config.cdn_grpc) {
+            // A Rellm Subdomain (`jon.bullcity.social`) gets its own backend name, `jon.<backend_host>`: gRPC to it
+            // then arrives with a `Host` that says which subdomain it is for (see `logic::subdomains`).
+            (backend_host, false) if backend_host != "" => {
+                match crate::logic::subdomains::subdomain_label_for_host(host.domain().as_str(), &cdn_config.frontend_host) {
+                    Some(label) => format!("{label}.{backend_host}"),
+                    None => backend_host,
+                }
+            }
             _ => host.domain().to_string(),
         },
         None => host.domain().to_string(),

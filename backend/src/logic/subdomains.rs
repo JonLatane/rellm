@@ -27,20 +27,6 @@ pub struct RequestHost(pub String);
 /// Labels that must never be handed out as a subdomain (they'd shadow real infrastructure hosts).
 const RESERVED_LABELS: &[&str] = &["www", "api", "admin", "mail", "smtp", "imap", "ftp", "cdn", "media", "static"];
 
-/// A request's `Origin` header (`https://jon.bullcity.social`), if any -- see `RequestHost`. A browser on a
-/// subdomain's page talks to the parent's *backend* host (`ExternalCDNConfig.backend_host`, found through
-/// `/backend_host`), so the gRPC request's own host is the parent's: the page's origin is what says which subdomain
-/// it is. Browsers set `Origin` themselves; a non-browser client can claim any, which only changes whose
-/// (public) scope it reads -- it never grants access to anything.
-#[derive(Clone, Debug)]
-pub struct RequestOrigin(pub String);
-
-/// The host part of an `Origin` header value (`https://jon.bullcity.social:8443` -> `jon.bullcity.social:8443`).
-pub fn origin_host(origin: &str) -> &str {
-    let without_scheme = origin.split_once("://").map_or(origin, |(_, rest)| rest);
-    without_scheme.split('/').next().unwrap_or("")
-}
-
 /// An active subdomain, resolved from a request's host.
 #[derive(Clone, Debug)]
 pub struct SubdomainContext {
@@ -203,21 +189,6 @@ pub fn settings_of(subscription: &models::MarketSubscription) -> SubdomainSettin
 /// server's `ExternalCDNConfig.frontend_host` must be configured, `host` must be one label beneath it, and an
 /// active `PURCHASE_TYPE_SUBDOMAIN` subscription must hold that label. Everything else is `Ok(None)` -- the
 /// request is simply for the parent server.
-/// `resolve_subdomain` for a Tonic request: the page's `Origin` first (see `RequestOrigin`), then the request's own
-/// host.
-pub fn resolve_subdomain_for_request(
-    host: Option<&str>,
-    origin: Option<&str>,
-    conn: &mut PgPooledConnection,
-) -> Result<Option<SubdomainContext>, Status> {
-    if let Some(origin) = origin.map(origin_host).filter(|o| !o.is_empty()) {
-        if let Some(subdomain) = resolve_subdomain(Some(origin), conn)? {
-            return Ok(Some(subdomain));
-        }
-    }
-    resolve_subdomain(host, conn)
-}
-
 pub fn resolve_subdomain(
     host: Option<&str>,
     conn: &mut PgPooledConnection,
@@ -225,11 +196,13 @@ pub fn resolve_subdomain(
     let Some(host) = host else {
         return Ok(None);
     };
-    let frontend_host = get_server_configuration_proto(conn)?
-        .external_cdn_config
-        .map(|c| c.frontend_host)
-        .unwrap_or_default();
-    let Some(label) = subdomain_label_for_host(host, &frontend_host) else {
+    let cdn = get_server_configuration_proto(conn)?.external_cdn_config.unwrap_or_default();
+    // A subdomain is reached at `<label>.<frontend_host>` (pages) and, for gRPC when the backend is a separate host,
+    // at `<label>.<backend_host>` (what `/backend_host` returns on a subdomain) -- so every request carries which
+    // server it is for, and the parent and a subdomain are never confused even though they share a backend.
+    let Some(label) = subdomain_label_for_host(host, &cdn.frontend_host)
+        .or_else(|| subdomain_label_for_host(host, &cdn.backend_host))
+    else {
         return Ok(None);
     };
     let Some(subscription) = find_active_subdomain_subscription(&label, conn)? else {
@@ -327,11 +300,15 @@ impl SubdomainContext {
         // Secrets/infrastructure of the parent are never shown on a subdomain, whoever is looking.
         config.cluster_resources = None;
         // Clients adopt `external_cdn_config.frontend_host` as the server's identity, so it must be the subdomain
-        // itself -- not the parent's -- or the page would turn into the parent site. (`backend_host` stays the
-        // parent's: that is where gRPC really lives, and the subdomain is recognized there by the page's `Origin`.)
+        // itself -- not the parent's -- or the page would turn into the parent site. Likewise `backend_host`: gRPC
+        // for a subdomain goes to `<label>.<backend_host>` (wildcard DNS/TLS on the backend domain, like the
+        // frontend's), which is how the backend knows the request is for the subdomain and not the parent.
         if let Some(cdn) = config.external_cdn_config.as_mut() {
             if !cdn.frontend_host.is_empty() {
                 cdn.frontend_host = format!("{}.{}", self.settings.subdomain, cdn.frontend_host);
+            }
+            if !cdn.backend_host.is_empty() {
+                cdn.backend_host = format!("{}.{}", self.settings.subdomain, cdn.backend_host);
             }
         }
         config.twilio_config = None;

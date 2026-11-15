@@ -399,22 +399,36 @@ fn css_only_saves_keep_the_toggles_and_a_buyer_holds_one_subscription() {
 }
 
 #[test]
-fn the_pages_origin_names_the_subdomain_when_the_host_is_the_parents_backend() {
+fn a_subdomain_is_recognized_on_the_backend_host_too() {
     let mut conn = test_conn();
     conn.test_transaction::<_, Status, _>(|conn| {
-        configure_frontend_host(conn);
+        let mut new_config = models::default_server_configuration();
+        new_config.external_cdn_config = Some(
+            serde_json::to_value(ExternalCdnConfig {
+                frontend_host: FRONTEND_HOST.to_string(),
+                backend_host: "bullcity.test.backend.example".to_string(),
+                ..Default::default()
+            })
+            .unwrap(),
+        );
+        diesel::insert_into(server_configurations::table).values(&new_config).execute(conn).unwrap();
         let admin_user = create_user(conn, "sd8_admin");
         let admin = grant_permissions(conn, &admin_user, vec![Permission::Admin]);
         let owner = create_user(conn, "sd8owner");
         subscribe(conn, &admin, &owner, SubdomainSettings::default());
-        let resolve = |conn: &mut crate::db_connection::PgPooledConnection, host: &str, origin: Option<&str>| {
-            crate::logic::subdomains::resolve_subdomain_for_request(Some(host), origin, conn).unwrap().is_some()
-        };
-        // gRPC arrives at the parent's backend host; only the browser's Origin says which page it came from.
-        assert!(resolve(conn, "bullcity.test.backend.example", Some("https://sd8owner.bullcity.test")));
-        assert!(resolve(conn, "sd8owner.bullcity.test", None));
-        assert!(!resolve(conn, "bullcity.test.backend.example", Some("https://bullcity.test")));
-        assert!(!resolve(conn, "bullcity.test.backend.example", None));
+
+        // gRPC for the subdomain goes to `<label>.<backend_host>`; the parent's own backend host is the parent.
+        assert!(scope(conn, "sd8owner.bullcity.test.backend.example").is_some());
+        assert!(scope(conn, "sd8owner.bullcity.test").is_some());
+        assert!(scope(conn, "bullcity.test.backend.example").is_none());
+        assert!(scope(conn, "bullcity.test").is_none());
+
+        // The virtual configuration points the page's connection at the subdomain's own backend name.
+        let context = scope(conn, "sd8owner.bullcity.test");
+        let config = crate::rpcs::get_server_configuration_for((), &None, &context, conn)?;
+        let cdn = config.external_cdn_config.unwrap();
+        assert_eq!(cdn.frontend_host, "sd8owner.bullcity.test");
+        assert_eq!(cdn.backend_host, "sd8owner.bullcity.test.backend.example");
         Ok(())
     });
 }

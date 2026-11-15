@@ -52,12 +52,7 @@ macro_rules! subdomain_rpc {
             .extensions()
             .get::<crate::logic::subdomains::RequestHost>()
             .map(|h| h.0.clone());
-        let origin = $request
-            .extensions()
-            .get::<crate::logic::subdomains::RequestOrigin>()
-            .map(|o| o.0.clone());
-        let scope =
-            crate::logic::subdomains::resolve_subdomain_for_request(host.as_deref(), origin.as_deref(), &mut conn)?;
+        let scope = crate::logic::subdomains::resolve_subdomain(host.as_deref(), &mut conn)?;
         let inner = $request.into_inner();
         let request_log = format!("{:?}", &inner);
         let result = $rpc(inner, &user.as_ref(), &scope, &mut conn);
