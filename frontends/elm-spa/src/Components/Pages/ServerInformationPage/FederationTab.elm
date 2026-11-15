@@ -19,9 +19,10 @@ import Effect exposing (Effect)
 import Grpc
 import Html exposing (Html, button, div, h3, img, input, p, span, text)
 import Html.Attributes exposing (alt, class, disabled, id, placeholder, src, title, value)
-import Html.Events exposing (onClick, onInput)
+import Html.Events exposing (onClick, onInput, preventDefaultOn)
 import Html.Keyed
 import Http
+import Json.Decode
 import Proto.Rellm exposing (BlueskyServer, FederatedServer, MastodonServer, ServerConfiguration)
 import Set exposing (Set)
 import Shared
@@ -33,7 +34,6 @@ import Shared.AccountsPanel.RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer)
 import Task
 import Time
-import UI
 import UI.Classes exposing (classes, hostnameToCSSClass)
 import UI.Drag
 import UI.Flip
@@ -2091,6 +2091,24 @@ mastodonServerLogoImage logos domain =
             text ""
 
 
+{-| Fires `msg` (suppressing the key's default effect) when Enter is pressed in a text input --
+used so Enter saves the Mastodon server editor like its Save button does.
+-}
+onEnter : Msg -> Html.Attribute Msg
+onEnter msg =
+    preventDefaultOn "keydown"
+        (Json.Decode.field "key" Json.Decode.string
+            |> Json.Decode.andThen
+                (\key ->
+                    if key == "Enter" then
+                        Json.Decode.succeed ( msg, True )
+
+                    else
+                        Json.Decode.fail "Not the Enter key"
+                )
+        )
+
+
 mastodonAppIdField : String -> String -> Html Msg
 mastodonAppIdField domain appId =
     div [ class "server-details-color-row" ]
@@ -2099,7 +2117,7 @@ mastodonAppIdField domain appId =
             [ class "server-details-rename-input"
             , value appId
             , onInput (MastodonAppIdChanged domain)
-            , UI.onEnter MastodonServersSaveClicked
+            , onEnter MastodonServersSaveClicked
             ]
             []
         ]
@@ -2119,7 +2137,7 @@ mastodonAppSecretField domain mastodonServerEdit =
                 , placeholder "New App Secret"
                 , value mastodonServerEdit.pendingAppSecret
                 , onInput (MastodonAppSecretChanged domain)
-                , UI.onEnter MastodonServersSaveClicked
+                , onEnter MastodonServersSaveClicked
                 ]
                 []
             , button
