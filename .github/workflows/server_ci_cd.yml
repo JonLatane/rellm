@@ -169,7 +169,7 @@ jobs:
         run: make -C frontends/flutter build_web
 
       - name: Upload Flutter web build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: flutter-web-build
           path: frontends/flutter/build/web
@@ -238,7 +238,7 @@ jobs:
         run: yarn web:prod:build
 
       - name: Upload tamagui-web-build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tamagui-web-build
           path: |
@@ -287,7 +287,7 @@ jobs:
         run: make build
 
       - name: Upload elm-web-build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: elm-web-build
           path: frontends/elm-spa/public
@@ -659,18 +659,18 @@ jobs:
         run: echo ${{ steps.vars.outputs.dated_sha_short }} > deploys/docker/continuous_delivery_hash
 
       - name: Download Flutter web build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: flutter-web-build
           path: frontends/flutter/build/web
       - name: Download tamagui-web-build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: tamagui-web-build
           # The artifact holds `out` and `out-tamagui`, rooted at their common parent.
           path: frontends/tamagui/apps/next
       - name: Download elm-web-build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: elm-web-build
           path: frontends/elm-spa/public
@@ -1004,18 +1004,18 @@ jobs:
         run: echo ${{ steps.vars.outputs.dated_sha_short }} > deploys/docker/continuous_delivery_hash
 
       - name: Download tamagui-web-build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: tamagui-web-build
           # The artifact holds `out` and `out-tamagui`, rooted at their common parent.
           path: frontends/tamagui/apps/next
       - name: Download elm-web-build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: elm-web-build
           path: frontends/elm-spa/public
       - name: Download Flutter web build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: flutter-web-build
           path: frontends/flutter/build/web
@@ -1195,18 +1195,18 @@ jobs:
         run: echo ${{ steps.vars.outputs.dated_sha_short }} > deploys/docker/continuous_delivery_hash
 
       - name: Download tamagui-web-build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: tamagui-web-build
           # The artifact holds `out` and `out-tamagui`, rooted at their common parent.
           path: frontends/tamagui/apps/next
       - name: Download elm-web-build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: elm-web-build
           path: frontends/elm-spa/public
       - name: Download Flutter web build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: flutter-web-build
           path: frontends/flutter/build/web
