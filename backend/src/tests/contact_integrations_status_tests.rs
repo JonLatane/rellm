@@ -438,7 +438,7 @@ mod email {
             assert_eq!(dmarc.level, StatusLevel::Warning as i32);
             assert_eq!(
                 crate::logic::contact_integrations_status::copy::record_lines(dmarc.fix_hint.as_ref().unwrap()),
-                vec![("TXT", "_dmarc", "v=DMARC1; p=none; rua=mailto:postmaster@example.com")]
+                vec![("TXT", "_dmarc.example.com", "v=DMARC1; p=none; rua=mailto:postmaster@example.com")]
             );
             assert_eq!(domain.level, StatusLevel::Error as i32);
             Ok(())
@@ -474,8 +474,64 @@ mod email {
             let dkim = domain.checks.iter().find(|c| c.name == "Postmark: DKIM").unwrap();
             assert_eq!(
                 record_lines(dkim.fix_hint.as_ref().unwrap()),
-                vec![("TXT", "20240101pm._domainkey", "k=rsa; p=ABC123")]
+                vec![("TXT", "20240101pm._domainkey.example.com", "k=rsa; p=ABC123")]
             );
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn sendgrid_records_keep_their_own_zone_when_the_sender_is_a_subdomain() {
+        use crate::logic::contact_integrations_status::copy::record_lines;
+        let mut conn = test_conn();
+        conn.test_transaction::<_, tonic::Status, _>(|conn| {
+            configure(
+                conn,
+                None,
+                None,
+                email_only(
+                    None,
+                    Some(SendgridConfig {
+                        sendgrid_enabled: true,
+                        sendgrid_api_key: "SG.secret".to_string(),
+                        sendgrid_from_address: "a@sub.example.com".to_string(),
+                        ..Default::default()
+                    }),
+                ),
+                None,
+            );
+            let user = admin(conn, "cis_sendgrid_zone");
+            let (url, _) = serve_capturing(|request, _| {
+                let line = request_line(request);
+                if line.contains("/v3/scopes") {
+                    ("HTTP/1.1 200 OK", json!({"scopes": ["mail.send"]}))
+                } else if line.contains("/v3/whitelabel/domains") {
+                    (
+                        "HTTP/1.1 200 OK",
+                        json!([{"domain": "example.com", "subdomain": "em1", "valid": false, "dns": {
+                            "mail_cname": {"valid": true, "type": "cname", "host": "em1.example.com", "data": "u1.wl.sendgrid.net"},
+                            "dkim1": {"valid": false, "type": "cname", "host": "s1._domainkey.example.com", "data": "s1.domainkey.u1.wl.sendgrid.net"},
+                            "dkim2": {"valid": false, "type": "cname", "host": "s2._domainkey.example.com", "data": "s2.domainkey.u1.wl.sendgrid.net"}}}]),
+                    )
+                } else {
+                    ("HTTP/1.1 403 Forbidden", json!({}))
+                }
+            });
+            let status = get_contact_integrations_status_with(&user, conn, &env(&url, FakeDns::new(&[]))).unwrap();
+            assert_eq!(status.email_domains[0].domain, "sub.example.com");
+            // The CNAMEs live in example.com's zone, so they must keep their full names.
+            let provider_hint = check(&status.email_providers[0], "Domain authentication").fix_hint.clone().unwrap();
+            assert_eq!(
+                record_lines(&provider_hint),
+                vec![
+                    ("CNAME", "s1._domainkey.example.com", "s1.domainkey.u1.wl.sendgrid.net"),
+                    ("CNAME", "s2._domainkey.example.com", "s2.domainkey.u1.wl.sendgrid.net"),
+                ]
+            );
+            // ...while the DMARC/SPF suggestions for the sender itself use *its* full name.
+            let dmarc = status.email_domains[0].checks.iter().find(|c| c.name == "DMARC").unwrap();
+            let lines = record_lines(dmarc.fix_hint.as_ref().unwrap());
+            assert_eq!(lines[0].1, "_dmarc.sub.example.com");
             Ok(())
         });
     }

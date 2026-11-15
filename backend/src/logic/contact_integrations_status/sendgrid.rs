@@ -128,7 +128,7 @@ pub fn check(config: &SendgridConfig, ctx: &Ctx) -> ProviderReport {
                             invalid.push(record);
                             let (kind, data) = (str_of(r, "type").to_ascii_uppercase(), str_of(r, "data"));
                             if !host.is_empty() && !data.is_empty() && !kind.is_empty() {
-                                records.push(copy::record_line(&kind, &copy::relative_name(host, &auth_domain), data));
+                                records.push(copy::record_line(&kind, &host, data));
                             }
                         }
                     }

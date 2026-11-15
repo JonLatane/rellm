@@ -141,7 +141,7 @@ metricTile metric =
 
 {-| A toggle row ("3 checks" + chevron) over a folding list of `StatusCheck`s. For a domain's checks
 (`Just domain`) each check that names SPF/DKIM/DMARC/MX gets a one-line plain-English meaning, and record
-names in fix hints are shown in full under that domain.
+record names in fix hints get a "just type ..." hint when they sit under that domain.
 -}
 checksList : Handlers msg -> Set String -> Maybe String -> String -> List StatusCheck -> Html msg
 checksList handlers toggledChecks maybeDomain key checks =
@@ -446,11 +446,11 @@ dmarcFix handlers domainName dmarc =
     in
     if not dmarc.recordFound then
         fix "Publish a DMARC record that just watches for now."
-            { recordType = "TXT", name = "_dmarc", value = Status.dmarcStarterRecord domainName }
+            { recordType = "TXT", name = "_dmarc." ++ domainName, value = Status.dmarcStarterRecord domainName }
 
     else if (Status.dmarcPill dmarc).label == "Monitoring only" then
         fix "Once the reports look clean, move to quarantine (then reject)."
-            { recordType = "TXT", name = "_dmarc", value = Status.strengthenDmarc dmarc.rawRecord }
+            { recordType = "TXT", name = "_dmarc." ++ domainName, value = Status.strengthenDmarc dmarc.rawRecord }
 
     else
         text ""

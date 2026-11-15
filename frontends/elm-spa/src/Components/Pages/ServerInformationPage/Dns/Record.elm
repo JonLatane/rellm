@@ -2,7 +2,7 @@ module Components.Pages.ServerInformationPage.Dns.Record exposing
     ( DnsRecord
     , HintPart(..)
     , copyText
-    , fullName
+    , relativeHint
     , parseFixHint
     , parseRecordLine
     )
@@ -17,9 +17,10 @@ line as `TYPE name value`, e.g.
     Add a DMARC record so receivers know what to do with forged mail.
     TXT _dmarc v=DMARC1; p=none; rua=mailto:postmaster@example.com
 
-`TYPE` is `TXT`, `CNAME` or `MX`, `name` is a single token *relative to the domain the sentence names*
-(`@` is the domain itself; `_dmarc`, `s1._domainkey`), and `value` is the rest of the line (it may contain
-spaces and semicolons). `parseFixHint` splits a hint into ordered `HintPart`s --
+`TYPE` is `TXT`, `CNAME` or `MX`, `name` is a single token holding the *fully-qualified* name exactly as it
+should be created (no trailing dot; an apex record is the bare domain, e.g. `_dmarc.example.com`,
+`s1._domainkey.example.com`, `example.com`), and `value` is the rest of the line (it may contain spaces and
+semicolons). Names are always shown as given -- never re-expanded under some other domain. `parseFixHint` splits a hint into ordered `HintPart`s --
 `HintText` for anything that isn't a record line (rendered as plain text), `HintRecord` for a line that
 is -- so a malformed line degrades to text instead of being lost.
 
@@ -101,17 +102,36 @@ copyText record =
     record.recordType ++ " " ++ record.name ++ " " ++ record.value
 
 
-{-| The full DNS name of a record `name` relative to `domain`: the domain itself for `@`, else
-`name.domain` -- e.g. `_dmarc` under `example.com` is `_dmarc.example.com`. A name already under the
-domain (or empty) is returned as is.
+{-| For a record `name` that sits under `domain` or one of its parent domains (`mg.example.com` -> also
+`example.com`), the part before that suffix -- what a DNS host that adds the zone automatically wants
+typed -- e.g. `_dmarc.example.com` under `mail.example.com` gives `_dmarc`. `Nothing` when the name isn't
+under any of them (or is exactly a domain, which has no prefix); nothing is ever invented.
 -}
-fullName : String -> String -> String
-fullName domain name =
-    if name == "@" || String.isEmpty name then
-        domain
+relativeHint : String -> String -> Maybe String
+relativeHint domain name =
+    domainAndParents domain
+        |> List.filterMap
+            (\candidate ->
+                if String.endsWith ("." ++ candidate) name then
+                    Just (String.dropRight (String.length candidate + 1) name)
 
-    else if name == domain || String.endsWith ("." ++ domain) name then
-        name
+                else
+                    Nothing
+            )
+        |> List.head
 
-    else
-        name ++ "." ++ domain
+
+{-| `a.b.example.com` -> `[ a.b.example.com, b.example.com, example.com ]` (always at least two labels).
+-}
+domainAndParents : String -> List String
+domainAndParents domain =
+    case String.split "." domain of
+        _ :: rest ->
+            if List.length rest >= 2 then
+                domain :: domainAndParents (String.join "." rest)
+
+            else
+                [ domain ]
+
+        [] ->
+            []

@@ -141,6 +141,10 @@ fn domain_checks(ctx: &Ctx, api: &str, auth: Auth, from: &str, domain: &str, rep
     if let Some(entry) = entry {
         let id = entry.get("ID").map(|v| i64_of(v).to_string()).unwrap_or_default();
         let details = get_json(ctx, &format!("{api}/domains/{}", encode_segment(&id)), auth, &[], &[]).unwrap_or(entry.clone());
+        let zone = {
+            let name = str_of(&details, "Name");
+            if name.is_empty() { domain.to_string() } else { name.to_ascii_lowercase() }
+        };
         let dkim_ok = details.get("DKIMVerified").and_then(Value::as_bool).unwrap_or(false);
         let dkim_host = str_of(&details, "DKIMHost");
         let pending_host = str_of(&details, "DKIMPendingHost");
@@ -159,7 +163,7 @@ fn domain_checks(ctx: &Ctx, api: &str, auth: Auth, from: &str, domain: &str, rep
             dr.checks.push(make_check(StatusLevel::Ok, "Postmark: DKIM", "Postmark has verified your DKIM signing key.", None));
         } else {
             let records: Vec<String> = if !dkim_record_host.is_empty() && !dkim_value.is_empty() {
-                vec![copy::record_line("TXT", &copy::relative_name(dkim_record_host, domain), dkim_value)]
+                vec![copy::record_line("TXT", &dkim_record_host, dkim_value)]
             } else {
                 vec![]
             };
@@ -168,7 +172,7 @@ fn domain_checks(ctx: &Ctx, api: &str, auth: Auth, from: &str, domain: &str, rep
                 "Postmark: DKIM",
                 format!("Postmark hasn't verified your DKIM signing key yet. {}", copy::DKIM),
                 Some(&copy::with_records(
-                    &format!("Add this record to `{domain}`, then click Verify in Postmark (Sender Signatures > Domains):"),
+                    &format!("Add this record to `{zone}`, then click Verify in Postmark (Sender Signatures > Domains):"),
                     &records,
                 )),
             ));
@@ -187,8 +191,8 @@ fn domain_checks(ctx: &Ctx, api: &str, auth: Auth, from: &str, domain: &str, rep
                 "Postmark: DKIM rotation",
                 "A new DKIM key is waiting to be published.",
                 Some(&copy::with_records(
-                    &format!("Add this record to `{domain}` to finish the key rotation:"),
-                    &[copy::record_line("TXT", &copy::relative_name(pending_host, domain), str_of(&details, "DKIMPendingTextValue"))],
+                    &format!("Add this record to `{zone}` to finish the key rotation:"),
+                    &[copy::record_line("TXT", &pending_host, str_of(&details, "DKIMPendingTextValue"))],
                 )),
             ));
         }
@@ -207,13 +211,13 @@ fn domain_checks(ctx: &Ctx, api: &str, auth: Auth, from: &str, domain: &str, rep
             let records: Vec<String> = if cname.is_empty() {
                 vec![]
             } else {
-                vec![copy::record_line("CNAME", &copy::relative_name(return_path, domain), cname)]
+                vec![copy::record_line("CNAME", &return_path, cname)]
             };
             dr.checks.push(make_check(
                 StatusLevel::Warning,
                 "Postmark: Return-Path",
                 format!("Postmark hasn't verified your Return-Path domain ({return_path})."),
-                Some(&copy::with_records(&format!("Add this record to `{domain}`, then click Verify in Postmark:"), &records)),
+                Some(&copy::with_records(&format!("Add this record to `{zone}`, then click Verify in Postmark:"), &records)),
             ));
         }
         report.ok(NAME, format!("{domain} is covered by the Postmark domain \"{}\".", str_of(&details, "Name")));

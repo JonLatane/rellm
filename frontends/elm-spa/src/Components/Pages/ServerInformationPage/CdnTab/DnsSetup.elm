@@ -257,12 +257,7 @@ frontendStep frontend backend =
     , badge = Just "Proxied (orange cloud)"
     , records =
         [ { recordType = "CNAME"
-          , name =
-                if isApex frontend then
-                    "@"
-
-                else
-                    frontend
+          , name = frontend
           , value = backend
           }
         ]
@@ -270,7 +265,7 @@ frontendStep frontend backend =
     , links = []
     , note =
         if isApex frontend then
-            Just "Root domain: Cloudflare flattens this CNAME for you. Elsewhere, use A/AAAA records with your server's IP instead."
+            Just "Root domain (enter @ if your DNS host wants a relative name): Cloudflare flattens this CNAME for you. Elsewhere, use A/AAAA records with your server's IP instead."
 
         else
             Just "Or use A/AAAA records with your server's IP."

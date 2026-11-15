@@ -25,21 +25,35 @@ suite =
                 \_ ->
                     [ Record.parseRecordLine "MX example.com 10 mail.example.com"
                     , Record.parseRecordLine "A host.example.com 203.0.113.9"
-                    , Record.parseRecordLine "TXT @ v=spf1 include:spf.mtasv.net ~all"
+                    , Record.parseRecordLine "TXT example.com v=spf1 include:spf.mtasv.net ~all"
                     ]
                         |> Expect.equal
                             [ Just { recordType = "MX", name = "example.com", value = "10 mail.example.com" }
                             , Nothing
-                            , Just { recordType = "TXT", name = "@", value = "v=spf1 include:spf.mtasv.net ~all" }
+                            , Just { recordType = "TXT", name = "example.com", value = "v=spf1 include:spf.mtasv.net ~all" }
                             ]
             , test "a sentence that merely starts with A stays text" <|
                 \_ ->
                     Record.parseFixHint "A DMARC record is missing."
                         |> Expect.equal [ HintText "A DMARC record is missing." ]
-            , test "fullName spells out the complete name" <|
+            , test "relativeHint only when the name is under the domain or a parent" <|
                 \_ ->
-                    [ Record.fullName "example.com" "@", Record.fullName "example.com" "_dmarc", Record.fullName "mg.example.com" "s1._domainkey", Record.fullName "example.com" "_dmarc.example.com" ]
-                        |> Expect.equal [ "example.com", "_dmarc.example.com", "s1._domainkey.mg.example.com", "_dmarc.example.com" ]
+                    [ Record.relativeHint "example.com" "_dmarc.example.com"
+                    , Record.relativeHint "mail.example.com" "_dmarc.example.com"
+                    , Record.relativeHint "mail.example.com" "s1._domainkey.mail.example.com"
+                    , Record.relativeHint "example.com" "example.com"
+                    , Record.relativeHint "example.com" "_dmarc.other.net"
+                    , Record.relativeHint "example.com" "_dmarc.com"
+                    ]
+                        |> Expect.equal [ Just "_dmarc", Just "_dmarc", Just "s1._domainkey", Nothing, Nothing, Nothing ]
+            , test "fully-qualified names parse as given" <|
+                \_ ->
+                    Record.parseFixHint "Add this.\nTXT _dmarc.example.com v=DMARC1; p=none\nCNAME s1._domainkey.example.com u1.wl.sendgrid.net"
+                        |> Expect.equal
+                            [ HintText "Add this."
+                            , HintRecord { recordType = "TXT", name = "_dmarc.example.com", value = "v=DMARC1; p=none" }
+                            , HintRecord { recordType = "CNAME", name = "s1._domainkey.example.com", value = "u1.wl.sendgrid.net" }
+                            ]
             , test "unknown types, missing name or value, and blank lines" <|
                 \_ ->
                     Record.parseFixHint "SRV _x y\nTXT onlyname\n\n   \nTXT\nplain"
@@ -137,7 +151,7 @@ suite =
                     ( step |> Maybe.andThen (.records >> List.head) |> Maybe.map .name
                     , step |> Maybe.andThen .note |> Maybe.map (String.contains "flattens")
                     )
-                        |> Expect.equal ( Just "@", Just True )
+                        |> Expect.equal ( Just "example.com", Just True )
             , test "the check step has the URL and a curl line" <|
                 \_ ->
                     DnsSetup.plan { frontendHost = "example.com", backendHost = "app.example.net", secureMedia = False }

@@ -112,7 +112,7 @@ pub fn check(config: &MailgunConfig, ctx: &Ctx) -> ProviderReport {
                 } else {
                     ("Mailgun: tracking CNAME", false)
                 };
-                let record = copy::record_line(rtype, &copy::relative_name(&name, &domain), value);
+                let record = copy::record_line(rtype, &&name, value);
                 dr.checks.push(if valid {
                     let what = if label == "Mailgun: DKIM" { "DKIM signing record" } else if critical { "SPF record" } else { "tracking record" };
                     make_check(StatusLevel::Ok, label, format!("Mailgun has verified your {what}."), None)

@@ -11,9 +11,11 @@
 //! ```
 //!
 //! e.g. `TXT _dmarc v=DMARC1; p=none; rua=mailto:postmaster@example.com`. `TYPE` is a DNS record
-//! type (`TXT`, `CNAME`, `MX`), `name` is the host to enter in the DNS panel *relative to the
-//! domain the sentence names* (`@` means the domain itself), and `value` is everything after the
-//! second space (it may contain spaces and semicolons). A line is a record line iff it starts with
+//! type (`TXT`, `CNAME`, `MX`), `name` is the **fully-qualified** host name (lowercase, no trailing
+//! dot; the apex is just the bare domain, e.g. `TXT example.com v=spf1 ...`,
+//! `TXT _dmarc.example.com v=DMARC1; ...`, `CNAME s1._domainkey.example.com u123.wl.sendgrid.net`) --
+//! never relative to anything, because a record can live in a different zone than the sending
+//! domain. `value` is everything after the second space (it may contain spaces and semicolons). A line is a record line iff it starts with
 //! `TXT `, `CNAME ` or `MX ` -- [`parse_record_line`] is the reference parser. Lines before the
 //! first record line are prose.
 
@@ -36,9 +38,15 @@ pub fn dmarc_policy(policy: &str) -> &'static str {
     }
 }
 
-/// `TYPE name value` -- one exact DNS record, formatted for copying.
+/// A fully-qualified record name: lowercase, no trailing dot, no surrounding space.
+pub fn fqdn(name: &str) -> String {
+    name.trim().trim_end_matches('.').to_ascii_lowercase()
+}
+
+/// `TYPE fqdn value` -- one exact DNS record, formatted for copying. `name` must already be the
+/// full host name (it is only normalized, never made relative).
 pub fn record_line(record_type: &str, name: &str, value: &str) -> String {
-    format!("{record_type} {name} {}", value.trim())
+    format!("{record_type} {} {}", fqdn(name), value.trim())
 }
 
 /// `sentence` followed by each record on its own line.
@@ -51,20 +59,6 @@ pub fn with_records(sentence: &str, records: &[String]) -> String {
     out
 }
 
-/// A record name relative to `domain`: `@` for the domain itself, `_dmarc` for `_dmarc.<domain>`;
-/// names outside the domain are returned unchanged.
-pub fn relative_name(full: &str, domain: &str) -> String {
-    let full = full.trim().trim_end_matches('.').to_ascii_lowercase();
-    let domain = domain.trim().trim_end_matches('.').to_ascii_lowercase();
-    if full == domain {
-        "@".to_string()
-    } else if let Some(prefix) = full.strip_suffix(&format!(".{domain}")) {
-        prefix.to_string()
-    } else {
-        full
-    }
-}
-
 /// Reference parser for one record line of a `fix_hint`: `Some((type, name, value))`.
 pub fn parse_record_line(line: &str) -> Option<(&str, &str, &str)> {
     let mut parts = line.splitn(3, ' ');
@@ -72,7 +66,7 @@ pub fn parse_record_line(line: &str) -> Option<(&str, &str, &str)> {
     if !matches!(record_type, "TXT" | "CNAME" | "MX") {
         return None;
     }
-    let name = parts.next().filter(|n| !n.is_empty())?;
+    let name = parts.next().filter(|n| !n.is_empty() && *n != "@" && !n.ends_with('.'))?;
     let value = parts.next().filter(|v| !v.is_empty())?;
     Some((record_type, name, value))
 }
@@ -87,29 +81,31 @@ mod tests {
     use super::*;
 
     #[test]
-    fn record_line_round_trips() {
-        let line = record_line("TXT", "_dmarc", "v=DMARC1; p=none; rua=mailto:postmaster@example.com");
-        assert_eq!(line, "TXT _dmarc v=DMARC1; p=none; rua=mailto:postmaster@example.com");
+    fn record_line_round_trips_with_a_fully_qualified_name() {
+        let line = record_line("TXT", "_dmarc.example.com", "v=DMARC1; p=none; rua=mailto:postmaster@example.com");
+        assert_eq!(line, "TXT _dmarc.example.com v=DMARC1; p=none; rua=mailto:postmaster@example.com");
         assert_eq!(
             parse_record_line(&line),
-            Some(("TXT", "_dmarc", "v=DMARC1; p=none; rua=mailto:postmaster@example.com"))
+            Some(("TXT", "_dmarc.example.com", "v=DMARC1; p=none; rua=mailto:postmaster@example.com"))
         );
     }
 
     #[test]
-    fn prose_is_not_a_record_line() {
-        assert_eq!(parse_record_line("Add this record to example.com:"), None);
-        assert_eq!(parse_record_line("TXT"), None);
-        assert_eq!(parse_record_line("TXT @"), None);
-        let hint = with_records("Add this record:", &[record_line("TXT", "@", "v=spf1 -all")]);
-        assert_eq!(record_lines(&hint), vec![("TXT", "@", "v=spf1 -all")]);
+    fn names_are_normalized_never_relativized() {
+        assert_eq!(record_line("TXT", "Example.COM.", "v=spf1 -all"), "TXT example.com v=spf1 -all");
+        assert_eq!(
+            record_line("CNAME", "s1._domainkey.example.com", "u1.wl.sendgrid.net"),
+            "CNAME s1._domainkey.example.com u1.wl.sendgrid.net"
+        );
     }
 
     #[test]
-    fn relative_names() {
-        assert_eq!(relative_name("example.com", "example.com"), "@");
-        assert_eq!(relative_name("_dmarc.example.com.", "example.com"), "_dmarc");
-        assert_eq!(relative_name("s1._domainkey.mg.example.com", "mg.example.com"), "s1._domainkey");
-        assert_eq!(relative_name("other.net", "example.com"), "other.net");
+    fn prose_and_relative_names_are_not_record_lines() {
+        assert_eq!(parse_record_line("Add this record to example.com:"), None);
+        assert_eq!(parse_record_line("TXT"), None);
+        assert_eq!(parse_record_line("TXT example.com"), None);
+        assert_eq!(parse_record_line("TXT @ v=spf1 -all"), None);
+        let hint = with_records("Add this record:", &[record_line("TXT", "example.com", "v=spf1 -all")]);
+        assert_eq!(record_lines(&hint), vec![("TXT", "example.com", "v=spf1 -all")]);
     }
 }

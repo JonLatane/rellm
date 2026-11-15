@@ -138,7 +138,7 @@ fn spf_check(domain: &str, lookup: &DnsLookup, used_by: &[String]) -> StatusChec
             detail,
             Some(&copy::with_records(
                 &format!("Add this record to `{domain}`:"),
-                &[copy::record_line("TXT", "@", &value)],
+                &[copy::record_line("TXT", domain, &value)],
             )),
         );
     }
@@ -150,7 +150,7 @@ fn spf_check(domain: &str, lookup: &DnsLookup, used_by: &[String]) -> StatusChec
             Some("Combine them into a single TXT record (merge the `include:` parts) and delete the others."),
         );
     }
-    let fixed = copy::record_line("TXT", "@", &spf_with_soft_fail(&spf.record));
+    let fixed = copy::record_line("TXT", domain, &spf_with_soft_fail(&spf.record));
     let (mut level, mut detail, mut fix) = match (spf.all, &spf.redirect) {
         (Some('+'), _) => (
             StatusLevel::Error,
@@ -234,29 +234,29 @@ fn dmarc_check(domain: &str, dmarc: &DmarcStatus, found_at: &Option<String>) -> 
     let fix = if !dmarc.record_found && level == StatusLevel::Warning {
         Some(copy::with_records(
             &format!("Start in monitoring mode. Add this record to `{domain}` (replace the address with a mailbox you read; it receives the reports):"),
-            &[copy::record_line("TXT", "_dmarc", &suggested_dmarc_record(domain))],
+            &[copy::record_line("TXT", &format!("_dmarc.{domain}"), &suggested_dmarc_record(domain))],
         ))
     } else if dmarc.record_found && level == StatusLevel::Error {
         Some("Keep exactly one DMARC record (a TXT record named `_dmarc`) and delete the others.".to_string())
     } else if dmarc.record_found && effective_policy == "none" && parent.is_some() {
         Some(copy::with_records(
             &format!("This domain is only covered by its parent's monitoring-only policy. Once your reports look clean, give `{domain}` its own record:"),
-            &[copy::record_line("TXT", "_dmarc", &set_dmarc_tag(&suggested_dmarc_record(domain), "p", "quarantine"))],
+            &[copy::record_line("TXT", &format!("_dmarc.{domain}"), &set_dmarc_tag(&suggested_dmarc_record(domain), "p", "quarantine"))],
         ))
     } else if dmarc.record_found && effective_policy == "none" {
         Some(copy::with_records(
-            "Once your reports show only your own mail passing, tighten the policy. Replace the record on `_dmarc` with:",
-            &[copy::record_line("TXT", "_dmarc", &set_dmarc_tag(own_raw, "p", "quarantine"))],
+            &format!("Once your reports show only your own mail passing, tighten the policy. Replace the record at `_dmarc.{domain}` with:"),
+            &[copy::record_line("TXT", &format!("_dmarc.{domain}"), &set_dmarc_tag(own_raw, "p", "quarantine"))],
         ))
     } else if dmarc.record_found && dmarc.percentage < 100 && level == StatusLevel::Warning && parent.is_none() {
         Some(copy::with_records(
-            "Raise `pct` to 100 once you're confident. Replace the record on `_dmarc` with:",
-            &[copy::record_line("TXT", "_dmarc", &set_dmarc_tag(own_raw, "pct", "100"))],
+            &format!("Raise `pct` to 100 once you're confident. Replace the record at `_dmarc.{domain}` with:"),
+            &[copy::record_line("TXT", &format!("_dmarc.{domain}"), &set_dmarc_tag(own_raw, "pct", "100"))],
         ))
     } else if dmarc.record_found && level == StatusLevel::Warning && parent.is_none() && dmarc.policy.is_empty() {
         Some(copy::with_records(
-            "Add a policy. Replace the record on `_dmarc` with:",
-            &[copy::record_line("TXT", "_dmarc", &set_dmarc_tag(own_raw, "p", "none"))],
+            &format!("Add a policy. Replace the record at `_dmarc.{domain}` with:"),
+            &[copy::record_line("TXT", &format!("_dmarc.{domain}"), &set_dmarc_tag(own_raw, "p", "none"))],
         ))
     } else {
         None
@@ -272,10 +272,10 @@ fn reports_check(domain: &str, dmarc: &DmarcStatus, found_at: &Option<String>) -
             "DMARC reports",
             "You aren't getting DMARC reports, so you can't see who else sends as your domain.",
             Some(&copy::with_records(
-                "Add a `rua` address (a mailbox you read) to the record. Replace the record on `_dmarc` with:",
+                &format!("Add a `rua` address (a mailbox you read) to the record. Replace the record at `_dmarc.{domain}` with:"),
                 &[copy::record_line(
                     "TXT",
-                    "_dmarc",
+                    &format!("_dmarc.{domain}"),
                     &set_dmarc_tag(&dmarc.raw_record, "rua", &format!("mailto:postmaster@{domain}")),
                 )],
             )),
@@ -553,7 +553,7 @@ mod tests {
         let dmarc = status.checks.iter().find(|c| c.name == "DMARC").unwrap();
         assert_eq!(
             copy::record_lines(dmarc.fix_hint.as_ref().unwrap()),
-            vec![("TXT", "_dmarc", "v=DMARC1; p=none; rua=mailto:postmaster@example.com")]
+            vec![("TXT", "_dmarc.example.com", "v=DMARC1; p=none; rua=mailto:postmaster@example.com")]
         );
         assert_eq!(level_of(&status, "SPF"), StatusLevel::Warning as i32);
         assert_eq!(level_of(&status, "DKIM"), StatusLevel::Warning as i32);
@@ -659,7 +659,7 @@ mod tests {
         assert!(dmarc.detail.contains("sp=none"), "{}", dmarc.detail);
         let lines = copy::record_lines(dmarc.fix_hint.as_ref().unwrap());
         assert_eq!(lines.len(), 1);
-        assert_eq!(lines[0].1, "_dmarc");
+        assert_eq!(lines[0].1, "_dmarc.mail.example.com");
         assert!(lines[0].2.contains("p=quarantine"), "{lines:?}");
         assert_eq!(status.dmarc.as_ref().unwrap().level, StatusLevel::Warning as i32);
         // The apex domain itself is still judged by p=.
@@ -672,7 +672,7 @@ mod tests {
         let r = FakeResolver::new();
         let status = build_domain_status(&sending("example.com", &["sendgrid", "mailgun"]), &[], &r);
         let spf = status.checks.iter().find(|c| c.name == "SPF").unwrap();
-        assert_eq!(copy::record_lines(spf.fix_hint.as_ref().unwrap()), vec![("TXT", "@", "v=spf1 include:sendgrid.net include:mailgun.org ~all")]);
+        assert_eq!(copy::record_lines(spf.fix_hint.as_ref().unwrap()), vec![("TXT", "example.com", "v=spf1 include:sendgrid.net include:mailgun.org ~all")]);
         assert!(spf.detail.contains(copy::SPF));
     }
 
@@ -682,13 +682,13 @@ mod tests {
         r.txt.insert("example.com".into(), vec!["v=spf1 include:sendgrid.net +all".into()]);
         let status = build_domain_status(&sending("example.com", &[]), &[], &r);
         let spf = status.checks.iter().find(|c| c.name == "SPF").unwrap();
-        assert_eq!(copy::record_lines(spf.fix_hint.as_ref().unwrap()), vec![("TXT", "@", "v=spf1 include:sendgrid.net ~all")]);
+        assert_eq!(copy::record_lines(spf.fix_hint.as_ref().unwrap()), vec![("TXT", "example.com", "v=spf1 include:sendgrid.net ~all")]);
 
         let mut r = FakeResolver::new();
         r.txt.insert("example.com".into(), vec!["v=spf1 include:sendgrid.net".into()]);
         let status = build_domain_status(&sending("example.com", &[]), &[], &r);
         let spf = status.checks.iter().find(|c| c.name == "SPF").unwrap();
-        assert_eq!(copy::record_lines(spf.fix_hint.as_ref().unwrap()), vec![("TXT", "@", "v=spf1 include:sendgrid.net ~all")]);
+        assert_eq!(copy::record_lines(spf.fix_hint.as_ref().unwrap()), vec![("TXT", "example.com", "v=spf1 include:sendgrid.net ~all")]);
     }
 
     #[test]
@@ -700,7 +700,7 @@ mod tests {
         assert!(dmarc.detail.starts_with("Monitoring only"), "{}", dmarc.detail);
         assert_eq!(
             copy::record_lines(dmarc.fix_hint.as_ref().unwrap()),
-            vec![("TXT", "_dmarc", "v=DMARC1; p=quarantine; rua=mailto:r@example.com")]
+            vec![("TXT", "_dmarc.example.com", "v=DMARC1; p=quarantine; rua=mailto:r@example.com")]
         );
     }
 
@@ -712,7 +712,7 @@ mod tests {
         let dmarc = status.checks.iter().find(|c| c.name == "DMARC").unwrap();
         assert_eq!(
             copy::record_lines(dmarc.fix_hint.as_ref().unwrap()),
-            vec![("TXT", "_dmarc", "v=DMARC1; p=reject; pct=100; rua=mailto:r@example.com")]
+            vec![("TXT", "_dmarc.example.com", "v=DMARC1; p=reject; pct=100; rua=mailto:r@example.com")]
         );
 
         let mut r = FakeResolver::new();
@@ -721,7 +721,7 @@ mod tests {
         let reports = status.checks.iter().find(|c| c.name == "DMARC reports").unwrap();
         assert_eq!(
             copy::record_lines(reports.fix_hint.as_ref().unwrap()),
-            vec![("TXT", "_dmarc", "v=DMARC1; p=reject; rua=mailto:postmaster@example.com")]
+            vec![("TXT", "_dmarc.example.com", "v=DMARC1; p=reject; rua=mailto:postmaster@example.com")]
         );
     }
 

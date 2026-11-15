@@ -56,9 +56,9 @@ copyButton copy copied content =
 
 
 {-| One record as labelled rows (Type / Name / Value) in monospace, each of Name and Value with its own
-Copy button -- the shape every DNS dashboard asks for. With a `domain` the record's name is relative to
-(`@`, `_dmarc`), a "Full name" row spells out the complete name too, since DNS panels differ on which
-they want.
+Copy button -- the shape every DNS dashboard asks for. The name is shown exactly as given. When
+`maybeDomain` (the card's domain) or one of its parents is a suffix of the name, a small line says what to
+type if the DNS host adds the domain automatically (`Record.relativeHint`).
 -}
 recordBlock : (String -> msg) -> Maybe String -> Maybe String -> DnsRecord -> Html msg
 recordBlock copy copied maybeDomain record =
@@ -74,22 +74,17 @@ recordBlock copy copied maybeDomain record =
     div [ class "dns-record" ]
         [ row "Type" record.recordType Nothing
         , row "Name" record.name (Just (copyButton copy copied record.name))
-        , case maybeDomain of
-            Just domain ->
-                let
-                    full : String
-                    full =
-                        Record.fullName domain record.name
-                in
-                if full == record.name then
-                    text ""
-
-                else
-                    row "Full name" full (Just (copyButton copy copied full))
+        , row "Value" record.value (Just (copyButton copy copied record.value))
+        , case maybeDomain |> Maybe.andThen (\domain -> Record.relativeHint domain record.name) of
+            Just prefix ->
+                p [ class "dns-record-hint" ]
+                    [ text "If your DNS host adds the domain automatically, enter just "
+                    , code [] [ text prefix ]
+                    , text "."
+                    ]
 
             Nothing ->
                 text ""
-        , row "Value" record.value (Just (copyButton copy copied record.value))
         ]
 
 
@@ -130,7 +125,7 @@ explainer config body =
 
 
 {-| A tiny "How to fix" box for a server fix hint: its sentences as text, each exact-record line as a
-copyable `recordBlock` (names are relative to `maybeDomain`, see there).
+copyable `recordBlock` (see there for `maybeDomain`).
 -}
 fixHint : (String -> msg) -> Maybe String -> Maybe String -> String -> Html msg
 fixHint copy copied maybeDomain hint =
