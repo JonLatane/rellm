@@ -26,7 +26,7 @@ module Shared.Countabilibar exposing
     )
 
 {-| The "Countabilibar": a row at the bottom of the top nav, *below* `Shared.Breadcrumbs`' trail (see
-`UI.headerNav`), counting the posts and events the page is currently showing -- per server when the
+`UI.headerNav`), counting the posts, events, videos and tracks the page is currently showing -- per server when the
 page spans several (each server a logo + name chip with its post/event counts), per user when it spans
 just one. Every entry has a checkbox to its left (checked = visible); unchecking one hides that
 server's/user's posts and events from the page, and checking it brings them back. With several
@@ -124,6 +124,8 @@ type alias ServerCounts =
     { host : String
     , postCount : Int
     , eventCount : Int
+    , videoCount : Int
+    , trackCount : Int
 
     -- Most-counted user first.
     , authorCounts : List AuthorCounts
@@ -138,17 +140,24 @@ type alias AuthorCounts =
     { author : Author
     , postCount : Int
     , eventCount : Int
+    , videoCount : Int
+    , trackCount : Int
     , postIds : Set String
     , eventIds : Set String
+    , videoIds : Set String
+    , trackIds : Set String
     }
 
 
 {-| What's being counted. Replies aren't counted yet: `PostsPage` only counts while it's listing
-top-level posts.
+top-level posts. `VideosKind`/`TracksKind` are what the Video/Audio pages (`Components.MediaFeed`) show:
+a video or an audio track, from a Rellm server's own media or a Mastodon/Bluesky post that has one.
 -}
 type Kind
     = PostsKind
     | EventsKind
+    | VideosKind
+    | TracksKind
 
 
 type Msg
@@ -158,11 +167,15 @@ type Msg
       -- server's response lands.
     | CountPosts String (List ( Author, String ))
     | CountEvents String (List ( Author, String ))
+    | CountVideos String (List ( Author, String ))
+    | CountTracks String (List ( Author, String ))
     | Reset
     | RemoveHost String
     | RemoveAuthor String Author
     | RemovePost String Author String
     | RemoveEvent String Author String
+    | RemoveVideo String Author String
+    | RemoveTrack String Author String
     | HideHost String
     | ShowHost String
     | ToggleHostVisibility String
@@ -425,6 +438,12 @@ countMsg kind host pairs =
         EventsKind ->
             CountEvents host pairs
 
+        VideosKind ->
+            CountVideos host pairs
+
+        TracksKind ->
+            CountTracks host pairs
+
 
 removeMsg : Kind -> String -> Author -> String -> Msg
 removeMsg kind host author id =
@@ -434,6 +453,12 @@ removeMsg kind host author id =
 
         EventsKind ->
             RemoveEvent host author id
+
+        VideosKind ->
+            RemoveVideo host author id
+
+        TracksKind ->
+            RemoveTrack host author id
 
 
 idsOf : Kind -> AuthorCounts -> Set String
@@ -445,6 +470,12 @@ idsOf kind counts =
         EventsKind ->
             counts.eventIds
 
+        VideosKind ->
+            counts.videoIds
+
+        TracksKind ->
+            counts.trackIds
+
 
 
 -- COUNTING
@@ -452,22 +483,36 @@ idsOf kind counts =
 
 emptyAuthorCounts : Author -> AuthorCounts
 emptyAuthorCounts author =
-    { author = author, postCount = 0, eventCount = 0, postIds = Set.empty, eventIds = Set.empty }
+    { author = author
+    , postCount = 0
+    , eventCount = 0
+    , videoCount = 0
+    , trackCount = 0
+    , postIds = Set.empty
+    , eventIds = Set.empty
+    , videoIds = Set.empty
+    , trackIds = Set.empty
+    }
 
 
 emptyServerCounts : String -> ServerCounts
 emptyServerCounts host =
-    { host = host, postCount = 0, eventCount = 0, authorCounts = [] }
+    { host = host, postCount = 0, eventCount = 0, videoCount = 0, trackCount = 0, authorCounts = [] }
 
 
 recountAuthor : AuthorCounts -> AuthorCounts
 recountAuthor counts =
-    { counts | postCount = Set.size counts.postIds, eventCount = Set.size counts.eventIds }
+    { counts
+        | postCount = Set.size counts.postIds
+        , eventCount = Set.size counts.eventIds
+        , videoCount = Set.size counts.videoIds
+        , trackCount = Set.size counts.trackIds
+    }
 
 
 totalOfAuthor : AuthorCounts -> Int
 totalOfAuthor counts =
-    counts.postCount + counts.eventCount
+    counts.postCount + counts.eventCount + counts.videoCount + counts.trackCount
 
 
 {-| Drops users with nothing left, recounts everything and sorts users highest-first (ties by user id, so
@@ -487,12 +532,14 @@ recountServer server =
         | authorCounts = authors
         , postCount = List.sum (List.map .postCount authors)
         , eventCount = List.sum (List.map .eventCount authors)
+        , videoCount = List.sum (List.map .videoCount authors)
+        , trackCount = List.sum (List.map .trackCount authors)
     }
 
 
 totalOfServer : ServerCounts -> Int
 totalOfServer server =
-    server.postCount + server.eventCount
+    server.postCount + server.eventCount + server.videoCount + server.trackCount
 
 
 serverFor : String -> Model -> ServerCounts
@@ -594,6 +641,12 @@ insertId kind id counts =
         EventsKind ->
             { counts | eventIds = Set.insert id counts.eventIds }
 
+        VideosKind ->
+            { counts | videoIds = Set.insert id counts.videoIds }
+
+        TracksKind ->
+            { counts | trackIds = Set.insert id counts.trackIds }
+
 
 deleteId : Kind -> String -> AuthorCounts -> AuthorCounts
 deleteId kind id counts =
@@ -603,6 +656,12 @@ deleteId kind id counts =
 
         EventsKind ->
             { counts | eventIds = Set.remove id counts.eventIds }
+
+        VideosKind ->
+            { counts | videoIds = Set.remove id counts.videoIds }
+
+        TracksKind ->
+            { counts | trackIds = Set.remove id counts.trackIds }
 
 
 {-| Everything but the animation plumbing -- the data half of `update`.
@@ -621,6 +680,12 @@ applyData msg model =
 
         CountEvents host pairs ->
             addIds EventsKind host pairs model
+
+        CountVideos host pairs ->
+            addIds VideosKind host pairs model
+
+        CountTracks host pairs ->
+            addIds TracksKind host pairs model
 
         Reset ->
             reset model
@@ -648,6 +713,12 @@ applyData msg model =
 
         RemoveEvent host author id ->
             removeIds EventsKind host [ ( author, id ) ] model
+
+        RemoveVideo host author id ->
+            removeIds VideosKind host [ ( author, id ) ] model
+
+        RemoveTrack host author id ->
+            removeIds TracksKind host [ ( author, id ) ] model
 
         HideHost host ->
             if List.any (\server -> server.host == host) model.hiddenHosts then
@@ -777,6 +848,8 @@ type alias EntryData =
     , kind : EntryKind
     , posts : Int
     , events : Int
+    , videos : Int
+    , tracks : Int
     , visible : Bool
     }
 
@@ -826,7 +899,7 @@ serverEntry : Model -> String -> EntryData
 serverEntry model host =
     case List.filter (\server -> server.host == host) model.hiddenHosts |> List.head of
         Just cached ->
-            { key = "s:" ++ host, kind = ServerEntry host, posts = cached.postCount, events = cached.eventCount, visible = False }
+            { key = "s:" ++ host, kind = ServerEntry host, posts = cached.postCount, events = cached.eventCount, videos = cached.videoCount, tracks = cached.trackCount, visible = False }
 
         Nothing ->
             let
@@ -834,7 +907,7 @@ serverEntry model host =
                 server =
                     serverFor host model
             in
-            { key = "s:" ++ host, kind = ServerEntry host, posts = server.postCount, events = server.eventCount, visible = True }
+            { key = "s:" ++ host, kind = ServerEntry host, posts = server.postCount, events = server.eventCount, videos = server.videoCount, tracks = server.trackCount, visible = True }
 
 
 authorEntries : Model -> String -> List EntryData
@@ -846,6 +919,8 @@ authorEntries model host =
             , kind = AuthorEntry host counts.author
             , posts = counts.postCount
             , events = counts.eventCount
+            , videos = counts.videoCount
+            , tracks = counts.trackCount
             , visible = visible
             }
     in
@@ -1349,7 +1424,7 @@ countsView data =
     in
     span [ class "countabilibar-counts" ]
         [ text
-            (case part data.posts "post" ++ part data.events "event" of
+            (case part data.posts "post" ++ part data.events "event" ++ part data.videos "video" ++ part data.tracks "track" of
                 [] ->
                     "0"
 

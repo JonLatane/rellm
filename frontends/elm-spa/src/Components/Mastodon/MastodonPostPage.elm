@@ -109,7 +109,16 @@ init shared instanceHost statusId =
 -}
 fetchEffect : Shared.Model -> String -> String -> Effect Msg
 fetchEffect shared instanceHost statusId =
-    Mastodon.fetchStatusWithQuotes instanceHost statusId
+    (case connectedAccessToken shared instanceHost of
+        -- As the connected account, so its own followers-only/direct posts load (falling back to anonymous if it's
+        -- rejected, as for the thread below).
+        Just token ->
+            Mastodon.fetchStatusWithQuotesAs (Just token) instanceHost statusId
+                |> Task.onError (\_ -> Mastodon.fetchStatusWithQuotes instanceHost statusId)
+
+        Nothing ->
+            Mastodon.fetchStatusWithQuotes instanceHost statusId
+    )
         |> Task.andThen
             (\( post, sensitive ) ->
                 Mastodon.fetchThreadAs (connectedAccessToken shared instanceHost) instanceHost statusId

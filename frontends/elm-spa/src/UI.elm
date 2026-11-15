@@ -34,6 +34,7 @@ import Shared.AccountsPanel.MastodonAccounts exposing (MastodonAccount)
 import Shared.AccountsPanel.MastodonServers exposing (BrowsedMastodonInstance)
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (Branding, RellmServer)
+import Shared.Federation.Actions as FederationActions
 import Shared.Federation.Common exposing (publicBlueskyAppViewHost)
 import Shared.Federation.RellmLinks as RellmLinks
 import Shared.AudioPlayerPanel as AudioPlayerPanel
@@ -3317,11 +3318,17 @@ mastodonAccountRow shared count mainCount index mastodonAccount =
                 [ div [ classList [ ( "reorder-arrow", True ), ( "reorder-arrow-hidden", not reorderInfo.canMoveUp ) ] ] [ reorderInfo.reorderPair.backward ]
                 , div [ classList [ ( "reorder-arrow", True ), ( "reorder-arrow-hidden", not reorderInfo.canMoveDown ) ] ] [ reorderInfo.reorderPair.forward ]
                 ]
-            , imageOrInitial [ "account-avatar" ] mastodonAccount.username Nothing
-            , div [ class "account-row-label" ]
-                [ div [ class "account-row-username" ] [ text ("⇄ @" ++ mastodonAccount.username) ]
-                , div [ classes [ "account-row-server-badge", mainHostClass, "background-color-primary" ] ]
-                    [ text mastodonAccount.instanceHost ]
+            , div
+                [ classes [ "account-row-profile-link", "account-row-menu-toggle" ]
+                , title "Show account menu"
+                , stopPropagationAndPreventDefaultOnClick (Shared.AccountsPanelMsg (AccountsPanel.FederatedAccountClicked key))
+                ]
+                [ federatedAccountToggle shared key (imageOrInitial [ "account-avatar" ] mastodonAccount.username mastodonAccount.avatarUrl)
+                , div [ class "account-row-label" ]
+                    [ div [ class "account-row-username" ] [ text ("⇄ @" ++ mastodonAccount.username) ]
+                    , div [ classes [ "account-row-server-badge", mainHostClass, "background-color-primary" ] ]
+                        [ text mastodonAccount.instanceHost ]
+                    ]
                 ]
             ]
         , if mastodonAccount.needsReauth then
@@ -3336,6 +3343,7 @@ mastodonAccountRow shared count mainCount index mastodonAccount =
 
           else
             text ""
+        , federatedAccountMenuView shared key (FederationActions.MastodonServerAccount mastodonAccount) []
         ]
 
 
@@ -3379,12 +3387,12 @@ blueskyAccountRow shared count mainCount index blueskyAccount =
                 , div [ classList [ ( "reorder-arrow", True ), ( "reorder-arrow-hidden", not reorderInfo.canMoveDown ) ] ] [ reorderInfo.reorderPair.forward ]
                 ]
             , switchInput blueskyAccount.enabled False (Shared.AccountsPanelMsg (AccountsPanel.ToggleBlueskyAccountEnabled blueskyAccount.handle))
-            , a
-                [ class "account-row-profile-link"
-                , href ("https://bsky.app/profile/" ++ blueskyAccount.handle)
-                , target "_blank"
+            , div
+                [ classes [ "account-row-profile-link", "account-row-menu-toggle" ]
+                , title "Show account menu"
+                , stopPropagationAndPreventDefaultOnClick (Shared.AccountsPanelMsg (AccountsPanel.FederatedAccountClicked key))
                 ]
-                [ imageOrInitial [ "account-avatar" ] blueskyAccount.handle blueskyAccount.avatarUrl
+                [ federatedAccountToggle shared key (imageOrInitial [ "account-avatar" ] blueskyAccount.handle blueskyAccount.avatarUrl)
                 , div [ class "account-row-label" ]
                     [ div [ class "account-row-username" ] [ text ("⇄ " ++ label) ]
                     , div [ classes [ "account-row-server-badge", mainHostClass, "background-color-primary" ] ]
@@ -3410,6 +3418,65 @@ blueskyAccountRow shared count mainCount index blueskyAccount =
 
           else
             text ""
+        , federatedAccountMenuView shared
+            key
+            (FederationActions.BlueskyServerAccount blueskyAccount)
+            [ a
+                [ class "account-avatar-menu-item"
+                , href ("https://bsky.app/profile/" ++ blueskyAccount.handle)
+                , target "_blank"
+                ]
+                [ span [ class "account-avatar-menu-item-label" ] [ text "View on Bluesky" ] ]
+            ]
+        ]
+
+
+{-| The chevron and avatar that open a connected Mastodon/Bluesky account's row menu --
+`accountAvatarToggle`'s counterpart (see `AccountsPanel.Model.focusedFederatedAccount`). `key` is the row's
+`combinedAccountItemKey`.
+-}
+federatedAccountToggle : Shared.Model -> String -> Html Shared.Msg -> Html Shared.Msg
+federatedAccountToggle shared key avatar =
+    let
+        openClosed : String
+        openClosed =
+            openClosedClass (shared.accounts.focusedFederatedAccount == Just key)
+    in
+    div [ class "account-avatar-toggle" ]
+        [ span [ classes [ "account-avatar-chevron", openClosed ] ] []
+        , div [ classes [ "media-btn", openClosed ] ] [ avatar ]
+        ]
+
+
+{-| A connected Mastodon/Bluesky account's expandable menu line, `accountAvatarMenuView`'s counterpart: "Media"
+(that account's own video, audio and images, in the Media page's My Media tab -- see
+`Components.FederatedMyMedia`), then any `extraItems` for the network. Collapsed to nothing until the row's
+toggle is clicked (`AccountsPanel.Model.focusedFederatedAccount`).
+-}
+federatedAccountMenuView : Shared.Model -> String -> FederationActions.ServerAccount -> List (Html Shared.Msg) -> Html Shared.Msg
+federatedAccountMenuView shared key account extraItems =
+    let
+        network : String
+        network =
+            case account of
+                FederationActions.MastodonServerAccount a ->
+                    a.instanceHost
+
+                FederationActions.BlueskyServerAccount _ ->
+                    "Bluesky"
+    in
+    div [ classes [ "account-avatar-menu", openClosedClass (shared.accounts.focusedFederatedAccount == Just key) ] ]
+        [ div [ class "account-avatar-menu-list" ]
+            (a
+                [ class "account-avatar-menu-item"
+                , href (shared.basePath ++ "/media?tab=my&account=" ++ Url.percentEncode (FederationActions.accountId account))
+                , stopPropagationAndPreventDefaultOnClick (Shared.AccountsPanelMsg AccountsPanel.CloseAccountsPanel)
+                ]
+                [ span [ class "account-avatar-menu-item-label" ] [ text "Media" ]
+                , span [ class "account-avatar-menu-item-detail" ] [ text ("Your media on " ++ network) ]
+                ]
+                :: extraItems
+            )
         ]
 
 

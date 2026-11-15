@@ -1,5 +1,17 @@
 module Shared.Federation.Mastodon exposing
     ( Account
+    , OwnProfile
+    , fetchOwnMediaStatuses
+    , fetchStatusWithQuotesAs
+    , postStatusWithMedia
+    , uploadMedia
+    , Relationship
+    , fetchMediaPosts
+    , fetchOwnProfile
+    , fetchRelationship
+    , resolveAccountId
+    , setFollowing
+    , updateOwnProfile
     , MastodonVisibility(..)
     , allVisibilities
     , deleteStatus
@@ -52,10 +64,12 @@ all, same as `fetchPosts`/`fetchStatus` already rely on for the local timeline/s
 -}
 
 import Dict exposing (Dict)
+import File exposing (File)
 import Http
 import Iso8601
 import Json.Decode as Decode exposing (Decoder)
 import Json.Encode as Encode
+import Process
 import Proto.Rellm exposing (Author, MediaReference, Post, defaultAuthor, defaultMediaReference, defaultMediaSize, defaultPost, wrapMediaReference, wrapPost)
 import Proto.Rellm.MediaConversion exposing (MediaConversion(..))
 import Proto.Rellm.PostContext exposing (PostContext(..))
@@ -383,6 +397,43 @@ fetchPosts instanceHost before cursor =
         |> Task.map (pageOf instanceHost)
 
 
+{-| A page of statuses that have media attachments, for the Video and Audio pages (they keep the video and
+audio ones -- see `Shared.Federation.Media`): `GET /api/v1/timelines/tag/:tag?only_media=true` when `query`
+has a word to use as a hashtag (a public timeline can't be text-searched without logging in, but a hashtag
+timeline can), otherwise the instance's local public timeline with `only_media=true`. Unauthenticated.
+`cursor` pages as in `fetchPosts`.
+-}
+fetchMediaPosts : String -> String -> Maybe String -> Task Http.Error ( List Post, Maybe String )
+fetchMediaPosts instanceHost query cursor =
+    let
+        tag : String
+        tag =
+            query
+                |> String.trim
+                |> String.words
+                |> List.head
+                |> Maybe.withDefault ""
+                |> String.filter (\char -> Char.isAlphaNum char || char == '_')
+
+        path : String
+        path =
+            if String.isEmpty tag then
+                "/api/v1/timelines/public?local=true&only_media=true&limit=40"
+
+            else
+                "/api/v1/timelines/tag/" ++ Url.percentEncode tag ++ "?only_media=true&limit=40"
+    in
+    Http.task
+        { method = "GET"
+        , headers = []
+        , url = "https://" ++ instanceHost ++ path ++ maxIdParam Nothing cursor
+        , body = Http.emptyBody
+        , resolver = jsonResolver (Decode.list decoder) (\metadata _ -> Http.BadStatus metadata.statusCode)
+        , timeout = Just 10000
+        }
+        |> Task.map (pageOf instanceHost)
+
+
 {-| A timeline page as `Components.Pages.PostsPage` pages through it: the posts, and the cursor that asks
 for the page after them -- `max_id` is the id of the page's last (oldest) status, which Mastodon answers with
 the statuses older than it -- or `Nothing` once a page comes back empty, the end of the timeline.
@@ -511,7 +562,16 @@ chain there rather than failing the whole status.
 -}
 fetchStatusWithQuotes : String -> String -> Task Http.Error ( Post, Bool )
 fetchStatusWithQuotes instanceHost statusId =
-    fetchRawStatus instanceHost statusId
+    fetchStatusWithQuotesAs Nothing instanceHost statusId
+
+
+{-| `fetchStatusWithQuotes` as the account holding `accessToken` (one on `instanceHost` itself), so a status only
+that account may see -- its own followers-only or direct one -- can be loaded too. (Quoted statuses are still
+fetched anonymously.)
+-}
+fetchStatusWithQuotesAs : Maybe String -> String -> String -> Task Http.Error ( Post, Bool )
+fetchStatusWithQuotesAs accessToken instanceHost statusId =
+    fetchRawStatusAs accessToken instanceHost statusId
         |> Task.andThen (expandQuotes instanceHost maxPageQuoteDepth)
         |> Task.map
             (\status ->
@@ -555,9 +615,14 @@ expandQuotes instanceHost depth status =
 
 fetchRawStatus : String -> String -> Task Http.Error Status
 fetchRawStatus instanceHost statusId =
+    fetchRawStatusAs Nothing instanceHost statusId
+
+
+fetchRawStatusAs : Maybe String -> String -> String -> Task Http.Error Status
+fetchRawStatusAs accessToken instanceHost statusId =
     Http.task
         { method = "GET"
-        , headers = []
+        , headers = accessToken |> Maybe.map authHeaders |> Maybe.withDefault []
         , url = "https://" ++ instanceHost ++ "/api/v1/statuses/" ++ statusId
         , body = Http.emptyBody
         , resolver = jsonResolver decoder (\metadata _ -> Http.BadStatus metadata.statusCode)
@@ -1018,5 +1083,256 @@ deleteStatus instanceHost accessToken statusId =
         , url = "https://" ++ instanceHost ++ "/api/v1/statuses/" ++ statusId
         , body = Http.emptyBody
         , resolver = jsonResolver (Decode.succeed ()) (\metadata _ -> Http.BadStatus metadata.statusCode)
+        , timeout = Just 10000
+        }
+
+
+{-| What the connected account's follow relationship to another account is -- `requested` is a follow
+request still waiting on a locked account's approval.
+-}
+type alias Relationship =
+    { following : Bool
+    , requested : Bool
+    }
+
+
+relationshipDecoder : Decoder Relationship
+relationshipDecoder =
+    Decode.map2 Relationship
+        (Decode.oneOf [ Decode.field "following" Decode.bool, Decode.succeed False ])
+        (Decode.oneOf [ Decode.field "requested" Decode.bool, Decode.succeed False ])
+
+
+{-| `GET /api/v2/search?type=accounts&resolve=true` for `acct` (`user@host`) -- the id that account has on
+`instanceHost`, which is what that instance's follow endpoints need (an account id is only meaningful to
+the instance it came from, like a status id -- see `resolveStatusId`).
+-}
+resolveAccountId : String -> String -> String -> Task Http.Error String
+resolveAccountId instanceHost accessToken acct =
+    Http.task
+        { method = "GET"
+        , headers = authHeaders accessToken
+        , url = "https://" ++ instanceHost ++ "/api/v2/search?type=accounts&resolve=true&limit=1&q=" ++ Url.percentEncode acct
+        , body = Http.emptyBody
+        , resolver =
+            jsonResolver
+                (Decode.field "accounts" (Decode.list (Decode.field "id" Decode.string))
+                    |> Decode.andThen
+                        (\ids ->
+                            case ids of
+                                first :: _ ->
+                                    Decode.succeed first
+
+                                [] ->
+                                    Decode.fail "account not found"
+                        )
+                )
+                (\metadata _ -> Http.BadStatus metadata.statusCode)
+        , timeout = Just 10000
+        }
+
+
+{-| `GET /api/v1/accounts/relationships` for `accountId` (on `instanceHost`) -- covered by the `read` scope.
+-}
+fetchRelationship : String -> String -> String -> Task Http.Error Relationship
+fetchRelationship instanceHost accessToken accountId =
+    Http.task
+        { method = "GET"
+        , headers = authHeaders accessToken
+        , url = "https://" ++ instanceHost ++ "/api/v1/accounts/relationships?id%5B%5D=" ++ Url.percentEncode accountId
+        , body = Http.emptyBody
+        , resolver =
+            jsonResolver
+                (Decode.list relationshipDecoder
+                    |> Decode.andThen
+                        (\relationships ->
+                            case relationships of
+                                first :: _ ->
+                                    Decode.succeed first
+
+                                [] ->
+                                    Decode.fail "no relationship"
+                        )
+                )
+                (\metadata _ -> Http.BadStatus metadata.statusCode)
+        , timeout = Just 10000
+        }
+
+
+{-| `POST /api/v1/accounts/:id/follow` (or `/unfollow`) -- needs the `write:follows` OAuth scope (see
+`public/index.html`'s authorize URL); a token connected before it was requested gets a 403. Resolves to
+the new relationship (a locked account answers `requested`, not `following`).
+-}
+setFollowing : Bool -> String -> String -> String -> Task Http.Error Relationship
+setFollowing follow instanceHost accessToken accountId =
+    Http.task
+        { method = "POST"
+        , headers = authHeaders accessToken
+        , url = "https://" ++ instanceHost ++ "/api/v1/accounts/" ++ accountId ++ "/" ++ (if follow then "follow" else "unfollow")
+        , body = Http.emptyBody
+        , resolver = jsonResolver relationshipDecoder (\metadata _ -> Http.BadStatus metadata.statusCode)
+        , timeout = Just 10000
+        }
+
+
+{-| The editable parts of the connected account's own profile, as plain text (`note` is `source.note` -- the
+bio as written, not the HTML it renders to).
+-}
+type alias OwnProfile =
+    { displayName : String
+    , note : String
+    }
+
+
+{-| `GET /api/v1/accounts/verify_credentials` -- the connected account's current display name and plain-text
+bio, to start an edit from. Covered by the `read` scope.
+-}
+fetchOwnProfile : String -> String -> Task Http.Error OwnProfile
+fetchOwnProfile instanceHost accessToken =
+    Http.task
+        { method = "GET"
+        , headers = authHeaders accessToken
+        , url = "https://" ++ instanceHost ++ "/api/v1/accounts/verify_credentials"
+        , body = Http.emptyBody
+        , resolver =
+            jsonResolver
+                (Decode.map2 OwnProfile
+                    (Decode.oneOf [ Decode.field "display_name" Decode.string, Decode.succeed "" ])
+                    (Decode.oneOf [ Decode.at [ "source", "note" ] Decode.string, Decode.succeed "" ])
+                )
+                (\metadata _ -> Http.BadStatus metadata.statusCode)
+        , timeout = Just 10000
+        }
+
+
+{-| `PATCH /api/v1/accounts/update_credentials` with a new display name and bio -- needs the `write:accounts`
+OAuth scope (see `public/index.html`'s authorize URL); a token connected before it was requested gets a 403.
+-}
+updateOwnProfile : String -> String -> OwnProfile -> Task Http.Error ()
+updateOwnProfile instanceHost accessToken profile =
+    Http.task
+        { method = "PATCH"
+        , headers = authHeaders accessToken
+        , url = "https://" ++ instanceHost ++ "/api/v1/accounts/update_credentials"
+        , body =
+            Http.jsonBody
+                (Encode.object
+                    [ ( "display_name", Encode.string profile.displayName )
+                    , ( "note", Encode.string profile.note )
+                    ]
+                )
+        , resolver = jsonResolver (Decode.succeed ()) (\metadata _ -> Http.BadStatus metadata.statusCode)
+        , timeout = Just 10000
+        }
+
+
+{-| `GET /api/v1/accounts/:id/statuses?only_media=true` as the account holding `accessToken` -- its own statuses that
+carry media (what "your media" is on Mastodon, which can't list uploads that aren't on a post), including its
+unlisted/followers-only ones, already translated via `toPost`. `accountId` is the account's id on `instanceHost`.
+`cursor` pages as in `fetchPosts`.
+-}
+fetchOwnMediaStatuses : String -> String -> String -> Maybe String -> Task Http.Error ( List Post, Maybe String )
+fetchOwnMediaStatuses instanceHost accessToken accountId cursor =
+    Http.task
+        { method = "GET"
+        , headers = authHeaders accessToken
+        , url =
+            "https://"
+                ++ instanceHost
+                ++ "/api/v1/accounts/"
+                ++ accountId
+                ++ "/statuses?only_media=true&exclude_reblogs=true&limit=30"
+                ++ maxIdParam Nothing cursor
+        , body = Http.emptyBody
+        , resolver = jsonResolver (Decode.list decoder) (\metadata _ -> Http.BadStatus metadata.statusCode)
+        , timeout = Just 10000
+        }
+        |> Task.map (pageOf instanceHost)
+
+
+{-| `POST /api/v2/media` -- uploads `file` (with `description` as its alt text) and resolves to the new attachment's
+id once the instance has finished processing it (video and audio are processed asynchronously: the upload answers
+202 with no `url` yet, so this polls `GET /api/v1/media/:id`, up to about a minute). Needs the `write:media`
+OAuth scope (see `public/index.html`'s authorize URL); a token connected before it was requested gets a 403.
+An attachment on its own is deleted after a while -- `postStatusWithMedia` is what keeps it.
+-}
+uploadMedia : String -> String -> File -> String -> Task Http.Error String
+uploadMedia instanceHost accessToken file description =
+    Http.task
+        { method = "POST"
+        , headers = authHeaders accessToken
+        , url = "https://" ++ instanceHost ++ "/api/v2/media"
+        , body = Http.multipartBody [ Http.filePart "file" file, Http.stringPart "description" description ]
+        , resolver =
+            jsonResolver
+                (Decode.map2 Tuple.pair
+                    (Decode.field "id" Decode.string)
+                    (Decode.oneOf [ Decode.field "url" (Decode.nullable Decode.string) |> Decode.map (\url -> url /= Nothing), Decode.succeed False ])
+                )
+                (\metadata _ -> Http.BadStatus metadata.statusCode)
+        , timeout = Just 120000
+        }
+        |> Task.andThen
+            (\( id, ready ) ->
+                if ready then
+                    Task.succeed id
+
+                else
+                    waitForMedia instanceHost accessToken id 30
+            )
+
+
+{-| Polls `GET /api/v1/media/:id` once a second until the attachment has its `url` (or `attemptsLeft` runs out,
+which fails as a timeout).
+-}
+waitForMedia : String -> String -> String -> Int -> Task Http.Error String
+waitForMedia instanceHost accessToken id attemptsLeft =
+    if attemptsLeft <= 0 then
+        Task.fail Http.Timeout
+
+    else
+        Process.sleep 1000
+            |> Task.andThen
+                (\() ->
+                    Http.task
+                        { method = "GET"
+                        , headers = authHeaders accessToken
+                        , url = "https://" ++ instanceHost ++ "/api/v1/media/" ++ id
+                        , body = Http.emptyBody
+                        , resolver =
+                            jsonResolver
+                                (Decode.oneOf [ Decode.field "url" (Decode.nullable Decode.string) |> Decode.map (\url -> url /= Nothing), Decode.succeed False ])
+                                (\metadata _ -> Http.BadStatus metadata.statusCode)
+                        , timeout = Just 10000
+                        }
+                )
+            |> Task.andThen
+                (\ready ->
+                    if ready then
+                        Task.succeed id
+
+                    else
+                        waitForMedia instanceHost accessToken id (attemptsLeft - 1)
+                )
+
+
+{-| `POST /api/v1/statuses` with `text` and the already-uploaded attachments `mediaIds` -- `postStatus`'s
+counterpart for a post that carries media. Resolves to the new status' public `url`, when it has one.
+-}
+postStatusWithMedia : String -> String -> { text : String, mediaIds : List String, visibility : MastodonVisibility } -> Task Http.Error (Maybe String)
+postStatusWithMedia instanceHost accessToken { text, mediaIds, visibility } =
+    Http.task
+        { method = "POST"
+        , headers = authHeaders accessToken
+        , url = "https://" ++ instanceHost ++ "/api/v1/statuses"
+        , body =
+            Http.jsonBody
+                (Encode.object
+                    [ ( "status", Encode.string text )
+                    , ( "visibility", Encode.string (visibilityValue visibility) )
+                    , ( "media_ids", Encode.list Encode.string mediaIds )
+                    ]
+                )
+        , resolver = jsonResolver (Decode.maybe (Decode.field "url" Decode.string)) (\metadata _ -> Http.BadStatus metadata.statusCode)
         , timeout = Just 10000
         }

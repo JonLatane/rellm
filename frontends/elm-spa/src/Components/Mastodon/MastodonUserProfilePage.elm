@@ -1,8 +1,10 @@
 module Components.Mastodon.MastodonUserProfilePage exposing (Model, Msg, fromShared, init, subscriptions, title, update, view)
 
-{-| A single Mastodon account's profile, read-only -- avatar/display name/bio/follower-and-following
+{-| A single Mastodon account's profile, -- avatar/display name/bio/follower-and-following
 counts, plus that account's own authored posts (embedding `Components.Pages.PostsPage`, scoped to
-just this account via its `MastodonAccountFeed` `FeedSource`). No follow/moderation/permissions/sync
+just this account via its `MastodonAccountFeed` `FeedSource`). When a Mastodon account is connected (see
+`Shared.Federation.Actions`), it also offers Follow/Unfollow on someone else's profile and "Edit Profile"
+(display name and bio) on the connected account's own. No moderation/permissions/sync
 affordances, no Events/Sync Sources/Sync Destinations/AI Providers sections -- none of that
 makes sense for an account Rellm doesn't own, mirroring `Components.Mastodon.MastodonPostPage`'s own
 read-only scope one level up (a whole profile instead of a single post).
@@ -22,12 +24,17 @@ import Components.Pages.PostsPage as PostsPage
 import Components.Users as Users
 import Dict exposing (Dict)
 import Effect exposing (Effect)
-import Html exposing (Html, a, div, h1, h3, p, span, text)
-import Html.Attributes exposing (class, href)
+import Html exposing (Html, a, button, div, h1, h3, input, p, span, text, textarea)
+import Html.Attributes exposing (class, disabled, href, placeholder, rows, value)
+import Html.Events exposing (onClick, onInput)
 import Http
 import Shared
+import Shared.AccountsPanel as AccountsPanel
+import Shared.AccountsPanel.MastodonAccounts exposing (MastodonAccount)
+import Shared.Federation.Actions as Actions
 import Shared.Federation.Mastodon as Mastodon
 import Task
+import UI.Classes exposing (classes)
 
 
 type alias Model =
@@ -38,6 +45,30 @@ type alias Model =
     , navKey : Browser.Navigation.Key
     , path : String
     , query : Dict String String
+
+    -- The connected account's relationship to this profile (`Nothing` until known, or when there's
+    -- no connected account / this is its own profile).
+    --
+    -- It's the relationship *for `relationshipFor`* -- the `Actions.accountId` of the account acting when it was
+    -- fetched: switching accounts clears it and fetches again (`syncRelationship`), and replies from the previous
+    -- account are dropped, so one account's relationship is never used as another's.
+    , relationshipFor : Maybe String
+    , relationship : Maybe Mastodon.Relationship
+    , followBusy : Bool
+
+    -- `Just` while the connected account's own profile is being edited.
+    , profileEdit : Maybe ProfileEdit
+    , actionError : Maybe String
+    }
+
+
+type alias ProfileEdit =
+    { displayName : String
+    , note : String
+
+    -- `False` while the current values are still being fetched.
+    , loaded : Bool
+    , saving : Bool
     }
 
 
@@ -51,6 +82,17 @@ type Msg
     = GotAccount (Result Http.Error Mastodon.Account)
     | PostsMsg PostsPage.Msg
     | SharedMsgReceived Shared.Msg
+    | GotFollowState String (Result Http.Error ( Maybe AccountsPanel.Msg, Mastodon.Relationship ))
+    | FollowClicked
+    | GotFollowResult String (Result Http.Error ( Maybe AccountsPanel.Msg, Mastodon.Relationship ))
+    | EditProfileClicked
+    | GotOwnProfile (Result Http.Error ( Maybe AccountsPanel.Msg, Mastodon.OwnProfile ))
+    | DisplayNameChanged String
+    | NoteChanged String
+    | SaveProfileClicked
+    | CancelProfileClicked
+    | GotProfileSaved (Result Http.Error (Maybe AccountsPanel.Msg))
+    | GotRefreshedAccount (Result Http.Error Mastodon.Account)
 
 
 {-| `instanceHost`/`username` come straight from `Components.Users.parseFederatedUserId`'s
@@ -69,6 +111,11 @@ init instanceHost username navKey path query =
       , navKey = navKey
       , path = path
       , query = query
+      , relationshipFor = Nothing
+      , relationship = Nothing
+      , followBusy = False
+      , profileEdit = Nothing
+      , actionError = Nothing
       }
     , Mastodon.lookupAccount instanceHost username
         |> Task.attempt GotAccount
@@ -78,6 +125,65 @@ init instanceHost username navKey path query =
 
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
 update shared msg model =
+    updateInner shared msg model |> syncRelationship shared
+
+
+{-| The `Actions.accountId` of a connected Mastodon account.
+-}
+accountKey : MastodonAccount -> String
+accountKey account =
+    Actions.accountId (Actions.MastodonServerAccount account)
+
+
+{-| Keeps the relationship for the account that is acting *now*: when that isn't the one it was fetched for
+(another account became the acting one, or the profile just loaded), it's cleared and fetched for the new one.
+Nothing for your own profile or with no account.
+-}
+syncRelationship : Shared.Model -> ( Model, Effect Msg ) -> ( Model, Effect Msg )
+syncRelationship shared ( model, effect ) =
+    case model.profileStatus of
+        ProfileLoaded account ->
+            let
+                acting : Maybe MastodonAccount
+                acting =
+                    actingAccount shared model
+                        |> Maybe.andThen
+                            (\a ->
+                                if Actions.isOwnMastodonProfile a (targetOf model account) then
+                                    Nothing
+
+                                else
+                                    Just a
+                            )
+
+                wanted : Maybe String
+                wanted =
+                    Maybe.map accountKey acting
+            in
+            if wanted == model.relationshipFor then
+                ( model, effect )
+
+            else
+                ( { model | relationshipFor = wanted, relationship = Nothing, followBusy = False }
+                , Effect.batch
+                    [ effect
+                    , case acting of
+                        Just a ->
+                            Actions.fetchMastodonFollowState a (targetOf model account)
+                                |> Task.attempt (GotFollowState (accountKey a))
+                                |> Effect.fromCmd
+
+                        Nothing ->
+                            Effect.none
+                    ]
+                )
+
+        _ ->
+            ( model, effect )
+
+
+updateInner : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
+updateInner shared msg model =
     case msg of
         GotAccount (Ok account) ->
             let
@@ -110,6 +216,113 @@ update shared msg model =
                 Nothing ->
                     ( model, Effect.none )
 
+        GotFollowState key (Ok ( maybeAccountsPanelMsg, relationship )) ->
+            if Just key == model.relationshipFor then
+                ( { model | relationship = Just relationship }, forwardRotated maybeAccountsPanelMsg )
+
+            else
+                ( model, forwardRotated maybeAccountsPanelMsg )
+
+        GotFollowState _ (Err _) ->
+            -- Not being able to tell (e.g. the instance doesn't know the account) just means no button.
+            ( model, Effect.none )
+
+        FollowClicked ->
+            case ( model.profileStatus, actingAccount shared model, model.relationship ) of
+                ( ProfileLoaded account, Just acting, Just relationship ) ->
+                    if model.relationshipFor /= Just (accountKey acting) then
+                        ( model, Effect.none )
+
+                    else
+                        ( { model | followBusy = True, actionError = Nothing }
+                        , Actions.setMastodonFollowing (not (relationship.following || relationship.requested)) acting (targetOf model account)
+                            |> Task.attempt (GotFollowResult (accountKey acting))
+                            |> Effect.fromCmd
+                        )
+
+                _ ->
+                    ( model, Effect.none )
+
+        GotFollowResult key (Ok ( maybeAccountsPanelMsg, relationship )) ->
+            if Just key == model.relationshipFor then
+                ( { model | relationship = Just relationship, followBusy = False }, forwardRotated maybeAccountsPanelMsg )
+
+            else
+                ( model, forwardRotated maybeAccountsPanelMsg )
+
+        GotFollowResult key (Err err) ->
+            if Just key == model.relationshipFor then
+                ( { model | followBusy = False, actionError = Just (Actions.writeErrorText err) }, Effect.none )
+
+            else
+                ( model, Effect.none )
+
+        EditProfileClicked ->
+            case actingAccount shared model of
+                Just acting ->
+                    ( { model | profileEdit = Just { displayName = "", note = "", loaded = False, saving = False }, actionError = Nothing }
+                    , Actions.fetchMastodonOwnProfile acting
+                        |> Task.attempt GotOwnProfile
+                        |> Effect.fromCmd
+                    )
+
+                Nothing ->
+                    ( model, Effect.none )
+
+        GotOwnProfile (Ok ( maybeAccountsPanelMsg, profile )) ->
+            ( { model | profileEdit = model.profileEdit |> Maybe.map (\edit -> { edit | displayName = profile.displayName, note = profile.note, loaded = True }) }
+            , forwardRotated maybeAccountsPanelMsg
+            )
+
+        GotOwnProfile (Err err) ->
+            ( { model | profileEdit = Nothing, actionError = Just (Actions.writeErrorText err) }, Effect.none )
+
+        DisplayNameChanged text ->
+            ( { model | profileEdit = model.profileEdit |> Maybe.map (\edit -> { edit | displayName = text }) }, Effect.none )
+
+        NoteChanged text ->
+            ( { model | profileEdit = model.profileEdit |> Maybe.map (\edit -> { edit | note = text }) }, Effect.none )
+
+        SaveProfileClicked ->
+            case ( model.profileEdit, actingAccount shared model ) of
+                ( Just edit, Just acting ) ->
+                    ( { model | profileEdit = Just { edit | saving = True }, actionError = Nothing }
+                    , Actions.updateMastodonOwnProfile acting { displayName = edit.displayName, note = edit.note }
+                        |> Task.attempt GotProfileSaved
+                        |> Effect.fromCmd
+                    )
+
+                _ ->
+                    ( model, Effect.none )
+
+        CancelProfileClicked ->
+            ( { model | profileEdit = Nothing, actionError = Nothing }, Effect.none )
+
+        GotProfileSaved (Ok maybeAccountsPanelMsg) ->
+            ( { model | profileEdit = Nothing }
+            , Effect.batch
+                [ forwardRotated maybeAccountsPanelMsg
+                , Mastodon.lookupAccount model.instanceHost model.username
+                    |> Task.attempt GotRefreshedAccount
+                    |> Effect.fromCmd
+                ]
+            )
+
+        GotProfileSaved (Err err) ->
+            ( { model
+                | profileEdit = model.profileEdit |> Maybe.map (\edit -> { edit | saving = False })
+                , actionError = Just (Actions.writeErrorText err)
+              }
+            , Effect.none
+            )
+
+        GotRefreshedAccount (Ok account) ->
+            -- Just the profile card -- the embedded posts list is left alone.
+            ( { model | profileStatus = ProfileLoaded account }, Effect.none )
+
+        GotRefreshedAccount (Err _) ->
+            ( model, Effect.none )
+
         SharedMsgReceived subMsg ->
             -- The embedded `PostsPage`, once it exists, already re-emits `Effect.fromShared subMsg`
             -- as part of its own `SharedMsg` handling (see that module's own doc) -- forwarding
@@ -126,6 +339,31 @@ update shared msg model =
 
                 Nothing ->
                     ( model, Effect.fromShared subMsg )
+
+
+{-| The connected Mastodon account that acts on this profile's instance, if any (preferring one on that
+very instance -- see `Actions.serverAccountFor`).
+-}
+actingAccount : Shared.Model -> Model -> Maybe MastodonAccount
+actingAccount shared model =
+    case Actions.serverAccountFor shared.accounts ("mastodon:" ++ model.instanceHost) of
+        Just (Actions.MastodonServerAccount account) ->
+            Just account
+
+        _ ->
+            Nothing
+
+
+targetOf : Model -> Mastodon.Account -> Actions.MastodonProfileTarget
+targetOf model account =
+    { instanceHost = model.instanceHost, username = account.username, accountId = account.id }
+
+
+forwardRotated : Maybe AccountsPanel.Msg -> Effect Msg
+forwardRotated maybeAccountsPanelMsg =
+    maybeAccountsPanelMsg
+        |> Maybe.map (Shared.AccountsPanelMsg >> Effect.fromShared)
+        |> Maybe.withDefault Effect.none
 
 
 subscriptions : Model -> Sub Msg
@@ -169,6 +407,7 @@ view shared model =
                             ]
                         ]
                     ]
+                , profileActionsView shared model account
                 , div [ class "profile-counts" ]
                     [ profileCountView Nothing "Posts" account.statusesCount
                     , profileCountView (Just (Users.followersHref "" shared.accounts.mainFrontendHost ("mastodon:" ++ model.instanceHost) account.username)) "Followers" account.followersCount
@@ -188,6 +427,105 @@ view shared model =
                     Nothing ->
                         text ""
                 ]
+
+
+{-| Follow/Unfollow on someone else's profile, or "Edit Profile" (display name and bio) on the connected
+account's own -- nothing at all without a connected Mastodon account.
+-}
+profileActionsView : Shared.Model -> Model -> Mastodon.Account -> Html Msg
+profileActionsView shared model account =
+    case actingAccount shared model of
+        Nothing ->
+            text ""
+
+        Just acting ->
+            div [ class "profile-actions" ]
+                [ if Actions.isOwnMastodonProfile acting (targetOf model account) then
+                    case model.profileEdit of
+                        Nothing ->
+                            button [ class "server-details-rename-button", onClick EditProfileClicked ] [ text "Edit Profile" ]
+
+                        Just edit ->
+                            profileEditForm edit
+
+                  else
+                    case ( model.relationshipFor == Just (accountKey acting), model.relationship ) of
+                        ( True, Just relationship ) ->
+                            let
+                                label : String
+                                label =
+                                    if relationship.following then
+                                        "Unfollow"
+
+                                    else if relationship.requested then
+                                        "Requested — cancel"
+
+                                    else
+                                        "Follow"
+                            in
+                            button
+                                [ classes
+                                    (if relationship.following || relationship.requested then
+                                        [ "server-details-rename-button" ]
+
+                                     else
+                                        [ "server-details-rename-save", "background-color-primary" ]
+                                    )
+                                , onClick FollowClicked
+                                , disabled model.followBusy
+                                ]
+                                [ text label ]
+
+                        _ ->
+                            text ""
+                , case model.actionError of
+                    Just err ->
+                        div [ class "server-details-rename-error" ] [ text err ]
+
+                    Nothing ->
+                        text ""
+                ]
+
+
+profileEditForm : ProfileEdit -> Html Msg
+profileEditForm edit =
+    if not edit.loaded then
+        p [ class "post-loading" ] [ text "Loading…" ]
+
+    else
+        div [ class "server-details-federation-edit" ]
+            [ input
+                [ class "server-details-rename-input"
+                , value edit.displayName
+                , onInput DisplayNameChanged
+                , placeholder "Display name"
+                ]
+                []
+            , textarea
+                [ class "server-details-rename-input"
+                , value edit.note
+                , onInput NoteChanged
+                , placeholder "Bio"
+                , rows 4
+                ]
+                []
+            , div [ class "server-details-permissions-actions" ]
+                [ button
+                    [ classes [ "server-details-rename-save", "background-color-primary" ]
+                    , onClick SaveProfileClicked
+                    , disabled edit.saving
+                    ]
+                    [ text
+                        (if edit.saving then
+                            "Saving…"
+
+                         else
+                            "Save"
+                        )
+                    ]
+                , button [ class "server-details-rename-cancel", onClick CancelProfileClicked, disabled edit.saving ] [ text "Cancel" ]
+                ]
+            ]
 
 
 {-| Mirrors `Components.Pages.UserProfilePage.profileCountView` exactly (not exposed there, so

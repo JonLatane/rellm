@@ -54,6 +54,11 @@ type alias Model =
     -- (see `view`).
     , maybePost : Maybe Post
 
+    -- Where each item's source post is in the Rellm UI, by `MediaReference.id` -- for media that came from a
+    -- Mastodon/Bluesky post (see `OpenWithPostLinks`), whose post isn't reachable any other way. The toolbar shows
+    -- a "View post" button for the current item when it has one.
+    , postLinks : Dict String String
+
     -- Needed to resolve `view`'s `AccountsPanel.Model` down to the actual
     -- `Server`/`Account` the tapped Post's media belongs to -- same
     -- `targetHost` convention `Shared.MarkdownPanel` uses.
@@ -632,6 +637,9 @@ type
     -- `Nothing` renders no title at all, same as before this panel could
     -- be opened any other way.
     = Open (List MediaReference) (Maybe Post) String String
+      -- `Open`, for media from Mastodon/Bluesky posts: `postLinks` maps each item's id to the Rellm-UI page of the
+      -- post it came from (see `Model.postLinks`). Opens on the item with the given id, on the given host.
+    | OpenWithPostLinks (List MediaReference) (Dict String String) String String
     | SetCurrent String
     | Next
     | Prev
@@ -690,7 +698,7 @@ type Direction
 
 init : Model
 init =
-    { media = [], currentMediaReference = Nothing, maybePost = Nothing, targetHost = "", direction = Entering, touchStart = Nothing, preloadFor = Nothing, edit = Nothing, autoplay = True, editOnly = False, choosingCoverArt = False }
+    { media = [], currentMediaReference = Nothing, maybePost = Nothing, postLinks = Dict.empty, targetHost = "", direction = Entering, touchStart = Nothing, preloadFor = Nothing, edit = Nothing, autoplay = True, editOnly = False, choosingCoverArt = False }
 
 
 {-| Left/right arrow keys page `Prev`/`Next`, same as the toolbar's `‹`/`›`
@@ -1166,6 +1174,7 @@ updatePure msg model =
             ( { media = media
               , currentMediaReference = newCurrent
               , maybePost = maybePost
+              , postLinks = Dict.empty
               , targetHost = host
               , direction = Entering
               , touchStart = Nothing
@@ -1177,6 +1186,10 @@ updatePure msg model =
               }
             , schedulePreload newCurrent
             )
+
+        OpenWithPostLinks media postLinks initialId host ->
+            updatePure (Open media Nothing initialId host) model
+                |> Tuple.mapFirst (\opened -> { opened | postLinks = postLinks })
 
         EscapePressed ->
             if model.choosingCoverArt then
@@ -1963,6 +1976,13 @@ view audioPlayerActive accountsPanelModel model =
 
                     else
                         text ""
+
+                Nothing ->
+                    text ""
+            , case currentMedia |> Maybe.andThen (\media -> Dict.get media.id model.postLinks) of
+                Just postLink ->
+                    -- A plain link (no `preventDefault`), so it navigates like any other; the click also closes the viewer.
+                    Html.a [ class "media-viewer-panel-post-link", Html.Attributes.href postLink, onClick CloseClicked ] [ text "View post" ]
 
                 Nothing ->
                     text ""

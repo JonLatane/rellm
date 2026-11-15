@@ -149,6 +149,11 @@ type alias Model =
     -- escape logic of its own; the row's existing FLIP-collapse height transition does that for free.
     , focusedAccount : Maybe RellmAccount
 
+    -- The `combinedAccountItemKey` of the connected Mastodon/Bluesky account whose row is expanded into its
+    -- own small menu (`UI.federatedAccountMenuView`: "Media"), if any -- the same single-`Maybe`, expanding-row
+    -- idea as `focusedAccount`, kept separate because those accounts aren't `RellmAccount`s. Cleared with it.
+    , focusedFederatedAccount : Maybe String
+
     -- `focusedAccount`'s own nested "Contact Methods" item state (see `UI.accountAvatarMenuView`'s
     -- "Contact Methods" item, and `RellmContactMethods`'s own doc for why it's one record rather
     -- than several separate fields here). Kept in lockstep with `focusedAccount` -- `Just
@@ -497,6 +502,7 @@ type Msg
     | ToggleAccountsPanel
     | CloseAccountsPanel
     | AccountAvatarClicked RellmAccount
+    | FederatedAccountClicked String
     | CloseFocusedAccount
     | ContactMethodsMenuToggled
     | ContactMethodPhoneEditClicked
@@ -1619,6 +1625,7 @@ init req flags blueskyAccountsFlags mastodonAccountsAndServersFlags =
       , recommendedServerConnections = Dict.empty
       , nonRellmHosts = Set.empty
       , focusedAccount = Nothing
+      , focusedFederatedAccount = Nothing
       , focusedAccountContactMethods = Nothing
       , addAccountServerFormType = Nothing
       , reauthenticatingAccount = Nothing
@@ -3418,7 +3425,7 @@ sendUpdate req msg model =
 
               else
                 collapseAddAccountFormIfIdle
-                    (resetFocusedAccountContactMethods { newModel | recommendedServersExpanded = False, focusedAccount = Nothing })
+                    (resetFocusedAccountContactMethods { newModel | recommendedServersExpanded = False, focusedAccount = Nothing, focusedFederatedAccount = Nothing })
             , Cmd.none
             )
 
@@ -3431,6 +3438,7 @@ sendUpdate req msg model =
                         , acceptedCreateAccount = Nothing
                         , recommendedServersExpanded = False
                         , focusedAccount = Nothing
+                        , focusedFederatedAccount = Nothing
                     }
                 )
             , Cmd.none
@@ -3443,8 +3451,20 @@ sendUpdate req msg model =
             else
                 ( resetFocusedAccountContactMethods { model | focusedAccount = Just account }, Cmd.none )
 
+        FederatedAccountClicked key ->
+            ( { model
+                | focusedFederatedAccount =
+                    if model.focusedFederatedAccount == Just key then
+                        Nothing
+
+                    else
+                        Just key
+              }
+            , Cmd.none
+            )
+
         CloseFocusedAccount ->
-            ( resetFocusedAccountContactMethods { model | focusedAccount = Nothing }, Cmd.none )
+            ( resetFocusedAccountContactMethods { model | focusedAccount = Nothing, focusedFederatedAccount = Nothing }, Cmd.none )
 
         ContactMethodsMenuToggled ->
             let

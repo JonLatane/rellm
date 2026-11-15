@@ -785,3 +785,11 @@
   line-height: 1;
   font-size: 1rem;
 }
+
+/* Small italic instructional text under a form field (e.g. Federation tab's Mastodon Client Secret). */
+.server-details-field-hint {
+  display: block;
+  font-size: 0.7rem;
+  font-style: italic;
+  opacity: 0.7;
+}
