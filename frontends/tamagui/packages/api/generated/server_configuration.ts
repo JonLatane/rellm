@@ -1131,13 +1131,42 @@ export interface SearchSettings {
    */
   semanticSearchEnabled: boolean;
   /**
-   * Which embedding model this server runs, e.g. "paraphrase-multilingual-MiniLM-L12-v2 (quantized,
-   * 384 dimensions)". Read-only: always filled in by the server on `GetServerConfiguration` (it
-   * describes the running software, so it's not stored) and ignored by `ConfigureServer`. Shown on
-   * the Settings tab so admins know exactly what is downloaded and run. Changing the model
-   * re-embeds everything.
+   * The `EmbeddingModel.id` this server uses, chosen from `available_models`. Empty (or, on read,
+   * never empty -- the server fills in the effective one) means the default,
+   * `bge-small-en-v1.5`. `ConfigureServer` rejects an unknown id with
+   * `INVALID_ARGUMENT` (`unknown_embedding_model`). Changing it makes the server download the new
+   * model (once) and re-embed everything in the background; until a row has been redone it simply
+   * isn't a semantic candidate (full-text search still finds it), so search quality dips and then
+   * recovers. Different models trade size, speed, languages and quality -- see each model's
+   * description.
    */
   embeddingModel: string;
+  /**
+   * The models an admin can choose from. Read-only: always filled in by the server on
+   * `GetServerConfiguration` and ignored by `ConfigureServer`.
+   */
+  availableModels: EmbeddingModel[];
+}
+
+/** One embedding model a server can run for semantic search. See `SearchSettings.embedding_model`. */
+export interface EmbeddingModel {
+  /** Stable identifier, e.g. `multilingual-e5-small`. */
+  id: string;
+  /** Display name. */
+  name: string;
+  /** What it's good at and what it costs, for the picker. */
+  description: string;
+  /** Vector size. */
+  dimensions: number;
+  /** Approximate one-time model download, in MB (binary, 1024-based, like the rest of the UI). */
+  downloadMegabytes: number;
+  /** Whether it understands languages other than English. */
+  multilingual: boolean;
+  /**
+   * Approximate resident memory with the model loaded, in MB -- the server holds one copy and the
+   * `generate_embeddings` job another while it runs. The number to check on small hardware.
+   */
+  memoryMegabytes: number;
 }
 
 /**
@@ -3520,7 +3549,7 @@ export const MarketSettings: MessageFns<MarketSettings> = {
 };
 
 function createBaseSearchSettings(): SearchSettings {
-  return { semanticSearchEnabled: false, embeddingModel: "" };
+  return { semanticSearchEnabled: false, embeddingModel: "", availableModels: [] };
 }
 
 export const SearchSettings: MessageFns<SearchSettings> = {
@@ -3530,6 +3559,9 @@ export const SearchSettings: MessageFns<SearchSettings> = {
     }
     if (message.embeddingModel !== "") {
       writer.uint32(18).string(message.embeddingModel);
+    }
+    for (const v of message.availableModels) {
+      EmbeddingModel.encode(v!, writer.uint32(26).fork()).join();
     }
     return writer;
   },
@@ -3557,6 +3589,14 @@ export const SearchSettings: MessageFns<SearchSettings> = {
           message.embeddingModel = reader.string();
           continue;
         }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.availableModels.push(EmbeddingModel.decode(reader, reader.uint32()));
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -3572,6 +3612,9 @@ export const SearchSettings: MessageFns<SearchSettings> = {
         ? globalThis.Boolean(object.semanticSearchEnabled)
         : false,
       embeddingModel: isSet(object.embeddingModel) ? globalThis.String(object.embeddingModel) : "",
+      availableModels: globalThis.Array.isArray(object?.availableModels)
+        ? object.availableModels.map((e: any) => EmbeddingModel.fromJSON(e))
+        : [],
     };
   },
 
@@ -3583,6 +3626,9 @@ export const SearchSettings: MessageFns<SearchSettings> = {
     if (message.embeddingModel !== "") {
       obj.embeddingModel = message.embeddingModel;
     }
+    if (message.availableModels?.length) {
+      obj.availableModels = message.availableModels.map((e) => EmbeddingModel.toJSON(e));
+    }
     return obj;
   },
 
@@ -3593,6 +3639,171 @@ export const SearchSettings: MessageFns<SearchSettings> = {
     const message = createBaseSearchSettings();
     message.semanticSearchEnabled = object.semanticSearchEnabled ?? false;
     message.embeddingModel = object.embeddingModel ?? "";
+    message.availableModels = object.availableModels?.map((e) => EmbeddingModel.fromPartial(e)) || [];
+    return message;
+  },
+};
+
+function createBaseEmbeddingModel(): EmbeddingModel {
+  return {
+    id: "",
+    name: "",
+    description: "",
+    dimensions: 0,
+    downloadMegabytes: 0,
+    multilingual: false,
+    memoryMegabytes: 0,
+  };
+}
+
+export const EmbeddingModel: MessageFns<EmbeddingModel> = {
+  encode(message: EmbeddingModel, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.id !== "") {
+      writer.uint32(10).string(message.id);
+    }
+    if (message.name !== "") {
+      writer.uint32(18).string(message.name);
+    }
+    if (message.description !== "") {
+      writer.uint32(26).string(message.description);
+    }
+    if (message.dimensions !== 0) {
+      writer.uint32(32).uint32(message.dimensions);
+    }
+    if (message.downloadMegabytes !== 0) {
+      writer.uint32(40).uint32(message.downloadMegabytes);
+    }
+    if (message.multilingual !== false) {
+      writer.uint32(48).bool(message.multilingual);
+    }
+    if (message.memoryMegabytes !== 0) {
+      writer.uint32(56).uint32(message.memoryMegabytes);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): EmbeddingModel {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseEmbeddingModel();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.id = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.name = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.description = reader.string();
+          continue;
+        }
+        case 4: {
+          if (tag !== 32) {
+            break;
+          }
+
+          message.dimensions = reader.uint32();
+          continue;
+        }
+        case 5: {
+          if (tag !== 40) {
+            break;
+          }
+
+          message.downloadMegabytes = reader.uint32();
+          continue;
+        }
+        case 6: {
+          if (tag !== 48) {
+            break;
+          }
+
+          message.multilingual = reader.bool();
+          continue;
+        }
+        case 7: {
+          if (tag !== 56) {
+            break;
+          }
+
+          message.memoryMegabytes = reader.uint32();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): EmbeddingModel {
+    return {
+      id: isSet(object.id) ? globalThis.String(object.id) : "",
+      name: isSet(object.name) ? globalThis.String(object.name) : "",
+      description: isSet(object.description) ? globalThis.String(object.description) : "",
+      dimensions: isSet(object.dimensions) ? globalThis.Number(object.dimensions) : 0,
+      downloadMegabytes: isSet(object.downloadMegabytes) ? globalThis.Number(object.downloadMegabytes) : 0,
+      multilingual: isSet(object.multilingual) ? globalThis.Boolean(object.multilingual) : false,
+      memoryMegabytes: isSet(object.memoryMegabytes) ? globalThis.Number(object.memoryMegabytes) : 0,
+    };
+  },
+
+  toJSON(message: EmbeddingModel): unknown {
+    const obj: any = {};
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    if (message.name !== "") {
+      obj.name = message.name;
+    }
+    if (message.description !== "") {
+      obj.description = message.description;
+    }
+    if (message.dimensions !== 0) {
+      obj.dimensions = Math.round(message.dimensions);
+    }
+    if (message.downloadMegabytes !== 0) {
+      obj.downloadMegabytes = Math.round(message.downloadMegabytes);
+    }
+    if (message.multilingual !== false) {
+      obj.multilingual = message.multilingual;
+    }
+    if (message.memoryMegabytes !== 0) {
+      obj.memoryMegabytes = Math.round(message.memoryMegabytes);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<EmbeddingModel>, I>>(base?: I): EmbeddingModel {
+    return EmbeddingModel.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<EmbeddingModel>, I>>(object: I): EmbeddingModel {
+    const message = createBaseEmbeddingModel();
+    message.id = object.id ?? "";
+    message.name = object.name ?? "";
+    message.description = object.description ?? "";
+    message.dimensions = object.dimensions ?? 0;
+    message.downloadMegabytes = object.downloadMegabytes ?? 0;
+    message.multilingual = object.multilingual ?? false;
+    message.memoryMegabytes = object.memoryMegabytes ?? 0;
     return message;
   },
 };

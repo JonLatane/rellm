@@ -477,6 +477,7 @@ const SearchSettings$json = {
   '2': [
     {'1': 'semantic_search_enabled', '3': 1, '4': 1, '5': 8, '10': 'semanticSearchEnabled'},
     {'1': 'embedding_model', '3': 2, '4': 1, '5': 9, '10': 'embeddingModel'},
+    {'1': 'available_models', '3': 3, '4': 3, '5': 11, '6': '.rellm.EmbeddingModel', '10': 'availableModels'},
   ],
 };
 
@@ -484,7 +485,30 @@ const SearchSettings$json = {
 final $typed_data.Uint8List searchSettingsDescriptor = $convert.base64Decode(
     'Cg5TZWFyY2hTZXR0aW5ncxI2ChdzZW1hbnRpY19zZWFyY2hfZW5hYmxlZBgBIAEoCFIVc2VtYW'
     '50aWNTZWFyY2hFbmFibGVkEicKD2VtYmVkZGluZ19tb2RlbBgCIAEoCVIOZW1iZWRkaW5nTW9k'
-    'ZWw=');
+    'ZWwSQAoQYXZhaWxhYmxlX21vZGVscxgDIAMoCzIVLnJlbGxtLkVtYmVkZGluZ01vZGVsUg9hdm'
+    'FpbGFibGVNb2RlbHM=');
+
+@$core.Deprecated('Use embeddingModelDescriptor instead')
+const EmbeddingModel$json = {
+  '1': 'EmbeddingModel',
+  '2': [
+    {'1': 'id', '3': 1, '4': 1, '5': 9, '10': 'id'},
+    {'1': 'name', '3': 2, '4': 1, '5': 9, '10': 'name'},
+    {'1': 'description', '3': 3, '4': 1, '5': 9, '10': 'description'},
+    {'1': 'dimensions', '3': 4, '4': 1, '5': 13, '10': 'dimensions'},
+    {'1': 'download_megabytes', '3': 5, '4': 1, '5': 13, '10': 'downloadMegabytes'},
+    {'1': 'multilingual', '3': 6, '4': 1, '5': 8, '10': 'multilingual'},
+    {'1': 'memory_megabytes', '3': 7, '4': 1, '5': 13, '10': 'memoryMegabytes'},
+  ],
+};
+
+/// Descriptor for `EmbeddingModel`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List embeddingModelDescriptor = $convert.base64Decode(
+    'Cg5FbWJlZGRpbmdNb2RlbBIOCgJpZBgBIAEoCVICaWQSEgoEbmFtZRgCIAEoCVIEbmFtZRIgCg'
+    'tkZXNjcmlwdGlvbhgDIAEoCVILZGVzY3JpcHRpb24SHgoKZGltZW5zaW9ucxgEIAEoDVIKZGlt'
+    'ZW5zaW9ucxItChJkb3dubG9hZF9tZWdhYnl0ZXMYBSABKA1SEWRvd25sb2FkTWVnYWJ5dGVzEi'
+    'IKDG11bHRpbGluZ3VhbBgGIAEoCFIMbXVsdGlsaW5ndWFsEikKEG1lbW9yeV9tZWdhYnl0ZXMY'
+    'ByABKA1SD21lbW9yeU1lZ2FieXRlcw==');
 
 @$core.Deprecated('Use featureSettingsDescriptor instead')
 const FeatureSettings$json = {

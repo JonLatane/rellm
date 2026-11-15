@@ -363,5 +363,29 @@ pub fn default_search_settings() -> SearchSettings {
     SearchSettings {
         semantic_search_enabled: true,
         embedding_model: String::new(),
+        available_models: vec![],
+    }
+}
+
+/// Reads the stored `search_settings` JSON field by field, so a blob saved by an older version (fewer
+/// fields) or by hand still yields the settings it does contain, rather than all-or-nothing: a missing
+/// `semantic_search_enabled` means on, a missing `embedding_model` means the default. (Strict
+/// `serde_json::from_value` would drop a whole blob over one absent field and silently turn the
+/// setting back on.)
+pub fn search_settings_from_json(stored: Option<&serde_json::Value>) -> SearchSettings {
+    let Some(stored) = stored else {
+        return default_search_settings();
+    };
+    SearchSettings {
+        semantic_search_enabled: stored
+            .get("semantic_search_enabled")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true),
+        embedding_model: stored
+            .get("embedding_model")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string(),
+        available_models: vec![],
     }
 }

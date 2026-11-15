@@ -262,19 +262,94 @@ fn semantic_search_is_on_by_default_and_the_setting_turns_it_off() {
     let mut conn = test_conn();
     conn.test_transaction::<_, diesel::result::Error, _>(|conn| {
         assert!(embeddings::semantic_search_enabled(conn)); // nothing saved: default on
-        // The default configuration reads as enabled through the proto too.
-        let config = crate::rpcs::get_server_configuration_proto(conn).unwrap();
-        assert_eq!(config.search_settings, Some(SearchSettings { semantic_search_enabled: true, embedding_model: embeddings::MODEL_DESCRIPTION.to_string() }));
+        // The default configuration reads as enabled, with the default model and the choices offered.
+        let settings = crate::rpcs::get_server_configuration_proto(conn).unwrap().search_settings.unwrap();
+        assert!(settings.semantic_search_enabled);
+        assert_eq!(settings.embedding_model, embeddings::DEFAULT_MODEL_ID);
+        assert_eq!(settings.available_models.len(), embeddings::MODELS.len());
+        assert!(settings.available_models.iter().any(|m| m.id == "multilingual-e5-small" && m.multilingual && m.memory_megabytes > 0));
 
         update(server_configurations::table.filter(server_configurations::active.eq(true)))
-            .set(server_configurations::search_settings
-                .eq(serde_json::to_value(SearchSettings { semantic_search_enabled: false, embedding_model: String::new() }).unwrap()))
+            .set(server_configurations::search_settings.eq(
+                serde_json::to_value(SearchSettings { semantic_search_enabled: false, ..Default::default() }).unwrap(),
+            ))
             .execute(conn)?;
         assert!(!embeddings::semantic_search_enabled(conn));
-        let config = crate::rpcs::get_server_configuration_proto(conn).unwrap();
-        assert_eq!(config.search_settings, Some(SearchSettings { semantic_search_enabled: false, embedding_model: embeddings::MODEL_DESCRIPTION.to_string() }));
+        assert!(!crate::rpcs::get_server_configuration_proto(conn).unwrap().search_settings.unwrap().semantic_search_enabled);
         // Disabled: no semantic ranking is attempted at all.
         assert_eq!(embeddings::semantic_ranking(conn, EmbeddingKind::Post, "anything", &[1, 2]), None);
+        Ok(())
+    });
+}
+
+#[test]
+fn the_chosen_model_is_used_and_unknown_or_missing_choices_fall_back_to_the_default() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, diesel::result::Error, _>(|conn| {
+        crate::rpcs::get_server_configuration_proto(conn).unwrap(); // creates the default row if there is none
+        let choose = |conn: &mut PgPooledConnection, id: &str| {
+            update(server_configurations::table.filter(server_configurations::active.eq(true)))
+                .set(server_configurations::search_settings.eq(serde_json::json!({
+                    "semantic_search_enabled": true,
+                    "embedding_model": id,
+                })))
+                .execute(conn)
+                .unwrap();
+        };
+        choose(conn, "multilingual-e5-small");
+        assert_eq!(embeddings::active_model(conn).id, "multilingual-e5-small");
+        assert_eq!(
+            crate::rpcs::get_server_configuration_proto(conn).unwrap().search_settings.unwrap().embedding_model,
+            "multilingual-e5-small"
+        );
+        choose(conn, "retired-model-from-an-older-version");
+        assert_eq!(embeddings::active_model(conn).id, embeddings::DEFAULT_MODEL_ID);
+        choose(conn, "");
+        assert_eq!(embeddings::active_model(conn).id, embeddings::DEFAULT_MODEL_ID);
+        Ok(())
+    });
+}
+
+#[test]
+fn configure_server_rejects_an_unknown_embedding_model() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, diesel::result::Error, _>(|conn| {
+        let mut config = crate::rpcs::get_server_configuration_proto(conn).unwrap();
+        config.search_settings = Some(SearchSettings { embedding_model: "no-such-model".to_string(), ..Default::default() });
+        let err = crate::rpcs::validations::validate_configuration(&config).unwrap_err();
+        assert_eq!(err.message(), "unknown_embedding_model");
+        config.search_settings = Some(SearchSettings { embedding_model: "all-minilm-l6-v2".to_string(), ..Default::default() });
+        assert!(crate::rpcs::validations::validate_configuration(&config).is_ok());
+        config.search_settings = Some(SearchSettings::default()); // empty = the default
+        assert!(crate::rpcs::validations::validate_configuration(&config).is_ok());
+        Ok(())
+    });
+}
+
+#[test]
+fn rows_embedded_by_another_model_are_redone_when_the_model_changes() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, anyhow::Error, _>(|conn| {
+        // A blank document needs no model, so this runs without downloading one: what matters is
+        // that a row from a *different* model counts as missing and is rewritten for the new one.
+        let blank = create_post(conn, None, PostOpts { title: None, content: None, ..Default::default() });
+        let mut ctx = SyncContext::unrestricted();
+        ctx.spec = embeddings::model_spec("all-minilm-l6-v2").unwrap();
+        embeddings::sync_embeddings(conn, EmbeddingKind::Post, &mut ctx)?;
+        let model_of = |conn: &mut PgPooledConnection| -> String {
+            post_embeddings::table
+                .filter(post_embeddings::post_id.eq(blank.id))
+                .select(post_embeddings::model)
+                .first(conn)
+                .unwrap()
+        };
+        assert_eq!(model_of(conn), "all-minilm-l6-v2");
+
+        let mut switched = SyncContext::unrestricted();
+        switched.spec = embeddings::model_spec("bge-small-en-v1.5").unwrap();
+        let stats = embeddings::sync_embeddings(conn, EmbeddingKind::Post, &mut switched)?;
+        assert_eq!(stats.empty, 1, "the old model's row was redone");
+        assert_eq!(model_of(conn), "bge-small-en-v1.5");
         Ok(())
     });
 }
@@ -287,7 +362,7 @@ mod with_model {
 
     fn wait_for_server_model() {
         let started = std::time::Instant::now();
-        while embeddings::server_embedder().is_none() {
+        while embeddings::server_embedder(embeddings::default_model()).is_none() {
             assert!(started.elapsed().as_secs() < 900, "embedding model never became ready");
             std::thread::sleep(std::time::Duration::from_secs(1));
         }
@@ -397,5 +472,191 @@ mod with_model {
             assert!(!names.contains(&baker.username), "{:?}", names);
             Ok(())
         });
+    }
+
+    // ---- Model comparison -------------------------------------------------------------------
+    //
+    // `cargo test --lib embeddings_tests::with_model::compare_models -- --ignored --nocapture`
+    // (set COMPARE_MODEL=<model id> to run one model per process, for honest RAM numbers)
+    //
+    // Downloads every model in `embeddings::MODELS` and scores each on a small retrieval set: 25
+    // short documents (English, Spanish, French, German; "title\ncontent" like real search documents)
+    // and 29 queries each with one right document, in four kinds. None of the paraphrase/non-English
+    // queries shares a word with its document, so this measures meaning, not keywords. A further 6
+    // queries have no right answer and calibrate `ModelSpec.min_similarity`. It is deliberately
+    // small: a sanity check and calibration aid, not a benchmark -- the differences between models
+    // on your content may be larger or smaller.
+
+    const CORPUS: [&str; 25] = [
+        "Adopting a puppy from the shelter\nWhat to buy before your new dog comes home",
+        "Sourdough starter troubleshooting\nMy bread won't rise and the starter smells like acetone",
+        "Quarterly corporate tax filing deadlines\nWhat accountants need submitted before the fiscal year closes",
+        "Learning to play jazz piano\nChord voicings and improvisation exercises for beginners",
+        "Marathon training plan\nTwelve weeks of long runs, tempo work and rest days",
+        "Repotting a root-bound houseplant\nWhen the roots circle the pot it's time for fresh soil",
+        "Community garden volunteer day\nHelp us plant tomatoes and build raised beds this Saturday",
+        "Open source licenses explained\nThe difference between permissive and copyleft software licenses",
+        "Camping gear checklist\nTent, sleeping bag, stove and water filter for a weekend in the mountains",
+        "How vaccines train the immune system\nAntibodies, memory cells and why boosters matter",
+        "Cheap flights to Lisbon\nTips for finding airfare deals to Portugal in spring",
+        "Electric cars charging at home\nInstalling a wall charger and what it costs per mile",
+        "Local election results\nCity council candidates and ballot measures counted overnight",
+        "Watercolor painting for beginners\nWet-on-wet technique, brushes and paper choices",
+        "Debugging a memory leak in Rust\nProfiling allocations and tracking down who holds the references",
+        "Neighborhood block party\nPotluck, live music and kids' games on Elm Street this weekend",
+        "Receta de paella valenciana\nArroz, azafr\u{e1}n, pollo y conejo cocinados a fuego lento",
+        "Consejos para ahorrar dinero\nC\u{f3}mo reducir gastos mensuales y crear un fondo de emergencia",
+        "Concierto de guitarra flamenca\nUna noche de m\u{fa}sica tradicional andaluza en el teatro municipal",
+        "Apprendre \u{e0} cuisiner des cr\u{ea}pes\nLa p\u{e2}te, la po\u{ea}le et les garnitures sucr\u{e9}es ou sal\u{e9}es",
+        "Randonn\u{e9}e dans les Alpes\nSentiers de montagne, refuges et conseils de s\u{e9}curit\u{e9} pour l'\u{e9}t\u{e9}",
+        "Exposition d'art moderne au mus\u{e9}e\nPeintures et sculptures d'artistes contemporains \u{e0} Paris",
+        "Fahrradtour entlang der Donau\nRadwege, Unterk\u{fc}nfte und Etappenplanung f\u{fc}r eine Woche",
+        "Bier brauen zu Hause\nMalz, Hopfen, Hefe und G\u{e4}rung f\u{fc}r das erste eigene Bier",
+        "Wohnung in Berlin suchen\nTipps f\u{fc}r Mieter bei Besichtigung, Vertrag und Kaution",
+    ];
+
+    // (kind, query, index of the right document)
+    const QUERIES: [(&str, &str, usize); 29] = [
+        ("english paraphrase", "getting a new dog", 0),
+        ("english paraphrase", "my loaf is flat", 1),
+        ("english paraphrase", "business paperwork due to the government", 2),
+        ("english paraphrase", "learn improvising on the keys", 3),
+        ("english paraphrase", "preparing to run 26 miles", 4),
+        ("english paraphrase", "plant is too big for its container", 5),
+        ("english paraphrase", "volunteers growing vegetables together", 6),
+        ("english paraphrase", "rules for reusing other people's code", 7),
+        ("english paraphrase", "what to pack for sleeping outdoors", 8),
+        ("english paraphrase", "why do I need a second shot", 9),
+        ("english paraphrase", "inexpensive airfare to Europe", 10),
+        ("english paraphrase", "plug in my Tesla at the house", 11),
+        ("english paraphrase", "who won the mayoral vote", 12),
+        ("english paraphrase", "painting with water-based colours", 13),
+        ("english paraphrase", "program keeps eating RAM", 14),
+        ("english paraphrase", "street party with food and music", 15),
+        ("non-english", "plato t\u{ed}pico espa\u{f1}ol con arroz", 16),
+        ("non-english", "guardar dinero para imprevistos", 17),
+        ("non-english", "espect\u{e1}culo de baile y guitarra del sur de Espa\u{f1}a", 18),
+        ("non-english", "recette de galettes fines", 19),
+        ("non-english", "marcher en haute montagne", 20),
+        ("non-english", "galerie d'oeuvres d'artistes actuels", 21),
+        ("non-english", "mit dem Rad an einem Fluss entlang", 22),
+        ("non-english", "alkoholisches Getr\u{e4}nk selbst herstellen", 23),
+        ("non-english", "eine Mietwohnung finden", 24),
+        ("cross-lingual", "traditional Spanish rice dish", 16),
+        ("cross-lingual", "hiking in the French mountains", 20),
+        ("cross-lingual", "brewing your own beer", 23),
+        ("cross-lingual", "renting an apartment in Germany", 24),
+    ];
+
+    const NO_MATCH_QUERIES: [&str; 6] = [
+        "quantum chromodynamics lattice calculations",
+        "medieval siege warfare tactics",
+        "how to knit a sweater",
+        "deep sea hydrothermal vents",
+        "stock option vesting schedule",
+        "volcano eruption lava flow",
+    ];
+
+    fn dir_bytes(path: &std::path::Path) -> u64 {
+        std::fs::read_dir(path)
+            .map(|entries| {
+                entries
+                    .filter_map(Result::ok)
+                    .map(|e| match e.metadata() {
+                        Ok(m) if m.is_dir() => dir_bytes(&e.path()),
+                        Ok(m) => m.len(),
+                        Err(_) => 0,
+                    })
+                    .sum()
+            })
+            .unwrap_or(0)
+    }
+
+    fn resident_megabytes() -> f64 {
+        std::fs::read_to_string("/proc/self/status")
+            .ok()
+            .and_then(|s| s.lines().find(|l| l.starts_with("VmRSS:")).map(str::to_string))
+            .and_then(|l| l.split_whitespace().nth(1).and_then(|kb| kb.parse::<f64>().ok()))
+            .map(|kb| kb / 1024.0)
+            .unwrap_or(0.0)
+    }
+
+    fn dot(a: &[f32], b: &[f32]) -> f32 {
+        a.iter().zip(b).map(|(x, y)| x * y).sum()
+    }
+
+    #[test]
+    #[ignore = "downloads every embedding model (~650MB) and takes a few minutes"]
+    fn compare_models() {
+        let documents: Vec<String> = CORPUS.iter().map(|d| d.to_string()).collect();
+        println!("\n| model | download | RAM after load | ms/doc | R@1 | R@3 | MRR | en R@3 | non-en R@3 | cross R@3 | best min_similarity (kept / rejected) |");
+        println!("|---|---|---|---|---|---|---|---|---|---|---|");
+        // COMPARE_MODEL=<id> runs just that model -- one process per model gives honest RAM numbers.
+        let only = std::env::var("COMPARE_MODEL").ok();
+        for spec in embeddings::MODELS.iter().filter(|m| only.as_deref().map_or(true, |o| o == m.id)) {
+            let cache = embeddings::model_cache_dir();
+            let (bytes_before, rss_before) = (dir_bytes(&cache), resident_megabytes());
+            let mut embedder = embeddings::Embedder::load(spec, 2).expect("model loads");
+            let downloaded_mb = dir_bytes(&cache).saturating_sub(bytes_before) as f64 / 1_048_576.0;
+            let ram_mb = resident_megabytes() - rss_before;
+
+            let started = std::time::Instant::now();
+            let doc_vectors = embedder.embed_documents(&documents).unwrap();
+            let ms_per_doc = started.elapsed().as_secs_f64() * 1000.0 / documents.len() as f64;
+
+            let mut ranks: Vec<(&str, usize)> = vec![];
+            let mut relevant_similarities: Vec<f32> = vec![];
+            for (kind, query, relevant) in QUERIES.iter() {
+                let q = embedder.embed_query(query).unwrap();
+                let mut scored: Vec<(usize, f32)> = doc_vectors.iter().enumerate().map(|(i, d)| (i, dot(&q, d))).collect();
+                scored.sort_by(|a, b| b.1.total_cmp(&a.1));
+                let rank = scored.iter().position(|(i, _)| i == relevant).unwrap() + 1;
+                relevant_similarities.push(scored.iter().find(|(i, _)| i == relevant).unwrap().1);
+                ranks.push((kind, rank));
+            }
+            let no_match_max: Vec<f32> = NO_MATCH_QUERIES
+                .iter()
+                .map(|q| {
+                    let v = embedder.embed_query(q).unwrap();
+                    doc_vectors.iter().map(|d| dot(&v, d)).fold(f32::MIN, f32::max)
+                })
+                .collect();
+
+            let n = ranks.len() as f64;
+            let at = |k: usize| ranks.iter().filter(|(_, r)| *r <= k).count() as f64 / n;
+            let at_for = |kind: &str, k: usize| {
+                let of_kind: Vec<_> = ranks.iter().filter(|(kd, _)| *kd == kind).collect();
+                of_kind.iter().filter(|(_, r)| *r <= k).count() as f64 / of_kind.len() as f64
+            };
+            let mrr = ranks.iter().map(|(_, r)| 1.0 / *r as f64).sum::<f64>() / n;
+
+            // The threshold that keeps the most right answers while rejecting the most no-answer queries.
+            let (mut best_t, mut best_score, mut best_kept, mut best_rejected) = (0.0, -1.0, 0.0, 0.0);
+            for step in 20..=95 {
+                let t = step as f32 / 100.0;
+                let kept = relevant_similarities.iter().filter(|s| **s >= t).count() as f64 / n;
+                let rejected = no_match_max.iter().filter(|s| **s < t).count() as f64 / no_match_max.len() as f64;
+                if kept + rejected > best_score + 1e-9 {
+                    (best_t, best_score, best_kept, best_rejected) = (t, kept + rejected, kept, rejected);
+                }
+            }
+            println!(
+                "| {} | {:.0} MB | {:.0} MB | {:.0} | {:.0}% | {:.0}% | {:.2} | {:.0}% | {:.0}% | {:.0}% | {:.2} ({:.0}% / {:.0}%) (configured {:.2}) |",
+                spec.id,
+                downloaded_mb,
+                ram_mb,
+                ms_per_doc,
+                at(1) * 100.0,
+                at(3) * 100.0,
+                mrr,
+                at_for("english paraphrase", 3) * 100.0,
+                at_for("non-english", 3) * 100.0,
+                at_for("cross-lingual", 3) * 100.0,
+                best_t,
+                best_kept * 100.0,
+                best_rejected * 100.0,
+                spec.min_similarity,
+            );
+        }
     }
 }

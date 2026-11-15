@@ -495,12 +495,38 @@ message SearchSettings {
   // full-text only.
   bool semantic_search_enabled = 1;
 
-  // Which embedding model this server runs, e.g. "paraphrase-multilingual-MiniLM-L12-v2 (quantized,
-  // 384 dimensions)". Read-only: always filled in by the server on `GetServerConfiguration` (it
-  // describes the running software, so it's not stored) and ignored by `ConfigureServer`. Shown on
-  // the Settings tab so admins know exactly what is downloaded and run. Changing the model
-  // re-embeds everything.
+  // The `EmbeddingModel.id` this server uses, chosen from `available_models`. Empty (or, on read,
+  // never empty -- the server fills in the effective one) means the default,
+  // `bge-small-en-v1.5`. `ConfigureServer` rejects an unknown id with
+  // `INVALID_ARGUMENT` (`unknown_embedding_model`). Changing it makes the server download the new
+  // model (once) and re-embed everything in the background; until a row has been redone it simply
+  // isn't a semantic candidate (full-text search still finds it), so search quality dips and then
+  // recovers. Different models trade size, speed, languages and quality -- see each model's
+  // description.
   string embedding_model = 2;
+
+  // The models an admin can choose from. Read-only: always filled in by the server on
+  // `GetServerConfiguration` and ignored by `ConfigureServer`.
+  repeated EmbeddingModel available_models = 3;
+}
+
+// One embedding model a server can run for semantic search. See `SearchSettings.embedding_model`.
+message EmbeddingModel {
+  // Stable identifier, e.g. `multilingual-e5-small`.
+  string id = 1;
+  // Display name.
+  string name = 2;
+  // What it's good at and what it costs, for the picker.
+  string description = 3;
+  // Vector size.
+  uint32 dimensions = 4;
+  // Approximate one-time model download, in MB (binary, 1024-based, like the rest of the UI).
+  uint32 download_megabytes = 5;
+  // Whether it understands languages other than English.
+  bool multilingual = 6;
+  // Approximate resident memory with the model loaded, in MB -- the server holds one copy and the
+  // `generate_embeddings` job another while it runs. The number to check on small hardware.
+  uint32 memory_megabytes = 7;
 }
 
 // Settings for a feature (e.g. People, Groups, Posts, Events, Media).

@@ -69,7 +69,10 @@ pub fn main() {
         .and_then(|t| t.parse::<usize>().ok())
         .filter(|t| *t > 0)
         .unwrap_or(DEFAULT_THREADS);
+    let spec = embeddings::active_model(&mut conn);
+    log::info!("Embedding model: {} ({} dimensions).", spec.id, spec.dimensions);
     let mut ctx = SyncContext {
+        spec,
         embedder: None,
         deadline: Instant::now() + RUN_BUDGET,
         threads,

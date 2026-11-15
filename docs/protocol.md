@@ -123,6 +123,7 @@
     - [CustomHomePage](#rellm-CustomHomePage)
     - [CustomNavigationTab](#rellm-CustomNavigationTab)
     - [CustomNavigationTabSet](#rellm-CustomNavigationTabSet)
+    - [EmbeddingModel](#rellm-EmbeddingModel)
     - [EventSettings](#rellm-EventSettings)
     - [ExternalCDNConfig](#rellm-ExternalCDNConfig)
     - [FeatureSettings](#rellm-FeatureSettings)
@@ -3623,6 +3624,27 @@ If set, overrides the default tab set for the Elm navigation on a Rellm instance
 
 
 
+<a name="rellm-EmbeddingModel"></a>
+
+### EmbeddingModel
+One embedding model a server can run for semantic search. See `SearchSettings.embedding_model`.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| id | [string](#string) |  | Stable identifier, e.g. `multilingual-e5-small`. |
+| name | [string](#string) |  | Display name. |
+| description | [string](#string) |  | What it&#39;s good at and what it costs, for the picker. |
+| dimensions | [uint32](#uint32) |  | Vector size. |
+| download_megabytes | [uint32](#uint32) |  | Approximate one-time model download, in MB (binary, 1024-based, like the rest of the UI). |
+| multilingual | [bool](#bool) |  | Whether it understands languages other than English. |
+| memory_megabytes | [uint32](#uint32) |  | Approximate resident memory with the model loaded, in MB -- the server holds one copy and the `generate_embeddings` job another while it runs. The number to check on small hardware. |
+
+
+
+
+
+
 <a name="rellm-EventSettings"></a>
 
 ### EventSettings
@@ -3824,7 +3846,8 @@ Search settings for a server. Edited on the Server Information page&#39;s Settin
 When enabled: - the `generate_embeddings` background job downloads a small local embedding model (once; see `RELLM_EMBEDDING_CACHE_DIR`) and keeps embeddings up to date for Posts (`post_embeddings`), Events (`event_embeddings` -- the Event&#39;s Post plus its Occasions&#39; times/places), Media (`media_embeddings`) and User profiles (`user_profile_embeddings`). Every embedding is made from the very same text Postgres full-text search indexes (title, content, names, ...). - `TEXT_SEARCH`-style listings in `GetPosts`, `GetEvents`, `GetMedia` and `GetUsers` also consider semantically similar results (not just prefix matches) and rerank by fusing the full-text rank with embedding similarity.
 
 When disabled, the job does nothing, the server never loads the model, and search is plain Postgres full-text search, exactly as before. Existing embeddings are kept (re-enabling resumes where it left off). If the model can&#39;t be downloaded/loaded, search silently falls back to full-text only. |
-| embedding_model | [string](#string) |  | Which embedding model this server runs, e.g. &#34;paraphrase-multilingual-MiniLM-L12-v2 (quantized, 384 dimensions)&#34;. Read-only: always filled in by the server on `GetServerConfiguration` (it describes the running software, so it&#39;s not stored) and ignored by `ConfigureServer`. Shown on the Settings tab so admins know exactly what is downloaded and run. Changing the model re-embeds everything. |
+| embedding_model | [string](#string) |  | The `EmbeddingModel.id` this server uses, chosen from `available_models`. Empty (or, on read, never empty -- the server fills in the effective one) means the default, `bge-small-en-v1.5`. `ConfigureServer` rejects an unknown id with `INVALID_ARGUMENT` (`unknown_embedding_model`). Changing it makes the server download the new model (once) and re-embed everything in the background; until a row has been redone it simply isn&#39;t a semantic candidate (full-text search still finds it), so search quality dips and then recovers. Different models trade size, speed, languages and quality -- see each model&#39;s description. |
+| available_models | [EmbeddingModel](#rellm-EmbeddingModel) | repeated | The models an admin can choose from. Read-only: always filled in by the server on `GetServerConfiguration` and ignored by `ConfigureServer`. |
 
 
 

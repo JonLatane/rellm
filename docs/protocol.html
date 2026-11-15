@@ -408,6 +408,9 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
             <p><a href="#rellm-CustomNavigationTabSet">CustomNavigationTabSet</a></p>
           </li>
           <li>
+            <p><a href="#rellm-EmbeddingModel">EmbeddingModel</a></p>
+          </li>
+          <li>
             <p><a href="#rellm-EventSettings">EventSettings</a></p>
           </li>
           <li>
@@ -7435,6 +7438,63 @@ directory</a> is (<code>{name}</code> denotes a
         </tr>
       </tbody>
     </table>
+    <p><a name="rellm-EmbeddingModel"></a></p>
+    <h3 id="embeddingmodel"><a class="anchor" aria-hidden="true" tabindex="-1" href="#embeddingmodel"><span class="octicon octicon-link"></span></a>EmbeddingModel</h3>
+    <p>One embedding model a server can run for semantic search. See <code>SearchSettings.embedding_model</code>.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>id</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>Stable identifier, e.g. <code>multilingual-e5-small</code>.</td>
+        </tr>
+        <tr>
+          <td>name</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>Display name.</td>
+        </tr>
+        <tr>
+          <td>description</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>What it's good at and what it costs, for the picker.</td>
+        </tr>
+        <tr>
+          <td>dimensions</td>
+          <td><a href="#uint32">uint32</a></td>
+          <td></td>
+          <td>Vector size.</td>
+        </tr>
+        <tr>
+          <td>download_megabytes</td>
+          <td><a href="#uint32">uint32</a></td>
+          <td></td>
+          <td>Approximate one-time model download, in MB (binary, 1024-based, like the rest of the UI).</td>
+        </tr>
+        <tr>
+          <td>multilingual</td>
+          <td><a href="#bool">bool</a></td>
+          <td></td>
+          <td>Whether it understands languages other than English.</td>
+        </tr>
+        <tr>
+          <td>memory_megabytes</td>
+          <td><a href="#uint32">uint32</a></td>
+          <td></td>
+          <td>Approximate resident memory with the model loaded, in MB -- the server holds one copy and the <code>generate_embeddings</code> job another while it runs. The number to check on small hardware.</td>
+        </tr>
+      </tbody>
+    </table>
     <p><a name="rellm-EventSettings"></a></p>
     <h3 id="eventsettings"><a class="anchor" aria-hidden="true" tabindex="-1" href="#eventsettings"><span class="octicon octicon-link"></span></a>EventSettings</h3>
     <p>Specific settings for Events.</p>
@@ -7908,7 +7968,8 @@ directory</a> is (<code>{name}</code> denotes a
     <p>When enabled: - the <code>generate_embeddings</code> background job downloads a small local embedding model (once; see <code>RELLM_EMBEDDING_CACHE_DIR</code>) and keeps embeddings up to date for Posts (<code>post_embeddings</code>), Events (<code>event_embeddings</code> -- the Event's Post plus its Occasions' times/places), Media (<code>media_embeddings</code>) and User profiles (<code>user_profile_embeddings</code>). Every embedding is made from the very same text Postgres full-text search indexes (title, content, names, ...). - <code>TEXT_SEARCH</code>-style listings in <code>GetPosts</code>, <code>GetEvents</code>, <code>GetMedia</code> and <code>GetUsers</code> also consider semantically similar results (not just prefix matches) and rerank by fusing the full-text rank with embedding similarity.</p>
     <p>
       When disabled, the job does nothing, the server never loads the model, and search is plain Postgres full-text search, exactly as before. Existing embeddings are kept (re-enabling resumes where it left off). If the model can't be downloaded/loaded, search silently falls back to full-text only. |
-      | embedding_model | <a href="#string">string</a> | | Which embedding model this server runs, e.g. "paraphrase-multilingual-MiniLM-L12-v2 (quantized, 384 dimensions)". Read-only: always filled in by the server on <code>GetServerConfiguration</code> (it describes the running software, so it's not stored) and ignored by <code>ConfigureServer</code>. Shown on the Settings tab so admins know exactly what is downloaded and run. Changing the model re-embeds everything. |
+      | embedding_model | <a href="#string">string</a> | | The <code>EmbeddingModel.id</code> this server uses, chosen from <code>available_models</code>. Empty (or, on read, never empty -- the server fills in the effective one) means the default, <code>bge-small-en-v1.5</code>. <code>ConfigureServer</code> rejects an unknown id with <code>INVALID_ARGUMENT</code> (<code>unknown_embedding_model</code>). Changing it makes the server download the new model (once) and re-embed everything in the background; until a row has been redone it simply isn't a semantic candidate (full-text search still finds it), so search quality dips and then recovers. Different models trade size, speed, languages and quality -- see each model's description. |
+      | available_models | <a href="#rellm-EmbeddingModel">EmbeddingModel</a> | repeated | The models an admin can choose from. Read-only: always filled in by the server on <code>GetServerConfiguration</code> and ignored by <code>ConfigureServer</code>. |
     </p>
     <p><a name="rellm-ServerColors"></a></p>
     <h3 id="servercolors"><a class="anchor" aria-hidden="true" tabindex="-1" href="#servercolors"><span class="octicon octicon-link"></span></a>ServerColors</h3>

@@ -1610,6 +1610,7 @@ class SearchSettings extends $pb.GeneratedMessage {
   factory SearchSettings({
     $core.bool? semanticSearchEnabled,
     $core.String? embeddingModel,
+    $core.Iterable<EmbeddingModel>? availableModels,
   }) {
     final $result = create();
     if (semanticSearchEnabled != null) {
@@ -1617,6 +1618,9 @@ class SearchSettings extends $pb.GeneratedMessage {
     }
     if (embeddingModel != null) {
       $result.embeddingModel = embeddingModel;
+    }
+    if (availableModels != null) {
+      $result.availableModels.addAll(availableModels);
     }
     return $result;
   }
@@ -1627,6 +1631,7 @@ class SearchSettings extends $pb.GeneratedMessage {
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'SearchSettings', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
     ..aOB(1, _omitFieldNames ? '' : 'semanticSearchEnabled')
     ..aOS(2, _omitFieldNames ? '' : 'embeddingModel')
+    ..pc<EmbeddingModel>(3, _omitFieldNames ? '' : 'availableModels', $pb.PbFieldType.PM, subBuilder: EmbeddingModel.create)
     ..hasRequiredFields = false
   ;
 
@@ -1676,11 +1681,14 @@ class SearchSettings extends $pb.GeneratedMessage {
   @$pb.TagNumber(1)
   void clearSemanticSearchEnabled() => clearField(1);
 
-  /// Which embedding model this server runs, e.g. "paraphrase-multilingual-MiniLM-L12-v2 (quantized,
-  /// 384 dimensions)". Read-only: always filled in by the server on `GetServerConfiguration` (it
-  /// describes the running software, so it's not stored) and ignored by `ConfigureServer`. Shown on
-  /// the Settings tab so admins know exactly what is downloaded and run. Changing the model
-  /// re-embeds everything.
+  /// The `EmbeddingModel.id` this server uses, chosen from `available_models`. Empty (or, on read,
+  /// never empty -- the server fills in the effective one) means the default,
+  /// `bge-small-en-v1.5`. `ConfigureServer` rejects an unknown id with
+  /// `INVALID_ARGUMENT` (`unknown_embedding_model`). Changing it makes the server download the new
+  /// model (once) and re-embed everything in the background; until a row has been redone it simply
+  /// isn't a semantic candidate (full-text search still finds it), so search quality dips and then
+  /// recovers. Different models trade size, speed, languages and quality -- see each model's
+  /// description.
   @$pb.TagNumber(2)
   $core.String get embeddingModel => $_getSZ(1);
   @$pb.TagNumber(2)
@@ -1689,6 +1697,154 @@ class SearchSettings extends $pb.GeneratedMessage {
   $core.bool hasEmbeddingModel() => $_has(1);
   @$pb.TagNumber(2)
   void clearEmbeddingModel() => clearField(2);
+
+  /// The models an admin can choose from. Read-only: always filled in by the server on
+  /// `GetServerConfiguration` and ignored by `ConfigureServer`.
+  @$pb.TagNumber(3)
+  $core.List<EmbeddingModel> get availableModels => $_getList(2);
+}
+
+/// One embedding model a server can run for semantic search. See `SearchSettings.embedding_model`.
+class EmbeddingModel extends $pb.GeneratedMessage {
+  factory EmbeddingModel({
+    $core.String? id,
+    $core.String? name,
+    $core.String? description,
+    $core.int? dimensions,
+    $core.int? downloadMegabytes,
+    $core.bool? multilingual,
+    $core.int? memoryMegabytes,
+  }) {
+    final $result = create();
+    if (id != null) {
+      $result.id = id;
+    }
+    if (name != null) {
+      $result.name = name;
+    }
+    if (description != null) {
+      $result.description = description;
+    }
+    if (dimensions != null) {
+      $result.dimensions = dimensions;
+    }
+    if (downloadMegabytes != null) {
+      $result.downloadMegabytes = downloadMegabytes;
+    }
+    if (multilingual != null) {
+      $result.multilingual = multilingual;
+    }
+    if (memoryMegabytes != null) {
+      $result.memoryMegabytes = memoryMegabytes;
+    }
+    return $result;
+  }
+  EmbeddingModel._() : super();
+  factory EmbeddingModel.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromBuffer(i, r);
+  factory EmbeddingModel.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'EmbeddingModel', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'id')
+    ..aOS(2, _omitFieldNames ? '' : 'name')
+    ..aOS(3, _omitFieldNames ? '' : 'description')
+    ..a<$core.int>(4, _omitFieldNames ? '' : 'dimensions', $pb.PbFieldType.OU3)
+    ..a<$core.int>(5, _omitFieldNames ? '' : 'downloadMegabytes', $pb.PbFieldType.OU3)
+    ..aOB(6, _omitFieldNames ? '' : 'multilingual')
+    ..a<$core.int>(7, _omitFieldNames ? '' : 'memoryMegabytes', $pb.PbFieldType.OU3)
+    ..hasRequiredFields = false
+  ;
+
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.deepCopy] instead. '
+  'Will be removed in next major version')
+  EmbeddingModel clone() => EmbeddingModel()..mergeFromMessage(this);
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.rebuild] instead. '
+  'Will be removed in next major version')
+  EmbeddingModel copyWith(void Function(EmbeddingModel) updates) => super.copyWith((message) => updates(message as EmbeddingModel)) as EmbeddingModel;
+
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static EmbeddingModel create() => EmbeddingModel._();
+  EmbeddingModel createEmptyInstance() => create();
+  static $pb.PbList<EmbeddingModel> createRepeated() => $pb.PbList<EmbeddingModel>();
+  @$core.pragma('dart2js:noInline')
+  static EmbeddingModel getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<EmbeddingModel>(create);
+  static EmbeddingModel? _defaultInstance;
+
+  /// Stable identifier, e.g. `multilingual-e5-small`.
+  @$pb.TagNumber(1)
+  $core.String get id => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set id($core.String v) { $_setString(0, v); }
+  @$pb.TagNumber(1)
+  $core.bool hasId() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearId() => clearField(1);
+
+  /// Display name.
+  @$pb.TagNumber(2)
+  $core.String get name => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set name($core.String v) { $_setString(1, v); }
+  @$pb.TagNumber(2)
+  $core.bool hasName() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearName() => clearField(2);
+
+  /// What it's good at and what it costs, for the picker.
+  @$pb.TagNumber(3)
+  $core.String get description => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set description($core.String v) { $_setString(2, v); }
+  @$pb.TagNumber(3)
+  $core.bool hasDescription() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearDescription() => clearField(3);
+
+  /// Vector size.
+  @$pb.TagNumber(4)
+  $core.int get dimensions => $_getIZ(3);
+  @$pb.TagNumber(4)
+  set dimensions($core.int v) { $_setUnsignedInt32(3, v); }
+  @$pb.TagNumber(4)
+  $core.bool hasDimensions() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearDimensions() => clearField(4);
+
+  /// Approximate one-time model download, in MB (binary, 1024-based, like the rest of the UI).
+  @$pb.TagNumber(5)
+  $core.int get downloadMegabytes => $_getIZ(4);
+  @$pb.TagNumber(5)
+  set downloadMegabytes($core.int v) { $_setUnsignedInt32(4, v); }
+  @$pb.TagNumber(5)
+  $core.bool hasDownloadMegabytes() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearDownloadMegabytes() => clearField(5);
+
+  /// Whether it understands languages other than English.
+  @$pb.TagNumber(6)
+  $core.bool get multilingual => $_getBF(5);
+  @$pb.TagNumber(6)
+  set multilingual($core.bool v) { $_setBool(5, v); }
+  @$pb.TagNumber(6)
+  $core.bool hasMultilingual() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearMultilingual() => clearField(6);
+
+  /// Approximate resident memory with the model loaded, in MB -- the server holds one copy and the
+  /// `generate_embeddings` job another while it runs. The number to check on small hardware.
+  @$pb.TagNumber(7)
+  $core.int get memoryMegabytes => $_getIZ(6);
+  @$pb.TagNumber(7)
+  set memoryMegabytes($core.int v) { $_setUnsignedInt32(6, v); }
+  @$pb.TagNumber(7)
+  $core.bool hasMemoryMegabytes() => $_has(6);
+  @$pb.TagNumber(7)
+  void clearMemoryMegabytes() => clearField(7);
 }
 
 /// Settings for a feature (e.g. People, Groups, Posts, Events, Media).

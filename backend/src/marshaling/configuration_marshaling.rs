@@ -60,10 +60,14 @@ impl ToDbServerConfiguration for ServerConfiguration {
                 .market_settings
                 .as_ref()
                 .map(|c| serde_json::to_value(c).unwrap()),
-            search_settings: self
-                .search_settings
-                .as_ref()
-                .map(|c| serde_json::to_value(c).unwrap()),
+            // `available_models` is derived (see `to_proto`), never stored.
+            search_settings: self.search_settings.as_ref().map(|c| {
+                serde_json::to_value(SearchSettings {
+                    available_models: vec![],
+                    ..c.clone()
+                })
+                .unwrap()
+            }),
             preferred_verification_apis: Some(crate::logic::verification_apis_to_json(
                 &self
                     .preferred_verification_apis
@@ -277,14 +281,15 @@ impl ToProtoServerConfiguration for models::ServerConfiguration {
         // `SearchSettings` -- falls back to the default (semantic search ON) whenever the stored blob
         // is missing (every server before this column existed), same read-time-fallback convention
         // as `market_settings`/`media_settings` above. Public, like `market_settings`.
-        let search_settings: SearchSettings = self
-            .search_settings
-            .to_owned()
-            .and_then(|c| serde_json::from_value::<SearchSettings>(c).ok())
-            .unwrap_or_else(models::default_search_settings);
-        // Describes the running software, not a stored choice: always the live value.
+        let search_settings: SearchSettings = models::search_settings_from_json(self.search_settings.as_ref());
+        // The effective model (the default when unset/unrecognized) and what can be chosen are facts
+        // about the running software, not stored: always the live values.
         let search_settings = SearchSettings {
-            embedding_model: crate::logic::embeddings::MODEL_DESCRIPTION.to_string(),
+            embedding_model: crate::logic::embeddings::model_spec(&search_settings.embedding_model)
+                .unwrap_or_else(crate::logic::embeddings::default_model)
+                .id
+                .to_string(),
+            available_models: crate::logic::embeddings::available_models(),
             ..search_settings
         };
         // Not persisted anywhere yet -- see `NewServerConfiguration`'s doc and
