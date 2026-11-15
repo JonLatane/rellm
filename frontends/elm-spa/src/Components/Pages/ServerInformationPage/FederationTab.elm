@@ -33,6 +33,7 @@ import Shared.AccountsPanel.RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer)
 import Task
 import Time
+import UI
 import UI.Classes exposing (classes, hostnameToCSSClass)
 import UI.Drag
 import UI.Flip
@@ -2098,6 +2099,7 @@ mastodonAppIdField domain appId =
             [ class "server-details-rename-input"
             , value appId
             , onInput (MastodonAppIdChanged domain)
+            , UI.onEnter MastodonServersSaveClicked
             ]
             []
         ]
@@ -2117,8 +2119,15 @@ mastodonAppSecretField domain mastodonServerEdit =
                 , placeholder "New App Secret"
                 , value mastodonServerEdit.pendingAppSecret
                 , onInput (MastodonAppSecretChanged domain)
+                , UI.onEnter MastodonServersSaveClicked
                 ]
                 []
+            , button
+                [ classes [ "server-details-rename-save", "background-color-primary" ]
+                , onClick MastodonServersSaveClicked
+                , disabled (String.isEmpty mastodonServerEdit.pendingAppSecret)
+                ]
+                [ text "Save" ]
             , button [ class "server-details-rename-button", onClick (MastodonAppSecretCancelClicked domain) ] [ text "Cancel" ]
             ]
 
