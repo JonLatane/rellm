@@ -488,7 +488,7 @@ jobs:
     # applied automatically on first test run, so no separate migration step is needed here.
     services:
       postgres:
-        image: postgres:16
+        image: postgres:17.6
         env:
           POSTGRES_DB: rellm_test
           POSTGRES_HOST_AUTH_METHOD: trust
