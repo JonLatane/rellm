@@ -568,20 +568,36 @@ update shared msg model =
 
         FedMediaClicked key mediaId ->
             let
+                items : List FedMedia.Item
+                items =
+                    Dict.get key model.federated
+                        |> Maybe.map .items
+                        |> Maybe.withDefault []
+
+                -- Where each item's post is in the Rellm UI: the viewer's "View post" button, and the audio
+                -- player's "Opened from post" link, go there.
+                postLinks : Dict String String
+                postLinks =
+                    items
+                        |> List.map (\item -> ( item.media.id, Posts.postHref shared.basePath shared.accounts.mainFrontendHost item.host item.post ))
+                        |> Dict.fromList
+
                 references : List MediaReference
                 references =
-                    Dict.get key model.federated
-                        |> Maybe.map (.items >> List.map .media)
-                        |> Maybe.withDefault []
+                    List.map .media items
             in
             ( model
-            , Effect.fromShared
-                (if model.kind == Audio then
-                    Shared.AudioPlayerPanelMsg (AudioPlayerPanel.Open references mediaId key)
+            , if model.kind == Audio then
+                Effect.batch
+                    (Effect.fromShared (Shared.AudioPlayerPanelMsg (AudioPlayerPanel.Open references mediaId key))
+                        :: (postLinks
+                                |> Dict.toList
+                                |> List.map (\( id, link ) -> Effect.fromShared (Shared.AudioPlayerPanelMsg (AudioPlayerPanel.AttachPostUrl id key (Just link))))
+                           )
+                    )
 
-                 else
-                    Shared.MediaViewerPanelMsg (MediaViewerPanel.Open references Nothing mediaId key)
-                )
+              else
+                Effect.fromShared (Shared.MediaViewerPanelMsg (MediaViewerPanel.OpenWithPostLinks references postLinks mediaId key))
             )
 
         FedQueuePicked key mediaId choice ->

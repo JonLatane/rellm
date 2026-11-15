@@ -480,3 +480,88 @@
   text-align: center;
   margin-top: 0.25rem;
 }
+
+/* Components.FederatedMyMedia -- "your media" for a connected Mastodon/Bluesky account (the Media page's My Media tab). */
+.federated-my-media {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.federated-my-media-warning {
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--border);
+  border-left-width: 4px;
+  border-radius: 0.4rem;
+  font-size: 0.85rem;
+  background: var(--chip-bg);
+}
+
+.federated-my-media-upload {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.federated-my-media-upload-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.federated-my-media-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 0.75rem;
+}
+
+.federated-my-media-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.federated-my-media-thumb {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  background: var(--chip-bg);
+}
+
+.federated-my-media-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.federated-my-media-caption {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.8rem;
+}
+
+.federated-my-media-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.federated-my-media-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.federated-my-media-delete {
+  color: var(--danger);
+}

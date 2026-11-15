@@ -1,6 +1,9 @@
 module Shared.Federation.Mastodon exposing
     ( Account
     , OwnProfile
+    , fetchOwnMediaStatuses
+    , postStatusWithMedia
+    , uploadMedia
     , Relationship
     , fetchMediaPosts
     , fetchOwnProfile
@@ -60,10 +63,12 @@ all, same as `fetchPosts`/`fetchStatus` already rely on for the local timeline/s
 -}
 
 import Dict exposing (Dict)
+import File exposing (File)
 import Http
 import Iso8601
 import Json.Decode as Decode exposing (Decoder)
 import Json.Encode as Encode
+import Process
 import Proto.Rellm exposing (Author, MediaReference, Post, defaultAuthor, defaultMediaReference, defaultMediaSize, defaultPost, wrapMediaReference, wrapPost)
 import Proto.Rellm.MediaConversion exposing (MediaConversion(..))
 import Proto.Rellm.PostContext exposing (PostContext(..))
@@ -1202,5 +1207,117 @@ updateOwnProfile instanceHost accessToken profile =
                     ]
                 )
         , resolver = jsonResolver (Decode.succeed ()) (\metadata _ -> Http.BadStatus metadata.statusCode)
+        , timeout = Just 10000
+        }
+
+
+{-| `GET /api/v1/accounts/:id/statuses?only_media=true` as the account holding `accessToken` -- its own statuses that
+carry media (what "your media" is on Mastodon, which can't list uploads that aren't on a post), including its
+unlisted/followers-only ones, already translated via `toPost`. `accountId` is the account's id on `instanceHost`.
+`cursor` pages as in `fetchPosts`.
+-}
+fetchOwnMediaStatuses : String -> String -> String -> Maybe String -> Task Http.Error ( List Post, Maybe String )
+fetchOwnMediaStatuses instanceHost accessToken accountId cursor =
+    Http.task
+        { method = "GET"
+        , headers = authHeaders accessToken
+        , url =
+            "https://"
+                ++ instanceHost
+                ++ "/api/v1/accounts/"
+                ++ accountId
+                ++ "/statuses?only_media=true&exclude_reblogs=true&limit=30"
+                ++ maxIdParam Nothing cursor
+        , body = Http.emptyBody
+        , resolver = jsonResolver (Decode.list decoder) (\metadata _ -> Http.BadStatus metadata.statusCode)
+        , timeout = Just 10000
+        }
+        |> Task.map (pageOf instanceHost)
+
+
+{-| `POST /api/v2/media` -- uploads `file` (with `description` as its alt text) and resolves to the new attachment's
+id once the instance has finished processing it (video and audio are processed asynchronously: the upload answers
+202 with no `url` yet, so this polls `GET /api/v1/media/:id`, up to about a minute). Needs the `write:media`
+OAuth scope (see `public/index.html`'s authorize URL); a token connected before it was requested gets a 403.
+An attachment on its own is deleted after a while -- `postStatusWithMedia` is what keeps it.
+-}
+uploadMedia : String -> String -> File -> String -> Task Http.Error String
+uploadMedia instanceHost accessToken file description =
+    Http.task
+        { method = "POST"
+        , headers = authHeaders accessToken
+        , url = "https://" ++ instanceHost ++ "/api/v2/media"
+        , body = Http.multipartBody [ Http.filePart "file" file, Http.stringPart "description" description ]
+        , resolver =
+            jsonResolver
+                (Decode.map2 Tuple.pair
+                    (Decode.field "id" Decode.string)
+                    (Decode.oneOf [ Decode.field "url" (Decode.nullable Decode.string) |> Decode.map (\url -> url /= Nothing), Decode.succeed False ])
+                )
+                (\metadata _ -> Http.BadStatus metadata.statusCode)
+        , timeout = Just 120000
+        }
+        |> Task.andThen
+            (\( id, ready ) ->
+                if ready then
+                    Task.succeed id
+
+                else
+                    waitForMedia instanceHost accessToken id 30
+            )
+
+
+{-| Polls `GET /api/v1/media/:id` once a second until the attachment has its `url` (or `attemptsLeft` runs out,
+which fails as a timeout).
+-}
+waitForMedia : String -> String -> String -> Int -> Task Http.Error String
+waitForMedia instanceHost accessToken id attemptsLeft =
+    if attemptsLeft <= 0 then
+        Task.fail Http.Timeout
+
+    else
+        Process.sleep 1000
+            |> Task.andThen
+                (\() ->
+                    Http.task
+                        { method = "GET"
+                        , headers = authHeaders accessToken
+                        , url = "https://" ++ instanceHost ++ "/api/v1/media/" ++ id
+                        , body = Http.emptyBody
+                        , resolver =
+                            jsonResolver
+                                (Decode.oneOf [ Decode.field "url" (Decode.nullable Decode.string) |> Decode.map (\url -> url /= Nothing), Decode.succeed False ])
+                                (\metadata _ -> Http.BadStatus metadata.statusCode)
+                        , timeout = Just 10000
+                        }
+                )
+            |> Task.andThen
+                (\ready ->
+                    if ready then
+                        Task.succeed id
+
+                    else
+                        waitForMedia instanceHost accessToken id (attemptsLeft - 1)
+                )
+
+
+{-| `POST /api/v1/statuses` with `text` and the already-uploaded attachments `mediaIds` -- `postStatus`'s
+counterpart for a post that carries media. Resolves to the new status' public `url`, when it has one.
+-}
+postStatusWithMedia : String -> String -> { text : String, mediaIds : List String, visibility : MastodonVisibility } -> Task Http.Error (Maybe String)
+postStatusWithMedia instanceHost accessToken { text, mediaIds, visibility } =
+    Http.task
+        { method = "POST"
+        , headers = authHeaders accessToken
+        , url = "https://" ++ instanceHost ++ "/api/v1/statuses"
+        , body =
+            Http.jsonBody
+                (Encode.object
+                    [ ( "status", Encode.string text )
+                    , ( "visibility", Encode.string (visibilityValue visibility) )
+                    , ( "media_ids", Encode.list Encode.string mediaIds )
+                    ]
+                )
+        , resolver = jsonResolver (Decode.maybe (Decode.field "url" Decode.string)) (\metadata _ -> Http.BadStatus metadata.statusCode)
         , timeout = Just 10000
         }

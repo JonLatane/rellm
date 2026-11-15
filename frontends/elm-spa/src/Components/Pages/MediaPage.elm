@@ -25,6 +25,7 @@ server at a time.
 -}
 
 import Browser.Navigation
+import Components.FederatedMyMedia as FedMyMedia
 import Components.MediaFeed as MediaFeed
 import Dict exposing (Dict)
 import Effect exposing (Effect)
@@ -37,6 +38,7 @@ import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers as RellmServers
 import Shared.Breadcrumbs as Breadcrumbs
+import Shared.Federation.Actions as Actions
 import Shared.MediaViewerPanel as MediaViewerPanel
 import Shared.MyMediaPanel as MyMediaPanel
 import UI
@@ -77,6 +79,12 @@ type alias Model =
     -- until one is chosen (`enterTab` defaults to the first signed-in account).
     , myMediaHost : Maybe String
 
+    -- A connected Mastodon/Bluesky account (its `Actions.accountId`) whose media the My Media tab shows instead,
+    -- once chosen (or named by `?account=`, which `UI`'s Accounts Panel rows link with) -- and its view, created by
+    -- `enterTab` when that account is found. `Nothing` for a Rellm account's (`myMedia`).
+    , myFederatedKey : Maybe String
+    , myFederated : Maybe FedMyMedia.Model
+
     -- A media item the My Media tab's Delete button asked to delete, awaiting this page's own
     -- inline confirmation (see module doc).
     , pendingDelete : Maybe Media
@@ -88,6 +96,8 @@ type Msg
     | AudioMsg MediaFeed.Msg
     | ImagesMsg MediaFeed.Msg
     | MyMediaMsg MyMediaPanel.Msg
+    | FedMyMediaMsg FedMyMedia.Msg
+    | FederatedAccountSelected String
     | TabClicked Tab
     | AccountSelected String
     | DeleteConfirmed
@@ -161,6 +171,17 @@ init shared mode navKey path query =
                 , images = Nothing
                 , myMedia = MyMediaPanel.init
                 , myMediaHost = Nothing
+                , myFederatedKey =
+                    Dict.get "account" query
+                        |> Maybe.andThen
+                            (\key ->
+                                if String.startsWith "mastodon:" key || String.startsWith "bluesky:" key then
+                                    Just key
+
+                                else
+                                    Nothing
+                            )
+                , myFederated = Nothing
                 , pendingDelete = Nothing
                 }
     in
@@ -209,42 +230,89 @@ enterTab shared model =
 
         MyMediaTab ->
             let
-                accounts : List RellmAccount
-                accounts =
-                    mediaAccounts shared
+                federated : List Actions.ServerAccount
+                federated =
+                    Actions.usableAccounts shared.accounts
 
-                chosenHost : Maybe String
-                chosenHost =
-                    case model.myMediaHost of
-                        Just host ->
-                            if List.any (\a -> a.server == host) accounts then
-                                Just host
-
-                            else
-                                List.head accounts |> Maybe.map .server
+                -- The account the tab is for, if it's a Mastodon/Bluesky one: the one named (by `?account=` or the
+                -- chips), or -- with no Rellm account to show instead -- the first there is.
+                chosenFederated : Maybe Actions.ServerAccount
+                chosenFederated =
+                    case model.myFederatedKey of
+                        Just key ->
+                            List.filter (\account -> Actions.accountId account == key) federated |> List.head
 
                         Nothing ->
-                            List.head accounts |> Maybe.map .server
+                            if List.isEmpty (mediaAccounts shared) then
+                                List.head federated
+
+                            else
+                                Nothing
             in
-            case chosenHost of
-                Just host ->
-                    if MyMediaPanel.isOpen model.myMedia && model.myMediaHost == Just host then
-                        ( model, Effect.none )
+            case chosenFederated of
+                Just account ->
+                    case model.myFederated of
+                        Just existing ->
+                            if Actions.accountId existing.account == Actions.accountId account then
+                                ( model, Effect.none )
 
-                    else if RellmServers.knownConnectedRellmServer shared.accounts.servers host == Nothing then
-                        -- A cold load races `Shared.AccountsPanel.init`'s own reconnect (every
-                        -- persisted server starts disconnected -- see
-                        -- `RellmServers.knownConnectedRellmServer`), and opening the panel now would
-                        -- fail its fetch with "Couldn't reach the server". Remember the choice and
-                        -- retry on the next forwarded `Shared.Msg` (`SharedMsgReceived`), which a
-                        -- server connecting triggers.
-                        ( { model | myMediaHost = Just host }, Effect.none )
+                            else
+                                startFederatedMyMedia account model
 
-                    else
-                        updateMyMedia shared (MyMediaPanel.Open Nothing host) { model | myMediaHost = Just host }
+                        Nothing ->
+                            startFederatedMyMedia account model
 
                 Nothing ->
-                    ( model, Effect.none )
+                    enterRellmMyMedia shared model
+
+
+startFederatedMyMedia : Actions.ServerAccount -> Model -> ( Model, Effect Msg )
+startFederatedMyMedia account model =
+    FedMyMedia.init account
+        |> Tuple.mapFirst (\started -> { model | myFederated = Just started, myFederatedKey = Just (Actions.accountId account) })
+        |> Tuple.mapSecond (Effect.map FedMyMediaMsg)
+
+
+{-| The My Media tab for a Rellm account: opens `Shared.MyMediaPanel` on its server. -}
+enterRellmMyMedia : Shared.Model -> Model -> ( Model, Effect Msg )
+enterRellmMyMedia shared model =
+    let
+        accounts : List RellmAccount
+        accounts =
+            mediaAccounts shared
+
+        chosenHost : Maybe String
+        chosenHost =
+            case model.myMediaHost of
+                Just host ->
+                    if List.any (\a -> a.server == host) accounts then
+                        Just host
+
+                    else
+                        List.head accounts |> Maybe.map .server
+
+                Nothing ->
+                    List.head accounts |> Maybe.map .server
+    in
+    case chosenHost of
+        Just host ->
+            if MyMediaPanel.isOpen model.myMedia && model.myMediaHost == Just host then
+                ( model, Effect.none )
+
+            else if RellmServers.knownConnectedRellmServer shared.accounts.servers host == Nothing then
+                -- A cold load races `Shared.AccountsPanel.init`'s own reconnect (every
+                -- persisted server starts disconnected -- see
+                -- `RellmServers.knownConnectedRellmServer`), and opening the panel now would
+                -- fail its fetch with "Couldn't reach the server". Remember the choice and
+                -- retry on the next forwarded `Shared.Msg` (`SharedMsgReceived`), which a
+                -- server connecting triggers.
+                ( { model | myMediaHost = Just host }, Effect.none )
+
+            else
+                updateMyMedia shared (MyMediaPanel.Open Nothing host) { model | myMediaHost = Just host }
+
+        Nothing ->
+            ( model, Effect.none )
 
 
 {-| The accounts the My Media tab can show: one per enabled server (the account `MyMediaPanel`
@@ -388,7 +456,20 @@ updateTab shared msg model =
         AccountSelected host ->
             -- Reopens (`Open` resets the panel's state, including its search text) on the chosen
             -- account's server; any half-finished delete confirmation belonged to the old one.
-            updateMyMedia shared (MyMediaPanel.Open Nothing host) { model | myMediaHost = Just host, pendingDelete = Nothing }
+            updateMyMedia shared (MyMediaPanel.Open Nothing host) { model | myMediaHost = Just host, myFederatedKey = Nothing, myFederated = Nothing, pendingDelete = Nothing }
+
+        FederatedAccountSelected key ->
+            enterTab shared { model | myFederatedKey = Just key, myFederated = Nothing, pendingDelete = Nothing }
+
+        FedMyMediaMsg viewMsg ->
+            case model.myFederated of
+                Just current ->
+                    FedMyMedia.update shared viewMsg current
+                        |> Tuple.mapFirst (\v -> { model | myFederated = Just v })
+                        |> Tuple.mapSecond (Effect.map FedMyMediaMsg)
+
+                Nothing ->
+                    ( model, Effect.none )
 
         DeleteConfirmed ->
             case model.pendingDelete of
@@ -483,7 +564,7 @@ view shared model =
             Tabbed ->
                 div [ class "media-page-tabs" ]
                     ([ tabButton VideoTab "Video", tabButton AudioTab "Audio", tabButton ImagesTab "Images" ]
-                        ++ (if not (List.isEmpty (mediaAccounts shared)) then
+                        ++ (if not (List.isEmpty (mediaAccounts shared)) || not (List.isEmpty (Actions.usableAccounts shared.accounts)) then
                                 [ tabButton MyMediaTab "My Media" ]
 
                             else
@@ -511,10 +592,17 @@ view shared model =
 
             MyMediaTab ->
                 div [ class "media-page-my-media" ]
-                    [ accountChipsView shared model
-                    , pendingDeleteView model.pendingDelete
-                    , Html.map MyMediaMsg (MyMediaPanel.viewEmbedded shared.windowSize.width shared.accounts model.myMedia)
-                    ]
+                    (accountChipsView shared model
+                        :: (case model.myFederated of
+                                Just federatedView ->
+                                    [ Html.map FedMyMediaMsg (FedMyMedia.view shared federatedView) ]
+
+                                Nothing ->
+                                    [ pendingDeleteView model.pendingDelete
+                                    , Html.map MyMediaMsg (MyMediaPanel.viewEmbedded shared.windowSize.width shared.accounts model.myMedia)
+                                    ]
+                           )
+                    )
         ]
 
 
@@ -524,15 +612,61 @@ colors), as buttons, with the selected account emphasized. Hidden unless there's
 -}
 accountChipsView : Shared.Model -> Model -> Html Msg
 accountChipsView shared model =
-    case mediaAccounts shared of
-        [] ->
-            text ""
+    let
+        accounts : List RellmAccount
+        accounts =
+            mediaAccounts shared
 
-        [ _ ] ->
-            text ""
+        federated : List Actions.ServerAccount
+        federated =
+            Actions.usableAccounts shared.accounts
+    in
+    if List.length accounts + List.length federated < 2 then
+        text ""
 
-        accounts ->
-            div [ class "profile-federated media-page-accounts" ] (List.map (accountChip shared model) accounts)
+    else
+        div [ class "profile-federated media-page-accounts" ]
+            (List.map (accountChip shared model) accounts ++ List.map (federatedAccountChip model) federated)
+
+
+{-| A connected Mastodon/Bluesky account's chip, beside the Rellm accounts' -- in the colors of its network's
+`"mastodon:"`/`"bluesky:"` host, like its posts' cards.
+-}
+federatedAccountChip : Model -> Actions.ServerAccount -> Html Msg
+federatedAccountChip model account =
+    let
+        key : String
+        key =
+            Actions.accountId account
+    in
+    button
+        [ classes
+            ([ "profile-federated-link", "media-page-account-chip", hostnameToCSSClass (Actions.hostOf account), "background-color-primary" ]
+                ++ (if model.myFederatedKey == Just key then
+                        [ "is-selected" ]
+
+                    else
+                        []
+                   )
+            )
+        , onClick (FederatedAccountSelected key)
+        , title (Actions.usernameOf account ++ " (" ++ Actions.hostOf account ++ ")")
+        ]
+        [ UI.imageOrInitial [ "profile-federated-avatar" ] (Actions.usernameOf account) (Actions.avatarUrlOf account)
+        , div [ class "profile-federated-names" ]
+            [ span [ class "profile-federated-username" ] [ text ("⇄ " ++ Actions.usernameOf account) ]
+            , span [ class "profile-federated-realname" ]
+                [ text
+                    (case account of
+                        Actions.MastodonServerAccount mastodonAccount ->
+                            mastodonAccount.instanceHost
+
+                        Actions.BlueskyServerAccount _ ->
+                            "Bluesky"
+                    )
+                ]
+            ]
+        ]
 
 
 accountChip : Shared.Model -> Model -> RellmAccount -> Html Msg
@@ -540,7 +674,7 @@ accountChip shared model account =
     button
         [ classes
             ([ "profile-federated-link", "media-page-account-chip", hostnameToCSSClass account.server, "background-color-primary" ]
-                ++ (if model.myMediaHost == Just account.server then
+                ++ (if model.myMediaHost == Just account.server && model.myFederatedKey == Nothing then
                         [ "is-selected" ]
 
                     else

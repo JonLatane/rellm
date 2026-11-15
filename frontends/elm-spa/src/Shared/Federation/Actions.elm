@@ -10,6 +10,8 @@ module Shared.Federation.Actions exposing
     , MastodonProfileTarget
     , editPost
     , fetchBlueskyFollowState
+    , fetchOwnMediaPosts
+    , uploadAsPost
     , fetchBlueskyOwnProfile
     , fetchMastodonFollowState
     , isOwnBlueskyProfile
@@ -35,6 +37,7 @@ write counterpart to the reads in `Shared.Federation.Mastodon`/`Bluesky`. Every 
 `MastodonAccounts.performWithMastodonAccount`/`BlueskyAccounts.performWithBlueskyAccount`).
 -}
 
+import File exposing (File)
 import Http
 import Proto.Rellm exposing (Post)
 import Shared.AccountsPanel as AccountsPanel
@@ -416,3 +419,53 @@ updateBlueskyOwnProfile : BlueskyAccount -> Bluesky.OwnProfileRecord -> { displa
 updateBlueskyOwnProfile account record edit =
     BlueskyAccounts.performWithBlueskyAccount account (\auth -> Bluesky.updateOwnProfileRecord account.handle auth record edit)
         |> Task.map (\( refreshed, () ) -> rotatedBluesky account refreshed)
+
+
+{-| The connected account's own posts that carry media -- "your media" on a network with no media library --
+newest first, a page at a time (`cursor` is the previous page's, `Nothing` for the first; the cursor that follows
+is `Nothing` once it has run out).
+-}
+fetchOwnMediaPosts : ServerAccount -> Maybe String -> Task Http.Error ( Maybe AccountsPanel.Msg, List Post, Maybe String )
+fetchOwnMediaPosts account cursor =
+    case account of
+        MastodonServerAccount a ->
+            MastodonAccounts.performWithMastodonAccount a
+                (\token ->
+                    Mastodon.lookupAccount a.instanceHost a.username
+                        |> Task.andThen (\profile -> Mastodon.fetchOwnMediaStatuses a.instanceHost token profile.id cursor)
+                )
+                |> Task.map (\( refreshed, ( posts, next ) ) -> ( rotatedMastodon a refreshed, posts, next ))
+
+        BlueskyServerAccount a ->
+            BlueskyAccounts.performWithBlueskyAccount a (\auth -> Bluesky.fetchOwnMediaPosts auth a.handle cursor)
+                |> Task.map (\( refreshed, ( posts, next ) ) -> ( rotatedBluesky a refreshed, posts, next ))
+
+
+{-| "Uploads" `file` as `account`: neither network stores media on its own, so this makes a post carrying it
+(`caption` as its text, `description` as the media's alt text; `visibility` only matters for Mastodon). Mastodon
+takes images, video and audio; Bluesky only images here -- anything else fails with `Http.BadBody
+"unsupported-media-type"`.
+-}
+uploadAsPost : ServerAccount -> MastodonVisibility -> File -> String -> String -> Task Http.Error (Maybe AccountsPanel.Msg)
+uploadAsPost account visibility file caption description =
+    case account of
+        MastodonServerAccount a ->
+            MastodonAccounts.performWithMastodonAccount a
+                (\token ->
+                    Mastodon.uploadMedia a.instanceHost token file description
+                        |> Task.andThen
+                            (\mediaId ->
+                                Mastodon.postStatusWithMedia a.instanceHost token { text = caption, mediaIds = [ mediaId ], visibility = visibility }
+                            )
+                        |> Task.map (\_ -> ())
+                )
+                |> Task.map (\( refreshed, () ) -> rotatedMastodon a refreshed)
+
+        BlueskyServerAccount a ->
+            if String.startsWith "image/" (File.mime file) then
+                BlueskyAccounts.performWithBlueskyAccount a
+                    (\auth -> Bluesky.createPostWithImage a.handle auth file caption description |> Task.map (\_ -> ()))
+                    |> Task.map (\( refreshed, () ) -> rotatedBluesky a refreshed)
+
+            else
+                Task.fail (Http.BadBody "unsupported-media-type")

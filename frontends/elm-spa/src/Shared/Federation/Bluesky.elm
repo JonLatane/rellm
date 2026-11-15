@@ -1,5 +1,7 @@
 module Shared.Federation.Bluesky exposing
     ( ActorProfile
+    , createPostWithImage
+    , fetchOwnMediaPosts
     , FollowState
     , OwnProfileRecord
     , fetchFollowState
@@ -65,6 +67,7 @@ account's own.
 -}
 
 import Dict
+import File exposing (File)
 import Http
 import Iso8601
 import Json.Decode as Decode exposing (Decoder)
@@ -1646,7 +1649,7 @@ into text + facets by `richText`.
 createReply : String -> BlueskyAuth -> String -> String -> Task Http.Error ()
 createReply repo auth parentUri markdown =
     fetchReplyRefs auth parentUri
-        |> Task.andThen (\( parent, root ) -> createPostRecord repo auth (Just ( parent, root )) markdown)
+        |> Task.andThen (\( parent, root ) -> createPostRecord repo auth (Just ( parent, root )) Nothing markdown)
         |> Task.map (\_ -> ())
 
 
@@ -1655,13 +1658,13 @@ record's `at://` URI.
 -}
 createPost : String -> BlueskyAuth -> String -> Task Http.Error String
 createPost repo auth markdown =
-    createPostRecord repo auth Nothing markdown
+    createPostRecord repo auth Nothing Nothing markdown
 
 
 {-| `com.atproto.repo.createRecord` for an `app.bsky.feed.post`, a reply when `replyRefs` (parent, root) is given.
 -}
-createPostRecord : String -> BlueskyAuth -> Maybe ( StrongRef, StrongRef ) -> String -> Task Http.Error String
-createPostRecord repo auth replyRefs markdown =
+createPostRecord : String -> BlueskyAuth -> Maybe ( StrongRef, StrongRef ) -> Maybe Encode.Value -> String -> Task Http.Error String
+createPostRecord repo auth replyRefs embed markdown =
     Time.now
         |> Task.andThen
             (\now ->
@@ -1696,6 +1699,7 @@ createPostRecord repo auth replyRefs markdown =
                                          , ( "createdAt", Encode.string (Iso8601.fromTime now) )
                                          ]
                                             ++ replyField
+                                            ++ (embed |> Maybe.map (\value -> [ ( "embed", value ) ]) |> Maybe.withDefault [])
                                         )
                                   )
                                 ]
@@ -2007,3 +2011,55 @@ updateOwnProfileRecord repo auth record { displayName, description } =
                 ++ (record.cid |> Maybe.map (\cid -> [ ( "swapRecord", Encode.string cid ) ]) |> Maybe.withDefault [])
             )
         )
+
+
+{-| `GET /xrpc/app.bsky.feed.getAuthorFeed?filter=posts_with_media` for `handle` -- that account's own posts that
+carry images or a video (what "your media" is on Bluesky, which has no media library of its own), already
+translated via `toPost`. Read as the account itself, so its own posts are all there.
+-}
+fetchOwnMediaPosts : BlueskyAuth -> String -> Maybe String -> Task Http.Error ( List Post, Maybe String )
+fetchOwnMediaPosts auth handle cursor =
+    Http.task
+        { method = "GET"
+        , headers = readHeaders auth
+        , url =
+            readHost auth
+                ++ "/xrpc/app.bsky.feed.getAuthorFeed?filter=posts_with_media&limit=30&actor="
+                ++ Url.percentEncode handle
+                ++ cursorParam cursor
+        , body = Http.emptyBody
+        , resolver = jsonResolver (feedPageDecoder decoder) (\metadata _ -> Http.BadStatus metadata.statusCode)
+        , timeout = Just 10000
+        }
+        |> Task.map (Tuple.mapFirst (List.map toPost))
+
+
+{-| Uploads the image `file` (`com.atproto.repo.uploadBlob`, the raw bytes with the file's own content type)
+and posts it as `repo`, with `markdown` as the post's text and `alt` as the image's description. Bluesky has no
+standalone media: an image only exists attached to a post, so this is how "uploading" one works. Resolves to the
+new post's `at://` URI. (Videos need Bluesky's separate video service and aren't handled here.)
+-}
+createPostWithImage : String -> BlueskyAuth -> File -> String -> String -> Task Http.Error String
+createPostWithImage repo auth file markdown alt =
+    Http.task
+        { method = "POST"
+        , headers = readHeaders auth
+        , url = readHost auth ++ "/xrpc/com.atproto.repo.uploadBlob"
+        , body = Http.fileBody file
+        , resolver = jsonResolver (Decode.field "blob" Decode.value) (\metadata _ -> Http.BadStatus metadata.statusCode)
+        , timeout = Just 60000
+        }
+        |> Task.andThen
+            (\blob ->
+                createPostRecord repo
+                    auth
+                    Nothing
+                    (Just
+                        (Encode.object
+                            [ ( "$type", Encode.string "app.bsky.embed.images" )
+                            , ( "images", Encode.list identity [ Encode.object [ ( "alt", Encode.string alt ), ( "image", blob ) ] ] )
+                            ]
+                        )
+                    )
+                    markdown
+            )
