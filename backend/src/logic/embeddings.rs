@@ -313,7 +313,9 @@ static SERVER_EMBEDDER: RwLock<Option<Arc<Mutex<Embedder>>>> = RwLock::new(None)
 static LAST_KNOWN_ENABLED: AtomicBool = AtomicBool::new(true);
 static LAST_KNOWN_MODEL_ID: Mutex<&'static str> = Mutex::new(DEFAULT_MODEL_ID);
 static LOADING: AtomicBool = AtomicBool::new(false);
-static LAST_LOAD_FAILURE: Mutex<Option<Instant>> = Mutex::new(None);
+// Which model failed to load, and when: a cooldown only applies to *that* model, so an admin who
+// switches to a working one isn't stuck on full-text search until the failed model's timer expires.
+static LAST_LOAD_FAILURE: Mutex<Option<(&'static str, Instant)>> = Mutex::new(None);
 const RETRY_LOAD_AFTER: Duration = Duration::from_secs(600);
 // Embedding one short search query needs no more than this.
 const SERVER_THREADS: usize = 1;
@@ -333,8 +335,8 @@ pub fn server_embedder(spec: &'static ModelSpec) -> Option<Arc<Mutex<Embedder>>>
     if SERVER_EMBEDDER.read().unwrap().is_some() {
         unload_server_embedder();
     }
-    if let Some(failed_at) = *LAST_LOAD_FAILURE.lock().unwrap() {
-        if failed_at.elapsed() < RETRY_LOAD_AFTER {
+    if let Some((failed_model, failed_at)) = *LAST_LOAD_FAILURE.lock().unwrap() {
+        if failed_model == spec.id && failed_at.elapsed() < RETRY_LOAD_AFTER {
             return None;
         }
     }
@@ -353,7 +355,7 @@ pub fn server_embedder(spec: &'static ModelSpec) -> Option<Arc<Mutex<Embedder>>>
                 Ok(_) => log::info!("Semantic search was turned off or its model changed while {} loaded; dropping it.", spec.id),
                 Err(e) => {
                     log::error!("Couldn't load embedding model {}; search stays full-text only: {:?}", spec.id, e);
-                    *LAST_LOAD_FAILURE.lock().unwrap() = Some(Instant::now());
+                    *LAST_LOAD_FAILURE.lock().unwrap() = Some((spec.id, Instant::now()));
                 }
             }
             LOADING.store(false, Ordering::SeqCst);
@@ -601,32 +603,8 @@ pub fn sync_embeddings(
 ) -> anyhow::Result<SyncStats> {
     let mut stats = SyncStats::default();
 
-    loop {
-        if Instant::now() >= ctx.deadline {
-            stats.out_of_time = true;
-            return Ok(stats);
-        }
-        let batch = sql_query(format!(
-            "SELECT s.{sid} AS id, d.document, hashtextextended(d.document, 0) AS document_hash, false AS up_to_date \
-             FROM {source} s \
-             CROSS JOIN LATERAL (SELECT coalesce({doc}(s.{sid}), '') AS document) d \
-             WHERE NOT EXISTS (SELECT 1 FROM {table} e WHERE e.{eid} = s.{sid} AND e.model = $2) \
-             ORDER BY s.{sid} DESC LIMIT $1",
-            sid = kind.source_id_column(),
-            source = kind.source_table(),
-            doc = kind.document_function(),
-            table = kind.embeddings_table(),
-            eid = kind.embeddings_id_column(),
-        ))
-        .bind::<BigInt, _>(WRITE_BATCH)
-        .bind::<Text, _>(ctx.spec.id)
-        .load::<SourceDocument>(conn)?;
-        if batch.is_empty() {
-            break;
-        }
-        store_embeddings(conn, kind, &batch, ctx, &mut stats)?;
-    }
-
+    // The staleness sweep goes first: it is bounded (`SWEEP_BATCH` rows), so edits and renames are always
+    // refreshed, even while a large backlog of never-embedded rows is being worked down below.
     let sweep = sql_query(format!(
         "SELECT e.{eid} AS id, d.document, hashtextextended(d.document, 0) AS document_hash, \
                 (e.document_hash = hashtextextended(d.document, 0) AND e.model = $2) AS up_to_date \
@@ -658,6 +636,33 @@ pub fn sync_embeddings(
         }
         store_embeddings(conn, kind, chunk, ctx, &mut stats)?;
     }
+
+    loop {
+        if Instant::now() >= ctx.deadline {
+            stats.out_of_time = true;
+            return Ok(stats);
+        }
+        let batch = sql_query(format!(
+            "SELECT s.{sid} AS id, d.document, hashtextextended(d.document, 0) AS document_hash, false AS up_to_date \
+             FROM {source} s \
+             CROSS JOIN LATERAL (SELECT coalesce({doc}(s.{sid}), '') AS document) d \
+             WHERE NOT EXISTS (SELECT 1 FROM {table} e WHERE e.{eid} = s.{sid} AND e.model = $2) \
+             ORDER BY s.{sid} DESC LIMIT $1",
+            sid = kind.source_id_column(),
+            source = kind.source_table(),
+            doc = kind.document_function(),
+            table = kind.embeddings_table(),
+            eid = kind.embeddings_id_column(),
+        ))
+        .bind::<BigInt, _>(WRITE_BATCH)
+        .bind::<Text, _>(ctx.spec.id)
+        .load::<SourceDocument>(conn)?;
+        if batch.is_empty() {
+            break;
+        }
+        store_embeddings(conn, kind, &batch, ctx, &mut stats)?;
+    }
+
     Ok(stats)
 }
 
