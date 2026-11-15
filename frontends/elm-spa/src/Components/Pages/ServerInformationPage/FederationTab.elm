@@ -1362,6 +1362,27 @@ withLogoInputs edit =
         edit.pending
 
 
+{-| Whether an editor's `pending` servers differ from the `saved` ones, for `Common.editSaveButtonWhen`.
+An unset (`Nothing`) "by default" flag and `Just False` both mean off, and toggling a flag on and back
+off leaves the latter -- so they count as the same here, or Save would stay highlighted after
+undoing the change.
+-}
+differsFromSaved :
+    List { a | configuredByDefault : Maybe Bool, pinnedByDefault : Maybe Bool }
+    -> List { a | configuredByDefault : Maybe Bool, pinnedByDefault : Maybe Bool }
+    -> Bool
+differsFromSaved pending saved =
+    let
+        flagsDefaulted : { a | configuredByDefault : Maybe Bool, pinnedByDefault : Maybe Bool } -> { a | configuredByDefault : Maybe Bool, pinnedByDefault : Maybe Bool }
+        flagsDefaulted server =
+            { server
+                | configuredByDefault = Just (Maybe.withDefault False server.configuredByDefault)
+                , pinnedByDefault = Just (Maybe.withDefault False server.pinnedByDefault)
+            }
+    in
+    List.map flagsDefaulted pending /= List.map flagsDefaulted saved
+
+
 mapPendingBlueskyHost : String -> (BlueskyServer -> BlueskyServer) -> BlueskyServersEdit -> BlueskyServersEdit
 mapPendingBlueskyHost host f edit =
     { edit | pending = List.map (\bs -> if bs.host == host then f bs else bs) edit.pending }
@@ -1870,7 +1891,7 @@ blueskyServersEditorView savedServers edit =
             ]
         , Common.settingsNote "Enter an AppView's API host. \"bsky.app\" is Bluesky's public AppView. Only one Bluesky source (an AppView or a connected account) is shown at a time, so only the first \"enabled by default\" one takes effect."
         , div [ class "server-details-permissions-actions" ]
-            [ Common.editSaveButtonWhen (withLogoInputs edit /= savedServers) BlueskyServersSaveClicked edit.status
+            [ Common.editSaveButtonWhen (differsFromSaved (withLogoInputs edit) savedServers) BlueskyServersSaveClicked edit.status
             , Common.editCancelButton BlueskyServersCancelClicked edit.status
             ]
         , Common.editErrorView edit.status
@@ -1969,7 +1990,7 @@ mastodonServersEditorView logos savedServers edit =
             ]
         , div [ class "server-details-permissions-actions" ]
             [ Common.editSaveButtonWhen
-                (List.map .server edit.pending /= savedServers || List.any (\e -> not (String.isEmpty e.pendingAppSecret)) edit.pending)
+                (differsFromSaved (List.map .server edit.pending) savedServers || List.any (\e -> not (String.isEmpty e.pendingAppSecret)) edit.pending)
                 MastodonServersSaveClicked
                 edit.status
             , Common.editCancelButton MastodonServersCancelClicked edit.status
@@ -2466,7 +2487,7 @@ federationEditorView shared savedServers edit =
             , Common.editErrorView edit.addStatus
             ]
         , div [ class "server-details-permissions-actions" ]
-            [ Common.editSaveButtonWhen (edit.pending /= savedServers) FederationSaveClicked edit.status
+            [ Common.editSaveButtonWhen (differsFromSaved edit.pending savedServers) FederationSaveClicked edit.status
             , Common.editCancelButton FederationCancelClicked edit.status
             ]
         , Common.editErrorView edit.status
