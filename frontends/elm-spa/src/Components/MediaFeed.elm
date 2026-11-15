@@ -913,7 +913,7 @@ view shared model =
 
         errors : List (Html Msg)
         errors =
-            model.feeds
+            (model.feeds
                 |> Dict.toList
                 |> List.filterMap
                     (\( host, feed ) ->
@@ -924,6 +924,7 @@ view shared model =
                             _ ->
                                 Nothing
                     )
+            )
                 ++ (model.federated
                         |> Dict.toList
                         |> List.filterMap
