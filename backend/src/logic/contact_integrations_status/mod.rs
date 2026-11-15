@@ -25,6 +25,7 @@ use crate::marshaling::ToProtoTime;
 use crate::protos::*;
 
 pub mod bird;
+pub mod copy;
 pub mod dns;
 pub mod domain;
 pub mod http;

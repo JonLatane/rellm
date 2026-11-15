@@ -13,6 +13,7 @@ use serde_json::Value;
 
 use crate::protos::{SendgridConfig, StatusLevel};
 
+use super::copy;
 use super::domain::domain_of_address;
 use super::http::{f64_of, get_json, i64_of, str_of, Auth, Ctx, Fail};
 use super::report::{make_check, DomainReport, ProviderReport};
@@ -41,20 +42,20 @@ pub fn check(config: &SendgridConfig, ctx: &Ctx) -> ProviderReport {
                 .map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect())
                 .unwrap_or_default();
             if scopes.is_empty() || scopes.iter().any(|s| s == "mail.send") {
-                report.ok("API credentials", "SendGrid accepted the API key and it can send mail.");
+                report.ok("API credentials", "SendGrid accepted the API key.");
             } else {
                 report.error(
                     "API credentials",
-                    "The API key is valid but lacks the \"Mail Send\" permission.",
-                    "Create a key with at least Mail Send (Settings > API Keys).",
+                    "The API key works but isn't allowed to send email.",
+                    "In SendGrid, create an API key with Mail Send permission (Settings > API Keys) and paste it here.",
                 );
             }
         }
         Err(Fail::Unauthorized) => {
             report.error(
                 "API credentials",
-                "SendGrid rejected the API key (HTTP 401).",
-                "Create a new API key (Settings > API Keys) with Mail Send permission and paste it here.",
+                "SendGrid didn't accept the API key.",
+                "In SendGrid, create an API key with Mail Send permission (Settings > API Keys) and paste it here.",
             );
             report.headline = Some("Credentials rejected by SendGrid".to_string());
             return report;
@@ -83,14 +84,14 @@ pub fn check(config: &SendgridConfig, ctx: &Ctx) -> ProviderReport {
                 if rep < 90.0 {
                     report.warn(
                         "Sender reputation",
-                        format!("Reputation is {rep:.1} (below 90)."),
-                        "Check bounces and spam reports; clean your recipient list and review SendGrid's reputation guidance.",
+                        format!("Your sender reputation is {rep:.1}, which is lowish."),
+                        "Check bounces and spam reports in SendGrid and remove addresses that no longer work.",
                     );
                 }
             }
         }
         Err(e) if e.is_access_denied() => {
-            report.info("Account", "The API key lacks the \"Account read\" scope, so plan and reputation aren't shown.");
+            report.info("Account", "This API key can't read account details, so the plan and reputation aren't shown.");
         }
         Err(_) => {}
     }
@@ -113,7 +114,9 @@ pub fn check(config: &SendgridConfig, ctx: &Ctx) -> ProviderReport {
                 !name.is_empty() && (domain == name || domain.ends_with(&format!(".{name}")))
             });
             if let Some(entry) = matched {
+                let auth_domain = str_of(entry, "domain").to_ascii_lowercase();
                 let mut invalid: Vec<&str> = vec![];
+                let mut records: Vec<String> = vec![];
                 for record in ["dkim1", "dkim2", "mail_cname"] {
                     let r = entry.pointer(&format!("/dns/{record}"));
                     if let Some(r) = r {
@@ -123,32 +126,30 @@ pub fn check(config: &SendgridConfig, ctx: &Ctx) -> ProviderReport {
                         }
                         if r.get("valid").and_then(Value::as_bool) == Some(false) {
                             invalid.push(record);
+                            let (kind, data) = (str_of(r, "type").to_ascii_uppercase(), str_of(r, "data"));
+                            if !host.is_empty() && !data.is_empty() && !kind.is_empty() {
+                                records.push(copy::record_line(&kind, &copy::relative_name(host, &auth_domain), data));
+                            }
                         }
                     }
                 }
                 let valid = entry.get("valid").and_then(Value::as_bool).unwrap_or(false) && invalid.is_empty();
                 if valid {
                     domain_ok = true;
-                    dr.checks.push(make_check(
-                        StatusLevel::Ok,
-                        "SendGrid: DKIM",
-                        format!("Domain authentication for {} is valid (DKIM + link branding CNAMEs).", str_of(entry, "domain")),
-                        None,
-                    ));
-                    report.ok("Domain authentication", format!("{} is authenticated.", str_of(entry, "domain")));
+                    dr.checks.push(make_check(StatusLevel::Ok, "SendGrid: DKIM", "SendGrid has verified your domain authentication (DKIM).", None));
+                    report.ok("Domain authentication", format!("{auth_domain} is authenticated."));
                 } else {
-                    let which = if invalid.is_empty() { "validation hasn't passed".to_string() } else { format!("invalid records: {}", invalid.join(", ")) };
+                    let fix = copy::with_records(
+                        &format!("Add these records to `{auth_domain}`, then click Verify in SendGrid (Settings > Sender Authentication):"),
+                        &records,
+                    );
                     dr.checks.push(make_check(
                         StatusLevel::Error,
                         "SendGrid: DKIM",
-                        format!("Domain authentication for {} isn't valid ({which}).", str_of(entry, "domain")),
-                        Some("Add the CNAME records shown under Settings > Sender Authentication, then click Verify."),
+                        format!("SendGrid hasn't verified your domain authentication yet. {}", copy::DKIM),
+                        Some(&fix),
                     ));
-                    report.error(
-                        "Domain authentication",
-                        format!("{} isn't fully authenticated ({which}).", str_of(entry, "domain")),
-                        "Add the DNS records shown under Settings > Sender Authentication, then click Verify.",
-                    );
+                    report.error("Domain authentication", format!("{auth_domain} isn't fully authenticated in SendGrid."), &fix);
                 }
             }
         }
@@ -156,7 +157,7 @@ pub fn check(config: &SendgridConfig, ctx: &Ctx) -> ProviderReport {
             domains_readable = false;
             report.info(
                 "Domain authentication",
-                "The API key lacks the \"Domain Authentication read\" scope, so domain verification isn't shown.",
+                "This API key can't read domain authentication, so it isn't shown. Add the Domain Authentication read permission to see it.",
             );
         }
         Err(_) => domains_readable = false,
@@ -175,24 +176,24 @@ pub fn check(config: &SendgridConfig, ctx: &Ctx) -> ProviderReport {
                         dr.checks.push(make_check(
                             StatusLevel::Info,
                             "SendGrid: sender verification",
-                            "Sending as a verified Single Sender; authenticating the whole domain gives better DKIM/SPF alignment.",
+                            "You're sending from one verified address. Authenticating the whole domain gives better deliverability.",
                             None,
                         ));
                     }
                     Some(_) => report.error(
                         "Sender verification",
-                        format!("The Single Sender {from} isn't verified."),
-                        "Click the verification link SendGrid emailed to that address, or authenticate the domain.",
+                        format!("{from} isn't verified as a sender yet."),
+                        "Click the verification link SendGrid emailed to that address, or authenticate the whole domain.",
                     ),
                     None => report.error(
                         "Sender verification",
-                        format!("{from} isn't a verified Single Sender and {domain} isn't an authenticated domain."),
-                        "Authenticate the domain (Settings > Sender Authentication) or verify the address as a Single Sender.",
+                        format!("Neither {from} nor {domain} is verified in SendGrid."),
+                        "In SendGrid, authenticate the domain (Settings > Sender Authentication) or verify this address as a Single Sender.",
                     ),
                 }
             }
             Err(e) if e.is_access_denied() => {
-                report.info("Sender verification", "The API key lacks the \"Sender Verification read\" scope, so Single Sender status isn't shown.");
+                report.info("Sender verification", "This API key can't read sender verification, so it isn't shown.");
             }
             Err(_) => {}
         }
@@ -212,7 +213,7 @@ fn stats(ctx: &Ctx, api: &str, auth: Auth, report: &mut ProviderReport) {
     let body = match get_json(ctx, &format!("{api}/v3/stats"), auth, &[], &query) {
         Ok(b) => b,
         Err(e) if e.is_access_denied() => {
-            report.info("Recent delivery", "The API key lacks the \"Stats read\" scope, so delivery statistics aren't shown.");
+            report.info("Recent delivery", "This API key can't read statistics, so delivery numbers aren't shown.");
             return;
         }
         Err(_) => return,

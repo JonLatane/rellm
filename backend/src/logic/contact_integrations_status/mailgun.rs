@@ -12,6 +12,7 @@ use serde_json::Value;
 
 use crate::protos::{MailgunConfig, StatusLevel};
 
+use super::copy;
 use super::http::{encode_segment, get_json, i64_of, str_of, Auth, Ctx, Fail};
 use super::report::{make_check, DomainReport, ProviderReport};
 
@@ -48,8 +49,8 @@ pub fn check(config: &MailgunConfig, ctx: &Ctx) -> ProviderReport {
         Err(Fail::Unauthorized) => {
             report.error(
                 "API credentials",
-                "Mailgun rejected the API key (HTTP 401).",
-                "Copy a Private API key (or a domain sending key) from Mailgun, and check the region (US/EU).",
+                "Mailgun didn't accept the API key.",
+                "Copy a Private API key (or a domain sending key) from Mailgun and check the region (US or EU).",
             );
             report.headline = Some("Credentials rejected by Mailgun".to_string());
             return report;
@@ -63,14 +64,14 @@ pub fn check(config: &MailgunConfig, ctx: &Ctx) -> ProviderReport {
             report.ok("API credentials", "Mailgun accepted the API key.");
             report.error(
                 "Sending domain",
-                format!("Mailgun has no domain called {domain}."),
-                "Add the domain in Mailgun, correct the domain here, or switch the region (US vs EU) if the domain lives in the other one.",
+                format!("Mailgun doesn't have a domain called {domain}."),
+                "Add the domain in Mailgun, fix the name here, or switch the region if the domain lives in the other one.",
             );
             return report;
         }
         Err(e) if e.is_access_denied() => {
             report.ok("API credentials", "Mailgun accepted the API key.");
-            report.info("Sending domain", "This key (e.g. a domain sending key) can't read domain details, so DNS verification isn't shown.");
+            report.info("Sending domain", "This key can't read domain details, so DNS verification isn't shown.");
         }
         Err(other) => {
             report.unknown("API credentials", format!("Unexpected response from Mailgun: {}", other.describe()));
@@ -84,17 +85,17 @@ pub fn check(config: &MailgunConfig, ctx: &Ctx) -> ProviderReport {
                 "active" => report.ok("Sending domain", format!("{domain} is active.")),
                 "unverified" => report.error(
                     "Sending domain",
-                    format!("{domain} is not verified yet."),
-                    "Publish the DNS records shown for the domain in Mailgun, then click Verify DNS Settings.",
+                    format!("{domain} isn't verified yet."),
+                    "Add the DNS records Mailgun shows for this domain, then click Verify DNS Settings.",
                 ),
-                "disabled" => report.error("Sending domain", format!("{domain} is disabled."), "Re-enable the domain in Mailgun or contact Mailgun support."),
+                "disabled" => report.error("Sending domain", format!("{domain} is disabled."), "Re-enable the domain in Mailgun, or contact Mailgun support."),
                 "" => report.unknown("Sending domain", "Mailgun didn't report a domain state."),
                 other => report.warn("Sending domain", format!("{domain} has state \"{other}\"."), "Check the domain in the Mailgun dashboard."),
             }
             if str_of(info, "type") == "sandbox" {
                 report.warn(
                     "Sandbox domain",
-                    "This is a Mailgun sandbox domain: it can only send to authorized recipients.",
+                    "This is a Mailgun sandbox domain, which can only email recipients you've authorized.",
                     "Add and verify your own domain in Mailgun.",
                 );
             }
@@ -111,20 +112,26 @@ pub fn check(config: &MailgunConfig, ctx: &Ctx) -> ProviderReport {
                 } else {
                     ("Mailgun: tracking CNAME", false)
                 };
+                let record = copy::record_line(rtype, &copy::relative_name(&name, &domain), value);
                 dr.checks.push(if valid {
-                    make_check(StatusLevel::Ok, label, format!("{rtype} record {name} is verified."), None)
+                    let what = if label == "Mailgun: DKIM" { "DKIM signing record" } else if critical { "SPF record" } else { "tracking record" };
+                    make_check(StatusLevel::Ok, label, format!("Mailgun has verified your {what}."), None)
                 } else if critical {
+                    let (what, explain) = if label == "Mailgun: DKIM" { ("DKIM signing record", copy::DKIM) } else { ("SPF record", copy::SPF) };
                     make_check(
                         StatusLevel::Error,
                         label,
-                        format!("Mailgun hasn't verified the {rtype} record at {name}."),
-                        Some("Publish the record exactly as shown in Mailgun, then click Verify DNS Settings."),
+                        format!("Mailgun hasn't verified your {what} yet. {explain}"),
+                        Some(&copy::with_records(
+                            &format!("Add this record to `{domain}`, then click Verify DNS Settings in Mailgun:"),
+                            &[record],
+                        )),
                     )
                 } else {
                     make_check(
                         StatusLevel::Info,
                         label,
-                        format!("The optional {rtype} record at {name} isn't verified (only needed for open/click tracking)."),
+                        "The optional tracking record isn't set up. It's only needed for open and click tracking.",
                         None,
                     )
                 });
@@ -132,11 +139,11 @@ pub fn check(config: &MailgunConfig, ctx: &Ctx) -> ProviderReport {
             if dr.checks.iter().any(|c| c.level == StatusLevel::Error as i32) {
                 report.error(
                     "Domain DNS records",
-                    "Some of the domain's required DNS records aren't verified.",
-                    "See the DNS section of this domain's status below, then re-verify in Mailgun.",
+                    "Some required DNS records aren't verified yet.",
+                    "See the records to add under your sending domain below, then verify in Mailgun.",
                 );
             } else if !dr.checks.is_empty() {
-                report.ok("Domain DNS records", "Mailgun reports the domain's SPF/DKIM records as verified.");
+                report.ok("Domain DNS records", "Mailgun has verified your SPF and DKIM records.");
             }
         }
     }

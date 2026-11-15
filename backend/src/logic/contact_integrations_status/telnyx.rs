@@ -49,7 +49,7 @@ pub fn check(config: &TelnyxConfig, ctx: &Ctx) -> ProviderReport {
     if results.iter().any(|r| matches!(r, Err(Fail::Unauthorized))) {
         report.error(
             "API credentials",
-            "Telnyx rejected the API key (HTTP 401).",
+            "Telnyx didn't accept the API key.",
             "Create a new v2 API key in the Telnyx Portal (Keys & Credentials) and paste it here.",
         );
         report.headline = Some("Credentials rejected by Telnyx".to_string());
@@ -125,7 +125,7 @@ pub fn check(config: &TelnyxConfig, ctx: &Ctx) -> ProviderReport {
                     } else if !configured.is_empty() && assigned != configured {
                         report.error(
                             "Messaging profile assignment",
-                            format!("{from} is assigned to a different messaging profile ({assigned}) than the one configured here ({configured})."),
+                            format!("{from} belongs to a different messaging profile ({assigned}) than the one set here ({configured})."),
                             "Update the Messaging Profile ID here, or reassign the number in the Telnyx Portal.",
                         );
                     } else {
@@ -193,7 +193,7 @@ fn compliance(ctx: &Ctx, api: &str, auth: Auth, from: &str, report: &mut Provide
                         report.error(
                             NAME,
                             format!("Toll-free verification was rejected. {reason}").trim().to_string(),
-                            "Fix the issues and resubmit the verification in the Telnyx Portal; unverified toll-free numbers are blocked by carriers.",
+                            "Fix the issues and resubmit in the Telnyx Portal. Carriers block unverified toll-free numbers.",
                         )
                     }
                     Some(s @ ("Waiting For Vendor" | "Waiting For Customer" | "Waiting For Telnyx" | "In Progress")) => report.warn(
@@ -232,12 +232,12 @@ fn compliance(ctx: &Ctx, api: &str, auth: Auth, from: &str, report: &mut Provide
             Err(Fail::NotFound) => report.warn(
                 NAME,
                 format!("{from} isn't assigned to a 10DLC campaign."),
-                "US carriers increasingly block unregistered 10DLC traffic: register a brand and campaign and assign this number (Telnyx Portal > Messaging > 10DLC), or use a verified toll-free number.",
+                "US carriers block texts from unregistered numbers. Register a 10DLC brand and campaign and assign this number (Telnyx Portal > Messaging > 10DLC), or use a verified toll-free number.",
             ),
             Err(e) if e.is_access_denied() => report.info(NAME, "This API key can't read 10DLC campaigns."),
             Err(_) => report.unknown(NAME, "Couldn't read 10DLC campaign status."),
         }
     } else {
-        report.info(NAME, "US carrier registration (10DLC / toll-free verification) doesn't apply to this number; check the sender-registration rules for your destination countries.");
+        report.info(NAME, "US carrier registration doesn't apply to this number. Check the sender rules for the countries you text.");
     }
 }

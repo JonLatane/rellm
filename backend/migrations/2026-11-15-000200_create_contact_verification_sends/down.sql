@@ -1,0 +1,1 @@
+DROP TABLE contact_verification_sends;

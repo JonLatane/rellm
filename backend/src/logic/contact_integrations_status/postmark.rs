@@ -11,6 +11,7 @@ use serde_json::Value;
 
 use crate::protos::{PostmarkConfig, StatusLevel};
 
+use super::copy;
 use super::domain::domain_of_address;
 use super::http::{encode_segment, f64_of, get_json, i64_of, str_of, Auth, Ctx, Fail};
 use super::report::{make_check, DomainReport, ProviderReport};
@@ -34,16 +35,16 @@ pub fn check(config: &PostmarkConfig, ctx: &Ctx) -> ProviderReport {
             if str_of(&body, "DeliveryType").eq_ignore_ascii_case("sandbox") {
                 report.warn(
                     "Server mode",
-                    "This is a Sandbox server: Postmark accepts messages but never delivers them.",
-                    "Create a Live server in Postmark (or switch to one) and use its token.",
+                    "This is a Sandbox server, so Postmark accepts email but never delivers it.",
+                    "Create a Live server in Postmark and paste its Server API Token here.",
                 );
             }
         }
         Err(Fail::Unauthorized) | Err(Fail::Http(422, _)) => {
             report.error(
                 "API credentials",
-                "Postmark rejected the Server API token.",
-                "Copy the Server API Token from your Postmark server's API Tokens tab.",
+                "Postmark didn't accept the Server API token.",
+                "Copy the Server API Token from your Postmark server's API Tokens tab and paste it here.",
             );
             report.headline = Some("Credentials rejected by Postmark".to_string());
             return report;
@@ -68,7 +69,7 @@ pub fn check(config: &PostmarkConfig, ctx: &Ctx) -> ProviderReport {
     if config.postmark_account_token.trim().is_empty() {
         report.info(
             "Sending domain",
-            "Add a Postmark Account API token to see whether the sending domain's DKIM and Return-Path are verified.",
+            "Add a Postmark Account API token to see whether your sending domain is verified.",
         );
     } else if let Some(domain) = from_domain {
         let account_auth = Auth::Header("X-Postmark-Account-Token", &config.postmark_account_token);
@@ -91,7 +92,7 @@ fn stats(ctx: &Ctx, api: &str, auth: Auth, stream: &str, report: &mut ProviderRe
     let body = match get_json(ctx, &format!("{api}/stats/outbound"), auth, &[], &query) {
         Ok(b) => b,
         Err(e) if e.is_access_denied() => {
-            report.info("Recent delivery", "This token can't read outbound statistics.");
+            report.info("Recent delivery", "This token can't read sending statistics.");
             return;
         }
         Err(_) => return,
@@ -113,7 +114,7 @@ fn domain_checks(ctx: &Ctx, api: &str, auth: Auth, from: &str, domain: &str, rep
     let domains = match get_json(ctx, &format!("{api}/domains"), auth, &[], &query) {
         Ok(b) => b,
         Err(e) if e.is_access_denied() || matches!(e, Fail::Http(422, _)) => {
-            report.warn(NAME, "Postmark rejected the Account API token.", "Paste the Account API Token from Postmark (Account > API Tokens).");
+            report.warn(NAME, "Postmark didn't accept the Account API token.", "Copy the Account API Token from Postmark (Account > API Tokens) and paste it here.");
             return;
         }
         Err(_) => {
@@ -148,30 +149,47 @@ fn domain_checks(ctx: &Ctx, api: &str, auth: Auth, from: &str, domain: &str, rep
                 dr.dkim_hosts.push(host.to_string());
             }
         }
-        if dkim_ok {
-            dr.checks.push(make_check(StatusLevel::Ok, "Postmark: DKIM", "Postmark reports DKIM as verified for this domain.", None));
+        let dkim_value = if !pending_host.is_empty() {
+            str_of(&details, "DKIMPendingTextValue")
         } else {
+            str_of(&details, "DKIMTextValue")
+        };
+        let dkim_record_host = if pending_host.is_empty() { dkim_host } else { pending_host };
+        if dkim_ok {
+            dr.checks.push(make_check(StatusLevel::Ok, "Postmark: DKIM", "Postmark has verified your DKIM signing key.", None));
+        } else {
+            let records: Vec<String> = if !dkim_record_host.is_empty() && !dkim_value.is_empty() {
+                vec![copy::record_line("TXT", &copy::relative_name(dkim_record_host, domain), dkim_value)]
+            } else {
+                vec![]
+            };
             dr.checks.push(make_check(
                 StatusLevel::Error,
                 "Postmark: DKIM",
-                "Postmark hasn't verified this domain's DKIM record.",
-                Some("Publish the DKIM TXT record shown under Sender Signatures > Domains in Postmark, then click Verify."),
+                format!("Postmark hasn't verified your DKIM signing key yet. {}", copy::DKIM),
+                Some(&copy::with_records(
+                    &format!("Add this record to `{domain}`, then click Verify in Postmark (Sender Signatures > Domains):"),
+                    &records,
+                )),
             ));
         }
         if details.get("WeakDKIM").and_then(Value::as_bool) == Some(true) {
             dr.checks.push(make_check(
                 StatusLevel::Warning,
                 "Postmark: DKIM key strength",
-                "The domain uses a weak DKIM key.",
-                Some("Rotate the DKIM key in Postmark (Sender Signatures > Domains > Rotate DKIM key)."),
+                "Your DKIM key is an older, weaker size.",
+                Some("In Postmark, open Sender Signatures > Domains and choose Rotate DKIM key, then publish the new record it shows."),
             ));
         }
-        if !pending_host.is_empty() {
+        if !pending_host.is_empty() && dkim_ok {
             dr.checks.push(make_check(
                 StatusLevel::Info,
                 "Postmark: DKIM rotation",
                 "A new DKIM key is waiting to be published.",
-                Some("Publish the pending DKIM record from the Postmark domain page to finish the rotation."),
+                Some(&copy::with_records(
+                    &format!("Add this record to `{domain}` to finish the key rotation:"),
+                    &[copy::record_line("TXT", &copy::relative_name(pending_host, domain), str_of(&details, "DKIMPendingTextValue"))],
+                )),
             ));
         }
         let return_path = str_of(&details, "ReturnPathDomain");
@@ -179,22 +197,28 @@ fn domain_checks(ctx: &Ctx, api: &str, auth: Auth, from: &str, domain: &str, rep
             dr.checks.push(make_check(
                 StatusLevel::Info,
                 "Postmark: Return-Path",
-                "No custom Return-Path domain is set (optional; improves DMARC alignment for SPF).",
+                "No custom Return-Path is set. It's optional, but helps SPF line up with your domain.",
                 None,
             ));
         } else if details.get("ReturnPathDomainVerified").and_then(Value::as_bool).unwrap_or(false) {
-            dr.checks.push(make_check(StatusLevel::Ok, "Postmark: Return-Path", format!("Return-Path {return_path} is verified."), None));
+            dr.checks.push(make_check(StatusLevel::Ok, "Postmark: Return-Path", "Your Return-Path domain is verified.", None));
         } else {
+            let cname = str_of(&details, "ReturnPathDomainCNAMEValue");
+            let records: Vec<String> = if cname.is_empty() {
+                vec![]
+            } else {
+                vec![copy::record_line("CNAME", &copy::relative_name(return_path, domain), cname)]
+            };
             dr.checks.push(make_check(
                 StatusLevel::Warning,
                 "Postmark: Return-Path",
-                format!("Return-Path {return_path} isn't verified."),
-                Some("Publish the Return-Path CNAME record shown in Postmark."),
+                format!("Postmark hasn't verified your Return-Path domain ({return_path})."),
+                Some(&copy::with_records(&format!("Add this record to `{domain}`, then click Verify in Postmark:"), &records)),
             ));
         }
         report.ok(NAME, format!("{domain} is covered by the Postmark domain \"{}\".", str_of(&details, "Name")));
         if !dkim_ok {
-            report.error("Domain DKIM", "Postmark hasn't verified DKIM for the sending domain.", "Publish the DKIM record and verify it in Postmark.");
+            report.error("Domain DKIM", "Postmark hasn't verified your DKIM key yet.", "See the DKIM record to add under your sending domain below.");
         }
     } else {
         // No Domain: fall back to a Sender Signature for exactly this address.
@@ -212,19 +236,19 @@ fn domain_checks(ctx: &Ctx, api: &str, auth: Auth, from: &str, domain: &str, rep
                 dr.checks.push(make_check(
                     StatusLevel::Info,
                     "Postmark: sender signature",
-                    "Sending from a single confirmed address; a verified Domain would give better DKIM/SPF alignment.",
+                    "You're sending from one confirmed address. Verifying the whole domain gives better deliverability.",
                     None,
                 ));
             }
             Some(_) => report.error(
                 NAME,
                 format!("The Sender Signature for {from} isn't confirmed."),
-                "Click the confirmation link Postmark emailed to that address (or add the whole domain).",
+                "Click the confirmation link Postmark emailed to that address, or verify the whole domain instead.",
             ),
             None => report.error(
                 NAME,
-                format!("{from} isn't a verified Sender Signature or part of a verified Domain."),
-                "Add and verify the domain (or this address) in Postmark under Sender Signatures.",
+                format!("{from} isn't verified in Postmark."),
+                "In Postmark, open Sender Signatures and verify this domain (or just this address).",
             ),
         }
     }

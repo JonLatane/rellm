@@ -11,7 +11,8 @@ use crate::logic::*;
 use crate::marshaling::*;
 use crate::models;
 use crate::protos::{
-    ContactConsentChange, ContactMethod, CreateAccountRequest, RefreshTokenResponse,
+    ContactConsentChange, ContactConsentState, ContactMethod, CreateAccountRequest,
+    RefreshTokenResponse,
 };
 use crate::schema::users::dsl::*;
 
@@ -132,6 +133,26 @@ fn create_account_inner(
         ));
     }
 
+    if passwordless {
+        // A passwordless account's only way in is SMS/email login, so at least one of its verified
+        // contacts must be loggable-into on this server -- otherwise we'd mint accounts nobody can
+        // ever sign in to.
+        let mut loginable = false;
+        for c in &to_verify {
+            loginable |= authentication_feature_enabled(conn, c.kind.login_feature())
+                && contact_protocol_ready(conn, c.kind);
+        }
+        if !loginable {
+            return Err(Status::new(
+                Code::FailedPrecondition,
+                match to_verify[0].kind {
+                    ContactKind::Phone => "login_with_sms_not_enabled",
+                    ContactKind::Email => "login_with_email_not_enabled",
+                },
+            ));
+        }
+    }
+
     if to_verify.is_empty() {
         return insert_account(request, vec![], conn);
     }
@@ -165,7 +186,6 @@ fn create_account_inner(
     }
 
     if to_verify.iter().any(|c| c.code.is_some()) {
-        verify_codes(&to_verify, conn)?;
         insert_account(request, to_verify, conn)
     } else {
         send_codes(base_url, &to_verify, conn)
@@ -188,7 +208,18 @@ fn send_codes(
             }
         }
     }
-    if models::count_pending_contact_verifications_sent_within(Duration::from_secs(60 * 60), conn)?
+    for c in to_verify {
+        if contact_send_cap_reached(conn, &c.value)? {
+            return Err(Status::new(
+                Code::ResourceExhausted,
+                "too_many_verification_requests",
+            ));
+        }
+    }
+    // Global backstop on total spend. Counts the send *ledger* (one row per actual send, any
+    // flow), not pending rows -- those are overwritten on resend and deleted on exhaustion/expiry,
+    // which would make many sends look like one.
+    if models::count_contact_verification_sends_within(Duration::from_secs(60 * 60), conn)?
         > MAX_PENDING_SENDS_PER_HOUR
     {
         return Err(Status::new(
@@ -213,7 +244,8 @@ fn send_codes(
     })
 }
 
-/// Second phase: every contact needs its code, and every code must be right.
+/// Second phase: every contact needs its code, and every code must be right. Must run inside
+/// `insert_account`'s transaction with the contacts' advisory locks held.
 fn verify_codes(
     to_verify: &[ContactToVerify],
     conn: &mut PgPooledConnection,
@@ -245,8 +277,14 @@ fn verify_codes(
                 )?;
                 return Err(verdict_status(verdict));
             }
+            CodeVerdict::TooManyAttempts => {
+                // Exhausted: keep the row (its `sent_at` still drives the resend cooldown, so
+                // burning guesses can't buy an immediate fresh code) -- `judge_code` rejects
+                // everything against it until a new first phase overwrites it.
+                return Err(verdict_status(verdict));
+            }
             _ => {
-                // Expired or exhausted: a fresh first phase is required.
+                // Expired (long past the resend cooldown): a fresh first phase is required.
                 models::delete_pending_contact_verification(&c.value, conn)?;
                 return Err(verdict_status(verdict));
             }
@@ -278,28 +316,45 @@ fn insert_account(
     };
 
     let now = SystemTime::now();
+    // Server-owned fields never come from the client, verified or not: `verified_at` and
+    // `verification_in_progress` (a caller-chosen code would make a contact "verified" and
+    // login-able without receiving a message, and copying someone's contact would mint a second
+    // verified owner), `supported_by_server` (recomputed), and `consent_history` (built here, like
+    // `update_user` does). Only `value`, `visibility` and `consent_state` are taken from the
+    // request.
+    let phone_listed = contact_protocol_listed(conn, ContactKind::Phone);
+    let email_listed = contact_protocol_listed(conn, ContactKind::Email);
     let contact_json = |kind: ContactKind, supplied: &Option<ContactMethod>| -> Option<serde_json::Value> {
         let supplied = supplied.as_ref()?;
-        match verified.iter().find(|c| c.kind == kind) {
-            Some(c) => {
-                let mut consent_history = c.contact.consent_history.clone();
-                consent_history.push(ContactConsentChange {
-                    state: c.contact.consent_state,
-                    changed_at: Some(now.into()),
-                });
-                serde_json::to_value(ContactMethod {
-                    value: Some(c.value.clone()),
-                    visibility: c.contact.visibility,
-                    supported_by_server: true,
-                    verified_at: Some(now.to_proto()),
-                    verification_in_progress: None,
-                    consent_state: c.contact.consent_state,
-                    consent_history,
-                })
-                .ok()
-            }
-            None => serde_json::to_value(supplied).ok(),
-        }
+        let proven = verified.iter().find(|c| c.kind == kind);
+        let value = match proven {
+            Some(c) => Some(c.value.clone()),
+            None => supplied.value.clone(),
+        };
+        let listed = match kind {
+            ContactKind::Phone => phone_listed,
+            ContactKind::Email => email_listed,
+        };
+        let supported_by_server = proven.is_some()
+            || (listed && value.as_deref().is_some_and(|v| v.starts_with(kind.scheme())));
+        let consent_history = if supplied.consent_state == ContactConsentState::ContactConsentRevoked as i32 {
+            vec![]
+        } else {
+            vec![ContactConsentChange {
+                state: supplied.consent_state,
+                changed_at: Some(now.into()),
+            }]
+        };
+        serde_json::to_value(ContactMethod {
+            value,
+            visibility: supplied.visibility,
+            supported_by_server,
+            verified_at: proven.map(|_| now.to_proto()),
+            verification_in_progress: None,
+            consent_state: supplied.consent_state,
+            consent_history,
+        })
+        .ok()
     };
     let req_email = contact_json(ContactKind::Email, &request.email);
     let req_phone = contact_json(ContactKind::Phone, &request.phone);
@@ -315,9 +370,31 @@ fn insert_account(
         .as_ref()
         .map(|m| m.default_user_media_allocation_bytes as i64);
 
-    // Its own transaction (a savepoint under `test_transaction`) so a failed insert -- the
-    // username already exists -- doesn't poison an enclosing transaction.
-    let insert_result: Result<models::User, diesel::result::Error> = conn.transaction(|conn| {
+    // One transaction does everything that must be atomic. For verified contacts: take each
+    // contact's advisory lock (sorted, so concurrent signups can't deadlock), then -- now that no
+    // concurrent request can be between "check" and "write" for this contact -- re-check the codes
+    // (counting wrong guesses / deleting expired rows, which must be committed even when the signup
+    // is rejected), re-check nobody else has verified the contact, insert, and delete the pending
+    // rows. Also a savepoint under `test_transaction`, so a failed insert (username taken) doesn't
+    // poison an enclosing transaction.
+    let insert_result: Result<Outcome, diesel::result::Error> = conn.transaction(|conn| {
+        let mut locks: Vec<&str> = verified.iter().map(|c| c.value.as_str()).collect();
+        locks.sort();
+        for value in locks {
+            if let Err(e) = lock_contact_value(conn, value) {
+                return Ok(Outcome::Rejected(e));
+            }
+        }
+        if !verified.is_empty() {
+            if let Err(e) = verify_codes(&verified, conn) {
+                return Ok(Outcome::Rejected(e));
+            }
+            for c in &verified {
+                if let Err(e) = ensure_contact_not_verified_elsewhere(conn, c.kind, &c.value, None) {
+                    return Ok(Outcome::Rejected(e));
+                }
+            }
+        }
         let user = insert_into(users)
             .values((
                 username.eq(request.username.to_owned()),
@@ -351,15 +428,23 @@ fn insert_account(
             )
             .execute(conn)?;
         }
-        Ok(user)
+        Ok(Outcome::Created(user))
     });
 
     match insert_result {
-        Err(e) => {
-            log::warn!("Failed to create account (username already exists?): {:?}", e);
+        Err(diesel::result::Error::DatabaseError(
+            diesel::result::DatabaseErrorKind::UniqueViolation,
+            info,
+        )) => {
+            log::warn!("Failed to create account, username already exists: {:?}", info.message());
             Err(Status::new(Code::AlreadyExists, "username_already_exists"))
         }
-        Ok(user) => {
+        Err(e) => {
+            log::error!("Failed to create account: {:?}", e);
+            Err(Status::new(Code::Internal, "data_error"))
+        }
+        Ok(Outcome::Rejected(status)) => Err(status),
+        Ok(Outcome::Created(user)) => {
             let tokens =
                 auth::generate_refresh_and_access_token(user.id, conn, &request.expires_at);
             let mut proto_user = user.to_proto(&None, &None, None, &Some(&user), Some(conn));
@@ -372,4 +457,11 @@ fn insert_account(
             })
         }
     }
+}
+
+/// What `insert_account`'s transaction decided. `Rejected` still *commits* (wrong-guess counters
+/// and deleted expired rows must persist); only a real DB error rolls back.
+enum Outcome {
+    Created(models::User),
+    Rejected(Status),
 }

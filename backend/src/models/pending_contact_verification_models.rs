@@ -10,7 +10,7 @@ use diesel::*;
 use tonic::{Code, Status};
 
 use crate::db_connection::PgPooledConnection;
-use crate::schema::pending_contact_verifications;
+use crate::schema::{contact_verification_sends, pending_contact_verifications};
 
 #[derive(Debug, Queryable, Identifiable, Clone)]
 #[diesel(table_name = pending_contact_verifications)]
@@ -92,17 +92,57 @@ pub fn delete_pending_contact_verification(
     .map_err(|e| db_error("delete", e))
 }
 
-/// How many codes (to any contact) were sent within the last `window` -- the global abuse cap's
-/// input (see `rpcs::authentication::create_account`).
-pub fn count_pending_contact_verifications_sent_within(
+/// Records one actually-sent verification code in the `contact_verification_sends` ledger (see
+/// that table's migration for why it's separate from the pending rows). `contact_value` is
+/// lowercased so spelling can't dodge the per-contact cap.
+pub fn record_contact_verification_send(
+    contact_value: &str,
+    conn: &mut PgPooledConnection,
+) -> Result<(), Status> {
+    insert_into(contact_verification_sends::table)
+        .values(contact_verification_sends::contact_value.eq(contact_value.to_lowercase()))
+        .execute(conn)
+        .map(|_| ())
+        .map_err(|e| db_error("record send of", e))
+}
+
+/// How many codes (to any contact) were sent within the last `window`.
+pub fn count_contact_verification_sends_within(
     window: Duration,
     conn: &mut PgPooledConnection,
 ) -> Result<i64, Status> {
-    pending_contact_verifications::table
-        .filter(pending_contact_verifications::sent_at.gt(SystemTime::now() - window))
+    contact_verification_sends::table
+        .filter(contact_verification_sends::sent_at.gt(SystemTime::now() - window))
         .count()
         .get_result::<i64>(conn)
-        .map_err(|e| db_error("count", e))
+        .map_err(|e| db_error("count sends of", e))
+}
+
+/// How many codes were sent to `contact_value` within the last `window`.
+pub fn count_contact_verification_sends_to_within(
+    contact_value: &str,
+    window: Duration,
+    conn: &mut PgPooledConnection,
+) -> Result<i64, Status> {
+    contact_verification_sends::table
+        .filter(contact_verification_sends::contact_value.eq(contact_value.to_lowercase()))
+        .filter(contact_verification_sends::sent_at.gt(SystemTime::now() - window))
+        .count()
+        .get_result::<i64>(conn)
+        .map_err(|e| db_error("count sends to", e))
+}
+
+/// Deletes ledger rows older than `older_than` (the `delete_expired_tokens` job keeps an hour).
+pub fn delete_old_contact_verification_sends(
+    older_than: Duration,
+    conn: &mut PgPooledConnection,
+) -> Result<usize, Status> {
+    delete(
+        contact_verification_sends::table
+            .filter(contact_verification_sends::sent_at.lt(SystemTime::now() - older_than)),
+    )
+    .execute(conn)
+    .map_err(|e| db_error("delete old sends of", e))
 }
 
 /// Deletes rows whose code was sent more than `older_than` ago. Used by the

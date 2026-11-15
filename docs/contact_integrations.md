@@ -296,11 +296,17 @@ verified, consent granted, and no code was sent within the last minute -- every 
 contact, unverified contact, revoked consent, cooldown, even a provider send failure) is logged
 server-side only. Phase 2 (with `code`) fails with `incorrect_code` in *every* failure case (no
 such account, no code outstanding, wrong, expired, or attempt-exhausted) for the same reason; the
-state is still updated server-side (guess counted; code cleared on expiry/exhaustion). Known
+state is still updated server-side (guess counted; code cleared on expiry, burned on exhaustion). Known
 limits of the anti-enumeration: the SMS/email send makes phase 1 slower for a real account than for
 an unknown one, and `multiple_accounts_for_contact` does reveal that a contact is verified on more
 than one account. Brute force is bounded by the attempt cap and the resend cooldown (5 guesses per
 new code, one new code per minute, per account).
+
+Check-and-save of codes on an account (`verification_in_progress`) happens in a transaction that
+takes the contact's advisory lock and `SELECT ... FOR UPDATE`s the user row, then reloads the
+contact -- so concurrent submissions can't both redeem a code, lose attempt counts, or restore a
+cleared code. The send phase writes only `verification_in_progress` (reloaded under lock after the
+slow provider call), so a contact edit made in the meantime isn't overwritten.
 
 The code is stored in plaintext in the account's own `ContactMethod.verification_in_progress` (the
 same slot `StartContactMethodVerification` uses, so the two share one cooldown/attempt counter),
@@ -317,15 +323,28 @@ the account exists (otherwise they're saved unverified, as always):
    then sends a code to each such contact and stores `sha256("<contact_value>:<code>")` in the
    `pending_contact_verifications` table (one row per contact value, upserted; no account yet).
    Resends within 60 seconds are refused (`verification_recently_sent`). As a global backstop against
-   SMS/email cost abuse, once more than 200 codes have been sent in the last hour further first
-   phases fail with `too_many_verification_requests` (constant `MAX_PENDING_SENDS_PER_HOUR` in
-   [`create_account.rs`](../backend/src/rpcs/authentication/create_account.rs)).
+   SMS/email cost abuse, once more than 200 codes have been sent in the last hour (any flow) further
+   first phases fail with `too_many_verification_requests` (constant `MAX_PENDING_SENDS_PER_HOUR` in
+   [`create_account.rs`](../backend/src/rpcs/authentication/create_account.rs)). The count comes from
+   the append-only `contact_verification_sends` ledger (one row per actual send, written by
+   `send_verification_code`), *not* from pending rows, which are overwritten on resend and deleted
+   on expiry. The same ledger enforces a per-contact cap of 10 sends/hour
+   (`MAX_SENDS_PER_CONTACT_PER_HOUR`): signup and `StartContactMethodVerification` report
+   `too_many_verification_requests`; login phase 1 silently skips the send.
 2. **Phase 2** (every pending contact's code supplied): TTL/attempt rules as above (expired or
-   exhausted rows are deleted; a correct code isn't consumed by a failed request); then, in one
-   transaction, the account is created with those contacts `verified_at = now` and the pending rows
-   are deleted. Both phone and email given means both codes are required.
+   expired rows are deleted; *exhausted* rows are kept, with their original send time, so burning five
+   guesses can't buy an immediate fresh code -- the same applies to an exhausted
+   `verification_in_progress` on an account; a correct code isn't consumed by a failed request).
+   Then, in one transaction that first takes a per-contact advisory lock and re-checks the code and
+   that nobody else has verified the contact, the account is created with those contacts
+   `verified_at = now` and the pending rows are deleted -- so two concurrent signups can't both
+   claim one contact. Both phone and email given means both codes are required.
+
+Contact methods on a signup are never trusted for server-owned fields, verified or not:
+`verified_at`, `verification_in_progress`, `supported_by_server` and `consent_history` are all
+rebuilt server-side (only `value`, `visibility` and `consent_state` come from the request).
 
 An empty `password` makes the account **passwordless** (needs a contact whose `CREATE_ACCOUNT_WITH_*`
-feature is on). Its `password_salted_hash` (NOT NULL) is a bcrypt hash of 32 random bytes nobody
+*and* `LOGIN_WITH_*` features are on, since SMS/email login is its only way in). Its `password_salted_hash` (NOT NULL) is a bcrypt hash of 32 random bytes nobody
 knows, so the username/password path can never log into it. Expired `pending_contact_verifications`
 rows are also removed by the `delete_expired_tokens` job.

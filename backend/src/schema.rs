@@ -84,6 +84,14 @@ diesel::table! {
 }
 
 diesel::table! {
+    contact_verification_sends (id) {
+        id -> Int8,
+        contact_value -> Varchar,
+        sent_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     events (post_id) {
         post_id -> Int8,
         info -> Jsonb,
@@ -598,6 +606,7 @@ diesel::joinable!(user_refresh_tokens -> users (user_id));
 diesel::allow_tables_to_appear_in_same_query!(
     ai_provider_grants,
     ai_providers,
+    contact_verification_sends,
     rsvps,
     occasion_sync_destinations,
     occasions,

@@ -436,8 +436,46 @@ mod email {
             assert!(!domain.dmarc.as_ref().unwrap().record_found);
             let dmarc = domain.checks.iter().find(|c| c.name == "DMARC").unwrap();
             assert_eq!(dmarc.level, StatusLevel::Warning as i32);
-            assert!(dmarc.fix_hint.as_ref().unwrap().contains("_dmarc.example.com"));
+            assert_eq!(
+                crate::logic::contact_integrations_status::copy::record_lines(dmarc.fix_hint.as_ref().unwrap()),
+                vec![("TXT", "_dmarc", "v=DMARC1; p=none; rua=mailto:postmaster@example.com")]
+            );
             assert_eq!(domain.level, StatusLevel::Error as i32);
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn unverified_provider_dkim_hint_carries_the_exact_record_line() {
+        use crate::logic::contact_integrations_status::copy::record_lines;
+        let mut conn = test_conn();
+        conn.test_transaction::<_, tonic::Status, _>(|conn| {
+            configure(conn, None, None, email_only(Some(postmark(true, "account-secret")), None), None);
+            let user = admin(conn, "cis_postmark_record");
+            let (url, _) = serve_capturing(|request, _| {
+                let line = request_line(request);
+                if line.contains("GET /server ") {
+                    ("HTTP/1.1 200 OK", json!({"Name": "S", "DeliveryType": "Live"}))
+                } else if line.contains("GET /domains/") {
+                    (
+                        "HTTP/1.1 200 OK",
+                        json!({"ID": 7, "Name": "example.com", "DKIMVerified": false, "DKIMHost": "",
+                               "DKIMPendingHost": "20240101pm._domainkey.example.com",
+                               "DKIMPendingTextValue": "k=rsa; p=ABC123", "ReturnPathDomain": ""}),
+                    )
+                } else if line.contains("GET /domains") {
+                    ("HTTP/1.1 200 OK", json!({"Domains": [{"ID": 7, "Name": "example.com"}]}))
+                } else {
+                    ("HTTP/1.1 404 Not Found", json!({}))
+                }
+            });
+            let status = get_contact_integrations_status_with(&user, conn, &env(&url, FakeDns::new(&[]))).unwrap();
+            let domain = &status.email_domains[0];
+            let dkim = domain.checks.iter().find(|c| c.name == "Postmark: DKIM").unwrap();
+            assert_eq!(
+                record_lines(dkim.fix_hint.as_ref().unwrap()),
+                vec![("TXT", "20240101pm._domainkey", "k=rsa; p=ABC123")]
+            );
             Ok(())
         });
     }
@@ -495,8 +533,8 @@ mod email {
             assert_ne!(sg.level, StatusLevel::Error as i32, "{:?}", sg.checks);
             // The domain is still reported on, from DNS alone, with SendGrid's s1/s2 probed.
             assert_eq!(status.email_domains[0].domain, "mail.example.org");
-            let dkim = status.email_domains[0].checks.iter().find(|c| c.name == "DKIM keys in DNS").unwrap();
-            assert!(dkim.detail.contains("s1._domainkey.mail.example.org"), "{}", dkim.detail);
+            let dkim = status.email_domains[0].checks.iter().find(|c| c.name == "DKIM").unwrap();
+            assert!(dkim.detail.contains("s1._domainkey"), "{}", dkim.detail);
             Ok(())
         });
     }

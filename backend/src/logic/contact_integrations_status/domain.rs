@@ -5,8 +5,9 @@ use std::collections::BTreeSet;
 
 use crate::protos::{DmarcStatus, EmailDomainStatus, StatusCheck, StatusLevel};
 
+use super::copy;
 use super::dns::{
-    parse_dmarc, parse_spf, suggested_dmarc_record, DnsLookup, DnsResolver, RecordType,
+    apply_inherited_policy, effective_inherited_policy, parse_dmarc, parse_spf, set_dmarc_tag, suggested_dmarc_record, DnsLookup, DnsResolver, RecordType,
 };
 use super::report::{make_check, worst_level, DomainReport};
 
@@ -58,6 +59,8 @@ fn lookup_dmarc(resolver: &dyn DnsResolver, domain: &str) -> (DmarcStatus, Optio
             lookup @ DnsLookup::Found(_) => {
                 let status = parse_dmarc(&lookup.txt_records());
                 if status.record_found {
+                    // A record on a parent domain governs this subdomain through its `sp=`.
+                    let status = if candidate == domain { status } else { apply_inherited_policy(status) };
                     return (status, Some(candidate));
                 }
             }
@@ -76,19 +79,54 @@ fn lookup_dmarc(resolver: &dyn DnsResolver, domain: &str) -> (DmarcStatus, Optio
     (status, None)
 }
 
-fn spf_check(domain: &str, lookup: &DnsLookup) -> StatusCheck {
+/// SPF `include:` hosts the providers publish for authorizing their servers.
+fn spf_includes_for(used_by: &[String]) -> Vec<&'static str> {
+    let mut hosts = vec![];
+    for provider in used_by {
+        match provider.as_str() {
+            "sendgrid" => hosts.push("sendgrid.net"),
+            "mailgun" => hosts.push("mailgun.org"),
+            "postmark" => hosts.push("spf.mtasv.net"),
+            _ => {}
+        }
+    }
+    hosts
+}
+
+/// `record` with its `all` mechanism (or lack of one) replaced by `~all`.
+fn spf_with_soft_fail(record: &str) -> String {
+    let mut terms: Vec<String> = record
+        .split_whitespace()
+        .filter(|t| {
+            let t = t.to_ascii_lowercase();
+            !(t == "all" || t == "+all" || t == "?all" || t == "-all" || t == "~all")
+        })
+        .map(|t| t.to_string())
+        .collect();
+    terms.push("~all".to_string());
+    terms.join(" ")
+}
+
+fn spf_check(domain: &str, lookup: &DnsLookup, used_by: &[String]) -> StatusCheck {
     let name = "SPF";
-    if let Some(message) = lookup.failed() {
-        return make_check(StatusLevel::Unknown, name, format!("Couldn't look up TXT records ({message})."), None);
+    if lookup.failed().is_some() {
+        return make_check(StatusLevel::Unknown, name, "Couldn't look up SPF right now (the DNS lookup failed).", None);
     }
     let spf = parse_spf(&lookup.txt_records());
     if !spf.found {
+        let includes = spf_includes_for(used_by);
+        let value = if includes.is_empty() {
+            "v=spf1 include:<your email provider's SPF host> ~all".to_string()
+        } else {
+            format!("v=spf1 {} ~all", includes.iter().map(|h| format!("include:{h}")).collect::<Vec<_>>().join(" "))
+        };
         return make_check(
             StatusLevel::Warning,
             name,
-            format!("No SPF record (a TXT record starting with v=spf1) at {domain}."),
-            Some(&format!(
-                "Publish a TXT record at {domain} that authorizes your email provider, e.g. `v=spf1 include:<your provider's SPF host> ~all`. Your provider's domain-authentication page shows the exact value."
+            format!("No SPF record found. {}", copy::SPF),
+            Some(&copy::with_records(
+                &format!("Add this record to `{domain}`:"),
+                &[copy::record_line("TXT", "@", &value)],
             )),
         );
     }
@@ -96,54 +134,59 @@ fn spf_check(domain: &str, lookup: &DnsLookup) -> StatusCheck {
         return make_check(
             StatusLevel::Error,
             name,
-            "More than one SPF record is published; receivers treat that as a permanent error.",
-            Some("Merge them into a single TXT record starting with v=spf1."),
+            "More than one SPF record exists, so receivers ignore SPF entirely.",
+            Some("Combine them into a single TXT record (merge the `include:` parts) and delete the others."),
         );
     }
-    let mut level = StatusLevel::Ok;
-    let mut detail = match (spf.all, &spf.redirect) {
-        (Some('+'), _) => {
-            level = StatusLevel::Error;
-            "SPF ends with +all, which lets anyone send mail as this domain.".to_string()
-        }
-        (Some('?'), _) => {
-            level = StatusLevel::Warning;
-            "SPF ends with ?all (neutral), which gives receivers no guidance on unlisted senders.".to_string()
-        }
-        (Some('-'), _) => "SPF is published and rejects unlisted senders (-all).".to_string(),
-        (Some('~'), _) => "SPF is published and soft-fails unlisted senders (~all).".to_string(),
-        (_, Some(target)) => format!("SPF is delegated to {target} (redirect=)."),
-        (_, None) => {
-            level = StatusLevel::Warning;
-            "SPF has no all mechanism, so unlisted senders are neither accepted nor rejected.".to_string()
-        }
-    };
-    let mut fix: Option<String> = match level {
-        StatusLevel::Error => Some("Change +all to ~all (or -all) once all your senders are listed.".to_string()),
-        StatusLevel::Warning => Some("End the record with ~all (or -all).".to_string()),
-        _ => None,
+    let fixed = copy::record_line("TXT", "@", &spf_with_soft_fail(&spf.record));
+    let (mut level, mut detail, mut fix) = match (spf.all, &spf.redirect) {
+        (Some('+'), _) => (
+            StatusLevel::Error,
+            "SPF lets anyone send email as your domain (`+all`).".to_string(),
+            Some(copy::with_records(
+                &format!("Change the ending to `~all` so only listed servers can send. Replace the record on `{domain}` with:"),
+                &[fixed.clone()],
+            )),
+        ),
+        (Some('?'), _) => (
+            StatusLevel::Warning,
+            "SPF doesn't say what to do with unlisted senders (`?all`).".to_string(),
+            Some(copy::with_records(
+                &format!("Change the ending to `~all`. Replace the record on `{domain}` with:"),
+                &[fixed.clone()],
+            )),
+        ),
+        (Some('-'), _) => (StatusLevel::Ok, "SPF is set up; unlisted senders are rejected.".to_string(), None),
+        (Some('~'), _) => (StatusLevel::Ok, "SPF is set up; unlisted senders are marked suspicious.".to_string(), None),
+        (_, Some(target)) => (StatusLevel::Ok, format!("SPF is set up through {target}."), None),
+        (_, None) => (
+            StatusLevel::Warning,
+            "The SPF record has no ending rule, so unlisted senders aren't handled.".to_string(),
+            Some(copy::with_records(
+                &format!("Add `~all` to the end. Replace the record on `{domain}` with:"),
+                &[fixed],
+            )),
+        ),
     };
     if spf.lookups > 10 {
         level = StatusLevel::Warning;
-        detail.push_str(&format!(
-            " The record already costs {} DNS lookups; SPF allows at most 10, so some receivers will fail it.",
+        detail = format!(
+            "SPF needs {} DNS lookups but the limit is 10, so some receivers will fail it.",
             spf.lookups
-        ));
-        fix = Some("Remove unused include:/a/mx terms (or flatten the record) to get to 10 lookups or fewer.".to_string());
+        );
+        fix = Some("Remove `include:` entries you no longer use, or ask your provider about a flattened record.".to_string());
     }
     make_check(level, name, detail, fix.as_deref())
 }
 
 fn mx_check(lookup: &DnsLookup) -> StatusCheck {
-    let name = "MX";
+    let name = "Incoming mail (MX)";
     match lookup {
-        DnsLookup::Failed(message) => {
-            make_check(StatusLevel::Unknown, name, format!("Couldn't look up MX records ({message})."), None)
-        }
+        DnsLookup::Failed(_) => make_check(StatusLevel::Unknown, name, "Couldn't look up MX records right now (the DNS lookup failed).", None),
         DnsLookup::NotFound => make_check(
             StatusLevel::Info,
             name,
-            "No MX records: this domain can't receive replies or bounces (fine for send-only domains).",
+            "No MX records, so this domain can't receive replies or bounces. That's fine if it only sends email.",
             None,
         ),
         DnsLookup::Found(answers) => {
@@ -152,7 +195,7 @@ fn mx_check(lookup: &DnsLookup) -> StatusCheck {
                 .filter(|a| a.rtype == super::dns::TYPE_MX)
                 .map(|a| a.data.clone())
                 .collect();
-            make_check(StatusLevel::Info, name, format!("{} MX record(s): {}", hosts.len(), hosts.join(", ")), None)
+            make_check(StatusLevel::Info, name, format!("Incoming mail is delivered to {}.", hosts.join(", ")), None)
         }
     }
 }
@@ -160,36 +203,70 @@ fn mx_check(lookup: &DnsLookup) -> StatusCheck {
 fn dmarc_check(domain: &str, dmarc: &DmarcStatus, found_at: &Option<String>) -> StatusCheck {
     let name = "DMARC";
     let level = StatusLevel::try_from(dmarc.level).unwrap_or(StatusLevel::Unknown);
-    let mut detail = dmarc.summary.clone();
-    if let Some(parent) = found_at {
-        if parent != domain {
-            detail = format!("Inherited from {parent}: {detail}");
-        }
+    let parent = found_at.as_ref().filter(|p| p.as_str() != domain);
+    let (tag, effective_policy) = match parent {
+        Some(_) => effective_inherited_policy(dmarc),
+        None => ("p", dmarc.policy.clone()),
+    };
+    if level == StatusLevel::Unknown {
+        return make_check(level, name, "Couldn't look up DMARC right now (the DNS lookup failed).", None);
     }
-    let suggestion = suggested_dmarc_record(domain);
+    let mut detail = dmarc.summary.clone();
+    if let Some(parent) = parent {
+        detail = format!("Uses the record on {parent} (its `{tag}` applies here). {detail}");
+    }
+    if !dmarc.record_found && level == StatusLevel::Warning {
+        detail = format!("{detail} {}", copy::DMARC);
+    }
+    let own_raw = if parent.is_none() { dmarc.raw_record.as_str() } else { "" };
     let fix = if !dmarc.record_found && level == StatusLevel::Warning {
-        Some(format!(
-            "Publish a TXT record at _dmarc.{domain} with the value `{suggestion}` (use a mailbox you read for rua=), then tighten p= to quarantine/reject once reports look clean."
+        Some(copy::with_records(
+            &format!("Start in monitoring mode. Add this record to `{domain}` (replace the address with a mailbox you read; it receives the reports):"),
+            &[copy::record_line("TXT", "_dmarc", &suggested_dmarc_record(domain))],
         ))
-    } else if dmarc.record_found && dmarc.policy == "none" {
-        Some("Once the reports show only legitimate mail passing, change p=none to p=quarantine, then p=reject.".to_string())
-    } else if dmarc.record_found && dmarc.percentage < 100 && level == StatusLevel::Warning {
-        Some("Raise pct to 100 (or remove it) once you're confident in the policy.".to_string())
     } else if dmarc.record_found && level == StatusLevel::Error {
-        Some(format!("Keep exactly one TXT record at _dmarc.{domain}."))
+        Some("Keep exactly one DMARC record (a TXT record named `_dmarc`) and delete the others.".to_string())
+    } else if dmarc.record_found && effective_policy == "none" && parent.is_some() {
+        Some(copy::with_records(
+            &format!("This domain is only covered by its parent's monitoring-only policy. Once your reports look clean, give `{domain}` its own record:"),
+            &[copy::record_line("TXT", "_dmarc", &set_dmarc_tag(&suggested_dmarc_record(domain), "p", "quarantine"))],
+        ))
+    } else if dmarc.record_found && effective_policy == "none" {
+        Some(copy::with_records(
+            "Once your reports show only your own mail passing, tighten the policy. Replace the record on `_dmarc` with:",
+            &[copy::record_line("TXT", "_dmarc", &set_dmarc_tag(own_raw, "p", "quarantine"))],
+        ))
+    } else if dmarc.record_found && dmarc.percentage < 100 && level == StatusLevel::Warning && parent.is_none() {
+        Some(copy::with_records(
+            "Raise `pct` to 100 once you're confident. Replace the record on `_dmarc` with:",
+            &[copy::record_line("TXT", "_dmarc", &set_dmarc_tag(own_raw, "pct", "100"))],
+        ))
+    } else if dmarc.record_found && level == StatusLevel::Warning && parent.is_none() && dmarc.policy.is_empty() {
+        Some(copy::with_records(
+            "Add a policy. Replace the record on `_dmarc` with:",
+            &[copy::record_line("TXT", "_dmarc", &set_dmarc_tag(own_raw, "p", "none"))],
+        ))
     } else {
         None
     };
     make_check(level, name, detail, fix.as_deref())
 }
 
-fn reports_check(dmarc: &DmarcStatus) -> Option<StatusCheck> {
-    if dmarc.record_found && dmarc.aggregate_report_uris.is_empty() {
+fn reports_check(domain: &str, dmarc: &DmarcStatus, found_at: &Option<String>) -> Option<StatusCheck> {
+    let own = found_at.as_deref() == Some(domain);
+    if own && dmarc.record_found && dmarc.aggregate_report_uris.is_empty() {
         Some(make_check(
             StatusLevel::Info,
             "DMARC reports",
-            "The DMARC record has no rua= address, so you won't receive aggregate reports.",
-            Some("Add `rua=mailto:<a mailbox you read>` to the DMARC record to see who is sending as your domain."),
+            "You aren't getting DMARC reports, so you can't see who else sends as your domain.",
+            Some(&copy::with_records(
+                "Add a `rua` address (a mailbox you read) to the record. Replace the record on `_dmarc` with:",
+                &[copy::record_line(
+                    "TXT",
+                    "_dmarc",
+                    &set_dmarc_tag(&dmarc.raw_record, "rua", &format!("mailto:postmaster@{domain}")),
+                )],
+            )),
         ))
     } else {
         None
@@ -201,38 +278,25 @@ fn dkim_check(
     probes: &[(String, DnsLookup)],
     provider_reported_dkim_ok: bool,
 ) -> StatusCheck {
-    let name = "DKIM keys in DNS";
-    let found: Vec<&str> = probes
-        .iter()
-        .filter(|(_, l)| l.has_txt_or_cname())
-        .map(|(n, _)| n.as_str())
-        .collect();
-    let probed: Vec<&str> = probes.iter().map(|(n, _)| n.as_str()).collect();
+    let name = "DKIM";
+    let short = |n: &str| n.strip_suffix(&format!(".{domain}")).unwrap_or(n).to_string();
+    let found: Vec<String> = probes.iter().filter(|(_, l)| l.has_txt_or_cname()).map(|(n, _)| short(n)).collect();
+    let probed: Vec<String> = probes.iter().map(|(n, _)| short(n)).collect();
     if !found.is_empty() {
-        return make_check(
-            StatusLevel::Ok,
-            name,
-            format!("Found DKIM record(s) at {}.", found.join(", ")),
-            None,
-        );
-    }
-    if !probes.is_empty() && probes.iter().all(|(_, l)| l.failed().is_some()) {
-        return make_check(StatusLevel::Unknown, name, "Couldn't look up DKIM records (DNS resolver failed).", None);
+        return make_check(StatusLevel::Ok, name, format!("Signing key found ({}).", found.join(", ")), None);
     }
     if probes.is_empty() {
-        return make_check(
-            StatusLevel::Unknown,
-            name,
-            "No DKIM selectors are known for the providers using this domain.",
-            None,
-        );
+        return make_check(StatusLevel::Unknown, name, "Not sure which DKIM key names to look for with your email provider.", None);
+    }
+    if probes.iter().all(|(_, l)| l.failed().is_some()) {
+        return make_check(StatusLevel::Unknown, name, "Couldn't look up DKIM right now (the DNS lookup failed).", None);
     }
     if provider_reported_dkim_ok {
         make_check(
             StatusLevel::Info,
             name,
             format!(
-                "Your provider reports DKIM as verified, but none of the probed names resolved ({}); it may use a custom selector.",
+                "Your provider says DKIM is verified, but we didn't find its key at the usual names ({}). It may use a custom name.",
                 probed.join(", ")
             ),
             None,
@@ -241,23 +305,32 @@ fn dkim_check(
         make_check(
             StatusLevel::Warning,
             name,
-            format!("No DKIM record found at the usual names for {domain} ({}).", probed.join(", ")),
-            Some("Publish the DKIM records shown on your email provider's domain-authentication page."),
+            format!("No DKIM signing key found (looked for {}). {}", probed.join(", "), copy::DKIM),
+            Some(&format!(
+                "Open your email provider's domain-authentication page for `{domain}`, add the DKIM records it shows, then click Verify there."
+            )),
         )
     }
 }
 
 fn status_summary(domain: &str, checks: &[StatusCheck]) -> String {
-    let mut bad: Vec<&str> = checks
-        .iter()
-        .filter(|c| c.level == StatusLevel::Error as i32 || c.level == StatusLevel::Warning as i32)
-        .map(|c| c.name.as_str())
-        .collect();
-    bad.dedup();
-    if bad.is_empty() {
-        format!("{domain}: SPF, DKIM and DMARC are in place")
-    } else {
-        format!("{domain}: needs attention - {}", bad.join(", "))
+    let names = |level: StatusLevel| -> Vec<&str> {
+        let mut v: Vec<&str> = checks.iter().filter(|c| c.level == level as i32).map(|c| c.name.as_str()).collect();
+        v.dedup();
+        v
+    };
+    let mut bad = names(StatusLevel::Error);
+    bad.extend(names(StatusLevel::Warning));
+    let unknown = names(StatusLevel::Unknown);
+    match (bad.is_empty(), unknown.is_empty()) {
+        (false, true) => format!("{domain}: needs attention - {}", bad.join(", ")),
+        (false, false) => format!(
+            "{domain}: needs attention - {} (couldn't check: {})",
+            bad.join(", "),
+            unknown.join(", ")
+        ),
+        (true, false) => format!("{domain}: couldn't fully check - no result for {}", unknown.join(", ")),
+        (true, true) => format!("{domain}: SPF, DKIM and DMARC are set up"),
     }
 }
 
@@ -317,11 +390,11 @@ pub fn build_domain_status(
     });
 
     let mut checks = vec![
-        spf_check(domain, &spf_lookup),
+        spf_check(domain, &spf_lookup, &sending.used_by),
         dkim_check(domain, &probes, provider_dkim_ok),
         dmarc_check(domain, &dmarc, &dmarc_at),
     ];
-    if let Some(c) = reports_check(&dmarc) {
+    if let Some(c) = reports_check(domain, &dmarc, &dmarc_at) {
         checks.push(c);
     }
     checks.push(mx_check(&mx_lookup));
@@ -442,9 +515,9 @@ mod tests {
         assert_eq!(status.level, StatusLevel::Ok as i32, "{:?}", status.checks);
         assert!(status.dmarc.as_ref().unwrap().record_found);
         assert_eq!(level_of(&status, "SPF"), StatusLevel::Ok as i32);
-        assert!(status.summary.contains("in place"));
-        let dkim = status.checks.iter().find(|c| c.name == "DKIM keys in DNS").unwrap();
-        assert!(dkim.detail.contains("s1._domainkey.example.com"));
+        assert!(status.summary.contains("are set up"));
+        let dkim = status.checks.iter().find(|c| c.name == "DKIM").unwrap();
+        assert!(dkim.detail.contains("s1._domainkey"));
         assert!(!dkim.detail.contains("s2._domainkey"));
     }
 
@@ -454,14 +527,16 @@ mod tests {
         let status = build_domain_status(&sending("example.com", &["mailgun"]), &[], &r);
         assert_eq!(status.level, StatusLevel::Warning as i32);
         let dmarc = status.checks.iter().find(|c| c.name == "DMARC").unwrap();
-        assert!(dmarc.fix_hint.as_ref().unwrap().contains("_dmarc.example.com"));
-        assert!(dmarc.fix_hint.as_ref().unwrap().contains("v=DMARC1; p=none"));
+        assert_eq!(
+            copy::record_lines(dmarc.fix_hint.as_ref().unwrap()),
+            vec![("TXT", "_dmarc", "v=DMARC1; p=none; rua=mailto:postmaster@example.com")]
+        );
         assert_eq!(level_of(&status, "SPF"), StatusLevel::Warning as i32);
-        assert_eq!(level_of(&status, "DKIM keys in DNS"), StatusLevel::Warning as i32);
+        assert_eq!(level_of(&status, "DKIM"), StatusLevel::Warning as i32);
         assert!(status.summary.contains("needs attention"));
         // Mailgun probes `smtp`, `k1`, `mailo`, `krs`.
-        let dkim = status.checks.iter().find(|c| c.name == "DKIM keys in DNS").unwrap();
-        assert!(dkim.detail.contains("k1._domainkey.example.com"));
+        let dkim = status.checks.iter().find(|c| c.name == "DKIM").unwrap();
+        assert!(dkim.detail.contains("k1._domainkey"));
     }
 
     #[test]
@@ -484,7 +559,7 @@ mod tests {
         let status = build_domain_status(&sending("mg.example.com", &["mailgun"]), &[], &r);
         let dmarc = status.checks.iter().find(|c| c.name == "DMARC").unwrap();
         assert_eq!(dmarc.level, StatusLevel::Ok as i32);
-        assert!(dmarc.detail.contains("Inherited from example.com"));
+        assert!(dmarc.detail.contains("Uses the record on example.com"), "{}", dmarc.detail);
     }
 
     #[test]
@@ -497,7 +572,7 @@ mod tests {
             dkim_hosts: vec![],
         };
         let status = build_domain_status(&sending("example.com", &["stalwart"]), &[&report], &r);
-        assert_eq!(level_of(&status, "DKIM keys in DNS"), StatusLevel::Info as i32);
+        assert_eq!(level_of(&status, "DKIM"), StatusLevel::Info as i32);
         assert!(status.checks.iter().any(|c| c.name == "Postmark: DKIM"));
     }
 
@@ -512,7 +587,7 @@ mod tests {
             dkim_hosts: vec!["20240101pm._domainkey.example.com".into()],
         };
         let status = build_domain_status(&sending("example.com", &["postmark"]), &[&report], &r);
-        assert_eq!(level_of(&status, "DKIM keys in DNS"), StatusLevel::Ok as i32);
+        assert_eq!(level_of(&status, "DKIM"), StatusLevel::Ok as i32);
     }
 
     #[test]
@@ -521,9 +596,126 @@ mod tests {
         r.fail_all = true;
         let status = build_domain_status(&sending("example.com", &["sendgrid"]), &[], &r);
         assert_eq!(level_of(&status, "SPF"), StatusLevel::Unknown as i32);
-        assert_eq!(level_of(&status, "DKIM keys in DNS"), StatusLevel::Unknown as i32);
+        assert_eq!(level_of(&status, "DKIM"), StatusLevel::Unknown as i32);
         assert_eq!(status.dmarc.as_ref().unwrap().level, StatusLevel::Unknown as i32);
         assert_ne!(status.level, StatusLevel::Error as i32);
+    }
+
+    #[test]
+    fn dns_outage_never_reads_as_all_good() {
+        let mut r = FakeResolver::new();
+        r.fail_all = true;
+        let status = build_domain_status(&sending("example.com", &["sendgrid"]), &[], &r);
+        assert_eq!(status.level, StatusLevel::Unknown as i32);
+        assert!(!status.summary.contains("are set up"), "{}", status.summary);
+        assert!(status.summary.contains("couldn't fully check"), "{}", status.summary);
+        assert!(status.summary.contains("SPF") && status.summary.contains("DMARC"), "{}", status.summary);
+    }
+
+    #[test]
+    fn partial_dns_failure_with_a_warning_lists_both() {
+        let checks = vec![
+            make_check(StatusLevel::Warning, "DMARC", "x", None),
+            make_check(StatusLevel::Unknown, "SPF", "y", None),
+            make_check(StatusLevel::Ok, "DKIM", "z", None),
+        ];
+        let s = status_summary("example.com", &checks);
+        assert!(s.contains("needs attention - DMARC"), "{s}");
+        assert!(s.contains("couldn't check: SPF"), "{s}");
+    }
+
+    #[test]
+    fn subdomain_inheriting_sp_none_is_monitor_only() {
+        let mut r = FakeResolver::new();
+        r.txt.insert("_dmarc.example.com".into(), vec!["v=DMARC1; p=reject; sp=none; rua=mailto:a@example.com".into()]);
+        let status = build_domain_status(&sending("mail.example.com", &["mailgun"]), &[], &r);
+        let dmarc = status.checks.iter().find(|c| c.name == "DMARC").unwrap();
+        assert_eq!(dmarc.level, StatusLevel::Warning as i32);
+        assert!(dmarc.detail.contains("Uses the record on example.com"), "{}", dmarc.detail);
+        assert!(dmarc.detail.contains("sp=none"), "{}", dmarc.detail);
+        let lines = copy::record_lines(dmarc.fix_hint.as_ref().unwrap());
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].1, "_dmarc");
+        assert!(lines[0].2.contains("p=quarantine"), "{lines:?}");
+        assert_eq!(status.dmarc.as_ref().unwrap().level, StatusLevel::Warning as i32);
+        // The apex domain itself is still judged by p=.
+        let apex = build_domain_status(&sending("example.com", &["mailgun"]), &[], &r);
+        assert_eq!(apex.checks.iter().find(|c| c.name == "DMARC").unwrap().level, StatusLevel::Ok as i32);
+    }
+
+    #[test]
+    fn missing_spf_hint_has_a_parseable_record_with_the_providers_include() {
+        let r = FakeResolver::new();
+        let status = build_domain_status(&sending("example.com", &["sendgrid", "mailgun"]), &[], &r);
+        let spf = status.checks.iter().find(|c| c.name == "SPF").unwrap();
+        assert_eq!(copy::record_lines(spf.fix_hint.as_ref().unwrap()), vec![("TXT", "@", "v=spf1 include:sendgrid.net include:mailgun.org ~all")]);
+        assert!(spf.detail.contains(copy::SPF));
+    }
+
+    #[test]
+    fn spf_plus_all_and_missing_all_hints_replace_the_whole_record() {
+        let mut r = FakeResolver::new();
+        r.txt.insert("example.com".into(), vec!["v=spf1 include:sendgrid.net +all".into()]);
+        let status = build_domain_status(&sending("example.com", &[]), &[], &r);
+        let spf = status.checks.iter().find(|c| c.name == "SPF").unwrap();
+        assert_eq!(copy::record_lines(spf.fix_hint.as_ref().unwrap()), vec![("TXT", "@", "v=spf1 include:sendgrid.net ~all")]);
+
+        let mut r = FakeResolver::new();
+        r.txt.insert("example.com".into(), vec!["v=spf1 include:sendgrid.net".into()]);
+        let status = build_domain_status(&sending("example.com", &[]), &[], &r);
+        let spf = status.checks.iter().find(|c| c.name == "SPF").unwrap();
+        assert_eq!(copy::record_lines(spf.fix_hint.as_ref().unwrap()), vec![("TXT", "@", "v=spf1 include:sendgrid.net ~all")]);
+    }
+
+    #[test]
+    fn dmarc_none_hint_tightens_the_existing_record() {
+        let mut r = FakeResolver::new();
+        r.txt.insert("_dmarc.example.com".into(), vec!["v=DMARC1; p=none; rua=mailto:r@example.com".into()]);
+        let status = build_domain_status(&sending("example.com", &[]), &[], &r);
+        let dmarc = status.checks.iter().find(|c| c.name == "DMARC").unwrap();
+        assert!(dmarc.detail.starts_with("Monitoring only"), "{}", dmarc.detail);
+        assert_eq!(
+            copy::record_lines(dmarc.fix_hint.as_ref().unwrap()),
+            vec![("TXT", "_dmarc", "v=DMARC1; p=quarantine; rua=mailto:r@example.com")]
+        );
+    }
+
+    #[test]
+    fn dmarc_pct_and_missing_rua_hints_are_record_lines() {
+        let mut r = FakeResolver::new();
+        r.txt.insert("_dmarc.example.com".into(), vec!["v=DMARC1; p=reject; pct=50; rua=mailto:r@example.com".into()]);
+        let status = build_domain_status(&sending("example.com", &[]), &[], &r);
+        let dmarc = status.checks.iter().find(|c| c.name == "DMARC").unwrap();
+        assert_eq!(
+            copy::record_lines(dmarc.fix_hint.as_ref().unwrap()),
+            vec![("TXT", "_dmarc", "v=DMARC1; p=reject; pct=100; rua=mailto:r@example.com")]
+        );
+
+        let mut r = FakeResolver::new();
+        r.txt.insert("_dmarc.example.com".into(), vec!["v=DMARC1; p=reject".into()]);
+        let status = build_domain_status(&sending("example.com", &[]), &[], &r);
+        let reports = status.checks.iter().find(|c| c.name == "DMARC reports").unwrap();
+        assert_eq!(
+            copy::record_lines(reports.fix_hint.as_ref().unwrap()),
+            vec![("TXT", "_dmarc", "v=DMARC1; p=reject; rua=mailto:postmaster@example.com")]
+        );
+    }
+
+    #[test]
+    fn every_record_hint_is_prose_then_record_lines_only() {
+        // Anything with record lines puts the sentence first and nothing but records after it.
+        let r = FakeResolver::new();
+        let status = build_domain_status(&sending("example.com", &["postmark"]), &[], &r);
+        for c in &status.checks {
+            if let Some(h) = &c.fix_hint {
+                let lines: Vec<&str> = h.lines().collect();
+                let first_record = lines.iter().position(|l| copy::parse_record_line(l).is_some());
+                if let Some(i) = first_record {
+                    assert!(i >= 1, "{h}");
+                    assert!(lines[i..].iter().all(|l| copy::parse_record_line(l).is_some()), "{h}");
+                }
+            }
+        }
     }
 
     #[test]

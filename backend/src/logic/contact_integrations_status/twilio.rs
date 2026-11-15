@@ -51,7 +51,7 @@ pub fn check(config: &TwilioConfig, ctx: &Ctx) -> ProviderReport {
         Err(Fail::Unauthorized) => {
             report.error(
                 "API credentials",
-                "Twilio rejected the API Key (HTTP 401).",
+                "Twilio didn't accept the API Key.",
                 "Check the Account SID, API Key SID and API Key Secret; the key may have been revoked.",
             );
             report.headline = Some("Credentials rejected by Twilio".to_string());
@@ -96,7 +96,7 @@ pub fn check(config: &TwilioConfig, ctx: &Ctx) -> ProviderReport {
             if kind.eq_ignore_ascii_case("trial") {
                 report.warn(
                     "Account plan",
-                    "This is a Twilio trial account: it can only text numbers you've verified in Twilio, and messages are prefixed with a trial notice.",
+                    "This is a Twilio trial account. It can only text numbers you've verified, and messages carry a trial notice.",
                     "Upgrade the account in the Twilio Console to text arbitrary users.",
                 );
             } else if !kind.is_empty() {
@@ -234,9 +234,9 @@ fn delivery_stats(ctx: &Ctx, account_url: &str, auth: Auth, from: &str, report: 
     let failure_pct = if finished > 0 { failed as f64 * 100.0 / finished as f64 } else { 0.0 };
     let top_error = errors.iter().max_by_key(|(_, n)| **n).map(|(c, _)| *c);
     let hint = match top_error {
-        Some(30034) => Some("Twilio error 30034: US carriers block messages from unregistered 10DLC numbers. Register an A2P 10DLC brand and campaign, or use a verified toll-free number."),
-        Some(30032) => Some("Twilio error 30032: this toll-free number hasn't been verified. Submit a Toll-Free Verification in the Twilio Console."),
-        Some(30007) => Some("Twilio error 30007: carriers filtered messages as spam. Review message content and opt-in practices."),
+        Some(30034) => Some("Error 30034: US carriers block texts from unregistered numbers. Register an A2P 10DLC brand and campaign, or use a verified toll-free number."),
+        Some(30032) => Some("Error 30032: this toll-free number isn't verified. Submit a Toll-Free Verification in the Twilio Console."),
+        Some(30007) => Some("Error 30007: carriers filtered texts as spam. Review the message wording and how people opt in."),
         _ => None,
     };
     let top = top_error.map(|c| format!(" Most common error code: {c}.")).unwrap_or_default();
@@ -283,7 +283,7 @@ fn compliance(
                         report.error(
                             NAME,
                             format!("Toll-free verification was rejected. {reason}").trim().to_string(),
-                            "Edit and resubmit the verification in the Twilio Console; unverified toll-free numbers are blocked by carriers.",
+                            "Edit and resubmit it in the Twilio Console. Carriers block unverified toll-free numbers.",
                         )
                     }
                     Some(s @ ("PENDING_REVIEW" | "IN_REVIEW")) => report.warn(
@@ -295,7 +295,7 @@ fn compliance(
                     None => report.warn(
                         NAME,
                         "No toll-free verification has been submitted for this number.",
-                        "Submit a Toll-Free Verification in the Twilio Console (Messaging > Regulatory Compliance); unverified toll-free traffic is blocked.",
+                        "Submit a Toll-Free Verification in the Twilio Console (Messaging > Regulatory Compliance). Carriers block unverified toll-free numbers.",
                     ),
                 }
             }
@@ -309,7 +309,7 @@ fn compliance(
         };
         a2p_status(ctx, messaging, auth, from, sid, report);
     } else {
-        report.info(NAME, "US carrier registration (A2P 10DLC / toll-free verification) doesn't apply to this number; check the sender-registration rules for your destination countries.");
+        report.info(NAME, "US carrier registration doesn't apply to this number. Check the sender rules for the countries you text.");
     }
 }
 
@@ -362,7 +362,7 @@ fn a2p_status(ctx: &Ctx, messaging: &str, auth: Auth, from: &str, number_sid: &s
                     report.warn(
                         NAME,
                         format!("{from} is in a Messaging Service with no A2P 10DLC campaign."),
-                        "Register an A2P 10DLC brand and campaign for the Messaging Service; unregistered US traffic is increasingly blocked.",
+                        "Register an A2P 10DLC brand and campaign for the Messaging Service. US carriers block unregistered texts.",
                     );
                     return;
                 }
@@ -388,7 +388,7 @@ fn a2p_status(ctx: &Ctx, messaging: &str, auth: Auth, from: &str, number_sid: &s
     report.warn(
         NAME,
         format!("{from} isn't in any Messaging Service with an A2P 10DLC campaign."),
-        "US carriers increasingly block unregistered 10DLC traffic: add the number to a Messaging Service with a registered A2P campaign, or use a verified toll-free number.",
+        "US carriers block texts from unregistered numbers. Add the number to a Messaging Service with a registered A2P campaign, or use a verified toll-free number.",
     );
 }
 

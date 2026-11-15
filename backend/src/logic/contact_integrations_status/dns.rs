@@ -14,6 +14,7 @@ use std::time::Duration;
 
 use crate::protos::{DmarcStatus, StatusLevel};
 
+use super::copy;
 use super::http::{self, Auth, Ctx};
 
 pub const DEFAULT_DOH_URL: &str = "https://cloudflare-dns.com/dns-query";
@@ -309,6 +310,62 @@ fn alignment(value: Option<&String>) -> String {
     .to_string()
 }
 
+/// Level and one-line summary for an effective DMARC `policy` (`none`/`quarantine`/`reject`/other)
+/// applied to `percentage`% of failing mail. `tag` is the record tag the policy came from (`p` or
+/// `sp`), shown so the admin can find it.
+fn evaluate_policy(policy: &str, percentage: i32, tag: &str) -> (StatusLevel, String) {
+    let plain = copy::dmarc_policy(policy);
+    let (mut level, mut summary) = match policy {
+        "reject" | "quarantine" => (
+            StatusLevel::Ok,
+            format!("Protected: {plain} ({tag}={policy})."),
+        ),
+        "none" => (
+            StatusLevel::Warning,
+            format!("Monitoring only: {plain} ({tag}=none)."),
+        ),
+        "" => (
+            StatusLevel::Warning,
+            format!("The record has no valid policy ({tag}=), so receivers ignore it."),
+        ),
+        other => (
+            StatusLevel::Warning,
+            format!("The policy \"{other}\" isn't valid; use none, quarantine or reject."),
+        ),
+    };
+    if matches!(policy, "reject" | "quarantine") && percentage < 100 {
+        level = StatusLevel::Warning;
+        summary = format!(
+            "Only enforced for {percentage}% of failing mail (pct={percentage}); the rest is still delivered."
+        );
+    }
+    (level, summary)
+}
+
+/// The policy that actually governs mail from a subdomain when the record was found on a *parent*
+/// domain: its `sp=` when present, else its `p=` (RFC 7489 §6.3).
+pub fn effective_inherited_policy(dmarc: &DmarcStatus) -> (&'static str, String) {
+    if dmarc.subdomain_policy.is_empty() {
+        ("p", dmarc.policy.clone())
+    } else {
+        ("sp", dmarc.subdomain_policy.clone())
+    }
+}
+
+/// Re-evaluates `dmarc` (as returned by [`parse_dmarc`] for a record found on a *parent* domain)
+/// for the subdomain: the level and summary follow the effective inherited policy (`sp=` if set).
+/// A multiple-records error is left alone.
+pub fn apply_inherited_policy(mut dmarc: DmarcStatus) -> DmarcStatus {
+    if !dmarc.record_found || dmarc.level == StatusLevel::Error as i32 {
+        return dmarc;
+    }
+    let (tag, effective) = effective_inherited_policy(&dmarc);
+    let (level, summary) = evaluate_policy(&effective, dmarc.percentage, tag);
+    dmarc.level = level as i32;
+    dmarc.summary = summary;
+    dmarc
+}
+
 /// Parses `_dmarc.<domain>` TXT records into a fully populated [`DmarcStatus`], including its
 /// `level` and `summary`. `records` are the TXT strings found at that name (already de-quoted);
 /// per RFC 7489 §6.6.3 more than one DMARC record means *none* applies.
@@ -326,7 +383,7 @@ pub fn parse_dmarc(records: &[String]) -> DmarcStatus {
             dkim_alignment: String::new(),
             spf_alignment: String::new(),
             level: StatusLevel::Warning as i32,
-            summary: "No DMARC record published.".to_string(),
+            summary: "No DMARC record found.".to_string(),
         };
     }
     let raw = dmarc[0].trim().to_string();
@@ -356,33 +413,10 @@ pub fn parse_dmarc(records: &[String]) -> DmarcStatus {
     let dkim_alignment = alignment(tags.get("adkim"));
     let spf_alignment = alignment(tags.get("aspf"));
 
-    let (mut level, mut summary) = match policy.as_str() {
-        "reject" | "quarantine" => (
-            StatusLevel::Ok,
-            format!("Enforced ({policy}) for {percentage}% of failing mail."),
-        ),
-        "none" => (
-            StatusLevel::Warning,
-            "Monitor only (p=none): spoofed mail is still delivered.".to_string(),
-        ),
-        "" => (
-            StatusLevel::Warning,
-            "The record has no valid policy (p=) tag, so receivers will ignore it.".to_string(),
-        ),
-        other => (
-            StatusLevel::Warning,
-            format!("Unrecognized policy \"{other}\"; expected none, quarantine or reject."),
-        ),
-    };
-    if matches!(policy.as_str(), "reject" | "quarantine") && percentage < 100 {
-        level = StatusLevel::Warning;
-        summary = format!(
-            "Policy {policy} only applies to {percentage}% of failing mail (pct={percentage})."
-        );
-    }
+    let (mut level, mut summary) = evaluate_policy(&policy, percentage, "p");
     if dmarc.len() > 1 {
         level = StatusLevel::Error;
-        summary = "Multiple DMARC records are published; receivers ignore all of them.".to_string();
+        summary = "More than one DMARC record exists, so receivers ignore all of them.".to_string();
     }
 
     DmarcStatus {
@@ -400,9 +434,34 @@ pub fn parse_dmarc(records: &[String]) -> DmarcStatus {
     }
 }
 
-/// The exact TXT value to suggest when a domain has no (or a monitor-only) DMARC record.
+/// The exact TXT value to suggest when a domain has no DMARC record: monitor-only (`p=none`) with
+/// reports going to a mailbox the admin should replace with one they read.
 pub fn suggested_dmarc_record(domain: &str) -> String {
-    format!("v=DMARC1; p=none; rua=mailto:dmarc-reports@{domain}")
+    format!("v=DMARC1; p=none; rua=mailto:postmaster@{domain}")
+}
+
+/// `raw` (a DMARC record) with tag `key` set to `value` (replacing it, or appending it if absent);
+/// every other tag is kept as written.
+pub fn set_dmarc_tag(raw: &str, key: &str, value: &str) -> String {
+    let mut found = false;
+    let mut parts: Vec<String> = raw
+        .split(';')
+        .map(|p| p.trim())
+        .filter(|p| !p.is_empty())
+        .map(|p| {
+            let name = p.splitn(2, '=').next().unwrap_or("").trim();
+            if name.eq_ignore_ascii_case(key) {
+                found = true;
+                format!("{key}={value}")
+            } else {
+                p.to_string()
+            }
+        })
+        .collect();
+    if !found {
+        parts.push(format!("{key}={value}"));
+    }
+    parts.join("; ")
 }
 
 #[cfg(test)]
@@ -565,7 +624,7 @@ mod tests {
         let d = parse_dmarc(&s(&["v=DMARC1; p=none; rua=mailto:r@x.com"]));
         assert_eq!(d.policy, "none");
         assert_eq!(d.level, StatusLevel::Warning as i32);
-        assert!(d.summary.to_lowercase().contains("monitor"));
+        assert!(d.summary.to_lowercase().contains("monitoring"));
     }
 
     #[test]
@@ -613,10 +672,45 @@ mod tests {
     }
 
     #[test]
+    fn inherited_dmarc_uses_subdomain_policy_when_present() {
+        let parent = parse_dmarc(&s(&["v=DMARC1; p=reject; sp=none; rua=mailto:a@x.com"]));
+        assert_eq!(parent.level, StatusLevel::Ok as i32);
+        let inherited = apply_inherited_policy(parent);
+        assert_eq!(inherited.level, StatusLevel::Warning as i32);
+        assert!(inherited.summary.contains("sp=none"), "{}", inherited.summary);
+        // Fields describing the record itself are untouched.
+        assert_eq!(inherited.policy, "reject");
+        assert_eq!(inherited.subdomain_policy, "none");
+    }
+
+    #[test]
+    fn inherited_dmarc_falls_back_to_p_without_sp() {
+        let inherited = apply_inherited_policy(parse_dmarc(&s(&["v=DMARC1; p=quarantine"])));
+        assert_eq!(inherited.level, StatusLevel::Ok as i32);
+        let weak = apply_inherited_policy(parse_dmarc(&s(&["v=DMARC1; p=none"])));
+        assert_eq!(weak.level, StatusLevel::Warning as i32);
+        assert!(weak.summary.contains("p=none"));
+    }
+
+    #[test]
+    fn inherited_sp_enforcing_over_p_none_is_ok() {
+        let inherited = apply_inherited_policy(parse_dmarc(&s(&["v=DMARC1; p=none; sp=reject"])));
+        assert_eq!(inherited.level, StatusLevel::Ok as i32);
+        assert!(inherited.summary.contains("reject"));
+    }
+
+    #[test]
     fn suggested_record_names_domain() {
         assert_eq!(
             suggested_dmarc_record("example.com"),
-            "v=DMARC1; p=none; rua=mailto:dmarc-reports@example.com"
+            "v=DMARC1; p=none; rua=mailto:postmaster@example.com"
         );
+    }
+
+    #[test]
+    fn set_dmarc_tag_replaces_or_appends() {
+        assert_eq!(set_dmarc_tag("v=DMARC1; p=none; pct=50", "p", "quarantine"), "v=DMARC1; p=quarantine; pct=50");
+        assert_eq!(set_dmarc_tag("v=DMARC1; p=reject", "rua", "mailto:a@x.com"), "v=DMARC1; p=reject; rua=mailto:a@x.com");
+        assert_eq!(set_dmarc_tag("V=DMARC1;P=none", "p", "reject"), "V=DMARC1; p=reject");
     }
 }

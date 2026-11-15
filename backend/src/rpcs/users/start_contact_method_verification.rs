@@ -80,6 +80,13 @@ pub fn start_contact_method_verification_at(
     // Don't spend a message on a contact that verification will then refuse.
     ensure_contact_not_verified_elsewhere(conn, kind, &value, Some(current_user.id))?;
 
+    if contact_send_cap_reached(conn, &value)? {
+        return Err(Status::new(
+            Code::ResourceExhausted,
+            "too_many_verification_requests",
+        ));
+    }
+
     // Send to the stored spelling of the value (case preserved for emails).
     let send_to = existing.value.clone().unwrap_or(value);
     let mut updated = begin_user_contact_verification(
@@ -87,7 +94,6 @@ pub fn start_contact_method_verification_at(
         conn,
         current_user.id,
         kind,
-        &existing,
         &send_to,
     )?;
 

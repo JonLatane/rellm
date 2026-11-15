@@ -21,37 +21,43 @@ pub fn verify_contact_method(
     })?;
     let value = normalize_contact_value(kind, &request.value)?;
 
-    let mut contact = user_contact(current_user, kind)
-        .filter(|cm| {
-            cm.value
-                .as_deref()
-                .is_some_and(|v| contact_values_match(kind, v, &value))
-        })
-        .ok_or_else(|| {
-            Status::new(
-                Code::FailedPrecondition,
-                match kind {
-                    ContactKind::Phone => "phone_not_set",
-                    ContactKind::Email => "email_not_set",
-                },
-            )
-        })?;
-
-    let verdict = check_contact_code(&mut contact, &request.code);
-    if verdict == CodeVerdict::NotStarted {
-        return Err(verdict_status(verdict));
-    }
-    if verdict != CodeVerdict::Valid {
-        // Expired/exhausted codes are cleared, wrong guesses counted -- persist either way.
-        persist_user_contact(conn, current_user.id, kind, &contact)?;
-        return Err(verdict_status(verdict));
+    // Cheap pre-check for a clean `*_not_set` error; the authoritative check happens again under
+    // lock below.
+    if !user_contact(current_user, kind).is_some_and(|cm| {
+        cm.value
+            .as_deref()
+            .is_some_and(|v| contact_values_match(kind, v, &value))
+    }) {
+        return Err(not_set(kind));
     }
 
-    // Two accounts can't both hold the same verified contact (it is a login credential).
-    ensure_contact_not_verified_elsewhere(conn, kind, &value, Some(current_user.id))?;
+    // Judge the code, check ownership and save -- all under the contact's advisory lock and a lock
+    // on the freshly reloaded user row, so racing requests (same user, or two users claiming the
+    // same contact) are serialized: a code can't be redeemed twice, attempts aren't lost, and two
+    // accounts can't both end up as the verified owner.
+    let outcome = with_locked_user_contact(conn, current_user.id, kind, &value, |conn, contact| {
+        let verdict = check_contact_code(contact, &request.code);
+        if verdict != CodeVerdict::Valid {
+            // Counted guess / cleared-or-exhausted code: saved (Ok), but reported as the error.
+            return Ok(Err(verdict));
+        }
+        // Two accounts can't both hold the same verified contact (it is a login credential).
+        // Err => nothing is saved, so the valid code stays redeemable.
+        ensure_contact_not_verified_elsewhere(conn, kind, &value, Some(current_user.id))?;
+        contact.verified_at = Some(std::time::SystemTime::now().to_proto());
+        Ok(Ok(contact.clone()))
+    })?
+    .ok_or_else(|| not_set(kind))?;
 
-    contact.verified_at = Some(std::time::SystemTime::now().to_proto());
-    persist_user_contact(conn, current_user.id, kind, &contact)?;
+    outcome.map_err(verdict_status)
+}
 
-    Ok(contact)
+fn not_set(kind: ContactKind) -> Status {
+    Status::new(
+        Code::FailedPrecondition,
+        match kind {
+            ContactKind::Phone => "phone_not_set",
+            ContactKind::Email => "email_not_set",
+        },
+    )
 }

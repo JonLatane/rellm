@@ -56,8 +56,8 @@ pub fn check(config: &StalwartConfig, ctx: &Ctx, tcp_timeout: Duration) -> Provi
         if host.is_empty() || config.stalwart_from_address.trim().is_empty() {
             report.error(
                 "Sending configuration",
-                "Sending is enabled but the SMTP host or From address is missing.",
-                "Fill in the SMTP host and From address.",
+                "Sending is on, but the SMTP host or From address is missing.",
+                "Fill in the SMTP host and From address, or turn sending off.",
             );
         } else {
             match tcp_reachable(host, port, tcp_timeout) {
@@ -65,7 +65,7 @@ pub fn check(config: &StalwartConfig, ctx: &Ctx, tcp_timeout: Duration) -> Provi
                 Err(why) => report.error(
                     "SMTP submission",
                     format!("Couldn't connect to {host}:{port} ({why})."),
-                    "Check that Stalwart is running and its submission listener is reachable from this server (Service name, port, network policy).",
+                    "Check that Stalwart is running and that this server can reach that host and port.",
                 ),
             }
         }
@@ -78,7 +78,7 @@ pub fn check(config: &StalwartConfig, ctx: &Ctx, tcp_timeout: Duration) -> Provi
     if config.stalwart_receiving_enabled {
         report.info(
             "Receiving",
-            "Receiving is enabled: Stalwart delivers inbound mail to this server's MTA-Hook endpoint (not testable from here).",
+            "Receiving is on: Stalwart hands incoming email to this server. That can't be tested from here.",
         );
     }
 
@@ -90,7 +90,7 @@ pub fn check(config: &StalwartConfig, ctx: &Ctx, tcp_timeout: Duration) -> Provi
     } else {
         report.info(
             "Management API",
-            "No management URL is configured, so queue and DNS details aren't shown.",
+            "No management URL is set, so queue and DNS details aren't shown.",
         );
     }
 
@@ -110,15 +110,15 @@ fn management(config: &StalwartConfig, ctx: &Ctx, base: &str, report: &mut Provi
         Ok(r) if (200..300).contains(&r.status) => report.ok("Server health", "Stalwart reports ready."),
         Ok(r) if r.status == 503 => report.error(
             "Server health",
-            "Stalwart is up but not ready (its data store is unavailable).",
-            "Check Stalwart's logs and storage backend.",
+            "Stalwart is running but not ready (its data store is unavailable).",
+            "Check Stalwart's logs and its storage backend.",
         ),
         Ok(_) => {}
         Err(e) => {
             report.error(
                 NAME,
                 format!("Couldn't reach the management URL ({e})."),
-                "Check the management URL and that it's reachable from this server.",
+                "Check the management URL and that this server can reach it.",
             );
             return;
         }
@@ -138,12 +138,12 @@ fn management(config: &StalwartConfig, ctx: &Ctx, base: &str, report: &mut Provi
             token_rejected = true;
             report.error(
                 NAME,
-                "Stalwart rejected the management token (HTTP 401).",
-                "Create an API key principal in Stalwart and paste its token here.",
+                "Stalwart didn't accept the management token.",
+                "Create an API key in Stalwart and paste its token here.",
             );
         }
-        Err(Fail::Forbidden(_)) => report.warn(NAME, "The management token is valid but lacks permissions.", "Grant the API key read access."),
-        Err(_) => report.info(NAME, "Stalwart answered, but its account endpoint isn't available on this version."),
+        Err(Fail::Forbidden(_)) => report.warn(NAME, "The management token works but isn't allowed to read this.", "Give the API key read access in Stalwart."),
+        Err(_) => report.info(NAME, "Stalwart answered, but this version doesn't offer the account check."),
     }
     if token_rejected {
         return;
@@ -178,7 +178,7 @@ fn management(config: &StalwartConfig, ctx: &Ctx, base: &str, report: &mut Provi
     if !got_any {
         report.info(
             "Queue and reports",
-            "Queue depth and DMARC report counts aren't available through this Stalwart version's REST API.",
+            "Queue size and DMARC report counts aren't available from this Stalwart version.",
         );
     }
 }

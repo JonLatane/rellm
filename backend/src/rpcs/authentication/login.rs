@@ -185,15 +185,17 @@ fn contact_login(
             })
         }
         Some(code) => {
-            let Some((user, mut contact)) = matched else {
+            let Some((user, contact)) = matched else {
                 log::info!("{:?} login code submitted for a contact with no verified account", kind);
                 return Err(incorrect_code());
             };
-            let verdict = check_contact_code(&mut contact, &code);
-            if verdict != CodeVerdict::NotStarted {
-                // Counted guess, or cleared on success/expiry/exhaustion.
-                persist_user_contact(conn, user.id, kind, &contact)?;
-            }
+            // Judge + record the guess under a lock on the freshly reloaded contact, so two
+            // concurrent submissions can't both redeem one code or lose attempt counts.
+            let stored_value = contact.value.clone().unwrap_or_else(|| value.clone());
+            let verdict = with_locked_user_contact(conn, user.id, kind, &stored_value, |_conn, contact| {
+                Ok(check_contact_code(contact, &code))
+            })?
+            .unwrap_or(CodeVerdict::NotStarted);
             if verdict != CodeVerdict::Valid {
                 log::info!(
                     "{:?} login code rejected for user_id={}: {:?}",
@@ -232,9 +234,20 @@ fn send_login_code(
         log::info!("{:?} login code not sent for user_id={}: resend cooldown", kind, user.id);
         return;
     }
+    match contact_send_cap_reached(conn, value) {
+        Ok(false) => {}
+        Ok(true) => {
+            log::warn!("{:?} login code not sent for user_id={}: hourly send cap", kind, user.id);
+            return;
+        }
+        Err(e) => {
+            log::warn!("{:?} login code not sent for user_id={}: {}", kind, user.id, e.message());
+            return;
+        }
+    }
     // Send to the stored spelling of the value (case preserved for emails).
     let send_to = contact.value.clone().unwrap_or_else(|| value.to_string());
-    if let Err(e) = begin_user_contact_verification(base_url, conn, user.id, kind, &contact, &send_to) {
+    if let Err(e) = begin_user_contact_verification(base_url, conn, user.id, kind, &send_to) {
         log::warn!(
             "{:?} login code could not be sent for user_id={}: {}",
             kind,

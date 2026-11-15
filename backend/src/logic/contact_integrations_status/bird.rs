@@ -53,8 +53,8 @@ pub fn check(config: &BirdConfig, ctx: &Ctx) -> ProviderReport {
             Err(Fail::Unauthorized) => {
                 report.error(
                     "API credentials",
-                    "Bird rejected the access key (HTTP 401).",
-                    "Create a workspace access key in Bird (Developers > API access) with SMS permissions, and check the region (us1/eu1).",
+                    "Bird didn't accept the access key.",
+                    "Create a workspace access key in Bird (Developers > API access) with SMS permission, and check the region (us1 or eu1).",
                 );
                 report.headline = Some("Credentials rejected by Bird".to_string());
                 return report;
@@ -185,7 +185,7 @@ fn requirements(ctx: &Ctx, host: &str, auth: Auth, sender_id: &str, report: &mut
         report.error(
             NAME,
             format!("Registration needs action: {}.", bad.join("; ")),
-            "Open the sender in Bird (SMS > Senders) and complete or resubmit the registration; carriers block unregistered traffic in these countries.",
+            "Open the sender in Bird (SMS > Senders) and finish or resubmit the registration. Carriers block unregistered texts in these countries.",
         );
     } else if !pending.is_empty() {
         report.warn(
