@@ -7,7 +7,20 @@ module Shared.Federation.Actions exposing
     , postWebUrl
     , usableAccounts
     , deletePost
+    , MastodonProfileTarget
     , editPost
+    , fetchBlueskyFollowState
+    , fetchOwnMediaPosts
+    , uploadAsPost
+    , fetchBlueskyOwnProfile
+    , fetchMastodonFollowState
+    , isOwnBlueskyProfile
+    , setBlueskyFollowing
+    , updateBlueskyOwnProfile
+    , fetchMastodonOwnProfile
+    , isOwnMastodonProfile
+    , setMastodonFollowing
+    , updateMastodonOwnProfile
     , isOwnPost
     , ownAccountFor
     , reply
@@ -24,6 +37,7 @@ write counterpart to the reads in `Shared.Federation.Mastodon`/`Bluesky`. Every 
 `MastodonAccounts.performWithMastodonAccount`/`BlueskyAccounts.performWithBlueskyAccount`).
 -}
 
+import File exposing (File)
 import Http
 import Proto.Rellm exposing (Post)
 import Shared.AccountsPanel as AccountsPanel
@@ -218,7 +232,7 @@ writeErrorText : Http.Error -> String
 writeErrorText err =
     case err of
         Http.BadStatus 403 ->
-            "Not allowed. If this is a Mastodon account connected before posting was supported, disconnect and reconnect it to grant permission."
+            "Not allowed. If this is a Mastodon account connected before this permission (posting, following, profile editing) was requested, disconnect and reconnect it to grant it."
 
         Http.BadStatus 401 ->
             "Your account was signed out. Reconnect it in the Accounts Panel."
@@ -298,3 +312,160 @@ createPost account visibility text =
 postWebUrl : String -> String -> String
 postWebUrl handle uri =
     "https://bsky.app/profile/" ++ handle ++ "/post/" ++ (uri |> String.split "/" |> List.reverse |> List.head |> Maybe.withDefault "")
+
+
+{-| A Mastodon profile being viewed: the instance it lives on, its bare `username`, and its account id there.
+-}
+type alias MastodonProfileTarget =
+    { instanceHost : String
+    , username : String
+    , accountId : String
+    }
+
+
+{-| Whether `account` is the very account `target` is the profile of.
+-}
+isOwnMastodonProfile : MastodonAccount -> MastodonProfileTarget -> Bool
+isOwnMastodonProfile account target =
+    account.instanceHost == target.instanceHost && String.toLower account.username == String.toLower target.username
+
+
+{-| `target`'s account id on `account`'s own instance -- the same id when it lives there, otherwise looked up
+(federating it in if need be).
+-}
+targetIdOn : MastodonAccount -> String -> MastodonProfileTarget -> Task Http.Error String
+targetIdOn account token target =
+    if account.instanceHost == target.instanceHost then
+        Task.succeed target.accountId
+
+    else
+        Mastodon.resolveAccountId account.instanceHost token (target.username ++ "@" ++ target.instanceHost)
+
+
+{-| How `account` currently relates to `target` (following / follow requested).
+-}
+fetchMastodonFollowState : MastodonAccount -> MastodonProfileTarget -> Task Http.Error ( Maybe AccountsPanel.Msg, Mastodon.Relationship )
+fetchMastodonFollowState account target =
+    MastodonAccounts.performWithMastodonAccount account
+        (\token ->
+            targetIdOn account token target
+                |> Task.andThen (Mastodon.fetchRelationship account.instanceHost token)
+        )
+        |> Task.map (\( refreshed, relationship ) -> ( rotatedMastodon account refreshed, relationship ))
+
+
+{-| Has `account` follow (`True`) or unfollow (`False`) `target`.
+-}
+setMastodonFollowing : Bool -> MastodonAccount -> MastodonProfileTarget -> Task Http.Error ( Maybe AccountsPanel.Msg, Mastodon.Relationship )
+setMastodonFollowing follow account target =
+    MastodonAccounts.performWithMastodonAccount account
+        (\token ->
+            targetIdOn account token target
+                |> Task.andThen (Mastodon.setFollowing follow account.instanceHost token)
+        )
+        |> Task.map (\( refreshed, relationship ) -> ( rotatedMastodon account refreshed, relationship ))
+
+
+{-| `account`'s current display name and plain-text bio, to start editing its profile from.
+-}
+fetchMastodonOwnProfile : MastodonAccount -> Task Http.Error ( Maybe AccountsPanel.Msg, Mastodon.OwnProfile )
+fetchMastodonOwnProfile account =
+    MastodonAccounts.performWithMastodonAccount account (Mastodon.fetchOwnProfile account.instanceHost)
+        |> Task.map (\( refreshed, profile ) -> ( rotatedMastodon account refreshed, profile ))
+
+
+{-| Saves a new display name and bio on `account`'s own profile.
+-}
+updateMastodonOwnProfile : MastodonAccount -> Mastodon.OwnProfile -> Task Http.Error (Maybe AccountsPanel.Msg)
+updateMastodonOwnProfile account profile =
+    MastodonAccounts.performWithMastodonAccount account (\token -> Mastodon.updateOwnProfile account.instanceHost token profile)
+        |> Task.map (\( refreshed, () ) -> rotatedMastodon account refreshed)
+
+
+{-| Whether `account` is the very account whose profile is `viewedHandle`.
+-}
+isOwnBlueskyProfile : BlueskyAccount -> String -> Bool
+isOwnBlueskyProfile account viewedHandle =
+    String.toLower account.handle == String.toLower viewedHandle
+
+
+{-| Whether `account` follows `viewedHandle`, and the ids needed to (un)follow.
+-}
+fetchBlueskyFollowState : BlueskyAccount -> String -> Task Http.Error ( Maybe AccountsPanel.Msg, Bluesky.FollowState )
+fetchBlueskyFollowState account viewedHandle =
+    BlueskyAccounts.performWithBlueskyAccount account (\auth -> Bluesky.fetchFollowState auth viewedHandle)
+        |> Task.map (\( refreshed, state ) -> ( rotatedBluesky account refreshed, state ))
+
+
+{-| Has `account` follow (`True`) or unfollow (`False`) the actor in `state`.
+-}
+setBlueskyFollowing : Bool -> BlueskyAccount -> Bluesky.FollowState -> Task Http.Error ( Maybe AccountsPanel.Msg, Bluesky.FollowState )
+setBlueskyFollowing follow account state =
+    BlueskyAccounts.performWithBlueskyAccount account (\auth -> Bluesky.setFollowing follow account.handle auth state)
+        |> Task.map (\( refreshed, newState ) -> ( rotatedBluesky account refreshed, newState ))
+
+
+{-| `account`'s current profile record, to start editing its profile from.
+-}
+fetchBlueskyOwnProfile : BlueskyAccount -> Task Http.Error ( Maybe AccountsPanel.Msg, Bluesky.OwnProfileRecord )
+fetchBlueskyOwnProfile account =
+    BlueskyAccounts.performWithBlueskyAccount account (\auth -> Bluesky.fetchOwnProfileRecord account.handle auth)
+        |> Task.map (\( refreshed, record ) -> ( rotatedBluesky account refreshed, record ))
+
+
+{-| Saves a new display name and bio on `account`'s own profile record.
+-}
+updateBlueskyOwnProfile : BlueskyAccount -> Bluesky.OwnProfileRecord -> { displayName : String, description : String } -> Task Http.Error (Maybe AccountsPanel.Msg)
+updateBlueskyOwnProfile account record edit =
+    BlueskyAccounts.performWithBlueskyAccount account (\auth -> Bluesky.updateOwnProfileRecord account.handle auth record edit)
+        |> Task.map (\( refreshed, () ) -> rotatedBluesky account refreshed)
+
+
+{-| The connected account's own posts that carry media -- "your media" on a network with no media library --
+newest first, a page at a time (`cursor` is the previous page's, `Nothing` for the first; the cursor that follows
+is `Nothing` once it has run out).
+-}
+fetchOwnMediaPosts : ServerAccount -> Maybe String -> Task Http.Error ( Maybe AccountsPanel.Msg, List Post, Maybe String )
+fetchOwnMediaPosts account cursor =
+    case account of
+        MastodonServerAccount a ->
+            MastodonAccounts.performWithMastodonAccount a
+                (\token ->
+                    Mastodon.lookupAccount a.instanceHost a.username
+                        |> Task.andThen (\profile -> Mastodon.fetchOwnMediaStatuses a.instanceHost token profile.id cursor)
+                )
+                |> Task.map (\( refreshed, ( posts, next ) ) -> ( rotatedMastodon a refreshed, posts, next ))
+
+        BlueskyServerAccount a ->
+            BlueskyAccounts.performWithBlueskyAccount a (\auth -> Bluesky.fetchOwnMediaPosts auth a.handle cursor)
+                |> Task.map (\( refreshed, ( posts, next ) ) -> ( rotatedBluesky a refreshed, posts, next ))
+
+
+{-| "Uploads" `file` as `account`: neither network stores media on its own, so this makes a post carrying it
+(`caption` as its text, `description` as the media's alt text; `visibility` only matters for Mastodon). Mastodon
+takes images, video and audio; Bluesky only images here -- anything else fails with `Http.BadBody
+"unsupported-media-type"`.
+-}
+uploadAsPost : ServerAccount -> MastodonVisibility -> File -> String -> String -> Task Http.Error (Maybe AccountsPanel.Msg)
+uploadAsPost account visibility file caption description =
+    case account of
+        MastodonServerAccount a ->
+            MastodonAccounts.performWithMastodonAccount a
+                (\token ->
+                    Mastodon.uploadMedia a.instanceHost token file description
+                        |> Task.andThen
+                            (\mediaId ->
+                                Mastodon.postStatusWithMedia a.instanceHost token { text = caption, mediaIds = [ mediaId ], visibility = visibility }
+                            )
+                        |> Task.map (\_ -> ())
+                )
+                |> Task.map (\( refreshed, () ) -> rotatedMastodon a refreshed)
+
+        BlueskyServerAccount a ->
+            if String.startsWith "image/" (File.mime file) then
+                BlueskyAccounts.performWithBlueskyAccount a
+                    (\auth -> Bluesky.createPostWithImage a.handle auth file caption description |> Task.map (\_ -> ()))
+                    |> Task.map (\( refreshed, () ) -> rotatedBluesky a refreshed)
+
+            else
+                Task.fail (Http.BadBody "unsupported-media-type")
