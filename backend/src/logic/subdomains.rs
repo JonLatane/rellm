@@ -84,7 +84,7 @@ pub fn find_active_subdomain_subscription(
         .filter(sql::<Bool>("market_subscriptions.details #>> '{settings,subdomain}' = ").bind::<Text, _>(label.to_string()))
         .load::<models::MarketSubscription>(conn)
         .map_err(|e| {
-            log::error!("Failed to look up subdomain {}: {:?}", label, e);
+            log::error!("Failed to look up a subdomain: {:?}", e);
             Status::new(Code::Internal, "failed_to_load_subscriptions")
         })?;
     let now = SystemTime::now();
@@ -143,7 +143,7 @@ pub fn release_lapsed_subdomain_labels(label: &str, conn: &mut PgPooledConnectio
     .execute(conn)
     .map(|_| ())
     .map_err(|e| {
-        log::error!("Failed to release lapsed subdomain {}: {:?}", label, e);
+        log::error!("Failed to release a lapsed subdomain label: {:?}", e);
         Status::new(Code::Internal, "failed_to_release_subdomain")
     })
 }

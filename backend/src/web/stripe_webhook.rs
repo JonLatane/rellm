@@ -221,10 +221,12 @@ fn handle_checkout_session_completed(
             conn,
         )?;
         let label = crate::logic::subdomains::validate_label_available(&buyer, conn).map_err(|e| {
+            // The checkout session id is a Stripe identifier and the label comes from the username, so neither is
+            // logged; the user and product ids are enough to find the order (the session's metadata carries both).
             log::error!(
-                "Paid subdomain checkout {} for user {} conflicts ({}); no subscription created -- refund needed",
-                session_id,
+                "Paid subdomain checkout for user {} on product {} conflicts ({}); no subscription created -- refund needed",
                 buyer_id,
+                product.id,
                 e.message()
             );
             e
