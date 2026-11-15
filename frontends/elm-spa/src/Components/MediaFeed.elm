@@ -9,6 +9,8 @@ module Components.MediaFeed exposing
     , replaceMedia
     , requestFor
     , retryFetch
+    , syncMsg
+    , clearMsg
     , update
     , view
     )
@@ -28,11 +30,20 @@ forwarded `Shared.Msg`. Tapping an item opens it in `Shared.MediaViewerPanel`, p
 loaded item _from that same server_ -- the viewer resolves media URLs/edit rights against a single
 `targetHost` -- which is where playback and (for owners) editing happen.
 
+Videos and audio also come from Mastodon and Bluesky, as _posts_ that carry them (`Shared.Federation.Media`):
+one feed per Mastodon instance / Bluesky source the Accounts Panel has enabled (`federatedSources`), searched
+with the same box (a Bluesky text search; a Mastodon hashtag) and merged with the Rellm servers' media
+newest-first. They play through the same viewer/audio player as a post's own media does.
+
+What's on screen is registered with the Countabilibar (`syncMsg`: videos / tracks per server and author, whose
+checkboxes hide servers and authors here too).
+
 Mounted by `Components.Pages.MediaPage`, which `Pages.Video`/`Pages.Audio`/`Pages.Media` all wrap.
 
 -}
 
 import Components.Authors as Authors
+import Components.Posts as Posts
 import Components.Users as Users
 import Dict exposing (Dict)
 import Effect exposing (Effect)
@@ -42,12 +53,21 @@ import Html.Attributes exposing (attribute, class, disabled, href, placeholder, 
 import Html.Events exposing (onClick, onInput)
 import Html.Keyed
 import Process
-import Proto.Rellm exposing (GetMediaRequest, GetMediaResponse, Media, MediaMetadata, defaultGetMediaRequest, defaultMediaMetadata)
+import Proto.Rellm exposing (Author, GetMediaRequest, GetMediaResponse, Media, MediaMetadata, MediaReference, Post, defaultGetMediaRequest, defaultMediaMetadata)
 import Proto.Rellm.MediaConversion exposing (MediaConversion(..))
 import Proto.Rellm.Rellm as Rellm
 import Proto.Rellm.Visibility exposing (Visibility(..))
 import Shared
+import Http
+import Set exposing (Set)
 import Shared.AccountsPanel as AccountsPanel
+import Shared.AccountsPanel.BlueskyAccounts as BlueskyAccounts exposing (BlueskyAccount)
+import Shared.Countabilibar as Countabilibar
+import Shared.Federation.Actions as Actions
+import Shared.Federation.Bluesky as Bluesky
+import Shared.Federation.Common exposing (BlueskyAuth, anonymousSearchHost, blueskyAuthFor)
+import Shared.Federation.Mastodon as Mastodon
+import Shared.Federation.Media as FedMedia
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer, withAccessToken)
 import Shared.Conversions exposing (timestampToPosix)
@@ -77,6 +97,10 @@ type alias Model =
 
     -- One per enabled server, keyed by `frontendHost` -- see `retryFetch`.
     , feeds : Dict String HostFeed
+
+    -- One per Mastodon instance / Bluesky source whose posts are searched for video/audio (always empty for
+    -- `Images`), keyed by its `"mastodon:"`/`"bluesky:"`-tagged host -- see `federatedSources`.
+    , federated : Dict String FedFeed
 
     -- Bumped after every add-to-queue pick, which re-creates the rows' hidden `<select>`s (see
     -- `queueButton`) so they're blank again.
@@ -110,12 +134,94 @@ type Status
     | Failed String
 
 
+{-| What one Mastodon/Bluesky source has handed over so far. `next` is the cursor for its next page
+(`Nothing` once it has run out); `requestId` stamps the newest fetch, so an older response is dropped.
+-}
+type alias FedFeed =
+    { items : List FedMedia.Item
+    , status : Status
+    , next : Maybe String
+    , loadingMore : Bool
+    , fetchStarted : Bool
+    , requestId : Int
+    }
+
+
+emptyFedFeed : FedFeed
+emptyFedFeed =
+    { items = [], status = Loading, next = Nothing, loadingMore = False, fetchStarted = False, requestId = 0 }
+
+
+{-| A federated place to look for video/audio posts.
+-}
+type FedSource
+    = FedMastodon String
+    | FedBlueskyAccount BlueskyAccount
+    | FedBlueskyAppView String
+
+
+{-| One thing listed: a Rellm server's media item (with that server's host), or a video/audio from a
+Mastodon/Bluesky post.
+-}
+type Entry
+    = RellmEntry String Media
+    | FedEntry FedMedia.Item
+
+
+entryMillis : Entry -> Int
+entryMillis entry =
+    case entry of
+        RellmEntry _ media ->
+            createdMillis media
+
+        FedEntry item ->
+            item.post.createdAt
+                |> Maybe.map (\ts -> Time.posixToMillis (timestampToPosix ts))
+                |> Maybe.withDefault 0
+
+
+fedKey : FedSource -> String
+fedKey source =
+    case source of
+        FedMastodon host ->
+            "mastodon:" ++ host
+
+        FedBlueskyAccount account ->
+            "bluesky:" ++ account.handle
+
+        FedBlueskyAppView host ->
+            "bluesky:" ++ host
+
+
+{-| Every Mastodon instance (connected, or browsed and enabled) and Bluesky account/AppView in use, for the
+Video and Audio feeds -- never for Images (neither network has a media library, and a photo feed isn't
+asked for).
+-}
+federatedSources : Shared.Model -> Kind -> List FedSource
+federatedSources shared kind =
+    if kind == Images then
+        []
+
+    else
+        (List.map .instanceHost shared.accounts.mastodonAccounts
+            ++ (shared.accounts.browsedMastodonInstances |> List.filter .enabled |> List.map .host)
+            |> Set.fromList
+            |> Set.toList
+            |> List.map FedMastodon
+        )
+            ++ List.map FedBlueskyAccount (List.filter .enabled shared.accounts.blueskyAccounts)
+            ++ List.map (.host >> FedBlueskyAppView) (List.filter .enabled shared.accounts.blueskyAppViews)
+
+
 type Msg
     = GotMediaResult String (Maybe String) Int Int (Result Grpc.Error ( Maybe AccountsPanel.Msg, GetMediaResponse ))
     | SearchChanged String
     | SearchDebounced Int
     | LoadMoreClicked
     | MediaClicked String String
+    | GotFederated String Int Bool (Result Http.Error ( Maybe AccountsPanel.Msg, List FedMedia.Item, Maybe String ))
+    | FedMediaClicked String String
+    | FedQueuePicked String String String
       -- host, media id, picked `<option>` value ("next" or "last")
     | QueuePicked String String String
 
@@ -125,7 +231,7 @@ for none.
 -}
 init : Shared.Model -> Kind -> String -> ( Model, Effect Msg )
 init shared kind searchText =
-    retryFetch shared { kind = kind, searchText = searchText, searchVersion = 0, feeds = Dict.empty, queueGeneration = 0 }
+    retryFetch shared { kind = kind, searchText = searchText, searchVersion = 0, feeds = Dict.empty, federated = Dict.empty, queueGeneration = 0 }
 
 
 emptyHostFeed : HostFeed
@@ -256,8 +362,36 @@ retryFetch shared model =
 
         ( updatedFeeds, fetchEffects ) =
             List.foldl step ( reconciled, [] ) hosts
+
+        sources : List FedSource
+        sources =
+            federatedSources shared model.kind
+
+        fedReconciled : Dict String FedFeed
+        fedReconciled =
+            sources
+                |> List.map (\source -> ( fedKey source, Dict.get (fedKey source) model.federated |> Maybe.withDefault emptyFedFeed ))
+                |> Dict.fromList
+
+        fedStep : FedSource -> ( Dict String FedFeed, List (Effect Msg) ) -> ( Dict String FedFeed, List (Effect Msg) )
+        fedStep source ( soFar, effects ) =
+            case Dict.get (fedKey source) soFar of
+                Just feed ->
+                    if feed.fetchStarted then
+                        ( soFar, effects )
+
+                    else
+                        ( Dict.insert (fedKey source) { feed | fetchStarted = True, requestId = feed.requestId + 1 } soFar
+                        , fetchFederated model source (feed.requestId + 1) Nothing False :: effects
+                        )
+
+                Nothing ->
+                    ( soFar, effects )
+
+        ( fedFeeds, fedEffects ) =
+            List.foldl fedStep ( fedReconciled, [] ) sources
     in
-    ( { model | feeds = updatedFeeds }, Effect.batch fetchEffects )
+    ( { model | feeds = updatedFeeds, federated = fedFeeds }, Effect.batch (fetchEffects ++ fedEffects) )
 
 
 {-| The id of the account currently acting on `host` (the enabled one), `Nothing` when anonymous.
@@ -279,6 +413,58 @@ fetch shared model host version page =
                 |> Grpc.toTask
         )
         |> Task.attempt (GotMediaResult host (actingAccountId shared host) version page)
+        |> Effect.fromCmd
+
+
+{-| Fetches a page of video/audio posts from one federated source. `cursor` is `Nothing` for the first page
+(or a fresh search); `append` says whether the result extends what's shown. `requestId` is the feed's newest
+(see `FedFeed.requestId`). The task resolves to the `AccountsPanel.Msg` to forward if a Bluesky account's token
+had to be refreshed on the way.
+-}
+fetchFederated : Model -> FedSource -> Int -> Maybe String -> Bool -> Effect Msg
+fetchFederated model source requestId cursor append =
+    let
+        key : String
+        key =
+            fedKey source
+
+        kind : FedMedia.Kind
+        kind =
+            if model.kind == Audio then
+                FedMedia.AudioKind
+
+            else
+                FedMedia.VideoKind
+
+        search : String
+        search =
+            String.trim model.searchText
+
+        blueskyPage : BlueskyAuth -> Maybe String -> Task.Task Http.Error ( List Post, Maybe String )
+        blueskyPage auth page =
+            if String.isEmpty search then
+                Bluesky.fetchLatestPosts Nothing auth page
+
+            else
+                Bluesky.searchPosts Bluesky.SearchTop Nothing auth search page
+
+        task : Task.Task Http.Error ( Maybe AccountsPanel.Msg, List FedMedia.Item, Maybe String )
+        task =
+            case source of
+                FedMastodon host ->
+                    FedMedia.collect kind key (Mastodon.fetchMediaPosts host search) cursor
+                        |> Task.map (\( items, next ) -> ( Nothing, items, next ))
+
+                FedBlueskyAccount account ->
+                    BlueskyAccounts.performWithBlueskyAccount account (\auth -> FedMedia.collect kind key (blueskyPage auth) cursor)
+                        |> Task.map (\( refreshed, ( items, next ) ) -> ( Actions.rotatedBluesky account refreshed, items, next ))
+
+                FedBlueskyAppView host ->
+                    FedMedia.collect kind key (blueskyPage (blueskyAuthFor (anonymousSearchHost host))) cursor
+                        |> Task.map (\( items, next ) -> ( Nothing, items, next ))
+    in
+    task
+        |> Task.attempt (GotFederated key requestId append)
         |> Effect.fromCmd
 
 
@@ -331,6 +517,95 @@ update shared msg model =
                     ( _, Nothing ) ->
                         ( model, Effect.none )
 
+        GotFederated key requestId append result ->
+            let
+                forwardRefresh : Effect Msg
+                forwardRefresh =
+                    case result of
+                        Ok ( maybeAccountsPanelMsg, _, _ ) ->
+                            maybeAccountsPanelMsg
+                                |> Maybe.map (Shared.AccountsPanelMsg >> Effect.fromShared)
+                                |> Maybe.withDefault Effect.none
+
+                        Err _ ->
+                            Effect.none
+            in
+            case Dict.get key model.federated of
+                Just feed ->
+                    if requestId /= feed.requestId then
+                        -- Superseded by a newer search/page request. The page is dropped, but a token refresh isn't.
+                        ( model, forwardRefresh )
+
+                    else
+                        case result of
+                            Ok ( _, items, next ) ->
+                                ( { model
+                                    | federated =
+                                        Dict.insert key
+                                            { feed
+                                                | items =
+                                                    if append then
+                                                        feed.items ++ List.filter (\item -> not (List.any (\existing -> existing.id == item.id) feed.items)) items
+
+                                                    else
+                                                        items
+                                                , status = Loaded
+                                                , next = next
+                                                , loadingMore = False
+                                            }
+                                            model.federated
+                                  }
+                                , forwardRefresh
+                                )
+
+                            Err err ->
+                                ( { model | federated = Dict.insert key { feed | status = Failed (httpErrorText err), loadingMore = False } model.federated }
+                                , Effect.none
+                                )
+
+                Nothing ->
+                    ( model, forwardRefresh )
+
+        FedMediaClicked key mediaId ->
+            let
+                references : List MediaReference
+                references =
+                    Dict.get key model.federated
+                        |> Maybe.map (.items >> List.map .media)
+                        |> Maybe.withDefault []
+            in
+            ( model
+            , Effect.fromShared
+                (if model.kind == Audio then
+                    Shared.AudioPlayerPanelMsg (AudioPlayerPanel.Open references mediaId key)
+
+                 else
+                    Shared.MediaViewerPanelMsg (MediaViewerPanel.Open references Nothing mediaId key)
+                )
+            )
+
+        FedQueuePicked key mediaId choice ->
+            ( { model | queueGeneration = model.queueGeneration + 1 }
+            , case Dict.get key model.federated |> Maybe.andThen (\feed -> feed.items |> List.filter (\item -> item.media.id == mediaId) |> List.head) of
+                Just item ->
+                    Effect.fromShared
+                        (Shared.AudioPlayerPanelMsg
+                            (AudioPlayerPanel.Enqueue
+                                (if choice == "next" then
+                                    AudioPlayerPanel.PlayNext
+
+                                 else
+                                    AudioPlayerPanel.PlayLast
+                                )
+                                item.media
+                                key
+                            )
+                        )
+
+                Nothing ->
+                    Effect.none
+            )
+
         SearchChanged text ->
             let
                 version : Int
@@ -347,15 +622,41 @@ update shared msg model =
 
             else
                 -- Keeps showing the old results (rather than blanking to "Loading…") until the new ones land.
-                ( model
-                , model.feeds
-                    |> Dict.toList
-                    |> List.filter (\( _, feed ) -> feed.fetchStarted)
-                    |> List.map (\( host, _ ) -> fetch shared model host version 0)
-                    |> Effect.batch
+                let
+                    ( fedFeeds, fedEffects ) =
+                        refetchFederated shared model
+                in
+                ( { model | federated = fedFeeds }
+                , Effect.batch
+                    (fedEffects
+                        :: (model.feeds
+                                |> Dict.toList
+                                |> List.filter (\( _, feed ) -> feed.fetchStarted)
+                                |> List.map (\( host, _ ) -> fetch shared model host version 0)
+                           )
+                    )
                 )
 
         LoadMoreClicked ->
+            let
+                step : FedSource -> ( Dict String FedFeed, List (Effect Msg) ) -> ( Dict String FedFeed, List (Effect Msg) )
+                step source ( dict, effects ) =
+                    case Dict.get (fedKey source) dict of
+                        Just feed ->
+                            if feed.next /= Nothing && not feed.loadingMore then
+                                ( Dict.insert (fedKey source) { feed | loadingMore = True, requestId = feed.requestId + 1 } dict
+                                , fetchFederated model source (feed.requestId + 1) feed.next True :: effects
+                                )
+
+                            else
+                                ( dict, effects )
+
+                        Nothing ->
+                            ( dict, effects )
+
+                ( fedFeeds, fedEffects ) =
+                    List.foldl step ( model.federated, [] ) (federatedSources shared model.kind)
+            in
             ( { model
                 | feeds =
                     Dict.map
@@ -367,12 +668,16 @@ update shared msg model =
                                 feed
                         )
                         model.feeds
+                , federated = fedFeeds
               }
-            , model.feeds
-                |> Dict.toList
-                |> List.filter (\( _, feed ) -> feed.hasNextPage)
-                |> List.map (\( host, feed ) -> fetch shared model host model.searchVersion feed.nextPage)
-                |> Effect.batch
+            , Effect.batch
+                (fedEffects
+                    ++ (model.feeds
+                            |> Dict.toList
+                            |> List.filter (\( _, feed ) -> feed.hasNextPage)
+                            |> List.map (\( host, feed ) -> fetch shared model host model.searchVersion feed.nextPage)
+                       )
+                )
             )
 
         QueuePicked host mediaId choice ->
@@ -430,22 +735,181 @@ update shared msg model =
 
 
 
+{-| Restarts every already-started federated feed from its first page for the current search, keeping what's
+shown until the new results land.
+-}
+refetchFederated : Shared.Model -> Model -> ( Dict String FedFeed, Effect Msg )
+refetchFederated shared model =
+    let
+        step : FedSource -> ( Dict String FedFeed, List (Effect Msg) ) -> ( Dict String FedFeed, List (Effect Msg) )
+        step source ( dict, effects ) =
+            case Dict.get (fedKey source) dict of
+                Just feed ->
+                    if feed.fetchStarted then
+                        ( Dict.insert (fedKey source) { feed | requestId = feed.requestId + 1, loadingMore = False } dict
+                        , fetchFederated model source (feed.requestId + 1) Nothing False :: effects
+                        )
+
+                    else
+                        ( dict, effects )
+
+                Nothing ->
+                    ( dict, effects )
+    in
+    List.foldl step ( model.federated, [] ) (federatedSources shared model.kind)
+        |> Tuple.mapSecond Effect.batch
+
+
+httpErrorText : Http.Error -> String
+httpErrorText err =
+    case err of
+        Http.BadStatus status ->
+            "the server answered " ++ String.fromInt status
+
+        Http.Timeout ->
+            "it took too long to respond"
+
+        _ ->
+            "couldn't reach it"
+
+
+
+-- COUNTABILIBAR
+
+
+{-| The `Shared.Countabilibar` kind this feed's items count as: videos, or audio tracks. Images aren't counted.
+-}
+countKind : Kind -> Maybe Countabilibar.Kind
+countKind kind =
+    case kind of
+        Videos ->
+            Just Countabilibar.VideosKind
+
+        Audio ->
+            Just Countabilibar.TracksKind
+
+        Images ->
+            Nothing
+
+
+{-| Everything the feed is showing -- the author and id of each item, by host -- the same set `view` lists
+(loaded, and not hidden by an unchecked server or author in the Countabilibar). Items without an author can't be
+counted.
+-}
+shownByHost : Shared.Model -> Model -> Dict String (List ( Author, String ))
+shownByHost shared model =
+    let
+        state : Countabilibar.Hidden
+        state =
+            Countabilibar.hidden shared.countabilibar
+
+        add : String -> Maybe Author -> String -> Dict String (List ( Author, String )) -> Dict String (List ( Author, String ))
+        add host maybeAuthor id dict =
+            case maybeAuthor of
+                Just author ->
+                    if Countabilibar.isAuthorHidden state host author.userId then
+                        dict
+
+                    else
+                        Dict.update host (\existing -> Just (( author, id ) :: Maybe.withDefault [] existing)) dict
+
+                Nothing ->
+                    dict
+    in
+    Dict.foldl
+        (\host feed dict ->
+            if Countabilibar.isHostHidden state host then
+                dict
+
+            else
+                List.foldl (\media -> add host media.author media.id) dict feed.media
+        )
+        Dict.empty
+        model.feeds
+        |> (\withRellm ->
+                Dict.foldl
+                    (\host feed dict ->
+                        if Countabilibar.isHostHidden state host then
+                            dict
+
+                        else
+                            List.foldl (\item -> add host item.post.author item.id) dict feed.items
+                    )
+                    withRellm
+                    model.federated
+           )
+
+
+{-| Hosts still waiting on a fetch -- the Countabilibar leaves them alone until they land.
+-}
+pendingHosts : Model -> Set String
+pendingHosts model =
+    (Dict.toList model.feeds |> List.filter (\( _, feed ) -> feed.status == Loading || feed.loadingMore) |> List.map Tuple.first)
+        ++ (Dict.toList model.federated |> List.filter (\( _, feed ) -> feed.status == Loading || feed.loadingMore) |> List.map Tuple.first)
+        |> Set.fromList
+
+
+{-| What to tell the Countabilibar after an update so it agrees with what this feed shows (`Nothing` when it
+already does, or for a feed it doesn't count) -- see `Countabilibar.syncMsg`.
+-}
+syncMsg : Shared.Model -> Model -> Maybe Shared.Msg
+syncMsg shared model =
+    countKind model.kind
+        |> Maybe.andThen (\kind -> Countabilibar.syncMsg kind (pendingHosts model) (shownByHost shared model) shared.countabilibar)
+        |> Maybe.map Shared.CountabilibarSync
+
+
+{-| For a feed that isn't on screen (another tab): forget everything it registered.
+-}
+clearMsg : Shared.Model -> Model -> Maybe Shared.Msg
+clearMsg shared model =
+    countKind model.kind
+        |> Maybe.andThen (\kind -> Countabilibar.syncMsg kind Set.empty Dict.empty shared.countabilibar)
+        |> Maybe.map Shared.CountabilibarSync
+
+
+
 -- VIEW
 
 
 view : Shared.Model -> Model -> Html Msg
 view shared model =
     let
-        items : List ( String, Media )
+        hiddenState : Countabilibar.Hidden
+        hiddenState =
+            Countabilibar.hidden shared.countabilibar
+
+        -- Whatever the Countabilibar has unchecked (a whole server, or one author on it) isn't listed.
+        notHidden : String -> Maybe Author -> Bool
+        notHidden host maybeAuthor =
+            not (Countabilibar.isHostHidden hiddenState host)
+                && (maybeAuthor |> Maybe.map (\author -> not (Countabilibar.isAuthorHidden hiddenState host author.userId)) |> Maybe.withDefault True)
+
+        items : List Entry
         items =
-            model.feeds
+            (model.feeds
                 |> Dict.toList
-                |> List.concatMap (\( host, feed ) -> List.map (Tuple.pair host) feed.media)
-                |> mergeByRecency
+                |> List.concatMap
+                    (\( host, feed ) ->
+                        feed.media
+                            |> List.filter (\media -> notHidden host media.author)
+                            |> List.map (RellmEntry host)
+                    )
+            )
+                ++ (model.federated
+                        |> Dict.toList
+                        |> List.concatMap
+                            (\( host, feed ) ->
+                                feed.items
+                                    |> List.filter (\item -> notHidden host item.post.author)
+                                    |> List.map FedEntry
+                            )
+                   )
+                |> List.sortBy (entryMillis >> negate)
 
         showHost : Bool
         showHost =
-            Dict.size model.feeds > 1
+            Dict.size model.feeds + Dict.size model.federated > 1
 
         errors : List (Html Msg)
         errors =
@@ -460,23 +924,45 @@ view shared model =
                             _ ->
                                 Nothing
                     )
+                ++ (model.federated
+                        |> Dict.toList
+                        |> List.filterMap
+                            (\( host, feed ) ->
+                                case feed.status of
+                                    Failed err ->
+                                        Just (div [ class "media-feed-message media-feed-error" ] [ text (host ++ ": " ++ err) ])
 
-        card : ( String, Media ) -> Html Msg
-        card ( host, media ) =
-            let
-                maybeServer : Maybe RellmServer
-                maybeServer =
-                    RellmServers.rellmServerForHost shared.accounts.servers host
-            in
-            case model.kind of
-                Videos ->
-                    videoCard shared showHost host maybeServer media
+                                    _ ->
+                                        Nothing
+                            )
+                   )
 
-                Audio ->
-                    audioRow shared model.queueGeneration showHost host maybeServer media
+        card : Entry -> Html Msg
+        card entry =
+            case entry of
+                FedEntry item ->
+                    case model.kind of
+                        Audio ->
+                            fedAudioRow shared model.queueGeneration showHost item
 
-                Images ->
-                    imageTile shared showHost host maybeServer media
+                        _ ->
+                            fedVideoCard shared showHost item
+
+                RellmEntry host media ->
+                    let
+                        maybeServer : Maybe RellmServer
+                        maybeServer =
+                            RellmServers.rellmServerForHost shared.accounts.servers host
+                    in
+                    case model.kind of
+                        Videos ->
+                            videoCard shared showHost host maybeServer media
+
+                        Audio ->
+                            audioRow shared model.queueGeneration showHost host maybeServer media
+
+                        Images ->
+                            imageTile shared showHost host maybeServer media
     in
     div [ class "media-feed", class (kindClass model.kind) ]
         [ div [ class "media-feed-search" ]
@@ -508,7 +994,8 @@ view shared model =
             let
                 anyLoading : Bool
                 anyLoading =
-                    model.feeds |> Dict.values |> List.any (\feed -> feed.status == Loading)
+                    (model.feeds |> Dict.values |> List.any (\feed -> feed.status == Loading))
+                        || (model.federated |> Dict.values |> List.any (\feed -> feed.status == Loading))
             in
             if anyLoading then
                 div [ class "media-feed-message" ] [ text "Loading…" ]
@@ -517,7 +1004,7 @@ view shared model =
                 let
                     emptyMessage : String
                     emptyMessage =
-                        if Dict.isEmpty model.feeds then
+                        if Dict.isEmpty model.feeds && Dict.isEmpty model.federated then
                             "No servers are enabled."
 
                         else if String.isEmpty (String.trim model.searchText) then
@@ -538,11 +1025,11 @@ view shared model =
 
             else
                 text ""
-        , if model.feeds |> Dict.values |> List.any .hasNextPage then
+        , if (model.feeds |> Dict.values |> List.any .hasNextPage) || (model.federated |> Dict.values |> List.any (\feed -> feed.next /= Nothing)) then
             let
                 loadingMore : Bool
                 loadingMore =
-                    model.feeds |> Dict.values |> List.any .loadingMore
+                    (model.feeds |> Dict.values |> List.any .loadingMore) || (model.federated |> Dict.values |> List.any .loadingMore)
             in
             button [ class "media-feed-load-more", onClick LoadMoreClicked, disabled loadingMore ]
                 [ text
@@ -881,6 +1368,192 @@ queueButton generation host media =
                     ]
                 ]
           )
+        ]
+
+
+{-| What a Mastodon/Bluesky post's video/audio is called on a card: the attachment's own name (its alt text) if
+it has one, else the start of the post's text, else a plain "Video"/"Audio".
+-}
+fedTitle : FedMedia.Item -> String
+fedTitle item =
+    case item.media.name |> Maybe.andThen nonBlank of
+        Just name ->
+            FedMedia.plainTitle 90 name
+
+        Nothing ->
+            case item.post.content |> Maybe.map (FedMedia.plainTitle 90) |> Maybe.andThen nonBlank of
+                Just postText ->
+                    postText
+
+                Nothing ->
+                    case item.kind of
+                        FedMedia.VideoKind ->
+                            "Video"
+
+                        FedMedia.AudioKind ->
+                            "Audio"
+
+
+{-| The poster's name (linking to their profile), with their avatar when `withAvatar`.
+-}
+fedAuthorLink : Shared.Model -> Bool -> FedMedia.Item -> Html msg
+fedAuthorLink shared withAvatar item =
+    let
+        maybeServer : Maybe RellmServer
+        maybeServer =
+            Posts.mediaServer Nothing item.host
+
+        name : Maybe String
+        name =
+            item.post.author
+                |> Maybe.andThen
+                    (\author ->
+                        case author.realName |> Maybe.andThen nonBlank of
+                            Just realName ->
+                                Just realName
+
+                            Nothing ->
+                                author.username
+                    )
+
+        authorClass : String
+        authorClass =
+            if withAvatar then
+                "media-card-author media-card-author-with-avatar"
+
+            else
+                "media-card-author"
+
+        contents : String -> List (Html msg)
+        contents shown =
+            if withAvatar then
+                [ Authors.avatar shown (Authors.avatarUrl maybeServer Nothing item.post.author), text shown ]
+
+            else
+                [ text shown ]
+    in
+    case ( name, item.post.author |> Maybe.andThen .username ) of
+        ( Just shown, Just username ) ->
+            a [ class authorClass, href (Users.usernameHref shared.basePath shared.accounts.mainFrontendHost item.host username) ] (contents shown)
+
+        ( Just shown, Nothing ) ->
+            span [ class authorClass ] (contents shown)
+
+        _ ->
+            text ""
+
+
+fedDateLabel : Shared.Model -> FedMedia.Item -> String
+fedDateLabel shared item =
+    item.post.createdAt
+        |> Maybe.map (\ts -> SharedTime.formatDate shared.time.browserTimeZone.zone (timestampToPosix ts))
+        |> Maybe.withDefault ""
+
+
+{-| A video from a Mastodon/Bluesky post -- `videoCard`'s counterpart, opening in the same viewer.
+-}
+fedVideoCard : Shared.Model -> Bool -> FedMedia.Item -> Html Msg
+fedVideoCard shared showHost item =
+    div [ class "media-card video-card" ]
+        [ button [ class "media-card-thumb", onClick (FedMediaClicked item.host item.media.id), attribute "aria-label" ("Play " ++ fedTitle item) ]
+            [ case item.thumbnailUrl of
+                Just url ->
+                    img [ src url, attribute "alt" "", attribute "loading" "lazy" ] []
+
+                Nothing ->
+                    span [ class "media-card-thumb-placeholder" ] [ text "🎬" ]
+            , span [ class "media-card-play" ] [ text Glyph.play ]
+            ]
+        , div [ class "media-card-meta" ]
+            [ button [ class "media-card-title", onClick (FedMediaClicked item.host item.media.id) ] [ text (fedTitle item) ]
+            , div [ class "media-card-sub" ]
+                [ fedAuthorLink shared True item
+                , span [ class "media-card-date" ] [ text (fedDateLabel shared item) ]
+                ]
+            , hostBadge showHost item.host
+            ]
+        ]
+
+
+{-| A track from a Mastodon post -- `audioRow`'s counterpart, playing in the same bottom player.
+-}
+fedAudioRow : Shared.Model -> Int -> Bool -> FedMedia.Item -> Html Msg
+fedAudioRow shared queueGeneration showHost item =
+    let
+        nowPlaying : Maybe Bool
+        nowPlaying =
+            let
+                player : AudioPlayerPanel.Model
+                player =
+                    shared.panels.audioPlayerPanel
+            in
+            if player.currentId == Just item.media.id && player.targetHost == item.host then
+                Just player.playing
+
+            else
+                Nothing
+    in
+    div
+        [ classes
+            ("media-card"
+                :: "audio-row"
+                :: (case nowPlaying of
+                        Just True ->
+                            [ "is-now-playing", "is-playing" ]
+
+                        Just False ->
+                            [ "is-now-playing" ]
+
+                        Nothing ->
+                            []
+                   )
+            )
+        ]
+        [ button [ class "media-card-thumb", onClick (FedMediaClicked item.host item.media.id), attribute "aria-label" ("Play " ++ fedTitle item) ]
+            [ span [ class "media-card-thumb-placeholder" ] [ text "🎵" ]
+            , case nowPlaying of
+                Just playing ->
+                    span
+                        [ class "media-card-now-playing"
+                        , attribute "role" "img"
+                        , attribute "aria-label"
+                            (if playing then
+                                "Now playing"
+
+                             else
+                                "Paused"
+                            )
+                        ]
+                        [ span [] [], span [] [], span [] [], span [] [] ]
+
+                Nothing ->
+                    span [ class "media-card-play" ] [ text Glyph.play ]
+            ]
+        , div [ class "media-card-meta" ]
+            [ button [ class "media-card-title", onClick (FedMediaClicked item.host item.media.id) ] [ text (fedTitle item) ]
+            , div [ class "media-card-sub" ]
+                [ fedAuthorLink shared True item
+                , hostBadge showHost item.host
+                , span [ class "media-card-date" ] [ text (fedDateLabel shared item) ]
+                ]
+            ]
+        , Html.Keyed.node "span"
+            [ class "audio-row-queue" ]
+            [ ( String.fromInt queueGeneration
+              , span [ class "audio-row-queue-inner", attribute "title" "Add to queue" ]
+                    [ AudioPlayerPanel.queueIcon
+                    , Html.select
+                        [ class "audio-row-queue-select"
+                        , attribute "aria-label" ("Add " ++ fedTitle item ++ " to queue")
+                        , onInput (FedQueuePicked item.host item.media.id)
+                        ]
+                        [ Html.option [ value "", Html.Attributes.disabled True, Html.Attributes.selected True ] [ text "Queue" ]
+                        , Html.option [ value "next" ] [ text "Add Next In Queue" ]
+                        , Html.option [ value "last" ] [ text "Add To Queue" ]
+                        ]
+                    ]
+              )
+            ]
         ]
 
 

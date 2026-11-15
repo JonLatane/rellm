@@ -2,6 +2,7 @@ module Shared.Federation.Mastodon exposing
     ( Account
     , OwnProfile
     , Relationship
+    , fetchMediaPosts
     , fetchOwnProfile
     , fetchRelationship
     , resolveAccountId
@@ -383,6 +384,43 @@ fetchPosts instanceHost before cursor =
                 ++ instanceHost
                 ++ "/api/v1/timelines/public?local=true&limit=20"
                 ++ maxIdParam before cursor
+        , body = Http.emptyBody
+        , resolver = jsonResolver (Decode.list decoder) (\metadata _ -> Http.BadStatus metadata.statusCode)
+        , timeout = Just 10000
+        }
+        |> Task.map (pageOf instanceHost)
+
+
+{-| A page of statuses that have media attachments, for the Video and Audio pages (they keep the video and
+audio ones -- see `Shared.Federation.Media`): `GET /api/v1/timelines/tag/:tag?only_media=true` when `query`
+has a word to use as a hashtag (a public timeline can't be text-searched without logging in, but a hashtag
+timeline can), otherwise the instance's local public timeline with `only_media=true`. Unauthenticated.
+`cursor` pages as in `fetchPosts`.
+-}
+fetchMediaPosts : String -> String -> Maybe String -> Task Http.Error ( List Post, Maybe String )
+fetchMediaPosts instanceHost query cursor =
+    let
+        tag : String
+        tag =
+            query
+                |> String.trim
+                |> String.words
+                |> List.head
+                |> Maybe.withDefault ""
+                |> String.filter (\char -> Char.isAlphaNum char || char == '_')
+
+        path : String
+        path =
+            if String.isEmpty tag then
+                "/api/v1/timelines/public?local=true&only_media=true&limit=40"
+
+            else
+                "/api/v1/timelines/tag/" ++ Url.percentEncode tag ++ "?only_media=true&limit=40"
+    in
+    Http.task
+        { method = "GET"
+        , headers = []
+        , url = "https://" ++ instanceHost ++ path ++ maxIdParam Nothing cursor
         , body = Http.emptyBody
         , resolver = jsonResolver (Decode.list decoder) (\metadata _ -> Http.BadStatus metadata.statusCode)
         , timeout = Just 10000

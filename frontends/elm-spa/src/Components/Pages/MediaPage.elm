@@ -292,6 +292,40 @@ updateMyMedia shared msg model =
 
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
 update shared msg model =
+    let
+        ( newModel, effect ) =
+            updateTab shared msg model
+    in
+    ( newModel, Effect.batch [ effect, countabilibarEffect shared newModel ] )
+
+
+{-| Keeps `Shared.Countabilibar` in step with what's on screen after every update (see
+`Components.MediaFeed.syncMsg`): the shown tab's feed registers its videos/tracks, while a feed whose tab isn't
+showing (or any other tab) has what it registered withdrawn.
+-}
+countabilibarEffect : Shared.Model -> Model -> Effect Msg
+countabilibarEffect shared model =
+    let
+        forFeed : Tab -> Maybe MediaFeed.Model -> Maybe Shared.Msg
+        forFeed tab maybeFeed =
+            maybeFeed
+                |> Maybe.andThen
+                    (\feed ->
+                        if model.tab == tab then
+                            MediaFeed.syncMsg shared feed
+
+                        else
+                            MediaFeed.clearMsg shared feed
+                    )
+    in
+    [ forFeed VideoTab model.video, forFeed AudioTab model.audio ]
+        |> List.filterMap identity
+        |> List.map Effect.fromShared
+        |> Effect.batch
+
+
+updateTab : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
+updateTab shared msg model =
     case msg of
         VideoMsg feedMsg ->
             case model.video of
