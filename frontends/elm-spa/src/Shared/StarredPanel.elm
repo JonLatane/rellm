@@ -772,8 +772,17 @@ sendUpdate accountsPanelModel msg model =
                         | transition = Just { transition | enterStarted = True }
                         , starAnimations =
                             transition.entering
-                                |> List.filter (not << collapsed)
-                                |> List.foldl (\key acc -> Dict.insert key UI.Flip.enter acc) (collapseKeys (Set.toList transition.leaving) model.starAnimations)
+                                |> List.foldl
+                                    (\key acc ->
+                                        if collapsed key then
+                                            -- Its section's collapse state takes over (a leftover
+                                            -- "removing" own state would pin it collapsed forever).
+                                            Dict.remove key acc
+
+                                        else
+                                            Dict.insert key UI.Flip.enter acc
+                                    )
+                                    (collapseKeys (Set.toList transition.leaving) model.starAnimations)
                       }
                     , Cmd.none
                     , Nothing
@@ -2219,8 +2228,15 @@ enterNewlyShownItems before after =
     { after
         | starAnimations =
             tabChangeKeys after before
-                |> List.filter (not << collapsed)
-                |> List.foldl (\key acc -> Dict.insert key UI.Flip.enter acc) after.starAnimations
+                |> List.foldl
+                    (\key acc ->
+                        if collapsed key then
+                            Dict.remove key acc
+
+                        else
+                            Dict.insert key UI.Flip.enter acc
+                    )
+                    after.starAnimations
     }
 
 
