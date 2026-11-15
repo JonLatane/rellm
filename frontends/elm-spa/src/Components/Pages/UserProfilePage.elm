@@ -6396,13 +6396,13 @@ subdomainSettingsView editable status subscription =
         Just settings ->
             let
                 toggle : String -> Bool -> (Bool -> Proto.Rellm.SubdomainSettings) -> Html Msg
-                toggle labelText isOn update =
+                toggle labelText isOn withValue =
                     label [ class "profile-subdomain-toggle" ]
                         [ input
                             [ type_ "checkbox"
                             , checked isOn
                             , disabled (not editable || status == Submitting)
-                            , onCheck (\on -> SaveSubdomainSettingsClicked subscription (update on))
+                            , onCheck (\on -> SaveSubdomainSettingsClicked subscription (withValue on))
                             ]
                             []
                         , text labelText

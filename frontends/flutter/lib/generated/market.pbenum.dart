@@ -24,12 +24,14 @@ class PurchaseType extends $pb.ProtobufEnum {
   static const PurchaseType PURCHASE_TYPE_AI_GRANTS = PurchaseType._(1, _omitEnumNames ? '' : 'PURCHASE_TYPE_AI_GRANTS');
   static const PurchaseType PURCHASE_TYPE_RELLM_HOSTING = PurchaseType._(2, _omitEnumNames ? '' : 'PURCHASE_TYPE_RELLM_HOSTING');
   static const PurchaseType PURCHASE_TYPE_PERMISSIONS_ACCESS = PurchaseType._(3, _omitEnumNames ? '' : 'PURCHASE_TYPE_PERMISSIONS_ACCESS');
+  static const PurchaseType PURCHASE_TYPE_SUBDOMAIN = PurchaseType._(4, _omitEnumNames ? '' : 'PURCHASE_TYPE_SUBDOMAIN');
 
   static const $core.List<PurchaseType> values = <PurchaseType> [
     PURCHASE_TYPE_MEDIA_STORAGE,
     PURCHASE_TYPE_AI_GRANTS,
     PURCHASE_TYPE_RELLM_HOSTING,
     PURCHASE_TYPE_PERMISSIONS_ACCESS,
+    PURCHASE_TYPE_SUBDOMAIN,
   ];
 
   static final $core.Map<$core.int, PurchaseType> _byValue = $pb.ProtobufEnum.initByValue(values);
