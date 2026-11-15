@@ -1643,16 +1643,11 @@ federatedServerFor shared host =
 -}
 view : Shared.Model -> RellmServer -> Maybe RellmAccount -> Model -> Html Msg
 view shared server maybeAdminAccount model =
-    let
-        savedFederatedServers : List FederatedServer
-        savedFederatedServers =
-            (RellmServers.configurationOf server).federationInfo |> Maybe.map .servers |> Maybe.withDefault []
-    in
     div [ class "server-details-tab-content server-details-federation" ]
         [ h3 [ class "section-title" ] [ text "Federated Servers" ]
         , case model.federationEdit of
             Just edit ->
-                federationEditorView shared savedFederatedServers edit
+                federationEditorView shared ((RellmServers.configurationOf server).federationInfo |> Maybe.map .servers |> Maybe.withDefault []) edit
 
             Nothing ->
                 let
