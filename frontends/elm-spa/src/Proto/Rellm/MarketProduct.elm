@@ -35,6 +35,8 @@ import Proto.Rellm.Internals_
 
 ### PermissionsAccessSubscriptionDetails
 
+### SubdomainSubscriptionDetails
+
 -}
 type alias Details =
     Proto.Rellm.Internals_.Proto__Rellm__MarketProduct__Details__Details

@@ -32,9 +32,12 @@ To run it, add a dependency via `elm install` on [`elm-protocol-buffers`](https:
 
 ### PermissionsAccessPurchaseDetails
 
+### SubdomainPurchaseDetails
+
 -}
-type Details a0 a1 a2 a3
+type Details a0 a1 a2 a3 a4
     = MediaStoragePurchaseDetails a0
     | AiGrantPurchaseDetails a1
     | RellmHostingPurchaseDetails a2
     | PermissionsAccessPurchaseDetails a3
+    | SubdomainPurchaseDetails a4

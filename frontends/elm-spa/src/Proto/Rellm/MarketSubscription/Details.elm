@@ -34,9 +34,12 @@ To run it, add a dependency via `elm install` on [`elm-protocol-buffers`](https:
 
 ### PermissionsAccessSubscriptionDetails
 
+### SubdomainSubscriptionDetails
+
 -}
-type Details a0 a1 a2 a3
+type Details a0 a1 a2 a3 a4
     = MediaStorageSubscriptionDetails a0
     | AiGrantSubscriptionDetails a1
     | RellmHostingSubscriptionDetails a2
     | PermissionsAccessSubscriptionDetails a3
+    | SubdomainSubscriptionDetails a4
