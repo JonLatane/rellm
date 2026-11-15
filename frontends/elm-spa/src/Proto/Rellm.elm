@@ -1461,7 +1461,7 @@ type alias FeatureSettings =
 {-| The field numbers for the fields of `SearchSettings`. This is mostly useful for internals, like documentation generation.
 
 -}
-fieldNumbersSearchSettings : { semanticSearchEnabled : Int }
+fieldNumbersSearchSettings : { semanticSearchEnabled : Int, embeddingModel : Int }
 fieldNumbersSearchSettings =
     Proto.Rellm.Internals_.fieldNumbersProto__Rellm__SearchSettings
 
@@ -1513,6 +1513,15 @@ encodeSearchSettings =
  Postgres full-text search, exactly as before. Existing embeddings are kept (re-enabling resumes
  where it left off). If the model can't be downloaded/loaded, search silently falls back to
  full-text only.
+
+
+### embeddingModel
+
+ Which embedding model this server runs, e.g. "paraphrase-multilingual-MiniLM-L12-v2 (quantized,
+ 384 dimensions)". Read-only: always filled in by the server on `GetServerConfiguration` (it
+ describes the running software, so it's not stored) and ignored by `ConfigureServer`. Shown on
+ the Settings tab so admins know exactly what is downloaded and run. Changing the model
+ re-embeds everything.
 
 
 -}

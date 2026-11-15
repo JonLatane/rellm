@@ -362,5 +362,6 @@ Your media policy should describe who has ownership of uploaded media, anything 
 pub fn default_search_settings() -> SearchSettings {
     SearchSettings {
         semantic_search_enabled: true,
+        embedding_model: String::new(),
     }
 }

@@ -282,6 +282,11 @@ impl ToProtoServerConfiguration for models::ServerConfiguration {
             .to_owned()
             .and_then(|c| serde_json::from_value::<SearchSettings>(c).ok())
             .unwrap_or_else(models::default_search_settings);
+        // Describes the running software, not a stored choice: always the live value.
+        let search_settings = SearchSettings {
+            embedding_model: crate::logic::embeddings::MODEL_DESCRIPTION.to_string(),
+            ..search_settings
+        };
         // Not persisted anywhere yet -- see `NewServerConfiguration`'s doc and
         // `preferred_verification_apis`'s own proto comment. `ConfigureServer` does persist this
         // one (unlike the comment below used to say), stored the same way `Permission` lists are

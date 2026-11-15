@@ -27,6 +27,11 @@ use fastembed::{EmbeddingModel, TextEmbedding, TextInitOptions};
 
 use crate::db_connection::PgPooledConnection;
 
+/// Human-readable description of `MODEL`, served as `SearchSettings.embedding_model` and shown on
+/// the Settings tab. Keep in step with `MODEL`/`MODEL_NAME`.
+pub const MODEL_DESCRIPTION: &str =
+    "paraphrase-multilingual-MiniLM-L12-v2 (quantized ONNX, 384 dimensions, multilingual), run locally via fastembed";
+
 /// Stored in every embedding row's `model` column. A row whose `model` differs is stale and gets
 /// re-embedded, so switching `MODEL` (and bumping this name with it) re-embeds everything.
 pub const MODEL_NAME: &str = "paraphrase-multilingual-MiniLM-L12-v2-onnx-Q";

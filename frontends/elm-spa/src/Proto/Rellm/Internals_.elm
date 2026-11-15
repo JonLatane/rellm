@@ -2646,9 +2646,9 @@ type alias Proto__Rellm__FeatureSettings =
 {-| The field numbers for the fields of `Proto__Rellm__SearchSettings`. This is mostly useful for internals, like documentation generation.
 
 -}
-fieldNumbersProto__Rellm__SearchSettings : { semanticSearchEnabled : Int }
+fieldNumbersProto__Rellm__SearchSettings : { semanticSearchEnabled : Int, embeddingModel : Int }
 fieldNumbersProto__Rellm__SearchSettings =
-    { semanticSearchEnabled = 1 }
+    { semanticSearchEnabled = 1, embeddingModel = 2 }
 
 
 {-| Default for Proto__Rellm__SearchSettings. Should only be used for 'required' decoders as an initial value.
@@ -2656,7 +2656,7 @@ fieldNumbersProto__Rellm__SearchSettings =
 -}
 defaultProto__Rellm__SearchSettings : Proto__Rellm__SearchSettings
 defaultProto__Rellm__SearchSettings =
-    { semanticSearchEnabled = False }
+    { semanticSearchEnabled = False, embeddingModel = "" }
 
 
 {-| Declares how to decode a `Proto__Rellm__SearchSettings` from Bytes. To actually perform the conversion from Bytes, you need to use Protobuf.Decode.decode from eriktim/elm-protocol-buffers.
@@ -2666,7 +2666,9 @@ decodeProto__Rellm__SearchSettings : Protobuf.Decode.Decoder Proto__Rellm__Searc
 decodeProto__Rellm__SearchSettings =
     Protobuf.Decode.message
         defaultProto__Rellm__SearchSettings
-        [ Protobuf.Decode.optional 1 Protobuf.Decode.bool (\a r -> { r | semanticSearchEnabled = a }) ]
+        [ Protobuf.Decode.optional 1 Protobuf.Decode.bool (\a r -> { r | semanticSearchEnabled = a })
+        , Protobuf.Decode.optional 2 Protobuf.Decode.string (\a r -> { r | embeddingModel = a })
+        ]
 
 
 {-| Declares how to encode a `Proto__Rellm__SearchSettings` to Bytes. To actually perform the conversion to Bytes, you need to use Protobuf.Encode.encode from eriktim/elm-protocol-buffers.
@@ -2674,14 +2676,15 @@ decodeProto__Rellm__SearchSettings =
 -}
 encodeProto__Rellm__SearchSettings : Proto__Rellm__SearchSettings -> Protobuf.Encode.Encoder
 encodeProto__Rellm__SearchSettings value =
-    Protobuf.Encode.message [ ( 1, Protobuf.Encode.bool value.semanticSearchEnabled ) ]
+    Protobuf.Encode.message
+        [ ( 1, Protobuf.Encode.bool value.semanticSearchEnabled ), ( 2, Protobuf.Encode.string value.embeddingModel ) ]
 
 
 {-| `Proto__Rellm__SearchSettings` message
 
 -}
 type alias Proto__Rellm__SearchSettings =
-    { semanticSearchEnabled : Bool }
+    { semanticSearchEnabled : Bool, embeddingModel : String }
 
 
 {-| The field numbers for the fields of `Proto__Rellm__MarketSettings`. This is mostly useful for internals, like documentation generation.

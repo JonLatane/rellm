@@ -199,15 +199,15 @@ fn semantic_search_is_on_by_default_and_the_setting_turns_it_off() {
         assert!(embeddings::semantic_search_enabled(conn)); // nothing saved: default on
         // The default configuration reads as enabled through the proto too.
         let config = crate::rpcs::get_server_configuration_proto(conn).unwrap();
-        assert_eq!(config.search_settings, Some(SearchSettings { semantic_search_enabled: true }));
+        assert_eq!(config.search_settings, Some(SearchSettings { semantic_search_enabled: true, embedding_model: embeddings::MODEL_DESCRIPTION.to_string() }));
 
         update(server_configurations::table.filter(server_configurations::active.eq(true)))
             .set(server_configurations::search_settings
-                .eq(serde_json::to_value(SearchSettings { semantic_search_enabled: false }).unwrap()))
+                .eq(serde_json::to_value(SearchSettings { semantic_search_enabled: false, embedding_model: String::new() }).unwrap()))
             .execute(conn)?;
         assert!(!embeddings::semantic_search_enabled(conn));
         let config = crate::rpcs::get_server_configuration_proto(conn).unwrap();
-        assert_eq!(config.search_settings, Some(SearchSettings { semantic_search_enabled: false }));
+        assert_eq!(config.search_settings, Some(SearchSettings { semantic_search_enabled: false, embedding_model: embeddings::MODEL_DESCRIPTION.to_string() }));
         // Disabled: no semantic ranking is attempted at all.
         assert_eq!(embeddings::semantic_ranking(conn, EmbeddingKind::Post, "anything", &[1, 2]), None);
         Ok(())
