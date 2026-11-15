@@ -48,6 +48,7 @@ pub struct ServerConfiguration {
     pub stripe_config: Option<serde_json::Value>,
 
     pub market_settings: Option<serde_json::Value>,
+    pub search_settings: Option<serde_json::Value>,
 
     pub telnyx_config: Option<serde_json::Value>,
 
@@ -93,6 +94,7 @@ pub const SERVER_CONFIGURATION_COLUMNS: (
     server_configurations::media_settings,
     server_configurations::stripe_config,
     server_configurations::market_settings,
+    server_configurations::search_settings,
     server_configurations::telnyx_config,
     server_configurations::supported_contact_protocols,
     server_configurations::stalwart_config,
@@ -123,6 +125,7 @@ pub const SERVER_CONFIGURATION_COLUMNS: (
     server_configurations::media_settings,
     server_configurations::stripe_config,
     server_configurations::market_settings,
+    server_configurations::search_settings,
     server_configurations::telnyx_config,
     server_configurations::supported_contact_protocols,
     server_configurations::stalwart_config,
@@ -153,6 +156,7 @@ pub struct NewServerConfiguration {
     pub media_settings: Option<serde_json::Value>,
     pub stripe_config: Option<serde_json::Value>,
     pub market_settings: Option<serde_json::Value>,
+    pub search_settings: Option<serde_json::Value>,
     pub telnyx_config: Option<serde_json::Value>,
     pub supported_contact_protocols: Option<serde_json::Value>,
     pub stalwart_config: Option<serde_json::Value>,
@@ -193,6 +197,7 @@ impl From<ServerConfiguration> for NewServerConfiguration {
             media_settings: c.media_settings,
             stripe_config: c.stripe_config,
             market_settings: c.market_settings,
+            search_settings: c.search_settings,
             telnyx_config: c.telnyx_config,
             supported_contact_protocols: c.supported_contact_protocols,
             stalwart_config: c.stalwart_config,
@@ -330,6 +335,7 @@ Your media policy should describe who has ownership of uploaded media, anything 
         media_settings: None,
         stripe_config: None,
         market_settings: None,
+        search_settings: None,
         telnyx_config: None,
         supported_contact_protocols: None,
         stalwart_config: None,
@@ -349,4 +355,12 @@ Your media policy should describe who has ownership of uploaded media, anything 
         )
         .unwrap(),
     };
+}
+
+/// What `ServerConfiguration.search_settings` reads as when nothing was ever saved (every server
+/// from before the column existed, and a fresh install): semantic search on.
+pub fn default_search_settings() -> SearchSettings {
+    SearchSettings {
+        semantic_search_enabled: true,
+    }
 }

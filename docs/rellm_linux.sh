@@ -57,7 +57,7 @@ RELLM_COMMANDS=(
   environment edit_environment
   local_db_create local_db_drop local_db_reset local_db_connect
   local_object_storage_start local_object_storage_create local_object_storage_delete
-  delete_expired_tokens delete_unowned_media sync_sources update_user_counts convert_media_sizes renew_market_subscriptions generate_link_preview_images regenerate_link_preview_images_for_post
+  delete_expired_tokens delete_unowned_media sync_sources update_user_counts generate_embeddings convert_media_sizes renew_market_subscriptions generate_link_preview_images regenerate_link_preview_images_for_post
   calculate_server_media_usage calculate_server_object_storage_usage
   set_permission delete_link_preview_images disable_cdn_grpc free_all_cluster_resources
   to_db_id to_proto_id grpcurl
@@ -166,6 +166,11 @@ Commands:
                              sync_interval_seconds/last_synced_at
     update_user_counts       Recompute follower/following/friend/group/post/response/event/
                              occasion counts for every User, correcting any drift
+    generate_embeddings      Create/refresh text embeddings of Posts, Events, Media and User
+                             profiles for semantic search (a no-op when "semantic search" is
+                             off in the server settings). Downloads a ~120MB model on first
+                             use into $RELLM_EMBEDDING_CACHE_DIR (default
+                             ~/.cache/rellm/embedding_models)
     convert_media_sizes      Generate small/medium/large resized copies of unprocessed PNG/JPEG
                              Media via ImageMagick (`magick`, or `convert`+`identify`) and
                              MP4/QuickTime/WebM Media via `ffmpeg`+`ffprobe`; each must be on
@@ -504,6 +509,10 @@ sync_sources() {
 
 update_user_counts() {
   _rellm_exec_bin update_user_counts "$@"
+}
+
+generate_embeddings() {
+  _rellm_exec_bin generate_embeddings "$@"
 }
 
 # Resizes images via ImageMagick (`magick`, or the legacy `convert`+`identify` pair) -- e.g.

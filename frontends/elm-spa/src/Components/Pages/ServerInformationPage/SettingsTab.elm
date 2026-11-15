@@ -53,6 +53,10 @@ type alias Model =
     , mediaSettingsEdit : Maybe FeatureSettingsEdit
     , collapsedFeatureSettings : Set String
     , mediaMaintenanceStatus : MediaMaintenanceStatus
+
+    -- The Search section's "Semantic Search" switch saves the moment it's flipped (a single
+    -- boolean, no Save/Cancel), so only its in-flight/error state lives here.
+    , searchSettingsStatus : AccountsPanel.FormStatus
     }
 
 
@@ -91,6 +95,8 @@ type Msg
     | FeatureSettingsHlsStreamingToggled FeatureSettingsSet
     | FeatureSettingsGenerateLinkPreviewImagesToggled FeatureSettingsSet
     | FeatureSettingsPreferMetadataForLinkPreviewImagesToggled FeatureSettingsSet
+    | SemanticSearchToggled
+    | GotSemanticSearchSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, ServerConfiguration ))
     | DeleteLinkPreviewImagesClicked
     | DeleteUnownedMediaClicked
     | GotDeleteUnownedMediaResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, () ))
@@ -216,6 +222,7 @@ init =
     , mediaSettingsEdit = Nothing
     , collapsedFeatureSettings = Set.empty
     , mediaMaintenanceStatus = MediaMaintenanceIdle
+    , searchSettingsStatus = AccountsPanel.Idle
     }
 
 
@@ -481,6 +488,38 @@ update shared targetHost maybeServer msg model =
             ( setFeatureSettingsEditFor set
                 (featureSettingsEditFor set model |> Maybe.map (\edit -> { edit | preferMetadataForLinkPreviewImages = not edit.preferMetadataForLinkPreviewImages }))
                 model
+            , Effect.none
+            )
+
+        SemanticSearchToggled ->
+            case ( maybeServer, Common.adminAccountFor shared targetHost ) of
+                ( Just server, Just account ) ->
+                    let
+                        enabled : Bool
+                        enabled =
+                            semanticSearchEnabled (RellmServers.configurationOf server)
+                    in
+                    ( { model | searchSettingsStatus = AccountsPanel.Submitting }
+                    , AccountsPanel.updateServerConfig shared.accounts
+                        ( Just account.userId, targetHost )
+                        (\config -> { config | searchSettings = Just { semanticSearchEnabled = not enabled } })
+                        |> Task.attempt GotSemanticSearchSaveResult
+                        |> Effect.fromCmd
+                    )
+
+                _ ->
+                    ( model, Effect.none )
+
+        GotSemanticSearchSaveResult (Ok ( maybeAccountsPanelMsg, newConfig )) ->
+            ( { model | searchSettingsStatus = AccountsPanel.Idle }
+            , Effect.batch
+                [ Common.accountsPanelEffect maybeAccountsPanelMsg
+                , Effect.fromShared (Shared.AccountsPanelMsg (AccountsPanel.GotServerConfigSaveResult targetHost newConfig))
+                ]
+            )
+
+        GotSemanticSearchSaveResult (Err err) ->
+            ( { model | searchSettingsStatus = AccountsPanel.Errored (AccountsPanel.grpcErrorToString err) }
             , Effect.none
             )
 
@@ -1154,6 +1193,7 @@ view shared server maybeAdminAccount model =
         ([ permissionsSection AnonymousPermissions "Anonymous User Permissions" maybeAdminAccount model.anonymousPermissionsEdit config.anonymousUserPermissions
          , permissionsSection DefaultPermissions "Default User Permissions" maybeAdminAccount model.defaultPermissionsEdit config.defaultUserPermissions
          , permissionsSection BasicPermissions "Basic User Permissions" maybeAdminAccount model.basicPermissionsEdit config.basicUserPermissions
+         , searchSection maybeAdminAccount model.searchSettingsStatus (semanticSearchEnabled config)
          ]
             ++ ([ PeopleFeatureSettings, MediaFeatureSettings, PostFeatureSettings, EventFeatureSettings, GroupFeatureSettings ]
                     |> List.map
@@ -1168,6 +1208,37 @@ view shared server maybeAdminAccount model =
                         )
                )
         )
+
+
+{-| `SearchSettings.semantic_search_enabled`, defaulting to on (the server's own default) when the
+server didn't report `search_settings` at all -- e.g. one that predates the field.
+-}
+semanticSearchEnabled : ServerConfiguration -> Bool
+semanticSearchEnabled config =
+    config.searchSettings |> Maybe.map .semanticSearchEnabled |> Maybe.withDefault True
+
+
+{-| The "Search" section: one switch, "Semantic Search". An admin flips it and it saves right away
+(see `SemanticSearchToggled`); everyone else sees it read-only.
+-}
+searchSection : Maybe RellmAccount -> AccountsPanel.FormStatus -> Bool -> Html Msg
+searchSection maybeAdminAccount status enabled =
+    div [ Html.Attributes.class "server-details-permissions" ]
+        [ h3 [ classes [ "section-title" ] ] [ text "Search" ]
+        , Common.settingsRow "Semantic Search"
+            (case ( maybeAdminAccount, status ) of
+                ( Just _, AccountsPanel.Submitting ) ->
+                    Common.switchDisplay enabled
+
+                ( Just _, _ ) ->
+                    Common.flagSwitch enabled SemanticSearchToggled
+
+                ( Nothing, _ ) ->
+                    Common.switchDisplay enabled
+            )
+        , Common.settingsNote "Also finds posts, events, media and profiles by meaning (not just matching words) and reranks results with text embeddings, generated in the background by a small local model that's downloaded the first time. Turn off to use plain full-text search only."
+        , Common.editErrorView status
+        ]
 
 
 {-| One of the three server-wide permission sections (Anonymous/Default/Basic, distinguished by

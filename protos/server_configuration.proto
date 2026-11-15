@@ -63,6 +63,12 @@ message ServerConfiguration {
   // here just to check -- see `rellm.proto`'s own "Federated Markets" doc section.
   MarketSettings market_settings = 25;
 
+  // Search behavior across Posts, Events, Media and People/profiles -- see
+  // [`SearchSettings`](#rellm-SearchSettings). Publicly readable (clients can tell whether a search
+  // on this server is semantically ranked). Unset on read never happens: servers that predate this
+  // field report the default (`semantic_search_enabled: true`).
+  SearchSettings search_settings = 28;
+
   // If set, enables External CDN support for the server. This means that the
   // non-secure HTTP server (on port 80) will *not* redirect to the secure server,
   // and instead serve up Tamagui Web/Flutter clients directly. This allows you
@@ -232,7 +238,7 @@ message ClusterConductorState {
   repeated ClusterResourceLock locks = 1;
 
   // How many distinct namespaces may concurrently hold each `ClusterResource`'s lock - e.g. only
-  // one headless browser at a time, but a handful of `ffmpeg`/ImageMagick conversions in parallel
+  // one headless browser (or embedding run) at a time, but a handful of `ffmpeg`/ImageMagick conversions in parallel
   // across the cluster, since those are far lighter-weight. Any `ClusterResource` not present here
   // - including on a cluster that's never had `ConfigureServer` touch `limits` at all - defaults
   // to `1` (see `ClusterTab.elm`'s matching client-side default, shown/edited there as "Browser
@@ -308,6 +314,12 @@ enum ClusterResource {
   CLUSTER_RESOURCE_BROWSER = 0;
   CLUSTER_RESOURCE_FFMPEG = 1;
   CLUSTER_RESOURCE_IMAGEMAGICK = 2;
+  // Running the text-embedding model (ONNX Runtime) for semantic search -- the `generate_embeddings`
+  // job (see `SearchSettings`). Loading the model takes a few hundred MB of RAM and embedding keeps
+  // CPU cores busy, which small shared nodes can't afford for several instances at once. Each run
+  // holds this only while it's actually embedding text (never for a run with nothing to do), and is
+  // capped to a few minutes of work, so a backlog is worked down over many runs that take turns.
+  CLUSTER_RESOURCE_EMBEDDINGS = 3;
 }
 
 // Useful for setting your Rellm instance up to run underneath a CDN.
@@ -461,6 +473,27 @@ message MarketSettings {
   // "Stripe is not configured" message) without ever exposing `StripeConfig` itself, which stays
   // admin-only.
   bool stripe_configured = 2;
+}
+
+// Search settings for a server. Edited on the Server Information page's Settings tab.
+message SearchSettings {
+  // Whether this server builds and uses text embeddings for search. Defaults to `true`.
+  //
+  // When enabled:
+  // - the `generate_embeddings` background job downloads a small local embedding model (once; see
+  //   `RELLM_EMBEDDING_CACHE_DIR`) and keeps embeddings up to date for Posts (`post_embeddings`),
+  //   Events (`event_embeddings` -- the Event's Post plus its Occasions' times/places), Media
+  //   (`media_embeddings`) and User profiles (`user_profile_embeddings`). Every embedding is made
+  //   from the very same text Postgres full-text search indexes (title, content, names, ...).
+  // - `TEXT_SEARCH`-style listings in `GetPosts`, `GetEvents`, `GetMedia` and `GetUsers` also
+  //   consider semantically similar results (not just prefix matches) and rerank by fusing the
+  //   full-text rank with embedding similarity.
+  //
+  // When disabled, the job does nothing, the server never loads the model, and search is plain
+  // Postgres full-text search, exactly as before. Existing embeddings are kept (re-enabling resumes
+  // where it left off). If the model can't be downloaded/loaded, search silently falls back to
+  // full-text only.
+  bool semantic_search_enabled = 1;
 }
 
 // Settings for a feature (e.g. People, Groups, Posts, Events, Media).

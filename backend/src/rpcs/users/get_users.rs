@@ -3,12 +3,12 @@ use std::collections::HashMap;
 use diesel::*;
 // use diesel::internal::operators_macro::FieldAliasMapper;
 use diesel_full_text_search::{
-    configuration::TsConfigurationByName, to_tsquery_with_search_config, TsVectorExtensions,
+    configuration::TsConfigurationByName, to_tsquery_with_search_config, ts_rank_cd, TsVectorExtensions,
 };
 use tonic::{Code, Status};
 
 use crate::db_connection::PgPooledConnection;
-use crate::logic::prefix_tsquery_text;
+use crate::logic::{embeddings, prefix_tsquery_text};
 use crate::marshaling::*;
 use crate::models;
 use crate::models::MEDIA_REFERENCE_COLUMNS;
@@ -110,6 +110,71 @@ fn required_search_text(request: &GetUsersRequest) -> Result<&str, Status> {
     Ok(search_text)
 }
 
+
+fn visibilities_for(user: &Option<&models::User>) -> Vec<&'static str> {
+    match user {
+        Some(_) => vec![Visibility::ServerPublic, Visibility::GlobalPublic],
+        None => vec![Visibility::GlobalPublic],
+    }
+    .iter()
+    .map(|v| v.as_str_name())
+    .collect()
+}
+
+// The ids `get_all_users` shows for one page of a search when semantic search is on, best first:
+// full-text matches (ranked by `ts_rank_cd`, newest first among ties) fused with the profiles
+// semantically closest to `search_text` among the newest visible ones. `None` -- keep the plain
+// full-text listing -- if semantic search can't be used or anything goes wrong.
+fn semantic_user_page_ids(
+    visibilities: &[&str],
+    user: &Option<&models::User>,
+    search_text: &str,
+    page_offset: i64,
+    conn: &mut PgPooledConnection,
+) -> Option<Vec<i64>> {
+    let visible = || {
+        users::visibility
+            .eq_any(visibilities.to_vec())
+            .or(users::id.nullable().eq(user.map(|u| u.id)))
+    };
+    let rank_query = to_tsquery_with_search_config(
+        TsConfigurationByName("simple"),
+        prefix_tsquery_text(search_text),
+    );
+    let search_query = to_tsquery_with_search_config(
+        TsConfigurationByName("simple"),
+        prefix_tsquery_text(search_text),
+    );
+    let mut ranked: Vec<i64> = users::table
+        .filter(visible())
+        .filter(users::search_text.matches(search_query))
+        .order(ts_rank_cd(users::search_text, rank_query).desc())
+        .then_order_by(users::created_at.desc())
+        .select(users::id)
+        .limit(embeddings::SEMANTIC_SCAN_LIMIT)
+        .load(conn)
+        .ok()?;
+    let mut scope: Vec<i64> = users::table
+        .filter(visible())
+        .order(users::created_at.desc())
+        .select(users::id)
+        .limit(embeddings::SEMANTIC_SCAN_LIMIT)
+        .load(conn)
+        .ok()?;
+    scope.extend(ranked.iter().copied());
+    scope.sort_unstable();
+    scope.dedup();
+    let semantic = embeddings::semantic_ranking(conn, embeddings::EmbeddingKind::UserProfile, search_text, &scope)?;
+    ranked = embeddings::fuse_rankings(&ranked, &semantic);
+    Some(
+        ranked
+            .into_iter()
+            .skip(page_offset as usize)
+            .take(PAGE_SIZE as usize)
+            .collect(),
+    )
+}
+
 fn get_all_users(
     request: GetUsersRequest,
     user: &Option<&models::User>,
@@ -155,8 +220,10 @@ fn get_all_users(
         )
         .order(users::created_at.desc())
         .limit(PAGE_SIZE)
-        .offset((request.page.unwrap_or(0) * 100).into())
         .into_boxed();
+    let page_offset: i64 = (request.page.unwrap_or(0) * 100).into();
+    // Set when a semantic-search listing decided which users (and in what order) this page shows.
+    let mut semantic_page_ids: Option<Vec<i64>> = None;
 
     if let Some(search_text) = search_text {
         // "simple" (not "english") to match users_build_search_text's indexing config - see
@@ -166,16 +233,32 @@ fn get_all_users(
             prefix_tsquery_text(search_text),
         );
         query = query.filter(users::search_text.matches(search_query));
+
+        // Semantic reranking (see `logic::embeddings`): full-text matches ranked by quality, plus
+        // semantically similar profiles among the newest visible ones, fused. Only the plain
+        // all-users search -- followers/following/friends listings stay full-text.
+        if embeddings::semantic_search_ready(conn) {
+            semantic_page_ids = semantic_user_page_ids(&visibilities_for(user), user, search_text, page_offset, conn);
+        }
+    }
+    match &semantic_page_ids {
+        Some(ids) => query = query.filter(users::id.eq_any(ids.clone())),
+        None => query = query.offset(page_offset),
     }
 
-    let users = query
+    let mut rows = query
         .load::<(
             models::User,
             Option<models::Follow>,
             Option<models::Follow>,
             Option<models::MediaReference>,
         )>(conn)
-        .unwrap()
+        .unwrap();
+    if let Some(ids) = &semantic_page_ids {
+        let position: HashMap<i64, usize> = ids.iter().enumerate().map(|(i, id)| (*id, i)).collect();
+        rows.sort_by_key(|row| position.get(&row.0.id).copied().unwrap_or(usize::MAX));
+    }
+    let users = rows
         .iter()
         .map(|(row_user, follow, target_follow, media_reference)| {
             let lookup = media_reference.to_media_lookup();

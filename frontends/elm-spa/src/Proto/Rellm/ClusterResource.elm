@@ -33,6 +33,9 @@ fieldNumbersClusterResource n_ =
         CLUSTERRESOURCEIMAGEMAGICK ->
             2
 
+        CLUSTERRESOURCEEMBEDDINGS ->
+            3
+
         ClusterResourceUnrecognized_ m_ ->
             m_
 
@@ -61,6 +64,9 @@ encodeClusterResource value =
             CLUSTERRESOURCEIMAGEMAGICK ->
                 2
 
+            CLUSTERRESOURCEEMBEDDINGS ->
+                3
+
             ClusterResourceUnrecognized_ i ->
                 i
 
@@ -83,6 +89,9 @@ decodeClusterResource =
                     2 ->
                         CLUSTERRESOURCEIMAGEMAGICK
 
+                    3 ->
+                        CLUSTERRESOURCEEMBEDDINGS
+
                     _ ->
                         ClusterResourceUnrecognized_ i
             )
@@ -95,4 +104,5 @@ type ClusterResource
     = CLUSTERRESOURCEBROWSER
     | CLUSTERRESOURCEFFMPEG
     | CLUSTERRESOURCEIMAGEMAGICK
+    | CLUSTERRESOURCEEMBEDDINGS
     | ClusterResourceUnrecognized_ Int

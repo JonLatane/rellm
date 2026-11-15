@@ -284,6 +284,50 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    post_embeddings (post_id) {
+        post_id -> Int8,
+        model -> Varchar,
+        document_hash -> Int8,
+        embedding -> Nullable<Bytea>,
+        embedded_at -> Timestamp,
+        checked_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    event_embeddings (event_id) {
+        event_id -> Int8,
+        model -> Varchar,
+        document_hash -> Int8,
+        embedding -> Nullable<Bytea>,
+        embedded_at -> Timestamp,
+        checked_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    media_embeddings (media_id) {
+        media_id -> Int8,
+        model -> Varchar,
+        document_hash -> Int8,
+        embedding -> Nullable<Bytea>,
+        embedded_at -> Timestamp,
+        checked_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    user_profile_embeddings (user_id) {
+        user_id -> Int8,
+        model -> Varchar,
+        document_hash -> Int8,
+        embedding -> Nullable<Bytea>,
+        embedded_at -> Timestamp,
+        checked_at -> Timestamp,
+    }
+}
+
 diesel::joinable!(media_licenses -> media (media_id));
 diesel::joinable!(media_licenses -> users (user_id));
 
@@ -431,6 +475,7 @@ diesel::table! {
         media_settings -> Nullable<Jsonb>,
         stripe_config -> Nullable<Jsonb>,
         market_settings -> Nullable<Jsonb>,
+        search_settings -> Nullable<Jsonb>,
         telnyx_config -> Nullable<Jsonb>,
         supported_contact_protocols -> Nullable<Jsonb>,
         stalwart_config -> Nullable<Jsonb>,
@@ -583,7 +628,16 @@ diesel::joinable!(user_posts -> posts (post_id));
 diesel::joinable!(user_posts -> users (user_id));
 diesel::joinable!(user_refresh_tokens -> users (user_id));
 
+diesel::joinable!(post_embeddings -> posts (post_id));
+diesel::joinable!(event_embeddings -> events (event_id));
+diesel::joinable!(media_embeddings -> media (media_id));
+diesel::joinable!(user_profile_embeddings -> users (user_id));
+
 diesel::allow_tables_to_appear_in_same_query!(
+    post_embeddings,
+    event_embeddings,
+    media_embeddings,
+    user_profile_embeddings,
     ai_provider_grants,
     ai_providers,
     rsvps,

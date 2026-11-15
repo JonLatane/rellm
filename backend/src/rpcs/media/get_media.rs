@@ -9,7 +9,7 @@ use crate::models;
 use crate::protos::*;
 use crate::schema::{follows, media, media_filter, users};
 use diesel_full_text_search::{to_tsquery_with_search_config, ts_rank_cd, configuration::TsConfigurationByName, TsVectorExtensions};
-use crate::logic::prefix_tsquery_text;
+use crate::logic::{embeddings, prefix_tsquery_text};
 
 /// Batch-loads every distinct author of `media_rows`, keyed by `user_id` -- see
 /// `ToProtoMedia::to_proto`'s own doc on why each `Media`'s owner is populated here (rather than
@@ -74,6 +74,30 @@ macro_rules! query_visible_media {
 enum ContentTypeFilter {
     Exact(String),
     Prefix(String),
+}
+
+/// Narrows `query` to the requested `content_type` (exact, or a `type/` prefix); a no-op for `None`.
+fn apply_content_type_filter<'a>(
+    query: media::BoxedQuery<'a, diesel::pg::Pg>,
+    content_type_filter: &Option<ContentTypeFilter>,
+) -> media::BoxedQuery<'a, diesel::pg::Pg> {
+    match content_type_filter {
+        Some(ContentTypeFilter::Exact(content_type)) => query.filter(
+            media::id.eq_any(
+                media_filter::table
+                    .filter(media_filter::content_type.eq(content_type.clone()))
+                    .select(media_filter::id),
+            ),
+        ),
+        Some(ContentTypeFilter::Prefix(prefix)) => query.filter(
+            media::id.eq_any(
+                media_filter::table
+                    .filter(media_filter::content_type.like(format!("{}%", prefix)))
+                    .select(media_filter::id),
+            ),
+        ),
+        None => query,
+    }
 }
 
 fn parse_content_type_filter(content_type: &str) -> Result<ContentTypeFilter, Status> {
@@ -141,27 +165,7 @@ pub fn get_media(
                 users::table.filter(users::avatar_media_id.eq(media::id.nullable())),
             )));
     }
-    match content_type_filter {
-        Some(ContentTypeFilter::Exact(content_type)) => {
-            query = query.filter(
-                media::id.eq_any(
-                    media_filter::table
-                        .filter(media_filter::content_type.eq(content_type))
-                        .select(media_filter::id),
-                ),
-            );
-        }
-        Some(ContentTypeFilter::Prefix(prefix)) => {
-            query = query.filter(
-                media::id.eq_any(
-                    media_filter::table
-                        .filter(media_filter::content_type.like(format!("{}%", prefix)))
-                        .select(media_filter::id),
-                ),
-            );
-        }
-        None => {}
-    }
+    query = apply_content_type_filter(query, &content_type_filter);
     if let Some(prefix_query_text) = prefix_query_text.clone() {
         // "simple" to match `media_build_search_text`'s indexing config -- see `get_search_posts`.
         let search_query =
@@ -175,6 +179,37 @@ pub fn get_media(
             .limit(1000)
             .load(conn)
             .map_err(|_| Status::internal("error_loading_media"))?;
+        // Semantic reranking (see `logic::embeddings`): also consider the newest visible media
+        // (of the requested owner/type) that's semantically close to the query without sharing
+        // its words, and fuse the two rankings. The final `query` below still applies visibility.
+        let mut matching_ids = matching_ids;
+        if embeddings::semantic_search_ready(conn) {
+            let mut recent = apply_content_type_filter(
+                query_visible_media!(user, licensed_globally),
+                &content_type_filter,
+            );
+            if let Some(user_id) = requested_user_id {
+                recent = recent.filter(media::user_id.eq(user_id));
+            }
+            let mut scope: Vec<i64> = recent
+                .order(media::created_at.desc())
+                .select(media::id)
+                .limit(embeddings::SEMANTIC_SCAN_LIMIT)
+                .load(conn)
+                .map_err(|_| Status::internal("error_loading_media"))?;
+            scope.extend(matching_ids.iter().copied());
+            scope.sort_unstable();
+            scope.dedup();
+            if let Some(semantic) = embeddings::semantic_ranking(
+                conn,
+                embeddings::EmbeddingKind::Media,
+                search_text.unwrap_or_default(),
+                &scope,
+            ) {
+                matching_ids = embeddings::fuse_rankings(&matching_ids, &semantic);
+                matching_ids.truncate(1000);
+            }
+        }
         // Ranked order is applied after loading (below) from this id list's order.
         query = query.filter(media::id.eq_any(matching_ids.clone()));
         return load_page(query, request.page, Some(matching_ids), conn);

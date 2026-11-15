@@ -12,6 +12,7 @@ use tonic::{Code, Status};
 
 use crate::db_connection::PgPooledConnection;
 use crate::logic::*;
+use crate::logic::embeddings;
 use crate::marshaling::*;
 use crate::models;
 use crate::models::get_group;
@@ -432,23 +433,71 @@ fn get_search_posts(
         matching_post_ids = matching_post_ids.filter(posts::sort_published_at.lt(cutoff));
     }
 
-    let result: Vec<MarshalablePost> = posts::table
-        .left_join(users::table.on(posts::user_id.eq(users::id.nullable())))
+    // Full-text matches, best first. Ordered by match quality first (best guess at what the user is
+    // looking for), falling back to recency - `COALESCE(published_at, created_at)` - to keep
+    // ordering stable across the (common, with prefix matching) rank ties rather than falling
+    // through to unspecified/DB-natural order.
+    let mut ranked_ids: Vec<i64> = posts::table
         .filter(posts::id.eq_any(matching_post_ids))
-        .select((models::POST_COLUMNS, models::AUTHOR_COLUMNS.nullable()))
-        // Search results are ordered by match quality first (best guess at what the user is
-        // looking for), falling back to recency - `COALESCE(published_at, created_at)` - to keep
-        // ordering stable across the (common, with prefix matching) rank ties rather than falling
-        // through to unspecified/DB-natural order.
         .order(ts_rank_cd(posts::search_text, rank_query).desc())
         .then_order_by(posts::sort_published_at.desc())
         .then_order_by(posts::id.desc())
-        .limit(PAGE_SIZE)
-        .offset(page_offset(request))
+        .select(posts::id)
+        .limit(SEARCH_CANDIDATE_LIMIT)
+        .load(conn)
+        .map_err(|_| Status::new(Code::Internal, "error_loading_posts"))?;
+
+    // Semantic reranking (see `logic::embeddings`): also consider the newest visible posts that
+    // are semantically close to the query even though they share no words with it, and fuse the
+    // two rankings. Only ever ids the visibility-filtered queries above/below returned.
+    if embeddings::semantic_search_ready(conn) {
+        let mut recent = query_visible_posts_unlimited!(user)
+            .filter(posts::context.eq(request.context().as_str_name()))
+            .filter(exclude_authors!(excluded))
+            .order(posts::sort_published_at.desc())
+            .select((posts::id, posts::sort_published_at))
+            .limit(embeddings::SEMANTIC_SCAN_LIMIT)
+            .into_boxed();
+        if let Some(author_user_id) = author_user_id {
+            recent = recent.filter(posts::user_id.eq(author_user_id));
+        }
+        if let Some(cutoff) = published_or_created_before(request) {
+            recent = recent.filter(posts::sort_published_at.lt(cutoff));
+        }
+        let mut scope: Vec<i64> = recent
+            .load::<(i64, std::time::SystemTime)>(conn)
+            .map_err(|_| Status::new(Code::Internal, "error_loading_posts"))?
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect();
+        scope.extend(ranked_ids.iter().copied());
+        scope.sort_unstable();
+        scope.dedup();
+        if let Some(semantic) =
+            embeddings::semantic_ranking(conn, embeddings::EmbeddingKind::Post, search_text, &scope)
+        {
+            ranked_ids = embeddings::fuse_rankings(&ranked_ids, &semantic);
+        }
+    }
+
+    let page_ids: Vec<i64> = ranked_ids
+        .into_iter()
+        .skip(page_offset(request) as usize)
+        .take(PAGE_SIZE as usize)
+        .collect();
+    let mut rows: HashMap<i64, (models::Post, Option<models::Author>)> = posts::table
+        .left_join(users::table.on(posts::user_id.eq(users::id.nullable())))
+        .filter(posts::id.eq_any(&page_ids))
+        .select((models::POST_COLUMNS, models::AUTHOR_COLUMNS.nullable()))
         .load::<(models::Post, Option<models::Author>)>(conn)
         .map_err(|_| Status::new(Code::Internal, "error_loading_posts"))?
+        .into_iter()
+        .map(|row| (row.0.id, row))
+        .collect();
+    let result: Vec<MarshalablePost> = page_ids
         .iter()
-        .map(|(post, author)| MarshalablePost(post.clone(), author.clone(), None, None, vec![]))
+        .filter_map(|id| rows.remove(id))
+        .map(|(post, author)| MarshalablePost(post, author, None, None, vec![]))
         .collect();
 
     Ok(result)

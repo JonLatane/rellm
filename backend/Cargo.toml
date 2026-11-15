@@ -115,6 +115,13 @@ reqwest = { version = "0.13", default-features = false, features = [
   "rustls-no-provider",
 ] }
 rrule = "0.14"
+# Local text embeddings (ONNX Runtime) for semantic search/reranking -- see `logic::embeddings`. rustls
+# variants only (no OpenSSL), matching tonic/reqwest above. The model itself is downloaded from
+# Hugging Face on first use (by the `generate_embeddings` job, or the server's own warm-up thread).
+fastembed = { version = "7.7", default-features = false, features = [
+  "ort-download-binaries-rustls-tls",
+  "hf-hub-rustls-tls",
+] }
 mail-parser = "0.11.5"
 feed-rs = "2.4.0"
 rss = { version = "2.1.2", default-features = false, features = ["builders"] }

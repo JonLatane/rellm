@@ -158,6 +158,13 @@ Supported flags:
             .expect("Failed to load or regenerate server configuration");
     let server_configuration: protos::ServerConfiguration = server_configuration_model.to_proto();
 
+    // Start loading (downloading, the first time) the embedding model for semantic search now, on a
+    // background thread, so the first search doesn't have to wait for it -- see
+    // `logic::embeddings::server_embedder`. Searches are full-text until it's ready.
+    if logic::embeddings::semantic_search_enabled(&mut conn) {
+        let _ = logic::embeddings::server_embedder();
+    }
+
     log::info!("Loaded server configuration: {:?}", &server_configuration);
 
     let external_cdn_config = server_configuration.external_cdn_config;
