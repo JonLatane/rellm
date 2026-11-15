@@ -9,7 +9,12 @@ module Shared.Federation.Actions exposing
     , deletePost
     , MastodonProfileTarget
     , editPost
+    , fetchBlueskyFollowState
+    , fetchBlueskyOwnProfile
     , fetchMastodonFollowState
+    , isOwnBlueskyProfile
+    , setBlueskyFollowing
+    , updateBlueskyOwnProfile
     , fetchMastodonOwnProfile
     , isOwnMastodonProfile
     , setMastodonFollowing
@@ -372,3 +377,42 @@ updateMastodonOwnProfile : MastodonAccount -> Mastodon.OwnProfile -> Task Http.E
 updateMastodonOwnProfile account profile =
     MastodonAccounts.performWithMastodonAccount account (\token -> Mastodon.updateOwnProfile account.instanceHost token profile)
         |> Task.map (\( refreshed, () ) -> rotatedMastodon account refreshed)
+
+
+{-| Whether `account` is the very account whose profile is `viewedHandle`.
+-}
+isOwnBlueskyProfile : BlueskyAccount -> String -> Bool
+isOwnBlueskyProfile account viewedHandle =
+    String.toLower account.handle == String.toLower viewedHandle
+
+
+{-| Whether `account` follows `viewedHandle`, and the ids needed to (un)follow.
+-}
+fetchBlueskyFollowState : BlueskyAccount -> String -> Task Http.Error ( Maybe AccountsPanel.Msg, Bluesky.FollowState )
+fetchBlueskyFollowState account viewedHandle =
+    BlueskyAccounts.performWithBlueskyAccount account (\auth -> Bluesky.fetchFollowState auth viewedHandle)
+        |> Task.map (\( refreshed, state ) -> ( rotatedBluesky account refreshed, state ))
+
+
+{-| Has `account` follow (`True`) or unfollow (`False`) the actor in `state`.
+-}
+setBlueskyFollowing : Bool -> BlueskyAccount -> Bluesky.FollowState -> Task Http.Error ( Maybe AccountsPanel.Msg, Bluesky.FollowState )
+setBlueskyFollowing follow account state =
+    BlueskyAccounts.performWithBlueskyAccount account (\auth -> Bluesky.setFollowing follow account.handle auth state)
+        |> Task.map (\( refreshed, newState ) -> ( rotatedBluesky account refreshed, newState ))
+
+
+{-| `account`'s current profile record, to start editing its profile from.
+-}
+fetchBlueskyOwnProfile : BlueskyAccount -> Task Http.Error ( Maybe AccountsPanel.Msg, Bluesky.OwnProfileRecord )
+fetchBlueskyOwnProfile account =
+    BlueskyAccounts.performWithBlueskyAccount account (\auth -> Bluesky.fetchOwnProfileRecord account.handle auth)
+        |> Task.map (\( refreshed, record ) -> ( rotatedBluesky account refreshed, record ))
+
+
+{-| Saves a new display name and bio on `account`'s own profile record.
+-}
+updateBlueskyOwnProfile : BlueskyAccount -> Bluesky.OwnProfileRecord -> { displayName : String, description : String } -> Task Http.Error (Maybe AccountsPanel.Msg)
+updateBlueskyOwnProfile account record edit =
+    BlueskyAccounts.performWithBlueskyAccount account (\auth -> Bluesky.updateOwnProfileRecord account.handle auth record edit)
+        |> Task.map (\( refreshed, () ) -> rotatedBluesky account refreshed)

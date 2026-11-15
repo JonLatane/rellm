@@ -1,8 +1,10 @@
 module Components.Bluesky.BlueskyUserProfilePage exposing (Model, Msg, fromShared, init, subscriptions, title, update, view)
 
-{-| A single Bluesky account's profile, read-only -- avatar/display name/bio/follower-and-following
+{-| A single Bluesky account's profile -- avatar/display name/bio/follower-and-following
 counts, plus that account's own authored posts (embedding `Components.Pages.PostsPage`, scoped to
-just this account via its `BlueskyAuthorFeed` `FeedSource`). No follow/moderation/permissions/sync
+just this account via its `BlueskyAuthorFeed` `FeedSource`). When a Bluesky account is connected (see
+`Shared.Federation.Actions`), it also offers Follow/Unfollow on someone else's profile and "Edit Profile"
+(display name and bio) on the connected account's own. No moderation/permissions/sync
 affordances, no Events/Sync Sources/Sync Destinations/AI Providers sections -- none of that
 makes sense for an account Rellm doesn't own, mirroring `Components.Bluesky.BlueskyPostPage`'s own
 read-only scope one level up (a whole profile instead of a single post).
@@ -26,14 +28,17 @@ import Components.Pages.PostsPage as PostsPage
 import Components.Users as Users
 import Dict exposing (Dict)
 import Effect exposing (Effect)
-import Html exposing (Html, a, div, h1, h3, p, span, text)
-import Html.Attributes exposing (class, href)
+import Html exposing (Html, a, button, div, h1, h3, input, p, span, text, textarea)
+import Html.Attributes exposing (class, disabled, href, placeholder, rows, value)
+import Html.Events exposing (onClick, onInput)
 import Http
 import Shared
 import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.BlueskyAccounts as BlueskyAccounts exposing (BlueskyAccount)
+import Shared.Federation.Actions as Actions
 import Shared.Federation.Bluesky as Bluesky
 import Task
+import UI.Classes exposing (classes)
 
 
 type alias Model =
@@ -43,6 +48,25 @@ type alias Model =
     , navKey : Browser.Navigation.Key
     , path : String
     , query : Dict String String
+
+    -- Whether the connected account follows this profile (`Nothing` until known, or when there's no
+    -- connected account / this is its own profile).
+    , followState : Maybe Bluesky.FollowState
+    , followBusy : Bool
+
+    -- `Just` while the connected account's own profile is being edited.
+    , profileEdit : Maybe ProfileEdit
+    , actionError : Maybe String
+    }
+
+
+type alias ProfileEdit =
+    { displayName : String
+    , description : String
+
+    -- The record the values above were read from -- `Nothing` while still being fetched.
+    , record : Maybe Bluesky.OwnProfileRecord
+    , saving : Bool
     }
 
 
@@ -56,6 +80,17 @@ type Msg
     = GotProfile ( String, String ) (Result Http.Error ( Maybe BlueskyAccount, Bluesky.ActorProfile ))
     | PostsMsg PostsPage.Msg
     | SharedMsgReceived Shared.Msg
+    | GotFollowState (Result Http.Error ( Maybe AccountsPanel.Msg, Bluesky.FollowState ))
+    | FollowClicked
+    | GotFollowResult (Result Http.Error ( Maybe AccountsPanel.Msg, Bluesky.FollowState ))
+    | EditProfileClicked
+    | GotOwnProfile (Result Http.Error ( Maybe AccountsPanel.Msg, Bluesky.OwnProfileRecord ))
+    | DisplayNameChanged String
+    | DescriptionChanged String
+    | SaveProfileClicked
+    | CancelProfileClicked
+    | GotProfileSaved (Result Http.Error (Maybe AccountsPanel.Msg))
+    | GotRefreshedProfile (Result Http.Error ( BlueskyAccount, Bluesky.ActorProfile ))
 
 
 {-| `handle` comes straight from `Components.Users.parseFederatedUserId`'s `BlueskyUserId` -- see
@@ -94,6 +129,10 @@ init shared handle navKey path query =
       , navKey = navKey
       , path = path
       , query = query
+      , followState = Nothing
+      , followBusy = False
+      , profileEdit = Nothing
+      , actionError = Nothing
       }
     , fetchTask
         |> Task.attempt (GotProfile actingAccount)
@@ -126,6 +165,20 @@ update shared msg model =
                             Nothing ->
                                 []
                        )
+                    ++ (case AccountsPanel.activeBlueskyAccount shared.accounts of
+                            Just acting ->
+                                if Actions.isOwnBlueskyProfile acting profile.handle then
+                                    []
+
+                                else
+                                    [ Actions.fetchBlueskyFollowState acting profile.handle
+                                        |> Task.attempt GotFollowState
+                                        |> Effect.fromCmd
+                                    ]
+
+                            Nothing ->
+                                []
+                       )
                 )
             )
 
@@ -150,6 +203,113 @@ update shared msg model =
                 Nothing ->
                     ( model, Effect.none )
 
+        GotFollowState (Ok ( maybeAccountsPanelMsg, state )) ->
+            ( { model | followState = Just state }, forwardRotated maybeAccountsPanelMsg )
+
+        GotFollowState (Err _) ->
+            -- Not being able to tell just means no button.
+            ( model, Effect.none )
+
+        FollowClicked ->
+            case ( AccountsPanel.activeBlueskyAccount shared.accounts, model.followState ) of
+                ( Just acting, Just state ) ->
+                    ( { model | followBusy = True, actionError = Nothing }
+                    , Actions.setBlueskyFollowing (state.followUri == Nothing) acting state
+                        |> Task.attempt GotFollowResult
+                        |> Effect.fromCmd
+                    )
+
+                _ ->
+                    ( model, Effect.none )
+
+        GotFollowResult (Ok ( maybeAccountsPanelMsg, state )) ->
+            ( { model | followState = Just state, followBusy = False }, forwardRotated maybeAccountsPanelMsg )
+
+        GotFollowResult (Err err) ->
+            ( { model | followBusy = False, actionError = Just (Actions.writeErrorText err) }, Effect.none )
+
+        EditProfileClicked ->
+            case AccountsPanel.activeBlueskyAccount shared.accounts of
+                Just acting ->
+                    ( { model | profileEdit = Just { displayName = "", description = "", record = Nothing, saving = False }, actionError = Nothing }
+                    , Actions.fetchBlueskyOwnProfile acting
+                        |> Task.attempt GotOwnProfile
+                        |> Effect.fromCmd
+                    )
+
+                Nothing ->
+                    ( model, Effect.none )
+
+        GotOwnProfile (Ok ( maybeAccountsPanelMsg, record )) ->
+            ( { model
+                | profileEdit =
+                    model.profileEdit
+                        |> Maybe.map (\edit -> { edit | displayName = record.displayName, description = record.description, record = Just record })
+              }
+            , forwardRotated maybeAccountsPanelMsg
+            )
+
+        GotOwnProfile (Err err) ->
+            ( { model | profileEdit = Nothing, actionError = Just (Actions.writeErrorText err) }, Effect.none )
+
+        DisplayNameChanged text ->
+            ( { model | profileEdit = model.profileEdit |> Maybe.map (\edit -> { edit | displayName = text }) }, Effect.none )
+
+        DescriptionChanged text ->
+            ( { model | profileEdit = model.profileEdit |> Maybe.map (\edit -> { edit | description = text }) }, Effect.none )
+
+        SaveProfileClicked ->
+            case ( model.profileEdit, AccountsPanel.activeBlueskyAccount shared.accounts ) of
+                ( Just ({ record } as edit), Just acting ) ->
+                    case record of
+                        Just loadedRecord ->
+                            ( { model | profileEdit = Just { edit | saving = True }, actionError = Nothing }
+                            , Actions.updateBlueskyOwnProfile acting loadedRecord { displayName = edit.displayName, description = edit.description }
+                                |> Task.attempt GotProfileSaved
+                                |> Effect.fromCmd
+                            )
+
+                        Nothing ->
+                            ( model, Effect.none )
+
+                _ ->
+                    ( model, Effect.none )
+
+        CancelProfileClicked ->
+            ( { model | profileEdit = Nothing, actionError = Nothing }, Effect.none )
+
+        GotProfileSaved (Ok maybeAccountsPanelMsg) ->
+            ( { model | profileEdit = Nothing }
+            , Effect.batch
+                [ forwardRotated maybeAccountsPanelMsg
+                , case AccountsPanel.activeBlueskyAccount shared.accounts of
+                    Just acting ->
+                        BlueskyAccounts.performWithBlueskyAccount acting (\auth -> Bluesky.fetchActorProfile auth model.handle)
+                            |> Task.attempt GotRefreshedProfile
+                            |> Effect.fromCmd
+
+                    Nothing ->
+                        Effect.none
+                ]
+            )
+
+        GotProfileSaved (Err err) ->
+            ( { model
+                | profileEdit = model.profileEdit |> Maybe.map (\edit -> { edit | saving = False })
+                , actionError = Just (Actions.writeErrorText err)
+              }
+            , Effect.none
+            )
+
+        GotRefreshedProfile (Ok ( account, profile )) ->
+            -- Just the profile card -- the embedded posts list is left alone.
+            ( { model | profileStatus = ProfileLoaded profile }
+            , Effect.fromShared (Shared.AccountsPanelMsg (AccountsPanel.BlueskyAccountRefreshed account))
+            )
+
+        GotRefreshedProfile (Err _) ->
+            ( model, Effect.none )
+
         SharedMsgReceived subMsg ->
             -- See `Components.Mastodon.MastodonUserProfilePage.update`'s identical `SharedMsgReceived`
             -- doc -- the embedded `PostsPage` re-emits `Effect.fromShared subMsg` on its own once it
@@ -164,6 +324,13 @@ update shared msg model =
 
                 Nothing ->
                     ( model, Effect.fromShared subMsg )
+
+
+forwardRotated : Maybe AccountsPanel.Msg -> Effect Msg
+forwardRotated maybeAccountsPanelMsg =
+    maybeAccountsPanelMsg
+        |> Maybe.map (Shared.AccountsPanelMsg >> Effect.fromShared)
+        |> Maybe.withDefault Effect.none
 
 
 subscriptions : Model -> Sub Msg
@@ -205,6 +372,7 @@ view shared model =
                             ]
                         ]
                     ]
+                , profileActionsView shared model profile
                 , div [ class "profile-counts" ]
                     [ profileCountView Nothing "Posts" profile.postsCount
                     , profileCountView (Just (Users.followersHref "" shared.accounts.mainFrontendHost ("bluesky:" ++ profile.handle) profile.handle)) "Followers" profile.followersCount
@@ -224,6 +392,105 @@ view shared model =
                     Nothing ->
                         text ""
                 ]
+
+
+{-| Follow/Unfollow on someone else's profile, or "Edit Profile" (display name and bio) on the connected
+account's own -- nothing at all without a connected Bluesky account.
+-}
+profileActionsView : Shared.Model -> Model -> Bluesky.ActorProfile -> Html Msg
+profileActionsView shared model profile =
+    case AccountsPanel.activeBlueskyAccount shared.accounts of
+        Nothing ->
+            text ""
+
+        Just acting ->
+            div [ class "profile-actions" ]
+                [ if Actions.isOwnBlueskyProfile acting profile.handle then
+                    case model.profileEdit of
+                        Nothing ->
+                            button [ class "server-details-rename-button", onClick EditProfileClicked ] [ text "Edit Profile" ]
+
+                        Just edit ->
+                            profileEditForm edit
+
+                  else
+                    case model.followState of
+                        Just state ->
+                            let
+                                following : Bool
+                                following =
+                                    state.followUri /= Nothing
+                            in
+                            button
+                                [ classes
+                                    (if following then
+                                        [ "server-details-rename-button" ]
+
+                                     else
+                                        [ "server-details-rename-save", "background-color-primary" ]
+                                    )
+                                , onClick FollowClicked
+                                , disabled model.followBusy
+                                ]
+                                [ text
+                                    (if following then
+                                        "Unfollow"
+
+                                     else
+                                        "Follow"
+                                    )
+                                ]
+
+                        Nothing ->
+                            text ""
+                , case model.actionError of
+                    Just err ->
+                        div [ class "server-details-rename-error" ] [ text err ]
+
+                    Nothing ->
+                        text ""
+                ]
+
+
+profileEditForm : ProfileEdit -> Html Msg
+profileEditForm edit =
+    if edit.record == Nothing then
+        p [ class "post-loading" ] [ text "Loading…" ]
+
+    else
+        div [ class "server-details-federation-edit" ]
+            [ input
+                [ class "server-details-rename-input"
+                , value edit.displayName
+                , onInput DisplayNameChanged
+                , placeholder "Display name"
+                ]
+                []
+            , textarea
+                [ class "server-details-rename-input"
+                , value edit.description
+                , onInput DescriptionChanged
+                , placeholder "Bio"
+                , rows 4
+                ]
+                []
+            , div [ class "server-details-permissions-actions" ]
+                [ button
+                    [ classes [ "server-details-rename-save", "background-color-primary" ]
+                    , onClick SaveProfileClicked
+                    , disabled edit.saving
+                    ]
+                    [ text
+                        (if edit.saving then
+                            "Saving…"
+
+                         else
+                            "Save"
+                        )
+                    ]
+                , button [ class "server-details-rename-cancel", onClick CancelProfileClicked, disabled edit.saving ] [ text "Cancel" ]
+                ]
+            ]
 
 
 {-| Mirrors `Components.Pages.UserProfilePage.profileCountView` exactly (not exposed there, so

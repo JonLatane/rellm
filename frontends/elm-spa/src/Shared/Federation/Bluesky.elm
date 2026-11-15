@@ -1,5 +1,11 @@
 module Shared.Federation.Bluesky exposing
     ( ActorProfile
+    , FollowState
+    , OwnProfileRecord
+    , fetchFollowState
+    , fetchOwnProfileRecord
+    , setFollowing
+    , updateOwnProfileRecord
     , BlueskyImage
     , BlueskyVideo
     , FeedPost
@@ -1827,3 +1833,177 @@ isCombining code =
         || (code >= 0xFE00 && code <= 0xFE0F)
         || (code >= 0x0001F3FB && code <= 0x0001F3FF)
         || (code >= 0x000E0020 && code <= 0x000E007F)
+
+
+{-| Whether the connected account follows an actor: the actor's `did` (what a follow record points at) and
+the AT URI of the account's own follow record for it (`Nothing` when it isn't following).
+-}
+type alias FollowState =
+    { did : String
+    , followUri : Maybe String
+    }
+
+
+{-| `GET /xrpc/app.bsky.actor.getProfile` for `handle`, read as the connected account so `viewer.following`
+is filled in.
+-}
+fetchFollowState : BlueskyAuth -> String -> Task Http.Error FollowState
+fetchFollowState auth handle =
+    Http.task
+        { method = "GET"
+        , headers = readHeaders auth
+        , url = readHost auth ++ "/xrpc/app.bsky.actor.getProfile?actor=" ++ Url.percentEncode handle
+        , body = Http.emptyBody
+        , resolver =
+            jsonResolver
+                (Decode.map2 FollowState
+                    (Decode.field "did" Decode.string)
+                    (Decode.maybe (Decode.at [ "viewer", "following" ] Decode.string))
+                )
+                (\metadata _ -> Http.BadStatus metadata.statusCode)
+        , timeout = Just 10000
+        }
+
+
+{-| Follows (`True`) or unfollows (`False`) the actor in `state`, as `repo` (the connected account's handle):
+a follow is an `app.bsky.graph.follow` record created in the account's repo (via
+`com.atproto.repo.createRecord`, whose answer carries the new record's URI); an unfollow `deleteRecord`s the
+`rkey` of the existing one. A no-op if already in the requested state. Needs an App Password with default
+(non-read-only) access, which is what Rellm's connect form always asks for.
+-}
+setFollowing : Bool -> String -> BlueskyAuth -> FollowState -> Task Http.Error FollowState
+setFollowing follow repo auth state =
+    case ( follow, state.followUri ) of
+        ( True, Nothing ) ->
+            Time.now
+                |> Task.andThen
+                    (\now ->
+                        Http.task
+                            { method = "POST"
+                            , headers = readHeaders auth
+                            , url = readHost auth ++ "/xrpc/com.atproto.repo.createRecord"
+                            , body =
+                                Http.jsonBody
+                                    (Encode.object
+                                        [ ( "repo", Encode.string repo )
+                                        , ( "collection", Encode.string "app.bsky.graph.follow" )
+                                        , ( "record"
+                                          , Encode.object
+                                                [ ( "$type", Encode.string "app.bsky.graph.follow" )
+                                                , ( "subject", Encode.string state.did )
+                                                , ( "createdAt", Encode.string (Iso8601.fromTime now) )
+                                                ]
+                                          )
+                                        ]
+                                    )
+                            , resolver = jsonResolver (Decode.field "uri" Decode.string) (\metadata _ -> Http.BadStatus metadata.statusCode)
+                            , timeout = Just 10000
+                            }
+                    )
+                |> Task.map (\uri -> { state | followUri = Just uri })
+
+        ( False, Just followUri ) ->
+            repoWrite auth
+                "deleteRecord"
+                (Encode.object
+                    [ ( "repo", Encode.string repo )
+                    , ( "collection", Encode.string "app.bsky.graph.follow" )
+                    , ( "rkey", Encode.string (followUri |> String.split "/" |> List.reverse |> List.head |> Maybe.withDefault "") )
+                    ]
+                )
+                |> Task.map (\() -> { state | followUri = Nothing })
+
+        _ ->
+            Task.succeed state
+
+
+{-| The connected account's own `app.bsky.actor.profile` record: the editable `displayName`/`description`
+as plain text, plus every other field it holds (avatar/banner blobs and so on, kept verbatim so saving
+doesn't drop them) and the record's `cid`, for `updateOwnProfileRecord`'s compare-and-swap.
+-}
+type alias OwnProfileRecord =
+    { displayName : String
+    , description : String
+    , otherFields : List ( String, Decode.Value )
+    , cid : Maybe String
+    }
+
+
+{-| `GET /xrpc/com.atproto.repo.getRecord` for the account's `self` profile record. An account that never
+set a profile has none (a 400/404): that reads as an empty one.
+-}
+fetchOwnProfileRecord : String -> BlueskyAuth -> Task Http.Error OwnProfileRecord
+fetchOwnProfileRecord repo auth =
+    Http.task
+        { method = "GET"
+        , headers = readHeaders auth
+        , url =
+            readHost auth
+                ++ "/xrpc/com.atproto.repo.getRecord?repo="
+                ++ Url.percentEncode repo
+                ++ "&collection=app.bsky.actor.profile&rkey=self"
+        , body = Http.emptyBody
+        , resolver =
+            jsonResolver
+                (Decode.map2
+                    (\fields cid ->
+                        { displayName = fields |> List.filter (\( key, _ ) -> key == "displayName") |> List.head |> Maybe.andThen (Tuple.second >> Decode.decodeValue Decode.string >> Result.toMaybe) |> Maybe.withDefault ""
+                        , description = fields |> List.filter (\( key, _ ) -> key == "description") |> List.head |> Maybe.andThen (Tuple.second >> Decode.decodeValue Decode.string >> Result.toMaybe) |> Maybe.withDefault ""
+                        , otherFields = fields |> List.filter (\( key, _ ) -> key /= "displayName" && key /= "description")
+                        , cid = cid
+                        }
+                    )
+                    (Decode.field "value" (Decode.keyValuePairs Decode.value))
+                    (Decode.maybe (Decode.field "cid" Decode.string))
+                )
+                (\metadata _ -> Http.BadStatus metadata.statusCode)
+        , timeout = Just 10000
+        }
+        |> Task.onError
+            (\err ->
+                case err of
+                    Http.BadStatus status ->
+                        if status == 400 || status == 404 then
+                            Task.succeed { displayName = "", description = "", otherFields = [], cid = Nothing }
+
+                        else
+                            Task.fail err
+
+                    _ ->
+                        Task.fail err
+            )
+
+
+{-| `POST /xrpc/com.atproto.repo.putRecord` -- replaces the account's `self` profile record with a new
+`displayName`/`description` (blank ones are left out), keeping `record.otherFields` as they were and
+swapping against `record.cid` so a profile edited elsewhere in the meantime isn't silently overwritten.
+-}
+updateOwnProfileRecord : String -> BlueskyAuth -> OwnProfileRecord -> { displayName : String, description : String } -> Task Http.Error ()
+updateOwnProfileRecord repo auth record { displayName, description } =
+    let
+        textField : String -> String -> List ( String, Encode.Value )
+        textField key value =
+            if String.isEmpty (String.trim value) then
+                []
+
+            else
+                [ ( key, Encode.string value ) ]
+    in
+    repoWrite auth
+        "putRecord"
+        (Encode.object
+            ([ ( "repo", Encode.string repo )
+             , ( "collection", Encode.string "app.bsky.actor.profile" )
+             , ( "rkey", Encode.string "self" )
+             , ( "record"
+               , Encode.object
+                    (( "$type", Encode.string "app.bsky.actor.profile" )
+                        :: textField "displayName" displayName
+                        ++ textField "description" description
+                        ++ (record.otherFields |> List.filter (\( key, _ ) -> key /= "$type"))
+                    )
+               )
+             ]
+                ++ (record.cid |> Maybe.map (\cid -> [ ( "swapRecord", Encode.string cid ) ]) |> Maybe.withDefault [])
+            )
+        )
