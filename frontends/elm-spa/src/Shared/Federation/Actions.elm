@@ -7,7 +7,13 @@ module Shared.Federation.Actions exposing
     , postWebUrl
     , usableAccounts
     , deletePost
+    , MastodonProfileTarget
     , editPost
+    , fetchMastodonFollowState
+    , fetchMastodonOwnProfile
+    , isOwnMastodonProfile
+    , setMastodonFollowing
+    , updateMastodonOwnProfile
     , isOwnPost
     , ownAccountFor
     , reply
@@ -218,7 +224,7 @@ writeErrorText : Http.Error -> String
 writeErrorText err =
     case err of
         Http.BadStatus 403 ->
-            "Not allowed. If this is a Mastodon account connected before posting was supported, disconnect and reconnect it to grant permission."
+            "Not allowed. If this is a Mastodon account connected before this permission (posting, following, profile editing) was requested, disconnect and reconnect it to grant it."
 
         Http.BadStatus 401 ->
             "Your account was signed out. Reconnect it in the Accounts Panel."
@@ -298,3 +304,71 @@ createPost account visibility text =
 postWebUrl : String -> String -> String
 postWebUrl handle uri =
     "https://bsky.app/profile/" ++ handle ++ "/post/" ++ (uri |> String.split "/" |> List.reverse |> List.head |> Maybe.withDefault "")
+
+
+{-| A Mastodon profile being viewed: the instance it lives on, its bare `username`, and its account id there.
+-}
+type alias MastodonProfileTarget =
+    { instanceHost : String
+    , username : String
+    , accountId : String
+    }
+
+
+{-| Whether `account` is the very account `target` is the profile of.
+-}
+isOwnMastodonProfile : MastodonAccount -> MastodonProfileTarget -> Bool
+isOwnMastodonProfile account target =
+    account.instanceHost == target.instanceHost && String.toLower account.username == String.toLower target.username
+
+
+{-| `target`'s account id on `account`'s own instance -- the same id when it lives there, otherwise looked up
+(federating it in if need be).
+-}
+targetIdOn : MastodonAccount -> String -> MastodonProfileTarget -> Task Http.Error String
+targetIdOn account token target =
+    if account.instanceHost == target.instanceHost then
+        Task.succeed target.accountId
+
+    else
+        Mastodon.resolveAccountId account.instanceHost token (target.username ++ "@" ++ target.instanceHost)
+
+
+{-| How `account` currently relates to `target` (following / follow requested).
+-}
+fetchMastodonFollowState : MastodonAccount -> MastodonProfileTarget -> Task Http.Error ( Maybe AccountsPanel.Msg, Mastodon.Relationship )
+fetchMastodonFollowState account target =
+    MastodonAccounts.performWithMastodonAccount account
+        (\token ->
+            targetIdOn account token target
+                |> Task.andThen (Mastodon.fetchRelationship account.instanceHost token)
+        )
+        |> Task.map (\( refreshed, relationship ) -> ( rotatedMastodon account refreshed, relationship ))
+
+
+{-| Has `account` follow (`True`) or unfollow (`False`) `target`.
+-}
+setMastodonFollowing : Bool -> MastodonAccount -> MastodonProfileTarget -> Task Http.Error ( Maybe AccountsPanel.Msg, Mastodon.Relationship )
+setMastodonFollowing follow account target =
+    MastodonAccounts.performWithMastodonAccount account
+        (\token ->
+            targetIdOn account token target
+                |> Task.andThen (Mastodon.setFollowing follow account.instanceHost token)
+        )
+        |> Task.map (\( refreshed, relationship ) -> ( rotatedMastodon account refreshed, relationship ))
+
+
+{-| `account`'s current display name and plain-text bio, to start editing its profile from.
+-}
+fetchMastodonOwnProfile : MastodonAccount -> Task Http.Error ( Maybe AccountsPanel.Msg, Mastodon.OwnProfile )
+fetchMastodonOwnProfile account =
+    MastodonAccounts.performWithMastodonAccount account (Mastodon.fetchOwnProfile account.instanceHost)
+        |> Task.map (\( refreshed, profile ) -> ( rotatedMastodon account refreshed, profile ))
+
+
+{-| Saves a new display name and bio on `account`'s own profile.
+-}
+updateMastodonOwnProfile : MastodonAccount -> Mastodon.OwnProfile -> Task Http.Error (Maybe AccountsPanel.Msg)
+updateMastodonOwnProfile account profile =
+    MastodonAccounts.performWithMastodonAccount account (\token -> Mastodon.updateOwnProfile account.instanceHost token profile)
+        |> Task.map (\( refreshed, () ) -> rotatedMastodon account refreshed)

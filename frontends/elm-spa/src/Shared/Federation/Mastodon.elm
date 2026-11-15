@@ -1,5 +1,12 @@
 module Shared.Federation.Mastodon exposing
     ( Account
+    , OwnProfile
+    , Relationship
+    , fetchOwnProfile
+    , fetchRelationship
+    , resolveAccountId
+    , setFollowing
+    , updateOwnProfile
     , MastodonVisibility(..)
     , allVisibilities
     , deleteStatus
@@ -1017,6 +1024,145 @@ deleteStatus instanceHost accessToken statusId =
         , headers = authHeaders accessToken
         , url = "https://" ++ instanceHost ++ "/api/v1/statuses/" ++ statusId
         , body = Http.emptyBody
+        , resolver = jsonResolver (Decode.succeed ()) (\metadata _ -> Http.BadStatus metadata.statusCode)
+        , timeout = Just 10000
+        }
+
+
+{-| What the connected account's follow relationship to another account is -- `requested` is a follow
+request still waiting on a locked account's approval.
+-}
+type alias Relationship =
+    { following : Bool
+    , requested : Bool
+    }
+
+
+relationshipDecoder : Decoder Relationship
+relationshipDecoder =
+    Decode.map2 Relationship
+        (Decode.oneOf [ Decode.field "following" Decode.bool, Decode.succeed False ])
+        (Decode.oneOf [ Decode.field "requested" Decode.bool, Decode.succeed False ])
+
+
+{-| `GET /api/v2/search?type=accounts&resolve=true` for `acct` (`user@host`) -- the id that account has on
+`instanceHost`, which is what that instance's follow endpoints need (an account id is only meaningful to
+the instance it came from, like a status id -- see `resolveStatusId`).
+-}
+resolveAccountId : String -> String -> String -> Task Http.Error String
+resolveAccountId instanceHost accessToken acct =
+    Http.task
+        { method = "GET"
+        , headers = authHeaders accessToken
+        , url = "https://" ++ instanceHost ++ "/api/v2/search?type=accounts&resolve=true&limit=1&q=" ++ Url.percentEncode acct
+        , body = Http.emptyBody
+        , resolver =
+            jsonResolver
+                (Decode.field "accounts" (Decode.list (Decode.field "id" Decode.string))
+                    |> Decode.andThen
+                        (\ids ->
+                            case ids of
+                                first :: _ ->
+                                    Decode.succeed first
+
+                                [] ->
+                                    Decode.fail "account not found"
+                        )
+                )
+                (\metadata _ -> Http.BadStatus metadata.statusCode)
+        , timeout = Just 10000
+        }
+
+
+{-| `GET /api/v1/accounts/relationships` for `accountId` (on `instanceHost`) -- covered by the `read` scope.
+-}
+fetchRelationship : String -> String -> String -> Task Http.Error Relationship
+fetchRelationship instanceHost accessToken accountId =
+    Http.task
+        { method = "GET"
+        , headers = authHeaders accessToken
+        , url = "https://" ++ instanceHost ++ "/api/v1/accounts/relationships?id%5B%5D=" ++ Url.percentEncode accountId
+        , body = Http.emptyBody
+        , resolver =
+            jsonResolver
+                (Decode.list relationshipDecoder
+                    |> Decode.andThen
+                        (\relationships ->
+                            case relationships of
+                                first :: _ ->
+                                    Decode.succeed first
+
+                                [] ->
+                                    Decode.fail "no relationship"
+                        )
+                )
+                (\metadata _ -> Http.BadStatus metadata.statusCode)
+        , timeout = Just 10000
+        }
+
+
+{-| `POST /api/v1/accounts/:id/follow` (or `/unfollow`) -- needs the `write:follows` OAuth scope (see
+`public/index.html`'s authorize URL); a token connected before it was requested gets a 403. Resolves to
+the new relationship (a locked account answers `requested`, not `following`).
+-}
+setFollowing : Bool -> String -> String -> String -> Task Http.Error Relationship
+setFollowing follow instanceHost accessToken accountId =
+    Http.task
+        { method = "POST"
+        , headers = authHeaders accessToken
+        , url = "https://" ++ instanceHost ++ "/api/v1/accounts/" ++ accountId ++ "/" ++ (if follow then "follow" else "unfollow")
+        , body = Http.emptyBody
+        , resolver = jsonResolver relationshipDecoder (\metadata _ -> Http.BadStatus metadata.statusCode)
+        , timeout = Just 10000
+        }
+
+
+{-| The editable parts of the connected account's own profile, as plain text (`note` is `source.note` -- the
+bio as written, not the HTML it renders to).
+-}
+type alias OwnProfile =
+    { displayName : String
+    , note : String
+    }
+
+
+{-| `GET /api/v1/accounts/verify_credentials` -- the connected account's current display name and plain-text
+bio, to start an edit from. Covered by the `read` scope.
+-}
+fetchOwnProfile : String -> String -> Task Http.Error OwnProfile
+fetchOwnProfile instanceHost accessToken =
+    Http.task
+        { method = "GET"
+        , headers = authHeaders accessToken
+        , url = "https://" ++ instanceHost ++ "/api/v1/accounts/verify_credentials"
+        , body = Http.emptyBody
+        , resolver =
+            jsonResolver
+                (Decode.map2 OwnProfile
+                    (Decode.oneOf [ Decode.field "display_name" Decode.string, Decode.succeed "" ])
+                    (Decode.oneOf [ Decode.at [ "source", "note" ] Decode.string, Decode.succeed "" ])
+                )
+                (\metadata _ -> Http.BadStatus metadata.statusCode)
+        , timeout = Just 10000
+        }
+
+
+{-| `PATCH /api/v1/accounts/update_credentials` with a new display name and bio -- needs the `write:accounts`
+OAuth scope (see `public/index.html`'s authorize URL); a token connected before it was requested gets a 403.
+-}
+updateOwnProfile : String -> String -> OwnProfile -> Task Http.Error ()
+updateOwnProfile instanceHost accessToken profile =
+    Http.task
+        { method = "PATCH"
+        , headers = authHeaders accessToken
+        , url = "https://" ++ instanceHost ++ "/api/v1/accounts/update_credentials"
+        , body =
+            Http.jsonBody
+                (Encode.object
+                    [ ( "display_name", Encode.string profile.displayName )
+                    , ( "note", Encode.string profile.note )
+                    ]
+                )
         , resolver = jsonResolver (Decode.succeed ()) (\metadata _ -> Http.BadStatus metadata.statusCode)
         , timeout = Just 10000
         }
