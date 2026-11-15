@@ -1,0 +1,278 @@
+//! Specs for Rellm Subdomains (`logic::subdomains`, `rpcs::subdomain_rpcs`, `SaveMarketSubscription`):
+//! host -> subscription resolution, the feed scoping the `share_content_from_*` toggles drive, and what
+//! the subscriber may save. Stripe/fulfillment isn't involved -- the subscription row is inserted directly.
+
+use std::time::SystemTime;
+
+use diesel::prelude::*;
+use diesel::Connection;
+use tonic::{Code, Status};
+
+use crate::logic::subdomains::{resolve_subdomain, SubdomainContext};
+use crate::marshaling::*;
+use crate::models;
+use crate::protos::*;
+use crate::rpcs::{create_market_product, get_posts_for, save_market_subscription};
+use crate::schema::server_configurations;
+use crate::tests::factories::*;
+
+const FRONTEND_HOST: &str = "bullcity.test";
+
+fn configure_frontend_host(conn: &mut crate::db_connection::PgPooledConnection) {
+    let mut new_config = models::default_server_configuration();
+    new_config.external_cdn_config = Some(
+        serde_json::to_value(ExternalCdnConfig { frontend_host: FRONTEND_HOST.to_string(), ..Default::default() })
+            .unwrap(),
+    );
+    diesel::insert_into(server_configurations::table)
+        .values(&new_config)
+        .execute(conn)
+        .expect("failed to create test server configuration");
+}
+
+/// An active `PURCHASE_TYPE_SUBDOMAIN` subscription for `owner` (admin `admin` creates the product).
+fn subscribe(
+    conn: &mut crate::db_connection::PgPooledConnection,
+    admin: &models::User,
+    owner: &models::User,
+    settings: SubdomainSettings,
+) -> models::MarketSubscription {
+    let product = create_market_product(
+        MarketProduct {
+            r#type: PurchaseType::Subdomain as i32,
+            period: PurchasePeriod::Monthly as i32,
+            amount: 300,
+            currency: 840,
+            details: Some(market_product::Details::SubdomainSubscriptionDetails(Default::default())),
+            ..Default::default()
+        },
+        admin,
+        conn,
+    )
+    .expect("failed to create subdomain product");
+    let mut details = crate::logic::subdomains::new_subscription_details_json(owner);
+    let mut parsed: SubdomainSubscriptionDetails = serde_json::from_value(details.clone()).unwrap();
+    let mut merged = parsed.settings.take().unwrap();
+    merged.share_content_from_followers = settings.share_content_from_followers;
+    merged.share_content_from_following = settings.share_content_from_following;
+    merged.share_content_from_friends = settings.share_content_from_friends;
+    parsed.settings = Some(merged);
+    details = serde_json::to_value(parsed).unwrap();
+    models::insert_market_subscription(
+        &models::NewMarketSubscription {
+            buyer_id: owner.id,
+            product_id: product.id.to_db_id().unwrap(),
+            product_type: PurchaseType::Subdomain.to_string_purchase_type(),
+            period: PurchasePeriod::Monthly.to_string_purchase_period(),
+            amount: 300,
+            currency: 840,
+            details,
+            renews_at: Some(SystemTime::now() + std::time::Duration::from_secs(86_400)),
+            stripe_customer_id: None,
+            stripe_payment_method_id: None,
+        },
+        conn,
+    )
+    .expect("failed to create subdomain subscription")
+}
+
+fn public_post(conn: &mut crate::db_connection::PgPooledConnection, author: &models::User) -> String {
+    create_post(conn, Some(author), PostOpts { visibility: Visibility::GlobalPublic, ..Default::default() })
+        .id
+        .to_proto_id()
+}
+
+fn scope(conn: &mut crate::db_connection::PgPooledConnection, host: &str) -> Option<SubdomainContext> {
+    resolve_subdomain(Some(host), conn).expect("resolve_subdomain failed")
+}
+
+fn feed(conn: &mut crate::db_connection::PgPooledConnection, scope: &Option<SubdomainContext>) -> Vec<String> {
+    let mut ids: Vec<String> = get_posts_for(GetPostsRequest::default(), &None, scope, conn)
+        .expect("get_posts_for failed")
+        .posts
+        .into_iter()
+        .map(|p| p.id)
+        .collect();
+    ids.sort();
+    ids
+}
+
+fn sorted(mut ids: Vec<String>) -> Vec<String> {
+    ids.sort();
+    ids
+}
+
+#[test]
+fn host_resolves_to_the_owners_active_subscription() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, Status, _>(|conn| {
+        configure_frontend_host(conn);
+        let admin_user = create_user(conn, "sd_admin");
+        let admin = grant_permissions(conn, &admin_user, vec![Permission::Admin]);
+        let owner = create_user(conn, "sdjon");
+        let subscription = subscribe(conn, &admin, &owner, SubdomainSettings::default());
+
+        let context = scope(conn, "sdjon.bullcity.test").expect("subdomain should resolve");
+        assert_eq!(context.owner.id, owner.id);
+        assert_eq!(context.settings.subdomain, "sdjon");
+        assert_eq!(context.settings.subdomain_of, owner.id.to_proto_id());
+        assert!(scope(conn, "bullcity.test").is_none(), "the parent host is not a subdomain");
+        assert!(scope(conn, "nobody.bullcity.test").is_none(), "unsubscribed label");
+        assert!(scope(conn, "sdjon.elsewhere.test").is_none(), "wrong parent");
+
+        // Canceled with the paid period over -> stops resolving.
+        diesel::update(crate::schema::market_subscriptions::table.find(subscription.id))
+            .set((
+                crate::schema::market_subscriptions::canceled_at.eq(Some(SystemTime::now())),
+                crate::schema::market_subscriptions::renews_at.eq(Some(SystemTime::now() - std::time::Duration::from_secs(60))),
+            ))
+            .execute(conn)
+            .unwrap();
+        assert!(scope(conn, "sdjon.bullcity.test").is_none());
+        Ok(())
+    });
+}
+
+#[test]
+fn feed_is_scoped_to_the_owner_plus_what_the_toggles_share() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, Status, _>(|conn| {
+        configure_frontend_host(conn);
+        let admin_user = create_user(conn, "sd2_admin");
+        let admin = grant_permissions(conn, &admin_user, vec![Permission::Admin]);
+        let owner = create_user(conn, "sd2owner");
+        let follower = create_user(conn, "sd2follower"); // follows owner only
+        let following = create_user(conn, "sd2following"); // followed by owner only
+        let friend = create_user(conn, "sd2friend"); // both
+        let stranger = create_user(conn, "sd2stranger");
+        create_follow(conn, &follower, &owner);
+        create_follow(conn, &owner, &following);
+        create_follow(conn, &friend, &owner);
+        create_follow(conn, &owner, &friend);
+
+        let own = public_post(conn, &owner);
+        let followers_post = public_post(conn, &follower);
+        let following_post = public_post(conn, &following);
+        let friends_post = public_post(conn, &friend);
+        let _strangers_post = public_post(conn, &stranger);
+
+        let subscription = subscribe(conn, &admin, &owner, SubdomainSettings::default());
+        let host = "sd2owner.bullcity.test";
+
+        // Nothing shared: only the owner's own content.
+        let context = scope(conn, host);
+        assert_eq!(feed(conn, &context), vec![own.clone()]);
+
+        let set = |conn: &mut crate::db_connection::PgPooledConnection, followers, following_, friends| {
+            diesel::update(crate::schema::market_subscriptions::table.find(subscription.id))
+                .set(crate::schema::market_subscriptions::details.eq(
+                    serde_json::to_value(SubdomainSubscriptionDetails {
+                        settings: Some(SubdomainSettings {
+                            subdomain_of: owner.id.to_proto_id(),
+                            subdomain: "sd2owner".to_string(),
+                            share_content_from_followers: followers,
+                            share_content_from_following: following_,
+                            share_content_from_friends: friends,
+                            custom_css_configuration: None,
+                        }),
+                        ..Default::default()
+                    })
+                    .unwrap(),
+                ))
+                .execute(conn)
+                .unwrap();
+        };
+
+        set(conn, true, false, false);
+        let context = scope(conn, host);
+        assert_eq!(feed(conn, &context), sorted(vec![own.clone(), followers_post.clone(), friends_post.clone()]));
+        set(conn, false, true, false);
+        let context = scope(conn, host);
+        assert_eq!(feed(conn, &context), sorted(vec![own.clone(), following_post.clone(), friends_post.clone()]));
+        set(conn, false, false, true);
+        let context = scope(conn, host);
+        assert_eq!(feed(conn, &context), sorted(vec![own.clone(), friends_post.clone()]));
+
+        // No subdomain scope at all: everything, as before.
+        assert_eq!(feed(conn, &None).len(), 5);
+        Ok(())
+    });
+}
+
+#[test]
+fn virtual_configuration_describes_the_owner_and_hides_irrelevant_tabs() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, Status, _>(|conn| {
+        configure_frontend_host(conn);
+        let admin_user = create_user(conn, "sd3_admin");
+        let admin = grant_permissions(conn, &admin_user, vec![Permission::Admin]);
+        let owner = create_user(conn, "sd3owner");
+        subscribe(conn, &admin, &owner, SubdomainSettings::default());
+
+        let context = scope(conn, "sd3owner.bullcity.test").unwrap();
+        let config = crate::rpcs::get_server_configuration_for((), &None, &Some(context), conn)?;
+        assert_eq!(config.subdomain_settings.as_ref().unwrap().subdomain, "sd3owner");
+        assert_eq!(config.server_info.unwrap().short_name.as_deref(), Some("sd3owner"));
+        assert!(!config.people_settings.unwrap().visible);
+        // The parent's CDN configuration is shared.
+        assert_eq!(config.external_cdn_config.unwrap().frontend_host, FRONTEND_HOST);
+        Ok(())
+    });
+}
+
+#[test]
+fn only_the_buyer_saves_and_a_missing_stylesheet_is_kept() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, Status, _>(|conn| {
+        configure_frontend_host(conn);
+        let admin_user = create_user(conn, "sd4_admin");
+        let admin = grant_permissions(conn, &admin_user, vec![Permission::Admin]);
+        let owner = create_user(conn, "sd4owner");
+        let other = create_user(conn, "sd4other");
+        let subscription = subscribe(conn, &admin, &owner, SubdomainSettings::default());
+        let id = subscription.id.to_proto_id();
+
+        let request = |css: Option<CustomCssConfiguration>| SaveMarketSubscriptionRequest {
+            market_subscription_id: id.clone(),
+            subdomain_settings: Some(SubdomainSettings {
+                subdomain: "hijacked".to_string(),
+                share_content_from_friends: true,
+                custom_css_configuration: css,
+                ..Default::default()
+            }),
+        };
+
+        // Someone else -- even an admin -- can't.
+        assert_eq!(save_market_subscription(request(None), &other, conn).unwrap_err().code(), Code::PermissionDenied);
+        assert_eq!(save_market_subscription(request(None), &admin, conn).unwrap_err().code(), Code::PermissionDenied);
+
+        // The buyer can: the CSS is stored, the label stays server-assigned.
+        let saved = save_market_subscription(
+            request(Some(CustomCssConfiguration { custom_css: Some("body { color: red }".to_string()), ..Default::default() })),
+            &owner,
+            conn,
+        )?;
+        let settings = Some(market_subscription::Details::SubdomainSubscriptionDetails(Default::default()))
+            .and(saved.details)
+            .map(|d| match d {
+                market_subscription::Details::SubdomainSubscriptionDetails(d) => d.settings.unwrap(),
+                _ => panic!("wrong details"),
+            })
+            .unwrap();
+        assert_eq!(settings.subdomain, "sd4owner");
+        assert!(settings.share_content_from_friends);
+        assert_eq!(settings.custom_css_configuration.unwrap().custom_css.as_deref(), Some("body { color: red }"));
+
+        // An empty id means "my subdomain subscription"; no CSS in the request keeps the stored text.
+        let mut keep = request(None);
+        keep.market_subscription_id = String::new();
+        save_market_subscription(keep, &owner, conn)?;
+        let context = scope(conn, "sd4owner.bullcity.test").unwrap();
+        assert_eq!(context.custom_css_configuration().custom_css.as_deref(), Some("body { color: red }"));
+
+        // Oversized CSS is rejected like ConfigureCustomCSS.
+        let too_big = CustomCssConfiguration { custom_css: Some("a".repeat(70 * 1024)), ..Default::default() };
+        assert_eq!(save_market_subscription(request(Some(too_big)), &owner, conn).unwrap_err().code(), Code::InvalidArgument);
+        Ok(())
+    });
+}

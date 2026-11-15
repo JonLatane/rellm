@@ -4327,7 +4327,8 @@ encodeSaveMarketSubscriptionRequest =
 
 ### marketSubscriptionId
 
- The ID of the buyer's own `PURCHASE_TYPE_SUBDOMAIN` subscription.
+ The ID of the buyer's own `PURCHASE_TYPE_SUBDOMAIN` subscription. May be empty, meaning "my active subdomain
+ subscription" (a subdomain's own pages don't know the ID -- see `ServerConfiguration.subdomain_settings`).
 
 
 ### subdomainSettings

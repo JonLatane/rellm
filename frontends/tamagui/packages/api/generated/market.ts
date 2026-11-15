@@ -1140,7 +1140,10 @@ export interface SubdomainPurchaseDetails {
 
 /** Request for [`SaveMarketSubscription`](#grpc-api-SaveMarketSubscription). */
 export interface SaveMarketSubscriptionRequest {
-  /** The ID of the buyer's own `PURCHASE_TYPE_SUBDOMAIN` subscription. */
+  /**
+   * The ID of the buyer's own `PURCHASE_TYPE_SUBDOMAIN` subscription. May be empty, meaning "my active subdomain
+   * subscription" (a subdomain's own pages don't know the ID -- see `ServerConfiguration.subdomain_settings`).
+   */
   marketSubscriptionId: string;
   /**
    * The new settings. Only `share_content_from_followers`/`_following`/`_friends` and `custom_css_configuration`
