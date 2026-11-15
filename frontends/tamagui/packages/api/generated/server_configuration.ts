@@ -33,6 +33,14 @@ export enum ClusterResource {
   CLUSTER_RESOURCE_BROWSER = 0,
   CLUSTER_RESOURCE_FFMPEG = 1,
   CLUSTER_RESOURCE_IMAGEMAGICK = 2,
+  /**
+   * CLUSTER_RESOURCE_EMBEDDINGS - Running the text-embedding model (ONNX Runtime) for semantic search -- the `generate_embeddings`
+   * job (see `SearchSettings`). Loading the model takes a few hundred MB of RAM and embedding keeps
+   * CPU cores busy, which small shared nodes can't afford for several instances at once. Each run
+   * holds this only while it's actually embedding text (never for a run with nothing to do), and is
+   * capped to a few minutes of work, so a backlog is worked down over many runs that take turns.
+   */
+  CLUSTER_RESOURCE_EMBEDDINGS = 3,
   UNRECOGNIZED = -1,
 }
 
@@ -47,6 +55,9 @@ export function clusterResourceFromJSON(object: any): ClusterResource {
     case 2:
     case "CLUSTER_RESOURCE_IMAGEMAGICK":
       return ClusterResource.CLUSTER_RESOURCE_IMAGEMAGICK;
+    case 3:
+    case "CLUSTER_RESOURCE_EMBEDDINGS":
+      return ClusterResource.CLUSTER_RESOURCE_EMBEDDINGS;
     case -1:
     case "UNRECOGNIZED":
     default:
@@ -62,6 +73,8 @@ export function clusterResourceToJSON(object: ClusterResource): string {
       return "CLUSTER_RESOURCE_FFMPEG";
     case ClusterResource.CLUSTER_RESOURCE_IMAGEMAGICK:
       return "CLUSTER_RESOURCE_IMAGEMAGICK";
+    case ClusterResource.CLUSTER_RESOURCE_EMBEDDINGS:
+      return "CLUSTER_RESOURCE_EMBEDDINGS";
     case ClusterResource.UNRECOGNIZED:
     default:
       return "UNRECOGNIZED";
@@ -631,6 +644,15 @@ export interface ServerConfiguration {
     | MarketSettings
     | undefined;
   /**
+   * Search behavior across Posts, Events, Media and People/profiles -- see
+   * [`SearchSettings`](#rellm-SearchSettings). Publicly readable (clients can tell whether a search
+   * on this server is semantically ranked). Unset on read never happens: servers that predate this
+   * field report the default (`semantic_search_enabled: true`).
+   */
+  searchSettings:
+    | SearchSettings
+    | undefined;
+  /**
    * If set, enables External CDN support for the server. This means that the
    * non-secure HTTP server (on port 80) will *not* redirect to the secure server,
    * and instead serve up Tamagui Web/Flutter clients directly. This allows you
@@ -831,7 +853,7 @@ export interface ClusterConductorState {
   locks: ClusterResourceLock[];
   /**
    * How many distinct namespaces may concurrently hold each `ClusterResource`'s lock - e.g. only
-   * one headless browser at a time, but a handful of `ffmpeg`/ImageMagick conversions in parallel
+   * one headless browser (or embedding run) at a time, but a handful of `ffmpeg`/ImageMagick conversions in parallel
    * across the cluster, since those are far lighter-weight. Any `ClusterResource` not present here
    * - including on a cluster that's never had `ConfigureServer` touch `limits` at all - defaults
    * to `1` (see `ClusterTab.elm`'s matching client-side default, shown/edited there as "Browser
@@ -1085,6 +1107,37 @@ export interface MarketSettings {
    * admin-only.
    */
   stripeConfigured: boolean;
+}
+
+/** Search settings for a server. Edited on the Server Information page's Settings tab. */
+export interface SearchSettings {
+  /**
+   * Whether this server builds and uses text embeddings for search. Defaults to `true`.
+   *
+   * When enabled:
+   * - the `generate_embeddings` background job downloads a small local embedding model (once; see
+   *   `RELLM_EMBEDDING_CACHE_DIR`) and keeps embeddings up to date for Posts (`post_embeddings`),
+   *   Events (`event_embeddings` -- the Event's Post plus its Occasions' times/places), Media
+   *   (`media_embeddings`) and User profiles (`user_profile_embeddings`). Every embedding is made
+   *   from the very same text Postgres full-text search indexes (title, content, names, ...).
+   * - `TEXT_SEARCH`-style listings in `GetPosts`, `GetEvents`, `GetMedia` and `GetUsers` also
+   *   consider semantically similar results (not just prefix matches) and rerank by fusing the
+   *   full-text rank with embedding similarity.
+   *
+   * When disabled, the job does nothing, the server never loads the model, and search is plain
+   * Postgres full-text search, exactly as before. Existing embeddings are kept (re-enabling resumes
+   * where it left off). If the model can't be downloaded/loaded, search silently falls back to
+   * full-text only.
+   */
+  semanticSearchEnabled: boolean;
+  /**
+   * Which embedding model this server runs, e.g. "paraphrase-multilingual-MiniLM-L12-v2 (quantized,
+   * 384 dimensions)". Read-only: always filled in by the server on `GetServerConfiguration` (it
+   * describes the running software, so it's not stored) and ignored by `ConfigureServer`. Shown on
+   * the Settings tab so admins know exactly what is downloaded and run. Changing the model
+   * re-embeds everything.
+   */
+  embeddingModel: string;
 }
 
 /**
@@ -1655,6 +1708,7 @@ function createBaseServerConfiguration(): ServerConfiguration {
     eventSettings: undefined,
     mediaSettings: undefined,
     marketSettings: undefined,
+    searchSettings: undefined,
     externalCdnConfig: undefined,
     clusterResources: undefined,
     privateUserStrategy: 0,
@@ -1715,6 +1769,9 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
     }
     if (message.marketSettings !== undefined) {
       MarketSettings.encode(message.marketSettings, writer.uint32(202).fork()).join();
+    }
+    if (message.searchSettings !== undefined) {
+      SearchSettings.encode(message.searchSettings, writer.uint32(226).fork()).join();
     }
     if (message.externalCdnConfig !== undefined) {
       ExternalCDNConfig.encode(message.externalCdnConfig, writer.uint32(722).fork()).join();
@@ -1902,6 +1959,14 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
           message.marketSettings = MarketSettings.decode(reader, reader.uint32());
           continue;
         }
+        case 28: {
+          if (tag !== 226) {
+            break;
+          }
+
+          message.searchSettings = SearchSettings.decode(reader, reader.uint32());
+          continue;
+        }
         case 90: {
           if (tag !== 722) {
             break;
@@ -2083,6 +2148,7 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
       eventSettings: isSet(object.eventSettings) ? EventSettings.fromJSON(object.eventSettings) : undefined,
       mediaSettings: isSet(object.mediaSettings) ? MediaSettings.fromJSON(object.mediaSettings) : undefined,
       marketSettings: isSet(object.marketSettings) ? MarketSettings.fromJSON(object.marketSettings) : undefined,
+      searchSettings: isSet(object.searchSettings) ? SearchSettings.fromJSON(object.searchSettings) : undefined,
       externalCdnConfig: isSet(object.externalCdnConfig)
         ? ExternalCDNConfig.fromJSON(object.externalCdnConfig)
         : undefined,
@@ -2151,6 +2217,9 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
     }
     if (message.marketSettings !== undefined) {
       obj.marketSettings = MarketSettings.toJSON(message.marketSettings);
+    }
+    if (message.searchSettings !== undefined) {
+      obj.searchSettings = SearchSettings.toJSON(message.searchSettings);
     }
     if (message.externalCdnConfig !== undefined) {
       obj.externalCdnConfig = ExternalCDNConfig.toJSON(message.externalCdnConfig);
@@ -2231,6 +2300,9 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
       : undefined;
     message.marketSettings = (object.marketSettings !== undefined && object.marketSettings !== null)
       ? MarketSettings.fromPartial(object.marketSettings)
+      : undefined;
+    message.searchSettings = (object.searchSettings !== undefined && object.searchSettings !== null)
+      ? SearchSettings.fromPartial(object.searchSettings)
       : undefined;
     message.externalCdnConfig = (object.externalCdnConfig !== undefined && object.externalCdnConfig !== null)
       ? ExternalCDNConfig.fromPartial(object.externalCdnConfig)
@@ -3443,6 +3515,84 @@ export const MarketSettings: MessageFns<MarketSettings> = {
     const message = createBaseMarketSettings();
     message.enabled = object.enabled ?? false;
     message.stripeConfigured = object.stripeConfigured ?? false;
+    return message;
+  },
+};
+
+function createBaseSearchSettings(): SearchSettings {
+  return { semanticSearchEnabled: false, embeddingModel: "" };
+}
+
+export const SearchSettings: MessageFns<SearchSettings> = {
+  encode(message: SearchSettings, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.semanticSearchEnabled !== false) {
+      writer.uint32(8).bool(message.semanticSearchEnabled);
+    }
+    if (message.embeddingModel !== "") {
+      writer.uint32(18).string(message.embeddingModel);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): SearchSettings {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseSearchSettings();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 8) {
+            break;
+          }
+
+          message.semanticSearchEnabled = reader.bool();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.embeddingModel = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): SearchSettings {
+    return {
+      semanticSearchEnabled: isSet(object.semanticSearchEnabled)
+        ? globalThis.Boolean(object.semanticSearchEnabled)
+        : false,
+      embeddingModel: isSet(object.embeddingModel) ? globalThis.String(object.embeddingModel) : "",
+    };
+  },
+
+  toJSON(message: SearchSettings): unknown {
+    const obj: any = {};
+    if (message.semanticSearchEnabled !== false) {
+      obj.semanticSearchEnabled = message.semanticSearchEnabled;
+    }
+    if (message.embeddingModel !== "") {
+      obj.embeddingModel = message.embeddingModel;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<SearchSettings>, I>>(base?: I): SearchSettings {
+    return SearchSettings.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<SearchSettings>, I>>(object: I): SearchSettings {
+    const message = createBaseSearchSettings();
+    message.semanticSearchEnabled = object.semanticSearchEnabled ?? false;
+    message.embeddingModel = object.embeddingModel ?? "";
     return message;
   },
 };

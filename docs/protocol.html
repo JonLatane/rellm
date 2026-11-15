@@ -435,6 +435,9 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
             <p><a href="#rellm-PostSettings">PostSettings</a></p>
           </li>
           <li>
+            <p><a href="#rellm-SearchSettings">SearchSettings</a></p>
+          </li>
+          <li>
             <p><a href="#rellm-ServerColors">ServerColors</a></p>
           </li>
           <li>
@@ -7110,7 +7113,7 @@ directory</a> is (<code>{name}</code> denotes a
           <td>limits</td>
           <td><a href="#rellm-ClusterResourceLimit">ClusterResourceLimit</a></td>
           <td>repeated</td>
-          <td>How many distinct namespaces may concurrently hold each <code>ClusterResource</code>'s lock - e.g. only one headless browser at a time, but a handful of <code>ffmpeg</code>/ImageMagick conversions in parallel across the cluster, since those are far lighter-weight. Any <code>ClusterResource</code> not present here - including on a cluster that's never had <code>ConfigureServer</code> touch <code>limits</code> at all - defaults to <code>1</code> (see <code>ClusterTab.elm</code>'s matching client-side default, shown/edited there as "Browser Instance Limit"/"FFMPEG Process Limit"/"ImageMagick Process Limit"). These are changed by <code>ConfigureServer</code> (gated on <code>EDIT_CLUSTER_SETTINGS</code>, like the rest of <code>cluster_resources</code>) and create a new ServerConfiguration version, unlike <code>locks</code> above.</td>
+          <td>How many distinct namespaces may concurrently hold each <code>ClusterResource</code>'s lock - e.g. only one headless browser (or embedding run) at a time, but a handful of <code>ffmpeg</code>/ImageMagick conversions in parallel across the cluster, since those are far lighter-weight. Any <code>ClusterResource</code> not present here - including on a cluster that's never had <code>ConfigureServer</code> touch <code>limits</code> at all - defaults to <code>1</code> (see <code>ClusterTab.elm</code>'s matching client-side default, shown/edited there as "Browser Instance Limit"/"FFMPEG Process Limit"/"ImageMagick Process Limit"). These are changed by <code>ConfigureServer</code> (gated on <code>EDIT_CLUSTER_SETTINGS</code>, like the rest of <code>cluster_resources</code>) and create a new ServerConfiguration version, unlike <code>locks</code> above.</td>
         </tr>
       </tbody>
     </table>
@@ -7881,6 +7884,32 @@ directory</a> is (<code>{name}</code> denotes a
         </tr>
       </tbody>
     </table>
+    <p><a name="rellm-SearchSettings"></a></p>
+    <h3 id="searchsettings"><a class="anchor" aria-hidden="true" tabindex="-1" href="#searchsettings"><span class="octicon octicon-link"></span></a>SearchSettings</h3>
+    <p>Search settings for a server. Edited on the Server Information page's Settings tab.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>semantic_search_enabled</td>
+          <td><a href="#bool">bool</a></td>
+          <td></td>
+          <td>Whether this server builds and uses text embeddings for search. Defaults to <code>true</code>.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>When enabled: - the <code>generate_embeddings</code> background job downloads a small local embedding model (once; see <code>RELLM_EMBEDDING_CACHE_DIR</code>) and keeps embeddings up to date for Posts (<code>post_embeddings</code>), Events (<code>event_embeddings</code> -- the Event's Post plus its Occasions' times/places), Media (<code>media_embeddings</code>) and User profiles (<code>user_profile_embeddings</code>). Every embedding is made from the very same text Postgres full-text search indexes (title, content, names, ...). - <code>TEXT_SEARCH</code>-style listings in <code>GetPosts</code>, <code>GetEvents</code>, <code>GetMedia</code> and <code>GetUsers</code> also consider semantically similar results (not just prefix matches) and rerank by fusing the full-text rank with embedding similarity.</p>
+    <p>
+      When disabled, the job does nothing, the server never loads the model, and search is plain Postgres full-text search, exactly as before. Existing embeddings are kept (re-enabling resumes where it left off). If the model can't be downloaded/loaded, search silently falls back to full-text only. |
+      | embedding_model | <a href="#string">string</a> | | Which embedding model this server runs, e.g. "paraphrase-multilingual-MiniLM-L12-v2 (quantized, 384 dimensions)". Read-only: always filled in by the server on <code>GetServerConfiguration</code> (it describes the running software, so it's not stored) and ignored by <code>ConfigureServer</code>. Shown on the Settings tab so admins know exactly what is downloaded and run. Changing the model re-embeds everything. |
+    </p>
     <p><a name="rellm-ServerColors"></a></p>
     <h3 id="servercolors"><a class="anchor" aria-hidden="true" tabindex="-1" href="#servercolors"><span class="octicon octicon-link"></span></a>ServerColors</h3>
     <p>Color in ARGB hex format (i.e <code>0xAARRGGBB</code>).</p>
@@ -8010,6 +8039,12 @@ directory</a> is (<code>{name}</code> denotes a
           <td><a href="#rellm-MarketSettings">MarketSettings</a></td>
           <td></td>
           <td>Public, non-secret "is this server's Market open" signal -- unlike <code>stripe_config</code> (which holds real credentials and is Admin-only, see that field's own doc), this is never stripped for a non-admin/unauthenticated caller. Lets a client decide whether to show this server's Market section at all (e.g. when browsing a federated list of servers) without needing to be an admin here just to check -- see <code>rellm.proto</code>'s own "Federated Markets" doc section.</td>
+        </tr>
+        <tr>
+          <td>search_settings</td>
+          <td><a href="#rellm-SearchSettings">SearchSettings</a></td>
+          <td></td>
+          <td>Search behavior across Posts, Events, Media and People/profiles -- see <a href="#rellm-SearchSettings"><code>SearchSettings</code></a>. Publicly readable (clients can tell whether a search on this server is semantically ranked). Unset on read never happens: servers that predate this field report the default (<code>semantic_search_enabled: true</code>).</td>
         </tr>
         <tr>
           <td>external_cdn_config</td>
@@ -8510,6 +8545,11 @@ directory</a> is (<code>{name}</code> denotes a
           <td>CLUSTER_RESOURCE_IMAGEMAGICK</td>
           <td>2</td>
           <td></td>
+        </tr>
+        <tr>
+          <td>CLUSTER_RESOURCE_EMBEDDINGS</td>
+          <td>3</td>
+          <td>Running the text-embedding model (ONNX Runtime) for semantic search -- the <code>generate_embeddings</code> job (see <code>SearchSettings</code>). Loading the model takes a few hundred MB of RAM and embedding keeps CPU cores busy, which small shared nodes can't afford for several instances at once. Each run holds this only while it's actually embedding text (never for a run with nothing to do), and is capped to a few minutes of work, so a backlog is worked down over many runs that take turns.</td>
         </tr>
       </tbody>
     </table>

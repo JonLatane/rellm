@@ -132,6 +132,7 @@
     - [MarketSettings](#rellm-MarketSettings)
     - [MediaSettings](#rellm-MediaSettings)
     - [PostSettings](#rellm-PostSettings)
+    - [SearchSettings](#rellm-SearchSettings)
     - [ServerColors](#rellm-ServerColors)
     - [ServerConfiguration](#rellm-ServerConfiguration)
     - [ServerInfo](#rellm-ServerInfo)
@@ -3451,7 +3452,7 @@ See `ClusterResources.conductor_state`.
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | locks | [ClusterResourceLock](#rellm-ClusterResourceLock) | repeated | Locks currently held by the conductor. Mutations are only made by `FreeClusterResource` and `LockClusterResource`, not `ConfigureServer`. Changes to locks do *not* produce a new ServerConfiguration version. |
-| limits | [ClusterResourceLimit](#rellm-ClusterResourceLimit) | repeated | How many distinct namespaces may concurrently hold each `ClusterResource`&#39;s lock - e.g. only one headless browser at a time, but a handful of `ffmpeg`/ImageMagick conversions in parallel across the cluster, since those are far lighter-weight. Any `ClusterResource` not present here - including on a cluster that&#39;s never had `ConfigureServer` touch `limits` at all - defaults to `1` (see `ClusterTab.elm`&#39;s matching client-side default, shown/edited there as &#34;Browser Instance Limit&#34;/&#34;FFMPEG Process Limit&#34;/&#34;ImageMagick Process Limit&#34;). These are changed by `ConfigureServer` (gated on `EDIT_CLUSTER_SETTINGS`, like the rest of `cluster_resources`) and create a new ServerConfiguration version, unlike `locks` above. |
+| limits | [ClusterResourceLimit](#rellm-ClusterResourceLimit) | repeated | How many distinct namespaces may concurrently hold each `ClusterResource`&#39;s lock - e.g. only one headless browser (or embedding run) at a time, but a handful of `ffmpeg`/ImageMagick conversions in parallel across the cluster, since those are far lighter-weight. Any `ClusterResource` not present here - including on a cluster that&#39;s never had `ConfigureServer` touch `limits` at all - defaults to `1` (see `ClusterTab.elm`&#39;s matching client-side default, shown/edited there as &#34;Browser Instance Limit&#34;/&#34;FFMPEG Process Limit&#34;/&#34;ImageMagick Process Limit&#34;). These are changed by `ConfigureServer` (gated on `EDIT_CLUSTER_SETTINGS`, like the rest of `cluster_resources`) and create a new ServerConfiguration version, unlike `locks` above. |
 
 
 
@@ -3810,6 +3811,26 @@ Specific settings for Posts.
 
 
 
+<a name="rellm-SearchSettings"></a>
+
+### SearchSettings
+Search settings for a server. Edited on the Server Information page&#39;s Settings tab.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| semantic_search_enabled | [bool](#bool) |  | Whether this server builds and uses text embeddings for search. Defaults to `true`.
+
+When enabled: - the `generate_embeddings` background job downloads a small local embedding model (once; see `RELLM_EMBEDDING_CACHE_DIR`) and keeps embeddings up to date for Posts (`post_embeddings`), Events (`event_embeddings` -- the Event&#39;s Post plus its Occasions&#39; times/places), Media (`media_embeddings`) and User profiles (`user_profile_embeddings`). Every embedding is made from the very same text Postgres full-text search indexes (title, content, names, ...). - `TEXT_SEARCH`-style listings in `GetPosts`, `GetEvents`, `GetMedia` and `GetUsers` also consider semantically similar results (not just prefix matches) and rerank by fusing the full-text rank with embedding similarity.
+
+When disabled, the job does nothing, the server never loads the model, and search is plain Postgres full-text search, exactly as before. Existing embeddings are kept (re-enabling resumes where it left off). If the model can&#39;t be downloaded/loaded, search silently falls back to full-text only. |
+| embedding_model | [string](#string) |  | Which embedding model this server runs, e.g. &#34;paraphrase-multilingual-MiniLM-L12-v2 (quantized, 384 dimensions)&#34;. Read-only: always filled in by the server on `GetServerConfiguration` (it describes the running software, so it&#39;s not stored) and ignored by `ConfigureServer`. Shown on the Settings tab so admins know exactly what is downloaded and run. Changing the model re-embeds everything. |
+
+
+
+
+
+
 <a name="rellm-ServerColors"></a>
 
 ### ServerColors
@@ -3849,6 +3870,7 @@ Configuration for a Rellm server instance.
 | event_settings | [EventSettings](#rellm-EventSettings) |  | Configuration for events on the server. If default visibility is `GLOBAL_PUBLIC`, default_user_permissions *must* contain `PUBLISH_EVENTS_GLOBALLY`. |
 | media_settings | [MediaSettings](#rellm-MediaSettings) |  | Configuration for media on the server. If default visibility is `GLOBAL_PUBLIC`, default_user_permissions *must* contain `PUBLISH_MEDIA_GLOBALLY`. |
 | market_settings | [MarketSettings](#rellm-MarketSettings) |  | Public, non-secret &#34;is this server&#39;s Market open&#34; signal -- unlike `stripe_config` (which holds real credentials and is Admin-only, see that field&#39;s own doc), this is never stripped for a non-admin/unauthenticated caller. Lets a client decide whether to show this server&#39;s Market section at all (e.g. when browsing a federated list of servers) without needing to be an admin here just to check -- see `rellm.proto`&#39;s own &#34;Federated Markets&#34; doc section. |
+| search_settings | [SearchSettings](#rellm-SearchSettings) |  | Search behavior across Posts, Events, Media and People/profiles -- see [`SearchSettings`](#rellm-SearchSettings). Publicly readable (clients can tell whether a search on this server is semantically ranked). Unset on read never happens: servers that predate this field report the default (`semantic_search_enabled: true`). |
 | external_cdn_config | [ExternalCDNConfig](#rellm-ExternalCDNConfig) | optional | If set, enables External CDN support for the server. This means that the non-secure HTTP server (on port 80) will *not* redirect to the secure server, and instead serve up Tamagui Web/Flutter clients directly. This allows you to point Cloudflare&#39;s &#34;CNAME HTTPS Proxy&#34; feature at your Rellm server to serve up HTML/CS/JS and Media files with caching from Cloudflare&#39;s CDN. See ExternalCDNConfig for more details on securing this setup. |
 | cluster_resources | [ClusterResources](#rellm-ClusterResources) | optional | Cluster-internal coordination state - see `ClusterResources`&#39;s own doc. Visible to any logged-in admin (unlike most fields here, this describes infrastructure topology rather than anything end users need, so it&#39;s stripped entirely from [`GetServerConfiguration`](#grpc-api-GetServerConfiguration) for non-admins/anonymous callers); editing it via [`ConfigureServer`](#grpc-api-ConfigureServer) additionally requires the [`EDIT_CLUSTER_SETTINGS`](#rellm-Permission) permission. |
 | private_user_strategy | [PrivateUserStrategy](#rellm-PrivateUserStrategy) |  | Strategy when a user sets their visibility to `PRIVATE`. Defaults to `ACCOUNT_IS_FROZEN`. |
@@ -4058,6 +4080,7 @@ via [`LockClusterResources`](#grpc-api-LockClusterResources)/
 | CLUSTER_RESOURCE_BROWSER | 0 | The ability to launch a headless Chrome/Brave browser - see `ClusterResources`&#39;s own doc for why more than one running at once across a cluster&#39;s instances can be a problem. |
 | CLUSTER_RESOURCE_FFMPEG | 1 |  |
 | CLUSTER_RESOURCE_IMAGEMAGICK | 2 |  |
+| CLUSTER_RESOURCE_EMBEDDINGS | 3 | Running the text-embedding model (ONNX Runtime) for semantic search -- the `generate_embeddings` job (see `SearchSettings`). Loading the model takes a few hundred MB of RAM and embedding keeps CPU cores busy, which small shared nodes can&#39;t afford for several instances at once. Each run holds this only while it&#39;s actually embedding text (never for a run with nothing to do), and is capped to a few minutes of work, so a backlog is worked down over many runs that take turns. |
 
 
 

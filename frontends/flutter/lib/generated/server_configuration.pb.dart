@@ -37,6 +37,7 @@ class ServerConfiguration extends $pb.GeneratedMessage {
     EventSettings? eventSettings,
     MediaSettings? mediaSettings,
     MarketSettings? marketSettings,
+    SearchSettings? searchSettings,
     ExternalCDNConfig? externalCdnConfig,
     ClusterResources? clusterResources,
     PrivateUserStrategy? privateUserStrategy,
@@ -88,6 +89,9 @@ class ServerConfiguration extends $pb.GeneratedMessage {
     }
     if (marketSettings != null) {
       $result.marketSettings = marketSettings;
+    }
+    if (searchSettings != null) {
+      $result.searchSettings = searchSettings;
     }
     if (externalCdnConfig != null) {
       $result.externalCdnConfig = externalCdnConfig;
@@ -150,6 +154,7 @@ class ServerConfiguration extends $pb.GeneratedMessage {
     ..aOM<EventSettings>(23, _omitFieldNames ? '' : 'eventSettings', subBuilder: EventSettings.create)
     ..aOM<MediaSettings>(24, _omitFieldNames ? '' : 'mediaSettings', subBuilder: MediaSettings.create)
     ..aOM<MarketSettings>(25, _omitFieldNames ? '' : 'marketSettings', subBuilder: MarketSettings.create)
+    ..aOM<SearchSettings>(28, _omitFieldNames ? '' : 'searchSettings', subBuilder: SearchSettings.create)
     ..aOM<ExternalCDNConfig>(90, _omitFieldNames ? '' : 'externalCdnConfig', subBuilder: ExternalCDNConfig.create)
     ..aOM<ClusterResources>(91, _omitFieldNames ? '' : 'clusterResources', subBuilder: ClusterResources.create)
     ..e<PrivateUserStrategy>(100, _omitFieldNames ? '' : 'privateUserStrategy', $pb.PbFieldType.OE, defaultOrMaker: PrivateUserStrategy.ACCOUNT_IS_FROZEN, valueOf: PrivateUserStrategy.valueOf, enumValues: PrivateUserStrategy.values)
@@ -332,6 +337,21 @@ class ServerConfiguration extends $pb.GeneratedMessage {
   @$pb.TagNumber(25)
   MarketSettings ensureMarketSettings() => $_ensure(11);
 
+  /// Search behavior across Posts, Events, Media and People/profiles -- see
+  /// [`SearchSettings`](#rellm-SearchSettings). Publicly readable (clients can tell whether a search
+  /// on this server is semantically ranked). Unset on read never happens: servers that predate this
+  /// field report the default (`semantic_search_enabled: true`).
+  @$pb.TagNumber(28)
+  SearchSettings get searchSettings => $_getN(12);
+  @$pb.TagNumber(28)
+  set searchSettings(SearchSettings v) { setField(28, v); }
+  @$pb.TagNumber(28)
+  $core.bool hasSearchSettings() => $_has(12);
+  @$pb.TagNumber(28)
+  void clearSearchSettings() => clearField(28);
+  @$pb.TagNumber(28)
+  SearchSettings ensureSearchSettings() => $_ensure(12);
+
   /// If set, enables External CDN support for the server. This means that the
   /// non-secure HTTP server (on port 80) will *not* redirect to the secure server,
   /// and instead serve up Tamagui Web/Flutter clients directly. This allows you
@@ -339,15 +359,15 @@ class ServerConfiguration extends $pb.GeneratedMessage {
   /// up HTML/CS/JS and Media files with caching from Cloudflare's CDN.
   /// See ExternalCDNConfig for more details on securing this setup.
   @$pb.TagNumber(90)
-  ExternalCDNConfig get externalCdnConfig => $_getN(12);
+  ExternalCDNConfig get externalCdnConfig => $_getN(13);
   @$pb.TagNumber(90)
   set externalCdnConfig(ExternalCDNConfig v) { setField(90, v); }
   @$pb.TagNumber(90)
-  $core.bool hasExternalCdnConfig() => $_has(12);
+  $core.bool hasExternalCdnConfig() => $_has(13);
   @$pb.TagNumber(90)
   void clearExternalCdnConfig() => clearField(90);
   @$pb.TagNumber(90)
-  ExternalCDNConfig ensureExternalCdnConfig() => $_ensure(12);
+  ExternalCDNConfig ensureExternalCdnConfig() => $_ensure(13);
 
   /// Cluster-internal coordination state - see `ClusterResources`'s own doc. Visible to any
   /// logged-in admin (unlike most fields here, this describes infrastructure topology rather than
@@ -356,42 +376,42 @@ class ServerConfiguration extends $pb.GeneratedMessage {
   /// callers); editing it via [`ConfigureServer`](#grpc-api-ConfigureServer) additionally requires
   /// the [`EDIT_CLUSTER_SETTINGS`](#rellm-Permission) permission.
   @$pb.TagNumber(91)
-  ClusterResources get clusterResources => $_getN(13);
+  ClusterResources get clusterResources => $_getN(14);
   @$pb.TagNumber(91)
   set clusterResources(ClusterResources v) { setField(91, v); }
   @$pb.TagNumber(91)
-  $core.bool hasClusterResources() => $_has(13);
+  $core.bool hasClusterResources() => $_has(14);
   @$pb.TagNumber(91)
   void clearClusterResources() => clearField(91);
   @$pb.TagNumber(91)
-  ClusterResources ensureClusterResources() => $_ensure(13);
+  ClusterResources ensureClusterResources() => $_ensure(14);
 
   /// Strategy when a user sets their visibility to `PRIVATE`. Defaults to `ACCOUNT_IS_FROZEN`.
   @$pb.TagNumber(100)
-  PrivateUserStrategy get privateUserStrategy => $_getN(14);
+  PrivateUserStrategy get privateUserStrategy => $_getN(15);
   @$pb.TagNumber(100)
   set privateUserStrategy(PrivateUserStrategy v) { setField(100, v); }
   @$pb.TagNumber(100)
-  $core.bool hasPrivateUserStrategy() => $_has(14);
+  $core.bool hasPrivateUserStrategy() => $_has(15);
   @$pb.TagNumber(100)
   void clearPrivateUserStrategy() => clearField(100);
 
   /// (TODO) Allows admins to enable/disable creating accounts and logging in.
   /// Eventually, external auth too hopefully!
   @$pb.TagNumber(101)
-  $core.List<AuthenticationFeature> get authenticationFeatures => $_getList(15);
+  $core.List<AuthenticationFeature> get authenticationFeatures => $_getList(16);
 
   /// Web Push (VAPID) configuration for the server.
   @$pb.TagNumber(110)
-  WebPushConfig get webPushConfig => $_getN(16);
+  WebPushConfig get webPushConfig => $_getN(17);
   @$pb.TagNumber(110)
   set webPushConfig(WebPushConfig v) { setField(110, v); }
   @$pb.TagNumber(110)
-  $core.bool hasWebPushConfig() => $_has(16);
+  $core.bool hasWebPushConfig() => $_has(17);
   @$pb.TagNumber(110)
   void clearWebPushConfig() => clearField(110);
   @$pb.TagNumber(110)
-  WebPushConfig ensureWebPushConfig() => $_ensure(16);
+  WebPushConfig ensureWebPushConfig() => $_ensure(17);
 
   /// Which [`ContactProtocol`](#rellm-ContactProtocol)s (`tel:`/`mailto:`) this server currently
   /// accepts -- drives [`ContactMethod.supported_by_server`](#rellm-ContactMethod) (`users.proto`,
@@ -405,7 +425,7 @@ class ServerConfiguration extends $pb.GeneratedMessage {
   /// Configuration" sections (`ContactIntegrationsTab.smsConfigurationSection`/
   /// `emailConfigurationSection`) -- see `docs/contact_integrations.md`.
   @$pb.TagNumber(119)
-  $core.List<ContactProtocol> get supportedContactProtocols => $_getList(17);
+  $core.List<ContactProtocol> get supportedContactProtocols => $_getList(18);
 
   /// A server-preferred order of [`ContactVerificationAPI`](#rellm-ContactVerificationAPI)
   /// providers to try first when more than one of `twilio_config`/`bird_config`/`telnyx_config`
@@ -416,7 +436,7 @@ class ServerConfiguration extends $pb.GeneratedMessage {
   /// Telnyx/Bird/Twilio) -- this field only matters when more than one is enabled and the admin
   /// wants a specific one tried first. Only serialized for admin users.
   @$pb.TagNumber(120)
-  $core.List<ContactVerificationAPI> get preferredVerificationApis => $_getList(18);
+  $core.List<ContactVerificationAPI> get preferredVerificationApis => $_getList(19);
 
   /// Derived from whether [`TwilioConfig`](#rellm-TwilioConfig).twilio_enabled/
   /// [`BirdConfig`](#rellm-BirdConfig).bird_enabled/
@@ -428,59 +448,59 @@ class ServerConfiguration extends $pb.GeneratedMessage {
   /// that's the admin's own on/off toggle (can disable `tel:` contact even while a provider stays
   /// enabled/configured), this is purely "is at least one provider actually configured."
   @$pb.TagNumber(121)
-  $core.List<ContactVerificationAPI> get availableVerificationApis => $_getList(19);
+  $core.List<ContactVerificationAPI> get availableVerificationApis => $_getList(20);
 
   /// Twilio Config -- see [`TwilioConfig`](#rellm-TwilioConfig). Only serialized for admin users.
   @$pb.TagNumber(122)
-  TwilioConfig get twilioConfig => $_getN(20);
+  TwilioConfig get twilioConfig => $_getN(21);
   @$pb.TagNumber(122)
   set twilioConfig(TwilioConfig v) { setField(122, v); }
   @$pb.TagNumber(122)
-  $core.bool hasTwilioConfig() => $_has(20);
+  $core.bool hasTwilioConfig() => $_has(21);
   @$pb.TagNumber(122)
   void clearTwilioConfig() => clearField(122);
   @$pb.TagNumber(122)
-  TwilioConfig ensureTwilioConfig() => $_ensure(20);
+  TwilioConfig ensureTwilioConfig() => $_ensure(21);
 
   /// Bird (bird.com, formerly MessageBird) Config -- a cheaper alternative to
   /// [`TwilioConfig`](#rellm-TwilioConfig) for SMS verification; see
   /// [`BirdConfig`](#rellm-BirdConfig)'s own doc. Only serialized for admin users.
   @$pb.TagNumber(123)
-  BirdConfig get birdConfig => $_getN(21);
+  BirdConfig get birdConfig => $_getN(22);
   @$pb.TagNumber(123)
   set birdConfig(BirdConfig v) { setField(123, v); }
   @$pb.TagNumber(123)
-  $core.bool hasBirdConfig() => $_has(21);
+  $core.bool hasBirdConfig() => $_has(22);
   @$pb.TagNumber(123)
   void clearBirdConfig() => clearField(123);
   @$pb.TagNumber(123)
-  BirdConfig ensureBirdConfig() => $_ensure(21);
+  BirdConfig ensureBirdConfig() => $_ensure(22);
 
   /// Stripe Config, backing the Marketplace (`market.proto`). Only serialized for admin users.
   @$pb.TagNumber(124)
-  StripeConfig get stripeConfig => $_getN(22);
+  StripeConfig get stripeConfig => $_getN(23);
   @$pb.TagNumber(124)
   set stripeConfig(StripeConfig v) { setField(124, v); }
   @$pb.TagNumber(124)
-  $core.bool hasStripeConfig() => $_has(22);
+  $core.bool hasStripeConfig() => $_has(23);
   @$pb.TagNumber(124)
   void clearStripeConfig() => clearField(124);
   @$pb.TagNumber(124)
-  StripeConfig ensureStripeConfig() => $_ensure(22);
+  StripeConfig ensureStripeConfig() => $_ensure(23);
 
   /// Telnyx Config -- another alternative SMS verification provider to
   /// [`TwilioConfig`](#rellm-TwilioConfig) (see [`TelnyxConfig`](#rellm-TelnyxConfig)'s own doc).
   /// Only serialized for admin users.
   @$pb.TagNumber(125)
-  TelnyxConfig get telnyxConfig => $_getN(23);
+  TelnyxConfig get telnyxConfig => $_getN(24);
   @$pb.TagNumber(125)
   set telnyxConfig(TelnyxConfig v) { setField(125, v); }
   @$pb.TagNumber(125)
-  $core.bool hasTelnyxConfig() => $_has(23);
+  $core.bool hasTelnyxConfig() => $_has(24);
   @$pb.TagNumber(125)
   void clearTelnyxConfig() => clearField(125);
   @$pb.TagNumber(125)
-  TelnyxConfig ensureTelnyxConfig() => $_ensure(23);
+  TelnyxConfig ensureTelnyxConfig() => $_ensure(24);
 
   ///  Unlike the other configs, at least at the moment, the integration with Stalwart is designed
   ///  to be *in-cluster*, not over the web. It relies on unsecured /email endpoint on port 27705
@@ -488,15 +508,15 @@ class ServerConfiguration extends $pb.GeneratedMessage {
   ///
   ///  This could be extended in the future to allow sending mail with Stalwart, but that's TBD.
   @$pb.TagNumber(126)
-  StalwartConfig get stalwartConfig => $_getN(24);
+  StalwartConfig get stalwartConfig => $_getN(25);
   @$pb.TagNumber(126)
   set stalwartConfig(StalwartConfig v) { setField(126, v); }
   @$pb.TagNumber(126)
-  $core.bool hasStalwartConfig() => $_has(24);
+  $core.bool hasStalwartConfig() => $_has(25);
   @$pb.TagNumber(126)
   void clearStalwartConfig() => clearField(126);
   @$pb.TagNumber(126)
-  StalwartConfig ensureStalwartConfig() => $_ensure(24);
+  StalwartConfig ensureStalwartConfig() => $_ensure(25);
 
   /// The server's [`CustomCSSConfiguration`](#rellm-CustomCSSConfiguration): which media its custom stylesheet uses and
   /// whether it forces the light or dark theme. Publicly readable. `custom_css` itself is always unset here -- fetch
@@ -504,15 +524,15 @@ class ServerConfiguration extends $pb.GeneratedMessage {
   /// text. Ignored by [`ConfigureServer`](#grpc-api-ConfigureServer); write it with
   /// [`ConfigureCustomCSS`](#grpc-api-ConfigureCustomCSS).
   @$pb.TagNumber(127)
-  CustomCSSConfiguration get customCssConfiguration => $_getN(25);
+  CustomCSSConfiguration get customCssConfiguration => $_getN(26);
   @$pb.TagNumber(127)
   set customCssConfiguration(CustomCSSConfiguration v) { setField(127, v); }
   @$pb.TagNumber(127)
-  $core.bool hasCustomCssConfiguration() => $_has(25);
+  $core.bool hasCustomCssConfiguration() => $_has(26);
   @$pb.TagNumber(127)
   void clearCustomCssConfiguration() => clearField(127);
   @$pb.TagNumber(127)
-  CustomCSSConfiguration ensureCustomCssConfiguration() => $_ensure(25);
+  CustomCSSConfiguration ensureCustomCssConfiguration() => $_ensure(26);
 }
 
 ///  Coordinates a small piece of shared, cluster-wide state across multiple independent Rellm
@@ -720,7 +740,7 @@ class ClusterConductorState extends $pb.GeneratedMessage {
   $core.List<ClusterResourceLock> get locks => $_getList(0);
 
   /// How many distinct namespaces may concurrently hold each `ClusterResource`'s lock - e.g. only
-  /// one headless browser at a time, but a handful of `ffmpeg`/ImageMagick conversions in parallel
+  /// one headless browser (or embedding run) at a time, but a handful of `ffmpeg`/ImageMagick conversions in parallel
   /// across the cluster, since those are far lighter-weight. Any `ClusterResource` not present here
   /// - including on a cluster that's never had `ConfigureServer` touch `limits` at all - defaults
   /// to `1` (see `ClusterTab.elm`'s matching client-side default, shown/edited there as "Browser
@@ -1583,6 +1603,92 @@ class MarketSettings extends $pb.GeneratedMessage {
   $core.bool hasStripeConfigured() => $_has(1);
   @$pb.TagNumber(2)
   void clearStripeConfigured() => clearField(2);
+}
+
+/// Search settings for a server. Edited on the Server Information page's Settings tab.
+class SearchSettings extends $pb.GeneratedMessage {
+  factory SearchSettings({
+    $core.bool? semanticSearchEnabled,
+    $core.String? embeddingModel,
+  }) {
+    final $result = create();
+    if (semanticSearchEnabled != null) {
+      $result.semanticSearchEnabled = semanticSearchEnabled;
+    }
+    if (embeddingModel != null) {
+      $result.embeddingModel = embeddingModel;
+    }
+    return $result;
+  }
+  SearchSettings._() : super();
+  factory SearchSettings.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromBuffer(i, r);
+  factory SearchSettings.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'SearchSettings', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
+    ..aOB(1, _omitFieldNames ? '' : 'semanticSearchEnabled')
+    ..aOS(2, _omitFieldNames ? '' : 'embeddingModel')
+    ..hasRequiredFields = false
+  ;
+
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.deepCopy] instead. '
+  'Will be removed in next major version')
+  SearchSettings clone() => SearchSettings()..mergeFromMessage(this);
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.rebuild] instead. '
+  'Will be removed in next major version')
+  SearchSettings copyWith(void Function(SearchSettings) updates) => super.copyWith((message) => updates(message as SearchSettings)) as SearchSettings;
+
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static SearchSettings create() => SearchSettings._();
+  SearchSettings createEmptyInstance() => create();
+  static $pb.PbList<SearchSettings> createRepeated() => $pb.PbList<SearchSettings>();
+  @$core.pragma('dart2js:noInline')
+  static SearchSettings getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<SearchSettings>(create);
+  static SearchSettings? _defaultInstance;
+
+  ///  Whether this server builds and uses text embeddings for search. Defaults to `true`.
+  ///
+  ///  When enabled:
+  ///  - the `generate_embeddings` background job downloads a small local embedding model (once; see
+  ///    `RELLM_EMBEDDING_CACHE_DIR`) and keeps embeddings up to date for Posts (`post_embeddings`),
+  ///    Events (`event_embeddings` -- the Event's Post plus its Occasions' times/places), Media
+  ///    (`media_embeddings`) and User profiles (`user_profile_embeddings`). Every embedding is made
+  ///    from the very same text Postgres full-text search indexes (title, content, names, ...).
+  ///  - `TEXT_SEARCH`-style listings in `GetPosts`, `GetEvents`, `GetMedia` and `GetUsers` also
+  ///    consider semantically similar results (not just prefix matches) and rerank by fusing the
+  ///    full-text rank with embedding similarity.
+  ///
+  ///  When disabled, the job does nothing, the server never loads the model, and search is plain
+  ///  Postgres full-text search, exactly as before. Existing embeddings are kept (re-enabling resumes
+  ///  where it left off). If the model can't be downloaded/loaded, search silently falls back to
+  ///  full-text only.
+  @$pb.TagNumber(1)
+  $core.bool get semanticSearchEnabled => $_getBF(0);
+  @$pb.TagNumber(1)
+  set semanticSearchEnabled($core.bool v) { $_setBool(0, v); }
+  @$pb.TagNumber(1)
+  $core.bool hasSemanticSearchEnabled() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearSemanticSearchEnabled() => clearField(1);
+
+  /// Which embedding model this server runs, e.g. "paraphrase-multilingual-MiniLM-L12-v2 (quantized,
+  /// 384 dimensions)". Read-only: always filled in by the server on `GetServerConfiguration` (it
+  /// describes the running software, so it's not stored) and ignored by `ConfigureServer`. Shown on
+  /// the Settings tab so admins know exactly what is downloaded and run. Changing the model
+  /// re-embeds everything.
+  @$pb.TagNumber(2)
+  $core.String get embeddingModel => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set embeddingModel($core.String v) { $_setString(1, v); }
+  @$pb.TagNumber(2)
+  $core.bool hasEmbeddingModel() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearEmbeddingModel() => clearField(2);
 }
 
 /// Settings for a feature (e.g. People, Groups, Posts, Events, Media).
