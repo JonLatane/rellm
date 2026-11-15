@@ -109,7 +109,8 @@ thumbnailFor host media =
     case media.url of
         Just url ->
             if String.startsWith "bluesky:" host && String.endsWith "/playlist.m3u8" url then
-                Just (String.dropRight (String.length "playlist.m3u8") url ++ "thumbnail.jpg")
+                -- 13 is the length of "playlist.m3u8".
+                Just (String.dropRight 13 url ++ "thumbnail.jpg")
 
             else
                 Nothing
