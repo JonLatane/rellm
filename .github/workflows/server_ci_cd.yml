@@ -50,7 +50,7 @@ permissions:
 jobs:
   test_consistency:
     name: Test Proto/Docs Consistency
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
       - name: Install protoc
@@ -127,7 +127,7 @@ jobs:
 
   test_deploys:
     name: Test Deploy Scripts
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
       # No cluster needed: the tests run the deploys/ Makefiles and scripts against stub kubectl/tmux.
@@ -135,7 +135,7 @@ jobs:
 
   build_flutter_ui:
     name: Build Flutter Web UI
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v7
@@ -179,7 +179,7 @@ jobs:
 
   build_tamagui_ui:
     name: Build Tamagui Web UI
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v7
@@ -250,7 +250,7 @@ jobs:
 
   build_elm_ui:
     name: Test & Build Elm SPA Web UI
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v7
@@ -297,7 +297,7 @@ jobs:
 
   build_rust_binaries:
     name: Build Rust Binaries
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       CARGO_INCREMENTAL: "0"
 
@@ -390,7 +390,7 @@ jobs:
 
   build_rust_binaries_linux_amd64_static:
     name: Build Rust Binaries (Linux amd64, static libpq)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       CARGO_INCREMENTAL: "0"
 
@@ -481,7 +481,7 @@ jobs:
 
   test_rust_binaries:
     name: Test Rust Binaries
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Backs the DB-backed specs under backend/src/tests/ (see src/tests/factories.rs), which run
     # against TEST_DATABASE_URL - a dedicated `rellm_test` DB, analogous to a Rails dev/test
     # split, kept separate from the `rellm_dev` DB used by a real running server. Migrations are
@@ -560,7 +560,7 @@ jobs:
 
   test_tamagui_ui:
     name: Test Tamagui Web UI
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
 
@@ -615,7 +615,7 @@ jobs:
 
   test_flutter_ui:
     name: Test Flutter Web UI
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
 
@@ -639,7 +639,7 @@ jobs:
   push_server:
     name: "DockerHub: Server"
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/experiments/elm-spa'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs:
       - build_flutter_ui
       - build_tamagui_ui
@@ -722,7 +722,7 @@ jobs:
   push_preview_generator:
     name: "DockerHub: Preview Generator"
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/experiments/elm-spa'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs:
       - build_rust_binaries
       - test_consistency
@@ -780,7 +780,7 @@ jobs:
       - test_flutter_ui
       - test_tamagui_ui
       - push_server
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v7
@@ -835,7 +835,7 @@ jobs:
     needs:
       - test_rust_binaries
       - push_preview_generator
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v7
@@ -861,7 +861,7 @@ jobs:
     permissions:
       contents: write # pushes the version tag and creates the release
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs:
       - test_deploys
       - deploy_jonlineio_server
@@ -980,7 +980,7 @@ jobs:
     permissions:
       contents: write # `gh release upload` onto the release created above
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs:
       - create_github_release
       - build_rust_binaries_macos
@@ -1170,7 +1170,7 @@ jobs:
     permissions:
       contents: write # `gh release upload` onto the release created above
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs:
       - create_github_release
       - build_rust_binaries_linux_amd64_static
@@ -1314,7 +1314,7 @@ jobs:
     name: Deploy Bull City Social
     needs: create_github_release
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v7
@@ -1354,7 +1354,7 @@ jobs:
     name: Deploy Oak City Social
     needs: create_github_release
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v7
@@ -1394,7 +1394,7 @@ jobs:
     name: Deploy ATO Band
     needs: create_github_release
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v7
@@ -1434,7 +1434,7 @@ jobs:
     name: Deploy to rellm.org
     needs: create_github_release
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v7
@@ -1474,7 +1474,7 @@ jobs:
     name: Deploy to neurospicysteve.bullcity.social
     needs: create_github_release
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v7
@@ -1518,7 +1518,7 @@ jobs:
     if: |
       always() && github.ref == 'refs/heads/main' &&
       (needs.deploy_bullcitysocial.result == 'success' || needs.deploy_oakcitysocial.result == 'success' || needs.deploy_ato_band.result == 'success' || needs.deploy_rellm_org.result == 'success' || needs.deploy_neurospicysteve_bullcity_social.result == 'success')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: digitalocean/action-doctl@v2
@@ -1539,7 +1539,7 @@ jobs:
   manifest_change_notice:
     name: Notice if deploy manifests changed
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v7
