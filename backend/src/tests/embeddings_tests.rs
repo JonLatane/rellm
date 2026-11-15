@@ -107,16 +107,16 @@ fn an_event_document_adds_occasion_places_and_dates_but_not_a_hidden_location() 
             post.id
         };
         let open = make(conn, "Open house", serde_json::json!({}));
-        let secret = make(conn, "Secret supper", serde_json::json!({"hide_location_until_rsvp_approved": true}));
+        let hidden_place = make(conn, "Hidden-place supper", serde_json::json!({"hide_location_until_rsvp_approved": true}));
 
         let open_doc = document(conn, "event_search_document", open);
         assert!(open_doc.contains("Open house"));
         assert!(open_doc.contains("1 Infinite Loop, Cupertino"));
         assert!(open_doc.contains("20"), "has a date: {:?}", open_doc);
 
-        let secret_doc = document(conn, "event_search_document", secret);
-        assert!(secret_doc.contains("Secret supper"));
-        assert!(!secret_doc.contains("Infinite Loop"), "location leaked: {:?}", secret_doc);
+        let hidden_place_doc = document(conn, "event_search_document", hidden_place);
+        assert!(hidden_place_doc.contains("Hidden-place supper"));
+        assert!(!hidden_place_doc.contains("Infinite Loop"), "the hidden location appeared in the event document");
         Ok(())
     });
 }
