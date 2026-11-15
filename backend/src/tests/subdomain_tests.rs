@@ -276,3 +276,31 @@ fn only_the_buyer_saves_and_a_missing_stylesheet_is_kept() {
         Ok(())
     });
 }
+
+#[test]
+fn a_label_can_only_be_bought_by_one_user_and_must_be_valid() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, Status, _>(|conn| {
+        configure_frontend_host(conn);
+        let admin_user = create_user(conn, "sd5_admin");
+        let admin = grant_permissions(conn, &admin_user, vec![Permission::Admin]);
+        let owner = create_user(conn, "sd5owner");
+        subscribe(conn, &admin, &owner, SubdomainSettings::default());
+
+        // The owner may (re-)buy their own label; nobody else holds it.
+        assert_eq!(crate::logic::subdomains::validate_label_available(&owner, conn)?, "sd5owner");
+        // A username that differs only by case maps to the same label -> taken for another user.
+        let clash = create_user(conn, "SD5Owner");
+        assert_eq!(
+            crate::logic::subdomains::validate_label_available(&clash, conn).unwrap_err().message(),
+            "subdomain_taken"
+        );
+        // Not a DNS label.
+        let bad = create_user(conn, "sd5_bad");
+        assert_eq!(
+            crate::logic::subdomains::validate_label_available(&bad, conn).unwrap_err().message(),
+            "username_not_a_valid_subdomain"
+        );
+        Ok(())
+    });
+}
