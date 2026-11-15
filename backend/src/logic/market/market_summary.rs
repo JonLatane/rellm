@@ -156,6 +156,7 @@ fn resource_description(product: &MarketProduct) -> String {
                 )
             }
         }
+        Some(market_product::Details::SubdomainSubscriptionDetails(_)) => "a Rellm Subdomain".to_string(),
         None => "Rellm Market product".to_string(),
     }
 }
@@ -192,6 +193,10 @@ fn additional_note(purchase_type: PurchaseType) -> Option<&'static str> {
             "You get full admin access to your own Rellm instance -- e.g. you can pay-gate \
              features like Facebook sync yourself, if you set up your own Facebook developer account.",
         ),
+        PurchaseType::Subdomain => Some(
+            "Your profile becomes reachable at your own subdomain (you.<this server>), with its own theme and \
+             the option to share content from your followers, the people you follow, or your friends.",
+        ),
         PurchaseType::MediaStorage | PurchaseType::AiGrants | PurchaseType::PermissionsAccess => None,
     }
 }
@@ -223,6 +228,7 @@ pub fn market_product_headline(product: &MarketProduct) -> String {
         PurchaseType::AiGrants => "AI Token Grant".to_string(),
         PurchaseType::RellmHosting => "Rellm Hosting".to_string(),
         PurchaseType::PermissionsAccess => "Permissions Access".to_string(),
+        PurchaseType::Subdomain => "Rellm Subdomain".to_string(),
     }
 }
 
@@ -260,6 +266,9 @@ pub fn stripe_product_name(product: &MarketProduct, server_short_name: &str) -> 
         }
         Some(market_product::Details::PermissionsAccessSubscriptionDetails(d)) => {
             format!("{} Access on {}", d.name, server_short_name)
+        }
+        Some(market_product::Details::SubdomainSubscriptionDetails(_)) => {
+            format!("Rellm Subdomain on {}", server_short_name)
         }
         None => format!("Rellm Market product on {}", server_short_name),
     }

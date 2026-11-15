@@ -209,8 +209,19 @@ fn handle_checkout_session_completed(
             contact_email: get_meta("rellm_hosting_contact_email"),
             additional_information: get_meta("rellm_hosting_additional_information"),
         })
+    } else if purchase_type == PurchaseType::Subdomain {
+        // The purchase records which label it paid for; the subscription (below) carries the live,
+        // buyer-editable settings. `MakeMarketPurchase` already checked the label was free.
+        let buyer = models::get_user(buyer_id, conn)?;
+        crate::logic::subdomains::subdomain_purchase_details_json_for_label(&crate::logic::subdomains::label_for_username(&buyer.username))
     } else {
         product.details.clone()
+    };
+    let subscription_details = if purchase_type == PurchaseType::Subdomain {
+        let buyer = models::get_user(buyer_id, conn)?;
+        crate::logic::subdomains::new_subscription_details_json(&buyer)
+    } else {
+        details.clone()
     };
 
     let customer_id = session.get("customer").and_then(|v| v.as_str()).map(str::to_string);
@@ -250,7 +261,7 @@ fn handle_checkout_session_completed(
             period: product.period.clone(),
             amount: product.amount,
             currency: product.currency,
-            details: details.clone(),
+            details: subscription_details,
             renews_at,
             stripe_customer_id: customer_id.clone(),
             stripe_payment_method_id: payment_method_id.clone(),

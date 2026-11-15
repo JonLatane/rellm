@@ -1,0 +1,338 @@
+//! Rellm Subdomains (`PURCHASE_TYPE_SUBDOMAIN`): `bullcity.social/jon` is also served as
+//! `jon.bullcity.social`, by the same Rocket and Tonic servers as the parent -- a "virtual server" scoped
+//! to one user. This module resolves a request's `Host` to that user's subscription and derives everything
+//! the scoped RPCs/pages need from it (the visible authors, the virtual `ServerConfiguration`, the
+//! stylesheet). See `SubdomainSettings` in `server_configuration.proto`.
+
+use std::time::SystemTime;
+
+use diesel::dsl::sql;
+use diesel::sql_types::{Bool, Text};
+use diesel::*;
+use tonic::{Code, Status};
+
+use crate::db_connection::PgPooledConnection;
+use crate::logic::subscription_state;
+use crate::marshaling::{ToProtoId, ToStringPurchaseType};
+use crate::models;
+use crate::protos::*;
+use crate::rpcs::get_server_configuration_proto;
+use crate::schema::{follows, market_subscriptions};
+
+/// A request's host, as the Tonic layer saw it (`:authority`/`Host`) -- an extension on every Tonic
+/// `Request` (see `servers::tonic::RequestHostLayer`).
+#[derive(Clone, Debug)]
+pub struct RequestHost(pub String);
+
+/// Labels that must never be handed out as a subdomain (they'd shadow real infrastructure hosts).
+const RESERVED_LABELS: &[&str] = &["www", "api", "admin", "mail", "smtp", "imap", "ftp", "cdn", "media", "static"];
+
+/// An active subdomain, resolved from a request's host.
+#[derive(Clone, Debug)]
+pub struct SubdomainContext {
+    pub subscription: models::MarketSubscription,
+    /// The subdomain's owner (the subscription's buyer).
+    pub owner: models::User,
+    /// The subscription's settings, `custom_css_configuration.custom_css` included.
+    pub settings: SubdomainSettings,
+}
+
+/// A username as a candidate DNS label (lower case) -- `None` if it can't be one (see `is_valid_label`).
+pub fn label_for_username(username: &str) -> String {
+    username.trim().to_ascii_lowercase()
+}
+
+/// `a-z`, `0-9` and inner `-`, 1-63 characters, not reserved.
+pub fn is_valid_label(label: &str) -> bool {
+    !label.is_empty()
+        && label.len() <= 63
+        && !label.starts_with('-')
+        && !label.ends_with('-')
+        && label.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+        && !RESERVED_LABELS.contains(&label)
+}
+
+/// The subdomain label `host` addresses under `frontend_host`: `jon.bullcity.social` (any port) under
+/// `bullcity.social` is `jon`. `None` for the parent host itself, for hosts that aren't a single label
+/// beneath it, and for invalid labels.
+pub fn subdomain_label_for_host(host: &str, frontend_host: &str) -> Option<String> {
+    let host = strip_port(host).trim_end_matches('.').to_ascii_lowercase();
+    let frontend_host = strip_port(frontend_host).trim_end_matches('.').to_ascii_lowercase();
+    if frontend_host.is_empty() {
+        return None;
+    }
+    let label = host.strip_suffix(&format!(".{frontend_host}"))?;
+    is_valid_label(label).then(|| label.to_string())
+}
+
+fn strip_port(host: &str) -> &str {
+    // IPv6 literals ("[::1]:80") never match a frontend_host anyway.
+    match host.rsplit_once(':') {
+        Some((name, port)) if !name.contains(':') && port.bytes().all(|b| b.is_ascii_digit()) => name,
+        _ => host,
+    }
+}
+
+/// The active (not canceled-and-lapsed) `PURCHASE_TYPE_SUBDOMAIN` subscription holding `label`.
+pub fn find_active_subdomain_subscription(
+    label: &str,
+    conn: &mut PgPooledConnection,
+) -> Result<Option<models::MarketSubscription>, Status> {
+    let candidates = market_subscriptions::table
+        .filter(market_subscriptions::product_type.eq(PurchaseType::Subdomain.to_string_purchase_type()))
+        .filter(market_subscriptions::service_terminated_at.is_null())
+        .filter(sql::<Bool>("market_subscriptions.details #>> '{settings,subdomain}' = ").bind::<Text, _>(label.to_string()))
+        .load::<models::MarketSubscription>(conn)
+        .map_err(|e| {
+            log::error!("Failed to look up subdomain {}: {:?}", label, e);
+            Status::new(Code::Internal, "failed_to_load_subscriptions")
+        })?;
+    let now = SystemTime::now();
+    Ok(candidates.into_iter().find(|s| {
+        subscription_state(s.canceled_at, s.renews_at, s.service_terminated_at, now)
+            != MarketSubscriptionState::SubscriptionCanceled
+    }))
+}
+
+/// Whether `buyer_id` may start a subdomain subscription: their username is a valid label and no *other*
+/// user's active subscription holds it. Returns the label.
+pub fn validate_label_available(buyer: &models::User, conn: &mut PgPooledConnection) -> Result<String, Status> {
+    let label = label_for_username(&buyer.username);
+    if !is_valid_label(&label) {
+        return Err(Status::new(Code::FailedPrecondition, "username_not_a_valid_subdomain"));
+    }
+    if let Some(existing) = find_active_subdomain_subscription(&label, conn)? {
+        if existing.buyer_id != buyer.id {
+            return Err(Status::new(Code::FailedPrecondition, "subdomain_taken"));
+        }
+    }
+    Ok(label)
+}
+
+/// `market_subscriptions.details` for a brand-new subdomain subscription owned by `owner`.
+pub fn new_subscription_details_json(owner: &models::User) -> serde_json::Value {
+    serde_json::to_value(SubdomainSubscriptionDetails {
+        settings: Some(SubdomainSettings {
+            subdomain_of: owner.id.to_proto_id(),
+            subdomain: label_for_username(&owner.username),
+            ..Default::default()
+        }),
+        fulfillment_status: FulfillmentStatus::Fulfilled as i32,
+        ..Default::default()
+    })
+    .unwrap_or_default()
+}
+
+/// `market_purchases.details` (a `SubdomainPurchaseDetails`) for `label`.
+pub fn subdomain_purchase_details_json_for_label(label: &str) -> serde_json::Value {
+    serde_json::to_value(SubdomainPurchaseDetails { subdomain: label.to_string() }).unwrap_or_default()
+}
+
+/// The `SubdomainPurchaseDetails` for a renewal, from the subscription's own details.
+pub fn subdomain_purchase_details_json(subscription_details: &serde_json::Value) -> serde_json::Value {
+    let label = serde_json::from_value::<SubdomainSubscriptionDetails>(subscription_details.clone())
+        .ok()
+        .and_then(|d| d.settings)
+        .map(|s| s.subdomain)
+        .unwrap_or_default();
+    subdomain_purchase_details_json_for_label(&label)
+}
+
+/// A subscription's `SubdomainSettings` (empty if its details don't parse).
+pub fn settings_of(subscription: &models::MarketSubscription) -> SubdomainSettings {
+    serde_json::from_value::<SubdomainSubscriptionDetails>(subscription.details.clone())
+        .ok()
+        .and_then(|d| d.settings)
+        .unwrap_or_default()
+}
+
+/// Resolves `host` (a request's `Host`/`:authority`) to the subdomain it addresses, if any: the parent
+/// server's `ExternalCDNConfig.frontend_host` must be configured, `host` must be one label beneath it, and an
+/// active `PURCHASE_TYPE_SUBDOMAIN` subscription must hold that label. Everything else is `Ok(None)` -- the
+/// request is simply for the parent server.
+pub fn resolve_subdomain(
+    host: Option<&str>,
+    conn: &mut PgPooledConnection,
+) -> Result<Option<SubdomainContext>, Status> {
+    let Some(host) = host else {
+        return Ok(None);
+    };
+    let frontend_host = get_server_configuration_proto(conn)?
+        .external_cdn_config
+        .map(|c| c.frontend_host)
+        .unwrap_or_default();
+    let Some(label) = subdomain_label_for_host(host, &frontend_host) else {
+        return Ok(None);
+    };
+    let Some(subscription) = find_active_subdomain_subscription(&label, conn)? else {
+        return Ok(None);
+    };
+    let owner = models::get_user(subscription.buyer_id, conn)?;
+    let settings = settings_of(&subscription);
+    Ok(Some(SubdomainContext { subscription, owner, settings }))
+}
+
+impl SubdomainContext {
+    /// The owner's user id plus -- per the `share_content_from_*` toggles -- everyone whose content the
+    /// subdomain also shows (accepted follows only). What `GetPosts`/`GetEvents` are limited to.
+    pub fn visible_author_ids(&self, conn: &mut PgPooledConnection) -> Result<Vec<i64>, Status> {
+        let owner_id = self.owner.id;
+        let passing: Vec<String> = crate::rpcs::PASSING_MODERATIONS.iter().map(|s| s.to_string()).collect();
+        let load = |query: Result<Vec<i64>, diesel::result::Error>| {
+            query.map_err(|e| {
+                log::error!("Failed to load subdomain authors: {:?}", e);
+                Status::new(Code::Internal, "failed_to_load_subdomain_authors")
+            })
+        };
+        // Users who follow the owner / users the owner follows.
+        let followers: Vec<i64> = if self.settings.share_content_from_followers || self.settings.share_content_from_friends {
+            load(
+                follows::table
+                    .filter(follows::target_user_id.eq(owner_id))
+                    .filter(follows::target_user_moderation.eq_any(&passing))
+                    .select(follows::user_id)
+                    .load::<i64>(&mut *conn),
+            )?
+        } else {
+            vec![]
+        };
+        let following: Vec<i64> = if self.settings.share_content_from_following || self.settings.share_content_from_friends {
+            load(
+                follows::table
+                    .filter(follows::user_id.eq(owner_id))
+                    .filter(follows::target_user_moderation.eq_any(&passing))
+                    .select(follows::target_user_id)
+                    .load::<i64>(&mut *conn),
+            )?
+        } else {
+            vec![]
+        };
+        Ok(combine_authors(owner_id, &self.settings, &followers, &following))
+    }
+
+    /// The subdomain's own stylesheet configuration, `custom_css` text included (empty if never set) -- what
+    /// `GetCustomCSS` and `/custom_css.css` serve on this host.
+    pub fn custom_css_configuration(&self) -> CustomCssConfiguration {
+        let mut css = self.settings.custom_css_configuration.clone().unwrap_or_default();
+        css.custom_css = Some(css.custom_css.unwrap_or_default());
+        css
+    }
+
+    /// The virtual `ServerConfiguration` `GetServerConfiguration` returns on this subdomain: the parent's
+    /// configuration (CDN, contact integrations, permissions, ... are all shared) re-skinned for the owner --
+    /// their name/bio instead of the server's, their stylesheet's settings, only the tabs that make sense for
+    /// one user, and `subdomain_settings` set so clients can tell.
+    pub fn virtual_server_configuration(&self, parent: ServerConfiguration) -> ServerConfiguration {
+        let mut config = parent;
+        let owner = &self.owner;
+        let display_name = if owner.real_name.trim().is_empty() { owner.username.clone() } else { owner.real_name.clone() };
+        let mut server_info = config.server_info.take().unwrap_or_default();
+        server_info.name = Some(display_name);
+        server_info.short_name = Some(owner.username.clone());
+        server_info.description = Some(owner.bio.clone());
+        // The parent's logo/colors/policies describe the whole server, not this user.
+        server_info.logo = None;
+        server_info.colors = None;
+        config.server_info = Some(server_info);
+
+        // Only what is relevant to one user's site: no People/Groups/Market, no custom tab set.
+        for settings in [config.people_settings.as_mut(), config.group_settings.as_mut()].into_iter().flatten() {
+            settings.visible = false;
+        }
+        if let Some(market) = config.market_settings.as_mut() {
+            market.enabled = false;
+        }
+        config.custom_tabs = None;
+        config.federation_info = None;
+        // Secrets/infrastructure of the parent are never shown on a subdomain, whoever is looking.
+        config.cluster_resources = None;
+        config.twilio_config = None;
+        config.bird_config = None;
+        config.telnyx_config = None;
+        config.stalwart_config = None;
+        config.stripe_config = None;
+        config.preferred_verification_apis = vec![];
+
+        let mut css = self.settings.custom_css_configuration.clone().unwrap_or_default();
+        css.custom_css = None;
+        config.custom_css_configuration = Some(css);
+
+        let mut settings = self.settings.clone();
+        settings.subdomain_of = owner.id.to_proto_id();
+        if let Some(css) = settings.custom_css_configuration.as_mut() {
+            css.custom_css = None;
+        }
+        config.subdomain_settings = Some(settings);
+        config
+    }
+}
+
+/// Pure core of `visible_author_ids`: `followers` are users who follow the owner, `following` users the
+/// owner follows. Friends are the intersection. The owner is always first; the result has no duplicates.
+pub fn combine_authors(owner_id: i64, settings: &SubdomainSettings, followers: &[i64], following: &[i64]) -> Vec<i64> {
+    let mut authors = vec![owner_id];
+    let mut add = |ids: &mut dyn Iterator<Item = i64>| {
+        for id in ids {
+            if !authors.contains(&id) {
+                authors.push(id);
+            }
+        }
+    };
+    if settings.share_content_from_followers {
+        add(&mut followers.iter().copied());
+    }
+    if settings.share_content_from_following {
+        add(&mut following.iter().copied());
+    }
+    if settings.share_content_from_friends {
+        add(&mut followers.iter().copied().filter(|id| following.contains(id)));
+    }
+    authors
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn label_for_host() {
+        assert_eq!(subdomain_label_for_host("jon.bullcity.social", "bullcity.social"), Some("jon".to_string()));
+        assert_eq!(subdomain_label_for_host("Jon.BullCity.Social:8000", "bullcity.social"), Some("jon".to_string()));
+        assert_eq!(subdomain_label_for_host("bullcity.social", "bullcity.social"), None);
+        assert_eq!(subdomain_label_for_host("a.b.bullcity.social", "bullcity.social"), None);
+        assert_eq!(subdomain_label_for_host("www.bullcity.social", "bullcity.social"), None);
+        assert_eq!(subdomain_label_for_host("jon.other.social", "bullcity.social"), None);
+        assert_eq!(subdomain_label_for_host("jon.bullcity.social", ""), None);
+        assert_eq!(subdomain_label_for_host("notbullcity.social", "bullcity.social"), None);
+    }
+
+    #[test]
+    fn valid_labels() {
+        assert!(is_valid_label("jon"));
+        assert!(is_valid_label("jon-1"));
+        assert!(!is_valid_label("-jon"));
+        assert!(!is_valid_label("jon_l"));
+        assert!(!is_valid_label("jon.l"));
+        assert!(!is_valid_label(""));
+        assert!(!is_valid_label("admin"));
+    }
+
+    #[test]
+    fn authors_follow_the_toggles() {
+        let none = SubdomainSettings::default();
+        assert_eq!(combine_authors(1, &none, &[2, 3], &[3, 4]), vec![1]);
+        let followers = SubdomainSettings { share_content_from_followers: true, ..Default::default() };
+        assert_eq!(combine_authors(1, &followers, &[2, 3], &[3, 4]), vec![1, 2, 3]);
+        let following = SubdomainSettings { share_content_from_following: true, ..Default::default() };
+        assert_eq!(combine_authors(1, &following, &[2, 3], &[3, 4]), vec![1, 3, 4]);
+        let friends = SubdomainSettings { share_content_from_friends: true, ..Default::default() };
+        assert_eq!(combine_authors(1, &friends, &[2, 3], &[3, 4]), vec![1, 3]);
+        let all = SubdomainSettings {
+            share_content_from_followers: true,
+            share_content_from_following: true,
+            share_content_from_friends: true,
+            ..Default::default()
+        };
+        assert_eq!(combine_authors(1, &all, &[2, 3], &[3, 4]), vec![1, 2, 3, 4]);
+    }
+}

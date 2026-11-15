@@ -14,6 +14,12 @@ fn main() {
         .type_attribute("MediaStorageSubscriptionDetails", "#[serde(default)]")
         .type_attribute("AIGrantSubscriptionDetails", "#[serde(default)]")
         .type_attribute("PermissionsAccessSubscriptionDetails", "#[serde(default)]")
+        // Subdomain subscription details are stored as JSON and edited piecemeal (`SaveMarketSubscription`),
+        // so every key is optional on the way back in.
+        .type_attribute("SubdomainSubscriptionDetails", "#[serde(default)]")
+        .type_attribute("SubdomainSettings", "#[serde(default)]")
+        .type_attribute("SubdomainPurchaseDetails", "#[serde(default)]")
+        .type_attribute("CustomCSSConfiguration", "#[serde(default)]")
         // Used for updating servers from 0.5.551 -> 0.5.553+. Can be removed
         // in the distant future.
         // Lets `event_settings` JSON stored before this field existed deserialize

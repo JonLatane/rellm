@@ -67,6 +67,10 @@ pub fn fulfill_purchase(
         // No automatic entitlement -- just leaves the `Purchase` record (with domain/contact/
         // notes) for Jon to act on by hand. See `market.proto`'s own framing.
         PurchaseType::RellmHosting => Ok(()),
+        // The subdomain's label and settings were recorded on the subscription itself when it was
+        // created (`web::stripe_webhook`) -- there is nothing to apply: it resolves for as long as the
+        // subscription is in force (`logic::subdomains::resolve_subdomain`).
+        PurchaseType::Subdomain => Ok(()),
         // Adds the product's configured `Permission`s to the buyer's own `User.permissions`,
         // union-style (never removes anything the buyer already had, from this grant or any other
         // source) -- "just grant the permissions to the subscribed user," per Jon's own framing.
@@ -173,6 +177,7 @@ pub fn terminate_entitlement(
             Ok(())
         }
         // Out of scope for this MVP -- no automatic revocation action for either.
-        PurchaseType::AiGrants | PurchaseType::RellmHosting => Ok(()),
+        // Nothing to claw back -- `logic::subdomains::resolve_subdomain` stops resolving it on its own.
+        PurchaseType::AiGrants | PurchaseType::RellmHosting | PurchaseType::Subdomain => Ok(()),
     }
 }

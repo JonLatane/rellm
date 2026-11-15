@@ -110,7 +110,11 @@ fn renew_one(
             subscription_id: Some(subscription.id),
             product_type: subscription.product_type.clone(),
             // Renewals repeat the same entitlement the subscription was created with.
-            details: subscription.details.clone(),
+            details: if purchase_type == PurchaseType::Subdomain {
+                crate::logic::subdomains::subdomain_purchase_details_json(&subscription.details)
+            } else {
+                subscription.details.clone()
+            },
             stripe_checkout_session_id: None,
             stripe_payment_intent_id: Some(result.id.clone()),
         },

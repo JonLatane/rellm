@@ -3,6 +3,7 @@ syntax = "proto3";
 package rellm;
 import "media.proto";
 import "permissions.proto";
+import "server_configuration.proto";
 import "google/protobuf/timestamp.proto";
 
 // What a `MarketProduct`/`MarketPurchase`/`MarketSubscription` actually grants the buyer once
@@ -38,6 +39,13 @@ enum PurchaseType {
   // difference, not a reconciliation against any other subscription/grant the buyer might also
   // hold).
   PURCHASE_TYPE_PERMISSIONS_ACCESS = 3;
+  // A Rellm Subdomain for the buyer's own profile: `bullcity.social/jon` becomes reachable as
+  // `jon.bullcity.social` (see `SubdomainSettings`). Fulfillment records the buyer's lower-cased username as the
+  // subscription's `SubdomainSettings.subdomain` (failing if another active subscription already holds it);
+  // there is no other entitlement to apply -- the subdomain simply resolves while the subscription is in force.
+  // The buyer then edits their `SubdomainSettings` with `SaveMarketSubscription`. Revoked (the subdomain stops
+  // resolving) as soon as the subscription's `service_terminated_at` is set.
+  PURCHASE_TYPE_SUBDOMAIN = 4;
 }
 
 // How often a `MarketProduct`/`MarketSubscription` bills. Immutable on a `MarketProduct` once
@@ -126,6 +134,7 @@ message MarketProduct {
     AIGrantSubscriptionDetails ai_grant_subscription_details = 11;
     RellmHostingSubscriptionDetails rellm_hosting_subscription_details = 12;
     PermissionsAccessSubscriptionDetails permissions_access_subscription_details = 13;
+    SubdomainSubscriptionDetails subdomain_subscription_details = 14;
   }
 
   // When this product was created. Server-stamped -- `CreateMarketProduct` ignores any client-sent
@@ -271,6 +280,7 @@ message MarketPurchase {
     AIGrantPurchaseDetails ai_grant_purchase_details = 11;
     RellmHostingPurchaseDetails rellm_hosting_purchase_details = 12;
     PermissionsAccessPurchaseDetails permissions_access_purchase_details = 13;
+    SubdomainPurchaseDetails subdomain_purchase_details = 14;
   }
 
   // When this purchase was recorded -- i.e. when the Stripe webhook/renewal job actually processed
@@ -506,6 +516,7 @@ message MarketSubscription {
     AIGrantSubscriptionDetails ai_grant_subscription_details = 11;
     RellmHostingSubscriptionDetails rellm_hosting_subscription_details = 12;
     PermissionsAccessSubscriptionDetails permissions_access_subscription_details = 13;
+    SubdomainSubscriptionDetails subdomain_subscription_details = 14;
   }
 
   // When this subscription was first created (i.e. when the initial `MarketPurchase` was
@@ -733,4 +744,36 @@ message FulfillmentNote {
 message MarkFulfillmentNotesReadRequest {
   // The `MarketSubscription.id`. Only its buyer may mark it read.
   string market_subscription_id = 1;
+}
+
+
+// `MarketProduct.details`/`MarketSubscription.details`' `PURCHASE_TYPE_SUBDOMAIN` variant. On a
+// `MarketProduct` it carries nothing (a subdomain product has no parameters -- the label comes from the buyer's
+// username); on a `MarketSubscription` it holds the live, buyer-editable [`SubdomainSettings`](#rellm-SubdomainSettings)
+// (unlike every other details type, these are *not* frozen at purchase -- `SaveMarketSubscription` changes them).
+message SubdomainSubscriptionDetails {
+  // The subdomain's settings; `settings.subdomain_of`/`settings.subdomain` are filled in by the server at
+  // fulfillment. Unset on a product.
+  optional SubdomainSettings settings = 1;
+
+  // The fulfillment chat -- see `MediaStorageSubscriptionDetails.fulfillment_status`. Always
+  // `FULFILLMENT_STATUS_FULFILLED` (the system fulfills this type automatically).
+  FulfillmentStatus fulfillment_status = 7;
+  repeated FulfillmentNote fulfillment_notes = 8;
+  optional google.protobuf.Timestamp notes_last_read = 9;
+}
+
+// `MarketPurchase.details`' `PURCHASE_TYPE_SUBDOMAIN` variant: which subdomain this purchase paid for.
+message SubdomainPurchaseDetails {
+  // The DNS label that was (or, on renewal, is being kept) reserved, e.g. `jon`.
+  string subdomain = 1;
+}
+
+// Request for [`SaveMarketSubscription`](#grpc-api-SaveMarketSubscription).
+message SaveMarketSubscriptionRequest {
+  // The ID of the buyer's own `PURCHASE_TYPE_SUBDOMAIN` subscription.
+  string market_subscription_id = 1;
+  // The new settings. Only `share_content_from_followers`/`_following`/`_friends` and `custom_css_configuration`
+  // are read -- `subdomain_of`/`subdomain` are server-assigned and ignored.
+  SubdomainSettings subdomain_settings = 2;
 }
