@@ -43,7 +43,7 @@ const SAFE_KEYS: &[&str] = &[
     "fbtrace_id",
 ];
 
-fn is_identifier_like(s: &str) -> bool {
+pub fn is_identifier_like(s: &str) -> bool {
     !s.is_empty()
         && s.len() <= 64
         && s.chars()

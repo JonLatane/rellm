@@ -65,7 +65,9 @@ pub fn configure_server(
     user: &models::User,
     conn: &mut PgPooledConnection,
 ) -> Result<protos::ServerConfiguration, Status> {
-    log::info!("ConfigureServer called; request {:?}", redact_secrets(&request));
+    // The configuration holds contact details (sender addresses, phone numbers, SMTP usernames, ...),
+    // so it is never logged -- not even through `redact_secrets`.
+    log::info!("ConfigureServer called by user_id={}", user.id);
     validate_permission(&Some(user), Permission::Admin)?;
     validate_configuration(&request)?;
 
@@ -543,10 +545,7 @@ pub fn configure_server(
         });
     match result {
         Ok(configuration) => {
-            log::info!(
-                "ConfigureServer called; updated configuration to {:?}",
-                redact_secrets(&configuration.to_proto())
-            );
+            log::info!("ConfigureServer: configuration updated");
             Ok(configuration.to_proto())
         }
         Err(e) => {

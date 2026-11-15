@@ -35,7 +35,17 @@ type ReplyStream = Pin<Box<dyn Stream<Item = Result<Post, Status>> + Send>>;
 fn rpc_outcome<T>(result: &Result<T, Status>) -> String {
     match result {
         Ok(_) => "ok".to_string(),
-        Err(status) => format!("error {:?}: {}", status.code(), status.message()),
+        // Messages are meant to be fixed machine-readable keys (`username_already_exists`), but some
+        // carry interpolated text; only identifier-like ones are logged.
+        Err(status) => {
+            let message = status.message();
+            let message = if crate::logic::log_redaction::is_identifier_like(message) {
+                message
+            } else {
+                "<redacted>"
+            };
+            format!("error {:?}: {}", status.code(), message)
+        }
     }
 }
 

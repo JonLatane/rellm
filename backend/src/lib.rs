@@ -53,7 +53,7 @@ where
     let mut stack = String::from("\n");
     if let Some(cause) = err.source() {
         for (i, e) in std::iter::successors(Some(cause), |e| e.source()).enumerate() {
-            stack.push_str(&format!("   {}: {}\n", i, e));
+            stack.push_str(&format!("   {}: {}\n", i, crate::logic::log_redaction::scrub_urls(&e.to_string())));
         }
     }
     log::error!("[ERROR] {}\nCaused by: {}", crate::logic::log_redaction::safe_error(&err), stack);
