@@ -44,15 +44,20 @@ suite =
                         |> Media.itemsOf VideoKind "bluesky:bsky.app"
                         |> Expect.equal []
             ]
-        , describe "thumbnailFor"
-            [ test "a Bluesky playlist has a thumbnail next to it" <|
+        , describe "thumbnails"
+            [ test "a video item's thumbnail is its poster, found from its URL (Bluesky and Mastodon)" <|
                 \_ ->
-                    Media.thumbnailFor "bluesky:bsky.app" (reference "x" "video/*" (Just "https://video.bsky.app/watch/did:plc:abc/bafy123/playlist.m3u8"))
-                        |> Expect.equal (Just "https://video.bsky.app/watch/did:plc:abc/bafy123/thumbnail.jpg")
-            , test "a Mastodon video has none" <|
-                \_ ->
-                    Media.thumbnailFor "mastodon:example.social" (reference "x" "video/*" (Just "https://example.social/video.mp4"))
-                        |> Expect.equal Nothing
+                    [ post "p1" [ reference "a" "video/*" (Just "https://video.bsky.app/watch/did:plc:abc/bafy123/playlist.m3u8") ]
+                    , post "p2" [ reference "b" "video/*" (Just "https://m.example/media_attachments/files/1/2/original/clip.mp4") ]
+                    , post "p3" [ reference "c" "video/*" (Just "https://example.social/video.mp4") ]
+                    ]
+                        |> Media.itemsOf VideoKind "mixed"
+                        |> List.map .thumbnailUrl
+                        |> Expect.equal
+                            [ Just "https://video.bsky.app/watch/did:plc:abc/bafy123/thumbnail.jpg"
+                            , Just "https://m.example/media_attachments/files/1/2/small/clip.png"
+                            , Nothing
+                            ]
             ]
         , describe "plainTitle"
             [ test "drops HTML tags and collapses whitespace" <|

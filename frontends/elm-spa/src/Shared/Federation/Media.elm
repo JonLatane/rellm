@@ -4,7 +4,6 @@ module Shared.Federation.Media exposing
     , collect
     , itemsOf
     , plainTitle
-    , thumbnailFor
     )
 
 {-| The video and audio of Mastodon/Bluesky _posts_, for the Video and Audio pages (`Components.MediaFeed`):
@@ -21,6 +20,7 @@ enough of what it was asked for, or has run out of patience (`maxPages`).
 import Http
 import Proto.Rellm exposing (MediaReference, Post)
 import Shared.Federation.Common exposing (sensitiveMediaHiddenId)
+import Shared.Federation.VideoPoster as VideoPoster
 import Task exposing (Task)
 
 
@@ -74,7 +74,7 @@ itemsOf kind host posts =
                             , kind = kind
                             , media = media
                             , post = post
-                            , thumbnailUrl = thumbnailFor host media
+                            , thumbnailUrl = media.url |> Maybe.andThen VideoPoster.posterUrl
                             }
                         )
             )
@@ -92,25 +92,6 @@ kindOf media =
 
             else if String.startsWith "audio/" contentType then
                 Just AudioKind
-
-            else
-                Nothing
-
-        Nothing ->
-            Nothing
-
-
-{-| A still for a video, where one can be derived: Bluesky's video CDN serves `thumbnail.jpg` next to each
-`playlist.m3u8`. Mastodon's attachments carry their preview separately (not kept in a `MediaReference`),
-so those have none and the card shows a placeholder.
--}
-thumbnailFor : String -> MediaReference -> Maybe String
-thumbnailFor host media =
-    case media.url of
-        Just url ->
-            if String.startsWith "bluesky:" host && String.endsWith "/playlist.m3u8" url then
-                -- 13 is the length of "playlist.m3u8".
-                Just (String.dropRight 13 url ++ "thumbnail.jpg")
 
             else
                 Nothing

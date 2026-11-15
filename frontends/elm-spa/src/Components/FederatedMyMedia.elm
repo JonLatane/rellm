@@ -32,6 +32,7 @@ import Shared.Federation.Actions as Actions exposing (ServerAccount(..))
 import Shared.Federation.Common exposing (sensitiveMediaHiddenId)
 import Shared.Federation.Mastodon as Mastodon exposing (MastodonVisibility(..))
 import Shared.Federation.Media as FedMedia
+import Shared.Federation.VideoPoster as VideoPoster
 import Shared.MediaViewerPanel as MediaViewerPanel
 import Task
 import UI.Classes exposing (classes)
@@ -576,7 +577,7 @@ tile shared model item =
                     img [ src url, attribute "alt" title, attribute "loading" "lazy" ] []
 
                 ( VideoKind, _ ) ->
-                    case FedMedia.thumbnailFor host item.media of
+                    case item.media.url |> Maybe.andThen VideoPoster.posterUrl of
                         Just url ->
                             img [ src url, attribute "alt" "", attribute "loading" "lazy" ] []
 
