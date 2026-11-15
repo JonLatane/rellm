@@ -423,6 +423,9 @@ pub fn configure_server(
         });
     match result {
         Ok(configuration) => {
+            // Apply a changed `search_settings.semantic_search_enabled` right away: start loading the
+            // query model when turned on, free its memory when turned off.
+            crate::logic::embeddings::apply_semantic_search_setting(conn);
             log::info!(
                 "ConfigureServer called; updated configuration to {:?}",
                 configuration.to_proto()

@@ -110,8 +110,22 @@ CREATE FUNCTION media_search_document(p_media_id BIGINT) RETURNS TEXT AS $$
 $$ LANGUAGE sql STABLE;
 
 -- An Event's document is its Post's document plus what only the Event has: when and where its
--- Occasions are (soonest first, at most 10) and each Occasion's own title. An Event that hides its
--- location until RSVP approval (EventInfo.hide_location_until_rsvp_approved) doesn't leak it here.
+-- Occasions are (soonest first, at most 10) and each Occasion's own title.
+--
+-- One embedding is shared by everyone who can see the Event, but each Occasion has its own Post with
+-- its own visibility/moderation -- so only Occasions anyone who can see the Event could also see
+-- are included: moderation passing (UNMODERATED/APPROVED) and visibility at least as public as the
+-- Event's own Post. A private or pending Occasion's title/address never influences who a search
+-- returns. An Event that hides its location until RSVP approval
+-- (EventInfo.hide_location_until_rsvp_approved) doesn't leak it here either.
+CREATE FUNCTION visibility_openness(p_visibility VARCHAR) RETURNS INT AS $$
+  SELECT CASE p_visibility
+    WHEN 'GLOBAL_PUBLIC' THEN 3
+    WHEN 'SERVER_PUBLIC' THEN 2
+    WHEN 'LIMITED' THEN 1
+    ELSE 0 END;
+$$ LANGUAGE sql IMMUTABLE;
+
 CREATE FUNCTION event_search_document(p_event_id BIGINT) RETURNS TEXT AS $$
   SELECT concat_ws(E'\n',
     nullif(post_search_document(p_event_id), ''),
@@ -127,11 +141,14 @@ CREATE FUNCTION event_search_document(p_event_id BIGINT) RETURNS TEXT AS $$
        FROM occasions o
        JOIN posts op ON op.id = o.post_id
        WHERE o.event_id = p_event_id
+         AND op.moderation IN ('UNMODERATED', 'APPROVED')
+         AND visibility_openness(op.visibility) >= visibility_openness(ep.visibility)
        ORDER BY o.starts_at
        LIMIT 10
      ) occ)
   )
-  FROM events e WHERE e.post_id = p_event_id;
+  FROM events e JOIN posts ep ON ep.id = e.post_id
+  WHERE e.post_id = p_event_id;
 $$ LANGUAGE sql STABLE;
 
 -- 3. EMBEDDINGS. One table per kind of thing searched (Posts and Events both have a Post as their

@@ -6,6 +6,7 @@ DROP TABLE event_embeddings;
 DROP TABLE post_embeddings;
 
 DROP FUNCTION event_search_document(BIGINT);
+DROP FUNCTION visibility_openness(VARCHAR);
 DROP FUNCTION media_search_document(BIGINT);
 DROP FUNCTION user_search_document(BIGINT);
 DROP FUNCTION post_search_document(BIGINT);

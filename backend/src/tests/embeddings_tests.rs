@@ -122,6 +122,43 @@ fn an_event_document_adds_occasion_places_and_dates_but_not_a_hidden_location() 
 }
 
 #[test]
+fn an_event_document_leaves_out_occasions_the_event_s_viewers_could_not_see() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, diesel::result::Error, _>(|conn| {
+        let organizer = create_user(conn, "occasion_privacy");
+        let (event, post) = create_event(
+            conn,
+            &organizer,
+            EventOpts { title: Some("Garden party".to_string()), default_occasion: None, ..Default::default() },
+        );
+        let occasion = |conn: &mut PgPooledConnection, title: &str, address: &str, visibility, moderation| {
+            create_occasion(
+                conn,
+                &event,
+                Some(&organizer),
+                OccasionOpts {
+                    title: Some(title.to_string()),
+                    visibility,
+                    moderation,
+                    location: Some(serde_json::json!({"uniformly_formatted_address": address})),
+                    ..Default::default()
+                },
+            );
+        };
+        occasion(conn, "Public toast", "10 Open Road", Visibility::ServerPublic, Moderation::Unmoderated);
+        occasion(conn, "Secret meeting", "99 Hidden Lane", Visibility::Private, Moderation::Unmoderated);
+        occasion(conn, "Awaiting review", "5 Pending Place", Visibility::ServerPublic, Moderation::Pending);
+
+        let doc = document(conn, "event_search_document", post.id);
+        assert!(doc.contains("Public toast") && doc.contains("10 Open Road"), "{:?}", doc);
+        for leaked in ["Secret meeting", "99 Hidden Lane", "Awaiting review", "5 Pending Place"] {
+            assert!(!doc.contains(leaked), "{:?} leaked into {:?}", leaked, doc);
+        }
+        Ok(())
+    });
+}
+
+#[test]
 fn a_document_with_nothing_to_embed_gets_one_null_embedding_row_and_is_not_retried() {
     let mut conn = test_conn();
     conn.test_transaction::<_, anyhow::Error, _>(|conn| {
@@ -302,6 +339,34 @@ mod with_model {
             .map_err(|s| anyhow::anyhow!("{:?}", s))?;
             let found: Vec<String> = response.posts.iter().map(|p| p.id.clone()).collect();
             assert!(found.contains(&crate::marshaling::ToProtoId::to_proto_id(&dog.id).to_string()), "{:?}", found);
+            Ok(())
+        });
+    }
+
+    #[test]
+    #[ignore = "downloads the embedding model"]
+    fn a_profile_found_only_by_meaning_is_returned_by_the_all_users_search() {
+        wait_for_server_model();
+        let mut conn = test_conn();
+        conn.test_transaction::<_, anyhow::Error, _>(|conn| {
+            let trainer = create_user_with_profile(conn, "pawsitive", "Sam Rivers", "I train puppies and rescue dogs");
+            let baker = create_user_with_profile(conn, "doughboy", "Dee Baker", "Sourdough bread and pastries");
+            let mut ctx = SyncContext::unrestricted();
+            embeddings::sync_embeddings(conn, EmbeddingKind::UserProfile, &mut ctx)?;
+
+            let response = crate::rpcs::get_users(
+                GetUsersRequest {
+                    listing_type: UserListingType::UsersTextSearch as i32,
+                    search_text: Some("canine behaviorist".to_string()),
+                    ..Default::default()
+                },
+                &None,
+                conn,
+            )
+            .map_err(|s| anyhow::anyhow!("{:?}", s))?;
+            let names: Vec<String> = response.users.iter().map(|u| u.username.clone()).collect();
+            assert!(names.contains(&trainer.username), "{:?}", names);
+            assert!(!names.contains(&baker.username), "{:?}", names);
             Ok(())
         });
     }

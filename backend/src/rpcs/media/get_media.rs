@@ -100,6 +100,21 @@ fn apply_content_type_filter<'a>(
     }
 }
 
+/// What server-wide browsing (neither `media_id` nor `user_id`) leaves out: media with no owner, server-generated
+/// media, and profile pictures -- ordinary uploaded `Media`, but not something anyone posted to browse (they'd
+/// otherwise flood an `image/*` listing). Also applied when picking semantic-search candidates, so excluded
+/// rows can't fill the candidate slots and push real matches out.
+fn apply_server_wide_exclusions<'a>(
+    query: media::BoxedQuery<'a, diesel::pg::Pg>,
+) -> media::BoxedQuery<'a, diesel::pg::Pg> {
+    query
+        .filter(media::user_id.is_not_null())
+        .filter(media::generated.eq(false))
+        .filter(diesel::dsl::not(diesel::dsl::exists(
+            users::table.filter(users::avatar_media_id.eq(media::id.nullable())),
+        )))
+}
+
 fn parse_content_type_filter(content_type: &str) -> Result<ContentTypeFilter, Status> {
     let content_type = content_type.trim().to_ascii_lowercase();
     let valid_part = |part: &str| {
@@ -155,15 +170,9 @@ pub fn get_media(
     // Server-wide browsing (neither `media_id` nor `user_id`) is only for pages' feeds -- skip
     // media with no owner (e.g. deleted users' media) and server-generated media, so they don't
     // show up as "videos"/"audio" nobody posted.
-    if requested_media_id.is_none() && requested_user_id.is_none() {
-        // Also skip profile pictures, which are ordinary uploaded `Media` but not something
-        // anyone posted to browse (they'd otherwise flood an `image/*` listing).
-        query = query
-            .filter(media::user_id.is_not_null())
-            .filter(media::generated.eq(false))
-            .filter(diesel::dsl::not(diesel::dsl::exists(
-                users::table.filter(users::avatar_media_id.eq(media::id.nullable())),
-            )));
+    let server_wide = requested_media_id.is_none() && requested_user_id.is_none();
+    if server_wide {
+        query = apply_server_wide_exclusions(query);
     }
     query = apply_content_type_filter(query, &content_type_filter);
     if let Some(prefix_query_text) = prefix_query_text.clone() {
@@ -190,6 +199,9 @@ pub fn get_media(
             );
             if let Some(user_id) = requested_user_id {
                 recent = recent.filter(media::user_id.eq(user_id));
+            }
+            if server_wide {
+                recent = apply_server_wide_exclusions(recent);
             }
             let mut scope: Vec<i64> = recent
                 .order(media::created_at.desc())

@@ -226,19 +226,23 @@ fn get_all_users(
     let mut semantic_page_ids: Option<Vec<i64>> = None;
 
     if let Some(search_text) = search_text {
-        // "simple" (not "english") to match users_build_search_text's indexing config - see
-        // 2026-07-23-012047_add_search_text_no_stopwords.
-        let search_query = to_tsquery_with_search_config(
-            TsConfigurationByName("simple"),
-            prefix_tsquery_text(search_text),
-        );
-        query = query.filter(users::search_text.matches(search_query));
-
         // Semantic reranking (see `logic::embeddings`): full-text matches ranked by quality, plus
         // semantically similar profiles among the newest visible ones, fused. Only the plain
         // all-users search -- followers/following/friends listings stay full-text.
         if embeddings::semantic_search_ready(conn) {
             semantic_page_ids = semantic_user_page_ids(&visibilities_for(user), user, search_text, page_offset, conn);
+        }
+        // The full-text filter is the *fallback* path's only way to select matches. On the semantic
+        // path the chosen ids already include profiles that share no words with the query, so
+        // filtering them by text again would drop exactly those.
+        if semantic_page_ids.is_none() {
+            // "simple" (not "english") to match users_build_search_text's indexing config - see
+            // 2026-07-23-012047_add_search_text_no_stopwords.
+            let search_query = to_tsquery_with_search_config(
+                TsConfigurationByName("simple"),
+                prefix_tsquery_text(search_text),
+            );
+            query = query.filter(users::search_text.matches(search_query));
         }
     }
     match &semantic_page_ids {

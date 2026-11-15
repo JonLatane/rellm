@@ -18,7 +18,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 use diesel::sql_types::{BigInt, Binary, Nullable, Text};
@@ -193,7 +193,12 @@ fn similarity(query: &[f32], stored: &[u8]) -> Option<f32> {
 // The server's query embedder
 // ---------------------------------------------------------------------------------------------
 
-static SERVER_EMBEDDER: OnceLock<Mutex<Embedder>> = OnceLock::new();
+// `None` until loaded, and again after `unload_server_embedder` (setting turned off) so a small host gets
+// the model's memory back without a restart. Searches hold their own `Arc` while using it.
+static SERVER_EMBEDDER: RwLock<Option<Arc<Mutex<Embedder>>>> = RwLock::new(None);
+// What the last `semantic_search_enabled` check saw, so a load that finishes after the setting was
+// turned off discards the model instead of keeping it.
+static LAST_KNOWN_ENABLED: AtomicBool = AtomicBool::new(true);
 static LOADING: AtomicBool = AtomicBool::new(false);
 static LAST_LOAD_FAILURE: Mutex<Option<Instant>> = Mutex::new(None);
 const RETRY_LOAD_AFTER: Duration = Duration::from_secs(600);
@@ -204,9 +209,9 @@ const SERVER_THREADS: usize = 1;
 /// loading it on a background thread -- downloading the model if need be -- and returns `None`
 /// until that finishes, so a search never waits on a download: it's just full-text until then. A
 /// failed load is retried at most every ten minutes.
-pub fn server_embedder() -> Option<&'static Mutex<Embedder>> {
-    if let Some(embedder) = SERVER_EMBEDDER.get() {
-        return Some(embedder);
+pub fn server_embedder() -> Option<Arc<Mutex<Embedder>>> {
+    if let Some(embedder) = SERVER_EMBEDDER.read().unwrap().as_ref() {
+        return Some(embedder.clone());
     }
     if let Some(failed_at) = *LAST_LOAD_FAILURE.lock().unwrap() {
         if failed_at.elapsed() < RETRY_LOAD_AFTER {
@@ -217,10 +222,11 @@ pub fn server_embedder() -> Option<&'static Mutex<Embedder>> {
         std::thread::spawn(|| {
             log::info!("Loading embedding model {} for semantic search...", MODEL_NAME);
             match Embedder::load(SERVER_THREADS) {
-                Ok(embedder) => {
-                    let _ = SERVER_EMBEDDER.set(Mutex::new(embedder));
+                Ok(embedder) if LAST_KNOWN_ENABLED.load(Ordering::SeqCst) => {
+                    *SERVER_EMBEDDER.write().unwrap() = Some(Arc::new(Mutex::new(embedder)));
                     log::info!("Embedding model ready; semantic search is active.");
                 }
+                Ok(_) => log::info!("Semantic search was turned off while the model loaded; dropping it."),
                 Err(e) => {
                     log::error!("Couldn't load the embedding model; search stays full-text only: {:?}", e);
                     *LAST_LOAD_FAILURE.lock().unwrap() = Some(Instant::now());
@@ -232,9 +238,32 @@ pub fn server_embedder() -> Option<&'static Mutex<Embedder>> {
     None
 }
 
+/// Frees the server's query model (the setting was turned off). A search already using it finishes
+/// first; the memory is released when its last `Arc` drops.
+pub fn unload_server_embedder() {
+    *SERVER_EMBEDDER.write().unwrap() = None;
+}
+
+/// Brings the server's query model in line with the setting: starts loading it when semantic search is
+/// on, frees it when off. Called when the configuration is saved (and at startup), so a toggle takes
+/// effect immediately instead of on the next search.
+pub fn apply_semantic_search_setting(conn: &mut PgPooledConnection) {
+    if semantic_search_enabled(conn) {
+        let _ = server_embedder();
+    } else {
+        unload_server_embedder();
+    }
+}
+
 /// Whether `ServerConfiguration.search_settings.semantic_search_enabled` is on (the default,
 /// including for rows saved before the setting existed).
 pub fn semantic_search_enabled(conn: &mut PgPooledConnection) -> bool {
+    let enabled = read_semantic_search_enabled(conn);
+    LAST_KNOWN_ENABLED.store(enabled, Ordering::SeqCst);
+    enabled
+}
+
+fn read_semantic_search_enabled(conn: &mut PgPooledConnection) -> bool {
     use crate::schema::server_configurations::dsl::*;
     server_configurations
         .filter(active.eq(true))
@@ -253,7 +282,12 @@ pub fn semantic_search_enabled(conn: &mut PgPooledConnection) -> bool {
 /// Whether a search can use semantic ranking right now (enabled, and the server's model is loaded).
 /// Callers check this before doing the extra work of gathering `semantic_ranking`'s candidate ids.
 pub fn semantic_search_ready(conn: &mut PgPooledConnection) -> bool {
-    semantic_search_enabled(conn) && server_embedder().is_some()
+    if !semantic_search_enabled(conn) {
+        // Turned off (maybe by another instance's `ConfigureServer`): give the memory back.
+        unload_server_embedder();
+        return false;
+    }
+    server_embedder().is_some()
 }
 
 #[derive(QueryableByName)]

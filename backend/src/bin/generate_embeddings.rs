@@ -8,7 +8,9 @@
 //     from the conductor right before loading the model, so only as many instances as its
 //     `ClusterResourceLimit` allows (default 1) embed at once. A denied lock just skips this run.
 //   * Stops after `RUN_BUDGET` of work (it runs again every few minutes; a backlog is worked down
-//     over several runs) and releases the lock.
+//     over several runs) and releases the lock. Each kind (posts, events, media, profiles) gets an
+//     even share of what's left, and the kind that goes first rotates every run, so a big backlog in
+//     one kind (say, an import of posts) can't starve the others.
 //   * The model gets `RELLM_EMBEDDING_THREADS` CPU threads (default 2).
 // The first run with something to embed downloads the model into `RELLM_EMBEDDING_CACHE_DIR`
 // (default ~/.cache/rellm/embedding_models); later runs reuse it.
@@ -23,6 +25,19 @@ use rellm::{db_connection, init_bin_logging, init_crypto, rpcs};
 
 const RUN_BUDGET: Duration = Duration::from_secs(240);
 const DEFAULT_THREADS: usize = 2;
+
+/// `EmbeddingKind::ALL`, starting from a different kind each run (the run's 5-minute slot, mod 4), so
+/// no kind is always first in line.
+fn rotated_kinds() -> Vec<EmbeddingKind> {
+    let slot = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() / 300)
+        .unwrap_or(0) as usize;
+    let mut kinds = EmbeddingKind::ALL.to_vec();
+    let shift = slot % kinds.len();
+    kinds.rotate_left(shift);
+    kinds
+}
 
 pub fn main() {
     init_crypto();
@@ -74,7 +89,15 @@ pub fn main() {
         }),
     };
 
-    for kind in EmbeddingKind::ALL {
+    let run_deadline = ctx.deadline;
+    let kinds = rotated_kinds();
+    for (turn, kind) in kinds.iter().copied().enumerate() {
+        let now = Instant::now();
+        if now >= run_deadline {
+            break;
+        }
+        // An even share of the time left among the kinds still to go.
+        ctx.deadline = now + (run_deadline - now) / (kinds.len() - turn) as u32;
         match embeddings::sync_embeddings(&mut conn, kind, &mut ctx) {
             Ok(stats) => {
                 log::info!(
@@ -85,8 +108,7 @@ pub fn main() {
                     stats.empty
                 );
                 if stats.out_of_time {
-                    log::info!("Out of time for this run; the rest happens on the next one.");
-                    break;
+                    log::info!("{} embeddings used up their share of this run; the rest happens next run.", kind.name());
                 }
             }
             // Someone else holds the cluster's embedding slot: no point asking again for the other kinds.

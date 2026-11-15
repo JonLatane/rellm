@@ -161,9 +161,7 @@ Supported flags:
     // Start loading (downloading, the first time) the embedding model for semantic search now, on a
     // background thread, so the first search doesn't have to wait for it -- see
     // `logic::embeddings::server_embedder`. Searches are full-text until it's ready.
-    if logic::embeddings::semantic_search_enabled(&mut conn) {
-        let _ = logic::embeddings::server_embedder();
-    }
+    logic::embeddings::apply_semantic_search_setting(&mut conn);
 
     log::info!("Loaded server configuration: {:?}", &server_configuration);
 
