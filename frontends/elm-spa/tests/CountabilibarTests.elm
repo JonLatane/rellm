@@ -387,6 +387,33 @@ suite =
                         |> Countabilibar.syncMsg PostsKind Set.empty (Dict.fromList [ ( "a.example", [ ( bob, "p1" ) ] ) ])
                         |> Expect.equal (Just (Batch [ CountPosts "a.example" [ ( bob, "p1" ) ], RemovePost "a.example" alice "p1" ]))
             ]
+        , describe "videos and tracks"
+            [ test "are counted per server and author, alongside posts, and withdrawn individually" <|
+                \_ ->
+                    let
+                        model : Model
+                        model =
+                            counted
+                                [ CountVideos "a.example" [ ( alice, "v1" ), ( alice, "v2" ), ( bob, "v3" ) ]
+                                , CountTracks "a.example" [ ( alice, "t1" ) ]
+                                , CountPost "a.example" alice "p1"
+                                ]
+                                |> apply [ RemoveVideo "a.example" alice "v2" ]
+                    in
+                    model.serverCounts
+                        |> List.map (\server -> ( server.postCount, server.videoCount, server.trackCount ))
+                        |> Expect.equal [ ( 1, 2, 1 ) ]
+            , test "syncMsg for VideosKind only diffs videos" <|
+                \_ ->
+                    let
+                        model : Model
+                        model =
+                            counted [ CountTracks "a.example" [ ( alice, "t1" ) ] ]
+                    in
+                    Countabilibar.syncMsg VideosKind Set.empty (Dict.fromList [ ( "a.example", [ ( alice, "v1" ) ] ) ]) model
+                        |> Maybe.map (\msg -> apply [ msg ] model |> .serverCounts |> List.map (\server -> ( server.videoCount, server.trackCount )))
+                        |> Expect.equal (Just [ ( 1, 1 ) ])
+            ]
         ]
 
 

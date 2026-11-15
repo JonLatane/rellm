@@ -393,7 +393,8 @@
 /* Shared.MediaViewerPanel's own Edit button (owner-or-admin only, see `canEditMedia`) -- a
    pill rather than `.media-viewer-panel-nav`/`.media-viewer-panel-close`'s circle, since "Edit"
    is wider than a single glyph. */
-.media-viewer-panel-edit-toggle {
+.media-viewer-panel-edit-toggle,
+.media-viewer-panel-post-link {
   flex: 0 0 auto;
   padding: 0 0.75rem;
   height: 2.2rem;
@@ -402,6 +403,15 @@
   background: rgba(255, 255, 255, 0.1);
   color: white;
   font-size: 0.9rem;
+}
+
+/* The "View post" link to the Rellm-UI page of the Mastodon/Bluesky post the current media came from -- the
+   same pill as Edit, an anchor, so it needs centering and no underline. Sits just left of the close button
+   (the toolbar's bottom-right corner). */
+.media-viewer-panel-post-link {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
 }
 
 /* The name/description/sizes editor `Shared.MediaViewerPanel.editView` shows once
