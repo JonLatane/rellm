@@ -45,6 +45,7 @@ server's page.
 -}
 
 import Components.Markdown as Markdown
+import Components.Market as Market
 import Components.Pages.ServerInformationPage.Common as Common
 import Effect exposing (Effect)
 import Grpc
@@ -205,6 +206,36 @@ updateInner shared targetHost msg model =
         SaveClicked ->
             -- A demo can never be saved (it has no Save button; this just makes sure).
             case ( model.edit |> Maybe.andThen (\e -> if e.demo then Nothing else Just e), Common.adminAccountFor shared targetHost ) of
+                -- On a Rellm Subdomain the owner (not an admin) edits the CSS, saved as part of their
+                -- `PURCHASE_TYPE_SUBDOMAIN` subscription: `SaveMarketSubscription` with an empty id ("my subdomain").
+                ( Just edit, Nothing ) ->
+                    case ( Common.subdomainSettingsFor shared targetHost, Common.subdomainOwnerAccountFor shared targetHost ) of
+                        ( Just settings, Just account ) ->
+                            let
+                                request : CustomCSSConfiguration
+                                request =
+                                    draftConfig edit
+                            in
+                            ( mapEdit (\e -> { e | status = AccountsPanel.Submitting }) model
+                            , Market.saveMarketSubscription shared.accounts
+                                ( Just account.userId, targetHost )
+                                ""
+                                { settings | customCssConfiguration = Just request }
+                                |> Task.map
+                                    (Tuple.mapSecond
+                                        (\subscription ->
+                                            Market.subdomainSettingsOf subscription
+                                                |> Maybe.andThen .customCssConfiguration
+                                                |> Maybe.withDefault request
+                                        )
+                                    )
+                                |> Task.attempt GotSaveResult
+                                |> Effect.fromCmd
+                            )
+
+                        _ ->
+                            ( model, Effect.none )
+
                 ( Just edit, Just account ) ->
                     let
                         request : CustomCSSConfiguration

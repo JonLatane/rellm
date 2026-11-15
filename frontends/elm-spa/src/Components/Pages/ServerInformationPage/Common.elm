@@ -1,4 +1,4 @@
-module Components.Pages.ServerInformationPage.Common exposing (accountsPanelEffect, adminAccountFor, editCancelButton, editErrorView, editSaveButton, editSaveButtonWhen, flagSwitch, settingsNote, settingsRow, switchDisplay)
+module Components.Pages.ServerInformationPage.Common exposing (accountsPanelEffect, adminAccountFor, subdomainOwnerAccountFor, subdomainSettingsFor, editCancelButton, editErrorView, editSaveButton, editSaveButtonWhen, flagSwitch, settingsNote, settingsRow, switchDisplay)
 
 {-| Shared, `msg`-generic bits reused by 2+ of `Components.Pages.ServerInformationPage`'s tab
 submodules (`AboutTab`/`ThemeTab`/`SettingsTab`/`FederationTab`) -- pulled out so none of them have
@@ -12,7 +12,9 @@ import Html.Attributes exposing (checked, class, disabled, type_)
 import Html.Events exposing (onClick)
 import Shared
 import Shared.AccountsPanel as AccountsPanel
+import Proto.Rellm exposing (SubdomainSettings)
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccount)
+import Shared.AccountsPanel.RellmServers as RellmServers
 import UI.Classes exposing (classes)
 
 
@@ -31,6 +33,37 @@ adminAccountFor shared targetHost =
 
                 else
                     Nothing
+            )
+
+
+{-| The `SubdomainSettings` of `targetHost`'s configuration -- `Just` only when `targetHost` is a Rellm Subdomain
+(`jon.bullcity.social`; see `ServerConfiguration.subdomain_settings`), whose page shows only the tabs that make
+sense for one user and whose saves go through `SaveMarketSubscription` instead of `ConfigureServer`.
+-}
+subdomainSettingsFor : Shared.Model -> String -> Maybe SubdomainSettings
+subdomainSettingsFor shared targetHost =
+    RellmServers.rellmServerForHost shared.accounts.servers targetHost
+        |> Maybe.andThen (\server -> (RellmServers.configurationOf server).subdomainSettings)
+
+
+{-| On a subdomain, the signed-in account that *owns* it (`SubdomainSettings.subdomainOf` is its user id) -- the
+subdomain's equivalent of `adminAccountFor`: the only account whose Edit buttons show, saving via
+`SaveMarketSubscription`. `Nothing` on a normal server, or for anyone else.
+-}
+subdomainOwnerAccountFor : Shared.Model -> String -> Maybe RellmAccount
+subdomainOwnerAccountFor shared targetHost =
+    subdomainSettingsFor shared targetHost
+        |> Maybe.andThen
+            (\settings ->
+                RellmAccounts.enabledRellmAccountForServer shared.accounts.accounts targetHost
+                    |> Maybe.andThen
+                        (\account ->
+                            if account.userId == settings.subdomainOf then
+                                Just account
+
+                            else
+                                Nothing
+                        )
             )
 
 

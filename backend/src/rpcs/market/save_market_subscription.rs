@@ -19,7 +19,21 @@ pub fn save_market_subscription(
     current_user: &models::User,
     conn: &mut PgPooledConnection,
 ) -> Result<MarketSubscription, Status> {
-    let subscription_id = request.market_subscription_id.to_db_id_or_err("market_subscription_id")?;
+    // An empty id means "my subdomain subscription" -- what the subdomain's own pages send, since the
+    // virtual `ServerConfiguration` they have doesn't carry subscription ids.
+    let subscription_id = if request.market_subscription_id.is_empty() {
+        models::get_market_subscriptions_for_buyer(current_user.id, conn)?
+            .into_iter()
+            .find(|s| {
+                s.product_type.to_owned().to_proto_purchase_type() == Some(PurchaseType::Subdomain)
+                    && subscription_state(s.canceled_at, s.renews_at, s.service_terminated_at, std::time::SystemTime::now())
+                        != MarketSubscriptionState::SubscriptionCanceled
+            })
+            .map(|s| s.id)
+            .ok_or_else(|| Status::new(Code::NotFound, "subdomain_subscription_not_found"))?
+    } else {
+        request.market_subscription_id.to_db_id_or_err("market_subscription_id")?
+    };
     let existing = models::get_market_subscription(subscription_id, conn)?;
     if existing.buyer_id != current_user.id {
         return Err(Status::new(Code::PermissionDenied, "not_your_subscription"));
