@@ -115,15 +115,27 @@ fn spf_check(domain: &str, lookup: &DnsLookup, used_by: &[String]) -> StatusChec
     let spf = parse_spf(&lookup.txt_records());
     if !spf.found {
         let includes = spf_includes_for(used_by);
-        let value = if includes.is_empty() {
-            "v=spf1 include:<your email provider's SPF host> ~all".to_string()
-        } else {
-            format!("v=spf1 {} ~all", includes.iter().map(|h| format!("include:{h}")).collect::<Vec<_>>().join(" "))
-        };
+        let detail = format!("No SPF record found. {}", copy::SPF);
+        if includes.is_empty() {
+            // We don't know which host(s) send this domain's mail (e.g. a self-hosted Stalwart),
+            // so don't present a finished-looking record with a placeholder in it.
+            return make_check(
+                StatusLevel::Warning,
+                name,
+                detail,
+                Some(&format!(
+                    "Add a TXT record at `{domain}` that lists the server(s) allowed to send your mail, ending in `~all`. For a mail server you run yourself that is usually its IP address (`v=spf1 ip4:<server IP> ~all`) or, if it's your MX host, `v=spf1 mx ~all`."
+                )),
+            );
+        }
+        let value = format!(
+            "v=spf1 {} ~all",
+            includes.iter().map(|h| format!("include:{h}")).collect::<Vec<_>>().join(" ")
+        );
         return make_check(
             StatusLevel::Warning,
             name,
-            format!("No SPF record found. {}", copy::SPF),
+            detail,
             Some(&copy::with_records(
                 &format!("Add this record to `{domain}`:"),
                 &[copy::record_line("TXT", "@", &value)],
@@ -452,6 +464,18 @@ mod tests {
     use super::*;
     use super::super::dns::{DnsAnswer, TYPE_TXT};
     use std::collections::HashMap;
+
+    #[test]
+    fn missing_spf_for_an_unknown_sender_gives_prose_not_a_placeholder_record() {
+        let check = spf_check("example.com", &DnsLookup::NotFound, &["stalwart".to_string()]);
+        let hint = check.fix_hint.expect("a fix hint");
+        assert!(!hint.contains("<your email provider"), "{hint}");
+        assert!(
+            !hint.lines().any(|l| l.starts_with("TXT ")),
+            "no finished-looking record when the sending host is unknown: {hint}"
+        );
+        assert!(hint.contains("ip4:") && hint.contains("mx"));
+    }
 
     /// A fake resolver backed by a map of `(name, type)` -> answers; unknown names are NXDOMAIN.
     pub struct FakeResolver {
