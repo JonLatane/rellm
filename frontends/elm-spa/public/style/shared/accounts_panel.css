@@ -624,6 +624,23 @@
   opacity: 0.5;
 }
 
+/* `UI.blueskyAppViewFeedChip`'s keyboard-focusable "open the login form" button: looks like the plain
+   host text it wraps, with a visible outline only for keyboard focus. */
+.server-chip-login-btn {
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.server-chip-login-btn:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
 .server-name-and-logo.compact .server-logo-image {
   width: 20px;
   height: 20px;

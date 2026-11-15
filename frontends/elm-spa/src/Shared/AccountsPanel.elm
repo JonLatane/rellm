@@ -508,6 +508,7 @@ type Msg
     | ResetMainFrontendHost
     | ServerChipClicked String
     | MastodonServerChipClicked String
+    | BlueskyAppViewChipClicked
     | SetWebUserInterfaceClicked String WebUserInterface
     | GotSetWebUserInterfaceResult (Result Grpc.Error ( RellmAccount, ServerConfiguration ))
     | RenameServerClicked String String
@@ -3591,6 +3592,14 @@ sendUpdate req msg model =
             -- Mirror of `ServerChipClicked` for a browsed Mastodon instance's chip: fills the
             -- Mastodon tab's host field and opens that tab.
             ( { model | addAccountServerFormType = Just MastodonServerFormType, reauthenticatingAccount = Nothing, browseMastodonInstanceInput = host }
+            , Cmd.none
+            )
+
+        BlueskyAppViewChipClicked ->
+            -- Mirror of `MastodonServerChipClicked` for a browsed Bluesky AppView's chip: opens the
+            -- Bluesky tab (handle + App Password). Logins don't depend on the AppView, so there's
+            -- nothing to pre-fill.
+            ( { model | addAccountServerFormType = Just BlueskyAccountFormType, reauthenticatingAccount = Nothing }
             , Cmd.none
             )
 

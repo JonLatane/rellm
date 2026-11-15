@@ -2125,14 +2125,28 @@ blueskyAppViewFeedChip shared count index appView =
             :: reorderInfo.moveAttrs
         )
         [ div
-            [ classes [ "server-chip-top", mainHostClass, "background-color-nav" ] ]
+            [ classes [ "server-chip-top", "selectable", mainHostClass, "background-color-nav" ]
+            , onClick (Shared.AccountsPanelMsg AccountsPanel.BlueskyAppViewChipClicked)
+            , title "Open the Bluesky login form"
+            ]
             [ div [ class "server-chip-logo-row" ]
                 [ div [ classList [ ( "reorder-arrow", True ), ( "reorder-arrow-hidden", not reorderInfo.showBackward ) ] ] [ reorderInfo.reorderPair.backward ]
                 , blueskyServerLogo (BlueskyAppViews.logoUrlFor (AccountsPanel.allBlueskyServers shared.accounts) appView.host) name
                 , div [ classList [ ( "reorder-arrow", True ), ( "reorder-arrow-hidden", not reorderInfo.showForward ) ] ] [ reorderInfo.reorderPair.forward ]
                 ]
             , div [ class "server-chip-host-row" ] [ div [ class "federated-feed-service-label" ] [ text "⇄ Bluesky" ] ]
-            , div [ class "server-chip-host-row" ] [ div [ class "server-chip-host" ] [ text name ] ]
+            , div [ class "server-chip-host-row" ]
+                [ -- The keyboard-operable twin of the chip's own click handler (a plain `div` can't be
+                  -- focused or activated with Enter/Space). `stopPropagationOn` so a click on it isn't
+                  -- handled twice by the chip's `onClick`.
+                  button
+                    [ type_ "button"
+                    , class "server-chip-login-btn"
+                    , stopPropagationOn "click" (Decode.succeed ( Shared.AccountsPanelMsg AccountsPanel.BlueskyAppViewChipClicked, True ))
+                    , title "Open the Bluesky login form"
+                    ]
+                    [ div [ class "server-chip-host" ] [ text name ] ]
+                ]
             ]
         , div [ classes [ "server-chip-bottom", mainHostClass, "background-color-primary" ] ]
             [ switchInput appView.enabled False (Shared.AccountsPanelMsg (AccountsPanel.ToggleBlueskyAppViewEnabled appView.host))
