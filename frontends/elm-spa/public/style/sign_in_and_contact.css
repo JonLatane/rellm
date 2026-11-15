@@ -620,19 +620,6 @@
   color: var(--muted);
 }
 
-.sc-check-fix {
-  margin: 0.2rem 0 0;
-  font-size: 0.82rem;
-  padding: 0.3rem 0.55rem;
-  border-radius: 0.45rem;
-  background: var(--panel-bg);
-  border-left: 3px solid var(--sc-c);
-}
-
-.sc-check-fix-label {
-  font-weight: 600;
-}
-
 .sc-dashboard-link {
   align-self: flex-start;
   font-size: 0.85rem;
@@ -700,6 +687,9 @@
 }
 
 .sc-auth-chip {
+  border: none;
+  font: inherit;
+  cursor: pointer;
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
@@ -783,48 +773,6 @@
 
 .sc-uri {
   font-size: 0.8rem;
-}
-
-.sc-record {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.5rem;
-  background: var(--panel-bg);
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
-  padding: 0.45rem 0.5rem 0.45rem 0.65rem;
-}
-
-.sc-record-text {
-  flex: 1 1 auto;
-  min-width: 0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.78rem;
-  line-height: 1.45;
-  word-break: break-all;
-  user-select: all;
-}
-
-.sc-record-copy {
-  flex: 0 0 auto;
-  font-size: 0.78rem;
-  padding: 0.1rem 0.55rem;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--chip-bg);
-  color: var(--fg);
-  cursor: pointer;
-}
-
-.sc-dmarc-advice {
-  margin: 0;
-  font-size: 0.82rem;
-  color: var(--muted);
-  line-height: 1.45;
-}
-
-.sc-dmarc-advice code {
-  font-size: 0.78rem;
 }
 
 .sc-empty {
@@ -956,4 +904,50 @@
   .sc-card-body {
     padding: 0 0.6rem 0.7rem;
   }
+}
+
+
+/* ---- Plain-language helpers (DNS explainer, chip meanings) ---- */
+
+.sc-auth-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.sc-chip-hint,
+.sc-chip-meaning,
+.sc-check-meaning,
+.sc-dmarc-meaning {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  color: var(--muted);
+}
+
+.sc-chip-hint {
+  font-size: 0.75rem;
+  opacity: 0.8;
+}
+
+.sc-chip-meanings {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.sc-chip-meaning strong {
+  color: var(--fg);
+}
+
+.sc-check-meaning {
+  font-style: italic;
+}
+
+.sc-dmarc-meaning {
+  color: var(--fg);
+}
+
+.sc-explainer-item strong {
+  font-weight: 700;
 }

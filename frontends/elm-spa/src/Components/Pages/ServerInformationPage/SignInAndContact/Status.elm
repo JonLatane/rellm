@@ -3,21 +3,25 @@ module Components.Pages.ServerInformationPage.SignInAndContact.Status exposing
     , ageLabel
     , checkedAtLabel
     , checksDefaultOpen
+    , dmarcMeaning
     , dmarcPill
+    , dmarcStarterRecord
     , domainChips
     , findProvider
     , levelGlyph
     , levelKey
     , levelLabel
     , providerDisplayName
+    , replyIsFresh
     , safeLink
     , sectionHealth
+    , strengthenDmarc
     , worstLevel
     )
 
 {-| The pure half of the Sign In & Contact tab's live status display (`ContactIntegrationsStatus`,
 from `GetContactIntegrationsStatus`) -- everything that decides _what to say_ about a status report,
-so it can be unit-tested (`tests/ContactIntegrationsStatusTests.elm`) without rendering anything.
+so it can be unit-tested (`tests/SignInAndContactStatusTests.elm`) without rendering anything.
 `SignInAndContact.StatusView` turns these into HTML.
 
 "Worst" level: `severity` orders `StatusLevel`s for aggregation (`ERROR` > `WARNING` > `UNKNOWN` >
@@ -275,19 +279,32 @@ plural n singular pluralForm =
 
 {-| The DMARC policy as a pill: `p=none` is only "Monitoring only" (a warning -- mail failing
 authentication is still delivered), `quarantine`/`reject` actually enforce (OK). A partial `pct=`
-is spelled out. No record at all is a warning too. An unrecognized policy falls back to the level
-the server computed.
+is spelled out. No record at all is a warning too. The level is the server's own (it sees things the
+policy text doesn't, like several records), falling back to what the policy implies only when the
+server reported `UNKNOWN`.
 -}
 dmarcPill : DmarcStatus -> Chip
 dmarcPill dmarc =
     let
+        -- The parsed `pct=` is authoritative whenever a record exists (the server defaults an absent
+        -- tag to 100), so even 0 is spelled out.
         partial : String -> String
         partial label =
-            if dmarc.percentage > 0 && dmarc.percentage < 100 then
+            if dmarc.percentage < 100 then
                 label ++ " · " ++ String.fromInt dmarc.percentage ++ "%"
 
             else
                 label
+
+        -- The server's own verdict wins (it knows about multiple records, partial `pct`, ...); only an
+        -- `UNKNOWN` (older server) falls back to what the policy alone implies.
+        levelOr : StatusLevel -> StatusLevel
+        levelOr fallback =
+            if severity dmarc.level == severity STATUSLEVELUNKNOWN then
+                fallback
+
+            else
+                dmarc.level
     in
     if not dmarc.recordFound then
         { label = "No DMARC record", level = STATUSLEVELWARNING }
@@ -295,13 +312,13 @@ dmarcPill dmarc =
     else
         case String.toLower (String.trim dmarc.policy) of
             "none" ->
-                { label = "Monitoring only", level = STATUSLEVELWARNING }
+                { label = "Monitoring only", level = levelOr STATUSLEVELWARNING }
 
             "quarantine" ->
-                { label = partial "Quarantine", level = STATUSLEVELOK }
+                { label = partial "Quarantine", level = levelOr STATUSLEVELOK }
 
             "reject" ->
-                { label = partial "Reject", level = STATUSLEVELOK }
+                { label = partial "Reject", level = levelOr STATUSLEVELOK }
 
             _ ->
                 { label = "Unrecognized policy", level = dmarc.level }
@@ -398,3 +415,60 @@ an admin's attention (a warning or an error) -- an all-green list stays folded a
 checksDefaultOpen : List StatusCheck -> Bool
 checksDefaultOpen checks =
     List.any (\check -> severity check.level >= severity STATUSLEVELWARNING && check.level /= STATUSLEVELUNKNOWN) checks
+
+
+{-| Whether a status reply should be applied: only if its request id is newer than the newest reply
+already applied -- a slow pre-save check must not overwrite a later one (or its error).
+-}
+replyIsFresh : Int -> Int -> Bool
+replyIsFresh appliedId replyId =
+    replyId > appliedId
+
+
+{-| What the DMARC policy means in plain words (shown under the DMARC pill).
+-}
+dmarcMeaning : DmarcStatus -> String
+dmarcMeaning dmarc =
+    if not dmarc.recordFound then
+        "Receivers have no instructions for forged mail."
+
+    else
+        case String.toLower (String.trim dmarc.policy) of
+            "none" ->
+                "Failing mail is still delivered (monitoring only)."
+
+            "quarantine" ->
+                "Failing mail goes to spam."
+
+            "reject" ->
+                "Failing mail is rejected."
+
+            _ ->
+                "The policy isn't one receivers recognise."
+
+
+{-| A starter DMARC record that only watches and sends reports to `postmaster@<domain>`.
+-}
+dmarcStarterRecord : String -> String
+dmarcStarterRecord domain =
+    "v=DMARC1; p=none; rua=mailto:postmaster@" ++ domain
+
+
+{-| The same DMARC record with its own `p=none` raised to `p=quarantine` (the `sp=` tag, if any, is
+left alone). Records whose `p=` isn't `none` come back unchanged.
+-}
+strengthenDmarc : String -> String
+strengthenDmarc record =
+    record
+        |> String.split ";"
+        |> List.map String.trim
+        |> List.filter (not << String.isEmpty)
+        |> List.map
+            (\tag ->
+                if String.toLower (String.replace " " "" tag) == "p=none" then
+                    "p=quarantine"
+
+                else
+                    tag
+            )
+        |> String.join "; "

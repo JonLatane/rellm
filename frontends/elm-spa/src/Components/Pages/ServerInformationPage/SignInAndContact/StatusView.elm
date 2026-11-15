@@ -1,6 +1,7 @@
 module Components.Pages.ServerInformationPage.SignInAndContact.StatusView exposing
     ( Handlers
     , domainsSection
+    , emailExplainer
     , levelPill
     , providerStatusBlock
     , shimmerLine
@@ -18,22 +19,26 @@ transition (`.sc-collapse.is-open`/`.is-closed`), like the rest of this tab's co
 -}
 
 import Components.Pages.ServerInformationPage.SignInAndContact.Status as Status exposing (Chip)
-import Html exposing (Html, a, button, code, div, h4, li, p, span, text, ul)
+import Components.Pages.ServerInformationPage.Dns.Glossary as Glossary
+import Components.Pages.ServerInformationPage.Dns.Record exposing (DnsRecord, HintPart(..))
+import Components.Pages.ServerInformationPage.Dns.View as DnsView
+import Html exposing (Html, a, button, code, div, h4, li, p, span, strong, text, ul)
 import Html.Attributes exposing (class, href, rel, target, title, type_)
 import Html.Events exposing (onClick)
 import Proto.Rellm exposing (ContactIntegrationsStatus, DmarcStatus, EmailDomainStatus, ProviderStatus, StatusCheck, StatusMetric)
-import Proto.Rellm.StatusLevel exposing (StatusLevel(..))
+import Proto.Rellm.StatusLevel exposing (StatusLevel)
 import Set exposing (Set)
 import UI.Classes exposing (classes, openClosedClass)
 import UI.Glyph as Glyph
 
 
-{-| The messages these views can fire: toggling a checks list (keyed by `checksKey`'s strings), and
-copying text (the raw DMARC record) to the clipboard.
+{-| The messages these views can fire -- toggling a folding section (a checks list, a chip's
+explanation, the DNS explainer; keyed by string) and copying text -- plus which text was last copied.
 -}
 type alias Handlers msg =
     { toggleChecks : String -> msg
     , copy : String -> msg
+    , copied : Maybe String
     }
 
 
@@ -95,7 +100,7 @@ providerStatusBlock handlers toggledChecks key provider =
             , span [ class "sc-status-summary-text" ] [ text provider.summary ]
             ]
         , metricsView provider.metrics
-        , checksList handlers toggledChecks key provider.checks
+        , checksList handlers toggledChecks Nothing key provider.checks
         , case provider.dashboardUrl |> Maybe.andThen Status.safeLink of
             Just url ->
                 a
@@ -134,10 +139,12 @@ metricTile metric =
         ]
 
 
-{-| A toggle row ("3 checks" + chevron) over a folding list of `StatusCheck`s.
+{-| A toggle row ("3 checks" + chevron) over a folding list of `StatusCheck`s. For a domain's checks
+(`Just domain`) each check that names SPF/DKIM/DMARC/MX gets a one-line plain-English meaning, and record
+names in fix hints are shown in full under that domain.
 -}
-checksList : Handlers msg -> Set String -> String -> List StatusCheck -> Html msg
-checksList handlers toggledChecks key checks =
+checksList : Handlers msg -> Set String -> Maybe String -> String -> List StatusCheck -> Html msg
+checksList handlers toggledChecks maybeDomain key checks =
     if List.isEmpty checks then
         text ""
 
@@ -178,16 +185,22 @@ checksList handlers toggledChecks key checks =
                 , text countLabel
                 ]
             , div [ classes [ "sc-collapse", openClosedClass open ] ]
-                [ ul [ class "sc-check-list" ] (List.map checkRow checks) ]
+                [ ul [ class "sc-check-list" ] (List.map (checkRow handlers maybeDomain) checks) ]
             ]
 
 
-checkRow : StatusCheck -> Html msg
-checkRow check =
+checkRow : Handlers msg -> Maybe String -> StatusCheck -> Html msg
+checkRow handlers maybeDomain check =
     li [ class "sc-check" ]
         [ levelDot check.level
         , div [ class "sc-check-body" ]
             [ span [ class "sc-check-name" ] [ text check.name ]
+            , case ( maybeDomain, Glossary.meaningOf check.name ) of
+                ( Just _, Just meaning ) ->
+                    span [ class "sc-check-meaning" ] [ text meaning ]
+
+                _ ->
+                    text ""
             , if String.isEmpty check.detail then
                 text ""
 
@@ -195,7 +208,7 @@ checkRow check =
                 span [ class "sc-check-detail" ] [ text check.detail ]
             , case check.fixHint of
                 Just hint ->
-                    p [ class "sc-check-fix" ] [ span [ class "sc-check-fix-label" ] [ text "How to fix: " ], text hint ]
+                    DnsView.fixHint handlers.copy handlers.copied maybeDomain hint
 
                 Nothing ->
                     text ""
@@ -207,26 +220,51 @@ checkRow check =
 -- EMAIL DOMAINS
 
 
-{-| The "Email Domains" subsection's body: a card per sending domain (see `domainCard`), or a
-friendly empty state when the report has none. `toggledChecks`/`copied` are the tab's own view
-state (see `Handlers`).
+{-| The collapsible "What do these DNS records do?" box: SPF, DKIM, DMARC and MX in a line or two each.
+`toggled` is the tab's set of flipped sections (closed by default).
 -}
-domainsSection : Handlers msg -> Set String -> Maybe String -> ContactIntegrationsStatus -> Html msg
-domainsSection handlers toggledChecks copied report =
+emailExplainer : Handlers msg -> Set String -> Html msg
+emailExplainer handlers toggled =
+    DnsView.explainer
+        { title = "What do these DNS records do?"
+        , open = Set.member explainerKey toggled
+        , onToggle = handlers.toggleChecks explainerKey
+        }
+        (List.map
+            (\( label, sentence, extra ) ->
+                p [ class "sc-explainer-item" ]
+                    [ strong [] [ text (label ++ " ") ]
+                    , text (String.dropLeft (String.length label + 1) sentence ++ " " ++ extra |> String.trim)
+                    ]
+            )
+            Glossary.emailExplainer
+        )
+
+
+explainerKey : String
+explainerKey =
+    "explainer/email"
+
+
+{-| The "Email Domains" subsection's body: a card per sending domain (see `domainCard`), or a
+friendly empty state when the report has none.
+-}
+domainsSection : Handlers msg -> Set String -> ContactIntegrationsStatus -> Html msg
+domainsSection handlers toggled report =
     if List.isEmpty report.emailDomains then
         div [ class "sc-empty" ]
             [ span [ class "sc-empty-title" ] [ text "No sending domains yet" ]
             , span [ class "sc-empty-text" ]
-                [ text "Once an email provider is switched on and has a From address, the domain it sends from shows up here with its SPF, DKIM and DMARC checks." ]
+                [ text "Once an email provider is on and has a From address, its domain shows up here with SPF, DKIM and DMARC checks." ]
             ]
 
     else
         div [ class "sc-domains" ]
-            (List.map (domainCard handlers toggledChecks copied report.emailProviders) report.emailDomains)
+            (List.map (domainCard handlers toggled report.emailProviders) report.emailDomains)
 
 
-domainCard : Handlers msg -> Set String -> Maybe String -> List ProviderStatus -> EmailDomainStatus -> Html msg
-domainCard handlers toggledChecks copied providers domain =
+domainCard : Handlers msg -> Set String -> List ProviderStatus -> EmailDomainStatus -> Html msg
+domainCard handlers toggled providers domain =
     div [ classes [ "sc-domain-card", levelClass domain.level ] ]
         [ div [ class "sc-domain-header" ]
             [ span [ class "sc-domain-name" ] [ text domain.domain ]
@@ -245,30 +283,83 @@ domainCard handlers toggledChecks copied providers domain =
 
           else
             p [ class "sc-domain-summary" ] [ text domain.summary ]
-        , div [ class "sc-auth-chips" ] (List.map authChip (Status.domainChips domain))
+        , authChips handlers toggled domain
         , case domain.dmarc of
             Just dmarc ->
-                dmarcCard handlers copied dmarc
+                dmarcCard handlers domain.domain dmarc
 
             Nothing ->
                 text ""
-        , checksList handlers toggledChecks ("domain/" ++ domain.domain) domain.checks
+        , checksList handlers toggled (Just domain.domain) ("domain/" ++ domain.domain) domain.checks
         ]
 
 
-authChip : Chip -> Html msg
-authChip chip =
-    span [ classes [ "sc-auth-chip", levelClass chip.level ], title (chip.label ++ ": " ++ Status.levelLabel chip.level) ]
+chipKey : String -> Chip -> String
+chipKey domainName chip =
+    "chip/" ++ domainName ++ "/" ++ chip.label
+
+
+{-| SPF / DKIM / DMARC / MX as tappable chips: tapping one shows its one-line meaning underneath (so
+it works on phones, unlike a hover tooltip -- which it also gets, as `title`).
+-}
+authChips : Handlers msg -> Set String -> EmailDomainStatus -> Html msg
+authChips handlers toggled domain =
+    let
+        chips : List Chip
+        chips =
+            Status.domainChips domain
+
+        open : List Chip
+        open =
+            List.filter (\chip -> Set.member (chipKey domain.domain chip) toggled) chips
+    in
+    div [ class "sc-auth-block" ]
+        [ div [ class "sc-auth-chips" ] (List.map (authChip handlers toggled domain.domain) chips)
+        , if List.isEmpty open then
+            p [ class "sc-chip-hint" ] [ text "Tap a chip to see what it checks." ]
+
+          else
+            div [ class "sc-chip-meanings" ]
+                (List.map
+                    (\chip ->
+                        p [ class "sc-chip-meaning" ] [ text (Maybe.withDefault "" (Glossary.meaningOf chip.label)) ]
+                    )
+                    open
+                )
+        ]
+
+
+authChip : Handlers msg -> Set String -> String -> Chip -> Html msg
+authChip handlers toggled domainName chip =
+    let
+        isOpen : Bool
+        isOpen =
+            Set.member (chipKey domainName chip) toggled
+    in
+    button
+        [ type_ "button"
+        , classes [ "sc-auth-chip", levelClass chip.level ]
+        , title (chip.label ++ " (" ++ Status.levelLabel chip.level ++ "): " ++ Maybe.withDefault "" (Glossary.meaningOf chip.label))
+        , onClick (handlers.toggleChecks (chipKey domainName chip))
+        , Html.Attributes.attribute "aria-expanded"
+            (if isOpen then
+                "true"
+
+             else
+                "false"
+            )
+        ]
         [ span [ class "sc-auth-chip-glyph" ] [ text (Status.levelGlyph chip.level) ]
         , text chip.label
         ]
 
 
-{-| The prominent DMARC panel: the policy as a pill (`Status.dmarcPill`), the server's one-sentence
-summary, the parsed tags, and the raw record in a copyable monospace block.
+{-| The prominent DMARC panel: the policy as a pill (`Status.dmarcPill`) with what it means in plain
+words, the server's summary, the parsed tags, the raw record in a copyable line, and -- when the policy
+only watches or there's no record -- a "How to fix" box with the exact record to publish.
 -}
-dmarcCard : Handlers msg -> Maybe String -> DmarcStatus -> Html msg
-dmarcCard handlers copied dmarc =
+dmarcCard : Handlers msg -> String -> DmarcStatus -> Html msg
+dmarcCard handlers domainName dmarc =
     let
         pill : Chip
         pill =
@@ -294,22 +385,15 @@ dmarcCard handlers copied dmarc =
             [ h4 [ class "sc-dmarc-title" ] [ text "DMARC" ]
             , levelPill pill.level (Just pill.label)
             ]
-        , if String.isEmpty dmarc.summary then
-            text ""
+        , -- The server's own summary already says what the policy does; our plain-words line is the fallback.
+          if String.isEmpty dmarc.summary then
+            p [ class "sc-dmarc-meaning" ] [ text (Status.dmarcMeaning dmarc) ]
 
           else
             p [ class "sc-dmarc-summary" ] [ text dmarc.summary ]
         , if dmarc.recordFound then
             div [ class "sc-dmarc-tags" ]
-                [ tagRow "Applies to"
-                    (text
-                        (if dmarc.percentage <= 0 || dmarc.percentage >= 100 then
-                            "100% of failing mail"
-
-                         else
-                            String.fromInt dmarc.percentage ++ "% of failing mail"
-                        )
-                    )
+                [ tagRow "Applies to" (text (String.fromInt dmarc.percentage ++ "% of failing mail"))
                 , tagRow "Subdomains"
                     (if String.isEmpty dmarc.subdomainPolicy then
                         span [ class "sc-muted" ] [ text "Same as the domain" ]
@@ -319,8 +403,8 @@ dmarcCard handlers copied dmarc =
                     )
                 , tagRow "DKIM alignment" (text (alignmentLabel dmarc.dkimAlignment))
                 , tagRow "SPF alignment" (text (alignmentLabel dmarc.spfAlignment))
-                , tagRow "Aggregate reports (rua)" (uriList dmarc.aggregateReportUris)
-                , tagRow "Forensic reports (ruf)" (uriList dmarc.forensicReportUris)
+                , tagRow "Reports (rua)" (uriList dmarc.aggregateReportUris)
+                , tagRow "Forensic (ruf)" (uriList dmarc.forensicReportUris)
                 ]
 
           else
@@ -329,23 +413,8 @@ dmarcCard handlers copied dmarc =
             text ""
 
           else
-            div [ class "sc-record" ]
-                [ code [ class "sc-record-text" ] [ text dmarc.rawRecord ]
-                , button
-                    [ type_ "button"
-                    , class "sc-record-copy"
-                    , onClick (handlers.copy dmarc.rawRecord)
-                    ]
-                    [ text
-                        (if copied == Just dmarc.rawRecord then
-                            "Copied ✓"
-
-                         else
-                            "Copy"
-                        )
-                    ]
-                ]
-        , dmarcAdvice dmarc
+            DnsView.codeLine handlers.copy handlers.copied dmarc.rawRecord
+        , dmarcFix handlers domainName dmarc
         ]
 
 
@@ -365,29 +434,23 @@ alignmentLabel alignment =
             String.toUpper (String.left 1 other) ++ String.dropLeft 1 other
 
 
-{-| A friendly nudge under the DMARC card -- only when there is something to do.
+{-| A tiny "How to fix" under the DMARC card -- only when there is something to do, with the exact
+record to publish.
 -}
-dmarcAdvice : DmarcStatus -> Html msg
-dmarcAdvice dmarc =
+dmarcFix : Handlers msg -> String -> DmarcStatus -> Html msg
+dmarcFix handlers domainName dmarc =
+    let
+        fix : String -> DnsRecord -> Html msg
+        fix sentence record =
+            DnsView.fixBox handlers.copy handlers.copied (Just domainName) [ HintText sentence, HintRecord record ]
+    in
     if not dmarc.recordFound then
-        p [ class "sc-dmarc-advice" ]
-            [ text "Without a DMARC record, mailbox providers can't tell whether mail claiming to be from this domain is really yours, and Gmail/Yahoo expect one from bulk senders. Publish a TXT record at "
-            , code [] [ text "_dmarc.<your domain>" ]
-            , text ", starting with "
-            , code [] [ text "v=DMARC1; p=none; rua=mailto:you@your-domain" ]
-            , text " to watch reports before enforcing."
-            ]
+        fix "Publish a DMARC record that just watches for now."
+            { recordType = "TXT", name = "_dmarc", value = Status.dmarcStarterRecord domainName }
 
-    else if (Status.dmarcPill dmarc).level == STATUSLEVELWARNING then
-        p [ class "sc-dmarc-advice" ]
-            [ text "A policy of "
-            , code [] [ text "none" ]
-            , text " only monitors: spoofed mail is still delivered. Once the aggregate reports look clean, move to "
-            , code [] [ text "quarantine" ]
-            , text ", then "
-            , code [] [ text "reject" ]
-            , text "."
-            ]
+    else if (Status.dmarcPill dmarc).label == "Monitoring only" then
+        fix "Once the reports look clean, move to quarantine (then reject)."
+            { recordType = "TXT", name = "_dmarc", value = Status.strengthenDmarc dmarc.rawRecord }
 
     else
         text ""

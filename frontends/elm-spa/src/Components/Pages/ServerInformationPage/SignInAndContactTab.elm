@@ -63,6 +63,7 @@ across all states (always mounted, CSS-driven) -- keep it that way.
 -}
 
 import Components.Pages.ServerInformationPage.Common as Common
+import Components.Pages.ServerInformationPage.Dns.View as DnsView
 import Components.Pages.ServerInformationPage.SignInAndContact.EmailEdits as EmailEdits
     exposing
         ( MailgunField(..)
@@ -82,8 +83,6 @@ import Grpc
 import Html exposing (Html, button, div, h2, h3, h4, input, option, p, select, span, text)
 import Html.Attributes exposing (attribute, class, disabled, placeholder, selected, title, type_, value)
 import Html.Events exposing (onClick, onInput)
-import Ports
-import Process
 import Proto.Rellm
     exposing
         ( BirdConfig
@@ -142,13 +141,16 @@ type alias Model =
 
 
 {-| The live `GetContactIntegrationsStatus` report and its fetch state. `report` outlives a refresh
-(it stays visible while another fetch is `inFlight`); `requested` makes "fetch once on first activation" stick
+(it stays visible while another fetch is `inFlight`); `requestSeq`/`appliedSeq` tag each request and drop replies older than one already applied
+(`Status.replyIsFresh`); `requested` makes "fetch once on first activation" stick
 even if that first fetch failed (the Refresh button retries); `now` is the browser clock as of the
 last report landing or tick (`Time.every`), for "Checked 2 minutes ago".
 -}
 type alias LiveStatus =
     { report : Maybe ContactIntegrationsStatus
     , inFlight : Int
+    , requestSeq : Int
+    , appliedSeq : Int
     , requested : Bool
     , error : Maybe String
     , now : Time.Posix
@@ -371,7 +373,7 @@ type Msg
     | GotAuthenticatedServerConfiguration (Result Grpc.Error ( Maybe AccountsPanel.Msg, ServerConfiguration ))
     | ProviderSectionToggled ProviderSection
     | StatusRefreshClicked
-    | GotLiveStatus (Result Grpc.Error ( Maybe AccountsPanel.Msg, Time.Posix, ContactIntegrationsStatus ))
+    | GotLiveStatus Int (Result Grpc.Error ( Maybe AccountsPanel.Msg, Time.Posix, ContactIntegrationsStatus ))
     | StatusChecksToggled String
     | StatusTick Time.Posix
     | CopyClicked String
@@ -494,6 +496,8 @@ init =
     , liveStatus =
         { report = Nothing
         , inFlight = 0
+        , requestSeq = 0
+        , appliedSeq = 0
         , requested = False
         , error = Nothing
         , now = Time.millisToPosix 0
@@ -1145,32 +1149,54 @@ update shared targetHost maybeServer msg model =
             else
                 startStatusFetch shared targetHost model
 
-        GotLiveStatus (Ok ( maybeAccountsPanelMsg, now, report )) ->
+        GotLiveStatus requestId (Ok ( maybeAccountsPanelMsg, now, report )) ->
             let
                 live : LiveStatus
                 live =
                     model.liveStatus
-            in
-            ( { model | liveStatus = { live | report = Just report, inFlight = max 0 (live.inFlight - 1), error = Nothing, now = now } }
-            , Common.accountsPanelEffect maybeAccountsPanelMsg
-            )
 
-        GotLiveStatus (Err err) ->
-            let
-                live : LiveStatus
-                live =
-                    model.liveStatus
+                settled : LiveStatus
+                settled =
+                    { live | inFlight = max 0 (live.inFlight - 1) }
             in
             ( { model
                 | liveStatus =
-                    { live
-                        | inFlight = max 0 (live.inFlight - 1)
-                        , error = Just (statusErrorText err)
+                    -- A reply to a request older than one already applied (a pre-save check landing
+                    -- after the post-save one) only settles the in-flight count.
+                    if Status.replyIsFresh live.appliedSeq requestId then
+                        { settled | report = Just report, error = Nothing, now = now, appliedSeq = requestId }
 
-                        -- A `NetworkError` is the connection not having settled yet (see module doc),
-                        -- not an answer: let the next activation/config landing try again.
-                        , requested = live.requested && err /= Grpc.NetworkError
-                    }
+                    else
+                        settled
+              }
+              -- The token refresh must be kept even from a stale reply.
+            , Common.accountsPanelEffect maybeAccountsPanelMsg
+            )
+
+        GotLiveStatus requestId (Err err) ->
+            let
+                live : LiveStatus
+                live =
+                    model.liveStatus
+
+                settled : LiveStatus
+                settled =
+                    { live | inFlight = max 0 (live.inFlight - 1) }
+            in
+            ( { model
+                | liveStatus =
+                    if Status.replyIsFresh live.appliedSeq requestId then
+                        { settled
+                            | error = Just (statusErrorText err)
+                            , appliedSeq = requestId
+
+                            -- A `NetworkError` is the connection not having settled yet (see module
+                            -- doc), not an answer: let the next activation/config landing try again.
+                            , requested = live.requested && err /= Grpc.NetworkError
+                        }
+
+                    else
+                        settled
               }
             , Effect.none
             )
@@ -1187,12 +1213,7 @@ update shared targetHost maybeServer msg model =
             ( { model | liveStatus = { live | now = now } }, Effect.none )
 
         CopyClicked text ->
-            ( { model | copied = Just text }
-            , Effect.batch
-                [ Effect.fromCmd (Ports.copyToClipboard text)
-                , Process.sleep 2000 |> Task.perform (\_ -> CopiedReset text) |> Effect.fromCmd
-                ]
-            )
+            ( { model | copied = Just text }, DnsView.copyEffect CopiedReset text )
 
         CopiedReset text ->
             if model.copied == Just text then
@@ -1222,8 +1243,8 @@ startStatusFetch shared targetHost model =
                 live =
                     model.liveStatus
             in
-            ( { model | liveStatus = { live | inFlight = live.inFlight + 1, requested = True, error = Nothing } }
-            , fetchLiveStatus shared targetHost account
+            ( { model | liveStatus = { live | inFlight = live.inFlight + 1, requestSeq = live.requestSeq + 1, requested = True, error = Nothing } }
+            , fetchLiveStatus shared targetHost account (live.requestSeq + 1)
             )
 
         Nothing ->
@@ -1234,8 +1255,8 @@ startStatusFetch shared targetHost model =
 does DNS lookups), hence the generous timeout, and stamped with the browser clock on arrival for
 "Checked 2 minutes ago".
 -}
-fetchLiveStatus : Shared.Model -> String -> RellmAccount -> Effect Msg
-fetchLiveStatus shared targetHost account =
+fetchLiveStatus : Shared.Model -> String -> RellmAccount -> Int -> Effect Msg
+fetchLiveStatus shared targetHost account requestId =
     AccountsPanel.performWithAccountServer shared.accounts
         ( Just account.userId, targetHost )
         (\server token ->
@@ -1246,7 +1267,7 @@ fetchLiveStatus shared targetHost account =
                 |> Grpc.toTask
         )
         |> Task.andThen (\( maybeAccountsPanelMsg, report ) -> Time.now |> Task.map (\now -> ( maybeAccountsPanelMsg, now, report )))
-        |> Task.attempt GotLiveStatus
+        |> Task.attempt (GotLiveStatus requestId)
         |> Effect.fromCmd
 
 
@@ -1604,10 +1625,11 @@ loadingSkeleton =
         )
 
 
-statusHandlers : StatusView.Handlers Msg
-statusHandlers =
+statusHandlers : Model -> StatusView.Handlers Msg
+statusHandlers model =
     { toggleChecks = StatusChecksToggled
     , copy = CopyClicked
+    , copied = model.copied
     }
 
 
@@ -2189,7 +2211,7 @@ providerCard model card =
             [ div [ class "sc-card-body" ]
                 (case card.status of
                     Just status ->
-                        StatusView.providerStatusBlock statusHandlers model.toggledChecks (statusKey card.section) status
+                        StatusView.providerStatusBlock (statusHandlers model) model.toggledChecks (statusKey card.section) status
                             :: card.body
 
                     Nothing ->
@@ -2229,14 +2251,15 @@ emailDomainsView model config =
     div [ class "sc-domains-section" ]
         [ h4 [ class "sc-subsection-title" ] [ text "Email domains" ]
         , p [ class "sc-order-blurb" ]
-            [ text "Mailbox providers like Gmail and Outlook check your sending domain's SPF, DKIM and DMARC records before trusting mail from it." ]
+            [ text "Gmail, Outlook and others check these DNS records before trusting your mail." ]
+        , StatusView.emailExplainer (statusHandlers model) model.toggledChecks
         , if not anyProviderOn then
-            StatusView.domainsSection statusHandlers model.toggledChecks model.copied Proto.Rellm.defaultContactIntegrationsStatus
+            StatusView.domainsSection (statusHandlers model) model.toggledChecks Proto.Rellm.defaultContactIntegrationsStatus
 
           else
             case model.liveStatus.report of
                 Just report ->
-                    StatusView.domainsSection statusHandlers model.toggledChecks model.copied report
+                    StatusView.domainsSection (statusHandlers model) model.toggledChecks report
 
                 Nothing ->
                     if isFetchingStatus model.liveStatus then
@@ -2244,7 +2267,7 @@ emailDomainsView model config =
 
                     else
                         div [ class "sc-empty" ]
-                            [ span [ class "sc-empty-text" ] [ text "Run a status check to see your domains' SPF, DKIM and DMARC records." ] ]
+                            [ span [ class "sc-empty-text" ] [ text "Run a status check to see your domains' DNS records." ] ]
         ]
 
 

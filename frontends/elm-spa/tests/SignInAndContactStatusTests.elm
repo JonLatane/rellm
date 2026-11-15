@@ -102,6 +102,17 @@ suite =
                 \_ ->
                     Status.dmarcPill { policy = "reject", percentage = 25, recordFound = True, rawRecord = "", subdomainPolicy = "", aggregateReportUris = [], forensicReportUris = [], dkimAlignment = "", spfAlignment = "", level = STATUSLEVELOK, summary = "" }
                         |> Expect.equal { label = "Reject · 25%", level = STATUSLEVELOK }
+            , test "the server's warning or error is kept for an enforcing policy" <|
+                \_ ->
+                    [ Status.dmarcPill { defaultDmarcStatus | recordFound = True, policy = "reject", percentage = 100, level = STATUSLEVELERROR }
+                    , Status.dmarcPill { defaultDmarcStatus | recordFound = True, policy = "quarantine", percentage = 100, level = STATUSLEVELWARNING }
+                    ]
+                        |> List.map .level
+                        |> Expect.equal [ STATUSLEVELERROR, STATUSLEVELWARNING ]
+            , test "pct=0 with a record is spelled out, not treated as unset" <|
+                \_ ->
+                    Status.dmarcPill { defaultDmarcStatus | recordFound = True, policy = "reject", percentage = 0, level = STATUSLEVELWARNING }
+                        |> Expect.equal { label = "Reject · 0%", level = STATUSLEVELWARNING }
             , test "an unrecognized policy falls back to the server's level" <|
                 \_ ->
                     Status.dmarcPill { defaultDmarcStatus | recordFound = True, policy = "bogus", level = STATUSLEVELERROR }
@@ -166,6 +177,12 @@ suite =
                         |> Expect.equal "Checked 2 minutes ago"
             , test "no timestamp reads as just now" <|
                 \_ -> Status.checkedAtLabel (Time.millisToPosix 0) Nothing |> Expect.equal "Checked just now"
+            ]
+        , describe "replyIsFresh"
+            [ test "only a reply newer than the newest applied one is fresh" <|
+                \_ ->
+                    [ Status.replyIsFresh 0 1, Status.replyIsFresh 2 2, Status.replyIsFresh 2 1, Status.replyIsFresh 2 3 ]
+                        |> Expect.equal [ True, False, False, True ]
             ]
         , describe "safeLink"
             [ test "only http(s) links" <|
