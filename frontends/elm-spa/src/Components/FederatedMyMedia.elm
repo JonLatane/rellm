@@ -207,6 +207,23 @@ withLatestAccount shared model =
             model
 
 
+{-| Takes up the account a request refreshed (`Just` when its token was rotated on the way) right away: the
+Accounts Panel only gets it with the forwarded message, which lands after whatever this update starts next -- the
+refetch after an upload, say -- so that request would otherwise go out with the pre-refresh token.
+-}
+withRotation : Maybe AccountsPanel.Msg -> Model -> Model
+withRotation maybeAccountsPanelMsg model =
+    case maybeAccountsPanelMsg of
+        Just (AccountsPanel.MastodonAccountRefreshed refreshed) ->
+            { model | account = MastodonServerAccount refreshed }
+
+        Just (AccountsPanel.BlueskyAccountRefreshed refreshed) ->
+            { model | account = BlueskyServerAccount refreshed }
+
+        _ ->
+            model
+
+
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
 update shared msg unrefreshed =
     let
@@ -239,7 +256,8 @@ update shared msg unrefreshed =
                                 itemsOf posts
                         in
                         ( { model
-                            | items =
+                            | account = (withRotation maybeAccountsPanelMsg model).account
+                            , items =
                                 if append then
                                     model.items ++ List.filter (\item -> not (List.any (\existing -> existing.id == item.id) model.items)) newItems
 
@@ -292,8 +310,13 @@ update shared msg unrefreshed =
 
             else
                 -- The new post is the newest one: refetch from the top so it shows.
-                ( { model | upload = Idle, caption = "", description = "", requestId = model.requestId + 1 }
-                , Effect.batch [ forwardRotated maybeAccountsPanelMsg, fetchPage model.account (model.requestId + 1) False Nothing ]
+                let
+                    rotated : Model
+                    rotated =
+                        withRotation maybeAccountsPanelMsg model
+                in
+                ( { rotated | upload = Idle, caption = "", description = "", requestId = model.requestId + 1 }
+                , Effect.batch [ forwardRotated maybeAccountsPanelMsg, fetchPage rotated.account (model.requestId + 1) False Nothing ]
                 )
 
         GotUploadResult accountKey (Err err) ->
@@ -379,7 +402,8 @@ update shared msg unrefreshed =
 
             else
                 ( { model
-                    | items = List.filter (\item -> item.post.id /= postId) model.items
+                    | account = (withRotation maybeAccountsPanelMsg model).account
+                    , items = List.filter (\item -> item.post.id /= postId) model.items
                     , confirmingDelete = Nothing
                     , deleting = False
                   }
