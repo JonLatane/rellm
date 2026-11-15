@@ -168,11 +168,14 @@ jobs:
       - name: Build Flutter Web UI
         run: make -C frontends/flutter build_web
 
-      - uses: actions/cache/save@v6
-        id: flutter-app-cache
+      - name: Upload Flutter web build
+        uses: actions/upload-artifact@v4
         with:
+          name: flutter-web-build
           path: frontends/flutter/build/web
-          key: flutter-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}-${{ github.run_id }}
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
 
   build_tamagui_ui:
     name: Build Tamagui Web UI
@@ -649,12 +652,11 @@ jobs:
       - name: Store Versioning Data for release ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
         run: echo ${{ steps.vars.outputs.dated_sha_short }} > deploys/docker/continuous_delivery_hash
 
-      - uses: actions/cache/restore@v6
-        id: flutter-app-cache
+      - name: Download Flutter web build
+        uses: actions/download-artifact@v4
         with:
+          name: flutter-web-build
           path: frontends/flutter/build/web
-          key: flutter-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}-${{ github.run_id }}
-          fail-on-cache-miss: true
       - uses: actions/cache/restore@v6
         id: web-app-cache
         with:
@@ -1012,12 +1014,11 @@ jobs:
           path: frontends/elm-spa/public
           key: elm-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}-${{ github.run_id }}
           fail-on-cache-miss: true
-      - uses: actions/cache/restore@v6
-        id: flutter-app-cache
+      - name: Download Flutter web build
+        uses: actions/download-artifact@v4
         with:
+          name: flutter-web-build
           path: frontends/flutter/build/web
-          key: flutter-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}-${{ github.run_id }}
-          fail-on-cache-miss: true
       - uses: actions/cache/restore@v6
         id: rust-macos-app-cache
         with:
@@ -1207,12 +1208,11 @@ jobs:
           path: frontends/elm-spa/public
           key: elm-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}-${{ github.run_id }}
           fail-on-cache-miss: true
-      - uses: actions/cache/restore@v6
-        id: flutter-app-cache
+      - name: Download Flutter web build
+        uses: actions/download-artifact@v4
         with:
+          name: flutter-web-build
           path: frontends/flutter/build/web
-          key: flutter-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}-${{ github.run_id }}
-          fail-on-cache-miss: true
 
       # Both cached builds were saved from the same "backend/target/release"
       # path, so they're restored one at a time and moved aside immediately --
