@@ -242,7 +242,7 @@ impl SubdomainContext {
         if let Some(market) = config.market_settings.as_mut() {
             market.enabled = false;
         }
-        config.custom_tabs = None;
+        config.custom_tabs = Some(subdomain_tabs());
         config.federation_info = None;
         // Secrets/infrastructure of the parent are never shown on a subdomain, whoever is looking.
         config.cluster_resources = None;
@@ -264,6 +264,29 @@ impl SubdomainContext {
         }
         config.subdomain_settings = Some(settings);
         config
+    }
+}
+
+/// The only nav tabs a subdomain shows -- everything that is about one user's content. People, Groups and Market
+/// (and the per-server Home override) don't apply to a single user's site, so they are simply not listed.
+fn subdomain_tabs() -> CustomNavigationTabSet {
+    let tab = |tab: NavigationTab, emoji: &str, path: &str| CustomNavigationTab {
+        target: Some(custom_navigation_tab::Target::Tab(tab as i32)),
+        icon: Some(custom_navigation_tab::Icon::EmojiIcon(emoji.to_string())),
+        title: None,
+        path: path.to_string(),
+    };
+    CustomNavigationTabSet {
+        home: None,
+        tabs: vec![
+            tab(NavigationTab::EventsTab, "📅", "events"),
+            tab(NavigationTab::PostsTab, "📝", "posts"),
+            tab(NavigationTab::MediaTab, "🎨", "media"),
+            tab(NavigationTab::VideoTab, "🎥", "video"),
+            tab(NavigationTab::AudioTab, "🎵", "audio"),
+            tab(NavigationTab::AboutTab, "i", "about"),
+        ],
+        tab_style: NavigationTabStyle::NavigationTabIconOnly as i32,
     }
 }
 
@@ -304,6 +327,16 @@ mod tests {
         assert_eq!(subdomain_label_for_host("jon.other.social", "bullcity.social"), None);
         assert_eq!(subdomain_label_for_host("jon.bullcity.social", ""), None);
         assert_eq!(subdomain_label_for_host("notbullcity.social", "bullcity.social"), None);
+    }
+
+    #[test]
+    fn subdomain_has_no_people_or_market_tabs() {
+        let tabs = subdomain_tabs().tabs;
+        let has = |t: NavigationTab| {
+            tabs.iter().any(|x| x.target == Some(custom_navigation_tab::Target::Tab(t as i32)))
+        };
+        assert!(has(NavigationTab::EventsTab) && has(NavigationTab::PostsTab) && has(NavigationTab::AboutTab));
+        assert!(!has(NavigationTab::PeopleTab) && !has(NavigationTab::MarketTab));
     }
 
     #[test]

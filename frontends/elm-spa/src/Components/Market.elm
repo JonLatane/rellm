@@ -21,6 +21,8 @@ module Components.Market exposing
     , priceLabel
     , productDescription
     , productName
+    , saveMarketSubscription
+    , subdomainSettingsOf
     , purchasePeriodLabel
     , purchaseTypeDescription
     , purchaseTypeEmoji
@@ -63,6 +65,7 @@ import Proto.Rellm
         )
 import Proto.Rellm.GetMarketSubscriptionsRequestType exposing (GetMarketSubscriptionsRequestType(..))
 import Proto.Rellm.MarketProduct.Details as ProductDetails
+import Proto.Rellm.MarketSubscription.Details as SubscriptionDetails
 import Proto.Rellm.MarketSubscriptionState exposing (MarketSubscriptionState(..))
 import Proto.Rellm.Permission exposing (Permission)
 import Proto.Rellm.PurchasePeriod exposing (PurchasePeriod(..))
@@ -306,6 +309,42 @@ updateMarketSubscription accountsPanelModel maybeAccountServer subscription =
         )
 
 
+{-| Saves the buyer-editable `SubdomainSettings` (the `shareContentFrom*` toggles and/or `customCssConfiguration`) of
+one of the caller's own `PURCHASE_TYPE_SUBDOMAIN` subscriptions (`SaveMarketSubscription`). `subdomainOf`/`subdomain`
+are server-assigned and ignored; a `customCssConfiguration` of `Nothing` keeps the stored stylesheet, and so does a
+`customCss` of `Nothing` inside it.
+-}
+saveMarketSubscription :
+    AccountsPanel.Model
+    -> AccountsPanel.MaybeAccountServer
+    -> String
+    -> Proto.Rellm.SubdomainSettings
+    -> Task Grpc.Error ( Maybe AccountsPanel.Msg, MarketSubscription )
+saveMarketSubscription accountsPanelModel maybeAccountServer subscriptionId settings =
+    AccountsPanel.performWithAccountServer
+        accountsPanelModel
+        maybeAccountServer
+        (\server token ->
+            Grpc.new Rellm.saveMarketSubscription
+                { marketSubscriptionId = subscriptionId, subdomainSettings = Just settings }
+                |> Grpc.setHost (RellmServers.rellmServerUrl server)
+                |> withAccessToken (Just token)
+                |> Grpc.toTask
+        )
+
+
+{-| The `SubdomainSettings` of a `PURCHASE_TYPE_SUBDOMAIN` subscription (`Nothing` for every other type).
+-}
+subdomainSettingsOf : MarketSubscription -> Maybe Proto.Rellm.SubdomainSettings
+subdomainSettingsOf subscription =
+    case subscription.details of
+        Just (SubscriptionDetails.SubdomainSubscriptionDetails details) ->
+            details.settings
+
+        _ ->
+            Nothing
+
+
 {-| `subscription.state`, or -- for a server too old to send `state` at all (the decoder then defaults it to
 `SUBSCRIPTION_ACTIVE`) -- what its `canceledAt`/`serviceTerminatedAt`/`renewsAt` say. Never contradicts a
 server that does send it: a canceled subscription can't also be `SUBSCRIPTION_ACTIVE` there.
@@ -357,7 +396,7 @@ Access/Rellm Hosting.
 -}
 allPurchaseTypes : List PurchaseType
 allPurchaseTypes =
-    [ PURCHASETYPEMEDIASTORAGE, PURCHASETYPEPERMISSIONSACCESS, PURCHASETYPEAIGRANTS, PURCHASETYPERELLMHOSTING ]
+    [ PURCHASETYPEMEDIASTORAGE, PURCHASETYPEPERMISSIONSACCESS, PURCHASETYPEAIGRANTS, PURCHASETYPESUBDOMAIN, PURCHASETYPERELLMHOSTING ]
 
 
 purchaseTypeLabel : PurchaseType -> String
@@ -374,6 +413,9 @@ purchaseTypeLabel type_ =
 
         PURCHASETYPEPERMISSIONSACCESS ->
             "Extra Features"
+
+        PURCHASETYPESUBDOMAIN ->
+            "Rellm Subdomains"
 
         PurchaseTypeUnrecognized_ _ ->
             "Unknown"
@@ -399,6 +441,9 @@ purchaseTypeEmoji type_ =
         PURCHASETYPEPERMISSIONSACCESS ->
             "✨"
 
+        PURCHASETYPESUBDOMAIN ->
+            "🔗"
+
         PurchaseTypeUnrecognized_ _ ->
             "📦"
 
@@ -420,6 +465,9 @@ purchaseTypeDescription type_ =
 
         PURCHASETYPEPERMISSIONSACCESS ->
             "Unlock additional permissions and capabilities on this server."
+
+        PURCHASETYPESUBDOMAIN ->
+            "Your own subdomain (you.this-server) -- your profile, posts and events with your own theme."
 
         PurchaseTypeUnrecognized_ _ ->
             ""
@@ -586,6 +634,9 @@ productName product =
         Just (ProductDetails.PermissionsAccessSubscriptionDetails details) ->
             details.name
 
+        Just (ProductDetails.SubdomainSubscriptionDetails _) ->
+            "Rellm Subdomain"
+
         Nothing ->
             "Rellm Market Product"
 
@@ -634,6 +685,10 @@ productDescription product =
 
         Just (ProductDetails.PermissionsAccessSubscriptionDetails details) ->
             details.description
+
+        Just (ProductDetails.SubdomainSubscriptionDetails _) ->
+            "Your profile, posts and events, served at **your-username.this-server** with your own custom CSS theme. "
+                ++ "You can also choose to share content from your followers, the people you follow, or your friends there."
 
         Nothing ->
             ""
