@@ -369,7 +369,7 @@ fn eval_string(tab: &headless_chrome::Tab, js: &str) -> Option<String> {
     match tab.evaluate(js, false) {
         Ok(obj) => obj.value.and_then(|v| v.as_str().map(|s| s.to_string())),
         Err(e) => {
-            log::debug!("Page script failed: {}", e);
+            log::debug!("Page script failed: {}", crate::logic::log_redaction::safe_error(&e));
             None
         }
     }
@@ -413,7 +413,7 @@ fn capture_page(
         // Pages with long-polling/ad requests may never fire a clean load event; a partially
         // loaded page is still worth a screenshot, so don't fail the whole preview over it.
         if let Err(e) = tab.wait_until_navigated() {
-            log::warn!("Navigation to {} didn't finish cleanly ({}); capturing anyway.", url, e);
+            log::warn!("Navigation to {} didn't finish cleanly ({}); capturing anyway.", url, crate::logic::log_redaction::safe_error(&e));
         }
         // Allow time for client-side page rendering and extensions to work.
         thread::sleep(RENDER_WAIT);
@@ -749,7 +749,7 @@ async fn find_metadata_image(
             Ok((bytes, ..)) => {
                 log::info!("Metadata image {} is only {} bytes; skipping.", image_url, bytes.len())
             }
-            Err(e) => log::info!("Metadata image {} unusable: {}", image_url, e),
+            Err(e) => log::info!("Metadata image {} unusable: {}", image_url, crate::logic::log_redaction::safe_error(&e)),
         }
     }
     Ok(None)
@@ -891,7 +891,7 @@ pub fn record_failed_attempt(post_id: i64, conn: &mut PgPooledConnection) {
         ))
         .execute(conn);
     if let Err(e) = result {
-        log::error!("Failed to record preview attempt for post {}: {:?}", post_id, e);
+        log::error!("Failed to record preview attempt for post {}: {:?}", post_id, crate::logic::log_redaction::safe_error(&e));
     }
 }
 
@@ -899,7 +899,7 @@ pub fn record_failed_attempt(post_id: i64, conn: &mut PgPooledConnection) {
 /// eligible again.
 pub fn clear_failed_attempts(post_id: i64, conn: &mut PgPooledConnection) {
     if let Err(e) = delete(link_preview_attempts::table.filter(link_preview_attempts::post_id.eq(post_id))).execute(conn) {
-        log::error!("Failed to clear preview attempts for post {}: {:?}", post_id, e);
+        log::error!("Failed to clear preview attempts for post {}: {:?}", post_id, crate::logic::log_redaction::safe_error(&e));
     }
 }
 
@@ -917,7 +917,7 @@ pub fn link_preview_settings(
     conn: &mut PgPooledConnection,
 ) -> Result<LinkPreviewSettings, diesel::result::Error> {
     let config = crate::rpcs::get_server_configuration_model(conn).map_err(|e| {
-        log::error!("Failed to load server configuration: {:?}", e);
+        log::error!("Failed to load server configuration: {:?}", crate::logic::log_redaction::safe_error(&e));
         diesel::result::Error::NotFound
     })?;
     let media_settings = normalized_media_settings(config.media_settings);
@@ -992,7 +992,7 @@ pub async fn generate_previews_for_post(
                 preview = Some(("main_image", extension, content_type, bytes));
             }
             Ok(None) => log::info!("No usable metadata image for {}; using the browser.", url),
-            Err(e) => log::info!("Couldn't fetch {} for metadata ({}); using the browser.", url, e),
+            Err(e) => log::info!("Couldn't fetch {} for metadata ({}); using the browser.", url, crate::logic::log_redaction::safe_error(&e)),
         }
     }
 
@@ -1011,7 +1011,7 @@ pub async fn generate_previews_for_post(
                     "Failed to fetch main image {} for post {}: {}; falling back to a screenshot.",
                     image_url,
                     post.id,
-                    e
+                    crate::logic::log_redaction::safe_error(&e)
                 ),
             }
         }
@@ -1043,7 +1043,7 @@ pub async fn generate_previews_for_post(
     clear_failed_attempts(post.id, conn);
 
     if let Err(e) = update_media_storage_used(user_id, conn) {
-        log::error!("Failed to update media_storage_bytes_used for user {}: {:?}", user_id, e);
+        log::error!("Failed to update media_storage_bytes_used for user {}: {:?}", user_id, crate::logic::log_redaction::safe_error(&e));
     }
     Ok(())
 }

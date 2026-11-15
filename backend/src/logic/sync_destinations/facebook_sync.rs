@@ -51,7 +51,7 @@ pub fn server_facebook_app_credentials(
     let configuration = crate::rpcs::get_server_configuration_model(conn)?;
     let federation_info: FederationInfo = serde_json::from_value(configuration.federation_info)
         .map_err(|e| {
-            log::error!("Failed to parse stored federation_info: {:?}", e);
+            log::error!("Failed to parse stored federation_info: {:?}", crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::Internal, "failed_to_load_server_configuration")
         })?;
     federation_info
@@ -123,7 +123,7 @@ fn exchange_long_lived_user_token(
         .ok_or_else(|| {
             log::error!(
                 "Facebook token exchange response missing access_token: {:?}",
-                response
+                crate::logic::log_redaction::summarize(&response)
             );
             Status::new(Code::FailedPrecondition, "facebook_token_exchange_failed")
         })
@@ -142,7 +142,7 @@ fn find_page_access_token(
         .ok_or_else(|| {
             log::error!(
                 "Facebook /me/accounts response missing data: {:?}",
-                response
+                crate::logic::log_redaction::summarize(&response)
             );
             Status::new(Code::FailedPrecondition, "facebook_pages_lookup_failed")
         })?;
@@ -302,7 +302,7 @@ fn post_video_to_facebook_page(
         .and_then(|v| v.as_str())
         .map(str::to_string)
         .ok_or_else(|| {
-            log::error!("Facebook video post response missing id: {:?}", response);
+            log::error!("Facebook video post response missing id: {:?}", crate::logic::log_redaction::summarize(&response));
             Status::new(Code::Internal, "facebook_post_failed")
         })?;
     // Prefer the response's own permalink if the Graph API returns one for this call -- more
@@ -339,7 +339,7 @@ fn post_photos_to_facebook_page(
             .and_then(|v| v.as_str())
             .map(str::to_string)
             .ok_or_else(|| {
-                log::error!("Facebook photo upload response missing id: {:?}", response);
+                log::error!("Facebook photo upload response missing id: {:?}", crate::logic::log_redaction::summarize(&response));
                 Status::new(Code::Internal, "facebook_post_failed")
             })?;
         photo_ids.push(photo_id);
@@ -370,7 +370,7 @@ fn extract_facebook_post_id_and_url(response: &Value) -> Result<(String, String)
         .and_then(|v| v.as_str())
         .map(str::to_string)
         .ok_or_else(|| {
-            log::error!("Facebook post response missing id: {:?}", response);
+            log::error!("Facebook post response missing id: {:?}", crate::logic::log_redaction::summarize(&response));
             Status::new(Code::Internal, "facebook_post_failed")
         })?;
     let post_url = format!("https://www.facebook.com/{}", post_id);
@@ -397,24 +397,24 @@ fn graph_request(
         let text = build(&client)
             .send()
             .map_err(|e| {
-                log::error!("Facebook Graph API request failed: {:?}", e);
+                log::error!("Facebook Graph API request failed: {:?}", crate::logic::log_redaction::safe_error(&e));
                 Status::new(Code::FailedPrecondition, "facebook_request_failed")
             })?
             .text()
             .map_err(|e| {
-                log::error!("Failed to read Facebook Graph API response body: {:?}", e);
+                log::error!("Failed to read Facebook Graph API response body: {:?}", crate::logic::log_redaction::safe_error(&e));
                 Status::new(Code::FailedPrecondition, "facebook_request_failed")
             })?;
         let value: Value = serde_json::from_str(&text).map_err(|e| {
             log::error!(
                 "Failed to parse Facebook Graph API response as JSON: {:?} ({})",
-                e,
-                text
+                crate::logic::log_redaction::safe_error(&e),
+                crate::logic::log_redaction::summarize(&text)
             );
             Status::new(Code::FailedPrecondition, "facebook_request_failed")
         })?;
         if let Some(error) = value.get("error") {
-            log::error!("Facebook Graph API returned an error: {:?}", error);
+            log::error!("Facebook Graph API returned an error: {:?}", crate::logic::log_redaction::safe_error(&error));
             // Facebook's top-level `error.code` is a documented, stable field (unlike
             // `error_subcode`, which isn't) -- 190 is always an invalid/expired OAuth token, 368
             // is Facebook's "confirm your identity" checkpoint (surfaced to the Page admin via

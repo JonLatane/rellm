@@ -43,7 +43,7 @@ pub fn send_email_at(
         "mailgun_request_failed",
     )?;
     if !status.is_success() {
-        log::error!("Mailgun send failed ({}): {:?}", status, body);
+        log::error!("Mailgun send failed ({}): {:?}", status, crate::logic::log_redaction::summarize(&body));
         return Err(Status::new(Code::FailedPrecondition, "mailgun_send_failed"));
     }
     Ok(())

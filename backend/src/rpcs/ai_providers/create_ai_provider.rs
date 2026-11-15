@@ -72,7 +72,7 @@ pub fn create_ai_provider(
         })
         .get_result::<models::AIProvider>(conn)
         .map_err(|e| {
-            log::error!("Failed to create AI model provider: {:?}", e);
+            log::error!("Failed to create AI model provider: {:?}", crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::Internal, "failed_to_create_ai_provider")
         })?;
 

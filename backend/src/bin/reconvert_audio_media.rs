@@ -95,7 +95,7 @@ async fn main() {
                     }
                     Ok(false) => {}
                     Err(e) => {
-                        log::error!("Media {}: failed to backfill metadata: {:#}", item.id, e);
+                        log::error!("Media {}: failed to backfill metadata: {:#}", item.id, rellm::logic::log_redaction::safe_error(&e));
                         skipped += 1;
                     }
                 }
@@ -108,7 +108,7 @@ async fn main() {
                     skipped += 1;
                 }
                 Err(e) => {
-                    log::error!("Media {}: failed to queue for reconversion: {:?}", item.id, e);
+                    log::error!("Media {}: failed to queue for reconversion: {:?}", item.id, rellm::logic::log_redaction::safe_error(&e));
                     skipped += 1;
                 }
             }

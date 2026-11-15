@@ -148,7 +148,7 @@ pub fn sync_post(
         .set(&new_row)
         .execute(conn)
         .map_err(|e| {
-            log::error!("Failed to record post sync status: {:?}", e);
+            log::error!("Failed to record post sync status: {:?}", crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::Internal, "failed_to_record_post_sync")
         })?;
 

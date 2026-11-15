@@ -95,7 +95,7 @@ pub fn fetch_stellarwp_pages(
             .timeout(REQUEST_TIMEOUT)
             .build()
             .map_err(|e| {
-                log::error!("Failed to build HTTP client for StellarWP sync: {:?}", e);
+                log::error!("Failed to build HTTP client for StellarWP sync: {:?}", crate::logic::log_redaction::safe_error(&e));
                 Status::new(Code::Internal, "stellarwp_fetch_failed")
             })?;
         collect_pages(max_pages, |page| {
@@ -181,15 +181,15 @@ fn fetch_page(client: &reqwest::blocking::Client, url: &Url) -> Result<String, S
         {
             Ok(text) => return Ok(text),
             Err(e) => {
-                log::warn!("Failed to fetch StellarWP page {}: {:?}", url, e);
+                log::warn!("Failed to fetch StellarWP page {}: {:?}", crate::logic::log_redaction::redact_url(&url), crate::logic::log_redaction::safe_error(&e));
                 last_error = Some(e);
             }
         }
     }
     log::error!(
         "Giving up fetching StellarWP page {}: {:?}",
-        url,
-        last_error
+        crate::logic::log_redaction::redact_url(&url),
+        crate::logic::log_redaction::safe_error(&last_error)
     );
     Err(Status::new(Code::FailedPrecondition, "stellarwp_fetch_failed"))
 }

@@ -50,3 +50,5 @@ pub(crate) use contact_methods::{bird_sms, telnyx_sms, twilio_sms};
 #[allow(unused_imports)] // the `rellm` bin's duplicate module tree has no specs that use these
 pub(crate) use contact_methods::{mailgun_email, sendgrid_email, stalwart_email};
 pub(crate) use market::stripe_payments;
+
+pub mod log_redaction;

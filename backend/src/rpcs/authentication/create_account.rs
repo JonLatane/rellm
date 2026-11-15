@@ -49,31 +49,22 @@ pub fn create_account_at(
     request: CreateAccountRequest,
     conn: &mut PgPooledConnection,
 ) -> Result<RefreshTokenResponse, Status> {
-    let redacted_request = CreateAccountRequest {
-        password: "<redacted>".to_string(),
-        phone_verification_code: request
-            .phone_verification_code
-            .as_ref()
-            .map(|_| "<redacted>".to_string()),
-        email_verification_code: request
-            .email_verification_code
-            .as_ref()
-            .map(|_| "<redacted>".to_string()),
-        ..request.clone()
-    };
+    // Nothing from the request is logged (username, email, phone, password, codes): only that a
+    // request happened, which phase it was, and the outcome (the new user's id on success).
+    let verified_phase = request.phone_verification_code.is_some() || request.email_verification_code.is_some();
     let result = create_account_inner(base_url, request, conn);
 
-    // Never log the response itself -- it carries the new account's tokens.
+    // Never log the response itself either -- it carries the new account's tokens.
     log::info!(
-        "CreateAccount::request: {:?}, result: {}",
-        redacted_request,
+        "CreateAccount request ({}): {}",
+        if verified_phase { "code submitted" } else { "no code" },
         match &result {
             Ok(response) if response.verification_challenge.is_some() => {
                 "verification code(s) sent".to_string()
             }
             Ok(response) => format!(
-                "created user {:?}",
-                response.user.as_ref().map(|u| u.username.clone())
+                "created user_id={}",
+                response.user.as_ref().map(|u| u.id.as_str()).unwrap_or("?")
             ),
             Err(e) => format!("{:?}: {}", e.code(), e.message()),
         }
@@ -165,7 +156,7 @@ fn create_account_inner(
         .first::<i64>(conn)
         .optional()
         .map_err(|e| {
-            log::error!("Failed to check for existing username: {:?}", e);
+            log::error!("Failed to check for existing username: {}", safe_db_error(&e));
             Status::new(Code::Internal, "data_error")
         })?
         .is_some()
@@ -218,7 +209,9 @@ fn send_codes(
     }
     // Global backstop on total spend. Counts the send *ledger* (one row per actual send, any
     // flow), not pending rows -- those are overwritten on resend and deleted on exhaustion/expiry,
-    // which would make many sends look like one.
+    // which would make many sends look like one. (Best-effort fail-fast across *all* contacts
+    // before anything is sent; `send_reserved_code` re-checks every limit authoritatively, under
+    // locks, per contact.)
     if models::count_contact_verification_sends_within(Duration::from_secs(60 * 60), conn)?
         > MAX_PENDING_SENDS_PER_HOUR
     {
@@ -229,9 +222,17 @@ fn send_codes(
     }
 
     for c in to_verify {
-        let code = generate_code();
-        send_verification_code(base_url, conn, &c.value, &code)?;
-        models::upsert_pending_contact_verification(&c.value, &hash_code(&c.value, &code), conn)?;
+        // Reserve the send (cooldown, per-contact + global caps, ledger row, pending code) under
+        // lock and commit, *then* call the provider -- so concurrent first phases can't all pass
+        // the checks and each send a paid message.
+        send_reserved_code(
+            base_url,
+            conn,
+            &c.value,
+            &c.value,
+            SendTarget::Pending,
+            Some(MAX_PENDING_SENDS_PER_HOUR),
+        )?;
     }
 
     Ok(RefreshTokenResponse {
@@ -434,13 +435,13 @@ fn insert_account(
     match insert_result {
         Err(diesel::result::Error::DatabaseError(
             diesel::result::DatabaseErrorKind::UniqueViolation,
-            info,
+            _,
         )) => {
-            log::warn!("Failed to create account, username already exists: {:?}", info.message());
+            log::warn!("Failed to create account: username already exists");
             Err(Status::new(Code::AlreadyExists, "username_already_exists"))
         }
         Err(e) => {
-            log::error!("Failed to create account: {:?}", e);
+            log::error!("Failed to create account: {}", safe_db_error(&e));
             Err(Status::new(Code::Internal, "data_error"))
         }
         Ok(Outcome::Rejected(status)) => Err(status),

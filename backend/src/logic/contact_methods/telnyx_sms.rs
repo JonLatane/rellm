@@ -44,7 +44,7 @@ pub fn send_sms_at(
         "telnyx_request_failed",
     )?;
     if !status.is_success() {
-        log::error!("Telnyx SendSms failed ({}): {:?}", status, response_body);
+        log::error!("Telnyx SendSms failed ({}): {:?}", status, crate::logic::log_redaction::summarize(&response_body));
         return Err(Status::new(Code::FailedPrecondition, "telnyx_send_failed"));
     }
     Ok(())

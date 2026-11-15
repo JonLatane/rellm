@@ -25,7 +25,7 @@ pub fn get_custom_css_text(conn: &mut PgPooledConnection) -> Result<Option<Strin
         .select(server_configurations::custom_css)
         .first::<Option<String>>(conn)
         .map_err(|e| {
-            log::error!("get_custom_css_text error: {:?}", e);
+            log::error!("get_custom_css_text error: {:?}", crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::Internal, "data_error")
         })
 }
@@ -224,7 +224,7 @@ pub fn save_custom_css_configuration(
         Ok(())
     })
     .map_err(|e| {
-        log::error!("ConfigureCustomCSS failed. Error: {:?}", e);
+        log::error!("ConfigureCustomCSS failed. Error: {:?}", crate::logic::log_redaction::safe_error(&e));
         Status::new(Code::Internal, "error_updating")
     })
 }

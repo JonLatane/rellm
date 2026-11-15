@@ -24,7 +24,7 @@ pub async fn delete_media(
         .get_result::<models::Media>(conn)
         .optional()
         .map_err(|e| {
-            log::error!("Error finding media: {:?}", e);
+            log::error!("Error finding media: {:?}", crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::Internal, "media_not_found")
         })?;
 
@@ -62,7 +62,7 @@ pub async fn delete_media(
         Ok(_) => Ok(()),
         Err(NotFound) => Err(Status::new(Code::NotFound, "media_not_found")),
         Err(e) => {
-            log::error!("Error deleting media: {:?}", e);
+            log::error!("Error deleting media: {:?}", crate::logic::log_redaction::safe_error(&e));
             Err(Status::new(Code::Internal, "data_error"))
         }
     };
@@ -74,7 +74,7 @@ pub async fn delete_media(
                     "Failed to delete object storage object {} for media {}: {:?}",
                     object_storage_path,
                     media_id,
-                    e
+                    crate::logic::log_redaction::safe_error(&e)
                 );
             }
         }
@@ -83,7 +83,7 @@ pub async fn delete_media(
                 log::error!(
                     "Failed to update media_storage_bytes_used for user {}: {:?}",
                     owner_id,
-                    e
+                    crate::logic::log_redaction::safe_error(&e)
                 );
             }
         }
@@ -91,12 +91,12 @@ pub async fn delete_media(
             log::error!(
                 "Failed to adjust server_media_usage_bytes for deleted media {}: {:?}",
                 media_id,
-                e
+                crate::logic::log_redaction::safe_error(&e)
             );
         }
     }
 
-    log::info!("DeleteMedia::request: {:?}, result: {:?}", request, result);
+    log::info!("DeleteMedia: ok={}", result.is_ok());
 
     result
 }

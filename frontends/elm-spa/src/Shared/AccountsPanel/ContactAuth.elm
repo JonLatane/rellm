@@ -23,6 +23,8 @@ module Shared.AccountsPanel.ContactAuth exposing
     , methodAvailable
     , normalizePhone
     , phoneLooksValid
+    , replyIsCurrent
+    , resetsForm
     , resendSecondsLeft
     , sanitizeCode
     , sentToLabel
@@ -256,6 +258,39 @@ update msg state =
 
         CreateChallengeDismissed ->
             { state | createPhoneCode = "", createEmailCode = "", createChallenge = Nothing }
+
+
+
+-- STALE REPLIES
+
+
+{-| Whether a login/create-account reply should be applied: it answers the latest request
+(`replyId == currentId`, see `AccountsPanel.Model.authRequestId`) *and* the form is still waiting
+on one. Resetting the form bumps the id, so an abandoned request's late reply is dropped rather
+than showing a code step for (or signing into) a form that has moved on.
+-}
+replyIsCurrent : { currentId : Int, replyId : Int, submitting : Bool } -> Bool
+replyIsCurrent { currentId, replyId, submitting } =
+    submitting && replyId == currentId
+
+
+{-| Whether `msg` resets the form out from under any request in flight (see `replyIsCurrent`): picking
+another method, or backing out of a code step.
+-}
+resetsForm : Msg -> Bool
+resetsForm msg =
+    case msg of
+        MethodSelected _ ->
+            True
+
+        LoginChallengeDismissed ->
+            True
+
+        CreateChallengeDismissed ->
+            True
+
+        _ ->
+            False
 
 
 

@@ -69,7 +69,7 @@ fn generate(base_url: &str, api_key: &str, model_name: &str, prompt: &str) -> Re
     )?;
 
     if !status.is_success() {
-        log::error!("OpenAI-shaped image generation failed ({}): {:?}", status, value);
+        log::error!("OpenAI-shaped image generation failed ({}): {:?}", status, crate::logic::log_redaction::summarize(&value));
         return Err(Status::new(Code::FailedPrecondition, "openai_request_failed"));
     }
     parse_generated_image(&value)
@@ -107,7 +107,7 @@ fn edit(
     )?;
 
     if !status.is_success() {
-        log::error!("OpenAI-shaped image edit failed ({}): {:?}", status, value);
+        log::error!("OpenAI-shaped image edit failed ({}): {:?}", status, crate::logic::log_redaction::summarize(&value));
         return Err(Status::new(Code::FailedPrecondition, "openai_request_failed"));
     }
     parse_generated_image(&value)
@@ -120,7 +120,7 @@ fn parse_generated_image(value: &serde_json::Value) -> Result<OpenAiGeneratedIma
     let data = value["data"][0]["b64_json"]
         .as_str()
         .ok_or_else(|| {
-            log::error!("OpenAI-shaped response had no image output: {:?}", value);
+            log::error!("OpenAI-shaped response had no image output: {:?}", crate::logic::log_redaction::summarize(&value));
             Status::new(Code::Internal, "openai_no_image_returned")
         })?;
     let bytes = STANDARD

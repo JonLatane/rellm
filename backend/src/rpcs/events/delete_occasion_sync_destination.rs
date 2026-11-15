@@ -53,7 +53,7 @@ pub fn delete_occasion_sync_destination(
             "Failed to delete event occasion sync destination ({}, {}): {:?}",
             occasion_id,
             destination.id,
-            e
+            crate::logic::log_redaction::safe_error(&e)
         );
         Status::new(
             tonic::Code::Internal,

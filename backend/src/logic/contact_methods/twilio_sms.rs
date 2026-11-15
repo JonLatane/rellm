@@ -38,7 +38,7 @@ pub fn send_sms_at(
         "twilio_request_failed",
     )?;
     if !status.is_success() {
-        log::error!("Twilio SendSms failed ({}): {:?}", status, response_body);
+        log::error!("Twilio SendSms failed ({}): {:?}", status, crate::logic::log_redaction::summarize(&response_body));
         return Err(Status::new(Code::FailedPrecondition, "twilio_send_failed"));
     }
     Ok(())

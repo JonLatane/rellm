@@ -101,23 +101,18 @@ pub fn create_group(
 
     match group {
         Ok(group) => {
-            log::info!("Group created! Result: {:?}", group);
+            log::info!("Group created: group_id={}", group.id);
             Ok(group.to_proto_with(
                 membership.map(|m| m.to_proto()),
                 Some(&media_lookup(avatar.map(|a| vec![a]).unwrap_or(vec![]))),
             ))
         }
-        Err(DatabaseError(UniqueViolation, details)) => {
-            log::error!(
-                "Error creating group! {:?}, {} {:?}",
-                details,
-                derived_shortname,
-                request
-            );
+        Err(DatabaseError(UniqueViolation, _)) => {
+            log::error!("Error creating group: unique violation");
             Err(Status::new(Code::NotFound, "duplicate_group_name"))
         }
         Err(e) => {
-            log::error!("Error creating group! {:?}", e);
+            log::error!("Error creating group! {:?}", crate::logic::log_redaction::safe_error(&e));
             Err(Status::new(Code::Internal, "internal_error"))
         }
     }

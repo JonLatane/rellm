@@ -114,7 +114,7 @@ fn username_password_login(
     };
     let response = login_response(&user, &request.expires_at, conn);
 
-    log::info!("Logged in user {}, user_id={}", &request.username, user.id);
+    log::info!("Logged in via password, user_id={}", user.id);
 
     Ok(response)
 }
@@ -206,7 +206,7 @@ fn contact_login(
                 return Err(incorrect_code());
             }
             let response = login_response(&user, &expires_at, conn);
-            log::info!("Logged in user {} via {:?}, user_id={}", user.username, kind, user.id);
+            log::info!("Logged in via {:?} code, user_id={}", kind, user.id);
             Ok(response)
         }
     }

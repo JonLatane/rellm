@@ -24,7 +24,7 @@ pub(super) fn update_event_details_impl(
         .set(&existing_event)
         .get_result::<models::Event>(conn)
         .map_err(|e| {
-            log::error!("Failed to update event: {:?}", e);
+            log::error!("Failed to update event: {:?}", crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::Internal, "failed_to_update_event")
         })?;
 

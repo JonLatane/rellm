@@ -302,11 +302,35 @@ an unknown one, and `multiple_accounts_for_contact` does reveal that a contact i
 than one account. Brute force is bounded by the attempt cap and the resend cooldown (5 guesses per
 new code, one new code per minute, per account).
 
+**One canonical contact value.** `normalize_contact_value` is the single function behind every
+key -- cooldown, pending rows, the send ledger, advisory locks, the users lookup -- *and* the
+delivery address: scheme optional and case-insensitive, emails lowercased, and anything extra
+(`?query`, `#fragment`, `;param`, whitespace, a second recipient) is rejected rather than
+stripped, with the same strict recipient check the email providers apply before sending. Phone
+numbers are bare `tel:+E164`. So no spelling of a contact can mint a "different" key to dodge the
+cooldown or per-contact cap.
+
+**Sends are reserved atomically before the provider is called** (`send_reserved_code`, used by
+signup phase 1, login phase 1 and `StartContactMethodVerification`). A short transaction takes the
+contact's advisory lock (then, for signup, the global send lock -- always second), re-checks the
+resend cooldown, the per-contact hourly cap and the global hourly cap under those locks, writes the
+ledger row and the new code (pending row / `verification_in_progress` with its start time), and
+commits. Only then is the provider called, outside any lock. Concurrent requests therefore see
+the reservation and send nothing, instead of all passing the checks and each paying for a
+message. If the provider call fails, the new code state is undone (the previous code/row is
+restored, so a clean failure doesn't leave the caller behind a 60s cooldown for a message that
+never arrived), but the **ledger row is kept**: a provider error can be a timeout on a message that
+did go out, and the hourly caps (10 per contact, 200 global) are what bound an abuser looping on a
+failing provider.
+
 Check-and-save of codes on an account (`verification_in_progress`) happens in a transaction that
 takes the contact's advisory lock and `SELECT ... FOR UPDATE`s the user row, then reloads the
 contact -- so concurrent submissions can't both redeem a code, lose attempt counts, or restore a
 cleared code. The send phase writes only `verification_in_progress` (reloaded under lock after the
 slow provider call), so a contact edit made in the meantime isn't overwritten.
+
+Server logs for these flows never contain usernames, contact values, passwords or codes -- only
+user ids, the phase and the outcome.
 
 The code is stored in plaintext in the account's own `ContactMethod.verification_in_progress` (the
 same slot `StartContactMethodVerification` uses, so the two share one cooldown/attempt counter),

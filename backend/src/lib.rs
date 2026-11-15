@@ -56,7 +56,7 @@ where
             stack.push_str(&format!("   {}: {}\n", i, e));
         }
     }
-    log::error!("[ERROR] {}\nCaused by: {}", err, stack);
+    log::error!("[ERROR] {}\nCaused by: {}", crate::logic::log_redaction::safe_error(&err), stack);
 }
 
 pub fn env_var(name: &str) -> Option<String> {

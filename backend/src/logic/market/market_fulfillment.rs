@@ -28,7 +28,7 @@ pub fn fulfill_purchase(
         PurchaseType::MediaStorage => {
             let parsed: MediaStoragePurchaseDetails = serde_json::from_value(details.clone())
                 .map_err(|e| {
-                    log::error!("Failed to parse MediaStoragePurchaseDetails: {:?}", e);
+                    log::error!("Failed to parse MediaStoragePurchaseDetails: {:?}", crate::logic::log_redaction::safe_error(&e));
                     Status::new(tonic::Code::Internal, "invalid_purchase_details")
                 })?;
             diesel::update(users::table.filter(users::id.eq(buyer_id)))
@@ -38,7 +38,7 @@ pub fn fulfill_purchase(
                     log::error!(
                         "Failed to apply media storage entitlement to user {}: {:?}",
                         buyer_id,
-                        e
+                        crate::logic::log_redaction::safe_error(&e)
                     );
                     Status::new(tonic::Code::Internal, "failed_to_apply_entitlement")
                 })?;
@@ -46,7 +46,7 @@ pub fn fulfill_purchase(
         }
         PurchaseType::AiGrants => {
             let parsed: AiGrantPurchaseDetails = serde_json::from_value(details.clone()).map_err(|e| {
-                log::error!("Failed to parse AiGrantPurchaseDetails: {:?}", e);
+                log::error!("Failed to parse AiGrantPurchaseDetails: {:?}", crate::logic::log_redaction::safe_error(&e));
                 Status::new(tonic::Code::Internal, "invalid_purchase_details")
             })?;
             let ai_provider_id = parsed.ai_provider_id.to_db_id_or_err("ai_provider_id")?;
@@ -78,7 +78,7 @@ pub fn fulfill_purchase(
         PurchaseType::PermissionsAccess => {
             let parsed: PermissionsAccessPurchaseDetails =
                 serde_json::from_value(details.clone()).map_err(|e| {
-                    log::error!("Failed to parse PermissionsAccessPurchaseDetails: {:?}", e);
+                    log::error!("Failed to parse PermissionsAccessPurchaseDetails: {:?}", crate::logic::log_redaction::safe_error(&e));
                     Status::new(tonic::Code::Internal, "invalid_purchase_details")
                 })?;
             let buyer = models::get_user(buyer_id, conn)?;
@@ -95,7 +95,7 @@ pub fn fulfill_purchase(
                     log::error!(
                         "Failed to apply permissions entitlement to user {}: {:?}",
                         buyer_id,
-                        e
+                        crate::logic::log_redaction::safe_error(&e)
                     );
                     Status::new(tonic::Code::Internal, "failed_to_apply_entitlement")
                 })?;
@@ -135,7 +135,7 @@ pub fn terminate_entitlement(
                     log::error!(
                         "Failed to revert media storage entitlement for user {}: {:?}",
                         buyer_id,
-                        e
+                        crate::logic::log_redaction::safe_error(&e)
                     );
                     Status::new(tonic::Code::Internal, "failed_to_revoke_entitlement")
                 })?;
@@ -148,7 +148,7 @@ pub fn terminate_entitlement(
         PurchaseType::PermissionsAccess => {
             let parsed: PermissionsAccessSubscriptionDetails =
                 serde_json::from_value(details.clone()).map_err(|e| {
-                    log::error!("Failed to parse PermissionsAccessSubscriptionDetails: {:?}", e);
+                    log::error!("Failed to parse PermissionsAccessSubscriptionDetails: {:?}", crate::logic::log_redaction::safe_error(&e));
                     Status::new(tonic::Code::Internal, "invalid_subscription_details")
                 })?;
             let granted = parsed.permissions.to_proto_permissions();
@@ -166,7 +166,7 @@ pub fn terminate_entitlement(
                     log::error!(
                         "Failed to revoke permissions entitlement for user {}: {:?}",
                         buyer_id,
-                        e
+                        crate::logic::log_redaction::safe_error(&e)
                     );
                     Status::new(tonic::Code::Internal, "failed_to_revoke_entitlement")
                 })?;

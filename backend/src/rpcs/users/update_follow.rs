@@ -46,7 +46,7 @@ pub fn update_follow(
             Ok(existing_follow.to_proto())
         }
         Err(e) => {
-            log::error!("Error updating follow: {:?}", e);
+            log::error!("Error updating follow: {:?}", crate::logic::log_redaction::safe_error(&e));
             Err(Status::new(Code::Internal, "error_updating_follow"))
         }
     }

@@ -131,11 +131,11 @@ pub fn delete_post(
             "cannot_publish_globally",
         )),
         Err(e) => {
-            log::error!("Error updating user: {:?}", e);
+            log::error!("Error updating user: {:?}", crate::logic::log_redaction::safe_error(&e));
             Err(Status::new(Code::Internal, "data_error"))
         }
     };
-    log::info!("DeletePost::request: {:?}, result: {:?}", &request, result);
+    log::info!("DeletePost: post_id={:?}, ok={}", &request.id, result.is_ok());
 
     result
 }

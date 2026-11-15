@@ -96,7 +96,7 @@ pub fn get_media(
     user: &Option<&models::User>,
     conn: &mut PgPooledConnection,
 ) -> Result<GetMediaResponse, Status> {
-    log::info!("GetMedia called: {:?}", request);
+    log::info!("GetMedia called");
     let requested_user_id = match request.user_id.as_ref() {
         Some(user_id) => Some(user_id.to_db_id_or_err("user_id")?),
         None => None,

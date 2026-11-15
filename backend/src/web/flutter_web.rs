@@ -32,7 +32,7 @@ pub async fn flutter_index() -> CacheResponse<Result<NamedFile, Status>> {
     };
     CacheResponse::public(
         result.map_err(|e| {
-            log::info!("flutter: {:?}", e);
+            log::info!("flutter: {:?}", crate::logic::log_redaction::safe_error(&e));
             Status::NotFound
         }),
         60,

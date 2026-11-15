@@ -17,6 +17,6 @@ pub fn main() {
     let mut conn = pool.get().expect("Failed to get DB connection");
     match recompute_server_media_usage_bytes(&mut conn) {
         Ok(()) => log::info!("Done calculating server Media usage."),
-        Err(e) => log::error!("Failed to calculate server Media usage: {:?}", e),
+        Err(e) => log::error!("Failed to calculate server Media usage: {:?}", rellm::logic::log_redaction::safe_error(&e)),
     }
 }

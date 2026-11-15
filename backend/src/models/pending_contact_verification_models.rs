@@ -24,7 +24,11 @@ pub struct PendingContactVerification {
 }
 
 fn db_error(what: &str, e: diesel::result::Error) -> Status {
-    log::error!("Failed to {} pending contact verification: {:?}", what, e);
+    log::error!(
+        "Failed to {} pending contact verification: {}",
+        what,
+        crate::logic::safe_db_error(&e)
+    );
     Status::new(Code::Internal, "data_error")
 }
 
@@ -65,6 +69,26 @@ pub fn upsert_pending_contact_verification(
         .execute(conn)
         .map(|_| ())
         .map_err(|e| db_error("store", e))
+}
+
+/// Puts back a row exactly as it was (`code_hash`/`attempts`/`sent_at`) -- the undo of a failed
+/// reservation that had overwritten it.
+pub fn restore_pending_contact_verification(
+    previous: &PendingContactVerification,
+    conn: &mut PgPooledConnection,
+) -> Result<(), Status> {
+    update(
+        pending_contact_verifications::table
+            .filter(pending_contact_verifications::contact_value.eq(&previous.contact_value)),
+    )
+    .set((
+        pending_contact_verifications::code_hash.eq(&previous.code_hash),
+        pending_contact_verifications::attempts.eq(previous.attempts),
+        pending_contact_verifications::sent_at.eq(previous.sent_at),
+    ))
+    .execute(conn)
+    .map(|_| ())
+    .map_err(|e| db_error("restore", e))
 }
 
 pub fn set_pending_contact_verification_attempts(

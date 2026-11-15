@@ -19,6 +19,17 @@ use crate::rpcs::{
 use crate::schema::{pending_contact_verifications, users};
 use crate::tests::factories::*;
 
+/// A fresh random password for each use -- never a literal (and never printed; see
+/// `account_request`, whose `Debug` output is not logged anywhere in these specs).
+fn test_password() -> String {
+    uuid::Uuid::new_v4().simple().to_string()
+}
+
+/// The "no password" of a passwordless signup.
+fn no_password() -> String {
+    String::new()
+}
+
 const PHONE: &str = "tel:+15551234567";
 const EMAIL: &str = "mailto:jon@example.com";
 
@@ -671,7 +682,8 @@ mod create_account_spec {
         conn.test_transaction::<_, tonic::Status, _>(|conn| {
             setup(conn, &ALL_FEATURES);
             let (base_url, sms) = sms_mock();
-            let request = account_request("ca_sms", "password123", Some(granted(PHONE)), None);
+            let pw = test_password();
+            let request = account_request("ca_sms", &pw, Some(granted(PHONE)), None);
 
             let phase1 = create_account_at(Some(&base_url), request.clone(), conn).unwrap();
             assert_challenge(&phase1, &[PHONE]);
@@ -715,7 +727,7 @@ mod create_account_spec {
             assert!(pending_row(conn, PHONE).is_none(), "pending row cleaned up");
 
             // The password works too.
-            let ok = login_at(None, password_login("ca_sms", "password123"), conn).unwrap();
+            let ok = login_at(None, password_login("ca_sms", &pw), conn).unwrap();
             assert_logged_in(&ok, "ca_sms");
             Ok(())
         });
@@ -726,7 +738,7 @@ mod create_account_spec {
         let mut conn = test_conn();
         conn.test_transaction::<_, tonic::Status, _>(|conn| {
             setup(conn, &ALL_FEATURES);
-            let request = account_request("ca_nopass", "", None, Some(granted("mailto:New.User@Example.com")));
+            let request = account_request("ca_nopass", &no_password(), None, Some(granted("mailto:New.User@Example.com")));
 
             let phase1 = create_account_at(None, request.clone(), conn).unwrap();
             assert_challenge(&phase1, &["mailto:new.user@example.com"]);
@@ -749,9 +761,9 @@ mod create_account_spec {
             assert_logged_in(&ok, "ca_nopass");
 
             // ...but no password -- empty, guessable, or the (unknowable) stored hash -- ever does.
-            for password in ["", "password", "password123", "00000000"] {
-                let result = login_at(None, password_login("ca_nopass", password), conn);
-                assert!(result.is_err(), "password {password:?} must not log into a passwordless account");
+            for password in [no_password(), test_password(), test_password()] {
+                let result = login_at(None, password_login("ca_nopass", &password), conn);
+                assert!(result.is_err(), "a guessed password must not log into a passwordless account");
             }
             let user = users::table
                 .filter(users::username.eq("ca_nopass"))
@@ -771,7 +783,7 @@ mod create_account_spec {
         conn.test_transaction::<_, tonic::Status, _>(|conn| {
             setup(conn, &ALL_FEATURES);
             let (base_url, sms) = sms_mock();
-            let request = account_request("ca_both", "", Some(granted(PHONE)), Some(granted(EMAIL)));
+            let request = account_request("ca_both", &no_password(), Some(granted(PHONE)), Some(granted(EMAIL)));
 
             let phase1 = create_account_at(Some(&base_url), request.clone(), conn).unwrap();
             assert_challenge(&phase1, &[PHONE, EMAIL]);
@@ -830,7 +842,7 @@ mod create_account_spec {
             let (base_url, sms) = sms_mock();
             let response = create_account_at(
                 Some(&base_url),
-                account_request("ca_classic", "password123", Some(granted(PHONE)), Some(granted(EMAIL))),
+                account_request("ca_classic", &test_password(), Some(granted(PHONE)), Some(granted(EMAIL))),
                 conn,
             )
             .unwrap();
@@ -857,7 +869,7 @@ mod create_account_spec {
             setup(conn, &[AuthenticationFeature::CreateAccountWithPassword]);
             let response = create_account_at(
                 None,
-                account_request("ca_email_classic", "password123", None, Some(granted(EMAIL))),
+                account_request("ca_email_classic", &test_password(), None, Some(granted(EMAIL))),
                 conn,
             )
             .unwrap();
@@ -872,12 +884,12 @@ mod create_account_spec {
         conn.test_transaction::<_, tonic::Status, _>(|conn| {
             setup(conn, &[AuthenticationFeature::CreateAccountWithEmail]);
             // No contact at all: it's still a password problem.
-            let err = create_account_at(None, account_request("ca_np1", "", None, None), conn).unwrap_err();
+            let err = create_account_at(None, account_request("ca_np1", &no_password(), None, None), conn).unwrap_err();
             assert_eq!(err.code(), Code::InvalidArgument);
             // A phone, but SMS signup isn't enabled.
             let err = create_account_at(
                 None,
-                account_request("ca_np2", "", Some(granted(PHONE)), None),
+                account_request("ca_np2", &no_password(), Some(granted(PHONE)), None),
                 conn,
             )
             .unwrap_err();
@@ -903,7 +915,7 @@ mod create_account_spec {
             let (base_url, sms) = sms_mock();
             let err = create_account_at(
                 Some(&base_url),
-                account_request("ca_nologin", "", None, Some(granted(EMAIL))),
+                account_request("ca_nologin", &no_password(), None, Some(granted(EMAIL))),
                 conn,
             )
             .unwrap_err();
@@ -913,7 +925,7 @@ mod create_account_spec {
             // The same server is fine with a phone (LOGIN_WITH_SMS is on)...
             let ok = create_account_at(
                 Some(&base_url),
-                account_request("ca_nologin", "", Some(granted(PHONE)), None),
+                account_request("ca_nologin", &no_password(), Some(granted(PHONE)), None),
                 conn,
             )
             .unwrap();
@@ -921,7 +933,7 @@ mod create_account_spec {
             // ...and with both, one loginable contact is enough.
             let both = create_account_at(
                 Some(&base_url),
-                account_request("ca_nologin2", "", Some(granted("tel:+15557654321")), Some(granted(EMAIL))),
+                account_request("ca_nologin2", &no_password(), Some(granted("tel:+15557654321")), Some(granted(EMAIL))),
                 conn,
             )
             .unwrap();
@@ -930,7 +942,7 @@ mod create_account_spec {
             // A password account doesn't need a login feature for its contacts.
             let with_password = create_account_at(
                 Some(&base_url),
-                account_request("ca_haspw", "password123", None, Some(granted("mailto:other@example.com"))),
+                account_request("ca_haspw", &test_password(), None, Some(granted("mailto:other@example.com"))),
                 conn,
             )
             .unwrap();
@@ -946,7 +958,7 @@ mod create_account_spec {
             setup(conn, &ALL_FEATURES);
             let err = create_account_at(
                 None,
-                account_request("ca_shortpw", "short", None, Some(granted(EMAIL))),
+                account_request("ca_shortpw", &test_password()[..4], None, Some(granted(EMAIL))),
                 conn,
             )
             .unwrap_err();
@@ -965,7 +977,7 @@ mod create_account_spec {
             for state in [ContactConsentState::ContactConsentRevoked] {
                 let err = create_account_at(
                     Some(&base_url),
-                    account_request("ca_noconsent", "password123", Some(contact(PHONE, state, false)), None),
+                    account_request("ca_noconsent", &test_password(), Some(contact(PHONE, state, false)), None),
                     conn,
                 )
                 .unwrap_err();
@@ -989,14 +1001,14 @@ mod create_account_spec {
 
             let err = create_account_at(
                 Some(&base_url),
-                account_request("ca_dup", "password123", Some(granted(PHONE)), None),
+                account_request("ca_dup", &test_password(), Some(granted(PHONE)), None),
                 conn,
             )
             .unwrap_err();
             assert_eq!(err.message(), "contact_already_verified");
             let err = create_account_at(
                 Some(&base_url),
-                account_request("ca_dup", "password123", None, Some(granted(EMAIL))),
+                account_request("ca_dup", &test_password(), None, Some(granted(EMAIL))),
                 conn,
             )
             .unwrap_err();
@@ -1017,7 +1029,7 @@ mod create_account_spec {
             let (base_url, _sms) = sms_mock();
             let response = create_account_at(
                 Some(&base_url),
-                account_request("ca_unv", "password123", Some(granted(PHONE)), None),
+                account_request("ca_unv", &test_password(), Some(granted(PHONE)), None),
                 conn,
             )
             .unwrap();
@@ -1035,7 +1047,7 @@ mod create_account_spec {
             let (base_url, sms) = sms_mock();
             let err = create_account_at(
                 Some(&base_url),
-                account_request("ca_taken", "password123", Some(granted(PHONE)), None),
+                account_request("ca_taken", &test_password(), Some(granted(PHONE)), None),
                 conn,
             )
             .unwrap_err();
@@ -1053,7 +1065,7 @@ mod create_account_spec {
         conn.test_transaction::<_, tonic::Status, _>(|conn| {
             setup(conn, &ALL_FEATURES);
             let (base_url, sms) = sms_mock();
-            let request = account_request("ca_race", "password123", Some(granted(PHONE)), None);
+            let request = account_request("ca_race", &test_password(), Some(granted(PHONE)), None);
             create_account_at(Some(&base_url), request.clone(), conn).unwrap();
             let code = sms_code(&sms, 0);
             create_user(conn, "ca_race");
@@ -1074,7 +1086,7 @@ mod create_account_spec {
         conn.test_transaction::<_, tonic::Status, _>(|conn| {
             setup(conn, &ALL_FEATURES);
             let (base_url, sms) = sms_mock();
-            let request = account_request("ca_wrong", "password123", Some(granted(PHONE)), None);
+            let request = account_request("ca_wrong", &test_password(), Some(granted(PHONE)), None);
             create_account_at(Some(&base_url), request.clone(), conn).unwrap();
             let code = sms_code(&sms, 0);
             let wrong = if code == "000000" { "000001" } else { "000000" };
@@ -1114,7 +1126,7 @@ mod create_account_spec {
         conn.test_transaction::<_, tonic::Status, _>(|conn| {
             setup(conn, &ALL_FEATURES);
             let (base_url, sms) = sms_mock();
-            let request = account_request("ca_expired", "password123", Some(granted(PHONE)), None);
+            let request = account_request("ca_expired", &test_password(), Some(granted(PHONE)), None);
             create_account_at(Some(&base_url), request.clone(), conn).unwrap();
             let code = sms_code(&sms, 0);
             age_pending_row(conn, PHONE, Duration::from_secs(11 * 60));
@@ -1144,7 +1156,7 @@ mod create_account_spec {
                 None,
                 CreateAccountRequest {
                     phone_verification_code: Some("123456".to_string()),
-                    ..account_request("ca_nofirst", "password123", Some(granted(PHONE)), None)
+                    ..account_request("ca_nofirst", &test_password(), Some(granted(PHONE)), None)
                 },
                 conn,
             )
@@ -1160,7 +1172,7 @@ mod create_account_spec {
         conn.test_transaction::<_, tonic::Status, _>(|conn| {
             setup(conn, &ALL_FEATURES);
             let (base_url, sms) = sms_mock();
-            let request = account_request("ca_cool", "password123", Some(granted(PHONE)), None);
+            let request = account_request("ca_cool", &test_password(), Some(granted(PHONE)), None);
             create_account_at(Some(&base_url), request.clone(), conn).unwrap();
             let err = create_account_at(Some(&base_url), request.clone(), conn).unwrap_err();
             assert_eq!(err.message(), "verification_recently_sent");
@@ -1190,7 +1202,7 @@ mod create_account_spec {
             // Exactly 200 in the last hour is still allowed...
             create_account_at(
                 Some(&base_url),
-                account_request("ca_cap1", "password123", Some(granted(PHONE)), None),
+                account_request("ca_cap1", &test_password(), Some(granted(PHONE)), None),
                 conn,
             )
             .unwrap();
@@ -1198,7 +1210,7 @@ mod create_account_spec {
             // ...but now there are 201.
             let err = create_account_at(
                 Some(&base_url),
-                account_request("ca_cap2", "password123", Some(granted("tel:+15557654321")), None),
+                account_request("ca_cap2", &test_password(), Some(granted("tel:+15557654321")), None),
                 conn,
             )
             .unwrap_err();
@@ -1213,7 +1225,7 @@ mod create_account_spec {
                 .unwrap();
             create_account_at(
                 Some(&base_url),
-                account_request("ca_cap2", "password123", Some(granted("tel:+15557654321")), None),
+                account_request("ca_cap2", &test_password(), Some(granted("tel:+15557654321")), None),
                 conn,
             )
             .unwrap();
@@ -1234,7 +1246,7 @@ mod create_account_spec {
             for i in 0..198 {
                 models::record_contact_verification_send(&format!("tel:+1666000{i:04}"), conn).unwrap();
             }
-            let request = account_request("ca_resends", "password123", Some(granted(PHONE)), None);
+            let request = account_request("ca_resends", &test_password(), Some(granted(PHONE)), None);
             for _ in 0..3 {
                 // 198 -> 199 -> 200 -> 201: the third send still starts from 200 (allowed)...
                 create_account_at(Some(&base_url), request.clone(), conn).unwrap();
@@ -1262,7 +1274,7 @@ mod create_account_spec {
             // Signup: reported.
             let err = create_account_at(
                 Some(&base_url),
-                account_request("ca_pcap", "password123", Some(granted(PHONE)), None),
+                account_request("ca_pcap", &test_password(), Some(granted(PHONE)), None),
                 conn,
             )
             .unwrap_err();
@@ -1288,7 +1300,7 @@ mod create_account_spec {
         conn.test_transaction::<_, tonic::Status, _>(|conn| {
             setup(conn, &[AuthenticationFeature::CreateAccountWithEmail]);
             let (base_url, sms) = sms_mock();
-            let request = account_request("ca_mixed", "password123", Some(granted(PHONE)), Some(granted(EMAIL)));
+            let request = account_request("ca_mixed", &test_password(), Some(granted(PHONE)), Some(granted(EMAIL)));
             let phase1 = create_account_at(Some(&base_url), request.clone(), conn).unwrap();
             assert_challenge(&phase1, &[EMAIL]);
             assert_eq!(sms_count(&sms), 0);
@@ -1490,7 +1502,7 @@ mod forged_server_owned_fields_spec {
             forged_email.value = Some(EMAIL.to_string());
             let response = create_account_at(
                 Some(&base_url),
-                account_request("ca_forge", "password123", Some(forged_phone()), Some(forged_email)),
+                account_request("ca_forge", &test_password(), Some(forged_phone()), Some(forged_email)),
                 conn,
             )
             .unwrap();
@@ -1539,7 +1551,7 @@ mod forged_server_owned_fields_spec {
             set_user_phone(conn, &owner, &verified(PHONE));
             let response = create_account_at(
                 None,
-                account_request("ca_copy_thief", "password123", Some(forged_phone()), None),
+                account_request("ca_copy_thief", &test_password(), Some(forged_phone()), None),
                 conn,
             )
             .unwrap();
@@ -1636,7 +1648,7 @@ mod exhausted_code_cooldown_spec {
 
 mod locking_spec {
     use super::*;
-    use crate::logic::after_send_hook;
+    use crate::logic::in_flight_hook;
 
     #[test]
     fn a_login_code_can_only_be_redeemed_once() {
@@ -1656,7 +1668,7 @@ mod locking_spec {
     }
 
     #[test]
-    fn a_contact_edit_made_while_the_code_was_in_flight_is_not_clobbered() {
+    fn a_contact_edit_made_while_the_message_is_in_flight_is_not_clobbered() {
         let mut conn = test_conn();
         conn.test_transaction::<_, tonic::Status, _>(|conn| {
             setup(conn, &ALL_FEATURES);
@@ -1664,10 +1676,16 @@ mod locking_spec {
             let user = set_user_phone(conn, &user, &verified(PHONE));
             let (base_url, sms) = sms_mock();
 
-            // While the SMS is "in flight", the user changes the phone's visibility.
+            // After the reservation is committed but before the provider answers, the user changes
+            // the phone's visibility (a read-modify-write that keeps the reserved code).
             let user_id = user.id;
-            after_send_hook::set(move |conn| {
-                let mut edited = verified(PHONE);
+            in_flight_hook::set(move |conn| {
+                let user = users::table
+                    .filter(users::id.eq(user_id))
+                    .select(models::USER_COLUMNS)
+                    .first::<models::User>(conn)
+                    .unwrap();
+                let mut edited: ContactMethod = serde_json::from_value(user.phone.unwrap()).unwrap();
                 edited.visibility = Visibility::Private as i32;
                 diesel::update(users::table.filter(users::id.eq(user_id)))
                     .set(users::phone.eq(serde_json::to_value(&edited).unwrap()))
@@ -1688,27 +1706,31 @@ mod locking_spec {
     }
 
     #[test]
-    fn a_code_is_dropped_if_the_contact_value_changed_while_it_was_in_flight() {
+    fn nothing_is_sent_for_a_contact_whose_value_changed() {
         let mut conn = test_conn();
         conn.test_transaction::<_, tonic::Status, _>(|conn| {
             setup(conn, &ALL_FEATURES);
             let user = create_user(conn, "lk_changed");
-            let user = set_user_phone(conn, &user, &granted(PHONE));
-            let (base_url, _sms) = sms_mock();
-
-            let user_id = user.id;
-            after_send_hook::set(move |conn| {
-                diesel::update(users::table.filter(users::id.eq(user_id)))
-                    .set(users::phone.eq(serde_json::to_value(granted("tel:+15557654321")).unwrap()))
-                    .execute(conn)
-                    .unwrap();
-            });
-            let err = start_contact_method_verification_at(Some(&base_url), granted(PHONE), &user, conn)
-                .unwrap_err();
+            let user = set_user_phone(conn, &user, &granted("tel:+15557654321"));
+            let (base_url, sms) = sms_mock();
+            // The caller looked up PHONE, but the stored contact is a different number by the time
+            // the (authoritative, locked) reservation runs.
+            let err = crate::logic::begin_user_contact_verification(
+                Some(&base_url),
+                conn,
+                user.id,
+                crate::logic::ContactKind::Phone,
+                PHONE,
+            )
+            .unwrap_err();
             assert_eq!(err.message(), "contact_changed");
-            let stored = stored_phone(conn, &user);
-            assert_eq!(stored.value.as_deref(), Some("tel:+15557654321"));
-            assert!(stored.verification_in_progress.is_none(), "the old number's code isn't attached to the new one");
+            assert_eq!(sms_count(&sms), 0);
+            assert_eq!(
+                models::count_contact_verification_sends_to_within(PHONE, Duration::from_secs(3600), conn).unwrap(),
+                0,
+                "no ledger row for a send that never happened"
+            );
+            assert!(stored_phone(conn, &user).verification_in_progress.is_none());
             Ok(())
         });
     }
@@ -1758,6 +1780,349 @@ mod locking_spec {
             };
             assert!(!try_lock("mailto:jon@example.com"), "same contact (any case) is locked");
             assert!(try_lock("mailto:someone.else@example.com"), "other contacts are not");
+            Ok(())
+        });
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Contact normalization: one canonical key == delivery address
+// ---------------------------------------------------------------------------------------------
+
+mod canonical_contact_spec {
+    use super::*;
+    use crate::logic::{normalize_contact_value, ContactKind};
+
+    #[test]
+    fn email_is_canonicalized_and_extras_are_rejected_not_stripped() {
+        assert_eq!(
+            normalize_contact_value(ContactKind::Email, " MAILTO:Person@Example.COM ").unwrap(),
+            "mailto:person@example.com"
+        );
+        assert_eq!(
+            normalize_contact_value(ContactKind::Email, "person@example.com").unwrap(),
+            "mailto:person@example.com"
+        );
+        for bad in [
+            "mailto:person@example.com?x=1",
+            "mailto:person@example.com?subject=hi",
+            "person@example.com#frag",
+            "mailto:person@example.com;x=1",
+            "mailto:a@example.com,b@example.com",
+            "mailto:person@example.com\nBcc: x@example.com",
+            "mailto:Person Name <person@example.com>",
+        ] {
+            let err = normalize_contact_value(ContactKind::Email, bad).unwrap_err();
+            assert_eq!(err.code(), Code::InvalidArgument, "{bad}");
+        }
+    }
+
+    #[test]
+    fn phone_is_canonical_e164_only() {
+        assert_eq!(
+            normalize_contact_value(ContactKind::Phone, " TEL:+15551234567").unwrap(),
+            PHONE
+        );
+        assert_eq!(normalize_contact_value(ContactKind::Phone, "+15551234567").unwrap(), PHONE);
+        for bad in ["tel:+15551234567;ext=1", "tel:+15551234567?x=1", "tel:+1 555 123 4567", "tel:5551234567", "tel:+1555#1"] {
+            assert!(normalize_contact_value(ContactKind::Phone, bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_query_cannot_dodge_the_signup_cooldown_or_caps() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, tonic::Status, _>(|conn| {
+            setup(conn, &ALL_FEATURES);
+            create_account_at(None, account_request("cn_a", &test_password(), None, Some(granted(EMAIL))), conn).unwrap();
+            assert_eq!(email_capture::sent().len(), 1);
+            // Variants of the same address are either rejected outright or share the one key.
+            for variant in ["mailto:jon@example.com?x=1", "mailto:jon@example.com#x"] {
+                let err = create_account_at(
+                    None,
+                    account_request("cn_b", &test_password(), None, Some(granted(variant))),
+                    conn,
+                )
+                .unwrap_err();
+                assert_eq!(err.code(), Code::InvalidArgument, "{variant}");
+            }
+            for variant in ["MAILTO:JON@example.com", "jon@EXAMPLE.com"] {
+                let err = create_account_at(
+                    None,
+                    account_request("cn_c", &test_password(), None, Some(granted(variant))),
+                    conn,
+                )
+                .unwrap_err();
+                assert_eq!(err.message(), "verification_recently_sent", "{variant}");
+            }
+            assert_eq!(email_capture::sent().len(), 1);
+            assert_eq!(
+                models::count_contact_verification_sends_to_within(EMAIL, Duration::from_secs(3600), conn).unwrap(),
+                1
+            );
+            Ok(())
+        });
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Atomic send reservation (cooldown/caps hold while a send is in flight) and failure handling
+// ---------------------------------------------------------------------------------------------
+
+mod send_reservation_spec {
+    use super::*;
+    use crate::logic::in_flight_hook;
+
+    fn failing_sms_mock() -> (String, Captured) {
+        serve_capturing(|_request, _prior| {
+            (
+                "HTTP/1.1 400 Bad Request",
+                serde_json::json!({ "code": 21211, "message": "Invalid 'To' Phone Number" }),
+            )
+        })
+    }
+
+    #[test]
+    fn signup_second_request_while_first_is_in_flight_sends_nothing() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, tonic::Status, _>(|conn| {
+            setup(conn, &ALL_FEATURES);
+            let (base_url, sms) = sms_mock();
+            let seen_in_hook = Arc::new(Mutex::new(None));
+            let (hook_url, hook_sms, hook_seen) = (base_url.clone(), sms.clone(), seen_in_hook.clone());
+            let pw = test_password();
+            let hook_pw = pw.clone();
+            in_flight_hook::set(move |conn| {
+                // The first request has reserved but its provider call hasn't happened yet.
+                assert_eq!(sms_count(&hook_sms), 0);
+                let second = create_account_at(
+                    Some(&hook_url),
+                    account_request("sr_signup", &hook_pw, Some(granted(PHONE)), None),
+                    conn,
+                );
+                *hook_seen.lock().unwrap() = Some(second.map(|_| ()));
+            });
+            create_account_at(
+                Some(&base_url),
+                account_request("sr_signup", &pw, Some(granted(PHONE)), None),
+                conn,
+            )
+            .unwrap();
+            let second = seen_in_hook.lock().unwrap().take().expect("hook ran").unwrap_err();
+            assert_eq!(second.message(), "verification_recently_sent");
+            assert_eq!(sms_count(&sms), 1, "exactly one paid message");
+            assert_eq!(
+                models::count_contact_verification_sends_to_within(PHONE, Duration::from_secs(3600), conn).unwrap(),
+                1
+            );
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn global_cap_counts_a_send_that_is_still_in_flight() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, tonic::Status, _>(|conn| {
+            setup(conn, &ALL_FEATURES);
+            let (base_url, sms) = sms_mock();
+            for i in 0..200 {
+                models::record_contact_verification_send(&format!("tel:+1666000{i:04}"), conn).unwrap();
+            }
+            let seen = Arc::new(Mutex::new(None));
+            let (hook_url, hook_seen) = (base_url.clone(), seen.clone());
+            let pw = test_password();
+            in_flight_hook::set(move |conn| {
+                let other = create_account_at(
+                    Some(&hook_url),
+                    account_request("sr_global_b", &pw, Some(granted("tel:+15557654321")), None),
+                    conn,
+                );
+                *hook_seen.lock().unwrap() = Some(other.map(|_| ()));
+            });
+            create_account_at(
+                Some(&base_url),
+                account_request("sr_global_a", &test_password(), Some(granted(PHONE)), None),
+                conn,
+            )
+            .unwrap();
+            let other = seen.lock().unwrap().take().expect("hook ran").unwrap_err();
+            assert_eq!(other.message(), "too_many_verification_requests");
+            assert_eq!(sms_count(&sms), 1);
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn login_second_request_while_first_is_in_flight_sends_nothing() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, tonic::Status, _>(|conn| {
+            setup(conn, &ALL_FEATURES);
+            let user = create_user(conn, "sr_login");
+            let user = set_user_phone(conn, &user, &verified(PHONE));
+            let (base_url, sms) = sms_mock();
+            let hook_url = base_url.clone();
+            let hook_sms = sms.clone();
+            in_flight_hook::set(move |conn| {
+                assert_eq!(sms_count(&hook_sms), 0);
+                // Looks identical to the caller (same challenge), but nothing is sent.
+                let again = login_at(Some(&hook_url), sms_login(PHONE, None, None), conn).unwrap();
+                assert_challenge(&again, &[PHONE]);
+            });
+            login_at(Some(&base_url), sms_login(PHONE, None, None), conn).unwrap();
+            assert_eq!(sms_count(&sms), 1);
+            assert_eq!(
+                stored_phone(conn, &user).verification_in_progress.unwrap().verification_code,
+                sms_code(&sms, 0),
+                "the in-flight request's code wasn't overwritten by the second"
+            );
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn authenticated_start_second_request_while_first_is_in_flight_sends_nothing() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, tonic::Status, _>(|conn| {
+            setup(conn, &ALL_FEATURES);
+            let user = create_user(conn, "sr_start");
+            let user = set_user_phone(conn, &user, &granted(PHONE));
+            let (base_url, sms) = sms_mock();
+            let seen = Arc::new(Mutex::new(None));
+            let (hook_url, hook_seen, hook_user) = (base_url.clone(), seen.clone(), user.clone());
+            in_flight_hook::set(move |conn| {
+                let second =
+                    start_contact_method_verification_at(Some(&hook_url), granted(PHONE), &hook_user, conn);
+                *hook_seen.lock().unwrap() = Some(second.map(|_| ()));
+            });
+            start_contact_method_verification_at(Some(&base_url), granted(PHONE), &user, conn).unwrap();
+            let second = seen.lock().unwrap().take().expect("hook ran").unwrap_err();
+            assert_eq!(second.message(), "verification_recently_sent");
+            assert_eq!(sms_count(&sms), 1);
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn a_failed_signup_send_releases_the_cooldown_but_keeps_the_ledger_row() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, tonic::Status, _>(|conn| {
+            setup(conn, &ALL_FEATURES);
+            let (bad_url, _bad) = failing_sms_mock();
+            let (good_url, good) = sms_mock();
+            let pw = test_password();
+            let request = account_request("sr_fail", &pw, Some(granted(PHONE)), None);
+
+            let err = create_account_at(Some(&bad_url), request.clone(), conn).unwrap_err();
+            assert_eq!(err.message(), "twilio_send_failed");
+            assert!(pending_row(conn, PHONE).is_none(), "the undelivered code is not left behind");
+            assert_eq!(
+                models::count_contact_verification_sends_to_within(PHONE, Duration::from_secs(3600), conn).unwrap(),
+                1,
+                "the attempt still counts against the caps (the provider may have sent it)"
+            );
+            // No cooldown after a clean failure: an immediate retry goes through.
+            create_account_at(Some(&good_url), request, conn).unwrap();
+            assert_eq!(sms_count(&good), 1);
+            assert_eq!(
+                models::count_contact_verification_sends_to_within(PHONE, Duration::from_secs(3600), conn).unwrap(),
+                2
+            );
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn a_failed_resend_restores_the_previous_pending_code() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, tonic::Status, _>(|conn| {
+            setup(conn, &ALL_FEATURES);
+            let (bad_url, _bad) = failing_sms_mock();
+            let (good_url, good) = sms_mock();
+            let request = account_request("sr_restore", &test_password(), Some(granted(PHONE)), None);
+            create_account_at(Some(&good_url), request.clone(), conn).unwrap();
+            let first_code = sms_code(&good, 0);
+            age_pending_row(conn, PHONE, Duration::from_secs(61));
+            let before = pending_row(conn, PHONE).unwrap();
+
+            let err = create_account_at(Some(&bad_url), request.clone(), conn).unwrap_err();
+            assert_eq!(err.message(), "twilio_send_failed");
+            let after = pending_row(conn, PHONE).expect("previous row restored");
+            assert_eq!(after.code_hash, before.code_hash);
+            assert_eq!(after.attempts, before.attempts);
+            assert_eq!(after.sent_at, before.sent_at);
+
+            // ...and the earlier code still completes the signup.
+            let ok = create_account_at(
+                Some(&good_url),
+                CreateAccountRequest { phone_verification_code: Some(first_code), ..request },
+                conn,
+            )
+            .unwrap();
+            assert_logged_in(&ok, "sr_restore");
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn a_failed_login_send_is_silent_and_leaves_no_cooldown() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, tonic::Status, _>(|conn| {
+            setup(conn, &ALL_FEATURES);
+            let user = create_user(conn, "sr_login_fail");
+            let user = set_user_phone(conn, &user, &verified(PHONE));
+            let (bad_url, _bad) = failing_sms_mock();
+            let (good_url, good) = sms_mock();
+
+            let response = login_at(Some(&bad_url), sms_login(PHONE, None, None), conn).unwrap();
+            assert_challenge(&response, &[PHONE]);
+            assert!(stored_phone(conn, &user).verification_in_progress.is_none());
+            login_at(Some(&good_url), sms_login(PHONE, None, None), conn).unwrap();
+            assert_eq!(sms_count(&good), 1, "retry isn't blocked by the failed attempt");
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn a_failed_start_restores_the_previous_code() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, tonic::Status, _>(|conn| {
+            setup(conn, &ALL_FEATURES);
+            let user = create_user(conn, "sr_start_fail");
+            let mut phone = granted(PHONE);
+            let old_started = SystemTime::now() - Duration::from_secs(120);
+            phone.verification_in_progress = Some(ContactMethodVerification {
+                verification_code: "111111".to_string(),
+                verification_started_at: Some(old_started.to_proto()),
+                attempts: 2,
+            });
+            let user = set_user_phone(conn, &user, &phone);
+            let (bad_url, _bad) = failing_sms_mock();
+
+            let err = start_contact_method_verification_at(Some(&bad_url), granted(PHONE), &user, conn)
+                .unwrap_err();
+            assert_eq!(err.message(), "twilio_send_failed");
+            let stored = stored_phone(conn, &user).verification_in_progress.unwrap();
+            assert_eq!(stored.verification_code, "111111");
+            assert_eq!(stored.attempts, 2);
+            assert_eq!(stored.verification_started_at, Some(old_started.to_proto()));
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn an_exhausted_ledger_still_refuses_after_failures() {
+        // Failures keep their ledger rows, so looping on a failing provider hits the per-contact cap.
+        let mut conn = test_conn();
+        conn.test_transaction::<_, tonic::Status, _>(|conn| {
+            setup(conn, &ALL_FEATURES);
+            let (bad_url, _bad) = failing_sms_mock();
+            let request = account_request("sr_loop", &test_password(), Some(granted(PHONE)), None);
+            for _ in 0..10 {
+                let err = create_account_at(Some(&bad_url), request.clone(), conn).unwrap_err();
+                assert_eq!(err.message(), "twilio_send_failed");
+            }
+            let err = create_account_at(Some(&bad_url), request, conn).unwrap_err();
+            assert_eq!(err.message(), "too_many_verification_requests");
             Ok(())
         });
     }

@@ -79,7 +79,7 @@ pub fn get_rsvps(
                 log::error!(
                     "Failed to load event rsvps for occasion_id={}: {:?}",
                     occasion_id,
-                    e
+                    crate::logic::log_redaction::safe_error(&e)
                 );
                 Status::new(Code::Internal, "failed_to_load_rsvps")
             })?;

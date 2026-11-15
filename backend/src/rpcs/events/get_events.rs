@@ -126,7 +126,7 @@ fn attach_occasion_counts(
         .select((occasions::event_id, diesel::dsl::count_star()))
         .load::<(i64, i64)>(conn)
         .unwrap_or_else(|e| {
-            log::error!("Error counting occasions: {:?}", e);
+            log::error!("Error counting occasions: {:?}", crate::logic::log_redaction::safe_error(&e));
             vec![]
         })
         .into_iter()

@@ -50,7 +50,7 @@ pub fn delete_post_sync_destination(
             "Failed to delete post sync destination ({}, {}): {:?}",
             post_id,
             destination.id,
-            e
+            crate::logic::log_redaction::safe_error(&e)
         );
         Status::new(
             tonic::Code::Internal,

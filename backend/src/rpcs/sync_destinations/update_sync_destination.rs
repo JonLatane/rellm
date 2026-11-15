@@ -232,7 +232,7 @@ pub fn update_sync_destination(
         .set(&existing)
         .get_result::<models::SyncDestination>(conn)
         .map_err(|e| {
-            log::error!("Failed to update sync destination: {:?}", e);
+            log::error!("Failed to update sync destination: {:?}", crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::Internal, "failed_to_update_sync_destination")
         })?;
 

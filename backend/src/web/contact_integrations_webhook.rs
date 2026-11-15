@@ -311,11 +311,11 @@ async fn handle_stop(from: &str, text: &str, conn: &mut PgPooledConnection) -> S
     }
     match revoke_sms_consent_by_phone_number(from, conn) {
         Ok(revoked_count) => {
-            log::info!("SMS STOP received from {from}: revoked consent for {revoked_count} user(s)");
+            log::info!("SMS STOP received: revoked consent for {revoked_count} user(s)");
             Status::Ok
         }
         Err(e) => {
-            log::error!("Failed to process SMS STOP from {from}: {:?}", e);
+            log::error!("Failed to process SMS STOP: {:?}", crate::logic::log_redaction::safe_error(&e));
             Status::InternalServerError
         }
     }

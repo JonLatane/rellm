@@ -22,7 +22,7 @@ use tonic::{Code, Status};
 
 use crate::db_connection::PgPooledConnection;
 use crate::logic::{
-    contact_protocol_supported, email_sending_available, send_verification_email,
+    contact_protocol_supported, email_sending_available, normalize_recipient, send_verification_email,
     send_verification_sms, verification_available,
 };
 use crate::marshaling::*;
@@ -52,6 +52,7 @@ pub enum ContactKind {
 impl ContactKind {
     /// Kind of a `tel:`/`mailto:` value (by scheme), if it is one.
     pub fn from_value(value: &str) -> Option<ContactKind> {
+        let value = value.trim_start().to_ascii_lowercase();
         if value.starts_with("tel:") {
             Some(ContactKind::Phone)
         } else if value.starts_with("mailto:") {
@@ -138,9 +139,9 @@ pub fn contact_protocol_listed(conn: &mut PgPooledConnection, kind: ContactKind)
 }
 
 /// Sends `code` to `contact_value` (`tel:`/`mailto:`) via the matching provider. `base_url`, if
-/// `Some`, overrides the provider's API host so specs can point at a mock server. Every send that
-/// actually goes out is appended to the `contact_verification_sends` ledger -- the one place all
-/// flows (verify RPC, login, signup) pass through -- which the abuse caps below count.
+/// `Some`, overrides the provider's API host so specs can point at a mock server. This is ONLY the
+/// provider call: the abuse-cap bookkeeping (ledger row, cooldown state) is reserved *before* it by
+/// `send_reserved_code`, which every flow (verify RPC, login, signup) goes through.
 pub fn send_verification_code(
     base_url: Option<&str>,
     conn: &mut PgPooledConnection,
@@ -165,9 +166,6 @@ pub fn send_verification_code(
             ));
         }
     }
-    if let Err(e) = models::record_contact_verification_send(contact_value, conn) {
-        log::error!("Failed to record a verification send: {}", e.message());
-    }
     Ok(())
 }
 
@@ -190,11 +188,12 @@ pub fn contact_send_cap_reached(
     )? >= MAX_SENDS_PER_CONTACT_PER_HOUR)
 }
 
-/// Test seam for races: a one-shot closure run (on this thread) right after the provider call in
-/// `begin_user_contact_verification`, i.e. at the moment a concurrent request could edit the
-/// contact while the message is in flight.
+/// Test seam for races: a one-shot closure run (on this thread) at the moment a send is "in
+/// flight" -- after `send_reserved_code` has committed its reservation, right before the provider
+/// is called. A spec uses it to fire a second, concurrent-looking request (or edit the contact)
+/// while the first is still mid-send, deterministically.
 #[cfg(test)]
-pub mod after_send_hook {
+pub mod in_flight_hook {
     use std::cell::RefCell;
 
     use crate::db_connection::PgPooledConnection;
@@ -256,25 +255,36 @@ pub mod email_capture {
 // Contact value normalization
 // ---------------------------------------------------------------------------------------------
 
-/// Normalizes a client-supplied phone number/email into the canonical stored `tel:`/`mailto:`
-/// form (a leading scheme is optional; emails are trimmed and lowercased) and validates it.
+/// The ONE canonical form of a contact value, feeding every key (signup, login, verify, the send
+/// ledger, pending rows, the users lookup, advisory locks) *and* the delivery address -- so the key
+/// a cooldown/cap is tracked under is exactly where the message goes, and no spelling trick
+/// (`?x=1`, `#frag`, scheme case, address case) mints a "different" contact. A leading scheme is
+/// optional (any case) and dropped; the result is always `tel:+E164digits` or `mailto:<lowercased
+/// address>`. Anything extra -- a `?query`/`#fragment`/`;param`, whitespace, a second recipient --
+/// is rejected, not stripped, and an email must also pass the strict recipient check the email
+/// providers apply before sending (`normalize_recipient`).
 pub fn normalize_contact_value(kind: ContactKind, raw: &str) -> Result<String, Status> {
     let raw = raw.trim();
+    let strip_scheme = |scheme: &str| -> String {
+        match raw.get(..scheme.len()) {
+            Some(prefix) if prefix.eq_ignore_ascii_case(scheme) => raw[scheme.len()..].to_string(),
+            _ => raw.to_string(),
+        }
+    };
     match kind {
         ContactKind::Phone => {
-            let number = raw.strip_prefix("tel:").unwrap_or(raw);
-            let value = format!("tel:{number}");
+            let value = format!("tel:{}", strip_scheme("tel:"));
             validate_phone(&Some(value.clone()))?;
             Ok(value)
         }
         ContactKind::Email => {
-            let lowered = raw.to_lowercase();
-            let address = lowered.strip_prefix("mailto:").unwrap_or(&lowered);
-            let value = format!("mailto:{address}");
-            validate_email(&Some(value.clone()))?;
+            let address = strip_scheme("mailto:").to_lowercase();
             let invalid = || Status::new(Code::InvalidArgument, "email_must_be_a_valid_address");
+            validate_email(&Some(format!("mailto:{address}")))?;
             let (local, domain) = address.split_once('@').ok_or_else(invalid)?;
-            let forbidden = |c: char| c.is_whitespace() || c.is_control() || "<>,;:\"'()[]\\".contains(c);
+            let forbidden = |c: char| {
+                c.is_whitespace() || c.is_control() || "<>,;:?#\"'()[]\\".contains(c)
+            };
             if local.is_empty()
                 || domain.contains('@')
                 || !domain.contains('.')
@@ -284,7 +294,12 @@ pub fn normalize_contact_value(kind: ContactKind, raw: &str) -> Result<String, S
             {
                 return Err(invalid());
             }
-            Ok(value)
+            // Key == delivery address: what the providers will actually send to must be this very
+            // address, not a stripped/reinterpreted form of it.
+            if normalize_recipient(&address).map_err(|_| invalid())? != address {
+                return Err(invalid());
+            }
+            Ok(format!("mailto:{address}"))
         }
     }
 }
@@ -462,13 +477,24 @@ pub fn persist_user_contact(
     }
     .map(|_| ())
     .map_err(|e| {
-        log::error!("Failed to persist {:?} contact verification state: {:?}", kind, e);
+        log::error!("Failed to persist {:?} contact verification state: {}", kind, safe_db_error(&e));
         Status::new(Code::Internal, "data_error")
     })
 }
 
+/// A diesel error described without its payload: `Debug` on a `DatabaseError` can include the
+/// offending row's values (`Key (username)=(...) already exists`, contact values), which must not
+/// reach logs. Only the error's kind is kept.
+pub fn safe_db_error(e: &diesel::result::Error) -> String {
+    match e {
+        diesel::result::Error::DatabaseError(kind, _) => format!("DatabaseError({kind:?})"),
+        diesel::result::Error::NotFound => "NotFound".to_string(),
+        other => format!("{:?}", std::mem::discriminant(other)),
+    }
+}
+
 fn db_error(what: &str, e: diesel::result::Error) -> Status {
-    log::error!("Failed to {}: {:?}", what, e);
+    log::error!("Failed to {}: {}", what, safe_db_error(&e));
     Status::new(Code::Internal, "data_error")
 }
 
@@ -539,15 +565,214 @@ pub fn with_locked_user_contact<T>(
     outcome.map_err(|e| db_error("update contact method", e))?
 }
 
-/// Generates a code, sends it to `value`, and then stores it as `verification_in_progress` on
-/// `user_id`'s `kind` contact method. The provider call is slow and happens outside any lock, so
-/// the contact is RELOADED under lock afterwards and only `verification_in_progress` (plus the
-/// server-computed `supported_by_server`) is written -- a concurrent edit of the contact made
-/// while the message was in flight is not clobbered, and if the contact's value changed meanwhile
-/// the code is simply dropped (`contact_changed`). Returns the stored contact method (INCLUDING the
-/// real code -- blank it before returning it to a client). Callers gate on consent/cooldown/
-/// provider availability themselves (their error handling differs: the authenticated verify RPC
-/// reports each, login must not).
+/// Where `send_reserved_code` keeps the sent code's state (and cooldown clock).
+#[derive(Clone, Copy, Debug)]
+pub enum SendTarget {
+    /// `pending_contact_verifications` -- an account being created (no user yet).
+    Pending,
+    /// `verification_in_progress` on this existing user's `kind` contact method.
+    UserContact { user_id: i64, kind: ContactKind },
+}
+
+/// What a reservation overwrote, so a failed send can put it back.
+enum Previous {
+    Pending(Option<models::PendingContactVerification>),
+    UserContact(Option<ContactMethodVerification>),
+}
+
+/// Sends a fresh code to `send_to` with the abuse limits enforced *atomically with* recording the
+/// send, so concurrent requests can't all pass the checks and each pay for a message:
+///
+/// 1. **Reserve** (short transaction): take the contact's advisory lock (the same key every other
+///    ownership decision uses), then -- only when `global_cap` is given -- the global send lock
+///    (always second, so no deadlocks). Re-check, under those locks, the resend cooldown, the
+///    per-contact hourly cap and the global hourly cap (and, for a user's contact, that it still
+///    exists unchanged and still consents). Then write the `contact_verification_sends` ledger row
+///    and the new code state (pending row / `verification_in_progress`, `sent_at` = now) and
+///    COMMIT. A second request arriving now sees the cooldown and the ledger row and sends nothing.
+/// 2. **Send** outside any transaction/lock (never hold a lock across the network call).
+/// 3. If the provider fails, **undo the code state** (restore what the reservation overwrote --
+///    but only if it's still ours) so the caller isn't stuck behind a cooldown for a code that was
+///    never delivered. The ledger row is deliberately KEPT: a provider error can be a timeout on a
+///    message that did go out, and the caps (10/contact/hour, `global_cap`/hour) are what bound an
+///    abuser looping on a failing or flaky provider.
+///
+/// `key` is the contact's normalized value (ledger/lock/pending key); `send_to` is where the
+/// message goes (a user's stored spelling, same address modulo case). Errors from the checks are
+/// `verification_recently_sent` / `too_many_verification_requests` / `contact_changed` /
+/// `contact_consent_not_granted`. For `UserContact` returns the stored contact method INCLUDING the
+/// real code -- blank it before returning it to a client.
+pub fn send_reserved_code(
+    base_url: Option<&str>,
+    conn: &mut PgPooledConnection,
+    key: &str,
+    send_to: &str,
+    target: SendTarget,
+    global_cap: Option<i64>,
+) -> Result<Option<ContactMethod>, Status> {
+    let code = generate_code();
+    let (previous, reserved) = reserve_send(conn, key, target, &code, global_cap)?;
+
+    #[cfg(test)]
+    in_flight_hook::run(conn);
+
+    if let Err(e) = send_verification_code(base_url, conn, send_to, &code) {
+        if let Err(undo_error) = undo_reservation(conn, key, target, &code, previous) {
+            log::error!("Failed to undo a verification reservation: {}", undo_error.message());
+        }
+        return Err(e);
+    }
+    Ok(reserved)
+}
+
+fn too_many_requests() -> Status {
+    Status::new(Code::ResourceExhausted, "too_many_verification_requests")
+}
+
+fn reserve_send(
+    conn: &mut PgPooledConnection,
+    key: &str,
+    target: SendTarget,
+    code: &str,
+    global_cap: Option<i64>,
+) -> Result<(Previous, Option<ContactMethod>), Status> {
+    let hour = Duration::from_secs(60 * 60);
+    let outcome: Result<Result<(Previous, Option<ContactMethod>), Status>, diesel::result::Error> =
+        conn.transaction(|conn| {
+            // Always per-contact first, then global.
+            if let Err(e) = lock_contact_value(conn, key) {
+                return Ok(Err(e));
+            }
+            if global_cap.is_some() {
+                if let Err(e) = lock_global_sends(conn) {
+                    return Ok(Err(e));
+                }
+            }
+            // The limits shared by every target; run under the locks, after the target's own
+            // cooldown check, immediately before the ledger row is written.
+            let limits = |conn: &mut PgPooledConnection| -> Result<(), Status> {
+                if contact_send_cap_reached(conn, key)? {
+                    return Err(too_many_requests());
+                }
+                if let Some(cap) = global_cap {
+                    if models::count_contact_verification_sends_within(hour, conn)? > cap {
+                        return Err(too_many_requests());
+                    }
+                }
+                models::record_contact_verification_send(key, conn)
+            };
+            let result = match target {
+                SendTarget::Pending => (|| -> Result<_, Status> {
+                    let previous = models::find_pending_contact_verification(key, conn)?;
+                    if previous
+                        .as_ref()
+                        .is_some_and(|p| p.sent_at + RESEND_COOLDOWN > SystemTime::now())
+                    {
+                        return Err(Status::new(
+                            Code::FailedPrecondition,
+                            "verification_recently_sent",
+                        ));
+                    }
+                    limits(conn)?;
+                    models::upsert_pending_contact_verification(key, &hash_code(key, code), conn)?;
+                    Ok((Previous::Pending(previous), None))
+                })(),
+                SendTarget::UserContact { user_id, kind } => {
+                    let mut previous = None;
+                    with_locked_user_contact(conn, user_id, kind, key, |conn, contact| {
+                        if !consent_granted(contact) {
+                            return Err(Status::new(
+                                Code::FailedPrecondition,
+                                "contact_consent_not_granted",
+                            ));
+                        }
+                        if cooldown_active(contact) {
+                            return Err(Status::new(
+                                Code::FailedPrecondition,
+                                "verification_recently_sent",
+                            ));
+                        }
+                        limits(conn)?;
+                        previous = contact.verification_in_progress.clone();
+                        contact.supported_by_server = true;
+                        contact.verification_in_progress = Some(ContactMethodVerification {
+                            verification_code: code.to_string(),
+                            verification_started_at: Some(SystemTime::now().to_proto()),
+                            attempts: 0,
+                        });
+                        Ok(contact.clone())
+                    })
+                    .and_then(|reserved| {
+                        reserved
+                            .ok_or_else(|| Status::new(Code::FailedPrecondition, "contact_changed"))
+                    })
+                    .map(|contact| (Previous::UserContact(previous), Some(contact)))
+                }
+            };
+            Ok(result)
+        });
+    outcome.map_err(|e| db_error("reserve a verification send", e))?
+}
+
+fn lock_global_sends(conn: &mut PgPooledConnection) -> Result<(), Status> {
+    diesel::sql_query("SELECT pg_advisory_xact_lock(hashtext('contact-verification-global-sends'))")
+        .execute(conn)
+        .map(|_| ())
+        .map_err(|e| db_error("take the global send lock", e))
+}
+
+/// Reverts a reservation whose provider call failed -- but only state that is still ours (a newer
+/// reservation/redemption since is left alone). The ledger row stays; see `send_reserved_code`.
+fn undo_reservation(
+    conn: &mut PgPooledConnection,
+    key: &str,
+    target: SendTarget,
+    code: &str,
+    previous: Previous,
+) -> Result<(), Status> {
+    match (target, previous) {
+        (SendTarget::Pending, Previous::Pending(previous)) => {
+            let outcome: Result<Result<(), Status>, diesel::result::Error> = conn.transaction(|conn| {
+                if let Err(e) = lock_contact_value(conn, key) {
+                    return Ok(Err(e));
+                }
+                let ours = models::find_pending_contact_verification(key, conn)
+                    .ok()
+                    .flatten()
+                    .is_some_and(|row| row.code_hash == hash_code(key, code));
+                if !ours {
+                    return Ok(Ok(()));
+                }
+                Ok(match previous {
+                    Some(previous) => models::restore_pending_contact_verification(&previous, conn),
+                    None => models::delete_pending_contact_verification(key, conn),
+                })
+            });
+            outcome.map_err(|e| db_error("undo a pending verification", e))?
+        }
+        (SendTarget::UserContact { user_id, kind }, Previous::UserContact(previous)) => {
+            with_locked_user_contact(conn, user_id, kind, key, |_conn, contact| {
+                let ours = contact
+                    .verification_in_progress
+                    .as_ref()
+                    .is_some_and(|v| v.verification_code == code);
+                if ours {
+                    contact.verification_in_progress = previous;
+                }
+                Ok(())
+            })
+            .map(|_| ())
+        }
+        _ => Ok(()),
+    }
+}
+
+/// `begin_user_contact_verification` -- sends a code to an existing user's contact method under
+/// the reservation protocol (see `send_reserved_code`); `value` is both the key and the delivery
+/// address (the stored spelling). Returns the stored contact method INCLUDING the real code --
+/// blank it before returning it to a client. Callers gate on consent/provider availability
+/// themselves for good error messages (their handling differs: the authenticated verify RPC reports
+/// each, login must not); the checks are repeated authoritatively under lock.
 pub fn begin_user_contact_verification(
     base_url: Option<&str>,
     conn: &mut PgPooledConnection,
@@ -555,21 +780,15 @@ pub fn begin_user_contact_verification(
     kind: ContactKind,
     value: &str,
 ) -> Result<ContactMethod, Status> {
-    let code = generate_code();
-    send_verification_code(base_url, conn, value, &code)?;
-    #[cfg(test)]
-    after_send_hook::run(conn);
-    let verification = ContactMethodVerification {
-        verification_code: code,
-        verification_started_at: Some(SystemTime::now().to_proto()),
-        attempts: 0,
-    };
-    with_locked_user_contact(conn, user_id, kind, value, |_conn, contact| {
-        contact.supported_by_server = true;
-        contact.verification_in_progress = Some(verification);
-        Ok(contact.clone())
-    })?
-    .ok_or_else(|| Status::new(Code::FailedPrecondition, "contact_changed"))
+    send_reserved_code(
+        base_url,
+        conn,
+        value,
+        value,
+        SendTarget::UserContact { user_id, kind },
+        None,
+    )?
+    .ok_or_else(|| Status::new(Code::Internal, "data_error"))
 }
 
 /// Every user (by id) with `value` stored as a *verified* `kind` contact method, paired with that
@@ -601,7 +820,7 @@ pub fn find_users_with_verified_contact(
             .load::<models::User>(conn),
     }
     .map_err(|e| {
-        log::error!("Failed to look up users by {:?} contact: {:?}", kind, e);
+        log::error!("Failed to look up users by {:?} contact: {}", kind, safe_db_error(&e));
         Status::new(Code::Internal, "data_error")
     })?;
 

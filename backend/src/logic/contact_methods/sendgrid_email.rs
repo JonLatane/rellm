@@ -48,7 +48,7 @@ pub fn send_email_at(
         "sendgrid_request_failed",
     )?;
     if !status.is_success() {
-        log::error!("SendGrid send failed ({}): {:?}", status, body);
+        log::error!("SendGrid send failed ({}): {:?}", status, crate::logic::log_redaction::summarize(&body));
         return Err(Status::new(Code::FailedPrecondition, "sendgrid_send_failed"));
     }
     Ok(())

@@ -36,7 +36,7 @@ pub fn revoke_sms_consent_by_phone_number(
         .select(models::USER_COLUMNS)
         .load::<models::User>(conn)
         .map_err(|e| {
-            log::error!("Failed to look up users by phone number for SMS STOP: {:?}", e);
+            log::error!("Failed to look up users by phone number for SMS STOP: {:?}", crate::logic::log_redaction::safe_error(&e));
             tonic::Status::new(tonic::Code::Internal, "db_error")
         })?;
 
@@ -65,7 +65,7 @@ pub fn revoke_sms_consent_by_phone_number(
                 log::error!(
                     "Failed to persist SMS STOP consent revocation for user {}: {:?}",
                     user.id,
-                    e
+                    crate::logic::log_redaction::safe_error(&e)
                 );
                 tonic::Status::new(tonic::Code::Internal, "db_error")
             })?;

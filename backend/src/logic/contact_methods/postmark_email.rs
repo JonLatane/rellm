@@ -45,7 +45,7 @@ pub fn send_email_at(
     // A 200 carries `ErrorCode: 0` on success; any non-zero `ErrorCode` is a failure.
     let error_code = body.get("ErrorCode").and_then(|v| v.as_i64()).unwrap_or(0);
     if !status.is_success() || error_code != 0 {
-        log::error!("Postmark send failed ({}): {:?}", status, body);
+        log::error!("Postmark send failed ({}): {:?}", status, crate::logic::log_redaction::summarize(&body));
         return Err(Status::new(Code::FailedPrecondition, "postmark_send_failed"));
     }
     Ok(())

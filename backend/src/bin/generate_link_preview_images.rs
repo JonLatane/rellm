@@ -52,10 +52,10 @@ async fn main() {
                 // Not the post's fault, so don't count an attempt against it -- and the rest of
                 // the batch would hit the same wall, so skip them (metadata-only posts get
                 // another chance next run).
-                log::warn!("{}; ending this run early.", e);
+                log::warn!("{}; ending this run early.", rellm::logic::log_redaction::safe_error(&e));
                 break;
             }
-            log::error!("Failed to generate previews for post {}: {}", post.id, e);
+            log::error!("Failed to generate previews for post {}: {}", post.id, rellm::logic::log_redaction::safe_error(&e));
             record_failed_attempt(post.id, &mut conn);
         }
     }

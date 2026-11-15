@@ -208,6 +208,13 @@ type alias Model =
     -- successful `GotAuthResult`).
     , contactAuth : ContactAuth.State
 
+    -- Id of the latest login/create-account request (`sendLoginRequest`, `sendContactLogin`,
+    -- `sendCreateAccount`; either phase), echoed back by its `GotAuthResult`. Anything that resets
+    -- the form (`invalidateAuthRequest`: server edit, method change, back, hiding the form, ...)
+    -- bumps it, so a reply to a request the user has since abandoned is ignored instead of landing
+    -- on a form that no longer matches it. See `ContactAuth.replyIsCurrent`.
+    , authRequestId : Int
+
     -- Set once `ChooseCreateAccountClicked` (the Username-step "Create
     -- Account" button) has resolved the target server's configuration, until
     -- the user accepts or cancels -- see `UI.createAccountConfirmationModal`.
@@ -480,7 +487,7 @@ type Msg
     | ConfirmCreateAccountClicked
     | GotCreateAccountAcceptedTime Time.Posix
     | CancelCreateAccountClicked
-    | GotAuthResult (Result Grpc.Error ( Connection, ServerConfiguration, RefreshTokenResponse ))
+    | GotAuthResult Int (Result Grpc.Error ( Connection, ServerConfiguration, RefreshTokenResponse ))
     | FederatedAccountReceived RellmAccount
     | GotReconnectResult String Bool Bool (Result Grpc.Error ( Connection, ServerConfiguration ))
     | GotMainServerResult (Result Grpc.Error ( Connection, ServerConfiguration ))
@@ -1631,6 +1638,7 @@ init req flags blueskyAccountsFlags mastodonAccountsAndServersFlags =
       , reauthenticatingAccount = Nothing
       , newAccountType = Nothing
       , contactAuth = ContactAuth.initial
+      , authRequestId = 0
       , createAccountConfirmation = Nothing
       , acceptedCreateAccount = Nothing
       , browsingHost = browsingHost
@@ -1808,8 +1816,8 @@ update req msg model =
         -- A login/create cancelled (`HideAddAccountFormClicked` resets the status to `Idle`) while
         -- its request was in flight: drop the late result rather than signing in behind the
         -- user's back. Both senders (`LoginClicked`/`CreateAccountClicked`) set `Submitting` first.
-        GotAuthResult _ ->
-            if model.accountForm.status /= Submitting then
+        GotAuthResult requestId _ ->
+            if not (ContactAuth.replyIsCurrent { currentId = model.authRequestId, replyId = requestId, submitting = model.accountForm.status == Submitting }) then
                 ( model, Cmd.none )
 
             else
@@ -1939,6 +1947,53 @@ verificationCodeInputId =
     "account-form-code"
 
 
+{-| Shows the code step for a first-phase `verification_challenge` (login or create-account, per
+`newAccountType`), clears any stale code, starts the countdown clock and focuses the code field.
+-}
+applyVerificationChallenge : RefreshTokenResponse -> Model -> ( Model, Cmd Msg )
+applyVerificationChallenge resp model =
+    case resp.verificationChallenge of
+        Just challenge ->
+            let
+                contactAuth : ContactAuth.State
+                contactAuth =
+                    model.contactAuth
+            in
+            ( updateForm (\f -> { f | status = Idle })
+                (if model.newAccountType == Just CreateNewAccount then
+                    { model | contactAuth = { contactAuth | createPhoneCode = "", createEmailCode = "", createChallenge = Just (ContactAuth.challengeFromProto challenge) } }
+
+                 else
+                    { model | contactAuth = { contactAuth | code = "", loginChallenge = Just (ContactAuth.challengeFromProto challenge) } }
+                )
+            , Cmd.batch
+                [ Task.perform (ContactAuth.Tick >> ContactAuthMsg) Time.now
+                , Task.attempt (\_ -> NoOp) (Dom.focus verificationCodeInputId)
+                ]
+            )
+
+        Nothing ->
+            ( model, Cmd.none )
+
+
+{-| Abandons whatever login/create-account request is in flight: bumps `authRequestId` so its reply is
+ignored (`ContactAuth.replyIsCurrent`), and frees the form from `Submitting` (nothing is left to
+wait for). Run by everything that resets the form -- server edit, method change, back, hiding the
+form.
+-}
+invalidateAuthRequest : Model -> Model
+invalidateAuthRequest model =
+    { model | authRequestId = model.authRequestId + 1 }
+        |> updateForm
+            (\f ->
+                if f.status == Submitting then
+                    { f | status = Idle }
+
+                else
+                    f
+            )
+
+
 {-| `grpcErrorToString`, with friendlier wording for the SMS/email verification errors
 (`ContactAuth.friendlyMessage`). Anything else -- every password login/create-account error
 included -- is formatted exactly as before.
@@ -2022,7 +2077,7 @@ sendContactLogin req withCode model =
             ( model, Cmd.none )
 
         Just request ->
-            ( model
+            ( { model | authRequestId = model.authRequestId + 1 }
                 |> updateForm (\f -> { f | status = Submitting })
                 |> updateAddServerForm (\f -> { f | status = clearErrored f.status })
             , RellmServers.resolveHost (RellmServers.isSecure req) model.servers (String.trim model.accountForm.server)
@@ -2033,7 +2088,7 @@ sendContactLogin req withCode model =
                             |> Grpc.toTask
                             |> Task.map (\resp -> ( connection, config, resp ))
                     )
-                |> Task.attempt GotAuthResult
+                |> Task.attempt (GotAuthResult (model.authRequestId + 1))
             )
 
 
@@ -2106,7 +2161,7 @@ sendCreateAccount withCodes model =
                             else
                                 Nothing
                     in
-                    ( model
+                    ( { model | authRequestId = model.authRequestId + 1 }
                         |> updateForm (\f -> { f | status = Submitting })
                     , Grpc.new Rellm.createAccount
                         { username = accepted.username
@@ -2121,7 +2176,7 @@ sendCreateAccount withCodes model =
                         |> Grpc.setHost (RellmServers.connectionUrl connection)
                         |> Grpc.toTask
                         |> Task.map (\resp -> ( connection, configuration, resp ))
-                        |> Task.attempt GotAuthResult
+                        |> Task.attempt (GotAuthResult (model.authRequestId + 1))
                     )
 
                 -- `accepted.server` was built by `RellmServers.rellmServerFrom` (see
@@ -2191,6 +2246,7 @@ sendUpdate req msg model =
 
         NewAccountBackClicked ->
             ( { model | newAccountType = Nothing, acceptedCreateAccount = Nothing, contactAuth = resetContactCreate model.contactAuth }
+                |> invalidateAuthRequest
                 |> updateForm (\f -> { f | password = "", showPasswordAsText = False })
             , Cmd.none
             )
@@ -2201,6 +2257,7 @@ sendUpdate req msg model =
             -- confirmation, password cleared, and no in-flight/errored status -- an `Idle` status is
             -- also what makes a still-pending `GotAuthResult` get ignored (see its guard clause).
             ( { model | addAccountServerFormType = Nothing, reauthenticatingAccount = Nothing, newAccountType = Nothing, acceptedCreateAccount = Nothing, createAccountConfirmation = Nothing, contactAuth = ContactAuth.initial }
+                |> invalidateAuthRequest
                 |> updateForm (\f -> { f | password = "", showPasswordAsText = False, status = Idle })
             , Cmd.none
             )
@@ -2215,7 +2272,7 @@ sendUpdate req msg model =
                 server =
                     String.trim form.server
             in
-            ( model
+            ( { model | authRequestId = model.authRequestId + 1 }
                 |> updateForm (\f -> { f | status = Submitting })
                 |> updateAddServerForm (\f -> { f | status = clearErrored f.status })
             , RellmServers.resolveHost (RellmServers.isSecure req) model.servers server
@@ -2237,7 +2294,7 @@ sendUpdate req msg model =
                             |> Grpc.toTask
                             |> Task.map (\resp -> ( connection, config, resp ))
                     )
-                |> Task.attempt GotAuthResult
+                |> Task.attempt (GotAuthResult (model.authRequestId + 1))
             )
 
         CreateAccountClicked ->
@@ -2247,7 +2304,18 @@ sendUpdate req msg model =
             sendCreateAccount False model
 
         ContactAuthMsg contactMsg ->
-            ( { model | contactAuth = ContactAuth.update contactMsg model.contactAuth }, Cmd.none )
+            let
+                updated : Model
+                updated =
+                    { model | contactAuth = ContactAuth.update contactMsg model.contactAuth }
+            in
+            ( if ContactAuth.resetsForm contactMsg then
+                invalidateAuthRequest updated
+
+              else
+                updated
+            , Cmd.none
+            )
 
         SendLoginCodeClicked ->
             sendContactLogin req False model
@@ -2258,6 +2326,7 @@ sendUpdate req msg model =
         CreateAccountInsteadClicked ->
             -- Creating an account starts from a username, which only the Password method's form has.
             ( { model | contactAuth = ContactAuth.update (ContactAuth.MethodSelected ContactAuth.PasswordMethod) model.contactAuth }
+                |> invalidateAuthRequest
                 |> updateForm (\f -> { f | status = clearErrored f.status })
             , Task.attempt (\_ -> NoOp) (Dom.focus "account-form-username")
             )
@@ -2344,7 +2413,7 @@ sendUpdate req msg model =
             , Cmd.none
             )
 
-        GotAuthResult (Ok ( connection, config, resp )) ->
+        GotAuthResult _ (Ok ( connection, config, resp )) ->
             case ( resp.user, resp.refreshToken, resp.accessToken ) of
                 ( Just user, Just refreshToken, Just accessToken ) ->
                     let
@@ -2395,6 +2464,7 @@ sendUpdate req msg model =
                                 , newAccountType = Nothing
                                 , acceptedCreateAccount = Nothing
                                 , contactAuth = ContactAuth.initial
+                                , authRequestId = model.authRequestId + 1
 
                                 -- Collapse the form (and any reauth filter) so the accounts list re-appears.
                                 , addAccountServerFormType = Nothing
@@ -2407,31 +2477,21 @@ sendUpdate req msg model =
                 -- the form now asks for it (`UI.ContactAuthView.codeStep`).
                 _ ->
                     case resp.verificationChallenge of
-                        Just challenge ->
-                            let
-                                contactAuth : ContactAuth.State
-                                contactAuth =
-                                    model.contactAuth
-                            in
-                            ( updateForm (\f -> { f | status = Idle })
-                                (if model.newAccountType == Just CreateNewAccount then
-                                    { model | contactAuth = { contactAuth | createPhoneCode = "", createEmailCode = "", createChallenge = Just (ContactAuth.challengeFromProto challenge) } }
+                        Just _ ->
+                            if model.newAccountType /= Just CreateNewAccount && model.contactAuth.method == ContactAuth.PasswordMethod then
+                                -- A login code can only be for an SMS/email method; with Password
+                                -- picked there's no step to show it on.
+                                ( updateForm (\f -> { f | status = Idle }) model, Cmd.none )
 
-                                 else
-                                    { model | contactAuth = { contactAuth | code = "", loginChallenge = Just (ContactAuth.challengeFromProto challenge) } }
-                                )
-                            , Cmd.batch
-                                [ Task.perform (ContactAuth.Tick >> ContactAuthMsg) Time.now
-                                , Task.attempt (\_ -> NoOp) (Dom.focus verificationCodeInputId)
-                                ]
-                            )
+                            else
+                                applyVerificationChallenge resp model
 
                         Nothing ->
                             ( updateForm (\f -> { f | status = Errored "Server response was missing user/token data." }) model
                             , Cmd.none
                             )
 
-        GotAuthResult (Err err) ->
+        GotAuthResult _ (Err err) ->
             ( updateForm (\f -> { f | status = Errored (authErrorToString err) }) model
             , Cmd.none
             )
@@ -3782,6 +3842,7 @@ sendUpdate req msg model =
                 , reauthenticatingAccount = Just ( account.server, account.username )
                 , newAccountType = Just LoginToAccount
                 , contactAuth = ContactAuth.initial
+                , authRequestId = model.authRequestId + 1
                 , accountForm =
                     { server = account.server
                     , username = account.username
@@ -5158,6 +5219,7 @@ applies.
 setServerField : String -> Model -> Model
 setServerField server model =
     { model | newAccountType = Nothing, createAccountConfirmation = Nothing, acceptedCreateAccount = Nothing, contactAuth = ContactAuth.initial }
+        |> invalidateAuthRequest
         |> updateForm (\form -> { form | server = server, status = clearErrored form.status })
         |> updateAddServerForm (\f -> { f | status = clearErrored f.status })
 

@@ -33,7 +33,7 @@ pub fn mark_fulfillment_notes_read(
     // `details`: a concurrent `UpdateMarketSubscription` appending a note would otherwise be overwritten
     // by this request's stale copy.
     let marker = serde_json::to_value(SystemTime::now().to_proto()).map_err(|e| {
-        log::error!("Failed to serialize notes_last_read: {:?}", e);
+        log::error!("Failed to serialize notes_last_read: {:?}", crate::logic::log_redaction::safe_error(&e));
         Status::new(Code::Internal, "failed_to_serialize_details")
     })?;
     diesel::update(market_subscriptions::table.filter(market_subscriptions::id.eq(existing.id)))
@@ -44,7 +44,7 @@ pub fn mark_fulfillment_notes_read(
         )
         .execute(conn)
         .map_err(|e| {
-            log::error!("Failed to mark fulfillment notes read: {:?}", e);
+            log::error!("Failed to mark fulfillment notes read: {:?}", crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::Internal, "failed_to_update_subscription")
         })?;
     build_subscription(existing.id, conn)

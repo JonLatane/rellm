@@ -28,7 +28,7 @@ pub async fn delete_media_sizes(
         .get_result::<models::Media>(conn)
         .optional()
         .map_err(|e| {
-            log::error!("Error finding media: {:?}", e);
+            log::error!("Error finding media: {:?}", crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::Internal, "media_not_found")
         })?
         .ok_or_else(|| Status::new(Code::NotFound, "media_not_found"))?;
@@ -56,7 +56,7 @@ pub async fn delete_media_sizes(
         .set(media::sizes.eq(serde_json::to_value(&remaining).unwrap()))
         .get_result::<models::Media>(conn)
         .map_err(|e| {
-            log::error!("Error deleting media sizes: {:?}", e);
+            log::error!("Error deleting media sizes: {:?}", crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::Internal, "data_error")
         })?;
 
@@ -68,7 +68,7 @@ pub async fn delete_media_sizes(
                 "Failed to delete object storage object {} for media {}: {:?}",
                 size.object_storage_path,
                 media_id,
-                e
+                crate::logic::log_redaction::safe_error(&e)
             );
         }
     }
@@ -78,7 +78,7 @@ pub async fn delete_media_sizes(
             log::error!(
                 "Failed to update media_storage_bytes_used for user {}: {:?}",
                 owner_id,
-                e
+                crate::logic::log_redaction::safe_error(&e)
             );
         }
     }
@@ -86,7 +86,7 @@ pub async fn delete_media_sizes(
         log::error!(
             "Failed to adjust server_media_usage_bytes for media {}: {:?}",
             media_id,
-            e
+            crate::logic::log_redaction::safe_error(&e)
         );
     }
 

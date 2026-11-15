@@ -49,7 +49,7 @@ pub fn upsert_rsvp(
 /// The parent `Event`'s RSVP settings (`EventInfo`); unreadable stored `info` reads as all-unset.
 fn event_info(event: &models::Event) -> EventInfo {
     serde_json::from_value(event.info.clone()).unwrap_or_else(|e| {
-        log::warn!("Unreadable info on event {}: {:?}", event.post_id, e);
+        log::warn!("Unreadable info on event {}: {:?}", event.post_id, crate::logic::log_redaction::safe_error(&e));
         EventInfo::default()
     })
 }
@@ -57,7 +57,7 @@ fn event_info(event: &models::Event) -> EventInfo {
 /// The `Occasion`'s own RSVP overrides (`OccasionRsvpInfo`), if any.
 fn occasion_rsvp_info(occasion: &models::Occasion) -> Option<OccasionRsvpInfo> {
     serde_json::from_value::<OccasionInfo>(occasion.info.clone())
-        .map_err(|e| log::warn!("Unreadable info on occasion {}: {:?}", occasion.post_id, e))
+        .map_err(|e| log::warn!("Unreadable info on occasion {}: {:?}", occasion.post_id, crate::logic::log_redaction::safe_error(&e)))
         .ok()
         .and_then(|info| info.rsvp_info)
 }
@@ -197,12 +197,11 @@ fn upsert_rsvp_impl(
     let is_anonymous = attendee_user_id.is_none();
 
     log::info!(
-        "is_event_owner: {}, is_own_rsvp: {}, is_anonymous: {}, user_id: {:?}, attendee: {:?}",
+        "is_event_owner: {}, is_own_rsvp: {}, is_anonymous: {}, user_id: {:?}",
         is_event_owner,
         is_own_rsvp,
         is_anonymous,
-        user.map(|u| u.id),
-        request.attendee
+        user.map(|u| u.id)
     );
 
     let attendee_auth_token = request

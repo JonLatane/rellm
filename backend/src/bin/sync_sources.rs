@@ -34,7 +34,7 @@ pub fn main() {
             Err(e) => log::error!(
                 "Failed to sync SyncSource {}: {:?}. Proceeding through remaining sources.",
                 source.id,
-                e
+                rellm::logic::log_redaction::safe_error(&e)
             ),
         }
     }

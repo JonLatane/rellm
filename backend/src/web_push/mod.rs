@@ -103,7 +103,7 @@ pub fn notify_message_recipients(
         )
         .await
         {
-            log::warn!("notify_message_recipients failed: {:?}", error);
+            log::warn!("notify_message_recipients failed: {:?}", crate::logic::log_redaction::safe_error(&error));
         }
     });
 }
@@ -219,14 +219,14 @@ impl PushSender {
             | Err(WebPushError::EndpointNotFound(_))
             | Err(WebPushError::BadRequest(_)) => {
                 if let Err(e) = models::delete_push_subscription_by_id(subscription.id, conn) {
-                    log::warn!("Failed to prune dead push subscription {}: {:?}", subscription.id, e);
+                    log::warn!("Failed to prune dead push subscription {}: {:?}", subscription.id, crate::logic::log_redaction::safe_error(&e));
                 }
             }
             Err(error) => {
                 log::warn!(
                     "Failed to send push notification to subscription {}: {:?}",
                     subscription.id,
-                    error
+                    crate::logic::log_redaction::safe_error(&error)
                 );
             }
         }
@@ -266,7 +266,7 @@ pub fn notify_fulfillment_note(pool: Arc<PgPool>, content: FulfillmentNoteNotifi
     };
     handle.spawn(async move {
         if let Err(error) = send_fulfillment_note_notifications(pool, content).await {
-            log::warn!("notify_fulfillment_note failed: {:?}", error);
+            log::warn!("notify_fulfillment_note failed: {:?}", crate::logic::log_redaction::safe_error(&error));
         }
     });
 }

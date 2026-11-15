@@ -107,7 +107,7 @@ pub fn main() {
                 log::error!(
                     "UID {}: failed to collapse duplicates: {:?}. Skipping this group.",
                     uid,
-                    e
+                    rellm::logic::log_redaction::safe_error(&e)
                 );
             }
         }
@@ -122,8 +122,7 @@ pub fn main() {
         stats.occasions_deleted,
         stats.media_merged,
         stats.relations_reassigned,
-        stats.relations_dropped_as_duplicate,
-    );
+        stats.relations_dropped_as_duplicate);
 }
 
 #[derive(Default)]
@@ -190,8 +189,7 @@ fn collapse_duplicate_event(
                     duplicate_event_id,
                     duplicate_occasion.post_id,
                     anchor,
-                    keeper_event_id,
-                );
+                    keeper_event_id);
                 diesel::update(
                     occasions::table.filter(occasions::post_id.eq(duplicate_occasion.post_id)),
                 )

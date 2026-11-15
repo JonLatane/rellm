@@ -78,7 +78,7 @@ pub fn get_server_configuration_model(
             result
         }
         Err(e) => {
-            log::error!("get_server_configuration_model error: {:?}", e);
+            log::error!("get_server_configuration_model error: {:?}", crate::logic::log_redaction::safe_error(&e));
             Err(Status::new(Code::Unauthenticated, "data_error"))
         }
     }
@@ -94,7 +94,7 @@ pub fn create_default_server_configuration(
     {
         Ok(server_configuration) => server_configuration,
         Err(e) => {
-            log::error!("Error inserting default server configuration: {:?}", e);
+            log::error!("Error inserting default server configuration: {:?}", crate::logic::log_redaction::safe_error(&e));
             return Err(Status::new(
                 Code::Internal,
                 "error_inserting_default_server_configuration",

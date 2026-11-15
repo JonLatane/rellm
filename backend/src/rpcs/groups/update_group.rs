@@ -62,7 +62,7 @@ pub fn update_group(
             Err(Status::new(Code::NotFound, "duplicate_group_name"))
         }
         Err(e) => {
-            log::error!("Error updating group! {:?}", e);
+            log::error!("Error updating group! {:?}", crate::logic::log_redaction::safe_error(&e));
             Err(Status::new(Code::Internal, "data_error"))
         }
     }

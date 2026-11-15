@@ -233,10 +233,14 @@ pub struct SpfInfo {
 
 fn is_spf_record(txt: &str) -> bool {
     let t = txt.trim_start();
-    if t.len() < 6 || !t[..6].eq_ignore_ascii_case("v=spf1") {
-        return false;
+    // `get` (not `[..6]`): TXT data is arbitrary and may have a multibyte char across byte 6, and
+    // a slice panic would abort the whole server (`panic = "abort"`).
+    match (t.get(..6), t.get(6..)) {
+        (Some(prefix), Some(rest)) if prefix.eq_ignore_ascii_case("v=spf1") => {
+            rest.is_empty() || rest.starts_with(char::is_whitespace)
+        }
+        _ => false,
     }
-    t[6..].is_empty() || t[6..].starts_with(char::is_whitespace)
 }
 
 /// Picks the SPF record out of a domain's TXT records and analyzes it.
@@ -467,6 +471,14 @@ pub fn set_dmarc_tag(raw: &str, key: &str, value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn multibyte_txt_near_the_spf_prefix_does_not_panic() {
+        // Byte 6 falls inside the 2-byte `é`; slicing there used to panic (and abort the server).
+        for txt in ["aaaaa\u{e9}", "v=spf\u{e9}", "\u{e9}\u{e9}\u{e9}\u{e9}", "v=spf1\u{e9}"] {
+            assert!(!parse_spf(&[txt.to_string()]).found, "{txt}");
+        }
+    }
     use serde_json::json;
 
     fn s(v: &[&str]) -> Vec<String> {

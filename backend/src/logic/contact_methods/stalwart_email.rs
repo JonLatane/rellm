@@ -76,7 +76,7 @@ pub fn build_message(
             email.html.clone(),
         ))
         .map_err(|e| {
-            log::error!("Failed to build Stalwart email: {:?}", e);
+            log::error!("Failed to build Stalwart email: {:?}", crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::Internal, "stalwart_message_build_failed")
         })
 }
@@ -91,7 +91,7 @@ pub fn send_message_with(
     message: Message,
 ) -> Result<(), Status> {
     let failed = |e: &dyn std::fmt::Debug| {
-        log::error!("Stalwart SMTP send failed: {:?}", e);
+        log::error!("Stalwart SMTP send failed: {:?}", crate::logic::log_redaction::safe_error(&e));
         Status::new(Code::FailedPrecondition, "stalwart_send_failed")
     };
     run_blocking(move || {

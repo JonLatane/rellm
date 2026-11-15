@@ -53,7 +53,7 @@ async fn backfill_media(item: &Media, bucket: &Bucket, conn: &mut PgPooledConnec
                     "media_size_backfill: failed to stat object storage object {} for Media {}: {:?}",
                     size.object_storage_path,
                     item.id,
-                    e
+                    crate::logic::log_redaction::safe_error(&e)
                 );
             }
         }
@@ -80,14 +80,14 @@ pub async fn run_media_size_backfill(pool: crate::db_connection::PgPool, bucket:
         let mut conn = match pool.get() {
             Ok(conn) => conn,
             Err(e) => {
-                log::error!("media_size_backfill: failed to get DB connection: {:?}", e);
+                log::error!("media_size_backfill: failed to get DB connection: {:?}", crate::logic::log_redaction::safe_error(&e));
                 return;
             }
         };
         let pending = match media_pending_size_backfill(&mut conn, BATCH_SIZE) {
             Ok(pending) => pending,
             Err(e) => {
-                log::error!("media_size_backfill: failed to load pending Media: {:?}", e);
+                log::error!("media_size_backfill: failed to load pending Media: {:?}", crate::logic::log_redaction::safe_error(&e));
                 return;
             }
         };
@@ -96,7 +96,7 @@ pub async fn run_media_size_backfill(pool: crate::db_connection::PgPool, bucket:
         }
         for item in &pending {
             if let Err(e) = backfill_media(item, &bucket, &mut conn).await {
-                log::error!("media_size_backfill: failed to backfill Media {}: {:?}", item.id, e);
+                log::error!("media_size_backfill: failed to backfill Media {}: {:?}", item.id, crate::logic::log_redaction::safe_error(&e));
             }
         }
         total += pending.len();

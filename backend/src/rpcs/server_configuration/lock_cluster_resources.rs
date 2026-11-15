@@ -21,7 +21,7 @@ pub fn lock_cluster_resources(
     shared_secret: &str,
     conn: &mut PgPooledConnection,
 ) -> Result<protos::LockClusterResourcesResponse, Status> {
-    log::info!("LockClusterResources called: {:?}", request);
+    log::info!("LockClusterResources called");
 
     // Validated once up front (a plain read, no row lock needed just to fail fast on a
     // misconfigured/unauthorized caller) before taking the `FOR UPDATE` lock below.
@@ -105,7 +105,7 @@ pub fn lock_cluster_resources(
     match result {
         Ok(response) => Ok(response),
         Err(e) => {
-            log::error!("LockClusterResources failed: {:?}", e);
+            log::error!("LockClusterResources failed: {:?}", crate::logic::log_redaction::safe_error(&e));
             Err(Status::new(Code::Internal, "data_error"))
         }
     }

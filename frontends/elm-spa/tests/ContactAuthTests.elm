@@ -36,6 +36,7 @@ suite =
         , countdownTests
         , errorTests
         , stateTests
+        , staleReplyTests
         ]
 
 
@@ -320,4 +321,31 @@ stateTests =
                 }
                     |> ContactAuth.update ContactAuth.LoginChallengeDismissed
                     |> Expect.equal { initial | method = SmsMethod, contact = "+19195551234" }
+        ]
+
+
+staleReplyTests : Test
+staleReplyTests =
+    describe "stale auth replies"
+        [ test "the reply to the latest request, while waiting, is applied" <|
+            \_ ->
+                ContactAuth.replyIsCurrent { currentId = 3, replyId = 3, submitting = True }
+                    |> Expect.equal True
+        , test "a reply to an earlier request is ignored" <|
+            \_ ->
+                ContactAuth.replyIsCurrent { currentId = 4, replyId = 3, submitting = True }
+                    |> Expect.equal False
+        , test "a reply is ignored once the form is no longer submitting, even with a matching id" <|
+            \_ ->
+                ContactAuth.replyIsCurrent { currentId = 3, replyId = 3, submitting = False }
+                    |> Expect.equal False
+        , test "picking a method or leaving a code step resets the form; typing doesn't" <|
+            \_ ->
+                Expect.equal [ True, True, True, False, False ]
+                    [ ContactAuth.resetsForm (ContactAuth.MethodSelected SmsMethod)
+                    , ContactAuth.resetsForm ContactAuth.LoginChallengeDismissed
+                    , ContactAuth.resetsForm ContactAuth.CreateChallengeDismissed
+                    , ContactAuth.resetsForm (ContactAuth.ContactChanged "+1")
+                    , ContactAuth.resetsForm (ContactAuth.CodeChanged "123")
+                    ]
         ]

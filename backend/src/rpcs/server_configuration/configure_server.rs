@@ -550,7 +550,7 @@ pub fn configure_server(
             Ok(configuration.to_proto())
         }
         Err(e) => {
-            log::error!("ConfigureServer failed. Error: {:?}", e);
+            log::error!("ConfigureServer failed. Error: {:?}", crate::logic::log_redaction::safe_error(&e));
             Err(Status::new(Code::Internal, "error_updating"))
         }
     }

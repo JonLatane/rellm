@@ -127,7 +127,7 @@ pub fn post_to_instagram_at(
         .ok_or_else(|| {
             log::error!(
                 "Instagram media creation response missing id: {:?}",
-                create_response
+                crate::logic::log_redaction::summarize(&create_response)
             );
             Status::new(Code::Internal, "instagram_post_failed")
         })?;
@@ -150,7 +150,7 @@ pub fn post_to_instagram_at(
         .ok_or_else(|| {
             log::error!(
                 "Instagram media_publish response missing id: {:?}",
-                publish_response
+                crate::logic::log_redaction::summarize(&publish_response)
             );
             Status::new(Code::Internal, "instagram_post_failed")
         })?;
@@ -167,7 +167,7 @@ pub fn post_to_instagram_at(
         .ok_or_else(|| {
             log::error!(
                 "Instagram media permalink lookup response missing permalink: {:?}",
-                permalink_response
+                crate::logic::log_redaction::summarize(&permalink_response)
             );
             Status::new(Code::Internal, "instagram_post_failed")
         })?;

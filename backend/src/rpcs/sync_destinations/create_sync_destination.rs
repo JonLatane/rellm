@@ -263,7 +263,7 @@ pub fn create_sync_destination(
         })
         .get_result::<models::SyncDestination>(conn)
         .map_err(|e| {
-            log::error!("Failed to create sync destination: {:?}", e);
+            log::error!("Failed to create sync destination: {:?}", crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::Internal, "failed_to_create_sync_destination")
         })?;
 

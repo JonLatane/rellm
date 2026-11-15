@@ -30,12 +30,7 @@ pub fn main() {
         "on" | "true" | "off" | "false" => {}
         _ => return help(format!("Invalid status: {}.", status)),
     }
-    log::info!(
-        "Setting '{}' permission to '{}' for user '{}'.",
-        permission,
-        status,
-        username
-    );
+    log::info!("Setting '{}' permission to '{}'.", permission, status);
 
     log::info!("Connecting to DB...");
     let mut conn = db_connection::establish_connection();
@@ -47,12 +42,7 @@ pub fn main() {
         Ok(user) => user,
         Err(_) => return log::info!("Could not find user."),
     };
-    log::info!(
-        "Found user {} with ID {}/{}.",
-        username,
-        user.id.to_proto_id(),
-        user.id
-    );
+    log::info!("Found user with ID {}/{}.", user.id.to_proto_id(), user.id);
 
     let mut perms: Vec<String> = match serde_json::from_value(user.permissions.to_owned()) {
         Ok(it) => it,
@@ -81,12 +71,12 @@ pub fn main() {
         .returning(rellm::models::USER_COLUMNS)
         .get_result::<rellm::models::User>(&mut conn)
         .unwrap();
-    log::info!("Updated user {}.", username);
+    log::info!("Updated user {}.", user.id);
 }
 
 fn help(error: String) {
     if error.len() > 0 {
-        log::info!("{}", error);
+        log::info!("{}", rellm::logic::log_redaction::safe_error(&error));
         log::info!("");
     }
     log::info!("This tool sets permissions for Rellm users.");
