@@ -136,7 +136,7 @@ pub fn release_lapsed_subdomain_labels(label: &str, conn: &mut PgPooledConnectio
             .filter(market_subscriptions::canceled_at.is_not_null())
             .filter(sql::<Bool>("market_subscriptions.details #>> '{settings,subdomain}' = ").bind::<Text, _>(label.to_string()))
             .filter(sql::<Bool>(
-                "GREATEST(market_subscriptions.canceled_at, COALESCE(market_subscriptions.renews_at, market_subscriptions.canceled_at)) <= NOW()",
+                "GREATEST(market_subscriptions.canceled_at, COALESCE(market_subscriptions.renews_at, market_subscriptions.canceled_at)) <= clock_timestamp()",
             )),
     )
     .set(market_subscriptions::service_terminated_at.eq(Some(SystemTime::now())))

@@ -358,8 +358,38 @@ fn a_lapsed_label_is_released_for_a_new_buyer_and_the_index_blocks_duplicates() 
             ))
             .execute(conn)
             .unwrap();
-        crate::logic::subdomains::release_lapsed_subdomain_labels("sd6owner", conn)?;
+        let replacement = |conn: &mut crate::db_connection::PgPooledConnection| {
+            conn.transaction::<(), diesel::result::Error, _>(|conn| {
+                let mut details = crate::logic::subdomains::new_subscription_details_json(&first);
+                details["settings"]["subdomain"] = serde_json::json!("sd6owner");
+                models::insert_market_subscription(
+                    &models::NewMarketSubscription {
+                        buyer_id: clash.id,
+                        product_id: subscription.product_id,
+                        product_type: PurchaseType::Subdomain.to_string_purchase_type(),
+                        period: PurchasePeriod::Monthly.to_string_purchase_period(),
+                        amount: 300,
+                        currency: 840,
+                        details,
+                        renews_at: None,
+                        stripe_customer_id: None,
+                        stripe_payment_method_id: None,
+                    },
+                    conn,
+                )
+                .map(|_| ())
+                .map_err(|_| diesel::result::Error::RollbackTransaction)
+            })
+        };
+        // The lapsed-but-unterminated row still reserves the label in the index: without the release, the new
+        // buyer's insert fails even though `validate_label_available` (which ignores lapsed rows) says it's free.
         assert_eq!(crate::logic::subdomains::validate_label_available(&clash, conn)?, "sd6owner");
+        assert!(replacement(conn).is_err(), "the index reserves a lapsed, unterminated label");
+
+        crate::logic::subdomains::release_lapsed_subdomain_labels("sd6owner", conn)?;
+        let released = models::get_market_subscription(subscription.id, conn)?;
+        assert!(released.service_terminated_at.is_some(), "the lapsed subscription is terminated");
+        assert!(replacement(conn).is_ok(), "and the label can then be re-bought");
         Ok(())
     });
 }
