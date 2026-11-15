@@ -93,7 +93,7 @@ fn receiving_disabled_response() -> RawJson<String> {
                 status: 550,
                 enhanced_status: "5.7.1",
                 message: "Rellm email receiving is disabled on this server -- enable \"Receive \
-                    Emails from Stalwart\" on its Contact Integrations tab \
+                    Emails from Stalwart\" on its Sign In & Contact tab \
                     (ServerConfiguration.stalwart_config.stalwart_receiving_enabled) to accept \
                     mail here.",
                 disconnect: false,

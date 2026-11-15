@@ -1042,7 +1042,7 @@ mod supported_contact_protocols_spec {
             config.supported_contact_protocols = vec![ContactProtocol::Tel as i32];
             configure_server(config, &admin, conn).expect("initial configure should succeed");
 
-            // Same request shape a real save would resend (`ContactIntegrationsTab.elm` always
+            // Same request shape a real save would resend (`SignInAndContactTab.elm` always
             // resends its whole loaded config), just with Twilio switched off and
             // `supported_contact_protocols` left untouched -- must be caught, not silently stored.
             let mut config = get_server_configuration_proto(conn).expect("failed to fetch base config");

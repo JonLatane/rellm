@@ -432,8 +432,8 @@ class ServerConfiguration extends $pb.GeneratedMessage {
   /// requires an enabled [`StalwartConfig`](#rellm-StalwartConfig) (with sending enabled)/
   /// [`PostmarkConfig`](#rellm-PostmarkConfig)/[`SendgridConfig`](#rellm-SendgridConfig)/
   /// [`MailgunConfig`](#rellm-MailgunConfig). Edited via the "Enable SMS Sending"/"Enable
-  /// Email Sending" toggles on the Contact Integrations tab's "SMS Configuration"/"Email
-  /// Configuration" sections (`ContactIntegrationsTab.smsConfigurationSection`/
+  /// Email Sending" toggles on the Sign In & Contact tab's "SMS Configuration"/"Email
+  /// Configuration" sections (`SignInAndContactTab.smsConfigurationSection`/
   /// `emailConfigurationSection`) -- see `docs/contact_integrations.md`.
   @$pb.TagNumber(119)
   $core.List<ContactProtocol> get supportedContactProtocols => $_getList(17);
@@ -3266,7 +3266,7 @@ class TwilioConfig extends $pb.GeneratedMessage {
   /// Whether `twilio_webhook_signing_key` above is actually used to verify inbound
   /// `/contact_integrations/twilio/receive` deliveries. Defaults to `false` (unverified) even once
   /// a key is stored -- an admin must explicitly opt in, same "explicit switch, not implicit from
-  /// presence" reasoning `ContactIntegrationsTab`'s own "Use Webhook Signing Key" toggle exists
+  /// presence" reasoning `SignInAndContactTab`'s own "Use Webhook Signing Key" toggle exists
   /// for. `false` while this is `false` means inbound deliveries are accepted without signature
   /// verification, same fail-safe-direction reasoning as before (see this message's own doc and
   /// `docs/contact_integrations.md`) -- the only effect an unauthenticated/spoofed delivery can
@@ -3669,7 +3669,7 @@ class StripeConfig extends $pb.GeneratedMessage {
 /// Postmark (https://postmarkapp.com) Config -- transactional email, sent via Postmark's Email API
 /// (`POST /email`). Setup: create a *Server*, verify a Sender Signature or (better, for DKIM/SPF
 /// alignment) a whole sending Domain, and copy the Server API Token. Optionally also provide the
-/// Account API Token, which lets the Contact Integrations tab show the domain's DKIM/Return-Path
+/// Account API Token, which lets the Sign In & Contact tab show the domain's DKIM/Return-Path
 /// verification state and the Server's own delivery statistics.
 class PostmarkConfig extends $pb.GeneratedMessage {
   factory PostmarkConfig({
@@ -3801,7 +3801,7 @@ class PostmarkConfig extends $pb.GeneratedMessage {
 
 /// SendGrid (https://sendgrid.com) Config -- sent via the v3 Mail Send API (`POST /v3/mail/send`).
 /// Setup: create an API key with at least "Mail Send" (plus "Domain Authentication read"/"Stats
-/// read" if you want the Contact Integrations tab to show domain-authentication and delivery
+/// read" if you want the Sign In & Contact tab to show domain-authentication and delivery
 /// statistics), and authenticate your sending domain (Settings -> Sender Authentication).
 class SendgridConfig extends $pb.GeneratedMessage {
   factory SendgridConfig({
@@ -4214,7 +4214,7 @@ class StalwartConfig extends $pb.GeneratedMessage {
   void clearStalwartFromName() => clearField(8);
 
   /// Base URL of Stalwart's management HTTP API (e.g. `http://stalwart.email.svc.cluster.local:8080`),
-  /// used *read-only* by the Contact Integrations tab to show queue depth, DNS records and
+  /// used *read-only* by the Sign In & Contact tab to show queue depth, DNS records and
   /// received DMARC reports. Optional.
   @$pb.TagNumber(9)
   $core.String get stalwartManagementUrl => $_getSZ(8);

@@ -1,4 +1,4 @@
-# Contact Integrations
+# Sign-In & Contact Integrations
 
 How Rellm asks users for consent before contacting them by SMS/email, and how the Twilio/Telnyx/Bird
 SMS providers are wired up (both outbound sending and inbound delivery, including opt-out

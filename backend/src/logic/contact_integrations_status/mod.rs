@@ -313,7 +313,7 @@ fn provider_status(spec: &Spec, report: Option<ProviderReport>) -> (ProviderStat
             StatusLevel::Error,
             "Configuration",
             format!("Missing required settings: {}.", spec.missing.join(", ")),
-            Some("Fill in the missing fields on the Contact Integrations tab, or switch the provider off."),
+            Some("Fill in the missing fields on the Sign In & Contact tab, or switch the provider off."),
         ));
         return (status, vec![]);
     };

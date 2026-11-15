@@ -519,10 +519,10 @@ and a running Valkey underneath it. Keep it simple and lightweight.
 ### Where it goes
 
 `Components/Pages/ServerInformationPage.elm` composes one tab module per tab (`AboutTab`, `ThemeTab`,
-`SettingsTab`, `FederationTab`, `CdnTab`, `ContactIntegrationsTab`, `MarketTab`, `ClusterTab`). Add
+`SettingsTab`, `FederationTab`, `CdnTab`, `SignInAndContactTab`, `MarketTab`, `ClusterTab`). Add
 `Components/Pages/ServerInformationPage/ServerLogsTab.elm` and a `TabServerLogs` **immediately right
 of `TabCluster`**, which means last in the tab bar (today: About, Theme, Settings, Federation, then for
-admins Market, Contact Integrations, CDN, Cluster). Following the existing per-tab pattern:
+admins Market, Sign In & Contact, CDN, Cluster). Following the existing per-tab pattern:
 
 - `Tab` union, `tabParam`/`tabFromParam` (`"server-logs"`), `tabIndex` (the slide direction depends on
   it), the `Model`/`Msg` fields (`serverLogsTab`, `ServerLogsTabMsg`), `init`, `update`, `view`. The

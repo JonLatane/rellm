@@ -8229,7 +8229,7 @@ directory</a> is (<code>{name}</code> denotes a
       Postmark (<a href="https://postmarkapp.com/">https://postmarkapp.com</a>) Config -- transactional email, sent via Postmark's Email API
       (<code>POST /email</code>). Setup: create a <em>Server</em>, verify a Sender Signature or (better, for DKIM/SPF
       alignment) a whole sending Domain, and copy the Server API Token. Optionally also provide the
-      Account API Token, which lets the Contact Integrations tab show the domain's DKIM/Return-Path
+      Account API Token, which lets the Sign In &#x26; Contact tab show the domain's DKIM/Return-Path
       verification state and the Server's own delivery statistics.
     </p>
     <table>
@@ -8285,7 +8285,7 @@ directory</a> is (<code>{name}</code> denotes a
     <p>
       SendGrid (<a href="https://sendgrid.com/">https://sendgrid.com</a>) Config -- sent via the v3 Mail Send API (<code>POST /v3/mail/send</code>).
       Setup: create an API key with at least "Mail Send" (plus "Domain Authentication read"/"Stats
-      read" if you want the Contact Integrations tab to show domain-authentication and delivery
+      read" if you want the Sign In &#x26; Contact tab to show domain-authentication and delivery
       statistics), and authenticate your sending domain (Settings -> Sender Authentication).
     </p>
     <table>
@@ -8494,7 +8494,7 @@ directory</a> is (<code>{name}</code> denotes a
           <td>supported_contact_protocols</td>
           <td><a href="#rellm-ContactProtocol">ContactProtocol</a></td>
           <td>repeated</td>
-          <td>Which <a href="#rellm-ContactProtocol"><code>ContactProtocol</code></a>s (<code>tel:</code>/<code>mailto:</code>) this server currently accepts -- drives <a href="#rellm-ContactMethod"><code>ContactMethod.supported_by_server</code></a> (<code>users.proto</code>, which can't reference this message directly -- see that field's own doc for why). Settable via <a href="#grpc-api-ConfigureServer"><code>ConfigureServer</code></a>, which <em>errors</em> rather than silently dropping an invalid entry: <code>CONTACT_PROTOCOL_TEL</code> requires an enabled <a href="#rellm-TwilioConfig"><code>TwilioConfig</code></a>/<a href="#rellm-BirdConfig"><code>BirdConfig</code></a>/ <a href="#rellm-TelnyxConfig"><code>TelnyxConfig</code></a> in that same request, and <code>CONTACT_PROTOCOL_MAILTO</code> requires an enabled <a href="#rellm-StalwartConfig"><code>StalwartConfig</code></a> (with sending enabled)/ <a href="#rellm-PostmarkConfig"><code>PostmarkConfig</code></a>/<a href="#rellm-SendgridConfig"><code>SendgridConfig</code></a>/ <a href="#rellm-MailgunConfig"><code>MailgunConfig</code></a>. Edited via the "Enable SMS Sending"/"Enable Email Sending" toggles on the Contact Integrations tab's "SMS Configuration"/"Email Configuration" sections (<code>ContactIntegrationsTab.smsConfigurationSection</code>/ <code>emailConfigurationSection</code>) -- see <code>docs/contact_integrations.md</code>.</td>
+          <td>Which <a href="#rellm-ContactProtocol"><code>ContactProtocol</code></a>s (<code>tel:</code>/<code>mailto:</code>) this server currently accepts -- drives <a href="#rellm-ContactMethod"><code>ContactMethod.supported_by_server</code></a> (<code>users.proto</code>, which can't reference this message directly -- see that field's own doc for why). Settable via <a href="#grpc-api-ConfigureServer"><code>ConfigureServer</code></a>, which <em>errors</em> rather than silently dropping an invalid entry: <code>CONTACT_PROTOCOL_TEL</code> requires an enabled <a href="#rellm-TwilioConfig"><code>TwilioConfig</code></a>/<a href="#rellm-BirdConfig"><code>BirdConfig</code></a>/ <a href="#rellm-TelnyxConfig"><code>TelnyxConfig</code></a> in that same request, and <code>CONTACT_PROTOCOL_MAILTO</code> requires an enabled <a href="#rellm-StalwartConfig"><code>StalwartConfig</code></a> (with sending enabled)/ <a href="#rellm-PostmarkConfig"><code>PostmarkConfig</code></a>/<a href="#rellm-SendgridConfig"><code>SendgridConfig</code></a>/ <a href="#rellm-MailgunConfig"><code>MailgunConfig</code></a>. Edited via the "Enable SMS Sending"/"Enable Email Sending" toggles on the Sign In &#x26; Contact tab's "SMS Configuration"/"Email Configuration" sections (<code>SignInAndContactTab.smsConfigurationSection</code>/ <code>emailConfigurationSection</code>) -- see <code>docs/contact_integrations.md</code>.</td>
         </tr>
         <tr>
           <td>preferred_verification_apis</td>
@@ -8753,7 +8753,7 @@ directory</a> is (<code>{name}</code> denotes a
           <td>stalwart_management_url</td>
           <td><a href="#string">string</a></td>
           <td></td>
-          <td>Base URL of Stalwart's management HTTP API (e.g. <code>http://stalwart.email.svc.cluster.local:8080</code>), used <em>read-only</em> by the Contact Integrations tab to show queue depth, DNS records and received DMARC reports. Optional.</td>
+          <td>Base URL of Stalwart's management HTTP API (e.g. <code>http://stalwart.email.svc.cluster.local:8080</code>), used <em>read-only</em> by the Sign In &#x26; Contact tab to show queue depth, DNS records and received DMARC reports. Optional.</td>
         </tr>
         <tr>
           <td>stalwart_management_token</td>
@@ -8927,7 +8927,7 @@ directory</a> is (<code>{name}</code> denotes a
           <td>use_twilio_webhook_signing_key</td>
           <td><a href="#bool">bool</a></td>
           <td></td>
-          <td>Whether <code>twilio_webhook_signing_key</code> above is actually used to verify inbound <code>/contact_integrations/twilio/receive</code> deliveries. Defaults to <code>false</code> (unverified) even once a key is stored -- an admin must explicitly opt in, same "explicit switch, not implicit from presence" reasoning <code>ContactIntegrationsTab</code>'s own "Use Webhook Signing Key" toggle exists for. <code>false</code> while this is <code>false</code> means inbound deliveries are accepted without signature verification, same fail-safe-direction reasoning as before (see this message's own doc and <code>docs/contact_integrations.md</code>) -- the only effect an unauthenticated/spoofed delivery can have either way is <em>revoking</em> consent, never granting it.</td>
+          <td>Whether <code>twilio_webhook_signing_key</code> above is actually used to verify inbound <code>/contact_integrations/twilio/receive</code> deliveries. Defaults to <code>false</code> (unverified) even once a key is stored -- an admin must explicitly opt in, same "explicit switch, not implicit from presence" reasoning <code>SignInAndContactTab</code>'s own "Use Webhook Signing Key" toggle exists for. <code>false</code> while this is <code>false</code> means inbound deliveries are accepted without signature verification, same fail-safe-direction reasoning as before (see this message's own doc and <code>docs/contact_integrations.md</code>) -- the only effect an unauthenticated/spoofed delivery can have either way is <em>revoking</em> consent, never granting it.</td>
         </tr>
       </tbody>
     </table>

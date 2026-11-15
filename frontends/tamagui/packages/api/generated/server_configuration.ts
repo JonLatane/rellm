@@ -761,8 +761,8 @@ export interface ServerConfiguration {
    * requires an enabled [`StalwartConfig`](#rellm-StalwartConfig) (with sending enabled)/
    * [`PostmarkConfig`](#rellm-PostmarkConfig)/[`SendgridConfig`](#rellm-SendgridConfig)/
    * [`MailgunConfig`](#rellm-MailgunConfig). Edited via the "Enable SMS Sending"/"Enable
-   * Email Sending" toggles on the Contact Integrations tab's "SMS Configuration"/"Email
-   * Configuration" sections (`ContactIntegrationsTab.smsConfigurationSection`/
+   * Email Sending" toggles on the Sign In & Contact tab's "SMS Configuration"/"Email
+   * Configuration" sections (`SignInAndContactTab.smsConfigurationSection`/
    * `emailConfigurationSection`) -- see `docs/contact_integrations.md`.
    */
   supportedContactProtocols: ContactProtocol[];
@@ -1629,7 +1629,7 @@ export interface TwilioConfig {
    * Whether `twilio_webhook_signing_key` above is actually used to verify inbound
    * `/contact_integrations/twilio/receive` deliveries. Defaults to `false` (unverified) even once
    * a key is stored -- an admin must explicitly opt in, same "explicit switch, not implicit from
-   * presence" reasoning `ContactIntegrationsTab`'s own "Use Webhook Signing Key" toggle exists
+   * presence" reasoning `SignInAndContactTab`'s own "Use Webhook Signing Key" toggle exists
    * for. `false` while this is `false` means inbound deliveries are accepted without signature
    * verification, same fail-safe-direction reasoning as before (see this message's own doc and
    * `docs/contact_integrations.md`) -- the only effect an unauthenticated/spoofed delivery can
@@ -1750,7 +1750,7 @@ export interface StripeConfig {
  * Postmark (https://postmarkapp.com) Config -- transactional email, sent via Postmark's Email API
  * (`POST /email`). Setup: create a *Server*, verify a Sender Signature or (better, for DKIM/SPF
  * alignment) a whole sending Domain, and copy the Server API Token. Optionally also provide the
- * Account API Token, which lets the Contact Integrations tab show the domain's DKIM/Return-Path
+ * Account API Token, which lets the Sign In & Contact tab show the domain's DKIM/Return-Path
  * verification state and the Server's own delivery statistics.
  */
 export interface PostmarkConfig {
@@ -1779,7 +1779,7 @@ export interface PostmarkConfig {
 /**
  * SendGrid (https://sendgrid.com) Config -- sent via the v3 Mail Send API (`POST /v3/mail/send`).
  * Setup: create an API key with at least "Mail Send" (plus "Domain Authentication read"/"Stats
- * read" if you want the Contact Integrations tab to show domain-authentication and delivery
+ * read" if you want the Sign In & Contact tab to show domain-authentication and delivery
  * statistics), and authenticate your sending domain (Settings -> Sender Authentication).
  */
 export interface SendgridConfig {
@@ -1849,7 +1849,7 @@ export interface StalwartConfig {
   stalwartFromName: string;
   /**
    * Base URL of Stalwart's management HTTP API (e.g. `http://stalwart.email.svc.cluster.local:8080`),
-   * used *read-only* by the Contact Integrations tab to show queue depth, DNS records and
+   * used *read-only* by the Sign In & Contact tab to show queue depth, DNS records and
    * received DMARC reports. Optional.
    */
   stalwartManagementUrl: string;

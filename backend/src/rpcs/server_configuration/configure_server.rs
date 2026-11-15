@@ -151,7 +151,7 @@ pub fn configure_server(
     // `twilio_api_key_sid`/`twilio_from_number`/`use_twilio_webhook_signing_key` pass through
     // freely, no scrubbing needed -- an API Key SID is useless without its Secret, same as a
     // username alone, and `use_twilio_webhook_signing_key` isn't a secret at all (it's the
-    // "Use Webhook Signing Key" toggle on `ContactIntegrationsTab`).
+    // "Use Webhook Signing Key" toggle on `SignInAndContactTab`).
     if let Some(incoming_twilio_config) = request.twilio_config.as_ref() {
         let existing_twilio_config = get_server_configuration_model(conn)
             .ok()

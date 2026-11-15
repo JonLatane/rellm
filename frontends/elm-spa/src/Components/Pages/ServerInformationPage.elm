@@ -52,7 +52,7 @@ import Components.Pages.ServerInformationPage.AboutTab as AboutTab
 import Components.Pages.ServerInformationPage.CdnTab as CdnTab
 import Components.Pages.ServerInformationPage.ClusterTab as ClusterTab
 import Components.Pages.ServerInformationPage.Common as Common
-import Components.Pages.ServerInformationPage.ContactIntegrationsTab as ContactIntegrationsTab
+import Components.Pages.ServerInformationPage.SignInAndContactTab as SignInAndContactTab
 import Components.Pages.ServerInformationPage.FederationTab as FederationTab
 import Components.Pages.ServerInformationPage.MarketTab as MarketTab
 import Components.Pages.ServerInformationPage.SettingsTab as SettingsTab
@@ -106,7 +106,7 @@ type alias Model =
     , settingsTab : SettingsTab.Model
     , federationTab : FederationTab.Model
     , cdnTab : CdnTab.Model
-    , contactIntegrationsTab : ContactIntegrationsTab.Model
+    , signInAndContactTab : SignInAndContactTab.Model
     , marketTab : MarketTab.Model
     , clusterTab : ClusterTab.Model
     }
@@ -124,7 +124,7 @@ type Msg
     | SettingsTabMsg SettingsTab.Msg
     | FederationTabMsg FederationTab.Msg
     | CdnTabMsg CdnTab.Msg
-    | ContactIntegrationsTabMsg ContactIntegrationsTab.Msg
+    | SignInAndContactTabMsg SignInAndContactTab.Msg
     | MarketTabMsg MarketTab.Msg
     | ClusterTabMsg ClusterTab.Msg
     | SharedMsg Shared.Msg
@@ -140,7 +140,7 @@ type Tab
     | TabSettings
     | TabFederation
     | TabCdn
-    | TabContactIntegrations
+    | TabSignInAndContact
     | TabMarket
     | TabCluster
 
@@ -167,8 +167,8 @@ tabParam tab =
         TabCdn ->
             "cdn"
 
-        TabContactIntegrations ->
-            "contact-integrations"
+        TabSignInAndContact ->
+            "sign-in-and-contact"
 
         TabMarket ->
             "market"
@@ -199,8 +199,12 @@ tabFromParam param =
         "cdn" ->
             Just TabCdn
 
+        "sign-in-and-contact" ->
+            Just TabSignInAndContact
+
+        -- Old slug, kept so bookmarked links still land on the (renamed) tab.
         "contact-integrations" ->
-            Just TabContactIntegrations
+            Just TabSignInAndContact
 
         "market" ->
             Just TabMarket
@@ -255,7 +259,7 @@ init shared pageIsSecure targetHost navKey path query =
             , settingsTab = SettingsTab.init
             , federationTab = FederationTab.init
             , cdnTab = CdnTab.init
-            , contactIntegrationsTab = ContactIntegrationsTab.init
+            , signInAndContactTab = SignInAndContactTab.init
             , marketTab = MarketTab.init
             , clusterTab = ClusterTab.init
             }
@@ -271,14 +275,14 @@ init shared pageIsSecure targetHost navKey path query =
                         ( clusterTabModel, clusterTabEffect ) =
                             activateClusterTab shared newModel
 
-                        ( contactIntegrationsTabModel, contactIntegrationsTabEffect ) =
-                            activateContactIntegrationsTab shared newModel
+                        ( signInAndContactTabModel, signInAndContactTabEffect ) =
+                            activateSignInAndContactTab shared newModel
 
                         ( marketTabModel, marketTabEffect ) =
                             activateMarketTab shared newModel
                     in
-                    ( { newModel | clusterTab = clusterTabModel, contactIntegrationsTab = contactIntegrationsTabModel, marketTab = marketTabModel }
-                    , Effect.batch [ fetchAdmins server, fetchVersion server, Effect.map ThemeTabMsg (ThemeTab.fetchCustomCss server), clusterTabEffect, contactIntegrationsTabEffect, marketTabEffect ]
+                    ( { newModel | clusterTab = clusterTabModel, signInAndContactTab = signInAndContactTabModel, marketTab = marketTabModel }
+                    , Effect.batch [ fetchAdmins server, fetchVersion server, Effect.map ThemeTabMsg (ThemeTab.fetchCustomCss server), clusterTabEffect, signInAndContactTabEffect, marketTabEffect ]
                     )
 
                 Nothing ->
@@ -312,6 +316,7 @@ subscriptions model =
     Sub.batch
         [ Sub.map ThemeTabMsg (ThemeTab.subscriptions model.themeTab)
         , Sub.map FederationTabMsg (FederationTab.subscriptions model.federationTab)
+        , Sub.map SignInAndContactTabMsg (SignInAndContactTab.subscriptions model.signInAndContactTab)
         ]
 
 
@@ -371,17 +376,17 @@ updateInner shared msg model =
                 ( clusterTabModel, clusterTabEffect ) =
                     activateClusterTab shared newModel
 
-                ( contactIntegrationsTabModel, contactIntegrationsTabEffect ) =
-                    activateContactIntegrationsTab shared newModel
+                ( signInAndContactTabModel, signInAndContactTabEffect ) =
+                    activateSignInAndContactTab shared newModel
 
                 ( marketTabModel, marketTabEffect ) =
                     activateMarketTab shared newModel
             in
-            ( { newModel | clusterTab = clusterTabModel, contactIntegrationsTab = contactIntegrationsTabModel, marketTab = marketTabModel }
+            ( { newModel | clusterTab = clusterTabModel, signInAndContactTab = signInAndContactTabModel, marketTab = marketTabModel }
             , Effect.batch
                 [ pushTabUrl newModel
                 , clusterTabEffect
-                , contactIntegrationsTabEffect
+                , signInAndContactTabEffect
                 , marketTabEffect
                 , if newModel.tabSwitchSeq /= model.tabSwitchSeq then
                     Process.sleep 260
@@ -402,14 +407,14 @@ updateInner shared msg model =
                 ( clusterTabModel, clusterTabEffect ) =
                     activateClusterTab shared newModel
 
-                ( contactIntegrationsTabModel, contactIntegrationsTabEffect ) =
-                    activateContactIntegrationsTab shared newModel
+                ( signInAndContactTabModel, signInAndContactTabEffect ) =
+                    activateSignInAndContactTab shared newModel
 
                 ( marketTabModel, marketTabEffect ) =
                     activateMarketTab shared newModel
             in
-            ( { newModel | clusterTab = clusterTabModel, contactIntegrationsTab = contactIntegrationsTabModel, marketTab = marketTabModel }
-            , Effect.batch [ fetchAdmins server, fetchVersion server, Effect.map ThemeTabMsg (ThemeTab.fetchCustomCss server), clusterTabEffect, contactIntegrationsTabEffect, marketTabEffect ]
+            ( { newModel | clusterTab = clusterTabModel, signInAndContactTab = signInAndContactTabModel, marketTab = marketTabModel }
+            , Effect.batch [ fetchAdmins server, fetchVersion server, Effect.map ThemeTabMsg (ThemeTab.fetchCustomCss server), clusterTabEffect, signInAndContactTabEffect, marketTabEffect ]
             )
 
         GotOwnServerResult (Err err) ->
@@ -457,10 +462,10 @@ updateInner shared msg model =
                 |> Tuple.mapFirst (\subModel -> { model | cdnTab = subModel })
                 |> Tuple.mapSecond (Effect.map CdnTabMsg)
 
-        ContactIntegrationsTabMsg subMsg ->
-            ContactIntegrationsTab.update shared model.targetHost (effectiveServer shared model) subMsg model.contactIntegrationsTab
-                |> Tuple.mapFirst (\subModel -> { model | contactIntegrationsTab = subModel })
-                |> Tuple.mapSecond (Effect.map ContactIntegrationsTabMsg)
+        SignInAndContactTabMsg subMsg ->
+            SignInAndContactTab.update shared model.targetHost (effectiveServer shared model) subMsg model.signInAndContactTab
+                |> Tuple.mapFirst (\subModel -> { model | signInAndContactTab = subModel })
+                |> Tuple.mapSecond (Effect.map SignInAndContactTabMsg)
 
         MarketTabMsg subMsg ->
             MarketTab.update shared model.targetHost subMsg model.marketTab
@@ -485,14 +490,14 @@ updateInner shared msg model =
                 ( clusterTabModel, clusterTabEffect ) =
                     activateClusterTab shared newModel
 
-                ( contactIntegrationsTabModel, contactIntegrationsTabEffect ) =
-                    activateContactIntegrationsTab shared newModel
+                ( signInAndContactTabModel, signInAndContactTabEffect ) =
+                    activateSignInAndContactTab shared newModel
 
                 ( marketTabModel, marketTabEffect ) =
                     activateMarketTab shared newModel
             in
-            ( { newModel | clusterTab = clusterTabModel, contactIntegrationsTab = contactIntegrationsTabModel, marketTab = marketTabModel }
-            , Effect.batch [ Effect.fromShared subMsg, ThemeTab.customCssPreviewEffect model.themeTab newModel.themeTab, clusterTabEffect, contactIntegrationsTabEffect, marketTabEffect ]
+            ( { newModel | clusterTab = clusterTabModel, signInAndContactTab = signInAndContactTabModel, marketTab = marketTabModel }
+            , Effect.batch [ Effect.fromShared subMsg, ThemeTab.customCssPreviewEffect model.themeTab newModel.themeTab, clusterTabEffect, signInAndContactTabEffect, marketTabEffect ]
             )
 
 
@@ -545,19 +550,19 @@ activateClusterTab shared model =
         ( model.clusterTab, Effect.none )
 
 
-{-| Same as `activateClusterTab`, for `ContactIntegrationsTab.activated` -- `twilio_config`/
+{-| Same as `activateClusterTab`, for `SignInAndContactTab.activated` -- `twilio_config`/
 `bird_config`/`preferred_verification_apis` are admin-only-serialized the same way
-`cluster_resources` is (see `ContactIntegrationsTab`'s own doc), so this tab needs the identical
+`cluster_resources` is (see `SignInAndContactTab`'s own doc), so this tab needs the identical
 "fire from everywhere connectivity could have settled" treatment, called from the exact same sites.
 -}
-activateContactIntegrationsTab : Shared.Model -> Model -> ( ContactIntegrationsTab.Model, Effect Msg )
-activateContactIntegrationsTab shared model =
-    if model.activeTab == TabContactIntegrations then
-        ContactIntegrationsTab.update shared model.targetHost (effectiveServer shared model) ContactIntegrationsTab.activated model.contactIntegrationsTab
-            |> Tuple.mapSecond (Effect.map ContactIntegrationsTabMsg)
+activateSignInAndContactTab : Shared.Model -> Model -> ( SignInAndContactTab.Model, Effect Msg )
+activateSignInAndContactTab shared model =
+    if model.activeTab == TabSignInAndContact then
+        SignInAndContactTab.update shared model.targetHost (effectiveServer shared model) SignInAndContactTab.activated model.signInAndContactTab
+            |> Tuple.mapSecond (Effect.map SignInAndContactTabMsg)
 
     else
-        ( model.contactIntegrationsTab, Effect.none )
+        ( model.signInAndContactTab, Effect.none )
 
 
 {-| Same as `activateClusterTab`, for `MarketTab.activated` -- `stripe_config` is admin-only-
@@ -717,7 +722,7 @@ tabBar shared model =
              , ( TabFederation, "Federation" )
              ]
                 ++ (if Common.adminAccountFor shared model.targetHost /= Nothing then
-                        [ ( TabMarket, "Market" ), ( TabContactIntegrations, "Contact Integrations" ), ( TabCdn, "CDN" ), ( TabCluster, "Cluster" ) ]
+                        [ ( TabMarket, "Market" ), ( TabSignInAndContact, "Sign In & Contact" ), ( TabCdn, "CDN" ), ( TabCluster, "Cluster" ) ]
 
                     else
                         [ ( TabCdn, "CDN" ) ]
@@ -809,7 +814,7 @@ tabIndex tab =
         TabMarket ->
             4
 
-        TabContactIntegrations ->
+        TabSignInAndContact ->
             5
 
         TabCdn ->
@@ -842,8 +847,8 @@ tabContent shared model server tab =
         TabCdn ->
             Html.map CdnTabMsg (CdnTab.view server maybeAdminAccount model.cdnTab)
 
-        TabContactIntegrations ->
-            Html.map ContactIntegrationsTabMsg (ContactIntegrationsTab.view server maybeAdminAccount model.contactIntegrationsTab)
+        TabSignInAndContact ->
+            Html.map SignInAndContactTabMsg (SignInAndContactTab.view server maybeAdminAccount model.signInAndContactTab)
 
         TabMarket ->
             Html.map MarketTabMsg (MarketTab.view maybeAdminAccount model.marketTab)

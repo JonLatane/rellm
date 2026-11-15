@@ -1,0 +1,959 @@
+/* Sign In & Contact tab (Components/Pages/ServerInformationPage/SignInAndContactTab.elm and
+   SignInAndContact/StatusView.elm) -- the SMS / Sign-in / Email / Web Push sections, provider
+   cards, live-status pills, checks, metrics, the Email Domains + DMARC cards.
+
+   Everything is scoped under `.sc-root`. The status colors are semantic custom properties declared
+   once on `.sc-root` (light), redefined for the system dark preference unless the user explicitly
+   picked Light (`:root:not([data-theme="light"])`), and again for an explicit Dark selection --
+   the same three-way split main.css uses for its own variables. Elements opt into a level by
+   carrying `.sc-level-ok|info|warning|error|disabled|unknown`, which sets `--sc-c` (foreground) and
+   `--sc-bg` (tint) for that element and its descendants. */
+
+.sc-root {
+  --sc-ok: #1a7f37;
+  --sc-ok-bg: rgba(26, 127, 55, 0.12);
+  --sc-warning: #9a6700;
+  --sc-warning-bg: rgba(191, 135, 0, 0.16);
+  --sc-error: #c0392b;
+  --sc-error-bg: rgba(192, 57, 43, 0.12);
+  --sc-info: #0b69c7;
+  --sc-info-bg: rgba(11, 105, 199, 0.11);
+  --sc-neutral: var(--muted);
+  --sc-neutral-bg: var(--chip-bg);
+  --sc-shimmer-base: rgba(127, 127, 127, 0.14);
+  --sc-shimmer-peak: rgba(127, 127, 127, 0.28);
+  --sc-card-bg: var(--panel-bg);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .sc-root {
+    --sc-ok: #4cc26b;
+    --sc-ok-bg: rgba(76, 194, 107, 0.16);
+    --sc-warning: #e8b84a;
+    --sc-warning-bg: rgba(232, 184, 74, 0.16);
+    --sc-error: #ff8078;
+    --sc-error-bg: rgba(255, 128, 120, 0.15);
+    --sc-info: #6cb2ff;
+    --sc-info-bg: rgba(108, 178, 255, 0.15);
+  }
+}
+
+:root[data-theme="dark"] .sc-root {
+  --sc-ok: #4cc26b;
+  --sc-ok-bg: rgba(76, 194, 107, 0.16);
+  --sc-warning: #e8b84a;
+  --sc-warning-bg: rgba(232, 184, 74, 0.16);
+  --sc-error: #ff8078;
+  --sc-error-bg: rgba(255, 128, 120, 0.15);
+  --sc-info: #6cb2ff;
+  --sc-info-bg: rgba(108, 178, 255, 0.15);
+}
+
+.sc-level-ok { --sc-c: var(--sc-ok); --sc-bg: var(--sc-ok-bg); }
+.sc-level-warning { --sc-c: var(--sc-warning); --sc-bg: var(--sc-warning-bg); }
+.sc-level-error { --sc-c: var(--sc-error); --sc-bg: var(--sc-error-bg); }
+.sc-level-info { --sc-c: var(--sc-info); --sc-bg: var(--sc-info-bg); }
+.sc-level-disabled,
+.sc-level-unknown { --sc-c: var(--sc-neutral); --sc-bg: var(--sc-neutral-bg); }
+
+.sc-root {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.sc-muted {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: 0.2rem 0;
+}
+
+/* ---- Intro + overall toolbar ---- */
+
+.sc-intro {
+  margin-bottom: 1rem;
+}
+
+.sc-title {
+  font-size: 1.35rem;
+  margin: 0.2rem 0 0.35rem;
+}
+
+.sc-lead {
+  margin: 0 0 0.75rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.sc-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.sc-checked-at {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.sc-inline-error {
+  flex-basis: 100%;
+  color: var(--sc-error);
+  background: var(--sc-error-bg);
+  border-radius: 0.5rem;
+  padding: 0.45rem 0.7rem;
+  font-size: 0.88rem;
+}
+
+.sc-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.sc-refresh[disabled] {
+  opacity: 0.7;
+  cursor: progress;
+}
+
+.sc-refresh-compact {
+  margin-left: auto;
+  font-size: 0.8rem;
+  padding: 0.1rem 0.55rem;
+}
+
+.sc-spinner {
+  width: 0.8rem;
+  height: 0.8rem;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  border-top-color: var(--fg);
+  animation: sc-spin 0.7s linear infinite;
+}
+
+@keyframes sc-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ---- Sections ---- */
+
+.sc-section {
+  background: var(--chip-bg);
+  border: 1px solid var(--border);
+  border-radius: 0.9rem;
+  padding: 0.9rem 1rem 1rem;
+  margin-bottom: 1.1rem;
+  transition: opacity 0.2s ease;
+}
+
+.sc-section.is-refreshing .sc-health-row,
+.sc-section.is-refreshing .sc-status-block,
+.sc-section.is-refreshing .sc-domains {
+  opacity: 0.55;
+}
+
+.sc-section-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.6rem;
+}
+
+.sc-section-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  flex: 0 0 auto;
+  border-radius: 0.6rem;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+.sc-section-title {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 650;
+  flex: 1 1 auto;
+}
+
+.sc-master {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex: 0 0 auto;
+}
+
+.sc-master-label {
+  font-size: 0.9rem;
+}
+
+.sc-section-blurb {
+  margin: 0.55rem 0 0.2rem;
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.sc-health-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.6rem;
+  margin: 0.6rem 0 0.9rem;
+  padding: 0.5rem 0.65rem;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 0.65rem;
+  transition: opacity 0.2s ease;
+}
+
+.sc-health-summary {
+  font-size: 0.92rem;
+  min-width: 0;
+}
+
+.sc-failed p {
+  margin-top: 0;
+}
+
+.sc-skeleton .sc-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+/* ---- Pills, dots, chips ---- */
+
+.sc-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex: 0 0 auto;
+  padding: 0.08rem 0.6rem 0.08rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+  color: var(--sc-c);
+  background: var(--sc-bg);
+}
+
+.sc-pill-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  background: var(--sc-c);
+  color: var(--panel-bg);
+  font-size: 0.65rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.sc-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.15rem;
+  height: 1.15rem;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--sc-bg);
+  color: var(--sc-c);
+  font-size: 0.7rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.sc-badge {
+  font-size: 0.75rem;
+  padding: 0.05rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.sc-badge-on {
+  color: var(--fg);
+}
+
+.sc-chip {
+  display: inline-block;
+  padding: 0.02rem 0.5rem;
+  border-radius: 999px;
+  background: var(--chip-bg);
+  border: 1px solid var(--border);
+  font-size: 0.78rem;
+}
+
+/* ---- Shimmer (loading) ---- */
+
+.sc-shimmer {
+  background: linear-gradient(90deg, var(--sc-shimmer-base) 25%, var(--sc-shimmer-peak) 50%, var(--sc-shimmer-base) 75%);
+  background-size: 200% 100%;
+  animation: sc-shimmer 1.3s ease-in-out infinite;
+  color: transparent;
+}
+
+.sc-shimmer .sc-pill-glyph {
+  visibility: hidden;
+}
+
+.sc-shimmer-pill {
+  min-width: 5.5rem;
+  padding-left: 0.6rem;
+  user-select: none;
+}
+
+.sc-shimmer-line {
+  height: 0.8rem;
+  border-radius: 0.4rem;
+  max-width: 100%;
+}
+
+@keyframes sc-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sc-shimmer,
+  .sc-spinner {
+    animation-duration: 3s;
+  }
+}
+
+/* ---- Provider order ---- */
+
+.sc-order {
+  margin: 0 0 0.9rem;
+}
+
+.sc-order-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.sc-order-title,
+.sc-subsection-title {
+  margin: 0;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.sc-order-blurb {
+  margin: 0.25rem 0 0.5rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.sc-order-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  list-style: none;
+  margin: 0.3rem 0;
+  padding: 0;
+}
+
+.sc-order-editing .sc-order-list {
+  flex-direction: column;
+  flex-wrap: nowrap;
+}
+
+.sc-order-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.15rem 0.7rem 0.15rem 0.2rem;
+  border-radius: 999px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+}
+
+.sc-order-editing .sc-order-item {
+  border-radius: 0.6rem;
+  padding: 0.25rem 0.4rem 0.25rem 0.3rem;
+}
+
+.sc-order-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.3rem;
+  height: 1.3rem;
+  border-radius: 50%;
+  background: var(--chip-bg);
+  border: 1px solid var(--border);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.sc-order-label {
+  flex: 1 1 auto;
+}
+
+.sc-order-actions {
+  display: inline-flex;
+  gap: 0.25rem;
+}
+
+.sc-icon-button {
+  width: 1.7rem;
+  height: 1.7rem;
+  border-radius: 0.45rem;
+  border: 1px solid var(--border);
+  background: var(--chip-bg);
+  color: var(--fg);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.sc-icon-button[disabled] {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.sc-order-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.4rem 0;
+}
+
+.sc-order-add select {
+  padding: 0.15rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel-bg);
+  color: var(--fg);
+  font-size: 0.85rem;
+}
+
+/* ---- Provider cards ---- */
+
+.sc-card {
+  background: var(--sc-card-bg);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--sc-c, var(--border));
+  border-radius: 0.7rem;
+  margin: 0 0 0.6rem;
+  overflow: hidden;
+}
+
+.sc-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border: none;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sc-card-title {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.sc-card-name {
+  font-weight: 650;
+}
+
+.sc-card-tagline {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.sc-card-state {
+  flex: 0 0 auto;
+}
+
+.sc-card-body {
+  padding: 0 0.85rem 0.8rem;
+}
+
+/* The same `grid-template-rows` fold `.expandable-section-content` (profiles.css) uses, minus its
+   server-themed left border, for the cards and the folding checks lists. */
+.sc-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.2s ease;
+}
+
+.sc-collapse.is-open {
+  grid-template-rows: 1fr;
+}
+
+.sc-collapse.is-closed {
+  pointer-events: none;
+}
+
+.sc-collapse > * {
+  overflow: hidden;
+  min-height: 0;
+}
+
+.sc-collapse.is-closed > * {
+  visibility: hidden;
+  transition: visibility 0s 0.2s;
+}
+
+/* ---- Live status inside a card ---- */
+
+.sc-status-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0 0 0.8rem;
+  padding: 0.6rem 0.7rem;
+  background: var(--sc-bg, var(--chip-bg));
+  border-radius: 0.6rem;
+  transition: opacity 0.2s ease;
+}
+
+.sc-status-summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.sc-status-summary-text {
+  font-size: 0.92rem;
+  line-height: 1.35;
+  min-width: 0;
+}
+
+.sc-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr));
+  gap: 0.45rem;
+}
+
+.sc-metric {
+  display: flex;
+  flex-direction: column;
+  padding: 0.4rem 0.6rem;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 0.55rem;
+  min-width: 0;
+}
+
+.sc-metric-value {
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.sc-metric-label {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.sc-metric-detail {
+  font-size: 0.7rem;
+  color: var(--muted);
+  opacity: 0.85;
+}
+
+.sc-checks-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.sc-check-list {
+  list-style: none;
+  margin: 0.4rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.sc-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.sc-check-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.sc-check-name {
+  font-weight: 600;
+  font-size: 0.88rem;
+}
+
+.sc-check-detail {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.sc-check-fix {
+  margin: 0.2rem 0 0;
+  font-size: 0.82rem;
+  padding: 0.3rem 0.55rem;
+  border-radius: 0.45rem;
+  background: var(--panel-bg);
+  border-left: 3px solid var(--sc-c);
+}
+
+.sc-check-fix-label {
+  font-weight: 600;
+}
+
+.sc-dashboard-link {
+  align-self: flex-start;
+  font-size: 0.85rem;
+}
+
+/* ---- Email domains + DMARC ---- */
+
+.sc-domains-section {
+  margin-top: 1.1rem;
+}
+
+.sc-domains {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.sc-domain-card {
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--sc-c, var(--border));
+  border-radius: 0.7rem;
+  padding: 0.75rem 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.sc-domain-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.sc-domain-name {
+  font-family: monospace;
+  font-size: 1rem;
+  font-weight: 700;
+  min-width: 0;
+}
+
+.sc-used-by {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.sc-used-by-label {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.sc-domain-summary {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.sc-auth-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.sc-auth-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.12rem 0.65rem 0.12rem 0.3rem;
+  border-radius: 0.55rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--sc-c);
+  background: var(--sc-bg);
+}
+
+.sc-auth-chip-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 50%;
+  background: var(--sc-c);
+  color: var(--panel-bg);
+  font-size: 0.65rem;
+  font-weight: 800;
+}
+
+.sc-dmarc-card {
+  border: 1px solid var(--sc-c);
+  background: var(--sc-bg);
+  border-radius: 0.65rem;
+  padding: 0.7rem 0.8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.sc-dmarc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.sc-dmarc-title {
+  margin: 0;
+  font-size: 1rem;
+  letter-spacing: 0.03em;
+}
+
+.sc-dmarc-summary {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.sc-dmarc-tags {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.sc-dmarc-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.75rem;
+  font-size: 0.85rem;
+}
+
+.sc-dmarc-label {
+  flex: 0 0 10.5rem;
+  color: var(--muted);
+}
+
+.sc-dmarc-value {
+  flex: 1 1 10rem;
+  min-width: 0;
+}
+
+.sc-uri-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.sc-uri {
+  font-size: 0.8rem;
+}
+
+.sc-record {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.45rem 0.5rem 0.45rem 0.65rem;
+}
+
+.sc-record-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  word-break: break-all;
+  user-select: all;
+}
+
+.sc-record-copy {
+  flex: 0 0 auto;
+  font-size: 0.78rem;
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--chip-bg);
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.sc-dmarc-advice {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.sc-dmarc-advice code {
+  font-size: 0.78rem;
+}
+
+.sc-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.9rem 1rem;
+  border: 1px dashed var(--border);
+  border-radius: 0.7rem;
+  background: var(--panel-bg);
+  text-align: center;
+}
+
+.sc-empty-title {
+  font-weight: 600;
+}
+
+.sc-empty-text {
+  font-size: 0.88rem;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+/* ---- Sign-in & sign-up ---- */
+
+.sc-auth-grid {
+  margin-top: 0.7rem;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 0.7rem;
+  padding: 0.2rem 0.8rem;
+}
+
+.sc-auth-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 4.2rem 4.2rem;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0;
+}
+
+.sc-auth-row + .sc-auth-row {
+  border-top: 1px solid var(--border);
+}
+
+.sc-auth-head {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.sc-auth-cell {
+  display: flex;
+  justify-content: center;
+  text-align: center;
+}
+
+.sc-auth-what {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.sc-auth-label {
+  font-weight: 600;
+}
+
+.sc-auth-note {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+/* ---- Forms inside cards ---- */
+
+.sc-card-body .server-details-feature-settings-row {
+  flex-wrap: wrap;
+}
+
+.sc-card-body .server-details-rename-input {
+  flex: 1 1 12rem;
+  min-width: 0;
+  max-width: 100%;
+  font-size: 0.95rem;
+}
+
+.sc-card-body .server-details-feature-settings-row select {
+  max-width: 100%;
+}
+
+.sc-card-body .server-details-feature-settings-value {
+  min-width: 0;
+  text-align: right;
+}
+
+.sc-card-body .server-details-rename-button {
+  margin-top: 0.4rem;
+}
+
+.sc-section .server-details-color-row {
+  flex-wrap: wrap;
+}
+
+.sc-section .server-details-rename-input {
+  min-width: 0;
+  max-width: 100%;
+}
+
+@media (max-width: 480px) {
+  .sc-section {
+    padding: 0.75rem 0.7rem 0.85rem;
+  }
+
+  .sc-master {
+    flex-basis: 100%;
+    justify-content: space-between;
+    margin-left: 0;
+  }
+
+  .sc-auth-row {
+    grid-template-columns: minmax(0, 1fr) 3.6rem 3.6rem;
+    gap: 0.3rem;
+  }
+
+  .sc-dmarc-label {
+    flex-basis: 100%;
+  }
+
+  .sc-card-body {
+    padding: 0 0.6rem 0.7rem;
+  }
+}

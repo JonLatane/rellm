@@ -1,108 +1,116 @@
-module Components.Pages.ServerInformationPage.ContactIntegrationsTab exposing (Model, Msg, activated, init, update, view)
+module Components.Pages.ServerInformationPage.SignInAndContactTab exposing (Model, Msg, activated, init, subscriptions, update, view)
 
-{-| The Contact Integrations tab of `Components.Pages.ServerInformationPage` -- Telnyx
-(`TelnyxConfig`), Twilio (`TwilioConfig`), and Bird (`BirdConfig`, see that message's own doc in
-`server_configuration.proto` -- a cheaper Twilio alternative for SMS verification), each editable
-by an admin as its own unit (a single Edit/Save/Cancel per provider, mirroring `CdnTab`'s
-Edit/Save/Cancel shape), plus a "Preferred Verification Providers" selector choosing which of
-Telnyx/Twilio/Bird is tried first when more than one is enabled (`preferredVerificationApis`).
-Split out of a single "Integrations" tab (see `Components.Pages.ServerInformationPage.MarketTab`
-for the other half, Stripe/Market) once that combined tab grew unwieldy -- these two provider
-groups have nothing to do with each other beyond both once having lived in the same file.
+{-| The Sign In & Contact tab of `Components.Pages.ServerInformationPage`: how people sign in and sign
+up, and how this server contacts them. From the top: a **Sign in & sign up** section toggling the
+`AuthenticationFeature`s (password first -- always on for now -- then SMS, then email); then two big
+channel sections -- **SMS** (Twilio, Bird, Telnyx) and **Email** (Postmark, SendGrid, Mailgun,
+Stalwart) -- each with a master toggle ("Enable SMS Sending"/"Enable Email Sending",
+`ServerConfiguration.supportedContactProtocols`), a one-line health pill, a provider preference order
+(`preferredVerificationApis`/`preferredEmailApis`) and one collapsible card per provider; the
+**Email Domains** health view (SPF/DKIM/DMARC) under Email; and finally the Web Push (VAPID) key
+editor.
 
-Unlike `CdnTab`, though, this tab **can't** just read `RellmServers.configurationOf server` for its
-display -- `telnyxConfig`/`twilioConfig`/`birdConfig`/`preferredVerificationApis` are all
-admin-only-serialized (see their own proto docs), stripped from the unauthenticated `GetServerConfiguration` probe
-`RellmServers.configurationOf` reflects (the same one used for the initial "can we connect at all"
-check and every reconnect). So, exactly like `ClusterTab` (`cluster_resources` is admin-only the
-same way), this tab fires its own authenticated `GetServerConfiguration`
-(`fetchAuthenticatedServerConfiguration`/`AdminContactIntegrationsStatus`) once an admin account is
-present, and displays _that_ instead, via the exposed `activated` message --
-`Components.Pages.ServerInformationPage` dispatches it from every point its own connectivity state
-could plausibly have changed (`TabSelected`, `GotOwnServerResult`'s success branch, `init`'s
-already-known-connected branch, and every `SharedMsg`), via `activateContactIntegrationsTab`, since
-firing it before the account's server connection has actually finished settling races ahead of it
-and fails with a `Grpc.NetworkError` -- see `ClusterTab`'s own doc for the full "why so many call
-sites" explanation, which applies here verbatim. `Components.Pages.ServerInformationPage.MarketTab`
-does the exact same thing independently, with its own separate fetch -- the two tabs don't share
-this fetched `ServerConfiguration`, same as any other pair of admin tabs in this app.
+## Live status
 
-Unlike `CdnTab`'s "External CDN HTTP Support" toggle (which nulls `externalCdnConfig` out entirely
-when off), each provider's "Enabled" toggle here only ever flips its own `*Enabled` field -- the
-rest of the config (account identifiers, and whatever's currently stored for the write-only secret)
-is left alone on disable, so re-enabling later doesn't lose the credentials that were already
-entered. `telnyxApiKey`/`twilioApiKeySecret`/`birdAccessKey` are write-only secrets --
-`GetServerConfiguration` always blanks them (mirroring `WebPushConfig.privateVapidKey`), so
-`*EditClicked` naturally seeds the secret field blank with no special-casing, and each input's
-placeholder makes clear that leaving it blank on Save keeps whatever's already stored.
+Every card (and the section/domain summaries) can show _live_ health -- coloured level pill,
+summary, checks, metrics, dashboard link -- from `GetContactIntegrationsStatus`
+(`ContactIntegrationsStatus`). That RPC is admin-only and slow (the server calls every provider's own
+API and looks up DNS), so it is fetched once, when an admin first activates the tab
+(`LiveStatus.requested`), then only on an explicit Refresh or after saving a provider's config. The
+last report stays on screen (dimmed, with a spinner on the button) while a refresh is in flight; a
+failed check -- including an older server answering `Unimplemented` -- is reported inline and never
+blocks the settings forms. `SignInAndContact.Status` holds the pure decisions (worst level,
+DMARC pill, domain chips, "Checked 2 minutes ago"), `SignInAndContact.StatusView` the HTML,
+`subscriptions` a 30s tick that keeps the age label honest.
 
-The non-secret fields (`telnyxFromNumber`/`telnyxMessagingProfileId`/`twilioAccountSid`/
-`twilioApiKeySid`/`twilioFromNumber`/`birdFrom`/`birdRegion`) aren't secret among admins (just not
-shown to non-admins, since `telnyxConfig`/`twilioConfig`/`bird_config` are themselves
-admin-only-serialized -- see `ServerInformationPage`'s tab bar gating), so they're shown in plain
-text even in the read-only display view, same as CDN's `frontendHost`/`backendHost`.
+## Configuration fetch
 
-The Preferred Providers selector mirrors `SettingsTab`'s Permissions editor (removable badges + an
-Add `<select>` + Save/Cancel) -- "reordering" just means remove-then-re-add at the end, same as
-that editor offers no drag-and-drop either.
+Unlike `CdnTab`, this tab **can't** read `RellmServers.configurationOf server` for its display --
+every provider config, `supportedContactProtocols`, `authenticationFeatures` and both preference
+lists are admin-only-serialized, stripped from the unauthenticated `GetServerConfiguration` probe
+`RellmServers.configurationOf` reflects. So, exactly like `ClusterTab`, this tab fires its own
+authenticated `GetServerConfiguration` once an admin account is present, and displays _that_, via the
+exposed `activated` message -- `Components.Pages.ServerInformationPage` dispatches it from every
+point its own connectivity state could plausibly have changed (see `ClusterTab`'s doc for why there
+are so many call sites; firing before the account's server connection has settled races ahead of it
+and fails with a `Grpc.NetworkError`). `webPushConfig` is the exception: it is public (only
+`privateVapidKey` is blanked), so that section reads straight off `RellmServers.configurationOf
+server`.
 
-Also hosts the Web Push VAPID public/private key editor (`WebPushConfig`) -- moved here from
-`FederationTab` purely for topical consistency (it's another "contact/notification-delivery
-credential" alongside Telnyx/Twilio/Bird, not because it shares their admin-only-stripped
-visibility). Unlike Telnyx/Twilio/Bird/Preferred Providers, `webPushConfig` is NOT stripped from
-the unauthenticated `GetServerConfiguration` probe (only `privateVapidKey` itself is always
-blanked, mirroring `FacebookAuthConfig.appSecret`) -- so its display reads straight off
-`RellmServers.configurationOf server` (the `server` this module's own `update`/`view` now take,
-exactly like `FederationTab` already does for its own similarly-public Facebook/X (Twitter)
-fields), independent of `adminContactIntegrations`'s own fetch.
+## Editing conventions
 
-Preferred Providers/Telnyx/Twilio/Bird are grouped under a collapsible "External Integrations"
-section (`externalIntegrationsSection`), with Telnyx, Twilio, and Bird each _also_ independently
-collapsible inside it (`telnyxSection`/`twilioSection`/`birdSection`) -- four nested levels of the
-same `expandable-section-title`/`-arrow`/`-content` idiom
-`SettingsTab.featureSettingsSection`/`UserProfilePage.expandableProfileSection` already establish
-(see `collapsedIntegrationsSections`, a `Set String` exactly like
-`SettingsTab.Model.collapsedFeatureSettings`). `telnyxSection` is rendered above `twilioSection`
-(newest provider first, since it's the one currently being onboarded). Before this tab's own
-authenticated fetch resolves, all three (and "External Integrations" itself) default to expanded;
-once it lands, `initialCollapsedIntegrationsSections` recomputes Telnyx/Twilio/Bird's collapsed
-state from the fetched data itself -- a provider with nothing configured yet
-(`twilioConfigHasValues`/`birdConfigHasValues`/`telnyxConfigHasValues`, checked against its
-non-secret fields plus whether a webhook signing key is set) collapses out of the way, while one an
-admin is actively using pre-expands with no click needed. A later manual
-`IntegrationsSectionToggled` always wins over this one-time guess. Since
-`ServerInformationPage.view` mounts each tab's content under a _different_ `Html.Keyed` key per tab
-(`tabParam model.activeTab`), switching away from and back to this tab always tears down and
-rebuilds this whole subtree from scratch (never patches it in place) -- so a freshly-collapsed
-Bird section (or a freshly-toggled anything) always mounts already in its final CSS state, with no
-"is-open" -> "is-closed" class flip for the browser to animate; the `grid-template-rows` transition
-`profiles.css` defines only ever fires from a live _click_ while this tab stays active, never from
-a tab switch. This only holds because each collapsible section's own wrapper node stays at a fixed
-position in its parent's child list across every state this module renders (Loading/Failed/Loaded,
-display/edit) -- if one were ever conditionally omitted instead of always-mounted-but-collapsed,
-Elm's positional diffing could reuse a DOM node meant for a different section and misfire a
-transition; every section here follows the established "always mounted, CSS-driven" convention
-specifically to avoid that.
+Each provider is edited as its own unit (Edit/Save/Cancel). A provider's "Enabled" toggle only
+flips its own `*Enabled` field -- the rest of its config is never nulled out, so re-enabling later
+loses nothing. API keys and tokens are write-only secrets: `GetServerConfiguration` always blanks
+them, so edits seed them blank and each input's placeholder says that leaving it blank on Save keeps
+what's stored. Non-secret fields are shown in plain text (they are admin-only anyway). The pure
+edit/apply logic for the email providers lives in `SignInAndContact.EmailEdits`; Stalwart's
+_receiving_ flag is an instant toggle that only touches that one field (it shares `StalwartConfig`
+with the sending settings, which it must never wipe).
+
+## Collapsing and keyed remounting
+
+Provider cards are collapsible (`ProviderSection`, stored as a `Set String` of collapsed keys
+exactly like `SettingsTab.collapsedFeatureSettings`) using the `.sc-collapse`
+`grid-template-rows` transition. Before the admin fetch resolves, all cards default to expanded;
+once it lands, `initialCollapsedProviderSections` collapses the providers with nothing
+configured yet. A later manual toggle always wins. `ServerInformationPage.view` mounts each tab under a
+_different_ `Html.Keyed` key, so switching tabs rebuilds this subtree from scratch -- a freshly
+collapsed card mounts already in its final CSS state, with no class flip to animate. That only
+holds because every collapsible's wrapper stays at a fixed position in its parent's child list
+across all states (always mounted, CSS-driven) -- keep it that way.
 
 -}
 
 import Components.Pages.ServerInformationPage.Common as Common
+import Components.Pages.ServerInformationPage.SignInAndContact.EmailEdits as EmailEdits
+    exposing
+        ( MailgunField(..)
+        , MailgunForm
+        , PostmarkField(..)
+        , PostmarkForm
+        , SendgridField(..)
+        , SendgridForm
+        , StalwartField(..)
+        , StalwartForm
+        )
+import Components.Pages.ServerInformationPage.SignInAndContact.ProviderOrder as ProviderOrder
+import Components.Pages.ServerInformationPage.SignInAndContact.Status as Status
+import Components.Pages.ServerInformationPage.SignInAndContact.StatusView as StatusView
 import Effect exposing (Effect)
 import Grpc
-import Html exposing (Html, button, div, h2, h3, input, option, select, span, text)
-import Html.Attributes exposing (class, disabled, placeholder, selected, title, type_, value)
+import Html exposing (Html, button, div, h2, h3, h4, input, option, p, select, span, text)
+import Html.Attributes exposing (attribute, class, disabled, placeholder, selected, title, type_, value)
 import Html.Events exposing (onClick, onInput)
-import Proto.Rellm exposing (BirdConfig, ServerConfiguration, TelnyxConfig, TwilioConfig, defaultBirdConfig, defaultStalwartConfig, defaultTelnyxConfig, defaultTwilioConfig)
+import Ports
+import Process
+import Proto.Rellm
+    exposing
+        ( BirdConfig
+        , ContactIntegrationsStatus
+        , ProviderStatus
+        , ServerConfiguration
+        , TelnyxConfig
+        , TwilioConfig
+        , defaultBirdConfig
+        , defaultTelnyxConfig
+        , defaultTwilioConfig
+        )
+import Proto.Rellm.AuthenticationFeature exposing (AuthenticationFeature(..))
 import Proto.Rellm.ContactProtocol exposing (ContactProtocol(..))
 import Proto.Rellm.ContactVerificationAPI exposing (ContactVerificationAPI(..))
+import Proto.Rellm.EmailVerificationAPI exposing (EmailVerificationAPI(..))
 import Proto.Rellm.Rellm as Rellm
+import Proto.Rellm.StatusLevel exposing (StatusLevel(..))
 import Set exposing (Set)
 import Shared
 import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer)
 import Task
+import Time
 import UI.Classes exposing (classes, openClosedClass)
+import UI.Glyph as Glyph
 
 
 
@@ -113,70 +121,119 @@ type alias Model =
     { configEdit : Maybe TwilioConfigEdit
     , birdConfigEdit : Maybe BirdConfigEdit
     , telnyxConfigEdit : Maybe TelnyxConfigEdit
-    , preferredProvidersEdit : Maybe PreferredProvidersEdit
+    , postmarkEdit : Maybe (Editing PostmarkForm)
+    , sendgridEdit : Maybe (Editing SendgridForm)
+    , mailgunEdit : Maybe (Editing MailgunForm)
+    , stalwartEdit : Maybe (Editing StalwartForm)
+    , preferredProvidersEdit : Maybe (OrderEdit ContactVerificationAPI)
+    , preferredEmailProvidersEdit : Maybe (OrderEdit EmailVerificationAPI)
     , webPushPublicKeyEdit : Maybe TextFieldEdit
     , webPushPrivateKeyEdit : Maybe TextFieldEdit
-    , adminContactIntegrations : AdminContactIntegrationsStatus
-    , collapsedIntegrationsSections : Set String
+    , adminSignInAndContact : AdminSignInAndContactConfig
+    , collapsedProviderSections : Set String
     , smsContactProtocolStatus : AccountsPanel.FormStatus
     , emailContactProtocolStatus : AccountsPanel.FormStatus
     , stalwartReceivingStatus : AccountsPanel.FormStatus
+    , authFeaturesStatus : AccountsPanel.FormStatus
+    , liveStatus : LiveStatus
+    , toggledChecks : Set String
+    , copied : Maybe String
     }
 
 
-{-| The three nested collapsible sections `view` builds under "External Integrations" --
-`ExternalIntegrationsSection` is the outer wrapper (Preferred Providers/Twilio/Bird all live
-inside it), `TwilioIntegrationSection`/`BirdIntegrationSection` are each provider's own nested
-collapsible. See `Model.collapsedIntegrationsSections` and this module's own doc for why nesting
-this is safe against `ServerInformationPage`'s per-tab `Html.Keyed` remounting.
+{-| The live `GetContactIntegrationsStatus` report and its fetch state. `report` outlives a refresh
+(it stays visible while another fetch is `inFlight`); `requested` makes "fetch once on first activation" stick
+even if that first fetch failed (the Refresh button retries); `now` is the browser clock as of the
+last report landing or tick (`Time.every`), for "Checked 2 minutes ago".
 -}
-type IntegrationsSection
-    = ExternalIntegrationsSection
-    | TelnyxIntegrationSection
-    | TwilioIntegrationSection
+type alias LiveStatus =
+    { report : Maybe ContactIntegrationsStatus
+    , inFlight : Int
+    , requested : Bool
+    , error : Maybe String
+    , now : Time.Posix
+    }
+
+
+{-| An in-progress provider edit: the pure `form` (see `SignInAndContact.EmailEdits`) plus its
+save status.
+-}
+type alias Editing form =
+    { form : form
+    , status : AccountsPanel.FormStatus
+    }
+
+
+{-| Live only while a provider preference order (`preferredVerificationApis`/`preferredEmailApis`)
+is being edited -- `pending`'s order IS the preference order. The `ProviderOrder` module has the
+pure list operations.
+-}
+type alias OrderEdit api =
+    { pending : List api
+    , addSelection : Maybe api
+    , status : AccountsPanel.FormStatus
+    }
+
+
+{-| The collapsible provider cards -- see `Model.collapsedProviderSections` and this module's
+own doc for why a card's wrapper must always stay mounted.
+-}
+type ProviderSection
+    = TwilioIntegrationSection
     | BirdIntegrationSection
+    | TelnyxIntegrationSection
+    | PostmarkIntegrationSection
+    | SendgridIntegrationSection
+    | MailgunIntegrationSection
+    | StalwartIntegrationSection
 
 
-{-| The `collapsedIntegrationsSections` key each `IntegrationsSection` stores itself under --
+{-| The `collapsedProviderSections` key each `ProviderSection` stores itself under --
 distinct from its own display label the same way `SettingsTab.featureSettingsKey` is.
 -}
-integrationsSectionKey : IntegrationsSection -> String
-integrationsSectionKey section =
+providerSectionKey : ProviderSection -> String
+providerSectionKey section =
     case section of
-        ExternalIntegrationsSection ->
-            "external"
-
-        TelnyxIntegrationSection ->
-            "telnyx"
-
         TwilioIntegrationSection ->
             "twilio"
 
         BirdIntegrationSection ->
             "bird"
 
+        TelnyxIntegrationSection ->
+            "telnyx"
 
-{-| The `collapsedIntegrationsSections` to start with once `config` (the tab's own authenticated
-fetch) first loads -- `TwilioIntegrationSection`/`BirdIntegrationSection`/`TelnyxIntegrationSection`
-each pre-expand iff that provider's config is both present _and_ has at least one non-default value
-already entered (`*_enabled`, `*_from`/`*_from_number`, `*_region`/`*_messaging_profile_id`, or
-`use_*_webhook_signing_key` turned on -- see `twilioConfigHasValues`/`birdConfigHasValues`/
-`telnyxConfigHasValues`), so an admin actively using a provider sees it open right away without a
-click, while an unconfigured one stays out of the way collapsed. Only ever computed here, once per
-fetch (`GotAuthenticatedServerConfiguration`'s own success branch) -- it doesn't touch
-`ExternalIntegrationsSection`'s own collapsed state, and a later manual
-`IntegrationsSectionToggled` always wins over this initial guess (this never re-runs while already
-`AdminContactIntegrationsLoaded`, since `ContactIntegrationsTabActivated` only re-fetches from
-`AdminContactIntegrationsNotFetched`/`AdminContactIntegrationsFetchFailed`).
+        PostmarkIntegrationSection ->
+            "postmark"
+
+        SendgridIntegrationSection ->
+            "sendgrid"
+
+        MailgunIntegrationSection ->
+            "mailgun"
+
+        StalwartIntegrationSection ->
+            "stalwart"
+
+
+{-| The `collapsedProviderSections` to start with once `config` (the tab's own authenticated
+fetch) first loads: each provider pre-expands iff it already has at least one non-default value
+entered (see the `*HasValues` helpers), so an admin actively using a provider sees it open right
+away while an unconfigured one stays out of the way, collapsed. Only ever computed once per fetch
+(`GotAuthenticatedServerConfiguration`'s success branch).
 -}
-initialCollapsedIntegrationsSections : ServerConfiguration -> Set String
-initialCollapsedIntegrationsSections config =
-    [ ( TwilioIntegrationSection, config.twilioConfig |> Maybe.map twilioConfigHasValues |> Maybe.withDefault False )
-    , ( BirdIntegrationSection, config.birdConfig |> Maybe.map birdConfigHasValues |> Maybe.withDefault False )
-    , ( TelnyxIntegrationSection, config.telnyxConfig |> Maybe.map telnyxConfigHasValues |> Maybe.withDefault False )
+initialCollapsedProviderSections : ServerConfiguration -> Set String
+initialCollapsedProviderSections config =
+    [ ( TwilioIntegrationSection, config.twilioConfig |> Maybe.map twilioConfigHasValues )
+    , ( BirdIntegrationSection, config.birdConfig |> Maybe.map birdConfigHasValues )
+    , ( TelnyxIntegrationSection, config.telnyxConfig |> Maybe.map telnyxConfigHasValues )
+    , ( PostmarkIntegrationSection, config.postmarkConfig |> Maybe.map EmailEdits.postmarkHasValues )
+    , ( SendgridIntegrationSection, config.sendgridConfig |> Maybe.map EmailEdits.sendgridHasValues )
+    , ( MailgunIntegrationSection, config.mailgunConfig |> Maybe.map EmailEdits.mailgunHasValues )
+    , ( StalwartIntegrationSection, config.stalwartConfig |> Maybe.map EmailEdits.stalwartHasValues )
     ]
-        |> List.filter (\( _, hasValues ) -> not hasValues)
-        |> List.map (\( section, _ ) -> integrationsSectionKey section)
+        |> List.filter (\( _, hasValues ) -> hasValues /= Just True)
+        |> List.map (\( section, _ ) -> providerSectionKey section)
         |> Set.fromList
 
 
@@ -205,9 +262,9 @@ telnyxConfigHasValues config =
         || config.useTelnyxWebhookSigningKey
 
 
-integrationsSectionExpanded : Model -> IntegrationsSection -> Bool
-integrationsSectionExpanded model section =
-    not (Set.member (integrationsSectionKey section) model.collapsedIntegrationsSections)
+providerSectionExpanded : Model -> ProviderSection -> Bool
+providerSectionExpanded model section =
+    not (Set.member (providerSectionKey section) model.collapsedProviderSections)
 
 
 {-| Toggles a single `Set` member -- mirrors `SettingsTab.toggleSetMember` exactly.
@@ -223,15 +280,13 @@ toggleSetMember key set =
 
 {-| The result of this tab's own authenticated `GetServerConfiguration` fetch -- see this module's
 own doc for why it can't just read `RellmServers.configurationOf server` like most other tabs.
-Mirrors `ClusterTab.AdminClusterResourcesStatus` exactly, just holding the whole fetched
-`ServerConfiguration` (since this tab needs three admin-only fields off of it --
-`twilioConfig`/`birdConfig`/`preferredVerificationApis` -- rather than ClusterTab's one).
+Mirrors `ClusterTab.AdminClusterResourcesStatus` exactly.
 -}
-type AdminContactIntegrationsStatus
-    = AdminContactIntegrationsNotFetched
-    | FetchingAdminContactIntegrations
-    | AdminContactIntegrationsLoaded ServerConfiguration
-    | AdminContactIntegrationsFetchFailed String
+type AdminSignInAndContactConfig
+    = AdminSignInAndContactNotFetched
+    | FetchingAdminSignInAndContact
+    | AdminSignInAndContactLoaded ServerConfiguration
+    | AdminSignInAndContactFetchFailed String
 
 
 type Msg
@@ -266,13 +321,34 @@ type Msg
     | BirdCancelClicked
     | BirdSaveClicked
     | GotBirdSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, ServerConfiguration ))
-    | PreferredProvidersEditClicked
-    | PreferredProviderRemoveClicked ContactVerificationAPI
-    | PreferredProviderAddSelectionChanged String
-    | PreferredProviderAddClicked
-    | PreferredProvidersCancelClicked
-    | PreferredProvidersSaveClicked
+    | PostmarkEditClicked
+    | PostmarkEnabledToggled
+    | PostmarkFieldChanged PostmarkField String
+    | PostmarkCancelClicked
+    | PostmarkSaveClicked
+    | GotPostmarkSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, ServerConfiguration ))
+    | SendgridEditClicked
+    | SendgridEnabledToggled
+    | SendgridFieldChanged SendgridField String
+    | SendgridCancelClicked
+    | SendgridSaveClicked
+    | GotSendgridSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, ServerConfiguration ))
+    | MailgunEditClicked
+    | MailgunEnabledToggled
+    | MailgunFieldChanged MailgunField String
+    | MailgunCancelClicked
+    | MailgunSaveClicked
+    | GotMailgunSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, ServerConfiguration ))
+    | StalwartEditClicked
+    | StalwartSendingToggled
+    | StalwartFieldChanged StalwartField String
+    | StalwartCancelClicked
+    | StalwartSaveClicked
+    | GotStalwartSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, ServerConfiguration ))
+    | SmsOrderMsg OrderMsg
     | GotPreferredProvidersSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, ServerConfiguration ))
+    | EmailOrderMsg OrderMsg
+    | GotPreferredEmailProvidersSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, ServerConfiguration ))
     | WebPushPublicKeyEditClicked
     | WebPushPublicKeyChanged String
     | WebPushPublicKeyCancelClicked
@@ -289,9 +365,31 @@ type Msg
     | GotEmailContactProtocolSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, ServerConfiguration ))
     | StalwartReceivingToggled
     | GotStalwartReceivingSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, ServerConfiguration ))
-    | ContactIntegrationsTabActivated
+    | AuthFeatureToggled AuthenticationFeature
+    | GotAuthFeatureSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, ServerConfiguration ))
+    | SignInAndContactTabActivated
     | GotAuthenticatedServerConfiguration (Result Grpc.Error ( Maybe AccountsPanel.Msg, ServerConfiguration ))
-    | IntegrationsSectionToggled IntegrationsSection
+    | ProviderSectionToggled ProviderSection
+    | StatusRefreshClicked
+    | GotLiveStatus (Result Grpc.Error ( Maybe AccountsPanel.Msg, Time.Posix, ContactIntegrationsStatus ))
+    | StatusChecksToggled String
+    | StatusTick Time.Posix
+    | CopyClicked String
+    | CopiedReset String
+
+
+{-| What a provider-preference editor can do -- shared by the SMS (`SmsOrderMsg`) and email
+(`EmailOrderMsg`) editors. Indices refer to the editor's `pending` list.
+-}
+type OrderMsg
+    = OrderEditClicked
+    | OrderRemoveClicked Int
+    | OrderMoveUpClicked Int
+    | OrderMoveDownClicked Int
+    | OrderAddSelectionChanged String
+    | OrderAddClicked
+    | OrderCancelClicked
+    | OrderSaveClicked
 
 
 {-| Live only while the Telnyx config is being edited by an admin. `apiKey`/`webhookSigningKey`
@@ -361,17 +459,6 @@ type alias BirdConfigEdit =
     }
 
 
-{-| Live only while `preferredVerificationApis` is being edited by an admin -- mirrors
-`SettingsTab.PermissionsEdit` exactly, just over `ContactVerificationAPI` instead of `Permission`.
-`pending`'s order IS the preference order (see module doc).
--}
-type alias PreferredProvidersEdit =
-    { pending : List ContactVerificationAPI
-    , addSelection : Maybe ContactVerificationAPI
-    , status : AccountsPanel.FormStatus
-    }
-
-
 {-| Live only while the Web Push public or private VAPID key is being edited by an admin --
 `pending` is the in-progress `<input>` value. The private key always starts this at `""` (never
 pre-filled), since it's never actually sent back by the server (see `ToProtoServerConfiguration` on
@@ -390,71 +477,94 @@ init =
     { configEdit = Nothing
     , birdConfigEdit = Nothing
     , telnyxConfigEdit = Nothing
+    , postmarkEdit = Nothing
+    , sendgridEdit = Nothing
+    , mailgunEdit = Nothing
+    , stalwartEdit = Nothing
     , preferredProvidersEdit = Nothing
+    , preferredEmailProvidersEdit = Nothing
     , webPushPublicKeyEdit = Nothing
     , webPushPrivateKeyEdit = Nothing
-    , adminContactIntegrations = AdminContactIntegrationsNotFetched
-    , collapsedIntegrationsSections = Set.empty
+    , adminSignInAndContact = AdminSignInAndContactNotFetched
+    , collapsedProviderSections = Set.empty
     , smsContactProtocolStatus = AccountsPanel.Idle
     , emailContactProtocolStatus = AccountsPanel.Idle
     , stalwartReceivingStatus = AccountsPanel.Idle
+    , authFeaturesStatus = AccountsPanel.Idle
+    , liveStatus =
+        { report = Nothing
+        , inFlight = 0
+        , requested = False
+        , error = Nothing
+        , now = Time.millisToPosix 0
+        }
+    , toggledChecks = Set.empty
+    , copied = Nothing
     }
 
 
-{-| `Components.Pages.ServerInformationPage` dispatches this (via `ContactIntegrationsTab.update`)
-whenever this tab becomes the active one -- on `TabSelected TabContactIntegrations`, and at every
+{-| `Components.Pages.ServerInformationPage` dispatches this (via `SignInAndContactTab.update`)
+whenever this tab becomes the active one -- on `TabSelected TabSignInAndContact`, and at every
 point this page's own connectivity state could plausibly have changed (see module doc) -- to kick
-off the authenticated fetch this module's own doc describes. `ContactIntegrationsTabActivated`'s
-own constructor isn't exposed (like every other `Msg` here), so this is the one blessed way a
-parent triggers it. Mirrors `ClusterTab.activated` exactly.
+off the authenticated fetches this module's own doc describes (the configuration, and -- only the
+first time -- the live status). `SignInAndContactTabActivated`'s own constructor isn't exposed
+(like every other `Msg` here), so this is the one blessed way a parent triggers it. Mirrors
+`ClusterTab.activated` exactly.
 -}
 activated : Msg
 activated =
-    ContactIntegrationsTabActivated
+    SignInAndContactTabActivated
 
 
-{-| `telnyxConfig`/`twilioConfig`/`birdConfig`/`preferredVerificationApis` off of
-`model.adminContactIntegrations`'s own freshly-authenticated fetch (see module doc) -- `Nothing`/`[]`
-whenever that fetch hasn't completed yet (or failed), same as `ClusterTab`'s own accessors.
+{-| A 30-second tick (only while a report is on screen) so "Checked 2 minutes ago" stays honest.
 -}
-adminTelnyxConfig : Model -> Maybe TelnyxConfig
-adminTelnyxConfig model =
-    case model.adminContactIntegrations of
-        AdminContactIntegrationsLoaded config ->
-            config.telnyxConfig
+subscriptions : Model -> Sub Msg
+subscriptions model =
+    case model.liveStatus.report of
+        Just _ ->
+            Time.every 30000 StatusTick
+
+        Nothing ->
+            Sub.none
+
+
+{-| `telnyxConfig`/`twilioConfig`/... off of `model.adminSignInAndContact`'s own
+freshly-authenticated fetch (see module doc) -- `Nothing`/`[]` whenever that fetch hasn't completed
+yet (or failed), same as `ClusterTab`'s own accessors.
+-}
+adminConfig : Model -> Maybe ServerConfiguration
+adminConfig model =
+    case model.adminSignInAndContact of
+        AdminSignInAndContactLoaded config ->
+            Just config
 
         _ ->
             Nothing
+
+
+adminTelnyxConfig : Model -> Maybe TelnyxConfig
+adminTelnyxConfig model =
+    adminConfig model |> Maybe.andThen .telnyxConfig
 
 
 adminTwilioConfig : Model -> Maybe TwilioConfig
 adminTwilioConfig model =
-    case model.adminContactIntegrations of
-        AdminContactIntegrationsLoaded config ->
-            config.twilioConfig
-
-        _ ->
-            Nothing
+    adminConfig model |> Maybe.andThen .twilioConfig
 
 
 adminBirdConfig : Model -> Maybe BirdConfig
 adminBirdConfig model =
-    case model.adminContactIntegrations of
-        AdminContactIntegrationsLoaded config ->
-            config.birdConfig
-
-        _ ->
-            Nothing
+    adminConfig model |> Maybe.andThen .birdConfig
 
 
 adminPreferredProviders : Model -> List ContactVerificationAPI
 adminPreferredProviders model =
-    case model.adminContactIntegrations of
-        AdminContactIntegrationsLoaded config ->
-            config.preferredVerificationApis
+    adminConfig model |> Maybe.map .preferredVerificationApis |> Maybe.withDefault []
 
-        _ ->
-            []
+
+adminPreferredEmailProviders : Model -> List EmailVerificationAPI
+adminPreferredEmailProviders model =
+    adminConfig model |> Maybe.map .preferredEmailApis |> Maybe.withDefault []
 
 
 
@@ -463,6 +573,63 @@ adminPreferredProviders model =
 
 update : Shared.Model -> String -> Maybe RellmServer -> Msg -> Model -> ( Model, Effect Msg )
 update shared targetHost maybeServer msg model =
+    let
+        -- Fires `updateServerConfig` with `transform` as the signed-in admin (a no-op without one) --
+        -- `markSubmitting` puts the owning editor/toggle into its "Saving…" state first, `toResult`
+        -- is the `Got…SaveResult` constructor that comes back.
+        save :
+            (Model -> Model)
+            -> (ServerConfiguration -> ServerConfiguration)
+            -> (Result Grpc.Error ( Maybe AccountsPanel.Msg, ServerConfiguration ) -> Msg)
+            -> ( Model, Effect Msg )
+        save markSubmitting transform toResult =
+            case Common.adminAccountFor shared targetHost of
+                Just account ->
+                    ( markSubmitting model
+                    , AccountsPanel.updateServerConfig shared.accounts ( Just account.userId, targetHost ) transform
+                        |> Task.attempt toResult
+                        |> Effect.fromCmd
+                    )
+
+                Nothing ->
+                    ( model, Effect.none )
+
+        -- A successful save: show the returned config, tell the Accounts Panel about it, and (for
+        -- provider/protocol saves) re-run the live status check, since what it reports just changed.
+        saved : Bool -> Maybe AccountsPanel.Msg -> ServerConfiguration -> Model -> ( Model, Effect Msg )
+        saved refreshStatus maybeAccountsPanelMsg newConfig newModel =
+            let
+                ( refreshedModel, statusEffect ) =
+                    if refreshStatus then
+                        startStatusFetch shared targetHost { newModel | adminSignInAndContact = AdminSignInAndContactLoaded newConfig }
+
+                    else
+                        ( { newModel | adminSignInAndContact = AdminSignInAndContactLoaded newConfig }, Effect.none )
+            in
+            ( refreshedModel
+            , Effect.batch
+                [ Common.accountsPanelEffect maybeAccountsPanelMsg
+                , Effect.fromShared (Shared.AccountsPanelMsg (AccountsPanel.GotServerConfigSaveResult targetHost newConfig))
+                , statusEffect
+                ]
+            )
+
+        submitting : Maybe { a | status : AccountsPanel.FormStatus } -> Maybe { a | status : AccountsPanel.FormStatus }
+        submitting =
+            Maybe.map (\edit -> { edit | status = AccountsPanel.Submitting })
+
+        failed : Grpc.Error -> Maybe { a | status : AccountsPanel.FormStatus } -> Maybe { a | status : AccountsPanel.FormStatus }
+        failed err =
+            Maybe.map (\edit -> { edit | status = AccountsPanel.Errored (AccountsPanel.grpcErrorToString err) })
+
+        mapForm : (form -> form) -> Maybe (Editing form) -> Maybe (Editing form)
+        mapForm f =
+            Maybe.map (\edit -> { edit | form = f edit.form })
+
+        idle : form -> Maybe (Editing form)
+        idle form =
+            Just { form = form, status = AccountsPanel.Idle }
+    in
     case msg of
         TelnyxEditClicked ->
             let
@@ -507,29 +674,18 @@ update shared targetHost maybeServer msg model =
             ( { model | telnyxConfigEdit = Nothing }, Effect.none )
 
         TelnyxSaveClicked ->
-            case ( model.telnyxConfigEdit, Common.adminAccountFor shared targetHost ) of
-                ( Just edit, Just account ) ->
-                    ( { model | telnyxConfigEdit = Just { edit | status = AccountsPanel.Submitting } }
-                    , AccountsPanel.updateServerConfig shared.accounts ( Just account.userId, targetHost ) (applyTelnyxConfig edit)
-                        |> Task.attempt GotTelnyxSaveResult
-                        |> Effect.fromCmd
-                    )
+            case model.telnyxConfigEdit of
+                Just edit ->
+                    save (\m -> { m | telnyxConfigEdit = submitting m.telnyxConfigEdit }) (applyTelnyxConfig edit) GotTelnyxSaveResult
 
-                _ ->
+                Nothing ->
                     ( model, Effect.none )
 
         GotTelnyxSaveResult (Ok ( maybeAccountsPanelMsg, newConfig )) ->
-            ( { model | telnyxConfigEdit = Nothing, adminContactIntegrations = AdminContactIntegrationsLoaded newConfig }
-            , Effect.batch
-                [ Common.accountsPanelEffect maybeAccountsPanelMsg
-                , Effect.fromShared (Shared.AccountsPanelMsg (AccountsPanel.GotServerConfigSaveResult targetHost newConfig))
-                ]
-            )
+            saved True maybeAccountsPanelMsg newConfig { model | telnyxConfigEdit = Nothing }
 
         GotTelnyxSaveResult (Err err) ->
-            ( { model | telnyxConfigEdit = model.telnyxConfigEdit |> Maybe.map (\edit -> { edit | status = AccountsPanel.Errored (AccountsPanel.grpcErrorToString err) }) }
-            , Effect.none
-            )
+            ( { model | telnyxConfigEdit = failed err model.telnyxConfigEdit }, Effect.none )
 
         TwilioEditClicked ->
             let
@@ -578,29 +734,18 @@ update shared targetHost maybeServer msg model =
             ( { model | configEdit = Nothing }, Effect.none )
 
         TwilioSaveClicked ->
-            case ( model.configEdit, Common.adminAccountFor shared targetHost ) of
-                ( Just edit, Just account ) ->
-                    ( { model | configEdit = Just { edit | status = AccountsPanel.Submitting } }
-                    , AccountsPanel.updateServerConfig shared.accounts ( Just account.userId, targetHost ) (applyTwilioConfig edit)
-                        |> Task.attempt GotTwilioSaveResult
-                        |> Effect.fromCmd
-                    )
+            case model.configEdit of
+                Just edit ->
+                    save (\m -> { m | configEdit = submitting m.configEdit }) (applyTwilioConfig edit) GotTwilioSaveResult
 
-                _ ->
+                Nothing ->
                     ( model, Effect.none )
 
         GotTwilioSaveResult (Ok ( maybeAccountsPanelMsg, newConfig )) ->
-            ( { model | configEdit = Nothing, adminContactIntegrations = AdminContactIntegrationsLoaded newConfig }
-            , Effect.batch
-                [ Common.accountsPanelEffect maybeAccountsPanelMsg
-                , Effect.fromShared (Shared.AccountsPanelMsg (AccountsPanel.GotServerConfigSaveResult targetHost newConfig))
-                ]
-            )
+            saved True maybeAccountsPanelMsg newConfig { model | configEdit = Nothing }
 
         GotTwilioSaveResult (Err err) ->
-            ( { model | configEdit = model.configEdit |> Maybe.map (\edit -> { edit | status = AccountsPanel.Errored (AccountsPanel.grpcErrorToString err) }) }
-            , Effect.none
-            )
+            ( { model | configEdit = failed err model.configEdit }, Effect.none )
 
         BirdEditClicked ->
             let
@@ -645,113 +790,172 @@ update shared targetHost maybeServer msg model =
             ( { model | birdConfigEdit = Nothing }, Effect.none )
 
         BirdSaveClicked ->
-            case ( model.birdConfigEdit, Common.adminAccountFor shared targetHost ) of
-                ( Just edit, Just account ) ->
-                    ( { model | birdConfigEdit = Just { edit | status = AccountsPanel.Submitting } }
-                    , AccountsPanel.updateServerConfig shared.accounts ( Just account.userId, targetHost ) (applyBirdConfig edit)
-                        |> Task.attempt GotBirdSaveResult
-                        |> Effect.fromCmd
-                    )
+            case model.birdConfigEdit of
+                Just edit ->
+                    save (\m -> { m | birdConfigEdit = submitting m.birdConfigEdit }) (applyBirdConfig edit) GotBirdSaveResult
 
-                _ ->
+                Nothing ->
                     ( model, Effect.none )
 
         GotBirdSaveResult (Ok ( maybeAccountsPanelMsg, newConfig )) ->
-            ( { model | birdConfigEdit = Nothing, adminContactIntegrations = AdminContactIntegrationsLoaded newConfig }
-            , Effect.batch
-                [ Common.accountsPanelEffect maybeAccountsPanelMsg
-                , Effect.fromShared (Shared.AccountsPanelMsg (AccountsPanel.GotServerConfigSaveResult targetHost newConfig))
-                ]
-            )
+            saved True maybeAccountsPanelMsg newConfig { model | birdConfigEdit = Nothing }
 
         GotBirdSaveResult (Err err) ->
-            ( { model | birdConfigEdit = model.birdConfigEdit |> Maybe.map (\edit -> { edit | status = AccountsPanel.Errored (AccountsPanel.grpcErrorToString err) }) }
-            , Effect.none
-            )
+            ( { model | birdConfigEdit = failed err model.birdConfigEdit }, Effect.none )
 
-        PreferredProvidersEditClicked ->
-            let
-                current : List ContactVerificationAPI
-                current =
-                    adminPreferredProviders model
-            in
-            ( { model | preferredProvidersEdit = Just { pending = current, addSelection = resolveAddSelection Nothing current, status = AccountsPanel.Idle } }
-            , Effect.none
-            )
+        PostmarkEditClicked ->
+            ( { model | postmarkEdit = idle (EmailEdits.postmarkFormFrom (adminConfig model |> Maybe.andThen .postmarkConfig)) }, Effect.none )
 
-        PreferredProviderRemoveClicked provider ->
-            ( { model
-                | preferredProvidersEdit =
-                    model.preferredProvidersEdit
-                        |> Maybe.map
-                            (\edit ->
-                                let
-                                    pending : List ContactVerificationAPI
-                                    pending =
-                                        List.filter ((/=) provider) edit.pending
-                                in
-                                { edit | pending = pending, addSelection = resolveAddSelection edit.addSelection pending }
-                            )
-              }
-            , Effect.none
-            )
+        PostmarkEnabledToggled ->
+            ( { model | postmarkEdit = model.postmarkEdit |> mapForm (\form -> { form | enabled = not form.enabled }) }, Effect.none )
 
-        PreferredProviderAddSelectionChanged text ->
-            ( { model | preferredProvidersEdit = model.preferredProvidersEdit |> Maybe.map (\edit -> { edit | addSelection = verificationApiFromText text }) }
-            , Effect.none
-            )
+        PostmarkFieldChanged field text ->
+            ( { model | postmarkEdit = model.postmarkEdit |> mapForm (EmailEdits.setPostmarkField field text) }, Effect.none )
 
-        PreferredProviderAddClicked ->
-            ( { model
-                | preferredProvidersEdit =
-                    model.preferredProvidersEdit
-                        |> Maybe.map
-                            (\edit ->
-                                case edit.addSelection of
-                                    Just provider ->
-                                        let
-                                            pending : List ContactVerificationAPI
-                                            pending =
-                                                edit.pending ++ [ provider ]
-                                        in
-                                        { edit | pending = pending, addSelection = resolveAddSelection Nothing pending }
+        PostmarkCancelClicked ->
+            ( { model | postmarkEdit = Nothing }, Effect.none )
 
-                                    Nothing ->
-                                        edit
-                            )
-              }
-            , Effect.none
-            )
+        PostmarkSaveClicked ->
+            case model.postmarkEdit of
+                Just edit ->
+                    save (\m -> { m | postmarkEdit = submitting m.postmarkEdit }) (EmailEdits.applyPostmark edit.form) GotPostmarkSaveResult
 
-        PreferredProvidersCancelClicked ->
-            ( { model | preferredProvidersEdit = Nothing }, Effect.none )
-
-        PreferredProvidersSaveClicked ->
-            case ( model.preferredProvidersEdit, Common.adminAccountFor shared targetHost ) of
-                ( Just edit, Just account ) ->
-                    ( { model | preferredProvidersEdit = Just { edit | status = AccountsPanel.Submitting } }
-                    , AccountsPanel.updateServerConfig shared.accounts
-                        ( Just account.userId, targetHost )
-                        (\config -> { config | preferredVerificationApis = edit.pending })
-                        |> Task.attempt GotPreferredProvidersSaveResult
-                        |> Effect.fromCmd
-                    )
-
-                _ ->
+                Nothing ->
                     ( model, Effect.none )
 
-        GotPreferredProvidersSaveResult (Ok ( maybeAccountsPanelMsg, newConfig )) ->
-            ( { model | preferredProvidersEdit = Nothing, adminContactIntegrations = AdminContactIntegrationsLoaded newConfig }
-            , Effect.batch
-                [ Common.accountsPanelEffect maybeAccountsPanelMsg
-                , Effect.fromShared (Shared.AccountsPanelMsg (AccountsPanel.GotServerConfigSaveResult targetHost newConfig))
-                ]
-            )
+        GotPostmarkSaveResult (Ok ( maybeAccountsPanelMsg, newConfig )) ->
+            saved True maybeAccountsPanelMsg newConfig { model | postmarkEdit = Nothing }
 
-        GotPreferredProvidersSaveResult (Err err) ->
-            ( { model | preferredProvidersEdit = model.preferredProvidersEdit |> Maybe.map (\edit -> { edit | status = AccountsPanel.Errored (AccountsPanel.grpcErrorToString err) }) }
+        GotPostmarkSaveResult (Err err) ->
+            ( { model | postmarkEdit = failed err model.postmarkEdit }, Effect.none )
+
+        SendgridEditClicked ->
+            ( { model | sendgridEdit = idle (EmailEdits.sendgridFormFrom (adminConfig model |> Maybe.andThen .sendgridConfig)) }, Effect.none )
+
+        SendgridEnabledToggled ->
+            ( { model | sendgridEdit = model.sendgridEdit |> mapForm (\form -> { form | enabled = not form.enabled }) }, Effect.none )
+
+        SendgridFieldChanged field text ->
+            ( { model | sendgridEdit = model.sendgridEdit |> mapForm (EmailEdits.setSendgridField field text) }, Effect.none )
+
+        SendgridCancelClicked ->
+            ( { model | sendgridEdit = Nothing }, Effect.none )
+
+        SendgridSaveClicked ->
+            case model.sendgridEdit of
+                Just edit ->
+                    save (\m -> { m | sendgridEdit = submitting m.sendgridEdit }) (EmailEdits.applySendgrid edit.form) GotSendgridSaveResult
+
+                Nothing ->
+                    ( model, Effect.none )
+
+        GotSendgridSaveResult (Ok ( maybeAccountsPanelMsg, newConfig )) ->
+            saved True maybeAccountsPanelMsg newConfig { model | sendgridEdit = Nothing }
+
+        GotSendgridSaveResult (Err err) ->
+            ( { model | sendgridEdit = failed err model.sendgridEdit }, Effect.none )
+
+        MailgunEditClicked ->
+            ( { model | mailgunEdit = idle (EmailEdits.mailgunFormFrom (adminConfig model |> Maybe.andThen .mailgunConfig)) }, Effect.none )
+
+        MailgunEnabledToggled ->
+            ( { model | mailgunEdit = model.mailgunEdit |> mapForm (\form -> { form | enabled = not form.enabled }) }, Effect.none )
+
+        MailgunFieldChanged field text ->
+            ( { model | mailgunEdit = model.mailgunEdit |> mapForm (EmailEdits.setMailgunField field text) }, Effect.none )
+
+        MailgunCancelClicked ->
+            ( { model | mailgunEdit = Nothing }, Effect.none )
+
+        MailgunSaveClicked ->
+            case model.mailgunEdit of
+                Just edit ->
+                    save (\m -> { m | mailgunEdit = submitting m.mailgunEdit }) (EmailEdits.applyMailgun edit.form) GotMailgunSaveResult
+
+                Nothing ->
+                    ( model, Effect.none )
+
+        GotMailgunSaveResult (Ok ( maybeAccountsPanelMsg, newConfig )) ->
+            saved True maybeAccountsPanelMsg newConfig { model | mailgunEdit = Nothing }
+
+        GotMailgunSaveResult (Err err) ->
+            ( { model | mailgunEdit = failed err model.mailgunEdit }, Effect.none )
+
+        StalwartEditClicked ->
+            ( { model | stalwartEdit = idle (EmailEdits.stalwartFormFrom (adminConfig model |> Maybe.andThen .stalwartConfig)) }, Effect.none )
+
+        StalwartSendingToggled ->
+            ( { model | stalwartEdit = model.stalwartEdit |> mapForm (\form -> { form | sendingEnabled = not form.sendingEnabled }) }, Effect.none )
+
+        StalwartFieldChanged field text ->
+            ( { model | stalwartEdit = model.stalwartEdit |> mapForm (EmailEdits.setStalwartField field text) }, Effect.none )
+
+        StalwartCancelClicked ->
+            ( { model | stalwartEdit = Nothing }, Effect.none )
+
+        StalwartSaveClicked ->
+            case model.stalwartEdit of
+                Just edit ->
+                    save (\m -> { m | stalwartEdit = submitting m.stalwartEdit }) (EmailEdits.applyStalwart edit.form) GotStalwartSaveResult
+
+                Nothing ->
+                    ( model, Effect.none )
+
+        GotStalwartSaveResult (Ok ( maybeAccountsPanelMsg, newConfig )) ->
+            saved True maybeAccountsPanelMsg newConfig { model | stalwartEdit = Nothing }
+
+        GotStalwartSaveResult (Err err) ->
+            ( { model | stalwartEdit = failed err model.stalwartEdit }, Effect.none )
+
+        SmsOrderMsg OrderSaveClicked ->
+            case model.preferredProvidersEdit of
+                Just edit ->
+                    save
+                        (\m -> { m | preferredProvidersEdit = submitting m.preferredProvidersEdit })
+                        (\config -> { config | preferredVerificationApis = edit.pending })
+                        GotPreferredProvidersSaveResult
+
+                Nothing ->
+                    ( model, Effect.none )
+
+        SmsOrderMsg orderMsg ->
+            ( { model
+                | preferredProvidersEdit =
+                    updateOrderEdit allVerificationApis (adminPreferredProviders model) orderMsg model.preferredProvidersEdit
+              }
             , Effect.none
             )
+
+        GotPreferredProvidersSaveResult (Ok ( maybeAccountsPanelMsg, newConfig )) ->
+            saved False maybeAccountsPanelMsg newConfig { model | preferredProvidersEdit = Nothing }
+
+        GotPreferredProvidersSaveResult (Err err) ->
+            ( { model | preferredProvidersEdit = failed err model.preferredProvidersEdit }, Effect.none )
+
+        EmailOrderMsg OrderSaveClicked ->
+            case model.preferredEmailProvidersEdit of
+                Just edit ->
+                    save
+                        (\m -> { m | preferredEmailProvidersEdit = submitting m.preferredEmailProvidersEdit })
+                        (\config -> { config | preferredEmailApis = edit.pending })
+                        GotPreferredEmailProvidersSaveResult
+
+                Nothing ->
+                    ( model, Effect.none )
+
+        EmailOrderMsg orderMsg ->
+            ( { model
+                | preferredEmailProvidersEdit =
+                    updateOrderEdit allEmailApis (adminPreferredEmailProviders model) orderMsg model.preferredEmailProvidersEdit
+              }
+            , Effect.none
+            )
+
+        GotPreferredEmailProvidersSaveResult (Ok ( maybeAccountsPanelMsg, newConfig )) ->
+            saved False maybeAccountsPanelMsg newConfig { model | preferredEmailProvidersEdit = Nothing }
+
+        GotPreferredEmailProvidersSaveResult (Err err) ->
+            ( { model | preferredEmailProvidersEdit = failed err model.preferredEmailProvidersEdit }, Effect.none )
 
         WebPushPublicKeyEditClicked ->
             case maybeServer of
@@ -834,104 +1038,299 @@ update shared targetHost maybeServer msg model =
             )
 
         SmsContactProtocolToggled ->
-            case Common.adminAccountFor shared targetHost of
-                Just account ->
-                    ( { model | smsContactProtocolStatus = AccountsPanel.Submitting }
-                    , AccountsPanel.updateServerConfig shared.accounts ( Just account.userId, targetHost ) (toggleContactProtocol CONTACTPROTOCOLTEL)
-                        |> Task.attempt GotSmsContactProtocolSaveResult
-                        |> Effect.fromCmd
-                    )
-
-                Nothing ->
-                    ( model, Effect.none )
+            save (\m -> { m | smsContactProtocolStatus = AccountsPanel.Submitting }) (toggleContactProtocol CONTACTPROTOCOLTEL) GotSmsContactProtocolSaveResult
 
         GotSmsContactProtocolSaveResult (Ok ( maybeAccountsPanelMsg, newConfig )) ->
-            ( { model | smsContactProtocolStatus = AccountsPanel.Idle, adminContactIntegrations = AdminContactIntegrationsLoaded newConfig }
-            , Effect.batch
-                [ Common.accountsPanelEffect maybeAccountsPanelMsg
-                , Effect.fromShared (Shared.AccountsPanelMsg (AccountsPanel.GotServerConfigSaveResult targetHost newConfig))
-                ]
-            )
+            saved False maybeAccountsPanelMsg newConfig { model | smsContactProtocolStatus = AccountsPanel.Idle }
 
         GotSmsContactProtocolSaveResult (Err err) ->
             ( { model | smsContactProtocolStatus = AccountsPanel.Errored (AccountsPanel.grpcErrorToString err) }, Effect.none )
 
         EmailContactProtocolToggled ->
-            case Common.adminAccountFor shared targetHost of
-                Just account ->
-                    ( { model | emailContactProtocolStatus = AccountsPanel.Submitting }
-                    , AccountsPanel.updateServerConfig shared.accounts ( Just account.userId, targetHost ) (toggleContactProtocol CONTACTPROTOCOLMAILTO)
-                        |> Task.attempt GotEmailContactProtocolSaveResult
-                        |> Effect.fromCmd
-                    )
-
-                Nothing ->
-                    ( model, Effect.none )
+            save (\m -> { m | emailContactProtocolStatus = AccountsPanel.Submitting }) (toggleContactProtocol CONTACTPROTOCOLMAILTO) GotEmailContactProtocolSaveResult
 
         GotEmailContactProtocolSaveResult (Ok ( maybeAccountsPanelMsg, newConfig )) ->
-            ( { model | emailContactProtocolStatus = AccountsPanel.Idle, adminContactIntegrations = AdminContactIntegrationsLoaded newConfig }
-            , Effect.batch
-                [ Common.accountsPanelEffect maybeAccountsPanelMsg
-                , Effect.fromShared (Shared.AccountsPanelMsg (AccountsPanel.GotServerConfigSaveResult targetHost newConfig))
-                ]
-            )
+            saved False maybeAccountsPanelMsg newConfig { model | emailContactProtocolStatus = AccountsPanel.Idle }
 
         GotEmailContactProtocolSaveResult (Err err) ->
             ( { model | emailContactProtocolStatus = AccountsPanel.Errored (AccountsPanel.grpcErrorToString err) }, Effect.none )
 
         StalwartReceivingToggled ->
-            case Common.adminAccountFor shared targetHost of
-                Just account ->
-                    ( { model | stalwartReceivingStatus = AccountsPanel.Submitting }
-                    , AccountsPanel.updateServerConfig shared.accounts ( Just account.userId, targetHost ) toggleStalwartReceiving
-                        |> Task.attempt GotStalwartReceivingSaveResult
-                        |> Effect.fromCmd
-                    )
-
-                Nothing ->
-                    ( model, Effect.none )
+            save (\m -> { m | stalwartReceivingStatus = AccountsPanel.Submitting }) EmailEdits.toggleStalwartReceiving GotStalwartReceivingSaveResult
 
         GotStalwartReceivingSaveResult (Ok ( maybeAccountsPanelMsg, newConfig )) ->
-            ( { model | stalwartReceivingStatus = AccountsPanel.Idle, adminContactIntegrations = AdminContactIntegrationsLoaded newConfig }
-            , Effect.batch
-                [ Common.accountsPanelEffect maybeAccountsPanelMsg
-                , Effect.fromShared (Shared.AccountsPanelMsg (AccountsPanel.GotServerConfigSaveResult targetHost newConfig))
-                ]
-            )
+            saved True maybeAccountsPanelMsg newConfig { model | stalwartReceivingStatus = AccountsPanel.Idle }
 
         GotStalwartReceivingSaveResult (Err err) ->
             ( { model | stalwartReceivingStatus = AccountsPanel.Errored (AccountsPanel.grpcErrorToString err) }, Effect.none )
 
-        ContactIntegrationsTabActivated ->
-            case ( model.adminContactIntegrations, Common.adminAccountFor shared targetHost ) of
-                ( AdminContactIntegrationsNotFetched, Just account ) ->
-                    ( { model | adminContactIntegrations = FetchingAdminContactIntegrations }
-                    , fetchAuthenticatedServerConfiguration shared targetHost account
-                    )
+        AuthFeatureToggled feature ->
+            if model.authFeaturesStatus == AccountsPanel.Submitting then
+                ( model, Effect.none )
 
-                ( AdminContactIntegrationsFetchFailed _, Just account ) ->
-                    ( { model | adminContactIntegrations = FetchingAdminContactIntegrations }
-                    , fetchAuthenticatedServerConfiguration shared targetHost account
-                    )
+            else
+                save (\m -> { m | authFeaturesStatus = AccountsPanel.Submitting }) (toggleAuthFeature feature) GotAuthFeatureSaveResult
 
-                _ ->
+        GotAuthFeatureSaveResult (Ok ( maybeAccountsPanelMsg, newConfig )) ->
+            saved False maybeAccountsPanelMsg newConfig { model | authFeaturesStatus = AccountsPanel.Idle }
+
+        GotAuthFeatureSaveResult (Err err) ->
+            ( { model | authFeaturesStatus = AccountsPanel.Errored (AccountsPanel.grpcErrorToString err) }, Effect.none )
+
+        SignInAndContactTabActivated ->
+            case Common.adminAccountFor shared targetHost of
+                Just account ->
+                    let
+                        ( configModel, configEffect ) =
+                            case model.adminSignInAndContact of
+                                AdminSignInAndContactNotFetched ->
+                                    ( { model | adminSignInAndContact = FetchingAdminSignInAndContact }
+                                    , fetchAuthenticatedServerConfiguration shared targetHost account
+                                    )
+
+                                AdminSignInAndContactFetchFailed _ ->
+                                    ( { model | adminSignInAndContact = FetchingAdminSignInAndContact }
+                                    , fetchAuthenticatedServerConfiguration shared targetHost account
+                                    )
+
+                                _ ->
+                                    ( model, Effect.none )
+
+                        -- The live status is slow and expensive: asked for once, on first activation.
+                        ( statusModel, statusEffect ) =
+                            if configModel.liveStatus.requested then
+                                ( configModel, Effect.none )
+
+                            else
+                                startStatusFetch shared targetHost configModel
+                    in
+                    ( statusModel, Effect.batch [ configEffect, statusEffect ] )
+
+                Nothing ->
                     ( model, Effect.none )
 
         GotAuthenticatedServerConfiguration (Ok ( maybeAccountsPanelMsg, config )) ->
-            ( { model
-                | adminContactIntegrations = AdminContactIntegrationsLoaded config
-                , collapsedIntegrationsSections = initialCollapsedIntegrationsSections config
-              }
+            let
+                loadedModel : Model
+                loadedModel =
+                    { model
+                        | adminSignInAndContact = AdminSignInAndContactLoaded config
+                        , collapsedProviderSections = initialCollapsedProviderSections config
+                    }
+
+                -- The configuration landing proves the server connection has settled, so this is the
+                -- reliable moment for the first status check if activation's own attempt lost the race
+                -- (see `GotLiveStatus`'s `Err`).
+                ( statusModel, statusEffect ) =
+                    if loadedModel.liveStatus.requested then
+                        ( loadedModel, Effect.none )
+
+                    else
+                        startStatusFetch shared targetHost loadedModel
+            in
+            ( statusModel, Effect.batch [ Common.accountsPanelEffect maybeAccountsPanelMsg, statusEffect ] )
+
+        GotAuthenticatedServerConfiguration (Err err) ->
+            ( { model | adminSignInAndContact = AdminSignInAndContactFetchFailed (AccountsPanel.grpcErrorToString err) }, Effect.none )
+
+        ProviderSectionToggled section ->
+            ( { model | collapsedProviderSections = toggleSetMember (providerSectionKey section) model.collapsedProviderSections }
+            , Effect.none
+            )
+
+        StatusRefreshClicked ->
+            if isFetchingStatus model.liveStatus then
+                ( model, Effect.none )
+
+            else
+                startStatusFetch shared targetHost model
+
+        GotLiveStatus (Ok ( maybeAccountsPanelMsg, now, report )) ->
+            let
+                live : LiveStatus
+                live =
+                    model.liveStatus
+            in
+            ( { model | liveStatus = { live | report = Just report, inFlight = max 0 (live.inFlight - 1), error = Nothing, now = now } }
             , Common.accountsPanelEffect maybeAccountsPanelMsg
             )
 
-        GotAuthenticatedServerConfiguration (Err err) ->
-            ( { model | adminContactIntegrations = AdminContactIntegrationsFetchFailed (AccountsPanel.grpcErrorToString err) }, Effect.none )
+        GotLiveStatus (Err err) ->
+            let
+                live : LiveStatus
+                live =
+                    model.liveStatus
+            in
+            ( { model
+                | liveStatus =
+                    { live
+                        | inFlight = max 0 (live.inFlight - 1)
+                        , error = Just (statusErrorText err)
 
-        IntegrationsSectionToggled section ->
-            ( { model | collapsedIntegrationsSections = toggleSetMember (integrationsSectionKey section) model.collapsedIntegrationsSections }
+                        -- A `NetworkError` is the connection not having settled yet (see module doc),
+                        -- not an answer: let the next activation/config landing try again.
+                        , requested = live.requested && err /= Grpc.NetworkError
+                    }
+              }
             , Effect.none
             )
+
+        StatusChecksToggled key ->
+            ( { model | toggledChecks = toggleSetMember key model.toggledChecks }, Effect.none )
+
+        StatusTick now ->
+            let
+                live : LiveStatus
+                live =
+                    model.liveStatus
+            in
+            ( { model | liveStatus = { live | now = now } }, Effect.none )
+
+        CopyClicked text ->
+            ( { model | copied = Just text }
+            , Effect.batch
+                [ Effect.fromCmd (Ports.copyToClipboard text)
+                , Process.sleep 2000 |> Task.perform (\_ -> CopiedReset text) |> Effect.fromCmd
+                ]
+            )
+
+        CopiedReset text ->
+            if model.copied == Just text then
+                ( { model | copied = Nothing }, Effect.none )
+
+            else
+                ( model, Effect.none )
+
+
+{-| Whether a `GetContactIntegrationsStatus` call is currently in flight.
+-}
+isFetchingStatus : LiveStatus -> Bool
+isFetchingStatus live =
+    live.inFlight > 0
+
+
+{-| Marks a status fetch as started and fires it -- a no-op without an admin account (the RPC is
+admin-only). Always fires, even if one is already in flight (a provider save just changed what it
+would report); `inFlight` counts them so "fetching" only clears once the last one lands.
+-}
+startStatusFetch : Shared.Model -> String -> Model -> ( Model, Effect Msg )
+startStatusFetch shared targetHost model =
+    case Common.adminAccountFor shared targetHost of
+        Just account ->
+            let
+                live : LiveStatus
+                live =
+                    model.liveStatus
+            in
+            ( { model | liveStatus = { live | inFlight = live.inFlight + 1, requested = True, error = Nothing } }
+            , fetchLiveStatus shared targetHost account
+            )
+
+        Nothing ->
+            ( model, Effect.none )
+
+
+{-| `GetContactIntegrationsStatus` as `account` -- slow (the server calls each provider's API and
+does DNS lookups), hence the generous timeout, and stamped with the browser clock on arrival for
+"Checked 2 minutes ago".
+-}
+fetchLiveStatus : Shared.Model -> String -> RellmAccount -> Effect Msg
+fetchLiveStatus shared targetHost account =
+    AccountsPanel.performWithAccountServer shared.accounts
+        ( Just account.userId, targetHost )
+        (\server token ->
+            Grpc.new Rellm.getContactIntegrationsStatus {}
+                |> Grpc.setHost (RellmServers.rellmServerUrl server)
+                |> Grpc.setTimeout 90000
+                |> RellmServers.withAccessToken (Just token)
+                |> Grpc.toTask
+        )
+        |> Task.andThen (\( maybeAccountsPanelMsg, report ) -> Time.now |> Task.map (\now -> ( maybeAccountsPanelMsg, now, report )))
+        |> Task.attempt GotLiveStatus
+        |> Effect.fromCmd
+
+
+{-| A friendly sentence for a failed status check -- most notably an older server that doesn't have
+the RPC yet (`Unimplemented`).
+-}
+statusErrorText : Grpc.Error -> String
+statusErrorText err =
+    case err of
+        Grpc.BadStatus { status } ->
+            case status of
+                Grpc.Unimplemented ->
+                    "This server doesn't support live status checks yet -- it may need to be updated."
+
+                Grpc.PermissionDenied ->
+                    "Only server admins can run status checks."
+
+                _ ->
+                    AccountsPanel.grpcErrorToString err
+
+        _ ->
+            AccountsPanel.grpcErrorToString err
+
+
+{-| Applies a non-save `OrderMsg` to a preference editor. `current` is what's stored (what Edit
+starts from), `all` every provider that may appear in the list.
+-}
+updateOrderEdit : List api -> List api -> OrderMsg -> Maybe (OrderEdit api) -> Maybe (OrderEdit api)
+updateOrderEdit all current orderMsg maybeEdit =
+    case orderMsg of
+        OrderEditClicked ->
+            Just { pending = current, addSelection = ProviderOrder.addSelectionAfter all Nothing current, status = AccountsPanel.Idle }
+
+        OrderCancelClicked ->
+            Nothing
+
+        OrderSaveClicked ->
+            maybeEdit
+
+        OrderRemoveClicked index ->
+            maybeEdit |> Maybe.map (withPending all (ProviderOrder.removeAt index))
+
+        OrderMoveUpClicked index ->
+            maybeEdit |> Maybe.map (withPending all (ProviderOrder.moveUp index))
+
+        OrderMoveDownClicked index ->
+            maybeEdit |> Maybe.map (withPending all (ProviderOrder.moveDown index))
+
+        OrderAddSelectionChanged text ->
+            maybeEdit |> Maybe.map (\edit -> { edit | addSelection = all |> List.filter (\api -> orderKey all api == text) |> List.head })
+
+        OrderAddClicked ->
+            maybeEdit
+                |> Maybe.map
+                    (\edit ->
+                        case edit.addSelection of
+                            Just api ->
+                                withPending all (ProviderOrder.append api) edit
+
+                            Nothing ->
+                                edit
+                    )
+
+
+{-| The `<option value>` of a provider in `all` -- its position, so it works for any enum.
+-}
+orderKey : List api -> api -> String
+orderKey all api =
+    all
+        |> List.indexedMap Tuple.pair
+        |> List.filter (\( _, candidate ) -> candidate == api)
+        |> List.head
+        |> Maybe.map (Tuple.first >> String.fromInt)
+        |> Maybe.withDefault ""
+
+
+withPending : List api -> (List api -> List api) -> OrderEdit api -> OrderEdit api
+withPending all f edit =
+    let
+        pending : List api
+        pending =
+            f edit.pending
+    in
+    { edit | pending = pending, addSelection = ProviderOrder.addSelectionAfter all edit.addSelection pending }
 
 
 {-| `twilio_config`/`bird_config`/`preferred_verification_apis` are all stripped from the
@@ -1057,7 +1456,6 @@ applyWebPushPrivateKey privateKey config =
     in
     { config | webPushConfig = Just { publicVapidKey = existingPublicKey, privateVapidKey = privateKey } }
 
-
 {-| `SmsContactProtocolToggled`/`EmailContactProtocolToggled`'s transform -- flips whether `protocol`
 is present in the freshly re-fetched `config.supportedContactProtocols`, leaving every other entry
 (and every other field) untouched. The actual invariant enforcement ("TEL only with a configured SMS
@@ -1078,64 +1476,36 @@ toggleContactProtocol protocol config =
                 protocol :: config.supportedContactProtocols
     }
 
-
-{-| `StalwartReceivingToggled`'s transform -- `StalwartConfig` holds nothing but this one flag, so
-(per this feature's own design) there's no reason to keep a `Just { stalwartReceivingEnabled =
-False }` around: off collapses the whole `stalwartConfig` to `Nothing`, on sets it to
-`Just { defaultStalwartConfig | stalwartReceivingEnabled = True }`. Unrelated to `supported_contact_protocols`/
-`ContactProtocol` above -- this gates the internal `:27705/email` MTA hook endpoint receiving mail
-from Stalwart, not SMS/email _sending_ (see `web::email::create_email_message`'s own doc).
+{-| `AuthFeatureToggled`'s transform -- flips whether `feature` is in the freshly re-fetched
+`config.authenticationFeatures`, leaving every other entry alone. (Whether SMS/email sign-in is
+_allowed_ -- needs the matching `ContactProtocol` -- is validated server-side; the view just doesn't
+offer the switch until the channel is on.)
 -}
-toggleStalwartReceiving : ServerConfiguration -> ServerConfiguration
-toggleStalwartReceiving config =
-    let
-        currentlyEnabled : Bool
-        currentlyEnabled =
-            config.stalwartConfig |> Maybe.map .stalwartReceivingEnabled |> Maybe.withDefault False
-    in
+toggleAuthFeature : AuthenticationFeature -> ServerConfiguration -> ServerConfiguration
+toggleAuthFeature feature config =
     { config
-        | stalwartConfig =
-            if currentlyEnabled then
-                Nothing
+        | authenticationFeatures =
+            if List.member feature config.authenticationFeatures then
+                List.filter ((/=) feature) config.authenticationFeatures
 
             else
-                Just { defaultStalwartConfig | stalwartReceivingEnabled = True }
+                config.authenticationFeatures ++ [ feature ]
     }
 
 
-{-| Every `ContactVerificationAPI` value, in a fixed display order -- used both for the Add dropdown's
-full option list and (indirectly, via `addablePreferredProviders`) for what's left to add.
+{-| Every `ContactVerificationAPI`, in the server's own fallback order (Telnyx, Bird, Twilio -- see
+`preferred_verification_apis`'s proto doc) -- the Add dropdown's option list.
 -}
 allVerificationApis : List ContactVerificationAPI
 allVerificationApis =
-    [ CONTACTVERIFICATIONAPITWILIO, CONTACTVERIFICATIONAPIBIRD, CONTACTVERIFICATIONAPITELNYX ]
+    [ CONTACTVERIFICATIONAPITELNYX, CONTACTVERIFICATIONAPIBIRD, CONTACTVERIFICATIONAPITWILIO ]
 
 
-addablePreferredProviders : List ContactVerificationAPI -> List ContactVerificationAPI
-addablePreferredProviders pending =
-    List.filter (\api -> not (List.member api pending)) allVerificationApis
-
-
-{-| The first still-addable provider, preferring to keep `current` selected if it's still
-addable -- mirrors `SettingsTab.resolveAddSelection` exactly.
+{-| Every `EmailVerificationAPI`, in the server's fallback order (`preferred_email_apis`'s proto doc).
 -}
-resolveAddSelection : Maybe ContactVerificationAPI -> List ContactVerificationAPI -> Maybe ContactVerificationAPI
-resolveAddSelection current pending =
-    let
-        addable : List ContactVerificationAPI
-        addable =
-            addablePreferredProviders pending
-    in
-    case current of
-        Just api ->
-            if List.member api addable then
-                Just api
-
-            else
-                List.head addable
-
-        Nothing ->
-            List.head addable
+allEmailApis : List EmailVerificationAPI
+allEmailApis =
+    [ EMAILVERIFICATIONAPIPOSTMARK, EMAILVERIFICATIONAPISENDGRID, EMAILVERIFICATIONAPIMAILGUN, EMAILVERIFICATIONAPISTALWART ]
 
 
 verificationApiText : ContactVerificationAPI -> String
@@ -1154,224 +1524,1144 @@ verificationApiText api =
             "Unknown"
 
 
-verificationApiFromText : String -> Maybe ContactVerificationAPI
-verificationApiFromText text_ =
-    allVerificationApis |> List.filter (\api -> verificationApiText api == text_) |> List.head
+emailApiText : EmailVerificationAPI -> String
+emailApiText api =
+    case api of
+        EMAILVERIFICATIONAPIPOSTMARK ->
+            "Postmark"
 
+        EMAILVERIFICATIONAPISENDGRID ->
+            "SendGrid"
+
+        EMAILVERIFICATIONAPIMAILGUN ->
+            "Mailgun"
+
+        EMAILVERIFICATIONAPISTALWART ->
+            "Stalwart"
+
+        EmailVerificationAPIUnrecognized_ _ ->
+            "Unknown"
 
 
 -- VIEW
 
 
-{-| `server` is only needed for `webPushConfigSection` (see module doc -- `webPushConfig` isn't
-admin-only-stripped, so it doesn't need to wait on `adminContactIntegrations`'s own fetch the way
-Twilio/Bird/Preferred Providers below it do), mirroring exactly how `FederationTab.view` takes its
-own `server` for the same reason.
+{-| `server` is only needed for `webPushSection` (see module doc -- `webPushConfig` isn't
+admin-only-stripped, so it doesn't need to wait on the admin fetch the way every provider section
+does), mirroring exactly how `FederationTab.view` takes its own `server` for the same reason.
 -}
 view : RellmServer -> Maybe RellmAccount -> Model -> Html Msg
 view server maybeAdminAccount model =
-    div [ class "server-details-tab-content server-details-integrations" ]
-        [ webPushConfigSection server model maybeAdminAccount
-        , emailConfigurationSection model
-        , smsConfigurationSection model
-        , externalIntegrationsSection model maybeAdminAccount
+    div [ classes [ "server-details-tab-content", "server-details-sign-in-and-contact", "sc-root" ] ]
+        (case maybeAdminAccount of
+            Nothing ->
+                [ div [ class "sc-intro" ]
+                    [ h2 [ class "sc-title" ] [ text "Sign in & contact" ]
+                    , p [ class "sc-lead" ] [ text "Sign in as an admin of this server to see and manage how people sign in and how it contacts them." ]
+                    ]
+                , webPushSection server model maybeAdminAccount
+                ]
+
+            Just _ ->
+                case model.adminSignInAndContact of
+                    AdminSignInAndContactLoaded config ->
+                        [ introView model
+                        , signInSection model config
+                        , smsSection model maybeAdminAccount config
+                        , emailSection model maybeAdminAccount config
+                        , webPushSection server model maybeAdminAccount
+                        ]
+
+                    AdminSignInAndContactFetchFailed err ->
+                        [ introView model
+                        , div [ classes [ "sc-section", "sc-failed" ] ]
+                            [ p [] [ text ("Couldn't load the integration settings: " ++ err) ]
+                            , button [ type_ "button", class "server-details-rename-button", onClick SignInAndContactTabActivated ] [ text "Try again" ]
+                            ]
+                        , webPushSection server model maybeAdminAccount
+                        ]
+
+                    _ ->
+                        [ introView model
+                        , loadingSkeleton
+                        , webPushSection server model maybeAdminAccount
+                        ]
+        )
+
+
+{-| Placeholder blocks while the admin configuration fetch is in flight.
+-}
+loadingSkeleton : Html Msg
+loadingSkeleton =
+    div [ class "sc-skeleton", attribute "aria-busy" "true" ]
+        (List.repeat 2
+            (div [ class "sc-section" ]
+                [ StatusView.shimmerLine 35
+                , StatusView.shimmerLine 80
+                , StatusView.shimmerLine 60
+                ]
+            )
+        )
+
+
+statusHandlers : StatusView.Handlers Msg
+statusHandlers =
+    { toggleChecks = StatusChecksToggled
+    , copy = CopyClicked
+    }
+
+
+{-| The tab's title, a friendly one-paragraph orientation, and the overall status toolbar
+(`statusToolbar`).
+-}
+introView : Model -> Html Msg
+introView model =
+    div [ class "sc-intro" ]
+        [ h2 [ class "sc-title" ] [ text "Sign in & contact" ]
+        , p [ class "sc-lead" ]
+            [ text "How people sign in and sign up, and how this server contacts them: verification codes, sign-in codes and notifications by text message and email. Choose the ways people can get in, switch each channel on, pick the providers that send for it, and check that everything is healthy." ]
+        , statusToolbar model
         ]
 
 
-{-| "Email Configuration" -- sibling section to "Web Push Configuration" above it and "SMS
-Configuration" below it, grouping the two toggles that gate email entirely independently of each
-other: "Enable Email Sending" (`ServerConfiguration.supportedContactProtocols`, see
-`toggleContactProtocol`) and "Receive Emails from Stalwart" (`ServerConfiguration.stalwartConfig`,
-see `toggleStalwartReceiving`). Sending and receiving are unrelated mechanisms (outbound `mailto:`
-verification/notification vs. the internal `:27705/email` MTA hook accepting mail forwarded by a
-Stalwart mail server sharing this cluster -- see `web::email::create_email_message`'s own doc, and
-`docs/contact_integrations.md`'s Email section) that just happen to both belong under "Email" from
-an admin's point of view. Both are instant toggle-and-save (no Edit/Save/Cancel step, unlike every
-other section here), and neither is ever disabled up front -- "Enable Email Sending" always comes
-back `mailto_contact_protocol_not_supported` from `validate_configuration` (no email _sending_
-provider exists yet), surfaced the same way any other save error on this page is. Only rendered
-once this tab's own admin fetch (`AdminContactIntegrationsLoaded`) has actually landed, same gate as
-`externalIntegrationsSection`'s admin-only fields, since both `supportedContactProtocols` and
-`stalwartConfig` live on that same authenticated `ServerConfiguration`.
+{-| The overall "Check status"/"Refresh" button, a spinner while a check runs, "Checked 2 minutes
+ago", and any inline error from the last check.
 -}
-emailConfigurationSection : Model -> Html Msg
-emailConfigurationSection model =
-    div [ class "server-details-feature-settings" ]
-        (h3 [ class "section-title" ] [ text "Email Configuration" ]
-            :: (case model.adminContactIntegrations of
-                    AdminContactIntegrationsLoaded config ->
-                        [ Common.settingsRow "Enable Email Sending"
-                            (Common.flagSwitch (List.member CONTACTPROTOCOLMAILTO config.supportedContactProtocols) EmailContactProtocolToggled)
-                        , Common.editErrorView model.emailContactProtocolStatus
-                        , Common.settingsRow "Receive Emails from Stalwart"
-                            (Common.flagSwitch
-                                (config.stalwartConfig |> Maybe.map .stalwartReceivingEnabled |> Maybe.withDefault False)
-                                StalwartReceivingToggled
+statusToolbar : Model -> Html Msg
+statusToolbar model =
+    let
+        live : LiveStatus
+        live =
+            model.liveStatus
+    in
+    div [ class "sc-toolbar" ]
+        [ refreshButton False model
+        , case live.report of
+            Just report ->
+                span [ class "sc-checked-at", title "When the server last gathered this report" ]
+                    [ text
+                        (Status.checkedAtLabel live.now report.checkedAt
+                            ++ (if isFetchingStatus live then
+                                    " · refreshing…"
+
+                                else
+                                    ""
+                               )
+                        )
+                    ]
+
+            Nothing ->
+                text ""
+        , case live.error of
+            Just err ->
+                div [ class "sc-inline-error", attribute "role" "alert" ] [ text ("Couldn't check status: " ++ err) ]
+
+            Nothing ->
+                text ""
+        ]
+
+
+refreshButton : Bool -> Model -> Html Msg
+refreshButton compact model =
+    let
+        fetching : Bool
+        fetching =
+            isFetchingStatus model.liveStatus
+    in
+    button
+        [ type_ "button"
+        , classes
+            ([ "sc-refresh", "server-details-rename-button" ]
+                ++ (if compact then
+                        [ "sc-refresh-compact" ]
+
+                    else
+                        []
+                   )
+            )
+        , onClick StatusRefreshClicked
+        , disabled fetching
+        , title "Asks each provider's own API and looks up your domains' DNS records -- this can take a few seconds"
+        ]
+        [ if fetching then
+            span [ class "sc-spinner", attribute "aria-hidden" "true" ] []
+
+          else
+            text ""
+        , text
+            (if fetching then
+                "Checking…"
+
+             else if model.liveStatus.report == Nothing then
+                "Check status"
+
+             else
+                "Refresh"
+            )
+        ]
+
+
+
+-- CHANNEL SECTIONS (SMS / EMAIL)
+
+
+{-| Everything that differs between the SMS and Email sections.
+-}
+type alias Channel =
+    { id : String
+    , glyph : String
+    , title : String
+    , blurb : String
+    , toggleLabel : String
+    , enabled : Bool
+    , onToggle : Msg
+    , toggleStatus : AccountsPanel.FormStatus
+    , providers : Maybe (List ProviderStatus)
+    , offHint : String
+    }
+
+
+{-| A channel's header (icon, title, blurb, the master toggle), its health row, and then `content`
+(the preference order and provider cards, and for Email the domains).
+-}
+channelSection : Model -> Channel -> List (Html Msg) -> Html Msg
+channelSection model channel content =
+    div
+        [ classes
+            ([ "sc-section", "sc-channel-" ++ channel.id ]
+                ++ (if isFetchingStatus model.liveStatus && model.liveStatus.report /= Nothing then
+                        [ "is-refreshing" ]
+
+                    else
+                        []
+                   )
+            )
+        ]
+        ([ div [ class "sc-section-header" ]
+            [ span [ class "sc-section-icon", attribute "aria-hidden" "true" ] [ text channel.glyph ]
+            , h3 [ class "sc-section-title" ] [ text channel.title ]
+            , span [ class "sc-master" ]
+                [ span [ class "sc-master-label" ] [ text channel.toggleLabel ]
+                , if channel.toggleStatus == AccountsPanel.Submitting then
+                    Common.switchDisplay channel.enabled
+
+                  else
+                    Common.flagSwitch channel.enabled channel.onToggle
+                ]
+            ]
+         , Common.editErrorView channel.toggleStatus
+         , p [ class "sc-section-blurb" ]
+            [ text
+                (if channel.enabled then
+                    channel.blurb
+
+                 else
+                    channel.offHint
+                )
+            ]
+         , healthRow model channel.providers
+         ]
+            ++ content
+        )
+
+
+{-| One line: a level pill, what it means, and a compact Refresh button. Shimmers while the first
+check is running; a muted "Not checked yet" before it.
+-}
+healthRow : Model -> Maybe (List ProviderStatus) -> Html Msg
+healthRow model maybeProviders =
+    div [ class "sc-health-row" ]
+        (case maybeProviders of
+            Just providers ->
+                let
+                    health : { level : StatusLevel, summary : String }
+                    health =
+                        Status.sectionHealth providers
+                in
+                [ StatusView.levelPill health.level Nothing
+                , span [ class "sc-health-summary" ] [ text health.summary ]
+                , refreshButton True model
+                ]
+
+            Nothing ->
+                if isFetchingStatus model.liveStatus then
+                    [ StatusView.shimmerPill
+                    , StatusView.shimmerLine 40
+                    ]
+
+                else
+                    [ StatusView.levelPill STATUSLEVELUNKNOWN (Just "Not checked yet")
+                    , span [ class "sc-health-summary" ]
+                        [ text
+                            (if model.liveStatus.error == Nothing then
+                                "Run a check to see how things are doing."
+
+                             else
+                                "The last check didn't finish."
                             )
-                        , Common.editErrorView model.stalwartReceivingStatus
                         ]
-
-                    _ ->
-                        [ span [ class "server-details-feature-settings-value" ] [ text "Loading…" ] ]
-               )
+                    , refreshButton True model
+                    ]
         )
 
 
-{-| "SMS Configuration" -- sibling section to "Email Configuration", holding the one "Enable SMS
-Sending" toggle (`ServerConfiguration.supportedContactProtocols`, see `toggleContactProtocol`).
-Same instant toggle-and-save shape as `emailConfigurationSection`'s own toggles -- not disabled up
-front; checking it with no Twilio/Bird/Telnyx configured comes back
-`sms_contact_protocol_requires_a_configured_provider` from `validate_configuration`, surfaced the
-same way any other save error on this page is. Only rendered once this tab's own admin fetch
-(`AdminContactIntegrationsLoaded`) has actually landed, same gate as `emailConfigurationSection`.
--}
-smsConfigurationSection : Model -> Html Msg
-smsConfigurationSection model =
-    div [ class "server-details-feature-settings" ]
-        (h3 [ class "section-title" ] [ text "SMS Configuration" ]
-            :: (case model.adminContactIntegrations of
-                    AdminContactIntegrationsLoaded config ->
-                        [ Common.settingsRow "Enable SMS Sending"
-                            (Common.flagSwitch (List.member CONTACTPROTOCOLTEL config.supportedContactProtocols) SmsContactProtocolToggled)
-                        , Common.editErrorView model.smsContactProtocolStatus
-                        ]
-
-                    _ ->
-                        [ span [ class "server-details-feature-settings-value" ] [ text "Loading…" ] ]
-               )
-        )
-
-
-{-| The collapsible "External Integrations" group -- Preferred Providers/Twilio/Bird, each always
-mounted (even while collapsed, or before/during the admin fetch) so this section's own
-`expanded`/`is-open`/`is-closed` toggle stays purely CSS-driven, per this module's own doc. Twilio
-and Bird are each their own nested collapsible inside it (`twilioSection`/`birdSection`) -- see
-`IntegrationsSection`.
--}
-externalIntegrationsSection : Model -> Maybe RellmAccount -> Html Msg
-externalIntegrationsSection model maybeAdminAccount =
-    let
-        expanded : Bool
-        expanded =
-            integrationsSectionExpanded model ExternalIntegrationsSection
-    in
-    div [ class "server-details-external-integrations" ]
-        [ h2
-            [ classes [ "expandable-section-title", "server-details-group-title" ]
-            , onClick (IntegrationsSectionToggled ExternalIntegrationsSection)
-            ]
-            [ span [ classes [ "expandable-section-arrow", openClosedClass expanded ] ] [ text "▼" ]
-            , text "External Integrations"
-            ]
-        , div
-            [ classes [ "expandable-section-content", openClosedClass expanded, "border-color-primary-anchor-50" ] ]
-            [ div [ class "expandable-section-content-inner" ]
-                (case model.adminContactIntegrations of
-                    FetchingAdminContactIntegrations ->
-                        [ span [ class "server-details-feature-settings-value" ] [ text "Loading…" ] ]
-
-                    AdminContactIntegrationsNotFetched ->
-                        [ span [ class "server-details-feature-settings-value" ] [ text "Loading…" ] ]
-
-                    AdminContactIntegrationsFetchFailed err ->
-                        [ span [ class "server-details-feature-settings-value" ] [ text ("Failed to load integration settings: " ++ err) ] ]
-
-                    AdminContactIntegrationsLoaded _ ->
-                        [ preferredProvidersSection maybeAdminAccount model.preferredProvidersEdit (adminPreferredProviders model)
-                        , telnyxSection model maybeAdminAccount
-                        , birdSection model maybeAdminAccount
-                        , twilioSection model maybeAdminAccount
-                        ]
-                )
-            ]
-        ]
-
-
-telnyxSection : Model -> Maybe RellmAccount -> Html Msg
-telnyxSection model maybeAdminAccount =
-    let
-        expanded : Bool
-        expanded =
-            integrationsSectionExpanded model TelnyxIntegrationSection
-    in
-    div [ class "server-details-feature-settings" ]
-        [ h3
-            [ classes [ "section-title", "expandable-section-title" ]
-            , onClick (IntegrationsSectionToggled TelnyxIntegrationSection)
-            ]
-            [ span [ classes [ "expandable-section-arrow", openClosedClass expanded ] ] [ text "▼" ]
-            , text "Telnyx"
-            ]
-        , div
-            [ classes [ "expandable-section-content", openClosedClass expanded, "border-color-primary-anchor-50" ] ]
-            [ div [ class "expandable-section-content-inner" ]
-                (case model.telnyxConfigEdit of
-                    Just edit ->
-                        telnyxEditView edit
-
-                    Nothing ->
-                        telnyxDisplayView maybeAdminAccount (adminTelnyxConfig model)
-                )
-            ]
-        ]
-
-
-twilioSection : Model -> Maybe RellmAccount -> Html Msg
-twilioSection model maybeAdminAccount =
-    let
-        expanded : Bool
-        expanded =
-            integrationsSectionExpanded model TwilioIntegrationSection
-    in
-    div [ class "server-details-feature-settings" ]
-        [ h3
-            [ classes [ "section-title", "expandable-section-title" ]
-            , onClick (IntegrationsSectionToggled TwilioIntegrationSection)
-            ]
-            [ span [ classes [ "expandable-section-arrow", openClosedClass expanded ] ] [ text "▼" ]
-            , text "Twilio"
-            ]
-        , div
-            [ classes [ "expandable-section-content", openClosedClass expanded, "border-color-primary-anchor-50" ] ]
-            [ div [ class "expandable-section-content-inner" ]
-                (case model.configEdit of
+smsSection : Model -> Maybe RellmAccount -> ServerConfiguration -> Html Msg
+smsSection model maybeAdminAccount config =
+    channelSection model
+        { id = "sms"
+        , glyph = Glyph.textPresentation "☎"
+        , title = "Text messages (SMS)"
+        , blurb = "Text messages for phone-number verification codes and sign-in. Providers are tried in the order below."
+        , toggleLabel = "Enable SMS Sending"
+        , enabled = List.member CONTACTPROTOCOLTEL config.supportedContactProtocols
+        , onToggle = SmsContactProtocolToggled
+        , toggleStatus = model.smsContactProtocolStatus
+        , providers = model.liveStatus.report |> Maybe.map .smsProviders
+        , offHint = "SMS is switched off, so no texts are sent. Set up a provider below, then switch it on."
+        }
+        [ orderView
+            { title = "Provider order"
+            , blurb = "The server tries these first, in this order. Any other enabled provider is a fallback (Telnyx, then Bird, then Twilio)."
+            , emptyNote = "No preference set -- the first enabled provider (Telnyx, Bird, Twilio) is used."
+            , current = config.preferredVerificationApis
+            , editing = model.preferredProvidersEdit
+            , all = allVerificationApis
+            , label = verificationApiText
+            , toMsg = SmsOrderMsg
+            , isAdmin = maybeAdminAccount /= Nothing
+            }
+        , providerCard model
+            { section = TwilioIntegrationSection
+            , name = "Twilio"
+            , tagline = "The classic SMS API"
+            , enabled = config.twilioConfig |> Maybe.map .twilioEnabled |> Maybe.withDefault False
+            , status = smsProviderStatus model "twilio"
+            , body =
+                case model.configEdit of
                     Just edit ->
                         twilioEditView edit
 
                     Nothing ->
-                        twilioDisplayView maybeAdminAccount (adminTwilioConfig model)
-                )
-            ]
-        ]
-
-
-birdSection : Model -> Maybe RellmAccount -> Html Msg
-birdSection model maybeAdminAccount =
-    let
-        expanded : Bool
-        expanded =
-            integrationsSectionExpanded model BirdIntegrationSection
-    in
-    div [ class "server-details-feature-settings" ]
-        [ h3
-            [ classes [ "section-title", "expandable-section-title" ]
-            , onClick (IntegrationsSectionToggled BirdIntegrationSection)
-            ]
-            [ span [ classes [ "expandable-section-arrow", openClosedClass expanded ] ] [ text "▼" ]
-            , text "Bird"
-            ]
-        , div
-            [ classes [ "expandable-section-content", openClosedClass expanded, "border-color-primary-anchor-50" ] ]
-            [ div [ class "expandable-section-content-inner" ]
-                (case model.birdConfigEdit of
+                        twilioDisplayView maybeAdminAccount config.twilioConfig
+            }
+        , providerCard model
+            { section = BirdIntegrationSection
+            , name = "Bird"
+            , tagline = "A cheaper alternative to Twilio"
+            , enabled = config.birdConfig |> Maybe.map .birdEnabled |> Maybe.withDefault False
+            , status = smsProviderStatus model "bird"
+            , body =
+                case model.birdConfigEdit of
                     Just edit ->
                         birdEditView edit
 
                     Nothing ->
-                        birdDisplayView maybeAdminAccount (adminBirdConfig model)
+                        birdDisplayView maybeAdminAccount config.birdConfig
+            }
+        , providerCard model
+            { section = TelnyxIntegrationSection
+            , name = "Telnyx"
+            , tagline = "Messaging profiles and a v2 API key"
+            , enabled = config.telnyxConfig |> Maybe.map .telnyxEnabled |> Maybe.withDefault False
+            , status = smsProviderStatus model "telnyx"
+            , body =
+                case model.telnyxConfigEdit of
+                    Just edit ->
+                        telnyxEditView edit
+
+                    Nothing ->
+                        telnyxDisplayView maybeAdminAccount config.telnyxConfig
+            }
+        ]
+
+
+emailSection : Model -> Maybe RellmAccount -> ServerConfiguration -> Html Msg
+emailSection model maybeAdminAccount config =
+    let
+        stalwart : Maybe Proto.Rellm.StalwartConfig
+        stalwart =
+            config.stalwartConfig
+    in
+    channelSection model
+        { id = "email"
+        , glyph = Glyph.textPresentation "✉"
+        , title = "Email"
+        , blurb = "Email for address-verification codes and sign-in. Providers are tried in the order below."
+        , toggleLabel = "Enable Email Sending"
+        , enabled = List.member CONTACTPROTOCOLMAILTO config.supportedContactProtocols
+        , onToggle = EmailContactProtocolToggled
+        , toggleStatus = model.emailContactProtocolStatus
+        , providers = model.liveStatus.report |> Maybe.map .emailProviders
+        , offHint = "Email is switched off, so no email is sent. Set up a provider below, then switch it on."
+        }
+        [ orderView
+            { title = "Provider order"
+            , blurb = "The server tries these first, in this order. Any other enabled provider is a fallback (Postmark, SendGrid, Mailgun, then Stalwart)."
+            , emptyNote = "No preference set -- the first enabled provider (Postmark, SendGrid, Mailgun, Stalwart) is used."
+            , current = config.preferredEmailApis
+            , editing = model.preferredEmailProvidersEdit
+            , all = allEmailApis
+            , label = emailApiText
+            , toMsg = EmailOrderMsg
+            , isAdmin = maybeAdminAccount /= Nothing
+            }
+        , providerCard model
+            { section = PostmarkIntegrationSection
+            , name = "Postmark"
+            , tagline = "Transactional email API"
+            , enabled = config.postmarkConfig |> Maybe.map .postmarkEnabled |> Maybe.withDefault False
+            , status = emailProviderStatus model "postmark"
+            , body =
+                case model.postmarkEdit of
+                    Just edit ->
+                        postmarkEditView edit
+
+                    Nothing ->
+                        postmarkDisplayView maybeAdminAccount config.postmarkConfig
+            }
+        , providerCard model
+            { section = SendgridIntegrationSection
+            , name = "SendGrid"
+            , tagline = "Twilio SendGrid's v3 Mail Send API"
+            , enabled = config.sendgridConfig |> Maybe.map .sendgridEnabled |> Maybe.withDefault False
+            , status = emailProviderStatus model "sendgrid"
+            , body =
+                case model.sendgridEdit of
+                    Just edit ->
+                        sendgridEditView edit
+
+                    Nothing ->
+                        sendgridDisplayView maybeAdminAccount config.sendgridConfig
+            }
+        , providerCard model
+            { section = MailgunIntegrationSection
+            , name = "Mailgun"
+            , tagline = "Messages API with a sending domain"
+            , enabled = config.mailgunConfig |> Maybe.map .mailgunEnabled |> Maybe.withDefault False
+            , status = emailProviderStatus model "mailgun"
+            , body =
+                case model.mailgunEdit of
+                    Just edit ->
+                        mailgunEditView edit
+
+                    Nothing ->
+                        mailgunDisplayView maybeAdminAccount config.mailgunConfig
+            }
+        , providerCard model
+            { section = StalwartIntegrationSection
+            , name = "Stalwart"
+            , tagline = "Your own in-cluster mail server"
+            , enabled = (stalwart |> Maybe.map .stalwartSendingEnabled |> Maybe.withDefault False) || (stalwart |> Maybe.map .stalwartReceivingEnabled |> Maybe.withDefault False)
+            , status = emailProviderStatus model "stalwart"
+            , body =
+                stalwartReceivingRows model stalwart
+                    ++ (case model.stalwartEdit of
+                            Just edit ->
+                                stalwartEditView edit
+
+                            Nothing ->
+                                stalwartDisplayView maybeAdminAccount stalwart
+                       )
+            }
+        , emailDomainsView model config
+        ]
+
+
+smsProviderStatus : Model -> String -> Maybe ProviderStatus
+smsProviderStatus model provider =
+    model.liveStatus.report |> Maybe.andThen (\report -> Status.findProvider provider report.smsProviders)
+
+
+emailProviderStatus : Model -> String -> Maybe ProviderStatus
+emailProviderStatus model provider =
+    model.liveStatus.report |> Maybe.andThen (\report -> Status.findProvider provider report.emailProviders)
+
+
+
+-- PROVIDER ORDER
+
+
+type alias OrderView api =
+    { title : String
+    , blurb : String
+    , emptyNote : String
+    , current : List api
+    , editing : Maybe (OrderEdit api)
+    , all : List api
+    , label : api -> String
+    , toMsg : OrderMsg -> Msg
+    , isAdmin : Bool
+    }
+
+
+{-| The provider preference order: numbered chips when displaying, an editor with move-up/move-down/
+remove buttons, an Add dropdown and Save/Cancel while editing (`ProviderOrder` has the list logic).
+-}
+orderView : OrderView api -> Html Msg
+orderView config =
+    case config.editing of
+        Just edit ->
+            let
+                busy : Bool
+                busy =
+                    edit.status == AccountsPanel.Submitting
+            in
+            div [ classes [ "sc-order", "sc-order-editing" ] ]
+                [ h4 [ class "sc-order-title" ] [ text config.title ]
+                , p [ class "sc-order-blurb" ] [ text config.blurb ]
+                , if List.isEmpty edit.pending then
+                    p [ class "sc-muted" ] [ text config.emptyNote ]
+
+                  else
+                    Html.ol [ class "sc-order-list" ]
+                        (edit.pending
+                            |> List.indexedMap
+                                (\index api ->
+                                    Html.li [ class "sc-order-item" ]
+                                        [ span [ class "sc-order-num" ] [ text (String.fromInt (index + 1)) ]
+                                        , span [ class "sc-order-label" ] [ text (config.label api) ]
+                                        , span [ class "sc-order-actions" ]
+                                            [ orderButton "↑" "Move up" (config.toMsg (OrderMoveUpClicked index)) (busy || index == 0)
+                                            , orderButton "↓" "Move down" (config.toMsg (OrderMoveDownClicked index)) (busy || index == List.length edit.pending - 1)
+                                            , orderButton "✕" ("Remove " ++ config.label api) (config.toMsg (OrderRemoveClicked index)) busy
+                                            ]
+                                        ]
+                                )
+                        )
+                , div [ class "sc-order-add" ]
+                    [ select
+                        [ onInput (OrderAddSelectionChanged >> config.toMsg)
+                        , disabled (busy || List.isEmpty (ProviderOrder.addable config.all edit.pending))
+                        , attribute "aria-label" "Provider to add"
+                        ]
+                        (ProviderOrder.addable config.all edit.pending
+                            |> List.map
+                                (\api ->
+                                    option
+                                        [ value (orderKey config.all api)
+                                        , selected (edit.addSelection == Just api)
+                                        ]
+                                        [ text (config.label api) ]
+                                )
+                        )
+                    , button
+                        [ type_ "button"
+                        , class "server-details-rename-button"
+                        , onClick (config.toMsg OrderAddClicked)
+                        , disabled (edit.addSelection == Nothing || busy)
+                        ]
+                        [ text "Add provider" ]
+                    ]
+                , div [ class "server-details-feature-settings-actions" ]
+                    [ Common.editSaveButton (config.toMsg OrderSaveClicked) edit.status
+                    , Common.editCancelButton (config.toMsg OrderCancelClicked) edit.status
+                    ]
+                , Common.editErrorView edit.status
+                ]
+
+        Nothing ->
+            div [ class "sc-order" ]
+                [ div [ class "sc-order-head" ]
+                    [ h4 [ class "sc-order-title" ] [ text config.title ]
+                    , if config.isAdmin then
+                        button [ type_ "button", class "server-details-rename-button", onClick (config.toMsg OrderEditClicked) ] [ text "Change order" ]
+
+                      else
+                        text ""
+                    ]
+                , p [ class "sc-order-blurb" ] [ text config.blurb ]
+                , if List.isEmpty config.current then
+                    p [ class "sc-muted" ] [ text config.emptyNote ]
+
+                  else
+                    Html.ol [ class "sc-order-list" ]
+                        (config.current
+                            |> List.indexedMap
+                                (\index api ->
+                                    Html.li [ class "sc-order-item" ]
+                                        [ span [ class "sc-order-num" ] [ text (String.fromInt (index + 1)) ]
+                                        , span [ class "sc-order-label" ] [ text (config.label api) ]
+                                        ]
+                                )
+                        )
+                ]
+
+
+orderButton : String -> String -> Msg -> Bool -> Html Msg
+orderButton glyph label msg isDisabled =
+    button
+        [ type_ "button"
+        , class "sc-icon-button"
+        , title label
+        , attribute "aria-label" label
+        , onClick msg
+        , disabled isDisabled
+        ]
+        [ text glyph ]
+
+
+
+-- PROVIDER CARDS
+
+
+type alias Card =
+    { section : ProviderSection
+    , name : String
+    , tagline : String
+    , enabled : Bool
+    , status : Maybe ProviderStatus
+    , body : List (Html Msg)
+    }
+
+
+{-| One collapsible provider card: header (arrow, name, tagline, level pill), then -- always mounted,
+folded by CSS -- its live status block above its configuration rows.
+-}
+providerCard : Model -> Card -> Html Msg
+providerCard model card =
+    let
+        expanded : Bool
+        expanded =
+            providerSectionExpanded model card.section
+
+        live : LiveStatus
+        live =
+            model.liveStatus
+
+        level : StatusLevel
+        level =
+            case card.status of
+                Just status ->
+                    status.level
+
+                Nothing ->
+                    STATUSLEVELDISABLED
+    in
+    div [ classes [ "sc-card", "sc-level-" ++ Status.levelKey level ] ]
+        [ button
+            [ type_ "button"
+            , class "sc-card-header"
+            , onClick (ProviderSectionToggled card.section)
+            , attribute "aria-expanded"
+                (if expanded then
+                    "true"
+
+                 else
+                    "false"
+                )
+            ]
+            [ span [ classes [ "expandable-section-arrow", openClosedClass expanded ] ] [ text "▼" ]
+            , span [ class "sc-card-title" ]
+                [ span [ class "sc-card-name" ] [ text card.name ]
+                , span [ class "sc-card-tagline" ] [ text card.tagline ]
+                ]
+            , span [ class "sc-card-state" ]
+                [ case card.status of
+                    Just status ->
+                        StatusView.levelPill status.level Nothing
+
+                    Nothing ->
+                        if isFetchingStatus live && live.report == Nothing then
+                            StatusView.shimmerPill
+
+                        else
+                            span
+                                [ classes
+                                    [ "sc-badge"
+                                    , if card.enabled then
+                                        "sc-badge-on"
+
+                                      else
+                                        "sc-badge-off"
+                                    ]
+                                ]
+                                [ text
+                                    (if card.enabled then
+                                        "On"
+
+                                     else
+                                        "Off"
+                                    )
+                                ]
+                ]
+            ]
+        , div [ classes [ "sc-collapse", openClosedClass expanded ] ]
+            [ div [ class "sc-card-body" ]
+                (case card.status of
+                    Just status ->
+                        StatusView.providerStatusBlock statusHandlers model.toggledChecks (statusKey card.section) status
+                            :: card.body
+
+                    Nothing ->
+                        if isFetchingStatus live && live.report == Nothing then
+                            div [ class "sc-status-block" ] [ StatusView.shimmerLine 70, StatusView.shimmerLine 45 ]
+                                :: card.body
+
+                        else
+                            card.body
                 )
             ]
         ]
+
+
+statusKey : ProviderSection -> String
+statusKey section =
+    "provider/" ++ providerSectionKey section
+
+
+
+-- EMAIL DOMAINS
+
+
+{-| The "Email domains" subsection of the Email section: SPF/DKIM/DMARC state per sending domain
+(from the live report), with a friendly empty state while no email provider is set up.
+-}
+emailDomainsView : Model -> ServerConfiguration -> Html Msg
+emailDomainsView model config =
+    let
+        anyProviderOn : Bool
+        anyProviderOn =
+            (config.postmarkConfig |> Maybe.map .postmarkEnabled |> Maybe.withDefault False)
+                || (config.sendgridConfig |> Maybe.map .sendgridEnabled |> Maybe.withDefault False)
+                || (config.mailgunConfig |> Maybe.map .mailgunEnabled |> Maybe.withDefault False)
+                || (config.stalwartConfig |> Maybe.map .stalwartSendingEnabled |> Maybe.withDefault False)
+    in
+    div [ class "sc-domains-section" ]
+        [ h4 [ class "sc-subsection-title" ] [ text "Email domains" ]
+        , p [ class "sc-order-blurb" ]
+            [ text "Mailbox providers like Gmail and Outlook check your sending domain's SPF, DKIM and DMARC records before trusting mail from it." ]
+        , if not anyProviderOn then
+            StatusView.domainsSection statusHandlers model.toggledChecks model.copied Proto.Rellm.defaultContactIntegrationsStatus
+
+          else
+            case model.liveStatus.report of
+                Just report ->
+                    StatusView.domainsSection statusHandlers model.toggledChecks model.copied report
+
+                Nothing ->
+                    if isFetchingStatus model.liveStatus then
+                        div [ class "sc-domain-card" ] [ StatusView.shimmerLine 40, StatusView.shimmerLine 85, StatusView.shimmerLine 60 ]
+
+                    else
+                        div [ class "sc-empty" ]
+                            [ span [ class "sc-empty-text" ] [ text "Run a status check to see your domains' SPF, DKIM and DMARC records." ] ]
+        ]
+
+
+
+-- SIGN-IN & SIGN-UP
+
+
+{-| "Sign in & sign up": which ways people may create an account or log in. The SMS/email switches
+only work once their channel is enabled (and stay editable if one is already on, so it can be
+turned off); password sign-in/sign-up always work for now (`authentication_features`' proto doc), so
+those two are shown on and locked.
+-}
+signInSection : Model -> ServerConfiguration -> Html Msg
+signInSection model config =
+    let
+        smsOn : Bool
+        smsOn =
+            List.member CONTACTPROTOCOLTEL config.supportedContactProtocols
+
+        emailOn : Bool
+        emailOn =
+            List.member CONTACTPROTOCOLMAILTO config.supportedContactProtocols
+
+        authSwitch : Bool -> AuthenticationFeature -> Html Msg
+        authSwitch channelOn feature =
+            let
+                on : Bool
+                on =
+                    List.member feature config.authenticationFeatures
+            in
+            if model.authFeaturesStatus == AccountsPanel.Submitting || (not channelOn && not on) then
+                Common.switchDisplay on
+
+            else
+                Common.flagSwitch on (AuthFeatureToggled feature)
+
+        authRow : String -> String -> Html Msg -> Html Msg -> Html Msg
+        authRow label note signUp signIn =
+            div [ class "sc-auth-row" ]
+                [ div [ class "sc-auth-what" ]
+                    [ span [ class "sc-auth-label" ] [ text label ]
+                    , span [ class "sc-auth-note" ] [ text note ]
+                    ]
+                , span [ class "sc-auth-cell" ] [ signUp ]
+                , span [ class "sc-auth-cell" ] [ signIn ]
+                ]
+    in
+    div [ classes [ "sc-section", "sc-channel-auth" ] ]
+        [ div [ class "sc-section-header" ]
+            [ span [ class "sc-section-icon", attribute "aria-hidden" "true" ] [ text "→" ]
+            , h3 [ class "sc-section-title" ] [ text "Sign in & sign up" ]
+            ]
+        , p [ class "sc-section-blurb" ]
+            [ text "Choose how people can create an account and sign in. To use a phone number or email address to sign in, a person first has to verify it -- we send a code and they enter it -- so they'll need to add and verify it under Contact Methods on their profile." ]
+        , div [ class "sc-auth-grid" ]
+            [ div [ class "sc-auth-row sc-auth-head" ]
+                [ span [ class "sc-auth-what" ] []
+                , span [ class "sc-auth-cell" ] [ text "Sign up" ]
+                , span [ class "sc-auth-cell" ] [ text "Sign in" ]
+                ]
+            , authRow "Password"
+                "Always allowed for now."
+                (Common.switchDisplay True)
+                (Common.switchDisplay True)
+            , authRow "Text message (SMS)"
+                (if smsOn then
+                    "A code sent to a verified phone number."
+
+                 else
+                    "Enable SMS sending below first."
+                )
+                (authSwitch smsOn CREATEACCOUNTWITHSMS)
+                (authSwitch smsOn LOGINWITHSMS)
+            , authRow "Email"
+                (if emailOn then
+                    "A code sent to a verified email address."
+
+                 else
+                    "Enable email sending below first."
+                )
+                (authSwitch emailOn CREATEACCOUNTWITHEMAIL)
+                (authSwitch emailOn LOGINWITHEMAIL)
+            ]
+        , Common.editErrorView model.authFeaturesStatus
+        ]
+
+
+
+-- WEB PUSH
+
+
+{-| Mirrors `FederationTab`'s old `facebookAuthConfigSection`: the read-only Public VAPID key
+(needed by any browser calling `pushManager.subscribe`, see `Shared.AccountsPanel`'s "Enable
+notifications") is shown to everyone, same as Facebook's App ID; the Private VAPID key (needed only
+to sign outgoing pushes, see `backend/src/web_push`) is admin-only, same as Facebook's App Secret.
+-}
+webPushSection : RellmServer -> Model -> Maybe RellmAccount -> Html Msg
+webPushSection server model maybeAdminAccount =
+    let
+        currentPublicKey : String
+        currentPublicKey =
+            (RellmServers.configurationOf server).webPushConfig
+                |> Maybe.map .publicVapidKey
+                |> Maybe.withDefault ""
+    in
+    div [ classes [ "sc-section", "sc-channel-webpush", "server-details-facebook-auth" ] ]
+        (div [ class "sc-section-header" ]
+            [ span [ class "sc-section-icon", attribute "aria-hidden" "true" ] [ text "•" ]
+            , h3 [ class "sc-section-title" ] [ text "Web Push" ]
+            ]
+            :: p [ class "sc-section-blurb" ] [ text "The VAPID key pair browsers use to receive push notifications from this server." ]
+            :: webPushPublicKeyRow currentPublicKey model.webPushPublicKeyEdit maybeAdminAccount
+            :: (case maybeAdminAccount of
+                    Just _ ->
+                        [ webPushPrivateKeyRow model.webPushPrivateKeyEdit maybeAdminAccount ]
+
+                    Nothing ->
+                        []
+               )
+        )
+
+
+
+-- PROVIDER FORMS (new providers)
+
+
+fieldRow :
+    { label : String
+    , placeholder : String
+    , value : String
+    , onInput : String -> Msg
+    , secret : Bool
+    , busy : Bool
+    , note : Maybe String
+    }
+    -> Html Msg
+fieldRow config =
+    div [ class "sc-field" ]
+        [ Common.settingsRow config.label
+            (input
+                [ type_
+                    (if config.secret then
+                        "password"
+
+                     else
+                        "text"
+                    )
+                , class "server-details-rename-input"
+                , placeholder config.placeholder
+                , value config.value
+                , onInput config.onInput
+                , disabled config.busy
+                , attribute "autocomplete" "off"
+                ]
+                []
+            )
+        , case config.note of
+            Just note ->
+                Common.settingsNote note
+
+            Nothing ->
+                text ""
+        ]
+
+
+secretRow : String -> String -> Bool -> (String -> Msg) -> String -> Html Msg
+secretRow label note busy toMsg current =
+    fieldRow
+        { label = label
+        , placeholder = "Leave blank to keep the current one"
+        , value = current
+        , onInput = toMsg
+        , secret = True
+        , busy = busy
+        , note =
+            if String.isEmpty note then
+                Nothing
+
+            else
+                Just note
+        }
+
+
+textRow : String -> String -> Bool -> (String -> Msg) -> String -> Html Msg
+textRow label placeholder_ busy toMsg current =
+    fieldRow { label = label, placeholder = placeholder_, value = current, onInput = toMsg, secret = False, busy = busy, note = Nothing }
+
+
+regionRow : String -> List ( String, String ) -> String -> Bool -> (String -> Msg) -> Html Msg
+regionRow label options current busy toMsg =
+    Common.settingsRow label
+        (select [ onInput toMsg, disabled busy ]
+            (options
+                |> List.map
+                    (\( optionValue, optionLabel ) ->
+                        option [ value optionValue, selected (current == optionValue) ] [ text optionLabel ]
+                    )
+            )
+        )
+
+
+valueText : String -> Html msg
+valueText content =
+    span [ class "server-details-feature-settings-value" ]
+        [ text
+            (if String.isEmpty content then
+                "—"
+
+             else
+                content
+            )
+        ]
+
+
+fromLine : String -> String -> String
+fromLine name address =
+    if String.isEmpty address then
+        ""
+
+    else if String.isEmpty name then
+        address
+
+    else
+        name ++ " <" ++ address ++ ">"
+
+
+editButton : Maybe RellmAccount -> Msg -> String -> Html Msg
+editButton maybeAdminAccount msg label =
+    case maybeAdminAccount of
+        Just _ ->
+            button [ type_ "button", class "server-details-rename-button", onClick msg ] [ text label ]
+
+        Nothing ->
+            text ""
+
+
+formActions : Msg -> Msg -> AccountsPanel.FormStatus -> List (Html Msg)
+formActions onSave onCancel status =
+    [ div [ class "server-details-feature-settings-actions" ]
+        [ Common.editSaveButton onSave status
+        , Common.editCancelButton onCancel status
+        ]
+    , Common.editErrorView status
+    ]
+
+
+postmarkDisplayView : Maybe RellmAccount -> Maybe Proto.Rellm.PostmarkConfig -> List (Html Msg)
+postmarkDisplayView maybeAdminAccount maybeConfig =
+    let
+        config : Proto.Rellm.PostmarkConfig
+        config =
+            Maybe.withDefault Proto.Rellm.defaultPostmarkConfig maybeConfig
+    in
+    [ Common.settingsRow "Postmark Enabled" (Common.switchDisplay config.postmarkEnabled)
+    , Common.settingsRow "From" (valueText (fromLine config.postmarkFromName config.postmarkFromAddress))
+    , Common.settingsRow "Message Stream" (valueText (if String.isEmpty config.postmarkMessageStream then "outbound (default)" else config.postmarkMessageStream))
+    , editButton maybeAdminAccount PostmarkEditClicked "Edit Postmark Settings"
+    ]
+
+
+postmarkEditView : Editing PostmarkForm -> List (Html Msg)
+postmarkEditView edit =
+    let
+        busy : Bool
+        busy =
+            edit.status == AccountsPanel.Submitting
+
+        form : PostmarkForm
+        form =
+            edit.form
+    in
+    [ Common.settingsRow "Postmark Enabled" (Common.flagSwitch form.enabled PostmarkEnabledToggled)
+    , secretRow "Server API Token" "Sent as X-Postmark-Server-Token." busy (PostmarkFieldChanged PostmarkServerToken) form.serverToken
+    , secretRow "Account API Token" "Optional. Only used to read your domains' DKIM and Return-Path status for the health check." busy (PostmarkFieldChanged PostmarkAccountToken) form.accountToken
+    , textRow "From Address" "login@example.com" busy (PostmarkFieldChanged PostmarkFromAddress) form.fromAddress
+    , textRow "From Name" "Example (optional)" busy (PostmarkFieldChanged PostmarkFromName) form.fromName
+    , textRow "Message Stream" "outbound" busy (PostmarkFieldChanged PostmarkMessageStream) form.messageStream
+    ]
+        ++ formActions PostmarkSaveClicked PostmarkCancelClicked edit.status
+
+
+sendgridDisplayView : Maybe RellmAccount -> Maybe Proto.Rellm.SendgridConfig -> List (Html Msg)
+sendgridDisplayView maybeAdminAccount maybeConfig =
+    let
+        config : Proto.Rellm.SendgridConfig
+        config =
+            Maybe.withDefault Proto.Rellm.defaultSendgridConfig maybeConfig
+    in
+    [ Common.settingsRow "SendGrid Enabled" (Common.switchDisplay config.sendgridEnabled)
+    , Common.settingsRow "From" (valueText (fromLine config.sendgridFromName config.sendgridFromAddress))
+    , Common.settingsRow "Region" (valueText (if config.sendgridRegion == "eu" then "EU" else "Global (default)"))
+    , editButton maybeAdminAccount SendgridEditClicked "Edit SendGrid Settings"
+    ]
+
+
+sendgridEditView : Editing SendgridForm -> List (Html Msg)
+sendgridEditView edit =
+    let
+        busy : Bool
+        busy =
+            edit.status == AccountsPanel.Submitting
+
+        form : SendgridForm
+        form =
+            edit.form
+    in
+    [ Common.settingsRow "SendGrid Enabled" (Common.flagSwitch form.enabled SendgridEnabledToggled)
+    , secretRow "API Key" "Needs \"Mail Send\"; add \"Domain Authentication\" and \"Stats\" read access to light up the health check." busy (SendgridFieldChanged SendgridApiKey) form.apiKey
+    , textRow "From Address" "login@example.com" busy (SendgridFieldChanged SendgridFromAddress) form.fromAddress
+    , textRow "From Name" "Example (optional)" busy (SendgridFieldChanged SendgridFromName) form.fromName
+    , regionRow "Region" [ ( "", "Global (api.sendgrid.com)" ), ( "eu", "EU (api.eu.sendgrid.com)" ) ] form.region busy (SendgridFieldChanged SendgridRegion)
+    ]
+        ++ formActions SendgridSaveClicked SendgridCancelClicked edit.status
+
+
+mailgunDisplayView : Maybe RellmAccount -> Maybe Proto.Rellm.MailgunConfig -> List (Html Msg)
+mailgunDisplayView maybeAdminAccount maybeConfig =
+    let
+        config : Proto.Rellm.MailgunConfig
+        config =
+            Maybe.withDefault Proto.Rellm.defaultMailgunConfig maybeConfig
+    in
+    [ Common.settingsRow "Mailgun Enabled" (Common.switchDisplay config.mailgunEnabled)
+    , Common.settingsRow "Sending Domain" (valueText config.mailgunDomain)
+    , Common.settingsRow "From" (valueText (fromLine config.mailgunFromName config.mailgunFromAddress))
+    , Common.settingsRow "Region" (valueText (if config.mailgunRegion == "eu" then "EU" else "US (default)"))
+    , editButton maybeAdminAccount MailgunEditClicked "Edit Mailgun Settings"
+    ]
+
+
+mailgunEditView : Editing MailgunForm -> List (Html Msg)
+mailgunEditView edit =
+    let
+        busy : Bool
+        busy =
+            edit.status == AccountsPanel.Submitting
+
+        form : MailgunForm
+        form =
+            edit.form
+    in
+    [ Common.settingsRow "Mailgun Enabled" (Common.flagSwitch form.enabled MailgunEnabledToggled)
+    , secretRow "API Key" "" busy (MailgunFieldChanged MailgunApiKey) form.apiKey
+    , textRow "Sending Domain" "mg.example.com" busy (MailgunFieldChanged MailgunDomain) form.domain
+    , regionRow "Region" [ ( "us", "US (api.mailgun.net)" ), ( "eu", "EU (api.eu.mailgun.net)" ) ] (if form.region == "" then "us" else form.region) busy (MailgunFieldChanged MailgunRegion)
+    , textRow "From Address" "login@mg.example.com" busy (MailgunFieldChanged MailgunFromAddress) form.fromAddress
+    , textRow "From Name" "Example (optional)" busy (MailgunFieldChanged MailgunFromName) form.fromName
+    ]
+        ++ formActions MailgunSaveClicked MailgunCancelClicked edit.status
+
+
+{-| Stalwart's instant "receiving" toggle -- separate from the sending form below it, and only ever
+touching `stalwartReceivingEnabled` (see `EmailEdits.toggleStalwartReceiving`).
+-}
+stalwartReceivingRows : Model -> Maybe Proto.Rellm.StalwartConfig -> List (Html Msg)
+stalwartReceivingRows model maybeConfig =
+    [ Common.settingsRow "Receive Emails from Stalwart"
+        (if model.stalwartReceivingStatus == AccountsPanel.Submitting then
+            Common.switchDisplay (maybeConfig |> Maybe.map .stalwartReceivingEnabled |> Maybe.withDefault False)
+
+         else
+            Common.flagSwitch (maybeConfig |> Maybe.map .stalwartReceivingEnabled |> Maybe.withDefault False) StalwartReceivingToggled
+        )
+    , Common.settingsNote "Lets a Stalwart server in this cluster hand incoming mail to Rellm (its MTA hook, on the internal :27705/email endpoint)."
+    , Common.editErrorView model.stalwartReceivingStatus
+    ]
+
+
+stalwartDisplayView : Maybe RellmAccount -> Maybe Proto.Rellm.StalwartConfig -> List (Html Msg)
+stalwartDisplayView maybeAdminAccount maybeConfig =
+    let
+        config : Proto.Rellm.StalwartConfig
+        config =
+            Maybe.withDefault Proto.Rellm.defaultStalwartConfig maybeConfig
+    in
+    [ Common.settingsRow "Sending Enabled" (Common.switchDisplay config.stalwartSendingEnabled)
+    , Common.settingsRow "SMTP Server"
+        (valueText
+            (if String.isEmpty config.stalwartSmtpHost then
+                ""
+
+             else
+                config.stalwartSmtpHost ++ ":" ++ String.fromInt (if config.stalwartSmtpPort == 0 then 587 else config.stalwartSmtpPort)
+            )
+        )
+    , Common.settingsRow "SMTP Username" (valueText config.stalwartSmtpUsername)
+    , Common.settingsRow "From" (valueText (fromLine config.stalwartFromName config.stalwartFromAddress))
+    , Common.settingsRow "Management URL" (valueText config.stalwartManagementUrl)
+    , editButton maybeAdminAccount StalwartEditClicked "Edit Sending Settings"
+    ]
+
+
+stalwartEditView : Editing StalwartForm -> List (Html Msg)
+stalwartEditView edit =
+    let
+        busy : Bool
+        busy =
+            edit.status == AccountsPanel.Submitting
+
+        form : StalwartForm
+        form =
+            edit.form
+    in
+    [ Common.settingsRow "Sending Enabled" (Common.flagSwitch form.sendingEnabled StalwartSendingToggled)
+    , textRow "SMTP Host" "stalwart.email.svc.cluster.local" busy (StalwartFieldChanged StalwartSmtpHost) form.smtpHost
+    , textRow "SMTP Port" "587" busy (StalwartFieldChanged StalwartSmtpPort) form.smtpPort
+    , textRow "SMTP Username" "rellm" busy (StalwartFieldChanged StalwartSmtpUsername) form.smtpUsername
+    , secretRow "SMTP Password" "" busy (StalwartFieldChanged StalwartSmtpPassword) form.smtpPassword
+    , textRow "From Address" "login@example.com" busy (StalwartFieldChanged StalwartFromAddress) form.fromAddress
+    , textRow "From Name" "Example (optional)" busy (StalwartFieldChanged StalwartFromName) form.fromName
+    , textRow "Management URL" "http://stalwart.email.svc.cluster.local:8080" busy (StalwartFieldChanged StalwartManagementUrl) form.managementUrl
+    , secretRow "Management Token" "Optional. Read-only access for queue depth, DNS records and DMARC reports in the health check." busy (StalwartFieldChanged StalwartManagementToken) form.managementToken
+    ]
+        ++ formActions StalwartSaveClicked StalwartCancelClicked edit.status
+
+
+-- SMS PROVIDER FORMS (Telnyx/Twilio/Bird) AND WEB PUSH ROWS
 
 
 telnyxDisplayView : Maybe RellmAccount -> Maybe TelnyxConfig -> List (Html Msg)
@@ -1625,7 +2915,7 @@ emptyToNothing str =
         Just str
 
 
-{-| A "⚠️" warning (with hover title text) shown next to a provider's "Use Webhook Signing Key"
+{-| A "▲" warning (with hover title text) shown next to a provider's "Use Webhook Signing Key"
 display row when that toggle is off (see `TwilioConfig.use_twilio_webhook_signing_key`'s own proto
 doc: `false` means inbound deliveries to that provider's `/contact_integrations/*/receive` endpoint
 are accepted without signature verification, per `docs/contact_integrations.md`). Driven purely by
@@ -1643,103 +2933,7 @@ webhookSigningKeyWarning useWebhookSigningKey =
             [ class "server-details-webhook-signing-key-warning"
             , title "Webhook signing key verification is off -- inbound deliveries to this provider's receive endpoint are accepted without signature verification. See docs/contact_integrations.md."
             ]
-            [ text " ⚠️" ]
-
-
-{-| The "Preferred Verification Providers" selector -- plain badges (plus an Edit button, for an
-admin) when not being edited, or the removable-badges + Add Provider + Save/Cancel editor while
-being edited. Mirrors `SettingsTab.permissionsSection` exactly (see module doc).
--}
-preferredProvidersSection : Maybe RellmAccount -> Maybe PreferredProvidersEdit -> List ContactVerificationAPI -> Html Msg
-preferredProvidersSection maybeAdminAccount maybeEdit preferred =
-    case maybeEdit of
-        Just edit ->
-            div [ class "server-details-permissions server-details-permissions-edit" ]
-                [ h3 [ class "section-title" ] [ text "Preferred Verification Providers" ]
-                , div [ class "permission-badges" ] (edit.pending |> List.map preferredProviderEditBadge)
-                , div [ class "server-details-permissions-add" ]
-                    [ select [ onInput PreferredProviderAddSelectionChanged ]
-                        (addablePreferredProviders edit.pending
-                            |> List.map
-                                (\api ->
-                                    option
-                                        [ value (verificationApiText api)
-                                        , selected (edit.addSelection == Just api)
-                                        ]
-                                        [ text (verificationApiText api) ]
-                                )
-                        )
-                    , button
-                        [ class "server-details-rename-button"
-                        , onClick PreferredProviderAddClicked
-                        , disabled (edit.addSelection == Nothing || edit.status == AccountsPanel.Submitting)
-                        ]
-                        [ text "Add Provider" ]
-                    ]
-                , div [ class "server-details-permissions-actions" ]
-                    [ Common.editSaveButton PreferredProvidersSaveClicked edit.status
-                    , Common.editCancelButton PreferredProvidersCancelClicked edit.status
-                    ]
-                , Common.editErrorView edit.status
-                ]
-
-        Nothing ->
-            div [ class "server-details-permissions" ]
-                [ h3 [ class "section-title" ] [ text "Preferred Verification Providers" ]
-                , if List.isEmpty preferred then
-                    Html.p [] [ text "None set - falls back to whichever provider is enabled (Telnyx first, then Bird, then Twilio)." ]
-
-                  else
-                    div [ class "permission-badges" ]
-                        (preferred |> List.map (\api -> span [ class "permission-badge" ] [ text (verificationApiText api) ]))
-                , case maybeAdminAccount of
-                    Just _ ->
-                        button [ class "server-details-rename-button", onClick PreferredProvidersEditClicked ] [ text "Edit Preferred Providers" ]
-
-                    Nothing ->
-                        text ""
-                ]
-
-
-preferredProviderEditBadge : ContactVerificationAPI -> Html Msg
-preferredProviderEditBadge api =
-    span [ class "permission-badge editable" ]
-        [ text (verificationApiText api)
-        , button
-            [ class "permission-remove"
-            , onClick (PreferredProviderRemoveClicked api)
-            , Html.Attributes.title ("Remove " ++ verificationApiText api)
-            ]
-            [ text "×" ]
-        ]
-
-
-{-| Mirrors `FederationTab`'s old `facebookAuthConfigSection`: the read-only Public VAPID key
-(needed by any browser calling `pushManager.subscribe`, see `Shared.AccountsPanel`'s "Enable
-notifications") is shown to everyone, same as Facebook's App ID; the Private VAPID key (needed only
-to sign outgoing pushes, see `backend/src/web_push`) is admin-only, same as Facebook's App Secret.
--}
-webPushConfigSection : RellmServer -> Model -> Maybe RellmAccount -> Html Msg
-webPushConfigSection server model maybeAdminAccount =
-    let
-        currentPublicKey : String
-        currentPublicKey =
-            (RellmServers.configurationOf server).webPushConfig
-                |> Maybe.map .publicVapidKey
-                |> Maybe.withDefault ""
-    in
-    div [ class "server-details-facebook-auth" ]
-        (h3 [ class "section-title" ] [ text "Web Push Configuration" ]
-            :: webPushPublicKeyRow currentPublicKey model.webPushPublicKeyEdit maybeAdminAccount
-            :: (case maybeAdminAccount of
-                    Just _ ->
-                        [ webPushPrivateKeyRow model.webPushPrivateKeyEdit maybeAdminAccount ]
-
-                    Nothing ->
-                        []
-               )
-        )
-
+            [ text " ▲" ]
 
 webPushPublicKeyRow : String -> Maybe TextFieldEdit -> Maybe RellmAccount -> Html Msg
 webPushPublicKeyRow currentPublicKey maybeEdit maybeAdminAccount =

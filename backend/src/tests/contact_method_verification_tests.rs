@@ -92,7 +92,7 @@ mod update_user_contact_methods {
         conn.test_transaction::<_, tonic::Status, _>(|conn| {
             // Twilio enabled directly, but `supported_contact_protocols` deliberately left unset
             // -- mirrors an admin having entered Twilio credentials without (yet, or anymore)
-            // checking "Enable SMS Sending" on `ContactIntegrationsTab.elm`. `supported_by_server`
+            // checking "Enable SMS Sending" on `SignInAndContactTab.elm`. `supported_by_server`
             // must be false: `contact_protocol_supported` (not the raw `twilio_enabled` flag) is
             // the actual gate, per `ContactMethod.supported_by_server`'s own proto doc.
             let mut new_config = models::default_server_configuration();

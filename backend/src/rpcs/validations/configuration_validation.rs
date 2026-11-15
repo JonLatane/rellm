@@ -121,7 +121,7 @@ pub fn validate_configuration(config: &ServerConfiguration) -> Result<(), Status
     // "Enable SMS Sending" without a configured provider, or "Enable Email Sending" without an
     // enabled email provider, gets a clear rejection back on save rather than a silent no-op.
     // Checked against the provider configs from this *same* request (not whatever's currently
-    // stored) -- `ContactIntegrationsTab.elm` always resends the whole config it has loaded, so a
+    // stored) -- `SignInAndContactTab.elm` always resends the whole config it has loaded, so a
     // request that both disables an admin's only provider and still claims `CONTACT_PROTOCOL_TEL`
     // (or `_MAILTO`) is exactly the case this must catch.
     let sms_provider_enabled = config.twilio_config.as_ref().is_some_and(|c| c.twilio_enabled)

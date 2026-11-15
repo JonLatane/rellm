@@ -69,7 +69,7 @@ pub fn telnyx_available(conn: &mut PgPooledConnection) -> bool {
 /// check: `CONTACT_PROTOCOL_TEL` can never be stored without some provider enabled), this also
 /// implies `twilio_available(conn) || bird_available(conn) || telnyx_available(conn)`, just gated
 /// additionally on the admin's own "Enable SMS Sending" toggle
-/// (`ContactIntegrationsTab.contactProtocolsSection`).
+/// (`SignInAndContactTab.contactProtocolsSection`).
 pub fn verification_available(conn: &mut PgPooledConnection) -> bool {
     contact_protocol_supported(conn, ContactProtocol::Tel)
 }

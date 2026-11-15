@@ -7,7 +7,7 @@ for their Posts and Occasions (see `logic::sync_destinations::facebook_sync` on 
 on the same `ServerConfiguration` (`federationInfo`/`federationInfo.facebookAuthConfig`), saved
 through the same `AccountsPanel.updateServerConfig` "fetch fresh copy, then write" dance every other
 editor on this page uses. (The Web Push VAPID key editor used to live here too -- moved to
-`Components.Pages.ServerInformationPage.ContactIntegrationsTab` for topical consistency alongside
+`Components.Pages.ServerInformationPage.SignInAndContactTab` for topical consistency alongside
 Twilio/Bird.)
 -}
 
