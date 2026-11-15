@@ -1149,7 +1149,14 @@ export interface SaveMarketSubscriptionRequest {
    * The new settings. Only `share_content_from_followers`/`_following`/`_friends` and `custom_css_configuration`
    * are read -- `subdomain_of`/`subdomain` are server-assigned and ignored.
    */
-  subdomainSettings: SubdomainSettings | undefined;
+  subdomainSettings:
+    | SubdomainSettings
+    | undefined;
+  /**
+   * When true, `subdomain_settings.share_content_from_*` are ignored and the stored toggles are kept -- for a save that
+   * only changes the stylesheet (the Theme tab), so a stale copy of the toggles can't undo a change made elsewhere.
+   */
+  keepSharingSettings: boolean;
 }
 
 function createBaseMarketProduct(): MarketProduct {
@@ -4421,7 +4428,7 @@ export const SubdomainPurchaseDetails: MessageFns<SubdomainPurchaseDetails> = {
 };
 
 function createBaseSaveMarketSubscriptionRequest(): SaveMarketSubscriptionRequest {
-  return { marketSubscriptionId: "", subdomainSettings: undefined };
+  return { marketSubscriptionId: "", subdomainSettings: undefined, keepSharingSettings: false };
 }
 
 export const SaveMarketSubscriptionRequest: MessageFns<SaveMarketSubscriptionRequest> = {
@@ -4431,6 +4438,9 @@ export const SaveMarketSubscriptionRequest: MessageFns<SaveMarketSubscriptionReq
     }
     if (message.subdomainSettings !== undefined) {
       SubdomainSettings.encode(message.subdomainSettings, writer.uint32(18).fork()).join();
+    }
+    if (message.keepSharingSettings !== false) {
+      writer.uint32(24).bool(message.keepSharingSettings);
     }
     return writer;
   },
@@ -4458,6 +4468,14 @@ export const SaveMarketSubscriptionRequest: MessageFns<SaveMarketSubscriptionReq
           message.subdomainSettings = SubdomainSettings.decode(reader, reader.uint32());
           continue;
         }
+        case 3: {
+          if (tag !== 24) {
+            break;
+          }
+
+          message.keepSharingSettings = reader.bool();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -4473,6 +4491,7 @@ export const SaveMarketSubscriptionRequest: MessageFns<SaveMarketSubscriptionReq
       subdomainSettings: isSet(object.subdomainSettings)
         ? SubdomainSettings.fromJSON(object.subdomainSettings)
         : undefined,
+      keepSharingSettings: isSet(object.keepSharingSettings) ? globalThis.Boolean(object.keepSharingSettings) : false,
     };
   },
 
@@ -4483,6 +4502,9 @@ export const SaveMarketSubscriptionRequest: MessageFns<SaveMarketSubscriptionReq
     }
     if (message.subdomainSettings !== undefined) {
       obj.subdomainSettings = SubdomainSettings.toJSON(message.subdomainSettings);
+    }
+    if (message.keepSharingSettings !== false) {
+      obj.keepSharingSettings = message.keepSharingSettings;
     }
     return obj;
   },
@@ -4498,6 +4520,7 @@ export const SaveMarketSubscriptionRequest: MessageFns<SaveMarketSubscriptionReq
     message.subdomainSettings = (object.subdomainSettings !== undefined && object.subdomainSettings !== null)
       ? SubdomainSettings.fromPartial(object.subdomainSettings)
       : undefined;
+    message.keepSharingSettings = object.keepSharingSettings ?? false;
     return message;
   },
 };

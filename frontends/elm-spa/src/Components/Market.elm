@@ -312,21 +312,23 @@ updateMarketSubscription accountsPanelModel maybeAccountServer subscription =
 {-| Saves the buyer-editable `SubdomainSettings` (the `shareContentFrom*` toggles and/or `customCssConfiguration`) of
 one of the caller's own `PURCHASE_TYPE_SUBDOMAIN` subscriptions (`SaveMarketSubscription`). `subdomainOf`/`subdomain`
 are server-assigned and ignored; a `customCssConfiguration` of `Nothing` keeps the stored stylesheet, and so does a
-`customCss` of `Nothing` inside it.
+`customCss` of `Nothing` inside it. `keepSharingSettings` (a CSS-only save) keeps the stored `shareContentFrom*` toggles
+whatever `settings` carries, so a stale copy of them can't undo a change made elsewhere.
 -}
 saveMarketSubscription :
     AccountsPanel.Model
     -> AccountsPanel.MaybeAccountServer
     -> String
+    -> Bool
     -> Proto.Rellm.SubdomainSettings
     -> Task Grpc.Error ( Maybe AccountsPanel.Msg, MarketSubscription )
-saveMarketSubscription accountsPanelModel maybeAccountServer subscriptionId settings =
+saveMarketSubscription accountsPanelModel maybeAccountServer subscriptionId keepSharingSettings settings =
     AccountsPanel.performWithAccountServer
         accountsPanelModel
         maybeAccountServer
         (\server token ->
             Grpc.new Rellm.saveMarketSubscription
-                { marketSubscriptionId = subscriptionId, subdomainSettings = Just settings }
+                { marketSubscriptionId = subscriptionId, subdomainSettings = Just settings, keepSharingSettings = keepSharingSettings }
                 |> Grpc.setHost (RellmServers.rellmServerUrl server)
                 |> withAccessToken (Just token)
                 |> Grpc.toTask

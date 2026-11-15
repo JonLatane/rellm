@@ -62,6 +62,15 @@ where
         if let Some(host) = host {
             request.extensions_mut().insert(crate::logic::subdomains::RequestHost(host));
         }
+        // The page's origin names the subdomain when the browser talks to the parent's backend host.
+        if let Some(origin) = request
+            .headers()
+            .get(http::header::ORIGIN)
+            .and_then(|h| h.to_str().ok())
+            .map(str::to_string)
+        {
+            request.extensions_mut().insert(crate::logic::subdomains::RequestOrigin(origin));
+        }
         self.inner.call(request)
     }
 }

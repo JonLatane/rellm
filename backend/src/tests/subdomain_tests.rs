@@ -214,8 +214,8 @@ fn virtual_configuration_describes_the_owner_and_hides_irrelevant_tabs() {
         assert_eq!(config.subdomain_settings.as_ref().unwrap().subdomain, "sd3owner");
         assert_eq!(config.server_info.unwrap().short_name.as_deref(), Some("sd3owner"));
         assert!(!config.people_settings.unwrap().visible);
-        // The parent's CDN configuration is shared.
-        assert_eq!(config.external_cdn_config.unwrap().frontend_host, FRONTEND_HOST);
+        // The parent's CDN configuration is shared -- except that the subdomain keeps its own identity as the frontend host.
+        assert_eq!(config.external_cdn_config.unwrap().frontend_host, "sd3owner.bullcity.test");
         Ok(())
     });
 }
@@ -240,6 +240,7 @@ fn only_the_buyer_saves_and_a_missing_stylesheet_is_kept() {
                 custom_css_configuration: css,
                 ..Default::default()
             }),
+            keep_sharing_settings: false,
         };
 
         // Someone else -- even an admin -- can't.
@@ -287,8 +288,11 @@ fn a_label_can_only_be_bought_by_one_user_and_must_be_valid() {
         let owner = create_user(conn, "sd5owner");
         subscribe(conn, &admin, &owner, SubdomainSettings::default());
 
-        // The owner may (re-)buy their own label; nobody else holds it.
-        assert_eq!(crate::logic::subdomains::validate_label_available(&owner, conn)?, "sd5owner");
+        // The owner already holds it (and may only hold one), so buying again is refused...
+        assert_eq!(
+            crate::logic::subdomains::validate_label_available(&owner, conn).unwrap_err().message(),
+            "already_subscribed"
+        );
         // A username that differs only by case maps to the same label -> taken for another user.
         let clash = create_user(conn, "SD5Owner");
         assert_eq!(
@@ -301,6 +305,145 @@ fn a_label_can_only_be_bought_by_one_user_and_must_be_valid() {
             crate::logic::subdomains::validate_label_available(&bad, conn).unwrap_err().message(),
             "username_not_a_valid_subdomain"
         );
+        Ok(())
+    });
+}
+
+#[test]
+fn a_lapsed_label_is_released_for_a_new_buyer_and_the_index_blocks_duplicates() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, Status, _>(|conn| {
+        configure_frontend_host(conn);
+        let admin_user = create_user(conn, "sd6_admin");
+        let admin = grant_permissions(conn, &admin_user, vec![Permission::Admin]);
+        let first = create_user(conn, "sd6owner");
+        let subscription = subscribe(conn, &admin, &first, SubdomainSettings::default());
+        let clash = create_user(conn, "SD6OWNER");
+
+        // Held: the new buyer is refused, and the unique index refuses a second in-force row for the label.
+        assert_eq!(
+            crate::logic::subdomains::validate_label_available(&clash, conn).unwrap_err().message(),
+            "subdomain_taken"
+        );
+        // A savepoint, so the failed insert doesn't poison the surrounding test transaction.
+        let duplicate = conn.transaction::<(), diesel::result::Error, _>(|conn| {
+            let mut details = crate::logic::subdomains::new_subscription_details_json(&first);
+            details["settings"]["subdomain"] = serde_json::json!("sd6owner");
+            models::insert_market_subscription(
+                &models::NewMarketSubscription {
+                    buyer_id: clash.id,
+                    product_id: subscription.product_id,
+                    product_type: PurchaseType::Subdomain.to_string_purchase_type(),
+                    period: PurchasePeriod::Monthly.to_string_purchase_period(),
+                    amount: 300,
+                    currency: 840,
+                    details,
+                    renews_at: None,
+                    stripe_customer_id: None,
+                    stripe_payment_method_id: None,
+                },
+                conn,
+            )
+            .map(|_| ())
+            .map_err(|_| diesel::result::Error::RollbackTransaction)
+        });
+        assert!(duplicate.is_err(), "a second in-force subscription for one label must violate the unique index");
+
+        // The first buyer cancels and the paid period runs out; the renewal job hasn't run. The label is free for the
+        // webhook once released.
+        diesel::update(crate::schema::market_subscriptions::table.find(subscription.id))
+            .set((
+                crate::schema::market_subscriptions::canceled_at.eq(Some(SystemTime::now())),
+                crate::schema::market_subscriptions::renews_at.eq(Some(SystemTime::now() - std::time::Duration::from_secs(60))),
+            ))
+            .execute(conn)
+            .unwrap();
+        crate::logic::subdomains::release_lapsed_subdomain_labels("sd6owner", conn)?;
+        assert_eq!(crate::logic::subdomains::validate_label_available(&clash, conn)?, "sd6owner");
+        Ok(())
+    });
+}
+
+#[test]
+fn css_only_saves_keep_the_toggles_and_a_buyer_holds_one_subscription() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, Status, _>(|conn| {
+        configure_frontend_host(conn);
+        let admin_user = create_user(conn, "sd7_admin");
+        let admin = grant_permissions(conn, &admin_user, vec![Permission::Admin]);
+        let owner = create_user(conn, "sd7owner");
+        subscribe(conn, &admin, &owner, SubdomainSettings { share_content_from_friends: true, ..Default::default() });
+
+        // A CSS-only save carrying stale (all-off) toggles must not undo the stored ones.
+        let saved = save_market_subscription(
+            SaveMarketSubscriptionRequest {
+                market_subscription_id: String::new(),
+                subdomain_settings: Some(SubdomainSettings {
+                    custom_css_configuration: Some(CustomCssConfiguration {
+                        custom_css: Some("a{}".to_string()),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }),
+                keep_sharing_settings: true,
+            },
+            &owner,
+            conn,
+        )?;
+        let context = scope(conn, "sd7owner.bullcity.test").unwrap();
+        assert!(context.settings.share_content_from_friends, "toggles kept");
+        assert_eq!(context.custom_css_configuration().custom_css.as_deref(), Some("a{}"));
+        assert!(saved.details.is_some());
+        Ok(())
+    });
+}
+
+#[test]
+fn the_pages_origin_names_the_subdomain_when_the_host_is_the_parents_backend() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, Status, _>(|conn| {
+        configure_frontend_host(conn);
+        let admin_user = create_user(conn, "sd8_admin");
+        let admin = grant_permissions(conn, &admin_user, vec![Permission::Admin]);
+        let owner = create_user(conn, "sd8owner");
+        subscribe(conn, &admin, &owner, SubdomainSettings::default());
+        let resolve = |conn: &mut crate::db_connection::PgPooledConnection, host: &str, origin: Option<&str>| {
+            crate::logic::subdomains::resolve_subdomain_for_request(Some(host), origin, conn).unwrap().is_some()
+        };
+        // gRPC arrives at the parent's backend host; only the browser's Origin says which page it came from.
+        assert!(resolve(conn, "bullcity.test.backend.example", Some("https://sd8owner.bullcity.test")));
+        assert!(resolve(conn, "sd8owner.bullcity.test", None));
+        assert!(!resolve(conn, "bullcity.test.backend.example", Some("https://bullcity.test")));
+        assert!(!resolve(conn, "bullcity.test.backend.example", None));
+        Ok(())
+    });
+}
+
+#[test]
+fn a_private_profile_stays_private_on_the_subdomain() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, Status, _>(|conn| {
+        configure_frontend_host(conn);
+        let admin_user = create_user(conn, "sd9_admin");
+        let admin = grant_permissions(conn, &admin_user, vec![Permission::Admin]);
+        let owner = create_user_with_profile(conn, "sd9owner", "Secret Name", "secret bio");
+        subscribe(conn, &admin, &owner, SubdomainSettings::default());
+        diesel::update(crate::schema::users::table.find(owner.id))
+            .set(crate::schema::users::visibility.eq(Visibility::Private.to_string_visibility()))
+            .execute(conn)
+            .unwrap();
+        let owner = models::get_user(owner.id, conn)?;
+
+        let context = scope(conn, "sd9owner.bullcity.test").unwrap();
+        let anonymous = crate::rpcs::get_server_configuration_for((), &None, &Some(context.clone()), conn)?;
+        let info = anonymous.server_info.unwrap();
+        assert_eq!(info.name.as_deref(), Some("sd9owner"));
+        assert_eq!(info.description, None);
+        // The subdomain keeps its own identity: the page must not turn into the parent site.
+        assert_eq!(anonymous.external_cdn_config.unwrap().frontend_host, "sd9owner.bullcity.test");
+
+        let as_owner = crate::rpcs::get_server_configuration_for((), &Some(&owner), &Some(context), conn)?;
+        assert_eq!(as_owner.server_info.unwrap().description.as_deref(), Some("secret bio"));
         Ok(())
     });
 }

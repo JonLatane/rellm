@@ -18,7 +18,7 @@ pub fn get_server_configuration_for(
 ) -> Result<ServerConfiguration, Status> {
     let config = crate::rpcs::get_server_configuration(request, user, conn)?;
     Ok(match scope {
-        Some(subdomain) => subdomain.virtual_server_configuration(config),
+        Some(subdomain) => subdomain.virtual_server_configuration(config, user),
         None => config,
     })
 }

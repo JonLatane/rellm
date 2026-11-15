@@ -660,6 +660,7 @@ const SaveMarketSubscriptionRequest$json = {
   '2': [
     {'1': 'market_subscription_id', '3': 1, '4': 1, '5': 9, '10': 'marketSubscriptionId'},
     {'1': 'subdomain_settings', '3': 2, '4': 1, '5': 11, '6': '.rellm.SubdomainSettings', '10': 'subdomainSettings'},
+    {'1': 'keep_sharing_settings', '3': 3, '4': 1, '5': 8, '10': 'keepSharingSettings'},
   ],
 };
 
@@ -667,5 +668,6 @@ const SaveMarketSubscriptionRequest$json = {
 final $typed_data.Uint8List saveMarketSubscriptionRequestDescriptor = $convert.base64Decode(
     'Ch1TYXZlTWFya2V0U3Vic2NyaXB0aW9uUmVxdWVzdBI0ChZtYXJrZXRfc3Vic2NyaXB0aW9uX2'
     'lkGAEgASgJUhRtYXJrZXRTdWJzY3JpcHRpb25JZBJHChJzdWJkb21haW5fc2V0dGluZ3MYAiAB'
-    'KAsyGC5yZWxsbS5TdWJkb21haW5TZXR0aW5nc1IRc3ViZG9tYWluU2V0dGluZ3M=');
+    'KAsyGC5yZWxsbS5TdWJkb21haW5TZXR0aW5nc1IRc3ViZG9tYWluU2V0dGluZ3MSMgoVa2VlcF'
+    '9zaGFyaW5nX3NldHRpbmdzGAMgASgIUhNrZWVwU2hhcmluZ1NldHRpbmdz');
 

@@ -6266,9 +6266,10 @@ type alias Proto__Rellm__User =
 {-| The field numbers for the fields of `Proto__Rellm__SaveMarketSubscriptionRequest`. This is mostly useful for internals, like documentation generation.
 
 -}
-fieldNumbersProto__Rellm__SaveMarketSubscriptionRequest : { marketSubscriptionId : Int, subdomainSettings : Int }
+fieldNumbersProto__Rellm__SaveMarketSubscriptionRequest :
+    { marketSubscriptionId : Int, subdomainSettings : Int, keepSharingSettings : Int }
 fieldNumbersProto__Rellm__SaveMarketSubscriptionRequest =
-    { marketSubscriptionId = 1, subdomainSettings = 2 }
+    { marketSubscriptionId = 1, subdomainSettings = 2, keepSharingSettings = 3 }
 
 
 {-| Default for Proto__Rellm__SaveMarketSubscriptionRequest. Should only be used for 'required' decoders as an initial value.
@@ -6276,7 +6277,7 @@ fieldNumbersProto__Rellm__SaveMarketSubscriptionRequest =
 -}
 defaultProto__Rellm__SaveMarketSubscriptionRequest : Proto__Rellm__SaveMarketSubscriptionRequest
 defaultProto__Rellm__SaveMarketSubscriptionRequest =
-    { marketSubscriptionId = "", subdomainSettings = Nothing }
+    { marketSubscriptionId = "", subdomainSettings = Nothing, keepSharingSettings = False }
 
 
 {-| Declares how to decode a `Proto__Rellm__SaveMarketSubscriptionRequest` from Bytes. To actually perform the conversion from Bytes, you need to use Protobuf.Decode.decode from eriktim/elm-protocol-buffers.
@@ -6291,6 +6292,7 @@ decodeProto__Rellm__SaveMarketSubscriptionRequest =
             2
             (Protobuf.Decode.map Just decodeProto__Rellm__SubdomainSettings)
             (\a r -> { r | subdomainSettings = a })
+        , Protobuf.Decode.optional 3 Protobuf.Decode.bool (\a r -> { r | keepSharingSettings = a })
         ]
 
 
@@ -6306,6 +6308,7 @@ encodeProto__Rellm__SaveMarketSubscriptionRequest value =
           , (Maybe.map encodeProto__Rellm__SubdomainSettings >> Maybe.withDefault Protobuf.Encode.none)
                 value.subdomainSettings
           )
+        , ( 3, Protobuf.Encode.bool value.keepSharingSettings )
         ]
 
 
@@ -6313,7 +6316,10 @@ encodeProto__Rellm__SaveMarketSubscriptionRequest value =
 
 -}
 type alias Proto__Rellm__SaveMarketSubscriptionRequest =
-    { marketSubscriptionId : String, subdomainSettings : Maybe Proto__Rellm__SubdomainSettings }
+    { marketSubscriptionId : String
+    , subdomainSettings : Maybe Proto__Rellm__SubdomainSettings
+    , keepSharingSettings : Bool
+    }
 
 
 {-| The field numbers for the fields of `Proto__Rellm__SubdomainPurchaseDetails`. This is mostly useful for internals, like documentation generation.

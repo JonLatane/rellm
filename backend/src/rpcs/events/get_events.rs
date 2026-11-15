@@ -551,7 +551,17 @@ fn get_search_events(
         .select(occasions::post_id)
         .order(occasions::post_id)
         .filter(occasions::search_text.matches(search_query))
-        .filter(exclude_authors!(occasions::user_id, excluded))
+        // Exclusions are about the occasion's own author (the denormalized `occasions::user_id`, which the search's
+        // GIN index serves); a subdomain's author limit is about the *event's* author, `posts::user_id`, same as every
+        // other listing -- the two differ when a moderator adds an occasion to someone else's event.
+        .filter(exclude_authors!(
+            occasions::user_id,
+            &AuthorScope { excluded: excluded.excluded.clone(), only: None }
+        ))
+        .filter(exclude_authors!(
+            posts::user_id,
+            &AuthorScope { excluded: vec![], only: excluded.only.clone() }
+        ))
         .into_boxed();
 
     if let Some(author_user_id) = author_user_id {

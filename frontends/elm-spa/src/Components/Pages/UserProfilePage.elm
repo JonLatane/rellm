@@ -2650,7 +2650,7 @@ updateInner shared msg model =
             case serverAndAccount shared model of
                 Just ( server, account ) ->
                     ( { model | cancelingSubscriptions = Dict.insert subscription.id Submitting model.cancelingSubscriptions }
-                    , Market.saveMarketSubscription shared.accounts ( Just account.userId, server.frontendHost ) subscription.id { settings | customCssConfiguration = Nothing }
+                    , Market.saveMarketSubscription shared.accounts ( Just account.userId, server.frontendHost ) subscription.id False { settings | customCssConfiguration = Nothing }
                         |> attemptInActingEpoch model (GotCancelSubscriptionResult subscription.id)
                         |> Effect.fromCmd
                     )

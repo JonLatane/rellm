@@ -12,8 +12,8 @@ use diesel::*;
 use tonic::{Code, Status};
 
 use crate::db_connection::PgPooledConnection;
-use crate::logic::subscription_state;
-use crate::marshaling::{ToProtoId, ToStringPurchaseType};
+use crate::logic::{public_string_visibilities, subscription_state};
+use crate::marshaling::{ToProtoId, ToProtoPurchaseType, ToStringPurchaseType};
 use crate::models;
 use crate::protos::*;
 use crate::rpcs::get_server_configuration_proto;
@@ -26,6 +26,20 @@ pub struct RequestHost(pub String);
 
 /// Labels that must never be handed out as a subdomain (they'd shadow real infrastructure hosts).
 const RESERVED_LABELS: &[&str] = &["www", "api", "admin", "mail", "smtp", "imap", "ftp", "cdn", "media", "static"];
+
+/// A request's `Origin` header (`https://jon.bullcity.social`), if any -- see `RequestHost`. A browser on a
+/// subdomain's page talks to the parent's *backend* host (`ExternalCDNConfig.backend_host`, found through
+/// `/backend_host`), so the gRPC request's own host is the parent's: the page's origin is what says which subdomain
+/// it is. Browsers set `Origin` themselves; a non-browser client can claim any, which only changes whose
+/// (public) scope it reads -- it never grants access to anything.
+#[derive(Clone, Debug)]
+pub struct RequestOrigin(pub String);
+
+/// The host part of an `Origin` header value (`https://jon.bullcity.social:8443` -> `jon.bullcity.social:8443`).
+pub fn origin_host(origin: &str) -> &str {
+    let without_scheme = origin.split_once("://").map_or(origin, |(_, rest)| rest);
+    without_scheme.split('/').next().unwrap_or("")
+}
 
 /// An active subdomain, resolved from a request's host.
 #[derive(Clone, Debug)]
@@ -94,19 +108,58 @@ pub fn find_active_subdomain_subscription(
     }))
 }
 
-/// Whether `buyer_id` may start a subdomain subscription: their username is a valid label and no *other*
-/// user's active subscription holds it. Returns the label.
+/// Whether `buyer` may start a (new) subdomain subscription: their username is a valid label, nobody holds it, and
+/// they don't already hold an in-force subdomain subscription of their own (resuming a canceled-but-paid-up one is
+/// `MakeMarketPurchase`'s resume path, which never gets here). Returns the label. A label whose holder has canceled
+/// and run out of paid time is free even if the renewal job hasn't terminated it yet -- see
+/// `release_lapsed_subdomain_labels`, which the webhook runs before inserting.
 pub fn validate_label_available(buyer: &models::User, conn: &mut PgPooledConnection) -> Result<String, Status> {
     let label = label_for_username(&buyer.username);
     if !is_valid_label(&label) {
         return Err(Status::new(Code::FailedPrecondition, "username_not_a_valid_subdomain"));
     }
     if let Some(existing) = find_active_subdomain_subscription(&label, conn)? {
-        if existing.buyer_id != buyer.id {
-            return Err(Status::new(Code::FailedPrecondition, "subdomain_taken"));
-        }
+        return Err(if existing.buyer_id == buyer.id {
+            Status::new(Code::FailedPrecondition, "already_subscribed")
+        } else {
+            Status::new(Code::FailedPrecondition, "subdomain_taken")
+        });
+    }
+    // One in-force subdomain per buyer -- also what lets `SaveMarketSubscription` take an empty id.
+    let now = SystemTime::now();
+    let holds_another = models::get_market_subscriptions_for_buyer(buyer.id, conn)?.into_iter().any(|s| {
+        s.product_type.to_owned().to_proto_purchase_type() == Some(PurchaseType::Subdomain)
+            && subscription_state(s.canceled_at, s.renews_at, s.service_terminated_at, now)
+                != MarketSubscriptionState::SubscriptionCanceled
+    });
+    if holds_another {
+        return Err(Status::new(Code::FailedPrecondition, "already_subscribed"));
     }
     Ok(label)
+}
+
+/// Marks as terminated every subdomain subscription holding `label` whose buyer canceled and whose paid-for period
+/// has run out -- exactly what `renew_market_subscriptions` does a little later. Frees the label for the unique
+/// index (`idx_market_subscriptions_subdomain_label`, which only counts rows with no `service_terminated_at`) when a
+/// new buyer's paid checkout arrives before that job has run.
+pub fn release_lapsed_subdomain_labels(label: &str, conn: &mut PgPooledConnection) -> Result<(), Status> {
+    diesel::update(
+        market_subscriptions::table
+            .filter(market_subscriptions::product_type.eq(PurchaseType::Subdomain.to_string_purchase_type()))
+            .filter(market_subscriptions::service_terminated_at.is_null())
+            .filter(market_subscriptions::canceled_at.is_not_null())
+            .filter(sql::<Bool>("market_subscriptions.details #>> '{settings,subdomain}' = ").bind::<Text, _>(label.to_string()))
+            .filter(sql::<Bool>(
+                "GREATEST(market_subscriptions.canceled_at, COALESCE(market_subscriptions.renews_at, market_subscriptions.canceled_at)) <= NOW()",
+            )),
+    )
+    .set(market_subscriptions::service_terminated_at.eq(Some(SystemTime::now())))
+    .execute(conn)
+    .map(|_| ())
+    .map_err(|e| {
+        log::error!("Failed to release lapsed subdomain {}: {:?}", label, e);
+        Status::new(Code::Internal, "failed_to_release_subdomain")
+    })
 }
 
 /// `market_subscriptions.details` for a brand-new subdomain subscription owned by `owner`.
@@ -150,6 +203,21 @@ pub fn settings_of(subscription: &models::MarketSubscription) -> SubdomainSettin
 /// server's `ExternalCDNConfig.frontend_host` must be configured, `host` must be one label beneath it, and an
 /// active `PURCHASE_TYPE_SUBDOMAIN` subscription must hold that label. Everything else is `Ok(None)` -- the
 /// request is simply for the parent server.
+/// `resolve_subdomain` for a Tonic request: the page's `Origin` first (see `RequestOrigin`), then the request's own
+/// host.
+pub fn resolve_subdomain_for_request(
+    host: Option<&str>,
+    origin: Option<&str>,
+    conn: &mut PgPooledConnection,
+) -> Result<Option<SubdomainContext>, Status> {
+    if let Some(origin) = origin.map(origin_host).filter(|o| !o.is_empty()) {
+        if let Some(subdomain) = resolve_subdomain(Some(origin), conn)? {
+            return Ok(Some(subdomain));
+        }
+    }
+    resolve_subdomain(host, conn)
+}
+
 pub fn resolve_subdomain(
     host: Option<&str>,
     conn: &mut PgPooledConnection,
@@ -222,14 +290,26 @@ impl SubdomainContext {
     /// configuration (CDN, contact integrations, permissions, ... are all shared) re-skinned for the owner --
     /// their name/bio instead of the server's, their stylesheet's settings, only the tabs that make sense for
     /// one user, and `subdomain_settings` set so clients can tell.
-    pub fn virtual_server_configuration(&self, parent: ServerConfiguration) -> ServerConfiguration {
+    pub fn virtual_server_configuration(
+        &self,
+        parent: ServerConfiguration,
+        viewer: &Option<&models::User>,
+    ) -> ServerConfiguration {
         let mut config = parent;
         let owner = &self.owner;
-        let display_name = if owner.real_name.trim().is_empty() { owner.username.clone() } else { owner.real_name.clone() };
+        // The owner's profile fields are only as public as their profile is (what `GetUsers` enforces): a `PRIVATE` or
+        // `SERVER_PUBLIC` profile shows an anonymous visitor just the username -- which is the address itself.
+        let profile_visible = viewer.is_some_and(|v| v.id == owner.id)
+            || public_string_visibilities(viewer).contains(&owner.visibility);
+        let display_name = if !profile_visible || owner.real_name.trim().is_empty() {
+            owner.username.clone()
+        } else {
+            owner.real_name.clone()
+        };
         let mut server_info = config.server_info.take().unwrap_or_default();
         server_info.name = Some(display_name);
         server_info.short_name = Some(owner.username.clone());
-        server_info.description = Some(owner.bio.clone());
+        server_info.description = profile_visible.then(|| owner.bio.clone());
         // The parent's logo/colors/policies describe the whole server, not this user.
         server_info.logo = None;
         server_info.colors = None;
@@ -246,6 +326,14 @@ impl SubdomainContext {
         config.federation_info = None;
         // Secrets/infrastructure of the parent are never shown on a subdomain, whoever is looking.
         config.cluster_resources = None;
+        // Clients adopt `external_cdn_config.frontend_host` as the server's identity, so it must be the subdomain
+        // itself -- not the parent's -- or the page would turn into the parent site. (`backend_host` stays the
+        // parent's: that is where gRPC really lives, and the subdomain is recognized there by the page's `Origin`.)
+        if let Some(cdn) = config.external_cdn_config.as_mut() {
+            if !cdn.frontend_host.is_empty() {
+                cdn.frontend_host = format!("{}.{}", self.settings.subdomain, cdn.frontend_host);
+            }
+        }
         config.twilio_config = None;
         config.bird_config = None;
         config.telnyx_config = None;

@@ -211,9 +211,25 @@ fn handle_checkout_session_completed(
         })
     } else if purchase_type == PurchaseType::Subdomain {
         // The purchase records which label it paid for; the subscription (below) carries the live,
-        // buyer-editable settings. `MakeMarketPurchase` already checked the label was free.
+        // buyer-editable settings. `MakeMarketPurchase` checked the label was free when checkout started, but two
+        // checkouts can race: free a label whose holder has lapsed, then check again. If it is *still* taken (someone
+        // else's paid checkout got there first) nothing is created -- the unique index would refuse it anyway -- and
+        // the error is logged with this session's id so the charge can be refunded by hand.
         let buyer = models::get_user(buyer_id, conn)?;
-        crate::logic::subdomains::subdomain_purchase_details_json_for_label(&crate::logic::subdomains::label_for_username(&buyer.username))
+        crate::logic::subdomains::release_lapsed_subdomain_labels(
+            &crate::logic::subdomains::label_for_username(&buyer.username),
+            conn,
+        )?;
+        let label = crate::logic::subdomains::validate_label_available(&buyer, conn).map_err(|e| {
+            log::error!(
+                "Paid subdomain checkout {} for user {} conflicts ({}); no subscription created -- refund needed",
+                session_id,
+                buyer_id,
+                e.message()
+            );
+            e
+        })?;
+        crate::logic::subdomains::subdomain_purchase_details_json_for_label(&label)
     } else {
         product.details.clone()
     };

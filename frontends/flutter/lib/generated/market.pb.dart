@@ -3030,6 +3030,7 @@ class SaveMarketSubscriptionRequest extends $pb.GeneratedMessage {
   factory SaveMarketSubscriptionRequest({
     $core.String? marketSubscriptionId,
     $2.SubdomainSettings? subdomainSettings,
+    $core.bool? keepSharingSettings,
   }) {
     final $result = create();
     if (marketSubscriptionId != null) {
@@ -3037,6 +3038,9 @@ class SaveMarketSubscriptionRequest extends $pb.GeneratedMessage {
     }
     if (subdomainSettings != null) {
       $result.subdomainSettings = subdomainSettings;
+    }
+    if (keepSharingSettings != null) {
+      $result.keepSharingSettings = keepSharingSettings;
     }
     return $result;
   }
@@ -3047,6 +3051,7 @@ class SaveMarketSubscriptionRequest extends $pb.GeneratedMessage {
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'SaveMarketSubscriptionRequest', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'marketSubscriptionId')
     ..aOM<$2.SubdomainSettings>(2, _omitFieldNames ? '' : 'subdomainSettings', subBuilder: $2.SubdomainSettings.create)
+    ..aOB(3, _omitFieldNames ? '' : 'keepSharingSettings')
     ..hasRequiredFields = false
   ;
 
@@ -3094,6 +3099,17 @@ class SaveMarketSubscriptionRequest extends $pb.GeneratedMessage {
   void clearSubdomainSettings() => clearField(2);
   @$pb.TagNumber(2)
   $2.SubdomainSettings ensureSubdomainSettings() => $_ensure(1);
+
+  /// When true, `subdomain_settings.share_content_from_*` are ignored and the stored toggles are kept -- for a save that
+  /// only changes the stylesheet (the Theme tab), so a stale copy of the toggles can't undo a change made elsewhere.
+  @$pb.TagNumber(3)
+  $core.bool get keepSharingSettings => $_getBF(2);
+  @$pb.TagNumber(3)
+  set keepSharingSettings($core.bool v) { $_setBool(2, v); }
+  @$pb.TagNumber(3)
+  $core.bool hasKeepSharingSettings() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearKeepSharingSettings() => clearField(3);
 }
 
 

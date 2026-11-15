@@ -11464,6 +11464,12 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td></td>
           <td>The new settings. Only <code>share_content_from_followers</code>/<code>_following</code>/<code>_friends</code> and <code>custom_css_configuration</code> are read -- <code>subdomain_of</code>/<code>subdomain</code> are server-assigned and ignored.</td>
         </tr>
+        <tr>
+          <td>keep_sharing_settings</td>
+          <td><a href="#bool">bool</a></td>
+          <td></td>
+          <td>When true, <code>subdomain_settings.share_content_from_*</code> are ignored and the stored toggles are kept -- for a save that only changes the stylesheet (the Theme tab), so a stale copy of the toggles can't undo a change made elsewhere.</td>
+        </tr>
       </tbody>
     </table>
     <p><a name="rellm-SubdomainPurchaseDetails"></a></p>

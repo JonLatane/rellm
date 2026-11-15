@@ -4291,7 +4291,8 @@ type alias User =
 {-| The field numbers for the fields of `SaveMarketSubscriptionRequest`. This is mostly useful for internals, like documentation generation.
 
 -}
-fieldNumbersSaveMarketSubscriptionRequest : { marketSubscriptionId : Int, subdomainSettings : Int }
+fieldNumbersSaveMarketSubscriptionRequest :
+    { marketSubscriptionId : Int, subdomainSettings : Int, keepSharingSettings : Int }
 fieldNumbersSaveMarketSubscriptionRequest =
     Proto.Rellm.Internals_.fieldNumbersProto__Rellm__SaveMarketSubscriptionRequest
 
@@ -4335,6 +4336,12 @@ encodeSaveMarketSubscriptionRequest =
 
  The new settings. Only `share_content_from_followers`/`_following`/`_friends` and `custom_css_configuration`
  are read -- `subdomain_of`/`subdomain` are server-assigned and ignored.
+
+
+### keepSharingSettings
+
+ When true, `subdomain_settings.share_content_from_*` are ignored and the stored toggles are kept -- for a save that
+ only changes the stylesheet (the Theme tab), so a stale copy of the toggles can't undo a change made elsewhere.
 
 
 -}

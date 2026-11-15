@@ -5531,6 +5531,7 @@ Request for [`SaveMarketSubscription`](#grpc-api-SaveMarketSubscription).
 | ----- | ---- | ----- | ----------- |
 | market_subscription_id | [string](#string) |  | The ID of the buyer&#39;s own `PURCHASE_TYPE_SUBDOMAIN` subscription. May be empty, meaning &#34;my active subdomain subscription&#34; (a subdomain&#39;s own pages don&#39;t know the ID -- see `ServerConfiguration.subdomain_settings`). |
 | subdomain_settings | [SubdomainSettings](#rellm-SubdomainSettings) |  | The new settings. Only `share_content_from_followers`/`_following`/`_friends` and `custom_css_configuration` are read -- `subdomain_of`/`subdomain` are server-assigned and ignored. |
+| keep_sharing_settings | [bool](#bool) |  | When true, `subdomain_settings.share_content_from_*` are ignored and the stored toggles are kept -- for a save that only changes the stylesheet (the Theme tab), so a stale copy of the toggles can&#39;t undo a change made elsewhere. |
 
 
 

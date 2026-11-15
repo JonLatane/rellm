@@ -20,7 +20,9 @@ pub fn save_market_subscription(
     conn: &mut PgPooledConnection,
 ) -> Result<MarketSubscription, Status> {
     // An empty id means "my subdomain subscription" -- what the subdomain's own pages send, since the
-    // virtual `ServerConfiguration` they have doesn't carry subscription ids.
+    // virtual `ServerConfiguration` they have doesn't carry subscription ids. Unambiguous: a buyer can hold at most
+    // one in-force subdomain subscription (`subdomains::validate_label_available`), and that one is the one the
+    // host resolves to (the label is unique among in-force subscriptions -- see the unique index).
     let subscription_id = if request.market_subscription_id.is_empty() {
         models::get_market_subscriptions_for_buyer(current_user.id, conn)?
             .into_iter()
@@ -50,6 +52,7 @@ pub fn save_market_subscription(
     {
         return Err(Status::new(Code::FailedPrecondition, "subscription_canceled"));
     }
+    let keep_sharing = request.keep_sharing_settings;
     let incoming = request
         .subdomain_settings
         .ok_or_else(|| Status::new(Code::InvalidArgument, "subdomain_settings_required"))?;
@@ -66,9 +69,21 @@ pub fn save_market_subscription(
         // Server-assigned: always whatever is stored.
         subdomain_of: stored.subdomain_of,
         subdomain: stored.subdomain,
-        share_content_from_followers: incoming.share_content_from_followers,
-        share_content_from_following: incoming.share_content_from_following,
-        share_content_from_friends: incoming.share_content_from_friends,
+        share_content_from_followers: if keep_sharing {
+            stored.share_content_from_followers
+        } else {
+            incoming.share_content_from_followers
+        },
+        share_content_from_following: if keep_sharing {
+            stored.share_content_from_following
+        } else {
+            incoming.share_content_from_following
+        },
+        share_content_from_friends: if keep_sharing {
+            stored.share_content_from_friends
+        } else {
+            incoming.share_content_from_friends
+        },
         // No css sent at all -> keep what is stored.
         custom_css_configuration: css.or(stored.custom_css_configuration),
     };
