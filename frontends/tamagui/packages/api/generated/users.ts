@@ -539,7 +539,7 @@ export interface GetUsersResponse {
 /** Request for [`VerifyContactMethod`](#grpc-api-VerifyContactMethod). */
 export interface VerifyContactMethodRequest {
   /**
-   * The `tel:` (or, in the future, `mailto:`) value being verified -- must match the current
+   * The `tel:` or `mailto:` value being verified -- must match the current
    * user's own stored `phone`/`email` value.
    */
   value: string;

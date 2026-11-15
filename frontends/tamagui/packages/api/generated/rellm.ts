@@ -23,6 +23,7 @@ import {
   RefreshTokenResponse,
   ResetPasswordRequest,
 } from "./authentication";
+import { ContactIntegrationsStatus } from "./contact_integrations";
 import {
   DeleteOccasionSyncDestinationRequest,
   Event,
@@ -1311,8 +1312,13 @@ export const RellmDefinition = {
      * [`ContactMethod.consent_state`](#rellm-ContactMethod)'s own doc; this is checked even though
      * the user is the one requesting the send). Generates a 6-digit code, sends it via SMS, and
      * stores it (with a start time and attempt counter) on the phone `ContactMethod`
-     * (`verification_in_progress`). Only `tel:` values are supported this iteration -- `mailto:`
-     * returns `Unimplemented`. Rate-limited to one send per 60 seconds per user.
+     * (`verification_in_progress`). Works for both `tel:` (via SMS) and `mailto:` (via the server's
+     * email providers -- Postmark/SendGrid/Mailgun/Stalwart -- which must be enabled, see
+     * [`ContactProtocol`](#rellm-ContactProtocol)) values, verifying the user's `phone` or `email`
+     * respectively. Rate-limited to one send per 60 seconds per user. A contact method that is
+     * already verified on a *different* account can't be verified here (`contact_already_verified`).
+     * Verified contact methods are what [`Login`](#grpc-api-Login) via SMS/email and
+     * [`CreateAccount`](#grpc-api-CreateAccount) with a verified phone/email are built on.
      */
     startContactMethodVerification: {
       name: "StartContactMethodVerification",
@@ -2102,6 +2108,21 @@ export const RellmDefinition = {
       options: {},
     },
     /**
+     * Checks the health of every configured SMS and email provider *right now* by calling their APIs
+     * (and, for email, looking up SPF/DKIM/DMARC DNS records) -- see
+     * [`ContactIntegrationsStatus`](#rellm-ContactIntegrationsStatus). *Authenticated.* Requires
+     * `ADMIN` permissions. Slow (several outbound calls, made in parallel), so call it on demand,
+     * not on every page load. Never returns secrets.
+     */
+    getContactIntegrationsStatus: {
+      name: "GetContactIntegrationsStatus",
+      requestType: Empty,
+      requestStream: false,
+      responseType: ContactIntegrationsStatus,
+      responseStream: false,
+      options: {},
+    },
+    /**
      * Gets the server's [`CustomCSSConfiguration`](#rellm-CustomCSSConfiguration), including the (potentially large)
      * `custom_css` text -- the only RPC that returns it:
      * [`GetServerConfiguration`](#grpc-api-GetServerConfiguration) carries the rest of the message (media, forced
@@ -2304,8 +2325,13 @@ export interface RellmServiceImplementation<CallContextExt = {}> {
    * [`ContactMethod.consent_state`](#rellm-ContactMethod)'s own doc; this is checked even though
    * the user is the one requesting the send). Generates a 6-digit code, sends it via SMS, and
    * stores it (with a start time and attempt counter) on the phone `ContactMethod`
-   * (`verification_in_progress`). Only `tel:` values are supported this iteration -- `mailto:`
-   * returns `Unimplemented`. Rate-limited to one send per 60 seconds per user.
+   * (`verification_in_progress`). Works for both `tel:` (via SMS) and `mailto:` (via the server's
+   * email providers -- Postmark/SendGrid/Mailgun/Stalwart -- which must be enabled, see
+   * [`ContactProtocol`](#rellm-ContactProtocol)) values, verifying the user's `phone` or `email`
+   * respectively. Rate-limited to one send per 60 seconds per user. A contact method that is
+   * already verified on a *different* account can't be verified here (`contact_already_verified`).
+   * Verified contact methods are what [`Login`](#grpc-api-Login) via SMS/email and
+   * [`CreateAccount`](#grpc-api-CreateAccount) with a verified phone/email are built on.
    */
   startContactMethodVerification(
     request: ContactMethod,
@@ -2685,6 +2711,17 @@ export interface RellmServiceImplementation<CallContextExt = {}> {
     context: CallContext & CallContextExt,
   ): Promise<DeepPartial<ServerConfiguration>>;
   /**
+   * Checks the health of every configured SMS and email provider *right now* by calling their APIs
+   * (and, for email, looking up SPF/DKIM/DMARC DNS records) -- see
+   * [`ContactIntegrationsStatus`](#rellm-ContactIntegrationsStatus). *Authenticated.* Requires
+   * `ADMIN` permissions. Slow (several outbound calls, made in parallel), so call it on demand,
+   * not on every page load. Never returns secrets.
+   */
+  getContactIntegrationsStatus(
+    request: Empty,
+    context: CallContext & CallContextExt,
+  ): Promise<DeepPartial<ContactIntegrationsStatus>>;
+  /**
    * Gets the server's [`CustomCSSConfiguration`](#rellm-CustomCSSConfiguration), including the (potentially large)
    * `custom_css` text -- the only RPC that returns it:
    * [`GetServerConfiguration`](#grpc-api-GetServerConfiguration) carries the rest of the message (media, forced
@@ -2839,8 +2876,13 @@ export interface RellmClient<CallOptionsExt = {}> {
    * [`ContactMethod.consent_state`](#rellm-ContactMethod)'s own doc; this is checked even though
    * the user is the one requesting the send). Generates a 6-digit code, sends it via SMS, and
    * stores it (with a start time and attempt counter) on the phone `ContactMethod`
-   * (`verification_in_progress`). Only `tel:` values are supported this iteration -- `mailto:`
-   * returns `Unimplemented`. Rate-limited to one send per 60 seconds per user.
+   * (`verification_in_progress`). Works for both `tel:` (via SMS) and `mailto:` (via the server's
+   * email providers -- Postmark/SendGrid/Mailgun/Stalwart -- which must be enabled, see
+   * [`ContactProtocol`](#rellm-ContactProtocol)) values, verifying the user's `phone` or `email`
+   * respectively. Rate-limited to one send per 60 seconds per user. A contact method that is
+   * already verified on a *different* account can't be verified here (`contact_already_verified`).
+   * Verified contact methods are what [`Login`](#grpc-api-Login) via SMS/email and
+   * [`CreateAccount`](#grpc-api-CreateAccount) with a verified phone/email are built on.
    */
   startContactMethodVerification(
     request: DeepPartial<ContactMethod>,
@@ -3219,6 +3261,17 @@ export interface RellmClient<CallOptionsExt = {}> {
     request: DeepPartial<ServerConfiguration>,
     options?: CallOptions & CallOptionsExt,
   ): Promise<ServerConfiguration>;
+  /**
+   * Checks the health of every configured SMS and email provider *right now* by calling their APIs
+   * (and, for email, looking up SPF/DKIM/DMARC DNS records) -- see
+   * [`ContactIntegrationsStatus`](#rellm-ContactIntegrationsStatus). *Authenticated.* Requires
+   * `ADMIN` permissions. Slow (several outbound calls, made in parallel), so call it on demand,
+   * not on every page load. Never returns secrets.
+   */
+  getContactIntegrationsStatus(
+    request: DeepPartial<Empty>,
+    options?: CallOptions & CallOptionsExt,
+  ): Promise<ContactIntegrationsStatus>;
   /**
    * Gets the server's [`CustomCSSConfiguration`](#rellm-CustomCSSConfiguration), including the (potentially large)
    * `custom_css` text -- the only RPC that returns it:

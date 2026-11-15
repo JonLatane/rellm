@@ -17,6 +17,7 @@ import 'package:protobuf/protobuf.dart' as $pb;
 
 import 'ai_providers.pb.dart' as $11;
 import 'authentication.pb.dart' as $3;
+import 'contact_integrations.pb.dart' as $13;
 import 'events.pb.dart' as $9;
 import 'federation.pb.dart' as $1;
 import 'google/protobuf/empty.pb.dart' as $0;
@@ -369,6 +370,10 @@ class RellmClient extends $grpc.Client {
       '/rellm.Rellm/ConfigureServer',
       ($2.ServerConfiguration value) => value.writeToBuffer(),
       ($core.List<$core.int> value) => $2.ServerConfiguration.fromBuffer(value));
+  static final _$getContactIntegrationsStatus = $grpc.ClientMethod<$0.Empty, $13.ContactIntegrationsStatus>(
+      '/rellm.Rellm/GetContactIntegrationsStatus',
+      ($0.Empty value) => value.writeToBuffer(),
+      ($core.List<$core.int> value) => $13.ContactIntegrationsStatus.fromBuffer(value));
   static final _$getCustomCSS = $grpc.ClientMethod<$0.Empty, $2.CustomCSSConfiguration>(
       '/rellm.Rellm/GetCustomCSS',
       ($0.Empty value) => value.writeToBuffer(),
@@ -742,6 +747,10 @@ class RellmClient extends $grpc.Client {
 
   $grpc.ResponseFuture<$2.ServerConfiguration> configureServer($2.ServerConfiguration request, {$grpc.CallOptions? options}) {
     return $createUnaryCall(_$configureServer, request, options: options);
+  }
+
+  $grpc.ResponseFuture<$13.ContactIntegrationsStatus> getContactIntegrationsStatus($0.Empty request, {$grpc.CallOptions? options}) {
+    return $createUnaryCall(_$getContactIntegrationsStatus, request, options: options);
   }
 
   $grpc.ResponseFuture<$2.CustomCSSConfiguration> getCustomCSS($0.Empty request, {$grpc.CallOptions? options}) {
@@ -1370,6 +1379,13 @@ abstract class RellmServiceBase extends $grpc.Service {
         false,
         ($core.List<$core.int> value) => $2.ServerConfiguration.fromBuffer(value),
         ($2.ServerConfiguration value) => value.writeToBuffer()));
+    $addMethod($grpc.ServiceMethod<$0.Empty, $13.ContactIntegrationsStatus>(
+        'GetContactIntegrationsStatus',
+        getContactIntegrationsStatus_Pre,
+        false,
+        false,
+        ($core.List<$core.int> value) => $0.Empty.fromBuffer(value),
+        ($13.ContactIntegrationsStatus value) => value.writeToBuffer()));
     $addMethod($grpc.ServiceMethod<$0.Empty, $2.CustomCSSConfiguration>(
         'GetCustomCSS',
         getCustomCSS_Pre,
@@ -1764,6 +1780,10 @@ abstract class RellmServiceBase extends $grpc.Service {
     return configureServer(call, await request);
   }
 
+  $async.Future<$13.ContactIntegrationsStatus> getContactIntegrationsStatus_Pre($grpc.ServiceCall call, $async.Future<$0.Empty> request) async {
+    return getContactIntegrationsStatus(call, await request);
+  }
+
   $async.Future<$2.CustomCSSConfiguration> getCustomCSS_Pre($grpc.ServiceCall call, $async.Future<$0.Empty> request) async {
     return getCustomCSS(call, await request);
   }
@@ -1880,6 +1900,7 @@ abstract class RellmServiceBase extends $grpc.Service {
   $async.Future<$1.FederatedAccount> federateProfile($grpc.ServiceCall call, $1.FederatedAccount request);
   $async.Future<$0.Empty> defederateProfile($grpc.ServiceCall call, $1.FederatedAccount request);
   $async.Future<$2.ServerConfiguration> configureServer($grpc.ServiceCall call, $2.ServerConfiguration request);
+  $async.Future<$13.ContactIntegrationsStatus> getContactIntegrationsStatus($grpc.ServiceCall call, $0.Empty request);
   $async.Future<$2.CustomCSSConfiguration> getCustomCSS($grpc.ServiceCall call, $0.Empty request);
   $async.Future<$2.CustomCSSConfiguration> configureCustomCSS($grpc.ServiceCall call, $2.CustomCSSConfiguration request);
   $async.Future<$0.Empty> deleteLinkPreviewImages($grpc.ServiceCall call, $0.Empty request);

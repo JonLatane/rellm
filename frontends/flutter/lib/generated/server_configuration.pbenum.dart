@@ -36,13 +36,21 @@ class ClusterResource extends $pb.ProtobufEnum {
 /// Authentication features that can be enabled/disabled by the server admin.
 class AuthenticationFeature extends $pb.ProtobufEnum {
   static const AuthenticationFeature AUTHENTICATION_FEATURE_UNKNOWN = AuthenticationFeature._(0, _omitEnumNames ? '' : 'AUTHENTICATION_FEATURE_UNKNOWN');
-  static const AuthenticationFeature CREATE_ACCOUNT = AuthenticationFeature._(1, _omitEnumNames ? '' : 'CREATE_ACCOUNT');
-  static const AuthenticationFeature LOGIN = AuthenticationFeature._(2, _omitEnumNames ? '' : 'LOGIN');
+  static const AuthenticationFeature CREATE_ACCOUNT_WITH_PASSWORD = AuthenticationFeature._(1, _omitEnumNames ? '' : 'CREATE_ACCOUNT_WITH_PASSWORD');
+  static const AuthenticationFeature CREATE_ACCOUNT_WITH_SMS = AuthenticationFeature._(2, _omitEnumNames ? '' : 'CREATE_ACCOUNT_WITH_SMS');
+  static const AuthenticationFeature CREATE_ACCOUNT_WITH_EMAIL = AuthenticationFeature._(3, _omitEnumNames ? '' : 'CREATE_ACCOUNT_WITH_EMAIL');
+  static const AuthenticationFeature LOGIN_WITH_PASSWORD = AuthenticationFeature._(11, _omitEnumNames ? '' : 'LOGIN_WITH_PASSWORD');
+  static const AuthenticationFeature LOGIN_WITH_SMS = AuthenticationFeature._(12, _omitEnumNames ? '' : 'LOGIN_WITH_SMS');
+  static const AuthenticationFeature LOGIN_WITH_EMAIL = AuthenticationFeature._(13, _omitEnumNames ? '' : 'LOGIN_WITH_EMAIL');
 
   static const $core.List<AuthenticationFeature> values = <AuthenticationFeature> [
     AUTHENTICATION_FEATURE_UNKNOWN,
-    CREATE_ACCOUNT,
-    LOGIN,
+    CREATE_ACCOUNT_WITH_PASSWORD,
+    CREATE_ACCOUNT_WITH_SMS,
+    CREATE_ACCOUNT_WITH_EMAIL,
+    LOGIN_WITH_PASSWORD,
+    LOGIN_WITH_SMS,
+    LOGIN_WITH_EMAIL,
   ];
 
   static final $core.Map<$core.int, AuthenticationFeature> _byValue = $pb.ProtobufEnum.initByValue(values);
@@ -218,6 +226,28 @@ class ContactVerificationAPI extends $pb.ProtobufEnum {
   static ContactVerificationAPI? valueOf($core.int value) => _byValue[value];
 
   const ContactVerificationAPI._($core.int v, $core.String n) : super(v, n);
+}
+
+/// The email providers [`ServerConfiguration.preferred_email_apis`](#rellm-ServerConfiguration)/
+/// [`available_email_apis`](#rellm-ServerConfiguration) order between -- the email counterpart of
+/// [`ContactVerificationAPI`](#rellm-ContactVerificationAPI).
+class EmailVerificationAPI extends $pb.ProtobufEnum {
+  static const EmailVerificationAPI EMAIL_VERIFICATION_API_POSTMARK = EmailVerificationAPI._(0, _omitEnumNames ? '' : 'EMAIL_VERIFICATION_API_POSTMARK');
+  static const EmailVerificationAPI EMAIL_VERIFICATION_API_SENDGRID = EmailVerificationAPI._(1, _omitEnumNames ? '' : 'EMAIL_VERIFICATION_API_SENDGRID');
+  static const EmailVerificationAPI EMAIL_VERIFICATION_API_MAILGUN = EmailVerificationAPI._(2, _omitEnumNames ? '' : 'EMAIL_VERIFICATION_API_MAILGUN');
+  static const EmailVerificationAPI EMAIL_VERIFICATION_API_STALWART = EmailVerificationAPI._(3, _omitEnumNames ? '' : 'EMAIL_VERIFICATION_API_STALWART');
+
+  static const $core.List<EmailVerificationAPI> values = <EmailVerificationAPI> [
+    EMAIL_VERIFICATION_API_POSTMARK,
+    EMAIL_VERIFICATION_API_SENDGRID,
+    EMAIL_VERIFICATION_API_MAILGUN,
+    EMAIL_VERIFICATION_API_STALWART,
+  ];
+
+  static final $core.Map<$core.int, EmailVerificationAPI> _byValue = $pb.ProtobufEnum.initByValue(values);
+  static EmailVerificationAPI? valueOf($core.int value) => _byValue[value];
+
+  const EmailVerificationAPI._($core.int v, $core.String n) : super(v, n);
 }
 
 

@@ -14,18 +14,44 @@ import 'dart:core' as $core;
 import 'package:fixnum/fixnum.dart' as $fixnum;
 import 'package:protobuf/protobuf.dart' as $pb;
 
-import 'google/protobuf/timestamp.pb.dart' as $13;
+import 'google/protobuf/timestamp.pb.dart' as $14;
 import 'users.pb.dart' as $4;
 
-/// Request to create a new account.
+///  Request to create a new account. Three ways to prove who you are, which may be combined:
+///
+///  - **Password** (`password` set): the classic flow. One request creates the account.
+///  - **Verified SMS** (`phone` set, server has `CREATE_ACCOUNT_WITH_SMS` enabled) and/or
+///  - **Verified email** (`email` set, server has `CREATE_ACCOUNT_WITH_EMAIL` enabled).
+///
+///  When a server has `CREATE_ACCOUNT_WITH_SMS`/`CREATE_ACCOUNT_WITH_EMAIL` enabled (see
+///  [`AuthenticationFeature`](#rellm-AuthenticationFeature)), every `phone`/`email` supplied here
+///  **must be verified before the account is created**, using two requests with the same contact
+///  methods:
+///
+///  1. Send the request *without* the matching `phone_verification_code`/`email_verification_code`.
+///     The contact method must have `consent_state` `CONTACT_CONSENT_GRANTED` (we're about to
+///     message it). The server sends a code to each unverified contact method and returns a
+///     [`RefreshTokenResponse`](#rellm-RefreshTokenResponse) with only `verification_challenge` set --
+///     no account exists yet.
+///  2. Repeat the request with the codes filled in. If every code is correct, the account is
+///     created with those contact methods already verified (`verified_at` set), and tokens are
+///     returned as usual.
+///
+///  If `password` is empty the account is passwordless: it can only be logged into via SMS/email
+///  (see [`LoginRequest`](#rellm-LoginRequest)), so at least one of `phone`/`email` must be given.
+///  A contact method that is already verified on another account is rejected
+///  (`contact_already_verified`). If the server doesn't have the matching `CREATE_ACCOUNT_WITH_*`
+///  feature enabled, `phone`/`email` are saved *unverified* exactly as before.
 class CreateAccountRequest extends $pb.GeneratedMessage {
   factory CreateAccountRequest({
     $core.String? username,
     $core.String? password,
     $4.ContactMethod? email,
     $4.ContactMethod? phone,
-    $13.Timestamp? expiresAt,
+    $14.Timestamp? expiresAt,
     $core.String? deviceName,
+    $core.String? phoneVerificationCode,
+    $core.String? emailVerificationCode,
   }) {
     final $result = create();
     if (username != null) {
@@ -46,6 +72,12 @@ class CreateAccountRequest extends $pb.GeneratedMessage {
     if (deviceName != null) {
       $result.deviceName = deviceName;
     }
+    if (phoneVerificationCode != null) {
+      $result.phoneVerificationCode = phoneVerificationCode;
+    }
+    if (emailVerificationCode != null) {
+      $result.emailVerificationCode = emailVerificationCode;
+    }
     return $result;
   }
   CreateAccountRequest._() : super();
@@ -57,8 +89,10 @@ class CreateAccountRequest extends $pb.GeneratedMessage {
     ..aOS(2, _omitFieldNames ? '' : 'password')
     ..aOM<$4.ContactMethod>(3, _omitFieldNames ? '' : 'email', subBuilder: $4.ContactMethod.create)
     ..aOM<$4.ContactMethod>(4, _omitFieldNames ? '' : 'phone', subBuilder: $4.ContactMethod.create)
-    ..aOM<$13.Timestamp>(5, _omitFieldNames ? '' : 'expiresAt', subBuilder: $13.Timestamp.create)
+    ..aOM<$14.Timestamp>(5, _omitFieldNames ? '' : 'expiresAt', subBuilder: $14.Timestamp.create)
     ..aOS(6, _omitFieldNames ? '' : 'deviceName')
+    ..aOS(7, _omitFieldNames ? '' : 'phoneVerificationCode')
+    ..aOS(8, _omitFieldNames ? '' : 'emailVerificationCode')
     ..hasRequiredFields = false
   ;
 
@@ -93,7 +127,8 @@ class CreateAccountRequest extends $pb.GeneratedMessage {
   @$pb.TagNumber(1)
   void clearUsername() => clearField(1);
 
-  /// Password for the account to be created. Must be at least 8 characters.
+  /// Password for the account to be created. Must be at least 8 characters, or empty to create a
+  /// passwordless (SMS/email-login-only) account -- see this message's own doc.
   @$pb.TagNumber(2)
   $core.String get password => $_getSZ(1);
   @$pb.TagNumber(2)
@@ -129,15 +164,15 @@ class CreateAccountRequest extends $pb.GeneratedMessage {
 
   /// Request an expiration time for the Auth Token returned. By default it will not expire.
   @$pb.TagNumber(5)
-  $13.Timestamp get expiresAt => $_getN(4);
+  $14.Timestamp get expiresAt => $_getN(4);
   @$pb.TagNumber(5)
-  set expiresAt($13.Timestamp v) { setField(5, v); }
+  set expiresAt($14.Timestamp v) { setField(5, v); }
   @$pb.TagNumber(5)
   $core.bool hasExpiresAt() => $_has(4);
   @$pb.TagNumber(5)
   void clearExpiresAt() => clearField(5);
   @$pb.TagNumber(5)
-  $13.Timestamp ensureExpiresAt() => $_ensure(4);
+  $14.Timestamp ensureExpiresAt() => $_ensure(4);
 
   /// (Not yet implemented.) The name of the device being used to create the account.
   @$pb.TagNumber(6)
@@ -148,32 +183,70 @@ class CreateAccountRequest extends $pb.GeneratedMessage {
   $core.bool hasDeviceName() => $_has(5);
   @$pb.TagNumber(6)
   void clearDeviceName() => clearField(6);
+
+  /// Second-phase code sent to `phone` (via SMS) by the first phase of this request. See this
+  /// message's own doc.
+  @$pb.TagNumber(7)
+  $core.String get phoneVerificationCode => $_getSZ(6);
+  @$pb.TagNumber(7)
+  set phoneVerificationCode($core.String v) { $_setString(6, v); }
+  @$pb.TagNumber(7)
+  $core.bool hasPhoneVerificationCode() => $_has(6);
+  @$pb.TagNumber(7)
+  void clearPhoneVerificationCode() => clearField(7);
+
+  /// Second-phase code sent to `email` by the first phase of this request. See this message's own
+  /// doc.
+  @$pb.TagNumber(8)
+  $core.String get emailVerificationCode => $_getSZ(7);
+  @$pb.TagNumber(8)
+  set emailVerificationCode($core.String v) { $_setString(7, v); }
+  @$pb.TagNumber(8)
+  $core.bool hasEmailVerificationCode() => $_has(7);
+  @$pb.TagNumber(8)
+  void clearEmailVerificationCode() => clearField(8);
 }
 
-/// Request to login to an existing account.
+enum LoginRequest_Request {
+  usernamePassword, 
+  sms, 
+  email, 
+  notSet
+}
+
+///  Request to login to an existing account. Exactly one of the `request` variants must be set.
+///
+///  `sms` and `email` logins are **two-phase**, and only work for a contact method that the account
+///  has already *verified* (`ContactMethod.verified_at`, see
+///  [`VerifyContactMethod`](#grpc-api-VerifyContactMethod)) and still consents to being contacted
+///  through (`consent_state` `CONTACT_CONSENT_GRANTED`):
+///
+///  1. Send the request with no `code`. If an account matches, the server sends it a one-time code
+///     and returns a [`RefreshTokenResponse`](#rellm-RefreshTokenResponse) with only
+///     `verification_challenge` set. To avoid revealing which phone numbers/emails have accounts, the
+///     response looks the same whether or not an account matched.
+///  2. Send the request again with the `code`. On success the response carries tokens and the user,
+///     as with a password login.
+///
+///  Codes are 6 digits, expire after 10 minutes, are limited to 5 wrong guesses, and can be re-sent
+///  at most once a minute -- the same rules as [`ContactMethodVerification`](#rellm-ContactMethodVerification).
+///  Servers advertise which login methods they allow in
+///  [`ServerConfiguration.authentication_features`](#rellm-ServerConfiguration).
 class LoginRequest extends $pb.GeneratedMessage {
   factory LoginRequest({
-    $core.String? username,
-    $core.String? password,
-    $13.Timestamp? expiresAt,
-    $core.String? deviceName,
-    $core.String? userId,
+    UsernamePasswordLoginRequest? usernamePassword,
+    SMSLoginRequest? sms,
+    EmailLoginRequest? email,
   }) {
     final $result = create();
-    if (username != null) {
-      $result.username = username;
+    if (usernamePassword != null) {
+      $result.usernamePassword = usernamePassword;
     }
-    if (password != null) {
-      $result.password = password;
+    if (sms != null) {
+      $result.sms = sms;
     }
-    if (expiresAt != null) {
-      $result.expiresAt = expiresAt;
-    }
-    if (deviceName != null) {
-      $result.deviceName = deviceName;
-    }
-    if (userId != null) {
-      $result.userId = userId;
+    if (email != null) {
+      $result.email = email;
     }
     return $result;
   }
@@ -181,12 +254,17 @@ class LoginRequest extends $pb.GeneratedMessage {
   factory LoginRequest.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromBuffer(i, r);
   factory LoginRequest.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
 
+  static const $core.Map<$core.int, LoginRequest_Request> _LoginRequest_RequestByTag = {
+    1 : LoginRequest_Request.usernamePassword,
+    2 : LoginRequest_Request.sms,
+    3 : LoginRequest_Request.email,
+    0 : LoginRequest_Request.notSet
+  };
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'LoginRequest', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
-    ..aOS(1, _omitFieldNames ? '' : 'username')
-    ..aOS(2, _omitFieldNames ? '' : 'password')
-    ..aOM<$13.Timestamp>(3, _omitFieldNames ? '' : 'expiresAt', subBuilder: $13.Timestamp.create)
-    ..aOS(4, _omitFieldNames ? '' : 'deviceName')
-    ..aOS(5, _omitFieldNames ? '' : 'userId')
+    ..oo(0, [1, 2, 3])
+    ..aOM<UsernamePasswordLoginRequest>(1, _omitFieldNames ? '' : 'usernamePassword', subBuilder: UsernamePasswordLoginRequest.create)
+    ..aOM<SMSLoginRequest>(2, _omitFieldNames ? '' : 'sms', subBuilder: SMSLoginRequest.create)
+    ..aOM<EmailLoginRequest>(3, _omitFieldNames ? '' : 'email', subBuilder: EmailLoginRequest.create)
     ..hasRequiredFields = false
   ;
 
@@ -211,6 +289,104 @@ class LoginRequest extends $pb.GeneratedMessage {
   static LoginRequest getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<LoginRequest>(create);
   static LoginRequest? _defaultInstance;
 
+  LoginRequest_Request whichRequest() => _LoginRequest_RequestByTag[$_whichOneof(0)]!;
+  void clearRequest() => clearField($_whichOneof(0));
+
+  @$pb.TagNumber(1)
+  UsernamePasswordLoginRequest get usernamePassword => $_getN(0);
+  @$pb.TagNumber(1)
+  set usernamePassword(UsernamePasswordLoginRequest v) { setField(1, v); }
+  @$pb.TagNumber(1)
+  $core.bool hasUsernamePassword() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearUsernamePassword() => clearField(1);
+  @$pb.TagNumber(1)
+  UsernamePasswordLoginRequest ensureUsernamePassword() => $_ensure(0);
+
+  @$pb.TagNumber(2)
+  SMSLoginRequest get sms => $_getN(1);
+  @$pb.TagNumber(2)
+  set sms(SMSLoginRequest v) { setField(2, v); }
+  @$pb.TagNumber(2)
+  $core.bool hasSms() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearSms() => clearField(2);
+  @$pb.TagNumber(2)
+  SMSLoginRequest ensureSms() => $_ensure(1);
+
+  @$pb.TagNumber(3)
+  EmailLoginRequest get email => $_getN(2);
+  @$pb.TagNumber(3)
+  set email(EmailLoginRequest v) { setField(3, v); }
+  @$pb.TagNumber(3)
+  $core.bool hasEmail() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearEmail() => clearField(3);
+  @$pb.TagNumber(3)
+  EmailLoginRequest ensureEmail() => $_ensure(2);
+}
+
+/// Request to login with username + password.
+class UsernamePasswordLoginRequest extends $pb.GeneratedMessage {
+  factory UsernamePasswordLoginRequest({
+    $core.String? username,
+    $core.String? password,
+    $14.Timestamp? expiresAt,
+    $core.String? deviceName,
+    $core.String? userId,
+  }) {
+    final $result = create();
+    if (username != null) {
+      $result.username = username;
+    }
+    if (password != null) {
+      $result.password = password;
+    }
+    if (expiresAt != null) {
+      $result.expiresAt = expiresAt;
+    }
+    if (deviceName != null) {
+      $result.deviceName = deviceName;
+    }
+    if (userId != null) {
+      $result.userId = userId;
+    }
+    return $result;
+  }
+  UsernamePasswordLoginRequest._() : super();
+  factory UsernamePasswordLoginRequest.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromBuffer(i, r);
+  factory UsernamePasswordLoginRequest.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'UsernamePasswordLoginRequest', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'username')
+    ..aOS(2, _omitFieldNames ? '' : 'password')
+    ..aOM<$14.Timestamp>(3, _omitFieldNames ? '' : 'expiresAt', subBuilder: $14.Timestamp.create)
+    ..aOS(4, _omitFieldNames ? '' : 'deviceName')
+    ..aOS(5, _omitFieldNames ? '' : 'userId')
+    ..hasRequiredFields = false
+  ;
+
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.deepCopy] instead. '
+  'Will be removed in next major version')
+  UsernamePasswordLoginRequest clone() => UsernamePasswordLoginRequest()..mergeFromMessage(this);
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.rebuild] instead. '
+  'Will be removed in next major version')
+  UsernamePasswordLoginRequest copyWith(void Function(UsernamePasswordLoginRequest) updates) => super.copyWith((message) => updates(message as UsernamePasswordLoginRequest)) as UsernamePasswordLoginRequest;
+
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static UsernamePasswordLoginRequest create() => UsernamePasswordLoginRequest._();
+  UsernamePasswordLoginRequest createEmptyInstance() => create();
+  static $pb.PbList<UsernamePasswordLoginRequest> createRepeated() => $pb.PbList<UsernamePasswordLoginRequest>();
+  @$core.pragma('dart2js:noInline')
+  static UsernamePasswordLoginRequest getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<UsernamePasswordLoginRequest>(create);
+  static UsernamePasswordLoginRequest? _defaultInstance;
+
   /// Username for the account to be logged into. Must exist.
   @$pb.TagNumber(1)
   $core.String get username => $_getSZ(0);
@@ -233,15 +409,15 @@ class LoginRequest extends $pb.GeneratedMessage {
 
   /// Request an expiration time for the Auth Token returned. By default it will not expire.
   @$pb.TagNumber(3)
-  $13.Timestamp get expiresAt => $_getN(2);
+  $14.Timestamp get expiresAt => $_getN(2);
   @$pb.TagNumber(3)
-  set expiresAt($13.Timestamp v) { setField(3, v); }
+  set expiresAt($14.Timestamp v) { setField(3, v); }
   @$pb.TagNumber(3)
   $core.bool hasExpiresAt() => $_has(2);
   @$pb.TagNumber(3)
   void clearExpiresAt() => clearField(3);
   @$pb.TagNumber(3)
-  $13.Timestamp ensureExpiresAt() => $_ensure(2);
+  $14.Timestamp ensureExpiresAt() => $_ensure(2);
 
   /// (Not yet implemented.) The name of the device being used to login.
   @$pb.TagNumber(4)
@@ -254,6 +430,240 @@ class LoginRequest extends $pb.GeneratedMessage {
   void clearDeviceName() => clearField(4);
 
   /// (TODO) If provided, username is ignored and login is initiated via user_id instead.
+  @$pb.TagNumber(5)
+  $core.String get userId => $_getSZ(4);
+  @$pb.TagNumber(5)
+  set userId($core.String v) { $_setString(4, v); }
+  @$pb.TagNumber(5)
+  $core.bool hasUserId() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearUserId() => clearField(5);
+}
+
+/// Request to login via SMS. Two SMSLoginRequests are required to complete
+/// a login.
+class SMSLoginRequest extends $pb.GeneratedMessage {
+  factory SMSLoginRequest({
+    $core.String? phoneNumber,
+    $core.String? code,
+    $14.Timestamp? expiresAt,
+    $core.String? deviceName,
+    $core.String? userId,
+  }) {
+    final $result = create();
+    if (phoneNumber != null) {
+      $result.phoneNumber = phoneNumber;
+    }
+    if (code != null) {
+      $result.code = code;
+    }
+    if (expiresAt != null) {
+      $result.expiresAt = expiresAt;
+    }
+    if (deviceName != null) {
+      $result.deviceName = deviceName;
+    }
+    if (userId != null) {
+      $result.userId = userId;
+    }
+    return $result;
+  }
+  SMSLoginRequest._() : super();
+  factory SMSLoginRequest.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromBuffer(i, r);
+  factory SMSLoginRequest.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'SMSLoginRequest', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'phoneNumber')
+    ..aOS(2, _omitFieldNames ? '' : 'code')
+    ..aOM<$14.Timestamp>(3, _omitFieldNames ? '' : 'expiresAt', subBuilder: $14.Timestamp.create)
+    ..aOS(4, _omitFieldNames ? '' : 'deviceName')
+    ..aOS(5, _omitFieldNames ? '' : 'userId')
+    ..hasRequiredFields = false
+  ;
+
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.deepCopy] instead. '
+  'Will be removed in next major version')
+  SMSLoginRequest clone() => SMSLoginRequest()..mergeFromMessage(this);
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.rebuild] instead. '
+  'Will be removed in next major version')
+  SMSLoginRequest copyWith(void Function(SMSLoginRequest) updates) => super.copyWith((message) => updates(message as SMSLoginRequest)) as SMSLoginRequest;
+
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static SMSLoginRequest create() => SMSLoginRequest._();
+  SMSLoginRequest createEmptyInstance() => create();
+  static $pb.PbList<SMSLoginRequest> createRepeated() => $pb.PbList<SMSLoginRequest>();
+  @$core.pragma('dart2js:noInline')
+  static SMSLoginRequest getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<SMSLoginRequest>(create);
+  static SMSLoginRequest? _defaultInstance;
+
+  /// The phone number to be used for login, in E.164 format (`+19195551234`); a leading `tel:` is
+  /// accepted. Always required. Must be a phone number the account has verified.
+  @$pb.TagNumber(1)
+  $core.String get phoneNumber => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set phoneNumber($core.String v) { $_setString(0, v); }
+  @$pb.TagNumber(1)
+  $core.bool hasPhoneNumber() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearPhoneNumber() => clearField(1);
+
+  /// Response code sent to the phone number via SMS for the second phase of authentication. Must be valid.
+  @$pb.TagNumber(2)
+  $core.String get code => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set code($core.String v) { $_setString(1, v); }
+  @$pb.TagNumber(2)
+  $core.bool hasCode() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearCode() => clearField(2);
+
+  /// Request an expiration time for the Auth Token returned. By default it will not expire.
+  @$pb.TagNumber(3)
+  $14.Timestamp get expiresAt => $_getN(2);
+  @$pb.TagNumber(3)
+  set expiresAt($14.Timestamp v) { setField(3, v); }
+  @$pb.TagNumber(3)
+  $core.bool hasExpiresAt() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearExpiresAt() => clearField(3);
+  @$pb.TagNumber(3)
+  $14.Timestamp ensureExpiresAt() => $_ensure(2);
+
+  /// (Not yet implemented.) The name of the device being used to login.
+  @$pb.TagNumber(4)
+  $core.String get deviceName => $_getSZ(3);
+  @$pb.TagNumber(4)
+  set deviceName($core.String v) { $_setString(3, v); }
+  @$pb.TagNumber(4)
+  $core.bool hasDeviceName() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearDeviceName() => clearField(4);
+
+  /// Only needed if (unusually) more than one account has this contact method verified: picks
+  /// which account to log into. Otherwise ignored.
+  @$pb.TagNumber(5)
+  $core.String get userId => $_getSZ(4);
+  @$pb.TagNumber(5)
+  set userId($core.String v) { $_setString(4, v); }
+  @$pb.TagNumber(5)
+  $core.bool hasUserId() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearUserId() => clearField(5);
+}
+
+/// Request to login via email. Two EmailLoginRequests are required to complete
+/// a login.
+class EmailLoginRequest extends $pb.GeneratedMessage {
+  factory EmailLoginRequest({
+    $core.String? email,
+    $core.String? code,
+    $14.Timestamp? expiresAt,
+    $core.String? deviceName,
+    $core.String? userId,
+  }) {
+    final $result = create();
+    if (email != null) {
+      $result.email = email;
+    }
+    if (code != null) {
+      $result.code = code;
+    }
+    if (expiresAt != null) {
+      $result.expiresAt = expiresAt;
+    }
+    if (deviceName != null) {
+      $result.deviceName = deviceName;
+    }
+    if (userId != null) {
+      $result.userId = userId;
+    }
+    return $result;
+  }
+  EmailLoginRequest._() : super();
+  factory EmailLoginRequest.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromBuffer(i, r);
+  factory EmailLoginRequest.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'EmailLoginRequest', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'email')
+    ..aOS(2, _omitFieldNames ? '' : 'code')
+    ..aOM<$14.Timestamp>(3, _omitFieldNames ? '' : 'expiresAt', subBuilder: $14.Timestamp.create)
+    ..aOS(4, _omitFieldNames ? '' : 'deviceName')
+    ..aOS(5, _omitFieldNames ? '' : 'userId')
+    ..hasRequiredFields = false
+  ;
+
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.deepCopy] instead. '
+  'Will be removed in next major version')
+  EmailLoginRequest clone() => EmailLoginRequest()..mergeFromMessage(this);
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.rebuild] instead. '
+  'Will be removed in next major version')
+  EmailLoginRequest copyWith(void Function(EmailLoginRequest) updates) => super.copyWith((message) => updates(message as EmailLoginRequest)) as EmailLoginRequest;
+
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static EmailLoginRequest create() => EmailLoginRequest._();
+  EmailLoginRequest createEmptyInstance() => create();
+  static $pb.PbList<EmailLoginRequest> createRepeated() => $pb.PbList<EmailLoginRequest>();
+  @$core.pragma('dart2js:noInline')
+  static EmailLoginRequest getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<EmailLoginRequest>(create);
+  static EmailLoginRequest? _defaultInstance;
+
+  /// The email address to be used for login (a leading `mailto:` is accepted; matched
+  /// case-insensitively). Always required. Must be an address the account has verified.
+  @$pb.TagNumber(1)
+  $core.String get email => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set email($core.String v) { $_setString(0, v); }
+  @$pb.TagNumber(1)
+  $core.bool hasEmail() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearEmail() => clearField(1);
+
+  /// Response code sent to the email address for the second phase of authentication. Must be valid.
+  @$pb.TagNumber(2)
+  $core.String get code => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set code($core.String v) { $_setString(1, v); }
+  @$pb.TagNumber(2)
+  $core.bool hasCode() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearCode() => clearField(2);
+
+  /// Request an expiration time for the Auth Token returned. By default it will not expire.
+  @$pb.TagNumber(3)
+  $14.Timestamp get expiresAt => $_getN(2);
+  @$pb.TagNumber(3)
+  set expiresAt($14.Timestamp v) { setField(3, v); }
+  @$pb.TagNumber(3)
+  $core.bool hasExpiresAt() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearExpiresAt() => clearField(3);
+  @$pb.TagNumber(3)
+  $14.Timestamp ensureExpiresAt() => $_ensure(2);
+
+  /// (Not yet implemented.) The name of the device being used to login.
+  @$pb.TagNumber(4)
+  $core.String get deviceName => $_getSZ(3);
+  @$pb.TagNumber(4)
+  set deviceName($core.String v) { $_setString(3, v); }
+  @$pb.TagNumber(4)
+  $core.bool hasDeviceName() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearDeviceName() => clearField(4);
+
+  /// Only needed if (unusually) more than one account has this contact method verified: picks
+  /// which account to log into. Otherwise ignored.
   @$pb.TagNumber(5)
   $core.String get userId => $_getSZ(4);
   @$pb.TagNumber(5)
@@ -282,7 +692,7 @@ class LoginRequest extends $pb.GeneratedMessage {
 ///  Note that refresh tokens
 class CreateThirdPartyRefreshTokenRequest extends $pb.GeneratedMessage {
   factory CreateThirdPartyRefreshTokenRequest({
-    $13.Timestamp? expiresAt,
+    $14.Timestamp? expiresAt,
     $core.String? userId,
     $core.String? deviceName,
   }) {
@@ -303,7 +713,7 @@ class CreateThirdPartyRefreshTokenRequest extends $pb.GeneratedMessage {
   factory CreateThirdPartyRefreshTokenRequest.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
 
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'CreateThirdPartyRefreshTokenRequest', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
-    ..aOM<$13.Timestamp>(2, _omitFieldNames ? '' : 'expiresAt', subBuilder: $13.Timestamp.create)
+    ..aOM<$14.Timestamp>(2, _omitFieldNames ? '' : 'expiresAt', subBuilder: $14.Timestamp.create)
     ..aOS(3, _omitFieldNames ? '' : 'userId')
     ..aOS(4, _omitFieldNames ? '' : 'deviceName')
     ..hasRequiredFields = false
@@ -332,15 +742,15 @@ class CreateThirdPartyRefreshTokenRequest extends $pb.GeneratedMessage {
 
   /// The third-party refresh token's expiration time.
   @$pb.TagNumber(2)
-  $13.Timestamp get expiresAt => $_getN(0);
+  $14.Timestamp get expiresAt => $_getN(0);
   @$pb.TagNumber(2)
-  set expiresAt($13.Timestamp v) { setField(2, v); }
+  set expiresAt($14.Timestamp v) { setField(2, v); }
   @$pb.TagNumber(2)
   $core.bool hasExpiresAt() => $_has(0);
   @$pb.TagNumber(2)
   void clearExpiresAt() => clearField(2);
   @$pb.TagNumber(2)
-  $13.Timestamp ensureExpiresAt() => $_ensure(0);
+  $14.Timestamp ensureExpiresAt() => $_ensure(0);
 
   /// The third-party refresh token's user ID.
   @$pb.TagNumber(3)
@@ -369,6 +779,7 @@ class RefreshTokenResponse extends $pb.GeneratedMessage {
     ExpirableToken? refreshToken,
     ExpirableToken? accessToken,
     $4.User? user,
+    VerificationChallenge? verificationChallenge,
   }) {
     final $result = create();
     if (refreshToken != null) {
@@ -380,6 +791,9 @@ class RefreshTokenResponse extends $pb.GeneratedMessage {
     if (user != null) {
       $result.user = user;
     }
+    if (verificationChallenge != null) {
+      $result.verificationChallenge = verificationChallenge;
+    }
     return $result;
   }
   RefreshTokenResponse._() : super();
@@ -390,6 +804,7 @@ class RefreshTokenResponse extends $pb.GeneratedMessage {
     ..aOM<ExpirableToken>(1, _omitFieldNames ? '' : 'refreshToken', subBuilder: ExpirableToken.create)
     ..aOM<ExpirableToken>(2, _omitFieldNames ? '' : 'accessToken', subBuilder: ExpirableToken.create)
     ..aOM<$4.User>(3, _omitFieldNames ? '' : 'user', subBuilder: $4.User.create)
+    ..aOM<VerificationChallenge>(4, _omitFieldNames ? '' : 'verificationChallenge', subBuilder: VerificationChallenge.create)
     ..hasRequiredFields = false
   ;
 
@@ -450,13 +865,111 @@ class RefreshTokenResponse extends $pb.GeneratedMessage {
   void clearUser() => clearField(3);
   @$pb.TagNumber(3)
   $4.User ensureUser() => $_ensure(2);
+
+  /// Set *instead of* the tokens and `user` when this was the first phase of a two-phase
+  /// [`LoginRequest`](#rellm-LoginRequest) (SMS/email) or [`CreateAccountRequest`](#rellm-CreateAccountRequest):
+  /// a code was sent (or, for login, would have been -- see `LoginRequest`), and the client should
+  /// prompt for it and repeat the request with the code filled in.
+  @$pb.TagNumber(4)
+  VerificationChallenge get verificationChallenge => $_getN(3);
+  @$pb.TagNumber(4)
+  set verificationChallenge(VerificationChallenge v) { setField(4, v); }
+  @$pb.TagNumber(4)
+  $core.bool hasVerificationChallenge() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearVerificationChallenge() => clearField(4);
+  @$pb.TagNumber(4)
+  VerificationChallenge ensureVerificationChallenge() => $_ensure(3);
+}
+
+/// Returned in [`RefreshTokenResponse.verification_challenge`](#rellm-RefreshTokenResponse) after the
+/// first phase of an SMS/email login or account creation.
+class VerificationChallenge extends $pb.GeneratedMessage {
+  factory VerificationChallenge({
+    $core.Iterable<$core.String>? sentTo,
+    $14.Timestamp? expiresAt,
+    $14.Timestamp? resendAvailableAt,
+  }) {
+    final $result = create();
+    if (sentTo != null) {
+      $result.sentTo.addAll(sentTo);
+    }
+    if (expiresAt != null) {
+      $result.expiresAt = expiresAt;
+    }
+    if (resendAvailableAt != null) {
+      $result.resendAvailableAt = resendAvailableAt;
+    }
+    return $result;
+  }
+  VerificationChallenge._() : super();
+  factory VerificationChallenge.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromBuffer(i, r);
+  factory VerificationChallenge.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'VerificationChallenge', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
+    ..pPS(1, _omitFieldNames ? '' : 'sentTo')
+    ..aOM<$14.Timestamp>(2, _omitFieldNames ? '' : 'expiresAt', subBuilder: $14.Timestamp.create)
+    ..aOM<$14.Timestamp>(3, _omitFieldNames ? '' : 'resendAvailableAt', subBuilder: $14.Timestamp.create)
+    ..hasRequiredFields = false
+  ;
+
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.deepCopy] instead. '
+  'Will be removed in next major version')
+  VerificationChallenge clone() => VerificationChallenge()..mergeFromMessage(this);
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.rebuild] instead. '
+  'Will be removed in next major version')
+  VerificationChallenge copyWith(void Function(VerificationChallenge) updates) => super.copyWith((message) => updates(message as VerificationChallenge)) as VerificationChallenge;
+
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static VerificationChallenge create() => VerificationChallenge._();
+  VerificationChallenge createEmptyInstance() => create();
+  static $pb.PbList<VerificationChallenge> createRepeated() => $pb.PbList<VerificationChallenge>();
+  @$core.pragma('dart2js:noInline')
+  static VerificationChallenge getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<VerificationChallenge>(create);
+  static VerificationChallenge? _defaultInstance;
+
+  /// The `tel:`/`mailto:` values a code was sent to, e.g. `["tel:+19195551234"]` -- shown to the
+  /// user as "We sent a code to ...". For login this echoes the requested value even when no
+  /// account matched.
+  @$pb.TagNumber(1)
+  $core.List<$core.String> get sentTo => $_getList(0);
+
+  /// When the code(s) expire (10 minutes after being sent).
+  @$pb.TagNumber(2)
+  $14.Timestamp get expiresAt => $_getN(1);
+  @$pb.TagNumber(2)
+  set expiresAt($14.Timestamp v) { setField(2, v); }
+  @$pb.TagNumber(2)
+  $core.bool hasExpiresAt() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearExpiresAt() => clearField(2);
+  @$pb.TagNumber(2)
+  $14.Timestamp ensureExpiresAt() => $_ensure(1);
+
+  /// The earliest a new code can be requested for the same contact method.
+  @$pb.TagNumber(3)
+  $14.Timestamp get resendAvailableAt => $_getN(2);
+  @$pb.TagNumber(3)
+  set resendAvailableAt($14.Timestamp v) { setField(3, v); }
+  @$pb.TagNumber(3)
+  $core.bool hasResendAvailableAt() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearResendAvailableAt() => clearField(3);
+  @$pb.TagNumber(3)
+  $14.Timestamp ensureResendAvailableAt() => $_ensure(2);
 }
 
 /// Generic type for refresh and access tokens.
 class ExpirableToken extends $pb.GeneratedMessage {
   factory ExpirableToken({
     $core.String? token,
-    $13.Timestamp? expiresAt,
+    $14.Timestamp? expiresAt,
   }) {
     final $result = create();
     if (token != null) {
@@ -473,7 +986,7 @@ class ExpirableToken extends $pb.GeneratedMessage {
 
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'ExpirableToken', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'token')
-    ..aOM<$13.Timestamp>(2, _omitFieldNames ? '' : 'expiresAt', subBuilder: $13.Timestamp.create)
+    ..aOM<$14.Timestamp>(2, _omitFieldNames ? '' : 'expiresAt', subBuilder: $14.Timestamp.create)
     ..hasRequiredFields = false
   ;
 
@@ -510,22 +1023,22 @@ class ExpirableToken extends $pb.GeneratedMessage {
 
   /// Optional expiration time for the token. If not set, the token will not expire.
   @$pb.TagNumber(2)
-  $13.Timestamp get expiresAt => $_getN(1);
+  $14.Timestamp get expiresAt => $_getN(1);
   @$pb.TagNumber(2)
-  set expiresAt($13.Timestamp v) { setField(2, v); }
+  set expiresAt($14.Timestamp v) { setField(2, v); }
   @$pb.TagNumber(2)
   $core.bool hasExpiresAt() => $_has(1);
   @$pb.TagNumber(2)
   void clearExpiresAt() => clearField(2);
   @$pb.TagNumber(2)
-  $13.Timestamp ensureExpiresAt() => $_ensure(1);
+  $14.Timestamp ensureExpiresAt() => $_ensure(1);
 }
 
 /// Request for a new access token using a refresh token.
 class AccessTokenRequest extends $pb.GeneratedMessage {
   factory AccessTokenRequest({
     $core.String? refreshToken,
-    $13.Timestamp? expiresAt,
+    $14.Timestamp? expiresAt,
   }) {
     final $result = create();
     if (refreshToken != null) {
@@ -542,7 +1055,7 @@ class AccessTokenRequest extends $pb.GeneratedMessage {
 
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'AccessTokenRequest', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'refreshToken')
-    ..aOM<$13.Timestamp>(2, _omitFieldNames ? '' : 'expiresAt', subBuilder: $13.Timestamp.create)
+    ..aOM<$14.Timestamp>(2, _omitFieldNames ? '' : 'expiresAt', subBuilder: $14.Timestamp.create)
     ..hasRequiredFields = false
   ;
 
@@ -579,15 +1092,15 @@ class AccessTokenRequest extends $pb.GeneratedMessage {
 
   /// Optional *requested* expiration time for the token. Server may ignore this.
   @$pb.TagNumber(2)
-  $13.Timestamp get expiresAt => $_getN(1);
+  $14.Timestamp get expiresAt => $_getN(1);
   @$pb.TagNumber(2)
-  set expiresAt($13.Timestamp v) { setField(2, v); }
+  set expiresAt($14.Timestamp v) { setField(2, v); }
   @$pb.TagNumber(2)
   $core.bool hasExpiresAt() => $_has(1);
   @$pb.TagNumber(2)
   void clearExpiresAt() => clearField(2);
   @$pb.TagNumber(2)
-  $13.Timestamp ensureExpiresAt() => $_ensure(1);
+  $14.Timestamp ensureExpiresAt() => $_ensure(1);
 }
 
 /// Returned when requesting access tokens.
@@ -781,7 +1294,7 @@ class UserRefreshTokensResponse extends $pb.GeneratedMessage {
 class RefreshTokenMetadata extends $pb.GeneratedMessage {
   factory RefreshTokenMetadata({
     $fixnum.Int64? id,
-    $13.Timestamp? expiresAt,
+    $14.Timestamp? expiresAt,
     $core.String? deviceName,
     $core.bool? isThisDevice,
     $core.bool? thirdParty,
@@ -810,7 +1323,7 @@ class RefreshTokenMetadata extends $pb.GeneratedMessage {
 
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'RefreshTokenMetadata', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
     ..a<$fixnum.Int64>(1, _omitFieldNames ? '' : 'id', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
-    ..aOM<$13.Timestamp>(2, _omitFieldNames ? '' : 'expiresAt', subBuilder: $13.Timestamp.create)
+    ..aOM<$14.Timestamp>(2, _omitFieldNames ? '' : 'expiresAt', subBuilder: $14.Timestamp.create)
     ..aOS(3, _omitFieldNames ? '' : 'deviceName')
     ..aOB(4, _omitFieldNames ? '' : 'isThisDevice')
     ..aOB(5, _omitFieldNames ? '' : 'thirdParty')
@@ -850,15 +1363,15 @@ class RefreshTokenMetadata extends $pb.GeneratedMessage {
 
   /// Expiration date of the refresh token.
   @$pb.TagNumber(2)
-  $13.Timestamp get expiresAt => $_getN(1);
+  $14.Timestamp get expiresAt => $_getN(1);
   @$pb.TagNumber(2)
-  set expiresAt($13.Timestamp v) { setField(2, v); }
+  set expiresAt($14.Timestamp v) { setField(2, v); }
   @$pb.TagNumber(2)
   $core.bool hasExpiresAt() => $_has(1);
   @$pb.TagNumber(2)
   void clearExpiresAt() => clearField(2);
   @$pb.TagNumber(2)
-  $13.Timestamp ensureExpiresAt() => $_ensure(1);
+  $14.Timestamp ensureExpiresAt() => $_ensure(1);
 
   /// The device name the refresh token is on. User-updateable.
   @$pb.TagNumber(3)

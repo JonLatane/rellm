@@ -116,12 +116,16 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
           <li><a href="#rellm-AccessTokenResponse">AccessTokenResponse</a></li>
           <li><a href="#rellm-CreateAccountRequest">CreateAccountRequest</a></li>
           <li><a href="#rellm-CreateThirdPartyRefreshTokenRequest">CreateThirdPartyRefreshTokenRequest</a></li>
+          <li><a href="#rellm-EmailLoginRequest">EmailLoginRequest</a></li>
           <li><a href="#rellm-ExpirableToken">ExpirableToken</a></li>
           <li><a href="#rellm-LoginRequest">LoginRequest</a></li>
           <li><a href="#rellm-RefreshTokenMetadata">RefreshTokenMetadata</a></li>
           <li><a href="#rellm-RefreshTokenResponse">RefreshTokenResponse</a></li>
           <li><a href="#rellm-ResetPasswordRequest">ResetPasswordRequest</a></li>
+          <li><a href="#rellm-SMSLoginRequest">SMSLoginRequest</a></li>
           <li><a href="#rellm-UserRefreshTokensResponse">UserRefreshTokensResponse</a></li>
+          <li><a href="#rellm-UsernamePasswordLoginRequest">UsernamePasswordLoginRequest</a></li>
+          <li><a href="#rellm-VerificationChallenge">VerificationChallenge</a></li>
         </ul>
       </li>
       <li>
@@ -426,6 +430,9 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
             <p><a href="#rellm-LockClusterResourcesResponse">LockClusterResourcesResponse</a></p>
           </li>
           <li>
+            <p><a href="#rellm-MailgunConfig">MailgunConfig</a></p>
+          </li>
+          <li>
             <p><a href="#rellm-MarketSettings">MarketSettings</a></p>
           </li>
           <li>
@@ -433,6 +440,12 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
           </li>
           <li>
             <p><a href="#rellm-PostSettings">PostSettings</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-PostmarkConfig">PostmarkConfig</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-SendgridConfig">SendgridConfig</a></p>
           </li>
           <li>
             <p><a href="#rellm-ServerColors">ServerColors</a></p>
@@ -478,6 +491,9 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
           </li>
           <li>
             <p><a href="#rellm-DefaultPostsSort">DefaultPostsSort</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-EmailVerificationAPI">EmailVerificationAPI</a></p>
           </li>
           <li>
             <p><a href="#rellm-NavigationTab">NavigationTab</a></p>
@@ -683,6 +699,32 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
           </li>
           <li>
             <p><a href="#rellm-PurchaseType">PurchaseType</a></p>
+          </li>
+        </ul>
+      </li>
+      <li>
+        <p><a href="#contact_integrations-proto">contact_integrations.proto</a></p>
+        <ul>
+          <li>
+            <p><a href="#rellm-ContactIntegrationsStatus">ContactIntegrationsStatus</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-DmarcStatus">DmarcStatus</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-EmailDomainStatus">EmailDomainStatus</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-ProviderStatus">ProviderStatus</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-StatusCheck">StatusCheck</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-StatusMetric">StatusMetric</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-StatusLevel">StatusLevel</a></p>
           </li>
         </ul>
       </li>
@@ -2077,7 +2119,7 @@ directory</a> is (<code>{name}</code> denotes a
           <td>StartContactMethodVerification</td>
           <td><a href="#rellm-ContactMethod">ContactMethod</a></td>
           <td><a href="#rellm-ContactMethod">ContactMethod</a></td>
-          <td>Starts SMS verification of the current user's own phone <a href="#rellm-ContactMethod"><code>ContactMethod</code></a>. <em>Authenticated, self-only.</em> Requires the server to have a <a href="#rellm-TwilioConfig"><code>TwilioConfig</code></a>/<a href="#rellm-BirdConfig"><code>BirdConfig</code></a>/ <a href="#rellm-TelnyxConfig"><code>TelnyxConfig</code></a> SMS provider configured and enabled (see <a href="#rellm-ContactProtocol"><code>ContactProtocol</code></a> for the corresponding server-wide toggle). Also requires the phone <code>ContactMethod</code>'s own <code>consent_state</code> to already be <code>CONTACT_CONSENT_GRANTED</code> -- fails with <code>contact_consent_not_granted</code> otherwise, since the verification code is itself an outbound SMS sent through that same provider (see <a href="#rellm-ContactMethod"><code>ContactMethod.consent_state</code></a>'s own doc; this is checked even though the user is the one requesting the send). Generates a 6-digit code, sends it via SMS, and stores it (with a start time and attempt counter) on the phone <code>ContactMethod</code> (<code>verification_in_progress</code>). Only <code>tel:</code> values are supported this iteration -- <code>mailto:</code> returns <code>Unimplemented</code>. Rate-limited to one send per 60 seconds per user.</td>
+          <td>Starts SMS verification of the current user's own phone <a href="#rellm-ContactMethod"><code>ContactMethod</code></a>. <em>Authenticated, self-only.</em> Requires the server to have a <a href="#rellm-TwilioConfig"><code>TwilioConfig</code></a>/<a href="#rellm-BirdConfig"><code>BirdConfig</code></a>/ <a href="#rellm-TelnyxConfig"><code>TelnyxConfig</code></a> SMS provider configured and enabled (see <a href="#rellm-ContactProtocol"><code>ContactProtocol</code></a> for the corresponding server-wide toggle). Also requires the phone <code>ContactMethod</code>'s own <code>consent_state</code> to already be <code>CONTACT_CONSENT_GRANTED</code> -- fails with <code>contact_consent_not_granted</code> otherwise, since the verification code is itself an outbound SMS sent through that same provider (see <a href="#rellm-ContactMethod"><code>ContactMethod.consent_state</code></a>'s own doc; this is checked even though the user is the one requesting the send). Generates a 6-digit code, sends it via SMS, and stores it (with a start time and attempt counter) on the phone <code>ContactMethod</code> (<code>verification_in_progress</code>). Works for both <code>tel:</code> (via SMS) and <code>mailto:</code> (via the server's email providers -- Postmark/SendGrid/Mailgun/Stalwart -- which must be enabled, see <a href="#rellm-ContactProtocol"><code>ContactProtocol</code></a>) values, verifying the user's <code>phone</code> or <code>email</code> respectively. Rate-limited to one send per 60 seconds per user. A contact method that is already verified on a <em>different</em> account can't be verified here (<code>contact_already_verified</code>). Verified contact methods are what <a href="#grpc-api-Login"><code>Login</code></a> via SMS/email and <a href="#grpc-api-CreateAccount"><code>CreateAccount</code></a> with a verified phone/email are built on.</td>
         </tr>
         <tr>
           <td>VerifyContactMethod</td>
@@ -2500,6 +2542,12 @@ directory</a> is (<code>{name}</code> denotes a
           <td>Configure the server (i.e. the response to <a href="#grpc-api-GetServerConfiguration"><code>GetServerConfiguration</code></a>). <em>Authenticated.</em> Requires <code>ADMIN</code> permissions. Editing <code>cluster_resources</code> additionally requires <code>EDIT_CLUSTER_SETTINGS</code> - see that field's own doc. Editing <a href="#rellm-ServerConfiguration"><code>supported_contact_protocols</code></a> is validated, not just stored -- see <a href="#rellm-ContactProtocol"><code>ContactProtocol</code></a>'s own doc.</td>
         </tr>
         <tr>
+          <td>GetContactIntegrationsStatus</td>
+          <td><a href="#google-protobuf-Empty">.google.protobuf.Empty</a></td>
+          <td><a href="#rellm-ContactIntegrationsStatus">ContactIntegrationsStatus</a></td>
+          <td>Checks the health of every configured SMS and email provider <em>right now</em> by calling their APIs (and, for email, looking up SPF/DKIM/DMARC DNS records) -- see <a href="#rellm-ContactIntegrationsStatus"><code>ContactIntegrationsStatus</code></a>. <em>Authenticated.</em> Requires <code>ADMIN</code> permissions. Slow (several outbound calls, made in parallel), so call it on demand, not on every page load. Never returns secrets.</td>
+        </tr>
+        <tr>
           <td>GetCustomCSS</td>
           <td><a href="#google-protobuf-Empty">.google.protobuf.Empty</a></td>
           <td><a href="#rellm-CustomCSSConfiguration">CustomCSSConfiguration</a></td>
@@ -2608,7 +2656,39 @@ directory</a> is (<code>{name}</code> denotes a
     </table>
     <p><a name="rellm-CreateAccountRequest"></a></p>
     <h3 id="createaccountrequest"><a class="anchor" aria-hidden="true" tabindex="-1" href="#createaccountrequest"><span class="octicon octicon-link"></span></a>CreateAccountRequest</h3>
-    <p>Request to create a new account.</p>
+    <p>Request to create a new account. Three ways to prove who you are, which may be combined:</p>
+    <ul>
+      <li><strong>Password</strong> (<code>password</code> set): the classic flow. One request creates the account.</li>
+      <li><strong>Verified SMS</strong> (<code>phone</code> set, server has <code>CREATE_ACCOUNT_WITH_SMS</code> enabled) and/or</li>
+      <li><strong>Verified email</strong> (<code>email</code> set, server has <code>CREATE_ACCOUNT_WITH_EMAIL</code> enabled).</li>
+    </ul>
+    <p>
+      When a server has <code>CREATE_ACCOUNT_WITH_SMS</code>/<code>CREATE_ACCOUNT_WITH_EMAIL</code> enabled (see
+      <a href="#rellm-AuthenticationFeature"><code>AuthenticationFeature</code></a>), every <code>phone</code>/<code>email</code> supplied here
+      <strong>must be verified before the account is created</strong>, using two requests with the same contact
+      methods:
+    </p>
+    <ol>
+      <li>
+        Send the request <em>without</em> the matching <code>phone_verification_code</code>/<code>email_verification_code</code>.
+        The contact method must have <code>consent_state</code> <code>CONTACT_CONSENT_GRANTED</code> (we're about to
+        message it). The server sends a code to each unverified contact method and returns a
+        <a href="#rellm-RefreshTokenResponse"><code>RefreshTokenResponse</code></a> with only <code>verification_challenge</code> set --
+        no account exists yet.
+      </li>
+      <li>
+        Repeat the request with the codes filled in. If every code is correct, the account is
+        created with those contact methods already verified (<code>verified_at</code> set), and tokens are
+        returned as usual.
+      </li>
+    </ol>
+    <p>
+      If <code>password</code> is empty the account is passwordless: it can only be logged into via SMS/email
+      (see <a href="#rellm-LoginRequest"><code>LoginRequest</code></a>), so at least one of <code>phone</code>/<code>email</code> must be given.
+      A contact method that is already verified on another account is rejected
+      (<code>contact_already_verified</code>). If the server doesn't have the matching <code>CREATE_ACCOUNT_WITH_*</code>
+      feature enabled, <code>phone</code>/<code>email</code> are saved <em>unverified</em> exactly as before.
+    </p>
     <table>
       <thead>
         <tr>
@@ -2629,7 +2709,7 @@ directory</a> is (<code>{name}</code> denotes a
           <td>password</td>
           <td><a href="#string">string</a></td>
           <td></td>
-          <td>Password for the account to be created. Must be at least 8 characters.</td>
+          <td>Password for the account to be created. Must be at least 8 characters, or empty to create a passwordless (SMS/email-login-only) account -- see this message's own doc.</td>
         </tr>
         <tr>
           <td>email</td>
@@ -2654,6 +2734,18 @@ directory</a> is (<code>{name}</code> denotes a
           <td><a href="#string">string</a></td>
           <td>optional</td>
           <td>(Not yet implemented.) The name of the device being used to create the account.</td>
+        </tr>
+        <tr>
+          <td>phone_verification_code</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td>Second-phase code sent to <code>phone</code> (via SMS) by the first phase of this request. See this message's own doc.</td>
+        </tr>
+        <tr>
+          <td>email_verification_code</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td>Second-phase code sent to <code>email</code> by the first phase of this request. See this message's own doc.</td>
         </tr>
       </tbody>
     </table>
@@ -2711,6 +2803,54 @@ directory</a> is (<code>{name}</code> denotes a
         </tr>
       </tbody>
     </table>
+    <p><a name="rellm-EmailLoginRequest"></a></p>
+    <h3 id="emailloginrequest"><a class="anchor" aria-hidden="true" tabindex="-1" href="#emailloginrequest"><span class="octicon octicon-link"></span></a>EmailLoginRequest</h3>
+    <p>
+      Request to login via email. Two EmailLoginRequests are required to complete
+      a login.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>email</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>The email address to be used for login (a leading <code>mailto:</code> is accepted; matched case-insensitively). Always required. Must be an address the account has verified.</td>
+        </tr>
+        <tr>
+          <td>code</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td>Response code sent to the email address for the second phase of authentication. Must be valid.</td>
+        </tr>
+        <tr>
+          <td>expires_at</td>
+          <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
+          <td>optional</td>
+          <td>Request an expiration time for the Auth Token returned. By default it will not expire.</td>
+        </tr>
+        <tr>
+          <td>device_name</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td>(Not yet implemented.) The name of the device being used to login.</td>
+        </tr>
+        <tr>
+          <td>user_id</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td>Only needed if (unusually) more than one account has this contact method verified: picks which account to log into. Otherwise ignored.</td>
+        </tr>
+      </tbody>
+    </table>
     <p><a name="rellm-ExpirableToken"></a></p>
     <h3 id="expirabletoken"><a class="anchor" aria-hidden="true" tabindex="-1" href="#expirabletoken"><span class="octicon octicon-link"></span></a>ExpirableToken</h3>
     <p>Generic type for refresh and access tokens.</p>
@@ -2740,7 +2880,31 @@ directory</a> is (<code>{name}</code> denotes a
     </table>
     <p><a name="rellm-LoginRequest"></a></p>
     <h3 id="loginrequest"><a class="anchor" aria-hidden="true" tabindex="-1" href="#loginrequest"><span class="octicon octicon-link"></span></a>LoginRequest</h3>
-    <p>Request to login to an existing account.</p>
+    <p>Request to login to an existing account. Exactly one of the <code>request</code> variants must be set.</p>
+    <p>
+      <code>sms</code> and <code>email</code> logins are <strong>two-phase</strong>, and only work for a contact method that the account
+      has already <em>verified</em> (<code>ContactMethod.verified_at</code>, see
+      <a href="#grpc-api-VerifyContactMethod"><code>VerifyContactMethod</code></a>) and still consents to being contacted
+      through (<code>consent_state</code> <code>CONTACT_CONSENT_GRANTED</code>):
+    </p>
+    <ol>
+      <li>
+        Send the request with no <code>code</code>. If an account matches, the server sends it a one-time code
+        and returns a <a href="#rellm-RefreshTokenResponse"><code>RefreshTokenResponse</code></a> with only
+        <code>verification_challenge</code> set. To avoid revealing which phone numbers/emails have accounts, the
+        response looks the same whether or not an account matched.
+      </li>
+      <li>
+        Send the request again with the <code>code</code>. On success the response carries tokens and the user,
+        as with a password login.
+      </li>
+    </ol>
+    <p>
+      Codes are 6 digits, expire after 10 minutes, are limited to 5 wrong guesses, and can be re-sent
+      at most once a minute -- the same rules as <a href="#rellm-ContactMethodVerification"><code>ContactMethodVerification</code></a>.
+      Servers advertise which login methods they allow in
+      <a href="#rellm-ServerConfiguration"><code>ServerConfiguration.authentication_features</code></a>.
+    </p>
     <table>
       <thead>
         <tr>
@@ -2752,34 +2916,22 @@ directory</a> is (<code>{name}</code> denotes a
       </thead>
       <tbody>
         <tr>
-          <td>username</td>
-          <td><a href="#string">string</a></td>
+          <td>username_password</td>
+          <td><a href="#rellm-UsernamePasswordLoginRequest">UsernamePasswordLoginRequest</a></td>
           <td></td>
-          <td>Username for the account to be logged into. Must exist.</td>
-        </tr>
-        <tr>
-          <td>password</td>
-          <td><a href="#string">string</a></td>
           <td></td>
-          <td>Password for the account to be logged into.</td>
         </tr>
         <tr>
-          <td>expires_at</td>
-          <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
-          <td>optional</td>
-          <td>Request an expiration time for the Auth Token returned. By default it will not expire.</td>
+          <td>sms</td>
+          <td><a href="#rellm-SMSLoginRequest">SMSLoginRequest</a></td>
+          <td></td>
+          <td></td>
         </tr>
         <tr>
-          <td>device_name</td>
-          <td><a href="#string">string</a></td>
-          <td>optional</td>
-          <td>(Not yet implemented.) The name of the device being used to login.</td>
-        </tr>
-        <tr>
-          <td>user_id</td>
-          <td><a href="#string">string</a></td>
-          <td>optional</td>
-          <td>(TODO) If provided, username is ignored and login is initiated via user_id instead.</td>
+          <td>email</td>
+          <td><a href="#rellm-EmailLoginRequest">EmailLoginRequest</a></td>
+          <td></td>
+          <td></td>
         </tr>
       </tbody>
     </table>
@@ -2862,6 +3014,12 @@ directory</a> is (<code>{name}</code> denotes a
           <td></td>
           <td>The user associated with the account that was created/logged into.</td>
         </tr>
+        <tr>
+          <td>verification_challenge</td>
+          <td><a href="#rellm-VerificationChallenge">VerificationChallenge</a></td>
+          <td>optional</td>
+          <td>Set <em>instead of</em> the tokens and <code>user</code> when this was the first phase of a two-phase <a href="#rellm-LoginRequest"><code>LoginRequest</code></a> (SMS/email) or <a href="#rellm-CreateAccountRequest"><code>CreateAccountRequest</code></a>: a code was sent (or, for login, would have been -- see <code>LoginRequest</code>), and the client should prompt for it and repeat the request with the code filled in.</td>
+        </tr>
       </tbody>
     </table>
     <p><a name="rellm-ResetPasswordRequest"></a></p>
@@ -2891,6 +3049,54 @@ directory</a> is (<code>{name}</code> denotes a
         </tr>
       </tbody>
     </table>
+    <p><a name="rellm-SMSLoginRequest"></a></p>
+    <h3 id="smsloginrequest"><a class="anchor" aria-hidden="true" tabindex="-1" href="#smsloginrequest"><span class="octicon octicon-link"></span></a>SMSLoginRequest</h3>
+    <p>
+      Request to login via SMS. Two SMSLoginRequests are required to complete
+      a login.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>phone_number</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>The phone number to be used for login, in E.164 format (<code>&#x26;#43;19195551234</code>); a leading <code>tel:</code> is accepted. Always required. Must be a phone number the account has verified.</td>
+        </tr>
+        <tr>
+          <td>code</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td>Response code sent to the phone number via SMS for the second phase of authentication. Must be valid.</td>
+        </tr>
+        <tr>
+          <td>expires_at</td>
+          <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
+          <td>optional</td>
+          <td>Request an expiration time for the Auth Token returned. By default it will not expire.</td>
+        </tr>
+        <tr>
+          <td>device_name</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td>(Not yet implemented.) The name of the device being used to login.</td>
+        </tr>
+        <tr>
+          <td>user_id</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td>Only needed if (unusually) more than one account has this contact method verified: picks which account to log into. Otherwise ignored.</td>
+        </tr>
+      </tbody>
+    </table>
     <p><a name="rellm-UserRefreshTokensResponse"></a></p>
     <h3 id="userrefreshtokensresponse"><a class="anchor" aria-hidden="true" tabindex="-1" href="#userrefreshtokensresponse"><span class="octicon octicon-link"></span></a>UserRefreshTokensResponse</h3>
     <p>Response for <code>GetUserRefreshTokens</code> RPC. Returns all refresh tokens associated with the current user.</p>
@@ -2909,6 +3115,87 @@ directory</a> is (<code>{name}</code> denotes a
           <td><a href="#rellm-RefreshTokenMetadata">RefreshTokenMetadata</a></td>
           <td>repeated</td>
           <td>The refresh tokens associated with the current user.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-UsernamePasswordLoginRequest"></a></p>
+    <h3 id="usernamepasswordloginrequest"><a class="anchor" aria-hidden="true" tabindex="-1" href="#usernamepasswordloginrequest"><span class="octicon octicon-link"></span></a>UsernamePasswordLoginRequest</h3>
+    <p>Request to login with username + password.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>username</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>Username for the account to be logged into. Must exist.</td>
+        </tr>
+        <tr>
+          <td>password</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>Password for the account to be logged into.</td>
+        </tr>
+        <tr>
+          <td>expires_at</td>
+          <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
+          <td>optional</td>
+          <td>Request an expiration time for the Auth Token returned. By default it will not expire.</td>
+        </tr>
+        <tr>
+          <td>device_name</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td>(Not yet implemented.) The name of the device being used to login.</td>
+        </tr>
+        <tr>
+          <td>user_id</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td>(TODO) If provided, username is ignored and login is initiated via user_id instead.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-VerificationChallenge"></a></p>
+    <h3 id="verificationchallenge"><a class="anchor" aria-hidden="true" tabindex="-1" href="#verificationchallenge"><span class="octicon octicon-link"></span></a>VerificationChallenge</h3>
+    <p>
+      Returned in <a href="#rellm-RefreshTokenResponse"><code>RefreshTokenResponse.verification_challenge</code></a> after the
+      first phase of an SMS/email login or account creation.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>sent_to</td>
+          <td><a href="#string">string</a></td>
+          <td>repeated</td>
+          <td>The <code>tel:</code>/<code>mailto:</code> values a code was sent to, e.g. <code>[&#x26;#34;tel:&#x26;#43;19195551234&#x26;#34;]</code> -- shown to the user as "We sent a code to ...". For login this echoes the requested value even when no account matched.</td>
+        </tr>
+        <tr>
+          <td>expires_at</td>
+          <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
+          <td></td>
+          <td>When the code(s) expire (10 minutes after being sent).</td>
+        </tr>
+        <tr>
+          <td>resend_available_at</td>
+          <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
+          <td></td>
+          <td>The earliest a new code can be requested for the same contact method.</td>
         </tr>
       </tbody>
     </table>
@@ -3945,7 +4232,7 @@ directory</a> is (<code>{name}</code> denotes a
           <td>value</td>
           <td><a href="#string">string</a></td>
           <td></td>
-          <td>The <code>tel:</code> (or, in the future, <code>mailto:</code>) value being verified -- must match the current user's own stored <code>phone</code>/<code>email</code> value.</td>
+          <td>The <code>tel:</code> or <code>mailto:</code> value being verified -- must match the current user's own stored <code>phone</code>/<code>email</code> value.</td>
         </tr>
         <tr>
           <td>code</td>
@@ -7691,6 +7978,61 @@ directory</a> is (<code>{name}</code> denotes a
         </tr>
       </tbody>
     </table>
+    <p><a name="rellm-MailgunConfig"></a></p>
+    <h3 id="mailgunconfig"><a class="anchor" aria-hidden="true" tabindex="-1" href="#mailgunconfig"><span class="octicon octicon-link"></span></a>MailgunConfig</h3>
+    <p>
+      Mailgun (<a href="https://mailgun.com/">https://mailgun.com</a>) Config -- sent via the Messages API
+      (<code>POST /v3/{domain}/messages</code>). Setup: add and verify a sending domain, and create a (domain)
+      sending key or use your account's private API key.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>mailgun_enabled</td>
+          <td><a href="#bool">bool</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>mailgun_api_key</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>The API key, used as Basic auth (<code>api:{key}</code>). Write-only.</td>
+        </tr>
+        <tr>
+          <td>mailgun_domain</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>The Mailgun sending domain, e.g. <code>mg.example.com</code>.</td>
+        </tr>
+        <tr>
+          <td>mailgun_region</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td><code>us</code> (default, <code>api.mailgun.net</code>) or <code>eu</code> (<code>api.eu.mailgun.net</code>).</td>
+        </tr>
+        <tr>
+          <td>mailgun_from_address</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>The <code>From</code> address; should belong to <code>mailgun_domain</code>.</td>
+        </tr>
+        <tr>
+          <td>mailgun_from_name</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>Optional display name for the <code>From</code> header.</td>
+        </tr>
+      </tbody>
+    </table>
     <p><a name="rellm-MarketSettings"></a></p>
     <h3 id="marketsettings"><a class="anchor" aria-hidden="true" tabindex="-1" href="#marketsettings"><span class="octicon octicon-link"></span></a>MarketSettings</h3>
     <p>
@@ -7881,6 +8223,113 @@ directory</a> is (<code>{name}</code> denotes a
         </tr>
       </tbody>
     </table>
+    <p><a name="rellm-PostmarkConfig"></a></p>
+    <h3 id="postmarkconfig"><a class="anchor" aria-hidden="true" tabindex="-1" href="#postmarkconfig"><span class="octicon octicon-link"></span></a>PostmarkConfig</h3>
+    <p>
+      Postmark (<a href="https://postmarkapp.com/">https://postmarkapp.com</a>) Config -- transactional email, sent via Postmark's Email API
+      (<code>POST /email</code>). Setup: create a <em>Server</em>, verify a Sender Signature or (better, for DKIM/SPF
+      alignment) a whole sending Domain, and copy the Server API Token. Optionally also provide the
+      Account API Token, which lets the Contact Integrations tab show the domain's DKIM/Return-Path
+      verification state and the Server's own delivery statistics.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>postmark_enabled</td>
+          <td><a href="#bool">bool</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>postmark_server_token</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>The Server API Token, sent as <code>X-Postmark-Server-Token</code>. Never serialized once written (write-only; a blank value on <code>ConfigureServer</code> means "leave what's stored alone").</td>
+        </tr>
+        <tr>
+          <td>postmark_account_token</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>The Account API Token (<code>X-Postmark-Account-Token</code>) -- optional, only used to <em>read</em> domain verification status (<code>GET /domains</code>). Write-only, same as the server token.</td>
+        </tr>
+        <tr>
+          <td>postmark_from_address</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>The <code>From</code> address; must belong to a verified Sender Signature or Domain.</td>
+        </tr>
+        <tr>
+          <td>postmark_from_name</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>Optional display name for the <code>From</code> header, e.g. "My Rellm Server".</td>
+        </tr>
+        <tr>
+          <td>postmark_message_stream</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>The Message Stream to send through; empty means <code>outbound</code> (Postmark's default transactional stream).</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-SendgridConfig"></a></p>
+    <h3 id="sendgridconfig"><a class="anchor" aria-hidden="true" tabindex="-1" href="#sendgridconfig"><span class="octicon octicon-link"></span></a>SendgridConfig</h3>
+    <p>
+      SendGrid (<a href="https://sendgrid.com/">https://sendgrid.com</a>) Config -- sent via the v3 Mail Send API (<code>POST /v3/mail/send</code>).
+      Setup: create an API key with at least "Mail Send" (plus "Domain Authentication read"/"Stats
+      read" if you want the Contact Integrations tab to show domain-authentication and delivery
+      statistics), and authenticate your sending domain (Settings -> Sender Authentication).
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>sendgrid_enabled</td>
+          <td><a href="#bool">bool</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>sendgrid_api_key</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>The API key (starts with <code>SG.</code>), used as Bearer auth. Write-only.</td>
+        </tr>
+        <tr>
+          <td>sendgrid_from_address</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>The <code>From</code> address; must be a verified Single Sender or belong to an authenticated domain.</td>
+        </tr>
+        <tr>
+          <td>sendgrid_from_name</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>Optional display name for the <code>From</code> header.</td>
+        </tr>
+        <tr>
+          <td>sendgrid_region</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>Optional: set to <code>eu</code> to use SendGrid's EU regional API host (<code>api.eu.sendgrid.com</code>) -- required for EU-regional subusers/accounts. Empty (default) uses <code>api.sendgrid.com</code>.</td>
+        </tr>
+      </tbody>
+    </table>
     <p><a name="rellm-ServerColors"></a></p>
     <h3 id="servercolors"><a class="anchor" aria-hidden="true" tabindex="-1" href="#servercolors"><span class="octicon octicon-link"></span></a>ServerColors</h3>
     <p>Color in ARGB hex format (i.e <code>0xAARRGGBB</code>).</p>
@@ -8033,7 +8482,7 @@ directory</a> is (<code>{name}</code> denotes a
           <td>authentication_features</td>
           <td><a href="#rellm-AuthenticationFeature">AuthenticationFeature</a></td>
           <td>repeated</td>
-          <td>(TODO) Allows admins to enable/disable creating accounts and logging in. Eventually, external auth too hopefully!</td>
+          <td>Which ways of creating accounts and logging in the server allows. The <code>*_WITH_SMS</code>/ <code>*_WITH_EMAIL</code> values are enforced (they require the matching <code>ContactProtocol</code> to be supported -- see <code>supported_contact_protocols</code> -- and change how <a href="#grpc-api-CreateAccount"><code>CreateAccount</code></a>/<a href="#grpc-api-Login"><code>Login</code></a> behave); the <code>*_WITH_PASSWORD</code> values are not enforced yet (password creation/login always work). Eventually, external auth too hopefully!</td>
         </tr>
         <tr>
           <td>web_push_config</td>
@@ -8045,7 +8494,7 @@ directory</a> is (<code>{name}</code> denotes a
           <td>supported_contact_protocols</td>
           <td><a href="#rellm-ContactProtocol">ContactProtocol</a></td>
           <td>repeated</td>
-          <td>Which <a href="#rellm-ContactProtocol"><code>ContactProtocol</code></a>s (<code>tel:</code>/<code>mailto:</code>) this server currently accepts -- drives <a href="#rellm-ContactMethod"><code>ContactMethod.supported_by_server</code></a> (<code>users.proto</code>, which can't reference this message directly -- see that field's own doc for why). Settable via <a href="#grpc-api-ConfigureServer"><code>ConfigureServer</code></a>, which <em>errors</em> rather than silently dropping an invalid entry: <code>CONTACT_PROTOCOL_TEL</code> requires an enabled <a href="#rellm-TwilioConfig"><code>TwilioConfig</code></a>/<a href="#rellm-BirdConfig"><code>BirdConfig</code></a>/ <a href="#rellm-TelnyxConfig"><code>TelnyxConfig</code></a> in that same request, and <code>CONTACT_PROTOCOL_MAILTO</code> is always rejected (no email provider exists yet). Edited via the "Enable SMS Sending"/"Enable Email Sending" toggles on the Contact Integrations tab's "SMS Configuration"/"Email Configuration" sections (<code>ContactIntegrationsTab.smsConfigurationSection</code>/ <code>emailConfigurationSection</code>) -- see <code>docs/contact_integrations.md</code>.</td>
+          <td>Which <a href="#rellm-ContactProtocol"><code>ContactProtocol</code></a>s (<code>tel:</code>/<code>mailto:</code>) this server currently accepts -- drives <a href="#rellm-ContactMethod"><code>ContactMethod.supported_by_server</code></a> (<code>users.proto</code>, which can't reference this message directly -- see that field's own doc for why). Settable via <a href="#grpc-api-ConfigureServer"><code>ConfigureServer</code></a>, which <em>errors</em> rather than silently dropping an invalid entry: <code>CONTACT_PROTOCOL_TEL</code> requires an enabled <a href="#rellm-TwilioConfig"><code>TwilioConfig</code></a>/<a href="#rellm-BirdConfig"><code>BirdConfig</code></a>/ <a href="#rellm-TelnyxConfig"><code>TelnyxConfig</code></a> in that same request, and <code>CONTACT_PROTOCOL_MAILTO</code> requires an enabled <a href="#rellm-StalwartConfig"><code>StalwartConfig</code></a> (with sending enabled)/ <a href="#rellm-PostmarkConfig"><code>PostmarkConfig</code></a>/<a href="#rellm-SendgridConfig"><code>SendgridConfig</code></a>/ <a href="#rellm-MailgunConfig"><code>MailgunConfig</code></a>. Edited via the "Enable SMS Sending"/"Enable Email Sending" toggles on the Contact Integrations tab's "SMS Configuration"/"Email Configuration" sections (<code>ContactIntegrationsTab.smsConfigurationSection</code>/ <code>emailConfigurationSection</code>) -- see <code>docs/contact_integrations.md</code>.</td>
         </tr>
         <tr>
           <td>preferred_verification_apis</td>
@@ -8087,14 +8536,46 @@ directory</a> is (<code>{name}</code> denotes a
           <td>stalwart_config</td>
           <td><a href="#rellm-StalwartConfig">StalwartConfig</a></td>
           <td>optional</td>
-          <td>Unlike the other configs, at least at the moment, the integration with Stalwart is designed to be <em>in-cluster</em>, not over the web. It relies on unsecured /email endpoint on port 27705 to receive mail from a Stalwart deployed within the same Kubernetes cluster.</td>
+          <td>Unlike the other configs, at least at the moment, the integration with Stalwart is designed to be <em>in-cluster</em>, not over the web. It relies on unsecured /email endpoint on port 27705 to receive mail from a Stalwart deployed within the same Kubernetes cluster, and can send mail (verification codes) through the same Stalwart's SMTP submission port. Only serialized for admin users.</td>
+        </tr>
+        <tr>
+          <td>custom_css_configuration</td>
+          <td><a href="#rellm-CustomCSSConfiguration">CustomCSSConfiguration</a></td>
+          <td>optional</td>
+          <td>The server's <a href="#rellm-CustomCSSConfiguration"><code>CustomCSSConfiguration</code></a>: which media its custom stylesheet uses and whether it forces the light or dark theme. Publicly readable. <code>custom_css</code> itself is always unset here -- fetch it with <a href="#grpc-api-GetCustomCSS"><code>GetCustomCSS</code></a>, which is the only way to read the (potentially large) stylesheet text. Ignored by <a href="#grpc-api-ConfigureServer"><code>ConfigureServer</code></a>; write it with <a href="#grpc-api-ConfigureCustomCSS"><code>ConfigureCustomCSS</code></a>.</td>
+        </tr>
+        <tr>
+          <td>preferred_email_apis</td>
+          <td><a href="#rellm-EmailVerificationAPI">EmailVerificationAPI</a></td>
+          <td>repeated</td>
+          <td>Email sending, parallel to the SMS providers above. A server-preferred order of <a href="#rellm-EmailVerificationAPI"><code>EmailVerificationAPI</code></a> providers to try first when more than one of <code>stalwart_config</code> (sending)/<code>postmark_config</code>/<code>sendgrid_config</code>/<code>mailgun_config</code> is enabled; same preference-then-fallback ordering as <code>preferred_verification_apis</code> (fallback order: Postmark, SendGrid, Mailgun, Stalwart). Only serialized for admin users.</td>
+        </tr>
+        <tr>
+          <td>available_email_apis</td>
+          <td><a href="#rellm-EmailVerificationAPI">EmailVerificationAPI</a></td>
+          <td>repeated</td>
+          <td>The email providers that are enabled and configured, in the order they'd be tried -- the email counterpart of <code>available_verification_apis</code>, serialized to every caller.</td>
+        </tr>
+        <tr>
+          <td>postmark_config</td>
+          <td><a href="#rellm-PostmarkConfig">PostmarkConfig</a></td>
+          <td>optional</td>
+          <td>Postmark Config -- see <a href="#rellm-PostmarkConfig"><code>PostmarkConfig</code></a>. Only serialized for admin users.</td>
+        </tr>
+        <tr>
+          <td>sendgrid_config</td>
+          <td><a href="#rellm-SendgridConfig">SendgridConfig</a></td>
+          <td>optional</td>
+          <td>SendGrid Config -- see <a href="#rellm-SendgridConfig"><code>SendgridConfig</code></a>. Only serialized for admin users.</td>
+        </tr>
+        <tr>
+          <td>mailgun_config</td>
+          <td><a href="#rellm-MailgunConfig">MailgunConfig</a></td>
+          <td>optional</td>
+          <td>Mailgun Config -- see <a href="#rellm-MailgunConfig"><code>MailgunConfig</code></a>. Only serialized for admin users.</td>
         </tr>
       </tbody>
     </table>
-    <p>
-      This could be extended in the future to allow sending mail with Stalwart, but that's TBD. |
-      | custom_css_configuration | <a href="#rellm-CustomCSSConfiguration">CustomCSSConfiguration</a> | optional | The server's <a href="#rellm-CustomCSSConfiguration"><code>CustomCSSConfiguration</code></a>: which media its custom stylesheet uses and whether it forces the light or dark theme. Publicly readable. <code>custom_css</code> itself is always unset here -- fetch it with <a href="#grpc-api-GetCustomCSS"><code>GetCustomCSS</code></a>, which is the only way to read the (potentially large) stylesheet text. Ignored by <a href="#grpc-api-ConfigureServer"><code>ConfigureServer</code></a>; write it with <a href="#grpc-api-ConfigureCustomCSS"><code>ConfigureCustomCSS</code></a>. |
-    </p>
     <p><a name="rellm-ServerInfo"></a></p>
     <h3 id="serverinfo"><a class="anchor" aria-hidden="true" tabindex="-1" href="#serverinfo"><span class="octicon octicon-link"></span></a>ServerInfo</h3>
     <p>User-facing information about the server displayed on the "about" page.</p>
@@ -8207,7 +8688,8 @@ directory</a> is (<code>{name}</code> denotes a
     <h3 id="stalwartconfig"><a class="anchor" aria-hidden="true" tabindex="-1" href="#stalwartconfig"><span class="octicon octicon-link"></span></a>StalwartConfig</h3>
     <p>
       Stalwart is an extablished, open-source Rust email/contact/calendar server (think an Outlook or Google Workspace competitor).
-      Currently Rellm supports receiving emails via Stalwart webhook configurations.
+      Rellm can <em>receive</em> emails from Stalwart (via its MTA Hook webhook) and <em>send</em> email through
+      Stalwart's SMTP submission port -- both are designed to be in-cluster, see <code>deploys/email</code>.
     </p>
     <table>
       <thead>
@@ -8224,6 +8706,60 @@ directory</a> is (<code>{name}</code> denotes a
           <td><a href="#bool">bool</a></td>
           <td></td>
           <td>Enables receiving emails from the private, unsecured cluster-facing HTTP server at :27705/email.</td>
+        </tr>
+        <tr>
+          <td>stalwart_sending_enabled</td>
+          <td><a href="#bool">bool</a></td>
+          <td></td>
+          <td>Enables sending email (verification codes, ...) through Stalwart's SMTP submission service. Requires <code>stalwart_smtp_host</code> and <code>stalwart_from_address</code>.</td>
+        </tr>
+        <tr>
+          <td>stalwart_smtp_host</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>Host (usually the in-cluster Service name, e.g. <code>stalwart.email.svc.cluster.local</code>) of Stalwart's SMTP submission listener.</td>
+        </tr>
+        <tr>
+          <td>stalwart_smtp_port</td>
+          <td><a href="#int32">int32</a></td>
+          <td></td>
+          <td>Submission port; 0 means 587 (STARTTLS submission). 465 means implicit TLS.</td>
+        </tr>
+        <tr>
+          <td>stalwart_smtp_username</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>Credentials of the Stalwart account/app-password to authenticate (SMTP AUTH) as.</td>
+        </tr>
+        <tr>
+          <td>stalwart_smtp_password</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>Write-only, like every other credential.</td>
+        </tr>
+        <tr>
+          <td>stalwart_from_address</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>The <code>From</code> address -- must be one Stalwart accepts from <code>stalwart_smtp_username</code> and a domain Stalwart DKIM-signs for.</td>
+        </tr>
+        <tr>
+          <td>stalwart_from_name</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>Optional display name for the <code>From</code> header.</td>
+        </tr>
+        <tr>
+          <td>stalwart_management_url</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>Base URL of Stalwart's management HTTP API (e.g. <code>http://stalwart.email.svc.cluster.local:8080</code>), used <em>read-only</em> by the Contact Integrations tab to show queue depth, DNS records and received DMARC reports. Optional.</td>
+        </tr>
+        <tr>
+          <td>stalwart_management_token</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>API key/bearer token for the management API (Stalwart "API key" principal). Write-only.</td>
         </tr>
       </tbody>
     </table>
@@ -8440,14 +8976,34 @@ directory</a> is (<code>{name}</code> denotes a
           <td>An authentication feature that is not known to the server. (Likely, the client and server use different versions of the Rellm protocol.)</td>
         </tr>
         <tr>
-          <td>CREATE_ACCOUNT</td>
+          <td>CREATE_ACCOUNT_WITH_PASSWORD</td>
           <td>1</td>
           <td>Users can sign up for an account.</td>
         </tr>
         <tr>
-          <td>LOGIN</td>
+          <td>CREATE_ACCOUNT_WITH_SMS</td>
           <td>2</td>
+          <td>Users can sign up for an account via SMS.</td>
+        </tr>
+        <tr>
+          <td>CREATE_ACCOUNT_WITH_EMAIL</td>
+          <td>3</td>
+          <td>Users can sign up for an account via email.</td>
+        </tr>
+        <tr>
+          <td>LOGIN_WITH_PASSWORD</td>
+          <td>11</td>
           <td>Users can sign in with an existing account.</td>
+        </tr>
+        <tr>
+          <td>LOGIN_WITH_SMS</td>
+          <td>12</td>
+          <td>Users can sign in with an existing account via SMS.</td>
+        </tr>
+        <tr>
+          <td>LOGIN_WITH_EMAIL</td>
+          <td>13</td>
+          <td>Users can sign in with an existing account via email.</td>
         </tr>
       </tbody>
     </table>
@@ -8537,7 +9093,7 @@ directory</a> is (<code>{name}</code> denotes a
         <tr>
           <td>CONTACT_PROTOCOL_MAILTO</td>
           <td>1</td>
-          <td><code>mailto:</code> (email) contact. Currently not supported -- no email provider exists yet.</td>
+          <td><code>mailto:</code> (email) contact. Requires an enabled, configured email provider: <a href="#rellm-StalwartConfig"><code>StalwartConfig</code></a> (with <code>stalwart_sending_enabled</code>), <a href="#rellm-PostmarkConfig"><code>PostmarkConfig</code></a>, <a href="#rellm-SendgridConfig"><code>SendgridConfig</code></a> or <a href="#rellm-MailgunConfig"><code>MailgunConfig</code></a>.</td>
         </tr>
       </tbody>
     </table>
@@ -8602,6 +9158,44 @@ directory</a> is (<code>{name}</code> denotes a
           <td>DEFAULT_POSTS_SORT_FOLLOWING</td>
           <td>2</td>
           <td>"Following Posts" -- only what the signed-in accounts follow. Visitors who aren't signed in anywhere (and so aren't offered that option) get <code>RECENT</code> instead.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-EmailVerificationAPI"></a></p>
+    <h3 id="emailverificationapi"><a class="anchor" aria-hidden="true" tabindex="-1" href="#emailverificationapi"><span class="octicon octicon-link"></span></a>EmailVerificationAPI</h3>
+    <p>
+      The email providers <a href="#rellm-ServerConfiguration"><code>ServerConfiguration.preferred_email_apis</code></a>/
+      <a href="#rellm-ServerConfiguration"><code>available_email_apis</code></a> order between -- the email counterpart of
+      <a href="#rellm-ContactVerificationAPI"><code>ContactVerificationAPI</code></a>.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Number</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>EMAIL_VERIFICATION_API_POSTMARK</td>
+          <td>0</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>EMAIL_VERIFICATION_API_SENDGRID</td>
+          <td>1</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>EMAIL_VERIFICATION_API_MAILGUN</td>
+          <td>2</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>EMAIL_VERIFICATION_API_STALWART</td>
+          <td>3</td>
+          <td></td>
         </tr>
       </tbody>
     </table>
@@ -11516,6 +12110,382 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>PURCHASE_TYPE_PERMISSIONS_ACCESS</td>
           <td>3</td>
           <td>A bundle of <code>Permission</code>s (e.g. <code>SYNC_EVENTS_TO_FACEBOOK</code>) granted directly to the buyer's own <code>User.permissions</code>, union-style -- fulfillment only ever adds permissions the buyer doesn't already have from some other source, never removes any. Unlike the other three types, this ONE eventually claws back what it granted: once cancellation/expiry actually takes effect (see <code>MarketSubscription.canceled_at</code>/<code>service_terminated_at</code>), <code>logic::market::market_fulfillment:: terminate_entitlement</code> removes exactly the permissions this subscription granted (a plain set difference, not a reconciliation against any other subscription/grant the buyer might also hold).</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="contact_integrations-proto"></a></p>
+    <p align="right"><a href="#top">Top</a></p>
+    <h2 id="contact_integrationsproto"><a class="anchor" aria-hidden="true" tabindex="-1" href="#contact_integrationsproto"><span class="octicon octicon-link"></span></a>contact_integrations.proto</h2>
+    <p><a name="rellm-ContactIntegrationsStatus"></a></p>
+    <h3 id="contactintegrationsstatus"><a class="anchor" aria-hidden="true" tabindex="-1" href="#contactintegrationsstatus"><span class="octicon octicon-link"></span></a>ContactIntegrationsStatus</h3>
+    <p>
+      A live health report for every SMS and email integration an admin has configured -- the response to
+      <a href="#grpc-api-GetContactIntegrationsStatus"><code>GetContactIntegrationsStatus</code></a>. Everything here is
+      gathered <em>on demand</em> by actually calling each provider's own API (and, for email, looking up the
+      sending domains' SPF/DKIM/DMARC DNS records), so it reflects reality right now rather than what
+      the admin last typed into the form -- and it's therefore slow (several outbound HTTP calls, run
+      in parallel), which is why it's its own RPC instead of part of
+      <a href="#rellm-ServerConfiguration"><code>ServerConfiguration</code></a>. Contains no secrets.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>checked_at</td>
+          <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
+          <td></td>
+          <td>When the server gathered this report.</td>
+        </tr>
+        <tr>
+          <td>sms_providers</td>
+          <td><a href="#rellm-ProviderStatus">ProviderStatus</a></td>
+          <td>repeated</td>
+          <td>One entry per SMS provider (Twilio/Bird/Telnyx) that is enabled or has any configuration stored, in the order the server would try them for verification codes.</td>
+        </tr>
+        <tr>
+          <td>email_providers</td>
+          <td><a href="#rellm-ProviderStatus">ProviderStatus</a></td>
+          <td>repeated</td>
+          <td>One entry per email provider (Stalwart/Postmark/SendGrid/Mailgun) that is enabled or has any configuration stored, in the order the server would try them.</td>
+        </tr>
+        <tr>
+          <td>email_domains</td>
+          <td><a href="#rellm-EmailDomainStatus">EmailDomainStatus</a></td>
+          <td>repeated</td>
+          <td>DNS-level email authentication (SPF/DKIM/DMARC) for each distinct domain the enabled email providers send from. Independent of which provider is used -- this is what receiving mail servers (Gmail, Outlook, ...) actually check.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-DmarcStatus"></a></p>
+    <h3 id="dmarcstatus"><a class="anchor" aria-hidden="true" tabindex="-1" href="#dmarcstatus"><span class="octicon octicon-link"></span></a>DmarcStatus</h3>
+    <p>A parsed DMARC record (<code>_dmarc.&#x26;lt;domain&#x26;gt;</code> TXT) -- RFC 7489 tags in friendly form.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>record_found</td>
+          <td><a href="#bool">bool</a></td>
+          <td></td>
+          <td>Whether a <code>v=DMARC1</code> TXT record exists at <code>_dmarc.&#x26;lt;domain&#x26;gt;</code>.</td>
+        </tr>
+        <tr>
+          <td>raw_record</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>The raw record, e.g. <code>v=DMARC1; p=reject; rua=mailto:dmarc@example.com</code>. Empty if none.</td>
+        </tr>
+        <tr>
+          <td>policy</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>Requested handling for failing mail (<code>p=</code>): <code>none</code> (monitor only), <code>quarantine</code> or <code>reject</code>. Empty if no record.</td>
+        </tr>
+        <tr>
+          <td>subdomain_policy</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>Policy for subdomains (<code>sp=</code>); empty means "same as <code>policy</code>".</td>
+        </tr>
+        <tr>
+          <td>percentage</td>
+          <td><a href="#int32">int32</a></td>
+          <td></td>
+          <td>Percentage of failing mail the policy applies to (<code>pct=</code>, default 100).</td>
+        </tr>
+        <tr>
+          <td>aggregate_report_uris</td>
+          <td><a href="#string">string</a></td>
+          <td>repeated</td>
+          <td>Where aggregate reports are sent (<code>rua=</code>).</td>
+        </tr>
+        <tr>
+          <td>forensic_report_uris</td>
+          <td><a href="#string">string</a></td>
+          <td>repeated</td>
+          <td>Where forensic reports are sent (<code>ruf=</code>).</td>
+        </tr>
+        <tr>
+          <td>dkim_alignment</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>DKIM alignment (<code>adkim=</code>): <code>relaxed</code> (default) or <code>strict</code>.</td>
+        </tr>
+        <tr>
+          <td>spf_alignment</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>SPF alignment (<code>aspf=</code>): <code>relaxed</code> (default) or <code>strict</code>.</td>
+        </tr>
+        <tr>
+          <td>level</td>
+          <td><a href="#rellm-StatusLevel">StatusLevel</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>summary</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>One friendly sentence, e.g. "Enforced (reject) for 100% of failing mail."</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-EmailDomainStatus"></a></p>
+    <h3 id="emaildomainstatus"><a class="anchor" aria-hidden="true" tabindex="-1" href="#emaildomainstatus"><span class="octicon octicon-link"></span></a>EmailDomainStatus</h3>
+    <p>
+      Email-authentication (SPF/DKIM/DMARC) state for one sending domain, from live DNS lookups plus
+      whatever the providers' APIs report about domain verification.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>domain</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>The domain, e.g. <code>example.com</code> (the domain of the <code>from_address</code> the providers send as).</td>
+        </tr>
+        <tr>
+          <td>used_by</td>
+          <td><a href="#string">string</a></td>
+          <td>repeated</td>
+          <td>Names of the providers (see <code>ProviderStatus.provider</code>) that send from this domain.</td>
+        </tr>
+        <tr>
+          <td>level</td>
+          <td><a href="#rellm-StatusLevel">StatusLevel</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>summary</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>dmarc</td>
+          <td><a href="#rellm-DmarcStatus">DmarcStatus</a></td>
+          <td></td>
+          <td>The domain's parsed DMARC record. Always present; <code>record_found</code> says whether one exists.</td>
+        </tr>
+        <tr>
+          <td>checks</td>
+          <td><a href="#rellm-StatusCheck">StatusCheck</a></td>
+          <td>repeated</td>
+          <td>SPF, DKIM, MX, ... checks -- DNS lookups plus provider-reported verification state.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-ProviderStatus"></a></p>
+    <h3 id="providerstatus"><a class="anchor" aria-hidden="true" tabindex="-1" href="#providerstatus"><span class="octicon octicon-link"></span></a>ProviderStatus</h3>
+    <p>The health of one SMS or email provider integration.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>provider</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>Stable lowercase identifier: <code>twilio</code>, <code>bird</code>, <code>telnyx</code>, <code>postmark</code>, <code>sendgrid</code>, <code>mailgun</code> or <code>stalwart</code>.</td>
+        </tr>
+        <tr>
+          <td>display_name</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>Human-friendly name, e.g. "Twilio", "SendGrid".</td>
+        </tr>
+        <tr>
+          <td>enabled</td>
+          <td><a href="#bool">bool</a></td>
+          <td></td>
+          <td>Whether the admin has switched this provider on.</td>
+        </tr>
+        <tr>
+          <td>configured</td>
+          <td><a href="#bool">bool</a></td>
+          <td></td>
+          <td>Whether it has all the credentials/settings it needs to attempt a send.</td>
+        </tr>
+        <tr>
+          <td>level</td>
+          <td><a href="#rellm-StatusLevel">StatusLevel</a></td>
+          <td></td>
+          <td>The overall verdict: the worst <code>level</code> among <code>checks</code>, or <code>STATUS_LEVEL_DISABLED</code>.</td>
+        </tr>
+        <tr>
+          <td>summary</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>A one-sentence, plain-language summary suitable for a headline, e.g. "Ready to send -- 1 thing needs attention."</td>
+        </tr>
+        <tr>
+          <td>checks</td>
+          <td><a href="#rellm-StatusCheck">StatusCheck</a></td>
+          <td>repeated</td>
+          <td>Individual pass/warn/fail checks, e.g. "API credentials valid", "Sender number can send SMS", "Domain authenticated (DKIM + SPF)".</td>
+        </tr>
+        <tr>
+          <td>metrics</td>
+          <td><a href="#rellm-StatusMetric">StatusMetric</a></td>
+          <td>repeated</td>
+          <td>Numbers the provider reported, e.g. account balance, messages sent in the last 30 days, delivery/bounce rates.</td>
+        </tr>
+        <tr>
+          <td>dashboard_url</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td>A link to this provider's own dashboard, if it has a stable one.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-StatusCheck"></a></p>
+    <h3 id="statuscheck"><a class="anchor" aria-hidden="true" tabindex="-1" href="#statuscheck"><span class="octicon octicon-link"></span></a>StatusCheck</h3>
+    <p>
+      One pass/warn/fail line within a <a href="#rellm-ProviderStatus"><code>ProviderStatus</code></a> or
+      <a href="#rellm-EmailDomainStatus"><code>EmailDomainStatus</code></a>.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>name</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>Short name, e.g. "API credentials".</td>
+        </tr>
+        <tr>
+          <td>level</td>
+          <td><a href="#rellm-StatusLevel">StatusLevel</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>detail</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>What was found, e.g. "Authenticated as account AC12…".</td>
+        </tr>
+        <tr>
+          <td>fix_hint</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td>Optional advice for fixing a <code>WARNING</code>/<code>ERROR</code>, e.g. "Add a DMARC record at _dmarc.example.com."</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-StatusMetric"></a></p>
+    <h3 id="statusmetric"><a class="anchor" aria-hidden="true" tabindex="-1" href="#statusmetric"><span class="octicon octicon-link"></span></a>StatusMetric</h3>
+    <p>A single labelled number/string a provider reported, e.g. <code>{label: &#x26;#34;Balance&#x26;#34;, value: &#x26;#34;$12.34&#x26;#34;}</code>.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>label</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>value</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>Already formatted for display.</td>
+        </tr>
+        <tr>
+          <td>detail</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td>Optional extra context, e.g. "last 30 days".</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-StatusLevel"></a></p>
+    <h3 id="statuslevel"><a class="anchor" aria-hidden="true" tabindex="-1" href="#statuslevel"><span class="octicon octicon-link"></span></a>StatusLevel</h3>
+    <p>
+      Overall verdict for a provider, domain, or single check. Ordered roughly from best to worst so
+      a UI can pick the "worst" of a list.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Number</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>STATUS_LEVEL_UNKNOWN</td>
+          <td>0</td>
+          <td>The check wasn't run, or the provider doesn't expose enough information to tell.</td>
+        </tr>
+        <tr>
+          <td>STATUS_LEVEL_OK</td>
+          <td>1</td>
+          <td>Everything looks right.</td>
+        </tr>
+        <tr>
+          <td>STATUS_LEVEL_INFO</td>
+          <td>2</td>
+          <td>Purely informational (e.g. an account's plan name); neither good nor bad.</td>
+        </tr>
+        <tr>
+          <td>STATUS_LEVEL_WARNING</td>
+          <td>3</td>
+          <td>Works, but something deserves an admin's attention (a trial account, a DMARC policy of <code>none</code>, an unregistered 10DLC campaign, a low balance, ...).</td>
+        </tr>
+        <tr>
+          <td>STATUS_LEVEL_ERROR</td>
+          <td>4</td>
+          <td>Broken or about to break (bad credentials, unverified sending domain, missing DKIM, ...).</td>
+        </tr>
+        <tr>
+          <td>STATUS_LEVEL_DISABLED</td>
+          <td>5</td>
+          <td>Not configured/enabled, so nothing to check.</td>
         </tr>
       </tbody>
     </table>

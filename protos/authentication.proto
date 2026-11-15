@@ -5,11 +5,36 @@ package rellm;
 import "google/protobuf/timestamp.proto";
 import "users.proto";
 
-// Request to create a new account.
+// Request to create a new account. Three ways to prove who you are, which may be combined:
+//
+// - **Password** (`password` set): the classic flow. One request creates the account.
+// - **Verified SMS** (`phone` set, server has `CREATE_ACCOUNT_WITH_SMS` enabled) and/or
+// - **Verified email** (`email` set, server has `CREATE_ACCOUNT_WITH_EMAIL` enabled).
+//
+// When a server has `CREATE_ACCOUNT_WITH_SMS`/`CREATE_ACCOUNT_WITH_EMAIL` enabled (see
+// [`AuthenticationFeature`](#rellm-AuthenticationFeature)), every `phone`/`email` supplied here
+// **must be verified before the account is created**, using two requests with the same contact
+// methods:
+//
+// 1. Send the request *without* the matching `phone_verification_code`/`email_verification_code`.
+//    The contact method must have `consent_state` `CONTACT_CONSENT_GRANTED` (we're about to
+//    message it). The server sends a code to each unverified contact method and returns a
+//    [`RefreshTokenResponse`](#rellm-RefreshTokenResponse) with only `verification_challenge` set --
+//    no account exists yet.
+// 2. Repeat the request with the codes filled in. If every code is correct, the account is
+//    created with those contact methods already verified (`verified_at` set), and tokens are
+//    returned as usual.
+//
+// If `password` is empty the account is passwordless: it can only be logged into via SMS/email
+// (see [`LoginRequest`](#rellm-LoginRequest)), so at least one of `phone`/`email` must be given.
+// A contact method that is already verified on another account is rejected
+// (`contact_already_verified`). If the server doesn't have the matching `CREATE_ACCOUNT_WITH_*`
+// feature enabled, `phone`/`email` are saved *unverified* exactly as before.
 message CreateAccountRequest {
   // Username for the account to be created. Must not exist.
   string username = 1;
-  // Password for the account to be created. Must be at least 8 characters.
+  // Password for the account to be created. Must be at least 8 characters, or empty to create a
+  // passwordless (SMS/email-login-only) account -- see this message's own doc.
   string password = 2;
   // Email to be used as a contact method.
   optional ContactMethod email = 3;
@@ -19,10 +44,42 @@ message CreateAccountRequest {
   optional google.protobuf.Timestamp expires_at = 5;
   // (Not yet implemented.) The name of the device being used to create the account.
   optional string device_name = 6;
+  // Second-phase code sent to `phone` (via SMS) by the first phase of this request. See this
+  // message's own doc.
+  optional string phone_verification_code = 7;
+  // Second-phase code sent to `email` by the first phase of this request. See this message's own
+  // doc.
+  optional string email_verification_code = 8;
 }
 
-// Request to login to an existing account.
+// Request to login to an existing account. Exactly one of the `request` variants must be set.
+//
+// `sms` and `email` logins are **two-phase**, and only work for a contact method that the account
+// has already *verified* (`ContactMethod.verified_at`, see
+// [`VerifyContactMethod`](#grpc-api-VerifyContactMethod)) and still consents to being contacted
+// through (`consent_state` `CONTACT_CONSENT_GRANTED`):
+//
+// 1. Send the request with no `code`. If an account matches, the server sends it a one-time code
+//    and returns a [`RefreshTokenResponse`](#rellm-RefreshTokenResponse) with only
+//    `verification_challenge` set. To avoid revealing which phone numbers/emails have accounts, the
+//    response looks the same whether or not an account matched.
+// 2. Send the request again with the `code`. On success the response carries tokens and the user,
+//    as with a password login.
+//
+// Codes are 6 digits, expire after 10 minutes, are limited to 5 wrong guesses, and can be re-sent
+// at most once a minute -- the same rules as [`ContactMethodVerification`](#rellm-ContactMethodVerification).
+// Servers advertise which login methods they allow in
+// [`ServerConfiguration.authentication_features`](#rellm-ServerConfiguration).
 message LoginRequest {
+  oneof request {
+    UsernamePasswordLoginRequest username_password = 1;
+    SMSLoginRequest sms = 2;
+    EmailLoginRequest email = 3;
+  }
+}
+
+// Request to login with username + password.
+message UsernamePasswordLoginRequest {
   // Username for the account to be logged into. Must exist.
   string username = 1;
   // Password for the account to be logged into.
@@ -32,6 +89,40 @@ message LoginRequest {
   // (Not yet implemented.) The name of the device being used to login.
   optional string device_name = 4;
   // (TODO) If provided, username is ignored and login is initiated via user_id instead.
+  optional string user_id = 5;
+}
+
+// Request to login via SMS. Two SMSLoginRequests are required to complete
+// a login.
+message SMSLoginRequest {
+  // The phone number to be used for login, in E.164 format (`+19195551234`); a leading `tel:` is
+  // accepted. Always required. Must be a phone number the account has verified.
+  string phone_number = 1;
+  // Response code sent to the phone number via SMS for the second phase of authentication. Must be valid.
+  optional string code = 2;
+  // Request an expiration time for the Auth Token returned. By default it will not expire.
+  optional google.protobuf.Timestamp expires_at = 3;
+  // (Not yet implemented.) The name of the device being used to login.
+  optional string device_name = 4;
+  // Only needed if (unusually) more than one account has this contact method verified: picks
+  // which account to log into. Otherwise ignored.
+  optional string user_id = 5;
+}
+
+// Request to login via email. Two EmailLoginRequests are required to complete
+// a login.
+message EmailLoginRequest {
+  // The email address to be used for login (a leading `mailto:` is accepted; matched
+  // case-insensitively). Always required. Must be an address the account has verified.
+  string email = 1;
+  // Response code sent to the email address for the second phase of authentication. Must be valid.
+  optional string code = 2;
+  // Request an expiration time for the Auth Token returned. By default it will not expire.
+  optional google.protobuf.Timestamp expires_at = 3;
+  // (Not yet implemented.) The name of the device being used to login.
+  optional string device_name = 4;
+  // Only needed if (unusually) more than one account has this contact method verified: picks
+  // which account to log into. Otherwise ignored.
   optional string user_id = 5;
 }
 
@@ -70,6 +161,24 @@ message RefreshTokenResponse {
   ExpirableToken access_token = 2;
   // The user associated with the account that was created/logged into.
   User user = 3;
+  // Set *instead of* the tokens and `user` when this was the first phase of a two-phase
+  // [`LoginRequest`](#rellm-LoginRequest) (SMS/email) or [`CreateAccountRequest`](#rellm-CreateAccountRequest):
+  // a code was sent (or, for login, would have been -- see `LoginRequest`), and the client should
+  // prompt for it and repeat the request with the code filled in.
+  optional VerificationChallenge verification_challenge = 4;
+}
+
+// Returned in [`RefreshTokenResponse.verification_challenge`](#rellm-RefreshTokenResponse) after the
+// first phase of an SMS/email login or account creation.
+message VerificationChallenge {
+  // The `tel:`/`mailto:` values a code was sent to, e.g. `["tel:+19195551234"]` -- shown to the
+  // user as "We sent a code to ...". For login this echoes the requested value even when no
+  // account matched.
+  repeated string sent_to = 1;
+  // When the code(s) expire (10 minutes after being sent).
+  google.protobuf.Timestamp expires_at = 2;
+  // The earliest a new code can be requested for the same contact method.
+  google.protobuf.Timestamp resend_available_at = 3;
 }
 
 // Generic type for refresh and access tokens.

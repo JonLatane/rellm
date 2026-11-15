@@ -63,6 +63,7 @@ pub fn generate_refresh_and_access_token(
         refresh_token: Some(refresh_token),
         access_token: Some(access_token),
         user: None,
+        verification_challenge: None,
     }
 }
 

@@ -7,3 +7,6 @@ pub use contact_verification::*;
 
 mod contact_consent;
 pub use contact_consent::*;
+
+mod email_sending;
+pub use email_sending::*;

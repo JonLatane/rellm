@@ -12,6 +12,9 @@ fn main() {
         // fulfillment chat fields (`fulfillment_status`/`fulfillment_notes`/`notes_last_read`), so a missing
         // key must deserialize to its default rather than fail.
         .type_attribute("MediaStorageSubscriptionDetails", "#[serde(default)]")
+        // `stalwart_config` JSON stored before sending/management fields existed
+        // (`{"stalwart_receiving_enabled": true}`) must still deserialize.
+        .type_attribute("StalwartConfig", "#[serde(default)]")
         .type_attribute("AIGrantSubscriptionDetails", "#[serde(default)]")
         .type_attribute("PermissionsAccessSubscriptionDetails", "#[serde(default)]")
         // Used for updating servers from 0.5.551 -> 0.5.553+. Can be removed

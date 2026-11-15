@@ -348,6 +348,17 @@ diesel::table! {
 }
 
 diesel::table! {
+    pending_contact_verifications (id) {
+        id -> Int8,
+        contact_value -> Varchar,
+        code_hash -> Varchar,
+        attempts -> Int4,
+        created_at -> Timestamp,
+        sent_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     post_sync_destinations (post_id, sync_destination_id) {
         post_id -> Int8,
         sync_destination_id -> Int8,
@@ -434,6 +445,7 @@ diesel::table! {
         telnyx_config -> Nullable<Jsonb>,
         supported_contact_protocols -> Nullable<Jsonb>,
         stalwart_config -> Nullable<Jsonb>,
+        email_providers_config -> Nullable<Jsonb>,
         custom_css_configuration -> Nullable<Jsonb>,
         custom_css -> Nullable<Text>,
     }
@@ -610,6 +622,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     message_recipients,
     messages,
     messaging_groups,
+    pending_contact_verifications,
     post_sync_destinations,
     posts,
     push_subscriptions,

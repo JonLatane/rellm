@@ -328,7 +328,7 @@ message GetUsersResponse {
 
 // Request for [`VerifyContactMethod`](#grpc-api-VerifyContactMethod).
 message VerifyContactMethodRequest {
-  // The `tel:` (or, in the future, `mailto:`) value being verified -- must match the current
+  // The `tel:` or `mailto:` value being verified -- must match the current
   // user's own stored `phone`/`email` value.
   string value = 1;
   // The code the user was sent by `StartContactMethodVerification`.

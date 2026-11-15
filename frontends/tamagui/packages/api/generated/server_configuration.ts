@@ -72,10 +72,18 @@ export function clusterResourceToJSON(object: ClusterResource): string {
 export enum AuthenticationFeature {
   /** AUTHENTICATION_FEATURE_UNKNOWN - An authentication feature that is not known to the server. (Likely, the client and server use different versions of the Rellm protocol.) */
   AUTHENTICATION_FEATURE_UNKNOWN = 0,
-  /** CREATE_ACCOUNT - Users can sign up for an account. */
-  CREATE_ACCOUNT = 1,
-  /** LOGIN - Users can sign in with an existing account. */
-  LOGIN = 2,
+  /** CREATE_ACCOUNT_WITH_PASSWORD - Users can sign up for an account. */
+  CREATE_ACCOUNT_WITH_PASSWORD = 1,
+  /** CREATE_ACCOUNT_WITH_SMS - Users can sign up for an account via SMS. */
+  CREATE_ACCOUNT_WITH_SMS = 2,
+  /** CREATE_ACCOUNT_WITH_EMAIL - Users can sign up for an account via email. */
+  CREATE_ACCOUNT_WITH_EMAIL = 3,
+  /** LOGIN_WITH_PASSWORD - Users can sign in with an existing account. */
+  LOGIN_WITH_PASSWORD = 11,
+  /** LOGIN_WITH_SMS - Users can sign in with an existing account via SMS. */
+  LOGIN_WITH_SMS = 12,
+  /** LOGIN_WITH_EMAIL - Users can sign in with an existing account via email. */
+  LOGIN_WITH_EMAIL = 13,
   UNRECOGNIZED = -1,
 }
 
@@ -85,11 +93,23 @@ export function authenticationFeatureFromJSON(object: any): AuthenticationFeatur
     case "AUTHENTICATION_FEATURE_UNKNOWN":
       return AuthenticationFeature.AUTHENTICATION_FEATURE_UNKNOWN;
     case 1:
-    case "CREATE_ACCOUNT":
-      return AuthenticationFeature.CREATE_ACCOUNT;
+    case "CREATE_ACCOUNT_WITH_PASSWORD":
+      return AuthenticationFeature.CREATE_ACCOUNT_WITH_PASSWORD;
     case 2:
-    case "LOGIN":
-      return AuthenticationFeature.LOGIN;
+    case "CREATE_ACCOUNT_WITH_SMS":
+      return AuthenticationFeature.CREATE_ACCOUNT_WITH_SMS;
+    case 3:
+    case "CREATE_ACCOUNT_WITH_EMAIL":
+      return AuthenticationFeature.CREATE_ACCOUNT_WITH_EMAIL;
+    case 11:
+    case "LOGIN_WITH_PASSWORD":
+      return AuthenticationFeature.LOGIN_WITH_PASSWORD;
+    case 12:
+    case "LOGIN_WITH_SMS":
+      return AuthenticationFeature.LOGIN_WITH_SMS;
+    case 13:
+    case "LOGIN_WITH_EMAIL":
+      return AuthenticationFeature.LOGIN_WITH_EMAIL;
     case -1:
     case "UNRECOGNIZED":
     default:
@@ -101,10 +121,18 @@ export function authenticationFeatureToJSON(object: AuthenticationFeature): stri
   switch (object) {
     case AuthenticationFeature.AUTHENTICATION_FEATURE_UNKNOWN:
       return "AUTHENTICATION_FEATURE_UNKNOWN";
-    case AuthenticationFeature.CREATE_ACCOUNT:
-      return "CREATE_ACCOUNT";
-    case AuthenticationFeature.LOGIN:
-      return "LOGIN";
+    case AuthenticationFeature.CREATE_ACCOUNT_WITH_PASSWORD:
+      return "CREATE_ACCOUNT_WITH_PASSWORD";
+    case AuthenticationFeature.CREATE_ACCOUNT_WITH_SMS:
+      return "CREATE_ACCOUNT_WITH_SMS";
+    case AuthenticationFeature.CREATE_ACCOUNT_WITH_EMAIL:
+      return "CREATE_ACCOUNT_WITH_EMAIL";
+    case AuthenticationFeature.LOGIN_WITH_PASSWORD:
+      return "LOGIN_WITH_PASSWORD";
+    case AuthenticationFeature.LOGIN_WITH_SMS:
+      return "LOGIN_WITH_SMS";
+    case AuthenticationFeature.LOGIN_WITH_EMAIL:
+      return "LOGIN_WITH_EMAIL";
     case AuthenticationFeature.UNRECOGNIZED:
     default:
       return "UNRECOGNIZED";
@@ -466,7 +494,12 @@ export enum ContactProtocol {
    * [`BirdConfig`](#rellm-BirdConfig)/[`TelnyxConfig`](#rellm-TelnyxConfig).
    */
   CONTACT_PROTOCOL_TEL = 0,
-  /** CONTACT_PROTOCOL_MAILTO - `mailto:` (email) contact. Currently not supported -- no email provider exists yet. */
+  /**
+   * CONTACT_PROTOCOL_MAILTO - `mailto:` (email) contact. Requires an enabled, configured email provider:
+   * [`StalwartConfig`](#rellm-StalwartConfig) (with `stalwart_sending_enabled`),
+   * [`PostmarkConfig`](#rellm-PostmarkConfig), [`SendgridConfig`](#rellm-SendgridConfig) or
+   * [`MailgunConfig`](#rellm-MailgunConfig).
+   */
   CONTACT_PROTOCOL_MAILTO = 1,
   UNRECOGNIZED = -1,
 }
@@ -539,6 +572,56 @@ export function contactVerificationAPIToJSON(object: ContactVerificationAPI): st
     case ContactVerificationAPI.CONTACT_VERIFICATION_API_TELNYX:
       return "CONTACT_VERIFICATION_API_TELNYX";
     case ContactVerificationAPI.UNRECOGNIZED:
+    default:
+      return "UNRECOGNIZED";
+  }
+}
+
+/**
+ * The email providers [`ServerConfiguration.preferred_email_apis`](#rellm-ServerConfiguration)/
+ * [`available_email_apis`](#rellm-ServerConfiguration) order between -- the email counterpart of
+ * [`ContactVerificationAPI`](#rellm-ContactVerificationAPI).
+ */
+export enum EmailVerificationAPI {
+  EMAIL_VERIFICATION_API_POSTMARK = 0,
+  EMAIL_VERIFICATION_API_SENDGRID = 1,
+  EMAIL_VERIFICATION_API_MAILGUN = 2,
+  EMAIL_VERIFICATION_API_STALWART = 3,
+  UNRECOGNIZED = -1,
+}
+
+export function emailVerificationAPIFromJSON(object: any): EmailVerificationAPI {
+  switch (object) {
+    case 0:
+    case "EMAIL_VERIFICATION_API_POSTMARK":
+      return EmailVerificationAPI.EMAIL_VERIFICATION_API_POSTMARK;
+    case 1:
+    case "EMAIL_VERIFICATION_API_SENDGRID":
+      return EmailVerificationAPI.EMAIL_VERIFICATION_API_SENDGRID;
+    case 2:
+    case "EMAIL_VERIFICATION_API_MAILGUN":
+      return EmailVerificationAPI.EMAIL_VERIFICATION_API_MAILGUN;
+    case 3:
+    case "EMAIL_VERIFICATION_API_STALWART":
+      return EmailVerificationAPI.EMAIL_VERIFICATION_API_STALWART;
+    case -1:
+    case "UNRECOGNIZED":
+    default:
+      return EmailVerificationAPI.UNRECOGNIZED;
+  }
+}
+
+export function emailVerificationAPIToJSON(object: EmailVerificationAPI): string {
+  switch (object) {
+    case EmailVerificationAPI.EMAIL_VERIFICATION_API_POSTMARK:
+      return "EMAIL_VERIFICATION_API_POSTMARK";
+    case EmailVerificationAPI.EMAIL_VERIFICATION_API_SENDGRID:
+      return "EMAIL_VERIFICATION_API_SENDGRID";
+    case EmailVerificationAPI.EMAIL_VERIFICATION_API_MAILGUN:
+      return "EMAIL_VERIFICATION_API_MAILGUN";
+    case EmailVerificationAPI.EMAIL_VERIFICATION_API_STALWART:
+      return "EMAIL_VERIFICATION_API_STALWART";
+    case EmailVerificationAPI.UNRECOGNIZED:
     default:
       return "UNRECOGNIZED";
   }
@@ -655,7 +738,11 @@ export interface ServerConfiguration {
   /** Strategy when a user sets their visibility to `PRIVATE`. Defaults to `ACCOUNT_IS_FROZEN`. */
   privateUserStrategy: PrivateUserStrategy;
   /**
-   * (TODO) Allows admins to enable/disable creating accounts and logging in.
+   * Which ways of creating accounts and logging in the server allows. The `*_WITH_SMS`/
+   * `*_WITH_EMAIL` values are enforced (they require the matching `ContactProtocol` to be
+   * supported -- see `supported_contact_protocols` -- and change how
+   * [`CreateAccount`](#grpc-api-CreateAccount)/[`Login`](#grpc-api-Login) behave); the
+   * `*_WITH_PASSWORD` values are not enforced yet (password creation/login always work).
    * Eventually, external auth too hopefully!
    */
   authenticationFeatures: AuthenticationFeature[];
@@ -670,8 +757,10 @@ export interface ServerConfiguration {
    * [`ConfigureServer`](#grpc-api-ConfigureServer), which *errors* rather than silently dropping an
    * invalid entry: `CONTACT_PROTOCOL_TEL` requires an enabled
    * [`TwilioConfig`](#rellm-TwilioConfig)/[`BirdConfig`](#rellm-BirdConfig)/
-   * [`TelnyxConfig`](#rellm-TelnyxConfig) in that same request, and `CONTACT_PROTOCOL_MAILTO` is
-   * always rejected (no email provider exists yet). Edited via the "Enable SMS Sending"/"Enable
+   * [`TelnyxConfig`](#rellm-TelnyxConfig) in that same request, and `CONTACT_PROTOCOL_MAILTO`
+   * requires an enabled [`StalwartConfig`](#rellm-StalwartConfig) (with sending enabled)/
+   * [`PostmarkConfig`](#rellm-PostmarkConfig)/[`SendgridConfig`](#rellm-SendgridConfig)/
+   * [`MailgunConfig`](#rellm-MailgunConfig). Edited via the "Enable SMS Sending"/"Enable
    * Email Sending" toggles on the Contact Integrations tab's "SMS Configuration"/"Email
    * Configuration" sections (`ContactIntegrationsTab.smsConfigurationSection`/
    * `emailConfigurationSection`) -- see `docs/contact_integrations.md`.
@@ -727,9 +816,9 @@ export interface ServerConfiguration {
   /**
    * Unlike the other configs, at least at the moment, the integration with Stalwart is designed
    * to be *in-cluster*, not over the web. It relies on unsecured /email endpoint on port 27705
-   * to receive mail from a Stalwart deployed within the same Kubernetes cluster.
-   *
-   * This could be extended in the future to allow sending mail with Stalwart, but that's TBD.
+   * to receive mail from a Stalwart deployed within the same Kubernetes cluster, and can send
+   * mail (verification codes) through the same Stalwart's SMTP submission port. Only serialized
+   * for admin users.
    */
   stalwartConfig?:
     | StalwartConfig
@@ -741,7 +830,32 @@ export interface ServerConfiguration {
    * text. Ignored by [`ConfigureServer`](#grpc-api-ConfigureServer); write it with
    * [`ConfigureCustomCSS`](#grpc-api-ConfigureCustomCSS).
    */
-  customCssConfiguration?: CustomCSSConfiguration | undefined;
+  customCssConfiguration?:
+    | CustomCSSConfiguration
+    | undefined;
+  /**
+   * Email sending, parallel to the SMS providers above. A server-preferred order of
+   * [`EmailVerificationAPI`](#rellm-EmailVerificationAPI) providers to try first when more than one
+   * of `stalwart_config` (sending)/`postmark_config`/`sendgrid_config`/`mailgun_config` is enabled;
+   * same preference-then-fallback ordering as `preferred_verification_apis` (fallback order:
+   * Postmark, SendGrid, Mailgun, Stalwart). Only serialized for admin users.
+   */
+  preferredEmailApis: EmailVerificationAPI[];
+  /**
+   * The email providers that are enabled and configured, in the order they'd be tried -- the
+   * email counterpart of `available_verification_apis`, serialized to every caller.
+   */
+  availableEmailApis: EmailVerificationAPI[];
+  /** Postmark Config -- see [`PostmarkConfig`](#rellm-PostmarkConfig). Only serialized for admin users. */
+  postmarkConfig?:
+    | PostmarkConfig
+    | undefined;
+  /** SendGrid Config -- see [`SendgridConfig`](#rellm-SendgridConfig). Only serialized for admin users. */
+  sendgridConfig?:
+    | SendgridConfig
+    | undefined;
+  /** Mailgun Config -- see [`MailgunConfig`](#rellm-MailgunConfig). Only serialized for admin users. */
+  mailgunConfig?: MailgunConfig | undefined;
 }
 
 /**
@@ -1633,12 +1747,114 @@ export interface StripeConfig {
 }
 
 /**
+ * Postmark (https://postmarkapp.com) Config -- transactional email, sent via Postmark's Email API
+ * (`POST /email`). Setup: create a *Server*, verify a Sender Signature or (better, for DKIM/SPF
+ * alignment) a whole sending Domain, and copy the Server API Token. Optionally also provide the
+ * Account API Token, which lets the Contact Integrations tab show the domain's DKIM/Return-Path
+ * verification state and the Server's own delivery statistics.
+ */
+export interface PostmarkConfig {
+  postmarkEnabled: boolean;
+  /**
+   * The Server API Token, sent as `X-Postmark-Server-Token`. Never serialized once written
+   * (write-only; a blank value on `ConfigureServer` means "leave what's stored alone").
+   */
+  postmarkServerToken: string;
+  /**
+   * The Account API Token (`X-Postmark-Account-Token`) -- optional, only used to *read* domain
+   * verification status (`GET /domains`). Write-only, same as the server token.
+   */
+  postmarkAccountToken: string;
+  /** The `From` address; must belong to a verified Sender Signature or Domain. */
+  postmarkFromAddress: string;
+  /** Optional display name for the `From` header, e.g. "My Rellm Server". */
+  postmarkFromName: string;
+  /**
+   * The Message Stream to send through; empty means `outbound` (Postmark's default transactional
+   * stream).
+   */
+  postmarkMessageStream: string;
+}
+
+/**
+ * SendGrid (https://sendgrid.com) Config -- sent via the v3 Mail Send API (`POST /v3/mail/send`).
+ * Setup: create an API key with at least "Mail Send" (plus "Domain Authentication read"/"Stats
+ * read" if you want the Contact Integrations tab to show domain-authentication and delivery
+ * statistics), and authenticate your sending domain (Settings -> Sender Authentication).
+ */
+export interface SendgridConfig {
+  sendgridEnabled: boolean;
+  /** The API key (starts with `SG.`), used as Bearer auth. Write-only. */
+  sendgridApiKey: string;
+  /** The `From` address; must be a verified Single Sender or belong to an authenticated domain. */
+  sendgridFromAddress: string;
+  /** Optional display name for the `From` header. */
+  sendgridFromName: string;
+  /**
+   * Optional: set to `eu` to use SendGrid's EU regional API host (`api.eu.sendgrid.com`) -- required
+   * for EU-regional subusers/accounts. Empty (default) uses `api.sendgrid.com`.
+   */
+  sendgridRegion: string;
+}
+
+/**
+ * Mailgun (https://mailgun.com) Config -- sent via the Messages API
+ * (`POST /v3/{domain}/messages`). Setup: add and verify a sending domain, and create a (domain)
+ * sending key or use your account's private API key.
+ */
+export interface MailgunConfig {
+  mailgunEnabled: boolean;
+  /** The API key, used as Basic auth (`api:{key}`). Write-only. */
+  mailgunApiKey: string;
+  /** The Mailgun sending domain, e.g. `mg.example.com`. */
+  mailgunDomain: string;
+  /** `us` (default, `api.mailgun.net`) or `eu` (`api.eu.mailgun.net`). */
+  mailgunRegion: string;
+  /** The `From` address; should belong to `mailgun_domain`. */
+  mailgunFromAddress: string;
+  /** Optional display name for the `From` header. */
+  mailgunFromName: string;
+}
+
+/**
  * Stalwart is an extablished, open-source Rust email/contact/calendar server (think an Outlook or Google Workspace competitor).
- * Currently Rellm supports receiving emails via Stalwart webhook configurations.
+ * Rellm can *receive* emails from Stalwart (via its MTA Hook webhook) and *send* email through
+ * Stalwart's SMTP submission port -- both are designed to be in-cluster, see `deploys/email`.
  */
 export interface StalwartConfig {
   /** Enables receiving emails from the private, unsecured cluster-facing HTTP server at :27705/email. */
   stalwartReceivingEnabled: boolean;
+  /**
+   * Enables sending email (verification codes, ...) through Stalwart's SMTP submission service.
+   * Requires `stalwart_smtp_host` and `stalwart_from_address`.
+   */
+  stalwartSendingEnabled: boolean;
+  /**
+   * Host (usually the in-cluster Service name, e.g. `stalwart.email.svc.cluster.local`) of
+   * Stalwart's SMTP submission listener.
+   */
+  stalwartSmtpHost: string;
+  /** Submission port; 0 means 587 (STARTTLS submission). 465 means implicit TLS. */
+  stalwartSmtpPort: number;
+  /** Credentials of the Stalwart account/app-password to authenticate (SMTP AUTH) as. */
+  stalwartSmtpUsername: string;
+  /** Write-only, like every other credential. */
+  stalwartSmtpPassword: string;
+  /**
+   * The `From` address -- must be one Stalwart accepts from `stalwart_smtp_username` and a domain
+   * Stalwart DKIM-signs for.
+   */
+  stalwartFromAddress: string;
+  /** Optional display name for the `From` header. */
+  stalwartFromName: string;
+  /**
+   * Base URL of Stalwart's management HTTP API (e.g. `http://stalwart.email.svc.cluster.local:8080`),
+   * used *read-only* by the Contact Integrations tab to show queue depth, DNS records and
+   * received DMARC reports. Optional.
+   */
+  stalwartManagementUrl: string;
+  /** API key/bearer token for the management API (Stalwart "API key" principal). Write-only. */
+  stalwartManagementToken: string;
 }
 
 function createBaseServerConfiguration(): ServerConfiguration {
@@ -1669,6 +1885,11 @@ function createBaseServerConfiguration(): ServerConfiguration {
     telnyxConfig: undefined,
     stalwartConfig: undefined,
     customCssConfiguration: undefined,
+    preferredEmailApis: [],
+    availableEmailApis: [],
+    postmarkConfig: undefined,
+    sendgridConfig: undefined,
+    mailgunConfig: undefined,
   };
 }
 
@@ -1765,6 +1986,25 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
     }
     if (message.customCssConfiguration !== undefined) {
       CustomCSSConfiguration.encode(message.customCssConfiguration, writer.uint32(1018).fork()).join();
+    }
+    writer.uint32(1026).fork();
+    for (const v of message.preferredEmailApis) {
+      writer.int32(v);
+    }
+    writer.join();
+    writer.uint32(1034).fork();
+    for (const v of message.availableEmailApis) {
+      writer.int32(v);
+    }
+    writer.join();
+    if (message.postmarkConfig !== undefined) {
+      PostmarkConfig.encode(message.postmarkConfig, writer.uint32(1042).fork()).join();
+    }
+    if (message.sendgridConfig !== undefined) {
+      SendgridConfig.encode(message.sendgridConfig, writer.uint32(1050).fork()).join();
+    }
+    if (message.mailgunConfig !== undefined) {
+      MailgunConfig.encode(message.mailgunConfig, writer.uint32(1058).fork()).join();
     }
     return writer;
   },
@@ -2054,6 +2294,66 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
           message.customCssConfiguration = CustomCSSConfiguration.decode(reader, reader.uint32());
           continue;
         }
+        case 128: {
+          if (tag === 1024) {
+            message.preferredEmailApis.push(reader.int32() as any);
+
+            continue;
+          }
+
+          if (tag === 1026) {
+            const end2 = reader.uint32() + reader.pos;
+            while (reader.pos < end2) {
+              message.preferredEmailApis.push(reader.int32() as any);
+            }
+
+            continue;
+          }
+
+          break;
+        }
+        case 129: {
+          if (tag === 1032) {
+            message.availableEmailApis.push(reader.int32() as any);
+
+            continue;
+          }
+
+          if (tag === 1034) {
+            const end2 = reader.uint32() + reader.pos;
+            while (reader.pos < end2) {
+              message.availableEmailApis.push(reader.int32() as any);
+            }
+
+            continue;
+          }
+
+          break;
+        }
+        case 130: {
+          if (tag !== 1042) {
+            break;
+          }
+
+          message.postmarkConfig = PostmarkConfig.decode(reader, reader.uint32());
+          continue;
+        }
+        case 131: {
+          if (tag !== 1050) {
+            break;
+          }
+
+          message.sendgridConfig = SendgridConfig.decode(reader, reader.uint32());
+          continue;
+        }
+        case 132: {
+          if (tag !== 1058) {
+            break;
+          }
+
+          message.mailgunConfig = MailgunConfig.decode(reader, reader.uint32());
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -2111,6 +2411,15 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
       customCssConfiguration: isSet(object.customCssConfiguration)
         ? CustomCSSConfiguration.fromJSON(object.customCssConfiguration)
         : undefined,
+      preferredEmailApis: globalThis.Array.isArray(object?.preferredEmailApis)
+        ? object.preferredEmailApis.map((e: any) => emailVerificationAPIFromJSON(e))
+        : [],
+      availableEmailApis: globalThis.Array.isArray(object?.availableEmailApis)
+        ? object.availableEmailApis.map((e: any) => emailVerificationAPIFromJSON(e))
+        : [],
+      postmarkConfig: isSet(object.postmarkConfig) ? PostmarkConfig.fromJSON(object.postmarkConfig) : undefined,
+      sendgridConfig: isSet(object.sendgridConfig) ? SendgridConfig.fromJSON(object.sendgridConfig) : undefined,
+      mailgunConfig: isSet(object.mailgunConfig) ? MailgunConfig.fromJSON(object.mailgunConfig) : undefined,
     };
   },
 
@@ -2194,6 +2503,21 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
     if (message.customCssConfiguration !== undefined) {
       obj.customCssConfiguration = CustomCSSConfiguration.toJSON(message.customCssConfiguration);
     }
+    if (message.preferredEmailApis?.length) {
+      obj.preferredEmailApis = message.preferredEmailApis.map((e) => emailVerificationAPIToJSON(e));
+    }
+    if (message.availableEmailApis?.length) {
+      obj.availableEmailApis = message.availableEmailApis.map((e) => emailVerificationAPIToJSON(e));
+    }
+    if (message.postmarkConfig !== undefined) {
+      obj.postmarkConfig = PostmarkConfig.toJSON(message.postmarkConfig);
+    }
+    if (message.sendgridConfig !== undefined) {
+      obj.sendgridConfig = SendgridConfig.toJSON(message.sendgridConfig);
+    }
+    if (message.mailgunConfig !== undefined) {
+      obj.mailgunConfig = MailgunConfig.toJSON(message.mailgunConfig);
+    }
     return obj;
   },
 
@@ -2265,6 +2589,17 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
       (object.customCssConfiguration !== undefined && object.customCssConfiguration !== null)
         ? CustomCSSConfiguration.fromPartial(object.customCssConfiguration)
         : undefined;
+    message.preferredEmailApis = object.preferredEmailApis?.map((e) => e) || [];
+    message.availableEmailApis = object.availableEmailApis?.map((e) => e) || [];
+    message.postmarkConfig = (object.postmarkConfig !== undefined && object.postmarkConfig !== null)
+      ? PostmarkConfig.fromPartial(object.postmarkConfig)
+      : undefined;
+    message.sendgridConfig = (object.sendgridConfig !== undefined && object.sendgridConfig !== null)
+      ? SendgridConfig.fromPartial(object.sendgridConfig)
+      : undefined;
+    message.mailgunConfig = (object.mailgunConfig !== undefined && object.mailgunConfig !== null)
+      ? MailgunConfig.fromPartial(object.mailgunConfig)
+      : undefined;
     return message;
   },
 };
@@ -5558,14 +5893,476 @@ export const StripeConfig: MessageFns<StripeConfig> = {
   },
 };
 
+function createBasePostmarkConfig(): PostmarkConfig {
+  return {
+    postmarkEnabled: false,
+    postmarkServerToken: "",
+    postmarkAccountToken: "",
+    postmarkFromAddress: "",
+    postmarkFromName: "",
+    postmarkMessageStream: "",
+  };
+}
+
+export const PostmarkConfig: MessageFns<PostmarkConfig> = {
+  encode(message: PostmarkConfig, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.postmarkEnabled !== false) {
+      writer.uint32(8).bool(message.postmarkEnabled);
+    }
+    if (message.postmarkServerToken !== "") {
+      writer.uint32(18).string(message.postmarkServerToken);
+    }
+    if (message.postmarkAccountToken !== "") {
+      writer.uint32(26).string(message.postmarkAccountToken);
+    }
+    if (message.postmarkFromAddress !== "") {
+      writer.uint32(34).string(message.postmarkFromAddress);
+    }
+    if (message.postmarkFromName !== "") {
+      writer.uint32(42).string(message.postmarkFromName);
+    }
+    if (message.postmarkMessageStream !== "") {
+      writer.uint32(50).string(message.postmarkMessageStream);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): PostmarkConfig {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBasePostmarkConfig();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 8) {
+            break;
+          }
+
+          message.postmarkEnabled = reader.bool();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.postmarkServerToken = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.postmarkAccountToken = reader.string();
+          continue;
+        }
+        case 4: {
+          if (tag !== 34) {
+            break;
+          }
+
+          message.postmarkFromAddress = reader.string();
+          continue;
+        }
+        case 5: {
+          if (tag !== 42) {
+            break;
+          }
+
+          message.postmarkFromName = reader.string();
+          continue;
+        }
+        case 6: {
+          if (tag !== 50) {
+            break;
+          }
+
+          message.postmarkMessageStream = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): PostmarkConfig {
+    return {
+      postmarkEnabled: isSet(object.postmarkEnabled) ? globalThis.Boolean(object.postmarkEnabled) : false,
+      postmarkServerToken: isSet(object.postmarkServerToken) ? globalThis.String(object.postmarkServerToken) : "",
+      postmarkAccountToken: isSet(object.postmarkAccountToken) ? globalThis.String(object.postmarkAccountToken) : "",
+      postmarkFromAddress: isSet(object.postmarkFromAddress) ? globalThis.String(object.postmarkFromAddress) : "",
+      postmarkFromName: isSet(object.postmarkFromName) ? globalThis.String(object.postmarkFromName) : "",
+      postmarkMessageStream: isSet(object.postmarkMessageStream) ? globalThis.String(object.postmarkMessageStream) : "",
+    };
+  },
+
+  toJSON(message: PostmarkConfig): unknown {
+    const obj: any = {};
+    if (message.postmarkEnabled !== false) {
+      obj.postmarkEnabled = message.postmarkEnabled;
+    }
+    if (message.postmarkServerToken !== "") {
+      obj.postmarkServerToken = message.postmarkServerToken;
+    }
+    if (message.postmarkAccountToken !== "") {
+      obj.postmarkAccountToken = message.postmarkAccountToken;
+    }
+    if (message.postmarkFromAddress !== "") {
+      obj.postmarkFromAddress = message.postmarkFromAddress;
+    }
+    if (message.postmarkFromName !== "") {
+      obj.postmarkFromName = message.postmarkFromName;
+    }
+    if (message.postmarkMessageStream !== "") {
+      obj.postmarkMessageStream = message.postmarkMessageStream;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<PostmarkConfig>, I>>(base?: I): PostmarkConfig {
+    return PostmarkConfig.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<PostmarkConfig>, I>>(object: I): PostmarkConfig {
+    const message = createBasePostmarkConfig();
+    message.postmarkEnabled = object.postmarkEnabled ?? false;
+    message.postmarkServerToken = object.postmarkServerToken ?? "";
+    message.postmarkAccountToken = object.postmarkAccountToken ?? "";
+    message.postmarkFromAddress = object.postmarkFromAddress ?? "";
+    message.postmarkFromName = object.postmarkFromName ?? "";
+    message.postmarkMessageStream = object.postmarkMessageStream ?? "";
+    return message;
+  },
+};
+
+function createBaseSendgridConfig(): SendgridConfig {
+  return {
+    sendgridEnabled: false,
+    sendgridApiKey: "",
+    sendgridFromAddress: "",
+    sendgridFromName: "",
+    sendgridRegion: "",
+  };
+}
+
+export const SendgridConfig: MessageFns<SendgridConfig> = {
+  encode(message: SendgridConfig, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.sendgridEnabled !== false) {
+      writer.uint32(8).bool(message.sendgridEnabled);
+    }
+    if (message.sendgridApiKey !== "") {
+      writer.uint32(18).string(message.sendgridApiKey);
+    }
+    if (message.sendgridFromAddress !== "") {
+      writer.uint32(26).string(message.sendgridFromAddress);
+    }
+    if (message.sendgridFromName !== "") {
+      writer.uint32(34).string(message.sendgridFromName);
+    }
+    if (message.sendgridRegion !== "") {
+      writer.uint32(42).string(message.sendgridRegion);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): SendgridConfig {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseSendgridConfig();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 8) {
+            break;
+          }
+
+          message.sendgridEnabled = reader.bool();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.sendgridApiKey = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.sendgridFromAddress = reader.string();
+          continue;
+        }
+        case 4: {
+          if (tag !== 34) {
+            break;
+          }
+
+          message.sendgridFromName = reader.string();
+          continue;
+        }
+        case 5: {
+          if (tag !== 42) {
+            break;
+          }
+
+          message.sendgridRegion = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): SendgridConfig {
+    return {
+      sendgridEnabled: isSet(object.sendgridEnabled) ? globalThis.Boolean(object.sendgridEnabled) : false,
+      sendgridApiKey: isSet(object.sendgridApiKey) ? globalThis.String(object.sendgridApiKey) : "",
+      sendgridFromAddress: isSet(object.sendgridFromAddress) ? globalThis.String(object.sendgridFromAddress) : "",
+      sendgridFromName: isSet(object.sendgridFromName) ? globalThis.String(object.sendgridFromName) : "",
+      sendgridRegion: isSet(object.sendgridRegion) ? globalThis.String(object.sendgridRegion) : "",
+    };
+  },
+
+  toJSON(message: SendgridConfig): unknown {
+    const obj: any = {};
+    if (message.sendgridEnabled !== false) {
+      obj.sendgridEnabled = message.sendgridEnabled;
+    }
+    if (message.sendgridApiKey !== "") {
+      obj.sendgridApiKey = message.sendgridApiKey;
+    }
+    if (message.sendgridFromAddress !== "") {
+      obj.sendgridFromAddress = message.sendgridFromAddress;
+    }
+    if (message.sendgridFromName !== "") {
+      obj.sendgridFromName = message.sendgridFromName;
+    }
+    if (message.sendgridRegion !== "") {
+      obj.sendgridRegion = message.sendgridRegion;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<SendgridConfig>, I>>(base?: I): SendgridConfig {
+    return SendgridConfig.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<SendgridConfig>, I>>(object: I): SendgridConfig {
+    const message = createBaseSendgridConfig();
+    message.sendgridEnabled = object.sendgridEnabled ?? false;
+    message.sendgridApiKey = object.sendgridApiKey ?? "";
+    message.sendgridFromAddress = object.sendgridFromAddress ?? "";
+    message.sendgridFromName = object.sendgridFromName ?? "";
+    message.sendgridRegion = object.sendgridRegion ?? "";
+    return message;
+  },
+};
+
+function createBaseMailgunConfig(): MailgunConfig {
+  return {
+    mailgunEnabled: false,
+    mailgunApiKey: "",
+    mailgunDomain: "",
+    mailgunRegion: "",
+    mailgunFromAddress: "",
+    mailgunFromName: "",
+  };
+}
+
+export const MailgunConfig: MessageFns<MailgunConfig> = {
+  encode(message: MailgunConfig, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.mailgunEnabled !== false) {
+      writer.uint32(8).bool(message.mailgunEnabled);
+    }
+    if (message.mailgunApiKey !== "") {
+      writer.uint32(18).string(message.mailgunApiKey);
+    }
+    if (message.mailgunDomain !== "") {
+      writer.uint32(26).string(message.mailgunDomain);
+    }
+    if (message.mailgunRegion !== "") {
+      writer.uint32(34).string(message.mailgunRegion);
+    }
+    if (message.mailgunFromAddress !== "") {
+      writer.uint32(42).string(message.mailgunFromAddress);
+    }
+    if (message.mailgunFromName !== "") {
+      writer.uint32(50).string(message.mailgunFromName);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): MailgunConfig {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseMailgunConfig();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 8) {
+            break;
+          }
+
+          message.mailgunEnabled = reader.bool();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.mailgunApiKey = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.mailgunDomain = reader.string();
+          continue;
+        }
+        case 4: {
+          if (tag !== 34) {
+            break;
+          }
+
+          message.mailgunRegion = reader.string();
+          continue;
+        }
+        case 5: {
+          if (tag !== 42) {
+            break;
+          }
+
+          message.mailgunFromAddress = reader.string();
+          continue;
+        }
+        case 6: {
+          if (tag !== 50) {
+            break;
+          }
+
+          message.mailgunFromName = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): MailgunConfig {
+    return {
+      mailgunEnabled: isSet(object.mailgunEnabled) ? globalThis.Boolean(object.mailgunEnabled) : false,
+      mailgunApiKey: isSet(object.mailgunApiKey) ? globalThis.String(object.mailgunApiKey) : "",
+      mailgunDomain: isSet(object.mailgunDomain) ? globalThis.String(object.mailgunDomain) : "",
+      mailgunRegion: isSet(object.mailgunRegion) ? globalThis.String(object.mailgunRegion) : "",
+      mailgunFromAddress: isSet(object.mailgunFromAddress) ? globalThis.String(object.mailgunFromAddress) : "",
+      mailgunFromName: isSet(object.mailgunFromName) ? globalThis.String(object.mailgunFromName) : "",
+    };
+  },
+
+  toJSON(message: MailgunConfig): unknown {
+    const obj: any = {};
+    if (message.mailgunEnabled !== false) {
+      obj.mailgunEnabled = message.mailgunEnabled;
+    }
+    if (message.mailgunApiKey !== "") {
+      obj.mailgunApiKey = message.mailgunApiKey;
+    }
+    if (message.mailgunDomain !== "") {
+      obj.mailgunDomain = message.mailgunDomain;
+    }
+    if (message.mailgunRegion !== "") {
+      obj.mailgunRegion = message.mailgunRegion;
+    }
+    if (message.mailgunFromAddress !== "") {
+      obj.mailgunFromAddress = message.mailgunFromAddress;
+    }
+    if (message.mailgunFromName !== "") {
+      obj.mailgunFromName = message.mailgunFromName;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<MailgunConfig>, I>>(base?: I): MailgunConfig {
+    return MailgunConfig.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<MailgunConfig>, I>>(object: I): MailgunConfig {
+    const message = createBaseMailgunConfig();
+    message.mailgunEnabled = object.mailgunEnabled ?? false;
+    message.mailgunApiKey = object.mailgunApiKey ?? "";
+    message.mailgunDomain = object.mailgunDomain ?? "";
+    message.mailgunRegion = object.mailgunRegion ?? "";
+    message.mailgunFromAddress = object.mailgunFromAddress ?? "";
+    message.mailgunFromName = object.mailgunFromName ?? "";
+    return message;
+  },
+};
+
 function createBaseStalwartConfig(): StalwartConfig {
-  return { stalwartReceivingEnabled: false };
+  return {
+    stalwartReceivingEnabled: false,
+    stalwartSendingEnabled: false,
+    stalwartSmtpHost: "",
+    stalwartSmtpPort: 0,
+    stalwartSmtpUsername: "",
+    stalwartSmtpPassword: "",
+    stalwartFromAddress: "",
+    stalwartFromName: "",
+    stalwartManagementUrl: "",
+    stalwartManagementToken: "",
+  };
 }
 
 export const StalwartConfig: MessageFns<StalwartConfig> = {
   encode(message: StalwartConfig, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.stalwartReceivingEnabled !== false) {
       writer.uint32(8).bool(message.stalwartReceivingEnabled);
+    }
+    if (message.stalwartSendingEnabled !== false) {
+      writer.uint32(16).bool(message.stalwartSendingEnabled);
+    }
+    if (message.stalwartSmtpHost !== "") {
+      writer.uint32(26).string(message.stalwartSmtpHost);
+    }
+    if (message.stalwartSmtpPort !== 0) {
+      writer.uint32(32).int32(message.stalwartSmtpPort);
+    }
+    if (message.stalwartSmtpUsername !== "") {
+      writer.uint32(42).string(message.stalwartSmtpUsername);
+    }
+    if (message.stalwartSmtpPassword !== "") {
+      writer.uint32(50).string(message.stalwartSmtpPassword);
+    }
+    if (message.stalwartFromAddress !== "") {
+      writer.uint32(58).string(message.stalwartFromAddress);
+    }
+    if (message.stalwartFromName !== "") {
+      writer.uint32(66).string(message.stalwartFromName);
+    }
+    if (message.stalwartManagementUrl !== "") {
+      writer.uint32(74).string(message.stalwartManagementUrl);
+    }
+    if (message.stalwartManagementToken !== "") {
+      writer.uint32(82).string(message.stalwartManagementToken);
     }
     return writer;
   },
@@ -5585,6 +6382,78 @@ export const StalwartConfig: MessageFns<StalwartConfig> = {
           message.stalwartReceivingEnabled = reader.bool();
           continue;
         }
+        case 2: {
+          if (tag !== 16) {
+            break;
+          }
+
+          message.stalwartSendingEnabled = reader.bool();
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.stalwartSmtpHost = reader.string();
+          continue;
+        }
+        case 4: {
+          if (tag !== 32) {
+            break;
+          }
+
+          message.stalwartSmtpPort = reader.int32();
+          continue;
+        }
+        case 5: {
+          if (tag !== 42) {
+            break;
+          }
+
+          message.stalwartSmtpUsername = reader.string();
+          continue;
+        }
+        case 6: {
+          if (tag !== 50) {
+            break;
+          }
+
+          message.stalwartSmtpPassword = reader.string();
+          continue;
+        }
+        case 7: {
+          if (tag !== 58) {
+            break;
+          }
+
+          message.stalwartFromAddress = reader.string();
+          continue;
+        }
+        case 8: {
+          if (tag !== 66) {
+            break;
+          }
+
+          message.stalwartFromName = reader.string();
+          continue;
+        }
+        case 9: {
+          if (tag !== 74) {
+            break;
+          }
+
+          message.stalwartManagementUrl = reader.string();
+          continue;
+        }
+        case 10: {
+          if (tag !== 82) {
+            break;
+          }
+
+          message.stalwartManagementToken = reader.string();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -5599,6 +6468,19 @@ export const StalwartConfig: MessageFns<StalwartConfig> = {
       stalwartReceivingEnabled: isSet(object.stalwartReceivingEnabled)
         ? globalThis.Boolean(object.stalwartReceivingEnabled)
         : false,
+      stalwartSendingEnabled: isSet(object.stalwartSendingEnabled)
+        ? globalThis.Boolean(object.stalwartSendingEnabled)
+        : false,
+      stalwartSmtpHost: isSet(object.stalwartSmtpHost) ? globalThis.String(object.stalwartSmtpHost) : "",
+      stalwartSmtpPort: isSet(object.stalwartSmtpPort) ? globalThis.Number(object.stalwartSmtpPort) : 0,
+      stalwartSmtpUsername: isSet(object.stalwartSmtpUsername) ? globalThis.String(object.stalwartSmtpUsername) : "",
+      stalwartSmtpPassword: isSet(object.stalwartSmtpPassword) ? globalThis.String(object.stalwartSmtpPassword) : "",
+      stalwartFromAddress: isSet(object.stalwartFromAddress) ? globalThis.String(object.stalwartFromAddress) : "",
+      stalwartFromName: isSet(object.stalwartFromName) ? globalThis.String(object.stalwartFromName) : "",
+      stalwartManagementUrl: isSet(object.stalwartManagementUrl) ? globalThis.String(object.stalwartManagementUrl) : "",
+      stalwartManagementToken: isSet(object.stalwartManagementToken)
+        ? globalThis.String(object.stalwartManagementToken)
+        : "",
     };
   },
 
@@ -5606,6 +6488,33 @@ export const StalwartConfig: MessageFns<StalwartConfig> = {
     const obj: any = {};
     if (message.stalwartReceivingEnabled !== false) {
       obj.stalwartReceivingEnabled = message.stalwartReceivingEnabled;
+    }
+    if (message.stalwartSendingEnabled !== false) {
+      obj.stalwartSendingEnabled = message.stalwartSendingEnabled;
+    }
+    if (message.stalwartSmtpHost !== "") {
+      obj.stalwartSmtpHost = message.stalwartSmtpHost;
+    }
+    if (message.stalwartSmtpPort !== 0) {
+      obj.stalwartSmtpPort = Math.round(message.stalwartSmtpPort);
+    }
+    if (message.stalwartSmtpUsername !== "") {
+      obj.stalwartSmtpUsername = message.stalwartSmtpUsername;
+    }
+    if (message.stalwartSmtpPassword !== "") {
+      obj.stalwartSmtpPassword = message.stalwartSmtpPassword;
+    }
+    if (message.stalwartFromAddress !== "") {
+      obj.stalwartFromAddress = message.stalwartFromAddress;
+    }
+    if (message.stalwartFromName !== "") {
+      obj.stalwartFromName = message.stalwartFromName;
+    }
+    if (message.stalwartManagementUrl !== "") {
+      obj.stalwartManagementUrl = message.stalwartManagementUrl;
+    }
+    if (message.stalwartManagementToken !== "") {
+      obj.stalwartManagementToken = message.stalwartManagementToken;
     }
     return obj;
   },
@@ -5616,6 +6525,15 @@ export const StalwartConfig: MessageFns<StalwartConfig> = {
   fromPartial<I extends Exact<DeepPartial<StalwartConfig>, I>>(object: I): StalwartConfig {
     const message = createBaseStalwartConfig();
     message.stalwartReceivingEnabled = object.stalwartReceivingEnabled ?? false;
+    message.stalwartSendingEnabled = object.stalwartSendingEnabled ?? false;
+    message.stalwartSmtpHost = object.stalwartSmtpHost ?? "";
+    message.stalwartSmtpPort = object.stalwartSmtpPort ?? 0;
+    message.stalwartSmtpUsername = object.stalwartSmtpUsername ?? "";
+    message.stalwartSmtpPassword = object.stalwartSmtpPassword ?? "";
+    message.stalwartFromAddress = object.stalwartFromAddress ?? "";
+    message.stalwartFromName = object.stalwartFromName ?? "";
+    message.stalwartManagementUrl = object.stalwartManagementUrl ?? "";
+    message.stalwartManagementToken = object.stalwartManagementToken ?? "";
     return message;
   },
 };

@@ -43,6 +43,23 @@ impl ToDbServerConfiguration for ServerConfiguration {
                 .stalwart_config
                 .as_ref()
                 .map(|c| serde_json::to_value(c).unwrap()),
+            // All email providers + their order share one column (see
+            // `server_configuration_models::EmailProvidersJson`). Secret-merge-on-blank is
+            // `configure_server`'s job, as for the SMS providers.
+            email_providers_config: Some(
+                serde_json::to_value(models::EmailProvidersJson {
+                    postmark_config: self.postmark_config.clone(),
+                    sendgrid_config: self.sendgrid_config.clone(),
+                    mailgun_config: self.mailgun_config.clone(),
+                    preferred_email_apis: self
+                        .preferred_email_apis
+                        .iter()
+                        .filter_map(|i| EmailVerificationApi::try_from(*i).ok())
+                        .map(|a| a.as_str_name().to_string())
+                        .collect(),
+                })
+                .unwrap(),
+            ),
             // `ConfigureServer` ignores whatever custom CSS configuration the request carries --
             // `configure_server` carries the active row's `custom_css_configuration` and `custom_css`
             // forward instead (only `ConfigureCustomCSS` changes them).
@@ -369,6 +386,12 @@ impl ToProtoServerConfiguration for models::ServerConfiguration {
             preferred_verification_apis: preferred_verification_apis,
             available_verification_apis: available_verification_apis,
             supported_contact_protocols: supported_contact_protocols,
+            // TODO(email-providers): wired by the email-provider workstream.
+            preferred_email_apis: vec![],
+            available_email_apis: vec![],
+            postmark_config: None,
+            sendgrid_config: None,
+            mailgun_config: None,
         }
     }
 }

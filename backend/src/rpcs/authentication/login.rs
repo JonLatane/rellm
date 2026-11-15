@@ -14,6 +14,22 @@ pub fn login(
     request: LoginRequest,
     conn: &mut PgPooledConnection,
 ) -> Result<RefreshTokenResponse, Status> {
+    match request.request {
+        Some(login_request::Request::UsernamePassword(request)) => {
+            username_password_login(request, conn)
+        }
+        // TODO(sms-email-login): implemented by the auth-flow workstream.
+        Some(login_request::Request::Sms(_)) | Some(login_request::Request::Email(_)) => Err(
+            Status::new(Code::Unimplemented, "sms_email_login_not_implemented_yet"),
+        ),
+        None => Err(Status::new(Code::InvalidArgument, "login_request_required")),
+    }
+}
+
+fn username_password_login(
+    request: UsernamePasswordLoginRequest,
+    conn: &mut PgPooledConnection,
+) -> Result<RefreshTokenResponse, Status> {
     validate_username(&request.username)?;
     validate_password(&request.password)?;
 
@@ -60,5 +76,6 @@ pub fn login(
         refresh_token: tokens.refresh_token,
         access_token: tokens.access_token,
         user: Some(proto_user),
+        verification_challenge: None,
     })
 }

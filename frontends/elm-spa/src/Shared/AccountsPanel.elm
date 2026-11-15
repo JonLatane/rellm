@@ -68,6 +68,7 @@ import Json.Encode as Encode
 import Ports
 import Process
 import Proto.Rellm exposing (AccessTokenResponse, BlueskyServer, ContactMethod, CustomCSSConfiguration, FederatedServer, GetPushSubscriptionStatusResponse, MastodonServer, PushSubscription, RefreshTokenResponse, ServerConfiguration, ServerInfo, User)
+import Proto.Rellm.LoginRequest.Request as LoginRequest
 import Proto.Rellm.Rellm as Rellm
 import Proto.Rellm.Visibility exposing (Visibility(..))
 import Proto.Rellm.WebUserInterface exposing (WebUserInterface)
@@ -1990,11 +1991,16 @@ sendUpdate req msg model =
                 |> Task.andThen
                     (\( connection, config ) ->
                         Grpc.new Rellm.login
-                            { username = form.username
-                            , password = form.password
-                            , expiresAt = Nothing
-                            , deviceName = Nothing
-                            , userId = Nothing
+                            { request =
+                                Just
+                                    (LoginRequest.UsernamePassword
+                                        { username = form.username
+                                        , password = form.password
+                                        , expiresAt = Nothing
+                                        , deviceName = Nothing
+                                        , userId = Nothing
+                                        }
+                                    )
                             }
                             |> Grpc.setHost (RellmServers.connectionUrl connection)
                             |> Grpc.toTask
@@ -2029,6 +2035,8 @@ sendUpdate req msg model =
                                 , phone = Nothing
                                 , expiresAt = Nothing
                                 , deviceName = Nothing
+                                , phoneVerificationCode = Nothing
+                                , emailVerificationCode = Nothing
                                 }
                                 |> Grpc.setHost (RellmServers.connectionUrl connection)
                                 |> Grpc.toTask

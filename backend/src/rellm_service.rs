@@ -194,6 +194,13 @@ impl Rellm for RellmService {
         authenticated_rpc!(self, rpcs::configure_server, request)
     }
 
+    async fn get_contact_integrations_status(
+        &self,
+        request: Request<()>,
+    ) -> Result<Response<ContactIntegrationsStatus>, Status> {
+        authenticated_rpc!(self, rpcs::get_contact_integrations_status, request)
+    }
+
     async fn get_custom_css(
         &self,
         request: Request<()>,

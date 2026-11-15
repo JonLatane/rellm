@@ -89,6 +89,7 @@ pub fn create_account(
                 refresh_token: tokens.refresh_token,
                 access_token: tokens.access_token,
                 user: Some(proto_user),
+                verification_challenge: None,
             })
         }
     };

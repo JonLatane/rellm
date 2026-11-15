@@ -92,7 +92,7 @@ import Grpc
 import Html exposing (Html, button, div, h2, h3, input, option, select, span, text)
 import Html.Attributes exposing (class, disabled, placeholder, selected, title, type_, value)
 import Html.Events exposing (onClick, onInput)
-import Proto.Rellm exposing (BirdConfig, ServerConfiguration, TelnyxConfig, TwilioConfig, defaultBirdConfig, defaultTelnyxConfig, defaultTwilioConfig)
+import Proto.Rellm exposing (BirdConfig, ServerConfiguration, TelnyxConfig, TwilioConfig, defaultBirdConfig, defaultStalwartConfig, defaultTelnyxConfig, defaultTwilioConfig)
 import Proto.Rellm.ContactProtocol exposing (ContactProtocol(..))
 import Proto.Rellm.ContactVerificationAPI exposing (ContactVerificationAPI(..))
 import Proto.Rellm.Rellm as Rellm
@@ -1082,7 +1082,7 @@ toggleContactProtocol protocol config =
 {-| `StalwartReceivingToggled`'s transform -- `StalwartConfig` holds nothing but this one flag, so
 (per this feature's own design) there's no reason to keep a `Just { stalwartReceivingEnabled =
 False }` around: off collapses the whole `stalwartConfig` to `Nothing`, on sets it to
-`Just { stalwartReceivingEnabled = True }`. Unrelated to `supported_contact_protocols`/
+`Just { defaultStalwartConfig | stalwartReceivingEnabled = True }`. Unrelated to `supported_contact_protocols`/
 `ContactProtocol` above -- this gates the internal `:27705/email` MTA hook endpoint receiving mail
 from Stalwart, not SMS/email _sending_ (see `web::email::create_email_message`'s own doc).
 -}
@@ -1099,7 +1099,7 @@ toggleStalwartReceiving config =
                 Nothing
 
             else
-                Just { stalwartReceivingEnabled = True }
+                Just { defaultStalwartConfig | stalwartReceivingEnabled = True }
     }
 
 
