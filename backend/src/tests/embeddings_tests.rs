@@ -327,6 +327,34 @@ fn configure_server_rejects_an_unknown_embedding_model() {
 }
 
 #[test]
+fn saving_the_configuration_without_search_settings_keeps_what_was_saved() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let admin = create_user(conn, "older_client_admin");
+        let admin = grant_permissions(conn, &admin, vec![Permission::Admin]);
+
+        // The admin turns semantic search off and picks a model...
+        let mut config = crate::rpcs::get_server_configuration_proto(conn)?;
+        config.search_settings = Some(SearchSettings {
+            semantic_search_enabled: false,
+            embedding_model: "all-minilm-l6-v2".to_string(),
+            ..Default::default()
+        });
+        crate::rpcs::configure_server(config, &admin, conn)?;
+        assert!(!embeddings::semantic_search_enabled(conn));
+
+        // ...then a client that predates `search_settings` saves something else, sending none.
+        let mut older_client_request = crate::rpcs::get_server_configuration_proto(conn)?;
+        older_client_request.search_settings = None;
+        crate::rpcs::configure_server(older_client_request, &admin, conn)?;
+
+        assert!(!embeddings::semantic_search_enabled(conn), "it must stay off");
+        assert_eq!(embeddings::active_model(conn).id, "all-minilm-l6-v2", "and keep its model");
+        Ok(())
+    });
+}
+
+#[test]
 fn rows_embedded_by_another_model_are_redone_when_the_model_changes() {
     let mut conn = test_conn();
     conn.test_transaction::<_, anyhow::Error, _>(|conn| {

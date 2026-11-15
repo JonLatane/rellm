@@ -58,7 +58,10 @@ pub fn main() {
 
     // The lock calls are async; this job isn't (the model and Postgres are blocking), so drive just
     // those from a small runtime. `acquire`/`release` are only ever called from this thread.
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    // Multi-threaded (with a single worker): `acquire_cluster_lock` reaches `discover_backend_host`, whose
+    // `block_in_place` panics on a current-thread runtime.
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
         .enable_all()
         .build()
         .expect("Failed to start async runtime");
