@@ -2125,7 +2125,10 @@ blueskyAppViewFeedChip shared count index appView =
             :: reorderInfo.moveAttrs
         )
         [ div
-            [ classes [ "server-chip-top", mainHostClass, "background-color-nav" ] ]
+            [ classes [ "server-chip-top", "selectable", mainHostClass, "background-color-nav" ]
+            , onClick (Shared.AccountsPanelMsg AccountsPanel.BlueskyAppViewChipClicked)
+            , title "Open the Bluesky login form"
+            ]
             [ div [ class "server-chip-logo-row" ]
                 [ div [ classList [ ( "reorder-arrow", True ), ( "reorder-arrow-hidden", not reorderInfo.showBackward ) ] ] [ reorderInfo.reorderPair.backward ]
                 , blueskyServerLogo (BlueskyAppViews.logoUrlFor (AccountsPanel.allBlueskyServers shared.accounts) appView.host) name
