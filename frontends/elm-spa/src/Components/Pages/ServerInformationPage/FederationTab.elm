@@ -1643,11 +1643,16 @@ federatedServerFor shared host =
 -}
 view : Shared.Model -> RellmServer -> Maybe RellmAccount -> Model -> Html Msg
 view shared server maybeAdminAccount model =
+    let
+        savedFederatedServers : List FederatedServer
+        savedFederatedServers =
+            (RellmServers.configurationOf server).federationInfo |> Maybe.map .servers |> Maybe.withDefault []
+    in
     div [ class "server-details-tab-content server-details-federation" ]
         [ h3 [ class "section-title" ] [ text "Federated Servers" ]
         , case model.federationEdit of
             Just edit ->
-                federationEditorView shared edit
+                federationEditorView shared savedFederatedServers edit
 
             Nothing ->
                 let
@@ -1715,7 +1720,7 @@ mastodonServersSection server model maybeAdminAccount =
         [ h3 [ class "section-title" ] [ text "Mastodon Servers" ]
         , case model.mastodonServersEdit of
             Just edit ->
-                mastodonServersEditorView model.mastodonServerLogos edit
+                mastodonServersEditorView model.mastodonServerLogos ((RellmServers.configurationOf server).federationInfo |> Maybe.map .mastodonServers |> Maybe.withDefault []) edit
 
             Nothing ->
                 let
@@ -1743,7 +1748,7 @@ blueskyServersSection server model maybeAdminAccount =
         [ h3 [ class "section-title" ] [ text "Bluesky Servers" ]
         , case model.blueskyServersEdit of
             Just edit ->
-                blueskyServersEditorView edit
+                blueskyServersEditorView ((RellmServers.configurationOf server).federationInfo |> Maybe.map .blueskyServers |> Maybe.withDefault []) edit
 
             Nothing ->
                 let
@@ -1795,7 +1800,13 @@ blueskyServerChip editingLogoInput blueskyServer =
                 [ { blueskyServer | logoUrl = editingLogoInput |> Maybe.withDefault (Maybe.withDefault "" blueskyServer.logoUrl) |> Just } ]
                 blueskyServer.host
     in
-    div [ classes [ "server-chip", "federated-server-chip", hostnameToCSSClass blueskyServer.host ] ]
+    div
+        [ classes
+            ([ "server-chip", "federated-server-chip", hostnameToCSSClass blueskyServer.host ]
+                -- Same width as a Mastodon chip while editing, so its form fields fit.
+                ++ (if editingLogoInput /= Nothing then [ "mastodon-server-chip-edit" ] else [])
+            )
+        ]
         [ div [ classes [ "server-chip-top", "background-color-primary" ] ]
             [ case logoUrl of
                 Just url ->
@@ -1843,8 +1854,8 @@ blueskyServerChip editingLogoInput blueskyServer =
         ]
 
 
-blueskyServersEditorView : BlueskyServersEdit -> Html Msg
-blueskyServersEditorView edit =
+blueskyServersEditorView : List BlueskyServer -> BlueskyServersEdit -> Html Msg
+blueskyServersEditorView savedServers edit =
     div [ class "server-details-federation-edit" ]
         [ div [ class "federated-servers-strip" ] (List.map (\bs -> blueskyServerChip (Just (Dict.get bs.host edit.logoInputs |> Maybe.withDefault "")) bs) edit.pending)
         , div [ class "server-details-federation-add" ]
@@ -1864,7 +1875,7 @@ blueskyServersEditorView edit =
             ]
         , Common.settingsNote "Enter an AppView's API host. \"bsky.app\" is Bluesky's public AppView. Only one Bluesky source (an AppView or a connected account) is shown at a time, so only the first \"enabled by default\" one takes effect."
         , div [ class "server-details-permissions-actions" ]
-            [ Common.editSaveButton BlueskyServersSaveClicked edit.status
+            [ Common.editSaveButtonWhen (withLogoInputs edit /= savedServers) BlueskyServersSaveClicked edit.status
             , Common.editCancelButton BlueskyServersCancelClicked edit.status
             ]
         , Common.editErrorView edit.status
@@ -1935,8 +1946,8 @@ mastodonServerDisplayChip logos mastodonServer =
 `federationEditorView` exactly, minus the "Checking…" submitting state on Add (see
 `MastodonServerAddClicked`'s own doc: there's nothing to check).
 -}
-mastodonServersEditorView : Dict String String -> MastodonServersEdit -> Html Msg
-mastodonServersEditorView logos edit =
+mastodonServersEditorView : Dict String String -> List MastodonServer -> MastodonServersEdit -> Html Msg
+mastodonServersEditorView logos savedServers edit =
     div [ class "server-details-federation-edit" ]
         [ Html.Keyed.node "div"
             [ classes [ "federated-servers-strip", "flip-animated-row" ] ]
@@ -1962,7 +1973,10 @@ mastodonServersEditorView logos edit =
                 [ text "Add Instance" ]
             ]
         , div [ class "server-details-permissions-actions" ]
-            [ Common.editSaveButton MastodonServersSaveClicked edit.status
+            [ Common.editSaveButtonWhen
+                (List.map .server edit.pending /= savedServers || List.any (\e -> not (String.isEmpty e.pendingAppSecret)) edit.pending)
+                MastodonServersSaveClicked
+                edit.status
             , Common.editCancelButton MastodonServersCancelClicked edit.status
             ]
         , Common.editErrorView edit.status
@@ -2128,33 +2142,37 @@ mastodonAppIdField domain appId =
 -}
 mastodonAppSecretField : String -> MastodonServerEdit -> Html Msg
 mastodonAppSecretField domain mastodonServerEdit =
-    if mastodonServerEdit.appSecretEditing then
-        div [ class "server-details-color-row server-details-color-row-edit" ]
-            [ span [ class "server-details-color-label" ] [ text "App Secret" ]
-            , input
-                [ Html.Attributes.type_ "password"
-                , class "server-details-rename-input"
-                , placeholder "New App Secret"
-                , value mastodonServerEdit.pendingAppSecret
-                , onInput (MastodonAppSecretChanged domain)
-                , onEnter MastodonServersSaveClicked
+    div []
+        [ if mastodonServerEdit.appSecretEditing then
+            div [ class "server-details-color-row server-details-color-row-edit" ]
+                [ span [ class "server-details-color-label" ] [ text "Client Secret" ]
+                , input
+                    [ Html.Attributes.type_ "password"
+                    , class "server-details-rename-input"
+                    , placeholder "New Client Secret"
+                    , value mastodonServerEdit.pendingAppSecret
+                    , onInput (MastodonAppSecretChanged domain)
+                    , onEnter MastodonServersSaveClicked
+                    ]
+                    []
+                , button
+                    [ classes [ "server-details-rename-save", "background-color-primary" ]
+                    , onClick MastodonServersSaveClicked
+                    , disabled (String.isEmpty mastodonServerEdit.pendingAppSecret)
+                    ]
+                    [ text "Save" ]
+                , button [ class "server-details-rename-button", onClick (MastodonAppSecretCancelClicked domain) ] [ text "Cancel" ]
                 ]
-                []
-            , button
-                [ classes [ "server-details-rename-save", "background-color-primary" ]
-                , onClick MastodonServersSaveClicked
-                , disabled (String.isEmpty mastodonServerEdit.pendingAppSecret)
-                ]
-                [ text "Save" ]
-            , button [ class "server-details-rename-button", onClick (MastodonAppSecretCancelClicked domain) ] [ text "Cancel" ]
-            ]
 
-    else
-        div [ class "server-details-color-row" ]
-            [ span [ class "server-details-color-label" ] [ text "App Secret" ]
-            , span [ class "server-details-color-hex" ] [ text "Never shown" ]
-            , button [ class "server-details-rename-button", onClick (MastodonAppSecretEditClicked domain) ] [ text "Edit" ]
-            ]
+          else
+            div [ class "server-details-color-row" ]
+                [ span [ class "server-details-color-label" ] [ text "Client Secret" ]
+                , span [ class "server-details-color-hex" ] [ text "Never shown" ]
+                , button [ class "server-details-rename-button", onClick (MastodonAppSecretEditClicked domain) ] [ text "Edit" ]
+                ]
+        , Html.em [ class "server-details-field-hint" ]
+            [ text ("The Client Secret from your app at " ++ domain ++ "/settings/applications — not \"Your access token\".") ]
+        ]
 
 
 facebookAuthConfigSection : RellmServer -> Model -> Maybe RellmAccount -> Html Msg
@@ -2417,8 +2435,8 @@ federatedServerDisplayChip shared federatedServer =
 "type a host, validate it, add it" row, and the Save/Cancel actions -- everything shown once
 `FederationEditClicked` has started an edit.
 -}
-federationEditorView : Shared.Model -> FederationEdit -> Html Msg
-federationEditorView shared edit =
+federationEditorView : Shared.Model -> List FederatedServer -> FederationEdit -> Html Msg
+federationEditorView shared savedServers edit =
     div [ class "server-details-federation-edit" ]
         [ Html.Keyed.node "div"
             [ classes [ "federated-servers-strip", "flip-animated-row" ] ]
@@ -2453,7 +2471,7 @@ federationEditorView shared edit =
             , Common.editErrorView edit.addStatus
             ]
         , div [ class "server-details-permissions-actions" ]
-            [ Common.editSaveButton FederationSaveClicked edit.status
+            [ Common.editSaveButtonWhen (edit.pending /= savedServers) FederationSaveClicked edit.status
             , Common.editCancelButton FederationCancelClicked edit.status
             ]
         , Common.editErrorView edit.status

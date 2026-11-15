@@ -1,4 +1,4 @@
-module Components.Pages.ServerInformationPage.Common exposing (accountsPanelEffect, adminAccountFor, editCancelButton, editErrorView, editSaveButton, flagSwitch, settingsNote, settingsRow, switchDisplay)
+module Components.Pages.ServerInformationPage.Common exposing (accountsPanelEffect, adminAccountFor, editCancelButton, editErrorView, editSaveButton, editSaveButtonWhen, flagSwitch, settingsNote, settingsRow, switchDisplay)
 
 {-| Shared, `msg`-generic bits reused by 2+ of `Components.Pages.ServerInformationPage`'s tab
 submodules (`AboutTab`/`ThemeTab`/`SettingsTab`/`FederationTab`) -- pulled out so none of them have
@@ -49,6 +49,32 @@ editSaveButton : msg -> AccountsPanel.FormStatus -> Html msg
 editSaveButton onSave status =
     button
         [ classes [ "server-details-rename-save", "background-color-primary" ]
+        , onClick onSave
+        , disabled (status == AccountsPanel.Submitting)
+        ]
+        [ text
+            (if status == AccountsPanel.Submitting then
+                "Saving…"
+
+             else
+                "Save"
+            )
+        ]
+
+
+{-| `editSaveButton`, except it's only highlighted (the server's primary color) while `changed` --
+i.e. while the edit differs from what's saved -- and a plain neutral button otherwise.
+-}
+editSaveButtonWhen : Bool -> msg -> AccountsPanel.FormStatus -> Html msg
+editSaveButtonWhen changed onSave status =
+    button
+        [ classes
+            (if changed then
+                [ "server-details-rename-save", "background-color-primary" ]
+
+             else
+                [ "server-details-rename-save" ]
+            )
         , onClick onSave
         , disabled (status == AccountsPanel.Submitting)
         ]
