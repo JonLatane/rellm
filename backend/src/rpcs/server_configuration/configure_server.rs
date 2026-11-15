@@ -43,6 +43,31 @@ pub fn configure_server(
         new_config.federation_info = serde_json::to_value(merged_federation_info).unwrap();
     }
 
+    // `MastodonServer.app_secret` is write-only too: a blank incoming value (the client never
+    // shows the stored secret, so an untouched field is sent blank) keeps the secret already
+    // stored for that same `domain`, rather than wiping it. A non-blank value replaces it.
+    if request
+        .federation_info
+        .as_ref()
+        .is_some_and(|f| f.mastodon_servers.iter().any(|m| m.app_secret.is_empty()))
+    {
+        let existing_servers = get_server_configuration_model(conn)
+            .ok()
+            .and_then(|c| serde_json::from_value::<protos::FederationInfo>(c.federation_info).ok())
+            .map(|f| f.mastodon_servers)
+            .unwrap_or_default();
+        let mut merged_federation_info: protos::FederationInfo =
+            serde_json::from_value(new_config.federation_info.clone()).unwrap();
+        for incoming in merged_federation_info.mastodon_servers.iter_mut() {
+            if incoming.app_secret.is_empty() {
+                if let Some(existing) = existing_servers.iter().find(|e| e.domain == incoming.domain) {
+                    incoming.app_secret = existing.app_secret.clone();
+                }
+            }
+        }
+        new_config.federation_info = serde_json::to_value(merged_federation_info).unwrap();
+    }
+
     // `XTwitterAuthConfig.client_secret` is write-only, same reasoning (and same merge-on-blank
     // treatment) as `FacebookAuthConfig.app_secret` above.
     if let Some(incoming_x_twitter_auth_config) = request

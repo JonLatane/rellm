@@ -1088,3 +1088,58 @@ mod server_info_json {
         assert_eq!(back.disable_countabilibar, Some(true));
     }
 }
+
+fn mastodon_request(
+    conn: &mut PgPooledConnection,
+    domain: &str,
+    app_id: &str,
+    app_secret: &str,
+) -> ServerConfiguration {
+    let mut config = get_server_configuration_proto(conn).expect("failed to fetch base config");
+    let mut federation_info = config.federation_info.take().unwrap_or_default();
+    federation_info.mastodon_servers = vec![MastodonServer {
+        domain: domain.to_string(),
+        app_id: app_id.to_string(),
+        app_secret: app_secret.to_string(),
+        ..Default::default()
+    }];
+    config.federation_info = Some(federation_info);
+    config
+}
+
+fn stored_mastodon_secret(conn: &mut PgPooledConnection, domain: &str) -> String {
+    let model = crate::rpcs::get_server_configuration_model(conn).expect("config model");
+    let federation_info: FederationInfo =
+        serde_json::from_value(model.federation_info).expect("federation_info");
+    federation_info
+        .mastodon_servers
+        .into_iter()
+        .find(|m| m.domain == domain)
+        .map(|m| m.app_secret)
+        .unwrap_or_default()
+}
+
+#[test]
+fn mastodon_app_secret_can_be_updated_and_blank_preserves_it() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let admin = create_user(conn, "cst_mastodon_secret");
+        let admin = grant_permissions(conn, &admin, vec![Permission::Admin]);
+
+        configure_server(mastodon_request(conn, "mastodon.test", "id-1", "secret-1"), &admin, conn)
+            .expect("first configure should succeed");
+        assert_eq!(stored_mastodon_secret(conn, "mastodon.test"), "secret-1");
+
+        // Blank (untouched field) keeps the stored secret while other fields change.
+        configure_server(mastodon_request(conn, "mastodon.test", "id-2", ""), &admin, conn)
+            .expect("blank configure should succeed");
+        assert_eq!(stored_mastodon_secret(conn, "mastodon.test"), "secret-1");
+
+        // A new non-blank secret replaces it.
+        configure_server(mastodon_request(conn, "mastodon.test", "id-2", "secret-2"), &admin, conn)
+            .expect("update configure should succeed");
+        assert_eq!(stored_mastodon_secret(conn, "mastodon.test"), "secret-2");
+
+        Ok(())
+    });
+}

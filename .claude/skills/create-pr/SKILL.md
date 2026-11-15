@@ -11,6 +11,7 @@ Process for opening and driving a Rellm PR. Only create a PR when the user asks.
 - There is no PR template; write **Summary** (what + why/root cause) and **Test plan** (checklist) sections, ending with the attribution lines from the session reminder.
 
 ## 2. Open it
+- **One PR per task/session.** Follow-up requests on the same work (more changes, tweaks, extra fixes) go on the same branch and the same PR -- update its description -- never a new branch or separate/stacked PR unless the user explicitly asks for one.
 - `mcp__github__create_pull_request` (owner `JonLatane`, repo `rellm`, base `main`).
 - Then `subscribe_pr_activity` so CI results, comments and reviews arrive as events -- don't poll or sleep.
 
