@@ -118,15 +118,22 @@ pub fn validate_configuration(config: &ServerConfiguration) -> Result<(), Status
 
     // `ContactProtocol.supported_contact_protocols`'s own proto doc: the server enforces these
     // invariants by *erroring*, not silently dropping the offending entry -- an admin who checks
-    // "Enable SMS Sending" without a configured provider, or "Enable Email Sending" at all (no
-    // email provider exists yet), gets a clear rejection back on save rather than a silent no-op.
-    // Checked against `twilio_config`/`bird_config`/`telnyx_config` from this *same* request (not
-    // whatever's currently stored) -- `ContactIntegrationsTab.elm` always resends the whole config
-    // it has loaded, so a request that both disables an admin's only provider and still claims
-    // `CONTACT_PROTOCOL_TEL` is exactly the case this must catch.
+    // "Enable SMS Sending" without a configured provider, or "Enable Email Sending" without an
+    // enabled email provider, gets a clear rejection back on save rather than a silent no-op.
+    // Checked against the provider configs from this *same* request (not whatever's currently
+    // stored) -- `ContactIntegrationsTab.elm` always resends the whole config it has loaded, so a
+    // request that both disables an admin's only provider and still claims `CONTACT_PROTOCOL_TEL`
+    // (or `_MAILTO`) is exactly the case this must catch.
     let sms_provider_enabled = config.twilio_config.as_ref().is_some_and(|c| c.twilio_enabled)
         || config.bird_config.as_ref().is_some_and(|c| c.bird_enabled)
         || config.telnyx_config.as_ref().is_some_and(|c| c.telnyx_enabled);
+    let email_provider_enabled = config.postmark_config.as_ref().is_some_and(|c| c.postmark_enabled)
+        || config.sendgrid_config.as_ref().is_some_and(|c| c.sendgrid_enabled)
+        || config.mailgun_config.as_ref().is_some_and(|c| c.mailgun_enabled)
+        || config
+            .stalwart_config
+            .as_ref()
+            .is_some_and(|c| c.stalwart_sending_enabled);
     for protocol in &config.supported_contact_protocols {
         match ContactProtocol::try_from(*protocol) {
             Ok(ContactProtocol::Tel) if !sms_provider_enabled => {
@@ -135,16 +142,94 @@ pub fn validate_configuration(config: &ServerConfiguration) -> Result<(), Status
                     "sms_contact_protocol_requires_a_configured_provider",
                 ));
             }
-            Ok(ContactProtocol::Mailto) => {
+            Ok(ContactProtocol::Mailto) if !email_provider_enabled => {
                 return Err(Status::new(
-                    Code::Unimplemented,
-                    "mailto_contact_protocol_not_supported",
+                    Code::FailedPrecondition,
+                    "email_contact_protocol_requires_a_configured_provider",
                 ));
             }
             _ => {}
         }
     }
 
+    validate_email_provider_fields(config)?;
+
+    Ok(())
+}
+
+fn invalid(message: &'static str) -> Status {
+    Status::new(Code::InvalidArgument, message)
+}
+
+/// A plausible bare email address: one `@`, a dotted domain, no whitespace/control characters or
+/// header-smuggling punctuation. Blank is *not* valid here -- callers skip blank fields themselves.
+pub fn looks_like_email_address(address: &str) -> bool {
+    let Some((local, domain)) = address.split_once('@') else {
+        return false;
+    };
+    let bad = |c: char| c.is_whitespace() || c.is_control() || matches!(c, '<' | '>' | ',' | ';' | '"' | '@');
+    !local.is_empty()
+        && domain.contains('.')
+        && !domain.starts_with('.')
+        && !domain.ends_with('.')
+        && !local.chars().any(bad)
+        && !domain.chars().any(bad)
+}
+
+fn is_valid_email_or_blank(address: &str) -> bool {
+    address.is_empty() || looks_like_email_address(address)
+}
+
+fn is_http_url_or_blank(url: &str) -> bool {
+    url.is_empty()
+        || ((url.starts_with("http://") || url.starts_with("https://"))
+            && !url.chars().any(|c| c.is_whitespace() || c.is_control()))
+}
+
+/// Shape checks for the email provider configs (secrets and "is it complete" are not checked
+/// here -- an enabled-but-incomplete provider is simply not *available*, see
+/// `logic::available_email_apis`).
+fn validate_email_provider_fields(config: &ServerConfiguration) -> Result<(), Status> {
+    if let Some(c) = config.postmark_config.as_ref() {
+        if !is_valid_email_or_blank(c.postmark_from_address.trim()) {
+            return Err(invalid("postmark_from_address_invalid"));
+        }
+    }
+    if let Some(c) = config.sendgrid_config.as_ref() {
+        if !is_valid_email_or_blank(c.sendgrid_from_address.trim()) {
+            return Err(invalid("sendgrid_from_address_invalid"));
+        }
+        if !matches!(c.sendgrid_region.as_str(), "" | "eu") {
+            return Err(invalid("sendgrid_region_invalid"));
+        }
+    }
+    if let Some(c) = config.mailgun_config.as_ref() {
+        if !is_valid_email_or_blank(c.mailgun_from_address.trim()) {
+            return Err(invalid("mailgun_from_address_invalid"));
+        }
+        if !matches!(c.mailgun_region.as_str(), "" | "us" | "eu") {
+            return Err(invalid("mailgun_region_invalid"));
+        }
+        let domain = c.mailgun_domain.trim();
+        if !domain.chars().all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '-' | '_')) {
+            return Err(invalid("mailgun_domain_invalid"));
+        }
+    }
+    if let Some(c) = config.stalwart_config.as_ref() {
+        if !is_valid_email_or_blank(c.stalwart_from_address.trim()) {
+            return Err(invalid("stalwart_from_address_invalid"));
+        }
+        if !(0..=65535).contains(&c.stalwart_smtp_port) {
+            return Err(invalid("stalwart_smtp_port_invalid"));
+        }
+        let host = c.stalwart_smtp_host.trim();
+        if host.chars().any(|ch| ch.is_whitespace() || ch.is_control() || matches!(ch, '/' | '@')) {
+            return Err(invalid("stalwart_smtp_host_invalid"));
+        }
+        if !is_http_url_or_blank(c.stalwart_management_url.trim()) {
+            return Err(invalid("stalwart_management_url_invalid"));
+        }
+    }
     Ok(())
 }
 

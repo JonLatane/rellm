@@ -35,6 +35,12 @@ pub fn get_server_configuration(
         result.bird_config = None;
         result.telnyx_config = None;
         result.stalwart_config = None;
+        // Email providers: same split -- configs and the admin's preference order are admin-only,
+        // `available_email_apis` stays public (the "is email available" signal).
+        result.postmark_config = None;
+        result.sendgrid_config = None;
+        result.mailgun_config = None;
+        result.preferred_email_apis = vec![];
         result.stripe_config = None;
         result.preferred_verification_apis = vec![];
     }

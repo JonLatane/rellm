@@ -9,10 +9,10 @@ pub use get_server_configuration::get_server_configuration_proto;
 pub use get_server_configuration::create_default_server_configuration;
 
 mod get_contact_integrations_status;
-pub use get_contact_integrations_status::get_contact_integrations_status;
+pub use get_contact_integrations_status::{get_contact_integrations_status, get_contact_integrations_status_with};
 
 mod configure_server;
-pub use configure_server::configure_server;
+pub use configure_server::{configure_server, redact_secrets};
 
 mod get_custom_css;
 pub use get_custom_css::get_custom_css;

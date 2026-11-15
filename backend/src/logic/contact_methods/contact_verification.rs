@@ -176,6 +176,22 @@ pub fn send_verification_sms(
 /// don't-share-this warning. Falls back to just the server name (no parenthetical) if no CDN
 /// domain is configured.
 fn verification_sms_body(conn: &mut PgPooledConnection, code: &str) -> String {
+    let (server_name, frontend_host) = server_identity(conn);
+
+    match frontend_host {
+        Some(host) => format!(
+            "Phone verification requested from {server_name} ({host}). Your code is: {code}. Do not share this code with anyone."
+        ),
+        None => format!(
+            "Phone verification requested from {server_name}. Your code is: {code}. Do not share this code with anyone."
+        ),
+    }
+}
+
+/// The server's display name (`server_info.name`, falling back to "Rellm") and, if configured, its
+/// public frontend host (`external_cdn_config.frontend_host`) -- how verification SMS and email
+/// tell a recipient which of possibly many Rellm servers they're hearing from.
+pub(crate) fn server_identity(conn: &mut PgPooledConnection) -> (String, Option<String>) {
     let config = get_server_configuration_model(conn)
         .ok()
         .map(|c| c.to_proto());
@@ -190,15 +206,7 @@ fn verification_sms_body(conn: &mut PgPooledConnection, code: &str) -> String {
         .and_then(|c| c.external_cdn_config.as_ref())
         .map(|cdn| cdn.frontend_host.clone())
         .filter(|host| !host.is_empty());
-
-    match frontend_host {
-        Some(host) => format!(
-            "Phone verification requested from {server_name} ({host}). Your code is: {code}. Do not share this code with anyone."
-        ),
-        None => format!(
-            "Phone verification requested from {server_name}. Your code is: {code}. Do not share this code with anyone."
-        ),
-    }
+    (server_name, frontend_host)
 }
 
 /// Parses a `ContactVerificationApi` list stored the same way `Permission` lists are -- a JSON array of

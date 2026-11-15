@@ -7,12 +7,65 @@ use crate::{
     marshaling::*, models, protos, rpcs::get_server_configuration_model, rpcs::validations::*,
 };
 
+/// A copy of `config` with every write-only secret blanked, for logging (`ConfigureServer`'s request
+/// still carries real secrets on the way in, and a log line must never contain them). Keep in sync
+/// with every secret field in `server_configuration.proto` -- `redact_secrets_blanks_every_secret`
+/// (`email_providers_tests`) sets each one and fails if a new one is missed there.
+pub fn redact_secrets(config: &protos::ServerConfiguration) -> protos::ServerConfiguration {
+    let mut c = config.clone();
+    if let Some(f) = c.federation_info.as_mut() {
+        if let Some(fb) = f.facebook_auth_config.as_mut() {
+            fb.app_secret.clear();
+        }
+        if let Some(x) = f.x_twitter_auth_config.as_mut() {
+            x.client_secret.clear();
+        }
+    }
+    if let Some(w) = c.web_push_config.as_mut() {
+        w.private_vapid_key.clear();
+    }
+    if let Some(r) = c.cluster_resources.as_mut() {
+        r.cluster_shared_secret.clear();
+    }
+    if let Some(t) = c.twilio_config.as_mut() {
+        t.twilio_api_key_secret.clear();
+        t.twilio_webhook_signing_key.clear();
+    }
+    if let Some(b) = c.bird_config.as_mut() {
+        b.bird_access_key.clear();
+        b.bird_webhook_signing_key.clear();
+    }
+    if let Some(t) = c.telnyx_config.as_mut() {
+        t.telnyx_api_key.clear();
+        t.telnyx_webhook_signing_key.clear();
+    }
+    if let Some(s) = c.stripe_config.as_mut() {
+        s.stripe_secret_key.clear();
+        s.stripe_webhook_signing_secret.clear();
+    }
+    if let Some(p) = c.postmark_config.as_mut() {
+        p.postmark_server_token.clear();
+        p.postmark_account_token.clear();
+    }
+    if let Some(s) = c.sendgrid_config.as_mut() {
+        s.sendgrid_api_key.clear();
+    }
+    if let Some(m) = c.mailgun_config.as_mut() {
+        m.mailgun_api_key.clear();
+    }
+    if let Some(s) = c.stalwart_config.as_mut() {
+        s.stalwart_smtp_password.clear();
+        s.stalwart_management_token.clear();
+    }
+    c
+}
+
 pub fn configure_server(
     request: protos::ServerConfiguration,
     user: &models::User,
     conn: &mut PgPooledConnection,
 ) -> Result<protos::ServerConfiguration, Status> {
-    log::info!("ConfigureServer called; request {:?}", request);
+    log::info!("ConfigureServer called; request {:?}", redact_secrets(&request));
     validate_permission(&Some(user), Permission::Admin)?;
     validate_configuration(&request)?;
 
@@ -220,6 +273,73 @@ pub fn configure_server(
         );
     }
 
+    // Email providers: same merge-on-blank treatment for every write-only secret (an empty
+    // incoming secret keeps the stored one). The three HTTP providers share the one
+    // `email_providers_config` column; Stalwart has its own. Sending a `None` config clears it.
+    {
+        let existing_model = get_server_configuration_model(conn).ok();
+        let existing_providers = existing_model
+            .as_ref()
+            .map(|c| c.email_providers())
+            .unwrap_or_default();
+        let keep = |incoming: &String, existing: &String| {
+            if incoming.is_empty() { existing.clone() } else { incoming.clone() }
+        };
+        let mut providers: models::EmailProvidersJson =
+            serde_json::from_value(new_config.email_providers_config.clone().unwrap_or_default())
+                .unwrap_or_default();
+        if let Some(incoming) = request.postmark_config.as_ref() {
+            let existing = existing_providers.postmark_config.clone().unwrap_or_default();
+            providers.postmark_config = Some(protos::PostmarkConfig {
+                postmark_server_token: keep(
+                    &incoming.postmark_server_token,
+                    &existing.postmark_server_token,
+                ),
+                postmark_account_token: keep(
+                    &incoming.postmark_account_token,
+                    &existing.postmark_account_token,
+                ),
+                ..incoming.clone()
+            });
+        }
+        if let Some(incoming) = request.sendgrid_config.as_ref() {
+            let existing = existing_providers.sendgrid_config.clone().unwrap_or_default();
+            providers.sendgrid_config = Some(protos::SendgridConfig {
+                sendgrid_api_key: keep(&incoming.sendgrid_api_key, &existing.sendgrid_api_key),
+                ..incoming.clone()
+            });
+        }
+        if let Some(incoming) = request.mailgun_config.as_ref() {
+            let existing = existing_providers.mailgun_config.clone().unwrap_or_default();
+            providers.mailgun_config = Some(protos::MailgunConfig {
+                mailgun_api_key: keep(&incoming.mailgun_api_key, &existing.mailgun_api_key),
+                ..incoming.clone()
+            });
+        }
+        new_config.email_providers_config = Some(serde_json::to_value(providers).unwrap());
+
+        if let Some(incoming) = request.stalwart_config.as_ref() {
+            let existing = existing_model
+                .and_then(|c| c.stalwart_config)
+                .and_then(|c| serde_json::from_value::<protos::StalwartConfig>(c).ok())
+                .unwrap_or_default();
+            new_config.stalwart_config = Some(
+                serde_json::to_value(protos::StalwartConfig {
+                    stalwart_smtp_password: keep(
+                        &incoming.stalwart_smtp_password,
+                        &existing.stalwart_smtp_password,
+                    ),
+                    stalwart_management_token: keep(
+                        &incoming.stalwart_management_token,
+                        &existing.stalwart_management_token,
+                    ),
+                    ..incoming.clone()
+                })
+                .unwrap(),
+            );
+        }
+    }
+
     // Same merge-on-blank treatment as `twilio_config` above, for `StripeConfig.stripe_secret_key`/
     // `stripe_webhook_signing_secret` -- both write-only (`to_proto` always blanks them before
     // reaching a client), so an empty incoming value means "leave whatever's already stored alone."
@@ -400,7 +520,7 @@ pub fn configure_server(
         Ok(configuration) => {
             log::info!(
                 "ConfigureServer called; updated configuration to {:?}",
-                configuration.to_proto()
+                redact_secrets(&configuration.to_proto())
             );
             Ok(configuration.to_proto())
         }

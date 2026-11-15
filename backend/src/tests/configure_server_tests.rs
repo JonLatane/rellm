@@ -997,7 +997,7 @@ mod supported_contact_protocols_spec {
     }
 
     #[test]
-    fn mailto_is_always_rejected_even_with_an_sms_provider_configured() {
+    fn mailto_is_rejected_when_only_an_sms_provider_is_configured() {
         let mut conn = test_conn();
         conn.test_transaction::<_, tonic::Status, _>(|conn| {
             let admin = create_user(conn, "cst_protocols_mailto");
@@ -1007,8 +1007,8 @@ mod supported_contact_protocols_spec {
             config.supported_contact_protocols = vec![ContactProtocol::Mailto as i32];
 
             let err = configure_server(config, &admin, conn).unwrap_err();
-            assert_eq!(err.code(), tonic::Code::Unimplemented);
-            assert_eq!(err.message(), "mailto_contact_protocol_not_supported");
+            assert_eq!(err.code(), tonic::Code::FailedPrecondition);
+            assert_eq!(err.message(), "email_contact_protocol_requires_a_configured_provider");
 
             Ok(())
         });

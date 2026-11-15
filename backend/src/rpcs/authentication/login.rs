@@ -1,9 +1,11 @@
 use bcrypt::verify;
+use prost_wkt_types::Timestamp;
 use diesel::*;
 use tonic::{Code, Status};
 
 use crate::auth;
 use crate::db_connection::PgPooledConnection;
+use crate::logic::*;
 use crate::marshaling::*;
 use crate::models;
 use crate::protos::*;
@@ -14,15 +16,63 @@ pub fn login(
     request: LoginRequest,
     conn: &mut PgPooledConnection,
 ) -> Result<RefreshTokenResponse, Status> {
+    login_at(None, request, conn)
+}
+
+/// Same as `login`, but sends SMS/email codes via an arbitrary provider API `base_url` (see
+/// `send_verification_code`) -- lets specs point at a local mock server.
+pub fn login_at(
+    base_url: Option<&str>,
+    request: LoginRequest,
+    conn: &mut PgPooledConnection,
+) -> Result<RefreshTokenResponse, Status> {
     match request.request {
         Some(login_request::Request::UsernamePassword(request)) => {
             username_password_login(request, conn)
         }
-        // TODO(sms-email-login): implemented by the auth-flow workstream.
-        Some(login_request::Request::Sms(_)) | Some(login_request::Request::Email(_)) => Err(
-            Status::new(Code::Unimplemented, "sms_email_login_not_implemented_yet"),
+        Some(login_request::Request::Sms(request)) => contact_login(
+            base_url,
+            conn,
+            ContactKind::Phone,
+            request.phone_number,
+            request.code,
+            request.expires_at,
+            request.user_id,
+        ),
+        Some(login_request::Request::Email(request)) => contact_login(
+            base_url,
+            conn,
+            ContactKind::Email,
+            request.email,
+            request.code,
+            request.expires_at,
+            request.user_id,
         ),
         None => Err(Status::new(Code::InvalidArgument, "login_request_required")),
+    }
+}
+
+/// Builds the tokens + `User` response every successful login returns.
+fn login_response(
+    user: &models::User,
+    expires_at: &Option<Timestamp>,
+    conn: &mut PgPooledConnection,
+) -> RefreshTokenResponse {
+    let avatar: Option<models::MediaReference> = match user.avatar_media_id {
+        None => None,
+        Some(amid) => models::get_media_reference(amid, conn).ok(),
+    };
+    let tokens = auth::generate_refresh_and_access_token(user.id, conn, expires_at);
+    let lookup = avatar.to_media_lookup();
+
+    let mut proto_user = user.to_proto(&None, &None, lookup.as_ref(), &Some(user), Some(conn));
+    crate::rpcs::attach_own_advanced_data(&mut proto_user, user, conn);
+
+    RefreshTokenResponse {
+        refresh_token: tokens.refresh_token,
+        access_token: tokens.access_token,
+        user: Some(proto_user),
+        verification_challenge: None,
     }
 }
 
@@ -54,28 +104,142 @@ fn username_password_login(
         Err(_) => return Err(permission_denied),
         Ok(user) => user,
     };
-    let avatar: Option<models::MediaReference> = match user.avatar_media_id {
-        None => None,
-        Some(amid) => models::get_media_reference(amid, conn).ok(),
-    };
 
-    let tokens = match verify(request.password, &user.password_salted_hash) {
+    // Passwordless accounts (created via SMS/email only) store a bcrypt hash of random bytes nobody
+    // knows, so this never matches for them.
+    match verify(request.password, &user.password_salted_hash) {
         Err(_) => return Err(permission_denied),
         Ok(false) => return Err(permission_denied),
-        Ok(true) => auth::generate_refresh_and_access_token(user.id, conn, &request.expires_at),
+        Ok(true) => {}
     };
+    let response = login_response(&user, &request.expires_at, conn);
 
     log::info!("Logged in user {}, user_id={}", &request.username, user.id);
 
-    let lookup = avatar.to_media_lookup();
+    Ok(response)
+}
 
-    let mut proto_user = user.to_proto(&None, &None, lookup.as_ref(), &Some(&user), Some(conn));
-    crate::rpcs::attach_own_advanced_data(&mut proto_user, &user, conn);
+/// The one error every failed second-phase SMS/email login returns, whatever the cause (unknown
+/// contact, unverified contact, no code outstanding, wrong/expired/exhausted code) -- so the
+/// response never reveals whether an account exists for the contact.
+fn incorrect_code() -> Status {
+    Status::new(Code::InvalidArgument, "incorrect_code")
+}
 
-    Ok(RefreshTokenResponse {
-        refresh_token: tokens.refresh_token,
-        access_token: tokens.access_token,
-        user: Some(proto_user),
-        verification_challenge: None,
-    })
+/// Two-phase SMS/email login (see `LoginRequest`'s doc). Phase 1 (`code` unset) *always* returns
+/// the same challenge, whether or not a code was actually sent (an account must have the contact
+/// verified, consent granted, and no code sent in the last minute); phase 2 verifies the code.
+fn contact_login(
+    base_url: Option<&str>,
+    conn: &mut PgPooledConnection,
+    kind: ContactKind,
+    raw_contact: String,
+    code: Option<String>,
+    expires_at: Option<Timestamp>,
+    requested_user_id: Option<String>,
+) -> Result<RefreshTokenResponse, Status> {
+    // Server-wide capability checks -- these say nothing about any particular account.
+    if !authentication_feature_enabled(conn, kind.login_feature()) {
+        return Err(Status::new(
+            Code::FailedPrecondition,
+            match kind {
+                ContactKind::Phone => "login_with_sms_not_enabled",
+                ContactKind::Email => "login_with_email_not_enabled",
+            },
+        ));
+    }
+    if !contact_protocol_ready(conn, kind) {
+        return Err(kind.not_configured_error());
+    }
+    let value = normalize_contact_value(kind, &raw_contact)?;
+    let requested_user_id = match requested_user_id.as_deref() {
+        Some(user_id) if !user_id.is_empty() => Some(user_id.to_string().to_db_id_or_err("user_id")?),
+        _ => None,
+    };
+
+    // Accounts that have verified this contact. Only if more than one does is `user_id` needed.
+    let mut matches = find_users_with_verified_contact(conn, kind, &value)?;
+    if matches.len() > 1 {
+        match requested_user_id {
+            Some(wanted) => matches.retain(|(user, _)| user.id == wanted),
+            None => {
+                return Err(Status::new(
+                    Code::FailedPrecondition,
+                    "multiple_accounts_for_contact",
+                ));
+            }
+        }
+    } else if let Some(wanted) = requested_user_id {
+        matches.retain(|(user, _)| user.id == wanted);
+    }
+    let matched = matches.into_iter().next();
+
+    match code {
+        None => {
+            send_login_code(base_url, conn, kind, &value, matched);
+            Ok(RefreshTokenResponse {
+                refresh_token: None,
+                access_token: None,
+                user: None,
+                verification_challenge: Some(verification_challenge(vec![value])),
+            })
+        }
+        Some(code) => {
+            let Some((user, mut contact)) = matched else {
+                log::info!("{:?} login code submitted for a contact with no verified account", kind);
+                return Err(incorrect_code());
+            };
+            let verdict = check_contact_code(&mut contact, &code);
+            if verdict != CodeVerdict::NotStarted {
+                // Counted guess, or cleared on success/expiry/exhaustion.
+                persist_user_contact(conn, user.id, kind, &contact)?;
+            }
+            if verdict != CodeVerdict::Valid {
+                log::info!(
+                    "{:?} login code rejected for user_id={}: {:?}",
+                    kind,
+                    user.id,
+                    verdict
+                );
+                return Err(incorrect_code());
+            }
+            let response = login_response(&user, &expires_at, conn);
+            log::info!("Logged in user {} via {:?}, user_id={}", user.username, kind, user.id);
+            Ok(response)
+        }
+    }
+}
+
+/// Phase 1's send: only if there's a matching account whose contact consents to being messaged and
+/// has no code sent in the last minute. Every other outcome (and any send failure) is logged and
+/// otherwise invisible to the caller.
+fn send_login_code(
+    base_url: Option<&str>,
+    conn: &mut PgPooledConnection,
+    kind: ContactKind,
+    value: &str,
+    matched: Option<(models::User, ContactMethod)>,
+) {
+    let Some((user, contact)) = matched else {
+        log::info!("{:?} login code requested for a contact with no verified account", kind);
+        return;
+    };
+    if !consent_granted(&contact) {
+        log::info!("{:?} login code not sent for user_id={}: consent not granted", kind, user.id);
+        return;
+    }
+    if cooldown_active(&contact) {
+        log::info!("{:?} login code not sent for user_id={}: resend cooldown", kind, user.id);
+        return;
+    }
+    // Send to the stored spelling of the value (case preserved for emails).
+    let send_to = contact.value.clone().unwrap_or_else(|| value.to_string());
+    if let Err(e) = begin_user_contact_verification(base_url, conn, user.id, kind, &contact, &send_to) {
+        log::warn!(
+            "{:?} login code could not be sent for user_id={}: {}",
+            kind,
+            user.id,
+            e.message()
+        );
+    }
 }

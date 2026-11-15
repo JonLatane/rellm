@@ -114,6 +114,16 @@ reqwest = { version = "0.13", default-features = false, features = [
   # tonic's "tls-ring" feature.
   "rustls-no-provider",
 ] }
+# SMTP submission (STARTTLS/implicit TLS + AUTH) for `logic::contact_methods::stalwart_email`. Explicit
+# features: `ring` + `webpki-roots` keep us off the aws-lc-rs backend (see the note on `reqwest`) and
+# off native-tls/openssl; the default `pool`/`hostname` features aren't needed.
+lettre = { version = "0.11.23", default-features = false, features = [
+  "smtp-transport",
+  "builder",
+  "rustls",
+  "ring",
+  "webpki-roots",
+] }
 rrule = "0.14"
 mail-parser = "0.11.5"
 feed-rs = "2.4.0"
