@@ -50,7 +50,10 @@ type alias Model =
     , query : Dict String String
 
     -- Whether the connected account follows this profile (`Nothing` until known, or when there's no
-    -- connected account / this is its own profile).
+    -- connected account / this is its own profile). It's the state *for `followFor`* -- the handle of the account
+    -- acting when it was fetched: switching accounts clears it and fetches again (`syncFollow`), and replies
+    -- from the previous account are dropped, so one account's follow record is never used as another's.
+    , followFor : Maybe String
     , followState : Maybe Bluesky.FollowState
     , followBusy : Bool
 
@@ -80,9 +83,9 @@ type Msg
     = GotProfile ( String, String ) (Result Http.Error ( Maybe BlueskyAccount, Bluesky.ActorProfile ))
     | PostsMsg PostsPage.Msg
     | SharedMsgReceived Shared.Msg
-    | GotFollowState (Result Http.Error ( Maybe AccountsPanel.Msg, Bluesky.FollowState ))
+    | GotFollowState String (Result Http.Error ( Maybe AccountsPanel.Msg, Bluesky.FollowState ))
     | FollowClicked
-    | GotFollowResult (Result Http.Error ( Maybe AccountsPanel.Msg, Bluesky.FollowState ))
+    | GotFollowResult String (Result Http.Error ( Maybe AccountsPanel.Msg, Bluesky.FollowState ))
     | EditProfileClicked
     | GotOwnProfile (Result Http.Error ( Maybe AccountsPanel.Msg, Bluesky.OwnProfileRecord ))
     | DisplayNameChanged String
@@ -129,6 +132,7 @@ init shared handle navKey path query =
       , navKey = navKey
       , path = path
       , query = query
+      , followFor = Nothing
       , followState = Nothing
       , followBusy = False
       , profileEdit = Nothing
@@ -142,6 +146,51 @@ init shared handle navKey path query =
 
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
 update shared msg model =
+    updateInner shared msg model |> syncFollow shared
+
+
+{-| Keeps the follow state for the account that is acting *now*: when that isn't the one it was fetched for
+(another account was enabled, or the profile just loaded), it's cleared and fetched for the new one. Nothing for
+your own profile or with no account.
+-}
+syncFollow : Shared.Model -> ( Model, Effect Msg ) -> ( Model, Effect Msg )
+syncFollow shared ( model, effect ) =
+    case model.profileStatus of
+        ProfileLoaded profile ->
+            let
+                acting : Maybe BlueskyAccount
+                acting =
+                    AccountsPanel.activeBlueskyAccount shared.accounts
+                        |> Maybe.filter (\account -> not (Actions.isOwnBlueskyProfile account profile.handle))
+
+                wanted : Maybe String
+                wanted =
+                    Maybe.map .handle acting
+            in
+            if wanted == model.followFor then
+                ( model, effect )
+
+            else
+                ( { model | followFor = wanted, followState = Nothing, followBusy = False }
+                , Effect.batch
+                    [ effect
+                    , case acting of
+                        Just account ->
+                            Actions.fetchBlueskyFollowState account profile.handle
+                                |> Task.attempt (GotFollowState account.handle)
+                                |> Effect.fromCmd
+
+                        Nothing ->
+                            Effect.none
+                    ]
+                )
+
+        _ ->
+            ( model, effect )
+
+
+updateInner : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
+updateInner shared msg model =
     case msg of
         GotProfile _ (Ok ( account, profile )) ->
             let
@@ -161,20 +210,6 @@ update shared msg model =
                     :: (case account of
                             Just connectedAccount ->
                                 [ Effect.fromShared (Shared.AccountsPanelMsg (AccountsPanel.BlueskyAccountRefreshed connectedAccount)) ]
-
-                            Nothing ->
-                                []
-                       )
-                    ++ (case AccountsPanel.activeBlueskyAccount shared.accounts of
-                            Just acting ->
-                                if Actions.isOwnBlueskyProfile acting profile.handle then
-                                    []
-
-                                else
-                                    [ Actions.fetchBlueskyFollowState acting profile.handle
-                                        |> Task.attempt GotFollowState
-                                        |> Effect.fromCmd
-                                    ]
 
                             Nothing ->
                                 []
@@ -203,30 +238,46 @@ update shared msg model =
                 Nothing ->
                     ( model, Effect.none )
 
-        GotFollowState (Ok ( maybeAccountsPanelMsg, state )) ->
-            ( { model | followState = Just state }, forwardRotated maybeAccountsPanelMsg )
+        GotFollowState accountHandle (Ok ( maybeAccountsPanelMsg, state )) ->
+            if Just accountHandle == model.followFor then
+                ( { model | followState = Just state }, forwardRotated maybeAccountsPanelMsg )
 
-        GotFollowState (Err _) ->
+            else
+                ( model, forwardRotated maybeAccountsPanelMsg )
+
+        GotFollowState _ (Err _) ->
             -- Not being able to tell just means no button.
             ( model, Effect.none )
 
         FollowClicked ->
             case ( AccountsPanel.activeBlueskyAccount shared.accounts, model.followState ) of
                 ( Just acting, Just state ) ->
-                    ( { model | followBusy = True, actionError = Nothing }
-                    , Actions.setBlueskyFollowing (state.followUri == Nothing) acting state
-                        |> Task.attempt GotFollowResult
-                        |> Effect.fromCmd
-                    )
+                    if model.followFor /= Just acting.handle then
+                        ( model, Effect.none )
+
+                    else
+                        ( { model | followBusy = True, actionError = Nothing }
+                        , Actions.setBlueskyFollowing (state.followUri == Nothing) acting state
+                            |> Task.attempt (GotFollowResult acting.handle)
+                            |> Effect.fromCmd
+                        )
 
                 _ ->
                     ( model, Effect.none )
 
-        GotFollowResult (Ok ( maybeAccountsPanelMsg, state )) ->
-            ( { model | followState = Just state, followBusy = False }, forwardRotated maybeAccountsPanelMsg )
+        GotFollowResult accountHandle (Ok ( maybeAccountsPanelMsg, state )) ->
+            if Just accountHandle == model.followFor then
+                ( { model | followState = Just state, followBusy = False }, forwardRotated maybeAccountsPanelMsg )
 
-        GotFollowResult (Err err) ->
-            ( { model | followBusy = False, actionError = Just (Actions.writeErrorText err) }, Effect.none )
+            else
+                ( model, forwardRotated maybeAccountsPanelMsg )
+
+        GotFollowResult accountHandle (Err err) ->
+            if Just accountHandle == model.followFor then
+                ( { model | followBusy = False, actionError = Just (Actions.writeErrorText err) }, Effect.none )
+
+            else
+                ( model, Effect.none )
 
         EditProfileClicked ->
             case AccountsPanel.activeBlueskyAccount shared.accounts of
@@ -414,8 +465,8 @@ profileActionsView shared model profile =
                             profileEditForm edit
 
                   else
-                    case model.followState of
-                        Just state ->
+                    case ( model.followFor == Just acting.handle, model.followState ) of
+                        ( True, Just state ) ->
                             let
                                 following : Bool
                                 following =
@@ -441,7 +492,7 @@ profileActionsView shared model profile =
                                     )
                                 ]
 
-                        Nothing ->
+                        _ ->
                             text ""
                 , case model.actionError of
                     Just err ->

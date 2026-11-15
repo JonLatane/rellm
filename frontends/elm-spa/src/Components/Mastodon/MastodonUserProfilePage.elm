@@ -48,6 +48,11 @@ type alias Model =
 
     -- The connected account's relationship to this profile (`Nothing` until known, or when there's
     -- no connected account / this is its own profile).
+    --
+    -- It's the relationship *for `relationshipFor`* -- the `Actions.accountId` of the account acting when it was
+    -- fetched: switching accounts clears it and fetches again (`syncRelationship`), and replies from the previous
+    -- account are dropped, so one account's relationship is never used as another's.
+    , relationshipFor : Maybe String
     , relationship : Maybe Mastodon.Relationship
     , followBusy : Bool
 
@@ -77,9 +82,9 @@ type Msg
     = GotAccount (Result Http.Error Mastodon.Account)
     | PostsMsg PostsPage.Msg
     | SharedMsgReceived Shared.Msg
-    | GotFollowState (Result Http.Error ( Maybe AccountsPanel.Msg, Mastodon.Relationship ))
+    | GotFollowState String (Result Http.Error ( Maybe AccountsPanel.Msg, Mastodon.Relationship ))
     | FollowClicked
-    | GotFollowResult (Result Http.Error ( Maybe AccountsPanel.Msg, Mastodon.Relationship ))
+    | GotFollowResult String (Result Http.Error ( Maybe AccountsPanel.Msg, Mastodon.Relationship ))
     | EditProfileClicked
     | GotOwnProfile (Result Http.Error ( Maybe AccountsPanel.Msg, Mastodon.OwnProfile ))
     | DisplayNameChanged String
@@ -106,6 +111,7 @@ init instanceHost username navKey path query =
       , navKey = navKey
       , path = path
       , query = query
+      , relationshipFor = Nothing
       , relationship = Nothing
       , followBusy = False
       , profileEdit = Nothing
@@ -119,6 +125,58 @@ init instanceHost username navKey path query =
 
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
 update shared msg model =
+    updateInner shared msg model |> syncRelationship shared
+
+
+{-| The `Actions.accountId` of a connected Mastodon account.
+-}
+accountKey : MastodonAccount -> String
+accountKey account =
+    Actions.accountId (Actions.MastodonServerAccount account)
+
+
+{-| Keeps the relationship for the account that is acting *now*: when that isn't the one it was fetched for
+(another account became the acting one, or the profile just loaded), it's cleared and fetched for the new one.
+Nothing for your own profile or with no account.
+-}
+syncRelationship : Shared.Model -> ( Model, Effect Msg ) -> ( Model, Effect Msg )
+syncRelationship shared ( model, effect ) =
+    case model.profileStatus of
+        ProfileLoaded account ->
+            let
+                acting : Maybe MastodonAccount
+                acting =
+                    actingAccount shared model
+                        |> Maybe.filter (\a -> not (Actions.isOwnMastodonProfile a (targetOf model account)))
+
+                wanted : Maybe String
+                wanted =
+                    Maybe.map accountKey acting
+            in
+            if wanted == model.relationshipFor then
+                ( model, effect )
+
+            else
+                ( { model | relationshipFor = wanted, relationship = Nothing, followBusy = False }
+                , Effect.batch
+                    [ effect
+                    , case acting of
+                        Just a ->
+                            Actions.fetchMastodonFollowState a (targetOf model account)
+                                |> Task.attempt (GotFollowState (accountKey a))
+                                |> Effect.fromCmd
+
+                        Nothing ->
+                            Effect.none
+                    ]
+                )
+
+        _ ->
+            ( model, effect )
+
+
+updateInner : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
+updateInner shared msg model =
     case msg of
         GotAccount (Ok account) ->
             let
@@ -133,21 +191,7 @@ update shared msg model =
                         (Just (PostsPage.MastodonAccountFeed { instanceHost = model.instanceHost, accountId = account.id, username = account.username }))
             in
             ( { model | profileStatus = ProfileLoaded account, posts = Just postsModel }
-            , Effect.batch
-                [ Effect.map PostsMsg postsEffect
-                , case actingAccount shared model of
-                    Just acting ->
-                        if Actions.isOwnMastodonProfile acting (targetOf model account) then
-                            Effect.none
-
-                        else
-                            Actions.fetchMastodonFollowState acting (targetOf model account)
-                                |> Task.attempt GotFollowState
-                                |> Effect.fromCmd
-
-                    Nothing ->
-                        Effect.none
-                ]
+            , Effect.map PostsMsg postsEffect
             )
 
         GotAccount (Err _) ->
@@ -165,30 +209,46 @@ update shared msg model =
                 Nothing ->
                     ( model, Effect.none )
 
-        GotFollowState (Ok ( maybeAccountsPanelMsg, relationship )) ->
-            ( { model | relationship = Just relationship }, forwardRotated maybeAccountsPanelMsg )
+        GotFollowState key (Ok ( maybeAccountsPanelMsg, relationship )) ->
+            if Just key == model.relationshipFor then
+                ( { model | relationship = Just relationship }, forwardRotated maybeAccountsPanelMsg )
 
-        GotFollowState (Err _) ->
+            else
+                ( model, forwardRotated maybeAccountsPanelMsg )
+
+        GotFollowState _ (Err _) ->
             -- Not being able to tell (e.g. the instance doesn't know the account) just means no button.
             ( model, Effect.none )
 
         FollowClicked ->
             case ( model.profileStatus, actingAccount shared model, model.relationship ) of
                 ( ProfileLoaded account, Just acting, Just relationship ) ->
-                    ( { model | followBusy = True, actionError = Nothing }
-                    , Actions.setMastodonFollowing (not (relationship.following || relationship.requested)) acting (targetOf model account)
-                        |> Task.attempt GotFollowResult
-                        |> Effect.fromCmd
-                    )
+                    if model.relationshipFor /= Just (accountKey acting) then
+                        ( model, Effect.none )
+
+                    else
+                        ( { model | followBusy = True, actionError = Nothing }
+                        , Actions.setMastodonFollowing (not (relationship.following || relationship.requested)) acting (targetOf model account)
+                            |> Task.attempt (GotFollowResult (accountKey acting))
+                            |> Effect.fromCmd
+                        )
 
                 _ ->
                     ( model, Effect.none )
 
-        GotFollowResult (Ok ( maybeAccountsPanelMsg, relationship )) ->
-            ( { model | relationship = Just relationship, followBusy = False }, forwardRotated maybeAccountsPanelMsg )
+        GotFollowResult key (Ok ( maybeAccountsPanelMsg, relationship )) ->
+            if Just key == model.relationshipFor then
+                ( { model | relationship = Just relationship, followBusy = False }, forwardRotated maybeAccountsPanelMsg )
 
-        GotFollowResult (Err err) ->
-            ( { model | followBusy = False, actionError = Just (Actions.writeErrorText err) }, Effect.none )
+            else
+                ( model, forwardRotated maybeAccountsPanelMsg )
+
+        GotFollowResult key (Err err) ->
+            if Just key == model.relationshipFor then
+                ( { model | followBusy = False, actionError = Just (Actions.writeErrorText err) }, Effect.none )
+
+            else
+                ( model, Effect.none )
 
         EditProfileClicked ->
             case actingAccount shared model of
@@ -382,8 +442,8 @@ profileActionsView shared model account =
                             profileEditForm edit
 
                   else
-                    case model.relationship of
-                        Just relationship ->
+                    case ( model.relationshipFor == Just (accountKey acting), model.relationship ) of
+                        ( True, Just relationship ) ->
                             let
                                 label : String
                                 label =
@@ -409,7 +469,7 @@ profileActionsView shared model account =
                                 ]
                                 [ text label ]
 
-                        Nothing ->
+                        _ ->
                             text ""
                 , case model.actionError of
                     Just err ->

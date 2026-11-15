@@ -92,19 +92,21 @@ type alias Model =
 
 
 type Msg
-    = GotPage Int Bool (Result Http.Error ( Maybe AccountsPanel.Msg, List Post, Maybe String ))
+    = -- Every async reply carries the `Actions.accountId` of the account it was made as: a reply that lands after
+      -- another account was picked is dropped (see `update`), so one account's media never shows under another.
+      GotPage String Int Bool (Result Http.Error ( Maybe AccountsPanel.Msg, List Post, Maybe String ))
     | LoadMoreClicked
     | CaptionChanged String
     | DescriptionChanged String
     | VisibilityChanged String
     | UploadClicked
     | GotFile File
-    | GotUploadResult (Result Http.Error (Maybe AccountsPanel.Msg))
+    | GotUploadResult String (Result Http.Error (Maybe AccountsPanel.Msg))
     | ItemClicked String
     | DeleteClicked String
     | DeleteCancelled
     | DeleteConfirmed
-    | GotDeleteResult String (Result Http.Error (Maybe AccountsPanel.Msg))
+    | GotDeleteResult String String (Result Http.Error (Maybe AccountsPanel.Msg))
 
 
 init : ServerAccount -> ( Model, Effect Msg )
@@ -132,7 +134,7 @@ init account =
 fetchPage : ServerAccount -> Int -> Bool -> Maybe String -> Effect Msg
 fetchPage account requestId append cursor =
     Actions.fetchOwnMediaPosts account cursor
-        |> Task.attempt (GotPage requestId append)
+        |> Task.attempt (GotPage (Actions.accountId account) requestId append)
         |> Effect.fromCmd
 
 
@@ -191,11 +193,34 @@ forwardRotated maybeAccountsPanelMsg =
         |> Maybe.withDefault Effect.none
 
 
+{-| `model.account` as the Accounts Panel has it now: a request that refreshed an expired token (Bluesky rotates its
+refresh token) leaves the panel with the new one, and a later request made with this component's older copy would
+be rejected -- so every update starts from the latest.
+-}
+withLatestAccount : Shared.Model -> Model -> Model
+withLatestAccount shared model =
+    case Actions.usableAccounts shared.accounts |> List.filter (\account -> Actions.accountId account == Actions.accountId model.account) |> List.head of
+        Just latest ->
+            { model | account = latest }
+
+        Nothing ->
+            model
+
+
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
-update shared msg model =
+update shared msg unrefreshed =
+    let
+        model : Model
+        model =
+            withLatestAccount shared unrefreshed
+
+        isCurrent : String -> Bool
+        isCurrent accountKey =
+            accountKey == Actions.accountId model.account
+    in
     case msg of
-        GotPage requestId append result ->
-            if requestId /= model.requestId then
+        GotPage accountKey requestId append result ->
+            if not (isCurrent accountKey) || requestId /= model.requestId then
                 ( model
                 , case result of
                     Ok ( maybeAccountsPanelMsg, _, _ ) ->
@@ -257,30 +282,38 @@ update shared msg model =
         GotFile file ->
             ( { model | upload = Uploading, actionError = Nothing }
             , Actions.uploadAsPost model.account model.visibility file model.caption model.description
-                |> Task.attempt GotUploadResult
+                |> Task.attempt (GotUploadResult (Actions.accountId model.account))
                 |> Effect.fromCmd
             )
 
-        GotUploadResult (Ok maybeAccountsPanelMsg) ->
-            -- The new post is the newest one: refetch from the top so it shows.
-            ( { model | upload = Idle, caption = "", description = "", requestId = model.requestId + 1 }
-            , Effect.batch [ forwardRotated maybeAccountsPanelMsg, fetchPage model.account (model.requestId + 1) False Nothing ]
-            )
+        GotUploadResult accountKey (Ok maybeAccountsPanelMsg) ->
+            if not (isCurrent accountKey) then
+                ( model, forwardRotated maybeAccountsPanelMsg )
 
-        GotUploadResult (Err err) ->
-            ( { model
-                | upload =
-                    UploadFailed
-                        (case err of
-                            Http.BadBody "unsupported-media-type" ->
-                                "Bluesky takes images only here."
+            else
+                -- The new post is the newest one: refetch from the top so it shows.
+                ( { model | upload = Idle, caption = "", description = "", requestId = model.requestId + 1 }
+                , Effect.batch [ forwardRotated maybeAccountsPanelMsg, fetchPage model.account (model.requestId + 1) False Nothing ]
+                )
 
-                            _ ->
-                                Actions.writeErrorText err
-                        )
-              }
-            , Effect.none
-            )
+        GotUploadResult accountKey (Err err) ->
+            if not (isCurrent accountKey) then
+                ( model, Effect.none )
+
+            else
+                ( { model
+                    | upload =
+                        UploadFailed
+                            (case err of
+                                Http.BadBody "unsupported-media-type" ->
+                                    "Bluesky takes images only here."
+
+                                _ ->
+                                    Actions.writeErrorText err
+                            )
+                  }
+                , Effect.none
+                )
 
         ItemClicked itemId ->
             case List.filter (\item -> item.id == itemId) model.items |> List.head of
@@ -333,24 +366,32 @@ update shared msg model =
                 Just item ->
                     ( { model | deleting = True, actionError = Nothing }
                     , Actions.deletePost model.account item.post
-                        |> Task.attempt (GotDeleteResult item.post.id)
+                        |> Task.attempt (GotDeleteResult (Actions.accountId model.account) item.post.id)
                         |> Effect.fromCmd
                     )
 
                 Nothing ->
                     ( { model | confirmingDelete = Nothing }, Effect.none )
 
-        GotDeleteResult postId (Ok maybeAccountsPanelMsg) ->
-            ( { model
-                | items = List.filter (\item -> item.post.id /= postId) model.items
-                , confirmingDelete = Nothing
-                , deleting = False
-              }
-            , forwardRotated maybeAccountsPanelMsg
-            )
+        GotDeleteResult accountKey postId (Ok maybeAccountsPanelMsg) ->
+            if not (isCurrent accountKey) then
+                ( model, forwardRotated maybeAccountsPanelMsg )
 
-        GotDeleteResult _ (Err err) ->
-            ( { model | confirmingDelete = Nothing, deleting = False, actionError = Just (Actions.writeErrorText err) }, Effect.none )
+            else
+                ( { model
+                    | items = List.filter (\item -> item.post.id /= postId) model.items
+                    , confirmingDelete = Nothing
+                    , deleting = False
+                  }
+                , forwardRotated maybeAccountsPanelMsg
+                )
+
+        GotDeleteResult accountKey _ (Err err) ->
+            if not (isCurrent accountKey) then
+                ( model, Effect.none )
+
+            else
+                ( { model | confirmingDelete = Nothing, deleting = False, actionError = Just (Actions.writeErrorText err) }, Effect.none )
 
 
 

@@ -2,6 +2,7 @@ module Shared.Federation.Mastodon exposing
     ( Account
     , OwnProfile
     , fetchOwnMediaStatuses
+    , fetchStatusWithQuotesAs
     , postStatusWithMedia
     , uploadMedia
     , Relationship
@@ -561,7 +562,16 @@ chain there rather than failing the whole status.
 -}
 fetchStatusWithQuotes : String -> String -> Task Http.Error ( Post, Bool )
 fetchStatusWithQuotes instanceHost statusId =
-    fetchRawStatus instanceHost statusId
+    fetchStatusWithQuotesAs Nothing instanceHost statusId
+
+
+{-| `fetchStatusWithQuotes` as the account holding `accessToken` (one on `instanceHost` itself), so a status only
+that account may see -- its own followers-only or direct one -- can be loaded too. (Quoted statuses are still
+fetched anonymously.)
+-}
+fetchStatusWithQuotesAs : Maybe String -> String -> String -> Task Http.Error ( Post, Bool )
+fetchStatusWithQuotesAs accessToken instanceHost statusId =
+    fetchRawStatusAs accessToken instanceHost statusId
         |> Task.andThen (expandQuotes instanceHost maxPageQuoteDepth)
         |> Task.map
             (\status ->
@@ -605,9 +615,14 @@ expandQuotes instanceHost depth status =
 
 fetchRawStatus : String -> String -> Task Http.Error Status
 fetchRawStatus instanceHost statusId =
+    fetchRawStatusAs Nothing instanceHost statusId
+
+
+fetchRawStatusAs : Maybe String -> String -> String -> Task Http.Error Status
+fetchRawStatusAs accessToken instanceHost statusId =
     Http.task
         { method = "GET"
-        , headers = []
+        , headers = accessToken |> Maybe.map authHeaders |> Maybe.withDefault []
         , url = "https://" ++ instanceHost ++ "/api/v1/statuses/" ++ statusId
         , body = Http.emptyBody
         , resolver = jsonResolver decoder (\metadata _ -> Http.BadStatus metadata.statusCode)
